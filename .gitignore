@@ -162,4 +162,7 @@ cython_debug/
 #.idea/
 outputs/*
 models/*
+!models/README.md
 wandb/*
+
+.codegpt
