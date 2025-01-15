@@ -2,6 +2,11 @@
 https://www.fahdmirza.com/2024/04/fine-tune-phi-3-on-local-custom-dataset.html
 
 
+
+## run on multi-gpu
+torchrun --standalone --nnodes=1 --nproc-per-node=8 train.py 
+
+
 """
 # %%
 
