@@ -41,11 +41,13 @@ concept_length = 64
 
 # batch size is equal to the number of the sentences, based on the input data seq_len dimension
 batch_size = input_ids.shape[0]
-num_heads = 1
+num_heads = 2
 num_layers = 1  
 
 hidden_dropout_prob=0.0
 attention_probs_dropout_prob=0.0
+
+float_type = torch.bfloat16
 
 #%%
 CONCEPT_ENCDEC_DOC_STRING = """
@@ -87,37 +89,39 @@ While computing the attention we need to mulitply (Q*K^T)*V
 
 
 
-token_emb_layer = torch.nn.Embedding(vocab_size, representation_dim)
+token_emb_layer = torch.nn.Embedding(vocab_size, representation_dim, dtype=float_type)
 
 # Convert tokens to embeddings
 token_embeddings = token_emb_layer(input_ids)
 
 # initalize the concept embeddings
-concept_emb_layer = torch.nn.Embedding(concept_length, representation_dim)
+concept_emb_layer = torch.nn.Embedding(concept_length, representation_dim, dtype=float_type)
 
 concept_embeddings = concept_emb_layer(torch.arange(concept_length))
 # Add batch dimension to match token_embeddings batch size
 concept_embeddings = concept_embeddings.unsqueeze(0).expand(batch_size, -1, -1)  # Shape: [batch_size, concept_length, representation_dim]
 
 # debug print the shapes of the concept representations and the token embeddings,
-print(f"concept_embeddings shape: {concept_embeddings.shape}")
-print(f"token_embeddings shape: {token_embeddings.shape}")
+print(f"concept_embeddings shape: {concept_embeddings.shape} of type {concept_embeddings.dtype}")
+print(f"token_embeddings shape: {token_embeddings.shape} of type {token_embeddings.dtype}")
 
 
 #%% define the layer normalization layers
-pre_cross_attn_norm = nn.LayerNorm(representation_dim)
-pre_self_attn_norm = nn.LayerNorm(representation_dim)
-pre_ff_norm = nn.LayerNorm(representation_dim)
+pre_cross_attn_norm = nn.LayerNorm(representation_dim, dtype=float_type)
+pre_self_attn_norm = nn.LayerNorm(representation_dim, dtype=float_type)
+pre_ff_norm = nn.LayerNorm(representation_dim, dtype=float_type)
 
 
 # %% deffine attention layers, cross attention between the concept representations and the token embeddings, and concept self attention
 concept_seq_attn = nn.MultiheadAttention(
     representation_dim, num_heads=num_heads, batch_first=True,
-    dropout=attention_probs_dropout_prob,   
+    dropout=attention_probs_dropout_prob,
+    dtype=float_type,
 )
 concept_self_attn = nn.MultiheadAttention(
     representation_dim, num_heads=num_heads, batch_first=True,
     dropout=attention_probs_dropout_prob,
+    dtype=float_type,
 )
 
 # input to the concept attention layers is the concept embeddings
@@ -128,21 +132,53 @@ concept_representations = concept_embeddings
 # apply the layer normalization (nn.LayerNorm) with residual connection
 normed_concepts = pre_cross_attn_norm(concept_representations)
 
-# Convert the 2D attention_mask into a float-based 3D mask, the same way ConceptEncoder does it.
-# Shape => (batch_size, concept_seq_len, seq_len)
-expanded_attn_mask = attention_mask.unsqueeze(1)  # [batch_size, 1, seq_len]
-expanded_attn_mask = expanded_attn_mask.expand(
-    batch_size, concept_embeddings.size(1), input_ids.size(1)
-)
-expanded_attn_mask = expanded_attn_mask.to(dtype=token_embeddings.dtype)
-expanded_attn_mask = (1.0 - expanded_attn_mask) * torch.finfo(expanded_attn_mask.dtype).min
 
+# Option1 = float-based, expand the attention mask to the shape [batch_size×num_heads, target_seq_len, 
+# source_seq_len] - if we need more flexibility
+# at the beginning attention_mask shape => [batch_size, seq_len]
+# we want a float-based mask of shape [batch_size×num_heads, target_seq_len, source_seq_len]
+
+# expanded_attn_mask = attention_mask.unsqueeze(1)  # [batch_size, 1, seq_len]
+# expanded_attn_mask = expanded_attn_mask.expand(
+#     batch_size,
+#     concept_embeddings.size(1),  # concept_length
+#     input_ids.size(1)           # seq_len
+# )  # now => [batch_size, concept_length, seq_len]
+# expanded_attn_mask = expanded_attn_mask.to(dtype=token_embeddings.dtype)
+# expanded_attn_mask = (1.0 - expanded_attn_mask) * torch.finfo(expanded_attn_mask.dtype).min
+
+# # Insert a dimension for num_heads => [batch_size, 1, concept_length, seq_len]
+# expanded_attn_mask = expanded_attn_mask.unsqueeze(1)
+# expanded_attn_mask = expanded_attn_mask.repeat(1, num_heads, 1, 1)
+# # => [batch_size, num_heads, concept_length, seq_len]
+
+# # Flatten batch_size * num_heads => [batch_size * num_heads, concept_length, seq_len]
+# expanded_attn_mask = expanded_attn_mask.view(
+#     batch_size * num_heads,
+#     concept_embeddings.size(1),
+#     input_ids.size(1)
+# )
+
+# concept_seq_attn_output, concept_seq_attn_weights = concept_seq_attn(
+#     normed_concepts,     # query => [batch_size, concept_length, hidden_dim]
+#     token_embeddings,    # key   => [batch_size, seq_len, hidden_dim]
+#     token_embeddings,    # value => [batch_size, seq_len, hidden_dim]
+#     attn_mask=expanded_attn_mask
+# )
+
+# Option2 = boolean-based, “padding tokens should not contribute to attention
+# Suppose attention_mask has shape [batch_size, seq_len] with 1=nonpad, 0=pad
+# We need the opposite for key_padding_mask, which requires True at positions that should be masked out
+key_padding_mask = (attention_mask == 0)  # bool of shape [batch_size, seq_len]
 concept_seq_attn_output, concept_seq_attn_weights = concept_seq_attn(
-    normed_concepts,
-    token_embeddings,
-    token_embeddings,
-    attn_mask=expanded_attn_mask
+    normed_concepts,     # query => [batch_size, concept_length, hidden_dim]
+    token_embeddings,    # key   => [batch_size, seq_len, hidden_dim]
+    token_embeddings,    # value => [batch_size, seq_len, hidden_dim]
+    key_padding_mask=key_padding_mask
 )
+
+
+
 concept_representations = concept_representations + concept_seq_attn_output
 
 # apply the layer normalization (nn.LayerNorm) with residual connection
@@ -170,8 +206,8 @@ normed_concepts = pre_ff_norm(concept_representations)
 
 # apply the feed forward layer (nn.Linear) with GeLU activation and dropout with Wi,Wo weights with gate and dropout
 # https://github.com/huggingface/transformers/blob/6bc0fbcfa7acb6ac4937e7456a76c2f7975fefec/src/transformers/models/modernbert/modular_modernbert.py#L503
-Wi = nn.Linear(representation_dim, ff_dim * 2)
-Wo = nn.Linear(ff_dim, representation_dim)
+Wi = nn.Linear(representation_dim, ff_dim * 2, dtype=float_type)
+Wo = nn.Linear(ff_dim, representation_dim, dtype=float_type)
 
 wi_dropout = nn.Dropout(hidden_dropout_prob)
 act_fn = nn.GELU()
@@ -210,7 +246,7 @@ config = ConceptEncoderConfig(
     concept_size=concept_length,
     hidden_size=representation_dim,  # 128
     num_hidden_layers=num_layers,  # test with one layer
-    num_attention_heads=num_heads,  # test with one head
+    num_attention_heads=2, #num_heads,  # test with one head
     intermediate_size=ff_dim,  # 256
     hidden_dropout_prob=hidden_dropout_prob,
     attention_probs_dropout_prob=attention_probs_dropout_prob,
@@ -225,7 +261,9 @@ concept_encoder.eval()
 
 # Get concept representations from ConceptEncoder
 with torch.no_grad():
-    encoder_concept_representations = concept_encoder(input_ids, attention_mask)
+    encoder_concept_output = concept_encoder(input_ids, attention_mask)
+
+encoder_concept_representations = encoder_concept_output.last_hidden_state
 
 # Print shapes for comparison
 print("\nShape Comparison:")
@@ -250,3 +288,4 @@ print(f"Max: {encoder_concept_representations.max().item():.6f}")
 
 
 #
+# %%
