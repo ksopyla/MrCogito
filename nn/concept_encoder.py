@@ -302,12 +302,11 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
     def forward(
         self,
         input_ids: torch.LongTensor,
-        attention_mask: Optional[torch.FloatTensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
         labels: Optional[torch.LongTensor] = None,
     ):
         """
         Perform a forward pass for masked language modeling, based on the final concept representations.
-
         Args:
             input_ids (torch.LongTensor): [batch_size, seq_length] 
                 Indices of input sequence tokens.
@@ -322,12 +321,12 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
 
             logits => [batch_size, concept_size, vocab_size]
         """
-        # Get the final concept representations from the ConceptEncoder forward pass
-        # shape => [batch_size, concept_size, hidden_size]
-        concept_representations = self.encoder(input_ids, attention_mask)
+        # Get the final concept representations from the ConceptEncoder forward pass.
+        # Right now, that returns a BaseModelOutput. We need to grab .last_hidden_state
+        encoder_outputs = self.encoder(input_ids, attention_mask)
+        concept_representations = encoder_outputs.last_hidden_state
 
         # Project concept representations to vocab logits
-        # shape => [batch_size, concept_size, vocab_size]
         logits = self.lm_head(concept_representations)
 
         loss = None
