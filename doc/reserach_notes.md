@@ -73,3 +73,28 @@ for old_token, new_token in token_mapping.items():
 tokenizer.save_pretrained("./updated_tokenizer")
 ```
 
+
+
+## Prompts 
+
+** Analys and improve the concept encoder layer **
+
+You are a machine learning research and ai engineer. With deep knowledge of current AI neural networks architecuture.
+You have access to @Hugging-Face-Transformers and @Pytorch documentation, you can use your knowledge about research articles from arxiv.
+You are helping me to invent new architecture, some of my reserch notes are in reserch_notes.md  . My base idea is to use concepts insted of tokens, concept is more abstract mental model based on group of the tokens, each concept attent to tokens (via cross-attention). I'm building the encoder decoder architecture, but now focus on encoder part. I 
+
+Please read and analyse the code, help me improve idea from the teoretical point of view as well as practical by fixing the code errors, wrong use of function, tensor shapes mismatch. 
+
+Give me a llist of further improvements for consideration. 
+
+
+
+
+### How to compute the logits for MLM - ideas
+
+Now I seen the flows in my thinking while computing the logits for MLM. 
+Enoder computes the concept_representation of shape [batch_size, concept_size, hidden_size] and I should map it in some way to [batch_size, sequence_len, vocab_size]. 
+
+One of my idea is to do as follow: 
+1. multiply the sequence token embeddings of [batch_size, sequence_len, hidden_dim] by concept_representation transpose  [batch_size, hidden_dim, concept_len] -> [batch_size, sequence_len, concept_len] - this allows to match tokens from sequence to conepts
+2. make an linear projecttion to [batch_size, sequence_len, vocab_size] to get the sequence logits

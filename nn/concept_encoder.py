@@ -1,6 +1,7 @@
 from typing import Optional, Tuple, Union
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from transformers import PreTrainedModel
 from transformers.modeling_utils import ModuleUtilsMixin
 from transformers.utils import logging
@@ -44,10 +45,16 @@ class ConceptEncoderConfig(PretrainedConfig):
         vocab_size: int = 30522,
         concept_size: int = 128,
         hidden_size: int = 768,
-        num_hidden_layers: int = 12,
+        num_hidden_layers: int = 6,
         num_attention_heads: int = 12,
-        intermediate_size: int = 3072,
+        intermediate_size: int = 2048,
         hidden_act: str = "gelu",
+        pad_token_id: int = 0,
+        eos_token_id: int = 1,
+        bos_token_id: int = 2,
+        cls_token_id: int = 3,
+        sep_token_id: int = 4,
+        mask_token_id: int = 5,
         hidden_dropout_prob: float = 0.1,
         attention_probs_dropout_prob: float = 0.1,
         max_position_embeddings: int = 2048,
@@ -70,6 +77,13 @@ class ConceptEncoderConfig(PretrainedConfig):
         self.type_vocab_size = type_vocab_size
         self.initializer_range = initializer_range
         self.is_decoder = is_decoder
+        
+        self.pad_token_id = pad_token_id
+        self.eos_token_id = eos_token_id
+        self.bos_token_id = bos_token_id
+        self.cls_token_id = cls_token_id
+        self.sep_token_id = sep_token_id
+        self.mask_token_id = mask_token_id
 
 class ConceptEncoderLayer(nn.Module):
     """A single layer of the concept encoder.
@@ -177,9 +191,9 @@ class ConceptEncoder(PreTrainedModel):
         super().__init__(config)
         self.config = config
 
-        self.token_embeddings = nn.Embedding(config.vocab_size, config.hidden_size)
-        self.token_position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
-        self.concept_embeddings = nn.Embedding(config.concept_size, config.hidden_size)
+        self.token_embeddings = nn.Embedding(num_embeddings=config.vocab_size, embedding_dim=config.hidden_size, padding_idx=config.pad_token_id)
+        self.token_position_embeddings = nn.Embedding(num_embeddings=config.max_position_embeddings, embedding_dim=config.hidden_size)
+        self.concept_embeddings = nn.Embedding(num_embeddings=config.concept_size, embedding_dim=config.hidden_size)
 
         self.layers = nn.ModuleList([ConceptEncoderLayer(config) for _ in range(config.num_hidden_layers)])
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -287,12 +301,19 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
         self.config = config
 
         # The underlying ConceptEncoder (as defined above).
-        self.encoder = ConceptEncoder(config)
+        self.encoder = ConceptEncoder(config) # []
 
-        # Optionally tie token embeddings and lm_head in MLM
+        # Project concepts to sequence positions via attention
+        self.concept_to_sequence = nn.Sequential(
+            nn.LayerNorm(config.hidden_size),
+            nn.Linear(config.hidden_size, config.hidden_size)
+        )
+
+        # Final MLM head to project to vocabulary
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
-        # Tie weights if desired
+        # Initialize weights and tie if needed
+        self.post_init()
         self.tie_weights()
 
     def tie_weights(self):
@@ -307,13 +328,18 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
     ):
         """
         Perform a forward pass for masked language modeling, based on the final concept representations.
+        Concept to Sequence Mapping:
+        We now map concepts back to sequence positions
+        This is done through an attention mechanism between token embeddings and concepts
+        The attention weights determine how much each concept contributes to each sequence position
+        
         Args:
             input_ids (torch.LongTensor): [batch_size, seq_length] 
                 Indices of input sequence tokens.
             attention_mask (Optional[torch.FloatTensor]): [batch_size, seq_length]
                 1 for tokens to attend to, 0 for tokens to ignore.
-            labels (Optional[torch.LongTensor]): [batch_size, concept_size]
-                MLM labels at the concept level. -100 indicates tokens to ignore.
+            labels (Optional[torch.LongTensor]): [batch_size, seq_length]
+                MLM labels for the input sequence. pad_token_id indicates tokens to ignore.
 
         Returns:
             (loss, logits) if labels are provided
@@ -321,23 +347,41 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
 
             logits => [batch_size, concept_size, vocab_size]
         """
-        # Get the final concept representations from the ConceptEncoder forward pass.
-        # Right now, that returns a BaseModelOutput. We need to grab .last_hidden_state
+        # Get concept representations from encoder
         encoder_outputs = self.encoder(input_ids, attention_mask)
-        concept_representations = encoder_outputs.last_hidden_state
+        concept_repr = encoder_outputs.last_hidden_state  # [batch_size, concept_size, hidden_size]
 
-        # Project concept representations to vocab logits
-        logits = self.lm_head(concept_representations)
+        # Get token embeddings for attention computation
+        token_embeddings = self.encoder.token_embeddings(input_ids)  # [batch_size, seq_length, hidden_size]
+
+        # Project concepts for attention
+        projected_concepts = self.concept_to_sequence(concept_repr)  # [batch_size, concept_size, hidden_size]
+
+        # Compute attention scores between sequence positions and concepts
+        attention_scores = torch.matmul(
+            token_embeddings, 
+            projected_concepts.transpose(-1, -2)
+        )  # [batch_size, seq_length, concept_size]
+        
+        # Normalize attention scores
+        attention_weights = F.softmax(attention_scores, dim=-1)
+        
+        # Weight concept representations by attention
+        sequence_repr = torch.matmul(
+            attention_weights, 
+            concept_repr
+        )  # [batch_size, seq_length, hidden_size]
+
+        # Project to vocabulary
+        logits = self.lm_head(sequence_repr)  # [batch_size, seq_length, vocab_size]
 
         loss = None
         if labels is not None:
-            # Flatten for cross-entropy: [batch_size * concept_size, vocab_size]
-            shift_logits = logits.view(-1, self.config.vocab_size)
-            shift_labels = labels.view(-1)
-
-            loss_fct = CrossEntropyLoss(ignore_index=-100)
-            loss = loss_fct(shift_logits, shift_labels)
-
+            loss_fct = CrossEntropyLoss(ignore_index=-100)  # -100 index = padding token
+            loss = loss_fct(
+                logits.view(-1, self.config.vocab_size),
+                labels.view(-1)
+            )
             return (loss, logits)
-        else:
-            return (logits,)
+        
+        return (logits,)

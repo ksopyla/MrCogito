@@ -223,6 +223,22 @@ concept_representations = concept_representations + ff_output
 # print the shape of the final concept representations
 print(f"concept_representations shape: {concept_representations.shape}")
 
+#%% mlm head
+lm_concept2vocab = nn.Linear(representation_dim, vocab_size, bias=False, dtype=float_type)
+
+lm_concept2vocab_output = lm_concept2vocab(concept_representations)
+
+# print the shape of the final lm head output
+print(f"lm_concept2vocab_output shape: {lm_concept2vocab_output.shape}")
+
+lm_concept2seq = nn.Linear(representation_dim, input_ids.shape[1], bias=False, dtype=float_type)
+
+lm_concept2seq_output = lm_concept2seq(concept_representations)
+
+# print the shape of the final lm head output
+print(f"lm_concept2seq_output shape: {lm_concept2seq_output.shape}")
+
+
 
 # %% Compare with ConceptEncoder implementation
 print("\n=== Comparing Step-by-Step vs ConceptEncoder Implementation ===")
@@ -250,6 +266,12 @@ config = ConceptEncoderConfig(
     intermediate_size=ff_dim,  # 256
     hidden_dropout_prob=hidden_dropout_prob,
     attention_probs_dropout_prob=attention_probs_dropout_prob,
+    pad_token_id=tokenizer.pad_token_id,
+    eos_token_id=tokenizer.eos_token_id,
+    bos_token_id=tokenizer.bos_token_id,
+    cls_token_id=tokenizer.cls_token_id,
+    sep_token_id=tokenizer.sep_token_id,
+    mask_token_id=tokenizer.mask_token_id,
 )
 
 # Initialize ConceptEncoder with the config
