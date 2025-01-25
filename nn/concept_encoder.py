@@ -7,7 +7,7 @@ from transformers.modeling_utils import ModuleUtilsMixin
 from transformers.utils import logging
 from torch.nn import CrossEntropyLoss
 from transformers.configuration_utils import PretrainedConfig
-from transformers.modeling_outputs import BaseModelOutput
+from transformers.modeling_outputs import BaseModelOutput, MaskedLMOutput
 
 logger = logging.get_logger(__name__)
 
@@ -325,6 +325,8 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
         input_ids: torch.LongTensor,
         attention_mask: Optional[torch.Tensor] = None,
         labels: Optional[torch.LongTensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
     ):
         """
         Perform a forward pass for masked language modeling, based on the final concept representations.
@@ -348,7 +350,7 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
             logits => [batch_size, concept_size, vocab_size]
         """
         # Get concept representations from encoder
-        encoder_outputs = self.encoder(input_ids, attention_mask)
+        encoder_outputs = self.encoder(input_ids, attention_mask, output_attentions, output_hidden_states)
         concept_repr = encoder_outputs.last_hidden_state  # [batch_size, concept_size, hidden_size]
 
         # Get token embeddings for attention computation
@@ -375,13 +377,17 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
         # Project to vocabulary
         logits = self.lm_head(sequence_repr)  # [batch_size, seq_length, vocab_size]
 
-        loss = None
+        mlm_loss = None
         if labels is not None:
-            loss_fct = CrossEntropyLoss(ignore_index=-100)  # -100 index = padding token
-            loss = loss_fct(
+            loss_fct = CrossEntropyLoss(ignore_index=self.config.pad_token_id)  # -100 index = padding token
+            mlm_loss = loss_fct(
                 logits.view(-1, self.config.vocab_size),
                 labels.view(-1)
             )
-            return (loss, logits)
         
-        return (logits,)
+        return MaskedLMOutput(
+            loss=mlm_loss,
+            logits=logits,
+            hidden_states=encoder_outputs.hidden_states,
+            attentions=encoder_outputs.attentions
+        )
