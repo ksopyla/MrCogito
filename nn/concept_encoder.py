@@ -391,3 +391,85 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
             hidden_states=encoder_outputs.hidden_states,
             attentions=encoder_outputs.attentions
         )
+
+
+
+class ConceptEncoderWithSimMatrixForMaskedLM(PreTrainedModel):
+    """
+    ConceptEncoder Model with a masked language modeling head on top (for masked language modeling).
+    This model uses a encoded concepts to predict the [masked] tokens in the sequence.
+
+    Args:
+        config (ConceptEncoderConfig): Model configuration defining hidden sizes, embeddings, etc.
+    """
+    config_class = ConceptEncoderConfig
+    base_model_prefix = "concept_encoder"
+
+    def __init__(self, config: ConceptEncoderConfig):
+        super().__init__(config)
+        self.config = config
+        self.encoder = ConceptEncoder(config)
+        
+        # Concept->Vocab projection
+        self.concept_vocab_projection = nn.Linear(
+            config.hidden_size,
+            config.vocab_size,
+            bias=False
+        )
+        
+        # Token-level LM head
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        
+        # Dynamic gating mechanism
+        self.gate = nn.Sequential(
+            nn.Linear(config.hidden_size, 1),
+            nn.Sigmoid()
+        )
+        
+        # Initialize weights
+        nn.init.xavier_normal_(self.concept_vocab_projection.weight)
+        nn.init.xavier_normal_(self.lm_head.weight)
+        self._tie_weights()
+
+    def _tie_weights(self):
+        self.concept_vocab_projection.weight = self.encoder.token_embeddings.weight
+        self.lm_head.weight = self.encoder.token_embeddings.weight
+
+    def forward(self, input_ids, attention_mask=None, labels=None):
+        # Encoder forward
+        encoder_out = self.encoder(input_ids, attention_mask)
+        concept_repr = encoder_out.last_hidden_state  # [B, C, H]
+        
+        # Get token embeddings
+        token_emb = self.encoder.token_embeddings(input_ids)  # [B, S, H]
+        
+        # Sparse similarity matrix
+        similarity = torch.einsum("bsh,bch->bsc", token_emb, concept_repr)
+        similarity = similarity / (self.config.hidden_size ** 0.5)
+        
+        # Top-4 sparsity
+        topk_val, _ = similarity.topk(k=4, dim=-1)
+        mask = similarity >= topk_val[..., -1].unsqueeze(-1)
+        similarity = similarity.masked_fill(~mask, 0)
+        
+        # Project to vocab space
+        concept_logits = torch.einsum("bsc,cv->bsv", similarity, 
+                                   self.concept_vocab_projection.weight)
+        
+        # Gated combination with token logits
+        token_logits = self.lm_head(token_emb)
+        gate = self.gate(token_emb)
+        logits = gate * concept_logits + (1 - gate) * token_logits
+        
+        # Compute loss
+        loss = None
+        if labels is not None:
+            loss_fct = CrossEntropyLoss(ignore_index=self.config.pad_token_id)
+            loss = loss_fct(logits.view(-1, self.config.vocab_size), labels.view(-1))
+            
+        return MaskedLMOutput(
+            loss=loss,
+            logits=logits,
+            hidden_states=encoder_out.hidden_states,
+            attentions=encoder_out.attentions
+        )
