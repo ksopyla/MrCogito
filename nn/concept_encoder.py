@@ -46,7 +46,7 @@ class ConceptEncoderConfig(PretrainedConfig):
         concept_size: int = 128,
         hidden_size: int = 768,
         num_hidden_layers: int = 6,
-        num_attention_heads: int = 12,
+        num_attention_heads: int = 8,
         intermediate_size: int = 2048,
         hidden_act: str = "gelu",
         pad_token_id: int = 0,
@@ -379,7 +379,7 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
 
         mlm_loss = None
         if labels is not None:
-            loss_fct = CrossEntropyLoss(ignore_index=self.config.pad_token_id)  # -100 index = padding token
+            loss_fct = CrossEntropyLoss(ignore_index=-100)  # -100 index = padding token
             mlm_loss = loss_fct(
                 logits.view(-1, self.config.vocab_size),
                 labels.view(-1)
