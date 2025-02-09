@@ -44,10 +44,10 @@ class ConceptEncoderConfig(PretrainedConfig):
         self,
         vocab_size: int = 30522,
         concept_size: int = 128,
-        hidden_size: int = 768,
-        num_hidden_layers: int = 6,
+        hidden_size: int = 512,
+        num_hidden_layers: int = 4,
         num_attention_heads: int = 8,
-        intermediate_size: int = 2048,
+        intermediate_size: int = 1024,
         hidden_act: str = "gelu",
         pad_token_id: int = 0,
         eos_token_id: int = 1,
@@ -61,6 +61,7 @@ class ConceptEncoderConfig(PretrainedConfig):
         type_vocab_size: int = 2,
         initializer_range: float = 0.02,
         is_decoder: bool = False,
+        tie_word_embeddings: bool = True,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -77,7 +78,7 @@ class ConceptEncoderConfig(PretrainedConfig):
         self.type_vocab_size = type_vocab_size
         self.initializer_range = initializer_range
         self.is_decoder = is_decoder
-        
+        self.tie_word_embeddings = tie_word_embeddings
         self.pad_token_id = pad_token_id
         self.eos_token_id = eos_token_id
         self.bos_token_id = bos_token_id
@@ -318,7 +319,8 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
 
     def tie_weights(self):
         # Tie the lm_head to the token_embeddings weight to share parameters if desired
-        self._tie_or_clone_weights(self.lm_head, self.encoder.token_embeddings)
+        if self.config.tie_word_embeddings:
+            self._tie_or_clone_weights(self.lm_head, self.encoder.token_embeddings)
 
     def forward(
         self,
@@ -365,6 +367,9 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
             projected_concepts.transpose(-1, -2)
         )  # [batch_size, seq_length, concept_size]
         
+        # Add scaling to prevent softmax overflow
+        attention_scores = attention_scores / (self.config.hidden_size ** 0.5)
+        
         # Normalize attention scores
         attention_weights = F.softmax(attention_scores, dim=-1)
         
@@ -379,7 +384,7 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
 
         mlm_loss = None
         if labels is not None:
-            loss_fct = CrossEntropyLoss(ignore_index=-100)  # -100 index = padding token
+            loss_fct = CrossEntropyLoss(ignore_index=-100, label_smoothing=0.1)  # -100 index = padding token
             mlm_loss = loss_fct(
                 logits.view(-1, self.config.vocab_size),
                 labels.view(-1)

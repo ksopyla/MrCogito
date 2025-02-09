@@ -98,3 +98,19 @@ Enoder computes the concept_representation of shape [batch_size, concept_size, h
 One of my idea is to do as follow: 
 1. multiply the sequence token embeddings of [batch_size, sequence_len, hidden_dim] by concept_representation transpose  [batch_size, hidden_dim, concept_len] -> [batch_size, sequence_len, concept_len] - this allows to match tokens from sequence to conepts
 2. make an linear projecttion to [batch_size, sequence_len, vocab_size] to get the sequence logits
+
+
+# multiple masks 
+
+
+* [Iterative Mask Filling: An Effective Text Augmentation Method Using Masked Language Modeling](https://arxiv.org/abs/2401.01830) (2024)
+* [Blank language model](https://arxiv.org/abs/2002.03079) (2020)
+* transformer pr - https://github.com/huggingface/transformers/pull/10222
+
+* PMI-Masking: Principled masking of correlated spans
+* SpanBERT: Improving Pre-training by Representing and Predicting Spans
+* 
+
+
+Morphological aware tokenization: 
+* MorphBPE: A Morpho-Aware Tokenizer Bridging Linguistic Complexity for Efficient LLM Training Across Morphologies

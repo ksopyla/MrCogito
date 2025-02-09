@@ -21,7 +21,7 @@ def load_and_preprocess_text_dataset(tokenizer, dataset_hf_path, dataset_name, t
        
     train_ds = dataset["train"]
     
-    train_ds = train_ds.select(range(100000))
+    train_ds = train_ds.select(range(20000))
     
     if "test" in dataset:
         test_ds = dataset["test"]
@@ -75,61 +75,6 @@ def load_and_preprocess_text_dataset(tokenizer, dataset_hf_path, dataset_name, t
     
     return train_ds, test_ds
 
-
-class NeighborWordMaskCollator(DataCollatorForWholeWordMask):
-    """
-    This class mask the few nearby whole word, the intuition is that concepts contain multiple nearby words.
-    """ 
-    def __init__(self, *args, window_size=3, **kwargs):
-        super().__init__(*args, **kwargs)
-        
-        # The window size for masking, defines how many whole words to mask
-        self.window_size = window_size
-
-    def torch_mask_tokens(self, inputs, special_tokens_mask):
-        """
-        This function masks the tokens in the input sequence.
-        """
-        # First apply whole word masking
-        masked_inputs, mask_labels = super().torch_mask_tokens(inputs, special_tokens_mask)
-        
-        # Expand masks to neighbors
-        batch_size, seq_len = inputs.shape
-        expanded_mask = torch.zeros_like(masked_inputs, dtype=torch.bool)
-        
-        for b in range(batch_size):
-            # Get original masked positions
-            masked_indices = torch.where(mask_labels[b])[0].tolist()
-            
-            # Expand each mask position
-            for idx in masked_indices:
-                start = max(0, idx - self.window_size)
-                end = min(seq_len, idx + self.window_size + 1)
-                expanded_mask[b, start:end] = True
-                
-        # Apply expanded masking
-        random_mask = torch.rand(expanded_mask.shape, device=inputs.device) < self.mlm_probability
-        final_mask = expanded_mask & random_mask
-        
-        # Replace with [MASK] or random token
-        masked_inputs = torch.where(
-            final_mask,
-            self.tokenizer.convert_tokens_to_ids(self.tokenizer.mask_token),
-            inputs
-        )
-        
-        # Optional: Replace 10% of masked tokens with random words
-        random_words = torch.randint(
-            len(self.tokenizer), 
-            inputs.shape, 
-            dtype=torch.long, 
-            device=inputs.device
-        )
-        random_replace = (torch.rand(final_mask.shape, device=inputs.device) < 0.1) & final_mask
-        masked_inputs[random_replace] = random_words[random_replace]
-
-        return masked_inputs, final_mask
-    
     
     
     

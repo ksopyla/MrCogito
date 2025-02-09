@@ -4,6 +4,8 @@ import os
 # Add parent directory to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+
+import wandb
 import argparse
 from datetime import datetime
 from datasets import load_dataset
@@ -85,25 +87,6 @@ class DataTrainingArguments:
         metadata={"help": "Tokenizer name to use for training from HuggingFace hub"}
     )
 
-@dataclass
-class TrainingArguments(TrainingArguments):
-    output_dir: str = field(
-        default="./outputs",
-        metadata={"help": "Output directory for checkpoints"}
-    )
-    logging_dir: str = field(
-        default="./logs",
-        metadata={"help": "Logging directory"}
-    )
-    fp_type: str = field(
-        default="fp16",
-        metadata={"help": "Floating point precision", "choices": ["fp16", "bf16", "no"]}
-    )
-    wandb_project: str = field(
-        default="MrCogito",
-        metadata={"help": "W&B project name"}
-    )
-
 def parse_args():
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
     return parser.parse_args_into_dataclasses()
@@ -147,7 +130,8 @@ def main():
         intermediate_size=model_args.hidden_size * 4,
         max_position_embeddings=max_seq_length,
         pad_token_id=tokenizer.pad_token_id,
-        mask_token_id=tokenizer.mask_token_id
+        mask_token_id=tokenizer.mask_token_id,
+        tie_word_embeddings=True    
     )
         
     # initialize the model
@@ -181,10 +165,13 @@ def main():
     
     
     # Update training args with model/data parameters
-    training_args.per_device_train_batch_size = 8  # Can be moved to dataclass
+    training_args.per_device_train_batch_size = 48  # Can be moved to dataclass
+    training_args.num_train_epochs = 10
     training_args.learning_rate = 1e-4
     training_args.weight_decay = 0.01
-    training_args.num_train_epochs = 3
+    training_args.warmup_steps = 1000
+    
+    
     training_args.seed = 42
         
     # Training arguments
@@ -197,15 +184,14 @@ def main():
         learning_rate=training_args.learning_rate,
         weight_decay=training_args.weight_decay,
         num_train_epochs=training_args.num_train_epochs,
-        logging_steps=10,
+        logging_steps=100,
         eval_strategy="epoch",
         save_strategy="epoch",
+        save_safetensors=False,
         seed=training_args.seed,
-        fp16=training_args.fp_type == "fp16",
-        bf16=training_args.fp_type == "bf16",
         gradient_accumulation_steps=2,
         dataloader_num_workers=2,
-        report_to="wandb" if training_args.wandb_project else "none",
+        report_to=["tensorboard", "wandb"],
         push_to_hub=False,
         remove_unused_columns=True,
         optim="adamw_torch",
@@ -225,24 +211,24 @@ def main():
         #tokenizer=tokenizer
     )
     
-    # Add before training
-    if training_args.wandb_project:
-        import wandb
-        wandb.init(
-            project=training_args.wandb_project,
-            config=vars(training_args),
-            name=training_args.run_name,
-            tensorboard=True,
-            sync_tensorboard=True,
-            tags=[data_args.masking_type, model_args.model_type, os.environ['COMPUTERNAME']],
-            group=f"hostname-{os.environ['COMPUTERNAME']}"
-        )
+    # Initialize the wandb project
+    wandb.init(
+        project="MrCogito",
+        config=vars(training_args),
+        name=training_args.run_name,
+        tensorboard=True,
+        sync_tensorboard=True,
+        tags=[data_args.masking_type, model_args.model_type, os.environ['COMPUTERNAME']],
+        group=f"hostname-{os.environ['COMPUTERNAME']}"
+    )
     
     # Start training
     trainer.train()
     
     # Save final model
-    trainer.save_model(os.path.join(training_args.output_dir, "final_model"))
+    trainer.save_model(
+        os.path.join(training_args.output_dir, training_args.run_name)
+    )
 
 if __name__ == "__main__":
     main()
