@@ -7,7 +7,7 @@ from rich import print
 
 
 
-cache_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models   "))
+cache_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cache", "Models"))
 print(cache_dir)
 
 #%% load the bert model for comparistion with the modern bert model

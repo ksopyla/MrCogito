@@ -31,7 +31,7 @@ import os
 #  /Datasets
 #  /docs
 #  /playground
-cache_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Datasets"))
+cache_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cache", "Datasets"))
 print(cache_dir)
 
 #%% [Analysis Helper Function]
