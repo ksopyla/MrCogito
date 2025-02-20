@@ -165,6 +165,6 @@ models/*
 Datasets/*
 !models/README.md
 wandb/*
-
+Cache/*
 
 .codegpt
