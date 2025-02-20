@@ -1,1 +1,0 @@
-Folder for downloaded models, Hugging Face models cache folder.
