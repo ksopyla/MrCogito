@@ -28,7 +28,7 @@ from tokenizers import (
 )
 from transformers import AutoTokenizer
 from dotenv import dotenv_values
-from rich import print
+from rich import print, box
 from rich.console import Console
 from rich.table import Table
 import evaluate
@@ -79,7 +79,7 @@ def preprocess_with_morfessor(batch, model_file):
         
     processed_text = []
     
-    print(f"preprocessing {len(batch['text'])} lines with morfessor model {model_file} process {os.getpid()}")
+    #print(f"preprocessing {len(batch['text'])} lines with morfessor model {model_file} process {os.getpid()}")
     for text_line in batch["text"]:
         words = text_line.split()
         morf_segments = []
@@ -93,7 +93,8 @@ def get_preprocessed_morfessor_dataset(train_dataset,
                                      cached_file_name_suffix="_morphems",
                                      morfessor_model_file="",
                                      output_cache_directory=DATASET_CACHE_DIR,
-                                     num_proc=4):
+                                     num_proc=4,
+                                     batch_size=5000):
     """
     Process the dataset using Morfessor, caching results to disk.
     
@@ -120,11 +121,13 @@ def get_preprocessed_morfessor_dataset(train_dataset,
         print(f"[INFO] Loading existing preprocessed dataset from: {processed_dataset_path}")
         return Dataset.load_from_disk(processed_dataset_path)
     
-    print(f"[INFO] No cached dataset found {processed_dataset_path}.\nProcessing with Morfessor...")
+    print(f"[INFO] No cached dataset found {processed_dataset_path}.")
+    print(f"[INFO] Starting Morfessor processing with model: {morfessor_model_file} batch={batch_size} num_proc={num_proc}")
+    print(f"[INFO] Dataset size: {ds_len} samples")
     ds_processed = train_dataset.map(
         lambda batch: preprocess_with_morfessor(batch, morfessor_model_file),
         batched=True,
-        batch_size=50000,
+        batch_size=batch_size,
         num_proc=num_proc
     )
 
@@ -136,6 +139,7 @@ def setup_environment():
     os.makedirs(TOKENIZER_DIR, exist_ok=True)
     envs = dotenv_values(os.path.join(os.path.dirname(__file__), "..", ".env"))
     login(token=envs["HF_TOKEN"])
+    os.environ["TOKENIZERS_PARALLELISM"] = "true"
 
 def load_pretrained_tokenizers():
     """Load various pretrained tokenizers for comparison"""
@@ -261,38 +265,39 @@ def print_evaluation_results(bleu_scores):
 
 def main():
     """Main function to run the tokenizer training and evaluation pipeline"""
+    print("\n=== Starting Tokenizer Training and Evaluation ===\n")
+    
     # Setup
+    print("[Step 1] Setting up environment...")
     setup_environment()
     
     # Load pretrained tokenizers
+    print("\n[Step 2] Loading pretrained tokenizers...")
     tokenizers = load_pretrained_tokenizers()
+    print(f"Loaded {len(tokenizers)} pretrained tokenizers: {list(tokenizers.keys())}")
     
-   
-    
- 
-    
+    print("\n[Step 3] Loading Morfessor models...")
     # Load Morfessor models
     io = morfessor.MorfessorIO()
     model_nltk = io.read_binary_model_file(MORFESSOR_NLTK_MODEL)
     model_wiki = io.read_binary_model_file(MORFESSOR_WIKI_MODEL)
     model_sent = io.read_binary_model_file(MORFESSOR_WIKI_SENT_MODEL)
     model_wikipedia_300M = io.read_binary_model_file(MORFESSOR_WIKIPEDIA_MODEL)
+    print("Successfully loaded all Morfessor models")
     
-    
-
-    
-    
-     # Initialize and configure Unigram tokenizer, trained on Saleforec  wiki text words and morphems
-    # Load dataset
+    print("\n[Step 4] Loading and preparing WikiText dataset...")
     wiki_text_dataset = load_dataset("Salesforce/wikitext", 
                           "wikitext-103-v1",
                           cache_dir=DATASET_CACHE_DIR,
                           split="train")
-    wiki_text_train_dataset = wiki_text_dataset.select(range(500000)) 
+    wiki_text_train_dataset = wiki_text_dataset.select(range(500000))
+    print(f"Selected {len(wiki_text_train_dataset)} samples from WikiText dataset")
     
+    print("\n[Step 5] Training Unigram tokenizer on WikiText...")
     uni_wikitext_tokenizer = initialize_unigram_tokenizer()
     uni_wikitext_trainer = configure_trainer()
-    # Train Unigram tokenizer
+    
+    print("Processing WikiText with Morfessor...")
     uni_wiki_words_train_dataset = get_preprocessed_morfessor_dataset(
         wiki_text_train_dataset,
         morfessor_model_file=MORFESSOR_WIKI_MODEL,
@@ -301,35 +306,39 @@ def main():
         num_proc=4
     )
     
+    print("Training Unigram tokenizer on WikiText morphemes...")
     uni_wikitext_tokenizer.train_from_iterator(
         batch_iterator_morfessor_processed(morfessor_train_dataset=uni_wiki_words_train_dataset),
         trainer=uni_wikitext_trainer
     )
+    print("WikiText Unigram tokenizer training completed")
     
-    # Initialize and configure Unigram tokenizer, trained on wikipedia words and morphems
-  
-    wikipedia_dataset= load_dataset("wikimedia/wikipedia", "20231101.en", cache_dir=DATASET_CACHE_DIR)
+    print("\n[Step 6] Loading and preparing Wikipedia dataset...")
+    wikipedia_dataset = load_dataset("wikimedia/wikipedia", "20231101.en", cache_dir=DATASET_CACHE_DIR)
+    wikipedia_train_dataset = wikipedia_dataset["train"].select(range(3_000_000))
+    print(f"Selected {len(wikipedia_train_dataset)} samples from Wikipedia dataset")
     
-    wikipedia_train_dataset = wikipedia_dataset.select(range(3_000_000))
-    
+    print("\n[Step 7] Training Unigram tokenizer on Wikipedia...")
     uni_wikipedia_tokenizer = initialize_unigram_tokenizer()
     uni_wikipedia_trainer = configure_trainer()
-    # Train Unigram tokenizer
+    
+    print("Processing Wikipedia with Morfessor...")
     uni_wikipedia_words_train_dataset = get_preprocessed_morfessor_dataset(
         wikipedia_train_dataset,
         morfessor_model_file=MORFESSOR_WIKIPEDIA_MODEL,
         output_cache_directory=DATASET_CACHE_DIR,
         cached_file_name_suffix="wikipedia300m_morphems",
-        num_proc=4
+        num_proc=48, batch_size=3000
     )
     
-    uni_wikipedia_words_train_dataset.train_from_iterator(
+    print("Training Unigram tokenizer on Wikipedia morphemes...")
+    uni_wikipedia_tokenizer.train_from_iterator(
         batch_iterator_morfessor_processed(morfessor_train_dataset=uni_wikipedia_words_train_dataset),
         trainer=uni_wikipedia_trainer
     )
+    print("Wikipedia Unigram tokenizer training completed")
     
-    
-        # Add Morfessor models to tokenizers dict
+    print("\n[Step 8] Preparing for evaluation...")
     tokenizers.update({
         'morfessor_nltk': model_nltk,
         'morfessor_wiki': model_wiki,
@@ -353,8 +362,10 @@ def main():
     # uni_sp_tokenizer.decoder = decoders.Metaspace()
     
     # Evaluate tokenizers
+    print("\n=== Final Evaluation Results ===")
     bleu_scores = evaluate_tokenizers(tokenizers, GROUND_TRUTH_MORPHEMS)
+    print("\n=== Final Evaluation Results ===")
     print_evaluation_results(bleu_scores)
-
+    
 if __name__ == "__main__":
     main()
