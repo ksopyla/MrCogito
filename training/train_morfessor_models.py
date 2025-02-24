@@ -10,6 +10,8 @@ from nltk.corpus import words
 from datasets import load_dataset
 from nltk.tokenize import sent_tokenize
 from tqdm import tqdm
+import nltk
+from nltk.tokenize import word_tokenize
 
 
 MORFESSOR_CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cache", "Morfessor"))
@@ -20,7 +22,7 @@ os.makedirs(MORFESSOR_CACHE_DIR, exist_ok=True)
 
 # using nltk word corpus as training data, get the words from nltk and save them to the file
 
-nltk_corpus_words = words.words()
+
 
 # file with words is saved in the Cache
 
@@ -34,15 +36,17 @@ morfessor_wiki_en_train_file_sentences = os.path.join(MORFESSOR_CACHE_DIR, "morf
 morfessor_wiki_en_model_file_sentences = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wiki_en_model_sentences.bin")
 
 
-morfessor_wikipedia_en_train_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_300M.txt")
-morfessor_wikipedia_en_model_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_300M.bin")
+morfessor_wikipedia_en_train_300M_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_300M.txt")
+morfessor_wikipedia_en_model_300M_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_300M.bin")
 
-#%% save the words to the file
-outfile = open(morfessor_nltk_en_train_file, "w")
-for word in nltk_corpus_words:
-    outfile.write(word+"\n")
+morfessor_wikipedia_en_train_10M_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_10M.txt")
+morfessor_wikipedia_en_model_10M_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_10M.bin")
 
-outfile.close()
+morfessor_wikipedia_en_train_1M_art_unique_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_split_1M_art.txt")
+morfessor_wikipedia_en_model_1M_art_unique_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_split_1M_art.bin")
+
+morfessor_wikipedia_en_train_1M_art_unique_nltk_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_nltk_1M_art.txt")
+morfessor_wikipedia_en_model_1M_art_unique_nltk_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_nltk_1M_art.bin")
 
 #%% Utility functions
 
@@ -65,7 +69,7 @@ def prepare_nltk_corpus(output_file):
 
 #%% prepare the wikipedia training data with using the Huggingface dataset
 def prepare_wiki_words_corpus(output_file):
-    """Process Wikipedia dataset and save text to training file"""
+    """Process Wikitext dataset and save text to training file"""
     wikitext = load_dataset("Salesforce/wikitext", "wikitext-103-v1",
                        cache_dir=DATASET_CACHE_DIR,
                        )
@@ -129,8 +133,73 @@ def prepare_wikipedia2023_words_corpus(output_file):
                         
     print(f"Processed Wikipedia dataset and saved words to: {output_file}")
 
-def prepare_wikipedia_corpus_sentences(output_file):
-    """Process Wikipedia dataset and save sentences to training file"""
+def prepare_wikipedia2023_unique_words_corpus(output_file, sub_set=10_000, spliting='split'):
+    """Process Wikipedia dataset and save unique words to text to training file.
+    
+    Args:
+        output_file (str): Path to the output file where unique words will be saved
+        spliting (str): The method to split the text into words. Default is 'split' which uses the split method. 'nltk' uses nltk word_tokenize
+        
+    Returns:
+        None
+    """
+    # Check if file already exists
+    if os.path.exists(output_file):
+        print(f"Output file {output_file} already exists. Skipping processing.")
+        return
+        
+    # Load dataset
+    wikitext = load_dataset("wikimedia/wikipedia", "20231101.en",
+                       cache_dir=DATASET_CACHE_DIR,
+                       )
+    
+    
+    dataset = wikitext["train"].select(range(sub_set))
+    
+    total_rows = dataset.num_rows
+    pbar = tqdm(total=total_rows, desc="Processing Wikipedia articles")
+    processed_rows = 0
+    batch_size = 10_000
+    unique_words = set()
+    all_unique_words = set()  # Master set to store all unique words
+    
+    # Process and write in batches
+    with open(output_file, "w", encoding="utf-8") as f:
+        for batch in dataset.iter(batch_size=batch_size):
+            for text in batch["text"]:
+                # Split text into words and create a set of stripped words
+                if spliting == 'nltk':
+                    words = set(word_tokenize(text.replace('\n', ' '))) 
+                else:
+                    words = set(text.replace('\n', ' ').split())
+                
+                # Find new unique words using set difference
+                new_words = words - all_unique_words
+                
+                # Update the sets
+                unique_words.update(new_words)
+                all_unique_words.update(new_words)
+                
+            # After each batch save unique words to file
+            for word in unique_words:
+                f.write(f"{word}\n")
+            unique_words.clear()
+            
+            # Update progress bar based on batch size
+            processed_rows += batch_size
+            pbar.update(batch_size)
+        
+        # Write any remaining words
+        if unique_words:
+            for word in unique_words:
+                f.write(f"{word}\n")
+        
+        pbar.close()
+                        
+    print(f"Processed Wikipedia dataset and saved unique words to: {output_file}")
+
+def prepare_wiki_corpus_sentences(output_file):
+    """Process Wikitext dataset and save sentences to training file"""
     wikitext = load_dataset("Salesforce/wikitext", "wikitext-103-v1",
                        cache_dir=DATASET_CACHE_DIR,
                        )
@@ -200,7 +269,7 @@ if __name__ == "__main__":
     
     # # Prepare Wikipedia corpus for sentences
     # print("Preparing Wikitext corpus for sentences...")
-    # prepare_wikipedia_corpus_sentences(morfessor_wiki_en_train_file_sentences)
+    # prepare_wiki_corpus_sentences(morfessor_wiki_en_train_file_sentences)
     # print(f"   ✓ Wikitext corpus for sentences saved to: {morfessor_wiki_en_train_file_sentences}")
     
     # # Train the Wikipedia-based model for sentences
@@ -212,16 +281,43 @@ if __name__ == "__main__":
     # )
     
     # # Prepare Wikipedia corpus 
-    print("Preparing Wikipedia corpus with words...")
-    prepare_wikipedia2023_words_corpus(morfessor_wikipedia_en_train_words)
-    print(f"   ✓ Wikipedia corpus with words saved to: {morfessor_wikipedia_en_train_words}")
+    # print("Preparing Wikipedia corpus with words...")
+    # prepare_wikipedia2023_words_corpus(morfessor_wikipedia_en_train_10M_words)
+    # print(f"   ✓ Wikipedia corpus with words saved to: {morfessor_wikipedia_en_train_10M_words}")
+    
+    # # Train the Wikipedia-based model for sentences
+    # print("Training Wikipedia-based Morfessor model for words...")
+    # train_morfessor_model(
+    #     morfessor_wikipedia_en_train_10M_words,
+    #     morfessor_wikipedia_en_model_10M_words,
+    #     count_modifier=log_func
+    # )
+
+
+    # # Prepare Wikipedia corpus 
+    print(f"Preparing Wikipedia corpus with words {morfessor_wikipedia_en_train_1M_art_unique_words}")
+    prepare_wikipedia2023_unique_words_corpus(morfessor_wikipedia_en_train_1M_art_unique_words, spliting='split', sub_set=1_000_000)
+    print(f"   ✓ Wikipedia corpus with words saved to: {morfessor_wikipedia_en_train_1M_art_unique_words}")
     
     # Train the Wikipedia-based model for sentences
-    print("Training Wikipedia-based Morfessor model for words...")
+    print(f"Training Wikipedia-based Morfessor model {morfessor_wikipedia_en_model_1M_art_unique_words} ")
     train_morfessor_model(
-        morfessor_wikipedia_en_train_words,
-        morfessor_wikipedia_en_model_words,
-        count_modifier=log_func
+        morfessor_wikipedia_en_train_1M_art_unique_words,
+        morfessor_wikipedia_en_model_1M_art_unique_words,
+        count_modifier=lambda x: 1
+    )
+
+    # # Prepare Wikipedia corpus 
+    print(f"Preparing Wikipedia corpus {morfessor_wikipedia_en_train_1M_art_unique_nltk_words}")
+    prepare_wikipedia2023_unique_words_corpus(morfessor_wikipedia_en_train_1M_art_unique_nltk_words , spliting='nltk', sub_set=1_000_000)
+    print(f"   ✓ Wikipedia corpus with words saved to: {morfessor_wikipedia_en_train_1M_art_unique_nltk_words}")
+    
+    # Train the Wikipedia-based model for sentences
+    print(f"Training Wikipedia-based Morfessor model {morfessor_wikipedia_en_model_1M_art_unique_nltk_words}")
+    train_morfessor_model(
+        morfessor_wikipedia_en_train_1M_art_unique_nltk_words,
+        morfessor_wikipedia_en_model_1M_art_unique_nltk_words,
+        count_modifier=lambda x: 1
     )
     
 

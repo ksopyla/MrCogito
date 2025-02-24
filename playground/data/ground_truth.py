@@ -66,6 +66,19 @@ TEST_SENTENCES = [
 
 # Ground truth morpheme segmentations for evaluation
 GROUND_TRUTH_MORPHEMS = {
+    "Anarchism" : ["Anarch ism", "An arch ism" ],
+    "political" : ["politic al"],
+    "philosophy" : ["philosoph y"],
+    "skeptical" : ["skeptic al", "skeptical"],
+    "justifications" : ["justification s", "justificat ions"],
+    "authority" : ["author ity", "authori ty"],
+    "maintainence" : ["maintain ence", "maintainence"],
+    "unnecessary" : ["un necessary"],
+    "nation-state" : ["nation - state"],
+    "replacement" : ["replace ment", "re place ment"],
+    "described" : ["describ ed", "describe d"],
+    "historically" : ["historic ally"],
+    "government" : ["govern ment"],
     "windsurfing" : ["wind surf ing", "wind surfing"],
     "kitesurfing" : ["kite surf ing", "kite surfing"],
     "unfortunately" : ["un fortunately", "un fortunate ly"],
