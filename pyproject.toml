@@ -19,6 +19,7 @@ torch = { version = "2.5.0", source = "pytorch" }
 transformers = "^4.47.1"
 rich = "^13.9.4"
 accelerate = "^1.2.1"
+evaluate = "^0.4.3"
 
 
 [tool.poetry.group.dev.dependencies]
