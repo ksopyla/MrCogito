@@ -9,6 +9,7 @@ import os
 from nltk.corpus import words
 from datasets import load_dataset
 from nltk.tokenize import sent_tokenize
+from tqdm import tqdm
 
 
 MORFESSOR_CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cache", "Morfessor"))
@@ -26,11 +27,15 @@ nltk_corpus_words = words.words()
 morfessor_nltk_en_model_file = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_nltk_en_model.bin")
 morfessor_nltk_en_train_file = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_nltk_en_train.txt")
 
-morfessor_wikipedia_en_train_file = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train.txt")
-morfessor_wikipedia_en_model_file = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_model.bin")
+morfessor_wiki_en_train_file = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wiki_en_train.txt")
+morfessor_wiki_en_model_file = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wiki_en_model.bin")
 
-morfessor_wikipedia_en_train_file_sentences = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_sentences.txt")
-morfessor_wikipedia_en_model_file_sentences = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_model_sentences.bin")
+morfessor_wiki_en_train_file_sentences = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wiki_en_train_sentences.txt")
+morfessor_wiki_en_model_file_sentences = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wiki_en_model_sentences.bin")
+
+
+morfessor_wikipedia_en_train_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_300M.txt")
+morfessor_wikipedia_en_model_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_300M.bin")
 
 #%% save the words to the file
 outfile = open(morfessor_nltk_en_train_file, "w")
@@ -59,7 +64,7 @@ def prepare_nltk_corpus(output_file):
     save_words_to_file(nltk_corpus_words, output_file)
 
 #%% prepare the wikipedia training data with using the Huggingface dataset
-def prepare_wikipedia_corpus(output_file):
+def prepare_wiki_words_corpus(output_file):
     """Process Wikipedia dataset and save text to training file"""
     wikitext = load_dataset("Salesforce/wikitext", "wikitext-103-v1",
                        cache_dir=DATASET_CACHE_DIR,
@@ -79,6 +84,50 @@ def prepare_wikipedia_corpus(output_file):
         all_words.extend(article['processed_text'])
 
     save_words_to_file(all_words, output_file)
+    
+    
+def prepare_wikipedia2023_words_corpus(output_file):
+    """Process Wikipedia dataset and save text to training file.
+    
+    Args:
+        output_file (str): Path to the output file where words will be saved
+        
+    Returns:
+        None
+    """
+    # Check if file already exists
+    if os.path.exists(output_file):
+        print(f"Output file {output_file} already exists. Skipping processing.")
+        return
+        
+    # Load dataset
+    wikitext = load_dataset("wikimedia/wikipedia", "20231101.en",
+                       cache_dir=DATASET_CACHE_DIR,
+                       )
+    dataset = wikitext["train"]
+    
+    total_rows = dataset.num_rows
+    pbar = tqdm(total=total_rows, desc="Processing Wikipedia articles")
+    processed_rows = 0
+    batch_size = 100
+    
+    # Process and write directly to file
+    with open(output_file, "w", encoding="utf-8") as f:
+        # Process with built-in progress bar using streaming
+        for batch in dataset.iter(batch_size=batch_size):
+            for text in batch["text"]:
+                # Split text into words and write each word
+                words = text.replace('\n', ' ').split()
+                for word in words:
+                    if word.strip():  # Only write non-empty words
+                        f.write(f"{word.strip()}\n")
+            # Update progress bar based on batch size
+            processed_rows += batch_size
+            pbar.update(batch_size)
+        
+        pbar.close()
+                        
+    print(f"Processed Wikipedia dataset and saved words to: {output_file}")
 
 def prepare_wikipedia_corpus_sentences(output_file):
     """Process Wikipedia dataset and save sentences to training file"""
@@ -118,17 +167,14 @@ if __name__ == "__main__":
     print("\n=== Starting Morfessor Model Training Pipeline ===\n")
     
     # # Prepare NLTK corpus
-    # print("1. Preparing NLTK corpus...")
+    # print("Preparing NLTK corpus...")
     # prepare_nltk_corpus(morfessor_nltk_en_train_file)
     # print(f"   ✓ NLTK corpus saved to: {morfessor_nltk_en_train_file}")
 
-    # # Prepare Wikipedia corpus
-    # print("\n2. Preparing Wikipedia corpus (this may take a while)...")
-    # prepare_wikipedia_corpus(morfessor_wikipedia_en_train_file)
-    # print(f"   ✓ Wikipedia corpus saved to: {morfessor_wikipedia_en_train_file}")
+
 
     # # Train the NLTK-based model
-    # print("\n3. Training NLTK-based Morfessor model...")
+    # print("Training NLTK-based Morfessor model...")
     # train_morfessor_model(
     #     morfessor_nltk_en_train_file,
     #     morfessor_nltk_en_model_file,
@@ -136,30 +182,49 @@ if __name__ == "__main__":
     # )
     # print(f"   ✓ NLTK model saved to: {morfessor_nltk_en_model_file}")
     
+    
+    
+    # # Prepare Wikitext corpus
+    # print("Preparing Wikitext corpus (this may take a while)...")
+    # prepare_wiki_words_corpus(morfessor_wiki_en_train_file)
+    # print(f"   ✓ Wikitext corpus saved to: {morfessor_wiki_en_train_file}")
     # # Train the Wikipedia-based model
-    # print("\n4. Training Wikipedia-based Morfessor model...")
+    # print("Training Wikitext Morfessor model...")
     # train_morfessor_model(
-    #     morfessor_wikipedia_en_train_file,
-    #     morfessor_wikipedia_en_model_file,
+    #     morfessor_wiki_en_train_file,
+    #     morfessor_wiki_en_model_file,
     #     count_modifier=log_func
     # )
-    # print(f"   ✓ Wikipedia model saved to: {morfessor_wikipedia_en_model_file}")
+    # print(f"   ✓ Wikitext model saved to: {morfessor_wiki_en_model_file}")
     
     
-    # Prepare Wikipedia corpus for sentences
-    print("\n5. Preparing Wikipedia corpus for sentences...")
-    prepare_wikipedia_corpus_sentences(morfessor_wikipedia_en_train_file_sentences)
-    print(f"   ✓ Wikipedia corpus for sentences saved to: {morfessor_wikipedia_en_train_file_sentences}")
+    # # Prepare Wikipedia corpus for sentences
+    # print("Preparing Wikitext corpus for sentences...")
+    # prepare_wikipedia_corpus_sentences(morfessor_wiki_en_train_file_sentences)
+    # print(f"   ✓ Wikitext corpus for sentences saved to: {morfessor_wiki_en_train_file_sentences}")
+    
+    # # Train the Wikipedia-based model for sentences
+    # print("Training Wikitext Morfessor model for sentences...")
+    # train_morfessor_model(
+    #     morfessor_wiki_en_train_file_sentences,
+    #     morfessor_wiki_en_model_file_sentences,
+    #     count_modifier=log_func
+    # )
+    
+    # # Prepare Wikipedia corpus 
+    print("Preparing Wikipedia corpus with words...")
+    prepare_wikipedia2023_words_corpus(morfessor_wikipedia_en_train_words)
+    print(f"   ✓ Wikipedia corpus with words saved to: {morfessor_wikipedia_en_train_words}")
     
     # Train the Wikipedia-based model for sentences
-    print("\n6. Training Wikipedia-based Morfessor model for sentences...")
+    print("Training Wikipedia-based Morfessor model for words...")
     train_morfessor_model(
-        morfessor_wikipedia_en_train_file_sentences,
-        morfessor_wikipedia_en_model_file_sentences,
+        morfessor_wikipedia_en_train_words,
+        morfessor_wikipedia_en_model_words,
         count_modifier=log_func
     )
     
-    print("\n=== Training Pipeline Completed Successfully ===\n")
+
     
     # test the model
     # io = morfessor.MorfessorIO()
