@@ -204,7 +204,7 @@ def prepare_wikipedia2023_unique_words_corpus(output_file, sub_set=10_000, split
                         
     print(f"Processed Wikipedia dataset and saved unique words to: {output_file}")
 
-def prepare_wikipedia2023_unique_words_corpus_v2(output_file, sub_set=10_000, spliting='split', batch_size=1000, min_occurrences=2):
+def prepare_wikipedia2023_unique_words_corpus_v2(output_file, sub_set=10_000, spliting='split', batch_size=1000, min_occurrences=2, num_proc=4):
     """Process Wikipedia dataset and save unique words to text to training file using dataset.map functionality.
     
     This version uses Huggingface datasets' map functionality for better performance and memory efficiency.
@@ -257,7 +257,8 @@ def prepare_wikipedia2023_unique_words_corpus_v2(output_file, sub_set=10_000, sp
         batched=True,
         batch_size=batch_size,
         desc="Collecting word counts per batch",
-        remove_columns=dataset.column_names
+        remove_columns=dataset.column_names,
+        num_proc=num_proc
     )
     
     # Step 2: Reduce all batches to get final word counts
@@ -393,13 +394,7 @@ if __name__ == "__main__":
     # )
     
     
-    # Train the Wikipedia-based model for sentences
-    print(f"Training Wikipedia-based Morfessor model {morfessor_wikipedia_en_train_1M_art_unique_3M_words} ")
-    train_morfessor_model(
-        morfessor_wikipedia_en_train_1M_art_unique_3M_words,
-        morfessor_wikipedia_en_model_1M_art_unique_3M_words,
-        count_modifier=lambda x: 1
-    )
+   
     
 
     # # # Prepare Wikipedia corpus 
@@ -421,7 +416,7 @@ if __name__ == "__main__":
     
     # Prepare Wikipedia corpus 
     print(f"Preparing Wikipedia corpus {morfessor_wikipedia_en_train_1M_art_min_3_nltk_words}")
-    prepare_wikipedia2023_unique_words_corpus_v2(morfessor_wikipedia_en_train_1M_art_min_3_nltk_words , spliting='nltk', sub_set=1_000_000, min_occurrences=3)
+    prepare_wikipedia2023_unique_words_corpus_v2(morfessor_wikipedia_en_train_1M_art_min_3_nltk_words , spliting='nltk', sub_set=1_000_000, batch_size=10000, min_occurrences=3, num_proc=32)
     print(f"   ✓ Wikipedia corpus with words saved to: {morfessor_wikipedia_en_train_1M_art_min_3_nltk_words}")
     
     # Train the Wikipedia-based model for sentences
@@ -429,6 +424,15 @@ if __name__ == "__main__":
     train_morfessor_model(
         morfessor_wikipedia_en_train_1M_art_min_3_nltk_words,
         morfessor_wikipedia_en_model_1M_art_min_3_nltk_words,
+        count_modifier=lambda x: 1
+    )
+
+
+    # Train the Wikipedia-based model for sentences
+    print(f"Training Wikipedia-based Morfessor model {morfessor_wikipedia_en_train_1M_art_unique_3M_words} ")
+    train_morfessor_model(
+        morfessor_wikipedia_en_train_1M_art_unique_3M_words,
+        morfessor_wikipedia_en_model_1M_art_unique_3M_words,
         count_modifier=lambda x: 1
     )
 
