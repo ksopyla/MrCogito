@@ -273,6 +273,10 @@ def prepare_wikipedia2023_unique_words_corpus_v2(output_file, sub_set=10_000, sp
         num_proc=num_proc
     )
     
+    print(f"Processed dataset view, length: {len(processed_dataset)}")
+    print(processed_dataset)
+    print(processed_dataset[0])
+       
     # Step 2: Reduce all batches to get final word counts (on a single core)
     print("Reducing batches to get final word counts...")
     word_counts = {}
