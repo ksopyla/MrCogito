@@ -45,6 +45,9 @@ morfessor_wikipedia_en_model_10M_words = os.path.join(MORFESSOR_CACHE_DIR, "morf
 morfessor_wikipedia_en_train_1M_art_unique_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_split_1M_art.txt")
 morfessor_wikipedia_en_model_1M_art_unique_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_split_1M_art.bin")
 
+morfessor_wikipedia_en_train_1M_art_unique_3M_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_split_1M_art_3M_words.txt")
+morfessor_wikipedia_en_model_1M_art_unique_3M_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_split_1M_art_3M_words.bin")
+
 morfessor_wikipedia_en_train_1M_art_unique_nltk_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_nltk_1M_art.txt")
 morfessor_wikipedia_en_model_1M_art_unique_nltk_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_nltk_1M_art.bin")
 
@@ -373,18 +376,18 @@ if __name__ == "__main__":
     # )
 
 
-    # # Prepare Wikipedia corpus 
-    print(f"Preparing Wikipedia corpus with words {morfessor_wikipedia_en_train_1M_art_unique_words}")
-    prepare_wikipedia2023_unique_words_corpus(morfessor_wikipedia_en_train_1M_art_unique_words, spliting='split', sub_set=1_000_000)
-    print(f"   ✓ Wikipedia corpus with words saved to: {morfessor_wikipedia_en_train_1M_art_unique_words}")
+    # # # Prepare Wikipedia corpus 
+    # print(f"Preparing Wikipedia corpus with words {morfessor_wikipedia_en_train_1M_art_unique_words}")
+    # prepare_wikipedia2023_unique_words_corpus(morfessor_wikipedia_en_train_1M_art_unique_words, spliting='split', sub_set=1_000_000)
+    # print(f"   ✓ Wikipedia corpus with words saved to: {morfessor_wikipedia_en_train_1M_art_unique_words}")
     
-    # Train the Wikipedia-based model for sentences
-    print(f"Training Wikipedia-based Morfessor model {morfessor_wikipedia_en_model_1M_art_unique_words} ")
-    train_morfessor_model(
-        morfessor_wikipedia_en_train_1M_art_unique_words,
-        morfessor_wikipedia_en_model_1M_art_unique_words,
-        count_modifier=lambda x: 1
-    )
+    # # Train the Wikipedia-based model for sentences
+    # print(f"Training Wikipedia-based Morfessor model {morfessor_wikipedia_en_model_1M_art_unique_words} ")
+    # train_morfessor_model(
+    #     morfessor_wikipedia_en_train_1M_art_unique_words,
+    #     morfessor_wikipedia_en_model_1M_art_unique_words,
+    #     count_modifier=lambda x: 1
+    # )
 
     # # Prepare Wikipedia corpus 
     print(f"Preparing Wikipedia corpus {morfessor_wikipedia_en_train_1M_art_unique_nltk_words}")
@@ -396,6 +399,14 @@ if __name__ == "__main__":
     train_morfessor_model(
         morfessor_wikipedia_en_train_1M_art_unique_nltk_words,
         morfessor_wikipedia_en_model_1M_art_unique_nltk_words,
+        count_modifier=lambda x: 1
+    )
+
+    # Train the Wikipedia-based model for sentences
+    print(f"Training Wikipedia-based Morfessor model {morfessor_wikipedia_en_train_1M_art_unique_3M_words} ")
+    train_morfessor_model(
+        morfessor_wikipedia_en_train_1M_art_unique_3M_words,
+        morfessor_wikipedia_en_model_1M_art_unique_3M_words,
         count_modifier=lambda x: 1
     )
     
