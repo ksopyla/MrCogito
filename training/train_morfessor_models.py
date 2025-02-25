@@ -209,8 +209,8 @@ def prepare_wikipedia2023_unique_words_corpus_v2(output_file, sub_set=10_000, sp
     
     This version uses Huggingface datasets' map functionality for better performance and memory efficiency.
     The process is done in two steps:
-    1. Map over batches to collect unique words per batch with their counts
-    2. Reduce all batches to get final unique words with total counts and filter by minimum occurrences
+    1. Map over batches to collect words with their occurrences per batch with their counts (using multiprocessing)
+    2. Reduce all batches to get final words with total counts and filter by minimum occurrences (single core)
     
     Args:
         output_file (str): Path to the output file where unique words will be saved
@@ -218,7 +218,7 @@ def prepare_wikipedia2023_unique_words_corpus_v2(output_file, sub_set=10_000, sp
         spliting (str): The method to split text into words. Either 'split' or 'nltk'
         batch_size (int): Size of batches for processing. Default is 1000
         min_occurrences (int): Minimum number of occurrences required to keep a word. Default is 2
-        num_proc (int): Number of processes to use for parallel processing. Default is None
+        num_proc (int): Number of processes to use for parallel processing. Default is 4
         
     Returns:
         None
@@ -235,23 +235,37 @@ def prepare_wikipedia2023_unique_words_corpus_v2(output_file, sub_set=10_000, sp
     
     dataset = wikitext["train"].select(range(sub_set))
     
-    # Step 1: Process each batch to get unique words with counts
-    def get_batch_word_counts(examples):
-        batch_word_counts = {}
+    # Step 1: Process each batch to get unique words and their counts
+    def extract_words_from_batch(examples):
+        """Extract words from batch of texts and count frequencies directly.
+        
+        This optimized version counts words directly without creating intermediate lists.
+        Returns properly formatted output for Huggingface datasets.map().
+        """
+        # Count words directly as we process them
+        word_freq = {}
+        
         for text in examples["text"]:
             if spliting == 'nltk':
                 words = word_tokenize(text.replace('\n', ' '))
             else:
                 words = text.replace('\n', ' ').split()
-            # Count occurrences in this batch
+                
+            # Count each word directly as we see it
             for word in words:
-                if word.strip():
-                    batch_word_counts[word] = batch_word_counts.get(word, 0) + 1
-        return batch_word_counts
-
+                if word.strip():  # Only count non-empty words
+                    word_freq[word] = word_freq.get(word, 0) + 1
+        
+        # Convert to lists for HF dataset storage - must be in this format!
+        words = list(word_freq.keys())
+        counts = list(word_freq.values())
+        
+        # Return as a dictionary with list values
+        return {"batch_words": words, "batch_counts": counts}
+    
     print("Processing batches to collect words and their counts...")
-    processed_batches = dataset.map(
-        get_batch_word_counts,
+    processed_dataset = dataset.map(
+        extract_words_from_batch,
         batched=True,
         batch_size=batch_size,
         desc="Collecting word counts per batch",
@@ -259,11 +273,16 @@ def prepare_wikipedia2023_unique_words_corpus_v2(output_file, sub_set=10_000, sp
         num_proc=num_proc
     )
     
-    # Step 2: Reduce all batches to get final word counts
+    # Step 2: Reduce all batches to get final word counts (on a single core)
     print("Reducing batches to get final word counts...")
     word_counts = {}
-    for batch_counts in tqdm(processed_batches, desc="Merging word counts"):
-        for word, count in batch_counts.items():
+    
+    for batch in tqdm(processed_dataset, desc="Merging word counts"):
+        batch_words = batch["batch_words"]
+        batch_counts = batch["batch_counts"]
+        
+        # Add counts from this batch to the master count
+        for word, count in zip(batch_words, batch_counts):
             word_counts[word] = word_counts.get(word, 0) + count
     
     # Filter words by minimum occurrences
