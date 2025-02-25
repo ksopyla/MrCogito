@@ -437,7 +437,7 @@ if __name__ == "__main__":
     
     # Prepare Wikipedia corpus 
     print(f"Preparing Wikipedia corpus {morfessor_wikipedia_en_train_1M_art_min_3_nltk_words}")
-    prepare_wikipedia2023_unique_words_corpus_v2(morfessor_wikipedia_en_train_1M_art_min_3_nltk_words , spliting='nltk', sub_set=1_000_000, batch_size=10000, min_occurrences=3, num_proc=32)
+    prepare_wikipedia2023_unique_words_corpus_v2(morfessor_wikipedia_en_train_1M_art_min_3_nltk_words , spliting='nltk', sub_set=1_000_000, batch_size=5000, min_occurrences=3, num_proc=60)
     print(f"   ✓ Wikipedia corpus with words saved to: {morfessor_wikipedia_en_train_1M_art_min_3_nltk_words}")
     
     # Train the Wikipedia-based model for sentences
