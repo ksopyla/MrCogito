@@ -260,8 +260,8 @@ def prepare_wikipedia2023_unique_words_corpus_v2(output_file, sub_set=10_000, sp
         words = list(word_freq.keys())
         counts = list(word_freq.values())
         
-        # Return as a dictionary with list values
-        return {"batch_words": words, "batch_counts": counts}
+        # This will be flattned to a list of dictionaries {word: word, counts: counts}
+        return {"word": words, "counts": counts}
     
     print("Processing batches to collect words and their counts...")
     processed_dataset = dataset.map(
@@ -281,9 +281,9 @@ def prepare_wikipedia2023_unique_words_corpus_v2(output_file, sub_set=10_000, sp
     print("Reducing batches to get final word counts...")
     word_counts = {}
     
-    for batch in tqdm(processed_dataset, desc="Merging word counts"):
-        batch_words = batch["batch_words"]
-        batch_counts = batch["batch_counts"]
+    for batch in processed_dataset.iter(batch_size=1000):
+        batch_words = batch["word"]
+        batch_counts = batch["counts"]
         
         # Add counts from this batch to the master count
         for word, count in zip(batch_words, batch_counts):
@@ -298,7 +298,7 @@ def prepare_wikipedia2023_unique_words_corpus_v2(output_file, sub_set=10_000, sp
     with open(output_file, "w", encoding="utf-8") as f:
         # Sort words by occurrence count in descending order
         for word, count in sorted(filtered_words.items(), key=lambda x: x[1], reverse=True):
-            f.write(f"{word}\t{count}\n")
+            f.write(f"{count} {word}\n")
                 
     print(f"Successfully saved words to: {output_file}")
     print(f"Total unique words: {len(word_counts)}")
