@@ -204,7 +204,7 @@ def prepare_wikipedia2023_unique_words_corpus(output_file, sub_set=10_000, split
                         
     print(f"Processed Wikipedia dataset and saved unique words to: {output_file}")
 
-def prepare_wikipedia2023_unique_words_corpus_v2(output_file, sub_set=10_000, spliting='split', batch_size=1000, min_occurrences=2):
+def prepare_wikipedia2023_unique_words_corpus_v2(output_file, sub_set=10_000, spliting='split', batch_size=1000, min_occurrences=2, num_proc=None):
     """Process Wikipedia dataset and save unique words to text to training file using dataset.map functionality.
     
     This version uses Huggingface datasets' map functionality for better performance and memory efficiency.
@@ -217,7 +217,8 @@ def prepare_wikipedia2023_unique_words_corpus_v2(output_file, sub_set=10_000, sp
         sub_set (int): Number of articles to process. Default is 10,000
         spliting (str): The method to split text into words. Either 'split' or 'nltk'
         batch_size (int): Size of batches for processing. Default is 1000
-        min_occurrences (int): Minimum number of occurrences required to keep a word. Default is 1
+        min_occurrences (int): Minimum number of occurrences required to keep a word. Default is 2
+        num_proc (int): Number of processes to use for parallel processing. Default is None
         
     Returns:
         None
@@ -246,25 +247,23 @@ def prepare_wikipedia2023_unique_words_corpus_v2(output_file, sub_set=10_000, sp
             for word in words:
                 if word.strip():
                     batch_word_counts[word] = batch_word_counts.get(word, 0) + 1
-        # Convert to lists for HF dataset storage
-        words = list(batch_word_counts.keys())
-        counts = list(batch_word_counts.values())
-        return {"batch_words": words, "batch_counts": counts}
+        return batch_word_counts
 
     print("Processing batches to collect words and their counts...")
-    processed_dataset = dataset.map(
+    processed_batches = dataset.map(
         get_batch_word_counts,
         batched=True,
         batch_size=batch_size,
         desc="Collecting word counts per batch",
-        remove_columns=dataset.column_names
+        remove_columns=dataset.column_names,
+        num_proc=num_proc
     )
     
     # Step 2: Reduce all batches to get final word counts
     print("Reducing batches to get final word counts...")
     word_counts = {}
-    for batch in tqdm(processed_dataset, desc="Merging word counts"):
-        for word, count in zip(batch["batch_words"], batch["batch_counts"]):
+    for batch_counts in tqdm(processed_batches, desc="Merging word counts"):
+        for word, count in batch_counts.items():
             word_counts[word] = word_counts.get(word, 0) + count
     
     # Filter words by minimum occurrences
