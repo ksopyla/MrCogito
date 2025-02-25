@@ -198,6 +198,85 @@ def prepare_wikipedia2023_unique_words_corpus(output_file, sub_set=10_000, split
                         
     print(f"Processed Wikipedia dataset and saved unique words to: {output_file}")
 
+def prepare_wikipedia2023_unique_words_corpus_v2(output_file, sub_set=10_000, spliting='split', batch_size=1000, min_occurrences=1):
+    """Process Wikipedia dataset and save unique words to text to training file using dataset.map functionality.
+    
+    This version uses Huggingface datasets' map functionality for better performance and memory efficiency.
+    The process is done in two steps:
+    1. Map over batches to collect unique words per batch with their counts
+    2. Reduce all batches to get final unique words with total counts and filter by minimum occurrences
+    
+    Args:
+        output_file (str): Path to the output file where unique words will be saved
+        sub_set (int): Number of articles to process. Default is 10,000
+        spliting (str): The method to split text into words. Either 'split' or 'nltk'
+        batch_size (int): Size of batches for processing. Default is 1000
+        min_occurrences (int): Minimum number of occurrences required to keep a word. Default is 1
+        
+    Returns:
+        None
+    """
+    # Check if file already exists
+    if os.path.exists(output_file):
+        print(f"Output file {output_file} already exists. Skipping processing.")
+        return
+        
+    # Load dataset
+    wikitext = load_dataset("wikimedia/wikipedia", "20231101.en",
+                       cache_dir=DATASET_CACHE_DIR,
+                       )
+    
+    dataset = wikitext["train"].select(range(sub_set))
+    
+    # Step 1: Process each batch to get unique words with counts
+    def get_batch_word_counts(examples):
+        batch_word_counts = {}
+        for text in examples["text"]:
+            if spliting == 'nltk':
+                words = word_tokenize(text.replace('\n', ' '))
+            else:
+                words = text.replace('\n', ' ').split()
+            # Count occurrences in this batch
+            for word in words:
+                if word.strip():
+                    batch_word_counts[word] = batch_word_counts.get(word, 0) + 1
+        # Convert to lists for HF dataset storage
+        words = list(batch_word_counts.keys())
+        counts = list(batch_word_counts.values())
+        return {"batch_words": words, "batch_counts": counts}
+
+    print("Processing batches to collect words and their counts...")
+    processed_dataset = dataset.map(
+        get_batch_word_counts,
+        batched=True,
+        batch_size=batch_size,
+        desc="Collecting word counts per batch",
+        remove_columns=dataset.column_names
+    )
+    
+    # Step 2: Reduce all batches to get final word counts
+    print("Reducing batches to get final word counts...")
+    word_counts = {}
+    for batch in tqdm(processed_dataset, desc="Merging word counts"):
+        for word, count in zip(batch["batch_words"], batch["batch_counts"]):
+            word_counts[word] = word_counts.get(word, 0) + count
+    
+    # Filter words by minimum occurrences
+    filtered_words = {word: count for word, count in word_counts.items() 
+                     if count >= min_occurrences}
+    
+    # Save to file
+    print(f"Saving {len(filtered_words)} words (min occurrences: {min_occurrences}) to file...")
+    with open(output_file, "w", encoding="utf-8") as f:
+        # Sort words by occurrence count in descending order
+        for word, count in sorted(filtered_words.items(), key=lambda x: x[1], reverse=True):
+            f.write(f"{word}\t{count}\n")
+                
+    print(f"Successfully saved words to: {output_file}")
+    print(f"Total unique words: {len(word_counts)}")
+    print(f"Words with >= {min_occurrences} occurrences: {len(filtered_words)}")
+
+
 def prepare_wiki_corpus_sentences(output_file):
     """Process Wikitext dataset and save sentences to training file"""
     wikitext = load_dataset("Salesforce/wikitext", "wikitext-103-v1",
@@ -329,3 +408,4 @@ if __name__ == "__main__":
     # print(model.viterbi_segment("windsurfing")[0])
 
 # %%
+
