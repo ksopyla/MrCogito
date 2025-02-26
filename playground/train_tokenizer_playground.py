@@ -314,7 +314,7 @@ def main():
         morfessor_model_file=morfessor_wiki_en_model_file,
         output_cache_directory=DATASET_CACHE_DIR,
         cached_file_name_suffix="wiki_morphems",
-        num_proc=4
+        num_proc=40, batch_size=3000
     )
     
     print("Training Unigram tokenizer on WikiText morphemes...")
@@ -341,7 +341,7 @@ def main():
         morfessor_model_file=morfessor_wikipedia_en_model_300M_words,
         output_cache_directory=DATASET_CACHE_DIR,
         cached_file_name_suffix="wikipedia300m_morphems",
-        num_proc=48, batch_size=3000
+        num_proc=40, batch_size=3000
     )
     
     print("Training Unigram tokenizer on Wikipedia 300M morphemes...")
@@ -361,7 +361,7 @@ def main():
         morfessor_model_file=morfessor_wikipedia_en_model_10M_words,
         output_cache_directory=DATASET_CACHE_DIR,
         cached_file_name_suffix="wikipedia_10m_morphems",
-        num_proc=48, batch_size=3000
+        num_proc=40, batch_size=3000
     )
     
     print("Training Unigram tokenizer on Wikipedia 10M morphemes...")
@@ -382,7 +382,7 @@ def main():
         morfessor_model_file=morfessor_wikipedia_en_model_1M_art_unique_words,
         output_cache_directory=DATASET_CACHE_DIR,
         cached_file_name_suffix="wikipedia_1m_art_unique_morphems",
-        num_proc=48, batch_size=3000
+        num_proc=36, batch_size=3000
     )
     
     print("Training Unigram tokenizer on Wikipedia Morfessor 1M unique split words morphemes...")
@@ -405,7 +405,7 @@ def main():
         morfessor_model_file=morfessor_wikipedia_en_model_1M_art_unique_nltk_words,
         output_cache_directory=DATASET_CACHE_DIR,
         cached_file_name_suffix="wikipedia_1m_unique_tok_morphems",
-        num_proc=48, batch_size=3000
+        num_proc=40, batch_size=3000
     )
     
     print("Training Unigram tokenizer on Wikipedia Morfessor 10M unique nltk tokenize morphemes...")
@@ -426,7 +426,7 @@ def main():
         morfessor_model_file=morfessor_wikipedia_en_model_1M_art_min_3_nltk_words,
         output_cache_directory=DATASET_CACHE_DIR,
         cached_file_name_suffix="wikipedia_1m_min_3_nltk_morphems",
-        num_proc=48, batch_size=3000
+        num_proc=40, batch_size=3000
     )
     
     print("Training Unigram tokenizer on Wikipedia Morfessor 1M min_3_nltk morphemes...")
@@ -448,7 +448,7 @@ def main():
         morfessor_model_file=morfessor_wikipedia_en_model_1M_art_min_7_nltk_words,
         output_cache_directory=DATASET_CACHE_DIR,
         cached_file_name_suffix="wikipedia_1m_min_7_nltk_morphems",
-        num_proc=48, batch_size=3000
+        num_proc=40, batch_size=3000
     )
 
     print("Training Unigram tokenizer on Wikipedia Morfessor 1M min_7_nltk morphemes...")
