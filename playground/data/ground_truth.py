@@ -3,6 +3,7 @@ Ground truth data for tokenizer evaluation.
 This includes test corpora and morpheme segmentation ground truth.
 """
 
+#%% 
 # Test corpora for evaluating tokenizer performance
 HARD_WORDS_CORPUS = [
     "This is a windsurfing club.",
@@ -173,5 +174,64 @@ GROUND_TRUTH_MORPHEMS = {
     "UEFA" : ["UEFA"],
     "NBA" : ["NBA"],
     "NHL" : ["NHL"],
+    "algebraical" : ["algebra ic al", "algebra ical"],
+    "algebraically" : ["algebra ic ally", "algebra ically"],
+    "wrinklier" : ["wrink lier", "wrinkl ier"],
+    "youthfully" : ["youth ful ly", "youth fully"],
+    "youthfulness" : ["youth ful ness", "youth ful ness"],
+    "wishfully" : ["wish ful ly", "wish fully"],
+    "vocalized" : ["vocal ized", "vocal iz ed"],
+    "Tunisian" : ["Tunis ian"],
+    "Albanian" : ["Alban ian"],
+    "Egyptian" : ["Egypt ian"],
+    "inwardly" : ["in ward ly"],
+    "inwardness" : ["in ward ness"],
+    "likelihood" : ["like li hood"],
+    "justifications" : ["justifi cat ions", "justifi cations"],
+    "timelessly" : ["time less ly"],
+    "actionable" : ["action able", "act ion able"],
+    "systematization" : ["system at iza tion", "system atiza tion"],
+    "visualizations" : ["visual iza tions", "visual iza tion s", "visualiz ations", "visualiz ation s"],
+    "surgically" : ["surgic ally", "surg ic ally"],
+    "anagram" : ["ana gram"],
+    "anagrams" : ["ana grams" , "ana gram s"],
+    "untruths" : ["un truths", "un truth s"],
+    "untruth" : ["un truth"],
+    "unveils" : ["un veils", "un veil s"],
+    "unveil" : ["un veil"],
+    "unzipping" : ["un zipp ing", "un zipping"],
+    "unzipped" : ["un zipp ed", "un zipped"],
+    "underground" : ["under ground"],
+    "underpaying" : ["under pay ing", "under paying"],
+    "understock" : ["under stock"],
+    "stocking" : ["stock ing"],
+    "alliterated" : ["al literat ed"],
+    "allocating" : ["al locat ing", "al loc at ing"],
+    "anarchists" : ["an arch ists"],
+    "unbelievers" : ["un believers", "un believ ers"],
+    "unbeliever" : ["un believer", "un believ er"],
+    "transpolar" : ["trans polar"],
+    "trigonometry" : ["tri gonometry", "tri gono metry"],
+    "geometry" : ["geo metry"],
+    "substations" : ["sub stat ions"],
+    "substance" : ["sub stance"],
+    "substructure" : ["sub struct ure"],
+    "substructures" : ["sub struct ures", "sub struct ure s", "substruct ures"],
+    "subconsciousness" : ["sub conscious ness"],
+    "subconsciously" : ["sub conscious ly"],
+    "subeditor" : ["sub edit or", "sub editor"],
+    "remilitarized" : ["re militar ized"],
+    "remilitarizing" : ["re militar iz ing"],
+    "remodernized" : ["re modern ized"],
+    "replacable" : ["re place ab le", "re place able"],
+    "reimagin" : ["re imagin"],
+    "reimagined" : ["re imagin ed"],
+    "reimagining" : ["re imagin ing"],
+    "prohibition" : ["pro hibit ion"],
+    "prohibited" : ["pro hibit ed"],
     
+    
+
+
 } 
+# %%

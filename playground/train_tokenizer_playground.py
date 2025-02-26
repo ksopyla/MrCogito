@@ -314,7 +314,7 @@ def main():
         morfessor_model_file=morfessor_wiki_en_model_file,
         output_cache_directory=DATASET_CACHE_DIR,
         cached_file_name_suffix="wiki_morphems",
-        num_proc=4
+        num_proc=48, batch_size=3000
     )
     
     print("Training Unigram tokenizer on WikiText morphemes...")
