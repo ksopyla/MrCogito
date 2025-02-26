@@ -143,7 +143,11 @@ ground_truth_morphems = {
     "unfortunately" : ["un fortunately", "un fortunate ly"],
 }
 ```
-After the first experiments I have found that Morfessor and XLM tokenizer give the best results. 
+Some words could be takene from [MorphoLex-en](https://github.com/hugomailhot/MorphoLex-en/tree/master)
+
+
+After the first experiments I have found that Morfessor and XLM tokenizer give the best results. But Morfessor is not able to prune the vocabulary to desired size. 
+Thats why I have decided to use the Morfessor to split the words into the root and morphemes and then train the unigram model on the morphological segments.
 
 
 
@@ -160,14 +164,15 @@ After the first experiments I have found that Morfessor and XLM tokenizer give t
 ### Morfessor package 
 
 Package for training the morphological segmentation of the words
-
 After some experiments with Morfessor package, I found that it is able to train the model to split the words for root and morphemes. Very good results.
-
-
 Sample code form https://aayushsanghavi.blogspot.com/2018/03/morphological-segmentation-of-words.html
 
 
-### Experiment results
+### Experiments 
+
+While morfessor is not able to generate the vocabulary of desired size, I have tried to train custom unigram tokenizer. 
+I want to check if the unigram tokenizer trained on the morphological segments will give better results than the unigram tokenizer trained on the words.
+
 
 
 #### Exp 1. 
@@ -179,7 +184,14 @@ Files:
 * [train_morfessor_models.py](../training/train_morfessor_models.py)
 
 Description:
+Initial experiment with a few morfessor models, should not be used for deciding which approch is better. This was just to start and see some first results. 
+The resulta were evaluated on [ground_truth.py](../playground/ground_truth.py) dictionary with arbitrary choosen words and their ground truth morphological segments.
+This is not a big dataset, but it is enough to see some first results. 
+This evaluation procedure does not take into account the results on 'programming code', 'latex' text. 
+
 Loaded some standard tokenizers from Hugging Face and trained the Morfessor models on the sentences.
+
+
 morfessor_* - models are pure morfessor models trained on different corpora
 morferssor_nltk - is traind on nltk words corpus - it contains 236736 words
 morfessor_wiki - is trained on wikitext dataset that was alredy preprocessed and words are splited corpus - it contains 101425671 non unique words
@@ -209,13 +221,15 @@ BLEU Scores for each tokenizer
 
 #### Exp 2. 
 
-Date: 24.02.2025 - 21:00
+Date: 25.02.2025 - 19:00
 Commit: 
 Files: 
 * [train_tokenizer_playground.py](../playground/train_tokenizer_playground.py) 
 * [train_morfessor_models.py](../training/train_morfessor_models.py)
 
 Description:
+More reliable experiment then previous one (Exp 1). The ground truth [ground_truth.py](../playground/ground_truth.py) was extended with more words and morphological segments based on the MorphoLex-en.
+
 Loaded some standard tokenizers from Hugging Face and trained the Morfessor models on the sentences.
 morfessor_* - models are pure morfessor models trained on different corpora
 morferssor_nltk - is traind on nltk words corpus - it contains 236736 words
