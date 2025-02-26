@@ -189,24 +189,22 @@ uni_wiki - unigram tokenizer trained on prepreocess wikitext dataset with use of
 uni_wikipedia - unigram tokenizer trained on prepreocess wikipedia dataset with use of morfessor_wikipedia_300M model (later called uni_wikipedia_300M)
 
 
+BLEU Scores for each tokenizer     
 
-                   BLEU Scores for each tokenizer                   
-                           ╷            ╷        ╷        ╷         
-  Tokenizer                │ BLEU Score │ 1-gram │ 2-gram │ 3-gram  
- ══════════════════════════╪════════════╪════════╪════════╪════════ 
-  bert                     │     0.3550 │ 0.5177 │ 0.3457 │ 0.2500  
-  modernbert               │     0.2903 │ 0.5725 │ 0.3846 │ 0.1111  
-  llama32                  │     0.3041 │ 0.6462 │ 0.4571 │ 0.0952  
-  gpt2                     │     0.2761 │ 0.6183 │ 0.4085 │ 0.0833  
-  xlnet                    │     0.6412 │ 0.7119 │ 0.6552 │ 0.5652  
-  albert                   │     0.4332 │ 0.5081 │ 0.4219 │ 0.3793  
-  morfessor_nltk           │     0.4882 │ 0.6029 │ 0.5263 │ 0.3667  
-  morfessor_wiki           │     0.6948 │ 0.6782 │ 0.8889 │ 1.0000  
-  morfessor_sent           │     0.7105 │ 0.6932 │ 0.8929 │ 1.0000  
-  morfessor_wikipedia_300M │     0.0000 │ 0.4928 │ 0.7778 │ 0.0000  
-  uni_wiki                 │     0.2723 │ 0.5247 │ 0.3333 │ 0.1154  
-  uni_wikipedia            │     0.0000 │ 0.5245 │ 0.2410 │ 0.0000 
-
+| Tokenizer                | BLEU Score | 1-gram | 2-gram | 3-gram |
+|--------------------------|------------|--------|--------|--------|
+| bert                     | 0.3550     | 0.5177 | 0.3457 | 0.2500 |
+| modernbert               | 0.2903     | 0.5725 | 0.3846 | 0.1111 |
+| llama32                  | 0.3041     | 0.6462 | 0.4571 | 0.0952 |
+| gpt2                     | 0.2761     | 0.6183 | 0.4085 | 0.0833 |
+| **xlnet**                | **0.6412** | 0.7119 | 0.6552 | 0.5652 |
+| albert                   | 0.4332     | 0.5081 | 0.4219 | 0.3793 |
+| morfessor_nltk           | 0.4882     | 0.6029 | 0.5263 | 0.3667 |
+| morfessor_wiki           | 0.6948     | 0.6782 | 0.8889 | 1.0000 |
+| morfessor_sent           | 0.7105     | 0.6932 | 0.8929 | 1.0000 |
+| morfessor_wikipedia_300M | 0.0000     | 0.4928 | 0.7778 | 0.0000 |
+| uni_wiki                 | 0.2723     | 0.5247 | 0.3333 | 0.1154 |
+| uni_wikipedia            | 0.0000     | 0.5245 | 0.2410 | 0.0000 |
 
 
 #### Exp 2. 
