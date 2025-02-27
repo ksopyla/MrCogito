@@ -382,7 +382,7 @@ def main():
         morfessor_model_file=morfessor_wikipedia_en_model_1M_art_unique_words,
         output_cache_directory=DATASET_CACHE_DIR,
         cached_file_name_suffix="wikipedia_1m_art_unique_morphems",
-        num_proc=36, batch_size=3000
+        num_proc=32, batch_size=3000
     )
     
     print("Training Unigram tokenizer on Wikipedia Morfessor 1M unique split words morphemes...")
