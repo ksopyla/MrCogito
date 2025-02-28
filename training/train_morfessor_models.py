@@ -456,7 +456,7 @@ if __name__ == "__main__":
     #     count_modifier=lambda x: 1
     # )
     # Train the Wikipedia-based model for sentences
-    print(f"Training Wikipedia-based Morfessor model {morfessor_wikipedia_en_model_1M_art_min_7_nltk_words}")
+    print(f"Training Wikipedia-based Morfessor model {morfessor_wikipedia_en_model_1M_art_min_7_nltk_words_log}")
     train_morfessor_model(
         morfessor_wikipedia_en_train_1M_art_min_7_nltk_words,
         morfessor_wikipedia_en_model_1M_art_min_7_nltk_words_log,
