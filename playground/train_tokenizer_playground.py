@@ -10,7 +10,7 @@ Key features demonstrated:
 - Saving and loading tokenizers
 - Testing different configurations
 """
-
+#%%
 import os
 from datasets import load_dataset, Dataset
 from tokenizers import (
@@ -58,6 +58,11 @@ morfessor_wikipedia_en_model_1M_art_unique_3M_words = os.path.join(MORFESSOR_CAC
 morfessor_wikipedia_en_model_1M_art_unique_nltk_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_nltk_1M_art.bin")
 morfessor_wikipedia_en_model_1M_art_min_3_nltk_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_nltk_1M_art_min_3.bin")
 morfessor_wikipedia_en_model_1M_art_min_7_nltk_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_nltk_1M_art_min_7.bin")
+
+
+# txt files with word count
+morfessor_wikipedia_en_train_1M_art_min_7_nltk_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_nltk_1M_art_min_7.txt")
+
 
 SPECIAL_TOKENS = ["<cls>", "<sep>", "<unk>", "<pad>", "<mask>", "<s>", "</s>"]
 
@@ -188,6 +193,25 @@ def batch_iterator(batch_size=1000, train_dataset=None):
     tok_dataset = train_dataset.select_columns("text")
     for batch in tok_dataset.iter(batch_size):
         yield batch["text"]
+ 
+ 
+ 
+        
+def batch_iterator_from_txt_file(file_path, batch_size=1000, contains_word_and_occurences=True):
+    """Iterator for batching dataset from txt file with format
+    occurences word1
+    occurences word2
+    ...
+    occurences wordN
+    
+    """
+    with open(file_path, "r", encoding="utf-8") as file:
+        for line in file:
+            if contains_word_and_occurences:
+                occurence, word = line.strip().split()
+                yield word
+            else:
+                yield line.strip()
 
 def batch_iterator_only_one_same_word(batch_size=1000, train_dataset=None):
     """Iterator that returns unique words from dataset"""
@@ -482,6 +506,20 @@ def main():
         trainer=uni_normal_wikitext_trainer
     )
     print("WikiText Unigram tokenizer training completed")
+    
+    # build unigram tokenizer just on extracted unique words from wikipedia with minimum 7 nltk words
+    print("Training Unigram tokenizer on Wikipedia corpus with minimum 7 nltk words...")
+    uni_wikipedia_1M_min_7_nltk_tokenizer = initialize_unigram_tokenizer()
+    uni_wikipedia_1M_min_7_nltk_trainer = configure_trainer()
+    
+    # train the tokenizer from iterator returning unique words from wikipedia with minimum 7 nltk words
+    uni_wikipedia_1M_min_7_nltk_tokenizer.train_from_iterator(
+        batch_iterator_from_txt_file(morfessor_wikipedia_en_train_1M_art_min_7_nltk_words, contains_word_and_occurences=True),
+        trainer=uni_wikipedia_1M_min_7_nltk_trainer
+    )
+    print("Wikipedia Unigram tokenizer training completed")
+
+    
     
     print("\nPreparing for evaluation...")
     tokenizers.update({

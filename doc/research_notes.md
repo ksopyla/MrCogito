@@ -140,7 +140,7 @@ Experiments
 ground_truth_morphems = {
     "windsurfing" : ["wind surf ing", "wind surfing"],
     "kitesurfing" : ["kite surf ing", "kite surfing"],
-    "unfortunately" : ["un fortunately", "un fortunate ly"],
+    "unfortunately" : ["un unfortunately", "un fortunate ly"],
 }
 ```
 Some words could be takene from [MorphoLex-en](https://github.com/hugomailhot/MorphoLex-en/tree/master)
@@ -245,4 +245,31 @@ uni_wiki - unigram tokenizer trained on prepreocess wikitext dataset with use of
 uni_wikipedia_300M - unigram tokenizer trained on prepreocess wikipedia dataset with use of morfessor_wikipedia_300M model (later called uni_wikipedia_300M)
 
 
+### BLEU Scores for each tokenizer (Exp 2)                        
 
+| Tokenizer | BLEU Score | 1-gram | 2-gram | 3-gram |
+|-----------|------------|--------|--------|--------|
+| bert | 0.2468 | 0.4138 | 0.2299 | 0.1579 |
+| modernbert | 0.2587 | 0.4736 | 0.2924 | 0.1250 |
+| llama32 | 0.2691 | 0.4842 | 0.3059 | 0.1316 |
+| gpt2 | 0.2703 | 0.4873 | 0.3004 | 0.1348 |
+| xlnet | 0.4076 | 0.5469 | 0.4257 | 0.3333 |
+| albert | 0.3939 | 0.4839 | 0.4094 | 0.3500 |
+| morfessor_nltk | 0.5331 | 0.6560 | 0.5514 | 0.4189 |
+| morfessor_wiki | 0.3394 | 0.4788 | 0.4933 | 0.5000 |
+| morfessor_sent | 0.3343 | 0.4703 | 0.4800 | 0.5000 |
+| morfessor_wikipedia_300M | 0.0000 | 0.3542 | 0.4839 | 0.0000 |
+| morfessor_wikipedia_10M | 0.0000 | 0.4786 | 0.4110 | 0.0000 |
+| morfessor_wikipedia_1M_unique | 0.0000 | 0.3981 | 0.4222 | 0.0000 |
+| morfessor_wikipedia_1M_unique_tok | 0.4497 | 0.5633 | 0.5595 | 0.7500 |
+| morfessor_wikipedia_1M_min_3_nltk | 0.5985 | 0.6902 | 0.6176 | 0.6538 |
+| morfessor_wikipedia_1M_min_7_nltk | 0.6092 | 0.7217 | 0.6265 | 0.5000 |
+| uni_wiki | 0.3164 | 0.5157 | 0.3254 | 0.1887 |
+| uni_wikipedia_300M | 0.3350 | 0.5543 | 0.3586 | 0.1892 |
+| uni_wikipedia_10M | 0.2506 | 0.5012 | 0.2713 | 0.1157 |
+| uni_wikipedia_10M_unique | 0.3007 | 0.5354 | 0.3227 | 0.1573 |
+| uni_wikipedia_10M_unique_tok | 0.2728 | 0.4884 | 0.2807 | 0.1481 |
+| uni_wikipedia_1M_unique_3M_words | 0.2017 | 0.4737 | 0.2218 | 0.0781 |
+| uni_wikipedia_1M_min_7_nltk | 0.2159 | 0.4744 | 0.2528 | 0.0840 |
+| uni_normal_wikipedia | 0.3489 | 0.5527 | 0.3789 | 0.2027 |
+| uni_normal_wikitext | 0.2800 | 0.4908 | 0.3028 | 0.1477 |
