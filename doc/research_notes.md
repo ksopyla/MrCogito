@@ -273,3 +273,4 @@ uni_wikipedia_300M - unigram tokenizer trained on prepreocess wikipedia dataset 
 | uni_wikipedia_1M_min_7_nltk | 0.2159 | 0.4744 | 0.2528 | 0.0840 |
 | uni_normal_wikipedia | 0.3489 | 0.5527 | 0.3789 | 0.2027 |
 | uni_normal_wikitext | 0.2800 | 0.4908 | 0.3028 | 0.1477 |
+| uni_wikipedia_words_1M_min_7_nltk | 0.4570 | 0.6605 | 0.4954 | 0.2917 |

@@ -53,6 +53,7 @@ morfessor_wikipedia_en_model_1M_art_unique_nltk_words = os.path.join(MORFESSOR_C
 
 morfessor_wikipedia_en_train_1M_art_min_7_nltk_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_nltk_1M_art_min_7.txt")
 morfessor_wikipedia_en_model_1M_art_min_7_nltk_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_nltk_1M_art_min_7.bin")
+morfessor_wikipedia_en_model_1M_art_min_7_nltk_words_log = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_nltk_1M_art_min_7_log.bin")
 
 #%% Utility functions
 
@@ -442,17 +443,24 @@ if __name__ == "__main__":
     
     
     
-    # Prepare Wikipedia corpus 
-    print(f"Preparing Wikipedia corpus {morfessor_wikipedia_en_train_1M_art_min_7_nltk_words}")
-    prepare_wikipedia2023_unique_words_corpus_v2(morfessor_wikipedia_en_train_1M_art_min_7_nltk_words , spliting='nltk', sub_set=1_000_000, batch_size=5000, min_occurrences=7, num_proc=60)
-    print(f"   ✓ Wikipedia corpus with words saved to: {morfessor_wikipedia_en_train_1M_art_min_7_nltk_words}")
+    # # Prepare Wikipedia corpus 
+    # print(f"Preparing Wikipedia corpus {morfessor_wikipedia_en_train_1M_art_min_7_nltk_words}")
+    # prepare_wikipedia2023_unique_words_corpus_v2(morfessor_wikipedia_en_train_1M_art_min_7_nltk_words , spliting='nltk', sub_set=1_000_000, batch_size=5000, min_occurrences=7, num_proc=60)
+    # print(f"   ✓ Wikipedia corpus with words saved to: {morfessor_wikipedia_en_train_1M_art_min_7_nltk_words}")
     
+    # # Train the Wikipedia-based model for sentences
+    # print(f"Training Wikipedia-based Morfessor model {morfessor_wikipedia_en_model_1M_art_min_7_nltk_words}")
+    # train_morfessor_model(
+    #     morfessor_wikipedia_en_train_1M_art_min_7_nltk_words,
+    #     morfessor_wikipedia_en_model_1M_art_min_7_nltk_words,
+    #     count_modifier=lambda x: 1
+    # )
     # Train the Wikipedia-based model for sentences
     print(f"Training Wikipedia-based Morfessor model {morfessor_wikipedia_en_model_1M_art_min_7_nltk_words}")
     train_morfessor_model(
         morfessor_wikipedia_en_train_1M_art_min_7_nltk_words,
-        morfessor_wikipedia_en_model_1M_art_min_7_nltk_words,
-        count_modifier=lambda x: 1
+        morfessor_wikipedia_en_model_1M_art_min_7_nltk_words_log,
+        count_modifier=log_func
     )
 
 
