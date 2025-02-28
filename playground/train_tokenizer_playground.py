@@ -509,13 +509,13 @@ def main():
     
     # build unigram tokenizer just on extracted unique words from wikipedia with minimum 7 nltk words
     print("Training Unigram tokenizer on Wikipedia corpus with minimum 7 nltk words...")
-    uni_wikipedia_1M_min_7_nltk_tokenizer = initialize_unigram_tokenizer()
-    uni_wikipedia_1M_min_7_nltk_trainer = configure_trainer()
+    uni_wikipedia_words_1M_min_7_nltk_tokenizer = initialize_unigram_tokenizer()
+    uni_wikipedia_words_1M_min_7_nltk_trainer = configure_trainer()
     
     # train the tokenizer from iterator returning unique words from wikipedia with minimum 7 nltk words
-    uni_wikipedia_1M_min_7_nltk_tokenizer.train_from_iterator(
+    uni_wikipedia_words_1M_min_7_nltk_tokenizer.train_from_iterator(
         batch_iterator_from_txt_file(morfessor_wikipedia_en_train_1M_art_min_7_nltk_words, contains_word_and_occurences=True),
-        trainer=uni_wikipedia_1M_min_7_nltk_trainer
+        trainer=uni_wikipedia_words_1M_min_7_nltk_trainer
     )
     print("Wikipedia Unigram tokenizer training completed")
 
@@ -540,7 +540,8 @@ def main():
         'uni_wikipedia_1M_unique_3M_words': uni_wikipedia_1M_min_3_nltk_tokenizer,
         'uni_wikipedia_1M_min_7_nltk': uni_wikipedia_1M_min_7_nltk_tokenizer,
         'uni_normal_wikipedia': uni_normal_wikipedia_tokenizer,
-        'uni_normal_wikitext': uni_normal_wikitext_tokenizer
+        'uni_normal_wikitext': uni_normal_wikitext_tokenizer,
+        'uni_wikipedia_words_1M_min_7_nltk': uni_wikipedia_words_1M_min_7_nltk_tokenizer
     })
     
     # # Configure post-processor
