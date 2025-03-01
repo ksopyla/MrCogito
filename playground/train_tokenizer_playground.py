@@ -61,7 +61,10 @@ morfessor_wikipedia_en_model_1M_art_min_7_nltk_words = os.path.join(MORFESSOR_CA
 morfessor_wikipedia_en_model_1M_art_min_7_nltk_words_log = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_nltk_1M_art_min_7_log.bin")
 
 # txt files with word count
+# input file with unique words from wikipedia with minimum 7 nltk words
 morfessor_wikipedia_en_train_1M_art_min_7_nltk_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_nltk_1M_art_min_7.txt")
+# file with unique words from wikipedia with minimum 7 nltk words and processed with morfessor
+morfessor_wikipedia_en_train_1M_art_min_7_nltk_words_morphems = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_nltk_1M_art_min_7_morphems.txt")
 
 
 SPECIAL_TOKENS = ["<cls>", "<sep>", "<unk>", "<pad>", "<mask>", "<s>", "</s>"]
@@ -145,6 +148,35 @@ def get_preprocessed_morfessor_dataset(train_dataset,
     ds_processed.save_to_disk(processed_dataset_path)
     return ds_processed
 
+def get_preprocessed_morfessor_dataset_from_txt_file(input_file_path, 
+                                                     output_file_path, 
+                                                     morfessor_model_file):
+    """
+    Process the txt file with counts of words using Morfessor save the results as txt file to disk. 
+    The txt file should have the format:
+    morpheme1 morpheme2 ... morphemeN
+    """ 
+    
+    #check if the output file exists
+    if os.path.exists(output_file_path):
+        print(f"[INFO] Loading existing preprocessed dataset from: {output_file_path}")
+        return
+    
+    # Load the Morfessor model
+    model = _load_morfessor_model(morfessor_model_file)
+    
+    # Process the input file
+    with open(input_file_path, "r", encoding="utf-8") as file:  
+        with open(output_file_path, "w", encoding="utf-8") as output_file:
+            for line in file:
+                word, count = line.strip().split()
+                segments, _cost = model.viterbi_segment(word)
+                output_file.write(f"{' '.join(segments)}\n")
+                
+    
+  
+
+
 def setup_environment():
     """Setup environment variables and directories"""
     os.makedirs(TOKENIZER_DIR, exist_ok=True)
@@ -197,7 +229,7 @@ def batch_iterator(batch_size=1000, train_dataset=None):
  
  
         
-def batch_iterator_from_txt_file(file_path, batch_size=1000, contains_word_and_occurences=True):
+def batch_iterator_from_txt_file(file_path, contains_word_and_occurences=True):
     """Iterator for batching dataset from txt file with format
     occurences word1
     occurences word2
@@ -535,9 +567,6 @@ def main():
     # print("WikiText Unigram tokenizer training completed")
 
 
-
-    
-    
     # build unigram tokenizer just on extracted unique words from wikipedia with minimum 7 nltk words
     print("Training Unigram tokenizer on Wikipedia corpus with minimum 7 nltk words...")
     uni_wikipedia_words_1M_min_7_nltk_tokenizer = initialize_unigram_tokenizer()
@@ -553,6 +582,33 @@ def main():
     uni_wikipedia_words_1M_min_7_nltk_tokenizer.save(os.path.join(TOKENIZER_DIR, "uni_wikipedia_words_1M_min_7_nltk_tokenizer.json"))
 
     print("Wikipedia Unigram tokenizer training completed")
+   
+   
+    #############
+   
+    # build unigram tokenizer just on extracted unique words from wikipedia with minimum 7 nltk words and processed with morfessor   
+    print("Training Unigram tokenizer on Wikipedia corpus with minimum 7 nltk words and processed with morfessor...")
+    uni_wikipedia_words_1M_min_7_nltk_morphems_tokenizer = initialize_unigram_tokenizer()
+    uni_wikipedia_words_1M_min_7_nltk_morphems_trainer = configure_trainer()
+
+    # get the preprocessed txt dataset 
+ 
+    get_preprocessed_morfessor_dataset_from_txt_file(morfessor_wikipedia_en_train_1M_art_min_7_nltk_words, 
+                                                    morfessor_wikipedia_en_train_1M_art_min_7_nltk_words_morphems, 
+                                                    morfessor_wikipedia_en_model_1M_art_min_7_nltk_words)
+   
+   
+   
+    # train the tokenizer from iterator returning unique words from wikipedia with minimum 7 nltk words
+    uni_wikipedia_words_1M_min_7_nltk_morphems_tokenizer.train_from_iterator(
+            batch_iterator_from_txt_file(morfessor_wikipedia_en_train_1M_art_min_7_nltk_words_morphems, contains_word_and_occurences=False),
+            trainer=uni_wikipedia_words_1M_min_7_nltk_morphems_trainer
+        )
+    
+    #save the tokenizer
+    uni_wikipedia_words_1M_min_7_nltk_morphems_tokenizer.save(os.path.join(TOKENIZER_DIR, "uni_wikipedia_words_1M_min_7_nltk_morphems_tokenizer.json"))
+   
+   
    
     
     print("\nPreparing for evaluation...")
@@ -575,8 +631,12 @@ def main():
         # 'uni_wikipedia_1M_min_7_nltk': uni_wikipedia_1M_min_7_nltk_tokenizer,
         # 'uni_normal_wikipedia': uni_normal_wikipedia_tokenizer,
         # 'uni_normal_wikitext': uni_normal_wikitext_tokenizer,
-        'uni_wikipedia_words_1M_min_7_nltk': uni_wikipedia_words_1M_min_7_nltk_tokenizer
+        'uni_wikipedia_words_1M_min_7_nltk': uni_wikipedia_words_1M_min_7_nltk_tokenizer,
+        'uni_wikipedia_words_1M_min_7_nltk_morphems': uni_wikipedia_words_1M_min_7_nltk_morphems_tokenizer,
+        'uni_wikipedia_words_1M_min_7_nltk_log': uni_wikipedia_1M_min_7_nltk_log_tokenizer
     })
+    
+    # uni_wikipedia_1M_min_7_nltk_log_tokenizer
     
     # # Configure post-processor
     # uni_sp_tokenizer.post_processor = processors.TemplateProcessing(
