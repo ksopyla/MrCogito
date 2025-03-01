@@ -58,7 +58,7 @@ morfessor_wikipedia_en_model_1M_art_unique_3M_words = os.path.join(MORFESSOR_CAC
 morfessor_wikipedia_en_model_1M_art_unique_nltk_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_nltk_1M_art.bin")
 morfessor_wikipedia_en_model_1M_art_min_3_nltk_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_nltk_1M_art_min_3.bin")
 morfessor_wikipedia_en_model_1M_art_min_7_nltk_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_nltk_1M_art_min_7.bin")
-
+morfessor_wikipedia_en_model_1M_art_min_7_nltk_words_log = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_nltk_1M_art_min_7_log.bin")
 
 # txt files with word count
 morfessor_wikipedia_en_train_1M_art_min_7_nltk_words = os.path.join(MORFESSOR_CACHE_DIR, "morfessor_wikipedia_en_train_words_unique_nltk_1M_art_min_7.txt")
@@ -306,47 +306,47 @@ def main():
     tokenizers = load_pretrained_tokenizers()
     print(f"Loaded {len(tokenizers)} pretrained tokenizers: {list(tokenizers.keys())}")
     
-    print("Loading Morfessor models...")
-    # Load Morfessor models
-    io = morfessor.MorfessorIO()
-    model_nltk = io.read_binary_model_file(morfessor_nltk_en_model_file)
-    model_wiki = io.read_binary_model_file(morfessor_wiki_en_model_file)
-    model_sent = io.read_binary_model_file(morfessor_wiki_en_model_file_sentences)
-    model_wikipedia_300M = io.read_binary_model_file(morfessor_wikipedia_en_model_300M_words)
-    model_wikipedia_10M = io.read_binary_model_file(morfessor_wikipedia_en_model_10M_words)
-    model_wikipedia_1M_unique = io.read_binary_model_file(morfessor_wikipedia_en_model_1M_art_unique_words)
-    model_wikipedia_1M_unique_tok = io.read_binary_model_file(morfessor_wikipedia_en_model_1M_art_unique_nltk_words)
-    model_wikipedia_1M_min_3_nltk = io.read_binary_model_file(morfessor_wikipedia_en_model_1M_art_min_3_nltk_words)
-    model_wikipedia_1M_min_7_nltk = io.read_binary_model_file(morfessor_wikipedia_en_model_1M_art_min_7_nltk_words)
-    print("Successfully loaded all Morfessor models")
+    # print("Loading Morfessor models...")
+    # # Load Morfessor models
+    # io = morfessor.MorfessorIO()
+    # model_nltk = io.read_binary_model_file(morfessor_nltk_en_model_file)
+    # model_wiki = io.read_binary_model_file(morfessor_wiki_en_model_file)
+    # model_sent = io.read_binary_model_file(morfessor_wiki_en_model_file_sentences)
+    # model_wikipedia_300M = io.read_binary_model_file(morfessor_wikipedia_en_model_300M_words)
+    # model_wikipedia_10M = io.read_binary_model_file(morfessor_wikipedia_en_model_10M_words)
+    # model_wikipedia_1M_unique = io.read_binary_model_file(morfessor_wikipedia_en_model_1M_art_unique_words)
+    # model_wikipedia_1M_unique_tok = io.read_binary_model_file(morfessor_wikipedia_en_model_1M_art_unique_nltk_words)
+    # model_wikipedia_1M_min_3_nltk = io.read_binary_model_file(morfessor_wikipedia_en_model_1M_art_min_3_nltk_words)
+    # model_wikipedia_1M_min_7_nltk = io.read_binary_model_file(morfessor_wikipedia_en_model_1M_art_min_7_nltk_words)
+    # print("Successfully loaded all Morfessor models")
     
-    print("Loading and preparing WikiText dataset...")
-    wiki_text_dataset = load_dataset("Salesforce/wikitext", 
-                          "wikitext-103-v1",
-                          cache_dir=DATASET_CACHE_DIR,
-                          split="train")
-    wiki_text_train_dataset = wiki_text_dataset.select(range(1_000_000))
-    print(f"Selected {len(wiki_text_train_dataset)} samples from WikiText dataset")
+    # print("Loading and preparing WikiText dataset...")
+    # wiki_text_dataset = load_dataset("Salesforce/wikitext", 
+    #                       "wikitext-103-v1",
+    #                       cache_dir=DATASET_CACHE_DIR,
+    #                       split="train")
+    # wiki_text_train_dataset = wiki_text_dataset.select(range(1_000_000))
+    # print(f"Selected {len(wiki_text_train_dataset)} samples from WikiText dataset")
     
-    print("Training Unigram tokenizer on WikiText...")
-    uni_wikitext_tokenizer = initialize_unigram_tokenizer()
-    uni_wikitext_trainer = configure_trainer()
+    # print("Training Unigram tokenizer on WikiText...")
+    # uni_wikitext_tokenizer = initialize_unigram_tokenizer()
+    # uni_wikitext_trainer = configure_trainer()
     
-    print("Processing WikiText with Morfessor...")
-    uni_wiki_words_train_dataset = get_preprocessed_morfessor_dataset(
-        wiki_text_train_dataset,
-        morfessor_model_file=morfessor_wiki_en_model_file,
-        output_cache_directory=DATASET_CACHE_DIR,
-        cached_file_name_suffix="wiki_morphems",
-        num_proc=40, batch_size=3000
-    )
+    # print("Processing WikiText with Morfessor...")
+    # uni_wiki_words_train_dataset = get_preprocessed_morfessor_dataset(
+    #     wiki_text_train_dataset,
+    #     morfessor_model_file=morfessor_wiki_en_model_file,
+    #     output_cache_directory=DATASET_CACHE_DIR,
+    #     cached_file_name_suffix="wiki_morphems",
+    #     num_proc=40, batch_size=3000
+    # )
     
-    print("Training Unigram tokenizer on WikiText morphemes...")
-    uni_wikitext_tokenizer.train_from_iterator(
-        batch_iterator_morfessor_processed(morfessor_train_dataset=uni_wiki_words_train_dataset),
-        trainer=uni_wikitext_trainer
-    )
-    print("WikiText Unigram tokenizer training completed")
+    # print("Training Unigram tokenizer on WikiText morphemes...")
+    # uni_wikitext_tokenizer.train_from_iterator(
+    #     batch_iterator_morfessor_processed(morfessor_train_dataset=uni_wiki_words_train_dataset),
+    #     trainer=uni_wikitext_trainer
+    # )
+    # print("WikiText Unigram tokenizer training completed")
     
     print("Loading and preparing Wikipedia dataset...")
     
@@ -355,157 +355,188 @@ def main():
 
     print(f"Selected {len(wikipedia_train_dataset)} samples from Wikipedia dataset")
     
-    print("Training Unigram tokenizer on Wikipedia on Morfessor 300M words and morphemes...")
-    uni_wikipedia_300M_tokenizer = initialize_unigram_tokenizer()
-    uni_wikipedia_300M_trainer = configure_trainer()
+    # print("Training Unigram tokenizer on Wikipedia on Morfessor 300M words and morphemes...")
+    # uni_wikipedia_300M_tokenizer = initialize_unigram_tokenizer()
+    # uni_wikipedia_300M_trainer = configure_trainer()
     
-    print("Processing Wikipedia with Morfessor 300M model...")
-    uni_wikipedia_300M_words_train_dataset = get_preprocessed_morfessor_dataset(
-        wikipedia_train_dataset,
-        morfessor_model_file=morfessor_wikipedia_en_model_300M_words,
-        output_cache_directory=DATASET_CACHE_DIR,
-        cached_file_name_suffix="wikipedia300m_morphems",
-        num_proc=40, batch_size=3000
-    )
+    # print("Processing Wikipedia with Morfessor 300M model...")
+    # uni_wikipedia_300M_words_train_dataset = get_preprocessed_morfessor_dataset(
+    #     wikipedia_train_dataset,
+    #     morfessor_model_file=morfessor_wikipedia_en_model_300M_words,
+    #     output_cache_directory=DATASET_CACHE_DIR,
+    #     cached_file_name_suffix="wikipedia300m_morphems",
+    #     num_proc=40, batch_size=3000
+    # )
     
-    print("Training Unigram tokenizer on Wikipedia 300M morphemes...")
-    uni_wikipedia_300M_tokenizer.train_from_iterator(
-        batch_iterator_morfessor_processed(morfessor_train_dataset=uni_wikipedia_300M_words_train_dataset),
-        trainer=uni_wikipedia_300M_trainer
-    )
-    print("Wikipedia morfessor Unigram tokenizer training completed")
+    # print("Training Unigram tokenizer on Wikipedia 300M morphemes...")
+    # uni_wikipedia_300M_tokenizer.train_from_iterator(
+    #     batch_iterator_morfessor_processed(morfessor_train_dataset=uni_wikipedia_300M_words_train_dataset),
+    #     trainer=uni_wikipedia_300M_trainer
+    # )
+    # print("Wikipedia morfessor Unigram tokenizer training completed")
 
-    print("Training Unigram tokenizer on Wikipedia on Morfessor 10M words and morphemes...")
-    uni_wikipedia_10M_tokenizer = initialize_unigram_tokenizer()
-    uni_wikipedia_10M_trainer = configure_trainer()
+    # print("Training Unigram tokenizer on Wikipedia on Morfessor 10M words and morphemes...")
+    # uni_wikipedia_10M_tokenizer = initialize_unigram_tokenizer()
+    # uni_wikipedia_10M_trainer = configure_trainer()
     
-    print("Processing Wikipedia with Morfessor 10M model...")
-    uni_wikipedia_10M_words_train_dataset = get_preprocessed_morfessor_dataset(
-        wikipedia_train_dataset,
-        morfessor_model_file=morfessor_wikipedia_en_model_10M_words,
-        output_cache_directory=DATASET_CACHE_DIR,
-        cached_file_name_suffix="wikipedia_10m_morphems",
-        num_proc=40, batch_size=3000
-    )
+    # print("Processing Wikipedia with Morfessor 10M model...")
+    # uni_wikipedia_10M_words_train_dataset = get_preprocessed_morfessor_dataset(
+    #     wikipedia_train_dataset,
+    #     morfessor_model_file=morfessor_wikipedia_en_model_10M_words,
+    #     output_cache_directory=DATASET_CACHE_DIR,
+    #     cached_file_name_suffix="wikipedia_10m_morphems",
+    #     num_proc=40, batch_size=3000
+    # )
     
-    print("Training Unigram tokenizer on Wikipedia 10M morphemes...")
-    uni_wikipedia_10M_tokenizer.train_from_iterator(
-        batch_iterator_morfessor_processed(morfessor_train_dataset=uni_wikipedia_10M_words_train_dataset),
-        trainer=uni_wikipedia_10M_trainer
-    )
-    print("#####")
+    # print("Training Unigram tokenizer on Wikipedia 10M morphemes...")
+    # uni_wikipedia_10M_tokenizer.train_from_iterator(
+    #     batch_iterator_morfessor_processed(morfessor_train_dataset=uni_wikipedia_10M_words_train_dataset),
+    #     trainer=uni_wikipedia_10M_trainer
+    # )
+    # print("#####")
 
-    ###
-    print("Training Unigram tokenizer on Wikipedia on Morfessor 1M art unique split words and morphemes...")
-    uni_wikipedia_1M_unique_tokenizer = initialize_unigram_tokenizer()
-    uni_wikipedia_1M_unique_trainer = configure_trainer()
+    # ###
+    # print("Training Unigram tokenizer on Wikipedia on Morfessor 1M art unique split words and morphemes...")
+    # uni_wikipedia_1M_unique_tokenizer = initialize_unigram_tokenizer()
+    # uni_wikipedia_1M_unique_trainer = configure_trainer()
     
-    print("Processing Wikipedia with Morfessor 10M unique model...")
-    uni_wikipedia_1M_unique_words_train_dataset = get_preprocessed_morfessor_dataset(
-        wikipedia_train_dataset,
-        morfessor_model_file=morfessor_wikipedia_en_model_1M_art_unique_words,
-        output_cache_directory=DATASET_CACHE_DIR,
-        cached_file_name_suffix="wikipedia_1m_art_unique_morphems",
-        num_proc=32, batch_size=3000
-    )
+    # print("Processing Wikipedia with Morfessor 10M unique model...")
+    # uni_wikipedia_1M_unique_words_train_dataset = get_preprocessed_morfessor_dataset(
+    #     wikipedia_train_dataset,
+    #     morfessor_model_file=morfessor_wikipedia_en_model_1M_art_unique_words,
+    #     output_cache_directory=DATASET_CACHE_DIR,
+    #     cached_file_name_suffix="wikipedia_1m_art_unique_morphems",
+    #     num_proc=32, batch_size=3000
+    # )
     
-    print("Training Unigram tokenizer on Wikipedia Morfessor 1M unique split words morphemes...")
-    uni_wikipedia_1M_unique_tokenizer.train_from_iterator(
-        batch_iterator_morfessor_processed(morfessor_train_dataset=uni_wikipedia_1M_unique_words_train_dataset),
-        trainer=uni_wikipedia_1M_unique_trainer
-    )
-    print("####")
+    # print("Training Unigram tokenizer on Wikipedia Morfessor 1M unique split words morphemes...")
+    # uni_wikipedia_1M_unique_tokenizer.train_from_iterator(
+    #     batch_iterator_morfessor_processed(morfessor_train_dataset=uni_wikipedia_1M_unique_words_train_dataset),
+    #     trainer=uni_wikipedia_1M_unique_trainer
+    # )
+    # print("####")
 
-    
-
-    ######
-    print("Training Unigram tokenizer on Wikipedia on Morfessor 1M unique nltk tokenize words and morphemes...")
-    uni_wikipedia_1M_unique_tok_tokenizer = initialize_unigram_tokenizer()
-    uni_wikipedia_1M_unique_tok_trainer = configure_trainer()
-    
-    print("Processing Wikipedia with Morfessor 1M unique nltk tokenize model...")
-    uni_wikipedia_1M_unique_words_tok_train_dataset = get_preprocessed_morfessor_dataset(
-        wikipedia_train_dataset,
-        morfessor_model_file=morfessor_wikipedia_en_model_1M_art_unique_nltk_words,
-        output_cache_directory=DATASET_CACHE_DIR,
-        cached_file_name_suffix="wikipedia_1m_unique_tok_morphems",
-        num_proc=40, batch_size=3000
-    )
-    
-    print("Training Unigram tokenizer on Wikipedia Morfessor 10M unique nltk tokenize morphemes...")
-    uni_wikipedia_1M_unique_tok_tokenizer.train_from_iterator(
-        batch_iterator_morfessor_processed(morfessor_train_dataset=uni_wikipedia_1M_unique_words_tok_train_dataset),
-        trainer=uni_wikipedia_1M_unique_tok_trainer
-    )
-    print("####")
-    
-    # Add processing and training with min_3_nltk model
-    print("Training Unigram tokenizer on Wikipedia on Morfessor 1M min_3_nltk words model...")
-    uni_wikipedia_1M_min_3_nltk_tokenizer = initialize_unigram_tokenizer()
-    uni_wikipedia_1M_min_3_nltk_trainer = configure_trainer()
-    
-    print("Processing Wikipedia with Morfessor 1M min_3_nltk model...")
-    uni_wikipedia_1M_min_3_nltk_words_train_dataset = get_preprocessed_morfessor_dataset(
-        wikipedia_train_dataset,
-        morfessor_model_file=morfessor_wikipedia_en_model_1M_art_min_3_nltk_words,
-        output_cache_directory=DATASET_CACHE_DIR,
-        cached_file_name_suffix="wikipedia_1m_min_3_nltk_morphems",
-        num_proc=40, batch_size=3000
-    )
-    
-    print("Training Unigram tokenizer on Wikipedia Morfessor 1M min_3_nltk morphemes...")
-    uni_wikipedia_1M_min_3_nltk_tokenizer.train_from_iterator(
-        batch_iterator_morfessor_processed(morfessor_train_dataset=uni_wikipedia_1M_min_3_nltk_words_train_dataset),
-        trainer=uni_wikipedia_1M_min_3_nltk_trainer
-    )
-    print("####")
     
 
+    # ######
+    # print("Training Unigram tokenizer on Wikipedia on Morfessor 1M unique nltk tokenize words and morphemes...")
+    # uni_wikipedia_1M_unique_tok_tokenizer = initialize_unigram_tokenizer()
+    # uni_wikipedia_1M_unique_tok_trainer = configure_trainer()
+    
+    # print("Processing Wikipedia with Morfessor 1M unique nltk tokenize model...")
+    # uni_wikipedia_1M_unique_words_tok_train_dataset = get_preprocessed_morfessor_dataset(
+    #     wikipedia_train_dataset,
+    #     morfessor_model_file=morfessor_wikipedia_en_model_1M_art_unique_nltk_words,
+    #     output_cache_directory=DATASET_CACHE_DIR,
+    #     cached_file_name_suffix="wikipedia_1m_unique_tok_morphems",
+    #     num_proc=40, batch_size=3000
+    # )
+    
+    # print("Training Unigram tokenizer on Wikipedia Morfessor 10M unique nltk tokenize morphemes...")
+    # uni_wikipedia_1M_unique_tok_tokenizer.train_from_iterator(
+    #     batch_iterator_morfessor_processed(morfessor_train_dataset=uni_wikipedia_1M_unique_words_tok_train_dataset),
+    #     trainer=uni_wikipedia_1M_unique_tok_trainer
+    # )
+    # print("####")
+    
+    # # Add processing and training with min_3_nltk model
+    # print("Training Unigram tokenizer on Wikipedia on Morfessor 1M min_3_nltk words model...")
+    # uni_wikipedia_1M_min_3_nltk_tokenizer = initialize_unigram_tokenizer()
+    # uni_wikipedia_1M_min_3_nltk_trainer = configure_trainer()
+    
+    # print("Processing Wikipedia with Morfessor 1M min_3_nltk model...")
+    # uni_wikipedia_1M_min_3_nltk_words_train_dataset = get_preprocessed_morfessor_dataset(
+    #     wikipedia_train_dataset,
+    #     morfessor_model_file=morfessor_wikipedia_en_model_1M_art_min_3_nltk_words,
+    #     output_cache_directory=DATASET_CACHE_DIR,
+    #     cached_file_name_suffix="wikipedia_1m_min_3_nltk_morphems",
+    #     num_proc=40, batch_size=3000
+    # )
+    
+    # print("Training Unigram tokenizer on Wikipedia Morfessor 1M min_3_nltk morphemes...")
+    # uni_wikipedia_1M_min_3_nltk_tokenizer.train_from_iterator(
+    #     batch_iterator_morfessor_processed(morfessor_train_dataset=uni_wikipedia_1M_min_3_nltk_words_train_dataset),
+    #     trainer=uni_wikipedia_1M_min_3_nltk_trainer
+    # )
+    # print("####")
+    
+
+    # # Add processing and training with min_7_nltk model
+    # print("Training Unigram tokenizer on Wikipedia on Morfessor 1M min_7_nltk words model...")
+    # uni_wikipedia_1M_min_7_nltk_tokenizer = initialize_unigram_tokenizer()
+    # uni_wikipedia_1M_min_7_nltk_trainer = configure_trainer()
+
+    # print("Processing Wikipedia with Morfessor 1M min_7_nltk model...")
+    # uni_wikipedia_1M_min_7_nltk_words_train_dataset = get_preprocessed_morfessor_dataset(
+    #     wikipedia_train_dataset,
+    #     morfessor_model_file=morfessor_wikipedia_en_model_1M_art_min_7_nltk_words,
+    #     output_cache_directory=DATASET_CACHE_DIR,
+    #     cached_file_name_suffix="wikipedia_1m_min_7_nltk_morphems",
+    #     num_proc=40, batch_size=3000
+    # )
+
+    # print("Training Unigram tokenizer on Wikipedia Morfessor 1M min_7_nltk morphemes...")
+    # uni_wikipedia_1M_min_7_nltk_tokenizer.train_from_iterator(
+    #     batch_iterator_morfessor_processed(morfessor_train_dataset=uni_wikipedia_1M_min_7_nltk_words_train_dataset),
+    #     trainer=uni_wikipedia_1M_min_7_nltk_trainer
+    # )
+    # print("Training with min_7_nltk model completed")
+
+    ########################33
     # Add processing and training with min_7_nltk model
-    print("Training Unigram tokenizer on Wikipedia on Morfessor 1M min_7_nltk words model...")
-    uni_wikipedia_1M_min_7_nltk_tokenizer = initialize_unigram_tokenizer()
-    uni_wikipedia_1M_min_7_nltk_trainer = configure_trainer()
+    print("Training Unigram tokenizer on Wikipedia on Morfessor 1M min_7_nltk log words model...")
+    uni_wikipedia_1M_min_7_nltk_log_tokenizer = initialize_unigram_tokenizer()
+    uni_wikipedia_1M_min_7_nltk_log_trainer = configure_trainer()
 
     print("Processing Wikipedia with Morfessor 1M min_7_nltk model...")
-    uni_wikipedia_1M_min_7_nltk_words_train_dataset = get_preprocessed_morfessor_dataset(
+    uni_wikipedia_1M_min_7_nltk_log_words_train_dataset = get_preprocessed_morfessor_dataset(
         wikipedia_train_dataset,
-        morfessor_model_file=morfessor_wikipedia_en_model_1M_art_min_7_nltk_words,
+        morfessor_model_file=morfessor_wikipedia_en_model_1M_art_min_7_nltk_words_log,
         output_cache_directory=DATASET_CACHE_DIR,
-        cached_file_name_suffix="wikipedia_1m_min_7_nltk_morphems",
+        cached_file_name_suffix="wikipedia_1m_min_7log_nltk_morphems",
         num_proc=40, batch_size=3000
     )
 
     print("Training Unigram tokenizer on Wikipedia Morfessor 1M min_7_nltk morphemes...")
-    uni_wikipedia_1M_min_7_nltk_tokenizer.train_from_iterator(
-        batch_iterator_morfessor_processed(morfessor_train_dataset=uni_wikipedia_1M_min_7_nltk_words_train_dataset),
-        trainer=uni_wikipedia_1M_min_7_nltk_trainer
+    uni_wikipedia_1M_min_7_nltk_log_tokenizer.train_from_iterator(
+        batch_iterator_morfessor_processed(morfessor_train_dataset=uni_wikipedia_1M_min_7_nltk_log_words_train_dataset),
+        trainer=uni_wikipedia_1M_min_7_nltk_log_trainer
     )
+
+    uni_wikipedia_1M_min_7_nltk_log_tokenizer.save(os.path.join(TOKENIZER_DIR, "uni_wikipedia_1M_min_7_nltk_log_tokenizer.json"))
+
     print("Training with min_7_nltk model completed")
 
-    # build unigram tokenizer just on dataset withou any preprecessing
-    print("Training Unigram tokenizer on Wikipedia corpus (withou pre-processing)...")
 
-    uni_normal_wikipedia_tokenizer = initialize_unigram_tokenizer()
-    uni_normal_wikipedia_trainer = configure_trainer()
-    print("Training Unigram tokenizer on Wikipedia words...")
-    uni_normal_wikipedia_tokenizer.train_from_iterator(
-        batch_iterator(train_dataset=wikipedia_train_dataset),
-        trainer=uni_normal_wikipedia_trainer
-    )
-    print("Wikipedia Unigram tokenizer training completed")
+    ############################3
+    # # build unigram tokenizer just on dataset withou any preprecessing
+    # print("Training Unigram tokenizer on Wikipedia corpus (withou pre-processing)...")
+
+    # uni_normal_wikipedia_tokenizer = initialize_unigram_tokenizer()
+    # uni_normal_wikipedia_trainer = configure_trainer()
+    # print("Training Unigram tokenizer on Wikipedia words...")
+    # uni_normal_wikipedia_tokenizer.train_from_iterator(
+    #     batch_iterator(train_dataset=wikipedia_train_dataset),
+    #     trainer=uni_normal_wikipedia_trainer
+    # )
+    # print("Wikipedia Unigram tokenizer training completed")
     
     
-    # build unigram tokenizer just on dataset withou any preprecessing
-    print("Training Unigram tokenizer on WikiText corpus (withou pre-processing)...")
+    # # build unigram tokenizer just on dataset withou any preprecessing
+    # print("Training Unigram tokenizer on WikiText corpus (withou pre-processing)...")
 
-    uni_normal_wikitext_tokenizer = initialize_unigram_tokenizer()
-    uni_normal_wikitext_trainer = configure_trainer()
-    print("Training Unigram tokenizer on WikiText words...")
-    uni_normal_wikitext_tokenizer.train_from_iterator(
-        batch_iterator(train_dataset=wiki_text_train_dataset),
-        trainer=uni_normal_wikitext_trainer
-    )
-    print("WikiText Unigram tokenizer training completed")
+    # uni_normal_wikitext_tokenizer = initialize_unigram_tokenizer()
+    # uni_normal_wikitext_trainer = configure_trainer()
+    # print("Training Unigram tokenizer on WikiText words...")
+    # uni_normal_wikitext_tokenizer.train_from_iterator(
+    #     batch_iterator(train_dataset=wiki_text_train_dataset),
+    #     trainer=uni_normal_wikitext_trainer
+    # )
+    # print("WikiText Unigram tokenizer training completed")
+
+
+
+    
     
     # build unigram tokenizer just on extracted unique words from wikipedia with minimum 7 nltk words
     print("Training Unigram tokenizer on Wikipedia corpus with minimum 7 nltk words...")
@@ -517,30 +548,33 @@ def main():
         batch_iterator_from_txt_file(morfessor_wikipedia_en_train_1M_art_min_7_nltk_words, contains_word_and_occurences=True),
         trainer=uni_wikipedia_words_1M_min_7_nltk_trainer
     )
-    print("Wikipedia Unigram tokenizer training completed")
 
-    
+    #save the tokenizer
+    uni_wikipedia_words_1M_min_7_nltk_tokenizer.save(os.path.join(TOKENIZER_DIR, "uni_wikipedia_words_1M_min_7_nltk_tokenizer.json"))
+
+    print("Wikipedia Unigram tokenizer training completed")
+   
     
     print("\nPreparing for evaluation...")
     tokenizers.update({
-        'morfessor_nltk': model_nltk,
-        'morfessor_wiki': model_wiki,
-        'morfessor_sent': model_sent,   
-        'morfessor_wikipedia_300M': model_wikipedia_300M,
-        "morfessor_wikipedia_10M": model_wikipedia_10M,
-        "morfessor_wikipedia_1M_unique": model_wikipedia_1M_unique,
-        "morfessor_wikipedia_1M_unique_tok": model_wikipedia_1M_unique_tok,
-        "morfessor_wikipedia_1M_min_3_nltk": model_wikipedia_1M_min_3_nltk,
-        "morfessor_wikipedia_1M_min_7_nltk": model_wikipedia_1M_min_7_nltk,
-        'uni_wiki': uni_wikitext_tokenizer,
-        'uni_wikipedia_300M': uni_wikipedia_300M_tokenizer,
-        'uni_wikipedia_10M': uni_wikipedia_10M_tokenizer,
-        'uni_wikipedia_10M_unique': uni_wikipedia_1M_unique_tokenizer,
-        'uni_wikipedia_10M_unique_tok': uni_wikipedia_1M_unique_tok_tokenizer,
-        'uni_wikipedia_1M_unique_3M_words': uni_wikipedia_1M_min_3_nltk_tokenizer,
-        'uni_wikipedia_1M_min_7_nltk': uni_wikipedia_1M_min_7_nltk_tokenizer,
-        'uni_normal_wikipedia': uni_normal_wikipedia_tokenizer,
-        'uni_normal_wikitext': uni_normal_wikitext_tokenizer,
+        # 'morfessor_nltk': model_nltk,
+        # 'morfessor_wiki': model_wiki,
+        # 'morfessor_sent': model_sent,   
+        # 'morfessor_wikipedia_300M': model_wikipedia_300M,
+        # "morfessor_wikipedia_10M": model_wikipedia_10M,
+        # "morfessor_wikipedia_1M_unique": model_wikipedia_1M_unique,
+        # "morfessor_wikipedia_1M_unique_tok": model_wikipedia_1M_unique_tok,
+        # "morfessor_wikipedia_1M_min_3_nltk": model_wikipedia_1M_min_3_nltk,
+        # "morfessor_wikipedia_1M_min_7_nltk": model_wikipedia_1M_min_7_nltk,
+        # 'uni_wiki': uni_wikitext_tokenizer,
+        # 'uni_wikipedia_300M': uni_wikipedia_300M_tokenizer,
+        # 'uni_wikipedia_10M': uni_wikipedia_10M_tokenizer,
+        # 'uni_wikipedia_10M_unique': uni_wikipedia_1M_unique_tokenizer,
+        # 'uni_wikipedia_10M_unique_tok': uni_wikipedia_1M_unique_tok_tokenizer,
+        # 'uni_wikipedia_1M_unique_3M_words': uni_wikipedia_1M_min_3_nltk_tokenizer,
+        # 'uni_wikipedia_1M_min_7_nltk': uni_wikipedia_1M_min_7_nltk_tokenizer,
+        # 'uni_normal_wikipedia': uni_normal_wikipedia_tokenizer,
+        # 'uni_normal_wikitext': uni_normal_wikitext_tokenizer,
         'uni_wikipedia_words_1M_min_7_nltk': uni_wikipedia_words_1M_min_7_nltk_tokenizer
     })
     
