@@ -231,19 +231,40 @@ Description:
 More reliable experiment then previous one (Exp 1). The ground truth [ground_truth.py](../playground/ground_truth.py) was extended with more words and morphological segments based on the MorphoLex-en.
 
 Loaded some standard tokenizers from Hugging Face and trained the Morfessor models on the sentences.
-morfessor_* - models are pure morfessor models trained on different corpora
-morferssor_nltk - is traind on nltk words corpus - it contains 236736 words
-morfessor_wiki - is trained on wikitext dataset that was alredy preprocessed and words are splited corpus - it contains 101425671 non unique words
-morfessor_sent - is trained on the sentences from the wikitext dataset - it contains 4290307 sentences
-morfessor_wikipedia_300M - is trained on the wikipedia dataset that was alredy preprocessed and words are splited corpus - model trainined on 300M articles from wikipedia, giving the 314572800 words (morfessor_wikipedia_en_train_words_300M.txt)
-
-morfessor_wikipedia_10M - is trained on the wikipedia dataset that was alredy preprocessed and words are splited corpus - model trainined on 10M words subset of morfessor_wikipedia_en_train_words_300M
+morfessor_* - models are pure morfessor models trained on different corpora, training was done with use of [train_morfessor_models.py](../training/train_morfessor_models.py) script
 
 
+* morferssor_nltk - is traind on nltk words corpus - it contains 236736 words, [morfessor_wikipedia_en_train_words_10M.txt](../Cache/Morfessor/morfessor_wikipedia_en_train_words_10M.txt)
+* morfessor_wiki - is trained on wikitext dataset that was alredy preprocessed and words are splited corpus - it contains 101425671 non unique words, [morfessor_wiki_en_train.txt](../Cache/Morfessor/morfessor_wiki_en_train.txt)
+* morfessor_sent - is trained on the sentences from the wikitext dataset - it contains 4290307 sentences, _[morfessor_wiki_en_train_sentences.txt](../Cache/Morfessor/morfessor_wiki_en_train_sentences.txt)
 
-uni_wiki - unigram tokenizer trained on prepreocess wikitext dataset with use of morfessor_wiki model
-uni_wikipedia_300M - unigram tokenizer trained on prepreocess wikipedia dataset with use of morfessor_wikipedia_300M model (later called uni_wikipedia_300M)
+* morfessor_wikipedia_300M - morfessor model trained on the wikipedia dataset that was preprocessed, words were splited and saved in each in a new line model trainined on 300M articles from wikipedia, giving the 314572800 words [morfessor_wikipedia_en_train_words_300M.txt](../Cache/Morfessor/morfessor_wikipedia_en_train_words_300M.txt)
 
+* morfessor_wikipedia_10M - morfessor mmodel trained on the wikipedia dataset that was preprocessed, each word in a separate line- this model was train on 10M words subset of morfessor_wikipedia_en_train_words_300M, [morfessor_wikipedia_en_train_words_10M.txt](../Cache/Morfessor/morfessor_wikipedia_en_train_words_10M.txt)
+
+* morfessor_wikipedia_1M_unique - orfessor model trained on the wikipedia dataset that was preprocessed, each word in a separate line- this model was train on words extracted from 1M articles, unique words were splited by "split" python function, count_modifier=lambda x: 1
+[morfessor_wikipedia_en_train_words_unique_split_1M_art.txt](../Cache/Morfessor/morfessor_wikipedia_en_train_words_unique_split_1M_art.txt) num_words: 10 585 465
+
+* morfessor_wikipedia_1M_unique_tok (morfessor_wikipedia_1M_unique_nltk) - morfessor model trained on the wikipedia dataset that was preprocessed, each word in a separate line- this model was train on words extracted from 1M articles, unique words were splited by nltk.word_tokenize function, count_modifier=lambda x: 1, input file: [morfessor_wikipedia_en_train_words_unique_nltk_1M_art.txt](../Cache/Morfessor/morfessor_wikipedia_en_train_words_unique_nltk_1M_art.txt) num_words: 5 838 892
+
+* morfessor_wikipedia_1M_min_3_nltk - orfessor model trained on the wikipedia dataset that was preprocessed, each word in a separate line- this model was train on words extracted from 1M articles, unique words were splited by nltk.word_tokenize function, count_modifier=lambda x: 1, take words that ocuure at least 3 times, input_file: [morfessor_wikipedia_en_train_words_unique_nltk_1M_art_min_3.txt](../Cache/Morfessor/morfessor_wikipedia_en_train_words_unique_nltk_1M_art_min_3.txt) num_words: 1 690 998
+
+* morfessor_wikipedia_1M_min_7_nltk - morfessor model trained on the wikipedia dataset that was preprocessed, each word in a separate line- this model was train on words extracted from 1M articles, unique words were splited by nltk.word_tokenize function, count_modifier=lambda x: 1, take words that ocuure at least 7 times, input_file: [morfessor_wikipedia_en_train_words_unique_nltk_1M_art_min_7.txt](../Cache/Morfessor/morfessor_wikipedia_en_train_words_unique_nltk_1M_art_min_7.txt) num_words: 884 821
+
+
+* morfessor_wikipedia_1M_min_7_nltk_log - morfessor model trained on the wikipedia dataset that was preprocessed, each word in a separate line- this model was train on words extracted from 1M articles, unique words were splited by nltk.word_tokenize function, count_modifier=log_function, take words that ocuure at least 7 times, logaritmic count modifier, input_file: [morfessor_wikipedia_en_train_words_unique_nltk_1M_art_min_7.txt](../Cache/Morfessor/morfessor_wikipedia_en_train_words_unique_nltk_1M_art_min_7.txt) num_words: 884 821
+
+
+
+* uni_wiki - unigram tokenizer trained on wikitext dataset (1M articles) preprocessed by morfessor_wiki model, trained on created dataset [wikitext_wikitext-103-v1_1000000_wiki_morphems](../Cache/Dataset/wikitext_wikitext-103-v1_1000000_wiki_morphems) with user of `get_preprocessed_morfessor_dataset` function
+
+* uni_wikipedia_300M - unigram tokenizer trained on preprocessed wikipedia 1M articles, text preprocessed with use of [morfessor_wikipedia_en_train_words_300M](../Cache/Morfessor/morfessor_wikipedia_en_train_words_300M.bin) model and `get_preprocessed_morfessor_dataset`, trained on created dataset [wikipedia_20231101.en_1000000_wikipedia300m_morphems](../Cache/Datasets/wikipedia_20231101.en_1000000_wikipedia300m_morphems/)
+
+
+* uni_wikipedia_10M - unigram tokenizer trained on preprocessed wikipedia 1M articles, text preprocessed with use of [morfessor_wikipedia_en_train_words_10M](../Cache/Morfessor/morfessor_wikipedia_en_train_words_10M.bin) model and `get_preprocessed_morfessor_dataset`, trained on created dataset [wikipedia_20231101.en_10000000_wikipedia10m_morphems](../Cache/Datasets/wikipedia_20231101.en_10000000_wikipedia10m_morphems/) 
+
+
+* uni_wikipedia_10M_unique - unigram tokenizer trained on preprocessed wikipedia 1M articles, text preprocessed with use of [morfessor_wikipedia_en_train_words_unique_split_1M_art](../Cache/Morfessor/morfessor_wikipedia_en_train_words_unique_split_1M_art.bin) model and `get_preprocessed_morfessor_dataset`, trained on created dataset [wikipedia_20231101.en_1000000_wikipedia1m_unique_morphems](../Cache/Datasets/wikipedia_20231101.en_1000000_wikipedia1m_unique_morphems/)
 
 ### BLEU Scores for each tokenizer (Exp 2)                        
 
@@ -274,3 +295,5 @@ uni_wikipedia_300M - unigram tokenizer trained on prepreocess wikipedia dataset 
 | uni_normal_wikipedia | 0.3489 | 0.5527 | 0.3789 | 0.2027 |
 | uni_normal_wikitext | 0.2800 | 0.4908 | 0.3028 | 0.1477 |
 | uni_wikipedia_words_1M_min_7_nltk | 0.4570 | 0.6605 | 0.4954 | 0.2917 |
+|  uni_wikipedia_words_1M_min_7_nltk_morphems |     0.0000 | 0.2169 | 1.0000 | 0.0000  |
+| uni_wikipedia_words_1M_min_7_nltk_log      |     0.2275 | 0.5012 | 0.2689 | 0.0873 |
