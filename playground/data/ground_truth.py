@@ -229,7 +229,13 @@ GROUND_TRUTH_MORPHEMS = {
     "reimagining" : ["re imagin ing"],
     "prohibition" : ["pro hibit ion"],
     "prohibited" : ["pro hibit ed"],
+    "publish": ["publish"],
+    "published": ["published"],
+    "publishing": ["publish ing"],
+    "publishers": ["publish ers"],
+    "publisher": ["publish er"],
     
+
     
 
 
