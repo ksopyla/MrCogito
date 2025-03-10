@@ -168,3 +168,5 @@ wandb/*
 Cache/*
 
 .codegpt
+doc/MrCogito-research-docs/.obsidian/*
+.vscode/*
