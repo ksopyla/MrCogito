@@ -17,26 +17,9 @@ This work is inspired by the papers:
 *  "ConceptBERT: A Concept-based Framework for Pre-training Language Models"
 * "Large Concept Models" by Meta
 
-
-## Prompts for AI assistant
-
-** Analys and improve the concept encoder layer **
-
-You are a machine learning research and ai engineer. With deep knowledge of current AI neural networks architecuture.
-You have access to @Hugging-Face-Transformers and @Pytorch documentation, you can use your knowledge about research articles from arxiv.
-You are helping me to invent new architecture, some of my reserch notes are in reserch_notes.md  . My base idea is to use concepts insted of tokens, concept is more abstract mental model based on group of the tokens, each concept attent to tokens (via cross-attention). I'm building the encoder decoder architecture, but now focus on encoder part. I 
-
-Please read and analyse the code, help me improve idea from the teoretical point of view as well as practical by fixing the code errors, wrong use of function, tensor shapes mismatch. 
-
-Give me a list of further improvements for consideration. 
-
-
-
-
 ## Research log 
 
 Notes, ideas, thoughts, questions and material gathered during the research.
-
 
 ### Idea 1 - use the unsued BERT or ModernBERT tokens as concept tokens
 

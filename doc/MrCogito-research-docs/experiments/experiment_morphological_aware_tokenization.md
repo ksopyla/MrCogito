@@ -1,6 +1,27 @@
 # Idea 4 - Morphological aware tokenization 
 
-Following the [idea 3](1.reserch_notes.md#idea-3---multiple-token-masking-for-proper-concept-encoding) that for better concept encoding we need to use the multiple token masking, we should use the morphological aware tokenization. 
+
+* [Idea 4 - Morphological aware tokenization](#idea-4---morphological-aware-tokenization)
+        * [Recommended Approach - TL;DR](#recommended-approach---tldr)
+    * [Morphological aware tokenization intuitions and hypothesis](#morphological-aware-tokenization-intuitions-and-hypothesis)
+    * [Experiments](#experiments)
+        * [Exp 1.](#exp-1)
+        * [Exp 2.](#exp-2)
+    * [Conclusions and Recommendations](#conclusions-and-recommendations)
+        * [Analysis and Practical Considerations](#analysis-and-practical-considerations)
+
+### Recommended Approach - TL;DR
+
+Considering both performance and practical aspects, I have decided to train the custom unigram model on the modern data, the XLNet tokenizer is a good choice for first "concept encoding" experiments but due to quite old training procedure without any modern text pile (code, slang, chat, multilanguage, etc) we should train the custom tokenizer.
+The unigram model trained in similar fashion as **uni_wikipedia_words_1M_min_7_nltk** with mixed data.
+The procedure: 
+1. Unigram model trained on filtered set of moderately frequent words (≥7 occurrences)
+2. Training should be done on words (meaningfull tokens or conepts ). NLTK's word_tokenize is enough for word extraction, w
+3. It is sufficient to train directly on words without Morfessor preprocessing 
+
+## Morphological aware tokenization intuitions and hypothesis
+
+Following the [concept_encoder_notes](../concept_encoder_notes.md#idea-4---morphological-aware-tokenization) that for better concept encoding we need to use the multiple token masking, we should use the morphological aware tokenization. 
 Current tokenizers are not able to properly tokenize the words with morphological variations and split the words for root  and morphemes.
 Intuition behind this: root and morphemes contains meaning
 
@@ -30,23 +51,21 @@ Thats why I have decided to use the Morfessor to split the words into the root a
 * Morfessor - https://github.com/aalto-speech/morfessor
 * https://aayushsanghavi.blogspot.com/2018/03/morphological-segmentation-of-words.html
 
-
-
-### Morfessor package 
+**Morfessor package**
 
 Package for training the morphological segmentation of the words
 After some experiments with Morfessor package, I found that it is able to train the model to split the words for root and morphemes. Very good results.
 Sample code form https://aayushsanghavi.blogspot.com/2018/03/morphological-segmentation-of-words.html
 
 
-### Experiments 
+## Experiments 
 
 While morfessor is not able to generate the vocabulary of desired size, I have tried to train custom unigram tokenizer. 
 I want to check if the unigram tokenizer trained on the morphological segments will give better results than the unigram tokenizer trained on the words.
 
 
 
-#### Exp 1. 
+### Exp 1. 
 
 Date: 24.02.2025 - 18:00
 Commit: f337749d189b1d9f764b05d57f741e393e2b0a01
@@ -90,7 +109,7 @@ BLEU Scores for each tokenizer
 | uni_wikipedia            | 0.0000     | 0.5245 | 0.2410 | 0.0000 |
 
 
-#### Exp 2. 
+### Exp 2. 
 
 Date: 25.02.2025 - 19:00
 Commit: f337749d189b1d9f764b05d57f741e393e2b0a01
@@ -160,11 +179,11 @@ The training used the UnigramTrainer with:
 - n_sub_iterations=5
 - max_piece_length=10
 
-**Evaluation results:**
+#### Evaluation results:
 
 The tokenizers were evaluated using BLEU scores against a ground truth morphological segmentation dataset with expanded entries from MorphoLex-en. The evaluation computed 1-gram, 2-gram, and 3-gram precision as well as the overall BLEU score.
 
-#### BLEU Scores for each tokenizer (Exp 2)                        
+**BLEU Scores for each tokenizer (Exp 2)**                        
 
 | Tokenizer | BLEU Score | 1-gram | 2-gram | 3-gram |
 |-----------|------------|--------|--------|--------|
@@ -198,18 +217,11 @@ The tokenizers were evaluated using BLEU scores against a ground truth morpholog
 | uni_wikipedia_words_1M_min_7_nltk_log | 0.2275 | 0.5012 | 0.2689 | 0.0873 |
 
 
-### Conclusions and Recommendations
+## Conclusions and Recommendations
 
-#### Recommended Approach - TL;DR
 
-Considering both performance and practical aspects, I have decided to train the custom unigram model on the modern data, the XLNet tokenizer is a good choice for first "concept encoding" experiments but due to quite old training procedure without any modern text pile (code, slang, chat, multilanguage, etc) we should train the custom tokenizer.
-The unigram model trained in similar fashion as **uni_wikipedia_words_1M_min_7_nltk** with mixed data.
-The procedure: 
-1. Unigram model trained on filtered set of moderately frequent words (≥7 occurrences)
-2. Training should be done on words (meaningfull tokens or conepts ). NLTK's word_tokenize is enough for word extraction, w
-3. It is sufficient to train directly on words without Morfessor preprocessing 
 
-#### Analysis and Practical Considerations
+### Analysis and Practical Considerations
 
 1. **Morfessor models are good for morphological segmentation**. 
 The three best performing models (`morfessor_wikipedia_1M_min_7_nltk`, `morfessor_wikipedia_1M_min_7_nltk_log`, and `morfessor_wikipedia_1M_min_3_nltk`) all significantly outperform standard subword tokenizers on our morphological evaluation dataset.
