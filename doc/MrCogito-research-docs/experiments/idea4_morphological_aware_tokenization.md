@@ -10,7 +10,7 @@
     * [Conclusions and Recommendations](#conclusions-and-recommendations)
         * [Analysis and Practical Considerations](#analysis-and-practical-considerations)
 
-### Recommended Approach - TL;DR
+## Recommended Approach - TL;DR
 
 Considering both performance and practical aspects, I have decided to train the custom unigram model on the modern data, the XLNet tokenizer is a good choice for first "concept encoding" experiments but due to quite old training procedure without any modern text pile (code, slang, chat, multilanguage, etc) we should train the custom tokenizer.
 The unigram model trained in similar fashion as **uni_wikipedia_words_1M_min_7_nltk** with mixed data.
@@ -250,3 +250,9 @@ Considering real-world implementation, several factors beyond BLEU scores must b
 
 
 
+## Publications: 
+
+* [Byte Pair Encoding is Suboptimal for Language Model Pretraining](https://arxiv.org/pdf/2004.03720)
+* [MorphPiece : A Linguistic Tokenizer for Large Language Model](https://arxiv.org/pdf/2307.07262)
+* [Morfessor 2.0: Python Implementation and Extensions for Morfessor Baseline](https://aaltodoc.aalto.fi/server/api/core/bitstreams/78f1f8d4-c7a4-49e5-992e-85bd70f06ed4/content)
+* [MorphBPE: A Morpho-Aware Tokenizer Bridging Linguistic Complexity for Efficient LLM Training Across Morphologies](https://arxiv.org/pdf/2502.00894)
