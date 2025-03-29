@@ -1,6 +1,6 @@
 ** prompt for the AI to extract and summarise the article **
 
-Extract the key points and summarise the article from the link, extract the information strictly from the linked article, if possible try to use exact sentences from the article. Return output in markdown format that I can copy and paste. 
+Extract the key information from the publication text and summarise the article from the given link, extract the information strictly from the linked article, if possible try to use exact sentences from the article. Return output in markdown format that I can copy and paste. 
 
 Please structure this as follows: 
 
@@ -23,8 +23,9 @@ Please structure this as follows:
 
 ### Previous attempts to solve this problem 
 
-### Max 5 top most relevant to the problem follow-up publications
 
+### Max 5 top most relevant to the problem publication from bibliography
+Extracted from bibliography section
 
 
 

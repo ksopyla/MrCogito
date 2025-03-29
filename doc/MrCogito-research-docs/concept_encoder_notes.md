@@ -35,6 +35,11 @@ This work was initially inspired by the papers:
 * "LLaDA diffusion model"
 
 
+## Evaluation
+
+[evaluation_strategies](evaluation_strategies.md)
+
+
 ## Research log 
 
 Notes, ideas, thoughts, questions and material gathered during the research.

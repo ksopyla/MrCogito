@@ -1,18 +1,137 @@
-
-
-
 # Concept models, combining tokens into concepts
 
-Concept learning and encoding, list of extracts from articles. How to model concept learning, the learning objective, training protocol, etc. 
+Concept learning and encoding, list of extracts from articles. How to model concept learning, the learning objective, training protocol, etc
+
+* [Concept models, combining tokens into concepts](#concept-models-combining-tokens-into-concepts)
+    * [Memory Transformer](#memory-transformer)
+        * [TL;DR](#tldr)
+        * [The problem that authors want to solve](#the-problem-that-authors-want-to-solve)
+        * [The solution, main idea on the intuition level and strong points](#the-solution-main-idea-on-the-intuition-level-and-strong-points)
+        * [The detailed solution, training process, data preparation](#the-detailed-solution-training-process-data-preparation)
+        * [The evaluation procedure, evaluation datasets and results](#the-evaluation-procedure-evaluation-datasets-and-results)
+        * [Previous attempts to solve this problem](#previous-attempts-to-solve-this-problem)
+    * [ConcEPT: Concept-Enhanced Pre-Training for Language Models](#concept-concept-enhanced-pre-training-for-language-models)
+        * [TL;DR](#tldr-1)
+        * [The problem that authors want to solve](#the-problem-that-authors-want-to-solve-1)
+        * [The solution, main idea on the intuition level and strong points](#the-solution-main-idea-on-the-intuition-level-and-strong-points-1)
+        * [The detailed solution, training process, data preparation](#the-detailed-solution-training-process-data-preparation-1)
+        * [The evaluation procedure, evaluation datasets and results](#the-evaluation-procedure-evaluation-datasets-and-results-1)
+        * [Previous attempts to solve this problem](#previous-attempts-to-solve-this-problem-1)
+        * [Max 5 top most relevant to the problem publication from bibliography](#max-5-top-most-relevant-to-the-problem-publication-from-bibliography)
+    * [Large Concept Models: Language Modeling in a Sentence Representation Space](#large-concept-models-language-modeling-in-a-sentence-representation-space)
+        * [TL;DR](#tldr-2)
+        * [The problem that authors want to solve](#the-problem-that-authors-want-to-solve-2)
+        * [The solution, main idea on the intuition level and strong points](#the-solution-main-idea-on-the-intuition-level-and-strong-points-2)
+        * [The detailed solution, training process, data preparation](#the-detailed-solution-training-process-data-preparation-2)
+        * [The evaluation procedure, evaluation datasets and results](#the-evaluation-procedure-evaluation-datasets-and-results-2)
+        * [Previous attempts to solve this problem](#previous-attempts-to-solve-this-problem-2)
+        * [Max 5 top most relevant to the problem follow-up publications](#max-5-top-most-relevant-to-the-problem-follow-up-publications)
+
+
+
+## Memory Transformer 2020
+
+https://arxiv.org/abs/2006.11527
+
+**Title:** Memory Transformer  
+**Publish Date:** 20 June 2020 (v1), 16 February 2021 (v2)  
+**Authors:** Mikhail S. Burtsev, Yuri Kuratov, Anton Peganov, Grigory V. Sapunov  
+**URL:** [https://arxiv.org/abs/2006.11527](https://arxiv.org/abs/2006.11527)  
+**Extracted tags (with hash):** [#ComputationAndLanguage](app://obsidian.md/index.html#ComputationAndLanguage) [#MachineLearning](app://obsidian.md/index.html#MachineLearning) [#NeuralAndEvolutionaryComputing](app://obsidian.md/index.html#NeuralAndEvolutionaryComputing)
+
+### TL;DR
+
+Transformer-based models have achieved state-of-the-art results in many natural language processing tasks. However, the self-attention architecture's context storage may limit the processing of sequence-wide properties. This work proposes adding trainable memory to store non-local representations, enhancing the Transformer model's ability to process global context.
+
+### The problem that authors want to solve
+
+The self-attention architecture of Transformers stores information about context mostly within element-wise representations, which can limit the model's ability to process properties related to the sequence as a whole.
+
+### The solution, main idea on the intuition level and strong points
+
+The authors propose extending the Transformer by:
+
+1. Adding memory tokens to store non-local representations.
+2. Creating a memory bottleneck for global information.
+3. Controlling memory updates with a dedicated layer.
+
+These memory-augmented Transformers demonstrate improved performance on machine translation and language modeling tasks by better handling global context.
+
+### The detailed solution, training process, data preparation
+
+The paper introduces three extensions to the Transformer baseline:
+
+1. **Memory Tokens:** Incorporating additional tokens specifically designed to store non-local representations of the input sequence.
+2. **Memory Bottleneck:** Designing a bottleneck mechanism to manage global information efficiently.
+3. **Dedicated Memory Update Layer:** Implementing a specialized layer to control how and when the memory is updated during training.
+
+The models were trained using standard backpropagation techniques on datasets relevant to machine translation and language modeling.
+
+### The evaluation procedure, evaluation datasets and results
+
+The memory-augmented Transformers were evaluated on:
+
+- **Machine Translation:** Demonstrated a positive correlation between the presence of memory and improved translation quality.
+- **Language Modeling:** Showed enhanced performance in predicting subsequent words in a sequence.
+- **GLUE Benchmark:** When augmenting pre-trained masked language models with memory tokens, the results were mixed, indicating improvements in some tasks but not uniformly across all.
+
+Additionally, visualization of attention patterns over the memory revealed that the models were better at processing global context information.
+
+### Previous attempts to solve this problem
+
+Memory-augmented neural networks (MANNs) extend traditional neural architectures with general-purpose memory, enabling models to learn simple algorithms like Copy or Reverse. MANNs have been successfully trained via backpropagation on various tasks, including question answering and language modeling, often outperforming RNNs and LSTMs of comparable complexity.
 
 
 
 
-## "Memory Transformer"
 
+## ConcEPT: Concept-Enhanced Pre-Training for Language Models  
 
-## "ConceptBERT: A Concept-based Framework for Pre-training Language Models"
+**Publish Date:** January 11, 2024  
+**Authors:** Xintao Wang, Zhouhong Gu, Jiaqing Liang, Dakuan Lu, Yanghua Xiao, Wei Wang  
+**URL:** [https://arxiv.org/pdf/2401.05669](https://arxiv.org/pdf/2401.05669)  
+**Extracted tags (with hash):** [#NLP](app://obsidian.md/index.html#NLP) [#LanguageModels](app://obsidian.md/index.html#LanguageModels) [#PLMs](app://obsidian.md/index.html#PLMs) [#ConceptualKnowledge](app://obsidian.md/index.html#ConceptualKnowledge) [#PreTraining](app://obsidian.md/index.html#PreTraining) [#EntityTyping](app://obsidian.md/index.html#EntityTyping) [#KEPLMs](app://obsidian.md/index.html#KEPLMs)
 
+### TL;DR
+
+_Pre-trained language models (PLMs) have been prevailing in state-of-the-art methods for natural language processing, and knowledge-enhanced PLMs are further proposed to promote model performance in knowledge-intensive tasks. However, conceptual knowledge, one essential kind of knowledge for human cognition, still remains understudied in this line of research. This limits PLMs’ performance in scenarios requiring human-like cognition, such as understanding long-tail entities with concepts. In this paper, we propose ConcEPT, which stands for Concept-Enhanced Pre-Training for language models, to infuse conceptual knowledge into PLMs._
+
+### The problem that authors want to solve
+
+_Conceptual knowledge, an essential type of knowledge for human cognition, remains understudied in knowledge-enhanced pre-trained language models (KEPLMs). This gap limits PLMs’ performance in scenarios requiring human-like cognition, such as understanding long-tail entities with concepts._
+
+### The solution, main idea on the intuition level and strong points
+
+_The authors propose ConcEPT (Concept-Enhanced Pre-Training for language models), which infuses conceptual knowledge into PLMs by exploiting external taxonomies with a novel pre-training objective called entity concept prediction (ECP). Unlike previous concept-enhanced methods, ConcEPT can be readily adapted to various downstream applications without requiring entity linking or concept mapping._
+
+### The detailed solution, training process, data preparation
+
+_ConcEPT leverages external taxonomies, specifically a Wikidata-based taxonomy named WikiTaxo, to enhance PLMs with conceptual knowledge. The novel pre-training objective, entity concept prediction (ECP), involves predicting the concepts of entity mentions based on their contexts. Entities in the input documents are annotated via entity linking, their concepts are retrieved from the taxonomy, and the model is trained to predict these concepts using a binary classification approach. The model is implemented based on the BERT-base architecture, with an additional ECP head. Pre-training is conducted on the Wikipedia corpus linked with Wikidata entities, using a combination of ECP and masked language modeling (MLM) objectives._
+
+### The evaluation procedure, evaluation datasets and results
+
+_ConcEPT is evaluated on four knowledge-intensive tasks: entity typing, conceptual knowledge probing, relation classification, and knowledge graph completion. The datasets used include Open Entity, FIGER, COPEN, TACRED, FB15k-237, and Wiki-CKT. Experimental results demonstrate that ConcEPT outperforms vanilla BERT and existing KEPLMs across these tasks, validating the effectiveness of concept-enhanced pre-training. For instance, in entity typing, ConcEPT achieves significant improvements in micro F1 scores on Open Entity and FIGER compared to BERT._
+
+### Previous attempts to solve this problem
+
+_Previous efforts in enhancing PLMs with knowledge have primarily focused on integrating various types of knowledge such as entities, facts from knowledge graphs, syntax, retrieved texts, and logical rules. Examples include ERNIE, KEPLER, and KnowBERT. However, these approaches have largely overlooked the infusion of conceptual knowledge, which is crucial for human-like cognition and understanding of long-tail entities._
+
+### Max 5 top most relevant to the problem publication from bibliography
+
+1. **Devlin, J., Chang, M.-W., Lee, K., & Toutanova, K. (2018).** _BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding._  
+    [arXiv:1810.04805](https://arxiv.org/abs/1810.04805)
+    
+2. **Zhang, Y., et al. (2019).** _ERNIE: Enhanced Representation through Knowledge Integration._  
+    [arXiv:1905.07129](https://arxiv.org/abs/1905.07129)
+    
+3. **Wang, X., et al. (2021).** _KEPLER: A Unified Model for Knowledge Embedding and Pre-trained Language Representation._  
+    Transactions of the Association for Computational Linguistics, 9:176–194.
+    
+4. **Speer, R., Chin, J., & Havasi, C. (2017).** _ConceptNet 5.5: An Open Multilingual Graph of General Knowledge._  
+    [AAAI-17](https://www.aaai.org/ocs/index.php/AAAI/AAAI17/paper/view/14617)
+    
+5. **Peng, H., Gao, T., Han, X., Lin, Y., Li, P., Liu, Z., Sun, M., & Zhou, J. (2020a).** _Learning from Context or Names? An Empirical Study on Neural Relation Extraction._  
+    Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP).
 
 
 ##  Large Concept Models: Language Modeling in a Sentence Representation Space

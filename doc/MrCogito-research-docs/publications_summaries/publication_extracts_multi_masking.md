@@ -1,5 +1,7 @@
 
 
+
+
 This file is a collection of articles that I find interesting and worth summarising. it contains a summaries by AI, its main purpose is to serve as a reference, guide and ground for further AI generation to combine the ideas, generate new ones, check if my ideas are already known and align.  
 
 [[prompt_for_extraction]]
@@ -209,64 +211,7 @@ The authors propose a novel **Fractional Positional Encoding (FPE)** scheme. FPE
 
 
 
-## Smarter, Better, Faster, Longer : A Modern Bidirectional Encoder for Fast, Memory Efficient, and Long Context Finetuning and Inference  
 
-**Publish Date:** 19 Dec 2024  
-**Authors:** Benjamin Warner, Antoine Chaffin, Benjamin Clavié, Orion Weller, Oskar Hallström, Said Taghadouini, Alexis Gallagher, Raja Biswas, Faisal Ladhak, Tom Aarsen, Nathan Cooper, Griffin Adams, Jeremy Howard, Iacopo Poli  
-**URL:** [https://arxiv.org/pdf/2412.13663](https://arxiv.org/pdf/2412.13663)  
-Extracted tags (with hash): [#encoder](app://obsidian.md/index.html#encoder) [#transformer](app://obsidian.md/index.html#transformer) [#ModernBERT](app://obsidian.md/index.html#ModernBERT) [#NLP](app://obsidian.md/index.html#NLP) [#retrieval](app://obsidian.md/index.html#retrieval) [#classification](app://obsidian.md/index.html#classification) [#long_context](app://obsidian.md/index.html#long_context) [#finetuning](app://obsidian.md/index.html#finetuning) [#inference](app://obsidian.md/index.html#inference)
-
-### The problem that authors want to solve
-
-The authors aim to address the limitations of existing encoder-only transformer models like BERT, which, despite their widespread use, haven't seen significant improvements in recent years. These limitations include:
-
-- Sequence length limited to 512 tokens.
-- Suboptimal model design and vocabulary sizes.
-- Inefficient architectures in terms of downstream performance and computational efficiency.
-- Limited training data in volume, restricted to narrow domains, lacking code data, or lacking knowledge of recent events.
-
-### The solution, main idea on the intuition level and strong points
-
-The solution is ModernBERT, a modernized encoder-only transformer model. The main idea is to bring modern model optimizations to encoder-only models, resulting in a Pareto improvement over older encoders.
-
-Strong points:
-
-- Trained on 2 trillion tokens with a native 8192 sequence length.
-- State-of-the-art results on diverse classification tasks and single/multi-vector retrieval.
-- Speed and memory efficient, designed for inference on common GPUs.
-
-### The detailed solution, training process, data preparation
-
-**Architectural Improvements:**
-
-- **Modern Transformer Bias Terms:** Bias terms are disabled in all linear layers except the final decoder linear layer and in all Layer Norms.
-- **Positional Embeddings:** Rotary positional embeddings (RoPE) are used instead of absolute positional embeddings.
-- **Normalization:** Pre-normalization block with standard layer normalization is used. A LayerNorm is added after the embedding layer, and the first LayerNorm in the first attention layer is removed.
-- **Activation:** GeGLU activation function is adopted.
-- **Efficiency Improvements:**
-    - Alternating Attention: Attention layers alternate between global and local attention.
-    - Unpadding: Employs unpadding for both training and inference.
-    - Flash Attention: Uses Flash Attention 3 for global attention layers and Flash Attention 2 for local attention layers.
-    - torch.compile: PyTorch's built-in compiling is leveraged to improve training efficiency.
-- **Model Design:** Models are designed to maximize the utilization of common GPUs, with 22 and 28 layers for the base and large models, respectively.
-
-**Training:**
-
-- **Data Mixture:** Trained on 2 trillion tokens of primarily English data from various sources, including web documents, code, and scientific literature.
-- **Tokenizer:** Uses a modified version of the OLMo tokenizer. Vocabulary size is set to 50,368.
-- **Sequence Packing:** Sequence packing is adopted with a greedy algorithm to avoid high minibatch-size variance.
-- **MLM:** Masked Language Modeling (MLM) setup is used with a masking rate of 30 percent.
-- **Optimizer:** StableAdamW optimizer is used.
-- **Learning Rate Schedule:** A modified trapezoidal Learning Rate (LR) schedule (Warmup-Stable-Decay) is used.
-- **Batch Size Schedule:** Batch size scheduling starts with smaller gradient accumulated batches, increasing over time to the full batch size.
-- **Weight Initialization and Tiling:** ModernBERT-base is initialized with random weights following the Megatron initialization. For ModernBERT-large, weights are initialized from ModernBERT-base using center tiling and Gopher layer scaling.
-- **Context Length Extension:** The native context length of ModernBERT is extended to 8192 tokens by increasing the global attention layer’s RoPE theta to 160,000 and training for an additional 300 billion tokens.
-
-### Previous attempts to solve this problem
-
-The article mentions several previous efforts to improve encoder-only models:
-
-- **MosaicBERT, CrammingBERT, and AcademicBERT:** Focused on matching BERT performance with better training efficiency.
 
 
 
