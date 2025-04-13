@@ -21,9 +21,6 @@ Please structure this as follows:
 
 ### The evaluation procedure, evaluation datasets and results
 
-### Previous attempts to solve this problem 
-
-
 ### Max 5 top most relevant to the problem publication from bibliography
 Extracted from bibliography section
 

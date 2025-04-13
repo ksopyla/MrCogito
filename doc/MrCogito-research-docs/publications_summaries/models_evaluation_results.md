@@ -1,8 +1,7 @@
-
 * [XLNet](#xlnet)
 * [Albert](#albert)
 * [ModernBert evaluations](#modernbert-evaluations)
-* [XLNet, ModernBert, Albert GLUE results](#xlnet-modernbert-albert-glue-results)
+* [GLUE Benchmark Comparison for: XLNet, ModernBert, Albert](#glue-benchmark-comparison-for-xlnet-modernbert-albert)
 * [Llama 3 evaluations](#llama-3-evaluations)
 * [Qwen 2.5 evaluations](#qwen-25-evaluations)
 * [LLaDA evaluations](#llada-evaluations)
@@ -44,18 +43,18 @@ _Table 3: Results on SQuAD, a reading comprehension dataset. † marks our runs 
 
 - **SQuAD**
 
-|Model|SQuAD2.0||SQuAD1.1||
-|---|---|---|---|---|
-||EM|F1|EM|F1|
-|**Dev set results (single model)**|||||
-|BERT|78.98|81.77|84.1|90.9||
-|RoBERTa|86.5|89.4| 88.9|94.6|
-|XLNet|87.9|90.6|89.7|95.1|
-|**Test set results on leaderboard (single model, as of Dec 14, 2019)**|||||
-|BERT|80.005|83.061|85.083|91.835|
-|RoBERTa|86.820|89.795|||
-|BERT*|||87.433|93.294|
-|XLNet|87.926|90.689|89.898|95.080|
+| Model                | SQuAD2.0        |                | SQuAD1.1        |                |
+|----------------------|-----------------|----------------|-----------------|----------------|
+|                      | EM              | F1             | EM              | F1             |
+| **Dev set results (single model)** |||||
+| BERT                 | 78.98           | 81.77          | 84.1            | 90.9           |
+| RoBERTa              | 86.5            | 89.4           | 88.9            | 94.6           |
+| XLNet                | 87.9            | 90.6           | 89.7            | 95.1           |
+| **Test set results on leaderboard (single model, as of Dec 14, 2019)** |||||
+| BERT                 | 80.005          | 83.061         | 85.083          | 91.835         |
+| RoBERTa              | 86.820          | 89.795         |                 |                |
+| BERT*                |                 |                | 87.433          | 93.294         |
+| XLNet                | 87.926          | 90.689         | 89.898          | 95.080         |
 
 
 
@@ -63,16 +62,17 @@ _Table 3: Results on SQuAD, a reading comprehension dataset. † marks our runs 
 **GLUE Benchmark Results**
 _Table 5: Results on GLUE. ∗ indicates using ensembles, and † denotes single-task results in a multi-task row. All dev results are the median of 10 runs. The upper section shows direct comparison on dev data and the lower section shows comparison with state-of-the-art results on the public leaderboard._
 
-**Single-task single models on dev set**
+**Main GLUE results XLNet paper, table 5, Single-task single models on dev set**
 
-| Model   | MNLI      | QNLI | QQP  | RTE  | SST-2 | MRPC | CoLA | STS-B | WNLI |
-| ------- | --------- | ---- | ---- | ---- | ----- | ---- | ---- | ----- | ---- |
-| BERT-Large | 86.6/-    | 92.3 | 91.3 | 70.4 | 93.2  | 88.0 | 60.6 | 90.0  |  -   |
-| RoBERTa-Large | 90.2/90.2 | 94.7 | 92.2 | 86.6 | 96.4  | 90.9 | 68.0 | 92.4  |  -   |
-| XLNet   | 90.8/90.8 | 94.9 | 92.3 | 85.9 | 97.0  | 90.8 | 69.0 | 92.5  |  -    |
+| Model          | MNLI   | QNLI | QQP  | RTE  | SST-2 | MRPC | CoLA | STS-B | WNLI |
+|----------------|--------|------|------|------|-------|------|------|-------|------|
+| BERT-Large     | 86.6   | 92.3 | 91.3 | 70.4 | 93.2  | 88.0 | 60.6 | 90.0  | -    |
+| RoBERTa-Large  | 90.2   | 94.7 | 92.2 | 86.6 | 96.4  | 90.9 | 68.0 | 92.4  | -    |
+| XLNet          | 90.8   | 94.9 | 92.3 | 85.9 | 97.0  | 90.8 | 69.0 | 92.5  | -    |
+
+
 
 **Multi-task ensembles on test set**
-
 | Model   | MNLI      | QNLI | QQP  | RTE  | SST-2 | MRPC | CoLA | STS-B | WNLI |
 | ------- | --------- | ---- | ---- | ---- | ----- | ---- | ---- | ----- | ---- |
 | MT-DNN  | 87.9/87.4 | 96.0 | 89.9 | 86.3 | 96.5  | 92.7 | 68.4 | 91.1  | 89.0 |
@@ -89,51 +89,30 @@ https://arxiv.org/pdf/1909.11942
 
 I have extracted the benchmark results from the "ALBERT: A Lite BERT for Self-supervised Learning of Language Representations" paper and formatted them into Markdown tables. Here they are:
 
-**Overall results on the GLUE benchmark**
+**Overall results on the GLUE benchmark (Table 2 and Table 9 in the Albert research paper)**
 
-| Model                     | MNLI-m/mm | QQP  | QNLI | SST-2 | CoLA | STS-B | MRPC | RTE  | Avg. | Params |
-| ------------------------- | --------- | ---- | ---- | ----- | ---- | ----- | ---- | ---- | ---- | -------|
-| BERT-Base                 | 84.6/84.7 | 71.2 | 90.5 | 93.5  | 52.1 | 89.3  | 88.9 | 70.1 | 80.5 | 110M   |
-| BERT-Large                | 86.6/86.9 | 72.1 | 92.7 | 94.9  | 60.5 | 90.0  | 89.4 | 73.2 | 83.5 | 330M   |
-| RoBERTa-Large             | 89.0/89.3 | 72.4 | 93.8 | 96.4  | 68.0 | 90.9  | 90.9 | 86.6 | 87.0 | 355M   |
-| XLNet-Large               | 89.8/89.9 | 74.1 | 94.7 | 96.5  | 68.5 | 92.0  | 91.8 | 83.8 | 87.3 | 340M   |
-| ALBERT-Base               | 84.5/84.5 | 71.2 | 90.8 | 93.3  | 55.8 | 88.6  | 88.2 | 72.3 | 80.6 | 12M    |
-| ALBERT-Large              | 86.3/86.6 | 71.8 | 92.2 | 94.7  | 63.6 | 89.4  | 89.1 | 78.7 | 83.3 | 18M    |
-| ALBERT-XLarge             | 88.1/88.3 | 73.8 | 93.9 | 96.0  | 67.1 | 90.2  | 90.3 | 83.2 | 86.0 | 59M    |
-| ALBERT-XXLarge            | 89.4/89.7 | 74.3 | 94.7 | 96.4  | 68.7 | 91.2  | 91.4 | 86.0 | 87.6 | 235M   |
-| ALBERT-XXLarge (Ensemble) | 90.2/90.3 | 74.8 | 95.2 | 96.7  | 71.0 | 91.9  | 92.4 | 88.0 | 88.7 | 235M   |
-
-
-
+| Model                     | MNLI      | QNLI      | QQP       | RTE       | SST-2     | MRPC      | CoLA      | STS-B     | WNLI      | Avg.      | Params    |
+|---------------------------|-----------|-----------|-----------|-----------|-----------|-----------|-----------|-----------|-----------|-----------|-----------|
+| BERT-Base                 | 84.5      | -         | -         | -         | 92.8      | -         | -         | -         | -         | -         | 110M      |
+| BERT-Large                | 86.6      | 92.3      | 91.3      | 70.4      | 93.2      | 88.0      | 60.6      | 90.0      | -         | -         | 334M      |
+| RoBERTa-Large             | 90.2      | 94.7      | 92.2      | 86.6      | 96.4      | 90.9      | 68.0      | 92.4      | -         | -         | 355M      |
+| XLNet-Large               | 89.8      | 93.9      | 91.8      | 83.8      | 95.6      | 89.2      | 63.6      | 91.8      | -         | -         | 340M      |
+| ALBERT-Base               | 81.6      | -         | -         | -         | 90.3      | -         | -         | -         | -         | -         | 110M      |
+| ALBERT-Large              | 83.5      | -         | -         | -         | 91.7      | -         | -         | -         | -         | -         | 18M       |
+| ALBERT-XLarge             | 86.4      | -         | -         | -         | 92.4      | -         | -         | -         | -         | -         | 59M       |
+| ALBERT-XXLarge (Tab 2)    | 88.0      | -         | -         | -         | 95.2      | -         | -         | -         | -         | -         | 235M      |
+| ALBERT-XXLarge 1M (Tab 9) | 90.4      | 95.2      | 92.0      | 88.1      | 96.8      | 90.2      | 68.7      | 92.7      | -         | -         | 235M      |
+| ALBERT-XXLarge 1.5M (Tab 9)| 90.8     | 95.3      | 92.2      | 89.2      | 96.9      | 90.9      | 71.4      | 93.0      | -         | -         | 235M      |
 
 
+**Table: SQuAD 2.0 results**
 
-**Table 2: SQuAD 2.0 results**
+todo
 
-| Model                     | EM   | F1   |
-| ------------------------- | ---- | ---- |
-| BERT-Base                 | 77.4 | 80.8 |
-| BERT-Large                | 80.8 | 83.7 |
-| XLNet-Large               | 86.0 | 89.4 |
-| RoBERTa-Large             | 87.3 | 90.2 |
-| ALBERT-Base               | 70.9 | 75.1 |
-| ALBERT-Large              | 77.2 | 80.7 |
-| ALBERT-XLarge             | 83.4 | 86.5 |
-| ALBERT-XXLarge            | 86.4 | 89.4 |
-| ALBERT-XXLarge (Ensemble) | 87.8 | 90.8 |
+**Table: RACE results**
 
-**Table 3: RACE results**
+todo
 
-| Model          | Accuracy |
-| -------------- | -------- |
-| BERT-Base      | 66.9     |
-| BERT-Large     | 71.7     |
-| XLNet-Large    | 77.3     |
-| RoBERTa-Large  | 78.9     |
-| ALBERT-Base    | 64.1     |
-| ALBERT-Large   | 69.3     |
-| ALBERT-XLarge  | 76.5     |
-| ALBERT-XXLarge | 79.3     |
 
 
 
@@ -143,19 +122,19 @@ Benchmarks results and dataset used for Masked Language Model (MLM) based on Mod
 
 **Table 1: NLU and Code Benchmarks**
 
-|Model|GLUE|Code CSN|
-|---|---|---|
-|BERT-Base|84.7|41.2|
-|RoBERTa-Base|86.4|44.3|
-|DeBERTaV3-Base|88.1|17.5|
-|NomicBERT-Base|84.0|41.6|
-|GTE-en-MLM-Base|85.6|44.9|
-|ModernBERT-Base|88.4|56.4|
-|BERT-Large|85.2|41.6|
-|RoBERTa-Large|88.9|47.3|
-|DeBERTaV3-Large|91.4|21.2|
-|GTE-en-MLM-Large|87.6|40.5|
-|ModernBERT-Large|90.4|59.5|
+| Model              | GLUE  | Code CSN |
+|-------------------|-------|----------|
+| BERT-Base         | 84.7  | 41.2     |
+| RoBERTa-Base      | 86.4  | 44.3     |
+| DeBERTaV3-Base    | 88.1  | 17.5     |
+| NomicBERT-Base    | 84.0  | 41.6     |
+| GTE-en-MLM-Base   | 85.6  | 44.9     |
+| ModernBERT-Base   | 88.4  | 56.4     |
+| BERT-Large        | 85.2  | 41.6     |
+| RoBERTa-Large     | 88.9  | 47.3     |
+| DeBERTaV3-Large   | 91.4  | 21.2     |
+| GTE-en-MLM-Large  | 87.6  | 40.5     |
+| ModernBERT-Large  | 90.4  | 59.5     |
 
 Key:
 
@@ -164,79 +143,51 @@ Key:
 - **SQA:** StackQA score.
 
 
-This table summarizes the performance of ModernBERT and other models on key downstream tasks related to general understanding, reasoning (as reflected in NLU benchmarks), and code-related tasks
+**Table extracts the GLUE results from the ModernBert research paper, table 5, results for other models comes from respective papers**
+
+| Model           | Params | Seq. Len. | CoLA | SST-2 | MRPC | STS-B | QQP  | MNLI | QNLI | RTE  |
+| --------------- | ------ | --------- | ---- | ----- | ---- | ----- | ---- | ---- | ---- | ---- |
+| BERT-Base       | 110M   | 512       | 59.0 | 93.1  | 89.5 | 89.4  | 91.4 | 85.4 | 91.6 | 78.2 |
+| RoBERTa-Base    | 125M   | 512       | 63.6 | 94.8  | 90.2 | 91.2  | 91.9 | 87.6 | 92.8 | 78.7 |
+| DeBERTaV3-Base  | 183M   | 512       | 69.2 | 95.6  | 89.5 | 91.6  | 92.4 | 90.0 | 94.0 | 83.8 |
+| MosaicBERT-128  | 137M   | 128       | 58.2 | 93.5  | 89.0 | 90.3  | 92.0 | 85.6 | 91.4 | 83.0 |
+| NomicBERT-2048  | 137M   | 2048      | 50.0 | 93.0  | 88.0 | 90.0  | 92.0 | 86.0 | 92.0 | 82.0 |
+| GTE-en-MLM      | 137M   | 8192      | 57.0 | 93.4  | 92.1 | 90.2  | 88.8 | 86.7 | 91.9 | 84.8 |
+| ModernBERT-Base | 149M   | 8192      | 65.1 | 96.0  | 92.2 | 91.8  | 92.1 | 89.1 | 93.9 | 87.4 |
+| BERT-Large      | 330M   | 512       | 56.2 | 93.3  | 87.8 | 90.6  | 90.9 | 86.3 | 92.8 | 83.8 |
+| RoBERTa-Large   | 355M   | 512       | 68.0 | 96.4  | 90.9 | 92.4  | 92.2 | 90.2 | 94.7 | 86.6 |
+| DeBERTaV3-Large | 434M   | 512       | 75.3 | 96.9  | 92.2 | 93.0  | 93.3 | 91.8 | 96.0 | 92.7 |
+| GTE-en-MLM-Large| 434M   | 8192      | 60.4 | 95.1  | 93.5 | 91.4  | 89.2 | 89.2 | 93.9 | 88.1 |
+| ModernBERT-Large| 395M   | 8192      | 71.4 | 97.1  | 91.7 | 92.8  | 92.7 | 90.8 | 95.2 | 92.1 |
 
 
 
-| Model          | Params | Seq. Len. | CoLA | SST-2 | MRPC | STS-B | QQP  | MNLI | QNLI | RTE  |
-| -------------- | ------ | --------- | ---- | ----- | ---- | ----- | ---- | ---- | ---- | ---- |
-| **Base**       |        |           |      |       |      |       |      |      |      |      |
-| BERT           | 110M   | 512       | 59.0 | 93.1  | 89.5 | 89.4  | 91.4 | 85.4 | 91.6 | 78.2 |
-| RoBERTa        | 125M   | 512       | 63.6 | 94.8  | 90.2 | 91.2  | 91.9 | 87.6 | 92.8 | 78.7 |
-| DeBERTaV3      | 183M   | 512       | 69.2 | 95.6  | 89.5 | 91.6  | 92.4 | 90.0 | 94.0 | 83.8 |
-| MosaicBERT-128 | 137M   | 128       | 58.2 | 93.5  | 89.0 | 90.3  | 92.0 | 85.6 | 91.4 | 83.0 |
-| NomicBERT-2048 | 137M   | 2048      | 50.0 | 93.0  | 88.0 | 90.0  | 92.0 | 86.0 | 92.0 | 82.0 |
-| GTE-en-MLM     | 137M   | 8192      | 57.0 | 93.4  | 92.1 | 90.2  | 88.8 | 86.7 | 91.9 | 84.8 |
-| ModernBERT     | 149M   | 8192      | 65.1 | 96.0  | 92.2 | 91.8  | 92.1 | 89.1 | 93.9 | 87.4 |
-| **Large**      |        |           |      |       |      |       |      |      |      |      |
-| BERT           | 330M   | 512       | 56.2 | 93.3  | 87.8 | 90.6  | 90.9 | 86.3 | 92.8 | 83.8 |
-| RoBERTa        | 355M   | 512       | 68.0 | 96.4  | 90.9 | 92.4  | 92.2 | 90.2 | 94.7 | 86.6 |
-| DeBERTaV3      | 434M   | 512       | 75.3 | 96.9  | 92.2 | 93.0  | 93.3 | 91.8 | 96.0 | 92.7 |
-| GTE-en-MLM     | 434M   | 8192      | 60.4 | 95.1  | 93.5 | 91.4  | 89.2 | 89.2 | 93.9 | 88.1 |
-| ModernBERT     | 395M   | 8192      | 71.4 | 97.1  | 91.7 | 92.8  | 92.7 | 90.8 | 95.2 | 92.1 |
-
-
-
-## XLNet, ModernBert, Albert GLUE results
-
-
-
-
-
-
-
-GLUE Benchmark Comparison - By Model Size and Publication
-| Model Type | MNLI-m/mm | QNLI | QQP | RTE | SST-2 | MRPC | CoLA | STS-B | Avg. |
-|------------|-----------|------|-----|-----|-------|------|------|-------|------|
-| Base Models |
-| BERT-Base (from ALBERT paper) | 84.6/84.7 | 90.5 | 71.2 | 70.1 | 93.5 | 88.9 | 52.1 | 89.3 | 80.5 |
-| RoBERTa-Base (from ModernBERT) | - | - | - | - | - | - | - | - | - |
-| XLNet-Base | - | - | - | - | - | - | - | - | - |
-| ALBERT-Base | 84.5/84.5 | 90.8 | 71.2 | 72.3 | 93.3 | 88.2 | 55.8 | 88.6 | 80.6 |
-| ModernBERT-Base | 89.1/89.1 | 93.9 | 92.1 | 87.4 | 96.0 | 92.2 | 65.1 | 91.8 | 88.4 |
-| Large Models |
-| BERT-Large (from ALBERT paper) | 86.6/86.9 | 92.7 | 72.1 | 73.2 | 94.9 | 89.4 | 60.5 | 90.0 | 83.5 |
-| BERT-Large (from XLNet paper) | 86.6/- | 92.3 | 91.3 | 70.4 | 93.2 | 88.0 | 60.6 | 90.0 | - |
-| RoBERTa-Large (from XLNet paper) | 90.2/90.2 | 94.7 | 92.2 | 86.6 | 96.4 | 90.9 | 68.0 | 92.4 | - |
-| XLNet-Large | 90.8/90.8 | 94.9 | 92.3 | 85.9 | 97.0 | 90.8 | 69.0 | 92.5 | 89.3 |
-| ALBERT-Large | 86.3/86.6 | 92.2 | 71.8 | 78.7 | 94.7 | 89.1 | 63.6 | 89.4 | 83.3 |
-| ALBERT-XLarge | 88.1/88.3 | 93.9 | 73.8 | 83.2 | 96.0 | 90.3 | 67.1 | 90.2 | 86.0 |
-| ALBERT-XXLarge | 89.4/89.7 | 94.7 | 74.3 | 86.0 | 96.4 | 91.4 | 68.7 | 91.2 | 87.6 |
-| ModernBERT-Large | 90.8/90.8 | 95.2 | 92.7 | 92.1 | 97.1 | 91.7 | 71.4 | 92.8 | 90.4 |
+## GLUE Benchmark Comparison for: XLNet, ModernBert, Albert
 
 
 GLUE Benchmark Comparison - By Model Size and Source
-| Model | MNLI-m/mm | QNLI | QQP | RTE | SST-2 | MRPC | CoLA | STS-B | Avg. |
-|-------|-----------|------|-----|-----|-------|------|------|-------|------|
-| **Base Models** |
-| BERT-Base (ALBERT paper) | 84.6/84.7 | 90.5 | 71.2 | 70.1 | 93.5 | 88.9 | 52.1 | 89.3 | 80.5 |
-| BERT-Base (ModernBERT paper) | 85.4/85.4 | 91.6 | 91.4 | 78.2 | 93.1 | 89.5 | 59.0 | 89.4 | - |
-| RoBERTa-Base (ModernBERT paper) | 87.6/87.6 | 92.8 | 91.9 | 78.7 | 94.8 | 90.2 | 63.6 | 91.2 | - |
-| ALBERT-Base | 84.5/84.5 | 90.8 | 71.2 | 72.3 | 93.3 | 88.2 | 55.8 | 88.6 | 80.6 |
-| ModernBERT-Base | 89.1/89.1 | 93.9 | 92.1 | 87.4 | 96.0 | 92.2 | 65.1 | 91.8 | 88.4 |
-| **Large Models** |
-| BERT-Large (ALBERT paper) | 86.6/86.9 | 92.7 | 72.1 | 73.2 | 94.9 | 89.4 | 60.5 | 90.0 | 83.5 |
-| BERT-Large (XLNet paper) | 86.6/- | 92.3 | 91.3 | 70.4 | 93.2 | 88.0 | 60.6 | 90.0 | - |
-| BERT-Large (ModernBERT paper) | 86.3/86.3 | 92.8 | 90.9 | 83.8 | 93.3 | 87.8 | 56.2 | 90.6 | - |
-| RoBERTa-Large (XLNet paper) | 90.2/90.2 | 94.7 | 92.2 | 86.6 | 96.4 | 90.9 | 68.0 | 92.4 | - |
-| RoBERTa-Large (ALBERT paper) | 89.0/89.3 | 93.8 | 72.4 | 86.6 | 96.4 | 90.9 | 68.0 | 90.9 | 87.0 |
-| RoBERTa-Large (ModernBERT paper) | 90.2/90.2 | 94.7 | 92.2 | 86.6 | 96.4 | 90.9 | 68.0 | 92.4 | - |
-| XLNet-Large (XLNet paper) | 90.8/90.8 | 94.9 | 92.3 | 85.9 | 97.0 | 90.8 | 69.0 | 92.5 | - |
-| XLNet-Large (ALBERT paper) | 89.8/89.9 | 94.7 | 74.1 | 83.8 | 96.5 | 91.8 | 68.5 | 92.0 | 87.3 |
-| ALBERT-Large | 86.3/86.6 | 92.2 | 71.8 | 78.7 | 94.7 | 89.1 | 63.6 | 89.4 | 83.3 |
-| ALBERT-XLarge | 88.1/88.3 | 93.9 | 73.8 | 83.2 | 96.0 | 90.3 | 67.1 | 90.2 | 86.0 |
-| ALBERT-XXLarge | 89.4/89.7 | 94.7 | 74.3 | 86.0 | 96.4 | 91.4 | 68.7 | 91.2 | 87.6 |
-| ModernBERT-Large | 90.8/90.8 | 95.2 | 92.7 | 92.1 | 97.1 | 91.7 | 71.4 | 92.8 | 90.4 |
+
+
+Base Models
+| Model              | Source Paper   | Params | MNLI  | QNLI  | QQP   | RTE   | SST-2 | MRPC  | CoLA  | STS-B | Avg (8 tasks) |
+|:-------------------|:---------------|:-------|:------|:------|:------|:------|:------|:------|:------|:------|:--------------|
+| BERT-Base          | ModernBERT     | 110M   | 85.4  | 91.6  | 91.4  | 78.2  | 93.1  | 89.5  | 59.0  | 89.4  | 84.7          |
+| RoBERTa-Base       | ModernBERT     | 125M   | 87.6  | 92.8  | 91.9  | 78.7  | 94.8  | 90.2  | 63.6  | 91.2  | 86.4          |
+| DeBERTaV3-Base     | ModernBERT     | 184M   | 90.0  | 94.0  | 92.4  | 83.8  | 95.6  | 89.5  | 69.2  | 91.6  | 89.5          |
+| ModernBERT-Base    | ModernBERT     | 149M   | 89.1  | 93.9  | 92.1  | 87.4  | 96.0  | 92.2  | 65.1  | 91.8  | 88.5          |
+| ALBERT-Base        | ALBERT         | 12M    | 82.7  | 90.1  | 90.4  | 72.2  | 92.8  | 89.1  | 55.8  | 89.8  | 82.9          |
+
+Large Models
+| Model              | Source Paper   | Params | MNLI  | QNLI  | QQP   | RTE   | SST-2 | MRPC  | CoLA  | STS-B | Avg (8 tasks) |
+|:-------------------|:---------------|:-------|:------|:------|:------|:------|:------|:------|:------|:------|:--------------|
+| BERT-Large         |  ALBERT        | 334M   | 86.6  | 92.3  | 91.3  | 70.4  | 93.2  | 88.0  | 60.6  | 90.0  | 84.1          |
+| RoBERTa-Large      |  ALBERT        | 355M   | 90.2  | 94.7  | 92.2  | 86.6  | 96.4  | 90.9  | 68.0  | 92.4  | 88.9          |
+| DeBERTaV3-Large    | ModernBERT     | 435M   | 91.8  | 96.0  | 93.3  | 92.7  | 96.9  | 92.2  | 75.3  | 93.0  | 91.4          |
+| XLNet-Large        | XLNet          | 340M   | 90.8  | 94.9  | 92.3  | 85.9  | 97.0  | 90.8  | 69.0  | 92.5  | 89.2          |
+| ModernBERT-Large   | ModernBERT     | 395M   | 90.8  | 95.2  | 92.7  | 92.1  | 97.1  | 91.7  | 71.4  | 92.8  | 90.5          |
+| ALBERT-Large       | ALBERT         | 18M    | 84.8  | 91.5  | 90.9  | 77.6  | 93.9  | 90.3  | 60.2  | 91.2  | 85.1          |
+| ALBERT-XLarge      | ALBERT         | 60M    | 86.5  | 92.4  | 91.4  | 81.2  | 94.8  | 90.7  | 62.1  | 91.7  | 86.4          |
+| ALBERT-XXLarge     | ALBERT         | 235M   | 90.8  | 95.3  | 92.2  | 89.2  | 96.9  | 90.9  | 71.4  | 93.0  | 90.0          |
 
 
 ## Llama 3 evaluations
@@ -626,4 +577,5 @@ Okay, I have extracted the evaluation benchmarks with results from the provided 
 | **Code** |  |  |  |  |  |  |  |
 | HumanEval (0) | 47.6 | 59.8 | 16.5 | 79.9 | 84.8 | 68.9 | 48.2 |
 | MBPP (4) | 34.2 | 57.6 | 20.6 | 67.2 | 79.2 | 74.9 | 35.2 |
+
 

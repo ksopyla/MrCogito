@@ -1,6 +1,7 @@
 * [XLnet](#xlnet)
 * [ModernBert](#modernbert)
 * [Albert](#albert)
+* [DeBERTa](#deberta)
 
 
 
@@ -204,3 +205,152 @@ https://arxiv.org/pdf/1909.11942
 | ALBERT large | 18M        | 24     | 1024   | 128       | True              |
 | ALBERT xlarge| 60M        | 24     | 2048   | 128       | True              |
 | ALBERT xxlarge| 235M       | 12     | 4096   | 128       | True              |
+
+
+
+
+## DeBERTa 
+
+
+* [DeBERTa: Decoding-enhanced BERT with Disentangled Attention](https://arxiv.org/pdf/2006.03654) [Submitted on 5 Jun 2020 (v1), last revised 6 Oct 2021 (this version, v6)]
+
+
+**Title:** DeBERTa: Decoding-Enhanced BERT with Disentangled Attention  
+**Publish Date:** 6 Oct 2021 (Published as a conference paper at ICLR 2021)  
+**Authors:** Pengcheng He, Xiaodong Liu, Jianfeng Gao, Weizhu Chen  
+**URL:** [https://arxiv.org/pdf/2006.03654](https://arxiv.org/pdf/2006.03654)  
+**Extracted tags (with hash):** [#DeBERTa](app://obsidian.md/index.html#DeBERTa), [#BERT](app://obsidian.md/index.html#BERT), [#DisentangledAttention](app://obsidian.md/index.html#DisentangledAttention), [#EnhancedMaskDecoder](app://obsidian.md/index.html#EnhancedMaskDecoder), [#SiFT](app://obsidian.md/index.html#SiFT)
+
+### TL;DR
+
+DeBERTa introduces a novel pre-trained language model that improves upon BERT and RoBERTa by representing each token with two separate vectors (content and position) and by incorporating an Enhanced Mask Decoder that injects absolute positional information during masked language modeling. These improvements lead to superior performance on a range of NLP tasks, including surpassing human performance on SuperGLUE.
+
+### The problem that authors want to solve
+
+The authors observe that although pre-trained language models (PLMs) like BERT and RoBERTa have advanced NLP significantly, they still have two main limitations:
+
+- They represent each word with a single embedding that conflates content and positional information.
+- Their methods for incorporating absolute position information during masked language modeling may not fully capture syntactical nuances, especially when local contexts (or relative positional cues) are ambiguous.
+
+### The solution, main idea on the intuition level and strong points
+
+The solution proposed in DeBERTa is two-fold:
+
+- **Disentangled Attention Mechanism:** Instead of using a single embedding, each token is represented by two separate vectors—one for its content and one for its position. The attention score between any two tokens is computed by decomposing it into (a) content-to-content, (b) content-to-position, and (c) position-to-content contributions. This better captures how relative positions affect token dependencies.
+- **Enhanced Mask Decoder (EMD):** Unlike traditional models that incorporate absolute positions in the input layer, DeBERTa adds absolute position embeddings later—right before the softmax layer during masked token prediction. This gives the model clearer syntactical cues when determining the identity of a masked token.
+- An additional improvement is the use of a Scale-invariant Fine-Tuning (SiFT) strategy based on virtual adversarial training which normalizes word embeddings before applying perturbations. This boosts the stability and generalization performance, especially in larger models.
+
+### The detailed solution, training process, data preparation
+
+- **Architecture:**  
+    Each token at position i is represented by two vectors:  
+    • t_H(i) for content  
+    • t_P(i) for positional information (relative to other tokens)  
+    The self-attention is decomposed into components computed from these two embeddings (content-to-content, content-to-position, and position-to-content), with the relative position term handling a maximum distance (set to 512 during pre-training). An efficient implementation (Algorithm 1 in the paper) reuses position embeddings to reduce memory complexity.
+    
+- **Enhanced Mask Decoder (EMD):**  
+    During pre-training with Masked Language Modeling (MLM), in addition to using the aggregated information from the Transformer layers, absolute position embeddings are injected just before the softmax layer for predicting masked tokens. This contrasts with BERT’s early use of absolute position embeddings.
+    
+- **Training Process and Data:**  
+    The model is pre-trained on approximately 78GB of cleaned textual data obtained from:  
+    • Wikipedia  
+    • BookCorpus  
+    • OPENWEBTEXT  
+    • STORIES (a subset of CommonCrawl)  
+    Pre-training is done with 1 million steps using a batch size of 2K samples per step. For fine-tuning, the authors employ the SiFT algorithm, where they normalize word embeddings and apply adversarial perturbations to further regularize training. This procedure is shown to be particularly effective for larger model variants.
+    
+- **Scaling Up:**  
+    The authors also introduce a larger version, DeBERTa 1.5B, composed of 48 Transformer layers (hidden size 1536, 24 attention heads) which, through architectural optimizations (e.g. sharing projection matrices), achieves state-of-the-art results while being more energy efficient and easier to deploy.
+    
+
+### The evaluation procedure, evaluation datasets and results
+
+- **Evaluation on NLU Tasks:**  
+    DeBERTa is evaluated on a broad set of benchmarks including:  
+    • GLUE (tasks such as CoLA, MNLI, QQP, SST-2, MRPC, etc.)  
+    • Question Answering datasets (SQuAD v1.1 and SQuAD v2.0)  
+    • Reading comprehension (RACE, ReCoRD)  
+    • Natural Language Inference (MNLI)  
+    • Named Entity Recognition (CoNLL-2003)
+- **Key Results:**  
+    • On the GLUE benchmark, compared to RoBERTa-Large, a DeBERTa model trained on half the training data achieved improvements such as +0.9% on MNLI, +2.3% on SQuAD v2.0, and +3.6% on RACE.  
+    • The 1.5B parameter DeBERTa model surpassed the human baseline on the SuperGLUE benchmark (macro-average score of 89.9 vs. 89.8), and the ensemble version scored 90.3 versus 89.8 for humans.  
+    • The model also demonstrates lower perplexities on language generation tasks (e.g., reducing Wikitext-103 perplexity from 21.6 to 19.5).
+
+### Max 5 top most relevant to the problem publication from bibliography
+
+1. **Devlin et al., 2019** – BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding
+2. **Vaswani et al., 2017** – Attention is All You Need
+3. **Liu et al., 2019c** – RoBERTa: A Robustly Optimized BERT Pretraining Approach
+4. **Clark et al., 2020** – ELECTRA: Pre-training Text Encoders as Discriminators Rather Than Generators
+5. **Raffel et al., 2020** – Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer
+
+
+## DeBERTaV3
+* [DeBERTaV3: Improving DeBERTa using ELECTRA-Style Pre-Training with Gradient-Disentangled Embedding Sharing](https://arxiv.org/abs/2111.09543) [Submitted on 18 Nov 2021 (v1), last revised 24 Mar 2023 (this version, v4)]
+
+**Title:** DeBERTaV3: Improving DeBERTa using ELECTRA-Style Pre-Training with Gradient-Disentangled Embedding Sharing  
+**Publish Date:** Last revised 24 Mar 2023 (Submitted 18 Nov 2021)  
+**Authors:** Pengcheng He, Jianfeng Gao, Weizhu Chen  
+**URL:** [https://arxiv.org/abs/2111.09543](https://arxiv.org/abs/2111.09543)  
+**Extracted tags (with hash):** [#DeBERTaV3](app://obsidian.md/index.html#DeBERTaV3), [#ELECTRA](app://obsidian.md/index.html#ELECTRA), [#RTD](app://obsidian.md/index.html#RTD), [#GradientDisentangled](app://obsidian.md/index.html#GradientDisentangled), [#NLU](app://obsidian.md/index.html#NLU)
+
+### TL;DR
+
+DeBERTaV3 is a new pre-trained language model that replaces the conventional masked language modeling (MLM) objective with replaced token detection (RTD) for better sample efficiency. It introduces a novel gradient‐disentangled embedding sharing method to overcome “tug-of-war” dynamics seen in vanilla embedding sharing, resulting in improved training efficiency and stronger downstream performance on both English and multilingual natural language understanding tasks.
+
+### The problem that authors want to solve
+
+The authors aim to resolve two issues in pre-training language models:
+
+- First, the conventional MLM objective is less sample-efficient compared to alternatives like replaced token detection (RTD).
+- Second, “vanilla embedding sharing” (as used in ELECTRA) creates conflicting gradients between the generator and discriminator, causing a “tug-of-war” that harms both training efficiency and model performance.
+
+### The solution, main idea on the intuition level and strong points
+
+The solution consists of two main innovations:
+
+1. **Adopting RTD as the Pre-Training Objective:**  
+    Instead of masking tokens and predicting them (MLM), DeBERTaV3 uses replaced token detection (RTD) to distinguish whether a token is replaced by a generator. This objective is more sample-efficient.
+2. **Gradient-Disentangled Embedding Sharing:**  
+    To address the conflict caused by vanilla embedding sharing in ELECTRA, the authors propose “gradient-disentangled embedding sharing” – a method that prevents the discriminator and generator losses from pulling the token embeddings in different directions, thereby avoiding the harmful tug-of-war dynamics.
+
+These modifications improve training efficiency and lead to higher-quality pre-trained models.
+
+### The detailed solution, training process, data preparation
+
+- **Model Architecture and Training Objective:**  
+    DeBERTaV3 follows the architecture of its predecessor, DeBERTa, but replaces the MLM objective with RTD. The model is pre-trained using ELECTRA-style replaced token detection, which evaluates if a token is original or replaced, leading to more efficient learning.
+    
+- **Gradient-Disentangled Embedding Sharing:**  
+    The key technical contribution is the new method of embedding sharing. The authors note that "vanilla embedding sharing in ELECTRA hurts training efficiency and model performance" because “the training losses of the discriminator and the generator pull token embeddings in different directions.” Their solution disentangles these gradients so that the shared embeddings are not adversely affected by conflicting signals, which in turn improves both training efficiency and model quality.
+    
+- **Training Setup:**  
+    The paper states that they pre-trained DeBERTaV3 “using the same settings as DeBERTa” (i.e. the data, training steps, and architectural configurations remain similar) so that improvements can be directly attributed to the new pre-training task and gradient-disentangled embedding sharing.  
+    For multilingual evaluation, a variant named mDeBERTa was also pre-trained, further demonstrating the technique’s benefits across language settings.
+    
+
+### The evaluation procedure, evaluation datasets and results
+
+- **Evaluation on English NLU (GLUE):**  
+    The DeBERTaV3 Large model is evaluated on the GLUE benchmark (comprising eight tasks) and achieves a 91.37% average score. This score represents a 1.37% improvement over the original DeBERTa and a 1.91% improvement over ELECTRA among models with similar structure.
+    
+- **Evaluation on Multilingual Tasks (XNLI):**  
+    For multilingual benchmarking, mDeBERTa Base is tested on XNLI in a zero-shot cross-lingual setting where it achieves 79.8% accuracy—a 3.6% improvement over XLM-R Base—establishing a new state-of-the-art on this benchmark.
+    
+- **Other Notable Results:**  
+    The paper also mentions that even a very small variant (XSmall with only 22M backbone parameters) “significantly outperforms RoBERTa/XLNet-base,” illustrating the efficiency gains in parameter usage.
+    
+
+### Max 5 top most relevant to the problem publication from bibliography
+
+1. **Clark et al., 2020 – ELECTRA: Pre-training Text Encoders as Discriminators Rather Than Generators**  
+    (Introduces the RTD objective that DeBERTaV3 adopts and improves upon.)
+2. **Devlin et al., 2019 – BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding**  
+    (The foundational work on pre-trained language models which established MLM that DeBERTaV3 replaces.)
+3. **He et al., 2021 – DeBERTa: Decoding-Enhanced BERT with Disentangled Attention**  
+    (The predecessor to DeBERTaV3, whose settings are maintained to isolate the effects of the new techniques.)
+4. **Conneau et al., 2020 – Unifying Cross-lingual Pre-training and Fine-tuning**  
+    (Basis for XLM-R, against which mDeBERTa improvement is measured on XNLI.)
+5. **Brown et al., 2020 – Language Models are Few-Shot Learners**  
+    (Represents trends in scaling pre-trained models and the search for training efficiency improvements.)
