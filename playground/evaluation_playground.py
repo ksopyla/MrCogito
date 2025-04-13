@@ -1,8 +1,7 @@
-
 #%%
 from lm_eval import evaluator, tasks
 from lm_eval.models.huggingface import HFLM
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, XLNetLMHeadModel
 import torch
 import os
 
@@ -14,27 +13,27 @@ TOKENIZER_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "C
 MODEL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cache", "Models"))
 
 def evaluate_model(model_name, task_list, num_fewshot=0):
-    # Load model and tokenizer
     print(f"Loading model: {model_name}")
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name, 
-        torch_dtype=torch.bfloat16,
-        device_map="auto",
-        cache_dir=MODEL_DIR
-    )
-    tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=TOKENIZER_DIR)
     
-    # Make sure tokenizer has necessary tokens
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    
-    # Create HF model wrapper
-    hf_model = HFLM(
-        pretrained=model_name,
-        tokenizer=tokenizer,
-        model=model,
-        batch_size=8
-    )
+    # For XLNet, we can't use device_map="auto" but we can use dtype and batch_size
+    if "xlnet" in model_name.lower():
+        # Create HF model wrapper for XLNet - no device_map
+        hf_model = HFLM(
+            pretrained=model_name,
+            batch_size=8,
+            dtype="bfloat16", 
+            cache_dir=MODEL_DIR,
+            device="cuda" if torch.cuda.is_available() else "cpu"
+        )
+    else:
+        # For other models, use device_map="auto"
+        hf_model = HFLM(
+            pretrained=model_name,
+            batch_size=8,
+            dtype="bfloat16",
+            device_map="auto",
+            cache_dir=MODEL_DIR
+        )
     
     # Run evaluation
     print(f"Evaluating on tasks: {task_list}")
@@ -74,3 +73,5 @@ print("\n===== EVALUATION RESULTS =====")
 for benchmark, result in all_results.items():
     for task, metrics in result["results"].items():
         print(f"{benchmark} - {task}: {metrics['acc']*100:.2f}%")
+
+# %%

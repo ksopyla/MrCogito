@@ -23,19 +23,27 @@ from transformers import (
     XLNetModel,
     XLNetForSequenceClassification, 
     XLNetTokenizer,
+    AutoTokenizer,
     Trainer, 
     TrainingArguments,
     EarlyStoppingCallback,
     default_data_collator
 )
-from datasets import load_dataset, load_metric
+from datasets import load_dataset
 from datasets.utils.logging import disable_progress_bar
 import evaluate
 import logging
 import time
 import random
-import matplotlib.pyplot as plt
 from tqdm import tqdm
+from rich.console import Console
+from rich.table import Table
+from rich import box
+
+
+DATASET_CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cache", "Datasets"))
+MODEL_CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cache", "Models"))
+TOKENIZER_CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cache", "Tokenizers"))
 
 # Configure logging
 logging.basicConfig(
@@ -116,7 +124,7 @@ def parse_args():
     parser.add_argument(
         "--visualize",
         action="store_true",
-        help="Visualize results"
+        help="Visualize results with rich tables"
     )
     return parser.parse_args()
 
@@ -243,28 +251,66 @@ def compute_metrics(task, metric_names):
 
 def load_glue_dataset(task, tokenizer, max_length):
     """Load and preprocess a GLUE dataset for the given task."""
-    # Load dataset
-    if task == "mnli":
-        datasets = load_dataset("glue", task)
-        eval_dataset = datasets["validation_matched"]
-    else:
-        datasets = load_dataset("glue", task)
-        eval_dataset = datasets["validation"]
-    
-    # Preprocess datasets
-    train_dataset = datasets["train"].map(
-        lambda examples: preprocess_function(examples, tokenizer, max_length, task),
-        batched=True,
-        remove_columns=datasets["train"].column_names
-    )
-    
-    eval_dataset = eval_dataset.map(
-        lambda examples: preprocess_function(examples, tokenizer, max_length, task),
-        batched=True,
-        remove_columns=eval_dataset.column_names
-    )
-    
-    return train_dataset, eval_dataset
+    try:
+        # Validate task
+        if task not in GLUE_TASKS:
+            raise ValueError(f"Invalid task: {task}. Must be one of {list(GLUE_TASKS.keys())}")
+        
+        # Load dataset with error handling
+        try:
+            datasets = load_dataset("glue", task, cache_dir=DATASET_CACHE_DIR)
+        except Exception as e:
+            logger.error(f"Failed to load GLUE dataset for task {task}: {str(e)}")
+            raise
+        
+        # Handle MNLI special case
+        if task == "mnli":
+            eval_dataset = datasets["validation_matched"]
+            # Also load mismatched validation set for MNLI
+            eval_mismatched = datasets["validation_mismatched"]
+        else:
+            eval_dataset = datasets["validation"]
+            eval_mismatched = None
+        
+        # Preprocess datasets with error handling
+        try:
+            train_dataset = datasets["train"].map(
+                lambda examples: preprocess_function(examples, tokenizer, max_length, task),
+                batched=True,
+                remove_columns=datasets["train"].column_names,
+                desc="Preprocessing training data"
+            )
+            
+            eval_dataset = eval_dataset.map(
+                lambda examples: preprocess_function(examples, tokenizer, max_length, task),
+                batched=True,
+                remove_columns=eval_dataset.column_names,
+                desc="Preprocessing validation data"
+            )
+            
+            if eval_mismatched is not None:
+                eval_mismatched = eval_mismatched.map(
+                    lambda examples: preprocess_function(examples, tokenizer, max_length, task),
+                    batched=True,
+                    remove_columns=eval_mismatched.column_names,
+                    desc="Preprocessing validation mismatched data"
+                )
+        except Exception as e:
+            logger.error(f"Failed to preprocess dataset for task {task}: {str(e)}")
+            raise
+        
+        # Log dataset statistics
+        logger.info(f"Dataset statistics for {task}:")
+        logger.info(f"  Training samples: {len(train_dataset)}")
+        logger.info(f"  Validation samples: {len(eval_dataset)}")
+        if eval_mismatched is not None:
+            logger.info(f"  Validation mismatched samples: {len(eval_mismatched)}")
+        
+        return train_dataset, eval_dataset, eval_mismatched
+        
+    except Exception as e:
+        logger.error(f"Error in load_glue_dataset for task {task}: {str(e)}")
+        raise
 
 def finetune_xlnet_on_glue(args):
     """Fine-tune XLNet on a GLUE task and evaluate."""
@@ -272,15 +318,16 @@ def finetune_xlnet_on_glue(args):
     set_seed(args.seed)
     
     # Load tokenizer and model
-    tokenizer = XLNetTokenizer.from_pretrained(args.model_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained("xlnet-base-cased", cache_dir=TOKENIZER_CACHE_DIR)
     model = XLNetForSequenceClassification.from_pretrained(
         args.model_name_or_path,
         num_labels=GLUE_TASKS[args.task]["num_labels"],
-        problem_type="regression" if args.task == "stsb" else "single_label_classification"
+        problem_type="regression" if args.task == "stsb" else "single_label_classification",
+        cache_dir=MODEL_CACHE_DIR
     )
     
     # Load and preprocess dataset
-    train_dataset, eval_dataset = load_glue_dataset(args.task, tokenizer, args.max_length)
+    train_dataset, eval_dataset, eval_mismatched = load_glue_dataset(args.task, tokenizer, args.max_length)
     
     # Prepare training arguments
     training_args = TrainingArguments(
@@ -323,6 +370,12 @@ def finetune_xlnet_on_glue(args):
     logger.info(f"Evaluating XLNet on {args.task}...")
     eval_results = trainer.evaluate()
     
+    # Evaluate on mismatched set for MNLI if available
+    if eval_mismatched is not None:
+        logger.info("Evaluating on MNLI mismatched validation set...")
+        mismatched_results = trainer.evaluate(eval_dataset=eval_mismatched)
+        eval_results.update({f"eval_mismatched_{k}": v for k, v in mismatched_results.items()})
+    
     # Save model if requested
     if args.save_model:
         trainer.save_model(os.path.join(args.output_dir, f"{args.task}/final_model"))
@@ -335,69 +388,68 @@ def finetune_xlnet_on_glue(args):
     return eval_results
 
 def visualize_results(results_df, args):
-    """Create visualizations for the evaluation results."""
-    # Create output directory if it doesn't exist
-    os.makedirs(os.path.join(args.output_dir, "visualizations"), exist_ok=True)
+    """Create visualizations for the evaluation results using rich tables."""
+    console = Console()
     
-    # Plot results as bar chart
-    plt.figure(figsize=(12, 8))
+    # Create results directory if it doesn't exist
+    os.makedirs(os.path.join(args.output_dir, "results"), exist_ok=True)
     
-    # Get metrics for each task
-    tasks = results_df["Task"].unique()
+    # 1. Create a table showing all metrics for all tasks
+    all_metrics_table = Table(title="GLUE Benchmark Results for XLNet", box=box.ROUNDED)
+    all_metrics_table.add_column("Task", style="cyan")
     
-    for i, task in enumerate(tasks):
+    # Get unique metrics
+    metrics = sorted(results_df["Metric"].unique())
+    for metric in metrics:
+        all_metrics_table.add_column(metric, style="green")
+    
+    # Add rows for each task
+    for task in sorted(results_df["Task"].unique()):
+        task_results = results_df[results_df["Task"] == task]
+        row = [task]
+        
+        for metric in metrics:
+            metric_value = task_results[task_results["Metric"] == metric]["Score"].values
+            if len(metric_value) > 0:
+                row.append(f"{metric_value[0]:.4f}")
+            else:
+                row.append("N/A")
+        
+        all_metrics_table.add_row(*row)
+    
+    # Display and save the table content to a file
+    console.print(all_metrics_table)
+    
+    # 2. Create individual tables for each task
+    for task in sorted(results_df["Task"].unique()):
         task_df = results_df[results_df["Task"] == task]
-        metrics = task_df["Metric"].tolist()
-        scores = task_df["Score"].tolist()
         
-        x = np.arange(len(metrics))
-        plt.bar(x + i*0.2, scores, width=0.2, label=task)
+        task_table = Table(title=f"Results for {task.upper()}", box=box.ROUNDED)
+        task_table.add_column("Metric", style="cyan")
+        task_table.add_column("Score", style="green")
         
-        # Add value labels on bars
-        for j, score in enumerate(scores):
-            plt.text(x[j] + i*0.2, score + 0.01, f'{score:.4f}', ha='center', va='bottom', fontsize=8)
+        for _, row in task_df.iterrows():
+            task_table.add_row(row["Metric"], f"{row['Score']:.4f}")
+        
+        # Display the task table
+        console.print(task_table)
+        console.print("\n")
     
-    plt.ylabel("Score")
-    plt.xlabel("Metric")
-    plt.title("GLUE Benchmark Results for XLNet")
-    plt.xticks(np.arange(len(metrics)) + 0.2*(len(tasks)-1)/2, metrics)
-    plt.ylim(0, 1.0)
-    plt.legend(title="Task")
-    plt.tight_layout()
+    # 3. Create a summary table with average scores
+    summary_table = Table(title="Summary of Results", box=box.ROUNDED)
+    summary_table.add_column("Task", style="cyan")
+    summary_table.add_column("Avg Score", style="green")
+    summary_table.add_column("# Metrics", style="blue")
     
-    # Save figure
-    plt.savefig(os.path.join(args.output_dir, "visualizations/glue_results.png"))
-    plt.close()
+    for task in sorted(results_df["Task"].unique()):
+        task_df = results_df[results_df["Task"] == task]
+        avg_score = task_df["Score"].mean()
+        num_metrics = len(task_df)
+        
+        summary_table.add_row(task, f"{avg_score:.4f}", str(num_metrics))
     
-    # Create heatmap of results
-    plt.figure(figsize=(12, 8))
-    
-    # Pivot data for heatmap
-    pivot_df = results_df.pivot(index="Task", columns="Metric", values="Score")
-    
-    # Plot heatmap
-    im = plt.imshow(pivot_df.values, cmap="YlGn")
-    
-    # Add colorbar
-    plt.colorbar(im, label="Score")
-    
-    # Add labels
-    plt.xticks(np.arange(len(pivot_df.columns)), pivot_df.columns, rotation=45)
-    plt.yticks(np.arange(len(pivot_df.index)), pivot_df.index)
-    
-    # Add values to cells
-    for i in range(len(pivot_df.index)):
-        for j in range(len(pivot_df.columns)):
-            if not np.isnan(pivot_df.values[i, j]):
-                plt.text(j, i, f'{pivot_df.values[i, j]:.4f}', 
-                         ha="center", va="center", color="black")
-    
-    plt.title("GLUE Benchmark Results for XLNet")
-    plt.tight_layout()
-    
-    # Save figure
-    plt.savefig(os.path.join(args.output_dir, "visualizations/glue_heatmap.png"))
-    plt.close()
+    # Display the summary table
+    console.print(summary_table)
 
 def main():
     # Parse arguments

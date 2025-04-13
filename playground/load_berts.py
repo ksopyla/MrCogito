@@ -1,5 +1,5 @@
 #%% - load the bert model
-from transformers import AutoTokenizer, AutoModelForMaskedLM
+from transformers import AutoTokenizer, AutoModelForMaskedLM, AutoModelForSequenceClassification
 from transformers import BertModel, BertTokenizer
 import torch
 import os
@@ -77,5 +77,15 @@ for mask_idx, masked_index in enumerate(masked_indices):
     
     # for token, logit in zip(predicted_tokens, predicted_logits):
     #     print(f"Token: {token}, Logit: {logit:.2f}")
+
+# %% load bert from SequenceClassification
+
+bert_seq_class_model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", cache_dir=cache_dir)
+
+
+
+
+
+
 
 # %%
