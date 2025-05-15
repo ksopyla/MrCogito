@@ -5,9 +5,9 @@ import torch.nn.functional as F
 from transformers import PreTrainedModel
 from transformers.modeling_utils import ModuleUtilsMixin
 from transformers.utils import logging
-from torch.nn import CrossEntropyLoss
+from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss
 from transformers.configuration_utils import PretrainedConfig
-from transformers.modeling_outputs import BaseModelOutput, MaskedLMOutput
+from transformers.modeling_outputs import BaseModelOutput, MaskedLMOutput, SequenceClassifierOutput
 
 logger = logging.get_logger(__name__)
 
@@ -153,15 +153,21 @@ class ConceptEncoderLayer(nn.Module):
             normed_concepts, token_embeddings, token_embeddings, 
             key_padding_mask=attention_mask 
         )
+
+        # Add residual connection, add the additional knowledge from the concept token similarities to original concept representations, (how to fuse such information?, norm could act as a fuse operation, so maybe we could also use other operations )
         concept_representations = concept_representations + concept_token_attn_output
 
-        # Self Attention on concept representations
-        # Pre-LN
+        
+        # Pre-LN, norm operation could be view as fusing the knowledge
         normed_concepts = self.pre_self_attn_norm(concept_representations)
+
+        # Self Attention on concept representations, if this is needed? leave for further experiments
         concept_self_attn_output, _ = self.concept_self_attn(
             normed_concepts, normed_concepts, normed_concepts,
             attn_mask=None  # No mask needed for concept self-attention
         )
+
+        # Add residual connection between concepts
         concept_representations = concept_representations + concept_self_attn_output
 
         # Feed Forward Network with gating mechanism
@@ -246,6 +252,8 @@ class ConceptEncoder(PreTrainedModel):
         key_padding_mask = (attention_mask == 0)  # bool of shape [batch_size, seq_len]
 
         # 3) Initialize concept embeddings [batch_size, concept_length, hidden_size]
+        # From gemini deep research analysis:
+        # Concept Initialization: A key step is the initialization of concept_representations. The learnable concept_embeddings (shape [concept_size, hidden_size]) are expanded to match the batch size ([batch_size, concept_size, hidden_size]). This means every item in the batch starts with the exact same set of initial concept prototypes. These prototypes are then specialized for each input sequence through the subsequent layer processing.
         concept_representations = self.concept_embeddings(
             torch.arange(self.config.concept_size, device=input_ids.device)
         ).unsqueeze(0).expand(batch_size, -1, -1)
@@ -304,7 +312,7 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
         # The underlying ConceptEncoder (as defined above).
         self.encoder = ConceptEncoder(config) # []
 
-        # Project concepts to sequence positions via attention
+        # Project concepts to sequence positions via linear layer
         self.concept_to_sequence = nn.Sequential(
             nn.LayerNorm(config.hidden_size),
             nn.Linear(config.hidden_size, config.hidden_size)
@@ -359,7 +367,23 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
         token_embeddings = self.encoder.token_embeddings(input_ids)  # [batch_size, seq_length, hidden_size]
 
         # Project concepts for attention
+
+        # from gemini deep research analysis:
+        #TODO: Project Concepts: Apply the concept_to_sequence module to concept_repr to get projected_concepts. The purpose of this projection (LayerNorm + Linear) before the attention step is not immediately obvious from first principles. It might serve to transform the concept representations into a space more suitable for being attended to by token embeddings, or simply to add learnable parameters to the mapping process. Its necessity or benefit should ideally be verified through ablation studies.
         projected_concepts = self.concept_to_sequence(concept_repr)  # [batch_size, concept_size, hidden_size]
+
+
+
+        # from gemini deep research analysis https://gemini.google.com/gem/0696cd886317/ce82c504453e4949:
+        # This approach fundamentally changes the nature of the MLM task. It compels the model to 
+        # **first compress the essential information of the entire sequence into the fixed-size concept_repr bottleneck**, 
+        # and then reconstruct the sequence from this compressed representation. 
+        # This bears resemblance to autoencoder frameworks, where the concepts act as the encoded latent code. 
+        # It also relates conceptually to latent variable models where generation or reconstruction is conditioned on learned latent codes.1 
+        # The potential consequence is that the model might develop stronger representations of global semantics or concepts, 
+        # potentially at the cost of fine-grained local prediction accuracy compared to standard MLM
+        # The attention-based mapping from concepts back to sequence positions is distinct from other methods. Some approaches map latent representations directly to vocabulary logits, sometimes using the MLM head itself. Others use dedicated decoders. This implementation introduces an intermediate attention step where tokens query concepts to reconstruct their own representations before final vocabulary projection.   
+        # A potential risk is that the model might learn a trivial solution, such as copying token information into concepts and then directly retrieving it. The multi-layer structure of the ConceptEncoder should mitigate this, but the effectiveness of the information compression into the concept bottleneck remains an empirical question
 
         # Compute attention scores between sequence positions and concepts
         attention_scores = torch.matmul(
@@ -478,3 +502,142 @@ class ConceptEncoderWithSimMatrixForMaskedLM(PreTrainedModel):
             hidden_states=encoder_out.hidden_states,
             attentions=encoder_out.attentions
         )
+    
+
+
+class ConceptEncoderForSequenceClassification(PreTrainedModel):
+    """
+    ConceptEncoder Model with a sequence classification head on top
+    for tasks like GLUE (MNLI, QNLI, QQP, SST-2, etc.).
+    
+    This class is designed to fine-tune a pretrained ConceptEncoder model
+    on classification tasks, similar to BertForSequenceClassification.
+    
+    Args:
+        config (ConceptEncoderConfig): Model configuration defining hidden sizes, embeddings, etc.
+    """
+    config_class = ConceptEncoderConfig
+    base_model_prefix = "concept_encoder"
+
+    def __init__(self, config: ConceptEncoderConfig):
+        super().__init__(config)
+        self.num_labels = config.num_labels
+        self.config = config
+        
+        # The underlying ConceptEncoder
+        self.encoder = ConceptEncoder(config)
+        
+        # Classification head - we'll use a pooling layer to get a fixed-size
+        # representation followed by a classification layer
+        #todo: figure out how the polling should be done, different models uses different strategies 
+        # look at from transformers.modeling_utils import SequenceSummary
+        # xlnet implements addtitional abstration module to use different pooling strategies
+
+        self.pooler = nn.Sequential(
+            nn.Linear(config.hidden_size, config.hidden_size),
+            nn.Tanh()
+        )
+        
+        # Add dropout for regularization during fine-tuning
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        
+        # Classification head
+        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+
+        # Initialize weights and apply finalizer
+        self.post_init()
+    
+    def forward(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.IntTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple, SequenceClassifierOutput]:
+        """
+        Forward pass for sequence classification.
+        
+        This method:
+        1. Passes the inputs through the base ConceptEncoder model
+        2. Pools the concept representations (averaging all concepts)
+        3. Passes the pooled representation through the classification head
+        4. Computes loss if labels are provided
+        
+        Args:
+            input_ids: Input token IDs of shape [batch_size, sequence_length]
+            attention_mask: Attention mask of shape [batch_size, sequence_length]
+            labels: Optional labels for computing loss
+            output_attentions: Whether to return attention weights
+            output_hidden_states: Whether to return all hidden states
+            return_dict: Whether to return a SequenceClassifierOutput or a tuple
+            
+        Returns:
+            SequenceClassifierOutput or tuple with logits and optional hidden_states/attentions
+        """
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        
+        # Pass through the encoder to get concept representations
+        encoder_outputs = self.encoder(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+        
+        # Get the concept representations (batch_size, concept_size, hidden_size)
+        concept_representations = encoder_outputs.last_hidden_state
+        
+        # Pool the concept representations - average pooling across the concept dimension
+        # This gives us a representation of size (batch_size, hidden_size)
+        pooled_output = torch.mean(concept_representations, dim=1)
+        
+        # Apply the pooler transformation
+        pooled_output = self.pooler(pooled_output)
+        
+        # Apply dropout for regularization
+        pooled_output = self.dropout(pooled_output)
+        
+        # Compute logits
+        logits = self.classifier(pooled_output)
+        
+        # Compute loss if labels are provided
+        loss = None
+        if labels is not None:
+            if self.config.problem_type is None:
+                if self.num_labels == 1:
+                    self.config.problem_type = "regression"
+                elif self.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
+                    self.config.problem_type = "single_label_classification"
+                else:
+                    self.config.problem_type = "multi_label_classification"
+            
+            if self.config.problem_type == "regression":
+                loss_fct = MSELoss()
+                if self.num_labels == 1:
+                    loss = loss_fct(logits.squeeze(), labels.squeeze())
+                else:
+                    loss = loss_fct(logits, labels)
+            elif self.config.problem_type == "single_label_classification":
+                loss_fct = CrossEntropyLoss()
+                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            elif self.config.problem_type == "multi_label_classification":
+                loss_fct = BCEWithLogitsLoss()
+                loss = loss_fct(logits, labels)
+        
+        if not return_dict:
+            output = (logits,) + encoder_outputs[1:]
+            return ((loss,) + output) if loss is not None else output
+        
+        return SequenceClassifierOutput(
+            loss=loss,
+            logits=logits,
+            hidden_states=encoder_outputs.hidden_states,
+            attentions=encoder_outputs.attentions,
+        )
+    
+    def get_input_embeddings(self):
+        """Returns the token embeddings layer of the encoder."""
+        return self.encoder.token_embeddings

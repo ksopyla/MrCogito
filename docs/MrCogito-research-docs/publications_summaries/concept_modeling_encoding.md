@@ -179,3 +179,45 @@ Strong points:
 
 ### Max 5 top most relevant to the problem follow-up publications
 Due to the limitations of my current capabilities, I am unable to provide a list of the top 5 most relevant follow-up publications.
+
+
+
+
+## Long-Context Language Modeling with Parallel Context Encoding
+
+Howard Yen  Tianyu Gao  Danqi Chen
+Princeton Language and Intelligence (PLI), Princeton University {hyen,tianyug,danqic}@cs.princeton.edu
+11 Jun 2024
+
+paper: https://arxiv.org/html/2402.16617v2
+
+code: https://github.com/princeton-nlp/CEPE
+
+
+### TL;DR
+
+Abstract
+Extending large language models (LLMs) to process longer inputs is crucial for a wide range of applications. However, the substantial computational cost of transformers and limited generalization of positional encoding restrict the size of their context window. We introduce Context Expansion with Parallel Encoding (CEPE [Uncaptioned image]), a framework that can be applied to any existing decoder-only LLMs to extend their context window. CEPE employs a small encoder to process long inputs chunk by chunk, enabling the frozen decoder to utilize additional contexts via cross-attention. CEPE is efficient, generalizable, and versatile: trained with 8K-token documents, it extends the context window of LLAMA-2 to 128K tokens, offering 10× the throughput with only 1/6 of the memory. CEPE yields strong performance on language modeling and in-context learning. CEPE also excels in retrieval-augmented applications, while existing long-context models degenerate with retrieved contexts. We further introduce a CEPE variant that can extend the context window of instruction-tuned models using only unlabeled data, and showcase its effectiveness on LLaMA-2-Chat, leading to a strong instruction-following model that can leverage very long contexts on downstream tasks.1
+
+
+
+## Can Memory-Augmented Language Models Generalize on Reasoning-in-a-Haystack Tasks?
+
+https://arxiv.org/pdf/2503.07903
+
+Abstract
+Large language models often expose their brittleness in reasoning tasks, especially while executing long chains of reasoning over context. We propose MemReasoner, a new and simple memory-augmented LLM architecture, in which 
+the memory learns the relative order of facts in context, and enables hopping over them, while the
+decoder selectively attends to the memory. MemReasoner is trained end-to-end, with optional supporting fact supervision of varying degrees. We train MemReasoner, along with existing memoryaugmented transformer models and a state-space
+model, on two distinct synthetic multi-hop reasoning tasks. Experiments performed under a variety of challenging scenarios, including the presence of long distractor text or target answer changes in test set, show strong generalization of MemReasoner on both single- and two-hop tasks. This generalization of MemReasoner is achieved using
+none-to-weak supporting fact supervision (using none and 1% of supporting facts for one- and twohop tasks, respectively). In contrast, baseline models overall struggle to generalize and benefit far less from using full supporting fact supervision. The results highlight the importance of explicit memory mechanisms, combined with additional weak supervision, for improving large language model’s context processing ability toward reasoning tasks
+
+
+
+## Perceiver: General Perception with Iterative Attention
+Andrew Jaegle, Felix Gimeno, Andrew Brock, Andrew Zisserman, Oriol Vinyals, Joao Carreira
+
+https://arxiv.org/pdf/2103.03206
+
+
+Biological systems perceive the world by simultaneously processing high-dimensional inputs from modalities as diverse as vision, audition, touch, proprioception, etc. The perception models used in deep learning on the other hand are designed for individual modalities, often relying on domain-specific assumptions such as the local grid structures exploited by virtually all existing vision models. These priors introduce helpful inductive biases, but also lock models to individual modalities. In this paper we introduce the Perceiver - a model that builds upon Transformers and hence makes few architectural assumptions about the relationship between its inputs, but that also scales to hundreds of thousands of inputs, like ConvNets. The model leverages an asymmetric attention mechanism to iteratively distill inputs into a tight latent bottleneck, allowing it to scale to handle very large inputs. We show that this architecture is competitive with or outperforms strong, specialized models on classification tasks across various modalities: images, point clouds, audio, video, and video+audio. The Perceiver obtains performance comparable to ResNet-50 and ViT on ImageNet without 2D convolutions by directly attending to 50,000 pixels. It is also competitive in all modalities in AudioSet.

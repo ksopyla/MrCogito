@@ -2,6 +2,15 @@
 
 
 
+## Evaluation libraries
+
+[olmes](https://github.com/allenai/olmes)
+The OLMES (Open Language Model Evaluation System) repository is used within Ai2's Open Language Model efforts to evaluate base and instruction-tuned LLMs on a range of tasks.
+
+
+[lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness)
+Language Model Evaluation Harness by EleutherAI
+
 ## Evaluation for Masked Language Model based on Concept Encoder
 
 

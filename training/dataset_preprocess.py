@@ -76,59 +76,178 @@ def load_and_preprocess_text_dataset(tokenizer, dataset_hf_path, dataset_name, t
     return train_ds, test_ds
 
     
+class NeighborWordMaskCollator(DataCollatorForWholeWordMask):
+    """
+    This class masks neighboring whole words to capture concept-level information.
+    The intuition is that concepts often contain multiple adjacent words.
+    Inspired by LLaDA (Large Language Diffusion Models) that uses higher masking rates
+    and by the concept encoder hypothesis that adjacent tokens form meaningful concepts.
     
+    Unlike standard masking which randomly selects individual tokens, this collator:
+    1. Masks at a higher rate (default 25% vs BERT's 15%)
+    2. Expands masks to neighboring words using a window approach
+    3. Respects word boundaries so words aren't broken in the middle
+    4. Creates clusters of adjacent masked words to capture concept-level information
+    """
+    def __init__(self, tokenizer, mlm_probability=0.25, window_size=3, pad_to_multiple_of=None):
+        """
+        Initialize the NeighborWordMaskCollator.
+        
+        Args:
+            tokenizer: The tokenizer to use for masking
+            mlm_probability: Probability of masking a word (defaults to 0.25, higher than BERT's 0.15)
+            window_size: Size of the window around each masked word to potentially mask
+            pad_to_multiple_of: Pad sequences to multiples of this value
+        """
+        super().__init__(
+            tokenizer=tokenizer, 
+            mlm_probability=mlm_probability,
+            pad_to_multiple_of=pad_to_multiple_of
+        )
+        self.window_size = window_size
+    
+    def torch_mask_tokens(self, inputs, special_tokens_mask=None):
+        """
+        Prepare masked tokens inputs/labels for masked language modeling: 
+        80% MASK, 10% random, 10% original.
+        
+        This overrides the parent method to implement concept-level masking by:
+        1. First applying whole word masking to select initial words
+        2. Then expanding the mask to neighboring words
+        
+        Args:
+            inputs: Input tensor of shape (batch_size, sequence_length)
+            special_tokens_mask: Optional mask for special tokens
+        
+        Returns:
+            Tuple of (masked_inputs, labels) where:
+                - masked_inputs is the input with masked tokens
+                - labels is tensor of the same shape as inputs with -100 for non-masked tokens
+        """
+        # Get base masking from parent class
+        inputs_clone = inputs.clone()
+        masked_inputs, labels = super().torch_mask_tokens(inputs_clone, special_tokens_mask)
+        
+        # Expand masks to neighboring words
+        batch_size, seq_length = inputs.size()
+        
+        # Get word IDs for each token in the batch
+        word_ids_batch = []
+        for batch_idx in range(batch_size):
+            encoding = self.tokenizer.encode_plus(
+                self.tokenizer.decode(inputs[batch_idx].tolist(), skip_special_tokens=False),
+                return_tensors="pt",
+                add_special_tokens=False
+            )
+            word_ids = encoding.word_ids()
+            if len(word_ids) < seq_length:
+                word_ids = word_ids + [None] * (seq_length - len(word_ids))
+            elif len(word_ids) > seq_length:
+                word_ids = word_ids[:seq_length]
+            word_ids_batch.append(word_ids)
+        
+        # Create new expanded mask
+        expanded_mask = torch.zeros_like(inputs, dtype=torch.bool)
+        final_labels = torch.ones_like(inputs) * -100  # Default: don't predict
+        
+        for batch_idx in range(batch_size):
+            # Find originally masked words (not just tokens)
+            masked_word_ids = set()
+            for token_idx in range(seq_length):
+                if labels[batch_idx, token_idx] != -100:  # If this token was originally masked
+                    word_id = word_ids_batch[batch_idx][token_idx]
+                    if word_id is not None:  # Skip special tokens
+                        masked_word_ids.add(word_id)
+            
+            # For each masked word, find neighbors to mask
+            for masked_word_id in masked_word_ids:
+                # Find tokens in the window around this word
+                for token_idx in range(seq_length):
+                    current_word_id = word_ids_batch[batch_idx][token_idx]
+                    
+                    # Skip special tokens and None word_ids
+                    if current_word_id is None:
+                        continue
+                    
+                    # Check if this token belongs to a word within the window
+                    if (current_word_id in masked_word_ids or 
+                        any(abs(current_word_id - other_id) <= self.window_size 
+                            for other_id in masked_word_ids if current_word_id is not None and other_id is not None)):
+                        expanded_mask[batch_idx, token_idx] = True
+                        final_labels[batch_idx, token_idx] = inputs[batch_idx, token_idx]
+            
+            # Apply additional random masking to ensure we reach desired masking rate
+            actual_mask_rate = expanded_mask[batch_idx].float().mean().item()
+            if actual_mask_rate < self.mlm_probability:
+                additional_mask_needed = self.mlm_probability - actual_mask_rate
+                additional_mask_probs = torch.rand(seq_length, device=inputs.device)
+                
+                # Only consider unmasked, non-special tokens for additional masking
+                valid_tokens = ~expanded_mask[batch_idx]
+                if special_tokens_mask is not None:
+                    valid_tokens = valid_tokens & ~special_tokens_mask[batch_idx]
+                
+                # Calculate how many more tokens need to be masked
+                n_valid = valid_tokens.sum().item()
+                n_to_mask = int(n_valid * additional_mask_needed / (1 - actual_mask_rate))
+                
+                # Get indices of valid tokens
+                valid_indices = torch.where(valid_tokens)[0]
+                
+                # Randomly select indices to mask
+                if n_to_mask > 0 and len(valid_indices) > 0:
+                    perm = torch.randperm(len(valid_indices), device=inputs.device)
+                    additional_indices = valid_indices[perm[:n_to_mask]]
+                    
+                    # Apply additional masking
+                    expanded_mask[batch_idx, additional_indices] = True
+                    final_labels[batch_idx, additional_indices] = inputs[batch_idx, additional_indices]
+        
+        # Replace masked tokens with [MASK] or random tokens
+        masked_inputs = inputs.clone()
+        
+        # 80% of the time, replace with [MASK]
+        mask_indices = torch.bernoulli(torch.full(inputs.shape, 0.8)).bool() & expanded_mask
+        masked_inputs[mask_indices] = self.tokenizer.convert_tokens_to_ids(self.tokenizer.mask_token)
+        
+        # 10% of the time, replace with random token
+        random_indices = torch.bernoulli(torch.full(inputs.shape, 0.5)).bool() & expanded_mask & ~mask_indices
+        random_tokens = torch.randint(len(self.tokenizer), inputs.shape, dtype=torch.long, device=inputs.device)
+        masked_inputs[random_indices] = random_tokens[random_indices]
+        
+        # The rest of the time (10%), keep original tokens unchanged
+        
+        return masked_inputs, final_labels
+    
+    def __call__(self, examples):
+        """
+        Apply masking to a batch of examples.
+        
+        Args:
+            examples: List of dictionaries with input_ids, token_type_ids, etc.
+            
+        Returns:
+            Dictionary with masked inputs and corresponding labels
+        """
+        batch = super().__call__(examples)
+        
+        # Ensure "special_tokens_mask" is available or compute it
+        if "special_tokens_mask" not in batch:
+            batch["special_tokens_mask"] = [
+                self.tokenizer.get_special_tokens_mask(val, already_has_special_tokens=True)
+                for val in batch["input_ids"]
+            ]
+            batch["special_tokens_mask"] = torch.tensor(batch["special_tokens_mask"], dtype=torch.bool)
+        
+        # Apply neighbor word masking
+        inputs, labels = self.torch_mask_tokens(
+            batch["input_ids"], batch["special_tokens_mask"]
+        )
+        
+        batch["input_ids"] = inputs
+        batch["labels"] = labels
+        
+        return batch
     
 if __name__ == "__main__":
     pass
-    """
-    This class mask the few nearby whole word, the intuition is that concepts contain multiple nearby words.
-    """ 
-    def __init__(self, *args, window_size=3, **kwargs):
-        super().__init__(*args, **kwargs)
-        
-        # The window size for masking, defines how many whole words to mask
-        self.window_size = window_size
-
-    def torch_mask_tokens(self, inputs, special_tokens_mask):
-        """
-        This function masks the tokens in the input sequence.
-        """
-        # First apply whole word masking
-        masked_inputs, mask_labels = super().torch_mask_tokens(inputs, special_tokens_mask)
-        
-        # Expand masks to neighbors
-        batch_size, seq_len = inputs.shape
-        expanded_mask = torch.zeros_like(masked_inputs, dtype=torch.bool)
-        
-        for b in range(batch_size):
-            # Get original masked positions
-            masked_indices = torch.where(mask_labels[b])[0].tolist()
-            
-            # Expand each mask position
-            for idx in masked_indices:
-                start = max(0, idx - self.window_size)
-                end = min(seq_len, idx + self.window_size + 1)
-                expanded_mask[b, start:end] = True
-                
-        # Apply expanded masking
-        random_mask = torch.rand(expanded_mask.shape, device=inputs.device) < self.mlm_probability
-        final_mask = expanded_mask & random_mask
-        
-        # Replace with [MASK] or random token
-        masked_inputs = torch.where(
-            final_mask,
-            self.tokenizer.convert_tokens_to_ids(self.tokenizer.mask_token),
-            inputs
-        )
-        
-        # Optional: Replace 10% of masked tokens with random words
-        random_words = torch.randint(
-            len(self.tokenizer), 
-            inputs.shape, 
-            dtype=torch.long, 
-            device=inputs.device
-        )
-        random_replace = (torch.rand(final_mask.shape, device=inputs.device) < 0.1) & final_mask
-        masked_inputs[random_replace] = random_words[random_replace]
-
-        return masked_inputs, final_mask

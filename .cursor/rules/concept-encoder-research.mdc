@@ -1,0 +1,15 @@
+---
+description: Concept Transfromer Research project idea, folder structure and relevant reserach summaries
+globs: 
+alwaysApply: false
+---
+
+# Concept Transfromer Research project idea and structure
+
+- This is research project for develope and evaluate new transformer architecture called "Concept Encoder", the idea of Concept Encode and all relevant materials, notes, and usefull extracts from similar research articles are in  @docs docs/MrCogito-research-docs folders and its subfolders
+- [concept_encoder_notes.md](mdc:docs/MrCogito-research-docs/concept_encoder_notes.md) introduce the idea
+- [concept_modeling_encoding.md](mdc:docs/MrCogito-research-docs/publications_summaries/concept_modeling_encoding.md) [masked_language_models.md](mdc:docs/MrCogito-research-docs/publications_summaries/masked_language_models.md) contains the relevant publication summaries and techniques
+- Cache folder is only for storing downloaded Huggingface models and tokenizers, do not use it
+- @playground folder is use of testing and getting familiar with libraries, methods and testing new models 
+- @nn - contains main implementation of Concept models
+  

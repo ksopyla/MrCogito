@@ -1,5 +1,5 @@
 #%% - load the bert model
-from transformers import AutoTokenizer, AutoModelForMaskedLM, AutoModelForSequenceClassification
+from transformers import AutoTokenizer, AutoModelForMaskedLM, AutoModelForSequenceClassification, AutoModelForTokenClassification, AutoModelForQuestionAnswering
 from transformers import BertModel, BertTokenizer
 import torch
 import os
@@ -7,18 +7,18 @@ from rich import print
 
 
 
-cache_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cache", "Models"))
-print(cache_dir)
+MODEL_CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cache", "Models"))
+print(MODEL_CACHE_DIR)
 
 #%% load the bert model for comparistion with the modern bert model
-bert_model = AutoModelForMaskedLM.from_pretrained("bert-base-uncased", torch_dtype=torch.float16, attn_implementation="sdpa", cache_dir=cache_dir)
-bert_tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased', cache_dir=cache_dir)
+bert_model = AutoModelForMaskedLM.from_pretrained("bert-base-uncased", torch_dtype=torch.float16, attn_implementation="sdpa", cache_dir=MODEL_CACHE_DIR)
+bert_tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased', cache_dir=MODEL_CACHE_DIR)
 
 
 #%% load the ModernBERT model
 
-modern_bert_model = AutoModelForMaskedLM.from_pretrained('answerdotai/ModernBERT-base', cache_dir=cache_dir)
-modern_bert_tokenizer = AutoTokenizer.from_pretrained('answerdotai/ModernBERT-base', cache_dir=cache_dir)
+modern_bert_model = AutoModelForMaskedLM.from_pretrained('answerdotai/ModernBERT-base', cache_dir=MODEL_CACHE_DIR)
+modern_bert_tokenizer = AutoTokenizer.from_pretrained('answerdotai/ModernBERT-base', cache_dir=MODEL_CACHE_DIR)
 
 
 #%%
@@ -80,7 +80,106 @@ for mask_idx, masked_index in enumerate(masked_indices):
 
 # %% load bert from SequenceClassification
 
-bert_seq_class_model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", cache_dir=cache_dir)
+bert_seq_class_model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", cache_dir=MODEL_CACHE_DIR, num_labels=5)
+print(bert_seq_class_model)
+
+#load the bert for token classification
+bert_token_class_model = AutoModelForTokenClassification.from_pretrained("bert-base-uncased", cache_dir=MODEL_CACHE_DIR)
+print(bert_token_class_model)
+
+#load the bert for question answering
+bert_qa_model = AutoModelForQuestionAnswering.from_pretrained("bert-base-uncased", cache_dir=MODEL_CACHE_DIR)
+print(bert_qa_model)
+
+
+#%% load the modern bert for sequence classification
+
+modern_bert_seq_class_model = AutoModelForSequenceClassification.from_pretrained("answerdotai/ModernBERT-base", cache_dir=MODEL_CACHE_DIR, num_labels=5)
+print(modern_bert_seq_class_model)
+
+#load the modern bert for token classification
+modern_bert_token_class_model = AutoModelForTokenClassification.from_pretrained("answerdotai/ModernBERT-base", cache_dir=MODEL_CACHE_DIR)
+print(modern_bert_token_class_model)    
+
+#load the modern bert for question answering
+modern_bert_qa_model = AutoModelForQuestionAnswering.from_pretrained("answerdotai/ModernBERT-base", cache_dir=MODEL_CACHE_DIR)
+print(modern_bert_qa_model)
+
+
+#%% load the XLNet model
+
+xlnet_model = AutoModelForMaskedLM.from_pretrained("xlnet-base-cased", cache_dir=MODEL_CACHE_DIR)
+
+
+#%% load the XLNet for sequence classification
+xlnet_seq_class_model = AutoModelForSequenceClassification.from_pretrained("xlnet-base-cased", cache_dir=MODEL_CACHE_DIR) 
+
+#load the XLNet for token classification
+xlnet_token_class_model = AutoModelForTokenClassification.from_pretrained("xlnet-base-cased", cache_dir=MODEL_CACHE_DIR)
+
+#load the XLNet for question answering
+xlnet_qa_model = AutoModelForQuestionAnswering.from_pretrained("xlnet-base-cased", cache_dir=MODEL_CACHE_DIR) 
+
+#%% load the DeBERTa model
+
+deberta_model = AutoModelForMaskedLM.from_pretrained("microsoft/deberta-base", cache_dir=MODEL_CACHE_DIR)
+
+
+#%% load the DeBERTa for sequence classification
+deberta_seq_class_model = AutoModelForSequenceClassification.from_pretrained("microsoft/deberta-base", cache_dir=MODEL_CACHE_DIR)
+
+#load the DeBERTa for token classification
+deberta_token_class_model = AutoModelForTokenClassification.from_pretrained("microsoft/deberta-base", cache_dir=MODEL_CACHE_DIR)
+
+#load the DeBERTa for question answering
+deberta_qa_model = AutoModelForQuestionAnswering.from_pretrained("microsoft/deberta-base", cache_dir=MODEL_CACHE_DIR)
+
+
+#%% load the Albert model
+
+albert_model = AutoModelForMaskedLM.from_pretrained("albert-base-v2", cache_dir=MODEL_CACHE_DIR)
+
+#%% load the Albert for sequence classification
+albert_seq_class_model = AutoModelForSequenceClassification.from_pretrained("albert-base-v2", cache_dir=MODEL_CACHE_DIR)
+
+#load the Albert for token classification
+albert_token_class_model = AutoModelForTokenClassification.from_pretrained("albert-base-v2", cache_dir=MODEL_CACHE_DIR)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

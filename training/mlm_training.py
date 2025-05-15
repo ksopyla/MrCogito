@@ -118,8 +118,6 @@ def main():
                                                          test_size_percent = test_size_percent,
                                                          max_seq_length=max_seq_length)
     
-    # initialize the model
-    
     # Create model config using model_args
     config = ConceptEncoderConfig(
         vocab_size=tokenizer.vocab_size,
@@ -134,10 +132,14 @@ def main():
         tie_word_embeddings=True    
     )
         
-    # initialize the model
-    model = ConceptEncoderForMaskedLM(config)
-    
-    
+    # initialize the model based on model_type
+    print(f"Initializing model of type: {model_args.model_type}")
+    if model_args.model_type == "sim_matrix_mlm":
+        model = ConceptEncoderWithSimMatrixForMaskedLM(config)
+        print("Using ConceptEncoderWithSimMatrixForMaskedLM model")
+    else:  # Default to "concept_mlm"
+        model = ConceptEncoderForMaskedLM(config)
+        print("Using ConceptEncoderForMaskedLM model")
     
     # Data collator for dynamic masking
     if data_args.masking_type == "whole_word":

@@ -124,3 +124,11 @@ The procedure:
 1. Unigram model trained on filtered set of moderately frequent words (≥7 occurrences)
 2. Training should be done on words (meaningfull tokens or conepts ). NLTK's word_tokenize is enough for word extraction, w
 3. It is sufficient to train directly on words without Morfessor preprocessing
+
+
+## Idea 5 - review the Perceiver model architecture
+
+Revie the implementation of the Perceiver model and try to understand the architecture and the concepts - https://github.com/krasserm/perceiver-io
+
+The concept enc-dec idea is very similar to the Perceiver models, let's review the implementation and figure out the differences and similarities.
+
