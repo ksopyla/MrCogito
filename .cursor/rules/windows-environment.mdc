@@ -9,6 +9,7 @@ alwaysApply: true
 - project is using Python 3.12 and poetry for managing the packages
 - python packages are managed by poetry and are in [pyproject.toml](mdc:pyproject.toml) file, before installation check if it has been already installed
 - project poetry environment is called mrcogito-sHhaXiEk-py3.12, if you want run python code run in within this virtual environment, below are the details with location
+- when run some python code you must run it inside the poetry virual environment, use `poetry shell` command to enter to proper envronment or similar, below there are detials about my virtual environment
   
 ```poershell
 poetry env info

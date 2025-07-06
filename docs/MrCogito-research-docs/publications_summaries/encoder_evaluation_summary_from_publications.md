@@ -1,3 +1,11 @@
+# Encoder evaluation summary results from respective research papers
+
+This document contains the summary results of the encoder evaluation from the respective research papers. 
+
+
+## Table of contents
+
+* [Table of contents](#table-of-contents)
 * [XLNet](#xlnet)
 * [Albert](#albert)
 * [ModernBert evaluations](#modernbert-evaluations)
