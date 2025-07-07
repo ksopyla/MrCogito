@@ -38,6 +38,7 @@ from transformers import (
     XLNetForSequenceClassification, 
     XLNetTokenizer,
     AutoTokenizer,
+    AutoModelForSequenceClassification,
     Trainer, 
     TrainingArguments,
     EarlyStoppingCallback,
@@ -66,9 +67,6 @@ from sklearn.metrics import matthews_corrcoef, accuracy_score, f1_score
 from scipy.stats import pearsonr, spearmanr
 import wandb
 
-DATASET_CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cache", "Datasets"))
-MODEL_CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cache", "Models"))
-TOKENIZER_CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cache", "Tokenizers"))
 
 # Configure logging
 logging.basicConfig(
@@ -78,15 +76,62 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Add Hugging Face authentication token from .env file
+try:
+    from dotenv import load_dotenv
+    import os
+    
+    # Load environment variables from .env file in the project root
+    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+    load_dotenv(env_path)
+    
+    # Get HF token from environment variable
+    hf_token = os.getenv('HUGGINGFACE_TOKEN') or os.getenv('HF_TOKEN')
+    
+    if hf_token:
+        logger.info("Successfully loaded Hugging Face token from .env file")
+    else:
+        logger.warning("No Hugging Face token found in .env file. Add HUGGINGFACE_TOKEN or HF_TOKEN to your .env file")
+        hf_token = None
+        
+except ImportError:
+    logger.warning("python-dotenv not installed. Install with: pip install python-dotenv")
+    hf_token = None
+except Exception as e:
+    logger.warning(f"Failed to load token from .env file: {e}")
+    hf_token = None
+
+DATASET_CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cache", "Datasets"))
+MODEL_CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cache", "Models"))
+TOKENIZER_CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cache", "Tokenizers"))
+
+
+
 # Configure arguments
 def parse_args():
+    """
+    Parse command line arguments for GLUE evaluation script.
+    
+    Returns:
+        argparse.Namespace: Parsed command line arguments with all configuration options
+        
+    Available arguments:
+        --model_type: Type of model (bert-type, xlnet-type, concept-type)
+        --task: GLUE task to evaluate on (cola, mrpc, etc. or 'all')
+        --model_name_or_path: HuggingFace model name or local path
+        --batch_size: Training and evaluation batch size
+        --epochs: Number of training epochs
+        --learning_rate: Learning rate for optimizer
+        --visualize: Enable rich table visualizations
+        And many more hyperparameter options...
+    """
     parser = argparse.ArgumentParser(description="Fine-tune a model on GLUE")
     parser.add_argument(
         "--model_type",
         type=str,
-        default="xlnet",
-        choices=["xlnet", "concept"],
-        help="Type of model to fine-tune (xlnet or concept)"
+        default="bert",
+        choices=["bert-type", "xlnet-type", "concept-type"],
+        help="Type of model to fine-tune (bert, roberta, xlnet, or concept)"
     )
     parser.add_argument(
         "--task",
@@ -98,7 +143,7 @@ def parse_args():
     parser.add_argument(
         "--model_name_or_path",
         type=str,
-        default="xlnet-base-cased",
+        default="bert-base-cased", # bert-base-cased, xlnet-base-cased, roberta-base, distilbert-base-cased, distilbert-base-uncased-finetuned-sst-2-english
         help="Model name or path to use (pretrained model name or local checkpoint path)"
     )
     parser.add_argument(
@@ -163,6 +208,24 @@ def parse_args():
         "--visualize",
         action="store_true",
         help="Visualize results with rich tables"
+    )
+    parser.add_argument(
+        "--adam_epsilon",
+        type=float,
+        default=1e-8,
+        help="Epsilon for AdamW optimizer"
+    )
+    parser.add_argument(
+        "--adam_beta1",
+        type=float,
+        default=0.9,
+        help="Beta1 for AdamW optimizer"
+    )
+    parser.add_argument(
+        "--adam_beta2",
+        type=float,
+        default=0.999,
+        help="Beta2 for AdamW optimizer"
     )
     return parser.parse_args()
 
@@ -349,6 +412,15 @@ print(glue_df.style.set_properties(**{"text-align": "left"}))
 
 # Set seed for reproducibility
 def set_seed(seed):
+    """
+    Set random seeds for reproducible results across different runs.
+    
+    Args:
+        seed (int): Random seed value to use for all random number generators
+        
+    Note:
+        Sets seeds for: random, numpy, torch, and CUDA (if available)
+    """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -357,6 +429,21 @@ def set_seed(seed):
 
 # Preprocess function for GLUE tasks
 def preprocess_function(examples, tokenizer, max_length, task):
+    """
+    Preprocess examples for GLUE tasks by tokenizing text and adding labels.
+    
+    Args:
+        examples (dict): Batch of examples from the dataset
+        tokenizer: HuggingFace tokenizer for text processing
+        max_length (int): Maximum sequence length for tokenization
+        task (str): GLUE task name to determine input format
+        
+    Returns:
+        dict: Tokenized examples with input_ids, attention_mask, and labels
+        
+    Note:
+        Handles both single-sentence tasks (CoLA, SST-2) and sentence-pair tasks (MRPC, etc.)
+    """
     task_config = GLUE_TASKS[task]
     task_keys = task_config["keys"]
     
@@ -392,6 +479,20 @@ def preprocess_function(examples, tokenizer, max_length, task):
 
 # Compute metrics for evaluation
 def compute_metrics(task, metric_names):
+    """
+    Create a metrics computation function for the specified GLUE task.
+    
+    Args:
+        task (str): GLUE task name
+        metric_names (list): List of metric names to compute
+        
+    Returns:
+        function: Metrics computation function that takes eval_pred and returns metric dict
+        
+    Note:
+        Computes both HuggingFace evaluate metrics and scikit-learn metrics for validation.
+        Handles regression tasks (STS-B) and classification tasks differently.
+    """
     metrics = {name: evaluate.load(name) for name in metric_names}
     task_config = GLUE_TASKS[task]
     sklearn_metrics = task_config["metric_funcs"] if "metric_funcs" in task_config else []
@@ -443,7 +544,27 @@ def compute_metrics(task, metric_names):
     return compute_metrics_fn
 
 def load_glue_dataset(task, tokenizer, max_length):
-    """Load and preprocess a GLUE dataset for the given task."""
+    """
+    Load and preprocess a GLUE dataset for the specified task.
+    
+    Args:
+        task (str): GLUE task name (e.g., 'mrpc', 'cola', etc.)
+        tokenizer: HuggingFace tokenizer for text preprocessing
+        max_length (int): Maximum sequence length for tokenization
+        
+    Returns:
+        tuple: (train_dataset, eval_dataset, test_dataset)
+            - train_dataset: Preprocessed training dataset
+            - eval_dataset: Preprocessed validation dataset  
+            - test_dataset: None (not used in current implementation)
+            
+    Raises:
+        ValueError: If task is not a valid GLUE task
+        Exception: If dataset loading or preprocessing fails
+        
+    Note:
+        Handles different validation split names for different tasks (e.g., MNLI has matched/mismatched)
+    """
     try:
         # Validate task
         if task not in GLUE_TASKS:
@@ -494,31 +615,192 @@ def load_glue_dataset(task, tokenizer, max_length):
         logger.error(f"Error in load_glue_dataset for task {task}: {str(e)}")
         raise
 
+def create_experiment_name(model_name, task, total_params, timestamp=None):
+    """
+    Create a consistent experiment name for files and wandb runs.
+    
+    Args:
+        model_name (str): Full model name (e.g., 'distilbert-base-cased')
+        task (str): GLUE task name (e.g., 'mrpc')
+        total_params (int): Total number of model parameters
+        timestamp (str, optional): Timestamp string, generates new if None
+        
+    Returns:
+        tuple: (experiment_name, timestamp)
+            - experiment_name: Formatted name like 'glue-mrpc-distilbert-base-cased-66M'
+            - timestamp: Timestamp used (for consistency across files)
+    """
+    if timestamp is None:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M')
+    
+    # Clean model name for file system compatibility
+    clean_model_name = model_name.lower()
+    
+    # Remove organization prefix (everything before the last slash)
+    if '/' in clean_model_name:
+        clean_model_name = clean_model_name.split('/')[-1]
+    
+    # Replace problematic characters with hyphens
+    clean_model_name = clean_model_name.replace('_', '-')
+    clean_model_name = clean_model_name.replace(' ', '-')
+    clean_model_name = clean_model_name.replace('.', '-')
+    
+    # Remove multiple consecutive hyphens
+    while '--' in clean_model_name:
+        clean_model_name = clean_model_name.replace('--', '-')
+    
+    # Remove leading/trailing hyphens
+    clean_model_name = clean_model_name.strip('-')
+    
+    # Format parameters in millions
+    params_m = round(total_params / 1_000_000)
+    params_str = f"{params_m}M"
+    
+    # Create experiment name
+    experiment_name = f"glue-{task}-{clean_model_name}-{params_str}"
+    
+    return experiment_name, timestamp
+
+def create_file_names(experiment_name, timestamp):
+    """
+    Create consistent file names for all experiment outputs.
+    
+    Args:
+        experiment_name (str): Base experiment name
+        timestamp (str): Timestamp string
+        
+    Returns:
+        dict: Dictionary with file names for different report types
+    """
+    base_name = f"{experiment_name}-{timestamp}"
+    
+    return {
+        'results': f"{base_name}-results.csv",
+        'metadata': f"{base_name}-metadata.csv", 
+        'summary': f"{base_name}-summary.csv"
+    }
+
+def get_model_specific_config(model_name_or_path):
+    """
+    Get model-specific configuration parameters for fine-tuning.
+    
+    This function centralizes model-specific settings to handle known issues
+    and optimize training for different model architectures.
+    
+    Args:
+        model_name_or_path (str): The model name or path
+        
+    Returns:
+        dict: Dictionary containing model-specific configuration parameters
+    """
+    config = {
+        'use_bf16': True,
+        'use_fp16': False,
+        'adam_beta1': 0.9,
+        'adam_beta2': 0.999,
+        'adam_epsilon': 1e-8,
+        'max_grad_norm': 1.0,
+        'warmup_steps': 500,
+        'gradient_accumulation_steps': 1,
+        'special_notes': []
+    }
+    
+    model_name_lower = model_name_or_path.lower()
+    
+    # DeBERTa-specific configurations
+    if "deberta" in model_name_lower:
+        config.update({
+            'use_bf16': False,
+            'use_fp16': False,
+            'max_grad_norm': 2.0,
+            'special_notes': ['Mixed precision disabled due to BFloat16 overflow issues']
+        })
+        logger.info("DeBERTa model detected - applying DeBERTa-specific configurations")
+    
+    # ModernBERT-specific configurations
+    elif "modernbert" in model_name_lower:
+        config.update({
+            'adam_beta2': 0.98,  # Critical for ModernBERT stability
+            'adam_epsilon': 1e-6,
+            'max_grad_norm': 2.0,
+            'special_notes': ['ModernBERT requires adam_beta2=0.98 for stable training']
+        })
+        logger.info("ModernBERT model detected - applying ModernBERT-specific configurations")
+    
+    # ELECTRA-specific configurations
+    elif "electra" in model_name_lower:
+        config.update({
+            'warmup_steps': 1000,
+            'gradient_accumulation_steps': 2,
+            'special_notes': ['ELECTRA benefits from longer warmup and gradient accumulation']
+        })
+        logger.info("ELECTRA model detected - applying ELECTRA-specific configurations")
+    
+    # XLNet-specific configurations  
+    elif "xlnet" in model_name_lower:
+        config.update({
+            'warmup_steps': 1000,
+            'max_grad_norm': 2.0,
+            'special_notes': ['XLNet optimized with extended warmup']
+        })
+        logger.info("XLNet model detected - applying XLNet-specific configurations")
+    
+    # RoBERTa and BERT (standard configurations)
+    elif any(model_type in model_name_lower for model_type in ["roberta", "bert", "distilbert"]):
+        config.update({
+            'max_grad_norm': 1.0,
+            'special_notes': ['Using standard BERT/RoBERTa configurations']
+        })
+        logger.info(f"BERT-family model detected ({model_name_or_path}) - using standard configurations")
+    
+    # ALBERT-specific configurations
+    elif "albert" in model_name_lower:
+        config.update({
+            'warmup_steps': 1000,
+            'gradient_accumulation_steps': 2,
+            'special_notes': ['ALBERT optimized with extended warmup and gradient accumulation']
+        })
+        logger.info("ALBERT model detected - applying ALBERT-specific configurations")
+    
+    # Log configuration details
+    if config['special_notes']:
+        for note in config['special_notes']:
+            logger.info(f"  - {note}")
+    
+    return config
+
 def finetune_model_on_glue(args):
-    """Fine-tune a model on a GLUE task and evaluate."""
+    """
+    Fine-tune a model on a specific GLUE task and evaluate performance.
+    
+    Args:
+        args (argparse.Namespace): Command line arguments with model and training configuration
+        
+    Returns:
+        tuple: (eval_results, experiment_metadata)
+            - eval_results (dict): Raw evaluation metrics from trainer
+            - experiment_metadata (dict): Comprehensive experiment information including:
+                * experiment_id: Unique wandb run ID
+                * model info: name, type, parameters
+                * training info: times, hyperparameters
+                * wandb_url: Direct link to experiment
+                
+    Note:
+        Supports different model types: bert-type, xlnet-type, concept-type
+        Automatically tracks experiment in Weights & Biases
+        Handles both classification and regression tasks
+    """
     # Set seed for reproducibility
     set_seed(args.seed)
     
     # Determine tokenizer name
     tokenizer_name = args.tokenizer_name if args.tokenizer_name else args.model_name_or_path
     
-    # Load tokenizer based on model type
-    if args.model_type == "xlnet":
-        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=TOKENIZER_CACHE_DIR)
-    else:  # concept encoder
-        # For ConceptEncoder, we typically use a standard tokenizer like BERT's
-        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=TOKENIZER_CACHE_DIR)
+    # Load tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
     
     # Load and initialize model based on model type
-    if args.model_type == "xlnet":
-        # Load XLNet model
-        model = XLNetForSequenceClassification.from_pretrained(
-            args.model_name_or_path,
-            num_labels=GLUE_TASKS[args.task]["num_labels"],
-            problem_type="regression" if args.task == "stsb" else "single_label_classification",
-            cache_dir=MODEL_CACHE_DIR
-        )
-    else:  # concept encoder
+    if args.model_type == "concept":
         # First, load configuration and update with task-specific settings
         try:
             # Try to load the config from the model path
@@ -541,7 +823,8 @@ def finetune_model_on_glue(args):
             model = ConceptEncoderForSequenceClassification.from_pretrained(
                 args.model_name_or_path,
                 config=config,
-                cache_dir=MODEL_CACHE_DIR
+                cache_dir=MODEL_CACHE_DIR,
+                token=hf_token
             )
             logger.info(f"Successfully loaded ConceptEncoder model from {args.model_name_or_path}")
         except Exception as e:
@@ -549,6 +832,18 @@ def finetune_model_on_glue(args):
             logger.warning("Initializing a new ConceptEncoderForSequenceClassification model instead.")
             # Initialize a new model with the config
             model = ConceptEncoderForSequenceClassification(config)
+    else:  # Standard transformer models like bert, roberta, xlnet
+        model = AutoModelForSequenceClassification.from_pretrained(
+            args.model_name_or_path,
+            num_labels=GLUE_TASKS[args.task]["num_labels"],
+            problem_type="regression" if args.task == "stsb" else "single_label_classification",
+            cache_dir=MODEL_CACHE_DIR,
+            token=hf_token
+        )
+    
+    # Count model parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     
     # Load and preprocess dataset
     train_dataset, eval_dataset, _ = load_glue_dataset(args.task, tokenizer, args.max_length)
@@ -561,6 +856,18 @@ def finetune_model_on_glue(args):
     
     logger.info(f"Dataset size: {train_size}, Steps per epoch: {steps_per_epoch}, Dynamic logging steps: {logging_steps}")
     
+    # Create experiment timestamp and run name
+    experiment_name, timestamp = create_experiment_name(args.model_name_or_path, args.task, total_params)
+    run_name = f"{experiment_name}-{timestamp}"
+    
+    # Get model-specific configuration
+    model_config = get_model_specific_config(args.model_name_or_path)
+    
+    # Override with command line arguments if provided, otherwise use model-specific defaults
+    final_adam_beta1 = args.adam_beta1 if hasattr(args, 'adam_beta1') and args.adam_beta1 != 0.9 else model_config['adam_beta1']
+    final_adam_beta2 = args.adam_beta2 if hasattr(args, 'adam_beta2') and args.adam_beta2 != 0.999 else model_config['adam_beta2']
+    final_adam_epsilon = args.adam_epsilon if hasattr(args, 'adam_epsilon') and args.adam_epsilon != 1e-8 else model_config['adam_epsilon']
+    
     # Prepare training arguments
     training_args = TrainingArguments(
         output_dir=os.path.join(args.output_dir, f"{args.task}"),
@@ -569,18 +876,21 @@ def finetune_model_on_glue(args):
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=args.batch_size,
         num_train_epochs=args.epochs,
-        warmup_steps=500,
+        warmup_steps=model_config['warmup_steps'],
         lr_scheduler_type="linear",
-        bf16=True,
-        fp16=False,
+        bf16=model_config['use_bf16'],
+        fp16=model_config['use_fp16'],
 
         learning_rate=args.learning_rate,
         weight_decay=args.weight_decay,
-        max_grad_norm=2.0,
+        max_grad_norm=model_config['max_grad_norm'],
         optim="adamw_torch",
-        gradient_accumulation_steps=1,
+        adam_beta1=final_adam_beta1,
+        adam_beta2=final_adam_beta2,
+        adam_epsilon=final_adam_epsilon,
+        gradient_accumulation_steps=model_config['gradient_accumulation_steps'],
         
-        evaluation_strategy="epoch", # change to eval_strategy
+        eval_strategy="epoch", # change to eval_strategy
         save_strategy="epoch",
         logging_steps=logging_steps,
         seed=42,
@@ -590,7 +900,7 @@ def finetune_model_on_glue(args):
         metric_for_best_model=GLUE_TASKS[args.task]["metrics"][0],
         push_to_hub=False,
         report_to=["tensorboard", "wandb"],
-        run_name=f"GLUE-{args.model_type}-{args.task}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        run_name=run_name,
         
         disable_tqdm=False,
     )
@@ -618,10 +928,10 @@ def finetune_model_on_glue(args):
     )
 
     # Initialize the wandb project
-    wandb.init(
+    wandb_run = wandb.init(
         project="MrCogito",
         config=vars(training_args),
-        name=training_args.run_name,
+        name=run_name,
         tensorboard=True,
         sync_tensorboard=True,
         tags=["glue", args.task, "finetuning", args.model_type, args.model_name_or_path],
@@ -637,7 +947,9 @@ def finetune_model_on_glue(args):
     
     # Evaluate model
     logger.info(f"Evaluating {args.model_name_or_path} ({args.model_type}) on {args.task}...")
+    eval_start_time = time.time()
     eval_results = trainer.evaluate()
+    eval_time = time.time() - eval_start_time
     
     # Save model if requested
     if args.save_model:
@@ -648,78 +960,375 @@ def finetune_model_on_glue(args):
     for key, value in eval_results.items():
         logger.info(f"  {key}: {value}")
     
-    return eval_results
+    # Prepare comprehensive experiment metadata
+    experiment_metadata = {
+        'experiment_id': wandb_run.id,
+        'experiment_name': run_name,
+        'wandb_url': wandb_run.url,
+        'wandb_project': wandb_run.project,
+        'model_name': args.model_name_or_path,
+        'model_type': args.model_type,
+        'task': args.task,
+        'timestamp': timestamp,
+        'date': datetime.now().strftime('%Y-%m-%d'),
+        'time': datetime.now().strftime('%H:%M:%S'),
+        'total_params': total_params,
+        'trainable_params': trainable_params,
+        'training_time_seconds': training_time,
+        'eval_time_seconds': eval_time,
+        'train_samples': len(train_dataset),
+        'eval_samples': len(eval_dataset),
+        'batch_size': args.batch_size,
+        'learning_rate': args.learning_rate,
+        'weight_decay': args.weight_decay,
+        'epochs': args.epochs,
+        'max_length': args.max_length,
+        'seed': args.seed,
+        'adam_beta1': final_adam_beta1,
+        'adam_beta2': final_adam_beta2,
+        'adam_epsilon': final_adam_epsilon,
+        'warmup_steps': model_config['warmup_steps'],
+        'max_grad_norm': model_config['max_grad_norm'],
+        'gradient_accumulation_steps': model_config['gradient_accumulation_steps'],
+        'use_bf16': model_config['use_bf16'],
+        'use_fp16': model_config['use_fp16'],
+        'model_specific_notes': '; '.join(model_config['special_notes'])
+    }
+    
+    # Close wandb run
+    wandb.finish()
+    
+    return eval_results, experiment_metadata
+
+def create_experiment_results(eval_results, experiment_metadata):
+    """
+    Create standardized result entries from evaluation results and experiment metadata.
+    
+    Args:
+        eval_results (dict): Raw evaluation results from trainer.evaluate()
+        experiment_metadata (dict): Comprehensive experiment metadata
+        
+    Returns:
+        list: List of result dictionaries with consistent structure
+    """
+    results = []
+    
+    for metric, score in eval_results.items():
+        if metric.startswith("eval_"):
+            metric_name = metric[5:]  # Remove "eval_" prefix
+            results.append({
+                "experiment_id": experiment_metadata['experiment_id'],
+                "experiment_name": experiment_metadata['experiment_name'],
+                "model_name": experiment_metadata['model_name'],
+                "model_type": experiment_metadata['model_type'],
+                "task": experiment_metadata['task'],
+                "metric": metric_name,
+                "score": score,
+                "date": experiment_metadata['date'],
+                "timestamp": experiment_metadata['timestamp'],
+                "wandb_url": experiment_metadata['wandb_url'],
+                "total_params": experiment_metadata['total_params'],
+                "training_time_seconds": experiment_metadata['training_time_seconds'],
+                "eval_time_seconds": experiment_metadata['eval_time_seconds']
+            })
+        elif metric.startswith("sklearn_"):
+            # Store sklearn metric results
+            results.append({
+                "experiment_id": experiment_metadata['experiment_id'],
+                "experiment_name": experiment_metadata['experiment_name'],
+                "model_name": experiment_metadata['model_name'],
+                "model_type": experiment_metadata['model_type'],
+                "task": experiment_metadata['task'],
+                "metric": metric,
+                "score": score,
+                "date": experiment_metadata['date'],
+                "timestamp": experiment_metadata['timestamp'],
+                "wandb_url": experiment_metadata['wandb_url'],
+                "total_params": experiment_metadata['total_params'],
+                "training_time_seconds": experiment_metadata['training_time_seconds'],
+                "eval_time_seconds": experiment_metadata['eval_time_seconds']
+            })
+    
+    return results
+
+def create_summary_data(experiments_metadata, results_df):
+    """
+    Create summary data focusing on primary metrics for each experiment.
+    
+    Args:
+        experiments_metadata (list): List of experiment metadata dictionaries
+        results_df (pd.DataFrame): DataFrame containing all results
+        
+    Returns:
+        list: List of summary dictionaries with primary metrics only
+    """
+    summary_data = []
+    
+    for exp in experiments_metadata:
+        # Get primary metrics for this experiment
+        exp_results = results_df[results_df['experiment_id'] == exp['experiment_id']]
+        primary_metrics = exp_results[~exp_results['metric'].str.startswith('sklearn_')]
+        
+        if not primary_metrics.empty:
+            # Get the main metric for the task (first metric in GLUE_TASKS)
+            task_main_metric = GLUE_TASKS[exp['task']]['metrics'][0]
+            main_score_results = primary_metrics[primary_metrics['metric'] == task_main_metric]
+            
+            if not main_score_results.empty:
+                main_score = main_score_results['score'].iloc[0]
+            else:
+                # Fallback to first available metric if main metric not found
+                main_score = primary_metrics['score'].iloc[0]
+                task_main_metric = primary_metrics['metric'].iloc[0]
+            
+            summary_data.append({
+                'experiment_name': exp['experiment_name'],
+                'model_name': exp['model_name'],
+                'task': exp['task'],
+                'main_metric': task_main_metric,
+                'score': main_score,
+                'total_params': exp['total_params'],
+                'training_time_min': round(exp['training_time_seconds'] / 60, 2),
+                'date': exp['date'],
+                'wandb_url': exp['wandb_url']
+            })
+    
+    return summary_data
+
+def save_evaluation_reports(results_df, experiments_df, summary_df, model_name, total_params, task, reports_dir):
+    """
+    Save all evaluation reports to the specified directory with consistent naming.
+    
+    Args:
+        results_df (pd.DataFrame): Detailed results DataFrame
+        experiments_df (pd.DataFrame): Experiments metadata DataFrame  
+        summary_df (pd.DataFrame): Summary results DataFrame
+        model_name (str): Model name for file naming
+        total_params (int): Total model parameters for naming
+        task (str): GLUE task name
+        reports_dir (str): Directory to save reports
+        
+    Returns:
+        tuple: Paths to (results_file, experiments_file, summary_file)
+    """
+    # Create consistent experiment name and timestamp
+    experiment_name, timestamp = create_experiment_name(model_name, task, total_params)
+    file_names = create_file_names(experiment_name, timestamp)
+    
+    # Save detailed results
+    results_path = os.path.join(reports_dir, file_names['results'])
+    results_df.to_csv(results_path, index=False)
+    logger.info(f"Detailed results saved to {results_path}")
+    
+    # Save experiments metadata
+    experiments_path = os.path.join(reports_dir, file_names['metadata'])
+    experiments_df.to_csv(experiments_path, index=False)
+    logger.info(f"Experiments metadata saved to {experiments_path}")
+    
+    # Save summary report
+    summary_path = os.path.join(reports_dir, file_names['summary'])
+    summary_df.to_csv(summary_path, index=False)
+    logger.info(f"Summary report saved to {summary_path}")
+    
+    return results_path, experiments_path, summary_path
+
+def print_results_summary(results_df):
+    """
+    Print a formatted summary of all results to the console.
+    
+    Args:
+        results_df (pd.DataFrame): Results DataFrame to summarize
+    """
+    logger.info("Summary of results:")
+    for task in sorted(set(results_df["task"])):
+        task_results = results_df[results_df["task"] == task]
+        logger.info(f"  {task}:")
+        
+        # Group by experiment to avoid duplicates
+        for experiment_id in task_results['experiment_id'].unique():
+            exp_results = task_results[task_results['experiment_id'] == experiment_id]
+            model_name = exp_results['model_name'].iloc[0]
+            logger.info(f"    {model_name}:")
+            
+            for _, row in exp_results.iterrows():
+                logger.info(f"      {row['metric']}: {row['score']:.4f}")
+
+def print_file_locations(results_path, experiments_path, summary_path):
+    """
+    Print the locations of all generated report files.
+    
+    Args:
+        results_path (str): Path to detailed results file
+        experiments_path (str): Path to experiments metadata file
+        summary_path (str): Path to summary report file
+    """
+    logger.info("\nGenerated Reports:")
+    logger.info(f"  Detailed Results: {results_path}")
+    logger.info(f"  Experiments Metadata: {experiments_path}")
+    logger.info(f"  Summary Report: {summary_path}")
 
 def visualize_results(results_df, args):
-    """Create visualizations for the evaluation results using rich tables."""
+    """
+    Create comprehensive visualizations for evaluation results using rich tables.
+    
+    This function creates multiple table views:
+    1. Primary metrics table - main metric for each experiment
+    2. Detailed task tables - all metrics for each task
+    3. Model comparison table - side-by-side comparison (multi-task only)
+    4. Experiment summary table - overview of all experiments
+    
+    Args:
+        results_df (pd.DataFrame): Results DataFrame with experiment data
+        args (argparse.Namespace): Command line arguments containing output_dir
+    """
     console = Console()
     
     # Create results directory if it doesn't exist
     os.makedirs(os.path.join(args.output_dir, "results"), exist_ok=True)
     
-    # 1. Create a table showing all metrics for all tasks
-    all_metrics_table = Table(title="GLUE Benchmark Results for ", box=box.ROUNDED)
-    all_metrics_table.add_column("Task", style="cyan")
+    # Get unique tasks and models
+    unique_tasks = sorted(results_df["task"].unique())
+    unique_models = sorted(results_df["model_name"].unique())
     
-    # Get unique metrics
-    metrics = sorted(results_df["Metric"].unique())
-    for metric in metrics:
-        all_metrics_table.add_column(metric, style="green")
+    # 1. Create a table showing primary metrics for all tasks
+    primary_metrics_table = Table(title=f"GLUE Benchmark Results - Primary Metrics", box=box.ROUNDED)
+    primary_metrics_table.add_column("Model", style="cyan")
+    primary_metrics_table.add_column("Task", style="magenta")
+    primary_metrics_table.add_column("Primary Metric", style="yellow")
+    primary_metrics_table.add_column("Score", style="green")
+    primary_metrics_table.add_column("Training Time (min)", style="blue")
     
-    # Add rows for each task
-    for task in sorted(results_df["Task"].unique()):
-        task_results = results_df[results_df["Task"] == task]
-        row = [task]
+    # Filter to primary metrics only (exclude sklearn_ metrics)
+    primary_results = results_df[~results_df['metric'].str.startswith('sklearn_')]
+    
+    # Add rows for each experiment
+    for _, row in primary_results.iterrows():
+        # Get the primary metric for this task
+        task_primary_metric = GLUE_TASKS[row['task']]['metrics'][0]
         
-        for metric in metrics:
-            metric_value = task_results[task_results["Metric"] == metric]["Score"].values
-            if len(metric_value) > 0:
-                row.append(f"{metric_value[0]:.4f}")
-            else:
-                row.append("N/A")
-        
-        all_metrics_table.add_row(*row)
+        # Only show the primary metric for each task
+        if row['metric'] == task_primary_metric:
+            training_time_min = round(row['training_time_seconds'] / 60, 2)
+            primary_metrics_table.add_row(
+                row['model_name'],
+                row['task'].upper(),
+                row['metric'],
+                f"{row['score']:.4f}",
+                f"{training_time_min}"
+            )
     
-    # Display and save the table content to a file
-    console.print(all_metrics_table)
+    console.print(primary_metrics_table)
+    console.print("\n")
     
-    # 2. Create individual tables for each task
-    for task in sorted(results_df["Task"].unique()):
-        task_df = results_df[results_df["Task"] == task]
+    # 2. Create individual tables for each task showing all metrics
+    for task in unique_tasks:
+        task_results = results_df[results_df["task"] == task]
         
-        task_table = Table(title=f"Results for {task.upper()}", box=box.ROUNDED)
-        task_table.add_column("Metric", style="cyan")
+        task_table = Table(title=f"Detailed Results for {task.upper()}", box=box.ROUNDED)
+        task_table.add_column("Model", style="cyan")
+        task_table.add_column("Metric", style="yellow")
         task_table.add_column("Score", style="green")
+        task_table.add_column("Experiment", style="blue")
         
-        for _, row in task_df.iterrows():
-            task_table.add_row(row["Metric"], f"{row['Score']:.4f}")
+        for _, row in task_results.iterrows():
+            # Truncate experiment name for display
+            exp_name_short = row['experiment_name']
+            task_table.add_row(
+                row['model_name'],
+                row['metric'],
+                f"{row['score']:.4f}",
+                exp_name_short
+            )
         
-        # Display the task table
         console.print(task_table)
         console.print("\n")
     
-    # 3. Create a summary table with average scores
-    summary_table = Table(title="Summary of Results", box=box.ROUNDED)
-    summary_table.add_column("Task", style="cyan")
-    summary_table.add_column("Avg Score", style="green")
-    summary_table.add_column("# Metrics", style="blue")
-    
-    for task in sorted(results_df["Task"].unique()):
-        task_df = results_df[results_df["Task"] == task]
-        avg_score = task_df["Score"].mean()
-        num_metrics = len(task_df)
+    # 3. Create a model comparison table (primary metrics only)
+    if len(unique_tasks) > 1:
+        comparison_table = Table(title="Model Comparison - Primary Metrics Only", box=box.ROUNDED)
+        comparison_table.add_column("Model", style="cyan")
         
-        summary_table.add_row(task, f"{avg_score:.4f}", str(num_metrics))
+        # Add columns for each task
+        for task in unique_tasks:
+            task_primary_metric = GLUE_TASKS[task]['metrics'][0]
+            comparison_table.add_column(f"{task.upper()}\n({task_primary_metric})", style="green")
+        
+        # Add rows for each model
+        for model in unique_models:
+            row_data = [model]
+            
+            for task in unique_tasks:
+                task_primary_metric = GLUE_TASKS[task]['metrics'][0]
+                model_task_result = results_df[
+                    (results_df['model_name'] == model) & 
+                    (results_df['task'] == task) & 
+                    (results_df['metric'] == task_primary_metric)
+                ]
+                
+                if not model_task_result.empty:
+                    score = model_task_result['score'].iloc[0]
+                    row_data.append(f"{score:.4f}")
+                else:
+                    row_data.append("N/A")
+            
+            comparison_table.add_row(*row_data)
+        
+        console.print(comparison_table)
+        console.print("\n")
     
-    # Display the summary table
-    console.print(summary_table)
+    # 4. Create experiment summary table
+    experiment_summary_table = Table(title="Experiment Summary", box=box.ROUNDED)
+    experiment_summary_table.add_column("Experiment", style="cyan")
+    experiment_summary_table.add_column("Model", style="magenta")
+    experiment_summary_table.add_column("Task", style="yellow")
+    experiment_summary_table.add_column("Date", style="blue")
+    experiment_summary_table.add_column("Parameters", style="green")
+    
+    # Get unique experiments
+    unique_experiments = results_df.drop_duplicates(['experiment_id'])
+    
+    for _, row in unique_experiments.iterrows():
+        # Format parameters in millions
+        params_m = row['total_params'] / 1_000_000
+        experiment_summary_table.add_row(
+            row['experiment_name'],  # do not truncate for display
+            row['model_name'],
+            row['task'].upper(),
+            row['date'],
+            f"{params_m:.1f}M"
+        )
+    
+    console.print(experiment_summary_table)
 
 def main():
+    """
+    Main function to orchestrate GLUE evaluation experiments.
+    
+    This function:
+    1. Parses command line arguments
+    2. Sets up output directories
+    3. Runs evaluation on specified task(s)
+    4. Collects and processes results
+    5. Generates comprehensive reports
+    6. Optionally creates visualizations
+    
+    Returns:
+        tuple: Paths to generated report files (results, metadata, summary)
+        
+    Example:
+        Run single task: python script.py --task mrpc --model_name_or_path bert-base-cased
+        Run all tasks: python script.py --task all --model_name_or_path bert-base-cased
+        With visualization: python script.py --task mrpc --visualize
+    """
     # Parse arguments
     args = parse_args()
     
     # Create output directory if it doesn't exist
     os.makedirs(args.output_dir, exist_ok=True)
+    
+    # Create Evaluation_reports directory for CSV reports
+    reports_dir = os.path.join("./Cache", "Evaluation_reports")
+    os.makedirs(reports_dir, exist_ok=True)
     
     # Set device
     device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
@@ -731,8 +1340,9 @@ def main():
     else:
         tasks = [args.task]
     
-    # Store results
+    # Store results and experiment metadata
     results = []
+    experiments_metadata = []
     
     # Evaluate each task
     for task in tasks:
@@ -743,44 +1353,67 @@ def main():
         task_args.task = task
         
         # Fine-tune and evaluate
-        eval_results = finetune_model_on_glue(task_args)
+        eval_results, experiment_metadata = finetune_model_on_glue(task_args)
         
-        # Store results
-        for metric, score in eval_results.items():
-            if metric.startswith("eval_"):
-                metric_name = metric[5:]  # Remove "eval_" prefix
-                results.append({
-                    "Task": task,
-                    "Metric": metric_name,
-                    "Score": score
-                })
-            elif metric.startswith("sklearn_"):
-                # Store sklearn metric results
-                results.append({
-                    "Task": task,
-                    "Metric": metric,
-                    "Score": score
-                })
+        # Store experiment metadata
+        experiments_metadata.append(experiment_metadata)
+        
+        # Store results with experiment metadata
+        results.extend(create_experiment_results(eval_results, experiment_metadata))
     
     # Create results DataFrame
     results_df = pd.DataFrame(results)
     
-    # Save results
-    results_path = os.path.join(args.output_dir, f"glue_results_{args.model_type}.csv")
-    results_df.to_csv(results_path, index=False)
-    logger.info(f"Results saved to {results_path}")
+    # Create experiments metadata DataFrame
+    experiments_df = pd.DataFrame(experiments_metadata)
+    
+    # Create summary data
+    summary_data = create_summary_data(experiments_metadata, results_df)
+    
+    # Create summary DataFrame
+    summary_df = pd.DataFrame(summary_data)
+    
+    # Handle naming for single vs multiple tasks
+    if args.task == 'all':
+        # For multiple tasks, use a general name
+        total_params = experiments_metadata[0]['total_params'] if experiments_metadata else 0
+        experiment_name, timestamp = create_experiment_name(args.model_name_or_path, 'all-tasks', total_params)
+        
+        # Create file names manually for multi-task scenario
+        file_names = create_file_names(experiment_name, timestamp)
+        
+        # Save with multi-task naming
+        results_path = os.path.join(reports_dir, file_names['results'])
+        experiments_path = os.path.join(reports_dir, file_names['metadata'])
+        summary_path = os.path.join(reports_dir, file_names['summary'])
+        
+        results_df.to_csv(results_path, index=False)
+        experiments_df.to_csv(experiments_path, index=False)
+        summary_df.to_csv(summary_path, index=False)
+        
+        logger.info(f"Multi-task results saved to {results_path}")
+        logger.info(f"Multi-task metadata saved to {experiments_path}")
+        logger.info(f"Multi-task summary saved to {summary_path}")
+    else:
+        # Single task - use the standard naming
+        total_params = experiments_metadata[0]['total_params'] if experiments_metadata else 0
+        
+        # Save evaluation reports
+        results_path, experiments_path, summary_path = save_evaluation_reports(
+            results_df, experiments_df, summary_df, args.model_name_or_path, total_params, args.task, reports_dir
+        )
+    
+    # Print results summary
+    print_results_summary(results_df)
+    
+    # Print file locations
+    print_file_locations(results_path, experiments_path, summary_path)
     
     # Visualize results if requested
     if args.visualize:
         visualize_results(results_df, args)
     
-    # Print summary
-    logger.info("Summary of results:")
-    for task in set(results_df["Task"]):
-        task_results = results_df[results_df["Task"] == task]
-        logger.info(f"  {task}:")
-        for _, row in task_results.iterrows():
-            logger.info(f"    {row['Metric']}: {row['Score']:.4f}")
+    return results_path, experiments_path, summary_path
 
 if __name__ == "__main__":
     main() 

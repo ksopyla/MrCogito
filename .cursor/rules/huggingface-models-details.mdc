@@ -1,0 +1,9 @@
+---
+description: Can help to get the details of huggingface hosted models and recent research papers, model full name, author, model size and params, the training data. 
+alwaysApply: false
+---
+
+Please use the mcp server called hf-mcp-server to get the details of huggingface hosted models.
+You can find the model details like full name, author, model size and params, the organization, the training data, etc.
+You can also find the best model for a given task. The evaluation results are available for some models.
+You can also find the recent research papers, trending papers and papers related to a given model, their details, authors, etc.

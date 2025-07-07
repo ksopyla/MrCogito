@@ -21,6 +21,7 @@ rich = "^13.9.4"
 accelerate = "^1.2.1"
 evaluate = "^0.4.3"
 morfessor = "^2.0.6"
+tiktoken = "^0.9.0"
 
 
 [tool.poetry.group.dev.dependencies]
