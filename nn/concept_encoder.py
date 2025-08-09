@@ -125,7 +125,8 @@ class ConceptEncoderLayer(nn.Module):
         self.Wi = nn.Linear(config.hidden_size, config.intermediate_size * 2)  # *2 for gating
         self.Wo = nn.Linear(config.intermediate_size, config.hidden_size)
         self.wi_dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.act_fn = nn.GELU()
+        self.act_fn = nn.GELU() # TODO: might need to try other activation functions
+
 
     def forward(
         self,

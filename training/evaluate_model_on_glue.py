@@ -1387,7 +1387,7 @@ def main():
         experiments_path = os.path.join(reports_dir, file_names['metadata'])
         summary_path = os.path.join(reports_dir, file_names['summary'])
         
-        results_df.to_csv(results_path, index=False)
+    results_df.to_csv(results_path, index=False)
         experiments_df.to_csv(experiments_path, index=False)
         summary_df.to_csv(summary_path, index=False)
         
