@@ -9,6 +9,7 @@ Evaluation of baseline encoder models on GLUE MRPC task using [evaluate_model_on
 |Date Time| Model Name | F1 Score | Accuracy | Eval Runtime | Wandb Run |
 |---------|-------|----------|----------|--------------|--------------|
 |2025-07-07 22:29:53| **deberta-base (139M)** | **90.8%** | **87.5%** | ~23.9s | [i22gt7am](https://wandb.ai/ksopyla/MrCogito/runs/i22gt7am) |
+|2025-08-05 09:11:00| **albert-base-v2 (12M)** | **90.6%** | **87.0%** | ~19.2s | [no2yyx5n](https://wandb.ai/ksopyla/MrCogito/runs/no2yyx5n) |
 |2025-07-07 21:57:00| **roberta-base (125M)** | **90.2%** | **86.5%** | ~17.9s | [taf1duya](https://wandb.ai/ksopyla/MrCogito/runs/taf1duya) |
 |2025-07-07 21:01:00| **xlnet-base-cased (117M)** | **88.3%** | **84.8%** | ~21.7s | [nn7az5wf](https://wandb.ai/ksopyla/MrCogito/runs/nn7az5wf) |
 |2025-07-07 21:15:12| **bert-base-cased (108M)** | **86.4%** | **81.6%** | ~19.7s | [d9nqaaan](https://wandb.ai/ksopyla/MrCogito/runs/d9nqaaan) |
@@ -17,15 +18,29 @@ Evaluation of baseline encoder models on GLUE MRPC task using [evaluate_model_on
 
 ### Summary
 
-- **Best Performance**: RoBERTa-base (90.2% F1) - **NEW LEADER!** 🏆
-- **Efficiency Champion**: DistilBERT-base-cased (18.1s eval time)
-- **Balanced Performance**: XLNet-base-cased (88.3% F1, solid runner-up)
-- **Reliable Baseline**: BERT-base-cased (86.4% F1)
+- **Best Performance**: DeBERTa-base (90.8% F1, 87.5% Acc) - **NEW LEADER!** 🏆
+- **Parameter Efficiency Champion**: ALBERT-base-v2 (90.6% F1 with only 12M params) - **Most Efficient!** ⚡
+- **Strong Performance**: RoBERTa-base (90.2% F1, 86.5% Acc) 
+- **Balanced Choice**: XLNet-base-cased (88.3% F1, solid and reliable)
+- **Speed Champion**: DistilBERT-base-cased (18.1s eval time, good for resource constraints)
+- **Classic Baseline**: BERT-base-cased (86.4% F1, standard reference)
 
 
-### Reserch log updates for MRPC
+### Research log updates for MRPC
 
-**2025-07-07**: RoBERTa-base evaluation completed - **NEW PERFORMANCE LEADER!** 🚀
+**2025-08-05**: ALBERT-base-v2 evaluation completed - **PARAMETER EFFICIENCY BREAKTHROUGH!** 🚀
+- **Experiment ID**: `no2yyx5n`
+- **File Format**: `glue-mrpc-albert-base-v2-12M-20250805_0911-*.csv`
+- **F1 Score**: 90.6% (Exceptional performance for 12M parameters!)
+- **Accuracy**: 87.0% (Close to DeBERTa despite 91% fewer parameters)
+- **Training Time**: 2.91 minutes (174 seconds) - highly efficient
+- **Model Size**: Only 12M parameters (vs 139M for DeBERTa)
+- **Evaluation Time**: 19.2s (faster than most larger models)
+- **Critical Finding**: ALBERT achieves 99.8% of DeBERTa's F1 performance with only 8.6% of its parameters!
+- **vs Original Paper**: Our 90.6% F1 slightly **exceeds** the original ALBERT paper's reported ~89.3% F1 on MRPC
+- **Parameter Efficiency**: 7.55 F1 points per million parameters (vs 0.65 for DeBERTa)
+
+**2025-07-07**: RoBERTa-base evaluation completed
 - **Experiment ID**: `taf1duya`
 - **New File Format**: `glue-mrpc-roberta-base-125M-20250707_2200-*.csv`
 - **F1 Score**: 90.2% (NEW RECORD - surpasses XLNet!)

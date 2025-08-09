@@ -1,8 +1,7 @@
 # Technical Review of the Concept Transformer Architecture Proposal
 
 Based on the  Gemini report, I have prepared a technical review of the Concept 
-Transformer Architecture Proposal. https://gemini.google.com/app/
-c_ce82c504453e4949 
+Transformer Architecture Proposal. https://gemini.google.com/app/c_ce82c504453e4949 
 on Ermlab account
 
 ## I. Introduction

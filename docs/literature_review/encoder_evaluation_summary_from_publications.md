@@ -105,7 +105,7 @@ I have extracted the benchmark results from the "ALBERT: A Lite BERT for Self-su
 | BERT-Large                | 86.6      | 92.3      | 91.3      | 70.4      | 93.2      | 88.0      | 60.6      | 90.0      | -         | -         | 334M      |
 | RoBERTa-Large             | 90.2      | 94.7      | 92.2      | 86.6      | 96.4      | 90.9      | 68.0      | 92.4      | -         | -         | 355M      |
 | XLNet-Large               | 89.8      | 93.9      | 91.8      | 83.8      | 95.6      | 89.2      | 63.6      | 91.8      | -         | -         | 340M      |
-| ALBERT-Base               | 81.6      | -         | -         | -         | 90.3      | -         | -         | -         | -         | -         | 110M      |
+| ALBERT-Base               | 81.6      | -         | -         | -         | 90.3      | -         | -         | -         | -         | -         | 12M      |
 | ALBERT-Large              | 83.5      | -         | -         | -         | 91.7      | -         | -         | -         | -         | -         | 18M       |
 | ALBERT-XLarge             | 86.4      | -         | -         | -         | 92.4      | -         | -         | -         | -         | -         | 59M       |
 | ALBERT-XXLarge (Tab 2)    | 88.0      | -         | -         | -         | 95.2      | -         | -         | -         | -         | -         | 235M      |
