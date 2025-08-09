@@ -1,15 +1,101 @@
 ---
-description: Concept Transfromer Research project idea, folder structure and relevant reserach summaries
+description: Concept Encoder Research project - folder structure and key information locations
 globs: 
 alwaysApply: false
 ---
 
-# Concept Transfromer Research project idea and structure
+# Concept Encoder Research Project Guide
 
-- This is research project for develope and evaluate new transformer architecture called "Concept Encoder", the idea of Concept Encode and all relevant materials, notes, and usefull extracts from similar research articles are in  @docs docs/MrCogito-research-docs folders and its subfolders
-- [concept_encoder_notes.md](mdc:docs/MrCogito-research-docs/concept_encoder_notes.md) introduce the idea
-- [concept_modeling_encoding.md](mdc:docs/MrCogito-research-docs/publications_summaries/concept_modeling_encoding.md) [masked_language_models.md](mdc:docs/MrCogito-research-docs/publications_summaries/masked_language_models.md) contains the relevant publication summaries and techniques
-- Cache folder is only for storing downloaded Huggingface models and tokenizers, do not use it
-- @playground folder is use of testing and getting familiar with libraries, methods and testing new models 
-- @nn - contains main implementation of Concept models
-  
+## 🎯 Project Overview  
+Research project developing "Concept Encoder" - a transformer architecture using concept-level token masking for better text understanding and longer context processing.
+
+## 📚 Research Documentation
+
+### Core Research Ideas (@docs/research-notes/)
+- [concept_encoder_notes.md](mdc:docs/research-notes/concept_encoder_notes.md) - **Main research idea**: cross-attention between concept tokens and sequence tokens for efficient long context
+- [concept_transformer_ai_report.md](mdc:docs/research-notes/concept_transformer_ai_report.md) - Comprehensive research analysis
+- [evaluation_strategies.md](mdc:docs/research-notes/evaluation_strategies.md) - Benchmark evaluation protocols
+
+### Publication Summaries (@docs/MrCogito-research-docs/publications_summaries/)
+- [encoder_evaluation_summary_from_publications.md](mdc:docs/MrCogito-research-docs/publications_summaries/encoder_evaluation_summary_from_publications.md) - Evaluation methodologies from literature
+- [concept_modeling_encoding.md](mdc:docs/MrCogito-research-docs/publications_summaries/concept_modeling_encoding.md) - Concept encoding techniques
+- [masked_language_models.md](mdc:docs/research-notes/masked_language_models.md) - MLM strategies and variants
+- [publication_extracts_multi_masking.md](mdc:docs/MrCogito-research-docs/publications_summaries/publication_extracts_multi_masking.md) - Multi-token masking research
+
+### Dataset Information
+- [datasets_review_for_training.md](mdc:docs/research-notes/datasets_review_for_training.md) - Training data analysis
+- [datasets_review.ipynb](mdc:playground/datasets_review.ipynb) - Interactive dataset exploration
+
+## 🛠️ Implementation & Training
+
+### Core Model (@nn/)
+- [concept_encoder.py](mdc:nn/concept_encoder.py) - **Main ConceptEncoder implementation** with NeighborWordMaskCollator
+
+### Training Scripts (@training/)
+**Primary Scripts:**
+- [mlm_training.py](mdc:training/mlm_training.py) - **MLM training for ConceptEncoder**
+  ```bash
+  # Usage: python training/mlm_training.py [args]
+  # Uses WandB project: "MrCogito"
+  ```
+- [evaluate_model_on_glue.py](mdc:training/evaluate_model_on_glue.py) - **GLUE benchmark evaluation**
+  ```bash  
+  # Usage examples:
+  # python training/evaluate_model_on_glue.py --model_type xlnet --task mrpc --batch_size 16 --epochs 3
+  # python training/evaluate_model_on_glue.py --model_type concept --task all --batch_size 32 --epochs 5
+  ```
+- [dataset_preprocess.py](mdc:training/dataset_preprocess.py) - **Data preprocessing and custom collators**
+
+**Supporting Scripts:**
+- [concept_enc_dec.py](mdc:training/concept_enc_dec.py) - Alternative encoder-decoder approach
+- [train_morfessor_models.py](mdc:training/train_morfessor_models.py) - Morphological tokenizer training (mostly experimental)
+
+### Testing (@tests/)
+- [test_concept_encoder_layer.py](mdc:tests/test_concept_encoder_layer.py) - Core model tests
+- [test_data_collators.py](mdc:tests/test_data_collators.py) - Data collator validation
+
+## 📊 Evaluation & Results
+
+### Evaluation Results Storage
+- **Baseline Results**: [encoders_glue_evaluation_baseline.md](mdc:docs/experiments_results/encoders_glue_evaluation_baseline.md) - Current GLUE benchmark results
+- **CSV Reports**: `Cache/Evaluation_reports/` - Structured evaluation data [[memory:2369370]]
+  - Format: `[dataset]-[task]-[model]-[date]-[content].csv` [[memory:2371629]]
+
+### Training Monitoring
+- **WandB Logs**: `wandb/` folder - Training run history and metrics [[memory:2371908]]
+- **Run Naming**: `[dataset]-[task]-[model]` format [[memory:2371629]]
+
+## 🔬 Experimentation (@playground/)
+**Purpose**: Testing, prototyping, and exploring new approaches before main implementation
+
+**Key Files:**
+- [concept_layer_step_by_step.py](mdc:playground/concept_layer_step_by_step.py) - Step-by-step concept layer development
+- [train_tokenizer_playground.py](mdc:playground/train_tokenizer_playground.py) - Tokenizer experiments
+- [datacollators_playground.py](mdc:playground/datacollators_playground.py) - Masking strategy testing
+- [load_berts.py](mdc:playground/load_berts.py), [load_llama32.py](mdc:playground/load_llama32.py) - Model loading utilities
+
+## 🗂️ Cache Structure (@Cache/)
+**Purpose**: Storage for downloaded models, datasets, and generated outputs
+
+**Organization:**
+- `Models/` - Downloaded HuggingFace models and checkpoints
+- `Tokenizers/` - Trained morphological and standard tokenizers
+- `Datasets/` - Cached training datasets  
+- `Evaluation_reports/` - CSV evaluation results [[memory:2369370]]
+- `Training/` - Training artifacts and logs
+- `Outputs/` - Generated content and results
+
+## 🧪 Future Experiments (@docs/experiments/)
+- [idea1_unsed_tokens_as_registers.md](mdc:docs/experiments/idea1_unsed_tokens_as_registers.md) - Token register mechanisms
+- [idea4_morphological_aware_tokenization.md](mdc:docs/experiments/idea4_morphological_aware_tokenization.md) - Morphological tokenization research
+
+## 📋 Setup & Usage [[memory:2371908]]
+**Environment**: Windows + Poetry virtual environment `mrcogito-sHhaXiEk-py3.12`
+
+**Key Dependencies**: PyTorch 2.5.0, Transformers 4.47.1, WandB, Datasets, Evaluate
+
+**Getting Started:**
+1. Core implementation: `nn/concept_encoder.py`
+2. Training: `python training/mlm_training.py`
+3. Evaluation: `python training/evaluate_model_on_glue.py`
+4. Testing: `pytest tests/`
