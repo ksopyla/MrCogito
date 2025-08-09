@@ -34,6 +34,7 @@ print("----------")
 
 # %%
 
+#shared token and concept embeddings dimensions
 representation_dim = 128
 ff_dim = 256
 vocab_size = tokenizer.vocab_size
@@ -50,43 +51,6 @@ attention_probs_dropout_prob=0.0
 float_type = torch.bfloat16
 
 #%%
-CONCEPT_ENCDEC_DOC_STRING = """
-The example below is a test of the concept encoder-decoder approach. 
-This tries to organize the computation step by step before it will be implemented as a full model. 
-
-The model encoder is similar to the BERT or ModernBert encoder, it consists of the following layers:
-1. The token embeddings and concept embeddings layers as Rotary embeddings
-2. the position embeddings layer as Ro
-
-3. The concept attention layer - cross attention between the concept tokens and the word tokens
-4. The tokens attention layer - self attention on the word tokens
-5. the layer normalization blocks - for almost all layers
-6. The residual connections
-5. The feed forward layer (MLP with GeLU activation and dropout with Wi,Wo weights) with ff_dim
-
-The input data flow is as follows:
-1. The input data is tokenized and converted to the input ids and attention mask.
-2. the concept embeddings are randomly initialized
-2. The input id are transformed to the token embeddings.
-3. then cross attention is applied to the concept embeddings and the token embeddings
-4. then self attention is applied to the output of the cross attention
-5. the layer normalization is applied to the output of the self attention with residual connection
-6. the feed forward layer is applied to the output of the layer normalization with residual connection
-7. the layer normalization is applied to the output of the feed forward layer with residual connection
-
-
-The cross attention between the concept tokens and the sequence tokens should be faster than the self attention on the word tokens due to the smaller
-matrices dimensions.
-
-Its better to multiply the concept tensor [concept_length, batch_size, embed_dim] with the sequence tensor [sequence_length, batch_size, embed_dim  ]
-than the sequence tensor [sequence_length, batch_size, embed_dim] with itself because concept_length << sequence_length.
-While computing the attention we need to mulitply (Q*K^T)*V 
-* in the case of the self attention we have Q = K = V of shape [sequence_length, embed_dim], we aim to sequence_length be ~128K - 2M tokens, so the Q*K^T is very expensive operation in terms of time and memory [128K*embed_dim]*[embed_dim*128K] - as a result we got [128K*128K] matrix
-* however in the case of the cross attention with concept tokens we have Q = [concept_length, embed_dim] where concept_length is 8-256, K = V = [sequence_length, embed_dim] this leads to [concept_length*embed_dim]*[embed_dim*sequence_length] - as a result we got [concept_length*sequence_length] matrix which is much smaller and can be stored in memory.
-
-"""
-
-
 
 
 token_emb_layer = torch.nn.Embedding(vocab_size, representation_dim, dtype=float_type)
@@ -113,11 +77,15 @@ pre_ff_norm = nn.LayerNorm(representation_dim, dtype=float_type)
 
 
 # %% deffine attention layers, cross attention between the concept representations and the token embeddings, and concept self attention
+
+# cross attention between the concept representations and the token embeddings
 concept_seq_attn = nn.MultiheadAttention(
     representation_dim, num_heads=num_heads, batch_first=True,
     dropout=attention_probs_dropout_prob,
     dtype=float_type,
 )
+
+# self attention on the concept representations
 concept_self_attn = nn.MultiheadAttention(
     representation_dim, num_heads=num_heads, batch_first=True,
     dropout=attention_probs_dropout_prob,
@@ -133,8 +101,7 @@ concept_representations = concept_embeddings
 normed_concepts = pre_cross_attn_norm(concept_representations)
 
 
-# Option1 = float-based, expand the attention mask to the shape [batch_size×num_heads, target_seq_len, 
-# source_seq_len] - if we need more flexibility
+# Option1 = float-based, expand the attention mask to the shape [batch_size×num_heads, target_seq_len,source_seq_len] - if we need more flexibility
 # at the beginning attention_mask shape => [batch_size, seq_len]
 # we want a float-based mask of shape [batch_size×num_heads, target_seq_len, source_seq_len]
 
@@ -178,7 +145,7 @@ concept_seq_attn_output, concept_seq_attn_weights = concept_seq_attn(
 )
 
 
-
+# residual connection
 concept_representations = concept_representations + concept_seq_attn_output
 
 # apply the layer normalization (nn.LayerNorm) with residual connection
