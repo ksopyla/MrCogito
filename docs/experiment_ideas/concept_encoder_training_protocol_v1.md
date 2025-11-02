@@ -51,10 +51,17 @@ Few experiments configurations to try:
 
 Based on DistilBERT (66M, 40% of BERT), TinyBERT (14% of BERT), and transformer parameter research:
 
-| Option                 | Params   | Layers | Heads | Concepts | FFN  | Vocab | Max Pos |
-|------------------------|----------|--------|-------|----------|------|-------|---------|
-| **micro_balanced**     | 37.2M    | 4      | 8     | 64       | 2048 | 30522 | 512     |
-| **micro_concept_focused** | 33.7M | 4      | 12    | 128      | 1920 | 30522 | 512     |
+| Option                      | Params   |  Embed. dim | Vocab | Layers   | Heads | Concept dim |Concepts num | FFN     | Max Pos |
+|-----------------------------|----------|-------------|-------|----------|-------|-------------|-------------|---------|---------|
+| **micro_4d_base_clarge_512**| 39.5M    | 4           | 32786 | 3        | 1-32  | 1024        | 512         | 2048    | 2048    |
+| **micro_4d_base_clarge_1K** | 40.0M    | 4           | 32786 | 3        | 1-32  | 1024        | 1024        | 2048    | 2048    |
+| **micro_128d_base_cmid_1K** | 39.1M    | 128         | 32786 | 7        | 1-32  | 512         | 1024        | 2048    | 2048    |
+
+
+
+
+
+| **micro_concept_focused** | 33.7M | 4      | 16k   | 4      | 12    | 128      | 1920 | 30522 | 512     |
 | **micro_efficient**    | 30.2M    | 4      | 8     | 56       | 1792 | 30522 | 512     |
 | **micro_wide**         | 45.0M    | 3      | 10    | 96       | 2560 | 30522 | 512     |
 
