@@ -1,4 +1,5 @@
 from typing import Optional, Tuple, Union
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -316,7 +317,7 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
         # Project concepts to sequence positions via linear layer
         self.concept_to_sequence = nn.Sequential(
             nn.LayerNorm(config.hidden_size),
-            nn.Linear(config.hidden_size, config.hidden_size)
+            nn.Linear(config.hidden_size, config.hidden_size) # from concept_dim_size to token_embedding_dim
         )
 
         # Final MLM head to project to vocabulary
@@ -324,12 +325,11 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
 
         # Initialize weights and tie if needed
         self.post_init()
-        self.tie_weights()
+        
+        # Purposely not tying the weights, to allow for more flexibility in the model architecture
+        #self.tie_weights()
 
-    def tie_weights(self):
-        # Tie the lm_head to the token_embeddings weight to share parameters if desired
-        if self.config.tie_word_embeddings:
-            self._tie_or_clone_weights(self.lm_head, self.encoder.token_embeddings)
+
 
     def forward(
         self,
@@ -360,12 +360,20 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
 
             logits => [batch_size, concept_size, vocab_size]
         """
+
+        
+
+
         # Get concept representations from encoder
         encoder_outputs = self.encoder(input_ids, attention_mask, output_attentions, output_hidden_states)
         concept_repr = encoder_outputs.last_hidden_state  # [batch_size, concept_size, hidden_size]
 
         # Get token embeddings for attention computation
-        token_embeddings = self.encoder.token_embeddings(input_ids)  # [batch_size, seq_length, hidden_size]
+
+        batch_size, seq_length = input_ids.size()
+        position_ids = torch.arange(seq_length, device=input_ids.device).unsqueeze(0).expand_as(input_ids)
+
+        token_embeddings = self.encoder.token_embeddings(input_ids) + self.encoder.token_position_embeddings(position_ids)  # [batch_size, seq_length, hidden_size]
 
         # Project concepts for attention
 
@@ -394,6 +402,12 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
         
         # Add scaling to prevent softmax overflow
         attention_scores = attention_scores / (self.config.hidden_size ** 0.5)
+
+        # Apply attention mask if provided (mask out padding tokens)
+        if attention_mask is not None:
+            # Expand mask for broadcasting [batch_size, seq_length, 1]
+            attention_mask_expanded = attention_mask.unsqueeze(-1)
+            attention_scores = attention_scores.masked_fill(attention_mask_expanded == 0, -1e9)
         
         # Normalize attention scores
         attention_weights = F.softmax(attention_scores, dim=-1)
@@ -409,7 +423,7 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
 
         mlm_loss = None
         if labels is not None:
-            loss_fct = CrossEntropyLoss(ignore_index=-100, label_smoothing=0.1)  # -100 index = padding token
+            loss_fct = CrossEntropyLoss(ignore_index=-100)  # -100 index = padding token
             mlm_loss = loss_fct(
                 logits.view(-1, self.config.vocab_size),
                 labels.view(-1)
@@ -442,59 +456,77 @@ class ConceptEncoderWithSimMatrixForMaskedLM(PreTrainedModel):
         
         # Concept->Vocab projection
         self.concept_vocab_projection = nn.Linear(
-            config.hidden_size,
+            config.hidden_size, # concept_dim_size
             config.vocab_size,
             bias=False
         )
         
         # Token-level LM head
-        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.lm_token_head = nn.Linear(
+            config.hidden_size, # token_embedding_dim
+            config.vocab_size,
+            bias=False
+        )
         
         # Dynamic gating mechanism
+        # Improved gating mechanism with more capacity
         self.gate = nn.Sequential(
+            nn.Linear(config.hidden_size * 2, config.hidden_size),  # Takes concatenated input
+            nn.ReLU(),
             nn.Linear(config.hidden_size, 1),
             nn.Sigmoid()
         )
+
+        # Learnable temperature parameter
+        self.temperature = nn.Parameter(torch.ones(1) * 0.1)
         
         # Initialize weights
-        nn.init.xavier_normal_(self.concept_vocab_projection.weight)
-        nn.init.xavier_normal_(self.lm_head.weight)
-        self._tie_weights()
+        self.post_init()
 
-    def _tie_weights(self):
-        self.concept_vocab_projection.weight = self.encoder.token_embeddings.weight
-        self.lm_head.weight = self.encoder.token_embeddings.weight
 
     def forward(self, input_ids, attention_mask=None, labels=None):
         # Encoder forward
         encoder_out = self.encoder(input_ids, attention_mask)
         concept_repr = encoder_out.last_hidden_state  # [B, C, H]
         
-        # Get token embeddings
-        token_emb = self.encoder.token_embeddings(input_ids)  # [B, S, H]
+
+        # Get token embeddings with position information
+        batch_size, seq_length = input_ids.size()
+        position_ids = torch.arange(seq_length, device=input_ids.device).unsqueeze(0).expand_as(input_ids)
+        token_emb = self.encoder.token_embeddings(input_ids) + self.encoder.token_position_embeddings(position_ids) # [B, S, H]
         
-        # Sparse similarity matrix
+        # Compute similarity with learnable temperature
         similarity = torch.einsum("bsh,bch->bsc", token_emb, concept_repr)
-        similarity = similarity / (self.config.hidden_size ** 0.5)
+        similarity = similarity * self.temperature  # Learnable scaling
+
+        # Dynamic sparsity based on attention mask
+        if attention_mask is not None:
+            # Mask out padding tokens in similarity computation
+            similarity = similarity.masked_fill(attention_mask.unsqueeze(-1) == 0, -1e9)
         
-        # Top-4 sparsity
-        topk_val, _ = similarity.topk(k=4, dim=-1)
-        mask = similarity >= topk_val[..., -1].unsqueeze(-1)
-        similarity = similarity.masked_fill(~mask, 0)
+        # Take only top-k similarity values (routing mechanism)
+        # topk_val, _ = similarity.topk(k=4, dim=-1)
+        # mask = similarity >= topk_val[..., -1].unsqueeze(-1)
+        # similarity = similarity.masked_fill(~mask, 0)
         
-        # Project to vocab space
+        # Project to vocab space, question is concept_vocab_projection trained? why use its weights?
         concept_logits = torch.einsum("bsc,cv->bsv", similarity, 
                                    self.concept_vocab_projection.weight)
         
         # Gated combination with token logits
-        token_logits = self.lm_head(token_emb)
-        gate = self.gate(token_emb)
+        token_logits = self.lm_token_head(token_emb)
+
+        # gated combination current token representations with average concept representations
+        gate_input = torch.cat([token_emb, torch.mean(concept_repr, dim=1, keepdim=True).expand(-1, seq_length, -1)], dim=-1)
+        gate = self.gate(gate_input)
+
+        
         logits = gate * concept_logits + (1 - gate) * token_logits
         
         # Compute loss
         loss = None
         if labels is not None:
-            loss_fct = CrossEntropyLoss(ignore_index=self.config.pad_token_id)
+            loss_fct = CrossEntropyLoss(ignore_index=-100)  # -100 index = padding token
             loss = loss_fct(logits.view(-1, self.config.vocab_size), labels.view(-1))
             
         return MaskedLMOutput(
@@ -504,6 +536,125 @@ class ConceptEncoderWithSimMatrixForMaskedLM(PreTrainedModel):
             attentions=encoder_out.attentions
         )
     
+
+
+class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
+    """
+    Simplified ConceptEncoder MLM using learned weights to combine concepts.
+    This is a much simpler approach than attention-based decoding, suitable for
+    initial experiments to verify the concept bottleneck works.
+    
+    Each sequence position has learned weights to combine concepts into a
+    position-specific representation, which is then projected to vocabulary.
+    """
+    config_class = ConceptEncoderConfig
+    base_model_prefix = "concept_encoder"
+    
+    def __init__(self, config: ConceptEncoderConfig):
+        super().__init__(config)
+        self.config = config
+        self.encoder = ConceptEncoder(config)
+        
+        # Learn a weight matrix for combining concepts per position
+        # Initialize with small random values to break symmetry
+        self.concept_weights = nn.Parameter(
+            torch.randn(config.max_position_embeddings, config.concept_size) / math.sqrt(config.concept_size)
+        )
+        
+        # Simple MLM head
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        
+        # Optional: add a projection layer before lm_head for more capacity
+        self.pre_lm_projection = nn.Sequential(
+            nn.LayerNorm(config.hidden_size),
+            nn.Linear(config.hidden_size, config.hidden_size),
+            nn.GELU(),
+            nn.Dropout(config.hidden_dropout_prob)
+        )
+        
+        # Initialize weights
+        self.post_init()
+        
+        # Optionally tie embeddings (disabled by default for experimentation)
+        if config.tie_word_embeddings:
+            self._tie_or_clone_weights(self.lm_head, self.encoder.token_embeddings)
+    
+    def forward(
+        self,
+        input_ids: torch.LongTensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> MaskedLMOutput:
+        """
+        Forward pass using weighted concept combination.
+        
+        The key idea: each position learns which concepts to use through
+        trainable weights, avoiding complex attention mechanisms.
+        """
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        batch_size, seq_length = input_ids.shape
+        
+        # Get concept representations from encoder
+        encoder_outputs = self.encoder(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict
+        )
+        concept_repr = encoder_outputs.last_hidden_state  # [B, C, H]
+        
+        # Get position-specific weights and normalize them
+        position_weights = self.concept_weights[:seq_length, :]  # [S, C]
+        position_weights = F.softmax(position_weights, dim=-1)  # Normalize over concepts
+        
+        # Expand weights for batch processing
+        position_weights_expanded = position_weights.unsqueeze(0).expand(batch_size, -1, -1)  # [B, S, C]
+        
+        # Combine concepts using learned weights: [B, S, H] = [B, S, C] x [B, C, H]
+        sequence_repr = torch.bmm(position_weights_expanded, concept_repr)
+        
+        # Optional: apply projection before final LM head
+        sequence_repr = self.pre_lm_projection(sequence_repr)
+        
+        # Project to vocabulary
+        logits = self.lm_head(sequence_repr)  # [B, S, V]
+        
+        # Compute MLM loss if labels provided
+        masked_lm_loss = None
+        if labels is not None:
+            loss_fct = CrossEntropyLoss(ignore_index=-100)
+            masked_lm_loss = loss_fct(
+                logits.view(-1, self.config.vocab_size),
+                labels.view(-1)
+            )
+            
+            # Optional: Add orthogonality loss to encourage diverse concepts
+            if self.training and hasattr(self, 'compute_orthogonality_loss'):
+                ortho_loss = compute_orthogonality_loss(concept_repr)
+                masked_lm_loss = masked_lm_loss + 0.01 * ortho_loss
+        
+        if not return_dict:
+            output = (logits,) + encoder_outputs[1:]
+            return ((masked_lm_loss,) + output) if masked_lm_loss is not None else output
+        
+        return MaskedLMOutput(
+            loss=masked_lm_loss,
+            logits=logits,
+            hidden_states=encoder_outputs.hidden_states,
+            attentions=encoder_outputs.attentions,
+        )
+    
+    def get_position_weights_analysis(self):
+        """
+        Helper method to analyze which concepts are used for which positions.
+        Useful for interpretability and debugging.
+        """
+        weights = F.softmax(self.concept_weights, dim=-1)
+        return weights.detach().cpu().numpy()
 
 
 class ConceptEncoderForSequenceClassification(PreTrainedModel):
@@ -642,3 +793,35 @@ class ConceptEncoderForSequenceClassification(PreTrainedModel):
     def get_input_embeddings(self):
         """Returns the token embeddings layer of the encoder."""
         return self.encoder.token_embeddings
+    
+
+
+
+
+
+
+# try add this to the loss function to learn the different concepts and make them not correlated with each other to much
+def compute_orthogonality_loss(self, concept_repr):
+    """
+    Encourage concept vectors to be orthogonal to each other.
+    Args:
+        concept_repr: [batch_size, concept_size, hidden_size]
+    Returns:
+        orthogonality_loss: scalar
+    """
+    # Normalize concepts to unit vectors
+    concept_norm = F.normalize(concept_repr, p=2, dim=-1)  # [B, C, H]
+    
+    # Compute concept similarity matrix
+    concept_sim = torch.bmm(concept_norm, concept_norm.transpose(1, 2))  # [B, C, C]
+    
+    # Create identity matrix (target: concepts should be orthogonal)
+    batch_size, concept_size = concept_sim.shape[:2]
+    eye = torch.eye(concept_size, device=concept_sim.device).unsqueeze(0)
+    eye = eye.expand(batch_size, -1, -1)
+    
+    # Compute loss: penalize non-diagonal elements
+    off_diagonal_mask = 1.0 - eye
+    orthogonality_loss = (concept_sim * off_diagonal_mask).pow(2).sum() / (batch_size * concept_size * (concept_size - 1))
+    
+    return orthogonality_loss
