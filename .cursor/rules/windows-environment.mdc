@@ -22,4 +22,20 @@ Executable:     C:\Users\krzys\AppData\Local\pypoetry\Cache\virtualenvs\mrcogito
 Valid:          True
 ```
 
+Root project folder on my windows machine is `C:\Users\krzys\Documents\Projects\MrCogito`
+
+**Key Folders:**
+- `Cache/` - Root folder for all cached data like models, datasets, and generated outputs
+    - `Models/` - Folder for downloaded HuggingFace models and checkpoints
+    - `Tokenizers/` - Folder for trained morphological and standard tokenizers
+    - `Datasets/` - Folder for cached training datasets  
+    - `Evaluation_reports/` - Folder for CSV evaluation results [[memory:2369370]]
+    - `Training/` - Folder for training artifacts and logs
+- `docs/` - Folder for documentation and research notes, where I keep reserach ideas, list of publication with summary,  experiments results and descriptions, here you can find all context materials for the projects, 
+- `nn/` - Folder for the main implementation of the concept encoder model
+- `playground/` - Folder for testing and prototyping code, here you can find code snippetes, smaller jupyter notebooks that is not part of the main implementation but is used for testing and prototyping
+- `scripts/` - Folder for powershell, bash and other scripts that are used for training and evaluation,
+- `training/` - Folder for training python code and utilities, here you can find the main training python code and utilities for training the concept encoder model
+- `wandb/` - Folder for wandb logs and artifacts, here you can find the logs and artifacts for the training runs
+- 
   
