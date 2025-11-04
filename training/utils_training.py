@@ -1,10 +1,14 @@
 """
 Training utilities and helper functions for ConceptEncoder models.
 """
+import os
+import platform
 import torch
 from torch.nn import Module
-from typing import Tuple, Dict, Any, Optional
-from datasets import load_dataset
+from typing import Tuple, Dict, Any
+from transformers import logging
+
+logger = logging.get_logger(__name__)
 
 
 def count_parameters(model: Module) -> Tuple[int, int]:
@@ -22,29 +26,19 @@ def count_parameters(model: Module) -> Tuple[int, int]:
     return total_params, trainable_params
 
 
-def print_model_parameters(model: Module, model_name: str = "Model") -> None:
-    """
-    Print model parameter counts in a formatted way.
-    
-    Args:
-        model: PyTorch model
-        model_name: Name to display in the output
-    """
-    total_params, trainable_params = count_parameters(model)
-    print(f"\n{model_name} Parameters:")
-    print(f"Total parameters: {total_params:,} ({total_params/1e6:.2f}M)")
-    print(f"Trainable parameters: {trainable_params:,} ({trainable_params/1e6:.2f}M)")
-    
-    # Additional breakdown if there's a difference
-    if total_params != trainable_params:
-        frozen_params = total_params - trainable_params
-        print(f"Frozen parameters: {frozen_params:,} ({frozen_params/1e6:.2f}M)")
-        print(f"Trainable percentage: {trainable_params/total_params*100:.1f}%")
-
-
 def get_parameter_breakdown(model: Module) -> Dict[str, Dict[str, int]]:
     """
-    Get detailed parameter breakdown by model component.
+    Get detailed parameter breakdown by model component for ConceptEncoder models.
+    
+    Categorizes parameters into:
+    - token_embeddings: Token and position embeddings
+    - concept_embeddings: Concept token embeddings
+    - cross_attention: Cross-attention between concepts and tokens
+    - self_attention: Self-attention between concepts
+    - feedforward: Feed-forward network layers (Wi, Wo)
+    - layer_norm: Layer normalization parameters
+    - lm_head: Language modeling head and decoding layers
+    - other: Other components (pooler, classifier, gates, etc.)
     
     Args:
         model: PyTorch model
@@ -56,94 +50,179 @@ def get_parameter_breakdown(model: Module) -> Dict[str, Dict[str, int]]:
     
     # Count parameters by major components
     component_params = {
-        'embeddings': 0,
-        'encoder': 0,
-        'mlm_head': 0,
+        'token_embeddings': 0,
+        'concept_embeddings': 0,
+        'cross_attention': 0,
+        'self_attention': 0,
+        'feedforward': 0,
+        'layer_norm': 0,
+        'lm_head': 0,
         'other': 0
     }
     
     for name, param in model.named_parameters():
         param_count = param.numel()
+        name_lower = name.lower()
         
-        if 'embedding' in name:
-            component_params['embeddings'] += param_count
-        elif 'encoder' in name and 'embedding' not in name:
-            component_params['encoder'] += param_count
-        elif 'lm_head' in name or 'mlm' in name.lower() or 'concept_weights' in name:
-            component_params['mlm_head'] += param_count
+        # Token embeddings (including position embeddings)
+        if 'token_embeddings' in name or 'token_position_embeddings' in name:
+            component_params['token_embeddings'] += param_count
+        
+        # Concept embeddings
+        elif 'concept_embeddings' in name:
+            component_params['concept_embeddings'] += param_count
+        
+        # Cross attention (concept-token attention)
+        elif 'concept_token_attn' in name:
+            component_params['cross_attention'] += param_count
+        
+        # Self attention (concept-concept attention)
+        elif 'concept_self_attn' in name:
+            component_params['self_attention'] += param_count
+        
+        # Feed-forward layers (Wi, Wo matrices) - exclude from LM head and gates
+        elif ('wi' in name_lower or 'wo' in name_lower) and 'lm_head' not in name_lower and 'gate' not in name_lower:
+            component_params['feedforward'] += param_count
+        
+        # Layer normalization
+        elif 'norm' in name_lower or 'layernorm' in name_lower:
+            component_params['layer_norm'] += param_count
+        
+        # LM head and decoding components
+        elif any(x in name_lower for x in [
+            'lm_head', 'concept_vocab_projection', 'lm_token_head',
+            'concept_to_sequence', 'pre_lm_projection', 'concept_weights'
+        ]):
+            component_params['lm_head'] += param_count
+        
+        # Other components (gates, pooler, classifier, temperature, etc.)
         else:
             component_params['other'] += param_count
     
-    # Convert to millions for readability
-    for component in component_params:
-        breakdown[component] = {
-            'params': component_params[component],
-            'params_m': component_params[component] / 1e6
-        }
+    # Convert to millions for readability and only include non-zero components
+    for component, count in component_params.items():
+        if count > 0:
+            breakdown[component] = {
+                'params': count,
+                'params_m': count / 1e6
+            }
     
     return breakdown
 
 
-def format_time(seconds: float) -> str:
+
+def setup_distributed():
     """
-    Format seconds into a readable time string.
-    
-    Args:
-        seconds: Time in seconds
+    Setup for distributed training on multi-GPU single node.
+    Returns local rank for the current process.
+    """
+    if torch.cuda.is_available():
+        local_rank = int(os.environ.get("LOCAL_RANK", -1))
+        if local_rank != -1:
+            torch.cuda.set_device(local_rank)
+        return local_rank
+    return -1
+
+
+def is_main_process():
+    """
+    Check if this is the main process (local_rank 0).
+    Used to avoid duplicate logging/printing in multi-GPU training.
+    """
+    return int(os.environ.get("LOCAL_RANK", 0)) == 0
+
+
+def get_hostname():
+    """
+    Get hostname in a cross-platform way (works on Windows and Linux).
+    """
+    return platform.node()
+
+
+def log_system_info():
+    """
+    Log system and CUDA information on main process only.
+    """
+    if not is_main_process():
+        return
         
-    Returns:
-        Formatted time string (e.g., "2h 15m 30s")
-    """
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
+    logger.info("="*60)
+    logger.info("System Information")
+    logger.info("="*60)
+    logger.info(f"Platform: {platform.system()} {platform.release()}")
+    logger.info(f"Hostname: {get_hostname()}")
+    logger.info(f"Python version: {platform.python_version()}")
     
-    parts = []
-    if hours > 0:
-        parts.append(f"{hours}h")
-    if minutes > 0:
-        parts.append(f"{minutes}m")
-    if secs > 0 or not parts:
-        parts.append(f"{secs}s")
+    logger.info(f"PyTorch version: {torch.__version__}")
+    logger.info(f"CUDA available: {torch.cuda.is_available()}")
     
-    return " ".join(parts)
+    if torch.cuda.is_available():
+        logger.info(f"CUDA version: {torch.version.cuda}")
+        logger.info(f"GPU count: {torch.cuda.device_count()}")
+        logger.info(f"Current device: {torch.cuda.current_device()}")
+        
+        for i in range(torch.cuda.device_count()):
+            props = torch.cuda.get_device_properties(i)
+            logger.info(f"GPU {i}: {props.name}")
+            logger.info(f"  - Memory: {props.total_memory / 1024**3:.2f} GB")
+            logger.info(f"  - Compute capability: {props.major}.{props.minor}")
+    logger.info("="*60)
 
 
-def calculate_training_memory(model: Module, batch_size: int, seq_length: int, 
-                            gradient_accumulation_steps: int = 1) -> Dict[str, float]:
+def log_model_info(model: Module, config: Any = None, model_type: str = None, 
+                   model_description: str = None):
     """
-    Estimate GPU memory requirements for training.
+    Log model architecture and parameter information on main process only.
     
     Args:
         model: PyTorch model
-        batch_size: Training batch size
-        seq_length: Sequence length
-        gradient_accumulation_steps: Gradient accumulation steps
-        
-    Returns:
-        Dictionary with memory estimates in GB
+        config: Model configuration object (optional)
+        model_type: String identifier for the model type (optional)
+        model_description: Human-readable description of the model (optional)
     """
-    total_params, _ = count_parameters(model)
+    if not is_main_process():
+        return
     
-    # Rough estimates (4 bytes per parameter)
-    model_memory = total_params * 4 / (1024**3)  # Model weights
-    optimizer_memory = model_memory * 2  # Adam optimizer states (2x model size)
-    gradient_memory = model_memory  # Gradients
+    logger.info("="*60)
+    logger.info("Model Information")
+    logger.info("="*60)
     
-    # Activation memory (very rough estimate)
-    # This is highly model-dependent
-    effective_batch = batch_size // gradient_accumulation_steps
-    activation_memory = effective_batch * seq_length * 1024 * 4 / (1024**3)  # Rough estimate
+    if model_type:
+        logger.info(f"Model type: {model_type}")
+    if model_description:
+        logger.info(f"Model description: {model_description}")
     
-    total_memory = model_memory + optimizer_memory + gradient_memory + activation_memory
+    # Log model class name
+    logger.info(f"Model class: {model.__class__.__name__}")
     
-    return {
-        'model_gb': model_memory,
-        'optimizer_gb': optimizer_memory,
-        'gradients_gb': gradient_memory,
-        'activations_gb': activation_memory,
-        'total_gb': total_memory
-    }
-
-
-
+    # Log configuration if provided
+    if config:
+        logger.info("\nModel Configuration:")
+        config_attrs = ['hidden_size', 'num_hidden_layers', 'intermediate_size', 
+                       'num_attention_heads', 'concept_size', 'vocab_size', 
+                       'max_position_embeddings']
+        
+        for attr in config_attrs:
+            if hasattr(config, attr):
+                value = getattr(config, attr)
+                logger.info(f"  {attr.replace('_', ' ').title()}: {value}")
+    
+    # Get parameter counts
+    total_params, trainable_params = count_parameters(model)
+    logger.info(f"\nParameter Summary:")
+    logger.info(f"  Total parameters: {total_params:,} ({total_params/1e6:.2f}M)")
+    logger.info(f"  Trainable parameters: {trainable_params:,} ({trainable_params/1e6:.2f}M)")
+    
+    if total_params != trainable_params:
+        frozen_params = total_params - trainable_params
+        logger.info(f"  Frozen parameters: {frozen_params:,} ({frozen_params/1e6:.2f}M)")
+        logger.info(f"  Trainable percentage: {trainable_params/total_params*100:.1f}%")
+    
+    # Detailed parameter breakdown
+    breakdown = get_parameter_breakdown(model)
+    if breakdown:
+        logger.info("\nParameter breakdown by component:")
+        for component, info in breakdown.items():
+            if info['params'] > 0:
+                logger.info(f"  {component}: {info['params']:,} ({info['params_m']:.2f}M)")
+    logger.info("="*60)

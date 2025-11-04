@@ -1,5 +1,6 @@
 #%%
 import os
+import platform
 from transformers import (
     EncoderDecoderModel,
     AutoTokenizer,
@@ -10,6 +11,7 @@ from transformers import (
 )
 from datasets import load_dataset
 import torch
+import torch.distributed as dist
 from torch.utils.data import Dataset
 import numpy as np
 from typing import Dict, List
