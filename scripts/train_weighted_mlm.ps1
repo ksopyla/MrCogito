@@ -11,6 +11,10 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $env:HF_HOME = Join-Path $projectRoot "Cache"
 # Set specific cache directories within HF_HOME structure
 $env:HF_DATASETS_CACHE = Join-Path $projectRoot "Cache\Datasets"
+
+# Unset the old, deprecated TRANSFORMERS_CACHE variable to prevent warnings
+Remove-Item Env:\TRANSFORMERS_CACHE -ErrorAction SilentlyContinue
+
 # Note: TRANSFORMERS_CACHE is deprecated, but kept for backwards compatibility
 # Models will be cached under HF_HOME/models/ by default
 
@@ -25,15 +29,15 @@ python training/mlm_training.py `
     --dataset_name "Salesforce/wikitext" `
     --dataset_name_subset "wikitext-103-v1" `
     --dataset_cache_dir "./Cache/Datasets" `
-    --per_device_train_batch_size 32 `
-    --per_device_eval_batch_size 32 `
+    --per_device_train_batch_size 96 `
+    --per_device_eval_batch_size 64 `
     --gradient_accumulation_steps 1 `
     --learning_rate 5e-4 `
     --num_train_epochs 1 `
     --warmup_steps 1000 `
-    --logging_steps 500 `
+    --logging_steps 2000 `
     --eval_strategy "steps" `
-    --eval_steps 500 `
+    --eval_steps 2000 `
     --save_steps 10000 `
     --output_dir "./Cache/Training/" `
     --seed 42 `

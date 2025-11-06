@@ -139,7 +139,8 @@ def main():
         import logging as std_logging
         std_logging.basicConfig(
             level=std_logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            datefmt='%H:%M:%S',
             force=True
         )
     else:
@@ -387,7 +388,7 @@ def main():
     
     # Start training
     logger.info("="*60)
-    logger.info("Starting training...")
+    logger.info(f"Starting training at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info("="*60)
     trainer.train()
     

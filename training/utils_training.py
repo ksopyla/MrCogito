@@ -7,6 +7,7 @@ import torch
 from torch.nn import Module
 from typing import Tuple, Dict, Any
 from transformers import logging
+from datetime import datetime
 
 logger = logging.get_logger(__name__)
 
@@ -149,6 +150,8 @@ def log_system_info():
     logger.info("="*60)
     logger.info("System Information")
     logger.info("="*60)
+    # Start training at date and time
+    logger.info(f"Training started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info(f"Platform: {platform.system()} {platform.release()}")
     logger.info(f"Hostname: {get_hostname()}")
     logger.info(f"Python version: {platform.python_version()}")

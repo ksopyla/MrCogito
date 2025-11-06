@@ -335,6 +335,8 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
         self,
         input_ids: torch.LongTensor,
         attention_mask: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.LongTensor] = None,
+        special_tokens_mask: Optional[torch.Tensor] = None,
         labels: Optional[torch.LongTensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
@@ -484,7 +486,7 @@ class ConceptEncoderWithSimMatrixForMaskedLM(PreTrainedModel):
         self.post_init()
 
 
-    def forward(self, input_ids, attention_mask=None, labels=None):
+    def forward(self, input_ids, attention_mask=None, token_type_ids=None, special_tokens_mask=None, labels=None):
         # Encoder forward
         encoder_out = self.encoder(input_ids, attention_mask)
         concept_repr = encoder_out.last_hidden_state  # [B, C, H]
@@ -583,6 +585,8 @@ class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
         self,
         input_ids: torch.LongTensor,
         attention_mask: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.LongTensor] = None,
+        special_tokens_mask: Optional[torch.Tensor] = None,
         labels: Optional[torch.LongTensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
