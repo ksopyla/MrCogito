@@ -60,7 +60,7 @@ class ConceptEncoderConfig(PretrainedConfig):
         attention_probs_dropout_prob: float = 0.1,
         max_sequence_length: int = 2048,
         type_vocab_size: int = 2,
-        initializer_range: float = 0.02,
+        initializer_range: float = 0.1,
         is_decoder: bool = False,
         tie_word_embeddings: bool = True,
         **kwargs,
@@ -138,19 +138,23 @@ class ConceptEncoderLayer(nn.Module):
         """Process input through the encoder layer.
         
         Args:
-            concept_representations: Tensor of shape (batch_size, concept_length, hidden_size)
+            concept_representations: Tensor of shape (batch_size, concept_length, hidden_size=concept_dim)
                 Current concept representations to be updated.
-            token_embeddings: Tensor of shape (batch_size, sequence_length, hidden_size)
+            token_embeddings: Tensor of shape (batch_size, sequence_length, hidden_size=token_embedding_dim)
                 Token embeddings to attend to.
             attention_mask: Optional tensor of shape (batch_size, 1, sequence_length)
                 Mask to avoid attending to padding tokens. Values should be 0 or 1.
         
         Returns:
-            torch.Tensor: Updated concept representations of shape (batch_size, concept_length, hidden_size)
+            torch.Tensor: Updated concept representations of shape (batch_size, concept_length, hidden_size=concept_dim)
         """
-        # Cross Attention between concept and token embeddings
-        # Pre-LN
+        
+        # Layer Normalization - concept normalization
         normed_concepts = self.pre_cross_attn_norm(concept_representations)
+        # Cross Attention between concept and token embeddings, 
+        # Queries: concepts [batch_size, concept_num, concept_dim]
+        # Keys: token embeddings [batch_size, sequence_length, token_embedding_dim]
+        # Values: token embeddings [batch_size, sequence_length, token_embedding_dim]
         concept_token_attn_output, _ = self.concept_token_attn(
             normed_concepts, token_embeddings, token_embeddings, 
             key_padding_mask=attention_mask 
@@ -163,23 +167,29 @@ class ConceptEncoderLayer(nn.Module):
         # Pre-LN, norm operation could be view as fusing the knowledge
         normed_concepts = self.pre_self_attn_norm(concept_representations)
 
-        # Self Attention on concept representations, if this is needed? leave for further experiments
+        # Self Attention on concept representations, Q, K, V = concept_representations
+        # Queries: concepts [batch_size, concept_num, concept_dim]
+        # Keys: concepts [batch_size, concept_num, concept_dim]
+        # Values: concepts [batch_size, concept_num, concept_dim]
         concept_self_attn_output, _ = self.concept_self_attn(
             normed_concepts, normed_concepts, normed_concepts,
             attn_mask=None  # No mask needed for concept self-attention
         )
 
-        # Add residual connection between concepts
+        # Add residual connection between concepts after concept self attention
         concept_representations = concept_representations + concept_self_attn_output
 
         # Feed Forward Network with gating mechanism
-        # Pre-LN
+        # Layer Normalization - concept normalization
         normed_concepts = self.pre_ff_norm(concept_representations)
+
         ff_input, ff_gate = self.Wi(normed_concepts).chunk(2, dim=-1)
         ff_output = self.Wo(self.wi_dropout(self.act_fn(ff_input) * ff_gate))
+
+        # Add residual connection between concepts after feed forward network
         concept_representations = concept_representations + ff_output
 
-        return concept_representations
+        return concept_representations # [batch_size, concept_num, concept_dim]
 
 class ConceptEncoder(PreTrainedModel):
     """Concept Encoder model.
@@ -200,30 +210,47 @@ class ConceptEncoder(PreTrainedModel):
         super().__init__(config)
         self.config = config
 
-        self.token_embeddings = nn.Embedding(num_embeddings=config.vocab_size, embedding_dim=config.hidden_size, padding_idx=config.pad_token_id)
+
+        # Token embeddings [vocab_size, hidden_size=token_embedding_dim]
+        self.token_embeddings = nn.Embedding(num_embeddings=config.vocab_size, embedding_dim=config.hidden_size, padding_idx=config.pad_token_id)   
+        # Token position embeddings [max_sequence_length, hidden_size=token_embedding_dim]
         self.token_position_embeddings = nn.Embedding(num_embeddings=config.max_sequence_length, embedding_dim=config.hidden_size)
+        # Concept embeddings [concept_num, hidden_size=concept_dim]
         self.concept_embeddings = nn.Embedding(num_embeddings=config.concept_num, embedding_dim=config.hidden_size)
 
+        # Concept encoder layers [num_hidden_layers]
         self.layers = nn.ModuleList([ConceptEncoderLayer(config) for _ in range(config.num_hidden_layers)])
+        # Dropout [hidden_dropout_prob]
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        # Output layer normalization [hidden_size=concept_dim] - return the concept representations [batch_size, concept_num, concept_dim]
         self.output_layer_norm = nn.LayerNorm(config.hidden_size, eps=1e-12)
 
         self.post_init()
 
     def _init_weights(self, module):
         """
-        Override _init_weights so that from_pretrained or .init_weights() uses
-        your custom init logic. This aligns with Hugging Face patterns.
+        Override _init_weights to use custom initialization for embeddings.
+        
+        Initialize embeddings with different variances:
+        - Token and position embeddings: Normal(0, initializer_range)
+        - Concept embeddings: Normal(0, 2 * initializer_range) - higher variance for diversity, capped at 1.0
+        - Linear and LayerNorm: Use PyTorch defaults
+        
+        The higher variance for concept embeddings encourages initial diversity while staying
+        within reasonable bounds to avoid gradient instability.
         """
-        if isinstance(module, nn.Linear):
-            nn.init.trunc_normal_(module.weight, std=self.config.initializer_range)
-            if module.bias is not None:
-                nn.init.zeros_(module.bias)
+        if module is self.concept_embeddings:
+            # Concept embeddings get 2x variance for increased initial diversity (capped at 1.0)
+            concept_std = min(2.0 * self.config.initializer_range, 1.0)
+            module.weight.data.normal_(mean=0.0, std=concept_std)
+        
         elif isinstance(module, nn.Embedding):
-            nn.init.trunc_normal_(module.weight, std=self.config.initializer_range)
-        elif isinstance(module, nn.LayerNorm):
-            nn.init.ones_(module.weight)
-            nn.init.zeros_(module.bias)
+            # Token and position embeddings use standard initializer_range
+            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
+            if module.padding_idx is not None:
+                # Ensure padding embeddings are zeros
+                module.weight.data[module.padding_idx].zero_()
+        
 
     def forward(
         self,
