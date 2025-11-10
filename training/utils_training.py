@@ -203,7 +203,7 @@ def log_model_info(model: Module, config: Any = None, model_type: str = None,
         logger.info("\nModel Configuration:")
         config_attrs = ['hidden_size', 'num_hidden_layers', 'intermediate_size', 
                        'num_attention_heads', 'concept_num', 'vocab_size', 
-                       'max_position_embeddings']
+                       'max_sequence_length']
         
         for attr in config_attrs:
             if hasattr(config, attr):

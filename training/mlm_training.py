@@ -201,7 +201,7 @@ def main():
         num_hidden_layers=model_args.num_hidden_layers,
         num_attention_heads=num_attention_heads,
         intermediate_size=model_args.intermediate_size,
-        max_position_embeddings=data_args.max_seq_length,
+        max_sequence_length=data_args.max_seq_length,
         pad_token_id=tokenizer.pad_token_id,
         mask_token_id=tokenizer.mask_token_id,
         tie_word_embeddings= False
@@ -367,7 +367,7 @@ def main():
             'intermediate_size': model_args.intermediate_size,
             'num_attention_heads': config.num_attention_heads,
             'vocab_size': config.vocab_size,
-            'max_position_embeddings': config.max_position_embeddings,
+            'max_sequence_length': config.max_sequence_length,
             'total_params': total_params,
             'trainable_params': trainable_params,
             

@@ -33,7 +33,7 @@ class ConceptEncoderConfig(PretrainedConfig):
         hidden_act (str): Activation function for the hidden layers.
         hidden_dropout_prob (float): Dropout probability for fully connected layers.
         attention_probs_dropout_prob (float): Dropout probability for attention probabilities.
-        max_position_embeddings (int): Maximum sequence length supported by the model.
+        max_sequence_length (int): Maximum sequence length supported by the model.
         type_vocab_size (int): Size of the token type vocabulary.
         initializer_range (float): Standard deviation for initializing model weights.
         is_decoder (bool): Whether the model acts as a decoder. Defaults to False.
@@ -58,7 +58,7 @@ class ConceptEncoderConfig(PretrainedConfig):
         mask_token_id: int = 5,
         hidden_dropout_prob: float = 0.1,
         attention_probs_dropout_prob: float = 0.1,
-        max_position_embeddings: int = 2048,
+        max_sequence_length: int = 2048,
         type_vocab_size: int = 2,
         initializer_range: float = 0.02,
         is_decoder: bool = False,
@@ -75,7 +75,7 @@ class ConceptEncoderConfig(PretrainedConfig):
         self.hidden_act = hidden_act
         self.hidden_dropout_prob = hidden_dropout_prob
         self.attention_probs_dropout_prob = attention_probs_dropout_prob
-        self.max_position_embeddings = max_position_embeddings
+        self.max_sequence_length = max_sequence_length
         self.type_vocab_size = type_vocab_size
         self.initializer_range = initializer_range
         self.is_decoder = is_decoder
@@ -201,7 +201,7 @@ class ConceptEncoder(PreTrainedModel):
         self.config = config
 
         self.token_embeddings = nn.Embedding(num_embeddings=config.vocab_size, embedding_dim=config.hidden_size, padding_idx=config.pad_token_id)
-        self.token_position_embeddings = nn.Embedding(num_embeddings=config.max_position_embeddings, embedding_dim=config.hidden_size)
+        self.token_position_embeddings = nn.Embedding(num_embeddings=config.max_sequence_length, embedding_dim=config.hidden_size)
         self.concept_embeddings = nn.Embedding(num_embeddings=config.concept_num, embedding_dim=config.hidden_size)
 
         self.layers = nn.ModuleList([ConceptEncoderLayer(config) for _ in range(config.num_hidden_layers)])
@@ -557,10 +557,10 @@ class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
         self.config = config
         self.encoder = ConceptEncoder(config)
         
-        # Learn a weight matrix for combining concepts per position
+        # Learn a weight matrix for combining concepts per sequence position
         # Initialize with small random values to break symmetry
         self.concept_weights = nn.Parameter(
-            torch.randn(config.max_position_embeddings, config.concept_num) / math.sqrt(config.concept_num)
+            torch.randn(config.max_sequence_length, config.concept_num) / math.sqrt(config.concept_num)
         )
         
         # Simple MLM head
@@ -609,7 +609,9 @@ class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict
         )
-        concept_repr = encoder_outputs.last_hidden_state  # [B, C, H]
+
+        # Get the concept representations (batch_size, concept_num, concept_dim)
+        concept_repr = encoder_outputs.last_hidden_state  # [B, C, concept_dim]
         
         # Get position-specific weights and normalize them
         position_weights = self.concept_weights[:seq_length, :]  # [S, C]
