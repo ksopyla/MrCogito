@@ -743,11 +743,11 @@ class ConceptEncoderForSequenceClassification(PreTrainedModel):
             return_dict=return_dict,
         )
         
-        # Get the concept representations (batch_size, concept_num, hidden_size)
+        # Get the concept representations (batch_size, concept_num, concept_dim)
         concept_representations = encoder_outputs.last_hidden_state
         
         # Pool the concept representations - average pooling across the concept dimension
-        # This gives us a representation of size (batch_size, hidden_size)
+        # This gives us a representation of size (batch_size, concept_dim)
         pooled_output = torch.mean(concept_representations, dim=1)
         
         # Apply the pooler transformation
