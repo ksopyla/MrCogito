@@ -130,7 +130,7 @@ def parse_args():
         "--model_type",
         type=str,
         default="bert",
-        choices=["bert-type", "xlnet-type", "concept-type"],
+        choices=["bert-type", "xlnet-type", "concept-type", "sim_matrix_mlm", "concept_mlm", "weighted_mlm"],
         help="Type of model to fine-tune (bert, roberta, xlnet, or concept)"
     )
     parser.add_argument(
@@ -800,7 +800,8 @@ def finetune_model_on_glue(args):
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
     
     # Load and initialize model based on model type
-    if args.model_type == "concept":
+    concept_model_types = ["sim_matrix_mlm", "concept_mlm", "weighted_mlm"]
+    if args.model_type in concept_model_types:
         # First, load configuration and update with task-specific settings
         try:
             # Try to load the config from the model path
@@ -927,15 +928,54 @@ def finetune_model_on_glue(args):
         callbacks=[EarlyStoppingCallback(early_stopping_patience=2)]
     )
 
+    # Create comprehensive config dictionary for wandb
+    wandb_config = {
+        '_name_or_path': args.model_name_or_path,
+        'model_type': args.model_type,
+        'task': args.task,
+        'total_params': total_params,
+        'trainable_params': trainable_params,
+        **{k: v for k, v in vars(training_args).items() if not k.startswith('_')}
+    }
+
+    # Create wandb tags
+    # Sanitize model name for wandb tag to avoid errors with long paths
+    model_tag = args.model_name_or_path
+    if os.path.isdir(model_tag):
+        model_tag = os.path.basename(model_tag)
+    
+    # Strip timestamp from model name if it exists (e.g., _YYYYMMDD_HHMMSS)
+    parts = model_tag.split('_')
+    if len(parts) > 2 and parts[-2].isdigit() and len(parts[-2]) == 8 and parts[-1].isdigit() and len(parts[-1]) == 6:
+        model_tag = '_'.join(parts[:-2])
+
+    # Ensure tag is not too long
+    if len(model_tag) > 63:
+        model_tag = model_tag[:63]
+
+    wandb_tags = [
+        "glue",
+        args.task,
+        "finetuning",
+        args.model_type,
+        model_tag,
+        f"hostname-{os.environ.get('COMPUTERNAME', 'unknown')}"
+    ]
+
+    # Create group identifier for clustering related runs
+    group_identifier = f"GLUE_{args.task}"
+    
     # Initialize the wandb project
     wandb_run = wandb.init(
         project="MrCogito",
-        config=vars(training_args),
+        id=run_name,  # Use run_name as a unique ID for resuming
         name=run_name,
-        tensorboard=True,
+        job_type=f"glue_{args.task}_evaluation",
+        config=wandb_config,
+        tags=wandb_tags,
+        group=group_identifier,
         sync_tensorboard=True,
-        tags=["glue", args.task, "finetuning", args.model_type, args.model_name_or_path],
-        group=f"hostname-{os.environ['COMPUTERNAME']}"
+        notes=f"Fine-tuning {args.model_name_or_path} on GLUE task {args.task}"
     )
 
     # Train model
