@@ -29,7 +29,7 @@ class MLMBatch(NamedTuple):
 class ModelConfig:
     """Base configuration for model testing."""
     vocab_size: int
-    concept_size: int = 4
+    concept_num: int = 4
     hidden_size: int = 8
     num_hidden_layers: int = 1
     num_attention_heads: int = 1
@@ -44,7 +44,7 @@ class ModelConfigs:
     def tiny_1l_1h():
         return ModelConfig(
             vocab_size=16,
-            concept_size=4,
+            concept_num=4,
             hidden_size=8,
             num_hidden_layers=1,
             num_attention_heads=1,
@@ -55,7 +55,7 @@ class ModelConfigs:
     def small_2l_1h():
         return ModelConfig(
             vocab_size=16,
-            concept_size=8,
+            concept_num=8,
             hidden_size=12,
             num_hidden_layers=2,
             num_attention_heads=1,
@@ -65,7 +65,7 @@ class ModelConfigs:
     def small_2l_2h():
         return ModelConfig(
             vocab_size=16,
-            concept_size=8,
+            concept_num=8,
             hidden_size=16,
             num_hidden_layers=2,
             num_attention_heads=2,
@@ -76,7 +76,7 @@ class ModelConfigs:
     def medium_3l_4h():
         return ModelConfig(
             vocab_size=16,
-            concept_size=8,
+            concept_num=8,
             hidden_size=16,
             num_hidden_layers=3,
             num_attention_heads=4,
@@ -93,7 +93,7 @@ class TestBase:
         """Creates ConceptEncoderConfig from ModelConfig and SpecialTokens."""
         return ConceptEncoderConfig(
             vocab_size=model_config.vocab_size,
-            concept_size=model_config.concept_size,
+            concept_num=model_config.concept_num,
             hidden_size=model_config.hidden_size,
             num_hidden_layers=model_config.num_hidden_layers,
             num_attention_heads=model_config.num_attention_heads,
@@ -151,7 +151,7 @@ class TestConceptEncoder(TestBase):
         # check the shapr of encoder output which is the concept_representation
         expected_shape = (
             batch_size,
-            model_config.concept_size, # concept_size
+            model_config.concept_num, # concept_num
             model_config.hidden_size # hidden_size
         )
         assert outputs.last_hidden_state.shape == expected_shape, (
@@ -191,7 +191,7 @@ class TestConceptEncoder(TestBase):
         for hidden_state in outputs.hidden_states:
             assert hidden_state.shape == (
                 batch_size,
-                model_config.concept_size,
+                model_config.concept_num,
                 model_config.hidden_size
             )
             
@@ -323,7 +323,7 @@ class TestConceptEncoderForMaskedLM(TestBase):
         for hidden_state in outputs.hidden_states:
             assert hidden_state.shape == (
                 batch_size,
-                model_config.concept_size,
+                model_config.concept_num,
                 model_config.hidden_size
             )
 
@@ -358,10 +358,10 @@ class TestConceptEncoderEmbeddings(TestBase):
         model = ConceptEncoder(encoder_config)
         
         # Get concept embeddings directly
-        concept_ids = torch.arange(model_config.concept_size)
+        concept_ids = torch.arange(model_config.concept_num)
         embeddings = model.concept_embeddings(concept_ids)
         
-        expected_shape = (model_config.concept_size, model_config.hidden_size)
+        expected_shape = (model_config.concept_num, model_config.hidden_size)
         assert embeddings.shape == expected_shape
         
         # Check if embeddings are not zero and properly initialized
@@ -442,7 +442,7 @@ class TestConceptEncoderForMLMDetails(TestBase):
             # Check shapes
             assert projected_concepts.shape == (
                 batch_size,
-                model_config.concept_size,
+                model_config.concept_num,
                 model_config.hidden_size
             )
             

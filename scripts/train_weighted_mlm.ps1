@@ -23,21 +23,21 @@ python training/mlm_training.py `
     --model_type weighted_mlm `
     --hidden_size 256 `
     --num_hidden_layers 2 `
-    --concept_size 128 `
+    --concept_num 128 `
     --mlm_probability 0.15 `
     --max_seq_length 256 `
     --dataset_name "Salesforce/wikitext" `
     --dataset_name_subset "wikitext-103-v1" `
     --dataset_cache_dir "./Cache/Datasets" `
-    --per_device_train_batch_size 96 `
+    --per_device_train_batch_size 64 `
     --per_device_eval_batch_size 64 `
     --gradient_accumulation_steps 1 `
     --learning_rate 5e-4 `
-    --num_train_epochs 1 `
+    --num_train_epochs 0.1 `
     --warmup_steps 1000 `
-    --logging_steps 2000 `
+    --logging_steps 200 `
     --eval_strategy "steps" `
-    --eval_steps 2000 `
+    --eval_steps 1000 `
     --save_steps 10000 `
     --output_dir "./Cache/Training/" `
     --seed 42 `

@@ -81,9 +81,9 @@ class ModelArguments:
         default=2,
         metadata={"help": "Number of transformer layers"}
     )
-    concept_size: int = field(
+    concept_num: int = field(
         default=128,
-        metadata={"help": "Number of concept tokens"}
+        metadata={"help": "Number of concepts to train"}
     )
     
 
@@ -196,7 +196,7 @@ def main():
     
     config = ConceptEncoderConfig(
         vocab_size=tokenizer.vocab_size,
-        concept_size=model_args.concept_size,
+        concept_num=model_args.concept_num,
         hidden_size=model_args.hidden_size,
         num_hidden_layers=model_args.num_hidden_layers,
         num_attention_heads=num_attention_heads,
@@ -244,13 +244,32 @@ def main():
         )
     
     # Configure training arguments with defaults and timestamped directories
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-
-
-    # Set timestamped output directories
-    training_args.output_dir = os.path.join(training_args.output_dir or "./outputs", f"{model_args.model_type}_{timestamp}")
-    training_args.logging_dir = os.path.join(training_args.logging_dir or "./logs", f"{model_args.model_type}_{timestamp}_logs")
-    training_args.run_name = f"{model_args.model_type}-H{model_args.hidden_size}L{model_args.num_hidden_layers}C{model_args.concept_size}-{timestamp}"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Create a consistent run identifier using underscores (wandb best practice)
+    # Format: model_type_H{hidden_size}L{layers}C{concept_num}_{timestamp}
+    # IMPORTANT: Use underscores only (no hyphens) for wandb compatibility
+    # This identifier will be used for run_name, logging_dir, and wandb.init(name)
+    run_identifier = f"{model_args.model_type}_H{model_args.hidden_size}L{model_args.num_hidden_layers}C{model_args.concept_num}_{timestamp}"
+    
+    # Create a unique run ID for wandb (allows resuming runs if needed)
+    # Format: same as run_identifier but can be used for resume functionality
+    run_id = run_identifier
+    
+    # Set timestamped output directories - use consistent naming with run_name
+    training_args.output_dir = os.path.join(training_args.output_dir or "./outputs", run_identifier)
+    
+    # CRITICAL: logging_dir structure affects panel names when sync_tensorboard=True
+    # When sync_tensorboard=True, wandb creates panels from the directory structure
+    # To ensure consistent panel names matching run names:
+    # 1. Use the same base name as run_name
+    # 2. Avoid nested subdirectories that don't match the run name
+    # 3. The directory name becomes part of the panel name
+    training_args.logging_dir = os.path.join(training_args.logging_dir or "./logs", run_identifier)
+    
+    # Use the same identifier for run_name to ensure consistency across wandb, Trainer, and directories
+    # This ensures: wandb.run.name == TrainingArguments.run_name == logging_dir base name
+    training_args.run_name = run_identifier
     
     # Log training configuration
     logger.info("="*60)
@@ -344,7 +363,7 @@ def main():
             'model_type': model_args.model_type,
             'hidden_size': model_args.hidden_size,
             'num_hidden_layers': model_args.num_hidden_layers,
-            'concept_size': model_args.concept_size,
+            'concept_num': model_args.concept_num,
             'intermediate_size': model_args.intermediate_size,
             'num_attention_heads': config.num_attention_heads,
             'vocab_size': config.vocab_size,
@@ -366,15 +385,36 @@ def main():
         }
         
         logger.info("Initializing Weights & Biases...")
+        # Initialize wandb with best practices for Hugging Face Transformers integration:
+        # 
+        # KEY PARAMETERS:
+        # - id: Unique identifier for the run (allows resuming if needed)
+        # - name: Human-readable run name (MUST match TrainingArguments.run_name exactly)
+        # - job_type: Categorizes runs (e.g., "pretraining", "finetuning", "evaluation")
+        # - group: Groups related runs for easier comparison (e.g., same model config)
+        # - tags: For filtering and searching runs
+        # - sync_tensorboard: Syncs TensorBoard logs (creates panels from logging_dir structure)        
+        # Create group identifier for clustering related runs (same model config)
+        group_identifier = f"{model_args.model_type}_H{model_args.hidden_size}L{model_args.num_hidden_layers}C{model_args.concept_num}"
+        
         wandb.init(
             project="MrCogito",
-            name=training_args.run_name,
+            id=run_id,  # Unique identifier (allows resuming runs)
+            name=training_args.run_name,  # MUST match TrainingArguments.run_name exactly
+            job_type="mlm-pretraining",  # Categorizes the type of training job
             config=wandb_config,
             tags=wandb_tags,
-            group=f"hostname-{hostname}",
-            sync_tensorboard=True
+            group=group_identifier,  # Group by model config for easier comparison
+            sync_tensorboard=True,  # Syncs TensorBoard logs - panel names come from logging_dir structure
+            notes=f"Model: {model_args.model_type}, Dataset: {data_args.dataset_name}"  # Add context
         )
-        logger.info(f"W&B run initialized: {wandb.run.name}")
+        logger.info(f"W&B run initialized:")
+        logger.info(f"  - Run ID: {wandb.run.id}")
+        logger.info(f"  - Run name: {wandb.run.name}")
+        logger.info(f"  - Run group: {wandb.run.group}")
+        logger.info(f"  - Job type: {wandb.run.job_type}")
+        logger.info(f"  - Logging dir: {training_args.logging_dir}")
+        logger.info(f"  - Note: Panel names will be based on logging_dir structure when sync_tensorboard=True")
     
     # Initialize Trainer
     trainer = Trainer(

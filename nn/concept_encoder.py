@@ -25,7 +25,7 @@ class ConceptEncoderConfig(PretrainedConfig):
 
     Args:
         vocab_size (int): Size of the token vocabulary.
-        concept_size (int): Number of concept tokens to learn.
+        concept_num (int): Number of concept tokens to learn.
         hidden_size (int): Dimension of hidden layers and embeddings.
         num_hidden_layers (int): Number of transformer layers in the encoder.
         num_attention_heads (int): Number of attention heads in each layer.
@@ -44,7 +44,7 @@ class ConceptEncoderConfig(PretrainedConfig):
     def __init__(
         self,
         vocab_size: int = 30522,
-        concept_size: int = 128,
+        concept_num: int = 128,
         hidden_size: int = 512,
         num_hidden_layers: int = 4,
         num_attention_heads: int = 8,
@@ -67,7 +67,7 @@ class ConceptEncoderConfig(PretrainedConfig):
     ):
         super().__init__(**kwargs)
         self.vocab_size = vocab_size
-        self.concept_size = concept_size
+        self.concept_num = concept_num
         self.hidden_size = hidden_size
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
@@ -202,7 +202,7 @@ class ConceptEncoder(PreTrainedModel):
 
         self.token_embeddings = nn.Embedding(num_embeddings=config.vocab_size, embedding_dim=config.hidden_size, padding_idx=config.pad_token_id)
         self.token_position_embeddings = nn.Embedding(num_embeddings=config.max_position_embeddings, embedding_dim=config.hidden_size)
-        self.concept_embeddings = nn.Embedding(num_embeddings=config.concept_size, embedding_dim=config.hidden_size)
+        self.concept_embeddings = nn.Embedding(num_embeddings=config.concept_num, embedding_dim=config.hidden_size)
 
         self.layers = nn.ModuleList([ConceptEncoderLayer(config) for _ in range(config.num_hidden_layers)])
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -255,9 +255,9 @@ class ConceptEncoder(PreTrainedModel):
 
         # 3) Initialize concept embeddings [batch_size, concept_length, hidden_size]
         # From gemini deep research analysis:
-        # Concept Initialization: A key step is the initialization of concept_representations. The learnable concept_embeddings (shape [concept_size, hidden_size]) are expanded to match the batch size ([batch_size, concept_size, hidden_size]). This means every item in the batch starts with the exact same set of initial concept prototypes. These prototypes are then specialized for each input sequence through the subsequent layer processing.
+        # Concept Initialization: A key step is the initialization of concept_representations. The learnable concept_embeddings (shape [concept_num, hidden_size]) are expanded to match the batch size ([batch_size, concept_num, hidden_size]). This means every item in the batch starts with the exact same set of initial concept prototypes. These prototypes are then specialized for each input sequence through the subsequent layer processing.
         concept_representations = self.concept_embeddings(
-            torch.arange(self.config.concept_size, device=input_ids.device)
+            torch.arange(self.config.concept_num, device=input_ids.device)
         ).unsqueeze(0).expand(batch_size, -1, -1)
 
         # Possibly track hidden_states/attentions
@@ -360,7 +360,7 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
             (loss, logits) if labels are provided
             or just (logits,) otherwise
 
-            logits => [batch_size, concept_size, vocab_size]
+            logits => [batch_size, concept_num, vocab_size]
         """
 
         
@@ -368,7 +368,7 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
 
         # Get concept representations from encoder
         encoder_outputs = self.encoder(input_ids, attention_mask, output_attentions, output_hidden_states)
-        concept_repr = encoder_outputs.last_hidden_state  # [batch_size, concept_size, hidden_size]
+        concept_repr = encoder_outputs.last_hidden_state  # [batch_size, concept_num, hidden_size]
 
         # Get token embeddings for attention computation
 
@@ -381,7 +381,7 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
 
         # from gemini deep research analysis:
         #TODO: Project Concepts: Apply the concept_to_sequence module to concept_repr to get projected_concepts. The purpose of this projection (LayerNorm + Linear) before the attention step is not immediately obvious from first principles. It might serve to transform the concept representations into a space more suitable for being attended to by token embeddings, or simply to add learnable parameters to the mapping process. Its necessity or benefit should ideally be verified through ablation studies.
-        projected_concepts = self.concept_to_sequence(concept_repr)  # [batch_size, concept_size, hidden_size]
+        projected_concepts = self.concept_to_sequence(concept_repr)  # [batch_size, concept_num, hidden_size]
 
 
 
@@ -400,7 +400,7 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
         attention_scores = torch.matmul(
             token_embeddings, 
             projected_concepts.transpose(-1, -2)
-        )  # [batch_size, seq_length, concept_size]
+        )  # [batch_size, seq_length, concept_num]
         
         # Add scaling to prevent softmax overflow
         attention_scores = attention_scores / (self.config.hidden_size ** 0.5)
@@ -560,7 +560,7 @@ class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
         # Learn a weight matrix for combining concepts per position
         # Initialize with small random values to break symmetry
         self.concept_weights = nn.Parameter(
-            torch.randn(config.max_position_embeddings, config.concept_size) / math.sqrt(config.concept_size)
+            torch.randn(config.max_position_embeddings, config.concept_num) / math.sqrt(config.concept_num)
         )
         
         # Simple MLM head
@@ -743,7 +743,7 @@ class ConceptEncoderForSequenceClassification(PreTrainedModel):
             return_dict=return_dict,
         )
         
-        # Get the concept representations (batch_size, concept_size, hidden_size)
+        # Get the concept representations (batch_size, concept_num, hidden_size)
         concept_representations = encoder_outputs.last_hidden_state
         
         # Pool the concept representations - average pooling across the concept dimension
@@ -809,7 +809,7 @@ def compute_orthogonality_loss(self, concept_repr):
     """
     Encourage concept vectors to be orthogonal to each other.
     Args:
-        concept_repr: [batch_size, concept_size, hidden_size]
+        concept_repr: [batch_size, concept_num, hidden_size]
     Returns:
         orthogonality_loss: scalar
     """
@@ -820,12 +820,12 @@ def compute_orthogonality_loss(self, concept_repr):
     concept_sim = torch.bmm(concept_norm, concept_norm.transpose(1, 2))  # [B, C, C]
     
     # Create identity matrix (target: concepts should be orthogonal)
-    batch_size, concept_size = concept_sim.shape[:2]
-    eye = torch.eye(concept_size, device=concept_sim.device).unsqueeze(0)
+    batch_size, concept_num = concept_sim.shape[:2]
+    eye = torch.eye(concept_num, device=concept_sim.device).unsqueeze(0)
     eye = eye.expand(batch_size, -1, -1)
     
     # Compute loss: penalize non-diagonal elements
     off_diagonal_mask = 1.0 - eye
-    orthogonality_loss = (concept_sim * off_diagonal_mask).pow(2).sum() / (batch_size * concept_size * (concept_size - 1))
+    orthogonality_loss = (concept_sim * off_diagonal_mask).pow(2).sum() / (batch_size * concept_num * (concept_num - 1))
     
     return orthogonality_loss

@@ -226,7 +226,7 @@ from nn.concept_encoder import ConceptEncoder, ConceptEncoderConfig
 # Create config with matching dimensions
 config = ConceptEncoderConfig(
     vocab_size=vocab_size,
-    concept_size=concept_length,
+    concept_num=concept_length,
     hidden_size=representation_dim,  # 128
     num_hidden_layers=num_layers,  # test with one layer
     num_attention_heads=2, #num_heads,  # test with one head

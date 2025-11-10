@@ -21,7 +21,7 @@ export OMP_NUM_THREADS=8  # Adjust based on CPU cores available
 MODEL_TYPE="weighted_mlm"
 HIDDEN_SIZE=384
 NUM_LAYERS=3
-CONCEPT_SIZE=64
+CONCEPT_NUM=64
 INTERMEDIATE_SIZE=1536
 
 # Data configuration
@@ -89,7 +89,7 @@ accelerate launch \
     --model_type "$MODEL_TYPE" \
     --hidden_size "$HIDDEN_SIZE" \
     --num_hidden_layers "$NUM_LAYERS" \
-    --concept_size "$CONCEPT_SIZE" \
+    --concept_num "$CONCEPT_NUM" \
     --intermediate_size "$INTERMEDIATE_SIZE" \
     --mlm_probability "$MLM_PROBABILITY" \
     --max_seq_length "$MAX_SEQ_LENGTH" \

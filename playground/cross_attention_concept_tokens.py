@@ -17,7 +17,8 @@ import torch.nn as nn
 import time
 
 #%% - the dim and size of the input
-embed_dim = 1024
+token_embed_dim = 256
+concept_embed_dim = 512
 num_heads = 1
 batch_size = 2
 
@@ -25,16 +26,16 @@ concept_length = 64
 sequence_length = 16384
 
 
-# (concept_length, batch_size, embed_dim)
-concept_embeddings = torch.rand(concept_length, batch_size, embed_dim)
+# (batch_size, concept_length, embed_dim)
+concept_embeddings = torch.rand(batch_size, concept_length, concept_embed_dim)
 
-# (sequence_length, batch_size, embed_dim)
-seq_x = torch.rand(sequence_length, batch_size, embed_dim)
+# (batch_size, sequence_length, embed_dim)
+seq_x = torch.rand(batch_size, sequence_length, token_embed_dim)
 
 #%% - Self attention 
 
-# Initialize the MultiheadAttention module
-multihead_attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=False)
+# Initialize the MultiheadAttention module between the token embeddings
+multihead_attn = nn.MultiheadAttention(token_embed_dim, num_heads, batch_first=True)
 
 # Define the input tensors (query, key, value)
 
@@ -53,10 +54,28 @@ print(f"Self attention Time taken: {end_time - start_time} seconds")
 # print("Attention Weights Shape:", attn_output_weights.shape)
 # print("Attention Weights:", attn_output_weights)
 
-# %% Concept cross attention
 
-concept_seq_attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=False)
-concept_self_attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=False)
+#%% concept self attention
+
+concept_self_attn = nn.MultiheadAttention(concept_embed_dim, num_heads, batch_first=True)
+start_time = time.time()
+concept_self_attn_output, concept_self_attn_weights = concept_self_attn(concept_embeddings, concept_embeddings, concept_embeddings)
+end_time = time.time()
+print(f"Concept self attention Time taken: {end_time - start_time} seconds")
+
+# %% Concept tokens cross attention
+# For cross attention with different dimensions:
+# - embed_dim: dimension of queries (concepts) = concept_embed_dim
+# - kdim: dimension of keys (tokens) = token_embed_dim  
+# - vdim: dimension of values (tokens) = token_embed_dim
+concept_seq_attn = nn.MultiheadAttention(
+    embed_dim=concept_embed_dim, 
+    num_heads=num_heads, 
+    kdim=token_embed_dim, 
+    vdim=token_embed_dim, 
+    batch_first=True
+)
+
 
 # measure the wall clock time of the execution 
 start_time = time.time()
@@ -65,10 +84,6 @@ end_time = time.time()
 print(f"Cross sequence attention Time taken: {end_time - start_time} seconds")
 
 
-start_time = time.time()
-concept_self_attn_output, concept_self_attn_weights = concept_self_attn(concept_embeddings, concept_embeddings, concept_embeddings)
-end_time = time.time()
-print(f"Concept self attention Time taken: {end_time - start_time} seconds")
 
 # %%
 
