@@ -19,16 +19,16 @@ export OMP_NUM_THREADS=8  # Adjust based on CPU cores available
 
 # Training configuration
 MODEL_TYPE="weighted_mlm"
-HIDDEN_SIZE=384
-NUM_LAYERS=3
-CONCEPT_NUM=64
-INTERMEDIATE_SIZE=1536
+HIDDEN_SIZE=512
+NUM_LAYERS=2
+CONCEPT_NUM=128
+INTERMEDIATE_SIZE=1024
 
 # Data configuration
 DATASET_NAME="Salesforce/wikitext"
 DATASET_SUBSET="wikitext-103-raw-v1"
-TOKENIZER_NAME="bert-base-uncased"
-MAX_SEQ_LENGTH=256
+TOKENIZER_NAME="bert-base-cased"
+MAX_SEQ_LENGTH=512
 MLM_PROBABILITY=0.15
 TEST_SIZE_PERCENT=0.1
 
@@ -42,16 +42,16 @@ WEIGHT_DECAY=0.01
 MAX_GRAD_NORM=1.0
 
 # Logging and evaluation
-LOGGING_STEPS=50
+LOGGING_STEPS=500
 EVAL_STRATEGY="steps"
-EVAL_STEPS=500
+EVAL_STEPS=5000
 SAVE_STRATEGY="steps"
-SAVE_STEPS=1000
+SAVE_STEPS=10000
 
 # Paths (adjust these for your server)
-OUTPUT_DIR="./Cache/Training"
-LOGGING_DIR="./logs"
-DATASET_CACHE_DIR="./Cache/Datasets"
+OUTPUT_DIR="~/HF/Cache/Training"
+LOGGING_DIR="~/HF/Cache/logs"
+DATASET_CACHE_DIR="~/HF/Cache/Datasets"
 
 # Seeds for reproducibility
 SEED=42
@@ -83,7 +83,7 @@ echo ""
 accelerate launch \
     --num_processes=4 \
     --num_machines=1 \
-    --mixed_precision=fp16 \
+    --mixed_precision=bf16 \
     --multi_gpu \
     training/mlm_training.py \
     --model_type "$MODEL_TYPE" \
@@ -114,15 +114,15 @@ accelerate launch \
     --output_dir "$OUTPUT_DIR" \
     --logging_dir "$LOGGING_DIR" \
     --seed "$SEED" \
-    --fp16 \
+    --bf16 \
     --ddp_backend "nccl" \
     --ddp_find_unused_parameters False \
     --dataloader_pin_memory True \
     --dataloader_num_workers 4 \
     --gradient_checkpointing False \
     --optim "adamw_torch_fused" \
-    --lr_scheduler_type "cosine" \
-    --report_to "tensorboard" "wandb" \
+    --lr_scheduler_type "linear" \
+    --report_to "wandb" \
     --save_safetensors False \
     --overwrite_output_dir True \
     --remove_unused_columns True \
