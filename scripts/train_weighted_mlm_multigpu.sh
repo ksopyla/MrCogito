@@ -10,11 +10,11 @@ set -e  # Exit on error
 echo "=== Multi-GPU Training Script for Concept Encoder ==="
 echo ""
 
-# Set environment variables for optimal performance and debugging
+# Set environment variables for optimal performance
 export CUDA_VISIBLE_DEVICES=0,1,2,3
-export NCCL_DEBUG=INFO  # Set to INFO to debug NCCL issues
-export NCCL_DEBUG_SUBSYS=ALL  # Show all NCCL subsystem info
-export NCCL_TIMEOUT=1800      # Increase timeout to 30 minutes (1800 seconds) for debugging
+# NCCL_DEBUG options: WARN (normal), INFO (verbose debugging), VERSION (minimal)
+export NCCL_DEBUG=WARN  # Only show warnings/errors (change to INFO if issues arise)
+export NCCL_TIMEOUT=1800  # 30 minutes timeout
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 export OMP_NUM_THREADS=8  # Adjust based on CPU cores available
 
