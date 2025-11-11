@@ -10,12 +10,19 @@ set -e  # Exit on error
 echo "=== Multi-GPU Training Script for Concept Encoder ==="
 echo ""
 
-# Set environment variables for optimal performance
+# Set environment variables for optimal performance and debugging
 export CUDA_VISIBLE_DEVICES=0,1,2,3
-export NCCL_DEBUG=WARN  # Change to INFO for debugging
+export NCCL_DEBUG=INFO  # Set to INFO to debug NCCL issues
+export NCCL_DEBUG_SUBSYS=ALL  # Show all NCCL subsystem info
+export NCCL_TIMEOUT=1800      # Increase timeout to 30 minutes (1800 seconds) for debugging
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 export OMP_NUM_THREADS=8  # Adjust based on CPU cores available
-# Add near the top of the environment variables section:
+
+# Additional NCCL settings for stability
+export NCCL_IB_DISABLE=0  # Enable InfiniBand if available
+export NCCL_IB_GID_INDEX=3  # InfiniBand GID index
+export NCCL_SOCKET_IFNAME=^docker0,lo  # Exclude docker and loopback interfaces
+export NCCL_ASYNC_ERROR_HANDLING=1  # Enable async error handling
 export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=1
 export NVIDIA_TF32_OVERRIDE=1
 
@@ -122,7 +129,7 @@ accelerate launch \
     --ddp_backend "nccl" \
     --ddp_find_unused_parameters False \
     --dataloader_pin_memory True \
-    --dataloader_num_workers 4 \
+    --dataloader_num_workers 2 \
     --gradient_checkpointing False \
     --optim "adamw_torch_fused" \
     --lr_scheduler_type "linear" \
