@@ -36,7 +36,7 @@ TEST_SIZE_PERCENT=0.1
 PER_DEVICE_BATCH_SIZE=48        # 48 per GPU = 192 total
 GRADIENT_ACCUMULATION_STEPS=2    # Effective batch = 192 * 2 = 384
 LEARNING_RATE=5e-4
-NUM_EPOCHS=10
+NUM_EPOCHS=0.1
 WARMUP_STEPS=1000
 WEIGHT_DECAY=0.01
 MAX_GRAD_NORM=1.0
@@ -49,9 +49,11 @@ SAVE_STRATEGY="steps"
 SAVE_STEPS=10000
 
 # Paths (adjust these for your server)
-OUTPUT_DIR="~/HF/Cache/Training"
-LOGGING_DIR="~/HF/Cache/logs"
-DATASET_CACHE_DIR="~/HF/Cache/Datasets"
+OUTPUT_DIR="~/dev/MrCogito/Cache/Training"
+LOGGING_DIR="~/dev/MrCogito/Cache/logs"
+
+# Default HF dataset cache
+DATASET_CACHE_DIR="${HF_DATASETS_CACHE:-.cache/huggingface/datasets}"
 
 # Seeds for reproducibility
 SEED=42
