@@ -8,7 +8,6 @@
 set -e  # Exit on error
 
 echo "=== Multi-GPU Training Script for Concept Encoder ==="
-echo "Using 4x RTX 3090 GPUs with Accelerate"
 echo ""
 
 # Set environment variables for optimal performance
@@ -16,6 +15,9 @@ export CUDA_VISIBLE_DEVICES=0,1,2,3
 export NCCL_DEBUG=WARN  # Change to INFO for debugging
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 export OMP_NUM_THREADS=8  # Adjust based on CPU cores available
+# Add near the top of the environment variables section:
+export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=1
+export NVIDIA_TF32_OVERRIDE=1
 
 # Training configuration
 MODEL_TYPE="weighted_mlm"
@@ -33,24 +35,24 @@ MLM_PROBABILITY=0.15
 TEST_SIZE_PERCENT=0.1
 
 # Training hyperparameters optimized for 4x RTX 3090 (24GB each)
-PER_DEVICE_BATCH_SIZE=48        # 48 per GPU = 192 total
-GRADIENT_ACCUMULATION_STEPS=2    # Effective batch = 192 * 2 = 384
+PER_DEVICE_BATCH_SIZE=96        # 48 per GPU = 192 total
+GRADIENT_ACCUMULATION_STEPS=1    # Effective batch = 192 * 2 = 384
 LEARNING_RATE=5e-4
-NUM_EPOCHS=0.1
-WARMUP_STEPS=1000
+NUM_EPOCHS=5
+WARMUP_STEPS=2000
 WEIGHT_DECAY=0.01
 MAX_GRAD_NORM=1.0
 
 # Logging and evaluation
 LOGGING_STEPS=500
 EVAL_STRATEGY="steps"
-EVAL_STEPS=5000
+EVAL_STEPS=2000
 SAVE_STRATEGY="steps"
 SAVE_STEPS=10000
 
 # Paths (adjust these for your server)
-OUTPUT_DIR="~/dev/MrCogito/Cache/Training"
-LOGGING_DIR="~/dev/MrCogito/Cache/logs"
+OUTPUT_DIR="$HOME/dev/MrCogito/Cache/Training"
+LOGGING_DIR="$HOME/dev/MrCogito/Cache/logs"
 
 # Default HF dataset cache
 DATASET_CACHE_DIR="${HF_DATASETS_CACHE:-.cache/huggingface/datasets}"
@@ -62,7 +64,7 @@ echo "Model Configuration:"
 echo "  - Model Type: $MODEL_TYPE"
 echo "  - Hidden Size: $HIDDEN_SIZE"
 echo "  - Num Layers: $NUM_LAYERS"
-echo "  - Concept Size: $CONCEPT_SIZE"
+echo "  - Concept Num: $CONCEPT_NUM"
 echo "  - Intermediate Size: $INTERMEDIATE_SIZE"
 echo ""
 echo "Training Configuration:"
@@ -137,4 +139,3 @@ echo ""
 echo "Training completed successfully!"
 echo "Output saved to: $OUTPUT_DIR"
 echo "Logs saved to: $LOGGING_DIR"
-
