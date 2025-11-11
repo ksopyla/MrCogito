@@ -529,8 +529,10 @@ class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
         position_weights = self.concept_weights[:seq_length, :]  # [seq_length, concept_num]
         position_weights = F.softmax(position_weights, dim=-1)  # Normalize over concepts
         
-        # Expand weights for batch processing
-        position_weights_expanded = position_weights.unsqueeze(0).expand(batch_size, -1, -1)  # [batch_size, seq_length, concept_num]
+        # CRITICAL FIX for distributed training:
+        # Use repeat() instead of expand() to create actual copies, not views
+        # This prevents memory aliasing issues that break NCCL gradient synchronization
+        position_weights_expanded = position_weights.unsqueeze(0).repeat(batch_size, 1, 1)  # [batch_size, seq_length, concept_num]
         
         # Combine concepts using learned weights: [Batch_size, seq_length, concept_dim] = [batch_size, seq_length, concept_num] x [batch_size, concept_num, concept_dim]
         sequence_repr = torch.bmm(position_weights_expanded, concept_repr)
