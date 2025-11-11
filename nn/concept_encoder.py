@@ -341,129 +341,14 @@ class ConceptEncoderForMaskedLM(PreTrainedModel):
         # The underlying ConceptEncoder (as defined above).
         self.encoder = ConceptEncoder(config) # []
 
-        # Project concepts to sequence positions via linear layer
-        self.concept_to_sequence = nn.Sequential(
-            nn.LayerNorm(config.hidden_size),
-            nn.Linear(config.hidden_size, config.hidden_size) # from concept_dim_size to token_embedding_dim
-        )
-
-        # Final MLM head to project to vocabulary
-        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
-
-        # Initialize weights and tie if needed
-        self.post_init()
-        
-        # Purposely not tying the weights, to allow for more flexibility in the model architecture
-        #self.tie_weights()
+        # todo - add necessary variables here when we establisht how we want to combine the concepts and tokens
 
 
+    def forward(self, input_ids, attention_mask=None, token_type_ids=None, special_tokens_mask=None, labels=None):
 
-    def forward(
-        self,
-        input_ids: torch.LongTensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.LongTensor] = None,
-        special_tokens_mask: Optional[torch.Tensor] = None,
-        labels: Optional[torch.LongTensor] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-    ):
-        """
-        Perform a forward pass for masked language modeling, based on the final concept representations.
-        Concept to Sequence Mapping:
-        We now map concepts back to sequence positions
-        This is done through an attention mechanism between token embeddings and concepts
-        The attention weights determine how much each concept contributes to each sequence position
-        
-        Args:
-            input_ids (torch.LongTensor): [batch_size, seq_length] 
-                Indices of input sequence tokens.
-            attention_mask (Optional[torch.FloatTensor]): [batch_size, seq_length]
-                1 for tokens to attend to, 0 for tokens to ignore.
-            labels (Optional[torch.LongTensor]): [batch_size, seq_length]
-                MLM labels for the input sequence. pad_token_id indicates tokens to ignore.
+        pass
 
-        Returns:
-            (loss, logits) if labels are provided
-            or just (logits,) otherwise
-
-            logits => [batch_size, concept_num, vocab_size]
-        """
-
-        
-
-
-        # Get concept representations from encoder
-        encoder_outputs = self.encoder(input_ids, attention_mask, output_attentions, output_hidden_states)
-        concept_repr = encoder_outputs.last_hidden_state  # [batch_size, concept_num, hidden_size]
-
-        # Get token embeddings for attention computation
-
-        batch_size, seq_length = input_ids.size()
-        position_ids = torch.arange(seq_length, device=input_ids.device).unsqueeze(0).expand_as(input_ids)
-
-        token_embeddings = self.encoder.token_embeddings(input_ids) + self.encoder.token_position_embeddings(position_ids)  # [batch_size, seq_length, hidden_size]
-
-        # Project concepts for attention
-
-        # from gemini deep research analysis:
-        #TODO: Project Concepts: Apply the concept_to_sequence module to concept_repr to get projected_concepts. The purpose of this projection (LayerNorm + Linear) before the attention step is not immediately obvious from first principles. It might serve to transform the concept representations into a space more suitable for being attended to by token embeddings, or simply to add learnable parameters to the mapping process. Its necessity or benefit should ideally be verified through ablation studies.
-        projected_concepts = self.concept_to_sequence(concept_repr)  # [batch_size, concept_num, hidden_size]
-
-
-
-        # from gemini deep research analysis https://gemini.google.com/gem/0696cd886317/ce82c504453e4949:
-        # This approach fundamentally changes the nature of the MLM task. It compels the model to 
-        # **first compress the essential information of the entire sequence into the fixed-size concept_repr bottleneck**, 
-        # and then reconstruct the sequence from this compressed representation. 
-        # This bears resemblance to autoencoder frameworks, where the concepts act as the encoded latent code. 
-        # It also relates conceptually to latent variable models where generation or reconstruction is conditioned on learned latent codes.1 
-        # The potential consequence is that the model might develop stronger representations of global semantics or concepts, 
-        # potentially at the cost of fine-grained local prediction accuracy compared to standard MLM
-        # The attention-based mapping from concepts back to sequence positions is distinct from other methods. Some approaches map latent representations directly to vocabulary logits, sometimes using the MLM head itself. Others use dedicated decoders. This implementation introduces an intermediate attention step where tokens query concepts to reconstruct their own representations before final vocabulary projection.   
-        # A potential risk is that the model might learn a trivial solution, such as copying token information into concepts and then directly retrieving it. The multi-layer structure of the ConceptEncoder should mitigate this, but the effectiveness of the information compression into the concept bottleneck remains an empirical question
-
-        # Compute attention scores between sequence positions and concepts
-        attention_scores = torch.matmul(
-            token_embeddings, 
-            projected_concepts.transpose(-1, -2)
-        )  # [batch_size, seq_length, concept_num]
-        
-        # Add scaling to prevent softmax overflow
-        attention_scores = attention_scores / (self.config.hidden_size ** 0.5)
-
-        # Apply attention mask if provided (mask out padding tokens)
-        if attention_mask is not None:
-            # Expand mask for broadcasting [batch_size, seq_length, 1]
-            attention_mask_expanded = attention_mask.unsqueeze(-1)
-            attention_scores = attention_scores.masked_fill(attention_mask_expanded == 0, -1e9)
-        
-        # Normalize attention scores
-        attention_weights = F.softmax(attention_scores, dim=-1)
-        
-        # Weight concept representations by attention
-        sequence_repr = torch.matmul(
-            attention_weights, 
-            concept_repr
-        )  # [batch_size, seq_length, hidden_size]
-
-        # Project to vocabulary
-        logits = self.lm_head(sequence_repr)  # [batch_size, seq_length, vocab_size]
-
-        mlm_loss = None
-        if labels is not None:
-            loss_fct = CrossEntropyLoss(ignore_index=-100)  # -100 index = padding token
-            mlm_loss = loss_fct(
-                logits.view(-1, self.config.vocab_size),
-                labels.view(-1)
-            )
-        
-        return MaskedLMOutput(
-            loss=mlm_loss,
-            logits=logits,
-            hidden_states=encoder_outputs.hidden_states,
-            attentions=encoder_outputs.attentions
-        )
+ 
 
 
 
@@ -485,7 +370,7 @@ class ConceptEncoderWithSimMatrixForMaskedLM(PreTrainedModel):
         
         # Concept->Vocab projection
         self.concept_vocab_projection = nn.Linear(
-            config.hidden_size, # concept_dim_size
+            config.hidden_size, # concept_dim
             config.vocab_size,
             bias=False
         )
@@ -516,13 +401,13 @@ class ConceptEncoderWithSimMatrixForMaskedLM(PreTrainedModel):
     def forward(self, input_ids, attention_mask=None, token_type_ids=None, special_tokens_mask=None, labels=None):
         # Encoder forward
         encoder_out = self.encoder(input_ids, attention_mask)
-        concept_repr = encoder_out.last_hidden_state  # [B, C, H]
+        concept_repr = encoder_out.last_hidden_state  # [Batch_size, concept_num, concept_dim]
         
 
         # Get token embeddings with position information
         batch_size, seq_length = input_ids.size()
         position_ids = torch.arange(seq_length, device=input_ids.device).unsqueeze(0).expand_as(input_ids)
-        token_emb = self.encoder.token_embeddings(input_ids) + self.encoder.token_position_embeddings(position_ids) # [B, S, H]
+        token_emb = self.encoder.token_embeddings(input_ids) + self.encoder.token_position_embeddings(position_ids) # [Batch_size, seq_length, hidden_size=token_embedding_dim]
         
         # Compute similarity with learnable temperature
         similarity = torch.einsum("bsh,bch->bsc", token_emb, concept_repr)
@@ -595,8 +480,8 @@ class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
         
         # Optional: add a projection layer before lm_head for more capacity
         self.pre_lm_projection = nn.Sequential(
-            nn.LayerNorm(config.hidden_size),
-            nn.Linear(config.hidden_size, config.hidden_size),
+            nn.LayerNorm(config.hidden_size), # [batch_size, seq_length, concept_dim]
+            nn.Linear(config.hidden_size, config.hidden_size), # [batch_size, seq_length, concept_dim] -> [batch_size, seq_length, concept_dim]
             nn.GELU(),
             nn.Dropout(config.hidden_dropout_prob)
         )
@@ -638,23 +523,23 @@ class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
         )
 
         # Get the concept representations (batch_size, concept_num, concept_dim)
-        concept_repr = encoder_outputs.last_hidden_state  # [B, C, concept_dim]
+        concept_repr = encoder_outputs.last_hidden_state  # [batch_size, concept_num, concept_dim]
         
         # Get position-specific weights and normalize them
-        position_weights = self.concept_weights[:seq_length, :]  # [S, C]
+        position_weights = self.concept_weights[:seq_length, :]  # [seq_length, concept_num]
         position_weights = F.softmax(position_weights, dim=-1)  # Normalize over concepts
         
         # Expand weights for batch processing
-        position_weights_expanded = position_weights.unsqueeze(0).expand(batch_size, -1, -1)  # [B, S, C]
+        position_weights_expanded = position_weights.unsqueeze(0).expand(batch_size, -1, -1)  # [batch_size, seq_length, concept_num]
         
-        # Combine concepts using learned weights: [B, S, H] = [B, S, C] x [B, C, H]
+        # Combine concepts using learned weights: [Batch_size, seq_length, concept_dim] = [batch_size, seq_length, concept_num] x [batch_size, concept_num, concept_dim]
         sequence_repr = torch.bmm(position_weights_expanded, concept_repr)
         
         # Optional: apply projection before final LM head
-        sequence_repr = self.pre_lm_projection(sequence_repr)
+        sequence_repr = self.pre_lm_projection(sequence_repr) # [batch_size, seq_length, concept_dim]
         
         # Project to vocabulary
-        logits = self.lm_head(sequence_repr)  # [B, S, V]
+        logits = self.lm_head(sequence_repr)  # [batch_size, seq_length, vocab_size]
         
         # Compute MLM loss if labels provided
         masked_lm_loss = None
