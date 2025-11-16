@@ -525,17 +525,34 @@ class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
         # Get the concept representations (batch_size, concept_num, concept_dim)
         concept_repr = encoder_outputs.last_hidden_state  # [batch_size, concept_num, concept_dim]
         
+        # CRITICAL FIX: Ensure seq_length doesn't exceed max_sequence_length to prevent out-of-bounds access
+        if seq_length > self.config.max_sequence_length:
+            raise ValueError(
+                f"Sequence length {seq_length} exceeds max_sequence_length {self.config.max_sequence_length}. "
+                f"This should be prevented by the data preprocessing."
+            )
+        
         # Get position-specific weights and normalize them
-        position_weights = self.concept_weights[:seq_length, :]  # [seq_length, concept_num]
+        # Use .contiguous() to ensure memory layout is correct for distributed training
+        position_weights = self.concept_weights[:seq_length, :].contiguous()  # [seq_length, concept_num]
         position_weights = F.softmax(position_weights, dim=-1)  # Normalize over concepts
         
-        # CRITICAL FIX for distributed training:
-        # Use repeat() instead of expand() to create actual copies, not views
-        # This prevents memory aliasing issues that break NCCL gradient synchronization
-        position_weights_expanded = position_weights.unsqueeze(0).repeat(batch_size, 1, 1)  # [batch_size, seq_length, concept_num]
+        #Combine concepts using learned weights: [Batch_size, seq_length, concept_dim] = broadcast:[seq_length, concept_num] x [batch_size, concept_num, concept_dim]
+        # CRITICAL FIX for RTX 5090 / CUDA 12.8 compatibility:
+        # Use einsum instead of bmm + repeat to avoid CUDA 12.8 compiler bug
+        # The CUDA 12.8 compiler has a known miscompilation issue on SM120 (RTX 5090)
+        # that causes illegal memory access errors. This is fixed in CUDA 12.9.1.
+        # einsum with implicit broadcasting avoids the buggy code path.
+        # einsum is more explicit and handles broadcasting safely
+        # We broadcast position_weights to batch dimension implicitly
+        # Formula: einsum('sc,bcd->bsd') where:
+        #   s = seq_length, c = concept_num, b = batch_size, d = hidden_dim
+        # This implicitly broadcasts position_weights across the batch dimension
+        sequence_repr = torch.einsum('sc,bcd->bsd', position_weights, concept_repr)
         
-        # Combine concepts using learned weights: [Batch_size, seq_length, concept_dim] = [batch_size, seq_length, concept_num] x [batch_size, concept_num, concept_dim]
-        sequence_repr = torch.bmm(position_weights_expanded, concept_repr)
+        # OLD METHOD (triggers CUDA 12.8 bug on RTX 5090):
+        # position_weights_expanded = position_weights.unsqueeze(0).repeat(batch_size, 1, 1)
+        # sequence_repr = torch.bmm(position_weights_expanded, concept_repr)
         
         # Optional: apply projection before final LM head
         sequence_repr = self.pre_lm_projection(sequence_repr) # [batch_size, seq_length, concept_dim]

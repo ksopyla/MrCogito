@@ -1,17 +1,37 @@
 #!/bin/bash
 # Bash script to train the weighted MLM model on multi-GPU Linux server
-# Uses accelerate for distributed training on 4x RTX 3090 GPUs
+# Uses accelerate for distributed training on multiple GPUs
 #
-# Usage:
-#   bash scripts/train_weighted_mlm_multigpu.sh
+# IMPORTANT: RTX 5090 / CUDA 12.8 COMPATIBILITY ISSUE
+# ======================================================
+# CUDA 12.8 has a KNOWN COMPILER BUG affecting RTX 5090 (SM120/Blackwell architecture)
+# that causes "illegal memory access" errors during distributed training.
+# 
+# This bug is FIXED in CUDA 12.9.1 or later.
+#   - CUDA 12.8 Bug Report: https://docs.nvidia.com/cuda/pdf/CUDA_Toolkit_Release_Notes.pdf
+#   - NVIDIA Forums: https://forums.developer.nvidia.com/t/cudamemset-illegal-memory-access-with-rtx5090-with-570-86-16/323770
 
 set -e  # Exit on error
 
 echo "=== Multi-GPU Training Script for Concept Encoder ==="
 echo ""
 
+# Detect number of available GPUs
+NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
+echo "Detected $NUM_GPUS GPU(s)"
+
+# Set CUDA_VISIBLE_DEVICES to use all detected GPUs
+if [ $NUM_GPUS -gt 0 ]; then
+    GPU_IDS=$(seq -s, 0 $((NUM_GPUS - 1)))
+    export CUDA_VISIBLE_DEVICES=$GPU_IDS
+    echo "Using GPUs: $CUDA_VISIBLE_DEVICES"
+else
+    echo "ERROR: No GPUs detected!"
+    exit 1
+fi
+echo ""
+
 # Set environment variables for optimal performance
-export CUDA_VISIBLE_DEVICES=0,1,2,3
 # NCCL_DEBUG options: WARN (normal), INFO (verbose debugging), VERSION (minimal)
 export NCCL_DEBUG=WARN  # Only show warnings/errors (change to INFO if issues arise)
 export NCCL_TIMEOUT=1800  # 30 minutes timeout
@@ -22,7 +42,7 @@ export OMP_NUM_THREADS=8  # Adjust based on CPU cores available
 export NCCL_IB_DISABLE=0  # Enable InfiniBand if available
 export NCCL_IB_GID_INDEX=3  # InfiniBand GID index
 export NCCL_SOCKET_IFNAME=^docker0,lo  # Exclude docker and loopback interfaces
-export NCCL_ASYNC_ERROR_HANDLING=1  # Enable async error handling
+export TORCH_NCCL_ASYNC_ERROR_HANDLING=1  # Enable async error handling (updated from deprecated NCCL_ASYNC_ERROR_HANDLING)
 export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=1
 export NVIDIA_TF32_OVERRIDE=1
 
@@ -41,9 +61,9 @@ MAX_SEQ_LENGTH=512
 MLM_PROBABILITY=0.15
 TEST_SIZE_PERCENT=0.1
 
-# Training hyperparameters optimized for 4x RTX 3090 (24GB each)
-PER_DEVICE_BATCH_SIZE=64        # 48 per GPU = 192 total
-GRADIENT_ACCUMULATION_STEPS=1    # Effective batch = 192 * 2 = 384
+# Training hyperparameters (adjust based on your GPU memory)
+PER_DEVICE_BATCH_SIZE=64        # Batch size per GPU
+GRADIENT_ACCUMULATION_STEPS=1    # Number of gradient accumulation steps
 LEARNING_RATE=5e-4
 NUM_EPOCHS=5
 WARMUP_STEPS=2000
@@ -75,9 +95,10 @@ echo "  - Concept Num: $CONCEPT_NUM"
 echo "  - Intermediate Size: $INTERMEDIATE_SIZE"
 echo ""
 echo "Training Configuration:"
+echo "  - Number of GPUs: $NUM_GPUS"
 echo "  - Per-device Batch Size: $PER_DEVICE_BATCH_SIZE"
 echo "  - Gradient Accumulation Steps: $GRADIENT_ACCUMULATION_STEPS"
-echo "  - Effective Batch Size: $((PER_DEVICE_BATCH_SIZE * 4 * GRADIENT_ACCUMULATION_STEPS))"
+echo "  - Effective Batch Size: $((PER_DEVICE_BATCH_SIZE * NUM_GPUS * GRADIENT_ACCUMULATION_STEPS))"
 echo "  - Learning Rate: $LEARNING_RATE"
 echo "  - Epochs: $NUM_EPOCHS"
 echo ""
@@ -92,7 +113,7 @@ echo "Starting training..."
 echo ""
 
 accelerate launch \
-    --num_processes=4 \
+    --num_processes=$NUM_GPUS \
     --num_machines=1 \
     --mixed_precision=bf16 \
     --multi_gpu \
@@ -134,7 +155,7 @@ accelerate launch \
     --optim "adamw_torch_fused" \
     --lr_scheduler_type "linear" \
     --report_to "wandb" \
-    --save_safetensors False \
+    --save_safetensors True \
     --overwrite_output_dir True \
     --remove_unused_columns True \
     --disable_tqdm False \
