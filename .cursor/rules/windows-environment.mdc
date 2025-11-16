@@ -39,3 +39,7 @@ Root project folder on my windows machine is `C:\Users\krzys\Documents\Projects\
 - `wandb/` - Folder for wandb logs and artifacts, here you can find the logs and artifacts for the training runs
 - 
   
+## 📋 Setup & Usage
+**Environment**: Windows + Poetry virtual environment `mrcogito-sHhaXiEk-py3.12`
+
+**Key Dependencies**: PyTorch ^2.5.0, Transformers 4, WandB, Datasets, Evaluate

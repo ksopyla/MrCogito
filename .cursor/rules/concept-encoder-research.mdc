@@ -9,6 +9,9 @@ alwaysApply: false
 ## 🎯 Project Overview  
 Research project developing "Concept Encoder" - a transformer architecture using concept-level token masking for better text understanding and longer context processing.
 
+repository: https://github.com/ksopyla/MrCogito
+
+
 ## 📚 Research Documentation
 
 ### Core Research Ideas (@docs/research-notes/)
@@ -31,8 +34,8 @@ Research project developing "Concept Encoder" - a transformer architecture using
 ### Core Model (@nn/)
 - [concept_encoder.py](mdc:nn/concept_encoder.py) - **Main ConceptEncoder implementation** with NeighborWordMaskCollator
 
-### Training Scripts (@training/)
-**Primary Scripts:**
+### Training  (@training/)
+
 - [mlm_training.py](mdc:training/mlm_training.py) - **MLM training for ConceptEncoder**
   ```bash
   # Usage: python training/mlm_training.py [args]
@@ -45,6 +48,12 @@ Research project developing "Concept Encoder" - a transformer architecture using
   # python training/evaluate_model_on_glue.py --model_type concept --task all --batch_size 32 --epochs 5
   ```
 - [dataset_preprocess.py](mdc:training/dataset_preprocess.py) - **Data preprocessing and custom collators**
+
+
+** bash and powershell scripts for training and evaluation are in the scripts folder **
+- [scripts/train_weighted_mlm.ps1](mdc:scripts/train_weighted_mlm.ps1) - PowerShell script for training the ConceptEncoder
+- [scripts/evaluate_concept_encoder_glue.ps1](mdc:scripts/evaluate_concept_encoder_glue.ps1) - PowerShell script for evaluating the ConceptEncoder on the GLUE benchmark
+- [scripts/train_weighted_mlm_multigpu.sh](mdc:scripts/train_weighted_mlm_multigpu.sh) - Bash script for training the ConceptEncoder on multiple GPUs
 
 **Supporting Scripts:**
 - [concept_enc_dec.py](mdc:training/concept_enc_dec.py) - Alternative encoder-decoder approach
@@ -85,17 +94,3 @@ Research project developing "Concept Encoder" - a transformer architecture using
 - `Training/` - Training artifacts and logs
 - `Outputs/` - Generated content and results
 
-## 🧪 Future Experiments (@docs/experiments/)
-- [idea1_unsed_tokens_as_registers.md](mdc:docs/experiments/idea1_unsed_tokens_as_registers.md) - Token register mechanisms
-- [idea4_morphological_aware_tokenization.md](mdc:docs/experiments/idea4_morphological_aware_tokenization.md) - Morphological tokenization research
-
-## 📋 Setup & Usage [[memory:2371908]]
-**Environment**: Windows + Poetry virtual environment `mrcogito-sHhaXiEk-py3.12`
-
-**Key Dependencies**: PyTorch 2.5.0, Transformers 4.47.1, WandB, Datasets, Evaluate
-
-**Getting Started:**
-1. Core implementation: `nn/concept_encoder.py`
-2. Training: `python training/mlm_training.py`
-3. Evaluation: `python training/evaluate_model_on_glue.py`
-4. Testing: `pytest tests/`
