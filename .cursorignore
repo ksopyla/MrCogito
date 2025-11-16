@@ -1,0 +1,15 @@
+# Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
+
+.vscode/*
+!.vscode/launch.json
+.cursorignore
+.env.development.local
+.env.test.local
+Datasets/*
+outputs/*
+logs/*
+models/*
+training/outputs/*
+training/logs/*
+training/models/*
+*.arrow
