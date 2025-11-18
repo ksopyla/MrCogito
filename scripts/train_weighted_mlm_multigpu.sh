@@ -77,9 +77,18 @@ EVAL_STEPS=2000
 SAVE_STRATEGY="steps"
 SAVE_STEPS=10000
 
-# Paths (adjust these for your server)
-OUTPUT_DIR="$HOME/dev/MrCogito/Cache/Training"
-LOGGING_DIR="$HOME/dev/MrCogito/Cache/logs"
+# Paths are dependent on the server setup:
+# runpod: /workspace/MrCogito
+# odra: $HOME/dev/MrCogito
+# polone: $HOME/dev/MrCogito
+PROJECT_ROOT="/workspace/MrCogito"
+
+OUTPUT_DIR="$PROJECT_ROOT/Cache/Training"
+LOGGING_DIR="$PROJECT_ROOT/Cache/logs"
+
+# Optional: Set HF_HOME and HF_DATASETS_CACHE 
+export HF_HOME="${PROJECT_ROOT}/../hf_home"
+export HF_DATASETS_CACHE="${PROJECT_ROOT}/../hf_home/datasets"
 
 # Default HF dataset cache
 DATASET_CACHE_DIR="${HF_DATASETS_CACHE:-.cache/huggingface/datasets}"

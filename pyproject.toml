@@ -48,7 +48,7 @@ priority = "primary"
 
 [[tool.poetry.source]]
 name = "pytorch"
-url = "https://download.pytorch.org/whl/cu124"  # CUDA 12.4
+url = "https://download.pytorch.org/whl/cu128"  # CUDA 12.8
 priority = "explicit"
 
 
