@@ -62,10 +62,10 @@ MLM_PROBABILITY=0.15
 TEST_SIZE_PERCENT=0.1
 
 # Training hyperparameters (adjust based on your GPU memory)
-PER_DEVICE_BATCH_SIZE=64        # Batch size per GPU
+PER_DEVICE_BATCH_SIZE=96        # Batch size per GPU
 GRADIENT_ACCUMULATION_STEPS=1    # Number of gradient accumulation steps
 LEARNING_RATE=5e-4
-NUM_EPOCHS=5
+NUM_EPOCHS=20
 WARMUP_STEPS=2000
 WEIGHT_DECAY=0.01
 MAX_GRAD_NORM=1.0
@@ -81,7 +81,7 @@ SAVE_STEPS=10000
 # runpod: /workspace/MrCogito
 # odra: $HOME/dev/MrCogito
 # polone: $HOME/dev/MrCogito
-PROJECT_ROOT="/workspace/MrCogito"
+PROJECT_ROOT="/home/ksopyla/dev/MrCogito"
 
 OUTPUT_DIR="$PROJECT_ROOT/Cache/Training"
 LOGGING_DIR="$PROJECT_ROOT/Cache/logs"
