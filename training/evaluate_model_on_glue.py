@@ -51,6 +51,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import ConceptEncoder
 from nn.concept_encoder import ConceptEncoderForSequenceClassification, ConceptEncoderConfig
+from training.utils_training import get_hostname
 
 from datasets import load_dataset
 from datasets.utils.logging import disable_progress_bar
@@ -953,17 +954,29 @@ def finetune_model_on_glue(args):
     if len(model_tag) > 63:
         model_tag = model_tag[:63]
 
+    # Get hostname
+    hostname = get_hostname()
+
     wandb_tags = [
         "glue",
         args.task,
         "finetuning",
         args.model_type,
         model_tag,
-        f"hostname-{os.environ.get('COMPUTERNAME', 'unknown')}"
+        hostname
     ]
 
-    # Create group identifier for clustering related runs
+    # Create group identifier matching training script if possible
+    # Default fallback
     group_identifier = f"GLUE_{args.task}"
+    
+    # Try to reconstruct training group identifier: {model_type}_H{hidden}L{layers}C{concepts}
+    if hasattr(model, "config"):
+        config = model.config
+        if hasattr(config, "hidden_size") and hasattr(config, "num_hidden_layers") and hasattr(config, "concept_num"):
+             # Use args.model_type (e.g. weighted_mlm) and config params
+             group_identifier = f"{args.model_type}_H{config.hidden_size}L{config.num_hidden_layers}C{config.concept_num}"
+             logger.info(f"Using training-compatible group identifier: {group_identifier}")
     
     # Initialize the wandb project
     wandb_run = wandb.init(
