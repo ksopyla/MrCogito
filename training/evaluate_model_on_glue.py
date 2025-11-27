@@ -51,7 +51,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import ConceptEncoder
 from nn.concept_encoder import (
-    ConceptEncoderForSequenceClassification, 
     ConceptEncoderConfig,
     ConceptEncoderForSequenceClassificationWeighted
 )
@@ -831,7 +830,7 @@ def finetune_model_on_glue(args):
                 logger.info(f"Using Weighted Sequence Classification for model type: {args.model_type}")
                 model_class = ConceptEncoderForSequenceClassificationWeighted
             else:
-                model_class = ConceptEncoderForSequenceClassification
+                raise ValueError(f"Unsupported model type for classification: {args.model_type}")
                 
             model = model_class.from_pretrained(
                 args.model_name_or_path,
@@ -842,12 +841,12 @@ def finetune_model_on_glue(args):
             logger.info(f"Successfully loaded ConceptEncoder model from {args.model_name_or_path}")
         except Exception as e:
             logger.warning(f"Could not load model from {args.model_name_or_path}: {e}")
-            logger.warning("Initializing a new ConceptEncoderForSequenceClassification model instead.")
+            logger.warning("Initializing a new ConceptEncoderForSequenceClassificationWeighted model instead.")
             # Initialize a new model with the config
             if args.model_type == "weighted_mlm":
                  model = ConceptEncoderForSequenceClassificationWeighted(config)
             else:
-                 model = ConceptEncoderForSequenceClassification(config)
+                 raise ValueError(f"Unsupported model type for classification initialization: {args.model_type}")
     else:  # Standard transformer models like bert, roberta, xlnet
         model = AutoModelForSequenceClassification.from_pretrained(
             args.model_name_or_path,

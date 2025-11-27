@@ -10,7 +10,7 @@ import numpy as np
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from nn.concept_encoder import ConceptEncoderConfig, ConceptEncoderForMaskedLMWeighted, ConceptEncoderForSequenceClassification
+    from nn.concept_encoder import ConceptEncoderConfig, ConceptEncoderForMaskedLMWeighted
 except ImportError:
     print("Could not import ConceptEncoder classes. Make sure you are running this from the project root or scripts directory.")
     sys.path.append(".")
