@@ -42,10 +42,10 @@ MLM_PROBABILITY=0.15
 TEST_SIZE_PERCENT=0.1
 
 # Training hyperparameters optimized for 4x RTX 3090 (24GB each)
-PER_DEVICE_BATCH_SIZE=64        # 48 per GPU = 192 total
+PER_DEVICE_BATCH_SIZE=96        # 48 per GPU = 192 total
 GRADIENT_ACCUMULATION_STEPS=1    # Effective batch = 192 * 2 = 384
 LEARNING_RATE=5e-4
-NUM_EPOCHS=5
+NUM_EPOCHS=10
 WARMUP_STEPS=2000
 WEIGHT_DECAY=0.01
 MAX_GRAD_NORM=1.0
@@ -134,7 +134,7 @@ accelerate launch \
     --optim "adamw_torch_fused" \
     --lr_scheduler_type "linear" \
     --report_to "wandb" \
-    --save_safetensors False \
+    --save_safetensors True \
     --overwrite_output_dir True \
     --remove_unused_columns True \
     --disable_tqdm False \
