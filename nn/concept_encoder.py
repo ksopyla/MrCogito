@@ -594,13 +594,10 @@ class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
         return weights.detach().cpu().numpy()
 
 
-class ConceptEncoderForSequenceClassification(PreTrainedModel):
+class ConceptEncoderForSequenceClassificationWeighted(PreTrainedModel):
     """
-    ConceptEncoder Model with a sequence classification head on top
-    for tasks like GLUE (MNLI, QNLI, QQP, SST-2, etc.).
-    
-    This class is designed to fine-tune a pretrained ConceptEncoder model
-    on classification tasks, similar to BertForSequenceClassification.
+    ConceptEncoder Model with a sequence classification head on top,
+    using the weighted combination strategy from ConceptEncoderForMaskedLMWeighted.
     
     Args:
         config (ConceptEncoderConfig): Model configuration defining hidden sizes, embeddings, etc.
@@ -616,24 +613,34 @@ class ConceptEncoderForSequenceClassification(PreTrainedModel):
         # The underlying ConceptEncoder
         self.encoder = ConceptEncoder(config)
         
-        # Classification head - we'll use a pooling layer to get a fixed-size
-        # representation followed by a classification layer
-        #todo: figure out how the polling should be done, different models uses different strategies 
-        # look at from transformers.modeling_utils import SequenceSummary
-        # xlnet implements addtitional abstration module to use different pooling strategies
-
-        self.pooler = nn.Sequential(
-            nn.Linear(config.hidden_size, config.hidden_size),
-            nn.Tanh()
+        # Learned concept weights (position-specific)
+        # We initialize these with the same shape as the MLM model to allow loading weights
+        self.concept_weights = nn.Parameter(
+            torch.randn(config.max_sequence_length, config.concept_num) / math.sqrt(config.concept_num)
         )
         
-        # Add dropout for regularization during fine-tuning
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        # Pooling / Projection
+        # In MLMWeighted, we have: sequence_repr = pre_lm_projection(weighted_sum)
+        # Here we want a single vector for classification.
+        # Strategy:
+        # 1. Compute weighted sum -> [batch, seq_len, concept_dim]
+        # 2. Pool across sequence length (Mean/Max/CLS?)
+        # 3. Classify
         
-        # Classification head
+        # To reuse weights from MLMWeighted, we should probably include the pre_lm_projection if possible,
+        # but that maps to concept_dim. 
+        
+        self.pre_classifier_projection = nn.Sequential(
+            nn.LayerNorm(config.hidden_size), 
+            nn.Linear(config.hidden_size, config.hidden_size), 
+            nn.GELU(),
+            nn.Dropout(config.hidden_dropout_prob)
+        )
+        
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, config.num_labels)
 
-        # Initialize weights and apply finalizer
+        # Initialize weights
         self.post_init()
     
     def forward(
@@ -645,29 +652,11 @@ class ConceptEncoderForSequenceClassification(PreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, SequenceClassifierOutput]:
-        """
-        Forward pass for sequence classification.
         
-        This method:
-        1. Passes the inputs through the base ConceptEncoder model
-        2. Pools the concept representations (averaging all concepts)
-        3. Passes the pooled representation through the classification head
-        4. Computes loss if labels are provided
-        
-        Args:
-            input_ids: Input token IDs of shape [batch_size, sequence_length]
-            attention_mask: Attention mask of shape [batch_size, sequence_length]
-            labels: Optional labels for computing loss
-            output_attentions: Whether to return attention weights
-            output_hidden_states: Whether to return all hidden states
-            return_dict: Whether to return a SequenceClassifierOutput or a tuple
-            
-        Returns:
-            SequenceClassifierOutput or tuple with logits and optional hidden_states/attentions
-        """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        batch_size, seq_length = input_ids.shape
         
-        # Pass through the encoder to get concept representations
+        # Pass through encoder
         encoder_outputs = self.encoder(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -676,23 +665,40 @@ class ConceptEncoderForSequenceClassification(PreTrainedModel):
             return_dict=return_dict,
         )
         
-        # Get the concept representations (batch_size, concept_num, concept_dim)
-        concept_representations = encoder_outputs.last_hidden_state
+        # [batch_size, concept_num, concept_dim]
+        concept_repr = encoder_outputs.last_hidden_state
         
-        # Pool the concept representations - average pooling across the concept dimension
-        # This gives us a representation of size (batch_size, concept_dim)
-        pooled_output = torch.mean(concept_representations, dim=1)
+        if seq_length > self.config.max_sequence_length:
+             raise ValueError(f"Sequence length {seq_length} exceeds max.")
+
+        # 1. Apply Concept Weights (same as MLM Weighted)
+        position_weights = self.concept_weights[:seq_length, :].contiguous() # [seq_len, concept_num]
+        position_weights = F.softmax(position_weights, dim=-1)
         
-        # Apply the pooler transformation
-        pooled_output = self.pooler(pooled_output)
+        # [batch_size, seq_len, concept_dim]
+        sequence_repr = torch.einsum('sc,bcd->bsd', position_weights, concept_repr)
         
-        # Apply dropout for regularization
+        # 2. Projection (matches pre_lm_projection structure)
+        sequence_repr = self.pre_classifier_projection(sequence_repr)
+        
+        # 3. Pooling for Classification
+        # Now we have a sequence of representations. For classification, we usually need one vector.
+        # Options: Mean pooling over sequence, or use the first token (CLS-like).
+        # Since we don't have a dedicated CLS token mechanism in the weighted sum, Mean Pooling is safe.
+        # Mask out padding tokens!
+        
+        if attention_mask is not None:
+            # attention_mask is [batch, seq_len] (1 for keep, 0 for pad)
+            mask_expanded = attention_mask.unsqueeze(-1).expand(sequence_repr.size()).float()
+            sum_embeddings = torch.sum(sequence_repr * mask_expanded, 1)
+            sum_mask = torch.clamp(mask_expanded.sum(1), min=1e-9)
+            pooled_output = sum_embeddings / sum_mask
+        else:
+            pooled_output = torch.mean(sequence_repr, dim=1)
+            
         pooled_output = self.dropout(pooled_output)
-        
-        # Compute logits
         logits = self.classifier(pooled_output)
         
-        # Compute loss if labels are provided
         loss = None
         if labels is not None:
             if self.config.problem_type is None:
@@ -726,10 +732,7 @@ class ConceptEncoderForSequenceClassification(PreTrainedModel):
             hidden_states=encoder_outputs.hidden_states,
             attentions=encoder_outputs.attentions,
         )
-    
-    def get_input_embeddings(self):
-        """Returns the token embeddings layer of the encoder."""
-        return self.encoder.token_embeddings
+
     
 
 

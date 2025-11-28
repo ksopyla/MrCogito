@@ -50,7 +50,10 @@ from transformers import (
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import ConceptEncoder
-from nn.concept_encoder import ConceptEncoderForSequenceClassification, ConceptEncoderConfig
+from nn.concept_encoder import (
+    ConceptEncoderConfig,
+    ConceptEncoderForSequenceClassificationWeighted
+)
 from training.utils_training import get_hostname
 
 from datasets import load_dataset
@@ -822,7 +825,14 @@ def finetune_model_on_glue(args):
         # Load or initialize ConceptEncoder model
         try:
             # Attempt to load from checkpoint
-            model = ConceptEncoderForSequenceClassification.from_pretrained(
+            # Check if we should use the weighted version (e.g. if args.model_type is weighted_mlm)
+            if args.model_type == "weighted_mlm":
+                logger.info(f"Using Weighted Sequence Classification for model type: {args.model_type}")
+                model_class = ConceptEncoderForSequenceClassificationWeighted
+            else:
+                raise ValueError(f"Unsupported model type for classification: {args.model_type}")
+                
+            model = model_class.from_pretrained(
                 args.model_name_or_path,
                 config=config,
                 cache_dir=MODEL_CACHE_DIR,
@@ -831,9 +841,12 @@ def finetune_model_on_glue(args):
             logger.info(f"Successfully loaded ConceptEncoder model from {args.model_name_or_path}")
         except Exception as e:
             logger.warning(f"Could not load model from {args.model_name_or_path}: {e}")
-            logger.warning("Initializing a new ConceptEncoderForSequenceClassification model instead.")
+            logger.warning("Initializing a new ConceptEncoderForSequenceClassificationWeighted model instead.")
             # Initialize a new model with the config
-            model = ConceptEncoderForSequenceClassification(config)
+            if args.model_type == "weighted_mlm":
+                 model = ConceptEncoderForSequenceClassificationWeighted(config)
+            else:
+                 raise ValueError(f"Unsupported model type for classification initialization: {args.model_type}")
     else:  # Standard transformer models like bert, roberta, xlnet
         model = AutoModelForSequenceClassification.from_pretrained(
             args.model_name_or_path,

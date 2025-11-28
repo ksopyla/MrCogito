@@ -58,6 +58,9 @@ echo "Starting evaluation..."
 
 # Execute evaluation script
 # Assumes python environment is already activated or python is accessible
+# Added --visualize flag
+# Added --save_model flag
+# IMPORTANT: Using 'weighted_mlm' model type triggers the new Weighted Classification Head
 python training/evaluate_model_on_glue.py \
     --model_type "weighted_mlm" \
     --model_name_or_path "$MODEL_PATH" \
@@ -71,4 +74,3 @@ python training/evaluate_model_on_glue.py \
 
 echo ""
 echo "GLUE evaluation completed!"
-
