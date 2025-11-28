@@ -71,11 +71,11 @@ WEIGHT_DECAY=0.01
 MAX_GRAD_NORM=1.0
 
 # Logging and evaluation
-LOGGING_STEPS=500
+LOGGING_STEPS=1000
 EVAL_STRATEGY="steps"
-EVAL_STEPS=2000
+EVAL_STEPS=5000
 SAVE_STRATEGY="steps"
-SAVE_STEPS=10000
+SAVE_STEPS=100000
 
 # Paths are dependent on the server setup:
 # runpod: /workspace/MrCogito
