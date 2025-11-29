@@ -17,11 +17,14 @@ The ConceptEncoder uses cross-attention where:
 - **Key/Value (K, V)**: Sequence tokens `[sequence_length, embed_dim]` (e.g., 128K tokens)
 - **Result**: Attention matrix `[128 × 128K]` instead of `[128K × 128K]` → **1000x memory reduction**
 
-This architecture is inspired by:
-- Memory Transformers (register tokens)
-- ConceptBERT (concept-based pre-training)
-- Meta's Large Concept Models
-- LLaDA (diffusion-based language models)
+### Model Variants
+
+The project currently explores these architectures:
+
+1. **`weighted_mlm`** (Primary): A simplified approach using weighted combinations of concept tokens. This is currently the most stable variant and recommended for all initial experiments.
+2. **`concept_mlm`**: The original ConceptEncoder design with full cross-attention.
+3. **`sim_matrix_mlm`**: Variant with explicit similarity matrices.
+4. **Encoder-Decoder (Experimental)**: A sequence-to-sequence model (`training/concept_enc_dec.py`) combining ModernBERT (encoder) and GPT-2 (decoder) for abstractive summarization tasks, paving the way for concept-based generation.
 
 ## 📦 Installation
 
@@ -87,12 +90,17 @@ MrCogito/
 │   └── concept_encoder.py       # ConceptEncoder architecture
 ├── training/                    # Training scripts
 │   ├── mlm_training.py         # Main MLM pre-training script
+│   ├── concept_enc_dec.py      # Encoder-Decoder training (Seq2Seq)
 │   ├── evaluate_model_on_glue.py  # GLUE benchmark evaluation
 │   ├── dataset_preprocess.py   # Data collators and preprocessing
 │   └── utils_training.py       # Training utilities
 ├── scripts/                     # Training/evaluation scripts
-│   ├── train_weighted_mlm.ps1  # Windows training script
-│   └── train_weighted_mlm_multigpu.sh  # Multi-GPU training
+│   ├── train_weighted_mlm.ps1      # Windows training script (Single GPU)
+│   ├── train_weighted_mlm_multigpu.sh  # Linux Multi-GPU training
+│   ├── evaluate_concept_encoder_glue.ps1 # Windows GLUE evaluation
+│   └── evaluate_concept_encoder_glue.sh  # Linux GLUE evaluation
+├── analysis/                    # Analysis tools
+│   └── check_model_health.py    # Model sanity checker
 ├── tests/                       # Unit tests
 │   ├── test_concept_encoder_layer.py
 │   └── test_data_collators.py
@@ -111,54 +119,33 @@ MrCogito/
 
 ## 🚀 Training
 
-### Quick Start - Single GPU Training
+### 1. Weighted MLM Training (Windows / Single GPU)
 
-Use the PowerShell script for easy training on Windows:
+For development and testing on Windows, use the PowerShell script. This trains a "Micro-2" sized model (21M params) on Wikitext-103.
 
 ```powershell
 .\scripts\train_weighted_mlm.ps1
 ```
 
-This trains a **Micro-2 model** (21M parameters) with:
-- Model: `weighted_mlm` (simplified weighted combination)
-- Hidden size: 256, Layers: 2, Concepts: 128
-- Dataset: Wikitext-103
-- Batch size: 64, Sequence length: 256
-- Learning rate: 5e-4, BF16 precision
+### 2. Weighted MLM Training (Linux / Multi-GPU)
 
-### Advanced Training - Custom Configuration
-
-```powershell
-python training/mlm_training.py `
-    --model_type weighted_mlm `
-    --hidden_size 512 `
-    --num_hidden_layers 4 `
-    --concept_num 256 `
-    --mlm_probability 0.15 `
-    --max_seq_length 512 `
-    --dataset_name "Salesforce/wikitext" `
-    --dataset_name_subset "wikitext-103-v1" `
-    --per_device_train_batch_size 32 `
-    --learning_rate 5e-4 `
-    --num_train_epochs 3 `
-    --output_dir "./Cache/Training/" `
-    --bf16 `
-    --report_to "wandb"
-```
-
-### Multi-GPU Training (Linux/RunPod)
+For large-scale training on clusters (e.g., RunPod, Odra), use the bash script which leverages Hugging Face Accelerate for distributed training.
 
 ```bash
 bash scripts/train_weighted_mlm_multigpu.sh
 ```
 
-### Model Variants
+Configuration variables (batch size, GPUs, learning rate) can be edited directly in the script.
 
-The project includes three ConceptEncoder variants:
+### 3. Encoder-Decoder Training (Summarization)
 
-1. **`concept_mlm`**: Standard ConceptEncoder with cross-attention
-2. **`sim_matrix_mlm`**: ConceptEncoder with explicit similarity matrix
-3. **`weighted_mlm`**: Simplified weighted combination approach (recommended for initial experiments)
+To train the experimental encoder-decoder architecture on CNN/DailyMail:
+
+```powershell
+python training/concept_enc_dec.py
+```
+
+This script uses `ModelConfig` and `DatasetConfig` classes within the file for easy hyperparameter tuning.
 
 ### Model Size Configurations
 
@@ -171,43 +158,49 @@ The project includes three ConceptEncoder variants:
 
 ## 📊 Evaluation
 
-### GLUE Benchmark Evaluation
+### GLUE Benchmark
 
-Evaluate a trained model on GLUE tasks:
+We provide unified scripts for evaluating trained models on the GLUE benchmark. These scripts handle formatting, model loading, and result saving automatically.
 
+**Windows (PowerShell):**
 ```powershell
-python training/evaluate_model_on_glue.py `
-    --model_type concept `
-    --model_path "./Cache/Training/checkpoint-10000" `
-    --task mrpc `
-    --batch_size 16 `
-    --epochs 3
+# Evaluate on MRPC (default)
+.\scripts\evaluate_concept_encoder_glue.ps1 -ModelPath "Cache/Training/your_model_folder"
+
+# Evaluate on other tasks
+.\scripts\evaluate_concept_encoder_glue.ps1 -ModelPath "..." -Task "sst2"
 ```
 
-### Evaluate on all GLUE tasks:
-
-```powershell
-python training/evaluate_model_on_glue.py `
-    --model_type concept `
-    --model_path "./Cache/Training/checkpoint-10000" `
-    --task all `
-    --batch_size 32 `
-    --epochs 5
-```
-
-### Baseline Model Evaluation
-
-Compare against standard encoders (BERT, RoBERTa, etc.):
-
-```powershell
-python training/evaluate_model_on_glue.py `
-    --model_type bert `
-    --task mrpc `
-    --batch_size 16 `
-    --epochs 3
+**Linux (Bash):**
+```bash
+# Usage: script.sh [model_path] [task]
+bash scripts/evaluate_concept_encoder_glue.sh "Cache/Training/your_model_folder" "mrpc"
 ```
 
 Results are saved to: `Cache/Evaluation_reports/[dataset]-[task]-[model]-[date]-[content].csv`
+
+## 🩺 Model Health & Analysis
+
+Before running expensive fine-tuning or evaluations, it is crucial to verify the structural and numerical health of the pre-trained model.
+
+### Health Check Script
+
+The `analysis/check_model_health.py` tool performs comprehensive sanity checks:
+
+*   **Parameter Health**: Scans for NaN/Inf values, extreme magnitudes, and dead neurons (zero variance).
+*   **Concept Embeddings**: Checks distribution and collapse (if concepts are too similar).
+*   **Forward Pass**: Verifies the model runs without errors and produces diverse logits.
+*   **Loss Stability**: Checks if loss computation is stable and positive.
+
+**Usage:**
+
+```powershell
+# Basic health check
+python analysis/check_model_health.py --model_path "Cache/Training/your_model_folder"
+
+# Detailed weight inspection (per layer statistics)
+python analysis/check_model_health.py --model_path "Cache/Training/your_model_folder" --detailed
+```
 
 ## 🧪 Testing
 

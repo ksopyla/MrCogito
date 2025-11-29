@@ -50,10 +50,9 @@ from transformers import (
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import ConceptEncoder
-from nn.concept_encoder import (
-    ConceptEncoderConfig,
-    ConceptEncoderForSequenceClassificationWeighted
-)
+from nn.concept_encoder import ConceptEncoderConfig
+from nn.concept_encoder_weighted import ConceptEncoderForSequenceClassificationWeighted
+from nn.concept_encoder_perceiver import ConceptEncoderForSequenceClassificationPerceiver
 from training.utils_training import get_hostname
 
 from datasets import load_dataset
@@ -134,7 +133,7 @@ def parse_args():
         "--model_type",
         type=str,
         default="bert",
-        choices=["bert-type", "xlnet-type", "concept-type", "sim_matrix_mlm", "concept_mlm", "weighted_mlm"],
+        choices=["bert-type", "xlnet-type", "concept-type", "sim_matrix_mlm", "concept_mlm", "weighted_mlm", "perceiver_mlm"],
         help="Type of model to fine-tune (bert, roberta, xlnet, or concept)"
     )
     parser.add_argument(
@@ -804,7 +803,7 @@ def finetune_model_on_glue(args):
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
     
     # Load and initialize model based on model type
-    concept_model_types = ["sim_matrix_mlm", "concept_mlm", "weighted_mlm"]
+    concept_model_types = ["sim_matrix_mlm", "concept_mlm", "weighted_mlm", "perceiver_mlm"]
     if args.model_type in concept_model_types:
         # First, load configuration and update with task-specific settings
         try:
@@ -829,6 +828,9 @@ def finetune_model_on_glue(args):
             if args.model_type == "weighted_mlm":
                 logger.info(f"Using Weighted Sequence Classification for model type: {args.model_type}")
                 model_class = ConceptEncoderForSequenceClassificationWeighted
+            elif args.model_type == "perceiver_mlm":
+                logger.info(f"Using Perceiver Sequence Classification for model type: {args.model_type}")
+                model_class = ConceptEncoderForSequenceClassificationPerceiver
             else:
                 raise ValueError(f"Unsupported model type for classification: {args.model_type}")
                 
@@ -845,6 +847,8 @@ def finetune_model_on_glue(args):
             # Initialize a new model with the config
             if args.model_type == "weighted_mlm":
                  model = ConceptEncoderForSequenceClassificationWeighted(config)
+            elif args.model_type == "perceiver_mlm":
+                 model = ConceptEncoderForSequenceClassificationPerceiver(config)
             else:
                  raise ValueError(f"Unsupported model type for classification initialization: {args.model_type}")
     else:  # Standard transformer models like bert, roberta, xlnet

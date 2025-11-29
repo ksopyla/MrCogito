@@ -24,12 +24,11 @@ import numpy as np
 import torch
 from dataclasses import dataclass, field
 
-from nn.concept_encoder import (
-    ConceptEncoderConfig,
-    ConceptEncoderForMaskedLM,
-    ConceptEncoderWithSimMatrixForMaskedLM,
-    ConceptEncoderForMaskedLMWeighted
-)
+from nn.concept_encoder import ConceptEncoderConfig
+from nn.concept_encoder_methods import ConceptEncoderForMaskedLM
+from nn.concept_encoder_sim_matrix import ConceptEncoderWithSimMatrixForMaskedLM
+from nn.concept_encoder_weighted import ConceptEncoderForMaskedLMWeighted
+from nn.concept_encoder_perceiver import ConceptEncoderForMaskedLMPerceiver
 
 from training.dataset_preprocess import load_and_preprocess_text_dataset
 from training.utils_training import (
@@ -58,6 +57,10 @@ MODEL_REGISTRY = {
     "weighted_mlm": {
         "class": ConceptEncoderForMaskedLMWeighted,
         "description": "ConceptEncoder with simplified weighted approach for MLM"
+    },
+    "perceiver_mlm": {
+        "class": ConceptEncoderForMaskedLMPerceiver,
+        "description": "ConceptEncoder with Perceiver IO decoding for MLM"
     }
 }
 
@@ -66,7 +69,11 @@ MODEL_REGISTRY = {
 class ModelArguments:
     model_type: str = field(
         default="weighted_mlm",
-        metadata={"help": "Type of model to train", "choices": ["sim_matrix_mlm", "concept_mlm", "weighted_mlm"]}
+        metadata={"help": "Type of model to train", "choices": ["sim_matrix_mlm", "concept_mlm", "weighted_mlm", "perceiver_mlm"]}
+    )
+    model_name_or_path: str | None = field(
+        default=None,
+        metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
     )
     hidden_size: int = field(
         default=256,
@@ -216,8 +223,41 @@ def main():
     model_info = MODEL_REGISTRY[model_args.model_type]
     model_class = model_info["class"]
     
+    # Check if we should load from a checkpoint or initialize fresh
+    if training_args.resume_from_checkpoint and training_args.resume_from_checkpoint is not None:
+        logger.info(f"Loading model from checkpoint: {training_args.resume_from_checkpoint}")
+        # If resume_from_checkpoint is a path, load from there
+        # However, Trainer.train(resume_from_checkpoint=...) handles the loading of weights + optimizer state.
+        # Here we are initializing the model object. 
+        # If we provide a path to .from_pretrained, we load weights.
+        # If we use resume_from_checkpoint in trainer.train(), it loads everything.
+        # The standard HF pattern is to init config, init model (random), then let trainer load checkpoint.
+        # BUT if the user provided --model_name_or_path pointing to a checkpoint, we should load weights here.
+        pass 
+    
+    # Check if model_name_or_path is provided and is a directory (implies checkpoint/saved model)
+    # In TrainingArguments, model_name_or_path is not a standard argument, it usually comes from ModelArguments
+    # But we don't have model_name_or_path in ModelArguments definition above (it was missing).
+    # Let's check if we can infer it or if we should add it to ModelArguments.
+    
+    # For now, we'll stick to initializing from config unless we want to explicitly support loading weights here.
+    # If we want to continue training with NEW epochs but OLD weights, we should ideally load weights here.
+    
     logger.info(f"Initializing model: {model_info['description']}")
-    model = model_class(config)
+    
+    if model_args.model_name_or_path:
+        logger.info(f"Loading model weights from: {model_args.model_name_or_path}")
+        # When loading from a path, we usually want to use .from_pretrained
+        # Ensure the config matches what we prepared or let it load from the path
+        try:
+            model = model_class.from_pretrained(model_args.model_name_or_path, config=config)
+        except Exception as e:
+            logger.warning(f"Failed to load via from_pretrained (might be a fresh directory?): {e}")
+            logger.info("Falling back to fresh initialization")
+            model = model_class(config)
+    else:
+        logger.info("Initializing fresh model from config")
+        model = model_class(config)
     
     # Log detailed model information
     log_model_info(
