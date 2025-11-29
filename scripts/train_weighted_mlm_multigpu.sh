@@ -65,17 +65,17 @@ TEST_SIZE_PERCENT=0.1
 PER_DEVICE_BATCH_SIZE=96        # Batch size per GPU
 GRADIENT_ACCUMULATION_STEPS=1    # Number of gradient accumulation steps
 LEARNING_RATE=5e-4
-NUM_EPOCHS=20
+NUM_EPOCHS=100
 WARMUP_STEPS=2000
 WEIGHT_DECAY=0.01
 MAX_GRAD_NORM=1.0
 
 # Logging and evaluation
-LOGGING_STEPS=500
+LOGGING_STEPS=1000
 EVAL_STRATEGY="steps"
-EVAL_STEPS=2000
+EVAL_STEPS=5000
 SAVE_STRATEGY="steps"
-SAVE_STEPS=10000
+SAVE_STEPS=100000
 
 # Paths are dependent on the server setup:
 # runpod: /workspace/MrCogito
