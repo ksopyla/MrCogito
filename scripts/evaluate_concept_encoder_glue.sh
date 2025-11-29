@@ -27,7 +27,7 @@ unset TRANSFORMERS_CACHE
 
 # Default Model Path 
 # Using the path provided in the user query
-DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training//weighted_mlm_H512L2C256_20251128_141024/weighted_mlm_H512L2C256_20251128_141024"
+DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/weighted_mlm_H512L2C256_20251128_141024/weighted_mlm_H512L2C256_20251128_141024"
 
 # Allow overriding model path via first argument
 MODEL_PATH="${1:-$DEFAULT_MODEL_PATH}"
