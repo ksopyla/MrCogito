@@ -1,5 +1,5 @@
 ---
-description: This file describes the computing environments Windows, Odra, Polonez, how to run python scripts, for developing, training, fine-tuning, evaluating the networks. Local windows environment, remote linux environments, python version, CUDA compute capabilites
+description: computing environments local jupyter - Windows,  remote: Odra and Polonez Ubuntu. Servers setup, GPUs, memory, python version, CUDA compute capabilites
 alwaysApply: false
 ---
 ## Local Windows 11 Development Environment
