@@ -193,10 +193,10 @@ def train_custom_tokenizer(
     # Polonez Optimization: Chunking
     # The Unigram trainer crashes on extremely long documents ("likelihood is NAN").
     # We must split long documents into manageable chunks for the trainer.
-    # This does not affect the quality of the vocabulary.
-    MAX_CHUNK_SIZE = 100_000 
+    # Reduced to 32768 to be absolutely safe against float underflow in lattice.
+    MAX_CHUNK_SIZE = 2**15 # 32768
     corpus = []
-    print("Chunking long documents to prevent trainer crash...")
+    print(f"Chunking documents to {MAX_CHUNK_SIZE} chars to prevent trainer crash...")
     for text in raw_corpus:
         if len(text) > MAX_CHUNK_SIZE:
             # Split into chunks
