@@ -166,29 +166,32 @@ def train_custom_tokenizer(
 
     # 6. Load Data
     print(f"Loading dataset {dataset_name}...")
-    dataset = load_dataset(dataset_name, split="train", streaming=True)
+    # Polonez Optimization: Load to RAM (streaming=False) for speed
+    # 1M samples is small for 256GB RAM (~1-2GB text)
+    dataset = load_dataset(dataset_name, split="train", streaming=False)
     
-    # Create iterator
-    def batch_iterator():
-        count = 0
-        for item in dataset:
-            if count >= sample_size:
-                break
-            if "text" in item:
-                yield item["text"]
-                count += 1
-            else:
-                # Fallback for datasets with different column names
-                # Try common names
-                for col in ["content", "body", "sentence"]:
-                    if col in item:
-                        yield item[col]
-                        count += 1
-                        break
+    # Select samples
+    print(f"Selecting {sample_size} samples...")
+    if len(dataset) > sample_size:
+        dataset = dataset.select(range(sample_size))
+    
+    # Pre-extract text to list to remove Python iterator overhead during Rust training
+    print("Extracting text to memory...")
+    # Handle different column names if needed
+    text_column = "text"
+    for col in ["content", "body", "sentence"]:
+        if col in dataset.column_names:
+            text_column = col
+            break
+            
+    # Using dataset['text'] returns a list directly in Arrow/HF datasets
+    # This is extremely fast and keeps data contiguous in memory
+    corpus = dataset[text_column]
 
     # 7. Train
-    print(f"Starting training on {sample_size} samples...")
-    tokenizer.train_from_iterator(batch_iterator(), trainer=trainer)
+    print(f"Starting training on {len(corpus)} samples...")
+    # Passing a list is much faster than a generator for the Rust backend
+    tokenizer.train_from_iterator(corpus, trainer=trainer)
 
     # 8. Post-Processing (Decoder & Template)
     tokenizer.decoder = decoders.Metaspace()
