@@ -1,22 +1,45 @@
 from typing import Optional, Tuple, Union
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from transformers import PreTrainedModel
 from transformers.modeling_outputs import MaskedLMOutput, SequenceClassifierOutput
 from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss
 
 from nn.concept_encoder import ConceptEncoder, ConceptEncoderConfig
 
+def compute_orthogonality_loss(concept_repr):
+    """
+    Encourage concept vectors to be orthogonal to each other.
+    Args:
+        concept_repr: [batch_size, concept_num, hidden_size]
+    Returns:
+        orthogonality_loss: scalar
+    """
+    # Normalize concepts to unit vectors
+    concept_norm = F.normalize(concept_repr, p=2, dim=-1)  # [B, C, H]
+    
+    # Compute concept similarity matrix
+    concept_sim = torch.bmm(concept_norm, concept_norm.transpose(1, 2))  # [B, C, C]
+    
+    # Create identity matrix (target: concepts should be orthogonal)
+    batch_size, concept_num = concept_sim.shape[:2]
+    eye = torch.eye(concept_num, device=concept_sim.device).unsqueeze(0)
+    eye = eye.expand(batch_size, -1, -1)
+    
+    # Compute loss: penalize non-diagonal elements
+    off_diagonal_mask = 1.0 - eye
+    orthogonality_loss = (concept_sim * off_diagonal_mask).pow(2).sum() / (batch_size * concept_num * (concept_num - 1))
+    
+    return orthogonality_loss
+
 class ConceptEncoderForMaskedLMPerceiver(PreTrainedModel):
     """
     ConceptEncoder with Perceiver IO style decoding.
     
-    Instead of using static weights to combine concepts (like in Weighted model),
-    this model uses a Cross-Attention mechanism where Position Embeddings 'query'
-    the Concept representations to reconstruct the sequence.
-    
-    This allows for Dynamic Routing: the model can choose which concepts to use
-    at each position based on the concept content, not just fixed position-concept pairs.
+    Improved Version:
+    1. Supports Input Embeddings as Decoder Queries (better gradient flow).
+    2. Includes Orthogonality Loss (prevents concept collapse).
     """
     config_class = ConceptEncoderConfig
     base_model_prefix = "concept_encoder"
@@ -26,14 +49,14 @@ class ConceptEncoderForMaskedLMPerceiver(PreTrainedModel):
         self.config = config
         self.encoder = ConceptEncoder(config)
         
-        # Learnable queries for the decoder (representing positions)
-        # We use an embedding layer to retrieve queries for the specific sequence length
+        # Decoder Queries
+        # We keep the learned position embeddings as a base or fallback
         self.decoder_query_embeddings = nn.Embedding(
             num_embeddings=config.max_sequence_length, 
             embedding_dim=config.hidden_size
         )
         
-        # Cross-Attention: Query=Position, Key=Concepts, Value=Concepts
+        # Cross-Attention: Query=Position/Input, Key=Concepts, Value=Concepts
         self.decoder_cross_attn = nn.MultiheadAttention(
             embed_dim=config.hidden_size,
             num_heads=config.num_attention_heads,
@@ -41,13 +64,12 @@ class ConceptEncoderForMaskedLMPerceiver(PreTrainedModel):
             batch_first=True,
         )
         
-        # Decoder Layer Norm (Pre-LN style for the decoder block)
+        # Decoder Layer Norms
         self.decoder_norm = nn.LayerNorm(config.hidden_size)
+        self.post_cross_norm = nn.LayerNorm(config.hidden_size)
         
-        # Optional: FFN after attention (Standard Transformer Decoder Block)
-        # Perceiver IO uses: CrossAttn -> MLP.
+        # FFN after attention
         self.decoder_ffn = nn.Sequential(
-            nn.LayerNorm(config.hidden_size),
             nn.Linear(config.hidden_size, config.intermediate_size),
             nn.GELU(),
             nn.Linear(config.intermediate_size, config.hidden_size),
@@ -56,6 +78,11 @@ class ConceptEncoderForMaskedLMPerceiver(PreTrainedModel):
 
         # MLM Head
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        
+        # Learnable Loss Weights (Kendall & Gal, CVPR 2018)
+        # parameter 0: MLM Loss, parameter 1: Orthogonality Loss
+        # initialized to 0.0 (which corresponds to weight = 1.0 = exp(-0.0))
+        self.loss_log_vars = nn.Parameter(torch.zeros(2))
         
         # Initialize weights
         self.post_init()
@@ -91,31 +118,40 @@ class ConceptEncoderForMaskedLMPerceiver(PreTrainedModel):
         
         # 2. Decode: Concepts -> Sequence using Perceiver IO (Cross Attention)
         
-        # Generate queries for the current sequence length
-        # [1, seq_len] -> [1, seq_len, H] -> [B, seq_len, H]
-        position_ids = torch.arange(seq_length, device=input_ids.device).unsqueeze(0)
-        decoder_queries = self.decoder_query_embeddings(position_ids).expand(batch_size, -1, -1)
+        # Construct Queries: Input Embeddings + Position Embeddings
+        # This gives the decoder a hint about what was at the position (especially for unmasked tokens)
+        # and allows the model to focus on filling in the [MASK] tokens using concepts.
         
-        # Norm queries (Pre-LN) - helpful for training stability
-        decoder_queries = self.decoder_norm(decoder_queries)
+        # A. Position Embeddings
+        position_ids = torch.arange(seq_length, device=input_ids.device).unsqueeze(0)
+        pos_embeddings = self.decoder_query_embeddings(position_ids).expand(batch_size, -1, -1)
+        
+        # B. Input Embeddings (Reuse encoder's embeddings)
+        # We access the embeddings directly from the encoder instance
+        input_embeddings = self.encoder.token_embeddings(input_ids)
+        
+        # Combine: Query = Input + Position
+        # This is standard Transformer input construction, but used here as the Decoder Query
+        decoder_queries = input_embeddings + pos_embeddings
+        
+        # Norm queries before attention (Pre-LN)
+        decoder_queries_norm = self.decoder_norm(decoder_queries)
         
         # Cross Attention
-        # Query: Position Embeddings [B, L, H]
-        # Key/Value: Concept Representations [B, C, H]
-        # No mask needed for keys (concepts are fully visible)
+        # Query: Input+Pos [B, L, H]
+        # Key/Value: Concepts [B, C, H]
         attn_output, attn_weights = self.decoder_cross_attn(
-            query=decoder_queries,
+            query=decoder_queries_norm,
             key=concept_repr,
             value=concept_repr
         )
         
-        # Residual connection (if we had an input to residual add to... but here queries are "new")
-        # Usually Perceiver Decoder is: Output = CrossAttn(Query, Latents) + Query (Residual)
-        # Adding residual to Position Embeddings preserves position information
-        decoder_queries = decoder_queries + attn_output
+        # Residual Connection 1 (Add attention result to original queries)
+        decoder_latents = decoder_queries + attn_output
         
-        # Feed Forward Network
-        decoder_output = decoder_queries + self.decoder_ffn(decoder_queries)
+        # Feed Forward Network with Residual 2
+        # Note: We apply norm before FFN (Pre-LN style)
+        decoder_output = decoder_latents + self.decoder_ffn(self.post_cross_norm(decoder_latents))
         
         # 3. Project to Vocabulary
         logits = self.lm_head(decoder_output) # [B, L, V]
@@ -128,6 +164,26 @@ class ConceptEncoderForMaskedLMPerceiver(PreTrainedModel):
                 logits.view(-1, self.config.vocab_size),
                 labels.view(-1)
             )
+            
+            # ADDED: Orthogonality Loss with Uncertainty Weighting
+            ortho_loss = compute_orthogonality_loss(concept_repr)
+            
+            # Retrieve learned variances
+            # precision = 1 / (2 * sigma^2) = 0.5 * exp(-log_var)
+            # Loss = precision * task_loss + log_var
+            # We add 0.5 * log_var to the loss (standard derivation)
+            
+            w_mlm = torch.exp(-self.loss_log_vars[0])
+            w_ortho = torch.exp(-self.loss_log_vars[1])
+            
+            # Combined loss
+            # Note: we multiply by 0.5 as per Kendall & Gal formulation, 
+            # but simple weighting works too. Sticking to the paper:
+            # L = (1/2sigma^2) * L_task + log(sigma)
+            # log(sigma) = 0.5 * log_var
+            
+            masked_lm_loss = (0.5 * w_mlm * masked_lm_loss) + (0.5 * self.loss_log_vars[0]) + \
+                             (0.5 * w_ortho * ortho_loss) + (0.5 * self.loss_log_vars[1])
             
         if not return_dict:
             output = (logits,) + encoder_outputs[1:]
@@ -182,6 +238,10 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
         
         self.classifier = nn.Linear(config.hidden_size, config.num_labels)
         
+        # Learnable Loss Weights (Kendall & Gal)
+        # param 0: Task Loss, param 1: Ortho Loss
+        self.loss_log_vars = nn.Parameter(torch.zeros(2))
+
         self.post_init()
         
     def _init_weights(self, module):
@@ -224,17 +284,21 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
         # 2. Decode with Single Query
         # Expand CLS query to batch: [1, 1, H] -> [B, 1, H]
         decoder_queries = self.cls_query.expand(batch_size, -1, -1)
-        decoder_queries = self.decoder_norm(decoder_queries)
+        
+        # Pre-LN before Attention (Fixed: Apply norm to copy, preserve residual stream)
+        decoder_queries_norm = self.decoder_norm(decoder_queries)
         
         # Cross Attn
         attn_output, _ = self.decoder_cross_attn(
-            query=decoder_queries,
+            query=decoder_queries_norm,
             key=concept_repr,
             value=concept_repr
         )
         
-        # Residual & FFN
+        # Residual (Add to original queries)
         decoder_queries = decoder_queries + attn_output
+        
+        # FFN (Note: decoder_ffn already includes a LayerNorm at the start)
         decoder_output = decoder_queries + self.decoder_ffn(decoder_queries) # [B, 1, H]
         
         # 3. Classify
@@ -263,6 +327,17 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
             elif self.config.problem_type == "multi_label_classification":
                 loss_fct = BCEWithLogitsLoss()
                 loss = loss_fct(logits, labels)
+            
+            # ADDED: Orthogonality Loss with Uncertainty Weighting
+            if self.training:
+                ortho_loss = compute_orthogonality_loss(concept_repr)
+                
+                w_task = torch.exp(-self.loss_log_vars[0])
+                w_ortho = torch.exp(-self.loss_log_vars[1])
+                
+                # Kendall & Gal weighting
+                loss = (0.5 * w_task * loss) + (0.5 * self.loss_log_vars[0]) + \
+                       (0.5 * w_ortho * ortho_loss) + (0.5 * self.loss_log_vars[1])
                 
         if not return_dict:
             output = (logits,) + encoder_outputs[1:]
