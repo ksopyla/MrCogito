@@ -192,64 +192,62 @@ def train_custom_tokenizer(
     
     # Polonez Optimization: Diverse Document Sampling + Strict Limits
     # -----------------------------------------------------------------
-    # Issue: Unigram trainer crashes with "likelihood is NAN" on Minipile.
-    # Diagnosis: 
-    # 1. 50M+ segments (lines) causes numerical instability or hits edge cases.
-    # 2. "Long sentence" panic can be triggered by specific byte sequences or underflow.
-    #
-    # Solution Strategy:
-    # 1. Sampling: Take random documents to ensure diversity (Code, Web, Academic).
-    # 2. Truncation: Take a safe slice (e.g. first 2k chars) of each document.
-    # 3. Quantity: Limit total training segments to ~500k-1M. This is standard for SentencePiece.
+    # Strategy: Use HF Dataset optimized operations (map/filter) with multiprocessing
+    # to prepare a safe, diverse, and high-quality corpus for Unigram training.
     
     TARGET_TRAIN_COUNT = 500_000
-    SAFE_DOC_LENGTH = 4096 # 4KB is safe for a single segment if quantity is managed
+    SAFE_DOC_LENGTH = 4096 # 4KB is safe
+    NUM_PROC = 32 # Use Polonez cores effectively
     
     print(f"Processing dataset for stable Unigram training...")
     print(f"Target: {TARGET_TRAIN_COUNT} diverse document segments of max {SAFE_DOC_LENGTH} chars.")
     
-    # 1. Shuffle to get random distribution of sources (GitHub, Wiki, etc.)
-    # We load indices first to avoid shuffling massive data in RAM if possible, 
-    # but since we loaded to RAM, we can shuffle directly.
-    import random
-    
+    # 1. Shuffle & Select (Dataset operations are efficient)
     # Ensure we have enough data
-    indices = list(range(len(raw_corpus)))
-    random.seed(42)
-    random.shuffle(indices)
+    if len(dataset) > TARGET_TRAIN_COUNT:
+        print(f"Shuffling and selecting random {TARGET_TRAIN_COUNT} documents...")
+        dataset = dataset.shuffle(seed=42).select(range(TARGET_TRAIN_COUNT))
     
-    # Select random subset indices
-    selected_indices = indices[:TARGET_TRAIN_COUNT]
+    # 2. Filter (Multiprocessed)
+    # Remove null bytes which crash tokenizers
+    print("Filtering invalid documents...")
+    dataset = dataset.filter(
+        lambda x: x[text_column] is not None and len(x[text_column]) > 0 and '\0' not in x[text_column],
+        num_proc=NUM_PROC
+    )
     
-    corpus = []
-    for idx in selected_indices:
-        text = raw_corpus[idx]
-        
-        # 2. Strict Filtering & Cleaning
-        # Skip empty or null-byte containing text
-        if not text or '\0' in text:
-            continue
-            
-        # 3. Truncation (Take a meaningful slice)
-        # Taking the first N chars is usually representative for vocabulary.
-        # For code/papers, the header/imports/abstract often contain key terms.
-        # We limit to SAFE_DOC_LENGTH to prevent the NAN panic.
-        if len(text) > SAFE_DOC_LENGTH:
-            # Optional: We could take a random slice, but start is safer for context.
-            segment = text[:SAFE_DOC_LENGTH]
-            
-            # Ensure we don't cut in the middle of a word (heuristic)
-            # Walk back to the last space
-            last_space = segment.rfind(' ')
-            if last_space > SAFE_DOC_LENGTH // 2: # Only cut if space is reasonably far
-                segment = segment[:last_space]
-        else:
-            segment = text
-            
-        corpus.append(segment)
+    # 3. Truncate (Multiprocessed)
+    print(f"Truncating documents to {SAFE_DOC_LENGTH} chars...")
+    
+    def truncate_text(batch):
+        truncated_batch = []
+        for text in batch[text_column]:
+            if len(text) > SAFE_DOC_LENGTH:
+                # Take slice
+                segment = text[:SAFE_DOC_LENGTH]
+                # Try to cut at space to be nice, but simple slice is fine for vocabulary
+                last_space = segment.rfind(' ')
+                if last_space > SAFE_DOC_LENGTH // 2: 
+                    segment = segment[:last_space]
+                truncated_batch.append(segment)
+            else:
+                truncated_batch.append(text)
+        return {text_column: truncated_batch}
+
+    dataset = dataset.map(
+        truncate_text,
+        batched=True,
+        batch_size=1000,
+        num_proc=NUM_PROC
+    )
+    
+    # 4. Extract list for trainer
+    print("Extracting processed text to memory...")
+    corpus = dataset[text_column]
     
     print(f"Final training corpus size: {len(corpus)} documents")
-    print(f"Average length: {sum(len(s) for s in corpus) / len(corpus):.1f} chars")
+    if len(corpus) > 0:
+        print(f"Average length: {sum(len(s) for s in corpus) / len(corpus):.1f} chars")
 
     # 7. Train
     print(f"Starting training on {len(corpus)} samples...")
