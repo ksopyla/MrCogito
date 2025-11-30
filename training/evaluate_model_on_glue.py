@@ -61,6 +61,7 @@ import evaluate
 import logging
 import time
 import random
+import math
 from datetime import datetime
 from tqdm import tqdm
 from rich.console import Console
@@ -927,14 +928,19 @@ def finetune_model_on_glue(args):
     # Load and preprocess dataset
     train_dataset, eval_dataset, _ = load_glue_dataset(args.task, tokenizer, args.max_length)
     
+    # Get model-specific configuration
+    model_config = get_model_specific_config(args.model_name_or_path)
+    
     # Calculate dynamic logging steps based on dataset size
     # Target approximately 10-15 logs per epoch for readability
     train_size = len(train_dataset)
-    steps_per_epoch = max(1, train_size // args.batch_size // 2)  # Account for gradient accumulation of 2
-    logging_steps = max(1, steps_per_epoch // 10)  # Aim for ~10 logs per epoch
+    grad_acc_steps = model_config.get('gradient_accumulation_steps', 1)
     
-    # Get model-specific configuration
-    model_config = get_model_specific_config(args.model_name_or_path)
+    # Use math.ceil for batches per epoch to match Trainer's default behavior (drop_last=False)
+    num_batches_per_epoch = math.ceil(train_size / args.batch_size)
+    steps_per_epoch = max(1, num_batches_per_epoch // grad_acc_steps)
+    
+    logging_steps = max(1, steps_per_epoch // 10)  # Aim for ~10 logs per epoch
     
     # Print grouped experiment configuration
     print_experiment_configuration(
@@ -977,7 +983,7 @@ def finetune_model_on_glue(args):
         adam_beta1=final_adam_beta1,
         adam_beta2=final_adam_beta2,
         adam_epsilon=final_adam_epsilon,
-        gradient_accumulation_steps=model_config['gradient_accumulation_steps'],
+        gradient_accumulation_steps=grad_acc_steps,
         
         eval_strategy="epoch", # change to eval_strategy
         save_strategy="epoch",
