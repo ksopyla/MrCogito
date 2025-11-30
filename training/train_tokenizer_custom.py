@@ -190,22 +190,29 @@ def train_custom_tokenizer(
     # This is extremely fast and keeps data contiguous in memory
     raw_corpus = dataset[text_column]
     
-    # Polonez Optimization: Chunking
-    # The Unigram trainer crashes on extremely long documents ("likelihood is NAN").
-    # We must split long documents into manageable chunks for the trainer.
-    # Reduced to 8192 to be absolutely safe against float underflow in lattice.
-    MAX_CHUNK_SIZE = 2**13 # 8192
+    # Polonez Optimization: Splitting by Newline + Aggressive Chunking
+    # The Unigram trainer is extremely sensitive to sequence length ("likelihood is NAN").
+    # Standard fix is to train on sentences/lines rather than full documents.
+    print("Splitting documents into lines to prevent trainer crash...")
     corpus = []
-    print(f"Chunking documents to {MAX_CHUNK_SIZE} chars to prevent trainer crash...")
+    MAX_LINE_LENGTH = 4096 # 4KB is very safe for SentencePiece
+    
     for text in raw_corpus:
-        if len(text) > MAX_CHUNK_SIZE:
-            # Split into chunks
-            for i in range(0, len(text), MAX_CHUNK_SIZE):
-                corpus.append(text[i : i + MAX_CHUNK_SIZE])
-        else:
-            corpus.append(text)
+        # Split by newline to get natural sentence/paragraph boundaries
+        lines = text.split('\n')
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            # If line is still huge (e.g. minified code/json), chunk it
+            if len(line) > MAX_LINE_LENGTH:
+                for i in range(0, len(line), MAX_LINE_LENGTH):
+                    corpus.append(line[i : i + MAX_LINE_LENGTH])
+            else:
+                corpus.append(line)
             
-    print(f"Final training corpus size (after chunking): {len(corpus)} segments")
+    print(f"Final training corpus size (lines): {len(corpus)} segments")
 
     # 7. Train
     print(f"Starting training on {len(corpus)} samples...")
