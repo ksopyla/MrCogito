@@ -186,7 +186,24 @@ def train_custom_tokenizer(
             
     # Using dataset['text'] returns a list directly in Arrow/HF datasets
     # This is extremely fast and keeps data contiguous in memory
-    corpus = dataset[text_column]
+    raw_corpus = dataset[text_column]
+    
+    # Polonez Optimization: Chunking
+    # The Unigram trainer crashes on extremely long documents ("likelihood is NAN").
+    # We must split long documents into manageable chunks for the trainer.
+    # This does not affect the quality of the vocabulary.
+    MAX_CHUNK_SIZE = 100_000 
+    corpus = []
+    print("Chunking long documents to prevent trainer crash...")
+    for text in raw_corpus:
+        if len(text) > MAX_CHUNK_SIZE:
+            # Split into chunks
+            for i in range(0, len(text), MAX_CHUNK_SIZE):
+                corpus.append(text[i : i + MAX_CHUNK_SIZE])
+        else:
+            corpus.append(text)
+            
+    print(f"Final training corpus size (after chunking): {len(corpus)} segments")
 
     # 7. Train
     print(f"Starting training on {len(corpus)} samples...")
