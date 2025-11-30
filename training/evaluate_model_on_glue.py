@@ -608,9 +608,9 @@ def load_glue_dataset(task, tokenizer, max_length):
             raise
         
         # Log dataset statistics
-        logger.info(f"Dataset statistics for {task}:")
-        logger.info(f"  Training samples: {len(train_dataset)}")
-        logger.info(f"  Validation samples: {len(eval_dataset)}")
+        # logger.info(f"Dataset statistics for {task}:")
+        # logger.info(f"  Training samples: {len(train_dataset)}")
+        # logger.info(f"  Validation samples: {len(eval_dataset)}")
         
         return train_dataset, eval_dataset, None
         
@@ -765,12 +765,46 @@ def get_model_specific_config(model_name_or_path):
         })
         logger.info("ALBERT model detected - applying ALBERT-specific configurations")
     
-    # Log configuration details
-    if config['special_notes']:
-        for note in config['special_notes']:
-            logger.info(f"  - {note}")
-    
     return config
+
+def print_experiment_configuration(args, model_config, total_params, trainable_params, train_dataset_size, steps_per_epoch, tokenizer_name):
+    """
+    Print a structured summary of the experiment configuration before training starts.
+    """
+    logger.info("\n" + "="*50)
+    logger.info("EXPERIMENT CONFIGURATION")
+    logger.info("="*50)
+    
+    logger.info(f"Task:           {args.task.upper()}")
+    logger.info(f"Model Type:     {args.model_type}")
+    logger.info(f"Model Path:     {args.model_name_or_path}")
+    logger.info(f"Tokenizer:      {tokenizer_name}")
+    logger.info(f"Device:         {torch.device('cuda' if torch.cuda.is_available() and not args.no_cuda else 'cpu')}")
+    
+    logger.info("-" * 50)
+    logger.info("MODEL STATISTICS")
+    logger.info(f"Total Params:      {total_params:,}")
+    logger.info(f"Trainable Params:  {trainable_params:,} ({trainable_params/total_params:.1%} of total)")
+    
+    logger.info("-" * 50)
+    logger.info("TRAINING DETAILS")
+    logger.info(f"Dataset Size:      {train_dataset_size:,} samples")
+    logger.info(f"Batch Size:        {args.batch_size}")
+    logger.info(f"Epochs:            {args.epochs}")
+    logger.info(f"Total Steps:       {steps_per_epoch * args.epochs:,}")
+    logger.info(f"Learning Rate:     {args.learning_rate}")
+    logger.info(f"Weight Decay:      {args.weight_decay}")
+    logger.info(f"Warmup Steps:      {model_config['warmup_steps']}")
+    logger.info(f"Max Grad Norm:     {model_config['max_grad_norm']}")
+    logger.info(f"FP16/BF16:         {model_config['use_fp16']}/{model_config['use_bf16']}")
+    
+    if model_config['special_notes']:
+        logger.info("-" * 50)
+        logger.info("MODEL SPECIFIC SETTINGS")
+        for note in model_config['special_notes']:
+            logger.info(f"* {note}")
+            
+    logger.info("="*50 + "\n")
 
 def finetune_model_on_glue(args):
     """
@@ -797,10 +831,36 @@ def finetune_model_on_glue(args):
     set_seed(args.seed)
     
     # Determine tokenizer name
-    tokenizer_name = args.tokenizer_name if args.tokenizer_name else args.model_name_or_path
+    # Strategy:
+    # 1. If tokenizer_name is explicitly provided, use it (highest priority)
+    # 2. If not, try to load tokenizer from the model directory (best practice)
+    # 3. If not available, check if model config has 'tokenizer_name' stored (traceability)
+    # 4. Fallback to model_name_or_path (works for HF Hub models)
+    
+    tokenizer_name = args.tokenizer_name
+    
+    if not tokenizer_name:
+        # Check if tokenizer files exist in the model directory
+        if os.path.isdir(args.model_name_or_path) and any(f.startswith("vocab") or f.startswith("tokenizer") for f in os.listdir(args.model_name_or_path)):
+            tokenizer_name = args.model_name_or_path
+            logger.info(f"Found tokenizer files in model directory. Using: {tokenizer_name}")
+        # Check if config has stored tokenizer name
+        elif hasattr(model, "config") and hasattr(model.config, "tokenizer_name"):
+            tokenizer_name = model.config.tokenizer_name
+            logger.info(f"Using stored tokenizer name from model config: {tokenizer_name}")
+        else:
+            tokenizer_name = args.model_name_or_path
+            logger.info(f"Fallback: Using model path as tokenizer name: {tokenizer_name}")
     
     # Load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
+    except Exception as e:
+        logger.error(f"Failed to load tokenizer '{tokenizer_name}': {e}")
+        # If fallback failed, try the hardcoded default from training script
+        default_tokenizer = "bert-base-cased"
+        logger.warning(f"Attempting fallback to default tokenizer: {default_tokenizer}")
+        tokenizer = AutoTokenizer.from_pretrained(default_tokenizer, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
     
     # Load and initialize model based on model type
     concept_model_types = ["sim_matrix_mlm", "concept_mlm", "weighted_mlm", "perceiver_mlm"]
@@ -873,14 +933,24 @@ def finetune_model_on_glue(args):
     steps_per_epoch = max(1, train_size // args.batch_size // 2)  # Account for gradient accumulation of 2
     logging_steps = max(1, steps_per_epoch // 10)  # Aim for ~10 logs per epoch
     
-    logger.info(f"Dataset size: {train_size}, Steps per epoch: {steps_per_epoch}, Dynamic logging steps: {logging_steps}")
+    # Get model-specific configuration
+    model_config = get_model_specific_config(args.model_name_or_path)
+    
+    # Print grouped experiment configuration
+    print_experiment_configuration(
+        args, 
+        model_config, 
+        total_params, 
+        trainable_params, 
+        train_size, 
+        steps_per_epoch,
+        tokenizer_name
+    )
     
     # Create experiment timestamp and run name
     experiment_name, timestamp = create_experiment_name(args.model_name_or_path, args.task, total_params)
     run_name = f"{experiment_name}-{timestamp}"
     
-    # Get model-specific configuration
-    model_config = get_model_specific_config(args.model_name_or_path)
     
     # Override with command line arguments if provided, otherwise use model-specific defaults
     final_adam_beta1 = args.adam_beta1 if hasattr(args, 'adam_beta1') and args.adam_beta1 != 0.9 else model_config['adam_beta1']

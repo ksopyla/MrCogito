@@ -211,7 +211,8 @@ def main():
         max_sequence_length=data_args.max_seq_length,
         pad_token_id=tokenizer.pad_token_id,
         mask_token_id=tokenizer.mask_token_id,
-        tie_word_embeddings= False
+        tie_word_embeddings=False,
+        tokenizer_name=data_args.tokenizer_name  # Store source tokenizer name for traceability
     )
     
 
@@ -463,7 +464,7 @@ def main():
         train_dataset=train_ds,
         eval_dataset=test_ds,
         data_collator=data_collator,
-        #tokenizer=tokenizer
+        tokenizer=tokenizer
     )
     
     # Start training
@@ -476,6 +477,11 @@ def main():
     final_model_path = os.path.join(training_args.output_dir, training_args.run_name)
     logger.info(f"Saving final model to: {final_model_path}")
     trainer.save_model(final_model_path)
+    
+    # Explicitly save tokenizer to ensure it's available for evaluation
+    tokenizer.save_pretrained(final_model_path)
+    logger.info(f"Saved tokenizer to {final_model_path}")
+    
     logger.info("Training completed successfully!")
 
 if __name__ == "__main__":
