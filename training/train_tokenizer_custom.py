@@ -190,30 +190,66 @@ def train_custom_tokenizer(
     # This is extremely fast and keeps data contiguous in memory
     raw_corpus = dataset[text_column]
     
-    # Polonez Optimization: Splitting by Newline + Aggressive Chunking
-    # The Unigram trainer is extremely sensitive to sequence length ("likelihood is NAN").
-    # 2048 still crashed. Using 512 (BERT-seq length). 
-    # This is the definitive "safe" length for transformers.
-    print("Splitting documents into lines to prevent trainer crash...")
-    corpus = []
-    MAX_LINE_LENGTH = 512
+    # Polonez Optimization: Diverse Document Sampling + Strict Limits
+    # -----------------------------------------------------------------
+    # Issue: Unigram trainer crashes with "likelihood is NAN" on Minipile.
+    # Diagnosis: 
+    # 1. 50M+ segments (lines) causes numerical instability or hits edge cases.
+    # 2. "Long sentence" panic can be triggered by specific byte sequences or underflow.
+    #
+    # Solution Strategy:
+    # 1. Sampling: Take random documents to ensure diversity (Code, Web, Academic).
+    # 2. Truncation: Take a safe slice (e.g. first 2k chars) of each document.
+    # 3. Quantity: Limit total training segments to ~500k-1M. This is standard for SentencePiece.
     
-    for text in raw_corpus:
-        # Split by newline to get natural sentence/paragraph boundaries
-        lines = text.split('\n')
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-                
-            # If line is still huge (e.g. minified code/json), chunk it
-            if len(line) > MAX_LINE_LENGTH:
-                for i in range(0, len(line), MAX_LINE_LENGTH):
-                    corpus.append(line[i : i + MAX_LINE_LENGTH])
-            else:
-                corpus.append(line)
+    TARGET_TRAIN_COUNT = 500_000
+    SAFE_DOC_LENGTH = 4096 # 4KB is safe for a single segment if quantity is managed
+    
+    print(f"Processing dataset for stable Unigram training...")
+    print(f"Target: {TARGET_TRAIN_COUNT} diverse document segments of max {SAFE_DOC_LENGTH} chars.")
+    
+    # 1. Shuffle to get random distribution of sources (GitHub, Wiki, etc.)
+    # We load indices first to avoid shuffling massive data in RAM if possible, 
+    # but since we loaded to RAM, we can shuffle directly.
+    import random
+    
+    # Ensure we have enough data
+    indices = list(range(len(raw_corpus)))
+    random.seed(42)
+    random.shuffle(indices)
+    
+    # Select random subset indices
+    selected_indices = indices[:TARGET_TRAIN_COUNT]
+    
+    corpus = []
+    for idx in selected_indices:
+        text = raw_corpus[idx]
+        
+        # 2. Strict Filtering & Cleaning
+        # Skip empty or null-byte containing text
+        if not text or '\0' in text:
+            continue
             
-    print(f"Final training corpus size (lines): {len(corpus)} segments")
+        # 3. Truncation (Take a meaningful slice)
+        # Taking the first N chars is usually representative for vocabulary.
+        # For code/papers, the header/imports/abstract often contain key terms.
+        # We limit to SAFE_DOC_LENGTH to prevent the NAN panic.
+        if len(text) > SAFE_DOC_LENGTH:
+            # Optional: We could take a random slice, but start is safer for context.
+            segment = text[:SAFE_DOC_LENGTH]
+            
+            # Ensure we don't cut in the middle of a word (heuristic)
+            # Walk back to the last space
+            last_space = segment.rfind(' ')
+            if last_space > SAFE_DOC_LENGTH // 2: # Only cut if space is reasonably far
+                segment = segment[:last_space]
+        else:
+            segment = text
+            
+        corpus.append(segment)
+    
+    print(f"Final training corpus size: {len(corpus)} documents")
+    print(f"Average length: {sum(len(s) for s in corpus) / len(corpus):.1f} chars")
 
     # 7. Train
     print(f"Starting training on {len(corpus)} samples...")
