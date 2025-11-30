@@ -704,7 +704,7 @@ def get_model_specific_config(model_name_or_path):
         'adam_beta2': 0.999,
         'adam_epsilon': 1e-8,
         'max_grad_norm': 1.0,
-        'warmup_steps': 500,
+        'warmup_steps': 100,
         'gradient_accumulation_steps': 1,
         'special_notes': []
     }
