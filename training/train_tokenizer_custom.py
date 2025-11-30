@@ -193,9 +193,10 @@ def train_custom_tokenizer(
     # Polonez Optimization: Splitting by Newline + Aggressive Chunking
     # The Unigram trainer is extremely sensitive to sequence length ("likelihood is NAN").
     # Standard fix is to train on sentences/lines rather than full documents.
+    # Reduced to 2048 chars to be safe (standard SentencePiece is fine with ~4k, but rust impl might differ)
     print("Splitting documents into lines to prevent trainer crash...")
     corpus = []
-    MAX_LINE_LENGTH = 4096 # 4KB is very safe for SentencePiece
+    MAX_LINE_LENGTH = 2048 
     
     for text in raw_corpus:
         # Split by newline to get natural sentence/paragraph boundaries
