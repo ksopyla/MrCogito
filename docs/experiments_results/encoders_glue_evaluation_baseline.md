@@ -8,6 +8,7 @@ Evaluation of baseline encoder models on GLUE MRPC task using [evaluate_model_on
 
 | Date Time | Model Name | F1 Score | Accuracy | Eval Runtime | Wandb Run |
 |-----------|------------|----------|----------|--------------|-----------|
+| 2025-11-30 16:22:50 | **weighted_mlm_H512L2C256 (23M)** | **79.9%** | **68.6%** | ~0.39s | [20251130_1622](https://wandb.ai/ksopyla/MrCogito/runs/glue-mrpc-weighted-mlm-h512l2c256-20251128-133227-23M-20251130_1622) |
 | 2025-11-27 14:48:31 | **weighted_mlm_H512L2C128 (23M)** | **81.2%** | **68.4%** | ~19.2s | [20251127_1448](https://wandb.ai/ksopyla/MrCogito/runs/glue-mrpc-weighted-mlm-h512l2c128-20251123-213949-23M-20251127_1448) |
 | 2025-11-23 21:20:53 | **weighted_mlm_H512L2C128 (23M)** | **81.2%** | **68.4%** | ~0.49s | [20251123_2120](https://wandb.ai/ksopyla/MrCogito/runs/glue-mrpc-weighted-mlm-h512l2c128-20251119-090233-23M-20251123_2120) |
 | 2025-07-07 22:29:53 | **deberta-base (139M)** | **90.8%** | **87.5%** | ~23.9s | [i22gt7am](https://wandb.ai/ksopyla/MrCogito/runs/i22gt7am) |
@@ -34,6 +35,12 @@ Evaluation of baseline encoder models on GLUE MRPC task using [evaluate_model_on
 
 
 ### Research log updates for MRPC
+
+**2025-11-30**: Concept Encoder `weighted_mlm_H512L2C256` evaluation.
+- **Experiment ID**: `glue-mrpc-weighted-mlm-h512l2c256-20251128-133227-23M-20251130_1622`
+- **F1 Score**: 79.9%
+- **Accuracy**: 68.6%
+- **Analysis**: Increasing concept dimension to 256 (from 128) resulted in similar performance (F1 79.9% vs 81.2%, Acc 68.6% vs 68.4%). The larger concept space didn't immediately yield better generalization on MRPC.
 
 **2025-11-30**: Concept Encoder `perceiver_mlm_H512L2C128` evaluation - **Architecture Fixed** ✅
 - **Experiment ID**: `glue-mrpc-perceiver-mlm-h512l2c128-20251129-174003-25M-20251130_1333`
