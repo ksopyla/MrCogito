@@ -195,7 +195,7 @@ def train_custom_tokenizer(
     # Strategy: Use HF Dataset optimized operations (map/filter) with multiprocessing
     # to prepare a safe, diverse, and high-quality corpus for Unigram training.
     
-    TARGET_TRAIN_COUNT = 500_000
+    TARGET_TRAIN_COUNT = 100_000
     SAFE_DOC_LENGTH = 4096 # 4KB is safe
     NUM_PROC = 32 # Use Polonez cores effectively
     
