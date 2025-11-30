@@ -1013,7 +1013,7 @@ def finetune_model_on_glue(args):
         #tokenizer=tokenizer,
         data_collator=data_collator,
         compute_metrics=compute_metrics_fn,
-        callbacks=[EarlyStoppingCallback(early_stopping_patience=2)]
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=5)]
     )
 
     # Create comprehensive config dictionary for wandb

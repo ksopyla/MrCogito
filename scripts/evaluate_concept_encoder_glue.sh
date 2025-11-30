@@ -27,7 +27,7 @@ unset TRANSFORMERS_CACHE
 
 # Default Model Path 
 # Using the path provided in the user query
-DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/weighted_mlm_H512L2C256_20251128_141024/weighted_mlm_H512L2C256_20251128_141024"
+DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L2C128_20251129_174003/perceiver_mlm_H512L2C128_20251129_174003"
 
 # Allow overriding model path via first argument
 MODEL_PATH="${1:-$DEFAULT_MODEL_PATH}"
@@ -62,13 +62,13 @@ echo "Starting evaluation..."
 # Added --save_model flag
 # IMPORTANT: Using 'weighted_mlm' model type triggers the new Weighted Classification Head
 python training/evaluate_model_on_glue.py \
-    --model_type "weighted_mlm" \
+    --model_type "perceiver_mlm" \
     --model_name_or_path "$MODEL_PATH" \
     --tokenizer_name "$TOKENIZER_NAME" \
     --task "$TASK" \
-    --batch_size 32 \
-    --epochs 5 \
-    --learning_rate 2e-5 \
+    --batch_size 96 \
+    --epochs 30 \
+    --learning_rate 1e-5 \
     --visualize \
     --save_model
 
