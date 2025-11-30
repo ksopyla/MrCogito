@@ -66,8 +66,8 @@ python training/evaluate_model_on_glue.py \
     --model_name_or_path "$MODEL_PATH" \
     --tokenizer_name "$TOKENIZER_NAME" \
     --task "$TASK" \
-    --batch_size 96 \
-    --epochs 30 \
+    --batch_size 32 \
+    --epochs 10 \
     --learning_rate 1e-5 \
     --visualize \
     --save_model
