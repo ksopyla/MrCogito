@@ -173,7 +173,9 @@ def train_custom_tokenizer(
     # Select samples
     print(f"Selecting {sample_size} samples...")
     if len(dataset) > sample_size:
-        dataset = dataset.select(range(sample_size))
+        # Randomly sample to ensure diverse coverage (code, web, academic)
+        # instead of taking the first N which might be biased by source
+        dataset = dataset.shuffle(seed=42).select(range(sample_size))
     
     # Pre-extract text to list to remove Python iterator overhead during Rust training
     print("Extracting text to memory...")
