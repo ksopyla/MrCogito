@@ -71,10 +71,20 @@ class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
         # Initialize weights
         self.post_init()
         
-        # Optionally tie embeddings (disabled by default for experimentation)
-        if config.tie_word_embeddings:
-            self._tie_or_clone_weights(self.lm_head, self.encoder.token_embeddings)
-    
+    def _init_weights(self, module):
+        """Initialize the weights"""
+        if isinstance(module, nn.Linear):
+            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
+            if module.bias is not None:
+                module.bias.data.zero_()
+        elif isinstance(module, nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+        elif isinstance(module, nn.Embedding):
+            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
+            if module.padding_idx is not None:
+                module.weight.data[module.padding_idx].zero_()
+        
     def forward(
         self,
         input_ids: torch.LongTensor,
@@ -225,6 +235,20 @@ class ConceptEncoderForSequenceClassificationWeighted(PreTrainedModel):
         # Initialize weights
         self.post_init()
     
+    def _init_weights(self, module):
+        """Initialize the weights"""
+        if isinstance(module, nn.Linear):
+            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
+            if module.bias is not None:
+                module.bias.data.zero_()
+        elif isinstance(module, nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+        elif isinstance(module, nn.Embedding):
+            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
+            if module.padding_idx is not None:
+                module.weight.data[module.padding_idx].zero_()
+
     def forward(
         self,
         input_ids: Optional[torch.LongTensor] = None,

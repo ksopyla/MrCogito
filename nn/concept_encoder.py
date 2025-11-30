@@ -247,6 +247,15 @@ class ConceptEncoder(PreTrainedModel):
                 # Ensure padding embeddings are zeros
                 module.weight.data[module.padding_idx].zero_()
         
+        elif isinstance(module, nn.Linear):
+            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
+            if module.bias is not None:
+                module.bias.data.zero_()
+        
+        elif isinstance(module, nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+        
 
     def forward(
         self,
@@ -274,7 +283,9 @@ class ConceptEncoder(PreTrainedModel):
         token_embeddings = self.token_embeddings(input_ids) + self.token_position_embeddings(position_ids)
         token_embeddings = self.dropout(token_embeddings)
 
-        key_padding_mask = (attention_mask == 0)  # bool of shape [batch_size, seq_len]
+        key_padding_mask = None
+        if attention_mask is not None:
+            key_padding_mask = (attention_mask == 0)  # bool of shape [batch_size, seq_len]
 
         # 3) Initialize concept embeddings [batch_size, concept_length, hidden_size]
         # From gemini deep research analysis:

@@ -159,7 +159,8 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
         
         # Learnable [CLS] query for classification
         # Shape: [1, 1, hidden_size]
-        self.cls_query = nn.Parameter(torch.randn(1, 1, config.hidden_size))
+        self.cls_query = nn.Parameter(torch.zeros(1, 1, config.hidden_size))
+        self.cls_query.data.normal_(mean=0.0, std=config.initializer_range)
         
         # Cross-Attention (same arch as MLM decoder, but 1 query)
         self.decoder_cross_attn = nn.MultiheadAttention(
@@ -183,6 +184,20 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
         
         self.post_init()
         
+    def _init_weights(self, module):
+        """Initialize the weights"""
+        if isinstance(module, nn.Linear):
+            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
+            if module.bias is not None:
+                module.bias.data.zero_()
+        elif isinstance(module, nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+        elif isinstance(module, nn.Embedding):
+            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
+            if module.padding_idx is not None:
+                module.weight.data[module.padding_idx].zero_()
+
     def forward(
         self,
         input_ids: Optional[torch.LongTensor] = None,
