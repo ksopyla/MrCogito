@@ -4,6 +4,8 @@ from typing import List, Optional
 from datasets import load_dataset
 from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, decoders, trainers, processors
 from transformers import PreTrainedTokenizerFast
+from dotenv import dotenv_values
+from huggingface_hub import login, HfApi
 
 # Define the README Template as a constant
 README_TEMPLATE = """---
@@ -115,150 +117,134 @@ def get_special_tokens(add_chat_tokens: bool = True) -> List[str]:
         
     return tokens
 
-def train_custom_tokenizer(
-    dataset_name: str,
+def setup_HF_environment():
+    """Setup environment variables and directories"""
+    # Load .env from project root (parent of training dir)
+    env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+    if os.path.exists(env_path):
+        envs = dotenv_values(env_path)
+        if "HF_TOKEN" in envs:
+            login(token=envs["HF_TOKEN"])
+    
+    # Enable parallelism for tokenizers
+    os.environ["TOKENIZERS_PARALLELISM"] = "true"
+
+def prepare_training_corpus(dataset_name: str, sample_size: int = 1_000_000) -> List[str]:
+    """
+    Loads the dataset and prepares a list of strings for training.
+    CRITICAL: Splits long documents into lines/chunks to avoid Unigram trainer panics ("likelihood is NAN").
+    """
+    print(f"\n{'='*60}")
+    print(f"Preparing Training Corpus")
+    print(f"Dataset: {dataset_name}")
+    print(f"Target Samples: {sample_size}")
+    print(f"{'='*60}\n")
+
+    # 1. Load Data
+    print(f"Loading dataset {dataset_name}...")
+    # Load to RAM (streaming=False) for speed on high-RAM machines
+    dataset = load_dataset(dataset_name, split="train", streaming=False)
+    
+    # 2. Identify Text Column (Moved up for optimization)
+    text_column = "text"
+    available_cols = dataset.column_names
+    print(f"Available columns: {available_cols}")
+    
+    for col in ["text", "content", "body", "sentence"]:
+        if col in available_cols:
+            text_column = col
+            break
+    print(f"Using text column: '{text_column}'")
+
+    # 3. Optimize: Select only the text column BEFORE shuffle/select
+    # This drastically reduces memory usage by dropping metadata columns early
+    # and making the shuffle operation lighter.
+    if len(available_cols) > 1:
+        print("Removing non-text columns to save memory...")
+        dataset = dataset.select_columns([text_column])
+
+    # 4. Select Samples
+    if len(dataset) > sample_size:
+        print(f"Shuffling and selecting {sample_size} random samples...")
+        dataset = dataset.shuffle(seed=42).select(range(sample_size))
+    
+    # 5. Process into manageable chunks (Corpus Creation)
+    # Use dataset.map to truncate documents to a fixed length (e.g., 4096 chars).
+    # This preserves structure (code, latex) while keeping sequence lengths safe for Unigram.
+    
+    MAX_DOC_LENGTH = 4096
+    print(f"Truncating documents to max {MAX_DOC_LENGTH} chars using dataset.map...")
+    
+    def truncate_batch(batch):
+        return {text_column: [text[:MAX_DOC_LENGTH] for text in batch[text_column]]}
+
+    # Determine optimized process count
+    import multiprocessing
+    num_proc = max(1, multiprocessing.cpu_count() // 2) # Use half cores to be safe/nice
+    
+    dataset = dataset.map(
+        truncate_batch,
+        batched=True,
+        num_proc=num_proc,
+        desc="Truncating documents"
+    )
+    
+    print("Extracting text to memory...")
+    corpus = dataset[text_column]
+    
+    print(f"Corpus preparation complete.")
+    print(f"Total training sequences: {len(corpus)}")
+    avg_len = sum(len(s) for s in corpus) / len(corpus) if corpus else 0
+    print(f"Average sequence length: {avg_len:.1f} chars")
+    
+    return corpus
+
+def train_and_save_tokenizer(
+    corpus: List[str],
     vocab_size: int,
     repo_id: str,
-    sample_size: int = 1_000_000,
     push_to_hub: bool = False,
     local_dir: str = "./tokenizers"
 ):
     """
-    Trains a Unigram tokenizer (XLNet-style) robust for modern use cases.
-    
-    Features:
-    - Unigram algorithm (best for morphology)
-    - Metaspace pre-tokenization (reversible, handles whitespace)
-    - NFKC normalization (standard Unicode)
-    - Chat template support (reserved tokens)
+    Trains a Unigram tokenizer on a pre-loaded corpus.
     """
     print(f"\n{'='*60}")
-    print(f"Training Custom Unigram Tokenizer")
-    print(f"Dataset: {dataset_name}")
+    print(f"Training Tokenizer: {repo_id}")
     print(f"Vocab Size: {vocab_size}")
-    print(f"Target Repo: {repo_id}")
     print(f"{'='*60}\n")
 
-    # 1. Initialize Tokenizer with Unigram model
+    # 1. Initialize Tokenizer
     tokenizer = Tokenizer(models.Unigram())
 
     # 2. Normalization: NFKC
-    # Using Cased training (no Lowercase) is better for code, names, and modern tasks.
     tokenizer.normalizer = normalizers.Sequence([
         normalizers.NFKC()
     ])
 
     # 3. Pre-tokenization: Metaspace
-    # Replaces spaces with _ (U+2581). Critical for reversibility.
     tokenizer.pre_tokenizer = pre_tokenizers.Metaspace()
 
     # 4. Define Special Tokens
     special_tokens = get_special_tokens(add_chat_tokens=True)
-    print(f"Special tokens: {special_tokens}")
 
     # 5. Trainer Configuration
     trainer = trainers.UnigramTrainer(
         vocab_size=vocab_size,
         special_tokens=special_tokens,
         unk_token="<unk>",
-        shrinking_factor=0.75
+        shrinking_factor=0.75,
+        show_progress=True,
+        max_piece_length=10,
+        n_sub_iterations=5
     )
 
-    # 6. Load Data
-    print(f"Loading dataset {dataset_name}...")
-    # Polonez Optimization: Load to RAM (streaming=False) for speed
-    # 1M samples is small for 256GB RAM (~1-2GB text)
-    dataset = load_dataset(dataset_name, split="train", streaming=False)
-    
-    # Select samples
-    print(f"Selecting {sample_size} samples...")
-    if len(dataset) > sample_size:
-        # Randomly sample to ensure diverse coverage (code, web, academic)
-        # instead of taking the first N which might be biased by source
-        dataset = dataset.shuffle(seed=42).select(range(sample_size))
-    
-    # Pre-extract text to list to remove Python iterator overhead during Rust training
-    print("Extracting text to memory...")
-    # Handle different column names if needed
-    text_column = "text"
-    for col in ["content", "body", "sentence"]:
-        if col in dataset.column_names:
-            text_column = col
-            break
-            
-    # Using dataset['text'] returns a list directly in Arrow/HF datasets
-    # This is extremely fast and keeps data contiguous in memory
-    raw_corpus = dataset[text_column]
-    
-    # Polonez Optimization: Diverse Document Sampling + Strict Limits
-    # -----------------------------------------------------------------
-    # Strategy: Use HF Dataset optimized operations (map/filter) with multiprocessing
-    # to prepare a safe, diverse, and high-quality corpus for Unigram training.
-    
-    TARGET_TRAIN_COUNT = 100_000
-    SAFE_DOC_LENGTH = 4096 # 4KB is safe
-    NUM_PROC = 32 # Use Polonez cores effectively
-    
-    print(f"Processing dataset for stable Unigram training...")
-    print(f"Target: {TARGET_TRAIN_COUNT} diverse document segments of max {SAFE_DOC_LENGTH} chars.")
-    
-    # 1. Shuffle & Select (Dataset operations are efficient)
-    # Ensure we have enough data
-    if len(dataset) > TARGET_TRAIN_COUNT:
-        print(f"Shuffling and selecting random {TARGET_TRAIN_COUNT} documents...")
-        dataset = dataset.shuffle(seed=42).select(range(TARGET_TRAIN_COUNT))
-    
-    # 2. Filter (Multiprocessed)
-    # Remove null bytes which crash tokenizers
-    print("Filtering invalid documents...")
-    dataset = dataset.filter(
-        lambda x: x[text_column] is not None and len(x[text_column]) > 0 and '\0' not in x[text_column],
-        num_proc=NUM_PROC
-    )
-    
-    # 3. Truncate (Multiprocessed)
-    print(f"Truncating documents to {SAFE_DOC_LENGTH} chars...")
-    
-    def truncate_text(batch):
-        truncated_batch = []
-        for text in batch[text_column]:
-            if len(text) > SAFE_DOC_LENGTH:
-                # Take slice
-                segment = text[:SAFE_DOC_LENGTH]
-                # Try to cut at space to be nice, but simple slice is fine for vocabulary
-                last_space = segment.rfind(' ')
-                if last_space > SAFE_DOC_LENGTH // 2: 
-                    segment = segment[:last_space]
-                truncated_batch.append(segment)
-            else:
-                truncated_batch.append(text)
-        return {text_column: truncated_batch}
-
-    dataset = dataset.map(
-        truncate_text,
-        batched=True,
-        batch_size=1000,
-        num_proc=NUM_PROC
-    )
-    
-    # 4. Extract list for trainer
-    print("Extracting processed text to memory...")
-    corpus = dataset[text_column]
-    
-    print(f"Final training corpus size: {len(corpus)} documents")
-    if len(corpus) > 0:
-        print(f"Average length: {sum(len(s) for s in corpus) / len(corpus):.1f} chars")
-
-    # 7. Train
-    print(f"Starting training on {len(corpus)} samples...")
-    # Passing a list is much faster than a generator for the Rust backend
+    # 6. Train
+    print("Starting training...")
     tokenizer.train_from_iterator(corpus, trainer=trainer)
 
-    # 8. Post-Processing (Decoder & Template)
+    # 7. Post-Processing
     tokenizer.decoder = decoders.Metaspace()
-    
-    # Default template for single sequence: <cls> seq <sep>
-    # This ensures compatibility with standard BERT-like pipelines
     tokenizer.post_processor = processors.TemplateProcessing(
         single="<cls> $A <sep>",
         pair="<cls> $A <sep> $B <sep>",
@@ -268,11 +254,8 @@ def train_custom_tokenizer(
         ],
     )
 
-    # 9. Wrap in Transformers & Save
-    print("Training complete. wrapping...")
-    
-    # Convert special tokens list to a map for the wrapper
-    # We need to explicitly tell the wrapper which token does what
+    # 8. Wrap & Save
+    print("Wrapping in Transformers format...")
     fast_tokenizer = PreTrainedTokenizerFast(
         tokenizer_object=tokenizer,
         model_max_length=2048,
@@ -281,13 +264,10 @@ def train_custom_tokenizer(
         cls_token="<cls>",
         sep_token="<sep>",
         mask_token="<mask>",
-        # Additional special tokens are handled by the tokenizer_object, 
-        # but we can register them here for easy access property
         additional_special_tokens=[t for t in special_tokens if t not in ["<pad>", "<unk>", "<cls>", "<sep>", "<mask>"]]
     )
     
-    # Define a default chat template (ChatML style as an example, popular and robust)
-    # This allows tokenizer.apply_chat_template() to work out of the box
+    # Set Chat Template
     fast_tokenizer.chat_template = (
         "{% if messages[0]['role'] == 'system' %}"
         "{{ '<|im_start|>system\n' + messages[0]['content'] + '<|im_end|>\n' }}"
@@ -308,15 +288,13 @@ def train_custom_tokenizer(
         try:
             fast_tokenizer.push_to_hub(repo_id)
             
-            # Create and upload a detailed README.md (Model Card)
+            # Upload README
             readme_content = README_TEMPLATE.format(
                 vocab_size=vocab_size,
                 vocab_size_k=vocab_size//1000,
                 repo_id=repo_id
             )
             
-            # Use HfApi to upload the README
-            from huggingface_hub import HfApi
             api = HfApi()
             api.upload_file(
                 path_or_fileobj=readme_content.encode("utf-8"),
@@ -324,12 +302,12 @@ def train_custom_tokenizer(
                 repo_id=repo_id,
                 repo_type="model"
             )
-            
             print(f"Successfully uploaded to https://huggingface.co/{repo_id}")
         except Exception as e:
             print(f"Upload failed: {e}")
-            print(f"Saving locally instead to {local_dir}/{vocab_size}")
-            fast_tokenizer.save_pretrained(f"{local_dir}/{vocab_size}")
+            print(f"Saving locally instead...")
+            output_path = f"{local_dir}/{vocab_size}"
+            fast_tokenizer.save_pretrained(output_path)
     else:
         output_path = f"{local_dir}/{vocab_size}"
         print(f"Saving locally to {output_path}...")
@@ -339,23 +317,28 @@ def train_custom_tokenizer(
 def main():
     parser = argparse.ArgumentParser(description="Train custom Unigram tokenizer")
     parser.add_argument("--dataset", type=str, default="JeanKaddour/minipile", help="HuggingFace dataset name")
-    parser.add_argument("--sample_size", type=int, default=1_000_000, help="Number of samples to train on")
+    parser.add_argument("--sample_size", type=int, default=1_000_000, help="Number of samples to load")
     parser.add_argument("--vocab_sizes", type=int, nargs="+", default=[32000, 64000], help="List of vocab sizes to train")
     parser.add_argument("--push_to_hub", action="store_true", help="Push to Hugging Face Hub")
     parser.add_argument("--user_handle", type=str, default="ksopyla", help="HF username for repo creation")
     
     args = parser.parse_args()
 
+    setup_HF_environment()
+
+    # 1. Load and prepare corpus ONCE
+    corpus = prepare_training_corpus(args.dataset, args.sample_size)
+    
+    # 2. Train multiple vocab sizes on the same corpus
     for vocab in args.vocab_sizes:
         repo_name = f"{args.user_handle}/minipile-english-unigram-{vocab//1000}k"
-        train_custom_tokenizer(
-            dataset_name=args.dataset,
+        
+        train_and_save_tokenizer(
+            corpus=corpus,
             vocab_size=vocab,
             repo_id=repo_name,
-            sample_size=args.sample_size,
             push_to_hub=args.push_to_hub
         )
 
 if __name__ == "__main__":
     main()
-
