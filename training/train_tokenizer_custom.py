@@ -30,6 +30,16 @@ This is a Unigram tokenizer (SentencePiece-style) trained on the [JeanKaddour/mi
 
 It was developed for the **[MrCogito](https://github.com/ksopyla/MrCogito)** project, which explores novel transformer architectures like the **Concept Encoder**.
 
+## Training Details
+
+- **Dataset**: [{dataset_name}](https://huggingface.co/datasets/{dataset_name})
+- **Sample Size**: {sample_size} documents
+- **Preprocessing**: Documents were truncated to a maximum length of 4096 characters to ensure training stability while preserving local context (code blocks, latex, paragraphs).
+- **Algorithm**: Unigram (SentencePiece)
+- **Vocab Size**: {vocab_size}
+- **Normalization**: NFKC (Cased)
+- **Pre-tokenization**: Metaspace
+
 ## Motivation for Concept Encoders
 
 This tokenizer is specifically optimized for **Concept Encoder** and **Concept Decoder** architectures (e.g., Perceiver IO, Latent Transformers).
@@ -81,12 +91,13 @@ print(prompt)
 - SEP: `<sep>`
 - MASK: `<mask>`
 - Chat: `<|im_start|>`, `<|im_end|>`, `<|user|>`, `<|assistant|>`, `<|system|>`, `<|endoftext|>`
+- Unused: `<|unused0|>` ... `<|unused99|>` (100 reserved tokens)
 """
 
-def get_special_tokens(add_chat_tokens: bool = True) -> List[str]:
+def get_special_tokens(add_chat_tokens: bool = True, num_unused_tokens: int = 100) -> List[str]:
     """
     Define the set of special tokens for the tokenizer.
-    Includes standard structural tokens and optional chat template tokens.
+    Includes standard structural tokens, optional chat template tokens, and unused tokens for future expansion.
     """
     # Standard structural tokens (XLNet/RoBERTa style)
     tokens = ["<pad>", "<unk>", "<cls>", "<sep>", "<mask>"]
@@ -114,6 +125,12 @@ def get_special_tokens(add_chat_tokens: bool = True) -> List[str]:
             "<|audio|>"
         ]
         tokens.extend(chat_tokens)
+        
+    # Add unused tokens for future extensions (like ModernBERT)
+    # We use the <|unusedN|> format to be consistent with other special tokens
+    if num_unused_tokens > 0:
+        unused_tokens = [f"<|unused{i}|>" for i in range(num_unused_tokens)]
+        tokens.extend(unused_tokens)
         
     return tokens
 
@@ -203,6 +220,7 @@ def train_and_save_tokenizer(
     corpus: List[str],
     vocab_size: int,
     repo_id: str,
+    dataset_name: str,
     push_to_hub: bool = False,
     local_dir: str = "./tokenizers"
 ):
@@ -292,7 +310,9 @@ def train_and_save_tokenizer(
             readme_content = README_TEMPLATE.format(
                 vocab_size=vocab_size,
                 vocab_size_k=vocab_size//1000,
-                repo_id=repo_id
+                repo_id=repo_id,
+                dataset_name=dataset_name,
+                sample_size=len(corpus)
             )
             
             api = HfApi()
@@ -331,12 +351,25 @@ def main():
     
     # 2. Train multiple vocab sizes on the same corpus
     for vocab in args.vocab_sizes:
-        repo_name = f"{args.user_handle}/minipile-english-unigram-{vocab//1000}k"
+        # Naming Convention: {dataset_type}-{task}-{model_name}-{params}-{date}
+        # e.g. minipile-unigram-tokenizer-32k-1M
+        # But user asked for: minipile-english-unigram-{vocab}k
+        # And requested to add vocab size and number of training documents to the name
+        
+        # Format samples count (e.g. 1000000 -> 1M, 500000 -> 500k)
+        samples_count = len(corpus)
+        if samples_count >= 1_000_000:
+            samples_str = f"{samples_count//1_000_000}M"
+        else:
+            samples_str = f"{samples_count//1000}k"
+            
+        repo_name = f"{args.user_handle}/minipile-unigram-{vocab//1000}k-{samples_str}"
         
         train_and_save_tokenizer(
             corpus=corpus,
             vocab_size=vocab,
             repo_id=repo_name,
+            dataset_name=args.dataset,
             push_to_hub=args.push_to_hub
         )
 
