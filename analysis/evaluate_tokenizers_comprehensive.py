@@ -6,6 +6,10 @@ import math
 import torch
 import evaluate
 import numpy as np
+import wandb
+import platform
+import socket
+from datetime import datetime
 from dotenv import load_dotenv
 from datasets import load_dataset
 from transformers import (
@@ -181,11 +185,46 @@ def main():
     parser.add_argument("--ppl_samples", type=int, default=10000, help="Number of samples for perplexity training")
     parser.add_argument("--ppl_steps", type=int, default=100, help="Training steps for perplexity")
     parser.add_argument("--skip_ppl", action="store_true", help="Skip perplexity evaluation (slow)")
+    parser.add_argument("--wandb_project", type=str, default="MrCogito", help="W&B project name")
+    parser.add_argument("--wandb_entity", type=str, default="ksopyla", help="W&B entity")
     args = parser.parse_args()
     
     console = Console()
     console.print("[bold green]Starting Comprehensive Tokenizer Evaluation[/bold green]")
     
+    # Generate standardized W&B metadata
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    hostname = socket.gethostname()
+    
+    wandb_tags = [
+        "tokenizer-evaluation",
+        "benchmark",
+        hostname,
+        f"samples-{args.minipile_samples}"
+    ]
+    
+    if args.skip_ppl:
+        wandb_tags.append("no-perplexity")
+    
+    # Initialize W&B with standard project settings
+    wandb.init(
+        project=args.wandb_project,
+        entity=args.wandb_entity,
+        job_type="tokenizer-evaluation",
+        name=f"tokenizers-eval-{args.minipile_samples//1000}k",
+        tags=wandb_tags,
+        config={
+            "minipile_samples": args.minipile_samples,
+            "ppl_samples": args.ppl_samples,
+            "ppl_steps": args.ppl_steps,
+            "skip_ppl": args.skip_ppl,
+            "evaluation_type": "comprehensive_tokenizer_benchmark",
+            "timestamp": timestamp,
+            "hostname": hostname,
+            "platform": platform.platform()
+        }
+    )
+
     # 1. Load Tokenizers
     # You can expand this list
     tokenizer_names = [
@@ -193,9 +232,11 @@ def main():
         "xlnet-base-cased",
         "gpt2",
         "meta-llama/Llama-3.2-1B-instruct",
+        "answerdotai/ModernBERT-base",
         "ksopyla/minipile-english-unigram-32k",
         "ksopyla/minipile-english-unigram-64k"
     ]
+
     
     tokenizers = {}
     for name in tokenizer_names:
@@ -259,6 +300,9 @@ def main():
     table.add_column("Compression", justify="right", style="blue")
     table.add_column("Perplexity", justify="right", style="red")
 
+    # Create a table for W&B
+    wandb_table = wandb.Table(columns=["Tokenizer", "BLEU", "1-gram Precision", "Compression Ratio", "Perplexity"])
+
     for name in tokenizer_names:
         if name not in tokenizers: continue
         
@@ -273,8 +317,39 @@ def main():
             f"{comp:.2f}",
             f"{ppl:.2f}" if ppl > 0 else "N/A"
         )
+
+        # Log to W&B Table
+        wandb_table.add_data(
+            name,
+            bleu['bleu'],
+            bleu['precisions'][0],
+            comp,
+            ppl if ppl > 0 else None
+        )
+        
+        # Log metrics directly for charts (using tokenizer name as prefix/group)
+        wandb.log({
+            f"{name}/bleu": bleu['bleu'],
+            f"{name}/1gram_precision": bleu['precisions'][0],
+            f"{name}/compression_ratio": comp,
+            f"{name}/perplexity": ppl if ppl > 0 else None,
+        })
+
+        # Log summarized metrics for comparison (e.g. scatter plot ready)
+        wandb.log({
+            "tokenizer_name": name,
+            "bleu": bleu['bleu'],
+            "compression_ratio": comp,
+            "perplexity": ppl if ppl > 0 else None,
+        })
         
     console.print(table)
+    
+    # Log the main comparison table
+    wandb.log({"tokenizer_evaluation_results": wandb_table})
+    
+    # Finish the run
+    wandb.finish()
 
 if __name__ == "__main__":
     main()
