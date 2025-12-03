@@ -79,49 +79,53 @@ def evaluate_morphology_bleu(tokenizers_dict, ground_truth_morphems):
     
     return bleu_scores
 
-def calculate_compression_ratio(tokenizer, dataset, num_samples=10000):
+def calculate_compression_ratio(tokenizer, dataset):
     """
     Calculate compression ratio: Total Characters / Total Tokens.
     Higher is generally better (more information per token).
+    Uses pre-truncated text from dataset.
+    
+    IMPORTANT: Does NOT use padding or special tokens in tokenization to get accurate 
+    compression metrics based on actual content tokens only.
     """
-    total_chars = 0
-    total_tokens = 0
     
-    # Take a subset
-    subset = dataset.select(range(min(len(dataset), num_samples)))
+    def tokenize_and_count(examples):
+        """Batch processing function for efficient tokenization"""
+        char_counts = [len(text) for text in examples['text']]
+        token_counts = []
+        for text in examples['text']:
+            # Tokenize WITHOUT padding or special tokens for accurate compression ratio
+            tokens = tokenizer.encode(text, add_special_tokens=False, padding=False, truncation=False)
+            token_counts.append(len(tokens))
+        return {"char_count": char_counts, "token_count": token_counts}
     
-    for item in subset:
-        text = item['text']
-        total_chars += len(text)
-        # Tokenize
-        tokens = tokenizer.encode(text, add_special_tokens=False)
-        total_tokens += len(tokens)
-        
+    # Use batched map for speed
+    result = dataset.map(tokenize_and_count, batched=True, remove_columns=["text"])
+    
+    total_chars = sum(result["char_count"])
+    total_tokens = sum(result["token_count"])
+    
     if total_tokens == 0:
         return 0.0
         
     return total_chars / total_tokens
 
-def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, dataset_name="JeanKaddour/minipile", subset_size=100000, max_steps=1000):
+def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_dataset, eval_dataset, max_seq_length=512, max_steps=1000):
     """
     Train a small Transformer model from scratch and calculate perplexity.
     This is a proxy for how 'learnable' the tokenization is.
+    Uses pre-truncated text from dataset.
     """
-    print(f"Training small model for {tokenizer_name} with subset_size={subset_size}, max_steps={max_steps}")
+    print(f"Training small model for {tokenizer_name} with max_steps={max_steps}")
     
-    # 1. Load Dataset
-    # HF datasets will automatically use HF_DATASETS_CACHE env var if set
-    dataset = load_dataset(dataset_name, split="train")
-    if subset_size and subset_size < len(dataset):
-        dataset = dataset.select(range(subset_size))
-        
-    # 2. Tokenize
+    # Tokenize the preprocessed datasets
     def tokenize_function(examples):
-        return tokenizer(examples["text"], truncation=True, max_length=512)
+        return tokenizer(examples["text"], truncation=True, max_length=512, padding=True)
         
-    tokenized_datasets = dataset.map(tokenize_function, batched=True, remove_columns=["text"])
+    tokenized_train = train_dataset.map(tokenize_function, batched=True, remove_columns=["text"])
+    tokenized_eval = eval_dataset.map(tokenize_function, batched=True, remove_columns=["text"])
     
-    # 3. Config Small Model (Tiny GPT-2 style)
+    # Config Small Model (Tiny GPT-2 style)
     config = AutoConfig.from_pretrained("gpt2")
     config.n_layer = 2
     config.n_head = 4
@@ -134,11 +138,11 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, dataset_name
     
     model = AutoModelForCausalLM.from_config(config)
     
-    # 4. Training Arguments
+    # Training Arguments
     # Create a unique run name for this perplexity training
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     tokenizer_short_name = tokenizer_name.split('/')[-1]  # Remove organization prefix
-    run_name = f"ppl-{tokenizer_short_name}-{subset_size//1000}k-{max_steps}steps"
+    run_name = f"ppl-{tokenizer_short_name}-{len(train_dataset)//1000}k-{max_steps}steps"
     
     output_dir = os.path.join(os.getenv("PROJECT_ROOT", os.getcwd()), "Cache", "Training", "perplexity_eval", run_name)
     os.makedirs(output_dir, exist_ok=True)
@@ -146,7 +150,7 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, dataset_name
     training_args = TrainingArguments(
         output_dir=output_dir,
         run_name=run_name,
-        per_device_train_batch_size=64,
+        per_device_train_batch_size=32,
         learning_rate=5e-4,
         max_steps=max_steps,
         logging_steps=max(1, max_steps//10),
@@ -162,20 +166,14 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, dataset_name
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=tokenized_datasets,
+        train_dataset=tokenized_train,
         data_collator=data_collator,
     )
     
     trainer.train()
     
-    # 5. Evaluate Perplexity
-    # Use a small validation set from minipile test
-    # HF datasets will automatically use HF_DATASETS_CACHE env var if set
-    eval_dataset = load_dataset(dataset_name, split="test")
-    eval_dataset = eval_dataset.select(range(min(len(eval_dataset), 1000))) # Small eval set for speed
-    eval_tokenized = eval_dataset.map(tokenize_function, batched=True, remove_columns=["text"])
-    
-    eval_results = trainer.evaluate(eval_tokenized)
+    # Evaluate Perplexity
+    eval_results = trainer.evaluate(tokenized_eval)
     perplexity = math.exp(eval_results['eval_loss'])
     
     # Cleanup output directory to save space
@@ -197,6 +195,34 @@ def main():
     
     console = Console()
     console.print("[bold green]Starting Comprehensive Tokenizer Evaluation[/bold green]")
+    
+    # Load and preprocess dataset ONCE
+    console.print("\n[bold]Loading and preprocessing dataset...[/bold]")
+    dataset_train = None
+    dataset_test = None
+    try:
+        # HF datasets will automatically use HF_DATASETS_CACHE env var if set
+        dataset_train = load_dataset("JeanKaddour/minipile", split="train")
+        dataset_test = load_dataset("JeanKaddour/minipile", split="test")
+
+        # Select subsets first to save memory
+        dataset_train = dataset_train.select(range(min(len(dataset_train), args.minipile_samples)))
+        dataset_test = dataset_test.select(range(min(len(dataset_test), 1000)))
+        
+        # Truncate text to max 1000 characters for efficient processing
+        def truncate_text(examples):
+            return {"text": [text[:1000] for text in examples["text"]]}
+        
+        dataset_train = dataset_train.map(truncate_text, batched=True)
+        dataset_test = dataset_test.map(truncate_text, batched=True)
+        
+        console.print(f"Loaded and truncated train dataset: {len(dataset_train)} samples")
+        console.print(f"Loaded and truncated test dataset: {len(dataset_test)} samples")
+        
+    except Exception as e:
+        console.print(f"[red]Could not load MiniPile: {e}[/red]")
+        dataset_train = None
+        dataset_test = None
     
     # Generate standardized W&B metadata
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -267,33 +293,28 @@ def main():
     
     # 3. Compression Ratio
     console.print(f"\n[bold]Evaluating Compression Ratio (on {args.minipile_samples} samples)[/bold]")
-    try:
-        # HF datasets will automatically use HF_DATASETS_CACHE env var if set
-        dataset = load_dataset("JeanKaddour/minipile", split="train")
-    except Exception as e:
-        console.print(f"[red]Could not load MiniPile: {e}. Using dummy data?[/red]")
-        # Fallback logic could go here
-        dataset = []
-
     compression_ratios = {}
-    if len(dataset) > 0:
+    if dataset_train is not None:
         for name, tok in tokenizers.items():
             console.print(f"Calculating compression for {name}...")
-            ratio = calculate_compression_ratio(tok, dataset, num_samples=args.minipile_samples)
+            ratio = calculate_compression_ratio(tok, dataset_train)
             compression_ratios[name] = ratio
     
     # 4. Perplexity (Optional)
     perplexities = {}
-    if not args.skip_ppl and len(dataset) > 0:
+    if not args.skip_ppl and dataset_train is not None and dataset_test is not None:
         console.print(f"\n[bold]Evaluating Downstream Perplexity (Train {args.ppl_steps} steps on {args.ppl_samples} samples)[/bold]")
+        
+        
         for name, tok in tokenizers.items():
             try:
                 console.print(f"Training small model for {name}...")
                 ppl = train_small_model_and_get_perplexity(
                     tok,
                     tokenizer_name=name,
-                    dataset_name="JeanKaddour/minipile", 
-                    subset_size=args.ppl_samples, 
+                    train_dataset=dataset_train,
+                    eval_dataset=dataset_test,
+                    max_seq_length=512,
                     max_steps=args.ppl_steps
                 )
                 perplexities[name] = ppl
@@ -315,9 +336,7 @@ def main():
     # Create a table for W&B
     wandb_table = wandb.Table(columns=["Tokenizer", "BLEU", "1-gram Precision", "Compression Ratio", "Perplexity"])
 
-    for name in tokenizer_names:
-        if name not in tokenizers: continue
-        
+    for name in tokenizers.keys():
         bleu = bleu_scores.get(name, {'bleu': 0, 'precisions': [0,0,0]})
         comp = compression_ratios.get(name, 0)
         ppl = perplexities.get(name, 0)
