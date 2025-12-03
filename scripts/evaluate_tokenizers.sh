@@ -35,8 +35,6 @@ fi
 echo "Starting Tokenizer Evaluation..."
 python analysis/evaluate_tokenizers_comprehensive.py \
     --minipile_samples 10000 \
-    --ppl_samples 10000 \
-    --ppl_steps 100 \
     "$@"
 
 echo "Done!"
