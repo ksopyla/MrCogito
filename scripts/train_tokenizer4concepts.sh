@@ -36,7 +36,7 @@ fi
 echo "Starting Tokenizer Training..."
 python training/train_tokenizer_custom.py \
     --dataset "JeanKaddour/minipile" \
-    --sample_size 500000 \
+    --sample_size 100000 \
     --vocab_sizes 32768 65536 \
     --push_to_hub \
     --user_handle "ksopyla"
