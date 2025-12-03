@@ -33,11 +33,6 @@ except ImportError:
     print("Warning: Could not import GROUND_TRUTH_MORPHEMS. Please check the path.")
     GROUND_TRUTH_MORPHEMS = {}
 
-DATASET_CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cache", "Datasets"))
-TOKENIZER_CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cache", "Tokenizers"))
-RESULTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cache", "Results"))
-os.makedirs(RESULTS_DIR, exist_ok=True)
-
 # Load environment variables
 load_dotenv()
 hf_token = os.getenv("HF_TOKEN")
@@ -107,15 +102,16 @@ def calculate_compression_ratio(tokenizer, dataset, num_samples=10000):
         
     return total_chars / total_tokens
 
-def train_small_model_and_get_perplexity(tokenizer, dataset_name="JeanKaddour/minipile", subset_size=100000, max_steps=1000):
+def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, dataset_name="JeanKaddour/minipile", subset_size=100000, max_steps=1000):
     """
     Train a small Transformer model from scratch and calculate perplexity.
     This is a proxy for how 'learnable' the tokenization is.
     """
-    print(f"Training small model for tokenizer with subset_size={subset_size}, max_steps={max_steps}")
+    print(f"Training small model for {tokenizer_name} with subset_size={subset_size}, max_steps={max_steps}")
     
     # 1. Load Dataset
-    dataset = load_dataset(dataset_name, split="train", cache_dir=DATASET_CACHE_DIR)
+    # HF datasets will automatically use HF_DATASETS_CACHE env var if set
+    dataset = load_dataset(dataset_name, split="train")
     if subset_size and subset_size < len(dataset):
         dataset = dataset.select(range(subset_size))
         
@@ -139,17 +135,26 @@ def train_small_model_and_get_perplexity(tokenizer, dataset_name="JeanKaddour/mi
     model = AutoModelForCausalLM.from_config(config)
     
     # 4. Training Arguments
-    output_dir = os.path.join(RESULTS_DIR, "temp_trainer")
+    # Create a unique run name for this perplexity training
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    tokenizer_short_name = tokenizer_name.split('/')[-1]  # Remove organization prefix
+    run_name = f"ppl-{tokenizer_short_name}-{subset_size//1000}k-{max_steps}steps"
+    
+    output_dir = os.path.join(os.getenv("PROJECT_ROOT", os.getcwd()), "Cache", "Training", "perplexity_eval", run_name)
+    os.makedirs(output_dir, exist_ok=True)
+    
     training_args = TrainingArguments(
         output_dir=output_dir,
-        per_device_train_batch_size=8,
+        run_name=run_name,
+        per_device_train_batch_size=64,
         learning_rate=5e-4,
         max_steps=max_steps,
-        logging_steps=max_steps//10,
+        logging_steps=max(1, max_steps//10),
         save_steps=max_steps + 1, # Don't save checkpoints
-        report_to="none",
+        report_to="wandb",
         use_cpu=not torch.cuda.is_available(),
         prediction_loss_only=True,
+        fp16=torch.cuda.is_available(),  # Use fp16 if GPU available (more compatible than bf16)
     )
     
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
@@ -165,14 +170,15 @@ def train_small_model_and_get_perplexity(tokenizer, dataset_name="JeanKaddour/mi
     
     # 5. Evaluate Perplexity
     # Use a small validation set from minipile test
-    eval_dataset = load_dataset(dataset_name, split="test", cache_dir=DATASET_CACHE_DIR)
+    # HF datasets will automatically use HF_DATASETS_CACHE env var if set
+    eval_dataset = load_dataset(dataset_name, split="test")
     eval_dataset = eval_dataset.select(range(min(len(eval_dataset), 1000))) # Small eval set for speed
     eval_tokenized = eval_dataset.map(tokenize_function, batched=True, remove_columns=["text"])
     
     eval_results = trainer.evaluate(eval_tokenized)
     perplexity = math.exp(eval_results['eval_loss'])
     
-    # Cleanup
+    # Cleanup output directory to save space
     import shutil
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
@@ -234,7 +240,10 @@ def main():
         "meta-llama/Llama-3.2-1B-instruct",
         "answerdotai/ModernBERT-base",
         "ksopyla/minipile-english-unigram-32k",
-        "ksopyla/minipile-english-unigram-64k"
+        "ksopyla/minipile-english-unigram-64k",
+        "ksopyla/minipile-unigram-32k-100k",
+        "ksopyla/minipile-unigram-65k-100k"
+
     ]
 
     
@@ -242,7 +251,8 @@ def main():
     for name in tokenizer_names:
         try:
             console.print(f"Loading {name}...")
-            tokenizers[name] = AutoTokenizer.from_pretrained(name, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
+            # HF tokenizers will automatically use HF_HOME env var if set
+            tokenizers[name] = AutoTokenizer.from_pretrained(name, token=hf_token)
                 
             # Ensure pad token for training
             if tokenizers[name].pad_token is None:
@@ -258,7 +268,8 @@ def main():
     # 3. Compression Ratio
     console.print(f"\n[bold]Evaluating Compression Ratio (on {args.minipile_samples} samples)[/bold]")
     try:
-        dataset = load_dataset("JeanKaddour/minipile", split="train", cache_dir=DATASET_CACHE_DIR)
+        # HF datasets will automatically use HF_DATASETS_CACHE env var if set
+        dataset = load_dataset("JeanKaddour/minipile", split="train")
     except Exception as e:
         console.print(f"[red]Could not load MiniPile: {e}. Using dummy data?[/red]")
         # Fallback logic could go here
@@ -279,7 +290,8 @@ def main():
             try:
                 console.print(f"Training small model for {name}...")
                 ppl = train_small_model_and_get_perplexity(
-                    tok, 
+                    tok,
+                    tokenizer_name=name,
                     dataset_name="JeanKaddour/minipile", 
                     subset_size=args.ppl_samples, 
                     max_steps=args.ppl_steps
