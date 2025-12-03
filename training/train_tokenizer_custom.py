@@ -276,7 +276,7 @@ def train_and_save_tokenizer(
     print("Wrapping in Transformers format...")
     fast_tokenizer = PreTrainedTokenizerFast(
         tokenizer_object=tokenizer,
-        model_max_length=2048,
+        model_max_length=8192,
         pad_token="<pad>",
         unk_token="<unk>",
         cls_token="<cls>",
