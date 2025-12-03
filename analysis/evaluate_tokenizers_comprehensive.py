@@ -110,13 +110,13 @@ def calculate_compression_ratio(tokenizer, dataset):
         
     return total_chars / total_tokens
 
-def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_dataset, eval_dataset, max_seq_length=512, max_steps=1000):
+def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_dataset, eval_dataset, epochs=2):
     """
     Train a small Transformer model from scratch and calculate perplexity.
     This is a proxy for how 'learnable' the tokenization is.
     Uses pre-truncated text from dataset.
     """
-    print(f"Training small model for {tokenizer_name} with max_steps={max_steps}")
+    print(f"Training small model for {tokenizer_name} with epochs={epochs}")
     
     # Tokenize the preprocessed datasets
     def tokenize_function(examples):
@@ -131,18 +131,26 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
     config.n_head = 4
     config.n_embd = 128
     config.vocab_size = len(tokenizer)
+
+    model = AutoModelForCausalLM.from_config(config)
+
+    # print number of total parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"Total number of parameters: {total_params}={total_params/1e6:.2f}M")
+
+
     # Ensure pad_token_id is set
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
     config.pad_token_id = tokenizer.pad_token_id
     
-    model = AutoModelForCausalLM.from_config(config)
+
     
     # Training Arguments
     # Create a unique run name for this perplexity training
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     tokenizer_short_name = tokenizer_name.split('/')[-1]  # Remove organization prefix
-    run_name = f"ppl-{tokenizer_short_name}-{len(train_dataset)//1000}k-{max_steps}steps"
+    run_name = f"ppl-{tokenizer_short_name}-{len(train_dataset)//1000}k-{epochs}epochs"
     
     output_dir = os.path.join(os.getenv("PROJECT_ROOT", os.getcwd()), "Cache", "Training", "perplexity_eval", run_name)
     os.makedirs(output_dir, exist_ok=True)
@@ -152,9 +160,9 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
         run_name=run_name,
         per_device_train_batch_size=32,
         learning_rate=5e-4,
-        max_steps=max_steps,
-        logging_steps=max(1, max_steps//10),
-        save_steps=max_steps + 1, # Don't save checkpoints
+        num_train_epochs=epochs,
+        logging_steps=100,
+        save_steps=10**5, # Don't save checkpoints to save space
         report_to="wandb",
         use_cpu=not torch.cuda.is_available(),
         prediction_loss_only=True,
@@ -173,8 +181,10 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
     trainer.train()
     
     # Evaluate Perplexity
+    print(f"Evaluating perplexity for {tokenizer_name} with epochs={epochs}")
     eval_results = trainer.evaluate(tokenized_eval)
     perplexity = math.exp(eval_results['eval_loss'])
+    print(f"Perplexity: {perplexity}")
     
     # Cleanup output directory to save space
     import shutil
@@ -186,11 +196,7 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
 def main():
     parser = argparse.ArgumentParser(description="Evaluate Tokenizers: BLEU, Compression, Perplexity")
     parser.add_argument("--minipile_samples", type=int, default=10000, help="Number of samples for compression ratio")
-    parser.add_argument("--ppl_samples", type=int, default=10000, help="Number of samples for perplexity training")
-    parser.add_argument("--ppl_steps", type=int, default=100, help="Training steps for perplexity")
     parser.add_argument("--skip_ppl", action="store_true", help="Skip perplexity evaluation (slow)")
-    parser.add_argument("--wandb_project", type=str, default="MrCogito", help="W&B project name")
-    parser.add_argument("--wandb_entity", type=str, default="ksopyla", help="W&B entity")
     args = parser.parse_args()
     
     console = Console()
@@ -207,7 +213,7 @@ def main():
 
         # Select subsets first to save memory
         dataset_train = dataset_train.select(range(min(len(dataset_train), args.minipile_samples)))
-        dataset_test = dataset_test.select(range(min(len(dataset_test), 1000)))
+        dataset_test = dataset_test.select(range(min(len(dataset_test), 5000)))
         
         # Truncate text to max 1000 characters for efficient processing
         def truncate_text(examples):
@@ -240,15 +246,13 @@ def main():
     
     # Initialize W&B with standard project settings
     wandb.init(
-        project=args.wandb_project,
-        entity=args.wandb_entity,
+        project="MrCogito",
         job_type="tokenizer-evaluation",
+        group=f"tokenizers-eval-{args.minipile_samples//1000}k",
         name=f"tokenizers-eval-{args.minipile_samples//1000}k",
         tags=wandb_tags,
         config={
             "minipile_samples": args.minipile_samples,
-            "ppl_samples": args.ppl_samples,
-            "ppl_steps": args.ppl_steps,
             "skip_ppl": args.skip_ppl,
             "evaluation_type": "comprehensive_tokenizer_benchmark",
             "timestamp": timestamp,
@@ -303,19 +307,18 @@ def main():
     # 4. Perplexity (Optional)
     perplexities = {}
     if not args.skip_ppl and dataset_train is not None and dataset_test is not None:
-        console.print(f"\n[bold]Evaluating Downstream Perplexity (Train {args.ppl_steps} steps on {args.ppl_samples} samples)[/bold]")
+        console.print(f"\n[bold]Evaluating Downstream Perplexity [/bold]")
         
         
         for name, tok in tokenizers.items():
             try:
-                console.print(f"Training small model for {name}...")
+                console.print(f"Training small model for {name} with vocab size {len(tok)}")
                 ppl = train_small_model_and_get_perplexity(
                     tok,
                     tokenizer_name=name,
                     train_dataset=dataset_train,
                     eval_dataset=dataset_test,
-                    max_seq_length=512,
-                    max_steps=args.ppl_steps
+                    epochs=2
                 )
                 perplexities[name] = ppl
             except Exception as e:
