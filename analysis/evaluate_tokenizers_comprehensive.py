@@ -14,8 +14,8 @@ from dotenv import load_dotenv
 from datasets import load_dataset
 from transformers import (
     AutoTokenizer, 
-    AutoConfig, 
-    AutoModelForCausalLM, 
+    GPTNeoXConfig,
+    GPTNeoXForCausalLM,
     Trainer, 
     TrainingArguments,
     DataCollatorForLanguageModeling,
@@ -116,35 +116,49 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
     This is a proxy for how 'learnable' the tokenization is.
     Uses pre-truncated text from dataset.
     """
-    print(f"Training small model for {tokenizer_name} with epochs={epochs}")
+    print(f"\n\nTraining small model for {tokenizer_name} with epochs={epochs}")
+    
+
+    
+    # Ensure pad_token_id is set
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    
+    # Config Small Pythia Model (GPTNeoX architecture)
+    # Using minimal configuration based on pythia-70m-deduped, scaled down for memory efficiency
+    config = GPTNeoXConfig(
+        vocab_size=len(tokenizer),
+        hidden_size=64,            # Scaled down from 512 for memory
+        num_hidden_layers=2,        # Minimal layers
+        num_attention_heads=4,      # Must divide hidden_size evenly (256/4=64 per head)
+        intermediate_size=1024,     # 4x hidden_size (standard FFN ratio)
+        max_position_embeddings=512,
+        rotary_pct=0.25,            # Pythia uses 25% rotary embeddings
+        rotary_emb_base=10000,
+        use_parallel_residual=True, # Pythia-specific optimization
+        hidden_dropout=0.0,
+        attention_dropout=0.0,
+        layer_norm_eps=1e-5,
+        initializer_range=0.02,
+        use_cache=True,
+        bos_token_id=tokenizer.bos_token_id if tokenizer.bos_token_id is not None else 0,
+        eos_token_id=tokenizer.eos_token_id if tokenizer.eos_token_id is not None else 0,
+        pad_token_id=tokenizer.pad_token_id,
+        tie_word_embeddings=False   # Pythia doesn't tie embeddings
+    )
+
+    model = GPTNeoXForCausalLM(config)
+
+    # Print number of total parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"Total number of parameters: {total_params}={total_params/1e6:.2f}M")
     
     # Tokenize the preprocessed datasets
     def tokenize_function(examples):
         return tokenizer(examples["text"], truncation=True, max_length=512, padding=True)
-        
+    print(f"Tokenizing datasets for {tokenizer_name}")
     tokenized_train = train_dataset.map(tokenize_function, batched=True, remove_columns=["text"])
     tokenized_eval = eval_dataset.map(tokenize_function, batched=True, remove_columns=["text"])
-    
-    # Config Small Model (Tiny GPT-2 style)
-    config = AutoConfig.from_pretrained("gpt2")
-    config.n_layer = 2
-    config.n_head = 4
-    config.n_embd = 128
-    config.vocab_size = len(tokenizer)
-
-    model = AutoModelForCausalLM.from_config(config)
-
-    # print number of total parameters
-    total_params = sum(p.numel() for p in model.parameters())
-    print(f"Total number of parameters: {total_params}={total_params/1e6:.2f}M")
-
-
-    # Ensure pad_token_id is set
-    if tokenizer.pad_token_id is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    config.pad_token_id = tokenizer.pad_token_id
-    
-
     
     # Training Arguments
     # Create a unique run name for this perplexity training
@@ -158,15 +172,18 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
     training_args = TrainingArguments(
         output_dir=output_dir,
         run_name=run_name,
-        per_device_train_batch_size=32,
-        learning_rate=5e-4,
+        per_device_train_batch_size=8,  # Reduced for memory safety with larger vocabs
+        gradient_accumulation_steps=2,   # Maintain effective batch size of 32
+        learning_rate=6e-4,              # Pythia-recommended LR
         num_train_epochs=epochs,
+        warmup_steps=100,                # Small warmup for stability
+        weight_decay=0.1,                # Pythia default
         logging_steps=100,
-        save_steps=10**5, # Don't save checkpoints to save space
+        save_steps=10**5,                # Don't save checkpoints to save space
         report_to="wandb",
         use_cpu=not torch.cuda.is_available(),
         prediction_loss_only=True,
-        fp16=torch.cuda.is_available(),  # Use fp16 if GPU available (more compatible than bf16)
+        fp16=torch.cuda.is_available(),  # Use fp16 if GPU available
     )
     
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
@@ -190,6 +207,9 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
     import shutil
     if os.path.exists(output_dir):
         shutil.rmtree(output_dir)
+
+    del model, trainer
+    torch.cuda.empty_cache()
         
     return perplexity
 
