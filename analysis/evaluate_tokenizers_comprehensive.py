@@ -271,6 +271,8 @@ def main():
         "answerdotai/ModernBERT-base",
         "ksopyla/minipile-english-unigram-32k",
         "ksopyla/minipile-english-unigram-64k",
+        "ksopyla/minipile-unigram-32k-50k",
+        "ksopyla/minipile-unigram-65k-50k",
         "ksopyla/minipile-unigram-32k-100k",
         "ksopyla/minipile-unigram-65k-100k"
 
