@@ -147,15 +147,24 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
         tie_word_embeddings=False   # Pythia doesn't tie embeddings
     )
 
-    model = GPTNeoXForCausalLM(config)
+    # Try to use Flash Attention 2 if available, fallback to SDPA
+    try:
+        model = GPTNeoXForCausalLM(config, attn_implementation="flash_attention_2")
+        print(f"Using Flash Attention 2 for {tokenizer_name}")
+    except Exception as e:
+        # Fallback to SDPA (still faster than eager)
+        print(f"Flash Attention 2 not available, using SDPA: {e}")
+        model = GPTNeoXForCausalLM(config, attn_implementation="sdpa")
 
     # Print number of total parameters
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Total number of parameters: {total_params}={total_params/1e6:.2f}M")
     
     # Tokenize the preprocessed datasets
+    # Using dynamic padding (pad to longest in batch, not max_length) for memory efficiency
     def tokenize_function(examples):
-        return tokenizer(examples["text"], truncation=True, max_length=512, padding=True)
+        return tokenizer(examples["text"], truncation=True, max_length=512, padding=False)
+    
     print(f"Tokenizing datasets for {tokenizer_name}")
     tokenized_train = train_dataset.map(tokenize_function, batched=True, remove_columns=["text"])
     tokenized_eval = eval_dataset.map(tokenize_function, batched=True, remove_columns=["text"])
@@ -186,7 +195,11 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
         fp16=torch.cuda.is_available(),  # Use fp16 if GPU available
     )
     
-    data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+    data_collator = DataCollatorForLanguageModeling(
+        tokenizer=tokenizer, 
+        mlm=False,
+        pad_to_multiple_of=8  # Pad to multiple of 8 for tensor core efficiency
+    )
     
     trainer = Trainer(
         model=model,
