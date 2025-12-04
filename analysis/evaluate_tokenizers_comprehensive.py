@@ -144,17 +144,15 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
         bos_token_id=tokenizer.bos_token_id if tokenizer.bos_token_id is not None else 0,
         eos_token_id=tokenizer.eos_token_id if tokenizer.eos_token_id is not None else 0,
         pad_token_id=tokenizer.pad_token_id,
-        tie_word_embeddings=False   # Pythia doesn't tie embeddings
+        tie_word_embeddings=False,  # Pythia doesn't tie embeddings
+        _attn_implementation="sdpa"  # Use SDPA by default (Flash Attn 2 requires from_pretrained)
     )
 
-    # Try to use Flash Attention 2 if available, fallback to SDPA
-    try:
-        model = GPTNeoXForCausalLM(config, attn_implementation="flash_attention_2")
-        print(f"Using Flash Attention 2 for {tokenizer_name}")
-    except Exception as e:
-        # Fallback to SDPA (still faster than eager)
-        print(f"Flash Attention 2 not available, using SDPA: {e}")
-        model = GPTNeoXForCausalLM(config, attn_implementation="sdpa")
+    # Create model from config
+    # Note: attn_implementation parameter only works with from_pretrained(), not __init__()
+    # For models created from config, SDPA is used by default in PyTorch >= 2.1.1
+    model = GPTNeoXForCausalLM(config)
+    print(f"Using SDPA attention (PyTorch native optimized attention)")
 
     # Print number of total parameters
     total_params = sum(p.numel() for p in model.parameters())
@@ -181,7 +179,7 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
     training_args = TrainingArguments(
         output_dir=output_dir,
         run_name=run_name,
-        per_device_train_batch_size=8,  # Reduced for memory safety with larger vocabs
+        per_device_train_batch_size=4,  # Reduced for memory safety with larger vocabs
         gradient_accumulation_steps=2,   # Maintain effective batch size of 32
         learning_rate=6e-4,              # Pythia-recommended LR
         num_train_epochs=epochs,
@@ -353,7 +351,7 @@ def main():
                     tokenizer_name=name,
                     train_dataset=dataset_train,
                     eval_dataset=dataset_test,
-                    epochs=2
+                    epochs=4
                 )
                 perplexities[name] = ppl
             except Exception as e:
