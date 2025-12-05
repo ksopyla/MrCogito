@@ -205,12 +205,13 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
         warmup_steps=100,                # Small warmup for stability
         weight_decay=0.1,                # Pythia default
         logging_steps=100,                # Log every 10 steps for detailed curves
-        save_steps=10**5,                # Don't save checkpoints to save space
+        save_steps=10**8,                # Don't save checkpoints to save space
         report_to="wandb",
         use_cpu=not torch.cuda.is_available(),
         fp16=torch.cuda.is_available(),  # Use fp16 if GPU available
         logging_first_step=True,         # Log first step for better visualization
         eval_strategy="epoch",           # Evaluate at end of each epoch
+        eval_steps=0.25 * len(tokenized_train) // training_args.per_device_train_batch_size,                  # Evaluate every 25% each training epoch with respect to batch size
     )
     
     data_collator = DataCollatorForLanguageModeling(
@@ -223,6 +224,7 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
         model=model,
         args=training_args,
         train_dataset=tokenized_train,
+        eval_dataset=tokenized_eval,  # Add eval dataset for eval_strategy="epoch"
         data_collator=data_collator,
     )
     
