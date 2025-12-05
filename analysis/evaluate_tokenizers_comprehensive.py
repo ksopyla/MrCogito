@@ -195,23 +195,30 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
         reinit=True  # Allow multiple init() calls
     )
     
+    # Calculate eval_steps before creating TrainingArguments
+    per_device_batch_size = 4
+    gradient_accumulation_steps = 2
+    # Calculate steps per epoch
+    steps_per_epoch = len(tokenized_train) // (per_device_batch_size * gradient_accumulation_steps)
+    eval_steps = max(1, int(0.25 * steps_per_epoch))  # Evaluate every 25% of epoch
+    
     training_args = TrainingArguments(
         output_dir=output_dir,
         run_name=run_name,
-        per_device_train_batch_size=4,  # Reduced for memory safety with larger vocabs
-        gradient_accumulation_steps=2,   # Maintain effective batch size of 8
+        per_device_train_batch_size=per_device_batch_size,
+        gradient_accumulation_steps=gradient_accumulation_steps,
         learning_rate=6e-4,              # Pythia-recommended LR
         num_train_epochs=epochs,
         warmup_steps=100,                # Small warmup for stability
         weight_decay=0.1,                # Pythia default
-        logging_steps=100,                # Log every 10 steps for detailed curves
+        logging_steps=100,               # Log every 100 steps for detailed curves
         save_steps=10**8,                # Don't save checkpoints to save space
         report_to="wandb",
         use_cpu=not torch.cuda.is_available(),
         fp16=torch.cuda.is_available(),  # Use fp16 if GPU available
         logging_first_step=True,         # Log first step for better visualization
-        eval_strategy="epoch",           # Evaluate at end of each epoch
-        eval_steps=0.25 * len(tokenized_train) // training_args.per_device_train_batch_size,                  # Evaluate every 25% each training epoch with respect to batch size
+        eval_strategy="steps",           # Changed to steps for more frequent eval
+        eval_steps=eval_steps,           # Evaluate every 25% of epoch
     )
     
     data_collator = DataCollatorForLanguageModeling(
