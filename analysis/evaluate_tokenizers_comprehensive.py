@@ -28,12 +28,16 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 try:
     from playground.data.ground_truth import GROUND_TRUTH_MORPHEMS
 except ImportError:
-    print("Warning: Could not import GROUND_TRUTH_MORPHEMS. Please check the path.")
+    logger = logging.getLogger(__name__)
+    logger.warning("Could not import GROUND_TRUTH_MORPHEMS. Please check the path.")
     GROUND_TRUTH_MORPHEMS = {}
 
 # Load environment variables
 load_dotenv()
 hf_token = os.getenv("HF_TOKEN")
+
+# Setup module-level logger
+logger = logging.getLogger(__name__)
 
 def get_tokenizer_predictions(tokenizer, word):
     """Get tokenizer predictions for a word"""
@@ -114,7 +118,7 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
     This is a proxy for how 'learnable' the tokenization is.
     Uses pre-truncated text from dataset.
     """
-    print(f"\n\nTraining small model for {tokenizer_name} with epochs={epochs}")
+    logger.info(f"\nTraining small model for {tokenizer_name} with epochs={epochs}")
     
 
     
@@ -150,18 +154,18 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
     # Note: attn_implementation parameter only works with from_pretrained(), not __init__()
     # For models created from config, SDPA is used by default in PyTorch >= 2.1.1
     model = GPTNeoXForCausalLM(config)
-    print(f"Using SDPA attention (PyTorch native optimized attention)")
+    logger.info(f"Using SDPA attention (PyTorch native optimized attention)")
 
     # Print number of total parameters
     total_params = sum(p.numel() for p in model.parameters())
-    print(f"Total number of parameters: {total_params}={total_params/1e6:.2f}M")
+    logger.info(f"Total number of parameters: {total_params}={total_params/1e6:.2f}M")
     
     # Tokenize the preprocessed datasets
     # Using dynamic padding (pad to longest in batch, not max_length) for memory efficiency
     def tokenize_function(examples):
         return tokenizer(examples["text"], truncation=True, max_length=512, padding=False)
     
-    print(f"Tokenizing datasets for {tokenizer_name}")
+    logger.info(f"Tokenizing datasets for {tokenizer_name}")
     tokenized_train = train_dataset.map(tokenize_function, batched=True, remove_columns=["text"])
     tokenized_eval = eval_dataset.map(tokenize_function, batched=True, remove_columns=["text"])
     
@@ -200,7 +204,7 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
     gradient_accumulation_steps = 2
     # Calculate steps per epoch
     steps_per_epoch = len(tokenized_train) // (per_device_batch_size * gradient_accumulation_steps)
-    eval_steps = max(1, int(0.25 * steps_per_epoch))  # Evaluate every 25% of epoch
+    eval_steps = max(100, int(0.25 * steps_per_epoch))  # Evaluate every 25% of epoch
     
     training_args = TrainingArguments(
         output_dir=output_dir,
@@ -238,10 +242,10 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
     trainer.train()
     
     # Evaluate Perplexity
-    print(f"Evaluating perplexity for {tokenizer_name} with epochs={epochs}")
+    logger.info(f"Evaluating perplexity for {tokenizer_name}")
     eval_results = trainer.evaluate(tokenized_eval)
     perplexity = math.exp(eval_results['eval_loss'])
-    print(f"Perplexity: {perplexity}")
+    logger.info(f"Perplexity: {perplexity:.2f}")
     
     # Log final perplexity to this run's summary
     wandb.summary["final_perplexity"] = perplexity
@@ -300,9 +304,10 @@ def main():
         dataset_train = load_dataset("JeanKaddour/minipile", split="train")
         dataset_test = load_dataset("JeanKaddour/minipile", split="test")
 
-        # Select subsets first to save memory
-        dataset_train = dataset_train.select(range(min(len(dataset_train), args.minipile_samples)))
-        dataset_test = dataset_test.select(range(min(len(dataset_test), 5000)))
+        # Select subsets first to save memory (using random sampling with fixed seed for reproducibility)
+        rand_seed = 42
+        dataset_train = dataset_train.shuffle(seed=rand_seed).select(range(min(len(dataset_train), args.minipile_samples)))
+        dataset_test = dataset_test.shuffle(seed=rand_seed).select(range(min(len(dataset_test), 5000)))
         
         # Truncate text to max 1000 characters for efficient processing
         def truncate_text(examples):
