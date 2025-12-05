@@ -9,6 +9,7 @@ import numpy as np
 import wandb
 import platform
 import socket
+import logging
 from datetime import datetime
 from dotenv import load_dotenv
 from datasets import load_dataset
@@ -21,9 +22,6 @@ from transformers import (
     DataCollatorForLanguageModeling,
     PreTrainedTokenizerFast
 )
-from rich.console import Console
-from rich.table import Table
-from rich import box
 
 # Add project root to path to import ground_truth
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -176,21 +174,43 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
     output_dir = os.path.join(os.getenv("PROJECT_ROOT", os.getcwd()), "Cache", "Training", "perplexity_eval", run_name)
     os.makedirs(output_dir, exist_ok=True)
     
+    # Initialize nested W&B run for this tokenizer's training
+    # This creates a separate run to track training curves
+    ppl_run = wandb.init(
+        project="MrCogito",
+        job_type="perplexity-training",
+        name=run_name,
+        group="tokenizer-eval-perplexity",
+        tags=["perplexity", "tokenizer-training", tokenizer_short_name],
+        config={
+            "tokenizer_name": tokenizer_name,
+            "vocab_size": len(tokenizer),
+            "train_samples": len(train_dataset),
+            "eval_samples": len(eval_dataset),
+            "epochs": epochs,
+            "model_type": "pythia-tiny",
+            "hidden_size": 64,
+            "num_layers": 2,
+        },
+        reinit=True  # Allow multiple init() calls
+    )
+    
     training_args = TrainingArguments(
         output_dir=output_dir,
         run_name=run_name,
         per_device_train_batch_size=4,  # Reduced for memory safety with larger vocabs
-        gradient_accumulation_steps=2,   # Maintain effective batch size of 32
+        gradient_accumulation_steps=2,   # Maintain effective batch size of 8
         learning_rate=6e-4,              # Pythia-recommended LR
         num_train_epochs=epochs,
         warmup_steps=100,                # Small warmup for stability
         weight_decay=0.1,                # Pythia default
-        logging_steps=100,
+        logging_steps=100,                # Log every 10 steps for detailed curves
         save_steps=10**5,                # Don't save checkpoints to save space
         report_to="wandb",
         use_cpu=not torch.cuda.is_available(),
-        prediction_loss_only=True,
         fp16=torch.cuda.is_available(),  # Use fp16 if GPU available
+        logging_first_step=True,         # Log first step for better visualization
+        eval_strategy="epoch",           # Evaluate at end of each epoch
     )
     
     data_collator = DataCollatorForLanguageModeling(
@@ -214,6 +234,14 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
     perplexity = math.exp(eval_results['eval_loss'])
     print(f"Perplexity: {perplexity}")
     
+    # Log final perplexity to this run's summary
+    wandb.summary["final_perplexity"] = perplexity
+    wandb.summary["final_eval_loss"] = eval_results['eval_loss']
+    wandb.summary["total_params"] = total_params
+    
+    # Finish the nested W&B run
+    wandb.finish()
+    
     # Cleanup output directory to save space
     import shutil
     if os.path.exists(output_dir):
@@ -222,19 +250,40 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
     del model, trainer
     torch.cuda.empty_cache()
         
-    return perplexity
+    return perplexity, total_params
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate Tokenizers: BLEU, Compression, Perplexity")
     parser.add_argument("--minipile_samples", type=int, default=10000, help="Number of samples for compression ratio")
     parser.add_argument("--skip_ppl", action="store_true", help="Skip perplexity evaluation (slow)")
+    parser.add_argument("--log_file", type=str, default=None, help="Path to log file (default: auto-generated)")
     args = parser.parse_args()
     
-    console = Console()
-    console.print("[bold green]Starting Comprehensive Tokenizer Evaluation[/bold green]")
+    # Setup logging to both console and file
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if args.log_file is None:
+        log_dir = os.path.join(os.getcwd(), "Cache", "Logs")
+        os.makedirs(log_dir, exist_ok=True)
+        args.log_file = os.path.join(log_dir, f"tokenizer_eval_{timestamp}.log")
+    
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(args.log_file),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+    logger = logging.getLogger(__name__)
+    logger.info(f"Logging to: {args.log_file}")
+    
+    logger.info("="*60)
+    logger.info("Starting Comprehensive Tokenizer Evaluation")
+    logger.info("="*60)
     
     # Load and preprocess dataset ONCE
-    console.print("\n[bold]Loading and preprocessing dataset...[/bold]")
+    logger.info("\nLoading and preprocessing dataset...")
     dataset_train = None
     dataset_test = None
     try:
@@ -253,11 +302,11 @@ def main():
         dataset_train = dataset_train.map(truncate_text, batched=True)
         dataset_test = dataset_test.map(truncate_text, batched=True)
         
-        console.print(f"Loaded and truncated train dataset: {len(dataset_train)} samples")
-        console.print(f"Loaded and truncated test dataset: {len(dataset_test)} samples")
+        logger.info(f"Loaded and truncated train dataset: {len(dataset_train)} samples")
+        logger.info(f"Loaded and truncated test dataset: {len(dataset_test)} samples")
         
     except Exception as e:
-        console.print(f"[red]Could not load MiniPile: {e}[/red]")
+        logger.error(f"Could not load MiniPile: {e}")
         dataset_train = None
         dataset_test = None
     
@@ -293,7 +342,7 @@ def main():
     )
 
     # 1. Load Tokenizers
-    # You can expand this list
+    logger.info("\nLoading tokenizers...")
     tokenizer_names = [
         "bert-base-cased",
         "xlnet-base-cased",
@@ -306,14 +355,13 @@ def main():
         "ksopyla/minipile-unigram-65k-50k",
         "ksopyla/minipile-unigram-32k-100k",
         "ksopyla/minipile-unigram-65k-100k"
-
     ]
 
     
     tokenizers = {}
     for name in tokenizer_names:
         try:
-            console.print(f"Loading {name}...")
+            logger.info(f"Loading {name}...")
             # HF tokenizers will automatically use HF_HOME env var if set
             tokenizers[name] = AutoTokenizer.from_pretrained(name, token=hf_token)
                 
@@ -322,31 +370,40 @@ def main():
                 tokenizers[name].pad_token = tokenizers[name].eos_token
                 
         except Exception as e:
-            console.print(f"[red]Failed to load {name}: {e}[/red]")
+            logger.error(f"Failed to load {name}: {e}")
+
+    logger.info(f"Successfully loaded {len(tokenizers)} tokenizers")
 
     # 2. Morphology BLEU
-    console.print("\n[bold]Evaluating Morphology (BLEU)[/bold]")
+    logger.info("\n" + "="*60)
+    logger.info("Evaluating Morphology (BLEU)")
+    logger.info("="*60)
     bleu_scores = evaluate_morphology_bleu(tokenizers, GROUND_TRUTH_MORPHEMS)
     
     # 3. Compression Ratio
-    console.print(f"\n[bold]Evaluating Compression Ratio (on {args.minipile_samples} samples)[/bold]")
+    logger.info("\n" + "="*60)
+    logger.info(f"Evaluating Compression Ratio (on {args.minipile_samples} samples)")
+    logger.info("="*60)
     compression_ratios = {}
     if dataset_train is not None:
         for name, tok in tokenizers.items():
-            console.print(f"Calculating compression for {name}...")
+            logger.info(f"Calculating compression for {name}...")
             ratio = calculate_compression_ratio(tok, dataset_train)
             compression_ratios[name] = ratio
+            logger.info(f"  Compression ratio: {ratio:.2f}")
     
     # 4. Perplexity (Optional)
     perplexities = {}
+    model_params = {}  # Store actual model parameters
     if not args.skip_ppl and dataset_train is not None and dataset_test is not None:
-        console.print(f"\n[bold]Evaluating Downstream Perplexity [/bold]")
-        
+        logger.info("\n" + "="*60)
+        logger.info("Evaluating Downstream Perplexity")
+        logger.info("="*60)
         
         for name, tok in tokenizers.items():
             try:
-                console.print(f"Training small model for {name} with vocab size {len(tok)}")
-                ppl = train_small_model_and_get_perplexity(
+                logger.info(f"\nTraining small model for {name} (vocab size: {len(tok)})")
+                ppl, params = train_small_model_and_get_perplexity(
                     tok,
                     tokenizer_name=name,
                     train_dataset=dataset_train,
@@ -354,68 +411,104 @@ def main():
                     epochs=4
                 )
                 perplexities[name] = ppl
+                model_params[name] = params
+                logger.info(f"  Final perplexity: {ppl:.2f}")
+                logger.info(f"  Model parameters: {params/1e6:.2f}M")
             except Exception as e:
-                console.print(f"[red]Failed PPL for {name}: {e}[/red]")
+                logger.error(f"Failed PPL for {name}: {e}")
                 perplexities[name] = float('nan')
+                model_params[name] = 0
     else:
         for name in tokenizers:
             perplexities[name] = 0.0
+            model_params[name] = 0
 
-    # 5. Report
-    table = Table(title="Tokenizer Evaluation Results")
-    table.add_column("Tokenizer", style="cyan")
-    table.add_column("BLEU", justify="right", style="green")
-    table.add_column("1-gram", justify="right", style="magenta")
-    table.add_column("Compression", justify="right", style="blue")
-    table.add_column("Perplexity", justify="right", style="red")
+    # 5. Report and Log to W&B
+    logger.info("\n" + "="*60)
+    logger.info("FINAL RESULTS")
+    logger.info("="*60)
+    
+    # Create a table for W&B with model parameters
+    wandb_table = wandb.Table(columns=["Tokenizer", "Vocab Size", "Model Params (M)", "BLEU", "1-gram Precision", "Compression Ratio", "Perplexity"])
+    
+    # Prepare data for bar charts
+    tokenizer_names_list = []
+    bleu_values = []
+    compression_values = []
+    perplexity_values = []
+    vocab_sizes = []
 
-    # Create a table for W&B
-    wandb_table = wandb.Table(columns=["Tokenizer", "BLEU", "1-gram Precision", "Compression Ratio", "Perplexity"])
+    # Print header
+    logger.info(f"\n{'Tokenizer':<45} {'BLEU':>8} {'1-gram':>8} {'Compression':>12} {'Perplexity':>12} {'Vocab':>10} {'Params(M)':>10}")
+    logger.info("-" * 110)
 
     for name in tokenizers.keys():
         bleu = bleu_scores.get(name, {'bleu': 0, 'precisions': [0,0,0]})
         comp = compression_ratios.get(name, 0)
         ppl = perplexities.get(name, 0)
+        vocab_size = len(tokenizers[name])
+        params = model_params.get(name, 0)
+        model_params_m = params / 1_000_000 if params > 0 else 0
         
-        table.add_row(
-            name,
-            f"{bleu['bleu']:.4f}",
-            f"{bleu['precisions'][0]:.4f}",
-            f"{comp:.2f}",
-            f"{ppl:.2f}" if ppl > 0 else "N/A"
-        )
+        # Log to console/file
+        ppl_str = f"{ppl:.2f}" if ppl > 0 and not math.isnan(ppl) else "N/A"
+        params_str = f"{model_params_m:.2f}" if params > 0 else "N/A"
+        logger.info(f"{name:<45} {bleu['bleu']:>8.4f} {bleu['precisions'][0]:>8.4f} {comp:>12.2f} {ppl_str:>12} {vocab_size:>10} {params_str:>10}")
 
-        # Log to W&B Table
+        # Add to W&B table
         wandb_table.add_data(
             name,
+            vocab_size,
+            f"{model_params_m:.2f}" if params > 0 else "N/A",
             bleu['bleu'],
             bleu['precisions'][0],
             comp,
-            ppl if ppl > 0 else None
+            ppl if ppl > 0 and not math.isnan(ppl) else None
         )
         
-        # Log metrics directly for charts (using tokenizer name as prefix/group)
-        wandb.log({
-            f"{name}/bleu": bleu['bleu'],
-            f"{name}/1gram_precision": bleu['precisions'][0],
-            f"{name}/compression_ratio": comp,
-            f"{name}/perplexity": ppl if ppl > 0 else None,
-        })
-
-        # Log summarized metrics for comparison (e.g. scatter plot ready)
-        wandb.log({
-            "tokenizer_name": name,
-            "bleu": bleu['bleu'],
-            "compression_ratio": comp,
-            "perplexity": ppl if ppl > 0 else None,
-        })
+        # Collect data for bar charts
+        tokenizer_names_list.append(name.split('/')[-1])  # Short names for X-axis
+        bleu_values.append(bleu['bleu'])
+        compression_values.append(comp)
+        perplexity_values.append(ppl if ppl > 0 and not math.isnan(ppl) else None)
+        vocab_sizes.append(vocab_size)
         
-    console.print(table)
+        # Log individual metrics to W&B summary (creates bar charts)
+        wandb.summary[f"{name}/bleu"] = bleu['bleu']
+        wandb.summary[f"{name}/1gram_precision"] = bleu['precisions'][0]
+        wandb.summary[f"{name}/compression_ratio"] = comp
+        wandb.summary[f"{name}/perplexity"] = ppl if ppl > 0 and not math.isnan(ppl) else None
+        wandb.summary[f"{name}/vocab_size"] = vocab_size
+    
+    logger.info("-" * 110)
     
     # Log the main comparison table
-    wandb.log({"tokenizer_evaluation_results": wandb_table})
+    wandb.log({"tokenizer_evaluation_table": wandb_table})
+    
+    # Create bar chart data for easy comparison
+    wandb.log({
+        "bleu_comparison": wandb.plot.bar(
+            wandb.Table(data=list(zip(tokenizer_names_list, bleu_values)), columns=["Tokenizer", "BLEU"]),
+            "Tokenizer", "BLEU", title="BLEU Score Comparison"
+        ),
+        "compression_comparison": wandb.plot.bar(
+            wandb.Table(data=list(zip(tokenizer_names_list, compression_values)), columns=["Tokenizer", "Compression"]),
+            "Tokenizer", "Compression", title="Compression Ratio Comparison"
+        ),
+    })
+    
+    # Log perplexity comparison if available
+    ppl_data = [(name, ppl) for name, ppl in zip(tokenizer_names_list, perplexity_values) if ppl is not None]
+    if ppl_data:
+        wandb.log({
+            "perplexity_comparison": wandb.plot.bar(
+                wandb.Table(data=ppl_data, columns=["Tokenizer", "Perplexity"]),
+                "Tokenizer", "Perplexity", title="Perplexity Comparison (Lower is Better)"
+            )
+        })
     
     # Finish the run
+    logger.info(f"\nEvaluation complete. Results logged to W&B and {args.log_file}")
     wandb.finish()
 
 if __name__ == "__main__":
