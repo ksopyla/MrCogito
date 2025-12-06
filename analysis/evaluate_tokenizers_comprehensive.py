@@ -170,8 +170,7 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
     tokenized_eval = eval_dataset.map(tokenize_function, batched=True, remove_columns=["text"])
     
     # Training Arguments
-    # Create a unique run name for this perplexity training
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
     tokenizer_short_name = tokenizer_name.split('/')[-1]  # Remove organization prefix
     run_name = f"ppl-{tokenizer_short_name}-{len(train_dataset)//1000}k-{epochs}epochs"
     
@@ -180,9 +179,11 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
     
     # Initialize nested W&B run for this tokenizer's training
     # This creates a separate run to track training curves
-    tags = wandb_tags + ["perplexity", "tokenizer-training", tokenizer_short_name]
+    tags = wandb_tags + ["perplexity", "tokenizer-training", tokenizer_short_name, "GPTNeoX"]
     ppl_run = wandb.init(
         project="MrCogito",
+        mode="online",
+        sync_tensorboard=True,
         job_type="perplexity-training",
         name=run_name,
         group=run_group_id,
