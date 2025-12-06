@@ -94,13 +94,19 @@ print(prompt)
 - Unused: `<|unused0|>` ... `<|unused99|>` (100 reserved tokens)
 """
 
-def get_special_tokens(add_chat_tokens: bool = True, num_unused_tokens: int = 100) -> List[str]:
+def get_special_tokens(add_chat_tokens: bool = True, num_unused_tokens: int = 100, mwt_list: List[str] = []) -> List[str]:
     """
     Define the set of special tokens for the tokenizer.
-    Includes standard structural tokens, optional chat template tokens, and unused tokens for future expansion.
+    Includes standard structural tokens, optional chat template tokens, unused tokens,
+    and user-provided Multi-Word Tokens (MWTs).
     """
     # Standard structural tokens (XLNet/RoBERTa style)
     tokens = ["<pad>", "<unk>", "<cls>", "<sep>", "<mask>"]
+    
+    # Add User-Defined MWTs
+    if mwt_list:
+        print(f"Adding {len(mwt_list)} user-defined MWTs as special tokens")
+        tokens.extend(mwt_list)
     
     if add_chat_tokens:
         # Modern Chat / Instruction Tuning tokens
@@ -189,7 +195,7 @@ def prepare_training_corpus(dataset_name: str, sample_size: int = 1_000_000) -> 
     # Use dataset.map to truncate documents to a fixed length (e.g., 4096 chars).
     # This preserves structure (code, latex) while keeping sequence lengths safe for Unigram.
     
-    MAX_DOC_LENGTH = 4096
+    MAX_DOC_LENGTH = 100000 # Increased from 4096 to avoid breaking long documents excessively, relying on Unigram's ability to handle longer contexts now that we have robust settings.
     print(f"Truncating documents to max {MAX_DOC_LENGTH} chars using dataset.map...")
     
     def truncate_batch(batch):
@@ -206,21 +212,17 @@ def prepare_training_corpus(dataset_name: str, sample_size: int = 1_000_000) -> 
         desc="Truncating documents"
     )
     
-    print("Extracting text to memory...")
-    corpus = dataset[text_column]
-    
     print(f"Corpus preparation complete.")
-    print(f"Total training sequences: {len(corpus)}")
-    avg_len = sum(len(s) for s in corpus) / len(corpus) if corpus else 0
-    print(f"Average sequence length: {avg_len:.1f} chars")
+    print(f"Total training sequences: {len(dataset)}")
     
-    return corpus
+    return dataset[text_column]
 
 def train_and_save_tokenizer(
     corpus: List[str],
     vocab_size: int,
     repo_id: str,
     dataset_name: str,
+    mwt_list: List[str] = [],
     push_to_hub: bool = False,
     local_dir: str = "./tokenizers"
 ):
@@ -230,6 +232,8 @@ def train_and_save_tokenizer(
     print(f"\n{'='*60}")
     print(f"Training Tokenizer: {repo_id}")
     print(f"Vocab Size: {vocab_size}")
+    if mwt_list:
+        print(f"Multi-Word Tokens (MWTs): {len(mwt_list)} provided")
     print(f"{'='*60}\n")
 
     # 1. Initialize Tokenizer
@@ -241,19 +245,30 @@ def train_and_save_tokenizer(
     ])
 
     # 3. Pre-tokenization: Metaspace
+    # We remove Digits splitting to preserve numbers as single concepts (e.g., "2024", "3.14")
     tokenizer.pre_tokenizer = pre_tokenizers.Metaspace()
 
     # 4. Define Special Tokens
-    special_tokens = get_special_tokens(add_chat_tokens=True)
+    special_tokens = get_special_tokens(add_chat_tokens=True, mwt_list=mwt_list)
 
     # 5. Trainer Configuration
+    # Use ByteLevel alphabet to ensure we cover basic characters/bytes to minimize <unk>
+    try:
+        initial_alphabet = pre_tokenizers.ByteLevel.alphabet()
+    except AttributeError:
+        # Fallback if specific version doesn't expose alphabet directly
+        # We construct the standard byte-level alphabet manually if needed, 
+        # or just rely on data coverage (less safe)
+        initial_alphabet = []
+    
     trainer = trainers.UnigramTrainer(
         vocab_size=vocab_size,
         special_tokens=special_tokens,
         unk_token="<unk>",
+        initial_alphabet=initial_alphabet,
         shrinking_factor=0.75,
         show_progress=True,
-        max_piece_length=10,
+        max_piece_length=24, # Increased from 10 to capture full long words (e.g. 'internationalization')
         n_sub_iterations=5
     )
 
@@ -312,7 +327,7 @@ def train_and_save_tokenizer(
                 vocab_size_k=vocab_size//1000,
                 repo_id=repo_id,
                 dataset_name=dataset_name,
-                sample_size=len(corpus)
+        sample_size=len(corpus)
             )
             
             api = HfApi()
@@ -327,6 +342,8 @@ def train_and_save_tokenizer(
             print(f"Upload failed: {e}")
             print(f"Saving locally instead...")
             output_path = f"{local_dir}/{vocab_size}"
+            if not os.path.exists(output_path):
+                 os.makedirs(output_path, exist_ok=True)
             fast_tokenizer.save_pretrained(output_path)
     else:
         output_path = f"{local_dir}/{vocab_size}"
@@ -341,10 +358,28 @@ def main():
     parser.add_argument("--vocab_sizes", type=int, nargs="+", default=[32000, 64000], help="List of vocab sizes to train")
     parser.add_argument("--push_to_hub", action="store_true", help="Push to Hugging Face Hub")
     parser.add_argument("--user_handle", type=str, default="ksopyla", help="HF username for repo creation")
+    parser.add_argument("--mwt_files", type=str, nargs="+", default=[], help="List of paths to text files containing MWTs (one per line)")
     
     args = parser.parse_args()
 
     setup_HF_environment()
+
+    # 0. Load MWTs if provided
+    all_mwts = []
+    if args.mwt_files:
+        print(f"Loading MWTs from {len(args.mwt_files)} files...")
+        for file_path in args.mwt_files:
+            if os.path.exists(file_path):
+                print(f"  Reading {file_path}...")
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    mwts = [line.strip() for line in f if line.strip()]
+                    all_mwts.extend(mwts)
+            else:
+                print(f"  Warning: MWT file {file_path} not found.")
+        
+        # Deduplicate
+        all_mwts = sorted(list(set(all_mwts)))
+        print(f"Loaded {len(all_mwts)} unique MWTs.")
 
     # 1. Load and prepare corpus ONCE
     corpus = prepare_training_corpus(args.dataset, args.sample_size)
@@ -357,11 +392,14 @@ def main():
         # And requested to add vocab size and number of training documents to the name
         
         # Format samples count (e.g. 1000000 -> 1M, 500000 -> 500k)
-        samples_count = len(corpus)
-        if samples_count >= 1_000_000:
-            samples_str = f"{samples_count//1_000_000}M"
+        # We can't easily get len of iterator, so use the one calculated earlier
+        # Assuming corpus is reusable or we pass the count explicitly. 
+        # For simplicity in this script, we trust the sample_size arg roughly matches if we used it.
+        
+        if args.sample_size >= 1_000_000:
+            samples_str = f"{args.sample_size//1_000_000}M"
         else:
-            samples_str = f"{samples_count//1000}k"
+            samples_str = f"{args.sample_size//1000}k"
             
         repo_name = f"{args.user_handle}/minipile-unigram-{vocab//1000}k-{samples_str}"
         
@@ -370,6 +408,7 @@ def main():
             vocab_size=vocab,
             repo_id=repo_name,
             dataset_name=args.dataset,
+            mwt_list=all_mwts,
             push_to_hub=args.push_to_hub
         )
 
