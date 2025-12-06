@@ -112,7 +112,7 @@ def calculate_compression_ratio(tokenizer, dataset):
         
     return total_chars / total_tokens
 
-def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_dataset, eval_dataset, epochs=2):
+def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_dataset, eval_dataset, run_group_id, wandb_tags, epochs=2):
     """
     Train a small Transformer model from scratch and calculate perplexity.
     This is a proxy for how 'learnable' the tokenization is.
@@ -180,12 +180,13 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
     
     # Initialize nested W&B run for this tokenizer's training
     # This creates a separate run to track training curves
+    tags = wandb_tags + ["perplexity", "tokenizer-training", tokenizer_short_name]
     ppl_run = wandb.init(
         project="MrCogito",
         job_type="perplexity-training",
         name=run_name,
-        group="tokenizer-eval-perplexity",
-        tags=["perplexity", "tokenizer-training", tokenizer_short_name],
+        group=run_group_id,
+        tags=tags,
         config={
             "tokenizer_name": tokenizer_name,
             "vocab_size": len(tokenizer),
@@ -268,6 +269,7 @@ def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_datase
 def main():
     parser = argparse.ArgumentParser(description="Evaluate Tokenizers: BLEU, Compression, Perplexity")
     parser.add_argument("--minipile_samples", type=int, default=10000, help="Number of samples for compression ratio")
+    parser.add_argument("--epochs", type=int, default=2, help="Number of epochs for perplexity training (default: 2)")
     parser.add_argument("--skip_ppl", action="store_true", help="Skip perplexity evaluation (slow)")
     parser.add_argument("--log_file", type=str, default=None, help="Path to log file (default: auto-generated)")
     args = parser.parse_args()
@@ -286,8 +288,16 @@ def main():
         handlers=[
             logging.FileHandler(args.log_file),
             logging.StreamHandler(sys.stdout)
-        ]
+        ],
+        force=True  # Important: This forces re-configuration of logging
     )
+    
+    # Also configure transformers logging to capture Trainer output
+    transformers_logger = logging.getLogger("transformers")
+    transformers_logger.setLevel(logging.INFO)
+    transformers_logger.addHandler(logging.FileHandler(args.log_file))
+    transformers_logger.addHandler(logging.StreamHandler(sys.stdout))
+    
     logger = logging.getLogger(__name__)
     logger.info(f"Logging to: {args.log_file}")
     
@@ -338,22 +348,13 @@ def main():
     if args.skip_ppl:
         wandb_tags.append("no-perplexity")
     
-    # Initialize W&B with standard project settings
-    wandb.init(
-        project="MrCogito",
-        job_type="tokenizer-evaluation",
-        group=f"tokenizers-eval-{args.minipile_samples//1000}k",
-        name=f"tokenizers-eval-{args.minipile_samples//1000}k",
-        tags=wandb_tags,
-        config={
-            "minipile_samples": args.minipile_samples,
-            "skip_ppl": args.skip_ppl,
-            "evaluation_type": "comprehensive_tokenizer_benchmark",
-            "timestamp": timestamp,
-            "hostname": hostname,
-            "platform": platform.platform()
-        }
-    )
+    # Common group ID for all runs in this execution
+    # Format: tokenizer-eval-{sample_size}-epoch-{epoch}
+    run_group_id = f"tokenizers-eval-{args.minipile_samples//1000}k-epoch-{args.epochs}"
+    
+    # Note: We delay W&B initialization until needed.
+    # 1. Perplexity runs will be initialized individually inside the training function
+    # 2. The final summary run will be initialized at the end
 
     # 1. Load Tokenizers
     logger.info("\nLoading tokenizers...")
@@ -422,7 +423,9 @@ def main():
                     tokenizer_name=name,
                     train_dataset=dataset_train,
                     eval_dataset=dataset_test,
-                    epochs=4
+                    run_group_id=run_group_id,
+                    wandb_tags=wandb_tags,
+                    epochs=args.epochs
                 )
                 perplexities[name] = ppl
                 model_params[name] = params
@@ -432,6 +435,7 @@ def main():
                 logger.error(f"Failed PPL for {name}: {e}")
                 perplexities[name] = float('nan')
                 model_params[name] = 0
+        
     else:
         for name in tokenizers:
             perplexities[name] = 0.0
@@ -439,8 +443,26 @@ def main():
 
     # 5. Report and Log to W&B
     logger.info("\n" + "="*60)
-    logger.info("FINAL RESULTS")
+    logger.info("FINAL RESULTS - Creating Summary Run")
     logger.info("="*60)
+    
+    # Initialize the Summary Run
+    summary_run = wandb.init(
+        project="MrCogito",
+        job_type="tokenizer-evaluation-summary",
+        group=run_group_id,
+        name=f"summary-{args.minipile_samples//1000}k",
+        tags=wandb_tags + ["summary"],
+        config={
+            "minipile_samples": args.minipile_samples,
+            "skip_ppl": args.skip_ppl,
+            "evaluation_type": "comprehensive_tokenizer_benchmark",
+            "timestamp": timestamp,
+            "hostname": hostname,
+            "platform": platform.platform()
+        },
+        reinit=True
+    )
     
     # Create a table for W&B with model parameters
     wandb_table = wandb.Table(columns=["Tokenizer", "Vocab Size", "Model Params (M)", "BLEU", "1-gram Precision", "Compression Ratio", "Perplexity"])

@@ -22,6 +22,9 @@ fi
 # Ensure python path
 export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 
+# Set W&B to online mode for cloud syncing
+export WANDB_MODE=online
+
 # Verify HF Login status (needed for Llama tokenizer)
 if ! huggingface-cli whoami > /dev/null 2>&1; then
     echo "Error: You are not logged in to Hugging Face."
@@ -34,7 +37,8 @@ fi
 # Use --skip_ppl to skip slow perplexity training
 echo "Starting Tokenizer Evaluation..."
 python analysis/evaluate_tokenizers_comprehensive.py \
-    --minipile_samples 50000 \
+    --minipile_samples 20000 \
+    --epochs 1 \
     "$@"
 
 echo "Done!"
