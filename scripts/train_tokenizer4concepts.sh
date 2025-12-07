@@ -32,7 +32,7 @@ else
 fi
 
 # 1. Mine Multi-Word Tokens (MWTs) first
-# This generates 'minipile_mwt_text.txt', 'minipile_mwt_code.txt', 'minipile_mwt_math.txt'
+# This generates 'minipile_mwt_statistical.txt', 'minipile_mwt_regex_code.txt', etc.
 echo "Step 1: Mining Multi-Word Tokens (MWT)..."
 python training/mine_mwt.py \
     --dataset "JeanKaddour/minipile" \
@@ -42,12 +42,13 @@ python training/mine_mwt.py \
 
 # 2. Run the training script
 # Uses 1M samples, creates 32k/50k/64k vocabs, includes MWTs, pushes to Hub
+# We include BOTH statistical and regex-based MWTs for maximum coverage
 echo "Step 2: Starting Tokenizer Training..."
 python training/train_tokenizer_custom.py \
     --dataset "JeanKaddour/minipile" \
     --sample_size 1000000 \
     --vocab_sizes 32768 50257 65536 \
-    --mwt_files "minipile_mwt_text.txt" "minipile_mwt_code.txt" "minipile_mwt_math.txt" \
+    --mwt_files "minipile_mwt_statistical.txt" "minipile_mwt_code.txt" "minipile_mwt_math.txt" "minipile_mwt_entities.txt" \
     --push_to_hub \
     --user_handle "ksopyla"
 
