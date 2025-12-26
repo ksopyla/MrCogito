@@ -94,19 +94,13 @@ print(prompt)
 - Unused: `<|unused0|>` ... `<|unused99|>` (100 reserved tokens)
 """
 
-def get_special_tokens(add_chat_tokens: bool = True, num_unused_tokens: int = 100, mwt_list: List[str] = []) -> List[str]:
+def get_special_tokens(add_chat_tokens: bool = True, num_unused_tokens: int = 100) -> List[str]:
     """
     Define the set of special tokens for the tokenizer.
-    Includes standard structural tokens, optional chat template tokens, unused tokens,
-    and user-provided Multi-Word Tokens (MWTs).
+    Includes standard structural tokens, optional chat template tokens, unused tokens.
     """
     # Standard structural tokens (XLNet/RoBERTa style)
     tokens = ["<pad>", "<unk>", "<cls>", "<sep>", "<mask>"]
-    
-    # Add User-Defined MWTs
-    if mwt_list:
-        print(f"Adding {len(mwt_list)} user-defined MWTs as special tokens")
-        tokens.extend(mwt_list)
     
     if add_chat_tokens:
         # Modern Chat / Instruction Tuning tokens
@@ -222,7 +216,6 @@ def train_and_save_tokenizer(
     vocab_size: int,
     repo_id: str,
     dataset_name: str,
-    mwt_list: List[str] = [],
     push_to_hub: bool = False,
     local_dir: str = "./tokenizers"
 ):
@@ -232,8 +225,6 @@ def train_and_save_tokenizer(
     print(f"\n{'='*60}")
     print(f"Training Tokenizer: {repo_id}")
     print(f"Vocab Size: {vocab_size}")
-    if mwt_list:
-        print(f"Multi-Word Tokens (MWTs): {len(mwt_list)} provided")
     print(f"{'='*60}\n")
 
     # 1. Initialize Tokenizer
@@ -249,7 +240,7 @@ def train_and_save_tokenizer(
     tokenizer.pre_tokenizer = pre_tokenizers.Metaspace()
 
     # 4. Define Special Tokens
-    special_tokens = get_special_tokens(add_chat_tokens=True, mwt_list=mwt_list)
+    special_tokens = get_special_tokens(add_chat_tokens=True)
 
     # 5. Trainer Configuration
     # Use ByteLevel alphabet to ensure we cover basic characters/bytes to minimize <unk>
@@ -358,28 +349,10 @@ def main():
     parser.add_argument("--vocab_sizes", type=int, nargs="+", default=[32000, 64000], help="List of vocab sizes to train")
     parser.add_argument("--push_to_hub", action="store_true", help="Push to Hugging Face Hub")
     parser.add_argument("--user_handle", type=str, default="ksopyla", help="HF username for repo creation")
-    parser.add_argument("--mwt_files", type=str, nargs="+", default=[], help="List of paths to text files containing MWTs (one per line)")
     
     args = parser.parse_args()
 
     setup_HF_environment()
-
-    # 0. Load MWTs if provided
-    all_mwts = []
-    if args.mwt_files:
-        print(f"Loading MWTs from {len(args.mwt_files)} files...")
-        for file_path in args.mwt_files:
-            if os.path.exists(file_path):
-                print(f"  Reading {file_path}...")
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    mwts = [line.strip() for line in f if line.strip()]
-                    all_mwts.extend(mwts)
-            else:
-                print(f"  Warning: MWT file {file_path} not found.")
-        
-        # Deduplicate
-        all_mwts = sorted(list(set(all_mwts)))
-        print(f"Loaded {len(all_mwts)} unique MWTs.")
 
     # 1. Load and prepare corpus ONCE
     corpus = prepare_training_corpus(args.dataset, args.sample_size)
@@ -408,7 +381,6 @@ def main():
             vocab_size=vocab,
             repo_id=repo_name,
             dataset_name=args.dataset,
-            mwt_list=all_mwts,
             push_to_hub=args.push_to_hub
         )
 

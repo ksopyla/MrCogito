@@ -10,6 +10,7 @@ import wandb
 import platform
 import socket
 import logging
+import json
 from datetime import datetime
 from dotenv import load_dotenv
 from datasets import load_dataset
@@ -38,6 +39,37 @@ hf_token = os.getenv("HF_TOKEN")
 
 # Setup module-level logger
 logger = logging.getLogger(__name__)
+
+def load_mwts_from_files(mwt_files, max_mwts=None):
+    pass  # Removed MWT functionality
+
+def tokenizer_vocab_has_token(tokenizer, token: str) -> bool:
+    pass  # Removed MWT functionality
+
+def get_tokens_for_text(tokenizer, text: str):
+    """
+    Return token strings (best-effort) for a given text, without adding special tokens.
+    """
+    try:
+        if hasattr(tokenizer, "tokenize"):
+            # Most HF tokenizers expose tokenize(text) -> List[str]
+            return tokenizer.tokenize(text)
+    except Exception:
+        pass
+
+    try:
+        ids = tokenizer.encode(text, add_special_tokens=False, padding=False, truncation=False)
+        if hasattr(tokenizer, "convert_ids_to_tokens"):
+            return tokenizer.convert_ids_to_tokens(ids)
+        if hasattr(tokenizer, "decode"):
+            return [tokenizer.decode([i]) for i in ids]
+    except Exception:
+        pass
+
+    return []
+
+def evaluate_mwt_utilization(tokenizer, dataset, mwt_set: set, top_k: int = 25):
+    pass # Removed MWT functionality
 
 def get_tokenizer_predictions(tokenizer, word):
     """Get tokenizer predictions for a word"""
@@ -273,6 +305,7 @@ def main():
     parser.add_argument("--epochs", type=int, default=2, help="Number of epochs for perplexity training (default: 2)")
     parser.add_argument("--skip_ppl", action="store_true", help="Skip perplexity evaluation (slow)")
     parser.add_argument("--log_file", type=str, default=None, help="Path to log file (default: auto-generated)")
+
     args = parser.parse_args()
     
     # Setup logging to both console and file
@@ -407,7 +440,7 @@ def main():
             ratio = calculate_compression_ratio(tok, dataset_train)
             compression_ratios[name] = ratio
             logger.info(f"  Compression ratio: {ratio:.2f}")
-    
+
     # 4. Perplexity (Optional)
     perplexities = {}
     model_params = {}  # Store actual model parameters
@@ -466,7 +499,10 @@ def main():
     )
     
     # Create a table for W&B with model parameters
-    wandb_table = wandb.Table(columns=["Tokenizer", "Vocab Size", "Model Params (M)", "BLEU", "1-gram Precision", "Compression Ratio", "Perplexity"])
+    wandb_table = wandb.Table(columns=[
+        "Tokenizer", "Vocab Size", "Model Params (M)",
+        "BLEU", "1-gram Precision", "Compression Ratio", "Perplexity"
+    ])
     
     # Prepare data for bar charts
     tokenizer_names_list = []
@@ -486,7 +522,7 @@ def main():
         vocab_size = len(tokenizers[name])
         params = model_params.get(name, 0)
         model_params_m = params / 1_000_000 if params > 0 else 0
-        
+
         # Log to console/file
         ppl_str = f"{ppl:.2f}" if ppl > 0 and not math.isnan(ppl) else "N/A"
         params_str = f"{model_params_m:.2f}" if params > 0 else "N/A"

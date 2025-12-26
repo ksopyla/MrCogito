@@ -31,26 +31,14 @@ else
     echo "HF Login verified: $(huggingface-cli whoami | head -n 1)"
 fi
 
-# 1. Mine Multi-Word Tokens (MWTs) first
-# Based on Experiment 6 findings: 500K samples, min_freq=100, min_score=15.0
-# Generates: minipile_mwt_statistical.txt (bigrams), code, math, entities
-echo "Step 1: Mining Multi-Word Tokens (MWT)..."
-python training/mine_mwt.py \
-    --dataset "JeanKaddour/minipile" \
-    --samples 500000 \
-    --output "minipile_mwt" \
-    --min_freq 100 \
-    --min_score 15.0
-
 # 2. Run the training script
-# Uses 1M samples, creates 32k/50k/64k vocabs, includes MWTs
+# Uses 1M samples, creates 32k/50k/64k vocabs
 # Vocab sizes: 32768 (standard), 50368 (ModernBERT), 65536 (power of 2)
 echo "Step 2: Starting Tokenizer Training..."
 python training/train_tokenizer_custom.py \
     --dataset "JeanKaddour/minipile" \
-    --sample_size 1000000 \
+    --sample_size 100000 \
     --vocab_sizes 32768 50368 65536 \
-    --mwt_files "minipile_mwt_statistical.txt" "minipile_mwt_code.txt" "minipile_mwt_math.txt" "minipile_mwt_entities.txt" \
     --push_to_hub \
     --user_handle "ksopyla"
 
