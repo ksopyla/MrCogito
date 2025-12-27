@@ -32,14 +32,39 @@ else
 fi
 
 # 2. Run the training script
-# Uses 1M samples, creates 32k/50k/64k vocabs
+# Uses 100k samples, creates 32k/50k/64k vocabs
 # Vocab sizes: 32768 (standard), 50368 (ModernBERT), 65536 (power of 2)
-echo "Step 2: Starting Tokenizer Training..."
+# Algorithm options: "unigram", "bpe", or "both" (for fair comparison)
+
+# Option A: Train Unigram only (morphological awareness)
+echo "Step 2a: Training Unigram Tokenizers..."
 python training/train_tokenizer_custom.py \
     --dataset "JeanKaddour/minipile" \
     --sample_size 100000 \
     --vocab_sizes 32768 50368 65536 \
+    --algorithm unigram \
     --push_to_hub \
     --user_handle "ksopyla"
+
+# Option B: Train BPE only (industry standard for code)
+echo "Step 2b: Training BPE Tokenizers..."
+python training/train_tokenizer_custom.py \
+    --dataset "JeanKaddour/minipile" \
+    --sample_size 100000 \
+    --vocab_sizes 32768 50368 65536 \
+    --algorithm bpe \
+    --push_to_hub \
+    --user_handle "ksopyla"
+
+# Option C: Train both (recommended for fair comparison)
+# Uncomment to train both algorithms:
+# echo "Step 2: Training Both Unigram and BPE Tokenizers..."
+# python training/train_tokenizer_custom.py \
+#     --dataset "JeanKaddour/minipile" \
+#     --sample_size 100000 \
+#     --vocab_sizes 32768 50368 65536 \
+#     --algorithm both \
+#     --push_to_hub \
+#     --user_handle "ksopyla"
 
 echo "Done!"

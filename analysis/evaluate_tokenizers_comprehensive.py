@@ -113,6 +113,28 @@ def evaluate_morphology_bleu(tokenizers_dict, ground_truth_morphems):
     
     return bleu_scores
 
+def is_code_document(text: str) -> bool:
+    """
+    Heuristic to detect if a document is primarily code.
+    Based on common code markers across multiple languages.
+    """
+    if not text or len(text) < 10:
+        return False
+    
+    code_markers = [
+        'def ', 'class ', 'import ', 'function ', '#include', 'SELECT ', 
+        'INSERT ', 'fn ', 'const ', 'let ', 'var ', '{', '}', '();', 
+        'std::', 'return ', 'void ', 'int ', 'async ', '__init__', 
+        'from ', '::', 'VALUES', '->', '=>', 'public ', 'private ',
+        'namespace ', 'template ', 'lambda ', 'try:', 'except ',
+        'if __name__', 'package ', 'interface ', 'extends ', 'implements '
+    ]
+    
+    marker_count = sum(1 for m in code_markers if m in text)
+    # Require at least 2 markers to classify as code (reduces false positives)
+    return marker_count >= 2
+
+
 def calculate_compression_ratio(tokenizer, dataset):
     """
     Calculate compression ratio: Total Characters / Total Tokens.
@@ -143,6 +165,64 @@ def calculate_compression_ratio(tokenizer, dataset):
         return 0.0
         
     return total_chars / total_tokens
+
+
+def calculate_code_compression_ratio(tokenizer, dataset, min_code_samples: int = 100):
+    """
+    Calculate compression ratio specifically on code documents.
+    This metric is crucial for evaluating tokenizers on programming tasks.
+    
+    Args:
+        tokenizer: Tokenizer to evaluate
+        dataset: Dataset to evaluate on
+        min_code_samples: Minimum number of code samples required to compute metric
+        
+    Returns:
+        Compression ratio (chars/tokens) for code, or None if insufficient code samples
+    """
+    
+    def filter_and_tokenize_code(examples):
+        """Filter code documents and tokenize them"""
+        code_texts = []
+        code_char_counts = []
+        code_token_counts = []
+        
+        for text in examples['text']:
+            if is_code_document(text):
+                code_texts.append(text)
+                code_char_counts.append(len(text))
+                # Tokenize WITHOUT padding or special tokens
+                tokens = tokenizer.encode(text, add_special_tokens=False, padding=False, truncation=False)
+                code_token_counts.append(len(tokens))
+        
+        return {
+            "code_char_count": code_char_counts,
+            "code_token_count": code_token_counts
+        }
+    
+    # Process dataset to find code samples
+    code_stats = dataset.map(
+        filter_and_tokenize_code,
+        batched=True,
+        remove_columns=dataset.column_names,
+        desc="Filtering code samples"
+    )
+    
+    total_code_chars = sum(code_stats["code_char_count"])
+    total_code_tokens = sum(code_stats["code_token_count"])
+    num_code_samples = len(code_stats["code_char_count"])
+    
+    if num_code_samples < min_code_samples:
+        logger.warning(f"Only found {num_code_samples} code samples (minimum: {min_code_samples}). Skipping code compression metric.")
+        return None
+    
+    if total_code_tokens == 0:
+        return None
+        
+    compression_ratio = total_code_chars / total_code_tokens
+    logger.info(f"  Code samples: {num_code_samples}, Code compression ratio: {compression_ratio:.2f}")
+    
+    return compression_ratio
 
 def train_small_model_and_get_perplexity(tokenizer, tokenizer_name, train_dataset, eval_dataset, run_group_id, wandb_tags, epochs=2):
     """
@@ -398,25 +478,58 @@ def main():
         "gpt2",
         "meta-llama/Llama-3.2-1B-instruct",
         "answerdotai/ModernBERT-base",
+        # Custom Unigram tokenizers (trained on MiniPile)
         "ksopyla/minipile-english-unigram-32k",
         "ksopyla/minipile-english-unigram-64k",
         "ksopyla/minipile-unigram-32k-50k",
         "ksopyla/minipile-unigram-65k-50k",
         "ksopyla/minipile-unigram-32k-100k",
-        "ksopyla/minipile-unigram-65k-100k"
+        "ksopyla/minipile-unigram-65k-100k",
+        # Custom BPE tokenizers (trained on MiniPile) - add these after training with --algorithm bpe
+        # "ksopyla/minipile-bpe-32k-100k",
+        # "ksopyla/minipile-bpe-50k-100k",
+        # "ksopyla/minipile-bpe-65k-100k",
+        "cl100k_base" # OpenAI GPT-4
     ]
 
     
     tokenizers = {}
+    tiktoken_encoder = None  # Store tiktoken encoder separately for compression metrics
+    
     for name in tokenizer_names:
         try:
             logger.info(f"Loading {name}...")
-            # HF tokenizers will automatically use HF_HOME env var if set
-            tokenizers[name] = AutoTokenizer.from_pretrained(name, token=hf_token)
+            
+            if name == "cl100k_base":
+                # Special handling for tiktoken (OpenAI GPT-4 tokenizer)
+                # We'll use it for compression metrics but skip perplexity training
+                # since it doesn't have a direct HF Trainer-compatible interface
+                try:
+                    import tiktoken
+                    tiktoken_encoder = tiktoken.get_encoding("cl100k_base")
+                    logger.info("Loaded tiktoken cl100k_base encoder (will use for compression metrics only)")
+                    # Create a minimal wrapper for compression metrics
+                    # We'll handle this specially in compression functions
+                    class TikTokenWrapper:
+                        def __init__(self, encoder):
+                            self.encoder = encoder
+                            self.vocab_size = encoder.n_vocab
+                        def encode(self, text, add_special_tokens=False, padding=False, truncation=False):
+                            return self.encoder.encode(text)
+                        def __len__(self):
+                            return self.vocab_size
+                    tokenizers[name] = TikTokenWrapper(tiktoken_encoder)
+                except Exception as e:
+                    logger.warning(f"Could not load tiktoken cl100k_base: {e}. Skipping.")
+                    continue
+            else:
+                # HF tokenizers will automatically use HF_HOME env var if set
+                tokenizers[name] = AutoTokenizer.from_pretrained(name, token=hf_token)
                 
-            # Ensure pad token for training
-            if tokenizers[name].pad_token is None:
-                tokenizers[name].pad_token = tokenizers[name].eos_token
+            # Ensure pad token for training (skip for tiktoken wrapper)
+            if hasattr(tokenizers[name], 'pad_token') and tokenizers[name].pad_token is None:
+                if hasattr(tokenizers[name], 'eos_token') and tokenizers[name].eos_token is not None:
+                    tokenizers[name].pad_token = tokenizers[name].eos_token
                 
         except Exception as e:
             logger.error(f"Failed to load {name}: {e}")
@@ -429,7 +542,7 @@ def main():
     logger.info("="*60)
     bleu_scores = evaluate_morphology_bleu(tokenizers, GROUND_TRUTH_MORPHEMS)
     
-    # 3. Compression Ratio
+    # 3. Compression Ratio (General)
     logger.info("\n" + "="*60)
     logger.info(f"Evaluating Compression Ratio (on {args.minipile_samples} samples)")
     logger.info("="*60)
@@ -441,7 +554,23 @@ def main():
             compression_ratios[name] = ratio
             logger.info(f"  Compression ratio: {ratio:.2f}")
 
+    # 3b. Code-Specific Compression Ratio
+    logger.info("\n" + "="*60)
+    logger.info(f"Evaluating Code Compression Ratio")
+    logger.info("="*60)
+    code_compression_ratios = {}
+    if dataset_train is not None:
+        for name, tok in tokenizers.items():
+            logger.info(f"Calculating code compression for {name}...")
+            code_ratio = calculate_code_compression_ratio(tok, dataset_train, min_code_samples=50)
+            code_compression_ratios[name] = code_ratio
+            if code_ratio is not None:
+                logger.info(f"  Code compression ratio: {code_ratio:.2f}")
+            else:
+                logger.info(f"  Code compression ratio: N/A (insufficient code samples)")
+
     # 4. Perplexity (Optional)
+    # Note: Skip tiktoken for perplexity training as it doesn't have HF Trainer compatibility
     perplexities = {}
     model_params = {}  # Store actual model parameters
     if not args.skip_ppl and dataset_train is not None and dataset_test is not None:
@@ -450,6 +579,13 @@ def main():
         logger.info("="*60)
         
         for name, tok in tokenizers.items():
+            # Skip tiktoken for perplexity (requires HF Trainer interface)
+            if name == "cl100k_base":
+                logger.info(f"Skipping perplexity for {name} (tiktoken not compatible with HF Trainer)")
+                perplexities[name] = float('nan')
+                model_params[name] = 0
+                continue
+                
             try:
                 logger.info(f"\nTraining small model for {name} (vocab size: {len(tok)})")
                 ppl, params = train_small_model_and_get_perplexity(
@@ -501,7 +637,7 @@ def main():
     # Create a table for W&B with model parameters
     wandb_table = wandb.Table(columns=[
         "Tokenizer", "Vocab Size", "Model Params (M)",
-        "BLEU", "1-gram Precision", "Compression Ratio", "Perplexity"
+        "BLEU", "1-gram Precision", "Compression Ratio", "Code Compression Ratio", "Perplexity"
     ])
     
     # Prepare data for bar charts
@@ -512,12 +648,13 @@ def main():
     vocab_sizes = []
 
     # Print header
-    logger.info(f"\n{'Tokenizer':<45} {'BLEU':>8} {'1-gram':>8} {'Compression':>12} {'Perplexity':>12} {'Vocab':>10} {'Params(M)':>10}")
-    logger.info("-" * 110)
+    logger.info(f"\n{'Tokenizer':<45} {'BLEU':>8} {'1-gram':>8} {'Compression':>12} {'Code Comp.':>18} {'Perplexity':>12} {'Vocab':>10} {'Params(M)':>10}")
+    logger.info("-" * 130)
 
     for name in tokenizers.keys():
         bleu = bleu_scores.get(name, {'bleu': 0, 'precisions': [0,0,0]})
         comp = compression_ratios.get(name, 0)
+        code_comp = code_compression_ratios.get(name, None)
         ppl = perplexities.get(name, 0)
         vocab_size = len(tokenizers[name])
         params = model_params.get(name, 0)
@@ -525,8 +662,9 @@ def main():
 
         # Log to console/file
         ppl_str = f"{ppl:.2f}" if ppl > 0 and not math.isnan(ppl) else "N/A"
+        code_comp_str = f"{code_comp:.2f}" if code_comp is not None else "N/A"
         params_str = f"{model_params_m:.2f}" if params > 0 else "N/A"
-        logger.info(f"{name:<45} {bleu['bleu']:>8.4f} {bleu['precisions'][0]:>8.4f} {comp:>12.2f} {ppl_str:>12} {vocab_size:>10} {params_str:>10}")
+        logger.info(f"{name:<45} {bleu['bleu']:>8.4f} {bleu['precisions'][0]:>8.4f} {comp:>12.2f} {code_comp_str:>18} {ppl_str:>12} {vocab_size:>10} {params_str:>10}")
 
         # Add to W&B table
         wandb_table.add_data(
@@ -536,6 +674,7 @@ def main():
             bleu['bleu'],
             bleu['precisions'][0],
             comp,
+            code_comp if code_comp is not None else None,
             ppl if ppl > 0 and not math.isnan(ppl) else None
         )
         
@@ -550,15 +689,20 @@ def main():
         wandb.summary[f"{name}/bleu"] = bleu['bleu']
         wandb.summary[f"{name}/1gram_precision"] = bleu['precisions'][0]
         wandb.summary[f"{name}/compression_ratio"] = comp
+        if code_comp is not None:
+            wandb.summary[f"{name}/code_compression_ratio"] = code_comp
         wandb.summary[f"{name}/perplexity"] = ppl if ppl > 0 and not math.isnan(ppl) else None
         wandb.summary[f"{name}/vocab_size"] = vocab_size
     
-    logger.info("-" * 110)
+    logger.info("-" * 130)
     
     # Log the main comparison table
     wandb.log({"tokenizer_evaluation_table": wandb_table})
     
     # Create bar chart data for easy comparison
+    code_comp_values = [code_compression_ratios.get(name, None) for name in tokenizers.keys()]
+    code_comp_data = [(name, comp) for name, comp in zip(tokenizer_names_list, code_comp_values) if comp is not None]
+    
     wandb.log({
         "bleu_comparison": wandb.plot.bar(
             wandb.Table(data=list(zip(tokenizer_names_list, bleu_values)), columns=["Tokenizer", "BLEU"]),
@@ -569,6 +713,15 @@ def main():
             "Tokenizer", "Compression", title="Compression Ratio Comparison"
         ),
     })
+    
+    # Log code compression comparison if we have data
+    if code_comp_data:
+        wandb.log({
+            "code_compression_comparison": wandb.plot.bar(
+                wandb.Table(data=code_comp_data, columns=["Tokenizer", "Code Compression"]),
+                "Tokenizer", "Code Compression", title="Code Compression Ratio Comparison"
+            )
+        })
     
     # Log perplexity comparison if available
     ppl_data = [(name, ppl) for name, ppl in zip(tokenizer_names_list, perplexity_values) if ppl is not None]

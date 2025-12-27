@@ -7,8 +7,8 @@ from transformers import PreTrainedTokenizerFast
 from dotenv import dotenv_values
 from huggingface_hub import login, HfApi
 
-# Define the README Template as a constant
-README_TEMPLATE = """---
+# Define README Templates for different algorithms
+README_TEMPLATE_UNIGRAM = """---
 language:
 - en
 license: apache-2.0
@@ -34,7 +34,7 @@ It was developed for the **[MrCogito](https://github.com/ksopyla/MrCogito)** pro
 
 - **Dataset**: [{dataset_name}](https://huggingface.co/datasets/{dataset_name})
 - **Sample Size**: {sample_size} documents
-- **Preprocessing**: Documents were truncated to a maximum length of 4096 characters to ensure training stability while preserving local context (code blocks, latex, paragraphs).
+- **Preprocessing**: Documents were chunked into 8192-character segments to ensure training stability while preserving local context (code blocks, latex, paragraphs). This prevents numerical instability in the training algorithm.
 - **Algorithm**: Unigram (SentencePiece)
 - **Vocab Size**: {vocab_size}
 - **Normalization**: NFKC (Cased)
@@ -73,6 +73,92 @@ text = "Hello, world! This is a test."
 tokens = tokenizer.tokenize(text)
 print(tokens) 
 # Output: [' Hello', ',', ' world', '!', ' This', ' is', ' a', ' test', '.']
+
+# Chat Template
+messages = [
+    {{"role": "user", "content": "What is the Concept Encoder?"}},
+    {{"role": "assistant", "content": "It is a novel transformer architecture..."}}
+]
+prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+print(prompt)
+# Output: <|im_start|>user\\nWhat is the Concept Encoder?<|im_end|>\\n<|im_start|>assistant\\n...
+```
+
+## Special Tokens
+- PAD: `<pad>`
+- UNK: `<unk>`
+- CLS: `<cls>`
+- SEP: `<sep>`
+- MASK: `<mask>`
+- Chat: `<|im_start|>`, `<|im_end|>`, `<|user|>`, `<|assistant|>`, `<|system|>`, `<|endoftext|>`
+- Unused: `<|unused0|>` ... `<|unused99|>` (100 reserved tokens)
+"""
+
+README_TEMPLATE_BPE = """---
+language:
+- en
+license: apache-2.0
+tags:
+- tokenizer
+- bpe
+- minipile
+- concept-encoder
+- chatml
+- code
+---
+
+# Custom BPE Tokenizer for Minipile ({vocab_size_k}k Vocab)
+
+This is a Byte Pair Encoding (BPE) tokenizer trained on the [JeanKaddour/minipile](https://huggingface.co/datasets/JeanKaddour/minipile) dataset. 
+
+**Language**: English (en). 
+*Note: BPE is the industry standard for code models (GPT-4, CodeLlama, StarCoder). This tokenizer is optimized for English text, code, and common technical terms found in Minipile.*
+
+It was developed for the **[MrCogito](https://github.com/ksopyla/MrCogito)** project, which explores novel transformer architectures like the **Concept Encoder**.
+
+## Training Details
+
+- **Dataset**: [{dataset_name}](https://huggingface.co/datasets/{dataset_name})
+- **Sample Size**: {sample_size} documents
+- **Preprocessing**: Documents were chunked into 8192-character segments to ensure training stability while preserving local context (code blocks, latex, paragraphs). This prevents numerical instability in the training algorithm.
+- **Algorithm**: BPE (Byte Pair Encoding)
+- **Vocab Size**: {vocab_size}
+- **Normalization**: NFKC (Cased)
+- **Pre-tokenization**: ByteLevel (standard for code)
+
+## Motivation for Concept Encoders
+
+This tokenizer is trained for **Concept Encoder** and **Concept Decoder** architectures (e.g., Perceiver IO, Latent Transformers).
+
+### Why BPE?
+BPE is the de-facto standard for modern language models, especially those handling code:
+*   **Industry Standard**: Used by GPT-2, GPT-3, GPT-4, CodeLlama, StarCoder, and most modern LLMs
+*   **Code-Friendly**: ByteLevel pre-tokenization handles whitespace and special characters robustly, crucial for programming languages
+*   **Proven Performance**: Extensive research shows BPE works well for both natural language and code
+
+### Why Minipile?
+By training a fresh BPE model on **Minipile** (2023), we combine the proven BPE algorithm with modern vocabulary coverage (code, Python, ChatML, technical terms) while maintaining compatibility with existing model architectures.
+
+## Features
+- **Algorithm**: BPE (Byte Pair Encoding).
+- **Vocab Size**: {vocab_size} tokens.
+- **Normalization**: NFKC (Cased).
+- **Pre-tokenization**: ByteLevel (reversible, handles all Unicode).
+- **Chat Support**: Includes standard ChatML special tokens (`<|im_start|>`, `<|im_end|>`) and a pre-configured chat template.
+
+## Usage
+
+```python
+from transformers import AutoTokenizer
+
+# Load tokenizer
+tokenizer = AutoTokenizer.from_pretrained("{repo_id}")
+
+# Basic encoding
+text = "Hello, world! This is a test."
+tokens = tokenizer.tokenize(text)
+print(tokens) 
+# Output: ['Hello', ',', 'Ġworld', '!', 'ĠThis', 'Ġis', 'Ġa', 'Ġtest', '.']
 
 # Chat Template
 messages = [
@@ -186,24 +272,33 @@ def prepare_training_corpus(dataset_name: str, sample_size: int = 1_000_000) -> 
         dataset = dataset.shuffle(seed=42).select(range(sample_size))
     
     # 5. Process into manageable chunks (Corpus Creation)
-    # Use dataset.map to truncate documents to a fixed length (e.g., 4096 chars).
-    # This preserves structure (code, latex) while keeping sequence lengths safe for Unigram.
+    # CRITICAL FIX: Unigram trainer panics on very long sequences (likelihood NAN).
+    # We must split documents into smaller chunks (e.g., 4KB-8KB) instead of one huge string.
+    # This preserves local context (paragraphs/functions) while keeping the trainer stable.
     
-    MAX_DOC_LENGTH = 100000 # Increased from 4096 to avoid breaking long documents excessively, relying on Unigram's ability to handle longer contexts now that we have robust settings.
-    print(f"Truncating documents to max {MAX_DOC_LENGTH} chars using dataset.map...")
+    CHUNK_SIZE = 8192
+    print(f"Chunking documents to max {CHUNK_SIZE} chars...")
     
-    def truncate_batch(batch):
-        return {text_column: [text[:MAX_DOC_LENGTH] for text in batch[text_column]]}
+    def chunk_examples(batch):
+        chunks = []
+        for text in batch[text_column]:
+            # Split text into chunks of CHUNK_SIZE
+            for i in range(0, len(text), CHUNK_SIZE):
+                chunk = text[i : i + CHUNK_SIZE]
+                if len(chunk) > 100:  # Skip tiny fragments
+                    chunks.append(chunk)
+        return {text_column: chunks}
 
     # Determine optimized process count
     import multiprocessing
-    num_proc = max(1, multiprocessing.cpu_count() // 2) # Use half cores to be safe/nice
+    num_proc = max(1, multiprocessing.cpu_count() // 2)
     
     dataset = dataset.map(
-        truncate_batch,
+        chunk_examples,
         batched=True,
         num_proc=num_proc,
-        desc="Truncating documents"
+        remove_columns=dataset.column_names, # We only need the new chunks
+        desc="Chunking corpus"
     )
     
     print(f"Corpus preparation complete.")
@@ -211,45 +306,50 @@ def prepare_training_corpus(dataset_name: str, sample_size: int = 1_000_000) -> 
     
     return dataset[text_column]
 
-def train_and_save_tokenizer(
-    corpus: List[str],
-    vocab_size: int,
-    repo_id: str,
-    dataset_name: str,
-    push_to_hub: bool = False,
-    local_dir: str = "./tokenizers"
-):
-    """
-    Trains a Unigram tokenizer on a pre-loaded corpus.
-    """
-    print(f"\n{'='*60}")
-    print(f"Training Tokenizer: {repo_id}")
-    print(f"Vocab Size: {vocab_size}")
-    print(f"{'='*60}\n")
+def _create_post_processor(tokenizer: Tokenizer) -> processors.TemplateProcessing:
+    """Create post-processor with CLS/SEP template (common for both algorithms)."""
+    return processors.TemplateProcessing(
+        single="<cls> $A <sep>",
+        pair="<cls> $A <sep> $B <sep>",
+        special_tokens=[
+            ("<cls>", tokenizer.token_to_id("<cls>")),
+            ("<sep>", tokenizer.token_to_id("<sep>")),
+        ],
+    )
 
-    # 1. Initialize Tokenizer
+
+def _train_bpe_tokenizer(corpus: List[str], vocab_size: int, special_tokens: List[str]) -> Tokenizer:
+    """Train a BPE tokenizer (GPT-2/CodeLlama style)."""
+    tokenizer = Tokenizer(models.BPE())
+    tokenizer.normalizer = normalizers.Sequence([normalizers.NFKC()])
+    tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=True)
+    
+    trainer = trainers.BpeTrainer(
+        vocab_size=vocab_size,
+        special_tokens=special_tokens,
+        show_progress=True,
+        min_frequency=2,
+    )
+    
+    print("Starting BPE training...")
+    tokenizer.train_from_iterator(corpus, trainer=trainer)
+    
+    tokenizer.decoder = decoders.ByteLevel()
+    tokenizer.post_processor = _create_post_processor(tokenizer)
+    
+    return tokenizer
+
+
+def _train_unigram_tokenizer(corpus: List[str], vocab_size: int, special_tokens: List[str]) -> Tokenizer:
+    """Train a Unigram tokenizer (XLNet/SentencePiece style)."""
     tokenizer = Tokenizer(models.Unigram())
-
-    # 2. Normalization: NFKC
-    tokenizer.normalizer = normalizers.Sequence([
-        normalizers.NFKC()
-    ])
-
-    # 3. Pre-tokenization: Metaspace
-    # We remove Digits splitting to preserve numbers as single concepts (e.g., "2024", "3.14")
+    tokenizer.normalizer = normalizers.Sequence([normalizers.NFKC()])
     tokenizer.pre_tokenizer = pre_tokenizers.Metaspace()
-
-    # 4. Define Special Tokens
-    special_tokens = get_special_tokens(add_chat_tokens=True)
-
-    # 5. Trainer Configuration
-    # Use ByteLevel alphabet to ensure we cover basic characters/bytes to minimize <unk>
+    
+    # Get initial alphabet to minimize <unk> tokens
     try:
         initial_alphabet = pre_tokenizers.ByteLevel.alphabet()
     except AttributeError:
-        # Fallback if specific version doesn't expose alphabet directly
-        # We construct the standard byte-level alphabet manually if needed, 
-        # or just rely on data coverage (less safe)
         initial_alphabet = []
     
     trainer = trainers.UnigramTrainer(
@@ -259,27 +359,21 @@ def train_and_save_tokenizer(
         initial_alphabet=initial_alphabet,
         shrinking_factor=0.75,
         show_progress=True,
-        max_piece_length=24, # Increased from 10 to capture full long words (e.g. 'internationalization')
+        max_piece_length=24,
         n_sub_iterations=5
     )
-
-    # 6. Train
-    print("Starting training...")
+    
+    print("Starting Unigram training...")
     tokenizer.train_from_iterator(corpus, trainer=trainer)
-
-    # 7. Post-Processing
+    
     tokenizer.decoder = decoders.Metaspace()
-    tokenizer.post_processor = processors.TemplateProcessing(
-        single="<cls> $A <sep>",
-        pair="<cls> $A <sep> $B <sep>",
-        special_tokens=[
-            ("<cls>", tokenizer.token_to_id("<cls>")),
-            ("<sep>", tokenizer.token_to_id("<sep>")),
-        ],
-    )
+    tokenizer.post_processor = _create_post_processor(tokenizer)
+    
+    return tokenizer
 
-    # 8. Wrap & Save
-    print("Wrapping in Transformers format...")
+
+def _wrap_tokenizer(tokenizer: Tokenizer, special_tokens: List[str]) -> PreTrainedTokenizerFast:
+    """Wrap tokenizer in Transformers format with chat template."""
     fast_tokenizer = PreTrainedTokenizerFast(
         tokenizer_object=tokenizer,
         model_max_length=8192,
@@ -291,7 +385,7 @@ def train_and_save_tokenizer(
         additional_special_tokens=[t for t in special_tokens if t not in ["<pad>", "<unk>", "<cls>", "<sep>", "<mask>"]]
     )
     
-    # Set Chat Template
+    # Set ChatML template
     fast_tokenizer.chat_template = (
         "{% if messages[0]['role'] == 'system' %}"
         "{{ '<|im_start|>system\n' + messages[0]['content'] + '<|im_end|>\n' }}"
@@ -306,21 +400,39 @@ def train_and_save_tokenizer(
         "{{ '<|im_start|>assistant\n' }}"
         "{% endif %}"
     )
+    
+    return fast_tokenizer
 
+
+def _generate_readme(algorithm: str, vocab_size: int, repo_id: str, dataset_name: str, sample_size: int) -> str:
+    """Generate README content for the tokenizer."""
+    template = README_TEMPLATE_BPE if algorithm.lower() == "bpe" else README_TEMPLATE_UNIGRAM
+    return template.format(
+        vocab_size=vocab_size,
+        vocab_size_k=vocab_size//1000,
+        repo_id=repo_id,
+        dataset_name=dataset_name,
+        sample_size=sample_size
+    )
+
+
+def _save_tokenizer(
+    fast_tokenizer: PreTrainedTokenizerFast,
+    repo_id: str,
+    vocab_size: int,
+    dataset_name: str,
+    corpus_size: int,
+    algorithm: str,
+    push_to_hub: bool,
+    local_dir: str = "./tokenizers"
+):
+    """Save tokenizer locally or push to Hugging Face Hub."""
     if push_to_hub:
         print(f"Pushing to Hub: {repo_id}...")
         try:
             fast_tokenizer.push_to_hub(repo_id)
             
-            # Upload README
-            readme_content = README_TEMPLATE.format(
-                vocab_size=vocab_size,
-                vocab_size_k=vocab_size//1000,
-                repo_id=repo_id,
-                dataset_name=dataset_name,
-        sample_size=len(corpus)
-            )
-            
+            readme_content = _generate_readme(algorithm, vocab_size, repo_id, dataset_name, corpus_size)
             api = HfApi()
             api.upload_file(
                 path_or_fileobj=readme_content.encode("utf-8"),
@@ -331,58 +443,122 @@ def train_and_save_tokenizer(
             print(f"Successfully uploaded to https://huggingface.co/{repo_id}")
         except Exception as e:
             print(f"Upload failed: {e}")
-            print(f"Saving locally instead...")
-            output_path = f"{local_dir}/{vocab_size}"
-            if not os.path.exists(output_path):
-                 os.makedirs(output_path, exist_ok=True)
-            fast_tokenizer.save_pretrained(output_path)
+            print("Saving locally instead...")
+            _save_locally(fast_tokenizer, vocab_size, local_dir)
     else:
-        output_path = f"{local_dir}/{vocab_size}"
-        print(f"Saving locally to {output_path}...")
-        os.makedirs(output_path, exist_ok=True)
-        fast_tokenizer.save_pretrained(output_path)
+        _save_locally(fast_tokenizer, vocab_size, local_dir)
+
+
+def _save_locally(fast_tokenizer: PreTrainedTokenizerFast, vocab_size: int, local_dir: str):
+    """Save tokenizer to local directory."""
+    output_path = os.path.join(local_dir, str(vocab_size))
+    print(f"Saving locally to {output_path}...")
+    os.makedirs(output_path, exist_ok=True)
+    fast_tokenizer.save_pretrained(output_path)
+
+
+def train_and_save_tokenizer(
+    corpus: List[str],
+    vocab_size: int,
+    repo_id: str,
+    dataset_name: str,
+    algorithm: str = "unigram",
+    push_to_hub: bool = False,
+    local_dir: str = "./tokenizers"
+):
+    """
+    Train and save a tokenizer (Unigram or BPE) on a pre-loaded corpus.
+    
+    Args:
+        corpus: List of training text strings
+        vocab_size: Target vocabulary size
+        repo_id: HuggingFace repository ID
+        dataset_name: Name of the dataset used for training
+        algorithm: Either "unigram" or "bpe"
+        push_to_hub: Whether to push to HuggingFace Hub
+        local_dir: Local directory for saving if not pushing to hub
+    """
+    print(f"\n{'='*60}")
+    print(f"Training {algorithm.upper()} Tokenizer: {repo_id}")
+    print(f"Vocab Size: {vocab_size}")
+    print(f"{'='*60}\n")
+
+    special_tokens = get_special_tokens(add_chat_tokens=True)
+    
+    # Train tokenizer based on algorithm
+    if algorithm.lower() == "bpe":
+        tokenizer = _train_bpe_tokenizer(corpus, vocab_size, special_tokens)
+    else:
+        tokenizer = _train_unigram_tokenizer(corpus, vocab_size, special_tokens)
+    
+    # Wrap in Transformers format
+    print("Wrapping in Transformers format...")
+    fast_tokenizer = _wrap_tokenizer(tokenizer, special_tokens)
+    
+    # Save or push to hub
+    _save_tokenizer(
+        fast_tokenizer=fast_tokenizer,
+        repo_id=repo_id,
+        vocab_size=vocab_size,
+        dataset_name=dataset_name,
+        corpus_size=len(corpus),
+        algorithm=algorithm,
+        push_to_hub=push_to_hub,
+        local_dir=local_dir
+    )
+
+def _format_sample_size(sample_size: int) -> str:
+    """Format sample size for repo naming (e.g., 1000000 -> '1M', 500000 -> '500k')."""
+    if sample_size >= 1_000_000:
+        return f"{sample_size//1_000_000}M"
+    return f"{sample_size//1000}k"
+
+
+def _build_repo_name(user_handle: str, algorithm: str, vocab_size: int, sample_size: int) -> str:
+    """Build HuggingFace repository name."""
+    algo_short = "bpe" if algorithm == "bpe" else "unigram"
+    samples_str = _format_sample_size(sample_size)
+    return f"{user_handle}/minipile-{algo_short}-{vocab_size//1000}k-{samples_str}"
+
+
+def _get_algorithms_to_train(algorithm_arg: str) -> List[str]:
+    """Parse algorithm argument and return list of algorithms to train."""
+    if algorithm_arg == "both":
+        return ["unigram", "bpe"]
+    return [algorithm_arg]
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Train custom Unigram tokenizer")
+    parser = argparse.ArgumentParser(description="Train custom tokenizer (Unigram or BPE)")
     parser.add_argument("--dataset", type=str, default="JeanKaddour/minipile", help="HuggingFace dataset name")
     parser.add_argument("--sample_size", type=int, default=1_000_000, help="Number of samples to load")
     parser.add_argument("--vocab_sizes", type=int, nargs="+", default=[32000, 64000], help="List of vocab sizes to train")
+    parser.add_argument("--algorithm", type=str, choices=["unigram", "bpe", "both"], default="unigram", 
+                        help="Tokenization algorithm: 'unigram', 'bpe', or 'both' (trains both for comparison)")
     parser.add_argument("--push_to_hub", action="store_true", help="Push to Hugging Face Hub")
     parser.add_argument("--user_handle", type=str, default="ksopyla", help="HF username for repo creation")
     
     args = parser.parse_args()
-
     setup_HF_environment()
 
-    # 1. Load and prepare corpus ONCE
+    # Load and prepare corpus once (shared across all training runs)
     corpus = prepare_training_corpus(args.dataset, args.sample_size)
     
-    # 2. Train multiple vocab sizes on the same corpus
-    for vocab in args.vocab_sizes:
-        # Naming Convention: {dataset_type}-{task}-{model_name}-{params}-{date}
-        # e.g. minipile-unigram-tokenizer-32k-1M
-        # But user asked for: minipile-english-unigram-{vocab}k
-        # And requested to add vocab size and number of training documents to the name
-        
-        # Format samples count (e.g. 1000000 -> 1M, 500000 -> 500k)
-        # We can't easily get len of iterator, so use the one calculated earlier
-        # Assuming corpus is reusable or we pass the count explicitly. 
-        # For simplicity in this script, we trust the sample_size arg roughly matches if we used it.
-        
-        if args.sample_size >= 1_000_000:
-            samples_str = f"{args.sample_size//1_000_000}M"
-        else:
-            samples_str = f"{args.sample_size//1000}k"
+    # Train tokenizers for each algorithm and vocab size
+    algorithms_to_train = _get_algorithms_to_train(args.algorithm)
+    
+    for algorithm in algorithms_to_train:
+        for vocab_size in args.vocab_sizes:
+            repo_name = _build_repo_name(args.user_handle, algorithm, vocab_size, args.sample_size)
             
-        repo_name = f"{args.user_handle}/minipile-unigram-{vocab//1000}k-{samples_str}"
-        
-        train_and_save_tokenizer(
-            corpus=corpus,
-            vocab_size=vocab,
-            repo_id=repo_name,
-            dataset_name=args.dataset,
-            push_to_hub=args.push_to_hub
-        )
+            train_and_save_tokenizer(
+                corpus=corpus,
+                vocab_size=vocab_size,
+                repo_id=repo_name,
+                dataset_name=args.dataset,
+                algorithm=algorithm,
+                push_to_hub=args.push_to_hub
+            )
 
 if __name__ == "__main__":
     main()
