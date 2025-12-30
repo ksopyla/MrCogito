@@ -1,0 +1,24 @@
+---
+description: python pip poetry computing environments  remote: Odra and Polonez Ubuntu. Servers setup, GPUs, memory, python version, CUDA compute capabilites
+alwaysApply: false
+---
+
+
+## Remote Odra Server Environment
+
+- OS: Ubuntu 22.04
+- GPU: 3x RTX 3090  each with 24GB of VRAM
+- CPU:  AMD Ryzen Threadripper 1900X 8-Core Processor (16 threads)
+- Memory: 96GB
+- hostname: odra (server)
+- project root folder is `/home/ksopyla/dev/MrCogito`
+
+
+## Remote Polonez Server Environment
+
+- OS: Ubuntu 22.04
+- GPU: 4x RTX 3090  each with 24GB of VRAM
+- Memory: 256GB
+- CPU: AMD Ryzen Threadripper 3970X 32-Core Processor (64 threads)
+- hostname: polonez (server)
+- project root folder is `/home/ksopyla/dev/MrCogito`
