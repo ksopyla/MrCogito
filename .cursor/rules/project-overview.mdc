@@ -2,7 +2,7 @@
 alwaysApply: true
 ---
 ## 🎯 Project Overview  
-Research project developing "Concept Encoder" - a transformer architecture using concept-level token masking for better text understanding and longer context processing.
+A research project developing "Concept Encoder and decoder" - a transformer architecture using concept embeddings that try to encode informationtion, gather it from many text or audio tokens. My ultimate goal is to develop a model that can understand and generate text and audio in a coherent way.
 
 repository: https://github.com/ksopyla/MrCogito
 Author: Krzysztof Sopyla
@@ -14,7 +14,12 @@ Blog: https://ai.ksopyla.com
 Project page: https://ai.ksopyla.com/projects/concept-encoder/
 
 Project description:
-A research project developing "Concept Encoder" - a transformer architecture using concept-level token masking for better text understanding and longer context processing.
+A research project developing "Concept Encoder and decoder" - a transformer architecture using concept embeddings that try to encode informationtion, gather it from many text or audio tokens. My ultimate goal is to develop a model that can understand and generate text and audio in a coherent way.
 
-Project goals:
+Project short-term goals:
 - Develop a transformer architecture using concept-level token masking for better text understanding and longer context processing.
+- Find the best way to encode the information from the text or audio tokens into the concept embeddings.
+- Find the best tokenization strategy for the text or audio tokens.
+- Train the concept encoder via MLM task as a quick way to verify the concepts idea is working.
+- Find the best way to decode the concept embeddings into the text or audio tokens.
+- Put the concept encoder and decoder together and train the model on the text or audio tokens.
