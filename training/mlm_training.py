@@ -201,6 +201,32 @@ def main():
     # Each head should have at least 64 dimensions
     num_attention_heads = max(1, min(8, model_args.hidden_size // 64))
     
+    # Ensure all special tokens are correctly mapped from tokenizer to config
+    # We validate critical tokens that are required for the model/training to function
+    
+    # 1. Critical Tokens (Must exist)
+    if tokenizer.pad_token_id is None:
+        raise ValueError(
+            f"Tokenizer '{data_args.tokenizer_name}' does not have a defined pad_token_id. "
+            f"ConceptEncoder requires a pad token for embedding initialization and attention masking. "
+            f"Please ensure the tokenizer has a pad token defined."
+        )
+    
+    if tokenizer.mask_token_id is None:
+        raise ValueError(
+            f"Tokenizer '{data_args.tokenizer_name}' does not have a defined mask_token_id. "
+            f"MLM training requires a mask token. "
+            f"Please ensure the tokenizer has a mask token defined."
+        )
+
+    # 2. Optional Tokens (Use if available, else None)
+    # We strictly use tokenizer's values or None, avoiding arbitrary defaults like 3/4/etc.
+    cls_token_id = tokenizer.cls_token_id
+    sep_token_id = tokenizer.sep_token_id
+    bos_token_id = tokenizer.bos_token_id
+    eos_token_id = tokenizer.eos_token_id
+    unk_token_id = tokenizer.unk_token_id
+
     config = ConceptEncoderConfig(
         vocab_size=tokenizer.vocab_size,
         concept_num=model_args.concept_num,
@@ -209,8 +235,16 @@ def main():
         num_attention_heads=num_attention_heads,
         intermediate_size=model_args.intermediate_size,
         max_sequence_length=data_args.max_seq_length,
+        
+        # Special Tokens
         pad_token_id=tokenizer.pad_token_id,
         mask_token_id=tokenizer.mask_token_id,
+        cls_token_id=cls_token_id,
+        sep_token_id=sep_token_id,
+        bos_token_id=bos_token_id,
+        eos_token_id=eos_token_id,
+        unk_token_id=unk_token_id,
+        
         tie_word_embeddings=False,
         tokenizer_name=data_args.tokenizer_name  # Store source tokenizer name for traceability
     )
@@ -221,8 +255,7 @@ def main():
     if model_args.model_type not in MODEL_REGISTRY:
         raise ValueError(f"Unknown model_type: {model_args.model_type}. Available models: {list(MODEL_REGISTRY.keys())}")
     
-    model_info = MODEL_REGISTRY[model_args.model_type]
-    model_class = model_info["class"]
+    model_class = MODEL_REGISTRY[model_args.model_type]["class"]
     
     # Check if we should load from a checkpoint or initialize fresh
     if training_args.resume_from_checkpoint and training_args.resume_from_checkpoint is not None:

@@ -46,12 +46,13 @@ class ConceptEncoderConfig(PretrainedConfig):
         num_attention_heads: int = 8,
         intermediate_size: int = 1024,
         hidden_act: str = "gelu",
-        pad_token_id: int = 0,
-        eos_token_id: int = 1,
-        bos_token_id: int = 2,
-        cls_token_id: int = 3,
-        sep_token_id: int = 4,
-        mask_token_id: int = 5,
+        pad_token_id: Optional[int] = None,
+        eos_token_id: Optional[int] = None,
+        bos_token_id: Optional[int] = None,
+        cls_token_id: Optional[int] = None,
+        sep_token_id: Optional[int] = None,
+        mask_token_id: Optional[int] = None,
+        unk_token_id: Optional[int] = None,
         hidden_dropout_prob: float = 0.1,
         attention_probs_dropout_prob: float = 0.1,
         max_sequence_length: int = 2048,
@@ -82,6 +83,7 @@ class ConceptEncoderConfig(PretrainedConfig):
         self.cls_token_id = cls_token_id
         self.sep_token_id = sep_token_id
         self.mask_token_id = mask_token_id
+        self.unk_token_id = unk_token_id
 
 class ConceptEncoderLayer(nn.Module):
     """A single layer of the concept encoder.

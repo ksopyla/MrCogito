@@ -19,7 +19,7 @@ def compute_orthogonality_loss(concept_repr):
     # Normalize concepts to unit vectors
     concept_norm = F.normalize(concept_repr, p=2, dim=-1)  # [B, C, H]
     
-    # Compute concept similarity matrix
+    # Compute concept similarity matrix [B, C,H]*[B, H, C] = [B, C, C]
     concept_sim = torch.bmm(concept_norm, concept_norm.transpose(1, 2))  # [B, C, C]
     
     # Create identity matrix (target: concepts should be orthogonal)
