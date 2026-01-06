@@ -13,16 +13,12 @@ Key Models:
 
 import os
 import torch
-import soundfile as sf
 import numpy as np
 from PIL import Image
 from transformers import (
-    AutoModelForCausalLM, 
-    AutoTokenizer, 
     AutoProcessor, 
     TextIteratorStreamer
 )
-import librosa
 
 # Cache directory configuration
 MODEL_CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "Cache", "Models"))
@@ -147,11 +143,11 @@ print("\n🔍 === Special Tokens Map ===")
 print(tokenizer.special_tokens_map)
 
 print("\n🔍 === Additional Special Tokens (Audio/Image) ===")
-# Check for common multimodal tokens
-known_special_tokens = ["<|audio_bos|>", "<|audio_eos|>", "<|image_pad|>", "<|video_pad|>"]
+known_special_tokens = ["<|im_start|>", "<|im_end|>", "<|endoftext|>", "<|audio_bos|>", "<|audio_eos|>", "<|vision_bos|>", "<|vision_eos|>", "<|AUDIO|>", "<|IMAGE|>", "<|VIDEO|>"]
 for token in known_special_tokens:
     if token in tokenizer.get_vocab():
-        print(f"  {token}: {tokenizer.convert_tokens_to_ids(token)}")
+        token_id = tokenizer.convert_tokens_to_ids(token)
+        print(f"  {token}: {token_id}")
     else:
         print(f"  {token}: Not found")
 
@@ -179,17 +175,38 @@ print("Multi-turn conversation with system, user, and assistant messages\n")
 # Note: Qwen2.5 Omni processor expects a system message as the first message
 # If omitted, it will warn that audio output may not work as expected
 messages_text_only = [
-    {"role": "system", "content": [{"type": "text", "text": "You are Qwen, a virtual human developed by the Qwen Team, Alibaba Group, capable of perceiving auditory and visual inputs, as well as generating text and speech."}]},
-    {"role": "user", "content": [{"type": "text", "text": "What is machine learning?"}]},
-    {"role": "assistant", "content": [{"type": "text", "text": "Machine learning is a subset of AI..."}]},
-    {"role": "user", "content": [{"type": "text", "text": "Can you give me an example?"}]}
+    {
+        "role": "system", 
+        "content": [
+            {"type": "text", "text": "You are Qwen, a virtual human developed by the Qwen Team, Alibaba Group, capable of perceiving auditory and visual inputs, as well as generating text and speech."}
+        ]
+    },
+    {
+        "role": "user", 
+        "content": "What is machine learning?"
+        # [
+        #     {"type": "text", "text": "What is machine learning?"},
+        #     {"type": "text", "text": "And how to learn it?"}
+        # ]
+    },
+    {
+        "role": "assistant", 
+        "content": 
+        [
+            {"type": "text", "text": "Machine learning is a subset of AI..."}
+        ]
+    },
+    {
+        "role": "user", 
+        "content": 
+        [
+            {"type": "text", "text": "Can you give me an example?"}
+        ]
+    }
 ]
 
-formatted_text = processor.apply_chat_template(
-    messages_text_only,
-    add_generation_prompt=True,
-    tokenize=False
-)
+# Apply chat template to convert messages into a formatted prompt string
+formatted_text = processor.apply_chat_template(messages_text_only, add_generation_prompt=False, tokenize=False)
 print("Formatted prompt:")
 print("-" * 80)
 print(formatted_text)
@@ -205,16 +222,14 @@ print("Image + text question\n")
 
 messages_with_image = [
     {"role": "user", "content": [
+        {"type": "text", "text": "I have an image:"},
         {"type": "image", "image": dummy_image_red},
         {"type": "text", "text": "What's in this image?"}
     ]}
 ]
 
-formatted_image = processor.apply_chat_template(
-    messages_with_image,
-    add_generation_prompt=True,
-    tokenize=False
-)
+# Apply chat template with image - image is converted to embeddings internally
+formatted_image = processor.apply_chat_template(messages_with_image, add_generation_prompt=True, tokenize=False)
 print("Formatted prompt:")
 print("-" * 80)
 print(formatted_image)
@@ -236,11 +251,8 @@ messages_with_audio = [
     ]}
 ]
 
-formatted_audio = processor.apply_chat_template(
-    messages_with_audio,
-    add_generation_prompt=True,
-    tokenize=False
-)
+# Apply chat template with audio - audio is converted to embeddings/tokens internally
+formatted_audio = processor.apply_chat_template(messages_with_audio, add_generation_prompt=True, tokenize=False)
 print("Formatted prompt:")
 print("-" * 80)
 print(formatted_audio)
@@ -264,11 +276,8 @@ messages_multimodal = [
     ]}
 ]
 
-formatted_multimodal = processor.apply_chat_template(
-    messages_multimodal,
-    add_generation_prompt=True,
-    tokenize=False
-)
+# Apply chat template with multiple modalities (text + image + audio)
+formatted_multimodal = processor.apply_chat_template(messages_multimodal, add_generation_prompt=True, tokenize=False)
 print("Formatted prompt:")
 print("-" * 80)
 print(formatted_multimodal)
@@ -289,11 +298,8 @@ messages_with_video = [
     ]}
 ]
 
-formatted_video = processor.apply_chat_template(
-    messages_with_video,
-    add_generation_prompt=True,
-    tokenize=False
-)
+# Apply chat template with video (if supported by the model)
+formatted_video = processor.apply_chat_template(messages_with_video, add_generation_prompt=True, tokenize=False)
 print("Formatted prompt:")
 print("-" * 80)
 print(formatted_video)
@@ -381,8 +387,7 @@ def analyze_tokenized_messages(messages, title="Tokenized Input"):
 #   - messages_with_audio     : Audio + text
 #   - messages_multimodal      : Text + Image + Audio
 #   - messages_with_video     : Video + text
-#   - messages_text            : Simple text (from CELL 5)
-#   - messages_audio           : Audio example (from CELL 5)
+
 
 MESSAGES_TO_ANALYZE = messages_with_audio  # 👈 Change this line to test different message types!
 
@@ -393,33 +398,37 @@ print("\n🔢 === Tokenized Input Examples ===")
 print("Change 'MESSAGES_TO_ANALYZE' variable above to test different message types!\n")
 
 tokenized_output, token_ids = analyze_tokenized_messages(MESSAGES_TO_ANALYZE)
-
-# Example: Show what happens with multimodal inputs
-print("\n💡 Multimodal Input Structure Info:")
-print("   When processing multimodal inputs, the processor typically:")
-print("   - Converts images to embeddings/patches")
-print("   - Converts audio to spectrograms or embeddings")
-print("   - Interleaves these with text tokens using special tokens")
-print("   - Creates attention masks that account for all modalities")
-print("\n   Example token sequence structure:")
-print("   [BOS] [text_tokens...] [IMAGE_START] [image_tokens...] [IMAGE_END] [text_tokens...] [AUDIO_START] [audio_tokens...] [AUDIO_END] [text_tokens...] [EOS]")
+# Note: tokenized_output contains the full tokenized tensor, token_ids is the first sequence
 
 #%%
 # ============================================================================
 # CELL 3: Load the Model
 # ============================================================================
-# Loading the model with trust_remote_code=True to handle custom architectures (Thinker/Talker)
+# Simple loading for both Qwen 2.5 Omni and Qwen2 Audio
 
 print(f"Loading model {model_config['id']}...")
 print("⚡ (This may take a while and consume significant VRAM...)")
 
-model = AutoModelForCausalLM.from_pretrained(
-    model_config['id'],
-    trust_remote_code=True,
-    torch_dtype=torch.float16, # Use bfloat16 if supported by GPU
-    device_map="auto",
-    cache_dir=MODEL_CACHE_DIR
-)
+# Import the appropriate model class based on the model type
+if model_config['type'] == "omni":
+    from transformers import Qwen2_5OmniForConditionalGeneration
+    model = Qwen2_5OmniForConditionalGeneration.from_pretrained(
+        model_config['id'],
+        torch_dtype=torch.float16,
+        device_map="auto",
+        cache_dir=MODEL_CACHE_DIR
+    )
+elif model_config['type'] == "audio_text":
+    from transformers import Qwen2AudioForConditionalGeneration
+    model = Qwen2AudioForConditionalGeneration.from_pretrained(
+        model_config['id'],
+        torch_dtype=torch.float16,
+        device_map="auto",
+        cache_dir=MODEL_CACHE_DIR
+    )
+else:
+    raise ValueError(f"Unknown model type: {model_config['type']}")
+
 print(f"✅ Model loaded: {type(model).__name__}")
 
 #%%
@@ -439,139 +448,125 @@ has_talker = hasattr(model, 'talker') or any('talker' in n for n, _ in model.nam
 
 if has_thinker:
     print("\n✅ Thinker Component Found - Handles text reasoning and generation.")
-    # If exposed as a property or attribute
     if hasattr(model, 'thinker'):
-        print(f"  Config: {model.thinker.config if hasattr(model.thinker, 'config') else 'N/A'}")
+        if hasattr(model.thinker, 'config'):
+            print(f"  Config: {model.thinker.config}")
+        else:
+            print("  Config: N/A")
 
 if has_talker:
     print("\n✅ Talker Component Found - Handles audio/speech synthesis.")
     if hasattr(model, 'talker'):
-        print(f"  Config: {model.talker.config if hasattr(model.talker, 'config') else 'N/A'}")
+        if hasattr(model.talker, 'config'):
+            print(f"  Config: {model.talker.config}")
+        else:
+            print("  Config: N/A")
 
 #%%
 # ============================================================================
-# CELL 5: Input Processing & Chat Templates
+# CELL 5: Inspect Actual Tensor Inputs & Padding
 # ============================================================================
-# How to prepare inputs for the model (Text + Audio)
+# Show what tensors the processor actually creates and how padding works
 
-# 1. Text Only Example
-messages_text = [
-    {"role": "system", "content": [{"type": "text", "text": "You are a helpful assistant."}]},
-    {"role": "user", "content": [{"type": "text", "text": "Hello, how does a transformer work?"}]}
-]
+simple_text_prompt = processor.apply_chat_template(messages_text_only[:2], add_generation_prompt=True, tokenize=False)
 
-text_input = processor.apply_chat_template(
-    messages_text, 
-    add_generation_prompt=True, 
-    tokenize=False # Just to see the string
-)
-print("\n💬 === Formatted Text Prompt ===")
-print(text_input)
+print("\n🔍 === Actual Tensor Inspection ===")
+print("Processing text prompt into model inputs...\n")
 
-# 2. Audio Input Example
-# Note: Using dummy_audio_noise from CELL 1.5 (created at the beginning)
-# For template formatting only, we use a placeholder string
-# For actual processing, use the numpy array from dummy_audio_noise
-messages_audio = [
-    {"role": "system", "content": [{"type": "text", "text": "You are a helpful assistant."}]},
-    {"role": "user", "content": [
-        {"type": "audio", "audio": dummy_audio_noise},  # Using centralized dummy data
-        {"type": "text", "text": "What is this sound?"}
-    ]}
-]
+# Process text into tensors - returns dict with 'input_ids' and 'attention_mask'
+inputs = processor(text=[simple_text_prompt], return_tensors="pt", padding=True)
 
-# Note: apply_chat_template usually handles string formatting. 
-# Actual tensor creation happens via processor(text=..., audios=...)
-
-print("\n🔧 === Input Processing & Tensor Creation ===")
-# This demonstrates how the processor converts formatted prompts to model inputs
-
-# Show actual input tensor structure
-print("\n1️⃣ Text-Only Input Processing:")
-inputs_text = processor(
-    text=[text_input],
-    return_tensors="pt",
-    padding=True
-)
-print("   Input dictionary keys:", list(inputs_text.keys()))
-for key, value in inputs_text.items():
+print(f"Input keys: {list(inputs.keys())}")
+for key, value in inputs.items():
     if isinstance(value, torch.Tensor):
-        print(f"   - {key}: shape {value.shape}, dtype {value.dtype}")
+        print(f"  {key:20s}: shape {str(value.shape):20s} dtype {value.dtype}")
     else:
-        print(f"   - {key}: {type(value)}")
+        print(f"  {key:20s}: {type(value)}")
 
-# Show multimodal input processing (if supported)
-print("\n2️⃣ Multimodal Input Processing Examples:")
-print("   For models supporting multiple modalities, inputs may include:")
+# ============================================================================
+# Padding Demonstration
+# ============================================================================
+print("\n\n📦 === Padding Demonstration ===")
+print("Creating sequences of different lengths to show how padding works\n")
 
-print("\n   📝 TEXT INPUT:")
-print("   inputs = processor(text=[formatted_prompt], return_tensors='pt')")
-print("   → Returns: {'input_ids': tensor, 'attention_mask': tensor}")
+# Create three prompts of different lengths
+short_prompt = "Hi"
+medium_prompt = "Hello, how are you today?"
+long_prompt = "Hello, I would like to know more about machine learning and artificial intelligence."
 
-if "audio" in model_config['type'] or model_config['type'] == "omni":
-    print("\n   🎵 AUDIO INPUT:")
-    print("   inputs = processor(")
-    print("       text=[formatted_prompt],")
-    print("       audios=[audio_array],  # numpy array or list of arrays")
-    print("       sampling_rate=16000,")
-    print("       return_tensors='pt'")
-    print("   )")
-    print("   → Returns: {")
-    print("       'input_ids': tensor,           # Text tokens")
-    print("       'attention_mask': tensor,      # Attention mask")
-    print("       'audio_values': tensor,        # Audio waveform or features")
-    print("       'audio_attention_mask': tensor # Audio attention mask")
-    print("   }")
+# Get the padding token information
+print("🔍 Tokenizer Padding Configuration:")
+print(f"  pad_token: '{tokenizer.pad_token}'")
+print(f"  pad_token_id: {tokenizer.pad_token_id}")
+print(f"  eos_token: '{tokenizer.eos_token}'")
+print(f"  eos_token_id: {tokenizer.eos_token_id}")
+
+im_end_token = "<|im_end|>"
+if im_end_token in tokenizer.get_vocab():
+    im_end_id = tokenizer.convert_tokens_to_ids(im_end_token)
+    print(f"  {im_end_token}: {im_end_id}")
+else:
+    print(f"  {im_end_token}: Not found in vocabulary")
+
+print("\n" + "="*80)
+
+batch_inputs = processor(text=[short_prompt, medium_prompt, long_prompt], return_tensors="pt", padding=True)
+
+print(f"\nBatch input shape: {batch_inputs['input_ids'].shape}")
+print(f"  → [batch_size={batch_inputs['input_ids'].shape[0]}, max_seq_len={batch_inputs['input_ids'].shape[1]}]\n")
+
+# Show each sequence with its padding
+for idx, prompt_text in enumerate([short_prompt, medium_prompt, long_prompt]):
+    input_ids = batch_inputs['input_ids'][idx]
+    attention_mask = batch_inputs['attention_mask'][idx]
     
-    print("\n   📸 IMAGE INPUT:")
-    print("   inputs = processor(")
-    print("       text=[formatted_prompt],")
-    print("       images=[pil_image],  # PIL Image or list of Images")
-    print("       return_tensors='pt'")
-    print("   )")
-    print("   → Returns: {")
-    print("       'input_ids': tensor,           # Text tokens")
-    print("       'attention_mask': tensor,      # Attention mask")
-    print("       'pixel_values': tensor,        # Image embeddings/patches")
-    print("       'image_grid_thw': tensor       # Image grid dimensions")
-    print("   }")
+    # Count real tokens vs padding
+    num_real_tokens = attention_mask.sum().item()
+    num_padding = len(attention_mask) - num_real_tokens
     
-    print("\n   🎬 VIDEO INPUT:")
-    print("   inputs = processor(")
-    print("       text=[formatted_prompt],")
-    print("       videos=[video_array],  # Video frames or path")
-    print("       return_tensors='pt'")
-    print("   )")
-    print("   → Returns: Similar to image but with temporal dimension")
+    print(f"Sequence {idx + 1}: \"{prompt_text}\"")
+    print(f"  Length: {len(input_ids)} tokens ({num_real_tokens} real + {num_padding} padding)")
+    print(f"  input_ids: {input_ids.tolist()}")
+    print(f"  attention_mask: {attention_mask.tolist()}")
+    
+    # Show which tokens are padding
+    if num_padding > 0:
+        padding_positions = (attention_mask == 0).nonzero(as_tuple=True)[0].tolist()
+        padding_token_ids = input_ids[padding_positions].tolist()
+        print(f"  Padding positions: {padding_positions}")
+        print(f"  Padding token IDs: {padding_token_ids} (should be {tokenizer.pad_token_id})")
+        
+        unique_padding = set(padding_token_ids)
+        if len(unique_padding) == 1:
+            print(f"  ✅ All padding uses token ID: {list(unique_padding)[0]}")
+        else:
+            print(f"  ⚠️ Multiple padding token IDs found: {unique_padding}")
+    else:
+        print(f"  No padding (this is the longest sequence)")
+    
+    print()
 
-print("\n3️⃣ Input Shape Examples:")
-print("   Typical shapes for Qwen Omni/Audio models:")
-print("   - input_ids: [1, seq_len] where seq_len varies (e.g., 512-8192)")
-print("   - attention_mask: [1, seq_len] (1 for real tokens, 0 for padding)")
-print("   - audio_values: [1, audio_len] or [1, num_frames, feature_dim]")
-print("   - pixel_values: [1, num_patches, patch_dim] for images")
+print("="*80)
+print("\n💡 Key Points:")
+print("  • Padding token ID is added to shorter sequences to match the longest")
+print("  • attention_mask = 1 for real tokens, 0 for padding")
+print("  • The model ignores padding tokens during computation")
+print(f"  • For this tokenizer, pad_token_id = {tokenizer.pad_token_id}")
 
-print("\n💡 Note: Actual shapes depend on:")
-print("   - Model architecture (Omni vs Audio vs standard)")
-print("   - Input length (text + modalities)")
-print("   - Model's max context length")
-print("   - How modalities are encoded (patches, embeddings, etc.)")
+print(f"\n💡 To add audio/images: processor(text=[...], audios=[...], images=[...], return_tensors='pt')")
 
 #%%
 # ============================================================================
-# CELL 6: Generating Response (Thinker Mode)
+# CELL 6: Generate Text Response
 # ============================================================================
-# Generate text response (Thinker only)
+# Simple text generation example
 
 print("\n⚡ === Generating Text Response ===")
-inputs = processor(
-    text=[text_input], 
-    return_tensors="pt", 
-    padding=True
-)
-inputs = inputs.to(model.device)
 
-# Standard generation (Text-to-Text)
+# Reuse inputs from CELL 5, move to device
+inputs = {k: v.to(model.device) for k, v in inputs.items()}
+
+# Generate text
 with torch.no_grad():
     generated_ids = model.generate(
         **inputs, 
@@ -581,7 +576,7 @@ with torch.no_grad():
     )
 
 decoded_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
-print("\n✨ === Generated Output ===")
+print("\n✨ Generated Output:")
 print(decoded_text)
 
 #%%
@@ -601,18 +596,12 @@ if model_config['type'] == "omni":
     
     print("💡 Common Omni arguments: 'output_audio=True' or 'talker_do_sample=True'")
     
-    # This assumes a hypothetical API common in recent Omni models
-    # Adjust based on specific model documentation
     with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=100,
-            # Experimental flags often found in these models:
-            # output_audio=True, 
-            # return_dict_in_generate=True 
-        )
-        
+        # Generate output - may contain text tokens and/or audio depending on model configuration
+        outputs = model.generate(**inputs, max_new_tokens=100)
+    
     # Check if output contains audio (often in a separate field or extended tensor)
+    # outputs is typically a tensor of token IDs, but Omni models may return dicts with audio
     if hasattr(outputs, 'audio') or isinstance(outputs, dict):
         print("✅ Audio output container found")
     else:
@@ -620,49 +609,40 @@ if model_config['type'] == "omni":
 
 #%%
 # ============================================================================
-# CELL 8: Audio Streaming Concept
+# CELL 8: Text Streaming Example
 # ============================================================================
-# How to handle streaming audio I/O
+# Stream generated tokens as they're produced
 
-print("\n🌊 === Audio Streaming Architecture ===")
-print("""
-Streaming with Omni models typically involves:
-1. Input Stream: VAD (Voice Activity Detection) -> Accumulate chunks -> Feed to processor
-2. Output Stream: 
-   - Model generates tokens
-   - Specific tokens trigger 'Talker'
-   - Talker outputs latent audio codes or waveform chunks
-   - Yield chunks to audio device
-""")
+print("\n🌊 === Streaming Text Generation ===")
 
-# Example pseudo-code for streaming loop
-print("\nPseudocode for streaming loop:")
-print("""
-streamer = TextIteratorStreamer(tokenizer)
-generation_kwargs = dict(inputs, streamer=streamer, max_new_tokens=100)
+from threading import Thread
+
+# Create a streamer
+streamer = TextIteratorStreamer(tokenizer, skip_special_tokens=True)
+
+# Prepare generation in a thread
+generation_kwargs = dict(inputs, streamer=streamer, max_new_tokens=50)
 thread = Thread(target=model.generate, kwargs=generation_kwargs)
 thread.start()
 
+print("Streaming output:")
 for new_text in streamer:
-    print(new_text)
-    # If audio is interleaved, extract and play
-""")
+    print(new_text, end="", flush=True)
+print("\n")
 
-#%%
+#%% 
 # ============================================================================
 # CELL 9: Deep Dive - Tokenizer & Vocabulary Statistics
 # ============================================================================
-
 vocab = tokenizer.get_vocab()
 print(f"\n📊 === Vocabulary Size ===")
 print(f"Vocabulary Size: {len(vocab)}")
 
-# Check for audio specific token ranges if likely
-# Qwen-Audio often uses specific ranges for audio patch tokens
 audio_tokens = [k for k in vocab.keys() if "AUDIO" in k or "audio" in k]
 print(f"Tokens containing 'AUDIO': {len(audio_tokens)}")
-if len(audio_tokens) > 0:
+if audio_tokens:
     print(f"Samples: {audio_tokens[:10]}")
 
 #%%
+
 
