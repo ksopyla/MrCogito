@@ -10,14 +10,14 @@ logger = logging.get_logger(__name__)
 
 class ConceptEncoderConfig(PretrainedConfig):
     """
-    Configuration class for ConceptEncoder.
+    Configuration class for ConceptEncoder model architecture.
     
-    Inherits from PretrainedConfig, so it integrates more seamlessly with
-    the Hugging Face Transformers library (e.g., from_pretrained, save_pretrained).
+    Inherits from PretrainedConfig for seamless integration with the
+    HuggingFace Transformers library (from_pretrained, save_pretrained).
 
-    This configuration class controls parameters for the ConceptEncoder model.
-    It defines the architecture (number of layers, dimensions, etc.) and training
-    parameters (dropout rates, initialization ranges, etc.).
+    This configuration class controls ONLY model architecture parameters.
+    Training-specific parameters (like loss configuration) should be passed
+    separately via ConceptLossConfig to follow Single Responsibility Principle.
 
     Args:
         vocab_size (int): Size of the token vocabulary.
@@ -33,6 +33,13 @@ class ConceptEncoderConfig(PretrainedConfig):
         type_vocab_size (int): Size of the token type vocabulary.
         initializer_range (float): Standard deviation for initializing model weights.
         is_decoder (bool): Whether the model acts as a decoder. Defaults to False.
+        tie_word_embeddings (bool): Whether to tie input/output embeddings. Defaults to True.
+    
+    Note:
+        For training with concept regularization losses, use ConceptLossConfig
+        from nn.concept_losses module. This separation follows SOLID principles:
+        - Model config = what the model IS (architecture)
+        - Loss config = how the model is TRAINED (behavior)
     """
 
     model_type = "concept_encoder"

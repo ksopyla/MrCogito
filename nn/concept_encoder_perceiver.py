@@ -1,56 +1,93 @@
+"""
+ConceptEncoder with Perceiver IO style decoding.
+
+This module provides ConceptEncoder models using Perceiver IO cross-attention
+for decoding concept representations back to sequence/classification outputs.
+
+Models:
+- ConceptEncoderForMaskedLMPerceiver: MLM pretraining
+- ConceptEncoderForSequenceClassificationPerceiver: Sequence classification (GLUE, etc.)
+
+Loss Management:
+- Uses LossManager for clean, extensible loss handling
+- Supports MLM-only, MLM + concept loss, MLM + multiple concept losses
+- Supports fixed, learnable, and uncertainty-based weighting
+
+Example:
+    >>> from nn.loss_manager import LossConfig, LossManager
+    >>> 
+    >>> # MLM + orthogonality with learnable weights
+    >>> loss_config = LossConfig(
+    ...     concept_losses=["orthogonality"],
+    ...     weighting_strategy="kendall_gal"
+    ... )
+    >>> model = ConceptEncoderForMaskedLMPerceiver(model_config, loss_config=loss_config)
+    >>> 
+    >>> # For inference (no concept loss)
+    >>> model = ConceptEncoderForMaskedLMPerceiver.from_pretrained("path/to/model")
+"""
+
 from typing import Optional, Tuple, Union
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from transformers import PreTrainedModel
 from transformers.modeling_outputs import MaskedLMOutput, SequenceClassifierOutput
+from transformers.utils import logging
 from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss
 
 from nn.concept_encoder import ConceptEncoder, ConceptEncoderConfig
+from nn.loss_manager import LossManager, LossConfig, check_loss_feasibility
 
-def compute_orthogonality_loss(concept_repr):
-    """
-    Encourage concept vectors to be orthogonal to each other.
-    Args:
-        concept_repr: [batch_size, concept_num, hidden_size]
-    Returns:
-        orthogonality_loss: scalar
-    """
-    # Normalize concepts to unit vectors
-    concept_norm = F.normalize(concept_repr, p=2, dim=-1)  # [B, C, H]
-    
-    # Compute concept similarity matrix [B, C,H]*[B, H, C] = [B, C, C]
-    concept_sim = torch.bmm(concept_norm, concept_norm.transpose(1, 2))  # [B, C, C]
-    
-    # Create identity matrix (target: concepts should be orthogonal)
-    batch_size, concept_num = concept_sim.shape[:2]
-    eye = torch.eye(concept_num, device=concept_sim.device).unsqueeze(0)
-    eye = eye.expand(batch_size, -1, -1)
-    
-    # Compute loss: penalize non-diagonal elements
-    off_diagonal_mask = 1.0 - eye
-    orthogonality_loss = (concept_sim * off_diagonal_mask).pow(2).sum() / (batch_size * concept_num * (concept_num - 1))
-    
-    return orthogonality_loss
+logger = logging.get_logger(__name__)
+
 
 class ConceptEncoderForMaskedLMPerceiver(PreTrainedModel):
     """
-    ConceptEncoder with Perceiver IO style decoding.
+    ConceptEncoder with Perceiver IO style decoding for Masked Language Modeling.
     
-    Improved Version:
-    1. Supports Input Embeddings as Decoder Queries (better gradient flow).
-    2. Includes Orthogonality Loss (prevents concept collapse).
+    Architecture:
+    1. Encoder: Tokens -> Concepts via cross-attention
+    2. Decoder: Concepts -> Token predictions via Perceiver IO cross-attention
+    
+    Training:
+    - For training with concept regularization, pass `loss_config` to __init__
+    - For inference or baseline (no concept loss), omit `loss_config`
+    
+    This follows SOLID principles:
+    - Model config (ConceptEncoderConfig) = architecture only, saved with model
+    - Loss config (LossConfig) = training behavior, NOT saved with model
+    - Loss computation delegated to LossManager (Single Responsibility)
+    
+    Example:
+        >>> from nn.loss_manager import LossConfig
+        >>> 
+        >>> # For training with concept loss
+        >>> loss_config = LossConfig(
+        ...     concept_losses=["orthogonality", "uniformity"],
+        ...     weighting_strategy="kendall_gal"
+        ... )
+        >>> model = ConceptEncoderForMaskedLMPerceiver(model_config, loss_config=loss_config)
+        >>> 
+        >>> # For inference (no concept loss)
+        >>> model = ConceptEncoderForMaskedLMPerceiver.from_pretrained("path/to/model")
     """
     config_class = ConceptEncoderConfig
     base_model_prefix = "concept_encoder"
 
-    def __init__(self, config: ConceptEncoderConfig):
+    def __init__(
+        self, 
+        config: ConceptEncoderConfig,
+        loss_config: Optional[LossConfig] = None
+    ):
         super().__init__(config)
         self.config = config
         self.encoder = ConceptEncoder(config)
         
-        # Decoder Queries
-        # We keep the learned position embeddings as a base or fallback
+        # === Loss Management (Delegated to LossManager) ===
+        self._setup_loss_manager(config, loss_config)
+        
+        # === Decoder Architecture ===
+        # Decoder Queries: Position embeddings
         self.decoder_query_embeddings = nn.Embedding(
             num_embeddings=config.max_sequence_length, 
             embedding_dim=config.hidden_size
@@ -79,17 +116,47 @@ class ConceptEncoderForMaskedLMPerceiver(PreTrainedModel):
         # MLM Head
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         
-        # Learnable Loss Weights (Kendall & Gal, CVPR 2018)
-        # parameter 0: MLM Loss, parameter 1: Orthogonality Loss
-        # initialized to 0.0 (which corresponds to weight = 1.0 = exp(-0.0))
-        self.loss_log_vars = nn.Parameter(torch.zeros(2))
-        
         # Initialize weights
         self.post_init()
         
         # Optionally tie embeddings
         if config.tie_word_embeddings:
             self._tie_or_clone_weights(self.lm_head, self.encoder.token_embeddings)
+    
+    def _setup_loss_manager(
+        self, 
+        model_config: ConceptEncoderConfig,
+        loss_config: Optional[LossConfig]
+    ) -> None:
+        """
+        Setup the loss manager based on configuration.
+        
+        Args:
+            model_config: Model architecture config (for feasibility check)
+            loss_config: Training loss config (None = no concept loss)
+        """
+        # Validate loss feasibility
+        if loss_config is not None and loss_config.is_enabled:
+            warnings = check_loss_feasibility(
+                model_config.concept_num,
+                model_config.hidden_size,
+                loss_config.concept_losses
+            )
+            for warning in warnings:
+                logger.warning(warning)
+        
+        # Create loss manager
+        self.loss_manager = LossManager(loss_config)
+        self._loss_config = loss_config
+    
+    def set_loss_config(self, loss_config: Optional[LossConfig]) -> None:
+        """
+        Update loss configuration (e.g., for ablation studies mid-training).
+        
+        Args:
+            loss_config: New loss configuration, or None to disable concept loss
+        """
+        self._setup_loss_manager(self.config, loss_config)
 
     def forward(
         self,
@@ -114,10 +181,9 @@ class ConceptEncoderForMaskedLMPerceiver(PreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict
         )
-        concept_repr = encoder_outputs.last_hidden_state # [B, C, H]
+        concept_repr = encoder_outputs.last_hidden_state  # [B, C, H]
         
         # 2. Decode: Concepts -> Sequence using Perceiver IO (Cross Attention)
-        
         # Construct Queries: Input Embeddings + Position Embeddings
         # This gives the decoder a hint about what was at the position (especially for unmasked tokens)
         # and allows the model to focus on filling in the [MASK] tokens using concepts.
@@ -156,41 +222,28 @@ class ConceptEncoderForMaskedLMPerceiver(PreTrainedModel):
         # 3. Project to Vocabulary
         logits = self.lm_head(decoder_output) # [B, L, V]
         
-        # 4. Compute Loss
-        masked_lm_loss = None
+        # 4. Compute Loss (delegated to LossManager)
+        loss = None
         if labels is not None:
+            # Compute MLM loss
             loss_fct = CrossEntropyLoss(ignore_index=-100)
-            masked_lm_loss = loss_fct(
+            mlm_loss = loss_fct(
                 logits.view(-1, self.config.vocab_size),
                 labels.view(-1)
             )
             
-            # ADDED: Orthogonality Loss with Uncertainty Weighting
-            ortho_loss = compute_orthogonality_loss(concept_repr)
-            
-            # Retrieve learned variances
-            # precision = 1 / (2 * sigma^2) = 0.5 * exp(-log_var)
-            # Loss = precision * task_loss + log_var
-            # We add 0.5 * log_var to the loss (standard derivation)
-            
-            w_mlm = torch.exp(-self.loss_log_vars[0])
-            w_ortho = torch.exp(-self.loss_log_vars[1])
-            
-            # Combined loss
-            # Note: we multiply by 0.5 as per Kendall & Gal formulation, 
-            # but simple weighting works too. Sticking to the paper:
-            # L = (1/2sigma^2) * L_task + log(sigma)
-            # log(sigma) = 0.5 * log_var
-            
-            masked_lm_loss = (0.5 * w_mlm * masked_lm_loss) + (0.5 * self.loss_log_vars[0]) + \
-                             (0.5 * w_ortho * ortho_loss) + (0.5 * self.loss_log_vars[1])
+            # Apply loss manager (combines task loss with concept losses)
+            loss = self.loss_manager(
+                task_loss=mlm_loss,
+                concept_repr=concept_repr
+            )
             
         if not return_dict:
             output = (logits,) + encoder_outputs[1:]
-            return ((masked_lm_loss,) + output) if masked_lm_loss is not None else output
+            return ((loss,) + output) if loss is not None else output
             
         return MaskedLMOutput(
-            loss=masked_lm_loss,
+            loss=loss,
             logits=logits,
             hidden_states=encoder_outputs.hidden_states,
             attentions=encoder_outputs.attentions,
@@ -203,18 +256,43 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
     
     Uses a single learnable [CLS] query to aggregate concept information
     directly into a classification token, avoiding mean pooling.
+    
+    Training:
+    - For training with concept regularization, pass `loss_config` to __init__
+    - For inference or baseline (no concept loss), omit `loss_config`
+    
+    This follows SOLID principles:
+    - Model config (ConceptEncoderConfig) = architecture only, saved with model
+    - Loss config (LossConfig) = training behavior, NOT saved with model
+    - Loss computation delegated to LossManager (Single Responsibility)
+    
+    Example:
+        >>> from nn.loss_manager import LossConfig
+        >>> 
+        >>> # For training with concept loss
+        >>> loss_config = LossConfig(concept_losses=["uniformity"])
+        >>> model = ConceptEncoderForSequenceClassificationPerceiver(
+        ...     model_config, loss_config=loss_config
+        ... )
     """
     config_class = ConceptEncoderConfig
     base_model_prefix = "concept_encoder"
 
-    def __init__(self, config: ConceptEncoderConfig):
+    def __init__(
+        self, 
+        config: ConceptEncoderConfig,
+        loss_config: Optional[LossConfig] = None
+    ):
         super().__init__(config)
         self.num_labels = config.num_labels
         self.config = config
         self.encoder = ConceptEncoder(config)
         
+        # === Loss Management (Delegated to LossManager) ===
+        self._setup_loss_manager(config, loss_config)
+        
+        # === Classification Decoder ===
         # Learnable [CLS] query for classification
-        # Shape: [1, 1, hidden_size]
         self.cls_query = nn.Parameter(torch.zeros(1, 1, config.hidden_size))
         self.cls_query.data.normal_(mean=0.0, std=config.initializer_range)
         
@@ -237,15 +315,46 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
         )
         
         self.classifier = nn.Linear(config.hidden_size, config.num_labels)
-        
-        # Learnable Loss Weights (Kendall & Gal)
-        # param 0: Task Loss, param 1: Ortho Loss
-        self.loss_log_vars = nn.Parameter(torch.zeros(2))
 
         self.post_init()
+    
+    def _setup_loss_manager(
+        self, 
+        model_config: ConceptEncoderConfig,
+        loss_config: Optional[LossConfig]
+    ) -> None:
+        """
+        Setup the loss manager based on configuration.
+        
+        Args:
+            model_config: Model architecture config (for feasibility check)
+            loss_config: Training loss config (None = no concept loss)
+        """
+        # Validate loss feasibility
+        if loss_config is not None and loss_config.is_enabled:
+            warnings = check_loss_feasibility(
+                model_config.concept_num,
+                model_config.hidden_size,
+                loss_config.concept_losses
+            )
+            for warning in warnings:
+                logger.warning(warning)
+        
+        # Create loss manager
+        self.loss_manager = LossManager(loss_config)
+        self._loss_config = loss_config
+    
+    def set_loss_config(self, loss_config: Optional[LossConfig]) -> None:
+        """
+        Update loss configuration (e.g., for ablation studies mid-training).
+        
+        Args:
+            loss_config: New loss configuration, or None to disable concept loss
+        """
+        self._setup_loss_manager(self.config, loss_config)
         
     def _init_weights(self, module):
-        """Initialize the weights"""
+        """Initialize the weights."""
         if isinstance(module, nn.Linear):
             module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
             if module.bias is not None:
@@ -279,7 +388,7 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
-        concept_repr = encoder_outputs.last_hidden_state # [B, C, H]
+        concept_repr = encoder_outputs.last_hidden_state  # [B, C, H]
         
         # 2. Decode with Single Query
         # Expand CLS query to batch: [1, 1, H] -> [B, 1, H]
@@ -288,7 +397,7 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
         # Pre-LN before Attention (Fixed: Apply norm to copy, preserve residual stream)
         decoder_queries_norm = self.decoder_norm(decoder_queries)
         
-        # Cross Attn
+        # Cross Attention
         attn_output, _ = self.decoder_cross_attn(
             query=decoder_queries_norm,
             key=concept_repr,
@@ -305,8 +414,10 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
         # Squeeze sequence dim (1)
         logits = self.classifier(decoder_output.squeeze(1)) # [B, num_labels]
         
+        # 4. Compute Loss (delegated to LossManager)
         loss = None
         if labels is not None:
+            # Determine problem type
             if self.config.problem_type is None:
                 if self.num_labels == 1:
                     self.config.problem_type = "regression"
@@ -315,29 +426,28 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
                 else:
                     self.config.problem_type = "multi_label_classification"
             
+            # Compute task loss
             if self.config.problem_type == "regression":
                 loss_fct = MSELoss()
                 if self.num_labels == 1:
-                    loss = loss_fct(logits.squeeze(), labels.squeeze())
+                    task_loss = loss_fct(logits.squeeze(), labels.squeeze())
                 else:
-                    loss = loss_fct(logits, labels)
+                    task_loss = loss_fct(logits, labels)
             elif self.config.problem_type == "single_label_classification":
                 loss_fct = CrossEntropyLoss()
-                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+                task_loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
             elif self.config.problem_type == "multi_label_classification":
                 loss_fct = BCEWithLogitsLoss()
-                loss = loss_fct(logits, labels)
+                task_loss = loss_fct(logits, labels)
             
-            # ADDED: Orthogonality Loss with Uncertainty Weighting
+            # Apply loss manager (only during training for classification)
             if self.training:
-                ortho_loss = compute_orthogonality_loss(concept_repr)
-                
-                w_task = torch.exp(-self.loss_log_vars[0])
-                w_ortho = torch.exp(-self.loss_log_vars[1])
-                
-                # Kendall & Gal weighting
-                loss = (0.5 * w_task * loss) + (0.5 * self.loss_log_vars[0]) + \
-                       (0.5 * w_ortho * ortho_loss) + (0.5 * self.loss_log_vars[1])
+                loss = self.loss_manager(
+                    task_loss=task_loss,
+                    concept_repr=concept_repr
+                )
+            else:
+                loss = task_loss
                 
         if not return_dict:
             output = (logits,) + encoder_outputs[1:]

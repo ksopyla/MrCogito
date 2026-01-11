@@ -5,7 +5,7 @@ from transformers import DataCollatorForWholeWordMask
 
 
 
-def load_and_preprocess_text_dataset(tokenizer, dataset_hf_path, dataset_name, text_column_name, test_size_percent=0.1, max_seq_length=512, dataset_cache_dir=None):
+def load_and_preprocess_text_dataset(tokenizer, dataset_hf_path, dataset_name_subset, text_column_name, test_size_percent=0.1, max_seq_length=512, dataset_cache_dir=None):
     """
     Loads and preprocesses the text dataset that fits to memory.
     
@@ -23,7 +23,10 @@ def load_and_preprocess_text_dataset(tokenizer, dataset_hf_path, dataset_name, t
     else:
         DATASET_CACHE_DIR = os.path.abspath(dataset_cache_dir)
 
-    dataset = load_dataset(dataset_hf_path, dataset_name, cache_dir=DATASET_CACHE_DIR, trust_remote_code=True)
+    if dataset_name_subset == "":
+        dataset_name_subset = None
+
+    dataset = load_dataset(dataset_hf_path, dataset_name_subset, cache_dir=DATASET_CACHE_DIR, trust_remote_code=True)
 
     # check if the dataset contains a train and test split
        

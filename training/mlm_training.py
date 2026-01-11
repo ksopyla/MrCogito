@@ -23,12 +23,14 @@ from transformers import (
 import numpy as np
 import torch
 from dataclasses import dataclass, field
+from typing import List, Optional
 
 from nn.concept_encoder import ConceptEncoderConfig
 from nn.concept_encoder_methods import ConceptEncoderForMaskedLM
 from nn.concept_encoder_sim_matrix import ConceptEncoderWithSimMatrixForMaskedLM
 from nn.concept_encoder_weighted import ConceptEncoderForMaskedLMWeighted
 from nn.concept_encoder_perceiver import ConceptEncoderForMaskedLMPerceiver
+from nn.loss_manager import LossConfig, get_available_losses
 
 from training.dataset_preprocess import load_and_preprocess_text_dataset
 from training.utils_training import (
@@ -92,6 +94,86 @@ class ModelArguments:
         default=128,
         metadata={"help": "Number of concepts to train"}
     )
+
+
+@dataclass
+class LossArguments:
+    """
+    Arguments for loss configuration.
+    
+    Examples:
+        # MLM only (no concept loss)
+        --concept_losses none
+        
+        # MLM + orthogonality with fixed weight 0.1
+        --concept_losses orthogonality --loss_weighting fixed --loss_weight 0.1
+        
+        # MLM + orthogonality with learnable weights (Kendall & Gal)
+        --concept_losses orthogonality --loss_weighting kendall_gal
+        
+        # MLM + two concept losses
+        --concept_losses orthogonality uniformity --loss_weighting kendall_gal
+    """
+    concept_losses: Optional[str] = field(
+        default="orthogonality",
+        metadata={
+            "help": f"Concept loss types to use, space-separated. 'none' for no concept loss. "
+                    f"Available: {get_available_losses()}"
+        }
+    )
+    loss_weighting: str = field(
+        default="kendall_gal",
+        metadata={
+            "help": "Loss weighting strategy: 'fixed', 'learnable', or 'kendall_gal'",
+            "choices": ["fixed", "learnable", "kendall_gal"]
+        }
+    )
+    loss_weight: float = field(
+        default=0.1,
+        metadata={
+            "help": "Fixed weight for concept loss (only used with --loss_weighting fixed)"
+        }
+    )
+    # Loss-specific parameters
+    soft_ortho_threshold: float = field(
+        default=0.1,
+        metadata={"help": "Threshold for soft_orthogonality loss"}
+    )
+    uniformity_temperature: float = field(
+        default=2.0,
+        metadata={"help": "Temperature for uniformity loss"}
+    )
+    
+    def to_loss_config(self) -> LossConfig:
+        """Convert arguments to LossConfig."""
+        # Parse concept losses
+        if self.concept_losses is None or self.concept_losses.lower() == "none":
+            return LossConfig.disabled()
+        
+        losses = self.concept_losses.split()
+        
+        # Build loss weights dict
+        loss_weights = {"task": 1.0}
+        if self.loss_weighting == "fixed":
+            # Distribute weight equally among concept losses
+            per_loss_weight = self.loss_weight / len(losses) if losses else 0
+            for loss_name in losses:
+                loss_weights[loss_name] = per_loss_weight
+        
+        # Build loss params
+        loss_params = {}
+        if "soft_orthogonality" in losses:
+            loss_params["soft_orthogonality"] = {"threshold": self.soft_ortho_threshold}
+        if "uniformity" in losses or "combined" in losses:
+            loss_params["uniformity"] = {"temperature": self.uniformity_temperature}
+            loss_params["combined"] = {"temperature": self.uniformity_temperature}
+        
+        return LossConfig(
+            concept_losses=losses,
+            weighting_strategy=self.loss_weighting,
+            loss_weights=loss_weights,
+            loss_params=loss_params
+        )
     
 
 @dataclass
@@ -130,7 +212,7 @@ class DataTrainingArguments:
     )
 
 def parse_args():
-    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, LossArguments, TrainingArguments))
     return parser.parse_args_into_dataclasses()
 
 
@@ -154,7 +236,10 @@ def main():
         logging.set_verbosity_error()
     
     # Parse arguments
-    model_args, data_args, training_args = parse_args()
+    model_args, data_args, loss_args, training_args = parse_args()
+    
+    # Create loss configuration from arguments
+    loss_config = loss_args.to_loss_config()
     
     # Set seed for reproducibility
     set_seed(training_args.seed)
@@ -277,21 +362,48 @@ def main():
     # For now, we'll stick to initializing from config unless we want to explicitly support loading weights here.
     # If we want to continue training with NEW epochs but OLD weights, we should ideally load weights here.
     
+    model_info = MODEL_REGISTRY[model_args.model_type]
     logger.info(f"Initializing model: {model_info['description']}")
+    
+    # Log loss configuration
+    logger.info("="*60)
+    logger.info("Loss Configuration")
+    logger.info("="*60)
+    logger.info(f"Concept losses: {loss_config.concept_losses or 'none (MLM only)'}")
+    logger.info(f"Weighting strategy: {loss_config.weighting_strategy}")
+    if loss_config.weighting_strategy == "fixed":
+        logger.info(f"Loss weights: {loss_config.loss_weights}")
+    logger.info("="*60)
+    
+    # Models that support loss_config parameter
+    models_with_loss_config = {"weighted_mlm", "perceiver_mlm"}
+    supports_loss_config = model_args.model_type in models_with_loss_config
     
     if model_args.model_name_or_path:
         logger.info(f"Loading model weights from: {model_args.model_name_or_path}")
-        # When loading from a path, we usually want to use .from_pretrained
-        # Ensure the config matches what we prepared or let it load from the path
         try:
             model = model_class.from_pretrained(model_args.model_name_or_path, config=config)
+            # Set loss config after loading (not saved with model)
+            if supports_loss_config and hasattr(model, 'set_loss_config'):
+                model.set_loss_config(loss_config)
         except Exception as e:
             logger.warning(f"Failed to load via from_pretrained (might be a fresh directory?): {e}")
             logger.info("Falling back to fresh initialization")
-            model = model_class(config)
+            if supports_loss_config:
+                model = model_class(config, loss_config=loss_config)
+            else:
+                model = model_class(config)
     else:
         logger.info("Initializing fresh model from config")
-        model = model_class(config)
+        if supports_loss_config:
+            model = model_class(config, loss_config=loss_config)
+        else:
+            model = model_class(config)
+            if loss_config.is_enabled:
+                logger.warning(
+                    f"Model type '{model_args.model_type}' does not support configurable loss. "
+                    f"Concept loss settings will be ignored."
+                )
     
     # Log detailed model information
     log_model_info(
@@ -444,6 +556,11 @@ def main():
             'max_sequence_length': config.max_sequence_length,
             'total_params': total_params,
             'trainable_params': trainable_params,
+            
+            # Loss configuration
+            'concept_losses': loss_config.concept_losses,
+            'loss_weighting': loss_config.weighting_strategy,
+            'loss_weights': loss_config.loss_weights if loss_config.weighting_strategy == "fixed" else "learnable",
             
             # Data configuration
             'dataset_name': data_args.dataset_name,

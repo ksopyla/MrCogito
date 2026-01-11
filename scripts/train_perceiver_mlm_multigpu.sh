@@ -51,9 +51,9 @@ CONCEPT_NUM=128      # Same as weighted_mlm_H512L2C128_20251123_213949
 INTERMEDIATE_SIZE=1024
 
 # Data configuration
-DATASET_NAME="Salesforce/wikitext"
-DATASET_SUBSET="wikitext-103-raw-v1"
-TOKENIZER_NAME="bert-base-cased"
+DATASET_NAME="JeanKaddour/minipile"
+DATASET_SUBSET="" 
+TOKENIZER_NAME="answerdotai/ModernBERT-base"
 MAX_SEQ_LENGTH=512
 MLM_PROBABILITY=0.15
 TEST_SIZE_PERCENT=0.1
@@ -66,6 +66,13 @@ NUM_EPOCHS=20
 WARMUP_STEPS=2000
 WEIGHT_DECAY=0.01
 MAX_GRAD_NORM=1.0
+
+# Loss configuration
+# Options for concept_losses: orthogonality, soft_orthogonality, uniformity, vicreg, combined, none
+# Options for loss_weighting: fixed, learnable, kendall_gal
+CONCEPT_LOSSES="none"
+LOSS_WEIGHTING="kendall_gal"
+LOSS_WEIGHT=0.1  # Only used with loss_weighting=fixed
 
 # Logging and evaluation
 LOGGING_STEPS=1000
@@ -136,6 +143,9 @@ accelerate launch \
     --tokenizer_name "$TOKENIZER_NAME" \
     --test_size_percent "$TEST_SIZE_PERCENT" \
     --dataset_cache_dir "$DATASET_CACHE_DIR" \
+    --concept_losses "$CONCEPT_LOSSES" \
+    --loss_weighting "$LOSS_WEIGHTING" \
+    --loss_weight "$LOSS_WEIGHT" \
     --per_device_train_batch_size "$PER_DEVICE_BATCH_SIZE" \
     --per_device_eval_batch_size "$PER_DEVICE_BATCH_SIZE" \
     --gradient_accumulation_steps "$GRADIENT_ACCUMULATION_STEPS" \

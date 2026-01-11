@@ -70,6 +70,14 @@ WARMUP_STEPS=2000
 WEIGHT_DECAY=0.01
 MAX_GRAD_NORM=1.0
 
+# Loss configuration (new extensible system)
+# Options for concept_losses: orthogonality, soft_orthogonality, uniformity, vicreg, combined, none
+# Options for loss_weighting: fixed, learnable, kendall_gal
+# For multiple losses: CONCEPT_LOSSES="orthogonality uniformity"
+CONCEPT_LOSSES="orthogonality"
+LOSS_WEIGHTING="kendall_gal"
+LOSS_WEIGHT=0.1  # Only used with loss_weighting=fixed
+
 # Logging and evaluation
 LOGGING_STEPS=1000
 EVAL_STRATEGY="steps"
@@ -139,6 +147,9 @@ accelerate launch \
     --tokenizer_name "$TOKENIZER_NAME" \
     --test_size_percent "$TEST_SIZE_PERCENT" \
     --dataset_cache_dir "$DATASET_CACHE_DIR" \
+    --concept_losses "$CONCEPT_LOSSES" \
+    --loss_weighting "$LOSS_WEIGHTING" \
+    --loss_weight "$LOSS_WEIGHT" \
     --per_device_train_batch_size "$PER_DEVICE_BATCH_SIZE" \
     --per_device_eval_batch_size "$PER_DEVICE_BATCH_SIZE" \
     --gradient_accumulation_steps "$GRADIENT_ACCUMULATION_STEPS" \
