@@ -18,6 +18,7 @@ The speech-to-speech (S2S) landscape has shifted from cascaded systems (ASR -> L
 | **Kimi (k1.5)** | 2024/25 | Moonshot AI's multimodal model. Details are less public than Qwen, but known for long-context and robust multimodal understanding. | [Website](https://moonshot.cn/) |
 | **Spirit LM** | Feb 2024 | Meta's foundation model that interleaves spoken and written tokens, enabling arbitrary task mixing (ASR, TTS, S2S). | [Paper](https://arxiv.org/abs/2402.05755) |
 
+
 ---
 
 ## 2. Detailed Review & Relevance to Concept Encoder
