@@ -266,16 +266,22 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(data_args.tokenizer_name)
     
     # Load and preprocess the dataset
-    logger.info(f"Loading and preprocessing dataset...")
-    train_ds, test_ds = load_and_preprocess_text_dataset(
-        tokenizer, 
-        data_args.dataset_name, 
-        data_args.dataset_name_subset, 
-        "text", 
-        test_size_percent=data_args.test_size_percent,
-        max_seq_length=data_args.max_seq_length,
-        dataset_cache_dir=data_args.dataset_cache_dir
-    )
+    # Only load on the main process to avoid memory spikes and redundant processing
+    # The processed dataset is cached, so other processes will load it quickly
+    # However, 'load_dataset' in dataset_preprocess is not distributed-aware by default in this script structure.
+    # To be safe and simple: let main process load and cache, then others load.
+    
+    with training_args.main_process_first(desc="loading and tokenizing dataset"):
+        logger.info(f"Loading and preprocessing dataset...")
+        train_ds, test_ds = load_and_preprocess_text_dataset(
+            tokenizer, 
+            data_args.dataset_name, 
+            data_args.dataset_name_subset, 
+            "text", 
+            test_size_percent=data_args.test_size_percent,
+            max_seq_length=data_args.max_seq_length,
+            dataset_cache_dir=data_args.dataset_cache_dir
+        )
     
     logger.info(f"Train dataset size: {len(train_ds):,}")
     logger.info(f"Test dataset size: {len(test_ds):,}")

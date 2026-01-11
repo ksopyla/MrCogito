@@ -71,10 +71,12 @@ def load_and_preprocess_text_dataset(tokenizer, dataset_hf_path, dataset_name_su
 
    
     # Process train dataset
+    # Disable multiprocessing to avoid OOM or reduce num_proc significantly
+    # Using a smaller number of processes (e.g., 4 or 8) is usually safe
     train_ds = train_ds.map(
         tokenize_batch_function,
         batched=True,
-        num_proc=os.cpu_count()-2,
+        num_proc=8, # os.cpu_count()-2 can be too high (62 processes!) causing OOM
         remove_columns=["text"]
     )
 
@@ -83,7 +85,7 @@ def load_and_preprocess_text_dataset(tokenizer, dataset_hf_path, dataset_name_su
     test_ds = test_ds.map(
         tokenize_batch_function,
         batched=True,
-        num_proc=os.cpu_count()-2,
+        num_proc=4, # Lower for test set
         remove_columns=["text"]
     )
     
