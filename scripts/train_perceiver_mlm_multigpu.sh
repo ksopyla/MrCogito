@@ -59,8 +59,8 @@ MLM_PROBABILITY=0.15
 TEST_SIZE_PERCENT=0.1
 
 # Training hyperparameters (adjust based on your GPU memory)
-PER_DEVICE_BATCH_SIZE=96        # Batch size per GPU
-GRADIENT_ACCUMULATION_STEPS=1    # Number of gradient accumulation steps
+PER_DEVICE_BATCH_SIZE=48        # Batch size per GPU (reduced from 96 to avoid OOM)
+GRADIENT_ACCUMULATION_STEPS=2    # Increased to maintain effective batch size
 LEARNING_RATE=5e-4
 NUM_EPOCHS=20                  
 WARMUP_STEPS=2000
