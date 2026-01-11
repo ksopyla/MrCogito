@@ -119,8 +119,15 @@ def setup_distributed():
     """
     if torch.cuda.is_available():
         local_rank = int(os.environ.get("LOCAL_RANK", -1))
+        
+        # Initialize process group if using distributed training (rank != -1)
+        # This fixes warnings about "No device id provided via init_process_group"
         if local_rank != -1:
+            if not torch.distributed.is_initialized():
+                torch.distributed.init_process_group(backend="nccl")
+            
             torch.cuda.set_device(local_rank)
+            
         return local_rank
     return -1
 

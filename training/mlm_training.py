@@ -219,6 +219,7 @@ def parse_args():
 def main():
     # Setup distributed training
     local_rank = setup_distributed()
+
     
     # Setup logging - set transformers verbosity first
     if is_main_process():
@@ -312,14 +313,9 @@ def main():
 
     # 2. Optional Tokens (Use if available, else None)
     # We strictly use tokenizer's values or None, avoiding arbitrary defaults like 3/4/etc.
-    cls_token_id = tokenizer.cls_token_id
-    sep_token_id = tokenizer.sep_token_id
-    bos_token_id = tokenizer.bos_token_id
-    eos_token_id = tokenizer.eos_token_id
-    unk_token_id = tokenizer.unk_token_id
-
+    # Pass special tokens directly to config
     config = ConceptEncoderConfig(
-        vocab_size=tokenizer.vocab_size,
+        vocab_size=len(tokenizer), # Use len(tokenizer) to include special tokens/padding
         concept_num=model_args.concept_num,
         hidden_size=model_args.hidden_size,
         num_hidden_layers=model_args.num_hidden_layers,
@@ -330,11 +326,11 @@ def main():
         # Special Tokens
         pad_token_id=tokenizer.pad_token_id,
         mask_token_id=tokenizer.mask_token_id,
-        cls_token_id=cls_token_id,
-        sep_token_id=sep_token_id,
-        bos_token_id=bos_token_id,
-        eos_token_id=eos_token_id,
-        unk_token_id=unk_token_id,
+        cls_token_id=tokenizer.cls_token_id,
+        sep_token_id=tokenizer.sep_token_id,
+        bos_token_id=tokenizer.bos_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+        unk_token_id=tokenizer.unk_token_id,
         
         tie_word_embeddings=False,
         tokenizer_name=data_args.tokenizer_name  # Store source tokenizer name for traceability
