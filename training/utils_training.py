@@ -124,7 +124,7 @@ def setup_distributed():
         # This fixes warnings about "No device id provided via init_process_group"
         if local_rank != -1:
             if not torch.distributed.is_initialized():
-                torch.distributed.init_process_group(backend="nccl")
+                torch.distributed.init_process_group(backend="nccl", device_id=torch.device(f"cuda:{local_rank}"))
             
             torch.cuda.set_device(local_rank)
             

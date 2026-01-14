@@ -66,7 +66,7 @@ class ConceptEncoderConfig(PretrainedConfig):
         type_vocab_size: int = 2,
         initializer_range: float = 0.1,
         is_decoder: bool = False,
-        tie_word_embeddings: bool = True,
+        tie_word_embeddings: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)

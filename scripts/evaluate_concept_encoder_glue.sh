@@ -25,9 +25,8 @@ export HF_DATASETS_CACHE="${PROJECT_ROOT}/../hf_home/datasets"
 # Unset deprecated variable to avoid warnings
 unset TRANSFORMERS_CACHE
 
-# Default Model Path 
-# Using the path provided in the user query
-DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/weighted_mlm_H512L2C256_20251128_133227/weighted_mlm_H512L2C256_20251128_133227"
+# Default Model Path (trained on Polonez)
+DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L2C128_20260111_210335/perceiver_mlm_H512L2C128_20260111_210335"
 
 # Allow overriding model path via first argument
 MODEL_PATH="${1:-$DEFAULT_MODEL_PATH}"
@@ -37,8 +36,8 @@ MODEL_PATH="${1:-$DEFAULT_MODEL_PATH}"
 TASK="${2:-mrpc}" 
 # Task list: cola, mnli-matched, mnli-mismatched, mrpc, qnli, qqp, rte, sst2, stsb, wnli
 
-# Tokenizer - should match what was used in training (bert-base-cased per training script)
-TOKENIZER_NAME="bert-base-cased"
+# Tokenizer - use the tokenizer saved alongside the trained model (best match)
+TOKENIZER_NAME="$MODEL_PATH"
 
 echo "Configuration:"
 echo "  - Project Root: $PROJECT_ROOT"
@@ -60,10 +59,11 @@ echo "Starting evaluation..."
 # Assumes python environment is already activated or python is accessible
 # Added --visualize flag
 # Added --save_model flag
-# IMPORTANT: Using 'weighted_mlm' model type triggers the new Weighted Classification Head
-# model_type: "perceiver_mlm" for Concept Encoder, "weighted_mlm" for Weighted Classification Head
+# IMPORTANT:
+# - model_type: "perceiver_mlm" for Concept Encoder (Perceiver)
+# - model_type: "weighted_mlm" for Weighted Classification Head
 python training/evaluate_model_on_glue.py \
-    --model_type "weighted_mlm" \
+    --model_type "perceiver_mlm" \
     --model_name_or_path "$MODEL_PATH" \
     --tokenizer_name "$TOKENIZER_NAME" \
     --task "$TASK" \

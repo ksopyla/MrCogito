@@ -616,7 +616,7 @@ def main():
         train_dataset=train_ds,
         eval_dataset=test_ds,
         data_collator=data_collator,
-        tokenizer=tokenizer
+        processing_class=tokenizer 
     )
     
     # Start training
