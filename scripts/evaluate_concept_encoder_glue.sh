@@ -63,7 +63,7 @@ echo "Starting evaluation..."
 # - model_type: "perceiver_mlm" for Concept Encoder (Perceiver)
 # - model_type: "weighted_mlm" for Weighted Classification Head
 python training/evaluate_model_on_glue.py \
-    --model_type "perceiver_mlm" \
+    --model_type "weighted_mlm" \
     --model_name_or_path "$MODEL_PATH" \
     --tokenizer_name "$TOKENIZER_NAME" \
     --task "$TASK" \
