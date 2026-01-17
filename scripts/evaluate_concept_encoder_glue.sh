@@ -26,7 +26,7 @@ export HF_DATASETS_CACHE="${PROJECT_ROOT}/../hf_home/datasets"
 unset TRANSFORMERS_CACHE
 
 # Default Model Path (trained on Polonez)
-DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L2C128_20260111_210335/perceiver_mlm_H512L2C128_20260111_210335"
+DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/weighted_mlm_H512L2C128_20260117_153544/weighted_mlm_H512L2C128_20260117_153544"
 
 # Allow overriding model path via first argument
 MODEL_PATH="${1:-$DEFAULT_MODEL_PATH}"
