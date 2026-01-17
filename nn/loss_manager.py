@@ -740,6 +740,49 @@ class LossManager(nn.Module):
                     f"Unknown weighting strategy: {self.config.weighting_strategy}"
                 )
     
+    @classmethod
+    def create_for_model(
+        cls,
+        concept_num: int,
+        hidden_size: int,
+        loss_config: Optional[LossConfig] = None
+    ) -> "LossManager":
+        """
+        Factory method that validates loss feasibility and creates LossManager.
+        
+        This centralizes all loss setup logic in one place, removing duplication
+        from model classes. Models should use this instead of direct instantiation.
+        
+        Args:
+            concept_num: Number of concept vectors in the model
+            hidden_size: Hidden dimension size of the model
+            loss_config: Loss configuration. None = disabled (task loss only)
+            
+        Returns:
+            Configured LossManager instance
+            
+        Example:
+            >>> # In model __init__
+            >>> self.loss_manager = LossManager.create_for_model(
+            ...     concept_num=config.concept_num,
+            ...     hidden_size=config.hidden_size,
+            ...     loss_config=loss_config
+            ... )
+        """
+        # Validate loss feasibility before creating manager
+        if loss_config is not None and loss_config.is_enabled:
+            warnings = check_loss_feasibility(
+                concept_num,
+                hidden_size,
+                loss_config.concept_losses
+            )
+            for warning in warnings:
+                from transformers.utils import logging
+                logger = logging.get_logger(__name__)
+                logger.warning(warning)
+        
+        return cls(loss_config)
+    
     @property
     def is_enabled(self) -> bool:
         """Check if concept loss is enabled."""

@@ -25,7 +25,7 @@ from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss
 from transformers.modeling_outputs import MaskedLMOutput, SequenceClassifierOutput
 
 from nn.concept_encoder import ConceptEncoder, ConceptEncoderConfig
-from nn.loss_manager import LossManager, LossConfig, check_loss_feasibility
+from nn.loss_manager import LossManager, LossConfig
 
 
 class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
@@ -68,9 +68,8 @@ class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
         self.encoder = ConceptEncoder(config)
         
         # === Loss Management (Delegated to LossManager) ===
-        # If loss_config is None, LossManager defaults to disabled (task loss only)
-        # This ensures consistent behavior with perceiver_mlm
-        self._setup_loss_manager(config, loss_config)
+        # Initialize via set_loss_config to avoid duplication
+        self.set_loss_config(loss_config)
         
         # === Decoder Architecture ===
         # Learn a weight matrix for combining concepts per sequence position
@@ -92,34 +91,6 @@ class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
         # Initialize weights
         self.post_init()
     
-    def _setup_loss_manager(
-        self, 
-        model_config: ConceptEncoderConfig,
-        loss_config: Optional[LossConfig]
-    ) -> None:
-        """
-        Setup the loss manager based on configuration.
-        
-        Args:
-            model_config: Model architecture config (for feasibility check)
-            loss_config: Training loss config (None = no concept loss)
-        """
-        # Validate loss feasibility
-        if loss_config is not None and loss_config.is_enabled:
-            warnings = check_loss_feasibility(
-                model_config.concept_num,
-                model_config.hidden_size,
-                loss_config.concept_losses
-            )
-            for warning in warnings:
-                from transformers.utils import logging
-                logger = logging.get_logger(__name__)
-                logger.warning(warning)
-        
-        # Create loss manager (handles None as disabled)
-        self.loss_manager = LossManager(loss_config)
-        self._loss_config = loss_config
-    
     def set_loss_config(self, loss_config: Optional[LossConfig]) -> None:
         """
         Update loss configuration (e.g., for ablation studies mid-training).
@@ -127,7 +98,12 @@ class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
         Args:
             loss_config: New loss configuration, or None to disable concept loss
         """
-        self._setup_loss_manager(self.config, loss_config)
+        self.loss_manager = LossManager.create_for_model(
+            concept_num=self.config.concept_num,
+            hidden_size=self.config.hidden_size,
+            loss_config=loss_config
+        )
+        self._loss_config = loss_config
         
     def _init_weights(self, module):
         """Initialize the weights."""
@@ -237,39 +213,24 @@ class ConceptEncoderForSequenceClassificationWeighted(PreTrainedModel):
     ConceptEncoder Model with a sequence classification head,
     using the weighted combination strategy.
     
-    Training:
-    - Default: No concept loss (classification-focused)
-    - For concept loss, pass `loss_config` to __init__
+    This model is for fine-tuning on classification tasks (e.g., GLUE).
+    It uses only task loss (CrossEntropy/MSE/BCE) - no concept regularization.
     
     Example:
-        >>> # Default: no concept loss
         >>> model = ConceptEncoderForSequenceClassificationWeighted(config)
-        >>> 
-        >>> # With concept loss
-        >>> from nn.loss_manager import LossConfig
-        >>> loss_config = LossConfig(concept_losses=["uniformity"])
-        >>> model = ConceptEncoderForSequenceClassificationWeighted(config, loss_config=loss_config)
+        >>> outputs = model(input_ids, attention_mask, labels=labels)
+        >>> loss = outputs.loss  # Task loss only
     """
     config_class = ConceptEncoderConfig
     base_model_prefix = "concept_encoder"
 
-    def __init__(
-        self, 
-        config: ConceptEncoderConfig,
-        loss_config: Optional[LossConfig] = None
-    ):
+    def __init__(self, config: ConceptEncoderConfig):
         super().__init__(config)
         self.num_labels = config.num_labels
         self.config = config
         
         # The underlying ConceptEncoder
         self.encoder = ConceptEncoder(config)
-        
-        # === Loss Management ===
-        # Default: no concept loss for classification (different from MLM)
-        if loss_config is None:
-            loss_config = LossConfig.disabled()
-        self._setup_loss_manager(config, loss_config)
         
         # Learned concept weights (position-specific)
         self.concept_weights = nn.Parameter(
@@ -289,30 +250,6 @@ class ConceptEncoderForSequenceClassificationWeighted(PreTrainedModel):
 
         # Initialize weights
         self.post_init()
-    
-    def _setup_loss_manager(
-        self, 
-        model_config: ConceptEncoderConfig,
-        loss_config: LossConfig
-    ) -> None:
-        """Setup the loss manager based on configuration."""
-        if loss_config.is_enabled:
-            warnings = check_loss_feasibility(
-                model_config.concept_num,
-                model_config.hidden_size,
-                loss_config.concept_losses
-            )
-            for warning in warnings:
-                from transformers.utils import logging
-                logger = logging.get_logger(__name__)
-                logger.warning(warning)
-        
-        self.loss_manager = LossManager(loss_config)
-        self._loss_config = loss_config
-    
-    def set_loss_config(self, loss_config: LossConfig) -> None:
-        """Update loss configuration."""
-        self._setup_loss_manager(self.config, loss_config)
     
     def _init_weights(self, module):
         """Initialize the weights."""
@@ -376,7 +313,7 @@ class ConceptEncoderForSequenceClassificationWeighted(PreTrainedModel):
         pooled_output = self.dropout(pooled_output)
         logits = self.classifier(pooled_output)
         
-        # Compute loss (delegated to LossManager)
+        # Compute task loss only (no concept regularization for classification)
         loss = None
         if labels is not None:
             if self.config.problem_type is None:
@@ -390,24 +327,15 @@ class ConceptEncoderForSequenceClassificationWeighted(PreTrainedModel):
             if self.config.problem_type == "regression":
                 loss_fct = MSELoss()
                 if self.num_labels == 1:
-                    task_loss = loss_fct(logits.squeeze(), labels.squeeze())
+                    loss = loss_fct(logits.squeeze(), labels.squeeze())
                 else:
-                    task_loss = loss_fct(logits, labels)
+                    loss = loss_fct(logits, labels)
             elif self.config.problem_type == "single_label_classification":
                 loss_fct = CrossEntropyLoss()
-                task_loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
             elif self.config.problem_type == "multi_label_classification":
                 loss_fct = BCEWithLogitsLoss()
-                task_loss = loss_fct(logits, labels)
-            
-            # Apply loss manager (only during training)
-            if self.training:
-                loss = self.loss_manager(
-                    task_loss=task_loss,
-                    concept_repr=concept_repr
-                )
-            else:
-                loss = task_loss
+                loss = loss_fct(logits, labels)
         
         if not return_dict:
             output = (logits,) + encoder_outputs[1:]
