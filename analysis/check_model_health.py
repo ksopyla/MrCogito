@@ -408,6 +408,80 @@ def main():
     all_checks_passed &= check_forward_pass(model, tokenizer)
     all_checks_passed &= check_loss_computation(model, tokenizer)
     
+    # Run concept geometry analysis if requested
+    if args.detailed:
+        try:
+            from analysis.concept_analysis import compute_concept_geometry_metrics
+            print("\n" + "="*80)
+            print("CONCEPT GEOMETRY ANALYSIS")
+            print("="*80)
+            
+            # Get concept representations from a sample forward pass
+            sample_text = "The quick brown fox jumps over the lazy dog. This is a sample text for analysis."
+            inputs = tokenizer(
+                sample_text,
+                return_tensors="pt",
+                padding="max_length",
+                truncation=True,
+                max_length=128
+            ).to(device)
+            
+            with torch.no_grad():
+                if hasattr(model, 'encoder'):
+                    encoder_outputs = model.encoder(**inputs, output_hidden_states=True)
+                    concept_repr = encoder_outputs.last_hidden_state.unsqueeze(0)  # Add batch dim if needed
+                else:
+                    outputs = model(**inputs)
+                    concept_repr = None
+                    
+            if concept_repr is not None:
+                metrics = compute_concept_geometry_metrics(concept_repr)
+                
+                print("\nKey Geometry Metrics:")
+                key_metrics = [
+                    ('effective_rank', 'Effective Rank'),
+                    ('effective_rank_normalized', 'Effective Rank (normalized)'),
+                    ('max_concept_similarity', 'Max Concept Similarity'),
+                    ('mean_concept_similarity', 'Mean Concept Similarity'),
+                    ('uniformity_loss', 'Uniformity Loss'),
+                    ('isotropy', 'Isotropy'),
+                    ('collapsed_dimensions', 'Collapsed Dimensions'),
+                ]
+                
+                for key, name in key_metrics:
+                    if key in metrics:
+                        value = metrics[key]
+                        if isinstance(value, float):
+                            print(f"  {name:35s}: {value:.4f}")
+                        else:
+                            print(f"  {name:35s}: {value}")
+                
+                # Interpret results
+                print("\nInterpretation:")
+                eff_rank_norm = metrics.get('effective_rank_normalized', 0)
+                max_sim = metrics.get('max_concept_similarity', 1)
+                uniformity = metrics.get('uniformity_loss', 1)
+                
+                if eff_rank_norm > 0.5:
+                    print("  [OK] Good effective rank - concepts use diverse dimensions")
+                else:
+                    print("  [!] Low effective rank - potential dimensional collapse")
+                    
+                if max_sim < 0.5:
+                    print("  [OK] Good concept diversity - concepts are distinct")
+                elif max_sim < 0.8:
+                    print("  [!] Moderate similarity - some concepts may be redundant")
+                else:
+                    print("  [X] High similarity - concept collapse detected")
+                    
+                if uniformity < 0.2:
+                    print("  [OK] Good uniformity - concepts well-distributed")
+                else:
+                    print("  [!] Poor uniformity - concepts are clustered")
+                    
+        except ImportError as e:
+            print(f"[!] Could not run geometry analysis: {e}")
+    
     # Final summary
     print("\n" + "="*80)
     print("FINAL SUMMARY")
@@ -415,6 +489,11 @@ def main():
     
     if all_checks_passed:
         print("[OK] MODEL IS HEALTHY - Ready for fine-tuning on downstream tasks!")
+        if args.detailed:
+            print("\nNext steps:")
+            print("  1. Run full analysis: python -m analysis.concept_analysis")
+            print("  2. Open Jupyter notebook: analysis/concept_analysis_notebook.ipynb")
+            print("  3. Fine-tune on GLUE: python training/evaluate_model_on_glue.py")
     else:
         print("[X] MODEL HAS ISSUES - DO NOT use for fine-tuning yet!")
         print("\nRecommendations:")
@@ -422,6 +501,7 @@ def main():
         print("  2. Train for longer (at least 3 epochs)")
         print("  3. Use gradient clipping (max_grad_norm=1.0)")
         print("  4. Consider using FP32 instead of BF16 for stability")
+        print("  5. Check concept regularization loss (orthogonality/uniformity)")
     
     print("="*80)
 
