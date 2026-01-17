@@ -332,7 +332,7 @@ def main():
         eos_token_id=tokenizer.eos_token_id,
         unk_token_id=tokenizer.unk_token_id,
         
-        tie_word_embeddings=False,
+        tie_word_embeddings=True,
         tokenizer_name=data_args.tokenizer_name  # Store source tokenizer name for traceability
     )
     
