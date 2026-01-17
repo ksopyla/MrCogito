@@ -50,20 +50,28 @@ export NVIDIA_TF32_OVERRIDE=1
 MODEL_TYPE="weighted_mlm"
 HIDDEN_SIZE=512
 NUM_LAYERS=2
-CONCEPT_NUM=256
+CONCEPT_NUM=128
 INTERMEDIATE_SIZE=1024
 
-# Data configuration
-DATASET_NAME="Salesforce/wikitext"
-DATASET_SUBSET="wikitext-103-raw-v1"
-TOKENIZER_NAME="bert-base-cased"
+# Data configuration for wikiptedia and bert-base tokenizer
+# DATASET_NAME="Salesforce/wikitext"
+# DATASET_SUBSET="wikitext-103-raw-v1"
+# TOKENIZER_NAME="bert-base-cased"
+# MAX_SEQ_LENGTH=512
+# MLM_PROBABILITY=0.15
+# TEST_SIZE_PERCENT=0.1
+
+# Data configuration for mini-pile and ModernBERT tokenizer
+DATASET_NAME="JeanKaddour/minipile"
+DATASET_SUBSET=""
+TOKENIZER_NAME="answerdotai/ModernBERT-base"
 MAX_SEQ_LENGTH=512
 MLM_PROBABILITY=0.15
 TEST_SIZE_PERCENT=0.1
 
 # Training hyperparameters (adjust based on your GPU memory)
-PER_DEVICE_BATCH_SIZE=96        # Batch size per GPU
-GRADIENT_ACCUMULATION_STEPS=1    # Number of gradient accumulation steps
+PER_DEVICE_BATCH_SIZE=48        # Batch size per GPU
+GRADIENT_ACCUMULATION_STEPS=2    # Number of gradient accumulation steps
 LEARNING_RATE=5e-4
 NUM_EPOCHS=20
 WARMUP_STEPS=2000
@@ -74,7 +82,7 @@ MAX_GRAD_NORM=1.0
 # Options for concept_losses: orthogonality, soft_orthogonality, uniformity, vicreg, combined, none
 # Options for loss_weighting: fixed, learnable, kendall_gal
 # For multiple losses: CONCEPT_LOSSES="orthogonality uniformity"
-CONCEPT_LOSSES="orthogonality"
+CONCEPT_LOSSES="none"
 LOSS_WEIGHTING="kendall_gal"
 LOSS_WEIGHT=0.1  # Only used with loss_weighting=fixed
 
