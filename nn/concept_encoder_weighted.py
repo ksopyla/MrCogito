@@ -10,7 +10,8 @@ Models:
 
 Loss Management:
 - Uses LossManager for clean, extensible loss handling
-- Default: orthogonality loss with fixed weight (backward compatible)
+- Default: No concept loss (task loss only) - configure via LossConfig
+- Concept losses are only applied during training, not evaluation
 - Configurable via LossConfig for experimentation
 """
 
@@ -38,18 +39,18 @@ class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
     position-specific representation, which is then projected to vocabulary.
     
     Training:
-    - Default: Uses orthogonality loss with weight 0.01 (backward compatible)
-    - For custom losses, pass `loss_config` to __init__
-    - For no concept loss, pass `loss_config=LossConfig.disabled()`
+    - Default: No concept loss (task loss only) - configure via loss_config
+    - For concept losses, pass `loss_config` to __init__
+    - Concept losses are only applied during training, not evaluation
     
     Example:
-        >>> # Default behavior (orthogonality with 0.01 weight)
+        >>> # Default behavior (task loss only)
         >>> model = ConceptEncoderForMaskedLMWeighted(config)
         >>> 
-        >>> # Custom: MLM + uniformity with learnable weights
+        >>> # With concept loss (orthogonality + learnable weights)
         >>> from nn.loss_manager import LossConfig
         >>> loss_config = LossConfig(
-        ...     concept_losses=["uniformity"],
+        ...     concept_losses=["orthogonality"],
         ...     weighting_strategy="kendall_gal"
         ... )
         >>> model = ConceptEncoderForMaskedLMWeighted(config, loss_config=loss_config)
@@ -66,14 +67,9 @@ class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
         self.config = config
         self.encoder = ConceptEncoder(config)
         
-        # === Loss Management ===
-        # For backward compatibility: default to orthogonality with 0.01 weight
-        if loss_config is None:
-            loss_config = LossConfig(
-                concept_losses=["orthogonality"],
-                weighting_strategy="fixed",
-                loss_weights={"task": 1.0, "orthogonality": 0.01}
-            )
+        # === Loss Management (Delegated to LossManager) ===
+        # If loss_config is None, LossManager defaults to disabled (task loss only)
+        # This ensures consistent behavior with perceiver_mlm
         self._setup_loss_manager(config, loss_config)
         
         # === Decoder Architecture ===
@@ -99,10 +95,17 @@ class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
     def _setup_loss_manager(
         self, 
         model_config: ConceptEncoderConfig,
-        loss_config: LossConfig
+        loss_config: Optional[LossConfig]
     ) -> None:
-        """Setup the loss manager based on configuration."""
-        if loss_config.is_enabled:
+        """
+        Setup the loss manager based on configuration.
+        
+        Args:
+            model_config: Model architecture config (for feasibility check)
+            loss_config: Training loss config (None = no concept loss)
+        """
+        # Validate loss feasibility
+        if loss_config is not None and loss_config.is_enabled:
             warnings = check_loss_feasibility(
                 model_config.concept_num,
                 model_config.hidden_size,
@@ -113,11 +116,17 @@ class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
                 logger = logging.get_logger(__name__)
                 logger.warning(warning)
         
+        # Create loss manager (handles None as disabled)
         self.loss_manager = LossManager(loss_config)
         self._loss_config = loss_config
     
-    def set_loss_config(self, loss_config: LossConfig) -> None:
-        """Update loss configuration."""
+    def set_loss_config(self, loss_config: Optional[LossConfig]) -> None:
+        """
+        Update loss configuration (e.g., for ablation studies mid-training).
+        
+        Args:
+            loss_config: New loss configuration, or None to disable concept loss
+        """
         self._setup_loss_manager(self.config, loss_config)
         
     def _init_weights(self, module):

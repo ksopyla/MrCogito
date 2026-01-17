@@ -232,11 +232,15 @@ class ConceptEncoderForMaskedLMPerceiver(PreTrainedModel):
                 labels.view(-1)
             )
             
-            # Apply loss manager (combines task loss with concept losses)
-            loss = self.loss_manager(
-                task_loss=mlm_loss,
-                concept_repr=concept_repr
-            )
+            # Apply loss manager only during training (concept losses are regularization)
+            # During evaluation, use only task loss for fair comparison
+            if self.training:
+                loss = self.loss_manager(
+                    task_loss=mlm_loss,
+                    concept_repr=concept_repr
+                )
+            else:
+                loss = mlm_loss
             
         if not return_dict:
             output = (logits,) + encoder_outputs[1:]
