@@ -46,8 +46,8 @@ export NVIDIA_TF32_OVERRIDE=1
 # MATCHING WEIGHTED MLM CONFIG FOR FAIR COMPARISON
 MODEL_TYPE="perceiver_mlm"
 HIDDEN_SIZE=512
-NUM_LAYERS=2
-CONCEPT_NUM=128      # Same as weighted_mlm_H512L2C128_20251123_213949
+NUM_LAYERS=4
+CONCEPT_NUM=256      # Same as weighted_mlm_H512L2C128_20251123_213949
 INTERMEDIATE_SIZE=1024
 
 # Data configuration
@@ -59,7 +59,7 @@ MLM_PROBABILITY=0.15
 TEST_SIZE_PERCENT=0.1
 
 # Training hyperparameters (adjust based on your GPU memory)
-PER_DEVICE_BATCH_SIZE=48        # Batch size per GPU (reduced from 96 to avoid OOM)
+PER_DEVICE_BATCH_SIZE=64        # Batch size per GPU (reduced from 96 to avoid OOM)
 GRADIENT_ACCUMULATION_STEPS=2    # Increased to maintain effective batch size
 LEARNING_RATE=5e-4
 NUM_EPOCHS=20                  
@@ -75,9 +75,9 @@ LOSS_WEIGHTING="kendall_gal"
 LOSS_WEIGHT=0.1  # Only used with loss_weighting=fixed
 
 # Logging and evaluation
-LOGGING_STEPS=1000
+LOGGING_STEPS=5000
 EVAL_STRATEGY="steps"
-EVAL_STEPS=5000
+EVAL_STEPS=10000
 SAVE_STRATEGY="steps"
 SAVE_STEPS=100000
 
