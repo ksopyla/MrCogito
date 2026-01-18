@@ -258,22 +258,22 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
         self.config = config
         self.encoder = ConceptEncoder(config)
         
-        # === Classification Decoder ===
+        # === Classification Head (cls_ prefix to avoid name collision with MLM decoder) ===
         # Learnable [CLS] query for classification
         self.cls_query = nn.Parameter(torch.zeros(1, 1, config.hidden_size))
         self.cls_query.data.normal_(mean=0.0, std=config.initializer_range)
         
-        # Cross-Attention (same arch as MLM decoder, but 1 query)
-        self.decoder_cross_attn = nn.MultiheadAttention(
+        # Cross-Attention to aggregate concepts into [CLS] token
+        self.cls_cross_attn = nn.MultiheadAttention(
             embed_dim=config.hidden_size,
             num_heads=config.num_attention_heads,
             dropout=config.attention_probs_dropout_prob,
             batch_first=True,
         )
         
-        self.decoder_norm = nn.LayerNorm(config.hidden_size)
+        self.cls_norm = nn.LayerNorm(config.hidden_size)
         
-        self.decoder_ffn = nn.Sequential(
+        self.cls_ffn = nn.Sequential(
             nn.LayerNorm(config.hidden_size),
             nn.Linear(config.hidden_size, config.intermediate_size),
             nn.GELU(),
@@ -282,7 +282,7 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
         )
         
         # Final LayerNorm before classifier to stabilize training
-        self.final_layer_norm = nn.LayerNorm(config.hidden_size)
+        self.cls_final_norm = nn.LayerNorm(config.hidden_size)
         
         self.classifier = nn.Linear(config.hidden_size, config.num_labels)
 
@@ -327,30 +327,30 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
         
         # 2. Decode with Single Query
         # Expand CLS query to batch: [1, 1, H] -> [B, 1, H]
-        decoder_queries = self.cls_query.expand(batch_size, -1, -1)
+        cls_hidden = self.cls_query.expand(batch_size, -1, -1)
         
-        # Pre-LN before Attention (Fixed: Apply norm to copy, preserve residual stream)
-        decoder_queries_norm = self.decoder_norm(decoder_queries)
+        # Pre-LN before Attention (apply norm to copy, preserve residual stream)
+        cls_hidden_norm = self.cls_norm(cls_hidden)
         
-        # Cross Attention
-        attn_output, _ = self.decoder_cross_attn(
-            query=decoder_queries_norm,
+        # Cross Attention: aggregate concepts into [CLS] token
+        attn_output, _ = self.cls_cross_attn(
+            query=cls_hidden_norm,
             key=concept_repr,
             value=concept_repr
         )
         
-        # Residual (Add to original queries)
-        decoder_queries = decoder_queries + attn_output
+        # Residual connection
+        cls_hidden = cls_hidden + attn_output
         
-        # FFN (Note: decoder_ffn already includes a LayerNorm at the start)
-        decoder_output = decoder_queries + self.decoder_ffn(decoder_queries)  # [B, 1, H]
+        # FFN with residual (cls_ffn includes LayerNorm at the start)
+        cls_hidden = cls_hidden + self.cls_ffn(cls_hidden)  # [B, 1, H]
         
         # Apply final normalization to stabilize logits/loss
-        decoder_output = self.final_layer_norm(decoder_output)
+        cls_hidden = self.cls_final_norm(cls_hidden)
         
         # 3. Classify
         # Squeeze sequence dim (1)
-        logits = self.classifier(decoder_output.squeeze(1)) # [B, num_labels]
+        logits = self.classifier(cls_hidden.squeeze(1))  # [B, num_labels]
         
         # 4. Compute task loss only (no concept regularization for classification)
         loss = None

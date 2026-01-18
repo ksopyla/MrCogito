@@ -882,36 +882,55 @@ def finetune_model_on_glue(args):
                 problem_type="regression" if args.task == "stsb" else "single_label_classification"
             )
         
-        # Load or initialize ConceptEncoder model
-        try:
-            # Attempt to load from checkpoint
-            # Check if we should use the weighted version (e.g. if args.model_type is weighted_mlm)
-            if args.model_type == "weighted_mlm":
-                logger.info(f"Using Weighted Sequence Classification for model type: {args.model_type}")
-                model_class = ConceptEncoderForSequenceClassificationWeighted
-            elif args.model_type == "perceiver_mlm":
-                logger.info(f"Using Perceiver Sequence Classification for model type: {args.model_type}")
-                model_class = ConceptEncoderForSequenceClassificationPerceiver
+        # Select the appropriate classification model class
+        if args.model_type == "weighted_mlm":
+            logger.info(f"Using Weighted Sequence Classification for model type: {args.model_type}")
+            model_class = ConceptEncoderForSequenceClassificationWeighted
+        elif args.model_type == "perceiver_mlm":
+            logger.info(f"Using Perceiver Sequence Classification for model type: {args.model_type}")
+            model_class = ConceptEncoderForSequenceClassificationPerceiver
+        else:
+            raise ValueError(f"Unsupported model type for classification: {args.model_type}")
+        
+        # Initialize classification model with config (classification head will be random)
+        model = model_class(config)
+        
+        # Load pre-trained encoder weights from MLM checkpoint
+        checkpoint_path = os.path.join(args.model_name_or_path, "pytorch_model.bin")
+        if not os.path.exists(checkpoint_path):
+            # Try safetensors format
+            checkpoint_path = os.path.join(args.model_name_or_path, "model.safetensors")
+        
+        if os.path.exists(checkpoint_path):
+            logger.info(f"Loading pre-trained weights from {checkpoint_path}")
+            
+            if checkpoint_path.endswith(".safetensors"):
+                from safetensors.torch import load_file
+                checkpoint_state_dict = load_file(checkpoint_path)
             else:
-                raise ValueError(f"Unsupported model type for classification: {args.model_type}")
-                
-            model = model_class.from_pretrained(
-                args.model_name_or_path,
-                config=config,
-                cache_dir=MODEL_CACHE_DIR,
-                token=hf_token
-            )
-            logger.info(f"Successfully loaded ConceptEncoder model from {args.model_name_or_path}")
-        except Exception as e:
-            logger.warning(f"Could not load model from {args.model_name_or_path}: {e}")
-            logger.warning("Initializing a new ConceptEncoderForSequenceClassificationWeighted model instead.")
-            # Initialize a new model with the config
-            if args.model_type == "weighted_mlm":
-                 model = ConceptEncoderForSequenceClassificationWeighted(config)
-            elif args.model_type == "perceiver_mlm":
-                 model = ConceptEncoderForSequenceClassificationPerceiver(config)
-            else:
-                 raise ValueError(f"Unsupported model type for classification initialization: {args.model_type}")
+                checkpoint_state_dict = torch.load(checkpoint_path, map_location="cpu")
+            
+            # Filter to only load encoder weights (backbone)
+            model_state_dict = model.state_dict()
+            encoder_weights_loaded = 0
+            encoder_weights_skipped = 0
+            
+            for key, value in checkpoint_state_dict.items():
+                if key.startswith("encoder."):
+                    if key in model_state_dict and model_state_dict[key].shape == value.shape:
+                        model_state_dict[key] = value
+                        encoder_weights_loaded += 1
+                    else:
+                        encoder_weights_skipped += 1
+                        logger.warning(f"Skipping encoder key {key}: shape mismatch or not in model")
+            
+            # Load the filtered state dict
+            model.load_state_dict(model_state_dict)
+            logger.info(f"Loaded {encoder_weights_loaded} encoder weights from checkpoint (skipped {encoder_weights_skipped})")
+            logger.info("Classification head initialized randomly (will be trained during fine-tuning)")
+        else:
+            logger.warning(f"No checkpoint found at {args.model_name_or_path}")
+            logger.warning("Initializing model with random weights - results will be meaningless!")
     else:  # Standard transformer models like bert, roberta, xlnet
         model = AutoModelForSequenceClassification.from_pretrained(
             args.model_name_or_path,
