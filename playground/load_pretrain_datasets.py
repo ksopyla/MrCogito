@@ -179,14 +179,13 @@ def get_dataset_metadata(dataset_name, config_name=None):
         dict: A dictionary containing dataset metadata (configs, info, splits, features)
     """
     # Get available configs (if any)
-    configs = get_dataset_config_names(dataset_name, cache_dir=DATASET_CACHE_DIR, trust_remote_code=True)
+    configs = get_dataset_config_names(dataset_name, cache_dir=DATASET_CACHE_DIR)
     print("Configs:", configs)
 
     # Load the dataset builder (does NOT download the data)
     builder = load_dataset_builder(
         dataset_name,
         name=config_name,
-        trust_remote_code=True,
         cache_dir=DATASET_CACHE_DIR,
     )
     print("Dataset info:", builder.info)
