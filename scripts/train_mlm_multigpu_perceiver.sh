@@ -44,10 +44,16 @@ export NVIDIA_TF32_OVERRIDE=1
 
 # Training configuration
 # MATCHING WEIGHTED MLM CONFIG FOR FAIR COMPARISON
+#
+# MODEL_TYPE options:
+#   - "perceiver_mlm": Input+Position decoder queries (hybrid approach)
+#   - "perceiver_posonly_mlm": Position-only decoder queries (pure Perceiver IO)
+#
 MODEL_TYPE="perceiver_mlm"
+# MODEL_TYPE="perceiver_posonly_mlm"  # Uncomment for position-only variant
 HIDDEN_SIZE=512
-NUM_LAYERS=4
-CONCEPT_NUM=256      # Same as weighted_mlm_H512L2C128_20251123_213949
+NUM_LAYERS=2
+CONCEPT_NUM=128      # Same as weighted_mlm_H512L2C128_20251123_213949
 INTERMEDIATE_SIZE=1024
 
 # Data configuration
@@ -59,8 +65,11 @@ MLM_PROBABILITY=0.15
 TEST_SIZE_PERCENT=0.1
 
 # Training hyperparameters (adjust based on your GPU memory)
-PER_DEVICE_BATCH_SIZE=64        # Batch size per GPU (reduced from 96 to avoid OOM)
-GRADIENT_ACCUMULATION_STEPS=2    # Increased to maintain effective batch size
+# For 4 layers + 256 concepts, reduced batch size to avoid OOM
+# With sparse MLM decoding, can use batch_size=48; without it, use 32
+PER_DEVICE_BATCH_SIZE=32        # Reduced for larger model (4L, 256C)
+EVAL_BATCH_SIZE=16              # Eval needs full logits, so smaller batch
+GRADIENT_ACCUMULATION_STEPS=4    # Increased to maintain effective batch size ~512
 LEARNING_RATE=5e-4
 NUM_EPOCHS=20                  
 WARMUP_STEPS=2000
@@ -147,7 +156,7 @@ accelerate launch \
     --loss_weighting "$LOSS_WEIGHTING" \
     --loss_weight "$LOSS_WEIGHT" \
     --per_device_train_batch_size "$PER_DEVICE_BATCH_SIZE" \
-    --per_device_eval_batch_size "$PER_DEVICE_BATCH_SIZE" \
+    --per_device_eval_batch_size "$EVAL_BATCH_SIZE" \
     --gradient_accumulation_steps "$GRADIENT_ACCUMULATION_STEPS" \
     --learning_rate "$LEARNING_RATE" \
     --num_train_epochs "$NUM_EPOCHS" \

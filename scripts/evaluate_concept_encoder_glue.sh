@@ -26,13 +26,26 @@ export HF_DATASETS_CACHE="${PROJECT_ROOT}/../hf_home/datasets"
 unset TRANSFORMERS_CACHE
 
 # Model Configuration - set both together!
+#
+# MODEL_TYPE options for concept encoders:
+#   - "weighted_mlm": Weighted attention pooling approach
+#   - "perceiver_mlm": Perceiver IO with Input+Position decoder queries
+#   - "perceiver_posonly_mlm": Perceiver IO with Position-only decoder queries (pure Perceiver IO)
+#
+# Note: perceiver_mlm and perceiver_posonly_mlm use the same classification head
+# (the difference is only in how the MLM decoder works during pretraining)
+
 # Weighted MLM:
 DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/weighted_mlm_H512L2C128_20260117_153544/weighted_mlm_H512L2C128_20260117_153544"
 MODEL_TYPE="weighted_mlm"
 
-# Perceiver MLM (comment out the above, uncomment below):
+# Perceiver MLM (comment out above, uncomment below):
 # DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L2C128_20260111_210335/perceiver_mlm_H512L2C128_20260111_210335"
 # MODEL_TYPE="perceiver_mlm"
+
+# Perceiver Position-Only MLM (comment out above, uncomment below):
+# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_posonly_mlm_H512L2C128_YYYYMMDD_HHMMSS/perceiver_posonly_mlm_H512L2C128_YYYYMMDD_HHMMSS"
+# MODEL_TYPE="perceiver_posonly_mlm"
 
 # Allow overriding model path via first argument
 MODEL_PATH="${1:-$DEFAULT_MODEL_PATH}"

@@ -134,8 +134,8 @@ def parse_args():
         "--model_type",
         type=str,
         default="bert",
-        choices=["bert-type", "xlnet-type", "concept-type", "sim_matrix_mlm", "concept_mlm", "weighted_mlm", "perceiver_mlm"],
-        help="Type of model to fine-tune (bert, roberta, xlnet, or concept)"
+        choices=["bert-type", "xlnet-type", "concept-type", "sim_matrix_mlm", "concept_mlm", "weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm"],
+        help="Type of model to fine-tune (bert, roberta, xlnet, or concept). perceiver_posonly_mlm uses position-only decoder queries."
     )
     parser.add_argument(
         "--task",
@@ -864,7 +864,7 @@ def finetune_model_on_glue(args):
         tokenizer = AutoTokenizer.from_pretrained(default_tokenizer, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
     
     # Load and initialize model based on model type
-    concept_model_types = ["sim_matrix_mlm", "concept_mlm", "weighted_mlm", "perceiver_mlm"]
+    concept_model_types = ["weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm"]
     if args.model_type in concept_model_types:
         # First, load configuration and update with task-specific settings
         try:
@@ -886,7 +886,9 @@ def finetune_model_on_glue(args):
         if args.model_type == "weighted_mlm":
             logger.info(f"Using Weighted Sequence Classification for model type: {args.model_type}")
             model_class = ConceptEncoderForSequenceClassificationWeighted
-        elif args.model_type == "perceiver_mlm":
+        elif args.model_type in ("perceiver_mlm", "perceiver_posonly_mlm"):
+            # Both perceiver variants use the same classification head
+            # (the difference is only in the MLM decoder, not the encoder or classification head)
             logger.info(f"Using Perceiver Sequence Classification for model type: {args.model_type}")
             model_class = ConceptEncoderForSequenceClassificationPerceiver
         else:

@@ -5,8 +5,17 @@ This module provides ConceptEncoder models using Perceiver IO cross-attention
 for decoding concept representations back to sequence/classification outputs.
 
 Models:
-- ConceptEncoderForMaskedLMPerceiver: MLM pretraining
+- ConceptEncoderForMaskedLMPerceiver: MLM with Input+Position queries (hybrid approach)
+- ConceptEncoderForMaskedLMPerceiverPosOnly: MLM with Position-only queries (pure Perceiver IO)
 - ConceptEncoderForSequenceClassificationPerceiver: Sequence classification (GLUE, etc.)
+- ConceptEncoderForSequenceClassificationPerceiverPosOnly: Classification with Position-only encoder
+
+Decoder Query Strategies:
+- Input+Position (default): Query = token_embedding + position_embedding
+  Provides a "hint" about what token was at each position.
+- Position-only: Query = position_embedding only
+  Pure Perceiver IO style - model must decode entirely from concepts.
+  More memory efficient and aligned with Perceiver IO philosophy.
 
 Loss Management:
 - Uses LossManager for clean, extensible loss handling
@@ -22,6 +31,9 @@ Example:
     ...     weighting_strategy="kendall_gal"
     ... )
     >>> model = ConceptEncoderForMaskedLMPerceiver(model_config, loss_config=loss_config)
+    >>> 
+    >>> # Position-only variant (pure Perceiver IO)
+    >>> model = ConceptEncoderForMaskedLMPerceiverPosOnly(model_config, loss_config=loss_config)
     >>> 
     >>> # For inference (no concept loss)
     >>> model = ConceptEncoderForMaskedLMPerceiver.from_pretrained("path/to/model")
@@ -199,29 +211,60 @@ class ConceptEncoderForMaskedLMPerceiver(PreTrainedModel):
         # Note: We apply norm before FFN (Pre-LN style)
         decoder_output = decoder_latents + self.decoder_ffn(self.post_cross_norm(decoder_latents))
         
-        # 3. Project to Vocabulary
-        logits = self.lm_head(decoder_output) # [B, L, V]
-        
-        # 4. Compute Loss (delegated to LossManager)
+        # 3. Compute logits and loss
+        # Use sparse decoding during training for memory efficiency:
+        # Only compute logits for masked positions (~15% of sequence)
         loss = None
-        if labels is not None:
-            # Compute MLM loss
-            loss_fct = CrossEntropyLoss(ignore_index=-100)
-            mlm_loss = loss_fct(
-                logits.view(-1, self.config.vocab_size),
-                labels.view(-1)
+        logits = None
+        
+        if labels is not None and self.training:
+            # SPARSE MLM DECODING: Only compute logits for masked positions
+            # This saves ~7x memory on the logits tensor!
+            # labels != -100 indicates positions where we need predictions
+            mask = (labels != -100)  # [B, L]
+            
+            # Gather decoder outputs only at masked positions
+            # Flatten for efficient gathering
+            flat_decoder_output = decoder_output.view(-1, decoder_output.size(-1))  # [B*L, H]
+            flat_mask = mask.view(-1)  # [B*L]
+            
+            # Select only masked positions
+            masked_decoder_output = flat_decoder_output[flat_mask]  # [num_masked, H]
+            
+            # Project only masked positions to vocabulary
+            masked_logits = self.lm_head(masked_decoder_output)  # [num_masked, V]
+            
+            # Get corresponding labels
+            flat_labels = labels.view(-1)  # [B*L]
+            masked_labels = flat_labels[flat_mask]  # [num_masked]
+            
+            # Compute MLM loss on sparse predictions
+            loss_fct = CrossEntropyLoss()
+            mlm_loss = loss_fct(masked_logits, masked_labels)
+            
+            # Apply loss manager for concept regularization
+            loss = self.loss_manager(
+                task_loss=mlm_loss,
+                concept_repr=concept_repr
             )
             
-            # Apply loss manager only during training (concept losses are regularization)
-            # During evaluation, use only task loss for fair comparison
-            if self.training:
-                loss = self.loss_manager(
-                    task_loss=mlm_loss,
-                    concept_repr=concept_repr
-                )
-            else:
-                loss = mlm_loss
+            # For training, we don't need full logits - set to None or minimal placeholder
+            # This prevents the huge [B, L, V] tensor from being returned
+            logits = None
             
+        else:
+            # FULL DECODING: For evaluation/inference, compute all logits
+            # (needed for metrics like perplexity, or for generation)
+            logits = self.lm_head(decoder_output)  # [B, L, V]
+            
+            if labels is not None:
+                # Evaluation mode: compute loss on full logits
+                loss_fct = CrossEntropyLoss(ignore_index=-100)
+                loss = loss_fct(
+                    logits.view(-1, self.config.vocab_size),
+                    labels.view(-1)
+                )
+        
         if not return_dict:
             output = (logits,) + encoder_outputs[1:]
             return ((loss,) + output) if loss is not None else output
@@ -383,6 +426,175 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
             return ((loss,) + output) if loss is not None else output
             
         return SequenceClassifierOutput(
+            loss=loss,
+            logits=logits,
+            hidden_states=encoder_outputs.hidden_states,
+            attentions=encoder_outputs.attentions,
+        )
+
+
+# =============================================================================
+# Position-Only Decoder Variants (Pure Perceiver IO Style)
+# =============================================================================
+
+class ConceptEncoderForMaskedLMPerceiverPosOnly(PreTrainedModel):
+    """
+    ConceptEncoder with pure Perceiver IO style decoding for Masked Language Modeling.
+    
+    Key Difference from ConceptEncoderForMaskedLMPerceiver:
+    - Decoder queries use ONLY position embeddings (no input token embeddings)
+    - This forces the model to decode entirely from concept representations
+    - More aligned with original Perceiver IO paper philosophy
+    
+    Architecture:
+    1. Encoder: Tokens -> Concepts via cross-attention (same as hybrid)
+    2. Decoder: Position queries attend to Concepts -> Token predictions
+       Query = position_embedding only (NOT input_embedding + position_embedding)
+    
+    Benefits:
+    - Forces concepts to be more complete (can't rely on input hints)
+    - More memory efficient (no need to recompute input embeddings in decoder)
+    - Cleaner separation between encoding and decoding
+    
+    Example:
+        >>> from nn.loss_manager import LossConfig
+        >>> 
+        >>> loss_config = LossConfig(concept_losses=["orthogonality"])
+        >>> model = ConceptEncoderForMaskedLMPerceiverPosOnly(config, loss_config=loss_config)
+    """
+    config_class = ConceptEncoderConfig
+    base_model_prefix = "concept_encoder"
+
+    def __init__(
+        self, 
+        config: ConceptEncoderConfig,
+        loss_config: Optional[LossConfig] = None
+    ):
+        super().__init__(config)
+        self.config = config
+        self.encoder = ConceptEncoder(config)
+        
+        # === Loss Management ===
+        self.set_loss_config(loss_config)
+        
+        # === Decoder Architecture (Position-Only Queries) ===
+        # Learnable position embeddings for decoder queries
+        self.decoder_query_embeddings = nn.Embedding(
+            num_embeddings=config.max_sequence_length, 
+            embedding_dim=config.hidden_size
+        )
+        
+        # Cross-Attention: Query=Position, Key=Concepts, Value=Concepts
+        self.decoder_cross_attn = nn.MultiheadAttention(
+            embed_dim=config.hidden_size,
+            num_heads=config.num_attention_heads,
+            dropout=config.attention_probs_dropout_prob,
+            batch_first=True,
+        )
+        
+        # Layer Norms
+        self.decoder_norm = nn.LayerNorm(config.hidden_size)
+        self.post_cross_norm = nn.LayerNorm(config.hidden_size)
+        
+        # FFN after attention
+        self.decoder_ffn = nn.Sequential(
+            nn.Linear(config.hidden_size, config.intermediate_size),
+            nn.GELU(),
+            nn.Linear(config.intermediate_size, config.hidden_size),
+            nn.Dropout(config.hidden_dropout_prob)
+        )
+
+        # MLM Head
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        
+        # Initialize weights
+        self.post_init()
+        
+        # Optionally tie embeddings
+        if config.tie_word_embeddings:
+            self._tie_or_clone_weights(self.lm_head, self.encoder.token_embeddings)
+    
+    def set_loss_config(self, loss_config: Optional[LossConfig]) -> None:
+        """Update loss configuration."""
+        self.loss_manager = LossManager.create_for_model(
+            concept_num=self.config.concept_num,
+            hidden_size=self.config.hidden_size,
+            loss_config=loss_config
+        )
+        self._loss_config = loss_config
+
+    def forward(
+        self,
+        input_ids: torch.LongTensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.LongTensor] = None,
+        special_tokens_mask: Optional[torch.Tensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> MaskedLMOutput:
+        
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        batch_size, seq_length = input_ids.shape
+        
+        # 1. Encode: Tokens -> Concepts
+        encoder_outputs = self.encoder(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict
+        )
+        concept_repr = encoder_outputs.last_hidden_state  # [B, C, H]
+        
+        # 2. Decode: Position-Only Queries attend to Concepts
+        # KEY DIFFERENCE: No input embeddings, only position embeddings
+        # This is pure Perceiver IO style - "what should be at position X?"
+        position_ids = torch.arange(seq_length, device=input_ids.device).unsqueeze(0)
+        decoder_queries = self.decoder_query_embeddings(position_ids).expand(batch_size, -1, -1)
+        
+        # Pre-LN
+        decoder_queries_norm = self.decoder_norm(decoder_queries)
+        
+        # Cross Attention: Position queries attend to concepts
+        attn_output, attn_weights = self.decoder_cross_attn(
+            query=decoder_queries_norm,
+            key=concept_repr,
+            value=concept_repr
+        )
+        
+        # Residual Connection
+        decoder_latents = decoder_queries + attn_output
+        
+        # FFN with Residual
+        decoder_output = decoder_latents + self.decoder_ffn(self.post_cross_norm(decoder_latents))
+        
+        # 3. Project to Vocabulary
+        logits = self.lm_head(decoder_output)  # [B, L, V]
+        
+        # 4. Compute Loss
+        loss = None
+        if labels is not None:
+            loss_fct = CrossEntropyLoss(ignore_index=-100)
+            mlm_loss = loss_fct(
+                logits.view(-1, self.config.vocab_size),
+                labels.view(-1)
+            )
+            
+            if self.training:
+                loss = self.loss_manager(
+                    task_loss=mlm_loss,
+                    concept_repr=concept_repr
+                )
+            else:
+                loss = mlm_loss
+            
+        if not return_dict:
+            output = (logits,) + encoder_outputs[1:]
+            return ((loss,) + output) if loss is not None else output
+            
+        return MaskedLMOutput(
             loss=loss,
             logits=logits,
             hidden_states=encoder_outputs.hidden_states,

@@ -29,7 +29,10 @@ from nn.concept_encoder import ConceptEncoderConfig
 from nn.concept_encoder_methods import ConceptEncoderForMaskedLM
 from nn.concept_encoder_sim_matrix import ConceptEncoderWithSimMatrixForMaskedLM
 from nn.concept_encoder_weighted import ConceptEncoderForMaskedLMWeighted
-from nn.concept_encoder_perceiver import ConceptEncoderForMaskedLMPerceiver
+from nn.concept_encoder_perceiver import (
+    ConceptEncoderForMaskedLMPerceiver,
+    ConceptEncoderForMaskedLMPerceiverPosOnly
+)
 from nn.loss_manager import LossConfig, get_available_losses
 
 from training.dataset_preprocess import load_and_preprocess_text_dataset
@@ -62,7 +65,11 @@ MODEL_REGISTRY = {
     },
     "perceiver_mlm": {
         "class": ConceptEncoderForMaskedLMPerceiver,
-        "description": "ConceptEncoder with Perceiver IO decoding for MLM"
+        "description": "ConceptEncoder with Perceiver IO decoding for MLM (Input+Position queries)"
+    },
+    "perceiver_posonly_mlm": {
+        "class": ConceptEncoderForMaskedLMPerceiverPosOnly,
+        "description": "ConceptEncoder with Perceiver IO decoding for MLM (Position-only queries, pure Perceiver IO)"
     }
 }
 
@@ -71,7 +78,7 @@ MODEL_REGISTRY = {
 class ModelArguments:
     model_type: str = field(
         default="weighted_mlm",
-        metadata={"help": "Type of model to train", "choices": ["sim_matrix_mlm", "concept_mlm", "weighted_mlm", "perceiver_mlm"]}
+        metadata={"help": "Type of model to train", "choices": ["weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm"]}
     )
     model_name_or_path: str | None = field(
         default=None,
@@ -378,7 +385,7 @@ def main():
     logger.info("="*60)
     
     # Models that support loss_config parameter
-    models_with_loss_config = {"weighted_mlm", "perceiver_mlm"}
+    models_with_loss_config = {"weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm"}
     supports_loss_config = model_args.model_type in models_with_loss_config
     
     if model_args.model_name_or_path:
