@@ -25,8 +25,14 @@ export HF_DATASETS_CACHE="${PROJECT_ROOT}/../hf_home/datasets"
 # Unset deprecated variable to avoid warnings
 unset TRANSFORMERS_CACHE
 
-# Default Model Path (trained on Polonez)
-DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L2C128_20260111_210335/perceiver_mlm_H512L2C128_20260111_210335"
+# Model Configuration - set both together!
+# Weighted MLM:
+DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/weighted_mlm_H512L2C128_20260117_153544/weighted_mlm_H512L2C128_20260117_153544"
+MODEL_TYPE="weighted_mlm"
+
+# Perceiver MLM (comment out the above, uncomment below):
+# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L2C128_20260111_210335/perceiver_mlm_H512L2C128_20260111_210335"
+# MODEL_TYPE="perceiver_mlm"
 
 # Allow overriding model path via first argument
 MODEL_PATH="${1:-$DEFAULT_MODEL_PATH}"
@@ -42,6 +48,7 @@ TOKENIZER_NAME="$MODEL_PATH"
 echo "Configuration:"
 echo "  - Project Root: $PROJECT_ROOT"
 echo "  - HF Cache: $HF_HOME"
+echo "  - Model Type: $MODEL_TYPE"
 echo "  - Model Path: $MODEL_PATH"
 echo "  - Task: $TASK"
 echo "  - Tokenizer: $TOKENIZER_NAME"
@@ -59,11 +66,9 @@ echo "Starting evaluation..."
 # Assumes python environment is already activated or python is accessible
 # Added --visualize flag
 # Added --save_model flag
-# IMPORTANT:
-# - model_type: "perceiver_mlm" for Concept Encoder (Perceiver)
-# - model_type: "weighted_mlm" for Weighted Classification Head
+
 python training/evaluate_model_on_glue.py \
-    --model_type "perceiver_mlm" \
+    --model_type "$MODEL_TYPE" \
     --model_name_or_path "$MODEL_PATH" \
     --tokenizer_name "$TOKENIZER_NAME" \
     --task "$TASK" \
