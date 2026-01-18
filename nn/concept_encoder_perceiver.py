@@ -281,6 +281,9 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
             nn.Dropout(config.hidden_dropout_prob)
         )
         
+        # Final LayerNorm before classifier to stabilize training
+        self.final_layer_norm = nn.LayerNorm(config.hidden_size)
+        
         self.classifier = nn.Linear(config.hidden_size, config.num_labels)
 
         self.post_init()
@@ -341,6 +344,9 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
         
         # FFN (Note: decoder_ffn already includes a LayerNorm at the start)
         decoder_output = decoder_queries + self.decoder_ffn(decoder_queries)  # [B, 1, H]
+        
+        # Apply final normalization to stabilize logits/loss
+        decoder_output = self.final_layer_norm(decoder_output)
         
         # 3. Classify
         # Squeeze sequence dim (1)
