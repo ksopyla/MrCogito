@@ -20,21 +20,16 @@ Evaluate the performance of the weighted and perceiver encoders on the GLUE task
 Goal: Evaluate the performance of the weighted encoders on the mini-pile dataset.The current implementation. Serve as a baseline for the perceiver experiments.
 
 
-1. Train the perceiver on mini-pile - done 17/01/2026 - conclusions: perceiver is able to learn the concepts and use them in the downstream tasks, but the performance is not as good as the weighted encoder. The 'cls_query' is not able to learn the concepts and use them in the downstream tasks. suggested approaches is to implement the multi-query perceiver Sequence Classification (v2) and the attention pooling for the perceiver Sequence Classification (v3) to see if it can improve the performance.
-2. Train the weighted on mini-pile - todo 17/01/2026 - previous implementations was on Wikipedia dataset with the bert-base tokenizer. We should train on mini-pile with the ModernBERT tokenizer - to compare the performance with the perceiver.
-3. Evaluate the weighted on the GLUE MRPC task - todo 17/01/2026
+1. Train the perceiver on mini-pile  - conclusions: perceiver is able to learn the concepts and use them in the downstream tasks, but the performance is not as good as the weighted encoder. The 'cls_query' is not able to learn the concepts and use them in the downstream tasks. suggested approaches is to implement the multi-query perceiver Sequence Classification (v2) and the attention pooling for the perceiver Sequence Classification (v3) to see if it can improve the performance. 
+    [x] done 17/01/2026
+2. Train the weighted on mini-pile - previous implementations was on Wikipedia dataset with the bert-base tokenizer. We should train on mini-pile with the ModernBERT tokenizer - to compare the performance with the perceiver.
+    [x] done 17/01/2026
+3. Evaluate the weighted on the GLUE MRPC task
+    [x] done 17/01/2026
+    - conclusions and observations:
+        1. I have noticed that perceiver sequence classification class was not normalize the pre calss inputs correctly, I noticed it by accident when I was evaluating the performance of the perceiver on the MRPC task but loadint the weighted_mlm core encoder. I have fixed it by adding the LayerNorm to the pre classifier.
+        2. The was an error in the model loading logic, due to some naming conflict between the mlm perceiver and the sequence classification perceiver some of the weights were not loaded correctly, the classification head was mistakenly intialized from mlm head. Renaming the classification decoder_att to cls_attn and other fix it
 4. Evaluate the weighted and perceiver on the all GLUE tasks
-
-
-### Step 2: Concetp encoders implemeantion changes for ablation studies
-
-Goal: Implement the changes for the concept encoders to be able to test the small embeddings size (32-256) versus the larger concept size (256-4096) and the RoPE positional encoding.
-
-1. Implement for weighted and perceiver encoders change that would allow to have different dims for embeddings and concepts, to be able test the small embeddings size (32-256) versus the larger concept size (256-4096) - todo 
-2. Implement the RoPE positional encoding for the weighted and perceiver encoders - todo 
-3. Train the weighted and perceiver on the mini-pile dataset to see if the implementation is correct
-4. Evaluate the weighted and perceiver on the GLUE MRPC task to make sure if the implementation is correct
-
 
 ### Step 3: Multi-query perceiver Sequence Classification (v2) and attention pooling for the perceiver Sequence Classification (v3)
 
