@@ -67,9 +67,9 @@ TEST_SIZE_PERCENT=0.1
 # Training hyperparameters (adjust based on your GPU memory)
 # For 4 layers + 256 concepts, reduced batch size to avoid OOM
 # With sparse MLM decoding, can use batch_size=48; without it, use 32
-PER_DEVICE_BATCH_SIZE=32        # Reduced for larger model (4L, 256C)
+PER_DEVICE_BATCH_SIZE=64        # Reduced for larger model (4L, 256C)
 EVAL_BATCH_SIZE=16              # Eval needs full logits, so smaller batch
-GRADIENT_ACCUMULATION_STEPS=4    # Increased to maintain effective batch size ~512
+GRADIENT_ACCUMULATION_STEPS=1    # Increased to maintain effective batch size ~512
 LEARNING_RATE=5e-4
 NUM_EPOCHS=20                  
 WARMUP_STEPS=2000
