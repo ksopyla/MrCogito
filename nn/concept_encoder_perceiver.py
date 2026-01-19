@@ -8,7 +8,6 @@ Models:
 - ConceptEncoderForMaskedLMPerceiver: MLM with Input+Position queries (hybrid approach)
 - ConceptEncoderForMaskedLMPerceiverPosOnly: MLM with Position-only queries (pure Perceiver IO)
 - ConceptEncoderForSequenceClassificationPerceiver: Sequence classification (GLUE, etc.)
-- ConceptEncoderForSequenceClassificationPerceiverPosOnly: Classification with Position-only encoder
 
 Decoder Query Strategies:
 - Input+Position (default): Query = token_embedding + position_embedding

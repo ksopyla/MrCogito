@@ -36,15 +36,15 @@ unset TRANSFORMERS_CACHE
 # (the difference is only in how the MLM decoder works during pretraining)
 
 # Weighted MLM:
-DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/weighted_mlm_H512L2C128_20260117_153544/weighted_mlm_H512L2C128_20260117_153544"
-MODEL_TYPE="weighted_mlm"
+# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/weighted_mlm_H512L2C128_20260117_153544/weighted_mlm_H512L2C128_20260117_153544"
+# MODEL_TYPE="weighted_mlm"
 
 # Perceiver MLM (comment out above, uncomment below):
-# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L2C128_20260111_210335/perceiver_mlm_H512L2C128_20260111_210335"
-# MODEL_TYPE="perceiver_mlm"
+DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L2C128_20260118_172328/perceiver_mlm_H512L2C128_20260118_172328"
+MODEL_TYPE="perceiver_mlm"
 
 # Perceiver Position-Only MLM (comment out above, uncomment below):
-# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_posonly_mlm_H512L2C128_YYYYMMDD_HHMMSS/perceiver_posonly_mlm_H512L2C128_YYYYMMDD_HHMMSS"
+# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/"
 # MODEL_TYPE="perceiver_posonly_mlm"
 
 # Allow overriding model path via first argument
