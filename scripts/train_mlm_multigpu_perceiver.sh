@@ -49,8 +49,8 @@ export NVIDIA_TF32_OVERRIDE=1
 #   - "perceiver_mlm": Input+Position decoder queries (hybrid approach)
 #   - "perceiver_posonly_mlm": Position-only decoder queries (pure Perceiver IO)
 #
-MODEL_TYPE="perceiver_mlm"
-# MODEL_TYPE="perceiver_posonly_mlm"  # Uncomment for position-only variant
+#MODEL_TYPE="perceiver_mlm"
+MODEL_TYPE="perceiver_posonly_mlm"  # Uncomment for position-only variant
 HIDDEN_SIZE=512
 NUM_LAYERS=2
 CONCEPT_NUM=128      # Same as weighted_mlm_H512L2C128_20251123_213949
