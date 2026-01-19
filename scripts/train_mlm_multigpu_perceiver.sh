@@ -84,9 +84,9 @@ LOSS_WEIGHTING="kendall_gal"
 LOSS_WEIGHT=0.1  # Only used with loss_weighting=fixed
 
 # Logging and evaluation
-LOGGING_STEPS=5000
+LOGGING_STEPS=2000
 EVAL_STRATEGY="steps"
-EVAL_STEPS=10000
+EVAL_STEPS=5000
 SAVE_STRATEGY="steps"
 SAVE_STEPS=100000
 
