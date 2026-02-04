@@ -40,12 +40,12 @@ unset TRANSFORMERS_CACHE
 # MODEL_TYPE="weighted_mlm"
 
 # Perceiver MLM (comment out above, uncomment below):
-DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L2C128_20260118_172328/perceiver_mlm_H512L2C128_20260118_172328"
-MODEL_TYPE="perceiver_mlm"
+# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L2C128_20260118_172328/perceiver_mlm_H512L2C128_20260118_172328"
+# MODEL_TYPE="perceiver_mlm"
 
 # Perceiver Position-Only MLM (comment out above, uncomment below):
-# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/"
-# MODEL_TYPE="perceiver_posonly_mlm"
+DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_posonly_mlm_H512L2C128_20260119_204015/perceiver_posonly_mlm_H512L2C128_20260119_204015"
+MODEL_TYPE="perceiver_posonly_mlm"
 
 # Allow overriding model path via first argument
 MODEL_PATH="${1:-$DEFAULT_MODEL_PATH}"
