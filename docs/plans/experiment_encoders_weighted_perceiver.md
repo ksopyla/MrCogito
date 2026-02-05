@@ -26,7 +26,7 @@ Goal: Evaluate the performance of the weighted encoders on the mini-pile dataset
     1. I have noticed that perceiver sequence classification class was not normalize the pre calss inputs correctly, I noticed it by accident when I was evaluating the performance of the perceiver on the MRPC task but loadint the weighted_mlm core encoder. I have fixed it by adding the LayerNorm to the pre classifier.
     2. There was an error in the model loading logic, due to some naming conflict between the mlm perceiver and the sequence classification perceiver some of the weights were not loaded correctly, the classification head was mistakenly intialized from mlm head. Renaming the classification decoder_att to cls_attn and other fixes it.
     3. Introduce the sparse mlm decoding to perceiver mlm: https://wandb.ai/ksopyla/MrCogito/runs/perceiver_mlm_H512L2C128_20260118_172328?nw=nwuserksopyla this is the first model, the results are exactly the same as with previous dense mlm decoding see the previous run https://wandb.ai/ksopyla/MrCogito/runs/perceiver_mlm_H512L2C128_20260111_210335?nw=nwuserksopyla
-4. Evaluate the weighted and perceiver on the all GLUE tasks
+4. Evaluate the weighted and perceiver on the all GLUE tasks - todo 
 
 
 
