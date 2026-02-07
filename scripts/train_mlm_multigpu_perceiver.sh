@@ -109,7 +109,7 @@ PER_DEVICE_BATCH_SIZE=64
 EVAL_BATCH_SIZE=16              # Eval computes full logits [B, L, V], keep smaller
 GRADIENT_ACCUMULATION_STEPS=2   # Effective batch = 64 * NUM_GPUs * 2
 LEARNING_RATE=3e-4              # Lower than v1 (5e-4) for deeper model stability
-NUM_EPOCHS=30                   # Increased from 20 for more pretraining
+NUM_EPOCHS=40                   # Increased from 20 for more pretraining
 WARMUP_STEPS=3000               # ~3.8% of total steps, standard range
 WEIGHT_DECAY=0.01
 MAX_GRAD_NORM=1.0
