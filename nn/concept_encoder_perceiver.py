@@ -569,24 +569,56 @@ class ConceptEncoderForMaskedLMPerceiverPosOnly(PreTrainedModel):
         # FFN with Residual
         decoder_output = decoder_latents + self.decoder_ffn(self.post_cross_norm(decoder_latents))
         
-        # 3. Project to Vocabulary
-        logits = self.lm_head(decoder_output)  # [B, L, V]
-        
-        # 4. Compute Loss
+        # 3. Compute logits and loss
+        # Use sparse decoding during training for memory efficiency:
+        # Only compute logits for masked positions (~15% of sequence)
+        # This avoids materializing the huge [B, L, V] tensor AND
+        # prevents accelerate's convert_to_fp32 from doubling memory.
         loss = None
-        if labels is not None:
-            loss_fct = CrossEntropyLoss(ignore_index=-100)
-            mlm_loss = loss_fct(
-                logits.view(-1, self.config.vocab_size),
-                labels.view(-1)
+        logits = None
+        
+        if labels is not None and self.training:
+            # SPARSE MLM DECODING: Only compute logits for masked positions
+            # labels != -100 indicates positions where we need predictions
+            mask = (labels != -100)  # [B, L]
+            
+            # Gather decoder outputs only at masked positions
+            flat_decoder_output = decoder_output.view(-1, decoder_output.size(-1))  # [B*L, H]
+            flat_mask = mask.view(-1)  # [B*L]
+            
+            # Select only masked positions
+            masked_decoder_output = flat_decoder_output[flat_mask]  # [num_masked, H]
+            
+            # Project only masked positions to vocabulary
+            masked_logits = self.lm_head(masked_decoder_output)  # [num_masked, V]
+            
+            # Get corresponding labels
+            flat_labels = labels.view(-1)  # [B*L]
+            masked_labels = flat_labels[flat_mask]  # [num_masked]
+            
+            # Compute MLM loss on sparse predictions
+            loss_fct = CrossEntropyLoss()
+            mlm_loss = loss_fct(masked_logits, masked_labels)
+            
+            # Apply loss manager for concept regularization
+            loss = self.loss_manager(
+                task_loss=mlm_loss,
+                concept_repr=concept_repr
             )
             
-            if self.training:
-                loss = self.loss_manager(
-                    task_loss=mlm_loss,
-                    concept_repr=concept_repr
+            # Don't return full logits during training (saves ~6GB from fp32 conversion)
+            logits = None
+            
+        else:
+            # FULL DECODING: For evaluation/inference, compute all logits
+            logits = self.lm_head(decoder_output)  # [B, L, V]
+            
+            if labels is not None:
+                loss_fct = CrossEntropyLoss(ignore_index=-100)
+                mlm_loss = loss_fct(
+                    logits.view(-1, self.config.vocab_size),
+                    labels.view(-1)
                 )
-            else:
                 loss = mlm_loss
             
         if not return_dict:
