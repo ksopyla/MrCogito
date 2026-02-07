@@ -1,6 +1,17 @@
 #!/bin/bash
-# Bash script to train the Perceiver MLM model on multi-GPU Linux server (Odra)
+# Bash script to train Concept Encoder MLM models on multi-GPU Linux server
+# Supports all 3 model types: weighted_mlm, perceiver_mlm, perceiver_posonly_mlm
 # Uses accelerate for distributed training on multiple GPUs
+#
+# Usage:
+#   # Edit MODEL_TYPE below, then run:
+#   bash scripts/train_mlm_multigpu_perceiver.sh
+#
+#   # Or train all 3 sequentially:
+#   for TYPE in weighted_mlm perceiver_posonly_mlm perceiver_mlm; do
+#     sed -i "s/^MODEL_TYPE=.*/MODEL_TYPE=\"$TYPE\"/" scripts/train_mlm_multigpu_perceiver.sh
+#     bash scripts/train_mlm_multigpu_perceiver.sh
+#   done
 #
 # IMPORTANT: RTX 5090 / CUDA 12.8 COMPATIBILITY ISSUE
 # ======================================================
@@ -42,21 +53,47 @@ export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=1
 export NVIDIA_TF32_OVERRIDE=1
 
-# Training configuration
-# MATCHING WEIGHTED MLM CONFIG FOR FAIR COMPARISON
+# =============================================================================
+# SCALED-UP MODEL CONFIGURATION (v2, 2026-02-06)
+# =============================================================================
+# Previous config: H512, L2, C128, intermediate=1024 (~34-36M params)
+# New config:      H512, L6, C128, intermediate=2048 (~85-88M params)
 #
-# MODEL_TYPE options:
-#   - "perceiver_mlm": Input+Position decoder queries (hybrid approach)
-#   - "perceiver_posonly_mlm": Position-only decoder queries (pure Perceiver IO)
+# Key changes from v1:
+#   - Depth: 2 -> 6 layers (most impactful, enables deeper syntactic learning)
+#   - FFN: 1024 -> 2048 (more capacity per layer)
+#   - Epochs: 20 -> 30 (more pretraining to compensate for small dataset)
+#   - LR: 5e-4 -> 3e-4 (lower for larger model stability)
+#   - Warmup: 2000 -> 3000 (longer warmup for deeper model)
+#   - Batch: 48 per device (reduced from 64 for memory)
+#   - Grad accum: 2 (effective batch = 48*NUM_GPUs*2)
 #
-#MODEL_TYPE="perceiver_mlm"
-MODEL_TYPE="perceiver_posonly_mlm"  # Uncomment for position-only variant
-HIDDEN_SIZE=512
-NUM_LAYERS=2
-CONCEPT_NUM=128      # Same as weighted_mlm_H512L2C128_20251123_213949
-INTERMEDIATE_SIZE=1024
+# Estimated params: ~85M (weighted), ~88M (perceiver variants)
+# Estimated training time: ~36-48h on 4x RTX 3090 for 30 epochs
+# Target MLM loss: < 3.0 (vs 4.0 for L2 models)
+#
+# MODEL_TYPE options (change this for each training run):
+#   - "weighted_mlm": Weighted concept combination decoder
+#   - "perceiver_mlm": Perceiver IO with Input+Position decoder queries
+#   - "perceiver_posonly_mlm": Perceiver IO with Position-only queries (pure Perceiver IO)
+#
+# Run all 3 models sequentially:
+#   for TYPE in weighted_mlm perceiver_posonly_mlm perceiver_mlm; do
+#     sed -i "s/^MODEL_TYPE=.*/MODEL_TYPE=\"$TYPE\"/" scripts/train_mlm_multigpu_perceiver.sh
+#     bash scripts/train_mlm_multigpu_perceiver.sh
+#   done
+# =============================================================================
 
-# Data configuration
+# --- Model Architecture ---
+MODEL_TYPE="weighted_mlm"         # CHANGE THIS for each run
+#MODEL_TYPE="perceiver_posonly_mlm"
+#MODEL_TYPE="perceiver_mlm"
+HIDDEN_SIZE=512
+NUM_LAYERS=6                      # Scaled from 2 -> 6 (key change)
+CONCEPT_NUM=128
+INTERMEDIATE_SIZE=2048            # Scaled from 1024 -> 2048
+
+# --- Data Configuration ---
 DATASET_NAME="JeanKaddour/minipile"
 DATASET_SUBSET="" 
 TOKENIZER_NAME="answerdotai/ModernBERT-base"
@@ -64,31 +101,32 @@ MAX_SEQ_LENGTH=512
 MLM_PROBABILITY=0.15
 TEST_SIZE_PERCENT=0.1
 
-# Training hyperparameters (adjust based on your GPU memory)
-# For 4 layers + 256 concepts, reduced batch size to avoid OOM
-# With sparse MLM decoding, can use batch_size=48; without it, use 32
-PER_DEVICE_BATCH_SIZE=64        # Reduced for larger model (4L, 256C)
-EVAL_BATCH_SIZE=16              # Eval needs full logits, so smaller batch
-GRADIENT_ACCUMULATION_STEPS=1    # Increased to maintain effective batch size ~512
-LEARNING_RATE=5e-4
-NUM_EPOCHS=20                  
-WARMUP_STEPS=2000
+# --- Training Hyperparameters ---
+# Memory budget: ~88M params * bf16 + optimizer states + activations
+# Fits on RTX 3090 (24GB) with batch_size=48 and gradient_checkpointing=False
+# For OOM issues: reduce PER_DEVICE_BATCH_SIZE to 32, increase GRADIENT_ACCUMULATION_STEPS to 4
+PER_DEVICE_BATCH_SIZE=48
+EVAL_BATCH_SIZE=8               # Eval needs full logits [B, L, V], keep small
+GRADIENT_ACCUMULATION_STEPS=2   # Effective batch = 48 * NUM_GPUs * 2
+LEARNING_RATE=3e-4              # Lower than v1 (5e-4) for stability with deeper model
+NUM_EPOCHS=30                   # Increased from 20 for more pretraining
+WARMUP_STEPS=3000               # Longer warmup for deeper model
 WEIGHT_DECAY=0.01
 MAX_GRAD_NORM=1.0
 
-# Loss configuration
+# --- Loss Configuration ---
 # Options for concept_losses: orthogonality, soft_orthogonality, uniformity, vicreg, combined, none
 # Options for loss_weighting: fixed, learnable, kendall_gal
 CONCEPT_LOSSES="none"
 LOSS_WEIGHTING="kendall_gal"
 LOSS_WEIGHT=0.1  # Only used with loss_weighting=fixed
 
-# Logging and evaluation
-LOGGING_STEPS=2000
+# --- Logging and Evaluation ---
+LOGGING_STEPS=1000              # More frequent logging for longer training
 EVAL_STRATEGY="steps"
 EVAL_STEPS=5000
 SAVE_STRATEGY="steps"
-SAVE_STEPS=100000
+SAVE_STEPS=50000                # Save less frequently (models are larger)
 
 # Paths are dependent on the server setup:
 # runpod: /workspace/MrCogito
@@ -156,7 +194,7 @@ accelerate launch \
     --loss_weighting "$LOSS_WEIGHTING" \
     --loss_weight "$LOSS_WEIGHT" \
     --per_device_train_batch_size "$PER_DEVICE_BATCH_SIZE" \
-    --per_device_eval_batch_size "$EVAL_BATCH_SIZE" \
+    --per_device_eval_batch_size "${EVAL_BATCH_SIZE:-$PER_DEVICE_BATCH_SIZE}" \
     --gradient_accumulation_steps "$GRADIENT_ACCUMULATION_STEPS" \
     --learning_rate "$LEARNING_RATE" \
     --num_train_epochs "$NUM_EPOCHS" \
@@ -176,7 +214,7 @@ accelerate launch \
     --ddp_find_unused_parameters False \
     --dataloader_pin_memory True \
     --dataloader_num_workers 2 \
-    --gradient_checkpointing False \
+    --gradient_checkpointing True \
     --optim "adamw_torch_fused" \
     --lr_scheduler_type "linear" \
     --report_to "wandb" \
