@@ -41,7 +41,7 @@ echo ""
 
 # Set environment variables for optimal performance
 export NCCL_DEBUG=WARN
-export NCCL_TIMEOUT=1800
+export NCCL_TIMEOUT=3600  # 1 hour - increased for larger model + grad accum
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 export OMP_NUM_THREADS=8
 
@@ -57,7 +57,7 @@ export NVIDIA_TF32_OVERRIDE=1
 # SCALED-UP MODEL CONFIGURATION (v2, 2026-02-06)
 # =============================================================================
 # Previous config: H512, L2, C128, intermediate=1024 (~34-36M params)
-# New config:      H512, L6, C128, intermediate=2048 (~85-88M params)
+# New config:      H512, L6, C128, intermediate=2048 (~58-61M params)
 #
 # Key changes from v1:
 #   - Depth: 2 -> 6 layers (most impactful, enables deeper syntactic learning)
@@ -102,15 +102,15 @@ MLM_PROBABILITY=0.15
 TEST_SIZE_PERCENT=0.1
 
 # --- Training Hyperparameters ---
-# Memory budget: ~88M params * bf16 + optimizer states + activations
-# Fits on RTX 3090 (24GB) with batch_size=48 and gradient_checkpointing=False
-# For OOM issues: reduce PER_DEVICE_BATCH_SIZE to 32, increase GRADIENT_ACCUMULATION_STEPS to 4
-PER_DEVICE_BATCH_SIZE=48
-EVAL_BATCH_SIZE=8               # Eval needs full logits [B, L, V], keep small
-GRADIENT_ACCUMULATION_STEPS=2   # Effective batch = 48 * NUM_GPUs * 2
-LEARNING_RATE=3e-4              # Lower than v1 (5e-4) for stability with deeper model
+# Memory: ~61-83M params, fits RTX 3090 (24GB) with batch=64 and NO gradient checkpointing
+# Effective batch: 64 * 4 GPUs * 2 accum = 512 (good for MLM pretraining)
+# For OOM: reduce to PER_DEVICE_BATCH_SIZE=48 (effective batch = 384)
+PER_DEVICE_BATCH_SIZE=64
+EVAL_BATCH_SIZE=16              # Eval computes full logits [B, L, V], keep smaller
+GRADIENT_ACCUMULATION_STEPS=2   # Effective batch = 64 * NUM_GPUs * 2
+LEARNING_RATE=3e-4              # Lower than v1 (5e-4) for deeper model stability
 NUM_EPOCHS=30                   # Increased from 20 for more pretraining
-WARMUP_STEPS=3000               # Longer warmup for deeper model
+WARMUP_STEPS=3000               # ~3.8% of total steps, standard range
 WEIGHT_DECAY=0.01
 MAX_GRAD_NORM=1.0
 
@@ -214,7 +214,7 @@ accelerate launch \
     --ddp_find_unused_parameters False \
     --dataloader_pin_memory True \
     --dataloader_num_workers 2 \
-    --gradient_checkpointing True \
+    --gradient_checkpointing False \
     --optim "adamw_torch_fused" \
     --lr_scheduler_type "linear" \
     --report_to "wandb" \
