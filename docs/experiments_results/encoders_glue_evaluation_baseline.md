@@ -79,18 +79,43 @@ Standard pretrained encoder models for reference. Evaluated with default Hugging
 
 ---
 
-## Full GLUE Benchmark Results
+## Scaled-Up Models: H512L6C128 (v2)
 
-TODO: Full GLUE evaluation in progress. Run with:
+Scaled model config to test whether depth improves downstream performance.
+Architecture: H512, **L6** (from L2), C128, intermediate=2048 (from 1024).
+Same dataset (Minipile), tokenizer (ModernBERT), and fine-tuning protocol.
+
+### MLM Pretraining Runs
+
+| Model Type | Checkpoint | Params | MLM Loss (best) | Training Time | Epochs | Wandb |
+|------------|-----------|--------|:---:|:---:|:---:|---|
+| **weighted_mlm** | `weighted_mlm_H512L6C128_20260207_174251` | 84M | **3.415** | 10h 09m | 40 | [run](https://wandb.ai/ksopyla/MrCogito/runs/weighted_mlm_H512L6C128_20260207_174251) |
+| **perceiver_posonly_mlm** | TODO | ~61M | -- | -- | -- | -- |
+| **perceiver_mlm** | TODO | ~61M | -- | -- | -- | -- |
+
+Training details (weighted_mlm):
+- Server: Polonez (4x RTX 3090)
+- Effective batch: 512 (64 per GPU x 4 GPUs x 2 grad accum)
+- LR: 3e-4, cosine schedule, 3000 warmup steps
+- Best checkpoint: step 50,000 (eval loss 3.415)
+- Train loss: 4.820 (final), compared to 4.089 for L2 model
+- Speed: 2.14 steps/sec, ~36,543 sec total
+- Fix applied: sparse MLM decoding to avoid OOM from accelerate fp32 conversion
+
+### GLUE Results (H512L6C128)
+
+TODO: Run evaluation after all 3 models are trained.
+
 ```bash
 P="/home/ksopyla/dev/MrCogito/Cache/Training"
-for model in \
-  "perceiver_mlm_H512L2C128_20260118_172328" \
-  "weighted_mlm_H512L2C128_20260117_153544" \
-  "perceiver_posonly_mlm_H512L2C128_20260119_204015"; do
-    bash scripts/evaluate_concept_encoder_glue.sh "$P/$model/$model" all
-done
+bash scripts/evaluate_concept_encoder_glue.sh "$P/weighted_mlm_H512L6C128_20260207_174251/weighted_mlm_H512L6C128_20260207_174251" all
 ```
+
+---
+
+## Full GLUE Benchmark Results (H512L2C128)
+
+Completed 2026-02-05. Full results in [full_glue_evaluation_20260205.md](full_glue_evaluation_20260205.md).
 
 ---
 

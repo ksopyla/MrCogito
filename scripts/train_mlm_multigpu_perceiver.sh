@@ -85,8 +85,8 @@ export NVIDIA_TF32_OVERRIDE=1
 # =============================================================================
 
 # --- Model Architecture ---
-MODEL_TYPE="weighted_mlm"         # CHANGE THIS for each run
-#MODEL_TYPE="perceiver_posonly_mlm"
+#MODEL_TYPE="weighted_mlm"        # DONE 2026-02-08, 10h09m, best loss 3.415
+MODEL_TYPE="perceiver_posonly_mlm" # NEXT
 #MODEL_TYPE="perceiver_mlm"
 HIDDEN_SIZE=512
 NUM_LAYERS=6                      # Scaled from 2 -> 6 (key change)
