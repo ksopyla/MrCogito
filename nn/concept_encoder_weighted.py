@@ -181,8 +181,9 @@ class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
             mask = (labels != -100)  # [B, L]
             
             # Gather sequence representations only at masked positions
-            flat_sequence_repr = sequence_repr.view(-1, sequence_repr.size(-1))  # [B*L, H]
-            flat_mask = mask.view(-1)  # [B*L]
+            # Use reshape instead of view - sequence_repr may be non-contiguous
+            flat_sequence_repr = sequence_repr.reshape(-1, sequence_repr.size(-1))  # [B*L, H]
+            flat_mask = mask.reshape(-1)  # [B*L]
             
             # Select only masked positions
             masked_repr = flat_sequence_repr[flat_mask]  # [num_masked, H]

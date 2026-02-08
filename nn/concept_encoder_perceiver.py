@@ -223,9 +223,9 @@ class ConceptEncoderForMaskedLMPerceiver(PreTrainedModel):
             mask = (labels != -100)  # [B, L]
             
             # Gather decoder outputs only at masked positions
-            # Flatten for efficient gathering
-            flat_decoder_output = decoder_output.view(-1, decoder_output.size(-1))  # [B*L, H]
-            flat_mask = mask.view(-1)  # [B*L]
+            # Use reshape instead of view - decoder_output may be non-contiguous
+            flat_decoder_output = decoder_output.reshape(-1, decoder_output.size(-1))  # [B*L, H]
+            flat_mask = mask.reshape(-1)  # [B*L]
             
             # Select only masked positions
             masked_decoder_output = flat_decoder_output[flat_mask]  # [num_masked, H]
@@ -583,8 +583,9 @@ class ConceptEncoderForMaskedLMPerceiverPosOnly(PreTrainedModel):
             mask = (labels != -100)  # [B, L]
             
             # Gather decoder outputs only at masked positions
-            flat_decoder_output = decoder_output.view(-1, decoder_output.size(-1))  # [B*L, H]
-            flat_mask = mask.view(-1)  # [B*L]
+            # Use reshape instead of view - decoder_output may be non-contiguous from expand()
+            flat_decoder_output = decoder_output.reshape(-1, decoder_output.size(-1))  # [B*L, H]
+            flat_mask = mask.reshape(-1)  # [B*L]
             
             # Select only masked positions
             masked_decoder_output = flat_decoder_output[flat_mask]  # [num_masked, H]
