@@ -52,6 +52,9 @@ export HF_DATASETS_CACHE="${PROJECT_ROOT}/../hf_home/datasets"
 # Unset deprecated variable to avoid warnings
 unset TRANSFORMERS_CACHE
 
+# Suppress tokenizer parallelism fork warning (harmless, but noisy)
+export TOKENIZERS_PARALLELISM=false
+
 # Model Configuration - set both together!
 #
 # MODEL_TYPE options for concept encoders:
