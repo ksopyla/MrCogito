@@ -90,8 +90,8 @@ Same dataset (Minipile), tokenizer (ModernBERT), and fine-tuning protocol.
 | Model Type | Checkpoint | Params | MLM Loss (best) | Training Time | Epochs | Wandb |
 |------------|-----------|--------|:---:|:---:|:---:|---|
 | **weighted_mlm** | `weighted_mlm_H512L6C128_20260207_174251` | 84M | **3.415** | 10h 09m | 40 | [run](https://wandb.ai/ksopyla/MrCogito/runs/weighted_mlm_H512L6C128_20260207_174251) |
-| **perceiver_posonly_mlm** | TODO | ~61M | -- | -- | -- | -- |
-| **perceiver_mlm** | TODO | ~61M | -- | -- | -- | -- |
+| **perceiver_posonly_mlm** | `perceiver_posonly_mlm_H512L6C128_20260208_102656` | 61M | **2.640** | 10h 43m | 40 | [run](https://wandb.ai/ksopyla/MrCogito/runs/perceiver_posonly_mlm_H512L6C128_20260208_102656) |
+| **perceiver_mlm** | `perceiver_mlm_H512L6C128_20260208_211633` | 61M | **2.537** | 10h 44m | 40 | [run](https://wandb.ai/ksopyla/MrCogito/runs/perceiver_mlm_H512L6C128_20260208_211633) |
 
 Training details (weighted_mlm):
 - Server: Polonez (4x RTX 3090)
