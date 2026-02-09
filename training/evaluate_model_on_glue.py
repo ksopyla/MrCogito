@@ -365,7 +365,7 @@ GLUE_TASKS = {
     },
     "stsb": {
         "num_labels": 1,
-        "metrics": ["pearson", "spearmanr"],
+        "metrics": ["pearsonr", "spearmanr"],
         "keys": {"sentence1": "sentence1", "sentence2": "sentence2", "label": "label"},
         "abbr": "STS-B",
         "name": "Semantic Textual Similarity Benchmark",
@@ -519,8 +519,8 @@ def compute_metrics(task, metric_names):
                 results[name] = metric.compute(predictions=predictions, references=labels)["matthews_correlation"]
             elif name == "f1":
                 results[name] = metric.compute(predictions=predictions, references=labels)["f1"]
-            elif name == "pearson":
-                results[name] = metric.compute(predictions=predictions, references=labels)["pearson"]
+            elif name == "pearsonr":
+                results[name] = metric.compute(predictions=predictions, references=labels)["pearsonr"]
             elif name == "spearmanr":
                 results[name] = metric.compute(predictions=predictions, references=labels)["spearmanr"]
             else:
