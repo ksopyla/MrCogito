@@ -1053,44 +1053,55 @@ def finetune_model_on_glue(args):
         **{k: v for k, v in vars(training_args).items() if not k.startswith('_')}
     }
 
-    # Create wandb tags
-    # Sanitize model name for wandb tag to avoid errors with long paths
-    model_tag = args.model_name_or_path
-    if os.path.isdir(model_tag):
-        model_tag = os.path.basename(model_tag)
+    # === Model Lineage: Extract source training run ID from checkpoint path ===
+    # The checkpoint path follows the convention:
+    #   .../Cache/Training/<training_run_id>/<training_run_id>/
+    # e.g., .../weighted_mlm_H512L6C128_20260207_174251/weighted_mlm_H512L6C128_20260207_174251
+    # The training_run_id matches the wandb run name from mlm_training.py
+    source_training_run_id = os.path.basename(args.model_name_or_path)
     
-    # Strip timestamp from model name if it exists (e.g., _YYYYMMDD_HHMMSS)
-    parts = model_tag.split('_')
-    if len(parts) > 2 and parts[-2].isdigit() and len(parts[-2]) == 8 and parts[-1].isdigit() and len(parts[-1]) == 6:
-        model_tag = '_'.join(parts[:-2])
-
-    # Ensure tag is not too long
-    if len(model_tag) > 63:
-        model_tag = model_tag[:63]
+    # Extract architecture tag (strip timestamp): weighted_mlm_H512L6C128
+    arch_parts = source_training_run_id.split('_')
+    if len(arch_parts) > 2 and arch_parts[-2].isdigit() and len(arch_parts[-2]) == 8 and arch_parts[-1].isdigit() and len(arch_parts[-1]) == 6:
+        architecture_tag = '_'.join(arch_parts[:-2])
+    else:
+        architecture_tag = source_training_run_id
+    
+    # Ensure tag is not too long for wandb
+    if len(architecture_tag) > 63:
+        architecture_tag = architecture_tag[:63]
 
     # Get hostname
     hostname = get_hostname()
 
+    # Tags for filtering: task, model type, architecture, source training run
     wandb_tags = [
         "glue",
         args.task,
         "finetuning",
         args.model_type,
-        model_tag,
+        architecture_tag,           # e.g., weighted_mlm_H512L6C128
+        source_training_run_id,     # e.g., weighted_mlm_H512L6C128_20260207_174251 (for lineage)
         hostname
     ]
 
-    # Create group identifier matching training script if possible
-    # Default fallback
-    group_identifier = f"GLUE_{args.task}"
+    # Group by architecture config (backward compatible)
+    # Format: {model_type}_H{hidden}L{layers}C{concepts} - same as mlm_training.py
+    # L2 and L6 are naturally separated since layer count is in the name
+    group_identifier = architecture_tag  # e.g., weighted_mlm_H512L6C128
     
-    # Try to reconstruct training group identifier: {model_type}_H{hidden}L{layers}C{concepts}
+    # Try to reconstruct from model config if architecture_tag extraction failed
     if hasattr(model, "config"):
         config = model.config
         if hasattr(config, "hidden_size") and hasattr(config, "num_hidden_layers") and hasattr(config, "concept_num"):
-             # Use args.model_type (e.g. weighted_mlm) and config params
-             group_identifier = f"{args.model_type}_H{config.hidden_size}L{config.num_hidden_layers}C{config.concept_num}"
-             logger.info(f"Using training-compatible group identifier: {group_identifier}")
+            group_identifier = f"{args.model_type}_H{config.hidden_size}L{config.num_hidden_layers}C{config.concept_num}"
+    
+    logger.info(f"Group: {group_identifier} | Source training run: {source_training_run_id}")
+    
+    # Add lineage metadata to wandb config
+    wandb_config["source_training_run_id"] = source_training_run_id
+    wandb_config["source_checkpoint_path"] = args.model_name_or_path
+    wandb_config["architecture_tag"] = architecture_tag
     
     # Initialize the wandb project
     wandb_run = wandb.init(
@@ -1102,7 +1113,7 @@ def finetune_model_on_glue(args):
         tags=wandb_tags,
         group=group_identifier,
         sync_tensorboard=True,
-        notes=f"Fine-tuning {args.model_name_or_path} on GLUE task {args.task}"
+        notes=f"GLUE {args.task} | Source: {source_training_run_id} | Model: {args.model_type}"
     )
 
     # Train model
@@ -1133,6 +1144,8 @@ def finetune_model_on_glue(args):
         'experiment_name': run_name,
         'wandb_url': wandb_run.url,
         'wandb_project': wandb_run.project,
+        'source_training_run_id': source_training_run_id,
+        'architecture_tag': architecture_tag,
         'model_name': args.model_name_or_path,
         'model_type': args.model_type,
         'task': args.task,
