@@ -168,14 +168,16 @@ class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
         sequence_repr = self.pre_lm_projection(sequence_repr)
         
         # Compute logits and loss
-        # Use sparse decoding during training for memory efficiency:
-        # Only compute logits for masked positions (~15% of sequence)
-        # This avoids materializing the huge [B, L, V] tensor AND
-        # prevents accelerate's convert_to_fp32 from doubling memory.
+        # Use sparse decoding for memory efficiency whenever labels are provided
+        # (both training AND evaluation). Only compute logits for masked positions
+        # (~15% of sequence), saving ~7x memory and avoiding accelerate's
+        # convert_to_fp32 doubling the [B,L,V] tensor.
+        # The loss is mathematically identical to full decoding with ignore_index=-100.
+        # Full logits are only materialized for pure inference (labels=None).
         loss = None
         logits = None
         
-        if labels is not None and self.training:
+        if labels is not None:
             # SPARSE MLM DECODING: Only compute logits for masked positions
             # labels != -100 indicates positions where we need predictions
             mask = (labels != -100)  # [B, L]
@@ -199,26 +201,21 @@ class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
             loss_fct = CrossEntropyLoss()
             mlm_loss = loss_fct(masked_logits, masked_labels)
             
-            # Apply loss manager for concept regularization
-            loss = self.loss_manager(
-                task_loss=mlm_loss,
-                concept_repr=concept_repr
-            )
+            # Apply loss manager for concept regularization (only during training)
+            if self.training:
+                loss = self.loss_manager(
+                    task_loss=mlm_loss,
+                    concept_repr=concept_repr
+                )
+            else:
+                loss = mlm_loss
             
-            # Don't return full logits during training (saves ~6GB from fp32 conversion)
+            # Don't return full logits - saves ~6GB from [B,L,V] tensor + fp32 conversion
             logits = None
             
         else:
-            # FULL DECODING: For evaluation/inference, compute all logits
+            # FULL DECODING: For pure inference without labels (e.g., generation)
             logits = self.lm_head(sequence_repr)  # [B, L, V]
-            
-            if labels is not None:
-                loss_fct = CrossEntropyLoss(ignore_index=-100)
-                mlm_loss = loss_fct(
-                    logits.view(-1, self.config.vocab_size),
-                    labels.view(-1)
-                )
-                loss = mlm_loss
         
         if not return_dict:
             output = (logits,) + encoder_outputs[1:]
