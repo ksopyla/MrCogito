@@ -478,6 +478,9 @@ def main():
         "gpt2",
         "meta-llama/Llama-3.2-1B-instruct",
         "answerdotai/ModernBERT-base",
+        "Qwen/Qwen2-Audio-7B-Instruct",
+        "Qwen/Qwen2.5-Omni-7B"
+        "Qwen/Qwen3-Audio-7B-Instruct",
         # Custom Unigram tokenizers (trained on MiniPile)
         "ksopyla/minipile-english-unigram-32k",
         "ksopyla/minipile-english-unigram-64k",

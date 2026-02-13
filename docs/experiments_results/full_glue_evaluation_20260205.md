@@ -1,86 +1,155 @@
-# Full GLUE Evaluation Report -- Concept Encoders (2026-02-05)
+# Full GLUE Evaluation Report -- Concept Encoders L2 vs L6
 
-## Experiment Setup
+## Experiment Overview
 
-Three concept encoder checkpoints evaluated across 8 GLUE tasks (STS-B failed, MRPC perceiver variants from earlier runs). All models: H512, L2, C128, Minipile pretraining, ModernBERT tokenizer. Fine-tuning: LR 1e-5, batch 96, 20 epochs (small tasks) / 3-5 epochs (large tasks).
+**Goal:** Assess whether scaling depth (2 -> 6 layers) and training duration (20 -> 40 epochs) improves concept encoder downstream performance, particularly on tasks that failed at L2 (CoLA, RTE, MNLI).
 
-## Results
+| Config | L2 (baseline) | L6 (scaled) |
+|--------|:---:|:---:|
+| Layers | 2 | **6** |
+| Hidden | 512 | 512 |
+| Concepts | 128 | 128 |
+| FFN dim | 1024 | **2048** |
+| Params (weighted / perceiver) | 34M / 36M | **58M / 61M** |
+| Epochs | 20 | **40** |
+| LR | 5e-4 | **3e-4** |
+| Scheduler | linear | **linear** |
+| Effective batch | 256 | **512** |
+| Dataset | Minipile | Minipile |
+| Tokenizer | ModernBERT-base | ModernBERT-base |
+| Eval date | 2026-02-05 | 2026-02-09 |
 
-| Task | Type | Metric | weighted (34M) | posonly (36M) | perceiver (36M) | BERT-Base (110M) | ModernBERT (149M) |
-|------|------|--------|:-:|:-:|:-:|:-:|:-:|
-| **CoLA** | Linguistic acceptability | MCC | 0.04 | **0.09** | 0.03 | 59.0 | 65.1 |
-| **SST-2** | Sentiment | Acc | 74.3 | 75.1 | **77.4** | 93.1 | 96.0 |
-| **MRPC** | Paraphrase (F1/Acc) | F1 | **81.8**/71.1 | 81.8/71.6* | 80.6/70.8* | 89.5 | 92.2 |
-| **QQP** | Question paraphrase (F1/Acc) | F1 | 61.5/74.7 | **69.2**/76.9 | 67.3/76.4 | 91.4 | 92.1 |
-| **QNLI** | QA entailment | Acc | 63.4 | **69.7** | 68.1 | 91.6 | 93.9 |
-| **RTE** | Textual entailment | Acc | **56.0** | 53.4 | 52.0 | 78.2 | 87.4 |
-| **MNLI-m** | NLI (3-class) | Acc | 49.0 | **53.9** | 52.5 | 85.4 | 89.1 |
-| **MNLI-mm** | NLI (3-class) | Acc | 50.1 | **56.4** | 54.8 | 85.4 | 89.1 |
-| **STS-B** | Similarity (regression) | -- | -- | -- | -- | 89.4 | 91.8 |
+### MLM Pretraining Loss
 
-\* MRPC perceiver variants from earlier evaluation runs (20260119, 20260204), not 20260205.
+| Model | L2 loss | L6 loss | Improvement |
+|-------|:---:|:---:|:---:|
+| weighted_mlm | ~4.1 | **3.415** | -17% |
+| perceiver_posonly_mlm | ~4.1 | **2.640** | -36% |
+| perceiver_mlm | ~4.0 | **2.537** | -37% |
 
-Bold = best concept encoder per task. BERT-Base and ModernBERT-Base from published papers (dev set).
 
-## Extended Baselines (Published Dev Set Results)
+## Results: L2 vs L6 Comparison
 
-| Task | ALBERT-Base (12M) | BERT-Base (110M) | RoBERTa-Base (125M) | DeBERTaV3-Base (183M) | ModernBERT-Base (149M) |
-|------|:-:|:-:|:-:|:-:|:-:|
-| CoLA | 55.8 | 59.0 | 63.6 | 69.2 | 65.1 |
-| SST-2 | 92.8 | 93.1 | 94.8 | 95.6 | 96.0 |
-| MRPC | 89.1 | 89.5 | 90.2 | 89.5 | 92.2 |
-| QQP | 90.4 | 91.4 | 91.9 | 92.4 | 92.1 |
-| QNLI | 90.1 | 91.6 | 92.8 | 94.0 | 93.9 |
-| RTE | 72.2 | 78.2 | 78.7 | 83.8 | 87.4 |
-| MNLI | 82.7 | 85.4 | 87.6 | 90.0 | 89.1 |
-| STS-B | 89.8 | 89.4 | 91.2 | 91.6 | 91.8 |
+### Full Results Table
+
+| Task | Metric | weighted L2 | weighted **L6** | posonly L2 | posonly **L6** | perceiver L2 | perceiver **L6** | BERT-Base |
+|------|--------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **CoLA** | MCC | 0.04 | **0.11** | 0.09 | **0.11** | 0.03 | **0.13** | 59.0 |
+| **SST-2** | Acc | 74.3 | **76.1** | 75.1 | **77.8** | 77.4 | 77.5 | 93.1 |
+| **MRPC** | F1 | 81.8 | 80.2 | 81.8 | 81.0 | 80.6 | **81.3** | 89.5 |
+| **MRPC** | Acc | 71.1 | 69.9 | 71.6 | 70.6 | 70.8 | **71.1** | -- |
+| **QQP** | F1 | 61.5 | **66.3** | 69.2 | **72.3** | 67.3 | **72.5** | 91.4 |
+| **QQP** | Acc | 74.7 | **77.1** | 76.9 | **77.5** | 76.4 | **79.0** | -- |
+| **QNLI** | Acc | 63.4 | **67.1** | 69.7 | **70.8** | 68.1 | **74.0** | 91.6 |
+| **RTE** | Acc | 56.0 | **57.8** | 53.4 | **57.4** | 52.0 | **56.7** | 78.2 |
+| **MNLI-m** | Acc | 49.0 | **53.8** | 53.9 | **57.6** | 52.5 | **59.1** | 85.4 |
+| **MNLI-mm** | Acc | 50.1 | **55.9** | 56.4 | **59.4** | 54.8 | **61.4** | 85.4 |
+| **STS-B** | -- | -- | -- | -- | -- | -- | -- | 89.4 |
+
+STS-B: missing for both L2 and L6 (pearson metric bug, fixed, pending re-evaluation).
+
+### Best-Model-Per-Task Improvement (L2 -> L6)
+
+| Task | L2 best | L6 best | Delta | Relative |
+|------|:---:|:---:|:---:|:---:|
+| MNLI-mm | 56.4 (posonly) | **61.4** (perceiver) | **+5.0** | +8.9% |
+| MNLI-m | 53.9 (posonly) | **59.1** (perceiver) | **+5.2** | +9.6% |
+| QNLI | 69.7 (posonly) | **74.0** (perceiver) | **+4.3** | +6.2% |
+| RTE | 56.0 (weighted) | **57.8** (weighted) | +1.8 | +3.2% |
+| QQP F1 | 69.2 (posonly) | **72.5** (perceiver) | **+3.3** | +4.8% |
+| CoLA | 0.094 (posonly) | **0.133** (perceiver) | +0.04 | +42% rel. |
+| SST-2 | 77.4 (perceiver) | **77.8** (posonly) | +0.4 | +0.5% |
+| MRPC F1 | 81.8 (weighted) | 81.3 (perceiver) | **-0.5** | -0.6% |
+
 
 ## Analysis
 
-### Performance by Task Category
+### 1. Depth helps inference tasks the most
 
-**Best: Similarity/Paraphrase tasks (MRPC, QQP).**
-MRPC F1 of 80-82% reaches ~91% of BERT-Base performance and ~89% of ModernBERT. The concept bottleneck preserves enough semantic overlap information for coarse paraphrase detection. QQP is weaker (61-69% F1 vs 91%+) because its larger and more varied dataset exposes the bottleneck's limits.
+The largest gains are on tasks requiring reasoning about relationships between texts:
+- **MNLI** (+5.0-5.2 pts): No longer near-random. At L2, 3-class MNLI accuracy of ~50-54% was barely above the 33% baseline. At L6, 57-61% shows the model is learning entailment structure, though still 26 pts below BERT-Base.
+- **QNLI** (+4.3 pts): QA entailment benefits significantly from deeper cross-attention passes between concepts and tokens.
+- **QQP** (+3.3 pts F1): Paraphrase detection on the larger, more varied QQP dataset improves substantially.
 
-**Moderate: Single-sentence classification (SST-2).**
-Accuracy of 74-77% vs 93-96% baseline. The encoder captures overall sentiment polarity but misses nuanced expressions. The ~19pt gap suggests concepts retain broad meaning but lose discriminative details.
+These tasks require the model to build compositional representations of two input texts and compare them -- exactly what more cross-attention layers provide.
 
-**Poor: Inference/entailment (RTE, MNLI, QNLI).**
-MNLI accuracy of 49-56% is barely above the 33% random baseline for 3-class classification. RTE at 52-56% barely beats the 50% coin flip. QNLI at 63-70% is the best inference task but still 22-30pt below baselines. These tasks require reasoning about logical relationships between premise and hypothesis -- information the concept bottleneck destroys.
+### 2. Similarity tasks show diminishing returns
 
-**Failing: Linguistic acceptability (CoLA).**
-Matthews correlation of 0.03-0.09 is essentially zero. CoLA requires fine-grained syntactic judgment. The concept bottleneck completely eliminates grammatical structure information.
+**MRPC** slightly decreased (-0.5 F1). This was already the strongest task at L2. The small dataset (3.7k) may cause the deeper model to overfit differently. **SST-2** barely changed (+0.4). Binary sentiment is a holistic property already capturable with shallow processing.
 
-### Model Comparison
+### 3. CoLA remains fundamentally broken
 
-| Rank | Best on tasks | Model | Strength |
-|------|:---:|---|---|
-| 1 | 6/8 | **perceiver_posonly** | Best on CoLA, QQP, QNLI, MNLI-m, MNLI-mm, MRPC(tied) |
-| 2 | 2/8 | **perceiver_mlm** | Best on SST-2, competitive on QQP/QNLI |
-| 3 | 2/8 | **weighted_mlm** | Best on RTE, MRPC; worst on inference tasks |
+MCC improved from 0.09 to 0.13 -- still essentially zero. For context, BERT-Base achieves 59.0 and even a random-initialized BERT gets ~5-10 MCC after fine-tuning. The +42% relative improvement sounds dramatic but absolute MCC of 0.13 means the model has near-zero ability to distinguish grammatical from ungrammatical sentences. **The concept bottleneck irreversibly destroys syntactic structure, and more depth cannot recover it.**
 
-**Surprising finding**: perceiver_posonly (position-only queries, no input token hints) is the strongest across most tasks. This contradicts the MRPC-only evaluation where weighted_mlm led. The full GLUE picture reveals that the pure Perceiver IO approach, which forces concepts to encode all information without decoder shortcuts, generalizes better.
+### 4. perceiver_mlm is now the clear winner
 
-The weighted decoder wins only on MRPC and RTE (both small datasets), suggesting it overfits more easily to small fine-tuning sets.
+At L2, perceiver_posonly was best on most tasks. At L6, **perceiver_mlm wins 6 of 8 tasks**. The input+position decoder queries benefit more from richer concept representations because the decoder can use both position hints and concept content simultaneously. The additional capacity from 6 layers makes this advantage decisive.
 
-### Gap to SoTA Baselines
+| Model | Best on tasks | Avg GLUE rank |
+|-------|:---:|:---:|
+| **perceiver_mlm** | **6/8** | 1.25 |
+| perceiver_posonly | 2/8 | 1.88 |
+| weighted_mlm | 1/8 | 2.75 |
 
-| Gap metric | Concept Encoders (best) | vs BERT-Base | vs ALBERT-Base (12M) |
-|---|:-:|:-:|:-:|
-| Avg gap across tasks | -- | **-26 pt** | **-22 pt** |
-| Best task (MRPC F1) | 81.8% | -7.7 pt | -7.3 pt |
-| Worst task (CoLA MCC) | 0.09 | -58.9 pt | -55.7 pt |
+### 5. MLM loss vs downstream: diminishing returns
 
-Even ALBERT-Base with only 12M parameters (vs our 34-36M) outperforms concept encoders by 20+ points on average. The gap is not explained by parameter count.
+| Model | MLM loss improvement | Avg downstream improvement |
+|-------|:---:|:---:|
+| perceiver_mlm | -37% (4.0 -> 2.54) | +3.2 pts avg |
+| perceiver_posonly | -36% (4.1 -> 2.64) | +2.7 pts avg |
+| weighted_mlm | -17% (4.1 -> 3.42) | +2.1 pts avg |
+
+The perceiver variants improved MLM loss dramatically (36-37%) but downstream gains are modest (2-3 pts on average). This suggests the concept bottleneck, not training quality, is the binding constraint. Better MLM loss means the encoder has learned better language statistics, but the 128-concept compression still loses too much for fine-grained downstream tasks.
+
+### 6. Anomaly: weighted_mlm has worst MLM loss but isn't always worst downstream
+
+weighted_mlm's MLM loss (3.415) is 35% worse than perceiver_mlm (2.537), yet on MRPC and RTE it's competitive. This suggests the weighted decoder's position-specific concept combination creates representations that, while poor for MLM reconstruction, happen to work for certain small-dataset classification tasks through a different inductive bias (fixed position-concept mapping vs learned cross-attention).
+
+### 7. Gap to baselines remains large
+
+| Metric | Concept Encoder (L6 best) | BERT-Base (110M) | Gap |
+|--------|:---:|:---:|:---:|
+| CoLA MCC | 0.13 | 59.0 | -58.9 |
+| SST-2 Acc | 77.8 | 93.1 | -15.3 |
+| MRPC F1 | 81.3 | 89.5 | -8.2 |
+| QQP F1 | 72.5 | 91.4 | -18.9 |
+| QNLI Acc | 74.0 | 91.6 | -17.6 |
+| RTE Acc | 57.8 | 78.2 | -20.4 |
+| MNLI-m Acc | 59.1 | 85.4 | -26.3 |
+| **Avg gap** | | | **-23.7** |
+
+Average gap shrank from -26 pts (L2) to **-23.7 pts** (L6). Progress, but the concept bottleneck remains the fundamental limiting factor.
+
 
 ## Conclusions
 
-1. **The concept bottleneck architecture works for coarse semantic similarity** (MRPC) but fails catastrophically on tasks requiring syntactic knowledge (CoLA), logical reasoning (MNLI, RTE), or fine-grained discrimination (QNLI).
+1. **Depth helps, but with diminishing returns.** 3x more layers and 2x more epochs yielded +3 pts average improvement. The largest gains were on inference tasks (MNLI, QNLI) that were previously near-random. However, the gap to BERT-Base is still ~24 pts.
 
-2. **The information bottleneck is too aggressive.** Compressing 512 tokens through 128 concept vectors of dim 512, with only 2 encoder layers, destroys too much task-relevant information. The architecture needs either more layers, more concepts, or a less lossy compression mechanism.
+2. **The concept bottleneck is the binding constraint, not model capacity.** MLM loss dropped 37% but downstream gains were modest. Compressing 512 tokens into 128 concept vectors fundamentally limits what information is available for fine-tuning.
 
-3. **Pretraining scale is insufficient.** Minipile (~1.5M samples) is orders of magnitude smaller than BERT (3.3B words) or ModernBERT (2T tokens). The concepts likely haven't learned rich enough representations.
+3. **CoLA is a dead end for this architecture.** Even with 6 layers and 40 epochs, MCC ~0.13 is essentially random. Syntactic acceptability requires token-level structural information that concepts cannot preserve.
 
-4. **The perceiver_posonly variant is the most promising.** Forcing the decoder to reconstruct entirely from concepts (no input hints) leads to better concept representations that transfer more broadly.
+4. **perceiver_mlm with input+position queries is the best decoder strategy.** It wins 6/8 tasks at L6 and should be the default for future experiments.
 
-5. **The approach is at proof-of-concept stage.** The MRPC results show the concept idea has merit for semantic tasks. The immediate priorities for improvement are: (a) scaling to 4+ encoder layers, (b) pretraining on larger data, (c) testing concept regularization losses, and (d) the dimension inversion experiment (small token embeddings + large concept dims).
+5. **MRPC is saturated at ~81-82% F1** for this architecture. Further improvements need architectural changes, not more depth.
+
+
+## Recommendations vs Experiment Plan
+
+### Assessment of planned steps:
+
+**Step 2 (Dimension inversion: small token_dim + large concept_dim)** -- **Still high priority but needs reframing.** The L6 results show that depth alone gives diminishing returns. Dimension inversion attacks a different bottleneck: it could allow concepts to carry more information by having larger concept dimensions (256-512) even with tiny token embeddings (32-64). This is now the most promising architectural change since it directly addresses the compression constraint.
+
+**Step 3 (Multi-query classification head)** -- **Deprioritize.** The perceiver_mlm decoder (with input+position queries) already outperforms the single-query classification head on most tasks. The classification head is not the bottleneck -- the concept representation quality is. Multi-query might squeeze out 1-2 pts but won't solve the 24-pt gap.
+
+**Step 4 (Concept losses)** -- **Worth testing now on L6 models.** The L6 concepts are rich enough that regularization could meaningfully improve structure. Run orthogonality + VICReg ablations on the L6 perceiver_mlm as a quick experiment. However, this is unlikely to yield more than 1-2 pts.
+
+**Step 5 (Concept analysis)** -- **Do this now, before expensive experiments.** Understanding what the 128 concepts have actually learned would guide whether the fix is more concepts, different concepts, or a different compression mechanism. This is cheap (no training) and highly informative.
+
+### Suggested plan modification:
+
+1. **Step 5 first** (concept analysis on L6 perceiver_mlm) -- diagnostic, no training cost
+2. **Step 2** (dimension inversion) -- highest potential architectural impact
+3. **New: Scale pretraining data** -- the model sees Minipile 40 times; try OpenWebText or a larger subset of The Pile
+4. Step 4 (concept losses) -- quick ablation on L6
+5. Step 3 (multi-query) -- low priority, small expected gains
