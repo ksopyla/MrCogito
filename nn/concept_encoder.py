@@ -160,9 +160,12 @@ class ConceptEncoderLayer(nn.Module):
         # Queries: concepts [batch_size, concept_num, concept_dim]
         # Keys: token embeddings [batch_size, sequence_length, token_embedding_dim]
         # Values: token embeddings [batch_size, sequence_length, token_embedding_dim]
+        # need_weights=False enables SDPA/Flash Attention fast path on PyTorch 2.x
+        # Without it, attention weights are computed even if discarded (_), disabling the fast path
         concept_token_attn_output, _ = self.concept_token_attn(
             normed_concepts, token_embeddings, token_embeddings, 
-            key_padding_mask=attention_mask 
+            key_padding_mask=attention_mask,
+            need_weights=False
         )
 
         # Add residual connection, add the additional knowledge from the concept token similarities to original concept representations, (how to fuse such information?, norm could act as a fuse operation, so maybe we could also use other operations )
@@ -176,9 +179,11 @@ class ConceptEncoderLayer(nn.Module):
         # Queries: concepts [batch_size, concept_num, concept_dim]
         # Keys: concepts [batch_size, concept_num, concept_dim]
         # Values: concepts [batch_size, concept_num, concept_dim]
+        # need_weights=False enables SDPA/Flash Attention fast path on PyTorch 2.x
         concept_self_attn_output, _ = self.concept_self_attn(
             normed_concepts, normed_concepts, normed_concepts,
-            attn_mask=None  # No mask needed for concept self-attention
+            attn_mask=None,  # No mask needed for concept self-attention
+            need_weights=False
         )
 
         # Add residual connection between concepts after concept self attention

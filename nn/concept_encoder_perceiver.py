@@ -197,10 +197,13 @@ class ConceptEncoderForMaskedLMPerceiver(PreTrainedModel):
         # Cross Attention
         # Query: Input+Pos [B, L, H]
         # Key/Value: Concepts [B, C, H]
-        attn_output, attn_weights = self.decoder_cross_attn(
+        # need_weights=False enables SDPA/Flash Attention fast path on PyTorch 2.x
+        # (returning attn_weights forces the slow O(N^2) materialized attention path)
+        attn_output, _ = self.decoder_cross_attn(
             query=decoder_queries_norm,
             key=concept_repr,
-            value=concept_repr
+            value=concept_repr,
+            need_weights=False
         )
         
         # Residual Connection 1 (Add attention result to original queries)
@@ -375,10 +378,12 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
         cls_hidden_norm = self.cls_norm(cls_hidden)
         
         # Cross Attention: aggregate concepts into [CLS] token
+        # need_weights=False enables SDPA/Flash Attention fast path on PyTorch 2.x
         attn_output, _ = self.cls_cross_attn(
             query=cls_hidden_norm,
             key=concept_repr,
-            value=concept_repr
+            value=concept_repr,
+            need_weights=False
         )
         
         # Residual connection
@@ -557,10 +562,13 @@ class ConceptEncoderForMaskedLMPerceiverPosOnly(PreTrainedModel):
         decoder_queries_norm = self.decoder_norm(decoder_queries)
         
         # Cross Attention: Position queries attend to concepts
-        attn_output, attn_weights = self.decoder_cross_attn(
+        # need_weights=False enables SDPA/Flash Attention fast path on PyTorch 2.x
+        # (returning attn_weights forces the slow O(N^2) materialized attention path)
+        attn_output, _ = self.decoder_cross_attn(
             query=decoder_queries_norm,
             key=concept_repr,
-            value=concept_repr
+            value=concept_repr,
+            need_weights=False
         )
         
         # Residual Connection

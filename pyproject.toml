@@ -28,6 +28,7 @@ scikit-learn = "^1.7.2"
 nltk = "^3.9.1"
 soundfile = "^0.12.1"
 librosa = "^0.10.2"
+liger-kernel = ">=0.5.0"          # Fused Triton kernels: cross-entropy (+20% throughput, -60% memory)
 
 
 [tool.poetry.group.dev.dependencies]

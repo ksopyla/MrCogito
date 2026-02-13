@@ -109,8 +109,8 @@ PER_DEVICE_BATCH_SIZE=64
 EVAL_BATCH_SIZE=16              # Eval computes full logits [B, L, V], keep smaller
 GRADIENT_ACCUMULATION_STEPS=2   # Effective batch = 64 * NUM_GPUs * 2
 LEARNING_RATE=3e-4              # Lower than v1 (5e-4) for deeper model stability
-NUM_EPOCHS=40                   # Increased from 20 for more pretraining
-WARMUP_STEPS=3000               # ~3.8% of total steps, standard range
+NUM_EPOCHS=20                   # Quick test run to verify engineering improvements (speed, loss)
+WARMUP_STEPS=1500               # Proportional to 20 epochs (~3.8% of total steps)
 WEIGHT_DECAY=0.01
 MAX_GRAD_NORM=1.0
 
@@ -213,10 +213,10 @@ accelerate launch \
     --ddp_backend "nccl" \
     --ddp_find_unused_parameters False \
     --dataloader_pin_memory True \
-    --dataloader_num_workers 2 \
+    --dataloader_num_workers 4 \
     --gradient_checkpointing False \
     --optim "adamw_torch_fused" \
-    --lr_scheduler_type "linear" \
+    --lr_scheduler_type "cosine" \
     --report_to "wandb" \
     --save_safetensors True \
     --overwrite_output_dir True \
@@ -224,7 +224,8 @@ accelerate launch \
     --disable_tqdm False \
     --load_best_model_at_end True \
     --metric_for_best_model "eval_loss" \
-    --greater_is_better False
+    --greater_is_better False \
+    --torch_compile True
 
 echo ""
 echo "Training completed successfully!"
