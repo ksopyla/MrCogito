@@ -86,9 +86,14 @@ class ModelArguments:
     )
     hidden_size: int = field(
         default=256,
-        metadata={"help": "Hidden size of the model"}
+        metadata={"help": "Hidden size of the model (concept dimension, attention dimension)"}
     )
-
+    token_embedding_dim: int = field(
+        default=0,
+        metadata={"help": "Token embedding dimension. 0 = same as hidden_size (backward compat). "
+                  "When smaller than hidden_size, enables Dimension Inversion: tokens are cheap "
+                  "(small vocab memory) while concepts are rich (large hidden_size)."}
+    )
     intermediate_size: int = field(
         default=1024,
         metadata={"help": "Internal feedforward network size of the model"}
@@ -100,6 +105,11 @@ class ModelArguments:
     concept_num: int = field(
         default=128,
         metadata={"help": "Number of concepts to train"}
+    )
+    concept_position_type: str = field(
+        default="none",
+        metadata={"help": "Concept position encoding type: 'none' (orderless), "
+                  "'sinusoidal' (fixed, no extra params), 'learned' (trainable)"}
     )
 
 
@@ -321,14 +331,23 @@ def main():
     # 2. Optional Tokens (Use if available, else None)
     # We strictly use tokenizer's values or None, avoiding arbitrary defaults like 3/4/etc.
     # Pass special tokens directly to config
+    # Resolve token_embedding_dim: 0 means same as hidden_size (backward compat)
+    token_embedding_dim = model_args.token_embedding_dim if model_args.token_embedding_dim > 0 else None
+    
+    # When Dimension Inversion is active (token_dim < hidden_size), weight tying
+    # is not possible because lm_head shape [hidden_size, vocab] != token_emb shape [vocab, token_dim]
+    should_tie = token_embedding_dim is None or token_embedding_dim == model_args.hidden_size
+    
     config = ConceptEncoderConfig(
         vocab_size=len(tokenizer), # Use len(tokenizer) to include special tokens/padding
         concept_num=model_args.concept_num,
         hidden_size=model_args.hidden_size,
+        token_embedding_dim=token_embedding_dim,  # None = hidden_size (backward compat)
         num_hidden_layers=model_args.num_hidden_layers,
         num_attention_heads=num_attention_heads,
         intermediate_size=model_args.intermediate_size,
         max_sequence_length=data_args.max_seq_length,
+        concept_position_type=model_args.concept_position_type,
         
         # Special Tokens
         pad_token_id=tokenizer.pad_token_id,
@@ -339,7 +358,7 @@ def main():
         eos_token_id=tokenizer.eos_token_id,
         unk_token_id=tokenizer.unk_token_id,
         
-        tie_word_embeddings=True,
+        tie_word_embeddings=should_tie,
         tokenizer_name=data_args.tokenizer_name  # Store source tokenizer name for traceability
     )
     
@@ -442,10 +461,17 @@ def main():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     # Create a consistent run identifier using underscores (wandb best practice)
-    # Format: model_type_H{hidden_size}L{layers}C{concept_num}_{timestamp}
+    # Format: model_type_H{hidden_size}L{layers}C{concept_num}[_T{token_dim}][_pos{type}]_{timestamp}
     # IMPORTANT: Use underscores only (no hyphens) for wandb compatibility
     # This identifier will be used for run_name, logging_dir, and wandb.init(name)
-    run_identifier = f"{model_args.model_type}_H{model_args.hidden_size}L{model_args.num_hidden_layers}C{model_args.concept_num}_{timestamp}"
+    base_id = f"{model_args.model_type}_H{model_args.hidden_size}L{model_args.num_hidden_layers}C{model_args.concept_num}"
+    # Append token_embedding_dim suffix only when Dimension Inversion is active
+    if config.token_embedding_dim != config.hidden_size:
+        base_id += f"_T{config.token_embedding_dim}"
+    # Append concept position type suffix only when non-default
+    if config.concept_position_type != "none":
+        base_id += f"_pos{config.concept_position_type}"
+    run_identifier = f"{base_id}_{timestamp}"
     
     # Create a unique run ID for wandb (allows resuming runs if needed)
     # Format: same as run_identifier but can be used for resume functionality
@@ -557,10 +583,12 @@ def main():
             # Model architecture
             'model_type': model_args.model_type,
             'hidden_size': model_args.hidden_size,
+            'token_embedding_dim': config.token_embedding_dim,
             'num_hidden_layers': model_args.num_hidden_layers,
             'concept_num': model_args.concept_num,
             'intermediate_size': model_args.intermediate_size,
             'num_attention_heads': config.num_attention_heads,
+            'concept_position_type': config.concept_position_type,
             'vocab_size': config.vocab_size,
             'max_sequence_length': config.max_sequence_length,
             'total_params': total_params,
@@ -595,7 +623,7 @@ def main():
         # - tags: For filtering and searching runs
         # - sync_tensorboard: Syncs TensorBoard logs (creates panels from logging_dir structure)        
         # Create group identifier for clustering related runs (same model config)
-        group_identifier = f"{model_args.model_type}_H{model_args.hidden_size}L{model_args.num_hidden_layers}C{model_args.concept_num}"
+        group_identifier = base_id  # Reuse the base identifier (without timestamp)
         
         wandb.init(
             project="MrCogito",

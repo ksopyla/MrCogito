@@ -7,7 +7,8 @@ for decoding concept representations back to sequence/classification outputs.
 Models:
 - ConceptEncoderForMaskedLMPerceiver: MLM with Input+Position queries (hybrid approach)
 - ConceptEncoderForMaskedLMPerceiverPosOnly: MLM with Position-only queries (pure Perceiver IO)
-- ConceptEncoderForSequenceClassificationPerceiver: Sequence classification (GLUE, etc.)
+- ConceptEncoderForSequenceClassificationPerceiver: Sequence classification via CLS query (GLUE, etc.)
+- ConceptEncoderForSequenceClassificationViaDecoder: Sequence classification via pretrained MLM decoder
 
 Decoder Query Strategies:
 - Input+Position (default): Query = token_embedding + position_embedding
@@ -99,11 +100,20 @@ class ConceptEncoderForMaskedLMPerceiver(PreTrainedModel):
         self.set_loss_config(loss_config)
         
         # === Decoder Architecture ===
-        # Decoder Queries: Position embeddings
+        # Decoder Queries: Position embeddings (always in hidden_size space)
         self.decoder_query_embeddings = nn.Embedding(
             num_embeddings=config.max_sequence_length, 
             embedding_dim=config.hidden_size
         )
+        
+        # Dimension Inversion: when token_embedding_dim < hidden_size, the input embeddings
+        # used in decoder queries are in token_dim space and need projection to hidden_size.
+        # This projection is separate from the encoder's token_projection because it handles
+        # the decoder-specific input contribution to queries.
+        if config.token_embedding_dim != config.hidden_size:
+            self.decoder_input_projection = nn.Linear(config.token_embedding_dim, config.hidden_size)
+        else:
+            self.decoder_input_projection = None
         
         # Cross-Attention: Query=Position/Input, Key=Concepts, Value=Concepts
         self.decoder_cross_attn = nn.MultiheadAttention(
@@ -125,14 +135,15 @@ class ConceptEncoderForMaskedLMPerceiver(PreTrainedModel):
             nn.Dropout(config.hidden_dropout_prob)
         )
 
-        # MLM Head
+        # MLM Head: projects from hidden_size to vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         
         # Initialize weights
         self.post_init()
         
-        # Optionally tie embeddings
-        if config.tie_word_embeddings:
+        # Optionally tie embeddings (only when token_embedding_dim == hidden_size,
+        # otherwise shapes mismatch and tying is not possible)
+        if config.tie_word_embeddings and config.token_embedding_dim == config.hidden_size:
             self._tie_or_clone_weights(self.lm_head, self.encoder.token_embeddings)
     
     def set_loss_config(self, loss_config: Optional[LossConfig]) -> None:
@@ -179,16 +190,17 @@ class ConceptEncoderForMaskedLMPerceiver(PreTrainedModel):
         # This gives the decoder a hint about what was at the position (especially for unmasked tokens)
         # and allows the model to focus on filling in the [MASK] tokens using concepts.
         
-        # A. Position Embeddings
+        # A. Position Embeddings (always in hidden_size space)
         position_ids = torch.arange(seq_length, device=input_ids.device).unsqueeze(0)
         pos_embeddings = self.decoder_query_embeddings(position_ids).expand(batch_size, -1, -1)
         
-        # B. Input Embeddings (Reuse encoder's embeddings)
-        # We access the embeddings directly from the encoder instance
+        # B. Input Embeddings (Reuse encoder's token embeddings)
+        # When Dimension Inversion is active (token_dim < hidden_size), project to hidden_size
         input_embeddings = self.encoder.token_embeddings(input_ids)
+        if self.decoder_input_projection is not None:
+            input_embeddings = self.decoder_input_projection(input_embeddings)
         
-        # Combine: Query = Input + Position
-        # This is standard Transformer input construction, but used here as the Decoder Query
+        # Combine: Query = Input + Position (both now in hidden_size space)
         decoder_queries = input_embeddings + pos_embeddings
         
         # Norm queries before attention (Pre-LN)
@@ -433,6 +445,221 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
 
 
 # =============================================================================
+# Classification via Pretrained MLM Decoder (Experiment 3.1)
+# =============================================================================
+
+class ConceptEncoderForSequenceClassificationViaDecoder(PreTrainedModel):
+    """
+    ConceptEncoder with Sequence Classification using the pretrained MLM Decoder.
+    
+    KEY INSIGHT: Instead of discarding the MLM decoder and using a single CLS query,
+    this model REUSES the full pretrained decoder to reconstruct a sequence representation,
+    then pools and classifies. This loads ALL pretrained weights (encoder + decoder)
+    rather than just encoder weights.
+    
+    Architecture:
+    1. Encoder: Tokens -> Concepts via cross-attention (pretrained)
+    2. Decoder: Concepts -> Full sequence via Perceiver IO cross-attention (pretrained)
+       Query = input_embedding + position_embedding (same as MLM decoder)
+    3. Pool: Mean pool decoder output over non-padding positions
+    4. Classify: Linear head on pooled representation
+    
+    Weight Loading:
+    - encoder.* weights loaded from MLM checkpoint (pretrained)
+    - decoder_* weights loaded from MLM checkpoint (pretrained) 
+    - classifier.* randomly initialized (trained during fine-tuning)
+    
+    Expected Impact:
+    - Significant improvement on position-sensitive tasks (CoLA, RTE, MNLI)
+    - The decoder already learned position->concept reconstruction during MLM
+    - The pooled decoder output preserves positional/syntactic structure
+    
+    Example:
+        >>> model = ConceptEncoderForSequenceClassificationViaDecoder(config)
+        >>> # Load pretrained encoder + decoder weights from MLM checkpoint
+        >>> outputs = model(input_ids, attention_mask, labels=labels)
+        >>> loss = outputs.loss  # Task loss only
+    """
+    config_class = ConceptEncoderConfig
+    base_model_prefix = "concept_encoder"
+
+    def __init__(self, config: ConceptEncoderConfig):
+        super().__init__(config)
+        self.num_labels = config.num_labels
+        self.config = config
+        
+        # === Encoder (same as MLM model - weights will be loaded from checkpoint) ===
+        self.encoder = ConceptEncoder(config)
+        
+        # === Decoder (SAME architecture as MLM model - names MUST match for weight loading) ===
+        # Decoder Queries: Position embeddings (pretrained during MLM)
+        self.decoder_query_embeddings = nn.Embedding(
+            num_embeddings=config.max_sequence_length, 
+            embedding_dim=config.hidden_size
+        )
+        
+        # Dimension Inversion: project token embeddings to hidden_size for decoder queries
+        # (must match MLM model's decoder_input_projection for weight loading)
+        if config.token_embedding_dim != config.hidden_size:
+            self.decoder_input_projection = nn.Linear(config.token_embedding_dim, config.hidden_size)
+        else:
+            self.decoder_input_projection = None
+        
+        # Cross-Attention: Query=Position/Input, Key=Concepts, Value=Concepts (pretrained)
+        self.decoder_cross_attn = nn.MultiheadAttention(
+            embed_dim=config.hidden_size,
+            num_heads=config.num_attention_heads,
+            dropout=config.attention_probs_dropout_prob,
+            batch_first=True,
+        )
+        
+        # Decoder Layer Norms (pretrained)
+        self.decoder_norm = nn.LayerNorm(config.hidden_size)
+        self.post_cross_norm = nn.LayerNorm(config.hidden_size)
+        
+        # FFN after attention (pretrained)
+        self.decoder_ffn = nn.Sequential(
+            nn.Linear(config.hidden_size, config.intermediate_size),
+            nn.GELU(),
+            nn.Linear(config.intermediate_size, config.hidden_size),
+            nn.Dropout(config.hidden_dropout_prob)
+        )
+        
+        # === Classification Head (new, randomly initialized) ===
+        # Final LayerNorm before pooling to stabilize representations
+        self.pre_pool_norm = nn.LayerNorm(config.hidden_size)
+        
+        self.classifier_dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+
+        self.post_init()
+    
+    def _init_weights(self, module):
+        """Initialize the weights."""
+        if isinstance(module, nn.Linear):
+            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
+            if module.bias is not None:
+                module.bias.data.zero_()
+        elif isinstance(module, nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+        elif isinstance(module, nn.Embedding):
+            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
+            if module.padding_idx is not None:
+                module.weight.data[module.padding_idx].zero_()
+
+    def forward(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.IntTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple, SequenceClassifierOutput]:
+        
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        batch_size, seq_length = input_ids.shape
+        
+        # 1. Encode: Tokens -> Concepts (pretrained)
+        encoder_outputs = self.encoder(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+        concept_repr = encoder_outputs.last_hidden_state  # [B, C, H]
+        
+        # 2. Decode: Concepts -> Full Sequence (pretrained, same as MLM decoder)
+        # Construct Queries: Input Embeddings + Position Embeddings
+        # This gives the decoder positional and content hints, exactly as during MLM pretraining
+        
+        # A. Position Embeddings (always in hidden_size space)
+        position_ids = torch.arange(seq_length, device=input_ids.device).unsqueeze(0)
+        pos_embeddings = self.decoder_query_embeddings(position_ids).expand(batch_size, -1, -1)
+        
+        # B. Input Embeddings (reuse encoder's token embeddings)
+        # When Dimension Inversion is active, project to hidden_size
+        input_embeddings = self.encoder.token_embeddings(input_ids)
+        if self.decoder_input_projection is not None:
+            input_embeddings = self.decoder_input_projection(input_embeddings)
+        
+        # Combine: Query = Input + Position (both in hidden_size space)
+        decoder_queries = input_embeddings + pos_embeddings
+        
+        # Norm queries before attention (Pre-LN)
+        decoder_queries_norm = self.decoder_norm(decoder_queries)
+        
+        # Cross Attention: position-aware queries attend to concepts
+        # need_weights=False enables SDPA/Flash Attention fast path on PyTorch 2.x
+        attn_output, _ = self.decoder_cross_attn(
+            query=decoder_queries_norm,
+            key=concept_repr,
+            value=concept_repr,
+            need_weights=False
+        )
+        
+        # Residual Connection
+        decoder_latents = decoder_queries + attn_output
+        
+        # Feed Forward Network with Residual (Pre-LN style)
+        decoder_output = decoder_latents + self.decoder_ffn(self.post_cross_norm(decoder_latents))
+        # decoder_output: [B, L, H] -- full sequence representation reconstructed from concepts
+        
+        # 3. Pool: Mean pool over non-padding positions (like BERT mean pooling)
+        # Apply LayerNorm before pooling for stable representations
+        decoder_output = self.pre_pool_norm(decoder_output)
+        
+        # Mask padding positions
+        if attention_mask is not None:
+            expanded_mask = attention_mask.unsqueeze(-1).float()  # [B, L, 1]
+            pooled = (decoder_output * expanded_mask).sum(dim=1) / expanded_mask.sum(dim=1).clamp(min=1e-8)
+        else:
+            pooled = decoder_output.mean(dim=1)  # [B, H]
+        
+        # 4. Classify
+        logits = self.classifier(self.classifier_dropout(pooled))  # [B, num_labels]
+        
+        # 5. Compute task loss (no concept regularization for classification)
+        loss = None
+        if labels is not None:
+            # Determine problem type
+            if self.config.problem_type is None:
+                if self.num_labels == 1:
+                    self.config.problem_type = "regression"
+                elif self.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
+                    self.config.problem_type = "single_label_classification"
+                else:
+                    self.config.problem_type = "multi_label_classification"
+            
+            # Compute task loss
+            if self.config.problem_type == "regression":
+                loss_fct = MSELoss()
+                if self.num_labels == 1:
+                    loss = loss_fct(logits.squeeze(), labels.squeeze())
+                else:
+                    loss = loss_fct(logits, labels)
+            elif self.config.problem_type == "single_label_classification":
+                loss_fct = CrossEntropyLoss()
+                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            elif self.config.problem_type == "multi_label_classification":
+                loss_fct = BCEWithLogitsLoss()
+                loss = loss_fct(logits, labels)
+                
+        if not return_dict:
+            output = (logits,) + encoder_outputs[1:]
+            return ((loss,) + output) if loss is not None else output
+            
+        return SequenceClassifierOutput(
+            loss=loss,
+            logits=logits,
+            hidden_states=encoder_outputs.hidden_states,
+            attentions=encoder_outputs.attentions,
+        )
+
+
+# =============================================================================
 # Position-Only Decoder Variants (Pure Perceiver IO Style)
 # =============================================================================
 
@@ -503,14 +730,14 @@ class ConceptEncoderForMaskedLMPerceiverPosOnly(PreTrainedModel):
             nn.Dropout(config.hidden_dropout_prob)
         )
 
-        # MLM Head
+        # MLM Head: projects from hidden_size to vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         
         # Initialize weights
         self.post_init()
         
-        # Optionally tie embeddings
-        if config.tie_word_embeddings:
+        # Optionally tie embeddings (only when token_embedding_dim == hidden_size)
+        if config.tie_word_embeddings and config.token_embedding_dim == config.hidden_size:
             self._tie_or_clone_weights(self.lm_head, self.encoder.token_embeddings)
     
     def set_loss_config(self, loss_config: Optional[LossConfig]) -> None:

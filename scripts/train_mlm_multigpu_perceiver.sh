@@ -89,9 +89,11 @@ export NVIDIA_TF32_OVERRIDE=1
 #MODEL_TYPE="perceiver_posonly_mlm" 
 MODEL_TYPE="perceiver_mlm"
 HIDDEN_SIZE=512
+TOKEN_EMBEDDING_DIM=0             # 0 = same as HIDDEN_SIZE (default). Set to 64/128 for Dimension Inversion.
 NUM_LAYERS=6                      # Scaled from 2 -> 6 (key change)
 CONCEPT_NUM=128
 INTERMEDIATE_SIZE=2048            # Scaled from 1024 -> 2048
+CONCEPT_POSITION_TYPE="none"      # "none" (orderless), "sinusoidal" (fixed), "learned" (trainable)
 
 # --- Data Configuration ---
 DATASET_NAME="JeanKaddour/minipile"
@@ -150,9 +152,11 @@ SEED=42
 echo "Model Configuration:"
 echo "  - Model Type: $MODEL_TYPE"
 echo "  - Hidden Size: $HIDDEN_SIZE"
+echo "  - Token Embedding Dim: $TOKEN_EMBEDDING_DIM (0 = same as hidden_size)"
 echo "  - Num Layers: $NUM_LAYERS"
 echo "  - Concept Num: $CONCEPT_NUM"
 echo "  - Intermediate Size: $INTERMEDIATE_SIZE"
+echo "  - Concept Position Type: $CONCEPT_POSITION_TYPE"
 echo ""
 echo "Training Configuration:"
 echo "  - Number of GPUs: $NUM_GPUS"
@@ -180,9 +184,11 @@ accelerate launch \
     training/mlm_training.py \
     --model_type "$MODEL_TYPE" \
     --hidden_size "$HIDDEN_SIZE" \
+    --token_embedding_dim "$TOKEN_EMBEDDING_DIM" \
     --num_hidden_layers "$NUM_LAYERS" \
     --concept_num "$CONCEPT_NUM" \
     --intermediate_size "$INTERMEDIATE_SIZE" \
+    --concept_position_type "$CONCEPT_POSITION_TYPE" \
     --mlm_probability "$MLM_PROBABILITY" \
     --max_seq_length "$MAX_SEQ_LENGTH" \
     --dataset_name "$DATASET_NAME" \

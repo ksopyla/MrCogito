@@ -52,7 +52,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Import ConceptEncoder
 from nn.concept_encoder import ConceptEncoderConfig
 from nn.concept_encoder_weighted import ConceptEncoderForSequenceClassificationWeighted
-from nn.concept_encoder_perceiver import ConceptEncoderForSequenceClassificationPerceiver
+from nn.concept_encoder_perceiver import (
+    ConceptEncoderForSequenceClassificationPerceiver,
+    ConceptEncoderForSequenceClassificationViaDecoder,
+)
 from training.utils_training import get_hostname
 
 from datasets import load_dataset
@@ -134,8 +137,8 @@ def parse_args():
         "--model_type",
         type=str,
         default="bert",
-        choices=["bert-type", "xlnet-type", "concept-type", "sim_matrix_mlm", "concept_mlm", "weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm"],
-        help="Type of model to fine-tune (bert, roberta, xlnet, or concept). perceiver_posonly_mlm uses position-only decoder queries."
+        choices=["bert-type", "xlnet-type", "concept-type", "sim_matrix_mlm", "concept_mlm", "weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm", "perceiver_decoder_cls"],
+        help="Type of model to fine-tune. perceiver_decoder_cls uses the pretrained MLM decoder for classification (loads encoder+decoder weights)."
     )
     parser.add_argument(
         "--task",
@@ -864,7 +867,7 @@ def finetune_model_on_glue(args):
         tokenizer = AutoTokenizer.from_pretrained(default_tokenizer, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
     
     # Load and initialize model based on model type
-    concept_model_types = ["weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm"]
+    concept_model_types = ["weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm", "perceiver_decoder_cls"]
     if args.model_type in concept_model_types:
         # First, load configuration and update with task-specific settings
         try:
@@ -887,17 +890,23 @@ def finetune_model_on_glue(args):
             logger.info(f"Using Weighted Sequence Classification for model type: {args.model_type}")
             model_class = ConceptEncoderForSequenceClassificationWeighted
         elif args.model_type in ("perceiver_mlm", "perceiver_posonly_mlm"):
-            # Both perceiver variants use the same classification head
+            # Both perceiver variants use the same CLS-query classification head
             # (the difference is only in the MLM decoder, not the encoder or classification head)
-            logger.info(f"Using Perceiver Sequence Classification for model type: {args.model_type}")
+            logger.info(f"Using Perceiver CLS-query Sequence Classification for model type: {args.model_type}")
             model_class = ConceptEncoderForSequenceClassificationPerceiver
+        elif args.model_type == "perceiver_decoder_cls":
+            # Classification via pretrained MLM decoder (Experiment 3.1)
+            # This model reuses the full MLM decoder to reconstruct sequence, then pools + classifies
+            # Loads BOTH encoder AND decoder weights from perceiver_mlm checkpoint
+            logger.info(f"Using Classification via Decoder for model type: {args.model_type}")
+            model_class = ConceptEncoderForSequenceClassificationViaDecoder
         else:
             raise ValueError(f"Unsupported model type for classification: {args.model_type}")
         
         # Initialize classification model with config (classification head will be random)
         model = model_class(config)
         
-        # Load pre-trained encoder weights from MLM checkpoint
+        # Load pre-trained weights from MLM checkpoint
         checkpoint_path = os.path.join(args.model_name_or_path, "pytorch_model.bin")
         if not os.path.exists(checkpoint_path):
             # Try safetensors format
@@ -912,24 +921,50 @@ def finetune_model_on_glue(args):
             else:
                 checkpoint_state_dict = torch.load(checkpoint_path, map_location="cpu")
             
-            # Filter to only load encoder weights (backbone)
             model_state_dict = model.state_dict()
-            encoder_weights_loaded = 0
-            encoder_weights_skipped = 0
             
-            for key, value in checkpoint_state_dict.items():
-                if key.startswith("encoder."):
+            if args.model_type == "perceiver_decoder_cls":
+                # For decoder-based classification: load ALL matching weights from MLM checkpoint
+                # (encoder.* + decoder_* weights), skip only lm_head.* and classifier.*
+                # This preserves the pretrained decoder that learned position reconstruction
+                pretrained_loaded = 0
+                pretrained_skipped = 0
+                skipped_keys = []
+                
+                for key, value in checkpoint_state_dict.items():
+                    # Skip MLM prediction head (not needed for classification)
+                    if key.startswith("lm_head.") or key.startswith("loss_manager."):
+                        continue
+                    
                     if key in model_state_dict and model_state_dict[key].shape == value.shape:
                         model_state_dict[key] = value
-                        encoder_weights_loaded += 1
+                        pretrained_loaded += 1
                     else:
-                        encoder_weights_skipped += 1
-                        logger.warning(f"Skipping encoder key {key}: shape mismatch or not in model")
-            
-            # Load the filtered state dict
-            model.load_state_dict(model_state_dict)
-            logger.info(f"Loaded {encoder_weights_loaded} encoder weights from checkpoint (skipped {encoder_weights_skipped})")
-            logger.info("Classification head initialized randomly (will be trained during fine-tuning)")
+                        pretrained_skipped += 1
+                        skipped_keys.append(key)
+                
+                model.load_state_dict(model_state_dict)
+                logger.info(f"Loaded {pretrained_loaded} pretrained weights (encoder + decoder) from checkpoint")
+                if pretrained_skipped > 0:
+                    logger.warning(f"Skipped {pretrained_skipped} keys: {skipped_keys[:10]}...")
+                logger.info("Classification head (pre_pool_norm, classifier) initialized randomly")
+            else:
+                # For CLS-query and weighted models: load only encoder weights (backbone)
+                encoder_weights_loaded = 0
+                encoder_weights_skipped = 0
+                
+                for key, value in checkpoint_state_dict.items():
+                    if key.startswith("encoder."):
+                        if key in model_state_dict and model_state_dict[key].shape == value.shape:
+                            model_state_dict[key] = value
+                            encoder_weights_loaded += 1
+                        else:
+                            encoder_weights_skipped += 1
+                            logger.warning(f"Skipping encoder key {key}: shape mismatch or not in model")
+                
+                model.load_state_dict(model_state_dict)
+                logger.info(f"Loaded {encoder_weights_loaded} encoder weights from checkpoint (skipped {encoder_weights_skipped})")
+                logger.info("Classification head initialized randomly (will be trained during fine-tuning)")
         else:
             logger.warning(f"No checkpoint found at {args.model_name_or_path}")
             logger.warning("Initializing model with random weights - results will be meaningless!")

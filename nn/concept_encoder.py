@@ -1,4 +1,5 @@
 from typing import Optional, Tuple
+import math
 import torch
 import torch.nn as nn
 from transformers import PreTrainedModel
@@ -22,7 +23,10 @@ class ConceptEncoderConfig(PretrainedConfig):
     Args:
         vocab_size (int): Size of the token vocabulary.
         concept_num (int): Number of concept tokens to learn.
-        hidden_size (int): Dimension of hidden layers and embeddings.
+        hidden_size (int): Dimension of hidden layers, concept embeddings, and attention.
+        token_embedding_dim (int or None): Dimension of token embeddings. When smaller than
+            hidden_size, a projection layer bridges the gap (Dimension Inversion).
+            None defaults to hidden_size for backward compatibility with existing checkpoints.
         num_hidden_layers (int): Number of transformer layers in the encoder.
         num_attention_heads (int): Number of attention heads in each layer.
         intermediate_size (int): Dimension of the feedforward network in each layer.
@@ -30,6 +34,10 @@ class ConceptEncoderConfig(PretrainedConfig):
         hidden_dropout_prob (float): Dropout probability for fully connected layers.
         attention_probs_dropout_prob (float): Dropout probability for attention probabilities.
         max_sequence_length (int): Maximum sequence length supported by the model.
+        concept_position_type (str): Type of positional encoding for concept embeddings.
+            "none" = no position (current default, concepts are orderless).
+            "sinusoidal" = fixed sinusoidal positions (no extra params).
+            "learned" = learned position embeddings (extra params).
         type_vocab_size (int): Size of the token type vocabulary.
         initializer_range (float): Standard deviation for initializing model weights.
         is_decoder (bool): Whether the model acts as a decoder. Defaults to False.
@@ -49,6 +57,7 @@ class ConceptEncoderConfig(PretrainedConfig):
         vocab_size: int = 30522,
         concept_num: int = 128,
         hidden_size: int = 512,
+        token_embedding_dim: Optional[int] = None,
         num_hidden_layers: int = 4,
         num_attention_heads: int = 8,
         intermediate_size: int = 1024,
@@ -63,6 +72,7 @@ class ConceptEncoderConfig(PretrainedConfig):
         hidden_dropout_prob: float = 0.1,
         attention_probs_dropout_prob: float = 0.1,
         max_sequence_length: int = 2048,
+        concept_position_type: str = "none",
         type_vocab_size: int = 2,
         initializer_range: float = 0.1,
         is_decoder: bool = False,
@@ -73,6 +83,9 @@ class ConceptEncoderConfig(PretrainedConfig):
         self.vocab_size = vocab_size
         self.concept_num = concept_num
         self.hidden_size = hidden_size
+        # Dimension Inversion: token_embedding_dim can be smaller than hidden_size.
+        # None defaults to hidden_size for backward compatibility with existing checkpoints.
+        self.token_embedding_dim = token_embedding_dim if token_embedding_dim is not None else hidden_size
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
         self.intermediate_size = intermediate_size
@@ -80,6 +93,7 @@ class ConceptEncoderConfig(PretrainedConfig):
         self.hidden_dropout_prob = hidden_dropout_prob
         self.attention_probs_dropout_prob = attention_probs_dropout_prob
         self.max_sequence_length = max_sequence_length
+        self.concept_position_type = concept_position_type
         self.type_vocab_size = type_vocab_size
         self.initializer_range = initializer_range
         self.is_decoder = is_decoder
@@ -220,22 +234,75 @@ class ConceptEncoder(PreTrainedModel):
         super().__init__(config)
         self.config = config
 
+        token_dim = config.token_embedding_dim  # May differ from hidden_size (Dimension Inversion)
 
-        # Token embeddings [vocab_size, hidden_size=token_embedding_dim]
-        self.token_embeddings = nn.Embedding(num_embeddings=config.vocab_size, embedding_dim=config.hidden_size, padding_idx=config.pad_token_id)   
-        # Token position embeddings [max_sequence_length, hidden_size=token_embedding_dim]
-        self.token_position_embeddings = nn.Embedding(num_embeddings=config.max_sequence_length, embedding_dim=config.hidden_size)
+        # Token embeddings [vocab_size, token_embedding_dim]
+        self.token_embeddings = nn.Embedding(
+            num_embeddings=config.vocab_size, embedding_dim=token_dim, padding_idx=config.pad_token_id
+        )
+        # Token position embeddings [max_sequence_length, token_embedding_dim]
+        self.token_position_embeddings = nn.Embedding(
+            num_embeddings=config.max_sequence_length, embedding_dim=token_dim
+        )
+        
+        # Dimension Inversion: project token embeddings to hidden_size when dims differ.
+        # When token_embedding_dim < hidden_size, tokens are cheap (small vocab memory)
+        # and concepts are rich (large hidden_size for attention and FFN).
+        if token_dim != config.hidden_size:
+            self.token_projection = nn.Linear(token_dim, config.hidden_size)
+        else:
+            self.token_projection = None
+        
         # Concept embeddings [concept_num, hidden_size=concept_dim]
-        self.concept_embeddings = nn.Embedding(num_embeddings=config.concept_num, embedding_dim=config.hidden_size)
+        # Concepts always live in hidden_size space (the "fat" dimension)
+        self.concept_embeddings = nn.Embedding(
+            num_embeddings=config.concept_num, embedding_dim=config.hidden_size
+        )
+        
+        # Concept position encoding (optional, default "none" for backward compat)
+        # "sinusoidal": fixed sinusoidal positions, no extra trainable params
+        # "learned": trainable position embeddings for each concept slot
+        # "none": concepts are orderless (original design)
+        if config.concept_position_type == "sinusoidal":
+            # Register as buffer (not a parameter) -- no gradient, moves with model device
+            sinusoidal_emb = self._create_sinusoidal_embeddings(config.concept_num, config.hidden_size)
+            self.register_buffer("concept_position_emb", sinusoidal_emb)
+        elif config.concept_position_type == "learned":
+            self.concept_position_emb = nn.Embedding(
+                num_embeddings=config.concept_num, embedding_dim=config.hidden_size
+            )
+        # For "none", no concept_position_emb attribute is created
 
         # Concept encoder layers [num_hidden_layers]
         self.layers = nn.ModuleList([ConceptEncoderLayer(config) for _ in range(config.num_hidden_layers)])
         # Dropout [hidden_dropout_prob]
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        # Output layer normalization [hidden_size=concept_dim] - return the concept representations [batch_size, concept_num, concept_dim]
+        # Output layer normalization [hidden_size=concept_dim]
         self.output_layer_norm = nn.LayerNorm(config.hidden_size, eps=1e-12)
 
         self.post_init()
+    
+    @staticmethod
+    def _create_sinusoidal_embeddings(num_positions: int, dim: int) -> torch.Tensor:
+        """Create fixed sinusoidal position embeddings (Vaswani et al., 2017).
+        
+        These provide a fixed ordering signal to concept slots without adding
+        trainable parameters. Each position gets a unique pattern of sin/cos values.
+        
+        Args:
+            num_positions: Number of positions (concept_num)
+            dim: Embedding dimension (hidden_size)
+            
+        Returns:
+            Tensor of shape [num_positions, dim]
+        """
+        position = torch.arange(num_positions).unsqueeze(1).float()
+        div_term = torch.exp(torch.arange(0, dim, 2).float() * -(math.log(10000.0) / dim))
+        
+        embeddings = torch.zeros(num_positions, dim)
+        embeddings[:, 0::2] = torch.sin(position * div_term)
+        embeddings[:, 1::2] = torch.cos(position * div_term)
+        return embeddings
 
     def _init_weights(self, module):
         """
@@ -292,21 +359,35 @@ class ConceptEncoder(PreTrainedModel):
         """
         batch_size, seq_length = input_ids.size()
 
-        # 1) Token embeddings
+        # 1) Token embeddings (in token_embedding_dim space)
         position_ids = torch.arange(seq_length, device=input_ids.device).unsqueeze(0).expand_as(input_ids)
         token_embeddings = self.token_embeddings(input_ids) + self.token_position_embeddings(position_ids)
+        
+        # Project token embeddings to hidden_size if Dimension Inversion is active
+        # (token_embedding_dim < hidden_size). This bridges the gap between cheap
+        # token representations and the rich concept/attention space.
+        if self.token_projection is not None:
+            token_embeddings = self.token_projection(token_embeddings)
+        
         token_embeddings = self.dropout(token_embeddings)
 
         key_padding_mask = None
         if attention_mask is not None:
             key_padding_mask = (attention_mask == 0)  # bool of shape [batch_size, seq_len]
 
-        # 3) Initialize concept embeddings [batch_size, concept_length, hidden_size]
-        # From gemini deep research analysis:
-        # Concept Initialization: A key step is the initialization of concept_representations. The learnable concept_embeddings (shape [concept_num, hidden_size]) are expanded to match the batch size ([batch_size, concept_num, hidden_size]). This means every item in the batch starts with the exact same set of initial concept prototypes. These prototypes are then specialized for each input sequence through the subsequent layer processing.
-        concept_representations = self.concept_embeddings(
-            torch.arange(self.config.concept_num, device=input_ids.device)
-        ).unsqueeze(0).expand(batch_size, -1, -1)
+        # 2) Initialize concept embeddings [batch_size, concept_num, hidden_size]
+        # Every item in the batch starts with the exact same set of initial concept prototypes.
+        # These prototypes are then specialized for each input sequence through the layers.
+        concept_ids = torch.arange(self.config.concept_num, device=input_ids.device)
+        concept_representations = self.concept_embeddings(concept_ids).unsqueeze(0).expand(batch_size, -1, -1)
+        
+        # Add concept position encoding if configured
+        # Sinusoidal: fixed positions from buffer (no gradient)
+        # Learned: trainable positions from embedding layer
+        if self.config.concept_position_type == "sinusoidal":
+            concept_representations = concept_representations + self.concept_position_emb.unsqueeze(0)
+        elif self.config.concept_position_type == "learned":
+            concept_representations = concept_representations + self.concept_position_emb(concept_ids).unsqueeze(0)
 
         # Possibly track hidden_states/attentions
         all_hidden_states = () if output_hidden_states else None
