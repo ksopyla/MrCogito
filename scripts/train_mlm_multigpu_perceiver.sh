@@ -111,8 +111,8 @@ PER_DEVICE_BATCH_SIZE=64
 EVAL_BATCH_SIZE=16              # Eval computes full logits [B, L, V], keep smaller
 GRADIENT_ACCUMULATION_STEPS=2   # Effective batch = 64 * NUM_GPUs * 2
 LEARNING_RATE=3e-4              # Lower than v1 (5e-4) for deeper model stability
-NUM_EPOCHS=20                   # Quick test run to verify engineering improvements (speed, loss)
-WARMUP_STEPS=1500               # Proportional to 20 epochs (~3.8% of total steps)
+NUM_EPOCHS=40                   # Same as previous L6 runs for fair comparison
+WARMUP_STEPS=3000               # Same as previous L6 runs (~3.8% of ~78k total steps)
 WEIGHT_DECAY=0.01
 MAX_GRAD_NORM=1.0
 
@@ -128,7 +128,7 @@ LOGGING_STEPS=1000              # More frequent logging for longer training
 EVAL_STRATEGY="steps"
 EVAL_STEPS=5000
 SAVE_STRATEGY="steps"
-SAVE_STEPS=50000                # Save less frequently (models are larger)
+SAVE_STEPS=10000                # Must be <= total_steps for load_best_model_at_end to work
 
 # Paths are dependent on the server setup:
 # runpod: /workspace/MrCogito
@@ -138,6 +138,7 @@ PROJECT_ROOT="/home/ksopyla/dev/MrCogito"
 
 OUTPUT_DIR="$PROJECT_ROOT/Cache/Training"
 LOGGING_DIR="$PROJECT_ROOT/Cache/logs"
+export LOG_DIR="$LOGGING_DIR"  # Used by mlm_training.py for file-based logging
 
 # Optional: Set HF_HOME and HF_DATASETS_CACHE 
 export HF_HOME="${PROJECT_ROOT}/../hf_home"
@@ -173,7 +174,10 @@ mkdir -p "$LOGGING_DIR"
 mkdir -p "$DATASET_CACHE_DIR"
 
 # Launch training with accelerate
+# Capture full output (including torch warnings) to a log file via tee
+SHELL_LOG="${LOGGING_DIR}/shell_${MODEL_TYPE}_$(date +%Y%m%d_%H%M%S).log"
 echo "Starting training..."
+echo "Shell output logged to: $SHELL_LOG"
 echo ""
 
 accelerate launch \
@@ -231,9 +235,11 @@ accelerate launch \
     --load_best_model_at_end True \
     --metric_for_best_model "eval_loss" \
     --greater_is_better False \
-    --torch_compile True
+    --torch_compile False \
+    2>&1 | tee -a "$SHELL_LOG"
 
 echo ""
 echo "Training completed successfully!"
 echo "Output saved to: $OUTPUT_DIR"
 echo "Logs saved to: $LOGGING_DIR"
+echo "Shell log saved to: $SHELL_LOG"

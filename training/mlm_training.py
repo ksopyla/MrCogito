@@ -238,18 +238,40 @@ def main():
     local_rank = setup_distributed()
 
     
-    # Setup logging - set transformers verbosity first
+    # Setup logging - both console and file output for debugging
+    import logging as std_logging
     if is_main_process():
-        # Set transformers logging to info level
         logging.set_verbosity_info()
-        # Ensure our logger is also at info level
-        import logging as std_logging
-        std_logging.basicConfig(
-            level=std_logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            datefmt='%H:%M:%S',
-            force=True
+        
+        # Create a timestamped log file alongside the training output
+        log_filename = f"training_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        log_dir = os.environ.get("LOG_DIR", "./Cache/logs")
+        os.makedirs(log_dir, exist_ok=True)
+        log_filepath = os.path.join(log_dir, log_filename)
+        
+        # Configure root logger with both console and file handlers
+        root_logger = std_logging.getLogger()
+        root_logger.setLevel(std_logging.INFO)
+        # Clear existing handlers to avoid duplicates on re-entry
+        root_logger.handlers.clear()
+        
+        formatter = std_logging.Formatter(
+            '%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S'
         )
+        
+        # Console handler
+        console_handler = std_logging.StreamHandler()
+        console_handler.setLevel(std_logging.INFO)
+        console_handler.setFormatter(formatter)
+        root_logger.addHandler(console_handler)
+        
+        # File handler (appends so multiple runs accumulate in the same dir)
+        file_handler = std_logging.FileHandler(log_filepath, mode='a', encoding='utf-8')
+        file_handler.setLevel(std_logging.INFO)
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+        
+        logger.info(f"Logging to file: {log_filepath}")
     else:
         logging.set_verbosity_error()
     
@@ -509,9 +531,20 @@ def main():
     logger.info(f"Warmup steps: {training_args.warmup_steps}")
     logger.info(f"Weight decay: {training_args.weight_decay}")
     logger.info(f"Evaluation strategy: {training_args.eval_strategy}")
+    logger.info(f"Eval steps: {training_args.eval_steps}")
     logger.info(f"Save strategy: {training_args.save_strategy}")
+    logger.info(f"Save steps: {training_args.save_steps}")
     logger.info(f"Mixed precision: {'fp16' if training_args.fp16 else 'bf16' if training_args.bf16 else 'fp32'}")
     logger.info(f"Seed: {training_args.seed}")
+    logger.info(f"Optimizer: {training_args.optim}")
+    logger.info(f"LR scheduler: {training_args.lr_scheduler_type}")
+    logger.info(f"Max grad norm: {training_args.max_grad_norm}")
+    logger.info(f"Dataloader num workers: {training_args.dataloader_num_workers}")
+    logger.info(f"Dataloader pin memory: {training_args.dataloader_pin_memory}")
+    logger.info(f"torch.compile: {training_args.torch_compile}")
+    logger.info(f"Save safetensors: {training_args.save_safetensors}")
+    logger.info(f"Gradient checkpointing: {training_args.gradient_checkpointing}")
+    logger.info(f"Load best model at end: {training_args.load_best_model_at_end}")
     logger.info("="*60)
     
     # Set default values if not provided via command line
@@ -528,15 +561,13 @@ def main():
     training_args.per_device_eval_batch_size = training_args.per_device_eval_batch_size or training_args.per_device_train_batch_size
     
     
-    # Set fixed training configuration
-    training_args.overwrite_output_dir = True
-    training_args.save_safetensors = False
-    training_args.dataloader_num_workers = 2
+    # BUG FIX (2026-02-18): These were HARDCODED overrides that silently replaced CLI args!
+    # Previously: training_args.optim = "adamw_torch" would overwrite --optim "adamw_torch_fused"
+    # Now: only set sensible defaults that don't conflict with CLI-provided values.
+    # Values that should always be set regardless of CLI:
     training_args.report_to = ["tensorboard", "wandb"]
     training_args.push_to_hub = False
     training_args.remove_unused_columns = True
-    training_args.optim = "adamw_torch"
-    training_args.max_grad_norm = 1.0
     training_args.use_cpu = False
     
     # Set fp16 as default (True), unless bf16 is explicitly set (then fp16=False)
