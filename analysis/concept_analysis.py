@@ -118,7 +118,8 @@ def compute_concept_geometry_metrics(concept_repr: torch.Tensor) -> Dict[str, fl
     
     metrics['max_concept_similarity'] = off_diag.max().item()
     metrics['mean_concept_similarity'] = off_diag.abs().sum().item() / (batch_size * concept_num * (concept_num - 1))
-    metrics['std_concept_similarity'] = off_diag[off_diag_mask.bool()].std().item()
+    # expand mask to [B, C, C] before boolean indexing — off_diag_mask may be [1, C, C]
+    metrics['std_concept_similarity'] = off_diag[off_diag_mask.expand_as(off_diag).bool()].std().item()
     
     # === 3. Uniformity Loss (Wang & Isola, 2020) ===
     # Lower is better - concepts are well spread on hypersphere
