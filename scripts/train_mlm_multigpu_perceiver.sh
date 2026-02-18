@@ -257,8 +257,8 @@ accelerate launch \
     --metric_for_best_model "eval_loss" \
     --greater_is_better False \
     --torch_compile False \
-    --torch_compile_dynamic "$TORCH_COMPILE_DYNAMIC" \
     --torch_compile_backend "inductor" \
+    --torch_compile_dynamic "$TORCH_COMPILE_DYNAMIC" \
     2>&1 | tee -a "$SHELL_LOG"
 
 echo ""

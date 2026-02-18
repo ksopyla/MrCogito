@@ -95,11 +95,8 @@ class ModelArguments:
         default=False,
         metadata={"help": "Compile model with torch.compile(dynamic=True) for stable training "
                   "with variable-shape tensors (e.g. sparse MLM masked token counts). "
-                  "Keep TrainingArguments.torch_compile=False when this is True."}
-    )
-    torch_compile_backend: str = field(
-        default="inductor",
-        metadata={"help": "Backend for torch.compile (only used when torch_compile_dynamic=True)"}
+                  "Keep TrainingArguments.torch_compile=False when this is True. "
+                  "Backend is read from TrainingArguments.torch_compile_backend (default: inductor)."}
     )
     hidden_size: int = field(
         default=256,
@@ -489,14 +486,15 @@ def main():
         if not torch.cuda.is_available():
             logger.warning("torch_compile_dynamic=True but no CUDA detected — skipping compile.")
         else:
-            logger.info(
-                f"Applying torch.compile(dynamic=True, backend='{model_args.torch_compile_backend}') ..."
-            )
+            # Backend comes from TrainingArguments.torch_compile_backend (already defined there).
+            # Default "inductor" is fine for RTX 3090 (Ampere, sm86).
+            backend = getattr(training_args, "torch_compile_backend", None) or "inductor"
+            logger.info(f"Applying torch.compile(dynamic=True, backend='{backend}') ...")
             model = torch.compile(
                 model,
-                dynamic=True,       # Handle variable masked-token shapes without recompilation
-                fullgraph=False,    # Allow graph breaks (safer for complex HF models)
-                backend=model_args.torch_compile_backend,
+                dynamic=True,    # Handle variable masked-token shapes without recompilation
+                fullgraph=False, # Allow graph breaks (safer for complex HF models)
+                backend=backend,
             )
             logger.info("torch.compile applied successfully.")
     
