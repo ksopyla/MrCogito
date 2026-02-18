@@ -333,6 +333,46 @@ class VICRegLoss(ConceptLossComponent):
         return var_w * var_loss + cov_w * cov_loss
 
 
+class TREGSMSTLoss(ConceptLossComponent):
+    """
+    MST-based uniformity regularization (T-REGS, Mordacq et al., 2025).
+
+    Approximates the Minimum Spanning Tree length using nearest-neighbor
+    distances between concept vectors. Maximizing MST length forces concepts
+    to spread uniformly through space — it simultaneously prevents dimensional
+    collapse AND promotes uniformity, two properties that VICReg variance
+    metrics can miss.
+
+    Reference:
+        "T-REGS: Minimum Spanning Tree Regularization for Self-Supervised
+        Learning", Mordacq et al., 2025 — https://hf.co/papers/2510.23484
+    """
+
+    @property
+    def name(self) -> str:
+        return "t_regs_mst"
+
+    def compute(self, concept_repr: torch.Tensor, **kwargs) -> torch.Tensor:
+        # concept_repr: [B, C, H]
+        # Normalize to unit sphere so distances are geometry-preserving
+        concept_norm = F.normalize(concept_repr, p=2, dim=-1)  # [B, C, H]
+
+        # Pairwise L2 distances: [B, C, C]
+        distances = torch.cdist(concept_norm, concept_norm, p=2)
+
+        # Mask self-distances with large value so they don't become the minimum
+        eye_mask = torch.eye(
+            concept_repr.size(1), device=concept_repr.device
+        ).unsqueeze(0) * 1e9
+        distances = distances + eye_mask
+
+        # Nearest-neighbor distance for each concept — O(C²) per batch item
+        nn_distances = distances.min(dim=-1).values  # [B, C]
+
+        # Maximize total NN distance (proxy for MST length) → minimise its negative
+        return -nn_distances.mean()
+
+
 class CombinedLoss(ConceptLossComponent):
     """
     Variance + Uniformity combination (recommended for most cases).
@@ -376,6 +416,7 @@ LOSS_REGISTRY: Dict[str, type] = {
     "covariance": CovarianceLoss,
     "vicreg": VICRegLoss,
     "combined": CombinedLoss,
+    "t_regs_mst": TREGSMSTLoss,
 }
 
 

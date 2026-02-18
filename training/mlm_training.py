@@ -84,6 +84,23 @@ class ModelArguments:
         default=None,
         metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
     )
+    # torch.compile is applied MANUALLY here (not via TrainingArguments.torch_compile) so we
+    # can pass dynamic=True.  TrainingArguments.torch_compile should be kept False to avoid
+    # double-compilation.  The Feb-2026 training instability (loss stuck at 7.0 vs 2.54, grad
+    # explosion at step 8000–9000) was caused by the default static-shape compile tracing
+    # triggering recompilation / eager-mode fallbacks on every batch due to the variable number
+    # of masked tokens produced by DataCollatorForLanguageModeling.  dynamic=True resolves this
+    # by emitting shape-agnostic code via symbolic integers.
+    torch_compile_dynamic: bool = field(
+        default=False,
+        metadata={"help": "Compile model with torch.compile(dynamic=True) for stable training "
+                  "with variable-shape tensors (e.g. sparse MLM masked token counts). "
+                  "Keep TrainingArguments.torch_compile=False when this is True."}
+    )
+    torch_compile_backend: str = field(
+        default="inductor",
+        metadata={"help": "Backend for torch.compile (only used when torch_compile_dynamic=True)"}
+    )
     hidden_size: int = field(
         default=256,
         metadata={"help": "Hidden size of the model (concept dimension, attention dimension)"}
@@ -462,6 +479,26 @@ def main():
         model_type=model_args.model_type,
         model_description=model_info['description']
     )
+
+    # Apply torch.compile with dynamic=True AFTER model init, BEFORE Trainer creation.
+    # Using dynamic=True prevents constant recompilation caused by variable masked-token
+    # counts from DataCollatorForLanguageModeling (each batch has a different number of
+    # ~15% masked positions, producing variable-size sparse tensors inside the model).
+    # Keep training_args.torch_compile=False so HF Trainer does NOT compile again.
+    if model_args.torch_compile_dynamic:
+        if not torch.cuda.is_available():
+            logger.warning("torch_compile_dynamic=True but no CUDA detected — skipping compile.")
+        else:
+            logger.info(
+                f"Applying torch.compile(dynamic=True, backend='{model_args.torch_compile_backend}') ..."
+            )
+            model = torch.compile(
+                model,
+                dynamic=True,       # Handle variable masked-token shapes without recompilation
+                fullgraph=False,    # Allow graph breaks (safer for complex HF models)
+                backend=model_args.torch_compile_backend,
+            )
+            logger.info("torch.compile applied successfully.")
     
     # Data collator for dynamic masking
     if data_args.masking_type == "whole_word":

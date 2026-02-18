@@ -111,17 +111,38 @@ PER_DEVICE_BATCH_SIZE=64
 EVAL_BATCH_SIZE=16              # Eval computes full logits [B, L, V], keep smaller
 GRADIENT_ACCUMULATION_STEPS=2   # Effective batch = 64 * NUM_GPUs * 2
 LEARNING_RATE=3e-4              # Lower than v1 (5e-4) for deeper model stability
-NUM_EPOCHS=40                   # Same as previous L6 runs for fair comparison
-WARMUP_STEPS=3000               # Same as previous L6 runs (~3.8% of ~78k total steps)
+NUM_EPOCHS=20                   # Quick test run to verify engineering improvements (speed, loss)
+WARMUP_STEPS=1500               # Proportional to 20 epochs (~3.8% of total steps)
 WEIGHT_DECAY=0.01
 MAX_GRAD_NORM=1.0
 
 # --- Loss Configuration ---
-# Options for concept_losses: orthogonality, soft_orthogonality, uniformity, vicreg, combined, none
+# Options for concept_losses (space-separated, or "none"):
+#   none                          - MLM only, no concept regularisation
+#   orthogonality                 - strict cosine-orthogonality between concept vectors
+#   soft_orthogonality            - orthogonality with a slack threshold (0.1)
+#   uniformity                    - Gaussian-kernel push-apart on the unit hypersphere
+#   variance                      - VICReg-style hinge on per-dimension std
+#   covariance                    - decorrelate embedding dimensions
+#   vicreg                        - variance + covariance (VICReg)
+#   combined                      - variance + uniformity (recommended first experiment)
+#   t_regs_mst                    - MST-based uniformity (Mordacq et al. 2025, best collapse detection)
 # Options for loss_weighting: fixed, learnable, kendall_gal
-CONCEPT_LOSSES="none"
+#
+# Recommended starting config: combined + kendall_gal
+#   - "combined" prevents both norm-collapse (variance) and clustering (uniformity)
+#   - "kendall_gal" learns the optimal MLM-vs-concept balance automatically
+CONCEPT_LOSSES="combined"
 LOSS_WEIGHTING="kendall_gal"
 LOSS_WEIGHT=0.1  # Only used with loss_weighting=fixed
+
+# --- torch.compile Configuration ---
+# IMPORTANT: torch_compile_dynamic uses dynamic=True to handle variable masked-token
+# shapes safely.  Keep --torch_compile False (TrainingArguments) when using this flag.
+# The Feb-2026 run "perceiver_mlm_H512L6C128_20260213_203403" showed that the default
+# static compile causes gradient explosion (grad_norm=2207 at step 9000) and permanently
+# stuck loss at 7.0 instead of converging to 2.54.
+TORCH_COMPILE_DYNAMIC=False   # Set True once you have verified Flash Attention is running
 
 # --- Logging and Evaluation ---
 LOGGING_STEPS=1000              # More frequent logging for longer training
@@ -236,6 +257,8 @@ accelerate launch \
     --metric_for_best_model "eval_loss" \
     --greater_is_better False \
     --torch_compile False \
+    --torch_compile_dynamic "$TORCH_COMPILE_DYNAMIC" \
+    --torch_compile_backend "inductor" \
     2>&1 | tee -a "$SHELL_LOG"
 
 echo ""
