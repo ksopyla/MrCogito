@@ -1,7 +1,22 @@
-# Concept Encoder Experiment Plan v2
+# Concept Reasoning Experiment Plan v1
+
+> **OBSOLETE — 2026-02-18**
+> This plan has been superseded by **[concept_reasoning_experiment_plan_v2.md](concept_reasoning_experiment_plan_v2.md)**.
+>
+> **Why obsolete:** The goal stated below ("close the 24pt GLUE gap to BERT-Base") was revised after deeper analysis
+> revealed that: (1) CoLA is architecturally impossible with any concept bottleneck — MCC 0.13 at L6 is the
+> ceiling, not a training failure; (2) GLUE rewards token-level representations that the concept bottleneck
+> intentionally destroys; (3) the pretraining objective (MLM) is misaligned with concept-level learning.
+> The v3 plan reframes the goal toward long-context benchmarks and multimodal tasks where the concept
+> architecture has a genuine advantage.
+>
+> This file is kept for historical reference. All new experiments follow v3.
+
+---
 
 **Updated: 2026-02-13** | Previous: 2026-01-17
-**Goal:** Close the ~24pt GLUE gap to BERT-Base. Current best: perceiver_mlm L6 = 59.1% MNLI, 81.3% MRPC.
+**Goal:** ~~Close the ~24pt GLUE gap to BERT-Base.~~ *(Revised — see v2 plan)*
+**Current best:** perceiver_mlm L6 = 59.1% MNLI, 81.3% MRPC.
 
 ## Status Summary
 
@@ -12,7 +27,14 @@
 | Step 1c: Scale to L6, 40 epochs | **Done** | +3pts avg, MNLI 59.1%, CoLA still broken (0.13 MCC) |
 | Step 1d: Sparse MLM decoding fix | **Done** | Fixed OOM from accelerate fp32 conversion on full logits |
 
-**Diagnosis:** The concept bottleneck is the binding constraint. MLM loss dropped 37% (L2->L6) but downstream only +3pts. Three root causes: (1) too aggressive compression, (2) position information destroyed, (3) insufficient pretraining data.
+**Diagnosis (v2):** The concept bottleneck is the binding constraint. MLM loss dropped 37% (L2->L6) but downstream only +3pts. Three root causes: (1) too aggressive compression, (2) position information destroyed, (3) insufficient pretraining data.
+
+> **Updated diagnosis (v2):** Two additional root causes were identified: (4) MLM pretraining objective is
+> fundamentally misaligned with concept-level learning — MLM requires preserving token-level detail through
+> the bottleneck, opposing the compression goal; (5) GLUE evaluates token-level properties that concepts
+> cannot preserve by design. The v2 plan adds a contrastive sentence objective, targets long-context
+> benchmarks, and introduces backbone initialization from pretrained CLM weights.
+> See [concept_reasoning_experiment_plan_v2.md](concept_reasoning_experiment_plan_v2.md) for the full updated diagnosis.
 
 ---
 
@@ -70,6 +92,10 @@ The model sees Minipile 40 times. BERT saw BookCorpus+Wikipedia (~16GB) multiple
 
 ## Phase 3: Architectural Improvements (parallel with Phase 2)
 
+> **v2 note:** Phase 3.1 is promoted to the highest priority experiment in v2 (now Phase 3 of v2 plan).
+> The code sketch below is almost complete — verify `ConceptEncoderForSequenceClassificationViaDecoder`
+> in `nn/concept_encoder_perceiver.py` loads pretrained decoder weights correctly.
+
 ### 3.1 Concept-Aware Classification Head (HIGH PRIORITY)
 
 **Problem:** Current classification head (single [CLS] query -> concepts -> classify) discards everything the MLM decoder learned about reconstructing positions and sequences.
@@ -101,7 +127,7 @@ class ConceptEncoderForSequenceClassificationViaDecoder(PreTrainedModel):
 
 **Key insight:** This loads ALL pretrained weights (encoder + decoder) instead of just encoder weights. The decoder knows how to reconstruct positional information from concepts.
 
-**Expected impact:** Significant on position-sensitive tasks (CoLA, RTE). The decoder already learned position->concept mapping during MLM.
+**Expected impact:** Significant on QNLI, MNLI (positional composition). CoLA will remain near-zero — that is architectural, not a training problem. See v2 for explanation.
 
 ### 3.2 Position-Enriched Concepts (MEDIUM PRIORITY)
 
@@ -196,19 +222,29 @@ Use existing tools: `analysis/check_model_health.py`, `analysis/concept_analysis
 
 ## Execution Priority
 
+> **OBSOLETE — see [concept_reasoning_experiment_plan_v2.md](concept_reasoning_experiment_plan_v2.md) for the revised priority table.**
+>
+> Key changes in v2 priority:
+> - "CoLA/RTE" struck from expected impact on 3.1 — they are architecturally unreachable
+> - Added contrastive sentence objective to Phase 2 (data scaling)
+> - Added Phase 6: long-context evaluation (SCROLLS, LongBench) as new primary benchmark
+> - Added Phase 8.2: backbone initialization from pretrained CLM (SmolLM2-135M or Qwen2.5-0.5B)
+> - Dropped "close 24pt GLUE gap" as success criterion
+
 | # | Experiment | Days | Expected Impact | Dependencies |
 |---|-----------|------|----------------|-------------|
 | **1** | Phase 1: Engineering fixes | 1 | 2-4x speedup | None |
 | **2** | Phase 5: Concept analysis | 0.5 | Diagnostic guidance | None |
-| **3** | 3.1: Classification via decoder | 2 | +5-10pts on CoLA/RTE | None |
-| **4** | Phase 2: Scale data (OpenWebText+Wiki) | 5 | +5-10pts avg (hypothesis) | Phase 1 |
+| **3** | 3.1: Classification via decoder | 2 | +5-10pts on ~~CoLA/~~RTE, QNLI, MNLI | None |
+| **4** | Phase 2: Scale data (OpenWebText+Wiki) + contrastive loss | 5-7 | +5-15pts avg (hypothesis) | Phase 1 |
 | **5** | 3.4: Span masking | 1 code + 5 train | +2-5pts (hypothesis) | Phase 1 |
-| **6** | 3.2: Position-enriched concepts | 2 | +3-5pts on CoLA | Phase 1 |
+| **6** | 3.2: Position-enriched concepts | 2 | +2-4pts on composition tasks | Phase 1 |
 | **7** | Phase 4: Concept losses | 2 | +1-2pts | Any L6 model |
 | **8** | 3.3: Dimension inversion | 3 code + 5 train | Unknown (novel) | Phase 1 |
 | **9** | 3.5: Gradual compression | 5 code + 5 train | Unknown (novel) | Phase 1, 4 |
 
-**Critical path:** Phase 1 -> [Phase 5 + Experiment 3.1] in parallel -> Phase 2 with span masking -> evaluate
+**Critical path (v1):** Phase 1 -> [Phase 5 + Experiment 3.1] in parallel -> Phase 2 with span masking -> evaluate
+**Critical path (v2, updated):** Phase 1 → [Phase 2 + Phase 3] → Phase 4+5 (data+contrastive) → Phase 6 (long-context eval)
 
 ---
 
@@ -226,8 +262,17 @@ This would dramatically accelerate the experiment cycle from ~2 days (manual) to
 
 ## Research Horizon
 
-If the above experiments succeed (closing gap to < 10pts from BERT-Base), the next frontier is:
+> **v2 update:** The success criterion below ("closing gap to <10pts from BERT-Base") is replaced in v2 by
+> demonstrating long-context efficiency advantages. Items 3 and 4 are now the **primary** research frontier,
+> not the horizon. See [concept_reasoning_experiment_plan_v2.md](concept_reasoning_experiment_plan_v2.md) for the full updated horizon.
+
+If the v2 experiments succeed (closing gap to < 10pts from BERT-Base on semantic tasks):
 1. **Concept encoder-decoder for generation** (the original vision) -- use SONAR-LLM's frozen-decoder-as-loss approach
 2. **Audio modality** -- concept bottleneck on mel spectrograms, shared concept space with text
-3. **Longer context** -- the concept bottleneck enables O(C*N) attention instead of O(N^2), test on 4K-16K sequences
-4. **Publication** -- the dimension inversion + concept-aware classification results would be novel contributions
+3. **Longer context** -- the concept bottleneck enables O(C*N) attention instead of O(N^2), test on 4K-16K sequences *(promoted to primary target in v3)*
+4. **Publication** -- the dimension inversion + concept-aware classification + long-context results would be novel contributions
+
+---
+
+*This plan (v1) was active 2026-02-13 to 2026-02-18.*
+*Superseded by: [concept_reasoning_experiment_plan_v2.md](concept_reasoning_experiment_plan_v2.md)*
