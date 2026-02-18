@@ -2,37 +2,64 @@
 alwaysApply: true
 ---
 ## 🎯 Project Overview  
-A research project developing "Concept Encoder and decoder" - a transformer architecture using concept embeddings that try to encode informationtion, gather it from many text or audio tokens. My ultimate goal is to develop a model that can understand and generate text and audio in a coherent way.
+A research project developing "Concept Encoder and Decoder" - a transformer architecture using concept embeddings that encode information gathered from many text or audio tokens. The ultimate goal is to develop a model that can understand and generate text and audio in a coherent way.
 
-repository: https://github.com/ksopyla/MrCogito
-Author: Krzysztof Sopyla
-Email: krzysztof.sopyla@gmail.com
-LinkedIn: https://www.linkedin.com/in/krzysztof-sopyla/
-Twitter: https://twitter.com/ksopyla
-GitHub: https://github.com/ksopyla
-Blog: https://ai.ksopyla.com
-Project page: https://ai.ksopyla.com/projects/concept-encoder/
+**Repository**: https://github.com/ksopyla/MrCogito  
+**Author**: Krzysztof Sopyla  
+**Email**: krzysztof.sopyla@gmail.com  
+**LinkedIn**: https://www.linkedin.com/in/krzysztof-sopyla/  
+**Twitter**: https://twitter.com/ksopyla  
+**GitHub**: https://github.com/ksopyla  
+**Blog**: https://ai.ksopyla.com  
+**Project page**: https://ai.ksopyla.com/projects/concept-encoder/
 
-Project description:
-A research project developing "Concept Encoder and decoder" - a transformer architecture using concept embeddings that try to encode informationtion, gather it from many text or audio tokens. My ultimate goal is to develop a model that can understand and generate text and audio in a coherent way.
+## Core Architecture Idea
+The Concept Encoder uses **cross-attention between a small set of "concept tokens" and the full input sequence**, allowing the model to compress information from many tokens into fewer concept embeddings. This enables efficient long-context processing with ~1000x memory reduction vs standard self-attention. The architecture separates encoding (token → concept space) from decoding (concept space → token predictions).
 
-Project short-term goals:
+**Model variants implemented:**
+- `weighted_mlm` - Simplified weighted approach using learned position-specific weights (currently recommended for experiments)
+- `perceiver_mlm` - Perceiver IO style decoding with Input+Position queries
+- `perceiver_posonly_mlm` - Perceiver IO decoding with Position-only queries
+- `concept_mlm` - Original attention-based decoding
+- `sim_matrix_mlm` - Similarity matrix variant
+
+## Project Short-term Goals
 - Develop a transformer architecture using concept-level token masking for better text understanding and longer context processing.
-- Find the best way to encode the information from the text or audio tokens into the concept embeddings.
-- Find the best tokenization strategy for the text or audio tokens.
-- Train the concept encoder via MLM task as a quick way to verify the concepts idea is working.
-- Find the best way to decode the concept embeddings into the text or audio tokens.
-- Put the concept encoder and decoder together and train the model on the text or audio tokens.
+- Find the best way to encode information from text or audio tokens into concept embeddings.
+- Find the best tokenization strategy for text or audio tokens.
+- Train the concept encoder via MLM task as a quick way to verify the concept idea is working.
+- Evaluate the concept encoder on the GLUE benchmark and other benchmarks.
+- Find the best way to decode concept embeddings back into text or audio tokens.
+- Put the concept encoder and decoder together and train on text or audio tokens.
 
-For any temporary and intermediate files that are generated during the working with agent use the `agent_memory` folder, it is located in the root of the project and is used to store all the temporary and intermediate files.
-You can use the `agent_memory` folder to store any files that are generated during the working with agent, for example:
-- intermediate plans
-- intermediate thoughts
-- summaries of recent research and findings
-- code snippets
-- things for future reference
-- links to the relevant files, publications, websites, datasets
-- links to the tools
-- useful terminal commands for linux and windows
-- treat this space as your personal knowledge base, use it to store all the information that you need to remember or reference later
-- remember to keep it clean and organized, do not clutter it with unnecessary files, only keep the files that are relevant to the current task or project
+## Key Technical Details
+- **Training task**: Masked Language Modeling (MLM) on Wikitext-103
+- **Evaluation**: GLUE benchmark (MRPC, SST-2, MNLI, QQP, etc.)
+- **Base model**: ModernBERT backbone (for tokenizer and pretrained weights)
+- **Training framework**: HuggingFace Transformers + Accelerate
+- **Experiment tracking**: Weights & Biases (project name: "MrCogito")
+- **Loss functions**: MLM cross-entropy + optional auxiliary losses (orthogonality, uniformity, VICReg)
+
+## `agent_memory/` Folder - AI Working Space
+Use `agent_memory/` (project root) for all temporary and intermediate files generated during agent sessions:
+- Intermediate plans and thoughts
+- Summaries of research findings
+- Code snippets and experiment notes
+- Future reference items (links, commands, dataset info)
+- Treat it as a personal knowledge base - keep clean and organized
+
+## Top-level Project Structure
+```
+MrCogito/
+├── nn/           - Core model implementations (ConceptEncoder variants)
+├── training/     - MLM training, GLUE evaluation, dataset preprocessing
+├── scripts/      - PowerShell (Windows) and bash (Linux) training/eval scripts
+├── tests/        - Unit tests and verification scripts
+├── playground/   - Prototyping, Jupyter notebooks, experiments
+├── analysis/     - Model health checks, concept analysis, tokenizer evaluation
+├── docs/         - Research notes, literature reviews, experiment results
+├── agent_memory/ - AI agent working space for intermediate files
+├── Cache/        - Downloaded models, datasets, tokenizers, eval reports (gitignored)
+├── wandb/        - WandB training logs (gitignored)
+└── pyproject.toml - Poetry project definition (Python 3.12, CUDA 12.8)
+```

@@ -1,9 +1,51 @@
 ---
-description: Can help to get the details of huggingface hosted models and recent research papers, model full name, author, model size and params, the training data. 
+description: Can help to get the details of huggingface hosted models and recent research papers, model full name, author, model size and params, the training data.
 alwaysApply: false
 ---
 
-Please use the mcp server called hf-mcp-server to get the details of huggingface hosted models.
-You can find the model details like full name, author, model size and params, the organization, the training data, etc.
-You can also find the best model for a given task. The evaluation results are available for some models.
-You can also find the recent research papers, trending papers and papers related to a given model, their details, authors, etc.
+## HuggingFace MCP Server Usage
+
+Use the MCP server `hf-mcp-server` to get details about HuggingFace hosted models.
+- Find model details: full name, author, model size, parameter count, organization, training data
+- Find the best model for a given task (check evaluation results)
+- Find recent/trending research papers and papers related to a given model
+- **Authenticated user**: `ksopyla` — models uploaded to `https://huggingface.co/ksopyla`
+
+## Models Used in This Project
+
+### Primary Backbone / Tokenizer
+- `answerdotai/ModernBERT-base` — Used as the tokenizer and base architecture reference for ConceptEncoder. ModernBERT is a modern encoder-only model with Flash Attention, RoPE embeddings, and alternating local/global attention.
+
+### Baseline Comparison Models
+- `xlnet-base-cased` / `xlm-roberta-base` — Comparison baselines on GLUE benchmark
+- `bert-base-uncased` — Standard MLM baseline
+
+### Models Explored in Playground
+- `meta-llama/Llama-3.2-*` — LLaMA 3.2 exploration (`playground/load_llama32.py`)
+- `EleutherAI/pythia-*` — Pythia model family exploration (`playground/load_pythia_model.py`)
+- `Qwen/Qwen2-Audio-*`, `Qwen/QwenOmni-*` — Qwen Omni audio models for speech research (`playground/Qwen/`)
+
+### Training Datasets (HuggingFace Hub)
+- `JeanKaddour/minipile` — Primary MLM pretraining dataset (subset of The Pile)
+- `wikitext` (wikitext-103-raw-v1) — Wikitext-103 for MLM pretraining
+- `glue` — GLUE benchmark tasks for evaluation (mrpc, sst2, mnli, qqp, etc.)
+
+## Finding Models
+
+When searching for models relevant to this project, focus on:
+- **Encoder-only** models (BERT-style, for MLM and GLUE)
+- **Perceiver IO** variants (cross-attention between latent tokens and input)
+- **Long-context encoders** (efficient attention for >512 tokens)
+- **Audio encoders** (for future speech integration)
+
+## Uploading Models
+
+Project models can be uploaded to HuggingFace Hub using:
+```powershell
+# Windows
+poetry run python scripts/upload_model_to_hf.py
+
+# Linux
+bash scripts/upload_model_to_hf.sh
+```
+Models are uploaded under the `ksopyla` namespace.
