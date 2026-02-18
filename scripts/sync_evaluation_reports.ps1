@@ -25,10 +25,13 @@ param(
 )
 
 # --- Configuration ---
-$SSHHost = "ksopyla@79.191.142.144"
+$SSHHost = "ksopyla@79.191.173.66"
 $SSHPort = 2205
 $RemotePath = "/home/ksopyla/dev/MrCogito/Cache/Evaluation_reports"
 $LocalPath = "C:\Users\krzys\Dev Projects\MrCogito\Cache\Evaluation_reports"
+# Auto-accept new host keys (Polonez has a dynamic IP).
+# "accept-new" accepts unknown hosts but still rejects changed keys for safety.
+$SSHOpts = @("-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15")
 
 # Ensure local directory exists
 if (-not (Test-Path $LocalPath)) {
@@ -38,7 +41,7 @@ if (-not (Test-Path $LocalPath)) {
 
 function Get-RemoteFiles {
     Write-Host "Fetching file list from Polonez..." -ForegroundColor Cyan
-    $remoteFiles = ssh -p $SSHPort $SSHHost "ls -1 $RemotePath/*.csv 2>/dev/null" 2>$null
+    $remoteFiles = ssh @SSHOpts -p $SSHPort $SSHHost "ls -1 $RemotePath/*.csv 2>/dev/null" 2>$null
     if ($LASTEXITCODE -ne 0 -or -not $remoteFiles) {
         Write-Host "No CSV files found on Polonez or SSH failed." -ForegroundColor Yellow
         return @()
@@ -89,7 +92,7 @@ function Download-NewReports {
         $localDst = Join-Path $LocalPath $file
         
         Write-Host "  Downloading: $file" -ForegroundColor Gray -NoNewline
-        scp -P $SSHPort $remoteSrc $localDst 2>$null
+        scp @SSHOpts -P $SSHPort $remoteSrc $localDst 2>$null
         if ($LASTEXITCODE -eq 0) {
             Write-Host " OK" -ForegroundColor Green
             $downloaded++
@@ -139,7 +142,7 @@ function Upload-NewReports {
         $remoteDst = "${SSHHost}:${RemotePath}/${file}"
         
         Write-Host "  Uploading: $file" -ForegroundColor Gray -NoNewline
-        scp -P $SSHPort $localSrc $remoteDst 2>$null
+        scp @SSHOpts -P $SSHPort $localSrc $remoteDst 2>$null
         if ($LASTEXITCODE -eq 0) {
             Write-Host " OK" -ForegroundColor Green
             $uploaded++
