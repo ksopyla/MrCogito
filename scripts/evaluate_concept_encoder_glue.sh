@@ -16,7 +16,15 @@
 #   # Run ALL GLUE tasks for a single model:
 #   bash scripts/evaluate_concept_encoder_glue.sh <model_path> all
 #
-# Best model checkpoints - Fair Comparison Set (H512L2C128, Minipile + ModernBERT):
+# Latest model (concept losses enabled, Feb 2026):
+#   perceiver_mlm L6 + combined+kendall_gal (61M, eff. rank 95.5%):
+#     perceiver_mlm_H512L6C128_20260219_105435
+#
+# Best L6 baseline (no concept losses):
+#   perceiver_mlm L6 (61M, MRPC 81.3% F1, eff. rank 4%):
+#     perceiver_mlm_H512L6C128_20260208_211633
+#
+# Fair Comparison Set (H512L2C128, Minipile + ModernBERT):
 #   1. weighted_mlm      (34M, MRPC 82.2% F1): weighted_mlm_H512L2C128_20260117_153544
 #   2. perceiver_posonly  (36M, MRPC 81.8% F1): perceiver_posonly_mlm_H512L2C128_20260119_204015
 #   3. perceiver_mlm     (36M, MRPC 80.6% F1): perceiver_mlm_H512L2C128_20260118_172328
@@ -65,14 +73,25 @@ export TOKENIZERS_PARALLELISM=false
 # Note: perceiver_mlm and perceiver_posonly_mlm use the same classification head
 # (the difference is only in how the MLM decoder works during pretraining)
 
-# Weighted MLM:
+# --- L6 models + concept losses (H512L6C128, 20ep Minipile, combined+kendall_gal) ---
+# Perceiver MLM L6 + combined+kendall_gal (Feb 19 2026, concept eff. rank 95.5%):
+DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260219_105435/perceiver_mlm_H512L6C128_20260219_105435"
+
+# --- L6 models (H512L6C128, 40ep Minipile, no concept losses — baseline) ---
+# Perceiver MLM L6 baseline (best on 6/8 tasks, eff. rank 4%):
+# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260208_211633/perceiver_mlm_H512L6C128_20260208_211633"
+# Weighted MLM L6:
+# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/weighted_mlm_H512L6C128_20260207_174251/weighted_mlm_H512L6C128_20260207_174251"
+# Perceiver PosOnly L6:
+# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_posonly_mlm_H512L6C128_20260208_102656/perceiver_posonly_mlm_H512L6C128_20260208_102656"
+
+# --- L2 models (H512L2C128, legacy) ---
+# Weighted MLM L2:
 # DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/weighted_mlm_H512L2C128_20260117_153544/weighted_mlm_H512L2C128_20260117_153544"
-
-# Perceiver MLM:
+# Perceiver MLM L2:
 # DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L2C128_20260118_172328/perceiver_mlm_H512L2C128_20260118_172328"
-
-# Perceiver Position-Only MLM:
-DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_posonly_mlm_H512L2C128_20260119_204015/perceiver_posonly_mlm_H512L2C128_20260119_204015"
+# Perceiver PosOnly L2:
+# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_posonly_mlm_H512L2C128_20260119_204015/perceiver_posonly_mlm_H512L2C128_20260119_204015"
 
 # Allow overriding model path via first argument
 MODEL_PATH="${1:-$DEFAULT_MODEL_PATH}"
@@ -85,6 +104,12 @@ TASK="${2:-mrpc}"
 
 # Auto-detect MODEL_TYPE from model path, or accept as $3 override
 # This avoids mismatches when switching between models via $1
+#
+# Supported model types for GLUE classification:
+#   - "weighted_mlm": Weighted attention pooling (CLS-query classification)
+#   - "perceiver_mlm": Perceiver IO Input+Position queries (CLS-query classification)
+#   - "perceiver_posonly_mlm": Perceiver IO Position-only queries (CLS-query classification)
+#   - "perceiver_decoder_cls": Classification via pretrained MLM decoder (loads encoder+decoder weights)
 if [ -n "$3" ]; then
     MODEL_TYPE="$3"
 elif echo "$MODEL_PATH" | grep -q "perceiver_posonly_mlm"; then
@@ -144,7 +169,7 @@ run_single_task() {
     echo "  Started: $(date '+%Y-%m-%d %H:%M:%S')"
     echo "------------------------------------------------------------"
 
-    python training/evaluate_model_on_glue.py \
+    python evaluation/evaluate_model_on_glue.py \
         --model_type "$MODEL_TYPE" \
         --model_name_or_path "$MODEL_PATH" \
         --tokenizer_name "$TOKENIZER_NAME" \
@@ -161,10 +186,16 @@ run_single_task() {
 }
 
 # --- Execute ---
-if [ "$TASK" = "all" ]; then
-    # Run all GLUE tasks sequentially (WNLI excluded - unreliable)
-    # Ordered from fastest to slowest for better progress visibility
+if [ "$TASK" = "all-glue" ]; then
+    # Run ALL GLUE tasks (WNLI excluded - unreliable)
     ALL_TASKS=("cola" "rte" "mrpc" "stsb" "sst2" "qnli" "qqp" "mnli-matched" "mnli-mismatched")
+    TOTAL=${#ALL_TASKS[@]}
+elif [ "$TASK" = "all" ]; then
+    # Concept-relevant tasks only (skip CoLA/RTE/SST-2 — architectural ceiling or low signal)
+    # MRPC, QQP: semantic similarity (concept strength)
+    # STS-B: continuous similarity regression (direct concept quality measure)
+    # MNLI: compositional entailment (tests if concepts preserve meaning)
+    ALL_TASKS=("mrpc" "stsb" "qqp" "mnli-matched" "mnli-mismatched")
     TOTAL=${#ALL_TASKS[@]}
     SUCCEEDED=0
     FAILED=0
