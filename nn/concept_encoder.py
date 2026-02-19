@@ -403,7 +403,6 @@ class ConceptEncoder(PreTrainedModel):
             hidden_states = layer(
                 concept_representations=hidden_states,
                 token_embeddings=token_embeddings,
-                # 3D attention_mask => [batch_size, concept_length, seq_length]
                 attention_mask=key_padding_mask,
             )
 
