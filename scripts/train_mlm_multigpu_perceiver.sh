@@ -149,7 +149,7 @@ LOGGING_STEPS=1000              # More frequent logging for longer training
 EVAL_STRATEGY="steps"
 EVAL_STEPS=5000
 SAVE_STRATEGY="steps"
-SAVE_STEPS=10000                # Must be <= total_steps for load_best_model_at_end to work
+SAVE_STEPS=5000                 # Save every 5000 steps (~2h intervals on 4x RTX 3090)
 
 # Paths are dependent on the server setup:
 # runpod: /workspace/MrCogito
@@ -249,7 +249,7 @@ accelerate launch \
     --optim "adamw_torch_fused" \
     --lr_scheduler_type "cosine" \
     --report_to "wandb" \
-    --save_safetensors True \
+    --save_safetensors False \
     --overwrite_output_dir True \
     --remove_unused_columns True \
     --disable_tqdm False \
@@ -257,7 +257,6 @@ accelerate launch \
     --metric_for_best_model "eval_loss" \
     --greater_is_better False \
     --torch_compile False \
-    --torch_compile_backend "inductor" \
     --torch_compile_dynamic "$TORCH_COMPILE_DYNAMIC" \
     2>&1 | tee -a "$SHELL_LOG"
 

@@ -85,6 +85,11 @@ class ConceptEncoderForMaskedLMPerceiver(PreTrainedModel):
     """
     config_class = ConceptEncoderConfig
     base_model_prefix = "concept_encoder"
+    # Declare tied weight pairs so safetensors handles them correctly.
+    # lm_head.weight is tied to encoder.token_embeddings.weight when
+    # config.tie_word_embeddings=True and token_embedding_dim==hidden_size.
+    # Without this, safetensors >=0.4.3 raises RuntimeError on checkpoint save.
+    _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(
         self, 
@@ -690,6 +695,7 @@ class ConceptEncoderForMaskedLMPerceiverPosOnly(PreTrainedModel):
     """
     config_class = ConceptEncoderConfig
     base_model_prefix = "concept_encoder"
+    _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(
         self, 
