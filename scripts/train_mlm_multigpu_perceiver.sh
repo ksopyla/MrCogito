@@ -51,6 +51,11 @@ export NCCL_IB_GID_INDEX=3
 export NCCL_SOCKET_IFNAME=^docker0,lo
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=1
+
+# CUDA_LAUNCH_BLOCKING=1: makes CUDA kernels synchronous.
+# With the default (0), CUDA errors surface as SIGSEGV instead of Python exceptions.
+# Cost: ~10-20% training slowdown. Disable once training is confirmed stable.
+export CUDA_LAUNCH_BLOCKING=1
 export NVIDIA_TF32_OVERRIDE=1
 
 # =============================================================================
@@ -152,9 +157,9 @@ SAVE_STRATEGY="steps"
 SAVE_STEPS=5000                 # Save every 5000 steps (~2h intervals on 4x RTX 3090)
 
 # Paths are dependent on the server setup:
-# runpod: /workspace/MrCogito
-# odra: $HOME/dev/MrCogito
-# polone: $HOME/dev/MrCogito
+# runpod:  /workspace/MrCogito  (ssh root@<pod-ip> -p <pod-port>)
+# odra:    $HOME/dev/MrCogito   (ssh odra    — configure alias in ~/.ssh/config, see .cursor/rules/computing-environments-remote.mdc)
+# polonez: $HOME/dev/MrCogito   (ssh polonez — configure alias in ~/.ssh/config, see .cursor/rules/computing-environments-remote.mdc)
 PROJECT_ROOT="/home/ksopyla/dev/MrCogito"
 
 OUTPUT_DIR="$PROJECT_ROOT/Cache/Training"
@@ -246,7 +251,7 @@ accelerate launch \
     --dataloader_pin_memory True \
     --dataloader_num_workers 4 \
     --gradient_checkpointing False \
-    --optim "adamw_torch_fused" \
+    --optim "adamw_torch" \
     --lr_scheduler_type "cosine" \
     --report_to "wandb" \
     --save_safetensors False \
