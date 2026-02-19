@@ -8,7 +8,7 @@
 
 ## Context: Why a New Plan?
 
-The v1 plan correctly identified engineering and data-scaling improvements but retained a flawed framing: **"close the 24pt GLUE gap to BERT-Base."** After deeper analysis of the L6 results and the research landscape, this goal is both unachievable with the current architecture and the wrong target. This v3 plan corrects both.
+The v1 plan correctly identified engineering and data-scaling improvements but retained a flawed framing: **"close the 24pt GLUE gap to BERT-Base."** After deeper analysis of the L6 results and the research landscape, this goal is both unachievable with the current architecture and the wrong target. This v2 plan corrects both.
 
 The concept encoder's architecture is designed to *compress and abstract* token-level information. GLUE was designed to *reward preservation* of token-level information (especially CoLA, RTE). These are structurally opposed. The 24-point gap is not a training failure — it is the expected signature of a working information bottleneck being evaluated on a benchmark that penalizes compression.
 
@@ -584,7 +584,7 @@ Carry over from v1 Phase 3.5. Still interesting but complex to implement. Do aft
 
 ## Execution Priority (Revised — 2026-02-18)
 
-### ✅ Already done (2026-02-18)
+### ✅ Already done (2026-02-19)
 
 | Step | What | Result |
 |---|---|---|
@@ -594,30 +594,41 @@ Carry over from v1 Phase 3.5. Still interesting but complex to implement. Do aft
 | ✅ | Enable concept losses in script | `combined + kendall_gal` now default |
 | ✅ | Concept analysis on L6 | **CRITICAL collapse: effective rank 4%** — 5/128 concepts used |
 | ✅ | Masked Diffusion implementation | `nn/concept_encoder_diffusion.py` + training scripts |
+| ✅ | Fix STS-B Pearson bug | `evaluation/evaluate_model_on_glue.py` — predictions squeezed to 1D |
+| ✅ | GLUE script: concept-relevant tasks only | `all` = mrpc,stsb,qqp,mnli; `all-glue` = full set |
+| ✅ | Beyond-GLUE evaluation scripts | `evaluation/evaluate_on_benchmark.py` — SICK + PAWS |
+| ✅ | Recursive Concept Encoder | `nn/concept_encoder_recursive.py` — separate file, 47% fewer encoder params |
 
 ### 🔜 Immediate next (this week)
 
 | # | Experiment | Effort | Expected Impact | Dependencies | Status |
 |---|---|---|---|---|---|
-| **1** | Restart MLM training with `combined+kendall_gal` losses | 5 days GPU | Fix concept collapse (eff. rank 4% → >50%) | None | **Start now** |
-| **2** | Run masked diffusion on Minipile (parallel) | 5 days GPU | Validate diffusion objective | None | **Start now** |
-| **3** | Phase 3: Classification via decoder | 2 days | +5-10pts QNLI/MNLI on L6 model | None | High |
-| **4** | Re-run concept analysis after (1) | 0.5 day | Verify concept losses fixed collapse | After (1) | High |
+| **1** | MLM training with `combined+kendall_gal` losses | 5 days GPU | Fix concept collapse (eff. rank 4% → >50%) | None | **Running on Polonez** |
+| **2** | Eval ViaDecoder classification on L6 | 0.5 day | +5-10pts QNLI/MNLI | None | Ready |
+| **3** | Re-run concept analysis after (1) | 0.5 day | Verify concept losses fixed collapse | After (1) | Waiting |
+
+### 📅 Next 2 weeks
+
+| # | Experiment | Effort | Expected Impact | Dependencies |
+|---|---|---|---|---|
+| **4** | **Recursive MLM:** build `recursive_mlm` model, register in training script | 1 day code | New model type available | None |
+| **5** | **Recursive MLM:** train on Minipile (K=6, concept losses) | 2 GPU-days | ~42M param model with 47% fewer encoder params | (4) |
+| **6** | **Recursive MLM:** concept analysis + GLUE + SICK + PAWS eval | 1 day | Compare recursive vs standard | (5) |
+| **7** | **Recursive MLM:** iteration sweep K=2,4,6,8,12 on GLUE | 0.5 day | Test-time compute scaling validation | (5) |
+| **8** | Run masked diffusion on Minipile (parallel on Odra) | 5 GPU-days | Validate diffusion objective | None |
+| **9** | Phase 4+5: Scale data (OpenWebText+Wiki) + span masking | 7 days | Largest single improvement | After (3) |
+| **10** | Phase 8.1: Dimension inversion (token_dim=32, concept_dim=512) | 3+5 days | Novel efficiency + quality | After (3) |
 
 ### 📅 Next quarter
 
 | # | Experiment | Effort | Expected Impact | Dependencies |
 |---|---|---|---|---|
-| **5** | Phase 4+5: Scale data (OpenWebText+Wiki) + span masking | 7 days | Largest single improvement | After (1) |
-| **6** | Phase 6: Long-context evaluation (SCROLLS/LongBench) | 2 days | Validates efficiency advantage | Phase 4+5 |
-| **7** | Phase 9: Masked Diffusion on large data | 7 days | Best pretraining objective | After (5) |
-| **8** | Phase 10: Slot Attention encoder variant | 5 days code + 5 days train | Fix concept collapse architecturally | Phase 7 |
-| **9** | Phase 8.2: Backbone init from SmolLM2 | 3 days | Bypass data starvation | Phase 1 |
-| **10** | Phase 7: Concept losses ablation (t_regs_mst vs combined) | 2 days | +1-3pts, identify best loss | After (4) |
-| **11** | Phase 8.1: Dimension inversion (token_dim=32, concept_dim=512) | 3+5 days | Novel efficiency + quality | Phase 5 |
-| **12** | Phase 8.3: Position-enriched concepts (RoPE on self-attn) | 2 days | +2-4pts composition | Phase 1 |
+| **11** | Phase 6: Long-context evaluation (SCROLLS/LongBench) | 2 days | Validates efficiency advantage | Phase 9 |
+| **12** | Phase 8.2: Backbone init from SmolLM2 | 3 days | Bypass data starvation | Phase 1 |
+| **13** | Concept losses ablation (t_regs_mst vs combined) | 2 days | +1-3pts, identify best loss | After (3) |
+| **14** | Phase 8.3: Position-enriched concepts (RoPE on self-attn) | 2 days | +2-4pts composition | Phase 1 |
 
-**Critical path:** [Restart MLM with concept losses + Diffusion on Minipile] in parallel → Concept re-analysis → Scale data → Long-context eval → Slot Attention → publish
+**Critical path:** [MLM with concept losses] → Concept re-analysis → [Recursive MLM + Diffusion in parallel] → Pick best → Scale data → Long-context eval → publish
 
 ---
 
@@ -656,7 +667,7 @@ After Phase 6 (long-context eval):
 
 ### Long-term (the original vision, 2-3 years):
 5. **Multimodal SoTA** — concept bottleneck as universal modality bridge; competing with Qwen-Omni / Moshi on speech-text understanding
-6. **Recurrent concept refinement** — apply Geiping et al. recurrent depth idea to concept tokens; each "thinking step" refines the 128 concept vectors; enable test-time compute scaling
+6. **Recurrent concept refinement** — apply Geiping et al. recurrent depth idea to concept tokens; each "thinking step" refines the 128 concept vectors; enable test-time compute scaling. **Implementation started:** `nn/concept_encoder_recursive.py` provides the `RecursiveConceptEncoder` (1 shared layer, K iterations, 47% fewer encoder params). See `docs/plans/experiment_todo_v3.md` TODO 8 for full training/eval plan.
 
 ---
 
@@ -676,9 +687,12 @@ After Phase 6 (long-context eval):
 | T-REGS MST (Mordacq) | 2025 | MST-based uniformity detects dimensional collapse | Better than VICReg | [HF](https://hf.co/papers/2510.23484) |
 | Token Assorted (Su et al.) | 2025 | Mixing latent + text tokens improves reasoning | Hybrid concept-token generation | [HF](https://hf.co/papers/2502.03275) |
 | Information Bottleneck (Shwartz-Ziv) | 2017 | Training = fitting then compression | Theoretical foundation | [HF](https://hf.co/papers/1703.00810) |
+| TRM (Jolicoeur-Martineau) | 2025 | 7M-param recursive model beats LLMs on ARC-AGI | Direct inspiration for `RecursiveConceptEncoder` | [HF](https://hf.co/papers/2510.04871) |
+| ALBERT (Lan et al.) | 2020 | Shared transformer layers, 12M params, 90.6% MRPC F1 | Proves weight tying works at scale | [Paper](https://arxiv.org/abs/1909.11942) |
 
 ---
 
-*Plan v2 created: 2026-02-18*
+*Plan v2 created: 2026-02-18, updated 2026-02-19 (recursive encoder, evaluation refactor)*
 *Previous plan (v1): [`concept_reasoning_experiment_plan_v1.md`](concept_reasoning_experiment_plan_v1.md)*
-*Next review: after Phase 4 training completes*
+*Detailed TODO list: [`experiment_todo_v3.md`](experiment_todo_v3.md)*
+*Next review: after concept analysis on losses training + recursive MLM results*

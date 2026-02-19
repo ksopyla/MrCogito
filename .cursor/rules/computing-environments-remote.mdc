@@ -18,6 +18,8 @@ alwaysApply: false
 Both servers share one dynamic DNS domain, updated automatically via a FreeDNS cron on Polonez.
 Connection details (host, port, user) are stored locally in `~/.ssh/config` — **not in the repository**.
 
+Please use the following SSH aliases to connect to the servers, not their previous IP addresses.
+
 | Server  | SSH alias  | Port | Project root               |
 |---------|-----------|------|----------------------------|
 | Polonez | `polonez` | 2205 | `/home/ksopyla/dev/MrCogito` |
