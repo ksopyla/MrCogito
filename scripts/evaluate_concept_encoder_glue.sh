@@ -1,42 +1,24 @@
 #!/bin/bash
-# Bash script to evaluate the Concept Encoder model on the GLUE benchmark on Linux (Odra)
-# Based on scripts/evaluate_concept_encoder_glue.ps1
+# Evaluate the Concept Encoder model on the GLUE benchmark.
+#
+# MODEL_PATH is set directly in this file — update it when a new model is trained.
+# MODEL_TYPE is auto-detected from MODEL_PATH (no need to change it manually).
 #
 # Usage:
-#   # Single task with default model (perceiver_posonly_mlm):
-#   bash scripts/evaluate_concept_encoder_glue.sh
+#   bash scripts/evaluate_concept_encoder_glue.sh            # all semantic tasks (default)
+#   bash scripts/evaluate_concept_encoder_glue.sh all        # all semantic tasks
+#   bash scripts/evaluate_concept_encoder_glue.sh all-glue   # all GLUE tasks
+#   bash scripts/evaluate_concept_encoder_glue.sh mrpc       # single task
 #
-#   # Specify model path and task:
-#   bash scripts/evaluate_concept_encoder_glue.sh <model_path> <task>
+# Task list: all, all-glue, cola, mrpc, stsb, sst2, qnli, qqp, rte, mnli-matched, mnli-mismatched
 #
-#   # MODEL_TYPE is auto-detected from the model path name.
-#   # Override with $3 if needed:
-#   bash scripts/evaluate_concept_encoder_glue.sh <model_path> <task> <model_type>
-#
-#   # Run ALL GLUE tasks for a single model:
-#   bash scripts/evaluate_concept_encoder_glue.sh <model_path> all
-#
-# Latest model (concept losses enabled, Feb 2026):
-#   perceiver_mlm L6 + combined+kendall_gal (61M, eff. rank 95.5%):
-#     perceiver_mlm_H512L6C128_20260219_105435
-#
-# Best L6 baseline (no concept losses):
-#   perceiver_mlm L6 (61M, MRPC 81.3% F1, eff. rank 4%):
+# Model history:
+#   perceiver_mlm L6 + combined+kendall_gal (Feb 19 2026, eff. rank 95.5%):
+#     perceiver_mlm_H512L6C128_20260219_105435  ← CURRENT
+#   perceiver_mlm L6 baseline (Feb 08 2026, eff. rank 4%):
 #     perceiver_mlm_H512L6C128_20260208_211633
-#
-# Fair Comparison Set (H512L2C128, Minipile + ModernBERT):
-#   1. weighted_mlm      (34M, MRPC 82.2% F1): weighted_mlm_H512L2C128_20260117_153544
-#   2. perceiver_posonly  (36M, MRPC 81.8% F1): perceiver_posonly_mlm_H512L2C128_20260119_204015
-#   3. perceiver_mlm     (36M, MRPC 80.6% F1): perceiver_mlm_H512L2C128_20260118_172328
-#
-# Full GLUE evaluation for all 3 models (run from project root):
-#   P="/home/ksopyla/dev/MrCogito/Cache/Training"
-#   for model in \
-#     "perceiver_mlm_H512L2C128_20260118_172328" \
-#     "weighted_mlm_H512L2C128_20260117_153544" \
-#     "perceiver_posonly_mlm_H512L2C128_20260119_204015"; do
-#       bash scripts/evaluate_concept_encoder_glue.sh "$P/$model/$model" all
-#   done
+#   weighted_mlm L2 (Jan 17 2026, MRPC 82.2% F1):
+#     weighted_mlm_H512L2C128_20260117_153544
 
 set -o pipefail  # Catch errors in piped commands
 
@@ -73,46 +55,32 @@ export TOKENIZERS_PARALLELISM=false
 # Note: perceiver_mlm and perceiver_posonly_mlm use the same classification head
 # (the difference is only in how the MLM decoder works during pretraining)
 
-# --- L6 models + concept losses (H512L6C128, 20ep Minipile, combined+kendall_gal) ---
-# Perceiver MLM L6 + combined+kendall_gal (Feb 19 2026, concept eff. rank 95.5%):
-DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260219_105435/perceiver_mlm_H512L6C128_20260219_105435"
+# =============================================================================
+# MODEL TO EVALUATE — update this when a new model is trained
+# =============================================================================
+# perceiver_mlm L6 + combined+kendall_gal (Feb 19 2026, eff. rank 95.5%)
+MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260219_105435/perceiver_mlm_H512L6C128_20260219_105435"
 
-# --- L6 models (H512L6C128, 40ep Minipile, no concept losses — baseline) ---
-# Perceiver MLM L6 baseline (best on 6/8 tasks, eff. rank 4%):
-# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260208_211633/perceiver_mlm_H512L6C128_20260208_211633"
-# Weighted MLM L6:
-# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/weighted_mlm_H512L6C128_20260207_174251/weighted_mlm_H512L6C128_20260207_174251"
-# Perceiver PosOnly L6:
-# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_posonly_mlm_H512L6C128_20260208_102656/perceiver_posonly_mlm_H512L6C128_20260208_102656"
+# Previous models (uncomment to evaluate):
+# perceiver_mlm L6 baseline — no concept losses (eff. rank 4%)
+# MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260208_211633/perceiver_mlm_H512L6C128_20260208_211633"
+# weighted_mlm L6
+# MODEL_PATH="${PROJECT_ROOT}/Cache/Training/weighted_mlm_H512L6C128_20260207_174251/weighted_mlm_H512L6C128_20260207_174251"
+# perceiver_posonly L6
+# MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_posonly_mlm_H512L6C128_20260208_102656/perceiver_posonly_mlm_H512L6C128_20260208_102656"
+# weighted_mlm L2
+# MODEL_PATH="${PROJECT_ROOT}/Cache/Training/weighted_mlm_H512L2C128_20260117_153544/weighted_mlm_H512L2C128_20260117_153544"
+# perceiver_mlm L2
+# MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L2C128_20260118_172328/perceiver_mlm_H512L2C128_20260118_172328"
+# =============================================================================
 
-# --- L2 models (H512L2C128, legacy) ---
-# Weighted MLM L2:
-# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/weighted_mlm_H512L2C128_20260117_153544/weighted_mlm_H512L2C128_20260117_153544"
-# Perceiver MLM L2:
-# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L2C128_20260118_172328/perceiver_mlm_H512L2C128_20260118_172328"
-# Perceiver PosOnly L2:
-# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_posonly_mlm_H512L2C128_20260119_204015/perceiver_posonly_mlm_H512L2C128_20260119_204015"
+# Task: optional $1, defaults to "all" (semantic-relevant subset)
+# Task list: all, all-glue, cola, mrpc, stsb, sst2, qnli, qqp, rte, mnli-matched, mnli-mismatched
+TASK="${1:-all}"
 
-# Allow overriding model path via first argument
-MODEL_PATH="${1:-$DEFAULT_MODEL_PATH}"
-
-# Task Configuration
-# Default task is mrpc, can be overridden via $2
-# Use "all" to run all GLUE tasks sequentially (excludes wnli)
-TASK="${2:-mrpc}" 
-# Task list: cola, mnli-matched, mnli-mismatched, mrpc, qnli, qqp, rte, sst2, stsb, wnli
-
-# Auto-detect MODEL_TYPE from model path, or accept as $3 override
-# This avoids mismatches when switching between models via $1
-#
-# Supported model types for GLUE classification:
-#   - "weighted_mlm": Weighted attention pooling (CLS-query classification)
-#   - "perceiver_mlm": Perceiver IO Input+Position queries (CLS-query classification)
-#   - "perceiver_posonly_mlm": Perceiver IO Position-only queries (CLS-query classification)
-#   - "perceiver_decoder_cls": Classification via pretrained MLM decoder (loads encoder+decoder weights)
-if [ -n "$3" ]; then
-    MODEL_TYPE="$3"
-elif echo "$MODEL_PATH" | grep -q "perceiver_posonly_mlm"; then
+# Auto-detect MODEL_TYPE from MODEL_PATH name (no manual override needed)
+# Supported: weighted_mlm, perceiver_mlm, perceiver_posonly_mlm, perceiver_decoder_cls
+if echo "$MODEL_PATH" | grep -q "perceiver_posonly_mlm"; then
     MODEL_TYPE="perceiver_posonly_mlm"
 elif echo "$MODEL_PATH" | grep -q "perceiver_mlm"; then
     MODEL_TYPE="perceiver_mlm"
