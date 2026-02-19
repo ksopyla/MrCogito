@@ -15,7 +15,8 @@
 #   .\scripts\sync_evaluation_reports.ps1 -DryRun
 #
 # Prerequisites:
-#   - SSH key auth configured for Polonez
+#   - ~/.ssh/config entry for "polonez" alias configured (see .cursor/rules/computing-environments-remote.mdc)
+#   - SSH public key auth set up on the server
 #   - scp/ssh available (Windows 10+ built-in OpenSSH)
 
 param(
@@ -25,12 +26,12 @@ param(
 )
 
 # --- Configuration ---
-$SSHHost = "ksopyla@79.191.173.66"
-$SSHPort = 2205
+# Uses "polonez" SSH alias from ~/.ssh/config (see .cursor/rules/computing-environments-remote.mdc).
+# Host, port, and username are NOT stored here — configure them in ~/.ssh/config.
+$SSHHost = "polonez"
 $RemotePath = "/home/ksopyla/dev/MrCogito/Cache/Evaluation_reports"
 $LocalPath = "C:\Users\krzys\Dev Projects\MrCogito\Cache\Evaluation_reports"
-# Auto-accept new host keys (Polonez has a dynamic IP).
-# "accept-new" accepts unknown hosts but still rejects changed keys for safety.
+# StrictHostKeyChecking=accept-new: safe for dynamic IPs (accepts new, rejects changed keys).
 $SSHOpts = @("-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15")
 
 # Ensure local directory exists
@@ -41,7 +42,7 @@ if (-not (Test-Path $LocalPath)) {
 
 function Get-RemoteFiles {
     Write-Host "Fetching file list from Polonez..." -ForegroundColor Cyan
-    $remoteFiles = ssh @SSHOpts -p $SSHPort $SSHHost "ls -1 $RemotePath/*.csv 2>/dev/null" 2>$null
+    $remoteFiles = ssh @SSHOpts $SSHHost "ls -1 $RemotePath/*.csv 2>/dev/null" 2>$null
     if ($LASTEXITCODE -ne 0 -or -not $remoteFiles) {
         Write-Host "No CSV files found on Polonez or SSH failed." -ForegroundColor Yellow
         return @()
@@ -92,7 +93,7 @@ function Download-NewReports {
         $localDst = Join-Path $LocalPath $file
         
         Write-Host "  Downloading: $file" -ForegroundColor Gray -NoNewline
-        scp @SSHOpts -P $SSHPort $remoteSrc $localDst 2>$null
+        scp @SSHOpts $remoteSrc $localDst 2>$null
         if ($LASTEXITCODE -eq 0) {
             Write-Host " OK" -ForegroundColor Green
             $downloaded++
@@ -142,7 +143,7 @@ function Upload-NewReports {
         $remoteDst = "${SSHHost}:${RemotePath}/${file}"
         
         Write-Host "  Uploading: $file" -ForegroundColor Gray -NoNewline
-        scp @SSHOpts -P $SSHPort $localSrc $remoteDst 2>$null
+        scp @SSHOpts $localSrc $remoteDst 2>$null
         if ($LASTEXITCODE -eq 0) {
             Write-Host " OK" -ForegroundColor Green
             $uploaded++
@@ -158,7 +159,7 @@ function Upload-NewReports {
 # --- Main ---
 Write-Host "Evaluation Reports Sync" -ForegroundColor Cyan
 Write-Host "  Local:  $LocalPath"
-Write-Host "  Remote: ${SSHHost}:${RemotePath} (port $SSHPort)"
+Write-Host "  Remote: ${SSHHost}:${RemotePath} (connection via ~/.ssh/config)"
 if ($DryRun) { Write-Host "  Mode:   DRY RUN" -ForegroundColor Yellow }
 
 if ($TwoWay) {

@@ -119,6 +119,9 @@ SEED=42
 
 # =============================================================================
 # PATHS (update for your server)
+# runpod:  /workspace/MrCogito        (ssh root@<pod-ip> -p <pod-port>)
+# odra:    /home/ksopyla/dev/MrCogito  (ssh odra    — see .cursor/rules/computing-environments-remote.mdc)
+# polonez: /home/ksopyla/dev/MrCogito  (ssh polonez — see .cursor/rules/computing-environments-remote.mdc)
 # =============================================================================
 PROJECT_ROOT="/home/ksopyla/dev/MrCogito"
 OUTPUT_DIR="$PROJECT_ROOT/Cache/Training"

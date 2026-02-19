@@ -3,17 +3,41 @@ description: python pip poetry computing environments remote: Odra and Polonez U
 alwaysApply: false
 ---
 
-## Remote Odra Server Environment
+## Rules for Working with Remote Servers (Polonez & Odra)
 
-- **OS**: Ubuntu 22.04
-- **GPU**: 3x RTX 3090, each with 24GB VRAM (CUDA compute capability 8.6)
-- **CPU**: AMD Ryzen Threadripper 1900X 8-Core Processor (16 threads)
-- **Memory**: 96GB RAM
-- **Hostname**: odra
-- **Project root**: `/home/ksopyla/dev/MrCogito`
-- **Python**: 3.12 (via Poetry)
-- **CUDA**: 12.x (RTX 3090 requires >= 11.0)
-- **Multi-GPU training**: 3 GPUs with `accelerate` + NCCL backend
+- **NEVER copy source code or project files directly to remote servers** (no `scp`, `rsync`, or file upload of `.py`, `.sh`, `.ps1`, `.toml`, `.yaml`, or any code files).
+- **ALWAYS use Git to sync code**: commit and push changes locally, then ask the user to run `git pull` on the remote server, or offer to trigger it via SSH.
+- If code changes need to be deployed to a remote server, say: *"Please run `git pull` on [server name]"* or ask for permission before running `ssh <server> "cd ~/dev/MrCogito && git pull"`.
+- `scp` is allowed **only** for downloading the non-code data files such as evaluation reports (`.csv`), model checkpoints, or dataset files that are not tracked in Git.
+- Do not create, modify, or delete files on remote servers directly — all code changes must go through the local Git workflow.
+
+---
+
+## SSH Access to Remote Servers
+
+Both servers share one dynamic DNS domain, updated automatically via a FreeDNS cron on Polonez.
+Connection details (host, port, user) are stored locally in `~/.ssh/config` — **not in the repository**.
+
+| Server  | SSH alias  | Port | Project root               |
+|---------|-----------|------|----------------------------|
+| Polonez | `polonez` | 2205 | `/home/ksopyla/dev/MrCogito` |
+| Odra    | `odra`    | 2203 | `/home/ksopyla/dev/MrCogito` |
+
+**After `~/.ssh/config` is configured (see SSH key setup section below):**
+```bash
+ssh polonez    # connect to Polonez (4x RTX 3090)
+ssh odra       # connect to Odra    (3x RTX 3090)
+
+# Run a command remotely
+ssh polonez "cd ~/dev/MrCogito && git status"
+
+# SCP — sync evaluation reports
+scp polonez:/home/ksopyla/dev/MrCogito/Cache/Evaluation_reports/*.csv ./Cache/Evaluation_reports/
+scp localfile.csv polonez:/home/ksopyla/dev/MrCogito/Cache/
+```
+
+---
+
 
 ## Remote Polonez Server Environment
 
@@ -21,81 +45,96 @@ alwaysApply: false
 - **GPU**: 4x RTX 3090, each with 24GB VRAM (CUDA compute capability 8.6)
 - **CPU**: AMD Ryzen Threadripper 3970X 32-Core Processor (64 threads)
 - **Memory**: 256GB RAM
-- **Hostname**: polonez
+- **SSH alias**: `polonez` (configure in `~/.ssh/config`, see SSH key setup section above)
 - **Project root**: `/home/ksopyla/dev/MrCogito`
+- **HuggingFace cache**: `/home/ksopyla/hf_home/`
 - **Python**: 3.12 (via Poetry)
 - **CUDA**: 12.x
-- **Multi-GPU training**: 4 GPUs with `accelerate` + NCCL backend
-- **Estimated training time (L6 model, 30 epochs)**: ~36-48h on 4x RTX 3090
+- **Multi-GPU training**: 4 GPUs via `accelerate` + NCCL
+- **Estimated training time (L6 model, 40 epochs)**: ~36-48h on 4x RTX 3090
+- **FreeDNS cron**: installed, updates domain every 5 min
+
+## Remote Odra Server Environment
+
+- **OS**: Ubuntu 22.04
+- **GPU**: 3x RTX 3090, each with 24GB VRAM (CUDA compute capability 8.6)
+- **CPU**: AMD Ryzen Threadripper 1900X 8-Core Processor (16 threads)
+- **Memory**: 96GB RAM
+- **SSH alias**: `odra` (configure in `~/.ssh/config`, see SSH key setup section above)
+- **Project root**: `/home/ksopyla/dev/MrCogito`
+- **HuggingFace cache**: `/home/ksopyla/hf_home/`
+- **Python**: 3.12 (via Poetry)
+- **CUDA**: 12.x (RTX 3090 requires >= 11.0)
+- **Multi-GPU training**: 3 GPUs via `accelerate` + NCCL
 
 ## RunPod Cloud Environment (on-demand)
 
 - **GPU**: Variable (configured per pod)
 - **Project root**: `/workspace/MrCogito`
 - **Poetry home**: `/workspace/poetry/`
-- **Poetry cache**: `/workspace/poetry/cache`
 - **HuggingFace cache**: `/workspace/hf_home/`
-- **HF datasets cache**: `/workspace/hf_home/datasets/`
-- **Setup script**: `scripts/setup_runpod.sh` - copies SSH keys, sets env vars in `~/.bashrc`
+- **Setup script**: `scripts/setup_runpod.sh` — copies SSH keys, sets env vars in `~/.bashrc`
 
-## Key Environment Variables (all servers)
-
-```bash
-export HF_HOME="/path/to/hf_home/"            # HuggingFace model/dataset cache
-export HF_DATASETS_CACHE="/path/to/datasets/" # Dataset cache override
-export WANDB_API_KEY="..."                    # WandB tracking (from .env file)
-export NCCL_TIMEOUT=3600                      # 1-hour NCCL timeout for multi-GPU
-export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
-export OMP_NUM_THREADS=8
-export NCCL_SOCKET_IFNAME=^docker0,lo         # Exclude problematic network interfaces
-export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
-```
+---
 
 ## Running Training on Remote Servers
 
-**Single-run (one model type):**
 ```bash
-bash scripts/train_mlm_multigpu_perceiver.sh
-```
+# SSH in, then:
+cd ~/dev/MrCogito
+git pull  # sync latest code
 
-**Sequential training of all 3 model types:**
-```bash
+# Single run
+bash scripts/train_mlm_multigpu_perceiver.sh
+
+# Train all 3 model types sequentially
 for TYPE in weighted_mlm perceiver_posonly_mlm perceiver_mlm; do
   sed -i "s/^MODEL_TYPE=.*/MODEL_TYPE=\"$TYPE\"/" scripts/train_mlm_multigpu_perceiver.sh
   bash scripts/train_mlm_multigpu_perceiver.sh
 done
+
+# GLUE evaluation
+bash scripts/evaluate_concept_encoder_glue.sh
+
+# Diffusion model training
+bash scripts/train_diffusion_multigpu.sh
 ```
 
-**GLUE evaluation:**
+## Key Environment Variables (all servers)
+
 ```bash
-bash scripts/evaluate_concept_encoder_glue.sh
+export HF_HOME="/home/ksopyla/hf_home/"
+export HF_DATASETS_CACHE="/home/ksopyla/hf_home/datasets/"
+export WANDB_API_KEY="..."                    # from .env file
+export NCCL_TIMEOUT=3600                      # 1-hour timeout for multi-GPU
+export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+export OMP_NUM_THREADS=8
+export NCCL_SOCKET_IFNAME=^docker0,lo
+export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 ```
 
 ## Multi-GPU Key Details
 
-- Framework: `accelerate` with DDP (DistributedDataParallel) and NCCL backend
-- **Important bug**: Do NOT use `.expand()` in model forward pass for distributed training — use `.repeat()` instead to avoid NCCL gradient synchronization deadlocks (see `docs/debugging/nccl_timeout_fix_2025-11-11.md`)
-- CUDA 12.8 has a known compiler bug affecting RTX 5090 (Blackwell/SM120) — fixed in CUDA 12.9.1+; RTX 3090 (Ampere) is not affected
+- Framework: `accelerate` with DDP + NCCL backend
+- **Critical bug**: Never use `.expand()` in model forward pass in distributed training — use `.repeat()` to avoid NCCL gradient synchronization deadlocks (see `docs/debugging/nccl_timeout_fix_2025-11-11.md`)
 - Effective batch size = `PER_DEVICE_BATCH_SIZE * NUM_GPUS * GRADIENT_ACCUMULATION_STEPS`
+- CUDA 12.8 has a known compiler bug for RTX 5090 (Blackwell/SM120) — fixed in CUDA 12.9.1+; RTX 3090 (Ampere) is unaffected
 
 ## CUDA Diagnostics
 
-If experiencing GPU/CUDA issues on Linux servers, run:
 ```bash
 bash scripts/diagnose_cuda.sh
+nvidia-smi  # check GPU utilization during training
 ```
 
 ## Poetry on Remote Servers
 
 ```bash
-# Install poetry (if not installed)
-curl -sSL https://install.python-poetry.org | python3 -
-
 # Install dependencies
 cd /home/ksopyla/dev/MrCogito
 poetry install
 
-# Run python in poetry env
+# Run in poetry env
 poetry run python training/mlm_training.py [args]
 
 # Or activate shell
