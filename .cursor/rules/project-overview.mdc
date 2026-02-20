@@ -20,8 +20,6 @@ The Concept Encoder uses **cross-attention between a small set of "concept token
 - `weighted_mlm` - Simplified weighted approach using learned position-specific weights (currently recommended for experiments)
 - `perceiver_mlm` - Perceiver IO style decoding with Input+Position queries
 - `perceiver_posonly_mlm` - Perceiver IO decoding with Position-only queries
-- `concept_mlm` - Original attention-based decoding
-- `sim_matrix_mlm` - Similarity matrix variant
 
 ## Project Short-term Goals
 - Develop a transformer architecture using concept-level token masking for better text understanding and longer context processing.
