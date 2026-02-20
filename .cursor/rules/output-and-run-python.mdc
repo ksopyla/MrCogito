@@ -51,7 +51,7 @@ C:\Users\krzys\AppData\Local\pypoetry\Cache\virtualenvs\mrcogito-sHhaXiEk-py3.12
 
 **Windows**: `C:\Users\krzys\Dev Projects\MrCogito`
 
-## Key Dependencies (from pyproject.toml)
+## Key Dependencies are in poetry environment (pyproject.toml)
 
 | Package | Version | Purpose |
 |---|---|---|
@@ -62,10 +62,6 @@ C:\Users\krzys\AppData\Local\pypoetry\Cache\virtualenvs\mrcogito-sHhaXiEk-py3.12
 | wandb | ^0.23.1 | Experiment tracking |
 | evaluate | >=0.4.3 | GLUE benchmark metrics |
 | liger-kernel | >=0.5.0 | Fused Triton kernels for speed |
-| morfessor | ^2.0.6 | Morphological tokenizer |
-| soundfile + librosa | latest | Audio processing |
-| scikit-learn | ^1.7.2 | ML utilities |
-| rich | ^13.9.4 | Pretty terminal output |
 
 ## Running Tests
 
@@ -77,9 +73,7 @@ poetry run pytest tests/
 poetry run pytest tests/test_concept_encoder_layer.py -v
 
 # Run verification scripts (not pytest)
-poetry run python tests/verify_perceiver.py
-poetry run python tests/verify_sparse_decoding.py
-poetry run python tests/verify_dimension_inversion.py
+poetry run python tests/verify_perceiver.py #etc Verify_*.py
 ```
 
 ## WandB Configuration
