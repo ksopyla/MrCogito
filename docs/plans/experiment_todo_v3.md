@@ -1,14 +1,66 @@
 # Experiment TODO List v3
 
-**Created: 2026-02-19**
+**Created: 2026-02-19** | **Updated: 2026-02-19**
 **Status: Active**
-**Context:** Combined losses + kendall_gal training is running on Polonez.
+
+## Summary of Feb 19 Results
+
+| Experiment | Outcome |
+|---|---|
+| Training: combined+kendall_gal (20ep Minipile) | Completed. Concept eff. rank **95.5%** ✓ |
+| GLUE eval: L6 + concept losses | QQP **−13.76%**, MNLI **−10%** vs baseline ✗ |
+| Root cause | Kendall-Gal muted MLM gradient after step ~10k. MLM eval_loss 4.31 vs 2.54. |
+| Key lesson | **Concept diversity without semantic content = worse performance.** |
+| Next experiment | `fixed` loss weight (0.05) to keep MLM dominant, run baseline STS-B |
+
+**Full results:** [`glue_evaluation_concept_losses_20260219.md`](../experiments_results/glue_evaluation_concept_losses_20260219.md)
 
 ---
 
 ## Currently Running
 
-- [x] MLM training with `combined` + `kendall_gal` concept losses on Polonez (perceiver_mlm L6, Minipile)
+- [x] ~~MLM training with `combined` + `kendall_gal`~~ — **COMPLETED & EVALUATED**
+  - Result: concept diversity ✓ but GLUE regressed (QQP −13.76%, MNLI −10%)
+
+## TODO 0: Run L6 baseline STS-B evaluation — DONE ✅
+
+**Result (2026-02-20):** L6 baseline `perceiver_mlm_H512L6C128_20260208_211633` achieves STS-B **Pearson 0.627 / Spearman 0.627**.
+
+The Kendall-Gal concept losses model scored only 0.341 — a **−46% regression** on STS-B. STS-B directly measures semantic similarity, which is exactly what concept encoders should be good at. This confirms the diagnosis: Kendall-Gal destroyed semantic content while maximising geometric diversity.
+
+Reference targets for next training run (fixed 0.1 weighting):
+- STS-B Pearson > 0.60 (within 5% of baseline) ← primary target
+- Concept eff. rank > 30/128 ← secondary target
+- QQP F1 > 70% ← no regression
+
+**Status:** [x] Done
+
+---
+
+## TODO 0b: Re-train L6 with `fixed` concept loss weight (Priority: CRITICAL, Effort: ~6h GPU)
+
+**Problem:** Kendall-Gal over-suppressed MLM, causing QQP −13.76%, MNLI −10% regression.
+
+**Fix:** Switch to `fixed` loss weighting with a small weight so MLM stays dominant:
+
+In `scripts/train_mlm_multigpu_perceiver.sh`:
+```bash
+CONCEPT_LOSSES="combined"
+LOSS_WEIGHTING="fixed"
+LOSS_WEIGHT=0.05   # 5% weight: MLM stays at 100%, concept loss at 5%
+```
+
+**Expected outcome:**
+- MLM eval_loss: close to baseline 2.54 (not degraded)
+- Concept eff. rank: somewhere between 5/128 and 122/128 (partial improvement)
+- GLUE: should not regress vs L6 baseline
+
+**Decision gates after training:**
+- If MLM eval_loss < 3.0 AND eff. rank > 40/128 → success, proceed to full GLUE
+- If MLM eval_loss < 3.0 but eff. rank < 20/128 → increase weight to 0.1
+- If MLM eval_loss > 3.5 → decrease weight to 0.02
+
+**Status:** [ ] Pending
 
 ---
 

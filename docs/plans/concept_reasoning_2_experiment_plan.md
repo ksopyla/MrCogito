@@ -16,7 +16,7 @@ This plan reframes the goal, prioritizes experiments accordingly, and adds the c
 
 ---
 
-## Completed Work (as of 2026-02-18)
+## Completed Work (as of 2026-02-19)
 
 | Step | Status | Key Finding |
 |------|--------|-------------|
@@ -27,30 +27,49 @@ This plan reframes the goal, prioritizes experiments accordingly, and adds the c
 | Full GLUE eval L6 | **Done** | `perceiver_mlm` wins 6/8 tasks; avg gap to BERT-Base = -23.7pts |
 | torch.compile fix (dynamic=True) | **Done** | `training/mlm_training.py` + `--torch_compile_dynamic` flag added |
 | T-REGS MST loss | **Done** | Added `TREGSMSTLoss` + `"t_regs_mst"` registry entry to `nn/loss_manager.py` |
-| Concept losses enabled in script | **Done** | `CONCEPT_LOSSES="combined"`, `LOSS_WEIGHTING="kendall_gal"` in `train_mlm_multigpu_perceiver.sh` |
-| Concept analysis — L6 perceiver_mlm | **Done** | **CRITICAL collapse detected** — see table below |
+| Concept losses enabled in script | **Done** | `CONCEPT_LOSSES="combined"`, `LOSS_WEIGHTING="kendall_gal"` in training script |
+| Concept analysis — L6 baseline | **Done** | **CRITICAL collapse detected**: eff. rank 5/128 (4%), mean sim 0.451, duplicates exist |
 | Masked Diffusion model implementation | **Done** | `nn/concept_encoder_diffusion.py` + `training/train_diffusion.py` + `scripts/train_diffusion_multigpu.sh` |
+| Training L6 + combined+kendall_gal | **Done** | Completed Feb 19. MLM eval_loss 4.31 (vs baseline 2.54). Negative Kendall-Gal total loss (expected). |
+| Concept analysis — L6 + concept losses | **Done** | Eff. rank 122/128 (95.5%), mean sim 0.009 — collapse **fixed**. But MLM quality sacrificed. |
+| Full GLUE eval — L6 + concept losses | **Done** | **Mixed: MRPC +0.11%, QQP −13.76%, MNLI −10%**. See analysis below. |
 
-### Concept Analysis Results — perceiver_mlm H512L6C128 (2026-02-18)
+### Concept Analysis — perceiver_mlm H512L6C128 BEFORE concept losses (2026-02-18)
 
-Raw results: `agent_memory/concept_analysis_l6_20260218.json` (480 samples, 30 batches)
+Raw results: `agent_memory/concept_analysis_l6_20260218.json`
 
-| Metric | Value | Target | Status |
+| Metric | L6 baseline (no losses) | L6 + concept losses | Target |
 |---|---|---|---|
-| Global effective rank (raw) | **5.07** | > 40 | **CRITICAL — collapsed** |
-| Effective rank (normalized) | **0.040** | > 0.3 | **CRITICAL — only 4% used** |
-| Participation ratio (normalized) | **0.013** | > 0.1 | **CRITICAL** |
-| Mean pairwise concept similarity | 0.451 | < 0.3 | **POOR — highly correlated** |
-| Max pairwise concept similarity | **1.000** | < 0.6 | **CRITICAL — duplicated concepts** |
-| Dimensions for 95% variance | 20.6 | > 50 | **Poor — dominated by 20 dims** |
-| Top-1 singular value dominance | **111.8** (vs next 34.1) | balanced | **1 concept dominates** |
-| Uniformity loss | 0.104 | < 0.3 | OK |
-| Collapsed dimensions ratio | 0.0 | 0.0 | Good |
-| Mean dimension std | 0.517 | > 0.3 | OK |
+| Global effective rank | **5.07 / 128** | **122.3 / 128** | > 64 |
+| Effective rank (normalized) | 0.040 (4%) | **0.955 (95.5%)** | > 0.5 |
+| Mean pairwise similarity | 0.451 | **0.009** | < 0.3 |
+| Max pairwise similarity | **1.000** (duplicates) | 0.145 | < 0.6 |
+| Top-1 singular value | 111.8 (dominates) | 24.7 (balanced) | balanced |
+| Dims for 95% variance | 20 | **120** | > 50 |
 
-**Critical finding:** Only **5 out of 128 concepts** have meaningful effective rank. The model is almost entirely dominated by a single concept vector (singular value 111.8 vs next 34.1). At least two concept pairs have cosine similarity = 1.0 (perfect duplicates). This is severe dimensional collapse — the concept bottleneck is not being used effectively.
+**Key finding:** Concept losses fixed the geometric collapse completely. But the downstream GLUE results showed regression, revealing a deeper issue with Kendall-Gal weighting.
 
-**Implication:** The next MLM training run MUST include concept losses. The existing L6 model is essentially running on 5 concept dimensions instead of 128.
+### GLUE Results — L6 + combined+kendall_gal (2026-02-19)
+
+Full report: [`glue_evaluation_concept_losses_20260219.md`](glue_evaluation_concept_losses_20260219.md)
+
+| Task | Metric | L6 + concept losses | L6 baseline | vs baseline |
+|---|---|:---:|:---:|:---:|
+| MRPC | F1 | 81.41% | 81.3% | +0.11% |
+| STS-B | Pearson | 0.341 | N/A | NEW |
+| QQP | F1 | 58.74% | 72.5% | **−13.76%** |
+| MNLI-m | Acc | 48.87% | 59.1% | **−10.23%** |
+| MNLI-mm | Acc | 50.80% | 61.4% | **−10.60%** |
+
+### Critical Diagnosis: Kendall-Gal Muted the MLM Objective
+
+The Kendall-Gal weighting found an equilibrium where `log_var_task > 0` (low MLM precision) and `log_var_combined << 0` (high concept loss precision), causing the training loss to go **negative** (reached −0.26 at step 39000). The MLM gradient contribution was effectively zeroed out after step ~10000.
+
+**Result:** MLM eval_loss 4.31 vs baseline 2.54 — a 70% worse reconstruction quality. The concepts are orthogonal but encode almost no semantic information. The large QQP and MNLI regressions confirm this.
+
+**Key lesson:** Concept diversity without semantic meaningfulness is *worse* than semantic meaningfulness without diversity. The Kendall-Gal weighting is too aggressive for this use case — it treats concept regularisation as equally important as MLM, when it should be a light secondary constraint.
+
+**Target for next experiment:** MLM eval_loss < 3.0 with effective rank > 50% simultaneously. The right tool is `fixed` low-weight regularisation.
 
 **References:**
 - L6 results: [`full_glue_evaluation_20260205.md`](../experiments_results/full_glue_evaluation_20260205.md)
@@ -598,8 +617,11 @@ Carry over from v1 Phase 3.5. Still interesting but complex to implement. Do aft
 | ✅ | GLUE script: concept-relevant tasks only | `all` = mrpc,stsb,qqp,mnli; `all-glue` = full set |
 | ✅ | Beyond-GLUE evaluation scripts | `evaluation/evaluate_on_benchmark.py` — SICK + PAWS |
 | ✅ | Recursive Concept Encoder | `nn/concept_encoder_recursive.py` — separate file, 47% fewer encoder params |
+| ✅ | Training: L6 + combined+kendall_gal | Concept eff. rank **95.5%** ✓. MLM eval_loss **4.31 ✗** (vs 2.54 baseline) |
+| ✅ | GLUE eval: L6 + concept losses | QQP **−13.76%**, MNLI **−10%**, STS-B **−46%** vs baseline. Kendall-Gal muted MLM. |
+| ✅ | STS-B baseline: L6 no losses | Pearson **0.627** / Spearman **0.627** (2026-02-20). Reference for next experiment. |
 
-### 🔜 Immediate next (this week)
+### 🔜 Immediate next — concept loss weight calibration
 
 | # | Experiment | Effort | Expected Impact | Dependencies | Status |
 |---|---|---|---|---|---|

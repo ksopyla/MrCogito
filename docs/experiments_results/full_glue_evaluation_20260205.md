@@ -44,9 +44,12 @@
 | **RTE** | Acc | 56.0 | **57.8** | 53.4 | **57.4** | 52.0 | **56.7** | 78.2 |
 | **MNLI-m** | Acc | 49.0 | **53.8** | 53.9 | **57.6** | 52.5 | **59.1** | 85.4 |
 | **MNLI-mm** | Acc | 50.1 | **55.9** | 56.4 | **59.4** | 54.8 | **61.4** | 85.4 |
-| **STS-B** | -- | -- | -- | -- | -- | -- | -- | 89.4 |
+| **STS-B** | Pearson | -- | -- | -- | -- | -- | **0.627** | 89.4 |
+| **STS-B** | Spearman | -- | -- | -- | -- | -- | **0.627** | -- |
 
-STS-B: missing for both L2 and L6 (pearson metric bug, fixed, pending re-evaluation).
+STS-B L2: missing (Pearson metric bug — fixed Feb 2026, re-run pending).
+STS-B L6 perceiver_mlm: **Pearson 0.627 / Spearman 0.627** (2026-02-20, `perceiver_mlm_H512L6C128_20260208_211633`).
+WandB: https://wandb.ai/ksopyla/MrCogito/runs/glue-stsb-perceiver-mlm-h512l6c128-20260208-211633-61M-20260220_0900
 
 ### Best-Model-Per-Task Improvement (L2 -> L6)
 
@@ -153,3 +156,35 @@ Average gap shrank from -26 pts (L2) to **-23.7 pts** (L6). Progress, but the co
 3. **New: Scale pretraining data** -- the model sees Minipile 40 times; try OpenWebText or a larger subset of The Pile
 4. Step 4 (concept losses) -- quick ablation on L6
 5. Step 3 (multi-query) -- low priority, small expected gains
+
+---
+
+## Update: STS-B Baseline Added (2026-02-20)
+
+STS-B was missing from the original report due to a Pearson metric bug (predictions not squeezed to 1D before passing to `evaluate`). Fixed in `evaluation/evaluate_model_on_glue.py`.
+
+**L6 perceiver_mlm STS-B result** (`perceiver_mlm_H512L6C128_20260208_211633`, 2026-02-20):
+
+| Metric | Score | BERT-Base | Gap |
+|---|:---:|:---:|:---:|
+| Pearson r | **0.627** | 89.4 | -26.7 |
+| Spearman r | **0.627** | — | — |
+
+WandB: https://wandb.ai/ksopyla/MrCogito/runs/glue-stsb-perceiver-mlm-h512l6c128-20260208-211633-61M-20260220_0900
+
+**Context from concept losses experiment (Feb 19 2026):**
+The concept losses model (`perceiver_mlm_H512L6C128_20260219_105435`, Kendall-Gal weighting) achieved STS-B Pearson **0.341** — a **−0.286 regression** vs this baseline. STS-B is a direct semantic similarity task and the clearest indicator that the Kendall-Gal concept losses destroyed semantic content while improving geometric diversity. The upcoming fixed-weight (0.1) experiment should aim to maintain STS-B Pearson close to **0.627**.
+
+**Complete updated gap table (L6 perceiver_mlm vs BERT-Base):**
+
+| Task | Metric | L6 perceiver_mlm | BERT-Base | Gap |
+|---|---|:---:|:---:|:---:|
+| CoLA | MCC | 0.13 | 59.0 | -58.9 |
+| SST-2 | Acc | 77.5 | 93.1 | -15.6 |
+| MRPC | F1 | 81.3 | 89.5 | -8.2 |
+| **STS-B** | **Pearson** | **0.627** | **89.4** | **-26.7** |
+| QQP | F1 | 72.5 | 91.4 | -18.9 |
+| QNLI | Acc | 74.0 | 91.6 | -17.6 |
+| RTE | Acc | 56.7 | 78.2 | -21.5 |
+| MNLI-m | Acc | 59.1 | 85.4 | -26.3 |
+| MNLI-mm | Acc | 61.4 | 85.4 | -24.0 |
