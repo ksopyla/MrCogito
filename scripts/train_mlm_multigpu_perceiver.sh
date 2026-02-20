@@ -53,9 +53,10 @@ export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=1
 
 export NVIDIA_TF32_OVERRIDE=1
-# CUDA_LAUNCH_BLOCKING was set to 1 for diagnostics (Feb 19 SIGSEGV investigation).
-# Root cause was adamw_torch_fused + Kendall-Gal learnable params. Fixed by using
-# fixed loss weighting (no learnable params in LossManager). Removed to restore speed.
+# adamw_torch_fused history:
+#   PyTorch 2.7.1+cu128: SIGSEGV in 4-GPU DDP (pytorch/pytorch#137368, int32 overflow)
+#   PyTorch 2.10+cu128:  FIXED — single-GPU and 2-GPU DDP tests passed (Feb 2026)
+#   Now safe to use fused again after upgrading to 2.10.
 
 # =============================================================================
 # SCALED-UP MODEL CONFIGURATION (v2, 2026-02-06)
@@ -138,7 +139,7 @@ MAX_GRAD_NORM=1.0
 #     → Kendall-Gal muted MLM gradient, causing QQP -13.76%, MNLI -10% regression
 #   fixed 0.1 (current): MLM stays at full weight; concept loss adds 10% regularisation
 #     → Safer: MLM should converge near 2.5 (baseline), concept diversity improves partially
-#     → No learnable params in LossManager → adamw_torch_fused is safe again
+#     → No learnable params in LossManager (adamw_torch_fused fixed in PyTorch 2.10, safe to use again)
 CONCEPT_LOSSES="combined"
 LOSS_WEIGHTING="fixed"
 LOSS_WEIGHT=0.1  # 10% weight on concept loss; MLM loss stays at 100% weight
