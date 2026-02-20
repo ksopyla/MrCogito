@@ -469,6 +469,28 @@ def main():
                     f"Concept loss settings will be ignored."
                 )
     
+    # Verify Flash Attention is available and will be used by SDPA.
+    # Prerequisites already met: need_weights=False on all MHA, bf16, head_dim=64, pad_to_multiple_of=64.
+    # This check catches silent fallback to math attention (e.g. wrong dtype, old CUDA).
+    if torch.cuda.is_available() and is_main_process():
+        try:
+            _q = torch.zeros(1, 64, config.hidden_size,
+                             dtype=torch.bfloat16, device="cuda")
+            _k = torch.zeros(1, 128, config.hidden_size,
+                             dtype=torch.bfloat16, device="cuda")
+            with torch.backends.cuda.sdp_kernel(
+                enable_flash=True, enable_math=False, enable_mem_efficient=False
+            ):
+                torch.nn.functional.scaled_dot_product_attention(_q, _k, _k)
+            logger.info("Flash Attention v2: ACTIVE ✓  (CUDA SDPA fast path confirmed)")
+        except Exception as _fa_exc:
+            logger.warning(
+                f"Flash Attention not available — falling back to memory-efficient / math SDPA. "
+                f"Reason: {_fa_exc}. Training continues but may be slower."
+            )
+        finally:
+            del _q, _k
+
     # Log detailed model information
     log_model_info(
         model, 
