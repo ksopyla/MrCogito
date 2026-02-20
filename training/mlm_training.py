@@ -470,23 +470,31 @@ def main():
                 )
     
     # Verify Flash Attention is available and will be used by SDPA.
-    # Prerequisites already met: need_weights=False on all MHA, bf16, head_dim=64, pad_to_multiple_of=64.
-    # This check catches silent fallback to math attention (e.g. wrong dtype, old CUDA).
+    # F.scaled_dot_product_attention requires 4D tensors: [batch, heads, seq_len, head_dim].
+    # nn.MultiheadAttention(need_weights=False) reshapes internally before calling SDPA,
+    # so the actual training already uses the correct format — this test mirrors that.
     if torch.cuda.is_available() and is_main_process():
+        _num_heads = config.num_attention_heads
+        _head_dim  = config.hidden_size // _num_heads   # 512 / 8 = 64 for L6 model
         try:
-            _q = torch.zeros(1, 64, config.hidden_size,
+            # [batch=1, heads=8, seq_q=128(concepts), head_dim=64]  Q = concepts
+            _q = torch.zeros(1, _num_heads, config.concept_num, _head_dim,
                              dtype=torch.bfloat16, device="cuda")
-            _k = torch.zeros(1, 128, config.hidden_size,
+            # [batch=1, heads=8, seq_k=512(tokens),  head_dim=64]  K/V = tokens
+            _k = torch.zeros(1, _num_heads, 512, _head_dim,
                              dtype=torch.bfloat16, device="cuda")
             with torch.backends.cuda.sdp_kernel(
                 enable_flash=True, enable_math=False, enable_mem_efficient=False
             ):
                 torch.nn.functional.scaled_dot_product_attention(_q, _k, _k)
-            logger.info("Flash Attention v2: ACTIVE ✓  (CUDA SDPA fast path confirmed)")
+            logger.info(
+                f"Flash Attention v2: ACTIVE ✓  "
+                f"(heads={_num_heads}, head_dim={_head_dim}, dtype=bf16)"
+            )
         except Exception as _fa_exc:
             logger.warning(
-                f"Flash Attention not available — falling back to memory-efficient / math SDPA. "
-                f"Reason: {_fa_exc}. Training continues but may be slower."
+                f"Flash Attention not available — training will use memory-efficient / math SDPA. "
+                f"Reason: {_fa_exc}"
             )
         finally:
             del _q, _k
