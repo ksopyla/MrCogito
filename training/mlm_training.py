@@ -639,6 +639,19 @@ def main():
         ]
         if data_args.dataset_name_subset:
             wandb_tags.append(data_args.dataset_name_subset)
+        # Concept loss tags — makes filtering WandB runs by loss config easy
+        if loss_config.is_enabled:
+            wandb_tags.append(f"losses:{'+'.join(loss_config.concept_losses)}")
+            wandb_tags.append(f"weighting:{loss_config.weighting_strategy}")
+            if loss_config.weighting_strategy == "fixed":
+                # Include the weight value so fixed runs are distinguishable
+                task_weight = loss_config.loss_weights.get("task", 1.0)
+                concept_weight = loss_config.loss_weights.get(
+                    loss_config.concept_losses[0], loss_args.loss_weight
+                )
+                wandb_tags.append(f"concept_w:{concept_weight}")
+        else:
+            wandb_tags.append("losses:none")
         
         
         # Create comprehensive config dictionary

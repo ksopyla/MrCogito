@@ -52,11 +52,10 @@ export NCCL_SOCKET_IFNAME=^docker0,lo
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=1
 
-# CUDA_LAUNCH_BLOCKING=1: makes CUDA kernels synchronous.
-# With the default (0), CUDA errors surface as SIGSEGV instead of Python exceptions.
-# Cost: ~10-20% training slowdown. Disable once training is confirmed stable.
-export CUDA_LAUNCH_BLOCKING=1
 export NVIDIA_TF32_OVERRIDE=1
+# CUDA_LAUNCH_BLOCKING was set to 1 for diagnostics (Feb 19 SIGSEGV investigation).
+# Root cause was adamw_torch_fused + Kendall-Gal learnable params. Fixed by using
+# fixed loss weighting (no learnable params in LossManager). Removed to restore speed.
 
 # =============================================================================
 # SCALED-UP MODEL CONFIGURATION (v2, 2026-02-06)
@@ -134,12 +133,15 @@ MAX_GRAD_NORM=1.0
 #   t_regs_mst                    - MST-based uniformity (Mordacq et al. 2025, best collapse detection)
 # Options for loss_weighting: fixed, learnable, kendall_gal
 #
-# Recommended starting config: combined + kendall_gal
-#   - "combined" prevents both norm-collapse (variance) and clustering (uniformity)
-#   - "kendall_gal" learns the optimal MLM-vs-concept balance automatically
+# Loss weighting experiment history:
+#   kendall_gal (Feb 19 run): concept eff. rank 95.5% ✓ but MLM eval_loss 4.31 ✗
+#     → Kendall-Gal muted MLM gradient, causing QQP -13.76%, MNLI -10% regression
+#   fixed 0.1 (current): MLM stays at full weight; concept loss adds 10% regularisation
+#     → Safer: MLM should converge near 2.5 (baseline), concept diversity improves partially
+#     → No learnable params in LossManager → adamw_torch_fused is safe again
 CONCEPT_LOSSES="combined"
-LOSS_WEIGHTING="kendall_gal"
-LOSS_WEIGHT=0.1  # Only used with loss_weighting=fixed
+LOSS_WEIGHTING="fixed"
+LOSS_WEIGHT=0.1  # 10% weight on concept loss; MLM loss stays at 100% weight
 
 # --- torch.compile Configuration ---
 # IMPORTANT: torch_compile_dynamic uses dynamic=True to handle variable masked-token
@@ -251,7 +253,7 @@ accelerate launch \
     --dataloader_pin_memory True \
     --dataloader_num_workers 4 \
     --gradient_checkpointing False \
-    --optim "adamw_torch" \
+    --optim "adamw_torch_fused" \
     --lr_scheduler_type "cosine" \
     --report_to "wandb" \
     --save_safetensors False \

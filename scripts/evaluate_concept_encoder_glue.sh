@@ -58,12 +58,12 @@ export TOKENIZERS_PARALLELISM=false
 # =============================================================================
 # MODEL TO EVALUATE — update this when a new model is trained
 # =============================================================================
-# perceiver_mlm L6 + combined+kendall_gal (Feb 19 2026, eff. rank 95.5%)
-MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260219_105435/perceiver_mlm_H512L6C128_20260219_105435"
+# perceiver_mlm L6 baseline — no concept losses (eff. rank 4%) — STS-B reference run
+MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260208_211633/perceiver_mlm_H512L6C128_20260208_211633"
 
-# Previous models (uncomment to evaluate):
-# perceiver_mlm L6 baseline — no concept losses (eff. rank 4%)
-# MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260208_211633/perceiver_mlm_H512L6C128_20260208_211633"
+# Previous models:
+# perceiver_mlm L6 + combined+kendall_gal (Feb 19 2026, eff. rank 95.5%, QQP/MNLI regressed)
+# MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260219_105435/perceiver_mlm_H512L6C128_20260219_105435"
 # weighted_mlm L6
 # MODEL_PATH="${PROJECT_ROOT}/Cache/Training/weighted_mlm_H512L6C128_20260207_174251/weighted_mlm_H512L6C128_20260207_174251"
 # perceiver_posonly L6
