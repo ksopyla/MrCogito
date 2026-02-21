@@ -313,10 +313,23 @@ def main():
                f"C{model_args.concept_num}D{model_args.decoder_layers}")
     run_identifier = f"{base_id}_{timestamp}"
 
-    training_args.output_dir = os.path.join(training_args.output_dir or "./outputs", run_identifier)
-    training_args.logging_dir = os.path.join(
-        os.path.dirname(training_args.output_dir), "logs", run_identifier
-    )
+    # Setup directories
+    output_dir = training_args.output_dir if training_args.output_dir else "./outputs"
+    
+    # If the user passed "--output_dir ./Cache/Training/", HF Trainer will just dump checkpoints
+    # straight into that folder instead of a unique run folder. So we append the run_identifier.
+    if not output_dir.endswith(run_identifier):
+        training_args.output_dir = os.path.join(output_dir, run_identifier)
+
+    # Force logging_dir to be under Cache/logs/run_identifier
+    if not training_args.logging_dir:
+        # Default fallback
+        training_args.logging_dir = os.path.join(os.path.dirname(training_args.output_dir), "logs", run_identifier)
+    else:
+        # Ensure it also gets the run_identifier folder
+        if not training_args.logging_dir.endswith(run_identifier):
+             training_args.logging_dir = os.path.join(training_args.logging_dir, run_identifier)
+
     training_args.run_name = run_identifier
     training_args.report_to = ["tensorboard", "wandb"]
     training_args.push_to_hub = False

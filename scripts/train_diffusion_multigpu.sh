@@ -200,7 +200,7 @@ accelerate launch \
     --save_safetensors True \
     --overwrite_output_dir True \
     --remove_unused_columns False \
-    --load_best_model_at_end True \
+    --load_best_model_at_end False \
     --metric_for_best_model "eval_loss" \
     --greater_is_better False \
     2>&1 | tee -a "$SHELL_LOG"
