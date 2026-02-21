@@ -55,7 +55,9 @@ export NVIDIA_TF32_OVERRIDE=1
 # MODEL ARCHITECTURE
 # =============================================================================
 # Encoder is identical to the MLM models (H512 L6 C128).
-# You can warm-start from an existing MLM checkpoint (set MODEL_NAME_OR_PATH).
+# Starting from scratch for fair baseline comparison with MLM models
+MODEL_NAME_OR_PATH=""
+
 HIDDEN_SIZE=512
 TOKEN_EMBEDDING_DIM=0         # 0 = same as HIDDEN_SIZE
 NUM_ENCODER_LAYERS=6          # Same depth as best MLM model
@@ -91,11 +93,13 @@ MAX_GRAD_NORM=1.0
 # =============================================================================
 # CONCEPT LOSSES
 # =============================================================================
-# "combined" = variance + uniformity (recommended)
+# Disabled for the first baseline run from scratch to ensure fair comparison
+# with the initial perceiver_mlm baseline which also did not use concept losses.
+# "combined" = variance + uniformity (recommended later)
 # "t_regs_mst" = MST-based uniformity (best at detecting dimensional collapse)
 # Combine both: CONCEPT_LOSSES="combined t_regs_mst"
-CONCEPT_LOSSES="combined"
-LOSS_WEIGHTING="kendall_gal"
+CONCEPT_LOSSES="none"
+LOSS_WEIGHTING="fixed"
 LOSS_WEIGHT=0.1
 
 # =============================================================================
@@ -110,11 +114,11 @@ TORCH_COMPILE_DYNAMIC=False   # Enable once you verify training is stable
 # =============================================================================
 # LOGGING
 # =============================================================================
-LOGGING_STEPS=500
+LOGGING_STEPS=1000
 EVAL_STRATEGY="steps"
-EVAL_STEPS=2500
+EVAL_STEPS=5000
 SAVE_STRATEGY="steps"
-SAVE_STEPS=10000
+SAVE_STEPS=5000
 SEED=42
 
 # =============================================================================
@@ -157,6 +161,7 @@ accelerate launch \
     --decoder_layers "$DECODER_LAYERS" \
     --t_min "$T_MIN" \
     --torch_compile_dynamic "$TORCH_COMPILE_DYNAMIC" \
+    --model_name_or_path "$MODEL_NAME_OR_PATH" \
     --dataset_name "$DATASET_NAME" \
     --dataset_name_subset "$DATASET_SUBSET" \
     --tokenizer_name "$TOKENIZER_NAME" \

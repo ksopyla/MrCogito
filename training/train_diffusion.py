@@ -53,6 +53,7 @@ from torch.utils.data import Dataset
 
 from nn.concept_encoder import ConceptEncoderConfig
 from nn.concept_encoder_diffusion import ConceptEncoderForMaskedDiffusion
+from nn.concept_encoder_perceiver import ConceptEncoderForMaskedLMPerceiver
 from nn.loss_manager import LossConfig, get_available_losses
 
 from training.dataset_preprocess import load_and_preprocess_text_dataset
@@ -99,6 +100,11 @@ class ModelArguments:
                   "Keep --torch_compile False in TrainingArguments when enabled."}
     )
     torch_compile_backend: str = field(default="inductor")
+    model_name_or_path: Optional[str] = field(
+        default=None,
+        metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models. "
+                          "Used to warm-start the encoder weights."}
+    )
 
 
 @dataclass
@@ -269,6 +275,12 @@ def main():
         decoder_layers=model_args.decoder_layers,
         t_min=model_args.t_min,
     )
+
+    if model_args.model_name_or_path:
+        logger.info(f"Warm-starting encoder from {model_args.model_name_or_path}")
+        pretrained_mlm = ConceptEncoderForMaskedLMPerceiver.from_pretrained(model_args.model_name_or_path)
+        model.encoder.load_state_dict(pretrained_mlm.encoder.state_dict())
+        logger.info("Successfully loaded pretrained encoder weights. Diffusion decoder uses random init.")
 
     log_model_info(model, config=config, model_type="diffusion", model_description="Concept + Masked Diffusion")
 
