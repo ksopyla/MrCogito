@@ -115,7 +115,7 @@ bash scripts/evaluate_concept_encoder_glue.sh "$P/weighted_mlm_H512L6C128_202602
 
 ## Full GLUE Benchmark Results (H512L2C128)
 
-Completed 2026-02-05. Full results in [full_glue_evaluation_20260205.md](full_glue_evaluation_20260205.md).
+Completed 2026-02-05. Full results in [l2_vs_l6_scaling.md](comparative_studies/l2_vs_l6_scaling.md).
 
 ---
 

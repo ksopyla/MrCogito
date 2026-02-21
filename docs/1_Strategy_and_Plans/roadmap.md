@@ -51,7 +51,7 @@ Raw results: `agent_memory/concept_analysis_l6_20260218.json`
 
 ### GLUE Results — L6 + combined+kendall_gal (2026-02-19)
 
-Full report: [`glue_evaluation_concept_losses_20260219.md`](glue_evaluation_concept_losses_20260219.md)
+Full report: [`concept_losses_20260219.md`](../2_Experiments_Registry/run_reports/concept_losses_20260219.md)
 
 | Task | Metric | L6 + concept losses | L6 baseline | vs baseline |
 |---|---|:---:|:---:|:---:|
@@ -72,8 +72,8 @@ The Kendall-Gal weighting found an equilibrium where `log_var_task > 0` (low MLM
 **Target for next experiment:** MLM eval_loss < 3.0 with effective rank > 50% simultaneously. The right tool is `fixed` low-weight regularisation.
 
 **References:**
-- L6 results: [`full_glue_evaluation_20260205.md`](../experiments_results/full_glue_evaluation_20260205.md)
-- Baseline comparison: [`encoders_glue_evaluation_baseline.md`](../experiments_results/encoders_glue_evaluation_baseline.md)
+- L6 results: [`l2_vs_l6_scaling.md`](../3_Evaluations_and_Baselines/comparative_studies/l2_vs_l6_scaling.md)
+- Baseline comparison: [`canonical_baselines.md`](../3_Evaluations_and_Baselines/canonical_baselines.md)
 - Embedding space theory: [`embedding_space_capabilites.md`](../research-notes/embedding_space_capabilites.md)
 - Concept analysis raw: `agent_memory/concept_analysis_l6_20260218.json`
 
@@ -689,7 +689,7 @@ After Phase 6 (long-context eval):
 
 ### Long-term (the original vision, 2-3 years):
 5. **Multimodal SoTA** — concept bottleneck as universal modality bridge; competing with Qwen-Omni / Moshi on speech-text understanding
-6. **Recurrent concept refinement** — apply Geiping et al. recurrent depth idea to concept tokens; each "thinking step" refines the 128 concept vectors; enable test-time compute scaling. **Implementation started:** `nn/concept_encoder_recursive.py` provides the `RecursiveConceptEncoder` (1 shared layer, K iterations, 47% fewer encoder params). See `docs/plans/experiment_todo_v3.md` TODO 8 for full training/eval plan.
+6. **Recurrent concept refinement** — apply Geiping et al. recurrent depth idea to concept tokens; each "thinking step" refines the 128 concept vectors; enable test-time compute scaling. **Implementation started:** `nn/concept_encoder_recursive.py` provides the `RecursiveConceptEncoder` (1 shared layer, K iterations, 47% fewer encoder params). See `docs/1_Strategy_and_Plans/active_todos.md` TODO 8 for full training/eval plan.
 
 ---
 
@@ -716,5 +716,5 @@ After Phase 6 (long-context eval):
 
 *Plan v2 created: 2026-02-18, updated 2026-02-19 (recursive encoder, evaluation refactor)*
 *Previous plan (v1): [`concept_reasoning_experiment_plan_v1.md`](concept_reasoning_experiment_plan_v1.md)*
-*Detailed TODO list: [`experiment_todo_v3.md`](experiment_todo_v3.md)*
+*Detailed TODO list: [`active_todos.md`](active_todos.md)*
 *Next review: after concept analysis on losses training + recursive MLM results*

@@ -24,5 +24,8 @@ The Concept Encoder uses **cross-attention between a small set of "concept token
 2. **Concept Quality Evaluation:** We prioritize semantic benchmarks (STS-B, MRPC, QQP, MNLI, SICK, PAWS) and probing tasks over the full GLUE average.
 3. **Data Scaling & Modality Transfer:** Once text concept quality is proven, we will scale the dataset and introduce an audio-to-concept adapter for speech-to-speech tasks.
 
-## `agent_memory/` Folder - AI Working Space
-Use `agent_memory/` (project root) for all temporary and intermediate files generated during agent sessions (plans, code snippets, research findings). Keep it clean and organized.
+## `agent_memory/` vs `docs/` Folder
+- **`agent_memory/`**: Use this for all *temporary* and *intermediate* files generated during agent sessions (e.g., scratchpads, raw json dumps of concept analysis, WIP code snippets).
+- **`docs/`**: Use the numbered hierarchical structure here for *permanent* research knowledge:
+  - Update `docs/2_Experiments_Registry/master_experiment_log.md` immediately after any training or evaluation run finishes.
+  - Put new actionable tasks in `docs/1_Strategy_and_Plans/active_todos.md`.

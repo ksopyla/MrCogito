@@ -1,5 +1,5 @@
 ---
-description: Concept Encoder Research project deep-dive - detailed folder structure, evaluation protocols, model implementations, and latest research directions.
+description: Research project deep-dive and experiemnt tracking and management - detailed folder structure, evaluation protocols, model implementations, training logs, and latest research directions.
 globs: 
 alwaysApply: false
 ---
@@ -38,6 +38,15 @@ bash scripts/evaluate_concept_encoder_paws.sh
 ## 📜 Key Scripts (`scripts/`)
 - **Bash (Linux)**: `train_mlm_multigpu_perceiver.sh`, `train_recursive_mlm.sh`, `evaluate_concept_encoder_glue.sh`
 - **PowerShell (Windows)**: `train_weighted_mlm.ps1`, `evaluate_concept_encoder_glue.ps1`
+
+## 🗂️ Project Documentation Structure (`docs/`)
+- `docs/1_Strategy_and_Plans/roadmap.md` — Long-term vision, theories, and hypotheses.
+- `docs/1_Strategy_and_Plans/active_todos.md` — Short-term, actionable tasks.
+- `docs/2_Experiments_Registry/master_experiment_log.md` — **CRITICAL**: The central table tracking all training runs. **Always update this file when a new training run completes.** Include hardware, hyperparams, GLUE scores, and WandB links.
+- `docs/2_Experiments_Registry/run_reports/` — Detailed analyses of individual runs (e.g., loss curve anomalies).
+- `docs/3_Evaluations_and_Baselines/` — Cross-model comparisons, scaling laws, and BERT baselines.
+- `docs/4_Research_Notes/` — Theoretical explorations and literature reviews.
+- `docs/5_Archive/` — Old plans and deprecated notes.
 
 ## 🗂️ Cache & Logs Structure
 - `Cache/Models/` — Downloaded HuggingFace models

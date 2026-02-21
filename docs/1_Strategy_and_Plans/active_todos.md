@@ -5,15 +5,15 @@
 
 ## Summary of Feb 19 Results
 
-| Experiment | Outcome |
-|---|---|
-| Training: combined+kendall_gal (20ep Minipile) | Completed. Concept eff. rank **95.5%** ✓ |
-| GLUE eval: L6 + concept losses | QQP **−13.76%**, MNLI **−10%** vs baseline ✗ |
-| Root cause | Kendall-Gal muted MLM gradient after step ~10k. MLM eval_loss 4.31 vs 2.54. |
-| Key lesson | **Concept diversity without semantic content = worse performance.** |
-| Next experiment | `fixed` loss weight (0.05) to keep MLM dominant, run baseline STS-B |
+| Experiment | Outcome | WandB Link |
+|---|---|---|
+| Training: combined+kendall_gal (20ep Minipile) | Completed. Concept eff. rank **95.5%** ✓ | [Link](https://wandb.ai/ksopyla/MrCogito/runs/perceiver_mlm_H512L6C128_20260219_105435) |
+| GLUE eval: L6 + concept losses | QQP **−13.76%**, MNLI **−10%** vs baseline ✗ | [Link](https://wandb.ai/ksopyla/MrCogito/runs/glue-mrpc-perceiver-mlm-h512l6c128-20260219-105435-61M-20260219_2027) |
+| Root cause | Kendall-Gal muted MLM gradient after step ~10k. MLM eval_loss 4.31 vs 2.54. | |
+| Key lesson | **Concept diversity without semantic content = worse performance.** | |
+| Next experiment | `fixed` loss weight (0.05) to keep MLM dominant, run baseline STS-B | |
 
-**Full results:** [`glue_evaluation_concept_losses_20260219.md`](../experiments_results/glue_evaluation_concept_losses_20260219.md)
+**Full results:** [`concept_losses_20260219.md`](../2_Experiments_Registry/run_reports/concept_losses_20260219.md)
 
 ---
 
@@ -39,7 +39,7 @@ Reference targets for next training run (fixed 0.1 weighting):
 
 ## TODO 0b: Re-train L6 with `fixed` concept loss weight — DONE ✅
 
-**Result (2026-02-21):** The model was trained with `fixed` weighting (0.1 weight) for the `combined` loss.
+**Result (2026-02-21):** The model was trained with `fixed` weighting (0.1 weight) for the `combined` loss. ([WandB Link](https://wandb.ai/ksopyla/MrCogito/runs/perceiver_mlm_H512L6C128_20260220_184029))
 **Outcome:**
 - MLM eval_loss degraded to **3.57** (vs baseline 2.54).
 - Concept eff. rank collapsed to **15.97 / 128 (12.5%)**.
@@ -161,6 +161,8 @@ Because the combined loss with weight 0.1 still collapsed, we abandon this regul
 
 ## TODO 5: Evaluate with ViaDecoder Classification (Priority: MEDIUM, Effort: 1h)
 
+*Maps to roadmap [Phase 3](roadmap.md#phase-3-classification-via-decoder-2-3-days-coding-1-day-eval)*
+
 **Depends on:** TODO 1 (STS-B fix)
 
 **Action:** Run GLUE eval with `--model_type perceiver_decoder_cls` on existing L6 `perceiver_mlm` checkpoint.
@@ -175,6 +177,8 @@ Because the combined loss with weight 0.1 still collapsed, we abandon this regul
 
 ## TODO 6: Masked Diffusion Experiment (Priority: HIGH, Effort: 5 GPU-days)
 
+*Maps to roadmap [Phase 9](roadmap.md#phase-9-masked-diffusion-decoder--replace-mlm-new--high-priority)*
+
 **When:** After TODO 4 results are in, or in parallel on Odra.
 
 **Action:** Run `bash scripts/train_diffusion_multigpu.sh` on Odra with warm-start from L6 MLM checkpoint + concept losses.
@@ -186,6 +190,8 @@ Because the combined loss with weight 0.1 still collapsed, we abandon this regul
 ---
 
 ## TODO 7: Data Scaling (Priority: HIGH, Effort: 7 GPU-days)
+
+*Maps to roadmap [Phase 4 & 5](roadmap.md#phase-4-scale-pretraining-data--add-contrastive-objective-5-7-days-training)*
 
 **Depends on:** TODO 4 (concept losses validated)
 

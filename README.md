@@ -237,7 +237,7 @@ Comprehensive research documentation is available in `docs/`:
 
 - **`docs/research-notes/concept_encoder_notes.md`**: Core research ideas and methodology
 - **`docs/research-notes/evaluation_strategies.md`**: Evaluation protocols
-- **`docs/experiments_results/encoders_glue_evaluation_baseline.md`**: GLUE benchmark results
+- **`docs/3_Evaluations_and_Baselines/canonical_baselines.md`**: GLUE benchmark results
 - **`docs/experiment_ideas/`**: Future research directions
 
 ## 🛠️ Development
