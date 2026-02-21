@@ -1,111 +1,51 @@
 ---
+description: Crucial rules for local Python execution, Poetry environment, Windows powershell requirements, and text output formatting.
 alwaysApply: true
 ---
 
 ## Output Rules
-
-- Do NOT use LaTeX format for output — it is not properly rendered
-- Use markdown format with all necessary formatting (bold, italic, headers, lists, code blocks)
-- Do not generate intermediate markdown files with summaries unless explicitly asked; use `agent_memory/` for intermediate files if needed
+- Do NOT use LaTeX format for output — it is not properly rendered.
+- Use markdown format with all necessary formatting (bold, italic, headers, lists, code blocks).
+- Do not generate intermediate markdown files with summaries unless explicitly asked; use `agent_memory/` for intermediate files if needed.
 
 ## Local Windows 11 Development Environment
-
 - **OS**: Windows 11
-- **RAM**: 64GB
-- **SSD**: 1TB
-- **GPU**: RTX 3080 laptop GPU (VRAM: 10GB)
-- **CPU**: AMD Ryzen 9 5900HX
-- **Hostname**: jupyter (Krzysztof's laptop)
-- **CUDA**: 12.8 (PyTorch installed from special CUDA 12.8 wheel source)
+- **Hardware**: 64GB RAM, RTX 3080 laptop GPU (10GB VRAM), Ryzen 9 5900HX
+- **Project Root**: `C:\Users\krzys\Dev Projects\MrCogito`
+
+## Windows Local Machine Rules for Python Code
+- Always use PowerShell (`.ps1`) scripts for local runs, not bash.
+- Use double quotes for paths with spaces: `"C:\Users\krzys\Dev Projects\MrCogito"`.
+- Environment variables set in PowerShell: `$env:WANDB_API_KEY = "..."`.
+- Local Training scripts: `scripts/train_weighted_mlm.ps1`, `scripts/train_perceiver_mlm.ps1`.
 
 ## Python & Poetry Setup
+- Python **3.12** managed via **Poetry**.
+- Virtual environment: `mrcogito-sHhaXiEk-py3.12`.
+- **Run Python code always inside the poetry env:**
+  ```powershell
+  # Option 1: run directly
+  poetry run python training/mlm_training.py [args]
 
-- Python **3.12.6** managed via **Poetry**
-- **pyproject.toml** defines all dependencies — check it before installing anything new
-- Poetry virtual environment: `mrcogito-sHhaXiEk-py3.12`
+  # Option 2: use the virtualenv Python directly
+  C:\Users\krzys\AppData\Local\pypoetry\Cache\virtualenvs\mrcogito-sHhaXiEk-py3.12\Scripts\python.exe script.py
+  ```
 
-```powershell
-# Get env info
-poetry env info
-
-# Virtualenv details:
-# Python:     3.12.6
-# Path:       C:\Users\krzys\AppData\Local\pypoetry\Cache\virtualenvs\mrcogito-sHhaXiEk-py3.12
-# Executable: C:\Users\krzys\AppData\Local\pypoetry\Cache\virtualenvs\mrcogito-sHhaXiEk-py3.12\Scripts\python.exe
-```
-
-**Run Python code always inside the poetry env:**
-```powershell
-# Option 1: run directly
-poetry run python training/mlm_training.py [args]
-
-# Option 2: activate env first, then run
-poetry shell
-python training/mlm_training.py [args]
-
-# Option 3: use the virtualenv Python directly
-C:\Users\krzys\AppData\Local\pypoetry\Cache\virtualenvs\mrcogito-sHhaXiEk-py3.12\Scripts\python.exe script.py
-```
-
-## Project Root
-
-**Windows**: `C:\Users\krzys\Dev Projects\MrCogito`
-
-## Key Dependencies are in poetry environment (pyproject.toml)
-
-| Package | Version | Purpose |
-|---|---|---|
-| torch | ^2.9.0 | Deep learning (CUDA 12.8 wheels) |
-| transformers | ^4.47.1 | HuggingFace models |
-| datasets | >=4.0.0 | Dataset loading |
-| accelerate | ^1.2.1 | Distributed training |
-| wandb | ^0.23.1 | Experiment tracking |
-| evaluate | >=0.4.3 | GLUE benchmark metrics |
-| liger-kernel | >=0.5.0 | Fused Triton kernels for speed |
+## Key Dependencies (pyproject.toml)
+- `torch` ^2.9.0 (CUDA 12.8 wheels)
+- `transformers`, `datasets`, `accelerate` (distributed training)
+- `wandb` (Experiment tracking)
+- `evaluate` (GLUE benchmark metrics)
 
 ## Running Tests
-
 ```powershell
 # Run all tests
 poetry run pytest tests/
-
 # Run specific test file
-poetry run pytest tests/test_concept_encoder_layer.py -v
-
-# Run verification scripts (not pytest)
-poetry run python tests/verify_perceiver.py #etc Verify_*.py
+poetry run pytest tests/test_recursive_mlm.py -v
 ```
 
 ## WandB Configuration
-
 - **Project name**: `"MrCogito"`
-- API key stored in `.env` file (gitignored), loaded via `python-dotenv`
-- Training logs in `wandb/` folder
-- Run naming convention: `[dataset]-[task]-[model]`
-
-## Key Project Folders
-
-| Folder | Purpose |
-|---|---|
-| `nn/` | Core ConceptEncoder model implementations |
-| `training/` | MLM training, GLUE evaluation, dataset preprocessing |
-| `scripts/` | PowerShell (`.ps1`) and bash (`.sh`) training scripts |
-| `tests/` | Unit tests (`test_*.py`) and verification scripts (`verify_*.py`) |
-| `playground/` | Prototyping code and Jupyter notebooks |
-| `analysis/` | Model health checks, concept analysis, tokenizer evaluation |
-| `docs/` | Research notes, literature reviews, experiment results, ideas |
-| `agent_memory/` | AI agent intermediate files and notes |
-| `Cache/` | Downloaded models, datasets, tokenizers, eval reports (gitignored) |
-| `Cache/Models/` | Downloaded HuggingFace models and checkpoints |
-| `Cache/Tokenizers/` | Trained morphological and standard tokenizers |
-| `Cache/Datasets/` | Cached training datasets |
-| `Cache/Evaluation_reports/` | CSV evaluation results (format: `[dataset]-[task]-[model]-[date]-[content].csv`) |
-| `Cache/Training/` | Training artifacts and checkpoints |
-| `wandb/` | WandB training logs (gitignored) |
-
-## Windows-Specific Notes
-
-- Always use PowerShell (`.ps1`) scripts for local runs, not bash
-- Use double quotes for paths with spaces: `"C:\Users\krzys\Dev Projects\MrCogito"`
-- Environment variables set in PowerShell: `$env:WANDB_API_KEY = "..."`
-- Training scripts on Windows: `scripts/train_weighted_mlm.ps1`, `scripts/train_perceiver_mlm.ps1`
+- API key stored in `.env` file (gitignored).
+- Run naming convention: `[dataset]-[task]-[model]`.

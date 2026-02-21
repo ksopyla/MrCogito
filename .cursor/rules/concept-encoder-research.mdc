@@ -1,237 +1,52 @@
 ---
-description: Concept Encoder Research project - folder structure and key information locations
+description: Concept Encoder Research project deep-dive - detailed folder structure, evaluation protocols, model implementations, and latest research directions.
 globs: 
 alwaysApply: false
 ---
 
 # Concept Encoder Research Project Guide
 
-## 🎯 Project Overview  
-A research project developing "Concept Encoder and Decoder" — a transformer architecture using concept embeddings that encode information gathered from many text or audio tokens. The ultimate goal is to develop a model that can understand and generate text and audio in a coherent way.
-
-**Repository**: https://github.com/ksopyla/MrCogito
-
-### Core Architecture Idea
-Cross-attention between a **small set of concept tokens** (e.g. 128) and the **full input sequence** (e.g. 512 tokens), compressing information into concept embeddings. This enables efficient long-context processing (~1000x memory reduction vs standard self-attention). The model separates:
-1. **Encoding**: input tokens → concept embeddings (cross-attention)
-2. **Decoding**: concept embeddings → token predictions (various strategies)
-
-### Project Roadmap
-- [x] Implement and train ConceptEncoder via MLM task on Wikitext-103 / MiniPile
-- [x] Evaluate on GLUE benchmark
-- [ ] Improve MLM loss below 3.0 (current best: ~4.0 for L2 models)
-- [ ] Scale to L6 models (~85M params, target <3.0 MLM loss)
-- [ ] Find best decoding strategy (weighted vs perceiver vs sim_matrix)
-- [ ] Autoregressive or diffusion-based audio generation
-- [ ] Full encoder-decoder speech-to-speech model
-
----
-
 ## 🧠 Core Model Implementations (`nn/`)
-
 | File | Description |
 |---|---|
-| [concept_encoder.py](mdc:nn/concept_encoder.py) | Base `ConceptEncoder` architecture: `ConceptEncoderConfig`, `ConceptEncoderLayer` (cross-attention), `ConceptEncoder` |
-| [concept_encoder_weighted.py](mdc:nn/concept_encoder_weighted.py) | **Recommended** — `ConceptEncoderForMaskedLMWeighted` using learned position-specific weights to combine concepts; `ConceptEncoderForSequenceClassificationWeighted` |
-| [concept_encoder_perceiver.py](mdc:nn/concept_encoder_perceiver.py) | Perceiver IO decoding: `ConceptEncoderForMaskedLMPerceiver` (Input+Position queries), `ConceptEncoderForMaskedLMPerceiverPosOnly` (Position-only), `ConceptEncoderForSequenceClassificationPerceiver`, `ConceptEncoderForSequenceClassificationViaDecoder` |
-| [concept_encoder_methods.py](mdc:nn/concept_encoder_methods.py) | Original `ConceptEncoderForMaskedLM` — standard attention-based decoding |
-| [concept_encoder_sim_matrix.py](mdc:nn/concept_encoder_sim_matrix.py) | `ConceptEncoderWithSimMatrixForMaskedLM` — similarity matrix variant |
-| [loss_manager.py](mdc:nn/loss_manager.py) | Extensible loss management system (Strategy/Composite patterns): `LossManager`, `LossConfig`, `OrthogonalityLoss`, `UniformityLoss`, `VICRegLoss`, `FixedWeighting`, `LearnableWeighting`, `KendallGalWeighting` |
-| [concept_losses.py](mdc:nn/concept_losses.py) | **Deprecated** — legacy loss functions, use `loss_manager.py` instead |
+| `concept_encoder.py` | Base `ConceptEncoder` architecture (cross-attention) |
+| `concept_encoder_weighted.py` | `ConceptEncoderForMaskedLMWeighted` (learned position-specific weights) |
+| `concept_encoder_perceiver.py` | Perceiver IO decoding: `ConceptEncoderForMaskedLMPerceiver`, `ConceptEncoderForSequenceClassificationPerceiver`, `ConceptEncoderForSequenceClassificationViaDecoder` |
+| `concept_encoder_recursive.py` | **New**: TRM-style recursive concept encoder (weight-tied shared layer applied K times) |
+| `concept_encoder_recursive_mlm.py` | **New**: `RecursiveConceptEncoderForMaskedLM` (recursive encoder + perceiver decoder) |
+| `loss_manager.py` | Extensible loss manager (`OrthogonalityLoss`, `UniformityLoss`, `VICRegLoss`, `KendallGalWeighting`) |
 
-**Model type → class mapping** (used in `mlm_training.py`):
-- `weighted_mlm` → `ConceptEncoderForMaskedLMWeighted` (**recommended**)
-- `perceiver_mlm` → `ConceptEncoderForMaskedLMPerceiver`
-- `perceiver_posonly_mlm` → `ConceptEncoderForMaskedLMPerceiverPosOnly`
-- `concept_mlm` → `ConceptEncoderForMaskedLM`
-- `sim_matrix_mlm` → `ConceptEncoderWithSimMatrixForMaskedLM`
+## 🛠️ Training & Evaluation (`training/`, `evaluation/`)
+- `training/mlm_training.py` — Main MLM training script (HuggingFace Trainer).
+- `evaluation/evaluate_model_on_glue.py` — Fine-tunes and evaluates on GLUE tasks (MRPC, QQP, STS-B, MNLI prioritized).
+- `evaluation/evaluate_on_benchmark.py` — Beyond-GLUE eval (SICK, PAWS).
+- `analysis/run_concept_analysis.py` — Inspects concept collapse, effective rank, and cosine similarities.
 
-**Key architecture hyperparameters** (v2 config, 2026-02-06):
-- Hidden size: 512, Layers: 6, Concepts: 128, Intermediate: 2048
-- ~85M params (weighted), ~88M params (perceiver variants)
-- Tokenizer: `answerdotai/ModernBERT-base`
-
----
-
-## 🛠️ Training (`training/`)
-
-| File | Description |
-|---|---|
-| [mlm_training.py](mdc:training/mlm_training.py) | **Main MLM training** — supports all model types via `--model_type`, uses HuggingFace Trainer + WandB (project: "MrCogito") |
-| [evaluate_model_on_glue.py](mdc:training/evaluate_model_on_glue.py) | **GLUE benchmark evaluation** — fine-tunes and evaluates on all GLUE tasks, generates CSV reports |
-| [dataset_preprocess.py](mdc:training/dataset_preprocess.py) | Dataset loading/preprocessing, custom MLM collators |
-| [utils_training.py](mdc:training/utils_training.py) | `count_parameters()`, `get_parameter_breakdown()`, `setup_distributed()`, `log_system_info()`, `log_model_info()` |
-| [concept_enc_dec.py](mdc:training/concept_enc_dec.py) | Encoder-decoder: ModernBERT encoder + GPT-2 decoder on CNN/DailyMail summarization |
-| [train_tokenizer_custom.py](mdc:training/train_tokenizer_custom.py) | BPE/Unigram tokenizer training, HuggingFace Hub upload |
-| [train_morfessor_models.py](mdc:training/train_morfessor_models.py) | Morfessor morphological tokenizer training (experimental) |
-| [model_sft.py](mdc:training/model_sft.py) | Supervised fine-tuning script |
-
-**MLM training usage:**
+**MLM Training (Linux servers):**
 ```bash
-# Single GPU (Windows)
-poetry run python training/mlm_training.py --model_type weighted_mlm [args]
-
-# Multi-GPU (Linux servers)
 bash scripts/train_mlm_multigpu_perceiver.sh
+bash scripts/train_recursive_mlm.sh
 ```
 
-**GLUE evaluation usage:**
+**Evaluation Usage (Linux):**
 ```bash
-# Windows
-.\scripts\evaluate_concept_encoder_glue.ps1
-
-# Linux
-bash scripts/evaluate_concept_encoder_glue.sh
-
-# Direct:
-python training/evaluate_model_on_glue.py --model_type concept --task all --batch_size 32 --epochs 5
-python training/evaluate_model_on_glue.py --model_type xlnet --task mrpc --batch_size 16 --epochs 3
+bash scripts/evaluate_concept_encoder_glue.sh # runs concept-relevant tasks (MRPC, QQP, STS-B, MNLI)
+bash scripts/evaluate_concept_encoder_sick.sh
+bash scripts/evaluate_concept_encoder_paws.sh
 ```
 
----
+## 📜 Key Scripts (`scripts/`)
+- **Bash (Linux)**: `train_mlm_multigpu_perceiver.sh`, `train_recursive_mlm.sh`, `evaluate_concept_encoder_glue.sh`
+- **PowerShell (Windows)**: `train_weighted_mlm.ps1`, `evaluate_concept_encoder_glue.ps1`
 
-## 📜 Scripts (`scripts/`)
+## 🗂️ Cache & Logs Structure
+- `Cache/Models/` — Downloaded HuggingFace models
+- `Cache/Evaluation_reports/` — CSV eval results
+- `Cache/Training/` — Checkpoints
+- `wandb/` — Training logs (gitignored)
 
-**PowerShell (Windows):**
-| File | Description |
-|---|---|
-| [train_weighted_mlm.ps1](mdc:scripts/train_weighted_mlm.ps1) | Windows single-GPU MLM training |
-| [train_perceiver_mlm.ps1](mdc:scripts/train_perceiver_mlm.ps1) | Windows Perceiver model training |
-| [evaluate_concept_encoder_glue.ps1](mdc:scripts/evaluate_concept_encoder_glue.ps1) | Windows GLUE evaluation |
-| [sync_evaluation_reports.ps1](mdc:scripts/sync_evaluation_reports.ps1) | Sync eval reports from remote servers |
-
-**Bash (Linux servers):**
-| File | Description |
-|---|---|
-| [train_mlm_multigpu_perceiver.sh](mdc:scripts/train_mlm_multigpu_perceiver.sh) | **Main multi-GPU training** — auto-detects GPU count, supports all 3 model types |
-| [train_weighted_mlm_multigpu.sh](mdc:scripts/train_weighted_mlm_multigpu.sh) | Multi-GPU weighted MLM training |
-| [evaluate_concept_encoder_glue.sh](mdc:scripts/evaluate_concept_encoder_glue.sh) | Linux GLUE evaluation |
-| [train_tokenizer4concepts.sh](mdc:scripts/train_tokenizer4concepts.sh) | Tokenizer training |
-| [evaluate_tokenizers.sh](mdc:scripts/evaluate_tokenizers.sh) | Tokenizer evaluation |
-| [setup_runpod.sh](mdc:scripts/setup_runpod.sh) | RunPod cloud setup (SSH keys, env vars) |
-| [diagnose_cuda.sh](mdc:scripts/diagnose_cuda.sh) | CUDA diagnostics |
-| [upload_model_to_hf.py](mdc:scripts/upload_model_to_hf.py) | Upload models to HuggingFace Hub (`ksopyla` namespace) |
-
----
-
-## 🧪 Tests (`tests/`)
-
-| File | Description |
-|---|---|
-| [test_concept_encoder_layer.py](mdc:tests/test_concept_encoder_layer.py) | Core model layer tests (pytest) |
-| [test_data_collators.py](mdc:tests/test_data_collators.py) | Data collator validation (pytest) |
-| [verify_perceiver.py](mdc:tests/verify_perceiver.py) | Perceiver model forward pass verification |
-| [verify_sparse_decoding.py](mdc:tests/verify_sparse_decoding.py) | Sparse decoding verification |
-| [verify_dimension_inversion.py](mdc:tests/verify_dimension_inversion.py) | Dimension inversion verification (token_embedding_dim < hidden_size) |
-
----
-
-## 🔬 Analysis (`analysis/`)
-
-| File | Description |
-|---|---|
-| [check_model_health.py](mdc:analysis/check_model_health.py) | NaN/Inf checks, concept embedding distribution, forward pass stability, weight inspection |
-| [concept_analysis.py](mdc:analysis/concept_analysis.py) | Concept space analysis utilities |
-| [concept_analysis_notebook.ipynb](mdc:analysis/concept_analysis_notebook.ipynb) | Interactive concept analysis |
-| [evaluate_tokenizers_comprehensive.py](mdc:analysis/evaluate_tokenizers_comprehensive.py) | Comprehensive tokenizer comparison |
-| [micro_model_exploration.py](mdc:analysis/micro_model_exploration.py) | Micro model exploration and debugging |
-
----
-
-## 🔭 Experimentation (`playground/`)
-
-| File | Description |
-|---|---|
-| [concept_layer_step_by_step.py](mdc:playground/concept_layer_step_by_step.py) | Step-by-step concept layer development |
-| [datacollators_playground.py](mdc:playground/datacollators_playground.py) | Masking strategy experiments |
-| [cross_attention_concept_tokens.py](mdc:playground/cross_attention_concept_tokens.py) | Cross-attention experiments |
-| [train_tokenizer_playground.py](mdc:playground/train_tokenizer_playground.py) | Tokenizer experiments |
-| [load_berts.py](mdc:playground/load_berts.py) | BERT model loading utilities |
-| [load_llama32.py](mdc:playground/load_llama32.py) | LLaMA 3.2 loading |
-| [load_pythia_model.py](mdc:playground/load_pythia_model.py) | Pythia model loading |
-| [datasets_review.ipynb](mdc:playground/datasets_review.ipynb) | Interactive dataset exploration |
-| `Qwen/explore_qwen_models.py` | Qwen model family exploration |
-| `Qwen/explore_qwen_omni.py` | Qwen Omni audio model exploration |
-| `audio_tutorial/mel_spectrogram_tutorial.py` | Audio processing / mel spectrogram tutorial |
-
----
-
-## 📚 Research Documentation (`docs/`)
-
-### `docs/research-notes/` — Core Research
-| File | Description |
-|---|---|
-| [concept_encoder_notes.md](mdc:docs/research-notes/concept_encoder_notes.md) | **Main research idea** — cross-attention between concept tokens and sequence tokens |
-| [concept_model_speech2speech.md](mdc:docs/research-notes/concept_model_speech2speech.md) | Speech-to-speech model research, Qwen Omni "Thinker-Talker" architecture |
-| [evaluation_strategies.md](mdc:docs/research-notes/evaluation_strategies.md) | Benchmark evaluation protocols |
-| [datasets_review_for_training.md](mdc:docs/research-notes/datasets_review_for_training.md) | Training dataset recommendations and analysis |
-| [concept_analysis_framework.md](mdc:docs/research-notes/concept_analysis_framework.md) | Framework for analyzing concept embedding space |
-| [embedding_space_capabilites.md](mdc:docs/research-notes/embedding_space_capabilites.md) | Embedding space capability analysis |
-
-### `docs/literature_review/` — Publication Summaries
-| File | Description |
-|---|---|
-| [concept_transformer_ai_report.md](mdc:docs/literature_review/concept_transformer_ai_report.md) | Comprehensive concept transformer research analysis |
-| [concept_modeling_encoding.md](mdc:docs/literature_review/concept_modeling_encoding.md) | Concept encoding techniques from literature |
-| [encoder_evaluation_summary_from_publications.md](mdc:docs/literature_review/encoder_evaluation_summary_from_publications.md) | Evaluation methodologies from literature |
-| [encoders_model_architectures.md](mdc:docs/literature_review/encoders_model_architectures.md) | Encoder architecture review |
-| [masked_language_models.md](mdc:docs/literature_review/masked_language_models.md) | MLM strategies and variants |
-| [publication_extracts_multi_masking.md](mdc:docs/literature_review/publication_extracts_multi_masking.md) | Multi-token masking research extracts |
-| [insertion_transformer.md](mdc:docs/literature_review/insertion_transformer.md) | Insertion Transformer review |
-
-### `docs/experiments_results/` — Evaluation Results
-| File | Description |
-|---|---|
-| [encoders_glue_evaluation_baseline.md](mdc:docs/experiments_results/encoders_glue_evaluation_baseline.md) | Current GLUE benchmark baseline results |
-| [full_glue_evaluation_20260205.md](mdc:docs/experiments_results/full_glue_evaluation_20260205.md) | Full GLUE evaluation run (2026-02-05) |
-| [mining_mwt_experiment_notes.md](mdc:docs/experiments_results/mining_mwt_experiment_notes.md) | Multi-word token (MWT) extraction experiment notes |
-
-### `docs/experiment_ideas/` — Future Ideas
-| File | Description |
-|---|---|
-| [concept_encoder_training_protocol_v1.md](mdc:docs/experiment_ideas/concept_encoder_training_protocol_v1.md) | Training protocol v1 |
-| [idea1_unsed_tokens_as_registers.md](mdc:docs/experiment_ideas/idea1_unsed_tokens_as_registers.md) | Unused tokens as register tokens idea |
-| [idea4_morphological_aware_tokenization.md](mdc:docs/experiment_ideas/idea4_morphological_aware_tokenization.md) | Morphological tokenization idea |
-| [idea5_advanced_concept_decoding.md](mdc:docs/experiment_ideas/idea5_advanced_concept_decoding.md) | Advanced concept decoding ideas |
-
-### `docs/plans/` — Experiment Plans
-| File | Description |
-|---|---|
-| [experiment_encoders_weighted_perceiver.md](mdc:docs/plans/experiment_encoders_weighted_perceiver.md) | Weighted vs Perceiver experiment plan |
-
-### `docs/debugging/` — Troubleshooting
-| File | Description |
-|---|---|
-| [nccl_timeout_fix_2025-11-11.md](mdc:docs/debugging/nccl_timeout_fix_2025-11-11.md) | **Important**: NCCL timeout fix — use `.repeat()` not `.expand()` in distributed training |
-
----
-
-## 📊 Evaluation & Results
-
-- **GLUE Results**: `docs/experiments_results/` — markdown summaries
-- **CSV Reports**: `Cache/Evaluation_reports/` — format: `[dataset]-[task]-[model]-[date]-[content].csv`
-- **WandB**: `wandb/` folder — project name `"MrCogito"`, run naming: `[dataset]-[task]-[model]`
-- **Model checkpoints**: `Cache/Training/`
-
----
-
-## 🗂️ Cache Structure (`Cache/`)
-
-```
-Cache/
-├── Models/            - Downloaded HuggingFace models and checkpoints
-├── Tokenizers/        - Trained morphological and standard tokenizers  
-├── Datasets/          - Cached training datasets
-├── Evaluation_reports/ - CSV evaluation results
-├── Training/          - Training artifacts and checkpoints
-└── Outputs/           - Generated content and results
-```
-
----
-
-## 🤖 Agent Memory (`agent_memory/`)
-
-Working space for AI agent sessions:
-- `research_plan_v2_20260213.md` — Current research plan with diagnostic analysis
-
-Use this folder for intermediate plans, summaries, code snippets, and future reference items.
+## 🔭 Current Research Direction
+1. **Concept Collapse Diagnosis:** The original MLM objective causes concept embeddings to collapse into a highly correlated space (effective rank ~5/128). Current priority is using regularization (`combined` losses + `fixed` weights) or alternate generative objectives (Masked Diffusion) to restore concept diversity without destroying semantics.
+2. **Recursive Concept Encoder:** Inspired by the TRM paper, the `recursive_mlm` architecture ties weights across iteration steps ($K$). This naturally supports latent reasoning and test-time compute scaling with far fewer parameters (e.g. 42M vs 61M).
+3. **Probing and Semantic Similarity:** We are dropping syntactic GLUE tasks (CoLA) and prioritizing STS-B (Pearson/Spearman), SICK (Relatedness), PAWS (Paraphrase), and SentEval probing tasks to explicitly measure what semantic properties survive the concept bottleneck.
+4. **Audio Roadmap:** We validate architecture on text first. Once proven, we'll introduce an audio-to-concept adapter to map mel-spectrograms into the frozen text concept space, leading to a "Concept-Talker" speech-to-speech model.
