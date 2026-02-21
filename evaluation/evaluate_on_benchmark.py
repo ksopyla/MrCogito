@@ -167,9 +167,9 @@ def load_benchmark_dataset(benchmark_name, tokenizer, max_length):
     cfg = BENCHMARKS[benchmark_name]
 
     if cfg["dataset_config"]:
-        raw = load_dataset(cfg["dataset_id"], cfg["dataset_config"], cache_dir=DATASET_CACHE_DIR)
+        raw = load_dataset(cfg["dataset_id"], cfg["dataset_config"], cache_dir=DATASET_CACHE_DIR, trust_remote_code=True)
     else:
-        raw = load_dataset(cfg["dataset_id"], cache_dir=DATASET_CACHE_DIR)
+        raw = load_dataset(cfg["dataset_id"], cache_dir=DATASET_CACHE_DIR, trust_remote_code=True)
 
     def preprocess(examples):
         texts_a = examples[cfg["input_columns"][0]]
