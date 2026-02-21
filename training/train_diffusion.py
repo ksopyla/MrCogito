@@ -94,12 +94,16 @@ class ModelArguments:
         metadata={"help": "Minimum noise level sampled during training. "
                   "Avoids trivial t≈0 steps where nothing is masked."}
     )
+    # torch.compile is applied MANUALLY here (not via TrainingArguments.torch_compile) so we
+    # can pass dynamic=True.  TrainingArguments.torch_compile should be kept False to avoid
+    # double-compilation.
     torch_compile_dynamic: bool = field(
         default=False,
-        metadata={"help": "Compile with torch.compile(dynamic=True). "
-                  "Keep --torch_compile False in TrainingArguments when enabled."}
+        metadata={"help": "Compile model with torch.compile(dynamic=True) for stable training "
+                          "with variable-shape tensors. "
+                          "Keep TrainingArguments.torch_compile=False when this is True. "
+                          "Backend is read from TrainingArguments.torch_compile_backend (default: inductor)."}
     )
-    torch_compile_backend: str = field(default="inductor")
     model_name_or_path: Optional[str] = field(
         default=None,
         metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models. "
@@ -284,11 +288,22 @@ def main():
 
     log_model_info(model, config=config, model_type="diffusion", model_description="Concept + Masked Diffusion")
 
-    # torch.compile (dynamic=True to avoid recompile on variable mask sizes)
-    if model_args.torch_compile_dynamic and torch.cuda.is_available():
-        logger.info(f"torch.compile(dynamic=True, backend={model_args.torch_compile_backend})")
-        model = torch.compile(model, dynamic=True, fullgraph=False,
-                              backend=model_args.torch_compile_backend)
+    # Apply torch.compile with dynamic=True AFTER model init, BEFORE Trainer creation.
+    # Using dynamic=True prevents constant recompilation caused by variable masked-token counts.
+    # Keep training_args.torch_compile=False so HF Trainer does NOT compile again.
+    if model_args.torch_compile_dynamic:
+        if not torch.cuda.is_available():
+            logger.warning("torch_compile_dynamic=True but no CUDA detected — skipping compile.")
+        else:
+            backend = getattr(training_args, "torch_compile_backend", None) or "inductor"
+            logger.info(f"Applying torch.compile(dynamic=True, backend='{backend}') ...")
+            model = torch.compile(
+                model,
+                dynamic=True,    # Handle variable masked-token shapes without recompilation
+                fullgraph=False, # Allow graph breaks (safer for complex HF models)
+                backend=backend,
+            )
+            logger.info("torch.compile applied successfully.")
 
     # Run identifier
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
