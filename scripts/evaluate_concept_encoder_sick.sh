@@ -29,8 +29,10 @@ export TOKENIZERS_PARALLELISM=false
 # =============================================================================
 # MODEL TO EVALUATE — update this when a new model is trained
 # =============================================================================
+# perceiver_mlm L6 + fixed0.1 combined (Feb 20 2026, eff. rank 12.5%)
+MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260220_184029/perceiver_mlm_H512L6C128_20260220_184029"
 # perceiver_mlm L6 + combined+kendall_gal (Feb 19 2026, eff. rank 95.5%)
-MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260219_105435/perceiver_mlm_H512L6C128_20260219_105435"
+# MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260219_105435/perceiver_mlm_H512L6C128_20260219_105435"
 # L6 baseline — no concept losses (eff. rank 4%)
 # MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260208_211633/perceiver_mlm_H512L6C128_20260208_211633"
 # =============================================================================
