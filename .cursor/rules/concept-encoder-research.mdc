@@ -6,6 +6,8 @@ alwaysApply: false
 
 # Concept Encoder Research Project Guide
 
+1. use the ai resercher skill while doing research and development.
+
 ## 🧠 Core Model Implementations (`nn/`)
 | File | Description |
 |---|---|
@@ -36,8 +38,8 @@ bash scripts/evaluate_concept_encoder_paws.sh
 ```
 
 ## 📜 Key Scripts (`scripts/`)
-- **Bash (Linux)**: `train_mlm_multigpu_perceiver.sh`, `train_recursive_mlm.sh`, `evaluate_concept_encoder_glue.sh`
-- **PowerShell (Windows)**: `train_weighted_mlm.ps1`, `evaluate_concept_encoder_glue.ps1`
+- **Bash (Linux)**: `train_mlm_multigpu_perceiver.sh`, `train_recursive_mlm.sh`, `train_diffusion_multigpu.sh`, `evaluate_concept_encoder_glue.sh`
+- **PowerShell (Windows)**: `train_weighted_mlm.ps1`, `evaluate_concept_encoder_glue.ps1`, `sync_evaluation_reports.ps1` (for synchronizing reports from remote servers)
 
 ## 🗂️ Project Documentation Structure (`docs/`)
 - `docs/1_Strategy_and_Plans/roadmap.md` — Long-term vision, theories, and hypotheses.
@@ -48,10 +50,11 @@ bash scripts/evaluate_concept_encoder_paws.sh
 - `docs/4_Research_Notes/` — Theoretical explorations and literature reviews.
 - `docs/5_Archive/` — Old plans and deprecated notes.
 
-## 🗂️ Cache & Logs Structure
+## 🗂️ Cache & Logs Structure (Local & Remote)
+- `Cache/` — This crucial folder stores synchronized files from remote servers (Polonez/Odra). Always check here for the latest results after running `scripts/sync_evaluation_reports.ps1`.
 - `Cache/Models/` — Downloaded HuggingFace models
-- `Cache/Evaluation_reports/` — CSV eval results
-- `Cache/Training/` — Checkpoints
+- `Cache/Evaluation_reports/` — CSV eval results synchronized from remote servers
+- `Cache/Training/` — Model checkpoints and optimizer states
 - `wandb/` — Training logs (gitignored)
 
 ## 🔭 Current Research Direction
