@@ -173,7 +173,7 @@ STS-B was missing from the original report due to a Pearson metric bug (predicti
 WandB: https://wandb.ai/ksopyla/MrCogito/runs/glue-stsb-perceiver-mlm-h512l6c128-20260208-211633-61M-20260220_0900
 
 **Context from concept losses experiment (Feb 19 2026):**
-The concept losses model (`perceiver_mlm_H512L6C128_20260219_105435`, Kendall-Gal weighting) achieved STS-B Pearson **0.341** — a **−0.286 regression** vs this baseline. STS-B is a direct semantic similarity task and the clearest indicator that the Kendall-Gal concept losses destroyed semantic content while improving geometric diversity. The upcoming fixed-weight (0.1) experiment should aim to maintain STS-B Pearson close to **0.627**.
+The concept losses model (`perceiver_mlm_H512L6C128_20260219_105435`, Kendall-Gal weighting) achieved STS-B Pearson **0.341** — a **−0.286 regression** vs this baseline. STS-B is a direct semantic similarity task and the clearest indicator that the Kendall-Gal concept losses destroyed semantic content while improving geometric diversity. (Update: A follow-up `fixed-weight` (0.1) experiment on Feb 21 failed to fix dimensional collapse and also degraded MLM loss to 3.57, so we are abandoning `combined` loss for `t_regs_mst` or Masked Diffusion).
 
 **Complete updated gap table (L6 perceiver_mlm vs BERT-Base):**
 

@@ -78,6 +78,26 @@ Kendall-Gal (Kendall & Gal, 2018) was designed for multi-task learning where all
 
 ---
 
+## Update (Feb 21 2026) — Fixed Weight 0.1 Experiment
+
+We trained the L6 model using `fixed` loss weighting with `LOSS_WEIGHT=0.1` and `combined` loss.
+**Model:** `perceiver_mlm_H512L6C128_20260220_184029`
+
+**Results:**
+- **MLM eval_loss:** 3.57 (degraded from baseline 2.54, but better than Kendall-Gal's 4.31)
+- **Concept eff. rank:** 15.97 / 128 (12.5%) — **✗ POOR (Collapsed)**
+- **Mean concept similarity:** 0.13 — ✓ GOOD
+- **Max concept similarity:** 0.999 — ✗ POOR
+
+**Diagnosis:**
+The fixed weight of 0.1 was still too disruptive to the MLM objective (loss 3.57 > 3.0), yet it was **insufficient** to fix the dimensional collapse. The model still collapsed to an effective rank of ~16. This proves that the `combined` loss (orthogonality) is fundamentally struggling to regularize the space without destroying the MLM gradient.
+Because the concept rank is so poor, running GLUE evaluation on this checkpoint is not recommended, as the bottleneck has still collapsed.
+
+**Recommendation:**
+The `combined` loss is ineffective. We must switch to a direct variance regularizer (`VICReg`) or the newly implemented `t_regs_mst` (Minimum Spanning Tree uniformity), which directly forces the utilization of dimensions. Alternatively, accelerate the shift to the **Masked Diffusion** objective, which bypasses this regularisation tuning entirely by forcing concepts to hold semantic meaning.
+
+---
+
 ## WandB Runs
 
 | Task | WandB Run |

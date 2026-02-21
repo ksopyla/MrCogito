@@ -625,9 +625,9 @@ Carry over from v1 Phase 3.5. Still interesting but complex to implement. Do aft
 
 | # | Experiment | Effort | Expected Impact | Dependencies | Status |
 |---|---|---|---|---|---|
-| **1** | MLM training with `combined+kendall_gal` losses | 5 days GPU | Fix concept collapse (eff. rank 4% → >50%) | None | **Running on Polonez** |
+| **1** | MLM training with `combined` (fixed 0.1 weight) | 5 days GPU | Fix concept collapse | None | **DONE** (Eval loss degraded, rank 12.5% ✗) |
 | **2** | Eval ViaDecoder classification on L6 | 0.5 day | +5-10pts QNLI/MNLI | None | Ready |
-| **3** | Re-run concept analysis after (1) | 0.5 day | Verify concept losses fixed collapse | After (1) | Waiting |
+| **3** | Re-run concept analysis after (1) | 0.5 day | Verify concept losses fixed collapse | After (1) | **DONE** (Still collapsed ✗) |
 
 ### 📅 Next 2 weeks
 

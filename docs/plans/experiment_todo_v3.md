@@ -37,30 +37,16 @@ Reference targets for next training run (fixed 0.1 weighting):
 
 ---
 
-## TODO 0b: Re-train L6 with `fixed` concept loss weight (Priority: CRITICAL, Effort: ~6h GPU)
+## TODO 0b: Re-train L6 with `fixed` concept loss weight — DONE ✅
 
-**Problem:** Kendall-Gal over-suppressed MLM, causing QQP −13.76%, MNLI −10% regression.
+**Result (2026-02-21):** The model was trained with `fixed` weighting (0.1 weight) for the `combined` loss.
+**Outcome:**
+- MLM eval_loss degraded to **3.57** (vs baseline 2.54).
+- Concept eff. rank collapsed to **15.97 / 128 (12.5%)**.
 
-**Fix:** Switch to `fixed` loss weighting with a small weight so MLM stays dominant:
+**Conclusion:** `combined` loss at 0.1 weight hurts the MLM objective while still failing to prevent dimensional collapse. This regularisation approach is fundamentally flawed for our setup. We should abandon `combined` loss and move to `t_regs_mst` or Masked Diffusion.
 
-In `scripts/train_mlm_multigpu_perceiver.sh`:
-```bash
-CONCEPT_LOSSES="combined"
-LOSS_WEIGHTING="fixed"
-LOSS_WEIGHT=0.05   # 5% weight: MLM stays at 100%, concept loss at 5%
-```
-
-**Expected outcome:**
-- MLM eval_loss: close to baseline 2.54 (not degraded)
-- Concept eff. rank: somewhere between 5/128 and 122/128 (partial improvement)
-- GLUE: should not regress vs L6 baseline
-
-**Decision gates after training:**
-- If MLM eval_loss < 3.0 AND eff. rank > 40/128 → success, proceed to full GLUE
-- If MLM eval_loss < 3.0 but eff. rank < 20/128 → increase weight to 0.1
-- If MLM eval_loss > 3.5 → decrease weight to 0.02
-
-**Status:** [ ] Pending
+**Status:** [x] Done
 
 ---
 
@@ -154,26 +140,22 @@ Reuse existing classification architecture (small heads):
 
 ---
 
-## TODO 4: Re-run Concept Analysis After Training (Priority: HIGH, Effort: 0.5h)
+## TODO 4: Re-run Concept Analysis After Training — DONE ✅
 
-**Depends on:** Currently running MLM + concept losses training completing.
+**Action (2026-02-21):** Ran `run_concept_analysis.py` on the `perceiver_mlm_H512L6C128_20260220_184029` checkpoint (fixed 0.1 weight for combined loss).
 
-**Action:** Run `analysis/run_concept_analysis.py` on the new checkpoint.
+**Results:**
+- Effective rank: **15.97 / 128 (12.5%)** — ✗ POOR (Target > 40)
+- Mean pairwise concept similarity: **0.133** — ✓ GOOD (Target < 0.3)
+- Max pairwise concept similarity: **0.999** — ✗ POOR (Target < 0.6)
+- Top-1 singular value dominance: **83.1** — ✗ POOR (Target < 50)
 
-**Key metrics to compare with baseline (effective_rank=5.07):**
-- Effective rank (target: > 40 out of 128)
-- Mean pairwise concept similarity (target: < 0.3)
-- Max pairwise concept similarity (target: < 0.6, was 1.0)
-- Top-1 singular value dominance (target: < 50, was 111.8)
-
-**Decision gate:**
+**Decision gate reached:**
 ```
-effective_rank > 40  → concept losses work, proceed to data scaling
-effective_rank 20-40 → partial fix, try stronger weights or add T-REGS MST
-effective_rank < 20  → concept losses alone insufficient, implement Slot Attention
+effective_rank < 20  → concept losses alone insufficient, implement Slot Attention or Masked Diffusion. 
+Because the combined loss with weight 0.1 still collapsed, we abandon this regularisation track. 
 ```
-
-**Status:** [ ] Waiting for training
+**Status:** [x] Done
 
 ---
 
@@ -230,10 +212,11 @@ effective_rank < 20  → concept losses alone insufficient, implement Slot Atten
 | File | Purpose | Status |
 |---|---|---|
 | `nn/concept_encoder_recursive.py` | `RecursiveConceptEncoderConfig`, `RecursiveConceptEncoder` (1 shared layer, K iterations) | [x] Done |
-| `nn/concept_encoder_recursive_mlm.py` | `RecursiveConceptEncoderForMaskedLM` — Perceiver IO decoder on top of recursive encoder | [ ] TODO |
-| `training/mlm_training.py` | Add `recursive_mlm` to `MODEL_REGISTRY` | [ ] TODO |
-| `scripts/train_recursive_mlm.sh` | Multi-GPU training script for recursive variant | [ ] TODO |
+| `nn/concept_encoder_recursive_mlm.py` | `RecursiveConceptEncoderForMaskedLM` — Perceiver IO decoder on top of recursive encoder | [x] Done |
+| `training/mlm_training.py` | Add `recursive_mlm` to `MODEL_REGISTRY` + `RecursiveConceptEncoderConfig` | [x] Done |
+| `scripts/train_recursive_mlm.sh` | Multi-GPU training script for recursive variant | [x] Done |
 | `tests/test_recursive_encoder.py` | Basic forward pass + param count verification | [x] Done |
+| `tests/test_recursive_mlm.py` | MLM forward pass + loss + registry + test-time scaling | [x] Done |
 
 ### Architecture
 
@@ -265,7 +248,8 @@ except `self.encoder` is a `RecursiveConceptEncoder` instead of a `ConceptEncode
 # model_type: recursive_mlm
 # Architecture: RecursiveConceptEncoderForMaskedLM, H512, K=6, C128
 # Data: Minipile, 20 epochs
-# Losses: combined + kendall_gal (same as current training run)
+# Losses: combined + fixed 0.1 (NOT kendall_gal — lesson from Feb 19)
+# LR: 2e-4 (slightly lower than 3e-4 for gradient accumulation through K iters)
 # Compare: MLM loss and concept analysis vs standard perceiver_mlm L6
 
 bash scripts/train_recursive_mlm.sh
@@ -291,7 +275,7 @@ just change `model.config.num_iterations` before evaluation.
 | Benchmark | Standard L6 | Recursive K=6 | What it tells us |
 |---|---|---|---|
 | MRPC F1 | 81.3% | ? | Semantic similarity: do fewer params hurt? |
-| STS-B Pearson | ? | ? | Concept quality regression |
+| STS-B Pearson | 0.627 | ? | Concept quality regression |
 | QQP F1 | 72.5% | ? | Scale test (400K samples) |
 | MNLI-m Acc | 59.1% | ? | Compositional reasoning |
 | PAWS Acc | ? | ? | Meaning vs surface form |
@@ -335,10 +319,11 @@ Week 1 (NOW):
   [x] TODO 2: Update GLUE shell script
   [x] TODO 3: Evaluation folder + SICK + PAWS
   [ ] TODO 5: Eval ViaDecoder classification on existing L6
-  [ ] TODO 4: Concept analysis on new checkpoint (when training finishes)
+  [x] TODO 4: Concept analysis on new checkpoint (when training finishes)
 
 Week 2:
-  [ ] TODO 8a: Build recursive MLM model + register in mlm_training.py
+  [x] TODO 8a: Build recursive MLM model + register in mlm_training.py — DONE
+  [x] TODO 0b: Re-train L6 with fixed concept loss weight (Polonez) — DONE (Failed to fix collapse)
   [ ] TODO 8b: Train recursive_mlm on Minipile (Odra, 2 GPU-days)
   [ ] TODO 6:  Masked diffusion experiment (Polonez, 5 GPU-days)
   [ ] TODO 8c: Concept analysis on recursive checkpoint
