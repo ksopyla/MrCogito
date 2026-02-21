@@ -60,9 +60,9 @@ MODEL_NAME_OR_PATH=""
 
 HIDDEN_SIZE=512
 TOKEN_EMBEDDING_DIM=0         # 0 = same as HIDDEN_SIZE
-NUM_ENCODER_LAYERS=6          # Same depth as best MLM model
+NUM_ENCODER_LAYERS=2          # Starting with 2 layers for correctness check (like MLM L2 baselines)
 CONCEPT_NUM=128
-INTERMEDIATE_SIZE=2048
+INTERMEDIATE_SIZE=1024        # 1024 matches the original L2 baseline FFN dim
 CONCEPT_POSITION_TYPE="none"
 DECODER_LAYERS=2              # Diffusion decoder layers (keep 1-4, larger = slower)
 T_MIN=0.05                    # Minimum masking rate (avoids trivial t≈0 batches)
@@ -83,8 +83,8 @@ TEST_SIZE_PERCENT=0.1
 # Effective batch: 64 * NUM_GPUS * 2 = 512
 PER_DEVICE_BATCH_SIZE=64
 EVAL_BATCH_SIZE=16
-GRADIENT_ACCUMULATION_STEPS=2
-LEARNING_RATE=3e-4
+GRADIENT_ACCUMULATION_STEPS=1   # 1 accum step for effective batch 256 (L2 baseline)
+LEARNING_RATE=5e-4              # 5e-4 used for L2 baselines
 NUM_EPOCHS=20
 WARMUP_STEPS=1500
 WEIGHT_DECAY=0.01
@@ -195,7 +195,7 @@ accelerate launch \
     --dataloader_num_workers 4 \
     --gradient_checkpointing False \
     --optim "adamw_torch_fused" \
-    --lr_scheduler_type "cosine" \
+    --lr_scheduler_type "linear" \
     --report_to "wandb" \
     --save_safetensors True \
     --overwrite_output_dir True \
