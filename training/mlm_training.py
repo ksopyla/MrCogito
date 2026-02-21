@@ -33,6 +33,8 @@ from nn.concept_encoder_perceiver import (
     ConceptEncoderForMaskedLMPerceiver,
     ConceptEncoderForMaskedLMPerceiverPosOnly
 )
+from nn.concept_encoder_recursive_mlm import RecursiveConceptEncoderForMaskedLM
+from nn.concept_encoder_recursive import RecursiveConceptEncoderConfig
 from nn.loss_manager import LossConfig, get_available_losses
 
 from training.dataset_preprocess import load_and_preprocess_text_dataset
@@ -70,6 +72,11 @@ MODEL_REGISTRY = {
     "perceiver_posonly_mlm": {
         "class": ConceptEncoderForMaskedLMPerceiverPosOnly,
         "description": "ConceptEncoder with Perceiver IO decoding for MLM (Position-only queries, pure Perceiver IO)"
+    },
+    "recursive_mlm": {
+        "class": RecursiveConceptEncoderForMaskedLM,
+        "description": "Recursive ConceptEncoder (1 shared layer, K iterations) with Perceiver IO decoding for MLM",
+        "config_class": RecursiveConceptEncoderConfig,
     }
 }
 
@@ -78,7 +85,7 @@ MODEL_REGISTRY = {
 class ModelArguments:
     model_type: str = field(
         default="weighted_mlm",
-        metadata={"help": "Type of model to train", "choices": ["weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm"]}
+        metadata={"help": "Type of model to train", "choices": list(MODEL_REGISTRY.keys())}
     )
     model_name_or_path: str | None = field(
         default=None,
@@ -374,18 +381,19 @@ def main():
     # is not possible because lm_head shape [hidden_size, vocab] != token_emb shape [vocab, token_dim]
     should_tie = token_embedding_dim is None or token_embedding_dim == model_args.hidden_size
     
-    config = ConceptEncoderConfig(
-        vocab_size=len(tokenizer), # Use len(tokenizer) to include special tokens/padding
+    # Use model-specific config class if the registry specifies one
+    config_class = MODEL_REGISTRY.get(model_args.model_type, {}).get("config_class", ConceptEncoderConfig)
+    
+    config_kwargs = dict(
+        vocab_size=len(tokenizer),
         concept_num=model_args.concept_num,
         hidden_size=model_args.hidden_size,
-        token_embedding_dim=token_embedding_dim,  # None = hidden_size (backward compat)
+        token_embedding_dim=token_embedding_dim,
         num_hidden_layers=model_args.num_hidden_layers,
         num_attention_heads=num_attention_heads,
         intermediate_size=model_args.intermediate_size,
         max_sequence_length=data_args.max_seq_length,
         concept_position_type=model_args.concept_position_type,
-        
-        # Special Tokens
         pad_token_id=tokenizer.pad_token_id,
         mask_token_id=tokenizer.mask_token_id,
         cls_token_id=tokenizer.cls_token_id,
@@ -393,10 +401,11 @@ def main():
         bos_token_id=tokenizer.bos_token_id,
         eos_token_id=tokenizer.eos_token_id,
         unk_token_id=tokenizer.unk_token_id,
-        
         tie_word_embeddings=should_tie,
-        tokenizer_name=data_args.tokenizer_name  # Store source tokenizer name for traceability
+        tokenizer_name=data_args.tokenizer_name,
     )
+    
+    config = config_class(**config_kwargs)
     
 
         
@@ -440,7 +449,7 @@ def main():
     logger.info("="*60)
     
     # Models that support loss_config parameter
-    models_with_loss_config = {"weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm"}
+    models_with_loss_config = {"weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm", "recursive_mlm"}
     supports_loss_config = model_args.model_type in models_with_loss_config
     
     if model_args.model_name_or_path:
