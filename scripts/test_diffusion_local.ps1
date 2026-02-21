@@ -31,7 +31,10 @@ poetry run python training/train_diffusion.py `
     --logging_steps 5 `
     --eval_strategy "steps" `
     --eval_steps 25 `
-    --save_strategy "no" `
+    --save_strategy "steps" `
+    --save_steps 25 `
+    --load_best_model_at_end True `
+    --metric_for_best_model "eval_loss" `
     --output_dir "./Cache/Training/" `
     --seed 42 `
     --report_to "none" `

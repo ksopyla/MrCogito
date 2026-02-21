@@ -193,7 +193,7 @@ class DataCollatorForMaskedDiffusion:
         return {
             "input_ids": padded_ids,
             "attention_mask": attention_mask,
-            # no 'labels' — model samples its own noise mask
+            "labels": padded_ids.clone(),  # Required so HF Trainer computes eval_loss
         }
 
 

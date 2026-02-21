@@ -357,6 +357,8 @@ class ConceptEncoderForMaskedDiffusion(PreTrainedModel):
         attention_mask: Optional[torch.Tensor] = None,
         t: Optional[torch.Tensor] = None,           # override noise level for testing
         return_dict: Optional[bool] = None,
+        labels: Optional[torch.LongTensor] = None,  # Ignored, but required by HF Trainer for eval_loss
+        **kwargs,
     ) -> DiffusionOutput:
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         B, L = input_ids.shape
