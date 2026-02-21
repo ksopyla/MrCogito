@@ -237,14 +237,16 @@ def main():
 
     # Dataset
     logger.info(f"Loading dataset: {data_args.dataset_name}")
-    train_ds, test_ds = load_and_preprocess_text_dataset(
-        dataset_name=data_args.dataset_name,
-        dataset_name_subset=data_args.dataset_name_subset,
-        tokenizer=tokenizer,
-        max_seq_length=data_args.max_seq_length,
-        test_size_percent=data_args.test_size_percent,
-        dataset_cache_dir=data_args.dataset_cache_dir,
-    )
+    with training_args.main_process_first(desc="loading and tokenizing dataset"):
+        train_ds, test_ds = load_and_preprocess_text_dataset(
+            tokenizer,
+            data_args.dataset_name,
+            data_args.dataset_name_subset,
+            "text",
+            test_size_percent=data_args.test_size_percent,
+            max_seq_length=data_args.max_seq_length,
+            dataset_cache_dir=data_args.dataset_cache_dir,
+        )
 
     # Token embedding dim
     effective_token_dim = (
