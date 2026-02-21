@@ -41,10 +41,17 @@ Reference targets for next training run (fixed 0.1 weighting):
 
 **Result (2026-02-21):** The model was trained with `fixed` weighting (0.1 weight) for the `combined` loss. ([WandB Link](https://wandb.ai/ksopyla/MrCogito/runs/perceiver_mlm_H512L6C128_20260220_184029))
 **Outcome:**
-- MLM eval_loss degraded to **3.57** (vs baseline 2.54).
+- MLM eval_loss degraded to **3.57** (vs baseline 2.54). *Note: Baseline was trained for 40 epochs, while this run was 20 epochs, so the degradation is less severe than it appears.*
 - Concept eff. rank collapsed to **15.97 / 128 (12.5%)**.
+- Downstream Evaluation:
+  - **MRPC**: 80.7% (vs 81.3%)
+  - **QQP**: 64.9% (vs 72.5%)
+  - **MNLI-m**: 56.9% (vs 59.1%)
+  - **STS-B**: 0.507 (vs 0.627)
+  - **PAWS**: 57.6%
+  - **SICK**: Failed due to `sick.py` HuggingFace dataset script deprecation.
 
-**Conclusion:** `combined` loss at 0.1 weight hurts the MLM objective while still failing to prevent dimensional collapse. This regularisation approach is fundamentally flawed for our setup. We should abandon `combined` loss and move to `t_regs_mst` or Masked Diffusion.
+**Conclusion:** Although the loss degradation is partially explained by fewer epochs, the dimensional collapse (rank ~16) remains fatal. `combined` loss at 0.1 weight fails to prevent this collapse. The compressed 16-rank space is not semantically dense enough to preserve performance on QQP, MNLI, and STS-B. We should abandon `combined` loss and move to `t_regs_mst` or Masked Diffusion.
 
 **Status:** [x] Done
 
@@ -313,6 +320,20 @@ the decoder initializes fresh (or also loaded from checkpoint).
 2. **Pre-LN architecture** stabilizes gradients across iterations.
 3. **Implicit gradient accumulation:** shared layer receives gradients from K positions — may need ~0.7x learning rate.
 4. **ALBERT precedent:** 12M params, shared 12 layers, 90.6% MRPC F1 in our baselines. It works.
+
+---
+
+## TODO 9: Initialize Encoder from SoTA Pretrained Model (Priority: MEDIUM, Effort: 3 days)
+
+*Maps to roadmap Phase 8.2*
+
+**Motivation:** Our current custom MLM models are undertrained (Minipile is too small). Instead of training the entire token-level backbone from scratch, initialize the transformer layers from a modern SoTA model (e.g., `SmolLM2-135M` or `Qwen2.5-0.5B`). This gives the token-level processing 100B+ token pretraining at zero cost. Keep the concept cross-attention and diffusion decoder randomly initialized.
+
+**Action:** 
+- Implement weight loading in `concept_encoder.py`.
+- Run a baseline diffusion/MLM experiment using the pretrained initialization.
+
+**Status:** [ ] Not started
 
 ---
 

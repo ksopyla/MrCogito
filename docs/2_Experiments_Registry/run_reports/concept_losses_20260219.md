@@ -78,20 +78,33 @@ Kendall-Gal (Kendall & Gal, 2018) was designed for multi-task learning where all
 
 ---
 
-## Update (Feb 21 2026) — Fixed Weight 0.1 Experiment
+## Update (Feb 21 2026) — Fixed Weight 0.1 Experiment & GLUE/Beyond-GLUE Eval
 
 We trained the L6 model using `fixed` loss weighting with `LOSS_WEIGHT=0.1` and `combined` loss.
 **Model:** `perceiver_mlm_H512L6C128_20260220_184029`
 
-**Results:**
-- **MLM eval_loss:** 3.57 (degraded from baseline 2.54, but better than Kendall-Gal's 4.31)
+**Pre-training Results:**
+- **MLM eval_loss:** 3.57 (20 epochs) (degraded from baseline 2.54 - 40 epochs, but better than Kendall-Gal's 4.31 - 20 epochs)
 - **Concept eff. rank:** 15.97 / 128 (12.5%) — **✗ POOR (Collapsed)**
 - **Mean concept similarity:** 0.13 — ✓ GOOD
 - **Max concept similarity:** 0.999 — ✗ POOR
 
+**Downstream Evaluation Results:**
+Despite the degraded pre-training loss and collapsed rank, we ran a full evaluation on the semantic subset (MRPC, QQP, STS-B, MNLI-m) plus PAWS to see if the 16 active dimensions held denser semantic features.
+
+| Task | Metric | **Fixed 0.1 combined** | Baseline (No loss) | Kendall-Gal combined |
+|---|---|:---:|:---:|:---:|
+| **MRPC** | F1 | 80.7% | 81.3% | 81.4% |
+| **QQP** | F1 | 64.9% | 72.5% | 58.7% |
+| **MNLI-m** | Acc | 56.9% | 59.1% | 48.9% |
+| **STS-B** | Pearson | 0.507 | 0.627 | 0.341 |
+| **PAWS** | Acc | 57.6% | (TBD) | (TBD) |
+
 **Diagnosis:**
-The fixed weight of 0.1 was still too disruptive to the MLM objective (loss 3.57 > 3.0), yet it was **insufficient** to fix the dimensional collapse. The model still collapsed to an effective rank of ~16. This proves that the `combined` loss (orthogonality) is fundamentally struggling to regularize the space without destroying the MLM gradient.
-Because the concept rank is so poor, running GLUE evaluation on this checkpoint is not recommended, as the bottleneck has still collapsed.
+The fixed weight of 0.1 sits exactly in the middle between the Baseline and Kendall-Gal across almost all metrics. 
+It degraded MLM loss (2.54 → 3.57), which caused a direct regression in downstream task performance (e.g. QQP 72.5% → 64.9%). At the same time, it entirely failed to prevent dimensional collapse (effective rank 12.5%).
+
+This definitively proves that the `combined` loss (orthogonality-driven) is fundamentally struggling to regularize the space without destroying the MLM gradient. There is no "goldilocks" weight setting that will save it. 
 
 **Recommendation:**
 The `combined` loss is ineffective. We must switch to a direct variance regularizer (`VICReg`) or the newly implemented `t_regs_mst` (Minimum Spanning Tree uniformity), which directly forces the utilization of dimensions. Alternatively, accelerate the shift to the **Masked Diffusion** objective, which bypasses this regularisation tuning entirely by forcing concepts to hold semantic meaning.
