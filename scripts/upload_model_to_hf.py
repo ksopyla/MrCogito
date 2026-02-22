@@ -519,6 +519,9 @@ def main():
                         help="Prefix for HF repo name (e.g. concept-encoder-{run_name})")
     parser.add_argument("--list-only", action="store_true",
                         help="Only list models, do not prompt for upload")
+    parser.add_argument("--run-name", type=str, default=None,
+                        help="Run name (or substring) to upload non-interactively, e.g. "
+                             "perceiver_mlm_H512L6C128_20260208_211633")
     args = parser.parse_args()
 
     console = Console()
@@ -596,37 +599,56 @@ def main():
         console.print("[dim]Use --list-only to see this list. Omit it to upload.[/dim]")
         return 0
 
-    console.print(Panel(
-        "[dim]Enter model number to upload (or 'q' to quit). Already uploaded models are marked with ✓.[/dim]",
-        title="Selection",
-        border_style="dim",
-    ))
+    # ── Non-interactive selection via --run-name ───────────────────────────────
+    if args.run_name:
+        matched = [c for c in choices if args.run_name in c["run_name"]]
+        if not matched:
+            console.print(f"[red]No model matching run name:[/red] {args.run_name!r}")
+            console.print("Available:", ", ".join(c["run_name"] for c in choices))
+            return 1
+        if len(matched) > 1:
+            console.print(f"[red]Ambiguous run name[/red] {args.run_name!r} matches {len(matched)} models:")
+            for m in matched:
+                console.print(f"  {m['run_name']}")
+            console.print("Provide a more specific substring.")
+            return 1
+        choice = matched[0]
+        console.print(f"[cyan]Non-interactive mode:[/cyan] selected [green]{choice['run_name']}[/green]")
+        if choice["uploaded"]:
+            console.print(f"[yellow]Already on Hub:[/yellow] https://huggingface.co/{choice['repo_id']} — re-uploading.")
+    else:
+        # ── Interactive selection ──────────────────────────────────────────────
+        console.print(Panel(
+            "[dim]Enter model number to upload (or 'q' to quit). Already uploaded models are marked with ✓.[/dim]",
+            title="Selection",
+            border_style="dim",
+        ))
 
-    try:
-        user_input = input("\nModel number: ").strip()
-    except (EOFError, KeyboardInterrupt):
-        console.print("\n[cancel]Cancelled.[/cancel]")
-        return 0
-
-    if user_input.lower() in ("q", "quit", ""):
-        return 0
-
-    try:
-        num = int(user_input)
-    except ValueError:
-        console.print("[red]Invalid number.[/red]")
-        return 1
-
-    choice = next((c for c in choices if c["index"] == num), None)
-    if not choice:
-        console.print(f"[red]No model with number {num}.[/red]")
-        return 1
-
-    if choice["uploaded"]:
-        console.print(f"[yellow]Model already uploaded:[/yellow] https://huggingface.co/{choice['repo_id']}")
-        overwrite = input("Overwrite? (y/N): ").strip().lower()
-        if overwrite != "y":
+        try:
+            user_input = input("\nModel number: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[cancel]Cancelled.[/cancel]")
             return 0
+
+        if user_input.lower() in ("q", "quit", ""):
+            return 0
+
+        try:
+            num = int(user_input)
+        except ValueError:
+            console.print("[red]Invalid number.[/red]")
+            return 1
+
+        choice = next((c for c in choices if c["index"] == num), None)
+        if not choice:
+            console.print(f"[red]No model with number {num}.[/red]")
+            return 1
+
+        if choice["uploaded"]:
+            console.print(f"[yellow]Model already uploaded:[/yellow] https://huggingface.co/{choice['repo_id']}")
+            overwrite = input("Overwrite? (y/N): ").strip().lower()
+            if overwrite != "y":
+                return 0
 
     # Login check
     try:
