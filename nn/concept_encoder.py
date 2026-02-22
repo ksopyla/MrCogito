@@ -77,6 +77,8 @@ class ConceptEncoderConfig(PretrainedConfig):
         initializer_range: float = 0.1,
         is_decoder: bool = False,
         tie_word_embeddings: bool = False,
+        use_bixt: bool = False,
+        decoder_posonly: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -105,7 +107,12 @@ class ConceptEncoderConfig(PretrainedConfig):
         self.sep_token_id = sep_token_id
         self.mask_token_id = mask_token_id
         self.unk_token_id = unk_token_id
-        self.use_bixt = kwargs.pop("use_bixt", False)
+        # use_bixt: enable BiXT bidirectional cross-attention (tokens update from concepts at each layer)
+        self.use_bixt = use_bixt
+        # decoder_posonly: True for TSDAE/PosOnly checkpoints — decoder queries use position
+        # embeddings only (no input token shortcut). Stored in config so ViaDecoder classification
+        # loads the correct decoder variant without silently using the wrong mode.
+        self.decoder_posonly = decoder_posonly
 
 class ConceptEncoderLayer(nn.Module):
     """A single layer of the concept encoder.

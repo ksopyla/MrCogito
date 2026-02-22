@@ -762,7 +762,6 @@ class ConceptEncoderForMaskedLMPerceiverPosOnly(PreTrainedModel):
     Supports two loss modes:
     - Dense (TSDAE): loss at ALL non-pad positions. Set labels = original
       input_ids with -100 at padding. Use with DataCollatorForTSDAE.
-    - Sparse (MLM compat): loss only at masked positions (labels=-100 elsewhere).
 
     Example:
         >>> from nn.loss_manager import LossConfig
@@ -781,6 +780,9 @@ class ConceptEncoderForMaskedLMPerceiverPosOnly(PreTrainedModel):
     ):
         super().__init__(config)
         self.config = config
+        # Mark config so downstream users (ViaDecoder classification, evaluation script)
+        # know this checkpoint uses position-only decoder queries.
+        self.config.decoder_posonly = True
         self.encoder = ConceptEncoder(config)
         
         # === Loss Management ===

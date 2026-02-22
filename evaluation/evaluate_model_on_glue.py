@@ -113,6 +113,43 @@ MODEL_CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", 
 TOKENIZER_CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Cache", "Tokenizers"))
 
 
+def resolve_model_path(model_name_or_path: str, hf_token: str = None) -> str:
+    """
+    Resolve model path: return local path as-is, download HF Hub repos to local cache.
+
+    A string is treated as an HF Hub repo ID when it contains "/" and does not
+    exist as a local directory.  The downloaded snapshot is stored under
+    Cache/Models so that subsequent runs skip the download.
+
+    Args:
+        model_name_or_path: Local directory path or HF Hub repo ID (e.g. "ksopyla/concept-encoder-xxx")
+        hf_token: Optional HF token for private repos.
+
+    Returns:
+        Absolute local path to the model directory.
+    """
+    if os.path.isdir(model_name_or_path):
+        return model_name_or_path
+
+    # Detect HF Hub repo ID: contains "/" and is not a local path
+    if "/" in model_name_or_path and not os.path.exists(model_name_or_path):
+        try:
+            from huggingface_hub import snapshot_download
+            logger.info(f"Downloading HF Hub model {model_name_or_path!r} to {MODEL_CACHE_DIR}")
+            local_path = snapshot_download(
+                repo_id=model_name_or_path,
+                cache_dir=MODEL_CACHE_DIR,
+                token=hf_token,
+            )
+            logger.info(f"Model cached at: {local_path}")
+            return local_path
+        except Exception as e:
+            logger.warning(f"Failed to download {model_name_or_path!r} from HF Hub: {e}")
+            logger.warning("Falling back to using model_name_or_path as-is.")
+
+    return model_name_or_path
+
+
 
 # Configure arguments
 def parse_args():
@@ -870,15 +907,18 @@ def finetune_model_on_glue(args):
     # Load and initialize model based on model type
     concept_model_types = ["weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm", "perceiver_decoder_cls"]
     if args.model_type in concept_model_types:
+        # Resolve local path or download from HF Hub into Cache/Models
+        local_model_path = resolve_model_path(args.model_name_or_path, hf_token)
+
         # First, load configuration and update with task-specific settings
         try:
             # Try to load the config from the model path
-            config = ConceptEncoderConfig.from_pretrained(args.model_name_or_path)
+            config = ConceptEncoderConfig.from_pretrained(local_model_path)
             # Update config with task-specific settings
             config.num_labels = GLUE_TASKS[args.task]["num_labels"]
             config.problem_type = "regression" if args.task == "stsb" else "single_label_classification"
         except Exception as e:
-            logger.warning(f"Could not load config from {args.model_name_or_path}: {e}")
+            logger.warning(f"Could not load config from {local_model_path}: {e}")
             logger.warning("Creating a new config instead.")
             # Create new config if loading failed
             config = ConceptEncoderConfig(
@@ -891,15 +931,16 @@ def finetune_model_on_glue(args):
             logger.info(f"Using Weighted Sequence Classification for model type: {args.model_type}")
             model_class = ConceptEncoderForSequenceClassificationWeighted
         elif args.model_type in ("perceiver_mlm", "perceiver_posonly_mlm"):
-            # Both perceiver variants use the same CLS-query classification head
-            # (the difference is only in the MLM decoder, not the encoder or classification head)
-            logger.info(f"Using Perceiver CLS-query Sequence Classification for model type: {args.model_type}")
+            # Both perceiver variants use the same encoder-only classification head.
+            # The decoder difference (posonly vs input+pos) is irrelevant for classification.
+            logger.info(f"Using Perceiver weighted-pool Sequence Classification for model type: {args.model_type}")
             model_class = ConceptEncoderForSequenceClassificationPerceiver
         elif args.model_type == "perceiver_decoder_cls":
             # Classification via pretrained MLM decoder (Experiment 3.1)
-            # This model reuses the full MLM decoder to reconstruct sequence, then pools + classifies
-            # Loads BOTH encoder AND decoder weights from perceiver_mlm checkpoint
+            # Loads BOTH encoder AND decoder weights from perceiver_mlm checkpoint.
+            # Respects config.decoder_posonly: True for TSDAE/PosOnly checkpoints.
             logger.info(f"Using Classification via Decoder for model type: {args.model_type}")
+            logger.info(f"  decoder_posonly={getattr(config, 'decoder_posonly', False)}")
             model_class = ConceptEncoderForSequenceClassificationViaDecoder
         else:
             raise ValueError(f"Unsupported model type for classification: {args.model_type}")
@@ -908,10 +949,10 @@ def finetune_model_on_glue(args):
         model = model_class(config)
         
         # Load pre-trained weights from MLM checkpoint
-        checkpoint_path = os.path.join(args.model_name_or_path, "pytorch_model.bin")
+        checkpoint_path = os.path.join(local_model_path, "pytorch_model.bin")
         if not os.path.exists(checkpoint_path):
             # Try safetensors format
-            checkpoint_path = os.path.join(args.model_name_or_path, "model.safetensors")
+            checkpoint_path = os.path.join(local_model_path, "model.safetensors")
         
         if os.path.exists(checkpoint_path):
             logger.info(f"Loading pre-trained weights from {checkpoint_path}")
@@ -1094,7 +1135,10 @@ def finetune_model_on_glue(args):
     #   .../Cache/Training/<training_run_id>/<training_run_id>/
     # e.g., .../weighted_mlm_H512L6C128_20260207_174251/weighted_mlm_H512L6C128_20260207_174251
     # The training_run_id matches the wandb run name from mlm_training.py
-    source_training_run_id = os.path.basename(args.model_name_or_path)
+    # Use the original model_name_or_path for traceability; for HF Hub IDs the
+    # repo name (after "/") is a clean run identifier.
+    _mnop = args.model_name_or_path
+    source_training_run_id = _mnop.split("/")[-1] if "/" in _mnop else os.path.basename(_mnop)
     
     # Extract architecture tag (strip timestamp): weighted_mlm_H512L6C128
     arch_parts = source_training_run_id.split('_')
