@@ -45,7 +45,8 @@ from training.utils_training import (
     is_main_process,
     get_hostname,
     log_system_info,
-    log_model_info
+    log_model_info,
+    get_git_info,
 )
 
 # Initialize logger
@@ -726,6 +727,9 @@ def main():
             'masking_type': data_args.masking_type,
             'test_size_percent': data_args.test_size_percent,
             
+            # Code version traceability (links WandB run to exact git commit)
+            **{f"git_{k}": v for k, v in get_git_info().items()},
+
             # Training configuration (from training_args)
             **{k: v for k, v in vars(training_args).items() if not k.startswith('_')}
         }

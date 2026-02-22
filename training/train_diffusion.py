@@ -65,6 +65,7 @@ from training.utils_training import (
     get_hostname,
     log_system_info,
     log_model_info,
+    get_git_info,
 )
 
 logger = logging.get_logger(__name__)
@@ -354,6 +355,7 @@ def main():
                 "loss_weighting": loss_args.loss_weighting,
                 "dataset": data_args.dataset_name,
                 "total_params": total_params,
+                **{f"git_{k}": v for k, v in get_git_info().items()},
             },
             tags=["diffusion", "concept-encoder", data_args.dataset_name],
         )

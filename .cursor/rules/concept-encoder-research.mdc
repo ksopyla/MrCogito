@@ -43,12 +43,22 @@ bash scripts/evaluate_concept_encoder_paws.sh
 
 ## 🗂️ Project Documentation Structure (`docs/`)
 - `docs/1_Strategy_and_Plans/roadmap.md` — Long-term vision, theories, and hypotheses.
-- `docs/1_Strategy_and_Plans/active_todos.md` — Short-term, actionable tasks.
-- `docs/2_Experiments_Registry/master_experiment_log.md` — **CRITICAL**: The central table tracking all training runs. **Always update this file when a new training run completes.** Include hardware, hyperparams, GLUE scores, and WandB links.
+- `docs/1_Strategy_and_Plans/active_todos.md` — Short-term, actionable tasks (include completion dates).
+- `docs/2_Experiments_Registry/master_experiment_log.md` — **CRITICAL**: The central table tracking all training runs. **Always update this file when a new training run completes.** Include hardware, hyperparams, GLUE scores, WandB links, and **git_tag**.
 - `docs/2_Experiments_Registry/run_reports/` — Detailed analyses of individual runs (e.g., loss curve anomalies).
 - `docs/3_Evaluations_and_Baselines/` — Cross-model comparisons, scaling laws, and BERT baselines.
 - `docs/4_Research_Notes/` — Theoretical explorations and literature reviews.
 - `docs/5_Archive/` — Old plans and deprecated notes.
+- `CHANGELOG.md` (repo root) — **Engineering log**: what code changed, when, why. Update after every architectural change.
+
+## 🔗 Traceability Protocol
+Three documents must stay linked:
+1. `CHANGELOG.md` → git tag → `master_experiment_log.md` (code ↔ run)
+2. `active_todos.md` → completion date → `CHANGELOG.md` (task ↔ implementation)
+3. WandB run config includes `git_commit` + `git_tag` (run ↔ code)
+
+Use **engineer-scribe** skill for the full checklist.
+Git tagging convention: `arch/{feature}` for code changes, `train/{run_id}` before training runs.
 
 ## 🗂️ Cache & Logs Structure (Local & Remote)
 - `Cache/` — This crucial folder stores synchronized files from remote servers (Polonez/Odra). Always check here for the latest results after running `scripts/sync_evaluation_reports.ps1`.

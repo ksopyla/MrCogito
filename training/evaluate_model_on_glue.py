@@ -55,6 +55,7 @@ from nn.concept_encoder_weighted import ConceptEncoderForSequenceClassificationW
 from nn.concept_encoder_perceiver import (
     ConceptEncoderForSequenceClassificationPerceiver,
     ConceptEncoderForSequenceClassificationViaDecoder,
+    ConceptEncoderForSentencePairClassification,
 )
 from training.utils_training import get_hostname
 
@@ -484,6 +485,41 @@ def preprocess_function(examples, tokenizer, max_length, task):
     
     return result
 
+
+def preprocess_function_separate(examples, tokenizer, max_length, task):
+    """
+    Preprocess sentence-pair examples by tokenizing each sentence separately.
+    
+    Used with ConceptEncoderForSentencePairClassification where the encoder
+    processes each sentence independently and comparison happens in concept space.
+    
+    Returns fields: input_ids_a, attention_mask_a, input_ids_b, attention_mask_b, labels
+    """
+    task_config = GLUE_TASKS[task]
+    task_keys = task_config["keys"]
+    
+    if "sentence2" not in task_keys:
+        raise ValueError(f"Task {task} is not a sentence-pair task. Use standard preprocess_function.")
+    
+    sentences1 = examples[task_keys["sentence1"]]
+    sentences2 = examples[task_keys["sentence2"]]
+    
+    result_a = tokenizer(sentences1, padding="max_length", max_length=max_length, truncation=True)
+    result_b = tokenizer(sentences2, padding="max_length", max_length=max_length, truncation=True)
+    
+    result = {
+        "input_ids_a": result_a["input_ids"],
+        "attention_mask_a": result_a["attention_mask"],
+        "input_ids_b": result_b["input_ids"],
+        "attention_mask_b": result_b["attention_mask"],
+    }
+    
+    if task_keys["label"] in examples:
+        result["labels"] = examples[task_keys["label"]]
+    
+    return result
+
+
 # Compute metrics for evaluation
 def compute_metrics(task, metric_names):
     """
@@ -593,17 +629,21 @@ def load_glue_dataset(task, tokenizer, max_length):
         validation_split = dataset_splits["validation"]
         eval_dataset = datasets[validation_split]
         
+        # Select preprocessing function based on model type
+        use_separate = getattr(args, "model_type", None) == "perceiver_pair_cls"
+        prep_fn = preprocess_function_separate if use_separate else preprocess_function
+        
         # Preprocess datasets with error handling
         try:
             train_dataset = datasets["train"].map(
-                lambda examples: preprocess_function(examples, tokenizer, max_length, task),
+                lambda examples: prep_fn(examples, tokenizer, max_length, task),
                 batched=True,
                 remove_columns=datasets["train"].column_names,
                 desc="Preprocessing training data"
             )
             
             eval_dataset = eval_dataset.map(
-                lambda examples: preprocess_function(examples, tokenizer, max_length, task),
+                lambda examples: prep_fn(examples, tokenizer, max_length, task),
                 batched=True,
                 remove_columns=eval_dataset.column_names,
                 desc="Preprocessing validation data"
@@ -868,7 +908,7 @@ def finetune_model_on_glue(args):
         tokenizer = AutoTokenizer.from_pretrained(default_tokenizer, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
     
     # Load and initialize model based on model type
-    concept_model_types = ["weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm", "perceiver_decoder_cls"]
+    concept_model_types = ["weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm", "perceiver_decoder_cls", "perceiver_pair_cls"]
     if args.model_type in concept_model_types:
         # First, load configuration and update with task-specific settings
         try:
@@ -896,11 +936,11 @@ def finetune_model_on_glue(args):
             logger.info(f"Using Perceiver CLS-query Sequence Classification for model type: {args.model_type}")
             model_class = ConceptEncoderForSequenceClassificationPerceiver
         elif args.model_type == "perceiver_decoder_cls":
-            # Classification via pretrained MLM decoder (Experiment 3.1)
-            # This model reuses the full MLM decoder to reconstruct sequence, then pools + classifies
-            # Loads BOTH encoder AND decoder weights from perceiver_mlm checkpoint
             logger.info(f"Using Classification via Decoder for model type: {args.model_type}")
             model_class = ConceptEncoderForSequenceClassificationViaDecoder
+        elif args.model_type == "perceiver_pair_cls":
+            logger.info(f"Using Sentence-Pair Classification (separate encoding) for model type: {args.model_type}")
+            model_class = ConceptEncoderForSentencePairClassification
         else:
             raise ValueError(f"Unsupported model type for classification: {args.model_type}")
         

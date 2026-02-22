@@ -25,6 +25,7 @@ Aliases are defined in `~/.ssh/config`. Use them directly:
 - **HuggingFace cache**: `/home/ksopyla/hf_home/`
 - **Models and checkpoints output saved to**: /home/ksopyla/dev/MrCogito/Cache/Training
 - **Training logs saved to**: /home/ksopyla/dev/MrCogito/Cache/logs
+- **shell output logs saved to**: /home/ksopyla/dev/MrCogito/Cache/logs/shell_{model_type}_{date_time}.log
 - **Evaluation reports saved to**: /home/ksopyla/dev/MrCogito/Cache/Evaluation_reports
 - **wandb logs saved to**: /home/ksopyla/dev/MrCogito/wandb
 

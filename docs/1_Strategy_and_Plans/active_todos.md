@@ -39,6 +39,7 @@ Reference targets for next training run (fixed 0.1 weighting):
 
 ## TODO 0b: Re-train L6 with `fixed` concept loss weight — DONE ✅
 
+**Done date: 2026-02-21**
 **Result (2026-02-21):** The model was trained with `fixed` weighting (0.1 weight) for the `combined` loss. ([WandB Link](https://wandb.ai/ksopyla/MrCogito/runs/perceiver_mlm_H512L6C128_20260220_184029))
 **Outcome:**
 - MLM eval_loss degraded to **3.57** (vs baseline 2.54). *Note: Baseline was trained for 40 epochs, while this run was 20 epochs, so the degradation is less severe than it appears.*
@@ -57,7 +58,9 @@ Reference targets for next training run (fixed 0.1 weighting):
 
 ---
 
-## TODO 1: Fix STS-B Evaluation Bug (Priority: HIGH, Effort: 0.5h)
+## TODO 1: Fix STS-B Evaluation Bug (Priority: HIGH, Effort: 0.5h) - DONE ✅
+
+**Done date: 2026-02-20**
 
 **Problem:** In `evaluate_model_on_glue.py`, the `compute_metrics` function passes 2D predictions `[N, 1]` to HuggingFace `evaluate` pearsonr/spearmanr metrics for STS-B, instead of the squeezed 1D `[N]` predictions. This causes either errors or wrong metric values.
 
@@ -81,8 +84,9 @@ if task == "stsb":
 
 ---
 
-## TODO 2: Update GLUE Evaluation Shell Script (Priority: HIGH, Effort: 1h)
+## TODO 2: Update GLUE Evaluation Shell Script (Priority: HIGH, Effort: 1h) DONE ✅
 
+**Done date: needs to be checked**
 **File:** `scripts/evaluate_concept_encoder_glue.sh`
 
 **Changes:**
@@ -101,7 +105,9 @@ if task == "stsb":
 
 ---
 
-## TODO 3: Create Evaluation Folder + Beyond-GLUE Benchmarks (Priority: MEDIUM, Effort: 3-4h)
+## TODO 3: Create Evaluation Folder + Beyond-GLUE Benchmarks (Priority: MEDIUM, Effort: 3-4h) DONE ✅
+
+**Done date: exact date needs to be checked**
 
 ### 3a. Move evaluation script to `evaluation/` folder
 
@@ -111,8 +117,9 @@ Update all references:
 - `scripts/evaluate_concept_encoder_glue.ps1`
 - `docs/` references
 
-### 3b. Add two Beyond-GLUE evaluation datasets
+### 3b. Add two Beyond-GLUE evaluation datasets DONE ✅
 
+**Done date: exact date needs to be checked**
 **Selected datasets:**
 
 | Dataset | Task | Why | HuggingFace ID | Size |
@@ -182,7 +189,9 @@ Because the combined loss with weight 0.1 still collapsed, we abandon this regul
 
 ---
 
-## TODO 6: Masked Diffusion Experiment (Priority: HIGH, Effort: 5 GPU-days)
+## TODO 6: Masked Diffusion Experiment (Priority: HIGH, Effort: 5 GPU-days) In Progress
+
+**Done date: in progress**
 
 *Maps to roadmap [Phase 9](roadmap.md#phase-9-masked-diffusion-decoder--replace-mlm-new--high-priority)*
 
@@ -192,7 +201,7 @@ Because the combined loss with weight 0.1 still collapsed, we abandon this regul
 
 **Compare:** Concept analysis metrics vs TODO 4 results. If diffusion effective_rank > MLM effective_rank, switch to diffusion as primary objective.
 
-**Status:** [ ] Not started
+**Status:** [] In progress
 
 ---
 
@@ -337,35 +346,85 @@ the decoder initializes fresh (or also loaded from checkpoint).
 
 ---
 
-## Experiment Priority Order
+## Experiment Priority Order (Updated 2026-02-21)
 
 ```
-Week 1 (NOW):
+Week 1 (DONE):
   [x] Training with concept losses (running on Polonez)
   [x] TODO 1: Fix STS-B bug
   [x] TODO 2: Update GLUE shell script
   [x] TODO 3: Evaluation folder + SICK + PAWS
-  [ ] TODO 5: Eval ViaDecoder classification on existing L6
-  [x] TODO 4: Concept analysis on new checkpoint (when training finishes)
+  [x] TODO 4: Concept analysis on new checkpoint
+  [x] TODO 0b: Re-train L6 with fixed concept loss weight → FAILED (rank 12.5%)
 
-Week 2:
-  [x] TODO 8a: Build recursive MLM model + register in mlm_training.py — DONE
-  [x] TODO 0b: Re-train L6 with fixed concept loss weight (Polonez) — DONE (Failed to fix collapse)
-  [ ] TODO 8b: Train recursive_mlm on Minipile (Odra, 2 GPU-days)
-  [ ] TODO 6:  Masked diffusion experiment (Polonez, 5 GPU-days)
-  [ ] TODO 8c: Concept analysis on recursive checkpoint
-  [ ] TODO 8d: GLUE + SICK + PAWS eval on recursive model
+Week 2 (CURRENT — Architecture Overhaul):
+  [x] Architecture review: identified 5 structural misalignments (see docs/4_Research_Notes/mlm_perceiver_diagnosis_20260221.md)
+  [x] Implemented TSDAE data collator (training/data_collators.py)
+  [x] Rewrote PosOnly decoder for dense loss (TSDAE objective)
+  [x] Implemented BiXT bidirectional cross-attention layer (nn/concept_encoder.py)
+  [x] Replaced CLS-query head with weighted concept pooling
+  [x] Added ConceptEncoderForSentencePairClassification (separate encoding)
+  [x] Updated ViaDecoder for PosOnly support (decoder_posonly flag)
+  [x] Updated GLUE eval: perceiver_pair_cls + separate tokenization
+  [x] Created TSDAE training script (training/train_tsdae.py)
+  [x] Verified TSDAE training locally (standard + BiXT modes)
+  [ ] TODO 10: Train TSDAE PosOnly on Minipile (Polonez, 5 GPU-days)
+  [ ] TODO 10b: Train TSDAE PosOnly + BiXT on Minipile (parallel on Odra)
+  [ ] TODO 6:  Masked diffusion experiment (running on Polonez)
+  [ ] TODO 5: Eval ViaDecoder classification on existing L6
 
 Week 3:
-  [ ] TODO 8e: Iteration sweep (K=2,4,6,8,12) — eval only, no retraining
-  [ ] TODO 7:  Data scaling (best model from TODO 4/6/8 comparison)
+  [ ] TODO 10c: Concept analysis on TSDAE checkpoints (compare vs MLM baseline)
+  [ ] TODO 10d: GLUE eval with perceiver_pair_cls on TSDAE model
+  [ ] TODO 10e: Zero-shot STS-B (cosine similarity, no fine-tuning)
+  [ ] Diffusion vs TSDAE comparison: concept rank, GLUE MRPC/QQP/STS-B
 
-Week 4+:
-  [ ] Full comparison table: standard vs recursive vs diffusion
-  [ ] Pick winner, scale to OpenWebText + Wikipedia
+Week 4:
+  [ ] Pick winner (TSDAE vs diffusion vs MLM), scale to OpenWebText + Wikipedia
+  [ ] Dimension Inversion ablation (token_dim=32, concept_dim=512)
+  [ ] Long-context eval (SCROLLS/LongBench) on best model
 ```
 
 ---
 
-*Plan created: 2026-02-19*
-*Next review: after TODO 4 concept analysis*
+## TODO 10: TSDAE Training Experiments (Priority: HIGHEST)
+
+**Architecture changes completed (2026-02-21):**
+- `DataCollatorForTSDAE`: token deletion (60%), dense labels, attention_mask zeroing
+- `ConceptEncoderForMaskedLMPerceiverPosOnly`: dense reconstruction loss (all positions)
+- `BiConceptEncoderLayer`: BiXT bidirectional cross-attention (O(C*N) complexity preserved)
+- `ConceptEncoderForSentencePairClassification`: separate encoding, weighted concept pooling, cosine_only mode
+- `ConceptEncoderForSequenceClassificationPerceiver`: CLS query → weighted concept pooling
+
+**Training script:** `training/train_tsdae.py`
+**Local test:** `scripts/test_tsdae_local.ps1`
+
+**Experiment A — TSDAE PosOnly baseline (5 GPU-days on Polonez):**
+```bash
+accelerate launch --num_processes=4 --mixed_precision=bf16 --multi_gpu \
+    training/train_tsdae.py \
+    --hidden_size 512 --num_hidden_layers 6 --concept_num 128 \
+    --intermediate_size 2048 --deletion_rate 0.6 \
+    --dataset_name JeanKaddour/minipile \
+    --tokenizer_name answerdotai/ModernBERT-base \
+    --num_train_epochs 20 --learning_rate 3e-4 \
+    --per_device_train_batch_size 64 \
+    --output_dir Cache/Training --bf16
+```
+
+**Experiment B — TSDAE PosOnly + BiXT (parallel on Odra):**
+Same as A but with `--use_bixt`. Compare concept quality (effective rank, mean sim) and GLUE scores.
+
+**Evaluation plan:**
+1. Concept analysis: effective rank, mean pairwise similarity (target: rank > 64/128)
+2. GLUE with perceiver_pair_cls: MRPC, QQP, STS-B, MNLI (separate encoding)
+3. Zero-shot STS-B: cosine similarity of separately-encoded sentences (no fine-tuning)
+4. Compare against MLM baseline (L6, eff rank 5/128) and diffusion
+
+**Status:** [ ] Not started (implementation done, waiting for GPU time)
+
+---
+
+*Plan updated: 2026-02-21*
+*Next review: after TSDAE training results*
+*Related: docs/4_Research_Notes/mlm_perceiver_diagnosis_20260221.md*

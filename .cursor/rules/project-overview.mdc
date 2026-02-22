@@ -29,3 +29,12 @@ The Concept Encoder uses **cross-attention between a small set of "concept token
 - **`docs/`**: Use the numbered hierarchical structure here for *permanent* research knowledge:
   - Update `docs/2_Experiments_Registry/master_experiment_log.md` immediately after any training or evaluation run finishes.
   - Put new actionable tasks in `docs/1_Strategy_and_Plans/active_todos.md`.
+
+## Engineering Traceability (MANDATORY)
+After every architectural change or completed implementation:
+1. Update `CHANGELOG.md` (repo root) — dated entry, what changed, why.
+2. Add `git_tag` to any new row in `master_experiment_log.md`.
+3. All training scripts must call `get_git_info()` from `training/utils_training.py`
+   and include the result in `wandb.init()` config.
+4. Use the **engineer-scribe** skill (`~/.cursor/skills-cursor/engineer-scribe/SKILL.md`)
+   for full checklist and conventions.

@@ -105,6 +105,7 @@ class ConceptEncoderConfig(PretrainedConfig):
         self.sep_token_id = sep_token_id
         self.mask_token_id = mask_token_id
         self.unk_token_id = unk_token_id
+        self.use_bixt = kwargs.pop("use_bixt", False)
 
 class ConceptEncoderLayer(nn.Module):
     """A single layer of the concept encoder.
@@ -176,6 +177,7 @@ class ConceptEncoderLayer(nn.Module):
         # Values: token embeddings [batch_size, sequence_length, token_embedding_dim]
         # need_weights=False enables SDPA/Flash Attention fast path on PyTorch 2.x
         # Without it, attention weights are computed even if discarded (_), disabling the fast path
+
         concept_token_attn_output, _ = self.concept_token_attn(
             normed_concepts, token_embeddings, token_embeddings, 
             key_padding_mask=attention_mask,
@@ -206,14 +208,100 @@ class ConceptEncoderLayer(nn.Module):
         # Feed Forward Network with gating mechanism
         # Layer Normalization - concept normalization
         normed_concepts = self.pre_ff_norm(concept_representations)
-
         ff_input, ff_gate = self.Wi(normed_concepts).chunk(2, dim=-1)
         ff_output = self.Wo(self.wi_dropout(self.act_fn(ff_input) * ff_gate))
-
-        # Add residual connection between concepts after feed forward network
         concept_representations = concept_representations + ff_output
 
-        return concept_representations # [batch_size, concept_num, concept_dim]
+        return concept_representations
+
+
+class BiConceptEncoderLayer(nn.Module):
+    """BiXT-style bidirectional cross-attention encoder layer.
+    
+    Extends ConceptEncoderLayer with a reverse cross-attention that updates
+    token representations from concepts.  This lets tokens become contextualised
+    across layers WITHOUT O(N^2) token self-attention.
+    
+    Per-layer complexity: O(C*N) + O(N*C) + O(C^2) = O(C*N), linear in N.
+    
+    Reference: Hiller, Ehinger & Drummond, "BiXT: Perceiving Longer Sequences
+    With Bi-Directional Cross-Attention Transformers", NeurIPS 2024.
+    """
+
+    def __init__(self, config: ConceptEncoderConfig):
+        super().__init__()
+
+        H = config.hidden_size
+
+        # --- concepts ← tokens (same as standard layer) ---
+        self.concept_token_attn = nn.MultiheadAttention(
+            embed_dim=H, num_heads=config.num_attention_heads,
+            dropout=config.attention_probs_dropout_prob, batch_first=True,
+        )
+        self.pre_cross_attn_norm = nn.LayerNorm(H)
+
+        # --- tokens ← concepts (BiXT reverse path, O(N*C)) ---
+        self.token_concept_attn = nn.MultiheadAttention(
+            embed_dim=H, num_heads=config.num_attention_heads,
+            dropout=config.attention_probs_dropout_prob, batch_first=True,
+        )
+        self.pre_reverse_cross_norm = nn.LayerNorm(H)
+
+        # --- concept self-attention ---
+        self.concept_self_attn = nn.MultiheadAttention(
+            embed_dim=H, num_heads=config.num_attention_heads,
+            dropout=config.attention_probs_dropout_prob, batch_first=True,
+        )
+        self.pre_self_attn_norm = nn.LayerNorm(H)
+
+        # --- concept FFN (gated) ---
+        self.pre_ff_norm = nn.LayerNorm(H)
+        self.Wi = nn.Linear(H, config.intermediate_size * 2)
+        self.Wo = nn.Linear(config.intermediate_size, H)
+        self.wi_dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.act_fn = nn.GELU()
+
+    def forward(
+        self,
+        concept_representations: torch.Tensor,
+        token_embeddings: torch.Tensor,
+        attention_mask: Optional[torch.BoolTensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Returns:
+            (concepts, tokens) -- both updated.
+        """
+        # 1. concepts ← cross-attn(Q=concepts, KV=tokens)   O(C*N)
+        normed_c = self.pre_cross_attn_norm(concept_representations)
+        c_out, _ = self.concept_token_attn(
+            normed_c, token_embeddings, token_embeddings,
+            key_padding_mask=attention_mask, need_weights=False,
+        )
+        concept_representations = concept_representations + c_out
+
+        # 2. tokens ← cross-attn(Q=tokens, KV=concepts)    O(N*C)
+        normed_t = self.pre_reverse_cross_norm(token_embeddings)
+        t_out, _ = self.token_concept_attn(
+            normed_t, concept_representations, concept_representations,
+            need_weights=False,
+        )
+        token_embeddings = token_embeddings + t_out
+
+        # 3. concept self-attention   O(C^2)
+        normed_c = self.pre_self_attn_norm(concept_representations)
+        sa_out, _ = self.concept_self_attn(
+            normed_c, normed_c, normed_c,
+            attn_mask=None, need_weights=False,
+        )
+        concept_representations = concept_representations + sa_out
+
+        # 4. concept FFN
+        normed_c = self.pre_ff_norm(concept_representations)
+        ff_in, ff_gate = self.Wi(normed_c).chunk(2, dim=-1)
+        ff_out = self.Wo(self.wi_dropout(self.act_fn(ff_in) * ff_gate))
+        concept_representations = concept_representations + ff_out
+
+        return concept_representations, token_embeddings
 
 class ConceptEncoder(PreTrainedModel):
     """Concept Encoder model.
@@ -274,7 +362,9 @@ class ConceptEncoder(PreTrainedModel):
         # For "none", no concept_position_emb attribute is created
 
         # Concept encoder layers [num_hidden_layers]
-        self.layers = nn.ModuleList([ConceptEncoderLayer(config) for _ in range(config.num_hidden_layers)])
+        layer_cls = BiConceptEncoderLayer if getattr(config, "use_bixt", False) else ConceptEncoderLayer
+        self.layers = nn.ModuleList([layer_cls(config) for _ in range(config.num_hidden_layers)])
+        self._use_bixt = getattr(config, "use_bixt", False)
         # Dropout [hidden_dropout_prob]
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         # Output layer normalization [hidden_size=concept_dim]
@@ -399,12 +489,18 @@ class ConceptEncoder(PreTrainedModel):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
-            # Cross + self-attention inside the layer
-            hidden_states = layer(
-                concept_representations=hidden_states,
-                token_embeddings=token_embeddings,
-                attention_mask=key_padding_mask,
-            )
+            if self._use_bixt:
+                hidden_states, token_embeddings = layer(
+                    concept_representations=hidden_states,
+                    token_embeddings=token_embeddings,
+                    attention_mask=key_padding_mask,
+                )
+            else:
+                hidden_states = layer(
+                    concept_representations=hidden_states,
+                    token_embeddings=token_embeddings,
+                    attention_mask=key_padding_mask,
+                )
 
         last_hidden_state = self.output_layer_norm(hidden_states)
 
