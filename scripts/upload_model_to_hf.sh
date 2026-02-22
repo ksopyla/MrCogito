@@ -42,21 +42,19 @@ if [ -z "$HF_TOKEN" ] && [ -n "$HUGGINGFACE_TOKEN" ]; then
     export HF_TOKEN="$HUGGINGFACE_TOKEN"
 fi
 
-# Check HF login: try token-based auth first, then cached credentials
-if [ -n "$HF_TOKEN" ]; then
-    if ! huggingface-cli whoami --token "$HF_TOKEN" > /dev/null 2>&1; then
+# Check HF login.
+# When HF_TOKEN is set, the Python script handles auth directly via
+# huggingface_hub — no need for huggingface-cli whoami here.
+if [ -z "$HF_TOKEN" ]; then
+    if ! huggingface-cli whoami > /dev/null 2>&1; then
         echo ""
-        echo "HF_TOKEN is set but huggingface-cli whoami failed."
-        echo "Check that the token is valid: https://huggingface.co/settings/tokens"
+        echo "Hugging Face not logged in and HF_TOKEN not found in .env"
+        echo "Either: run 'huggingface-cli login'  OR  add HF_TOKEN=hf_... to .env"
         echo ""
         exit 1
     fi
-elif ! huggingface-cli whoami > /dev/null 2>&1; then
-    echo ""
-    echo "Hugging Face not logged in. Run: huggingface-cli login"
-    echo "Or set HF_TOKEN in $PROJECT_ROOT/.env"
-    echo ""
-    exit 1
+else
+    echo "HF_TOKEN found in environment — auth handled by Python upload script."
 fi
 
 echo ""
