@@ -173,19 +173,27 @@ Because the combined loss with weight 0.1 still collapsed, we abandon this regul
 
 ---
 
-## TODO 5: Evaluate with ViaDecoder Classification (Priority: MEDIUM, Effort: 1h)
+## TODO 5: Evaluate with ViaDecoder Classification — DONE ✅
 
-*Maps to roadmap [Phase 3](roadmap.md#phase-3-classification-via-decoder-2-3-days-coding-1-day-eval)*
+**Done date: 2026-02-22**
 
-**Depends on:** TODO 1 (STS-B fix)
+**Action:** Ran GLUE eval with `--model_type perceiver_decoder_cls` on the L6 canonical checkpoint via HF Hub (`ksopyla/concept-encoder-perceiver_mlm_H512L6C128_20260208_211633`) on Odra.
 
-**Action:** Run GLUE eval with `--model_type perceiver_decoder_cls` on existing L6 `perceiver_mlm` checkpoint.
+**Results vs CLS-Query baseline:**
 
-**Why:** The `ConceptEncoderForSequenceClassificationViaDecoder` class loads BOTH encoder + decoder weights from the MLM checkpoint. The decoder already learned position→concept reconstruction. Pooling over the reconstructed sequence should give richer representations than a single CLS query.
+| Task | CLS-Query | ViaDecoder | Delta |
+|---|---|---|---|
+| MRPC F1 | 81.3% | **82.73%** | +1.4% ✓ |
+| STS-B Pearson | 0.627 | **0.650** | +2.3% ✓ |
+| QQP F1 | 72.5% | **73.35%** | +0.85% ✓ |
+| MNLI-m Acc | 59.1% | **59.75%** | +0.65% ✓ |
+| MNLI-mm Acc | 59.34% | **~61.0%** | ~+1.7% ✓ |
 
-**Tasks to evaluate:** mrpc, qqp, stsb, mnli-matched
+**Conclusion:** ViaDecoder consistently outperforms CLS-Query on all F1/Pearson metrics. Improvement is real but modest (+0.65–2.3%), bounded by concept collapse (eff. rank 5/128). **ViaDecoder is now the default evaluation mode for all future GLUE runs.**
 
-**Status:** [ ] Not started
+**Full analysis:** [via_decoder_eval_20260222.md](../2_Experiments_Registry/run_reports/via_decoder_eval_20260222.md)
+
+**Status:** [x] Done
 
 ---
 
@@ -377,10 +385,12 @@ Week 2 (CURRENT — Architecture Overhaul):
   [x] Updated GLUE eval: perceiver_pair_cls + separate tokenization
   [x] Created TSDAE training script (training/train_tsdae.py)
   [x] Verified TSDAE training locally (standard + BiXT modes)
+  [x] TODO 5: ViaDecoder GLUE eval — DONE ✅ (+0.65–2.3% on all tasks)
+  [x] Uploaded L6 canonical model to HF Hub (ksopyla/concept-encoder-perceiver_mlm_H512L6C128_20260208_211633)
+  [x] Added --run-name non-interactive upload, HF Hub eval download, eval script env-var overrides
   [ ] TODO 10: Train TSDAE PosOnly on Minipile (Polonez, 5 GPU-days)
   [ ] TODO 10b: Train TSDAE PosOnly + BiXT on Minipile (parallel on Odra)
   [ ] TODO 6:  Masked diffusion experiment (running on Polonez)
-  [ ] TODO 5: Eval ViaDecoder classification on existing L6
 
 Week 3:
   [ ] TODO 10c: Concept analysis on TSDAE checkpoints (compare vs MLM baseline)

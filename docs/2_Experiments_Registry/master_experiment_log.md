@@ -15,6 +15,26 @@ This is the central registry for all training runs and ablations. It is intended
 | 2026-02-19 | `perceiver_mlm_H512L6C128_20260219_105435` | H512 L6 C128 | Minipile (1x) | Polonez | 20 | `combined` + `kendall_gal` | MLM **4.31** | **122 / 128** (95.5%) | **MRPC:** 81.4% <br> **QQP:** 58.7% <br> **MNLI-m:** 48.9% <br> **STS-B:** 0.341 | -- | [Link](https://wandb.ai/ksopyla/MrCogito/runs/glue-mrpc-perceiver-mlm-h512l6c128-20260219-105435-61M-20260219_2027) | — | **Collapse fixed, but GLUE crashed.** Kendall-Gal muted MLM loss. |
 | 2026-02-21 | `perceiver_mlm_H512L6C128_20260220_184029` | H512 L6 C128 | Minipile (1x) | Polonez | 20 | `combined` + `fixed=0.1` | MLM 3.57 | **15.9 / 128** (12.5%) | **MRPC:** 80.7% <br> **QQP:** 64.9% <br> **MNLI-m:** 56.9% <br> **STS-B:** 0.507 <br> **PAWS:** 57.6% | -- | [Link](https://wandb.ai/ksopyla/MrCogito/runs/perceiver_mlm_H512L6C128_20260220_184029) | — | **Failed to fix collapse.** Abandon `combined` loss. |
 
+## Evaluation Experiments (Zero Training Cost)
+
+| Date | Eval Type | Source Checkpoint | Machine | Tasks | Key Scores | WandB | Conclusion |
+|---|---|---|---|---|---|---|---|
+| 2026-02-22 | `perceiver_decoder_cls` (ViaDecoder) | `perceiver_mlm_H512L6C128_20260208_211633` (from HF Hub) | Odra | mrpc, stsb, qqp, mnli-m, mnli-mm | **MRPC F1:** 82.73% <br> **STS-B P:** 0.650 <br> **QQP F1:** 73.35% <br> **MNLI-m:** 59.75% <br> **MNLI-mm:** 60.90% (ep2) | [WandB](https://wandb.ai/ksopyla/MrCogito) | **ViaDecoder > CLS-Query on all F1/Pearson metrics (+0.65–2.3%).** Consistent improvement confirms classification head was secondary bottleneck. Primary problem remains: concept collapse (rank 5/128). Sets new GLUE baselines. |
+
+**Updated baselines (ViaDecoder, L6 canonical, 2026-02-22):**
+
+| Task | CLS-Query (old) | ViaDecoder (new) | Delta |
+|---|---|---|---|
+| MRPC F1 | 81.3% | **82.73%** | +1.4% |
+| STS-B Pearson | 0.627 | **0.650** | +2.3% |
+| QQP F1 | 72.5% | **73.35%** | +0.85% |
+| MNLI-m Acc | 59.1% | **59.75%** | +0.65% |
+| MNLI-mm Acc | 59.34% | **60.90%** (+ep3 pend.) | +1.56% |
+
+**Full analysis:** [via_decoder_eval_20260222.md](run_reports/via_decoder_eval_20260222.md)
+
+---
+
 ## Architecture Overhaul (2026-02-21)
 
 **Decision:** Abandon MLM as primary training objective. Switch to TSDAE (denoising reconstruction) with PosOnly decoder.
