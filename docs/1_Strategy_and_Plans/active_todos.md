@@ -154,7 +154,7 @@ Reuse existing classification architecture (small heads):
 
 ---
 
-## TODO 4: Re-run Concept Analysis After Training — DONE ✅
+## TODO 4: Re-run Concept Analysis After Training — DONE v1, ✅
 
 **Action (2026-02-21):** Ran `run_concept_analysis.py` on the `perceiver_mlm_H512L6C128_20260220_184029` checkpoint (fixed 0.1 weight for combined loss).
 
@@ -169,11 +169,11 @@ Reuse existing classification architecture (small heads):
 effective_rank < 20  → concept losses alone insufficient, implement Slot Attention or Masked Diffusion. 
 Because the combined loss with weight 0.1 still collapsed, we abandon this regularisation track. 
 ```
-**Status:** [x] Done
+**Status:** [x] Done, but need to be validated on better trained concept model in the future.
 
 ---
 
-## TODO 5: Evaluate with ViaDecoder Classification — DONE ✅
+## TODO 5: Evaluate with ViaDecoder Classification — DONE v1, need to be validated on better trained concept model in the future. ✅
 
 **Done date: 2026-02-22**
 
@@ -189,7 +189,7 @@ Because the combined loss with weight 0.1 still collapsed, we abandon this regul
 | MNLI-m Acc | 59.1% | **59.75%** | +0.65% ✓ |
 | MNLI-mm Acc | 59.34% | **~61.0%** | ~+1.7% ✓ |
 
-**Conclusion:** ViaDecoder consistently outperforms CLS-Query on all F1/Pearson metrics. Improvement is real but modest (+0.65–2.3%), bounded by concept collapse (eff. rank 5/128). **ViaDecoder is now the default evaluation mode for all future GLUE runs.**
+**Conclusion:** ViaDecoder consistently outperforms CLS-Query on all F1/Pearson metrics. Improvement is real but modest (+0.65–2.3%) mainly due to evaluation on not well trained concepts, bounded by concept collapse (eff. rank 5/128), should be evaluated one more time on better trained concept model. **ViaDecoder is now the default evaluation mode for all future GLUE runs.**
 
 **Full analysis:** [via_decoder_eval_20260222.md](../2_Experiments_Registry/run_reports/via_decoder_eval_20260222.md)
 
@@ -363,7 +363,9 @@ the decoder initializes fresh (or also loaded from checkpoint).
 
 ---
 
-## Experiment Priority Order (Updated 2026-02-21)
+## Experiment Priority Order (Updated 2026-02-22)
+
+Aligned with [roadmap.md](roadmap.md) Track IDs. See roadmap for full experiment details and decision gates.
 
 ```
 Week 1 (DONE):
@@ -374,7 +376,7 @@ Week 1 (DONE):
   [x] TODO 4: Concept analysis on new checkpoint
   [x] TODO 0b: Re-train L6 with fixed concept loss weight → FAILED (rank 12.5%)
 
-Week 2 (CURRENT — Architecture Overhaul):
+Week 2 (DONE — Architecture Overhaul):
   [x] Architecture review: identified 5 structural misalignments (see docs/4_Research_Notes/mlm_perceiver_diagnosis_20260221.md)
   [x] Implemented TSDAE data collator (training/data_collators.py)
   [x] Rewrote PosOnly decoder for dense loss (TSDAE objective)
@@ -388,20 +390,34 @@ Week 2 (CURRENT — Architecture Overhaul):
   [x] TODO 5: ViaDecoder GLUE eval — DONE ✅ (+0.65–2.3% on all tasks)
   [x] Uploaded L6 canonical model to HF Hub (ksopyla/concept-encoder-perceiver_mlm_H512L6C128_20260208_211633)
   [x] Added --run-name non-interactive upload, HF Hub eval download, eval script env-var overrides
-  [ ] TODO 10: Train TSDAE PosOnly on Minipile (Polonez, 5 GPU-days)
-  [ ] TODO 10b: Train TSDAE PosOnly + BiXT on Minipile (parallel on Odra)
-  [ ] TODO 6:  Masked diffusion experiment (running on Polonez)
 
-Week 3:
-  [ ] TODO 10c: Concept analysis on TSDAE checkpoints (compare vs MLM baseline)
-  [ ] TODO 10d: GLUE eval with perceiver_pair_cls on TSDAE model
-  [ ] TODO 10e: Zero-shot STS-B (cosine similarity, no fine-tuning)
+Week 3 (CURRENT — Track A: Concept Quality Training):
+  [ ] TODO 10:  Train TSDAE PosOnly on Minipile (A1, Polonez, 5 GPU-days)
+  [ ] TODO 10b: Train TSDAE PosOnly + BiXT on Minipile (A2, parallel on Odra)
+  [ ] TODO 6:   Masked diffusion experiment (A3, running on Polonez)
+
+Week 4 (Track A: Evaluation + Decision Gate):
+  [ ] TODO 10c: Concept analysis on TSDAE checkpoints (A7 REPEAT, compare vs MLM baseline)
+  [ ] TODO 10d: GLUE eval with ViaDecoder + perceiver_pair_cls on TSDAE model (A6 REPEAT)
+  [ ] TODO 10e: Zero-shot STS-B (A8, cosine similarity, no fine-tuning)
   [ ] Diffusion vs TSDAE comparison: concept rank, GLUE MRPC/QQP/STS-B
+  [ ] Decision gate: pick winner (see roadmap Gate 1)
 
-Week 4:
-  [ ] Pick winner (TSDAE vs diffusion vs MLM), scale to OpenWebText + Wikipedia
-  [ ] Dimension Inversion ablation (token_dim=32, concept_dim=512)
-  [ ] Long-context eval (SCROLLS/LongBench) on best model
+Week 5-6 (Track A.4 + Track C start):
+  [ ] Add contrastive loss (SimCSE) to Track A winner (A4)
+  [ ] Recursive MLM baseline on Minipile (C1, TODO 8)
+  [ ] Test-time compute scaling sweep K=2..12 (C3)
+
+Week 7-8 (Track B: Data Scaling):
+  [ ] Scale to OpenWebText + Wikipedia with winner objective (B1, TODO 7)
+  [ ] Span masking (B2)
+  [ ] REPEAT: Full eval after scaling (B4/B5)
+
+Later (see roadmap for full schedule):
+  [ ] Dimension Inversion ablation (C4, token_dim=32, concept_dim=512)
+  [ ] Backbone init from SmolLM2-135M (B3, TODO 9)
+  [ ] Long-context eval SCROLLS/LongBench (D2/D3, after data scaling)
+  [ ] Recursive encoder with Track A winner (C2)
 ```
 
 ---
@@ -444,6 +460,7 @@ Same as A but with `--use_bixt`. Compare concept quality (effective rank, mean s
 
 ---
 
-*Plan updated: 2026-02-21*
-*Next review: after TSDAE training results*
+*Plan updated: 2026-02-22*
+*Aligned with: [roadmap.md v3](roadmap.md) (2026-02-22)*
+*Next review: after TSDAE training results (Track A decision gate)*
 *Related: docs/4_Research_Notes/mlm_perceiver_diagnosis_20260221.md*

@@ -1,720 +1,526 @@
-# Concept Reasoning Experiment Plan v2 — Strategic Reframe
+# MrCogito: Concept Encoder Research Roadmap v3
 
-**Created: 2026-02-18**
-**Supersedes:** [`concept_reasoning_experiment_plan_v1.md`](concept_reasoning_experiment_plan_v1.md) (v1, 2026-02-13, now obsolete)
-**Author analysis basis:** Full GLUE results (L2 + L6), embedding space research, field survey (Feb 2026)
-
----
-
-## Context: Why a New Plan?
-
-The v1 plan correctly identified engineering and data-scaling improvements but retained a flawed framing: **"close the 24pt GLUE gap to BERT-Base."** After deeper analysis of the L6 results and the research landscape, this goal is both unachievable with the current architecture and the wrong target. This v2 plan corrects both.
-
-The concept encoder's architecture is designed to *compress and abstract* token-level information. GLUE was designed to *reward preservation* of token-level information (especially CoLA, RTE). These are structurally opposed. The 24-point gap is not a training failure — it is the expected signature of a working information bottleneck being evaluated on a benchmark that penalizes compression.
-
-This plan reframes the goal, prioritizes experiments accordingly, and adds the contrastive pretraining objective that was missing from v1.
+**Created:** 2026-02-22 | **Supersedes:** roadmap v2 (2026-02-18)
+**Author:** Krzysztof Sopyla
+**Previous versions:** v1 (2026-02-13, obsolete), v2 (2026-02-18, archived)
 
 ---
 
-## Completed Work (as of 2026-02-19)
+## 1. Vision and Main Goal
 
-| Step | Status | Key Finding |
-|------|--------|-------------|
-| L2 baseline on Minipile (H512L2C128) | **Done** | `weighted_mlm` best on MRPC (82.2% F1), `posonly` best on inference tasks |
-| Full GLUE eval L2 | **Done** | CoLA ~0 MCC, MNLI ~54%, near-random on all inference tasks |
-| Scale to L6, 40 epochs (H512L6C128) | **Done** | +3pts avg; MNLI 59.1%; CoLA still broken (0.13 MCC) |
-| Sparse MLM decoding fix | **Done** | Fixed OOM from accelerate fp32 conversion on full logits |
-| Full GLUE eval L6 | **Done** | `perceiver_mlm` wins 6/8 tasks; avg gap to BERT-Base = -23.7pts |
-| torch.compile fix (dynamic=True) | **Done** | `training/mlm_training.py` + `--torch_compile_dynamic` flag added |
-| T-REGS MST loss | **Done** | Added `TREGSMSTLoss` + `"t_regs_mst"` registry entry to `nn/loss_manager.py` |
-| Concept losses enabled in script | **Done** | `CONCEPT_LOSSES="combined"`, `LOSS_WEIGHTING="kendall_gal"` in training script |
-| Concept analysis — L6 baseline | **Done** | **CRITICAL collapse detected**: eff. rank 5/128 (4%), mean sim 0.451, duplicates exist |
-| Masked Diffusion model implementation | **Done** | `nn/concept_encoder_diffusion.py` + `training/train_diffusion.py` + `scripts/train_diffusion_multigpu.sh` |
-| Training L6 + combined+kendall_gal | **Done** | Completed Feb 19. MLM eval_loss 4.31 (vs baseline 2.54). Negative Kendall-Gal total loss (expected). |
-| Concept analysis — L6 + concept losses | **Done** | Eff. rank 122/128 (95.5%), mean sim 0.009 — collapse **fixed**. But MLM quality sacrificed. |
-| Full GLUE eval — L6 + concept losses | **Done** | **Mixed: MRPC +0.11%, QQP −13.76%, MNLI −10%**. See analysis below. |
+Build an **audio conversational and reasoning model** grounded in a **concept bottleneck** architecture. Instead of operating on raw tokens (text) or codec frames (audio), the model compresses long input sequences into a small set of dense "concept tokens" and reasons over them.
 
-### Concept Analysis — perceiver_mlm H512L6C128 BEFORE concept losses (2026-02-18)
+**Core architecture idea:** Cross-attention between C learned concept tokens and N input tokens produces a fixed-size semantic representation (C << N). Decoding maps concepts back to output tokens. This yields O(C*N) complexity instead of O(N^2), enabling efficient processing of long sequences and modality-agnostic reasoning.
 
-Raw results: `agent_memory/concept_analysis_l6_20260218.json`
+**Publication framing:** *"Concept Bottleneck Encoder for Long-Context and Multimodal Understanding -- matching BERT on semantic tasks with 97% less compute at 4K tokens."*
 
-| Metric | L6 baseline (no losses) | L6 + concept losses | Target |
+---
+
+## 2. Sub-Goals
+
+### SG1: Text Concept Quality (prerequisite for everything)
+
+Produce concept representations that are **semantically rich** (high downstream task performance) and **geometrically diverse** (high effective rank, low pairwise similarity). This is the critical-path blocker for all subsequent work.
+
+**Success criteria:**
+- Concept effective rank > 64/128 (>50%)
+- STS-B Pearson > 0.75 (ViaDecoder evaluation)
+- QQP F1 > 76%, MNLI-m > 65%
+- Zero-shot STS-B cosine similarity > 0.60
+
+### SG2: Concept Reasoning for Abstract Reasoning
+
+Demonstrate that recursive concept refinement (weight-tied encoder applied K times) enables **test-time compute scaling** -- running more iterations at inference improves performance on hard reasoning tasks, without retraining.
+
+**Targets:**
+- Text reasoning benchmarks (HellaSwag, CommonsenseQA, WinoGrande) as near-term proxies
+- ARC-AGI as long-term target (requires visual/grid input adapter, see Track D)
+- Recursive encoder (42M params) matches or exceeds standard encoder (61M params) on semantic benchmarks
+
+**Inspiration:** TRM (Jolicoeur-Martineau et al., 2025) -- 7M-param recursive model beats LLMs 1000x its size on ARC-AGI. Recurrent Depth Reasoning (Geiping et al., 2025) -- latent space reasoning outperforms token-space models.
+
+### SG3: Audio Conversational Model
+
+Map audio (mel-spectrograms) into the frozen text concept space via a learned adapter. Build a "Concept-Talker": encode speech into concepts, reason over them, decode back to speech.
+
+**Architecture blueprint** (from Qwen Thinker-Talker and SLAM research):
+- **Encoder side:** Speech encoder (e.g., Whisper/HuBERT features) -> concept adapter -> shared concept space
+- **Reasoning:** Recursive concept encoder refines concepts (shared weights with text)
+- **Decoder side:** Concept-to-audio decoder (Talker) generates speech tokens/codec frames
+
+**Dependency:** SG3 only starts after SG1 demonstrates STS-B Pearson > 0.75 on text. The concept space must be proven semantically useful before mapping audio into it.
+
+---
+
+## 3. Feasibility Assessment
+
+### SG1: Text Concept Quality -- HIGH feasibility (2-3 months)
+
+| Factor | Assessment |
+|---|---|
+| TSDAE objective | Addresses all 5 identified structural problems simultaneously. 83x stronger gradient signal per concept vs sparse MLM. |
+| BiXT architecture | Solves static token embeddings problem. Implemented. |
+| Data scaling path | Minipile (0.6B tokens) -> OpenWebText+Wikipedia (5B+ tokens) is straightforward. |
+| Hardware available | Polonez (4x A100) + Odra (3x RTX 3090) sufficient for Minipile experiments. |
+| **Primary risk** | Concept collapse may be more fundamental than training objective. |
+| **Mitigation** | 3 parallel objective tracks (TSDAE, diffusion, contrastive). If all fail, Slot Attention is the architectural fallback. |
+
+### SG2: Concept Reasoning -- MEDIUM-HIGH feasibility (4-6 months)
+
+| Factor | Assessment |
+|---|---|
+| Recursive encoder | Implemented and tested (`nn/concept_encoder_recursive.py`). 47% fewer encoder params. |
+| TRM precedent | Validates that recursive refinement works for abstract reasoning. |
+| Text reasoning benchmarks | Achievable with current architecture once concept quality is fixed. |
+| ARC-AGI specifically | Requires visual/grid input adapter (not yet designed). This is an extension, not a prerequisite. |
+| **Primary risk** | Weight-tying may degrade concept quality vs independent layers. |
+| **Mitigation** | Warm-start from standard checkpoint. Iteration sweep (K=2..12) to find quality/compute tradeoff. |
+
+### SG3: Audio Modality -- MEDIUM feasibility (6-12 months, conditional on SG1)
+
+| Factor | Assessment |
+|---|---|
+| SLAM recipe | Single-GPU training with synthetic speech data is proven. |
+| Qwen architecture | Thinker-Talker maps directly to concept encoder + audio decoder. |
+| Modality adapter | Well-studied approach (Mini-Omni, AlignChat, Spirit LM). |
+| **Primary risk** | Concept space may not be rich enough for speech nuances (prosody, emotion). |
+| **Mitigation** | Start with speech understanding (ASR-like) before full S2S. Validate on spoken STS-B. |
+| **Gate** | Do not start audio work until STS-B Pearson > 0.75 and concept rank > 64/128. |
+
+### Overall Risk Assessment
+
+```mermaid
+graph LR
+    SG1[SG1: Text Concept Quality] -->|prerequisite| SG2[SG2: Concept Reasoning]
+    SG1 -->|prerequisite| SG3[SG3: Audio Modality]
+    SG2 -->|enables| ARC[ARC-AGI + Visual Adapter]
+    SG3 -->|enables| S2S[Speech-to-Speech Model]
+    SG2 --> S2S
+```
+
+The entire research program is **bottlenecked on SG1**. If concept quality cannot be fixed, SG2 and SG3 are not viable. The 3-track approach to SG1 (TSDAE, diffusion, contrastive) provides sufficient diversification.
+
+---
+
+## 4. Current State Summary (Feb 2026)
+
+### Best Baselines (ViaDecoder, L6 canonical checkpoint)
+
+| Task | Score | Notes |
+|---|---|---|
+| MRPC F1 | **82.73%** | ViaDecoder > CLS-Query (+1.4%) |
+| STS-B Pearson | **0.650** | ViaDecoder > CLS-Query (+2.3%) |
+| QQP F1 | **73.35%** | ViaDecoder > CLS-Query (+0.85%) |
+| MNLI-m Acc | **59.75%** | ViaDecoder > CLS-Query (+0.65%) |
+| MNLI-mm Acc | **60.90%** | ViaDecoder > CLS-Query (+1.56%) |
+| PAWS Acc | 57.6% | First measurement (fixed 0.1 model) |
+| Concept eff. rank | **5/128 (4%)** | Severe collapse in baseline |
+
+**Source checkpoint:** `perceiver_mlm_H512L6C128_20260208_211633` (40 epochs, Minipile)
+**Full results:** [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md), [via_decoder_eval_20260222.md](../2_Experiments_Registry/run_reports/via_decoder_eval_20260222.md)
+
+### What Was Tried and Failed
+
+| Approach | Outcome | Why it failed | Reference |
 |---|---|---|---|
-| Global effective rank | **5.07 / 128** | **122.3 / 128** | > 64 |
-| Effective rank (normalized) | 0.040 (4%) | **0.955 (95.5%)** | > 0.5 |
-| Mean pairwise similarity | 0.451 | **0.009** | < 0.3 |
-| Max pairwise similarity | **1.000** (duplicates) | 0.145 | < 0.6 |
-| Top-1 singular value | 111.8 (dominates) | 24.7 (balanced) | balanced |
-| Dims for 95% variance | 20 | **120** | > 50 |
+| `combined` + Kendall-Gal weighting | Rank 95.5% but GLUE crashed (QQP -13.76%, STS-B -46%) | Kendall-Gal muted MLM gradient; concepts diverse but semantically empty | [concept_losses_20260219.md](../2_Experiments_Registry/run_reports/concept_losses_20260219.md) |
+| `combined` + fixed 0.1 weight | Rank 12.5%, GLUE regressed across all tasks | Combined loss cannot prevent collapse without destroying MLM | [concept_losses_20260219.md](../2_Experiments_Registry/run_reports/concept_losses_20260219.md) |
+| CLS-query classification head | 128:1 information collapse | Single attention query destroys factorial concept structure | [mlm_perceiver_diagnosis_20260221.md](../4_Research_Notes/mlm_perceiver_diagnosis_20260221.md) |
 
-**Key finding:** Concept losses fixed the geometric collapse completely. But the downstream GLUE results showed regression, revealing a deeper issue with Kendall-Gal weighting.
+**Abandoned:** `combined` concept loss (both weighting strategies), CLS-query classification head.
+**Retained:** ViaDecoder classification (now default), `t_regs_mst` regularization (untested but implemented).
 
-### GLUE Results — L6 + combined+kendall_gal (2026-02-19)
+### Root Cause: 5 Structural Misalignments in MLM+Perceiver
 
-Full report: [`concept_losses_20260219.md`](../2_Experiments_Registry/run_reports/concept_losses_20260219.md)
+1. **[MASK] token pollution** -- encoder cross-attends to semantically empty [MASK] embeddings
+2. **Static token embeddings** -- concept cross-attention sees uncontextualized word vectors across all 6 layers
+3. **Input-embedding shortcut** -- decoder residual stream leaks token identity, killing 85% of gradient flow to concepts
+4. **CLS-query collapse** -- single query compresses 128 concepts into 1 vector (fixed by ViaDecoder)
+5. **GLUE mismatch** -- concatenated pair encoding conflicts with single-span pretraining
 
-| Task | Metric | L6 + concept losses | L6 baseline | vs baseline |
-|---|---|:---:|:---:|:---:|
-| MRPC | F1 | 81.41% | 81.3% | +0.11% |
-| STS-B | Pearson | 0.341 | N/A | NEW |
-| QQP | F1 | 58.74% | 72.5% | **−13.76%** |
-| MNLI-m | Acc | 48.87% | 59.1% | **−10.23%** |
-| MNLI-mm | Acc | 50.80% | 61.4% | **−10.60%** |
+**Full analysis:** [mlm_perceiver_diagnosis_20260221.md](../4_Research_Notes/mlm_perceiver_diagnosis_20260221.md)
 
-### Critical Diagnosis: Kendall-Gal Muted the MLM Objective
+### Architecture Overhaul (Feb 21, 2026)
 
-The Kendall-Gal weighting found an equilibrium where `log_var_task > 0` (low MLM precision) and `log_var_combined << 0` (high concept loss precision), causing the training loss to go **negative** (reached −0.26 at step 39000). The MLM gradient contribution was effectively zeroed out after step ~10000.
+The diagnosis led to a complete architecture overhaul addressing all 5 problems:
+- **TSDAE training** (token deletion, no [MASK], dense loss at all positions)
+- **BiXT bidirectional cross-attention** (tokens and concepts co-evolve)
+- **PosOnly decoder** (no input-embedding shortcut)
+- **Weighted concept pooling** (replaces CLS-query)
+- **Separate sentence encoding** for pair tasks (`perceiver_pair_cls`)
 
-**Result:** MLM eval_loss 4.31 vs baseline 2.54 — a 70% worse reconstruction quality. The concepts are orthogonal but encode almost no semantic information. The large QQP and MNLI regressions confirm this.
-
-**Key lesson:** Concept diversity without semantic meaningfulness is *worse* than semantic meaningfulness without diversity. The Kendall-Gal weighting is too aggressive for this use case — it treats concept regularisation as equally important as MLM, when it should be a light secondary constraint.
-
-**Target for next experiment:** MLM eval_loss < 3.0 with effective rank > 50% simultaneously. The right tool is `fixed` low-weight regularisation.
-
-**References:**
-- L6 results: [`l2_vs_l6_scaling.md`](../3_Evaluations_and_Baselines/comparative_studies/l2_vs_l6_scaling.md)
-- Baseline comparison: [`canonical_baselines.md`](../3_Evaluations_and_Baselines/canonical_baselines.md)
-- Embedding space theory: [`embedding_space_capabilites.md`](../research-notes/embedding_space_capabilites.md)
-- Concept analysis raw: `agent_memory/concept_analysis_l6_20260218.json`
+**Implementation complete.** Training not yet started. See [CHANGELOG.md](../../CHANGELOG.md) `[2026-02-21]`.
 
 ---
 
-## Root Cause Diagnosis (Updated)
+## 5. Research Tracks
 
-The v1 diagnosis identified three root causes: compression, position, data. This is correct but incomplete. Two additional root causes are now identified:
+### Track A: Fix Concept Quality (Critical Path)
 
-### Root Cause 1: Pretraining Objective Misalignment (NEW — critical)
+**Goal:** Find the training objective that produces concepts with effective rank > 64/128 AND STS-B Pearson > 0.70.
+**Targets SG1.** This is the highest priority. Everything else depends on it.
 
-MLM requires reconstructing individual masked tokens. The concept bottleneck is designed to destroy token-level detail during compression. These objectives are in direct conflict. The bottleneck is forced to be neither a good semantic abstractor nor a good token reconstructor — it converges to a suboptimal compromise.
-
-**Evidence:** MLM loss improved 37% (L2→L6) but downstream tasks improved only +3pts. Better MLM reconstruction does not produce better semantic concepts; it produces better-at-reconstruction-but-not-semantic concepts.
-
-**Fix:** Add a contrastive sentence-level objective alongside MLM (see Phase 3 below).
-
-**Reference paper:** *MAE-LM: Representation Deficiency in Masked Language Modeling* (Meng et al., 2023) — [[HF paper]](https://hf.co/papers/2302.02060). Shows that [MASK] tokens corrupt encoder representations; the concept bottleneck amplifies this.
-
-### Root Cause 2: GLUE Evaluates the Wrong Properties (NEW — critical)
-
-GLUE was designed for full-sequence token-level encoders (BERT-style). Concept encoders compress information: tasks that require token-level structure will always fail.
-
-| GLUE Task | Requires token-level detail? | Survivable through concept bottleneck? |
-|---|---|---|
-| **CoLA** | Yes — grammaticality is sub-word | **No — architectural ceiling reached at L6** |
-| **RTE** | Partially | Partially |
-| **SST-2** | No — holistic sentiment | Yes |
-| **MRPC / QQP** | No — semantic similarity | Yes |
-| **QNLI / MNLI** | Partially — compositional meaning | Partially |
-| **STS-B** | No — similarity | Yes |
-
-**CoLA MCC 0.13 at L6 is the architectural ceiling, not a training failure.** No amount of additional data or depth will fix CoLA. Drop it as an optimization target.
-
-**Fix:** Add long-context benchmarks (SCROLLS, LongBench) where concept compression is an advantage, not a liability.
-
-### Root Cause 3: Pretraining Data Starvation
-
-| Model | Pretraining tokens | Concept encoder gap |
-|---|---|---|
-| BERT-Base | ~3.3B | Baseline |
-| RoBERTa | ~160B | |
-| DeBERTa-base | ~78B | |
-| **Our L6 model** | **~0.6B effective (Minipile ×40)** | **5–270x deficit** |
-
-Seeing Minipile 40 times means the model is memorizing corpus statistics rather than generalizing language understanding.
-
-### Root Cause 4: Compression Ratio Wrong for Benchmark
-
-128 concepts / 512 tokens = **4:1 compression**. This ratio is:
-- Too aggressive to preserve token-level information (GLUE loses)
-- Not aggressive enough to show the architecture's efficiency advantage (512 tokens is trivial for O(N²) BERT)
-
-The concept encoder's real advantage appears at N > 1024 tokens, where O(C×N) vs O(N²) matters. Current experiments never test this.
-
-### Root Cause 5: Classification Head Ignores Pretrained Decoder
-
-Current GLUE fine-tuning: `single CLS query → concepts → linear classifier`. This throws away the entire pretrained Perceiver decoder, which already learned to reconstruct positional sequence representations from concepts. The decoder contains exactly the information the classifier needs.
-
-**Fix:** Implement Phase 1C (classification via decoder) — code already sketched in v1.
-
----
-
-## NEW Strategic Goal
-
-> **Instead of:** "Close the 24pt GLUE gap to BERT-Base on token-level tasks"
->
-> **New goal:** "Demonstrate that concept compression enables competitive performance on *long-context* tasks (N > 1K tokens) at a fraction of the memory and compute of standard attention, and enables *multimodal* (text + audio) understanding through a shared concept space."
-
-**Practical target benchmarks:**
-- **SCROLLS** (long document understanding, 1K-10K tokens) — primary new target
-- **LongBench** (multilingual long-context tasks) — secondary
-- **GLUE MRPC, QQP, MNLI** — retained as secondary metrics (fair tasks for concept representations)
-- ~~GLUE CoLA~~ — dropped as optimization target (architectural impossibility)
-
-**Publication framing:** "Concept Bottleneck Encoder for Long-Context and Multimodal Understanding — matching BERT on semantic tasks with 97% less compute at 4K tokens."
-
----
-
-## Phase 1: Engineering Foundation (1-2 days, prerequisite for all)
-
-Carry over from v1. These are unchanged but not yet done. **Do these before any new training run.**
-
-### 1.1 Enable Flash Attention / SDPA
-
-Set `need_weights=False` on ALL `nn.MultiheadAttention` calls:
-- `nn/concept_encoder.py` (cross-attn line 163, self-attn line 179)
-- `nn/concept_encoder_perceiver.py` (decoder cross-attn lines 200, 560; cls cross-attn line 378)
-- `nn/concept_encoder_weighted.py` (no attention in decoder, skip)
-
-This enables SDPA/Flash Attention automatically on PyTorch 2.x. **Expected: 2-4x training speedup. Required for 4K+ context experiments.**
-
-### 1.2 Enable torch.compile
-
-```bash
---torch_compile True
---torch_compile_backend "inductor"
-```
-
-Test for graph breaks before enabling on full training runs. Expected 1.5-2x additional speedup.
-
-### 1.3 Fused Cross-Entropy (Liger Kernel)
-
-Replace `CrossEntropyLoss` with `LigerCrossEntropyLoss` in sparse MLM decoding paths. Expected +20% throughput, -60% memory on loss computation.
-
-### 1.4 Data Loading
-
-```bash
---dataloader_num_workers=4
---dataloader_prefetch_factor=2
-```
-
----
-
-## Phase 2: Diagnostic — Concept Analysis (0.5 days, no training cost)
-
-**Run this immediately on the best existing checkpoint before any new experiments.** This determines whether further training with the current objective is worth it.
-
-Checkpoint: `perceiver_mlm_H512L6C128_20260208_211633`
-Tools: `analysis/check_model_health.py`, `analysis/concept_analysis.py`
-
-### Metrics to measure and interpret:
-
-| Metric | Target | If below target |
-|---|---|---|
-| Effective rank of 128 concepts | > 100 (>80%) used | Concepts have collapsed → add VICReg immediately |
-| Mean concept correlation | < 0.3 | Concepts are redundant → add orthogonality loss |
-| Attention specialization | Concepts attend to different token types | Low specialization → span masking needed |
-| Dimension utilization (512 dims) | > 30% active | Under-utilization → add T-REGS MST regularization |
-| Intrinsic dimensionality (TwoNN) | > 20 | Severe collapse → architecture change needed |
-
-**Reference:** *Revealing the Utilized Rank of Subspaces of Learning* (Garg et al., 2024) — ViT-B/16 utilizes only 35% of embedding space without regularization. [[HF paper]](https://hf.co/papers/2407.04797)
-
-**Decision gate:** If effective rank < 50 (less than 40% of concepts actually used), the MLM pretraining objective is causing dimensional collapse. This makes Phase 3 (contrastive objective) the top priority ahead of data scaling.
-
----
-
-## Phase 3: Classification via Decoder (2-3 days coding, 1 day eval)
-
-**Carry over from v1 Phase 3.1, but now the highest-priority experiment.**
-
-The current classification head (`CLS query → concepts → linear`) ignores the entire pretrained Perceiver decoder. Reuse the decoder for classification:
-
-```python
-# Current (wasteful):
-#   concepts → CLS cross-attn → classify
-#
-# Proposed (full weight reuse):
-#   concepts → Perceiver decoder (pretrained) → full sequence repr → pool → classify
-
-class ConceptEncoderForSequenceClassificationViaDecoder(PreTrainedModel):
-    def forward(self, input_ids, attention_mask, labels=None):
-        # 1. Encode to concepts (same as MLM pretraining)
-        concept_repr = self.encoder(input_ids, attention_mask).last_hidden_state
-
-        # 2. Decode back to full sequence using PRETRAINED decoder
-        position_ids = torch.arange(input_ids.shape[1], device=input_ids.device).unsqueeze(0)
-        pos_embeddings = self.decoder_query_embeddings(position_ids).expand(input_ids.shape[0], -1, -1)
-        input_embeddings = self.encoder.token_embeddings(input_ids)
-        decoder_queries = input_embeddings + pos_embeddings  # Input + Position (perceiver_mlm strategy)
-
-        attn_output, _ = self.decoder_cross_attn(
-            query=decoder_queries, key=concept_repr, value=concept_repr
-        )
-        decoder_output = decoder_queries + attn_output
-        decoder_output = decoder_output + self.decoder_ffn(self.post_cross_norm(decoder_output))
-
-        # 3. Mean pool over non-padding tokens, then classify
-        mask_expanded = attention_mask.unsqueeze(-1).float()
-        pooled = (decoder_output * mask_expanded).sum(1) / mask_expanded.sum(1).clamp(min=1e-9)
-        logits = self.classifier(self.dropout(pooled))
-        ...
-```
-
-**Why this matters:** Loads ALL pretrained weights (encoder + decoder), not just encoder. The Perceiver decoder already learned position→concept→token mappings during MLM pretraining. Pooling over the reconstructed sequence gives richer representations than a single CLS query.
-
-**Expected impact:** +5-10pts on QNLI, MNLI (positional composition); modest improvement on MRPC, QQP. CoLA will still be near-zero — that is expected.
-
-**Note from v1:** This class `ConceptEncoderForSequenceClassificationViaDecoder` already exists in `nn/concept_encoder_perceiver.py`. Verify it loads pretrained decoder weights correctly and run GLUE evaluation.
-
----
-
-## Phase 4: Scale Pretraining Data + Add Contrastive Objective (5-7 days training)
-
-This is the highest-impact experiment. Combines the data scaling from v2 with a new contrastive objective that addresses Root Cause 1.
-
-### 4.1 Dataset: OpenWebText + Wikipedia (same as v1 Phase 2.1)
-
-- `Skylion007/openwebtext` (~8M samples, 13.5GB) + `wikimedia/wikipedia` 20231101.en (~6.7M, 20GB)
-- Total: ~15M samples, ~33GB = 10x Minipile
-- Fits in RAM on Polonez (256GB)
-- Fallback if insufficient: `HuggingFaceFW/fineweb-edu` sample-10BT
-
-### 4.2 NEW: Add Contrastive Sentence Objective Alongside MLM
-
-**Motivation:** MLM alone trains the concept space to be good at reconstructing individual masked tokens. We also want the concept space to encode *semantic similarity*. Adding a contrastive objective alongside MLM directly targets this.
-
-**Implementation:**
-```python
-# During training, for each batch:
-# - MLM loss: as usual (predicts masked tokens)
-# - Contrastive loss: adjacent text spans should have similar concept representations
-#                     random pairs should have different concept representations
-
-def contrastive_concept_loss(concept_repr_a, concept_repr_b, temperature=0.07):
-    """
-    concept_repr_a: [B, C, H] - concepts for span A (e.g., first half of document)
-    concept_repr_b: [B, C, H] - concepts for span B (e.g., second half of document)
-    Adjacent spans from the same document = positive pairs.
-    """
-    # Pool concepts to sentence-level vector
-    z_a = F.normalize(concept_repr_a.mean(dim=1), dim=-1)  # [B, H]
-    z_b = F.normalize(concept_repr_b.mean(dim=1), dim=-1)  # [B, H]
-
-    # In-batch negatives (SimCSE-style)
-    sim_matrix = torch.matmul(z_a, z_b.T) / temperature   # [B, B]
-    labels = torch.arange(z_a.size(0), device=z_a.device)
-    loss = (F.cross_entropy(sim_matrix, labels) + F.cross_entropy(sim_matrix.T, labels)) / 2
-    return loss
-
-# Combined loss:
-total_loss = mlm_loss + 0.1 * contrastive_loss
-```
-
-**Why this is the right fix:** This is exactly what Large Concept Models (Meta, 2024) use at sentence level with SONAR embeddings. It trains the concept space directly for semantic similarity. The weight 0.1 keeps MLM dominant but adds the semantic alignment signal.
-
-**Reference papers:**
-- *Large Concept Models* (LCM Team, Meta, Dec 2024) — sentence-level concept prediction validated [[HF paper]](https://hf.co/papers/2412.08821)
-- *SimCSE: Simple Contrastive Learning of Sentence Embeddings* (Gao et al., 2021)
-
-### 4.3 Training Protocol
-
-```bash
-# Architecture: perceiver_mlm H512L6C128 (best from current experiments)
-# Data: OpenWebText + Wikipedia, streamed and interleaved
-# Epochs: 10-15 (vs 40 on Minipile — more data, fewer epochs needed)
-# LR: 3e-4 cosine, 3000 warmup steps
-# Effective batch: 512
-# New flags:
-#   --contrastive_loss_weight 0.1
-#   --span_masking True  (see Phase 5)
-#   --mlm_probability 0.30  (increased from 0.15, forces richer concept encoding)
-# Target MLM loss: < 2.0 (vs 2.54 on Minipile)
-```
-
----
-
-## Phase 5: Span Masking (implement together with Phase 4)
-
-Replace random 15% token masking with span masking. Low implementation cost; should be done as part of Phase 4 data pipeline.
-
-```python
-# In DataCollator: mask contiguous spans of 3-10 tokens
-# Forces concepts to encode phrases/semantic chunks, not individual tokens
-# Combined with higher masking rate (30%) to increase information pressure on the bottleneck
-```
-
-**Why:** Token-level random masking can be satisfied by remembering token co-occurrence statistics locally. Span masking forces the model to encode semantic content at the phrase level — exactly what concepts should represent.
-
-**Reference:** *SpanBERT* (Joshi et al., 2019) — showed +2-4pts on QA, coreference, and relation extraction over BERT with span masking. [[HF paper]](https://hf.co/papers/1907.10529)
-
-**PMI masking option:** Use pointwise mutual information to select spans of linguistically meaningful units (verb phrases, NPs). Harder to implement but more principled. Try simple span masking first.
-
----
-
-## Phase 6: Long-Context Evaluation (NEW — 1-2 days, no training)
-
-**This is the most important new addition to the plan.** Run the trained model on sequences longer than 512 tokens to validate the architecture's core efficiency claim.
-
-### 6.1 Extend Model to Handle Longer Sequences
-
-The concept encoder cross-attention is already O(C×N) not O(N²). Extend the positional embeddings and test at:
-- 512 tokens (current baseline)
-- 1024 tokens
-- 2048 tokens
-- 4096 tokens (requires Flash Attention from Phase 1.1)
-
-```python
-# Simple extension: resize position embeddings at inference time
-# Most HF models support this via model.resize_token_embeddings() equivalent
-# Or use RoPE/ALiBi for length extrapolation
-```
-
-### 6.2 Benchmarks to Evaluate
-
-| Benchmark | Task Type | Seq Length | Why relevant |
-|---|---|---|---|
-| **SCROLLS** | Long doc QA, summarization | 1K-10K | Primary long-context target |
-| **LongBench** | Multi-task long-context | 1K-32K | Diverse evaluation |
-| **QASPER** | Scientific QA | ~4K | Realistic long-context NLP |
-| **GovReport** | Summarization | ~10K | Tests concept compression |
-
-**Hypothesis:** At N=4096, concept encoder uses O(128×4096) = 524K attention ops vs BERT's impossible O(4096²) = 16.7M. This is a 32x efficiency advantage. Even at 50% downstream performance parity, the efficiency story changes entirely.
-
-### 6.3 Why This Unlocks the SoTA Path
-
-| Benchmark type | Can concept encoder win? | Why |
-|---|---|---|
-| GLUE (N≤512) | Unlikely on CoLA/RTE | Architecture penalized for compression |
-| GLUE MRPC/QQP | Competitive after data scaling | Semantic similarity = concept strength |
-| Long-context (N>1K) | **Yes — architectural advantage** | O(C×N) beats O(N²) |
-| Multimodal text+audio | **Yes — unique capability** | Shared concept space, modality-agnostic |
-
-**Reference:** *Scaling up Test-Time Compute with Latent Reasoning: A Recurrent Depth Approach* (Geiping et al., Feb 2025) — reasoning in latent space outperforms token-space models. [[HF paper]](https://hf.co/papers/2502.05171)
-
----
-
-## Phase 7: Concept Regularization Ablations (1-2 days, quick)
-
-Unchanged from v1. Infrastructure is ready (`LossManager`). Run on L6 perceiver_mlm.
-
-| Experiment | Config | Expected |
-|---|---|---|
-| Baseline | `CONCEPT_LOSSES="none"` | Current results |
-| Orthogonality | `CONCEPT_LOSSES="orthogonality" LOSS_WEIGHTING="kendall_gal"` | Diverse concepts |
-| VICReg | `CONCEPT_LOSSES="vicreg" LOSS_WEIGHTING="kendall_gal"` | Prevent collapse |
-| T-REGS MST | `CONCEPT_LOSSES="t_regs_mst"` | Better uniformity than VICReg |
-| Combined | `CONCEPT_LOSSES="combined" LOSS_WEIGHTING="kendall_gal"` | Best of both |
-
-**New option — T-REGS MST uniformity** (from *T-REGS: Minimum Spanning Tree Regularization*, Mordacq et al., 2025 [[HF paper]](https://hf.co/papers/2510.23484)):
-```python
-def mst_uniformity_loss(concepts):
-    distances = torch.cdist(concepts, concepts)
-    nn_distances = distances.topk(k=2, dim=-1, largest=False).values[:, :, 1]
-    return -nn_distances.sum(dim=-1).mean()  # Maximize spread
-```
-
-**Advantage over VICReg:** Detects and penalizes dimensional collapse that variance-based metrics miss.
-
----
-
-## Phase 9: Masked Diffusion Decoder — Replace MLM (NEW — HIGH PRIORITY)
-
-**Status:** Implementation complete. See `nn/concept_encoder_diffusion.py`, `training/train_diffusion.py`, `scripts/train_diffusion_multigpu.sh`.
-
-### Why masked diffusion instead of MLM?
-
-| Property | MLM (current) | Masked Diffusion |
-|---|---|---|
-| Masking rate | Fixed 15% | Sampled t ~ Uniform(0.05, 1.0) per batch |
-| At low t (5-15%) | decoder uses local context (easy) | same — local denoising |
-| At high t (70-99%) | impossible — too few tokens survive | decoder MUST use concepts |
-| Objective alignment | forces token-level preservation through bottleneck | forces semantic abstraction |
-| Inference | fill-mask only | iterative generation from all-[MASK] |
-| Graph breaks in compile | yes (sparse indexing) | no (uniform [B, L] shapes) |
-
-The key architectural insight: at t ≈ 1.0 (all tokens masked), the decoder receives **nothing but concepts**. It MUST extract all information from the encoder's concept vectors. This creates direct gradient pressure to make concepts semantically rich, eliminating the MLM misalignment root cause.
-
-### Architecture
-
-```
-Input tokens [B, L]
-    ↓
-ConceptEncoder (same L6 encoder)
-    ↓
-Concepts [B, C=128, H=512]
-    ↓  (+ noisy_ids [B, L] + timestep t [B])
-ConceptDiffusionDecoder (2 transformer layers)
-    └── Self-attention (token ↔ token coordination)
-    └── Cross-attention (token → concepts)
-    └── Timestep conditioning (AdaLN scale+shift)
-    ↓
-Logits [B, L, V]  → CE loss at masked positions
-```
-
-### Warm-start strategy (important)
-
-The encoder architecture is identical to the MLM models. Warm-start the diffusion model from the best MLM checkpoint:
-
-```bash
-# In train_diffusion.py: load encoder weights from MLM checkpoint
-# Only the diffusion decoder starts from random init
-model.encoder.load_state_dict(
-    ConceptEncoderForMaskedLMPerceiver.from_pretrained(mlm_checkpoint).encoder.state_dict()
-)
-```
-
-This gives the encoder a head start vs training from scratch, and lets training focus on optimizing the decoder and concept regularization.
-
-### Comparison experiment
-
-Run both in parallel on Minipile for 20 epochs:
-- **Run A**: MLM + combined + kendall_gal (current script, new losses)
-- **Run B**: Masked Diffusion + combined + kendall_gal (new script)
-
-Compare: concept analysis (effective rank), GLUE MRPC/MNLI, training stability.
-
-### Training script
-
-```bash
-bash scripts/train_diffusion_multigpu.sh
-```
-
----
-
-## Phase 10: Slot Attention Concept Encoder (NEW — MEDIUM PRIORITY)
-
-**Status:** Design complete (described in previous analysis). Not yet implemented.
-**Rationale:** Deprioritized vs masked diffusion — can be added as an encoder variant without changing the training objective.
-
-### What is Slot Attention?
-
-Standard cross-attention (current): softmax over **token positions** — each concept gets a soft mixture of all tokens.
-
-Slot Attention (Locatello et al., 2020): softmax over **concept dimension** — each token position assigns its mass to mostly one concept. This forces concepts to **compete** for token attribution, creating specialization.
-
-```python
-# Current ConceptEncoderLayer: softmax over tokens
-attn_logits = Q_concepts @ K_tokens.T   # [B, C, T]
-attn_weights = softmax(attn_logits, dim=-1)  # each concept attends all tokens
-
-# Slot Attention: softmax over concepts
-attn_logits = Q_tokens @ K_concepts.T   # [B, T, C]
-attn_weights = softmax(attn_logits, dim=-1)  # each token "votes" for ONE concept
-concept_updates = attn_weights.T @ token_features  # [B, C, H]
-```
-
-The concept-dimension softmax is what produces semantic specialization: one concept for nouns, another for verbs, another for clause boundaries.
-
-### Weight-tied iterations (Universal Transformer style)
-
-Instead of L=6 layers with different weights, apply ONE `SlotConceptLayer` K=6 times with tied weights. Benefits:
-- Test-time compute scaling: run K=12 at inference for hard inputs
-- Each iteration refines concepts until convergence (like EM)
-- Directly analogous to Geiping et al. recurrent depth reasoning
-
-### Implementation plan
-
-```python
-class SlotConceptLayer(nn.Module):
-    """Replaces ConceptEncoderLayer with Slot Attention."""
-    # See detailed implementation in previous architecture analysis
-
-class ConceptSlotEncoder(nn.Module):
-    """Weight-tied SlotConceptLayer applied K times."""
-    def __init__(self, config, num_iterations=6):
-        self.slot_layer = SlotConceptLayer(config)  # ONE shared layer
-        self.num_iterations = num_iterations
-
-    def forward(self, input_ids, attention_mask, num_iterations=None):
-        K = num_iterations or self.num_iterations
-        for _ in range(K):  # Same weights, K times
-            concepts = self.slot_layer(concepts, token_features, padding_mask)
-        return concepts
-```
-
-### When to implement
-
-After Phase 9 (masked diffusion) has been validated on Minipile:
-1. Add `ConceptSlotEncoder` as a new model variant (`model_type="slot_mlm"` or `"slot_diffusion"`)
-2. Run concept analysis: slot attention should dramatically improve effective rank vs standard cross-attention
-3. If effective rank improves to > 50% (64+ of 128 concepts), integrate as the default encoder
-
-### Expected impact
-
-The concept analysis shows only 5/128 concepts are used effectively. Slot Attention's competition mechanism is the most direct architectural fix for this collapse. Combined with masked diffusion:
-- Slot Attention fixes the encoder (diverse, specialized concepts)
-- Masked diffusion fixes the training objective (forces concepts to encode semantic content)
-
-This combination is the core of the proposed architecture.
-
-**References:**
-- *Object-Centric Learning with Slot Attention* (Locatello et al., 2020) — [[HF paper]](https://hf.co/papers/2006.15055)
-- *Universal Transformers* (Dehghani et al., 2018) — [[HF paper]](https://hf.co/papers/1807.03819)
-- *Recurrent Depth Reasoning* (Geiping et al., 2025) — [[HF paper]](https://hf.co/papers/2502.05171)
-
----
-
-## Phase 8: Architectural Experiments (parallel after Phase 4)
-
-### 8.1 Dimension Inversion: Thin Tokens + Fat Concepts (HIGH PRIORITY)
-
-Carry over from v1 Phase 3.3. Now supported by stronger evidence.
-
-**Theory:** Token embedding intrinsic dimensionality is 10-37 (Tsukagoshi & Sasano, 2025). ALBERT uses 128-dim token embeddings → 768-dim hidden with full GLUE performance. Apply this to concept encoder: tiny token embeddings, large concept embeddings.
-
-```python
-class ConceptEncoderConfig:
-    token_embedding_dim: int = 32    # down from 512
-    concept_dim: int = 512           # unchanged or larger
-```
-
-**Ablation grid:**
-
-| token_dim | concept_dim | Ratio | Expected |
-|---|---|---|---|
-| 512 | 512 | 1:1 | Baseline (current) |
-| 64 | 512 | 1:8 | Better concept capacity per param |
-| 32 | 512 | 1:16 | ALBERT-style factorization |
-| 32 | 1024 | 1:32 | Maximum concept richness |
-
-**Why now more justified:** The embedding space research (`embedding_space_capabilites.md`) shows keeping only 25% of embedding dims causes minimal performance degradation. Token dims can be cut to 32-64 without information loss.
-
-**Reference:** *Intrinsic Dimensionality Explains the Effectiveness of Language Model Fine-Tuning* (Aghajanyan et al., 2020) — RoBERTa achieves 90% performance with 200 trainable params. [[HF paper]](https://hf.co/papers/2012.13255)
-
-### 8.2 Backbone Initialization from Pretrained CLM (NEW — HIGH PRIORITY)
-
-**Motivation:** We train from random init while BERT/RoBERTa/DeBERTa all benefit from extensive pretraining. The biphasic CLM+MLM paper (2025) shows initializing from a pretrained causal LM and then fine-tuning with MLM gives dramatically better representations.
-
-**Proposal:** Initialize the token-level backbone transformer layers from a small pretrained model:
-- `HuggingFaceTB/SmolLM2-135M` — 135M params, trained on 11T tokens, permissive license
-- `Qwen/Qwen2.5-0.5B` — 500M params, strong baseline
-
-Keep concept cross-attention and decoder as random init (novel architecture). This gives the token-level processing layers 100B-token pretraining at zero training cost.
-
-**Implementation:** Load pretrained backbone weights selectively:
-```python
-pretrained = AutoModel.from_pretrained("HuggingFaceTB/SmolLM2-135M")
-concept_encoder.backbone.load_state_dict(pretrained.state_dict(), strict=False)
-# concept_cross_attn and decoder remain random init
-```
-
-**Reference:** *Should We Still Pretrain Encoders with Masked Language Modeling?* (Gisserot-Boukhlef et al., Jul 2025) — biphasic CLM→MLM training outperforms pure MLM from scratch. [[HF paper]](https://hf.co/papers/2507.00994)
-
-### 8.3 Position-Enriched Concepts (MEDIUM PRIORITY)
-
-Carry over from v1 Phase 3.2. Still worth testing but moved down in priority.
-
-**Recommended option — RoPE on concept self-attention:**
-Apply RoPE to the self-attention layers within the concept processing path (not cross-attention). Gives concepts a "before/after" ordering without adding parameters.
-
-### 8.4 Gradual Compression / Funnel-style (LOW PRIORITY)
-
-Carry over from v1 Phase 3.5. Still interesting but complex to implement. Do after 8.1 and 8.2.
-
----
-
-## Execution Priority (Revised — 2026-02-18)
-
-### ✅ Already done (2026-02-19)
-
-| Step | What | Result |
-|---|---|---|
-| ✅ | Flash Attention (`need_weights=False` on all MHA) | Already set in code |
-| ✅ | torch.compile fix (`dynamic=True`) | `mlm_training.py` updated, `--torch_compile_dynamic` flag |
-| ✅ | T-REGS MST loss | `nn/loss_manager.py` registry entry |
-| ✅ | Enable concept losses in script | `combined + kendall_gal` now default |
-| ✅ | Concept analysis on L6 | **CRITICAL collapse: effective rank 4%** — 5/128 concepts used |
-| ✅ | Masked Diffusion implementation | `nn/concept_encoder_diffusion.py` + training scripts |
-| ✅ | Fix STS-B Pearson bug | `evaluation/evaluate_model_on_glue.py` — predictions squeezed to 1D |
-| ✅ | GLUE script: concept-relevant tasks only | `all` = mrpc,stsb,qqp,mnli; `all-glue` = full set |
-| ✅ | Beyond-GLUE evaluation scripts | `evaluation/evaluate_on_benchmark.py` — SICK + PAWS |
-| ✅ | Recursive Concept Encoder | `nn/concept_encoder_recursive.py` — separate file, 47% fewer encoder params |
-| ✅ | Training: L6 + combined+kendall_gal | Concept eff. rank **95.5%** ✓. MLM eval_loss **4.31 ✗** (vs 2.54 baseline) |
-| ✅ | GLUE eval: L6 + concept losses | QQP **−13.76%**, MNLI **−10%**, STS-B **−46%** vs baseline. Kendall-Gal muted MLM. |
-| ✅ | STS-B baseline: L6 no losses | Pearson **0.627** / Spearman **0.627** (2026-02-20). Reference for next experiment. |
-
-### 🔜 Immediate next — concept loss weight calibration
-
-| # | Experiment | Effort | Expected Impact | Dependencies | Status |
+| ID | Experiment | Priority | Effort | Status | Dependencies |
 |---|---|---|---|---|---|
-| **1** | MLM training with `combined` (fixed 0.1 weight) | 5 days GPU | Fix concept collapse | None | **DONE** (Eval loss degraded, rank 12.5% ✗) |
-| **2** | Eval ViaDecoder classification on L6 | 0.5 day | +5-10pts QNLI/MNLI | None | Ready |
-| **3** | Re-run concept analysis after (1) | 0.5 day | Verify concept losses fixed collapse | After (1) | **DONE** (Still collapsed ✗) |
+| A1 | **TSDAE PosOnly** on Minipile (20 ep, H512L6C128) | HIGHEST | 5 GPU-days | Implemented, awaiting GPU | None |
+| A2 | **TSDAE + BiXT** on Minipile (parallel with A1) | HIGHEST | 5 GPU-days | Implemented, awaiting GPU | None |
+| A3 | **Masked Diffusion** on Minipile (warm-start from L6 MLM) | HIGH | 5 GPU-days | In progress (Polonez) | None |
+| A4 | **Contrastive loss** (SimCSE-style, add to A1/A2 winner) | HIGH | 1 day code + 3 GPU-days | Not started | After A1/A2 results |
+| A5 | **t_regs_mst regularization** (replace abandoned `combined`) | MEDIUM | 0.5 day code | Implemented, untested | Add to A1/A2/A3 |
+| A6 | REPEAT: **ViaDecoder evaluation** on every new checkpoint | STANDARD | 0.5 day per eval | Ongoing | After each training |
+| A7 | REPEAT: **Concept analysis** (eff. rank, similarity, singular values) | STANDARD | 0.5 day per run | Ongoing | After each training |
+| A8 | **Zero-shot STS-B** (cosine similarity of separately-encoded sentences) | MEDIUM | 0.5 day | Not started | After A1/A2 |
 
-### 📅 Next 2 weeks
+**Evaluation protocol for every Track A checkpoint:**
+1. Concept analysis: effective rank, mean/max pairwise similarity (target: rank > 64, mean sim < 0.2)
+2. GLUE with ViaDecoder: MRPC, STS-B, QQP, MNLI (target: beat current baselines)
+3. GLUE with `perceiver_pair_cls`: same tasks, separate encoding (new evaluation mode)
+4. Zero-shot STS-B: cosine similarity, no fine-tuning (ground truth of concept quality)
+5. Beyond-GLUE: PAWS, SICK
 
-| # | Experiment | Effort | Expected Impact | Dependencies |
-|---|---|---|---|---|
-| **4** | **Recursive MLM:** build `recursive_mlm` model, register in training script | 1 day code | New model type available | None |
-| **5** | **Recursive MLM:** train on Minipile (K=6, concept losses) | 2 GPU-days | ~42M param model with 47% fewer encoder params | (4) |
-| **6** | **Recursive MLM:** concept analysis + GLUE + SICK + PAWS eval | 1 day | Compare recursive vs standard | (5) |
-| **7** | **Recursive MLM:** iteration sweep K=2,4,6,8,12 on GLUE | 0.5 day | Test-time compute scaling validation | (5) |
-| **8** | Run masked diffusion on Minipile (parallel on Odra) | 5 GPU-days | Validate diffusion objective | None |
-| **9** | Phase 4+5: Scale data (OpenWebText+Wiki) + span masking | 7 days | Largest single improvement | After (3) |
-| **10** | Phase 8.1: Dimension inversion (token_dim=32, concept_dim=512) | 3+5 days | Novel efficiency + quality | After (3) |
+**Decision gate (end of Track A):**
+- If TSDAE or diffusion produces rank > 64 AND STS-B > 0.70 -> proceed to Track B (data scaling)
+- If all three objectives fail rank > 30 -> implement Slot Attention (Track C.5) before proceeding
+- Pick winner based on: (1) concept rank, (2) STS-B Pearson, (3) training stability
 
-### 📅 Next quarter
-
-| # | Experiment | Effort | Expected Impact | Dependencies |
-|---|---|---|---|---|
-| **11** | Phase 6: Long-context evaluation (SCROLLS/LongBench) | 2 days | Validates efficiency advantage | Phase 9 |
-| **12** | Phase 8.2: Backbone init from SmolLM2 | 3 days | Bypass data starvation | Phase 1 |
-| **13** | Concept losses ablation (t_regs_mst vs combined) | 2 days | +1-3pts, identify best loss | After (3) |
-| **14** | Phase 8.3: Position-enriched concepts (RoPE on self-attn) | 2 days | +2-4pts composition | Phase 1 |
-
-**Critical path:** [MLM with concept losses] → Concept re-analysis → [Recursive MLM + Diffusion in parallel] → Pick best → Scale data → Long-context eval → publish
+**Active TODOs:** [TODO 6](active_todos.md), [TODO 10](active_todos.md)
+**Training scripts:** `training/train_tsdae.py`, `scripts/train_diffusion_multigpu.sh`
 
 ---
 
-## Decision Gates
+### Track B: Data Scaling
 
-Use these to avoid wasting GPU-days on the wrong next step:
+**Goal:** Scale pretraining data from 0.6B to 5B+ effective tokens using the winning objective from Track A.
+**Targets SG1.** This is the largest single expected improvement.
+
+| ID | Experiment | Priority | Effort | Status | Dependencies |
+|---|---|---|---|---|---|
+| B1 | **OpenWebText + Wikipedia** (15M samples, ~33GB) with Track A winner | HIGH | 7 GPU-days | Not started | Track A winner selected |
+| B2 | **Span masking** (contiguous 3-10 tokens, 30% rate) alongside B1 | HIGH | 1 day code | Not started | With B1 |
+| B3 | **Backbone init from SmolLM2-135M** (or Qwen2.5-0.5B) | HIGH | 3 days code + 5 GPU-days | Not started | After B1 baseline |
+| B4 | REPEAT: **Full GLUE + Beyond-GLUE** after scaling | STANDARD | 1 day | -- | After B1 |
+| B5 | REPEAT: **Concept analysis + ViaDecoder eval** after scaling | STANDARD | 0.5 day | -- | After B1 |
+| B6 | Scale to **FineWeb-Edu sample-10BT** if B1 insufficient | MEDIUM | 10 GPU-days | Not started | After B1 results |
+
+**Data sources:**
+- `Skylion007/openwebtext` (~8M samples, 13.5GB)
+- `wikimedia/wikipedia` 20231101.en (~6.7M, 20GB)
+- Fallback: `HuggingFaceFW/fineweb-edu` sample-10BT
+
+**Training protocol for B1:**
+- Architecture: Track A winner (TSDAE or diffusion + best regularization)
+- Epochs: 10-15 (more data = fewer epochs needed)
+- LR: 3e-4 cosine, 3000 warmup steps
+- Effective batch: 512
+- Target: MLM/reconstruction loss < 2.0, effective rank > 60
+
+**Decision gate (end of Track B):**
+- STS-B Pearson > 0.75 -> proceed to Track D (long-context)
+- MNLI-m > 65% -> strong signal, ready for reasoning tasks
+- STS-B < 0.70 -> try backbone init (B3) before further scaling
+
+**Active TODO:** [TODO 7](active_todos.md)
+
+---
+
+### Track C: Architectural Innovations
+
+**Goal:** Test architectural variants that improve concept quality (SG1), enable reasoning (SG2), or improve efficiency.
+**Targets SG1 + SG2.** These can run in parallel with Track B once Track A winner is selected.
+
+| ID | Experiment | Priority | Effort | Status | Dependencies |
+|---|---|---|---|---|---|
+| C1 | **Recursive Concept Encoder** on Minipile (K=6, ~42M params, MLM) | MEDIUM | 2 GPU-days | Code done, not trained | None |
+| C2 | **Recursive encoder with Track A winner** (TSDAE/diffusion) | HIGH | 3 GPU-days | Not started | Track A winner + C1 results |
+| C3 | **Test-time compute scaling** sweep (K=2,4,6,8,12 on GLUE) | HIGH | 0.5 day eval | Not started | After C1 or C2 |
+| C4 | **Dimension Inversion** (token_dim=32, concept_dim=512) | MEDIUM | 3 days code + 5 GPU-days | Not started | After Track A |
+| C5 | **Slot Attention** encoder variant (softmax over concept dim) | MEDIUM | 3 days code + 5 GPU-days | Design complete | Fallback if Track A fails |
+| C6 | **Next-Concept Prediction** (LCM-style, concept-level LM) | LOW | 5 days code + 5 GPU-days | Not started | After Track B |
+
+**C1 training plan (Recursive MLM baseline):**
+- Phase A: Minipile, 20 epochs, K=6, combined losses with fixed 0.1 (learn from past -- NOT kendall_gal)
+- Phase B: Iteration sweep K=2,4,6,8,12 on GLUE (no retraining, change `model.config.num_iterations`)
+- Phase C: Compare vs standard L6 on MRPC, STS-B, QQP, MNLI, PAWS, SICK
+- Phase D: Warm-start from standard L6 checkpoint via `encoder.load_from_standard_checkpoint()`
+
+**C2 (Recursive + Track A winner):** The recursive encoder must be re-trained with the winning objective, not just MLM. If TSDAE wins Track A, train `RecursiveConceptEncoderForMaskedLM` with TSDAE collator and PosOnly decoder.
+
+**C4 rationale:** Token embedding intrinsic dimensionality is 10-37 (Tsukagoshi & Sasano, 2025). ALBERT uses 128-dim token embeddings with full GLUE performance. Cutting token_dim to 32 and keeping concept_dim=512 concentrates capacity in the concept space.
+
+**Active TODO:** [TODO 8](active_todos.md) (C1), [TODO 9](active_todos.md) (B3/backbone init)
+
+---
+
+### Track D: Long-Context and Reasoning
+
+**Goal:** Validate the architecture's core efficiency advantage on sequences > 1K tokens, and demonstrate concept-level reasoning capability.
+**Targets SG2.** This is the publication-critical track.
+
+| ID | Experiment | Priority | Effort | Status | Dependencies |
+|---|---|---|---|---|---|
+| D1 | **Extend position embeddings** to 4K+ tokens (RoPE or interpolation) | HIGH | 2 days code | Not started | Track B complete |
+| D2 | **SCROLLS** evaluation (long doc QA, summarization, 1K-10K tokens) | HIGH | 2 days eval | Not started | D1 |
+| D3 | **LongBench** evaluation (multilingual long-context) | MEDIUM | 1 day eval | Not started | D1 |
+| D4 | **Text reasoning benchmarks** (HellaSwag, CommonsenseQA, WinoGrande) | MEDIUM | 2 days eval | Not started | Track B or C2 |
+| D5 | **Concept-level reasoning** with recursive encoder at K=12-24 | HIGH | 1 day eval | Not started | C2 + C3 |
+| D6 | **Visual/grid adapter for ARC-AGI** | LOW | 2 weeks R&D | Not started | C2 proven, long-term |
+
+**Efficiency argument (the core claim):**
+
+| Sequence length | Concept Encoder O(C*N) | BERT O(N^2) | Advantage |
+|---|---|---|---|
+| 512 | 65K ops | 262K ops | 4x |
+| 2048 | 262K ops | 4.2M ops | 16x |
+| 4096 | 524K ops | 16.7M ops | **32x** |
+| 16384 | 2.1M ops | 268M ops | **128x** |
+
+At N=4096, even 50% downstream performance parity makes the efficiency story compelling.
+
+**ARC-AGI pathway (long-term):**
+ARC-AGI is a visual/spatial abstract reasoning benchmark. Applying concepts to it requires:
+1. Visual input adapter (grid -> token sequence or direct grid-to-concept mapping)
+2. Recursive concept refinement at high K (test-time compute scaling)
+3. Concept-level generation (predict output grid from refined concepts)
+
+This is orthogonal to current text work and will be designed after the recursive encoder proves test-time compute scaling works on text reasoning (D4, D5).
+
+---
+
+### Track E: Audio Modality
+
+**Goal:** Map audio into the concept space and build a speech-to-speech model.
+**Targets SG3.** Only starts after SG1 success criteria are met.
+
+| ID | Experiment | Priority | Effort | Status | Dependencies |
+|---|---|---|---|---|---|
+| E1 | **Mel-spectrogram to concept adapter** design and training | MEDIUM | 2 weeks R&D | Not started | SG1 criteria met |
+| E2 | **Synthetic speech data** generation (SLAM recipe, TTS from text) | MEDIUM | 1 week | Not started | E1 designed |
+| E3 | **Speech understanding** evaluation (spoken STS-B, speech NLI) | MEDIUM | 1 week | Not started | E1 trained |
+| E4 | **Concept-to-audio decoder** (Talker) for speech generation | LOW | 3 weeks R&D | Not started | E3 validated |
+| E5 | **Full conversational pipeline** prototype | LOW | 4 weeks | Not started | E4 |
+
+**Architecture reference models:**
+- Qwen2.5-Omni / Qwen3-Omni: Thinker-Talker architecture (most relevant)
+- Moshi (Kyutai): Full-duplex, multi-stream, inner monologue
+- SLAM: Single-GPU recipe with synthetic data
+- Mini-Omni / AlignChat: Lightweight adapters on frozen LLMs
+- Spirit LM (Meta): Interleaved spoken/written tokens
+
+**Detailed speech-to-speech research notes:** [concept_model_speech2speech.md](../research-notes/concept_model_speech2speech.md)
+
+**Gate:** Do not start E1 until:
+- STS-B Pearson > 0.75
+- Concept effective rank > 64/128
+- Text concept space demonstrably carries semantic structure (zero-shot STS-B > 0.60)
+
+---
+
+## 6. Experiment Priority Matrix
+
+All experiments sorted by priority, with effort estimates and dependencies.
+
+### Immediate (Month 1-2)
+
+| # | Experiment | Track | Effort | Expected Impact | Dependencies | Status |
+|---|---|---|---|---|---|---|
+| 1 | TSDAE PosOnly on Minipile | A1 | 5 GPU-days | Fixes all 5 structural problems | None | Awaiting GPU |
+| 2 | TSDAE + BiXT on Minipile | A2 | 5 GPU-days | Adds token contextualization | None | Awaiting GPU |
+| 3 | Masked Diffusion on Minipile | A3 | 5 GPU-days | Alternative objective validation | None | In progress |
+| 4 | Concept analysis on A1/A2/A3 checkpoints | A7 | 0.5 day each | Validate concept quality fix | After 1/2/3 | -- |
+| 5 | ViaDecoder + pair_cls eval on A1/A2/A3 | A6 | 0.5 day each | Establish new baselines | After 1/2/3 | -- |
+| 6 | Zero-shot STS-B on best Track A model | A8 | 0.5 day | Ground truth concept quality | After 4/5 | -- |
+| 7 | Diffusion vs TSDAE comparison, pick winner | A | 0 | Decision gate | After 4/5/6 | -- |
+
+### Near-term (Month 3-4)
+
+| # | Experiment | Track | Effort | Expected Impact | Dependencies | Status |
+|---|---|---|---|---|---|---|
+| 8 | Add contrastive loss (SimCSE) to Track A winner | A4 | 1+3 days | +4pts STS-B from SimCSE literature | Winner selected | Not started |
+| 9 | Scale data: OpenWebText+Wiki with winner | B1 | 7 GPU-days | Largest single improvement | Winner selected | Not started |
+| 10 | Span masking (with B1) | B2 | 1 day code | Phrase-level concept encoding | With 9 | Not started |
+| 11 | Recursive MLM baseline on Minipile | C1 | 2 GPU-days | Validate recursive approach | None (can start earlier) | Code done |
+| 12 | Recursive encoder with Track A winner | C2 | 3 GPU-days | Recursive + best objective | Winner + C1 | Not started |
+| 13 | Test-time compute scaling sweep (K=2..12) | C3 | 0.5 day | Validate SG2 hypothesis | After 11 or 12 | Not started |
+| 14 | Dimension Inversion ablation | C4 | 3+5 days | Novel efficiency improvement | After Track A | Not started |
+| 15 | REPEAT: Full eval after data scaling | B4/B5 | 1 day | Validate scaling gains | After 9 | -- |
+
+### Medium-term (Month 5-6)
+
+| # | Experiment | Track | Effort | Expected Impact | Dependencies | Status |
+|---|---|---|---|---|---|---|
+| 16 | Backbone init from SmolLM2-135M | B3 | 3+5 days | Bypass data starvation | After B1 results | Not started |
+| 17 | Extend position embeddings to 4K+ | D1 | 2 days | Enable long-context eval | Track B complete | Not started |
+| 18 | SCROLLS / LongBench evaluation | D2/D3 | 3 days | Validate efficiency claim | D1 | Not started |
+| 19 | Text reasoning benchmarks | D4 | 2 days | SG2 near-term proxy | Track B or C2 | Not started |
+| 20 | Recursive encoder at K=12-24 for reasoning | D5 | 1 day | SG2 validation | C2 + C3 | Not started |
+
+### Long-term (Month 7-12)
+
+| # | Experiment | Track | Effort | Expected Impact | Dependencies | Status |
+|---|---|---|---|---|---|---|
+| 21 | Slot Attention encoder variant | C5 | 3+5 days | Architectural fix for collapse | If Track A insufficient | Design done |
+| 22 | Next-Concept Prediction (LCM-style) | C6 | 5+5 days | Concept-level generation | After Track B | Not started |
+| 23 | Audio adapter prototype | E1/E2 | 3 weeks | SG3 entry point | SG1 criteria met | Not started |
+| 24 | Speech understanding eval | E3 | 1 week | Validate audio concepts | E1 trained | Not started |
+| 25 | Concept-to-audio decoder | E4 | 3 weeks | Speech generation | E3 validated | Not started |
+| 26 | Visual adapter for ARC-AGI | D6 | 2 weeks | SG2 long-term | C2 proven | Not started |
+| 27 | Full conversational pipeline | E5 | 4 weeks | SG3 completion | E4 | Not started |
+
+---
+
+## 7. Timeline
+
+```mermaid
+gantt
+    title MrCogito Research Timeline (2026)
+    dateFormat YYYY-MM
+    axisFormat %b %Y
+
+    section trackA [Track A: Concept Quality]
+    TSDAE + BiXT + Diffusion training     :a1, 2026-02, 1M
+    Evaluation + concept analysis          :a2, after a1, 2w
+    Pick winner + add contrastive loss     :a3, after a2, 3w
+
+    section trackB [Track B: Data Scaling]
+    OpenWebText+Wiki training              :b1, after a3, 1M
+    Span masking + eval                    :b2, after b1, 2w
+    Backbone init experiment               :b3, after b2, 3w
+
+    section trackC [Track C: Architecture]
+    Recursive MLM baseline                 :c1, 2026-03, 2w
+    Recursive + winner objective           :c2, after a3, 3w
+    Dimension Inversion                    :c4, after a3, 1M
+    Test-time compute sweep                :c3, after c2, 1w
+
+    section trackD [Track D: Long-Context]
+    Position embedding extension           :d1, after b1, 2w
+    SCROLLS + LongBench eval              :d2, after d1, 2w
+    Text reasoning benchmarks              :d3, after b1, 2w
+    Recursive reasoning K=12-24            :d5, after c3, 1w
+
+    section trackE [Track E: Audio]
+    Audio adapter design + training        :e1, 2026-08, 1M
+    Speech understanding eval              :e3, after e1, 2w
+    Concept-to-audio decoder               :e4, after e3, 1M
+    Full conversational pipeline           :e5, after e4, 1M
+```
+
+**Milestone summary:**
+
+| Month | Focus | Key deliverable |
+|---|---|---|
+| **1-2** (Mar-Apr) | Track A: concept quality | Winner objective selected, concept rank > 64/128 |
+| **3-4** (May-Jun) | Track B: data scaling + Track C start | Scaled model, STS-B > 0.75, recursive encoder validated |
+| **5-6** (Jul-Aug) | Track D: long-context + reasoning | SCROLLS results, test-time compute scaling demonstrated |
+| **7-9** (Sep-Nov) | Track E.1-E.2: audio adapter | Speech-to-concept mapping working |
+| **10-12** (Dec-Feb 2027) | Track E.3-E.5: full pipeline | Concept-Talker prototype, publication |
+
+---
+
+## 8. Decision Gates
+
+### Gate 1: After Track A (concept quality fix)
 
 ```
-After Phase 2 (concept analysis):
-  effective_rank < 50?  → Prioritize Phase 7 (VICReg/orthogonality) before data scaling
-  mean_correlation > 0.5? → Add orthogonality loss to Phase 4 training
-  effective_rank > 100? → Proceed with data scaling as planned
+TSDAE/Diffusion effective_rank > 64/128?
+  YES → proceed to Track B (data scaling)
+  NO, but rank > 30 → add Slot Attention (C5), retry
+  NO, rank < 30 → fundamental rethink needed (pause SG2/SG3)
 
-After Phase 4 (scaled training):
-  MLM loss < 2.0? → On track, proceed to Phase 6 long-context eval
-  MLM loss > 2.5? → Check data pipeline, try higher LR or learning rate schedule
-  GLUE MNLI > 65%? → Strong signal, expand long-context evaluation
-  GLUE MNLI < 60%? → Consider backbone init (Phase 8.2) before further data scaling
+STS-B Pearson > 0.70?
+  YES → TSDAE/diffusion is working, scale data
+  NO → add contrastive loss (A4), retry with combined objective
+```
 
-After Phase 6 (long-context eval):
-  Concept encoder competitive at N=4096? → Focus on long-context SoTA + publication
-  Not competitive? → Profile bottleneck: is it the concept count (128) or model depth?
+### Gate 2: After Track B (data scaling)
+
+```
+STS-B Pearson > 0.75 AND MNLI-m > 65%?
+  YES → proceed to Track D (long-context) AND Track E (audio)
+  NO → try backbone init from SmolLM2 (B3), then retry
+  Still NO → consider switching to decoder-only architecture
+
+Concept rank > 64/128 after scaling?
+  YES → concept collapse solved, full speed ahead
+  NO → scaling alone insufficient, add t_regs_mst or Slot Attention
+```
+
+### Gate 3: After Track C (recursive encoder)
+
+```
+Recursive K=6 within 2pts of standard L6 on GLUE?
+  YES → recursive is "free" compression, use as default
+  NO → weight tying hurts, keep standard encoder
+
+K=12 beats K=6 on MNLI or reasoning tasks?
+  YES → test-time compute scaling works, SG2 validated
+  NO → recursive refinement not helping, rethink reasoning approach
+```
+
+### Gate 4: After Track D (long-context)
+
+```
+Competitive on SCROLLS at N=4096?
+  YES → publish efficiency paper, start Track E
+  NO → profile bottleneck: concept count (128) or model depth?
+       Try C=256 or C=512 concepts with long sequences
+```
+
+### Gate 5: Before Track E (audio)
+
+```
+STS-B Pearson > 0.75 AND concept rank > 64/128 AND zero-shot STS-B > 0.60?
+  ALL YES → start audio adapter
+  ANY NO → text concept space not ready, continue Track A/B
 ```
 
 ---
 
-## Research Horizon
+## 9. Experiments to Repeat After Improvements
 
-### Near-term (v2 experiments succeed, <10pt gap on semantic GLUE tasks):
-1. **Long-context SoTA** — target SCROLLS leaderboard with 4K-16K sequence experiments
-2. **Publication** — "Concept Bottleneck Encoder for Long-Context and Multimodal NLU" — dimension inversion + classification via decoder + long-context results
+Certain experiments must be re-run after engineering improvements or new training checkpoints. This list ensures nothing is forgotten.
 
-### Medium-term (after long-context validation):
-3. **Audio modality** — concept bottleneck on mel spectrograms; shared concept space with text; target speech understanding benchmarks
-4. **Concept encoder-decoder for generation** — use LCM's approach: predict next-concept-embedding autoregressively; frozen concept encoder as semantic anchor
-
-### Long-term (the original vision, 2-3 years):
-5. **Multimodal SoTA** — concept bottleneck as universal modality bridge; competing with Qwen-Omni / Moshi on speech-text understanding
-6. **Recurrent concept refinement** — apply Geiping et al. recurrent depth idea to concept tokens; each "thinking step" refines the 128 concept vectors; enable test-time compute scaling. **Implementation started:** `nn/concept_encoder_recursive.py` provides the `RecursiveConceptEncoder` (1 shared layer, K iterations, 47% fewer encoder params). See `docs/1_Strategy_and_Plans/active_todos.md` TODO 8 for full training/eval plan.
+| Experiment | Repeat when | Last run | Target improvement |
+|---|---|---|---|
+| **ViaDecoder GLUE evaluation** | After every new training checkpoint | 2026-02-22 (L6 baseline) | Beat current baselines |
+| **Concept analysis** (eff. rank, similarity) | After every training run | 2026-02-21 (fixed 0.1 model) | Rank > 64/128 |
+| **Beyond-GLUE** (PAWS, SICK) | After every new training checkpoint | 2026-02-21 (PAWS only) | PAWS > 60%, SICK relatedness > 0.60 |
+| **Recursive encoder training** | Once with MLM (C1), once with Track A winner (C2) | Not yet run | Match standard encoder on GLUE |
+| **Full GLUE baseline** | After data scaling (B1, B3) | 2026-02-22 | All tasks improve |
+| **Zero-shot STS-B** | After every concept quality experiment | Not yet run | Cosine similarity > 0.60 |
 
 ---
 
-## Key Papers Reference Table
+## 10. Key References
 
-| Paper | Year | Finding | Relevance | Link |
+| Paper | Year | Key finding | Relevance | Link |
 |---|---|---|---|---|
 | Large Concept Models (Meta) | 2024 | Sentence-level concept prediction works for generation | Validates concept approach at scale | [HF](https://hf.co/papers/2412.08821) |
-| Recurrent Depth Reasoning (Geiping) | 2025 | Latent space reasoning outperforms token space | Natural extension for concept generation | [HF](https://hf.co/papers/2502.05171) |
-| Should We Still Use MLM? | 2025 | CLM→MLM biphasic beats pure MLM from scratch | Backbone init strategy | [HF](https://hf.co/papers/2507.00994) |
-| MAE-LM (Representation Deficiency) | 2023 | [MASK] tokens corrupt encoder representations | Explains MLM misalignment | [HF](https://hf.co/papers/2302.02060) |
-| SpanBERT | 2019 | Span masking > token masking for representation | Phase 5 justification | [HF](https://hf.co/papers/1907.10529) |
+| Recurrent Depth Reasoning (Geiping) | 2025 | Latent space reasoning outperforms token space | Justifies concept-level prediction, SG2 | [HF](https://hf.co/papers/2502.05171) |
+| TRM (Jolicoeur-Martineau) | 2025 | 7M-param recursive model beats LLMs on ARC-AGI | Direct inspiration for RecursiveConceptEncoder | [HF](https://hf.co/papers/2510.04871) |
+| MAE-LM (Meng et al.) | 2024 | [MASK] tokens corrupt encoder representations | Explains MLM misalignment (problem #1) | [HF](https://hf.co/papers/2302.02060) |
+| TSDAE (Wang et al.) | 2021 | Denoising autoencoder for sentence embeddings | Primary training objective for Track A | [ACL](https://aclanthology.org/2021.findings-emnlp.59/) |
+| SimCSE (Gao et al.) | 2021 | Contrastive learning for sentence embeddings | Contrastive objective (A4) | [HF](https://hf.co/papers/2104.08821) |
+| BiXT (Hiller et al.) | 2024 | Bidirectional cross-attention for Perceiver | Fixes static token embeddings (problem #2) | [arXiv](https://arxiv.org/abs/2402.12138) |
+| Should We Still Use MLM? (Gisserot-Boukhlef) | 2025 | CLM->MLM biphasic beats pure MLM | Backbone init strategy (B3) | [HF](https://hf.co/papers/2507.00994) |
+| SpanBERT (Joshi et al.) | 2019 | Span masking forces phrase-level encoding | Span masking (B2) | [HF](https://hf.co/papers/1907.10529) |
+| Slot Attention (Locatello et al.) | 2020 | Softmax over concept dim for specialization | Fallback encoder variant (C5) | [HF](https://hf.co/papers/2006.15055) |
+| T-REGS MST (Mordacq et al.) | 2025 | MST-based uniformity detects dimensional collapse | Better regularization (A5) | [HF](https://hf.co/papers/2510.23484) |
+| VICReg (Bardes et al.) | 2021 | Variance-invariance-covariance regularization | Concept collapse prevention | [HF](https://hf.co/papers/2105.04906) |
+| ALBERT (Lan et al.) | 2020 | Shared transformer layers, 12M params | Weight tying precedent for recursive encoder | [arXiv](https://arxiv.org/abs/1909.11942) |
 | Cramming 1568 Tokens | 2025 | 1500x compression theoretically achievable | Upper bound for concept compression | [HF](https://hf.co/papers/2502.13063) |
-| Intrinsic Dimensionality (Aghajanyan) | 2020 | 200 params achieves 90% RoBERTa performance | Dimension inversion justification | [HF](https://hf.co/papers/2012.13255) |
-| Revealing Utilized Rank (Garg) | 2024 | ViT uses only 20-35% of embedding space | Regularization needed | [HF](https://hf.co/papers/2407.04797) |
-| VICReg (Bardes) | 2021 | Explicit variance prevents concept collapse | Concept regularization | [HF](https://hf.co/papers/2105.04906) |
-| T-REGS MST (Mordacq) | 2025 | MST-based uniformity detects dimensional collapse | Better than VICReg | [HF](https://hf.co/papers/2510.23484) |
+| Intrinsic Dimensionality (Aghajanyan) | 2020 | Token embedding intrinsic dim is 10-37 | Dimension inversion justification (C4) | [HF](https://hf.co/papers/2012.13255) |
 | Token Assorted (Su et al.) | 2025 | Mixing latent + text tokens improves reasoning | Hybrid concept-token generation | [HF](https://hf.co/papers/2502.03275) |
+| SLAM (Slamming) | 2025 | Train Speech-LM on single GPU in 24h | Audio training recipe (E2) | [arXiv](https://arxiv.org/abs/2502.15814) |
+| Qwen2.5-Omni | 2025 | Thinker-Talker architecture for streaming S2S | Audio architecture reference (E4) | [arXiv](https://arxiv.org/abs/2503.20215) |
+| Moshi (Kyutai) | 2024 | Full-duplex spoken dialogue with inner monologue | Audio architecture reference | [arXiv](https://arxiv.org/abs/2410.00037) |
+| DenoSent | 2024 | Denoising + contrastive objectives are complementary | Supports combined TSDAE + SimCSE (A1+A4) | [OpenReview](https://openreview.net/pdf?id=Z1ElMM3ocz) |
 | Information Bottleneck (Shwartz-Ziv) | 2017 | Training = fitting then compression | Theoretical foundation | [HF](https://hf.co/papers/1703.00810) |
-| TRM (Jolicoeur-Martineau) | 2025 | 7M-param recursive model beats LLMs on ARC-AGI | Direct inspiration for `RecursiveConceptEncoder` | [HF](https://hf.co/papers/2510.04871) |
-| ALBERT (Lan et al.) | 2020 | Shared transformer layers, 12M params, 90.6% MRPC F1 | Proves weight tying works at scale | [Paper](https://arxiv.org/abs/1909.11942) |
 
 ---
 
-*Plan v2 created: 2026-02-18, updated 2026-02-19 (recursive encoder, evaluation refactor)*
-*Previous plan (v1): [`concept_reasoning_experiment_plan_v1.md`](concept_reasoning_experiment_plan_v1.md)*
-*Detailed TODO list: [`active_todos.md`](active_todos.md)*
-*Next review: after concept analysis on losses training + recursive MLM results*
+*Roadmap v3 created: 2026-02-22*
+*Previous version (v2): archived to `docs/5_Archive/`*
+*Detailed TODO list: [active_todos.md](active_todos.md)*
+*Experiment results: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md)*
+*Next review: after Track A results (TSDAE/diffusion checkpoints evaluated)*
