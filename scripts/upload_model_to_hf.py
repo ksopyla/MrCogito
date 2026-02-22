@@ -41,12 +41,21 @@ except ImportError as e:
     print("Run: poetry install")
     sys.exit(1)
 
-# Try load .env for HF token
+# Load .env for HF token (HUGGINGFACE_TOKEN or HF_TOKEN)
 try:
     from dotenv import load_dotenv
     load_dotenv(PROJECT_ROOT / ".env")
 except ImportError:
     pass
+
+# Ensure HF_TOKEN is set from any common env var name so huggingface_hub
+# auto-detects it without requiring huggingface-cli login.
+import os as _os
+for _key in ("HUGGINGFACE_TOKEN", "HF_TOKEN", "HUGGINGFACE_HUB_TOKEN"):
+    _tok = _os.environ.get(_key)
+    if _tok:
+        _os.environ.setdefault("HF_TOKEN", _tok)
+        break
 
 # Default paths (relative to project root)
 DEFAULT_TRAINING_DIR = PROJECT_ROOT / "Cache" / "Training"
@@ -650,12 +659,18 @@ def main():
             if overwrite != "y":
                 return 0
 
-    # Login check
+    # Login check — prefer token from env/dotenv, fall back to cached credentials
+    hf_token_env = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
     try:
-        login()
+        if hf_token_env:
+            login(token=hf_token_env, add_to_git_credential=False)
+            console.print("[green]HF login OK[/green] (token from env/.env)")
+        else:
+            login()  # uses cached credentials from huggingface-cli login
+            console.print("[green]HF login OK[/green] (cached credentials)")
     except Exception as e:
         console.print(f"[red]HF login failed:[/red] {e}")
-        console.print("Run: huggingface-cli login")
+        console.print("Set HF_TOKEN in .env or run: huggingface-cli login")
         return 1
 
     # Build model card and upload
