@@ -205,6 +205,15 @@ Because the combined loss with weight 0.1 still collapsed, we abandon this regul
 
 ---
 
+## TODO 6b: Diffusion on Polonez L2 — Investigate Slow Training (Reminder)
+
+**Model:** `diffusion_H512L2C128D2_20260221_195554` (trained on Polonez)
+**Context:** Training diffusion model on Polonez L2 takes more than 20h.
+**Action:** In the future, investigate what causes the long training time (bottleneck, config, data loading, etc.).
+**Status:** [ ] Reminder — not started
+
+---
+
 ## TODO 7: Data Scaling (Priority: HIGH, Effort: 7 GPU-days)
 
 *Maps to roadmap [Phase 4 & 5](roadmap.md#phase-4-scale-pretraining-data--add-contrastive-objective-5-7-days-training)*
