@@ -29,11 +29,32 @@ fi
 
 cd "$PROJECT_ROOT"
 
-# Check HF login
-if ! huggingface-cli whoami > /dev/null 2>&1; then
+# Load HF_TOKEN from .env if present (so non-interactive SSH runs work)
+if [ -f "$PROJECT_ROOT/.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$PROJECT_ROOT/.env" 2>/dev/null || true
+    set +a
+fi
+
+# Also accept HUGGINGFACE_TOKEN as an alias for HF_TOKEN
+if [ -z "$HF_TOKEN" ] && [ -n "$HUGGINGFACE_TOKEN" ]; then
+    export HF_TOKEN="$HUGGINGFACE_TOKEN"
+fi
+
+# Check HF login: try token-based auth first, then cached credentials
+if [ -n "$HF_TOKEN" ]; then
+    if ! huggingface-cli whoami --token "$HF_TOKEN" > /dev/null 2>&1; then
+        echo ""
+        echo "HF_TOKEN is set but huggingface-cli whoami failed."
+        echo "Check that the token is valid: https://huggingface.co/settings/tokens"
+        echo ""
+        exit 1
+    fi
+elif ! huggingface-cli whoami > /dev/null 2>&1; then
     echo ""
     echo "Hugging Face not logged in. Run: huggingface-cli login"
-    echo "Then paste your Write token from https://huggingface.co/settings/tokens"
+    echo "Or set HF_TOKEN in $PROJECT_ROOT/.env"
     echo ""
     exit 1
 fi
