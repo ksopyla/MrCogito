@@ -24,6 +24,23 @@ set -o pipefail  # Catch errors in piped commands
 
 echo "=== GLUE Evaluation Script for Concept Encoder ==="
 
+# Initialize pyenv/poetry PATH for non-interactive SSH sessions
+if [ -d "$HOME/.pyenv" ]; then
+    export PYENV_ROOT="$HOME/.pyenv"
+    export PATH="$PYENV_ROOT/bin:$PYENV_ROOT/shims:$PATH"
+    eval "$(pyenv init - 2>/dev/null)" || true
+fi
+if [ -d "$HOME/.local/share/pypoetry" ]; then
+    export PATH="$HOME/.local/share/pypoetry/venv/bin:$PATH"
+fi
+
+# Load .env for HF_TOKEN (enables HF Hub model download without manual login)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="$(dirname "$SCRIPT_DIR")/.env"
+if [ -f "$ENV_FILE" ]; then
+    set -a; source "$ENV_FILE" 2>/dev/null || true; set +a
+fi
+
 # --- Configuration ---
 
 # Project root - automatically detect or set hardcoded
@@ -57,45 +74,51 @@ export TOKENIZERS_PARALLELISM=false
 
 # =============================================================================
 # MODEL TO EVALUATE — update this when a new model is trained
+# Can be overridden non-interactively via environment variables:
+#   MODEL_PATH_OVERRIDE="ksopyla/concept-encoder-..." MODEL_TYPE_OVERRIDE="perceiver_decoder_cls" bash ...
 # =============================================================================
-# perceiver_mlm L6 + fixed0.1 combined (Feb 20 2026, eff. rank 12.5%)
-MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260220_184029/perceiver_mlm_H512L6C128_20260220_184029"
 
-# Previous models:
-# perceiver_mlm L6 baseline — no concept losses (eff. rank 4%) — STS-B reference run
-# MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260208_211633/perceiver_mlm_H512L6C128_20260208_211633"
+# Default model (last trained canonical run)
+# perceiver_mlm L6 + fixed0.1 combined (Feb 20 2026, eff. rank 12.5%)
+DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260220_184029/perceiver_mlm_H512L6C128_20260220_184029"
+
+# Previous models (uncomment to set a different default):
+# perceiver_mlm L6 baseline — no concept losses (eff. rank 4%) — uploaded to HF Hub
+# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260208_211633/perceiver_mlm_H512L6C128_20260208_211633"
 # perceiver_mlm L6 + combined+kendall_gal (Feb 19 2026, eff. rank 95.5%, QQP/MNLI regressed)
-# MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260219_105435/perceiver_mlm_H512L6C128_20260219_105435"
-# weighted_mlm L6
-# MODEL_PATH="${PROJECT_ROOT}/Cache/Training/weighted_mlm_H512L6C128_20260207_174251/weighted_mlm_H512L6C128_20260207_174251"
-# perceiver_posonly L6
-# MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_posonly_mlm_H512L6C128_20260208_102656/perceiver_posonly_mlm_H512L6C128_20260208_102656"
-# weighted_mlm L2
-# MODEL_PATH="${PROJECT_ROOT}/Cache/Training/weighted_mlm_H512L2C128_20260117_153544/weighted_mlm_H512L2C128_20260117_153544"
-# perceiver_mlm L2
-# MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L2C128_20260118_172328/perceiver_mlm_H512L2C128_20260118_172328"
+# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260219_105435/perceiver_mlm_H512L6C128_20260219_105435"
+# HF Hub model (auto-downloads to Cache/Models on first use):
+# DEFAULT_MODEL_PATH="ksopyla/concept-encoder-perceiver_mlm_H512L6C128_20260208_211633"
+
+# Apply env-var overrides (for non-interactive SSH / CI use)
+MODEL_PATH="${MODEL_PATH_OVERRIDE:-$DEFAULT_MODEL_PATH}"
+
 # =============================================================================
 
 # Task: optional $1, defaults to "all" (semantic-relevant subset)
 # Task list: all, all-glue, cola, mrpc, stsb, sst2, qnli, qqp, rte, mnli-matched, mnli-mismatched
 TASK="${1:-all}"
 
-# Auto-detect MODEL_TYPE from MODEL_PATH name (no manual override needed)
-# Supported: weighted_mlm, perceiver_mlm, perceiver_posonly_mlm, perceiver_decoder_cls
-if echo "$MODEL_PATH" | grep -q "perceiver_posonly_mlm"; then
+# Auto-detect MODEL_TYPE from MODEL_PATH name.
+# MODEL_TYPE_OVERRIDE skips auto-detection (required for perceiver_decoder_cls
+# and HF Hub model IDs that don't embed the type in the path).
+if [ -n "$MODEL_TYPE_OVERRIDE" ]; then
+    MODEL_TYPE="$MODEL_TYPE_OVERRIDE"
+    echo "MODEL_TYPE overridden: $MODEL_TYPE"
+elif echo "$MODEL_PATH" | grep -q "perceiver_posonly_mlm"; then
     MODEL_TYPE="perceiver_posonly_mlm"
 elif echo "$MODEL_PATH" | grep -q "perceiver_mlm"; then
     MODEL_TYPE="perceiver_mlm"
 elif echo "$MODEL_PATH" | grep -q "weighted_mlm"; then
     MODEL_TYPE="weighted_mlm"
 else
-    MODEL_TYPE="perceiver_posonly_mlm"
+    MODEL_TYPE="perceiver_mlm"
     echo "WARNING: Could not auto-detect MODEL_TYPE from path. Defaulting to: $MODEL_TYPE"
-    echo "  Override with: $0 <model_path> <task> <model_type>"
+    echo "  Use MODEL_TYPE_OVERRIDE env var to set explicitly."
 fi
 
-# Tokenizer - use the tokenizer saved alongside the trained model (best match)
-TOKENIZER_NAME="$MODEL_PATH"
+# Tokenizer: use the model path itself (works for both local and HF Hub IDs)
+TOKENIZER_NAME="${TOKENIZER_NAME_OVERRIDE:-$MODEL_PATH}"
 
 # Task-specific epoch count
 # Standard GLUE fine-tuning: fewer epochs for larger datasets
@@ -139,7 +162,15 @@ run_single_task() {
     echo "  Started: $(date '+%Y-%m-%d %H:%M:%S')"
     echo "------------------------------------------------------------"
 
-    python evaluation/evaluate_model_on_glue.py \
+    if command -v poetry > /dev/null 2>&1; then
+        PYTHON_CMD="poetry run python"
+    elif command -v python3 > /dev/null 2>&1; then
+        PYTHON_CMD="python3"
+    else
+        echo "ERROR: neither poetry nor python3 found in PATH"; return 1
+    fi
+
+    $PYTHON_CMD evaluation/evaluate_model_on_glue.py \
         --model_type "$MODEL_TYPE" \
         --model_name_or_path "$MODEL_PATH" \
         --tokenizer_name "$TOKENIZER_NAME" \
