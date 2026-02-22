@@ -212,6 +212,18 @@ def get_uploaded_models(hf_user: str) -> set[str]:
         return set()
 
 
+def _safe(val, default="?"):
+    """Return default when val is None, NaN, or empty."""
+    if val is None:
+        return default
+    try:
+        if pd.isna(val):
+            return default
+    except (TypeError, ValueError):
+        pass
+    return val if str(val).strip() else default
+
+
 def build_model_card(
     run_name: str,
     model_info: dict,
@@ -219,132 +231,272 @@ def build_model_card(
     results_data: list[dict],
     repo_id: str,
 ) -> str:
-    """Build README.md model card with metrics, training info, and links."""
+    """Build README.md model card with HF YAML front-matter, architecture details, and metrics."""
     config = model_info.get("config", {})
-    trainer_state = model_info.get("trainer_state", {})
 
-    # Model architecture
-    model_type = config.get("model_type", "concept_encoder")
-    hidden_size = config.get("hidden_size", "?")
-    num_layers = config.get("num_hidden_layers", "?")
-    concept_num = config.get("concept_num", "?")
+    # ── Architecture ──────────────────────────────────────────────────────────
+    hidden_size    = config.get("hidden_size", "?")
+    num_layers     = config.get("num_hidden_layers", "?")
+    concept_num    = config.get("concept_num", "?")
     intermediate_size = config.get("intermediate_size", "?")
+    use_bixt       = config.get("use_bixt", False)
+    decoder_posonly = config.get("decoder_posonly", False)
+    max_seq        = config.get("max_sequence_length", 512)
 
-    # Pretraining dataset (from training_args.json or default)
+    # Infer training objective from run name / flags
+    if "tsdae" in run_name.lower():
+        objective = "TSDAE (token-deletion denoising)"
+        obj_short = "tsdae"
+    elif "diffusion" in run_name.lower():
+        objective = "Masked Diffusion Language Modeling"
+        obj_short = "diffusion"
+    else:
+        objective = "Masked Language Modeling (MLM)"
+        obj_short = "mlm"
+
+    encoder_arch = "BiXT bidirectional cross-attention" if use_bixt else "standard cross-attention"
+
+    # ── Total parameters ──────────────────────────────────────────────────────
+    total_params = "?"
+    for row in eval_data:
+        tp = row.get("total_params")
+        try:
+            if tp and not pd.isna(tp):
+                total_params = f"{int(tp) / 1e6:.1f}M"
+                break
+        except (TypeError, ValueError):
+            pass
+    # Fallback: parse from run name (e.g. "...-61M-...")
+    if total_params == "?":
+        m = re.search(r"-(\d+)M-", run_name)
+        if m:
+            total_params = f"{m.group(1)}M"
+
+    # ── Pretraining dataset / epochs ──────────────────────────────────────────
     pretrain_dataset = "JeanKaddour/minipile"
-    pretrain_epochs = "?"
+    pretrain_epochs  = "?"
+    pretrain_lr      = "?"
+    pretrain_wandb   = ""
     run_dir = Path(model_info.get("run_dir", ""))
     if run_dir.exists():
-        ta_path = run_dir / "training_args.json"
-        if ta_path.exists():
-            try:
-                with open(ta_path) as f:
-                    ta = json.load(f)
+        for fname in ("training_args.json",):
+            ta_path = run_dir / fname
+            if ta_path.exists():
+                try:
+                    with open(ta_path) as f:
+                        ta = json.load(f)
                     pretrain_dataset = ta.get("dataset_name", pretrain_dataset)
-                    pretrain_epochs = ta.get("num_train_epochs", pretrain_epochs)
+                    pretrain_epochs  = _safe(ta.get("num_train_epochs"), "?")
+                    pretrain_lr      = _safe(ta.get("learning_rate"), "?")
+                except Exception:
+                    pass
+        # Try wandb run URL from trainer_state
+        ts_path = run_dir / "trainer_state.json"
+        if ts_path.exists():
+            try:
+                with open(ts_path) as f:
+                    ts = json.load(f)
+                pretrain_wandb = ts.get("wandb_url", "")
             except Exception:
                 pass
 
-    # GLUE evaluation info from metadata
-    glue_epochs = "?"
+    # ── GLUE metadata (from first eval row) ───────────────────────────────────
     tokenizer_name = config.get("tokenizer_name", "answerdotai/ModernBERT-base")
-    learning_rate = "?"
-    batch_size = "?"
-    wandb_url = ""
-    date = ""
+    glue_epochs    = "?"
+    glue_lr        = "?"
+    glue_batch     = "?"
+    glue_date      = ""
+    glue_wandb     = ""
 
     if eval_data:
         first = eval_data[0]
-        glue_epochs = first.get("epochs", glue_epochs)
-        if pd.isna(glue_epochs):
-            glue_epochs = "?"
-        tokenizer_name = first.get("tokenizer_name", tokenizer_name) or tokenizer_name
-        learning_rate = first.get("learning_rate", learning_rate)
-        batch_size = first.get("batch_size", batch_size)
-        wandb_url = first.get("wandb_url", wandb_url)
-        date = first.get("date", date)
-        if pd.isna(date):
-            date = ""
+        glue_epochs    = _safe(first.get("epochs"), "?")
+        tokenizer_name = _safe(first.get("tokenizer_name"), tokenizer_name) or tokenizer_name
+        glue_lr        = _safe(first.get("learning_rate"), "?")
+        glue_batch     = _safe(first.get("batch_size"), "?")
+        glue_date      = _safe(first.get("date"), "")
+        glue_wandb     = _safe(first.get("wandb_url"), "")
 
-    # Build metrics table
+    # ── Metrics tables ────────────────────────────────────────────────────────
+    # Priority concept-quality tasks first
+    PRIORITY_TASKS = ["stsb", "mrpc", "qqp", "mnli-matched", "mnli-mismatched"]
+    SKIP_METRICS   = {"loss", "runtime", "samples_per_second", "steps_per_second"}
+
+    task_results: dict[str, list[tuple]] = {}
+    for r in results_data:
+        task   = str(r.get("task", "?"))
+        metric = str(r.get("metric", ""))
+        if metric.startswith("sklearn_") or metric in SKIP_METRICS:
+            continue
+        score = r.get("score", 0)
+        task_results.setdefault(task, []).append((metric, score))
+
+    def _fmt(score):
+        return f"{score:.4f}" if isinstance(score, float) else str(score)
+
     metrics_lines = []
-    if results_data:
-        # Group by task
-        tasks = {}
-        for r in results_data:
-            t = r.get("task", "?")
-            if t not in tasks:
-                tasks[t] = []
-            metric = r.get("metric", "")
-            if not metric.startswith("sklearn_") and metric not in ("loss", "runtime", "samples_per_second", "steps_per_second"):
-                tasks[t].append((metric, r.get("score", 0)))
-
-        if tasks:
-            metrics_lines.append("## Evaluation Results (GLUE)")
-            metrics_lines.append("")
-            metrics_lines.append("| Task | Metric | Score |")
-            metrics_lines.append("|------|--------|-------|")
-            for task in sorted(tasks.keys()):
-                for metric, score in tasks[task]:
-                    if isinstance(score, float):
-                        score = f"{score:.4f}"
-                    metrics_lines.append(f"| {task} | {metric} | {score} |")
+    if task_results:
+        metrics_lines += [
+            "## Evaluation Results",
+            "",
+            "Concept-relevant tasks (primary evaluation signal):",
+            "",
+            "| Task | Metric | Score |",
+            "|------|--------|-------|",
+        ]
+        # Priority tasks first, then the rest alphabetically
+        ordered = [t for t in PRIORITY_TASKS if t in task_results]
+        ordered += sorted(t for t in task_results if t not in PRIORITY_TASKS)
+        for task in ordered:
+            for metric, score in task_results[task]:
+                metrics_lines.append(f"| {task} | {metric} | {_fmt(score)} |")
 
     dataset_hf_link = f"[{pretrain_dataset}](https://huggingface.co/datasets/{pretrain_dataset})"
-    total_params = config.get("vocab_size", "?")
-    if eval_data and not pd.isna(eval_data[0].get("total_params")):
-        total_params = f"{int(eval_data[0]['total_params']) / 1e6:.1f}M"
 
-    readme = f"""# {run_name}
+    # ── HF YAML front-matter ──────────────────────────────────────────────────
+    yaml_header = f"""\
+---
+language:
+  - en
+license: apache-2.0
+tags:
+  - concept-encoder
+  - sentence-embeddings
+  - semantic-similarity
+  - perceiver
+  - mrcogito
+  - {obj_short}
+datasets:
+  - {pretrain_dataset}
+library_name: transformers
+pipeline_tag: feature-extraction
+---"""
 
-Concept Encoder model trained with Masked Language Modeling (MLM) for the [MrCogito](https://github.com/ksopyla/MrCogito) project.
+    # ── Concept architecture note ─────────────────────────────────────────────
+    bixt_note = (
+        "Uses **BiXT bidirectional cross-attention** — tokens and concepts "
+        "update each other at every encoder layer, producing richer contextual "
+        "concept representations."
+    ) if use_bixt else (
+        "Tokens attend to concepts via standard cross-attention. Each encoder "
+        "layer refines the 128 concept vectors."
+    )
 
-## Model Details
+    posonly_note = (
+        "Decoder uses **position-only queries** (no input-embedding shortcut), "
+        "forcing all token information to flow through the concept bottleneck."
+    ) if decoder_posonly else (
+        "Decoder uses input+position queries."
+    )
 
-- **Model type:** {model_type}
-- **Architecture:** Hidden size {hidden_size}, {num_layers} layers, {concept_num} concept tokens
-- **Intermediate size:** {intermediate_size}
-- **Parameters:** ~{total_params}
+    readme = f"""{yaml_header}
 
-## Pretraining (MLM)
+# {run_name}
 
-- **Dataset:** {dataset_hf_link}
-- **Tokenizer:** {tokenizer_name}
-- **Epochs:** {pretrain_epochs}
+Part of the **[MrCogito](https://github.com/ksopyla/MrCogito)** research project —
+*Concept Encoder and Decoder*: a transformer architecture that compresses long token
+sequences into a small number of semantic "concept tokens" via cross-attention, then
+reconstructs or classifies from that compressed bottleneck.
 
-## GLUE Fine-tuning (Evaluation)
+**Project page:** https://ai.ksopyla.com/projects/concept-encoder/
 
-- **Epochs:** {glue_epochs}
-- **Learning rate:** {learning_rate}
-- **Batch size:** {batch_size}
-- **Evaluation date:** {date}
+## Architecture
 
-## Weights & Biases
+```
+Input tokens [B, L, D_tok]
+      │
+      ▼  cross-attention (L × layers)
+Concept representations [B, C={concept_num}, H={hidden_size}]   ← bottleneck
+      │
+      ▼  Perceiver IO decoder (position queries → concepts)
+Output tokens [B, L, vocab]
+```
 
-Training logs: {wandb_url if wandb_url else "N/A"}
+| Property | Value |
+|---|---|
+| Hidden size | {hidden_size} |
+| Encoder layers | {num_layers} |
+| Concept tokens (C) | {concept_num} |
+| Intermediate size | {intermediate_size} |
+| Max sequence length | {max_seq} |
+| Parameters | ~{total_params} |
+| Encoder attention | {encoder_arch} |
+| Tokenizer | [{tokenizer_name}](https://huggingface.co/{tokenizer_name}) |
 
-## Evaluation
+{bixt_note}
 
-{chr(10).join(metrics_lines) if metrics_lines else "No GLUE evaluation data available."}
+{posonly_note}
+
+## Pretraining
+
+| Property | Value |
+|---|---|
+| Objective | {objective} |
+| Dataset | {dataset_hf_link} |
+| Epochs | {pretrain_epochs} |
+| Learning rate | {pretrain_lr} |
+| WandB training logs | {pretrain_wandb if pretrain_wandb else "N/A"} |
+
+## GLUE Fine-tuning
+
+| Property | Value |
+|---|---|
+| Epochs per task | {glue_epochs} |
+| Learning rate | {glue_lr} |
+| Batch size | {glue_batch} |
+| Evaluation date | {glue_date} |
+| WandB eval logs | {glue_wandb if glue_wandb else "N/A"} |
+
+{chr(10).join(metrics_lines) if metrics_lines else "*(No evaluation data attached to this upload.)*"}
+
+## Known Limitations
+
+- **Concept collapse:** Without explicit regularization, the pure MLM objective can
+  collapse concept representations into a low-rank space (effective rank ~5/128).
+  See [experiment log](https://github.com/ksopyla/MrCogito/blob/main/docs/2_Experiments_Registry/master_experiment_log.md).
+- **CoLA ceiling:** Grammatical acceptability requires sub-word patterns that do not
+  survive 4:1 token→concept compression; MCC ≈ 0 is architectural, not a bug.
+- **GLUE concatenated pairs:** Pair tasks (MRPC, QQP, MNLI) encode both sentences
+  into one shared concept set, which compresses the cross-sentence signal.
 
 ## Usage
 
 ```python
-from transformers import AutoModel, AutoTokenizer
+import torch
+from transformers import AutoTokenizer
+import sys
+sys.path.append("path/to/MrCogito")  # project root
 
-model = AutoModel.from_pretrained("{repo_id}")
-tokenizer = AutoTokenizer.from_pretrained("{repo_id}")
+from nn.concept_encoder import ConceptEncoderConfig
+from nn.concept_encoder_perceiver import ConceptEncoderForMaskedLMPerceiver
+
+tokenizer = AutoTokenizer.from_pretrained("{tokenizer_name}")
+model = ConceptEncoderForMaskedLMPerceiver.from_pretrained("{repo_id}")
+model.eval()
+
+text = "Concept encoders compress tokens into semantic concept vectors."
+inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
+
+with torch.no_grad():
+    # Encode: tokens → concept representations [B, C=128, H=512]
+    concept_repr = model.encoder(**inputs).last_hidden_state
+    # Pool concepts to sentence embedding [B, H=512]
+    sentence_embedding = concept_repr.mean(dim=1)
+
+print(sentence_embedding.shape)  # torch.Size([1, 512])
 ```
 
 ## Citation
 
 ```bibtex
-@misc{{mrcogito-concept-encoder,
-  author = {{{{Krzysztof Sopyla}}}},
-  title = {{MrCogito Concept Encoder}},
-  year = {{2026}},
-  publisher = {{Hugging Face}},
-  url = {{https://huggingface.co/{repo_id}}}
+@misc{{mrcogito-concept-encoder-{run_name},
+  author       = {{Sopyla, Krzysztof}},
+  title        = {{MrCogito Concept Encoder: {run_name}}},
+  year         = {{2026}},
+  publisher    = {{Hugging Face}},
+  url          = {{https://huggingface.co/{repo_id}}},
+  note         = {{Concept bottleneck encoder trained with {objective}
+                  on {pretrain_dataset}}}
 }}
 ```
 
