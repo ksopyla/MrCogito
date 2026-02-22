@@ -63,9 +63,24 @@ echo "  Project: $PROJECT_ROOT"
 echo "  Host:    $(hostname)"
 echo ""
 
-# Run the Python upload script (passes --list-only, --training-dir, etc.)
+# Initialize pyenv/poetry PATH for non-interactive SSH sessions
+# (interactive shells source ~/.bashrc automatically; SSH does not)
+if [ -d "$HOME/.pyenv" ]; then
+    export PYENV_ROOT="$HOME/.pyenv"
+    export PATH="$PYENV_ROOT/bin:$PYENV_ROOT/shims:$PATH"
+    eval "$(pyenv init - 2>/dev/null)" || true
+fi
+if [ -d "$HOME/.local/share/pypoetry" ]; then
+    export PATH="$HOME/.local/share/pypoetry/venv/bin:$PATH"
+fi
+
+# Run the Python upload script (passes --list-only, --run-name, etc.)
 if command -v poetry > /dev/null 2>&1; then
     poetry run python scripts/upload_model_to_hf.py "$@"
+elif command -v python3 > /dev/null 2>&1; then
+    python3 scripts/upload_model_to_hf.py "$@"
 else
-    python scripts/upload_model_to_hf.py "$@"
+    echo "Error: neither poetry nor python3 found in PATH."
+    echo "PATH=$PATH"
+    exit 1
 fi
