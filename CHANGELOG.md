@@ -18,6 +18,90 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-02-23] — Diffusion Decoder Architectural Redesign + Training Fixes
+
+**Motivation:** Post-mortem of the first diffusion run (`diffusion_H512L2C128D2_20260221_195554`)
+revealed three critical problems: (1) the decoder contained full O(N²) token self-attention —
+directly contradicting the project's core O(C·N) efficiency goal; (2) AdaLN timestep conditioning
+was unbounded and multiplicative, causing a catastrophic gradient explosion at epoch 12 when
+the model had memorized Minipile (eval_loss → 0.009) but the LR was still 2e-4; (3) the lm_head
+was applied to all L=512 positions instead of only the M masked positions (~6.6x wasted compute).
+Full diagnosis: `agent_memory/cleaned_log.txt` (see conversation [Diffusion training log analysis](b3e92e31-4e4f-4e41-89ab-85e7bde3acb8)).
+
+**Research basis:** Muse (Chang et al., 2023) — masked generation conditioned on latent embeddings
+via cross-attention; DiT (Peebles & Xie, 2023) — AdaLN-Zero for stable timestep conditioning;
+Perceiver IO (Jaegle et al., 2021) — cross-attention-only decoding.
+
+### Changed — `nn/concept_encoder_diffusion.py` (complete rewrite)
+
+**`DiffusionDecoderLayer`** — removed token self-attention, redesigned around concept cross-attention:
+- **Removed:** `self.norm_self`, `self.self_attn` (full O(N²) self-attention between all token positions)
+- **Kept:** `self.cross_attn` — tokens attend to C=128 concept keys/values: O(N·C)
+- **Replaced AdaLN with AdaLN-Zero** (Peebles & Xie, DiT 2023):
+  - Single `adaLN` linear maps timestep to 6 modulation vectors: `[scale_ca, shift_ca, gate_ca, scale_ff, shift_ff, gate_ff]`
+  - `nn.init.zeros_()` on both weight and bias — layer starts as identity, gates start at zero
+  - Modulates both cross-attention and FFN independently
+  - **Eliminates multiplicative runaway** that caused grad_norm → 947 in the previous run
+
+**`ConceptDiffusionDecoder`** — returns hidden states, NOT logits:
+- Removed `self.lm_head` from decoder; lm_head now lives in the model class
+- Enables sparse logit computation: lm_head applied only to M masked positions
+
+**`ConceptEncoderForMaskedDiffusion`** — sparse loss, label smoothing, padding-safe noise:
+- Added `self.lm_head` at model level; applied sparsely to masked positions only (matching MLM perceiver's sparse decoding pattern)
+- Added `label_smoothing` parameter (default 0.1): prevents overconfident predictions and near-zero eval_loss that signals memorization
+- Fixed `_apply_noise()`: now respects `attention_mask` — padding positions are never masked
+- Changed `t_min` default: 0.05 → 0.1 (minimum ~51 masked tokens/sample vs ~25, reducing gradient variance)
+- In `generate()`: full lm_head over all positions is acceptable (inference, no sparsity constraint)
+
+**Complexity comparison per decoder layer:**
+
+| Sequence length | Previous (self + cross) | New (cross-attention only) | Speedup |
+|---|---|---|---|
+| 512 | O(N²) + O(N·C) = 269K | O(N·C) = 65K | 4× |
+| 4,096 | O(N²) + O(N·C) = 17.3M | O(N·C) = 524K | 33× |
+| 2,000,000 | O(N²) + O(N·C) ≈ 4T | O(N·C) = 256M | **15,000×** |
+
+### Changed — `scripts/train_diffusion_multigpu.sh`
+
+| Parameter | Previous | New | Reason |
+|---|---|---|---|
+| `LEARNING_RATE` | 5e-4 | **3e-4** | Matches stable MLM perceiver L6; 5e-4 caused explosion post-overfit |
+| `lr_scheduler_type` | linear | **cosine** | At 60% progress: cosine→3e-5 vs linear→2e-4; faster mid-training decay |
+| `GRADIENT_ACCUMULATION_STEPS` | 1 | **2** | Effective batch 512 (matching MLM perceiver); halves step count 78K→39K |
+| `T_MIN` | 0.05 | **0.1** | Reduces gradient variance; still covers full range to t=1.0 |
+| `LABEL_SMOOTHING` | (none) | **0.1** | Prevents memorization and overconfident logits |
+| `DECODER_LAYERS` description | "Diffusion decoder layers" | "Cross-attention layers (no self-attention)" | Clarified |
+
+### Changed — `training/train_diffusion.py`
+
+- Added `label_smoothing: float` field to `ModelArguments` (default 0.1)
+- Passes `label_smoothing` to `ConceptEncoderForMaskedDiffusion.__init__()`
+- Logs `label_smoothing` to WandB config for experiment traceability
+- Changed `t_min` default from 0.05 to 0.1
+
+### Changed — `scripts/test_diffusion_local.ps1`
+
+- Updated `lr_scheduler_type` from `"linear"` to `"cosine"`
+- Added `--label_smoothing 0.1` argument
+
+### Verified
+
+- Forward pass: loss computed, `masked_logits` shape `[M, V]` (sparse), `logits=None` during training
+- Backward pass: gradients flowing through cross-attention and AdaLN-Zero modulation
+- Generate: iterative denoising produces `[1, 64]` output
+- No linter errors
+
+**Git tag:** `arch/diffusion-xattn-only-20260223`
+
+**Expected impact on next run:**
+- No gradient explosion (AdaLN-Zero zero-initialization + cosine decay + label smoothing)
+- ~3–4× faster per step (no self-attention + sparse lm_head)
+- ~2× fewer steps (grad_accum=2)
+- Scales to sequences of any length (O(N·C) decoder is the long-context foundation)
+
+---
+
 ## [2026-02-21] — TSDAE Architecture Overhaul
 
 **Motivation:** Five structural misalignments in MLM+Perceiver pipeline identified.

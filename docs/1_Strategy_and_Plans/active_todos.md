@@ -199,26 +199,34 @@ Because the combined loss with weight 0.1 still collapsed, we abandon this regul
 
 ## TODO 6: Masked Diffusion Experiment (Priority: HIGH, Effort: 5 GPU-days) In Progress
 
-**Done date: in progress**
+**Done date: in progress (re-launching with fixed architecture)**
 
 *Maps to roadmap [Phase 9](roadmap.md#phase-9-masked-diffusion-decoder--replace-mlm-new--high-priority)*
 
-**When:** After TODO 4 results are in, or in parallel on Odra.
+**Run 1 outcome (2026-02-21, `diffusion_H512L2C128D2_20260221_195554`):** FAILED — gradient explosion at epoch 12.
+Root causes: O(N²) self-attention in decoder, unbounded AdaLN, linear LR schedule, full logits. See master experiment log.
 
-**Action:** Run `bash scripts/train_diffusion_multigpu.sh` on Odra with warm-start from L6 MLM checkpoint + concept losses.
+**Architecture fix (2026-02-23):** Complete decoder rewrite — cross-attention-only (Perceiver IO style), AdaLN-Zero, sparse lm_head, cosine LR, label_smoothing=0.1. See CHANGELOG `[2026-02-23]`.
 
-**Compare:** Concept analysis metrics vs TODO 4 results. If diffusion effective_rank > MLM effective_rank, switch to diffusion as primary objective.
+**Action (next):** Run `bash scripts/train_diffusion_multigpu.sh` on Polonez with the fixed architecture. Concept losses still disabled (`none`) for fair baseline. Evaluate with concept analysis + ViaDecoder GLUE once complete.
 
-**Status:** [] In progress
+**Compare:** Concept analysis metrics vs TSDAE results (TODO 10). If diffusion effective_rank > 64/128, it becomes the primary objective.
+
+**Status:** [~] Run 1 failed, architecture fixed, re-launching
 
 ---
 
-## TODO 6b: Diffusion on Polonez L2 — Investigate Slow Training (Reminder)
+## TODO 6b: Diffusion Slow Training — reworked, to verify on Polonez ✅
 
 **Model:** `diffusion_H512L2C128D2_20260221_195554` (trained on Polonez)
-**Context:** Training diffusion model on Polonez L2 takes more than 20h.
-**Action:** In the future, investigate what causes the long training time (bottleneck, config, data loading, etc.).
-**Status:** [ ] Reminder — not started
+**Context:** Training diffusion model on Polonez L2 took 26h39m — ~10× slower than perceiver MLM L2.
+**Root cause (identified 2026-02-23):** Three compounding factors:
+1. O(N²) self-attention in decoder (5.2× more FLOPs per sample than perceiver MLM)
+2. Full lm_head over all 512 positions instead of sparse (6.6× wasted compute on vocab projection)
+3. `GRADIENT_ACCUMULATION_STEPS=1` → 78,140 steps vs 39,070 for MLM (2× more steps)
+   Total: 5.2× × 2× ≈ 10× slower — exactly matching the observation.
+**Fix:** Decoder redesigned to cross-attention only + sparse lm_head + grad_accum=2. Expected ~6–8× speedup.
+**Status:** [x] In progress — architecture fix in CHANGELOG `[2026-02-23]` need to be validated on Polonez.
 
 ---
 

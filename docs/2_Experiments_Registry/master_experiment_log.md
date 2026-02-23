@@ -14,6 +14,7 @@ This is the central registry for all training runs and ablations. It is intended
 | 2026-02-08 | `perceiver_mlm_H512L6C128_20260208_211633` | H512 **L6** C128 | Minipile (1x) | Polonez | **40** | None | MLM 2.537 | **5 / 128** (4%) | **MRPC:** 81.3% <br> **QQP:** 72.5% <br> **MNLI-m:** 59.1% <br> **STS-B:** 0.627 | -- | [Link](https://wandb.ai/ksopyla/MrCogito/runs/perceiver_mlm_H512L6C128_20260208_211633) | `54ee870` | **Best L6 canonical model.** Wins 6/8 GLUE tasks. Severe concept collapse. |
 | 2026-02-19 | `perceiver_mlm_H512L6C128_20260219_105435` | H512 L6 C128 | Minipile (1x) | Polonez | 20 | `combined` + `kendall_gal` | MLM **4.31** | **122 / 128** (95.5%) | **MRPC:** 81.4% <br> **QQP:** 58.7% <br> **MNLI-m:** 48.9% <br> **STS-B:** 0.341 | -- | [Link](https://wandb.ai/ksopyla/MrCogito/runs/glue-mrpc-perceiver-mlm-h512l6c128-20260219-105435-61M-20260219_2027) | — | **Collapse fixed, but GLUE crashed.** Kendall-Gal muted MLM loss. |
 | 2026-02-21 | `perceiver_mlm_H512L6C128_20260220_184029` | H512 L6 C128 | Minipile (1x) | Polonez | 20 | `combined` + `fixed=0.1` | MLM 3.57 | **15.9 / 128** (12.5%) | **MRPC:** 80.7% <br> **QQP:** 64.9% <br> **MNLI-m:** 56.9% <br> **STS-B:** 0.507 <br> **PAWS:** 57.6% | -- | [Link](https://wandb.ai/ksopyla/MrCogito/runs/perceiver_mlm_H512L6C128_20260220_184029) | — | **Failed to fix collapse.** Abandon `combined` loss. |
+| 2026-02-21 | `diffusion_H512L2C128D2_20260221_195554` | H512 **L2** C128 D2 | Minipile (1x) | Polonez | 20 | None | Diffusion CE (**0.009** at best → diverged to **5.0**) | Not evaluated (diverged) | Not evaluated | 0.81 step/s | [Link](https://wandb.ai/ksopyla/MrCogito/runs/diffusion_H512L2C128D2_20260221_195554) | `7768576` | **FAILED: gradient explosion at epoch 12.** Root causes: (1) O(N²) self-attention in decoder — architecture violated O(C·N) goal; (2) unbounded AdaLN scale caused grad_norm→947 once model memorised dataset; (3) linear LR schedule too slow to decay (LR still 2e-4 when eval_loss=0.009); (4) full lm_head over all positions (6.6× wasted compute). Architecture completely redesigned. See CHANGELOG `[2026-02-23]`. |
 
 ## Evaluation Experiments (Zero Training Cost)
 
@@ -32,6 +33,29 @@ This is the central registry for all training runs and ablations. It is intended
 | MNLI-mm Acc | 59.34% | **60.90%** (+ep3 pend.) | +1.56% |
 
 **Full analysis:** [via_decoder_eval_20260222.md](run_reports/via_decoder_eval_20260222.md)
+
+---
+
+## Architecture Overhaul (2026-02-23) — Diffusion Decoder Redesign
+
+**Decision:** Completely rewrite the diffusion decoder. Remove O(N²) self-attention, replace with Perceiver IO-style cross-attention-only decoding, adopt AdaLN-Zero timestep conditioning.
+
+**Root cause of failure (`diffusion_H512L2C128D2_20260221_195554`):**
+
+1. **Architecture contradiction:** Decoder used full token self-attention (O(N²)) — the exact computational pattern the concept bottleneck is designed to replace. Meaningless for long sequences.
+2. **Unbounded AdaLN:** Multiplicative conditioning `x * (1 + scale)` with no initialization constraint. When eval_loss → 0.009 (memorization), the remaining LR (2e-4) overshoots the minimum, scale amplifies exponentially → grad_norm → 947.
+3. **Linear LR schedule:** At epoch 12, LR was still 2e-4 (40% of 5e-4). Cosine would give 3e-5. The sharp loss landscape post-memorization combined with high LR = guaranteed explosion.
+4. **Full logits waste:** `lm_head` applied to all 512 positions, only M masked kept. ~6.6× wasted matmul compute.
+5. **Padding positions masked:** `_apply_noise` did not respect `attention_mask`.
+
+**New architecture (`arch/diffusion-xattn-only-20260223`):**
+
+- `DiffusionDecoderLayer`: cross-attention only (O(N·C)), AdaLN-Zero (zero-initialized gates)
+- `ConceptDiffusionDecoder`: returns hidden states (no lm_head inside decoder)
+- `ConceptEncoderForMaskedDiffusion`: sparse `lm_head` at model level, `label_smoothing=0.1`, padding-safe noise, `t_min=0.1`
+- `train_diffusion_multigpu.sh`: LR 3e-4, cosine schedule, grad_accum=2, label_smoothing=0.1
+
+**Full analysis in CHANGELOG:** `[2026-02-23]`
 
 ---
 
@@ -62,3 +86,4 @@ More details in [mlm_perceiver_diagnosis_20260221.md](../4_Research_Notes/mlm_pe
 - [Baseline Models on GLUE](../3_Evaluations_and_Baselines/canonical_baselines.md)
 - [Concept Losses (Kendall-Gal vs Fixed)](run_reports/concept_losses_20260219.md)
 - [MLM+Perceiver Deep Diagnosis (Feb 21)](../4_Research_Notes/mlm_perceiver_diagnosis_20260221.md)
+- [Diffusion L2 Failure Analysis (Feb 21)](run_reports/diffusion_L2_failure_20260221.md)
