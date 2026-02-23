@@ -189,14 +189,14 @@ accelerate launch \
     --save_safetensors False \
     --overwrite_output_dir True \
     --remove_unused_columns True \
-    --disable_tqdm False \
+    --disable_tqdm True \
     --load_best_model_at_end True \
     --metric_for_best_model "eval_loss" \
     --greater_is_better False \
     --torch_compile False \
     --torch_compile_dynamic "$TORCH_COMPILE_DYNAMIC" \
     $OPTIONAL_ARGS \
-    2>&1 | tee -a "$SHELL_LOG"
+    2>&1 | python scripts/clean_tee.py "$SHELL_LOG"
 
 echo ""
 echo "Recursive MLM training completed!"

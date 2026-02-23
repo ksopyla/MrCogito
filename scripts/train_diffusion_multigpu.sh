@@ -203,7 +203,7 @@ accelerate launch \
     --load_best_model_at_end False \
     --metric_for_best_model "eval_loss" \
     --greater_is_better False \
-    2>&1 | tee -a "$SHELL_LOG"
+    2>&1 | python scripts/clean_tee.py "$SHELL_LOG"
 
 echo ""
 echo "Training completed! Output: $OUTPUT_DIR"
