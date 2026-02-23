@@ -91,9 +91,14 @@ class ModelArguments:
         metadata={"help": "Transformer layers in diffusion decoder (keep small: 1-4)"}
     )
     t_min: float = field(
-        default=0.05,
+        default=0.1,
         metadata={"help": "Minimum noise level sampled during training. "
                   "Avoids trivial t≈0 steps where nothing is masked."}
+    )
+    label_smoothing: float = field(
+        default=0.1,
+        metadata={"help": "Label smoothing for cross-entropy loss. Prevents overconfident "
+                  "predictions that create sharp loss landscapes and gradient explosion."}
     )
     # torch.compile is applied MANUALLY here (not via TrainingArguments.torch_compile) so we
     # can pass dynamic=True.  TrainingArguments.torch_compile should be kept False to avoid
@@ -281,6 +286,7 @@ def main():
         loss_config=loss_config,
         decoder_layers=model_args.decoder_layers,
         t_min=model_args.t_min,
+        label_smoothing=model_args.label_smoothing,
     )
 
     if model_args.model_name_or_path:
@@ -351,6 +357,7 @@ def main():
                 "concept_num": model_args.concept_num,
                 "decoder_layers": model_args.decoder_layers,
                 "t_min": model_args.t_min,
+                "label_smoothing": model_args.label_smoothing,
                 "concept_losses": loss_args.concept_losses,
                 "loss_weighting": loss_args.loss_weighting,
                 "dataset": data_args.dataset_name,

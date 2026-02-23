@@ -64,8 +64,9 @@ NUM_ENCODER_LAYERS=2          # Starting with 2 layers for correctness check (li
 CONCEPT_NUM=128
 INTERMEDIATE_SIZE=1024        # 1024 matches the original L2 baseline FFN dim
 CONCEPT_POSITION_TYPE="none"
-DECODER_LAYERS=2              # Diffusion decoder layers (keep 1-4, larger = slower)
-T_MIN=0.05                    # Minimum masking rate (avoids trivial t≈0 batches)
+DECODER_LAYERS=2              # Cross-attention layers in diffusion decoder (no self-attention)
+T_MIN=0.1                     # Min masking rate. 0.1 → ~51 masked tokens/sample (less gradient noise)
+LABEL_SMOOTHING=0.1           # Prevents overconfident predictions → smoother loss landscape
 
 # =============================================================================
 # DATA
@@ -83,8 +84,8 @@ TEST_SIZE_PERCENT=0.1
 # Effective batch: 64 * NUM_GPUS * 2 = 512
 PER_DEVICE_BATCH_SIZE=64
 EVAL_BATCH_SIZE=16
-GRADIENT_ACCUMULATION_STEPS=1   # 1 accum step for effective batch 256 (L2 baseline)
-LEARNING_RATE=5e-4              # 5e-4 used for L2 baselines
+GRADIENT_ACCUMULATION_STEPS=2   # Effective batch = 64 * NUM_GPUS * 2 = 512 (matching MLM perceiver)
+LEARNING_RATE=3e-4              # 3e-4 (matching MLM L6), NOT 5e-4 which caused explosion
 NUM_EPOCHS=20
 WARMUP_STEPS=1500
 WEIGHT_DECAY=0.01
@@ -160,6 +161,7 @@ accelerate launch \
     --concept_position_type "$CONCEPT_POSITION_TYPE" \
     --decoder_layers "$DECODER_LAYERS" \
     --t_min "$T_MIN" \
+    --label_smoothing "$LABEL_SMOOTHING" \
     --torch_compile_dynamic "$TORCH_COMPILE_DYNAMIC" \
     --model_name_or_path "$MODEL_NAME_OR_PATH" \
     --dataset_name "$DATASET_NAME" \
@@ -195,7 +197,7 @@ accelerate launch \
     --dataloader_num_workers 4 \
     --gradient_checkpointing False \
     --optim "adamw_torch_fused" \
-    --lr_scheduler_type "linear" \
+    --lr_scheduler_type "cosine" \
     --report_to "wandb" \
     --save_safetensors True \
     --overwrite_output_dir True \

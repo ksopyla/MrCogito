@@ -44,6 +44,7 @@ poetry run python training/train_diffusion.py `
     --torch_compile_dynamic False `
     --bf16 `
     --optim "adamw_torch_fused" `
-    --lr_scheduler_type "linear"
+    --lr_scheduler_type "cosine" `
+    --label_smoothing 0.1
 
 Write-Host "Local testing completed!"
