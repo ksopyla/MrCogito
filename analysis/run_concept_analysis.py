@@ -31,6 +31,7 @@ from nn.concept_encoder_perceiver import (
     ConceptEncoderForMaskedLMPerceiverPosOnly,
 )
 from nn.concept_encoder_weighted import ConceptEncoderForMaskedLMWeighted
+from nn.concept_encoder_diffusion import ConceptEncoderForMaskedDiffusion
 from analysis.concept_analysis import compute_concept_geometry_metrics
 
 
@@ -38,6 +39,7 @@ MODEL_CLASSES = {
     "perceiver_mlm": ConceptEncoderForMaskedLMPerceiver,
     "perceiver_posonly_mlm": ConceptEncoderForMaskedLMPerceiverPosOnly,
     "weighted_mlm": ConceptEncoderForMaskedLMWeighted,
+    "diffusion_mlm": ConceptEncoderForMaskedDiffusion,
 }
 
 

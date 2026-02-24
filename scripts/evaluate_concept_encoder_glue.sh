@@ -13,8 +13,12 @@
 # Task list: all, all-glue, cola, mrpc, stsb, sst2, qnli, qqp, rte, mnli-matched, mnli-mismatched
 #
 # Model history:
+#   diffusion_mlm L2 xattn-only (Feb 23 2026, train_loss=2.894, eval_loss=1.433):
+#     diffusion_H512L2C128D2_20260223_203349  ← CURRENT
+#   perceiver_mlm L6 + fixed=0.1 combined (Feb 20 2026, eff. rank 12.5%):
+#     perceiver_mlm_H512L6C128_20260220_184029
 #   perceiver_mlm L6 + combined+kendall_gal (Feb 19 2026, eff. rank 95.5%):
-#     perceiver_mlm_H512L6C128_20260219_105435  ← CURRENT
+#     perceiver_mlm_H512L6C128_20260219_105435
 #   perceiver_mlm L6 baseline (Feb 08 2026, eff. rank 4%):
 #     perceiver_mlm_H512L6C128_20260208_211633
 #   weighted_mlm L2 (Jan 17 2026, MRPC 82.2% F1):
@@ -79,10 +83,12 @@ export TOKENIZERS_PARALLELISM=false
 # =============================================================================
 
 # Default model (last trained canonical run)
-# perceiver_mlm L6 + fixed0.1 combined (Feb 20 2026, eff. rank 12.5%)
-DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260220_184029/perceiver_mlm_H512L6C128_20260220_184029"
+# diffusion_mlm L2 xattn-only (Feb 23 2026, train_loss=2.894, eval_loss=1.433, NO gradient explosion)
+DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/diffusion_H512L2C128D2_20260223_203349/diffusion_H512L2C128D2_20260223_203349"
 
 # Previous models (uncomment to set a different default):
+# perceiver_mlm L6 + fixed0.1 combined (Feb 20 2026, eff. rank 12.5%)
+# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260220_184029/perceiver_mlm_H512L6C128_20260220_184029"
 # perceiver_mlm L6 baseline — no concept losses (eff. rank 4%) — uploaded to HF Hub
 # DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260208_211633/perceiver_mlm_H512L6C128_20260208_211633"
 # perceiver_mlm L6 + combined+kendall_gal (Feb 19 2026, eff. rank 95.5%, QQP/MNLI regressed)
@@ -105,6 +111,8 @@ TASK="${1:-all}"
 if [ -n "$MODEL_TYPE_OVERRIDE" ]; then
     MODEL_TYPE="$MODEL_TYPE_OVERRIDE"
     echo "MODEL_TYPE overridden: $MODEL_TYPE"
+elif echo "$MODEL_PATH" | grep -q "diffusion"; then
+    MODEL_TYPE="diffusion_mlm"
 elif echo "$MODEL_PATH" | grep -q "perceiver_posonly_mlm"; then
     MODEL_TYPE="perceiver_posonly_mlm"
 elif echo "$MODEL_PATH" | grep -q "perceiver_mlm"; then

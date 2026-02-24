@@ -174,8 +174,8 @@ def parse_args():
         "--model_type",
         type=str,
         default="bert",
-        choices=["bert-type", "xlnet-type", "concept-type", "sim_matrix_mlm", "concept_mlm", "weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm", "perceiver_decoder_cls"],
-        help="Type of model to fine-tune. perceiver_decoder_cls uses the pretrained MLM decoder for classification (loads encoder+decoder weights)."
+        choices=["bert-type", "xlnet-type", "concept-type", "sim_matrix_mlm", "concept_mlm", "weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm", "perceiver_decoder_cls", "diffusion_mlm"],
+        help="Type of model to fine-tune. perceiver_decoder_cls uses the pretrained MLM decoder for classification (loads encoder+decoder weights). diffusion_mlm loads encoder weights from a ConceptEncoderForMaskedDiffusion checkpoint."
     )
     parser.add_argument(
         "--task",
@@ -905,7 +905,7 @@ def finetune_model_on_glue(args):
         tokenizer = AutoTokenizer.from_pretrained(default_tokenizer, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
     
     # Load and initialize model based on model type
-    concept_model_types = ["weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm", "perceiver_decoder_cls"]
+    concept_model_types = ["weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm", "perceiver_decoder_cls", "diffusion_mlm"]
     if args.model_type in concept_model_types:
         # Resolve local path or download from HF Hub into Cache/Models
         local_model_path = resolve_model_path(args.model_name_or_path, hf_token)
@@ -930,9 +930,10 @@ def finetune_model_on_glue(args):
         if args.model_type == "weighted_mlm":
             logger.info(f"Using Weighted Sequence Classification for model type: {args.model_type}")
             model_class = ConceptEncoderForSequenceClassificationWeighted
-        elif args.model_type in ("perceiver_mlm", "perceiver_posonly_mlm"):
-            # Both perceiver variants use the same encoder-only classification head.
-            # The decoder difference (posonly vs input+pos) is irrelevant for classification.
+        elif args.model_type in ("perceiver_mlm", "perceiver_posonly_mlm", "diffusion_mlm"):
+            # perceiver variants and diffusion_mlm all use the same encoder-only classification head.
+            # For diffusion_mlm: only encoder.* weights are loaded from the diffusion checkpoint;
+            # the decoder and lm_head are discarded. The encoder architecture is identical.
             logger.info(f"Using Perceiver weighted-pool Sequence Classification for model type: {args.model_type}")
             model_class = ConceptEncoderForSequenceClassificationPerceiver
         elif args.model_type == "perceiver_decoder_cls":
