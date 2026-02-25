@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Concept Encoder Research Project Guide
 
-1. use the ai resercher skill while doing research and development.
+When doing research and development, follow the guidelines in `.cursor/rules/ai-researcher.mdc` — senior research scientist mindset, empirical validation focus, use of HuggingFace MCP tools and WebSearch, and mandatory experiment documentation.
 
 ## 🧠 Core Model Implementations (`nn/`)
 | File | Description |
@@ -57,7 +57,7 @@ Three documents must stay linked:
 2. `active_todos.md` → completion date → `CHANGELOG.md` (task ↔ implementation)
 3. WandB run config includes `git_commit` + `git_tag` (run ↔ code)
 
-Use **engineer-scribe** skill for the full checklist.
+See `.cursor/rules/engineer-scribe.mdc` for the full traceability checklist.
 Git tagging convention: `arch/{feature}` for code changes, `train/{run_id}` before training runs.
 
 ## 🗂️ Cache & Logs Structure (Local & Remote)

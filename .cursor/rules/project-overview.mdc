@@ -36,5 +36,5 @@ After every architectural change or completed implementation:
 2. Add `git_tag` to any new row in `master_experiment_log.md`.
 3. All training scripts must call `get_git_info()` from `training/utils_training.py`
    and include the result in `wandb.init()` config.
-4. Use the **engineer-scribe** skill (`~/.cursor/skills-cursor/engineer-scribe/SKILL.md`)
-   for full checklist and conventions.
+4. See `.cursor/rules/engineer-scribe.mdc` for the full checklist, git tag conventions,
+   commit message prefixes, and CHANGELOG format.
