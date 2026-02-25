@@ -140,7 +140,7 @@ def parse_args():
                         choices=list(BENCHMARKS.keys()) + ["all", "sick_all"],
                         help="Benchmark to evaluate on")
     parser.add_argument("--model_type", type=str, required=True,
-                        choices=["weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm", "perceiver_decoder_cls"])
+                        choices=["weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm", "perceiver_decoder_cls", "diffusion_mlm"])
     parser.add_argument("--model_name_or_path", type=str, required=True)
     parser.add_argument("--tokenizer_name", type=str, default=None)
     parser.add_argument("--output_dir", type=str, default="./Cache/Training/")
@@ -230,7 +230,7 @@ def load_concept_model(args, benchmark_name):
 
     if args.model_type == "weighted_mlm":
         model_class = ConceptEncoderForSequenceClassificationWeighted
-    elif args.model_type in ("perceiver_mlm", "perceiver_posonly_mlm"):
+    elif args.model_type in ("perceiver_mlm", "perceiver_posonly_mlm", "diffusion_mlm"):
         model_class = ConceptEncoderForSequenceClassificationPerceiver
     elif args.model_type == "perceiver_decoder_cls":
         model_class = ConceptEncoderForSequenceClassificationViaDecoder

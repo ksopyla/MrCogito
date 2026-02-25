@@ -34,7 +34,9 @@ MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260220_184
 # =============================================================================
 
 # Auto-detect MODEL_TYPE from MODEL_PATH name
-if echo "$MODEL_PATH" | grep -q "perceiver_posonly_mlm"; then
+if echo "$MODEL_PATH" | grep -q "diffusion"; then
+    MODEL_TYPE="diffusion_mlm"
+elif echo "$MODEL_PATH" | grep -q "perceiver_posonly_mlm"; then
     MODEL_TYPE="perceiver_posonly_mlm"
 elif echo "$MODEL_PATH" | grep -q "perceiver_mlm"; then
     MODEL_TYPE="perceiver_mlm"
