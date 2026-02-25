@@ -1,6 +1,6 @@
 # Experiment TODO List v3
 
-**Created: 2026-02-19** | **Updated: 2026-02-19**
+**Created: 2026-02-19** | **Updated: 2026-02-25**
 **Status: Active**
 
 ## Summary of Feb 19 Results
@@ -21,6 +21,8 @@
 
 - [x] ~~MLM training with `combined` + `kendall_gal`~~ — **COMPLETED & EVALUATED**
   - Result: concept diversity ✓ but GLUE regressed (QQP −13.76%, MNLI −10%)
+- [x] ~~Diffusion MLM L2 (TODO 6)~~ — **COMPLETED & EVALUATED (2026-02-25)**
+  - Result: Stable training ✓, concept rank 2x better but still collapsed, STS-B near-random
 
 ## TODO 0: Run L6 baseline STS-B evaluation — DONE ✅
 
@@ -197,22 +199,41 @@ Because the combined loss with weight 0.1 still collapsed, we abandon this regul
 
 ---
 
-## TODO 6: Masked Diffusion Experiment (Priority: HIGH, Effort: 5 GPU-days) In Progress
+## TODO 6: Masked Diffusion Experiment (Priority: HIGH, Effort: 5 GPU-days) DONE ✅
 
-**Done date: in progress (re-launching with fixed architecture)**
+**Done date: 2026-02-25 (evaluated)**
 
 *Maps to roadmap [Phase 9](roadmap.md#phase-9-masked-diffusion-decoder--replace-mlm-new--high-priority)*
 
 **Run 1 outcome (2026-02-21, `diffusion_H512L2C128D2_20260221_195554`):** FAILED — gradient explosion at epoch 12.
-Root causes: O(N²) self-attention in decoder, unbounded AdaLN, linear LR schedule, full logits. See master experiment log.
 
-**Architecture fix (2026-02-23):** Complete decoder rewrite — cross-attention-only (Perceiver IO style), AdaLN-Zero, sparse lm_head, cosine LR, label_smoothing=0.1. See CHANGELOG `[2026-02-23]`.
+**Run 2 outcome (2026-02-23, `diffusion_H512L2C128D2_20260223_203349`):** COMPLETED — stable training with xattn-only decoder + AdaLN-Zero.
+- Train loss: 14.19 → 2.894, Eval loss: 3.77 → 1.433
+- Grad norm stable (peaked 6.81, ended 0.23)
 
-**Action (next):** Run `bash scripts/train_diffusion_multigpu.sh` on Polonez with the fixed architecture. Concept losses still disabled (`none`) for fair baseline. Evaluate with concept analysis + ViaDecoder GLUE once complete.
+**Evaluation results (2026-02-25):**
 
-**Compare:** Concept analysis metrics vs TSDAE results (TODO 10). If diffusion effective_rank > 64/128, it becomes the primary objective.
+| Metric | Diffusion L2 | L2 Perceiver Baseline | L6 ViaDecoder Baseline |
+|---|---|---|---|
+| Concept eff. rank | **10.1/128 (7.9%)** | ~5/128 (est.) | 5/128 (4%) |
+| MRPC F1 | **80.0%** | 80.6% | 82.73% |
+| STS-B Pearson | **0.138** | N/A | 0.650 |
+| PAWS Accuracy | **55.98%** | N/A | 57.6% |
+| SICK Relatedness | **0.064** | N/A | N/A |
+| SICK Entailment | **57.78%** | N/A | N/A |
 
-**Status:** [~] Run 1 failed, architecture fixed, re-launching
+**Concept analysis details:**
+- Global effective rank: 10.1/128 (7.9%) — 2x better than L6 MLM baseline (5/128) but still collapsed
+- Mean pairwise similarity: 0.187 — GOOD
+- Max pairwise similarity: 1.000 — POOR (duplicate concepts exist)
+- Top-1 dominance ratio: 0.099 — GOOD (much better singular value spread than MLM)
+- Min dimension std: 0.631 — GOOD (no dead dimensions)
+
+**Conclusion:** Diffusion training alone does NOT fix concept collapse. The architecture is validated (no gradient explosion, stable training), and shows 2x improvement in effective rank over MLM baseline. However, STS-B Pearson 0.138 is near-random, indicating concepts are geometrically better distributed but not semantically grounded. MRPC F1 80.0% matches L2 baseline — the encoder captures *some* information but the concept bottleneck is too leaky.
+
+**Decision gate (per roadmap):** Diffusion L2 effective_rank = 10.1 (< 30/128 threshold). Diffusion alone insufficient. Wait for TSDAE comparison. If TSDAE also fails rank > 30, implement Slot Attention (C5).
+
+**Status:** [x] Done — evaluated, results logged
 
 ---
 
@@ -399,17 +420,18 @@ Week 2 (DONE — Architecture Overhaul):
   [x] Uploaded L6 canonical model to HF Hub (ksopyla/concept-encoder-perceiver_mlm_H512L6C128_20260208_211633)
   [x] Added --run-name non-interactive upload, HF Hub eval download, eval script env-var overrides
 
-Week 3 (CURRENT — Track A: Concept Quality Training):
-  [ ] TODO 10:  Train TSDAE PosOnly on Minipile (A1, Polonez, 5 GPU-days)
+Week 3 (DONE — Track A: Diffusion Evaluated):
+  [x] TODO 6:   Masked diffusion experiment (A3) — DONE, rank 10/128, STS-B 0.138
+  [ ] TODO 10:  Train TSDAE PosOnly on Minipile (A1, Polonez, 5 GPU-days) ← NEXT PRIORITY
   [ ] TODO 10b: Train TSDAE PosOnly + BiXT on Minipile (A2, parallel on Odra)
-  [ ] TODO 6:   Masked diffusion experiment (A3, running on Polonez)
 
 Week 4 (Track A: Evaluation + Decision Gate):
   [ ] TODO 10c: Concept analysis on TSDAE checkpoints (A7 REPEAT, compare vs MLM baseline)
   [ ] TODO 10d: GLUE eval with ViaDecoder + perceiver_pair_cls on TSDAE model (A6 REPEAT)
   [ ] TODO 10e: Zero-shot STS-B (A8, cosine similarity, no fine-tuning)
-  [ ] Diffusion vs TSDAE comparison: concept rank, GLUE MRPC/QQP/STS-B
+  [ ] TSDAE vs Diffusion comparison: concept rank, GLUE MRPC/QQP/STS-B
   [ ] Decision gate: pick winner (see roadmap Gate 1)
+  [ ] If both fail rank > 30: implement Slot Attention (C5) as fallback
 
 Week 5-6 (Track A.4 + Track C start):
   [ ] Add contrastive loss (SimCSE) to Track A winner (A4)
@@ -468,7 +490,8 @@ Same as A but with `--use_bixt`. Compare concept quality (effective rank, mean s
 
 ---
 
-*Plan updated: 2026-02-22*
+*Plan updated: 2026-02-25*
 *Aligned with: [roadmap.md v3](roadmap.md) (2026-02-22)*
 *Next review: after TSDAE training results (Track A decision gate)*
 *Related: docs/4_Research_Notes/mlm_perceiver_diagnosis_20260221.md*
+*Diffusion L2 evaluated: 2026-02-25 — concept rank 10/128, STS-B 0.138 (insufficient alone)*
