@@ -166,10 +166,22 @@ def load_benchmark_dataset(benchmark_name, tokenizer, max_length):
     """Load and preprocess a benchmark dataset."""
     cfg = BENCHMARKS[benchmark_name]
 
-    if cfg["dataset_config"]:
-        raw = load_dataset(cfg["dataset_id"], cfg["dataset_config"], cache_dir=DATASET_CACHE_DIR, trust_remote_code=True)
-    else:
-        raw = load_dataset(cfg["dataset_id"], cache_dir=DATASET_CACHE_DIR, trust_remote_code=True)
+    try:
+        if cfg["dataset_config"]:
+            raw = load_dataset(cfg["dataset_id"], cfg["dataset_config"], cache_dir=DATASET_CACHE_DIR, trust_remote_code=True)
+        else:
+            raw = load_dataset(cfg["dataset_id"], cache_dir=DATASET_CACHE_DIR, trust_remote_code=True)
+    except RuntimeError as e:
+        if "Dataset scripts are no longer supported" in str(e):
+            logger.warning(f"Script-based loader failed for {cfg['dataset_id']}, retrying with parquet revision...")
+            if cfg["dataset_config"]:
+                raw = load_dataset(cfg["dataset_id"], cfg["dataset_config"],
+                                   cache_dir=DATASET_CACHE_DIR, revision="refs/convert/parquet")
+            else:
+                raw = load_dataset(cfg["dataset_id"],
+                                   cache_dir=DATASET_CACHE_DIR, revision="refs/convert/parquet")
+        else:
+            raise
 
     def preprocess(examples):
         texts_a = examples[cfg["input_columns"][0]]
