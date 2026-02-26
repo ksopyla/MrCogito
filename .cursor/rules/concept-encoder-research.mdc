@@ -1,74 +1,66 @@
 ---
-description: Research project deep-dive and experiemnt tracking and management - detailed folder structure, evaluation protocols, model implementations, training logs, and latest research directions.
+description: Research project structure, experiment protocols, and tracking rules for the Concept Encoder project.
 globs: 
 alwaysApply: false
 ---
 
 # Concept Encoder Research Project Guide
 
-When doing research and development, follow the guidelines in `.cursor/rules/ai-researcher.mdc` — senior research scientist mindset, empirical validation focus, use of HuggingFace MCP tools and WebSearch, and mandatory experiment documentation.
+Follow `.cursor/rules/ai-researcher.mdc` for research mindset. Follow `.cursor/rules/engineer-scribe.mdc` for traceability.
 
-## 🧠 Core Model Implementations (`nn/`)
-| File | Description |
+## Project Structure
+
+| Path | Purpose |
 |---|---|
-| `concept_encoder.py` | Base `ConceptEncoder` architecture (cross-attention) |
-| `concept_encoder_weighted.py` | `ConceptEncoderForMaskedLMWeighted` (learned position-specific weights) |
-| `concept_encoder_perceiver.py` | Perceiver IO decoding: `ConceptEncoderForMaskedLMPerceiver`, `ConceptEncoderForSequenceClassificationPerceiver`, `ConceptEncoderForSequenceClassificationViaDecoder` |
-| `concept_encoder_recursive.py` | **New**: TRM-style recursive concept encoder (weight-tied shared layer applied K times) |
-| `concept_encoder_recursive_mlm.py` | **New**: `RecursiveConceptEncoderForMaskedLM` (recursive encoder + perceiver decoder) |
-| `loss_manager.py` | Extensible loss manager (`OrthogonalityLoss`, `UniformityLoss`, `VICRegLoss`, `KendallGalWeighting`) |
+| `nn/` | Model implementations (`concept_encoder.py`, `*_perceiver.py`, `*_diffusion.py`, `*_recursive.py`, `loss_manager.py`) |
+| `training/` | Training scripts (`mlm_training.py`, `train_diffusion.py`, `train_tsdae.py`, `data_collators.py`) |
+| `evaluation/` | Eval scripts (`evaluate_model_on_glue.py`, `evaluate_on_benchmark.py`) |
+| `analysis/` | `run_concept_analysis.py` — concept collapse, effective rank, cosine similarities |
+| `scripts/` | Shell wrappers for Linux (`.sh`) and Windows (`.ps1`) |
+| `docs/1_Strategy_and_Plans/` | `roadmap.md` (vision + tracks), `active_todos.md` (actionable tasks) |
+| `docs/2_Experiments_Registry/` | `master_experiment_log.md` (central table), `run_reports/` (per-run analyses) |
+| `docs/4_Research_Notes/` | Deep analyses: `mlm_perceiver_diagnosis_20260221.md`, `diffusion_diagnosis_20260226.md` |
+| `Cache/` | Synced from remote servers: models, checkpoints, eval reports |
 
-## 🛠️ Training & Evaluation (`training/`, `evaluation/`)
-- `training/mlm_training.py` — Main MLM training script (HuggingFace Trainer).
-- `evaluation/evaluate_model_on_glue.py` — Fine-tunes and evaluates on GLUE tasks (MRPC, QQP, STS-B, MNLI prioritized).
-- `evaluation/evaluate_on_benchmark.py` — Beyond-GLUE eval (SICK, PAWS).
-- `analysis/run_concept_analysis.py` — Inspects concept collapse, effective rank, and cosine similarities.
+## Current Focus (Feb 2026)
 
-**MLM Training (Linux servers):**
-```bash
-bash scripts/train_mlm_multigpu_perceiver.sh
-bash scripts/train_recursive_mlm.sh
-```
+**Goal:** Build audio conversational + reasoning model via concept bottleneck. Current milestone: prove concept quality on text (SG1).
 
-**Evaluation Usage (Linux):**
-```bash
-bash scripts/evaluate_concept_encoder_glue.sh # runs concept-relevant tasks (MRPC, QQP, STS-B, MNLI)
-bash scripts/evaluate_concept_encoder_sick.sh
-bash scripts/evaluate_concept_encoder_paws.sh
-```
+**Training pipeline phases:** Phase 0 (self-reconstruction) → Phase 1 (prefix generation) → Phase 2 (recursive reasoning) → Phase 3 (instruction tuning).
 
-## 📜 Key Scripts (`scripts/`)
-- **Bash (Linux)**: `train_mlm_multigpu_perceiver.sh`, `train_recursive_mlm.sh`, `train_diffusion_multigpu.sh`, `evaluate_concept_encoder_glue.sh`
-- **PowerShell (Windows)**: `train_weighted_mlm.ps1`, `evaluate_concept_encoder_glue.ps1`, `sync_evaluation_reports.ps1` (for synchronizing reports from remote servers)
+**Concept count C scales with N:** C=128 at 512 tokens, C=8K-16K at 1M tokens. The invariant is O(C*N) << O(N^2).
 
-## 🗂️ Project Documentation Structure (`docs/`)
-- `docs/1_Strategy_and_Plans/roadmap.md` — Long-term vision, theories, and hypotheses.
-- `docs/1_Strategy_and_Plans/active_todos.md` — Short-term, actionable tasks (include completion dates).
-- `docs/2_Experiments_Registry/master_experiment_log.md` — **CRITICAL**: The central table tracking all training runs. **Always update this file when a new training run completes.** Include hardware, hyperparams, GLUE scores, WandB links, and **git_tag**.
-- `docs/2_Experiments_Registry/run_reports/` — Detailed analyses of individual runs (e.g., loss curve anomalies).
-- `docs/3_Evaluations_and_Baselines/` — Cross-model comparisons, scaling laws, and BERT baselines.
-- `docs/4_Research_Notes/` — Theoretical explorations and literature reviews.
-- `docs/5_Archive/` — Old plans and deprecated notes.
-- `CHANGELOG.md` (repo root) — **Engineering log**: what code changed, when, why. Update after every architectural change.
+**Active Track A priorities:** L6 diffusion ablation (TODO 11), ELBO fix (TODO 12), TSDAE PosOnly (TODO 10), prefix generation (TODO 13).
 
-## 🔗 Traceability Protocol
-Three documents must stay linked:
-1. `CHANGELOG.md` → git tag → `master_experiment_log.md` (code ↔ run)
-2. `active_todos.md` → completion date → `CHANGELOG.md` (task ↔ implementation)
-3. WandB run config includes `git_commit` + `git_tag` (run ↔ code)
+## Experiment Protocol (MANDATORY)
 
-See `.cursor/rules/engineer-scribe.mdc` for the full traceability checklist.
-Git tagging convention: `arch/{feature}` for code changes, `train/{run_id}` before training runs.
+### Before Training
+1. Create git tag: `arch/{feature}` for code, `train/{run_id}` before training.
+2. Ensure `get_git_info()` is called in training script and passed to `wandb.init()` config.
+3. Verify training config matches the TODO description.
 
-## 🗂️ Cache & Logs Structure (Local & Remote)
-- `Cache/` — This crucial folder stores synchronized files from remote servers (Polonez/Odra). Always check here for the latest results after running `scripts/sync_evaluation_reports.ps1`.
-- `Cache/Models/` — Downloaded HuggingFace models
-- `Cache/Evaluation_reports/` — CSV eval results synchronized from remote servers
-- `Cache/Training/` — Model checkpoints and optimizer states
-- `wandb/` — Training logs (gitignored)
+### After Training
+1. **Immediately** update `docs/2_Experiments_Registry/master_experiment_log.md` with a new row.
+2. Run `analysis/run_concept_analysis.py` — check effective rank, pairwise similarity.
+3. Run GLUE eval with ViaDecoder (default mode): MRPC, STS-B, QQP, MNLI.
+4. Write run report in `docs/2_Experiments_Registry/run_reports/` if results are non-trivial.
+5. Update `CHANGELOG.md` if any code changed.
 
-## 🔭 Current Research Direction
-1. **Concept Collapse Diagnosis:** The original MLM objective causes concept embeddings to collapse into a highly correlated space (effective rank ~5/128). Current priority is using regularization (`combined` losses + `fixed` weights) or alternate generative objectives (Masked Diffusion) to restore concept diversity without destroying semantics.
-2. **Recursive Concept Encoder:** Inspired by the TRM paper, the `recursive_mlm` architecture ties weights across iteration steps ($K$). This naturally supports latent reasoning and test-time compute scaling with far fewer parameters (e.g. 42M vs 61M).
-3. **Probing and Semantic Similarity:** We are dropping syntactic GLUE tasks (CoLA) and prioritizing STS-B (Pearson/Spearman), SICK (Relatedness), PAWS (Paraphrase), and SentEval probing tasks to explicitly measure what semantic properties survive the concept bottleneck.
-4. **Audio Roadmap:** We validate architecture on text first. Once proven, we'll introduce an audio-to-concept adapter to map mel-spectrograms into the frozen text concept space, leading to a "Concept-Talker" speech-to-speech model.
+### Evaluation Rules
+- **Default classification head:** ViaDecoder (not CLS-query).
+- **Priority benchmarks:** STS-B Pearson > concept rank > MRPC/QQP > PAWS/SICK > MNLI.
+- **Skip:** CoLA (architectural ceiling), RTE (too noisy), SST-2 (saturated).
+- **New metric:** Prefix generation loss (measures generation capability, not just similarity).
+
+### Concept Quality Targets
+- Effective rank > 50% of C (e.g., > 64/128)
+- Mean pairwise similarity < 0.20
+- Max pairwise similarity < 0.60
+- STS-B Pearson > 0.75
+- Zero-shot STS-B cosine > 0.60
+
+## Traceability (3 linked documents)
+
+1. `CHANGELOG.md` → git tag → `master_experiment_log.md`
+2. `active_todos.md` → completion date → `CHANGELOG.md`
+3. WandB run config includes `git_commit` + `git_tag`

@@ -1,18 +1,58 @@
-# MrCogito: Concept Encoder Research Roadmap v3
+# MrCogito: Concept Encoder Research Roadmap v4
 
-**Created:** 2026-02-22 | **Supersedes:** roadmap v2 (2026-02-18)
+**Created:** 2026-02-26 | **Supersedes:** roadmap v3 (2026-02-22)
 **Author:** Krzysztof Sopyla
-**Previous versions:** v1 (2026-02-13, obsolete), v2 (2026-02-18, archived)
+**Previous versions:** v1 (2026-02-13, obsolete), v2 (2026-02-18, archived), v3 (2026-02-22, archived)
 
 ---
 
 ## 1. Vision and Main Goal
 
-Build an **audio conversational and reasoning model** grounded in a **concept bottleneck** architecture. Instead of operating on raw tokens (text) or codec frames (audio), the model compresses long input sequences into a small set of dense "concept tokens" and reasons over them.
+Build an **audio conversational and reasoning model** grounded in a **concept bottleneck** architecture. Instead of operating on raw tokens (text) or codec frames (audio), the model compresses long input sequences into dense "concept tokens," reasons iteratively in concept space, and generates output (text or speech) via a decoder.
 
-**Core architecture idea:** Cross-attention between C learned concept tokens and N input tokens produces a fixed-size semantic representation (C << N). Decoding maps concepts back to output tokens. This yields O(C*N) complexity instead of O(N^2), enabling efficient processing of long sequences and modality-agnostic reasoning.
+**Milestone: text generative reasoning model.** Before adding audio, we must first prove the concept bottleneck works for text -- producing a generative reasoning model that encodes input, reasons in latent concept space, and generates text output. This is the current focus (SG1 + SG2).
 
-**Publication framing:** *"Concept Bottleneck Encoder for Long-Context and Multimodal Understanding -- matching BERT on semantic tasks with 97% less compute at 4K tokens."*
+**Inference pipeline (text milestone):**
+```
+User query (clean text, N tokens)
+  → Encoder: cross-attention compresses N tokens into C concepts
+  → Reasoning: recursive concept refinement (K iterations, weight-tied)
+  → Decoder: generates response from refined concepts (diffusion or autoregressive)
+```
+
+**Inference pipeline (audio end goal):**
+```
+User speech (audio, mel-spectrogram)
+  → Audio adapter: maps audio features into concept space
+  → Reasoning: recursive concept refinement (shared weights with text)
+  → Audio decoder (Talker): generates speech tokens/codec frames from concepts
+```
+
+**Core architecture idea:** Cross-attention between C learned concept tokens and N input tokens produces a compact semantic representation (C << N). This yields O(C*N) complexity instead of O(N^2). The concept count C **scales with sequence length** -- it is NOT fixed:
+
+| Sequence length N | Concept count C | Compression ratio | Self-attn O(N^2) | Concept O(C*N) | Speedup |
+|---|---|---|---|---|---|
+| 512 | 128 | 4:1 | 262K | 65K | 4x |
+| 4,096 | 512 | 8:1 | 16.7M | 2.1M | 8x |
+| 32,768 | 2,048 | 16:1 | 1.07B | 67M | 16x |
+| 262,144 | 4,096 | 64:1 | 68.7B | 1.07B | 64x |
+| 1,048,576 | 8,192 | 128:1 | 1.1T | 8.6B | **128x** |
+
+At 1M tokens, full self-attention is computationally impossible. Concept attention with C=8K-16K remains tractable while forcing increasingly abstract, semantic representations.
+
+**Training objective evolution** (reconstruction → generation → reasoning):
+
+| Phase | Objective | What it trains | Evaluation |
+|---|---|---|---|
+| Phase 0 | Self-reconstruction (MLM/diffusion/TSDAE) | Concept compression quality | STS-B, concept rank, GLUE |
+| Phase 1 | **Prefix generation** (encode prefix, generate suffix via diffusion) | Semantic concepts + generative decoder | Suffix perplexity, STS-B |
+| Phase 2 | **Variable-depth recursive training** (sample K at train time) | Latent reasoning through iteration | Reasoning benchmarks (GSM8K, ProntoQA) |
+| Phase 3 | **Instruction fine-tuning** (encode instruction, generate response) | Task-following generation | Instruction-following benchmarks |
+| Phase 4 | **Progressive sequence length** (512 → 4K → 32K → 1M) | Long-context concept abstraction | SCROLLS, LongBench |
+
+**Key insight from SODA (Hudson, CVPR 2024):** Bottleneck diffusion models learn semantic representations when the decoder generates RELATED but NOT IDENTICAL content to the encoder's input (novel view synthesis). Self-reconstruction (X→X) permits surface-level hashing; cross-content generation (A→B) forces genuine semantic compression. Phase 1 (prefix generation) implements this principle for text.
+
+**Publication framing:** *"Concept Bottleneck Encoder for Long-Context Reasoning and Multimodal Understanding -- O(C*N) attention with iterative latent reasoning, from text to speech."*
 
 ---
 
@@ -20,13 +60,14 @@ Build an **audio conversational and reasoning model** grounded in a **concept bo
 
 ### SG1: Text Concept Quality (prerequisite for everything)
 
-Produce concept representations that are **semantically rich** (high downstream task performance) and **geometrically diverse** (high effective rank, low pairwise similarity). This is the critical-path blocker for all subsequent work.
+Produce concept representations that are **semantically rich** (high downstream task performance), **geometrically diverse** (high effective rank, low pairwise similarity), and **generatively useful** (support coherent text generation from concepts). This is the critical-path blocker for all subsequent work.
 
 **Success criteria:**
-- Concept effective rank > 64/128 (>50%)
+- Concept effective rank > 64/C (>50% of concept space utilized)
 - STS-B Pearson > 0.75 (ViaDecoder evaluation)
 - QQP F1 > 76%, MNLI-m > 65%
 - Zero-shot STS-B cosine similarity > 0.60
+- **Prefix generation**: suffix reconstruction loss < 3.0 (concepts support generation, not just classification)
 
 ### SG2: Concept Reasoning for Abstract Reasoning
 
@@ -34,10 +75,19 @@ Demonstrate that recursive concept refinement (weight-tied encoder applied K tim
 
 **Targets:**
 - Text reasoning benchmarks (HellaSwag, CommonsenseQA, WinoGrande) as near-term proxies
+- Simple reasoning early validation: ProntoQA (fictional reasoning, used by Coconut) as fast diagnostic
 - ARC-AGI as long-term target (requires visual/grid input adapter, see Track D)
 - Recursive encoder (42M params) matches or exceeds standard encoder (61M params) on semantic benchmarks
 
-**Inspiration:** TRM (Jolicoeur-Martineau et al., 2025) -- 7M-param recursive model beats LLMs 1000x its size on ARC-AGI. Recurrent Depth Reasoning (Geiping et al., 2025) -- latent space reasoning outperforms token-space models.
+**Training methodology (from Recurrent Depth, Geiping 2025):**
+- **Variable-depth training:** randomly sample K (number of encoder iterations) per batch during training
+- **Truncated backpropagation:** gradients only through final k iterations for memory efficiency
+- **Standard loss:** no special reasoning annotations needed; the generation/reconstruction loss naturally rewards better concepts from more iterations
+
+**Inspiration:**
+- TRM (Jolicoeur-Martineau et al., 2025) -- 7M-param recursive model beats LLMs 1000x its size on ARC-AGI
+- Recurrent Depth (Geiping et al., 2025) -- prelude+recurrent+coda architecture; 3.5B model matches 103B equivalent via test-time recurrence
+- Coconut (Meta, 2024) -- chain of continuous thought; latent reasoning outperforms CoT; breadth-first search in concept space; multi-stage curriculum from explicit CoT to fully latent
 
 ### SG3: Audio Conversational Model
 
@@ -59,11 +109,13 @@ Map audio (mel-spectrograms) into the frozen text concept space via a learned ad
 | Factor | Assessment |
 |---|---|
 | TSDAE objective | Addresses all 5 identified structural problems simultaneously. 83x stronger gradient signal per concept vs sparse MLM. |
+| **Prefix generation** | SODA-inspired training: encoder sees prefix, decoder generates suffix. Forces semantic concepts because surface tokens don't transfer across segments. |
 | BiXT architecture | Solves static token embeddings problem. Implemented. |
+| Diffusion fixes | ELBO 1/t loss weighting + t_min=0.3 + L6 depth: low-cost fixes to existing diffusion pipeline. |
 | Data scaling path | Minipile (0.6B tokens) -> OpenWebText+Wikipedia (5B+ tokens) is straightforward. |
-| Hardware available | Polonez (4x A100) + Odra (3x RTX 3090) sufficient for Minipile experiments. |
-| **Primary risk** | Concept collapse may be more fundamental than training objective. |
-| **Mitigation** | 3 parallel objective tracks (TSDAE, diffusion, contrastive). If all fail, Slot Attention is the architectural fallback. |
+| Hardware available | Polonez (4x RTX 3090) + Odra (3x RTX 3090) sufficient for Minipile experiments. |
+| **Primary risk** | Self-reconstruction objectives may never produce concepts useful for generation/reasoning. |
+| **Mitigation** | 4 parallel tracks: TSDAE (reconstruction), prefix generation (generation), diffusion fixes (controlled ablation), contrastive (semantic organization). If all fail, Slot Attention is the architectural fallback. |
 
 ### SG2: Concept Reasoning -- MEDIUM-HIGH feasibility (4-6 months)
 
@@ -98,7 +150,7 @@ graph LR
     SG2 --> S2S
 ```
 
-The entire research program is **bottlenecked on SG1**. If concept quality cannot be fixed, SG2 and SG3 are not viable. The 3-track approach to SG1 (TSDAE, diffusion, contrastive) provides sufficient diversification.
+The entire research program is **bottlenecked on SG1**. If concept quality cannot be fixed, SG2 and SG3 are not viable. The 4-track approach to SG1 (TSDAE, prefix generation, diffusion fixes, contrastive) provides sufficient diversification. The key strategic shift from v3: **measure concept quality for generation, not just classification** (add prefix generation metrics alongside STS-B).
 
 ---
 
@@ -127,29 +179,16 @@ The entire research program is **bottlenecked on SG1**. If concept quality canno
 | `combined` + fixed 0.1 weight | Rank 12.5%, GLUE regressed across all tasks | Combined loss cannot prevent collapse without destroying MLM | [concept_losses_20260219.md](../2_Experiments_Registry/run_reports/concept_losses_20260219.md) |
 | CLS-query classification head | 128:1 information collapse | Single attention query destroys factorial concept structure | [mlm_perceiver_diagnosis_20260221.md](../4_Research_Notes/mlm_perceiver_diagnosis_20260221.md) |
 
+| Diffusion L2 (self-reconstruction, no regularization) | Concept rank 2x better (10/128) but STS-B 0.138 (near-random) | L2 too shallow + missing ELBO weighting + self-reconstruction permits surface hashing | [diffusion_L2_eval_20260225.md](../2_Experiments_Registry/run_reports/diffusion_L2_eval_20260225.md) |
+
 **Abandoned:** `combined` concept loss (both weighting strategies), CLS-query classification head.
 **Retained:** ViaDecoder classification (now default), `t_regs_mst` regularization (untested but implemented).
 
-### Root Cause: 5 Structural Misalignments in MLM+Perceiver
-
-1. **[MASK] token pollution** -- encoder cross-attends to semantically empty [MASK] embeddings
-2. **Static token embeddings** -- concept cross-attention sees uncontextualized word vectors across all 6 layers
-3. **Input-embedding shortcut** -- decoder residual stream leaks token identity, killing 85% of gradient flow to concepts
-4. **CLS-query collapse** -- single query compresses 128 concepts into 1 vector (fixed by ViaDecoder)
-5. **GLUE mismatch** -- concatenated pair encoding conflicts with single-span pretraining
-
-**Full analysis:** [mlm_perceiver_diagnosis_20260221.md](../4_Research_Notes/mlm_perceiver_diagnosis_20260221.md)
+**Root cause analyses:** [mlm_perceiver_diagnosis_20260221.md](../4_Research_Notes/mlm_perceiver_diagnosis_20260221.md) (5 structural misalignments in MLM+Perceiver), [diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md) (5 causes for diffusion underperformance + SoTA comparison + proposed fixes).
 
 ### Architecture Overhaul (Feb 21, 2026)
 
-The diagnosis led to a complete architecture overhaul addressing all 5 problems:
-- **TSDAE training** (token deletion, no [MASK], dense loss at all positions)
-- **BiXT bidirectional cross-attention** (tokens and concepts co-evolve)
-- **PosOnly decoder** (no input-embedding shortcut)
-- **Weighted concept pooling** (replaces CLS-query)
-- **Separate sentence encoding** for pair tasks (`perceiver_pair_cls`)
-
-**Implementation complete.** Training not yet started. See [CHANGELOG.md](../../CHANGELOG.md) `[2026-02-21]`.
+Diagnosis of 5 structural misalignments led to a complete architecture overhaul: TSDAE training, BiXT, PosOnly decoder, weighted concept pooling, separate sentence encoding. **Implementation complete, training not yet started.** See [CHANGELOG.md](../../CHANGELOG.md) `[2026-02-21]`.
 
 ---
 
@@ -170,6 +209,9 @@ The diagnosis led to a complete architecture overhaul addressing all 5 problems:
 | A6 | REPEAT: **ViaDecoder evaluation** on every new checkpoint | STANDARD | 0.5 day per eval | Ongoing | After each training |
 | A7 | REPEAT: **Concept analysis** (eff. rank, similarity, singular values) | STANDARD | 0.5 day per run | Ongoing | After each training |
 | A8 | **Zero-shot STS-B** (cosine similarity of separately-encoded sentences) | MEDIUM | 0.5 day | Not started | After A1/A2 |
+| A9 | **L6 Diffusion ablation** (same config as L2 but with 6 encoder layers) | **HIGHEST** | 1 GPU-day | Not started | None |
+| A10 | **Fix diffusion ELBO loss weighting** (1/t normalization) + raise t_min to 0.3 | **HIGHEST** | 0.5 day code | Not started | None |
+| A11 | **Prefix generation training** (encode prefix, generate suffix via diffusion decoder) | **HIGHEST** | 3 days code + 5 GPU-days | Not started | After A9/A10 |
 
 **Evaluation protocol for every Track A checkpoint:**
 1. Concept analysis: effective rank, mean/max pairwise similarity (target: rank > 64, mean sim < 0.2)
@@ -178,12 +220,15 @@ The diagnosis led to a complete architecture overhaul addressing all 5 problems:
 4. Zero-shot STS-B: cosine similarity, no fine-tuning (ground truth of concept quality)
 5. Beyond-GLUE: PAWS, SICK
 
-**Decision gate (end of Track A):**
-- If TSDAE or diffusion produces rank > 64 AND STS-B > 0.70 -> proceed to Track B (data scaling)
-- If all three objectives fail rank > 30 -> implement Slot Attention (Track C.5) before proceeding
-- Pick winner based on: (1) concept rank, (2) STS-B Pearson, (3) training stability
+**Detailed rationale for A9-A11:** [diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md)
 
-**Active TODOs:** [TODO 6](active_todos.md), [TODO 10](active_todos.md)
+**Decision gate (end of Track A):**
+- If any objective produces rank > 64 AND STS-B > 0.70 -> proceed to Track B (data scaling)
+- **NEW:** If prefix generation (A11) achieves suffix loss < 3.0, this validates generation capability regardless of STS-B
+- If all objectives fail rank > 30 -> implement Slot Attention (Track C.5) before proceeding
+- Pick winner based on: (1) concept rank, (2) STS-B Pearson, (3) **prefix generation quality**, (4) training stability
+
+**Active TODOs:** [TODO 6](active_todos.md), [TODO 10-13](active_todos.md)
 **Training scripts:** `training/train_tsdae.py`, `scripts/train_diffusion_multigpu.sh`
 
 ---
@@ -267,14 +312,16 @@ The diagnosis led to a complete architecture overhaul addressing all 5 problems:
 
 **Efficiency argument (the core claim):**
 
-| Sequence length | Concept Encoder O(C*N) | BERT O(N^2) | Advantage |
-|---|---|---|---|
-| 512 | 65K ops | 262K ops | 4x |
-| 2048 | 262K ops | 4.2M ops | 16x |
-| 4096 | 524K ops | 16.7M ops | **32x** |
-| 16384 | 2.1M ops | 268M ops | **128x** |
+C scales with N to maintain quality while preserving the O(C*N) << O(N^2) advantage:
 
-At N=4096, even 50% downstream performance parity makes the efficiency story compelling.
+| Sequence length N | Concept count C | Concept O(C*N) | Self-attn O(N^2) | Advantage |
+|---|---|---|---|---|
+| 512 | 128 | 65K | 262K | 4x |
+| 4,096 | 512 | 2.1M | 16.7M | **8x** |
+| 32,768 | 2,048 | 67M | 1.07B | **16x** |
+| 1,048,576 | 8,192 | 8.6B | 1.1T | **128x** |
+
+At N=4K with C=512, even 50% downstream performance parity makes the efficiency story compelling. At N=1M, self-attention is impossible; concept attention remains tractable.
 
 **ARC-AGI pathway (long-term):**
 ARC-AGI is a visual/spatial abstract reasoning benchmark. Applying concepts to it requires:
@@ -323,13 +370,15 @@ All experiments sorted by priority, with effort estimates and dependencies.
 
 | # | Experiment | Track | Effort | Expected Impact | Dependencies | Status |
 |---|---|---|---|---|---|---|
-| 1 | TSDAE PosOnly on Minipile | A1 | 5 GPU-days | Fixes all 5 structural problems | None | Awaiting GPU |
-| 2 | TSDAE + BiXT on Minipile | A2 | 5 GPU-days | Adds token contextualization | None | Awaiting GPU |
-| 3 | Masked Diffusion on Minipile | A3 | 5 GPU-days | Alternative objective validation | None | In progress |
-| 4 | Concept analysis on A1/A2/A3 checkpoints | A7 | 0.5 day each | Validate concept quality fix | After 1/2/3 | -- |
-| 5 | ViaDecoder + pair_cls eval on A1/A2/A3 | A6 | 0.5 day each | Establish new baselines | After 1/2/3 | -- |
-| 6 | Zero-shot STS-B on best Track A model | A8 | 0.5 day | Ground truth concept quality | After 4/5 | -- |
-| 7 | Diffusion vs TSDAE comparison, pick winner | A | 0 | Decision gate | After 4/5/6 | -- |
+| 1 | **L6 Diffusion ablation** (isolate encoder depth confound) | A9 | 1 GPU-day | Most informative single experiment | None | Not started |
+| 2 | **Fix ELBO loss weighting** (1/t) + t_min=0.3 in diffusion | A10 | 0.5 day code | Normalize gradient across noise levels | None | Not started |
+| 3 | TSDAE PosOnly on Minipile | A1 | 5 GPU-days | Fixes all 5 structural problems | None | Awaiting GPU |
+| 4 | TSDAE + BiXT on Minipile | A2 | 5 GPU-days | Adds token contextualization | None | Awaiting GPU |
+| 5 | **Prefix generation training** (encode prefix, decode suffix) | A11 | 3+5 days | SODA-inspired generative pretraining | After A9/A10 | Not started |
+| 6 | Concept analysis on all Track A checkpoints | A7 | 0.5 day each | Validate concept quality fix | After 1-5 | -- |
+| 7 | ViaDecoder + pair_cls eval on all checkpoints | A6 | 0.5 day each | Establish new baselines | After 1-5 | -- |
+| 8 | Zero-shot STS-B on best Track A model | A8 | 0.5 day | Ground truth concept quality | After 6/7 | -- |
+| 9 | Diffusion vs TSDAE vs Prefix comparison, pick winner | A | 0 | Decision gate | After 6/7/8 | -- |
 
 ### Near-term (Month 3-4)
 
@@ -422,14 +471,19 @@ gantt
 ### Gate 1: After Track A (concept quality fix)
 
 ```
-TSDAE/Diffusion effective_rank > 64/128?
+Effective_rank > 64/C (50% utilization)?
   YES → proceed to Track B (data scaling)
-  NO, but rank > 30 → add Slot Attention (C5), retry
-  NO, rank < 30 → fundamental rethink needed (pause SG2/SG3)
+  NO, but rank > 30/C → add Slot Attention (C5), retry
+  NO, rank < 30/C → fundamental rethink needed (pause SG2/SG3)
 
 STS-B Pearson > 0.70?
-  YES → TSDAE/diffusion is working, scale data
+  YES → concepts capture semantics, scale data
   NO → add contrastive loss (A4), retry with combined objective
+
+NEW: Prefix generation suffix loss < 3.0?
+  YES → concepts support generation (critical for reasoning model)
+  NO → self-reconstruction concepts don't generalize to generation;
+       pivot fully to prefix generation training (A11)
 ```
 
 ### Gate 2: After Track B (data scaling)
@@ -460,10 +514,10 @@ K=12 beats K=6 on MNLI or reasoning tasks?
 ### Gate 4: After Track D (long-context)
 
 ```
-Competitive on SCROLLS at N=4096?
+Competitive on SCROLLS at N=4096 with C=512?
   YES → publish efficiency paper, start Track E
-  NO → profile bottleneck: concept count (128) or model depth?
-       Try C=256 or C=512 concepts with long sequences
+  NO → increase concept count (C=1024, C=2048) or model depth
+       Profile whether bottleneck is concept capacity or encoder depth
 ```
 
 ### Gate 5: Before Track E (audio)
@@ -516,11 +570,20 @@ Certain experiments must be re-run after engineering improvements or new trainin
 | Moshi (Kyutai) | 2024 | Full-duplex spoken dialogue with inner monologue | Audio architecture reference | [arXiv](https://arxiv.org/abs/2410.00037) |
 | DenoSent | 2024 | Denoising + contrastive objectives are complementary | Supports combined TSDAE + SimCSE (A1+A4) | [OpenReview](https://openreview.net/pdf?id=Z1ElMM3ocz) |
 | Information Bottleneck (Shwartz-Ziv) | 2017 | Training = fitting then compression | Theoretical foundation | [HF](https://hf.co/papers/1703.00810) |
+| **SODA (Hudson)** | 2024 | Bottleneck diffusion for representation learning via novel view synthesis | Key insight: decoder must generate DIFFERENT content than encoder saw for semantic bottleneck | [CVPR](https://openaccess.thecvf.com/content/CVPR2024/html/Hudson_SODA_Bottleneck_Diffusion_Models_for_Representation_Learning_CVPR_2024_paper.html) |
+| **Coconut (Meta)** | 2024 | Chain of continuous thought; latent reasoning outperforms CoT | Multi-stage curriculum for latent reasoning; breadth-first search in concept space | [GitHub](https://github.com/facebookresearch/coconut) |
+| **LLaDA** | 2025 | Masked diffusion LLM at 8B scale; ELBO = weighted MLM losses; loss/p_mask weighting | Training objective and loss weighting reference for diffusion MLM | [arXiv](https://arxiv.org/abs/2502.09992) |
+| **LLaDA 2.0** | 2025 | Scaled to 100B via AR→diffusion conversion; 3-phase block training | Scaling recipe: inherit from AR models, not train from scratch | [arXiv](https://arxiv.org/abs/2512.15745) |
+| **MDLM (Sahoo)** | 2024 | Simplified ELBO for masked diffusion = weighted average of MLM losses | Principled training objective for discrete diffusion | [NeurIPS](https://proceedings.neurips.cc/paper_files/paper/2024/hash/eb0b13cc515724ab8015bc978fdde0ad-Abstract-Conference.html) |
+| **Mercury (Inception)** | 2025 | Commercial dLLM; 10x faster than AR; 12-30 denoising steps | Validates diffusion generation at production scale | [arXiv](https://arxiv.org/abs/2506.17298) |
+| **UL2 (Google)** | 2022 | Mixture-of-Denoisers unifies prefix LM + span corruption + CLM | Pretraining objective design for encoder-decoder | [Google Research](https://research.google/pubs/ul2-unifying-language-learning-paradigms/) |
+| **Seq-VCR** | 2025 | Sequential Variance-Covariance Regularization for reasoning models | Regularize at EACH layer, not just output; 99.5% on 5x5 multiplication | [arXiv](https://arxiv.org/abs/2411.02344) |
+| **Block Diffusion** | 2025 | Interpolates AR and diffusion; flexible-length generation | Hybrid generation strategy reference | [arXiv](https://arxiv.org/abs/2503.09573) |
 
 ---
 
-*Roadmap v3 created: 2026-02-22*
-*Previous version (v2): archived to `docs/5_Archive/`*
+*Roadmap v4 created: 2026-02-26*
+*Previous version (v3): archived to `docs/5_Archive/`*
 *Detailed TODO list: [active_todos.md](active_todos.md)*
 *Experiment results: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md)*
 *Next review: after Track A results (TSDAE/diffusion checkpoints evaluated)*

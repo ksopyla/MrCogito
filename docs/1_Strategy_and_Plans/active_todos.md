@@ -378,76 +378,74 @@ the decoder initializes fresh (or also loaded from checkpoint).
 
 ---
 
-## TODO 9: Initialize Encoder from SoTA Pretrained Model (Priority: MEDIUM, Effort: 3 days)
+## TODO 9: ~~Initialize Encoder from SoTA Pretrained Model~~ — Superseded by TODO 14 ✅
 
-*Maps to roadmap Phase 8.2*
-
-**Motivation:** Our current custom MLM models are undertrained (Minipile is too small). Instead of training the entire token-level backbone from scratch, initialize the transformer layers from a modern SoTA model (e.g., `SmolLM2-135M` or `Qwen2.5-0.5B`). This gives the token-level processing 100B+ token pretraining at zero cost. Keep the concept cross-attention and diffusion decoder randomly initialized.
-
-**Action:** 
-- Implement weight loading in `concept_encoder.py`.
-- Run a baseline diffusion/MLM experiment using the pretrained initialization.
-
-**Status:** [ ] Not started
+**Status:** [x] Superseded — see TODO 14 for updated rationale (Coconut-inspired strategy).
 
 ---
 
-## Experiment Priority Order (Updated 2026-02-22)
+## Experiment Priority Order (Updated 2026-02-26)
 
-Aligned with [roadmap.md](roadmap.md) Track IDs. See roadmap for full experiment details and decision gates.
+Aligned with [roadmap.md v4](roadmap.md) Track IDs. See roadmap for full experiment details and decision gates.
+
+**Strategic shift (v4):** Self-reconstruction alone is insufficient for a generative reasoning model. The training objective must evolve from reconstruction → generation → reasoning. New experiments (A9-A11, TODO 11-13) address this directly. Full analysis: [diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md)
 
 ```
-Week 1 (DONE):
+Week 1 (2026-02-19 — DONE):
   [x] Training with concept losses (running on Polonez)
-  [x] TODO 1: Fix STS-B bug
-  [x] TODO 2: Update GLUE shell script
-  [x] TODO 3: Evaluation folder + SICK + PAWS
-  [x] TODO 4: Concept analysis on new checkpoint
+  [x] TODO 0:  Run L6 baseline STS-B evaluation
   [x] TODO 0b: Re-train L6 with fixed concept loss weight → FAILED (rank 12.5%)
+  [x] TODO 1:  Fix STS-B bug
+  [x] TODO 2:  Update GLUE shell script
+  [x] TODO 3:  Evaluation folder + SICK + PAWS
+  [x] TODO 4:  Concept analysis on new checkpoint
 
-Week 2 (DONE — Architecture Overhaul):
-  [x] Architecture review: identified 5 structural misalignments (see docs/4_Research_Notes/mlm_perceiver_diagnosis_20260221.md)
-  [x] Implemented TSDAE data collator (training/data_collators.py)
-  [x] Rewrote PosOnly decoder for dense loss (TSDAE objective)
-  [x] Implemented BiXT bidirectional cross-attention layer (nn/concept_encoder.py)
-  [x] Replaced CLS-query head with weighted concept pooling
-  [x] Added ConceptEncoderForSentencePairClassification (separate encoding)
-  [x] Updated ViaDecoder for PosOnly support (decoder_posonly flag)
-  [x] Updated GLUE eval: perceiver_pair_cls + separate tokenization
-  [x] Created TSDAE training script (training/train_tsdae.py)
-  [x] Verified TSDAE training locally (standard + BiXT modes)
-  [x] TODO 5: ViaDecoder GLUE eval — DONE ✅ (+0.65–2.3% on all tasks)
-  [x] Uploaded L6 canonical model to HF Hub (ksopyla/concept-encoder-perceiver_mlm_H512L6C128_20260208_211633)
-  [x] Added --run-name non-interactive upload, HF Hub eval download, eval script env-var overrides
+Week 2 (2026-02-21 — DONE — Architecture Overhaul):
+  [x] Architecture review: identified 5 structural misalignments
+  [x] Implemented TSDAE, BiXT, PosOnly, weighted pooling, pair_cls
+  [x] TODO 5: ViaDecoder GLUE eval — DONE (+0.65–2.3% on all tasks)
+  [x] Uploaded L6 canonical model to HF Hub
 
-Week 3 (DONE — Track A: Diffusion Evaluated):
-  [x] TODO 6:   Masked diffusion experiment (A3) — DONE, rank 10/128, STS-B 0.138
-  [ ] TODO 10:  Train TSDAE PosOnly on Minipile (A1, Polonez, 5 GPU-days) ← NEXT PRIORITY
-  [ ] TODO 10b: Train TSDAE PosOnly + BiXT on Minipile (A2, parallel on Odra)
+Week 3 (2026-02-23 — DONE — Track A: Diffusion L2):
+  [x] TODO 6:  Masked diffusion L2 — DONE, rank 10/128, STS-B 0.138
+  [x] TODO 6b: Diffusion slow training diagnosis — DONE, decoder redesigned
 
-Week 4 (Track A: Evaluation + Decision Gate):
-  [ ] TODO 10c: Concept analysis on TSDAE checkpoints (A7 REPEAT, compare vs MLM baseline)
-  [ ] TODO 10d: GLUE eval with ViaDecoder + perceiver_pair_cls on TSDAE model (A6 REPEAT)
+Week 4 (2026-02-26 — Diffusion diagnosis + fixes):
+  [x] Diffusion L2 root cause analysis — DONE, 5 causes identified
+  [ ] TODO 12:  Fix ELBO loss weighting + t_min (A10, code change, 0.5 day) ← DO FIRST
+  [ ] TODO 11:  L6 Diffusion ablation (A9, Polonez, 1 GPU-day) ← HIGHEST PRIORITY
+  [ ] TODO 10:  Train TSDAE PosOnly on Minipile (A1, Odra, 5 GPU-days) ← IN PARALLEL
+  [ ] TODO 10b: Train TSDAE PosOnly + BiXT on Minipile (A2, parallel on other server)
+
+Week 5 (Prefix generation + evaluation):
+  [ ] TODO 13:  Implement & train prefix generation (A11, 3 days code + 5 GPU-days)
+  [ ] TODO 10c: Concept analysis on ALL Track A checkpoints (A7 REPEAT)
+  [ ] TODO 10d: GLUE eval with ViaDecoder + perceiver_pair_cls (A6 REPEAT)
   [ ] TODO 10e: Zero-shot STS-B (A8, cosine similarity, no fine-tuning)
-  [ ] TSDAE vs Diffusion comparison: concept rank, GLUE MRPC/QQP/STS-B
-  [ ] Decision gate: pick winner (see roadmap Gate 1)
-  [ ] If both fail rank > 30: implement Slot Attention (C5) as fallback
 
-Week 5-6 (Track A.4 + Track C start):
+Week 6 (Decision gate + Track A winner):
+  [ ] Compare: L6 diffusion vs TSDAE vs prefix generation
+  [ ] Metrics: concept rank, STS-B, prefix generation loss (all three!)
+  [ ] Decision gate: pick winner (see roadmap Gate 1)
+  [ ] If all fail rank > 30: implement Slot Attention (C5) as fallback
+
+Week 7-8 (Track A.4 + Track C start):
   [ ] Add contrastive loss (SimCSE) to Track A winner (A4)
   [ ] Recursive MLM baseline on Minipile (C1, TODO 8)
   [ ] Test-time compute scaling sweep K=2..12 (C3)
+  [ ] TODO 14: Backbone init from SmolLM2-135M (B3, can start early if capacity allows)
 
-Week 7-8 (Track B: Data Scaling):
+Week 9-10 (Track B: Data Scaling):
   [ ] Scale to OpenWebText + Wikipedia with winner objective (B1, TODO 7)
   [ ] Span masking (B2)
   [ ] REPEAT: Full eval after scaling (B4/B5)
 
 Later (see roadmap for full schedule):
   [ ] Dimension Inversion ablation (C4, token_dim=32, concept_dim=512)
-  [ ] Backbone init from SmolLM2-135M (B3, TODO 9)
+  [ ] Progressive sequence length training (512 → 2K → 8K)
   [ ] Long-context eval SCROLLS/LongBench (D2/D3, after data scaling)
-  [ ] Recursive encoder with Track A winner (C2)
+  [ ] Recursive encoder with Track A winner + variable-depth training (C2)
+  [ ] Simple reasoning eval: ProntoQA with recursive encoder at variable K
 ```
 
 ---
@@ -465,17 +463,7 @@ Later (see roadmap for full schedule):
 **Local test:** `scripts/test_tsdae_local.ps1`
 
 **Experiment A — TSDAE PosOnly baseline (5 GPU-days on Polonez):**
-```bash
-accelerate launch --num_processes=4 --mixed_precision=bf16 --multi_gpu \
-    training/train_tsdae.py \
-    --hidden_size 512 --num_hidden_layers 6 --concept_num 128 \
-    --intermediate_size 2048 --deletion_rate 0.6 \
-    --dataset_name JeanKaddour/minipile \
-    --tokenizer_name answerdotai/ModernBERT-base \
-    --num_train_epochs 20 --learning_rate 3e-4 \
-    --per_device_train_batch_size 64 \
-    --output_dir Cache/Training --bf16
-```
+
 
 **Experiment B — TSDAE PosOnly + BiXT (parallel on Odra):**
 Same as A but with `--use_bixt`. Compare concept quality (effective rank, mean sim) and GLUE scores.
@@ -490,8 +478,98 @@ Same as A but with `--use_bixt`. Compare concept quality (effective rank, mean s
 
 ---
 
-*Plan updated: 2026-02-25*
-*Aligned with: [roadmap.md v3](roadmap.md) (2026-02-22)*
-*Next review: after TSDAE training results (Track A decision gate)*
-*Related: docs/4_Research_Notes/mlm_perceiver_diagnosis_20260221.md*
-*Diffusion L2 evaluated: 2026-02-25 — concept rank 10/128, STS-B 0.138 (insufficient alone)*
+## TODO 11: L6 Diffusion Ablation — Controlled Experiment (Priority: HIGHEST, Effort: 1 GPU-day)
+
+*Maps to roadmap A9. Most informative single experiment before any code changes.*
+
+**Goal:** Isolate the encoder depth confound. Run the exact same diffusion training config as the L2 run (TODO 6) but with 6 encoder layers instead of 2. This tells us whether the problem is encoder capacity or the diffusion objective itself.
+
+**Config:** Identical to `diffusion_H512L2C128D2_20260223_203349` except `--num_hidden_layers 6`. Use `training/train_diffusion.py` with the same hyperparameters (LR 3e-4, 20 epochs, batch 64, grad_accum 2, t_min 0.1, bf16).
+
+**Decision logic:**
+- STS-B > 0.50 → encoder depth was the bottleneck, diffusion objective is viable at L6
+- STS-B < 0.30 → diffusion self-reconstruction itself is insufficient, pivot to prefix generation
+- Concept rank > 20/128 → diffusion geometry improvement scales with depth
+
+**Machine:** Polonez (4x RTX 3090), est. ~20h
+
+**Full rationale:** [diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md) (Cause 1: L2 encoder too shallow)
+
+**Status:** [ ] Not started
+
+---
+
+## TODO 12: Fix Diffusion ELBO Loss Weighting + Raise t_min (Priority: HIGHEST, Effort: 0.5 day)
+
+*Maps to roadmap A10. Small code fix with potentially significant impact.*
+
+**Problem 1:** The current diffusion loss is unweighted `cross_entropy(masked_logits, targets)`. MDLM/LLaDA derive that the proper ELBO training loss should be weighted by 1/t (inverse masking rate), normalizing gradient magnitude across noise levels.
+
+**Problem 2:** `t_min=0.1` means ~11% of training steps have t<0.2 where the task degenerates to standard MLM and concepts are unnecessary. Should be 0.3+.
+
+**Action:**
+- In `nn/concept_encoder_diffusion.py` forward(), after computing `diffusion_loss`: add `weighted_loss = diffusion_loss / t.mean().clamp(min=0.1)`
+- Change default `t_min` from 0.1 to 0.3
+
+**Validation:** Quick 5-epoch Minipile training locally, compare loss curves to L2 baseline. Then apply to TODO 11 (L6 ablation).
+
+**Full rationale:** [diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md) (Causes 2-3: missing ELBO weighting, t_min too low)
+
+**Status:** [ ] Not started
+
+---
+
+## TODO 13: Prefix Generation Training (Priority: HIGHEST, Effort: 3 days code + 5 GPU-days)
+
+*Maps to roadmap A11. The most strategically important new experiment.*
+
+**Motivation (SODA principle for text):** Current training asks the model to encode text X and reconstruct X (self-reconstruction). This permits surface-level hashing through the concept bottleneck. SODA (Hudson, CVPR 2024) shows that bottleneck diffusion models learn semantic representations only when the decoder generates DIFFERENT content than the encoder saw.
+
+**Design:**
+1. Split each training document at a random position (30-50% prefix, 50-70% suffix)
+2. **Encoder:** receives clean prefix tokens → produces concepts
+3. **Decoder:** generates suffix tokens via diffusion, conditioned on concepts
+4. Concepts must capture the *semantic gist* of the prefix to enable coherent continuation
+5. This directly trains for the inference-time use case: encode input → generate output
+
+**Implementation plan:**
+- New data collator `DataCollatorForPrefixGeneration` in `training/data_collators.py`
+- New or extended model class `ConceptEncoderForPrefixDiffusion` in `nn/concept_encoder_diffusion.py`
+- New training script `training/train_prefix_diffusion.py`
+- New shell script `scripts/train_prefix_diffusion_multigpu.sh`
+
+**Key decisions:** Encoder sees CLEAN prefix (matches inference), decoder uses diffusion on suffix tokens, position embeddings relative to suffix start, ELBO-weighted loss on suffix only.
+
+**Evaluation:**
+1. Suffix reconstruction loss (primary metric for generation capability)
+2. Concept analysis: effective rank, pairwise similarity
+3. STS-B Pearson (ViaDecoder fine-tuning)
+4. Zero-shot STS-B (cosine similarity of prefix concepts)
+
+**Full rationale:** [diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md) (Cause 4: self-reconstruction permits surface hashing; Fix 3: prefix generation)
+
+**Status:** [ ] Not started
+
+---
+
+## TODO 14: Backbone Init from SmolLM2-135M (Priority: HIGH, Effort: 3 days code + 5 GPU-days)
+
+*Replaces TODO 9 with updated rationale. Maps to roadmap B3.*
+
+**Motivation (Coconut insight):** Coconut (Meta, 2024) shows that latent reasoning is much easier when the model already understands language. Training language understanding AND concept compression AND reasoning from scratch is too many things at once. SmolLM2-135M provides language understanding from 11T-token pretraining at zero cost.
+
+**Action:**
+1. Implement weight loading from SmolLM2-135M into ConceptEncoder's token embeddings and (optionally) as initialization for concept cross-attention layers
+2. Verify dimension compatibility (SmolLM2-135M: H=576, 30 layers; may need projection)
+3. Run baseline prefix generation + TSDAE with pretrained init vs random init
+4. Compare concept quality, convergence speed, STS-B
+
+**Status:** [ ] Not started
+
+---
+
+*Plan updated: 2026-02-26*
+*Aligned with: [roadmap.md v4](roadmap.md) (2026-02-26)*
+*Next review: after L6 diffusion ablation (TODO 11) and TSDAE training (TODO 10) results*
+*New: added TODO 11-14 based on diffusion diagnosis analysis ([diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md))*
+*Related: [mlm_perceiver_diagnosis_20260221.md](../4_Research_Notes/mlm_perceiver_diagnosis_20260221.md), [diffusion_L2_eval_20260225.md](../2_Experiments_Registry/run_reports/diffusion_L2_eval_20260225.md)*
