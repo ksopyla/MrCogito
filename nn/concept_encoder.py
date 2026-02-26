@@ -1,32 +1,32 @@
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple
 import math
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from transformers import PreTrainedModel
-from transformers.modeling_utils import ModuleUtilsMixin
 from transformers.utils import logging
-from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss
 from transformers.configuration_utils import PretrainedConfig
-from transformers.modeling_outputs import BaseModelOutput, MaskedLMOutput, SequenceClassifierOutput
+from transformers.modeling_outputs import BaseModelOutput
 
 logger = logging.get_logger(__name__)
 
 class ConceptEncoderConfig(PretrainedConfig):
     """
-    Configuration class for ConceptEncoder.
+    Configuration class for ConceptEncoder model architecture.
     
-    Inherits from PretrainedConfig, so it integrates more seamlessly with
-    the Hugging Face Transformers library (e.g., from_pretrained, save_pretrained).
+    Inherits from PretrainedConfig for seamless integration with the
+    HuggingFace Transformers library (from_pretrained, save_pretrained).
 
-    This configuration class controls parameters for the ConceptEncoder model.
-    It defines the architecture (number of layers, dimensions, etc.) and training
-    parameters (dropout rates, initialization ranges, etc.).
+    This configuration class controls ONLY model architecture parameters.
+    Training-specific parameters (like loss configuration) should be passed
+    separately via ConceptLossConfig to follow Single Responsibility Principle.
 
     Args:
         vocab_size (int): Size of the token vocabulary.
         concept_num (int): Number of concept tokens to learn.
-        hidden_size (int): Dimension of hidden layers and embeddings.
+        hidden_size (int): Dimension of hidden layers, concept embeddings, and attention.
+        token_embedding_dim (int or None): Dimension of token embeddings. When smaller than
+            hidden_size, a projection layer bridges the gap (Dimension Inversion).
+            None defaults to hidden_size for backward compatibility with existing checkpoints.
         num_hidden_layers (int): Number of transformer layers in the encoder.
         num_attention_heads (int): Number of attention heads in each layer.
         intermediate_size (int): Dimension of the feedforward network in each layer.
@@ -34,9 +34,20 @@ class ConceptEncoderConfig(PretrainedConfig):
         hidden_dropout_prob (float): Dropout probability for fully connected layers.
         attention_probs_dropout_prob (float): Dropout probability for attention probabilities.
         max_sequence_length (int): Maximum sequence length supported by the model.
+        concept_position_type (str): Type of positional encoding for concept embeddings.
+            "none" = no position (current default, concepts are orderless).
+            "sinusoidal" = fixed sinusoidal positions (no extra params).
+            "learned" = learned position embeddings (extra params).
         type_vocab_size (int): Size of the token type vocabulary.
         initializer_range (float): Standard deviation for initializing model weights.
         is_decoder (bool): Whether the model acts as a decoder. Defaults to False.
+        tie_word_embeddings (bool): Whether to tie input/output embeddings. Defaults to True.
+    
+    Note:
+        For training with concept regularization losses, use ConceptLossConfig
+        from nn.concept_losses module. This separation follows SOLID principles:
+        - Model config = what the model IS (architecture)
+        - Loss config = how the model is TRAINED (behavior)
     """
 
     model_type = "concept_encoder"
@@ -46,29 +57,37 @@ class ConceptEncoderConfig(PretrainedConfig):
         vocab_size: int = 30522,
         concept_num: int = 128,
         hidden_size: int = 512,
+        token_embedding_dim: Optional[int] = None,
         num_hidden_layers: int = 4,
         num_attention_heads: int = 8,
         intermediate_size: int = 1024,
         hidden_act: str = "gelu",
-        pad_token_id: int = 0,
-        eos_token_id: int = 1,
-        bos_token_id: int = 2,
-        cls_token_id: int = 3,
-        sep_token_id: int = 4,
-        mask_token_id: int = 5,
+        pad_token_id: Optional[int] = None,
+        eos_token_id: Optional[int] = None,
+        bos_token_id: Optional[int] = None,
+        cls_token_id: Optional[int] = None,
+        sep_token_id: Optional[int] = None,
+        mask_token_id: Optional[int] = None,
+        unk_token_id: Optional[int] = None,
         hidden_dropout_prob: float = 0.1,
         attention_probs_dropout_prob: float = 0.1,
         max_sequence_length: int = 2048,
+        concept_position_type: str = "none",
         type_vocab_size: int = 2,
         initializer_range: float = 0.1,
         is_decoder: bool = False,
-        tie_word_embeddings: bool = True,
+        tie_word_embeddings: bool = False,
+        use_bixt: bool = False,
+        decoder_posonly: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.vocab_size = vocab_size
         self.concept_num = concept_num
         self.hidden_size = hidden_size
+        # Dimension Inversion: token_embedding_dim can be smaller than hidden_size.
+        # None defaults to hidden_size for backward compatibility with existing checkpoints.
+        self.token_embedding_dim = token_embedding_dim if token_embedding_dim is not None else hidden_size
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
         self.intermediate_size = intermediate_size
@@ -76,6 +95,7 @@ class ConceptEncoderConfig(PretrainedConfig):
         self.hidden_dropout_prob = hidden_dropout_prob
         self.attention_probs_dropout_prob = attention_probs_dropout_prob
         self.max_sequence_length = max_sequence_length
+        self.concept_position_type = concept_position_type
         self.type_vocab_size = type_vocab_size
         self.initializer_range = initializer_range
         self.is_decoder = is_decoder
@@ -86,6 +106,13 @@ class ConceptEncoderConfig(PretrainedConfig):
         self.cls_token_id = cls_token_id
         self.sep_token_id = sep_token_id
         self.mask_token_id = mask_token_id
+        self.unk_token_id = unk_token_id
+        # use_bixt: enable BiXT bidirectional cross-attention (tokens update from concepts at each layer)
+        self.use_bixt = use_bixt
+        # decoder_posonly: True for TSDAE/PosOnly checkpoints — decoder queries use position
+        # embeddings only (no input token shortcut). Stored in config so ViaDecoder classification
+        # loads the correct decoder variant without silently using the wrong mode.
+        self.decoder_posonly = decoder_posonly
 
 class ConceptEncoderLayer(nn.Module):
     """A single layer of the concept encoder.
@@ -155,9 +182,13 @@ class ConceptEncoderLayer(nn.Module):
         # Queries: concepts [batch_size, concept_num, concept_dim]
         # Keys: token embeddings [batch_size, sequence_length, token_embedding_dim]
         # Values: token embeddings [batch_size, sequence_length, token_embedding_dim]
+        # need_weights=False enables SDPA/Flash Attention fast path on PyTorch 2.x
+        # Without it, attention weights are computed even if discarded (_), disabling the fast path
+
         concept_token_attn_output, _ = self.concept_token_attn(
             normed_concepts, token_embeddings, token_embeddings, 
-            key_padding_mask=attention_mask 
+            key_padding_mask=attention_mask,
+            need_weights=False
         )
 
         # Add residual connection, add the additional knowledge from the concept token similarities to original concept representations, (how to fuse such information?, norm could act as a fuse operation, so maybe we could also use other operations )
@@ -171,9 +202,11 @@ class ConceptEncoderLayer(nn.Module):
         # Queries: concepts [batch_size, concept_num, concept_dim]
         # Keys: concepts [batch_size, concept_num, concept_dim]
         # Values: concepts [batch_size, concept_num, concept_dim]
+        # need_weights=False enables SDPA/Flash Attention fast path on PyTorch 2.x
         concept_self_attn_output, _ = self.concept_self_attn(
             normed_concepts, normed_concepts, normed_concepts,
-            attn_mask=None  # No mask needed for concept self-attention
+            attn_mask=None,  # No mask needed for concept self-attention
+            need_weights=False
         )
 
         # Add residual connection between concepts after concept self attention
@@ -182,14 +215,100 @@ class ConceptEncoderLayer(nn.Module):
         # Feed Forward Network with gating mechanism
         # Layer Normalization - concept normalization
         normed_concepts = self.pre_ff_norm(concept_representations)
-
         ff_input, ff_gate = self.Wi(normed_concepts).chunk(2, dim=-1)
         ff_output = self.Wo(self.wi_dropout(self.act_fn(ff_input) * ff_gate))
-
-        # Add residual connection between concepts after feed forward network
         concept_representations = concept_representations + ff_output
 
-        return concept_representations # [batch_size, concept_num, concept_dim]
+        return concept_representations
+
+
+class BiConceptEncoderLayer(nn.Module):
+    """BiXT-style bidirectional cross-attention encoder layer.
+    
+    Extends ConceptEncoderLayer with a reverse cross-attention that updates
+    token representations from concepts.  This lets tokens become contextualised
+    across layers WITHOUT O(N^2) token self-attention.
+    
+    Per-layer complexity: O(C*N) + O(N*C) + O(C^2) = O(C*N), linear in N.
+    
+    Reference: Hiller, Ehinger & Drummond, "BiXT: Perceiving Longer Sequences
+    With Bi-Directional Cross-Attention Transformers", NeurIPS 2024.
+    """
+
+    def __init__(self, config: ConceptEncoderConfig):
+        super().__init__()
+
+        H = config.hidden_size
+
+        # --- concepts ← tokens (same as standard layer) ---
+        self.concept_token_attn = nn.MultiheadAttention(
+            embed_dim=H, num_heads=config.num_attention_heads,
+            dropout=config.attention_probs_dropout_prob, batch_first=True,
+        )
+        self.pre_cross_attn_norm = nn.LayerNorm(H)
+
+        # --- tokens ← concepts (BiXT reverse path, O(N*C)) ---
+        self.token_concept_attn = nn.MultiheadAttention(
+            embed_dim=H, num_heads=config.num_attention_heads,
+            dropout=config.attention_probs_dropout_prob, batch_first=True,
+        )
+        self.pre_reverse_cross_norm = nn.LayerNorm(H)
+
+        # --- concept self-attention ---
+        self.concept_self_attn = nn.MultiheadAttention(
+            embed_dim=H, num_heads=config.num_attention_heads,
+            dropout=config.attention_probs_dropout_prob, batch_first=True,
+        )
+        self.pre_self_attn_norm = nn.LayerNorm(H)
+
+        # --- concept FFN (gated) ---
+        self.pre_ff_norm = nn.LayerNorm(H)
+        self.Wi = nn.Linear(H, config.intermediate_size * 2)
+        self.Wo = nn.Linear(config.intermediate_size, H)
+        self.wi_dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.act_fn = nn.GELU()
+
+    def forward(
+        self,
+        concept_representations: torch.Tensor,
+        token_embeddings: torch.Tensor,
+        attention_mask: Optional[torch.BoolTensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Returns:
+            (concepts, tokens) -- both updated.
+        """
+        # 1. concepts ← cross-attn(Q=concepts, KV=tokens)   O(C*N)
+        normed_c = self.pre_cross_attn_norm(concept_representations)
+        c_out, _ = self.concept_token_attn(
+            normed_c, token_embeddings, token_embeddings,
+            key_padding_mask=attention_mask, need_weights=False,
+        )
+        concept_representations = concept_representations + c_out
+
+        # 2. tokens ← cross-attn(Q=tokens, KV=concepts)    O(N*C)
+        normed_t = self.pre_reverse_cross_norm(token_embeddings)
+        t_out, _ = self.token_concept_attn(
+            normed_t, concept_representations, concept_representations,
+            need_weights=False,
+        )
+        token_embeddings = token_embeddings + t_out
+
+        # 3. concept self-attention   O(C^2)
+        normed_c = self.pre_self_attn_norm(concept_representations)
+        sa_out, _ = self.concept_self_attn(
+            normed_c, normed_c, normed_c,
+            attn_mask=None, need_weights=False,
+        )
+        concept_representations = concept_representations + sa_out
+
+        # 4. concept FFN
+        normed_c = self.pre_ff_norm(concept_representations)
+        ff_in, ff_gate = self.Wi(normed_c).chunk(2, dim=-1)
+        ff_out = self.Wo(self.wi_dropout(self.act_fn(ff_in) * ff_gate))
+        concept_representations = concept_representations + ff_out
+
+        return concept_representations, token_embeddings
 
 class ConceptEncoder(PreTrainedModel):
     """Concept Encoder model.
@@ -210,22 +329,77 @@ class ConceptEncoder(PreTrainedModel):
         super().__init__(config)
         self.config = config
 
+        token_dim = config.token_embedding_dim  # May differ from hidden_size (Dimension Inversion)
 
-        # Token embeddings [vocab_size, hidden_size=token_embedding_dim]
-        self.token_embeddings = nn.Embedding(num_embeddings=config.vocab_size, embedding_dim=config.hidden_size, padding_idx=config.pad_token_id)   
-        # Token position embeddings [max_sequence_length, hidden_size=token_embedding_dim]
-        self.token_position_embeddings = nn.Embedding(num_embeddings=config.max_sequence_length, embedding_dim=config.hidden_size)
+        # Token embeddings [vocab_size, token_embedding_dim]
+        self.token_embeddings = nn.Embedding(
+            num_embeddings=config.vocab_size, embedding_dim=token_dim, padding_idx=config.pad_token_id
+        )
+        # Token position embeddings [max_sequence_length, token_embedding_dim]
+        self.token_position_embeddings = nn.Embedding(
+            num_embeddings=config.max_sequence_length, embedding_dim=token_dim
+        )
+        
+        # Dimension Inversion: project token embeddings to hidden_size when dims differ.
+        # When token_embedding_dim < hidden_size, tokens are cheap (small vocab memory)
+        # and concepts are rich (large hidden_size for attention and FFN).
+        if token_dim != config.hidden_size:
+            self.token_projection = nn.Linear(token_dim, config.hidden_size)
+        else:
+            self.token_projection = None
+        
         # Concept embeddings [concept_num, hidden_size=concept_dim]
-        self.concept_embeddings = nn.Embedding(num_embeddings=config.concept_num, embedding_dim=config.hidden_size)
+        # Concepts always live in hidden_size space (the "fat" dimension)
+        self.concept_embeddings = nn.Embedding(
+            num_embeddings=config.concept_num, embedding_dim=config.hidden_size
+        )
+        
+        # Concept position encoding (optional, default "none" for backward compat)
+        # "sinusoidal": fixed sinusoidal positions, no extra trainable params
+        # "learned": trainable position embeddings for each concept slot
+        # "none": concepts are orderless (original design)
+        if config.concept_position_type == "sinusoidal":
+            # Register as buffer (not a parameter) -- no gradient, moves with model device
+            sinusoidal_emb = self._create_sinusoidal_embeddings(config.concept_num, config.hidden_size)
+            self.register_buffer("concept_position_emb", sinusoidal_emb)
+        elif config.concept_position_type == "learned":
+            self.concept_position_emb = nn.Embedding(
+                num_embeddings=config.concept_num, embedding_dim=config.hidden_size
+            )
+        # For "none", no concept_position_emb attribute is created
 
         # Concept encoder layers [num_hidden_layers]
-        self.layers = nn.ModuleList([ConceptEncoderLayer(config) for _ in range(config.num_hidden_layers)])
+        layer_cls = BiConceptEncoderLayer if getattr(config, "use_bixt", False) else ConceptEncoderLayer
+        self.layers = nn.ModuleList([layer_cls(config) for _ in range(config.num_hidden_layers)])
+        self._use_bixt = getattr(config, "use_bixt", False)
         # Dropout [hidden_dropout_prob]
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        # Output layer normalization [hidden_size=concept_dim] - return the concept representations [batch_size, concept_num, concept_dim]
+        # Output layer normalization [hidden_size=concept_dim]
         self.output_layer_norm = nn.LayerNorm(config.hidden_size, eps=1e-12)
 
         self.post_init()
+    
+    @staticmethod
+    def _create_sinusoidal_embeddings(num_positions: int, dim: int) -> torch.Tensor:
+        """Create fixed sinusoidal position embeddings (Vaswani et al., 2017).
+        
+        These provide a fixed ordering signal to concept slots without adding
+        trainable parameters. Each position gets a unique pattern of sin/cos values.
+        
+        Args:
+            num_positions: Number of positions (concept_num)
+            dim: Embedding dimension (hidden_size)
+            
+        Returns:
+            Tensor of shape [num_positions, dim]
+        """
+        position = torch.arange(num_positions).unsqueeze(1).float()
+        div_term = torch.exp(torch.arange(0, dim, 2).float() * -(math.log(10000.0) / dim))
+        
+        embeddings = torch.zeros(num_positions, dim)
+        embeddings[:, 0::2] = torch.sin(position * div_term)
+        embeddings[:, 1::2] = torch.cos(position * div_term)
+        return embeddings
 
     def _init_weights(self, module):
         """
@@ -251,6 +425,15 @@ class ConceptEncoder(PreTrainedModel):
                 # Ensure padding embeddings are zeros
                 module.weight.data[module.padding_idx].zero_()
         
+        elif isinstance(module, nn.Linear):
+            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
+            if module.bias is not None:
+                module.bias.data.zero_()
+        
+        elif isinstance(module, nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+        
 
     def forward(
         self,
@@ -273,19 +456,35 @@ class ConceptEncoder(PreTrainedModel):
         """
         batch_size, seq_length = input_ids.size()
 
-        # 1) Token embeddings
+        # 1) Token embeddings (in token_embedding_dim space)
         position_ids = torch.arange(seq_length, device=input_ids.device).unsqueeze(0).expand_as(input_ids)
         token_embeddings = self.token_embeddings(input_ids) + self.token_position_embeddings(position_ids)
+        
+        # Project token embeddings to hidden_size if Dimension Inversion is active
+        # (token_embedding_dim < hidden_size). This bridges the gap between cheap
+        # token representations and the rich concept/attention space.
+        if self.token_projection is not None:
+            token_embeddings = self.token_projection(token_embeddings)
+        
         token_embeddings = self.dropout(token_embeddings)
 
-        key_padding_mask = (attention_mask == 0)  # bool of shape [batch_size, seq_len]
+        key_padding_mask = None
+        if attention_mask is not None:
+            key_padding_mask = (attention_mask == 0)  # bool of shape [batch_size, seq_len]
 
-        # 3) Initialize concept embeddings [batch_size, concept_length, hidden_size]
-        # From gemini deep research analysis:
-        # Concept Initialization: A key step is the initialization of concept_representations. The learnable concept_embeddings (shape [concept_num, hidden_size]) are expanded to match the batch size ([batch_size, concept_num, hidden_size]). This means every item in the batch starts with the exact same set of initial concept prototypes. These prototypes are then specialized for each input sequence through the subsequent layer processing.
-        concept_representations = self.concept_embeddings(
-            torch.arange(self.config.concept_num, device=input_ids.device)
-        ).unsqueeze(0).expand(batch_size, -1, -1)
+        # 2) Initialize concept embeddings [batch_size, concept_num, hidden_size]
+        # Every item in the batch starts with the exact same set of initial concept prototypes.
+        # These prototypes are then specialized for each input sequence through the layers.
+        concept_ids = torch.arange(self.config.concept_num, device=input_ids.device)
+        concept_representations = self.concept_embeddings(concept_ids).unsqueeze(0).expand(batch_size, -1, -1)
+        
+        # Add concept position encoding if configured
+        # Sinusoidal: fixed positions from buffer (no gradient)
+        # Learned: trainable positions from embedding layer
+        if self.config.concept_position_type == "sinusoidal":
+            concept_representations = concept_representations + self.concept_position_emb.unsqueeze(0)
+        elif self.config.concept_position_type == "learned":
+            concept_representations = concept_representations + self.concept_position_emb(concept_ids).unsqueeze(0)
 
         # Possibly track hidden_states/attentions
         all_hidden_states = () if output_hidden_states else None
@@ -297,13 +496,18 @@ class ConceptEncoder(PreTrainedModel):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
-            # Cross + self-attention inside the layer
-            hidden_states = layer(
-                concept_representations=hidden_states,
-                token_embeddings=token_embeddings,
-                # 3D attention_mask => [batch_size, concept_length, seq_length]
-                attention_mask=key_padding_mask,
-            )
+            if self._use_bixt:
+                hidden_states, token_embeddings = layer(
+                    concept_representations=hidden_states,
+                    token_embeddings=token_embeddings,
+                    attention_mask=key_padding_mask,
+                )
+            else:
+                hidden_states = layer(
+                    concept_representations=hidden_states,
+                    token_embeddings=token_embeddings,
+                    attention_mask=key_padding_mask,
+                )
 
         last_hidden_state = self.output_layer_norm(hidden_states)
 
@@ -323,425 +527,3 @@ class ConceptEncoder(PreTrainedModel):
             if output_attentions:
                 outputs += (all_attentions,)
             return outputs
-
-class ConceptEncoderForMaskedLM(PreTrainedModel):
-    """
-    ConceptEncoder Model with a language modeling head on top (for masked language modeling).
-
-    Args:
-        config (ConceptEncoderConfig): Model configuration defining hidden sizes, embeddings, etc.
-    """
-    config_class = ConceptEncoderConfig
-    base_model_prefix = "concept_encoder"
-
-    def __init__(self, config: ConceptEncoderConfig):
-        super().__init__(config)
-        self.config = config
-
-        # The underlying ConceptEncoder (as defined above).
-        self.encoder = ConceptEncoder(config) # []
-
-        # todo - add necessary variables here when we establisht how we want to combine the concepts and tokens
-
-
-    def forward(self, input_ids, attention_mask=None, token_type_ids=None, special_tokens_mask=None, labels=None):
-
-        pass
-
- 
-
-
-
-class ConceptEncoderWithSimMatrixForMaskedLM(PreTrainedModel):
-    """
-    ConceptEncoder Model with a masked language modeling head on top (for masked language modeling).
-    This model uses a encoded concepts to predict the [masked] tokens in the sequence.
-
-    Args:
-        config (ConceptEncoderConfig): Model configuration defining hidden sizes, embeddings, etc.
-    """
-    config_class = ConceptEncoderConfig
-    base_model_prefix = "concept_encoder"
-
-    def __init__(self, config: ConceptEncoderConfig):
-        super().__init__(config)
-        self.config = config
-        self.encoder = ConceptEncoder(config)
-        
-        # Concept->Vocab projection
-        self.concept_vocab_projection = nn.Linear(
-            config.hidden_size, # concept_dim
-            config.vocab_size,
-            bias=False
-        )
-        
-        # Token-level LM head
-        self.lm_token_head = nn.Linear(
-            config.hidden_size, # token_embedding_dim
-            config.vocab_size,
-            bias=False
-        )
-        
-        # Dynamic gating mechanism
-        # Improved gating mechanism with more capacity
-        self.gate = nn.Sequential(
-            nn.Linear(config.hidden_size * 2, config.hidden_size),  # Takes concatenated input
-            nn.ReLU(),
-            nn.Linear(config.hidden_size, 1),
-            nn.Sigmoid()
-        )
-
-        # Learnable temperature parameter
-        self.temperature = nn.Parameter(torch.ones(1) * 0.1)
-        
-        # Initialize weights
-        self.post_init()
-
-
-    def forward(self, input_ids, attention_mask=None, token_type_ids=None, special_tokens_mask=None, labels=None):
-        # Encoder forward
-        encoder_out = self.encoder(input_ids, attention_mask)
-        concept_repr = encoder_out.last_hidden_state  # [Batch_size, concept_num, concept_dim]
-        
-
-        # Get token embeddings with position information
-        batch_size, seq_length = input_ids.size()
-        position_ids = torch.arange(seq_length, device=input_ids.device).unsqueeze(0).expand_as(input_ids)
-        token_emb = self.encoder.token_embeddings(input_ids) + self.encoder.token_position_embeddings(position_ids) # [Batch_size, seq_length, hidden_size=token_embedding_dim]
-        
-        # Compute similarity with learnable temperature
-        similarity = torch.einsum("bsh,bch->bsc", token_emb, concept_repr)
-        similarity = similarity * self.temperature  # Learnable scaling
-
-        # Dynamic sparsity based on attention mask
-        if attention_mask is not None:
-            # Mask out padding tokens in similarity computation
-            similarity = similarity.masked_fill(attention_mask.unsqueeze(-1) == 0, -1e9)
-        
-        # Take only top-k similarity values (routing mechanism)
-        # topk_val, _ = similarity.topk(k=4, dim=-1)
-        # mask = similarity >= topk_val[..., -1].unsqueeze(-1)
-        # similarity = similarity.masked_fill(~mask, 0)
-        
-        # Project to vocab space, question is concept_vocab_projection trained? why use its weights?
-        concept_logits = torch.einsum("bsc,cv->bsv", similarity, 
-                                   self.concept_vocab_projection.weight)
-        
-        # Gated combination with token logits
-        token_logits = self.lm_token_head(token_emb)
-
-        # gated combination current token representations with average concept representations
-        gate_input = torch.cat([token_emb, torch.mean(concept_repr, dim=1, keepdim=True).expand(-1, seq_length, -1)], dim=-1)
-        gate = self.gate(gate_input)
-
-        
-        logits = gate * concept_logits + (1 - gate) * token_logits
-        
-        # Compute loss
-        loss = None
-        if labels is not None:
-            loss_fct = CrossEntropyLoss(ignore_index=-100)  # -100 index = padding token
-            loss = loss_fct(logits.view(-1, self.config.vocab_size), labels.view(-1))
-            
-        return MaskedLMOutput(
-            loss=loss,
-            logits=logits,
-            hidden_states=encoder_out.hidden_states,
-            attentions=encoder_out.attentions
-        )
-    
-
-
-class ConceptEncoderForMaskedLMWeighted(PreTrainedModel):
-    """
-    Simplified ConceptEncoder MLM using learned weights to combine concepts.
-    This is a much simpler approach than attention-based decoding, suitable for
-    initial experiments to verify the concept bottleneck works.
-    
-    Each sequence position has learned weights to combine concepts into a
-    position-specific representation, which is then projected to vocabulary.
-    """
-    config_class = ConceptEncoderConfig
-    base_model_prefix = "concept_encoder"
-    
-    def __init__(self, config: ConceptEncoderConfig):
-        super().__init__(config)
-        self.config = config
-        self.encoder = ConceptEncoder(config)
-        
-        # Learn a weight matrix for combining concepts per sequence position
-        # Initialize with small random values to break symmetry
-        self.concept_weights = nn.Parameter(
-            torch.randn(config.max_sequence_length, config.concept_num) / math.sqrt(config.concept_num)
-        )
-        
-        # Simple MLM head
-        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
-        
-        # Optional: add a projection layer before lm_head for more capacity
-        self.pre_lm_projection = nn.Sequential(
-            nn.LayerNorm(config.hidden_size), # [batch_size, seq_length, concept_dim]
-            nn.Linear(config.hidden_size, config.hidden_size), # [batch_size, seq_length, concept_dim] -> [batch_size, seq_length, concept_dim]
-            nn.GELU(),
-            nn.Dropout(config.hidden_dropout_prob)
-        )
-        
-        # Initialize weights
-        self.post_init()
-        
-        # Optionally tie embeddings (disabled by default for experimentation)
-        if config.tie_word_embeddings:
-            self._tie_or_clone_weights(self.lm_head, self.encoder.token_embeddings)
-    
-    def forward(
-        self,
-        input_ids: torch.LongTensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        token_type_ids: Optional[torch.LongTensor] = None,
-        special_tokens_mask: Optional[torch.Tensor] = None,
-        labels: Optional[torch.LongTensor] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-    ) -> MaskedLMOutput:
-        """
-        Forward pass using weighted concept combination.
-        
-        The key idea: each position learns which concepts to use through
-        trainable weights, avoiding complex attention mechanisms.
-        """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        batch_size, seq_length = input_ids.shape
-        
-        # Get concept representations from encoder
-        encoder_outputs = self.encoder(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict
-        )
-
-        # Get the concept representations (batch_size, concept_num, concept_dim)
-        concept_repr = encoder_outputs.last_hidden_state  # [batch_size, concept_num, concept_dim]
-        
-        # Get position-specific weights and normalize them
-        position_weights = self.concept_weights[:seq_length, :]  # [seq_length, concept_num]
-        position_weights = F.softmax(position_weights, dim=-1)  # Normalize over concepts
-        
-        # CRITICAL FIX for distributed training:
-        # Use repeat() instead of expand() to create actual copies, not views
-        # This prevents memory aliasing issues that break NCCL gradient synchronization
-        position_weights_expanded = position_weights.unsqueeze(0).repeat(batch_size, 1, 1)  # [batch_size, seq_length, concept_num]
-        
-        # Combine concepts using learned weights: [Batch_size, seq_length, concept_dim] = [batch_size, seq_length, concept_num] x [batch_size, concept_num, concept_dim]
-        sequence_repr = torch.bmm(position_weights_expanded, concept_repr)
-        
-        # Optional: apply projection before final LM head
-        sequence_repr = self.pre_lm_projection(sequence_repr) # [batch_size, seq_length, concept_dim]
-        
-        # Project to vocabulary
-        logits = self.lm_head(sequence_repr)  # [batch_size, seq_length, vocab_size]
-        
-        # Compute MLM loss if labels provided
-        masked_lm_loss = None
-        if labels is not None:
-            loss_fct = CrossEntropyLoss(ignore_index=-100)
-            masked_lm_loss = loss_fct(
-                logits.view(-1, self.config.vocab_size),
-                labels.view(-1)
-            )
-            
-            # Optional: Add orthogonality loss to encourage diverse concepts
-            if self.training and hasattr(self, 'compute_orthogonality_loss'):
-                ortho_loss = compute_orthogonality_loss(concept_repr)
-                masked_lm_loss = masked_lm_loss + 0.01 * ortho_loss
-        
-        if not return_dict:
-            output = (logits,) + encoder_outputs[1:]
-            return ((masked_lm_loss,) + output) if masked_lm_loss is not None else output
-        
-        return MaskedLMOutput(
-            loss=masked_lm_loss,
-            logits=logits,
-            hidden_states=encoder_outputs.hidden_states,
-            attentions=encoder_outputs.attentions,
-        )
-    
-    def get_position_weights_analysis(self):
-        """
-        Helper method to analyze which concepts are used for which positions.
-        Useful for interpretability and debugging.
-        """
-        weights = F.softmax(self.concept_weights, dim=-1)
-        return weights.detach().cpu().numpy()
-
-
-class ConceptEncoderForSequenceClassification(PreTrainedModel):
-    """
-    ConceptEncoder Model with a sequence classification head on top
-    for tasks like GLUE (MNLI, QNLI, QQP, SST-2, etc.).
-    
-    This class is designed to fine-tune a pretrained ConceptEncoder model
-    on classification tasks, similar to BertForSequenceClassification.
-    
-    Args:
-        config (ConceptEncoderConfig): Model configuration defining hidden sizes, embeddings, etc.
-    """
-    config_class = ConceptEncoderConfig
-    base_model_prefix = "concept_encoder"
-
-    def __init__(self, config: ConceptEncoderConfig):
-        super().__init__(config)
-        self.num_labels = config.num_labels
-        self.config = config
-        
-        # The underlying ConceptEncoder
-        self.encoder = ConceptEncoder(config)
-        
-        # Classification head - we'll use a pooling layer to get a fixed-size
-        # representation followed by a classification layer
-        #todo: figure out how the polling should be done, different models uses different strategies 
-        # look at from transformers.modeling_utils import SequenceSummary
-        # xlnet implements addtitional abstration module to use different pooling strategies
-
-        self.pooler = nn.Sequential(
-            nn.Linear(config.hidden_size, config.hidden_size),
-            nn.Tanh()
-        )
-        
-        # Add dropout for regularization during fine-tuning
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        
-        # Classification head
-        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
-
-        # Initialize weights and apply finalizer
-        self.post_init()
-    
-    def forward(
-        self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.IntTensor] = None,
-        labels: Optional[torch.LongTensor] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-    ) -> Union[Tuple, SequenceClassifierOutput]:
-        """
-        Forward pass for sequence classification.
-        
-        This method:
-        1. Passes the inputs through the base ConceptEncoder model
-        2. Pools the concept representations (averaging all concepts)
-        3. Passes the pooled representation through the classification head
-        4. Computes loss if labels are provided
-        
-        Args:
-            input_ids: Input token IDs of shape [batch_size, sequence_length]
-            attention_mask: Attention mask of shape [batch_size, sequence_length]
-            labels: Optional labels for computing loss
-            output_attentions: Whether to return attention weights
-            output_hidden_states: Whether to return all hidden states
-            return_dict: Whether to return a SequenceClassifierOutput or a tuple
-            
-        Returns:
-            SequenceClassifierOutput or tuple with logits and optional hidden_states/attentions
-        """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        
-        # Pass through the encoder to get concept representations
-        encoder_outputs = self.encoder(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
-        
-        # Get the concept representations (batch_size, concept_num, concept_dim)
-        concept_representations = encoder_outputs.last_hidden_state
-        
-        # Pool the concept representations - average pooling across the concept dimension
-        # This gives us a representation of size (batch_size, concept_dim)
-        pooled_output = torch.mean(concept_representations, dim=1)
-        
-        # Apply the pooler transformation
-        pooled_output = self.pooler(pooled_output)
-        
-        # Apply dropout for regularization
-        pooled_output = self.dropout(pooled_output)
-        
-        # Compute logits
-        logits = self.classifier(pooled_output)
-        
-        # Compute loss if labels are provided
-        loss = None
-        if labels is not None:
-            if self.config.problem_type is None:
-                if self.num_labels == 1:
-                    self.config.problem_type = "regression"
-                elif self.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
-                    self.config.problem_type = "single_label_classification"
-                else:
-                    self.config.problem_type = "multi_label_classification"
-            
-            if self.config.problem_type == "regression":
-                loss_fct = MSELoss()
-                if self.num_labels == 1:
-                    loss = loss_fct(logits.squeeze(), labels.squeeze())
-                else:
-                    loss = loss_fct(logits, labels)
-            elif self.config.problem_type == "single_label_classification":
-                loss_fct = CrossEntropyLoss()
-                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-            elif self.config.problem_type == "multi_label_classification":
-                loss_fct = BCEWithLogitsLoss()
-                loss = loss_fct(logits, labels)
-        
-        if not return_dict:
-            output = (logits,) + encoder_outputs[1:]
-            return ((loss,) + output) if loss is not None else output
-        
-        return SequenceClassifierOutput(
-            loss=loss,
-            logits=logits,
-            hidden_states=encoder_outputs.hidden_states,
-            attentions=encoder_outputs.attentions,
-        )
-    
-    def get_input_embeddings(self):
-        """Returns the token embeddings layer of the encoder."""
-        return self.encoder.token_embeddings
-    
-
-
-
-
-
-
-# try add this to the loss function to learn the different concepts and make them not correlated with each other to much
-def compute_orthogonality_loss(self, concept_repr):
-    """
-    Encourage concept vectors to be orthogonal to each other.
-    Args:
-        concept_repr: [batch_size, concept_num, hidden_size]
-    Returns:
-        orthogonality_loss: scalar
-    """
-    # Normalize concepts to unit vectors
-    concept_norm = F.normalize(concept_repr, p=2, dim=-1)  # [B, C, H]
-    
-    # Compute concept similarity matrix
-    concept_sim = torch.bmm(concept_norm, concept_norm.transpose(1, 2))  # [B, C, C]
-    
-    # Create identity matrix (target: concepts should be orthogonal)
-    batch_size, concept_num = concept_sim.shape[:2]
-    eye = torch.eye(concept_num, device=concept_sim.device).unsqueeze(0)
-    eye = eye.expand(batch_size, -1, -1)
-    
-    # Compute loss: penalize non-diagonal elements
-    off_diagonal_mask = 1.0 - eye
-    orthogonality_loss = (concept_sim * off_diagonal_mask).pow(2).sum() / (batch_size * concept_num * (concept_num - 1))
-    
-    return orthogonality_loss

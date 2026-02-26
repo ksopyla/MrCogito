@@ -7,21 +7,28 @@ package-mode = false
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.12"
+python = ">=3.12,<3.15"
 wheel= ">=0.42.0"
-datasets = ">=2.16.0"
+datasets = ">=4.0.0"
 packaging = "^24.1"
 tqdm = "^4.66.4"
-wandb = "^0.17.4"
+wandb = "^0.23.1"
 python-dotenv = "^1.0.1"
-huggingface-hub = "^0.24.0"
-torch = { version = "2.5.0", source = "pytorch" }
+huggingface-hub = ">=0.24.0"
+torch = { version = "^2.10.0", source = "pytorch" }
+torchvision = { version = ">=0.24.0", source = "pytorch" }  # 0.25 ships with torch 2.10
 transformers = "^4.47.1"
 rich = "^13.9.4"
 accelerate = "^1.2.1"
-evaluate = "^0.4.3"
+evaluate = ">=0.4.3"
 morfessor = "^2.0.6"
-tiktoken = "^0.9.0"
+tiktoken = "^0.12.0"
+hf-transfer = ">=0.1.9"
+scikit-learn = "^1.7.2"
+nltk = "^3.9.1"
+soundfile = "^0.12.1"
+librosa = "^0.10.2"
+liger-kernel = ">=0.5.0"          # Fused Triton kernels: cross-entropy (+20% throughput, -60% memory)
 
 
 [tool.poetry.group.dev.dependencies]
@@ -31,7 +38,7 @@ pytest = "^8.3.4"
 matplotlib = "^3.10.0"
 tensorboard = "^2.18.0"
 stanza = "^1.10.1"
-nltk = "^3.9.1"
+
 lm-eval = "^0.4.8"
 
 [build-system]
@@ -47,7 +54,7 @@ priority = "primary"
 
 [[tool.poetry.source]]
 name = "pytorch"
-url = "https://download.pytorch.org/whl/cu124"  # CUDA 12.4
+url = "https://download.pytorch.org/whl/cu128"  # CUDA 12.8
 priority = "explicit"
 
 

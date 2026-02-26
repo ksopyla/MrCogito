@@ -1,0 +1,49 @@
+# PowerShell script to train the Perceiver MLM model
+# This uses the Perceiver IO decoding mechanism (Cross-Attention) instead of static weights
+
+# Activate poetry environment first if not already activated
+# poetry shell
+
+# Set HuggingFace cache directories to use local Cache folder
+# Get the project root directory (parent of scripts folder)
+$projectRoot = Split-Path -Parent $PSScriptRoot
+# Use HF_HOME (new recommended way) - this sets the base cache directory
+$env:HF_HOME = Join-Path $projectRoot "Cache"
+# Set specific cache directories within HF_HOME structure
+$env:HF_DATASETS_CACHE = Join-Path $projectRoot "Cache\Datasets"
+
+# Unset the old, deprecated TRANSFORMERS_CACHE variable to prevent warnings
+Remove-Item Env:\TRANSFORMERS_CACHE -ErrorAction SilentlyContinue
+
+# Note: TRANSFORMERS_CACHE is deprecated, but kept for backwards compatibility
+# Models will be cached under HF_HOME/models/ by default
+
+# Run training with Perceiver MLM model (Micro-2 config: ~21M params)
+# Using Perceiver Decoder instead of Weighted Combination
+python training/mlm_training.py `
+    --model_type perceiver_mlm `
+    --hidden_size 256 `
+    --num_hidden_layers 2 `
+    --concept_num 128 `
+    --mlm_probability 0.15 `
+    --max_seq_length 256 `
+    --dataset_name "Salesforce/wikitext" `
+    --dataset_name_subset "wikitext-103-v1" `
+    --dataset_cache_dir "./Cache/Datasets" `
+    --per_device_train_batch_size 64 `
+    --per_device_eval_batch_size 64 `
+    --gradient_accumulation_steps 1 `
+    --learning_rate 5e-4 `
+    --num_train_epochs 0.1 `
+    --warmup_steps 1000 `
+    --logging_steps 200 `
+    --eval_strategy "steps" `
+    --eval_steps 1000 `
+    --save_steps 10000 `
+    --output_dir "./Cache/Training/" `
+    --seed 42 `
+    --report_to "wandb" `
+    --bf16
+
+Write-Host "Training completed!"
+

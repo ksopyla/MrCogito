@@ -75,7 +75,7 @@ Files:
 
 Description:
 Initial experiment with a few morfessor models, should not be used for deciding which approch is better. This was just to start and see some first results. 
-The resulta were evaluated on [ground_truth.py](../playground/ground_truth.py) dictionary with arbitrary choosen words and their ground truth morphological segments.
+The resulta were evaluated on [ground_truth.py](../playground/data/ground_truth.py) dictionary with arbitrary choosen words and their ground truth morphological segments.
 This is not a big dataset, but it is enough to see some first results. 
 This evaluation procedure does not take into account the results on 'programming code', 'latex' text. 
 
@@ -215,6 +215,8 @@ The tokenizers were evaluated using BLEU scores against a ground truth morpholog
 | **uni_wikipedia_words_1M_min_7_nltk** | **0.4570** | 0.6605 | 0.4954 | 0.2917 |
 | uni_wikipedia_words_1M_min_7_nltk_morphems | 0.2205 | 0.4604 | 0.2410 | 0.0966 |
 | uni_wikipedia_words_1M_min_7_nltk_log | 0.2275 | 0.5012 | 0.2689 | 0.0873 |
+| minipile_32k | 0.2926 | 0.5352 | 0.3292 | 0.1475 |
+| minipile_64k | 0.3341 | 0.5288 | 0.4375 | 0.2857 |
 
 
 ## Conclusions and Recommendations

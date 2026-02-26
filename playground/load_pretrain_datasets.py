@@ -179,14 +179,13 @@ def get_dataset_metadata(dataset_name, config_name=None):
         dict: A dictionary containing dataset metadata (configs, info, splits, features)
     """
     # Get available configs (if any)
-    configs = get_dataset_config_names(dataset_name, cache_dir=DATASET_CACHE_DIR, trust_remote_code=True)
+    configs = get_dataset_config_names(dataset_name, cache_dir=DATASET_CACHE_DIR)
     print("Configs:", configs)
 
     # Load the dataset builder (does NOT download the data)
     builder = load_dataset_builder(
         dataset_name,
         name=config_name,
-        trust_remote_code=True,
         cache_dir=DATASET_CACHE_DIR,
     )
     print("Dataset info:", builder.info)
@@ -328,6 +327,22 @@ stats = analyze_dataset(wikipedia_train, f"Wikipedia_{subset_size}")
 display_stats(stats, f"Wikipedia_{subset_size}")
 
 
+#%% MiniPile dataset metadata
+minipile_metadata = get_dataset_metadata("JeanKaddour/minipile")
+
+# %% JeanKaddour/minipile
+
+minipile = load_dataset("JeanKaddour/minipile", cache_dir=DATASET_CACHE_DIR)
+minipile_train = minipile["train"]
+
+subset_size = minipile_train.num_rows
+
+stats = analyze_dataset(minipile_train, f"MiniPile_{subset_size}")
+
+display_stats(stats, f"MiniPile_{subset_size}")
+
+
+
 # %% load the allenai/olmo-mix-1124 dataset
 
 from datasets import get_dataset_config_names, load_dataset_builder
@@ -351,10 +366,10 @@ dolma_metadata = get_dataset_metadata("allenai/dolma", 'v1_7')
 olmo_mix = load_dataset("allenai/olmo-mix-1124", cache_dir=DATASET_CACHE_DIR)
 
 
-dolmino_mix = load_dataset(
-    "allenai/dolmino-mix-1124",
-    cache_dir=DATASET_CACHE_DIR,
-)
+# dolmino_mix = load_dataset(
+#     "allenai/dolmino-mix-1124",
+#     cache_dir=DATASET_CACHE_DIR,
+# )
 
 
 #%%

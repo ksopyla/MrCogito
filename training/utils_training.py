@@ -3,13 +3,72 @@ Training utilities and helper functions for ConceptEncoder models.
 """
 import os
 import platform
+import subprocess
 import torch
 from torch.nn import Module
-from typing import Tuple, Dict, Any
+from typing import Dict, Optional, Tuple, Any
 from transformers import logging
 from datetime import datetime
 
 logger = logging.get_logger(__name__)
+
+
+def get_git_info() -> Dict[str, Optional[str]]:
+    """
+    Return the current git commit hash and nearest tag.
+
+    Adds traceability between WandB training runs and the exact code version.
+    Call this once in each training script and include the result in wandb.init config.
+
+    Example usage in a training script:
+        from training.utils_training import get_git_info
+        git_info = get_git_info()
+        wandb.init(..., config={"git_commit": git_info["commit"], **...})
+
+    Returns:
+        dict with keys:
+          "commit"  : short SHA of HEAD (e.g. "54ee870"), or None if not in a git repo
+          "commit_long": full 40-char SHA, or None
+          "tag"     : nearest annotated/lightweight tag (e.g. "arch/tsdae-20260221"), or None
+          "dirty"   : True if working tree has uncommitted changes, False otherwise
+    """
+    info: Dict[str, Optional[str]] = {
+        "commit": None,
+        "commit_long": None,
+        "tag": None,
+        "dirty": False,
+    }
+    try:
+        info["commit"] = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL, text=True
+        ).strip()
+        info["commit_long"] = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            stderr=subprocess.DEVNULL, text=True
+        ).strip()
+        try:
+            info["tag"] = subprocess.check_output(
+                ["git", "describe", "--tags", "--exact-match", "HEAD"],
+                stderr=subprocess.DEVNULL, text=True
+            ).strip()
+        except subprocess.CalledProcessError:
+            # No exact tag — fall back to nearest tag + offset
+            try:
+                info["tag"] = subprocess.check_output(
+                    ["git", "describe", "--tags", "--abbrev=4"],
+                    stderr=subprocess.DEVNULL, text=True
+                ).strip()
+            except subprocess.CalledProcessError:
+                info["tag"] = None
+        status = subprocess.check_output(
+            ["git", "status", "--porcelain"],
+            stderr=subprocess.DEVNULL, text=True
+        ).strip()
+        info["dirty"] = bool(status)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    return info
 
 
 def count_parameters(model: Module) -> Tuple[int, int]:
@@ -119,8 +178,15 @@ def setup_distributed():
     """
     if torch.cuda.is_available():
         local_rank = int(os.environ.get("LOCAL_RANK", -1))
+        
+        # Initialize process group if using distributed training (rank != -1)
+        # This fixes warnings about "No device id provided via init_process_group"
         if local_rank != -1:
+            if not torch.distributed.is_initialized():
+                torch.distributed.init_process_group(backend="nccl", device_id=torch.device(f"cuda:{local_rank}"))
+            
             torch.cuda.set_device(local_rank)
+            
         return local_rank
     return -1
 
@@ -201,9 +267,9 @@ def log_model_info(model: Module, config: Any = None, model_type: str = None,
     # Log configuration if provided
     if config:
         logger.info("\nModel Configuration:")
-        config_attrs = ['hidden_size', 'num_hidden_layers', 'intermediate_size', 
-                       'num_attention_heads', 'concept_num', 'vocab_size', 
-                       'max_sequence_length']
+        config_attrs = ['hidden_size', 'token_embedding_dim', 'num_hidden_layers', 
+                       'intermediate_size', 'num_attention_heads', 'concept_num', 
+                       'concept_position_type', 'vocab_size', 'max_sequence_length']
         
         for attr in config_attrs:
             if hasattr(config, attr):

@@ -50,7 +50,14 @@ from transformers import (
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import ConceptEncoder
-from nn.concept_encoder import ConceptEncoderForSequenceClassification, ConceptEncoderConfig
+from nn.concept_encoder import ConceptEncoderConfig
+from nn.concept_encoder_weighted import ConceptEncoderForSequenceClassificationWeighted
+from nn.concept_encoder_perceiver import (
+    ConceptEncoderForSequenceClassificationPerceiver,
+    ConceptEncoderForSequenceClassificationViaDecoder,
+    ConceptEncoderForSentencePairClassification,
+)
+from training.utils_training import get_hostname
 
 from datasets import load_dataset
 from datasets.utils.logging import disable_progress_bar
@@ -58,6 +65,7 @@ import evaluate
 import logging
 import time
 import random
+import math
 from datetime import datetime
 from tqdm import tqdm
 from rich.console import Console
@@ -130,8 +138,8 @@ def parse_args():
         "--model_type",
         type=str,
         default="bert",
-        choices=["bert-type", "xlnet-type", "concept-type", "sim_matrix_mlm", "concept_mlm", "weighted_mlm"],
-        help="Type of model to fine-tune (bert, roberta, xlnet, or concept)"
+        choices=["bert-type", "xlnet-type", "concept-type", "sim_matrix_mlm", "concept_mlm", "weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm", "perceiver_decoder_cls"],
+        help="Type of model to fine-tune. perceiver_decoder_cls uses the pretrained MLM decoder for classification (loads encoder+decoder weights)."
     )
     parser.add_argument(
         "--task",
@@ -361,7 +369,7 @@ GLUE_TASKS = {
     },
     "stsb": {
         "num_labels": 1,
-        "metrics": ["pearson", "spearmanr"],
+        "metrics": ["pearsonr", "spearmanr"],
         "keys": {"sentence1": "sentence1", "sentence2": "sentence2", "label": "label"},
         "abbr": "STS-B",
         "name": "Semantic Textual Similarity Benchmark",
@@ -477,6 +485,41 @@ def preprocess_function(examples, tokenizer, max_length, task):
     
     return result
 
+
+def preprocess_function_separate(examples, tokenizer, max_length, task):
+    """
+    Preprocess sentence-pair examples by tokenizing each sentence separately.
+    
+    Used with ConceptEncoderForSentencePairClassification where the encoder
+    processes each sentence independently and comparison happens in concept space.
+    
+    Returns fields: input_ids_a, attention_mask_a, input_ids_b, attention_mask_b, labels
+    """
+    task_config = GLUE_TASKS[task]
+    task_keys = task_config["keys"]
+    
+    if "sentence2" not in task_keys:
+        raise ValueError(f"Task {task} is not a sentence-pair task. Use standard preprocess_function.")
+    
+    sentences1 = examples[task_keys["sentence1"]]
+    sentences2 = examples[task_keys["sentence2"]]
+    
+    result_a = tokenizer(sentences1, padding="max_length", max_length=max_length, truncation=True)
+    result_b = tokenizer(sentences2, padding="max_length", max_length=max_length, truncation=True)
+    
+    result = {
+        "input_ids_a": result_a["input_ids"],
+        "attention_mask_a": result_a["attention_mask"],
+        "input_ids_b": result_b["input_ids"],
+        "attention_mask_b": result_b["attention_mask"],
+    }
+    
+    if task_keys["label"] in examples:
+        result["labels"] = examples[task_keys["label"]]
+    
+    return result
+
+
 # Compute metrics for evaluation
 def compute_metrics(task, metric_names):
     """
@@ -502,7 +545,8 @@ def compute_metrics(task, metric_names):
         
         # Handle regression task (STS-B)
         if task == "stsb":
-            predictions_raw = predictions[:, 0]
+            predictions = predictions[:, 0]  # Squeeze [N,1] → [N] for all metrics
+            predictions_raw = predictions
         else:
             predictions_raw = predictions
             predictions = np.argmax(predictions, axis=1)
@@ -515,8 +559,8 @@ def compute_metrics(task, metric_names):
                 results[name] = metric.compute(predictions=predictions, references=labels)["matthews_correlation"]
             elif name == "f1":
                 results[name] = metric.compute(predictions=predictions, references=labels)["f1"]
-            elif name == "pearson":
-                results[name] = metric.compute(predictions=predictions, references=labels)["pearson"]
+            elif name == "pearsonr":
+                results[name] = metric.compute(predictions=predictions, references=labels)["pearsonr"]
             elif name == "spearmanr":
                 results[name] = metric.compute(predictions=predictions, references=labels)["spearmanr"]
             else:
@@ -585,17 +629,21 @@ def load_glue_dataset(task, tokenizer, max_length):
         validation_split = dataset_splits["validation"]
         eval_dataset = datasets[validation_split]
         
+        # Select preprocessing function based on model type
+        use_separate = getattr(args, "model_type", None) == "perceiver_pair_cls"
+        prep_fn = preprocess_function_separate if use_separate else preprocess_function
+        
         # Preprocess datasets with error handling
         try:
             train_dataset = datasets["train"].map(
-                lambda examples: preprocess_function(examples, tokenizer, max_length, task),
+                lambda examples: prep_fn(examples, tokenizer, max_length, task),
                 batched=True,
                 remove_columns=datasets["train"].column_names,
                 desc="Preprocessing training data"
             )
             
             eval_dataset = eval_dataset.map(
-                lambda examples: preprocess_function(examples, tokenizer, max_length, task),
+                lambda examples: prep_fn(examples, tokenizer, max_length, task),
                 batched=True,
                 remove_columns=eval_dataset.column_names,
                 desc="Preprocessing validation data"
@@ -605,9 +653,9 @@ def load_glue_dataset(task, tokenizer, max_length):
             raise
         
         # Log dataset statistics
-        logger.info(f"Dataset statistics for {task}:")
-        logger.info(f"  Training samples: {len(train_dataset)}")
-        logger.info(f"  Validation samples: {len(eval_dataset)}")
+        # logger.info(f"Dataset statistics for {task}:")
+        # logger.info(f"  Training samples: {len(train_dataset)}")
+        # logger.info(f"  Validation samples: {len(eval_dataset)}")
         
         return train_dataset, eval_dataset, None
         
@@ -700,7 +748,7 @@ def get_model_specific_config(model_name_or_path):
         'adam_beta2': 0.999,
         'adam_epsilon': 1e-8,
         'max_grad_norm': 1.0,
-        'warmup_steps': 500,
+        'warmup_steps': 100,
         'gradient_accumulation_steps': 1,
         'special_notes': []
     }
@@ -762,12 +810,46 @@ def get_model_specific_config(model_name_or_path):
         })
         logger.info("ALBERT model detected - applying ALBERT-specific configurations")
     
-    # Log configuration details
-    if config['special_notes']:
-        for note in config['special_notes']:
-            logger.info(f"  - {note}")
-    
     return config
+
+def print_experiment_configuration(args, model_config, total_params, trainable_params, train_dataset_size, steps_per_epoch, tokenizer_name):
+    """
+    Print a structured summary of the experiment configuration before training starts.
+    """
+    logger.info("\n" + "="*50)
+    logger.info("EXPERIMENT CONFIGURATION")
+    logger.info("="*50)
+    
+    logger.info(f"Task:           {args.task.upper()}")
+    logger.info(f"Model Type:     {args.model_type}")
+    logger.info(f"Model Path:     {args.model_name_or_path}")
+    logger.info(f"Tokenizer:      {tokenizer_name}")
+    logger.info(f"Device:         {torch.device('cuda' if torch.cuda.is_available() and not args.no_cuda else 'cpu')}")
+    
+    logger.info("-" * 50)
+    logger.info("MODEL STATISTICS")
+    logger.info(f"Total Params:      {total_params:,}")
+    logger.info(f"Trainable Params:  {trainable_params:,} ({trainable_params/total_params:.1%} of total)")
+    
+    logger.info("-" * 50)
+    logger.info("TRAINING DETAILS")
+    logger.info(f"Dataset Size:      {train_dataset_size:,} samples")
+    logger.info(f"Batch Size:        {args.batch_size}")
+    logger.info(f"Epochs:            {args.epochs}")
+    logger.info(f"Total Steps:       {steps_per_epoch * args.epochs:,}")
+    logger.info(f"Learning Rate:     {args.learning_rate}")
+    logger.info(f"Weight Decay:      {args.weight_decay}")
+    logger.info(f"Warmup Steps:      {model_config['warmup_steps']}")
+    logger.info(f"Max Grad Norm:     {model_config['max_grad_norm']}")
+    logger.info(f"FP16/BF16:         {model_config['use_fp16']}/{model_config['use_bf16']}")
+    
+    if model_config['special_notes']:
+        logger.info("-" * 50)
+        logger.info("MODEL SPECIFIC SETTINGS")
+        for note in model_config['special_notes']:
+            logger.info(f"* {note}")
+            
+    logger.info("="*50 + "\n")
 
 def finetune_model_on_glue(args):
     """
@@ -794,13 +876,39 @@ def finetune_model_on_glue(args):
     set_seed(args.seed)
     
     # Determine tokenizer name
-    tokenizer_name = args.tokenizer_name if args.tokenizer_name else args.model_name_or_path
+    # Strategy:
+    # 1. If tokenizer_name is explicitly provided, use it (highest priority)
+    # 2. If not, try to load tokenizer from the model directory (best practice)
+    # 3. If not available, check if model config has 'tokenizer_name' stored (traceability)
+    # 4. Fallback to model_name_or_path (works for HF Hub models)
+    
+    tokenizer_name = args.tokenizer_name
+    
+    if not tokenizer_name:
+        # Check if tokenizer files exist in the model directory
+        if os.path.isdir(args.model_name_or_path) and any(f.startswith("vocab") or f.startswith("tokenizer") for f in os.listdir(args.model_name_or_path)):
+            tokenizer_name = args.model_name_or_path
+            logger.info(f"Found tokenizer files in model directory. Using: {tokenizer_name}")
+        # Check if config has stored tokenizer name
+        elif hasattr(model, "config") and hasattr(model.config, "tokenizer_name"):
+            tokenizer_name = model.config.tokenizer_name
+            logger.info(f"Using stored tokenizer name from model config: {tokenizer_name}")
+        else:
+            tokenizer_name = args.model_name_or_path
+            logger.info(f"Fallback: Using model path as tokenizer name: {tokenizer_name}")
     
     # Load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
+    except Exception as e:
+        logger.error(f"Failed to load tokenizer '{tokenizer_name}': {e}")
+        # If fallback failed, try the hardcoded default from training script
+        default_tokenizer = "bert-base-cased"
+        logger.warning(f"Attempting fallback to default tokenizer: {default_tokenizer}")
+        tokenizer = AutoTokenizer.from_pretrained(default_tokenizer, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
     
     # Load and initialize model based on model type
-    concept_model_types = ["sim_matrix_mlm", "concept_mlm", "weighted_mlm"]
+    concept_model_types = ["weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm", "perceiver_decoder_cls", "perceiver_pair_cls"]
     if args.model_type in concept_model_types:
         # First, load configuration and update with task-specific settings
         try:
@@ -818,21 +926,89 @@ def finetune_model_on_glue(args):
                 problem_type="regression" if args.task == "stsb" else "single_label_classification"
             )
         
-        # Load or initialize ConceptEncoder model
-        try:
-            # Attempt to load from checkpoint
-            model = ConceptEncoderForSequenceClassification.from_pretrained(
-                args.model_name_or_path,
-                config=config,
-                cache_dir=MODEL_CACHE_DIR,
-                token=hf_token
-            )
-            logger.info(f"Successfully loaded ConceptEncoder model from {args.model_name_or_path}")
-        except Exception as e:
-            logger.warning(f"Could not load model from {args.model_name_or_path}: {e}")
-            logger.warning("Initializing a new ConceptEncoderForSequenceClassification model instead.")
-            # Initialize a new model with the config
-            model = ConceptEncoderForSequenceClassification(config)
+        # Select the appropriate classification model class
+        if args.model_type == "weighted_mlm":
+            logger.info(f"Using Weighted Sequence Classification for model type: {args.model_type}")
+            model_class = ConceptEncoderForSequenceClassificationWeighted
+        elif args.model_type in ("perceiver_mlm", "perceiver_posonly_mlm"):
+            # Both perceiver variants use the same CLS-query classification head
+            # (the difference is only in the MLM decoder, not the encoder or classification head)
+            logger.info(f"Using Perceiver CLS-query Sequence Classification for model type: {args.model_type}")
+            model_class = ConceptEncoderForSequenceClassificationPerceiver
+        elif args.model_type == "perceiver_decoder_cls":
+            logger.info(f"Using Classification via Decoder for model type: {args.model_type}")
+            model_class = ConceptEncoderForSequenceClassificationViaDecoder
+        elif args.model_type == "perceiver_pair_cls":
+            logger.info(f"Using Sentence-Pair Classification (separate encoding) for model type: {args.model_type}")
+            model_class = ConceptEncoderForSentencePairClassification
+        else:
+            raise ValueError(f"Unsupported model type for classification: {args.model_type}")
+        
+        # Initialize classification model with config (classification head will be random)
+        model = model_class(config)
+        
+        # Load pre-trained weights from MLM checkpoint
+        checkpoint_path = os.path.join(args.model_name_or_path, "pytorch_model.bin")
+        if not os.path.exists(checkpoint_path):
+            # Try safetensors format
+            checkpoint_path = os.path.join(args.model_name_or_path, "model.safetensors")
+        
+        if os.path.exists(checkpoint_path):
+            logger.info(f"Loading pre-trained weights from {checkpoint_path}")
+            
+            if checkpoint_path.endswith(".safetensors"):
+                from safetensors.torch import load_file
+                checkpoint_state_dict = load_file(checkpoint_path)
+            else:
+                checkpoint_state_dict = torch.load(checkpoint_path, map_location="cpu")
+            
+            model_state_dict = model.state_dict()
+            
+            if args.model_type == "perceiver_decoder_cls":
+                # For decoder-based classification: load ALL matching weights from MLM checkpoint
+                # (encoder.* + decoder_* weights), skip only lm_head.* and classifier.*
+                # This preserves the pretrained decoder that learned position reconstruction
+                pretrained_loaded = 0
+                pretrained_skipped = 0
+                skipped_keys = []
+                
+                for key, value in checkpoint_state_dict.items():
+                    # Skip MLM prediction head (not needed for classification)
+                    if key.startswith("lm_head.") or key.startswith("loss_manager."):
+                        continue
+                    
+                    if key in model_state_dict and model_state_dict[key].shape == value.shape:
+                        model_state_dict[key] = value
+                        pretrained_loaded += 1
+                    else:
+                        pretrained_skipped += 1
+                        skipped_keys.append(key)
+                
+                model.load_state_dict(model_state_dict)
+                logger.info(f"Loaded {pretrained_loaded} pretrained weights (encoder + decoder) from checkpoint")
+                if pretrained_skipped > 0:
+                    logger.warning(f"Skipped {pretrained_skipped} keys: {skipped_keys[:10]}...")
+                logger.info("Classification head (pre_pool_norm, classifier) initialized randomly")
+            else:
+                # For CLS-query and weighted models: load only encoder weights (backbone)
+                encoder_weights_loaded = 0
+                encoder_weights_skipped = 0
+                
+                for key, value in checkpoint_state_dict.items():
+                    if key.startswith("encoder."):
+                        if key in model_state_dict and model_state_dict[key].shape == value.shape:
+                            model_state_dict[key] = value
+                            encoder_weights_loaded += 1
+                        else:
+                            encoder_weights_skipped += 1
+                            logger.warning(f"Skipping encoder key {key}: shape mismatch or not in model")
+                
+                model.load_state_dict(model_state_dict)
+                logger.info(f"Loaded {encoder_weights_loaded} encoder weights from checkpoint (skipped {encoder_weights_skipped})")
+                logger.info("Classification head initialized randomly (will be trained during fine-tuning)")
+        else:
+            logger.warning(f"No checkpoint found at {args.model_name_or_path}")
+            logger.warning("Initializing model with random weights - results will be meaningless!")
     else:  # Standard transformer models like bert, roberta, xlnet
         model = AutoModelForSequenceClassification.from_pretrained(
             args.model_name_or_path,
@@ -849,20 +1025,35 @@ def finetune_model_on_glue(args):
     # Load and preprocess dataset
     train_dataset, eval_dataset, _ = load_glue_dataset(args.task, tokenizer, args.max_length)
     
+    # Get model-specific configuration
+    model_config = get_model_specific_config(args.model_name_or_path)
+    
     # Calculate dynamic logging steps based on dataset size
     # Target approximately 10-15 logs per epoch for readability
     train_size = len(train_dataset)
-    steps_per_epoch = max(1, train_size // args.batch_size // 2)  # Account for gradient accumulation of 2
+    grad_acc_steps = model_config.get('gradient_accumulation_steps', 1)
+    
+    # Use math.ceil for batches per epoch to match Trainer's default behavior (drop_last=False)
+    num_batches_per_epoch = math.ceil(train_size / args.batch_size)
+    steps_per_epoch = max(1, num_batches_per_epoch // grad_acc_steps)
+    
     logging_steps = max(1, steps_per_epoch // 10)  # Aim for ~10 logs per epoch
     
-    logger.info(f"Dataset size: {train_size}, Steps per epoch: {steps_per_epoch}, Dynamic logging steps: {logging_steps}")
+    # Print grouped experiment configuration
+    print_experiment_configuration(
+        args, 
+        model_config, 
+        total_params, 
+        trainable_params, 
+        train_size, 
+        steps_per_epoch,
+        tokenizer_name
+    )
     
     # Create experiment timestamp and run name
     experiment_name, timestamp = create_experiment_name(args.model_name_or_path, args.task, total_params)
     run_name = f"{experiment_name}-{timestamp}"
     
-    # Get model-specific configuration
-    model_config = get_model_specific_config(args.model_name_or_path)
     
     # Override with command line arguments if provided, otherwise use model-specific defaults
     final_adam_beta1 = args.adam_beta1 if hasattr(args, 'adam_beta1') and args.adam_beta1 != 0.9 else model_config['adam_beta1']
@@ -889,7 +1080,7 @@ def finetune_model_on_glue(args):
         adam_beta1=final_adam_beta1,
         adam_beta2=final_adam_beta2,
         adam_epsilon=final_adam_epsilon,
-        gradient_accumulation_steps=model_config['gradient_accumulation_steps'],
+        gradient_accumulation_steps=grad_acc_steps,
         
         eval_strategy="epoch", # change to eval_strategy
         save_strategy="epoch",
@@ -925,7 +1116,7 @@ def finetune_model_on_glue(args):
         #tokenizer=tokenizer,
         data_collator=data_collator,
         compute_metrics=compute_metrics_fn,
-        callbacks=[EarlyStoppingCallback(early_stopping_patience=2)]
+        # callbacks=[EarlyStoppingCallback(early_stopping_patience=5)]
     )
 
     # Create comprehensive config dictionary for wandb
@@ -938,32 +1129,55 @@ def finetune_model_on_glue(args):
         **{k: v for k, v in vars(training_args).items() if not k.startswith('_')}
     }
 
-    # Create wandb tags
-    # Sanitize model name for wandb tag to avoid errors with long paths
-    model_tag = args.model_name_or_path
-    if os.path.isdir(model_tag):
-        model_tag = os.path.basename(model_tag)
+    # === Model Lineage: Extract source training run ID from checkpoint path ===
+    # The checkpoint path follows the convention:
+    #   .../Cache/Training/<training_run_id>/<training_run_id>/
+    # e.g., .../weighted_mlm_H512L6C128_20260207_174251/weighted_mlm_H512L6C128_20260207_174251
+    # The training_run_id matches the wandb run name from mlm_training.py
+    source_training_run_id = os.path.basename(args.model_name_or_path)
     
-    # Strip timestamp from model name if it exists (e.g., _YYYYMMDD_HHMMSS)
-    parts = model_tag.split('_')
-    if len(parts) > 2 and parts[-2].isdigit() and len(parts[-2]) == 8 and parts[-1].isdigit() and len(parts[-1]) == 6:
-        model_tag = '_'.join(parts[:-2])
+    # Extract architecture tag (strip timestamp): weighted_mlm_H512L6C128
+    arch_parts = source_training_run_id.split('_')
+    if len(arch_parts) > 2 and arch_parts[-2].isdigit() and len(arch_parts[-2]) == 8 and arch_parts[-1].isdigit() and len(arch_parts[-1]) == 6:
+        architecture_tag = '_'.join(arch_parts[:-2])
+    else:
+        architecture_tag = source_training_run_id
+    
+    # Ensure tag is not too long for wandb
+    if len(architecture_tag) > 63:
+        architecture_tag = architecture_tag[:63]
 
-    # Ensure tag is not too long
-    if len(model_tag) > 63:
-        model_tag = model_tag[:63]
+    # Get hostname
+    hostname = get_hostname()
 
+    # Tags for filtering: task, model type, architecture, source training run
     wandb_tags = [
         "glue",
         args.task,
         "finetuning",
         args.model_type,
-        model_tag,
-        f"hostname-{os.environ.get('COMPUTERNAME', 'unknown')}"
+        architecture_tag,           # e.g., weighted_mlm_H512L6C128
+        source_training_run_id,     # e.g., weighted_mlm_H512L6C128_20260207_174251 (for lineage)
+        hostname
     ]
 
-    # Create group identifier for clustering related runs
-    group_identifier = f"GLUE_{args.task}"
+    # Group by architecture config (backward compatible)
+    # Format: {model_type}_H{hidden}L{layers}C{concepts} - same as mlm_training.py
+    # L2 and L6 are naturally separated since layer count is in the name
+    group_identifier = architecture_tag  # e.g., weighted_mlm_H512L6C128
+    
+    # Try to reconstruct from model config if architecture_tag extraction failed
+    if hasattr(model, "config"):
+        config = model.config
+        if hasattr(config, "hidden_size") and hasattr(config, "num_hidden_layers") and hasattr(config, "concept_num"):
+            group_identifier = f"{args.model_type}_H{config.hidden_size}L{config.num_hidden_layers}C{config.concept_num}"
+    
+    logger.info(f"Group: {group_identifier} | Source training run: {source_training_run_id}")
+    
+    # Add lineage metadata to wandb config
+    wandb_config["source_training_run_id"] = source_training_run_id
+    wandb_config["source_checkpoint_path"] = args.model_name_or_path
+    wandb_config["architecture_tag"] = architecture_tag
     
     # Initialize the wandb project
     wandb_run = wandb.init(
@@ -975,7 +1189,7 @@ def finetune_model_on_glue(args):
         tags=wandb_tags,
         group=group_identifier,
         sync_tensorboard=True,
-        notes=f"Fine-tuning {args.model_name_or_path} on GLUE task {args.task}"
+        notes=f"GLUE {args.task} | Source: {source_training_run_id} | Model: {args.model_type}"
     )
 
     # Train model
@@ -1006,6 +1220,8 @@ def finetune_model_on_glue(args):
         'experiment_name': run_name,
         'wandb_url': wandb_run.url,
         'wandb_project': wandb_run.project,
+        'source_training_run_id': source_training_run_id,
+        'architecture_tag': architecture_tag,
         'model_name': args.model_name_or_path,
         'model_type': args.model_type,
         'task': args.task,

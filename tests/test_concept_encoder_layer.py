@@ -6,8 +6,8 @@ from typing import NamedTuple
 from nn.concept_encoder import (
     ConceptEncoderConfig,
     ConceptEncoder,
-    ConceptEncoderForMaskedLM,
 )
+from nn.concept_encoder_methods import ConceptEncoderForMaskedLM
 
 @dataclass
 class SpecialTokens:

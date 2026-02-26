@@ -5,7 +5,7 @@ from transformers import DataCollatorForWholeWordMask
 
 
 
-def load_and_preprocess_text_dataset(tokenizer, dataset_hf_path, dataset_name, text_column_name, test_size_percent=0.1, max_seq_length=512, dataset_cache_dir=None):
+def load_and_preprocess_text_dataset(tokenizer, dataset_hf_path, dataset_name_subset, text_column_name, test_size_percent=0.1, max_seq_length=512, dataset_cache_dir=None):
     """
     Loads and preprocesses the text dataset that fits to memory.
     
@@ -23,7 +23,12 @@ def load_and_preprocess_text_dataset(tokenizer, dataset_hf_path, dataset_name, t
     else:
         DATASET_CACHE_DIR = os.path.abspath(dataset_cache_dir)
 
-    dataset = load_dataset(dataset_hf_path, dataset_name, cache_dir=DATASET_CACHE_DIR, trust_remote_code=True)
+    if dataset_name_subset == "":
+        dataset_name_subset = None
+
+    # Load dataset - remove trust_remote_code=True as it's no longer supported/needed for most datasets
+    # Minipile is a standard dataset, doesn't need it
+    dataset = load_dataset(dataset_hf_path, dataset_name_subset, cache_dir=DATASET_CACHE_DIR)
 
     # check if the dataset contains a train and test split
        
@@ -35,7 +40,10 @@ def load_and_preprocess_text_dataset(tokenizer, dataset_hf_path, dataset_name, t
     else:
         # test size is 10% of the train set not more than 100000 examples
         test_size = min(int(len(train_ds) * test_size_percent), 100000)
-        train_ds, test_ds = train_ds.train_test_split(test_size=test_size)
+        # train_test_split returns a dictionary with 'train' and 'test' keys
+        split_ds = train_ds.train_test_split(test_size=test_size)
+        train_ds = split_ds['train']
+        test_ds = split_ds['test']
   
     # Rename column to match processing
     # do a collumn rename based on the mapping provided below
@@ -63,10 +71,12 @@ def load_and_preprocess_text_dataset(tokenizer, dataset_hf_path, dataset_name, t
 
    
     # Process train dataset
+    # Disable multiprocessing to avoid OOM or reduce num_proc significantly
+    # Using a smaller number of processes (e.g., 4 or 8) is usually safe
     train_ds = train_ds.map(
         tokenize_batch_function,
         batched=True,
-        num_proc=os.cpu_count()-2,
+        num_proc=8, # os.cpu_count()-2 can be too high (62 processes!) causing OOM
         remove_columns=["text"]
     )
 
@@ -75,7 +85,7 @@ def load_and_preprocess_text_dataset(tokenizer, dataset_hf_path, dataset_name, t
     test_ds = test_ds.map(
         tokenize_batch_function,
         batched=True,
-        num_proc=os.cpu_count()-2,
+        num_proc=4, # Lower for test set
         remove_columns=["text"]
     )
     

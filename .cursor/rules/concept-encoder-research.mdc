@@ -1,101 +1,66 @@
 ---
-description: Concept Encoder Research project - folder structure and key information locations
+description: Research project structure, experiment protocols, and tracking rules for the Concept Encoder project.
 globs: 
 alwaysApply: false
 ---
 
 # Concept Encoder Research Project Guide
 
-## 🎯 Project Overview  
-Research project developing "Concept Encoder" - a transformer architecture using concept-level token masking for better text understanding and longer context processing.
+Follow `.cursor/rules/ai-researcher.mdc` for research mindset. Follow `.cursor/rules/engineer-scribe.mdc` for traceability.
 
-## 📚 Research Documentation
+## Project Structure
 
-### Core Research Ideas (@docs/research-notes/)
-- [concept_encoder_notes.md](mdc:docs/research-notes/concept_encoder_notes.md) - **Main research idea**: cross-attention between concept tokens and sequence tokens for efficient long context
-- [concept_transformer_ai_report.md](mdc:docs/research-notes/concept_transformer_ai_report.md) - Comprehensive research analysis
-- [evaluation_strategies.md](mdc:docs/research-notes/evaluation_strategies.md) - Benchmark evaluation protocols
+| Path | Purpose |
+|---|---|
+| `nn/` | Model implementations (`concept_encoder.py`, `*_perceiver.py`, `*_diffusion.py`, `*_recursive.py`, `loss_manager.py`) |
+| `training/` | Training scripts (`mlm_training.py`, `train_diffusion.py`, `train_tsdae.py`, `data_collators.py`) |
+| `evaluation/` | Eval scripts (`evaluate_model_on_glue.py`, `evaluate_on_benchmark.py`) |
+| `analysis/` | `run_concept_analysis.py` — concept collapse, effective rank, cosine similarities |
+| `scripts/` | Shell wrappers for Linux (`.sh`) and Windows (`.ps1`) |
+| `docs/1_Strategy_and_Plans/` | `roadmap.md` (vision + tracks), `active_todos.md` (actionable tasks) |
+| `docs/2_Experiments_Registry/` | `master_experiment_log.md` (central table), `run_reports/` (per-run analyses) |
+| `docs/4_Research_Notes/` | Deep analyses: `mlm_perceiver_diagnosis_20260221.md`, `diffusion_diagnosis_20260226.md` |
+| `Cache/` | Synced from remote servers: models, checkpoints, eval reports |
 
-### Publication Summaries (@docs/MrCogito-research-docs/publications_summaries/)
-- [encoder_evaluation_summary_from_publications.md](mdc:docs/MrCogito-research-docs/publications_summaries/encoder_evaluation_summary_from_publications.md) - Evaluation methodologies from literature
-- [concept_modeling_encoding.md](mdc:docs/MrCogito-research-docs/publications_summaries/concept_modeling_encoding.md) - Concept encoding techniques
-- [masked_language_models.md](mdc:docs/research-notes/masked_language_models.md) - MLM strategies and variants
-- [publication_extracts_multi_masking.md](mdc:docs/MrCogito-research-docs/publications_summaries/publication_extracts_multi_masking.md) - Multi-token masking research
+## Current Focus (Feb 2026)
 
-### Dataset Information
-- [datasets_review_for_training.md](mdc:docs/research-notes/datasets_review_for_training.md) - Training data analysis
-- [datasets_review.ipynb](mdc:playground/datasets_review.ipynb) - Interactive dataset exploration
+**Goal:** Build audio conversational + reasoning model via concept bottleneck. Current milestone: prove concept quality on text (SG1).
 
-## 🛠️ Implementation & Training
+**Training pipeline phases:** Phase 0 (self-reconstruction) → Phase 1 (prefix generation) → Phase 2 (recursive reasoning) → Phase 3 (instruction tuning).
 
-### Core Model (@nn/)
-- [concept_encoder.py](mdc:nn/concept_encoder.py) - **Main ConceptEncoder implementation** with NeighborWordMaskCollator
+**Concept count C scales with N:** C=128 at 512 tokens, C=8K-16K at 1M tokens. The invariant is O(C*N) << O(N^2).
 
-### Training Scripts (@training/)
-**Primary Scripts:**
-- [mlm_training.py](mdc:training/mlm_training.py) - **MLM training for ConceptEncoder**
-  ```bash
-  # Usage: python training/mlm_training.py [args]
-  # Uses WandB project: "MrCogito"
-  ```
-- [evaluate_model_on_glue.py](mdc:training/evaluate_model_on_glue.py) - **GLUE benchmark evaluation**
-  ```bash  
-  # Usage examples:
-  # python training/evaluate_model_on_glue.py --model_type xlnet --task mrpc --batch_size 16 --epochs 3
-  # python training/evaluate_model_on_glue.py --model_type concept --task all --batch_size 32 --epochs 5
-  ```
-- [dataset_preprocess.py](mdc:training/dataset_preprocess.py) - **Data preprocessing and custom collators**
+**Active Track A priorities:** L6 diffusion ablation (TODO 11), ELBO fix (TODO 12), TSDAE PosOnly (TODO 10), prefix generation (TODO 13).
 
-**Supporting Scripts:**
-- [concept_enc_dec.py](mdc:training/concept_enc_dec.py) - Alternative encoder-decoder approach
-- [train_morfessor_models.py](mdc:training/train_morfessor_models.py) - Morphological tokenizer training (mostly experimental)
+## Experiment Protocol (MANDATORY)
 
-### Testing (@tests/)
-- [test_concept_encoder_layer.py](mdc:tests/test_concept_encoder_layer.py) - Core model tests
-- [test_data_collators.py](mdc:tests/test_data_collators.py) - Data collator validation
+### Before Training
+1. Create git tag: `arch/{feature}` for code, `train/{run_id}` before training.
+2. Ensure `get_git_info()` is called in training script and passed to `wandb.init()` config.
+3. Verify training config matches the TODO description.
 
-## 📊 Evaluation & Results
+### After Training
+1. **Immediately** update `docs/2_Experiments_Registry/master_experiment_log.md` with a new row.
+2. Run `analysis/run_concept_analysis.py` — check effective rank, pairwise similarity.
+3. Run GLUE eval with ViaDecoder (default mode): MRPC, STS-B, QQP, MNLI.
+4. Write run report in `docs/2_Experiments_Registry/run_reports/` if results are non-trivial.
+5. Update `CHANGELOG.md` if any code changed.
 
-### Evaluation Results Storage
-- **Baseline Results**: [encoders_glue_evaluation_baseline.md](mdc:docs/experiments_results/encoders_glue_evaluation_baseline.md) - Current GLUE benchmark results
-- **CSV Reports**: `Cache/Evaluation_reports/` - Structured evaluation data [[memory:2369370]]
-  - Format: `[dataset]-[task]-[model]-[date]-[content].csv` [[memory:2371629]]
+### Evaluation Rules
+- **Default classification head:** ViaDecoder (not CLS-query).
+- **Priority benchmarks:** STS-B Pearson > concept rank > MRPC/QQP > PAWS/SICK > MNLI.
+- **Skip:** CoLA (architectural ceiling), RTE (too noisy), SST-2 (saturated).
+- **New metric:** Prefix generation loss (measures generation capability, not just similarity).
 
-### Training Monitoring
-- **WandB Logs**: `wandb/` folder - Training run history and metrics [[memory:2371908]]
-- **Run Naming**: `[dataset]-[task]-[model]` format [[memory:2371629]]
+### Concept Quality Targets
+- Effective rank > 50% of C (e.g., > 64/128)
+- Mean pairwise similarity < 0.20
+- Max pairwise similarity < 0.60
+- STS-B Pearson > 0.75
+- Zero-shot STS-B cosine > 0.60
 
-## 🔬 Experimentation (@playground/)
-**Purpose**: Testing, prototyping, and exploring new approaches before main implementation
+## Traceability (3 linked documents)
 
-**Key Files:**
-- [concept_layer_step_by_step.py](mdc:playground/concept_layer_step_by_step.py) - Step-by-step concept layer development
-- [train_tokenizer_playground.py](mdc:playground/train_tokenizer_playground.py) - Tokenizer experiments
-- [datacollators_playground.py](mdc:playground/datacollators_playground.py) - Masking strategy testing
-- [load_berts.py](mdc:playground/load_berts.py), [load_llama32.py](mdc:playground/load_llama32.py) - Model loading utilities
-
-## 🗂️ Cache Structure (@Cache/)
-**Purpose**: Storage for downloaded models, datasets, and generated outputs
-
-**Organization:**
-- `Models/` - Downloaded HuggingFace models and checkpoints
-- `Tokenizers/` - Trained morphological and standard tokenizers
-- `Datasets/` - Cached training datasets  
-- `Evaluation_reports/` - CSV evaluation results [[memory:2369370]]
-- `Training/` - Training artifacts and logs
-- `Outputs/` - Generated content and results
-
-## 🧪 Future Experiments (@docs/experiments/)
-- [idea1_unsed_tokens_as_registers.md](mdc:docs/experiments/idea1_unsed_tokens_as_registers.md) - Token register mechanisms
-- [idea4_morphological_aware_tokenization.md](mdc:docs/experiments/idea4_morphological_aware_tokenization.md) - Morphological tokenization research
-
-## 📋 Setup & Usage [[memory:2371908]]
-**Environment**: Windows + Poetry virtual environment `mrcogito-sHhaXiEk-py3.12`
-
-**Key Dependencies**: PyTorch 2.5.0, Transformers 4.47.1, WandB, Datasets, Evaluate
-
-**Getting Started:**
-1. Core implementation: `nn/concept_encoder.py`
-2. Training: `python training/mlm_training.py`
-3. Evaluation: `python training/evaluate_model_on_glue.py`
-4. Testing: `pytest tests/`
+1. `CHANGELOG.md` → git tag → `master_experiment_log.md`
+2. `active_todos.md` → completion date → `CHANGELOG.md`
+3. WandB run config includes `git_commit` + `git_tag`

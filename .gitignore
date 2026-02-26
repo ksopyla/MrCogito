@@ -171,3 +171,5 @@ Cache/*
 doc/MrCogito-research-docs/.obsidian/*
 .vscode/*
 docs/MrCogito-research-docs/.obsidian/*
+tokenizers/*
+mwt_extractions/*
