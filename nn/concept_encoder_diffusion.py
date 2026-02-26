@@ -435,9 +435,10 @@ class ConceptEncoderForMaskedDiffusion(PreTrainedModel):
                         reduction='none',
                         label_smoothing=self.label_smoothing,
                     )
+                    # .repeat() not .expand() — expand causes NCCL deadlocks in DDP
                     sample_indices = torch.arange(
                         B, device=input_ids.device
-                    ).unsqueeze(1).expand(B, L).reshape(-1)[flat_mask]
+                    ).unsqueeze(1).repeat(1, L).reshape(-1)[flat_mask]
                     token_weights = 1.0 / t[sample_indices].clamp(min=0.1)
                     diffusion_loss = (per_token_loss * token_weights).sum() / token_weights.sum()
                 else:
