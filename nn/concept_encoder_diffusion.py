@@ -322,13 +322,15 @@ class ConceptEncoderForMaskedDiffusion(PreTrainedModel):
         config: ConceptEncoderConfig,
         loss_config: Optional[LossConfig] = None,
         decoder_layers: int = 2,
-        t_min: float = 0.1,
+        t_min: float = 0.3,
         label_smoothing: float = 0.1,
+        elbo_weight: bool = True,
     ):
         super().__init__(config)
         self.config = config
         self.t_min = t_min
         self.label_smoothing = label_smoothing
+        self.elbo_weight = elbo_weight
 
         self.encoder = ConceptEncoder(config)
         self.decoder = ConceptDiffusionDecoder(config, num_layers=decoder_layers)
@@ -424,10 +426,26 @@ class ConceptEncoderForMaskedDiffusion(PreTrainedModel):
             masked_targets = input_ids.reshape(-1)[flat_mask]     # [M]
 
             if masked_logits.numel() > 0:
-                diffusion_loss = F.cross_entropy(
-                    masked_logits, masked_targets,
-                    label_smoothing=self.label_smoothing,
-                )
+                if self.elbo_weight:
+                    # ELBO-derived per-token 1/t weighting (MDLM, Sahoo NeurIPS 2024;
+                    # LLaDA, Nie 2025).  Each masked token's loss is weighted by 1/t
+                    # of its sample, normalizing gradient magnitude across noise levels.
+                    per_token_loss = F.cross_entropy(
+                        masked_logits, masked_targets,
+                        reduction='none',
+                        label_smoothing=self.label_smoothing,
+                    )
+                    sample_indices = torch.arange(
+                        B, device=input_ids.device
+                    ).unsqueeze(1).expand(B, L).reshape(-1)[flat_mask]
+                    token_weights = 1.0 / t[sample_indices].clamp(min=0.1)
+                    diffusion_loss = (per_token_loss * token_weights).sum() / token_weights.sum()
+                else:
+                    diffusion_loss = F.cross_entropy(
+                        masked_logits, masked_targets,
+                        label_smoothing=self.label_smoothing,
+                    )
+
                 if self.training:
                     loss = self.loss_manager(
                         task_loss=diffusion_loss,
