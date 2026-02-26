@@ -18,6 +18,63 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-02-26] — ELBO Loss Weighting + L6 Diffusion Config
+
+**Motivation:** Root cause analysis of L2 diffusion run (STS-B 0.138, near-random) identified
+missing ELBO loss weighting and low t_min as two of five root causes. MDLM (Sahoo, NeurIPS 2024)
+derives that the proper ELBO for masked diffusion is a weighted average of MLM losses with weight
+proportional to 1/t. LLaDA (Nie, 2025) uses `loss / p_mask`. The diagnosis proposed a batch-level
+approximation (`loss / t.mean()`), but this is mathematically incorrect — it's just a global scaling
+that doesn't reweight across noise levels. Implemented correct per-token 1/t weighting instead.
+Full analysis: `docs/4_Research_Notes/diffusion_diagnosis_20260226.md`.
+
+### Changed — `nn/concept_encoder_diffusion.py`
+
+- **Added ELBO per-token 1/t loss weighting** in `ConceptEncoderForMaskedDiffusion.forward()`:
+  - Computes `F.cross_entropy(reduction='none')` to get per-token losses
+  - Maps each masked token to its sample's `t` value via `sample_indices`
+  - Weights each token's loss by `1 / t.clamp(min=0.1)`
+  - Takes weighted mean: `(per_token_loss * weights).sum() / weights.sum()`
+  - Controlled by `elbo_weight: bool` parameter (default `True`)
+  - Old unweighted path preserved when `elbo_weight=False` for backward compat
+- **Changed `t_min` default** from 0.1 to **0.3**: avoids the near-MLM regime (t<0.2)
+  where local context suffices and concepts are unnecessary
+
+### Changed — `training/train_diffusion.py`
+
+- Added `elbo_weight: bool` field to `ModelArguments` (default `True`)
+- Changed `t_min` default from 0.1 to **0.3**
+- Passes `elbo_weight` to model constructor
+- Logs `elbo_weight` to WandB config
+
+### Changed — `scripts/train_diffusion_multigpu.sh`
+
+| Parameter | Previous | New | Reason |
+|---|---|---|---|
+| `NUM_ENCODER_LAYERS` | 2 | **6** | L2 proven too shallow for compositional semantics |
+| `INTERMEDIATE_SIZE` | 1024 | **2048** | Match L6 perceiver_mlm baseline FFN dim |
+| `T_MIN` | 0.1 | **0.3** | Avoids near-MLM regime where concepts unnecessary |
+| `ELBO_WEIGHT` | (N/A) | **True** | ELBO per-token 1/t weighting |
+
+### Changed — `scripts/test_diffusion_local.ps1`
+
+- Added `--t_min 0.3` and `--elbo_weight True` arguments
+
+### Added — `tests/test_diffusion.py`
+
+- 10 tests covering forward pass, backward pass, ELBO vs unweighted comparison,
+  gradient magnitude stability across t values, t_min behavior, and generation.
+
+### Verified
+
+- All 10 tests pass (`poetry run pytest tests/test_diffusion.py -v`)
+- Local training sanity test: 50 steps on wikitext-2, loss 9.5→2.3, grad_norm stable,
+  eval_loss 2.78. No gradient explosion.
+
+**Git tag:** `arch/elbo-loss-weighting-20260226`
+
+---
+
 ## [2026-02-23] — Diffusion Decoder Architectural Redesign + Training Fixes
 
 **Motivation:** Post-mortem of the first diffusion run (`diffusion_H512L2C128D2_20260221_195554`)

@@ -38,6 +38,8 @@ poetry run python training/train_diffusion.py `
     --output_dir "./Cache/Training/" `
     --seed 42 `
     --report_to "none" `
+    --t_min 0.3 `
+    --elbo_weight True `
     --concept_losses "none" `
     --loss_weighting "fixed" `
     --torch_compile False `

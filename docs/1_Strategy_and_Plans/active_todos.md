@@ -1,6 +1,6 @@
 # Experiment TODO List v3
 
-**Created: 2026-02-19** | **Updated: 2026-02-25**
+**Created: 2026-02-19** | **Updated: 2026-02-26**
 **Status: Active**
 
 ## Summary of Feb 19 Results
@@ -412,8 +412,8 @@ Week 3 (2026-02-23 — DONE — Track A: Diffusion L2):
 
 Week 4 (2026-02-26 — Diffusion diagnosis + fixes):
   [x] Diffusion L2 root cause analysis — DONE, 5 causes identified
-  [ ] TODO 12:  Fix ELBO loss weighting + t_min (A10, code change, 0.5 day) ← DO FIRST
-  [ ] TODO 11:  L6 Diffusion ablation (A9, Polonez, 1 GPU-day) ← HIGHEST PRIORITY
+  [x] TODO 12:  Fix ELBO loss weighting + t_min (A10, code change, 0.5 day) — DONE
+  [ ] TODO 11:  L6 Diffusion ablation with ELBO (A9+A10, Polonez, 1 GPU-day) ← HIGHEST PRIORITY
   [ ] TODO 10:  Train TSDAE PosOnly on Minipile (A1, Odra, 5 GPU-days) ← IN PARALLEL
   [ ] TODO 10b: Train TSDAE PosOnly + BiXT on Minipile (A2, parallel on other server)
 
@@ -478,44 +478,47 @@ Same as A but with `--use_bixt`. Compare concept quality (effective rank, mean s
 
 ---
 
-## TODO 11: L6 Diffusion Ablation — Controlled Experiment (Priority: HIGHEST, Effort: 1 GPU-day)
+## TODO 11: L6 Diffusion + ELBO — Controlled Experiment (Priority: HIGHEST, Effort: 1 GPU-day)
 
-*Maps to roadmap A9. Most informative single experiment before any code changes.*
+*Maps to roadmap A9 + A10. Most informative experiment: tests both depth fix and ELBO simultaneously.*
 
-**Goal:** Isolate the encoder depth confound. Run the exact same diffusion training config as the L2 run (TODO 6) but with 6 encoder layers instead of 2. This tells us whether the problem is encoder capacity or the diffusion objective itself.
+**Goal:** Test whether L6 encoder depth + ELBO 1/t loss weighting + t_min=0.3 fix the semantic emptiness of diffusion-trained concepts. Combines the two most impactful fixes from the diagnosis in a single run rather than wasting GPU time on sequential ablations.
 
-**Config:** Identical to `diffusion_H512L2C128D2_20260223_203349` except `--num_hidden_layers 6`. Use `training/train_diffusion.py` with the same hyperparameters (LR 3e-4, 20 epochs, batch 64, grad_accum 2, t_min 0.1, bf16).
+**Config:** `scripts/train_diffusion_multigpu.sh` (updated 2026-02-26): H512 L6 C128 D2, ELBO=True, t_min=0.3, LR 3e-4, 20 epochs, batch 64, grad_accum 2, bf16, no concept losses.
 
 **Decision logic:**
-- STS-B > 0.50 → encoder depth was the bottleneck, diffusion objective is viable at L6
-- STS-B < 0.30 → diffusion self-reconstruction itself is insufficient, pivot to prefix generation
-- Concept rank > 20/128 → diffusion geometry improvement scales with depth
+- STS-B > 0.50 → depth + ELBO fix the bottleneck, diffusion objective is viable
+- STS-B 0.30–0.50 → partial improvement, add contrastive loss or prefix generation
+- STS-B < 0.30 → self-reconstruction is fundamentally insufficient, pivot to prefix generation
+- Concept rank > 20/128 → geometry improvement scales with depth
 
 **Machine:** Polonez (4x RTX 3090), est. ~20h
 
-**Full rationale:** [diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md) (Cause 1: L2 encoder too shallow)
+**Full rationale:** [diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md) (Causes 1-3)
 
-**Status:** [ ] Not started
+**Status:** [ ] Ready to launch (code + script updated, local test passed)
 
 ---
 
-## TODO 12: Fix Diffusion ELBO Loss Weighting + Raise t_min (Priority: HIGHEST, Effort: 0.5 day)
+## TODO 12: Fix Diffusion ELBO Loss Weighting + Raise t_min (Priority: HIGHEST, Effort: 0.5 day) DONE ✅
 
 *Maps to roadmap A10. Small code fix with potentially significant impact.*
 
-**Problem 1:** The current diffusion loss is unweighted `cross_entropy(masked_logits, targets)`. MDLM/LLaDA derive that the proper ELBO training loss should be weighted by 1/t (inverse masking rate), normalizing gradient magnitude across noise levels.
+**Done date: 2026-02-26**
 
-**Problem 2:** `t_min=0.1` means ~11% of training steps have t<0.2 where the task degenerates to standard MLM and concepts are unnecessary. Should be 0.3+.
+**Implementation:** Correct per-token 1/t ELBO weighting (not the batch-level approximation proposed in the diagnosis). Each masked token's CE loss is weighted by `1/t_sample.clamp(min=0.1)`, then normalized by `sum(weights)`. This properly reweights across noise levels — low-t samples get higher per-token weight, compensating for fewer masked positions.
 
-**Action:**
-- In `nn/concept_encoder_diffusion.py` forward(), after computing `diffusion_loss`: add `weighted_loss = diffusion_loss / t.mean().clamp(min=0.1)`
-- Change default `t_min` from 0.1 to 0.3
+**Changes:**
+- `nn/concept_encoder_diffusion.py`: added `elbo_weight` parameter (default True), per-token 1/t weighting, `t_min` default 0.1→0.3
+- `training/train_diffusion.py`: added `elbo_weight` arg, `t_min` default 0.1→0.3, logged to WandB
+- `scripts/train_diffusion_multigpu.sh`: updated to L6 config + ELBO + t_min=0.3
+- `tests/test_diffusion.py`: 10 tests (all pass)
 
-**Validation:** Quick 5-epoch Minipile training locally, compare loss curves to L2 baseline. Then apply to TODO 11 (L6 ablation).
+**Validation:** Local 50-step test on wikitext-2: loss 9.5→2.3, grad_norm stable (peaked 46.4 step 1, then <7), eval_loss 2.78. No gradient explosion.
 
 **Full rationale:** [diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md) (Causes 2-3: missing ELBO weighting, t_min too low)
 
-**Status:** [ ] Not started
+**Status:** [x] Done — see CHANGELOG `[2026-02-26]`
 
 ---
 

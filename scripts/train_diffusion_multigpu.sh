@@ -2,12 +2,12 @@
 # Multi-GPU training script for Concept Encoder + Masked Diffusion Decoder
 # Run on Polonez (4x RTX 3090) or Odra (3x RTX 3090)
 #
-# Training objective: Masked Discrete Diffusion
-#   - Noise level t ~ Uniform(t_min=0.05, 1.0) sampled per batch
+# Training objective: Masked Discrete Diffusion with ELBO 1/t loss weighting
+#   - Noise level t ~ Uniform(t_min=0.3, 1.0) sampled per batch
 #   - Each token masked independently with probability t
-#   - Model predicts clean tokens at masked positions using concepts + context
+#   - Per-token loss weighted by 1/t (MDLM/LLaDA ELBO derivation)
+#   - t_min=0.3 avoids the near-MLM regime where concepts are unnecessary
 #   - Variable mask rate forces the encoder to build richer concept representations
-#     (vs MLM's fixed 15% which allows local-context shortcuts)
 #
 # Usage:
 #   bash scripts/train_diffusion_multigpu.sh
@@ -60,13 +60,14 @@ MODEL_NAME_OR_PATH=""
 
 HIDDEN_SIZE=512
 TOKEN_EMBEDDING_DIM=0         # 0 = same as HIDDEN_SIZE
-NUM_ENCODER_LAYERS=2          # Starting with 2 layers for correctness check (like MLM L2 baselines)
+NUM_ENCODER_LAYERS=6          # L6 encoder for compositional semantics (L2 proven too shallow)
 CONCEPT_NUM=128
-INTERMEDIATE_SIZE=1024        # 1024 matches the original L2 baseline FFN dim
+INTERMEDIATE_SIZE=2048        # 2048 matches the L6 perceiver_mlm baseline FFN dim
 CONCEPT_POSITION_TYPE="none"
 DECODER_LAYERS=2              # Cross-attention layers in diffusion decoder (no self-attention)
-T_MIN=0.1                     # Min masking rate. 0.1 → ~51 masked tokens/sample (less gradient noise)
+T_MIN=0.3                     # 0.3+ avoids the near-MLM regime where concepts are unnecessary (was 0.1)
 LABEL_SMOOTHING=0.1           # Prevents overconfident predictions → smoother loss landscape
+ELBO_WEIGHT=True              # ELBO-derived per-token 1/t loss weighting (MDLM/LLaDA)
 
 # =============================================================================
 # DATA
@@ -162,6 +163,7 @@ accelerate launch \
     --decoder_layers "$DECODER_LAYERS" \
     --t_min "$T_MIN" \
     --label_smoothing "$LABEL_SMOOTHING" \
+    --elbo_weight "$ELBO_WEIGHT" \
     --torch_compile_dynamic "$TORCH_COMPILE_DYNAMIC" \
     --model_name_or_path "$MODEL_NAME_OR_PATH" \
     --dataset_name "$DATASET_NAME" \
