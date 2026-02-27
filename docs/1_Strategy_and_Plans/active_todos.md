@@ -1,6 +1,6 @@
 # Experiment TODO List v3
 
-**Created: 2026-02-19** | **Updated: 2026-02-26**
+**Created: 2026-02-19** | **Updated: 2026-02-27**
 **Status: Active**
 
 ## Summary of Feb 19 Results
@@ -23,6 +23,11 @@
   - Result: concept diversity ✓ but GLUE regressed (QQP −13.76%, MNLI −10%)
 - [x] ~~Diffusion MLM L2 (TODO 6)~~ — **COMPLETED & EVALUATED (2026-02-25)**
   - Result: Stable training ✓, concept rank 2x better but still collapsed, STS-B near-random
+- [ ] **L6 Diffusion + ELBO baseline (TODO 11)** — **RUNNING ON ODRA (2026-02-26)**
+  - Config: H512 L6 C128 D2, ELBO=True, t_min=0.3, concept_losses=none, 3x RTX 3090
+  - WandB: `diffusion_H512L6C128D2_20260226_155541`
+  - At step 20k: train_loss 2.85, eval_loss 1.42, concept rank 5.45/128 (collapsed)
+  - ETA: ~22h remaining from step 20k
 
 ## TODO 0: Run L6 baseline STS-B evaluation — DONE ✅
 
@@ -413,8 +418,10 @@ Week 3 (2026-02-23 — DONE — Track A: Diffusion L2):
 Week 4 (2026-02-26 — Diffusion diagnosis + fixes):
   [x] Diffusion L2 root cause analysis — DONE, 5 causes identified
   [x] TODO 12:  Fix ELBO loss weighting + t_min (A10, code change, 0.5 day) — DONE
-  [ ] TODO 11:  L6 Diffusion ablation with ELBO (A9+A10, Polonez, 1 GPU-day) ← HIGHEST PRIORITY
-  [ ] TODO 10:  Train TSDAE PosOnly on Minipile (A1, Odra, 5 GPU-days) ← IN PARALLEL
+  [~] TODO 11:  L6 Diffusion + ELBO baseline (A9+A10, Odra, 1.5 GPU-day) ← RUNNING
+  [x] VICReg + t_regs_mst implementation (warmup, callback, tests) — DONE
+  [ ] TODO 11b: L6 Diffusion + VICReg + t_regs_mst (A5+A9, Odra, 1 GPU-day) ← NEXT after TODO 11
+  [ ] TODO 10:  Train TSDAE PosOnly on Minipile (A1, Odra, 5 GPU-days) ← AFTER TODO 11b
   [ ] TODO 10b: Train TSDAE PosOnly + BiXT on Minipile (A2, parallel on other server)
 
 Week 5 (Prefix generation + evaluation):
@@ -492,11 +499,13 @@ Same as A but with `--use_bixt`. Compare concept quality (effective rank, mean s
 - STS-B < 0.30 → self-reconstruction is fundamentally insufficient, pivot to prefix generation
 - Concept rank > 20/128 → geometry improvement scales with depth
 
-**Machine:** Polonez (4x RTX 3090), est. ~20h
+**Machine:** Odra (3x RTX 3090), est. ~36h (Polonez crashed 2026-02-26, redirected to Odra)
 
 **Full rationale:** [diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md) (Causes 1-3)
 
-**Status:** [ ] Ready to launch (code + script updated, local test passed)
+**Interim analysis (step 20k, 2026-02-27):** Concept rank 5.45/128 — collapse already visible. Loss plateau at eval_loss 1.42. Prognosis: high risk of repeating L2 STS-B ~0.15 without regularization. Let this run finish for a clean baseline, then immediately run TODO 11b with VICReg.
+
+**Status:** [ ] Running on Odra — WandB: `diffusion_H512L6C128D2_20260226_155541`
 
 ---
 
@@ -519,6 +528,38 @@ Same as A but with `--use_bixt`. Compare concept quality (effective rank, mean s
 **Full rationale:** [diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md) (Causes 2-3: missing ELBO weighting, t_min too low)
 
 **Status:** [x] Done — see CHANGELOG `[2026-02-26]`
+
+---
+
+## TODO 11b: L6 Diffusion + VICReg + t_regs_mst — Regularized Experiment (Priority: HIGHEST, Effort: 1 GPU-day)
+
+*Maps to roadmap A5 + A9. Immediate follow-up to TODO 11 baseline.*
+
+**Goal:** Test whether adding VICReg (cross-batch dimensional health) + t_regs_mst (within-sample concept diversity) regularization prevents the concept collapse observed in TODO 11 baseline (rank 5.45/128 at step 20k) while preserving MLM/diffusion quality.
+
+**Config:** Same as TODO 11, except:
+- `--concept_losses "vicreg t_regs_mst"` — VICReg (variance+covariance) + MST diversity
+- `--loss_weighting fixed` — NOT Kendall-Gal (proven to suppress MLM, Feb 19)
+- `--loss_weight 0.02` — small weight (Feb 21 showed 0.1 too aggressive, 0.02 = ~1.4% gradient contribution)
+- `--concept_loss_warmup_steps 2000` — ~4% of steps, lets model establish gradients first
+- Keep: `--elbo_weight True`, `--t_min 0.3`
+
+**Why this will work (unlike Feb 19/21 `combined` loss):**
+1. `t_regs_mst` operates **within-sample** (pairwise distances on `[B, C, C]` via `torch.cdist`), directly targeting the collapse mode we observe. The old `combined` loss operated across-batch and missed intra-sample collapse.
+2. Fixed weight 0.02 is 5x smaller than the 0.1 that degraded MLM.
+3. Warmup prevents early interference when concept representations are still random.
+4. VICReg adds covariance decorrelation (missing from `combined`).
+
+**Implementation:** Done — see CHANGELOG `[2026-02-27]`. Files: `nn/loss_manager.py`, `training/train_diffusion.py`, `scripts/train_diffusion_multigpu.sh`. 26 tests pass.
+
+**Decision logic:**
+- Rank > 30/128 AND task_loss < 3.0 → regularization works, proceed with this config
+- Rank > 30/128 BUT task_loss > 3.5 → weight too aggressive, reduce to 0.01
+- Rank < 20/128 → t_regs_mst insufficient, try Slot Attention or prefix generation
+
+**Machine:** Odra or Polonez, immediately after TODO 11 finishes.
+
+**Status:** [ ] Implementation done, waiting for TODO 11 baseline to finish
 
 ---
 
@@ -571,8 +612,9 @@ Same as A but with `--use_bixt`. Compare concept quality (effective rank, mean s
 
 ---
 
-*Plan updated: 2026-02-26*
+*Plan updated: 2026-02-27*
 *Aligned with: [roadmap.md v4](roadmap.md) (2026-02-26)*
-*Next review: after L6 diffusion ablation (TODO 11) and TSDAE training (TODO 10) results*
-*New: added TODO 11-14 based on diffusion diagnosis analysis ([diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md))*
+*Next review: after TODO 11 finishes → evaluate STS-B → launch TODO 11b (VICReg)*
+*New (2026-02-27): added TODO 11b (VICReg + t_regs_mst regularization experiment)*
+*New (2026-02-26): added TODO 11-14 based on diffusion diagnosis analysis ([diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md))*
 *Related: [mlm_perceiver_diagnosis_20260221.md](../4_Research_Notes/mlm_perceiver_diagnosis_20260221.md), [diffusion_L2_eval_20260225.md](../2_Experiments_Registry/run_reports/diffusion_L2_eval_20260225.md)*

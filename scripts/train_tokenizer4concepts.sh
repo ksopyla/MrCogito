@@ -38,7 +38,7 @@ fi
 
 # Option A: Train Unigram only (morphological awareness)
 echo "Step 2a: Training Unigram Tokenizers..."
-python training/train_tokenizer_custom.py \
+python tokenization/train_tokenizer_custom.py \
     --dataset "JeanKaddour/minipile" \
     --sample_size 100000 \
     --vocab_sizes 32768 50368 65536 \
@@ -48,7 +48,7 @@ python training/train_tokenizer_custom.py \
 
 # Option B: Train BPE only (industry standard for code)
 echo "Step 2b: Training BPE Tokenizers..."
-python training/train_tokenizer_custom.py \
+python tokenization/train_tokenizer_custom.py \
     --dataset "JeanKaddour/minipile" \
     --sample_size 100000 \
     --vocab_sizes 32768 50368 65536 \
@@ -59,7 +59,7 @@ python training/train_tokenizer_custom.py \
 # Option C: Train both (recommended for fair comparison)
 # Uncomment to train both algorithms:
 # echo "Step 2: Training Both Unigram and BPE Tokenizers..."
-# python training/train_tokenizer_custom.py \
+# python tokenization/train_tokenizer_custom.py \
 #     --dataset "JeanKaddour/minipile" \
 #     --sample_size 100000 \
 #     --vocab_sizes 32768 50368 65536 \

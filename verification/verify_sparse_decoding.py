@@ -6,7 +6,7 @@ This test catches issues where:
 2. need_weights=False changes attention output values
 3. Gradient flow through sparse indexing is correct
 
-Run: python tests/verify_sparse_decoding.py
+Run: python verification/verify_sparse_decoding.py
 """
 
 import sys

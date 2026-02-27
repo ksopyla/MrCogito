@@ -10,7 +10,7 @@ Tests:
 6. All model variants (perceiver_mlm, posonly, weighted, ViaDecoder) work with new config
 
 Usage:
-    python tests/verify_dimension_inversion.py
+    python verification/verify_dimension_inversion.py
 """
 
 import sys

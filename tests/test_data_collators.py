@@ -6,7 +6,7 @@ from transformers import AutoTokenizer, DataCollatorForWholeWordMask
 
 # Add parent directory to path to import modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from training.dataset_preprocess import NeighborWordMaskCollator
+from data.dataset_preprocess import NeighborWordMaskCollator
 
 @pytest.fixture
 def tokenizer():

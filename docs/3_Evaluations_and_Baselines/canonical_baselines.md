@@ -2,7 +2,7 @@
 
 ## GLUE MRPC evaluation
 
-Evaluation of baseline encoder models on GLUE MRPC task using [evaluate_model_on_glue.py](../../training/evaluate_model_on_glue.py).
+Evaluation of baseline encoder models on GLUE MRPC task using [evaluate_model_on_glue.py](../../evaluation/evaluate_model_on_glue.py).
 
 ### Concept Encoder Fair Comparison (H512L2C128, Minipile + ModernBERT)
 
@@ -26,19 +26,19 @@ Commands used for these evaluations:
 P="/home/ksopyla/dev/MrCogito/Cache/Training"
 
 # weighted_mlm (best F1: 82.2%)
-python training/evaluate_model_on_glue.py --model_type weighted_mlm \
+python evaluation/evaluate_model_on_glue.py --model_type weighted_mlm \
   --model_name_or_path "$P/weighted_mlm_H512L2C128_20260117_153544/weighted_mlm_H512L2C128_20260117_153544" \
   --tokenizer_name "$P/weighted_mlm_H512L2C128_20260117_153544/weighted_mlm_H512L2C128_20260117_153544" \
   --task mrpc --batch_size 96 --epochs 20 --learning_rate 1e-5 --visualize --save_model
 
 # perceiver_posonly_mlm (F1: 81.8%)
-python training/evaluate_model_on_glue.py --model_type perceiver_posonly_mlm \
+python evaluation/evaluate_model_on_glue.py --model_type perceiver_posonly_mlm \
   --model_name_or_path "$P/perceiver_posonly_mlm_H512L2C128_20260119_204015/perceiver_posonly_mlm_H512L2C128_20260119_204015" \
   --tokenizer_name "$P/perceiver_posonly_mlm_H512L2C128_20260119_204015/perceiver_posonly_mlm_H512L2C128_20260119_204015" \
   --task mrpc --batch_size 96 --epochs 20 --learning_rate 1e-5 --visualize --save_model
 
 # perceiver_mlm (F1: 80.6%)
-python training/evaluate_model_on_glue.py --model_type perceiver_mlm \
+python evaluation/evaluate_model_on_glue.py --model_type perceiver_mlm \
   --model_name_or_path "$P/perceiver_mlm_H512L2C128_20260118_172328/perceiver_mlm_H512L2C128_20260118_172328" \
   --tokenizer_name "$P/perceiver_mlm_H512L2C128_20260118_172328/perceiver_mlm_H512L2C128_20260118_172328" \
   --task mrpc --batch_size 96 --epochs 20 --learning_rate 1e-5 --visualize --save_model

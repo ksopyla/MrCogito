@@ -18,6 +18,63 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-02-27] — VICReg + t_regs_mst Concept Regularization with Warmup
+
+**Motivation:** The L6 diffusion baseline (step 20k) showed severe concept collapse
+(effective rank 5.45/128 = 4.3%). Previous regularization attempts with `combined`
+loss failed: Kendall-Gal weighting (Feb 19) destroyed MLM quality, fixed weight 0.1
+(Feb 21) failed at both goals. Root cause analysis identified two issues: (1) `combined`
+operates across-batch and cannot prevent intra-sample concept collapse, (2) Kendall-Gal
+is wrong for secondary constraints. Solution: VICReg (cross-batch dimensional health) +
+t_regs_mst (within-sample concept diversity) with fixed small weights and warmup.
+
+### Changed — `nn/loss_manager.py`
+
+- **Added `warmup_steps` to `LossConfig`**: Linear warmup for concept loss weights
+  (0 = no warmup). Only applies to fixed weighting; learnable strategies adapt on
+  their own.
+- **Added warmup to `FixedWeighting`**: Concept loss weights are linearly ramped
+  from 0 to their configured value over `warmup_steps`. Task loss weight is always
+  full strength. Implementation: `weight *= min(1.0, step / warmup_steps)`.
+- **Added `_current_step` tracking to `LossManager`**: Fallback step counter used
+  when `step` is not passed to `forward()`. Set by `ConceptLossStepCallback`.
+- **Added `ConceptLossStepCallback`**: Duck-typed TrainerCallback that sets
+  `model.loss_manager._current_step = state.global_step` on every training step.
+  Required for warmup since HF Trainer doesn't pass step through `model.forward()`.
+- **Added `t_regs_mst` to `ConceptLossType` literal** (was missing from type hint).
+
+### Changed — Training scripts
+
+- **`training/train_diffusion.py`**: Added `--concept_loss_warmup_steps` CLI arg,
+  registered `ConceptLossStepCallback` when warmup > 0, added to WandB config.
+- **`training/mlm_training.py`**: Same CLI arg and callback registration.
+- **`training/train_tsdae.py`**: Same CLI arg and callback registration.
+
+### Changed — Shell scripts
+
+- **`scripts/train_diffusion_multigpu.sh`**: Default changed from
+  `CONCEPT_LOSSES="none"` to `"vicreg t_regs_mst"`, `LOSS_WEIGHT=0.02`,
+  `CONCEPT_LOSS_WARMUP_STEPS=2000`. Added `--concept_loss_warmup_steps` to
+  accelerate launch command.
+- **`scripts/test_diffusion_local.ps1`**: Updated to test with `vicreg t_regs_mst`,
+  weight 0.02, and warmup 10 steps.
+
+### Added — Tests
+
+- **`tests/test_loss_manager.py`**: 26 tests covering FixedWeighting warmup
+  (8 tests), LossConfig warmup fields (5 tests), LossManager integration with
+  VICReg + t_regs_mst (5 tests), VICReg component behavior (2 tests), t_regs_mst
+  component behavior (3 tests), ConceptLossStepCallback (3 tests).
+
+### Verification
+
+```
+pytest tests/test_loss_manager.py -v  → 26 passed
+pytest tests/test_diffusion.py -v     → 10 passed (no regression)
+```
+
+---
+
 ## [2026-02-26] — ELBO Loss Weighting + L6 Diffusion Config
 
 **Motivation:** Root cause analysis of L2 diffusion run (STS-B 0.138, near-random) identified

@@ -95,14 +95,14 @@ MAX_GRAD_NORM=1.0
 # =============================================================================
 # CONCEPT LOSSES
 # =============================================================================
-# Disabled for the first baseline run from scratch to ensure fair comparison
-# with the initial perceiver_mlm baseline which also did not use concept losses.
-# "combined" = variance + uniformity (recommended later)
-# "t_regs_mst" = MST-based uniformity (best at detecting dimensional collapse)
-# Combine both: CONCEPT_LOSSES="combined t_regs_mst"
-CONCEPT_LOSSES="none"
+# "vicreg" = variance + covariance (cross-batch dimensional health, Bardes 2021)
+# "t_regs_mst" = MST nearest-neighbor diversity (within-sample concept collapse, Mordacq 2025)
+# Recommended combo: "vicreg t_regs_mst" with fixed weight 0.02
+# Use ONLY fixed weighting — Kendall-Gal proven to suppress MLM (Feb 19 experiment).
+CONCEPT_LOSSES="vicreg t_regs_mst"
 LOSS_WEIGHTING="fixed"
-LOSS_WEIGHT=0.1
+LOSS_WEIGHT=0.02
+CONCEPT_LOSS_WARMUP_STEPS=2000
 
 # =============================================================================
 # TORCH COMPILE
@@ -175,6 +175,7 @@ accelerate launch \
     --concept_losses "$CONCEPT_LOSSES" \
     --loss_weighting "$LOSS_WEIGHTING" \
     --loss_weight "$LOSS_WEIGHT" \
+    --concept_loss_warmup_steps "$CONCEPT_LOSS_WARMUP_STEPS" \
     --per_device_train_batch_size "$PER_DEVICE_BATCH_SIZE" \
     --per_device_eval_batch_size "$EVAL_BATCH_SIZE" \
     --gradient_accumulation_steps "$GRADIENT_ACCUMULATION_STEPS" \

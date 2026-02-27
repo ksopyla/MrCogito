@@ -8,7 +8,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
 import torch
 from transformers import AutoTokenizer
-from training.data_collators import DataCollatorForTSDAE
+from data.data_collators import DataCollatorForTSDAE
 
 
 @pytest.fixture

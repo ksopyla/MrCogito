@@ -40,8 +40,10 @@ poetry run python training/train_diffusion.py `
     --report_to "none" `
     --t_min 0.3 `
     --elbo_weight True `
-    --concept_losses "none" `
+    --concept_losses "vicreg t_regs_mst" `
     --loss_weighting "fixed" `
+    --loss_weight 0.02 `
+    --concept_loss_warmup_steps 10 `
     --torch_compile False `
     --torch_compile_dynamic False `
     --bf16 `

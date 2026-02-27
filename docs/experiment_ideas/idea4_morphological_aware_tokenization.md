@@ -71,7 +71,7 @@ Date: 24.02.2025 - 18:00
 Commit: f337749d189b1d9f764b05d57f741e393e2b0a01
 Files: 
 * [train_tokenizer_playground.py](../playground/train_tokenizer_playground.py) 
-* [train_morfessor_models.py](../training/train_morfessor_models.py)
+* [train_morfessor_models.py](../tokenization/train_morfessor_models.py)
 
 Description:
 Initial experiment with a few morfessor models, should not be used for deciding which approch is better. This was just to start and see some first results. 
@@ -115,7 +115,7 @@ Date: 25.02.2025 - 19:00
 Commit: f337749d189b1d9f764b05d57f741e393e2b0a01
 Files: 
 * [train_tokenizer_playground.py](../playground/train_tokenizer_playground.py) 
-* [train_morfessor_models.py](../training/train_morfessor_models.py)
+* [train_morfessor_models.py](../tokenization/train_morfessor_models.py)
 
 **Description and methodology:**
 
@@ -139,7 +139,7 @@ The dataset processing utilized multiprocessing (up to 60 processes) and batch s
 **Tokenizers description, training procedure and results:**
 
 Loaded some standard tokenizers from Hugging Face and trained the Morfessor models on the sentences.
-morfessor_* - models are pure morfessor models trained on different corpora, training was done with use of [train_morfessor_models.py](../training/train_morfessor_models.py) script
+morfessor_* - models are pure morfessor models trained on different corpora, training was done with use of [train_morfessor_models.py](../tokenization/train_morfessor_models.py) script
 
 
 * **morfessor_nltk** - trained on NLTK words corpus - it contains 236,736 words, [morfessor_wikipedia_en_train_words_10M.txt](../Cache/Morfessor/morfessor_wikipedia_en_train_words_10M.txt)

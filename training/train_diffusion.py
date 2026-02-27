@@ -54,9 +54,9 @@ from torch.utils.data import Dataset
 from nn.concept_encoder import ConceptEncoderConfig
 from nn.concept_encoder_diffusion import ConceptEncoderForMaskedDiffusion
 from nn.concept_encoder_perceiver import ConceptEncoderForMaskedLMPerceiver
-from nn.loss_manager import LossConfig, get_available_losses
+from nn.loss_manager import LossConfig, ConceptLossStepCallback, get_available_losses
 
-from training.dataset_preprocess import load_and_preprocess_text_dataset
+from data.dataset_preprocess import load_and_preprocess_text_dataset
 from training.utils_training import (
     get_parameter_breakdown,
     count_parameters,
@@ -135,6 +135,11 @@ class LossArguments:
     )
     loss_weight: float = field(default=0.1)
     uniformity_temperature: float = field(default=2.0)
+    concept_loss_warmup_steps: int = field(
+        default=0,
+        metadata={"help": "Linear warmup steps for concept losses (0 = no warmup). "
+                          "Only effective with fixed weighting."}
+    )
 
     def to_loss_config(self) -> LossConfig:
         if self.concept_losses is None or self.concept_losses.lower() == "none":
@@ -154,6 +159,7 @@ class LossArguments:
             weighting_strategy=self.loss_weighting,
             loss_weights=loss_weights,
             loss_params=loss_params,
+            warmup_steps=self.concept_loss_warmup_steps,
         )
 
 
@@ -305,6 +311,8 @@ def main():
     logger.info(f"Weighting strategy: {loss_config.weighting_strategy}")
     if loss_config.weighting_strategy == "fixed":
         logger.info(f"Loss weights: {loss_config.loss_weights}")
+    if loss_config.warmup_steps > 0:
+        logger.info(f"Concept loss warmup: {loss_config.warmup_steps} steps")
     logger.info("="*60)
 
     logger.info("Initializing ConceptEncoderForMaskedDiffusion")
@@ -457,6 +465,7 @@ def main():
             'concept_losses': loss_config.concept_losses,
             'loss_weighting': loss_config.weighting_strategy,
             'loss_weights': loss_config.loss_weights if loss_config.weighting_strategy == "fixed" else "learnable",
+            'concept_loss_warmup_steps': loss_config.warmup_steps,
             
             'dataset_name': data_args.dataset_name,
             'dataset_name_subset': data_args.dataset_name_subset,
@@ -491,6 +500,11 @@ def main():
 
     data_collator = DataCollatorForMaskedDiffusion(tokenizer, max_length=data_args.max_seq_length)
 
+    callbacks = []
+    if loss_config.warmup_steps > 0:
+        callbacks.append(ConceptLossStepCallback())
+        logger.info(f"Concept loss warmup: {loss_config.warmup_steps} steps")
+
     trainer = DiffusionTrainer(
         model=model,
         args=training_args,
@@ -498,6 +512,7 @@ def main():
         eval_dataset=test_ds,
         data_collator=data_collator,
         processing_class=tokenizer,
+        callbacks=callbacks,
     )
 
     logger.info("=" * 60)

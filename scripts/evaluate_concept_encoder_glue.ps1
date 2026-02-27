@@ -39,7 +39,7 @@ Write-Host "Starting evaluation..."
 
 # Run the evaluation script
 # Using 'weighted_mlm' model type triggers the new Weighted Classification Head
-python training/evaluate_model_on_glue.py `
+python evaluation/evaluate_model_on_glue.py `
     --model_type "weighted_mlm" `
     --model_name_or_path "$ModelPath" `
     --tokenizer_name "$TokenizerName" `

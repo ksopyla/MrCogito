@@ -493,7 +493,7 @@ def main():
             print("\nNext steps:")
             print("  1. Run full analysis: python -m analysis.concept_analysis")
             print("  2. Open Jupyter notebook: analysis/concept_analysis_notebook.ipynb")
-            print("  3. Fine-tune on GLUE: python training/evaluate_model_on_glue.py")
+            print("  3. Fine-tune on GLUE: python evaluation/evaluate_model_on_glue.py")
     else:
         print("[X] MODEL HAS ISSUES - DO NOT use for fine-tuning yet!")
         print("\nRecommendations:")

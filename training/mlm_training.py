@@ -35,9 +35,9 @@ from nn.concept_encoder_perceiver import (
 )
 from nn.concept_encoder_recursive_mlm import RecursiveConceptEncoderForMaskedLM
 from nn.concept_encoder_recursive import RecursiveConceptEncoderConfig
-from nn.loss_manager import LossConfig, get_available_losses
+from nn.loss_manager import LossConfig, ConceptLossStepCallback, get_available_losses
 
-from training.dataset_preprocess import load_and_preprocess_text_dataset
+from data.dataset_preprocess import load_and_preprocess_text_dataset
 from training.utils_training import (
     get_parameter_breakdown,
     count_parameters,
@@ -182,24 +182,25 @@ class LossArguments:
         default=2.0,
         metadata={"help": "Temperature for uniformity loss"}
     )
+    concept_loss_warmup_steps: int = field(
+        default=0,
+        metadata={"help": "Linear warmup steps for concept losses (0 = no warmup). "
+                          "Only effective with fixed weighting."}
+    )
     
     def to_loss_config(self) -> LossConfig:
         """Convert arguments to LossConfig."""
-        # Parse concept losses
         if self.concept_losses is None or self.concept_losses.lower() == "none":
             return LossConfig.disabled()
         
         losses = self.concept_losses.split()
         
-        # Build loss weights dict
         loss_weights = {"task": 1.0}
         if self.loss_weighting == "fixed":
-            # Distribute weight equally among concept losses
             per_loss_weight = self.loss_weight / len(losses) if losses else 0
             for loss_name in losses:
                 loss_weights[loss_name] = per_loss_weight
         
-        # Build loss params
         loss_params = {}
         if "soft_orthogonality" in losses:
             loss_params["soft_orthogonality"] = {"threshold": self.soft_ortho_threshold}
@@ -211,7 +212,8 @@ class LossArguments:
             concept_losses=losses,
             weighting_strategy=self.loss_weighting,
             loss_weights=loss_weights,
-            loss_params=loss_params
+            loss_params=loss_params,
+            warmup_steps=self.concept_loss_warmup_steps,
         )
     
 
@@ -766,14 +768,19 @@ def main():
         logger.info(f"  - Logging dir: {training_args.logging_dir}")
         logger.info(f"  - Note: Panel names will be based on logging_dir structure when sync_tensorboard=True")
     
-    # Initialize Trainer
+    callbacks = []
+    if loss_config.warmup_steps > 0:
+        callbacks.append(ConceptLossStepCallback())
+        logger.info(f"Concept loss warmup: {loss_config.warmup_steps} steps")
+
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_ds,
         eval_dataset=test_ds,
         data_collator=data_collator,
-        processing_class=tokenizer 
+        processing_class=tokenizer,
+        callbacks=callbacks,
     )
     
     # Start training

@@ -235,7 +235,7 @@ poetry install
 ### Verify
 
 ```powershell
-poetry run python torch_test.py
+poetry run python verification/torch_test.py
 ```
 
 ### Run Tests
@@ -279,7 +279,7 @@ All evaluations use ViaDecoder (fine-tuned lightweight decoder on top of frozen 
 
 ```powershell
 # GLUE evaluation on a checkpoint
-poetry run python training/evaluate_model_on_glue.py \
+poetry run python evaluation/evaluate_model_on_glue.py \
   --model_path "Cache/Training/your_checkpoint" \
   --task mrpc
 ```

@@ -57,10 +57,10 @@ from typing import Optional
 
 from nn.concept_encoder import ConceptEncoderConfig
 from nn.concept_encoder_perceiver import ConceptEncoderForMaskedLMPerceiverPosOnly
-from nn.loss_manager import LossConfig, get_available_losses
+from nn.loss_manager import LossConfig, ConceptLossStepCallback, get_available_losses
 
-from training.data_collators import DataCollatorForTSDAE
-from training.dataset_preprocess import load_and_preprocess_text_dataset
+from data.data_collators import DataCollatorForTSDAE
+from data.dataset_preprocess import load_and_preprocess_text_dataset
 from training.utils_training import (
     count_parameters,
     is_main_process,
@@ -114,6 +114,11 @@ class LossArguments:
     )
     loss_weight: float = field(default=0.05)
     uniformity_temperature: float = field(default=2.0)
+    concept_loss_warmup_steps: int = field(
+        default=0,
+        metadata={"help": "Linear warmup steps for concept losses (0 = no warmup). "
+                          "Only effective with fixed weighting."}
+    )
 
     def to_loss_config(self) -> LossConfig:
         if self.concept_losses is None or self.concept_losses.lower() == "none":
@@ -133,6 +138,7 @@ class LossArguments:
             weighting_strategy=self.loss_weighting,
             loss_weights=loss_weights,
             loss_params=loss_params,
+            warmup_steps=self.concept_loss_warmup_steps,
         )
 
 
@@ -279,6 +285,11 @@ def main():
         max_length=data_args.max_seq_length,
     )
 
+    callbacks = []
+    if loss_config.warmup_steps > 0:
+        callbacks.append(ConceptLossStepCallback())
+        logger.info(f"Concept loss warmup: {loss_config.warmup_steps} steps")
+
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -286,6 +297,7 @@ def main():
         eval_dataset=test_ds,
         data_collator=data_collator,
         processing_class=tokenizer,
+        callbacks=callbacks,
     )
 
     logger.info("=" * 60)

@@ -53,7 +53,8 @@ ConceptLossType = Literal[
     "vicreg",
     "variance",
     "covariance",
-    "combined"
+    "combined",
+    "t_regs_mst",
 ]
 
 WeightingStrategyType = Literal[
@@ -477,24 +478,36 @@ def create_loss_component(
 
 class FixedWeighting(WeightingStrategy):
     """
-    Static weighted sum of losses.
+    Static weighted sum of losses with optional linear warmup for concept losses.
+    
+    When ``warmup_steps > 0``, concept loss weights are linearly ramped from 0
+    to their configured value over the first ``warmup_steps`` training steps.
+    The task loss weight is always applied at full strength.
     
     Example:
         total = 0.8 * task_loss + 0.15 * ortho_loss + 0.05 * uniformity_loss
     """
     
-    def __init__(self, weights: Dict[str, float]):
+    def __init__(self, weights: Dict[str, float], warmup_steps: int = 0):
         """
         Args:
-            weights: Dictionary mapping loss names to their weights
-                     Must include 'task' for the main task loss
+            weights: Dictionary mapping loss names to their weights.
+                     Must include 'task' for the main task loss.
+            warmup_steps: Number of steps over which concept loss weights
+                          linearly ramp from 0 to their configured value.
+                          0 means no warmup (full weight from step 0).
         """
         super().__init__()
         self.weights = weights
+        self.warmup_steps = warmup_steps
         
-        # Validate task weight is present
         if "task" not in weights:
             weights["task"] = 1.0
+    
+    def _warmup_factor(self, step: Optional[int]) -> float:
+        if self.warmup_steps <= 0 or step is None:
+            return 1.0
+        return min(1.0, step / self.warmup_steps)
     
     def forward(
         self, 
@@ -502,9 +515,12 @@ class FixedWeighting(WeightingStrategy):
         step: Optional[int] = None
     ) -> torch.Tensor:
         total = torch.tensor(0.0, device=next(iter(losses.values())).device)
+        warmup = self._warmup_factor(step)
         
         for name, loss in losses.items():
             weight = self.weights.get(name, 0.0)
+            if name != "task":
+                weight *= warmup
             total = total + weight * loss
         
         return total
@@ -662,6 +678,10 @@ class LossConfig:
     # Parameters for specific losses (e.g., threshold, temperature)
     loss_params: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     
+    # Linear warmup steps for concept losses (0 = no warmup).
+    # Only applies to "fixed" weighting; learnable strategies adapt on their own.
+    warmup_steps: int = 0
+    
     def __post_init__(self):
         """Validate configuration."""
         # Ensure task weight exists
@@ -706,6 +726,7 @@ class LossConfig:
             "weighting_strategy": self.weighting_strategy,
             "loss_weights": self.loss_weights,
             "loss_params": self.loss_params,
+            "warmup_steps": self.warmup_steps,
         }
 
 
@@ -767,11 +788,16 @@ class LossManager(nn.Module):
         # Create weighting strategy
         self.weighting_strategy: Optional[WeightingStrategy] = None
         
+        self._current_step: Optional[int] = None
+
         if self.config.is_enabled:
             all_loss_names = ["task"] + self.config.concept_losses
             
             if self.config.weighting_strategy == "fixed":
-                self.weighting_strategy = FixedWeighting(self.config.loss_weights)
+                self.weighting_strategy = FixedWeighting(
+                    self.config.loss_weights,
+                    warmup_steps=self.config.warmup_steps,
+                )
             elif self.config.weighting_strategy == "learnable":
                 self.weighting_strategy = LearnableWeighting(all_loss_names)
             elif self.config.weighting_strategy == "kendall_gal":
@@ -862,9 +888,10 @@ class LossManager(nn.Module):
                 params = self.config.loss_params.get(loss_name, {})
                 losses[loss_name] = component.compute(concept_repr, **params)
         
-        # Apply weighting
+        # Apply weighting (use _current_step from callback when step not passed)
+        effective_step = step if step is not None else self._current_step
         if self.weighting_strategy is not None:
-            total = self.weighting_strategy(losses, step)
+            total = self.weighting_strategy(losses, effective_step)
         else:
             # No concept losses, just return task loss
             total = task_loss
@@ -892,6 +919,41 @@ class LossManager(nn.Module):
             metrics.update({f"{prefix}/{k}": v for k, v in weights.items()})
         
         return metrics
+
+
+# ============================================================================
+# Trainer Callback for Step Propagation
+# ============================================================================
+
+class ConceptLossStepCallback:
+    """
+    TrainerCallback that propagates the current training step to LossManager.
+
+    HuggingFace Trainer does not pass ``step`` through ``model.forward()``, so
+    this callback sets ``model.loss_manager._current_step`` on every training
+    step, enabling warmup scheduling without changing any model signatures.
+
+    Usage::
+
+        from transformers import Trainer
+        from nn.loss_manager import ConceptLossStepCallback
+
+        trainer = Trainer(
+            ...,
+            callbacks=[ConceptLossStepCallback()],
+        )
+
+    Compatible with ``TrainerCallback`` protocol (duck-typed so we don't
+    force a hard import of ``transformers`` at module level).
+    """
+
+    def on_step_begin(self, args, state, control, model=None, **kwargs):
+        if model is not None and hasattr(model, "loss_manager"):
+            model.loss_manager._current_step = state.global_step
+
+    def on_train_begin(self, args, state, control, model=None, **kwargs):
+        if model is not None and hasattr(model, "loss_manager"):
+            model.loss_manager._current_step = 0
 
 
 # ============================================================================
