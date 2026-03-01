@@ -1,0 +1,13 @@
+---
+description: Local Windows development environment, Python/Poetry setup, and output formatting rules.
+alwaysApply: true
+---
+
+## Output Rules
+- Do NOT use LaTeX format — not rendered properly. Use markdown instead.
+- Do not generate intermediate markdown files unless explicitly asked; use `agent_memory/` for scratch.
+
+## Local Environment
+- **OS**: Windows 11, **Hardware**: 64GB RAM, RTX 3080 (10GB VRAM), Ryzen 9 5900HX
+- Use PowerShell for local runs, not bash. Double-quote paths with spaces.
+- Python 3.12 via Poetry. Always run: `poetry run python <script> [args]`
