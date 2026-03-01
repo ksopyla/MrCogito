@@ -8,6 +8,7 @@ alwaysApply: false
 - **Do NOT** start training on remote servers without user permission.
 - **DO** run `analysis/run_concept_analysis.py` automatically — it's fast.
 - Sync eval reports locally: `.\scripts\sync_evaluation_reports.ps1`
+- do not run many experiments (traning and evaluation) at once on the same server, it will cause resource contention and slow down the training, just run one experiment at a time.
 
 ## SSH Access (aliases in `~/.ssh/config`)
 - `ssh polonez` — 4x RTX 3090 (24GB each), Threadripper 3970X 32-Core, 256GB RAM, port 2205
