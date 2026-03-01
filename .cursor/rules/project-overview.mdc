@@ -6,6 +6,10 @@ alwaysApply: true
 ## Project Overview
 "Concept Encoder and Decoder" — a transformer architecture that compresses long sequences (text/audio) into a small set of semantic "concept tokens" (e.g. 128,256, 512 concepts from 4-64 times longer tokens) via cross-attention, then decodes from concept space to token predictions.
 
+
+Full vision and goals are in `docs/1_Strategy_and_Plans/vision_and_goals.md`.
+Detailed roadmap is in `docs/1_Strategy_and_Plans/roadmap.md`.
+
 **Author**: Krzysztof Sopyla (krzysztof.sopyla@gmail.com, https://github.com/ksopyla)
 **Project page**: https://ai.ksopyla.com/projects/concept-encoder/
 
@@ -20,7 +24,20 @@ alwaysApply: true
 - `training/` — Training scripts, data collators
 - `evaluation/` — benchmark eval scripts
 - `analysis/` — `run_concept_analysis.py` (effective rank, cosine similarities)
-
-## `agent_memory/` vs `docs/`
-- **`agent_memory/`**: Temporary/intermediate files (scratchpads, raw JSON, WIP).
-- **`docs/`**: Permanent research knowledge (numbered hierarchy). Update `master_experiment_log.md` after every run. Actionable tasks go in `active_todos.md`.
+- `playground/` — playground for experiments, just for exploration and learning, not for production, mainly jupyter notebooks
+- `scripts/` — utility scripts
+- `docs/` — documentation, reserch logs, todo lists, reserch goals and hypotheses
+    - `1_Strategy_and_Plans/` — roadmap, active TODOs
+    - `2_Experiments_Registry/` — master experiment log, run reports
+    - `3_Evaluations_and_Baselines/` — canonical baselines
+    - `4_Research_Notes/` — root cause analyses, diagnoses
+    - `5_Archive/` — superseded roadmaps/plans
+- `Cache/` — cached files from remote servers, local training logs, evaluation reports, etc.
+    - `Training/` — model checkpoints and optimizer states
+    - `Evaluation_reports/` — CSV eval results synchronized from remote servers
+    - `Logs/` — training logs
+    - `wandb/` — training logs (gitignored)
+- `tests/` — unit tests, to have confidence in the implementation, safety net
+- `verification/` — verification scripts, fro local initial implementation verification
+- `pyproject.toml` — poetry dependencies
+- `CHANGELOG.md` — changelog
