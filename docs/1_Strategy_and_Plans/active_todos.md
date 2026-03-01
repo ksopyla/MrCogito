@@ -389,13 +389,15 @@ the decoder initializes fresh (or also loaded from checkpoint).
 
 ---
 
-## Experiment Priority Order (Updated 2026-02-26)
+## Experiment Priority Order (Updated 2026-03-01)
 
-Aligned with [roadmap.md v4](roadmap.md) Track IDs. See roadmap for full experiment details and decision gates.
+Aligned with [roadmap.md v5](roadmap.md) Track IDs. See roadmap for full experiment details and decision gates.
 
-**Strategic shift (v4):** Self-reconstruction alone is insufficient for a generative reasoning model. The training objective must evolve from reconstruction → generation → reasoning. New experiments (A9-A11, TODO 11-13) address this directly. Full analysis: [diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md)
+**Strategic shift (v5):** Expanded from 3 sub-goals to 5, aligning with a 6-phase research progression: concept proof (Phase 1) -> representation excellence (Phase 2) -> generation (Phase 3) -> SFT (Phase 4) -> reasoning (Phase 5) -> audio (Phase 6). Prefix generation stays in Track A (Phase 1-2) as a concept quality technique; Track D (Phase 3) starts with full generation. Reasoning repositioned after generation. Full analysis: [diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md)
 
 ```
+=== PHASE 1: Concept Encoding Proof (Track A) ===
+
 Week 1 (2026-02-19 — DONE):
   [x] Training with concept losses (running on Polonez)
   [x] TODO 0:  Run L6 baseline STS-B evaluation
@@ -430,11 +432,13 @@ Week 5 (Prefix generation + evaluation):
   [ ] TODO 10d: GLUE eval with ViaDecoder + perceiver_pair_cls (A6 REPEAT)
   [ ] TODO 10e: Zero-shot STS-B (A8, cosine similarity, no fine-tuning)
 
-Week 6 (Decision gate + Track A winner):
+Week 6 (Decision gate + Track A winner → Gate 1):
   [ ] Compare: L6 diffusion vs TSDAE vs prefix generation
   [ ] Metrics: concept rank, STS-B, prefix generation loss (all three!)
-  [ ] Decision gate: pick winner (see roadmap Gate 1)
+  [ ] Decision gate: pick winner (see roadmap Gate 1, Phase 1 → Phase 2)
   [ ] If all fail rank > 30: implement Slot Attention (C5) as fallback
+
+=== PHASE 2: Representation Excellence (Tracks B, C, E) ===
 
 Week 7-8 (Track A.4 + Track C start):
   [ ] Add contrastive loss (SimCSE) to Track A winner (A4)
@@ -447,12 +451,29 @@ Week 9-10 (Track B: Data Scaling):
   [ ] Span masking (B2)
   [ ] REPEAT: Full eval after scaling (B4/B5)
 
-Later (see roadmap for full schedule):
+Week 10-11 (Track E: Long-Context):
   [ ] Dimension Inversion ablation (C4, token_dim=32, concept_dim=512)
-  [ ] Progressive sequence length training (512 → 2K → 8K)
-  [ ] Long-context eval SCROLLS/LongBench (D2/D3, after data scaling)
-  [ ] Recursive encoder with Track A winner + variable-depth training (C2)
-  [ ] Simple reasoning eval: ProntoQA with recursive encoder at variable K
+  [ ] Position embedding extension to 4K+ (E1)
+  [ ] Long-context eval SCROLLS/LongBench (E2/E3, after data scaling)
+
+Decision gate: Gate 2 (Phase 2 → Phase 3)
+
+=== PHASE 3: Generation (Track D) ===
+
+Week 11-14:
+  [ ] Full response generation from concepts (D1)
+  [ ] AR decoder alternative (D2)
+  [ ] Generation quality evaluation (D3)
+
+Decision gate: Gate 3 (Phase 3 → Phase 4)
+
+=== PHASE 4-6: Later (see roadmap for full schedule) ===
+
+Phase 4 (Track F): Instruction following SFT
+Phase 5 (Track G): Reasoning with recursive refinement + variable-depth training
+  [ ] Recursive encoder with Track A winner + variable-depth training (C2+G1)
+  [ ] Simple reasoning eval: ProntoQA with recursive encoder at variable K (G3)
+Phase 6 (Track H): Audio modality
 ```
 
 ---
@@ -555,7 +576,7 @@ Same as A but with `--use_bixt`. Compare concept quality (effective rank, mean s
 **Decision logic:**
 - Rank > 30/128 AND task_loss < 3.0 → regularization works, proceed with this config
 - Rank > 30/128 BUT task_loss > 3.5 → weight too aggressive, reduce to 0.01
-- Rank < 20/128 → t_regs_mst insufficient, try Slot Attention or prefix generation
+- Rank < 20/128 → t_regs_mst insufficient, try Slot Attention (C5) or pivot to prefix generation (A11)
 
 **Machine:** Odra or Polonez, immediately after TODO 11 finishes.
 
@@ -565,7 +586,7 @@ Same as A but with `--use_bixt`. Compare concept quality (effective rank, mean s
 
 ## TODO 13: Prefix Generation Training (Priority: HIGHEST, Effort: 3 days code + 5 GPU-days)
 
-*Maps to roadmap A11. The most strategically important new experiment.*
+*Maps to roadmap A11 (Track A: Concept Quality, Phase 1-2). A concept quality training technique -- SODA principle forces semantic concepts by generating different content than the encoder saw. Also serves as the bridge to full generation (Track D).*
 
 **Motivation (SODA principle for text):** Current training asks the model to encode text X and reconstruct X (self-reconstruction). This permits surface-level hashing through the concept bottleneck. SODA (Hudson, CVPR 2024) shows that bottleneck diffusion models learn semantic representations only when the decoder generates DIFFERENT content than the encoder saw.
 
@@ -612,9 +633,10 @@ Same as A but with `--use_bixt`. Compare concept quality (effective rank, mean s
 
 ---
 
-*Plan updated: 2026-02-27*
-*Aligned with: [roadmap.md v4](roadmap.md) (2026-02-26)*
+*Plan updated: 2026-03-01*
+*Aligned with: [roadmap.md v5](roadmap.md) (2026-03-01)*
 *Next review: after TODO 11 finishes → evaluate STS-B → launch TODO 11b (VICReg)*
+*Update (2026-03-01): aligned experiment priority order with 6-phase structure (roadmap v5), TODO 13 maps to A11 (concept quality technique in Track A), prefix generation back in Phase 1-2*
 *New (2026-02-27): added TODO 11b (VICReg + t_regs_mst regularization experiment)*
 *New (2026-02-26): added TODO 11-14 based on diffusion diagnosis analysis ([diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md))*
 *Related: [mlm_perceiver_diagnosis_20260221.md](../4_Research_Notes/mlm_perceiver_diagnosis_20260221.md), [diffusion_L2_eval_20260225.md](../2_Experiments_Registry/run_reports/diffusion_L2_eval_20260225.md)*

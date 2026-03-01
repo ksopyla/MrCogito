@@ -1,8 +1,8 @@
-# MrCogito: Concept Encoder Research Roadmap v4
+# MrCogito: Concept Encoder Research Roadmap v5
 
-**Created:** 2026-02-26 | **Supersedes:** roadmap v3 (2026-02-22)
+**Created:** 2026-03-01 | **Supersedes:** roadmap v4 (2026-02-26)
 **Author:** Krzysztof Sopyla
-**Previous versions:** v1 (2026-02-13, obsolete), v2 (2026-02-18, archived), v3 (2026-02-22, archived)
+**Previous versions:** v1 (2026-02-13, obsolete), v2 (2026-02-18, archived), v3 (2026-02-22, archived), v4 (2026-02-26, archived)
 
 ---
 
@@ -16,47 +16,78 @@ Build an **audio conversational and reasoning model** grounded in a **concept bo
 
 ## 2. Sub-Goals
 
-### SG1: Text Concept Quality (prerequisite for everything)
+### SG1: Text Concept Quality (Phases 1-2 -- prerequisite for everything)
 
 Produce concept representations that are **semantically rich** (high downstream task performance), **geometrically diverse** (high effective rank, low pairwise similarity), and **generatively useful** (support coherent text generation from concepts). This is the critical-path blocker for all subsequent work.
 
-**Success criteria:**
+**Milestone 1a (Phase 1 -- Concept Encoding Proof):** Validate that cross-attention with concepts and MLM/reconstruction objectives can form good concepts. Work mainly with encoders.
 - Concept effective rank > 64/C (>50% of concept space utilized)
+- STS-B Pearson > 0.70 (ViaDecoder evaluation)
+- Zero-shot STS-B cosine similarity > 0.60
+
+**Milestone 1b (Phase 2 -- Representation Excellence):** New training objectives (TSDAE, diffusion, contrastive), new architectures (recursive, BiXT, dimension inversion), data scaling. Still perceiver-type encoding with different decoding methods.
 - STS-B Pearson > 0.75 (ViaDecoder evaluation)
 - QQP F1 > 76%, MNLI-m > 65%
-- Zero-shot STS-B cosine similarity > 0.60
 - **Prefix generation**: suffix reconstruction loss < 3.0 (concepts support generation, not just classification)
 
-### SG2: Concept Reasoning for Abstract Reasoning
+### SG2: Text Generation (Phase 3)
 
-Demonstrate that recursive concept refinement (weight-tied encoder applied K times) enables **test-time compute scaling** -- running more iterations at inference improves performance on hard reasoning tasks, without retraining.
+Transition from reconstruction to generation. Based on "good" concept representations (SG1), generate coherent text responses from concepts. Prefix generation evolves to full response generation via diffusion or autoregressive decoding.
+
+**Success criteria:**
+- Suffix perplexity on held-out data below a reasonable threshold
+- Coherent multi-sentence generation from concept representations
+- Generation quality competitive with similarly-sized language models
+
+**Dependency:** SG2 only starts after SG1 Milestone 1b is met (STS-B > 0.75, prefix loss < 3.0). Concepts must demonstrably support generation before investing in a full generative pipeline.
+
+### SG3: Instruction Following (Phase 4)
+
+SFT on instruction data. Encode instruction via concept bottleneck, generate response. This is the bridge from "text generation model" to "useful assistant."
+
+**Success criteria:**
+- Competitive scores on instruction-following benchmarks (AlpacaEval, MT-Bench)
+- Instruction-following model generates task-appropriate responses
+
+**Dependency:** SG3 only starts after SG2 demonstrates coherent text generation from concepts.
+
+### SG4: Concept Reasoning (Phase 5)
+
+Demonstrate that recursive concept refinement (weight-tied encoder applied K times) enables **test-time compute scaling** -- running more iterations at inference improves performance on hard reasoning tasks, without retraining. Reasoning is positioned after generation and SFT because reasoning through generation is the target capability.
 
 **Targets:**
 - Text reasoning benchmarks (HellaSwag, CommonsenseQA, WinoGrande) as near-term proxies
 - Simple reasoning early validation: ProntoQA (fictional reasoning, used by Coconut) as fast diagnostic
-- ARC-AGI as long-term target (requires visual/grid input adapter, see Track D)
+- ARC-AGI as long-term target (requires visual/grid input adapter)
 - Recursive encoder (42M params) matches or exceeds standard encoder (61M params) on semantic benchmarks
 
 **Training methodology (from Recurrent Depth, Geiping 2025):**
 - **Variable-depth training:** randomly sample K (number of encoder iterations) per batch during training
 - **Truncated backpropagation:** gradients only through final k iterations for memory efficiency
-- **Standard loss:** no special reasoning annotations needed; the generation/reconstruction loss naturally rewards better concepts from more iterations
+- **Standard loss:** no special reasoning annotations needed; the generation loss naturally rewards better concepts from more iterations
 
 **Inspiration:**
 - TRM (Jolicoeur-Martineau et al., 2025) -- 7M-param recursive model beats LLMs 1000x its size on ARC-AGI
 - Recurrent Depth (Geiping et al., 2025) -- prelude+recurrent+coda architecture; 3.5B model matches 103B equivalent via test-time recurrence
 - Coconut (Meta, 2024) -- chain of continuous thought; latent reasoning outperforms CoT; breadth-first search in concept space; multi-stage curriculum from explicit CoT to fully latent
 
-### SG3: Audio Conversational Model
+**Dependency:** SG4 starts after SG2 (generation must work) and benefits from SG3 (SFT provides instruction-response training data for reasoning evaluation).
+
+### SG5: Audio Conversational Model (Phase 6)
 
 Map audio (mel-spectrograms) into the frozen text concept space via a learned adapter. Build a "Concept-Talker": encode speech into concepts, reason over them, decode back to speech.
 
-**Architecture blueprint** (from Qwen Thinker-Talker and SLAM research):
+**Architecture blueprint:**
 - **Encoder side:** Speech encoder (e.g., Whisper/HuBERT features) -> concept adapter -> shared concept space
 - **Reasoning:** Recursive concept encoder refines concepts (shared weights with text)
 - **Decoder side:** Concept-to-audio decoder (Talker) generates speech tokens/codec frames
 
-**Dependency:** SG3 only starts after SG1 demonstrates STS-B Pearson > 0.75 on text. The concept space must be proven semantically useful before mapping audio into it.
+**Architecture references:**
+- Qwen Thinker-Talker: Thinker-Talker architecture for streaming S2S (most relevant for concept encoder mapping)
+- Moshi (Kyutai): Full-duplex, multi-stream, inner monologue approach for real-time conversation
+- SLAM: Single-GPU recipe with synthetic data
+
+**Dependency:** SG5 only starts after SG1 demonstrates STS-B Pearson > 0.75 on text and SG2 establishes decoder patterns. The concept space must be proven semantically useful before mapping audio into it.
 
 ---
 
@@ -75,40 +106,68 @@ Map audio (mel-spectrograms) into the frozen text concept space via a learned ad
 | **Primary risk** | Self-reconstruction objectives may never produce concepts useful for generation/reasoning. |
 | **Mitigation** | 4 parallel tracks: TSDAE (reconstruction), prefix generation (generation), diffusion fixes (controlled ablation), contrastive (semantic organization). If all fail, Slot Attention is the architectural fallback. |
 
-### SG2: Concept Reasoning -- MEDIUM-HIGH feasibility (4-6 months)
+### SG2: Text Generation -- MEDIUM-HIGH feasibility (3-5 months after SG1)
+
+| Factor | Assessment |
+|---|---|
+| Prefix generation (A11) validated | By the time Track D starts, prefix generation will have proven concepts can support generation (suffix loss < 3.0). This de-risks full generation. |
+| Diffusion decoder | Implemented and tested (`nn/concept_encoder_diffusion.py`). Cross-attention-only decoder scales to any length. |
+| AR decoder alternative | Well-studied; can adapt any causal LM head conditioned on concept cross-attention. |
+| **Primary risk** | Concepts may be too lossy for coherent multi-sentence generation. Compression may discard details needed for fluent output. |
+| **Mitigation** | Prefix generation (A11) validates generation capability first. If diffusion fails for full generation, try AR decoder (D2). |
+| **Gate** | Do not start full generation until SG1 Milestone 1b met (STS-B > 0.75, prefix loss < 3.0). |
+
+### SG3: Instruction Following -- HIGH feasibility (2-3 months after SG2)
+
+| Factor | Assessment |
+|---|---|
+| Well-studied technique | SFT on instruction data is standard practice (Alpaca, FLAN, etc.). |
+| Data availability | Open instruction datasets: OpenAssistant, FLAN, Alpaca, UltraChat. |
+| Architecture reuse | Same concept encoder + generative decoder from SG2. Only training data changes. |
+| **Primary risk** | Concept bottleneck may lose instruction nuances (e.g., formatting requirements, multi-step instructions). |
+| **Mitigation** | Start with simple single-turn instructions. Gradually increase complexity. |
+| **Gate** | Do not start SFT until SG2 demonstrates coherent text generation from concepts. |
+
+### SG4: Concept Reasoning -- MEDIUM-HIGH feasibility (4-6 months after SG2)
 
 | Factor | Assessment |
 |---|---|
 | Recursive encoder | Implemented and tested (`nn/concept_encoder_recursive.py`). 47% fewer encoder params. |
 | TRM precedent | Validates that recursive refinement works for abstract reasoning. |
-| Text reasoning benchmarks | Achievable with current architecture once concept quality is fixed. |
+| Text reasoning benchmarks | Achievable with current architecture once generation works. |
 | ARC-AGI specifically | Requires visual/grid input adapter (not yet designed). This is an extension, not a prerequisite. |
 | **Primary risk** | Weight-tying may degrade concept quality vs independent layers. |
 | **Mitigation** | Warm-start from standard checkpoint. Iteration sweep (K=2..12) to find quality/compute tradeoff. |
+| **Dependency** | Reasoning through generation requires SG2 (generation) to work first. Recursive encoder architecture can be validated earlier on reconstruction tasks (Track C). |
 
-### SG3: Audio Modality -- MEDIUM feasibility (6-12 months, conditional on SG1)
+### SG5: Audio Modality -- MEDIUM feasibility (6-12 months, conditional on SG1+SG2)
 
 | Factor | Assessment |
 |---|---|
 | SLAM recipe | Single-GPU training with synthetic speech data is proven. |
 | Qwen architecture | Thinker-Talker maps directly to concept encoder + audio decoder. |
+| Moshi approach | Full-duplex, multi-stream with inner monologue -- relevant for real-time conversation. |
 | Modality adapter | Well-studied approach (Mini-Omni, AlignChat, Spirit LM). |
 | **Primary risk** | Concept space may not be rich enough for speech nuances (prosody, emotion). |
 | **Mitigation** | Start with speech understanding (ASR-like) before full S2S. Validate on spoken STS-B. |
-| **Gate** | Do not start audio work until STS-B Pearson > 0.75 and concept rank > 64/128. |
+| **Gate** | Do not start audio work until STS-B Pearson > 0.75, concept rank > 64/128, and SG2 decoder patterns established. |
 
 ### Overall Risk Assessment
 
 ```mermaid
 graph LR
-    SG1[SG1: Text Concept Quality] -->|prerequisite| SG2[SG2: Concept Reasoning]
-    SG1 -->|prerequisite| SG3[SG3: Audio Modality]
-    SG2 -->|enables| ARC[ARC-AGI + Visual Adapter]
-    SG3 -->|enables| S2S[Speech-to-Speech Model]
-    SG2 --> S2S
+    SG1["SG1: Text Concept Quality"] -->|prerequisite| SG2["SG2: Text Generation"]
+    SG2 -->|prerequisite| SG3["SG3: Instruction Following"]
+    SG2 -->|prerequisite| SG4["SG4: Concept Reasoning"]
+    SG3 -->|enhances| SG4
+    SG1 -->|prerequisite| SG5["SG5: Audio Modality"]
+    SG2 -->|"decoder patterns"| SG5
+    SG4 -->|enables| ARC["ARC-AGI + Visual Adapter"]
+    SG5 -->|enables| S2S["Speech-to-Speech Model"]
+    SG4 --> S2S
 ```
 
-The entire research program is **bottlenecked on SG1**. If concept quality cannot be fixed, SG2 and SG3 are not viable. The 4-track approach to SG1 (TSDAE, prefix generation, diffusion fixes, contrastive) provides sufficient diversification. The key strategic shift from v3: **measure concept quality for generation, not just classification** (add prefix generation metrics alongside STS-B).
+The entire research program is **bottlenecked on SG1**. If concept quality cannot be fixed, nothing downstream is viable. The 4-track approach to SG1 (TSDAE, prefix generation, diffusion fixes, contrastive) provides sufficient diversification. The key strategic shift from v4: **explicit generation and SFT phases** (SG2, SG3) bridge the gap between concept quality and reasoning, reflecting the natural progression from reconstruction to generation to instruction-following to reasoning.
 
 ---
 
@@ -152,10 +211,10 @@ Diagnosis of 5 structural misalignments led to a complete architecture overhaul:
 
 ## 5. Research Tracks
 
-### Track A: Fix Concept Quality (Critical Path)
+### Track A: Fix Concept Quality (Critical Path -- Phase 1)
 
 **Goal:** Find the training objective that produces concepts with effective rank > 64/128 AND STS-B Pearson > 0.70.
-**Targets SG1.** This is the highest priority. Everything else depends on it.
+**Targets SG1 Milestone 1a.** This is the highest priority. Everything else depends on it.
 
 | ID | Experiment | Priority | Effort | Status | Dependencies |
 |---|---|---|---|---|---|
@@ -182,7 +241,7 @@ Diagnosis of 5 structural misalignments led to a complete architecture overhaul:
 
 **Decision gate (end of Track A):**
 - If any objective produces rank > 64 AND STS-B > 0.70 -> proceed to Track B (data scaling)
-- **NEW:** If prefix generation (A11) achieves suffix loss < 3.0, this validates generation capability regardless of STS-B
+- If prefix generation (A11) achieves suffix loss < 3.0, this validates generation capability regardless of STS-B
 - If all objectives fail rank > 30 -> implement Slot Attention (Track C.5) before proceeding
 - Pick winner based on: (1) concept rank, (2) STS-B Pearson, (3) **prefix generation quality**, (4) training stability
 
@@ -191,10 +250,10 @@ Diagnosis of 5 structural misalignments led to a complete architecture overhaul:
 
 ---
 
-### Track B: Data Scaling
+### Track B: Data Scaling (Phase 2)
 
 **Goal:** Scale pretraining data from 0.6B to 5B+ effective tokens using the winning objective from Track A.
-**Targets SG1.** This is the largest single expected improvement.
+**Targets SG1 Milestone 1b.** This is the largest single expected improvement.
 
 | ID | Experiment | Priority | Effort | Status | Dependencies |
 |---|---|---|---|---|---|
@@ -218,18 +277,18 @@ Diagnosis of 5 structural misalignments led to a complete architecture overhaul:
 - Target: MLM/reconstruction loss < 2.0, effective rank > 60
 
 **Decision gate (end of Track B):**
-- STS-B Pearson > 0.75 -> proceed to Track D (long-context)
-- MNLI-m > 65% -> strong signal, ready for reasoning tasks
+- STS-B Pearson > 0.75 -> SG1 Milestone 1b met, proceed to Track D (generation) and Track E (long-context)
+- MNLI-m > 65% -> strong signal, concepts capture compositional semantics
 - STS-B < 0.70 -> try backbone init (B3) before further scaling
 
 **Active TODO:** [TODO 7](active_todos.md)
 
 ---
 
-### Track C: Architectural Innovations
+### Track C: Architectural Innovations (Phase 2)
 
-**Goal:** Test architectural variants that improve concept quality (SG1), enable reasoning (SG2), or improve efficiency.
-**Targets SG1 + SG2.** These can run in parallel with Track B once Track A winner is selected.
+**Goal:** Test architectural variants that improve concept quality (SG1), enable reasoning (SG4), or improve efficiency.
+**Targets SG1 + SG4.** These can run in parallel with Track B once Track A winner is selected.
 
 | ID | Experiment | Priority | Effort | Status | Dependencies |
 |---|---|---|---|---|---|
@@ -254,19 +313,36 @@ Diagnosis of 5 structural misalignments led to a complete architecture overhaul:
 
 ---
 
-### Track D: Long-Context and Reasoning
+### Track D: Text Generation (Phase 3)
 
-**Goal:** Validate the architecture's core efficiency advantage on sequences > 1K tokens, and demonstrate concept-level reasoning capability.
-**Targets SG2.** This is the publication-critical track.
+**Goal:** Based on proven concept representations (SG1) and validated prefix generation (A11), transition to full text generation from concepts. Generate coherent multi-sentence responses conditioned on concept representations.
+**Targets SG2.** This is the critical transition from "encoder model" to "generative model."
+
+**Prerequisite:** Track A prefix generation (A11) must demonstrate suffix loss < 3.0, proving concepts can support generation. Track D builds on that foundation.
 
 | ID | Experiment | Priority | Effort | Status | Dependencies |
 |---|---|---|---|---|---|
-| D1 | **Extend position embeddings** to 4K+ tokens (RoPE or interpolation) | HIGH | 2 days code | Not started | Track B complete |
-| D2 | **SCROLLS** evaluation (long doc QA, summarization, 1K-10K tokens) | HIGH | 2 days eval | Not started | D1 |
-| D3 | **LongBench** evaluation (multilingual long-context) | MEDIUM | 1 day eval | Not started | D1 |
-| D4 | **Text reasoning benchmarks** (HellaSwag, CommonsenseQA, WinoGrande) | MEDIUM | 2 days eval | Not started | Track B or C2 |
-| D5 | **Concept-level reasoning** with recursive encoder at K=12-24 | HIGH | 1 day eval | Not started | C2 + C3 |
-| D6 | **Visual/grid adapter for ARC-AGI** | LOW | 2 weeks R&D | Not started | C2 proven, long-term |
+| D1 | **Full response generation** from concepts (diffusion decoder, full document) | HIGH | 3 days code + 5 GPU-days | Not started | A11 validated, SG1 Milestone 1b met |
+| D2 | **Autoregressive generation** from concepts (alternative decoder) | MEDIUM | 5 days code + 5 GPU-days | Not started | D1 or A11 validated |
+| D3 | **Generation quality evaluation** (perplexity, BLEU, human eval) | STANDARD | 2 days eval | Not started | After D1/D2 |
+
+**Decision gate (end of Track D):**
+- Generated text is coherent multi-sentence output -> SG2 validated, proceed to Track F (SFT)
+- If diffusion decoder fails, try AR decoder (D2) before declaring generation infeasible
+
+---
+
+### Track E: Long-Context (Phase 2 extension)
+
+**Goal:** Validate the architecture's core efficiency advantage on sequences > 1K tokens.
+**Targets SG1.** This is the publication-critical efficiency argument.
+
+| ID | Experiment | Priority | Effort | Status | Dependencies |
+|---|---|---|---|---|---|
+| E1 | **Extend position embeddings** to 4K+ tokens (RoPE or interpolation) | HIGH | 2 days code | Not started | Track B complete |
+| E2 | **SCROLLS** evaluation (long doc QA, summarization, 1K-10K tokens) | HIGH | 2 days eval | Not started | E1 |
+| E3 | **LongBench** evaluation (multilingual long-context) | MEDIUM | 1 day eval | Not started | E1 |
+| E4 | **Progressive sequence length training** (512 -> 2K -> 8K) | MEDIUM | 5 GPU-days | Not started | E1 |
 
 **Efficiency argument (the core claim):**
 
@@ -281,42 +357,80 @@ C scales with N to maintain quality while preserving the O(C*N) << O(N^2) advant
 
 At N=4K with C=512, even 50% downstream performance parity makes the efficiency story compelling. At N=1M, self-attention is impossible; concept attention remains tractable.
 
-**ARC-AGI pathway (long-term):**
-ARC-AGI is a visual/spatial abstract reasoning benchmark. Applying concepts to it requires:
-1. Visual input adapter (grid -> token sequence or direct grid-to-concept mapping)
-2. Recursive concept refinement at high K (test-time compute scaling)
-3. Concept-level generation (predict output grid from refined concepts)
-
-This is orthogonal to current text work and will be designed after the recursive encoder proves test-time compute scaling works on text reasoning (D4, D5).
+**Decision gate (end of Track E):**
+- Competitive on SCROLLS at N=4096 with C=512 -> publish efficiency paper
+- Not competitive -> increase concept count (C=1024, C=2048) or model depth
 
 ---
 
-### Track E: Audio Modality
+### Track F: Instruction Following (Phase 4)
 
-**Goal:** Map audio into the concept space and build a speech-to-speech model.
-**Targets SG3.** Only starts after SG1 success criteria are met.
+**Goal:** SFT on instruction data. Encode instruction via concept bottleneck, generate response.
+**Targets SG3.** Placeholder track -- details will be refined after SG2 (generation) is validated.
 
 | ID | Experiment | Priority | Effort | Status | Dependencies |
 |---|---|---|---|---|---|
-| E1 | **Mel-spectrogram to concept adapter** design and training | MEDIUM | 2 weeks R&D | Not started | SG1 criteria met |
-| E2 | **Synthetic speech data** generation (SLAM recipe, TTS from text) | MEDIUM | 1 week | Not started | E1 designed |
-| E3 | **Speech understanding** evaluation (spoken STS-B, speech NLI) | MEDIUM | 1 week | Not started | E1 trained |
-| E4 | **Concept-to-audio decoder** (Talker) for speech generation | LOW | 3 weeks R&D | Not started | E3 validated |
-| E5 | **Full conversational pipeline** prototype | LOW | 4 weeks | Not started | E4 |
+| F1 | **Instruction-following dataset curation** (OpenAssistant, FLAN, Alpaca, UltraChat) | MEDIUM | 1 week | Not started | SG2 validated |
+| F2 | **SFT training** on concept-conditioned generation | MEDIUM | 2 weeks | Not started | F1 + Track D winner |
+| F3 | **Evaluation** (AlpacaEval, MT-Bench) | MEDIUM | 1 week eval | Not started | F2 |
+
+**Gate:** Do not start F1 until Track D demonstrates coherent text generation from concepts.
+
+---
+
+### Track G: Reasoning (Phase 5)
+
+**Goal:** Demonstrate that recursive concept refinement enables test-time compute scaling for reasoning tasks.
+**Targets SG4.** Reasoning is positioned after generation (SG2) and SFT (SG3) because reasoning through generation is the target capability.
+
+| ID | Experiment | Priority | Effort | Status | Dependencies |
+|---|---|---|---|---|---|
+| G1 | **Variable-depth recursive training** (sample K per batch, from Recurrent Depth) | HIGH | 3 days code + 5 GPU-days | Not started | SG2 validated + C2 |
+| G2 | **Test-time compute scaling sweep** (K=2,4,6,8,12,24 on reasoning benchmarks) | HIGH | 1 day eval | Not started | G1 |
+| G3 | **Reasoning benchmarks** (HellaSwag, CommonsenseQA, WinoGrande, ProntoQA) | MEDIUM | 2 days eval | Not started | G1 or Track D |
+| G4 | **Visual/grid adapter for ARC-AGI** | LOW | 2 weeks R&D | Not started | G2 proven, long-term |
+
+**Training methodology (from Recurrent Depth, Geiping 2025):**
+- **Variable-depth training:** randomly sample K (number of encoder iterations) per batch during training
+- **Truncated backpropagation:** gradients only through final k iterations for memory efficiency
+- **Standard loss:** no special reasoning annotations needed; the generation loss naturally rewards better concepts from more iterations
+
+
+
+**Decision gate:**
+- K=12 beats K=6 on reasoning benchmarks -> test-time compute scaling works, SG4 validated
+- Recursive encoder within 2pts of standard on GLUE -> recursive is "free" compression
+- Neither -> rethink reasoning approach
+
+---
+
+### Track H: Audio Modality (Phase 6)
+
+**Goal:** Map audio into the concept space and build a speech-to-speech model.
+**Targets SG5.** Only starts after SG1 success criteria are met and SG2 establishes decoder patterns.
+
+| ID | Experiment | Priority | Effort | Status | Dependencies |
+|---|---|---|---|---|---|
+| H1 | **Mel-spectrogram to concept adapter** design and training | MEDIUM | 2 weeks R&D | Not started | SG1 + SG2 criteria met |
+| H2 | **Synthetic speech data** generation (SLAM recipe, TTS from text) | MEDIUM | 1 week | Not started | H1 designed |
+| H3 | **Speech understanding** evaluation (spoken STS-B, speech NLI) | MEDIUM | 1 week | Not started | H1 trained |
+| H4 | **Concept-to-audio decoder** (Talker) for speech generation | LOW | 3 weeks R&D | Not started | H3 validated |
+| H5 | **Full conversational pipeline** prototype | LOW | 4 weeks | Not started | H4 |
 
 **Architecture reference models:**
-- Qwen2.5-Omni / Qwen3-Omni: Thinker-Talker architecture (most relevant)
-- Moshi (Kyutai): Full-duplex, multi-stream, inner monologue
+- Qwen2.5-Omni / Qwen3-Omni: Thinker-Talker architecture (most relevant for concept encoder mapping)
+- Moshi (Kyutai): Full-duplex, multi-stream, inner monologue (relevant for real-time conversation)
 - SLAM: Single-GPU recipe with synthetic data
 - Mini-Omni / AlignChat: Lightweight adapters on frozen LLMs
 - Spirit LM (Meta): Interleaved spoken/written tokens
 
 **Detailed speech-to-speech research notes:** [concept_model_speech2speech.md](../research-notes/concept_model_speech2speech.md)
 
-**Gate:** Do not start E1 until:
+**Gate:** Do not start H1 until:
 - STS-B Pearson > 0.75
 - Concept effective rank > 64/128
 - Text concept space demonstrably carries semantic structure (zero-shot STS-B > 0.60)
+- SG2 decoder patterns established (know which decoder architecture works for generation)
 
 ---
 
@@ -324,7 +438,7 @@ This is orthogonal to current text work and will be designed after the recursive
 
 All experiments sorted by priority, with effort estimates and dependencies.
 
-### Immediate (Month 1-2)
+### Immediate (Month 1-2) -- Phase 1
 
 | # | Experiment | Track | Effort | Expected Impact | Dependencies | Status |
 |---|---|---|---|---|---|---|
@@ -332,46 +446,53 @@ All experiments sorted by priority, with effort estimates and dependencies.
 | 2 | **Fix ELBO loss weighting** (1/t) + t_min=0.3 in diffusion | A10 | 0.5 day code | Normalize gradient across noise levels | None | Not started |
 | 3 | TSDAE PosOnly on Minipile | A1 | 5 GPU-days | Fixes all 5 structural problems | None | Awaiting GPU |
 | 4 | TSDAE + BiXT on Minipile | A2 | 5 GPU-days | Adds token contextualization | None | Awaiting GPU |
-| 5 | **Prefix generation training** (encode prefix, decode suffix) | A11 | 3+5 days | SODA-inspired generative pretraining | After A9/A10 | Not started |
+| 5 | **Prefix generation training** (encode prefix, decode suffix) | A11 | 3+5 days | SODA-inspired concept quality technique | After A9/A10 | Not started |
 | 6 | Concept analysis on all Track A checkpoints | A7 | 0.5 day each | Validate concept quality fix | After 1-5 | -- |
 | 7 | ViaDecoder + pair_cls eval on all checkpoints | A6 | 0.5 day each | Establish new baselines | After 1-5 | -- |
 | 8 | Zero-shot STS-B on best Track A model | A8 | 0.5 day | Ground truth concept quality | After 6/7 | -- |
 | 9 | Diffusion vs TSDAE vs Prefix comparison, pick winner | A | 0 | Decision gate | After 6/7/8 | -- |
 
-### Near-term (Month 3-4)
+### Near-term (Month 3-5) -- Phase 2
 
 | # | Experiment | Track | Effort | Expected Impact | Dependencies | Status |
 |---|---|---|---|---|---|---|
-| 8 | Add contrastive loss (SimCSE) to Track A winner | A4 | 1+3 days | +4pts STS-B from SimCSE literature | Winner selected | Not started |
-| 9 | Scale data: OpenWebText+Wiki with winner | B1 | 7 GPU-days | Largest single improvement | Winner selected | Not started |
-| 10 | Span masking (with B1) | B2 | 1 day code | Phrase-level concept encoding | With 9 | Not started |
-| 11 | Recursive MLM baseline on Minipile | C1 | 2 GPU-days | Validate recursive approach | None (can start earlier) | Code done |
-| 12 | Recursive encoder with Track A winner | C2 | 3 GPU-days | Recursive + best objective | Winner + C1 | Not started |
-| 13 | Test-time compute scaling sweep (K=2..12) | C3 | 0.5 day | Validate SG2 hypothesis | After 11 or 12 | Not started |
-| 14 | Dimension Inversion ablation | C4 | 3+5 days | Novel efficiency improvement | After Track A | Not started |
-| 15 | REPEAT: Full eval after data scaling | B4/B5 | 1 day | Validate scaling gains | After 9 | -- |
+| 10 | Add contrastive loss (SimCSE) to Track A winner | A4 | 1+3 days | +4pts STS-B from SimCSE literature | Winner selected | Not started |
+| 11 | Scale data: OpenWebText+Wiki with winner | B1 | 7 GPU-days | Largest single improvement | Winner selected | Not started |
+| 12 | Span masking (with B1) | B2 | 1 day code | Phrase-level concept encoding | With 11 | Not started |
+| 13 | Recursive MLM baseline on Minipile | C1 | 2 GPU-days | Validate recursive approach | None (can start earlier) | Code done |
+| 14 | Recursive encoder with Track A winner | C2 | 3 GPU-days | Recursive + best objective | Winner + C1 | Not started |
+| 15 | Test-time compute scaling sweep (K=2..12) | C3 | 0.5 day | Early SG4 signal | After 13 or 14 | Not started |
+| 16 | Dimension Inversion ablation | C4 | 3+5 days | Novel efficiency improvement | After Track A | Not started |
+| 17 | Backbone init from SmolLM2-135M | B3 | 3+5 days | Bypass data starvation | After B1 results | Not started |
+| 18 | REPEAT: Full eval after data scaling | B4/B5 | 1 day | Validate scaling gains | After 11 | -- |
 
-### Medium-term (Month 5-6)
-
-| # | Experiment | Track | Effort | Expected Impact | Dependencies | Status |
-|---|---|---|---|---|---|---|
-| 16 | Backbone init from SmolLM2-135M | B3 | 3+5 days | Bypass data starvation | After B1 results | Not started |
-| 17 | Extend position embeddings to 4K+ | D1 | 2 days | Enable long-context eval | Track B complete | Not started |
-| 18 | SCROLLS / LongBench evaluation | D2/D3 | 3 days | Validate efficiency claim | D1 | Not started |
-| 19 | Text reasoning benchmarks | D4 | 2 days | SG2 near-term proxy | Track B or C2 | Not started |
-| 20 | Recursive encoder at K=12-24 for reasoning | D5 | 1 day | SG2 validation | C2 + C3 | Not started |
-
-### Long-term (Month 7-12)
+### Medium-term (Month 5-7) -- Phase 3 + Long-Context
 
 | # | Experiment | Track | Effort | Expected Impact | Dependencies | Status |
 |---|---|---|---|---|---|---|
-| 21 | Slot Attention encoder variant | C5 | 3+5 days | Architectural fix for collapse | If Track A insufficient | Design done |
-| 22 | Next-Concept Prediction (LCM-style) | C6 | 5+5 days | Concept-level generation | After Track B | Not started |
-| 23 | Audio adapter prototype | E1/E2 | 3 weeks | SG3 entry point | SG1 criteria met | Not started |
-| 24 | Speech understanding eval | E3 | 1 week | Validate audio concepts | E1 trained | Not started |
-| 25 | Concept-to-audio decoder | E4 | 3 weeks | Speech generation | E3 validated | Not started |
-| 26 | Visual adapter for ARC-AGI | D6 | 2 weeks | SG2 long-term | C2 proven | Not started |
-| 27 | Full conversational pipeline | E5 | 4 weeks | SG3 completion | E4 | Not started |
+| 19 | **Full response generation** from concepts (diffusion decoder) | D1 | 3+5 days | SG2 validation | A11 validated, SG1 1b met | Not started |
+| 20 | **AR generation** from concepts (alternative decoder) | D2 | 5+5 days | Decoder comparison | D1 or A11 validated | Not started |
+| 21 | Generation quality evaluation | D3 | 2 days | SG2 metrics | After 19/20 | Not started |
+| 22 | Extend position embeddings to 4K+ | E1 | 2 days | Enable long-context eval | Track B complete | Not started |
+| 23 | SCROLLS / LongBench evaluation | E2/E3 | 3 days | Validate efficiency claim | E1 | Not started |
+
+### Long-term (Month 7-12) -- Phases 4-6
+
+| # | Experiment | Track | Effort | Expected Impact | Dependencies | Status |
+|---|---|---|---|---|---|---|
+| 24 | Instruction-following dataset curation | F1 | 1 week | SG3 entry point | SG2 validated | Not started |
+| 25 | SFT training on concept-conditioned generation | F2 | 2 weeks | SG3 validation | F1 | Not started |
+| 26 | SFT evaluation (AlpacaEval, MT-Bench) | F3 | 1 week | SG3 metrics | F2 | Not started |
+| 27 | Variable-depth recursive training | G1 | 3+5 days | SG4 entry point | SG2 + C2 | Not started |
+| 28 | Reasoning benchmarks (HellaSwag, ProntoQA, etc.) | G3 | 2 days | SG4 near-term proxy | G1 or Track D | Not started |
+| 29 | Recursive reasoning K=12-24 sweep | G2 | 1 day | SG4 validation | G1 | Not started |
+| 30 | Slot Attention encoder variant | C5 | 3+5 days | Architectural fix for collapse | If Track A insufficient | Design done |
+| 31 | Next-Concept Prediction (LCM-style) | C6 | 5+5 days | Concept-level generation | After Track B | Not started |
+| 32 | Audio adapter prototype | H1/H2 | 3 weeks | SG5 entry point | SG1 + SG2 criteria met | Not started |
+| 33 | Speech understanding eval | H3 | 1 week | Validate audio concepts | H1 trained | Not started |
+| 34 | Concept-to-audio decoder | H4 | 3 weeks | Speech generation | H3 validated | Not started |
+| 35 | Visual adapter for ARC-AGI | G4 | 2 weeks | SG4 long-term | G2 proven | Not started |
+| 36 | Full conversational pipeline | H5 | 4 weeks | SG5 completion | H4 | Not started |
 
 ---
 
@@ -379,85 +500,115 @@ All experiments sorted by priority, with effort estimates and dependencies.
 
 ```mermaid
 gantt
-    title MrCogito Research Timeline (2026)
+    title MrCogito Research Timeline (2026-2027)
     dateFormat YYYY-MM
     axisFormat %b %Y
 
-    section trackA [Track A: Concept Quality]
-    TSDAE + BiXT + Diffusion training     :a1, 2026-02, 1M
+    section phase1 [Phase 1: Concept Quality]
+    TSDAE + BiXT + Diffusion training     :a1, 2026-03, 1M
+    Prefix generation training             :a11, after a1, 1M
     Evaluation + concept analysis          :a2, after a1, 2w
-    Pick winner + add contrastive loss     :a3, after a2, 3w
+    Pick winner + add contrastive loss     :a3, after a2, 2w
 
-    section trackB [Track B: Data Scaling]
+    section phase2 [Phase 2: Representation]
     OpenWebText+Wiki training              :b1, after a3, 1M
     Span masking + eval                    :b2, after b1, 2w
     Backbone init experiment               :b3, after b2, 3w
-
-    section trackC [Track C: Architecture]
     Recursive MLM baseline                 :c1, 2026-03, 2w
     Recursive + winner objective           :c2, after a3, 3w
     Dimension Inversion                    :c4, after a3, 1M
-    Test-time compute sweep                :c3, after c2, 1w
 
-    section trackD [Track D: Long-Context]
-    Position embedding extension           :d1, after b1, 2w
-    SCROLLS + LongBench eval              :d2, after d1, 2w
-    Text reasoning benchmarks              :d3, after b1, 2w
-    Recursive reasoning K=12-24            :d5, after c3, 1w
+    section phase2ext [Phase 2: Long-Context]
+    Position embedding extension           :e1, after b1, 2w
+    SCROLLS + LongBench eval              :e2, after e1, 2w
 
-    section trackE [Track E: Audio]
-    Audio adapter design + training        :e1, 2026-08, 1M
-    Speech understanding eval              :e3, after e1, 2w
-    Concept-to-audio decoder               :e4, after e3, 1M
-    Full conversational pipeline           :e5, after e4, 1M
+    section phase3 [Phase 3: Generation]
+    Full response generation               :d1, after b1, 1M
+    AR decoder alternative                 :d2, after d1, 1M
+    Generation evaluation                  :d3, after d1, 2w
+
+    section phase4 [Phase 4: SFT]
+    Instruction dataset curation           :f1, after d4, 2w
+    SFT training                           :f2, after f1, 3w
+    SFT evaluation                         :f3, after f2, 2w
+
+    section phase5 [Phase 5: Reasoning]
+    Variable-depth recursive training      :g1, after d4, 1M
+    Reasoning benchmarks                   :g3, after g1, 2w
+    Test-time compute sweep                :g2, after g1, 1w
+
+    section phase6 [Phase 6: Audio]
+    Audio adapter design + training        :h1, 2026-10, 1M
+    Speech understanding eval              :h3, after h1, 2w
+    Concept-to-audio decoder               :h4, after h3, 1M
+    Full conversational pipeline           :h5, after h4, 1M
 ```
 
 **Milestone summary:**
 
-| Month | Focus | Key deliverable |
-|---|---|---|
-| **1-2** (Mar-Apr) | Track A: concept quality | Winner objective selected, concept rank > 64/128 |
-| **3-4** (May-Jun) | Track B: data scaling + Track C start | Scaled model, STS-B > 0.75, recursive encoder validated |
-| **5-6** (Jul-Aug) | Track D: long-context + reasoning | SCROLLS results, test-time compute scaling demonstrated |
-| **7-9** (Sep-Nov) | Track E.1-E.2: audio adapter | Speech-to-concept mapping working |
-| **10-12** (Dec-Feb 2027) | Track E.3-E.5: full pipeline | Concept-Talker prototype, publication |
+| Month | Phase | Focus | Key deliverable |
+|---|---|---|---|
+| **1-2** (Mar-Apr) | Phase 1 | Track A: concept quality | Winner objective selected, concept rank > 64/128 |
+| **3-5** (May-Jul) | Phase 2 | Track B+C+E: scaling + architecture + long-context | STS-B > 0.75, recursive encoder validated, SCROLLS results |
+| **5-7** (Jul-Sep) | Phase 3 | Track D: generation | Coherent text generation from concepts, SG2 validated |
+| **7-8** (Sep-Oct) | Phase 4 | Track F: instruction following | SFT model functional, SG3 validated |
+| **8-10** (Oct-Dec) | Phase 5 | Track G: reasoning | Test-time compute scaling demonstrated, SG4 validated |
+| **10-12** (Dec-Feb 2027) | Phase 6 | Track H: audio | Concept-Talker prototype, publication |
 
 ---
 
 ## 8. Decision Gates
 
-### Gate 1: After Track A (concept quality fix)
+### Gate 1: Phase 1 -> Phase 2 (after Track A)
 
 ```
 Effective_rank > 64/C (50% utilization)?
   YES → proceed to Track B (data scaling)
   NO, but rank > 30/C → add Slot Attention (C5), retry
-  NO, rank < 30/C → fundamental rethink needed (pause SG2/SG3)
+  NO, rank < 30/C → fundamental rethink needed (pause all downstream)
 
 STS-B Pearson > 0.70?
-  YES → concepts capture semantics, scale data
+  YES → concepts capture semantics, SG1 Milestone 1a met, scale data
   NO → add contrastive loss (A4), retry with combined objective
-
-NEW: Prefix generation suffix loss < 3.0?
-  YES → concepts support generation (critical for reasoning model)
-  NO → self-reconstruction concepts don't generalize to generation;
-       pivot fully to prefix generation training (A11)
 ```
 
-### Gate 2: After Track B (data scaling)
+### Gate 2: Phase 2 -> Phase 3 (after Track A+B)
 
 ```
 STS-B Pearson > 0.75 AND MNLI-m > 65%?
-  YES → proceed to Track D (long-context) AND Track E (audio)
+  YES → SG1 Milestone 1b met
   NO → try backbone init from SmolLM2 (B3), then retry
   Still NO → consider switching to decoder-only architecture
+
+Prefix generation (A11) suffix loss < 3.0?
+  YES → concepts support generation, proceed to Track D (full generation)
+  NO → self-reconstruction concepts don't generalize;
+       pivot fully to prefix generation training before proceeding
 
 Concept rank > 64/128 after scaling?
   YES → concept collapse solved, full speed ahead
   NO → scaling alone insufficient, add t_regs_mst or Slot Attention
+
+All criteria met → proceed to Track D (generation) and Track E (long-context)
 ```
 
-### Gate 3: After Track C (recursive encoder)
+### Gate 3: Phase 3 -> Phase 4 (after Track D)
+
+```
+Coherent multi-sentence generation demonstrated?
+  YES → SG2 validated, proceed to Track F (SFT) and Track G (reasoning)
+  NO → try AR decoder (D2) if diffusion failed, or iterate on decoder architecture
+```
+
+### Gate 4: Phase 4 -> Phase 5 (after Track F)
+
+```
+Instruction-following model generates task-appropriate responses?
+  YES → SG3 validated, proceed to Track G (reasoning augmentation)
+  NO → iterate on SFT data mix and training
+```
+
+### Gate 5: After Track C (recursive encoder, can run in parallel)
 
 ```
 Recursive K=6 within 2pts of standard L6 on GLUE?
@@ -465,25 +616,26 @@ Recursive K=6 within 2pts of standard L6 on GLUE?
   NO → weight tying hurts, keep standard encoder
 
 K=12 beats K=6 on MNLI or reasoning tasks?
-  YES → test-time compute scaling works, SG2 validated
-  NO → recursive refinement not helping, rethink reasoning approach
+  YES → test-time compute scaling works, early SG4 signal
+  NO → recursive refinement not helping on reconstruction tasks (may still help with generation)
 ```
 
-### Gate 4: After Track D (long-context)
+### Gate 6: After Track E (long-context)
 
 ```
 Competitive on SCROLLS at N=4096 with C=512?
-  YES → publish efficiency paper, start Track E
+  YES → publish efficiency paper
   NO → increase concept count (C=1024, C=2048) or model depth
-       Profile whether bottleneck is concept capacity or encoder depth
 ```
 
-### Gate 5: Before Track E (audio)
+### Gate 7: Before Phase 6 (audio)
 
 ```
 STS-B Pearson > 0.75 AND concept rank > 64/128 AND zero-shot STS-B > 0.60?
-  ALL YES → start audio adapter
-  ANY NO → text concept space not ready, continue Track A/B
+  ALL YES → concept space ready
+SG2 decoder patterns established?
+  YES → start audio adapter (Track H)
+  NO → text pipeline not ready, continue Tracks D/F
 ```
 
 ---
@@ -508,7 +660,7 @@ Certain experiments must be re-run after engineering improvements or new trainin
 | Paper | Year | Key finding | Relevance | Link |
 |---|---|---|---|---|
 | Large Concept Models (Meta) | 2024 | Sentence-level concept prediction works for generation | Validates concept approach at scale | [HF](https://hf.co/papers/2412.08821) |
-| Recurrent Depth Reasoning (Geiping) | 2025 | Latent space reasoning outperforms token space | Justifies concept-level prediction, SG2 | [HF](https://hf.co/papers/2502.05171) |
+| Recurrent Depth Reasoning (Geiping) | 2025 | Latent space reasoning outperforms token space | Justifies concept-level prediction, SG4 | [HF](https://hf.co/papers/2502.05171) |
 | TRM (Jolicoeur-Martineau) | 2025 | 7M-param recursive model beats LLMs on ARC-AGI | Direct inspiration for RecursiveConceptEncoder | [HF](https://hf.co/papers/2510.04871) |
 | MAE-LM (Meng et al.) | 2024 | [MASK] tokens corrupt encoder representations | Explains MLM misalignment (problem #1) | [HF](https://hf.co/papers/2302.02060) |
 | TSDAE (Wang et al.) | 2021 | Denoising autoencoder for sentence embeddings | Primary training objective for Track A | [ACL](https://aclanthology.org/2021.findings-emnlp.59/) |
@@ -523,8 +675,8 @@ Certain experiments must be re-run after engineering improvements or new trainin
 | Cramming 1568 Tokens | 2025 | 1500x compression theoretically achievable | Upper bound for concept compression | [HF](https://hf.co/papers/2502.13063) |
 | Intrinsic Dimensionality (Aghajanyan) | 2020 | Token embedding intrinsic dim is 10-37 | Dimension inversion justification (C4) | [HF](https://hf.co/papers/2012.13255) |
 | Token Assorted (Su et al.) | 2025 | Mixing latent + text tokens improves reasoning | Hybrid concept-token generation | [HF](https://hf.co/papers/2502.03275) |
-| SLAM (Slamming) | 2025 | Train Speech-LM on single GPU in 24h | Audio training recipe (E2) | [arXiv](https://arxiv.org/abs/2502.15814) |
-| Qwen2.5-Omni | 2025 | Thinker-Talker architecture for streaming S2S | Audio architecture reference (E4) | [arXiv](https://arxiv.org/abs/2503.20215) |
+| SLAM (Slamming) | 2025 | Train Speech-LM on single GPU in 24h | Audio training recipe (H2) | [arXiv](https://arxiv.org/abs/2502.15814) |
+| Qwen2.5-Omni | 2025 | Thinker-Talker architecture for streaming S2S | Audio architecture reference (H4) | [arXiv](https://arxiv.org/abs/2503.20215) |
 | Moshi (Kyutai) | 2024 | Full-duplex spoken dialogue with inner monologue | Audio architecture reference | [arXiv](https://arxiv.org/abs/2410.00037) |
 | DenoSent | 2024 | Denoising + contrastive objectives are complementary | Supports combined TSDAE + SimCSE (A1+A4) | [OpenReview](https://openreview.net/pdf?id=Z1ElMM3ocz) |
 | Information Bottleneck (Shwartz-Ziv) | 2017 | Training = fitting then compression | Theoretical foundation | [HF](https://hf.co/papers/1703.00810) |
@@ -540,8 +692,8 @@ Certain experiments must be re-run after engineering improvements or new trainin
 
 ---
 
-*Roadmap v4 created: 2026-02-26*
-*Previous version (v3): archived to `docs/5_Archive/`*
+*Roadmap v5 created: 2026-03-01*
+*Previous version (v4): archived to `docs/5_Archive/`*
 *Detailed TODO list: [active_todos.md](active_todos.md)*
 *Experiment results: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md)*
 *Next review: after Track A results (TSDAE/diffusion checkpoints evaluated)*
