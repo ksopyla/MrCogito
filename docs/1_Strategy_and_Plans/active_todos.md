@@ -1,6 +1,6 @@
 # Experiment TODO List v3
 
-**Created: 2026-02-19** | **Updated: 2026-02-27**
+**Created: 2026-02-19** | **Updated: 2026-03-02**
 **Status: Active**
 
 ## Summary of Feb 19 Results
@@ -23,11 +23,12 @@
   - Result: concept diversity ✓ but GLUE regressed (QQP −13.76%, MNLI −10%)
 - [x] ~~Diffusion MLM L2 (TODO 6)~~ — **COMPLETED & EVALUATED (2026-02-25)**
   - Result: Stable training ✓, concept rank 2x better but still collapsed, STS-B near-random
-- [ ] **L6 Diffusion + ELBO baseline (TODO 11)** — **RUNNING ON ODRA (2026-02-26)**
-  - Config: H512 L6 C128 D2, ELBO=True, t_min=0.3, concept_losses=none, 3x RTX 3090
-  - WandB: `diffusion_H512L6C128D2_20260226_155541`
-  - At step 20k: train_loss 2.85, eval_loss 1.42, concept rank 5.45/128 (collapsed)
-  - ETA: ~22h remaining from step 20k
+- [x] ~~L6 Diffusion + ELBO baseline (TODO 11)~~ — **COMPLETED & EVALUATED (2026-03-01)**
+  - Result: Concept rank 5.74/128 (collapsed), STS-B 0.174 (near-random), all GLUE regressed
+  - Decision gate: STS-B < 0.30 → self-reconstruction fundamentally insufficient
+- [x] ~~L6 Diffusion + VICReg + t_regs_mst (TODO 11b)~~ — **COMPLETED & EVALUATED (2026-03-02)**
+  - Result: Concept rank 5.09/128 (collapsed), no improvement over ELBO baseline
+  - Decision gate: rank < 20 → **diffusion self-reconstruction track permanently closed**
 
 ## TODO 0: Run L6 baseline STS-B evaluation — DONE ✅
 
@@ -420,10 +421,10 @@ Week 3 (2026-02-23 — DONE — Track A: Diffusion L2):
 Week 4 (2026-02-26 — Diffusion diagnosis + fixes):
   [x] Diffusion L2 root cause analysis — DONE, 5 causes identified
   [x] TODO 12:  Fix ELBO loss weighting + t_min (A10, code change, 0.5 day) — DONE
-  [~] TODO 11:  L6 Diffusion + ELBO baseline (A9+A10, Odra, 1.5 GPU-day) ← RUNNING
+  [x] TODO 11:  L6 Diffusion + ELBO baseline (A9+A10, Odra, 1.5 GPU-day) ← DONE, STS-B 0.174, rank 5.74
   [x] VICReg + t_regs_mst implementation (warmup, callback, tests) — DONE
-  [ ] TODO 11b: L6 Diffusion + VICReg + t_regs_mst (A5+A9, Odra, 1 GPU-day) ← NEXT after TODO 11
-  [ ] TODO 10:  Train TSDAE PosOnly on Minipile (A1, Odra, 5 GPU-days) ← AFTER TODO 11b
+  [x] TODO 11b: L6 Diffusion + VICReg + t_regs_mst (A5+A9, Polonez, 1 GPU-day) — DONE, rank 5.09, NO improvement → diffusion self-reconstruction CLOSED
+  [ ] TODO 10:  Train TSDAE PosOnly on Minipile (A1, Polonez, 5 GPU-days) ← NEXT
   [ ] TODO 10b: Train TSDAE PosOnly + BiXT on Minipile (A2, parallel on other server)
 
 Week 5 (Prefix generation + evaluation):
@@ -526,7 +527,32 @@ Same as A but with `--use_bixt`. Compare concept quality (effective rank, mean s
 
 **Interim analysis (step 20k, 2026-02-27):** Concept rank 5.45/128 — collapse already visible. Loss plateau at eval_loss 1.42. Prognosis: high risk of repeating L2 STS-B ~0.15 without regularization. Let this run finish for a clean baseline, then immediately run TODO 11b with VICReg.
 
-**Status:** [ ] Running on Odra — WandB: `diffusion_H512L6C128D2_20260226_155541`
+**Final results (2026-03-01):** Training completed: 52,100 steps, 35h 30m on 3x RTX 3090 (Odra). Final train_loss 2.837, eval_loss 1.418, grad_norm 0.048 (very stable).
+
+**Concept analysis:**
+- Effective rank: **5.74/128 (4.5%)** — ✗ COLLAPSED (worse than L2 diffusion's 10.1/128)
+- Mean pairwise similarity: 0.239 — ✓ GOOD
+- Max pairwise similarity: 0.979 — ✗ POOR
+- Top-1 dominance: 0.174 — ✓ GOOD
+
+**Downstream evaluation:**
+
+| Task | L6 Diff+ELBO | L6 MLM ViaDecoder | Delta |
+|---|---|---|---|
+| STS-B Pearson | **0.174** | 0.650 | **−73%** ✗ |
+| MRPC F1 | **78.63%** | 82.73% | −4.1% ✗ |
+| QQP F1 | **57.18%** | 73.35% | −22% ✗ |
+| MNLI-m Acc | **44.25%** | 59.75% | −26% ✗ |
+
+**Decision gate reached:**
+- STS-B 0.174 < 0.30 → **self-reconstruction is fundamentally insufficient, pivot to prefix generation**
+- Concept rank 5.74 < 20 → geometry does NOT scale with depth or ELBO
+- All GLUE metrics regressed massively vs MLM baseline
+- L6 depth actually worsened rank (5.74 vs L2's 10.1) — deeper encoder compresses more aggressively into fewer dimensions
+
+**Conclusion:** ELBO weighting + t_min=0.3 + L6 encoder depth are all individually insufficient to solve concept collapse. Diffusion self-reconstruction training alone cannot produce useful concept representations. The model learns to "hash" tokens through a few dominant concept dimensions. Next: TODO 11b (VICReg regularization) to test if explicit anti-collapse losses help; if not, pivot fully to prefix generation (TODO 13).
+
+**Status:** [x] Done — evaluated 2026-03-01, results logged
 
 ---
 
@@ -578,9 +604,32 @@ Same as A but with `--use_bixt`. Compare concept quality (effective rank, mean s
 - Rank > 30/128 BUT task_loss > 3.5 → weight too aggressive, reduce to 0.01
 - Rank < 20/128 → t_regs_mst insufficient, try Slot Attention (C5) or pivot to prefix generation (A11)
 
-**Machine:** Odra or Polonez, immediately after TODO 11 finishes.
+**Machine:** Polonez (4x RTX 3090), launched 2026-03-01, completed 2026-03-02 (25h 35m).
 
-**Status:** [ ] Implementation done, waiting for TODO 11 baseline to finish
+**Run ID:** `diffusion_H512L6C128D2_20260301_165308`
+**WandB:** [Link](https://wandb.ai/ksopyla/MrCogito/runs/diffusion_H512L6C128D2_20260301_165308)
+
+**Training results:**
+- 39,080 steps, 20 epochs
+- Final train_loss: 2.841, eval_loss: 1.419 (identical to ELBO-only baseline)
+- Grad norm: 0.07 (very stable throughout)
+
+**Concept analysis:**
+- Effective rank: **5.09/128 (4.0%)** — COLLAPSED (worse than ELBO baseline's 5.74)
+- Global effective rank: **5.09/128** — no improvement from regularization
+- Mean pairwise similarity: 0.274 — GOOD
+- Max pairwise similarity: **1.000** — POOR (duplicate concepts persist)
+- Top-1 dominance: 0.197 — GOOD (but meaningless given rank collapse)
+
+**Decision gate reached:**
+- Rank 5.09 < 20/128 → **VICReg + t_regs_mst insufficient**
+- Regularization at 0.02 weight is overwhelmed by reconstruction loss (~50x larger)
+- Diffusion self-reconstruction track is **permanently closed**
+- Focus entirely on TSDAE (TODO 10) + prefix generation (TODO 13)
+
+**Conclusion:** VICReg + t_regs_mst regularization had zero measurable effect on concept collapse when combined with diffusion self-reconstruction. The regularization weight (0.02) is too small relative to the reconstruction loss (~2.84) to influence the optimization landscape. Increasing the weight would degrade reconstruction (as shown in Feb 19/21 with `combined` loss). The fundamental issue is the self-reconstruction objective, not lack of regularization.
+
+**Status:** [x] Done — evaluated 2026-03-02, results logged
 
 ---
 
@@ -633,9 +682,10 @@ Same as A but with `--use_bixt`. Compare concept quality (effective rank, mean s
 
 ---
 
-*Plan updated: 2026-03-01*
+*Plan updated: 2026-03-02*
 *Aligned with: [roadmap.md v5](roadmap.md) (2026-03-01)*
-*Next review: after TODO 11 finishes → evaluate STS-B → launch TODO 11b (VICReg)*
+*Update (2026-03-02): TODO 11b done — VICReg + t_regs_mst FAILED (rank 5.09). Diffusion self-reconstruction track permanently closed. Next: launch TSDAE (TODO 10) + code prefix generation (TODO 13)*
+*Next review: after TODO 10 (TSDAE PosOnly) initial results*
 *Update (2026-03-01): aligned experiment priority order with 6-phase structure (roadmap v5), TODO 13 maps to A11 (concept quality technique in Track A), prefix generation back in Phase 1-2*
 *New (2026-02-27): added TODO 11b (VICReg + t_regs_mst regularization experiment)*
 *New (2026-02-26): added TODO 11-14 based on diffusion diagnosis analysis ([diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md))*
