@@ -29,6 +29,9 @@
 - [x] ~~L6 Diffusion + VICReg + t_regs_mst (TODO 11b)~~ — **COMPLETED & EVALUATED (2026-03-02)**
   - Result: Concept rank 5.09/128 (collapsed), no improvement over ELBO baseline
   - Decision gate: rank < 20 → **diffusion self-reconstruction track permanently closed**
+- [ ] **TODO 13a: Prefix Generation clean baseline** — LAUNCHING on Polonez (2026-03-04)
+  - Config: H512 L6 C128 D2, no BiXT, token_dim=512, no concept losses, ELBO=True, t_min=0.3
+  - Git tag: `arch/prefix-diffusion-20260304`
 
 ## TODO 0: Run L6 baseline STS-B evaluation — DONE ✅
 
@@ -424,7 +427,8 @@ Week 4 (2026-02-26 — Diffusion diagnosis + fixes):
   [x] TODO 11:  L6 Diffusion + ELBO baseline (A9+A10, Odra, 1.5 GPU-day) ← DONE, STS-B 0.174, rank 5.74
   [x] VICReg + t_regs_mst implementation (warmup, callback, tests) — DONE
   [x] TODO 11b: L6 Diffusion + VICReg + t_regs_mst (A5+A9, Polonez, 1 GPU-day) — DONE, rank 5.09, NO improvement → diffusion self-reconstruction CLOSED
-  [ ] TODO 10:  Train TSDAE PosOnly on Minipile (A1, Polonez, 5 GPU-days) ← NEXT
+  [ ] TODO 13a: Prefix Generation clean baseline (A11, Polonez, ~1.5 GPU-days) ← RUNNING
+  [ ] TODO 10:  Train TSDAE PosOnly on Minipile (A1, Odra, 5 GPU-days) ← NEXT (parallel)
   [ ] TODO 10b: Train TSDAE PosOnly + BiXT on Minipile (A2, parallel on other server)
 
 Week 5 (Prefix generation + evaluation):
@@ -662,7 +666,11 @@ Same as A but with `--use_bixt`. Compare concept quality (effective rank, mean s
 
 **Full rationale:** [diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md) (Cause 4: self-reconstruction permits surface hashing; Fix 3: prefix generation)
 
-**Status:** [ ] Not started
+**Implementation status:** [x] Done (2026-03-04) — model, collator, training script, shell script, 27+12 tests passing.
+
+**Experiment 13a (clean baseline):** Launched on Polonez 2026-03-04. Config: H512 L6 C128 D2, no BiXT, token_dim=512, no concept losses.
+
+**Status:** [ ] Training in progress — implementation complete, awaiting training results
 
 ---
 
@@ -690,10 +698,11 @@ Same as A but with `--use_bixt`. Compare concept quality (effective rank, mean s
 
 ---
 
-*Plan updated: 2026-03-02*
+*Plan updated: 2026-03-04*
 *Aligned with: [roadmap.md v5](roadmap.md) (2026-03-01)*
-*Update (2026-03-02): TODO 11b done — VICReg + t_regs_mst FAILED (rank 5.09). Diffusion self-reconstruction track permanently closed. Next: launch TSDAE (TODO 10) + code prefix generation (TODO 13)*
-*Next review: after TODO 10 (TSDAE PosOnly) initial results*
+*Update (2026-03-04): TODO 13 implementation complete. Launching 13a (prefix generation clean baseline) on Polonez. TSDAE (TODO 10) next on Odra.*
+*Update (2026-03-02): TODO 11b done — VICReg + t_regs_mst FAILED (rank 5.09). Diffusion self-reconstruction track permanently closed.*
+*Next review: after TODO 13a step 10k checkpoint (concept analysis)*
 *Update (2026-03-01): aligned experiment priority order with 6-phase structure (roadmap v5), TODO 13 maps to A11 (concept quality technique in Track A), prefix generation back in Phase 1-2*
 *New (2026-02-27): added TODO 11b (VICReg + t_regs_mst regularization experiment)*
 *New (2026-02-26): added TODO 11-14 based on diffusion diagnosis analysis ([diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md))*

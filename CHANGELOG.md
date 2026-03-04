@@ -16,6 +16,76 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ## [Unreleased]
 
+## [2026-03-04] — SODA-style Prefix Generation (Encode Prefix → Generate Suffix)
+
+**Motivation:** Deep analysis ([diffusion_elbo_deep_analysis_20260301.md](docs/4_Research_Notes/diffusion_elbo_deep_analysis_20260301.md))
+proved that **self-reconstruction through a concept bottleneck teaches a positional hash
+function, not semantic representations.** All self-reconstruction variants collapsed:
+MLM (rank 5/128), diffusion L2 (10.1/128), diffusion L6+ELBO (5.74/128), diffusion+VICReg
+(5.09/128). Kendall-Gal forced rank to 95% but STS-B crashed (0.341). The SODA principle
+(Hudson, CVPR 2024) shows bottleneck diffusion learns semantics only when the decoder
+generates DIFFERENT content than the encoder saw. Prefix generation is the text equivalent:
+encode the first 30-50% of a document, generate the remaining 50-70% via masked diffusion.
+Concepts MUST carry semantic gist because surface tokens don't transfer across segments.
+
+### Added — `nn/concept_encoder_diffusion.py`
+
+- **`PrefixDiffusionDecoder`**: Diffusion decoder with sinusoidal (fixed, non-learnable)
+  position embeddings so suffix positions always start at index 0 and generalise to any
+  suffix length without retraining. Same `DiffusionDecoderLayer` (AdaLN-Zero +
+  cross-attention only) as `ConceptDiffusionDecoder`.
+- **`ConceptEncoderForPrefixDiffusion`**: Full model for prefix generation.
+  - `forward()`: (1) encode clean prefix → concepts, (2) sample noise t ~ U(t_min, 1),
+    (3) mask suffix tokens, (4) decode via concept cross-attention, (5) sparse ELBO-weighted
+    CE loss at masked suffix positions.
+  - `generate()`: iterative denoising from all-[MASK] suffix, confidence-based unmasking.
+  - Supports `--model_name_or_path` for warm-starting encoder from MLM checkpoints.
+  - Supports BiXT encoder via `use_bixt=True`.
+
+### Added — `data/data_collators.py`
+
+- **`DataCollatorForPrefixGeneration`**: Splits documents into prefix/suffix:
+  - Strips [CLS]/[SEP], splits content at random ratio (default 30-50% prefix),
+    wraps prefix as `[CLS] content [SEP]`, suffix as `content [SEP]`.
+  - Enforces minimum content lengths per side (default: 5 prefix, 10 suffix).
+  - Dynamic padding per batch (prefix and suffix independently).
+  - Output: `prefix_input_ids`, `prefix_attention_mask`, `suffix_input_ids`,
+    `suffix_attention_mask`, `labels` (with -100 at pad positions).
+
+### Added — `training/train_prefix_diffusion.py`
+
+- Full training script with HF Trainer integration, WandB logging, warm-start support.
+- `PrefixDiffusionTrainer` subclass extracts loss from `DiffusionOutput`.
+- CLI args: `--prefix_ratio_min`, `--prefix_ratio_max`, `--use_bixt`, `--token_embedding_dim`,
+  `--model_name_or_path` (warm-start), concept loss args.
+
+### Added — `scripts/train_prefix_diffusion_multigpu.sh`
+
+- Multi-GPU launch script for Polonez/Odra via accelerate.
+- Default config: H512 L6 C128 D2, ELBO=True, t_min=0.3, LR 3e-4, cosine schedule,
+  batch 64, grad_accum 2, 20 epochs, no concept losses (clean baseline).
+
+### Added — `tests/test_prefix_diffusion.py`
+
+- 27 tests: forward shapes (9), gradient flow (8), ELBO weighting (3),
+  sinusoidal positions (3), end-of-sequence (2), generation (2).
+
+### Added — `tests/test_data_collators.py` (prefix generation tests)
+
+- 12 tests for `DataCollatorForPrefixGeneration`: output keys/shapes, split ratios,
+  no information leak, special tokens, labels padding, dynamic padding, minimum lengths.
+
+### Verification
+
+```
+pytest tests/test_prefix_diffusion.py -v       → 27 passed
+pytest tests/test_data_collators.py -k Prefix -v → 12 passed
+```
+
+**Git tag:** `arch/prefix-diffusion-20260304`
+
+---
+
 ## [2026-03-02] — Paper-Faithful BiXT Cross-Attention (Shared Similarity Matrix)
 
 **Motivation:** The previous `BiConceptEncoderLayer` used two separate
