@@ -549,3 +549,373 @@ class ConceptEncoderForMaskedDiffusion(PreTrainedModel):
                 current[b, positions_to_unmask] = sampled[b, positions_to_unmask]
 
         return current
+
+
+# ============================================================================
+# Prefix diffusion decoder — sinusoidal positions, for SODA-style training
+# ============================================================================
+
+class PrefixDiffusionDecoder(nn.Module):
+    """
+    Diffusion decoder for prefix generation (SODA-style training).
+
+    Identical to ConceptDiffusionDecoder except position embeddings are
+    sinusoidal (fixed, no learned parameters) so they generalise to any
+    suffix length without retraining — important when scaling to 8K+
+    context in Track E.
+
+    Input:
+        noisy_ids  : [B, S]    — suffix token ids with some positions = mask_token_id
+        concepts   : [B, C, H] — concept vectors from the encoder
+        t          : [B]       — noise level (0 = clean, 1 = all masked)
+
+    Output:
+        hidden     : [B, S, H] — decoder hidden states (NOT logits)
+    """
+
+    def __init__(self, config: ConceptEncoderConfig, num_layers: int = 2):
+        super().__init__()
+        H = config.hidden_size
+
+        self.token_embed = nn.Embedding(config.vocab_size, H)
+        self.t_embed = SinusoidalTimestepEmbedding(H)
+
+        sinusoidal_emb = self._create_sinusoidal_embeddings(
+            config.max_sequence_length, H,
+        )
+        self.register_buffer("pos_embed", sinusoidal_emb)
+
+        self.layers = nn.ModuleList(
+            [DiffusionDecoderLayer(config) for _ in range(num_layers)]
+        )
+        self.out_norm = nn.LayerNorm(H)
+
+    @staticmethod
+    def _create_sinusoidal_embeddings(num_positions: int, dim: int) -> torch.Tensor:
+        position = torch.arange(num_positions).unsqueeze(1).float()
+        div_term = torch.exp(
+            torch.arange(0, dim, 2).float() * -(math.log(10000.0) / dim)
+        )
+        embeddings = torch.zeros(num_positions, dim)
+        embeddings[:, 0::2] = torch.sin(position * div_term)
+        embeddings[:, 1::2] = torch.cos(position * div_term)
+        return embeddings
+
+    def forward(
+        self,
+        noisy_ids: torch.LongTensor,
+        concepts: torch.Tensor,
+        t: torch.Tensor,
+    ) -> torch.Tensor:
+        B, S = noisy_ids.shape
+
+        x = self.token_embed(noisy_ids) + self.pos_embed[:S].unsqueeze(0)
+        t_emb = self.t_embed(t)
+
+        for layer in self.layers:
+            x = layer(x, concepts, t_emb)
+
+        return self.out_norm(x)
+
+
+# ============================================================================
+# Prefix generation model (SODA-style: encode prefix → generate suffix)
+# ============================================================================
+
+class ConceptEncoderForPrefixDiffusion(PreTrainedModel):
+    """
+    SODA-inspired prefix generation model.
+
+    The encoder sees clean prefix tokens and compresses them into concept
+    vectors.  The diffusion decoder generates suffix tokens conditioned
+    *only* on those concepts — no residual shortcut from prefix tokens.
+
+    This forces the concept bottleneck to capture semantic gist rather
+    than surface-level token patterns, addressing the concept collapse
+    observed in self-reconstruction diffusion (rank 5/128).
+
+    Training
+    --------
+    Each forward pass:
+      1. Encode CLEAN prefix tokens → concept vectors
+      2. Sample noise level  t ~ Uniform(t_min, 1.0)
+      3. Mask each suffix token independently with probability t
+      4. Decode concepts + noisy suffix → hidden states (cross-attention only)
+      5. Compute SPARSE ELBO-weighted cross-entropy at masked suffix positions
+
+    Inference
+    ---------
+    Use ``generate()`` for iterative denoising of the suffix from all-[MASK].
+
+    References
+    ----------
+    - SODA (Hudson et al., CVPR 2024) — bottleneck diffusion with novel-view
+      synthesis forces semantic representations
+    - MDLM (Sahoo et al., NeurIPS 2024) — ELBO = weighted MLM
+    - LLaDA (Nie et al., 2025) — loss/p_mask weighting
+    """
+
+    config_class = ConceptEncoderConfig
+    base_model_prefix = "concept_encoder"
+
+    def __init__(
+        self,
+        config: ConceptEncoderConfig,
+        loss_config: Optional[LossConfig] = None,
+        decoder_layers: int = 2,
+        t_min: float = 0.3,
+        label_smoothing: float = 0.1,
+        elbo_weight: bool = True,
+    ):
+        super().__init__(config)
+        self.config = config
+        self.t_min = t_min
+        self.label_smoothing = label_smoothing
+        self.elbo_weight = elbo_weight
+
+        self.encoder = ConceptEncoder(config)
+        self.decoder = PrefixDiffusionDecoder(config, num_layers=decoder_layers)
+
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+
+        self.loss_manager = LossManager.create_for_model(
+            concept_num=config.concept_num,
+            hidden_size=config.hidden_size,
+            loss_config=loss_config,
+        )
+        self._loss_config = loss_config
+
+        self.post_init()
+
+    def set_loss_config(self, loss_config: Optional[LossConfig]) -> None:
+        self.loss_manager = LossManager.create_for_model(
+            concept_num=self.config.concept_num,
+            hidden_size=self.config.hidden_size,
+            loss_config=loss_config,
+        )
+        self._loss_config = loss_config
+
+    def _apply_noise(
+        self,
+        input_ids: torch.LongTensor,
+        t: torch.Tensor,
+        mask_token_id: int,
+        attention_mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.LongTensor, torch.BoolTensor]:
+        """
+        Forward diffusion on suffix tokens: independently mask each token
+        with probability t[i].  Padding positions (attention_mask == 0) are
+        never masked.
+        """
+        rand = torch.rand_like(input_ids, dtype=torch.float32)
+        noise_mask = rand < t.unsqueeze(1)
+
+        if attention_mask is not None:
+            noise_mask = noise_mask & (attention_mask == 1)
+
+        noisy_ids = input_ids.clone()
+        noisy_ids[noise_mask] = mask_token_id
+        return noisy_ids, noise_mask
+
+    def forward(
+        self,
+        prefix_input_ids: torch.LongTensor,
+        prefix_attention_mask: Optional[torch.Tensor] = None,
+        suffix_input_ids: Optional[torch.LongTensor] = None,
+        suffix_attention_mask: Optional[torch.Tensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        t: Optional[torch.Tensor] = None,
+        return_dict: Optional[bool] = None,
+        **kwargs,
+    ) -> DiffusionOutput:
+        """
+        Args:
+            prefix_input_ids:      [B, P] — clean prefix tokens (encoder input)
+            prefix_attention_mask:  [B, P] — 1=real, 0=pad
+            suffix_input_ids:       [B, S] — clean suffix tokens (decoder target)
+            suffix_attention_mask:  [B, S] — 1=real, 0=pad
+            labels:                 [B, S] — suffix token ids, -100 at padding
+            t:                      [B]    — optional noise level override
+            return_dict:            bool
+        """
+        return_dict = (
+            return_dict if return_dict is not None
+            else self.config.use_return_dict
+        )
+        B = prefix_input_ids.shape[0]
+
+        # 1. Encode prefix → concepts
+        encoder_out = self.encoder(
+            input_ids=prefix_input_ids,
+            attention_mask=prefix_attention_mask,
+            return_dict=True,
+        )
+        concepts = encoder_out.last_hidden_state  # [B, C, H]
+
+        loss = None
+        masked_logits = None
+        noise_level = None
+
+        if suffix_input_ids is not None:
+            S = suffix_input_ids.shape[1]
+
+            # 2. Sample noise level
+            if t is None:
+                t = torch.empty(B, device=prefix_input_ids.device).uniform_(
+                    self.t_min, 1.0,
+                )
+            noise_level = t
+
+            # 3. Apply masking to suffix (forward diffusion)
+            mask_token_id = self.config.mask_token_id
+            if mask_token_id is None:
+                raise ValueError(
+                    "config.mask_token_id must be set. "
+                    "Pass it via ConceptEncoderConfig("
+                    "mask_token_id=tokenizer.mask_token_id)."
+                )
+            noisy_suffix, noise_mask = self._apply_noise(
+                suffix_input_ids, t, mask_token_id, suffix_attention_mask,
+            )
+
+            # 4. Decode: concept cross-attention → hidden states
+            hidden = self.decoder(noisy_suffix, concepts, t)  # [B, S, H]
+
+            # 5. SPARSE logits and loss at masked suffix positions
+            if self.training or noise_mask.any():
+                flat_hidden = hidden.reshape(-1, hidden.size(-1))  # [B*S, H]
+                flat_mask = noise_mask.reshape(-1)                   # [B*S]
+                masked_hidden = flat_hidden[flat_mask]               # [M, H]
+                masked_logits = self.lm_head(masked_hidden)          # [M, V]
+
+                # Targets: use labels if provided, otherwise suffix_input_ids
+                targets = labels if labels is not None else suffix_input_ids
+                masked_targets = targets.reshape(-1)[flat_mask]      # [M]
+
+                # Exclude padding from loss (-100 positions)
+                valid = masked_targets != -100
+                if valid.any():
+                    valid_logits = masked_logits[valid]
+                    valid_targets = masked_targets[valid]
+
+                    if self.elbo_weight:
+                        per_token_loss = F.cross_entropy(
+                            valid_logits, valid_targets,
+                            reduction='none',
+                            label_smoothing=self.label_smoothing,
+                        )
+                        sample_indices = torch.arange(
+                            B, device=prefix_input_ids.device,
+                        ).unsqueeze(1).repeat(1, S).reshape(-1)[flat_mask][valid]
+                        token_weights = 1.0 / t[sample_indices].clamp(min=0.1)
+                        diffusion_loss = (
+                            (per_token_loss * token_weights).sum()
+                            / token_weights.sum()
+                        )
+                    else:
+                        diffusion_loss = F.cross_entropy(
+                            valid_logits, valid_targets,
+                            label_smoothing=self.label_smoothing,
+                        )
+
+                    if self.training:
+                        loss = self.loss_manager(
+                            task_loss=diffusion_loss,
+                            concept_repr=concepts,
+                        )
+                    else:
+                        loss = diffusion_loss
+                else:
+                    loss = torch.tensor(
+                        0.0, device=prefix_input_ids.device, requires_grad=True,
+                    )
+
+        if not return_dict:
+            return (loss, None, concepts, noise_level)
+
+        return DiffusionOutput(
+            loss=loss,
+            logits=None,
+            masked_logits=masked_logits,
+            concept_repr=concepts,
+            noise_level=noise_level,
+        )
+
+    @torch.no_grad()
+    def generate(
+        self,
+        prefix_input_ids: torch.LongTensor,
+        prefix_attention_mask: Optional[torch.Tensor] = None,
+        suffix_length: int = 256,
+        num_steps: int = 10,
+        temperature: float = 1.0,
+        top_k: int = 0,
+    ) -> torch.LongTensor:
+        """
+        Generate suffix via iterative masked-diffusion denoising.
+
+        Args:
+            prefix_input_ids:      [B, P] — prefix tokens to encode
+            prefix_attention_mask:  [B, P] — attention mask for prefix
+            suffix_length:         int — max tokens to generate
+            num_steps:             int — denoising iterations
+            temperature:           float — sampling temperature
+            top_k:                 int — top-k filtering (0 = off)
+
+        Returns:
+            generated_ids : [B, suffix_length]  fully denoised suffix tokens
+        """
+        mask_id = self.config.mask_token_id
+        assert mask_id is not None, "config.mask_token_id must be set"
+
+        B = prefix_input_ids.shape[0]
+
+        encoder_out = self.encoder(
+            prefix_input_ids, prefix_attention_mask, return_dict=True,
+        )
+        concepts = encoder_out.last_hidden_state
+
+        current = torch.full(
+            (B, suffix_length), mask_id,
+            dtype=torch.long, device=prefix_input_ids.device,
+        )
+
+        for step in range(num_steps):
+            still_masked = (current == mask_id)
+            n_masked = still_masked.sum(dim=-1).max().item()
+            if n_masked == 0:
+                break
+
+            t_val = 1.0 - step / num_steps
+            t = torch.full((B,), t_val, device=current.device)
+
+            hidden = self.decoder(current, concepts, t)
+            logits = self.lm_head(hidden)
+
+            if temperature != 1.0:
+                logits = logits / temperature
+            if top_k > 0:
+                values, _ = logits.topk(top_k, dim=-1)
+                logits[logits < values[..., -1:]] = float('-inf')
+
+            probs = F.softmax(logits, dim=-1)
+            sampled = torch.multinomial(
+                probs.reshape(-1, probs.size(-1)), num_samples=1,
+            ).reshape(B, suffix_length)
+
+            confidence = probs.max(dim=-1).values
+            steps_remaining = num_steps - step
+            unmask_count = max(1, round(n_masked / steps_remaining))
+            confidence_masked = confidence * still_masked.float()
+
+            for b in range(B):
+                masked_positions = still_masked[b].nonzero(as_tuple=True)[0]
+                if len(masked_positions) == 0:
+                    continue
+                n_unmask = min(unmask_count, len(masked_positions))
+                conf_at_masked = confidence_masked[b, masked_positions]
+                _, top_idx = conf_at_masked.topk(n_unmask)
+                positions_to_unmask = masked_positions[top_idx]
+                current[b, positions_to_unmask] = sampled[b, positions_to_unmask]
+
+        return current

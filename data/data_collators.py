@@ -8,9 +8,16 @@ DataCollatorForTSDAE:
 
     Wang et al., "TSDAE: Using Transformer-based Sequential Denoising
     Auto-Encoder for Unsupervised Sentence Embedding Learning", EMNLP 2021.
+
+DataCollatorForPrefixGeneration:
+    SODA-inspired prefix generation training (Hudson et al., CVPR 2024).
+    Splits documents into prefix (encoder input) and suffix (decoder target),
+    forcing the concept bottleneck to capture semantics rather than surface
+    tokens, since the decoder must generate different content than the encoder saw.
 """
 
 from typing import Any, Dict, List, Optional
+import random
 import torch
 
 
@@ -97,5 +104,151 @@ class DataCollatorForTSDAE:
         return {
             "input_ids": padded_ids,
             "attention_mask": encoder_mask,
+            "labels": labels,
+        }
+
+
+class DataCollatorForPrefixGeneration:
+    """
+    SODA-inspired collator: split each document into prefix (encoder) and
+    suffix (decoder target).
+
+    The encoder sees clean prefix tokens and compresses them into concept
+    vectors. The decoder must generate the suffix conditioned only on those
+    concepts. Because the suffix never appears in the encoder input, the
+    concept bottleneck is forced to capture semantic gist rather than
+    surface-level token patterns.
+
+    Sequence template
+    -----------------
+    The raw tokenized sequence ``[CLS] content_tokens [SEP]`` is split into::
+
+        Encoder input  :  [CLS]  prefix_content  [SEP]   +  [PAD]...
+        Decoder target :         suffix_content   [SEP]   +  [PAD]...
+
+    The final ``[SEP]`` in the suffix acts as end-of-generation marker so the
+    model learns *when* to stop.  All suffix tokens including ``[SEP]`` are
+    subject to diffusion masking (masking is applied inside the model, not
+    here).
+
+    Output contract
+    ---------------
+    ::
+
+        prefix_input_ids      : [B, P]  -- [CLS] prefix [SEP] + padding
+        prefix_attention_mask : [B, P]  -- 1 = real, 0 = pad
+        suffix_input_ids      : [B, S]  -- suffix [SEP] + padding
+        suffix_attention_mask : [B, S]  -- 1 = real, 0 = pad
+        labels                : [B, S]  -- same as suffix_input_ids but -100 at pad
+    """
+
+    def __init__(
+        self,
+        tokenizer,
+        max_length: int = 512,
+        prefix_ratio_min: float = 0.3,
+        prefix_ratio_max: float = 0.5,
+        min_prefix_content: int = 5,
+        min_suffix_content: int = 10,
+    ):
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+        self.prefix_ratio_min = prefix_ratio_min
+        self.prefix_ratio_max = prefix_ratio_max
+        self.min_prefix_content = min_prefix_content
+        self.min_suffix_content = min_suffix_content
+
+        self.pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
+        self.cls_token_id = getattr(tokenizer, "cls_token_id", None)
+        self.sep_token_id = getattr(tokenizer, "sep_token_id", None)
+
+        if self.sep_token_id is None:
+            raise ValueError(
+                "Tokenizer must have a sep_token_id for prefix generation "
+                "(used as end-of-sequence marker in the suffix)."
+            )
+
+    def _extract_content(self, ids: List[int]) -> List[int]:
+        """Strip leading [CLS] and trailing [SEP] to get pure content tokens."""
+        start = 0
+        if self.cls_token_id is not None and len(ids) > 0 and ids[0] == self.cls_token_id:
+            start = 1
+        end = len(ids)
+        if self.sep_token_id is not None and end > start and ids[end - 1] == self.sep_token_id:
+            end -= 1
+        # Also strip any trailing padding
+        while end > start and ids[end - 1] == self.pad_token_id:
+            end -= 1
+        return ids[start:end]
+
+    def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
+        batch_size = len(features)
+
+        prefix_seqs: List[List[int]] = []
+        suffix_seqs: List[List[int]] = []
+
+        for f in features:
+            raw_ids = f["input_ids"]
+            if isinstance(raw_ids, torch.Tensor):
+                raw_ids = raw_ids.tolist()
+
+            content = self._extract_content(raw_ids)
+            content_len = len(content)
+
+            min_p = self.min_prefix_content
+            min_s = self.min_suffix_content
+
+            if content_len < min_p + min_s:
+                # Very short: split roughly in half, ensuring at least 1 per side
+                split = max(1, content_len // 2)
+            else:
+                lo = max(min_p, int(content_len * self.prefix_ratio_min))
+                hi = min(content_len - min_s, int(content_len * self.prefix_ratio_max))
+                if lo > hi:
+                    lo = min_p
+                    hi = content_len - min_s
+                split = random.randint(lo, max(lo, hi))
+
+            prefix_content = content[:split]
+            suffix_content = content[split:]
+
+            # Build: [CLS] prefix_content [SEP]
+            prefix_ids: List[int] = []
+            if self.cls_token_id is not None:
+                prefix_ids.append(self.cls_token_id)
+            prefix_ids.extend(prefix_content)
+            prefix_ids.append(self.sep_token_id)
+
+            # Build: suffix_content [SEP]
+            suffix_ids = list(suffix_content)
+            suffix_ids.append(self.sep_token_id)
+
+            prefix_seqs.append(prefix_ids)
+            suffix_seqs.append(suffix_ids)
+
+        max_prefix_len = min(max(len(s) for s in prefix_seqs), self.max_length)
+        max_suffix_len = min(max(len(s) for s in suffix_seqs), self.max_length)
+
+        prefix_input_ids = torch.full((batch_size, max_prefix_len), self.pad_token_id, dtype=torch.long)
+        prefix_attention_mask = torch.zeros(batch_size, max_prefix_len, dtype=torch.long)
+        suffix_input_ids = torch.full((batch_size, max_suffix_len), self.pad_token_id, dtype=torch.long)
+        suffix_attention_mask = torch.zeros(batch_size, max_suffix_len, dtype=torch.long)
+        labels = torch.full((batch_size, max_suffix_len), -100, dtype=torch.long)
+
+        for i in range(batch_size):
+            p_len = min(len(prefix_seqs[i]), max_prefix_len)
+            prefix_input_ids[i, :p_len] = torch.tensor(prefix_seqs[i][:p_len], dtype=torch.long)
+            prefix_attention_mask[i, :p_len] = 1
+
+            s_len = min(len(suffix_seqs[i]), max_suffix_len)
+            suffix_input_ids[i, :s_len] = torch.tensor(suffix_seqs[i][:s_len], dtype=torch.long)
+            suffix_attention_mask[i, :s_len] = 1
+            labels[i, :s_len] = suffix_input_ids[i, :s_len]
+
+        return {
+            "prefix_input_ids": prefix_input_ids,
+            "prefix_attention_mask": prefix_attention_mask,
+            "suffix_input_ids": suffix_input_ids,
+            "suffix_attention_mask": suffix_attention_mask,
             "labels": labels,
         }

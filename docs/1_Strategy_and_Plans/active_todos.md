@@ -682,6 +682,14 @@ Same as A but with `--use_bixt`. Compare concept quality (effective rank, mean s
 
 ---
 
+## Engineering Reminders (Backlog)
+
+1. Add more tests for testing the token concept asymmetry (e.g., `token_embeddings_dim` different than `hidden_size`).
+2. Check if our test suites cover the most important cases.
+3. Check if `token_projection` is needed; this probably cancels all the goodness of asymmetry of concept and token embeddings dims.
+
+---
+
 *Plan updated: 2026-03-02*
 *Aligned with: [roadmap.md v5](roadmap.md) (2026-03-01)*
 *Update (2026-03-02): TODO 11b done — VICReg + t_regs_mst FAILED (rank 5.09). Diffusion self-reconstruction track permanently closed. Next: launch TSDAE (TODO 10) + code prefix generation (TODO 13)*

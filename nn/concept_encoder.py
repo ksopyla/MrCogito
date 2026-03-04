@@ -78,6 +78,7 @@ class ConceptEncoderConfig(PretrainedConfig):
         is_decoder: bool = False,
         tie_word_embeddings: bool = False,
         use_bixt: bool = False,
+        bixt_token_ffn: bool = True,
         decoder_posonly: bool = False,
         **kwargs,
     ):
@@ -107,8 +108,8 @@ class ConceptEncoderConfig(PretrainedConfig):
         self.sep_token_id = sep_token_id
         self.mask_token_id = mask_token_id
         self.unk_token_id = unk_token_id
-        # use_bixt: enable BiXT bidirectional cross-attention (tokens update from concepts at each layer)
         self.use_bixt = use_bixt
+        self.bixt_token_ffn = bixt_token_ffn
         # decoder_posonly: True for TSDAE/PosOnly checkpoints — decoder queries use position
         # embeddings only (no input token shortcut). Stored in config so ViaDecoder classification
         # loads the correct decoder variant without silently using the wrong mode.
@@ -222,15 +223,113 @@ class ConceptEncoderLayer(nn.Module):
         return concept_representations
 
 
+class BiXTCrossAttention(nn.Module):
+    """Paper-faithful bi-directional cross-attention (Hiller et al., NeurIPS 2024).
+
+    Computes the similarity matrix R_lat @ R_tok^T ONCE and transposes it for the
+    reverse direction (Eq. 2).  Uses 4 projection matrices (R_lat, V_lat, R_tok,
+    V_tok) instead of 6 (Q, K, V per direction), saving ~1/3 of projection params.
+    Both sides are updated simultaneously from pre-update representations (Eq. 3).
+
+    Supports different dim_lat and dim_tok, enabling Dimension Inversion where
+    tokens stay in a thin embedding space (e.g. 32) while concepts live in a
+    rich space (e.g. 512).  The dimension bridging happens transiently inside
+    the reference/value projections.
+    """
+
+    def __init__(
+        self,
+        dim_lat: int,
+        dim_tok: int,
+        dim_attn: int,
+        num_heads: int,
+        attn_drop: float = 0.,
+        proj_drop: float = 0.,
+    ):
+        super().__init__()
+        assert dim_attn % num_heads == 0, (
+            f"dim_attn ({dim_attn}) must be divisible by num_heads ({num_heads})"
+        )
+        self.num_heads = num_heads
+        self.head_dim = dim_attn // num_heads
+        self.scale = self.head_dim ** -0.5
+        self.dim_attn = dim_attn
+
+        # Reference + Value projections for each side (4 matrices, not 6)
+        self.rv_lat = nn.Linear(dim_lat, dim_attn * 2)
+        self.rv_tok = nn.Linear(dim_tok, dim_attn * 2)
+
+        self.attn_drop_lat = nn.Dropout(attn_drop)
+        self.attn_drop_tok = nn.Dropout(attn_drop)
+
+        self.proj_lat = nn.Linear(dim_attn, dim_lat)
+        self.proj_tok = nn.Linear(dim_attn, dim_tok)
+        self.proj_drop_lat = nn.Dropout(proj_drop)
+        self.proj_drop_tok = nn.Dropout(proj_drop)
+
+    def forward(
+        self,
+        x_lat: torch.Tensor,
+        x_tok: torch.Tensor,
+        key_padding_mask: Optional[torch.BoolTensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            x_lat: [B, M, dim_lat] — pre-normed concept representations.
+            x_tok: [B, N, dim_tok] — pre-normed token representations.
+            key_padding_mask: [B, N] bool, True = padded (ignored in lat←tok).
+
+        Returns:
+            (lat_update, tok_update): residual deltas for both sides.
+        """
+        B, M, _ = x_lat.shape
+        _, N, _ = x_tok.shape
+        h, d = self.num_heads, self.head_dim
+
+        rv_l = self.rv_lat(x_lat).reshape(B, M, 2, h, d).permute(2, 0, 3, 1, 4)
+        r_lat, v_lat = rv_l.unbind(0)  # each [B, h, M, d]
+
+        rv_t = self.rv_tok(x_tok).reshape(B, N, 2, h, d).permute(2, 0, 3, 1, 4)
+        r_tok, v_tok = rv_t.unbind(0)  # each [B, h, N, d]
+
+        # Similarity computed ONCE (Eq. 2)
+        S = (r_lat @ r_tok.transpose(-2, -1)) * self.scale  # [B, h, M, N]
+
+        # --- Lat ← Tok: mask padded token positions before softmax ---
+        if key_padding_mask is not None:
+            S_masked = S.masked_fill(
+                key_padding_mask.unsqueeze(1).unsqueeze(2),  # [B,1,1,N]
+                float('-inf'),
+            )
+        else:
+            S_masked = S
+
+        A_lat = self.attn_drop_lat(S_masked.softmax(dim=-1))     # [B, h, M, N]
+        lat_out = (A_lat @ v_tok).transpose(1, 2).reshape(B, M, self.dim_attn)
+        lat_out = self.proj_drop_lat(self.proj_lat(lat_out))
+
+        # --- Tok ← Lat: transpose ORIGINAL S (latents are never padded) ---
+        S_T = S.transpose(-2, -1)                                 # [B, h, N, M]
+        A_tok = self.attn_drop_tok(S_T.softmax(dim=-1))           # [B, h, N, M]
+        tok_out = (A_tok @ v_lat).transpose(1, 2).reshape(B, N, self.dim_attn)
+        tok_out = self.proj_drop_tok(self.proj_tok(tok_out))
+
+        return lat_out, tok_out
+
+
 class BiConceptEncoderLayer(nn.Module):
     """BiXT-style bidirectional cross-attention encoder layer.
-    
-    Extends ConceptEncoderLayer with a reverse cross-attention that updates
-    token representations from concepts.  This lets tokens become contextualised
-    across layers WITHOUT O(N^2) token self-attention.
-    
-    Per-layer complexity: O(C*N) + O(N*C) + O(C^2) = O(C*N), linear in N.
-    
+
+    Uses paper-faithful BiXTCrossAttention: single shared similarity matrix,
+    simultaneous updates, and native support for Dimension Inversion where
+    tokens stay in token_embedding_dim throughout all layers.
+
+    Per-layer flow:
+      1. BiXCA  — concepts and tokens attend to each other simultaneously  O(C*N)
+      2. Token FFN (optional) — cheap non-linear refinement in dim_tok     O(N*dim_tok)
+      3. Concept self-attention                                            O(C^2)
+      4. Concept FFN (gated)                                               O(C*intermediate)
+
     Reference: Hiller, Ehinger & Drummond, "BiXT: Perceiving Longer Sequences
     With Bi-Directional Cross-Attention Transformers", NeurIPS 2024.
     """
@@ -238,34 +337,41 @@ class BiConceptEncoderLayer(nn.Module):
     def __init__(self, config: ConceptEncoderConfig):
         super().__init__()
 
-        H = config.hidden_size
+        dim_lat = config.hidden_size
+        dim_tok = config.token_embedding_dim
+        dim_attn = config.hidden_size
 
-        # --- concepts ← tokens (same as standard layer) ---
-        self.concept_token_attn = nn.MultiheadAttention(
-            embed_dim=H, num_heads=config.num_attention_heads,
-            dropout=config.attention_probs_dropout_prob, batch_first=True,
+        # --- BiXT cross-attention (single similarity matrix) ---
+        self.bixt_cross_attn = BiXTCrossAttention(
+            dim_lat=dim_lat, dim_tok=dim_tok, dim_attn=dim_attn,
+            num_heads=config.num_attention_heads,
+            attn_drop=config.attention_probs_dropout_prob,
+            proj_drop=config.hidden_dropout_prob,
         )
-        self.pre_cross_attn_norm = nn.LayerNorm(H)
+        self.pre_cross_norm_lat = nn.LayerNorm(dim_lat)
+        self.pre_cross_norm_tok = nn.LayerNorm(dim_tok)
 
-        # --- tokens ← concepts (BiXT reverse path, O(N*C)) ---
-        self.token_concept_attn = nn.MultiheadAttention(
-            embed_dim=H, num_heads=config.num_attention_heads,
-            dropout=config.attention_probs_dropout_prob, batch_first=True,
-        )
-        self.pre_reverse_cross_norm = nn.LayerNorm(H)
+        # --- token FFN (optional, very cheap at small dim_tok) ---
+        self._use_token_ffn = getattr(config, "bixt_token_ffn", True)
+        if self._use_token_ffn:
+            tok_intermediate = dim_tok * 4
+            self.pre_ff_norm_tok = nn.LayerNorm(dim_tok)
+            self.Wi_tok = nn.Linear(dim_tok, tok_intermediate * 2)  # *2 for gating
+            self.Wo_tok = nn.Linear(tok_intermediate, dim_tok)
+            self.wi_dropout_tok = nn.Dropout(config.hidden_dropout_prob)
 
         # --- concept self-attention ---
         self.concept_self_attn = nn.MultiheadAttention(
-            embed_dim=H, num_heads=config.num_attention_heads,
+            embed_dim=dim_lat, num_heads=config.num_attention_heads,
             dropout=config.attention_probs_dropout_prob, batch_first=True,
         )
-        self.pre_self_attn_norm = nn.LayerNorm(H)
+        self.pre_self_attn_norm = nn.LayerNorm(dim_lat)
 
         # --- concept FFN (gated) ---
-        self.pre_ff_norm = nn.LayerNorm(H)
-        self.Wi = nn.Linear(H, config.intermediate_size * 2)
-        self.Wo = nn.Linear(config.intermediate_size, H)
-        self.wi_dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.pre_ff_norm_lat = nn.LayerNorm(dim_lat)
+        self.Wi_lat = nn.Linear(dim_lat, config.intermediate_size * 2)
+        self.Wo_lat = nn.Linear(config.intermediate_size, dim_lat)
+        self.wi_dropout_lat = nn.Dropout(config.hidden_dropout_prob)
         self.act_fn = nn.GELU()
 
     def forward(
@@ -275,37 +381,39 @@ class BiConceptEncoderLayer(nn.Module):
         attention_mask: Optional[torch.BoolTensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Returns:
-            (concepts, tokens) -- both updated.
-        """
-        # 1. concepts ← cross-attn(Q=concepts, KV=tokens)   O(C*N)
-        normed_c = self.pre_cross_attn_norm(concept_representations)
-        c_out, _ = self.concept_token_attn(
-            normed_c, token_embeddings, token_embeddings,
-            key_padding_mask=attention_mask, need_weights=False,
-        )
-        concept_representations = concept_representations + c_out
+        Args:
+            concept_representations: [B, C, dim_lat]
+            token_embeddings:        [B, N, dim_tok]  (may differ from dim_lat)
+            attention_mask:          [B, N] bool, True = padded
 
-        # 2. tokens ← cross-attn(Q=tokens, KV=concepts)    O(N*C)
-        normed_t = self.pre_reverse_cross_norm(token_embeddings)
-        t_out, _ = self.token_concept_attn(
-            normed_t, concept_representations, concept_representations,
-            need_weights=False,
-        )
+        Returns:
+            (concepts, tokens) — both updated.
+        """
+        # 1. Simultaneous bi-directional cross-attention (Eq. 2-3)
+        normed_c = self.pre_cross_norm_lat(concept_representations)
+        normed_t = self.pre_cross_norm_tok(token_embeddings)
+        c_out, t_out = self.bixt_cross_attn(normed_c, normed_t, key_padding_mask=attention_mask)
+        concept_representations = concept_representations + c_out
         token_embeddings = token_embeddings + t_out
 
-        # 3. concept self-attention   O(C^2)
+        # 2. Token FFN — cheap non-linear processing in dim_tok space
+        if self._use_token_ffn:
+            nt = self.pre_ff_norm_tok(token_embeddings)
+            ff_in_t, ff_gate_t = self.Wi_tok(nt).chunk(2, dim=-1)
+            ff_out_t = self.Wo_tok(self.wi_dropout_tok(self.act_fn(ff_in_t) * ff_gate_t))
+            token_embeddings = token_embeddings + ff_out_t
+
+        # 3. Concept self-attention   O(C^2)
         normed_c = self.pre_self_attn_norm(concept_representations)
         sa_out, _ = self.concept_self_attn(
-            normed_c, normed_c, normed_c,
-            attn_mask=None, need_weights=False,
+            normed_c, normed_c, normed_c, attn_mask=None, need_weights=False,
         )
         concept_representations = concept_representations + sa_out
 
-        # 4. concept FFN
-        normed_c = self.pre_ff_norm(concept_representations)
-        ff_in, ff_gate = self.Wi(normed_c).chunk(2, dim=-1)
-        ff_out = self.Wo(self.wi_dropout(self.act_fn(ff_in) * ff_gate))
+        # 4. Concept FFN (gated)
+        normed_c = self.pre_ff_norm_lat(concept_representations)
+        ff_in, ff_gate = self.Wi_lat(normed_c).chunk(2, dim=-1)
+        ff_out = self.Wo_lat(self.wi_dropout_lat(self.act_fn(ff_in) * ff_gate))
         concept_representations = concept_representations + ff_out
 
         return concept_representations, token_embeddings
@@ -341,9 +449,11 @@ class ConceptEncoder(PreTrainedModel):
         )
         
         # Dimension Inversion: project token embeddings to hidden_size when dims differ.
-        # When token_embedding_dim < hidden_size, tokens are cheap (small vocab memory)
-        # and concepts are rich (large hidden_size for attention and FFN).
-        if token_dim != config.hidden_size:
+        # BiXT handles dimension bridging internally (rv_tok projects dim_tok → dim_attn
+        # transiently), so tokens stay thin throughout all layers — critical for long
+        # sequences where persistent [B, N, hidden_size] storage is prohibitive.
+        # Non-BiXT layers require tokens in hidden_size (nn.MHA embed_dim constraint).
+        if token_dim != config.hidden_size and not config.use_bixt:
             self.token_projection = nn.Linear(token_dim, config.hidden_size)
         else:
             self.token_projection = None
