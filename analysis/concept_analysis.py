@@ -212,7 +212,13 @@ class ConceptAttentionExtractor:
             encoder = self.model.encoder
             for layer_idx, layer in enumerate(encoder.layers):
                 # Cross-attention: concepts attending to tokens
-                if hasattr(layer, 'concept_token_attn'):
+                # BiXT layers use bixt_cross_attn; standard layers use concept_token_attn
+                if hasattr(layer, 'bixt_cross_attn'):
+                    hook = layer.bixt_cross_attn.register_forward_hook(
+                        get_attention_hook(f'layer_{layer_idx}_cross')
+                    )
+                    self.hooks.append(hook)
+                elif hasattr(layer, 'concept_token_attn'):
                     hook = layer.concept_token_attn.register_forward_hook(
                         get_attention_hook(f'layer_{layer_idx}_cross')
                     )

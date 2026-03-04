@@ -133,7 +133,7 @@ def get_parameter_breakdown(model: Module) -> Dict[str, Dict[str, int]]:
             component_params['concept_embeddings'] += param_count
         
         # Cross attention (concept-token attention)
-        elif 'concept_token_attn' in name:
+        elif 'concept_token_attn' in name or 'bixt_cross_attn' in name:
             component_params['cross_attention'] += param_count
         
         # Self attention (concept-concept attention)

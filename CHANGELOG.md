@@ -16,6 +16,62 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ## [Unreleased]
 
+## [2026-03-02] — Paper-Faithful BiXT Cross-Attention (Shared Similarity Matrix)
+
+**Motivation:** The previous `BiConceptEncoderLayer` used two separate
+`nn.MultiheadAttention` modules, computing the similarity matrix twice with 6
+projection matrices. The BiXT paper (Hiller et al., NeurIPS 2024, Eq. 2-3)
+computes the similarity once and transposes it, using 4 projections (R+V per
+side) — saving ~1/3 of cross-attention params and halving the dominant O(C*N)
+matmul. At the project's 1M-token target (C=8192, N=1M), this eliminates
+terabytes of redundant compute per forward pass.
+
+The rewrite also enables true Dimension Inversion in BiXT mode: tokens stay at
+`token_embedding_dim` (e.g. 32) throughout all layers instead of being projected
+to `hidden_size` (e.g. 512) before the first layer. The BiXT attention handles
+the dimension bridging internally via its R/V projections, yielding a 16x
+reduction in persistent token memory for long sequences.
+
+### Changed — `nn/concept_encoder.py`
+
+- **Added `BiXTCrossAttention`**: Custom cross-attention module implementing
+  Eq. 2-3 from the BiXT paper. Single similarity matrix `S = R_lat @ R_tok^T`,
+  transposed for the reverse direction. Supports `dim_lat != dim_tok` for
+  Dimension Inversion. Proper `key_padding_mask` handling via masked_fill.
+- **Rewrote `BiConceptEncoderLayer`**: Now uses `BiXTCrossAttention` instead of
+  two `nn.MultiheadAttention` modules. Both sides are updated simultaneously
+  from pre-update representations (matching paper). Layer ordering: BiXCA →
+  optional token FFN → concept self-attention → concept FFN.
+- **Added optional token FFN** (`bixt_token_ffn` config flag, default True):
+  Gated FFN on the token side after cross-attention, matching the reference
+  implementation's `CABlock`. Very cheap at small `dim_tok` (e.g. 32 → 128
+  intermediate).
+- **`ConceptEncoder` skips `token_projection`** when `use_bixt=True`: Tokens
+  stay at `token_embedding_dim` through all layers.
+- **Added `bixt_token_ffn` to `ConceptEncoderConfig`**.
+
+### Changed — `training/train_tsdae.py`
+
+- Added `bixt_token_ffn` argument to `ModelArguments`, passed to config and
+  logged to wandb.
+
+### Changed — `training/utils_training.py`
+
+- `count_model_params` now counts `bixt_cross_attn` params under
+  `cross_attention` component.
+
+### Changed — `analysis/concept_analysis.py`
+
+- Attention hook registration handles both `bixt_cross_attn` (new BiXT layers)
+  and `concept_token_attn` (standard layers).
+
+### Breaking — State dict incompatibility
+
+Old BiXT checkpoints (using `concept_token_attn` / `token_concept_attn` param
+names) will NOT load into the new `BiConceptEncoderLayer`. No existing trained
+BiXT models need migration — all prior experiments used standard
+`ConceptEncoderLayer`.
+
 ---
 
 ## [2026-02-27] — VICReg + t_regs_mst Concept Regularization with Warmup

@@ -92,6 +92,11 @@ class ModelArguments:
         metadata={"help": "Use BiXT bidirectional cross-attention layers (tokens update from concepts at each layer). "
                           "Preserves O(C*N) complexity while contextualising token representations."}
     )
+    bixt_token_ffn: bool = field(
+        default=True,
+        metadata={"help": "When use_bixt=True, add a gated FFN to the token side of each BiXT layer. "
+                          "Very cheap with small token_embedding_dim (e.g. 32 → intermediate=128)."}
+    )
     model_name_or_path: Optional[str] = field(
         default=None,
         metadata={"help": "Path to pretrained encoder checkpoint for warm-start."}
@@ -209,6 +214,7 @@ def main():
         eos_token_id=tokenizer.eos_token_id,
         unk_token_id=tokenizer.unk_token_id,
         use_bixt=model_args.use_bixt,
+        bixt_token_ffn=model_args.bixt_token_ffn,
     )
 
     loss_config = loss_args.to_loss_config()
@@ -269,6 +275,7 @@ def main():
                 "num_hidden_layers": model_args.num_hidden_layers,
                 "concept_num": model_args.concept_num,
                 "use_bixt": model_args.use_bixt,
+                "bixt_token_ffn": model_args.bixt_token_ffn,
                 "deletion_rate": data_args.deletion_rate,
                 "concept_losses": loss_args.concept_losses,
                 "loss_weighting": loss_args.loss_weighting,
