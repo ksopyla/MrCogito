@@ -6,6 +6,9 @@ alwaysApply: true
 ## Output Rules
 - Do NOT use LaTeX format — not rendered properly. Use markdown instead.
 - Do not generate intermediate markdown files unless explicitly asked; use `agent_memory/` for scratch.
+- while commiting to git do not add the "--trailer made with cursor" message, it is annoying and not needed.
+- while formating the git commit message do not use "-m "$(cat <<'EOF' ... EOF)"", use the normal way to format the commit message - you are working in powershell, not bash.
+- git commit message should contain on line short main change description, followed by a more detailed description, be precise  and to the point, but detailed
 
 ## Local Environment
 - **OS**: Windows 11, **Hardware**: 64GB RAM, RTX 3080 (10GB VRAM), Ryzen 9 5900HX
