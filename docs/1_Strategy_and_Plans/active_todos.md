@@ -1,6 +1,6 @@
 # Experiment TODO List v3
 
-**Created: 2026-02-19** | **Updated: 2026-03-02**
+**Created: 2026-02-19** | **Updated: 2026-03-05**
 **Status: Active**
 
 ## Summary of Feb 19 Results
@@ -29,8 +29,11 @@
 - [x] ~~L6 Diffusion + VICReg + t_regs_mst (TODO 11b)~~ — **COMPLETED & EVALUATED (2026-03-02)**
   - Result: Concept rank 5.09/128 (collapsed), no improvement over ELBO baseline
   - Decision gate: rank < 20 → **diffusion self-reconstruction track permanently closed**
-- [ ] **TODO 13a: Prefix Generation clean baseline** — LAUNCHING on Polonez (2026-03-04)
+- [x] ~~TODO 13a: Prefix Generation clean baseline~~ — **COMPLETED & EVALUATED (2026-03-05)**
   - Config: H512 L6 C128 D2, no BiXT, token_dim=512, no concept losses, ELBO=True, t_min=0.3
+  - Result: Concept rank 6.19/128 (4.8%) — collapsed. STS-B 0.337 < 0.50 gate. MRPC 81.25%, QQP 74.81%, MNLI 48.19%
+  - Eval loss 7.42 (below random 10.82, but still very high vs self-recon 1.4)
+  - **Decision: Prefix generation alone does NOT fix concept collapse**
   - Git tag: `arch/prefix-diffusion-20260304`
 
 ## TODO 0: Run L6 baseline STS-B evaluation — DONE ✅
@@ -290,7 +293,7 @@ Because the combined loss with weight 0.1 still collapsed, we abandon this regul
 |---|---|---|
 | `nn/concept_encoder_recursive.py` | `RecursiveConceptEncoderConfig`, `RecursiveConceptEncoder` (1 shared layer, K iterations) | [x] Done |
 | `nn/concept_encoder_recursive_mlm.py` | `RecursiveConceptEncoderForMaskedLM` — Perceiver IO decoder on top of recursive encoder | [x] Done |
-| `training/mlm_training.py` | Add `recursive_mlm` to `MODEL_REGISTRY` + `RecursiveConceptEncoderConfig` | [x] Done |
+| `training/train_mlm.py` | Add `recursive_mlm` to `MODEL_REGISTRY` + `RecursiveConceptEncoderConfig` | [x] Done |
 | `scripts/train_recursive_mlm.sh` | Multi-GPU training script for recursive variant | [x] Done |
 | `tests/test_recursive_encoder.py` | Basic forward pass + param count verification | [x] Done |
 | `tests/test_recursive_mlm.py` | MLM forward pass + loss + registry + test-time scaling | [x] Done |

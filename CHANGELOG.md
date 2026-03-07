@@ -16,6 +16,32 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ## [Unreleased]
 
+## [2026-03-07] — Training Script Logging Unification & Rename
+
+**Motivation:** Each training script carried ~100-200 lines of copy-pasted boilerplate
+for directory setup, config logging, and WandB init. Divergent formats made cross-run
+comparison unreliable, and every new script required re-copying the same block.
+
+### Refactored — `training/utils_training.py`
+
+Extracted 6 shared functions (`setup_file_logging`, `log_data_config`, `log_loss_config`,
+`log_training_config`, `setup_run_dirs`, `init_wandb`) that all training scripts now
+call. Each accepts an `extra_fields`/`extra_config` dict for script-specific values.
+
+### Refactored — all training scripts
+
+- `train_mlm.py`, `train_diffusion.py`, `train_prefix_diffusion.py`, `train_tsdae.py`
+  replaced inline boilerplate with shared function calls.
+- Renamed `mlm_training.py` → `train_mlm.py`; updated all references across 11 files.
+
+### Impact
+
+- **-270 net lines** (314 added in utils, 584 removed from scripts).
+- Identical log format and WandB config structure across all runs.
+- New training scripts need ~5 function calls instead of ~150 lines of copy-paste.
+
+---
+
 ## [2026-03-04] — SODA-style Prefix Generation (Encode Prefix → Generate Suffix)
 
 **Motivation:** Deep analysis ([diffusion_elbo_deep_analysis_20260301.md](docs/4_Research_Notes/diffusion_elbo_deep_analysis_20260301.md))
@@ -173,7 +199,7 @@ t_regs_mst (within-sample concept diversity) with fixed small weights and warmup
 
 - **`training/train_diffusion.py`**: Added `--concept_loss_warmup_steps` CLI arg,
   registered `ConceptLossStepCallback` when warmup > 0, added to WandB config.
-- **`training/mlm_training.py`**: Same CLI arg and callback registration.
+- **`training/train_mlm.py`**: Same CLI arg and callback registration.
 - **`training/train_tsdae.py`**: Same CLI arg and callback registration.
 
 ### Changed — Shell scripts
@@ -401,7 +427,7 @@ See `docs/4_Research_Notes/mlm_perceiver_diagnosis_20260221.md`.
 - `scripts/train_mlm_multigpu_perceiver.sh`: enabled `combined` concept losses +
   `kendall_gal` weighting by default.
 - `training/evaluate_model_on_glue.py`: STS-B bug fixed (predictions squeezed to 1D).
-- `training/mlm_training.py`: added `torch_compile_dynamic` flag (fixes step 8000
+- `training/train_mlm.py`: added `torch_compile_dynamic` flag (fixes step 8000
   gradient explosion).
 
 **Key result:** Combined+kendall_gal fixed concept rank (5/128 → 122/128) but muted
