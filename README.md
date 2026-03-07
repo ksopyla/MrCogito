@@ -187,7 +187,7 @@ MrCogito/
 │   ├── concept_encoder_tsdae.py     # TSDAE denoising autoencoder
 │   └── loss_manager.py             # VICReg + t_regs_mst concept losses
 ├── training/                        # Training scripts
-│   ├── mlm_training.py             # MLM pretraining
+│   ├── train_mlm.py               # MLM pretraining
 │   ├── train_diffusion.py          # Diffusion decoder training
 │   ├── train_tsdae.py              # TSDAE training
 │   ├── evaluate_model_on_glue.py   # GLUE benchmark evaluation

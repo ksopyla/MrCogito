@@ -40,7 +40,7 @@ All Python commands must use Poetry: `poetry run python <script> [args]`
 /home/ksopyla/dev/MrCogito/
 ├── nn/                          # Model implementations
 ├── training/                    # Training scripts
-│   ├── mlm_training.py
+│   ├── train_mlm.py
 │   ├── train_diffusion.py
 │   └── train_tsdae.py
 ├── evaluation/                  # Evaluation scripts
