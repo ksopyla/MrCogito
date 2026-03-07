@@ -167,7 +167,7 @@ PROJECT_ROOT="/home/ksopyla/dev/MrCogito"
 
 OUTPUT_DIR="$PROJECT_ROOT/Cache/Training"
 LOGGING_DIR="$PROJECT_ROOT/Cache/logs"
-export LOG_DIR="$LOGGING_DIR"  # Used by mlm_training.py for file-based logging
+export LOG_DIR="$LOGGING_DIR"  # Used by train_mlm.py for file-based logging
 
 # Optional: Set HF_HOME and HF_DATASETS_CACHE 
 export HF_HOME="${PROJECT_ROOT}/../hf_home"
@@ -214,7 +214,7 @@ accelerate launch \
     --num_machines=1 \
     --mixed_precision=bf16 \
     --multi_gpu \
-    training/mlm_training.py \
+    training/train_mlm.py \
     --model_type "$MODEL_TYPE" \
     --hidden_size "$HIDDEN_SIZE" \
     --token_embedding_dim "$TOKEN_EMBEDDING_DIM" \

@@ -143,7 +143,7 @@ accelerate launch \
     --num_machines=1 \
     --mixed_precision=bf16 \
     --multi_gpu \
-    training/mlm_training.py \
+    training/train_mlm.py \
     --model_type "$MODEL_TYPE" \
     --hidden_size "$HIDDEN_SIZE" \
     --token_embedding_dim "$TOKEN_EMBEDDING_DIM" \

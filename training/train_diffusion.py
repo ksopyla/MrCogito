@@ -32,9 +32,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import wandb
-import argparse
 from datetime import datetime
-from datasets import load_dataset
 from transformers import (
     Trainer,
     TrainingArguments,
@@ -44,12 +42,9 @@ from transformers import (
     logging,
 )
 
-import numpy as np
 import torch
-import torch.nn.functional as F
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
-from torch.utils.data import Dataset
 
 from nn.concept_encoder import ConceptEncoderConfig
 from nn.concept_encoder_diffusion import ConceptEncoderForMaskedDiffusion
@@ -58,14 +53,13 @@ from nn.loss_manager import LossConfig, ConceptLossStepCallback, get_available_l
 
 from data.dataset_preprocess import load_and_preprocess_text_dataset
 from training.utils_training import (
-    get_parameter_breakdown,
-    count_parameters,
-    setup_distributed,
-    is_main_process,
-    get_hostname,
     log_system_info,
     log_model_info,
-    get_git_info,
+    log_data_config,
+    log_loss_config,
+    log_training_config,
+    setup_run_dirs,
+    init_wandb,
 )
 
 logger = logging.get_logger(__name__)
@@ -245,19 +239,8 @@ def main():
     set_seed(training_args.seed)
     log_system_info()
 
-    # Log data configuration
-    logger.info("="*60)
-    logger.info("Data Configuration")
-    logger.info("="*60)
-    logger.info(f"Dataset: {data_args.dataset_name}")
-    if data_args.dataset_name_subset:
-        logger.info(f"Dataset subset: {data_args.dataset_name_subset}")
-    logger.info(f"Tokenizer: {data_args.tokenizer_name}")
-    logger.info(f"Max sequence length: {data_args.max_seq_length}")
-    logger.info(f"Test size: {data_args.test_size_percent * 100}%")
-    logger.info(f"Cache directory: {data_args.dataset_cache_dir or './Cache/Datasets'}")
+    log_data_config(data_args)
 
-    # Tokenizer
     logger.info(f"Loading tokenizer: {data_args.tokenizer_name}")
     tokenizer = AutoTokenizer.from_pretrained(
         data_args.tokenizer_name,
@@ -303,17 +286,7 @@ def main():
 
     loss_config = loss_args.to_loss_config()
 
-    # Log loss configuration
-    logger.info("="*60)
-    logger.info("Loss Configuration")
-    logger.info("="*60)
-    logger.info(f"Concept losses: {loss_config.concept_losses or 'none (diffusion only)'}")
-    logger.info(f"Weighting strategy: {loss_config.weighting_strategy}")
-    if loss_config.weighting_strategy == "fixed":
-        logger.info(f"Loss weights: {loss_config.loss_weights}")
-    if loss_config.warmup_steps > 0:
-        logger.info(f"Concept loss warmup: {loss_config.warmup_steps} steps")
-    logger.info("="*60)
+    log_loss_config(loss_config)
 
     logger.info("Initializing ConceptEncoderForMaskedDiffusion")
     model = ConceptEncoderForMaskedDiffusion(
@@ -356,147 +329,27 @@ def main():
                f"C{model_args.concept_num}D{model_args.decoder_layers}")
     run_identifier = f"{base_id}_{timestamp}"
 
-    # Setup directories
-    output_dir = training_args.output_dir if training_args.output_dir else "./outputs"
-    
-    # If the user passed "--output_dir ./Cache/Training/", HF Trainer will just dump checkpoints
-    # straight into that folder instead of a unique run folder. So we append the run_identifier.
-    if not output_dir.endswith(run_identifier):
-        training_args.output_dir = os.path.join(output_dir, run_identifier)
+    setup_run_dirs(training_args, run_identifier)
 
-    # Force logging_dir to be under Cache/logs/run_identifier
-    if not training_args.logging_dir:
-        # Default fallback
-        training_args.logging_dir = os.path.join(os.path.dirname(training_args.output_dir), "logs", run_identifier)
-    else:
-        # Ensure it also gets the run_identifier folder
-        if not training_args.logging_dir.endswith(run_identifier):
-             training_args.logging_dir = os.path.join(training_args.logging_dir, run_identifier)
+    log_training_config(training_args, extra_fields={
+        "Decoder layers": model_args.decoder_layers,
+        "t_min": model_args.t_min,
+        "ELBO weighting": model_args.elbo_weight,
+    })
 
-    training_args.run_name = run_identifier
-    training_args.report_to = ["tensorboard", "wandb"]
-    training_args.push_to_hub = False
-    training_args.remove_unused_columns = False  # keep input_ids + attention_mask
-    training_args.fp16 = not training_args.bf16
-
-    # Log training configuration
-    logger.info("="*60)
-    logger.info("Training Configuration")
-    logger.info("="*60)
-    logger.info(f"Output directory: {training_args.output_dir}")
-    logger.info(f"Logging directory: {training_args.logging_dir}")
-    logger.info(f"Run name: {training_args.run_name}")
-    logger.info(f"Per-device train batch size: {training_args.per_device_train_batch_size}")
-    logger.info(f"Per-device eval batch size: {training_args.per_device_eval_batch_size}")
-    logger.info(f"Gradient accumulation steps: {training_args.gradient_accumulation_steps}")
-    device_count = torch.cuda.device_count() if torch.cuda.is_available() else 1
-    logger.info(f"Effective batch size: {training_args.per_device_train_batch_size * device_count * training_args.gradient_accumulation_steps}")
-    logger.info(f"Learning rate: {training_args.learning_rate}")
-    logger.info(f"Number of epochs: {training_args.num_train_epochs}")
-    logger.info(f"Warmup steps: {training_args.warmup_steps}")
-    logger.info(f"Weight decay: {training_args.weight_decay}")
-    logger.info(f"Evaluation strategy: {training_args.eval_strategy}")
-    logger.info(f"Eval steps: {training_args.eval_steps}")
-    logger.info(f"Save strategy: {training_args.save_strategy}")
-    logger.info(f"Save steps: {training_args.save_steps}")
-    logger.info(f"Mixed precision: {'fp16' if training_args.fp16 else 'bf16' if training_args.bf16 else 'fp32'}")
-    logger.info(f"Seed: {training_args.seed}")
-    logger.info(f"Optimizer: {training_args.optim}")
-    logger.info(f"LR scheduler: {training_args.lr_scheduler_type}")
-    logger.info(f"Max grad norm: {training_args.max_grad_norm}")
-    logger.info(f"Dataloader num workers: {training_args.dataloader_num_workers}")
-    logger.info(f"Dataloader pin memory: {training_args.dataloader_pin_memory}")
-    logger.info(f"torch.compile: {training_args.torch_compile}")
-    logger.info(f"Save safetensors: {training_args.save_safetensors}")
-    logger.info(f"Gradient checkpointing: {training_args.gradient_checkpointing}")
-    logger.info(f"Load best model at end: {training_args.load_best_model_at_end}")
-    logger.info("="*60)
-
-    if is_main_process():
-        total_params, trainable_params = count_parameters(model)
-        
-        # Create model identifier for W&B _name_or_path field
-        model_name_or_path = f"concept-encoder-diffusion"
-        
-        # Get hostname in cross-platform way
-        hostname = get_hostname()
-        
-        wandb_tags = [
-            "concept_diffusion",
-            "diffusion-pretraining",
-            data_args.dataset_name,
-            hostname,
-            model_name_or_path
-        ]
-        if data_args.dataset_name_subset:
-            wandb_tags.append(data_args.dataset_name_subset)
-            
-        # Concept loss tags
-        if loss_config.is_enabled:
-            wandb_tags.append(f"losses:{'+'.join(loss_config.concept_losses)}")
-            wandb_tags.append(f"weighting:{loss_config.weighting_strategy}")
-            if loss_config.weighting_strategy == "fixed":
-                concept_weight = loss_config.loss_weights.get(
-                    loss_config.concept_losses[0], loss_args.loss_weight
-                )
-                wandb_tags.append(f"concept_w:{concept_weight}")
-        else:
-            wandb_tags.append("losses:none")
-            
-        wandb_config = {
-            '_name_or_path': model_name_or_path,
-            'model_type': "concept_diffusion",
-            'hidden_size': model_args.hidden_size,
-            'token_embedding_dim': config.token_embedding_dim,
-            'num_hidden_layers': model_args.num_hidden_layers,
-            'concept_num': model_args.concept_num,
-            'intermediate_size': model_args.intermediate_size,
-            'decoder_layers': model_args.decoder_layers,
-            't_min': model_args.t_min,
-            'label_smoothing': model_args.label_smoothing,
-            'elbo_weight': model_args.elbo_weight,
-            'num_attention_heads': config.num_attention_heads,
-            'concept_position_type': config.concept_position_type,
-            'vocab_size': config.vocab_size,
-            'max_sequence_length': config.max_sequence_length,
-            'total_params': total_params,
-            'trainable_params': trainable_params,
-            
-            'concept_losses': loss_config.concept_losses,
-            'loss_weighting': loss_config.weighting_strategy,
-            'loss_weights': loss_config.loss_weights if loss_config.weighting_strategy == "fixed" else "learnable",
-            'concept_loss_warmup_steps': loss_config.warmup_steps,
-            
-            'dataset_name': data_args.dataset_name,
-            'dataset_name_subset': data_args.dataset_name_subset,
-            'tokenizer_name': data_args.tokenizer_name,
-            'max_seq_length': data_args.max_seq_length,
-            'test_size_percent': data_args.test_size_percent,
-            
-            **{f"git_{k}": v for k, v in get_git_info().items()},
-            **{k: v for k, v in vars(training_args).items() if not k.startswith('_')}
-        }
-        
-        group_identifier = base_id
-        
-        wandb.init(
-            project="MrCogito",
-            id=run_identifier,
-            name=training_args.run_name,
-            job_type="diffusion-pretraining",
-            config=wandb_config,
-            tags=wandb_tags,
-            group=group_identifier,
-            sync_tensorboard=True,
-            notes=f"Model: diffusion, Dataset: {data_args.dataset_name}"
-        )
-        
-        logger.info(f"W&B run initialized:")
-        logger.info(f"  - Run ID: {wandb.run.id}")
-        logger.info(f"  - Run name: {wandb.run.name}")
-        logger.info(f"  - Run group: {wandb.run.group}")
-        logger.info(f"  - Job type: {wandb.run.job_type}")
-        logger.info(f"  - Logging dir: {training_args.logging_dir}")
+    init_wandb(
+        training_args, model, config, data_args, loss_config,
+        base_id, run_identifier,
+        job_type="diffusion-pretraining",
+        model_type="concept_diffusion",
+        wandb_tags=["concept_diffusion", "diffusion-pretraining"],
+        extra_config={
+            "decoder_layers": model_args.decoder_layers,
+            "t_min": model_args.t_min,
+            "label_smoothing": model_args.label_smoothing,
+            "elbo_weight": model_args.elbo_weight,
+        },
+    )
 
     data_collator = DataCollatorForMaskedDiffusion(tokenizer, max_length=data_args.max_seq_length)
 

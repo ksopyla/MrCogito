@@ -1,12 +1,14 @@
 """
 Training utilities and helper functions for ConceptEncoder models.
 """
+import logging as std_logging
 import os
 import platform
 import subprocess
 import torch
+import wandb
 from torch.nn import Module
-from typing import Dict, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any
 from transformers import logging
 from datetime import datetime
 
@@ -295,3 +297,196 @@ def log_model_info(model: Module, config: Any = None, model_type: str = None,
             if info['params'] > 0:
                 logger.info(f"  {component}: {info['params']:,} ({info['params_m']:.2f}M)")
     logger.info("="*60)
+
+
+# ============================================================================
+# Shared logging helpers — called by all training scripts
+# ============================================================================
+
+def setup_file_logging(log_dir: Optional[str] = None):
+    """
+    Add a timestamped file handler to the root logger.
+    Useful for remote runs where console output may be lost.
+    """
+    if not is_main_process():
+        return
+    log_dir = log_dir or os.environ.get("LOG_DIR", "./Cache/logs")
+    os.makedirs(log_dir, exist_ok=True)
+    log_filepath = os.path.join(
+        log_dir, f"training_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    )
+    root = std_logging.getLogger()
+    root.setLevel(std_logging.INFO)
+    root.handlers.clear()
+
+    formatter = std_logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(message)s", datefmt="%H:%M:%S"
+    )
+    console = std_logging.StreamHandler()
+    console.setLevel(std_logging.INFO)
+    console.setFormatter(formatter)
+    root.addHandler(console)
+
+    fh = std_logging.FileHandler(log_filepath, mode="a", encoding="utf-8")
+    fh.setLevel(std_logging.INFO)
+    fh.setFormatter(formatter)
+    root.addHandler(fh)
+
+    logger.info(f"Logging to file: {log_filepath}")
+
+
+def log_data_config(data_args, extra_fields: Optional[Dict[str, Any]] = None):
+    """Log standardized 'Data Configuration' section to console."""
+    if not is_main_process():
+        return
+    logger.info("=" * 60)
+    logger.info("Data Configuration")
+    logger.info("=" * 60)
+    logger.info(f"Dataset: {data_args.dataset_name}")
+    if getattr(data_args, "dataset_name_subset", None):
+        logger.info(f"Dataset subset: {data_args.dataset_name_subset}")
+    logger.info(f"Tokenizer: {data_args.tokenizer_name}")
+    logger.info(f"Max sequence length: {data_args.max_seq_length}")
+    logger.info(f"Test size: {data_args.test_size_percent * 100}%")
+    if extra_fields:
+        for k, v in extra_fields.items():
+            logger.info(f"{k}: {v}")
+
+
+def log_loss_config(loss_config):
+    """Log standardized 'Loss Configuration' section to console."""
+    if not is_main_process():
+        return
+    logger.info("=" * 60)
+    logger.info("Loss Configuration")
+    logger.info("=" * 60)
+    logger.info(f"Concept losses: {loss_config.concept_losses or 'none'}")
+    logger.info(f"Weighting strategy: {loss_config.weighting_strategy}")
+    if loss_config.weighting_strategy == "fixed" and loss_config.is_enabled:
+        logger.info(f"Loss weights: {loss_config.loss_weights}")
+    if loss_config.warmup_steps > 0:
+        logger.info(f"Concept loss warmup: {loss_config.warmup_steps} steps")
+
+
+def log_training_config(training_args, extra_fields: Optional[Dict[str, Any]] = None):
+    """
+    Log standardized 'Training Configuration' section to console.
+    Only logs derived/computed values; HF Trainer prints the rest.
+    """
+    if not is_main_process():
+        return
+    logger.info("=" * 60)
+    logger.info("Training Configuration")
+    logger.info("=" * 60)
+    logger.info(f"Output directory: {training_args.output_dir}")
+    logger.info(f"Run name: {training_args.run_name}")
+    device_count = torch.cuda.device_count() if torch.cuda.is_available() else 1
+    eff_batch = (
+        training_args.per_device_train_batch_size
+        * device_count
+        * training_args.gradient_accumulation_steps
+    )
+    logger.info(f"Effective batch size: {eff_batch}")
+    logger.info(f"Learning rate: {training_args.learning_rate}")
+    logger.info(f"Epochs: {training_args.num_train_epochs}")
+    mp = "bf16" if training_args.bf16 else ("fp16" if training_args.fp16 else "fp32")
+    logger.info(f"Mixed precision: {mp}")
+    if extra_fields:
+        for k, v in extra_fields.items():
+            logger.info(f"{k}: {v}")
+
+
+def setup_run_dirs(training_args, run_identifier: str):
+    """
+    Configure output_dir, logging_dir and run_name on *training_args* so that
+    every training script produces the same directory layout.
+    """
+    output_dir = training_args.output_dir or "./outputs"
+    if not output_dir.endswith(run_identifier):
+        training_args.output_dir = os.path.join(output_dir, run_identifier)
+
+    if not training_args.logging_dir:
+        training_args.logging_dir = os.path.join(
+            os.path.dirname(training_args.output_dir), "logs", run_identifier,
+        )
+    elif not training_args.logging_dir.endswith(run_identifier):
+        training_args.logging_dir = os.path.join(
+            training_args.logging_dir, run_identifier,
+        )
+
+    training_args.run_name = run_identifier
+    training_args.report_to = ["tensorboard", "wandb"]
+    training_args.push_to_hub = False
+    training_args.remove_unused_columns = False
+    training_args.fp16 = not training_args.bf16
+
+
+def init_wandb(
+    training_args,
+    model: Module,
+    config,
+    data_args,
+    loss_config,
+    base_id: str,
+    run_identifier: str,
+    job_type: str,
+    model_type: str,
+    wandb_tags: Optional[List[str]] = None,
+    notes: Optional[str] = None,
+    extra_config: Optional[Dict[str, Any]] = None,
+):
+    """
+    Standardized wandb.init with full reproducibility config.
+
+    Builds the wandb config dict from all argument groups and always includes
+    ``**vars(training_args)`` so every HF TrainingArgument is captured.
+    Tags always include hostname and dataset for easy filtering.
+    """
+    if not is_main_process():
+        return
+
+    total_params, trainable_params = count_parameters(model)
+    hostname = get_hostname()
+
+    tags = list(wandb_tags or [])
+    tags.extend([data_args.dataset_name, hostname])
+    if getattr(data_args, "dataset_name_subset", None):
+        tags.append(data_args.dataset_name_subset)
+    if loss_config.is_enabled:
+        tags.append(f"losses:{'+'.join(loss_config.concept_losses)}")
+
+    wandb_config: Dict[str, Any] = {
+        "model_type": model_type,
+        "hidden_size": config.hidden_size,
+        "token_embedding_dim": config.token_embedding_dim,
+        "num_hidden_layers": config.num_hidden_layers,
+        "concept_num": config.concept_num,
+        "intermediate_size": config.intermediate_size,
+        "num_attention_heads": config.num_attention_heads,
+        "vocab_size": config.vocab_size,
+        "max_sequence_length": config.max_sequence_length,
+        "total_params": total_params,
+        "trainable_params": trainable_params,
+        "concept_losses": loss_config.concept_losses,
+        "loss_weighting": loss_config.weighting_strategy,
+        "dataset_name": data_args.dataset_name,
+        "tokenizer_name": data_args.tokenizer_name,
+        "max_seq_length": data_args.max_seq_length,
+        **{f"git_{k}": v for k, v in get_git_info().items()},
+        **{k: v for k, v in vars(training_args).items() if not k.startswith("_")},
+    }
+    if extra_config:
+        wandb_config.update(extra_config)
+
+    wandb.init(
+        project="MrCogito",
+        id=run_identifier,
+        name=training_args.run_name,
+        job_type=job_type,
+        config=wandb_config,
+        tags=tags,
+        group=base_id,
+        sync_tensorboard=True,
+        notes=notes or f"Model: {model_type}, Dataset: {data_args.dataset_name}",
+    )
+    logger.info(f"W&B run: {wandb.run.id} / {wandb.run.name}")

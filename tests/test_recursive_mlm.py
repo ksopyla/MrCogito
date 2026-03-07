@@ -1,4 +1,4 @@
-"""Verify recursive_mlm model builds, runs forward pass, and is registered in mlm_training."""
+"""Verify recursive_mlm model builds, runs forward pass, and is registered in train_mlm."""
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -41,7 +41,7 @@ def test_forward_pass(m):
 
 
 def test_registry():
-    from training.mlm_training import MODEL_REGISTRY
+    from training.train_mlm import MODEL_REGISTRY
     assert "recursive_mlm" in MODEL_REGISTRY, "recursive_mlm not in MODEL_REGISTRY"
     entry = MODEL_REGISTRY["recursive_mlm"]
     assert entry["class"] is RecursiveConceptEncoderForMaskedLM

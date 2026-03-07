@@ -13,7 +13,7 @@
 #   bash scripts/train_diffusion_multigpu.sh
 #
 # Architecture comparison:
-#   MLM model (mlm_training.py):
+#   MLM model (train_mlm.py):
 #     Encoder: ConceptEncoder L6  + Perceiver decoder (1 cross-attn layer)
 #     Loss:    fixed 15% masking, sparse CE
 #   Diffusion model (train_diffusion.py):

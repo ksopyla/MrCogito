@@ -7,7 +7,7 @@ with the same Perceiver IO decoder used by ConceptEncoderForMaskedLMPerceiver.
 The decoder is NOT weight-tied — only the encoder uses recursion. This mirrors
 ALBERT's design: shared encoder layers + task-specific heads.
 
-Usage in mlm_training.py:
+Usage in train_mlm.py:
     --model_type recursive_mlm
 
 Warm-start from a standard perceiver_mlm checkpoint:

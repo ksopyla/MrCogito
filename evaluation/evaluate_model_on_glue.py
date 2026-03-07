@@ -1135,7 +1135,7 @@ def finetune_model_on_glue(args):
     # The checkpoint path follows the convention:
     #   .../Cache/Training/<training_run_id>/<training_run_id>/
     # e.g., .../weighted_mlm_H512L6C128_20260207_174251/weighted_mlm_H512L6C128_20260207_174251
-    # The training_run_id matches the wandb run name from mlm_training.py
+    # The training_run_id matches the wandb run name from train_mlm.py
     # Use the original model_name_or_path for traceability; for HF Hub IDs the
     # repo name (after "/") is a clean run identifier.
     _mnop = args.model_name_or_path
@@ -1167,7 +1167,7 @@ def finetune_model_on_glue(args):
     ]
 
     # Group by architecture config (backward compatible)
-    # Format: {model_type}_H{hidden}L{layers}C{concepts} - same as mlm_training.py
+    # Format: {model_type}_H{hidden}L{layers}C{concepts} - same as train_mlm.py
     # L2 and L6 are naturally separated since layer count is in the name
     group_identifier = architecture_tag  # e.g., weighted_mlm_H512L6C128
     

@@ -317,7 +317,7 @@ def format_results(configurations: List[Dict[str, Any]]) -> None:
             print(f"   {component.replace('_', ' ').title():25}: {params/1e6:>6.2f}M ({pct:>5.1f}%)")
         
         print(f"\n💻 Training Command:")
-        print(f"   python training/mlm_training.py \\")
+        print(f"   python training/train_mlm.py \\")
         print(f"     --model_name {cfg['name']} \\")
         print(f"     --vocab_size {config.vocab_size} \\")
         print(f"     --token_embedding_dim {config.token_embedding_dim} \\")

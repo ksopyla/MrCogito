@@ -20,7 +20,7 @@ Remove-Item Env:\TRANSFORMERS_CACHE -ErrorAction SilentlyContinue
 
 # Run training with Perceiver MLM model (Micro-2 config: ~21M params)
 # Using Perceiver Decoder instead of Weighted Combination
-python training/mlm_training.py `
+python training/train_mlm.py `
     --model_type perceiver_mlm `
     --hidden_size 256 `
     --num_hidden_layers 2 `

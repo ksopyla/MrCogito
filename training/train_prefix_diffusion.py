@@ -44,7 +44,7 @@ from transformers import (
 
 import torch
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
+from typing import Optional
 
 from nn.concept_encoder import ConceptEncoderConfig
 from nn.concept_encoder_diffusion import ConceptEncoderForPrefixDiffusion
@@ -54,12 +54,13 @@ from nn.loss_manager import LossConfig, ConceptLossStepCallback, get_available_l
 from data.dataset_preprocess import load_and_preprocess_text_dataset
 from data.data_collators import DataCollatorForPrefixGeneration
 from training.utils_training import (
-    count_parameters,
-    is_main_process,
-    get_hostname,
     log_system_info,
     log_model_info,
-    get_git_info,
+    log_data_config,
+    log_loss_config,
+    log_training_config,
+    setup_run_dirs,
+    init_wandb,
 )
 
 logger = logging.get_logger(__name__)
@@ -195,16 +196,9 @@ def main():
     set_seed(training_args.seed)
     log_system_info()
 
-    logger.info("=" * 60)
-    logger.info("Data Configuration")
-    logger.info("=" * 60)
-    logger.info(f"Dataset: {data_args.dataset_name}")
-    if data_args.dataset_name_subset:
-        logger.info(f"Dataset subset: {data_args.dataset_name_subset}")
-    logger.info(f"Tokenizer: {data_args.tokenizer_name}")
-    logger.info(f"Max sequence length: {data_args.max_seq_length}")
-    logger.info(f"Prefix ratio: [{data_args.prefix_ratio_min}, {data_args.prefix_ratio_max}]")
-    logger.info(f"Test size: {data_args.test_size_percent * 100}%")
+    log_data_config(data_args, extra_fields={
+        "Prefix ratio": f"[{data_args.prefix_ratio_min}, {data_args.prefix_ratio_max}]",
+    })
 
     # Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(
@@ -255,15 +249,7 @@ def main():
 
     loss_config = loss_args.to_loss_config()
 
-    logger.info("=" * 60)
-    logger.info("Loss Configuration")
-    logger.info("=" * 60)
-    logger.info(f"Concept losses: {loss_config.concept_losses or 'none'}")
-    logger.info(f"Weighting strategy: {loss_config.weighting_strategy}")
-    if loss_config.weighting_strategy == "fixed" and loss_config.is_enabled:
-        logger.info(f"Loss weights: {loss_config.loss_weights}")
-    if loss_config.warmup_steps > 0:
-        logger.info(f"Concept loss warmup: {loss_config.warmup_steps} steps")
+    log_loss_config(loss_config)
 
     logger.info("Initializing ConceptEncoderForPrefixDiffusion")
     model = ConceptEncoderForPrefixDiffusion(
@@ -309,72 +295,27 @@ def main():
     )
     run_identifier = f"{base_id}_{timestamp}"
 
-    output_dir = training_args.output_dir or "./outputs"
-    if not output_dir.endswith(run_identifier):
-        training_args.output_dir = os.path.join(output_dir, run_identifier)
+    setup_run_dirs(training_args, run_identifier)
 
-    if not training_args.logging_dir:
-        training_args.logging_dir = os.path.join(
-            os.path.dirname(training_args.output_dir), "logs", run_identifier,
-        )
-    elif not training_args.logging_dir.endswith(run_identifier):
-        training_args.logging_dir = os.path.join(
-            training_args.logging_dir, run_identifier,
-        )
+    log_training_config(training_args, extra_fields={
+        "BiXT encoder": model_args.use_bixt,
+        "t_min": model_args.t_min,
+        "ELBO weighting": model_args.elbo_weight,
+        "Decoder layers": model_args.decoder_layers,
+    })
 
-    training_args.run_name = run_identifier
-    training_args.report_to = ["tensorboard", "wandb"]
-    training_args.push_to_hub = False
-    training_args.remove_unused_columns = False
-    training_args.fp16 = not training_args.bf16
+    wandb_tags = ["prefix_diffusion", "soda-style"]
+    if model_args.use_bixt:
+        wandb_tags.append("bixt")
 
-    logger.info("=" * 60)
-    logger.info("Training Configuration")
-    logger.info("=" * 60)
-    logger.info(f"Output directory: {training_args.output_dir}")
-    logger.info(f"Run name: {training_args.run_name}")
-    logger.info(f"BiXT encoder: {model_args.use_bixt}")
-    logger.info(f"t_min: {model_args.t_min}")
-    logger.info(f"ELBO weighting: {model_args.elbo_weight}")
-    logger.info(f"Decoder layers: {model_args.decoder_layers}")
-    device_count = torch.cuda.device_count() if torch.cuda.is_available() else 1
-    eff_batch = (
-        training_args.per_device_train_batch_size
-        * device_count
-        * training_args.gradient_accumulation_steps
-    )
-    logger.info(f"Effective batch size: {eff_batch}")
-    logger.info(f"Learning rate: {training_args.learning_rate}")
-    logger.info(f"Epochs: {training_args.num_train_epochs}")
-    mp = "bf16" if training_args.bf16 else ("fp16" if training_args.fp16 else "fp32")
-    logger.info(f"Mixed precision: {mp}")
-
-    # W&B
-    if is_main_process():
-        total_params, trainable_params = count_parameters(model)
-        hostname = get_hostname()
-
-        wandb_tags = [
-            "prefix_diffusion",
-            "soda-style",
-            data_args.dataset_name,
-            hostname,
-        ]
-        if model_args.use_bixt:
-            wandb_tags.append("bixt")
-        if data_args.dataset_name_subset:
-            wandb_tags.append(data_args.dataset_name_subset)
-        if loss_config.is_enabled:
-            wandb_tags.append(f"losses:{'+'.join(loss_config.concept_losses)}")
-
-        wandb_config = {
-            "_name_or_path": "concept-encoder-prefix-diffusion",
-            "model_type": model_type_str,
-            "hidden_size": model_args.hidden_size,
-            "token_embedding_dim": config.token_embedding_dim,
-            "num_hidden_layers": model_args.num_hidden_layers,
-            "concept_num": model_args.concept_num,
-            "intermediate_size": model_args.intermediate_size,
+    init_wandb(
+        training_args, model, config, data_args, loss_config,
+        base_id, run_identifier,
+        job_type="prefix-diffusion-pretraining",
+        model_type=model_type_str,
+        wandb_tags=wandb_tags,
+        notes=f"SODA-style prefix generation, Dataset: {data_args.dataset_name}",
+        extra_config={
             "decoder_layers": model_args.decoder_layers,
             "t_min": model_args.t_min,
             "label_smoothing": model_args.label_smoothing,
@@ -382,28 +323,8 @@ def main():
             "use_bixt": model_args.use_bixt,
             "prefix_ratio_min": data_args.prefix_ratio_min,
             "prefix_ratio_max": data_args.prefix_ratio_max,
-            "total_params": total_params,
-            "trainable_params": trainable_params,
-            "concept_losses": loss_config.concept_losses,
-            "loss_weighting": loss_config.weighting_strategy,
-            "dataset_name": data_args.dataset_name,
-            "tokenizer_name": data_args.tokenizer_name,
-            "max_seq_length": data_args.max_seq_length,
-            **{f"git_{k}": v for k, v in get_git_info().items()},
-        }
-
-        wandb.init(
-            project="MrCogito",
-            id=run_identifier,
-            name=training_args.run_name,
-            job_type="prefix-diffusion-pretraining",
-            config=wandb_config,
-            tags=wandb_tags,
-            group=base_id,
-            sync_tensorboard=True,
-            notes=f"SODA-style prefix generation, Dataset: {data_args.dataset_name}",
-        )
-        logger.info(f"W&B run: {wandb.run.id} / {wandb.run.name}")
+        },
+    )
 
     # Data collator
     data_collator = DataCollatorForPrefixGeneration(

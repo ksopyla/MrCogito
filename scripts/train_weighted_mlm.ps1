@@ -19,7 +19,7 @@ Remove-Item Env:\TRANSFORMERS_CACHE -ErrorAction SilentlyContinue
 # Models will be cached under HF_HOME/models/ by default
 
 # Run training with weighted MLM model (Micro-2 config: 21M params)
-python training/mlm_training.py `
+python training/train_mlm.py `
     --model_type weighted_mlm `
     --hidden_size 256 `
     --num_hidden_layers 2 `

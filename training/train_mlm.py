@@ -1,14 +1,10 @@
 import sys
 import os
 
-# Add parent directory to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-
 import wandb
-import argparse
 from datetime import datetime
-from datasets import load_dataset
 from transformers import (
     Trainer,
     TrainingArguments,
@@ -17,13 +13,12 @@ from transformers import (
     set_seed,
     DataCollatorForWholeWordMask,
     HfArgumentParser,
-    logging
+    logging,
 )
 
-import numpy as np
 import torch
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Optional
 
 from nn.concept_encoder import ConceptEncoderConfig
 from nn.concept_encoder_methods import ConceptEncoderForMaskedLM
@@ -39,17 +34,18 @@ from nn.loss_manager import LossConfig, ConceptLossStepCallback, get_available_l
 
 from data.dataset_preprocess import load_and_preprocess_text_dataset
 from training.utils_training import (
-    get_parameter_breakdown,
-    count_parameters,
     setup_distributed,
     is_main_process,
-    get_hostname,
     log_system_info,
     log_model_info,
-    get_git_info,
+    setup_file_logging,
+    log_data_config,
+    log_loss_config,
+    log_training_config,
+    setup_run_dirs,
+    init_wandb,
 )
 
-# Initialize logger
 logger = logging.get_logger(__name__)
 
 # Model registry for cleaner initialization
@@ -258,48 +254,14 @@ def parse_args():
 
 
 def main():
-    # Setup distributed training
     local_rank = setup_distributed()
 
-    
-    # Setup logging - both console and file output for debugging
-    import logging as std_logging
     if is_main_process():
         logging.set_verbosity_info()
-        
-        # Create a timestamped log file alongside the training output
-        log_filename = f"training_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-        log_dir = os.environ.get("LOG_DIR", "./Cache/logs")
-        os.makedirs(log_dir, exist_ok=True)
-        log_filepath = os.path.join(log_dir, log_filename)
-        
-        # Configure root logger with both console and file handlers
-        root_logger = std_logging.getLogger()
-        root_logger.setLevel(std_logging.INFO)
-        # Clear existing handlers to avoid duplicates on re-entry
-        root_logger.handlers.clear()
-        
-        formatter = std_logging.Formatter(
-            '%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S'
-        )
-        
-        # Console handler
-        console_handler = std_logging.StreamHandler()
-        console_handler.setLevel(std_logging.INFO)
-        console_handler.setFormatter(formatter)
-        root_logger.addHandler(console_handler)
-        
-        # File handler (appends so multiple runs accumulate in the same dir)
-        file_handler = std_logging.FileHandler(log_filepath, mode='a', encoding='utf-8')
-        file_handler.setLevel(std_logging.INFO)
-        file_handler.setFormatter(formatter)
-        root_logger.addHandler(file_handler)
-        
-        logger.info(f"Logging to file: {log_filepath}")
+        setup_file_logging()
     else:
         logging.set_verbosity_error()
-    
-    # Parse arguments
+
     model_args, data_args, loss_args, training_args = parse_args()
     
     # Create loss configuration from arguments
@@ -311,22 +273,12 @@ def main():
     # Log system information (must be called after logging setup)
     log_system_info()
     
-    # Log data configuration
-    logger.info("="*60)
-    logger.info("Data Configuration")
-    logger.info("="*60)
-    logger.info(f"Dataset: {data_args.dataset_name}")
-    if data_args.dataset_name_subset:
-        logger.info(f"Dataset subset: {data_args.dataset_name_subset}")
-    logger.info(f"Tokenizer: {data_args.tokenizer_name}")
-    logger.info(f"Max sequence length: {data_args.max_seq_length}")
-    logger.info(f"MLM probability: {data_args.mlm_probability}")
-    logger.info(f"Masking type: {data_args.masking_type}")
-    logger.info(f"Test size: {data_args.test_size_percent * 100}%")
-    logger.info(f"Cache directory: {data_args.dataset_cache_dir or './Cache/Datasets'}")
-    
-    # Load the tokenizer
-    logger.info(f"\nLoading tokenizer: {data_args.tokenizer_name}")
+    log_data_config(data_args, extra_fields={
+        "MLM probability": data_args.mlm_probability,
+        "Masking type": data_args.masking_type,
+    })
+
+    logger.info(f"Loading tokenizer: {data_args.tokenizer_name}")
     tokenizer = AutoTokenizer.from_pretrained(data_args.tokenizer_name)
     
     # Load and preprocess the dataset
@@ -441,16 +393,8 @@ def main():
     model_info = MODEL_REGISTRY[model_args.model_type]
     logger.info(f"Initializing model: {model_info['description']}")
     
-    # Log loss configuration
-    logger.info("="*60)
-    logger.info("Loss Configuration")
-    logger.info("="*60)
-    logger.info(f"Concept losses: {loss_config.concept_losses or 'none (MLM only)'}")
-    logger.info(f"Weighting strategy: {loss_config.weighting_strategy}")
-    if loss_config.weighting_strategy == "fixed":
-        logger.info(f"Loss weights: {loss_config.loss_weights}")
-    logger.info("="*60)
-    
+    log_loss_config(loss_config)
+
     # Models that support loss_config parameter
     models_with_loss_config = {"weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm", "recursive_mlm"}
     supports_loss_config = model_args.model_type in models_with_loss_config
@@ -556,217 +500,38 @@ def main():
             pad_to_multiple_of=64
         )
     
-    # Configure training arguments with defaults and timestamped directories
+    # Run identifier
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    # Create a consistent run identifier using underscores (wandb best practice)
-    # Format: model_type_H{hidden_size}L{layers}C{concept_num}[_T{token_dim}][_pos{type}]_{timestamp}
-    # IMPORTANT: Use underscores only (no hyphens) for wandb compatibility
-    # This identifier will be used for run_name, logging_dir, and wandb.init(name)
     base_id = f"{model_args.model_type}_H{model_args.hidden_size}L{model_args.num_hidden_layers}C{model_args.concept_num}"
-    # Append token_embedding_dim suffix only when Dimension Inversion is active
     if config.token_embedding_dim != config.hidden_size:
         base_id += f"_T{config.token_embedding_dim}"
-    # Append concept position type suffix only when non-default
     if config.concept_position_type != "none":
         base_id += f"_pos{config.concept_position_type}"
     run_identifier = f"{base_id}_{timestamp}"
-    
-    # Create a unique run ID for wandb (allows resuming runs if needed)
-    # Format: same as run_identifier but can be used for resume functionality
-    run_id = run_identifier
-    
-    # Set timestamped output directories - use consistent naming with run_name
-    training_args.output_dir = os.path.join(training_args.output_dir or "./outputs", run_identifier)
-    
-    # CRITICAL: logging_dir structure affects panel names when sync_tensorboard=True
-    # When sync_tensorboard=True, wandb creates panels from the directory structure
-    # To ensure consistent panel names matching run names:
-    # 1. Use the same base name as run_name
-    # 2. Avoid nested subdirectories that don't match the run name
-    # 3. The directory name becomes part of the panel name
-    training_args.logging_dir = os.path.join(training_args.logging_dir or "./logs", run_identifier)
-    
-    # Use the same identifier for run_name to ensure consistency across wandb, Trainer, and directories
-    # This ensures: wandb.run.name == TrainingArguments.run_name == logging_dir base name
-    training_args.run_name = run_identifier
-    
-    # Log training configuration
-    logger.info("="*60)
-    logger.info("Training Configuration")
-    logger.info("="*60)
-    logger.info(f"Output directory: {training_args.output_dir}")
-    logger.info(f"Logging directory: {training_args.logging_dir}")
-    logger.info(f"Run name: {training_args.run_name}")
-    logger.info(f"Per-device train batch size: {training_args.per_device_train_batch_size}")
-    logger.info(f"Per-device eval batch size: {training_args.per_device_eval_batch_size}")
-    logger.info(f"Gradient accumulation steps: {training_args.gradient_accumulation_steps}")
-    device_count = torch.cuda.device_count() if torch.cuda.is_available() else 1
-    logger.info(f"Effective batch size: {training_args.per_device_train_batch_size * device_count * training_args.gradient_accumulation_steps}")
-    logger.info(f"Learning rate: {training_args.learning_rate}")
-    logger.info(f"Number of epochs: {training_args.num_train_epochs}")
-    logger.info(f"Warmup steps: {training_args.warmup_steps}")
-    logger.info(f"Weight decay: {training_args.weight_decay}")
-    logger.info(f"Evaluation strategy: {training_args.eval_strategy}")
-    logger.info(f"Eval steps: {training_args.eval_steps}")
-    logger.info(f"Save strategy: {training_args.save_strategy}")
-    logger.info(f"Save steps: {training_args.save_steps}")
-    logger.info(f"Mixed precision: {'fp16' if training_args.fp16 else 'bf16' if training_args.bf16 else 'fp32'}")
-    logger.info(f"Seed: {training_args.seed}")
-    logger.info(f"Optimizer: {training_args.optim}")
-    logger.info(f"LR scheduler: {training_args.lr_scheduler_type}")
-    logger.info(f"Max grad norm: {training_args.max_grad_norm}")
-    logger.info(f"Dataloader num workers: {training_args.dataloader_num_workers}")
-    logger.info(f"Dataloader pin memory: {training_args.dataloader_pin_memory}")
-    logger.info(f"torch.compile: {training_args.torch_compile}")
-    logger.info(f"Save safetensors: {training_args.save_safetensors}")
-    logger.info(f"Gradient checkpointing: {training_args.gradient_checkpointing}")
-    logger.info(f"Load best model at end: {training_args.load_best_model_at_end}")
-    logger.info("="*60)
-    
-    # Set default values if not provided via command line
-    training_args.per_device_train_batch_size = training_args.per_device_train_batch_size or 24
-    training_args.num_train_epochs = training_args.num_train_epochs or 2
-    training_args.learning_rate = training_args.learning_rate or 5e-4
-    training_args.weight_decay = training_args.weight_decay or 0.01
-    training_args.warmup_steps = training_args.warmup_steps or 1000
-    training_args.seed = training_args.seed or 42
-    training_args.logging_steps = training_args.logging_steps or 100
-    training_args.eval_strategy = training_args.eval_strategy or "epoch"
-    training_args.save_strategy = training_args.save_strategy or "epoch"
-    training_args.gradient_accumulation_steps = training_args.gradient_accumulation_steps or 1
-    training_args.per_device_eval_batch_size = training_args.per_device_eval_batch_size or training_args.per_device_train_batch_size
-    
-    
-    # BUG FIX (2026-02-18): These were HARDCODED overrides that silently replaced CLI args!
-    # Previously: training_args.optim = "adamw_torch" would overwrite --optim "adamw_torch_fused"
-    # Now: only set sensible defaults that don't conflict with CLI-provided values.
-    # Values that should always be set regardless of CLI:
-    training_args.report_to = ["tensorboard", "wandb"]
-    training_args.push_to_hub = False
+
+    setup_run_dirs(training_args, run_identifier)
+    # MLM uses HF DataCollator which expects unused columns removed
     training_args.remove_unused_columns = True
     training_args.use_cpu = False
-    
-    # Set fp16 as default (True), unless bf16 is explicitly set (then fp16=False)
-    training_args.fp16 = not training_args.bf16
-        
-    
-    # Clear eval/save steps if not using step-based strategy
+
     if training_args.eval_strategy != "steps":
         training_args.eval_steps = None
     if training_args.save_strategy != "steps":
         training_args.save_steps = None
-    
-    
-    
-    # Initialize wandb only on main process
-    if is_main_process():
-        
-        # Get model parameter counts for logging
-        total_params, trainable_params = count_parameters(model)
-        
-        # Create model identifier for W&B _name_or_path field
-        model_name_or_path = f"concept-encoder-{model_args.model_type}"
-        
-        # Get hostname in cross-platform way
-        hostname = get_hostname()
-        
-        wandb_tags = [
-            model_args.model_type,
-            "mlm-pretraining",
-            data_args.dataset_name,
-            data_args.masking_type,
-            hostname,
-            model_name_or_path
-        ]
-        if data_args.dataset_name_subset:
-            wandb_tags.append(data_args.dataset_name_subset)
-        # Concept loss tags — makes filtering WandB runs by loss config easy
-        if loss_config.is_enabled:
-            wandb_tags.append(f"losses:{'+'.join(loss_config.concept_losses)}")
-            wandb_tags.append(f"weighting:{loss_config.weighting_strategy}")
-            if loss_config.weighting_strategy == "fixed":
-                # Include the weight value so fixed runs are distinguishable
-                task_weight = loss_config.loss_weights.get("task", 1.0)
-                concept_weight = loss_config.loss_weights.get(
-                    loss_config.concept_losses[0], loss_args.loss_weight
-                )
-                wandb_tags.append(f"concept_w:{concept_weight}")
-        else:
-            wandb_tags.append("losses:none")
-        
-        
-        # Create comprehensive config dictionary
-        wandb_config = {
-            # Model identifier (special field for W&B)
-            '_name_or_path': model_name_or_path,
-            
-            # Model architecture
-            'model_type': model_args.model_type,
-            'hidden_size': model_args.hidden_size,
-            'token_embedding_dim': config.token_embedding_dim,
-            'num_hidden_layers': model_args.num_hidden_layers,
-            'concept_num': model_args.concept_num,
-            'intermediate_size': model_args.intermediate_size,
-            'num_attention_heads': config.num_attention_heads,
-            'concept_position_type': config.concept_position_type,
-            'vocab_size': config.vocab_size,
-            'max_sequence_length': config.max_sequence_length,
-            'total_params': total_params,
-            'trainable_params': trainable_params,
-            
-            # Loss configuration
-            'concept_losses': loss_config.concept_losses,
-            'loss_weighting': loss_config.weighting_strategy,
-            'loss_weights': loss_config.loss_weights if loss_config.weighting_strategy == "fixed" else "learnable",
-            
-            # Data configuration
-            'dataset_name': data_args.dataset_name,
-            'dataset_name_subset': data_args.dataset_name_subset,
-            'tokenizer_name': data_args.tokenizer_name,
-            'max_seq_length': data_args.max_seq_length,
-            'mlm_probability': data_args.mlm_probability,
-            'masking_type': data_args.masking_type,
-            'test_size_percent': data_args.test_size_percent,
-            
-            # Code version traceability (links WandB run to exact git commit)
-            **{f"git_{k}": v for k, v in get_git_info().items()},
 
-            # Training configuration (from training_args)
-            **{k: v for k, v in vars(training_args).items() if not k.startswith('_')}
-        }
-        
-        logger.info("Initializing Weights & Biases...")
-        # Initialize wandb with best practices for Hugging Face Transformers integration:
-        # 
-        # KEY PARAMETERS:
-        # - id: Unique identifier for the run (allows resuming if needed)
-        # - name: Human-readable run name (MUST match TrainingArguments.run_name exactly)
-        # - job_type: Categorizes runs (e.g., "pretraining", "finetuning", "evaluation")
-        # - group: Groups related runs for easier comparison (e.g., same model config)
-        # - tags: For filtering and searching runs
-        # - sync_tensorboard: Syncs TensorBoard logs (creates panels from logging_dir structure)        
-        # Create group identifier for clustering related runs (same model config)
-        group_identifier = base_id  # Reuse the base identifier (without timestamp)
-        
-        wandb.init(
-            project="MrCogito",
-            id=run_id,  # Unique identifier (allows resuming runs)
-            name=training_args.run_name,  # MUST match TrainingArguments.run_name exactly
-            job_type="mlm-pretraining",  # Categorizes the type of training job
-            config=wandb_config,
-            tags=wandb_tags,
-            group=group_identifier,  # Group by model config for easier comparison
-            sync_tensorboard=True,  # Syncs TensorBoard logs - panel names come from logging_dir structure
-            notes=f"Model: {model_args.model_type}, Dataset: {data_args.dataset_name}"  # Add context
-        )
-        logger.info(f"W&B run initialized:")
-        logger.info(f"  - Run ID: {wandb.run.id}")
-        logger.info(f"  - Run name: {wandb.run.name}")
-        logger.info(f"  - Run group: {wandb.run.group}")
-        logger.info(f"  - Job type: {wandb.run.job_type}")
-        logger.info(f"  - Logging dir: {training_args.logging_dir}")
-        logger.info(f"  - Note: Panel names will be based on logging_dir structure when sync_tensorboard=True")
+    log_training_config(training_args)
+
+    init_wandb(
+        training_args, model, config, data_args, loss_config,
+        base_id, run_identifier,
+        job_type="mlm-pretraining",
+        model_type=model_args.model_type,
+        wandb_tags=[model_args.model_type, "mlm-pretraining", data_args.masking_type],
+        extra_config={
+            "mlm_probability": data_args.mlm_probability,
+            "masking_type": data_args.masking_type,
+        },
+    )
     
     callbacks = []
     if loss_config.warmup_steps > 0:
@@ -783,22 +548,18 @@ def main():
         callbacks=callbacks,
     )
     
-    # Start training
-    logger.info("="*60)
-    logger.info(f"Starting training at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    logger.info("="*60)
+    logger.info("=" * 60)
+    logger.info(f"Starting MLM pretraining: {datetime.now()}")
+    logger.info("=" * 60)
     trainer.train()
-    
-    # Save final model
-    final_model_path = os.path.join(training_args.output_dir, training_args.run_name)
-    logger.info(f"Saving final model to: {final_model_path}")
-    trainer.save_model(final_model_path)
-    
-    # Explicitly save tokenizer to ensure it's available for evaluation
-    tokenizer.save_pretrained(final_model_path)
-    logger.info(f"Saved tokenizer to {final_model_path}")
-    
-    logger.info("Training completed successfully!")
+
+    final_path = os.path.join(training_args.output_dir, run_identifier)
+    trainer.save_model(final_path)
+    tokenizer.save_pretrained(final_path)
+    logger.info(f"Saved model to: {final_path}")
+
+    if wandb.run:
+        wandb.finish()
 
 if __name__ == "__main__":
     main()
