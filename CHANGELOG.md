@@ -16,6 +16,28 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ## [Unreleased]
 
+## [2026-03-07] — Prefix Diffusion Evaluation Hardening & V2 Training Path
+
+**Why:**
+- Diffusion-family checkpoints were still easy to evaluate incorrectly: pair tasks were concatenated, diffusion/prefix checkpoints could silently fall back to encoder-only weighted pooling, and the checkpoint itself did not declare the only valid downstream route.
+- The first prefix diffusion baseline also used the weakest training path: no BiXT requirement, no reduced token embedding default, and random token cuts on short/low-information samples.
+
+**Impact:**
+- Diffusion and prefix checkpoints now carry an explicit evaluation contract in `config.json`; pair tasks are routed automatically to separate sentence encoding, and diffusion-family checkpoints without the new metadata now fail loudly instead of being evaluated through a silent legacy fallback.
+- Prefix diffusion training now defaults to the stronger v2 path: BiXT-only, reduced token embedding width, sentence-boundary prefix splits, and short-example filtering before training.
+
+**What changed:**
+- [added] `evaluation/concept_eval_routing.py` - shared routing contract for concept checkpoint families.
+- [changed] `evaluation/evaluate_model_on_glue.py`, `evaluation/evaluate_on_benchmark.py` - automatic metadata-based routing, separate-encoding pair evaluation for diffusion-family checkpoints, and removal of silent legacy diffusion fallback.
+- [changed] `nn/concept_encoder.py`, `training/train_diffusion.py`, `training/train_prefix_diffusion.py` - checkpoint metadata contract for evaluation, BiXT-only prefix training, reduced token embedding default, and richer training metadata logging.
+- [changed] `data/data_collators.py` - added `sentence_boundary` split strategy for prefix/suffix generation.
+- [changed] `scripts/train_prefix_diffusion_multigpu.sh` - aligned the Polonez/Odra launcher with the hardened prefix v2 defaults.
+- [added] `tests/test_evaluation_routing.py`
+- [changed] `tests/test_data_collators.py` - added coverage for sentence-boundary splitting and invalid split-strategy rejection.
+
+**Git tag:** `arch/prefix-diffusion-v2-hardening`
+**Related TODO:** `active_todos.md` → `TODO 13b: Prefix diffusion evaluation hardening + v2 training path` (completed)
+
 ## [2026-03-07] — Training Script Logging Unification & Rename
 
 **Motivation:** Each training script carried ~100-200 lines of copy-pasted boilerplate

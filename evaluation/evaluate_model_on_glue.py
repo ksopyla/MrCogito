@@ -55,6 +55,11 @@ from nn.concept_encoder_weighted import ConceptEncoderForSequenceClassificationW
 from nn.concept_encoder_perceiver import (
     ConceptEncoderForSequenceClassificationPerceiver,
     ConceptEncoderForSequenceClassificationViaDecoder,
+    ConceptEncoderForSentencePairClassification,
+)
+from evaluation.concept_eval_routing import (
+    is_separate_pair_route,
+    resolve_concept_eval_route,
 )
 from training.utils_training import get_hostname
 
@@ -472,7 +477,7 @@ def set_seed(seed):
         torch.cuda.manual_seed_all(seed)
 
 # Preprocess function for GLUE tasks
-def preprocess_function(examples, tokenizer, max_length, task):
+def preprocess_function(examples, tokenizer, max_length, task, pair_input_mode="concatenated"):
     """
     Preprocess examples for GLUE tasks by tokenizing text and adding labels.
     
@@ -495,15 +500,34 @@ def preprocess_function(examples, tokenizer, max_length, task):
     if "sentence2" in task_keys:
         sentences1 = examples[task_keys["sentence1"]]
         sentences2 = examples[task_keys["sentence2"]]
-        
-        # Tokenize sentence pairs
-        result = tokenizer(
-            sentences1, 
-            sentences2, 
-            padding="max_length",
-            max_length=max_length,
-            truncation=True
-        )
+
+        if pair_input_mode == "separate":
+            tokenized_a = tokenizer(
+                sentences1,
+                padding="max_length",
+                max_length=max_length,
+                truncation=True,
+            )
+            tokenized_b = tokenizer(
+                sentences2,
+                padding="max_length",
+                max_length=max_length,
+                truncation=True,
+            )
+            result = {
+                "input_ids_a": tokenized_a["input_ids"],
+                "attention_mask_a": tokenized_a["attention_mask"],
+                "input_ids_b": tokenized_b["input_ids"],
+                "attention_mask_b": tokenized_b["attention_mask"],
+            }
+        else:
+            result = tokenizer(
+                sentences1,
+                sentences2,
+                padding="max_length",
+                max_length=max_length,
+                truncation=True,
+            )
     else:
         sentences = examples[task_keys["sentence"]]
         
@@ -588,7 +612,7 @@ def compute_metrics(task, metric_names):
     
     return compute_metrics_fn
 
-def load_glue_dataset(task, tokenizer, max_length):
+def load_glue_dataset(task, tokenizer, max_length, pair_input_mode="concatenated"):
     """
     Load and preprocess a GLUE dataset for the specified task.
     
@@ -633,14 +657,26 @@ def load_glue_dataset(task, tokenizer, max_length):
         # Preprocess datasets with error handling
         try:
             train_dataset = datasets["train"].map(
-                lambda examples: preprocess_function(examples, tokenizer, max_length, task),
+                lambda examples: preprocess_function(
+                    examples,
+                    tokenizer,
+                    max_length,
+                    task,
+                    pair_input_mode=pair_input_mode,
+                ),
                 batched=True,
                 remove_columns=datasets["train"].column_names,
                 desc="Preprocessing training data"
             )
             
             eval_dataset = eval_dataset.map(
-                lambda examples: preprocess_function(examples, tokenizer, max_length, task),
+                lambda examples: preprocess_function(
+                    examples,
+                    tokenizer,
+                    max_length,
+                    task,
+                    pair_input_mode=pair_input_mode,
+                ),
                 batched=True,
                 remove_columns=eval_dataset.column_names,
                 desc="Preprocessing validation data"
@@ -926,25 +962,31 @@ def finetune_model_on_glue(args):
                 problem_type="regression" if args.task == "stsb" else "single_label_classification"
             )
         
+        route = resolve_concept_eval_route(
+            config=config,
+            requested_model_type=args.model_type,
+            has_pair_inputs="sentence2" in GLUE_TASKS[args.task]["keys"],
+        )
+
         # Select the appropriate classification model class
-        if args.model_type == "weighted_mlm":
+        if route.model_mode == "weighted_pool" and route.load_mode == "full":
             logger.info(f"Using Weighted Sequence Classification for model type: {args.model_type}")
             model_class = ConceptEncoderForSequenceClassificationWeighted
-        elif args.model_type in ("perceiver_mlm", "perceiver_posonly_mlm", "diffusion_mlm", "prefix_diffusion"):
-            # perceiver variants, diffusion_mlm and prefix_diffusion all use the same
-            # encoder-only classification head. Only encoder.* weights are loaded from the
-            # checkpoint; decoder and lm_head are discarded. The encoder architecture is identical.
-            logger.info(f"Using Perceiver weighted-pool Sequence Classification for model type: {args.model_type}")
+        elif route.model_mode == "weighted_pool":
+            logger.info(
+                f"Using weighted-pool Sequence Classification for checkpoint family: "
+                f"{route.checkpoint_family}"
+            )
             model_class = ConceptEncoderForSequenceClassificationPerceiver
-        elif args.model_type == "perceiver_decoder_cls":
-            # Classification via pretrained MLM decoder (Experiment 3.1)
-            # Loads BOTH encoder AND decoder weights from perceiver_mlm checkpoint.
-            # Respects config.decoder_posonly: True for TSDAE/PosOnly checkpoints.
-            logger.info(f"Using Classification via Decoder for model type: {args.model_type}")
+        elif route.model_mode == "via_decoder":
+            logger.info(f"Using Classification via Decoder for checkpoint family: {route.checkpoint_family}")
             logger.info(f"  decoder_posonly={getattr(config, 'decoder_posonly', False)}")
             model_class = ConceptEncoderForSequenceClassificationViaDecoder
+        elif route.model_mode == "sentence_pair":
+            logger.info(f"Using sentence-pair classification for checkpoint family: {route.checkpoint_family}")
+            model_class = ConceptEncoderForSentencePairClassification
         else:
-            raise ValueError(f"Unsupported model type for classification: {args.model_type}")
+            raise ValueError(f"Unsupported concept evaluation route: {route.model_mode}")
         
         # Initialize classification model with config (classification head will be random)
         model = model_class(config)
@@ -966,7 +1008,7 @@ def finetune_model_on_glue(args):
             
             model_state_dict = model.state_dict()
             
-            if args.model_type == "perceiver_decoder_cls":
+            if route.load_mode == "encoder_decoder":
                 # For decoder-based classification: load ALL matching weights from MLM checkpoint
                 # (encoder.* + decoder_* weights), skip only lm_head.* and classifier.*
                 # This preserves the pretrained decoder that learned position reconstruction
@@ -1025,7 +1067,13 @@ def finetune_model_on_glue(args):
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     
     # Load and preprocess dataset
-    train_dataset, eval_dataset, _ = load_glue_dataset(args.task, tokenizer, args.max_length)
+    pair_input_mode = route.pair_input_mode if args.model_type in concept_model_types else "concatenated"
+    train_dataset, eval_dataset, _ = load_glue_dataset(
+        args.task,
+        tokenizer,
+        args.max_length,
+        pair_input_mode=pair_input_mode,
+    )
     
     # Get model-specific configuration
     model_config = get_model_specific_config(args.model_name_or_path)
@@ -1103,12 +1151,15 @@ def finetune_model_on_glue(args):
     compute_metrics_fn = compute_metrics(args.task, GLUE_TASKS[args.task]["metrics"])
     
     # Create an efficient data collator with dynamic padding
-    data_collator = DataCollatorWithPadding(
-        tokenizer=tokenizer,
-        padding="longest",
-        max_length=args.max_length,
-        pad_to_multiple_of=8  # Optimize for tensor core operations
-    )
+    if args.model_type in concept_model_types and is_separate_pair_route(route):
+        data_collator = default_data_collator
+    else:
+        data_collator = DataCollatorWithPadding(
+            tokenizer=tokenizer,
+            padding="longest",
+            max_length=args.max_length,
+            pad_to_multiple_of=8  # Optimize for tensor core operations
+        )
     
     trainer = Trainer(
         model=model,

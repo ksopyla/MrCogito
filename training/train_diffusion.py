@@ -282,6 +282,11 @@ def main():
         mask_token_id=tokenizer.mask_token_id,
         eos_token_id=tokenizer.eos_token_id,
         unk_token_id=tokenizer.unk_token_id,
+        checkpoint_family="diffusion_mlm",
+        evaluation_contract_version=1,
+        canonical_pair_eval_mode="sentence_pair",
+        canonical_single_eval_mode="weighted_pool",
+        pretraining_objective="masked_diffusion_self_reconstruction",
     )
 
     loss_config = loss_args.to_loss_config()

@@ -43,6 +43,7 @@ from transformers import (
     Trainer,
     TrainingArguments,
     DataCollatorWithPadding,
+    default_data_collator,
 )
 from datasets import load_dataset
 import evaluate
@@ -55,6 +56,11 @@ from nn.concept_encoder_weighted import ConceptEncoderForSequenceClassificationW
 from nn.concept_encoder_perceiver import (
     ConceptEncoderForSequenceClassificationPerceiver,
     ConceptEncoderForSequenceClassificationViaDecoder,
+    ConceptEncoderForSentencePairClassification,
+)
+from evaluation.concept_eval_routing import (
+    is_separate_pair_route,
+    resolve_concept_eval_route,
 )
 from training.utils_training import get_hostname
 
@@ -162,7 +168,7 @@ def set_seed(seed):
         torch.cuda.manual_seed_all(seed)
 
 
-def load_benchmark_dataset(benchmark_name, tokenizer, max_length):
+def load_benchmark_dataset(benchmark_name, tokenizer, max_length, pair_input_mode="concatenated"):
     """Load and preprocess a benchmark dataset."""
     cfg = BENCHMARKS[benchmark_name]
 
@@ -186,8 +192,33 @@ def load_benchmark_dataset(benchmark_name, tokenizer, max_length):
     def preprocess(examples):
         texts_a = examples[cfg["input_columns"][0]]
         texts_b = examples[cfg["input_columns"][1]]
-        result = tokenizer(texts_a, texts_b, padding="max_length",
-                           max_length=max_length, truncation=True)
+        if pair_input_mode == "separate":
+            tokenized_a = tokenizer(
+                texts_a,
+                padding="max_length",
+                max_length=max_length,
+                truncation=True,
+            )
+            tokenized_b = tokenizer(
+                texts_b,
+                padding="max_length",
+                max_length=max_length,
+                truncation=True,
+            )
+            result = {
+                "input_ids_a": tokenized_a["input_ids"],
+                "attention_mask_a": tokenized_a["attention_mask"],
+                "input_ids_b": tokenized_b["input_ids"],
+                "attention_mask_b": tokenized_b["attention_mask"],
+            }
+        else:
+            result = tokenizer(
+                texts_a,
+                texts_b,
+                padding="max_length",
+                max_length=max_length,
+                truncation=True,
+            )
         labels = examples[cfg["label_column"]]
         if cfg["label_scale"] is not None:
             labels = [float(l) / cfg["label_scale"] for l in labels]
@@ -239,15 +270,22 @@ def load_concept_model(args, benchmark_name):
     config = ConceptEncoderConfig.from_pretrained(args.model_name_or_path)
     config.num_labels = cfg["num_labels"]
     config.problem_type = cfg["problem_type"]
+    route = resolve_concept_eval_route(
+        config=config,
+        requested_model_type=args.model_type,
+        has_pair_inputs=len(cfg["input_columns"]) == 2,
+    )
 
-    if args.model_type == "weighted_mlm":
+    if route.model_mode == "weighted_pool" and route.load_mode == "full":
         model_class = ConceptEncoderForSequenceClassificationWeighted
-    elif args.model_type in ("perceiver_mlm", "perceiver_posonly_mlm", "diffusion_mlm", "prefix_diffusion"):
+    elif route.model_mode == "weighted_pool":
         model_class = ConceptEncoderForSequenceClassificationPerceiver
-    elif args.model_type == "perceiver_decoder_cls":
+    elif route.model_mode == "via_decoder":
         model_class = ConceptEncoderForSequenceClassificationViaDecoder
+    elif route.model_mode == "sentence_pair":
+        model_class = ConceptEncoderForSentencePairClassification
     else:
-        raise ValueError(f"Unknown model_type: {args.model_type}")
+        raise ValueError(f"Unknown concept evaluation route: {route.model_mode}")
 
     model = model_class(config)
 
@@ -265,7 +303,7 @@ def load_concept_model(args, benchmark_name):
         model_sd = model.state_dict()
         loaded, skipped = 0, 0
 
-        if args.model_type == "perceiver_decoder_cls":
+        if route.load_mode == "encoder_decoder":
             for k, v in ckpt.items():
                 if k.startswith("lm_head.") or k.startswith("loss_manager."):
                     continue
@@ -287,7 +325,7 @@ def load_concept_model(args, benchmark_name):
     else:
         logger.warning(f"No checkpoint found at {args.model_name_or_path}")
 
-    return model
+    return model, route
 
 
 def run_benchmark(args, benchmark_name):
@@ -303,11 +341,16 @@ def run_benchmark(args, benchmark_name):
     tokenizer_name = args.tokenizer_name or args.model_name_or_path
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
 
-    model = load_concept_model(args, benchmark_name)
+    model, route = load_concept_model(args, benchmark_name)
     total_params = sum(p.numel() for p in model.parameters())
     params_m = round(total_params / 1_000_000)
 
-    train_ds, eval_ds = load_benchmark_dataset(benchmark_name, tokenizer, args.max_length)
+    train_ds, eval_ds = load_benchmark_dataset(
+        benchmark_name,
+        tokenizer,
+        args.max_length,
+        pair_input_mode=route.pair_input_mode,
+    )
 
     num_batches = math.ceil(len(train_ds) / args.batch_size)
     logging_steps = max(1, num_batches // 10)
@@ -337,10 +380,15 @@ def run_benchmark(args, benchmark_name):
         run_name=run_name,
     )
 
-    data_collator = DataCollatorWithPadding(
-        tokenizer=tokenizer, padding="longest",
-        max_length=args.max_length, pad_to_multiple_of=8,
-    )
+    if is_separate_pair_route(route):
+        data_collator = default_data_collator
+    else:
+        data_collator = DataCollatorWithPadding(
+            tokenizer=tokenizer,
+            padding="longest",
+            max_length=args.max_length,
+            pad_to_multiple_of=8,
+        )
 
     hostname = get_hostname()
     wandb.init(

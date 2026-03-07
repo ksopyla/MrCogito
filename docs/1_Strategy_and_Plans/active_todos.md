@@ -1,6 +1,6 @@
 # Experiment TODO List v3
 
-**Created: 2026-02-19** | **Updated: 2026-03-05**
+**Created: 2026-02-19** | **Updated: 2026-03-07**
 **Status: Active**
 
 ## Summary of Feb 19 Results
@@ -35,6 +35,36 @@
   - Eval loss 7.42 (below random 10.82, but still very high vs self-recon 1.4)
   - **Decision: Prefix generation alone does NOT fix concept collapse**
   - Git tag: `arch/prefix-diffusion-20260304`
+
+## TODO 13b: Prefix diffusion evaluation hardening + v2 training path — In progress, implementaion done, traning not started yet.
+
+**Done date: 2026-03-07**
+
+**Why:** The first prefix diffusion baseline mixed together two separate problems: a weak prefix objective and a mismatched evaluation path. Diffusion-family checkpoints were still easy to evaluate incorrectly on pair tasks, and prefix training still allowed the weaker non-BiXT + full token-width setup by default.
+
+**Implemented in code:**
+- `evaluation/evaluate_model_on_glue.py`, `evaluation/evaluate_on_benchmark.py`, `evaluation/concept_eval_routing.py`
+  - Diffusion-family checkpoints now require evaluation metadata saved in `config.json`.
+  - Pair-input tasks now route automatically to `ConceptEncoderForSentencePairClassification` with separate sentence encoding.
+  - Old diffusion/prefix checkpoints without the new metadata now fail loudly instead of silently taking the wrong legacy route.
+- `nn/concept_encoder.py`, `training/train_diffusion.py`, `training/train_prefix_diffusion.py`
+  - New checkpoints save the canonical evaluation contract directly in config.
+  - Prefix diffusion training now requires `use_bixt=True`.
+  - Prefix diffusion now defaults to `token_embedding_dim=64` and keeps warm-start support for the next ablation tier.
+- `data/data_collators.py`
+  - Added `sentence_boundary` split strategy so prefix/suffix cuts prefer punctuation-defined boundaries instead of only random token cuts.
+  - Prefix training now filters out short examples before training instead of forcing weak half-splits.
+- Tests
+  - Added `tests/test_evaluation_routing.py`
+  - Extended `tests/test_data_collators.py`
+  - Verified locally: `18 passed, 5 skipped`
+
+**Next controlled experiment ladder (code-ready, not run yet):**
+1. Prefix v2 clean baseline: `BiXT`, `token_embedding_dim=64`, `split_strategy=sentence_boundary`, no concept losses.
+2. If promising: `token_embedding_dim=32` ablation and encoder warm-start comparison.
+3. Only after that: semantic auxiliary stage (`contrastive` first, `vicreg + t_regs_mst` second).
+
+**Status:** [x] Done — implementation completed locally, next action is to launch the new prefix v2 baseline on the hardened stack.
 
 ## TODO 0: Run L6 baseline STS-B evaluation — DONE ✅
 

@@ -52,12 +52,12 @@ export NVIDIA_TF32_OVERRIDE=1
 MODEL_NAME_OR_PATH=""         # Empty = train from scratch; set to warm-start from MLM encoder
 
 HIDDEN_SIZE=512
-TOKEN_EMBEDDING_DIM=0         # 0 = same as HIDDEN_SIZE
+TOKEN_EMBEDDING_DIM=64        # Reduced token width blocks the easiest position-hash shortcut
 NUM_ENCODER_LAYERS=6
 CONCEPT_NUM=128
 INTERMEDIATE_SIZE=2048
 CONCEPT_POSITION_TYPE="none"
-USE_BIXT=False                # Set to True for BiXT experiment (parallel run)
+USE_BIXT=True                 # Required by the hardened prefix diffusion trainer
 BIXT_TOKEN_FFN=True
 DECODER_LAYERS=2
 T_MIN=0.3
@@ -74,6 +74,10 @@ MAX_SEQ_LENGTH=512
 TEST_SIZE_PERCENT=0.1
 PREFIX_RATIO_MIN=0.3
 PREFIX_RATIO_MAX=0.5
+SPLIT_STRATEGY="sentence_boundary"
+MIN_PREFIX_CONTENT=8
+MIN_SUFFIX_CONTENT=16
+MIN_TOTAL_CONTENT_TOKENS=32
 
 # =============================================================================
 # TRAINING HYPERPARAMETERS
@@ -129,8 +133,10 @@ if [ "$USE_BIXT" = "True" ]; then
 fi
 
 echo "Model: ConceptEncoder-H${HIDDEN_SIZE}L${NUM_ENCODER_LAYERS}C${CONCEPT_NUM}${BIXT_LABEL} + PrefixDiffusionDecoder-D${DECODER_LAYERS}"
+echo "Token embedding dim: $TOKEN_EMBEDDING_DIM"
 echo "Dataset: $DATASET_NAME"
 echo "Prefix ratio: [${PREFIX_RATIO_MIN}, ${PREFIX_RATIO_MAX}]"
+echo "Split strategy: $SPLIT_STRATEGY"
 echo "Effective batch: $((PER_DEVICE_BATCH_SIZE * NUM_GPUS * GRADIENT_ACCUMULATION_STEPS))"
 echo "Concept losses: $CONCEPT_LOSSES"
 echo ""
@@ -165,6 +171,10 @@ accelerate launch \
     --test_size_percent "$TEST_SIZE_PERCENT" \
     --prefix_ratio_min "$PREFIX_RATIO_MIN" \
     --prefix_ratio_max "$PREFIX_RATIO_MAX" \
+    --split_strategy "$SPLIT_STRATEGY" \
+    --min_prefix_content "$MIN_PREFIX_CONTENT" \
+    --min_suffix_content "$MIN_SUFFIX_CONTENT" \
+    --min_total_content_tokens "$MIN_TOTAL_CONTENT_TOKENS" \
     --dataset_cache_dir "$DATASET_CACHE_DIR" \
     --concept_losses "$CONCEPT_LOSSES" \
     --loss_weighting "$LOSS_WEIGHTING" \

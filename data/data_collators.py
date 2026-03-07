@@ -150,6 +150,7 @@ class DataCollatorForPrefixGeneration:
         prefix_ratio_max: float = 0.5,
         min_prefix_content: int = 5,
         min_suffix_content: int = 10,
+        split_strategy: str = "sentence_boundary",
     ):
         self.tokenizer = tokenizer
         self.max_length = max_length
@@ -157,15 +158,21 @@ class DataCollatorForPrefixGeneration:
         self.prefix_ratio_max = prefix_ratio_max
         self.min_prefix_content = min_prefix_content
         self.min_suffix_content = min_suffix_content
+        self.split_strategy = split_strategy
 
         self.pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
         self.cls_token_id = getattr(tokenizer, "cls_token_id", None)
         self.sep_token_id = getattr(tokenizer, "sep_token_id", None)
+        self._token_text_cache: Dict[int, str] = {}
 
         if self.sep_token_id is None:
             raise ValueError(
                 "Tokenizer must have a sep_token_id for prefix generation "
                 "(used as end-of-sequence marker in the suffix)."
+            )
+        if self.split_strategy not in {"token_random", "sentence_boundary"}:
+            raise ValueError(
+                "split_strategy must be one of {'token_random', 'sentence_boundary'}."
             )
 
     def _extract_content(self, ids: List[int]) -> List[int]:
@@ -181,6 +188,63 @@ class DataCollatorForPrefixGeneration:
             end -= 1
         return ids[start:end]
 
+    def _get_token_text(self, token_id: int) -> str:
+        if token_id not in self._token_text_cache:
+            token = self.tokenizer.convert_ids_to_tokens([token_id])[0]
+            self._token_text_cache[token_id] = token
+        return self._token_text_cache[token_id]
+
+    def _is_sentence_boundary_token(self, token_id: int) -> bool:
+        token = self._get_token_text(token_id)
+        normalized = token.replace("##", "").strip()
+        if normalized in {".", "!", "?", ";", ":"}:
+            return True
+        return normalized.endswith((".", "!", "?"))
+
+    def _choose_random_split(self, content_len: int) -> int:
+        min_p = self.min_prefix_content
+        min_s = self.min_suffix_content
+        if content_len <= 1:
+            return content_len
+        if content_len < min_p + min_s:
+            return max(1, min(content_len - 1, content_len // 2))
+
+        lo = max(min_p, int(content_len * self.prefix_ratio_min))
+        hi = min(content_len - min_s, int(content_len * self.prefix_ratio_max))
+        if lo > hi:
+            lo = min_p
+            hi = content_len - min_s
+        return random.randint(lo, max(lo, hi))
+
+    def _choose_sentence_boundary_split(self, content: List[int]) -> int:
+        content_len = len(content)
+        split = self._choose_random_split(content_len)
+
+        min_p = min(self.min_prefix_content, max(1, content_len - 1))
+        max_p = max(min_p, content_len - self.min_suffix_content)
+        target = split
+
+        candidates = [
+            idx
+            for idx, token_id in enumerate(content[:-1], start=1)
+            if min_p <= idx <= max_p and self._is_sentence_boundary_token(token_id)
+        ]
+        if not candidates:
+            return split
+
+        in_ratio_band = [
+            idx
+            for idx in candidates
+            if int(content_len * self.prefix_ratio_min) <= idx <= int(content_len * self.prefix_ratio_max)
+        ]
+        pool = in_ratio_band or candidates
+        return min(pool, key=lambda idx: abs(idx - target))
+
+    def _choose_split(self, content: List[int]) -> int:
+        if self.split_strategy == "token_random":
+            return self._choose_random_split(len(content))
+        return self._choose_sentence_boundary_split(content)
+
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
         batch_size = len(features)
 
@@ -193,21 +257,7 @@ class DataCollatorForPrefixGeneration:
                 raw_ids = raw_ids.tolist()
 
             content = self._extract_content(raw_ids)
-            content_len = len(content)
-
-            min_p = self.min_prefix_content
-            min_s = self.min_suffix_content
-
-            if content_len < min_p + min_s:
-                # Very short: split roughly in half, ensuring at least 1 per side
-                split = max(1, content_len // 2)
-            else:
-                lo = max(min_p, int(content_len * self.prefix_ratio_min))
-                hi = min(content_len - min_s, int(content_len * self.prefix_ratio_max))
-                if lo > hi:
-                    lo = min_p
-                    hi = content_len - min_s
-                split = random.randint(lo, max(lo, hi))
+            split = self._choose_split(content)
 
             prefix_content = content[:split]
             suffix_content = content[split:]

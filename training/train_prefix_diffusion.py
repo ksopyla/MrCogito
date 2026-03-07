@@ -74,16 +74,16 @@ logger = logging.get_logger(__name__)
 class ModelArguments:
     hidden_size: int = field(default=512)
     token_embedding_dim: int = field(
-        default=0,
-        metadata={"help": "0 = same as hidden_size (Dimension Inversion disabled)"}
+        default=64,
+        metadata={"help": "Token embedding width for dimension inversion. Prefix diffusion now defaults to a reduced width."}
     )
     num_hidden_layers: int = field(default=6)
     concept_num: int = field(default=128)
     intermediate_size: int = field(default=2048)
     concept_position_type: str = field(default="none")
     use_bixt: bool = field(
-        default=False,
-        metadata={"help": "Use BiXT bidirectional cross-attention encoder layers."}
+        default=True,
+        metadata={"help": "Use BiXT bidirectional cross-attention encoder layers. Prefix diffusion requires this."}
     )
     bixt_token_ffn: bool = field(
         default=True,
@@ -162,11 +162,27 @@ class DataTrainingArguments:
     dataset_cache_dir: Optional[str] = field(default=None)
     prefix_ratio_min: float = field(
         default=0.3,
-        metadata={"help": "Minimum fraction of content tokens in prefix (0.3 = 30%)."}
+        metadata={"help": "Minimum fraction of content tokens in prefix (0.3 = 30%%)."}
     )
     prefix_ratio_max: float = field(
         default=0.5,
-        metadata={"help": "Maximum fraction of content tokens in prefix (0.5 = 50%)."}
+        metadata={"help": "Maximum fraction of content tokens in prefix (0.5 = 50%%)."}
+    )
+    split_strategy: str = field(
+        default="sentence_boundary",
+        metadata={"help": "Prefix split strategy. Use sentence_boundary for semantic continuation."}
+    )
+    min_prefix_content: int = field(
+        default=8,
+        metadata={"help": "Minimum number of content tokens kept in the prefix."}
+    )
+    min_suffix_content: int = field(
+        default=16,
+        metadata={"help": "Minimum number of content tokens predicted in the suffix."}
+    )
+    min_total_content_tokens: int = field(
+        default=32,
+        metadata={"help": "Filter out examples shorter than this many content tokens before training."}
     )
 
 
@@ -183,6 +199,51 @@ class PrefixDiffusionTrainer(Trainer):
         return (loss, outputs) if return_outputs else loss
 
 
+def _content_length(input_ids, pad_token_id, cls_token_id, sep_token_id):
+    start = 0
+    if cls_token_id is not None and len(input_ids) > 0 and input_ids[0] == cls_token_id:
+        start = 1
+
+    end = len(input_ids)
+    while end > start and input_ids[end - 1] == pad_token_id:
+        end -= 1
+    if sep_token_id is not None and end > start and input_ids[end - 1] == sep_token_id:
+        end -= 1
+
+    return max(0, end - start)
+
+
+def _filter_short_examples(dataset, data_args, tokenizer, split_name):
+    min_total_content = max(
+        data_args.min_total_content_tokens,
+        data_args.min_prefix_content + data_args.min_suffix_content,
+    )
+    before_count = len(dataset)
+
+    filtered = dataset.filter(
+        lambda example: _content_length(
+            example["input_ids"],
+            tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0,
+            tokenizer.cls_token_id,
+            tokenizer.sep_token_id,
+        ) >= min_total_content,
+        desc=f"Filtering {split_name} short examples",
+    )
+
+    removed = before_count - len(filtered)
+    logger.info(
+        f"{split_name}: kept {len(filtered):,}/{before_count:,} examples "
+        f"after min_total_content_tokens>={min_total_content} filter "
+        f"(removed {removed:,})."
+    )
+    if len(filtered) == 0:
+        raise ValueError(
+            f"All {split_name} examples were filtered out. Lower min_total_content_tokens "
+            "or verify the tokenizer/dataset configuration."
+        )
+    return filtered
+
+
 # ============================================================================
 # Main
 # ============================================================================
@@ -193,11 +254,26 @@ def main():
     ))
     model_args, loss_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
+    if not model_args.use_bixt:
+        raise ValueError(
+            "Prefix diffusion training now requires BiXT. The non-BiXT path is "
+            "intentionally unsupported because prior runs showed it is not a viable baseline."
+        )
+    if model_args.token_embedding_dim <= 0:
+        raise ValueError(
+            "Prefix diffusion now requires an explicit reduced token_embedding_dim. "
+            "Use 64 for the default baseline or 32 for the follow-up ablation."
+        )
+
     set_seed(training_args.seed)
     log_system_info()
 
     log_data_config(data_args, extra_fields={
         "Prefix ratio": f"[{data_args.prefix_ratio_min}, {data_args.prefix_ratio_max}]",
+        "Split strategy": data_args.split_strategy,
+        "Min prefix content": data_args.min_prefix_content,
+        "Min suffix content": data_args.min_suffix_content,
+        "Min total content": data_args.min_total_content_tokens,
     })
 
     # Tokenizer
@@ -218,13 +294,11 @@ def main():
             max_seq_length=data_args.max_seq_length,
             dataset_cache_dir=data_args.dataset_cache_dir,
         )
+        train_ds = _filter_short_examples(train_ds, data_args, tokenizer, "train")
+        test_ds = _filter_short_examples(test_ds, data_args, tokenizer, "eval")
 
     # Token embedding dim
-    effective_token_dim = (
-        model_args.token_embedding_dim
-        if model_args.token_embedding_dim > 0
-        else model_args.hidden_size
-    )
+    effective_token_dim = model_args.token_embedding_dim
 
     # Model config
     config = ConceptEncoderConfig(
@@ -245,6 +319,11 @@ def main():
         unk_token_id=tokenizer.unk_token_id,
         use_bixt=model_args.use_bixt,
         bixt_token_ffn=model_args.bixt_token_ffn,
+        checkpoint_family="prefix_diffusion",
+        evaluation_contract_version=1,
+        canonical_pair_eval_mode="sentence_pair",
+        canonical_single_eval_mode="weighted_pool",
+        pretraining_objective="prefix_suffix_diffusion",
     )
 
     loss_config = loss_args.to_loss_config()
@@ -269,7 +348,7 @@ def main():
         model.encoder.load_state_dict(pretrained.encoder.state_dict())
         logger.info("Loaded pretrained encoder weights. Decoder uses random init.")
 
-    model_type_str = "prefix_diffusion_bixt" if model_args.use_bixt else "prefix_diffusion"
+    model_type_str = "prefix_diffusion_bixt"
     log_model_info(
         model, config=config,
         model_type=model_type_str,
@@ -287,9 +366,8 @@ def main():
 
     # Run identifier
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    bixt_tag = "BiXT" if model_args.use_bixt else ""
     base_id = (
-        f"prefix_diff{bixt_tag}_H{model_args.hidden_size}"
+        f"prefix_diffBiXT_T{effective_token_dim}_H{model_args.hidden_size}"
         f"L{model_args.num_hidden_layers}"
         f"C{model_args.concept_num}D{model_args.decoder_layers}"
     )
@@ -299,14 +377,14 @@ def main():
 
     log_training_config(training_args, extra_fields={
         "BiXT encoder": model_args.use_bixt,
+        "Token embedding dim": effective_token_dim,
         "t_min": model_args.t_min,
         "ELBO weighting": model_args.elbo_weight,
         "Decoder layers": model_args.decoder_layers,
+        "Split strategy": data_args.split_strategy,
     })
 
-    wandb_tags = ["prefix_diffusion", "soda-style"]
-    if model_args.use_bixt:
-        wandb_tags.append("bixt")
+    wandb_tags = ["prefix_diffusion", "soda-style", "bixt"]
 
     init_wandb(
         training_args, model, config, data_args, loss_config,
@@ -321,8 +399,13 @@ def main():
             "label_smoothing": model_args.label_smoothing,
             "elbo_weight": model_args.elbo_weight,
             "use_bixt": model_args.use_bixt,
+            "token_embedding_dim": effective_token_dim,
             "prefix_ratio_min": data_args.prefix_ratio_min,
             "prefix_ratio_max": data_args.prefix_ratio_max,
+            "split_strategy": data_args.split_strategy,
+            "min_prefix_content": data_args.min_prefix_content,
+            "min_suffix_content": data_args.min_suffix_content,
+            "min_total_content_tokens": data_args.min_total_content_tokens,
         },
     )
 
@@ -332,6 +415,9 @@ def main():
         max_length=data_args.max_seq_length,
         prefix_ratio_min=data_args.prefix_ratio_min,
         prefix_ratio_max=data_args.prefix_ratio_max,
+        min_prefix_content=data_args.min_prefix_content,
+        min_suffix_content=data_args.min_suffix_content,
+        split_strategy=data_args.split_strategy,
     )
 
     callbacks = []

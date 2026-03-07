@@ -80,6 +80,11 @@ class ConceptEncoderConfig(PretrainedConfig):
         use_bixt: bool = False,
         bixt_token_ffn: bool = True,
         decoder_posonly: bool = False,
+        checkpoint_family: Optional[str] = None,
+        evaluation_contract_version: Optional[int] = None,
+        canonical_pair_eval_mode: Optional[str] = None,
+        canonical_single_eval_mode: Optional[str] = None,
+        pretraining_objective: Optional[str] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -114,6 +119,14 @@ class ConceptEncoderConfig(PretrainedConfig):
         # embeddings only (no input token shortcut). Stored in config so ViaDecoder classification
         # loads the correct decoder variant without silently using the wrong mode.
         self.decoder_posonly = decoder_posonly
+        # Evaluation contract metadata lets downstream scripts pick the canonical
+        # evaluation route directly from the checkpoint instead of relying on
+        # fragile CLI conventions.
+        self.checkpoint_family = checkpoint_family
+        self.evaluation_contract_version = evaluation_contract_version
+        self.canonical_pair_eval_mode = canonical_pair_eval_mode
+        self.canonical_single_eval_mode = canonical_single_eval_mode
+        self.pretraining_objective = pretraining_objective
 
 class ConceptEncoderLayer(nn.Module):
     """A single layer of the concept encoder.

@@ -448,3 +448,35 @@ class TestDataCollatorForPrefixGeneration:
 
         with pytest.raises(ValueError, match="sep_token_id"):
             DataCollatorForPrefixGeneration(FakeTokenizer())
+
+    def test_invalid_split_strategy(self, modern_bert_tokenizer):
+        with pytest.raises(ValueError, match="split_strategy"):
+            DataCollatorForPrefixGeneration(
+                modern_bert_tokenizer,
+                split_strategy="not_a_strategy",
+            )
+
+    def test_sentence_boundary_strategy_prefers_punctuation(self, modern_bert_tokenizer):
+        text = (
+            "Alpha beta gamma. Delta epsilon zeta. "
+            "Eta theta iota kappa lambda."
+        )
+        collator = DataCollatorForPrefixGeneration(
+            modern_bert_tokenizer,
+            max_length=128,
+            prefix_ratio_min=0.2,
+            prefix_ratio_max=0.8,
+            min_prefix_content=2,
+            min_suffix_content=2,
+            split_strategy="sentence_boundary",
+        )
+        examples = _make_prefix_examples(modern_bert_tokenizer, [text], max_length=128)
+        batch = collator(examples)
+
+        prefix_ids = batch["prefix_input_ids"][0]
+        prefix_mask = batch["prefix_attention_mask"][0]
+        real_len = prefix_mask.sum().item()
+        last_content_token_id = prefix_ids[real_len - 2].item()
+        last_content_token = modern_bert_tokenizer.convert_ids_to_tokens([last_content_token_id])[0]
+
+        assert last_content_token.replace("##", "").endswith((".", "!", "?"))
