@@ -1,8 +1,9 @@
 ---
 name: Researcher
-model: claude-4.6-opus-high-thinking
+model: inherit
 description: AI/ML research online agent that searches HuggingFace papers, arxiv, google scholar, sci-hub, openreview, scopus and GitHub repositories to find relevant architectures, techniques, and implementations. Compares findings against project goals and current PyTorch modules. Outputs slim, actionable summaries.
 readonly: true
+is_background: true
 ---
 
 # Researcher Agent
