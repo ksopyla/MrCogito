@@ -62,11 +62,14 @@ from nn.loss_manager import LossConfig, ConceptLossStepCallback, get_available_l
 from data.data_collators import DataCollatorForTSDAE
 from data.dataset_preprocess import load_and_preprocess_text_dataset
 from training.utils_training import (
-    count_parameters,
     is_main_process,
     log_system_info,
     log_model_info,
-    get_git_info,
+    log_data_config,
+    log_loss_config,
+    log_training_config,
+    setup_run_dirs,
+    init_wandb,
 )
 
 logger = logging.get_logger(__name__)
@@ -173,14 +176,16 @@ def main():
     set_seed(training_args.seed)
     log_system_info()
 
-    # Tokenizer
+    log_data_config(data_args, extra_fields={
+        "Deletion rate": data_args.deletion_rate,
+    })
+
     logger.info(f"Loading tokenizer: {data_args.tokenizer_name}")
     tokenizer = AutoTokenizer.from_pretrained(
         data_args.tokenizer_name,
         cache_dir=data_args.dataset_cache_dir,
     )
 
-    # Dataset
     logger.info(f"Loading dataset: {data_args.dataset_name}")
     with training_args.main_process_first(desc="loading and tokenizing dataset"):
         train_ds, test_ds = load_and_preprocess_text_dataset(
@@ -218,6 +223,7 @@ def main():
     )
 
     loss_config = loss_args.to_loss_config()
+    log_loss_config(loss_config)
 
     logger.info("Initializing ConceptEncoderForMaskedLMPerceiverPosOnly (TSDAE)")
     model = ConceptEncoderForMaskedLMPerceiverPosOnly(config, loss_config=loss_config)
@@ -229,7 +235,8 @@ def main():
         model.encoder.load_state_dict(pretrained.encoder.state_dict(), strict=False)
         logger.info("Loaded pretrained encoder weights. Decoder uses random init.")
 
-    log_model_info(model, config=config, model_type="tsdae_posonly",
+    model_type_str = "tsdae_posonly_bixt" if model_args.use_bixt else "tsdae_posonly"
+    log_model_info(model, config=config, model_type=model_type_str,
                    model_description="Concept + TSDAE PosOnly")
 
     if model_args.torch_compile_dynamic:
@@ -245,46 +252,29 @@ def main():
                f"L{model_args.num_hidden_layers}C{model_args.concept_num}")
     run_identifier = f"{base_id}_{timestamp}"
 
-    output_dir = training_args.output_dir or "./outputs"
-    if not output_dir.endswith(run_identifier):
-        training_args.output_dir = os.path.join(output_dir, run_identifier)
+    setup_run_dirs(training_args, run_identifier)
 
-    if not training_args.logging_dir:
-        training_args.logging_dir = os.path.join(
-            os.path.dirname(training_args.output_dir), "logs", run_identifier
-        )
-    elif not training_args.logging_dir.endswith(run_identifier):
-        training_args.logging_dir = os.path.join(training_args.logging_dir, run_identifier)
+    log_training_config(training_args, extra_fields={
+        "Deletion rate": data_args.deletion_rate,
+        "BiXT encoder": model_args.use_bixt,
+    })
 
-    training_args.run_name = run_identifier
-    training_args.report_to = ["tensorboard", "wandb"]
-    training_args.push_to_hub = False
-    training_args.remove_unused_columns = False
-    training_args.fp16 = not training_args.bf16
+    wandb_tags = ["tsdae", "concept-encoder", "posonly"]
+    if model_args.use_bixt:
+        wandb_tags.append("bixt")
 
-    if is_main_process():
-        total_params, trainable_params = count_parameters(model)
-        wandb.init(
-            project="MrCogito",
-            id=run_identifier,
-            name=run_identifier,
-            job_type="tsdae-pretraining",
-            config={
-                "model_type": "tsdae_posonly",
-                "hidden_size": model_args.hidden_size,
-                "num_hidden_layers": model_args.num_hidden_layers,
-                "concept_num": model_args.concept_num,
-                "use_bixt": model_args.use_bixt,
-                "bixt_token_ffn": model_args.bixt_token_ffn,
-                "deletion_rate": data_args.deletion_rate,
-                "concept_losses": loss_args.concept_losses,
-                "loss_weighting": loss_args.loss_weighting,
-                "dataset": data_args.dataset_name,
-                "total_params": total_params,
-                **{f"git_{k}": v for k, v in get_git_info().items()},
-            },
-            tags=["tsdae", "concept-encoder", "posonly", data_args.dataset_name],
-        )
+    init_wandb(
+        training_args, model, config, data_args, loss_config,
+        base_id, run_identifier,
+        job_type="tsdae-pretraining",
+        model_type=model_type_str,
+        wandb_tags=wandb_tags,
+        extra_config={
+            "deletion_rate": data_args.deletion_rate,
+            "use_bixt": model_args.use_bixt,
+            "bixt_token_ffn": model_args.bixt_token_ffn,
+        },
+    )
 
     data_collator = DataCollatorForTSDAE(
         tokenizer,
@@ -295,7 +285,6 @@ def main():
     callbacks = []
     if loss_config.warmup_steps > 0:
         callbacks.append(ConceptLossStepCallback())
-        logger.info(f"Concept loss warmup: {loss_config.warmup_steps} steps")
 
     trainer = Trainer(
         model=model,
@@ -309,8 +298,6 @@ def main():
 
     logger.info("=" * 60)
     logger.info(f"Starting TSDAE pretraining: {datetime.now()}")
-    logger.info(f"  Deletion rate: {data_args.deletion_rate}")
-    logger.info(f"  BiXT: {model_args.use_bixt}")
     logger.info("=" * 60)
     trainer.train()
 
