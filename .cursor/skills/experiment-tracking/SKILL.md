@@ -80,14 +80,22 @@ Push explicitly: `git push origin --tags`
 
 ## CHANGELOG Format
 
+* Be concise and to the point, you dont have to describe each change in each file. 
+* group related changes together and describe them in a single paragraph.
+* detailed information are in the git tag or commit message.
+
 ```markdown
 ## [YYYY-MM-DD] — Short Title
 
-**What changed:**
-- `nn/file.py`: description of change
-
 **Why:**
 - Hypothesis or motivation
+
+**Impact:**
+- All training scripts are unified and use the same parameters
+
+**What changed:**
+- [refactored]`nn/file.py`, `training/script.py`, `data/file.py` - unified training args parameters
+- [added] `training/training_new_architecture.py` - new architecture implementation
 
 **Git tag:** `arch/feature-name`
 **Related TODO:** `active_todos.md` → "Task name" (completed)
