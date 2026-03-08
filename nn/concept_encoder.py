@@ -258,6 +258,7 @@ class BiXTCrossAttention(nn.Module):
         num_heads: int,
         attn_drop: float = 0.,
         proj_drop: float = 0.,
+        update_tokens: bool = True,
     ):
         super().__init__()
         assert dim_attn % num_heads == 0, (
@@ -267,25 +268,30 @@ class BiXTCrossAttention(nn.Module):
         self.head_dim = dim_attn // num_heads
         self.scale = self.head_dim ** -0.5
         self.dim_attn = dim_attn
+        self.update_tokens = update_tokens
 
         # Reference + Value projections for each side (4 matrices, not 6)
         self.rv_lat = nn.Linear(dim_lat, dim_attn * 2)
         self.rv_tok = nn.Linear(dim_tok, dim_attn * 2)
 
         self.attn_drop_lat = nn.Dropout(attn_drop)
-        self.attn_drop_tok = nn.Dropout(attn_drop)
-
         self.proj_lat = nn.Linear(dim_attn, dim_lat)
-        self.proj_tok = nn.Linear(dim_attn, dim_tok)
         self.proj_drop_lat = nn.Dropout(proj_drop)
-        self.proj_drop_tok = nn.Dropout(proj_drop)
+        if self.update_tokens:
+            self.attn_drop_tok = nn.Dropout(attn_drop)
+            self.proj_tok = nn.Linear(dim_attn, dim_tok)
+            self.proj_drop_tok = nn.Dropout(proj_drop)
+        else:
+            self.attn_drop_tok = None
+            self.proj_tok = None
+            self.proj_drop_tok = None
 
     def forward(
         self,
         x_lat: torch.Tensor,
         x_tok: torch.Tensor,
         key_padding_mask: Optional[torch.BoolTensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         """
         Args:
             x_lat: [B, M, dim_lat] — pre-normed concept representations.
@@ -321,11 +327,13 @@ class BiXTCrossAttention(nn.Module):
         lat_out = (A_lat @ v_tok).transpose(1, 2).reshape(B, M, self.dim_attn)
         lat_out = self.proj_drop_lat(self.proj_lat(lat_out))
 
-        # --- Tok ← Lat: transpose ORIGINAL S (latents are never padded) ---
-        S_T = S.transpose(-2, -1)                                 # [B, h, N, M]
-        A_tok = self.attn_drop_tok(S_T.softmax(dim=-1))           # [B, h, N, M]
-        tok_out = (A_tok @ v_lat).transpose(1, 2).reshape(B, N, self.dim_attn)
-        tok_out = self.proj_drop_tok(self.proj_tok(tok_out))
+        tok_out = None
+        if self.update_tokens:
+            # --- Tok ← Lat: transpose ORIGINAL S (latents are never padded) ---
+            S_T = S.transpose(-2, -1)                                 # [B, h, N, M]
+            A_tok = self.attn_drop_tok(S_T.softmax(dim=-1))           # [B, h, N, M]
+            tok_out = (A_tok @ v_lat).transpose(1, 2).reshape(B, N, self.dim_attn)
+            tok_out = self.proj_drop_tok(self.proj_tok(tok_out))
 
         return lat_out, tok_out
 
@@ -347,7 +355,7 @@ class BiConceptEncoderLayer(nn.Module):
     With Bi-Directional Cross-Attention Transformers", NeurIPS 2024.
     """
 
-    def __init__(self, config: ConceptEncoderConfig):
+    def __init__(self, config: ConceptEncoderConfig, update_tokens: bool = True):
         super().__init__()
 
         dim_lat = config.hidden_size
@@ -355,17 +363,19 @@ class BiConceptEncoderLayer(nn.Module):
         dim_attn = config.hidden_size
 
         # --- BiXT cross-attention (single similarity matrix) ---
+        self._update_tokens = update_tokens
         self.bixt_cross_attn = BiXTCrossAttention(
             dim_lat=dim_lat, dim_tok=dim_tok, dim_attn=dim_attn,
             num_heads=config.num_attention_heads,
             attn_drop=config.attention_probs_dropout_prob,
             proj_drop=config.hidden_dropout_prob,
+            update_tokens=update_tokens,
         )
         self.pre_cross_norm_lat = nn.LayerNorm(dim_lat)
         self.pre_cross_norm_tok = nn.LayerNorm(dim_tok)
 
         # --- token FFN (optional, very cheap at small dim_tok) ---
-        self._use_token_ffn = getattr(config, "bixt_token_ffn", True)
+        self._use_token_ffn = update_tokens and getattr(config, "bixt_token_ffn", True)
         if self._use_token_ffn:
             tok_intermediate = dim_tok * 4
             self.pre_ff_norm_tok = nn.LayerNorm(dim_tok)
@@ -407,7 +417,8 @@ class BiConceptEncoderLayer(nn.Module):
         normed_t = self.pre_cross_norm_tok(token_embeddings)
         c_out, t_out = self.bixt_cross_attn(normed_c, normed_t, key_padding_mask=attention_mask)
         concept_representations = concept_representations + c_out
-        token_embeddings = token_embeddings + t_out
+        if self._update_tokens:
+            token_embeddings = token_embeddings + t_out
 
         # 2. Token FFN — cheap non-linear processing in dim_tok space
         if self._use_token_ffn:
@@ -492,8 +503,16 @@ class ConceptEncoder(PreTrainedModel):
         # For "none", no concept_position_emb attribute is created
 
         # Concept encoder layers [num_hidden_layers]
-        layer_cls = BiConceptEncoderLayer if getattr(config, "use_bixt", False) else ConceptEncoderLayer
-        self.layers = nn.ModuleList([layer_cls(config) for _ in range(config.num_hidden_layers)])
+        if getattr(config, "use_bixt", False):
+            self.layers = nn.ModuleList([
+                BiConceptEncoderLayer(
+                    config,
+                    update_tokens=(layer_index < config.num_hidden_layers - 1),
+                )
+                for layer_index in range(config.num_hidden_layers)
+            ])
+        else:
+            self.layers = nn.ModuleList([ConceptEncoderLayer(config) for _ in range(config.num_hidden_layers)])
         self._use_bixt = getattr(config, "use_bixt", False)
         # Dropout [hidden_dropout_prob]
         self.dropout = nn.Dropout(config.hidden_dropout_prob)

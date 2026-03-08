@@ -251,6 +251,27 @@ class TestGradientFlow:
         assert grad is not None
         assert (grad != 0).any()
 
+    def test_all_bixt_encoder_params_receive_gradients(self):
+        config = _tiny_config(use_bixt=True, bixt_token_ffn=True)
+        model = self._run_backward(config=config)
+        for i, layer in enumerate(model.encoder.layers):
+            for name, param in layer.named_parameters():
+                if param.requires_grad:
+                    assert param.grad is not None, (
+                        f"BiXT encoder layer {i}, param {name}: grad is None"
+                    )
+
+    def test_last_bixt_layer_does_not_build_dead_token_update_params(self):
+        config = _tiny_config(use_bixt=True, bixt_token_ffn=True)
+        model = ConceptEncoderForPrefixDiffusion(config)
+        last_layer = model.encoder.layers[-1]
+        param_names = {name for name, _ in last_layer.named_parameters()}
+
+        assert "bixt_cross_attn.proj_tok.weight" not in param_names
+        assert "bixt_cross_attn.proj_tok.bias" not in param_names
+        assert "Wi_tok.weight" not in param_names
+        assert "Wo_tok.weight" not in param_names
+
 
 # ===========================================================================
 # ELBO weighting tests
