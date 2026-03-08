@@ -53,13 +53,16 @@ from nn.loss_manager import LossConfig, ConceptLossStepCallback, get_available_l
 
 from data.dataset_preprocess import load_and_preprocess_text_dataset
 from training.utils_training import (
-    log_system_info,
-    log_model_info,
+    init_wandb,
+    is_main_process,
     log_data_config,
     log_loss_config,
+    log_model_info,
+    log_system_info,
     log_training_config,
+    setup_distributed,
+    setup_file_logging,
     setup_run_dirs,
-    init_wandb,
 )
 
 logger = logging.get_logger(__name__)
@@ -233,6 +236,14 @@ class DiffusionTrainer(Trainer):
 # ============================================================================
 
 def main():
+    setup_distributed()
+
+    if is_main_process():
+        logging.set_verbosity_info()
+        setup_file_logging()
+    else:
+        logging.set_verbosity_error()
+
     parser = HfArgumentParser((ModelArguments, LossArguments, DataTrainingArguments, TrainingArguments))
     model_args, loss_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
@@ -259,6 +270,10 @@ def main():
             max_seq_length=data_args.max_seq_length,
             dataset_cache_dir=data_args.dataset_cache_dir,
         )
+
+    logger.info(f"Train dataset size: {len(train_ds):,}")
+    logger.info(f"Test dataset size: {len(test_ds):,}")
+    logger.info("=" * 60)
 
     # Token embedding dim
     effective_token_dim = (
@@ -311,9 +326,30 @@ def main():
 
     log_model_info(model, config=config, model_type="diffusion", model_description="Concept + Masked Diffusion")
 
-    # Apply torch.compile with dynamic=True AFTER model init, BEFORE Trainer creation.
-    # Using dynamic=True prevents constant recompilation caused by variable masked-token counts.
-    # Keep training_args.torch_compile=False so HF Trainer does NOT compile again.
+    if torch.cuda.is_available() and is_main_process():
+        _num_heads = config.num_attention_heads
+        _head_dim = config.hidden_size // _num_heads
+        try:
+            _q = torch.zeros(1, _num_heads, config.concept_num, _head_dim,
+                             dtype=torch.bfloat16, device="cuda")
+            _k = torch.zeros(1, _num_heads, 512, _head_dim,
+                             dtype=torch.bfloat16, device="cuda")
+            with torch.backends.cuda.sdp_kernel(
+                enable_flash=True, enable_math=False, enable_mem_efficient=False
+            ):
+                torch.nn.functional.scaled_dot_product_attention(_q, _k, _k)
+            logger.info(
+                f"Flash Attention v2: ACTIVE  "
+                f"(heads={_num_heads}, head_dim={_head_dim}, dtype=bf16)"
+            )
+        except Exception as _fa_exc:
+            logger.warning(
+                f"Flash Attention not available — training will use memory-efficient / math SDPA. "
+                f"Reason: {_fa_exc}"
+            )
+        finally:
+            del _q, _k
+
     if model_args.torch_compile_dynamic:
         if not torch.cuda.is_available():
             logger.warning("torch_compile_dynamic=True but no CUDA detected — skipping compile.")
@@ -335,6 +371,12 @@ def main():
     run_identifier = f"{base_id}_{timestamp}"
 
     setup_run_dirs(training_args, run_identifier)
+    training_args.use_cpu = False
+
+    if training_args.eval_strategy != "steps":
+        training_args.eval_steps = None
+    if training_args.save_strategy != "steps":
+        training_args.save_steps = None
 
     log_training_config(training_args, extra_fields={
         "Decoder layers": model_args.decoder_layers,
@@ -383,7 +425,7 @@ def main():
     tokenizer.save_pretrained(final_path)
     logger.info(f"Saved model to: {final_path}")
 
-    if wandb.run:
+    if wandb.run and is_main_process():
         wandb.finish()
 
 
