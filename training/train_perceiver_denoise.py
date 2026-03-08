@@ -42,6 +42,8 @@ from training.utils_training import (
     log_model_info,
     log_system_info,
     log_training_config,
+    setup_distributed,
+    setup_file_logging,
     setup_run_dirs,
 )
 
@@ -261,6 +263,14 @@ def build_perceiver_denoise_config(
 
 
 def main():
+    setup_distributed()
+
+    if is_main_process():
+        logging.set_verbosity_info()
+        setup_file_logging()
+    else:
+        logging.set_verbosity_error()
+
     parser = HfArgumentParser((ModelArguments, LossArguments, DataTrainingArguments, TrainingArguments))
     model_args, loss_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
@@ -299,6 +309,10 @@ def main():
             dataset_cache_dir=data_args.dataset_cache_dir,
         )
 
+    logger.info(f"Train dataset size: {len(train_ds):,}")
+    logger.info(f"Test dataset size: {len(test_ds):,}")
+    logger.info("=" * 60)
+
     config = build_perceiver_denoise_config(tokenizer, model_args, data_args)
     loss_config = loss_args.to_loss_config()
     log_loss_config(loss_config)
@@ -328,6 +342,30 @@ def main():
         model_description="BiXT perceiver denoising pretraining",
     )
 
+    if torch.cuda.is_available() and is_main_process():
+        _num_heads = config.num_attention_heads
+        _head_dim = config.hidden_size // _num_heads
+        try:
+            _q = torch.zeros(1, _num_heads, config.concept_num, _head_dim,
+                             dtype=torch.bfloat16, device="cuda")
+            _k = torch.zeros(1, _num_heads, 512, _head_dim,
+                             dtype=torch.bfloat16, device="cuda")
+            with torch.backends.cuda.sdp_kernel(
+                enable_flash=True, enable_math=False, enable_mem_efficient=False
+            ):
+                torch.nn.functional.scaled_dot_product_attention(_q, _k, _k)
+            logger.info(
+                f"Flash Attention v2: ACTIVE  "
+                f"(heads={_num_heads}, head_dim={_head_dim}, dtype=bf16)"
+            )
+        except Exception as _fa_exc:
+            logger.warning(
+                f"Flash Attention not available — training will use memory-efficient / math SDPA. "
+                f"Reason: {_fa_exc}"
+            )
+        finally:
+            del _q, _k
+
     if model_args.torch_compile_dynamic and torch.cuda.is_available():
         backend = getattr(training_args, "torch_compile_backend", None) or "inductor"
         logger.info(f"torch.compile(dynamic=True, backend='{backend}')")
@@ -341,6 +379,12 @@ def main():
         f"D{model_args.decoder_num_layers}_{timestamp}"
     )
     setup_run_dirs(training_args, run_identifier)
+    training_args.use_cpu = False
+
+    if training_args.eval_strategy != "steps":
+        training_args.eval_steps = None
+    if training_args.save_strategy != "steps":
+        training_args.save_steps = None
 
     log_training_config(
         training_args,

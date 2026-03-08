@@ -204,6 +204,10 @@ def main():
             dataset_cache_dir=data_args.dataset_cache_dir,
         )
 
+    logger.info(f"Train dataset size: {len(train_ds):,}")
+    logger.info(f"Test dataset size: {len(test_ds):,}")
+    logger.info("=" * 60)
+
     config = _build_config(tokenizer, model_args, data_args)
     log_loss_config(loss_config)
 

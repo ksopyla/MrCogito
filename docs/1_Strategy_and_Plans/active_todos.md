@@ -539,8 +539,15 @@ Phase 6 (Track H): Audio modality
 **Training script:** `training/train_perceiver_denoise.py`
 **Local test:** `scripts/test_perceiver_denoise_local.ps1`
 
-**Experiment A — Reconstruction baseline (5 GPU-days on Polonez):**
+**Experiment A — Reconstruction baseline (next run on Odra):**
 
+This is the first recommended run for the new maintained perceiver stack.
+
+- **Script to run on Odra:** `bash scripts/train_perceiver_denoise_multigpu.sh`
+- **What it does:** launches the canonical `perceiver_denoise` training path on all 3 Odra GPUs using the clean reconstruction-only objective, BiXT encoder, and the shared 3-layer position-only decoder.
+- **Exact experiment started:** `A1` clean baseline on Minipile with `H512 / T512 / L6 / C128 / D3`, `deletion_rate=0.6`, `objective_variant=reconstruction`, no concept losses, batch `16 x 3 GPUs x grad_acc 2 = 96`.
+- **Why this first:** it is the simplest test of whether the new denoising-first perceiver line produces non-collapsed concepts before adding contrastive pressure.
+- **Launcher note:** `scripts/train_perceiver_denoise_multigpu.sh` now defaults to this Odra-safe A1 configuration, so no extra env vars are required for the first run.
 
 **Experiment B — Reconstruction + contrastive (parallel follow-up):**
 Same base architecture as A with `--objective_variant reconstruction+contrastive`. Compare concept quality (effective rank, mean sim), zero-shot STS-B, and downstream GLUE scores.
@@ -551,7 +558,7 @@ Same base architecture as A with `--objective_variant reconstruction+contrastive
 3. Zero-shot STS-B: cosine similarity of separately-encoded sentences (no fine-tuning)
 4. Compare against MLM baseline (L6, eff rank 5/128) and diffusion
 
-**Status:** [ ] Not started (implementation done, waiting for GPU time)
+**Status:** [ ] Ready to launch on Odra via `bash scripts/train_perceiver_denoise_multigpu.sh`
 
 ---
 

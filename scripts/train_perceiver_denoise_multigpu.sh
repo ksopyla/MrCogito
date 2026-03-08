@@ -3,6 +3,7 @@
 set -euo pipefail
 
 echo "=== Perceiver Denoising Multi-GPU Training ==="
+echo "Default profile: Odra A1 reconstruction baseline"
 
 NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
 if [ "$NUM_GPUS" -le 0 ]; then
@@ -31,6 +32,9 @@ SHELL_LOG="${LOGGING_DIR}/shell_perceiver_denoise_$(date +%Y%m%d_%H%M%S).log"
 
 mkdir -p "$OUTPUT_DIR" "$LOGGING_DIR" "$HF_DATASETS_CACHE"
 
+# Default experiment profile:
+# A1 on Odra = clean perceiver_denoise reconstruction baseline
+# H512 / T512 / L6 / C128 / D3, BiXT on, no concept losses.
 HIDDEN_SIZE="${HIDDEN_SIZE:-512}"
 TOKEN_EMBEDDING_DIM="${TOKEN_EMBEDDING_DIM:-512}"
 NUM_LAYERS="${NUM_LAYERS:-6}"
@@ -44,15 +48,15 @@ DELETION_RATE="${DELETION_RATE:-0.6}"
 OBJECTIVE_VARIANT="${OBJECTIVE_VARIANT:-reconstruction}"
 CONCEPT_LOSSES="${CONCEPT_LOSSES:-none}"
 LOSS_WEIGHT="${LOSS_WEIGHT:-0.02}"
-PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-32}"
-EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE:-16}"
+PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-16}"
+EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE:-8}"
 GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-2}"
 LEARNING_RATE="${LEARNING_RATE:-3e-4}"
 NUM_EPOCHS="${NUM_EPOCHS:-20}"
 WARMUP_STEPS="${WARMUP_STEPS:-1500}"
-LOGGING_STEPS="${LOGGING_STEPS:-1000}"
-EVAL_STEPS="${EVAL_STEPS:-5000}"
-SAVE_STEPS="${SAVE_STEPS:-5000}"
+LOGGING_STEPS="${LOGGING_STEPS:-200}"
+EVAL_STEPS="${EVAL_STEPS:-2000}"
+SAVE_STEPS="${SAVE_STEPS:-2000}"
 SEED="${SEED:-42}"
 
 accelerate launch \
