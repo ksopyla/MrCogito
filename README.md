@@ -181,20 +181,27 @@ Before moving forward, I need:
 ```
 MrCogito/
 ├── nn/                              # Core model implementations
-│   ├── concept_encoder.py           # Perceiver MLM (primary)
+│   ├── concept_encoder.py           # Shared encoder config and core blocks
+│   ├── concept_encoder_perceiver.py # Perceiver denoising + ViaDecoder models
 │   ├── concept_encoder_recursive.py # Recursive (weight-tied) encoder
 │   ├── concept_encoder_diffusion.py # Masked diffusion decoder
-│   ├── concept_encoder_tsdae.py     # TSDAE denoising autoencoder
 │   └── loss_manager.py             # VICReg + t_regs_mst concept losses
 ├── training/                        # Training scripts
-│   ├── train_mlm.py               # MLM pretraining
+│   ├── train_mlm.py               # Weighted MLM baseline
+│   ├── train_perceiver_denoise.py  # Canonical perceiver denoising
+│   ├── train_recursive_mlm.py      # Isolated recursive experiment
 │   ├── train_diffusion.py          # Diffusion decoder training
-│   ├── train_tsdae.py              # TSDAE training
-│   ├── evaluate_model_on_glue.py   # GLUE benchmark evaluation
 │   └── utils_training.py           # Git info, WandB helpers
+├── evaluation/                      # Benchmark evaluation
+│   ├── evaluate_model_on_glue.py   # GLUE benchmark evaluation
+│   ├── evaluate_on_benchmark.py    # STS-B zero-shot, SICK, PAWS
+│   └── concept_eval_routing.py     # Checkpoint-driven evaluator routing
 ├── scripts/                         # Launch scripts
+│   ├── train_perceiver_denoise.ps1  # Windows perceiver training
+│   ├── train_perceiver_denoise_multigpu.sh # Linux perceiver training
 │   ├── train_diffusion_multigpu.sh  # Linux multi-GPU (Odra/Polonez)
-│   ├── test_diffusion_local.ps1    # Windows local test run
+│   ├── test_perceiver_denoise_local.ps1 # Windows perceiver smoke test
+│   ├── test_diffusion_local.ps1    # Windows diffusion smoke test
 │   └── ...
 ├── analysis/                        # Concept analysis tools
 │   ├── check_model_health.py
@@ -246,13 +253,27 @@ poetry run pytest tests/ -v
 
 ---
 
+## Current Interfaces
+
+Current source of truth: [`docs/1_Strategy_and_Plans/training_eval_matrix.md`](docs/1_Strategy_and_Plans/training_eval_matrix.md)
+
+- Maintained perceiver path: `training/train_perceiver_denoise.py` (`perceiver_denoise`)
+- Maintained MLM baseline: `training/train_mlm.py --model_type weighted_mlm`
+- Isolated recursion experiment: `training/train_recursive_mlm.py`
+- Retired active interfaces: `perceiver_mlm`, `perceiver_posonly_mlm`, `perceiver_decoder_cls`, `training/train_tsdae.py`
+
+---
+
 ## Training
 
 ### Local (Windows, single GPU)
 
 ```powershell
-# TSDAE training
-poetry run python training/train_tsdae.py --model_type perceiver_mlm --hidden_size 512 --num_layers 6 --num_concepts 128
+# Perceiver denoising training
+poetry run python training/train_perceiver_denoise.py --hidden_size 512 --num_hidden_layers 6 --concept_num 128
+
+# Perceiver denoising smoke test
+.\scripts\test_perceiver_denoise_local.ps1
 
 # Diffusion training
 .\scripts\test_diffusion_local.ps1
@@ -261,6 +282,9 @@ poetry run python training/train_tsdae.py --model_type perceiver_mlm --hidden_si
 ### Cluster (Linux, multi-GPU)
 
 ```bash
+# Perceiver denoising training
+bash scripts/train_perceiver_denoise_multigpu.sh
+
 # Diffusion training with VICReg + t_regs_mst regularization
 bash scripts/train_diffusion_multigpu.sh
 ```

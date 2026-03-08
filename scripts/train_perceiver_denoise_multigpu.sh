@@ -1,0 +1,109 @@
+#!/bin/bash
+
+set -euo pipefail
+
+echo "=== Perceiver Denoising Multi-GPU Training ==="
+
+NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
+if [ "$NUM_GPUS" -le 0 ]; then
+    echo "ERROR: No GPUs detected."
+    exit 1
+fi
+
+GPU_IDS=$(seq -s, 0 $((NUM_GPUS - 1)))
+export CUDA_VISIBLE_DEVICES="$GPU_IDS"
+export NCCL_DEBUG=WARN
+export NCCL_TIMEOUT=3600
+export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+export OMP_NUM_THREADS=8
+export TOKENIZERS_PARALLELISM=false
+
+PROJECT_ROOT="/home/ksopyla/dev/MrCogito"
+if [ ! -d "$PROJECT_ROOT" ]; then
+    PROJECT_ROOT="$(pwd)"
+fi
+
+export HF_HOME="${PROJECT_ROOT}/../hf_home"
+export HF_DATASETS_CACHE="${PROJECT_ROOT}/../hf_home/datasets"
+OUTPUT_DIR="${PROJECT_ROOT}/Cache/Training"
+LOGGING_DIR="${PROJECT_ROOT}/Cache/logs"
+SHELL_LOG="${LOGGING_DIR}/shell_perceiver_denoise_$(date +%Y%m%d_%H%M%S).log"
+
+mkdir -p "$OUTPUT_DIR" "$LOGGING_DIR" "$HF_DATASETS_CACHE"
+
+HIDDEN_SIZE="${HIDDEN_SIZE:-512}"
+TOKEN_EMBEDDING_DIM="${TOKEN_EMBEDDING_DIM:-512}"
+NUM_LAYERS="${NUM_LAYERS:-6}"
+CONCEPT_NUM="${CONCEPT_NUM:-128}"
+INTERMEDIATE_SIZE="${INTERMEDIATE_SIZE:-2048}"
+DECODER_NUM_LAYERS="${DECODER_NUM_LAYERS:-3}"
+DATASET_NAME="${DATASET_NAME:-JeanKaddour/minipile}"
+TOKENIZER_NAME="${TOKENIZER_NAME:-answerdotai/ModernBERT-base}"
+MAX_SEQ_LENGTH="${MAX_SEQ_LENGTH:-512}"
+DELETION_RATE="${DELETION_RATE:-0.6}"
+OBJECTIVE_VARIANT="${OBJECTIVE_VARIANT:-reconstruction}"
+CONCEPT_LOSSES="${CONCEPT_LOSSES:-none}"
+LOSS_WEIGHT="${LOSS_WEIGHT:-0.02}"
+PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-32}"
+EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE:-16}"
+GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-2}"
+LEARNING_RATE="${LEARNING_RATE:-3e-4}"
+NUM_EPOCHS="${NUM_EPOCHS:-20}"
+WARMUP_STEPS="${WARMUP_STEPS:-1500}"
+LOGGING_STEPS="${LOGGING_STEPS:-1000}"
+EVAL_STEPS="${EVAL_STEPS:-5000}"
+SAVE_STEPS="${SAVE_STEPS:-5000}"
+SEED="${SEED:-42}"
+
+accelerate launch \
+    --num_processes="$NUM_GPUS" \
+    --num_machines=1 \
+    --mixed_precision=bf16 \
+    --multi_gpu \
+    training/train_perceiver_denoise.py \
+    --hidden_size "$HIDDEN_SIZE" \
+    --token_embedding_dim "$TOKEN_EMBEDDING_DIM" \
+    --num_hidden_layers "$NUM_LAYERS" \
+    --concept_num "$CONCEPT_NUM" \
+    --intermediate_size "$INTERMEDIATE_SIZE" \
+    --decoder_num_layers "$DECODER_NUM_LAYERS" \
+    --use_bixt \
+    --deletion_rate "$DELETION_RATE" \
+    --objective_variant "$OBJECTIVE_VARIANT" \
+    --dataset_name "$DATASET_NAME" \
+    --tokenizer_name "$TOKENIZER_NAME" \
+    --max_seq_length "$MAX_SEQ_LENGTH" \
+    --dataset_cache_dir "$HF_DATASETS_CACHE" \
+    --concept_losses "$CONCEPT_LOSSES" \
+    --loss_weight "$LOSS_WEIGHT" \
+    --per_device_train_batch_size "$PER_DEVICE_BATCH_SIZE" \
+    --per_device_eval_batch_size "$EVAL_BATCH_SIZE" \
+    --gradient_accumulation_steps "$GRADIENT_ACCUMULATION_STEPS" \
+    --learning_rate "$LEARNING_RATE" \
+    --num_train_epochs "$NUM_EPOCHS" \
+    --warmup_steps "$WARMUP_STEPS" \
+    --logging_steps "$LOGGING_STEPS" \
+    --eval_strategy "steps" \
+    --eval_steps "$EVAL_STEPS" \
+    --save_strategy "steps" \
+    --save_steps "$SAVE_STEPS" \
+    --output_dir "$OUTPUT_DIR" \
+    --logging_dir "$LOGGING_DIR" \
+    --seed "$SEED" \
+    --bf16 \
+    --ddp_backend "nccl" \
+    --ddp_find_unused_parameters False \
+    --dataloader_pin_memory True \
+    --dataloader_num_workers 4 \
+    --gradient_checkpointing False \
+    --optim "adamw_torch_fused" \
+    --lr_scheduler_type "cosine" \
+    --report_to "wandb" \
+    --save_safetensors False \
+    --overwrite_output_dir True \
+    --remove_unused_columns True \
+    --disable_tqdm True \
+    --load_best_model_at_end True \
+    --metric_for_best_model "eval_loss" \
+    --greater_is_better False \
+    2>&1 | python scripts/clean_tee.py "$SHELL_LOG"

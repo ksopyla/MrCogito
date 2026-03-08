@@ -1,11 +1,11 @@
 #!/bin/bash
 # Train Recursive Concept Encoder (TRM-style weight-tied) on multi-GPU Linux server.
 #
-# This trains recursive_mlm: 1 shared ConceptEncoderLayer applied K times,
-# with the same Perceiver IO decoder as perceiver_mlm.
+# This is an isolated experimental path. It is intentionally separate from
+# `training/train_mlm.py` and the maintained perceiver denoising stack.
 #
-# Key differences from train_mlm_multigpu_perceiver.sh:
-#   - MODEL_TYPE="recursive_mlm" (uses RecursiveConceptEncoderForMaskedLM)
+# Key characteristics of this isolated path:
+#   - Uses `training/train_recursive_mlm.py`
 #   - ~42M params instead of ~61M (47% fewer encoder params)
 #   - Same decoder, same loss manager, same training pipeline
 #   - num_hidden_layers controls how many iterations the shared layer is applied
@@ -13,7 +13,7 @@
 # Usage:
 #   bash scripts/train_recursive_mlm.sh
 #
-# Warm-start from standard perceiver_mlm:
+# Warm-start from a perceiver checkpoint:
 #   Edit MODEL_NAME_OR_PATH below to point to an existing checkpoint.
 #   The script loads layer-0 weights into the shared layer, skips layers 1-N.
 
@@ -51,19 +51,18 @@ export NVIDIA_TF32_OVERRIDE=1
 # layer applied NUM_LAYERS times. The decoder is NOT shared.
 #
 # Parameter comparison (H512, L6/K6, C128, intermediate=2048):
-#   perceiver_mlm:   encoder 37.6M + decoder ~24M = ~61M total
+#   perceiver baseline: encoder 37.6M + decoder ~24M = ~61M total
 #   recursive_mlm:   encoder  6.3M + decoder ~24M = ~42M total  (-31%)
 # =============================================================================
 
-MODEL_TYPE="recursive_mlm"
 HIDDEN_SIZE=512
-TOKEN_EMBEDDING_DIM=0
+TOKEN_EMBEDDING_DIM=512
 NUM_LAYERS=6                      # Number of iterations (K) for the shared layer
 CONCEPT_NUM=128
 INTERMEDIATE_SIZE=2048
 CONCEPT_POSITION_TYPE="none"
 
-# Warm-start: uncomment to load from existing perceiver_mlm checkpoint
+# Warm-start: uncomment to load from an existing perceiver checkpoint
 # The recursive model loads encoder.layers.0.* → encoder.shared_layer.*
 # MODEL_NAME_OR_PATH=""
 
@@ -86,7 +85,7 @@ WEIGHT_DECAY=0.01
 MAX_GRAD_NORM=1.0
 
 # --- Loss ---
-CONCEPT_LOSSES="combined"
+CONCEPT_LOSSES="t_regs_mst"
 LOSS_WEIGHTING="fixed"
 LOSS_WEIGHT=0.1
 
@@ -111,7 +110,7 @@ DATASET_CACHE_DIR="${HF_DATASETS_CACHE}"
 SEED=42
 
 echo "Model Configuration:"
-echo "  - Model Type: $MODEL_TYPE (1 shared layer, $NUM_LAYERS iterations)"
+echo "  - Model Type: recursive_mlm (1 shared layer, $NUM_LAYERS iterations)"
 echo "  - Hidden Size: $HIDDEN_SIZE"
 echo "  - Concept Num: $CONCEPT_NUM"
 echo "  - Intermediate Size: $INTERMEDIATE_SIZE"
@@ -127,7 +126,7 @@ echo ""
 
 mkdir -p "$OUTPUT_DIR" "$LOGGING_DIR" "$DATASET_CACHE_DIR"
 
-SHELL_LOG="${LOGGING_DIR}/shell_${MODEL_TYPE}_$(date +%Y%m%d_%H%M%S).log"
+SHELL_LOG="${LOGGING_DIR}/shell_recursive_mlm_$(date +%Y%m%d_%H%M%S).log"
 echo "Starting training... (log: $SHELL_LOG)"
 echo ""
 
@@ -143,8 +142,7 @@ accelerate launch \
     --num_machines=1 \
     --mixed_precision=bf16 \
     --multi_gpu \
-    training/train_mlm.py \
-    --model_type "$MODEL_TYPE" \
+    training/train_recursive_mlm.py \
     --hidden_size "$HIDDEN_SIZE" \
     --token_embedding_dim "$TOKEN_EMBEDDING_DIM" \
     --num_hidden_layers "$NUM_LAYERS" \

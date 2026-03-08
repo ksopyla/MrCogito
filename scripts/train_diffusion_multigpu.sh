@@ -62,7 +62,7 @@ HIDDEN_SIZE=512
 TOKEN_EMBEDDING_DIM=0         # 0 = same as HIDDEN_SIZE
 NUM_ENCODER_LAYERS=6          # L6 encoder for compositional semantics (L2 proven too shallow)
 CONCEPT_NUM=128
-INTERMEDIATE_SIZE=2048        # 2048 matches the L6 perceiver_mlm baseline FFN dim
+INTERMEDIATE_SIZE=2048        # Matches the larger perceiver-family baseline FFN dim
 CONCEPT_POSITION_TYPE="none"
 DECODER_LAYERS=2              # Cross-attention layers in diffusion decoder (no self-attention)
 T_MIN=0.3                     # 0.3+ avoids the near-MLM regime where concepts are unnecessary (was 0.1)

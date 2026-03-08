@@ -24,12 +24,6 @@ from nn.concept_encoder import ConceptEncoderConfig
 from nn.concept_encoder_methods import ConceptEncoderForMaskedLM
 from nn.concept_encoder_sim_matrix import ConceptEncoderWithSimMatrixForMaskedLM
 from nn.concept_encoder_weighted import ConceptEncoderForMaskedLMWeighted
-from nn.concept_encoder_perceiver import (
-    ConceptEncoderForMaskedLMPerceiver,
-    ConceptEncoderForMaskedLMPerceiverPosOnly
-)
-from nn.concept_encoder_recursive_mlm import RecursiveConceptEncoderForMaskedLM
-from nn.concept_encoder_recursive import RecursiveConceptEncoderConfig
 from nn.loss_manager import LossConfig, ConceptLossStepCallback, get_available_losses
 
 from data.dataset_preprocess import load_and_preprocess_text_dataset
@@ -61,19 +55,6 @@ MODEL_REGISTRY = {
     "weighted_mlm": {
         "class": ConceptEncoderForMaskedLMWeighted,
         "description": "ConceptEncoder with simplified weighted approach for MLM"
-    },
-    "perceiver_mlm": {
-        "class": ConceptEncoderForMaskedLMPerceiver,
-        "description": "ConceptEncoder with Perceiver IO decoding for MLM (Input+Position queries)"
-    },
-    "perceiver_posonly_mlm": {
-        "class": ConceptEncoderForMaskedLMPerceiverPosOnly,
-        "description": "ConceptEncoder with Perceiver IO decoding for MLM (Position-only queries, pure Perceiver IO)"
-    },
-    "recursive_mlm": {
-        "class": RecursiveConceptEncoderForMaskedLM,
-        "description": "Recursive ConceptEncoder (1 shared layer, K iterations) with Perceiver IO decoding for MLM",
-        "config_class": RecursiveConceptEncoderConfig,
     }
 }
 
@@ -396,7 +377,7 @@ def main():
     log_loss_config(loss_config)
 
     # Models that support loss_config parameter
-    models_with_loss_config = {"weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm", "recursive_mlm"}
+    models_with_loss_config = {"weighted_mlm"}
     supports_loss_config = model_args.model_type in models_with_loss_config
     
     if model_args.model_name_or_path:

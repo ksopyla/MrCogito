@@ -23,34 +23,23 @@ export HF_DATASETS_CACHE="${PROJECT_ROOT}/../hf_home/datasets"
 export TOKENIZERS_PARALLELISM=false
 
 # =============================================================================
-# MODEL TO EVALUATE — update this when a new model is trained
+# MODEL TO EVALUATE — update this when a new denoising checkpoint is trained
 # =============================================================================
-# perceiver_mlm L6 + fixed0.1 combined (Feb 20 2026, eff. rank 12.5%)
-MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260220_184029/perceiver_mlm_H512L6C128_20260220_184029"
-# perceiver_mlm L6 + combined+kendall_gal (Feb 19 2026, eff. rank 95.5%)
-# MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260219_105435/perceiver_mlm_H512L6C128_20260219_105435"
-# L6 baseline — no concept losses (eff. rank 4%)
-# MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260208_211633/perceiver_mlm_H512L6C128_20260208_211633"
+MODEL_PATH="${MODEL_PATH_OVERRIDE:-${PROJECT_ROOT}/Cache/Training/REPLACE_WITH_PERCEIVER_DENOISE_CHECKPOINT}"
+MODEL_TYPE="${MODEL_TYPE_OVERRIDE:-perceiver_denoise}"
 # =============================================================================
-
-# Auto-detect MODEL_TYPE from MODEL_PATH name
-if echo "$MODEL_PATH" | grep -q "diffusion"; then
-    MODEL_TYPE="diffusion_mlm"
-elif echo "$MODEL_PATH" | grep -q "perceiver_posonly_mlm"; then
-    MODEL_TYPE="perceiver_posonly_mlm"
-elif echo "$MODEL_PATH" | grep -q "perceiver_mlm"; then
-    MODEL_TYPE="perceiver_mlm"
-elif echo "$MODEL_PATH" | grep -q "weighted_mlm"; then
-    MODEL_TYPE="weighted_mlm"
-else
-    MODEL_TYPE="perceiver_mlm"
-fi
 
 echo "  Model Type: $MODEL_TYPE"
 echo "  Model Path: $MODEL_PATH"
 echo ""
 
-python evaluation/evaluate_on_benchmark.py \
+if command -v poetry > /dev/null 2>&1; then
+    PYTHON_CMD="poetry run python"
+else
+    PYTHON_CMD="python3"
+fi
+
+$PYTHON_CMD evaluation/evaluate_on_benchmark.py \
     --benchmark paws \
     --model_type "$MODEL_TYPE" \
     --model_name_or_path "$MODEL_PATH" \

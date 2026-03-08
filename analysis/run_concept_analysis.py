@@ -8,7 +8,7 @@ Results are printed to stdout and optionally saved to a JSON file.
 Usage:
     python analysis/run_concept_analysis.py \
         --model_path Cache/Training/MODEL/MODEL \
-        --model_type perceiver_mlm \
+        --model_type perceiver_denoise \
         [--output_json /tmp/results.json] \
         [--num_batches 20] \
         [--batch_size 32]
@@ -27,8 +27,7 @@ from datasets import load_dataset
 
 from nn.concept_encoder import ConceptEncoderConfig
 from nn.concept_encoder_perceiver import (
-    ConceptEncoderForMaskedLMPerceiver,
-    ConceptEncoderForMaskedLMPerceiverPosOnly,
+    ConceptEncoderForDenoisingPerceiver,
 )
 from nn.concept_encoder_weighted import ConceptEncoderForMaskedLMWeighted
 from nn.concept_encoder_diffusion import (
@@ -39,8 +38,7 @@ from analysis.concept_analysis import compute_concept_geometry_metrics
 
 
 MODEL_CLASSES = {
-    "perceiver_mlm": ConceptEncoderForMaskedLMPerceiver,
-    "perceiver_posonly_mlm": ConceptEncoderForMaskedLMPerceiverPosOnly,
+    "perceiver_denoise": ConceptEncoderForDenoisingPerceiver,
     "weighted_mlm": ConceptEncoderForMaskedLMWeighted,
     "diffusion_mlm": ConceptEncoderForMaskedDiffusion,
     "prefix_diffusion": ConceptEncoderForPrefixDiffusion,
@@ -50,7 +48,7 @@ MODEL_CLASSES = {
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--model_path", required=True)
-    p.add_argument("--model_type", default="perceiver_mlm", choices=list(MODEL_CLASSES))
+    p.add_argument("--model_type", default="perceiver_denoise", choices=list(MODEL_CLASSES))
     p.add_argument("--output_json", default=None)
     p.add_argument("--num_batches", type=int, default=20)
     p.add_argument("--batch_size", type=int, default=16)
@@ -216,11 +214,12 @@ def main():
     print("─── Recommendations ────────────────────────────────────────")
     if global_eff_rank_norm < 0.3:
         print("  → CRITICAL: Effective rank < 30% — concepts are collapsed.")
-        print("    Add VICReg or t_regs_mst loss BEFORE scaling data.")
+        print("    Stop and check zero-shot STS-B before spending more GPU time.")
+        print("    If this is a denoising run, only then try a light t_regs_mst or contrastive stage.")
     elif global_eff_rank_norm < 0.5:
-        print("  → effective rank 30-50% — add 'combined' loss to improve utilization.")
+        print("  → effective rank 30-50% — run zero-shot STS-B and a sentence-pair eval sweep next.")
     else:
-        print("  → Effective rank OK — proceed with data scaling.")
+        print("  → Effective rank OK — proceed to zero-shot STS-B, then fine-tuned evaluation.")
 
     if mean_sim > 0.5:
         print("  → Mean concept similarity > 0.5 — add orthogonality or uniformity loss.")

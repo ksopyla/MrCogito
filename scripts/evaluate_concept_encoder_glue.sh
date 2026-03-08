@@ -1,8 +1,8 @@
 #!/bin/bash
 # Evaluate the Concept Encoder model on the GLUE benchmark.
 #
-# MODEL_PATH is set directly in this file — update it when a new model is trained.
-# MODEL_TYPE is auto-detected from MODEL_PATH (no need to change it manually).
+# MODEL_PATH is set directly in this file — update it when a new denoising checkpoint is trained.
+# MODEL_TYPE is explicit; no path-based auto-detection remains.
 #
 # Usage:
 #   bash scripts/evaluate_concept_encoder_glue.sh            # all semantic tasks (default)
@@ -12,17 +12,10 @@
 #
 # Task list: all, all-glue, cola, mrpc, stsb, sst2, qnli, qqp, rte, mnli-matched, mnli-mismatched
 #
-# Model history:
-#   diffusion_mlm L2 xattn-only (Feb 23 2026, train_loss=2.894, eval_loss=1.433):
-#     diffusion_H512L2C128D2_20260223_203349  ← CURRENT
-#   perceiver_mlm L6 + fixed=0.1 combined (Feb 20 2026, eff. rank 12.5%):
-#     perceiver_mlm_H512L6C128_20260220_184029
-#   perceiver_mlm L6 + combined+kendall_gal (Feb 19 2026, eff. rank 95.5%):
-#     perceiver_mlm_H512L6C128_20260219_105435
-#   perceiver_mlm L6 baseline (Feb 08 2026, eff. rank 4%):
-#     perceiver_mlm_H512L6C128_20260208_211633
-#   weighted_mlm L2 (Jan 17 2026, MRPC 82.2% F1):
-#     weighted_mlm_H512L2C128_20260117_153544
+# Recommended order for a new perceiver checkpoint:
+#   1. analysis/run_concept_analysis.py
+#   2. evaluation/evaluate_on_benchmark.py --benchmark stsb_zero_shot
+#   3. this GLUE script for MRPC / STS-B / QQP / MNLI
 
 set -o pipefail  # Catch errors in piped commands
 
@@ -68,62 +61,29 @@ export TOKENIZERS_PARALLELISM=false
 
 # Model Configuration - set both together!
 #
-# MODEL_TYPE options for concept encoders:
-#   - "weighted_mlm": Weighted attention pooling approach
-#   - "perceiver_mlm": Perceiver IO with Input+Position decoder queries
-#   - "perceiver_posonly_mlm": Perceiver IO with Position-only decoder queries (pure Perceiver IO)
-#
-# Note: perceiver_mlm and perceiver_posonly_mlm use the same classification head
-# (the difference is only in how the MLM decoder works during pretraining)
+# MODEL_TYPE options for maintained concept encoders:
+#   - "perceiver_denoise": canonical denoising perceiver stack
+#   - "diffusion_mlm"
+#   - "prefix_diffusion"
+#   - "weighted_mlm"
 
 # =============================================================================
 # MODEL TO EVALUATE — update this when a new model is trained
 # Can be overridden non-interactively via environment variables:
-#   MODEL_PATH_OVERRIDE="ksopyla/concept-encoder-..." MODEL_TYPE_OVERRIDE="perceiver_decoder_cls" bash ...
+#   MODEL_PATH_OVERRIDE="ksopyla/concept-encoder-..." MODEL_TYPE_OVERRIDE="perceiver_denoise" bash ...
 # =============================================================================
 
-# Default model (last trained canonical run)
-# diffusion_mlm L2 xattn-only (Feb 23 2026, train_loss=2.894, eval_loss=1.433, NO gradient explosion)
-DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/diffusion_H512L2C128D2_20260223_203349/diffusion_H512L2C128D2_20260223_203349"
+# Default model path placeholder — replace with a fresh perceiver denoising checkpoint.
+DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/REPLACE_WITH_PERCEIVER_DENOISE_CHECKPOINT"
 
-# Previous models (uncomment to set a different default):
-# perceiver_mlm L6 + fixed0.1 combined (Feb 20 2026, eff. rank 12.5%)
-# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260220_184029/perceiver_mlm_H512L6C128_20260220_184029"
-# perceiver_mlm L6 baseline — no concept losses (eff. rank 4%) — uploaded to HF Hub
-# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260208_211633/perceiver_mlm_H512L6C128_20260208_211633"
-# perceiver_mlm L6 + combined+kendall_gal (Feb 19 2026, eff. rank 95.5%, QQP/MNLI regressed)
-# DEFAULT_MODEL_PATH="${PROJECT_ROOT}/Cache/Training/perceiver_mlm_H512L6C128_20260219_105435/perceiver_mlm_H512L6C128_20260219_105435"
-# HF Hub model (auto-downloads to Cache/Models on first use):
-# DEFAULT_MODEL_PATH="ksopyla/concept-encoder-perceiver_mlm_H512L6C128_20260208_211633"
-
-# Apply env-var overrides (for non-interactive SSH / CI use)
 MODEL_PATH="${MODEL_PATH_OVERRIDE:-$DEFAULT_MODEL_PATH}"
+MODEL_TYPE="${MODEL_TYPE_OVERRIDE:-perceiver_denoise}"
 
 # =============================================================================
 
 # Task: optional $1, defaults to "all" (semantic-relevant subset)
 # Task list: all, all-glue, cola, mrpc, stsb, sst2, qnli, qqp, rte, mnli-matched, mnli-mismatched
 TASK="${1:-all}"
-
-# Auto-detect MODEL_TYPE from MODEL_PATH name.
-# MODEL_TYPE_OVERRIDE skips auto-detection (required for perceiver_decoder_cls
-# and HF Hub model IDs that don't embed the type in the path).
-if [ -n "$MODEL_TYPE_OVERRIDE" ]; then
-    MODEL_TYPE="$MODEL_TYPE_OVERRIDE"
-    echo "MODEL_TYPE overridden: $MODEL_TYPE"
-elif echo "$MODEL_PATH" | grep -q "diffusion"; then
-    MODEL_TYPE="diffusion_mlm"
-elif echo "$MODEL_PATH" | grep -q "perceiver_posonly_mlm"; then
-    MODEL_TYPE="perceiver_posonly_mlm"
-elif echo "$MODEL_PATH" | grep -q "perceiver_mlm"; then
-    MODEL_TYPE="perceiver_mlm"
-elif echo "$MODEL_PATH" | grep -q "weighted_mlm"; then
-    MODEL_TYPE="weighted_mlm"
-else
-    MODEL_TYPE="perceiver_mlm"
-    echo "WARNING: Could not auto-detect MODEL_TYPE from path. Defaulting to: $MODEL_TYPE"
-    echo "  Use MODEL_TYPE_OVERRIDE env var to set explicitly."
-fi
 
 # Tokenizer: use the model path itself (works for both local and HF Hub IDs)
 TOKENIZER_NAME="${TOKENIZER_NAME_OVERRIDE:-$MODEL_PATH}"
@@ -148,7 +108,7 @@ get_task_epochs() {
 echo "Configuration:"
 echo "  - Project Root: $PROJECT_ROOT"
 echo "  - HF Cache: $HF_HOME"
-echo "  - Model Type: $MODEL_TYPE (auto-detected)"
+echo "  - Model Type: $MODEL_TYPE"
 echo "  - Model Path: $MODEL_PATH"
 echo "  - Task: $TASK"
 echo "  - Tokenizer: $TOKENIZER_NAME"

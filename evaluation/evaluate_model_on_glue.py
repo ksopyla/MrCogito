@@ -51,11 +51,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import ConceptEncoder
 from nn.concept_encoder import ConceptEncoderConfig
-from nn.concept_encoder_weighted import ConceptEncoderForSequenceClassificationWeighted
-from nn.concept_encoder_perceiver import (
-    ConceptEncoderForSequenceClassificationPerceiver,
-    ConceptEncoderForSequenceClassificationViaDecoder,
-    ConceptEncoderForSentencePairClassification,
+from evaluation.concept_checkpoint_loader import (
+    load_checkpoint_state_dict,
+    load_concept_checkpoint_weights,
+    select_concept_eval_model_class,
 )
 from evaluation.concept_eval_routing import (
     is_separate_pair_route,
@@ -179,8 +178,8 @@ def parse_args():
         "--model_type",
         type=str,
         default="bert",
-        choices=["bert-type", "xlnet-type", "concept-type", "sim_matrix_mlm", "concept_mlm", "weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm", "perceiver_decoder_cls", "diffusion_mlm", "prefix_diffusion"],
-        help="Type of model to fine-tune. perceiver_decoder_cls uses the pretrained MLM decoder for classification (loads encoder+decoder weights). diffusion_mlm loads encoder weights from a ConceptEncoderForMaskedDiffusion checkpoint. prefix_diffusion loads encoder weights from a ConceptEncoderForPrefixDiffusion checkpoint."
+        choices=["bert-type", "xlnet-type", "concept-type", "sim_matrix_mlm", "concept_mlm", "weighted_mlm", "perceiver_denoise", "diffusion_mlm", "prefix_diffusion"],
+        help="Type of model to fine-tune. perceiver_denoise uses checkpoint metadata to select the canonical decoder-based or sentence-pair evaluation route."
     )
     parser.add_argument(
         "--task",
@@ -941,7 +940,7 @@ def finetune_model_on_glue(args):
         tokenizer = AutoTokenizer.from_pretrained(default_tokenizer, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
     
     # Load and initialize model based on model type
-    concept_model_types = ["weighted_mlm", "perceiver_mlm", "perceiver_posonly_mlm", "perceiver_decoder_cls", "diffusion_mlm", "prefix_diffusion"]
+    concept_model_types = ["weighted_mlm", "perceiver_denoise", "diffusion_mlm", "prefix_diffusion"]
     if args.model_type in concept_model_types:
         # Resolve local path or download from HF Hub into Cache/Models
         local_model_path = resolve_model_path(args.model_name_or_path, hf_token)
@@ -968,91 +967,16 @@ def finetune_model_on_glue(args):
             has_pair_inputs="sentence2" in GLUE_TASKS[args.task]["keys"],
         )
 
-        # Select the appropriate classification model class
-        if route.model_mode == "weighted_pool" and route.load_mode == "full":
-            logger.info(f"Using Weighted Sequence Classification for model type: {args.model_type}")
-            model_class = ConceptEncoderForSequenceClassificationWeighted
-        elif route.model_mode == "weighted_pool":
-            logger.info(
-                f"Using weighted-pool Sequence Classification for checkpoint family: "
-                f"{route.checkpoint_family}"
-            )
-            model_class = ConceptEncoderForSequenceClassificationPerceiver
-        elif route.model_mode == "via_decoder":
-            logger.info(f"Using Classification via Decoder for checkpoint family: {route.checkpoint_family}")
-            logger.info(f"  decoder_posonly={getattr(config, 'decoder_posonly', False)}")
-            model_class = ConceptEncoderForSequenceClassificationViaDecoder
-        elif route.model_mode == "sentence_pair":
-            logger.info(f"Using sentence-pair classification for checkpoint family: {route.checkpoint_family}")
-            model_class = ConceptEncoderForSentencePairClassification
-        else:
-            raise ValueError(f"Unsupported concept evaluation route: {route.model_mode}")
-        
-        # Initialize classification model with config (classification head will be random)
+        model_class = select_concept_eval_model_class(route)
         model = model_class(config)
-        
-        # Load pre-trained weights from MLM checkpoint
-        checkpoint_path = os.path.join(local_model_path, "pytorch_model.bin")
-        if not os.path.exists(checkpoint_path):
-            # Try safetensors format
-            checkpoint_path = os.path.join(local_model_path, "model.safetensors")
-        
-        if os.path.exists(checkpoint_path):
-            logger.info(f"Loading pre-trained weights from {checkpoint_path}")
-            
-            if checkpoint_path.endswith(".safetensors"):
-                from safetensors.torch import load_file
-                checkpoint_state_dict = load_file(checkpoint_path)
-            else:
-                checkpoint_state_dict = torch.load(checkpoint_path, map_location="cpu")
-            
-            model_state_dict = model.state_dict()
-            
-            if route.load_mode == "encoder_decoder":
-                # For decoder-based classification: load ALL matching weights from MLM checkpoint
-                # (encoder.* + decoder_* weights), skip only lm_head.* and classifier.*
-                # This preserves the pretrained decoder that learned position reconstruction
-                pretrained_loaded = 0
-                pretrained_skipped = 0
-                skipped_keys = []
-                
-                for key, value in checkpoint_state_dict.items():
-                    # Skip MLM prediction head (not needed for classification)
-                    if key.startswith("lm_head.") or key.startswith("loss_manager."):
-                        continue
-                    
-                    if key in model_state_dict and model_state_dict[key].shape == value.shape:
-                        model_state_dict[key] = value
-                        pretrained_loaded += 1
-                    else:
-                        pretrained_skipped += 1
-                        skipped_keys.append(key)
-                
-                model.load_state_dict(model_state_dict)
-                logger.info(f"Loaded {pretrained_loaded} pretrained weights (encoder + decoder) from checkpoint")
-                if pretrained_skipped > 0:
-                    logger.warning(f"Skipped {pretrained_skipped} keys: {skipped_keys[:10]}...")
-                logger.info("Classification head (pre_pool_norm, classifier) initialized randomly")
-            else:
-                # For CLS-query and weighted models: load only encoder weights (backbone)
-                encoder_weights_loaded = 0
-                encoder_weights_skipped = 0
-                
-                for key, value in checkpoint_state_dict.items():
-                    if key.startswith("encoder."):
-                        if key in model_state_dict and model_state_dict[key].shape == value.shape:
-                            model_state_dict[key] = value
-                            encoder_weights_loaded += 1
-                        else:
-                            encoder_weights_skipped += 1
-                            logger.warning(f"Skipping encoder key {key}: shape mismatch or not in model")
-                
-                model.load_state_dict(model_state_dict)
-                logger.info(f"Loaded {encoder_weights_loaded} encoder weights from checkpoint (skipped {encoder_weights_skipped})")
-                logger.info("Classification head initialized randomly (will be trained during fine-tuning)")
-        else:
+
+        checkpoint_state_dict = load_checkpoint_state_dict(local_model_path)
+        if checkpoint_state_dict is None:
             logger.warning(f"No checkpoint found at {args.model_name_or_path}")
             logger.warning("Initializing model with random weights - results will be meaningless!")
+        else:
+            loaded, skipped = load_concept_checkpoint_weights(model, checkpoint_state_dict, route)
+            logger.info(f"Loaded {loaded} pretrained weights from checkpoint (skipped {skipped})")
     else:  # Standard transformer models like bert, roberta, xlnet
         model = AutoModelForSequenceClassification.from_pretrained(
             args.model_name_or_path,

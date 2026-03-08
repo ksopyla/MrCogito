@@ -30,13 +30,19 @@ except ImportError:
 try:
     from nn.concept_encoder import ConceptEncoderConfig
     from nn.concept_encoder_weighted import ConceptEncoderForMaskedLMWeighted
-    from nn.concept_encoder_perceiver import ConceptEncoderForMaskedLMPerceiver
+    from nn.concept_encoder_perceiver import (
+        ConceptEncoderForDenoisingPerceiver,
+        ConceptEncoderForMaskedLMPerceiver,
+    )
 except ImportError:
     # Fallback for when running from different directories
     sys.path.append(".")
     from nn.concept_encoder import ConceptEncoderConfig
     from nn.concept_encoder_weighted import ConceptEncoderForMaskedLMWeighted
-    from nn.concept_encoder_perceiver import ConceptEncoderForMaskedLMPerceiver
+    from nn.concept_encoder_perceiver import (
+        ConceptEncoderForDenoisingPerceiver,
+        ConceptEncoderForMaskedLMPerceiver,
+    )
 
 def inspect_weights_detailed(model_or_path):
     """
@@ -372,6 +378,8 @@ def main():
             model = ConceptEncoderForMaskedLMWeighted.from_pretrained(args.model_path)
         elif args.model_type == "perceiver_mlm":
             model = ConceptEncoderForMaskedLMPerceiver.from_pretrained(args.model_path)
+        elif args.model_type == "perceiver_denoise":
+            model = ConceptEncoderForDenoisingPerceiver.from_pretrained(args.model_path)
         else:
             raise ValueError(f"Unsupported model type: {args.model_type}")
         

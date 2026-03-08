@@ -20,13 +20,13 @@
 - `nn/concept_encoder_perceiver.py`
 - `nn/concept_encoder_weighted.py`
 - `training/train_mlm.py`
-- `training/train_tsdae.py`
+- `training/train_perceiver_denoise.py`
 - `data/dataset_preprocess.py`
 - `data/data_collators.py`
 - `evaluation/concept_eval_routing.py`
 - `evaluation/evaluate_model_on_glue.py`
 - `evaluation/evaluate_on_benchmark.py`
-- `scripts/train_mlm_multigpu_perceiver.sh`
+- `scripts/train_perceiver_denoise_multigpu.sh`
 - `scripts/train_prefix_diffusion_multigpu.sh`
 - `scripts/evaluate_concept_encoder_glue.sh`
 - `scripts/evaluate_concept_encoder_glue.ps1`

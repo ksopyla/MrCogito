@@ -80,6 +80,7 @@ class ConceptEncoderConfig(PretrainedConfig):
         use_bixt: bool = False,
         bixt_token_ffn: bool = True,
         decoder_posonly: bool = False,
+        decoder_num_layers: int = 3,
         checkpoint_family: Optional[str] = None,
         evaluation_contract_version: Optional[int] = None,
         canonical_pair_eval_mode: Optional[str] = None,
@@ -119,6 +120,7 @@ class ConceptEncoderConfig(PretrainedConfig):
         # embeddings only (no input token shortcut). Stored in config so ViaDecoder classification
         # loads the correct decoder variant without silently using the wrong mode.
         self.decoder_posonly = decoder_posonly
+        self.decoder_num_layers = decoder_num_layers
         # Evaluation contract metadata lets downstream scripts pick the canonical
         # evaluation route directly from the checkpoint instead of relying on
         # fragile CLI conventions.

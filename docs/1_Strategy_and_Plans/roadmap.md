@@ -203,9 +203,9 @@ The entire research program is **bottlenecked on SG1**. If concept quality canno
 
 **Root cause analyses:** [mlm_perceiver_diagnosis_20260221.md](../4_Research_Notes/mlm_perceiver_diagnosis_20260221.md) (5 structural misalignments in MLM+Perceiver), [diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md) (5 causes for diffusion underperformance + SoTA comparison + proposed fixes).
 
-### Architecture Overhaul (Feb 21, 2026)
+### Architecture Overhaul (Mar 8, 2026 status)
 
-Diagnosis of 5 structural misalignments led to a complete architecture overhaul: TSDAE training, BiXT, PosOnly decoder, weighted concept pooling, separate sentence encoding. **Implementation complete, training not yet started.** See [CHANGELOG.md](../../CHANGELOG.md) `[2026-02-21]`.
+Diagnosis of 5 structural misalignments led to a complete architecture overhaul: perceiver denoising training, BiXT, a shared stacked position-only decoder, checkpoint-driven evaluation routing, and separate sentence encoding for pair tasks. The maintained perceiver family is now `perceiver_denoise`; historical `perceiver_mlm` / `perceiver_posonly_mlm` checkpoints remain archived baselines rather than active interfaces. See [CHANGELOG.md](../../CHANGELOG.md) and the current [`training_eval_matrix.md`](training_eval_matrix.md).
 
 ---
 
@@ -218,8 +218,8 @@ Diagnosis of 5 structural misalignments led to a complete architecture overhaul:
 
 | ID | Experiment | Priority | Effort | Status | Dependencies |
 |---|---|---|---|---|---|
-| A1 | **TSDAE PosOnly** on Minipile (20 ep, H512L6C128) | HIGHEST | 5 GPU-days | Implemented, awaiting GPU | None |
-| A2 | **TSDAE + BiXT** on Minipile (parallel with A1) | HIGHEST | 5 GPU-days | Implemented, awaiting GPU | None |
+| A1 | **Perceiver denoise reconstruction baseline** on Minipile (20 ep, H512L6C128) | HIGHEST | 5 GPU-days | Implemented, awaiting GPU | None |
+| A2 | **Perceiver denoise + contrastive** on Minipile | HIGHEST | 5 GPU-days | Implemented, awaiting GPU | After A1 stability check |
 | A3 | **Masked Diffusion** on Minipile (warm-start from L6 MLM) | HIGH | 5 GPU-days | In progress (Polonez) | None |
 | A4 | **Contrastive loss** (SimCSE-style, add to A1/A2 winner) | HIGH | 1 day code + 3 GPU-days | Not started | After A1/A2 results |
 | A5 | **t_regs_mst regularization** (replace abandoned `combined`) | MEDIUM | 0.5 day code | Implemented, untested | Add to A1/A2/A3 |
@@ -233,7 +233,7 @@ Diagnosis of 5 structural misalignments led to a complete architecture overhaul:
 **Evaluation protocol for every Track A checkpoint:**
 1. Concept analysis: effective rank, mean/max pairwise similarity (target: rank > 64, mean sim < 0.2)
 2. GLUE with ViaDecoder: MRPC, STS-B, QQP, MNLI (target: beat current baselines)
-3. GLUE with `perceiver_pair_cls`: same tasks, separate encoding (new evaluation mode)
+3. GLUE with checkpoint-declared pair routing: same tasks, separate sentence encoding
 4. Zero-shot STS-B: cosine similarity, no fine-tuning (ground truth of concept quality)
 5. Beyond-GLUE: PAWS, SICK
 
@@ -246,7 +246,7 @@ Diagnosis of 5 structural misalignments led to a complete architecture overhaul:
 - Pick winner based on: (1) concept rank, (2) STS-B Pearson, (3) **prefix generation quality**, (4) training stability
 
 **Active TODOs:** [TODO 6](active_todos.md), [TODO 10-13](active_todos.md)
-**Training scripts:** `training/train_tsdae.py`, `scripts/train_diffusion_multigpu.sh`
+**Training scripts:** `training/train_perceiver_denoise.py`, `scripts/train_diffusion_multigpu.sh`
 
 ---
 
@@ -293,7 +293,7 @@ Diagnosis of 5 structural misalignments led to a complete architecture overhaul:
 | ID | Experiment | Priority | Effort | Status | Dependencies |
 |---|---|---|---|---|---|
 | C1 | **Recursive Concept Encoder** on Minipile (K=6, ~42M params, MLM) | MEDIUM | 2 GPU-days | Code done, not trained | None |
-| C2 | **Recursive encoder with Track A winner** (TSDAE/diffusion) | HIGH | 3 GPU-days | Not started | Track A winner + C1 results |
+| C2 | **Recursive encoder with Track A winner** (perceiver denoise/diffusion) | HIGH | 3 GPU-days | Not started | Track A winner + C1 results |
 | C3 | **Test-time compute scaling** sweep (K=2,4,6,8,12 on GLUE) | HIGH | 0.5 day eval | Not started | After C1 or C2 |
 | C4 | **Dimension Inversion** (token_dim=32, concept_dim=512) | MEDIUM | 3 days code + 5 GPU-days | Not started | After Track A |
 | C5 | **Slot Attention** encoder variant (softmax over concept dim) | MEDIUM | 3 days code + 5 GPU-days | Design complete | Fallback if Track A fails |
@@ -305,7 +305,7 @@ Diagnosis of 5 structural misalignments led to a complete architecture overhaul:
 - Phase C: Compare vs standard L6 on MRPC, STS-B, QQP, MNLI, PAWS, SICK
 - Phase D: Warm-start from standard L6 checkpoint via `encoder.load_from_standard_checkpoint()`
 
-**C2 (Recursive + Track A winner):** The recursive encoder must be re-trained with the winning objective, not just MLM. If TSDAE wins Track A, train `RecursiveConceptEncoderForMaskedLM` with TSDAE collator and PosOnly decoder.
+**C2 (Recursive + Track A winner):** The recursive encoder must be re-trained with the winning objective, not just MLM. If perceiver denoising wins Track A, keep recursion on its own script family and adapt it intentionally instead of folding it back into generic `train_mlm.py`.
 
 **C4 rationale:** Token embedding intrinsic dimensionality is 10-37 (Tsukagoshi & Sasano, 2025). ALBERT uses 128-dim token embeddings with full GLUE performance. Cutting token_dim to 32 and keeping concept_dim=512 concentrates capacity in the concept space.
 

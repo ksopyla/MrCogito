@@ -42,7 +42,8 @@ All Python commands must use Poetry: `poetry run python <script> [args]`
 ├── training/                    # Training scripts
 │   ├── train_mlm.py
 │   ├── train_diffusion.py
-│   └── train_tsdae.py
+│   ├── train_perceiver_denoise.py
+│   └── train_recursive_mlm.py
 ├── evaluation/                  # Evaluation scripts
 │   ├── evaluate_model_on_glue.py
 │   └── evaluate_on_benchmark.py
@@ -55,7 +56,7 @@ All Python commands must use Poetry: `poetry run python <script> [args]`
 │   ├── evaluate_concept_encoder_paws.sh
 │   ├── evaluate_concept_encoder_sick.sh
 │   ├── train_diffusion_multigpu.sh
-│   ├── train_mlm_multigpu_perceiver.sh
+│   ├── train_perceiver_denoise_multigpu.sh
 │   └── train_recursive_mlm.sh
 ├── Cache/
 │   ├── Training/                # Model checkpoints (each subfolder = one run)

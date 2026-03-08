@@ -1,14 +1,16 @@
-"""Verify recursive_mlm model builds, runs forward pass, and is registered in train_mlm."""
+"""Verify recursive MLM stays on its own experiment path."""
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import pytest
 import torch
 from nn.concept_encoder_recursive_mlm import RecursiveConceptEncoderForMaskedLM
 from nn.concept_encoder_recursive import RecursiveConceptEncoderConfig
 
 
-def test_model_creation():
+@pytest.fixture()
+def model_and_config():
     cfg = RecursiveConceptEncoderConfig(
         num_hidden_layers=6, hidden_size=512, intermediate_size=2048,
         concept_num=128, vocab_size=50368, max_sequence_length=512,
@@ -24,7 +26,13 @@ def test_model_creation():
     return m, cfg
 
 
-def test_forward_pass(m):
+def test_model_creation(model_and_config):
+    m, _ = model_and_config
+    assert isinstance(m, RecursiveConceptEncoderForMaskedLM)
+
+
+def test_forward_pass(model_and_config):
+    m, _ = model_and_config
     m.eval()
     ids = torch.randint(0, 50368, (2, 64))
     mask = torch.ones(2, 64, dtype=torch.int)
@@ -42,14 +50,15 @@ def test_forward_pass(m):
 
 def test_registry():
     from training.train_mlm import MODEL_REGISTRY
-    assert "recursive_mlm" in MODEL_REGISTRY, "recursive_mlm not in MODEL_REGISTRY"
-    entry = MODEL_REGISTRY["recursive_mlm"]
-    assert entry["class"] is RecursiveConceptEncoderForMaskedLM
-    assert entry["config_class"] is RecursiveConceptEncoderConfig
-    print("MODEL_REGISTRY registration OK")
+    from training.train_recursive_mlm import MODEL_CLASS
+
+    assert "recursive_mlm" not in MODEL_REGISTRY, "recursive_mlm should not live in generic train_mlm.py"
+    assert MODEL_CLASS is RecursiveConceptEncoderForMaskedLM
+    print("recursive_mlm isolated training path OK")
 
 
-def test_test_time_scaling(m, cfg):
+def test_test_time_scaling(model_and_config):
+    m, cfg = model_and_config
     m.eval()
     ids = torch.randint(0, 50368, (1, 32))
     mask = torch.ones(1, 32, dtype=torch.int)

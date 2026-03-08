@@ -16,6 +16,33 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ## [Unreleased]
 
+## [2026-03-08] — Perceiver V2 Denoising Reset
+
+**Why:**
+- The maintained perceiver path was still split across retired MLM-era assumptions: path-based evaluation routing, shallow decoder reuse, legacy `perceiver_mlm` / `perceiver_posonly_mlm` naming, and training wrappers that still advertised abandoned `combined` / `kendall_gal` defaults.
+- The research direction is now denoising-first and semantic-first: BiXT encoder, position-only stacked decoder, checkpoint-declared evaluation routes, separate sentence-pair evaluation, and zero-shot STS-B before full fine-tuning sweeps.
+
+**Impact:**
+- Perceiver checkpoints now train and evaluate through one canonical denoising stack with a shared decoder between pretraining and `ViaDecoder` downstream evaluation.
+- Pair-task evaluation is now contract-driven and separate-encoding by default for new perceiver checkpoints, and benchmark evaluation includes zero-shot STS-B as a first-class gate.
+- The old interface names `perceiver_mlm`, `perceiver_posonly_mlm`, `perceiver_decoder_cls`, and the unused `training/train_tsdae.py` path are retired from the maintained training/evaluation surface.
+
+**What changed:**
+- [added] `training/train_perceiver_denoise.py` - canonical perceiver denoising entrypoint with `reconstruction` and `reconstruction+contrastive` objective variants.
+- [removed] `training/train_tsdae.py` - deleted because it was never trained/evaluated as an independent path; it only duplicated the new denoising entrypoint name and added confusion.
+- [changed] `training/train_mlm.py`, [added] `training/train_recursive_mlm.py` - generic MLM training now excludes recursive experiments, which live on their own isolated script.
+- [changed] `nn/concept_encoder.py`, `nn/concept_encoder_perceiver.py` - added decoder-depth config, shared stacked position-only decoder, canonical denoising perceiver model, decoder reuse in `ViaDecoder`, and mean pooling for concept-space classifiers.
+- [changed] `evaluation/concept_eval_routing.py`, `evaluation/evaluate_model_on_glue.py`, `evaluation/evaluate_on_benchmark.py`, [added] `evaluation/concept_checkpoint_loader.py` - metadata-driven perceiver routing, shared checkpoint loading, and zero-shot STS-B benchmark support.
+- [changed] `analysis/run_concept_analysis.py`, `analysis/check_model_health.py` - aligned analysis defaults and recommendations with the new perceiver family and semantic-first gating.
+- [removed] `scripts/train_perceiver_mlm.ps1`, `scripts/train_mlm_multigpu_perceiver.sh`, `scripts/test_tsdae_local.ps1` - deleted to avoid leaving misleading legacy wrappers that no longer matched the maintained code path.
+- [added] `scripts/train_perceiver_denoise.ps1`, `scripts/train_perceiver_denoise_multigpu.sh`, `scripts/test_perceiver_denoise_local.ps1` - explicit denoising training/test entrypoints with non-legacy names.
+- [added] `tests/test_perceiver_denoise.py`, [changed] `tests/test_evaluation_routing.py` - coverage for the denoising config contract, shared decoder stack, sentence-pair cosine path, and perceiver metadata routing.
+
+**Retired on:** `2026-03-08`
+**Git tag:** `arch/perceiver-denoise-reset`
+**Reason for retirement:** the old perceiver MLM family encoded historical ablation names and evaluator aliases into the active interface, which was causing confusion about what is still a supported research path versus what is only a historical checkpoint/result.
+**Related TODO:** internal implementation plan → `Perceiver V2 Training And Eval Reset`
+
 ## [2026-03-07] — Prefix Diffusion Evaluation Hardening & V2 Training Path
 
 **Why:**

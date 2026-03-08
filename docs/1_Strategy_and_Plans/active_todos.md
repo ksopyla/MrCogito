@@ -1,6 +1,6 @@
 # Experiment TODO List v3
 
-**Created: 2026-02-19** | **Updated: 2026-03-07**
+**Created: 2026-02-19** | **Updated: 2026-03-08**
 **Status: Active**
 
 ## Summary of Feb 19 Results
@@ -14,6 +14,17 @@
 | Next experiment | `fixed` loss weight (0.05) to keep MLM dominant, run baseline STS-B | |
 
 **Full results:** [`concept_losses_20260219.md`](../2_Experiments_Registry/run_reports/concept_losses_20260219.md)
+
+---
+
+## Current Interface Status (2026-03-08)
+
+- Canonical perceiver training is now `training/train_perceiver_denoise.py` under the `perceiver_denoise` family.
+- `perceiver_mlm`, `perceiver_posonly_mlm`, and `perceiver_decoder_cls` are retired as active interfaces. Historical checkpoints/results remain useful as archived baselines only.
+- `training/train_tsdae.py` was removed because it was never a distinct trained/evaluated path after the reset.
+- `recursive_mlm` now lives in `training/train_recursive_mlm.py` as an isolated experiment path instead of staying inside generic `training/train_mlm.py`.
+- Architecture tag for this reset: `arch/perceiver-denoise-reset`
+- Current source of truth: [`training_eval_matrix.md`](training_eval_matrix.md)
 
 ---
 
@@ -516,27 +527,27 @@ Phase 6 (Track H): Audio modality
 
 ---
 
-## TODO 10: TSDAE Training Experiments (Priority: HIGHEST)
+## TODO 10: Perceiver Denoising Training Experiments (Priority: HIGHEST)
 
 **Architecture changes completed (2026-02-21):**
 - `DataCollatorForTSDAE`: token deletion (60%), dense labels, attention_mask zeroing
-- `ConceptEncoderForMaskedLMPerceiverPosOnly`: dense reconstruction loss (all positions)
+- `ConceptEncoderForDenoisingPerceiver`: dense reconstruction loss (all positions) with the shared stacked position-only decoder
 - `BiConceptEncoderLayer`: BiXT bidirectional cross-attention (O(C*N) complexity preserved)
-- `ConceptEncoderForSentencePairClassification`: separate encoding, weighted concept pooling, cosine_only mode
-- `ConceptEncoderForSequenceClassificationPerceiver`: CLS query → weighted concept pooling
+- `ConceptEncoderForSentencePairClassification`: separate encoding, cosine-only mode for zero-shot STS-B and pair tasks
+- `ConceptEncoderForSequenceClassificationViaDecoder`: canonical single-input evaluation path for perceiver checkpoints
 
-**Training script:** `training/train_tsdae.py`
-**Local test:** `scripts/test_tsdae_local.ps1`
+**Training script:** `training/train_perceiver_denoise.py`
+**Local test:** `scripts/test_perceiver_denoise_local.ps1`
 
-**Experiment A — TSDAE PosOnly baseline (5 GPU-days on Polonez):**
+**Experiment A — Reconstruction baseline (5 GPU-days on Polonez):**
 
 
-**Experiment B — TSDAE PosOnly + BiXT (parallel on Odra):**
-Same as A but with `--use_bixt`. Compare concept quality (effective rank, mean sim) and GLUE scores.
+**Experiment B — Reconstruction + contrastive (parallel follow-up):**
+Same base architecture as A with `--objective_variant reconstruction+contrastive`. Compare concept quality (effective rank, mean sim), zero-shot STS-B, and downstream GLUE scores.
 
 **Evaluation plan:**
 1. Concept analysis: effective rank, mean pairwise similarity (target: rank > 64/128)
-2. GLUE with perceiver_pair_cls: MRPC, QQP, STS-B, MNLI (separate encoding)
+2. GLUE with checkpoint-declared canonical routes: `ViaDecoder` for single-input tasks, separate encoding for pair tasks
 3. Zero-shot STS-B: cosine similarity of separately-encoded sentences (no fine-tuning)
 4. Compare against MLM baseline (L6, eff rank 5/128) and diffusion
 
