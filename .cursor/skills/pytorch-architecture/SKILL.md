@@ -1,9 +1,11 @@
 ---
 name: pytorch-architecture
-description: Research-oriented PyTorch architecture design workflow and non-obvious best practices. Use when designing new model architectures, prototyping nn.Module classes, planning ablations, or optimizing training performance. Covers tensor shape sketching, decision gates, mixed precision, DDP, and numerical stability.
+description: Design and implement Concept Encoder PyTorch modules safely. Use when sketching tensor shapes, writing or refactoring nn.Module code, checking memory or DDP behavior, choosing AMP or torch.compile patterns, or improving training-time performance and numerical stability. Not for experiment logging, changelog updates, or high-level research prioritization.
 ---
 
 # PyTorch Architecture Design & Best Practices
+
+Use this skill for model implementation and systems-level PyTorch decisions, not for run bookkeeping or deciding which research hypothesis to test next.
 
 ## Research Design Workflow
 
@@ -20,37 +22,5 @@ description: Research-oriented PyTorch architecture design workflow and non-obvi
 - Document expected input/output shapes in every `forward()` docstring.
 - Write a unit test with small random tensors before integration testing.
 
-## Non-Obvious PyTorch Best Practices
 
-### Mixed Precision Training
-Use `torch.cuda.amp` with `GradScaler` for faster training and lower memory:
-```python
-from torch.cuda.amp import autocast, GradScaler
-scaler = GradScaler()
-with autocast():
-    output = model(data)
-    loss = criterion(output, target)
-scaler.scale(loss).backward()
-scaler.step(optimizer)
-scaler.update()
-```
-
-### Distributed Data Parallel (DDP)
-- Framework: `accelerate` with NCCL backend.
-- **CRITICAL**: NEVER use `.expand()` in model forward pass — use `.repeat()` instead. `.expand()` creates views that cause NCCL gradient sync deadlocks. See `docs/debugging/nccl_timeout_fix_2025-11-11.md`.
-- Effective batch size = `PER_DEVICE_BATCH * NUM_GPUS * GRAD_ACCUM_STEPS`.
-
-### torch.compile
-Apply `torch.compile` to the model for graph-mode acceleration:
-```python
-compiled_model = torch.compile(model)
-```
-Check if this do not cause graph breaks. If it does, use `dynamic=True`.
-
-### DataLoader Optimization
-```python
-DataLoader(dataset, batch_size=B, shuffle=True,
-           num_workers=min(os.cpu_count(), 8),
-           pin_memory=True, persistent_workers=True)
-```
 

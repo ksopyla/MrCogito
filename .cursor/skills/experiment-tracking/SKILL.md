@@ -1,6 +1,6 @@
 ---
 name: experiment-tracking
-description: Track Concept Encoder training runs and evaluation sweeps. Use when preparing a training run, launching training, monitoring progress, syncing evaluation reports, recording benchmark results, updating docs/2_Experiments_Registry/master_experiment_log.md, writing run reports, or checking WandB run metadata.
+description: Record and maintain Concept Encoder training and evaluation metadata. Use when preparing a run, creating train or eval git tags, monitoring training, syncing evaluation reports, updating docs/2_Experiments_Registry/master_experiment_log.md, writing run reports, or checking WandB and git linkage. Not for changelog updates or deciding experiment priorities.
 ---
 
 # Experiment Tracking
@@ -14,6 +14,7 @@ Use this skill for experiment metadata and results:
 - run reports
 
 Do not use this skill for generic refactors, architecture cleanup, or standalone `CHANGELOG.md` updates. Use `engineering-change-tracking` for code-change traceability.
+Do not use this skill to decide which hypothesis to test next. Use `research-methodology` for experiment selection and interpretation.
 
 ## Required linkage
 Each tracked run should capture:

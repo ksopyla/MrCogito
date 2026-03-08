@@ -1,6 +1,6 @@
 ---
 name: engineering-change-tracking
-description: Track Concept Encoder code changes and direction shifts. Use after refactors, architecture updates, training or evaluation script changes, bug fixes, implementation improvements, or when updating CHANGELOG.md, docs/1_Strategy_and_Plans/active_todos.md, commit messages, or architecture git tags.
+description: Maintain project traceability for Concept Encoder code changes. Use after refactors, architecture updates, bug fixes, training or evaluation script edits, implementation improvements, or when updating CHANGELOG.md, docs/1_Strategy_and_Plans/active_todos.md, commit messages, or architecture git tags. Not for run metrics, benchmark bookkeeping, or experiment selection.
 ---
 
 # Engineering Change Tracking
@@ -15,6 +15,7 @@ Use this skill for code-change traceability:
 - direction shifts that should appear in project docs
 
 Do not use this skill to log run metrics or benchmark results. Use `experiment-tracking` for training and evaluation records.
+Do not use this skill to choose research priorities. Use `research-methodology` for hypothesis and benchmark decisions.
 
 ## Keep aligned
 When a change matters, keep these artifacts consistent:

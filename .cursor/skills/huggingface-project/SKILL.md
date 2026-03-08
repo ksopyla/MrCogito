@@ -1,9 +1,11 @@
 ---
 name: huggingface-project
-description: HuggingFace Hub integration for the Concept Encoder project — model upload, MCP search, and project-specific models/datasets. Use when uploading models to HF, searching HuggingFace for models/papers, or comparing baselines.
+description: Publish and inspect Concept Encoder artifacts on the Hugging Face Hub. Use when uploading checkpoints, generating model cards, checking the ksopyla namespace, searching the Hub via MCP for related models, datasets, or papers, or comparing Hub baselines before release. Not for general research planning or run bookkeeping.
 ---
 
 # HuggingFace Project Integration
+
+Use this skill for Hugging Face Hub actions and Hub-specific discovery, not for experiment design or training/evaluation tracking.
 
 ## HF Space & Auth
 - Authenticated user: `ksopyla` — https://huggingface.co/ksopyla

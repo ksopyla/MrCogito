@@ -1,9 +1,11 @@
 ---
 name: research-methodology
-description: AI research methodology for the Concept Encoder project — first-principles thinking, literature search, evaluation priorities, and concept quality targets. Use when designing experiments, analyzing results, evaluating models, or discussing research direction.
+description: Choose hypotheses, baselines, and decision criteria for Concept Encoder research. Use when deciding what experiment to run next, interpreting results against project goals, prioritizing benchmarks, searching literature, or discussing research direction. Not for run bookkeeping, code traceability, or changelog updates.
 ---
 
 # Research Methodology for Concept Encoder
+
+Use this skill to decide what to test and how to judge it. Use `experiment-tracking` to record a run once it exists.
 
 ## First Principles Approach
 - Reason about the concept bottleneck via information theory (capacity, compression, entropy).
