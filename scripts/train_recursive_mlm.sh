@@ -36,7 +36,6 @@ fi
 echo ""
 
 export NCCL_DEBUG=WARN
-export NCCL_TIMEOUT=3600
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 export OMP_NUM_THREADS=8
 export NCCL_SOCKET_IFNAME=^docker0,lo

@@ -7,10 +7,10 @@ import platform
 import subprocess
 import torch
 import wandb
+from datetime import datetime, timedelta
 from torch.nn import Module
 from typing import Dict, List, Optional, Tuple, Any
 from transformers import logging
-from datetime import datetime
 
 logger = logging.get_logger(__name__)
 
@@ -173,22 +173,30 @@ def get_parameter_breakdown(model: Module) -> Dict[str, Dict[str, int]]:
 
 
 
-def setup_distributed():
+def setup_distributed(timeout_minutes: int = 30):
     """
     Setup for distributed training on multi-GPU single node.
     Returns local rank for the current process.
+
+    Args:
+        timeout_minutes: NCCL collective timeout. Must exceed the longest
+            single-rank operation (e.g. first-time dataset tokenisation on
+            rank 0 while other ranks wait at the ``main_process_first`` barrier).
+            Default 30 min covers ~1M-example preprocessing on Odra.
     """
     if torch.cuda.is_available():
         local_rank = int(os.environ.get("LOCAL_RANK", -1))
-        
-        # Initialize process group if using distributed training (rank != -1)
-        # This fixes warnings about "No device id provided via init_process_group"
+
         if local_rank != -1:
             if not torch.distributed.is_initialized():
-                torch.distributed.init_process_group(backend="nccl", device_id=torch.device(f"cuda:{local_rank}"))
-            
+                torch.distributed.init_process_group(
+                    backend="nccl",
+                    device_id=torch.device(f"cuda:{local_rank}"),
+                    timeout=timedelta(minutes=timeout_minutes),
+                )
+
             torch.cuda.set_device(local_rank)
-            
+
         return local_rank
     return -1
 

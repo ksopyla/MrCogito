@@ -14,7 +14,6 @@ fi
 GPU_IDS=$(seq -s, 0 $((NUM_GPUS - 1)))
 export CUDA_VISIBLE_DEVICES="$GPU_IDS"
 export NCCL_DEBUG=WARN
-export NCCL_TIMEOUT=3600
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 export OMP_NUM_THREADS=8
 export TOKENIZERS_PARALLELISM=false
