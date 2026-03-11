@@ -98,7 +98,7 @@ Map audio (mel-spectrograms) into the frozen text concept space via a learned ad
 | Factor | Assessment |
 |---|---|
 | TSDAE objective | Addresses all 5 identified structural problems simultaneously. 83x stronger gradient signal per concept vs sparse MLM. |
-| **Prefix generation** | SODA-inspired training: encoder sees prefix, decoder generates suffix. Forces semantic concepts because surface tokens don't transfer across segments. |
+| **Prefix generation** | MiniPile clean baselines failed, but the objective remains worth one easier trainability probe: WikiText-103, 70-80% prefix, sentence-boundary split, longer training, unchanged diffusion noise. |
 | BiXT architecture | Solves static token embeddings problem. Implemented. |
 | Diffusion fixes | ELBO 1/t loss weighting + t_min=0.3 + L6 depth: low-cost fixes to existing diffusion pipeline. |
 | Data scaling path | Minipile (0.6B tokens) -> OpenWebText+Wikipedia (5B+ tokens) is straightforward. |
@@ -110,11 +110,11 @@ Map audio (mel-spectrograms) into the frozen text concept space via a learned ad
 
 | Factor | Assessment |
 |---|---|
-| Prefix generation (A11) validated | By the time Track D starts, prefix generation will have proven concepts can support generation (suffix loss < 3.0). This de-risks full generation. |
+| Prefix generation (A11) not yet validated | Two MiniPile baselines failed. Track D stays blocked until the easier WikiText-103 rescue probe demonstrates materially better suffix loss or concept quality. |
 | Diffusion decoder | Implemented and tested (`nn/concept_encoder_diffusion.py`). Cross-attention-only decoder scales to any length. |
 | AR decoder alternative | Well-studied; can adapt any causal LM head conditioned on concept cross-attention. |
 | **Primary risk** | Concepts may be too lossy for coherent multi-sentence generation. Compression may discard details needed for fluent output. |
-| **Mitigation** | Prefix generation (A11) validates generation capability first. If diffusion fails for full generation, try AR decoder (D2). |
+| **Mitigation** | Use the easier WikiText-103 prefix probe to test trainability before full generation. If that still fails, treat diffusion generation as unvalidated and prefer warm-start / AR alternatives later. |
 | **Gate** | Do not start full generation until SG1 Milestone 1b met (STS-B > 0.75, prefix loss < 3.0). |
 
 ### SG3: Instruction Following -- HIGH feasibility (2-3 months after SG2)
@@ -197,6 +197,7 @@ The entire research program is **bottlenecked on SG1**. If concept quality canno
 | CLS-query classification head | 128:1 information collapse | Single attention query destroys factorial concept structure | [mlm_perceiver_diagnosis_20260221.md](../4_Research_Notes/mlm_perceiver_diagnosis_20260221.md) |
 
 | Diffusion L2 (self-reconstruction, no regularization) | Concept rank 2x better (10/128) but STS-B 0.138 (near-random) | L2 too shallow + missing ELBO weighting + self-reconstruction permits surface hashing | [diffusion_L2_eval_20260225.md](../2_Experiments_Registry/run_reports/diffusion_L2_eval_20260225.md) |
+| Prefix diffusion on MiniPile (13a + 13b) | Stable training but concept rank stayed at 5-6 / 128 | Long suffix continuation on mixed web text appears too hard; cleaner Wikipedia-derived trainability probe needed before abandoning the objective | [prefix_diffusion_bixt_v2_20260308.md](../2_Experiments_Registry/run_reports/prefix_diffusion_bixt_v2_20260308.md) |
 
 **Abandoned:** `combined` concept loss (both weighting strategies), CLS-query classification head.
 **Retained:** ViaDecoder classification (now default), `t_regs_mst` regularization (untested but implemented).
@@ -228,7 +229,7 @@ Diagnosis of 5 structural misalignments led to a complete architecture overhaul:
 | A8 | **Zero-shot STS-B** (cosine similarity of separately-encoded sentences) | MEDIUM | 0.5 day | Not started | After A1/A2 |
 | A9 | **L6 Diffusion ablation** (same config as L2 but with 6 encoder layers) | **HIGHEST** | 1 GPU-day | Not started | None |
 | A10 | **Fix diffusion ELBO loss weighting** (1/t normalization) + raise t_min to 0.3 | **HIGHEST** | 0.5 day code | Not started | None |
-| A11 | **Prefix generation training** (encode prefix, generate suffix via diffusion decoder) | **HIGHEST** | 3 days code + 5 GPU-days | Not started | After A9/A10 |
+| A11 | **Prefix generation training** (encode prefix, generate suffix via diffusion decoder) | **HIGHEST** | 1 day setup + 2 GPU-days | Re-opened: MiniPile baselines failed, WikiText-103 easier probe next | After A9/A10 |
 
 **Evaluation protocol for every Track A checkpoint:**
 1. Concept analysis: effective rank, mean/max pairwise similarity (target: rank > 64, mean sim < 0.2)
@@ -241,12 +242,12 @@ Diagnosis of 5 structural misalignments led to a complete architecture overhaul:
 
 **Decision gate (end of Track A):**
 - If any objective produces rank > 64 AND STS-B > 0.70 -> proceed to Track B (data scaling)
-- If prefix generation (A11) achieves suffix loss < 3.0, this validates generation capability regardless of STS-B
+- If the easier prefix generation probe (A11) achieves suffix loss < 3.0, this validates generation capability regardless of STS-B
 - If all objectives fail rank > 30 -> implement Slot Attention (Track C.5) before proceeding
 - Pick winner based on: (1) concept rank, (2) STS-B Pearson, (3) **prefix generation quality**, (4) training stability
 
 **Active TODOs:** [TODO 6](active_todos.md), [TODO 10-13](active_todos.md)
-**Training scripts:** `training/train_perceiver_denoise.py`, `scripts/train_diffusion_multigpu.sh`
+**Training scripts:** `training/train_perceiver_denoise.py`, `scripts/train_diffusion_multigpu.sh`, `scripts/train_prefix_diffusion_multigpu.sh`
 
 ---
 
@@ -315,10 +316,10 @@ Diagnosis of 5 structural misalignments led to a complete architecture overhaul:
 
 ### Track D: Text Generation (Phase 3)
 
-**Goal:** Based on proven concept representations (SG1) and validated prefix generation (A11), transition to full text generation from concepts. Generate coherent multi-sentence responses conditioned on concept representations.
+**Goal:** Based on proven concept representations (SG1) and a validated prefix-generation signal (A11), transition to full text generation from concepts. Generate coherent multi-sentence responses conditioned on concept representations.
 **Targets SG2.** This is the critical transition from "encoder model" to "generative model."
 
-**Prerequisite:** Track A prefix generation (A11) must demonstrate suffix loss < 3.0, proving concepts can support generation. Track D builds on that foundation.
+**Prerequisite:** Track A prefix generation (A11) must first survive the easier WikiText-103 rescue probe and demonstrate suffix loss < 3.0, proving concepts can support generation. Track D remains blocked until that happens.
 
 | ID | Experiment | Priority | Effort | Status | Dependencies |
 |---|---|---|---|---|---|
@@ -446,7 +447,7 @@ All experiments sorted by priority, with effort estimates and dependencies.
 | 2 | **Fix ELBO loss weighting** (1/t) + t_min=0.3 in diffusion | A10 | 0.5 day code | Normalize gradient across noise levels | None | Not started |
 | 3 | TSDAE PosOnly on Minipile | A1 | 5 GPU-days | Fixes all 5 structural problems | None | Awaiting GPU |
 | 4 | TSDAE + BiXT on Minipile | A2 | 5 GPU-days | Adds token contextualization | None | Awaiting GPU |
-| 5 | **Prefix generation training** (encode prefix, decode suffix) | A11 | 3+5 days | SODA-inspired concept quality technique | After A9/A10 | Not started |
+| 5 | **Prefix generation training** (encode prefix, decode suffix) | A11 | 1+2 days | Easier WikiText-103 trainability probe for SODA-style concept quality | After A9/A10 | Re-opened |
 | 6 | Concept analysis on all Track A checkpoints | A7 | 0.5 day each | Validate concept quality fix | After 1-5 | -- |
 | 7 | ViaDecoder + pair_cls eval on all checkpoints | A6 | 0.5 day each | Establish new baselines | After 1-5 | -- |
 | 8 | Zero-shot STS-B on best Track A model | A8 | 0.5 day | Ground truth concept quality | After 6/7 | -- |

@@ -47,7 +47,7 @@
   - **Decision: Prefix generation alone does NOT fix concept collapse**
   - Git tag: `arch/prefix-diffusion-20260304`
 
-## TODO 13b: Prefix diffusion evaluation hardening + v2 training path — In progress, implementaion done, traning not started yet.
+## TODO 13b: Prefix diffusion evaluation hardening + v2 clean baseline — COMPLETED & EVALUATED
 
 **Done date: 2026-03-07**
 
@@ -70,12 +70,43 @@
   - Extended `tests/test_data_collators.py`
   - Verified locally: `18 passed, 5 skipped`
 
-**Next controlled experiment ladder (code-ready, not run yet):**
-1. Prefix v2 clean baseline: `BiXT`, `token_embedding_dim=64`, `split_strategy=sentence_boundary`, no concept losses.
-2. If promising: `token_embedding_dim=32` ablation and encoder warm-start comparison.
-3. Only after that: semantic auxiliary stage (`contrastive` first, `vicreg + t_regs_mst` second).
+**Evaluation result (2026-03-08):**
+1. Prefix v2 clean baseline run: `prefix_diffBiXT_T64_H512L6C128D2_20260308_065355`
+2. Config: `BiXT`, `token_embedding_dim=64`, `split_strategy=sentence_boundary`, no concept losses, ELBO=True, `t_min=0.3`
+3. Training: stable to 20 epochs, `train_loss=14.93`, best `eval_loss=7.425` at checkpoint 35k, `0.75 step/s`
+4. Concept health: effective rank `5.74 / 128`, global effective rank `4.94`, mean pairwise similarity `0.576`, max similarity `0.999`
+5. Comparison to TODO 13a: slightly worse rank than the original clean prefix baseline (`6.19 → 5.74`)
 
-**Status:** [x] Done — implementation completed locally, next action is to launch the new prefix v2 baseline on the hardened stack.
+**Decision:**
+- The hardened stack fixed infrastructure and evaluation issues, but **did not improve semantic concepts**
+- Do **not** spend more GPU on additional **MiniPile** random-init clean prefix variants such as `token_embedding_dim=32`
+- If the prefix track continues from scratch, first run one easier trainability probe on Wikipedia-derived data (`WikiText-103`, prefix ratio `0.7-0.8`, `sentence_boundary`, 40 epochs default, same diffusion `t in [0.3, 1.0]`)
+- If that easier setup still fails, jump directly to warm-start / pretrained-backbone initialization instead of more clean-baseline scaling
+
+**Status:** [x] Done — v2 clean baseline completed on Polonez and still failed the concept-quality gate.
+
+## TODO 13c: Easier Prefix-Diffusion Trainability Probe on WikiText-103 — PLANNED
+
+**Why:** The clean MiniPile prefix-diffusion baselines were stable but too hard: long, highly multimodal suffixes from mixed web text appear to overwhelm the bottleneck before it learns a usable semantic basis. Before abandoning the objective entirely, run one easier trainability probe on a cleaner Wikipedia-derived corpus with a larger observed prefix.
+
+**Planned experiment:**
+1. Dataset: `Salesforce/wikitext`, subset `wikitext-103-v1`
+2. Prefix ratio: random `0.7-0.8`
+3. Split strategy: `sentence_boundary`
+4. Max sequence length: `512`
+5. Diffusion noise: unchanged `t ~ Uniform(0.3, 1.0)`
+6. Train longer: configurable launcher, `40` epochs default
+
+**Decision gate:**
+- If suffix loss improves materially and concept rank leaves the `~5-6 / 128` collapse regime, continue the prefix line
+- If concept rank stays `< 10 / 128`, stop further random-init prefix diffusion and move to warm-start / pretrained-backbone initialization only
+
+**Implementation notes:**
+- Reuse `scripts/train_prefix_diffusion_multigpu.sh` and change its defaults to the WikiText-103 trainability probe
+- Prefer the built-in `validation` split during preprocessing when the dataset provides it
+- Add a loader test and a tiny local smoke verification before launching on Polonez
+
+**Status:** [ ] Next prefix run
 
 ## TODO 0: Run L6 baseline STS-B evaluation — DONE ✅
 
@@ -471,12 +502,13 @@ Week 4 (2026-02-26 — Diffusion diagnosis + fixes):
   [x] TODO 11:  L6 Diffusion + ELBO baseline (A9+A10, Odra, 1.5 GPU-day) ← DONE, STS-B 0.174, rank 5.74
   [x] VICReg + t_regs_mst implementation (warmup, callback, tests) — DONE
   [x] TODO 11b: L6 Diffusion + VICReg + t_regs_mst (A5+A9, Polonez, 1 GPU-day) — DONE, rank 5.09, NO improvement → diffusion self-reconstruction CLOSED
-  [ ] TODO 13a: Prefix Generation clean baseline (A11, Polonez, ~1.5 GPU-days) ← RUNNING
+  [x] TODO 13b: Prefix v2 clean baseline (A11, Polonez, ~1.5 GPU-days) ← DONE, stable but rank 5.74 → failed
+  [ ] TODO 13c: Easier prefix-diffusion trainability probe on WikiText-103 (A11, Polonez, ~2 GPU-days) ← NEXT prefix run
   [ ] TODO 10:  Train TSDAE PosOnly on Minipile (A1, Odra, 5 GPU-days) ← NEXT (parallel)
   [ ] TODO 10b: Train TSDAE PosOnly + BiXT on Minipile (A2, parallel on other server)
 
 Week 5 (Prefix generation + evaluation):
-  [ ] TODO 13:  Implement & train prefix generation (A11, 3 days code + 5 GPU-days)
+  [x] TODO 13:  Implement & train prefix generation (A11, 3 days code + 5 GPU-days) ← DONE, MiniPile clean baselines failed
   [ ] TODO 10c: Concept analysis on ALL Track A checkpoints (A7 REPEAT)
   [ ] TODO 10d: GLUE eval with ViaDecoder + perceiver_pair_cls (A6 REPEAT)
   [ ] TODO 10e: Zero-shot STS-B (A8, cosine similarity, no fine-tuning)
@@ -694,7 +726,7 @@ Same base architecture as A with `--objective_variant reconstruction+contrastive
 
 **Motivation (SODA principle for text):** Current training asks the model to encode text X and reconstruct X (self-reconstruction). This permits surface-level hashing through the concept bottleneck. SODA (Hudson, CVPR 2024) shows that bottleneck diffusion models learn semantic representations only when the decoder generates DIFFERENT content than the encoder saw.
 
-**Design:**
+**Original design:**
 1. Split each training document at a random position (30-50% prefix, 50-70% suffix)
 2. **Encoder:** receives clean prefix tokens → produces concepts
 3. **Decoder:** generates suffix tokens via diffusion, conditioned on concepts
@@ -719,9 +751,18 @@ Same base architecture as A with `--objective_variant reconstruction+contrastive
 
 **Implementation status:** [x] Done (2026-03-04) — model, collator, training script, shell script, 27+12 tests passing.
 
-**Experiment 13a (clean baseline):** Launched on Polonez 2026-03-04. Config: H512 L6 C128 D2, no BiXT, token_dim=512, no concept losses.
+**Result history:**
+- **Experiment 13a (clean baseline):** Polonez 2026-03-04. H512 L6 C128 D2, no BiXT, `token_dim=512`, no concept losses. Failed with rank `6.19 / 128`.
+- **Experiment 13b (hardened clean baseline):** Polonez 2026-03-08. `BiXT`, `token_dim=64`, `sentence_boundary`, no concept losses. Failed with rank `5.74 / 128`.
 
-**Status:** [ ] Training in progress — implementation complete, awaiting training results
+**Re-opened easier setup (13c):**
+1. Move from MiniPile to `WikiText-103` as a cleaner Wikipedia-derived corpus
+2. Use a larger prefix ratio (`0.7-0.8`) while keeping `sentence_boundary`
+3. Keep `max_seq_length=512`
+4. Keep the diffusion schedule unchanged (`t in [0.3, 1.0]`)
+5. Train longer (`40` epochs default, still configurable)
+
+**Status:** [ ] Planned — next prefix run is the easier WikiText-103 trainability probe
 
 ---
 
@@ -753,7 +794,7 @@ Same base architecture as A with `--objective_variant reconstruction+contrastive
 *Aligned with: [roadmap.md v5](roadmap.md) (2026-03-01)*
 *Update (2026-03-04): TODO 13 implementation complete. Launching 13a (prefix generation clean baseline) on Polonez. TSDAE (TODO 10) next on Odra.*
 *Update (2026-03-02): TODO 11b done — VICReg + t_regs_mst FAILED (rank 5.09). Diffusion self-reconstruction track permanently closed.*
-*Next review: after TODO 13a step 10k checkpoint (concept analysis)*
+*Next review: after the WikiText-103 prefix trainability probe or the TSDAE result; MiniPile clean prefix baselines are complete and failed*
 *Update (2026-03-01): aligned experiment priority order with 6-phase structure (roadmap v5), TODO 13 maps to A11 (concept quality technique in Track A), prefix generation back in Phase 1-2*
 *New (2026-02-27): added TODO 11b (VICReg + t_regs_mst regularization experiment)*
 *New (2026-02-26): added TODO 11-14 based on diffusion diagnosis analysis ([diffusion_diagnosis_20260226.md](../4_Research_Notes/diffusion_diagnosis_20260226.md))*
