@@ -1,24 +1,20 @@
 #!/bin/bash
-# Multi-GPU training script for SODA-inspired Prefix Generation
+# Multi-GPU training script for easier prefix diffusion.
 # Run on Polonez (4x RTX 3090) or Odra (3x RTX 3090)
 #
-# Training objective: encode prefix → generate suffix via masked diffusion
-#   - Encoder sees clean prefix (30-50% of document)
-#   - Decoder generates suffix using diffusion conditioned on concepts only
-#   - SODA principle: decoder never sees prefix tokens → forces semantic concepts
-#   - ELBO 1/t loss weighting on suffix positions
+# Goal: keep the diffusion objective unchanged while making the prefix task
+# easier to learn:
+#   - WikiText-103 instead of MiniPile
+#   - longer observed prefix (70-80%)
+#   - sentence-boundary splitting
+#   - longer default training horizon
 #
 # Usage:
 #   bash scripts/train_prefix_diffusion_multigpu.sh
 #
-# Architecture:
-#   Encoder: ConceptEncoder L6  (prefix → 128 concepts)
-#   Decoder: PrefixDiffusionDecoder (sinusoidal positions, D=2 cross-attn layers)
-#   Loss:    variable t% masking on suffix, ELBO-weighted sparse CE
-
 set -e
 
-echo "=== Multi-GPU Training: Prefix Generation (SODA-style) ==="
+echo "=== Multi-GPU Training: Prefix Diffusion ==="
 echo ""
 
 NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
@@ -48,70 +44,70 @@ export NVIDIA_TF32_OVERRIDE=1
 # =============================================================================
 # MODEL ARCHITECTURE
 # =============================================================================
-MODEL_NAME_OR_PATH=""         # Empty = train from scratch; set to warm-start from MLM encoder
+MODEL_NAME_OR_PATH="${MODEL_NAME_OR_PATH:-}"   # Optional warm-start from encoder checkpoint
 
-HIDDEN_SIZE=512
-TOKEN_EMBEDDING_DIM=64        # Reduced token width blocks the easiest position-hash shortcut
-NUM_ENCODER_LAYERS=6
-CONCEPT_NUM=128
-INTERMEDIATE_SIZE=2048
-CONCEPT_POSITION_TYPE="none"
-USE_BIXT=True                 # Required by the hardened prefix diffusion trainer
-BIXT_TOKEN_FFN=True
-DECODER_LAYERS=2
-T_MIN=0.3
-LABEL_SMOOTHING=0.1
-ELBO_WEIGHT=True
+HIDDEN_SIZE="${HIDDEN_SIZE:-512}"
+TOKEN_EMBEDDING_DIM="${TOKEN_EMBEDDING_DIM:-64}"
+NUM_ENCODER_LAYERS="${NUM_ENCODER_LAYERS:-6}"
+CONCEPT_NUM="${CONCEPT_NUM:-128}"
+INTERMEDIATE_SIZE="${INTERMEDIATE_SIZE:-2048}"
+CONCEPT_POSITION_TYPE="${CONCEPT_POSITION_TYPE:-none}"
+USE_BIXT="${USE_BIXT:-True}"
+BIXT_TOKEN_FFN="${BIXT_TOKEN_FFN:-True}"
+DECODER_LAYERS="${DECODER_LAYERS:-2}"
+T_MIN="${T_MIN:-0.3}"
+LABEL_SMOOTHING="${LABEL_SMOOTHING:-0.1}"
+ELBO_WEIGHT="${ELBO_WEIGHT:-True}"
 
 # =============================================================================
 # DATA
 # =============================================================================
-DATASET_NAME="JeanKaddour/minipile"
-DATASET_SUBSET=""
-TOKENIZER_NAME="answerdotai/ModernBERT-base"
-MAX_SEQ_LENGTH=512
-TEST_SIZE_PERCENT=0.1
-PREFIX_RATIO_MIN=0.3
-PREFIX_RATIO_MAX=0.5
-SPLIT_STRATEGY="sentence_boundary"
-MIN_PREFIX_CONTENT=8
-MIN_SUFFIX_CONTENT=16
-MIN_TOTAL_CONTENT_TOKENS=32
+DATASET_NAME="${DATASET_NAME:-Salesforce/wikitext}"
+DATASET_SUBSET="${DATASET_SUBSET:-wikitext-103-v1}"
+TOKENIZER_NAME="${TOKENIZER_NAME:-answerdotai/ModernBERT-base}"
+MAX_SEQ_LENGTH="${MAX_SEQ_LENGTH:-512}"
+TEST_SIZE_PERCENT="${TEST_SIZE_PERCENT:-0.1}"
+PREFIX_RATIO_MIN="${PREFIX_RATIO_MIN:-0.7}"
+PREFIX_RATIO_MAX="${PREFIX_RATIO_MAX:-0.8}"
+SPLIT_STRATEGY="${SPLIT_STRATEGY:-sentence_boundary}"
+MIN_PREFIX_CONTENT="${MIN_PREFIX_CONTENT:-8}"
+MIN_SUFFIX_CONTENT="${MIN_SUFFIX_CONTENT:-16}"
+MIN_TOTAL_CONTENT_TOKENS="${MIN_TOTAL_CONTENT_TOKENS:-32}"
 
 # =============================================================================
 # TRAINING HYPERPARAMETERS
 # =============================================================================
-PER_DEVICE_BATCH_SIZE=64
-EVAL_BATCH_SIZE=16
-GRADIENT_ACCUMULATION_STEPS=2
-LEARNING_RATE=3e-4
-NUM_EPOCHS=20
-WARMUP_STEPS=1500
-WEIGHT_DECAY=0.01
-MAX_GRAD_NORM=1.0
+PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-64}"
+EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE:-16}"
+GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-2}"
+LEARNING_RATE="${LEARNING_RATE:-3e-4}"
+NUM_EPOCHS="${NUM_EPOCHS:-40}"                 # Keep overridable; default to a longer run
+WARMUP_STEPS="${WARMUP_STEPS:-3000}"
+WEIGHT_DECAY="${WEIGHT_DECAY:-0.01}"
+MAX_GRAD_NORM="${MAX_GRAD_NORM:-1.0}"
 
 # =============================================================================
 # CONCEPT LOSSES (start with none for clean baseline)
 # =============================================================================
-CONCEPT_LOSSES="none"
-LOSS_WEIGHTING="fixed"
-LOSS_WEIGHT=0.02
-CONCEPT_LOSS_WARMUP_STEPS=0
+CONCEPT_LOSSES="${CONCEPT_LOSSES:-none}"
+LOSS_WEIGHTING="${LOSS_WEIGHTING:-fixed}"
+LOSS_WEIGHT="${LOSS_WEIGHT:-0.02}"
+CONCEPT_LOSS_WARMUP_STEPS="${CONCEPT_LOSS_WARMUP_STEPS:-0}"
 
 # =============================================================================
 # TORCH COMPILE
 # =============================================================================
-TORCH_COMPILE_DYNAMIC=False
+TORCH_COMPILE_DYNAMIC="${TORCH_COMPILE_DYNAMIC:-False}"
 
 # =============================================================================
 # LOGGING
 # =============================================================================
-LOGGING_STEPS=1000
-EVAL_STRATEGY="steps"
-EVAL_STEPS=5000
-SAVE_STRATEGY="steps"
-SAVE_STEPS=5000
-SEED=42
+LOGGING_STEPS="${LOGGING_STEPS:-1000}"
+EVAL_STRATEGY="${EVAL_STRATEGY:-steps}"
+EVAL_STEPS="${EVAL_STEPS:-10000}"
+SAVE_STRATEGY="${SAVE_STRATEGY:-steps}"
+SAVE_STEPS="${SAVE_STEPS:-10000}"
+SEED="${SEED:-42}"
 
 # =============================================================================
 # PATHS
@@ -134,10 +130,12 @@ fi
 echo "Model: ConceptEncoder-H${HIDDEN_SIZE}L${NUM_ENCODER_LAYERS}C${CONCEPT_NUM}${BIXT_LABEL} + PrefixDiffusionDecoder-D${DECODER_LAYERS}"
 echo "Token embedding dim: $TOKEN_EMBEDDING_DIM"
 echo "Dataset: $DATASET_NAME"
+echo "Dataset subset: $DATASET_SUBSET"
 echo "Prefix ratio: [${PREFIX_RATIO_MIN}, ${PREFIX_RATIO_MAX}]"
 echo "Split strategy: $SPLIT_STRATEGY"
+echo "Diffusion t range: [${T_MIN}, 1.0]"
+echo "Epochs: $NUM_EPOCHS"
 echo "Effective batch: $((PER_DEVICE_BATCH_SIZE * NUM_GPUS * GRADIENT_ACCUMULATION_STEPS))"
-echo "Concept losses: $CONCEPT_LOSSES"
 echo ""
 
 SHELL_LOG="${LOGGING_DIR}/shell_prefix_diffusion_$(date +%Y%m%d_%H%M%S).log"

@@ -2,10 +2,73 @@ import os
 import torch
 from datasets import load_dataset
 from transformers import DataCollatorForWholeWordMask
+from transformers.utils import logging
+
+
+logger = logging.get_logger(__name__)
 
 
 
-def load_and_preprocess_text_dataset(tokenizer, dataset_hf_path, dataset_name_subset, text_column_name, test_size_percent=0.1, max_seq_length=512, dataset_cache_dir=None):
+def _select_train_eval_splits(dataset, test_size_percent):
+    if "train" not in dataset:
+        available = ", ".join(dataset.keys())
+        raise ValueError(
+            f"Dataset must expose a 'train' split. Available splits: {available}"
+        )
+
+    train_ds = dataset["train"]
+
+    if "validation" in dataset:
+        logger.info("Using built-in validation split for evaluation.")
+        return train_ds, dataset["validation"]
+
+    if "test" in dataset:
+        logger.info("Using built-in test split for evaluation.")
+        return train_ds, dataset["test"]
+
+    if len(train_ds) < 2:
+        raise ValueError(
+            "Dataset must contain at least 2 training examples when no built-in "
+            "validation/test split is available."
+        )
+
+    test_size = max(1, min(int(len(train_ds) * test_size_percent), len(train_ds) - 1, 100000))
+    logger.info(
+        "Dataset has no validation/test split; creating holdout split from train "
+        f"(size={test_size})."
+    )
+    split_ds = train_ds.train_test_split(test_size=test_size)
+    return split_ds["train"], split_ds["test"]
+
+
+def _ensure_text_column(dataset_split, text_column_name, split_name):
+    if "text" in dataset_split.column_names:
+        return dataset_split
+
+    if text_column_name not in dataset_split.column_names:
+        available = ", ".join(dataset_split.column_names)
+        raise ValueError(
+            f"Split '{split_name}' does not contain the requested text column "
+            f"'{text_column_name}'. Available columns: {available}"
+        )
+
+    logger.info(
+        f"Renaming column '{text_column_name}' -> 'text' for split '{split_name}'."
+    )
+    return dataset_split.rename_column(text_column_name, "text")
+
+
+def load_and_preprocess_text_dataset(
+    tokenizer,
+    dataset_hf_path,
+    dataset_name_subset,
+    text_column_name,
+    test_size_percent=0.1,
+    max_seq_length=512,
+    dataset_cache_dir=None,
+    train_num_proc=8,
+    test_num_proc=4,
+):
     """
     Loads and preprocesses the text dataset that fits to memory.
     
@@ -28,31 +91,20 @@ def load_and_preprocess_text_dataset(tokenizer, dataset_hf_path, dataset_name_su
 
     # Load dataset - remove trust_remote_code=True as it's no longer supported/needed for most datasets
     # Minipile is a standard dataset, doesn't need it
+    logger.info(
+        f"Loading dataset '{dataset_hf_path}'"
+        + (f" subset '{dataset_name_subset}'" if dataset_name_subset else "")
+        + f" with cache_dir='{DATASET_CACHE_DIR}'."
+    )
     dataset = load_dataset(dataset_hf_path, dataset_name_subset, cache_dir=DATASET_CACHE_DIR)
 
-    # check if the dataset contains a train and test split
-       
-    train_ds = dataset["train"]
-        
-    if "test" in dataset:
-        test_ds = dataset["test"]
-
-    else:
-        # test size is 10% of the train set not more than 100000 examples
-        test_size = min(int(len(train_ds) * test_size_percent), 100000)
-        # train_test_split returns a dictionary with 'train' and 'test' keys
-        split_ds = train_ds.train_test_split(test_size=test_size)
-        train_ds = split_ds['train']
-        test_ds = split_ds['test']
+    train_ds, test_ds = _select_train_eval_splits(dataset, test_size_percent)
   
     # Rename column to match processing
     # do a collumn rename based on the mapping provided below
     #check if the text_column_name is in the dataset
-    if "text" not in train_ds.column_names:
-        train_ds = train_ds.rename_column(text_column_name, "text")
-    
-    if "text" not in test_ds.column_names:
-        test_ds = test_ds.rename_column(text_column_name, "text")
+    train_ds = _ensure_text_column(train_ds, text_column_name, "train")
+    test_ds = _ensure_text_column(test_ds, text_column_name, "eval")
 
 
     # Tokenization function
@@ -73,19 +125,21 @@ def load_and_preprocess_text_dataset(tokenizer, dataset_hf_path, dataset_name_su
     # Process train dataset
     # Disable multiprocessing to avoid OOM or reduce num_proc significantly
     # Using a smaller number of processes (e.g., 4 or 8) is usually safe
+    train_num_proc = max(1, min(train_num_proc, len(train_ds)))
     train_ds = train_ds.map(
         tokenize_batch_function,
         batched=True,
-        num_proc=8, # os.cpu_count()-2 can be too high (62 processes!) causing OOM
+        num_proc=train_num_proc, # os.cpu_count()-2 can be too high (62 processes!) causing OOM
         remove_columns=["text"]
     )
 
     
     # Process test dataset
+    test_num_proc = max(1, min(test_num_proc, len(test_ds)))
     test_ds = test_ds.map(
         tokenize_batch_function,
         batched=True,
-        num_proc=4, # Lower for test set
+        num_proc=test_num_proc, # Lower for test set
         remove_columns=["text"]
     )
     
