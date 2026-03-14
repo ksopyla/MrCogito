@@ -183,31 +183,36 @@ class PerceiverDenoiseTrainer(Trainer):
             outputs = model(**inputs)
             return (outputs.loss, outputs) if return_outputs else outputs.loss
 
+        # Unwrap DDP wrapper to access custom methods (encode_concepts, etc.).
+        # Gradient sync still works: with find_unused_parameters=False, DDP's
+        # parameter-level backward hooks fire regardless of the forward path.
+        base_model = model.module if hasattr(model, "module") else model
+
         input_ids = inputs["input_ids"]
         attention_mask = inputs.get("attention_mask")
         labels = inputs["labels"]
 
-        encoder_outputs_a = model.encode_concepts(
+        encoder_outputs_a = base_model.encode_concepts(
             input_ids=input_ids,
             attention_mask=attention_mask,
             return_dict=True,
         )
         concept_repr_a = encoder_outputs_a.last_hidden_state
-        decoder_output = model.decode_from_concepts(concept_repr_a, seq_length=input_ids.size(1))
-        logits, task_loss = model.reconstruction_loss(decoder_output, labels)
+        decoder_output = base_model.decode_from_concepts(concept_repr_a, seq_length=input_ids.size(1))
+        logits, task_loss = base_model.reconstruction_loss(decoder_output, labels)
 
-        if model.loss_manager.is_enabled:
-            total_loss = model.loss_manager(task_loss=task_loss, concept_repr=concept_repr_a)
+        if base_model.loss_manager.is_enabled:
+            total_loss = base_model.loss_manager(task_loss=task_loss, concept_repr=concept_repr_a)
         else:
             total_loss = task_loss
 
-        encoder_outputs_b = model.encode_concepts(
+        encoder_outputs_b = base_model.encode_concepts(
             input_ids=input_ids,
             attention_mask=attention_mask,
             return_dict=True,
         )
         contrastive_loss = self._contrastive_loss(
-            model,
+            base_model,
             concept_repr_a=concept_repr_a,
             concept_repr_b=encoder_outputs_b.last_hidden_state,
         )
