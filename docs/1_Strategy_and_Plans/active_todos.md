@@ -1,6 +1,6 @@
 # Experiment TODO List v3
 
-**Created: 2026-02-19** | **Updated: 2026-03-08**
+**Created: 2026-02-19** | **Updated: 2026-03-14**
 **Status: Active**
 
 ## Summary of Feb 19 Results
@@ -46,6 +46,14 @@
   - Eval loss 7.42 (below random 10.82, but still very high vs self-recon 1.4)
   - **Decision: Prefix generation alone does NOT fix concept collapse**
   - Git tag: `arch/prefix-diffusion-20260304`
+- [x] ~~TODO 10A: Perceiver denoise reconstruction baseline on Odra~~ — **COMPLETED & PARTIALLY EVALUATED (2026-03-11)**
+  - Config: H512 L6 C128 D3, `BiXT=True`, `token_embedding_dim=512`, `deletion_rate=0.6`, reconstruction-only, effective batch `96`
+  - Result: stable 20-epoch training, best eval loss `1.869` at `checkpoint-202000`, concept rank `10.61 / 128`, zero-shot STS-B `0.607 / 0.622`
+  - Downstream check: MRPC F1 `78.68%`, STS-B `0.102` → mixed signal; move to the contrastive follow-up before a full QQP/MNLI sweep
+- [x] ~~TODO 13c: Easier prefix-diffusion trainability probe on WikiText-103~~ — **COMPLETED & PARTIALLY EVALUATED (2026-03-14)**
+  - Config: H512 L6 C128 D2, `BiXT=True`, `token_embedding_dim=64`, `Salesforce/wikitext` / `wikitext-103-v1`, prefix ratio `0.7-0.8`, `sentence_boundary`, 40 epochs, effective batch `512`
+  - Result: stable 40-epoch training, best eval loss `7.041` at `checkpoint-20000`, concept rank `3.91 / 128`, zero-shot STS-B `0.574 / 0.580`
+  - Decision gate: rank `< 10 / 128` even on the easier WikiText-103 probe → stop further random-init prefix diffusion and move only to warm-start / pretrained-backbone follow-ups
 
 ## TODO 13b: Prefix diffusion evaluation hardening + v2 clean baseline — COMPLETED & EVALUATED
 
@@ -85,7 +93,7 @@
 
 **Status:** [x] Done — v2 clean baseline completed on Polonez and still failed the concept-quality gate.
 
-## TODO 13c: Easier Prefix-Diffusion Trainability Probe on WikiText-103 — PLANNED
+## TODO 13c: Easier Prefix-Diffusion Trainability Probe on WikiText-103 — COMPLETED & PARTIALLY EVALUATED
 
 **Why:** The clean MiniPile prefix-diffusion baselines were stable but too hard: long, highly multimodal suffixes from mixed web text appear to overwhelm the bottleneck before it learns a usable semantic basis. Before abandoning the objective entirely, run one easier trainability probe on a cleaner Wikipedia-derived corpus with a larger observed prefix.
 
@@ -106,7 +114,27 @@
 - Prefer the built-in `validation` split during preprocessing when the dataset provides it
 - Add a loader test and a tiny local smoke verification before launching on Polonez
 
-**Status:** [ ] Next prefix run
+**Done date:** 2026-03-12
+
+**Training result (2026-03-12):**
+1. Run: `prefix_diffBiXT_T64_H512L6C128D2_20260311_194729`
+2. Dataset: `Salesforce/wikitext`, subset `wikitext-103-v1`, using the built-in `validation` split for evaluation
+3. Config: `BiXT`, `token_embedding_dim=64`, prefix ratio `0.7-0.8`, `sentence_boundary`, ELBO=True, `t_min=0.3`, 40 epochs
+4. Training: stable to 40 epochs, `train_loss=13.99`, best `eval_loss=7.041` at `checkpoint-20000`, final checkpoint `checkpoint-57240`, throughput `1.95 step/s`
+
+**Evaluation result (2026-03-14):**
+1. Concept health regressed further: effective rank `3.91 / 128`, global effective rank `3.35`, mean pairwise similarity `0.594`, max similarity `0.999`
+2. Zero-shot STS-B reached `Pearson 0.574` / `Spearman 0.580`, which is non-random but still below the project zero-shot gate and below the denoising baseline (`0.607 / 0.622`)
+3. GLUE was only partially observed: the wrapper reached MRPC epoch-1 validation with `accuracy 0.377` and `F1 0.287`, but no completed benchmark artifacts were captured
+4. SICK and PAWS were skipped to keep to the one-workload-at-a-time rule on Polonez while GLUE was still active
+
+**Decision:**
+- The easier WikiText-103 setup did **not** rescue random-init prefix diffusion
+- The critical gate was reached anyway: concept rank stayed far below `10 / 128`, and in fact worsened versus TODO 13b (`5.74 -> 3.91`)
+- Do **not** spend more GPU on additional random-init prefix diffusion variants on cleaner text alone
+- If the prefix line continues, do it only with warm-start / pretrained-backbone initialization (see TODO 14)
+
+**Status:** [x] Done — training completed on Polonez, partial evaluation was sufficient to close the random-init WikiText-103 prefix probe as a failed rescue attempt.
 
 ## TODO 0: Run L6 baseline STS-B evaluation — DONE ✅
 
@@ -503,15 +531,15 @@ Week 4 (2026-02-26 — Diffusion diagnosis + fixes):
   [x] VICReg + t_regs_mst implementation (warmup, callback, tests) — DONE
   [x] TODO 11b: L6 Diffusion + VICReg + t_regs_mst (A5+A9, Polonez, 1 GPU-day) — DONE, rank 5.09, NO improvement → diffusion self-reconstruction CLOSED
   [x] TODO 13b: Prefix v2 clean baseline (A11, Polonez, ~1.5 GPU-days) ← DONE, stable but rank 5.74 → failed
-  [ ] TODO 13c: Easier prefix-diffusion trainability probe on WikiText-103 (A11, Polonez, ~2 GPU-days) ← NEXT prefix run
-  [ ] TODO 10:  Train TSDAE PosOnly on Minipile (A1, Odra, 5 GPU-days) ← NEXT (parallel)
-  [ ] TODO 10b: Train TSDAE PosOnly + BiXT on Minipile (A2, parallel on other server)
+  [x] TODO 13c: Easier prefix-diffusion trainability probe on WikiText-103 (A11, Polonez, ~2 GPU-days) ← DONE, best eval 7.041 but rank collapsed to 3.91 and zero-shot STS-B reached only 0.574
+  [x] TODO 10:  Perceiver denoise reconstruction baseline (A1, Odra, 5 GPU-days) ← DONE, best eval 1.869, rank 10.61, zero-shot STS-B 0.607
+  [ ] TODO 10b: Perceiver denoise + contrastive (A2, Odra/Polonez, 5 GPU-days) ← NEXT
 
 Week 5 (Prefix generation + evaluation):
   [x] TODO 13:  Implement & train prefix generation (A11, 3 days code + 5 GPU-days) ← DONE, MiniPile clean baselines failed
-  [ ] TODO 10c: Concept analysis on ALL Track A checkpoints (A7 REPEAT)
-  [ ] TODO 10d: GLUE eval with ViaDecoder + perceiver_pair_cls (A6 REPEAT)
-  [ ] TODO 10e: Zero-shot STS-B (A8, cosine similarity, no fine-tuning)
+  [x] TODO 10c: Concept analysis on A1 denoising checkpoint (A7 REPEAT) ← DONE, rank 10.61 / 128
+  [x] TODO 10d: Partial GLUE eval on A1 (MRPC, STS-B) ← DONE, mixed downstream signal
+  [x] TODO 10e: Zero-shot STS-B on A1 (A8, cosine similarity, no fine-tuning) ← DONE, Pearson 0.607
 
 Week 6 (Decision gate + Track A winner → Gate 1):
   [ ] Compare: L6 diffusion vs TSDAE vs prefix generation
@@ -571,17 +599,22 @@ Phase 6 (Track H): Audio modality
 **Training script:** `training/train_perceiver_denoise.py`
 **Local test:** `scripts/test_perceiver_denoise_local.ps1`
 
-**Experiment A — Reconstruction baseline (next run on Odra):**
+**Experiment A — Reconstruction baseline (completed on Odra):**
 
-This is the first recommended run for the new maintained perceiver stack.
+This was the first recommended run for the new maintained perceiver stack.
 
-- **Script to run on Odra:** `bash scripts/train_perceiver_denoise_multigpu.sh`
-- **What it does:** launches the canonical `perceiver_denoise` training path on all 3 Odra GPUs using the clean reconstruction-only objective, BiXT encoder, and the shared 3-layer position-only decoder.
-- **Exact experiment started:** `A1` clean baseline on Minipile with `H512 / T512 / L6 / C128 / D3`, `deletion_rate=0.6`, `objective_variant=reconstruction`, no concept losses, batch `16 x 3 GPUs x grad_acc 2 = 96`.
-- **Why this first:** it is the simplest test of whether the new denoising-first perceiver line produces non-collapsed concepts before adding contrastive pressure.
-- **Launcher note:** `scripts/train_perceiver_denoise_multigpu.sh` now defaults to this Odra-safe A1 configuration, so no extra env vars are required for the first run.
+- **Run ID:** `perceiver_denoise_H512L6C128D3_20260308_220324`
+- **Script used on Odra:** `bash scripts/train_perceiver_denoise_multigpu.sh`
+- **Exact config:** `H512 / T512 / L6 / C128 / D3`, `deletion_rate=0.6`, `objective_variant=reconstruction`, `BiXT=True`, no concept losses, batch `16 x 3 GPUs x grad_acc 2 = 96`
+- **Best checkpoint:** `checkpoint-202000`
+- **Training outcome:** stable 20-epoch run, final logged train loss `1.921`, best eval loss `1.869`, throughput `1.89 step/s`
+- **Concept health:** effective rank `10.61 / 128`, mean pairwise similarity `0.2006`, max similarity `0.9991`, top-1 dominance `0.094`
+- **Zero-shot semantics:** STS-B `Pearson 0.6066`, `Spearman 0.6225`
+- **Downstream spot-check:** MRPC F1 `78.68%`, STS-B `0.1015`; the broader QQP/MNLI sweep was stopped early because the signal was already mixed and Odra should stay free
+- **Interpretation:** better than the old L6 MLM baseline on raw rank (`5 -> 10.61`) and unexpectedly strong in zero-shot similarity, but still far below the concept-rank gate and not yet reliable under supervised pair-task fine-tuning
+- **Quick report:** `docs/2_Experiments_Registry/run_reports/perceiver_denoise_reconstruction_20260311.md`
 
-**Experiment B — Reconstruction + contrastive (parallel follow-up):**
+**Experiment B — Reconstruction + contrastive (next follow-up):**
 Same base architecture as A with `--objective_variant reconstruction+contrastive`. Compare concept quality (effective rank, mean sim), zero-shot STS-B, and downstream GLUE scores.
 
 **Evaluation plan:**
@@ -590,7 +623,7 @@ Same base architecture as A with `--objective_variant reconstruction+contrastive
 3. Zero-shot STS-B: cosine similarity of separately-encoded sentences (no fine-tuning)
 4. Compare against MLM baseline (L6, eff rank 5/128) and diffusion
 
-**Status:** [ ] Ready to launch on Odra via `bash scripts/train_perceiver_denoise_multigpu.sh`
+**Status:** [ ] Experiment A completed and partially evaluated on Odra; Experiment B is the next run
 
 ---
 
@@ -762,7 +795,7 @@ Same base architecture as A with `--objective_variant reconstruction+contrastive
 4. Keep the diffusion schedule unchanged (`t in [0.3, 1.0]`)
 5. Train longer (`40` epochs default, still configurable)
 
-**Status:** [ ] Planned — next prefix run is the easier WikiText-103 trainability probe
+**Status:** [ ] In progress — the easier WikiText-103 prefix trainability probe has been launched on Polonez
 
 ---
 
