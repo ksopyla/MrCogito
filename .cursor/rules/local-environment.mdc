@@ -1,16 +1,30 @@
 ---
-description: Local Windows development environment, Python/Poetry setup, and output formatting rules.
+description: Local macOS development environment, Python/uv setup, and output formatting rules.
 alwaysApply: true
 ---
 
 ## Output Rules
 - Do NOT use LaTeX format — not rendered properly. Use markdown instead.
 - Do not generate intermediate markdown files unless explicitly asked; use `agent_memory/` for scratch.
-- while commiting to git do not add the "--trailer made with cursor" message, it is annoying and not needed.
-- while formating the git commit message do not use "-m "$(cat <<'EOF' ... EOF)"", use the normal way to format the commit message - you are working in powershell, not bash.
-- git commit message should contain on line short main change description, followed by a more detailed description, be precise  and to the point, but detailed
+- While committing to git do not add the "--trailer made with cursor" message, it is annoying and not needed.
+- Git commit messages: one-line short main change description, followed by a more detailed body. Be precise and to the point, but detailed.
 
 ## Local Environment
-- **OS**: Windows 11, **Hardware**: 64GB RAM, RTX 3080 (10GB VRAM), Ryzen 9 5900HX
-- Use PowerShell for local runs, not bash. Double-quote paths with spaces.
-- Python 3.12 via Poetry. Always run: `poetry run python <script> [args]`
+- **OS**: macOS (Apple Silicon, arm64), **Shell**: zsh
+- **Hardware**: MacBook Pro (M-series). No NVIDIA GPU — use Apple MPS for smoke tests; full training runs on Polonez/Odra (see `remote-servers.mdc`).
+- **Python**: 3.12 pinned via `.python-version`, managed by [uv](https://docs.astral.sh/uv/).
+- **Package manager**: `uv` (migrated from Poetry). Lockfile is `uv.lock` (committed).
+- Quote paths with spaces using double quotes.
+
+## Common Commands
+- Install / update deps:    `uv sync`
+- Add a runtime dep:        `uv add <pkg>`
+- Add a dev dep:            `uv add --group dev <pkg>`
+- Run any script:           `uv run python <script> [args]`
+- Run tests:                `uv run pytest tests/ -v`
+- Verify torch + MPS:       `uv run python verification/torch_test.py`
+
+## MPS / PyTorch Notes
+- Set `PYTORCH_ENABLE_MPS_FALLBACK=1` (already in `.env.example`) so unimplemented ops fall back to CPU instead of crashing.
+- `liger-kernel` is Linux-only (CUDA + Triton); it is conditionally excluded on macOS in `pyproject.toml`. Do not import it from cross-platform code.
+- Local runs are for smoke tests and unit tests only. Real training happens on Polonez / Odra.

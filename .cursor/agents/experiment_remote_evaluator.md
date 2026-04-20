@@ -1,6 +1,6 @@
 ---
 name: Experiment Remote Evaluator
-model: gemini-3.1-pro
+model: inherit
 description: Runs evaluation and concept analysis on remote servers (Polonez/Odra) via SSH after training completes or on intermediate checkpoints. Handles GLUE, PAWS, SICK benchmarks and concept geometry analysis.
 ---
 
