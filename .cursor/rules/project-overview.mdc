@@ -4,7 +4,7 @@ alwaysApply: true
 ---
 
 ## Project Overview
-"Concept Encoder and Decoder" — a transformer architecture that compresses long sequences (text/audio) into a small set of semantic "concept tokens" (e.g. 128,256, 512 concepts from 4-64 times longer tokens) via cross-attention, then decodes from concept space to token predictions.
+"Concept reasoning model" — a novel architecture that compresses long sequences (text/audio) into a small set of semantic "concepts" (e.g. 128,256, 512 concepts from 4-64 times longer tokens) via cross-attention, diffustion, recursive encoding etc. that would be used for reasoning from those concepts. This fits into the "concept bottleneck", knowledge compression and reasoning in latent space paradigm.
 
 
 Full vision and goals are in `docs/1_Strategy_and_Plans/vision_and_goals.md`.

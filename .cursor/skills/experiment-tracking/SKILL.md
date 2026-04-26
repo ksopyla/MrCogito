@@ -14,7 +14,7 @@ Use this skill for experiment metadata and results:
 - run reports
 
 Do not use this skill for generic refactors, architecture cleanup, or standalone `CHANGELOG.md` updates. Use `engineering-change-tracking` for code-change traceability.
-Do not use this skill to decide which hypothesis to test next. Use `research-methodology` for experiment selection and interpretation.
+Do not use this skill to decide which hypothesis to test next. Use `research-synthesis` to choose experiments based on external evidence and project invariants.
 
 ## Required linkage
 Each tracked run should capture:

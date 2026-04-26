@@ -15,7 +15,7 @@ Use this skill for code-change traceability:
 - direction shifts that should appear in project docs
 
 Do not use this skill to log run metrics or benchmark results. Use `experiment-tracking` for training and evaluation records.
-Do not use this skill to choose research priorities. Use `research-methodology` for hypothesis and benchmark decisions.
+Do not use this skill to choose research priorities. Use `research-synthesis` for hypothesis, benchmark, and direction decisions grounded in external evidence.
 
 ## Keep aligned
 When a change matters, keep these artifacts consistent:
@@ -70,4 +70,4 @@ When a change matters, keep these artifacts consistent:
 
 ## Related skills
 - Use `experiment-tracking` when the same change also needs run metadata or benchmark results recorded.
-- Use `research-methodology` when the change reflects a new hypothesis, evaluation plan, or research decision.
+- Use `research-synthesis` when the change reflects a new hypothesis, evaluation plan, or research direction informed by external evidence.
