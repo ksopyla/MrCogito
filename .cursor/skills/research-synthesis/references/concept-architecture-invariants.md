@@ -5,7 +5,7 @@
 - Purpose
 - Compression principle
 - Cross-attention bottleneck
-- Concept tokens as latent reasoning state
+- Concept embeddings as reasoning state
 - Decoder and reasoner conditioning
 - Representation quality constraints
 - Stable diagnostics
@@ -33,7 +33,7 @@ Concept tokens query input tokens via cross-attention.
 - Information flow from input to output passes through concepts.
 - Methods that bypass the bottleneck (residual full-token paths, retrieval over raw tokens, attention sinks that re-expose tokens to the decoder) break the architecture's core claim.
 
-## Concept Tokens as Latent Reasoning State
+## Concept Embeddings as Latent Reasoning State
 
 Concepts are the working memory for downstream reasoning, decoding, or generation.
 
