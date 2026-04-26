@@ -14,6 +14,9 @@ Use this skill after results already exist. It is for:
 
 This skill focuses on evaluation results. Training details matter only insofar as they explain the evaluation outcome.
 
+Do not use this skill for generic refactors, architecture cleanup, or standalone `CHANGELOG.md` updates. Use `engineering-change-tracking` for code-change traceability.
+Do not use this skill to decide which hypothesis to test next. Use `research-synthesis` to choose experiments based on external evidence and project invariants.
+
 ## Use This Skill When
 - a training run or evaluation sweep finished and needs documentation
 - `WandB`, shell logs, `Cache/Evaluation_reports`, or checkpoint metadata need to be turned into a concise summary
@@ -23,8 +26,8 @@ This skill focuses on evaluation results. Training details matter only insofar a
 
 ## Do Not Use This Skill For
 - running evaluations, SSH, remote concept analysis, or report syncing. Use `experiment-remote-evaluator`.
-- deep literature research, architecture scouting, or paper-backed root-cause analysis. Use the `Researcher` agent.
-- deciding the next experiment family, redefining gates, or roadmap-level prioritization before a concrete run exists. Use `research-methodology`.
+- deep literature research, architecture scouting, or paper-backed root-cause analysis. Use the `research-synthesis` skill (which spawns the `research-scout` agent for source fetching).
+- deciding the next experiment family, redefining gates, or roadmap-level prioritization before a concrete run exists. Use `research-synthesis`.
 - code-change traceability or `CHANGELOG.md` updates. Use `engineering-change-tracking`.
 
 ## Read This Context First
@@ -106,7 +109,7 @@ Useful interpretation rules:
 - `master_experiment_log.md`: keep the row dense and factual. Include the key metric, the fair comparison point, and a one-sentence takeaway.
 - `active_todos.md`: update status, evidence, and the immediate next action for the relevant TODO.
 - `run_reports/`: keep reports short unless the user explicitly wants a deeper note.
-- Do not open a full research note by default. Use `Researcher` or a separate note only when the result requires deeper literature-backed analysis or a new cross-run diagnosis.
+- Do not open a full research note by default. Use `research-synthesis` (which can spawn `research-scout` for source fetching) or a separate note only when the result requires deeper literature-backed analysis or a new cross-run diagnosis.
 
 ## Dates And Linkage Discipline
 - Use exact dates from the evidence, not the current day unless the action really happened today.
@@ -247,4 +250,4 @@ When using this skill, produce:
 - a project-aware verdict
 - precise doc updates, not vague notes
 
-If the user asks for a deep external research follow-up, hand off to `Researcher`.
+If the user asks for a deep external research follow-up, hand off to `research-synthesis` (which spawns `research-scout` for source material).

@@ -16,6 +16,29 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ## [Unreleased]
 
+## [2026-04-20] — Local Dev Migration: Windows + Poetry → macOS + uv
+
+**Why:**
+- Primary dev machine moved from a Windows laptop with RTX 3080 to an Apple Silicon MacBook. Poetry was already swapped for `uv` upstream; the local toolchain, docs, and helper scripts had not caught up.
+- Tests refused to collect on a fresh checkout because the project is application-style (no installable package) and pytest had no `pythonpath` configured.
+
+**Impact:**
+- Fresh-checkout setup on macOS is now `uv sync` → `uv run pytest tests/ -v` with no manual PYTHONPATH or per-shell tweaks.
+- README, the local-environment Cursor rule, and `verification/torch_test.py` reflect the macOS / MPS reality. The remote-servers rule no longer claims poetry is the runtime.
+- `scripts/sync_evaluation_reports.sh` gives macOS/Linux a first-class equivalent of the existing PowerShell sync (rsync-based, supports download / upload / two-way / dry-run).
+- `~/.ssh/config` now defines `polonez` and `odra` host aliases that downstream scripts already assume; user still needs to push the public key with `ssh-copy-id`.
+
+**What changed:**
+- [updated] `pyproject.toml` — added `[tool.pytest.ini_options]` with `pythonpath = ["."]` and `testpaths = ["tests"]` so tests collect without an editable install.
+- [updated] `verification/torch_test.py` — also detects Apple MPS and CPU fallback; reports the device and runs a sanity matmul.
+- [updated] `README.md` — Setup section uses `uv sync` / `uv run pytest`; project tree comment notes uv instead of poetry.
+- [updated] `.cursor/rules/local-environment.mdc` — rewritten for macOS / zsh / uv. Documents `uv add`, `uv add --group dev`, MPS fallback, and that liger-kernel is Linux-only.
+- [updated] `.cursor/rules/remote-servers.mdc` — dropped the stale "servers use poetry" runtime block; minor CPU label cleanup.
+- [updated] `.cursor/agents/experiment_remote_evaluator.md` — `model: inherit`.
+- [added] `.env.example` — template for `HF_TOKEN`, `WANDB_API_KEY`, `HF_HOME`, `PYTORCH_ENABLE_MPS_FALLBACK`.
+- [added] `scripts/sync_evaluation_reports.sh` — bash/rsync twin of the existing `.ps1`.
+- [added] `.python-version`, `uv.lock` — pin Python 3.12 and lock dependencies for reproducible installs across macOS, Linux, Windows.
+
 ## [2026-03-08] — Perceiver V2 Denoising Reset
 
 **Why:**

@@ -189,7 +189,7 @@ MrCogito/
 |   |-- 4_Research_Notes/               # Root cause analyses, diagnoses
 |   +-- 5_Archive/                     # Superseded roadmaps/plans
 |-- CHANGELOG.md                        # Engineering log (what changed + why)
-+-- pyproject.toml                     # Poetry dependencies
++-- pyproject.toml                     # uv / PEP 621 dependencies
 ```
 
 ---
@@ -198,28 +198,28 @@ MrCogito/
 
 ### Prerequisites
 
-- Python 3.12+
-- [Poetry](https://python-poetry.org/) for dependency management
-- CUDA 12.8 (for GPU training)
+- Python 3.12 (managed by [uv](https://docs.astral.sh/uv/))
+- [uv](https://docs.astral.sh/uv/) for dependency / environment management
+- CUDA 12.8 for GPU training (Linux / Windows). On macOS the project installs CPU/MPS wheels automatically.
 
 ### Install
 
 ```bash
 git clone https://github.com/ksopyla/MrCogito.git
 cd MrCogito
-poetry install
+uv sync
 ```
 
 ### Verify
 
 ```bash
-poetry run python verification/torch_test.py
+uv run python verification/torch_test.py
 ```
 
 ### Run Tests
 
 ```bash
-poetry run pytest tests/ -v
+uv run pytest tests/ -v
 ```
 
 ---

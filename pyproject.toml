@@ -1,61 +1,98 @@
-[tool.poetry]
+[project]
 name = "mrcogito"
 version = "0.1.0"
-description = ""
-authors = ["ksopyla <krzysztofsopyla@gmail.com>"]
-package-mode = false
+description = "Concept Encoder & Decoder — compress long sequences into a small set of semantic concept tokens."
 readme = "README.md"
+requires-python = ">=3.12,<3.15"
+authors = [
+    { name = "Krzysztof Sopyla", email = "krzysztofsopyla@gmail.com" },
+]
+license = { text = "MIT" }
 
-[tool.poetry.dependencies]
-python = ">=3.12,<3.15"
-wheel= ">=0.42.0"
-datasets = ">=4.0.0"
-packaging = "^24.1"
-tqdm = "^4.66.4"
-wandb = "^0.23.1"
-python-dotenv = "^1.0.1"
-huggingface-hub = ">=0.24.0"
-torch = { version = "^2.10.0", source = "pytorch" }
-torchvision = { version = ">=0.24.0", source = "pytorch" }  # 0.25 ships with torch 2.10
-transformers = "^4.47.1"
-rich = "^13.9.4"
-accelerate = "^1.2.1"
-evaluate = ">=0.4.3"
-morfessor = "^2.0.6"
-tiktoken = "^0.12.0"
-hf-transfer = ">=0.1.9"
-scikit-learn = "^1.7.2"
-nltk = "^3.9.1"
-soundfile = "^0.12.1"
-librosa = "^0.10.2"
-liger-kernel = ">=0.5.0"          # Fused Triton kernels: cross-entropy (+20% throughput, -60% memory)
+# Runtime dependencies.
+# PyTorch / torchvision are resolved from the explicit pytorch CUDA index on
+# Linux + Windows (see [tool.uv.sources] / [[tool.uv.index]] below) and from
+# PyPI on macOS so that the project still installs on the dev laptop.
+dependencies = [
+    "wheel>=0.42.0",
+    "datasets>=4.0.0",
+    "packaging>=24.1,<25",
+    "tqdm>=4.66.4,<5",
+    "wandb>=0.23.1,<0.24",
+    "python-dotenv>=1.0.1,<2",
+    "huggingface-hub>=0.24.0",
+    "torch>=2.10.0,<3",
+    "torchvision>=0.24.0",
+    "transformers>=4.47.1,<5",
+    "rich>=13.9.4,<14",
+    "accelerate>=1.2.1,<2",
+    "evaluate>=0.4.3",
+    "morfessor>=2.0.6,<3",
+    "tiktoken>=0.12.0,<0.13",
+    "hf-transfer>=0.1.9",
+    "scikit-learn>=1.7.2,<2",
+    "nltk>=3.9.1,<4",
+    "soundfile>=0.12.1,<0.13",
+    "librosa>=0.10.2,<0.11",
+    # Fused Triton kernels (cross-entropy, +20% throughput, -60% memory).
+    # Linux-only because it depends on Triton + CUDA.
+    "liger-kernel>=0.5.0; sys_platform == 'linux'",
+]
 
-
-[tool.poetry.group.dev.dependencies]
-ipykernel = "^6.29.5"
-ipywidgets = "^8.1.3"
-pytest = "^8.3.4"
-matplotlib = "^3.10.0"
-tensorboard = "^2.18.0"
-stanza = "^1.10.1"
-
-lm-eval = "^0.4.8"
+# PEP 735 dependency groups (managed by uv).
+[dependency-groups]
+dev = [
+    "ipykernel>=6.29.5,<7",
+    "ipywidgets>=8.1.3,<9",
+    "pytest>=8.3.4,<9",
+    "matplotlib>=3.10.0,<4",
+    "tensorboard>=2.18.0,<3",
+    "stanza>=1.10.1,<2",
+    "lm-eval>=0.4.8,<0.5",
+]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
+# This project is application-style (no installable package); we still need a
+# build backend for `uv sync`, but tell hatch there is nothing to build.
+[tool.hatch.build.targets.wheel]
+bypass-selection = true
 
+# ---------------------------------------------------------------------------
+# uv configuration
+# ---------------------------------------------------------------------------
+[tool.uv]
+# Lock for the platforms we actually care about so CI / remote machines get a
+# deterministic install even though development happens on macOS.
+environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
 
-[[tool.poetry.source]]
-name = "PyPi"
-priority = "primary"
+# Pull torch / torchvision from the CUDA 12.8 wheels index on Linux + Windows;
+# fall back to PyPI on macOS (CPU / MPS wheels).
+# https://docs.astral.sh/uv/guides/integration/pytorch/
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+torchvision = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
 
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
 
-[[tool.poetry.source]]
-name = "pytorch"
-url = "https://download.pytorch.org/whl/cu128"  # CUDA 12.8
-priority = "explicit"
-
-
-# https://medium.com/decodingml/the-step-by-step-guide-on-how-to-install-pytorch-with-cuda-support-in-all-possible-ways-147b3f34085c
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+# Repo is application-style (no installable package), so put the project root
+# on PYTHONPATH so tests can `from nn.concept_encoder import ...` etc.
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
