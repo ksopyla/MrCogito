@@ -1,8 +1,8 @@
 # Training and Evaluation Matrix
 
-**Last updated:** 2026-03-08
+**Last updated:** 2026-06-05
 
-This table is the current source of truth for which training paths are actively maintained, which are isolated experiments, and which interfaces are retired.
+This table is the current source of truth for which training paths are actively maintained, which are parked, and which interfaces are retired.
 
 ## Current Matrix
 
@@ -10,9 +10,9 @@ This table is the current source of truth for which training paths are actively 
 |---|---|---|---|---|---|---|---|
 | `perceiver_denoise` | Maintained | `training/train_perceiver_denoise.py` | TSDAE-style token deletion + full-sequence reconstruction, optional `reconstruction+contrastive` | `ViaDecoder` | `ConceptEncoderForSentencePairClassification` with separate encoding | Yes | Canonical perceiver research path. Uses BiXT + stacked position-only decoder. |
 | `weighted_mlm` | Maintained baseline | `training/train_mlm.py --model_type weighted_mlm` | Sparse MLM | Weighted concept pooling classifier | Legacy sentence-pair route from `evaluate_model_on_glue.py` | No dedicated canonical route | Kept as the simple MLM baseline for comparison. |
-| `diffusion_mlm` | Maintained research track | `training/train_diffusion.py` | Masked diffusion self-reconstruction | Metadata-driven canonical route | Metadata-driven canonical route | Yes | Evaluation contract is stored in checkpoint config. |
-| `prefix_diffusion` | Maintained research track | `training/train_prefix_diffusion.py` | Prefix-to-suffix diffusion generation | Metadata-driven canonical route | Metadata-driven canonical route | Yes | Primary generation-oriented text track. |
-| `recursive_mlm` | Isolated experiment | `training/train_recursive_mlm.py` | Recursive sparse MLM with weight-tied encoder | Manual / experiment-specific | Manual / experiment-specific | Not wired as a standard path | Intentionally removed from generic `train_mlm.py` until recursion strategy is better defined. |
+| `diffusion_mlm` | **Parked** (`parked/`) | `parked/training/train_diffusion.py` | Masked diffusion self-reconstruction | — | — | — | Explored; concept rank stayed low so far. Set aside for now, likely to revisit. Existing checkpoints still evaluate via encoder-only routing into perceiver heads. See `parked/README.md`. |
+| `prefix_diffusion` | **Parked** (`parked/`) | `parked/training/train_prefix_diffusion.py` | Prefix-to-suffix diffusion generation | — | — | — | Explored (random init) with low concept rank so far. Set aside, to revisit — especially with warm-start. See `parked/README.md`. |
+| `recursive_mlm` | **Parked** (`parked/`) | `parked/training/train_recursive_mlm.py` | Recursive sparse MLM with weight-tied encoder | — | — | — | Not the current focus; recursive / latent reasoning stays part of the long-term Vision. See `parked/README.md`. |
 
 ## Retired Interfaces
 
@@ -39,5 +39,6 @@ This table is the current source of truth for which training paths are actively 
 
 - If you want the maintained perceiver path, use `perceiver_denoise`.
 - If you want the simple MLM baseline, use `weighted_mlm`.
-- If you want recursion, use `training/train_recursive_mlm.py` and treat it as a separate experiment family.
+- Recursion and diffusion are **parked** in `parked/` (revivable) — see `parked/README.md`.
+- Current work is tracked as small, well-defined increments in `agenda.md` + `docs/experiments/`; the direction is exploratory.
 - If you need historical `perceiver_mlm` comparisons, use old checkpoints/results as archived baselines, not as current launch interfaces.

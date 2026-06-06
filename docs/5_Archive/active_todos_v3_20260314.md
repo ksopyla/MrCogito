@@ -1,3 +1,7 @@
+> **OBSOLETE — 2026-06-05**
+> Superseded by **[agenda.md](../1_Strategy_and_Plans/agenda.md)** + per-experiment specs in **[docs/experiments/](../experiments/)**.
+> **Why:** This file grew into an append-only result diary (TODO 0–14) that was hard to use as a "what's next" plan. Live planning now lives in the slim agenda; recorded results live in the experiment registry. Kept for historical reference.
+
 # Experiment TODO List v3
 
 **Created: 2026-02-19** | **Updated: 2026-03-14**

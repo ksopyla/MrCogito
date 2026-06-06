@@ -1,5 +1,7 @@
 # MrCogito: Concept Encoder Research Vision and Goals
 
+> **Note (2026-06-05):** This file is the long-term **Vision** and still stands. Day-to-day work is tracked in **[agenda.md](agenda.md)** as small, well-defined increments. The path *within* this Vision is under active exploration and genuinely open — the phases and sub-goals below are an **indicative direction, not a committed schedule**.
+
 Build an **audio conversational and reasoning model** grounded in a **concept bottleneck** architecture. Instead of operating on raw tokens (text) or codec frames (audio), the model compresses long input sequences into dense "concept tokens," reasons iteratively in concept space, and generates output (text or speech) via a decoder.
 
 **Phased milestone path:** The full vision requires six sequential phases, each gated by concrete success criteria. Phase 1 proves the concept bottleneck captures semantics. Phases 2-3 build robust representations and transition to generation. Phase 4 adds instruction following. Phase 5 adds reasoning via recursive concept refinement. Phase 6 extends to audio. The current focus is Phase 1 (SG1).
