@@ -3,11 +3,26 @@ import math
 import torch
 import torch.nn as nn
 from transformers import PreTrainedModel
+from transformers.activations import ACT2FN
 from transformers.utils import logging
 from transformers.configuration_utils import PretrainedConfig
 from transformers.modeling_outputs import BaseModelOutput
 
 logger = logging.get_logger(__name__)
+
+
+def build_norm(norm_type: str, dim: int, eps: float = 1e-12) -> nn.Module:
+    """Construct a normalization layer selected by config.
+
+    "layernorm" (default) reproduces every prior checkpoint exactly; "rmsnorm"
+    selects the modern pre-norm used by Llama/SmolLM2. Kept tiny and shape-only so
+    new config-selectable building blocks stay backward compatible.
+    """
+    if norm_type == "rmsnorm":
+        return nn.RMSNorm(dim, eps=eps)
+    if norm_type == "layernorm":
+        return nn.LayerNorm(dim, eps=eps)
+    raise ValueError(f"Unknown norm_type: {norm_type!r}. Expected 'layernorm' or 'rmsnorm'.")
 
 class ConceptEncoderConfig(PretrainedConfig):
     """
@@ -81,6 +96,11 @@ class ConceptEncoderConfig(PretrainedConfig):
         bixt_token_ffn: bool = True,
         decoder_posonly: bool = False,
         decoder_num_layers: int = 3,
+        decoder_type: str = "perceiver_posonly",
+        decoder_word_dropout: float = 0.0,
+        decoder_pos_type: str = "learned",
+        norm_type: str = "layernorm",
+        rope_theta: float = 10000.0,
         checkpoint_family: Optional[str] = None,
         evaluation_contract_version: Optional[int] = None,
         canonical_pair_eval_mode: Optional[str] = None,
@@ -116,6 +136,18 @@ class ConceptEncoderConfig(PretrainedConfig):
         self.unk_token_id = unk_token_id
         self.use_bixt = use_bixt
         self.bixt_token_ffn = bixt_token_ffn
+        # Decoder selection + modern building blocks (backward-compatible defaults).
+        # decoder_type: "perceiver_posonly" (existing parallel decoder) | "causal_ar"
+        #   (autoregressive concept-conditioned decoder, E01).
+        # decoder_word_dropout: fraction of decoder-input tokens replaced by a learned
+        #   "dropout" embedding (posterior-collapse guard); 0.0 disables it.
+        # decoder_pos_type: "learned" (absolute position embeddings) | "rope".
+        # norm_type: "layernorm" (default, all prior checkpoints) | "rmsnorm".
+        self.decoder_type = decoder_type
+        self.decoder_word_dropout = decoder_word_dropout
+        self.decoder_pos_type = decoder_pos_type
+        self.norm_type = norm_type
+        self.rope_theta = rope_theta
         # decoder_posonly: True for TSDAE/PosOnly checkpoints — decoder queries use position
         # embeddings only (no input token shortcut). Stored in config so ViaDecoder classification
         # loads the correct decoder variant without silently using the wrong mode.
@@ -160,16 +192,17 @@ class ConceptEncoderLayer(nn.Module):
             batch_first=True,
         )
         
-        # Pre-LN normalization layers
-        self.pre_cross_attn_norm = nn.LayerNorm(config.hidden_size)
-        self.pre_self_attn_norm = nn.LayerNorm(config.hidden_size)
-        self.pre_ff_norm = nn.LayerNorm(config.hidden_size)
+        # Pre-LN normalization layers (LayerNorm by default; RMSNorm when config.norm_type="rmsnorm")
+        self.pre_cross_attn_norm = build_norm(config.norm_type, config.hidden_size)
+        self.pre_self_attn_norm = build_norm(config.norm_type, config.hidden_size)
+        self.pre_ff_norm = build_norm(config.norm_type, config.hidden_size)
         
-        # Feed Forward Network with Wi and Wo matrices and gating mechanism
+        # Feed Forward Network with Wi and Wo matrices and gating mechanism.
+        # With hidden_act="silu" the gated FFN is SwiGLU (Shazeer 2020); "gelu" = GEGLU (legacy default).
         self.Wi = nn.Linear(config.hidden_size, config.intermediate_size * 2)  # *2 for gating
         self.Wo = nn.Linear(config.intermediate_size, config.hidden_size)
         self.wi_dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.act_fn = nn.GELU() # TODO: might need to try other activation functions
+        self.act_fn = ACT2FN[config.hidden_act]
 
 
     def forward(
@@ -373,14 +406,14 @@ class BiConceptEncoderLayer(nn.Module):
             proj_drop=config.hidden_dropout_prob,
             update_tokens=update_tokens,
         )
-        self.pre_cross_norm_lat = nn.LayerNorm(dim_lat)
-        self.pre_cross_norm_tok = nn.LayerNorm(dim_tok)
+        self.pre_cross_norm_lat = build_norm(config.norm_type, dim_lat)
+        self.pre_cross_norm_tok = build_norm(config.norm_type, dim_tok)
 
         # --- token FFN (optional, very cheap at small dim_tok) ---
         self._use_token_ffn = update_tokens and getattr(config, "bixt_token_ffn", True)
         if self._use_token_ffn:
             tok_intermediate = dim_tok * 4
-            self.pre_ff_norm_tok = nn.LayerNorm(dim_tok)
+            self.pre_ff_norm_tok = build_norm(config.norm_type, dim_tok)
             self.Wi_tok = nn.Linear(dim_tok, tok_intermediate * 2)  # *2 for gating
             self.Wo_tok = nn.Linear(tok_intermediate, dim_tok)
             self.wi_dropout_tok = nn.Dropout(config.hidden_dropout_prob)
@@ -390,14 +423,14 @@ class BiConceptEncoderLayer(nn.Module):
             embed_dim=dim_lat, num_heads=config.num_attention_heads,
             dropout=config.attention_probs_dropout_prob, batch_first=True,
         )
-        self.pre_self_attn_norm = nn.LayerNorm(dim_lat)
+        self.pre_self_attn_norm = build_norm(config.norm_type, dim_lat)
 
-        # --- concept FFN (gated) ---
-        self.pre_ff_norm_lat = nn.LayerNorm(dim_lat)
+        # --- concept FFN (gated; SwiGLU when hidden_act="silu") ---
+        self.pre_ff_norm_lat = build_norm(config.norm_type, dim_lat)
         self.Wi_lat = nn.Linear(dim_lat, config.intermediate_size * 2)
         self.Wo_lat = nn.Linear(config.intermediate_size, dim_lat)
         self.wi_dropout_lat = nn.Dropout(config.hidden_dropout_prob)
-        self.act_fn = nn.GELU()
+        self.act_fn = ACT2FN[config.hidden_act]
 
     def forward(
         self,
@@ -519,7 +552,7 @@ class ConceptEncoder(PreTrainedModel):
         # Dropout [hidden_dropout_prob]
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         # Output layer normalization [hidden_size=concept_dim]
-        self.output_layer_norm = nn.LayerNorm(config.hidden_size, eps=1e-12)
+        self.output_layer_norm = build_norm(config.norm_type, config.hidden_size, eps=1e-12)
 
         self.post_init()
     
@@ -577,6 +610,11 @@ class ConceptEncoder(PreTrainedModel):
         elif isinstance(module, nn.LayerNorm):
             module.bias.data.zero_()
             module.weight.data.fill_(1.0)
+
+        elif isinstance(module, nn.RMSNorm):
+            # RMSNorm has a weight (gain) but no bias.
+            if module.weight is not None:
+                module.weight.data.fill_(1.0)
         
 
     def forward(

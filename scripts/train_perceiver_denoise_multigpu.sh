@@ -40,7 +40,14 @@ NUM_LAYERS="${NUM_LAYERS:-6}"
 CONCEPT_NUM="${CONCEPT_NUM:-128}"
 INTERMEDIATE_SIZE="${INTERMEDIATE_SIZE:-2048}"
 DECODER_NUM_LAYERS="${DECODER_NUM_LAYERS:-3}"
+# Decoder family + modern blocks (E01). Defaults reproduce the perceiver_denoise baseline.
+DECODER_TYPE="${DECODER_TYPE:-perceiver_posonly}"   # | causal_ar
+DECODER_POS_TYPE="${DECODER_POS_TYPE:-learned}"     # | rope (causal_ar)
+DECODER_WORD_DROPOUT="${DECODER_WORD_DROPOUT:-0.0}"
+HIDDEN_ACT="${HIDDEN_ACT:-gelu}"                    # | silu (SwiGLU)
+NORM_TYPE="${NORM_TYPE:-layernorm}"                 # | rmsnorm
 DATASET_NAME="${DATASET_NAME:-JeanKaddour/minipile}"
+DATASET_SUBSET="${DATASET_SUBSET:-}"
 TOKENIZER_NAME="${TOKENIZER_NAME:-answerdotai/ModernBERT-base}"
 MAX_SEQ_LENGTH="${MAX_SEQ_LENGTH:-512}"
 DELETION_RATE="${DELETION_RATE:-0.6}"
@@ -70,10 +77,16 @@ accelerate launch \
     --concept_num "$CONCEPT_NUM" \
     --intermediate_size "$INTERMEDIATE_SIZE" \
     --decoder_num_layers "$DECODER_NUM_LAYERS" \
+    --decoder_type "$DECODER_TYPE" \
+    --decoder_pos_type "$DECODER_POS_TYPE" \
+    --decoder_word_dropout "$DECODER_WORD_DROPOUT" \
+    --hidden_act "$HIDDEN_ACT" \
+    --norm_type "$NORM_TYPE" \
     --use_bixt \
     --deletion_rate "$DELETION_RATE" \
     --objective_variant "$OBJECTIVE_VARIANT" \
     --dataset_name "$DATASET_NAME" \
+    --dataset_name_subset "$DATASET_SUBSET" \
     --tokenizer_name "$TOKENIZER_NAME" \
     --max_seq_length "$MAX_SEQ_LENGTH" \
     --dataset_cache_dir "$HF_DATASETS_CACHE" \

@@ -32,7 +32,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data.data_collators import DataCollatorForTSDAE
 from data.dataset_preprocess import load_and_preprocess_text_dataset
 from nn.concept_encoder import ConceptEncoderConfig
-from nn.concept_encoder_perceiver import ConceptEncoderForDenoisingPerceiver
+from nn.concept_encoder_perceiver import (
+    ConceptEncoderForConditionalLM,
+    ConceptEncoderForDenoisingPerceiver,
+)
 from nn.loss_manager import ConceptLossStepCallback, LossConfig, get_available_losses
 from training.utils_training import (
     init_wandb,
@@ -57,6 +60,11 @@ VALID_OBJECTIVES = {
 }
 
 
+DECODER_PERCEIVER_POSONLY = "perceiver_posonly"
+DECODER_CAUSAL_AR = "causal_ar"
+VALID_DECODER_TYPES = {DECODER_PERCEIVER_POSONLY, DECODER_CAUSAL_AR}
+
+
 @dataclass
 class ModelArguments:
     hidden_size: int = field(default=512)
@@ -69,7 +77,29 @@ class ModelArguments:
     intermediate_size: int = field(default=2048)
     decoder_num_layers: int = field(
         default=3,
-        metadata={"help": "Number of stacked position-only decoder layers."},
+        metadata={"help": "Number of stacked decoder layers (position-only OR causal AR)."},
+    )
+    decoder_type: str = field(
+        default=DECODER_PERCEIVER_POSONLY,
+        metadata={"help": f"Decoder family: one of {sorted(VALID_DECODER_TYPES)}. "
+                  "'causal_ar' = autoregressive concept-conditioned decoder (E01)."},
+    )
+    decoder_pos_type: str = field(
+        default="learned",
+        metadata={"help": "Decoder position encoding: 'learned' or 'rope' (causal_ar only)."},
+    )
+    decoder_word_dropout: float = field(
+        default=0.0,
+        metadata={"help": "Fraction of decoder-input tokens replaced by a learned dropout "
+                  "embedding (posterior-collapse guard for causal_ar)."},
+    )
+    hidden_act: str = field(
+        default="gelu",
+        metadata={"help": "FFN activation. 'silu' makes the gated FFN SwiGLU; 'gelu' = GEGLU (legacy)."},
+    )
+    norm_type: str = field(
+        default="layernorm",
+        metadata={"help": "Normalization: 'layernorm' (legacy) or 'rmsnorm'."},
     )
     concept_position_type: str = field(default="none")
     use_bixt: bool = field(
@@ -155,12 +185,56 @@ class PerceiverDenoiseTrainer(Trainer):
         objective_variant: str,
         contrastive_weight: float,
         contrastive_temperature: float,
+        compute_concept_ablation: bool = False,
+        concept_ablation_batches: int = 5,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.objective_variant = objective_variant
         self.contrastive_weight = contrastive_weight
         self.contrastive_temperature = contrastive_temperature
+        self.compute_concept_ablation = compute_concept_ablation
+        self.concept_ablation_batches = concept_ablation_batches
+
+    @torch.no_grad()
+    def _concept_ablation_metrics(self) -> dict:
+        """Average the model's concept-ablation CE over a few eval batches.
+
+        Posterior-collapse diagnostic for the causal-AR decoder: large positive
+        delta_zero / delta_shuffle mean the decoder genuinely uses the concepts.
+        """
+        base_model = self.model.module if hasattr(self.model, "module") else self.model
+        if not hasattr(base_model, "concept_ablation_ce"):
+            return {}
+        dataloader = self.get_eval_dataloader()
+        device = self.args.device
+        keys = ["ce_intact", "ce_zero", "ce_shuffle", "delta_zero", "delta_shuffle"]
+        sums = {k: 0.0 for k in keys}
+        n = 0
+        for i, batch in enumerate(dataloader):
+            if i >= self.concept_ablation_batches:
+                break
+            input_ids = batch["input_ids"].to(device)
+            attention_mask = batch.get("attention_mask")
+            if attention_mask is not None:
+                attention_mask = attention_mask.to(device)
+            labels = batch["labels"].to(device)
+            m = base_model.concept_ablation_ce(input_ids, attention_mask, labels)
+            for k in keys:
+                sums[k] += m[k]
+            n += 1
+        if n == 0:
+            return {}
+        return {f"concept_ablation/{k}": sums[k] / n for k in keys}
+
+    def evaluate(self, *args, **kwargs):
+        metrics = super().evaluate(*args, **kwargs)
+        if self.compute_concept_ablation and is_main_process():
+            ablation = self._concept_ablation_metrics()
+            if ablation:
+                metrics.update(ablation)
+                self.log(ablation)
+        return metrics
 
     def _contrastive_loss(
         self,
@@ -237,6 +311,15 @@ def build_perceiver_denoise_config(
         if model_args.objective_variant == OBJECTIVE_RECONSTRUCTION
         else "denoising_full_reconstruction_contrastive"
     )
+    is_causal_ar = model_args.decoder_type == DECODER_CAUSAL_AR
+    # The causal-AR family probes concept quality with the encoder only (no
+    # PerceiverDecoderStack exists in its checkpoint), so the canonical single-input
+    # route is weighted_pool (encoder_only); pair tasks use sentence_pair (encoder_only).
+    checkpoint_family = "concept_ar" if is_causal_ar else "perceiver_denoise"
+    canonical_single_eval_mode = "weighted_pool" if is_causal_ar else "via_decoder"
+    if is_causal_ar:
+        objective_name = "ar_denoising_reconstruction"
+
     return ConceptEncoderConfig(
         vocab_size=len(tokenizer),
         concept_num=model_args.concept_num,
@@ -245,24 +328,30 @@ def build_perceiver_denoise_config(
         num_hidden_layers=model_args.num_hidden_layers,
         num_attention_heads=8,
         intermediate_size=model_args.intermediate_size,
+        hidden_act=model_args.hidden_act,
         max_sequence_length=data_args.max_seq_length,
         concept_position_type=model_args.concept_position_type,
         pad_token_id=tokenizer.pad_token_id,
         mask_token_id=tokenizer.mask_token_id,
         cls_token_id=tokenizer.cls_token_id,
         sep_token_id=tokenizer.sep_token_id,
+        bos_token_id=getattr(tokenizer, "bos_token_id", None),
         eos_token_id=tokenizer.eos_token_id,
         unk_token_id=tokenizer.unk_token_id,
         tie_word_embeddings=model_args.token_embedding_dim == model_args.hidden_size,
         tokenizer_name=data_args.tokenizer_name,
         use_bixt=model_args.use_bixt,
         bixt_token_ffn=model_args.bixt_token_ffn,
-        decoder_posonly=True,
+        decoder_posonly=not is_causal_ar,
         decoder_num_layers=model_args.decoder_num_layers,
-        checkpoint_family="perceiver_denoise",
+        decoder_type=model_args.decoder_type,
+        decoder_pos_type=model_args.decoder_pos_type,
+        decoder_word_dropout=model_args.decoder_word_dropout,
+        norm_type=model_args.norm_type,
+        checkpoint_family=checkpoint_family,
         evaluation_contract_version=1,
         canonical_pair_eval_mode="sentence_pair",
-        canonical_single_eval_mode="via_decoder",
+        canonical_single_eval_mode=canonical_single_eval_mode,
         pretraining_objective=objective_name,
     )
 
@@ -284,6 +373,17 @@ def main():
             f"Unknown objective_variant: {model_args.objective_variant}. "
             f"Expected one of {sorted(VALID_OBJECTIVES)}."
         )
+    if model_args.decoder_type not in VALID_DECODER_TYPES:
+        raise ValueError(
+            f"Unknown decoder_type: {model_args.decoder_type}. "
+            f"Expected one of {sorted(VALID_DECODER_TYPES)}."
+        )
+    is_causal_ar = model_args.decoder_type == DECODER_CAUSAL_AR
+    if is_causal_ar and model_args.objective_variant != OBJECTIVE_RECONSTRUCTION:
+        raise ValueError(
+            "decoder_type='causal_ar' supports only objective_variant='reconstruction' "
+            f"(got {model_args.objective_variant!r}). The contrastive path is perceiver-only."
+        )
 
     set_seed(training_args.seed)
     log_system_info()
@@ -302,6 +402,20 @@ def main():
         cache_dir=data_args.dataset_cache_dir,
     )
 
+    # SmolLM2-style causal tokenizers have <|endoftext|> (bos=eos=unk) but no distinct
+    # pad and no [MASK]. Add a dedicated pad token so pad != eos (avoids overloading id 0).
+    if tokenizer.pad_token_id is None:
+        if tokenizer.eos_token is None:
+            raise ValueError("Tokenizer has neither pad nor eos token; cannot train.")
+        added = tokenizer.add_special_tokens({"pad_token": "<|PAD_TOKEN|>"})
+        logger.info(f"Tokenizer had no pad token; added '<|PAD_TOKEN|>' (added={added}, "
+                    f"pad_id={tokenizer.pad_token_id}).")
+
+    # For the AR decoder, append EOS to every document so the model learns to stop.
+    append_eos_token_id = (
+        tokenizer.eos_token_id if (is_causal_ar and tokenizer.eos_token_id is not None) else None
+    )
+
     logger.info(f"Loading dataset: {data_args.dataset_name}")
     with training_args.main_process_first(desc="loading and tokenizing dataset"):
         train_ds, test_ds = load_and_preprocess_text_dataset(
@@ -312,6 +426,7 @@ def main():
             test_size_percent=data_args.test_size_percent,
             max_seq_length=data_args.max_seq_length,
             dataset_cache_dir=data_args.dataset_cache_dir,
+            append_eos_token_id=append_eos_token_id,
         )
 
     logger.info(f"Train dataset size: {len(train_ds):,}")
@@ -322,23 +437,29 @@ def main():
     loss_config = loss_args.to_loss_config()
     log_loss_config(loss_config)
 
-    logger.info("Initializing ConceptEncoderForDenoisingPerceiver")
-    model = ConceptEncoderForDenoisingPerceiver(config, loss_config=loss_config)
+    model_class = ConceptEncoderForConditionalLM if is_causal_ar else ConceptEncoderForDenoisingPerceiver
+    logger.info(f"Initializing {model_class.__name__}")
+    model = model_class(config, loss_config=loss_config)
 
     if model_args.model_name_or_path:
         logger.info(f"Warm-starting encoder from {model_args.model_name_or_path}")
-        pretrained = ConceptEncoderForDenoisingPerceiver.from_pretrained(
+        pretrained = model_class.from_pretrained(
             model_args.model_name_or_path,
             config=config,
         )
         model.encoder.load_state_dict(pretrained.encoder.state_dict(), strict=False)
         logger.info("Loaded pretrained encoder weights. Decoder and objective head use the current config.")
 
-    model_type_str = "perceiver_denoise"
-    if model_args.use_bixt:
-        model_type_str += "_bixt"
-    if model_args.objective_variant == OBJECTIVE_RECONSTRUCTION_CONTRASTIVE:
-        model_type_str += "_contrastive"
+    if is_causal_ar:
+        model_type_str = "concept_ar"
+        if model_args.use_bixt:
+            model_type_str += "_bixt"
+    else:
+        model_type_str = "perceiver_denoise"
+        if model_args.use_bixt:
+            model_type_str += "_bixt"
+        if model_args.objective_variant == OBJECTIVE_RECONSTRUCTION_CONTRASTIVE:
+            model_type_str += "_contrastive"
 
     log_model_info(
         model,
@@ -377,8 +498,9 @@ def main():
         model = torch.compile(model, dynamic=True, fullgraph=False, backend=backend)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_prefix = "concept_ar" if is_causal_ar else "perceiver_denoise"
     run_identifier = (
-        f"perceiver_denoise_H{model_args.hidden_size}"
+        f"{run_prefix}_H{model_args.hidden_size}"
         f"L{model_args.num_hidden_layers}"
         f"C{model_args.concept_num}"
         f"D{model_args.decoder_num_layers}_{timestamp}"
@@ -449,6 +571,7 @@ def main():
         objective_variant=model_args.objective_variant,
         contrastive_weight=model_args.contrastive_weight,
         contrastive_temperature=model_args.contrastive_temperature,
+        compute_concept_ablation=is_causal_ar,
     )
 
     logger.info("=" * 60)

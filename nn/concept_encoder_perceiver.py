@@ -45,11 +45,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import PreTrainedModel
+from transformers.activations import ACT2FN
 from transformers.modeling_outputs import MaskedLMOutput, SequenceClassifierOutput
 from transformers.utils import logging
 from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss
 
-from nn.concept_encoder import ConceptEncoder, ConceptEncoderConfig
+from nn.concept_encoder import ConceptEncoder, ConceptEncoderConfig, build_norm
 from nn.loss_manager import LossManager, LossConfig
 
 logger = logging.get_logger(__name__)
@@ -881,3 +882,371 @@ class ConceptEncoderForSentencePairClassification(PreTrainedModel):
 
 class ConceptEncoderForMaskedLMPerceiverPosOnly(ConceptEncoderForDenoisingPerceiver):
     """Legacy alias kept as a thin wrapper around the denoising perceiver."""
+
+
+# =============================================================================
+# Autoregressive concept-conditioned decoder (E01)
+# =============================================================================
+# A from-scratch AR Transformer decoder conditioned on the concept bottleneck:
+# causal self-attention over target tokens + cross-attention to the C concepts as
+# memory, trained with next-token cross-entropy. This is the generative counterpart
+# to the parallel PerceiverDecoderStack (which models p(x|concepts) as independent
+# per-position predictions and cannot generate). Reusable + config-selectable via
+# ConceptEncoderConfig.decoder_type == "causal_ar".
+
+
+def _build_rope_cache(seq_len: int, head_dim: int, theta: float, device, dtype):
+    """Precompute rotary cos/sin tables of shape [seq_len, head_dim] (Su et al. 2021).
+
+    head_dim must be even. Returns (cos, sin) ready to broadcast over [B, n_heads, T, head_dim].
+    """
+    half = head_dim // 2
+    inv_freq = 1.0 / (theta ** (torch.arange(0, half, device=device).float() / half))
+    positions = torch.arange(seq_len, device=device).float()
+    freqs = torch.outer(positions, inv_freq)              # [T, half]
+    emb = torch.cat([freqs, freqs], dim=-1)               # [T, head_dim]
+    return emb.cos().to(dtype), emb.sin().to(dtype)
+
+
+def _rotate_half(x: torch.Tensor) -> torch.Tensor:
+    half = x.shape[-1] // 2
+    x1, x2 = x[..., :half], x[..., half:]
+    return torch.cat([-x2, x1], dim=-1)
+
+
+def _apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
+    """Apply rotary embeddings to x of shape [B, n_heads, T, head_dim]. cos/sin: [T, head_dim]."""
+    cos = cos.unsqueeze(0).unsqueeze(0)   # [1, 1, T, head_dim]
+    sin = sin.unsqueeze(0).unsqueeze(0)
+    return (x * cos) + (_rotate_half(x) * sin)
+
+
+class ConceptCausalDecoderLayer(nn.Module):
+    """One AR decoder block: causal self-attn (+RoPE) → cross-attn to concepts → gated FFN.
+
+    Shapes: h [B, T, H] (target hidden), concepts [B, C, H] (memory). Pre-norm
+    residual structure mirrors the rest of the foundation. Self-attention uses
+    manual q/k/v so RoPE can be applied to q,k; SDPA runs with is_causal=True.
+    Cross-attention reads concepts (orderless) — no positional encoding there.
+    Keeps decoding O(T*C); the only O(T^2) term is the causal self-attention over
+    the *output* length, which is intrinsic to autoregression.
+    """
+
+    def __init__(self, config: ConceptEncoderConfig):
+        super().__init__()
+        self.hidden_size = config.hidden_size
+        self.num_heads = config.num_attention_heads
+        assert self.hidden_size % self.num_heads == 0, (
+            f"hidden_size ({self.hidden_size}) must be divisible by num_attention_heads ({self.num_heads})"
+        )
+        self.head_dim = self.hidden_size // self.num_heads
+        self.use_rope = config.decoder_pos_type == "rope"
+        self.attn_dropout_p = config.attention_probs_dropout_prob
+
+        # --- causal self-attention (manual q/k/v for RoPE) ---
+        self.pre_self_norm = build_norm(config.norm_type, config.hidden_size)
+        self.q_proj = nn.Linear(config.hidden_size, config.hidden_size)
+        self.k_proj = nn.Linear(config.hidden_size, config.hidden_size)
+        self.v_proj = nn.Linear(config.hidden_size, config.hidden_size)
+        self.self_out = nn.Linear(config.hidden_size, config.hidden_size)
+
+        # --- cross-attention to concepts (no RoPE) ---
+        self.pre_cross_norm = build_norm(config.norm_type, config.hidden_size)
+        self.cross_attn = nn.MultiheadAttention(
+            embed_dim=config.hidden_size,
+            num_heads=config.num_attention_heads,
+            dropout=config.attention_probs_dropout_prob,
+            batch_first=True,
+        )
+
+        # --- gated FFN (SwiGLU when hidden_act="silu") ---
+        self.pre_ff_norm = build_norm(config.norm_type, config.hidden_size)
+        self.ffn_in = nn.Linear(config.hidden_size, config.intermediate_size * 2)
+        self.ffn_out = nn.Linear(config.intermediate_size, config.hidden_size)
+        self.ffn_dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.act_fn = ACT2FN[config.hidden_act]
+
+    def _self_attention(self, x: torch.Tensor, rope) -> torch.Tensor:
+        B, T, _ = x.shape
+        h, d = self.num_heads, self.head_dim
+        q = self.q_proj(x).view(B, T, h, d).transpose(1, 2)   # [B, h, T, d]
+        k = self.k_proj(x).view(B, T, h, d).transpose(1, 2)
+        v = self.v_proj(x).view(B, T, h, d).transpose(1, 2)
+        if self.use_rope and rope is not None:
+            cos, sin = rope
+            q = _apply_rope(q, cos, sin)
+            k = _apply_rope(k, cos, sin)
+        attn = F.scaled_dot_product_attention(
+            q, k, v,
+            dropout_p=self.attn_dropout_p if self.training else 0.0,
+            is_causal=True,
+        )                                                     # [B, h, T, d]
+        attn = attn.transpose(1, 2).reshape(B, T, self.hidden_size)
+        return self.self_out(attn)
+
+    def forward(self, h: torch.Tensor, concepts: torch.Tensor, rope=None) -> torch.Tensor:
+        h = h + self._self_attention(self.pre_self_norm(h), rope)
+        cross_out, _ = self.cross_attn(
+            self.pre_cross_norm(h), concepts, concepts, need_weights=False
+        )
+        h = h + cross_out
+        ff_in, ff_gate = self.ffn_in(self.pre_ff_norm(h)).chunk(2, dim=-1)
+        h = h + self.ffn_out(self.ffn_dropout(self.act_fn(ff_in) * ff_gate))
+        return h
+
+
+class ConceptCausalDecoderStack(nn.Module):
+    """AR decoder: embed shifted target tokens → N causal layers (cross-attend to concepts) → norm.
+
+    Token embeddings live in token_embedding_dim (asymmetry); a projection lifts them
+    to hidden_size when dims differ. With decoder_pos_type="rope" no absolute position
+    embedding is added (RoPE injects position inside self-attention); with "learned" an
+    absolute position embedding is added. A single learned "dropout" embedding implements
+    decoder-input word-dropout (posterior-collapse guard) at the embedding level.
+    """
+
+    def __init__(self, config: ConceptEncoderConfig):
+        super().__init__()
+        self.config = config
+        self.use_rope = config.decoder_pos_type == "rope"
+        token_dim = config.token_embedding_dim
+
+        self.token_embeddings = nn.Embedding(
+            num_embeddings=config.vocab_size,
+            embedding_dim=token_dim,
+            padding_idx=config.pad_token_id,
+        )
+        self.input_projection = (
+            nn.Linear(token_dim, config.hidden_size) if token_dim != config.hidden_size else None
+        )
+        if not self.use_rope:
+            self.position_embeddings = nn.Embedding(config.max_sequence_length, config.hidden_size)
+        else:
+            self.position_embeddings = None
+        # Learned "dropout" embedding substituted for word-dropped decoder-input positions.
+        self.dropout_embedding = nn.Parameter(torch.zeros(config.hidden_size))
+
+        self.layers = nn.ModuleList(
+            [ConceptCausalDecoderLayer(config) for _ in range(config.decoder_num_layers)]
+        )
+        self.output_norm = build_norm(config.norm_type, config.hidden_size)
+        self.embed_dropout = nn.Dropout(config.hidden_dropout_prob)
+        self._head_dim = config.hidden_size // config.num_attention_heads
+        self._rope_theta = config.rope_theta
+
+    def embed(
+        self,
+        decoder_input_ids: torch.LongTensor,
+        word_dropout_p: float = 0.0,
+    ) -> torch.Tensor:
+        B, T = decoder_input_ids.shape
+        emb = self.token_embeddings(decoder_input_ids)
+        if self.input_projection is not None:
+            emb = self.input_projection(emb)                       # [B, T, H]
+        if word_dropout_p > 0.0 and self.training:
+            drop = (torch.rand(B, T, device=emb.device) < word_dropout_p).unsqueeze(-1)
+            emb = torch.where(drop, self.dropout_embedding.to(emb.dtype), emb)
+        if self.position_embeddings is not None:
+            position_ids = torch.arange(T, device=decoder_input_ids.device).unsqueeze(0)
+            emb = emb + self.position_embeddings(position_ids)
+        return self.embed_dropout(emb)
+
+    def forward(
+        self,
+        decoder_input_ids: torch.LongTensor,
+        concepts: torch.Tensor,
+        word_dropout_p: float = 0.0,
+    ) -> torch.Tensor:
+        h = self.embed(decoder_input_ids, word_dropout_p=word_dropout_p)   # [B, T, H]
+        rope = None
+        if self.use_rope:
+            rope = _build_rope_cache(
+                h.size(1), self._head_dim, self._rope_theta, h.device, h.dtype
+            )
+        for layer in self.layers:
+            h = layer(h, concepts, rope=rope)
+        return self.output_norm(h)
+
+
+class ConceptEncoderForConditionalLM(PreTrainedModel):
+    """Encoder → concepts → autoregressive concept-conditioned decoder (E01).
+
+    forward shapes:
+        input_ids       [B, N]  clean token ids (encoder sees them through attention_mask)
+        attention_mask  [B, N]  1 = visible to encoder, 0 = TSDAE-deleted/pad
+        labels          [B, N]  reconstruction targets (−100 at pad); next-token shifted internally
+      → concepts        [B, C, H]
+      → decoder_input   [B, N]  shift-right of input_ids (prepend bos)
+      → logits          [B, N, V]
+      → loss            scalar next-token CE on labels[:, 1:]
+
+    Selected when ConceptEncoderConfig.decoder_type == "causal_ar". Keeps the encoder
+    O(C*N); the decoder is deliberately lean (decoder_num_layers < encoder layers) and
+    uses decoder-input word-dropout to prevent posterior collapse.
+    """
+
+    config_class = ConceptEncoderConfig
+    base_model_prefix = "concept_encoder"
+    _tied_weights_keys = ["lm_head.weight"]
+
+    def __init__(
+        self,
+        config: ConceptEncoderConfig,
+        loss_config: Optional[LossConfig] = None,
+    ):
+        super().__init__(config)
+        self.config = config
+        self.encoder = ConceptEncoder(config)
+        self.decoder = ConceptCausalDecoderStack(config)
+        self.set_loss_config(loss_config)
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.post_init()
+
+        if config.tie_word_embeddings and config.token_embedding_dim == config.hidden_size:
+            self._tie_or_clone_weights(self.lm_head, self.decoder.token_embeddings)
+
+    def set_loss_config(self, loss_config: Optional[LossConfig]) -> None:
+        self.loss_manager = LossManager.create_for_model(
+            concept_num=self.config.concept_num,
+            hidden_size=self.config.hidden_size,
+            loss_config=loss_config,
+        )
+        self._loss_config = loss_config
+
+    def encode_concepts(
+        self,
+        input_ids: torch.LongTensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = True,
+    ):
+        return self.encoder(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+    def pool_concepts(self, concept_repr: torch.Tensor) -> torch.Tensor:
+        return concept_repr.mean(dim=1)
+
+    def _shift_right(self, input_ids: torch.LongTensor) -> torch.LongTensor:
+        """Prepend a start token (bos if available else eos) and drop the last token."""
+        start_id = self.config.bos_token_id
+        if start_id is None:
+            start_id = self.config.eos_token_id
+        if start_id is None:
+            start_id = self.config.pad_token_id or 0
+        shifted = input_ids.new_full(input_ids.shape, start_id)
+        shifted[:, 1:] = input_ids[:, :-1].clone()
+        return shifted
+
+    def decode_logits(
+        self,
+        concept_repr: torch.Tensor,
+        decoder_input_ids: torch.LongTensor,
+        word_dropout_p: float = 0.0,
+    ) -> torch.Tensor:
+        hidden = self.decoder(decoder_input_ids, concept_repr, word_dropout_p=word_dropout_p)
+        return self.lm_head(hidden)
+
+    @staticmethod
+    def _next_token_ce(logits: torch.Tensor, labels: torch.LongTensor) -> torch.Tensor:
+        shift_logits = logits[:, :-1, :].contiguous()
+        shift_labels = labels[:, 1:].contiguous()
+        return F.cross_entropy(
+            shift_logits.view(-1, shift_logits.size(-1)),
+            shift_labels.view(-1),
+            ignore_index=-100,
+        )
+
+    @torch.no_grad()
+    def concept_ablation_ce(
+        self,
+        input_ids: torch.LongTensor,
+        attention_mask: Optional[torch.Tensor],
+        labels: torch.LongTensor,
+    ) -> dict:
+        """Posterior-collapse diagnostic: next-token CE with intact vs ablated concepts.
+
+        Returns {ce_intact, ce_zero, ce_shuffle, delta_zero, delta_shuffle}. A decoder
+        that genuinely uses the concepts shows ce_zero/ce_shuffle >> ce_intact (large
+        positive deltas). "zero" replaces concepts with zeros (the no-concept floor);
+        "shuffle" permutes concepts across the batch (breaks instance-specific info while
+        preserving concept statistics — the stronger test). No word-dropout here.
+        """
+        was_training = self.training
+        self.eval()
+        concepts = self.encode_concepts(
+            input_ids=input_ids, attention_mask=attention_mask, return_dict=True
+        ).last_hidden_state
+        decoder_input_ids = self._shift_right(input_ids)
+        ce_intact = self._next_token_ce(self.decode_logits(concepts, decoder_input_ids), labels)
+        ce_zero = self._next_token_ce(
+            self.decode_logits(torch.zeros_like(concepts), decoder_input_ids), labels
+        )
+        perm = torch.randperm(concepts.size(0), device=concepts.device)
+        ce_shuffle = self._next_token_ce(self.decode_logits(concepts[perm], decoder_input_ids), labels)
+        if was_training:
+            self.train()
+        return {
+            "ce_intact": ce_intact.item(),
+            "ce_zero": ce_zero.item(),
+            "ce_shuffle": ce_shuffle.item(),
+            "delta_zero": (ce_zero - ce_intact).item(),
+            "delta_shuffle": (ce_shuffle - ce_intact).item(),
+        }
+
+    def forward(
+        self,
+        input_ids: torch.LongTensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.LongTensor] = None,
+        special_tokens_mask: Optional[torch.Tensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> MaskedLMOutput:
+        del token_type_ids, special_tokens_mask
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        encoder_outputs = self.encode_concepts(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+        concept_repr = encoder_outputs.last_hidden_state          # [B, C, H]
+
+        decoder_input_ids = self._shift_right(input_ids)
+        word_dropout_p = self.config.decoder_word_dropout if self.training else 0.0
+        logits = self.decode_logits(concept_repr, decoder_input_ids, word_dropout_p=word_dropout_p)
+
+        loss = None
+        if labels is not None:
+            shift_logits = logits[:, :-1, :].contiguous()
+            shift_labels = labels[:, 1:].contiguous()
+            loss_fct = CrossEntropyLoss(ignore_index=-100)
+            task_loss = loss_fct(
+                shift_logits.view(-1, shift_logits.size(-1)),
+                shift_labels.view(-1),
+            )
+            if self.training and self.loss_manager.is_enabled:
+                loss = self.loss_manager(task_loss=task_loss, concept_repr=concept_repr)
+            else:
+                loss = task_loss
+
+        if not return_dict:
+            output = (logits,) + encoder_outputs[1:]
+            return ((loss,) + output) if loss is not None else output
+
+        return MaskedLMOutput(
+            loss=loss,
+            logits=logits,
+            hidden_states=encoder_outputs.hidden_states,
+            attentions=encoder_outputs.attentions,
+        )

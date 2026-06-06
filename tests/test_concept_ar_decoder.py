@@ -1,0 +1,151 @@
+"""Unit tests for the E01 autoregressive concept-conditioned decoder.
+
+Covers the spec's success-critical wiring: output shapes, decoder causality,
+that the concepts actually feed the decoder (zero/shuffle change the loss), and
+that decoder-input word-dropout routes through the learned dropout embedding.
+Tiny random tensors only — runs on CPU.
+"""
+
+import torch
+
+from nn.concept_encoder import ConceptEncoderConfig
+from nn.concept_encoder_perceiver import ConceptEncoderForConditionalLM
+from training.train_perceiver_denoise import (
+    DataTrainingArguments,
+    ModelArguments,
+    build_perceiver_denoise_config,
+)
+
+
+def _tiny_config(**overrides) -> ConceptEncoderConfig:
+    base = dict(
+        vocab_size=40,
+        hidden_size=32,
+        token_embedding_dim=16,        # asymmetry kept (Ht < H), like E01
+        concept_num=8,
+        num_hidden_layers=3,
+        num_attention_heads=4,
+        intermediate_size=64,
+        max_sequence_length=16,
+        decoder_num_layers=2,          # lean decoder < encoder
+        decoder_type="causal_ar",
+        decoder_pos_type="rope",
+        decoder_word_dropout=0.0,
+        hidden_act="silu",             # SwiGLU
+        norm_type="rmsnorm",
+        use_bixt=True,
+        pad_token_id=0,
+        bos_token_id=1,
+        eos_token_id=2,
+    )
+    base.update(overrides)
+    return ConceptEncoderConfig(**base)
+
+
+def test_forward_shapes_and_finite_loss():
+    config = _tiny_config()
+    model = ConceptEncoderForConditionalLM(config)
+    B, T = 2, 16
+    input_ids = torch.randint(3, config.vocab_size, (B, T))
+    attention_mask = torch.ones_like(input_ids)
+    labels = input_ids.clone()
+
+    out = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+    assert out.logits.shape == (B, T, config.vocab_size)
+    assert out.loss is not None
+    assert torch.isfinite(out.loss)
+
+
+def test_decoder_self_attention_is_causal():
+    """Changing a future target token must not change earlier-position logits."""
+    config = _tiny_config()
+    model = ConceptEncoderForConditionalLM(config).eval()
+    B, T = 1, 12
+    input_ids = torch.randint(3, config.vocab_size, (B, T))
+    attention_mask = torch.ones_like(input_ids)
+
+    with torch.no_grad():
+        logits_a = model(input_ids=input_ids, attention_mask=attention_mask).logits
+        # Flip the LAST decoder-input position: decoder_input is shift-right of input_ids,
+        # so changing input_ids[:, -1] only affects the decoder input at the last position.
+        perturbed = input_ids.clone()
+        perturbed[:, -1] = (perturbed[:, -1] + 5) % config.vocab_size
+        logits_b = model(input_ids=perturbed, attention_mask=attention_mask).logits
+
+    # Concepts are recomputed from the encoder (bidirectional), so only compare the
+    # decoder causal behavior by holding concepts fixed:
+    with torch.no_grad():
+        concepts = model.encode_concepts(input_ids, attention_mask, return_dict=True).last_hidden_state
+        dec_in = model._shift_right(input_ids)
+        dec_in_perturbed = dec_in.clone()
+        dec_in_perturbed[:, -1] = (dec_in_perturbed[:, -1] + 5) % config.vocab_size
+        la = model.decode_logits(concepts, dec_in)
+        lb = model.decode_logits(concepts, dec_in_perturbed)
+
+    # All positions except the last must be identical (causal mask).
+    assert torch.allclose(la[:, :-1], lb[:, :-1], atol=1e-5)
+    assert not torch.allclose(la[:, -1], lb[:, -1], atol=1e-5)
+    del logits_a, logits_b
+
+
+def test_concepts_are_used_zero_and_shuffle_change_loss():
+    config = _tiny_config()
+    model = ConceptEncoderForConditionalLM(config).eval()
+    B, T = 4, 16
+    input_ids = torch.randint(3, config.vocab_size, (B, T))
+    attention_mask = torch.ones_like(input_ids)
+    labels = input_ids.clone()
+
+    m = model.concept_ablation_ce(input_ids, attention_mask, labels)
+    # Zeroing / shuffling concepts must change next-token CE (concepts wired into path).
+    assert abs(m["delta_zero"]) > 1e-4
+    assert abs(m["delta_shuffle"]) > 1e-4
+
+
+def test_word_dropout_routes_through_learned_embedding():
+    # hidden_dropout_prob=0 makes embed_dropout an identity; word-dropout only applies in
+    # training mode (so keep .train()). With p=1.0 and the RoPE path (no abs-pos add), every
+    # decoder-input embedding should equal the learned dropout embedding exactly.
+    config = _tiny_config(decoder_word_dropout=1.0, hidden_dropout_prob=0.0)
+    model = ConceptEncoderForConditionalLM(config).train()
+    B, T = 2, 16
+    dec_in = torch.randint(3, config.vocab_size, (B, T))
+
+    emb = model.decoder.embed(dec_in, word_dropout_p=1.0)
+    expected = model.decoder.dropout_embedding.expand(B, T, config.hidden_size)
+    assert torch.allclose(emb, expected, atol=1e-6)
+
+
+def test_build_config_causal_ar_eval_contract():
+    class _Tok:
+        pad_token_id, mask_token_id, cls_token_id = 0, None, None
+        sep_token_id, bos_token_id, eos_token_id, unk_token_id = None, 1, 2, None
+
+        def __len__(self):
+            return 40
+
+    config = build_perceiver_denoise_config(
+        _Tok(),
+        ModelArguments(
+            hidden_size=32,
+            token_embedding_dim=16,
+            num_hidden_layers=3,
+            concept_num=8,
+            intermediate_size=64,
+            decoder_num_layers=2,
+            decoder_type="causal_ar",
+            decoder_pos_type="rope",
+            decoder_word_dropout=0.4,
+            hidden_act="silu",
+            norm_type="rmsnorm",
+            use_bixt=True,
+        ),
+        DataTrainingArguments(max_seq_length=16, tokenizer_name="dummy"),
+    )
+    assert config.checkpoint_family == "concept_ar"
+    assert config.canonical_single_eval_mode == "weighted_pool"
+    assert config.canonical_pair_eval_mode == "sentence_pair"
+    assert config.decoder_type == "causal_ar"
+    assert config.decoder_posonly is False
+    assert config.norm_type == "rmsnorm"
+    assert config.hidden_act == "silu"

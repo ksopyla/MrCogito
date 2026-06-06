@@ -68,6 +68,7 @@ def load_and_preprocess_text_dataset(
     dataset_cache_dir=None,
     train_num_proc=8,
     test_num_proc=4,
+    append_eos_token_id=None,
 ):
     """
     Loads and preprocesses the text dataset that fits to memory.
@@ -112,14 +113,31 @@ def load_and_preprocess_text_dataset(
 
         text_batch = examples["text"]
 
-        
-        return tokenizer(
-            text_batch,  # Note different column name
-            padding="max_length",
+        # Default path (unchanged for all existing callers): pad to max_length.
+        if append_eos_token_id is None:
+            return tokenizer(
+                text_batch,  # Note different column name
+                padding="max_length",
+                truncation=True,
+                max_length=max_seq_length,
+                return_special_tokens_mask=True
+            )
+
+        # EOS-append path (AR decoder, e.g. SmolLM2 tokenizer that does not add EOS):
+        # leave room for one EOS, append it, and defer padding to the data collator.
+        out = tokenizer(
+            text_batch,
+            padding=False,
             truncation=True,
-            max_length=max_seq_length,
-            return_special_tokens_mask=True
+            max_length=max_seq_length - 1,
+            return_special_tokens_mask=True,
         )
+        out["input_ids"] = [ids + [append_eos_token_id] for ids in out["input_ids"]]
+        if "attention_mask" in out:
+            out["attention_mask"] = [m + [1] for m in out["attention_mask"]]
+        if "special_tokens_mask" in out:
+            out["special_tokens_mask"] = [s + [1] for s in out["special_tokens_mask"]]
+        return out
 
    
     # Process train dataset

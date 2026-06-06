@@ -27,6 +27,7 @@ from datasets import load_dataset
 
 from nn.concept_encoder import ConceptEncoderConfig
 from nn.concept_encoder_perceiver import (
+    ConceptEncoderForConditionalLM,
     ConceptEncoderForDenoisingPerceiver,
 )
 from nn.concept_encoder_weighted import ConceptEncoderForMaskedLMWeighted
@@ -35,8 +36,10 @@ from analysis.concept_analysis import compute_concept_geometry_metrics
 
 # Diffusion families (diffusion_mlm, prefix_diffusion) are parked in `parked/`;
 # revive their MODEL_CLASSES entries alongside the parked model code if needed.
+# concept_ar (E01) exposes .encoder like the others, so geometry analysis just works.
 MODEL_CLASSES = {
     "perceiver_denoise": ConceptEncoderForDenoisingPerceiver,
+    "concept_ar": ConceptEncoderForConditionalLM,
     "weighted_mlm": ConceptEncoderForMaskedLMWeighted,
 }
 

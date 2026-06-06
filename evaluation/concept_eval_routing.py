@@ -4,6 +4,9 @@ from typing import Optional
 
 DIFFUSION_FAMILIES = {"diffusion_mlm", "prefix_diffusion"}
 PERCEIVER_FAMILIES = {"perceiver_denoise"}
+# concept_ar (E01): autoregressive decoder; concept-quality probes use the encoder only
+# (it has no PerceiverDecoderStack), so its canonical single route is weighted_pool.
+CONCEPT_AR_FAMILIES = {"concept_ar"}
 
 
 @dataclass(frozen=True)
@@ -23,7 +26,7 @@ def resolve_checkpoint_family(config, requested_model_type: str) -> str:
     if family:
         return family
 
-    if requested_model_type in DIFFUSION_FAMILIES | PERCEIVER_FAMILIES:
+    if requested_model_type in DIFFUSION_FAMILIES | PERCEIVER_FAMILIES | CONCEPT_AR_FAMILIES:
         raise ValueError(
             "This checkpoint family now requires evaluation metadata in the saved "
             "config. Re-export or retrain the checkpoint with the updated training "
@@ -48,7 +51,7 @@ def resolve_concept_eval_route(
             load_mode="full",
         )
 
-    if family in DIFFUSION_FAMILIES | PERCEIVER_FAMILIES:
+    if family in DIFFUSION_FAMILIES | PERCEIVER_FAMILIES | CONCEPT_AR_FAMILIES:
         contract_version = _get_config_value(config, "evaluation_contract_version")
         pair_mode = _get_config_value(config, "canonical_pair_eval_mode")
         single_mode = _get_config_value(config, "canonical_single_eval_mode")
