@@ -16,7 +16,7 @@ Copy this checklist and check items off as you progress. The steps are a guide, 
 ```
 Synthesis Progress:
 - [ ] Step 1: Capture the question and pick a synthesis mode
-- [ ] Step 2: Read project context (vision, roadmap, relevant nn/ files) and scan past reviews
+- [ ] Step 2: Read project context (vision, agenda + current experiment specs, relevant nn/ files) and scan past reviews
 - [ ] Step 3: Collect source material (delegate to research-scout when needed)
 - [ ] Step 4: Extract thesis, technique, evidence, and code per source
 - [ ] Step 5: Map each idea onto the Concept reasoning model
@@ -30,7 +30,7 @@ Synthesis Progress:
 - **Single-paper deep dive**: extract a paper's method, evidence, and code, then translate it to our architecture.
 - **Cross-paper connection**: combine ideas from multiple sources into a coherent design, hypothesis, or research direction.
 - **Trend → application**: turn a current SoTA direction into one or two concrete experiments for MrCogito.
-- **Roadmap or vision update**: feed external evidence into proposed edits to `docs/1_Strategy_and_Plans/vision_and_goals.md` or `docs/1_Strategy_and_Plans/roadmap.md` so the project's plan stays grounded.
+- **Agenda or vision update**: feed external evidence into proposed edits to `docs/1_Strategy_and_Plans/vision_and_goals.md` or `docs/1_Strategy_and_Plans/agenda.md` so the project's plan stays grounded.
 
 ### Step 2: Read project context and scan past reviews
 
@@ -38,8 +38,10 @@ Before claiming relevance, read what is currently true about the project:
 
 - `.cursor/rules/project-overview.mdc`
 - `docs/1_Strategy_and_Plans/vision_and_goals.md`
-- `docs/1_Strategy_and_Plans/roadmap.md`
+- `docs/1_Strategy_and_Plans/agenda.md` (current focus + "what we've explored" learnings) and the active `docs/experiments/<ID>.md` specs
 - The `nn/`, `training/`, or `evaluation/` files that the question actually touches
+
+Treat `docs/5_Archive/` and any `> **OBSOLETE — ...**` or `~~struck-through~~` content as historical only — do not ground current relevance judgments in it (see `project-overview.mdc` → Docs Hygiene).
 
 Then scan `docs/literature_review/` for past reviews on the topic — see [Past Reviews](#past-reviews) below. Building on a prior review is much cheaper than redoing one and keeps the synthesis grounded in what was already considered.
 
@@ -143,8 +145,10 @@ Use this order before doing fresh literature work:
 
 - Need fresh papers, repos, or model cards → spawn the `research-scout` agent.
 - Need a deep walkthrough of a paper or repo (architecture, forward pass with shapes, training, gradient flow, decoding) before judging fit → use the `research-explain` skill, then return here for the verdict and smallest local test.
-- Need to record a concrete training plan or run → use the `experiment-tracking` skill.
+- Verdict is Adopt/Adapt and you want to build it → hand off to `experiment-design` (frame one experiment), then `implementation-plan` (turn this verdict + the frame into a repo-rooted build plan).
+- Need to record results of a finished run → use the `experiment-tracking` skill.
 - Need to ship a code change driven by this synthesis → use the `engineering-change-tracking` skill once the change is implemented.
+- A direction shift makes existing roadmap/vision/notes stale or self-contradictory → mark the superseded claim, then hand off bulk pruning/archiving to the `docs-hygiene` skill.
 
 ## Reference Files
 

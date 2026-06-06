@@ -45,7 +45,7 @@ For papers:
 
 - Abstract → method/architecture → loss/training → ablations → limitations.
 - Re-read the method section after looking at code — many details only become visible once you see the implementation.
-- Before reading the paper from scratch, check `docs/literature_review/` for an existing review of the same paper or topic. If one exists, read its `### TL;DR` first and use it as a starting anchor — but still verify against the paper, since walkthroughs need shape-level detail that TL;DRs skip.
+- Before reading the paper from scratch, check `docs/literature_review/` for an existing review of the same paper or topic. If one exists, read its `### TL;DR` first and use it as a starting anchor — but still verify against the paper, since walkthroughs need shape-level detail that TL;DRs skip. Skip reviews marked `> **OBSOLETE — ...**`; treat them as historical (see `project-overview.mdc` → Docs Hygiene).
 
 For PyTorch repositories, read in this order (more detail in [references/code-reading-checklist.md](references/code-reading-checklist.md)):
 

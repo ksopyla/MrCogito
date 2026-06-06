@@ -86,7 +86,7 @@ If the smallest test cannot be specified concretely, the recommendation is not y
 
 ## Roadmap and Vision Synthesis
 
-When the user wants to evolve `docs/1_Strategy_and_Plans/vision_and_goals.md` or `docs/1_Strategy_and_Plans/roadmap.md` based on external evidence:
+When the user wants to evolve `docs/1_Strategy_and_Plans/vision_and_goals.md` or `docs/1_Strategy_and_Plans/agenda.md` based on external evidence:
 
 - Anchor proposed edits to architecture invariants, not to recent paper hype.
 - Quote the evidence that justifies each change, with a citation.

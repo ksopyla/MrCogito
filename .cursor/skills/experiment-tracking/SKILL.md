@@ -1,6 +1,6 @@
 ---
 name: experiment-tracking
-description: Record and interpret completed Concept Encoder training and evaluation results. Use after a run or benchmark finishes to update `docs/2_Experiments_Registry/master_experiment_log.md`, `docs/1_Strategy_and_Plans/active_todos.md`, and short reports in `docs/2_Experiments_Registry/run_reports/`. Judge results against `docs/1_Strategy_and_Plans/roadmap.md` using fair baseline comparisons that consider model size, objective difficulty, data regime, checkpoint maturity, and compute. Not for remote execution, literature review, or choosing the next experiment family.
+description: Record and interpret completed Concept Encoder training and evaluation results. Use after a run or benchmark finishes to update `docs/2_Experiments_Registry/master_experiment_log.md`, the experiment's spec in `docs/experiments/<ID>.md` (Status + Result), the "what we've explored" learnings in `docs/1_Strategy_and_Plans/agenda.md`, and short reports in `docs/2_Experiments_Registry/run_reports/`. Judge results against the experiment's own success/kill criteria and the current focus, using fair baseline comparisons that consider model size, objective difficulty, data regime, checkpoint maturity, and compute. Not for remote execution, literature review, or choosing the next experiment family.
 ---
 
 # Experiment Tracking
@@ -9,7 +9,7 @@ description: Record and interpret completed Concept Encoder training and evaluat
 Use this skill after results already exist. It is for:
 - recording what happened,
 - interpreting evaluation results in the context of project goals,
-- updating the experiment registry and TODO state,
+- updating the experiment registry, the experiment spec status, and the agenda ledger,
 - writing a short run report when the run matters.
 
 This skill focuses on evaluation results. Training details matter only insofar as they explain the evaluation outcome.
@@ -21,7 +21,8 @@ Do not use this skill to decide which hypothesis to test next. Use `research-syn
 - a training run or evaluation sweep finished and needs documentation
 - `WandB`, shell logs, `Cache/Evaluation_reports`, or checkpoint metadata need to be turned into a concise summary
 - `docs/2_Experiments_Registry/master_experiment_log.md` needs a new row or row update
-- `docs/1_Strategy_and_Plans/active_todos.md` needs a status update based on evidence
+- the experiment spec `docs/experiments/<ID>.md` needs its `Status` flipped to `done`/`killed` and its `Result` link filled
+- the `docs/1_Strategy_and_Plans/agenda.md` "what we've explored" learnings need a one-line update
 - a short report should be added to `docs/2_Experiments_Registry/run_reports/`
 
 ## Do Not Use This Skill For
@@ -29,10 +30,12 @@ Do not use this skill to decide which hypothesis to test next. Use `research-syn
 - deep literature research, architecture scouting, or paper-backed root-cause analysis. Use the `research-synthesis` skill (which spawns the `research-scout` agent for source fetching).
 - deciding the next experiment family, redefining gates, or roadmap-level prioritization before a concrete run exists. Use `research-synthesis`.
 - code-change traceability or `CHANGELOG.md` updates. Use `engineering-change-tracking`.
+- pruning, deduplicating, or archiving stale TODOs/reports once a track is closed. Flag the drift and hand off to `docs-hygiene`.
 
 ## Read This Context First
-1. `docs/1_Strategy_and_Plans/roadmap.md`
-2. `docs/1_Strategy_and_Plans/active_todos.md`
+Skip `docs/5_Archive/` and any `> **OBSOLETE — ...**` section — that content is historical, not current truth (see `project-overview.mdc` → Docs Hygiene). Read:
+1. `docs/1_Strategy_and_Plans/agenda.md` (current focus + "what we've explored" learnings)
+2. the experiment's spec `docs/experiments/<ID>.md` (its hypothesis + success/kill criteria)
 3. `docs/2_Experiments_Registry/master_experiment_log.md`
 4. the relevant existing run report, if one exists
 5. available evidence:
@@ -67,15 +70,16 @@ Do not use this skill to decide which hypothesis to test next. Use `research-syn
    - same evaluation route before task-score claims
    - same checkpoint maturity before convergence claims
 
-4. Interpret in roadmap context:
-   - cite the relevant gate from `roadmap.md`
+4. Interpret in agenda + spec context:
+   - judge against the experiment spec's own success/kill criteria and the current `agenda.md` topic
    - decide whether the run is `promising`, `mixed`, `regression`, or `inconclusive`
    - explain why, not just what the metric was
    - recommend only the immediate next action justified by the evidence
 
 5. Update the docs:
-   - `docs/2_Experiments_Registry/master_experiment_log.md`
-   - `docs/1_Strategy_and_Plans/active_todos.md`
+   - `docs/2_Experiments_Registry/master_experiment_log.md` (the row)
+   - the experiment spec `docs/experiments/<ID>.md` (`Status` → done/killed, fill `Result`)
+   - the `docs/1_Strategy_and_Plans/agenda.md` "what we've explored" learnings (one line)
    - a short `docs/2_Experiments_Registry/run_reports/<run_name>.md` when needed
 
 ## How To Judge Results Like A Project-Aware Researcher
@@ -85,7 +89,7 @@ Judge in this order:
 3. supervised pair-task results
 4. training protocol, compute budget, and checkpoint maturity
 
-Use roadmap gates as anchors, not as blind pass/fail switches.
+Use the experiment spec's success/kill criteria as anchors, not as blind pass/fail switches.
 
 Do not reject a run only because one headline number looks average. Consider:
 - model size and depth
@@ -107,7 +111,8 @@ Useful interpretation rules:
 
 ## Documentation Rules
 - `master_experiment_log.md`: keep the row dense and factual. Include the key metric, the fair comparison point, and a one-sentence takeaway.
-- `active_todos.md`: update status, evidence, and the immediate next action for the relevant TODO.
+- `docs/experiments/<ID>.md`: flip `Status` to `done`/`killed` and fill the `Result` block (run id, WandB, run-report link, one-line verdict). Do not paste full results back into the spec.
+- `agenda.md`: add/update a one-line "what we've explored" entry (neutral, evidence-based — not a verdict) and move the experiment off Current focus.
 - `run_reports/`: keep reports short unless the user explicitly wants a deeper note.
 - Do not open a full research note by default. Use `research-synthesis` (which can spawn `research-scout` for source fetching) or a separate note only when the result requires deeper literature-backed analysis or a new cross-run diagnosis.
 
@@ -123,7 +128,7 @@ Use these date rules:
 - `master_experiment_log.md` evaluation row `Date`: evaluation date, not checkpoint training date.
 - `run_reports/<name>_YYYYMMDD.md` filename date: the decisive evaluation or write-up date used for that report.
 - Run report `**Date:**`: the same decisive result date used for the report, not necessarily the run start date.
-- `active_todos.md`: keep separate dates for separate events such as `**Done date:**`, `**Result (YYYY-MM-DD):**`, or `**Evaluation result (YYYY-MM-DD):**`.
+- `docs/experiments/<ID>.md` and `agenda.md`: keep separate dates for separate events such as training-done vs evaluation-done; record them with explicit `YYYY-MM-DD`.
 
 Prefer source order:
 1. checkpoint `config.json` and saved metadata
@@ -146,26 +151,12 @@ Prefer source order:
 - Use `--` for unavailable metric cells and `—` for absent git tags or truly not-applicable entries, matching the current file.
 - `Conclusion / Takeaway` should be short, factual, and usually start with a bold status phrase such as `**TODO 10A — MIXED.**` when that context exists.
 
-### `docs/1_Strategy_and_Plans/active_todos.md`
-- Preserve the document header style: `**Created:**`, `**Updated:**`, `**Status:**`.
-- Keep TODO ids stable. Do not renumber existing TODOs.
-- In `## Currently Running`, keep the checkbox style:
-  - `- [ ]` for active work
-  - `- [x]` with `~~...~~` when the item is completed in that summary list
-- For a dedicated TODO section, preserve the current label style:
-  - `## TODO N: <title> — <STATUS>`
-  - `**Done date:**`
-  - `**Why:**`
-  - `**Planned experiment:**` or `**Implemented in code:**`
-  - `**Result (YYYY-MM-DD):**` or `**Evaluation result (YYYY-MM-DD):**`
-  - `**Decision:**`
-  - `**Status:**`
+### `docs/experiments/<ID>.md` (the spec) and `docs/1_Strategy_and_Plans/agenda.md`
+- Do NOT rewrite the frozen spec body (hypothesis, builds-on, single change, criteria). Only set `Status` and fill the `Result` block.
+- `Result` block: run id, WandB link, run-report path, and a one-line verdict (`promising`/`mixed`/`regression`/`killed`) judged against that spec's own success/kill criteria.
+- Keep experiment IDs stable; never reuse an ID.
+- In `agenda.md`, move the experiment from `Current focus` to the "what we've explored so far" list as one neutral line: id + title + the decisive metric + what we learned + pointer. Avoid "best"/"killed"; keep it tentative.
 - If training completed on one day and evaluation finished later, record both dates separately instead of collapsing them into one.
-- When a TODO is updated from evidence, include:
-  - the run id
-  - the key metrics
-  - the decision gate reached
-  - the immediate next action
 
 ### `docs/2_Experiments_Registry/run_reports/`
 - Keep filenames descriptive and date-stamped: `<descriptive_slug>_YYYYMMDD.md`.
@@ -235,12 +226,12 @@ Use this structure for non-trivial runs and keep it close to the current reports
 <zero-shot and supervised subsections when applicable>
 
 ## Interpretation
-<1 short paragraph grounded in roadmap gates and fair baselines>
+<1 short paragraph grounded in the experiment's success/kill criteria and fair baselines>
 
 ## Decision
 <1 short paragraph with the immediate next action>
 
-*Related: `master_experiment_log.md`, `active_todos.md`*
+*Related: `master_experiment_log.md`, `docs/experiments/<ID>.md`, `agenda.md`*
 ```
 
 ## Output Expectations

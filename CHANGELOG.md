@@ -6,7 +6,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 **Relationship to other docs:**
 - This file: *What* changed in code and *when* (engineering log)
 - `docs/2_Experiments_Registry/master_experiment_log.md`: *What* training runs produced which results (science log)
-- `docs/1_Strategy_and_Plans/active_todos.md`: *What* to do next (planning log)
+- `docs/1_Strategy_and_Plans/agenda.md`: *What* to do next (slim living agenda) + `docs/experiments/<ID>.md` specs
 
 The `git_tag` column in the master experiment log links each training run to the
 exact code version. Tag format: `arch/{feature}` for architecture changes,
@@ -15,6 +15,42 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 ---
 
 ## [Unreleased]
+
+## [2026-06-06] — Complete the research pipeline: add `implementation-plan`, remove duplicate spec index
+
+**Why:**
+- The skill set had a gap between *framing* an experiment (`experiment-design`) and *writing code* (`research-implementation`): nothing produced a detailed, repo-rooted implementation plan (which modules to reuse, forward pass with shapes, data, loss, config, snippets) — the research analog of a PRD. Also, the per-experiment `docs/experiments/README.md` carried a manual Index/Status table that duplicated the canonical results ledger (`master_experiment_log.md`) and would drift.
+
+**Impact:**
+- The pipeline is now explicit and complete: `research-scout` → `research-explain` → `research-synthesis` → `experiment-design` → `implementation-plan` → `research-implementation` → run → `experiment-tracking`. Canonical homes are unambiguous: intent → specs/plans, results → `master_experiment_log.md`, live memory → `agenda.md`.
+
+**What changed:**
+- [added] `.cursor/skills/implementation-plan/SKILL.md` — the bridge skill; writes `docs/experiments/<ID>_plan.md` (reuse map, forward pass with shapes, inputs/data, loss/objective, config + launch, tests, risks, optional code sketches), rooted in real repo classes.
+- [added] `docs/experiments/PLAN_TEMPLATE.md` — template for `<ID>_plan.md`.
+- [updated] `experiment-design`, `research-implementation` (now reads spec **and** `<ID>_plan.md`), `experiment-discipline.mdc` (Roles = full pipeline order), `research-synthesis` (handoff to design/plan), `project-overview.mdc` (compact Research Pipeline map + canonical-homes note), `docs/experiments/README.md` (two-file model, self-indexing, where-things-live), `docs/experiments/TEMPLATE.md` (link to plan).
+- [removed] the manual `## Index` table in `docs/experiments/README.md` — `master_experiment_log.md` stays the single results ledger; the experiments folder is self-indexing.
+
+## [2026-06-05] — Experiment-system consolidation: slim agenda, scoped specs, foundation audit
+
+**Why:**
+- This is a process change, not a direction change. Experiments had blended together: a 700-line `roadmap.md` read as a committed schedule, an 835-line `active_todos.md` result-diary, 8 tracks (A–H), and a forked `train_*.py` / `nn/concept_encoder_*.py` per idea — which made runs hard to interpret. The goal is smaller, well-defined increments built on the existing foundation. The long-term Vision is unchanged; the direction within it stays open and exploratory.
+
+**Impact:**
+- A slim living agenda + per-experiment frozen specs replace the monolith. Experiments become small increments expressed as args/configs over the shared foundation rather than new forks (encouraged by a rule + the `experiment-design` skill). Dead code removed; recursive + diffusion families parked but revivable.
+
+**What changed:**
+- [added] `docs/1_Strategy_and_Plans/agenda.md` — slim living agenda (the process, current focus, candidate directions, neutral "what we've explored" learnings). New daily driver.
+- [added] `docs/experiments/` — `TEMPLATE.md` (frozen spec format) + `README.md` (lifecycle, ID scheme `E0NN_slug`).
+- [added] `.cursor/skills/experiment-design/SKILL.md` — front-half skill: hypothesis → one minimal spec before code.
+- [added] `.cursor/rules/experiment-discipline.mdc` — always-applied guardrail: spec-before-code, configs-over-forks, one variable at a time.
+- [archived] `roadmap.md` → `docs/5_Archive/roadmap_v5_20260301.md`, `active_todos.md` → `docs/5_Archive/active_todos_v3_20260314.md` (OBSOLETE banners).
+- [updated] `project-overview.mdc`, `experiment-tracking`, `engineering-change-tracking`, `docs-hygiene`, `research-synthesis`, `remote-experiment-evaluator`, `CHANGELOG.md`, `training_eval_matrix.md`, `vision_and_goals.md` — repointed from `roadmap.md`/`active_todos.md` to `agenda.md` + `docs/experiments/`.
+- [renamed] `.cursor/skills/pytorch-architecture/` → `.cursor/skills/research-implementation/` — rewritten from generic PyTorch guidance into a codebase-grounded implementation skill (module map, encode→reason→decode patterns, configs-over-forks, training entrypoint + bash-launcher mechanics, and a hard reproducibility rule: never delete old code/checkpoints — park instead). It is the implementation half of the spec→code workflow.
+- [removed] `nn/concept_encoder_methods.py` (dead stub, `forward`=`pass`), `nn/concept_encoder_sim_matrix.py` (orphan), `training/concept_enc_dec.py` (standalone ModernBERT→GPT-2 summarizer, never used the concept encoder), `training/model_sft.py` (orphan). Cleaned `train_mlm.py` registry (`sim_matrix_mlm`, `concept_mlm`), `run_concept_analysis.py` MODEL_CLASSES, GLUE eval `model_type` choices, and the broken stub test classes in `tests/test_concept_encoder_layer.py`.
+- [parked] `parked/` — recursive family (`concept_encoder_recursive*`, `train_recursive_mlm`) and diffusion family (`concept_encoder_diffusion`, `train_diffusion`, `train_prefix_diffusion`) + their tests/scripts; excluded from foundation, registries, and `testpaths`. See `parked/README.md`.
+
+**Git tag:** `pre-consolidation-20260605` (snapshot before this change)
+**Related:** `docs/1_Strategy_and_Plans/agenda.md`
 
 ## [2026-04-20] — Local Dev Migration: Windows + Poetry → macOS + uv
 

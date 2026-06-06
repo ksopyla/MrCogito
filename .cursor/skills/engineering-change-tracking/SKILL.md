@@ -1,6 +1,6 @@
 ---
 name: engineering-change-tracking
-description: Maintain project traceability for Concept Encoder code changes. Use after refactors, architecture updates, bug fixes, training or evaluation script edits, implementation improvements, or when updating CHANGELOG.md, docs/1_Strategy_and_Plans/active_todos.md, commit messages, or architecture git tags. Not for run metrics, benchmark bookkeeping, or experiment selection.
+description: Maintain project traceability for Concept Encoder code changes. Use after refactors, architecture updates, bug fixes, training or evaluation script edits, implementation improvements, or when updating CHANGELOG.md, docs/1_Strategy_and_Plans/agenda.md, commit messages, or architecture git tags. Not for run metrics, benchmark bookkeeping, or experiment selection.
 ---
 
 # Engineering Change Tracking
@@ -20,14 +20,14 @@ Do not use this skill to choose research priorities. Use `research-synthesis` fo
 ## Keep aligned
 When a change matters, keep these artifacts consistent:
 - `CHANGELOG.md`
-- `docs/1_Strategy_and_Plans/active_todos.md`
+- `docs/1_Strategy_and_Plans/agenda.md` (and the relevant `docs/experiments/<ID>.md` if the change is tied to an experiment)
 - git commit message
 - architecture tags such as `arch/{feature}` when justified
 
 ## After a meaningful code change
 1. Update `CHANGELOG.md` with a dated entry.
 2. Describe why the change happened and what it changes at a high level.
-3. Mark related tasks in `docs/1_Strategy_and_Plans/active_todos.md`. If a commit already exists, include the commit hash.
+3. Mark related items in `docs/1_Strategy_and_Plans/agenda.md` (or the relevant `docs/experiments/<ID>.md`). If a commit already exists, include the commit hash.
 4. Create an architecture tag if the change establishes a new milestone or architecture variant.
 5. Make sure the commit message matches the actual engineering intent.
 
@@ -65,9 +65,10 @@ When a change matters, keep these artifacts consistent:
 - [added] `path/new_file.py` - short purpose
 
 **Git tag:** `arch/feature-name`
-**Related TODO:** `docs/1_Strategy_and_Plans/active_todos.md` -> "Task name"
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` or `docs/experiments/<ID>.md` -> "experiment / item"
 ```
 
 ## Related skills
 - Use `experiment-tracking` when the same change also needs run metadata or benchmark results recorded.
 - Use `research-synthesis` when the change reflects a new hypothesis, evaluation plan, or research direction informed by external evidence.
+- Use `docs-hygiene` when a change makes existing docs stale or contradictory (retired interfaces, superseded plans) and they need pruning or archiving. Update the directly affected docs here; hand off broader cleanup to `docs-hygiene`. Treat `docs/5_Archive/` and `> **OBSOLETE — ...**` content as historical, not current.

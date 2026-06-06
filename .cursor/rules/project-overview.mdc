@@ -8,7 +8,7 @@ alwaysApply: true
 
 
 Full vision and goals are in `docs/1_Strategy_and_Plans/vision_and_goals.md`.
-Detailed roadmap is in `docs/1_Strategy_and_Plans/roadmap.md`.
+The live agenda is in `docs/1_Strategy_and_Plans/agenda.md` (slim daily driver); per-experiment specs in `docs/experiments/`.
 
 **Author**: Krzysztof Sopyla (krzysztof.sopyla@gmail.com, https://github.com/ksopyla)
 **Project page**: https://ai.ksopyla.com/projects/concept-encoder/
@@ -27,11 +27,12 @@ Detailed roadmap is in `docs/1_Strategy_and_Plans/roadmap.md`.
 - `playground/` — playground for experiments, just for exploration and learning, not for production, mainly jupyter notebooks
 - `scripts/` — utility scripts
 - `docs/` — documentation, reserch logs, todo lists, reserch goals and hypotheses
-    - `1_Strategy_and_Plans/` — roadmap, active TODOs
-    - `2_Experiments_Registry/` — master experiment log, run reports
+    - `1_Strategy_and_Plans/` — `agenda.md` (slim living agenda, current truth — read for live context), `vision_and_goals.md`, `training_eval_matrix.md`
+    - `experiments/` — one frozen spec per experiment (`E0NN_*.md`); implementation is a config over the shared foundation
+    - `2_Experiments_Registry/` — master experiment log, run reports (append-only result ledger)
     - `3_Evaluations_and_Baselines/` — canonical baselines
     - `4_Research_Notes/` — root cause analyses, diagnoses
-    - `5_Archive/` — superseded roadmaps/plans
+    - `5_Archive/` — superseded roadmaps/plans (HISTORICAL — see Docs hygiene below)
 - `Cache/` — cached files from remote servers, local training logs, evaluation reports, etc.
     - `Training/` — model checkpoints and optimizer states
     - `Evaluation_reports/` — CSV eval results synchronized from remote servers
@@ -41,3 +42,24 @@ Detailed roadmap is in `docs/1_Strategy_and_Plans/roadmap.md`.
 - `verification/` — verification scripts, fro local initial implementation verification
 - `pyproject.toml` — poetry dependencies
 - `CHANGELOG.md` — changelog
+
+## Docs Hygiene & Context Discipline
+Docs drift over time: old ideas, superseded facts, and dead actions accumulate and feed false context. Apply these rules in every skill, agent, and task that reads `docs/`:
+
+- **Do not treat historical content as current truth, and do not load it into working context** unless the task is explicitly historical research. Historical content is:
+    - anything under `docs/5_Archive/`, and
+    - any file or section that opens with an `> **OBSOLETE — YYYY-MM-DD**` callout, or a claim struck through as `~~revised~~`.
+- **Current truth lives in `docs/1_Strategy_and_Plans/agenda.md`** (the slim living agenda — the daily driver) plus per-experiment specs in `docs/experiments/`, `training_eval_matrix.md`, and `vision_and_goals.md`. The old `roadmap.md` and `active_todos.md` are archived in `docs/5_Archive/` (historical). When docs disagree, trust order is: code + git + `CHANGELOG.md` → `2_Experiments_Registry/` ledger → `agenda.md` + `docs/experiments/` → notes/ideas/drafts.
+- **Experiments are scoped specs, not forks.** Every experiment has a frozen spec in `docs/experiments/<ID>.md` and runs as a config over the shared foundation. See `.cursor/rules/experiment-discipline.mdc` and the `experiment-design` skill.
+
+## Research Pipeline (skills, in order)
+Input (prior result / idea / vision / paper) →
+`research-scout` (fetch sources) → `research-explain` (how it works, shapes) →
+`research-synthesis` (fit? tradeoffs? Adopt/Adapt/Watch/Reject) →
+`experiment-design` (frame ONE experiment → `docs/experiments/<ID>.md`) →
+`implementation-plan` (repo-rooted HOW → `docs/experiments/<ID>_plan.md`) →
+`research-implementation` (build on the shared foundation) → run →
+`experiment-tracking` (results → `master_experiment_log.md`). `docs-hygiene` keeps docs lean.
+Canonical homes: intent → specs/plans; results → `master_experiment_log.md`; live memory → `agenda.md`.
+- **`2_Experiments_Registry/` is append-only.** Never delete or rewrite recorded results; later results may add a dated note that supersedes an earlier *interpretation*.
+- **Cleaning, pruning, deduplicating, or archiving docs is the job of the `docs-hygiene` skill.** Do not bulk-delete stale docs ad hoc from other skills; flag drift and hand off to `docs-hygiene`.

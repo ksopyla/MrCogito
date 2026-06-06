@@ -82,4 +82,4 @@ These can change with the roadmap and should not be used as fixed criteria when 
 - The benchmark chosen as the priority gate at any given time.
 - Numerical targets (e.g. STS-B Pearson > 0.7x, effective rank > N/C).
 
-For current values, always re-read `docs/1_Strategy_and_Plans/vision_and_goals.md` and `docs/1_Strategy_and_Plans/roadmap.md` instead of caching them in this skill.
+For current values, always re-read `docs/1_Strategy_and_Plans/vision_and_goals.md` and `docs/1_Strategy_and_Plans/agenda.md` instead of caching them in this skill.
