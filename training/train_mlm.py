@@ -21,8 +21,6 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from nn.concept_encoder import ConceptEncoderConfig
-from nn.concept_encoder_methods import ConceptEncoderForMaskedLM
-from nn.concept_encoder_sim_matrix import ConceptEncoderWithSimMatrixForMaskedLM
 from nn.concept_encoder_weighted import ConceptEncoderForMaskedLMWeighted
 from nn.loss_manager import LossConfig, ConceptLossStepCallback, get_available_losses
 
@@ -44,14 +42,6 @@ logger = logging.get_logger(__name__)
 
 # Model registry for cleaner initialization
 MODEL_REGISTRY = {
-    "sim_matrix_mlm": {
-        "class": ConceptEncoderWithSimMatrixForMaskedLM,
-        "description": "ConceptEncoder with similarity matrix for MLM"
-    },
-    "concept_mlm": {
-        "class": ConceptEncoderForMaskedLM,
-        "description": "Standard ConceptEncoder for MLM"
-    },
     "weighted_mlm": {
         "class": ConceptEncoderForMaskedLMWeighted,
         "description": "ConceptEncoder with simplified weighted approach for MLM"

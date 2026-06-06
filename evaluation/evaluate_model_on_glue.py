@@ -178,7 +178,7 @@ def parse_args():
         "--model_type",
         type=str,
         default="bert",
-        choices=["bert-type", "xlnet-type", "concept-type", "sim_matrix_mlm", "concept_mlm", "weighted_mlm", "perceiver_denoise", "diffusion_mlm", "prefix_diffusion"],
+        choices=["bert-type", "xlnet-type", "concept-type", "weighted_mlm", "perceiver_denoise", "diffusion_mlm", "prefix_diffusion"],
         help="Type of model to fine-tune. perceiver_denoise uses checkpoint metadata to select the canonical decoder-based or sentence-pair evaluation route."
     )
     parser.add_argument(

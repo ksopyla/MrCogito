@@ -30,18 +30,14 @@ from nn.concept_encoder_perceiver import (
     ConceptEncoderForDenoisingPerceiver,
 )
 from nn.concept_encoder_weighted import ConceptEncoderForMaskedLMWeighted
-from nn.concept_encoder_diffusion import (
-    ConceptEncoderForMaskedDiffusion,
-    ConceptEncoderForPrefixDiffusion,
-)
 from analysis.concept_analysis import compute_concept_geometry_metrics
 
 
+# Diffusion families (diffusion_mlm, prefix_diffusion) are parked in `parked/`;
+# revive their MODEL_CLASSES entries alongside the parked model code if needed.
 MODEL_CLASSES = {
     "perceiver_denoise": ConceptEncoderForDenoisingPerceiver,
     "weighted_mlm": ConceptEncoderForMaskedLMWeighted,
-    "diffusion_mlm": ConceptEncoderForMaskedDiffusion,
-    "prefix_diffusion": ConceptEncoderForPrefixDiffusion,
 }
 
 
