@@ -58,8 +58,8 @@ Input (prior result / idea / vision / paper) →
 `research-synthesis` (fit? tradeoffs? Adopt/Adapt/Watch/Reject) →
 `experiment-design` (frame ONE experiment → `docs/experiments/<ID>.md`) →
 `implementation-plan` (repo-rooted HOW → `docs/experiments/<ID>_plan.md`) →
-`research-implementation` (build on the shared foundation) → run →
-`experiment-tracking` (results → `master_experiment_log.md`). `docs-hygiene` keeps docs lean.
+`research-implement` (build on the shared foundation) → run →
+`experiment-track` (results → `master_experiment_log.md`). `docs-hygiene` keeps docs lean.
 Canonical homes: intent → specs/plans; results → `master_experiment_log.md`; live memory → `agenda.md`.
 - **`2_Experiments_Registry/` is append-only.** Never delete or rewrite recorded results; later results may add a dated note that supersedes an earlier *interpretation*.
 - **Cleaning, pruning, deduplicating, or archiving docs is the job of the `docs-hygiene` skill.** Do not bulk-delete stale docs ad hoc from other skills; flag drift and hand off to `docs-hygiene`.

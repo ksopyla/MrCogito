@@ -32,10 +32,10 @@
 - **Compute:** <machine, GPUs, est. GPU-hours>
 - **Steps / epochs:** <budget>
 - **Launch:** `<exact command + env-var overrides on the shared bash launcher, e.g. HIDDEN_SIZE=768 bash scripts/train_perceiver_denoise_multigpu.sh>`
-- **New foundation code (if any):** <reusable module added via research-implementation, or "none — config only">
+- **New foundation code (if any):** <reusable module added via research-implement, or "none — config only">
 
 ## Result
-<Filled in AFTER, by experiment-tracking. Link out; do not paste full results here.>
+<Filled in AFTER, by experiment-track. Link out; do not paste full results here.>
 - Run id: `<run_id>`
 - WandB: <link>
 - Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`

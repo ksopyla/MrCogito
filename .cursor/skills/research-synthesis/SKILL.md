@@ -146,7 +146,7 @@ Use this order before doing fresh literature work:
 - Need fresh papers, repos, or model cards → spawn the `research-scout` agent.
 - Need a deep walkthrough of a paper or repo (architecture, forward pass with shapes, training, gradient flow, decoding) before judging fit → use the `research-explain` skill, then return here for the verdict and smallest local test.
 - Verdict is Adopt/Adapt and you want to build it → hand off to `experiment-design` (frame one experiment), then `implementation-plan` (turn this verdict + the frame into a repo-rooted build plan).
-- Need to record results of a finished run → use the `experiment-tracking` skill.
+- Need to record results of a finished run → use the `experiment-track` skill.
 - Need to ship a code change driven by this synthesis → use the `engineering-change-tracking` skill once the change is implemented.
 - A direction shift makes existing roadmap/vision/notes stale or self-contradictory → mark the superseded claim, then hand off bulk pruning/archiving to the `docs-hygiene` skill.
 

@@ -18,4 +18,4 @@ Pre-parking snapshot tag: `pre-consolidation-20260605`.
 2. `git mv` the needed files back into `nn/`/`training/`/`tests/` and fix imports.
 3. Re-register entries removed during parking (e.g. `analysis/run_concept_analysis.py` `MODEL_CLASSES`, eval `model_type` choices).
 
-Full procedure (move → re-wire → align with current foundation → test → update docs): see `research-implementation` skill → **Unparking**.
+Full procedure (move → re-wire → align with current foundation → test → update docs): see `research-implement` skill → **Unparking**.

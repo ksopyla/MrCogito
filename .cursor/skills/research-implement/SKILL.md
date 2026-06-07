@@ -1,9 +1,9 @@
 ---
-name: research-implementation
-description: Implement and extend the Concept Encoder PyTorch foundation (nn/, training/, data/, evaluation/) from an approved experiment spec and its implementation plan. Use when writing or modifying encoder/reasoning/decoder modules, losses, data collators, the training entrypoint, or training bash launchers in this codebase. Knows the existing modules and the encode→reason→decode patterns, adds capability as reusable config-selectable components (never per-experiment forks), and preserves old code/checkpoints for reproducibility. Not for experiment scoping (experiment-design), writing the design plan (implementation-plan), result logging (experiment-tracking), or doc cleanup (docs-hygiene).
+name: research-implement
+description: Implement and extend the Concept Encoder PyTorch foundation (nn/, training/, data/, evaluation/) from an approved experiment spec and its implementation plan. Use when writing or modifying encoder/reasoning/decoder modules, losses, data collators, the training entrypoint, or training bash launchers in this codebase. Knows the existing modules and the encode→reason→decode patterns, adds capability as reusable config-selectable components (never per-experiment forks), and preserves old code/checkpoints for reproducibility. Not for experiment scoping (experiment-design), writing the design plan (implementation-plan), result logging (experiment-track), or doc cleanup (docs-hygiene).
 ---
 
-# Research Implementation (Concept Encoder codebase)
+# Research Implement (Concept Encoder codebase)
 
 This is the **implementation half** of the workflow: `experiment-design` produces a
 frozen spec in `docs/experiments/<ID>.md`, `implementation-plan` produces the repo-rooted
@@ -98,4 +98,4 @@ Reference: `scripts/train_perceiver_denoise_multigpu.sh`. Pattern: set CUDA/NCCL
 - Preserve the O(C·N) advantage; keep AMP/bf16 + cosine schedule as in the reference launcher.
 
 ## Handoffs
-- Scope / write the spec → `experiment-design`. Record results → `experiment-tracking`. Retire or prune code/docs → `docs-hygiene`. Choose research direction from literature → `research-synthesis`.
+- Scope / write the spec → `experiment-design`. Record results → `experiment-track`. Retire or prune code/docs → `docs-hygiene`. Choose research direction from literature → `research-synthesis`.

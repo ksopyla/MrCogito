@@ -14,7 +14,7 @@ Use this skill for Hugging Face Hub actions and Hub-specific discovery, not for 
 - MCP server: `user-hf-mcp-server` for searching models, datasets, papers
 
 ## Uploading Models to HF
-Only upload after evaluation results are promising (see experiment-tracking workflow).
+Only upload after evaluation results are promising (see experiment-track workflow).
 Interactive script lists local models from `Cache/Training`, matches with eval reports, uploads with auto-generated model card:
 ```powershell
 # Windows

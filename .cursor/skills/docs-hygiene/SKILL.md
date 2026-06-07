@@ -1,6 +1,6 @@
 ---
 name: docs-hygiene
-description: Periodically clean and reconcile the Concept Encoder `docs/` tree so active files contain only what is currently true. Use when the user asks to clean, prune, tidy, declutter, deduplicate, reconcile, or archive docs, when markdown files have accumulated stale ideas, outdated facts, contradictions, or actions that no longer make sense after a research or direction shift, or for routine docs maintenance. Prunes live context while preserving a compact record of what was abandoned and why. Not for logging a single new run (use experiment-tracking), code-change traceability (use engineering-change-tracking), or choosing research direction (use research-synthesis).
+description: Periodically clean and reconcile the Concept Encoder `docs/` tree so active files contain only what is currently true. Use when the user asks to clean, prune, tidy, declutter, deduplicate, reconcile, or archive docs, when markdown files have accumulated stale ideas, outdated facts, contradictions, or actions that no longer make sense after a research or direction shift, or for routine docs maintenance. Prunes live context while preserving a compact record of what was abandoned and why. Not for logging a single new run (use experiment-track), code-change traceability (use engineering-change-tracking), or choosing research direction (use research-synthesis).
 ---
 
 # Docs Hygiene
@@ -15,7 +15,7 @@ Two goals that must both hold:
 The resolution to "prune vs. keep" is: **compress, don't delete.** Replace verbose stale content with a one-line tombstone that points to the archive/ledger. Live context stays small; memory stays intact.
 
 ## Boundaries (do not overlap other skills)
-- Logging one finished run or benchmark → `experiment-tracking`.
+- Logging one finished run or benchmark → `experiment-track`.
 - Code-change traceability / `CHANGELOG.md` → `engineering-change-tracking`.
 - Deciding the next experiment or shifting direction → `research-synthesis`.
 This skill runs *after* those: it reconciles what they left behind and removes drift across the whole tree. Those skills flag drift and hand off bulk pruning/archiving here.

@@ -1,7 +1,7 @@
 # E01 — Implementation Plan
 
 - **Spec:** [E01_concept_ar_decoder.md](E01_concept_ar_decoder.md) · **Status:** implemented
-- **Authored by:** `implementation-plan` · for → `research-implementation`
+- **Authored by:** `implementation-plan` · for → `research-implement`
 
 > The HOW for the spec's single change (the decoder). Repo-rooted; reuse-first; new code is a
 > reusable, config-selectable foundation component, never a fork.

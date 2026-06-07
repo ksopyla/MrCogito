@@ -14,7 +14,7 @@ Use this skill for code-change traceability:
 - implementation improvements
 - direction shifts that should appear in project docs
 
-Do not use this skill to log run metrics or benchmark results. Use `experiment-tracking` for training and evaluation records.
+Do not use this skill to log run metrics or benchmark results. Use `experiment-track` for training and evaluation records.
 Do not use this skill to choose research priorities. Use `research-synthesis` for hypothesis, benchmark, and direction decisions grounded in external evidence.
 
 ## Keep aligned
@@ -69,6 +69,6 @@ When a change matters, keep these artifacts consistent:
 ```
 
 ## Related skills
-- Use `experiment-tracking` when the same change also needs run metadata or benchmark results recorded.
+- Use `experiment-track` when the same change also needs run metadata or benchmark results recorded.
 - Use `research-synthesis` when the change reflects a new hypothesis, evaluation plan, or research direction informed by external evidence.
 - Use `docs-hygiene` when a change makes existing docs stale or contradictory (retired interfaces, superseded plans) and they need pruning or archiving. Update the directly affected docs here; hand off broader cleanup to `docs-hygiene`. Treat `docs/5_Archive/` and `> **OBSOLETE — ...**` content as historical, not current.

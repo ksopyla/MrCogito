@@ -18,8 +18,8 @@ same reason `literature_review/` has none).
 ## Lifecycle
 1. `experiment-design` → `<ID>.md` spec (the frame).
 2. `implementation-plan` → `<ID>_plan.md` (repo-rooted design), pulling from `research-explain` / `research-synthesis` when a paper is involved.
-3. `research-implementation` implements the plan; the spec is **frozen** when the run starts (`Status: active`).
-4. `experiment-tracking` records results to `master_experiment_log.md` + a run report, sets the spec `Status: done|killed`, fills its **Result** link, and adds a one-line `agenda.md` learning.
+3. `research-implement` implements the plan; the spec is **frozen** when the run starts (`Status: active`).
+4. `experiment-track` records results to `master_experiment_log.md` + a run report, sets the spec `Status: done|killed`, fills its **Result** link, and adds a one-line `agenda.md` learning.
 
 ## ID scheme
 `E0NN_short_slug` — zero-padded, stable, never reused. The ID joins

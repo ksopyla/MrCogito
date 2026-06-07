@@ -123,7 +123,7 @@ path matters more than raw decoder size**, so we attack it on four fronts:
   DATASET_NAME=HuggingFaceFW/fineweb-edu DATASET_SUBSET=sample-10BT \
   bash scripts/train_perceiver_denoise_multigpu.sh
   ```
-- **New foundation code (reusable, via `research-implementation`):** `ConceptCausalDecoderLayer` +
+- **New foundation code (reusable, via `research-implement`):** `ConceptCausalDecoderLayer` +
   `ConceptCausalDecoderStack` (manual q/k/v + **RoPE** on decoder self-attn, SDPA `is_causal=True`) +
   `ConceptEncoderForConditionalLM` in `nn/concept_encoder_perceiver.py`; config fields `decoder_type`
   ("perceiver_posonly" default | "causal_ar"), `decoder_word_dropout` (0.0 default), `norm_type`
@@ -133,7 +133,7 @@ path matters more than raw decoder size**, so we attack it on four fronts:
   `evaluation/concept_eval_routing.py`. Preserve the checkpoint eval contract.
 
 ## Result
-<Filled in AFTER, by experiment-tracking. Link out; do not paste full results here.>
+<Filled in AFTER, by experiment-track. Link out; do not paste full results here.>
 - Run id: `<run_id>`
 - WandB: <link>
 - Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`

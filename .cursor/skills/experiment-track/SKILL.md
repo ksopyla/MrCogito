@@ -1,9 +1,9 @@
 ---
-name: experiment-tracking
+name: experiment-track
 description: Record and interpret completed Concept Encoder training and evaluation results. Use after a run or benchmark finishes to update `docs/2_Experiments_Registry/master_experiment_log.md`, the experiment's spec in `docs/experiments/<ID>.md` (Status + Result), the "what we've explored" learnings in `docs/1_Strategy_and_Plans/agenda.md`, and short reports in `docs/2_Experiments_Registry/run_reports/`. Judge results against the experiment's own success/kill criteria and the current focus, using fair baseline comparisons that consider model size, objective difficulty, data regime, checkpoint maturity, and compute. Not for remote execution, literature review, or choosing the next experiment family.
 ---
 
-# Experiment Tracking
+# Experiment Track
 
 ## Mission
 Use this skill after results already exist. It is for:
@@ -26,7 +26,8 @@ Do not use this skill to decide which hypothesis to test next. Use `research-syn
 - a short report should be added to `docs/2_Experiments_Registry/run_reports/`
 
 ## Do Not Use This Skill For
-- running evaluations, SSH, remote concept analysis, or report syncing. Use `experiment-remote-evaluator`.
+- remote training, SSH, Byobu sessions, log debugging, or report syncing. Use `experiment-run`.
+- standalone remote evaluation sweeps on existing checkpoints. Use `experiment-remote-evaluator`.
 - deep literature research, architecture scouting, or paper-backed root-cause analysis. Use the `research-synthesis` skill (which spawns the `research-scout` agent for source fetching).
 - deciding the next experiment family, redefining gates, or roadmap-level prioritization before a concrete run exists. Use `research-synthesis`.
 - code-change traceability or `CHANGELOG.md` updates. Use `engineering-change-tracking`.

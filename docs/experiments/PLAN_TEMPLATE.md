@@ -1,7 +1,7 @@
 # E0NN — Implementation Plan
 
 - **Spec:** [E0NN_*.md](E0NN_*.md) · **Status:** draft | approved | implemented
-- **Authored by:** `implementation-plan` · for → `research-implementation`
+- **Authored by:** `implementation-plan` · for → `research-implement`
 
 > The HOW for the spec's single change. Repo-rooted: cite real classes/paths you read.
 > Reuse-first; new code only as a reusable, config-selectable foundation component.
