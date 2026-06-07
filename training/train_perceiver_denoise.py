@@ -176,6 +176,8 @@ class DataTrainingArguments:
     test_size_percent: float = field(default=0.1)
     dataset_cache_dir: Optional[str] = field(default=None)
     deletion_rate: float = field(default=0.6)
+    train_num_proc: int = field(default=8)
+    test_num_proc: int = field(default=4)
 
 
 class PerceiverDenoiseTrainer(Trainer):
@@ -402,14 +404,17 @@ def main():
         cache_dir=data_args.dataset_cache_dir,
     )
 
-    # SmolLM2-style causal tokenizers have <|endoftext|> (bos=eos=unk) but no distinct
-    # pad and no [MASK]. Add a dedicated pad token so pad != eos (avoids overloading id 0).
+    # SmolLM2-style causal tokenizers have <|endoftext|> (bos=eos=unk) but no distinct pad.
+    # Reuse eos as pad (standard decoder-only convention). Masking is positional via
+    # attention_mask / labels=-100, so pad positions never contribute to loss.
     if tokenizer.pad_token_id is None:
         if tokenizer.eos_token is None:
             raise ValueError("Tokenizer has neither pad nor eos token; cannot train.")
-        added = tokenizer.add_special_tokens({"pad_token": "<|PAD_TOKEN|>"})
-        logger.info(f"Tokenizer had no pad token; added '<|PAD_TOKEN|>' (added={added}, "
-                    f"pad_id={tokenizer.pad_token_id}).")
+        tokenizer.pad_token = tokenizer.eos_token
+        logger.info(
+            f"Tokenizer had no pad token; set pad_token=eos_token "
+            f"({tokenizer.pad_token!r}, pad_id={tokenizer.pad_token_id})."
+        )
 
     # For the AR decoder, append EOS to every document so the model learns to stop.
     append_eos_token_id = (
@@ -426,6 +431,8 @@ def main():
             test_size_percent=data_args.test_size_percent,
             max_seq_length=data_args.max_seq_length,
             dataset_cache_dir=data_args.dataset_cache_dir,
+            train_num_proc=data_args.train_num_proc,
+            test_num_proc=data_args.test_num_proc,
             append_eos_token_id=append_eos_token_id,
         )
 

@@ -11,6 +11,22 @@ from transformers.modeling_outputs import BaseModelOutput
 logger = logging.get_logger(__name__)
 
 
+def embedding_padding_idx(
+    pad_token_id: Optional[int],
+    eos_token_id: Optional[int] = None,
+) -> Optional[int]:
+    """Return ``padding_idx`` for ``nn.Embedding``, or ``None`` when pad aliases a real token.
+
+    Causal LMs often set ``pad_token = eos_token`` (id 0). Using that id as
+    ``padding_idx`` would freeze the EOS row and block learning the stop token.
+    """
+    if pad_token_id is None:
+        return None
+    if eos_token_id is not None and pad_token_id == eos_token_id:
+        return None
+    return pad_token_id
+
+
 def build_norm(norm_type: str, dim: int, eps: float = 1e-12) -> nn.Module:
     """Construct a normalization layer selected by config.
 
@@ -500,7 +516,9 @@ class ConceptEncoder(PreTrainedModel):
 
         # Token embeddings [vocab_size, token_embedding_dim]
         self.token_embeddings = nn.Embedding(
-            num_embeddings=config.vocab_size, embedding_dim=token_dim, padding_idx=config.pad_token_id
+            num_embeddings=config.vocab_size,
+            embedding_dim=token_dim,
+            padding_idx=embedding_padding_idx(config.pad_token_id, config.eos_token_id),
         )
         # Token position embeddings [max_sequence_length, token_embedding_dim]
         self.token_position_embeddings = nn.Embedding(

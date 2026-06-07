@@ -50,7 +50,7 @@ from transformers.modeling_outputs import MaskedLMOutput, SequenceClassifierOutp
 from transformers.utils import logging
 from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss
 
-from nn.concept_encoder import ConceptEncoder, ConceptEncoderConfig, build_norm
+from nn.concept_encoder import ConceptEncoder, ConceptEncoderConfig, build_norm, embedding_padding_idx
 from nn.loss_manager import LossManager, LossConfig
 
 logger = logging.get_logger(__name__)
@@ -1014,7 +1014,7 @@ class ConceptCausalDecoderStack(nn.Module):
         self.token_embeddings = nn.Embedding(
             num_embeddings=config.vocab_size,
             embedding_dim=token_dim,
-            padding_idx=config.pad_token_id,
+            padding_idx=embedding_padding_idx(config.pad_token_id, config.eos_token_id),
         )
         self.input_projection = (
             nn.Linear(token_dim, config.hidden_size) if token_dim != config.hidden_size else None

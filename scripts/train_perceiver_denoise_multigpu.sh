@@ -65,6 +65,9 @@ EVAL_STEPS="${EVAL_STEPS:-2000}"
 SAVE_STEPS="${SAVE_STEPS:-2000}"
 SEED="${SEED:-42}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-4}"
+# FineWeb-Edu one-off tokenization: use Polonez headroom (32–48); keep Odra defaults modest.
+TRAIN_NUM_PROC="${TRAIN_NUM_PROC:-8}"
+TEST_NUM_PROC="${TEST_NUM_PROC:-4}"
 RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-}"
 # DDP collective timeout (seconds). Raise well above the 30-min default when the first
 # epoch tokenizes a large corpus under main_process_first (e.g. FineWeb-Edu), otherwise
@@ -101,6 +104,8 @@ accelerate launch \
     --tokenizer_name "$TOKENIZER_NAME" \
     --max_seq_length "$MAX_SEQ_LENGTH" \
     --dataset_cache_dir "$HF_DATASETS_CACHE" \
+    --train_num_proc "$TRAIN_NUM_PROC" \
+    --test_num_proc "$TEST_NUM_PROC" \
     --concept_losses "$CONCEPT_LOSSES" \
     --loss_weight "$LOSS_WEIGHT" \
     --per_device_train_batch_size "$PER_DEVICE_BATCH_SIZE" \
