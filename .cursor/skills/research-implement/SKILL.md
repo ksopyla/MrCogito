@@ -91,6 +91,11 @@ Checklist for new/modified entrypoints: `setup_distributed()` first · verbosity
 ## Training bash launchers
 Reference: `scripts/train_perceiver_denoise_multigpu.sh`. Pattern: set CUDA/NCCL/HF env → declare `"${VAR:-default}"` knobs → `accelerate launch --num_processes=$NUM_GPUS --multi_gpu --mixed_precision=bf16 training/<entrypoint>.py --args …` → pipe through `scripts/clean_tee.py` to `Cache/logs/`.
 - To run a **new experiment variant**: add `"${VAR:-default}"` knobs and pass the new config arg to the **existing** launcher — do not copy the script. Override at launch time (`HIDDEN_SIZE=768 bash scripts/train_perceiver_denoise_multigpu.sh`).
+- Always expose and set checkpoint retention for training launchers (`SAVE_TOTAL_LIMIT`, passed to
+  `--save_total_limit`). Full-corpus runs with frequent saves can fill `/home` if retention is
+  unbounded; default to a small finite value (3–5) unless the experiment explicitly needs every
+  intermediate checkpoint. Keep final `trainer.save_model(...)` output separate from rotating periodic
+  checkpoints.
 - Write a **new** launcher only for a genuinely new entrypoint, and keep it structurally identical to the reference.
 
 ## Hardware / numerics (this project)

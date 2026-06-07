@@ -39,6 +39,15 @@ reused as the W&B id/name. Shell logs: `Cache/logs/shell_<family>_<date_time>.lo
   **32-48 workers** on Polonez when it is the only experiment running. A hardcoded/default `num_proc=8`
   underuses the 64 hardware threads and stretches preprocessing/barrier time. Keep some headroom for
   DDP ranks, dataloader workers, OS, and SSH/monitoring.
+- **GPU memory budget / batch sizing:** do not accept a clearly underfilled GPU for a long/full run.
+  Before launching a costly run, do a short calibration on the target model+sequence length:
+  start from the planned batch, increase `PER_DEVICE_BATCH_SIZE` until near-OOM, then back off to leave
+  ~1-2GB VRAM headroom on RTX 3090s. Use effective batch size as the invariant:
+  `per_device_batch_size × num_gpus × gradient_accumulation_steps`. If per-device batch increases,
+  lower `GRADIENT_ACCUMULATION_STEPS` when needed to keep optimization comparable. Judge by
+  throughput (`samples/sec` / tokens/sec), GPU utilization, and stable memory, not memory usage alone.
+  Typical symptoms: ~13GB/24GB with 99% compute may be acceptable but likely leaves batch-size
+  throughput on the table; low GPU util with low memory means dataloader/preprocessing is the bottleneck.
 - **Odra CPU budget:** much smaller (8C/16T); keep preprocessing/dataloader worker counts modest.
 - For full FineWeb-Edu / other large corpora, expect large one-time cache writes. Check:
   `df -h /home`, `du -sh /home/ksopyla/dev/hf_home`, `du -sh /home/ksopyla/dev/MrCogito/Cache`.
@@ -64,13 +73,19 @@ DATASET_NAME=HuggingFaceFW/fineweb-edu DATASET_SUBSET=sample-10BT \
 TOKENIZER_NAME=HuggingFaceTB/SmolLM2-135M PER_DEVICE_BATCH_SIZE=8 NUM_EPOCHS=1 \
 bash scripts/train_perceiver_denoise_multigpu.sh
 ```
+For new model sizes, first run a **tiny calibration** before the full launch: use a cached/small dataset
+or a very short step/epoch budget, sweep `PER_DEVICE_BATCH_SIZE` upward, watch for OOM, then choose the
+largest stable value with headroom. Re-run the real command only after the batch/dataloader settings are
+known for that model family.
 Knobs live at the top of the launcher (`HIDDEN_SIZE`, `TOKEN_EMBEDDING_DIM`, `NUM_LAYERS`,
 `CONCEPT_NUM`, `DECODER_*`, `HIDDEN_ACT`, `NORM_TYPE`, `DATASET_*`, `*_BATCH_SIZE`,
 `LEARNING_RATE`, `NUM_EPOCHS`, `*_STEPS`, `DATALOADER_NUM_WORKERS`, `DDP_TIMEOUT`,
-`RESUME_FROM_CHECKPOINT`). For dataset preprocessing, prefer exposing launcher/env knobs for
+`SAVE_TOTAL_LIMIT`, `SAVE_SAFETENSORS`, `RESUME_FROM_CHECKPOINT`). For dataset preprocessing, prefer exposing launcher/env knobs for
 `train_num_proc`/`test_num_proc` rather than accepting hardcoded `8` on Polonez; target 32-48
 preprocess workers for large one-off tokenization there. It auto-detects GPUs, runs `accelerate launch
 --multi_gpu --mixed_precision=bf16`, and tees through `scripts/clean_tee.py` to `Cache/logs/`.
+Always set a finite checkpoint retention limit for long/full-corpus runs (`SAVE_TOTAL_LIMIT=3–5` is
+usually enough) so periodic checkpoints cannot fill `/home`; keep the final saved model separately.
 
 **4. Monitor** (short checks, not blind polling):
 ```bash
@@ -78,7 +93,11 @@ LOG=$(ls -t Cache/logs/shell_*.log | head -1)
 rg -n "W&B run:|Train dataset size|loss|eval_loss|Saving model|Traceback|CUDA out of memory|NCCL|nan" "$LOG"
 nvidia-smi; ls -lt Cache/Training | head
 ```
-Healthy: GPUs busy, dataset sizes + W&B run logged, loss at `LOGGING_STEPS`, checkpoints at `SAVE_STEPS`.
+Healthy: GPUs busy, dataset sizes + W&B run logged, loss at `LOGGING_STEPS`, checkpoints at `SAVE_STEPS`,
+and old checkpoint directories rotate according to `SAVE_TOTAL_LIMIT`.
+Also check memory headroom and throughput early. If VRAM is far below capacity and the run is stable,
+consider stopping after the first smoke/calibration window and relaunching with a larger
+`PER_DEVICE_BATCH_SIZE` rather than spending a full run underfilled.
 
 **5. Debug** — read around the FIRST error, classify, then fix:
 OOM → lower `PER_DEVICE_BATCH_SIZE`/`MAX_SEQ_LENGTH`; NCCL stall → check earlier per-rank failure or
