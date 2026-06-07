@@ -64,6 +64,10 @@ LOGGING_STEPS="${LOGGING_STEPS:-200}"
 EVAL_STEPS="${EVAL_STEPS:-2000}"
 SAVE_STEPS="${SAVE_STEPS:-2000}"
 SEED="${SEED:-42}"
+# DDP collective timeout (seconds). Raise well above the 30-min default when the first
+# epoch tokenizes a large corpus under main_process_first (e.g. FineWeb-Edu), otherwise
+# non-main ranks time out at the preprocessing barrier (NCCL SeqNum=1 ALLREDUCE).
+DDP_TIMEOUT="${DDP_TIMEOUT:-1800}"
 
 accelerate launch \
     --num_processes="$NUM_GPUS" \
@@ -108,6 +112,7 @@ accelerate launch \
     --seed "$SEED" \
     --bf16 \
     --ddp_backend "nccl" \
+    --ddp_timeout "$DDP_TIMEOUT" \
     --ddp_find_unused_parameters False \
     --dataloader_pin_memory True \
     --dataloader_num_workers 4 \
