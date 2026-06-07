@@ -1,24 +1,20 @@
 ---
 name: experiment-design
-description: Turn a research hypothesis into ONE minimal, well-scoped Concept Encoder experiment before any code is written. Use when the user wants to start, define, scope, or implement a new experiment, asks "what should we try next" with a concrete idea, or when an implementation request risks pulling in multiple research-agenda threads at once. Produces a frozen spec in docs/experiments/<ID>.md that runs as args/config over the shared foundation; never a new training fork. Not for recording finished results (experiment-track), choosing direction from literature (research-synthesis), or implementing the nn modules (research-implement).
+description: Turn a research hypothesis into ONE minimal, well-scoped Concept Encoder experiment before any code is written. Use when the user wants to start, define, scope, or implement a new experiment, asks "what should we try next" with a concrete idea, or when an implementation request risks pulling in multiple research-agenda threads at once. Produces a frozen spec in docs/experiments/<ID>.md that runs as args/config over the shared foundation; never a new training fork. Not for recording finished results (experiment-tracking), choosing direction from literature (research-synthesis), or implementing the nn modules (research-implementation).
 ---
 
 # Experiment Design
 
 ## Mission
-Convert a hypothesis into exactly **one** runnable experiment with a frozen spec
-and a config — *before* writing code. This is the front-half of the loop;
-`experiment-track` is the back-half (results).
+Convert a hypothesis into well-scoped runnable experiment with a frozen spec
+and a config — *before* writing code. 
 
-The job is to **shrink scope**. The recurring pattern that slowed this project was
-"wanting too much": blended experiments, a forked script per idea, and no kill
-criteria — which made runs hard to interpret. This skill exists to keep each
-increment small and well-defined. Direction is exploratory; stay tentative.
+The job is to **shrink scope** and **write down the spec** before writing code. 
 
 ## Hard rules (non-negotiable)
 1. **One hypothesis, one changed variable.** Two changes → two specs.
 2. **Spec before code.** No experiment code until `docs/experiments/<ID>.md` exists and the user approves it.
-3. **Configs over forks.** An experiment is args/config over the single shared training entrypoint. NEVER create a new `train_*.py` or `nn/concept_encoder_*.py` per experiment. New capability lands as a *reusable, config-selectable* foundation component (implement via `research-implement`).
+3. **Configs over forks.** An experiment is args/config over the single shared training entrypoint. NEVER create a new `train_*.py` or `nn/concept_encoder_*.py` per experiment. New capability lands as a *reusable, config-selectable* foundation component (implement via `research-implementation`).
 4. **Numeric success AND kill criteria, set before running.** No open-ended runs.
 5. **Builds-on is mandatory.** Name the foundation modules reused, the init/checkpoint, and the baseline run id + score to beat.
 See `.cursor/rules/experiment-discipline.mdc`.
@@ -61,9 +57,9 @@ See `.cursor/rules/experiment-discipline.mdc`.
 - "If it fails, at what step/metric do we stop?"
 
 ## Handoffs
-- Detailed repo-rooted plan (the HOW: modules, forward pass, data, loss, snippets) → `implementation-plan`; then build → `research-implement`.
+- Detailed repo-rooted plan (the HOW: modules, forward pass, data, loss, snippets) → `implementation-plan`; then build → `research-implementation`.
 - Idea-vs-literature / which family to pursue → `research-synthesis` (+ `research-scout`).
-- After the run finishes → `experiment-track` (it writes results and flips the spec to done/killed).
+- After the run finishes → `experiment-tracking` (it writes results and flips the spec to done/killed).
 - Pruning/archiving old specs → `docs-hygiene`.
 
 ## ID scheme
