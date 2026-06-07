@@ -214,7 +214,7 @@ uv run python evaluation/evaluate_model_on_glue.py \
   --task mrpc
 ```
 
-Every serious run is logged to [Weights & Biases](https://wandb.ai/ksopyla/MrCogito) with hyperparameters, git commit, losses, concept metrics, and evaluation results. Human-readable conclusions live in the experiment registry.
+Every serious run is logged to a **public [Weights & Biases project](https://wandb.ai/ksopyla/MrCogito)** — anyone can follow the work live, with full hyperparameters, git commit, losses, concept metrics, and evaluation results. Human-readable conclusions live in the experiment registry.
 
 ---
 
@@ -241,6 +241,7 @@ This is an active research repository — public, MIT-licensed, and intentionall
 
 - **Long-term vision:** [`docs/1_Strategy_and_Plans/vision_and_goals.md`](docs/1_Strategy_and_Plans/vision_and_goals.md)
 - **Live agenda & experiments:** [`docs/1_Strategy_and_Plans/agenda.md`](docs/1_Strategy_and_Plans/agenda.md) · [`docs/experiments/`](docs/experiments/)
+- **Live experiment tracking:** the open [Weights & Biases project](https://wandb.ai/ksopyla/MrCogito) — every run, public.
 - Historical diffusion and recursive branches are parked, not discarded.
 
 ---
