@@ -51,6 +51,8 @@ class DataCollatorForTSDAE:
         self.deletion_rate = deletion_rate
         self.max_length = max_length
         self.pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
+        self.eos_token_id = getattr(tokenizer, "eos_token_id", None)
+        self._vocab_size = len(tokenizer) if hasattr(tokenizer, "__len__") else None
 
         self._special_ids = set()
         for attr in ("cls_token_id", "sep_token_id", "pad_token_id",
@@ -73,6 +75,14 @@ class DataCollatorForTSDAE:
             padded_ids[i, :length] = torch.tensor(ids[:length], dtype=torch.long)
             original_mask[i, :length] = 1
 
+            # Defensive guard for pathological empty examples. The AR denoising
+            # path appends EOS during preprocessing, but if a cached/legacy row is
+            # empty, give the encoder one visible token rather than letting an
+            # all-masked row produce NaNs in cross-attention.
+            if length == 0 and max_len > 0:
+                padded_ids[i, 0] = self.eos_token_id if self.eos_token_id is not None else self.pad_token_id
+                original_mask[i, 0] = 1
+
         # Build a boolean mask of deletable (non-special, non-pad) positions
         deletable = original_mask.clone().bool()
         for sid in self._special_ids:
@@ -92,6 +102,13 @@ class DataCollatorForTSDAE:
                 first_deletable = deletable[i].nonzero(as_tuple=True)[0]
                 if len(first_deletable) > 0:
                     delete_mask[i, first_deletable[0]] = False
+                else:
+                    # No deletable content token exists (e.g. a single EOS-only row).
+                    # Keep the first real token visible so the encoder never receives
+                    # an all-zero attention mask.
+                    first_real = original_mask[i].nonzero(as_tuple=True)[0]
+                    if len(first_real) > 0:
+                        delete_mask[i, first_real[0]] = False
 
         # Apply deletion to attention_mask: deleted tokens become invisible
         encoder_mask = original_mask.clone()
@@ -100,6 +117,26 @@ class DataCollatorForTSDAE:
         # Labels: original token ids at every non-pad position, -100 at padding
         labels = padded_ids.clone()
         labels[original_mask == 0] = -100
+
+        if self._vocab_size is not None:
+            ids_min = int(padded_ids.min().item())
+            ids_max = int(padded_ids.max().item())
+            if ids_min < 0 or ids_max >= self._vocab_size:
+                raise ValueError(
+                    f"DataCollatorForTSDAE produced input_ids outside tokenizer range: "
+                    f"min={ids_min}, max={ids_max}, vocab_size={self._vocab_size}"
+                )
+            valid_labels = labels[labels != -100]
+            if valid_labels.numel() > 0:
+                label_min = int(valid_labels.min().item())
+                label_max = int(valid_labels.max().item())
+                if label_min < 0 or label_max >= self._vocab_size:
+                    raise ValueError(
+                        f"DataCollatorForTSDAE produced labels outside tokenizer range: "
+                        f"min={label_min}, max={label_max}, vocab_size={self._vocab_size}"
+                    )
+            if (encoder_mask.sum(dim=1) == 0).any():
+                raise ValueError("DataCollatorForTSDAE produced an all-zero encoder attention_mask row.")
 
         return {
             "input_ids": padded_ids,

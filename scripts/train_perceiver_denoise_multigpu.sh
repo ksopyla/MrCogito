@@ -64,10 +64,17 @@ LOGGING_STEPS="${LOGGING_STEPS:-200}"
 EVAL_STEPS="${EVAL_STEPS:-2000}"
 SAVE_STEPS="${SAVE_STEPS:-2000}"
 SEED="${SEED:-42}"
+DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-4}"
+RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-}"
 # DDP collective timeout (seconds). Raise well above the 30-min default when the first
 # epoch tokenizes a large corpus under main_process_first (e.g. FineWeb-Edu), otherwise
 # non-main ranks time out at the preprocessing barrier (NCCL SeqNum=1 ALLREDUCE).
 DDP_TIMEOUT="${DDP_TIMEOUT:-1800}"
+
+RESUME_ARGS=()
+if [ -n "$RESUME_FROM_CHECKPOINT" ]; then
+    RESUME_ARGS+=(--resume_from_checkpoint "$RESUME_FROM_CHECKPOINT")
+fi
 
 accelerate launch \
     --num_processes="$NUM_GPUS" \
@@ -115,7 +122,7 @@ accelerate launch \
     --ddp_timeout "$DDP_TIMEOUT" \
     --ddp_find_unused_parameters False \
     --dataloader_pin_memory True \
-    --dataloader_num_workers 4 \
+    --dataloader_num_workers "$DATALOADER_NUM_WORKERS" \
     --gradient_checkpointing False \
     --optim "adamw_torch_fused" \
     --lr_scheduler_type "cosine" \
@@ -127,4 +134,5 @@ accelerate launch \
     --load_best_model_at_end True \
     --metric_for_best_model "eval_loss" \
     --greater_is_better False \
+    "${RESUME_ARGS[@]}" \
     2>&1 | python scripts/clean_tee.py "$SHELL_LOG"
