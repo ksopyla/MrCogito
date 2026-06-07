@@ -1,208 +1,178 @@
 # MrCogito
 
-> What if a transformer didn't attend over every token, but instead compressed long sequences into a small number of dense "concept tokens" and reasoned from there?
+> **A research project building models that compress long context into latent _concept_ vectors, reason in that concept space, and decode back to text or other modalities.**
 
-**Author:** Krzysztof Sopyla -- [ai.ksopyla.com](https://ai.ksopyla.com) | [GitHub](https://github.com/ksopyla) | [LinkedIn](https://www.linkedin.com/in/krzysztof-sopyla/)
+**Author:** Krzysztof Sopyla — [ai.ksopyla.com](https://ai.ksopyla.com) · [GitHub](https://github.com/ksopyla) · [LinkedIn](https://www.linkedin.com/in/krzysztof-sopyla/)
 **Project page:** [ai.ksopyla.com/projects/concept-encoder](https://ai.ksopyla.com/projects/concept-encoder/)
 **Experiments:** [wandb.ai/ksopyla/MrCogito](https://wandb.ai/ksopyla/MrCogito)
 
 ---
 
+## Vision
+
+Today's language models reason by expanding thought into text tokens. That works, but it is an extremely narrow channel: every intermediate idea has to be serialized into a vocabulary item, attended over again, and paid for again in the context window.
+
+This project explores a different primitive:
+
+> **Compress input into dense latent concepts, refine those concepts recursively, and generate output from the refined concept state.**
+
+The end goal is a foundation-model architecture defined by four bold targets:
+
+- **🧠 Reasoning in latent space.** The model should spend most of its compute refining continuous concept states, not just emitting visible chain-of-thought tokens.
+- **📜 10M-token context as the north star.** Reached not by forcing full self-attention to scale forever, but by compressing long streams into a far smaller set of concept vectors.
+- **🔀 One concept substrate across modalities.** Text, audio, and eventually other inputs map into the same reasoning space, with modality-specific adapters and decoders only at the edges.
+- **🤝 A path to latent agent communication.** Once concept vectors are a reliable semantic interface, models can exchange concepts directly instead of talking through text. _That multi-agent layer lives outside this repository — but it is the foundation this work is meant to enable._
+
+The core bet is simple: **if concept vectors can carry rich semantic and generative state, long-context reasoning becomes cheaper, more inspectable, and more composable than token-only reasoning.**
+
+---
+
 ## Why This Project Exists
 
-The standard transformer is remarkable, but self-attention is O(N^2). At 128K tokens the attention matrix is enormous. At 1M tokens it is computationally intractable. The field's answer so far has been better hardware, clever approximations, and bigger clusters.
+The frontier's answer to long context has been more of the same: better hardware, clever attention approximations, bigger clusters. I want a different bet — not making self-attention cheaper, but asking whether the model needs it at all for most of its reasoning.
 
-I want to explore a different direction.
+A few older ideas I think were ahead of their time, and that I believe belong together:
 
-Instead of making self-attention cheaper, what if the model did not need it at all for most of its reasoning? What if it compressed the input into a compact semantic state and then operated on that?
+- **Perceiver**[^perceiver] — a small set of latent queries can cross-attend to a huge input and decouple compute from sequence length. Better parameter and compute utilization through cross-attention — but used for perception, not as the seat of reasoning.
+- **Embedding space is wildly underused.** A single dense vector can be made to hold ~1,500 tokens of recoverable text[^cramming], yet we still spend enormous capacity on giant vocabularies and wide token embeddings. I believe most of that capacity goes to surface form, not meaning — the latent space is the asset we're not exploiting.
+- **Reasoning can move into latent space.** Looping the same weights[^ouro] and predicting continuous vectors instead of discrete tokens[^calm] let a model "think" beyond the token channel and punch above its parameter count[^huginn].
 
-This is not a new idea in isolation -- Perceivers, Flamingo, and Meta's Large Concept Models all use forms of cross-attention bottlenecks. But most of those systems treat the bottleneck as a means to an end (efficiency or multimodal fusion), not as the primary locus of reasoning.
+My bet is that **combining these into one end-to-end trained architecture** — a cross-attention concept bottleneck plus a recursive reasoning core operating in latent space — opens a different paradigm than the scaling race. Cross-attention bottlenecks themselves aren't new (Flamingo[^flamingo], Large Concept Models[^lcm]), but they're treated as a means to an end, not as the **primary locus of reasoning**. The question I keep asking is sharper:
 
-MrCogito asks: **can a small set of concept tokens become the model's working memory?**
+> **Can a small set of concept vectors become the model's working memory — the thing it actually reasons over?**
 
-If the answer is yes, that opens several doors at once:
-
-- **Efficient long-context processing.** O(C*N) instead of O(N^2), where C is the number of concepts and C << N.
-- **Test-time compute scaling.** A recursive, weight-tied encoder can run more iterations at inference to "think harder" without retraining.
-- **Modality-agnostic reasoning.** If different inputs (text, audio) map into the same concept space, the reasoning module does not need to know the modality.
-- **Interpretable internal states.** A small concept bank is easier to inspect than 32K hidden states.
-
-The bet is straightforward: if I can make the concept bottleneck carry real semantic content, the rest of the architecture becomes simpler, cheaper, and more composable.
+If yes, the payoff compounds: `O(C·N)` long context with `C ≪ N`, test-time compute scaling by running more refinement steps without retraining, modality-agnostic reasoning over a shared concept space, and an internal state small enough to actually inspect. It also opens a channel the token interface can't: **letting agents talk to each other in concept space instead of text** — early work shows passing latent state between models is both faster and more accurate than exchanging tokens[^latentmas][^interlat]. It may not work — it's a genuine research bet — but I think it's the more interesting direction, and the one the scaling race is leaving unexplored.
 
 ---
 
-## The Core Architecture
+## Architecture
 
-```
-Input text (N tokens)
-  --> Encoder: cross-attention compresses N tokens into C concept tokens
-  --> Reasoning: recursive concept refinement (K iterations, weight-tied)
-  --> Decoder: generates text output from refined concepts
-```
+The architecture follows an **encode → reason → decode** pattern, with the concept space at its center:
 
-The encoder uses cross-attention between a small set of learned concept tokens (C) and the full input sequence (N). This produces a compact representation in concept space:
-
-| Sequence length N | Concepts C | Compression | Self-attn O(N^2) | Concept O(C*N) | Speedup |
-|---|---|---|---|---|---|
-| 512 | 128 | 4:1 | 262K | 65K | 4x |
-| 4,096 | 512 | 8:1 | 16.7M | 2.1M | **8x** |
-| 32,768 | 2,048 | 16:1 | 1.07B | 67M | **16x** |
-| 1,048,576 | 8,192 | 128:1 | 1.1T | 8.6B | **128x** |
-
-At 1M tokens, full self-attention is impossible on any current hardware. Concept attention with C=8K remains tractable -- while forcing the model to produce increasingly abstract, semantic representations.
-
-The current model is small by design: **~21M parameters** in the Micro-2 configuration. This is deliberate. I want to prove the architecture works before scaling, not prove that enough parameters can brute-force any objective.
-
----
-
-## The End Vision
-
-The long-term goal is an **audio conversational and reasoning model** grounded in a concept bottleneck:
-
-```
-User speech (mel-spectrogram)
-  --> Audio adapter: maps audio features into concept space
-  --> Reasoning: recursive concept refinement (shared weights with text)
-  --> Audio decoder (Talker): generates speech tokens from concepts
+```text
+Input tokens / frames  (N)
+        │
+        ▼
+   Encoder            cross-attention compresses N inputs into C concepts   (C ≪ N)
+        │
+        ▼
+ Reasoning core       optional recursive refinement over the concepts
+        │
+        ▼
+   Decoder            generates text, speech, or another modality from concepts
 ```
 
-Text and audio would share the same concept space and the same reasoning module. The only modality-specific parts are the adapter and the decoder.
+A small set of learned **concept queries** cross-attends to the full input sequence. This shifts the dominant attention pattern from `O(N²)` token-to-token attention to `O(C·N)` concept-to-token attention — and the concept count `C` grows far more slowly than the input length `N`.
 
-This vision has six phases, each gated by concrete success criteria:
-
-| Phase | What | Gate |
+| Input length `N` | Concepts `C` | Attention savings vs. full self-attention |
 |---|---|---|
-| 1 | Prove concept bottleneck captures semantics | STS-B > 0.70, concept rank > 64/128 |
-| 2 | Stronger representations, data scaling, architecture variants | STS-B > 0.75, prefix loss < 3.0 |
-| 3 | Full text generation from concepts | Coherent multi-sentence output |
-| 4 | Instruction fine-tuning (SFT) | AlpacaEval, MT-Bench |
-| 5 | Recursive reasoning, test-time compute scaling | K=12 beats K=6 on reasoning benchmarks |
-| 6 | Audio modality (Concept-Talker) | Speech-to-concept-to-speech working |
+| 512 | 128 | ~4× |
+| 32K | 2K | ~16× |
+| 1M | 8K | ~128× |
+| **10M** | hierarchical | **north-star target** — needs hierarchical concepts, recurrence, and memory |
 
-**Current state (March 2026):** Phase 1 -- fighting concept collapse. All downstream phases depend on solving this.
+This is not just an efficiency trick. The bottleneck is meant to **force abstraction**: concepts become the model's working memory, the object reasoning operates on, and the interface decoders read from.
 
 ---
 
-## What I Have Learned So Far
+## How the Project Works
 
-### The Concept Collapse Problem
+This is an **active research project**: the north star is fixed, but the route is discovered one milestone at a time. Each milestone is a hypothesis, run as a small experiment with explicit success and kill criteria — and almost everything downstream can change once the first real training run is evaluated.
 
-The best checkpoint so far reaches decent downstream numbers: MRPC = 82.7%, STS-B = 0.650, QQP = 73.4%. Those look reasonable for a 21M parameter model.
+- **The first milestone is concept quality:** find a training objective *and* architecture that form a quality concept bottleneck — semantically meaningful, geometrically diverse, and actually used by the decoder.
+- **The next milestone is recursive reasoning over those concepts:** the broad idea is to refine concepts with a shared block applied multiple times, but the details are deliberately open and will be shaped by what the first experiments reveal.
 
-But the internal geometry tells a different story. I allocated 128 concept slots, and the model uses effectively **5 of them**. That is 4% utilization. The concepts have collapsed into a low-dimensional subspace.
+The day-to-day focus moves quickly, so it is not pinned here. The living source of truth is the agenda and the active experiment spec:
 
-This is the core problem. High downstream scores with collapsed concepts means the evaluation head is doing all the work, not the concept space. And a collapsed concept space cannot support generation, reasoning, or modality transfer.
+- **Live agenda:** [`docs/1_Strategy_and_Plans/agenda.md`](docs/1_Strategy_and_Plans/agenda.md)
+- **Active experiment:** [`docs/experiments/`](docs/experiments/)
+- **Run ledger:** [`docs/2_Experiments_Registry/master_experiment_log.md`](docs/2_Experiments_Registry/master_experiment_log.md)
 
-### What Failed
+---
 
-I document failures because I think they are as instructive as successes.
+## What Has Been Learned
 
-| Approach | What happened |
+The project has already run many small-scale experiments. The useful lesson is not "the old model worked" — it is the opposite: easy objectives exposed exactly *where* concept bottlenecks fail.
+
+- **Self-reconstruction is the wrong pressure.** When the encoder sees the same content the decoder reconstructs, the system learns positional or surface shortcuts instead of semantics.
+- **Diversity alone is not meaning.** Some regularizers raise effective rank while damaging downstream semantics.
+- **Parallel decoders are not enough.** Position-only reconstruction can train a useful probe, but it does not prove the model can *generate*.
+- **Bidirectional token ↔ concept interaction matters.** The token side and concept side must evolve together; static token embeddings leave the bottleneck too weak.
+- **Concept collapse is measurable.** Effective rank, pairwise concept cosine, STS-B, and concept-ablation loss are all tracked, because loss curves alone can be misleading.
+
+The method is deliberately incremental: **one experiment, one changed variable, explicit success and kill criteria.** Past runs are treated as evidence that improved understanding — not as wins or losses.
+
+---
+
+## Long-Term Roadmap
+
+The path is genuinely open, but the direction is stable:
+
+| Stage | Goal |
 |---|---|
-| Combined loss + Kendall-Gal weighting | Concept rank jumped to 95%, but all semantic metrics collapsed -- concepts were diverse but empty |
-| Combined loss + fixed weight | Rank stuck at 12%, everything regressed |
-| CLS-query classification head | 128:1 information collapse -- a single query flattens all concept structure |
-| Diffusion L2 self-reconstruction | Rank 2x better but STS-B near-random (0.138) |
-| Deep diffusion + ELBO + VICReg | Rank barely moved (5.74/128), STS-B 0.174 |
-| Prefix generation v1 (without BiXT) | Rank 6.19/128, STS-B 0.337 -- better direction but underpowered |
+| 1 · **Concept quality** | Concepts that are semantically rich, geometrically non-collapsed, and useful for generation. |
+| 2 · **Concept-conditioned generation** | Move from representation probes to real AR or diffusion generation from concepts. |
+| 3 · **Instruction following** | Encode instructions into concepts and generate useful responses through the bottleneck. |
+| 4 · **Recursive latent reasoning** | Apply a shared reasoning block repeatedly over concepts, with more refinement steps available at inference time. |
+| 5 · **Long context** | Scale length through concept compression, memory, and curricula — with **10M tokens** as the north-star target. |
+| 6 · **Audio-native reasoning** | Map speech into concepts, reason without mandatory text round-tripping, and decode back to speech. |
 
-### What I Believe Now
+The eventual audio path:
 
-**The root insight:** Self-reconstruction (feed in X, reconstruct X) teaches the model to build a positional hash function, not to extract semantics. The decoder needs to generate content the encoder never saw. This is the SODA principle (Hudson et al., 2024).
-
-- Self-reconstruction through a bottleneck optimizes the wrong information path
-- Prefix-conditioned generation (encode prefix, decode suffix) is the most promising current direction
-- BiXT (bidirectional cross-attention) is no longer optional -- the token side needs to evolve alongside concepts
-- Geometric diversity without semantic content is not a win
-- Regularization alone cannot fix collapse if the training objective rewards the wrong shortcut
-
-Root cause analyses live in `docs/4_Research_Notes/`. A fuller account of this diagnostic journey: [Quicker Failures Lead to Better Questions](https://ai.ksopyla.com/posts/quicker-failures-better-questions/).
-
----
-
-## Research Tracks
-
-The work is organized into parallel tracks, with Track A as the critical path.
-
-**Track A -- Fix Concept Quality.** Find the training objective that produces concept rank > 64/128 AND STS-B > 0.70. Current candidates: TSDAE denoising, prefix generation (encode prefix, decode suffix), masked diffusion with ELBO fixes. If all fail rank > 30, Slot Attention is the architectural fallback.
-
-**Track B -- Data Scaling.** Scale from Minipile (0.6B tokens) to OpenWebText + Wikipedia (5B+ tokens) with the winning objective from Track A.
-
-**Track C -- Architectural Innovations.** Recursive concept encoder (weight-tied, 47% fewer params), dimension inversion (token_dim=32, concept_dim=512), test-time compute scaling (more iterations at inference without retraining).
-
-**Track D -- Text Generation.** Transition from reconstruction to full text generation from concepts via diffusion or autoregressive decoders.
-
-**Track E -- Long-Context.** Validate the efficiency advantage on sequences > 1K tokens (SCROLLS, LongBench).
-
-**Tracks F, G, H -- SFT, Reasoning, Audio.** Future phases, gated on concept quality and generation working first.
-
-Full roadmap: [`docs/1_Strategy_and_Plans/roadmap.md`](docs/1_Strategy_and_Plans/roadmap.md)
-
----
-
-## Architecture Variants
-
-Four decoder approaches are implemented, each testing a different hypothesis about how to get semantic content into concept space:
-
-| Variant | Module | Training script | Idea |
-|---|---|---|---|
-| **Perceiver Denoise** | `nn/concept_encoder_perceiver.py` | `training/train_perceiver_denoise.py` | TSDAE denoising autoencoder with BiXT and position-only decoder |
-| **Weighted MLM** | `nn/concept_encoder_weighted.py` | `training/train_mlm.py` | Weighted concept pooling + masked language modeling |
-| **Recursive MLM** | `nn/concept_encoder_recursive.py` | `training/train_recursive_mlm.py` | Weight-tied encoder applied K times (TRM-inspired) |
-| **Diffusion** | `nn/concept_encoder_diffusion.py` | `training/train_diffusion.py` | Masked diffusion decoder with AdaLN-Zero |
-| **Prefix Diffusion** | `nn/concept_encoder_diffusion.py` | `training/train_prefix_diffusion.py` | Encode prefix, generate suffix via diffusion (SODA-inspired) |
-
-The maintained primary path is `perceiver_denoise`. Other variants are active experiments or baselines.
-
----
-
-## Project Structure
-
+```text
+User speech  →  audio adapter  →  concept space  →  recursive refinement  →  talker / decoder  →  spoken response
 ```
-MrCogito/
-|-- nn/                                 # Core model implementations
-|   |-- concept_encoder.py              # Shared encoder config and core blocks
-|   |-- concept_encoder_perceiver.py    # Perceiver denoising + ViaDecoder models
-|   |-- concept_encoder_recursive.py    # Recursive (weight-tied) encoder
-|   |-- concept_encoder_diffusion.py    # Masked diffusion decoder
-|   |-- concept_encoder_weighted.py     # Weighted MLM decoder
-|   |-- loss_manager.py                 # VICReg + t_regs_mst concept losses
-|   +-- concept_losses.py              # Loss function implementations
-|-- training/                           # Training scripts
-|   |-- train_perceiver_denoise.py      # Canonical perceiver denoising
-|   |-- train_mlm.py                    # Weighted MLM baseline
-|   |-- train_recursive_mlm.py          # Isolated recursive experiment
-|   |-- train_diffusion.py              # Diffusion decoder training
-|   |-- train_prefix_diffusion.py       # Prefix-conditioned diffusion
-|   +-- utils_training.py              # Shared logging, WandB, git helpers
-|-- evaluation/                         # Benchmark evaluation
-|   |-- evaluate_model_on_glue.py       # GLUE benchmark evaluation
-|   |-- evaluate_on_benchmark.py        # STS-B zero-shot, SICK, PAWS
-|   +-- concept_eval_routing.py        # Checkpoint-driven evaluator routing
-|-- analysis/                           # Concept space analysis tools
-|-- tests/                              # Unit tests
-|-- scripts/                            # Launch scripts (Windows + Linux)
-|-- docs/
-|   |-- 1_Strategy_and_Plans/           # Roadmap, active TODOs
-|   |-- 2_Experiments_Registry/         # Master experiment log + run reports
-|   |-- 3_Evaluations_and_Baselines/    # Canonical baselines
-|   |-- 4_Research_Notes/               # Root cause analyses, diagnoses
-|   +-- 5_Archive/                     # Superseded roadmaps/plans
-|-- CHANGELOG.md                        # Engineering log (what changed + why)
-+-- pyproject.toml                     # uv / PEP 621 dependencies
+
+Text is the first proving ground because it gives fast iteration, mature datasets, and clear evaluation. The larger ambition is a **modality-agnostic concept space**.
+
+---
+
+## Repository Guide
+
+```text
+.
+├── nn/                         # Core PyTorch model components
+│   ├── concept_encoder.py        # Shared config, encoder, BiXT-style blocks
+│   ├── concept_encoder_perceiver.py
+│   ├── concept_encoder_weighted.py
+│   ├── concept_encoder_recursive_mlm.py
+│   ├── concept_losses.py
+│   └── loss_manager.py
+├── training/                   # Training entrypoints and shared utilities
+│   ├── train_perceiver_denoise.py
+│   ├── train_mlm.py
+│   ├── train_prefix_diffusion.py
+│   └── utils_training.py
+├── evaluation/                 # GLUE, STS-B, PAWS/SICK, checkpoint routing
+├── analysis/                   # Concept-rank and geometry analysis
+├── scripts/                    # Local and multi-GPU launch scripts
+├── docs/
+│   ├── 1_Strategy_and_Plans/     # Current agenda and long-term vision
+│   ├── experiments/             # Frozen experiment specs and plans
+│   ├── 2_Experiments_Registry/   # Run ledger and reports
+│   ├── 3_Evaluations_and_Baselines/
+│   ├── 4_Research_Notes/
+│   └── 5_Archive/               # Historical plans (not current truth)
+├── parked/                     # Revivable but inactive experiment families
+├── tests/
+├── verification/
+├── CHANGELOG.md
+└── pyproject.toml              # uv / PEP 621 dependencies
 ```
+
+The foundation is shared on purpose: new experiments are **config-selectable extensions** over the common code, not one-off training forks.
 
 ---
 
 ## Setup
 
-### Prerequisites
+**Prerequisites**
 
-- Python 3.12 (managed by [uv](https://docs.astral.sh/uv/))
-- [uv](https://docs.astral.sh/uv/) for dependency / environment management
-- CUDA 12.8 for GPU training (Linux / Windows). On macOS the project installs CPU/MPS wheels automatically.
+- Python 3.12
+- [uv](https://docs.astral.sh/uv/) for dependency and environment management
+- CUDA for serious training; macOS CPU/MPS is suitable for smoke tests only
 
-### Install
+**Install**
 
 ```bash
 git clone https://github.com/ksopyla/MrCogito.git
@@ -210,102 +180,68 @@ cd MrCogito
 uv sync
 ```
 
-### Verify
+**Verify the environment**
 
 ```bash
 uv run python verification/torch_test.py
-```
-
-### Run Tests
-
-```bash
 uv run pytest tests/ -v
 ```
 
 ---
 
-## Training
+## Training and Evaluation
 
-### Local (single GPU)
+Main maintained training entrypoint:
 
-```powershell
-# Perceiver denoising (canonical path)
-poetry run python training/train_perceiver_denoise.py --hidden_size 512 --num_hidden_layers 6 --concept_num 128
-
-# Smoke test
-.\scripts\test_perceiver_denoise_local.ps1
+```bash
+uv run python training/train_perceiver_denoise.py \
+  --hidden_size 512 \
+  --num_hidden_layers 6 \
+  --concept_num 128
 ```
 
-### Cluster (multi-GPU via DDP)
+Remote multi-GPU launchers live in `scripts/`, for example:
 
 ```bash
 bash scripts/train_perceiver_denoise_multigpu.sh
-bash scripts/train_diffusion_multigpu.sh
 ```
 
-### Compute
-
-| Name | Hardware | Role |
-|---|---|---|
-| Local | RTX 3080 laptop (10 GB VRAM) | Smoke tests, debugging |
-| **Polonez** | 4x RTX 3090 (24 GB each) | Primary training cluster |
-| **Odra** | 3x RTX 3090 (24 GB each) | Secondary cluster, parallel experiments |
-
-This is modest hardware by industry standards. But it is enough for Phase 1-2 experiments on the Minipile dataset (0.6B tokens).
-
----
-
-## Evaluation
-
-All evaluations use ViaDecoder (fine-tuned lightweight decoder on top of frozen concepts) unless otherwise noted.
+Evaluate a checkpoint:
 
 ```bash
-poetry run python evaluation/evaluate_model_on_glue.py \
+uv run python evaluation/evaluate_model_on_glue.py \
   --model_path "Cache/Training/your_checkpoint" \
   --task mrpc
 ```
 
-Every training run is logged to [Weights & Biases](https://wandb.ai/ksopyla/MrCogito) with full hyperparameters, git commit hash, training curves, concept analysis metrics, and GLUE results. A `master_experiment_log.md` in the repo carries human-written summaries: what I tried, what happened, and what I concluded.
+Every serious run is logged to [Weights & Biases](https://wandb.ai/ksopyla/MrCogito) with hyperparameters, git commit, losses, concept metrics, and evaluation results. Human-readable conclusions live in the experiment registry.
 
 ---
 
-## Key Papers and Influences
+## Influences
 
-| Paper | Key contribution to MrCogito |
-|---|---|
-| [TSDAE](https://aclanthology.org/2021.findings-emnlp.59/) (Wang 2021) | Denoising autoencoder -- 83x stronger gradient signal per concept vs sparse MLM |
-| [SODA](https://openaccess.thecvf.com/content/CVPR2024/html/Hudson_SODA_Bottleneck_Diffusion_Models_for_Representation_Learning_CVPR_2024_paper.html) (Hudson, CVPR 2024) | Bottleneck model learns semantics only when decoder generates different content than encoder saw |
-| [TRM](https://hf.co/papers/2510.04871) (Jolicoeur-Martineau 2025) | 7M-param recursive model beats LLMs 1000x its size on ARC-AGI |
-| [Recurrent Depth](https://hf.co/papers/2502.05171) (Geiping 2025) | Test-time recurrence -- 3.5B model matches 103B equivalent |
-| [Coconut](https://github.com/facebookresearch/coconut) (Meta 2024) | Latent chain-of-thought outperforms token-space CoT |
-| [BiXT](https://arxiv.org/abs/2402.12138) (Hiller 2024) | Bidirectional cross-attention fixes static token embeddings in Perceivers |
-| [Large Concept Models](https://hf.co/papers/2412.08821) (Meta 2024) | Sentence-level concept prediction works for generation at scale |
-| [LLaDA](https://arxiv.org/abs/2502.09992) (Nie 2025) | Masked diffusion language model at 8B scale -- validates diffusion for text |
-| [SimCSE](https://hf.co/papers/2104.08821) (Gao 2021) | Contrastive learning for sentence embeddings |
-| [T-REGS MST](https://hf.co/papers/2510.23484) (Mordacq 2025) | MST-based regularization that detects and prevents dimensional collapse |
+This work sits at the intersection of several converging lines of research:
 
----
+- **Perceiver / Perceiver IO** — cross-attention bottlenecks as a general encode-reason-decode skeleton.
+- **Flamingo, BLIP-2** — learned query bottlenecks that condition strong decoders.
+- **SODA** — representation learning through bottleneck *generation*, not trivial self-reconstruction.
+- **BiXT** — bidirectional token ↔ concept interaction.
+- **Large Concept Models, SONAR-LLM** — generation and reasoning above the token level.
+- **Coconut & latent chain-of-thought** — reasoning in continuous hidden states instead of only text.
+- **Recurrent / recursive transformers** — test-time compute scaling through repeated refinement.
+- **Latent multi-agent communication** — the future direction where concept vectors become the channel between cooperating models.
 
-## FAQ
-
-**"Why not just fine-tune an existing model?"**
-Because the research question is about the architecture, not the task. I want to know whether concept bottlenecks can work as the primary representation, not whether I can get good STS-B scores (there are easier ways).
-
-**"Why so small? 21M parameters is tiny."**
-Deliberately. If the architecture cannot produce good concepts at 21M, scaling will not fix the fundamental problem. If it can, scaling will make it better. Small models also mean faster iteration and lower compute costs -- important for a solo researcher.
-
-**"What happens if concept collapse cannot be solved?"**
-I have a fallback path (Slot Attention) and a pivot option (decoder-only with concept conditioning). But I believe the current diagnostic work points to solvable problems -- wrong training objective, not wrong architecture.
+These are influences, not dependencies. The research question is whether a compact concept state can become the **primary working memory** of a generative model.
 
 ---
 
-## Updates
+## Status
 
-- **2026-03-08** -- Perceiver V2 denoising reset: canonical denoising stack, checkpoint-declared evaluation routing, retired legacy perceiver MLM interfaces.
-- **2026-03-08** -- Published [Quicker Failures Lead to Better Questions](https://ai.ksopyla.com/posts/quicker-failures-better-questions/): diagnostic journey through concept collapse.
-- **2026-03-07** -- Prefix diffusion v2 hardening: BiXT-only, sentence-boundary splits, evaluation contracts.
-- **2026-02-21** -- Architecture overhaul: BiXT, TSDAE, PosOnly decoder, ViaDecoder evaluation, VICReg + t_regs_mst regularization.
-- **2026-02-08** -- Best baseline checkpoint: Perceiver MLM L6, 40 epochs on Minipile. MRPC 82.7%, STS-B 0.650, concept rank 5/128.
+This is an active research repository — public, MIT-licensed, and intentionally transparent about negative results. The aim is not to polish a benchmark number, but to prove whether a concept bottleneck can support generation, and then reasoning.
+
+- **Long-term vision:** [`docs/1_Strategy_and_Plans/vision_and_goals.md`](docs/1_Strategy_and_Plans/vision_and_goals.md)
+- **Live agenda & experiments:** [`docs/1_Strategy_and_Plans/agenda.md`](docs/1_Strategy_and_Plans/agenda.md) · [`docs/experiments/`](docs/experiments/)
+- Historical diffusion and recursive branches are parked, not discarded.
 
 ---
 
@@ -326,4 +262,12 @@ I have a fallback path (Slot Attention) and a pivot option (decoder-only with co
 
 ---
 
-This is an open research project. The repo is public and MIT-licensed. If you find this work interesting, the most useful things you can do are: read the code, open an issue, or tell me what I am getting wrong.
+[^perceiver]: Jaegle et al., *Perceiver: General Perception with Iterative Attention*, ICML 2021 — <https://arxiv.org/abs/2103.03206>. See also *Perceiver IO*, ICLR 2022 — <https://arxiv.org/abs/2107.14795>.
+[^cramming]: Kuratov et al., *Cramming 1568 Tokens into a Single Vector and Back Again*, ACL 2025 — <https://arxiv.org/abs/2502.13063>.
+[^ouro]: Ouro team, *Ouro: Looped Language Models*, 2025 — <https://arxiv.org/abs/2510.25741>.
+[^calm]: Tencent & Tsinghua, *CALM: Continuous Autoregressive Language Models*, 2025 — <https://arxiv.org/abs/2510.27688>.
+[^huginn]: Geiping et al., *Scaling up Test-Time Compute with Latent Reasoning (Huginn)*, NeurIPS 2025 — <https://arxiv.org/abs/2502.05171>.
+[^flamingo]: Alayrac et al., *Flamingo: a Visual Language Model for Few-Shot Learning*, NeurIPS 2022 — <https://arxiv.org/abs/2204.14198>.
+[^lcm]: LCM team (Meta), *Large Concept Models: Language Modeling in a Sentence Representation Space*, 2024 — <https://arxiv.org/abs/2412.08821>.
+[^latentmas]: Princeton, UIUC & Stanford, *LatentMAS: Multi-Agent Collaboration in Latent Space*, 2025 — <https://arxiv.org/abs/2511.20639>.
+[^interlat]: Zhejiang & Alibaba, *Interlat: Inter-Agent Communication in Latent Space*, ACL 2026 — <https://arxiv.org/abs/2511.09149>.
