@@ -520,16 +520,16 @@ def main():
     if training_args.save_strategy != "steps":
         training_args.save_steps = None
 
-    log_training_config(
-        training_args,
-        extra_fields={
-            "Deletion rate": data_args.deletion_rate,
-            "BiXT encoder": model_args.use_bixt,
-            "Decoder layers": model_args.decoder_num_layers,
-            "Objective": model_args.objective_variant,
-            "Contrastive weight": model_args.contrastive_weight,
-        },
-    )
+    training_extra_fields = {
+        "Deletion rate": data_args.deletion_rate,
+        "BiXT encoder": model_args.use_bixt,
+        "Decoder layers": model_args.decoder_num_layers,
+        "Objective": model_args.objective_variant,
+    }
+    if model_args.objective_variant == OBJECTIVE_RECONSTRUCTION_CONTRASTIVE:
+        training_extra_fields["Contrastive weight"] = model_args.contrastive_weight
+
+    log_training_config(training_args, extra_fields=training_extra_fields)
 
     wandb_tags = ["perceiver-denoise", "concept-encoder", model_args.objective_variant]
     if model_args.use_bixt:

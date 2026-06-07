@@ -60,10 +60,11 @@ loss   = CE(logits[:, :-1].reshape(-1,V), labels[:, 1:].reshape(-1))         # n
 - **Dataset:** `HuggingFaceFW/fineweb-edu` `sample-10BT`, subsampled (~1–2B tokens). `text` column →
   `load_and_preprocess_text_dataset` handles tokenization + holdout split (no code change).
 - **Tokenizer:** `HuggingFaceTB/SmolLM2-135M` — BPE, vocab 49,152. **No `[MASK]`/`[CLS]`/`[SEP]`; base
-  has `<|endoftext|>` as bos=eos=unk and no distinct pad.** Handling: **add a distinct `<|PAD_TOKEN|>`**
-  (`tokenizer.add_special_tokens({"pad_token": "<|PAD_TOKEN|>"})`, id 49152 → vocab 49,153; resize
-  embeddings) so pad ≠ eos; use `<|endoftext|>` as AR bos/eos. `DataCollatorForTSDAE` already tolerates
-  `None` CLS/SEP/BOS ids; TSDAE deletes via `attention_mask` (no `[MASK]`).
+  has `<|endoftext|>` as bos=eos=unk and no distinct pad.** Handling: set **`pad_token=eos_token`**
+  to keep vocab/embeddings aligned with SmolLM2 warm-start. Padding is positional
+  (`attention_mask`, labels `-100`), so real eos tokens remain trainable; model embedding layers skip
+  `padding_idx` when pad aliases eos. `DataCollatorForTSDAE` already tolerates `None` CLS/SEP/BOS ids;
+  TSDAE deletes via `attention_mask` (no `[MASK]`).
 - **Preprocessing:** append `<|endoftext|>` (eos) to each document before/after tokenization (the current
   `tokenize_batch_function` does not add eos) so the decoder learns to stop.
 - **Collator:** `DataCollatorForTSDAE` (reuse): returns `input_ids` (clean), `attention_mask`

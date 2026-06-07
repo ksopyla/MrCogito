@@ -63,6 +63,8 @@ WARMUP_STEPS="${WARMUP_STEPS:-1500}"
 LOGGING_STEPS="${LOGGING_STEPS:-200}"
 EVAL_STEPS="${EVAL_STEPS:-2000}"
 SAVE_STEPS="${SAVE_STEPS:-2000}"
+SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-5}"
+SAVE_SAFETENSORS="${SAVE_SAFETENSORS:-True}"
 SEED="${SEED:-42}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-4}"
 # FineWeb-Edu one-off tokenization: use Polonez headroom (32–48); keep Odra defaults modest.
@@ -119,6 +121,7 @@ accelerate launch \
     --eval_steps "$EVAL_STEPS" \
     --save_strategy "steps" \
     --save_steps "$SAVE_STEPS" \
+    --save_total_limit "$SAVE_TOTAL_LIMIT" \
     --output_dir "$OUTPUT_DIR" \
     --logging_dir "$LOGGING_DIR" \
     --seed "$SEED" \
@@ -132,7 +135,7 @@ accelerate launch \
     --optim "adamw_torch_fused" \
     --lr_scheduler_type "cosine" \
     --report_to "wandb" \
-    --save_safetensors False \
+    --save_safetensors "$SAVE_SAFETENSORS" \
     --overwrite_output_dir True \
     --remove_unused_columns True \
     --disable_tqdm True \

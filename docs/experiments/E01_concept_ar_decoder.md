@@ -104,9 +104,11 @@ path matters more than raw decoder size**, so we attack it on four fronts:
   count to fit the holdout-split loader). **Append `<|endoftext|>` (eos) to every document** in
   preprocessing so the decoder learns to stop.
 - **Tokenizer:** **`HuggingFaceTB/SmolLM2-135M`** (vocab 49,152). Base tokenizer has `<|endoftext|>`
-  (bos=eos=unk) but **no distinct pad and no `[MASK]`** → **add a distinct `<|PAD_TOKEN|>`** (id 49152,
-  as the official instruct variants do; avoid `pad=eos`); vocab → 49,153. `[MASK]` not needed (TSDAE
-  deletes via `attention_mask`; word-dropout uses a learned embedding).
+  (bos=eos=unk) but **no distinct pad and no `[MASK]`** → set **`pad_token=eos_token`** and keep
+  vocab at 49,152 for clean SmolLM2 warm-start/alignment. Padding is positional
+  (`attention_mask`, labels `-100`), so real eos tokens remain trainable; embedding `padding_idx` is
+  disabled when pad aliases eos. `[MASK]` is not needed (TSDAE deletes via `attention_mask`;
+  word-dropout uses a learned embedding).
 - **Model (~135M):** `hidden_size=768`, `token_embedding_dim=256` (asymmetry kept), encoder
   `num_hidden_layers=6` (BiXT), `concept_num=128`, **decoder `decoder_num_layers=4` (causal AR, lean by
   design — see posterior collapse)**, `intermediate_size=2048` (decoder ≤ this), `hidden_act=silu`
