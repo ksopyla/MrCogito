@@ -8,9 +8,10 @@ description: Run, monitor, and debug Concept Encoder training/evaluation on the 
 Execute and babysit ONE approved run on a GPU server. This is the only doc needed to
 run training + evaluation and understand the remote environment.
 
-**Boundary:** this skill *runs and monitors*. It does not pick experiments
-(`experiment-design`), interpret/record results (`experiment-track`), or do standalone
-eval sweeps on existing checkpoints (`experiment-remote-evaluator`).
+**Boundary:** this skill *runs and monitors* training. It does not pick experiments
+(`experiment-design`), interpret/record results (`experiment-track`), or define the
+evaluation pipeline / run benchmark sweeps on checkpoints (`experiment-evaluate` — the
+single source of truth for *how to evaluate*, with `uv` commands).
 
 ## Hard rules
 - No training without explicit user permission; ONE experiment per server at a time.
@@ -62,9 +63,10 @@ cd /home/ksopyla/dev/MrCogito && byobu new-session -s <ID>   # attach: byobu att
 git fetch origin && git checkout <branch> && git pull --ff-only && git log -1 --oneline
 nvidia-smi; df -h .; command -v uv poetry; byobu list-sessions
 ```
-**2. Environment** — prefer `uv sync` + `uv run …`; if the server still has only Poetry, the
-training/eval bash scripts already fall back to `poetry run`/`python3`, so just `uv sync` or
-`poetry install` to match what exists. Migrating to `uv` needs user OK.
+**2. Environment** — use `uv sync` + `uv run …` (the project standard). The eval bash
+launchers call `uv run python` (falling back to `python3`); the training launcher uses
+`accelerate launch` from the active env. On a legacy Poetry-only server, run `uv sync` to
+provision the env; don't migrate a working remote env mid-run without user OK.
 
 **3. Launch training** — one shared launcher, override via env vars (never fork a script):
 ```bash
