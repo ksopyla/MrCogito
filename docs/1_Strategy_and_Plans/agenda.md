@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-06-06 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [../experiments/](../experiments/).
+**Updated:** 2026-06-07 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [../experiments/](../experiments/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -21,17 +21,20 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   asymmetry), re-confirm the bottleneck at a slightly bigger, modern scale, and address the two
   standing weaknesses: concept collapse and a decoder that cannot generate. First step:
   **[E01 — concept-conditioned autoregressive decoder](../experiments/E01_concept_ar_decoder.md)**
-  (spec + [plan](../experiments/E01_concept_ar_decoder_plan.md)) — *draft, pending go-ahead before
-  implementation.* All current decoders are parallel/non-AR (`p(x|concepts)=Πₚ p(xₚ|concepts,p)`);
-  E01 adds a real AR decoder (causal self-attn over tokens + cross-attn to concepts) so the encoder
-  produces concepts and the decoder *generates*.
+  (spec + [plan](../experiments/E01_concept_ar_decoder_plan.md)) is **active on Polonez** as
+  `concept_ar_H768L6C128D4_20260607_172931`. Early signal is trainable and concept-conditioned
+  (eval CE ~6.82 at epoch 0.08; ablation Δshuffle ~1.35), but final rank / STS-B gates are pending.
+  Next scope draft:
+  **[E02 — prefix-to-suffix AR generation objective](../experiments/E02_ar_prefix_suffix.md)** —
+  same AR foundation, one objective change, launch only after E01 final baseline is recorded.
 
 ### Series roadmap (plan-ahead; each step = ONE variable vs the prior, re-scoped as its own spec)
-1. **E01 — AR decoder from scratch** *(this spec).* New **modern** baseline line: encoder→AR decoder,
+1. **E01 — AR decoder from scratch** *(active on Polonez).* New **modern** baseline line: encoder→AR decoder,
    FineWeb-Edu, SmolLM2 tokenizer, SwiGLU + RMSNorm + RoPE(decoder), ~135M. Key new metric:
    concept-ablation ΔCE (is the decoder actually using concepts?).
-2. **E02 — objective:** prefix→suffix AR generation (strongest semantic pressure; the AR decoder is the
-   materially-new ingredient vs the previously-failed random-init prefix track).
+2. **E02 — objective:** [prefix→suffix AR generation](../experiments/E02_ar_prefix_suffix.md) *(draft)*.
+   Strongest semantic pressure; the AR decoder is the materially-new ingredient vs the previously-failed
+   random-init prefix-diffusion track.
 3. **E03 — token↔concept asymmetry sweep:** vary `token_embedding_dim` (e.g. 128/256/512) vs E01.
 4. **E04 — decoder warm-start (Flamingo-style):** gated cross-attention into a pretrained **SmolLM2-135M**
    AR decoder (concepts condition a strong LM); SmolLM2 tokenizer.
