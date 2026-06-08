@@ -6,6 +6,7 @@ Maintained perceiver training path:
   - position-only stacked decoder
   - full-sequence reconstruction from deleted-token inputs
   - optional stage-2 SimCSE-style contrastive objective
+  - causal-AR prefix->suffix objective for concept-conditioned generation
 """
 
 import os
@@ -29,7 +30,7 @@ from transformers.modeling_outputs import MaskedLMOutput
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data.data_collators import DataCollatorForTSDAE
+from data.data_collators import DataCollatorForPrefixGeneration, DataCollatorForTSDAE
 from data.dataset_preprocess import load_and_preprocess_text_dataset
 from nn.concept_encoder import ConceptEncoderConfig
 from nn.concept_encoder_perceiver import (
@@ -54,9 +55,11 @@ logger = logging.get_logger(__name__)
 
 OBJECTIVE_RECONSTRUCTION = "reconstruction"
 OBJECTIVE_RECONSTRUCTION_CONTRASTIVE = "reconstruction+contrastive"
+OBJECTIVE_PREFIX_SUFFIX = "prefix_suffix"
 VALID_OBJECTIVES = {
     OBJECTIVE_RECONSTRUCTION,
     OBJECTIVE_RECONSTRUCTION_CONTRASTIVE,
+    OBJECTIVE_PREFIX_SUFFIX,
 }
 
 
@@ -120,7 +123,7 @@ class ModelArguments:
     )
     objective_variant: str = field(
         default=OBJECTIVE_RECONSTRUCTION,
-        metadata={"help": "One of: reconstruction, reconstruction+contrastive."},
+        metadata={"help": "One of: reconstruction, reconstruction+contrastive, prefix_suffix."},
     )
     contrastive_weight: float = field(
         default=0.3,
@@ -178,6 +181,11 @@ class DataTrainingArguments:
     deletion_rate: float = field(default=0.6)
     train_num_proc: int = field(default=8)
     test_num_proc: int = field(default=4)
+    prefix_ratio_min: float = field(default=0.3)
+    prefix_ratio_max: float = field(default=0.5)
+    min_prefix_content: int = field(default=5)
+    min_suffix_content: int = field(default=10)
+    split_strategy: str = field(default="sentence_boundary")
 
 
 class PerceiverDenoiseTrainer(Trainer):
@@ -216,12 +224,23 @@ class PerceiverDenoiseTrainer(Trainer):
         for i, batch in enumerate(dataloader):
             if i >= self.concept_ablation_batches:
                 break
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch.get("attention_mask")
-            if attention_mask is not None:
-                attention_mask = attention_mask.to(device)
             labels = batch["labels"].to(device)
-            m = base_model.concept_ablation_ce(input_ids, attention_mask, labels)
+            if "prefix_input_ids" in batch:
+                prefix_attention_mask = batch.get("prefix_attention_mask")
+                if prefix_attention_mask is not None:
+                    prefix_attention_mask = prefix_attention_mask.to(device)
+                m = base_model.concept_ablation_ce(
+                    prefix_input_ids=batch["prefix_input_ids"].to(device),
+                    prefix_attention_mask=prefix_attention_mask,
+                    suffix_input_ids=batch["suffix_input_ids"].to(device),
+                    labels=labels,
+                )
+            else:
+                input_ids = batch["input_ids"].to(device)
+                attention_mask = batch.get("attention_mask")
+                if attention_mask is not None:
+                    attention_mask = attention_mask.to(device)
+                m = base_model.concept_ablation_ce(input_ids, attention_mask, labels)
             for k in keys:
                 sums[k] += m[k]
             n += 1
@@ -255,7 +274,10 @@ class PerceiverDenoiseTrainer(Trainer):
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         del num_items_in_batch
-        if not model.training or self.objective_variant == OBJECTIVE_RECONSTRUCTION:
+        if (
+            not model.training
+            or self.objective_variant in {OBJECTIVE_RECONSTRUCTION, OBJECTIVE_PREFIX_SUFFIX}
+        ):
             outputs = model(**inputs)
             return (outputs.loss, outputs) if return_outputs else outputs.loss
 
@@ -308,18 +330,18 @@ def build_perceiver_denoise_config(
     model_args: ModelArguments,
     data_args: DataTrainingArguments,
 ) -> ConceptEncoderConfig:
-    objective_name = (
-        "denoising_full_reconstruction"
-        if model_args.objective_variant == OBJECTIVE_RECONSTRUCTION
-        else "denoising_full_reconstruction_contrastive"
-    )
+    objective_name = "denoising_full_reconstruction"
+    if model_args.objective_variant == OBJECTIVE_RECONSTRUCTION_CONTRASTIVE:
+        objective_name = "denoising_full_reconstruction_contrastive"
+    elif model_args.objective_variant == OBJECTIVE_PREFIX_SUFFIX:
+        objective_name = "ar_prefix_suffix_generation"
     is_causal_ar = model_args.decoder_type == DECODER_CAUSAL_AR
     # The causal-AR family probes concept quality with the encoder only (no
     # PerceiverDecoderStack exists in its checkpoint), so the canonical single-input
     # route is weighted_pool (encoder_only); pair tasks use sentence_pair (encoder_only).
     checkpoint_family = "concept_ar" if is_causal_ar else "perceiver_denoise"
     canonical_single_eval_mode = "weighted_pool" if is_causal_ar else "via_decoder"
-    if is_causal_ar:
+    if is_causal_ar and model_args.objective_variant == OBJECTIVE_RECONSTRUCTION:
         objective_name = "ar_denoising_reconstruction"
 
     return ConceptEncoderConfig(
@@ -381,10 +403,15 @@ def main():
             f"Expected one of {sorted(VALID_DECODER_TYPES)}."
         )
     is_causal_ar = model_args.decoder_type == DECODER_CAUSAL_AR
-    if is_causal_ar and model_args.objective_variant != OBJECTIVE_RECONSTRUCTION:
+    if is_causal_ar and model_args.objective_variant == OBJECTIVE_RECONSTRUCTION_CONTRASTIVE:
         raise ValueError(
-            "decoder_type='causal_ar' supports only objective_variant='reconstruction' "
-            f"(got {model_args.objective_variant!r}). The contrastive path is perceiver-only."
+            "decoder_type='causal_ar' supports objective_variant='reconstruction' or "
+            f"'prefix_suffix' (got {model_args.objective_variant!r}). "
+            "The contrastive path is perceiver-only."
+        )
+    if not is_causal_ar and model_args.objective_variant == OBJECTIVE_PREFIX_SUFFIX:
+        raise ValueError(
+            "objective_variant='prefix_suffix' requires decoder_type='causal_ar'."
         )
 
     set_seed(training_args.seed)
@@ -395,6 +422,9 @@ def main():
         extra_fields={
             "Deletion rate": data_args.deletion_rate,
             "Objective": model_args.objective_variant,
+            "Prefix ratio min": data_args.prefix_ratio_min,
+            "Prefix ratio max": data_args.prefix_ratio_max,
+            "Split strategy": data_args.split_strategy,
         },
     )
 
@@ -459,6 +489,8 @@ def main():
 
     if is_causal_ar:
         model_type_str = "concept_ar"
+        if model_args.objective_variant == OBJECTIVE_PREFIX_SUFFIX:
+            model_type_str += "_prefix"
         if model_args.use_bixt:
             model_type_str += "_bixt"
     else:
@@ -505,7 +537,10 @@ def main():
         model = torch.compile(model, dynamic=True, fullgraph=False, backend=backend)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_prefix = "concept_ar" if is_causal_ar else "perceiver_denoise"
+    if is_causal_ar and model_args.objective_variant == OBJECTIVE_PREFIX_SUFFIX:
+        run_prefix = "concept_ar_prefix"
+    else:
+        run_prefix = "concept_ar" if is_causal_ar else "perceiver_denoise"
     run_identifier = (
         f"{run_prefix}_H{model_args.hidden_size}"
         f"L{model_args.num_hidden_layers}"
@@ -525,6 +560,9 @@ def main():
         "BiXT encoder": model_args.use_bixt,
         "Decoder layers": model_args.decoder_num_layers,
         "Objective": model_args.objective_variant,
+        "Prefix ratio min": data_args.prefix_ratio_min,
+        "Prefix ratio max": data_args.prefix_ratio_max,
+        "Split strategy": data_args.split_strategy,
     }
     if model_args.objective_variant == OBJECTIVE_RECONSTRUCTION_CONTRASTIVE:
         training_extra_fields["Contrastive weight"] = model_args.contrastive_weight
@@ -554,14 +592,30 @@ def main():
             "objective_variant": model_args.objective_variant,
             "contrastive_weight": model_args.contrastive_weight,
             "contrastive_temperature": model_args.contrastive_temperature,
+            "prefix_ratio_min": data_args.prefix_ratio_min,
+            "prefix_ratio_max": data_args.prefix_ratio_max,
+            "min_prefix_content": data_args.min_prefix_content,
+            "min_suffix_content": data_args.min_suffix_content,
+            "split_strategy": data_args.split_strategy,
         },
     )
 
-    data_collator = DataCollatorForTSDAE(
-        tokenizer,
-        deletion_rate=data_args.deletion_rate,
-        max_length=data_args.max_seq_length,
-    )
+    if model_args.objective_variant == OBJECTIVE_PREFIX_SUFFIX:
+        data_collator = DataCollatorForPrefixGeneration(
+            tokenizer,
+            max_length=data_args.max_seq_length,
+            prefix_ratio_min=data_args.prefix_ratio_min,
+            prefix_ratio_max=data_args.prefix_ratio_max,
+            min_prefix_content=data_args.min_prefix_content,
+            min_suffix_content=data_args.min_suffix_content,
+            split_strategy=data_args.split_strategy,
+        )
+    else:
+        data_collator = DataCollatorForTSDAE(
+            tokenizer,
+            deletion_rate=data_args.deletion_rate,
+            max_length=data_args.max_seq_length,
+        )
 
     callbacks = []
     if loss_config.warmup_steps > 0:

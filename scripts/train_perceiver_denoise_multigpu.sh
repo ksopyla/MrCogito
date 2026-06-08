@@ -52,6 +52,11 @@ TOKENIZER_NAME="${TOKENIZER_NAME:-answerdotai/ModernBERT-base}"
 MAX_SEQ_LENGTH="${MAX_SEQ_LENGTH:-512}"
 DELETION_RATE="${DELETION_RATE:-0.6}"
 OBJECTIVE_VARIANT="${OBJECTIVE_VARIANT:-reconstruction}"
+PREFIX_RATIO_MIN="${PREFIX_RATIO_MIN:-0.3}"
+PREFIX_RATIO_MAX="${PREFIX_RATIO_MAX:-0.5}"
+MIN_PREFIX_CONTENT="${MIN_PREFIX_CONTENT:-5}"
+MIN_SUFFIX_CONTENT="${MIN_SUFFIX_CONTENT:-10}"
+SPLIT_STRATEGY="${SPLIT_STRATEGY:-sentence_boundary}"
 CONCEPT_LOSSES="${CONCEPT_LOSSES:-none}"
 LOSS_WEIGHT="${LOSS_WEIGHT:-0.02}"
 PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-16}"
@@ -101,6 +106,11 @@ accelerate launch \
     --use_bixt \
     --deletion_rate "$DELETION_RATE" \
     --objective_variant "$OBJECTIVE_VARIANT" \
+    --prefix_ratio_min "$PREFIX_RATIO_MIN" \
+    --prefix_ratio_max "$PREFIX_RATIO_MAX" \
+    --min_prefix_content "$MIN_PREFIX_CONTENT" \
+    --min_suffix_content "$MIN_SUFFIX_CONTENT" \
+    --split_strategy "$SPLIT_STRATEGY" \
     --dataset_name "$DATASET_NAME" \
     --dataset_name_subset "$DATASET_SUBSET" \
     --tokenizer_name "$TOKENIZER_NAME" \

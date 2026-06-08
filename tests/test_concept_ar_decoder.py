@@ -56,6 +56,26 @@ def test_forward_shapes_and_finite_loss():
     assert torch.isfinite(out.loss)
 
 
+def test_prefix_suffix_forward_shapes_and_finite_loss():
+    config = _tiny_config()
+    model = ConceptEncoderForConditionalLM(config)
+    B, P, S = 2, 7, 10
+    prefix_input_ids = torch.randint(3, config.vocab_size, (B, P))
+    prefix_attention_mask = torch.ones_like(prefix_input_ids)
+    suffix_input_ids = torch.randint(3, config.vocab_size, (B, S))
+    labels = suffix_input_ids.clone()
+
+    out = model(
+        prefix_input_ids=prefix_input_ids,
+        prefix_attention_mask=prefix_attention_mask,
+        suffix_input_ids=suffix_input_ids,
+        labels=labels,
+    )
+    assert out.logits.shape == (B, S, config.vocab_size)
+    assert out.loss is not None
+    assert torch.isfinite(out.loss)
+
+
 def test_decoder_self_attention_is_causal():
     """Changing a future target token must not change earlier-position logits."""
     config = _tiny_config()
@@ -88,6 +108,31 @@ def test_decoder_self_attention_is_causal():
     del logits_a, logits_b
 
 
+def test_prefix_suffix_decoder_self_attention_is_causal():
+    """Suffix AR decoding must not let future suffix tokens affect earlier logits."""
+    config = _tiny_config()
+    model = ConceptEncoderForConditionalLM(config).eval()
+    B, P, S = 1, 8, 12
+    prefix_input_ids = torch.randint(3, config.vocab_size, (B, P))
+    prefix_attention_mask = torch.ones_like(prefix_input_ids)
+    suffix_input_ids = torch.randint(3, config.vocab_size, (B, S))
+
+    with torch.no_grad():
+        concepts = model.encode_concepts(
+            prefix_input_ids,
+            prefix_attention_mask,
+            return_dict=True,
+        ).last_hidden_state
+        dec_in = model._shift_right(suffix_input_ids)
+        dec_in_perturbed = dec_in.clone()
+        dec_in_perturbed[:, -1] = (dec_in_perturbed[:, -1] + 5) % config.vocab_size
+        la = model.decode_logits(concepts, dec_in)
+        lb = model.decode_logits(concepts, dec_in_perturbed)
+
+    assert torch.allclose(la[:, :-1], lb[:, :-1], atol=1e-5)
+    assert not torch.allclose(la[:, -1], lb[:, -1], atol=1e-5)
+
+
 def test_concepts_are_used_zero_and_shuffle_change_loss():
     config = _tiny_config()
     model = ConceptEncoderForConditionalLM(config).eval()
@@ -98,6 +143,25 @@ def test_concepts_are_used_zero_and_shuffle_change_loss():
 
     m = model.concept_ablation_ce(input_ids, attention_mask, labels)
     # Zeroing / shuffling concepts must change next-token CE (concepts wired into path).
+    assert abs(m["delta_zero"]) > 1e-4
+    assert abs(m["delta_shuffle"]) > 1e-4
+
+
+def test_prefix_suffix_concepts_are_used_zero_and_shuffle_change_loss():
+    config = _tiny_config()
+    model = ConceptEncoderForConditionalLM(config).eval()
+    B, P, S = 4, 8, 12
+    prefix_input_ids = torch.randint(3, config.vocab_size, (B, P))
+    prefix_attention_mask = torch.ones_like(prefix_input_ids)
+    suffix_input_ids = torch.randint(3, config.vocab_size, (B, S))
+    labels = suffix_input_ids.clone()
+
+    m = model.concept_ablation_ce(
+        prefix_input_ids=prefix_input_ids,
+        prefix_attention_mask=prefix_attention_mask,
+        suffix_input_ids=suffix_input_ids,
+        labels=labels,
+    )
     assert abs(m["delta_zero"]) > 1e-4
     assert abs(m["delta_shuffle"]) > 1e-4
 
@@ -149,3 +213,33 @@ def test_build_config_causal_ar_eval_contract():
     assert config.decoder_posonly is False
     assert config.norm_type == "rmsnorm"
     assert config.hidden_act == "silu"
+
+
+def test_build_config_causal_ar_prefix_suffix_objective():
+    class _Tok:
+        pad_token_id, mask_token_id, cls_token_id = 0, None, None
+        sep_token_id, bos_token_id, eos_token_id, unk_token_id = None, 1, 2, None
+
+        def __len__(self):
+            return 40
+
+    config = build_perceiver_denoise_config(
+        _Tok(),
+        ModelArguments(
+            hidden_size=32,
+            token_embedding_dim=16,
+            num_hidden_layers=3,
+            concept_num=8,
+            intermediate_size=64,
+            decoder_num_layers=2,
+            decoder_type="causal_ar",
+            decoder_pos_type="rope",
+            hidden_act="silu",
+            norm_type="rmsnorm",
+            use_bixt=True,
+            objective_variant="prefix_suffix",
+        ),
+        DataTrainingArguments(max_seq_length=16, tokenizer_name="dummy"),
+    )
+    assert config.checkpoint_family == "concept_ar"
+    assert config.pretraining_objective == "ar_prefix_suffix_generation"

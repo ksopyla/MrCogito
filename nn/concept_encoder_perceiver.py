@@ -544,7 +544,7 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
+        input_ids: torch.LongTensor,
         attention_mask: Optional[torch.IntTensor] = None,
         labels: Optional[torch.LongTensor] = None,
         output_attentions: Optional[bool] = None,
@@ -666,7 +666,7 @@ class ConceptEncoderForSequenceClassificationViaDecoder(PreTrainedModel):
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
+        input_ids: torch.LongTensor,
         attention_mask: Optional[torch.IntTensor] = None,
         labels: Optional[torch.LongTensor] = None,
         output_attentions: Optional[bool] = None,
@@ -1069,9 +1069,9 @@ class ConceptCausalDecoderStack(nn.Module):
 
 
 class ConceptEncoderForConditionalLM(PreTrainedModel):
-    """Encoder → concepts → autoregressive concept-conditioned decoder (E01).
+    """Encoder → concepts → autoregressive concept-conditioned decoder.
 
-    forward shapes:
+    Reconstruction forward shapes (E01):
         input_ids       [B, N]  clean token ids (encoder sees them through attention_mask)
         attention_mask  [B, N]  1 = visible to encoder, 0 = TSDAE-deleted/pad
         labels          [B, N]  reconstruction targets (−100 at pad); next-token shifted internally
@@ -1079,6 +1079,16 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
       → decoder_input   [B, N]  shift-right of input_ids (prepend bos)
       → logits          [B, N, V]
       → loss            scalar next-token CE on labels[:, 1:]
+
+    Prefix/suffix forward shapes (E02):
+        prefix_input_ids      [B, P]  encoder-visible prefix only
+        prefix_attention_mask [B, P]
+        suffix_input_ids      [B, S]  decoder target sequence
+        labels                [B, S]  suffix targets (−100 at pad)
+      → concepts              [B, C, H]
+      → decoder_input         [B, S]  shift-right of suffix_input_ids
+      → logits                [B, S, V]
+      → loss                  scalar suffix next-token CE
 
     Selected when ConceptEncoderConfig.decoder_type == "causal_ar". Keeps the encoder
     O(C*N); the decoder is deliberately lean (decoder_num_layers < encoder layers) and
@@ -1162,12 +1172,28 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
             ignore_index=-100,
         )
 
+    def _loss_from_logits(
+        self,
+        logits: torch.Tensor,
+        labels: Optional[torch.LongTensor],
+        concept_repr: torch.Tensor,
+    ) -> Optional[torch.Tensor]:
+        if labels is None:
+            return None
+        task_loss = self._next_token_ce(logits, labels)
+        if self.training and self.loss_manager.is_enabled:
+            return self.loss_manager(task_loss=task_loss, concept_repr=concept_repr)
+        return task_loss
+
     @torch.no_grad()
     def concept_ablation_ce(
         self,
-        input_ids: torch.LongTensor,
-        attention_mask: Optional[torch.Tensor],
-        labels: torch.LongTensor,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        prefix_input_ids: Optional[torch.LongTensor] = None,
+        prefix_attention_mask: Optional[torch.Tensor] = None,
+        suffix_input_ids: Optional[torch.LongTensor] = None,
     ) -> dict:
         """Posterior-collapse diagnostic: next-token CE with intact vs ablated concepts.
 
@@ -1177,12 +1203,24 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         "shuffle" permutes concepts across the batch (breaks instance-specific info while
         preserving concept statistics — the stronger test). No word-dropout here.
         """
+        if prefix_input_ids is not None:
+            if suffix_input_ids is None or labels is None:
+                raise ValueError("prefix/suffix ablation requires suffix_input_ids and labels.")
+            encoder_input_ids = prefix_input_ids
+            encoder_attention_mask = prefix_attention_mask
+            decoder_input_ids = self._shift_right(suffix_input_ids)
+        else:
+            if input_ids is None or labels is None:
+                raise ValueError("reconstruction ablation requires input_ids and labels.")
+            encoder_input_ids = input_ids
+            encoder_attention_mask = attention_mask
+            decoder_input_ids = self._shift_right(input_ids)
+
         was_training = self.training
         self.eval()
         concepts = self.encode_concepts(
-            input_ids=input_ids, attention_mask=attention_mask, return_dict=True
+            input_ids=encoder_input_ids, attention_mask=encoder_attention_mask, return_dict=True
         ).last_hidden_state
-        decoder_input_ids = self._shift_right(input_ids)
         ce_intact = self._next_token_ce(self.decode_logits(concepts, decoder_input_ids), labels)
         ce_zero = self._next_token_ce(
             self.decode_logits(torch.zeros_like(concepts), decoder_input_ids), labels
@@ -1201,17 +1239,48 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
 
     def forward(
         self,
-        input_ids: torch.LongTensor,
+        input_ids: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         token_type_ids: Optional[torch.LongTensor] = None,
         special_tokens_mask: Optional[torch.Tensor] = None,
         labels: Optional[torch.LongTensor] = None,
+        prefix_input_ids: Optional[torch.LongTensor] = None,
+        prefix_attention_mask: Optional[torch.Tensor] = None,
+        suffix_input_ids: Optional[torch.LongTensor] = None,
+        suffix_attention_mask: Optional[torch.Tensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> MaskedLMOutput:
-        del token_type_ids, special_tokens_mask
+        del token_type_ids, special_tokens_mask, suffix_attention_mask
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        if prefix_input_ids is not None:
+            if suffix_input_ids is None:
+                raise ValueError("prefix/suffix forward requires suffix_input_ids.")
+            encoder_outputs = self.encode_concepts(
+                input_ids=prefix_input_ids,
+                attention_mask=prefix_attention_mask,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+            )
+            concept_repr = encoder_outputs.last_hidden_state          # [B, C, H]
+            decoder_input_ids = self._shift_right(suffix_input_ids)
+            word_dropout_p = self.config.decoder_word_dropout if self.training else 0.0
+            logits = self.decode_logits(concept_repr, decoder_input_ids, word_dropout_p=word_dropout_p)
+            loss = self._loss_from_logits(logits, labels, concept_repr)
+
+            if not return_dict:
+                output = (logits,) + encoder_outputs[1:]
+                return ((loss,) + output) if loss is not None else output
+
+            return MaskedLMOutput(
+                loss=loss,
+                logits=logits,
+                hidden_states=encoder_outputs.hidden_states,
+                attentions=encoder_outputs.attentions,
+            )
 
         encoder_outputs = self.encode_concepts(
             input_ids=input_ids,
@@ -1226,19 +1295,7 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         word_dropout_p = self.config.decoder_word_dropout if self.training else 0.0
         logits = self.decode_logits(concept_repr, decoder_input_ids, word_dropout_p=word_dropout_p)
 
-        loss = None
-        if labels is not None:
-            shift_logits = logits[:, :-1, :].contiguous()
-            shift_labels = labels[:, 1:].contiguous()
-            loss_fct = CrossEntropyLoss(ignore_index=-100)
-            task_loss = loss_fct(
-                shift_logits.view(-1, shift_logits.size(-1)),
-                shift_labels.view(-1),
-            )
-            if self.training and self.loss_manager.is_enabled:
-                loss = self.loss_manager(task_loss=task_loss, concept_repr=concept_repr)
-            else:
-                loss = task_loss
+        loss = self._loss_from_logits(logits, labels, concept_repr)
 
         if not return_dict:
             output = (logits,) + encoder_outputs[1:]
