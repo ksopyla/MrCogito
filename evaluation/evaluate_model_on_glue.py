@@ -178,8 +178,8 @@ def parse_args():
         "--model_type",
         type=str,
         default="bert",
-        choices=["bert-type", "xlnet-type", "concept-type", "weighted_mlm", "perceiver_denoise", "diffusion_mlm", "prefix_diffusion"],
-        help="Type of model to fine-tune. perceiver_denoise uses checkpoint metadata to select the canonical decoder-based or sentence-pair evaluation route."
+        choices=["bert-type", "xlnet-type", "concept-type", "weighted_mlm", "perceiver_denoise", "concept_ar", "diffusion_mlm", "prefix_diffusion"],
+        help="Type of model to fine-tune. perceiver_denoise / concept_ar use checkpoint metadata (checkpoint_family) to select the canonical decoder-based or sentence-pair evaluation route."
     )
     parser.add_argument(
         "--task",
@@ -940,7 +940,7 @@ def finetune_model_on_glue(args):
         tokenizer = AutoTokenizer.from_pretrained(default_tokenizer, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
     
     # Load and initialize model based on model type
-    concept_model_types = ["weighted_mlm", "perceiver_denoise", "diffusion_mlm", "prefix_diffusion"]
+    concept_model_types = ["weighted_mlm", "perceiver_denoise", "concept_ar", "diffusion_mlm", "prefix_diffusion"]
     if args.model_type in concept_model_types:
         # Resolve local path or download from HF Hub into Cache/Models
         local_model_path = resolve_model_path(args.model_name_or_path, hf_token)

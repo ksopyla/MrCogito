@@ -26,6 +26,9 @@ export HF_HOME="${PROJECT_ROOT}/../hf_home"
 export HF_DATASETS_CACHE="${PROJECT_ROOT}/../hf_home/datasets"
 export TOKENIZERS_PARALLELISM=false
 
+# Python runs via `uv run`; ensure uv is on PATH for non-interactive SSH.
+if [ -d "$HOME/.local/bin" ]; then export PATH="$HOME/.local/bin:$PATH"; fi
+
 # =============================================================================
 # MODEL TO EVALUATE — update this when a new denoising checkpoint is trained
 # =============================================================================
@@ -41,8 +44,8 @@ echo "  Model Path: $MODEL_PATH"
 echo "  Benchmark:  $BENCHMARK"
 echo ""
 
-if command -v poetry > /dev/null 2>&1; then
-    PYTHON_CMD="poetry run python"
+if command -v uv > /dev/null 2>&1; then
+    PYTHON_CMD="uv run python"
 else
     PYTHON_CMD="python3"
 fi

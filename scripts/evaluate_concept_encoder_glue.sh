@@ -21,14 +21,10 @@ set -o pipefail  # Catch errors in piped commands
 
 echo "=== GLUE Evaluation Script for Concept Encoder ==="
 
-# Initialize pyenv/poetry PATH for non-interactive SSH sessions
-if [ -d "$HOME/.pyenv" ]; then
-    export PYENV_ROOT="$HOME/.pyenv"
-    export PATH="$PYENV_ROOT/bin:$PYENV_ROOT/shims:$PATH"
-    eval "$(pyenv init - 2>/dev/null)" || true
-fi
-if [ -d "$HOME/.local/share/pypoetry" ]; then
-    export PATH="$HOME/.local/share/pypoetry/venv/bin:$PATH"
+# Python is run via `uv run` (managed venv); see .cursor/rules/local-environment.mdc.
+# Ensure uv is on PATH for non-interactive SSH sessions.
+if [ -d "$HOME/.local/bin" ]; then
+    export PATH="$HOME/.local/bin:$PATH"
 fi
 
 # Load .env for HF_TOKEN (enables HF Hub model download without manual login)
@@ -130,12 +126,12 @@ run_single_task() {
     echo "  Started: $(date '+%Y-%m-%d %H:%M:%S')"
     echo "------------------------------------------------------------"
 
-    if command -v poetry > /dev/null 2>&1; then
-        PYTHON_CMD="poetry run python"
+    if command -v uv > /dev/null 2>&1; then
+        PYTHON_CMD="uv run python"
     elif command -v python3 > /dev/null 2>&1; then
         PYTHON_CMD="python3"
     else
-        echo "ERROR: neither poetry nor python3 found in PATH"; return 1
+        echo "ERROR: neither uv nor python3 found in PATH"; return 1
     fi
 
     $PYTHON_CMD evaluation/evaluate_model_on_glue.py \

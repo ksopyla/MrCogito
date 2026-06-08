@@ -162,7 +162,8 @@ def parse_args():
                         choices=list(BENCHMARKS.keys()) + ["all", "sick_all"],
                         help="Benchmark to evaluate on")
     parser.add_argument("--model_type", type=str, required=True,
-                        choices=["weighted_mlm", "perceiver_denoise", "diffusion_mlm", "prefix_diffusion"])
+                        choices=["weighted_mlm", "perceiver_denoise", "concept_ar", "diffusion_mlm", "prefix_diffusion"],
+                        help="perceiver_denoise / concept_ar route via checkpoint_family metadata (sentence-pair vs weighted-pool).")
     parser.add_argument("--model_name_or_path", type=str, required=True)
     parser.add_argument("--tokenizer_name", type=str, default=None)
     parser.add_argument("--output_dir", type=str, default="./Cache/Training/")
