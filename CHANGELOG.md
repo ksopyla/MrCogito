@@ -16,6 +16,18 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ## [Unreleased]
 
+## [2026-06-11] — Fix double-shift in AR teacher-forced CE (skip-one objective bug)
+
+**Why:**
+- `ConceptEncoderForConditionalLM` builds decoder inputs with `_shift_right` (`[bos, x0..x_{N-2}]`, T5 convention: `logits[t]` predicts `x_t`) **and** the loss helper shifted again (GPT convention: `logits[:, :-1]` vs `labels[:, 1:]`). Net effect: every target `x_t` was predicted from context ending at `x_{t-2}` — the decoder never saw the immediately preceding token of its target. This trained a harder "skip-one" objective, inflated all CE numbers, explains the at-chance no-concept floor in the E01 warm-up (a pure next-next-token LM is far weaker), and made the greedy generation loop (single-shift convention) inconsistent with training. The E02 plan even listed this exact risk ("loss shift is off by one for suffix generation").
+
+**Impact:**
+- All `concept_ar` losses (training CE, eval CE, concept-ablation CE, `ce_intact_wd`) now measure true next-token teacher forcing; generation and training conventions agree. CE values are not comparable with the buggy warm-up / first relaunch numbers. E01 was relaunched from scratch on the fixed code; E02 inherits the fix before its first run.
+
+**What changed:**
+- [fixed] `nn/concept_encoder_perceiver.py` — `_next_token_ce` → `_teacher_forced_ce`: plain `CE(logits, labels)` with `ignore_index=-100`, no second shift (decoder inputs are already shift-right-ed). All call sites updated (forward loss + concept ablation, reconstruction and prefix/suffix paths).
+- [added] `tests/test_concept_ar_decoder.py::test_loss_is_single_shift_teacher_forcing` — contract regression test (reconstruction + prefix/suffix), fails on the old double-shift code.
+
 ## [2026-06-11] — E01 eval-protocol fixes: matched word-dropout CE, deterministic eval corruption, pad=eos analysis labels
 
 **Why:**

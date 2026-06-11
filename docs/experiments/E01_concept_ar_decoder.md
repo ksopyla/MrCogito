@@ -148,6 +148,14 @@ path matters more than raw decoder size**, so we attack it on four fronts:
 > - `run_concept_analysis.py` label masking fixed for pad=eos tokenizers (positional, not by id).
 > Success criterion #4's "eval CE < ~4.0" is judged on the **matched-condition** `ce_intact_wd`
 > (and the clean-input CE must not diverge upward); other gates unchanged.
+>
+> **Amendment 2026-06-11 (second, same day — loss bug).** Pre-E02 code review found a
+> **double-shift** in the AR loss: decoder inputs were shift-right-ed *and* the CE shifted
+> logits/labels again, so every target `x_t` was predicted from context ending at `x_{t-2}`
+> (skip-one objective). This inflated every CE number from the warm-up and explains the
+> at-chance no-concept floor. Fixed (`_teacher_forced_ce`, single shift); the full E01 run was
+> restarted from scratch on the fixed code. Warm-up CE values are **not comparable** with the
+> fixed run; rank / STS-B / ΔCE-as-a-gate remain conceptually valid but will be re-measured.
 
 ## Result
 <Filled in AFTER, by experiment-track. Link out; do not paste full results here.>

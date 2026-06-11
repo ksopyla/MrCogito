@@ -133,7 +133,56 @@ def test_prefix_suffix_decoder_self_attention_is_causal():
     assert not torch.allclose(la[:, -1], lb[:, -1], atol=1e-5)
 
 
+def test_loss_is_single_shift_teacher_forcing():
+    """Regression guard for the E01-warmup double-shift bug.
+
+    Decoder inputs are already shift-right-ed ([bos, x0..x_{N-2}]), so logits[t]
+    is conditioned on [bos..x_{t-1}] and must be scored against labels[t] = x_t
+    directly. The buggy version shifted again (logits[:-1] vs labels[1:]), pairing
+    logits[t] with x_{t+1} — a skip-one objective where the decoder never sees the
+    immediately preceding token of its target.
+    """
+    config = _tiny_config()
+    model = ConceptEncoderForConditionalLM(config).eval()
+    B, T = 2, 12
+    input_ids = torch.randint(3, config.vocab_size, (B, T))
+    attention_mask = torch.ones_like(input_ids)
+    labels = input_ids.clone()
+    labels[:, -2] = -100  # mixed ignore positions must be honored too
+
+    with torch.no_grad():
+        out = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+        expected = torch.nn.functional.cross_entropy(
+            out.logits.view(-1, config.vocab_size),
+            labels.view(-1),
+            ignore_index=-100,
+        )
+    assert torch.allclose(out.loss, expected, atol=1e-6)
+
+    # And the same single-shift contract on the prefix->suffix path.
+    P, S = 6, 10
+    prefix_ids = torch.randint(3, config.vocab_size, (B, P))
+    suffix_ids = torch.randint(3, config.vocab_size, (B, S))
+    suffix_labels = suffix_ids.clone()
+    with torch.no_grad():
+        out_ps = model(
+            prefix_input_ids=prefix_ids,
+            prefix_attention_mask=torch.ones_like(prefix_ids),
+            suffix_input_ids=suffix_ids,
+            labels=suffix_labels,
+        )
+        expected_ps = torch.nn.functional.cross_entropy(
+            out_ps.logits.view(-1, config.vocab_size),
+            suffix_labels.view(-1),
+            ignore_index=-100,
+        )
+    assert torch.allclose(out_ps.loss, expected_ps, atol=1e-6)
+
+
 def test_concepts_are_used_zero_and_shuffle_change_loss():
+    # Seeded: an unlucky identity randperm in the shuffle ablation makes delta_shuffle
+    # exactly 0 and the test flaky (observed in full-suite runs).
+    torch.manual_seed(0)
     config = _tiny_config()
     model = ConceptEncoderForConditionalLM(config).eval()
     B, T = 4, 16
@@ -148,6 +197,7 @@ def test_concepts_are_used_zero_and_shuffle_change_loss():
 
 
 def test_prefix_suffix_concepts_are_used_zero_and_shuffle_change_loss():
+    torch.manual_seed(0)
     config = _tiny_config()
     model = ConceptEncoderForConditionalLM(config).eval()
     B, P, S = 4, 8, 12

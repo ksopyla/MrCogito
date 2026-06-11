@@ -5,7 +5,6 @@ alwaysApply: true
 
 ## Output Rules
 - Do NOT use LaTeX — it is not rendered properly. Use markdown instead.
-- Do not generate intermediate markdown files unless explicitly asked; use `agent_memory/` for scratch.
 - Git commit messages: one-line summary, then a detailed body. Precise and to the point. Never add the "made with cursor" trailer.
 
 ## Local Environment

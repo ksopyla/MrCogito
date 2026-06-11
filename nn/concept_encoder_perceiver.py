@@ -1165,12 +1165,18 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         return self.lm_head(hidden)
 
     @staticmethod
-    def _next_token_ce(logits: torch.Tensor, labels: torch.LongTensor) -> torch.Tensor:
-        shift_logits = logits[:, :-1, :].contiguous()
-        shift_labels = labels[:, 1:].contiguous()
+    def _teacher_forced_ce(logits: torch.Tensor, labels: torch.LongTensor) -> torch.Tensor:
+        """Next-token CE for logits produced from ALREADY shift-right-ed decoder inputs.
+
+        decoder_input = [bos, x0..x_{N-2}], so logits[t] is conditioned on
+        [bos, x0..x_{t-1}] and predicts labels[t] = x_t directly — NO additional
+        logits/labels shift here (T5 convention). Shifting again would pair
+        logits[t] with x_{t+1}, silently training a skip-one objective where the
+        decoder never sees the immediately preceding token (the E01-warmup bug).
+        """
         return F.cross_entropy(
-            shift_logits.view(-1, shift_logits.size(-1)),
-            shift_labels.view(-1),
+            logits.view(-1, logits.size(-1)),
+            labels.view(-1),
             ignore_index=-100,
         )
 
@@ -1182,7 +1188,7 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
     ) -> Optional[torch.Tensor]:
         if labels is None:
             return None
-        task_loss = self._next_token_ce(logits, labels)
+        task_loss = self._teacher_forced_ce(logits, labels)
         if self.training and self.loss_manager.is_enabled:
             return self.loss_manager(task_loss=task_loss, concept_repr=concept_repr)
         return task_loss
@@ -1231,12 +1237,12 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         concepts = self.encode_concepts(
             input_ids=encoder_input_ids, attention_mask=encoder_attention_mask, return_dict=True
         ).last_hidden_state
-        ce_intact = self._next_token_ce(self.decode_logits(concepts, decoder_input_ids), labels)
-        ce_zero = self._next_token_ce(
+        ce_intact = self._teacher_forced_ce(self.decode_logits(concepts, decoder_input_ids), labels)
+        ce_zero = self._teacher_forced_ce(
             self.decode_logits(torch.zeros_like(concepts), decoder_input_ids), labels
         )
         perm = torch.randperm(concepts.size(0), device=concepts.device)
-        ce_shuffle = self._next_token_ce(self.decode_logits(concepts[perm], decoder_input_ids), labels)
+        ce_shuffle = self._teacher_forced_ce(self.decode_logits(concepts[perm], decoder_input_ids), labels)
 
         metrics = {
             "ce_intact": ce_intact.item(),
@@ -1248,7 +1254,7 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
 
         train_wd = float(getattr(self.config, "decoder_word_dropout", 0.0) or 0.0)
         if train_wd > 0.0:
-            ce_intact_wd = self._next_token_ce(
+            ce_intact_wd = self._teacher_forced_ce(
                 self.decode_logits(concepts, decoder_input_ids, word_dropout_p=train_wd),
                 labels,
             )
