@@ -197,6 +197,7 @@ class PerceiverDenoiseTrainer(Trainer):
         contrastive_temperature: float,
         compute_concept_ablation: bool = False,
         concept_ablation_batches: int = 5,
+        eval_data_collator=None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -205,6 +206,23 @@ class PerceiverDenoiseTrainer(Trainer):
         self.contrastive_temperature = contrastive_temperature
         self.compute_concept_ablation = compute_concept_ablation
         self.concept_ablation_batches = concept_ablation_batches
+        self.eval_data_collator = eval_data_collator
+
+    def get_eval_dataloader(self, eval_dataset=None):
+        """Use a separate (seeded, deterministic-corruption) collator for eval.
+
+        The training collator samples fresh TSDAE deletions / prefix splits per
+        call; reusing it at eval makes eval_loss noisy and lets best-checkpoint
+        selection depend on corruption luck.
+        """
+        if self.eval_data_collator is None:
+            return super().get_eval_dataloader(eval_dataset)
+        original_collator = self.data_collator
+        self.data_collator = self.eval_data_collator
+        try:
+            return super().get_eval_dataloader(eval_dataset)
+        finally:
+            self.data_collator = original_collator
 
     @torch.no_grad()
     def _concept_ablation_metrics(self) -> dict:
@@ -218,8 +236,7 @@ class PerceiverDenoiseTrainer(Trainer):
             return {}
         dataloader = self.get_eval_dataloader()
         device = self.args.device
-        keys = ["ce_intact", "ce_zero", "ce_shuffle", "delta_zero", "delta_shuffle"]
-        sums = {k: 0.0 for k in keys}
+        sums: dict = {}
         n = 0
         for i, batch in enumerate(dataloader):
             if i >= self.concept_ablation_batches:
@@ -241,12 +258,12 @@ class PerceiverDenoiseTrainer(Trainer):
                 if attention_mask is not None:
                     attention_mask = attention_mask.to(device)
                 m = base_model.concept_ablation_ce(input_ids, attention_mask, labels)
-            for k in keys:
-                sums[k] += m[k]
+            for k, v in m.items():
+                sums[k] = sums.get(k, 0.0) + v
             n += 1
         if n == 0:
             return {}
-        return {f"concept_ablation/{k}": sums[k] / n for k in keys}
+        return {f"concept_ablation/{k}": v / n for k, v in sums.items()}
 
     def evaluate(self, *args, **kwargs):
         metrics = super().evaluate(*args, **kwargs)
@@ -600,9 +617,11 @@ def main():
         },
     )
 
+    # Train collator samples fresh corruption per call; the eval collator is seeded
+    # so the held-out set always sees the same deletions / split points (stable
+    # eval_loss, fair best-checkpoint selection).
     if model_args.objective_variant == OBJECTIVE_PREFIX_SUFFIX:
-        data_collator = DataCollatorForPrefixGeneration(
-            tokenizer,
+        prefix_collator_kwargs = dict(
             max_length=data_args.max_seq_length,
             prefix_ratio_min=data_args.prefix_ratio_min,
             prefix_ratio_max=data_args.prefix_ratio_max,
@@ -610,11 +629,21 @@ def main():
             min_suffix_content=data_args.min_suffix_content,
             split_strategy=data_args.split_strategy,
         )
+        data_collator = DataCollatorForPrefixGeneration(tokenizer, **prefix_collator_kwargs)
+        eval_data_collator = DataCollatorForPrefixGeneration(
+            tokenizer, seed=training_args.seed, **prefix_collator_kwargs
+        )
     else:
         data_collator = DataCollatorForTSDAE(
             tokenizer,
             deletion_rate=data_args.deletion_rate,
             max_length=data_args.max_seq_length,
+        )
+        eval_data_collator = DataCollatorForTSDAE(
+            tokenizer,
+            deletion_rate=data_args.deletion_rate,
+            max_length=data_args.max_seq_length,
+            seed=training_args.seed,
         )
 
     callbacks = []
@@ -633,6 +662,7 @@ def main():
         contrastive_weight=model_args.contrastive_weight,
         contrastive_temperature=model_args.contrastive_temperature,
         compute_concept_ablation=is_causal_ar,
+        eval_data_collator=eval_data_collator,
     )
 
     logger.info("=" * 60)

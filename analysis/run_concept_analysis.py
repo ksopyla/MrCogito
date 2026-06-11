@@ -90,26 +90,30 @@ def compute_ar_concept_ablation(model, batches, device):
     """Average concept_ablation_ce over a few held-out reconstruction batches.
 
     `batches` is a list of (input_ids, attention_mask) tensors already on CPU.
-    Labels are the clean input_ids with pad positions set to -100 (next-token CE).
-    Returns the averaged {ce_intact, ce_zero, ce_shuffle, delta_zero, delta_shuffle}.
+    Labels mask padding POSITIONALLY via attention_mask (labels[mask==0] = -100),
+    never by token id: with SmolLM2-style pad=eos tokenizers, masking by id would
+    silently drop every real eos target and skew CE vs the training-eval numbers.
+    Returns the averaged ablation dict (ce_intact, ce_zero, ce_shuffle, deltas,
+    plus ce_intact_wd / gap_clean_vs_wd when the model trained with word-dropout).
+
+    Note: the encoder here sees the FULL clean sequence (no TSDAE deletion), so
+    absolute CE values are not comparable with the trainer's eval metrics, which
+    corrupt the encoder input. Deltas remain internally consistent.
     """
-    pad_id = model.config.pad_token_id
-    keys = ["ce_intact", "ce_zero", "ce_shuffle", "delta_zero", "delta_shuffle"]
-    sums = {k: 0.0 for k in keys}
+    sums = {}
     n = 0
     for input_ids, attention_mask in batches:
         input_ids = input_ids.to(device)
         attention_mask = attention_mask.to(device)
         labels = input_ids.clone()
-        if pad_id is not None:
-            labels[labels == pad_id] = -100
+        labels[attention_mask == 0] = -100
         m = model.concept_ablation_ce(input_ids, attention_mask, labels)
-        for k in keys:
-            sums[k] += m[k]
+        for k, v in m.items():
+            sums[k] = sums.get(k, 0.0) + v
         n += 1
     if n == 0:
         return {}
-    return {k: sums[k] / n for k in keys}
+    return {k: v / n for k, v in sums.items()}
 
 
 @torch.no_grad()
@@ -349,6 +353,12 @@ def main():
             print(f"  Δzero  (zero-intact) : {dz:.4f}   {gz}")
             print(f"  Δshuffle             : {dsh:.4f}   {gsh}   (stronger test)")
             print("  E01 gate: Δzero AND Δshuffle ≥ 0.5 nats.")
+            if "ce_intact_wd" in ablation:
+                gap = ablation["gap_clean_vs_wd"]
+                gw = ("⚠ decoder specialized to word-dropped inputs — clean-input CE "
+                      "understates quality" if gap > 0.5 else "✓ clean/train conditions agree")
+                print(f"  CE intact (train-matched word-dropout): {ablation['ce_intact_wd']:.4f}")
+                print(f"  Gap clean-vs-wd      : {gap:.4f}   {gw}")
         try:
             samples = generate_ar_samples(model, tokenizer, sample_texts, device,
                                           max_new_tokens=args.max_new_tokens)

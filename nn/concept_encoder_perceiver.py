@@ -1043,7 +1043,9 @@ class ConceptCausalDecoderStack(nn.Module):
         emb = self.token_embeddings(decoder_input_ids)
         if self.input_projection is not None:
             emb = self.input_projection(emb)                       # [B, T, H]
-        if word_dropout_p > 0.0 and self.training:
+        # Applied whenever explicitly requested (callers gate on training mode;
+        # eval-time diagnostics pass the train rate to measure the matched condition).
+        if word_dropout_p > 0.0:
             drop = (torch.rand(B, T, device=emb.device) < word_dropout_p).unsqueeze(-1)
             emb = torch.where(drop, self.dropout_embedding.to(emb.dtype), emb)
         if self.position_embeddings is not None:
@@ -1197,11 +1199,19 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
     ) -> dict:
         """Posterior-collapse diagnostic: next-token CE with intact vs ablated concepts.
 
-        Returns {ce_intact, ce_zero, ce_shuffle, delta_zero, delta_shuffle}. A decoder
-        that genuinely uses the concepts shows ce_zero/ce_shuffle >> ce_intact (large
-        positive deltas). "zero" replaces concepts with zeros (the no-concept floor);
-        "shuffle" permutes concepts across the batch (breaks instance-specific info while
-        preserving concept statistics — the stronger test). No word-dropout here.
+        Returns {ce_intact, ce_zero, ce_shuffle, delta_zero, delta_shuffle} and, when the
+        model was trained with decoder word-dropout, {ce_intact_wd, gap_clean_vs_wd}.
+        A decoder that genuinely uses the concepts shows ce_zero/ce_shuffle >> ce_intact
+        (large positive deltas). "zero" replaces concepts with zeros (the no-concept
+        floor); "shuffle" permutes concepts across the batch (breaks instance-specific
+        info while preserving concept statistics — the stronger test).
+
+        ce_intact is measured with CLEAN decoder inputs (word_dropout=0). When training
+        used word-dropout, that clean condition is out-of-distribution for the decoder, so
+        ce_intact_wd re-measures intact CE under the TRAIN-matched word-dropout rate.
+        gap_clean_vs_wd = ce_intact - ce_intact_wd: a large positive gap means the
+        decoder is specialized to word-dropped inputs and the clean-input eval CE
+        understates the model's quality (train/eval protocol mismatch, E01 diagnostic).
         """
         if prefix_input_ids is not None:
             if suffix_input_ids is None or labels is None:
@@ -1227,15 +1237,27 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         )
         perm = torch.randperm(concepts.size(0), device=concepts.device)
         ce_shuffle = self._next_token_ce(self.decode_logits(concepts[perm], decoder_input_ids), labels)
-        if was_training:
-            self.train()
-        return {
+
+        metrics = {
             "ce_intact": ce_intact.item(),
             "ce_zero": ce_zero.item(),
             "ce_shuffle": ce_shuffle.item(),
             "delta_zero": (ce_zero - ce_intact).item(),
             "delta_shuffle": (ce_shuffle - ce_intact).item(),
         }
+
+        train_wd = float(getattr(self.config, "decoder_word_dropout", 0.0) or 0.0)
+        if train_wd > 0.0:
+            ce_intact_wd = self._next_token_ce(
+                self.decode_logits(concepts, decoder_input_ids, word_dropout_p=train_wd),
+                labels,
+            )
+            metrics["ce_intact_wd"] = ce_intact_wd.item()
+            metrics["gap_clean_vs_wd"] = (ce_intact - ce_intact_wd).item()
+
+        if was_training:
+            self.train()
+        return metrics
 
     def forward(
         self,

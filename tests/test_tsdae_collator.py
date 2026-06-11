@@ -153,3 +153,62 @@ class TestDataCollatorForTSDAE:
                 tid = batch["input_ids"][i, pos].item()
                 expected = 0 if tid == pad_id else 1
                 assert batch["attention_mask"][i, pos].item() == expected
+
+    def test_seeded_collator_is_deterministic(self, tokenizer, sample_features):
+        """A seeded collator must produce identical deletions for identical batches."""
+        collator = DataCollatorForTSDAE(tokenizer, deletion_rate=0.6, seed=42)
+        batch_a = collator(sample_features)
+        batch_b = collator(sample_features)
+        assert torch.equal(batch_a["attention_mask"], batch_b["attention_mask"])
+        assert torch.equal(batch_a["labels"], batch_b["labels"])
+
+    def test_unseeded_collator_resamples_deletions(self, tokenizer, sample_features):
+        """Without a seed, deletion masks should vary across calls."""
+        collator = DataCollatorForTSDAE(tokenizer, deletion_rate=0.6)
+        masks = [collator(sample_features)["attention_mask"] for _ in range(10)]
+        assert any(not torch.equal(masks[0], m) for m in masks[1:])
+
+
+class _EosOnlyTokenizer:
+    """SmolLM2-style stub: <|endoftext|> is bos=eos, pad aliases eos, no cls/sep/mask."""
+
+    eos_token_id = 0
+    bos_token_id = 0
+    pad_token_id = 0  # pad aliased to eos at runtime
+    cls_token_id = None
+    sep_token_id = None
+    mask_token_id = None
+    unk_token_id = 0
+
+    def __len__(self):
+        return 100
+
+
+class TestTSDAECollatorPadAliasesEos:
+    """SmolLM2 contract: pad == eos, masking must stay positional, eos stays trainable."""
+
+    def _features(self):
+        # Two docs of different length, each ending with the real eos (id 0).
+        return [
+            {"input_ids": [11, 12, 13, 14, 15, 0]},
+            {"input_ids": [21, 22, 0]},
+        ]
+
+    def test_real_eos_kept_as_label_and_pad_masked(self):
+        collator = DataCollatorForTSDAE(_EosOnlyTokenizer(), deletion_rate=0.6, seed=7)
+        batch = collator(self._features())
+        labels = batch["labels"]
+
+        # Row 0: full length 6, the trailing eos (pos 5) must be a real target.
+        assert labels[0, 5].item() == 0
+        # Row 1: content length 3, eos at pos 2 trainable; positions 3+ are padding -> -100.
+        assert labels[1, 2].item() == 0
+        assert (labels[1, 3:] == -100).all()
+
+    def test_eos_never_deleted_from_encoder_view(self):
+        collator = DataCollatorForTSDAE(_EosOnlyTokenizer(), deletion_rate=0.99)
+        for _ in range(10):
+            batch = collator(self._features())
+            # eos is a special token: must remain visible at its real positions.
+            assert batch["attention_mask"][0, 5].item() == 1
+            assert batch["attention_mask"][1, 2].item() == 1

@@ -167,9 +167,9 @@ def test_prefix_suffix_concepts_are_used_zero_and_shuffle_change_loss():
 
 
 def test_word_dropout_routes_through_learned_embedding():
-    # hidden_dropout_prob=0 makes embed_dropout an identity; word-dropout only applies in
-    # training mode (so keep .train()). With p=1.0 and the RoPE path (no abs-pos add), every
-    # decoder-input embedding should equal the learned dropout embedding exactly.
+    # hidden_dropout_prob=0 makes embed_dropout an identity. With p=1.0 and the RoPE path
+    # (no abs-pos add), every decoder-input embedding should equal the learned dropout
+    # embedding exactly. Callers gate on training mode; embed() honors the explicit rate.
     config = _tiny_config(decoder_word_dropout=1.0, hidden_dropout_prob=0.0)
     model = ConceptEncoderForConditionalLM(config).train()
     B, T = 2, 16
@@ -178,6 +178,42 @@ def test_word_dropout_routes_through_learned_embedding():
     emb = model.decoder.embed(dec_in, word_dropout_p=1.0)
     expected = model.decoder.dropout_embedding.expand(B, T, config.hidden_size)
     assert torch.allclose(emb, expected, atol=1e-6)
+
+
+def test_word_dropout_applies_in_eval_when_explicitly_requested():
+    """Eval-mode diagnostics (ce_intact_wd) must be able to force the train-matched rate."""
+    config = _tiny_config(hidden_dropout_prob=0.0)
+    model = ConceptEncoderForConditionalLM(config).eval()
+    B, T = 2, 16
+    dec_in = torch.randint(3, config.vocab_size, (B, T))
+
+    emb = model.decoder.embed(dec_in, word_dropout_p=1.0)
+    expected = model.decoder.dropout_embedding.expand(B, T, config.hidden_size)
+    assert torch.allclose(emb, expected, atol=1e-6)
+
+    # And forward() in eval mode must still use CLEAN inputs (word-dropout off).
+    clean = model.decoder.embed(dec_in, word_dropout_p=0.0)
+    assert not torch.allclose(clean, expected, atol=1e-6)
+
+
+def test_concept_ablation_reports_train_matched_word_dropout_ce():
+    config = _tiny_config(decoder_word_dropout=0.4)
+    model = ConceptEncoderForConditionalLM(config).eval()
+    B, T = 4, 16
+    input_ids = torch.randint(3, config.vocab_size, (B, T))
+    attention_mask = torch.ones_like(input_ids)
+    labels = input_ids.clone()
+
+    m = model.concept_ablation_ce(input_ids, attention_mask, labels)
+    assert "ce_intact_wd" in m and "gap_clean_vs_wd" in m
+    assert torch.isfinite(torch.tensor(m["ce_intact_wd"]))
+    assert abs(m["gap_clean_vs_wd"] - (m["ce_intact"] - m["ce_intact_wd"])) < 1e-5
+
+    # Without word-dropout in the config, the matched-condition keys must be absent.
+    config0 = _tiny_config(decoder_word_dropout=0.0)
+    model0 = ConceptEncoderForConditionalLM(config0).eval()
+    m0 = model0.concept_ablation_ce(input_ids, attention_mask, labels)
+    assert "ce_intact_wd" not in m0
 
 
 def test_build_config_causal_ar_eval_contract():

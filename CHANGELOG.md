@@ -16,6 +16,23 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ## [Unreleased]
 
+## [2026-06-11] — E01 eval-protocol fixes: matched word-dropout CE, deterministic eval corruption, pad=eos analysis labels
+
+**Why:**
+- The E01 warm-up run (`concept_ar_H768L6C128D4_20260607_172931`) showed eval CE *rising* (6.82 → 9.0) while train CE fell (10.2 → 3.1) on a single data pass — impossible as overfitting, so a train/eval protocol mismatch. Diagnosis: training applies decoder word-dropout p=0.4 while eval scores with clean decoder inputs; the decoder specializes to the blanked-input distribution and the clean condition becomes out-of-distribution (supported by ce_zero ≈ ln(vocab): the decoder learned no pure-LM use of its left context). Two further eval-trust issues from code review: TSDAE deletion is resampled every eval call (noisy `eval_loss`, lucky best-checkpoint selection), and `run_concept_analysis.py` masked labels by token id — with SmolLM2 pad=eos that silently dropped every real eos target.
+
+**Impact:**
+- E01/E02 eval numbers become trustworthy: eval CE is now also measured under the train-matched word-dropout condition (`ce_intact_wd`, `gap_clean_vs_wd` — a large gap flags the OOD mismatch directly), held-out corruption is deterministic so `eval_loss` is comparable across evaluations and runs, and offline concept-analysis CE agrees with the training-eval label contract for pad=eos tokenizers.
+
+**What changed:**
+- [updated] `nn/concept_encoder_perceiver.py` — `ConceptCausalDecoderStack.embed()` honors an explicitly passed `word_dropout_p` regardless of train/eval mode (callers still gate the training default); `concept_ablation_ce()` additionally returns `ce_intact_wd` (intact concepts, train-matched word-dropout) and `gap_clean_vs_wd` when the config has `decoder_word_dropout > 0`.
+- [updated] `data/data_collators.py` — `DataCollatorForTSDAE` and `DataCollatorForPrefixGeneration` accept `seed`; when set, deletion masks / prefix-suffix split points are a pure function of (seed, batch content) for reproducible eval corruption.
+- [updated] `training/train_perceiver_denoise.py` — trainer takes a separate seeded `eval_data_collator` (swapped in via `get_eval_dataloader`); concept-ablation aggregation passes through whatever metric keys the model returns.
+- [fixed] `analysis/run_concept_analysis.py` — ablation labels now mask padding positionally via `attention_mask` instead of by `pad_token_id` (pad=eos safe); prints the matched-word-dropout CE and the clean-vs-wd gap; documents that offline ablation encodes the full clean sequence (absolute CE not comparable with training eval).
+- [added] tests: seeded-collator determinism, unseeded resampling, pad=eos TSDAE label/visibility contract (`tests/test_tsdae_collator.py`); eval-mode forced word-dropout, `ce_intact_wd` reporting (`tests/test_concept_ar_decoder.py`).
+
+**Related:** `docs/experiments/E01_concept_ar_decoder.md` (rerun uses these fixes), E01 warm-up review (eval CE divergence diagnosis)
+
 ## [2026-06-06] — Complete the research pipeline: add `implementation-plan`, remove duplicate spec index
 
 **Why:**
