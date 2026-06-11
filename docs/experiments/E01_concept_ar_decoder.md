@@ -134,6 +134,21 @@ path matters more than raw decoder size**, so we attack it on four fronts:
   eval metric + register the new family in `analysis/run_concept_analysis.py` `MODEL_CLASSES` and
   `evaluation/concept_eval_routing.py`. Preserve the checkpoint eval contract.
 
+> **Amendment 2026-06-11 (before the full run; warm-up evidence).** The 0.3-epoch warm-up
+> `concept_ar_H768L6C128D4_20260607_172931` (Polonez) exposed a train/eval protocol mismatch:
+> with word-dropout **p=0.4** the decoder specialized to blanked inputs — clean-input eval CE
+> *rose* 6.8→9.0 while train CE fell to 3.1, and offline diagnosis on the last checkpoint showed
+> CE 13.9 (clean inputs, above random) vs **0.49** under the train-matched word-dropout condition
+> (gap 13.4 nats; Δzero even turned negative). Changes for the full run, all evidence-driven:
+> - **`DECODER_WORD_DROPOUT` 0.4 → 0.2** (the copy-path guard stays, the distribution shift shrinks);
+> - eval now logs **`ce_intact_wd` / `gap_clean_vs_wd`** (train-matched word-dropout CE) so the
+>   mismatch is measured, not hidden;
+> - **seeded eval collator** (deterministic TSDAE deletions on the held-out set — stable
+>   `eval_loss`, fair best-checkpoint selection);
+> - `run_concept_analysis.py` label masking fixed for pad=eos tokenizers (positional, not by id).
+> Success criterion #4's "eval CE < ~4.0" is judged on the **matched-condition** `ce_intact_wd`
+> (and the clean-input CE must not diverge upward); other gates unchanged.
+
 ## Result
 <Filled in AFTER, by experiment-track. Link out; do not paste full results here.>
 - Run id: `<run_id>`
