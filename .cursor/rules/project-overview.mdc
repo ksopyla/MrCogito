@@ -1,46 +1,42 @@
 ---
-description: High-level overview of the Concept Encoder project, core architecture, and AI agent rules.
+description: High-level overview of the Concept Reasoning research project, core architecture, and AI agent rules.
 alwaysApply: true
 ---
 
 ## Project Overview
-"Concept reasoning model" — a novel architecture that compresses long sequences (text/audio) into a small set of semantic "concepts" (e.g. 128,256, 512 concepts from 4-64 times longer tokens) via cross-attention, diffustion, recursive encoding etc. that would be used for reasoning from those concepts. This fits into the "concept bottleneck", knowledge compression and reasoning in latent space paradigm.
 
+This is a research project exploring "concept reasoning" as a way to reason about long sequences of text or audio. The focus is on gaining insight and knowledge through experimentation. Do not treat this as a well-defined engineering project — we explore the concept-reasoning paradigm in different ways, and the direction is genuinely open.
 
-Full vision and goals are in `docs/1_Strategy_and_Plans/vision_and_goals.md`.
-The live agenda is in `docs/1_Strategy_and_Plans/agenda.md` (slim daily driver); per-experiment specs in `docs/experiments/`.
+**Concept reasoning model** — a novel architecture that compresses long sequences (text/audio) into a small set of semantic "concepts" (e.g. 128/256/512 concepts from 4–64× longer token sequences) via cross-attention, diffusion, recursive encoding, etc., then reasons from those concepts. This fits the "concept bottleneck", knowledge compression, and latent-space reasoning paradigms.
+
+Full vision and goals: `docs/1_Strategy_and_Plans/vision_and_goals.md`.
+The live agenda is `docs/1_Strategy_and_Plans/agenda.md` (slim daily driver — read it for current focus); per-experiment specs in `docs/experiments/`.
 
 **Author**: Krzysztof Sopyla (krzysztof.sopyla@gmail.com, https://github.com/ksopyla)
-**Project page**: https://ai.ksopyla.com/projects/concept-encoder/
-
-## Key Implementations
-- `weighted_mlm` — Weighted decoder combining concepts using position-specific weights.
-- `perceiver_mlm` — Perceiver IO decoder (Input+Position queries).
-- `recursive_mlm` — TRM-inspired recursive encoder: same cross-attention layer applied K times.
-- `diffusion_mlm` — Masked diffusion decoder (AdaLN-Zero).
 
 ## Key Directories
-- `nn/` — Model implementations, `loss_manager.py`
-- `training/` — Training scripts, data collators
-- `evaluation/` — benchmark eval scripts
-- `analysis/` — `run_concept_analysis.py` (effective rank, cosine similarities)
-- `playground/` — playground for experiments, just for exploration and learning, not for production, mainly jupyter notebooks
-- `scripts/` — utility scripts
-- `docs/` — documentation, reserch logs, todo lists, reserch goals and hypotheses
-    - `1_Strategy_and_Plans/` — `agenda.md` (slim living agenda, current truth — read for live context), `vision_and_goals.md`, `training_eval_matrix.md`
-    - `experiments/` — one frozen spec per experiment (`E0NN_*.md`); implementation is a config over the shared foundation
+- `nn/` — active model implementations: `concept_encoder_perceiver.py` (main Perceiver/BiXT-style family, incl. the concept-conditioned AR decoder), `concept_encoder.py`, `concept_encoder_weighted.py`, `loss_manager.py`, `concept_losses.py`
+- `training/` — training entrypoints (`train_perceiver_denoise.py` is the main one) and `utils_training.py`
+- `data/` — `data_collators.py` (all collators), `dataset_preprocess.py`
+- `evaluation/` — benchmark eval scripts, checkpoint loading and eval routing
+- `analysis/` — `run_concept_analysis.py` (effective rank, cosine similarities), `check_model_health.py`
+- `parked/` — set-aside model families (recursive, diffusion, prefix-diffusion) with their training scripts and tests; revivable, do not modify casually
+- `playground/` — exploration and learning only (mainly notebooks), not production
+- `scripts/` — bash launchers for training/eval on remote GPU servers, sync and upload utilities
+- `docs/` — documentation, research logs, goals and hypotheses
+    - `1_Strategy_and_Plans/` — `agenda.md` (slim living agenda, current truth), `vision_and_goals.md`, `training_eval_matrix.md`
+    - `experiments/` — one frozen spec per experiment (`E0NN_*.md`) + its `_plan.md`; implementation is a config over the shared foundation
     - `2_Experiments_Registry/` — master experiment log, run reports (append-only result ledger)
-    - `3_Evaluations_and_Baselines/` — canonical baselines
+    - `3_Evaluations_and_Baselines/` — canonical baselines, comparative studies
     - `4_Research_Notes/` — root cause analyses, diagnoses
     - `5_Archive/` — superseded roadmaps/plans (HISTORICAL — see Docs hygiene below)
-- `Cache/` — cached files from remote servers, local training logs, evaluation reports, etc.
+- `Cache/` — files synced from remote servers (gitignored content)
     - `Training/` — model checkpoints and optimizer states
-    - `Evaluation_reports/` — CSV eval results synchronized from remote servers
-    - `Logs/` — training logs
-    - `wandb/` — training logs (gitignored)
-- `tests/` — unit tests, to have confidence in the implementation, safety net
-- `verification/` — verification scripts, fro local initial implementation verification
-- `pyproject.toml` — poetry dependencies
+    - `Evaluation_reports/` — CSV eval results from remote servers
+    - `Logs/` — training logs; `wandb/` — W&B runs
+- `tests/` — unit tests, the safety net for the implementation
+- `verification/` — scripts for initial local verification of new implementations
+- `pyproject.toml` + `uv.lock` — dependencies managed by `uv` (see `local-environment.mdc`)
 - `CHANGELOG.md` — changelog
 
 ## Docs Hygiene & Context Discipline
@@ -50,7 +46,7 @@ Docs drift over time: old ideas, superseded facts, and dead actions accumulate a
     - anything under `docs/5_Archive/`, and
     - any file or section that opens with an `> **OBSOLETE — YYYY-MM-DD**` callout, or a claim struck through as `~~revised~~`.
 - **Current truth lives in `docs/1_Strategy_and_Plans/agenda.md`** (the slim living agenda — the daily driver) plus per-experiment specs in `docs/experiments/`, `training_eval_matrix.md`, and `vision_and_goals.md`. The old `roadmap.md` and `active_todos.md` are archived in `docs/5_Archive/` (historical). When docs disagree, trust order is: code + git + `CHANGELOG.md` → `2_Experiments_Registry/` ledger → `agenda.md` + `docs/experiments/` → notes/ideas/drafts.
-- **Experiments are scoped specs, not forks.** Every experiment has a frozen spec in `docs/experiments/<ID>.md` and runs as a config over the shared foundation. See `.cursor/rules/experiment-discipline.mdc` and the `experiment-design` skill.
+- **Experiments are scoped specs, not forks.** Every experiment has a frozen spec in `docs/experiments/<ID>.md` and runs as args/config over the shared foundation — never a new training script per idea (see the `experiment-design` skill).
 
 ## Research Pipeline (skills, in order)
 Input (prior result / idea / vision / paper) →
@@ -58,7 +54,8 @@ Input (prior result / idea / vision / paper) →
 `research-synthesis` (fit? tradeoffs? Adopt/Adapt/Watch/Reject) →
 `experiment-design` (frame ONE experiment → `docs/experiments/<ID>.md`) →
 `implementation-plan` (repo-rooted HOW → `docs/experiments/<ID>_plan.md`) →
-`research-implement` (build on the shared foundation) → run →
+`research-implement` (build on the shared foundation) →
+`experiment-run` (launch/monitor on Odra/Polonez) → `experiment-evaluate` (tiered eval pipeline) →
 `experiment-track` (results → `master_experiment_log.md`). `docs-hygiene` keeps docs lean.
 Canonical homes: intent → specs/plans; results → `master_experiment_log.md`; live memory → `agenda.md`.
 - **`2_Experiments_Registry/` is append-only.** Never delete or rewrite recorded results; later results may add a dated note that supersedes an earlier *interpretation*.

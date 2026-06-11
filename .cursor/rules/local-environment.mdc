@@ -1,51 +1,28 @@
 ---
-description: Local macOS development environment, Python/uv setup, and output formatting rules.
+description: Local macOS development environment, Python/uv setup, git workflow, and output formatting rules.
 alwaysApply: true
 ---
 
 ## Output Rules
-- Do NOT use LaTeX format — not rendered properly. Use markdown instead.
+- Do NOT use LaTeX — it is not rendered properly. Use markdown instead.
 - Do not generate intermediate markdown files unless explicitly asked; use `agent_memory/` for scratch.
-- While committing to git do not add the "--trailer made with cursor" message, it is annoying and not needed.
-- Git commit messages: one-line short main change description, followed by a more detailed body. Be precise and to the point, but detailed.
+- Git commit messages: one-line summary, then a detailed body. Precise and to the point. Never add the "made with cursor" trailer.
 
 ## Local Environment
-- **OS**: macOS (Apple Silicon, arm64), **Shell**: zsh
-- **Hardware**: MacBook Pro (M-series). No NVIDIA GPU — use Apple MPS for smoke tests; full training runs on Polonez/Odra (see `remote-servers.mdc`).
-- **Python**: 3.12 pinned via `.python-version`, managed by [uv](https://docs.astral.sh/uv/).
-- **Package manager**: `uv` (migrated from Poetry). Lockfile is `uv.lock` (committed).
-- Quote paths with spaces using double quotes.
+- macOS (Apple Silicon, arm64), zsh. No NVIDIA GPU — Apple MPS for smoke tests only; real training runs on Polonez/Odra (see the `experiment-run` skill).
+- Python 3.12 pinned via `.python-version`; deps managed by [uv](https://docs.astral.sh/uv/) (`uv.lock` is committed).
+- Secrets/env in `.env` (copy from `.env.example`, never commit), loaded via python-dotenv by training/eval scripts. Includes `PYTORCH_ENABLE_MPS_FALLBACK=1` and project-local `HF_HOME=./Cache/hf_home`.
+- `liger-kernel` is Linux-only (CUDA + Triton), conditionally excluded on macOS in `pyproject.toml`. Do not import it from cross-platform code.
 
 ## Common Commands
-- Install / update deps:    `uv sync`
-- Add a runtime dep:        `uv add <pkg>`
-- Add a dev dep:            `uv add --group dev <pkg>`
-- Run any script:           `uv run python <script> [args]`
-- Run tests:                `uv run pytest tests/ -v`
-- Verify torch + MPS:       `uv run python verification/torch_test.py`
-
-## MPS / PyTorch Notes
-- Set `PYTORCH_ENABLE_MPS_FALLBACK=1` (already in `.env.example`) so unimplemented ops fall back to CPU instead of crashing.
-- `liger-kernel` is Linux-only (CUDA + Triton); it is conditionally excluded on macOS in `pyproject.toml`. Do not import it from cross-platform code.
-- Local runs are for smoke tests and unit tests only. Real training happens on Polonez / Odra.
+- Install / update deps: `uv sync` · add dep: `uv add <pkg>` (dev: `uv add --group dev <pkg>`)
+- Run a script: `uv run python <script> [args]`
+- Run tests: `uv run pytest tests/ -v`
+- Verify torch + MPS: `uv run python verification/torch_test.py`
 
 ## Git Workflow
-- Default working branch: `dev`. All new work goes here (or on a short-lived feature branch off `dev` for risky changes — merge those into `dev` first).
-- `main` is updated only via Pull Request from `dev`. Do **not** commit or push directly to `main`.
-- Use the GitHub CLI (`gh`, already installed locally) for all GitHub operations: PRs, issues, checks, releases. Prefer `gh` over the web UI and over raw `git` for anything that touches GitHub state.
-- Common commands:
-  ```bash
-  # commit on dev (or a feature branch off dev), then push
-  git push -u origin HEAD
-
-  # open PR from current branch into dev (feature branches) or main (release)
-  gh pr create --base dev  --title "..." --body "..."
-  gh pr create --base main --title "..." --body "..."
-
-  # inspect and land
-  gh pr checks                # CI status for the current PR
-  gh pr view                  # discussion, reviews, files changed
-  gh pr merge --squash        # land after review
-  ```
-- After a PR merges on origin, sync local branches: `git checkout dev && git pull && git checkout main && git pull`.
-- For the agent: when asked to "commit and push", commit on `dev` (or the current feature branch) and push there. Do not push to `main` unless the user explicitly says so.
+- Default working branch: `dev`. All new work goes there (or a short-lived feature branch off `dev`, merged back into `dev`).
+- `main` is updated only via PR from `dev`. Never commit or push directly to `main`.
+- "Commit and push" means: commit on `dev` (or the current feature branch) and push there (`git push -u origin HEAD`).
+- Use the GitHub CLI (`gh`) for all GitHub operations: `gh pr create --base dev|main`, `gh pr checks`, `gh pr view`, `gh pr merge --squash`.
+- After a PR merges on origin: `git checkout dev && git pull && git checkout main && git pull`.
