@@ -173,7 +173,7 @@ def get_parameter_breakdown(model: Module) -> Dict[str, Dict[str, int]]:
 
 
 
-def setup_distributed(timeout_minutes: int = 30):
+def setup_distributed(timeout_minutes: Optional[int] = None):
     """
     Setup for distributed training on multi-GPU single node.
     Returns local rank for the current process.
@@ -182,8 +182,17 @@ def setup_distributed(timeout_minutes: int = 30):
         timeout_minutes: NCCL collective timeout. Must exceed the longest
             single-rank operation (e.g. first-time dataset tokenisation on
             rank 0 while other ranks wait at the ``main_process_first`` barrier).
-            Default 30 min covers ~1M-example preprocessing on Odra.
+            When None, reads the ``DDP_TIMEOUT`` env var (seconds — same knob the
+            launchers pass to ``--ddp_timeout``), falling back to 30 min. This PG
+            is created BEFORE TrainingArguments parsing, so ``--ddp_timeout``
+            alone cannot protect the first barrier (caused a SIGABRT on Odra
+            when first-time FineWeb-Edu tokenization took ~61 min).
     """
+    if timeout_minutes is None:
+        try:
+            timeout_minutes = max(1, int(os.environ.get("DDP_TIMEOUT", "1800")) // 60)
+        except ValueError:
+            timeout_minutes = 30
     if torch.cuda.is_available():
         local_rank = int(os.environ.get("LOCAL_RANK", -1))
 

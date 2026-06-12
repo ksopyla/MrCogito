@@ -80,6 +80,10 @@ RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-}"
 # epoch tokenizes a large corpus under main_process_first (e.g. FineWeb-Edu), otherwise
 # non-main ranks time out at the preprocessing barrier (NCCL SeqNum=1 ALLREDUCE).
 DDP_TIMEOUT="${DDP_TIMEOUT:-1800}"
+# Export so setup_distributed() can apply it to the FIRST process group too
+# (created before TrainingArguments parsing; --ddp_timeout alone is too late
+# to protect the first-time preprocessing barrier).
+export DDP_TIMEOUT
 
 RESUME_ARGS=()
 if [ -n "$RESUME_FROM_CHECKPOINT" ]; then
