@@ -266,6 +266,45 @@ def test_concept_ablation_reports_train_matched_word_dropout_ce():
     assert "ce_intact_wd" not in m0
 
 
+def test_all_parameters_receive_grad_in_training_backward():
+    """DDP with find_unused_parameters=False requires every parameter to get a grad.
+
+    Regression guard for the Odra E02 crash: with decoder_word_dropout=0.0 the
+    learned dropout_embedding was never touched by the prefix->suffix forward and
+    DDP errored at the second step ('Expected to have finished reduction...').
+    """
+    torch.manual_seed(0)
+
+    # prefix->suffix path, word-dropout disabled (the E02 configuration).
+    config = _tiny_config(decoder_word_dropout=0.0)
+    model = ConceptEncoderForConditionalLM(config).train()
+    B, P, S = 2, 7, 10
+    out = model(
+        prefix_input_ids=torch.randint(3, config.vocab_size, (B, P)),
+        prefix_attention_mask=torch.ones(B, P, dtype=torch.long),
+        suffix_input_ids=torch.randint(3, config.vocab_size, (B, S)),
+        labels=torch.randint(3, config.vocab_size, (B, S)),
+    )
+    out.loss.backward()
+    missing = [n for n, p in model.named_parameters() if p.requires_grad and p.grad is None]
+    assert missing == [], f"parameters without grad (would crash DDP): {missing}"
+
+    # reconstruction path with word-dropout on (the E01 configuration).
+    torch.manual_seed(0)
+    config2 = _tiny_config(decoder_word_dropout=0.2)
+    model2 = ConceptEncoderForConditionalLM(config2).train()
+    T = 16
+    input_ids = torch.randint(3, config2.vocab_size, (B, T))
+    out2 = model2(
+        input_ids=input_ids,
+        attention_mask=torch.ones_like(input_ids),
+        labels=input_ids.clone(),
+    )
+    out2.loss.backward()
+    missing2 = [n for n, p in model2.named_parameters() if p.requires_grad and p.grad is None]
+    assert missing2 == [], f"parameters without grad (would crash DDP): {missing2}"
+
+
 def test_build_config_causal_ar_eval_contract():
     class _Tok:
         pad_token_id, mask_token_id, cls_token_id = 0, None, None

@@ -1048,6 +1048,11 @@ class ConceptCausalDecoderStack(nn.Module):
         if word_dropout_p > 0.0:
             drop = (torch.rand(B, T, device=emb.device) < word_dropout_p).unsqueeze(-1)
             emb = torch.where(drop, self.dropout_embedding.to(emb.dtype), emb)
+        elif self.training:
+            # Keep the otherwise-unused parameter in the autograd graph so DDP with
+            # find_unused_parameters=False doesn't error on objectives that disable
+            # word-dropout (e.g. E02 prefix->suffix). Numerically a no-op.
+            emb = emb + 0.0 * self.dropout_embedding.to(emb.dtype)
         if self.position_embeddings is not None:
             position_ids = torch.arange(T, device=decoder_input_ids.device).unsqueeze(0)
             emb = emb + self.position_embeddings(position_ids)
