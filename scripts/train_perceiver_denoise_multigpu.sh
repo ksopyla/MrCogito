@@ -48,6 +48,13 @@ DECODER_POS_TYPE="${DECODER_POS_TYPE:-learned}"     # | rope (causal_ar)
 DECODER_WORD_DROPOUT="${DECODER_WORD_DROPOUT:-0.0}"
 HIDDEN_ACT="${HIDDEN_ACT:-gelu}"                    # | silu (SwiGLU)
 NORM_TYPE="${NORM_TYPE:-layernorm}"                 # | rmsnorm
+# E03 — concept de-collapse via a frozen-encoder hidden-state anchor (causal_ar + reconstruction).
+# Default OFF reproduces E01 exactly (the matched control arm = ANCHOR_LOSS=false).
+ANCHOR_LOSS="${ANCHOR_LOSS:-false}"                 # | true
+ANCHOR_MODEL="${ANCHOR_MODEL:-HuggingFaceTB/SmolLM2-135M}"
+ANCHOR_LOSS_WEIGHT="${ANCHOR_LOSS_WEIGHT:-0.5}"
+ANCHOR_STANDARDIZE="${ANCHOR_STANDARDIZE:-true}"
+ANCHOR_HEAD_LAYERS="${ANCHOR_HEAD_LAYERS:-2}"
 DATASET_NAME="${DATASET_NAME:-JeanKaddour/minipile}"
 DATASET_SUBSET="${DATASET_SUBSET:-}"
 TOKENIZER_NAME="${TOKENIZER_NAME:-answerdotai/ModernBERT-base}"
@@ -90,6 +97,19 @@ export DDP_TIMEOUT
 RESUME_ARGS=()
 if [ -n "$RESUME_FROM_CHECKPOINT" ]; then
     RESUME_ARGS+=(--resume_from_checkpoint "$RESUME_FROM_CHECKPOINT")
+fi
+
+# E03 anchor args are only passed when enabled; the control arm (ANCHOR_LOSS=false) passes nothing,
+# so anchor_loss defaults to False and the run is byte-for-byte E01.
+ANCHOR_ARGS=()
+if [ "$ANCHOR_LOSS" = "true" ]; then
+    ANCHOR_ARGS+=(
+        --anchor_loss
+        --anchor_model_name "$ANCHOR_MODEL"
+        --anchor_loss_weight "$ANCHOR_LOSS_WEIGHT"
+        --anchor_standardize "$ANCHOR_STANDARDIZE"
+        --anchor_head_layers "$ANCHOR_HEAD_LAYERS"
+    )
 fi
 
 accelerate launch \
@@ -158,5 +178,6 @@ accelerate launch \
     --load_best_model_at_end True \
     --metric_for_best_model "eval_loss" \
     --greater_is_better False \
+    "${ANCHOR_ARGS[@]}" \
     "${RESUME_ARGS[@]}" \
     2>&1 | python scripts/clean_tee.py "$SHELL_LOG"

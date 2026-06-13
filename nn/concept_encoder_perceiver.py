@@ -1075,6 +1075,59 @@ class ConceptCausalDecoderStack(nn.Module):
         return self.output_norm(h)
 
 
+class AnchorDistillHead(nn.Module):
+    """E03 de-collapse head: regenerate a frozen teacher's per-token hidden states from concepts.
+
+    Position queries cross-attend to the C concepts (reusing PerceiverDecoderLayer), then a linear
+    projects to the teacher's hidden size — an MSE target computed by the trainer. Keeps the
+    bottleneck advantage O(C*N): no token self-attention. Deliberately LEAN (config.anchor_head_layers,
+    default 2) so the de-collapse pressure lands on the concepts, not on an expressive head that could
+    reconstruct the teacher from a low-rank (collapsed) concept set and hide the collapse.
+
+    Shapes: concepts [B, C, H] + seq_length N -> per-token predictions [B, N, teacher_hidden].
+    """
+
+    def __init__(self, config: ConceptEncoderConfig, teacher_hidden: int):
+        super().__init__()
+        self.query_embeddings = nn.Embedding(config.max_sequence_length, config.hidden_size)
+        self.layers = nn.ModuleList(
+            [PerceiverDecoderLayer(config) for _ in range(config.anchor_head_layers)]
+        )
+        self.output_norm = nn.LayerNorm(config.hidden_size)
+        self.proj = nn.Linear(config.hidden_size, teacher_hidden)
+
+    def forward(self, concept_repr: torch.Tensor, seq_length: int) -> torch.Tensor:
+        batch_size = concept_repr.size(0)
+        position_ids = torch.arange(seq_length, device=concept_repr.device).unsqueeze(0)
+        hidden = self.query_embeddings(position_ids).expand(batch_size, -1, -1)  # [B, N, H]
+        for layer in self.layers:
+            hidden = layer(hidden, concept_repr)                                  # cross-attn to concepts
+        return self.proj(self.output_norm(hidden))                                # [B, N, teacher_hidden]
+
+
+def masked_standardized_mse(
+    pred: torch.Tensor,
+    target: torch.Tensor,
+    target_mask: torch.Tensor,
+    standardize: bool = True,
+) -> torch.Tensor:
+    """Per-token masked MSE for the E03 anchor (single source of the loss policy).
+
+    Shapes: pred / target [B, N, D]; target_mask [B, N] (True/1 = real token). When ``standardize``
+    the target is per-token layer-normed (zero-mean/unit-var over D) before the MSE, so the teacher's
+    raw scale is irrelevant and the head learns the shape (Cosmos/LDLM practice). Error is averaged
+    over masked positions AND feature dims. Pure (no teacher) → unit-testable in isolation.
+    """
+    if standardize:
+        target = F.layer_norm(target.float(), (target.size(-1),)).to(pred.dtype)
+    else:
+        target = target.to(pred.dtype)
+    mask = target_mask.unsqueeze(-1).to(pred.dtype)            # [B, N, 1]
+    sq = ((pred - target) ** 2) * mask
+    denom = mask.sum().clamp(min=1) * pred.size(-1)
+    return sq.sum() / denom
+
+
 class ConceptEncoderForConditionalLM(PreTrainedModel):
     """Encoder → concepts → autoregressive concept-conditioned decoder.
 
@@ -1117,10 +1170,39 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         self.decoder = ConceptCausalDecoderStack(config)
         self.set_loss_config(loss_config)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        # E03: lean auxiliary head built ONLY when anchor_loss is enabled, so anchor_loss=False
+        # leaves the E01 state_dict byte-for-byte unchanged (old checkpoints load as before).
+        # The frozen teacher that produces MSE targets lives on the trainer, not here.
+        self.anchor_head = None
+        if getattr(config, "anchor_loss", False):
+            teacher_hidden = config.anchor_teacher_hidden or config.hidden_size
+            self.anchor_head = AnchorDistillHead(config, teacher_hidden)
         self.post_init()
 
         if config.tie_word_embeddings and config.token_embedding_dim == config.hidden_size:
             self._tie_or_clone_weights(self.lm_head, self.decoder.token_embeddings)
+
+    def anchor_predict(self, concept_repr: torch.Tensor, seq_length: int) -> torch.Tensor:
+        """Per-token teacher-hidden-state predictions from concepts (E03 anchor). [B,C,H]->[B,N,Ht]."""
+        if self.anchor_head is None:
+            raise RuntimeError(
+                "anchor_predict called but config.anchor_loss is False (no anchor head built)."
+            )
+        return self.anchor_head(concept_repr, seq_length)
+
+    def compute_anchor_loss(
+        self,
+        concept_repr: torch.Tensor,
+        teacher_hidden_states: torch.Tensor,
+        target_mask: torch.Tensor,
+        standardize: bool = True,
+    ) -> torch.Tensor:
+        """E03 anchor loss: distil the (precomputed, detached) teacher per-token hidden states through
+        the concept bottleneck. Pure w.r.t. the teacher (the caller supplies its states), so the loss
+        is unit-testable without downloading a teacher; the model owns the predict+compare. seq_length
+        is read from the targets."""
+        pred = self.anchor_predict(concept_repr, teacher_hidden_states.size(1))
+        return masked_standardized_mse(pred, teacher_hidden_states, target_mask, standardize=standardize)
 
     def set_loss_config(self, loss_config: Optional[LossConfig]) -> None:
         self.loss_manager = LossManager.create_for_model(

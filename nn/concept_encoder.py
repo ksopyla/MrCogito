@@ -122,6 +122,13 @@ class ConceptEncoderConfig(PretrainedConfig):
         canonical_pair_eval_mode: Optional[str] = None,
         canonical_single_eval_mode: Optional[str] = None,
         pretraining_objective: Optional[str] = None,
+        anchor_loss: bool = False,
+        anchor_model_name: Optional[str] = None,
+        anchor_loss_weight: float = 0.5,
+        anchor_standardize: bool = True,
+        anchor_head_layers: int = 2,
+        anchor_target_layer: int = -1,
+        anchor_teacher_hidden: Optional[int] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -177,6 +184,19 @@ class ConceptEncoderConfig(PretrainedConfig):
         self.canonical_pair_eval_mode = canonical_pair_eval_mode
         self.canonical_single_eval_mode = canonical_single_eval_mode
         self.pretraining_objective = pretraining_objective
+        # E03 — concept de-collapse via a frozen-encoder hidden-state anchor.
+        # anchor_loss (default False) gates a reusable auxiliary head/loss: the concepts must
+        # reconstruct a frozen teacher LM's per-token hidden states (MSE). Defaults keep every
+        # prior checkpoint identical (no anchor submodules built when anchor_loss is False).
+        # anchor_teacher_hidden is set by the training entrypoint from the teacher's config so the
+        # anchor head is rebuildable from config alone (no teacher needed at eval/analysis).
+        self.anchor_loss = anchor_loss
+        self.anchor_model_name = anchor_model_name
+        self.anchor_loss_weight = anchor_loss_weight
+        self.anchor_standardize = anchor_standardize
+        self.anchor_head_layers = anchor_head_layers
+        self.anchor_target_layer = anchor_target_layer
+        self.anchor_teacher_hidden = anchor_teacher_hidden
 
 class ConceptEncoderLayer(nn.Module):
     """A single layer of the concept encoder.
