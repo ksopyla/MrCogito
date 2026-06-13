@@ -16,6 +16,20 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ## [Unreleased]
 
+## [2026-06-13] - Standardize W&B identity for shared perceiver/AR training
+
+**Why:**
+- E01 (`concept_ar`) and E02 (`concept_ar_prefix`) run through the same shared training entrypoint, but W&B still logged them with the legacy `perceiver_denoise` group and job type. That made model families and objectives hard to separate in the run table.
+
+**Impact:**
+- New W&B training runs expose experiment/model/objective identity directly in `group`, `job_type`, tags, and config. E01/E02 retries now group separately by experiment plus architecture while preserving timestamped run ids.
+
+**What changed:**
+- [added] `training/utils_training.py` - `WandbRunIdentity` and `build_perceiver_wandb_identity()` derive stable W&B group/job_type/tags/config facets for the shared perceiver/AR entrypoint.
+- [updated] `training/train_perceiver_denoise.py` - uses the identity helper for W&B metadata; logs `experiment_id`, `model_family`, `objective_family`, `architecture_id`, `checkpoint_family`, and `pretraining_objective`; removes misleading `perceiver-denoise` tags from AR runs.
+- [added] `tests/test_wandb_identity.py` - regression tests for legacy perceiver denoise, E01, E02, and explicit experiment-id overrides.
+- [updated] `.cursor/skills/wandb-review/SKILL.md`, `docs/1_Strategy_and_Plans/training_eval_matrix.md` - document the W&B grouping contract and maintained `concept_ar` family.
+
 ## [2026-06-13] — E02 warm-up follow-ups: deterministic data split, single DDP run_id, early-suffix ablation + live effective-rank, linear-probe eval
 
 **Why:**
