@@ -9,7 +9,7 @@ logger = logging.get_logger(__name__)
 
 
 
-def _select_train_eval_splits(dataset, test_size_percent):
+def _select_train_eval_splits(dataset, test_size_percent, seed=42):
     if "train" not in dataset:
         available = ", ".join(dataset.keys())
         raise ValueError(
@@ -35,9 +35,13 @@ def _select_train_eval_splits(dataset, test_size_percent):
     test_size = max(1, min(int(len(train_ds) * test_size_percent), len(train_ds) - 1, 100000))
     logger.info(
         "Dataset has no validation/test split; creating holdout split from train "
-        f"(size={test_size})."
+        f"(size={test_size}, seed={seed})."
     )
-    split_ds = train_ds.train_test_split(test_size=test_size)
+    # A fixed seed makes the split deterministic: the resulting train_ds keeps a
+    # stable fingerprint, so the downstream tokenization .map() cache is reused
+    # across runs (no full re-tokenization on every launch) and every DDP rank
+    # sees the SAME train/eval split.
+    split_ds = train_ds.train_test_split(test_size=test_size, seed=seed)
     return split_ds["train"], split_ds["test"]
 
 
@@ -69,6 +73,7 @@ def load_and_preprocess_text_dataset(
     train_num_proc=8,
     test_num_proc=4,
     append_eos_token_id=None,
+    split_seed=42,
 ):
     """
     Loads and preprocesses the text dataset that fits to memory.
@@ -79,6 +84,9 @@ def load_and_preprocess_text_dataset(
     
     Args:
         dataset_cache_dir: Optional path to cache directory. If None, uses ./Cache/Datasets relative to this file.
+        split_seed: Seed for the train/holdout split when the dataset has no built-in
+            validation/test split. Fixing it keeps the tokenization cache reusable and
+            the split identical across runs and DDP ranks.
     """
     if dataset_cache_dir is None:
         DATASET_CACHE_DIR = os.path.abspath(
@@ -99,7 +107,7 @@ def load_and_preprocess_text_dataset(
     )
     dataset = load_dataset(dataset_hf_path, dataset_name_subset, cache_dir=DATASET_CACHE_DIR)
 
-    train_ds, test_ds = _select_train_eval_splits(dataset, test_size_percent)
+    train_ds, test_ds = _select_train_eval_splits(dataset, test_size_percent, seed=split_seed)
   
     # Rename column to match processing
     # do a collumn rename based on the mapping provided below

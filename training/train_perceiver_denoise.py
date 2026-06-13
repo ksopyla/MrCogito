@@ -39,6 +39,7 @@ from nn.concept_encoder_perceiver import (
 )
 from nn.loss_manager import ConceptLossStepCallback, LossConfig, get_available_losses
 from training.utils_training import (
+    broadcast_object,
     init_wandb,
     is_main_process,
     log_data_config,
@@ -238,6 +239,7 @@ class PerceiverDenoiseTrainer(Trainer):
         device = self.args.device
         sums: dict = {}
         n = 0
+        rank_metrics: dict = {}
         for i, batch in enumerate(dataloader):
             if i >= self.concept_ablation_batches:
                 break
@@ -246,24 +248,56 @@ class PerceiverDenoiseTrainer(Trainer):
                 prefix_attention_mask = batch.get("prefix_attention_mask")
                 if prefix_attention_mask is not None:
                     prefix_attention_mask = prefix_attention_mask.to(device)
+                encoder_input_ids = batch["prefix_input_ids"].to(device)
+                encoder_attention_mask = prefix_attention_mask
                 m = base_model.concept_ablation_ce(
-                    prefix_input_ids=batch["prefix_input_ids"].to(device),
+                    prefix_input_ids=encoder_input_ids,
                     prefix_attention_mask=prefix_attention_mask,
                     suffix_input_ids=batch["suffix_input_ids"].to(device),
                     labels=labels,
                 )
             else:
-                input_ids = batch["input_ids"].to(device)
-                attention_mask = batch.get("attention_mask")
-                if attention_mask is not None:
-                    attention_mask = attention_mask.to(device)
-                m = base_model.concept_ablation_ce(input_ids, attention_mask, labels)
+                encoder_input_ids = batch["input_ids"].to(device)
+                encoder_attention_mask = batch.get("attention_mask")
+                if encoder_attention_mask is not None:
+                    encoder_attention_mask = encoder_attention_mask.to(device)
+                m = base_model.concept_ablation_ce(encoder_input_ids, encoder_attention_mask, labels)
             for k, v in m.items():
                 sums[k] = sums.get(k, 0.0) + v
+            # Concept geometry (collapse gate) from the first batch only — cheap.
+            if not rank_metrics:
+                rank_metrics = self._concept_effective_rank(
+                    base_model, encoder_input_ids, encoder_attention_mask
+                )
             n += 1
         if n == 0:
             return {}
-        return {f"concept_ablation/{k}": v / n for k, v in sums.items()}
+        out = {f"concept_ablation/{k}": v / n for k, v in sums.items()}
+        out.update(rank_metrics)
+        return out
+
+    @torch.no_grad()
+    def _concept_effective_rank(self, base_model, input_ids, attention_mask) -> dict:
+        """Effective rank (nuclear/spectral norm of the mean concept matrix).
+
+        The collapse gate: low effective rank means the C concepts are redundant
+        (occupy few dimensions). Logged each eval so de-collapse is visible live.
+        Matches analysis/concept_analysis.compute_concept_geometry_metrics.
+        """
+        try:
+            concepts = base_model.encode_concepts(
+                input_ids=input_ids, attention_mask=attention_mask, return_dict=True
+            ).last_hidden_state.float()  # [B, C, H]
+            concept_mean = concepts.mean(dim=0)  # [C, H]
+            s = torch.linalg.svdvals(concept_mean)
+            eff_rank = (s.sum() / (s.max() + 1e-8)).item()
+            max_rank = min(concept_mean.shape)
+            return {
+                "concept_geometry/effective_rank": eff_rank,
+                "concept_geometry/effective_rank_normalized": eff_rank / max_rank,
+            }
+        except Exception:
+            return {}
 
     def evaluate(self, *args, **kwargs):
         metrics = super().evaluate(*args, **kwargs)
@@ -481,6 +515,7 @@ def main():
             train_num_proc=data_args.train_num_proc,
             test_num_proc=data_args.test_num_proc,
             append_eos_token_id=append_eos_token_id,
+            split_seed=training_args.seed,
         )
 
     logger.info(f"Train dataset size: {len(train_ds):,}")
@@ -564,6 +599,10 @@ def main():
         f"C{model_args.concept_num}"
         f"D{model_args.decoder_num_layers}_{timestamp}"
     )
+    # The timestamp is wall-clock, so each DDP rank would otherwise compute its
+    # own run_id (and may straddle a second boundary). Broadcast rank 0's id so
+    # all ranks share ONE output directory / W&B run.
+    run_identifier = broadcast_object(run_identifier)
     setup_run_dirs(training_args, run_identifier)
     training_args.use_cpu = False
 
@@ -665,8 +704,41 @@ def main():
         eval_data_collator=eval_data_collator,
     )
 
+    decoder_desc = (
+        f"causal_ar (AR, {model_args.decoder_num_layers}L, pos={model_args.decoder_pos_type}, "
+        f"word_dropout={model_args.decoder_word_dropout})"
+        if is_causal_ar
+        else f"perceiver_posonly ({model_args.decoder_num_layers}L)"
+    )
+    if model_args.objective_variant == OBJECTIVE_PREFIX_SUFFIX:
+        objective_desc = (
+            f"prefix_suffix (encoder sees prefix {data_args.prefix_ratio_min:.2f}-"
+            f"{data_args.prefix_ratio_max:.2f} via {data_args.split_strategy}, decoder generates suffix)"
+        )
+    elif model_args.objective_variant == OBJECTIVE_RECONSTRUCTION_CONTRASTIVE:
+        objective_desc = (
+            f"reconstruction+contrastive (TSDAE deletion={data_args.deletion_rate}, "
+            f"contrastive_weight={model_args.contrastive_weight})"
+        )
+    else:
+        objective_desc = f"reconstruction (TSDAE denoising, deletion={data_args.deletion_rate})"
+
     logger.info("=" * 60)
-    logger.info(f"Starting perceiver denoising pretraining: {datetime.now()}")
+    logger.info(f"STARTING TRAINING: {datetime.now()}")
+    logger.info(f"  Run id          : {run_identifier}")
+    logger.info(f"  Model type      : {model_type_str}  ({type(model).__name__})")
+    logger.info(f"  Pretraining obj : {config.pretraining_objective}")
+    logger.info(f"  Objective       : {objective_desc}")
+    logger.info(f"  Decoder         : {decoder_desc}")
+    logger.info(
+        f"  Encoder         : H{config.hidden_size} L{config.num_hidden_layers} "
+        f"C{config.concept_num} token_emb={config.token_embedding_dim} "
+        f"act={config.hidden_act} norm={config.norm_type} bixt={model_args.use_bixt}"
+    )
+    logger.info(f"  Data            : {data_args.dataset_name} {data_args.dataset_name_subset or ''} "
+                f"tokenizer={data_args.tokenizer_name} max_seq={data_args.max_seq_length}")
+    logger.info(f"  Eval collator   : seeded={getattr(eval_data_collator, 'seed', None)} "
+                f"(deterministic held-out corruption)")
     logger.info("=" * 60)
     trainer.train()
 

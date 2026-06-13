@@ -134,6 +134,12 @@ run_single_task() {
         echo "ERROR: neither uv nor python3 found in PATH"; return 1
     fi
 
+    # Optional linear-probe mode: FREEZE_ENCODER=1 trains only the task head.
+    local freeze_arg=()
+    if [ "${FREEZE_ENCODER:-0}" = "1" ]; then
+        freeze_arg=(--freeze_encoder)
+    fi
+
     $PYTHON_CMD evaluation/evaluate_model_on_glue.py \
         --model_type "$MODEL_TYPE" \
         --model_name_or_path "$MODEL_PATH" \
@@ -143,7 +149,8 @@ run_single_task() {
         --epochs "$epochs" \
         --learning_rate 1e-5 \
         --visualize \
-        --save_model
+        --save_model \
+        "${freeze_arg[@]}"
 
     echo ""
     echo "  Completed: $task at $(date '+%Y-%m-%d %H:%M:%S')"

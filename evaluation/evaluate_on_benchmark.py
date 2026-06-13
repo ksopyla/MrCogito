@@ -174,6 +174,13 @@ def parse_args():
     parser.add_argument("--weight_decay", type=float, default=0.01)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--save_model", action="store_true")
+    parser.add_argument(
+        "--freeze_encoder",
+        action="store_true",
+        help="Freeze the pretrained encoder and train only the task head (linear "
+             "probe). Robust way to measure concept quality; avoids destroying a "
+             "lightly-pretrained encoder via full fine-tuning on small datasets.",
+    )
     return parser.parse_args()
 
 
@@ -363,9 +370,10 @@ def run_zero_shot_stsb(args):
 
     total_params = sum(p.numel() for p in model.parameters())
     params_m = round(total_params / 1_000_000)
+    params_label = f"{params_m}M{'-enc' if route.load_mode == 'encoder_only' else ''}"
     source_run_id = os.path.basename(args.model_name_or_path)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    report_name = f"bench-{benchmark_name}-{source_run_id}-{params_m}M-{timestamp}"
+    report_name = f"bench-{benchmark_name}-{source_run_id}-{params_label}-{timestamp}"
 
     hostname = get_hostname()
     wandb.init(
@@ -413,8 +421,20 @@ def run_benchmark(args, benchmark_name):
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
 
     model, route = load_concept_model(args, benchmark_name)
+
+    if args.freeze_encoder and hasattr(model, "encoder"):
+        frozen = 0
+        for p in model.encoder.parameters():
+            p.requires_grad = False
+            frozen += p.numel()
+        logger.info(f"Froze encoder ({frozen/1e6:.1f}M params); training task head only (linear probe).")
+
     total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     params_m = round(total_params / 1_000_000)
+    # Label clarifies the eval model is the encoder-only sub-model (no decoder/lm_head),
+    # so reports don't imply the source checkpoint is this small.
+    params_label = f"{params_m}M{'-enc' if route.load_mode == 'encoder_only' else ''}"
 
     train_ds, eval_ds = load_benchmark_dataset(
         benchmark_name,
@@ -428,7 +448,7 @@ def run_benchmark(args, benchmark_name):
 
     source_run_id = os.path.basename(args.model_name_or_path)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    run_name = f"bench-{benchmark_name}-{source_run_id}-{params_m}M-{timestamp}"
+    run_name = f"bench-{benchmark_name}-{source_run_id}-{params_label}-{timestamp}"
 
     training_args = TrainingArguments(
         output_dir=os.path.join(args.output_dir, benchmark_name),
@@ -495,7 +515,7 @@ def run_benchmark(args, benchmark_name):
         logger.info(f"  {k}: {v}")
 
     os.makedirs(REPORTS_DIR, exist_ok=True)
-    report_name = f"bench-{benchmark_name}-{source_run_id}-{params_m}M-{timestamp}"
+    report_name = f"bench-{benchmark_name}-{source_run_id}-{params_label}-{timestamp}"
     pd.DataFrame([{
         "benchmark": benchmark_name,
         "model_type": args.model_type,

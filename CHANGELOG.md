@@ -16,6 +16,26 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ## [Unreleased]
 
+## [2026-06-13] — E02 warm-up follow-ups: deterministic data split, single DDP run_id, early-suffix ablation + live effective-rank, linear-probe eval
+
+**Why:**
+- Full evaluation of the E02 0.3-epoch warm-up (`concept_ar_prefix_H768L6C128D4_20260612_094555`) was promising (zero-shot STS-B **0.683**, beats prior 0.607) but surfaced several issues before scaling to a full run:
+  - The no-`seed` `train_test_split` reshuffled the holdout every launch, so the tokenization `.map()` cache never hit (the warm-up re-tokenized all 9.57M FineWeb-Edu rows, ~1.5–2 h) and each DDP rank built a *different* train/eval split.
+  - `run_identifier` was computed from `datetime.now()` inside `main()`, so DDP ranks straddling a second boundary forked into two output dirs (`…094555`/`…094600`) with duplicated checkpoints and "Could not locate the best model" warnings.
+  - The averaged suffix-CE concept-ablation Δ is diluted by teacher-forced AR self-context (late positions predictable without concepts), under-measuring concept usage; effective rank (collapse gate) was only computed offline.
+  - Supervised sentence-pair eval (`concept_ar`) was near chance across SICK/PAWS/MRPC despite strong zero-shot STS-B — it full-fine-tunes the lightly-pretrained encoder at LR 1e-5 on tiny datasets, destroying the pretrained geometry.
+  - Eval run names labelled the encoder-only sub-model as e.g. `73M`, implying the checkpoint is that small (full model is 161.6M).
+
+**Impact:**
+- Full-corpus runs reuse the tokenization cache (no re-tokenize per launch) and all DDP ranks share one split and one `run_id`/output dir. The full E02 run logs sharper concept-usage signals (early-suffix Δ) and live concept geometry (effective rank) each eval. A robust linear-probe path is available for trustworthy supervised concept-quality measurement.
+
+**What changed:**
+- [fixed] `data/dataset_preprocess.py` — `_select_train_eval_splits`/`load_and_preprocess_text_dataset` take a `split_seed` (default 42) passed to `train_test_split(seed=...)`; `training/train_perceiver_denoise.py` passes `training_args.seed`. Deterministic split → reusable tokenization cache and rank-consistent splits.
+- [fixed] `training/utils_training.py` — added `broadcast_object()` (rank-0 broadcast via `broadcast_object_list`, no-op when not distributed); `train_perceiver_denoise.py` broadcasts `run_identifier` so all ranks share one output dir/W&B run.
+- [added] `nn/concept_encoder_perceiver.py` — `concept_ablation_ce()` now also returns early-position metrics (`ce_intact_early`, `delta_zero_early`, `delta_shuffle_early`, default first `early_k=16` suffix tokens) via new `_teacher_forced_ce_early`.
+- [added] `training/train_perceiver_denoise.py` — `PerceiverDenoiseTrainer` logs `concept_geometry/effective_rank(_normalized)` each eval (SVD nuclear/spectral norm of the mean concept matrix, matching `analysis/concept_analysis`).
+- [added] `evaluation/evaluate_on_benchmark.py`, `evaluation/evaluate_model_on_glue.py`, `scripts/evaluate_concept_encoder_glue.sh` — `--freeze_encoder` (linear probe; `FREEZE_ENCODER=1` for the GLUE launcher) freezes the encoder and trains only the task head; eval run/report names mark encoder-only models with a `-enc` suffix.
+
 ## [2026-06-11] — Fix double-shift in AR teacher-forced CE (skip-one objective bug)
 
 **Why:**

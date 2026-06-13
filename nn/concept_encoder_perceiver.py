@@ -1185,6 +1185,26 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
             ignore_index=-100,
         )
 
+    @staticmethod
+    def _teacher_forced_ce_early(
+        logits: torch.Tensor, labels: torch.LongTensor, k: int
+    ) -> torch.Tensor:
+        """Next-token CE restricted to the FIRST k target positions.
+
+        Suffix targets are left-aligned (real tokens first, pad after), so the
+        first k columns are the earliest suffix tokens. Concept reliance is
+        strongest there: later positions are increasingly predictable from the
+        teacher-forced suffix context regardless of the concepts, which dilutes
+        the all-position ablation delta. The early-position delta is therefore
+        the sharper instrument for "does the decoder use the concepts?".
+        """
+        k = max(1, min(k, labels.size(1)))
+        return F.cross_entropy(
+            logits[:, :k, :].reshape(-1, logits.size(-1)),
+            labels[:, :k].reshape(-1),
+            ignore_index=-100,
+        )
+
     def _loss_from_logits(
         self,
         logits: torch.Tensor,
@@ -1207,6 +1227,7 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         prefix_input_ids: Optional[torch.LongTensor] = None,
         prefix_attention_mask: Optional[torch.Tensor] = None,
         suffix_input_ids: Optional[torch.LongTensor] = None,
+        early_k: int = 16,
     ) -> dict:
         """Posterior-collapse diagnostic: next-token CE with intact vs ablated concepts.
 
@@ -1242,12 +1263,19 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         concepts = self.encode_concepts(
             input_ids=encoder_input_ids, attention_mask=encoder_attention_mask, return_dict=True
         ).last_hidden_state
-        ce_intact = self._teacher_forced_ce(self.decode_logits(concepts, decoder_input_ids), labels)
-        ce_zero = self._teacher_forced_ce(
-            self.decode_logits(torch.zeros_like(concepts), decoder_input_ids), labels
-        )
+        logits_intact = self.decode_logits(concepts, decoder_input_ids)
+        logits_zero = self.decode_logits(torch.zeros_like(concepts), decoder_input_ids)
         perm = torch.randperm(concepts.size(0), device=concepts.device)
-        ce_shuffle = self._teacher_forced_ce(self.decode_logits(concepts[perm], decoder_input_ids), labels)
+        logits_shuffle = self.decode_logits(concepts[perm], decoder_input_ids)
+
+        ce_intact = self._teacher_forced_ce(logits_intact, labels)
+        ce_zero = self._teacher_forced_ce(logits_zero, labels)
+        ce_shuffle = self._teacher_forced_ce(logits_shuffle, labels)
+
+        # Early-position deltas: where concepts matter most (see _teacher_forced_ce_early).
+        ce_intact_early = self._teacher_forced_ce_early(logits_intact, labels, early_k)
+        ce_zero_early = self._teacher_forced_ce_early(logits_zero, labels, early_k)
+        ce_shuffle_early = self._teacher_forced_ce_early(logits_shuffle, labels, early_k)
 
         metrics = {
             "ce_intact": ce_intact.item(),
@@ -1255,6 +1283,9 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
             "ce_shuffle": ce_shuffle.item(),
             "delta_zero": (ce_zero - ce_intact).item(),
             "delta_shuffle": (ce_shuffle - ce_intact).item(),
+            "ce_intact_early": ce_intact_early.item(),
+            "delta_zero_early": (ce_zero_early - ce_intact_early).item(),
+            "delta_shuffle_early": (ce_shuffle_early - ce_intact_early).item(),
         }
 
         train_wd = float(getattr(self.config, "decoder_word_dropout", 0.0) or 0.0)

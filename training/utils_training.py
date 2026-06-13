@@ -218,6 +218,25 @@ def is_main_process():
     return int(os.environ.get("LOCAL_RANK", 0)) == 0
 
 
+def broadcast_object(obj):
+    """Broadcast a picklable object from rank 0 to all ranks.
+
+    Used to agree on values that must be identical across DDP ranks but are
+    derived from non-deterministic sources (e.g. a wall-clock ``run_id``).
+    Computing such values independently per process lets ranks diverge — e.g.
+    a second-resolution timestamp can differ across ranks and fork the output
+    directory into ``..._HHMMSS`` / ``..._HHMMSS+1`` with duplicated checkpoints.
+
+    No-op (returns ``obj`` unchanged) when distributed is not initialized
+    (single-GPU / CPU runs).
+    """
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        holder = [obj]
+        torch.distributed.broadcast_object_list(holder, src=0)
+        return holder[0]
+    return obj
+
+
 def get_hostname():
     """
     Get hostname in a cross-platform way (works on Windows and Linux).
