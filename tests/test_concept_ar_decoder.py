@@ -179,6 +179,38 @@ def test_loss_is_single_shift_teacher_forcing():
     assert torch.allclose(out_ps.loss, expected_ps, atol=1e-6)
 
 
+def test_encode_decode_loss_matches_forward():
+    """The shared recipe is the single source: it must equal forward()'s loss/logits exactly."""
+    config = _tiny_config()
+    model = ConceptEncoderForConditionalLM(config).eval()
+    B, T = 2, 16
+    input_ids = torch.randint(3, config.vocab_size, (B, T))
+    attention_mask = torch.ones_like(input_ids)
+    labels = input_ids.clone()
+    with torch.no_grad():
+        fwd = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+        loss, logits, _ = model.encode_decode_loss(input_ids, attention_mask, input_ids, labels)
+    assert torch.allclose(loss, fwd.loss, atol=1e-6)
+    assert torch.allclose(logits, fwd.logits, atol=1e-6)
+
+    # prefix->suffix branch: target is the suffix, encoder sees the prefix.
+    P, S = 6, 10
+    prefix_ids = torch.randint(3, config.vocab_size, (B, P))
+    prefix_mask = torch.ones_like(prefix_ids)
+    suffix_ids = torch.randint(3, config.vocab_size, (B, S))
+    suffix_labels = suffix_ids.clone()
+    with torch.no_grad():
+        fwd_ps = model(
+            prefix_input_ids=prefix_ids,
+            prefix_attention_mask=prefix_mask,
+            suffix_input_ids=suffix_ids,
+            labels=suffix_labels,
+        )
+        loss_ps, logits_ps, _ = model.encode_decode_loss(prefix_ids, prefix_mask, suffix_ids, suffix_labels)
+    assert torch.allclose(loss_ps, fwd_ps.loss, atol=1e-6)
+    assert torch.allclose(logits_ps, fwd_ps.logits, atol=1e-6)
+
+
 def test_concepts_are_used_zero_and_shuffle_change_loss():
     # Seeded: an unlucky identity randperm in the shuffle ablation makes delta_shuffle
     # exactly 0 and the test flaky (observed in full-suite runs).

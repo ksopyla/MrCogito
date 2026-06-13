@@ -271,28 +271,19 @@ class PerceiverDenoiseTrainer(Trainer):
             concept_repr, teacher_hidden, target_mask, standardize=self.anchor_standardize
         )
 
-    def _anchor_compute_loss(self, model, base_model, inputs, return_outputs):
-        """E01 AR loss + lambda * anchor MSE (mirrors the contrastive manual path)."""
+    def _anchor_compute_loss(self, base_model, inputs, return_outputs):
+        """Reconstruction AR loss (the model's single-source recipe) + lambda * anchor MSE."""
         input_ids = inputs["input_ids"]
         attention_mask = inputs.get("attention_mask")
         labels = inputs["labels"]
 
-        encoder_outputs = base_model.encode_concepts(
-            input_ids=input_ids, attention_mask=attention_mask, return_dict=True
+        # encode_decode_loss is the SAME recipe forward() uses → the anchor path cannot drift.
+        task_loss, logits, encoder_outputs = base_model.encode_decode_loss(
+            input_ids, attention_mask, input_ids, labels
         )
         concept_repr = encoder_outputs.last_hidden_state
-        decoder_input_ids = base_model._shift_right(input_ids)
-        word_dropout_p = base_model.config.decoder_word_dropout if model.training else 0.0
-        logits = base_model.decode_logits(concept_repr, decoder_input_ids, word_dropout_p=word_dropout_p)
-        ar_loss = base_model._teacher_forced_ce(logits, labels)
-
-        if base_model.loss_manager.is_enabled:
-            task_total = base_model.loss_manager(task_loss=ar_loss, concept_repr=concept_repr)
-        else:
-            task_total = ar_loss
-
         anchor_mse = self._anchor_mse(base_model, input_ids, labels, concept_repr)
-        total_loss = task_total + self.anchor_loss_weight * anchor_mse
+        total_loss = task_loss + self.anchor_loss_weight * anchor_mse
 
         outputs = MaskedLMOutput(
             loss=total_loss,
@@ -449,7 +440,7 @@ class PerceiverDenoiseTrainer(Trainer):
 
         # E03: reconstruction AR loss + frozen-teacher hidden-state anchor MSE.
         if self.anchor_loss:
-            return self._anchor_compute_loss(model, base_model, inputs, return_outputs)
+            return self._anchor_compute_loss(base_model, inputs, return_outputs)
 
         input_ids = inputs["input_ids"]
         attention_mask = inputs.get("attention_mask")

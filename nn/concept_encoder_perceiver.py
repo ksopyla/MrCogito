@@ -46,7 +46,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import PreTrainedModel
 from transformers.activations import ACT2FN
-from transformers.modeling_outputs import MaskedLMOutput, SequenceClassifierOutput
+from transformers.modeling_outputs import (
+    BaseModelOutput,
+    MaskedLMOutput,
+    SequenceClassifierOutput,
+)
 from transformers.utils import logging
 from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss
 
@@ -1300,6 +1304,38 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
             return self.loss_manager(task_loss=task_loss, concept_repr=concept_repr)
         return task_loss
 
+    def encode_decode_loss(
+        self,
+        encoder_input_ids: torch.LongTensor,
+        encoder_attention_mask: Optional[torch.Tensor],
+        target_input_ids: torch.LongTensor,
+        labels: Optional[torch.LongTensor],
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+    ) -> Tuple[Optional[torch.Tensor], torch.Tensor, BaseModelOutput]:
+        """Single source of the encode → (shift target) → decode → loss recipe.
+
+        Used by BOTH forward() branches (reconstruction: ``target == encoder input``;
+        prefix→suffix: ``target == suffix``) AND auxiliary-loss callers (the E03 anchor in
+        PerceiverDenoiseTrainer). Centralising it keeps the decoder loss from drifting between
+        call sites — the class of bug behind the E01 double-shift.
+
+        Returns ``(loss, logits, encoder_outputs)``; ``loss`` is None when ``labels`` is None.
+        """
+        encoder_outputs = self.encode_concepts(
+            input_ids=encoder_input_ids,
+            attention_mask=encoder_attention_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=True,
+        )
+        concept_repr = encoder_outputs.last_hidden_state
+        decoder_input_ids = self._shift_right(target_input_ids)
+        word_dropout_p = self.config.decoder_word_dropout if self.training else 0.0
+        logits = self.decode_logits(concept_repr, decoder_input_ids, word_dropout_p=word_dropout_p)
+        loss = self._loss_from_logits(logits, labels, concept_repr)
+        return loss, logits, encoder_outputs
+
     @torch.no_grad()
     def concept_ablation_ce(
         self,
@@ -1404,18 +1440,14 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         if prefix_input_ids is not None:
             if suffix_input_ids is None:
                 raise ValueError("prefix/suffix forward requires suffix_input_ids.")
-            encoder_outputs = self.encode_concepts(
-                input_ids=prefix_input_ids,
-                attention_mask=prefix_attention_mask,
+            loss, logits, encoder_outputs = self.encode_decode_loss(
+                prefix_input_ids,
+                prefix_attention_mask,
+                suffix_input_ids,
+                labels,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
-                return_dict=return_dict,
             )
-            concept_repr = encoder_outputs.last_hidden_state          # [B, C, H]
-            decoder_input_ids = self._shift_right(suffix_input_ids)
-            word_dropout_p = self.config.decoder_word_dropout if self.training else 0.0
-            logits = self.decode_logits(concept_repr, decoder_input_ids, word_dropout_p=word_dropout_p)
-            loss = self._loss_from_logits(logits, labels, concept_repr)
 
             if not return_dict:
                 output = (logits,) + encoder_outputs[1:]
@@ -1428,20 +1460,14 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
                 attentions=encoder_outputs.attentions,
             )
 
-        encoder_outputs = self.encode_concepts(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
+        loss, logits, encoder_outputs = self.encode_decode_loss(
+            input_ids,
+            attention_mask,
+            input_ids,
+            labels,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
         )
-        concept_repr = encoder_outputs.last_hidden_state          # [B, C, H]
-
-        decoder_input_ids = self._shift_right(input_ids)
-        word_dropout_p = self.config.decoder_word_dropout if self.training else 0.0
-        logits = self.decode_logits(concept_repr, decoder_input_ids, word_dropout_p=word_dropout_p)
-
-        loss = self._loss_from_logits(logits, labels, concept_repr)
 
         if not return_dict:
             output = (logits,) + encoder_outputs[1:]
