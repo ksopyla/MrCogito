@@ -45,15 +45,28 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
    Gate (updated): judge on the **per-sample manifold RankMe + early-Δ**, co-primary with zero-shot
    STS-B (not the slot-mean rank, which understates the geometry). **The shared Stage-A for the two bets below.**
    Sibling cheap ablation: **decoder-weakening** (`DECODER_WORD_DROPOUT=0.5`) — see Queue above.
-4. **E04 — recursion (Ouro-style):** weight-tied concept refinement between encoder and decoder
-   (test-time compute scaling). Use **Ouro** ([2510.25741](https://arxiv.org/abs/2510.25741)) **not TRM**
-   (audited [2512.11847](https://arxiv.org/abs/2512.11847)). Only meaningful on **de-collapsed** concepts
-   (needs E03) **and a depth-dependent reasoning bench** (needs the eval foundation below), else the
-   step-curve is unfalsifiable.
-5. **Diffusion decode — deferred staged program** (not the next experiment). Revive **only** as Stage-A
+4. **E04 — concept-only parallel decoder** [(spec)](../experiments/E04_concept_only_parallel_decoder.md)
+   *(next; cheapest decisive bypass test).* Swap causal AR → position-query Perceiver decoder (no token
+   self-attention) — *removes* the bypass instead of adding pressure. One config knob. Judge on manifold
+   RankMe + early-Δ.
+5. **E05 — windowed decoder + concepts as cross-window memory** [(spec)](../experiments/E05_windowed_decoder_concept_memory.md)
+   *(largest lift; long-context program; gate behind E04).* Local window for fluency + concepts as the
+   ONLY cross-window carrier (Gist/ICAE/AutoCompressor-style), on long coherent docs (FinePDFs/LongBlocks
+   — see `playground/long_dataset_seq_len_analysis.ipynb`). This is the 10M-token bet's Stage-A.
+6. **E06 — latent-space prediction** [(spec)](../experiments/E06_latent_space_prediction.md)
+   *(reuses E03 machinery).* Anchor promoted from auxiliary to primary objective (JEPA/data2vec/CPC) —
+   learning signal entirely in representation space, no token bypass.
+7. **E07 — sentence-gap / boundary-only infilling** [(spec)](../experiments/E07_sentence_gap_infilling.md)
+   *(objective change vs E02).* Regenerate removed whole sentences; forces global aggregation through
+   concepts (SpanBERT/PEGASUS). Sibling cheap ablation still available: decoder-weakening (`DECODER_WORD_DROPOUT=0.5`).
+8. **E08 — recursion (Ouro-style)** *(renumbered from the old E04; gated on de-collapse + a depth bench).*
+   Weight-tied concept refinement (test-time compute scaling). Use **Ouro** ([2510.25741](https://arxiv.org/abs/2510.25741))
+   **not TRM** (audited [2512.11847](https://arxiv.org/abs/2512.11847)). Only meaningful on **de-collapsed**
+   concepts and a depth-dependent reasoning bench, else the step-curve is unfalsifiable.
+9. **Diffusion decode — deferred staged program** (not scheduled). Revive **only** as Stage-A
    (E03 anchor, recon-validated) → Stage-B **ELF-style flow + concept-conditioning dropout/CFG**.
-   **CALM is *not* a diffusion decoder** (continuous-AR + energy head); a bare random-init AdaLN-Zero
-   re-run repeats the 5 prior diffusion failures — do not.
+   **CALM is *not* a diffusion decoder**; a bare random-init AdaLN-Zero re-run repeats the 5 prior
+   diffusion failures — do not. (NB: masked-diffusion/MaskGIT now also a candidate bypass-free decoder for E04/E05.)
 6. **Engineering (parallel; not `E0NN` experiments):**
    - **Unified eval interface** — one orchestrator + report schema over the existing intrinsic probes
      (rank, anti-collapse, zero-shot STS-B, ΔCE) **now**; add a **`lighteval` (SmolLM3 list)** backend
