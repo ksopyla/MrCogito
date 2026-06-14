@@ -1,9 +1,9 @@
 # E01 — Concept-conditioned autoregressive decoder (from scratch)
 
-- **Status:** active
+- **Status:** done (training 2026-06-13 · evaluation 2026-06-14)
 - **Serves:** the new **encoder→AR-decoder** Current focus in [agenda.md](../1_Strategy_and_Plans/agenda.md). First step of the planned series (see agenda "Series roadmap"). Bridges Vision SG1 (concept quality) → SG2 (text generation): the encoder still produces concepts we can probe for quality, but the decoder now *generates* autoregressively instead of reconstructing in parallel.
 - **Implementation plan:** [E01_concept_ar_decoder_plan.md](E01_concept_ar_decoder_plan.md) *(the HOW)*
-- **Owner / dates:** Krzysztof Sopyla · opened 2026-06-06 · closed —
+- **Owner / dates:** Krzysztof Sopyla · opened 2026-06-06 · closed 2026-06-14
 
 > One experiment = one hypothesis = one changed variable. Implementation is a config
 > (`--decoder_type causal_ar`) over the shared `train_perceiver_denoise.py` entrypoint and its
@@ -158,8 +158,7 @@ path matters more than raw decoder size**, so we attack it on four fronts:
 > fixed run; rank / STS-B / ΔCE-as-a-gate remain conceptually valid but will be re-measured.
 
 ## Result
-<Filled in AFTER, by experiment-track. Link out; do not paste full results here.>
-- Run id: `<run_id>`
-- WandB: <link>
-- Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
-- Verdict: promising | mixed | regression | killed — <one line>
+- Run id: `concept_ar_H768L6C128D4_20260613_185955`
+- WandB: [Link](https://wandb.ai/ksopyla/MrCogito/runs/concept_ar_H768L6C128D4_20260613_185955)
+- Run report: `docs/2_Experiments_Registry/run_reports/e01_concept_ar_decoder_20260614.md`
+- Verdict: **mixed** — AR plumbing confirmed and decoder uses concepts at step 4000 (Δshuffle 1.50, Δzero 1.48 ≥ 0.5 gate; success #1 and #4 pass at checkpoint-4000), but eval CE rises monotonically after the first checkpoint (overfitting), rank collapses from 14.64 → 4.64 by end-of-training, and best STS-B 0.556 misses the 0.62 gate (successes #2 and #3 fail). The reconstruction objective cannot sustain concept quality over a full epoch on FineWeb-Edu.

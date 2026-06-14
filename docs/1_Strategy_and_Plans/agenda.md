@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-06-13 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [../experiments/](../experiments/).
+**Updated:** 2026-06-14 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [../experiments/](../experiments/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -17,25 +17,15 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **Attack concept collapse at the root, on the encoder→AR-decoder foundation.** E01/E02 confirmed the
-  AR plumbing; the chronic blocker behind *every* bet is still **concept collapse** (effective rank
-  5–10/128 across ~60 runs). The next fundamental step is
+- **Attack concept collapse at the root, on the encoder→AR-decoder foundation.** E01/E02 are both done and evaluated (2026-06-14). E02 sets a new project STS-B best (0.702), confirming prefix→suffix as the better semantic objective. The chronic blocker — **concept collapse** (rank 11.57/128 for E02-best, far below 48/128 gate) — remains. The next step is
   **[E03 — de-collapse via a frozen-encoder hidden-state anchor](../experiments/E03_concept_anchor_decollapse.md)**
-  (spec + [plan](../experiments/E03_concept_anchor_decollapse_plan.md)): add an auxiliary loss where the
-  128 concepts must reconstruct a **frozen SmolLM2-135M's per-token hidden states** (MSE), as **one
-  variable vs E01**, run as a **matched anchor-ON/OFF pair** (the OFF arm is a fresh E01 baseline, so it
-  needs neither Polonez nor E01-final). This is the shared "validate the bottleneck first" Stage-A that
-  both the diffusion and recursion bets depend on (2026-06-13 scout evidence: Cosmos/LDLM/CALM).
-- **Run state (2026-06-13):** E01 **ended on Polonez**; Polonez is **down (needs restart)** so its final
-  rank/STS-B are not yet synced. **E02 (prefix→suffix) is active on Odra.** E03 queues after Odra frees
-  or Polonez returns; it is cheap (frozen-teacher forward + lean MSE head).
+  (spec + [plan](../experiments/E03_concept_anchor_decollapse_plan.md)): add an auxiliary MSE loss where concepts must reconstruct a **frozen SmolLM2-135M's per-token hidden states**, run as a **matched anchor-ON/OFF pair** vs E01. This is the shared Stage-A that both the diffusion and recursion bets depend on.
+- **Run state (2026-06-14):** E01 done (Polonez, `checkpoint-4000` best, rank 14.64→4.64 collapse, STS-B 0.556). E02 done (Odra, `checkpoint-78000` best, rank 11.57/128, **STS-B 0.702 new best**). Both servers idle. **E03 is ready to launch** on Polonez + Odra as a matched ON/OFF pair.
 
 ### Series roadmap (plan-ahead; each step = ONE variable vs the prior, re-scoped as its own spec)
-1. **E01 — AR decoder from scratch** *(ended on Polonez; final baseline pending sync).* Modern baseline
-   line: encoder→AR decoder, FineWeb-Edu, SmolLM2 tokenizer, SwiGLU + RMSNorm + RoPE(decoder), ~135M.
-   New metric: concept-ablation ΔCE.
+1. **E01 — AR decoder from scratch** *(done 2026-06-14, mixed).* Modern baseline line: encoder→AR decoder, FineWeb-Edu, SmolLM2 tokenizer, SwiGLU + RMSNorm + RoPE(decoder), ~135M. Best at checkpoint-4000 (Δshuffle 1.50, STS-B 0.556); collapses to rank 4.64 by end. New metric established: concept-ablation ΔCE.
 2. **E02 — objective:** [prefix→suffix AR generation](../experiments/E02_ar_prefix_suffix.md)
-   *(active on Odra).* Strongest semantic pressure on the AR foundation.
+   *(done 2026-06-14, mixed/positive; STS-B 0.702 new project best).* Stronger semantic pressure than reconstruction; concepts are compact but semantically loaded.
 3. **E03 — de-collapse via frozen-encoder anchor** *(next; spec+plan written).* Per-token SmolLM2-h MSE
    distillation, auxiliary to E01 AR, matched ON/OFF pair. Gate: rank ≥ control+16 & ≥32/128, co-primary
    with zero-shot STS-B. **The shared Stage-A for the two bets below.**
@@ -64,8 +54,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 - **MLM + concept losses** (combined / kendall_gal / fixed): pushing concept diversity tended to cost downstream semantics — a tension worth remembering.
 - **Diffusion (self-reconstruction, ELBO, VICReg) and prefix diffusion:** explored on MiniPile / WikiText-103; concept effective rank stayed low so far. Code in `parked/`. **2026-06-13 lit scan (CALM/ELF/Cosmos/LDLM/Nemotron):** our 5 failures match a *known* failure mode — an **unvalidated bottleneck + decoder bypass**, not just bugs. Reviving needs a materially-new ingredient (frozen-encoder MSE anchor + concept-dropout/CFG, ideally warm-start), not a re-run. For "do concepts carry semantics?", **AR + ΔCE is the cleaner probe** than diffusion.
 - **Recursive / latent-reasoning (Ouro/Huginn/TRM lit scan, 2026-06-13):** recurrent-depth is real but **task-selective** — gains show on multi-step/compositional benches, often flat on plain denoise/STS; **measurement is the bottleneck**. Use **Ouro**, not TRM (its ARC headline was audited down to ensemble + puzzle-ID lookup + shallow step-1). Only worth running on **de-collapsed** concepts (hence E03 first).
-- **Perceiver denoise reconstruction:** strongest zero-shot STS-B so far (~0.607) with still-low-rank geometry and mixed supervised signal.
-- **The shared missing ingredient (working hypothesis):** anchoring concepts to **frozen pretrained per-token hidden states** (MSE-to-h) is the de-collapse lever both lines need — and the one ingredient the SPRIND P1 matrix doesn't yet contain. E03 tests it directly.
+- **Perceiver denoise reconstruction:** strongest zero-shot STS-B at the time (~0.607) with still-low-rank geometry and mixed supervised signal. Now superseded by E02.
+- **E01 — AR denoising reconstruction (FineWeb-Edu, 1 epoch, 2026-06-14):** AR plumbing confirmed; decoder uses concepts early (Δshuffle 1.50 at step 4000). Eval CE rises monotonically thereafter (overfitting); rank collapses 14.64 → 4.64; best STS-B 0.556. Reconstruction + word-dropout insufficient to sustain concept quality over full training. Best checkpoint is an early checkpoint (4000 steps).
+- **E02 — prefix→suffix AR generation (FineWeb-Edu, 1 epoch, 2026-06-14):** STS-B **0.702** — new project best, well above prior best (0.607) and E01-best (0.556). Prefix→suffix creates better semantic pressure than reconstruction. Rank still collapsed (11.57/128), suffix-CE ablation modest (Δshuffle 0.50). Key insight: compact geometry can coexist with high STS-B — the active subspace is semantically loaded even when rank is low.
+- **The shared missing ingredient (working hypothesis):** anchoring concepts to **frozen pretrained per-token hidden states** (MSE-to-h) is the de-collapse lever both lines need. E03 tests it directly.
 - Full history (with caveats): [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md); older roadmap + TODO diary in [5_Archive/](../5_Archive/).
 
 ## Not active right now (still part of the Vision)

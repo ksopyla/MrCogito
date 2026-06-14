@@ -1,9 +1,9 @@
 # E02 — Prefix-to-suffix AR generation objective
 
-- **Status:** draft
+- **Status:** done (training 2026-06-13 · evaluation 2026-06-14)
 - **Serves:** the encoder->AR-decoder Current focus in [agenda.md](../1_Strategy_and_Plans/agenda.md). This is the second step in the AR series: keep the E01 AR foundation fixed, then test whether a stronger SODA-style objective forces more semantic concepts.
 - **Implementation plan:** [E02_ar_prefix_suffix_plan.md](E02_ar_prefix_suffix_plan.md) *(the HOW)*
-- **Owner / dates:** Krzysztof Sopyla · opened 2026-06-07 · closed —
+- **Owner / dates:** Krzysztof Sopyla · opened 2026-06-07 · closed 2026-06-14
 
 > One experiment = one hypothesis = one changed variable. E02 changes the training
 > objective only: reconstruction -> prefix-to-suffix AR generation. Do not launch
@@ -70,8 +70,7 @@ Everything else is held fixed unless needed for 3-GPU Odra batch-size calibratio
 - **New foundation code (reusable, via `research-implement`):** extend the shared entrypoint with `objective_variant="prefix_suffix"`; add or adapt a prefix/suffix collator that works with eos-only causal tokenizers; teach `ConceptEncoderForConditionalLM` to accept `prefix_input_ids`/`prefix_attention_mask` plus `suffix_input_ids`/`labels`; compute suffix next-token CE and concept-ablation CE on suffix targets; expose `PREFIX_RATIO_MIN`, `PREFIX_RATIO_MAX`, and `SPLIT_STRATEGY` in the existing launcher. No new `train_*.py`.
 
 ## Result
-<Filled in AFTER, by experiment-track. Link out; do not paste full results here.>
-- Run id: `<run_id>`
-- WandB: <link>
-- Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
-- Verdict: promising | mixed | regression | killed — <one line>
+- Run id: `concept_ar_prefix_H768L6C128D4_20260613_134159`
+- WandB: [Link](https://wandb.ai/ksopyla/MrCogito/runs/concept_ar_prefix_H768L6C128D4_20260613_134159)
+- Run report: `docs/2_Experiments_Registry/run_reports/e02_ar_prefix_suffix_20260614.md`
+- Verdict: **mixed / positive** — STS-B 0.702 clears the 0.65 gate with +0.05 margin (success #1 pass; new project best, +0.095 over prior best 0.607). Suffix eval CE 3.52 < 6.0 (success #4 pass). But effective rank 11.57/128 fails the ≥ 48/128 de-collapse gate (success #2 fail) and suffix-CE Δshuffle 0.50 / Δzero 0.73 fail their gates (success #3 fail). The prefix→suffix objective is the better semantic objective — concepts are compact but semantically loaded. Concept geometry collapse remains the primary blocker; E03 is the targeted fix.
