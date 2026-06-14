@@ -168,7 +168,79 @@ def compute_concept_geometry_metrics(concept_repr: torch.Tensor) -> Dict[str, fl
     metrics['std_concept_norm'] = concept_norms.std().item()
     metrics['min_concept_norm'] = concept_norms.min().item()
     metrics['max_concept_norm'] = concept_norms.max().item()
-    
+
+    # === 7. Per-slot input-activity (dead-register detection) ===
+    # How much does each slot vary ACROSS inputs? A slot whose value is ~constant over
+    # the batch is a dead register that carries no instance information, regardless of how
+    # the SVD of the batch-mean matrix looks. This is orthogonal to slot-redundancy: it
+    # asks "is each slot actually a function of the input?" (the property reasoning needs).
+    if batch_size > 1:
+        per_slot_input_std = concept_repr.std(dim=0).mean(dim=-1)  # [C] std over inputs, avg over H
+        metrics['mean_slot_input_std'] = per_slot_input_std.mean().item()
+        metrics['min_slot_input_std'] = per_slot_input_std.min().item()
+        metrics['active_slot_fraction'] = (per_slot_input_std > 1e-3).float().mean().item()
+    else:
+        metrics['mean_slot_input_std'] = float('nan')
+        metrics['min_slot_input_std'] = float('nan')
+        metrics['active_slot_fraction'] = float('nan')
+
+    return metrics
+
+
+@torch.no_grad()
+def compute_representation_manifold_metrics(pooled: torch.Tensor) -> Dict[str, float]:
+    """Geometry of the PER-SAMPLE pooled sentence embedding across the dataset.
+
+    This is the metric that actually matters for downstream similarity/retrieval/reasoning:
+    it asks how many independent directions DIFFERENT INPUTS occupy, NOT how redundant the
+    128 slots are after batch-averaging. Standard dimensional-collapse diagnostic
+    (Jing et al. 2021); RankMe (Garrido et al. 2023, arXiv:2210.02885) is the entropy-based
+    effective rank that correlates with downstream quality.
+
+    Args:
+        pooled: [N_samples, H] — mean-pooled concept embeddings (== what zero-shot STS-B uses).
+
+    Returns:
+        rankme, participation_ratio, dims_for_95_variance, anisotropy (mean random-pair cosine),
+        top_1/top_5 variance ratios.
+    """
+    metrics: Dict[str, float] = {}
+    n, h = pooled.shape
+    if n < 2:
+        return {k: float('nan') for k in (
+            'manifold_rankme', 'manifold_participation_ratio', 'manifold_dims_for_95_variance',
+            'manifold_anisotropy', 'manifold_top_1_variance_ratio', 'manifold_top_5_variance_ratio')}
+
+    pooled = pooled.float()
+    centered = pooled - pooled.mean(dim=0, keepdim=True)
+    try:
+        S = torch.linalg.svdvals(centered)               # singular values of [N, H]
+        p = S / (S.sum() + 1e-12)
+        # RankMe = exp(Shannon entropy of normalized singular values).
+        entropy = -(p * (p + 1e-12).log()).sum()
+        metrics['manifold_rankme'] = entropy.exp().item()
+        var = (S ** 2)
+        var = var / (var.sum() + 1e-12)
+        metrics['manifold_participation_ratio'] = ((var.sum() ** 2) / (var ** 2).sum()).item()
+        cumsum = var.cumsum(0)
+        metrics['manifold_dims_for_95_variance'] = float((cumsum < 0.95).sum().item() + 1)
+        metrics['manifold_top_1_variance_ratio'] = var[0].item()
+        metrics['manifold_top_5_variance_ratio'] = var[:5].sum().item() if len(var) >= 5 else 1.0
+    except Exception:
+        for k in ('manifold_rankme', 'manifold_participation_ratio',
+                  'manifold_dims_for_95_variance', 'manifold_top_1_variance_ratio',
+                  'manifold_top_5_variance_ratio'):
+            metrics[k] = float('nan')
+
+    # Anisotropy (Ethayarajh 2019): mean cosine between random pairs of (uncentered)
+    # sentence embeddings. ~0 = isotropic; ->1 = all sentences point the same way (a narrow
+    # cone, where STS-B rides on a single dominant direction).
+    normed = F.normalize(pooled, p=2, dim=-1)
+    m = min(n, 1024)
+    idx = torch.randperm(n)[:m]
+    sims = normed[idx] @ normed[idx].T
+    off = sims[~torch.eye(m, dtype=torch.bool, device=sims.device)]
+    metrics['manifold_anisotropy'] = off.mean().item()
     return metrics
 
 

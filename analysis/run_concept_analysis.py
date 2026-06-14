@@ -51,7 +51,10 @@ from nn.concept_encoder_perceiver import (
     ConceptEncoderForDenoisingPerceiver,
 )
 from nn.concept_encoder_weighted import ConceptEncoderForMaskedLMWeighted
-from analysis.concept_analysis import compute_concept_geometry_metrics
+from analysis.concept_analysis import (
+    compute_concept_geometry_metrics,
+    compute_representation_manifold_metrics,
+)
 
 
 # Diffusion families (diffusion_mlm, prefix_diffusion) are parked in `parked/`;
@@ -249,6 +252,14 @@ def main():
     agg["global_effective_rank"] = global_eff_rank
     agg["global_effective_rank_normalized"] = global_eff_rank_norm
 
+    # Per-sample representation manifold: SVD of the mean-pooled sentence embeddings
+    # [N_samples, H] (exactly what zero-shot STS-B consumes). Unlike global_effective_rank
+    # (which averages over the batch FIRST and so measures slot redundancy), this measures
+    # how many directions DIFFERENT INPUTS span — the geometry downstream tasks ride on.
+    pooled_embeddings = all_concepts.mean(dim=1)  # [N_samples, H]
+    manifold = compute_representation_manifold_metrics(pooled_embeddings)
+    agg.update(manifold)
+
     # --- Print report ---
     print("\n" + "=" * 65)
     print("CONCEPT SPACE GEOMETRY REPORT")
@@ -316,6 +327,28 @@ def main():
         print(f"  Top-1 dominance ratio: {dom_ratio:.3f}   {dom_grade}")
 
     print()
+    print("─── Representation Manifold (per-sample, the STS-relevant geometry) ─")
+    print("    SVD of mean-pooled sentence embeddings [N, H]; NOT the batch-mean slot matrix.")
+    row("RankMe effective rank (entropy-based)",
+        manifold.get("manifold_rankme", float("nan")), 16, 48, fmt=".2f")
+    row("Participation ratio",
+        manifold.get("manifold_participation_ratio", float("nan")), 16, 48, fmt=".2f")
+    row("Dims for 95% across-sample variance",
+        manifold.get("manifold_dims_for_95_variance", float("nan")), 10, 50, fmt=".0f")
+    ani = manifold.get("manifold_anisotropy", float("nan"))
+    ani_grade = "✓ GOOD" if ani < 0.3 else ("△ OK" if ani < 0.6 else "✗ POOR (narrow cone)")
+    print(f"  {'Anisotropy (mean random-pair cosine)':<40s} {ani:.4f}   {ani_grade}")
+    print(f"  {'Top-1 variance ratio (pooled)':<40s} "
+          f"{manifold.get('manifold_top_1_variance_ratio', float('nan')):.4f}")
+
+    print()
+    print("─── Per-slot Input Activity (dead-register detection) ──────")
+    row("Active slot fraction (std>1e-3 over inputs)",
+        agg.get("active_slot_fraction", float("nan")), 0.5, 0.9, fmt=".3f")
+    row("Mean slot input std",
+        agg.get("mean_slot_input_std", float("nan")), 0.05, 0.2, fmt=".4f")
+
+    print()
     print("─── Recommendations ────────────────────────────────────────")
     if global_eff_rank_norm < 0.3:
         print("  → CRITICAL: Effective rank < 30% — concepts are collapsed.")
@@ -353,6 +386,15 @@ def main():
             print(f"  Δzero  (zero-intact) : {dz:.4f}   {gz}")
             print(f"  Δshuffle             : {dsh:.4f}   {gsh}   (stronger test)")
             print("  E01 gate: Δzero AND Δshuffle ≥ 0.5 nats.")
+            # Early-position deltas: the sharper instrument. Concept reliance is strongest on
+            # the first ~k targets; later positions are predictable from teacher-forced local
+            # context regardless of concepts, diluting the all-position delta (the AR bypass).
+            if "delta_zero_early" in ablation:
+                dze, dshe = ablation["delta_zero_early"], ablation["delta_shuffle_early"]
+                gze = "✓ uses concepts" if dze >= 0.5 else "✗ near-collapse"
+                gshe = "✓ uses concepts" if dshe >= 0.5 else "✗ near-collapse"
+                print(f"  Δzero  (early-pos)   : {dze:.4f}   {gze}   ← PRIMARY (less bypass dilution)")
+                print(f"  Δshuffle (early-pos) : {dshe:.4f}   {gshe}   ← PRIMARY")
             if "ce_intact_wd" in ablation:
                 gap = ablation["gap_clean_vs_wd"]
                 gw = ("⚠ decoder specialized to word-dropped inputs — clean-input CE "
