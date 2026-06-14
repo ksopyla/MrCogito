@@ -492,6 +492,7 @@ def build_perceiver_wandb_identity(
     checkpoint_family: str,
     pretraining_objective: str,
     use_bixt: bool,
+    anchor_loss: bool = False,
     experiment_id: Optional[str] = None,
 ) -> WandbRunIdentity:
     """Derive W&B grouping metadata for the shared perceiver/AR entrypoint.
@@ -506,6 +507,11 @@ def build_perceiver_wandb_identity(
             model_family = "concept_ar_prefix"
             objective_family = "prefix_suffix"
             job_type = "train_concept_ar_prefix_suffix"
+        elif anchor_loss:
+            inferred_experiment = "E03"
+            model_family = "concept_ar"
+            objective_family = "ar_reconstruction_anchor"
+            job_type = "train_concept_ar_anchor_reconstruction"
         else:
             inferred_experiment = "E01"
             model_family = "concept_ar"
@@ -541,8 +547,11 @@ def build_perceiver_wandb_identity(
     ]
     if resolved_experiment:
         tags.append(resolved_experiment)
+    if anchor_loss:
+        tags.extend(["anchor", "anchor-on"])
     if use_bixt:
         tags.append("bixt")
+    tags = list(dict.fromkeys(tags))
 
     return WandbRunIdentity(
         experiment_id=resolved_experiment,

@@ -68,6 +68,29 @@ def test_e02_prefix_suffix_identity():
     assert {"E02", "concept_ar_prefix", "prefix_suffix", "causal_ar"}.issubset(identity.tags)
 
 
+def test_e03_anchor_reconstruction_identity():
+    identity = build_perceiver_wandb_identity(
+        decoder_type="causal_ar",
+        objective_variant="reconstruction",
+        hidden_size=768,
+        num_hidden_layers=6,
+        concept_num=128,
+        decoder_num_layers=4,
+        checkpoint_family="concept_ar",
+        pretraining_objective="ar_denoising_reconstruction",
+        use_bixt=True,
+        anchor_loss=True,
+    )
+
+    assert identity.experiment_id == "E03"
+    assert identity.model_family == "concept_ar"
+    assert identity.objective_family == "ar_reconstruction_anchor"
+    assert identity.architecture_id == "concept_ar_H768L6C128D4"
+    assert identity.group == "E03_concept_ar_H768L6C128D4"
+    assert identity.job_type == "train_concept_ar_anchor_reconstruction"
+    assert {"E03", "anchor", "anchor-on", "ar_reconstruction_anchor"}.issubset(identity.tags)
+
+
 def test_explicit_experiment_id_overrides_inferred_default():
     identity = build_perceiver_wandb_identity(
         decoder_type="causal_ar",

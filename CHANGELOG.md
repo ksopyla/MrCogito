@@ -16,6 +16,19 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ## [Unreleased]
 
+## [2026-06-14] - Make E03 anchor runs W&B-identifiable
+
+**Why:**
+- The live E03 anchor-ON warmup on Odra was launched with `anchor_loss=true` but inherited the E01 W&B group/tag identity, making it hard to separate from the AR reconstruction baseline.
+
+**Impact:**
+- Future anchor-enabled concept-AR runs self-label as E03 anchor runs in W&B, and the run checklist now requires verifying group, job type, tags, and `experiment_id` before training.
+
+**What changed:**
+- [fixed] `training/utils_training.py`, `training/train_perceiver_denoise.py` - make W&B identity anchor-aware (`E03`, `train_concept_ar_anchor_reconstruction`, `anchor`/`anchor-on` tags) and log anchor config explicitly.
+- [updated] `.cursor/skills/experiment-run/SKILL.md`, `docs/experiments/E03_concept_anchor_decollapse.md`, `docs/experiments/E03_concept_anchor_decollapse_plan.md` - add W&B preflight guidance and `EXPERIMENT_ID=E03` to E03 launch recipes, including the matched control.
+- [added] `tests/test_wandb_identity.py` - regression coverage for E03 anchor W&B identity.
+
 ## [2026-06-13] - Standardize W&B identity for shared perceiver/AR training
 
 **Why:**

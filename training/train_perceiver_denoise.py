@@ -732,6 +732,7 @@ def main():
         checkpoint_family=config.checkpoint_family,
         pretraining_objective=config.pretraining_objective,
         use_bixt=model_args.use_bixt,
+        anchor_loss=model_args.anchor_loss,
         experiment_id=os.environ.get("WANDB_EXPERIMENT_ID") or os.environ.get("EXPERIMENT_ID"),
     )
 
@@ -756,6 +757,7 @@ def main():
         "BiXT encoder": model_args.use_bixt,
         "Decoder layers": model_args.decoder_num_layers,
         "Objective": model_args.objective_variant,
+        "Anchor loss": model_args.anchor_loss,
         "W&B group": wandb_identity.group,
         "W&B job_type": wandb_identity.job_type,
         "Prefix ratio min": data_args.prefix_ratio_min,
@@ -788,6 +790,11 @@ def main():
             "checkpoint_family": config.checkpoint_family,
             "pretraining_objective": config.pretraining_objective,
             "objective_variant": model_args.objective_variant,
+            "anchor_loss": model_args.anchor_loss,
+            "anchor_model_name": model_args.anchor_model_name if model_args.anchor_loss else None,
+            "anchor_loss_weight": model_args.anchor_loss_weight,
+            "anchor_standardize": model_args.anchor_standardize,
+            "anchor_head_layers": model_args.anchor_head_layers,
             "contrastive_weight": model_args.contrastive_weight,
             "contrastive_temperature": model_args.contrastive_temperature,
             "prefix_ratio_min": data_args.prefix_ratio_min,
