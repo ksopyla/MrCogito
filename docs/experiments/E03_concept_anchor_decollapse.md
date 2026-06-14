@@ -1,6 +1,6 @@
 # E03 — De-collapse via a frozen-encoder hidden-state anchor
 
-- **Status:** draft
+- **Status:** running (anchor-ON warmup launched 2026-06-14 on Odra; matched control + decoder-weakening sibling queued)
 - **Serves:** the encoder→AR-decoder Current focus in [agenda.md](../1_Strategy_and_Plans/agenda.md), and the chronic open problem behind it — **concept collapse** (effective rank stuck at 5–10/128 across ~60 runs). Attacks the root cause that blocks every downstream bet (AR generation, recursion, diffusion). The frozen-hidden-state anchor is the shared "validate the bottleneck first" ingredient the diffusion literature (Cosmos/LDLM/CALM) and the recursion line both rely on — and the one ingredient the team brief's P1 matrix does **not** currently contain.
 - **Implementation plan:** [E03_concept_anchor_decollapse_plan.md](E03_concept_anchor_decollapse_plan.md) *(the HOW — repo-rooted design)*
 - **Owner / dates:** Krzysztof Sopyla · opened 2026-06-13 · closed —
