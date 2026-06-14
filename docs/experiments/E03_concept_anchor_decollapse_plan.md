@@ -111,7 +111,7 @@ clean, comparable next-token CE for best-checkpoint selection); `anchor/mse` is 
 - **Launch (anchor arm):** conditional `ANCHOR_ARGS` block in the existing launcher (RESUME_ARGS
   pattern); the **control arm is the same command with `ANCHOR_LOSS=false` == E01**:
   ```bash
-  DECODER_TYPE=causal_ar \
+  EXPERIMENT_ID=E03 DECODER_TYPE=causal_ar \
   HIDDEN_SIZE=768 TOKEN_EMBEDDING_DIM=256 NUM_LAYERS=6 DECODER_NUM_LAYERS=4 \
   CONCEPT_NUM=128 INTERMEDIATE_SIZE=2048 HIDDEN_ACT=silu NORM_TYPE=rmsnorm DECODER_POS_TYPE=rope \
   OBJECTIVE_VARIANT=reconstruction DELETION_RATE=0.6 DECODER_WORD_DROPOUT=0.2 \
@@ -122,6 +122,8 @@ clean, comparable next-token CE for best-checkpoint selection); `anchor/mse` is 
   SEED=42 NUM_EPOCHS=0.3 SAVE_TOTAL_LIMIT=5 \
   bash scripts/train_perceiver_denoise_multigpu.sh
   ```
+  Keep `EXPERIMENT_ID=E03` on the anchor-OFF control as well, so W&B groups the matched pair
+  together while `ANCHOR_LOSS`/tags distinguish the arms.
 
 - **Eval-time logging:** `eval_loss` stays **pure AR CE** (the anchor is absent from `model.forward`),
   so `metric_for_best_model="eval_loss"` is unchanged and directly comparable to the control. Extend

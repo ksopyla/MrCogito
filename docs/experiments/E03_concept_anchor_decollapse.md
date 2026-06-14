@@ -84,13 +84,20 @@ The risk is that effective rank rises **without** the concepts becoming useful o
   anti-collapse cosine stats.
 
 ## Success criteria (set BEFORE running) — judged on the matched pair (anchor ON vs OFF)
-1. **De-collapse (headline):** concept **effective rank(anchor) ≥ rank(control) + 16** AND
-   **≥ 32/128** (`analysis/run_concept_analysis.py`); anti-collapse **mean** pairwise cosine **< 0.4**
-   and **max < 0.8**.
+> **Amendment 2026-06-14 (metric upgrade, pre-verdict):** after the Phase-0 finding that the
+> headline "effective rank" SVDs the **batch-averaged** concepts (so it measures *slot redundancy*,
+> not the per-sample representation geometry that downstream tasks use), the **primary de-collapse
+> metric is the per-sample manifold RankMe** + **early-position ablation Δ** (both added to
+> `analysis/run_concept_analysis.py`). Slot-mean effective rank is kept only as a secondary
+> diagnostic. The anchor-ON warmup is already running mislabeled as E01 in W&B (launched without
+> `EXPERIMENT_ID=E03`); the **matched control and any rerun MUST pass `EXPERIMENT_ID=E03 ANCHOR_LOSS=…`**.
+1. **De-collapse (headline, upgraded):** **manifold RankMe(anchor) ≥ RankMe(control) + 8** (per-sample
+   pooled embeddings) AND **early-position Δzero(anchor) ≥ Δzero(control)**. Secondary/diagnostic:
+   slot-mean effective rank(anchor) ≥ control + 16; anti-collapse mean pairwise cosine < 0.4, max < 0.8.
 2. **Useful, not just spread (co-primary):** zero-shot **STS-B(anchor) ≥ STS-B(control) + 0.03** AND
    **≥ 0.62** (≥ prior best 0.607), from mean-pooled concepts.
 3. **Generation not broken (guardrails):** AR eval **CE(anchor)** no worse than control by **> ~0.2
-   nats**; concept-ablation **ΔCE ≥ 0.5** (shuffle/zero; concepts still causally used).
+   nats**; concept-ablation **early Δzero ≥ 0.5** (concepts still causally used).
 4. **Anchor actually learns:** anchor **MSE decreases** monotonically and the per-token regression is
    well below a mean-prediction baseline (sanity that the head + concepts carry the signal).
 
@@ -117,7 +124,7 @@ The risk is that effective rank rises **without** the concepts becoming useful o
 - **Launch (env-var overrides on the shared launcher; the only diff between arms is the anchor block):**
   ```bash
   # Experiment arm (anchor ON)
-  DECODER_TYPE=causal_ar \
+  EXPERIMENT_ID=E03 DECODER_TYPE=causal_ar \
   HIDDEN_SIZE=768 TOKEN_EMBEDDING_DIM=256 NUM_LAYERS=6 DECODER_NUM_LAYERS=4 \
   CONCEPT_NUM=128 INTERMEDIATE_SIZE=2048 HIDDEN_ACT=silu NORM_TYPE=rmsnorm DECODER_POS_TYPE=rope \
   OBJECTIVE_VARIANT=reconstruction DELETION_RATE=0.6 DECODER_WORD_DROPOUT=0.2 \
@@ -127,7 +134,8 @@ The risk is that effective rank rises **without** the concepts becoming useful o
   ANCHOR_LOSS_WEIGHT=0.5 ANCHOR_STANDARDIZE=true \
   bash scripts/train_perceiver_denoise_multigpu.sh
 
-  # Control arm (anchor OFF) — identical command minus the ANCHOR_* block (== E01 config)
+  # Control arm (anchor OFF) — identical command minus the ANCHOR_* block (== E01 config);
+  # keep EXPERIMENT_ID=E03 so W&B groups it with the matched E03 pair.
   ```
 - **New foundation code (reusable, via `research-implement`):** config fields `anchor_loss`
   (default `False`), `anchor_model_name`, `anchor_loss_weight`, `anchor_standardize`,
