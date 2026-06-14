@@ -6,6 +6,7 @@ Maintained perceiver training path:
   - position-only stacked decoder
   - full-sequence reconstruction from deleted-token inputs
   - optional stage-2 SimCSE-style contrastive objective
+  - causal-AR prefix->suffix objective for concept-conditioned generation
 """
 
 import os
@@ -18,6 +19,8 @@ import torch
 import torch.nn.functional as F
 import wandb
 from transformers import (
+    AutoConfig,
+    AutoModel,
     AutoTokenizer,
     HfArgumentParser,
     Trainer,
@@ -29,7 +32,7 @@ from transformers.modeling_outputs import MaskedLMOutput
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data.data_collators import DataCollatorForTSDAE
+from data.data_collators import DataCollatorForPrefixGeneration, DataCollatorForTSDAE
 from data.dataset_preprocess import load_and_preprocess_text_dataset
 from nn.concept_encoder import ConceptEncoderConfig
 from nn.concept_encoder_perceiver import (
@@ -38,6 +41,8 @@ from nn.concept_encoder_perceiver import (
 )
 from nn.loss_manager import ConceptLossStepCallback, LossConfig, get_available_losses
 from training.utils_training import (
+    broadcast_object,
+    build_perceiver_wandb_identity,
     init_wandb,
     is_main_process,
     log_data_config,
@@ -54,9 +59,11 @@ logger = logging.get_logger(__name__)
 
 OBJECTIVE_RECONSTRUCTION = "reconstruction"
 OBJECTIVE_RECONSTRUCTION_CONTRASTIVE = "reconstruction+contrastive"
+OBJECTIVE_PREFIX_SUFFIX = "prefix_suffix"
 VALID_OBJECTIVES = {
     OBJECTIVE_RECONSTRUCTION,
     OBJECTIVE_RECONSTRUCTION_CONTRASTIVE,
+    OBJECTIVE_PREFIX_SUFFIX,
 }
 
 
@@ -120,7 +127,7 @@ class ModelArguments:
     )
     objective_variant: str = field(
         default=OBJECTIVE_RECONSTRUCTION,
-        metadata={"help": "One of: reconstruction, reconstruction+contrastive."},
+        metadata={"help": "One of: reconstruction, reconstruction+contrastive, prefix_suffix."},
     )
     contrastive_weight: float = field(
         default=0.3,
@@ -129,6 +136,28 @@ class ModelArguments:
     contrastive_temperature: float = field(
         default=0.05,
         metadata={"help": "Temperature used by the in-batch contrastive loss."},
+    )
+    # E03 — concept de-collapse via a frozen-encoder hidden-state anchor (causal_ar + reconstruction).
+    anchor_loss: bool = field(
+        default=False,
+        metadata={"help": "Enable the frozen-encoder per-token hidden-state anchor auxiliary (E03)."},
+    )
+    anchor_model_name: str = field(
+        default="HuggingFaceTB/SmolLM2-135M",
+        metadata={"help": "Frozen teacher whose per-token hidden states the concepts must reconstruct. "
+                  "Must share the model tokenizer (1:1 token alignment)."},
+    )
+    anchor_loss_weight: float = field(
+        default=0.5,
+        metadata={"help": "Weight lambda on the anchor MSE term added to the AR loss."},
+    )
+    anchor_standardize: bool = field(
+        default=True,
+        metadata={"help": "Per-token layer_norm of teacher targets before MSE (stable regression)."},
+    )
+    anchor_head_layers: int = field(
+        default=2,
+        metadata={"help": "Lean anchor head depth (PerceiverDecoderLayer blocks); keep small."},
     )
 
 
@@ -178,6 +207,11 @@ class DataTrainingArguments:
     deletion_rate: float = field(default=0.6)
     train_num_proc: int = field(default=8)
     test_num_proc: int = field(default=4)
+    prefix_ratio_min: float = field(default=0.3)
+    prefix_ratio_max: float = field(default=0.5)
+    min_prefix_content: int = field(default=5)
+    min_suffix_content: int = field(default=10)
+    split_strategy: str = field(default="sentence_boundary")
 
 
 class PerceiverDenoiseTrainer(Trainer):
@@ -189,6 +223,11 @@ class PerceiverDenoiseTrainer(Trainer):
         contrastive_temperature: float,
         compute_concept_ablation: bool = False,
         concept_ablation_batches: int = 5,
+        eval_data_collator=None,
+        anchor_loss: bool = False,
+        anchor_loss_weight: float = 0.5,
+        anchor_standardize: bool = True,
+        anchor_model_name: Optional[str] = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -197,6 +236,78 @@ class PerceiverDenoiseTrainer(Trainer):
         self.contrastive_temperature = contrastive_temperature
         self.compute_concept_ablation = compute_concept_ablation
         self.concept_ablation_batches = concept_ablation_batches
+        self.eval_data_collator = eval_data_collator
+        # E03: frozen teacher held on the trainer (NOT a model submodule → never checkpointed).
+        self.anchor_loss = anchor_loss
+        self.anchor_loss_weight = anchor_loss_weight
+        self.anchor_standardize = anchor_standardize
+        self.anchor_teacher = None
+        if anchor_loss:
+            if anchor_model_name is None:
+                raise ValueError("anchor_loss=True requires anchor_model_name.")
+            logger.info(f"Loading frozen anchor teacher: {anchor_model_name}")
+            teacher = AutoModel.from_pretrained(anchor_model_name)
+            teacher.eval()
+            teacher.requires_grad_(False)
+            self.anchor_teacher = teacher.to(self.args.device)
+
+    def _anchor_mse(
+        self,
+        base_model,
+        input_ids: torch.Tensor,
+        labels: torch.Tensor,
+        concept_repr: torch.Tensor,
+    ) -> torch.Tensor:
+        """Frozen-teacher forward + the model-owned anchor loss. The teacher runs on the CLEAN
+        input_ids with a non-pad mask (labels != -100) — NOT the TSDAE-corrupted attention_mask —
+        so the concepts must carry uncorrupted semantics. The standardize+masked-MSE policy lives in
+        ConceptEncoderForConditionalLM.compute_anchor_loss (single source, unit-tested)."""
+        target_mask = (labels != -100)
+        with torch.no_grad():
+            teacher_hidden = self.anchor_teacher(
+                input_ids=input_ids, attention_mask=target_mask.long()
+            ).last_hidden_state  # [B, N, Ht]
+        return base_model.compute_anchor_loss(
+            concept_repr, teacher_hidden, target_mask, standardize=self.anchor_standardize
+        )
+
+    def _anchor_compute_loss(self, base_model, inputs, return_outputs):
+        """Reconstruction AR loss (the model's single-source recipe) + lambda * anchor MSE."""
+        input_ids = inputs["input_ids"]
+        attention_mask = inputs.get("attention_mask")
+        labels = inputs["labels"]
+
+        # encode_decode_loss is the SAME recipe forward() uses → the anchor path cannot drift.
+        task_loss, logits, encoder_outputs = base_model.encode_decode_loss(
+            input_ids, attention_mask, input_ids, labels
+        )
+        concept_repr = encoder_outputs.last_hidden_state
+        anchor_mse = self._anchor_mse(base_model, input_ids, labels, concept_repr)
+        total_loss = task_loss + self.anchor_loss_weight * anchor_mse
+
+        outputs = MaskedLMOutput(
+            loss=total_loss,
+            logits=logits,
+            hidden_states=encoder_outputs.hidden_states,
+            attentions=encoder_outputs.attentions,
+        )
+        return (total_loss, outputs) if return_outputs else total_loss
+
+    def get_eval_dataloader(self, eval_dataset=None):
+        """Use a separate (seeded, deterministic-corruption) collator for eval.
+
+        The training collator samples fresh TSDAE deletions / prefix splits per
+        call; reusing it at eval makes eval_loss noisy and lets best-checkpoint
+        selection depend on corruption luck.
+        """
+        if self.eval_data_collator is None:
+            return super().get_eval_dataloader(eval_dataset)
+        original_collator = self.data_collator
+        self.data_collator = self.eval_data_collator
+        try:
+            return super().get_eval_dataloader(eval_dataset)
+        finally:
+            self.data_collator = original_collator
 
     @torch.no_grad()
     def _concept_ablation_metrics(self) -> dict:
@@ -210,24 +321,81 @@ class PerceiverDenoiseTrainer(Trainer):
             return {}
         dataloader = self.get_eval_dataloader()
         device = self.args.device
-        keys = ["ce_intact", "ce_zero", "ce_shuffle", "delta_zero", "delta_shuffle"]
-        sums = {k: 0.0 for k in keys}
+        sums: dict = {}
         n = 0
+        rank_metrics: dict = {}
+        anchor_sum = 0.0
+        anchor_n = 0
         for i, batch in enumerate(dataloader):
             if i >= self.concept_ablation_batches:
                 break
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch.get("attention_mask")
-            if attention_mask is not None:
-                attention_mask = attention_mask.to(device)
             labels = batch["labels"].to(device)
-            m = base_model.concept_ablation_ce(input_ids, attention_mask, labels)
-            for k in keys:
-                sums[k] += m[k]
+            if "prefix_input_ids" in batch:
+                prefix_attention_mask = batch.get("prefix_attention_mask")
+                if prefix_attention_mask is not None:
+                    prefix_attention_mask = prefix_attention_mask.to(device)
+                encoder_input_ids = batch["prefix_input_ids"].to(device)
+                encoder_attention_mask = prefix_attention_mask
+                m = base_model.concept_ablation_ce(
+                    prefix_input_ids=encoder_input_ids,
+                    prefix_attention_mask=prefix_attention_mask,
+                    suffix_input_ids=batch["suffix_input_ids"].to(device),
+                    labels=labels,
+                )
+            else:
+                encoder_input_ids = batch["input_ids"].to(device)
+                encoder_attention_mask = batch.get("attention_mask")
+                if encoder_attention_mask is not None:
+                    encoder_attention_mask = encoder_attention_mask.to(device)
+                m = base_model.concept_ablation_ce(encoder_input_ids, encoder_attention_mask, labels)
+            for k, v in m.items():
+                sums[k] = sums.get(k, 0.0) + v
+            # E03: held-out anchor MSE (de-collapse progress) — reconstruction batches only.
+            # Kept out of eval_loss so best-checkpoint selection stays a clean AR CE.
+            if self.anchor_loss and self.anchor_teacher is not None and "prefix_input_ids" not in batch:
+                concepts_eval = base_model.encode_concepts(
+                    input_ids=encoder_input_ids,
+                    attention_mask=encoder_attention_mask,
+                    return_dict=True,
+                ).last_hidden_state
+                anchor_sum += self._anchor_mse(base_model, encoder_input_ids, labels, concepts_eval).item()
+                anchor_n += 1
+            # Concept geometry (collapse gate) from the first batch only — cheap.
+            if not rank_metrics:
+                rank_metrics = self._concept_effective_rank(
+                    base_model, encoder_input_ids, encoder_attention_mask
+                )
             n += 1
         if n == 0:
             return {}
-        return {f"concept_ablation/{k}": sums[k] / n for k in keys}
+        out = {f"concept_ablation/{k}": v / n for k, v in sums.items()}
+        out.update(rank_metrics)
+        if anchor_n > 0:
+            out["anchor/mse_eval"] = anchor_sum / anchor_n
+        return out
+
+    @torch.no_grad()
+    def _concept_effective_rank(self, base_model, input_ids, attention_mask) -> dict:
+        """Effective rank (nuclear/spectral norm of the mean concept matrix).
+
+        The collapse gate: low effective rank means the C concepts are redundant
+        (occupy few dimensions). Logged each eval so de-collapse is visible live.
+        Matches analysis/concept_analysis.compute_concept_geometry_metrics.
+        """
+        try:
+            concepts = base_model.encode_concepts(
+                input_ids=input_ids, attention_mask=attention_mask, return_dict=True
+            ).last_hidden_state.float()  # [B, C, H]
+            concept_mean = concepts.mean(dim=0)  # [C, H]
+            s = torch.linalg.svdvals(concept_mean)
+            eff_rank = (s.sum() / (s.max() + 1e-8)).item()
+            max_rank = min(concept_mean.shape)
+            return {
+                "concept_geometry/effective_rank": eff_rank,
+                "concept_geometry/effective_rank_normalized": eff_rank / max_rank,
+            }
+        except Exception:
+            return {}
 
     def evaluate(self, *args, **kwargs):
         metrics = super().evaluate(*args, **kwargs)
@@ -255,7 +423,13 @@ class PerceiverDenoiseTrainer(Trainer):
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         del num_items_in_batch
-        if not model.training or self.objective_variant == OBJECTIVE_RECONSTRUCTION:
+        # Fast path: eval (pure AR CE — keeps eval_loss comparable for best-checkpoint selection),
+        # or a plain forward objective with no extra manual auxiliary. The anchor and contrastive
+        # objectives fall through to the manual path below (training only).
+        if not model.training or (
+            self.objective_variant in {OBJECTIVE_RECONSTRUCTION, OBJECTIVE_PREFIX_SUFFIX}
+            and not self.anchor_loss
+        ):
             outputs = model(**inputs)
             return (outputs.loss, outputs) if return_outputs else outputs.loss
 
@@ -263,6 +437,10 @@ class PerceiverDenoiseTrainer(Trainer):
         # Gradient sync still works: with find_unused_parameters=False, DDP's
         # parameter-level backward hooks fire regardless of the forward path.
         base_model = model.module if hasattr(model, "module") else model
+
+        # E03: reconstruction AR loss + frozen-teacher hidden-state anchor MSE.
+        if self.anchor_loss:
+            return self._anchor_compute_loss(base_model, inputs, return_outputs)
 
         input_ids = inputs["input_ids"]
         attention_mask = inputs.get("attention_mask")
@@ -308,19 +486,34 @@ def build_perceiver_denoise_config(
     model_args: ModelArguments,
     data_args: DataTrainingArguments,
 ) -> ConceptEncoderConfig:
-    objective_name = (
-        "denoising_full_reconstruction"
-        if model_args.objective_variant == OBJECTIVE_RECONSTRUCTION
-        else "denoising_full_reconstruction_contrastive"
-    )
+    objective_name = "denoising_full_reconstruction"
+    if model_args.objective_variant == OBJECTIVE_RECONSTRUCTION_CONTRASTIVE:
+        objective_name = "denoising_full_reconstruction_contrastive"
+    elif model_args.objective_variant == OBJECTIVE_PREFIX_SUFFIX:
+        objective_name = "ar_prefix_suffix_generation"
     is_causal_ar = model_args.decoder_type == DECODER_CAUSAL_AR
     # The causal-AR family probes concept quality with the encoder only (no
     # PerceiverDecoderStack exists in its checkpoint), so the canonical single-input
     # route is weighted_pool (encoder_only); pair tasks use sentence_pair (encoder_only).
     checkpoint_family = "concept_ar" if is_causal_ar else "perceiver_denoise"
     canonical_single_eval_mode = "weighted_pool" if is_causal_ar else "via_decoder"
-    if is_causal_ar:
+    if is_causal_ar and model_args.objective_variant == OBJECTIVE_RECONSTRUCTION:
         objective_name = "ar_denoising_reconstruction"
+
+    # E03: infer the frozen teacher's hidden size from its config so the anchor head is rebuildable
+    # from our config alone (no teacher needed at eval/analysis), and assert a shared vocab so the
+    # teacher's per-token states align 1:1 with our token ids.
+    anchor_teacher_hidden = None
+    if model_args.anchor_loss:
+        teacher_cfg = AutoConfig.from_pretrained(model_args.anchor_model_name)
+        anchor_teacher_hidden = teacher_cfg.hidden_size
+        if teacher_cfg.vocab_size != len(tokenizer):
+            raise ValueError(
+                f"anchor_loss requires the model tokenizer to match the teacher vocab for 1:1 token "
+                f"alignment: tokenizer has {len(tokenizer)} tokens but "
+                f"{model_args.anchor_model_name} has {teacher_cfg.vocab_size}. "
+                f"Use TOKENIZER_NAME={model_args.anchor_model_name} (or a same-vocab tokenizer)."
+            )
 
     return ConceptEncoderConfig(
         vocab_size=len(tokenizer),
@@ -355,6 +548,12 @@ def build_perceiver_denoise_config(
         canonical_pair_eval_mode="sentence_pair",
         canonical_single_eval_mode=canonical_single_eval_mode,
         pretraining_objective=objective_name,
+        anchor_loss=model_args.anchor_loss,
+        anchor_model_name=model_args.anchor_model_name if model_args.anchor_loss else None,
+        anchor_loss_weight=model_args.anchor_loss_weight,
+        anchor_standardize=model_args.anchor_standardize,
+        anchor_head_layers=model_args.anchor_head_layers,
+        anchor_teacher_hidden=anchor_teacher_hidden,
     )
 
 
@@ -381,11 +580,24 @@ def main():
             f"Expected one of {sorted(VALID_DECODER_TYPES)}."
         )
     is_causal_ar = model_args.decoder_type == DECODER_CAUSAL_AR
-    if is_causal_ar and model_args.objective_variant != OBJECTIVE_RECONSTRUCTION:
+    if is_causal_ar and model_args.objective_variant == OBJECTIVE_RECONSTRUCTION_CONTRASTIVE:
         raise ValueError(
-            "decoder_type='causal_ar' supports only objective_variant='reconstruction' "
-            f"(got {model_args.objective_variant!r}). The contrastive path is perceiver-only."
+            "decoder_type='causal_ar' supports objective_variant='reconstruction' or "
+            f"'prefix_suffix' (got {model_args.objective_variant!r}). "
+            "The contrastive path is perceiver-only."
         )
+    if not is_causal_ar and model_args.objective_variant == OBJECTIVE_PREFIX_SUFFIX:
+        raise ValueError(
+            "objective_variant='prefix_suffix' requires decoder_type='causal_ar'."
+        )
+    if model_args.anchor_loss:
+        if not is_causal_ar:
+            raise ValueError("anchor_loss=True requires decoder_type='causal_ar' (E03).")
+        if model_args.objective_variant != OBJECTIVE_RECONSTRUCTION:
+            raise ValueError(
+                "anchor_loss=True is scoped to objective_variant='reconstruction' (E03 v1); "
+                f"got {model_args.objective_variant!r}."
+            )
 
     set_seed(training_args.seed)
     log_system_info()
@@ -395,6 +607,9 @@ def main():
         extra_fields={
             "Deletion rate": data_args.deletion_rate,
             "Objective": model_args.objective_variant,
+            "Prefix ratio min": data_args.prefix_ratio_min,
+            "Prefix ratio max": data_args.prefix_ratio_max,
+            "Split strategy": data_args.split_strategy,
         },
     )
 
@@ -434,6 +649,7 @@ def main():
             train_num_proc=data_args.train_num_proc,
             test_num_proc=data_args.test_num_proc,
             append_eos_token_id=append_eos_token_id,
+            split_seed=training_args.seed,
         )
 
     logger.info(f"Train dataset size: {len(train_ds):,}")
@@ -459,6 +675,8 @@ def main():
 
     if is_causal_ar:
         model_type_str = "concept_ar"
+        if model_args.objective_variant == OBJECTIVE_PREFIX_SUFFIX:
+            model_type_str += "_prefix"
         if model_args.use_bixt:
             model_type_str += "_bixt"
     else:
@@ -504,14 +722,28 @@ def main():
         logger.info(f"torch.compile(dynamic=True, backend='{backend}')")
         model = torch.compile(model, dynamic=True, fullgraph=False, backend=backend)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_prefix = "concept_ar" if is_causal_ar else "perceiver_denoise"
-    run_identifier = (
-        f"{run_prefix}_H{model_args.hidden_size}"
-        f"L{model_args.num_hidden_layers}"
-        f"C{model_args.concept_num}"
-        f"D{model_args.decoder_num_layers}_{timestamp}"
+    wandb_identity = build_perceiver_wandb_identity(
+        decoder_type=model_args.decoder_type,
+        objective_variant=model_args.objective_variant,
+        hidden_size=model_args.hidden_size,
+        num_hidden_layers=model_args.num_hidden_layers,
+        concept_num=model_args.concept_num,
+        decoder_num_layers=model_args.decoder_num_layers,
+        checkpoint_family=config.checkpoint_family,
+        pretraining_objective=config.pretraining_objective,
+        use_bixt=model_args.use_bixt,
+        anchor_loss=model_args.anchor_loss,
+        experiment_id=os.environ.get("WANDB_EXPERIMENT_ID") or os.environ.get("EXPERIMENT_ID"),
     )
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_identifier = (
+        f"{wandb_identity.architecture_id}_{timestamp}"
+    )
+    # The timestamp is wall-clock, so each DDP rank would otherwise compute its
+    # own run_id (and may straddle a second boundary). Broadcast rank 0's id so
+    # all ranks share ONE output directory / W&B run.
+    run_identifier = broadcast_object(run_identifier)
     setup_run_dirs(training_args, run_identifier)
     training_args.use_cpu = False
 
@@ -525,15 +757,17 @@ def main():
         "BiXT encoder": model_args.use_bixt,
         "Decoder layers": model_args.decoder_num_layers,
         "Objective": model_args.objective_variant,
+        "Anchor loss": model_args.anchor_loss,
+        "W&B group": wandb_identity.group,
+        "W&B job_type": wandb_identity.job_type,
+        "Prefix ratio min": data_args.prefix_ratio_min,
+        "Prefix ratio max": data_args.prefix_ratio_max,
+        "Split strategy": data_args.split_strategy,
     }
     if model_args.objective_variant == OBJECTIVE_RECONSTRUCTION_CONTRASTIVE:
         training_extra_fields["Contrastive weight"] = model_args.contrastive_weight
 
     log_training_config(training_args, extra_fields=training_extra_fields)
-
-    wandb_tags = ["perceiver-denoise", "concept-encoder", model_args.objective_variant]
-    if model_args.use_bixt:
-        wandb_tags.append("bixt")
 
     init_wandb(
         training_args,
@@ -541,27 +775,64 @@ def main():
         config,
         data_args,
         loss_config,
-        "perceiver_denoise",
+        wandb_identity.group,
         run_identifier,
-        job_type="perceiver-denoising-pretraining",
+        job_type=wandb_identity.job_type,
         model_type=model_type_str,
-        wandb_tags=wandb_tags,
+        wandb_tags=wandb_identity.tags,
         extra_config={
+            **wandb_identity.to_config(),
             "deletion_rate": data_args.deletion_rate,
             "use_bixt": model_args.use_bixt,
             "bixt_token_ffn": model_args.bixt_token_ffn,
+            "decoder_type": model_args.decoder_type,
             "decoder_num_layers": model_args.decoder_num_layers,
+            "checkpoint_family": config.checkpoint_family,
+            "pretraining_objective": config.pretraining_objective,
             "objective_variant": model_args.objective_variant,
+            "anchor_loss": model_args.anchor_loss,
+            "anchor_model_name": model_args.anchor_model_name if model_args.anchor_loss else None,
+            "anchor_loss_weight": model_args.anchor_loss_weight,
+            "anchor_standardize": model_args.anchor_standardize,
+            "anchor_head_layers": model_args.anchor_head_layers,
             "contrastive_weight": model_args.contrastive_weight,
             "contrastive_temperature": model_args.contrastive_temperature,
+            "prefix_ratio_min": data_args.prefix_ratio_min,
+            "prefix_ratio_max": data_args.prefix_ratio_max,
+            "min_prefix_content": data_args.min_prefix_content,
+            "min_suffix_content": data_args.min_suffix_content,
+            "split_strategy": data_args.split_strategy,
         },
     )
 
-    data_collator = DataCollatorForTSDAE(
-        tokenizer,
-        deletion_rate=data_args.deletion_rate,
-        max_length=data_args.max_seq_length,
-    )
+    # Train collator samples fresh corruption per call; the eval collator is seeded
+    # so the held-out set always sees the same deletions / split points (stable
+    # eval_loss, fair best-checkpoint selection).
+    if model_args.objective_variant == OBJECTIVE_PREFIX_SUFFIX:
+        prefix_collator_kwargs = dict(
+            max_length=data_args.max_seq_length,
+            prefix_ratio_min=data_args.prefix_ratio_min,
+            prefix_ratio_max=data_args.prefix_ratio_max,
+            min_prefix_content=data_args.min_prefix_content,
+            min_suffix_content=data_args.min_suffix_content,
+            split_strategy=data_args.split_strategy,
+        )
+        data_collator = DataCollatorForPrefixGeneration(tokenizer, **prefix_collator_kwargs)
+        eval_data_collator = DataCollatorForPrefixGeneration(
+            tokenizer, seed=training_args.seed, **prefix_collator_kwargs
+        )
+    else:
+        data_collator = DataCollatorForTSDAE(
+            tokenizer,
+            deletion_rate=data_args.deletion_rate,
+            max_length=data_args.max_seq_length,
+        )
+        eval_data_collator = DataCollatorForTSDAE(
+            tokenizer,
+            deletion_rate=data_args.deletion_rate,
+            max_length=data_args.max_seq_length,
+            seed=training_args.seed,
+        )
 
     callbacks = []
     if loss_config.warmup_steps > 0:
@@ -579,10 +850,50 @@ def main():
         contrastive_weight=model_args.contrastive_weight,
         contrastive_temperature=model_args.contrastive_temperature,
         compute_concept_ablation=is_causal_ar,
+        eval_data_collator=eval_data_collator,
+        anchor_loss=model_args.anchor_loss,
+        anchor_loss_weight=model_args.anchor_loss_weight,
+        anchor_standardize=model_args.anchor_standardize,
+        anchor_model_name=model_args.anchor_model_name,
     )
 
+    decoder_desc = (
+        f"causal_ar (AR, {model_args.decoder_num_layers}L, pos={model_args.decoder_pos_type}, "
+        f"word_dropout={model_args.decoder_word_dropout})"
+        if is_causal_ar
+        else f"perceiver_posonly ({model_args.decoder_num_layers}L)"
+    )
+    if model_args.objective_variant == OBJECTIVE_PREFIX_SUFFIX:
+        objective_desc = (
+            f"prefix_suffix (encoder sees prefix {data_args.prefix_ratio_min:.2f}-"
+            f"{data_args.prefix_ratio_max:.2f} via {data_args.split_strategy}, decoder generates suffix)"
+        )
+    elif model_args.objective_variant == OBJECTIVE_RECONSTRUCTION_CONTRASTIVE:
+        objective_desc = (
+            f"reconstruction+contrastive (TSDAE deletion={data_args.deletion_rate}, "
+            f"contrastive_weight={model_args.contrastive_weight})"
+        )
+    else:
+        objective_desc = f"reconstruction (TSDAE denoising, deletion={data_args.deletion_rate})"
+
     logger.info("=" * 60)
-    logger.info(f"Starting perceiver denoising pretraining: {datetime.now()}")
+    logger.info(f"STARTING TRAINING: {datetime.now()}")
+    logger.info(f"  Run id          : {run_identifier}")
+    logger.info(f"  W&B group       : {wandb_identity.group}")
+    logger.info(f"  W&B job_type    : {wandb_identity.job_type}")
+    logger.info(f"  Model type      : {model_type_str}  ({type(model).__name__})")
+    logger.info(f"  Pretraining obj : {config.pretraining_objective}")
+    logger.info(f"  Objective       : {objective_desc}")
+    logger.info(f"  Decoder         : {decoder_desc}")
+    logger.info(
+        f"  Encoder         : H{config.hidden_size} L{config.num_hidden_layers} "
+        f"C{config.concept_num} token_emb={config.token_embedding_dim} "
+        f"act={config.hidden_act} norm={config.norm_type} bixt={model_args.use_bixt}"
+    )
+    logger.info(f"  Data            : {data_args.dataset_name} {data_args.dataset_name_subset or ''} "
+                f"tokenizer={data_args.tokenizer_name} max_seq={data_args.max_seq_length}")
+    logger.info(f"  Eval collator   : seeded={getattr(eval_data_collator, 'seed', None)} "
+                f"(deterministic held-out corruption)")
     logger.info("=" * 60)
     trainer.train()
 

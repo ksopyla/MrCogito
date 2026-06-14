@@ -178,8 +178,8 @@ def parse_args():
         "--model_type",
         type=str,
         default="bert",
-        choices=["bert-type", "xlnet-type", "concept-type", "weighted_mlm", "perceiver_denoise", "diffusion_mlm", "prefix_diffusion"],
-        help="Type of model to fine-tune. perceiver_denoise uses checkpoint metadata to select the canonical decoder-based or sentence-pair evaluation route."
+        choices=["bert-type", "xlnet-type", "concept-type", "weighted_mlm", "perceiver_denoise", "concept_ar", "diffusion_mlm", "prefix_diffusion"],
+        help="Type of model to fine-tune. perceiver_denoise / concept_ar use checkpoint metadata (checkpoint_family) to select the canonical decoder-based or sentence-pair evaluation route."
     )
     parser.add_argument(
         "--task",
@@ -274,6 +274,13 @@ def parse_args():
         type=float,
         default=0.999,
         help="Beta2 for AdamW optimizer"
+    )
+    parser.add_argument(
+        "--freeze_encoder",
+        action="store_true",
+        help="Freeze the pretrained encoder and train only the task head (linear "
+             "probe). Robust concept-quality measurement; avoids destroying a "
+             "lightly-pretrained encoder via full fine-tuning on small GLUE tasks."
     )
     return parser.parse_args()
 
@@ -695,7 +702,7 @@ def load_glue_dataset(task, tokenizer, max_length, pair_input_mode="concatenated
         logger.error(f"Error in load_glue_dataset for task {task}: {str(e)}")
         raise
 
-def create_experiment_name(model_name, task, total_params, timestamp=None):
+def create_experiment_name(model_name, task, total_params, timestamp=None, encoder_only=False):
     """
     Create a consistent experiment name for files and wandb runs.
     
@@ -732,9 +739,10 @@ def create_experiment_name(model_name, task, total_params, timestamp=None):
     # Remove leading/trailing hyphens
     clean_model_name = clean_model_name.strip('-')
     
-    # Format parameters in millions
+    # Format parameters in millions. "-enc" marks an encoder-only eval sub-model
+    # (no decoder/lm_head) so the label doesn't imply the source checkpoint is this small.
     params_m = round(total_params / 1_000_000)
-    params_str = f"{params_m}M"
+    params_str = f"{params_m}M{'-enc' if encoder_only else ''}"
     
     # Create experiment name
     experiment_name = f"glue-{task}-{clean_model_name}-{params_str}"
@@ -940,7 +948,7 @@ def finetune_model_on_glue(args):
         tokenizer = AutoTokenizer.from_pretrained(default_tokenizer, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
     
     # Load and initialize model based on model type
-    concept_model_types = ["weighted_mlm", "perceiver_denoise", "diffusion_mlm", "prefix_diffusion"]
+    concept_model_types = ["weighted_mlm", "perceiver_denoise", "concept_ar", "diffusion_mlm", "prefix_diffusion"]
     if args.model_type in concept_model_types:
         # Resolve local path or download from HF Hub into Cache/Models
         local_model_path = resolve_model_path(args.model_name_or_path, hf_token)
@@ -986,6 +994,16 @@ def finetune_model_on_glue(args):
             token=hf_token
         )
     
+    # Optional linear probe: freeze the pretrained encoder, train only the task head.
+    # Robust concept-quality measurement; avoids wrecking a lightly-pretrained encoder
+    # via full fine-tuning on small GLUE tasks.
+    if getattr(args, "freeze_encoder", False) and hasattr(model, "encoder"):
+        frozen = 0
+        for p in model.encoder.parameters():
+            p.requires_grad = False
+            frozen += p.numel()
+        logger.info(f"Froze encoder ({frozen/1e6:.1f}M params); training task head only (linear probe).")
+
     # Count model parameters
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -1025,7 +1043,10 @@ def finetune_model_on_glue(args):
     )
     
     # Create experiment timestamp and run name
-    experiment_name, timestamp = create_experiment_name(args.model_name_or_path, args.task, total_params)
+    _enc_only = args.model_type in concept_model_types and getattr(route, "load_mode", None) == "encoder_only"
+    experiment_name, timestamp = create_experiment_name(
+        args.model_name_or_path, args.task, total_params, encoder_only=_enc_only
+    )
     run_name = f"{experiment_name}-{timestamp}"
     
     

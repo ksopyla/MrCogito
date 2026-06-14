@@ -14,7 +14,9 @@ fi
 GPU_IDS=$(seq -s, 0 $((NUM_GPUS - 1)))
 export CUDA_VISIBLE_DEVICES="$GPU_IDS"
 export NCCL_DEBUG=WARN
-export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+# Allow callers to override the allocator config (e.g. expandable_segments:True to
+# cut fragmentation / reserved-but-unallocated waste on tight-memory runs).
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-max_split_size_mb:512}"
 export OMP_NUM_THREADS=8
 export TOKENIZERS_PARALLELISM=false
 
@@ -46,12 +48,24 @@ DECODER_POS_TYPE="${DECODER_POS_TYPE:-learned}"     # | rope (causal_ar)
 DECODER_WORD_DROPOUT="${DECODER_WORD_DROPOUT:-0.0}"
 HIDDEN_ACT="${HIDDEN_ACT:-gelu}"                    # | silu (SwiGLU)
 NORM_TYPE="${NORM_TYPE:-layernorm}"                 # | rmsnorm
+# E03 — concept de-collapse via a frozen-encoder hidden-state anchor (causal_ar + reconstruction).
+# Default OFF reproduces E01 exactly (the matched control arm = ANCHOR_LOSS=false).
+ANCHOR_LOSS="${ANCHOR_LOSS:-false}"                 # | true
+ANCHOR_MODEL="${ANCHOR_MODEL:-HuggingFaceTB/SmolLM2-135M}"
+ANCHOR_LOSS_WEIGHT="${ANCHOR_LOSS_WEIGHT:-0.5}"
+ANCHOR_STANDARDIZE="${ANCHOR_STANDARDIZE:-true}"
+ANCHOR_HEAD_LAYERS="${ANCHOR_HEAD_LAYERS:-2}"
 DATASET_NAME="${DATASET_NAME:-JeanKaddour/minipile}"
 DATASET_SUBSET="${DATASET_SUBSET:-}"
 TOKENIZER_NAME="${TOKENIZER_NAME:-answerdotai/ModernBERT-base}"
 MAX_SEQ_LENGTH="${MAX_SEQ_LENGTH:-512}"
 DELETION_RATE="${DELETION_RATE:-0.6}"
 OBJECTIVE_VARIANT="${OBJECTIVE_VARIANT:-reconstruction}"
+PREFIX_RATIO_MIN="${PREFIX_RATIO_MIN:-0.3}"
+PREFIX_RATIO_MAX="${PREFIX_RATIO_MAX:-0.5}"
+MIN_PREFIX_CONTENT="${MIN_PREFIX_CONTENT:-5}"
+MIN_SUFFIX_CONTENT="${MIN_SUFFIX_CONTENT:-10}"
+SPLIT_STRATEGY="${SPLIT_STRATEGY:-sentence_boundary}"
 CONCEPT_LOSSES="${CONCEPT_LOSSES:-none}"
 LOSS_WEIGHT="${LOSS_WEIGHT:-0.02}"
 PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-16}"
@@ -75,10 +89,27 @@ RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-}"
 # epoch tokenizes a large corpus under main_process_first (e.g. FineWeb-Edu), otherwise
 # non-main ranks time out at the preprocessing barrier (NCCL SeqNum=1 ALLREDUCE).
 DDP_TIMEOUT="${DDP_TIMEOUT:-1800}"
+# Export so setup_distributed() can apply it to the FIRST process group too
+# (created before TrainingArguments parsing; --ddp_timeout alone is too late
+# to protect the first-time preprocessing barrier).
+export DDP_TIMEOUT
 
 RESUME_ARGS=()
 if [ -n "$RESUME_FROM_CHECKPOINT" ]; then
     RESUME_ARGS+=(--resume_from_checkpoint "$RESUME_FROM_CHECKPOINT")
+fi
+
+# E03 anchor args are only passed when enabled; the control arm (ANCHOR_LOSS=false) passes nothing,
+# so anchor_loss defaults to False and the run is byte-for-byte E01.
+ANCHOR_ARGS=()
+if [ "$ANCHOR_LOSS" = "true" ]; then
+    ANCHOR_ARGS+=(
+        --anchor_loss
+        --anchor_model_name "$ANCHOR_MODEL"
+        --anchor_loss_weight "$ANCHOR_LOSS_WEIGHT"
+        --anchor_standardize "$ANCHOR_STANDARDIZE"
+        --anchor_head_layers "$ANCHOR_HEAD_LAYERS"
+    )
 fi
 
 accelerate launch \
@@ -101,6 +132,11 @@ accelerate launch \
     --use_bixt \
     --deletion_rate "$DELETION_RATE" \
     --objective_variant "$OBJECTIVE_VARIANT" \
+    --prefix_ratio_min "$PREFIX_RATIO_MIN" \
+    --prefix_ratio_max "$PREFIX_RATIO_MAX" \
+    --min_prefix_content "$MIN_PREFIX_CONTENT" \
+    --min_suffix_content "$MIN_SUFFIX_CONTENT" \
+    --split_strategy "$SPLIT_STRATEGY" \
     --dataset_name "$DATASET_NAME" \
     --dataset_name_subset "$DATASET_SUBSET" \
     --tokenizer_name "$TOKENIZER_NAME" \
@@ -142,5 +178,6 @@ accelerate launch \
     --load_best_model_at_end True \
     --metric_for_best_model "eval_loss" \
     --greater_is_better False \
+    "${ANCHOR_ARGS[@]}" \
     "${RESUME_ARGS[@]}" \
     2>&1 | python scripts/clean_tee.py "$SHELL_LOG"

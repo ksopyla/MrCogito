@@ -1,9 +1,9 @@
 # E01 — Concept-conditioned autoregressive decoder (from scratch)
 
-- **Status:** active
+- **Status:** done (training 2026-06-13 · evaluation 2026-06-14)
 - **Serves:** the new **encoder→AR-decoder** Current focus in [agenda.md](../1_Strategy_and_Plans/agenda.md). First step of the planned series (see agenda "Series roadmap"). Bridges Vision SG1 (concept quality) → SG2 (text generation): the encoder still produces concepts we can probe for quality, but the decoder now *generates* autoregressively instead of reconstructing in parallel.
 - **Implementation plan:** [E01_concept_ar_decoder_plan.md](E01_concept_ar_decoder_plan.md) *(the HOW)*
-- **Owner / dates:** Krzysztof Sopyla · opened 2026-06-06 · closed —
+- **Owner / dates:** Krzysztof Sopyla · opened 2026-06-06 · closed 2026-06-14
 
 > One experiment = one hypothesis = one changed variable. Implementation is a config
 > (`--decoder_type causal_ar`) over the shared `train_perceiver_denoise.py` entrypoint and its
@@ -134,9 +134,31 @@ path matters more than raw decoder size**, so we attack it on four fronts:
   eval metric + register the new family in `analysis/run_concept_analysis.py` `MODEL_CLASSES` and
   `evaluation/concept_eval_routing.py`. Preserve the checkpoint eval contract.
 
+> **Amendment 2026-06-11 (before the full run; warm-up evidence).** The 0.3-epoch warm-up
+> `concept_ar_H768L6C128D4_20260607_172931` (Polonez) exposed a train/eval protocol mismatch:
+> with word-dropout **p=0.4** the decoder specialized to blanked inputs — clean-input eval CE
+> *rose* 6.8→9.0 while train CE fell to 3.1, and offline diagnosis on the last checkpoint showed
+> CE 13.9 (clean inputs, above random) vs **0.49** under the train-matched word-dropout condition
+> (gap 13.4 nats; Δzero even turned negative). Changes for the full run, all evidence-driven:
+> - **`DECODER_WORD_DROPOUT` 0.4 → 0.2** (the copy-path guard stays, the distribution shift shrinks);
+> - eval now logs **`ce_intact_wd` / `gap_clean_vs_wd`** (train-matched word-dropout CE) so the
+>   mismatch is measured, not hidden;
+> - **seeded eval collator** (deterministic TSDAE deletions on the held-out set — stable
+>   `eval_loss`, fair best-checkpoint selection);
+> - `run_concept_analysis.py` label masking fixed for pad=eos tokenizers (positional, not by id).
+> Success criterion #4's "eval CE < ~4.0" is judged on the **matched-condition** `ce_intact_wd`
+> (and the clean-input CE must not diverge upward); other gates unchanged.
+>
+> **Amendment 2026-06-11 (second, same day — loss bug).** Pre-E02 code review found a
+> **double-shift** in the AR loss: decoder inputs were shift-right-ed *and* the CE shifted
+> logits/labels again, so every target `x_t` was predicted from context ending at `x_{t-2}`
+> (skip-one objective). This inflated every CE number from the warm-up and explains the
+> at-chance no-concept floor. Fixed (`_teacher_forced_ce`, single shift); the full E01 run was
+> restarted from scratch on the fixed code. Warm-up CE values are **not comparable** with the
+> fixed run; rank / STS-B / ΔCE-as-a-gate remain conceptually valid but will be re-measured.
+
 ## Result
-<Filled in AFTER, by experiment-track. Link out; do not paste full results here.>
-- Run id: `<run_id>`
-- WandB: <link>
-- Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
-- Verdict: promising | mixed | regression | killed — <one line>
+- Run id: `concept_ar_H768L6C128D4_20260613_185955`
+- WandB: [Link](https://wandb.ai/ksopyla/MrCogito/runs/concept_ar_H768L6C128D4_20260613_185955)
+- Run report: `docs/2_Experiments_Registry/run_reports/e01_concept_ar_decoder_20260614.md`
+- Verdict: **mixed** — AR plumbing confirmed and decoder uses concepts at step 4000 (Δshuffle 1.50, Δzero 1.48 ≥ 0.5 gate; success #1 and #4 pass at checkpoint-4000), but eval CE rises monotonically after the first checkpoint (overfitting), rank collapses from 14.64 → 4.64 by end-of-training, and best STS-B 0.556 misses the 0.62 gate (successes #2 and #3 fail). The reconstruction objective cannot sustain concept quality over a full epoch on FineWeb-Edu.

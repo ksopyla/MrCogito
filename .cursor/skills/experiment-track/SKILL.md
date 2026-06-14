@@ -14,6 +14,13 @@ Use this skill after results already exist. It is for:
 
 This skill focuses on evaluation results. Training details matter only insofar as they explain the evaluation outcome.
 
+**Running the evaluations and the script pipeline are owned by `experiment-evaluate`** — the
+single source of truth for *how to evaluate* (tiered health → concept geometry + AR
+concept-ablation ΔCE + samples → zero-shot STS-B → supervised SICK/PAWS/GLUE), which scripts
+cover which aspect, and the exact `uv` commands. This skill consumes the evidence
+`experiment-evaluate` produces and records *what it means*. When you need to (re)run any
+metric on a checkpoint, switch to `experiment-evaluate`.
+
 Do not use this skill for generic refactors, architecture cleanup, or standalone `CHANGELOG.md` updates. Use `engineering-change-tracking` for code-change traceability.
 Do not use this skill to decide which hypothesis to test next. Use `research-synthesis` to choose experiments based on external evidence and project invariants.
 
@@ -27,7 +34,7 @@ Do not use this skill to decide which hypothesis to test next. Use `research-syn
 
 ## Do Not Use This Skill For
 - remote training, SSH, Byobu sessions, log debugging, or report syncing. Use `experiment-run`.
-- standalone remote evaluation sweeps on existing checkpoints. Use `experiment-remote-evaluator`.
+- running evaluations / benchmark sweeps on checkpoints, or the question "which eval script covers which aspect, and how do I run it with uv?". Use `experiment-evaluate` (the single source of truth for the evaluation pipeline).
 - deep literature research, architecture scouting, or paper-backed root-cause analysis. Use the `research-synthesis` skill (which spawns the `research-scout` agent for source fetching).
 - deciding the next experiment family, redefining gates, or roadmap-level prioritization before a concrete run exists. Use `research-synthesis`.
 - code-change traceability or `CHANGELOG.md` updates. Use `engineering-change-tracking`.

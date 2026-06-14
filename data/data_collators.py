@@ -39,6 +39,12 @@ class DataCollatorForTSDAE:
 
     The model's forward() should compute dense cross-entropy at every
     non-pad position, NOT sparse MLM loss.
+
+    seed: when set, deletion masks are derived deterministically from
+    (seed, batch content), so repeated evaluations of the same batches see
+    identical corruption. Use a seeded instance for the EVAL collator —
+    otherwise eval_loss carries deletion-sampling noise and best-checkpoint
+    selection can be decided by deletion luck. Leave seed=None for training.
     """
 
     def __init__(
@@ -46,10 +52,12 @@ class DataCollatorForTSDAE:
         tokenizer,
         deletion_rate: float = 0.6,
         max_length: int = 512,
+        seed: Optional[int] = None,
     ):
         self.tokenizer = tokenizer
         self.deletion_rate = deletion_rate
         self.max_length = max_length
+        self.seed = seed
         self.pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
         self.eos_token_id = getattr(tokenizer, "eos_token_id", None)
         self._vocab_size = len(tokenizer) if hasattr(tokenizer, "__len__") else None
@@ -88,9 +96,16 @@ class DataCollatorForTSDAE:
         for sid in self._special_ids:
             deletable &= (padded_ids != sid)
 
-        # Sample deletion: each deletable token is independently dropped
+        # Sample deletion: each deletable token is independently dropped.
+        # With a seed, the draw is a pure function of (seed, batch content) so
+        # the same eval batch always gets the same corruption.
         delete_probs = torch.full_like(padded_ids, self.deletion_rate, dtype=torch.float)
-        delete_draw = torch.bernoulli(delete_probs).bool()
+        generator = None
+        if self.seed is not None:
+            generator = torch.Generator()
+            content_key = int(padded_ids.sum().item()) + padded_ids.shape[0] * 1009 + padded_ids.shape[1]
+            generator.manual_seed((self.seed * 1_000_003 + content_key) % (2**62))
+        delete_draw = torch.bernoulli(delete_probs, generator=generator).bool()
         delete_mask = deletable & delete_draw
 
         # Ensure at least one token survives per sequence so the encoder
@@ -158,25 +173,29 @@ class DataCollatorForPrefixGeneration:
 
     Sequence template
     -----------------
-    The raw tokenized sequence ``[CLS] content_tokens [SEP]`` is split into::
+    The raw tokenized sequence ``[CLS] content_tokens [SEP]`` (BERT-style) or
+    ``content_tokens <eos>`` (causal-LM style) is split into::
 
-        Encoder input  :  [CLS]  prefix_content  [SEP]   +  [PAD]...
-        Decoder target :         suffix_content   [SEP]   +  [PAD]...
+        Encoder input  :  [CLS]? prefix_content  boundary   +  [PAD]...
+        Decoder target :         suffix_content  boundary   +  [PAD]...
 
-    The final ``[SEP]`` in the suffix acts as end-of-generation marker so the
-    model learns *when* to stop.  All suffix tokens including ``[SEP]`` are
-    subject to diffusion masking (masking is applied inside the model, not
-    here).
+    ``boundary`` is ``sep_token_id`` when available, otherwise ``eos_token_id``.
+    This supports SmolLM2-style tokenizers that have no [CLS]/[SEP] tokens and
+    use ``<|endoftext|>`` as bos/eos/unk.
 
     Output contract
     ---------------
     ::
 
-        prefix_input_ids      : [B, P]  -- [CLS] prefix [SEP] + padding
+        prefix_input_ids      : [B, P]  -- [CLS]? prefix boundary + padding
         prefix_attention_mask : [B, P]  -- 1 = real, 0 = pad
-        suffix_input_ids      : [B, S]  -- suffix [SEP] + padding
+        suffix_input_ids      : [B, S]  -- suffix boundary + padding
         suffix_attention_mask : [B, S]  -- 1 = real, 0 = pad
         labels                : [B, S]  -- same as suffix_input_ids but -100 at pad
+
+    seed: when set, prefix/suffix split points are derived deterministically from
+    (seed, batch content) — use a seeded instance for the EVAL collator so eval
+    loss is comparable across evaluations. Leave seed=None for training.
     """
 
     def __init__(
@@ -188,6 +207,7 @@ class DataCollatorForPrefixGeneration:
         min_prefix_content: int = 5,
         min_suffix_content: int = 10,
         split_strategy: str = "sentence_boundary",
+        seed: Optional[int] = None,
     ):
         self.tokenizer = tokenizer
         self.max_length = max_length
@@ -196,44 +216,83 @@ class DataCollatorForPrefixGeneration:
         self.min_prefix_content = min_prefix_content
         self.min_suffix_content = min_suffix_content
         self.split_strategy = split_strategy
+        self.seed = seed
+        self._rng = random
 
         self.pad_token_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0
         self.cls_token_id = getattr(tokenizer, "cls_token_id", None)
         self.sep_token_id = getattr(tokenizer, "sep_token_id", None)
+        self.eos_token_id = getattr(tokenizer, "eos_token_id", None)
+        self.boundary_token_id = self.sep_token_id if self.sep_token_id is not None else self.eos_token_id
+        self._vocab_size = len(tokenizer) if hasattr(tokenizer, "__len__") else None
         self._token_text_cache: Dict[int, str] = {}
 
-        if self.sep_token_id is None:
+        if self.boundary_token_id is None:
             raise ValueError(
-                "Tokenizer must have a sep_token_id for prefix generation "
-                "(used as end-of-sequence marker in the suffix)."
+                "Tokenizer must have a sep_token_id or eos_token_id for prefix generation "
+                "(used as the prefix/suffix boundary marker)."
             )
         if self.split_strategy not in {"token_random", "sentence_boundary"}:
             raise ValueError(
                 "split_strategy must be one of {'token_random', 'sentence_boundary'}."
             )
 
-    def _extract_content(self, ids: List[int]) -> List[int]:
-        """Strip leading [CLS] and trailing [SEP] to get pure content tokens."""
+    def _extract_content(
+        self,
+        ids: List[int],
+        attention_mask: Optional[List[int]] = None,
+    ) -> List[int]:
+        """Strip wrapper/pad/boundary tokens to get pure document content."""
+        if attention_mask is not None:
+            if isinstance(attention_mask, torch.Tensor):
+                attention_mask = attention_mask.tolist()
+            real_len = int(sum(attention_mask))
+            ids = ids[:real_len]
+
         start = 0
         if self.cls_token_id is not None and len(ids) > 0 and ids[0] == self.cls_token_id:
             start = 1
         end = len(ids)
-        if self.sep_token_id is not None and end > start and ids[end - 1] == self.sep_token_id:
+
+        # Strip pad tokens only when pad is distinct from the boundary/eos token.
+        # SmolLM2 aliases pad to eos at runtime; blindly stripping pad would remove
+        # the real document boundary and any legitimate eos tokens.
+        while (
+            end > start
+            and self.pad_token_id is not None
+            and self.pad_token_id != self.boundary_token_id
+            and ids[end - 1] == self.pad_token_id
+        ):
             end -= 1
-        # Also strip any trailing padding
-        while end > start and ids[end - 1] == self.pad_token_id:
+
+        # Remove one tokenizer-added document boundary; the collator adds fresh
+        # boundaries to both prefix and suffix after splitting.
+        if end > start and ids[end - 1] == self.boundary_token_id:
             end -= 1
+
         return ids[start:end]
 
     def _get_token_text(self, token_id: int) -> str:
         if token_id not in self._token_text_cache:
-            token = self.tokenizer.convert_ids_to_tokens([token_id])[0]
+            if hasattr(self.tokenizer, "decode"):
+                token = self.tokenizer.decode(
+                    [token_id],
+                    clean_up_tokenization_spaces=False,
+                )
+            else:
+                token = self.tokenizer.convert_ids_to_tokens([token_id])[0]
             self._token_text_cache[token_id] = token
         return self._token_text_cache[token_id]
 
     def _is_sentence_boundary_token(self, token_id: int) -> bool:
         token = self._get_token_text(token_id)
-        normalized = token.replace("##", "").strip()
+        normalized = (
+            token.replace("##", "")
+            .replace("Ġ", "")
+            .replace("▁", "")
+            .replace("Ċ", "")
+            .strip()
+        )
         if normalized in {".", "!", "?", ";", ":"}:
             return True
         return normalized.endswith((".", "!", "?"))
@@ -251,7 +310,7 @@ class DataCollatorForPrefixGeneration:
         if lo > hi:
             lo = min_p
             hi = content_len - min_s
-        return random.randint(lo, max(lo, hi))
+        return self._rng.randint(lo, max(lo, hi))
 
     def _choose_sentence_boundary_split(self, content: List[int]) -> int:
         content_len = len(content)
@@ -285,6 +344,16 @@ class DataCollatorForPrefixGeneration:
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
         batch_size = len(features)
 
+        if self.seed is not None:
+            content_key = 0
+            for f in features:
+                ids = f["input_ids"]
+                if isinstance(ids, torch.Tensor):
+                    content_key = (content_key * 1_000_003 + int(ids.sum().item()) + ids.numel()) % (2**62)
+                else:
+                    content_key = (content_key * 1_000_003 + sum(ids) + len(ids)) % (2**62)
+            self._rng = random.Random((self.seed * 1_000_003 + content_key) % (2**62))
+
         prefix_seqs: List[List[int]] = []
         suffix_seqs: List[List[int]] = []
 
@@ -293,22 +362,22 @@ class DataCollatorForPrefixGeneration:
             if isinstance(raw_ids, torch.Tensor):
                 raw_ids = raw_ids.tolist()
 
-            content = self._extract_content(raw_ids)
+            content = self._extract_content(raw_ids, f.get("attention_mask"))
             split = self._choose_split(content)
 
             prefix_content = content[:split]
             suffix_content = content[split:]
 
-            # Build: [CLS] prefix_content [SEP]
+            # Build: [CLS]? prefix_content boundary
             prefix_ids: List[int] = []
             if self.cls_token_id is not None:
                 prefix_ids.append(self.cls_token_id)
             prefix_ids.extend(prefix_content)
-            prefix_ids.append(self.sep_token_id)
+            prefix_ids.append(self.boundary_token_id)
 
-            # Build: suffix_content [SEP]
+            # Build: suffix_content boundary
             suffix_ids = list(suffix_content)
-            suffix_ids.append(self.sep_token_id)
+            suffix_ids.append(self.boundary_token_id)
 
             prefix_seqs.append(prefix_ids)
             suffix_seqs.append(suffix_ids)
@@ -331,6 +400,19 @@ class DataCollatorForPrefixGeneration:
             suffix_input_ids[i, :s_len] = torch.tensor(suffix_seqs[i][:s_len], dtype=torch.long)
             suffix_attention_mask[i, :s_len] = 1
             labels[i, :s_len] = suffix_input_ids[i, :s_len]
+
+        if self._vocab_size is not None:
+            for name, tensor in (
+                ("prefix_input_ids", prefix_input_ids),
+                ("suffix_input_ids", suffix_input_ids),
+            ):
+                ids_min = int(tensor.min().item())
+                ids_max = int(tensor.max().item())
+                if ids_min < 0 or ids_max >= self._vocab_size:
+                    raise ValueError(
+                        f"DataCollatorForPrefixGeneration produced {name} outside tokenizer range: "
+                        f"min={ids_min}, max={ids_max}, vocab_size={self._vocab_size}"
+                    )
 
         return {
             "prefix_input_ids": prefix_input_ids,

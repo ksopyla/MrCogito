@@ -46,7 +46,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import PreTrainedModel
 from transformers.activations import ACT2FN
-from transformers.modeling_outputs import MaskedLMOutput, SequenceClassifierOutput
+from transformers.modeling_outputs import (
+    BaseModelOutput,
+    MaskedLMOutput,
+    SequenceClassifierOutput,
+)
 from transformers.utils import logging
 from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss
 
@@ -544,7 +548,7 @@ class ConceptEncoderForSequenceClassificationPerceiver(PreTrainedModel):
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
+        input_ids: torch.LongTensor,
         attention_mask: Optional[torch.IntTensor] = None,
         labels: Optional[torch.LongTensor] = None,
         output_attentions: Optional[bool] = None,
@@ -666,7 +670,7 @@ class ConceptEncoderForSequenceClassificationViaDecoder(PreTrainedModel):
 
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
+        input_ids: torch.LongTensor,
         attention_mask: Optional[torch.IntTensor] = None,
         labels: Optional[torch.LongTensor] = None,
         output_attentions: Optional[bool] = None,
@@ -1043,9 +1047,16 @@ class ConceptCausalDecoderStack(nn.Module):
         emb = self.token_embeddings(decoder_input_ids)
         if self.input_projection is not None:
             emb = self.input_projection(emb)                       # [B, T, H]
-        if word_dropout_p > 0.0 and self.training:
+        # Applied whenever explicitly requested (callers gate on training mode;
+        # eval-time diagnostics pass the train rate to measure the matched condition).
+        if word_dropout_p > 0.0:
             drop = (torch.rand(B, T, device=emb.device) < word_dropout_p).unsqueeze(-1)
             emb = torch.where(drop, self.dropout_embedding.to(emb.dtype), emb)
+        elif self.training:
+            # Keep the otherwise-unused parameter in the autograd graph so DDP with
+            # find_unused_parameters=False doesn't error on objectives that disable
+            # word-dropout (e.g. E02 prefix->suffix). Numerically a no-op.
+            emb = emb + 0.0 * self.dropout_embedding.to(emb.dtype)
         if self.position_embeddings is not None:
             position_ids = torch.arange(T, device=decoder_input_ids.device).unsqueeze(0)
             emb = emb + self.position_embeddings(position_ids)
@@ -1068,10 +1079,63 @@ class ConceptCausalDecoderStack(nn.Module):
         return self.output_norm(h)
 
 
-class ConceptEncoderForConditionalLM(PreTrainedModel):
-    """Encoder → concepts → autoregressive concept-conditioned decoder (E01).
+class AnchorDistillHead(nn.Module):
+    """E03 de-collapse head: regenerate a frozen teacher's per-token hidden states from concepts.
 
-    forward shapes:
+    Position queries cross-attend to the C concepts (reusing PerceiverDecoderLayer), then a linear
+    projects to the teacher's hidden size — an MSE target computed by the trainer. Keeps the
+    bottleneck advantage O(C*N): no token self-attention. Deliberately LEAN (config.anchor_head_layers,
+    default 2) so the de-collapse pressure lands on the concepts, not on an expressive head that could
+    reconstruct the teacher from a low-rank (collapsed) concept set and hide the collapse.
+
+    Shapes: concepts [B, C, H] + seq_length N -> per-token predictions [B, N, teacher_hidden].
+    """
+
+    def __init__(self, config: ConceptEncoderConfig, teacher_hidden: int):
+        super().__init__()
+        self.query_embeddings = nn.Embedding(config.max_sequence_length, config.hidden_size)
+        self.layers = nn.ModuleList(
+            [PerceiverDecoderLayer(config) for _ in range(config.anchor_head_layers)]
+        )
+        self.output_norm = nn.LayerNorm(config.hidden_size)
+        self.proj = nn.Linear(config.hidden_size, teacher_hidden)
+
+    def forward(self, concept_repr: torch.Tensor, seq_length: int) -> torch.Tensor:
+        batch_size = concept_repr.size(0)
+        position_ids = torch.arange(seq_length, device=concept_repr.device).unsqueeze(0)
+        hidden = self.query_embeddings(position_ids).expand(batch_size, -1, -1)  # [B, N, H]
+        for layer in self.layers:
+            hidden = layer(hidden, concept_repr)                                  # cross-attn to concepts
+        return self.proj(self.output_norm(hidden))                                # [B, N, teacher_hidden]
+
+
+def masked_standardized_mse(
+    pred: torch.Tensor,
+    target: torch.Tensor,
+    target_mask: torch.Tensor,
+    standardize: bool = True,
+) -> torch.Tensor:
+    """Per-token masked MSE for the E03 anchor (single source of the loss policy).
+
+    Shapes: pred / target [B, N, D]; target_mask [B, N] (True/1 = real token). When ``standardize``
+    the target is per-token layer-normed (zero-mean/unit-var over D) before the MSE, so the teacher's
+    raw scale is irrelevant and the head learns the shape (Cosmos/LDLM practice). Error is averaged
+    over masked positions AND feature dims. Pure (no teacher) → unit-testable in isolation.
+    """
+    if standardize:
+        target = F.layer_norm(target.float(), (target.size(-1),)).to(pred.dtype)
+    else:
+        target = target.to(pred.dtype)
+    mask = target_mask.unsqueeze(-1).to(pred.dtype)            # [B, N, 1]
+    sq = ((pred - target) ** 2) * mask
+    denom = mask.sum().clamp(min=1) * pred.size(-1)
+    return sq.sum() / denom
+
+
+class ConceptEncoderForConditionalLM(PreTrainedModel):
+    """Encoder → concepts → autoregressive concept-conditioned decoder.
+
+    Reconstruction forward shapes (E01):
         input_ids       [B, N]  clean token ids (encoder sees them through attention_mask)
         attention_mask  [B, N]  1 = visible to encoder, 0 = TSDAE-deleted/pad
         labels          [B, N]  reconstruction targets (−100 at pad); next-token shifted internally
@@ -1079,6 +1143,16 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
       → decoder_input   [B, N]  shift-right of input_ids (prepend bos)
       → logits          [B, N, V]
       → loss            scalar next-token CE on labels[:, 1:]
+
+    Prefix/suffix forward shapes (E02):
+        prefix_input_ids      [B, P]  encoder-visible prefix only
+        prefix_attention_mask [B, P]
+        suffix_input_ids      [B, S]  decoder target sequence
+        labels                [B, S]  suffix targets (−100 at pad)
+      → concepts              [B, C, H]
+      → decoder_input         [B, S]  shift-right of suffix_input_ids
+      → logits                [B, S, V]
+      → loss                  scalar suffix next-token CE
 
     Selected when ConceptEncoderConfig.decoder_type == "causal_ar". Keeps the encoder
     O(C*N); the decoder is deliberately lean (decoder_num_layers < encoder layers) and
@@ -1100,10 +1174,39 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         self.decoder = ConceptCausalDecoderStack(config)
         self.set_loss_config(loss_config)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        # E03: lean auxiliary head built ONLY when anchor_loss is enabled, so anchor_loss=False
+        # leaves the E01 state_dict byte-for-byte unchanged (old checkpoints load as before).
+        # The frozen teacher that produces MSE targets lives on the trainer, not here.
+        self.anchor_head = None
+        if getattr(config, "anchor_loss", False):
+            teacher_hidden = config.anchor_teacher_hidden or config.hidden_size
+            self.anchor_head = AnchorDistillHead(config, teacher_hidden)
         self.post_init()
 
         if config.tie_word_embeddings and config.token_embedding_dim == config.hidden_size:
             self._tie_or_clone_weights(self.lm_head, self.decoder.token_embeddings)
+
+    def anchor_predict(self, concept_repr: torch.Tensor, seq_length: int) -> torch.Tensor:
+        """Per-token teacher-hidden-state predictions from concepts (E03 anchor). [B,C,H]->[B,N,Ht]."""
+        if self.anchor_head is None:
+            raise RuntimeError(
+                "anchor_predict called but config.anchor_loss is False (no anchor head built)."
+            )
+        return self.anchor_head(concept_repr, seq_length)
+
+    def compute_anchor_loss(
+        self,
+        concept_repr: torch.Tensor,
+        teacher_hidden_states: torch.Tensor,
+        target_mask: torch.Tensor,
+        standardize: bool = True,
+    ) -> torch.Tensor:
+        """E03 anchor loss: distil the (precomputed, detached) teacher per-token hidden states through
+        the concept bottleneck. Pure w.r.t. the teacher (the caller supplies its states), so the loss
+        is unit-testable without downloading a teacher; the model owns the predict+compare. seq_length
+        is read from the targets."""
+        pred = self.anchor_predict(concept_repr, teacher_hidden_states.size(1))
+        return masked_standardized_mse(pred, teacher_hidden_states, target_mask, standardize=standardize)
 
     def set_loss_config(self, loss_config: Optional[LossConfig]) -> None:
         self.loss_manager = LossManager.create_for_model(
@@ -1153,92 +1256,218 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         return self.lm_head(hidden)
 
     @staticmethod
-    def _next_token_ce(logits: torch.Tensor, labels: torch.LongTensor) -> torch.Tensor:
-        shift_logits = logits[:, :-1, :].contiguous()
-        shift_labels = labels[:, 1:].contiguous()
+    def _teacher_forced_ce(logits: torch.Tensor, labels: torch.LongTensor) -> torch.Tensor:
+        """Next-token CE for logits produced from ALREADY shift-right-ed decoder inputs.
+
+        decoder_input = [bos, x0..x_{N-2}], so logits[t] is conditioned on
+        [bos, x0..x_{t-1}] and predicts labels[t] = x_t directly — NO additional
+        logits/labels shift here (T5 convention). Shifting again would pair
+        logits[t] with x_{t+1}, silently training a skip-one objective where the
+        decoder never sees the immediately preceding token (the E01-warmup bug).
+        """
         return F.cross_entropy(
-            shift_logits.view(-1, shift_logits.size(-1)),
-            shift_labels.view(-1),
+            logits.view(-1, logits.size(-1)),
+            labels.view(-1),
             ignore_index=-100,
         )
+
+    @staticmethod
+    def _teacher_forced_ce_early(
+        logits: torch.Tensor, labels: torch.LongTensor, k: int
+    ) -> torch.Tensor:
+        """Next-token CE restricted to the FIRST k target positions.
+
+        Suffix targets are left-aligned (real tokens first, pad after), so the
+        first k columns are the earliest suffix tokens. Concept reliance is
+        strongest there: later positions are increasingly predictable from the
+        teacher-forced suffix context regardless of the concepts, which dilutes
+        the all-position ablation delta. The early-position delta is therefore
+        the sharper instrument for "does the decoder use the concepts?".
+        """
+        k = max(1, min(k, labels.size(1)))
+        return F.cross_entropy(
+            logits[:, :k, :].reshape(-1, logits.size(-1)),
+            labels[:, :k].reshape(-1),
+            ignore_index=-100,
+        )
+
+    def _loss_from_logits(
+        self,
+        logits: torch.Tensor,
+        labels: Optional[torch.LongTensor],
+        concept_repr: torch.Tensor,
+    ) -> Optional[torch.Tensor]:
+        if labels is None:
+            return None
+        task_loss = self._teacher_forced_ce(logits, labels)
+        if self.training and self.loss_manager.is_enabled:
+            return self.loss_manager(task_loss=task_loss, concept_repr=concept_repr)
+        return task_loss
+
+    def encode_decode_loss(
+        self,
+        encoder_input_ids: torch.LongTensor,
+        encoder_attention_mask: Optional[torch.Tensor],
+        target_input_ids: torch.LongTensor,
+        labels: Optional[torch.LongTensor],
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+    ) -> Tuple[Optional[torch.Tensor], torch.Tensor, BaseModelOutput]:
+        """Single source of the encode → (shift target) → decode → loss recipe.
+
+        Used by BOTH forward() branches (reconstruction: ``target == encoder input``;
+        prefix→suffix: ``target == suffix``) AND auxiliary-loss callers (the E03 anchor in
+        PerceiverDenoiseTrainer). Centralising it keeps the decoder loss from drifting between
+        call sites — the class of bug behind the E01 double-shift.
+
+        Returns ``(loss, logits, encoder_outputs)``; ``loss`` is None when ``labels`` is None.
+        """
+        encoder_outputs = self.encode_concepts(
+            input_ids=encoder_input_ids,
+            attention_mask=encoder_attention_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=True,
+        )
+        concept_repr = encoder_outputs.last_hidden_state
+        decoder_input_ids = self._shift_right(target_input_ids)
+        word_dropout_p = self.config.decoder_word_dropout if self.training else 0.0
+        logits = self.decode_logits(concept_repr, decoder_input_ids, word_dropout_p=word_dropout_p)
+        loss = self._loss_from_logits(logits, labels, concept_repr)
+        return loss, logits, encoder_outputs
 
     @torch.no_grad()
     def concept_ablation_ce(
         self,
-        input_ids: torch.LongTensor,
-        attention_mask: Optional[torch.Tensor],
-        labels: torch.LongTensor,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        prefix_input_ids: Optional[torch.LongTensor] = None,
+        prefix_attention_mask: Optional[torch.Tensor] = None,
+        suffix_input_ids: Optional[torch.LongTensor] = None,
+        early_k: int = 16,
     ) -> dict:
         """Posterior-collapse diagnostic: next-token CE with intact vs ablated concepts.
 
-        Returns {ce_intact, ce_zero, ce_shuffle, delta_zero, delta_shuffle}. A decoder
-        that genuinely uses the concepts shows ce_zero/ce_shuffle >> ce_intact (large
-        positive deltas). "zero" replaces concepts with zeros (the no-concept floor);
-        "shuffle" permutes concepts across the batch (breaks instance-specific info while
-        preserving concept statistics — the stronger test). No word-dropout here.
+        Returns {ce_intact, ce_zero, ce_shuffle, delta_zero, delta_shuffle} and, when the
+        model was trained with decoder word-dropout, {ce_intact_wd, gap_clean_vs_wd}.
+        A decoder that genuinely uses the concepts shows ce_zero/ce_shuffle >> ce_intact
+        (large positive deltas). "zero" replaces concepts with zeros (the no-concept
+        floor); "shuffle" permutes concepts across the batch (breaks instance-specific
+        info while preserving concept statistics — the stronger test).
+
+        ce_intact is measured with CLEAN decoder inputs (word_dropout=0). When training
+        used word-dropout, that clean condition is out-of-distribution for the decoder, so
+        ce_intact_wd re-measures intact CE under the TRAIN-matched word-dropout rate.
+        gap_clean_vs_wd = ce_intact - ce_intact_wd: a large positive gap means the
+        decoder is specialized to word-dropped inputs and the clean-input eval CE
+        understates the model's quality (train/eval protocol mismatch, E01 diagnostic).
         """
+        if prefix_input_ids is not None:
+            if suffix_input_ids is None or labels is None:
+                raise ValueError("prefix/suffix ablation requires suffix_input_ids and labels.")
+            encoder_input_ids = prefix_input_ids
+            encoder_attention_mask = prefix_attention_mask
+            decoder_input_ids = self._shift_right(suffix_input_ids)
+        else:
+            if input_ids is None or labels is None:
+                raise ValueError("reconstruction ablation requires input_ids and labels.")
+            encoder_input_ids = input_ids
+            encoder_attention_mask = attention_mask
+            decoder_input_ids = self._shift_right(input_ids)
+
         was_training = self.training
         self.eval()
         concepts = self.encode_concepts(
-            input_ids=input_ids, attention_mask=attention_mask, return_dict=True
+            input_ids=encoder_input_ids, attention_mask=encoder_attention_mask, return_dict=True
         ).last_hidden_state
-        decoder_input_ids = self._shift_right(input_ids)
-        ce_intact = self._next_token_ce(self.decode_logits(concepts, decoder_input_ids), labels)
-        ce_zero = self._next_token_ce(
-            self.decode_logits(torch.zeros_like(concepts), decoder_input_ids), labels
-        )
+        logits_intact = self.decode_logits(concepts, decoder_input_ids)
+        logits_zero = self.decode_logits(torch.zeros_like(concepts), decoder_input_ids)
         perm = torch.randperm(concepts.size(0), device=concepts.device)
-        ce_shuffle = self._next_token_ce(self.decode_logits(concepts[perm], decoder_input_ids), labels)
-        if was_training:
-            self.train()
-        return {
+        logits_shuffle = self.decode_logits(concepts[perm], decoder_input_ids)
+
+        ce_intact = self._teacher_forced_ce(logits_intact, labels)
+        ce_zero = self._teacher_forced_ce(logits_zero, labels)
+        ce_shuffle = self._teacher_forced_ce(logits_shuffle, labels)
+
+        # Early-position deltas: where concepts matter most (see _teacher_forced_ce_early).
+        ce_intact_early = self._teacher_forced_ce_early(logits_intact, labels, early_k)
+        ce_zero_early = self._teacher_forced_ce_early(logits_zero, labels, early_k)
+        ce_shuffle_early = self._teacher_forced_ce_early(logits_shuffle, labels, early_k)
+
+        metrics = {
             "ce_intact": ce_intact.item(),
             "ce_zero": ce_zero.item(),
             "ce_shuffle": ce_shuffle.item(),
             "delta_zero": (ce_zero - ce_intact).item(),
             "delta_shuffle": (ce_shuffle - ce_intact).item(),
+            "ce_intact_early": ce_intact_early.item(),
+            "delta_zero_early": (ce_zero_early - ce_intact_early).item(),
+            "delta_shuffle_early": (ce_shuffle_early - ce_intact_early).item(),
         }
+
+        train_wd = float(getattr(self.config, "decoder_word_dropout", 0.0) or 0.0)
+        if train_wd > 0.0:
+            ce_intact_wd = self._teacher_forced_ce(
+                self.decode_logits(concepts, decoder_input_ids, word_dropout_p=train_wd),
+                labels,
+            )
+            metrics["ce_intact_wd"] = ce_intact_wd.item()
+            metrics["gap_clean_vs_wd"] = (ce_intact - ce_intact_wd).item()
+
+        if was_training:
+            self.train()
+        return metrics
 
     def forward(
         self,
-        input_ids: torch.LongTensor,
+        input_ids: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         token_type_ids: Optional[torch.LongTensor] = None,
         special_tokens_mask: Optional[torch.Tensor] = None,
         labels: Optional[torch.LongTensor] = None,
+        prefix_input_ids: Optional[torch.LongTensor] = None,
+        prefix_attention_mask: Optional[torch.Tensor] = None,
+        suffix_input_ids: Optional[torch.LongTensor] = None,
+        suffix_attention_mask: Optional[torch.Tensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> MaskedLMOutput:
-        del token_type_ids, special_tokens_mask
+        del token_type_ids, special_tokens_mask, suffix_attention_mask
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        encoder_outputs = self.encode_concepts(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
+        if prefix_input_ids is not None:
+            if suffix_input_ids is None:
+                raise ValueError("prefix/suffix forward requires suffix_input_ids.")
+            loss, logits, encoder_outputs = self.encode_decode_loss(
+                prefix_input_ids,
+                prefix_attention_mask,
+                suffix_input_ids,
+                labels,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+            )
+
+            if not return_dict:
+                output = (logits,) + encoder_outputs[1:]
+                return ((loss,) + output) if loss is not None else output
+
+            return MaskedLMOutput(
+                loss=loss,
+                logits=logits,
+                hidden_states=encoder_outputs.hidden_states,
+                attentions=encoder_outputs.attentions,
+            )
+
+        loss, logits, encoder_outputs = self.encode_decode_loss(
+            input_ids,
+            attention_mask,
+            input_ids,
+            labels,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
         )
-        concept_repr = encoder_outputs.last_hidden_state          # [B, C, H]
-
-        decoder_input_ids = self._shift_right(input_ids)
-        word_dropout_p = self.config.decoder_word_dropout if self.training else 0.0
-        logits = self.decode_logits(concept_repr, decoder_input_ids, word_dropout_p=word_dropout_p)
-
-        loss = None
-        if labels is not None:
-            shift_logits = logits[:, :-1, :].contiguous()
-            shift_labels = labels[:, 1:].contiguous()
-            loss_fct = CrossEntropyLoss(ignore_index=-100)
-            task_loss = loss_fct(
-                shift_logits.view(-1, shift_logits.size(-1)),
-                shift_labels.view(-1),
-            )
-            if self.training and self.loss_manager.is_enabled:
-                loss = self.loss_manager(task_loss=task_loss, concept_repr=concept_repr)
-            else:
-                loss = task_loss
 
         if not return_dict:
             output = (logits,) + encoder_outputs[1:]

@@ -16,6 +16,82 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ## [Unreleased]
 
+## [2026-06-14] - Make E03 anchor runs W&B-identifiable
+
+**Why:**
+- The live E03 anchor-ON warmup on Odra was launched with `anchor_loss=true` but inherited the E01 W&B group/tag identity, making it hard to separate from the AR reconstruction baseline.
+
+**Impact:**
+- Future anchor-enabled concept-AR runs self-label as E03 anchor runs in W&B, and the run checklist now requires verifying group, job type, tags, and `experiment_id` before training.
+
+**What changed:**
+- [fixed] `training/utils_training.py`, `training/train_perceiver_denoise.py` - make W&B identity anchor-aware (`E03`, `train_concept_ar_anchor_reconstruction`, `anchor`/`anchor-on` tags) and log anchor config explicitly.
+- [updated] `.cursor/skills/experiment-run/SKILL.md`, `docs/experiments/E03_concept_anchor_decollapse.md`, `docs/experiments/E03_concept_anchor_decollapse_plan.md` - add W&B preflight guidance and `EXPERIMENT_ID=E03` to E03 launch recipes, including the matched control.
+- [added] `tests/test_wandb_identity.py` - regression coverage for E03 anchor W&B identity.
+
+## [2026-06-13] - Standardize W&B identity for shared perceiver/AR training
+
+**Why:**
+- E01 (`concept_ar`) and E02 (`concept_ar_prefix`) run through the same shared training entrypoint, but W&B still logged them with the legacy `perceiver_denoise` group and job type. That made model families and objectives hard to separate in the run table.
+
+**Impact:**
+- New W&B training runs expose experiment/model/objective identity directly in `group`, `job_type`, tags, and config. E01/E02 retries now group separately by experiment plus architecture while preserving timestamped run ids.
+
+**What changed:**
+- [added] `training/utils_training.py` - `WandbRunIdentity` and `build_perceiver_wandb_identity()` derive stable W&B group/job_type/tags/config facets for the shared perceiver/AR entrypoint.
+- [updated] `training/train_perceiver_denoise.py` - uses the identity helper for W&B metadata; logs `experiment_id`, `model_family`, `objective_family`, `architecture_id`, `checkpoint_family`, and `pretraining_objective`; removes misleading `perceiver-denoise` tags from AR runs.
+- [added] `tests/test_wandb_identity.py` - regression tests for legacy perceiver denoise, E01, E02, and explicit experiment-id overrides.
+- [updated] `.cursor/skills/wandb-review/SKILL.md`, `docs/1_Strategy_and_Plans/training_eval_matrix.md` - document the W&B grouping contract and maintained `concept_ar` family.
+
+## [2026-06-13] — E02 warm-up follow-ups: deterministic data split, single DDP run_id, early-suffix ablation + live effective-rank, linear-probe eval
+
+**Why:**
+- Full evaluation of the E02 0.3-epoch warm-up (`concept_ar_prefix_H768L6C128D4_20260612_094555`) was promising (zero-shot STS-B **0.683**, beats prior 0.607) but surfaced several issues before scaling to a full run:
+  - The no-`seed` `train_test_split` reshuffled the holdout every launch, so the tokenization `.map()` cache never hit (the warm-up re-tokenized all 9.57M FineWeb-Edu rows, ~1.5–2 h) and each DDP rank built a *different* train/eval split.
+  - `run_identifier` was computed from `datetime.now()` inside `main()`, so DDP ranks straddling a second boundary forked into two output dirs (`…094555`/`…094600`) with duplicated checkpoints and "Could not locate the best model" warnings.
+  - The averaged suffix-CE concept-ablation Δ is diluted by teacher-forced AR self-context (late positions predictable without concepts), under-measuring concept usage; effective rank (collapse gate) was only computed offline.
+  - Supervised sentence-pair eval (`concept_ar`) was near chance across SICK/PAWS/MRPC despite strong zero-shot STS-B — it full-fine-tunes the lightly-pretrained encoder at LR 1e-5 on tiny datasets, destroying the pretrained geometry.
+  - Eval run names labelled the encoder-only sub-model as e.g. `73M`, implying the checkpoint is that small (full model is 161.6M).
+
+**Impact:**
+- Full-corpus runs reuse the tokenization cache (no re-tokenize per launch) and all DDP ranks share one split and one `run_id`/output dir. The full E02 run logs sharper concept-usage signals (early-suffix Δ) and live concept geometry (effective rank) each eval. A robust linear-probe path is available for trustworthy supervised concept-quality measurement.
+
+**What changed:**
+- [fixed] `data/dataset_preprocess.py` — `_select_train_eval_splits`/`load_and_preprocess_text_dataset` take a `split_seed` (default 42) passed to `train_test_split(seed=...)`; `training/train_perceiver_denoise.py` passes `training_args.seed`. Deterministic split → reusable tokenization cache and rank-consistent splits.
+- [fixed] `training/utils_training.py` — added `broadcast_object()` (rank-0 broadcast via `broadcast_object_list`, no-op when not distributed); `train_perceiver_denoise.py` broadcasts `run_identifier` so all ranks share one output dir/W&B run.
+- [added] `nn/concept_encoder_perceiver.py` — `concept_ablation_ce()` now also returns early-position metrics (`ce_intact_early`, `delta_zero_early`, `delta_shuffle_early`, default first `early_k=16` suffix tokens) via new `_teacher_forced_ce_early`.
+- [added] `training/train_perceiver_denoise.py` — `PerceiverDenoiseTrainer` logs `concept_geometry/effective_rank(_normalized)` each eval (SVD nuclear/spectral norm of the mean concept matrix, matching `analysis/concept_analysis`).
+- [added] `evaluation/evaluate_on_benchmark.py`, `evaluation/evaluate_model_on_glue.py`, `scripts/evaluate_concept_encoder_glue.sh` — `--freeze_encoder` (linear probe; `FREEZE_ENCODER=1` for the GLUE launcher) freezes the encoder and trains only the task head; eval run/report names mark encoder-only models with a `-enc` suffix.
+
+## [2026-06-11] — Fix double-shift in AR teacher-forced CE (skip-one objective bug)
+
+**Why:**
+- `ConceptEncoderForConditionalLM` builds decoder inputs with `_shift_right` (`[bos, x0..x_{N-2}]`, T5 convention: `logits[t]` predicts `x_t`) **and** the loss helper shifted again (GPT convention: `logits[:, :-1]` vs `labels[:, 1:]`). Net effect: every target `x_t` was predicted from context ending at `x_{t-2}` — the decoder never saw the immediately preceding token of its target. This trained a harder "skip-one" objective, inflated all CE numbers, explains the at-chance no-concept floor in the E01 warm-up (a pure next-next-token LM is far weaker), and made the greedy generation loop (single-shift convention) inconsistent with training. The E02 plan even listed this exact risk ("loss shift is off by one for suffix generation").
+
+**Impact:**
+- All `concept_ar` losses (training CE, eval CE, concept-ablation CE, `ce_intact_wd`) now measure true next-token teacher forcing; generation and training conventions agree. CE values are not comparable with the buggy warm-up / first relaunch numbers. E01 was relaunched from scratch on the fixed code; E02 inherits the fix before its first run.
+
+**What changed:**
+- [fixed] `nn/concept_encoder_perceiver.py` — `_next_token_ce` → `_teacher_forced_ce`: plain `CE(logits, labels)` with `ignore_index=-100`, no second shift (decoder inputs are already shift-right-ed). All call sites updated (forward loss + concept ablation, reconstruction and prefix/suffix paths).
+- [added] `tests/test_concept_ar_decoder.py::test_loss_is_single_shift_teacher_forcing` — contract regression test (reconstruction + prefix/suffix), fails on the old double-shift code.
+
+## [2026-06-11] — E01 eval-protocol fixes: matched word-dropout CE, deterministic eval corruption, pad=eos analysis labels
+
+**Why:**
+- The E01 warm-up run (`concept_ar_H768L6C128D4_20260607_172931`) showed eval CE *rising* (6.82 → 9.0) while train CE fell (10.2 → 3.1) on a single data pass — impossible as overfitting, so a train/eval protocol mismatch. Diagnosis: training applies decoder word-dropout p=0.4 while eval scores with clean decoder inputs; the decoder specializes to the blanked-input distribution and the clean condition becomes out-of-distribution (supported by ce_zero ≈ ln(vocab): the decoder learned no pure-LM use of its left context). Two further eval-trust issues from code review: TSDAE deletion is resampled every eval call (noisy `eval_loss`, lucky best-checkpoint selection), and `run_concept_analysis.py` masked labels by token id — with SmolLM2 pad=eos that silently dropped every real eos target.
+
+**Impact:**
+- E01/E02 eval numbers become trustworthy: eval CE is now also measured under the train-matched word-dropout condition (`ce_intact_wd`, `gap_clean_vs_wd` — a large gap flags the OOD mismatch directly), held-out corruption is deterministic so `eval_loss` is comparable across evaluations and runs, and offline concept-analysis CE agrees with the training-eval label contract for pad=eos tokenizers.
+
+**What changed:**
+- [updated] `nn/concept_encoder_perceiver.py` — `ConceptCausalDecoderStack.embed()` honors an explicitly passed `word_dropout_p` regardless of train/eval mode (callers still gate the training default); `concept_ablation_ce()` additionally returns `ce_intact_wd` (intact concepts, train-matched word-dropout) and `gap_clean_vs_wd` when the config has `decoder_word_dropout > 0`.
+- [updated] `data/data_collators.py` — `DataCollatorForTSDAE` and `DataCollatorForPrefixGeneration` accept `seed`; when set, deletion masks / prefix-suffix split points are a pure function of (seed, batch content) for reproducible eval corruption.
+- [updated] `training/train_perceiver_denoise.py` — trainer takes a separate seeded `eval_data_collator` (swapped in via `get_eval_dataloader`); concept-ablation aggregation passes through whatever metric keys the model returns.
+- [fixed] `analysis/run_concept_analysis.py` — ablation labels now mask padding positionally via `attention_mask` instead of by `pad_token_id` (pad=eos safe); prints the matched-word-dropout CE and the clean-vs-wd gap; documents that offline ablation encodes the full clean sequence (absolute CE not comparable with training eval).
+- [added] tests: seeded-collator determinism, unseeded resampling, pad=eos TSDAE label/visibility contract (`tests/test_tsdae_collator.py`); eval-mode forced word-dropout, `ce_intact_wd` reporting (`tests/test_concept_ar_decoder.py`).
+
+**Related:** `docs/experiments/E01_concept_ar_decoder.md` (rerun uses these fixes), E01 warm-up review (eval CE divergence diagnosis)
+
 ## [2026-06-06] — Complete the research pipeline: add `implementation-plan`, remove duplicate spec index
 
 **Why:**

@@ -7,6 +7,7 @@ import platform
 import subprocess
 import torch
 import wandb
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from torch.nn import Module
 from typing import Dict, List, Optional, Tuple, Any
@@ -173,7 +174,7 @@ def get_parameter_breakdown(model: Module) -> Dict[str, Dict[str, int]]:
 
 
 
-def setup_distributed(timeout_minutes: int = 30):
+def setup_distributed(timeout_minutes: Optional[int] = None):
     """
     Setup for distributed training on multi-GPU single node.
     Returns local rank for the current process.
@@ -182,8 +183,17 @@ def setup_distributed(timeout_minutes: int = 30):
         timeout_minutes: NCCL collective timeout. Must exceed the longest
             single-rank operation (e.g. first-time dataset tokenisation on
             rank 0 while other ranks wait at the ``main_process_first`` barrier).
-            Default 30 min covers ~1M-example preprocessing on Odra.
+            When None, reads the ``DDP_TIMEOUT`` env var (seconds — same knob the
+            launchers pass to ``--ddp_timeout``), falling back to 30 min. This PG
+            is created BEFORE TrainingArguments parsing, so ``--ddp_timeout``
+            alone cannot protect the first barrier (caused a SIGABRT on Odra
+            when first-time FineWeb-Edu tokenization took ~61 min).
     """
+    if timeout_minutes is None:
+        try:
+            timeout_minutes = max(1, int(os.environ.get("DDP_TIMEOUT", "1800")) // 60)
+        except ValueError:
+            timeout_minutes = 30
     if torch.cuda.is_available():
         local_rank = int(os.environ.get("LOCAL_RANK", -1))
 
@@ -207,6 +217,25 @@ def is_main_process():
     Used to avoid duplicate logging/printing in multi-GPU training.
     """
     return int(os.environ.get("LOCAL_RANK", 0)) == 0
+
+
+def broadcast_object(obj):
+    """Broadcast a picklable object from rank 0 to all ranks.
+
+    Used to agree on values that must be identical across DDP ranks but are
+    derived from non-deterministic sources (e.g. a wall-clock ``run_id``).
+    Computing such values independently per process lets ranks diverge — e.g.
+    a second-resolution timestamp can differ across ranks and fork the output
+    directory into ``..._HHMMSS`` / ``..._HHMMSS+1`` with duplicated checkpoints.
+
+    No-op (returns ``obj`` unchanged) when distributed is not initialized
+    (single-GPU / CPU runs).
+    """
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        holder = [obj]
+        torch.distributed.broadcast_object_list(holder, src=0)
+        return holder[0]
+    return obj
 
 
 def get_hostname():
@@ -427,6 +456,112 @@ def setup_run_dirs(training_args, run_identifier: str):
     training_args.push_to_hub = False
     training_args.remove_unused_columns = False
     training_args.fp16 = not training_args.bf16
+
+
+@dataclass(frozen=True)
+class WandbRunIdentity:
+    """Stable W&B identity facets for training runs."""
+
+    experiment_id: Optional[str]
+    model_family: str
+    objective_family: str
+    architecture_id: str
+    group: str
+    job_type: str
+    tags: List[str]
+
+    def to_config(self) -> Dict[str, Optional[str]]:
+        return {
+            "experiment_id": self.experiment_id,
+            "model_family": self.model_family,
+            "objective_family": self.objective_family,
+            "architecture_id": self.architecture_id,
+            "wandb_group": self.group,
+            "wandb_job_type": self.job_type,
+        }
+
+
+def build_perceiver_wandb_identity(
+    *,
+    decoder_type: str,
+    objective_variant: str,
+    hidden_size: int,
+    num_hidden_layers: int,
+    concept_num: int,
+    decoder_num_layers: int,
+    checkpoint_family: str,
+    pretraining_objective: str,
+    use_bixt: bool,
+    anchor_loss: bool = False,
+    experiment_id: Optional[str] = None,
+) -> WandbRunIdentity:
+    """Derive W&B grouping metadata for the shared perceiver/AR entrypoint.
+
+    The training script hosts multiple research families. W&B group/job_type
+    should identify the family + objective, while run names stay unique via a
+    timestamp added by the caller.
+    """
+    if decoder_type == "causal_ar":
+        if objective_variant == "prefix_suffix":
+            inferred_experiment = "E02"
+            model_family = "concept_ar_prefix"
+            objective_family = "prefix_suffix"
+            job_type = "train_concept_ar_prefix_suffix"
+        elif anchor_loss:
+            inferred_experiment = "E03"
+            model_family = "concept_ar"
+            objective_family = "ar_reconstruction_anchor"
+            job_type = "train_concept_ar_anchor_reconstruction"
+        else:
+            inferred_experiment = "E01"
+            model_family = "concept_ar"
+            objective_family = "ar_reconstruction"
+            job_type = "train_concept_ar_reconstruction"
+    else:
+        inferred_experiment = None
+        model_family = "perceiver_denoise"
+        if objective_variant == "reconstruction+contrastive":
+            objective_family = "reconstruction_contrastive"
+            job_type = "train_perceiver_denoise_contrastive"
+        else:
+            objective_family = "reconstruction"
+            job_type = "train_perceiver_denoise_reconstruction"
+
+    resolved_experiment = experiment_id or inferred_experiment
+    architecture_id = (
+        f"{model_family}_H{hidden_size}"
+        f"L{num_hidden_layers}"
+        f"C{concept_num}"
+        f"D{decoder_num_layers}"
+    )
+    group = f"{resolved_experiment}_{architecture_id}" if resolved_experiment else architecture_id
+    tags = [
+        "train",
+        "concept-encoder",
+        model_family,
+        checkpoint_family,
+        decoder_type,
+        objective_family,
+        objective_variant,
+        pretraining_objective,
+    ]
+    if resolved_experiment:
+        tags.append(resolved_experiment)
+    if anchor_loss:
+        tags.extend(["anchor", "anchor-on"])
+    if use_bixt:
+        tags.append("bixt")
+    tags = list(dict.fromkeys(tags))
+
+    return WandbRunIdentity(
+        experiment_id=resolved_experiment,
+        model_family=model_family,
+        objective_family=objective_family,
+        architecture_id=architecture_id,
+        group=group,
+        job_type=job_type,
+        tags=tags,
+    )
 
 
 def init_wandb(

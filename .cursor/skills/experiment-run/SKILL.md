@@ -8,9 +8,10 @@ description: Run, monitor, and debug Concept Encoder training/evaluation on the 
 Execute and babysit ONE approved run on a GPU server. This is the only doc needed to
 run training + evaluation and understand the remote environment.
 
-**Boundary:** this skill *runs and monitors*. It does not pick experiments
-(`experiment-design`), interpret/record results (`experiment-track`), or do standalone
-eval sweeps on existing checkpoints (`experiment-remote-evaluator`).
+**Boundary:** this skill *runs and monitors* training. It does not pick experiments
+(`experiment-design`), interpret/record results (`experiment-track`), or define the
+evaluation pipeline / run benchmark sweeps on checkpoints (`experiment-evaluate` — the
+single source of truth for *how to evaluate*, with `uv` commands).
 
 ## Hard rules
 - No training without explicit user permission; ONE experiment per server at a time.
@@ -18,6 +19,8 @@ eval sweeps on existing checkpoints (`experiment-remote-evaluator`).
 - Local macOS (`uv`) = smoke tests only. Real runs are remote on Ubuntu.
 - Don't migrate a working remote env mid-run. Don't relaunch a failed run before reading the first traceback.
 - Read first: `docs/experiments/<ID>.md` (spec) + `docs/experiments/<ID>_plan.md` (launcher + env knobs).
+- Before launch, verify W&B identity (`group`, `job_type`, tags, config `experiment_id`) matches the
+  active spec/agenda entry. Do not start a long run with a generic or stale label.
 
 ## Servers (add a new one by appending a row + an `~/.ssh/config` alias)
 | alias | CPU / RAM / disk | GPUs | project root | notes |
@@ -62,13 +65,54 @@ cd /home/ksopyla/dev/MrCogito && byobu new-session -s <ID>   # attach: byobu att
 git fetch origin && git checkout <branch> && git pull --ff-only && git log -1 --oneline
 nvidia-smi; df -h .; command -v uv poetry; byobu list-sessions
 ```
-**2. Environment** — prefer `uv sync` + `uv run …`; if the server still has only Poetry, the
-training/eval bash scripts already fall back to `poetry run`/`python3`, so just `uv sync` or
-`poetry install` to match what exists. Migrating to `uv` needs user OK.
+**2. Environment** — use `uv sync` + `uv run …` (the project standard). The eval bash
+launchers call `uv run python` (falling back to `python3`); the training launcher uses
+`accelerate launch` from the active env. On a legacy Poetry-only server, run `uv sync` to
+provision the env; don't migrate a working remote env mid-run without user OK.
 
-**3. Launch training** — one shared launcher, override via env vars (never fork a script):
+**3. W&B identity preflight** — confirm the run will be discoverable before any training starts.
+Set `EXPERIMENT_ID=<ID>` (or `WANDB_EXPERIMENT_ID=<ID>`) for every spec-backed run, especially
+matched controls that otherwise look like a prior baseline. For E03 anchor-ON, expected identity is:
+`group=E03_concept_ar_H768L6C128D4`, `job_type=train_concept_ar_anchor_reconstruction`, tags include
+`E03`, `anchor`, `anchor-on`, `concept_ar`; after `wandb.init`, tags also include dataset/subset and
+hostname (`odra`/`polonez`).
+
+Dry-check the identity from the exact env vars before launching:
 ```bash
-DECODER_TYPE=causal_ar HIDDEN_SIZE=768 NUM_LAYERS=8 CONCEPT_NUM=128 \
+uv run python - <<'PY'
+import os
+from training.utils_training import build_perceiver_wandb_identity
+
+def env(name, default):
+    return os.environ.get(name, default)
+
+identity = build_perceiver_wandb_identity(
+    decoder_type=env("DECODER_TYPE", "perceiver_posonly"),
+    objective_variant=env("OBJECTIVE_VARIANT", "reconstruction"),
+    hidden_size=int(env("HIDDEN_SIZE", "512")),
+    num_hidden_layers=int(env("NUM_LAYERS", "6")),
+    concept_num=int(env("CONCEPT_NUM", "128")),
+    decoder_num_layers=int(env("DECODER_NUM_LAYERS", "3")),
+    checkpoint_family="concept_ar" if env("DECODER_TYPE", "") == "causal_ar" else "perceiver_denoise",
+    pretraining_objective="ar_denoising_reconstruction"
+        if env("DECODER_TYPE", "") == "causal_ar" else "denoising_full_reconstruction",
+    use_bixt=True,
+    anchor_loss=env("ANCHOR_LOSS", "false").lower() == "true",
+    experiment_id=os.environ.get("WANDB_EXPERIMENT_ID") or os.environ.get("EXPERIMENT_ID"),
+)
+print("group:", identity.group)
+print("job_type:", identity.job_type)
+print("tags:", ", ".join(identity.tags))
+print("config:", identity.to_config())
+PY
+```
+If the group/job type/tags are wrong, fix env vars or code first. For a matched E03 control, keep
+`EXPERIMENT_ID=E03` while setting `ANCHOR_LOSS=false`; otherwise the control is indistinguishable
+from the E01 baseline in W&B.
+
+**4. Launch training** — one shared launcher, override via env vars (never fork a script):
+```bash
+EXPERIMENT_ID=E03 DECODER_TYPE=causal_ar HIDDEN_SIZE=768 NUM_LAYERS=8 CONCEPT_NUM=128 \
 DATASET_NAME=HuggingFaceFW/fineweb-edu DATASET_SUBSET=sample-10BT \
 TOKENIZER_NAME=HuggingFaceTB/SmolLM2-135M PER_DEVICE_BATCH_SIZE=8 NUM_EPOCHS=1 \
 bash scripts/train_perceiver_denoise_multigpu.sh
@@ -77,7 +121,8 @@ For new model sizes, first run a **tiny calibration** before the full launch: us
 or a very short step/epoch budget, sweep `PER_DEVICE_BATCH_SIZE` upward, watch for OOM, then choose the
 largest stable value with headroom. Re-run the real command only after the batch/dataloader settings are
 known for that model family.
-Knobs live at the top of the launcher (`HIDDEN_SIZE`, `TOKEN_EMBEDDING_DIM`, `NUM_LAYERS`,
+Important env knobs include `EXPERIMENT_ID`/`WANDB_EXPERIMENT_ID` plus the launcher knobs
+(`HIDDEN_SIZE`, `TOKEN_EMBEDDING_DIM`, `NUM_LAYERS`,
 `CONCEPT_NUM`, `DECODER_*`, `HIDDEN_ACT`, `NORM_TYPE`, `DATASET_*`, `*_BATCH_SIZE`,
 `LEARNING_RATE`, `NUM_EPOCHS`, `*_STEPS`, `DATALOADER_NUM_WORKERS`, `DDP_TIMEOUT`,
 `SAVE_TOTAL_LIMIT`, `SAVE_SAFETENSORS`, `RESUME_FROM_CHECKPOINT`). For dataset preprocessing, prefer exposing launcher/env knobs for
@@ -87,10 +132,10 @@ preprocess workers for large one-off tokenization there. It auto-detects GPUs, r
 Always set a finite checkpoint retention limit for long/full-corpus runs (`SAVE_TOTAL_LIMIT=3–5` is
 usually enough) so periodic checkpoints cannot fill `/home`; keep the final saved model separately.
 
-**4. Monitor** (short checks, not blind polling):
+**5. Monitor** (short checks, not blind polling):
 ```bash
 LOG=$(ls -t Cache/logs/shell_*.log | head -1)
-rg -n "W&B run:|Train dataset size|loss|eval_loss|Saving model|Traceback|CUDA out of memory|NCCL|nan" "$LOG"
+rg -n "W&B group|W&B job_type|W&B run:|Train dataset size|loss|eval_loss|Saving model|Traceback|CUDA out of memory|NCCL|nan" "$LOG"
 nvidia-smi; ls -lt Cache/Training | head
 ```
 Healthy: GPUs busy, dataset sizes + W&B run logged, loss at `LOGGING_STEPS`, checkpoints at `SAVE_STEPS`,
@@ -99,19 +144,19 @@ Also check memory headroom and throughput early. If VRAM is far below capacity a
 consider stopping after the first smoke/calibration window and relaunching with a larger
 `PER_DEVICE_BATCH_SIZE` rather than spending a full run underfilled.
 
-**5. Debug** — read around the FIRST error, classify, then fix:
+**6. Debug** — read around the FIRST error, classify, then fix:
 OOM → lower `PER_DEVICE_BATCH_SIZE`/`MAX_SEQ_LENGTH`; NCCL stall → check earlier per-rank failure or
 preprocessing barrier or competing GPU process; import error → `uv sync`/`poetry install`; dataset/cache
 → check `HF_HOME`, name/subset, disk, auth; shape/config → fix code locally, test, push, rerun from new commit.
 
-**6. Concept analysis** (fast, run automatically after a checkpoint exists):
+**7. Concept analysis** (fast, run automatically after a checkpoint exists):
 ```bash
 RUN=$(ls -t Cache/Training | head -1)
 uv run python analysis/run_concept_analysis.py --model_path "Cache/Training/$RUN" --model_type <family>
 ```
 `--model_type` ∈ `perceiver_denoise|concept_ar|weighted_mlm`. Health probe: `analysis/check_model_health.py`.
 
-**7. Evaluation** (only when spec/plan/user asks). Set `MODEL_PATH_OVERRIDE` + `MODEL_TYPE_OVERRIDE`:
+**8. Evaluation** (only when spec/plan/user asks). Set `MODEL_PATH_OVERRIDE` + `MODEL_TYPE_OVERRIDE`:
 ```bash
 MODEL_PATH_OVERRIDE="Cache/Training/$RUN" MODEL_TYPE_OVERRIDE=perceiver_denoise \
   bash scripts/evaluate_concept_encoder_glue.sh stsb       # GLUE: all|all-glue|mrpc|stsb|qqp|mnli-matched
@@ -120,7 +165,7 @@ MODEL_PATH_OVERRIDE="Cache/Training/$RUN" MODEL_TYPE_OVERRIDE=perceiver_denoise 
 Recommended order for a fresh checkpoint: concept analysis → `stsb_zero_shot` → GLUE (MRPC/STS-B/QQP/MNLI).
 Reports land in `Cache/Evaluation_reports/`.
 
-**8. Sync + handoff** — pull artifacts to local, then hand to `experiment-track`:
+**9. Sync + handoff** — pull artifacts to local, then hand to `experiment-track`:
 ```bash
 bash scripts/sync_evaluation_reports.sh            # SSH_HOST=odra to target odra; --upload / --two-way / --dry-run
 ```

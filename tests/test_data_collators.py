@@ -249,6 +249,39 @@ def _make_prefix_examples(tokenizer, texts, max_length=64):
     return examples
 
 
+class FakeEosOnlyTokenizer:
+    """SmolLM2-like minimal tokenizer: no CLS/SEP, pad aliases EOS."""
+
+    pad_token_id = 0
+    eos_token_id = 0
+    bos_token_id = 0
+    unk_token_id = 0
+    cls_token_id = None
+    sep_token_id = None
+
+    _token_map = {
+        0: "<|endoftext|>",
+        10: "Alpha",
+        11: "Ġbeta",
+        12: "Ġgamma.",
+        13: "Ġdelta",
+        14: "Ġepsilon",
+        15: "Ġzeta.",
+        16: "Ġeta",
+        17: "Ġtheta",
+    }
+
+    def __len__(self):
+        return 64
+
+    def convert_ids_to_tokens(self, ids):
+        return [self._token_map.get(i, f"tok{i}") for i in ids]
+
+    def decode(self, ids, clean_up_tokenization_spaces=False):
+        del clean_up_tokenization_spaces
+        return "".join(self.convert_ids_to_tokens(ids))
+
+
 class TestDataCollatorForPrefixGeneration:
 
     def test_output_keys(self, modern_bert_tokenizer):
@@ -438,16 +471,61 @@ class TestDataCollatorForPrefixGeneration:
             assert prefix_real >= 3, f"Example {i}: prefix too short ({prefix_real})"
             assert suffix_real >= 2, f"Example {i}: suffix too short ({suffix_real})"
 
-    def test_requires_sep_token(self):
-        """Collator should raise ValueError if tokenizer has no sep_token_id."""
+    def test_requires_sep_or_eos_token(self):
+        """Collator should raise ValueError only if no boundary token exists."""
 
         class FakeTokenizer:
             pad_token_id = 0
             cls_token_id = 1
             sep_token_id = None
+            eos_token_id = None
 
-        with pytest.raises(ValueError, match="sep_token_id"):
+        with pytest.raises(ValueError, match="sep_token_id or eos_token_id"):
             DataCollatorForPrefixGeneration(FakeTokenizer())
+
+    def test_eos_only_tokenizer_uses_eos_boundary(self):
+        tokenizer = FakeEosOnlyTokenizer()
+        collator = DataCollatorForPrefixGeneration(
+            tokenizer,
+            max_length=16,
+            prefix_ratio_min=0.35,
+            prefix_ratio_max=0.45,
+            min_prefix_content=1,
+            min_suffix_content=1,
+            split_strategy="sentence_boundary",
+        )
+        examples = [{"input_ids": [10, 11, 12, 13, 14, 15, 0]}]
+        batch = collator(examples)
+
+        prefix_ids = batch["prefix_input_ids"][0]
+        suffix_ids = batch["suffix_input_ids"][0]
+        prefix_real = batch["prefix_attention_mask"][0].sum().item()
+        suffix_real = batch["suffix_attention_mask"][0].sum().item()
+
+        assert prefix_ids[prefix_real - 1].item() == tokenizer.eos_token_id
+        assert suffix_ids[suffix_real - 1].item() == tokenizer.eos_token_id
+        assert tokenizer.eos_token_id in batch["labels"][0][batch["labels"][0] != -100].tolist()
+
+    def test_eos_only_no_information_leak_except_boundary(self):
+        tokenizer = FakeEosOnlyTokenizer()
+        collator = DataCollatorForPrefixGeneration(
+            tokenizer,
+            max_length=16,
+            prefix_ratio_min=0.45,
+            prefix_ratio_max=0.45,
+            min_prefix_content=1,
+            min_suffix_content=1,
+            split_strategy="token_random",
+        )
+        batch = collator([{"input_ids": [10, 11, 12, 13, 14, 15, 0]}])
+
+        prefix_ids = batch["prefix_input_ids"][0].tolist()
+        suffix_ids = batch["suffix_input_ids"][0].tolist()
+        special = {tokenizer.eos_token_id}
+        prefix_content = set(prefix_ids) - special
+        suffix_content = set(suffix_ids) - special
+
+        assert not (prefix_content & suffix_content)
 
     def test_invalid_split_strategy(self, modern_bert_tokenizer):
         with pytest.raises(ValueError, match="split_strategy"):

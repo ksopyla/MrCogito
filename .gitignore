@@ -177,3 +177,7 @@ mwt_extractions/*
 
 sprind_frontier_ai/
 .DS_Store
+
+# Local-only: internal infrastructure details (server IPs/MACs/ports, router, WoL).
+# Keep on disk so the agent can use it, but never publish to the public repo.
+.cursor/skills/remote-servers/

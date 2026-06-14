@@ -1,0 +1,48 @@
+[
+  {
+    "name": "finepdfs_100BT_pdf_pretrain",
+    "dataset": "HuggingFaceFW/finepdfs_100BT",
+    "subset": "default",
+    "split": "train",
+    "length_column": "token_count",
+    "data_files": [
+      "https://huggingface.co/datasets/HuggingFaceFW/finepdfs_100BT/resolve/refs%2Fconvert%2Fparquet/default/train/0000.parquet"
+    ]
+  },
+  {
+    "name": "longblocks_doc_qa_reasoning",
+    "dataset": "utter-project/LongBlocks",
+    "subset": "default",
+    "split": "train",
+    "text_columns": [
+      "document",
+      "question",
+      "answer",
+      "response_Qwen3-Next-80B-A3B"
+    ]
+  },
+  {
+    "name": "openmathreasoning_cot",
+    "dataset": "nvidia/OpenMathReasoning",
+    "subset": "default",
+    "split": "cot",
+    "text_columns": [
+      "problem",
+      "generated_solution"
+    ]
+  },
+  {
+    "name": "big_reasoning_traces",
+    "dataset": "allenai/big-reasoning-traces",
+    "subset": "DeepSeek",
+    "split": "train",
+    "length_column": "num_tokens"
+  },
+  {
+    "name": "openthoughts3_math_code_science",
+    "dataset": "open-thoughts/OpenThoughts3-1.2M",
+    "subset": "default",
+    "split": "train",
+    "text_column": "conversations"
+  }
+]
