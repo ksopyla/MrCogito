@@ -18,7 +18,7 @@ single source of truth for *how to evaluate*, with `uv` commands).
 - Sync source by **Git only** — never `scp`/`rsync` code. (`rsync` is only for `Cache/` artifacts.)
 - Local macOS (`uv`) = smoke tests only. Real runs are remote on Ubuntu.
 - Don't migrate a working remote env mid-run. Don't relaunch a failed run before reading the first traceback.
-- Read first: `docs/experiments/<ID>.md` (spec) + `docs/experiments/<ID>_plan.md` (launcher + env knobs).
+- Read first: `docs/experiments_specs/<ID>.md` (spec) + `docs/experiments_specs/<ID>_plan.md` (launcher + env knobs).
 - Before launch, verify W&B identity (`group`, `job_type`, tags, config `experiment_id`) matches the
   active spec/agenda entry. Do not start a long run with a generic or stale label.
 

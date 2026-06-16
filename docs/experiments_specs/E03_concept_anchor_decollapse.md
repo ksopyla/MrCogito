@@ -1,6 +1,6 @@
 # E03 — De-collapse via a frozen-encoder hidden-state anchor
 
-- **Status:** running (anchor-ON warmup launched 2026-06-14 on Odra; matched control + decoder-weakening sibling queued)
+- **Status:** anchor-ON warmup done (2026-06-15); matched control queued on Odra next
 - **Serves:** the encoder→AR-decoder Current focus in [agenda.md](../1_Strategy_and_Plans/agenda.md), and the chronic open problem behind it — **concept collapse** (effective rank stuck at 5–10/128 across ~60 runs). Attacks the root cause that blocks every downstream bet (AR generation, recursion, diffusion). The frozen-hidden-state anchor is the shared "validate the bottleneck first" ingredient the diffusion literature (Cosmos/LDLM/CALM) and the recursion line both rely on — and the one ingredient the team brief's P1 matrix does **not** currently contain.
 - **Implementation plan:** [E03_concept_anchor_decollapse_plan.md](E03_concept_anchor_decollapse_plan.md) *(the HOW — repo-rooted design)*
 - **Owner / dates:** Krzysztof Sopyla · opened 2026-06-13 · closed —
@@ -147,8 +147,9 @@ The risk is that effective rank rises **without** the concepts becoming useful o
   checkpoint eval contract and backward-compatible defaults.
 
 ## Result
-<Filled in AFTER, by experiment-track. Link out; do not paste full results here.>
-- Run id: `<run_id>` (anchor) / `<run_id>` (control)
-- WandB: <link>
-- Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
-- Verdict: promising | mixed | regression | killed — <one line>
+**Anchor-ON warmup completed 2026-06-15. Control arm (anchor-OFF) not yet run — full verdict pending.**
+
+- Run id: `concept_ar_H768L6C128D4_20260614_164206` (anchor-ON, 0.3 epoch) / TBD (control)
+- WandB (anchor-ON): [Link](https://wandb.ai/ksopyla/MrCogito/runs/concept_ar_H768L6C128D4_20260614_164206)
+- Run report: `docs/2_Experiments_Registry/run_reports/e03a_anchor_on_warmup_20260615.md`
+- Verdict: **inconclusive** — anchor arm passes all kill gates (MSE ↓, AR CE stable, concept ablation strong), but the matched control must be run to evaluate de-collapse criteria.

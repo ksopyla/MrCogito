@@ -8,7 +8,7 @@
 **Best checkpoint:** `Cache/Training/concept_ar_H768L6C128D4_20260613_185955/checkpoint-4000`
 **Git commit:** `6c48d12`
 **Git tag:** `arch/perceiver-denoise-reset-51-g6c48`
-**Related TODO:** E01 in `docs/experiments/E01_concept_ar_decoder.md`
+**Related TODO:** E01 in `docs/experiments_specs/E01_concept_ar_decoder.md`
 
 ---
 
@@ -116,4 +116,4 @@ Immediate next actions:
 2. Proceed to E03 (frozen-encoder anchor de-collapse), which addresses the rank collapse that affects both E01 and E02.
 3. Keep checkpoint-4000 for concept-ablation analysis and as the E01 plumbing reference.
 
-*Related: `master_experiment_log.md`, `docs/experiments/E01_concept_ar_decoder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/E01_concept_ar_decoder.md`, `agenda.md`*

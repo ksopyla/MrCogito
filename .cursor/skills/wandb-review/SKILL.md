@@ -99,7 +99,7 @@ dataset unless the question is explicitly cross-dataset.
 ## Comparison framework (MrCogito-specific)
 
 When drawing conclusions, judge runs against **their experiment's own gates** (see
-`docs/experiments/<ID>.md`) and these cross-cutting signals:
+`docs/experiments_specs/<ID>.md`) and these cross-cutting signals:
 
 | Signal | Where in W&B | Notes |
 |---|---|---|

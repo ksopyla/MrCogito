@@ -6,8 +6,8 @@ description: Implement and extend the Concept Encoder PyTorch foundation (nn/, t
 # Research Implement (Concept Encoder codebase)
 
 This is the **implementation half** of the workflow: `experiment-design` produces a
-frozen spec in `docs/experiments/<ID>.md`, `implementation-plan` produces the repo-rooted
-design in `docs/experiments/<ID>_plan.md`; this skill turns them into code in the
+frozen spec in `docs/experiments_specs/<ID>.md`, `implementation-plan` produces the repo-rooted
+design in `docs/experiments_specs/<ID>_plan.md`; this skill turns them into code in the
 **shared foundation**. Implement *exactly* the spec's single change — nothing more.
 
 Read the spec (`Builds-on` + `The single change`) **and its `<ID>_plan.md`** (reuse map,
