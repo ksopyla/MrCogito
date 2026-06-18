@@ -9,7 +9,7 @@
 
 ## How we work (the process — this is the point)
 - Go back to fundamentals. Make **small, well-defined increments** — one change at a time.
-- One to a few active experiments, each with a frozen spec in `docs/experiments/<ID>.md` (hypothesis · builds-on · single change · success/kill criteria).
+- One to a few active experiments, each with a frozen spec in `docs/experiments_specs/<ID>.md` (hypothesis · builds-on · single change · success/kill criteria).
 - Build on the **existing foundation**; reuse and extend it, don't fork a script per idea (see `.cursor/rules/experiment-discipline.mdc`).
 - Treat every past run as **evidence that improved our understanding**, not as success or failure. Keep conclusions tentative.
 
@@ -20,10 +20,11 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 - **Attack concept collapse at the root, on the encoder→AR-decoder foundation.** E01/E02 are both done and evaluated (2026-06-14). E02 sets a new project STS-B best (0.702), confirming prefix→suffix as the better semantic objective. The chronic blocker — **concept collapse** (rank 11.57/128 for E02-best, far below 48/128 gate) — remains. The next step is
   **[E03 — de-collapse via a frozen-encoder hidden-state anchor](../experiments/E03_concept_anchor_decollapse.md)**
   (spec + [plan](../experiments/E03_concept_anchor_decollapse_plan.md)): add an auxiliary MSE loss where concepts must reconstruct a **frozen SmolLM2-135M's per-token hidden states**, run as a **matched anchor-ON/OFF pair** vs E01. This is the shared Stage-A that both the diffusion and recursion bets depend on.
-- **Run state (2026-06-14):** E01 done (Polonez, `checkpoint-4000` best, rank 14.64→4.64 collapse, STS-B 0.556). E02 done (Odra, `checkpoint-78000` best, rank 11.57/128, **STS-B 0.702 new best**). **E03 anchor-ON warmup RUNNING on Odra** (`concept_ar_H768L6C128D4_20260614_164206`, 0.3 epoch, tmux `E03A`); Polonez occupied (external).
-- **Queued on Odra (sequential — launch when Odra frees; one experiment per server):**
-  1. **E03 matched control** = identical config with `ANCHOR_LOSS=false` (= fresh E01-recon baseline + new metrics). Launch recipe in [E03 plan](../experiments/E03_concept_anchor_decollapse_plan.md).
-  2. **Decoder-weakening ablation (sibling of E03):** same E01/E02 stack, single change `DECODER_WORD_DROPOUT=0.5` (attacks the AR bypass directly, cheap; no anchor). Needs a frozen spec before the full run.
+- **Run state (2026-06-18):** E01 done (Polonez, `checkpoint-4000` best, rank 14.64→4.64 collapse, STS-B 0.556). E02 done (Odra, `checkpoint-78000` best, rank 11.57/128, STS-B 0.702). **E02-long DONE** (Polonez, 5 epoch, `checkpoint-296000`, rank 16.69/128 **rising with budget**, RankMe 246, **STS-B 0.714 new best**). **E03 matched 0.3-ep pair DONE + evaluated** — anchor-ON (`..._164206`, RankMe 167, STS-B 0.556, gap_wd 0.128) beats control (`..._211458`, RankMe 150, STS-B 0.485, gap_wd 1.677) on every relative metric but misses absolute gates at 0.3 ep. **Both Odra and Polonez are now free.** Next: either prefix→suffix + anchor (combine the two de-collapse levers), or Tier-2.5 attention-pool probe on E02-long, or E04.
+- **Queued (sequential — one experiment per server):**
+  1. ~~**E03 matched control**~~ **DONE 2026-06-18** (`concept_ar_H768L6C128D4_20260615_211458`). See "what we've explored".
+  2. **Prefix→suffix + anchor (highest-value E03 follow-up):** E02-long shows prefix→suffix de-collapses on its own with budget, while the E03 anchor was tested only on the *reconstruction* objective at 0.3 ep. The decisive next test is whether the anchor adds geometry/semantics **on top of** prefix→suffix (combine the two levers) — not whether it rescues the weaker reconstruction objective. Needs a one-line spec amendment (objective=prefix_suffix + anchor_loss=true).
+  3. **Decoder-weakening ablation (sibling of E03):** same E01/E02 stack, single change `DECODER_WORD_DROPOUT=0.5` (attacks the AR bypass directly, cheap; no anchor). Needs a frozen spec before the full run.
     ```bash
     # over reconstruction; matched effective batch 24*3*2=144, 0.3-epoch warmup
     DECODER_TYPE=causal_ar HIDDEN_SIZE=768 TOKEN_EMBEDDING_DIM=256 NUM_LAYERS=6 DECODER_NUM_LAYERS=4 \
@@ -40,8 +41,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 1. **E01 — AR decoder from scratch** *(done 2026-06-14, mixed).* Modern baseline line: encoder→AR decoder, FineWeb-Edu, SmolLM2 tokenizer, SwiGLU + RMSNorm + RoPE(decoder), ~135M. Best at checkpoint-4000 (Δshuffle 1.50, STS-B 0.556); collapses to rank 4.64 by end. New metric established: concept-ablation ΔCE.
 2. **E02 — objective:** [prefix→suffix AR generation](../experiments/E02_ar_prefix_suffix.md)
    *(done 2026-06-14, mixed/positive; STS-B 0.702 new project best).* Stronger semantic pressure than reconstruction; concepts are compact but semantically loaded.
-3. **E03 — de-collapse via frozen-encoder anchor** *(RUNNING 2026-06-14; anchor-ON warmup on Odra,
-   control queued).* Per-token SmolLM2-h MSE distillation, auxiliary to E01 AR, matched ON/OFF pair.
+3. **E03 — de-collapse via frozen-encoder anchor** *(anchor-ON warmup done 2026-06-15; control queued).*
    Gate (updated): judge on the **per-sample manifold RankMe + early-Δ**, co-primary with zero-shot
    STS-B (not the slot-mean rank, which understates the geometry). **The shared Stage-A for the two bets below.**
    Sibling cheap ablation: **decoder-weakening** (`DECODER_WORD_DROPOUT=0.5`) — see Queue above.
@@ -68,9 +68,20 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
    **CALM is *not* a diffusion decoder**; a bare random-init AdaLN-Zero re-run repeats the 5 prior
    diffusion failures — do not. (NB: masked-diffusion/MaskGIT now also a candidate bypass-free decoder for E04/E05.)
 6. **Engineering (parallel; not `E0NN` experiments):**
-   - **Unified eval interface** — one orchestrator + report schema over the existing intrinsic probes
-     (rank, anti-collapse, zero-shot STS-B, ΔCE) **now**; add a **`lighteval` (SmolLM3 list)** backend
-     **later, once a checkpoint generates coherently**. Don't merge logic; unify the interface.
+   - **Canonical eval protocol** — tiers, what each measures, and when to run them, live in
+     [evaluation_protocol.md](../3_Evaluations_and_Baselines/evaluation_protocol.md). Research track =
+     Tiers L0–L4 (direction-finding); **`lighteval` is a separate external-comparability track**,
+     deferred until the backbone is proven and we scale (SmolLM2-135M subset for ~135M; SmolLM3 list for
+     1B–3B). Don't merge logic; unify the interface.
+   - **Concept-information eval upgrade — DONE 2026-06-15** (eval-foundation, read-only). Fixes the
+     core misalignment that semantic probes mean-pool away the concept structure: adds (1) within-sample
+     concept RankMe as the PRIMARY de-collapse metric (slot-mean rank → secondary; cross-sample RankMe
+     → relabeled embedding-diversity), (2) trivial-floor STS-B baselines (`--baseline`), (3) a
+     frozen-encoder attention-pool probe (`--pool_mode attention`) that makes distributed-across-concepts
+     info visible. GLUE full-finetune demoted from concept-content evidence. Spec:
+     [concept_information_eval_upgrade.md](../engineering_specs/concept_information_eval_upgrade.md).
+     **Follow-up (needs a GPU box):** re-run the probe + baselines on E01/E02/E03 best checkpoints to
+     see whether the anchor buys distributed information that mean-pool was hiding.
    - **Cross-tokenizer / dim embedding-transfer module** for warm-start — **FVT/OMP (vocab) + truncated
      SVD (dim)**; bare PCA covers only the dim leg. Build when the first warm-start run needs it (E03
      does not — it trains from scratch with a *frozen* teacher).
@@ -87,6 +98,9 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 - **E01 — AR denoising reconstruction (FineWeb-Edu, 1 epoch, 2026-06-14):** AR plumbing confirmed; decoder uses concepts early (Δshuffle 1.50 at step 4000). Eval CE rises monotonically thereafter (overfitting); rank collapses 14.64 → 4.64; best STS-B 0.556. Reconstruction + word-dropout insufficient to sustain concept quality over full training. Best checkpoint is an early checkpoint (4000 steps).
 - **E02 — prefix→suffix AR generation (FineWeb-Edu, 1 epoch, 2026-06-14):** STS-B **0.702** — new project best, well above prior best (0.607) and E01-best (0.556). Prefix→suffix creates better semantic pressure than reconstruction. Rank still collapsed (11.57/128), suffix-CE ablation modest (Δshuffle 0.50). Key insight: compact geometry can coexist with high STS-B — the active subspace is semantically loaded even when rank is low.
 - **Collapse root-cause + measurement reframe (2026-06-14):** deep dive (code + data + lit) concluded "concept collapse" is mostly **(a) a measurement artifact** and **(b) strong-AR-decoder posterior collapse**, not a capacity problem. (a) The headline "effective rank" SVDs the **batch-averaged** concepts, so it measures *slot redundancy*, not representation dimensionality; zero-shot STS-B **mean-pools 128 slots to one vector**, so it's nearly blind to slot rank. New per-sample manifold metric (RankMe) on a live E03 checkpoint: slot-rank **2.7** vs **RankMe ≈24**, anisotropy 0.28, 100% active slots — the usable geometry is far healthier than the slot-rank number implied. (b) The teacher-forced AR decoder bypasses the bottleneck via local context, so required rate through `z`→0 (Bowman 2015; Chen VLAE 2016; Alemi 2018). **Evidence:** E02 all-position ablation `Δzero=0.50` but **early-position `Δzero=1.43`/`Δshuffle=1.04`** (concepts strongly used where bypass is impossible); `gap_clean_vs_wd=0.037` rules out the word-dropout protocol artifact. New tooling (manifold RankMe, anisotropy, per-slot activity, early-Δ as primary gate) committed in `analysis/`. **Implication:** judge de-collapse on the per-sample manifold + early-Δ, not slot-mean rank; the levers are anchor (E03) + decoder weakening, not more concepts or longer training.
+- **E03 anchor-ON warmup (FineWeb-Edu, 0.3 epoch, 2026-06-15):** All kill gates pass. Anchor MSE decreasing (0.512), AR CE stable (4.446 < E01-best 4.676), concept ablation healthy (Δshuffle 1.345, Δshuffle_early 3.342 — notably higher early-position signal than prior runs). Slot rank 10.34 held steady at 19k steps (no collapse seen unlike E01). STS-B 0.556 on par with E01-best on the same reconstruction objective. See [run report](../2_Experiments_Registry/run_reports/e03a_anchor_on_warmup_20260615.md).
+- **E03 matched control (anchor-OFF, FineWeb-Edu, 0.3 epoch, eval 2026-06-18):** completes the matched pair. Reconstruction at 0.3 ep **collapses without the anchor** — slot rank peaks 17.4 (0.06 ep) then falls to 5.1, STS-B 0.485 (below E01-best 0.556), `gap_clean_vs_wd 1.677` (the decoder bypasses its collapsing concepts via local context). The anchor arm beats the control on every relative metric — RankMe 167 vs 150 (+16.7), STS-B 0.556 vs 0.485 (+0.071), AR CE 4.45 vs 4.79, and decisively gap_clean_vs_wd 0.128 vs 1.677 (13×). **But** absolute gates are unmet at 0.3 ep (STS-B < 0.62; slot rank +4.4 < +16) and the control's higher early-Δ (5.58 vs 3.34) is a *collapse symptom* (fewer directions used harder), not health. Verdict **mixed/promising**. See [run report](../2_Experiments_Registry/run_reports/e03_control_anchor_off_20260618.md).
+- **E02-long — prefix→suffix, 5 epochs (FineWeb-Edu, Polonez, eval 2026-06-18):** **the most important reframe so far.** Longer prefix→suffix training **de-collapses** concepts: slot rank rises 5.9 → 11.6 → 16.7 across 0.3/1/5 epochs — the *opposite* of E01 reconstruction (rank 14.6 → 4.6 over 1 epoch). Upgraded metrics show genuinely healthy geometry (RankMe 245.9, anisotropy 0.32, mean concept cosine 0.124, 63 dims for 95% var). STS-B 0.714 (new project best, +0.012 over 1-ep E02) but plateaus despite 5× budget + much richer geometry → zero-shot mean-pool STS-B is near-saturated for this size; the rich geometry isn't read out by mean pooling (run the Tier-2.5 attention-pool probe). **Takeaway:** "concept collapse" is **objective-dependent, not universal** — it is a reconstruction + strong-AR-decoder posterior-collapse effect, and prefix→suffix improves with scale. See [run report](../2_Experiments_Registry/run_reports/e02_long_5epoch_20260618.md).
 - **The shared missing ingredient (working hypothesis):** anchoring concepts to **frozen pretrained per-token hidden states** (MSE-to-h) is the de-collapse lever both lines need. E03 tests it directly.
 - Full history (with caveats): [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md); older roadmap + TODO diary in [5_Archive/](../5_Archive/).
 

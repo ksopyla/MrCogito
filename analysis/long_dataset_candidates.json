@@ -1,5 +1,12 @@
 [
   {
+    "name": "fineweb_edu_baseline",
+    "dataset": "HuggingFaceFW/fineweb-edu",
+    "subset": "sample-10BT",
+    "split": "train",
+    "length_column": "token_count"
+  },
+  {
     "name": "finepdfs_100BT_pdf_pretrain",
     "dataset": "HuggingFaceFW/finepdfs_100BT",
     "subset": "default",
@@ -8,6 +15,62 @@
     "data_files": [
       "https://huggingface.co/datasets/HuggingFaceFW/finepdfs_100BT/resolve/refs%2Fconvert%2Fparquet/default/train/0000.parquet"
     ]
+  },
+  {
+    "name": "dclm_baseline",
+    "dataset": "mlfoundations/dclm-baseline-1.0",
+    "subset": "default",
+    "split": "train",
+    "text_column": "text"
+  },
+  {
+    "name": "finemath_3plus",
+    "dataset": "HuggingFaceTB/finemath",
+    "subset": "finemath-3plus",
+    "split": "train",
+    "length_column": "token_count"
+  },
+  {
+    "name": "finemath_4plus",
+    "dataset": "HuggingFaceTB/finemath",
+    "subset": "finemath-4plus",
+    "split": "train",
+    "length_column": "token_count"
+  },
+  {
+    "name": "dolmino_mix",
+    "dataset": "allenai/dolmino-mix-1124",
+    "subset": "default",
+    "split": "train",
+    "text_column": "text"
+  },
+  {
+    "name": "olmo_mix",
+    "dataset": "allenai/olmo-mix-1124",
+    "subset": "default",
+    "split": "train",
+    "text_column": "text"
+  },
+  {
+    "name": "cosmopedia_v2",
+    "dataset": "HuggingFaceTB/cosmopedia-v2",
+    "subset": "cosmopedia-v2",
+    "split": "train",
+    "length_column": "token_length"
+  },
+  {
+    "name": "stack_edu_python",
+    "dataset": "meryyllebr543/stack-edu-huggingface",
+    "subset": "python",
+    "split": "train",
+    "text_column": "text"
+  },
+  {
+    "name": "opc_annealing_synthetic_qa",
+    "dataset": "OpenCoder-LLM/opc-annealing-corpus",
+    "subset": "synthetic_qa",
+    "split": "train",
+    "text_column": "text"
   },
   {
     "name": "longblocks_doc_qa_reasoning",
