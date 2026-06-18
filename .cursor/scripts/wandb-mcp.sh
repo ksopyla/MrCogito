@@ -17,11 +17,10 @@ if [[ -z "${WANDB_API_KEY:-}" ]]; then
   exit 1
 fi
 
-# wandb 0.27+ removed vendored wandb_gql; current wandb-mcp-server HEAD still
-# imports it. Pin wandb<0.27.1 until upstream v0.3.6+ lands on PyPI/git tags.
-# See: https://github.com/wandb/wandb-mcp-server/pull/93
+# wandb-mcp-server 0.3.6+ (on PyPI and git HEAD) requires wandb>=0.27.1 and
+# resolved the wandb_gql import issue. No upper bound needed.
 exec uvx --python 3.12 \
-  --with 'wandb[workspaces]>=0.25.1,<0.27.1' \
+  --with 'wandb[workspaces]>=0.27.1' \
   --with 'wandb-workspaces>=0.3.9' \
   --from git+https://github.com/wandb/wandb-mcp-server \
   wandb_mcp_server

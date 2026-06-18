@@ -10,6 +10,7 @@ import torch
 from analysis.concept_analysis import (
     compute_concept_geometry_metrics,
     compute_representation_manifold_metrics,
+    compute_within_sample_concept_rank,
 )
 
 
@@ -60,3 +61,38 @@ def test_anisotropy_high_for_narrow_cone():
 def test_manifold_metrics_handle_tiny_input():
     m = compute_representation_manifold_metrics(torch.randn(1, 64))
     assert m["manifold_rankme"] != m["manifold_rankme"]  # NaN for n<2
+
+
+# --- within-sample concept-set rank (the PRIMARY de-collapse metric) ---
+
+def test_within_sample_rank_low_for_collapsed_concepts():
+    # All C concepts of each input are ~the same direction → within-sample rank ~1,
+    # EVEN THOUGH the cross-sample manifold is high-dim (the E02 paradox).
+    x = _slot_collapsed()
+    w = compute_within_sample_concept_rank(x)
+    assert w["within_sample_rankme_mean"] < 3.0
+    # The cross-sample manifold on the same tensor is NOT collapsed → metrics differ.
+    m = compute_representation_manifold_metrics(x.mean(dim=1))
+    assert m["manifold_rankme"] > 5.0
+
+
+def test_within_sample_rank_high_for_diverse_concepts():
+    w = compute_within_sample_concept_rank(_slot_diverse())
+    assert w["within_sample_rankme_mean"] > 30.0
+
+
+def test_within_sample_rank_monotonic_in_diversity():
+    B, C, H = 16, 128, 256
+    base = torch.randn(B, 1, H)
+    collapsed = base.expand(B, C, H) + 0.01 * torch.randn(B, C, H)
+    mid = base.expand(B, C, H) + 0.5 * torch.randn(B, C, H)
+    diverse = torch.randn(B, C, H)
+    r_collapsed = compute_within_sample_concept_rank(collapsed)["within_sample_rankme_mean"]
+    r_mid = compute_within_sample_concept_rank(mid)["within_sample_rankme_mean"]
+    r_diverse = compute_within_sample_concept_rank(diverse)["within_sample_rankme_mean"]
+    assert r_collapsed < r_mid < r_diverse
+
+
+def test_within_sample_rank_handles_tiny_input():
+    w = compute_within_sample_concept_rank(torch.randn(1, 1, 64))
+    assert w["within_sample_rankme_mean"] != w["within_sample_rankme_mean"]  # NaN, C<2

@@ -107,7 +107,17 @@ For `perceiver_denoise` / `weighted_mlm`, drop the AR-only flags and use their d
 (geometry is computed from the encoder for every family).
 
 Gates:
-- Effective rank: E01 success `> 32/128` (E02 `≥ 48/128`); collapsed history is ~5–10/128.
+- **Rank — read the right number** (three distinct objects, do not conflate; see
+  `docs/3_Evaluations_and_Baselines/concept_information_eval_upgrade.md`):
+  - **PRIMARY de-collapse = within-sample concept-set RankMe** (`within_sample_rankme_mean`):
+    how many independent directions ONE input's `C` concepts span. This is what "collapse"
+    actually means. Judge de-collapse on this.
+  - **SECONDARY diagnostic = slot-mean effective rank** (`global_effective_rank`, the old
+    "rank N/128"): SVD of the *batch-averaged* slots → slot redundancy, not per-input rank.
+    Keep as a diagnostic only; collapsed history ~5–10/128.
+  - **Cross-sample embedding RankMe** (`manifold_rankme`): diversity of pooled embeddings
+    *across inputs* — a downstream-retrieval property, can exceed `C`. Never quote it as
+    "concept rank".
 - Concept-ablation: E01 needs **Δzero AND Δshuffle ≥ 0.5 nats** (decoder genuinely uses
   concepts); E02 needs **Δshuffle ≥ 1.0** and **Δzero ≥ 2.0** on suffix CE. Shuffle is the
   stronger test. The intact model must beat the zero/no-concept floor by the same margin.
@@ -129,6 +139,35 @@ uv run python evaluation/evaluate_on_benchmark.py \
 Gate: E01 success `Pearson ≥ 0.62` (≥ prior best 0.607); E02 `≥ 0.65`. This is the cheapest
 semantic-quality signal — compare against prior bests before any fine-tuning.
 
+**Always anchor the number with the trivial floors** (otherwise STS-B is uninterpretable — a
+mean of word embeddings already scores ~0.4–0.6). Run once per study (no checkpoint needed):
+```bash
+# bag-of-embeddings floor (model's tokenizer family) and frozen-teacher floor
+uv run python evaluation/evaluate_on_benchmark.py --benchmark stsb_zero_shot \
+  --model_type concept_ar --model_name_or_path "$BEST" \
+  --baseline token_embed_mean --baseline_model HuggingFaceTB/SmolLM2-135M
+uv run python evaluation/evaluate_on_benchmark.py --benchmark stsb_zero_shot \
+  --model_type concept_ar --model_name_or_path "$BEST" \
+  --baseline teacher_hidden_mean --baseline_model HuggingFaceTB/SmolLM2-135M
+```
+Interpret: if the model's STS-B is within ~0.05 of `token_embed_mean`, the concepts add ~nothing
+over averaging. Reference **ceiling** (cited, not run): SimCSE-unsup ≈ 0.76, SBERT ≈ 0.84 Spearman.
+
+### Tier 2.5 — Frozen-encoder readout probe (mean vs attention pooling)
+The decisive test of whether information is **distributed across the C concepts**. Freeze the
+encoder, train only a tiny head, and compare mean-pool vs a single-learned-query attention pool
+on the pair tasks (STS-B-train / SICK / PAWS). If attention-pool ≫ mean-pool, the info is spread
+across slots and mean-pool was hiding it; if they tie, the set is genuinely collapsed.
+```bash
+for POOL in mean attention; do
+  uv run python evaluation/evaluate_on_benchmark.py --benchmark sick_relatedness \
+    --model_type concept_ar --model_name_or_path "$BEST" --tokenizer_name "$BEST" \
+    --freeze_encoder --pool_mode "$POOL"
+done
+```
+Report the mean-vs-attention delta (the delta is the signal, not the absolute). Same flags work
+on `evaluate_model_on_glue.py`.
+
 ### Tier 3 — Supervised pair tasks (expensive, run last)
 SICK (relatedness + entailment):
 ```bash
@@ -145,6 +184,14 @@ GLUE semantic subset (`mrpc`, `stsb`, `qqp`, `mnli-matched`, `mnli-mismatched`):
 MODEL_PATH_OVERRIDE="$BEST" MODEL_TYPE_OVERRIDE=concept_ar TOKENIZER_NAME_OVERRIDE="$BEST" \
   bash scripts/evaluate_concept_encoder_glue.sh all          # or a single task, e.g. mrpc
 ```
+
+> **GLUE is demoted as concept-content evidence (2026-06-15).** Full fine-tuning unfreezes the
+> encoder and trains a head, so it re-routes *around* the bottleneck and measures fine-tuning
+> capacity, not what the concepts store. Do **not** cite full-finetune GLUE as evidence that
+> "concepts store information." If you want a GLUE number for concept quality, run it as the
+> **frozen-encoder probe** (`--freeze_encoder`, Tier 2.5) — otherwise treat full-finetune GLUE as
+> at most a downstream-utility footnote. STS-B/SICK/PAWS remain the cheap semantic gates.
+
 Repeat the whole pipeline for `$LAST`, changing the output JSON / report labels.
 
 ## Outputs To Collect
@@ -161,8 +208,13 @@ SICK entailment accuracy; PAWS accuracy/F1; GLUE semantic-subset scores; a gener
 snippet; and any failed task with its first traceback line.
 
 ## Interpreting Results
-- Concept effective rank is the collapse gate (see Tier 1). Better geometry with near-random
-  STS-B = diversity without semantics.
+- **Within-sample concept RankMe** is the collapse gate (see Tier 1); slot-mean rank is only a
+  diagnostic and cross-sample RankMe is an embedding-diversity number, not concept rank. Better
+  geometry with near-random STS-B = diversity without semantics.
+- STS-B is only interpretable next to the trivial floors (Tier 2). A number near
+  `token_embed_mean` means the concepts add little over averaging.
+- The mean-vs-attention probe delta (Tier 2.5) tells you whether information is *distributed*
+  across concepts; a flat delta corroborates genuine collapse.
 - Concept-ablation ΔCE is the E01/E02 *primary* signal: small Δ on reconstruction can mean
   "task too easy from left context", which is exactly why E02 (prefix→suffix) is the decisive
   semantic test — judge E01 ablation against its own threshold, not E02's.

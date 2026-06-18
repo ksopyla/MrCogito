@@ -282,6 +282,15 @@ def parse_args():
              "probe). Robust concept-quality measurement; avoids destroying a "
              "lightly-pretrained encoder via full fine-tuning on small GLUE tasks."
     )
+    parser.add_argument(
+        "--pool_mode",
+        type=str,
+        default="mean",
+        choices=["mean", "attention"],
+        help="Concept-pooling for sentence-pair routes: 'mean' (default) or "
+             "'attention' (single learned query). Use with --freeze_encoder for "
+             "the frozen-encoder probe tier.",
+    )
     return parser.parse_args()
 
 # GLUE task configurations - merged dictionary with the best of both versions
@@ -969,6 +978,7 @@ def finetune_model_on_glue(args):
                 problem_type="regression" if args.task == "stsb" else "single_label_classification"
             )
         
+        config.pool_mode = getattr(args, "pool_mode", "mean")
         route = resolve_concept_eval_route(
             config=config,
             requested_model_type=args.model_type,

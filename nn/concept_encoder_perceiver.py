@@ -754,6 +754,29 @@ class ConceptEncoderForSequenceClassificationViaDecoder(PreTrainedModel):
 # Sentence-Pair Classification (separate encoding, concept-space comparison)
 # =============================================================================
 
+class AttentionPool(nn.Module):
+    """Permutation-aware pooling over the C concepts via a single learned query.
+
+    Unlike mean-pooling, a learned query can attend to the slots that carry the
+    instance-specific information, so information *distributed across concepts*
+    becomes recoverable. One query, single-head cross-attention: tiny by design
+    (a frozen-encoder probe — the delta vs mean-pool is the signal, not capacity).
+    """
+
+    def __init__(self, hidden_size: int):
+        super().__init__()
+        self.query = nn.Parameter(torch.zeros(1, 1, hidden_size))
+        nn.init.normal_(self.query, std=hidden_size ** -0.5)
+        self.attn = nn.MultiheadAttention(hidden_size, num_heads=1, batch_first=True)
+
+    def forward(self, concepts: torch.Tensor, key_padding_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        # concepts: [B, C, H] -> [B, H]
+        b = concepts.shape[0]
+        q = self.query.expand(b, -1, -1)  # [B, 1, H]
+        pooled, _ = self.attn(q, concepts, concepts, key_padding_mask=key_padding_mask)
+        return pooled.squeeze(1)
+
+
 class ConceptEncoderForSentencePairClassification(PreTrainedModel):
     """
     ConceptEncoder for sentence-pair tasks with separate encoding.
@@ -780,6 +803,9 @@ class ConceptEncoderForSentencePairClassification(PreTrainedModel):
         self.encoder = ConceptEncoder(config)
         
         self.pool_norm = nn.LayerNorm(config.hidden_size)
+        self.pool_mode = getattr(config, "pool_mode", "mean")
+        if self.pool_mode == "attention":
+            self.attn_pool = AttentionPool(config.hidden_size)
         
         # Classifier on concatenated features: [z_a; z_b; |z_a-z_b|; z_a*z_b]
         self.classifier_dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -801,7 +827,14 @@ class ConceptEncoderForSentencePairClassification(PreTrainedModel):
                 module.weight.data[module.padding_idx].zero_()
 
     def _pool_concepts(self, concept_repr: torch.Tensor) -> torch.Tensor:
-        """Mean pooling over concepts: [B, C, H] -> [B, H]."""
+        """Pool the C concepts to one vector: [B, C, H] -> [B, H].
+
+        ``pool_mode='mean'`` (default) is byte-identical to the original behaviour;
+        ``pool_mode='attention'`` uses the learned-query AttentionPool so that
+        information distributed across slots is recoverable.
+        """
+        if self.pool_mode == "attention":
+            return self.pool_norm(self.attn_pool(concept_repr))
         return self.pool_norm(concept_repr.mean(dim=1))
 
     def forward(

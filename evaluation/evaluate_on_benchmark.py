@@ -181,6 +181,31 @@ def parse_args():
              "probe). Robust way to measure concept quality; avoids destroying a "
              "lightly-pretrained encoder via full fine-tuning on small datasets.",
     )
+    parser.add_argument(
+        "--pool_mode",
+        type=str,
+        default="mean",
+        choices=["mean", "attention"],
+        help="Concept-pooling for sentence-pair routes. 'mean' (default, backward "
+             "compatible) averages the C concepts; 'attention' uses a single learned "
+             "query (cross-attention over the C concepts) so distributed-across-slots "
+             "information becomes visible. Use with --freeze_encoder for the probe tier.",
+    )
+    parser.add_argument(
+        "--baseline",
+        type=str,
+        default="none",
+        choices=["none", "token_embed_mean", "teacher_hidden_mean"],
+        help="Trivial-floor STS-B baseline (no concept model). 'token_embed_mean' = "
+             "mean of --baseline_model input embeddings; 'teacher_hidden_mean' = mean "
+             "of its last hidden states. Anchors the zero-shot STS-B number.",
+    )
+    parser.add_argument(
+        "--baseline_model",
+        type=str,
+        default="HuggingFaceTB/SmolLM2-135M",
+        help="HF model id for --baseline floors (shares our SmolLM2 tokenizer).",
+    )
     return parser.parse_args()
 
 
@@ -294,6 +319,7 @@ def load_concept_model(args, benchmark_name):
     config = ConceptEncoderConfig.from_pretrained(args.model_name_or_path)
     config.num_labels = cfg["num_labels"]
     config.problem_type = cfg["problem_type"]
+    config.pool_mode = getattr(args, "pool_mode", "mean")
     route = resolve_concept_eval_route(
         config=config,
         requested_model_type=args.model_type,
@@ -404,6 +430,74 @@ def run_zero_shot_stsb(args):
     logger.info("Results for stsb_zero_shot:")
     for key, value in results.items():
         logger.info(f"  {key}: {value}")
+    return results
+
+
+def run_zero_shot_stsb_baseline(args):
+    """Trivial-floor STS-B baseline: mean-pool an external model's token embeddings or
+    last hidden states, then cosine. No concept model involved — anchors the model number.
+    """
+    from transformers import AutoModel
+
+    benchmark_name = "stsb_zero_shot"
+    variant = args.baseline
+    tokenizer_name = args.tokenizer_name or args.baseline_model
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    teacher = AutoModel.from_pretrained(
+        args.baseline_model, cache_dir=MODEL_CACHE_DIR, token=hf_token
+    ).to(device).eval()
+    embedding = teacher.get_input_embeddings()
+
+    _, eval_ds = load_benchmark_dataset(
+        benchmark_name, tokenizer, args.max_length, pair_input_mode="separate"
+    )
+    dataloader = DataLoader(
+        eval_ds, batch_size=args.batch_size, shuffle=False, collate_fn=default_data_collator
+    )
+
+    def encode(input_ids, attention_mask):
+        mask = attention_mask.unsqueeze(-1).float()
+        if variant == "token_embed_mean":
+            h = embedding(input_ids)
+        else:  # teacher_hidden_mean
+            h = teacher(input_ids=input_ids, attention_mask=attention_mask).last_hidden_state
+        return (h * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1e-8)
+
+    predictions, labels = [], []
+    for batch in dataloader:
+        batch = {k: (v.to(device) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}
+        with torch.no_grad():
+            z_a = encode(batch["input_ids_a"], batch["attention_mask_a"])
+            z_b = encode(batch["input_ids_b"], batch["attention_mask_b"])
+            cos = torch.nn.functional.cosine_similarity(z_a, z_b, dim=-1)
+        predictions.append(cos.cpu())
+        labels.append(batch["labels"].cpu())
+
+    predictions = torch.cat(predictions).float().numpy()
+    labels = torch.cat(labels).float().numpy()
+    results = {
+        "pearsonr": pearsonr(predictions, labels)[0],
+        "spearmanr": spearmanr(predictions, labels)[0],
+    }
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    report_name = f"bench-{benchmark_name}-BASELINE_{variant}-{os.path.basename(args.baseline_model)}-{timestamp}"
+    os.makedirs(REPORTS_DIR, exist_ok=True)
+    pd.DataFrame([{
+        "benchmark": benchmark_name,
+        "variant": variant,
+        "baseline_model": args.baseline_model,
+        **results,
+    }]).to_csv(os.path.join(REPORTS_DIR, f"{report_name}-results.csv"), index=False)
+
+    logger.info(f"STS-B baseline [{variant}] on {args.baseline_model}:")
+    for k, v in results.items():
+        logger.info(f"  {k}: {v}")
+    logger.info("Reference ceilings (cited): SimCSE-unsup ~0.76, SBERT ~0.84 Spearman.")
     return results
 
 
@@ -548,7 +642,10 @@ def main():
         logger.info(f"# Running benchmark: {bm}")
         logger.info(f"{'#'*60}")
         if bm == "stsb_zero_shot":
-            run_zero_shot_stsb(args)
+            if getattr(args, "baseline", "none") != "none":
+                run_zero_shot_stsb_baseline(args)
+            else:
+                run_zero_shot_stsb(args)
         else:
             run_benchmark(args, bm)
 
