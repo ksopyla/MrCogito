@@ -61,23 +61,22 @@ logger = logging.get_logger(__name__)
 
 
 class PerceiverDecoderLayer(nn.Module):
-    """Decoder block shared by denoising pretraining and ViaDecoder evaluation."""
+    """Canonical linear Perceiver-IO decoder block: position queries cross-attend the C
+    concepts, then a gated FFN. There is deliberately **no self-attention over the N output
+    queries** — that would be O(N^2) and break the project's O(C*N) bottleneck invariant,
+    which is incompatible with the long-context vision. Output positions are therefore
+    conditionally independent given the concepts (the standard non-autoregressive parallel
+    decode); all cross-position information must flow through the concept bottleneck.
+    """
 
     def __init__(self, config: ConceptEncoderConfig):
         super().__init__()
-        self.self_attn = nn.MultiheadAttention(
-            embed_dim=config.hidden_size,
-            num_heads=config.num_attention_heads,
-            dropout=config.attention_probs_dropout_prob,
-            batch_first=True,
-        )
         self.cross_attn = nn.MultiheadAttention(
             embed_dim=config.hidden_size,
             num_heads=config.num_attention_heads,
             dropout=config.attention_probs_dropout_prob,
             batch_first=True,
         )
-        self.pre_self_norm = nn.LayerNorm(config.hidden_size)
         self.pre_cross_norm = nn.LayerNorm(config.hidden_size)
         self.pre_ff_norm = nn.LayerNorm(config.hidden_size)
         self.ffn_in = nn.Linear(config.hidden_size, config.intermediate_size * 2)
@@ -90,15 +89,6 @@ class PerceiverDecoderLayer(nn.Module):
         query_states: torch.Tensor,
         concept_repr: torch.Tensor,
     ) -> torch.Tensor:
-        normed_queries = self.pre_self_norm(query_states)
-        self_attn_output, _ = self.self_attn(
-            normed_queries,
-            normed_queries,
-            normed_queries,
-            need_weights=False,
-        )
-        query_states = query_states + self_attn_output
-
         cross_normed_queries = self.pre_cross_norm(query_states)
         cross_attn_output, _ = self.cross_attn(
             query=cross_normed_queries,

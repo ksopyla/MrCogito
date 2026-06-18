@@ -1,8 +1,8 @@
 # E04 — Concept-only parallel decoder (remove the AR bypass)
 
-- **Status:** draft
+- **Status:** implemented 2026-06-18 (reframed as a parallel-vs-AR concept-formation A/B; see plan); launching on Odra (512 ctx, 1 epoch)
 - **Serves:** the [agenda](../1_Strategy_and_Plans/agenda.md) "attack concept collapse at the root" focus. Where E03 *adds pressure* (anchor) to make concepts richer, E04 *removes the escape hatch*: it tests whether the chronic collapse is driven by the **autoregressive decoder bypass** (teacher-forced local context lets the decoder reconstruct tokens without the bottleneck, so required rate through `z`→0). The cheapest decisive test of the root-cause diagnosis.
-- **Implementation plan:** E04_concept_only_parallel_decoder_plan.md *(to author after approval)*
+- **Implementation plan:** [E04_concept_only_parallel_decoder_plan.md](E04_concept_only_parallel_decoder_plan.md) *(draft 2026-06-18; reframed as a parallel-vs-AR concept-formation A/B; 2 code changes pending approval)*
 - **Owner / dates:** Krzysztof Sopyla · opened 2026-06-14 · closed —
 
 > One experiment = one hypothesis = one changed variable. Implementation is a config
@@ -19,7 +19,24 @@ If we replace the causal AR decoder with a **position-query, concept-only parall
 ## The single change
 **Decoder architecture:** causal AR (`decoder_type=causal_ar`, token self-attention) → **concept-only parallel** (`decoder_type=perceiver_posonly`, position-only queries, cross-attend concepts, no token self-attention). Everything else identical to the E03 control: FineWeb-Edu `sample-10BT`, SmolLM2-135M tokenizer, `hidden_size=768`, `token_embedding_dim=256`, encoder `L6`, `C128`, `max_seq=512`, objective `reconstruction`, `deletion_rate=0.6`, no anchor, no concept losses.
 
-> **Verify (foundation check, not a fork):** the `perceiver_posonly` decoder queries must be **position-only** — assert no input-token embedding leaks into the queries (that would be a different leakage). If the current path adds input embeddings, add a config flag `decoder_query_mode=position_only` (reusable, default preserves old behaviour).
+> **Reframe (2026-06-18, post-grill):** a decoder-family swap changes 3 things at once (bypass + info
+> channel + prediction target), so this is **correlational** about the bypass, not proof. Read E04 as a
+> **parallel-vs-AR concept-formation A/B** judged on cross-arm-comparable metrics (within-sample RankMe +
+> zero-shot STS-B vs the E03 control); the "bypass causes collapse" mechanism claim belongs to the
+> decoder-weakening dose-response and/or E05. The generator use ("finish the sentence") is out of scope —
+> a parallel decoder generates poorly (NAT conditional-independence); E04 is a representation probe.
+
+### Foundation changes shipped for this experiment (2026-06-18)
+1. **`PerceiverDecoderLayer` is now linear Perceiver-IO** — the O(N²) output self-attention over the N
+   position queries was **removed outright** (not gated): it violated the O(C·N) invariant and the
+   long-context vision. Queries cross-attend the concepts + FFN only.
+2. **Data-contract fix** — the perceiver reconstruction path now appends EOS and stays variable-length
+   (`resolve_append_eos_token_id`), so `DataCollatorForTSDAE` masks padding correctly. The old
+   `padding="max_length"` path made the encoder attend the eos/pad tail and trained the decoder to predict
+   `<eos>` on hundreds of pad positions (a concept-free shortcut) — and put E04 on a *different* data
+   contract than its E03 baseline. Now byte-identical to the control.
+3. **W&B clarity** — runs carry legible `decoder:parallel|autoregressive` + `task:reconstruction|generation`
+   tags and a scannable `job_type` (`train_parallel_reconstruction`); `checkpoint_family` routing key untouched.
 
 ## Success criteria (set BEFORE running)
 - **Primary:** manifold **RankMe(E04) ≥ RankMe(control) + 8** AND **early-position Δzero(E04) ≥ Δzero(control)** (concepts more necessary once the bypass is gone).

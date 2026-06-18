@@ -501,31 +501,42 @@ def build_perceiver_wandb_identity(
     should identify the family + objective, while run names stay unique via a
     timestamp added by the caller.
     """
+    # Two human-legible axes surfaced as tags so W&B is scannable without decoding the
+    # cryptic family names: how the decoder runs (parallel one-shot vs autoregressive) and
+    # what the objective is (reconstruct the input vs generate unseen content).
     if decoder_type == "causal_ar":
+        decoder_mode = "autoregressive"
         if objective_variant == "prefix_suffix":
             inferred_experiment = "E02"
             model_family = "concept_ar_prefix"
             objective_family = "prefix_suffix"
-            job_type = "train_concept_ar_prefix_suffix"
+            task = "generation"
+            job_type = "train_ar_generation_prefix_suffix"
         elif anchor_loss:
             inferred_experiment = "E03"
             model_family = "concept_ar"
             objective_family = "ar_reconstruction_anchor"
-            job_type = "train_concept_ar_anchor_reconstruction"
+            task = "reconstruction"
+            job_type = "train_ar_reconstruction_anchor"
         else:
             inferred_experiment = "E01"
             model_family = "concept_ar"
             objective_family = "ar_reconstruction"
-            job_type = "train_concept_ar_reconstruction"
+            task = "reconstruction"
+            job_type = "train_ar_reconstruction"
     else:
-        inferred_experiment = None
+        # Parallel position-query Perceiver-IO decoder (denoising autoencoder, not diffusion).
+        decoder_mode = "parallel"
         model_family = "perceiver_denoise"
+        task = "reconstruction"
         if objective_variant == "reconstruction+contrastive":
+            inferred_experiment = None
             objective_family = "reconstruction_contrastive"
-            job_type = "train_perceiver_denoise_contrastive"
+            job_type = "train_parallel_reconstruction_contrastive"
         else:
+            inferred_experiment = "E04"
             objective_family = "reconstruction"
-            job_type = "train_perceiver_denoise_reconstruction"
+            job_type = "train_parallel_reconstruction"
 
     resolved_experiment = experiment_id or inferred_experiment
     architecture_id = (
@@ -538,6 +549,8 @@ def build_perceiver_wandb_identity(
     tags = [
         "train",
         "concept-encoder",
+        f"decoder:{decoder_mode}",
+        f"task:{task}",
         model_family,
         checkpoint_family,
         decoder_type,

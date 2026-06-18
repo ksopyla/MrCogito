@@ -6,7 +6,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 **Relationship to other docs:**
 - This file: *What* changed in code and *when* (engineering log)
 - `docs/2_Experiments_Registry/master_experiment_log.md`: *What* training runs produced which results (science log)
-- `docs/1_Strategy_and_Plans/agenda.md`: *What* to do next (slim living agenda) + `docs/experiments/<ID>.md` specs
+- `docs/1_Strategy_and_Plans/agenda.md`: *What* to do next (slim living agenda) + `docs/experiments_specs/<ID>.md` specs
 
 The `git_tag` column in the master experiment log links each training run to the
 exact code version. Tag format: `arch/{feature}` for architecture changes,
@@ -15,6 +15,79 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 ---
 
 ## [Unreleased]
+
+## [2026-06-18] - E04 parallel decoder: linear Perceiver-IO + data-contract fix + W&B clarity
+
+**Why:**
+- E04 swaps the causal-AR decoder for the parallel `perceiver_posonly` (Perceiver-IO) decoder, matched
+  to the E03 anchor-OFF control. Tracing the path surfaced two blockers and a usability gap.
+
+**Impact:**
+- **`nn/concept_encoder_perceiver.py` — `PerceiverDecoderLayer` is now linear Perceiver-IO.** Removed the
+  O(N²) self-attention over the N output position queries outright (no compat flag): it violated the
+  project's O(C·N) bottleneck invariant and the long-context vision. Layers now cross-attend the C
+  concepts + FFN only; output positions are conditionally independent given concepts (standard
+  non-autoregressive decode). Also makes `AnchorDistillHead` consistent with its own "no self-attn" docstring.
+- **`training/train_perceiver_denoise.py` — data-contract fix (`resolve_append_eos_token_id`).** The
+  perceiver reconstruction path now appends EOS and stays variable-length (padding=False), like causal_ar.
+  Previously it took the `padding="max_length"` path, and `DataCollatorForTSDAE` (which rebuilds the mask
+  from row length) marked all pad positions real → the encoder attended the eos/pad tail and the decoder
+  was trained to predict `<eos>` on hundreds of pad positions (a concept-free shortcut), on a *different*
+  data contract than the E03 baseline. Now byte-identical to the control.
+- **`training/utils_training.py` — W&B clarity.** Runs carry legible `decoder:parallel|autoregressive` and
+  `task:reconstruction|generation` tags and scannable `job_type`s (`train_parallel_reconstruction`,
+  `train_ar_generation_prefix_suffix`, …); parallel-recon defaults to experiment `E04`. The
+  `checkpoint_family` eval-routing key is unchanged.
+- **Tests:** `tests/test_perceiver_denoise.py` adds linear-decoder, EOS-append, and W&B-tag guards;
+  existing collator/anchor/AR suites still green (45 tests). NOTE: dropping output self-attn changes the
+  perceiver decoder state dict — old `perceiver_denoise` checkpoints with `self_attn` weights are no longer
+  load-compatible (intentional; the parallel family is being retrained fresh for E04).
+
+## [2026-06-16] - L1/L3 generation & compression faithfulness eval
+
+**Why:**
+- The eval protocol's L1 (generation faithfulness) and L3 (compression) tiers had no implementation:
+  we measured whether the decoder *uses* concepts (ΔCE) but not whether the input can be *recovered
+  from* the concepts, nor how recovery degrades with compression ratio.
+
+**Impact (research eval-foundation; read-only on checkpoints, no training changes):**
+- New `analysis/concept_generation_eval.py`: round-trip token recovery (teacher-forced accuracy +
+  free-running exact-match / token-F1), reconstruction-vs-compression-ratio curve (bucketed by
+  `⌈seq_len/C⌉`), and latent specificity (matched vs row-shuffled concepts → acc-drop + symmetric-KL).
+  Reuses the model's exact teacher-forcing convention (`encode_concepts`/`_shift_right`/`decode_logits`).
+- Wired into `analysis/run_concept_analysis.py` behind `--generation_eval` (default on for `concept_ar`)
+  + `--free_running_examples`; prints an "L1/L3 — Generation & compression faithfulness" section and
+  adds `generation_faithfulness` to the JSON report.
+- Tests: `tests/test_concept_generation_eval.py` (token_f1, recovery ranges, compression bucketing,
+  specificity).
+- Docs: implementation pass-2 section in `engineering_specs/concept_information_eval_upgrade.md`;
+  tier statuses updated in `3_Evaluations_and_Baselines/evaluation_protocol.md`. L2 SentEval/MTEB
+  explicitly deferred to a remote slice (heavy deps, needs GPU).
+
+## [2026-06-15] - Concept-information eval upgrade (probe + baselines + rank hygiene)
+
+**Why:**
+- The eval suite could not answer its own headline question ("do the 128 concepts store
+  meaningful information?"): every semantic probe mean-pools the C concepts to one vector before
+  scoring, so it is mathematically blind to the de-collapse E03+ chases; STS-B had no floor/ceiling
+  anchor; and three different "rank" numbers (batch-avg slot rank, cross-sample RankMe, and a
+  non-existent within-sample rank) were used interchangeably. Full-finetune GLUE re-routes around
+  the bottleneck and was being read as concept-content evidence.
+
+**Impact (eval-foundation only; read-only on checkpoints, no training changes):**
+- **Within-sample concept-set RankMe** added (`analysis/concept_analysis.py`
+  `compute_within_sample_concept_rank`) as the PRIMARY de-collapse metric; runner relabels the
+  slot-mean rank as secondary and the cross-sample manifold RankMe as embedding-diversity.
+- **Trivial-floor STS-B baselines** added to `evaluation/evaluate_on_benchmark.py`
+  (`--baseline token_embed_mean|teacher_hidden_mean`) so STS-B numbers are interpretable.
+- **Attention-pool readout** added to `ConceptEncoderForSentencePairClassification`
+  (`pool_mode=mean|attention`, `AttentionPool`) + `--pool_mode` on both eval CLIs — the
+  frozen-encoder probe that makes distributed-across-concepts information visible.
+- `experiment-evaluate` skill rewritten: rank disambiguation, Tier-2 floors, new Tier 2.5 probe,
+  GLUE full-finetune demoted from concept-content evidence.
+- Tests: `tests/test_concept_manifold_metrics.py` (within-sample rank), `tests/test_sentence_pair_pool_modes.py`.
+- Spec/plan: `docs/3_Evaluations_and_Baselines/concept_information_eval_upgrade.md`.
+- Backward-compatible: absent flags reproduce prior numbers; `pool_mode='mean'` is byte-identical.
 
 ## [2026-06-14] - Make E03 anchor runs W&B-identifiable
 
@@ -26,7 +99,7 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 **What changed:**
 - [fixed] `training/utils_training.py`, `training/train_perceiver_denoise.py` - make W&B identity anchor-aware (`E03`, `train_concept_ar_anchor_reconstruction`, `anchor`/`anchor-on` tags) and log anchor config explicitly.
-- [updated] `.cursor/skills/experiment-run/SKILL.md`, `docs/experiments/E03_concept_anchor_decollapse.md`, `docs/experiments/E03_concept_anchor_decollapse_plan.md` - add W&B preflight guidance and `EXPERIMENT_ID=E03` to E03 launch recipes, including the matched control.
+- [updated] `.cursor/skills/experiment-run/SKILL.md`, `docs/experiments_specs/E03_concept_anchor_decollapse.md`, `docs/experiments_specs/E03_concept_anchor_decollapse_plan.md` - add W&B preflight guidance and `EXPERIMENT_ID=E03` to E03 launch recipes, including the matched control.
 - [added] `tests/test_wandb_identity.py` - regression coverage for E03 anchor W&B identity.
 
 ## [2026-06-13] - Standardize W&B identity for shared perceiver/AR training
@@ -90,21 +163,21 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 - [fixed] `analysis/run_concept_analysis.py` — ablation labels now mask padding positionally via `attention_mask` instead of by `pad_token_id` (pad=eos safe); prints the matched-word-dropout CE and the clean-vs-wd gap; documents that offline ablation encodes the full clean sequence (absolute CE not comparable with training eval).
 - [added] tests: seeded-collator determinism, unseeded resampling, pad=eos TSDAE label/visibility contract (`tests/test_tsdae_collator.py`); eval-mode forced word-dropout, `ce_intact_wd` reporting (`tests/test_concept_ar_decoder.py`).
 
-**Related:** `docs/experiments/E01_concept_ar_decoder.md` (rerun uses these fixes), E01 warm-up review (eval CE divergence diagnosis)
+**Related:** `docs/experiments_specs/E01_concept_ar_decoder.md` (rerun uses these fixes), E01 warm-up review (eval CE divergence diagnosis)
 
 ## [2026-06-06] — Complete the research pipeline: add `implementation-plan`, remove duplicate spec index
 
 **Why:**
-- The skill set had a gap between *framing* an experiment (`experiment-design`) and *writing code* (`research-implement`): nothing produced a detailed, repo-rooted implementation plan (which modules to reuse, forward pass with shapes, data, loss, config, snippets) — the research analog of a PRD. Also, the per-experiment `docs/experiments/README.md` carried a manual Index/Status table that duplicated the canonical results ledger (`master_experiment_log.md`) and would drift.
+- The skill set had a gap between *framing* an experiment (`experiment-design`) and *writing code* (`research-implement`): nothing produced a detailed, repo-rooted implementation plan (which modules to reuse, forward pass with shapes, data, loss, config, snippets) — the research analog of a PRD. Also, the per-experiment `docs/experiments_specs/README.md` carried a manual Index/Status table that duplicated the canonical results ledger (`master_experiment_log.md`) and would drift.
 
 **Impact:**
 - The pipeline is now explicit and complete: `research-scout` → `research-explain` → `research-synthesis` → `experiment-design` → `implementation-plan` → `research-implement` → run → `experiment-track`. Canonical homes are unambiguous: intent → specs/plans, results → `master_experiment_log.md`, live memory → `agenda.md`.
 
 **What changed:**
-- [added] `.cursor/skills/implementation-plan/SKILL.md` — the bridge skill; writes `docs/experiments/<ID>_plan.md` (reuse map, forward pass with shapes, inputs/data, loss/objective, config + launch, tests, risks, optional code sketches), rooted in real repo classes.
-- [added] `docs/experiments/PLAN_TEMPLATE.md` — template for `<ID>_plan.md`.
-- [updated] `experiment-design`, `research-implement` (now reads spec **and** `<ID>_plan.md`), `experiment-discipline.mdc` (Roles = full pipeline order), `research-synthesis` (handoff to design/plan), `project-overview.mdc` (compact Research Pipeline map + canonical-homes note), `docs/experiments/README.md` (two-file model, self-indexing, where-things-live), `docs/experiments/TEMPLATE.md` (link to plan).
-- [removed] the manual `## Index` table in `docs/experiments/README.md` — `master_experiment_log.md` stays the single results ledger; the experiments folder is self-indexing.
+- [added] `.cursor/skills/implementation-plan/SKILL.md` — the bridge skill; writes `docs/experiments_specs/<ID>_plan.md` (reuse map, forward pass with shapes, inputs/data, loss/objective, config + launch, tests, risks, optional code sketches), rooted in real repo classes.
+- [added] `docs/experiments_specs/PLAN_TEMPLATE.md` — template for `<ID>_plan.md`.
+- [updated] `experiment-design`, `research-implement` (now reads spec **and** `<ID>_plan.md`), `experiment-discipline.mdc` (Roles = full pipeline order), `research-synthesis` (handoff to design/plan), `project-overview.mdc` (compact Research Pipeline map + canonical-homes note), `docs/experiments_specs/README.md` (two-file model, self-indexing, where-things-live), `docs/experiments_specs/TEMPLATE.md` (link to plan).
+- [removed] the manual `## Index` table in `docs/experiments_specs/README.md` — `master_experiment_log.md` stays the single results ledger; the experiments folder is self-indexing.
 
 ## [2026-06-05] — Experiment-system consolidation: slim agenda, scoped specs, foundation audit
 
@@ -116,11 +189,11 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 **What changed:**
 - [added] `docs/1_Strategy_and_Plans/agenda.md` — slim living agenda (the process, current focus, candidate directions, neutral "what we've explored" learnings). New daily driver.
-- [added] `docs/experiments/` — `TEMPLATE.md` (frozen spec format) + `README.md` (lifecycle, ID scheme `E0NN_slug`).
+- [added] `docs/experiments_specs/` — `TEMPLATE.md` (frozen spec format) + `README.md` (lifecycle, ID scheme `E0NN_slug`).
 - [added] `.cursor/skills/experiment-design/SKILL.md` — front-half skill: hypothesis → one minimal spec before code.
 - [added] `.cursor/rules/experiment-discipline.mdc` — always-applied guardrail: spec-before-code, configs-over-forks, one variable at a time.
 - [archived] `roadmap.md` → `docs/5_Archive/roadmap_v5_20260301.md`, `active_todos.md` → `docs/5_Archive/active_todos_v3_20260314.md` (OBSOLETE banners).
-- [updated] `project-overview.mdc`, `experiment-track`, `engineering-change-tracking`, `docs-hygiene`, `research-synthesis`, `remote-experiment-evaluator`, `CHANGELOG.md`, `training_eval_matrix.md`, `vision_and_goals.md` — repointed from `roadmap.md`/`active_todos.md` to `agenda.md` + `docs/experiments/`.
+- [updated] `project-overview.mdc`, `experiment-track`, `engineering-change-tracking`, `docs-hygiene`, `research-synthesis`, `remote-experiment-evaluator`, `CHANGELOG.md`, `training_eval_matrix.md`, `vision_and_goals.md` — repointed from `roadmap.md`/`active_todos.md` to `agenda.md` + `docs/experiments_specs/`.
 - [renamed] `.cursor/skills/pytorch-architecture/` → `.cursor/skills/research-implement/` — rewritten from generic PyTorch guidance into a codebase-grounded implementation skill (module map, encode→reason→decode patterns, configs-over-forks, training entrypoint + bash-launcher mechanics, and a hard reproducibility rule: never delete old code/checkpoints — park instead). It is the implementation half of the spec→code workflow.
 - [removed] `nn/concept_encoder_methods.py` (dead stub, `forward`=`pass`), `nn/concept_encoder_sim_matrix.py` (orphan), `training/concept_enc_dec.py` (standalone ModernBERT→GPT-2 summarizer, never used the concept encoder), `training/model_sft.py` (orphan). Cleaned `train_mlm.py` registry (`sim_matrix_mlm`, `concept_mlm`), `run_concept_analysis.py` MODEL_CLASSES, GLUE eval `model_type` choices, and the broken stub test classes in `tests/test_concept_encoder_layer.py`.
 - [parked] `parked/` — recursive family (`concept_encoder_recursive*`, `train_recursive_mlm`) and diffusion family (`concept_encoder_diffusion`, `train_diffusion`, `train_prefix_diffusion`) + their tests/scripts; excluded from foundation, registries, and `testpaths`. See `parked/README.md`.

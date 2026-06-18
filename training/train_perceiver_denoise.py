@@ -67,6 +67,30 @@ VALID_OBJECTIVES = {
 }
 
 
+def resolve_append_eos_token_id(objective_variant, is_causal_ar, eos_token_id):
+    """Decide whether preprocessing appends EOS (and so stays variable-length, padding=False).
+
+    Both decoder families need this:
+      - causal_ar: the AR decoder must learn to stop (EOS as a next-token target).
+      - perceiver_posonly reconstruction: a single boundary EOS, AND — critically — variable-length
+        rows so DataCollatorForTSDAE (which rebuilds the attention_mask from row LENGTH) marks
+        padding correctly. The old padding="max_length" path made every pad position look real,
+        so the encoder attended the pad tail and the decoder was trained to predict <eos> on
+        hundreds of pad positions (a concept-free shortcut) — and put the perceiver path on a
+        different data contract than its causal_ar baseline.
+
+    Returns the eos id to append, or None to keep the legacy pad-to-max_length path.
+    """
+    objective_appends_eos = objective_variant in (
+        OBJECTIVE_RECONSTRUCTION,
+        OBJECTIVE_RECONSTRUCTION_CONTRASTIVE,
+        OBJECTIVE_PREFIX_SUFFIX,
+    )
+    if eos_token_id is not None and (is_causal_ar or objective_appends_eos):
+        return eos_token_id
+    return None
+
+
 DECODER_PERCEIVER_POSONLY = "perceiver_posonly"
 DECODER_CAUSAL_AR = "causal_ar"
 VALID_DECODER_TYPES = {DECODER_PERCEIVER_POSONLY, DECODER_CAUSAL_AR}
@@ -631,9 +655,11 @@ def main():
             f"({tokenizer.pad_token!r}, pad_id={tokenizer.pad_token_id})."
         )
 
-    # For the AR decoder, append EOS to every document so the model learns to stop.
-    append_eos_token_id = (
-        tokenizer.eos_token_id if (is_causal_ar and tokenizer.eos_token_id is not None) else None
+    # Append EOS so preprocessing stays variable-length (padding=False) for both decoder families;
+    # see resolve_append_eos_token_id for the full rationale (fixes the perceiver pad-mask bug and
+    # keeps E04 on the same data contract as its E03 causal_ar baseline).
+    append_eos_token_id = resolve_append_eos_token_id(
+        model_args.objective_variant, is_causal_ar, tokenizer.eos_token_id
     )
 
     logger.info(f"Loading dataset: {data_args.dataset_name}")
