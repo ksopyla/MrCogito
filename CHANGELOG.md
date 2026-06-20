@@ -14,7 +14,46 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
-## [Unreleased]
+## [2026-06-20] - Fix W&B MCP auth (hosted bridge)
+
+**Why:** Local `wandb-mcp-server` pulls `wandb>=0.27.1`, whose Public API path goes through
+`wandb-core` and returned `relogin required` for the project API key (while `wandb` 0.23.x /
+0.27.0 still worked).
+
+**Impact:**
+- `.cursor/scripts/wandb-mcp.sh` — bridge Cursor stdio to hosted `mcp.withwandb.com` via
+  `mcp-remote` + Bearer token from `.env`.
+- `.cursor/mcp.json` — `bash` launcher + `envFile: ${workspaceFolder}/.env`.
+- `verification/test_wandb_mcp.py` — smoke test for hosted MCP auth.
+- `.cursor/skills/wandb-review/SKILL.md`, `.env.example` — updated troubleshooting.
+
+**After pull:** run `uv run python verification/test_wandb_mcp.py`, then restart Cursor
+(Tools and MCP → reload wandb server).
+
+
+**Why:**
+- E05 keeps the AR decoder (a good generator) but restricts its self-attention to the last K tokens,
+  making the 128 concepts the ONLY carrier of cross-window context — the "scalpel" test of
+  concepts-as-long-range-memory that a plain decoder swap (E04) cannot give. Scoped to **seq-len 2K**
+  on a **dataset mix** per the 2026-06-17/18 discussion. Foundation only — not yet launched (gated behind E04).
+
+**Impact:**
+- **`nn/concept_encoder.py`** — new backward-compatible config `decoder_context_window: Optional[int] = None`
+  (None = full causal, all prior checkpoints unchanged).
+- **`nn/concept_encoder_perceiver.py`** — `build_sliding_window_causal_mask()` + `ConceptCausalDecoderStack`
+  builds/caches the `[T,T]` window-causal mask and passes it to `ConceptCausalDecoderLayer._self_attention`,
+  which uses `is_causal=(mask is None)` (keeps the flash path when no window). `concept_ablation_ce(...,
+  window_k=K)` adds beyond/within-window deltas (`delta_{zero,shuffle}_beyond_window`) — the E05 long-range
+  memory gate. **Note:** stacked window layers reach ≈ `L·(K−1)` back (depth grows the receptive field).
+- **`data/dataset_preprocess.py`** — `load_and_preprocess_dataset_mix()` + `DATASET_MIXES["e05_long_2k"]`
+  (FinePDFs-100BT 0.50 / FineWeb-Edu sample-10BT 0.30 / FineMath-3+ 0.20), weighted `interleave_datasets`;
+  tokenize fn refactored to module-level `_make_tokenize_fn` (shared with the single-dataset path). No packing.
+- **`training/train_perceiver_denoise.py`** — `--decoder_context_window`, `--dataset_mix`; trainer logs
+  beyond-window ablation for the windowed arm. **`analysis/run_concept_analysis.py`** — `--ablation_window_k`
+  for the offline windowed-vs-control A/B + a beyond-window report block. **launcher** — `DECODER_CONTEXT_WINDOW`,
+  `DATASET_MIX` knobs (passed only when set; default behaviour unchanged).
+- **Tests:** `tests/test_e05_windowed_decoder.py` (7, green); end-to-end MPS smoke green; full suite 140 passed
+  (4 pre-existing `test_wandb_identity` failures from the E04 job_type rename — unrelated).
 
 ## [2026-06-18] - E04 parallel decoder: linear Perceiver-IO + data-contract fix + W&B clarity
 

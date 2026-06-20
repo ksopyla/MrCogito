@@ -1,9 +1,9 @@
 # E04 — Concept-only parallel decoder (remove the AR bypass)
 
-- **Status:** implemented 2026-06-18 (reframed as a parallel-vs-AR concept-formation A/B; see plan); launching on Odra (512 ctx, 1 epoch)
+- **Status:** done (eval 2026-06-20)
 - **Serves:** the [agenda](../1_Strategy_and_Plans/agenda.md) "attack concept collapse at the root" focus. Where E03 *adds pressure* (anchor) to make concepts richer, E04 *removes the escape hatch*: it tests whether the chronic collapse is driven by the **autoregressive decoder bypass** (teacher-forced local context lets the decoder reconstruct tokens without the bottleneck, so required rate through `z`→0). The cheapest decisive test of the root-cause diagnosis.
 - **Implementation plan:** [E04_concept_only_parallel_decoder_plan.md](E04_concept_only_parallel_decoder_plan.md) *(draft 2026-06-18; reframed as a parallel-vs-AR concept-formation A/B; 2 code changes pending approval)*
-- **Owner / dates:** Krzysztof Sopyla · opened 2026-06-14 · closed —
+- **Owner / dates:** Krzysztof Sopyla · opened 2026-06-14 · training done 2026-06-19 · eval 2026-06-20
 
 > One experiment = one hypothesis = one changed variable. Implementation is a config
 > (`DECODER_TYPE=perceiver_posonly`) over the shared entrypoint — NOT a new fork.
@@ -66,6 +66,5 @@ If we replace the causal AR decoder with a **position-query, concept-only parall
 - **New foundation code (if any):** likely none (config only). Possibly a small reusable `decoder_query_mode=position_only` flag if the verification finds query-side token leakage.
 
 ## Result
-<Filled in AFTER, by experiment-track.>
-- Run id: `<run_id>` · WandB: <link> · Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
-- Verdict: promising | mixed | regression | killed — <one line>
+- Run id: `perceiver_denoise_H768L6C128D4_20260618_200645` · WandB: [training](https://wandb.ai/ksopyla/MrCogito/runs/perceiver_denoise_H768L6C128D4_20260618_200645) · Run report: `docs/2_Experiments_Registry/run_reports/e04_parallel_decoder_20260620.md`
+- Verdict: **mixed** — RankMe +27 vs E03 control (clears +8 gate) and STS-B 0.532 > control 0.485, but early-Δ unscored (parallel decoder) and STS-B far below E02 0.702; within-sample RankMe 108 suggests richer per-input geometry when AR bypass is removed.
