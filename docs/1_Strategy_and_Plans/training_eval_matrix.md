@@ -43,5 +43,5 @@ This table is the current source of truth for which training paths are actively 
 - If you want the current encoder->AR decoder path, use `concept_ar` (`reconstruction`) or `concept_ar_prefix` (`prefix_suffix`) through `training/train_perceiver_denoise.py`.
 - If you want the simple MLM baseline, use `weighted_mlm`.
 - Recursion and diffusion are **parked** in `parked/` (revivable) — see `parked/README.md`.
-- Current work is tracked as small, well-defined increments in `agenda.md` + `docs/experiments/`; the direction is exploratory.
+- Current work is tracked as small, well-defined increments in `agenda.md` + `docs/experiments_specs/`; the direction is exploratory.
 - If you need historical `perceiver_mlm` comparisons, use old checkpoints/results as archived baselines, not as current launch interfaces.

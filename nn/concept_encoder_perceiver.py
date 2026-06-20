@@ -61,23 +61,22 @@ logger = logging.get_logger(__name__)
 
 
 class PerceiverDecoderLayer(nn.Module):
-    """Decoder block shared by denoising pretraining and ViaDecoder evaluation."""
+    """Canonical linear Perceiver-IO decoder block: position queries cross-attend the C
+    concepts, then a gated FFN. There is deliberately **no self-attention over the N output
+    queries** — that would be O(N^2) and break the project's O(C*N) bottleneck invariant,
+    which is incompatible with the long-context vision. Output positions are therefore
+    conditionally independent given the concepts (the standard non-autoregressive parallel
+    decode); all cross-position information must flow through the concept bottleneck.
+    """
 
     def __init__(self, config: ConceptEncoderConfig):
         super().__init__()
-        self.self_attn = nn.MultiheadAttention(
-            embed_dim=config.hidden_size,
-            num_heads=config.num_attention_heads,
-            dropout=config.attention_probs_dropout_prob,
-            batch_first=True,
-        )
         self.cross_attn = nn.MultiheadAttention(
             embed_dim=config.hidden_size,
             num_heads=config.num_attention_heads,
             dropout=config.attention_probs_dropout_prob,
             batch_first=True,
         )
-        self.pre_self_norm = nn.LayerNorm(config.hidden_size)
         self.pre_cross_norm = nn.LayerNorm(config.hidden_size)
         self.pre_ff_norm = nn.LayerNorm(config.hidden_size)
         self.ffn_in = nn.Linear(config.hidden_size, config.intermediate_size * 2)
@@ -90,15 +89,6 @@ class PerceiverDecoderLayer(nn.Module):
         query_states: torch.Tensor,
         concept_repr: torch.Tensor,
     ) -> torch.Tensor:
-        normed_queries = self.pre_self_norm(query_states)
-        self_attn_output, _ = self.self_attn(
-            normed_queries,
-            normed_queries,
-            normed_queries,
-            need_weights=False,
-        )
-        query_states = query_states + self_attn_output
-
         cross_normed_queries = self.pre_cross_norm(query_states)
         cross_attn_output, _ = self.cross_attn(
             query=cross_normed_queries,
@@ -754,6 +744,29 @@ class ConceptEncoderForSequenceClassificationViaDecoder(PreTrainedModel):
 # Sentence-Pair Classification (separate encoding, concept-space comparison)
 # =============================================================================
 
+class AttentionPool(nn.Module):
+    """Permutation-aware pooling over the C concepts via a single learned query.
+
+    Unlike mean-pooling, a learned query can attend to the slots that carry the
+    instance-specific information, so information *distributed across concepts*
+    becomes recoverable. One query, single-head cross-attention: tiny by design
+    (a frozen-encoder probe — the delta vs mean-pool is the signal, not capacity).
+    """
+
+    def __init__(self, hidden_size: int):
+        super().__init__()
+        self.query = nn.Parameter(torch.zeros(1, 1, hidden_size))
+        nn.init.normal_(self.query, std=hidden_size ** -0.5)
+        self.attn = nn.MultiheadAttention(hidden_size, num_heads=1, batch_first=True)
+
+    def forward(self, concepts: torch.Tensor, key_padding_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        # concepts: [B, C, H] -> [B, H]
+        b = concepts.shape[0]
+        q = self.query.expand(b, -1, -1)  # [B, 1, H]
+        pooled, _ = self.attn(q, concepts, concepts, key_padding_mask=key_padding_mask)
+        return pooled.squeeze(1)
+
+
 class ConceptEncoderForSentencePairClassification(PreTrainedModel):
     """
     ConceptEncoder for sentence-pair tasks with separate encoding.
@@ -780,6 +793,9 @@ class ConceptEncoderForSentencePairClassification(PreTrainedModel):
         self.encoder = ConceptEncoder(config)
         
         self.pool_norm = nn.LayerNorm(config.hidden_size)
+        self.pool_mode = getattr(config, "pool_mode", "mean")
+        if self.pool_mode == "attention":
+            self.attn_pool = AttentionPool(config.hidden_size)
         
         # Classifier on concatenated features: [z_a; z_b; |z_a-z_b|; z_a*z_b]
         self.classifier_dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -801,7 +817,14 @@ class ConceptEncoderForSentencePairClassification(PreTrainedModel):
                 module.weight.data[module.padding_idx].zero_()
 
     def _pool_concepts(self, concept_repr: torch.Tensor) -> torch.Tensor:
-        """Mean pooling over concepts: [B, C, H] -> [B, H]."""
+        """Pool the C concepts to one vector: [B, C, H] -> [B, H].
+
+        ``pool_mode='mean'`` (default) is byte-identical to the original behaviour;
+        ``pool_mode='attention'`` uses the learned-query AttentionPool so that
+        information distributed across slots is recoverable.
+        """
+        if self.pool_mode == "attention":
+            return self.pool_norm(self.attn_pool(concept_repr))
         return self.pool_norm(concept_repr.mean(dim=1))
 
     def forward(
@@ -912,6 +935,24 @@ def _build_rope_cache(seq_len: int, head_dim: int, theta: float, device, dtype):
     return emb.cos().to(dtype), emb.sin().to(dtype)
 
 
+def build_sliding_window_causal_mask(
+    seq_len: int, window: int, device, dtype=torch.bool
+) -> torch.Tensor:
+    """Boolean SDPA mask [T, T] for a last-K sliding-window causal decoder (E05).
+
+    ``True`` = token i may attend token j. Allowed iff ``i - window < j <= i`` — i.e.
+    causal AND within the last ``window`` tokens (the current token plus ``window-1``
+    predecessors). Out-of-window predecessors are masked, so any dependency further than
+    ``window`` back must be served through the concept bottleneck instead of local context.
+    Broadcasts over [B, n_heads, T, T] inside scaled_dot_product_attention.
+    """
+    idx = torch.arange(seq_len, device=device)
+    causal = idx.unsqueeze(1) >= idx.unsqueeze(0)              # j <= i
+    in_window = idx.unsqueeze(1) - idx.unsqueeze(0) < window   # i - j < window
+    mask = causal & in_window
+    return mask.to(dtype) if dtype == torch.bool else mask
+
+
 def _rotate_half(x: torch.Tensor) -> torch.Tensor:
     half = x.shape[-1] // 2
     x1, x2 = x[..., :half], x[..., half:]
@@ -970,7 +1011,9 @@ class ConceptCausalDecoderLayer(nn.Module):
         self.ffn_dropout = nn.Dropout(config.hidden_dropout_prob)
         self.act_fn = ACT2FN[config.hidden_act]
 
-    def _self_attention(self, x: torch.Tensor, rope) -> torch.Tensor:
+    def _self_attention(
+        self, x: torch.Tensor, rope, attn_mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         B, T, _ = x.shape
         h, d = self.num_heads, self.head_dim
         q = self.q_proj(x).view(B, T, h, d).transpose(1, 2)   # [B, h, T, d]
@@ -980,16 +1023,25 @@ class ConceptCausalDecoderLayer(nn.Module):
             cos, sin = rope
             q = _apply_rope(q, cos, sin)
             k = _apply_rope(k, cos, sin)
+        # attn_mask carries the sliding-window causal pattern (E05); when None we use the
+        # cheap flash-friendly is_causal path (full causal context, E01/E02/E03).
         attn = F.scaled_dot_product_attention(
             q, k, v,
+            attn_mask=attn_mask,
             dropout_p=self.attn_dropout_p if self.training else 0.0,
-            is_causal=True,
+            is_causal=attn_mask is None,
         )                                                     # [B, h, T, d]
         attn = attn.transpose(1, 2).reshape(B, T, self.hidden_size)
         return self.self_out(attn)
 
-    def forward(self, h: torch.Tensor, concepts: torch.Tensor, rope=None) -> torch.Tensor:
-        h = h + self._self_attention(self.pre_self_norm(h), rope)
+    def forward(
+        self,
+        h: torch.Tensor,
+        concepts: torch.Tensor,
+        rope=None,
+        attn_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        h = h + self._self_attention(self.pre_self_norm(h), rope, attn_mask=attn_mask)
         cross_out, _ = self.cross_attn(
             self.pre_cross_norm(h), concepts, concepts, need_weights=False
         )
@@ -1037,6 +1089,10 @@ class ConceptCausalDecoderStack(nn.Module):
         self.embed_dropout = nn.Dropout(config.hidden_dropout_prob)
         self._head_dim = config.hidden_size // config.num_attention_heads
         self._rope_theta = config.rope_theta
+        # E05: sliding-window causal context (None = full causal). Built lazily per
+        # forward and cached by (T, device) since the boolean mask is content-independent.
+        self.context_window = getattr(config, "decoder_context_window", None)
+        self._window_mask_cache: dict = {}
 
     def embed(
         self,
@@ -1069,14 +1125,32 @@ class ConceptCausalDecoderStack(nn.Module):
         word_dropout_p: float = 0.0,
     ) -> torch.Tensor:
         h = self.embed(decoder_input_ids, word_dropout_p=word_dropout_p)   # [B, T, H]
+        T = h.size(1)
         rope = None
         if self.use_rope:
             rope = _build_rope_cache(
-                h.size(1), self._head_dim, self._rope_theta, h.device, h.dtype
+                T, self._head_dim, self._rope_theta, h.device, h.dtype
             )
+        attn_mask = self._sliding_window_mask(T, h.device)
         for layer in self.layers:
-            h = layer(h, concepts, rope=rope)
+            h = layer(h, concepts, rope=rope, attn_mask=attn_mask)
         return self.output_norm(h)
+
+    def _sliding_window_mask(self, seq_len: int, device) -> Optional[torch.Tensor]:
+        """Return the [T, T] window-causal mask, or None for full causal (flash path).
+
+        None when no window is set OR the window already covers the whole sequence
+        (window >= T), so short sequences keep the cheaper is_causal kernel.
+        """
+        window = self.context_window
+        if window is None or window >= seq_len:
+            return None
+        key = (seq_len, device)
+        mask = self._window_mask_cache.get(key)
+        if mask is None:
+            mask = build_sliding_window_causal_mask(seq_len, window, device)
+            self._window_mask_cache[key] = mask
+        return mask
 
 
 class AnchorDistillHead(nn.Module):
@@ -1291,6 +1365,31 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
             ignore_index=-100,
         )
 
+    @staticmethod
+    def _teacher_forced_ce_window(
+        logits: torch.Tensor, labels: torch.LongTensor, window_k: int, beyond: bool
+    ) -> torch.Tensor:
+        """Next-token CE on positions BEYOND (t >= window_k) or WITHIN (t < window_k) the
+        sliding window (E05 long-range memory gate).
+
+        With a last-K windowed decoder, a position t >= window_k cannot reach tokens before
+        t - window_k through local self-attention, so any dependency further back than the
+        window MUST flow through the concepts. The intact-vs-ablated CE gap on beyond-window
+        positions is therefore the direct test of "are concepts used as cross-window memory?".
+        Within-window positions are the local-fluency control (the window still serves them).
+        """
+        T = labels.size(1)
+        window_k = max(1, min(window_k, T))
+        if beyond:
+            sl = slice(window_k, T)
+        else:
+            sl = slice(0, window_k)
+        return F.cross_entropy(
+            logits[:, sl, :].reshape(-1, logits.size(-1)),
+            labels[:, sl].reshape(-1),
+            ignore_index=-100,
+        )
+
     def _loss_from_logits(
         self,
         logits: torch.Tensor,
@@ -1346,6 +1445,7 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         prefix_attention_mask: Optional[torch.Tensor] = None,
         suffix_input_ids: Optional[torch.LongTensor] = None,
         early_k: int = 16,
+        window_k: Optional[int] = None,
     ) -> dict:
         """Posterior-collapse diagnostic: next-token CE with intact vs ablated concepts.
 
@@ -1405,6 +1505,22 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
             "delta_zero_early": (ce_zero_early - ce_intact_early).item(),
             "delta_shuffle_early": (ce_shuffle_early - ce_intact_early).item(),
         }
+
+        # E05 long-range memory gate: split CE by sliding-window boundary. Beyond-window
+        # positions (t >= window_k) cannot reach far-back tokens via local context, so a
+        # large intact-vs-ablated gap there means the concepts carry cross-window memory.
+        if window_k is not None and window_k < labels.size(1):
+            ci_beyond = self._teacher_forced_ce_window(logits_intact, labels, window_k, beyond=True)
+            cz_beyond = self._teacher_forced_ce_window(logits_zero, labels, window_k, beyond=True)
+            cs_beyond = self._teacher_forced_ce_window(logits_shuffle, labels, window_k, beyond=True)
+            ci_within = self._teacher_forced_ce_window(logits_intact, labels, window_k, beyond=False)
+            metrics.update({
+                "window_k": int(window_k),
+                "ce_intact_beyond_window": ci_beyond.item(),
+                "ce_intact_within_window": ci_within.item(),
+                "delta_zero_beyond_window": (cz_beyond - ci_beyond).item(),
+                "delta_shuffle_beyond_window": (cs_beyond - ci_beyond).item(),
+            })
 
         train_wd = float(getattr(self.config, "decoder_word_dropout", 0.0) or 0.0)
         if train_wd > 0.0:

@@ -1,8 +1,9 @@
 {
   "mcpServers": {
     "wandb": {
-      "command": ".cursor/scripts/wandb-mcp.sh",
-      "args": []
+      "command": "bash",
+      "args": [".cursor/scripts/wandb-mcp.sh"],
+      "envFile": "${workspaceFolder}/.env"
     }
   }
 }

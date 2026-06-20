@@ -11,7 +11,7 @@ This folder is **self-indexing** (filenames = IDs) — no manual index table (it
 same reason `literature_review/` has none).
 
 ## Where things live (no duplicate logs)
-- **Intent / criteria** → `docs/experiments/<ID>.md` (spec) and `<ID>_plan.md` (design).
+- **Intent / criteria** → `docs/experiments_specs/<ID>.md` (spec) and `<ID>_plan.md` (design).
 - **Results** → `docs/2_Experiments_Registry/master_experiment_log.md` (canonical, append-only) + run reports. The specs are *not* a results log.
 - **Live one-line memory** → `docs/1_Strategy_and_Plans/agenda.md` (pointers into the ledger).
 

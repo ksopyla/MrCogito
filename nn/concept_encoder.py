@@ -115,6 +115,7 @@ class ConceptEncoderConfig(PretrainedConfig):
         decoder_type: str = "perceiver_posonly",
         decoder_word_dropout: float = 0.0,
         decoder_pos_type: str = "learned",
+        decoder_context_window: Optional[int] = None,
         norm_type: str = "layernorm",
         rope_theta: float = 10000.0,
         checkpoint_family: Optional[str] = None,
@@ -169,6 +170,12 @@ class ConceptEncoderConfig(PretrainedConfig):
         self.decoder_type = decoder_type
         self.decoder_word_dropout = decoder_word_dropout
         self.decoder_pos_type = decoder_pos_type
+        # decoder_context_window (E05): for the causal_ar decoder, restrict each token's
+        # self-attention to the last K tokens (sliding-window causal). None (default) =
+        # full causal context (E01/E02/E03 behaviour, flash-friendly is_causal path).
+        # When set, out-of-window context is only reachable through the C concepts, making
+        # them the sole carrier of cross-window (long-range) information.
+        self.decoder_context_window = decoder_context_window
         self.norm_type = norm_type
         self.rope_theta = rope_theta
         # decoder_posonly: True for TSDAE/PosOnly checkpoints — decoder queries use position

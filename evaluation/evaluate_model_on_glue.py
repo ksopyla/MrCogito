@@ -60,6 +60,12 @@ from evaluation.concept_eval_routing import (
     is_separate_pair_route,
     resolve_concept_eval_route,
 )
+from evaluation.wandb_identity import (
+    build_eval_compare_fields,
+    build_namespaced_eval_tags,
+    lineage_to_wandb_config,
+    resolve_eval_lineage,
+)
 from training.utils_training import get_hostname
 
 from datasets import load_dataset
@@ -281,6 +287,52 @@ def parse_args():
         help="Freeze the pretrained encoder and train only the task head (linear "
              "probe). Robust concept-quality measurement; avoids destroying a "
              "lightly-pretrained encoder via full fine-tuning on small GLUE tasks."
+    )
+    parser.add_argument(
+        "--pool_mode",
+        type=str,
+        default="mean",
+        choices=["mean", "attention"],
+        help="Concept-pooling for sentence-pair routes: 'mean' (default) or "
+             "'attention' (single learned query). Use with --freeze_encoder for "
+             "the frozen-encoder probe tier.",
+    )
+    parser.add_argument("--wandb_entity", type=str, default="ksopyla")
+    parser.add_argument("--wandb_project", type=str, default="MrCogito")
+    parser.add_argument(
+        "--source_training_run_id",
+        type=str,
+        default=None,
+        help="Optional explicit parent training run id/name in W&B.",
+    )
+    parser.add_argument(
+        "--source_training_group",
+        type=str,
+        default=None,
+        help="Optional explicit parent training W&B group (overrides API lookup).",
+    )
+    parser.add_argument(
+        "--source_training_experiment_id",
+        type=str,
+        default=None,
+        help="Optional explicit experiment id (e.g. E04) for eval lineage.",
+    )
+    parser.add_argument(
+        "--source_checkpoint_step",
+        type=int,
+        default=None,
+        help="Optional explicit checkpoint step; inferred from checkpoint-<step> when absent.",
+    )
+    parser.add_argument(
+        "--source_checkpoint_epoch",
+        type=float,
+        default=None,
+        help="Optional checkpoint epoch for easier train/eval retrieval in W&B.",
+    )
+    parser.add_argument(
+        "--allow_unlinked_eval",
+        action="store_true",
+        help="Permit eval runs without resolved parent lineage (strict mode default is fail-fast).",
     )
     return parser.parse_args()
 
@@ -969,6 +1021,7 @@ def finetune_model_on_glue(args):
                 problem_type="regression" if args.task == "stsb" else "single_label_classification"
             )
         
+        config.pool_mode = getattr(args, "pool_mode", "mean")
         route = resolve_concept_eval_route(
             config=config,
             requested_model_type=args.model_type,
@@ -1127,62 +1180,83 @@ def finetune_model_on_glue(args):
         **{k: v for k, v in vars(training_args).items() if not k.startswith('_')}
     }
 
-    # === Model Lineage: Extract source training run ID from checkpoint path ===
-    # The checkpoint path follows the convention:
-    #   .../Cache/Training/<training_run_id>/<training_run_id>/
-    # e.g., .../weighted_mlm_H512L6C128_20260207_174251/weighted_mlm_H512L6C128_20260207_174251
-    # The training_run_id matches the wandb run name from train_mlm.py
-    # Use the original model_name_or_path for traceability; for HF Hub IDs the
-    # repo name (after "/") is a clean run identifier.
-    _mnop = args.model_name_or_path
-    source_training_run_id = _mnop.split("/")[-1] if "/" in _mnop else os.path.basename(_mnop)
-    
+    lineage = resolve_eval_lineage(
+        model_path=args.model_name_or_path,
+        source_training_run_id=args.source_training_run_id,
+        source_training_group=args.source_training_group,
+        source_training_experiment_id=args.source_training_experiment_id,
+        source_checkpoint_step=args.source_checkpoint_step,
+        source_checkpoint_epoch=args.source_checkpoint_epoch,
+        allow_unlinked_eval=args.allow_unlinked_eval,
+        wandb_entity=args.wandb_entity,
+        wandb_project=args.wandb_project,
+    )
+    source_training_run_id = lineage.source_training_run_id or os.path.basename(args.model_name_or_path.rstrip("/"))
+
     # Extract architecture tag (strip timestamp): weighted_mlm_H512L6C128
     arch_parts = source_training_run_id.split('_')
     if len(arch_parts) > 2 and arch_parts[-2].isdigit() and len(arch_parts[-2]) == 8 and arch_parts[-1].isdigit() and len(arch_parts[-1]) == 6:
         architecture_tag = '_'.join(arch_parts[:-2])
     else:
         architecture_tag = source_training_run_id
-    
-    # Ensure tag is not too long for wandb
     if len(architecture_tag) > 63:
         architecture_tag = architecture_tag[:63]
 
-    # Get hostname
-    hostname = get_hostname()
-
-    # Tags for filtering: task, model type, architecture, source training run
-    wandb_tags = [
-        "glue",
-        args.task,
-        "finetuning",
-        args.model_type,
-        architecture_tag,           # e.g., weighted_mlm_H512L6C128
-        source_training_run_id,     # e.g., weighted_mlm_H512L6C128_20260207_174251 (for lineage)
-        hostname
-    ]
-
-    # Group by architecture config (backward compatible)
-    # Format: {model_type}_H{hidden}L{layers}C{concepts} - same as train_mlm.py
-    # L2 and L6 are naturally separated since layer count is in the name
-    group_identifier = architecture_tag  # e.g., weighted_mlm_H512L6C128
-    
-    # Try to reconstruct from model config if architecture_tag extraction failed
+    model_family = args.model_type
+    objective_family = None
+    architecture_id = architecture_tag
     if hasattr(model, "config"):
-        config = model.config
-        if hasattr(config, "hidden_size") and hasattr(config, "num_hidden_layers") and hasattr(config, "concept_num"):
-            group_identifier = f"{args.model_type}_H{config.hidden_size}L{config.num_hidden_layers}C{config.concept_num}"
-    
+        cfg = model.config
+        model_family = getattr(cfg, "checkpoint_family", model_family)
+        objective_family = getattr(cfg, "pretraining_objective", None)
+        if hasattr(cfg, "hidden_size") and hasattr(cfg, "num_hidden_layers") and hasattr(cfg, "concept_num"):
+            decoder_layers = getattr(cfg, "decoder_num_layers", None)
+            if decoder_layers is not None:
+                architecture_id = (
+                    f"{model_family}_H{cfg.hidden_size}L{cfg.num_hidden_layers}"
+                    f"C{cfg.concept_num}D{decoder_layers}"
+                )
+            else:
+                architecture_id = f"{model_family}_H{cfg.hidden_size}L{cfg.num_hidden_layers}C{cfg.concept_num}"
+
+    params_m = round(total_params / 1_000_000)
+    hostname = get_hostname()
+    wandb_tags = build_namespaced_eval_tags(
+        benchmark=f"glue_{args.task}",
+        model_family=model_family,
+        objective_family=objective_family,
+        params_m=params_m,
+        tokenizer_name=tokenizer_name,
+        lineage=lineage,
+        extra_tags=[
+            "glue",
+            args.task,
+            "finetuning",
+            args.model_type,
+            architecture_tag,
+            source_training_run_id,
+            hostname,
+        ],
+    )
+    group_identifier = lineage.source_training_group
     logger.info(f"Group: {group_identifier} | Source training run: {source_training_run_id}")
-    
-    # Add lineage metadata to wandb config
-    wandb_config["source_training_run_id"] = source_training_run_id
-    wandb_config["source_checkpoint_path"] = args.model_name_or_path
+
+    wandb_config.update(lineage_to_wandb_config(lineage))
+    wandb_config.update(
+        build_eval_compare_fields(
+            model_family=model_family,
+            params_m=params_m,
+            objective_family=objective_family,
+            tokenizer_name=tokenizer_name,
+            architecture_id=architecture_id,
+        )
+    )
     wandb_config["architecture_tag"] = architecture_tag
     
     # Initialize the wandb project
     wandb_run = wandb.init(
-        project="MrCogito",
+        project=args.wandb_project,
+        entity=args.wandb_entity,
         id=run_name,  # Use run_name as a unique ID for resuming
         name=run_name,
         job_type=f"glue_{args.task}_evaluation",

@@ -501,31 +501,42 @@ def build_perceiver_wandb_identity(
     should identify the family + objective, while run names stay unique via a
     timestamp added by the caller.
     """
+    # Two human-legible axes surfaced as tags so W&B is scannable without decoding the
+    # cryptic family names: how the decoder runs (parallel one-shot vs autoregressive) and
+    # what the objective is (reconstruct the input vs generate unseen content).
     if decoder_type == "causal_ar":
+        decoder_mode = "autoregressive"
         if objective_variant == "prefix_suffix":
             inferred_experiment = "E02"
             model_family = "concept_ar_prefix"
             objective_family = "prefix_suffix"
-            job_type = "train_concept_ar_prefix_suffix"
+            task = "generation"
+            job_type = "train_ar_generation_prefix_suffix"
         elif anchor_loss:
             inferred_experiment = "E03"
             model_family = "concept_ar"
             objective_family = "ar_reconstruction_anchor"
-            job_type = "train_concept_ar_anchor_reconstruction"
+            task = "reconstruction"
+            job_type = "train_ar_reconstruction_anchor"
         else:
             inferred_experiment = "E01"
             model_family = "concept_ar"
             objective_family = "ar_reconstruction"
-            job_type = "train_concept_ar_reconstruction"
+            task = "reconstruction"
+            job_type = "train_ar_reconstruction"
     else:
-        inferred_experiment = None
+        # Parallel position-query Perceiver-IO decoder (denoising autoencoder, not diffusion).
+        decoder_mode = "parallel"
         model_family = "perceiver_denoise"
+        task = "reconstruction"
         if objective_variant == "reconstruction+contrastive":
+            inferred_experiment = None
             objective_family = "reconstruction_contrastive"
-            job_type = "train_perceiver_denoise_contrastive"
+            job_type = "train_parallel_reconstruction_contrastive"
         else:
+            inferred_experiment = "E04"
             objective_family = "reconstruction"
-            job_type = "train_perceiver_denoise_reconstruction"
+            job_type = "train_parallel_reconstruction"
 
     resolved_experiment = experiment_id or inferred_experiment
     architecture_id = (
@@ -538,6 +549,8 @@ def build_perceiver_wandb_identity(
     tags = [
         "train",
         "concept-encoder",
+        f"decoder:{decoder_mode}",
+        f"task:{task}",
         model_family,
         checkpoint_family,
         decoder_type,
@@ -592,6 +605,25 @@ def init_wandb(
     hostname = get_hostname()
 
     tags = list(wandb_tags or [])
+    identity_config = extra_config or {}
+    configured_group = identity_config.get("wandb_group")
+    experiment_id = identity_config.get("experiment_id")
+    if configured_group and configured_group != base_id:
+        raise ValueError(
+            f"W&B identity mismatch: base group '{base_id}' differs from config wandb_group "
+            f"'{configured_group}'."
+        )
+    if experiment_id:
+        expected_prefix = f"{experiment_id}_"
+        if not base_id.startswith(expected_prefix):
+            raise ValueError(
+                f"W&B identity mismatch: group '{base_id}' does not start with '{expected_prefix}'."
+            )
+        if experiment_id not in tags:
+            raise ValueError(
+                f"W&B identity mismatch: experiment tag '{experiment_id}' missing in wandb tags {tags}."
+            )
+
     tags.extend([data_args.dataset_name, hostname])
     if getattr(data_args, "dataset_name_subset", None):
         tags.append(data_args.dataset_name_subset)
@@ -615,6 +647,11 @@ def init_wandb(
         "dataset_name": data_args.dataset_name,
         "tokenizer_name": data_args.tokenizer_name,
         "max_seq_length": data_args.max_seq_length,
+        "compare_family": identity_config.get("model_family", model_type),
+        "compare_objective": identity_config.get("objective_family"),
+        "compare_architecture": identity_config.get("architecture_id"),
+        "compare_tokenizer": data_args.tokenizer_name,
+        "compare_params_m": round(total_params / 1_000_000),
         **{f"git_{k}": v for k, v in get_git_info().items()},
         **{k: v for k, v in vars(training_args).items() if not k.startswith("_")},
     }

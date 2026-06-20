@@ -20,14 +20,14 @@ Do not use this skill to choose research priorities. Use `research-synthesis` fo
 ## Keep aligned
 When a change matters, keep these artifacts consistent:
 - `CHANGELOG.md`
-- `docs/1_Strategy_and_Plans/agenda.md` (and the relevant `docs/experiments/<ID>.md` if the change is tied to an experiment)
+- `docs/1_Strategy_and_Plans/agenda.md` (and the relevant `docs/experiments_specs/<ID>.md` if the change is tied to an experiment)
 - git commit message
 - architecture tags such as `arch/{feature}` when justified
 
 ## After a meaningful code change
 1. Update `CHANGELOG.md` with a dated entry.
 2. Describe why the change happened and what it changes at a high level.
-3. Mark related items in `docs/1_Strategy_and_Plans/agenda.md` (or the relevant `docs/experiments/<ID>.md`). If a commit already exists, include the commit hash.
+3. Mark related items in `docs/1_Strategy_and_Plans/agenda.md` (or the relevant `docs/experiments_specs/<ID>.md`). If a commit already exists, include the commit hash.
 4. Create an architecture tag if the change establishes a new milestone or architecture variant.
 5. Make sure the commit message matches the actual engineering intent.
 
@@ -65,7 +65,7 @@ When a change matters, keep these artifacts consistent:
 - [added] `path/new_file.py` - short purpose
 
 **Git tag:** `arch/feature-name`
-**Related:** `docs/1_Strategy_and_Plans/agenda.md` or `docs/experiments/<ID>.md` -> "experiment / item"
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` or `docs/experiments_specs/<ID>.md` -> "experiment / item"
 ```
 
 ## Related skills

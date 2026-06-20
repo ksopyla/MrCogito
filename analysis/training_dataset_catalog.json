@@ -1,0 +1,946 @@
+{
+  "updated": "2026-06-18",
+  "purpose": "Reference catalog of public training datasets cited by recent open models (SmolLM, OLMo, Ouro, Qwen, etc.). Used by playground/training_dataset_catalog.ipynb and long_dataset_seq_len_analysis.ipynb.",
+  "models": [
+    {
+      "id": "smollm3",
+      "name": "SmolLM3-3B",
+      "org": "HuggingFaceTB",
+      "total_tokens": "11.2T pretrain + ~140B mid-train",
+      "sources": [
+        "https://huggingface.co/blog/smollm3",
+        "https://github.com/huggingface/smollm"
+      ],
+      "stages": [
+        {
+          "name": "Stage 1 (0-8T)",
+          "mix": "85% web, 12% code, 3% math"
+        },
+        {
+          "name": "Stage 2 (8-10T)",
+          "mix": "75% web, 15% code, 10% math"
+        },
+        {
+          "name": "Stage 3 (10-11.1T)",
+          "mix": "63% web, 24% code, 13% math (+ OpenMathReasoning)"
+        }
+      ],
+      "dataset_refs": [
+        "fineweb_edu",
+        "dclm_baseline",
+        "fineweb2",
+        "stack_edu",
+        "finemath",
+        "megamath",
+        "openmathreasoning_cot",
+        "fineweb2_hq",
+        "refinecode",
+        "starcoderdata",
+        "the_stack_v2",
+        "cosmopedia_v2"
+      ]
+    },
+    {
+      "id": "smollm2",
+      "name": "SmolLM2 (135M/360M/1.7B)",
+      "org": "HuggingFaceTB",
+      "total_tokens": "~11T (family)",
+      "sources": [
+        "https://huggingface.co/blog/smollm-v2",
+        "https://github.com/huggingface/smollm"
+      ],
+      "stages": [
+        {
+          "name": "Pretrain",
+          "mix": "FineWeb-Edu + FineMath + code (Stack-Edu)"
+        }
+      ],
+      "dataset_refs": [
+        "fineweb_edu",
+        "finemath",
+        "stack_edu"
+      ]
+    },
+    {
+      "id": "olmo2",
+      "name": "OLMo 2",
+      "org": "allenai",
+      "total_tokens": "~4T (OLMo-2 family)",
+      "sources": [
+        "https://huggingface.co/datasets/allenai/olmo-mix-1124",
+        "https://arxiv.org/abs/2412.02595"
+      ],
+      "stages": [
+        {
+          "name": "Pretrain",
+          "mix": "Dolmino mix (DCLM, Dolma sources, StarCoder, peS2o, arXiv, ...)"
+        }
+      ],
+      "dataset_refs": [
+        "dolmino_mix",
+        "olmo_mix",
+        "dolma",
+        "pes2o",
+        "big_reasoning_traces"
+      ]
+    },
+    {
+      "id": "olmo3",
+      "name": "OLMo 3",
+      "org": "allenai",
+      "total_tokens": "6T+ staged (Dolma3)",
+      "sources": [
+        "https://huggingface.co/datasets/allenai/dolma3_mix-6T",
+        "https://arxiv.org/abs/2512.13961"
+      ],
+      "stages": [
+        {
+          "name": "Stage 1",
+          "mix": "dolma3_mix-6T (6T)"
+        },
+        {
+          "name": "Stage 2",
+          "mix": "dolma3_dolmino_mix-100B-1025"
+        },
+        {
+          "name": "Long context",
+          "mix": "dolma3_longmino_mix-100B-1125"
+        }
+      ],
+      "dataset_refs": [
+        "dolma3_mix_6t",
+        "dolma3_dolmino_100b",
+        "dolma3_longmino_100b",
+        "dclm_baseline",
+        "pes2o",
+        "stack_edu",
+        "finemath"
+      ]
+    },
+    {
+      "id": "ouro",
+      "name": "Ouro (LoopLM)",
+      "org": "ouro-llm",
+      "total_tokens": "7.7T",
+      "sources": [
+        "https://arxiv.org/abs/2510.25741",
+        "https://ouro-llm.github.io/"
+      ],
+      "stages": [
+        {
+          "name": "Stage 1 pretrain",
+          "mix": "73% Nemotron-CC, 13% MAP-CC, 7.5% OpenCoder, 4% MegaMath-web, 2% Ultra-FineWeb-zh"
+        },
+        {
+          "name": "Stage 2 CT anneal (16k seq)",
+          "mix": "Nemotron-CC-HQ, MegaMath-HQ, Nemotron-CC-Math, OpenCoder-Annealing, Nemotron code/SFT"
+        },
+        {
+          "name": "Stage 3 LongCT",
+          "mix": "ProLong-64K (20B tokens)"
+        },
+        {
+          "name": "Stage 4 mid-train + SFT",
+          "mix": "OpenThoughts3, AceReason, OpenCodeReasoning, Nemotron post-train"
+        }
+      ],
+      "dataset_refs": [
+        "nemotron_cc",
+        "map_cc",
+        "ultra_fineweb_zh",
+        "opencoder_pretrain",
+        "megamath",
+        "opc_annealing",
+        "prolong_64k",
+        "openmathreasoning_cot",
+        "openthoughts3_math_code_science",
+        "big_reasoning_traces",
+        "refinecode",
+        "ultra_fineweb"
+      ]
+    },
+    {
+      "id": "qwen3",
+      "name": "Qwen3",
+      "org": "Alibaba",
+      "total_tokens": "~36T",
+      "sources": [
+        "https://arxiv.org/html/2505.09388",
+        "https://qwenlm.github.io/blog/qwen3/"
+      ],
+      "stages": [
+        {
+          "name": "S1 general",
+          "mix": ">30T, 4k context, 119 languages"
+        },
+        {
+          "name": "S2 reasoning",
+          "mix": "+5T STEM/code/reasoning-heavy"
+        },
+        {
+          "name": "S3 long context",
+          "mix": "hundreds of B tokens; ~75% samples 16k-32k"
+        }
+      ],
+      "dataset_refs": [
+        "finepdfs_100BT_pdf_pretrain",
+        "fineweb_edu",
+        "finemath",
+        "megamath",
+        "stack_edu",
+        "openmathreasoning_cot",
+        "openthoughts3_math_code_science",
+        "refinecode",
+        "dolma3_longmino_100b"
+      ],
+      "notes": "Most Qwen3 corpus is proprietary/mixed; public HF analogs listed as proxies."
+    },
+    {
+      "id": "qwen25",
+      "name": "Qwen2.5",
+      "org": "Alibaba",
+      "total_tokens": "~18T",
+      "sources": [
+        "https://arxiv.org/pdf/2412.15115"
+      ],
+      "stages": [
+        {
+          "name": "Pretrain",
+          "mix": "web + math + code + multilingual; heavy filtering"
+        }
+      ],
+      "dataset_refs": [
+        "fineweb_edu",
+        "finemath",
+        "stack_edu",
+        "megamath"
+      ],
+      "notes": "Paper cites categories not exact HF IDs; proxies listed."
+    },
+    {
+      "id": "kimi",
+      "name": "Kimi / Moonshot (k1.5)",
+      "org": "Moonshot AI",
+      "total_tokens": "undisclosed",
+      "sources": [
+        "https://arxiv.org/abs/2501.12599",
+        "https://moonshot.cn/"
+      ],
+      "stages": [],
+      "dataset_refs": [
+        "fineweb_edu",
+        "starcoderdata",
+        "the_stack_v2",
+        "megamath"
+      ],
+      "notes": "k1.5: proprietary pretrain (EN/ZH/code/math/knowledge + multimodal). Partial open refs: BigCode/StarCoder2 pipeline, FineWeb-style scoring, LAION/DataComp/OBELICS for vision. Long context to 131k. No HF pretrain IDs."
+    },
+    {
+      "id": "ettin",
+      "name": "Ettin (1B/8B family)",
+      "org": "jhu-clsp",
+      "total_tokens": "1.7T",
+      "sources": [
+        "https://huggingface.co/datasets/jhu-clsp/ettin-pretraining-data"
+      ],
+      "stages": [
+        {
+          "name": "Pretrain",
+          "mix": "DCLM, CC, StarCoder, Reddit, peS2o, arXiv, StackExchange, Tulu/FLAN, OpenWebMath, Wikipedia"
+        }
+      ],
+      "dataset_refs": [
+        "ettin_pretraining",
+        "dclm_baseline",
+        "pes2o",
+        "stack_edu"
+      ]
+    },
+    {
+      "id": "mrcogito_e01_e02",
+      "name": "MrCogito E01/E02/E03 (current)",
+      "org": "MrCogito",
+      "total_tokens": "10B sample",
+      "sources": [
+        "docs/experiments_specs/E02_*.md"
+      ],
+      "stages": [
+        {
+          "name": "Reconstruction pretrain",
+          "mix": "FineWeb-Edu sample-10BT, max_seq_length=512"
+        }
+      ],
+      "dataset_refs": [
+        "fineweb_edu"
+      ]
+    },
+    {
+      "id": "mrcogito_e05",
+      "name": "MrCogito E05 (planned long context)",
+      "org": "MrCogito",
+      "total_tokens": "staged",
+      "sources": [
+        "docs/experiments_specs/E05_windowed_decoder_concept_memory.md"
+      ],
+      "stages": [
+        {
+          "name": "Stage A",
+          "mix": "FinePDFs-100BT pretrain"
+        },
+        {
+          "name": "Stress tests",
+          "mix": "LongBlocks, OpenThoughts3"
+        }
+      ],
+      "dataset_refs": [
+        "finepdfs_100BT_pdf_pretrain",
+        "longblocks_doc_qa_reasoning",
+        "openthoughts3_math_code_science"
+      ]
+    }
+  ],
+  "datasets": [
+    {
+      "id": "fineweb_edu",
+      "hf_id": "HuggingFaceFW/fineweb-edu",
+      "subset": "sample-10BT",
+      "hf_url": "https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu",
+      "scale": "~1.3T full; 10B sample on HF",
+      "type": "pretrain",
+      "domains": "web, educational filter",
+      "typical_length": "median ~631 tokens (HF stats); short-doc heavy",
+      "variety": "broad web knowledge, English-primary",
+      "used_by": [
+        "smollm2",
+        "smollm3",
+        "qwen25",
+        "qwen3",
+        "mrcogito"
+      ],
+      "load_notes": "Streaming OK; use length_column=token_count",
+      "measurement": {
+        "length_column": "token_count"
+      },
+      "sample_name": "fineweb_edu_baseline",
+      "dataset_rows": "9,672,101",
+      "dataset_rows_source": "HF size API for sample-10BT train split"
+    },
+    {
+      "id": "dclm_baseline",
+      "hf_id": "mlfoundations/dclm-baseline-1.0",
+      "subset": "default",
+      "hf_url": "https://huggingface.co/datasets/mlfoundations/dclm-baseline-1.0",
+      "scale": "~2.6T tokens",
+      "type": "pretrain",
+      "domains": "web (DCLM pipeline)",
+      "typical_length": "web-crawl; similar short-doc tail to FineWeb",
+      "variety": "high-quality open web crawl",
+      "used_by": [
+        "smollm3",
+        "olmo2",
+        "ettin"
+      ],
+      "load_notes": "Streaming OK; tokenize text column",
+      "measurement": {
+        "text_column": "text"
+      },
+      "sample_name": "dclm_baseline",
+      "dataset_rows": "~3B",
+      "dataset_rows_source": "dataset card / paper; HF size API does not expose rows"
+    },
+    {
+      "id": "fineweb2",
+      "hf_id": "HuggingFaceFW/fineweb-2",
+      "subset": "per-language configs (e.g. deu_Latn)",
+      "hf_url": "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2",
+      "scale": "multilingual web; 100BT+ samples per language",
+      "type": "pretrain",
+      "domains": "multilingual web",
+      "typical_length": "web-crawl; language-specific",
+      "variety": "1000+ languages; SmolLM3 uses ~12% multilingual",
+      "used_by": [
+        "smollm3"
+      ],
+      "load_notes": "Pick a language config; no single 'sample-10BT' config",
+      "measurement": null
+    },
+    {
+      "id": "finepdfs_100BT_pdf_pretrain",
+      "hf_id": "HuggingFaceFW/finepdfs_100BT",
+      "subset": "default",
+      "hf_url": "https://huggingface.co/datasets/HuggingFaceFW/finepdfs_100BT",
+      "scale": "100B sample; ~3T parent",
+      "type": "pretrain",
+      "domains": "PDF documents",
+      "typical_length": "p50 ~1.5k; long tail to 50k+",
+      "variety": "varied PDF-derived docs; better long tail than FineWeb-Edu",
+      "used_by": [
+        "qwen3",
+        "mrcogito_e05"
+      ],
+      "load_notes": "Parquet; token_count column available",
+      "measurement": {
+        "length_column": "token_count",
+        "data_files": [
+          "https://huggingface.co/datasets/HuggingFaceFW/finepdfs_100BT/resolve/refs%2Fconvert%2Fparquet/default/train/0000.parquet"
+        ]
+      },
+      "sample_name": "finepdfs_100BT_pdf_pretrain",
+      "dataset_rows": "29,904,625",
+      "dataset_rows_source": "HF size API default/train"
+    },
+    {
+      "id": "finemath",
+      "hf_id": "HuggingFaceTB/finemath",
+      "subset": "finemath-3plus / finemath-4plus",
+      "hf_url": "https://huggingface.co/datasets/HuggingFaceTB/finemath",
+      "scale": "tens of B tokens per subset",
+      "type": "pretrain",
+      "domains": "math web",
+      "typical_length": "math pages; moderate length",
+      "variety": "math-only but high quality",
+      "used_by": [
+        "smollm2",
+        "smollm3",
+        "qwen25",
+        "qwen3"
+      ],
+      "load_notes": "token_count column; finemath-4plus is higher quality (Stage 2+)",
+      "measurement": {
+        "length_column": "token_count",
+        "subset": "finemath-3plus"
+      },
+      "sample_name": "finemath_3plus",
+      "dataset_rows": "21,405,610",
+      "dataset_rows_source": "HF size API for finemath-3plus train split"
+    },
+    {
+      "id": "stack_edu",
+      "hf_id": "HuggingFaceTB/stack-edu",
+      "subset": "Python (and 14 other langs)",
+      "hf_url": "https://huggingface.co/datasets/HuggingFaceTB/stack-edu",
+      "scale": "125B tokens total",
+      "type": "code pretrain",
+      "domains": "educational code from The Stack v2",
+      "typical_length": "file-level; variable, often 500-8k",
+      "variety": "15 languages; educational filter",
+      "used_by": [
+        "smollm2",
+        "smollm3",
+        "qwen3"
+      ],
+      "load_notes": "Original uses SWH blob_id \u2014 needs download_contents. Use meryyllebr543/stack-edu-huggingface for direct text.",
+      "measurement": {
+        "hf_id": "meryyllebr543/stack-edu-huggingface",
+        "subset": "python",
+        "text_column": "text"
+      },
+      "sample_name": "stack_edu_python",
+      "dataset_rows": "25,286,012",
+      "dataset_rows_source": "HF size API for processed Python subset used for sampling"
+    },
+    {
+      "id": "megamath",
+      "hf_id": "LLM360/MegaMath",
+      "subset": "default (code-heavy on HF)",
+      "hf_url": "https://huggingface.co/datasets/LLM360/MegaMath",
+      "scale": "371B tokens (paper); web/code/synthetic variants",
+      "type": "pretrain",
+      "domains": "math web, math code, synthetic QA",
+      "typical_length": "web avg ~2.3k tokens; synthetic shorter",
+      "variety": "math-focused; used by Ouro and SmolLM3 Stage 2+",
+      "used_by": [
+        "ouro",
+        "smollm3",
+        "qwen3"
+      ],
+      "load_notes": "HF default config is code shards; web subsets may need separate collection URLs",
+      "measurement": null
+    },
+    {
+      "id": "dolmino_mix",
+      "hf_id": "allenai/dolmino-mix-1124",
+      "subset": "default",
+      "hf_url": "https://huggingface.co/datasets/allenai/dolmino-mix-1124",
+      "scale": "1.124T tokens",
+      "type": "pretrain mix",
+      "domains": "DCLM, Dolma, StarCoder, peS2o, arXiv, StackExchange, ...",
+      "typical_length": "mixed; web-dominated short docs",
+      "variety": "very high \u2014 OLMo 2 canonical mix",
+      "used_by": [
+        "olmo2"
+      ],
+      "load_notes": "Streaming OK; text column",
+      "measurement": {
+        "text_column": "text"
+      },
+      "sample_name": "dolmino_mix",
+      "dataset_rows": "3,523,358",
+      "dataset_rows_source": "HF size API default/train"
+    },
+    {
+      "id": "olmo_mix",
+      "hf_id": "allenai/olmo-mix-1124",
+      "subset": "default",
+      "hf_url": "https://huggingface.co/datasets/allenai/olmo-mix-1124",
+      "scale": "part of OLMo 2 training",
+      "type": "pretrain mix",
+      "domains": "same family as Dolmino",
+      "typical_length": "mixed web",
+      "variety": "OLMo 2 release mix",
+      "used_by": [
+        "olmo2"
+      ],
+      "load_notes": "Streaming OK",
+      "measurement": {
+        "text_column": "text"
+      },
+      "sample_name": "olmo_mix",
+      "dataset_rows": "87,719",
+      "dataset_rows_source": "HF size API default/train"
+    },
+    {
+      "id": "dolma",
+      "hf_id": "allenai/dolma",
+      "subset": "v1_7",
+      "hf_url": "https://huggingface.co/datasets/allenai/dolma",
+      "scale": "2.3T tokens (v1.7)",
+      "type": "pretrain",
+      "domains": "CC, RefinedWeb, StarCoder, Reddit, peS2o, arXiv, ...",
+      "typical_length": "mixed",
+      "variety": "foundational open corpus",
+      "used_by": [
+        "olmo2"
+      ],
+      "load_notes": "Large; many subset configs",
+      "measurement": null
+    },
+    {
+      "id": "pes2o",
+      "hf_id": "allenai/peS2o",
+      "subset": "default",
+      "hf_url": "https://huggingface.co/datasets/allenai/peS2o",
+      "scale": "scientific papers (S2ORC-derived)",
+      "type": "pretrain",
+      "domains": "STEM papers",
+      "typical_length": "5k-30k tokens typical for full papers",
+      "variety": "scientific; coherent long docs",
+      "used_by": [
+        "olmo2",
+        "ettin",
+        "dolma"
+      ],
+      "load_notes": "datasets>=3.0 rejects legacy script; needs parquet conversion or old datasets pin",
+      "measurement": null
+    },
+    {
+      "id": "nemotron_cc",
+      "hf_id": "nvidia/Nemotron-CC-v2",
+      "subset": "various (Sample public)",
+      "hf_url": "https://huggingface.co/datasets/nvidia/Nemotron-CC-v2",
+      "scale": "6.3T tokens",
+      "type": "pretrain",
+      "domains": "refined Common Crawl",
+      "typical_length": "web; Ouro uses 16k seq in anneal \u2014 implies moderate+",
+      "variety": "high-quality web; Ouro primary corpus",
+      "used_by": [
+        "ouro"
+      ],
+      "load_notes": "Gated \u2014 requires HF auth + license acceptance",
+      "measurement": null
+    },
+    {
+      "id": "map_cc",
+      "hf_id": "mlfoundations/MAP-CC",
+      "subset": null,
+      "hf_url": null,
+      "scale": "~800B tokens (Ouro Stage 1)",
+      "type": "pretrain",
+      "domains": "web CC variant",
+      "typical_length": "web",
+      "variety": "multilingual web",
+      "used_by": [
+        "ouro"
+      ],
+      "load_notes": "HF ID unverified / may not be public standalone",
+      "measurement": null
+    },
+    {
+      "id": "ultra_fineweb_zh",
+      "hf_id": "HuggingFaceFW/ultrafineweb-zh",
+      "subset": null,
+      "hf_url": null,
+      "scale": "~120B tokens (Ouro Stage 1)",
+      "type": "pretrain",
+      "domains": "Chinese web",
+      "typical_length": "web",
+      "variety": "Chinese only; Ouro dropped after Stage 1",
+      "used_by": [
+        "ouro"
+      ],
+      "load_notes": "HF ID not found at probe time",
+      "measurement": null
+    },
+    {
+      "id": "opencoder_pretrain",
+      "hf_id": "OpenCoder-LLM/opencoder-pretrain",
+      "subset": null,
+      "hf_url": "https://huggingface.co/OpenCoder-LLM",
+      "scale": "~450B tokens (Ouro Stage 1)",
+      "type": "code pretrain",
+      "domains": "code",
+      "typical_length": "file/repo level",
+      "variety": "code",
+      "used_by": [
+        "ouro"
+      ],
+      "load_notes": "Check OpenCoder org for exact subset names",
+      "measurement": null
+    },
+    {
+      "id": "opc_annealing",
+      "hf_id": "OpenCoder-LLM/opc-annealing-corpus",
+      "subset": "synthetic_qa / synthetic_code_snippet",
+      "hf_url": "https://huggingface.co/datasets/OpenCoder-LLM/opc-annealing-corpus",
+      "scale": "~7B tokens",
+      "type": "annealing",
+      "domains": "synthetic code QA",
+      "typical_length": "code snippets; moderate",
+      "variety": "code-focused synthetic",
+      "used_by": [
+        "ouro"
+      ],
+      "load_notes": "Multiple configs; streaming OK",
+      "measurement": {
+        "subset": "synthetic_qa",
+        "text_column": "text"
+      },
+      "sample_name": "opc_annealing_synthetic_qa",
+      "dataset_rows": "3,238,929",
+      "dataset_rows_source": "HF size API synthetic_qa/train"
+    },
+    {
+      "id": "prolong_64k",
+      "hf_id": "princeton-nlp/prolong-data-64K",
+      "subset": "default",
+      "hf_url": "https://huggingface.co/datasets/princeton-nlp/prolong-data-64K",
+      "scale": "20B tokens (Ouro LongCT)",
+      "type": "long-context",
+      "domains": "books, arXiv, code \u2014 packed to 64k",
+      "typical_length": "pre-packed 65,536 tokens",
+      "variety": "long coherent docs",
+      "used_by": [
+        "ouro"
+      ],
+      "load_notes": "Mosaic streaming shards \u2014 not plain HF text rows; needs mosaic-streaming reader",
+      "measurement": null
+    },
+    {
+      "id": "cosmopedia_v2",
+      "hf_id": "HuggingFaceTB/cosmopedia-v2",
+      "subset": "cosmopedia-v2",
+      "hf_url": "https://huggingface.co/datasets/HuggingFaceTB/cosmopedia-v2",
+      "scale": "39M synthetic textbooks",
+      "type": "synthetic pretrain",
+      "domains": "textbooks, stories, knowledge",
+      "typical_length": "token_length column available",
+      "variety": "synthetic educational; SmolLM family",
+      "used_by": [
+        "smollm"
+      ],
+      "load_notes": "token_length column; streaming OK",
+      "measurement": {
+        "length_column": "token_length",
+        "subset": "cosmopedia-v2"
+      },
+      "sample_name": "cosmopedia_v2",
+      "dataset_rows": "39M",
+      "dataset_rows_source": "dataset card / catalog"
+    },
+    {
+      "id": "longblocks_doc_qa_reasoning",
+      "hf_id": "utter-project/LongBlocks",
+      "subset": "default",
+      "hf_url": "https://huggingface.co/datasets/utter-project/LongBlocks",
+      "scale": "57.6k rows",
+      "type": "SFT / long-context",
+      "domains": "books, arXiv, Wiki, Stack + synthetic QA",
+      "typical_length": "p50 ~5k; 33% >32k in 100-row sample",
+      "variety": "best varied ultra-long SFT candidate",
+      "used_by": [
+        "mrcogito_e05"
+      ],
+      "load_notes": "Concatenate document+QA columns",
+      "measurement": {
+        "text_columns": [
+          "document",
+          "question",
+          "answer",
+          "response_Qwen3-Next-80B-A3B"
+        ]
+      },
+      "sample_name": "longblocks_doc_qa_reasoning",
+      "dataset_rows": "193,894",
+      "dataset_rows_source": "HF size API default/train"
+    },
+    {
+      "id": "openmathreasoning_cot",
+      "hf_id": "nvidia/OpenMathReasoning",
+      "subset": "default",
+      "split": "cot",
+      "hf_url": "https://huggingface.co/datasets/nvidia/OpenMathReasoning",
+      "scale": "3.2M CoT + 1.7M TIR",
+      "type": "reasoning",
+      "domains": "math CoT",
+      "typical_length": "p50 ~7k tokens",
+      "variety": "math reasoning traces",
+      "used_by": [
+        "ouro",
+        "smollm3",
+        "mrcogito"
+      ],
+      "load_notes": "Use cot split",
+      "measurement": {
+        "split": "cot",
+        "text_columns": [
+          "problem",
+          "generated_solution"
+        ]
+      },
+      "sample_name": "openmathreasoning_cot",
+      "dataset_rows": "3,201,061",
+      "dataset_rows_source": "HF size API default/cot"
+    },
+    {
+      "id": "openthoughts3_math_code_science",
+      "hf_id": "open-thoughts/OpenThoughts3-1.2M",
+      "subset": "default",
+      "hf_url": "https://huggingface.co/datasets/open-thoughts/OpenThoughts3-1.2M",
+      "scale": "1.2M rows",
+      "type": "reasoning SFT",
+      "domains": "math, code, science",
+      "typical_length": "p50 ~20k; consistently long",
+      "variety": "reasoning traces; not broad world knowledge",
+      "used_by": [
+        "ouro",
+        "smollm3",
+        "mrcogito"
+      ],
+      "load_notes": "conversations column",
+      "measurement": {
+        "text_column": "conversations"
+      },
+      "sample_name": "openthoughts3_math_code_science",
+      "dataset_rows": "1,200,000",
+      "dataset_rows_source": "HF size API default/train"
+    },
+    {
+      "id": "big_reasoning_traces",
+      "hf_id": "allenai/big-reasoning-traces",
+      "subset": "DeepSeek",
+      "hf_url": "https://huggingface.co/datasets/allenai/big-reasoning-traces",
+      "scale": "~2.5B tokens",
+      "type": "reasoning mid-train",
+      "domains": "compiled reasoning traces",
+      "typical_length": "p50 ~1.4k; weaker ultra-long tail",
+      "variety": "OLMo 2 reasoning mix component",
+      "used_by": [
+        "olmo2",
+        "ouro"
+      ],
+      "load_notes": "num_tokens column",
+      "measurement": {
+        "subset": "DeepSeek",
+        "length_column": "num_tokens"
+      },
+      "sample_name": "big_reasoning_traces",
+      "dataset_rows": "676,665",
+      "dataset_rows_source": "HF size API DeepSeek/train"
+    },
+    {
+      "id": "ettin_pretraining",
+      "hf_id": "jhu-clsp/ettin-pretraining-data",
+      "subset": "default",
+      "hf_url": "https://huggingface.co/datasets/jhu-clsp/ettin-pretraining-data",
+      "scale": "1.7T tokens",
+      "type": "pretrain mix",
+      "domains": "DCLM, code, peS2o, arXiv, StackExchange, ...",
+      "typical_length": "mixed",
+      "variety": "excellent blend; MDS/TAR format",
+      "used_by": [
+        "ettin"
+      ],
+      "load_notes": "MDS format; HF streaming fails without mosaic",
+      "measurement": null,
+      "dataset_rows": "\u2014",
+      "dataset_rows_source": "MDS format; row count not exposed in current catalog"
+    },
+    {
+      "id": "dolma3_mix_6t",
+      "hf_id": "allenai/dolma3_mix-6T",
+      "subset": "default",
+      "hf_url": "https://huggingface.co/datasets/allenai/dolma3_mix-6T",
+      "scale": "6T tokens",
+      "type": "pretrain mix",
+      "domains": "OLMo3 stage-1 successor to olmo-mix",
+      "typical_length": "mixed",
+      "variety": "newest fully open mixed pretrain (OLMo3 lineage)",
+      "used_by": [
+        "olmo3"
+      ],
+      "load_notes": "Very large; shard/stream. Primary OLMo3 mix per HF card.",
+      "measurement": null,
+      "dataset_rows": "\u2014",
+      "dataset_rows_source": "not measured / huge mix"
+    },
+    {
+      "id": "dolma3_dolmino_100b",
+      "hf_id": "allenai/dolma3_dolmino_mix-100B-1025",
+      "subset": "default",
+      "hf_url": "https://huggingface.co/datasets/allenai/dolma3_dolmino_mix-100B-1025",
+      "scale": "100B tokens",
+      "type": "mid-train / anneal",
+      "domains": "HQ subset mix",
+      "typical_length": "mixed",
+      "variety": "OLMo3 stage-2 annealing-quality mix",
+      "used_by": [
+        "olmo3"
+      ],
+      "load_notes": "Smaller than full dolmino; OLMo3-7B reproduction stage-2",
+      "measurement": null,
+      "dataset_rows": "\u2014",
+      "dataset_rows_source": "not measured"
+    },
+    {
+      "id": "dolma3_longmino_100b",
+      "hf_id": "allenai/dolma3_longmino_mix-100B-1125",
+      "subset": "default",
+      "hf_url": "https://huggingface.co/datasets/allenai/dolma3_longmino_mix-100B-1125",
+      "scale": "100B tokens",
+      "type": "long-context stage",
+      "domains": "long documents",
+      "typical_length": "long-doc emphasis",
+      "variety": "OLMo3 explicit long-context stage; high priority for E05-style work",
+      "used_by": [
+        "olmo3"
+      ],
+      "load_notes": "Long-context CPT mix; not yet seq-len sampled",
+      "measurement": null,
+      "dataset_rows": "\u2014",
+      "dataset_rows_source": "not measured"
+    },
+    {
+      "id": "fineweb2_hq",
+      "hf_id": "epfml/FineWeb2-HQ",
+      "subset": "default",
+      "hf_url": "https://huggingface.co/datasets/epfml/FineWeb2-HQ",
+      "scale": "subset of FineWeb-2 (20 langs)",
+      "type": "pretrain",
+      "domains": "multilingual web, model-filtered HQ",
+      "typical_length": "web-crawl",
+      "variety": "SmolLM3 uses alongside FineWeb-2",
+      "used_by": [
+        "smollm3"
+      ],
+      "load_notes": "Higher precision than full FineWeb-2",
+      "measurement": null
+    },
+    {
+      "id": "ultra_fineweb",
+      "hf_id": "openbmb/Ultra-FineWeb",
+      "subset": "default",
+      "hf_url": "https://huggingface.co/datasets/openbmb/Ultra-FineWeb",
+      "scale": "~1.8T EN + 120B ZH",
+      "type": "pretrain",
+      "domains": "web EN+ZH",
+      "typical_length": "web",
+      "variety": "Ouro cites Ultra-FineWeb-zh; openbmb hosts EN+ZH",
+      "used_by": [
+        "ouro"
+      ],
+      "load_notes": "EN and ZH configs; Apache-2.0",
+      "measurement": null
+    },
+    {
+      "id": "refinecode",
+      "hf_id": "OpenCoder-LLM/refinecode",
+      "subset": "default",
+      "hf_url": "https://huggingface.co/datasets/OpenCoder-LLM/refinecode",
+      "scale": "960B tokens",
+      "type": "code pretrain",
+      "domains": "607 languages, source files",
+      "typical_length": "file-level; can be long",
+      "variety": "OpenCoder core; Ouro stage-1 code component",
+      "used_by": [
+        "ouro",
+        "smollm3"
+      ],
+      "load_notes": "Large; language subsets available",
+      "measurement": null
+    },
+    {
+      "id": "starcoderdata",
+      "hf_id": "bigcode/starcoderdata",
+      "subset": "default",
+      "hf_url": "https://huggingface.co/datasets/bigcode/starcoderdata",
+      "scale": "~250B tokens",
+      "type": "code pretrain",
+      "domains": "code files",
+      "typical_length": "file-level",
+      "variety": "SmolLM2 stage-1 code; easier than full Stack v2",
+      "used_by": [
+        "smollm2"
+      ],
+      "load_notes": "Curated StarCoder2 subset",
+      "measurement": null
+    },
+    {
+      "id": "the_stack_v2",
+      "hf_id": "bigcode/the-stack-v2",
+      "subset": "default",
+      "hf_url": "https://huggingface.co/datasets/bigcode/the-stack-v2",
+      "scale": "multi-T tokens",
+      "type": "code pretrain",
+      "domains": "600+ langs",
+      "typical_length": "file/repo level",
+      "variety": "SmolLM3 12-24% code mix",
+      "used_by": [
+        "smollm3"
+      ],
+      "load_notes": "Gated; huge; use language subsets",
+      "measurement": null
+    },
+    {
+      "id": "ettin_extension",
+      "hf_id": "jhu-clsp/ettin-extension-data",
+      "subset": "default",
+      "hf_url": "https://huggingface.co/datasets/jhu-clsp/ettin-extension-data",
+      "scale": "250B tokens",
+      "type": "mid-train",
+      "domains": "HQ filtered mix",
+      "typical_length": "mixed",
+      "variety": "Ettin stage-2; Dolmino-style",
+      "used_by": [
+        "ettin"
+      ],
+      "load_notes": "MDS format (MosaicML)",
+      "measurement": null
+    },
+    {
+      "id": "ettin_decay",
+      "hf_id": "jhu-clsp/ettin-decay-data",
+      "subset": "default",
+      "hf_url": "https://huggingface.co/datasets/jhu-clsp/ettin-decay-data",
+      "scale": "50-100B tokens",
+      "type": "decay/anneal",
+      "domains": "premium sources",
+      "typical_length": "mixed",
+      "variety": "Ettin final decay phase",
+      "used_by": [
+        "ettin"
+      ],
+      "load_notes": "MDS format",
+      "measurement": null
+    }
+  ]
+}

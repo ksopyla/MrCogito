@@ -1,6 +1,6 @@
 # E03 — De-collapse via a frozen-encoder hidden-state anchor
 
-- **Status:** running (anchor-ON warmup launched 2026-06-14 on Odra; matched control + decoder-weakening sibling queued)
+- **Status:** done — matched 0.3-ep pair complete (anchor-ON trained 2026-06-14, control trained 2026-06-15, both evaluated 2026-06-18)
 - **Serves:** the encoder→AR-decoder Current focus in [agenda.md](../1_Strategy_and_Plans/agenda.md), and the chronic open problem behind it — **concept collapse** (effective rank stuck at 5–10/128 across ~60 runs). Attacks the root cause that blocks every downstream bet (AR generation, recursion, diffusion). The frozen-hidden-state anchor is the shared "validate the bottleneck first" ingredient the diffusion literature (Cosmos/LDLM/CALM) and the recursion line both rely on — and the one ingredient the team brief's P1 matrix does **not** currently contain.
 - **Implementation plan:** [E03_concept_anchor_decollapse_plan.md](E03_concept_anchor_decollapse_plan.md) *(the HOW — repo-rooted design)*
 - **Owner / dates:** Krzysztof Sopyla · opened 2026-06-13 · closed —
@@ -147,8 +147,9 @@ The risk is that effective rank rises **without** the concepts becoming useful o
   checkpoint eval contract and backward-compatible defaults.
 
 ## Result
-<Filled in AFTER, by experiment-track. Link out; do not paste full results here.>
-- Run id: `<run_id>` (anchor) / `<run_id>` (control)
-- WandB: <link>
-- Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
-- Verdict: promising | mixed | regression | killed — <one line>
+**Matched 0.3-epoch pair complete (anchor-ON + control), both evaluated 2026-06-18.**
+
+- Run ids: `concept_ar_H768L6C128D4_20260614_164206` (anchor-ON, 0.3 ep) · `concept_ar_H768L6C128D4_20260615_211458` (control, anchor-OFF, 0.3 ep)
+- WandB: [anchor-ON](https://wandb.ai/ksopyla/MrCogito/runs/concept_ar_H768L6C128D4_20260614_164206) · [control](https://wandb.ai/ksopyla/MrCogito/runs/concept_ar_H768L6C128D4_20260615_211458)
+- Run reports: `run_reports/e03a_anchor_on_warmup_20260615.md` · `run_reports/e03_control_anchor_off_20260618.md`
+- Verdict: **mixed / promising.** Anchor-ON beats the matched control on every relative criterion — RankMe 167.1 vs 150.4 (+16.7, clears the +8 gate), STS-B 0.556 vs 0.485 (+0.071, clears the +0.03 gate), AR CE 4.45 vs 4.79 (better), and decisively gap_clean_vs_wd 0.128 vs 1.677 (13× — the control's decoder bypasses its collapsing concepts). The control confirms reconstruction collapses at 0.3 ep (slot rank peaks 17.4 then falls to 5.1). **But** the anchor does not clear the **absolute** gates at this budget: STS-B 0.556 < 0.62, slot rank +4.4 < the +16 secondary gate, and the early-Δ legs are confounded (the control's higher early-Δ is a collapse symptom, not health). **Open caveat:** the E02-long 5-epoch result shows geometry evolves strongly between 0.3 and 5 epochs in an objective-dependent direction, so this 0.3-ep reconstruction pair cannot prove the anchor prevents the *full-run* collapse. Next: combine the anchor with the prefix→suffix objective (which already de-collapses with budget) rather than rescuing reconstruction, or run a matched full-epoch pair.

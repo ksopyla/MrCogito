@@ -62,6 +62,12 @@ from evaluation.concept_eval_routing import (
     is_separate_pair_route,
     resolve_concept_eval_route,
 )
+from evaluation.wandb_identity import (
+    build_eval_compare_fields,
+    build_namespaced_eval_tags,
+    lineage_to_wandb_config,
+    resolve_eval_lineage,
+)
 from training.utils_training import get_hostname
 
 logging.basicConfig(
@@ -181,6 +187,68 @@ def parse_args():
              "probe). Robust way to measure concept quality; avoids destroying a "
              "lightly-pretrained encoder via full fine-tuning on small datasets.",
     )
+    parser.add_argument(
+        "--pool_mode",
+        type=str,
+        default="mean",
+        choices=["mean", "attention"],
+        help="Concept-pooling for sentence-pair routes. 'mean' (default, backward "
+             "compatible) averages the C concepts; 'attention' uses a single learned "
+             "query (cross-attention over the C concepts) so distributed-across-slots "
+             "information becomes visible. Use with --freeze_encoder for the probe tier.",
+    )
+    parser.add_argument(
+        "--baseline",
+        type=str,
+        default="none",
+        choices=["none", "token_embed_mean", "teacher_hidden_mean"],
+        help="Trivial-floor STS-B baseline (no concept model). 'token_embed_mean' = "
+             "mean of --baseline_model input embeddings; 'teacher_hidden_mean' = mean "
+             "of its last hidden states. Anchors the zero-shot STS-B number.",
+    )
+    parser.add_argument(
+        "--baseline_model",
+        type=str,
+        default="HuggingFaceTB/SmolLM2-135M",
+        help="HF model id for --baseline floors (shares our SmolLM2 tokenizer).",
+    )
+    parser.add_argument("--wandb_entity", type=str, default="ksopyla")
+    parser.add_argument("--wandb_project", type=str, default="MrCogito")
+    parser.add_argument(
+        "--source_training_run_id",
+        type=str,
+        default=None,
+        help="Optional explicit parent training run id/name in W&B.",
+    )
+    parser.add_argument(
+        "--source_training_group",
+        type=str,
+        default=None,
+        help="Optional explicit parent training W&B group (overrides API lookup).",
+    )
+    parser.add_argument(
+        "--source_training_experiment_id",
+        type=str,
+        default=None,
+        help="Optional explicit experiment id (e.g. E04) for eval lineage.",
+    )
+    parser.add_argument(
+        "--source_checkpoint_step",
+        type=int,
+        default=None,
+        help="Optional explicit checkpoint step; inferred from checkpoint-<step> when absent.",
+    )
+    parser.add_argument(
+        "--source_checkpoint_epoch",
+        type=float,
+        default=None,
+        help="Optional checkpoint epoch for easier train/eval retrieval in W&B.",
+    )
+    parser.add_argument(
+        "--allow_unlinked_eval",
+        action="store_true",
+        help="Permit eval runs without resolved parent lineage (strict mode default is fail-fast).",
+    )
     return parser.parse_args()
 
 
@@ -294,6 +362,7 @@ def load_concept_model(args, benchmark_name):
     config = ConceptEncoderConfig.from_pretrained(args.model_name_or_path)
     config.num_labels = cfg["num_labels"]
     config.problem_type = cfg["problem_type"]
+    config.pool_mode = getattr(args, "pool_mode", "mean")
     route = resolve_concept_eval_route(
         config=config,
         requested_model_type=args.model_type,
@@ -311,6 +380,21 @@ def load_concept_model(args, benchmark_name):
         logger.info(f"Loaded {loaded} weights from checkpoint (skipped {skipped})")
 
     return model, route
+
+
+def _architecture_id_from_config(config: ConceptEncoderConfig) -> str | None:
+    if not all(hasattr(config, attr) for attr in ("hidden_size", "num_hidden_layers", "concept_num")):
+        return None
+    family = getattr(config, "checkpoint_family", "concept_encoder")
+    decoder_layers = getattr(config, "decoder_num_layers", None)
+    if decoder_layers is not None:
+        return (
+            f"{family}_H{config.hidden_size}"
+            f"L{config.num_hidden_layers}"
+            f"C{config.concept_num}"
+            f"D{decoder_layers}"
+        )
+    return f"{family}_H{config.hidden_size}L{config.num_hidden_layers}C{config.concept_num}"
 
 
 def run_zero_shot_stsb(args):
@@ -375,18 +459,50 @@ def run_zero_shot_stsb(args):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     report_name = f"bench-{benchmark_name}-{source_run_id}-{params_label}-{timestamp}"
 
+    lineage = resolve_eval_lineage(
+        model_path=args.model_name_or_path,
+        source_training_run_id=args.source_training_run_id,
+        source_training_group=args.source_training_group,
+        source_training_experiment_id=args.source_training_experiment_id,
+        source_checkpoint_step=args.source_checkpoint_step,
+        source_checkpoint_epoch=args.source_checkpoint_epoch,
+        allow_unlinked_eval=args.allow_unlinked_eval,
+        wandb_entity=args.wandb_entity,
+        wandb_project=args.wandb_project,
+    )
+    objective_family = getattr(model.config, "pretraining_objective", None)
+    model_family = getattr(model.config, "checkpoint_family", args.model_type)
+    architecture_id = _architecture_id_from_config(model.config)
     hostname = get_hostname()
+    tags = build_namespaced_eval_tags(
+        benchmark=benchmark_name,
+        model_family=model_family,
+        objective_family=objective_family,
+        params_m=params_m,
+        tokenizer_name=tokenizer_name,
+        lineage=lineage,
+        extra_tags=["beyond-glue", benchmark_name, args.model_type, hostname, "zero-shot"],
+    )
     wandb.init(
-        project="MrCogito",
+        project=args.wandb_project,
+        entity=args.wandb_entity,
         name=report_name,
         job_type="benchmark_stsb_zero_shot",
-        tags=["beyond-glue", benchmark_name, args.model_type, hostname, "zero-shot"],
+        group=lineage.source_training_group,
+        tags=tags,
         config={
             "benchmark": benchmark_name,
             "model_type": args.model_type,
             "model_path": args.model_name_or_path,
             "total_params": total_params,
-            "source_run_id": source_run_id,
+            **lineage_to_wandb_config(lineage),
+            **build_eval_compare_fields(
+                model_family=model_family,
+                params_m=params_m,
+                objective_family=objective_family,
+                tokenizer_name=tokenizer_name,
+                architecture_id=architecture_id,
+            ),
         },
     )
     wandb.log(results)
@@ -404,6 +520,74 @@ def run_zero_shot_stsb(args):
     logger.info("Results for stsb_zero_shot:")
     for key, value in results.items():
         logger.info(f"  {key}: {value}")
+    return results
+
+
+def run_zero_shot_stsb_baseline(args):
+    """Trivial-floor STS-B baseline: mean-pool an external model's token embeddings or
+    last hidden states, then cosine. No concept model involved — anchors the model number.
+    """
+    from transformers import AutoModel
+
+    benchmark_name = "stsb_zero_shot"
+    variant = args.baseline
+    tokenizer_name = args.tokenizer_name or args.baseline_model
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    teacher = AutoModel.from_pretrained(
+        args.baseline_model, cache_dir=MODEL_CACHE_DIR, token=hf_token
+    ).to(device).eval()
+    embedding = teacher.get_input_embeddings()
+
+    _, eval_ds = load_benchmark_dataset(
+        benchmark_name, tokenizer, args.max_length, pair_input_mode="separate"
+    )
+    dataloader = DataLoader(
+        eval_ds, batch_size=args.batch_size, shuffle=False, collate_fn=default_data_collator
+    )
+
+    def encode(input_ids, attention_mask):
+        mask = attention_mask.unsqueeze(-1).float()
+        if variant == "token_embed_mean":
+            h = embedding(input_ids)
+        else:  # teacher_hidden_mean
+            h = teacher(input_ids=input_ids, attention_mask=attention_mask).last_hidden_state
+        return (h * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1e-8)
+
+    predictions, labels = [], []
+    for batch in dataloader:
+        batch = {k: (v.to(device) if isinstance(v, torch.Tensor) else v) for k, v in batch.items()}
+        with torch.no_grad():
+            z_a = encode(batch["input_ids_a"], batch["attention_mask_a"])
+            z_b = encode(batch["input_ids_b"], batch["attention_mask_b"])
+            cos = torch.nn.functional.cosine_similarity(z_a, z_b, dim=-1)
+        predictions.append(cos.cpu())
+        labels.append(batch["labels"].cpu())
+
+    predictions = torch.cat(predictions).float().numpy()
+    labels = torch.cat(labels).float().numpy()
+    results = {
+        "pearsonr": pearsonr(predictions, labels)[0],
+        "spearmanr": spearmanr(predictions, labels)[0],
+    }
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    report_name = f"bench-{benchmark_name}-BASELINE_{variant}-{os.path.basename(args.baseline_model)}-{timestamp}"
+    os.makedirs(REPORTS_DIR, exist_ok=True)
+    pd.DataFrame([{
+        "benchmark": benchmark_name,
+        "variant": variant,
+        "baseline_model": args.baseline_model,
+        **results,
+    }]).to_csv(os.path.join(REPORTS_DIR, f"{report_name}-results.csv"), index=False)
+
+    logger.info(f"STS-B baseline [{variant}] on {args.baseline_model}:")
+    for k, v in results.items():
+        logger.info(f"  {k}: {v}")
+    logger.info("Reference ceilings (cited): SimCSE-unsup ~0.76, SBERT ~0.84 Spearman.")
     return results
 
 
@@ -449,6 +633,17 @@ def run_benchmark(args, benchmark_name):
     source_run_id = os.path.basename(args.model_name_or_path)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     run_name = f"bench-{benchmark_name}-{source_run_id}-{params_label}-{timestamp}"
+    lineage = resolve_eval_lineage(
+        model_path=args.model_name_or_path,
+        source_training_run_id=args.source_training_run_id,
+        source_training_group=args.source_training_group,
+        source_training_experiment_id=args.source_training_experiment_id,
+        source_checkpoint_step=args.source_checkpoint_step,
+        source_checkpoint_epoch=args.source_checkpoint_epoch,
+        allow_unlinked_eval=args.allow_unlinked_eval,
+        wandb_entity=args.wandb_entity,
+        wandb_project=args.wandb_project,
+    )
 
     training_args = TrainingArguments(
         output_dir=os.path.join(args.output_dir, benchmark_name),
@@ -481,18 +676,39 @@ def run_benchmark(args, benchmark_name):
             pad_to_multiple_of=8,
         )
 
+    objective_family = getattr(model.config, "pretraining_objective", None)
+    model_family = getattr(model.config, "checkpoint_family", args.model_type)
+    architecture_id = _architecture_id_from_config(model.config)
     hostname = get_hostname()
+    tags = build_namespaced_eval_tags(
+        benchmark=benchmark_name,
+        model_family=model_family,
+        objective_family=objective_family,
+        params_m=params_m,
+        tokenizer_name=tokenizer_name,
+        lineage=lineage,
+        extra_tags=["beyond-glue", benchmark_name, args.model_type, hostname],
+    )
     wandb.init(
-        project="MrCogito",
+        project=args.wandb_project,
+        entity=args.wandb_entity,
         name=run_name,
         job_type=f"benchmark_{benchmark_name}",
-        tags=["beyond-glue", benchmark_name, args.model_type, hostname],
+        group=lineage.source_training_group,
+        tags=tags,
         config={
             "benchmark": benchmark_name,
             "model_type": args.model_type,
             "model_path": args.model_name_or_path,
             "total_params": total_params,
-            "source_run_id": source_run_id,
+            **lineage_to_wandb_config(lineage),
+            **build_eval_compare_fields(
+                model_family=model_family,
+                params_m=params_m,
+                objective_family=objective_family,
+                tokenizer_name=tokenizer_name,
+                architecture_id=architecture_id,
+            ),
         },
     )
 
@@ -548,7 +764,10 @@ def main():
         logger.info(f"# Running benchmark: {bm}")
         logger.info(f"{'#'*60}")
         if bm == "stsb_zero_shot":
-            run_zero_shot_stsb(args)
+            if getattr(args, "baseline", "none") != "none":
+                run_zero_shot_stsb_baseline(args)
+            else:
+                run_zero_shot_stsb(args)
         else:
             run_benchmark(args, bm)
 

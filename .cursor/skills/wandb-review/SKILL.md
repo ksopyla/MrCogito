@@ -99,7 +99,7 @@ dataset unless the question is explicitly cross-dataset.
 ## Comparison framework (MrCogito-specific)
 
 When drawing conclusions, judge runs against **their experiment's own gates** (see
-`docs/experiments/<ID>.md`) and these cross-cutting signals:
+`docs/experiments_specs/<ID>.md`) and these cross-cutting signals:
 
 | Signal | Where in W&B | Notes |
 |---|---|---|
@@ -161,11 +161,12 @@ Deliver reviews as:
 
 | Symptom | Fix |
 |---|---|
-| `ModuleNotFoundError: wandb_gql` | Upstream dep clash (`wandb>=0.27.1` vs MCP). Wrapper pins `wandb<0.27.1`; restart Cursor |
+| `ModuleNotFoundError: wandb_gql` | Historical local-uvx issue. Current bridge uses hosted `mcp.withwandb.com` via `mcp-remote`; restart Cursor |
 | MCP tools not available | Restart Cursor; confirm `.cursor/mcp.json` wandb server is enabled in **Tools and MCP** |
 | `WANDB_API_KEY is not set` | Fill `WANDB_API_KEY` in project `.env` (from https://wandb.ai/authorize) |
+| `relogin required` | Known `wandb>=0.27.1` + local `wandb-core` issue with some API keys. Bridge now uses hosted MCP; run `uv run python verification/test_wandb_mcp.py`, then **restart Cursor** (MCP reload required) |
 | Empty query results | Verify entity `ksopyla`, project `MrCogito`; probe first for correct metric keys |
-| Auth errors | Regenerate API key; ensure `.env` is saved |
+| Auth errors (other) | Regenerate API key at https://wandb.ai/authorize; ensure `.env` is saved |
 
 ## Do not use this skill for
 

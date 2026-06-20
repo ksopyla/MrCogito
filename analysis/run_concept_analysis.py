@@ -54,6 +54,11 @@ from nn.concept_encoder_weighted import ConceptEncoderForMaskedLMWeighted
 from analysis.concept_analysis import (
     compute_concept_geometry_metrics,
     compute_representation_manifold_metrics,
+    compute_within_sample_concept_rank,
+)
+from analysis.concept_generation_eval import (
+    compute_roundtrip_recovery,
+    compute_latent_specificity,
 )
 
 
@@ -81,15 +86,26 @@ def parse_args():
     # concept_ar-only knobs (ignored for other families)
     p.add_argument("--ablation_batches", type=int, default=5,
                    help="concept_ar: number of held-out batches for concept-ablation ΔCE.")
+    p.add_argument("--ablation_window_k", type=int, default=None,
+                   help="E05: position boundary K for beyond-window concept-ablation ΔCE. "
+                        "Defaults to the checkpoint's decoder_context_window; pass a fixed K to "
+                        "compare a windowed checkpoint against its full-context control on the "
+                        "same beyond-window positions.")
     p.add_argument("--num_samples", type=int, default=4,
                    help="concept_ar: number of qualitative AR generation samples to dump.")
     p.add_argument("--max_new_tokens", type=int, default=64,
                    help="concept_ar: max tokens to greedily generate per sample.")
+    p.add_argument("--generation_eval", action="store_true", default=True,
+                   help="concept_ar: run L1/L3 round-trip recovery + compression curve + specificity.")
+    p.add_argument("--no_generation_eval", dest="generation_eval", action="store_false",
+                   help="Disable the L1/L3 generation/compression faithfulness eval.")
+    p.add_argument("--free_running_examples", type=int, default=8,
+                   help="concept_ar: number of free-running greedy round-trip examples (cost O(N*tokens)).")
     return p.parse_args()
 
 
 @torch.no_grad()
-def compute_ar_concept_ablation(model, batches, device):
+def compute_ar_concept_ablation(model, batches, device, window_k=None):
     """Average concept_ablation_ce over a few held-out reconstruction batches.
 
     `batches` is a list of (input_ids, attention_mask) tensors already on CPU.
@@ -110,7 +126,7 @@ def compute_ar_concept_ablation(model, batches, device):
         attention_mask = attention_mask.to(device)
         labels = input_ids.clone()
         labels[attention_mask == 0] = -100
-        m = model.concept_ablation_ce(input_ids, attention_mask, labels)
+        m = model.concept_ablation_ce(input_ids, attention_mask, labels, window_k=window_k)
         for k, v in m.items():
             sums[k] = sums.get(k, 0.0) + v
         n += 1
@@ -260,6 +276,13 @@ def main():
     manifold = compute_representation_manifold_metrics(pooled_embeddings)
     agg.update(manifold)
 
+    # PRIMARY de-collapse metric: per-sample within-set concept rank (how many
+    # independent directions ONE input's C concepts span), averaged over inputs.
+    # This is distinct from global_effective_rank (slot redundancy after batch-averaging)
+    # and manifold_rankme (cross-sample embedding diversity).
+    within = compute_within_sample_concept_rank(all_concepts)
+    agg.update(within)
+
     # --- Print report ---
     print("\n" + "=" * 65)
     print("CONCEPT SPACE GEOMETRY REPORT")
@@ -277,10 +300,21 @@ def main():
         g = grade(val, lo, hi)
         print(f"  {name:<40s} {val:{fmt}}{unit}   {g}")
 
-    print("─── Collapse Detection ─────────────────────────────────────")
-    row("Global effective rank (raw)",
+    print("─── De-collapse (PRIMARY: within-sample concept-set rank) ───")
+    print("    RankMe of each input's [C, H] concepts, averaged over inputs.")
+    print("    THE de-collapse metric: are one input's C concepts diverse?")
+    row("Within-sample concept RankMe (mean)",
+        agg.get("within_sample_rankme_mean", float("nan")), 16, 48, fmt=".2f")
+    print(f"  {'  (std over inputs)':<40s} "
+          f"{agg.get('within_sample_rankme_std', float('nan')):.2f}")
+
+    print()
+    print("─── Collapse Detection (SECONDARY diagnostics) ─────────────")
+    print("    Global effective rank = SVD of the BATCH-AVERAGED slot matrix")
+    print("    → measures slot redundancy, NOT per-input concept rank. Diagnostic only.")
+    row("Slot-mean effective rank (raw, secondary)",
         global_eff_rank, 40, 90)
-    row("Global effective rank (normalized 0-1)",
+    row("Slot-mean effective rank (normalized, secondary)",
         global_eff_rank_norm, 0.3, 0.7, fmt=".3f")
     row("Participation ratio (normalized)",
         agg.get("participation_ratio_normalized", float("nan")), 0.1, 0.3, fmt=".3f")
@@ -327,9 +361,10 @@ def main():
         print(f"  Top-1 dominance ratio: {dom_ratio:.3f}   {dom_grade}")
 
     print()
-    print("─── Representation Manifold (per-sample, the STS-relevant geometry) ─")
-    print("    SVD of mean-pooled sentence embeddings [N, H]; NOT the batch-mean slot matrix.")
-    row("RankMe effective rank (entropy-based)",
+    print("─── Cross-sample Embedding Diversity (downstream/STS geometry) ─")
+    print("    RankMe of mean-pooled sentence embeddings [N, H] across inputs.")
+    print("    Embedding diversity across inputs — NOT concept-set rank (can exceed C).")
+    row("Cross-sample embedding RankMe (entropy-based)",
         manifold.get("manifold_rankme", float("nan")), 16, 48, fmt=".2f")
     row("Participation ratio",
         manifold.get("manifold_participation_ratio", float("nan")), 16, 48, fmt=".2f")
@@ -369,9 +404,17 @@ def main():
     # --- concept_ar: ablation ΔCE + qualitative generation samples ---
     ablation = {}
     samples = []
+    gen_faith = {}
     if is_concept_ar:
+        # E05: beyond-window deltas. Explicit --ablation_window_k wins; else fall back to the
+        # checkpoint's own window (None for full-context controls → no beyond-window metrics).
+        window_k = args.ablation_window_k
+        if window_k is None:
+            window_k = getattr(model.config, "decoder_context_window", None)
         try:
-            ablation = compute_ar_concept_ablation(model, ablation_batches, device)
+            ablation = compute_ar_concept_ablation(
+                model, ablation_batches, device, window_k=window_k
+            )
         except Exception as e:  # never let AR extras kill the geometry report
             print(f"\n[concept_ar] concept-ablation skipped: {e}")
         if ablation:
@@ -395,12 +438,57 @@ def main():
                 gshe = "✓ uses concepts" if dshe >= 0.5 else "✗ near-collapse"
                 print(f"  Δzero  (early-pos)   : {dze:.4f}   {gze}   ← PRIMARY (less bypass dilution)")
                 print(f"  Δshuffle (early-pos) : {dshe:.4f}   {gshe}   ← PRIMARY")
+            # E05 long-range memory gate: beyond-window positions (t >= K) cannot reach
+            # far-back tokens locally, so a large gap there = concepts carry cross-window memory.
+            if "delta_zero_beyond_window" in ablation:
+                wk = ablation.get("window_k")
+                dzb, dshb = ablation["delta_zero_beyond_window"], ablation["delta_shuffle_beyond_window"]
+                gzb = "✓ cross-window memory" if dzb >= 0.5 else "✗ no long-range use"
+                gshb = "✓ cross-window memory" if dshb >= 0.5 else "✗ no long-range use"
+                print(f"  CE intact (beyond K={wk}): {ablation['ce_intact_beyond_window']:.4f}  "
+                      f"(within-window {ablation['ce_intact_within_window']:.4f})")
+                print(f"  Δzero  (beyond-window): {dzb:.4f}   {gzb}   ← E05 GATE")
+                print(f"  Δshuffle (beyond-win) : {dshb:.4f}   {gshb}   ← E05 GATE")
             if "ce_intact_wd" in ablation:
                 gap = ablation["gap_clean_vs_wd"]
                 gw = ("⚠ decoder specialized to word-dropped inputs — clean-input CE "
                       "understates quality" if gap > 0.5 else "✓ clean/train conditions agree")
                 print(f"  CE intact (train-matched word-dropout): {ablation['ce_intact_wd']:.4f}")
                 print(f"  Gap clean-vs-wd      : {gap:.4f}   {gw}")
+        if args.generation_eval:
+            try:
+                recovery = compute_roundtrip_recovery(
+                    model, ablation_batches, device,
+                    concept_num=concept_mean.shape[0],
+                    free_running_examples=args.free_running_examples,
+                )
+                specificity = compute_latent_specificity(model, ablation_batches, device)
+                gen_faith = {**recovery, **specificity}
+            except Exception as e:  # never let it kill the geometry report
+                gen_faith = {}
+                print(f"\n[concept_ar] generation/compression eval skipped: {e}")
+            if gen_faith:
+                print()
+                print("─── L1/L3 — Generation & compression faithfulness ──────────")
+                print(f"  Teacher-forced token acc : {gen_faith['teacher_forced_token_acc']:.4f}  "
+                      "(recover input FROM concepts)")
+                print(f"  Free-running exact match  : {gen_faith['free_running_exact_match']:.4f}  "
+                      f"(greedy, n={gen_faith['free_running_n']})")
+                print(f"  Free-running token-F1     : {gen_faith['free_running_token_f1']:.4f}")
+                drop = gen_faith["specificity_acc_drop"]
+                gdrop = "✓ input-specific" if drop >= 0.05 else "✗ not specific to input"
+                print(f"  Specificity acc drop      : {drop:.4f}   {gdrop}  "
+                      f"(matched {gen_faith['specificity_acc_matched']:.3f} vs "
+                      f"shuffled {gen_faith['specificity_acc_shuffled']:.3f})")
+                print(f"  Specificity symmetric-KL  : {gen_faith['specificity_symmetric_kl']:.4f}")
+                curve = gen_faith.get("compression_curve", {})
+                if curve:
+                    print("  Compression curve (recovery vs ⌈seq_len/C⌉ ratio):")
+                    for r in curve.values():
+                        print(f"    ratio ~{r['compression_ratio']:>3}x : "
+                              f"acc {r['teacher_forced_token_acc']:.3f}  ({r['n_tokens']} tok)")
+        else:
+            gen_faith = {}
         try:
             samples = generate_ar_samples(model, tokenizer, sample_texts, device,
                                           max_new_tokens=args.max_new_tokens)
@@ -426,6 +514,8 @@ def main():
     }
     if ablation:
         result["concept_ablation"] = ablation
+    if gen_faith:
+        result["generation_faithfulness"] = gen_faith
     if samples:
         result["generation_samples"] = samples
 

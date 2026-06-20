@@ -15,7 +15,8 @@ Examples:
 
     uv run python analysis/dataset_seqlen_distribution.py \
         --candidates analysis/long_dataset_candidates.json \
-        --tokenizer HuggingFaceTB/SmolLM2-135M --max_docs 5000
+        --tokenizer HuggingFaceTB/SmolLM2-135M --max_docs 5000 \
+        --shuffle --shuffle_buffer_size 10000 --seed 42
 """
 
 import argparse
@@ -88,6 +89,18 @@ def parse_args():
     )
     p.add_argument("--cache_dir", default="./Cache/Datasets")
     p.add_argument("--out_dir", default="./Cache/Evaluation_reports")
+    p.add_argument(
+        "--shuffle",
+        action="store_true",
+        help="Shuffle the iterable dataset before taking max_docs (approximate for streaming datasets).",
+    )
+    p.add_argument(
+        "--shuffle_buffer_size",
+        type=int,
+        default=10_000,
+        help="Buffer size for streaming shuffle when --shuffle is set.",
+    )
+    p.add_argument("--seed", type=int, default=42, help="Random seed for streaming shuffle.")
     p.add_argument(
         "--trust_remote_code",
         action="store_true",
@@ -267,6 +280,10 @@ def analyze_candidate(
     )
 
     ds = _load_stream(candidate, args)
+    sample_method = "streaming first rows"
+    if args.shuffle:
+        ds = ds.shuffle(seed=args.seed, buffer_size=args.shuffle_buffer_size)
+        sample_method = f"streaming shuffle(buffer={args.shuffle_buffer_size}, seed={args.seed})"
 
     counts: Counter = Counter()
     total = 0
@@ -279,7 +296,7 @@ def analyze_candidate(
         else (f"tokenizer:{args.tokenizer}" if tokenizer is not None else f"len(text)/{args.chars_per_token:.1f} chars/tok")
     )
     print(f"Length source: {mode}")
-    print(f"Sampling up to {args.max_docs:,} documents ...\n")
+    print(f"Sampling up to {args.max_docs:,} documents ({sample_method}) ...\n")
 
     for i, row in enumerate(ds):
         if args.max_docs > 0 and i >= args.max_docs:
@@ -347,6 +364,7 @@ def analyze_candidate(
         "total_docs": total,
         "skipped_docs": skipped,
         "length_source": mode,
+        "sample_method": sample_method,
         "stats": stats,
         "bins": {b: counts[b] for b in bin_order},
         "bins_pct": {b: round(100 * counts[b] / total, 3) for b in bin_order},

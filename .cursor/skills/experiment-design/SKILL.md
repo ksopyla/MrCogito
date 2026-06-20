@@ -1,6 +1,6 @@
 ---
 name: experiment-design
-description: Turn a research hypothesis into ONE minimal, well-scoped Concept Encoder experiment before any code is written. Use when the user wants to start, define, scope, or implement a new experiment, asks "what should we try next" with a concrete idea, or when an implementation request risks pulling in multiple research-agenda threads at once. Produces a frozen spec in docs/experiments/<ID>.md that runs as args/config over the shared foundation; never a new training fork. Not for recording finished results (experiment-tracking), choosing direction from literature (research-synthesis), or implementing the nn modules (research-implementation).
+description: Turn a research hypothesis into ONE minimal, well-scoped Concept Encoder experiment before any code is written. Use when the user wants to start, define, scope, or implement a new experiment, asks "what should we try next" with a concrete idea, or when an implementation request risks pulling in multiple research-agenda threads at once. Produces a frozen spec in docs/experiments_specs/<ID>.md that runs as args/config over the shared foundation; never a new training fork. Not for recording finished results (experiment-tracking), choosing direction from literature (research-synthesis), or implementing the nn modules (research-implementation).
 ---
 
 # Experiment Design
@@ -13,7 +13,7 @@ The job is to **shrink scope** and **write down the spec** before writing code.
 
 ## Hard rules (non-negotiable)
 1. **One hypothesis, one changed variable.** Two changes → two specs.
-2. **Spec before code.** No experiment code until `docs/experiments/<ID>.md` exists and the user approves it.
+2. **Spec before code.** No experiment code until `docs/experiments_specs/<ID>.md` exists and the user approves it.
 3. **Configs over forks.** An experiment is args/config over the single shared training entrypoint. NEVER create a new `train_*.py` or `nn/concept_encoder_*.py` per experiment. New capability lands as a *reusable, config-selectable* foundation component (implement via `research-implementation`).
 4. **Numeric success AND kill criteria, set before running.** No open-ended runs.
 5. **Builds-on is mandatory.** Name the foundation modules reused, the init/checkpoint, and the baseline run id + score to beat.
@@ -21,7 +21,7 @@ See `.cursor/rules/experiment-discipline.mdc`.
 
 ## Read first
 1. `docs/1_Strategy_and_Plans/agenda.md` — the current focus (which may be exploratory / undecided) and what is already active. The new experiment should serve the guiding Vision and the current focus, and be a small, single-variable increment.
-2. `docs/experiments/` — existing specs + `TEMPLATE.md`.
+2. `docs/experiments_specs/` — existing specs + `TEMPLATE.md`.
 3. `docs/2_Experiments_Registry/master_experiment_log.md` — the nearest fair baseline and the "what we've explored" learnings (don't silently repeat a setup that already underperformed without a materially new ingredient; say what's new).
 
 ## Think upfront on architecture and parameters, write down in the spec
@@ -43,9 +43,9 @@ See `.cursor/rules/experiment-discipline.mdc`.
 - [ ] 3. Reduce to ONE changed variable vs a named baseline
 - [ ] 4. Fill Builds-on: foundation modules + init/checkpoint + baseline id & score
 - [ ] 5. Set numeric success + kill criteria
-- [ ] 6. Assign the next free ID (E0NN_slug); write docs/experiments/<ID>.md from TEMPLATE.md
+- [ ] 6. Assign the next free ID (E0NN_slug); write docs/experiments_specs/<ID>.md from TEMPLATE.md
 - [ ] 7. Specify how it runs: exact command + env-var overrides on the shared bash launcher (list any new FOUNDATION component needed — reusable, not a fork)
-- [ ] 8. Update agenda.md (set it as the Current focus); add the row to docs/experiments/README.md index
+- [ ] 8. Update agenda.md (set it as the Current focus); add the row to docs/experiments_specs/README.md index
 - [ ] 9. Get user go-ahead, THEN implement
 ```
 

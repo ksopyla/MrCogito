@@ -14,7 +14,7 @@ Pre-parking snapshot tag: `pre-consolidation-20260605`.
 | **Diffusion** (masked-diffusion + prefix-diffusion decoders) | Explored on MiniPile / WikiText-103; concept effective rank stayed low so far. Set aside for now and likely to be revisited (e.g. with warm-start, or as an alternative decoder). | `nn/concept_encoder_diffusion.py`, `training/train_diffusion.py`, `training/train_prefix_diffusion.py`, `tests/test_diffusion.py`, `tests/test_prefix_diffusion.py`, `scripts/train_diffusion_multigpu.sh`, `scripts/train_prefix_diffusion_multigpu.sh` |
 
 ## Reviving a family
-1. Open a spec in `docs/experiments/` with a materially new ingredient (e.g. warm-start) — see the "what we've explored" learnings in `agenda.md` first.
+1. Open a spec in `docs/experiments_specs/` with a materially new ingredient (e.g. warm-start) — see the "what we've explored" learnings in `agenda.md` first.
 2. `git mv` the needed files back into `nn/`/`training/`/`tests/` and fix imports.
 3. Re-register entries removed during parking (e.g. `analysis/run_concept_analysis.py` `MODEL_CLASSES`, eval `model_type` choices).
 

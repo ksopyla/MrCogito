@@ -244,6 +244,54 @@ def compute_representation_manifold_metrics(pooled: torch.Tensor) -> Dict[str, f
     return metrics
 
 
+@torch.no_grad()
+def compute_within_sample_concept_rank(concept_repr: torch.Tensor) -> Dict[str, float]:
+    """PRIMARY de-collapse metric: how many independent directions do ONE input's
+    128 concepts span, averaged over inputs.
+
+    This is the object "concept collapse" is really about, and the one neither
+    ``effective_rank`` (SVD of the BATCH-AVERAGED slot matrix → slot redundancy) nor
+    ``compute_representation_manifold_metrics`` (RankMe of CROSS-sample pooled embeddings →
+    embedding diversity) measures. For each sample we take its ``[C, H]`` concept matrix,
+    center it over concepts, and compute RankMe = ``exp(entropy(normalized singular values))``;
+    we report the mean and std over the batch.
+
+    Args:
+        concept_repr: ``[B, C, H]`` raw concept representations.
+
+    Returns:
+        ``within_sample_rankme_mean``, ``within_sample_rankme_std`` (NaN-safe).
+    """
+    metrics: Dict[str, float] = {
+        'within_sample_rankme_mean': float('nan'),
+        'within_sample_rankme_std': float('nan'),
+    }
+    if concept_repr.dim() != 3 or concept_repr.shape[0] < 1 or concept_repr.shape[1] < 2:
+        return metrics
+
+    x = concept_repr.float()
+    per_sample = []
+    for i in range(x.shape[0]):
+        m = x[i]                                   # [C, H]
+        # RankMe (Garrido et al. 2023) on the RAW concept matrix — NOT centered:
+        # if all C concepts share one direction (collapse), one singular value
+        # dominates → rank ~1; centering would remove that shared direction and
+        # wrongly report the residual noise as high rank.
+        try:
+            S = torch.linalg.svdvals(m)
+            p = S / (S.sum() + 1e-12)
+            entropy = -(p * (p + 1e-12).log()).sum()
+            per_sample.append(entropy.exp().item())
+        except Exception:
+            continue
+
+    if per_sample:
+        t = torch.tensor(per_sample)
+        metrics['within_sample_rankme_mean'] = t.mean().item()
+        metrics['within_sample_rankme_std'] = t.std(unbiased=False).item()
+    return metrics
+
+
 # ============================================================================
 # 2. ATTENTION PATTERN ANALYSIS
 # ============================================================================

@@ -85,7 +85,7 @@ This is an **active research project**: the north star is fixed, but the route i
 The day-to-day focus moves quickly, so it is not pinned here. The living source of truth is the agenda and the active experiment spec:
 
 - **Live agenda:** [`docs/1_Strategy_and_Plans/agenda.md`](docs/1_Strategy_and_Plans/agenda.md)
-- **Active experiment:** [`docs/experiments/`](docs/experiments/)
+- **Active experiment:** [`docs/experiments_specs/`](docs/experiments_specs/)
 - **Run ledger:** [`docs/2_Experiments_Registry/master_experiment_log.md`](docs/2_Experiments_Registry/master_experiment_log.md)
 
 ---
@@ -240,7 +240,7 @@ These are influences, not dependencies. The research question is whether a compa
 This is an active research repository — public, MIT-licensed, and intentionally transparent about negative results. The aim is not to polish a benchmark number, but to prove whether a concept bottleneck can support generation, and then reasoning.
 
 - **Long-term vision:** [`docs/1_Strategy_and_Plans/vision_and_goals.md`](docs/1_Strategy_and_Plans/vision_and_goals.md)
-- **Live agenda & experiments:** [`docs/1_Strategy_and_Plans/agenda.md`](docs/1_Strategy_and_Plans/agenda.md) · [`docs/experiments/`](docs/experiments/)
+- **Live agenda & experiments:** [`docs/1_Strategy_and_Plans/agenda.md`](docs/1_Strategy_and_Plans/agenda.md) · [`docs/experiments_specs/`](docs/experiments_specs/)
 - **Live experiment tracking:** the open [Weights & Biases project](https://wandb.ai/ksopyla/MrCogito) — every run, public.
 - Historical diffusion and recursive branches are parked, not discarded.
 
