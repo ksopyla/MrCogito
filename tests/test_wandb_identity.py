@@ -14,12 +14,12 @@ def test_perceiver_denoise_reconstruction_identity():
         use_bixt=True,
     )
 
-    assert identity.experiment_id is None
+    assert identity.experiment_id == "E04"
     assert identity.model_family == "perceiver_denoise"
     assert identity.objective_family == "reconstruction"
     assert identity.architecture_id == "perceiver_denoise_H512L6C128D3"
-    assert identity.group == "perceiver_denoise_H512L6C128D3"
-    assert identity.job_type == "train_perceiver_denoise_reconstruction"
+    assert identity.group == "E04_perceiver_denoise_H512L6C128D3"
+    assert identity.job_type == "train_parallel_reconstruction"
     assert "perceiver-denoise" not in identity.tags
     assert {"train", "perceiver_denoise", "bixt"}.issubset(identity.tags)
 
@@ -42,7 +42,7 @@ def test_e01_concept_ar_reconstruction_identity():
     assert identity.objective_family == "ar_reconstruction"
     assert identity.architecture_id == "concept_ar_H768L6C128D4"
     assert identity.group == "E01_concept_ar_H768L6C128D4"
-    assert identity.job_type == "train_concept_ar_reconstruction"
+    assert identity.job_type == "train_ar_reconstruction"
     assert {"E01", "concept_ar", "ar_reconstruction", "causal_ar"}.issubset(identity.tags)
 
 
@@ -64,7 +64,7 @@ def test_e02_prefix_suffix_identity():
     assert identity.objective_family == "prefix_suffix"
     assert identity.architecture_id == "concept_ar_prefix_H768L6C128D4"
     assert identity.group == "E02_concept_ar_prefix_H768L6C128D4"
-    assert identity.job_type == "train_concept_ar_prefix_suffix"
+    assert identity.job_type == "train_ar_generation_prefix_suffix"
     assert {"E02", "concept_ar_prefix", "prefix_suffix", "causal_ar"}.issubset(identity.tags)
 
 
@@ -87,7 +87,7 @@ def test_e03_anchor_reconstruction_identity():
     assert identity.objective_family == "ar_reconstruction_anchor"
     assert identity.architecture_id == "concept_ar_H768L6C128D4"
     assert identity.group == "E03_concept_ar_H768L6C128D4"
-    assert identity.job_type == "train_concept_ar_anchor_reconstruction"
+    assert identity.job_type == "train_ar_reconstruction_anchor"
     assert {"E03", "anchor", "anchor-on", "ar_reconstruction_anchor"}.issubset(identity.tags)
 
 

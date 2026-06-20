@@ -605,6 +605,25 @@ def init_wandb(
     hostname = get_hostname()
 
     tags = list(wandb_tags or [])
+    identity_config = extra_config or {}
+    configured_group = identity_config.get("wandb_group")
+    experiment_id = identity_config.get("experiment_id")
+    if configured_group and configured_group != base_id:
+        raise ValueError(
+            f"W&B identity mismatch: base group '{base_id}' differs from config wandb_group "
+            f"'{configured_group}'."
+        )
+    if experiment_id:
+        expected_prefix = f"{experiment_id}_"
+        if not base_id.startswith(expected_prefix):
+            raise ValueError(
+                f"W&B identity mismatch: group '{base_id}' does not start with '{expected_prefix}'."
+            )
+        if experiment_id not in tags:
+            raise ValueError(
+                f"W&B identity mismatch: experiment tag '{experiment_id}' missing in wandb tags {tags}."
+            )
+
     tags.extend([data_args.dataset_name, hostname])
     if getattr(data_args, "dataset_name_subset", None):
         tags.append(data_args.dataset_name_subset)
@@ -628,6 +647,11 @@ def init_wandb(
         "dataset_name": data_args.dataset_name,
         "tokenizer_name": data_args.tokenizer_name,
         "max_seq_length": data_args.max_seq_length,
+        "compare_family": identity_config.get("model_family", model_type),
+        "compare_objective": identity_config.get("objective_family"),
+        "compare_architecture": identity_config.get("architecture_id"),
+        "compare_tokenizer": data_args.tokenizer_name,
+        "compare_params_m": round(total_params / 1_000_000),
         **{f"git_{k}": v for k, v in get_git_info().items()},
         **{k: v for k, v in vars(training_args).items() if not k.startswith("_")},
     }

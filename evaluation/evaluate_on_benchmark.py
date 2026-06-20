@@ -62,6 +62,12 @@ from evaluation.concept_eval_routing import (
     is_separate_pair_route,
     resolve_concept_eval_route,
 )
+from evaluation.wandb_identity import (
+    build_eval_compare_fields,
+    build_namespaced_eval_tags,
+    lineage_to_wandb_config,
+    resolve_eval_lineage,
+)
 from training.utils_training import get_hostname
 
 logging.basicConfig(
@@ -206,6 +212,43 @@ def parse_args():
         default="HuggingFaceTB/SmolLM2-135M",
         help="HF model id for --baseline floors (shares our SmolLM2 tokenizer).",
     )
+    parser.add_argument("--wandb_entity", type=str, default="ksopyla")
+    parser.add_argument("--wandb_project", type=str, default="MrCogito")
+    parser.add_argument(
+        "--source_training_run_id",
+        type=str,
+        default=None,
+        help="Optional explicit parent training run id/name in W&B.",
+    )
+    parser.add_argument(
+        "--source_training_group",
+        type=str,
+        default=None,
+        help="Optional explicit parent training W&B group (overrides API lookup).",
+    )
+    parser.add_argument(
+        "--source_training_experiment_id",
+        type=str,
+        default=None,
+        help="Optional explicit experiment id (e.g. E04) for eval lineage.",
+    )
+    parser.add_argument(
+        "--source_checkpoint_step",
+        type=int,
+        default=None,
+        help="Optional explicit checkpoint step; inferred from checkpoint-<step> when absent.",
+    )
+    parser.add_argument(
+        "--source_checkpoint_epoch",
+        type=float,
+        default=None,
+        help="Optional checkpoint epoch for easier train/eval retrieval in W&B.",
+    )
+    parser.add_argument(
+        "--allow_unlinked_eval",
+        action="store_true",
+        help="Permit eval runs without resolved parent lineage (strict mode default is fail-fast).",
+    )
     return parser.parse_args()
 
 
@@ -339,6 +382,21 @@ def load_concept_model(args, benchmark_name):
     return model, route
 
 
+def _architecture_id_from_config(config: ConceptEncoderConfig) -> str | None:
+    if not all(hasattr(config, attr) for attr in ("hidden_size", "num_hidden_layers", "concept_num")):
+        return None
+    family = getattr(config, "checkpoint_family", "concept_encoder")
+    decoder_layers = getattr(config, "decoder_num_layers", None)
+    if decoder_layers is not None:
+        return (
+            f"{family}_H{config.hidden_size}"
+            f"L{config.num_hidden_layers}"
+            f"C{config.concept_num}"
+            f"D{decoder_layers}"
+        )
+    return f"{family}_H{config.hidden_size}L{config.num_hidden_layers}C{config.concept_num}"
+
+
 def run_zero_shot_stsb(args):
     """Evaluate sentence-pair cosine similarity without fine-tuning."""
     benchmark_name = "stsb_zero_shot"
@@ -401,18 +459,50 @@ def run_zero_shot_stsb(args):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     report_name = f"bench-{benchmark_name}-{source_run_id}-{params_label}-{timestamp}"
 
+    lineage = resolve_eval_lineage(
+        model_path=args.model_name_or_path,
+        source_training_run_id=args.source_training_run_id,
+        source_training_group=args.source_training_group,
+        source_training_experiment_id=args.source_training_experiment_id,
+        source_checkpoint_step=args.source_checkpoint_step,
+        source_checkpoint_epoch=args.source_checkpoint_epoch,
+        allow_unlinked_eval=args.allow_unlinked_eval,
+        wandb_entity=args.wandb_entity,
+        wandb_project=args.wandb_project,
+    )
+    objective_family = getattr(model.config, "pretraining_objective", None)
+    model_family = getattr(model.config, "checkpoint_family", args.model_type)
+    architecture_id = _architecture_id_from_config(model.config)
     hostname = get_hostname()
+    tags = build_namespaced_eval_tags(
+        benchmark=benchmark_name,
+        model_family=model_family,
+        objective_family=objective_family,
+        params_m=params_m,
+        tokenizer_name=tokenizer_name,
+        lineage=lineage,
+        extra_tags=["beyond-glue", benchmark_name, args.model_type, hostname, "zero-shot"],
+    )
     wandb.init(
-        project="MrCogito",
+        project=args.wandb_project,
+        entity=args.wandb_entity,
         name=report_name,
         job_type="benchmark_stsb_zero_shot",
-        tags=["beyond-glue", benchmark_name, args.model_type, hostname, "zero-shot"],
+        group=lineage.source_training_group,
+        tags=tags,
         config={
             "benchmark": benchmark_name,
             "model_type": args.model_type,
             "model_path": args.model_name_or_path,
             "total_params": total_params,
-            "source_run_id": source_run_id,
+            **lineage_to_wandb_config(lineage),
+            **build_eval_compare_fields(
+                model_family=model_family,
+                params_m=params_m,
+                objective_family=objective_family,
+                tokenizer_name=tokenizer_name,
+                architecture_id=architecture_id,
+            ),
         },
     )
     wandb.log(results)
@@ -543,6 +633,17 @@ def run_benchmark(args, benchmark_name):
     source_run_id = os.path.basename(args.model_name_or_path)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     run_name = f"bench-{benchmark_name}-{source_run_id}-{params_label}-{timestamp}"
+    lineage = resolve_eval_lineage(
+        model_path=args.model_name_or_path,
+        source_training_run_id=args.source_training_run_id,
+        source_training_group=args.source_training_group,
+        source_training_experiment_id=args.source_training_experiment_id,
+        source_checkpoint_step=args.source_checkpoint_step,
+        source_checkpoint_epoch=args.source_checkpoint_epoch,
+        allow_unlinked_eval=args.allow_unlinked_eval,
+        wandb_entity=args.wandb_entity,
+        wandb_project=args.wandb_project,
+    )
 
     training_args = TrainingArguments(
         output_dir=os.path.join(args.output_dir, benchmark_name),
@@ -575,18 +676,39 @@ def run_benchmark(args, benchmark_name):
             pad_to_multiple_of=8,
         )
 
+    objective_family = getattr(model.config, "pretraining_objective", None)
+    model_family = getattr(model.config, "checkpoint_family", args.model_type)
+    architecture_id = _architecture_id_from_config(model.config)
     hostname = get_hostname()
+    tags = build_namespaced_eval_tags(
+        benchmark=benchmark_name,
+        model_family=model_family,
+        objective_family=objective_family,
+        params_m=params_m,
+        tokenizer_name=tokenizer_name,
+        lineage=lineage,
+        extra_tags=["beyond-glue", benchmark_name, args.model_type, hostname],
+    )
     wandb.init(
-        project="MrCogito",
+        project=args.wandb_project,
+        entity=args.wandb_entity,
         name=run_name,
         job_type=f"benchmark_{benchmark_name}",
-        tags=["beyond-glue", benchmark_name, args.model_type, hostname],
+        group=lineage.source_training_group,
+        tags=tags,
         config={
             "benchmark": benchmark_name,
             "model_type": args.model_type,
             "model_path": args.model_name_or_path,
             "total_params": total_params,
-            "source_run_id": source_run_id,
+            **lineage_to_wandb_config(lineage),
+            **build_eval_compare_fields(
+                model_family=model_family,
+                params_m=params_m,
+                objective_family=objective_family,
+                tokenizer_name=tokenizer_name,
+                architecture_id=architecture_id,
+            ),
         },
     )
 
