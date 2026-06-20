@@ -321,7 +321,9 @@
       "measurement": {
         "length_column": "token_count"
       },
-      "sample_name": "fineweb_edu_baseline"
+      "sample_name": "fineweb_edu_baseline",
+      "dataset_rows": "9,672,101",
+      "dataset_rows_source": "HF size API for sample-10BT train split"
     },
     {
       "id": "dclm_baseline",
@@ -342,7 +344,9 @@
       "measurement": {
         "text_column": "text"
       },
-      "sample_name": "dclm_baseline"
+      "sample_name": "dclm_baseline",
+      "dataset_rows": "~3B",
+      "dataset_rows_source": "dataset card / paper; HF size API does not expose rows"
     },
     {
       "id": "fineweb2",
@@ -381,7 +385,9 @@
           "https://huggingface.co/datasets/HuggingFaceFW/finepdfs_100BT/resolve/refs%2Fconvert%2Fparquet/default/train/0000.parquet"
         ]
       },
-      "sample_name": "finepdfs_100BT_pdf_pretrain"
+      "sample_name": "finepdfs_100BT_pdf_pretrain",
+      "dataset_rows": "29,904,625",
+      "dataset_rows_source": "HF size API default/train"
     },
     {
       "id": "finemath",
@@ -404,7 +410,9 @@
         "length_column": "token_count",
         "subset": "finemath-3plus"
       },
-      "sample_name": "finemath_3plus"
+      "sample_name": "finemath_3plus",
+      "dataset_rows": "21,405,610",
+      "dataset_rows_source": "HF size API for finemath-3plus train split"
     },
     {
       "id": "stack_edu",
@@ -427,7 +435,9 @@
         "subset": "python",
         "text_column": "text"
       },
-      "sample_name": "stack_edu_python"
+      "sample_name": "stack_edu_python",
+      "dataset_rows": "25,286,012",
+      "dataset_rows_source": "HF size API for processed Python subset used for sampling"
     },
     {
       "id": "megamath",
@@ -464,7 +474,9 @@
       "measurement": {
         "text_column": "text"
       },
-      "sample_name": "dolmino_mix"
+      "sample_name": "dolmino_mix",
+      "dataset_rows": "3,523,358",
+      "dataset_rows_source": "HF size API default/train"
     },
     {
       "id": "olmo_mix",
@@ -483,7 +495,9 @@
       "measurement": {
         "text_column": "text"
       },
-      "sample_name": "olmo_mix"
+      "sample_name": "olmo_mix",
+      "dataset_rows": "87,719",
+      "dataset_rows_source": "HF size API default/train"
     },
     {
       "id": "dolma",
@@ -601,7 +615,9 @@
         "subset": "synthetic_qa",
         "text_column": "text"
       },
-      "sample_name": "opc_annealing_synthetic_qa"
+      "sample_name": "opc_annealing_synthetic_qa",
+      "dataset_rows": "3,238,929",
+      "dataset_rows_source": "HF size API synthetic_qa/train"
     },
     {
       "id": "prolong_64k",
@@ -637,7 +653,9 @@
         "length_column": "token_length",
         "subset": "cosmopedia-v2"
       },
-      "sample_name": "cosmopedia_v2"
+      "sample_name": "cosmopedia_v2",
+      "dataset_rows": "39M",
+      "dataset_rows_source": "dataset card / catalog"
     },
     {
       "id": "longblocks_doc_qa_reasoning",
@@ -661,7 +679,9 @@
           "response_Qwen3-Next-80B-A3B"
         ]
       },
-      "sample_name": "longblocks_doc_qa_reasoning"
+      "sample_name": "longblocks_doc_qa_reasoning",
+      "dataset_rows": "193,894",
+      "dataset_rows_source": "HF size API default/train"
     },
     {
       "id": "openmathreasoning_cot",
@@ -687,7 +707,9 @@
           "generated_solution"
         ]
       },
-      "sample_name": "openmathreasoning_cot"
+      "sample_name": "openmathreasoning_cot",
+      "dataset_rows": "3,201,061",
+      "dataset_rows_source": "HF size API default/cot"
     },
     {
       "id": "openthoughts3_math_code_science",
@@ -708,7 +730,9 @@
       "measurement": {
         "text_column": "conversations"
       },
-      "sample_name": "openthoughts3_math_code_science"
+      "sample_name": "openthoughts3_math_code_science",
+      "dataset_rows": "1,200,000",
+      "dataset_rows_source": "HF size API default/train"
     },
     {
       "id": "big_reasoning_traces",
@@ -729,7 +753,9 @@
         "subset": "DeepSeek",
         "length_column": "num_tokens"
       },
-      "sample_name": "big_reasoning_traces"
+      "sample_name": "big_reasoning_traces",
+      "dataset_rows": "676,665",
+      "dataset_rows_source": "HF size API DeepSeek/train"
     },
     {
       "id": "ettin_pretraining",
@@ -745,7 +771,9 @@
         "ettin"
       ],
       "load_notes": "MDS format; HF streaming fails without mosaic",
-      "measurement": null
+      "measurement": null,
+      "dataset_rows": "\u2014",
+      "dataset_rows_source": "MDS format; row count not exposed in current catalog"
     },
     {
       "id": "dolma3_mix_6t",
@@ -761,7 +789,9 @@
         "olmo3"
       ],
       "load_notes": "Very large; shard/stream. Primary OLMo3 mix per HF card.",
-      "measurement": null
+      "measurement": null,
+      "dataset_rows": "\u2014",
+      "dataset_rows_source": "not measured / huge mix"
     },
     {
       "id": "dolma3_dolmino_100b",
@@ -777,7 +807,9 @@
         "olmo3"
       ],
       "load_notes": "Smaller than full dolmino; OLMo3-7B reproduction stage-2",
-      "measurement": null
+      "measurement": null,
+      "dataset_rows": "\u2014",
+      "dataset_rows_source": "not measured"
     },
     {
       "id": "dolma3_longmino_100b",
@@ -793,7 +825,9 @@
         "olmo3"
       ],
       "load_notes": "Long-context CPT mix; not yet seq-len sampled",
-      "measurement": null
+      "measurement": null,
+      "dataset_rows": "\u2014",
+      "dataset_rows_source": "not measured"
     },
     {
       "id": "fineweb2_hq",

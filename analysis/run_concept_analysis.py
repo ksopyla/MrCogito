@@ -86,6 +86,11 @@ def parse_args():
     # concept_ar-only knobs (ignored for other families)
     p.add_argument("--ablation_batches", type=int, default=5,
                    help="concept_ar: number of held-out batches for concept-ablation ΔCE.")
+    p.add_argument("--ablation_window_k", type=int, default=None,
+                   help="E05: position boundary K for beyond-window concept-ablation ΔCE. "
+                        "Defaults to the checkpoint's decoder_context_window; pass a fixed K to "
+                        "compare a windowed checkpoint against its full-context control on the "
+                        "same beyond-window positions.")
     p.add_argument("--num_samples", type=int, default=4,
                    help="concept_ar: number of qualitative AR generation samples to dump.")
     p.add_argument("--max_new_tokens", type=int, default=64,
@@ -100,7 +105,7 @@ def parse_args():
 
 
 @torch.no_grad()
-def compute_ar_concept_ablation(model, batches, device):
+def compute_ar_concept_ablation(model, batches, device, window_k=None):
     """Average concept_ablation_ce over a few held-out reconstruction batches.
 
     `batches` is a list of (input_ids, attention_mask) tensors already on CPU.
@@ -121,7 +126,7 @@ def compute_ar_concept_ablation(model, batches, device):
         attention_mask = attention_mask.to(device)
         labels = input_ids.clone()
         labels[attention_mask == 0] = -100
-        m = model.concept_ablation_ce(input_ids, attention_mask, labels)
+        m = model.concept_ablation_ce(input_ids, attention_mask, labels, window_k=window_k)
         for k, v in m.items():
             sums[k] = sums.get(k, 0.0) + v
         n += 1
@@ -401,8 +406,15 @@ def main():
     samples = []
     gen_faith = {}
     if is_concept_ar:
+        # E05: beyond-window deltas. Explicit --ablation_window_k wins; else fall back to the
+        # checkpoint's own window (None for full-context controls → no beyond-window metrics).
+        window_k = args.ablation_window_k
+        if window_k is None:
+            window_k = getattr(model.config, "decoder_context_window", None)
         try:
-            ablation = compute_ar_concept_ablation(model, ablation_batches, device)
+            ablation = compute_ar_concept_ablation(
+                model, ablation_batches, device, window_k=window_k
+            )
         except Exception as e:  # never let AR extras kill the geometry report
             print(f"\n[concept_ar] concept-ablation skipped: {e}")
         if ablation:
@@ -426,6 +438,17 @@ def main():
                 gshe = "✓ uses concepts" if dshe >= 0.5 else "✗ near-collapse"
                 print(f"  Δzero  (early-pos)   : {dze:.4f}   {gze}   ← PRIMARY (less bypass dilution)")
                 print(f"  Δshuffle (early-pos) : {dshe:.4f}   {gshe}   ← PRIMARY")
+            # E05 long-range memory gate: beyond-window positions (t >= K) cannot reach
+            # far-back tokens locally, so a large gap there = concepts carry cross-window memory.
+            if "delta_zero_beyond_window" in ablation:
+                wk = ablation.get("window_k")
+                dzb, dshb = ablation["delta_zero_beyond_window"], ablation["delta_shuffle_beyond_window"]
+                gzb = "✓ cross-window memory" if dzb >= 0.5 else "✗ no long-range use"
+                gshb = "✓ cross-window memory" if dshb >= 0.5 else "✗ no long-range use"
+                print(f"  CE intact (beyond K={wk}): {ablation['ce_intact_beyond_window']:.4f}  "
+                      f"(within-window {ablation['ce_intact_within_window']:.4f})")
+                print(f"  Δzero  (beyond-window): {dzb:.4f}   {gzb}   ← E05 GATE")
+                print(f"  Δshuffle (beyond-win) : {dshb:.4f}   {gshb}   ← E05 GATE")
             if "ce_intact_wd" in ablation:
                 gap = ablation["gap_clean_vs_wd"]
                 gw = ("⚠ decoder specialized to word-dropped inputs — clean-input CE "
