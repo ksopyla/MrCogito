@@ -46,6 +46,8 @@ DECODER_NUM_LAYERS="${DECODER_NUM_LAYERS:-3}"
 DECODER_TYPE="${DECODER_TYPE:-perceiver_posonly}"   # | causal_ar
 DECODER_POS_TYPE="${DECODER_POS_TYPE:-learned}"     # | rope (causal_ar)
 DECODER_WORD_DROPOUT="${DECODER_WORD_DROPOUT:-0.0}"
+# E05: sliding-window causal context for causal_ar (last-K tokens). Empty = full causal.
+DECODER_CONTEXT_WINDOW="${DECODER_CONTEXT_WINDOW:-}"
 HIDDEN_ACT="${HIDDEN_ACT:-gelu}"                    # | silu (SwiGLU)
 NORM_TYPE="${NORM_TYPE:-layernorm}"                 # | rmsnorm
 # E03 — concept de-collapse via a frozen-encoder hidden-state anchor (causal_ar + reconstruction).
@@ -57,6 +59,8 @@ ANCHOR_STANDARDIZE="${ANCHOR_STANDARDIZE:-true}"
 ANCHOR_HEAD_LAYERS="${ANCHOR_HEAD_LAYERS:-2}"
 DATASET_NAME="${DATASET_NAME:-JeanKaddour/minipile}"
 DATASET_SUBSET="${DATASET_SUBSET:-}"
+# E05: registered multi-dataset mix name (e.g. e05_long_2k). Empty = single dataset above.
+DATASET_MIX="${DATASET_MIX:-}"
 TOKENIZER_NAME="${TOKENIZER_NAME:-answerdotai/ModernBERT-base}"
 MAX_SEQ_LENGTH="${MAX_SEQ_LENGTH:-512}"
 DELETION_RATE="${DELETION_RATE:-0.6}"
@@ -101,6 +105,18 @@ fi
 
 # E03 anchor args are only passed when enabled; the control arm (ANCHOR_LOSS=false) passes nothing,
 # so anchor_loss defaults to False and the run is byte-for-byte E01.
+# E05: only pass --decoder_context_window when set, so the default stays None (full causal).
+WINDOW_ARGS=()
+if [ -n "$DECODER_CONTEXT_WINDOW" ]; then
+    WINDOW_ARGS+=(--decoder_context_window "$DECODER_CONTEXT_WINDOW")
+fi
+
+# E05: pass --dataset_mix only when set (overrides the single dataset path).
+MIX_ARGS=()
+if [ -n "$DATASET_MIX" ]; then
+    MIX_ARGS+=(--dataset_mix "$DATASET_MIX")
+fi
+
 ANCHOR_ARGS=()
 if [ "$ANCHOR_LOSS" = "true" ]; then
     ANCHOR_ARGS+=(
@@ -178,6 +194,8 @@ accelerate launch \
     --load_best_model_at_end True \
     --metric_for_best_model "eval_loss" \
     --greater_is_better False \
+    "${WINDOW_ARGS[@]}" \
+    "${MIX_ARGS[@]}" \
     "${ANCHOR_ARGS[@]}" \
     "${RESUME_ARGS[@]}" \
     2>&1 | python scripts/clean_tee.py "$SHELL_LOG"

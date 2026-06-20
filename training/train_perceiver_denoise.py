@@ -33,7 +33,10 @@ from transformers.modeling_outputs import MaskedLMOutput
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from data.data_collators import DataCollatorForPrefixGeneration, DataCollatorForTSDAE
-from data.dataset_preprocess import load_and_preprocess_text_dataset
+from data.dataset_preprocess import (
+    load_and_preprocess_dataset_mix,
+    load_and_preprocess_text_dataset,
+)
 from nn.concept_encoder import ConceptEncoderConfig
 from nn.concept_encoder_perceiver import (
     ConceptEncoderForConditionalLM,
@@ -123,6 +126,12 @@ class ModelArguments:
         default=0.0,
         metadata={"help": "Fraction of decoder-input tokens replaced by a learned dropout "
                   "embedding (posterior-collapse guard for causal_ar)."},
+    )
+    decoder_context_window: Optional[int] = field(
+        default=None,
+        metadata={"help": "E05: restrict causal_ar decoder self-attention to the last K tokens "
+                  "(sliding-window). None = full causal context (E01/E02/E03). When set, "
+                  "out-of-window context is only reachable through the concepts."},
     )
     hidden_act: str = field(
         default="gelu",
@@ -224,6 +233,12 @@ class LossArguments:
 class DataTrainingArguments:
     dataset_name: str = field(default="JeanKaddour/minipile")
     dataset_name_subset: Optional[str] = field(default=None)
+    dataset_mix: Optional[str] = field(
+        default=None,
+        metadata={"help": "E05: name of a registered multi-dataset mix in "
+                  "data.dataset_preprocess.DATASET_MIXES (e.g. 'e05_long_2k'). When set, "
+                  "overrides dataset_name/dataset_name_subset and interleaves the mix."},
+    )
     tokenizer_name: str = field(default="answerdotai/ModernBERT-base")
     max_seq_length: int = field(default=512)
     test_size_percent: float = field(default=0.1)
@@ -343,6 +358,9 @@ class PerceiverDenoiseTrainer(Trainer):
         base_model = self.model.module if hasattr(self.model, "module") else self.model
         if not hasattr(base_model, "concept_ablation_ce"):
             return {}
+        # E05: when a sliding-window decoder is configured, also log beyond-window
+        # ablation deltas (the long-range memory gate). None for full-context decoders.
+        window_k = getattr(base_model.config, "decoder_context_window", None)
         dataloader = self.get_eval_dataloader()
         device = self.args.device
         sums: dict = {}
@@ -365,13 +383,16 @@ class PerceiverDenoiseTrainer(Trainer):
                     prefix_attention_mask=prefix_attention_mask,
                     suffix_input_ids=batch["suffix_input_ids"].to(device),
                     labels=labels,
+                    window_k=window_k,
                 )
             else:
                 encoder_input_ids = batch["input_ids"].to(device)
                 encoder_attention_mask = batch.get("attention_mask")
                 if encoder_attention_mask is not None:
                     encoder_attention_mask = encoder_attention_mask.to(device)
-                m = base_model.concept_ablation_ce(encoder_input_ids, encoder_attention_mask, labels)
+                m = base_model.concept_ablation_ce(
+                    encoder_input_ids, encoder_attention_mask, labels, window_k=window_k
+                )
             for k, v in m.items():
                 sums[k] = sums.get(k, 0.0) + v
             # E03: held-out anchor MSE (de-collapse progress) — reconstruction batches only.
@@ -566,6 +587,7 @@ def build_perceiver_denoise_config(
         decoder_type=model_args.decoder_type,
         decoder_pos_type=model_args.decoder_pos_type,
         decoder_word_dropout=model_args.decoder_word_dropout,
+        decoder_context_window=model_args.decoder_context_window,
         norm_type=model_args.norm_type,
         checkpoint_family=checkpoint_family,
         evaluation_contract_version=1,
@@ -662,21 +684,36 @@ def main():
         model_args.objective_variant, is_causal_ar, tokenizer.eos_token_id
     )
 
-    logger.info(f"Loading dataset: {data_args.dataset_name}")
     with training_args.main_process_first(desc="loading and tokenizing dataset"):
-        train_ds, test_ds = load_and_preprocess_text_dataset(
-            tokenizer,
-            data_args.dataset_name,
-            data_args.dataset_name_subset,
-            "text",
-            test_size_percent=data_args.test_size_percent,
-            max_seq_length=data_args.max_seq_length,
-            dataset_cache_dir=data_args.dataset_cache_dir,
-            train_num_proc=data_args.train_num_proc,
-            test_num_proc=data_args.test_num_proc,
-            append_eos_token_id=append_eos_token_id,
-            split_seed=training_args.seed,
-        )
+        if data_args.dataset_mix:
+            logger.info(f"Loading dataset mix: {data_args.dataset_mix}")
+            train_ds, test_ds = load_and_preprocess_dataset_mix(
+                tokenizer,
+                data_args.dataset_mix,
+                test_size_percent=data_args.test_size_percent,
+                max_seq_length=data_args.max_seq_length,
+                dataset_cache_dir=data_args.dataset_cache_dir,
+                train_num_proc=data_args.train_num_proc,
+                test_num_proc=data_args.test_num_proc,
+                append_eos_token_id=append_eos_token_id,
+                split_seed=training_args.seed,
+                interleave_seed=training_args.seed,
+            )
+        else:
+            logger.info(f"Loading dataset: {data_args.dataset_name}")
+            train_ds, test_ds = load_and_preprocess_text_dataset(
+                tokenizer,
+                data_args.dataset_name,
+                data_args.dataset_name_subset,
+                "text",
+                test_size_percent=data_args.test_size_percent,
+                max_seq_length=data_args.max_seq_length,
+                dataset_cache_dir=data_args.dataset_cache_dir,
+                train_num_proc=data_args.train_num_proc,
+                test_num_proc=data_args.test_num_proc,
+                append_eos_token_id=append_eos_token_id,
+                split_seed=training_args.seed,
+            )
 
     logger.info(f"Train dataset size: {len(train_ds):,}")
     logger.info(f"Test dataset size: {len(test_ds):,}")
