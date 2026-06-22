@@ -1,0 +1,36 @@
+[
+  {
+    "name": "optimalscale_climblmix",
+    "dataset": "OptimalScale/ClimbMix",
+    "split": "train",
+    "text_column": "text",
+    "_note": "token_count col is cluster-level avg; tokenize text for real lengths"
+  },
+  {
+    "name": "optimalscale_climbllab_cluster1",
+    "dataset": "parquet",
+    "split": "train",
+    "text_column": "text",
+    "data_files": [
+      "https://huggingface.co/datasets/OptimalScale/ClimbLab/resolve/main/cluster_1/cluster_1_001.parquet"
+    ]
+  },
+  {
+    "name": "optimalscale_climbllab_cluster10",
+    "dataset": "parquet",
+    "split": "train",
+    "text_column": "text",
+    "data_files": [
+      "https://huggingface.co/datasets/OptimalScale/ClimbLab/resolve/main/cluster_10/cluster_10_001.parquet"
+    ]
+  },
+  {
+    "name": "optimalscale_climbllab_cluster20",
+    "dataset": "parquet",
+    "split": "train",
+    "text_column": "text",
+    "data_files": [
+      "https://huggingface.co/datasets/OptimalScale/ClimbLab/resolve/main/cluster_20/cluster_20_001.parquet"
+    ]
+  }
+]
