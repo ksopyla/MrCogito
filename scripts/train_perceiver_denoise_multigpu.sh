@@ -59,8 +59,10 @@ ANCHOR_STANDARDIZE="${ANCHOR_STANDARDIZE:-true}"
 ANCHOR_HEAD_LAYERS="${ANCHOR_HEAD_LAYERS:-2}"
 DATASET_NAME="${DATASET_NAME:-JeanKaddour/minipile}"
 DATASET_SUBSET="${DATASET_SUBSET:-}"
-# E05: registered multi-dataset mix name (e.g. e05_long_2k). Empty = single dataset above.
+# Registered multi-dataset mix name (e.g. long_2k_base_v1). Empty = single dataset above.
 DATASET_MIX="${DATASET_MIX:-}"
+# Preferred recipe-based mix config (path or id under data/mix_recipes/).
+DATASET_MIX_RECIPE="${DATASET_MIX_RECIPE:-}"
 TOKENIZER_NAME="${TOKENIZER_NAME:-answerdotai/ModernBERT-base}"
 MAX_SEQ_LENGTH="${MAX_SEQ_LENGTH:-512}"
 DELETION_RATE="${DELETION_RATE:-0.6}"
@@ -115,6 +117,9 @@ fi
 MIX_ARGS=()
 if [ -n "$DATASET_MIX" ]; then
     MIX_ARGS+=(--dataset_mix "$DATASET_MIX")
+fi
+if [ -n "$DATASET_MIX_RECIPE" ]; then
+    MIX_ARGS+=(--dataset_mix_recipe "$DATASET_MIX_RECIPE")
 fi
 
 ANCHOR_ARGS=()

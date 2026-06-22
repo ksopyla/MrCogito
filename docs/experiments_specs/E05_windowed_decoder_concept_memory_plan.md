@@ -2,6 +2,7 @@
 
 - **Spec:** [E05_windowed_decoder_concept_memory.md](E05_windowed_decoder_concept_memory.md) · **Status:** implemented (foundation), not yet launched
 - **Authored by:** `implementation-plan` · for → `research-implement` (built 2026-06-18)
+- **Data-loader extension plan (2026-06-21):** [../engineering_specs/long_context_data_mix_loader_architecture.md](../engineering_specs/long_context_data_mix_loader_architecture.md)
 
 > The HOW for E05's single change (sliding-window causal decoder) + its enabling condition
 > (seq-len 2K on a long-doc dataset mix). Repo-rooted; reuse-first; all new code is reusable
@@ -43,7 +44,7 @@ lm_head                                                        → (B, N, V)
 - **Receptive field grows with depth:** L stacked window-K layers reach ≈ `L·(K−1)` back. With L=4, K=256 → ≈1020 at N=2048 (only the 2nd half is forced through concepts). Pick K against `L·(K−1)`.
 
 ## 4. Inputs & data
-- **Dataset:** `DATASET_MIX=e05_long_2k` — FinePDFs-100BT 0.50 / FineWeb-Edu sample-10BT 0.30 / FineMath-3+ 0.20 (weights = interleave sampling probabilities; per-source `max_samples` caps). Rationale + % > 2K in the spec.
+- **Dataset:** `DATASET_MIX=long_2k_base_v1` — FinePDFs-100BT 0.50 / FineWeb-Edu sample-10BT 0.30 / FineMath-3+ 0.20 (weights = interleave sampling probabilities; per-source `max_samples` caps). Rationale + % > 2K in the spec.
 - **Collator:** reuse `DataCollatorForTSDAE` (reconstruction) — unchanged. The window lives entirely in the decoder; the collator/data contract is identical to E01/E03 (EOS-appended, variable-length, `labels=-100` on pad).
 - **Preprocessing:** each source → normalise to a single `text` column (`_normalize_to_text_column`, supports multi-column join for future SFT sources) → EOS-append variable-length tokenize (`_make_tokenize_fn`, shared with the single-dataset path) → per-source train/eval split → `interleave_datasets(probabilities=…, stopping_strategy="all_exhausted")` for train, `concatenate_datasets` for a representative multi-source eval.
 - **No packing** of unrelated short docs (avoids fake long-range signal); long docs are truncated to 2K (first-2K window keeps genuine within-doc long-range structure).
@@ -56,10 +57,10 @@ lm_head                                                        → (B, N, V)
 ## 6. Config & launch
 - **New config fields (backward-compatible):** `ConceptEncoderConfig.decoder_context_window: Optional[int] = None`. `DataTrainingArguments.dataset_mix: Optional[str] = None`. `ModelArguments.decoder_context_window: Optional[int] = None`.
 - **Registry / routing:** unchanged — E05 reuses `concept_ar` (`ConceptEncoderForConditionalLM`); `checkpoint_family="concept_ar"`, canonical eval modes unchanged (encoder-only weighted_pool / sentence_pair), so existing eval routing + `run_concept_analysis.py --model_type concept_ar` work as-is.
-- **Launch:** windowed = `EXPERIMENT_ID=E05 DECODER_TYPE=causal_ar DECODER_CONTEXT_WINDOW=256 DATASET_MIX=e05_long_2k MAX_SEQ_LENGTH=2048 … bash scripts/train_perceiver_denoise_multigpu.sh`; control = same line without `DECODER_CONTEXT_WINDOW` (see spec for full command). `DECODER_CONTEXT_WINDOW` / `DATASET_MIX` are passed only when set, so all prior launches are unchanged.
+- **Launch:** windowed = `EXPERIMENT_ID=E05 DECODER_TYPE=causal_ar DECODER_CONTEXT_WINDOW=256 DATASET_MIX=long_2k_base_v1 MAX_SEQ_LENGTH=2048 … bash scripts/train_perceiver_denoise_multigpu.sh`; control = same line without `DECODER_CONTEXT_WINDOW` (see spec for full command). `DECODER_CONTEXT_WINDOW` / `DATASET_MIX` are passed only when set, so all prior launches are unchanged.
 
 ## 7. Tests & smoke
-- `tests/test_e05_windowed_decoder.py` (7, green): mask pattern; default = full-causal (no mask built); windowed forward shapes + finite loss; **single-layer reach = K**; **multi-layer reach ≈ L·(K−1)**; beyond-window ablation keys present (and absent without `window_k`); `e05_long_2k` mix registered + weights normalised + FinePDFs is the backbone.
+- `tests/test_e05_windowed_decoder.py` (7, green): mask pattern; default = full-causal (no mask built); windowed forward shapes + finite loss; **single-layer reach = K**; **multi-layer reach ≈ L·(K−1)**; beyond-window ablation keys present (and absent without `window_k`); `long_2k_base_v1` mix registered + weights normalised + FinePDFs is the backbone.
 - Local smoke (run 2026-06-18, green): SmolLM2 tokenizer → EOS-append → `DataCollatorForTSDAE` → windowed `ConceptEncoderForConditionalLM` forward/backward (loss 11.19→ finite, grads flow) + `concept_ablation_ce(window_k=32)` emits `delta_*_beyond_window`. Full suite: 140 passed (4 pre-existing `test_wandb_identity` failures from the E04 job_type rename — unrelated).
 
 ## 8. Risks & tradeoffs
@@ -85,7 +86,7 @@ def build_sliding_window_causal_mask(seq_len, window, device, dtype=torch.bool):
 #   + ce_intact_{beyond,within}_window  — the E05 long-range memory gate.
 
 # sketch: data/dataset_preprocess.py
-DATASET_MIXES = {"e05_long_2k": [ {hf_id/ data_files, subset, text_columns, weight, max_samples}, ... ]}
+DATASET_MIXES = {"long_2k_base_v1": [ {hf_id/ data_files, subset, text_columns, weight, max_samples}, ... ]}
 def load_and_preprocess_dataset_mix(tokenizer, mix, ...):
     # per source: load(cap) -> "text" -> split -> tokenize; then
     # interleave_datasets(parts, probabilities=weights, stopping_strategy="all_exhausted")

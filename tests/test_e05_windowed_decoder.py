@@ -155,11 +155,11 @@ def test_beyond_window_ablation_metrics_present():
     assert "delta_zero_beyond_window" not in m2
 
 
-def test_e05_mix_is_registered_and_normalisable():
-    """The e05_long_2k mix exists, sums sensibly, and references real loadable sources."""
+def test_long_context_mix_is_registered_and_normalisable():
+    """The long-context base mix exists, sums sensibly, and references real loadable sources."""
     from data.dataset_preprocess import DATASET_MIXES
 
-    mix = DATASET_MIXES["e05_long_2k"]
+    mix = DATASET_MIXES["long_2k_base_v1"]
     assert len(mix) >= 2
     total_w = sum(s["weight"] for s in mix)
     assert abs(total_w - 1.0) < 1e-6

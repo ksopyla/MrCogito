@@ -1,6 +1,6 @@
 # E05 — Windowed decoder + concepts as cross-window memory (long context)
 
-- **Status:** foundation IMPLEMENTED 2026-06-18 (`decoder_context_window` sliding-window mask + `e05_long_2k` dataset mix + beyond-window ablation metric; smoke-green, 7 unit tests). **Not yet launched** (gate behind E04, which is running on Odra). Scope set to **seq-len 2K** + a **dataset mix** per the 2026-06-17/18 discussion.
+- **Status:** foundation IMPLEMENTED 2026-06-18 (`decoder_context_window` sliding-window mask + `long_2k_base_v1` dataset mix + beyond-window ablation metric; smoke-green, 7 unit tests). **Not yet launched** (gate behind E04, which is running on Odra). Scope set to **seq-len 2K** + a **dataset mix** per the 2026-06-17/18 discussion.
 - **Serves:** the [agenda](../1_Strategy_and_Plans/agenda.md) collapse focus **and** the long-context / "10M-token" Vision. Fuses the two strong levers: a **local sliding window for fluency** + **the 128 concepts as the only carrier of cross-window information**. Structurally bypass-proof in the way the literature says actually works (Gist tokens [2304.08467], ICAE [2307.06945], AutoCompressor [2305.14788]) — the raw out-of-window tokens are **not reachable** except through the concepts.
 - **Implementation plan:** [E05_windowed_decoder_concept_memory_plan.md](E05_windowed_decoder_concept_memory_plan.md) *(written 2026-06-18; foundation built)*
 - **Owner / dates:** Krzysztof Sopyla · opened 2026-06-14 · closed —
@@ -30,7 +30,7 @@ If the decoder's causal self-attention is restricted to a **local window of the 
 - If long-context training is unstable (OOM at 2K after batch calibration, or NCCL/throughput collapse) → stop, fall back to a shorter seq-len / smaller mix.
 
 ## Plan
-- **Data — `e05_long_2k` mix** (registered in `data/dataset_preprocess.py:DATASET_MIXES`; interleaved by sampling weight; **no packing of unrelated short docs**). Weights chosen from the 1k-row seqlen sample (`playground/training_dataset_catalog.ipynb`, SmolLM2 tokenizer):
+- **Data — `long_2k_base_v1` mix** (registered in `data/dataset_preprocess.py:DATASET_MIXES`; interleaved by sampling weight; **no packing of unrelated short docs**). Weights chosen from the 1k-row seqlen sample (`playground/training_dataset_catalog.ipynb`, SmolLM2 tokenizer):
   | Source | hf_id | weight | % docs > 2K | role |
   |---|---|---|---|---|
   | FinePDFs-100BT | `HuggingFaceFW/finepdfs_100BT` (parquet shards 0–7) | 0.50 | 34.2% | long-range backbone (real coherent docs) |
@@ -43,7 +43,7 @@ If the decoder's causal self-attention is restricted to a **local window of the 
   ```bash
   # windowed arm (E05)
   EXPERIMENT_ID=E05 DECODER_TYPE=causal_ar DECODER_CONTEXT_WINDOW=256 \
-  DATASET_MIX=e05_long_2k MAX_SEQ_LENGTH=2048 \
+  DATASET_MIX=long_2k_base_v1 MAX_SEQ_LENGTH=2048 \
   HIDDEN_SIZE=768 TOKEN_EMBEDDING_DIM=256 NUM_LAYERS=6 DECODER_NUM_LAYERS=4 \
   CONCEPT_NUM=128 INTERMEDIATE_SIZE=2048 HIDDEN_ACT=silu NORM_TYPE=rmsnorm DECODER_POS_TYPE=rope \
   OBJECTIVE_VARIANT=reconstruction DELETION_RATE=0.6 TOKENIZER_NAME=HuggingFaceTB/SmolLM2-135M \
@@ -54,7 +54,7 @@ If the decoder's causal self-attention is restricted to a **local window of the 
 
   # matched control = same line WITHOUT DECODER_CONTEXT_WINDOW (full causal)
   ```
-- **Foundation code (LANDED 2026-06-18):** (1) `decoder_context_window` sliding-window causal mask in `ConceptCausalDecoderLayer`/`ConceptCausalDecoderStack` (`build_sliding_window_causal_mask`; reusable, default `None`). (2) multi-dataset mix loader `load_and_preprocess_dataset_mix` + `DATASET_MIXES["e05_long_2k"]` + `--dataset_mix` / `DATASET_MIX` knob. (3) beyond-window concept-ablation metric (`concept_ablation_ce(..., window_k=K)` → `delta_*_beyond_window`, logged live for the windowed arm; offline via `run_concept_analysis.py --ablation_window_k K` for both arms). Tests: `tests/test_e05_windowed_decoder.py` (7, green).
+- **Foundation code (LANDED 2026-06-18):** (1) `decoder_context_window` sliding-window causal mask in `ConceptCausalDecoderLayer`/`ConceptCausalDecoderStack` (`build_sliding_window_causal_mask`; reusable, default `None`). (2) multi-dataset mix loader `load_and_preprocess_dataset_mix` + `DATASET_MIXES["long_2k_base_v1"]` + `--dataset_mix` / `DATASET_MIX` knob. (3) beyond-window concept-ablation metric (`concept_ablation_ce(..., window_k=K)` → `delta_*_beyond_window`, logged live for the windowed arm; offline via `run_concept_analysis.py --ablation_window_k K` for both arms). Tests: `tests/test_e05_windowed_decoder.py` (7, green).
 
 ## Result
 <Filled in AFTER, by experiment-track.>

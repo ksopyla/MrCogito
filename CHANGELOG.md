@@ -45,7 +45,7 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   which uses `is_causal=(mask is None)` (keeps the flash path when no window). `concept_ablation_ce(...,
   window_k=K)` adds beyond/within-window deltas (`delta_{zero,shuffle}_beyond_window`) — the E05 long-range
   memory gate. **Note:** stacked window layers reach ≈ `L·(K−1)` back (depth grows the receptive field).
-- **`data/dataset_preprocess.py`** — `load_and_preprocess_dataset_mix()` + `DATASET_MIXES["e05_long_2k"]`
+- **`data/dataset_preprocess.py`** — `load_and_preprocess_dataset_mix()` + `DATASET_MIXES["long_2k_base_v1"]`
   (FinePDFs-100BT 0.50 / FineWeb-Edu sample-10BT 0.30 / FineMath-3+ 0.20), weighted `interleave_datasets`;
   tokenize fn refactored to module-level `_make_tokenize_fn` (shared with the single-dataset path). No packing.
 - **`training/train_perceiver_denoise.py`** — `--decoder_context_window`, `--dataset_mix`; trainer logs

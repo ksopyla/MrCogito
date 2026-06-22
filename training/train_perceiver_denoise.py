@@ -11,6 +11,7 @@ Maintained perceiver training path:
 
 import os
 import sys
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
@@ -235,9 +236,19 @@ class DataTrainingArguments:
     dataset_name_subset: Optional[str] = field(default=None)
     dataset_mix: Optional[str] = field(
         default=None,
-        metadata={"help": "E05: name of a registered multi-dataset mix in "
-                  "data.dataset_preprocess.DATASET_MIXES (e.g. 'e05_long_2k'). When set, "
+        metadata={"help": "Name of a registered multi-dataset mix in "
+                  "data.dataset_preprocess.DATASET_MIXES (e.g. 'long_2k_base_v1'). When set, "
                   "overrides dataset_name/dataset_name_subset and interleaves the mix."},
+    )
+    dataset_mix_recipe: Optional[str] = field(
+        default=None,
+        metadata={"help": "Path or id of a JSON mix recipe (data/mix_recipes/*.json). "
+                  "Preferred over dataset_mix for configurable long-context pretraining."},
+    )
+    dataset_mix_weight_override: Optional[str] = field(
+        default=None,
+        metadata={"help": "Optional JSON object that overrides source weights at runtime, "
+                  "e.g. '{\"finepdfs_100BT\":0.6,\"fineweb_edu\":0.2,\"finemath_3plus\":0.2}'."},
     )
     tokenizer_name: str = field(default="answerdotai/ModernBERT-base")
     max_seq_length: int = field(default=512)
@@ -656,6 +667,8 @@ def main():
             "Prefix ratio min": data_args.prefix_ratio_min,
             "Prefix ratio max": data_args.prefix_ratio_max,
             "Split strategy": data_args.split_strategy,
+            "Dataset mix (registry)": data_args.dataset_mix,
+            "Dataset mix recipe": data_args.dataset_mix_recipe,
         },
     )
 
@@ -685,11 +698,26 @@ def main():
     )
 
     with training_args.main_process_first(desc="loading and tokenizing dataset"):
-        if data_args.dataset_mix:
-            logger.info(f"Loading dataset mix: {data_args.dataset_mix}")
+        selected_mix = data_args.dataset_mix_recipe or data_args.dataset_mix
+        if data_args.dataset_mix_recipe and data_args.dataset_mix:
+            logger.warning(
+                "Both dataset_mix_recipe and dataset_mix were provided. "
+                f"Using dataset_mix_recipe='{data_args.dataset_mix_recipe}' and ignoring "
+                f"dataset_mix='{data_args.dataset_mix}'."
+            )
+
+        if selected_mix:
+            logger.info(f"Loading dataset mix: {selected_mix}")
+            if data_args.dataset_mix_weight_override:
+                try:
+                    preview_override = json.loads(data_args.dataset_mix_weight_override)
+                except Exception:
+                    preview_override = data_args.dataset_mix_weight_override
+                logger.info(f"Applying mix weight override: {preview_override}")
             train_ds, test_ds = load_and_preprocess_dataset_mix(
                 tokenizer,
-                data_args.dataset_mix,
+                selected_mix,
+                mix_weight_override=data_args.dataset_mix_weight_override,
                 test_size_percent=data_args.test_size_percent,
                 max_seq_length=data_args.max_seq_length,
                 dataset_cache_dir=data_args.dataset_cache_dir,
@@ -826,6 +854,8 @@ def main():
         "Prefix ratio min": data_args.prefix_ratio_min,
         "Prefix ratio max": data_args.prefix_ratio_max,
         "Split strategy": data_args.split_strategy,
+        "Dataset mix (registry)": data_args.dataset_mix,
+        "Dataset mix recipe": data_args.dataset_mix_recipe,
     }
     if model_args.objective_variant == OBJECTIVE_RECONSTRUCTION_CONTRASTIVE:
         training_extra_fields["Contrastive weight"] = model_args.contrastive_weight
@@ -865,6 +895,9 @@ def main():
             "min_prefix_content": data_args.min_prefix_content,
             "min_suffix_content": data_args.min_suffix_content,
             "split_strategy": data_args.split_strategy,
+            "dataset_mix": data_args.dataset_mix,
+            "dataset_mix_recipe": data_args.dataset_mix_recipe,
+            "dataset_mix_weight_override": data_args.dataset_mix_weight_override,
         },
     )
 
@@ -953,8 +986,22 @@ def main():
         f"C{config.concept_num} token_emb={config.token_embedding_dim} "
         f"act={config.hidden_act} norm={config.norm_type} bixt={model_args.use_bixt}"
     )
-    logger.info(f"  Data            : {data_args.dataset_name} {data_args.dataset_name_subset or ''} "
-                f"tokenizer={data_args.tokenizer_name} max_seq={data_args.max_seq_length}")
+    if data_args.dataset_mix_recipe or data_args.dataset_mix:
+        selected_mix = data_args.dataset_mix_recipe or data_args.dataset_mix
+        logger.info(
+            f"  Data            : mix={selected_mix} tokenizer={data_args.tokenizer_name} "
+            f"max_seq={data_args.max_seq_length}"
+            + (
+                f" weight_override={data_args.dataset_mix_weight_override}"
+                if data_args.dataset_mix_weight_override
+                else ""
+            )
+        )
+    else:
+        logger.info(
+            f"  Data            : {data_args.dataset_name} {data_args.dataset_name_subset or ''} "
+            f"tokenizer={data_args.tokenizer_name} max_seq={data_args.max_seq_length}"
+        )
     logger.info(f"  Eval collator   : seeded={getattr(eval_data_collator, 'seed', None)} "
                 f"(deterministic held-out corruption)")
     logger.info("=" * 60)
