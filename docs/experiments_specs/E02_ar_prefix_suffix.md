@@ -1,6 +1,6 @@
 # E02 — Prefix-to-suffix AR generation objective
 
-- **Status:** done (training 2026-06-13 · evaluation 2026-06-14)
+- **Status:** done (original training/eval 2026-06-13/14 · E02-long eval 2026-06-18 · Tier-2.5 pool probe 2026-06-20)
 - **Serves:** the encoder->AR-decoder Current focus in [agenda.md](../1_Strategy_and_Plans/agenda.md). This is the second step in the AR series: keep the E01 AR foundation fixed, then test whether a stronger SODA-style objective forces more semantic concepts.
 - **Implementation plan:** [E02_ar_prefix_suffix_plan.md](E02_ar_prefix_suffix_plan.md) *(the HOW)*
 - **Owner / dates:** Krzysztof Sopyla · opened 2026-06-07 · closed 2026-06-14
@@ -75,7 +75,9 @@ Everything else is held fixed unless needed for 3-GPU Odra batch-size calibratio
 - Run report: `docs/2_Experiments_Registry/run_reports/e02_ar_prefix_suffix_20260614.md`
 - Verdict: **mixed / positive** — STS-B 0.702 clears the 0.65 gate with +0.05 margin (success #1 pass; new project best, +0.095 over prior best 0.607). Suffix eval CE 3.52 < 6.0 (success #4 pass). But effective rank 11.57/128 fails the ≥ 48/128 de-collapse gate (success #2 fail) and suffix-CE Δshuffle 0.50 / Δzero 0.73 fail their gates (success #3 fail). The prefix→suffix objective is the better semantic objective — concepts are compact but semantically loaded. Concept geometry collapse remains the primary blocker; E03 is the targeted fix.
 
-### Follow-up: 5-epoch extension (E02-long), evaluated 2026-06-18
+### Follow-up: 5-epoch extension (E02-long), evaluated 2026-06-18; Tier-2.5 probe 2026-06-20
 - Run id: `concept_ar_prefix_H768L6C128D4_20260614_101305` (Polonez, 4× 3090, 5 epochs, eff batch 160)
 - WandB: [Link](https://wandb.ai/ksopyla/MrCogito/runs/concept_ar_prefix_H768L6C128D4_20260614_101305) · Run report: `run_reports/e02_long_5epoch_20260618.md`
-- Result: longer training **de-collapses** prefix→suffix concepts — slot rank rises 5.9→11.6→16.7 across 0.3/1/5 epochs (the inverse of E01 reconstruction's collapse). Upgraded metrics show genuinely healthy geometry (RankMe 245.9, anisotropy 0.32, mean concept cosine 0.124, 63 dims for 95% var). STS-B **0.714** (new project best, +0.012 over 1-ep E02) but plateaus despite 5× budget + richer geometry → zero-shot mean-pool STS-B is near-saturated for this size; Tier-2.5 attention-pool probe is the next read. **Key reframe:** "concept collapse" is objective-dependent, not universal — prefix→suffix concepts improve with scale.
+- Result: longer training **de-collapses** prefix→suffix concepts — slot rank rises 5.9→11.6→16.7 across 0.3/1/5 epochs (the inverse of E01 reconstruction's collapse). Upgraded metrics show genuinely healthy geometry (RankMe 245.9, anisotropy 0.32, mean concept cosine 0.124, 63 dims for 95% var). STS-B **0.714** (new project best, +0.012 over 1-ep E02) but plateaus despite 5× budget + richer geometry.
+- Tier-2.5 frozen-encoder pool probe on ck-296000 (Polonez, 2026-06-20): SICK relatedness **mean P −0.203 / attention P 0.133** (Δ**+0.336**; Spearman Δ+0.311), showing distributed concept information hidden from mean pooling. PAWS remains mixed: mean acc/F1 **0.509 / 0.428**, attention acc/F1 **0.546 / 0.377** (accuracy +0.037, F1 −0.051).
+- Key reframe: "concept collapse" is objective-dependent, not universal — prefix→suffix concepts improve with scale and should be the objective basis for E05. The attention probe supports the idea that richer concept geometry exists, but naive mean-pool readout underuses it.

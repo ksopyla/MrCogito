@@ -67,4 +67,4 @@ If we replace the causal AR decoder with a **position-query, concept-only parall
 
 ## Result
 - Run id: `perceiver_denoise_H768L6C128D4_20260618_200645` · WandB: [training](https://wandb.ai/ksopyla/MrCogito/runs/perceiver_denoise_H768L6C128D4_20260618_200645) · Run report: `docs/2_Experiments_Registry/run_reports/e04_parallel_decoder_20260620.md`
-- Verdict: **mixed** — RankMe +27 vs E03 control (clears +8 gate) and STS-B 0.532 > control 0.485, but early-Δ unscored (parallel decoder) and STS-B far below E02 0.702; within-sample RankMe 108 suggests richer per-input geometry when AR bypass is removed.
+- Verdict: **mixed** — RankMe +27 vs E03 control (clears +8 gate) and STS-B 0.532 > control 0.485, but STS-B far below E02 0.702; Tier-2.5 probe SICK ΔPearson +0.22 (mean −0.07 → attn 0.16) shows distributed geometry partially hidden from mean pool; absolute semantics still weak.

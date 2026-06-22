@@ -2,6 +2,7 @@ import pytest
 
 from evaluation.wandb_identity import (
     build_namespaced_eval_tags,
+    infer_checkpoint_id,
     parse_checkpoint_step_from_path,
     parse_training_run_id_from_model_path,
     resolve_eval_lineage,
@@ -121,3 +122,14 @@ def test_build_namespaced_eval_tags_contains_lineage_facets():
     assert "exp:e03" in tags
     assert "ckpt_step:10000" in tags
     assert "lineage:linked" in tags
+
+
+def test_infer_checkpoint_id_final_model():
+    assert (
+        infer_checkpoint_id(
+            source_checkpoint_path="Cache/Training/concept_ar_prefix_H768L6C128D4_20260612_094555/concept_ar_prefix_H768L6C128D4_20260612_094555",
+            source_training_run_id="concept_ar_prefix_H768L6C128D4_20260612_094555",
+            source_checkpoint_step=None,
+        )
+        == "final_model"
+    )
