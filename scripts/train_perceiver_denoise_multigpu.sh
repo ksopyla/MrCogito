@@ -20,18 +20,16 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-max_split_size_mb:512
 export OMP_NUM_THREADS=8
 export TOKENIZERS_PARALLELISM=false
 
-PROJECT_ROOT="/home/ksopyla/dev/MrCogito"
-if [ ! -d "$PROJECT_ROOT" ]; then
-    PROJECT_ROOT="$(pwd)"
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/remote_paths.sh
+source "${SCRIPT_DIR}/remote_paths.sh"
 
-export HF_HOME="${PROJECT_ROOT}/../hf_home"
-export HF_DATASETS_CACHE="${PROJECT_ROOT}/../hf_home/datasets"
-OUTPUT_DIR="${PROJECT_ROOT}/Cache/Training"
-LOGGING_DIR="${PROJECT_ROOT}/Cache/logs"
 SHELL_LOG="${LOGGING_DIR}/shell_perceiver_denoise_$(date +%Y%m%d_%H%M%S).log"
 
-mkdir -p "$OUTPUT_DIR" "$LOGGING_DIR" "$HF_DATASETS_CACHE"
+echo "HF_HOME=${HF_HOME}"
+echo "HF_DATASETS_CACHE=${HF_DATASETS_CACHE}"
+echo "OUTPUT_DIR=${OUTPUT_DIR}"
+echo "LOGGING_DIR=${LOGGING_DIR}"
 
 # Default experiment profile:
 # A1 on Odra = clean perceiver_denoise reconstruction baseline

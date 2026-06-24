@@ -12,7 +12,11 @@
 # Usage:
 #   bash scripts/train_prefix_diffusion_multigpu.sh
 #
-set -e
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/remote_paths.sh
+source "${SCRIPT_DIR}/../../scripts/remote_paths.sh"
 
 echo "=== Multi-GPU Training: Prefix Diffusion ==="
 echo ""
@@ -109,18 +113,7 @@ SAVE_STRATEGY="${SAVE_STRATEGY:-steps}"
 SAVE_STEPS="${SAVE_STEPS:-10000}"
 SEED="${SEED:-42}"
 
-# =============================================================================
-# PATHS
-# =============================================================================
-PROJECT_ROOT="/home/ksopyla/dev/MrCogito"
-OUTPUT_DIR="$PROJECT_ROOT/Cache/Training"
-LOGGING_DIR="$PROJECT_ROOT/Cache/logs"
-export LOG_DIR="$LOGGING_DIR"
-export HF_HOME="${PROJECT_ROOT}/../hf_home"
-export HF_DATASETS_CACHE="${PROJECT_ROOT}/../hf_home/datasets"
-DATASET_CACHE_DIR="${HF_DATASETS_CACHE:-.cache/huggingface/datasets}"
-
-mkdir -p "$OUTPUT_DIR" "$LOGGING_DIR" "$DATASET_CACHE_DIR"
+SHELL_LOG="${LOGGING_DIR}/shell_prefix_diffusion_$(date +%Y%m%d_%H%M%S).log"
 
 BIXT_LABEL=""
 if [ "$USE_BIXT" = "True" ]; then
@@ -138,7 +131,9 @@ echo "Epochs: $NUM_EPOCHS"
 echo "Effective batch: $((PER_DEVICE_BATCH_SIZE * NUM_GPUS * GRADIENT_ACCUMULATION_STEPS))"
 echo ""
 
-SHELL_LOG="${LOGGING_DIR}/shell_prefix_diffusion_$(date +%Y%m%d_%H%M%S).log"
+echo "HF_HOME=${HF_HOME}"
+echo "HF_DATASETS_CACHE=${HF_DATASETS_CACHE}"
+echo "OUTPUT_DIR=${OUTPUT_DIR}"
 echo "Starting training... (log: $SHELL_LOG)"
 
 accelerate launch \
@@ -172,7 +167,7 @@ accelerate launch \
     --min_prefix_content "$MIN_PREFIX_CONTENT" \
     --min_suffix_content "$MIN_SUFFIX_CONTENT" \
     --min_total_content_tokens "$MIN_TOTAL_CONTENT_TOKENS" \
-    --dataset_cache_dir "$DATASET_CACHE_DIR" \
+    --dataset_cache_dir "$HF_DATASETS_CACHE" \
     --concept_losses "$CONCEPT_LOSSES" \
     --loss_weighting "$LOSS_WEIGHTING" \
     --loss_weight "$LOSS_WEIGHT" \
