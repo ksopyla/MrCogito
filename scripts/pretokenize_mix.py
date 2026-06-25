@@ -59,45 +59,83 @@ def _api_list(repo: str, subpath: str, timeout: int = 60) -> list[dict]:
         return json.load(r)
 
 
-def list_parquet_urls(spec: dict) -> list[str]:
-    """Return the parquet file URLs for a source, capped to max_shards."""
+def _list_recursive(repo: str, subpath: str, timeout: int = 60) -> list[dict]:
+    """Recursively walk a directory tree, returning all file entries.
+
+    Used for datasets whose shards are nested (e.g. DCLM:
+    global-shard_*/local-shard_*/*.jsonl.zst). The HF tree API is non-recursive,
+    so we descend into subdirectories.
+    """
+    entries = _api_list(repo, subpath, timeout=timeout)
+    files: list[dict] = []
+    for e in entries:
+        if e.get("type") == "directory":
+            files.extend(_list_recursive(repo, e["path"], timeout=timeout))
+        elif e.get("type") in (None, "file") or e.get("path", "").endswith((".parquet", ".zst", ".jsonl")):
+            files.append(e)
+    return files
+
+
+def list_file_urls(spec: dict) -> list[str]:
+    """Return the file URLs for a source (parquet or .jsonl.zst), capped to max_shards.
+
+    Supports:
+      - explicit `data_files` (filtered to parquet/zst)
+      - `parquet_glob` / `file_glob` like "sample/10BT/*.parquet" or "data/cot-*.parquet"
+      - a `subset` dir (listed, optionally recursive via `recursive: true`)
+      - `file_suffix` to select non-parquet files (e.g. ".jsonl.zst")
+    """
     repo = spec["hf_id"]
     subset = spec.get("subset") or ""
     explicit = spec.get("data_files")
-    if explicit:
-        return [u for u in explicit if u.endswith(".parquet")][: spec.get("max_shards") or len(explicit)]
+    suffixes = (".parquet", ".jsonl.zst", ".zst")
+    file_suffix = spec.get("file_suffix")  # e.g. ".jsonl.zst"
+    if file_suffix:
+        suffixes = (file_suffix,)
 
-    # Find the subpath that contains train parquets.
-    parquet_glob = spec.get("parquet_glob")
-    if parquet_glob:
-        # e.g. "sample/10BT/*.parquet" or "data/cot-*.parquet"
-        parent = str(Path(parquet_glob).parent)
-        name = Path(parquet_glob).name
-        entries = _api_list(repo, parent)
-        if name == "*.parquet":
-            files = [e["path"] for e in entries if e.get("path", "").endswith(".parquet")]
-        elif name.endswith("*.parquet"):
-            stem = name[: -len("*.parquet")]  # e.g. "cot-"
+    if explicit:
+        return [u for u in explicit if u.endswith(suffixes)][: spec.get("max_shards") or len(explicit)]
+
+    file_glob = spec.get("file_glob") or spec.get("parquet_glob")
+    if file_glob:
+        parent = str(Path(file_glob).parent)
+        name = Path(file_glob).name
+        recursive = spec.get("recursive", False)
+        entries = _list_recursive(repo, parent) if recursive else _api_list(repo, parent)
+        if name == "*":
+            files = [e["path"] for e in entries if any(e.get("path", "").endswith(s) for s in suffixes)]
+        elif name.endswith("*"):
+            stem = name[:-1]
             files = [
                 e["path"]
                 for e in entries
-                if e.get("path", "").endswith(".parquet") and Path(e["path"]).name.startswith(stem)
+                if any(e.get("path", "").endswith(s) for s in suffixes)
+                and Path(e["path"]).name.startswith(stem)
             ]
         else:
-            files = [e["path"] for e in entries if e.get("path", "") == parquet_glob]
+            files = [e["path"] for e in entries if e.get("path", "") == file_glob]
+    elif spec.get("recursive"):
+        entries = _list_recursive(repo, subset)
+        files = [e["path"] for e in entries if any(e.get("path", "").endswith(s) for s in suffixes)]
     elif subset:
         entries = _api_list(repo, subset)
-        files = [e["path"] for e in entries if e.get("path", "").endswith(".parquet")]
+        files = [e["path"] for e in entries if any(e.get("path", "").endswith(s) for s in suffixes)]
     else:
         entries = _api_list(repo, "")
-        files = [e["path"] for e in entries if e.get("path", "").endswith(".parquet")]
+        files = [e["path"] for e in entries if any(e.get("path", "").endswith(s) for s in suffixes)]
 
     cap = spec.get("max_shards")
     if cap:
         files = files[:cap]
     if not files:
-        raise RuntimeError(f"No parquet files found for {repo} subset={subset!r} glob={parquet_glob!r}")
+        raise RuntimeError(
+            f"No files ({suffixes}) found for {repo} subset={subset!r} glob={file_glob!r}"
+        )
     return [HF_RESOLVE.format(repo=repo, path=f) for f in files]
+
+
+# Back-compat alias.
+list_parquet_urls = list_file_urls
 
 
 def _download_one(url: str, dest: Path) -> Path:
@@ -155,13 +193,19 @@ def tokenize_source(
         manifest_entry["eval_path"] = str(eval_dir)
         return manifest_entry
 
-    logger.info(f"[{name}] resolving parquet URLs")
-    urls = list_parquet_urls(spec)
-    logger.info(f"[{name}] {len(urls)} parquet files to download")
+    logger.info(f"[{name}] resolving file URLs")
+    urls = list_file_urls(spec)
+    logger.info(f"[{name}] {len(urls)} files to download")
     paths = download_parquets(urls, raw_dir, download_workers)
 
-    logger.info(f"[{name}] loading {len(paths)} parquet files")
-    ds = load_dataset("parquet", data_files=[str(p) for p in paths], split="train")
+    # Pick the loader by file extension: parquet -> parquet, .jsonl.zst/.zst/.jsonl -> json.
+    is_json = any(p.suffix in (".zst", ".jsonl") or str(p).endswith(".jsonl.zst") for p in paths)
+    if is_json:
+        logger.info(f"[{name}] loading {len(paths)} jsonl.zst files (zstd-decompressed by datasets)")
+        ds = load_dataset("json", data_files=[str(p) for p in paths], split="train")
+    else:
+        logger.info(f"[{name}] loading {len(paths)} parquet files")
+        ds = load_dataset("parquet", data_files=[str(p) for p in paths], split="train")
     ds = _normalize_to_text_column(ds, spec.get("text_columns"))
 
     max_samples = spec.get("max_samples")
