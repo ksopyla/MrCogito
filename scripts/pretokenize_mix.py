@@ -108,24 +108,34 @@ def list_file_urls(spec: dict) -> list[tuple[str, int | None]]:
     if explicit:
         picked = [(u, None) for u in explicit if u.endswith(suffixes)]
     else:
-        file_glob = spec.get("file_glob") or spec.get("parquet_glob")
-        if file_glob:
-            parent = str(Path(file_glob).parent)
-            name = Path(file_glob).name
-            recursive = spec.get("recursive", False)
-            entries = _list_recursive(repo, parent) if recursive else _api_list(repo, parent)
-            if "*" not in name:
-                picked = [(e["path"], e.get("size")) for e in entries if e.get("path", "") == file_glob]
-            else:
-                star = name.index("*")
-                prefix, suf = name[:star], name[star + 1:]
-                picked = [
-                    (e["path"], e.get("size"))
-                    for e in entries
-                    if any(e.get("path", "").endswith(s) for s in suffixes)
-                    and Path(e["path"]).name.startswith(prefix)
-                    and Path(e["path"]).name.endswith(suf)
-                ]
+        # Support one glob (file_glob/parquet_glob) or a list (file_globs).
+        file_globs = spec.get("file_globs")
+        if file_globs is None:
+            single = spec.get("file_glob") or spec.get("parquet_glob")
+            file_globs = [single] if single else []
+        if file_globs:
+            for fg in file_globs:
+                parent = str(Path(fg).parent)
+                name = Path(fg).name
+                recursive = spec.get("recursive", False)
+                entries = _list_recursive(repo, parent) if recursive else _api_list(repo, parent)
+                if "*" not in name:
+                    picked.extend(
+                        (e["path"], e.get("size")) for e in entries if e.get("path", "") == fg
+                    )
+                else:
+                    star = name.index("*")
+                    prefix, suf = name[:star], name[star + 1:]
+                    picked.extend(
+                        (e["path"], e.get("size"))
+                        for e in entries
+                        if any(e.get("path", "").endswith(s) for s in suffixes)
+                        and Path(e["path"]).name.startswith(prefix)
+                        and Path(e["path"]).name.endswith(suf)
+                    )
+            # Dedup by path preserving order.
+            seen = set()
+            picked = [x for x in picked if not (x[0] in seen or seen.add(x[0]))]
         elif spec.get("recursive"):
             picked = _pick(_list_recursive(repo, subset))
         elif subset:
@@ -138,7 +148,7 @@ def list_file_urls(spec: dict) -> list[tuple[str, int | None]]:
         picked = picked[:cap]
     if not picked:
         raise RuntimeError(
-            f"No files ({suffixes}) found for {repo} subset={subset!r} glob={file_glob!r}"
+            f"No files ({suffixes}) found for {repo} subset={subset!r} globs={file_globs!r}"
         )
     return [(HF_RESOLVE.format(repo=repo, path=f), sz) for f, sz in picked]
 
