@@ -170,3 +170,30 @@ def test_long_context_mix_is_registered_and_normalisable():
     # FinePDFs (the long-doc backbone) carries the most weight.
     backbone = max(mix, key=lambda s: s["weight"])
     assert "finepdfs" in backbone["name"].lower()
+
+
+def test_smollm3_inspired_2k_recipe_loads_and_is_well_formed():
+    """The actual E05 launch mix (smollm3_inspired_2k) loads as a recipe, sums to 1.0,
+    is objective-compatible with prefix_suffix, and carries the projected >2K long-context
+    tail that E05's concept-memory gate depends on."""
+    from data.dataset_preprocess import load_mix_recipe
+
+    recipe = load_mix_recipe("smollm3_inspired_2k")
+    assert recipe["mix_id"] == "smollm3_inspired_2k"
+    sources = recipe["sources"]
+    assert len(sources) >= 2
+    total_w = sum(s["weight"] for s in sources)
+    assert abs(total_w - 1.0) < 1e-6, f"weights sum to {total_w}, expected 1.0"
+    for spec in sources:
+        assert spec.get("hf_id") or spec.get("data_files")
+        assert spec.get("text_columns")
+        assert spec.get("max_samples", 0) > 0
+    # E05 launches with prefix_suffix; the recipe must declare it compatible.
+    compat = recipe.get("objective_compatibility", [])
+    assert "prefix_suffix" in compat, f"recipe not prefix_suffix-compatible: {compat}"
+    # The long-context tail that forces cross-window routing through concepts.
+    profile = recipe.get("expected_length_profile_from_2026_06_20_sample", {})
+    assert profile.get("estimated_docs_over_2k_pct", 0) >= 18.0, (
+        f"recipe >2K tail too small for E05: {profile}"
+    )
+    assert int(recipe.get("seq_len_target", 0)) == 2048

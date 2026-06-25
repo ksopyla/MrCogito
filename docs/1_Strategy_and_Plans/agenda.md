@@ -22,7 +22,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 - **Queued (sequential — one experiment per server):**
   1. ~~**E03 matched control**~~ **DONE 2026-06-18**
   2. ~~**E04 parallel decoder**~~ **DONE 2026-06-20** — see "what we've explored".
-  3. **E05 windowed decoder from scratch, prefix→suffix objective** — [(spec)](../experiments_specs/E05_windowed_decoder_concept_memory.md) · foundation implemented; amend the spec/plan from reconstruction to prefix→suffix before launch.
+  3. **E05 windowed decoder from scratch, prefix→suffix objective** — [(spec)](../experiments_specs/E05_windowed_decoder_concept_memory.md) · foundation implemented; spec/plan reconciled 2026-06-25 (K=128 fixed, `prefix_suffix`, `smollm3_inspired_2k` recipe); ready to launch.
   4. **Prefix→suffix + anchor (auxiliary ablation, not main focus):** useful only if E05 needs an anchor/control read, not the default next run.
   5. **Decoder-weakening ablation (sibling of E03):** same E01/E02 stack, single change `DECODER_WORD_DROPOUT=0.5`. Needs a frozen spec before the full run.
 
@@ -40,10 +40,13 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 5. **E05 — windowed decoder + concepts as cross-window memory** [(spec)](../experiments_specs/E05_windowed_decoder_concept_memory.md) · [(plan)](../experiments_specs/E05_windowed_decoder_concept_memory_plan.md)
    *(largest lift; long-context program; **foundation implemented 2026-06-18**, E04 gate cleared).*
    Local window for fluency + concepts as the ONLY cross-window carrier (Gist/ICAE/AutoCompressor-style).
-   **Scoped to seq-len 2K + a long-doc dataset mix** (`DATASET_MIX=long_2k_base_v1`: FinePDFs 0.50 / FineWeb-Edu 0.30 /
-   FineMath-3+ 0.20). Single change = `DECODER_CONTEXT_WINDOW=K` (default 256) on `causal_ar`; matched window-ON/OFF
-   pair; gate = beyond-window concept-ablation Δ (`run_concept_analysis.py --ablation_window_k K`) + RankMe.
-   **Caveat:** stacked window layers reach ≈ `L·(K−1)` back — pick K against depth, not K alone. This is the 10M-token bet's Stage-A.
+   **Scoped to seq-len 2K + a long-doc dataset mix** (`DATASET_MIX_RECIPE=smollm3_inspired_2k`: SmolLM3-inspired mix with
+   explicit long-tail boosters, ~21% docs >2K). Single change = `DECODER_CONTEXT_WINDOW=128` (fixed) on `causal_ar` +
+   `prefix_suffix` objective; matched window-ON/OFF pair; gate = beyond-window concept-ablation Δ
+   (`run_concept_analysis.py --ablation_window_k 128`, co-reported at 508 for the concept-only read) + RankMe.
+   **K is a fixed coherence window (128), never scaled to N** — the concept count C is what scales with N (per vision);
+   raising K would reintroduce O(N·K) local decoding and defeat the bottleneck. Depth caveat: stacked window layers reach
+   ≈ `L·(K−1)` ≈ 508 back; if the gate is weak, lower depth or raise seq-len — do not raise K. This is the 10M-token bet's Stage-A.
 6. **E06 — latent-space prediction** [(spec)](../experiments/E06_latent_space_prediction.md)
    *(reuses E03 machinery).* Anchor promoted from auxiliary to primary objective (JEPA/data2vec/CPC) —
    learning signal entirely in representation space, no token bypass.

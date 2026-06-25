@@ -9,9 +9,9 @@
 | NAS dirs (`mrcogito/*`, `archive_odra`, `archive_polonez`) | **Done** | Created on NAS |
 | Checkpoints `training/` → `mrcogito/checkpoints/` | **Done** | 12G, 7 runs |
 | Odra `gw` → `archive_odra/home/gw/` | **Done** | NAS archive in place |
-| Odra `/home` user cleanup | **Next** | `sudo bash scripts/cleanup_odra_gw_sudo.sh` on Odra |
-| Polonez `goodwrite_ml` → sdb | Pending | rsync + symlink |
-| Polonez inactive users | Pending | `cleanup_polonez_users_sudo.sh` |
+| Odra `/home` user cleanup | **Done** | One-time sudo run; scripts removed from repo |
+| Polonez `goodwrite_ml` → sdb | **Next** | rsync + symlink (see Step 3) |
+| Polonez inactive users | Pending | manual `userdel -r` on Polonez (Step 4) |
 
 ## Storage tiers (both GPU servers)
 
@@ -50,17 +50,15 @@ Do **not** point `HF_HOME` or `OUTPUT_DIR` at NAS or second disk. NAS is sync/ba
 | Data | Action | Status |
 |------|--------|--------|
 | MrCogito active runs (NVMe) | Keep best checkpoint only on NVMe; rsync best to `mrcogito/checkpoints/` | Ongoing |
-| Odra `/home/gw` (~428G) | NAS archive at `archive_odra/home/gw/`, then **`userdel -r gw`** | Archive **done**; NVMe cleanup **next** |
-| Odra other users | **`userdel -r`** all except `ksopyla`, `pgorecki` | Pending |
+| Odra `/home/gw` (~428G) | NAS archive at `archive_odra/home/gw/`, then remove NVMe home | **Done** |
+| Odra other users | Remove all except `ksopyla`, `pgorecki` | **Done** |
 | Polonez `goodwrite_ml` (~475G) | **Move** to `/data/mrcogito/goodwrite_ml/`, symlink `~/dev/goodwrite_ml` | Pending |
 | Polonez inactive users (~111G) | **`userdel -r`** — no NAS copy, no sdb copy | Pending |
 | sdb `/data/mrcogito/home_archive/` | **Delete** (partial mistaken rsync) | Pending |
 
-**Odra accounts to remove:** `bjankowski`, `car_recognition`, `ermlab`, `fiona`, `gw`, `jlewalski`, `kropiak`, `lsawaniewski`, `marcel`, `mmelzacki`, `pszocik`, `sdarmofal`, `sjankowski`, `szrek`, `wlipnicki`.
+**Odra (completed 2026-06-24):** kept `ksopyla`, `pgorecki`; removed all other UID ≥ 1000 accounts and homes.
 
-**Odra accounts to keep:** `ksopyla`, `pgorecki`.
-
-**Polonez accounts to remove:** `jlewalski`, `mwrobel`, `bmielczarek`, `kropiak`, `sidziniak`, `kfuchsig`.
+**Polonez accounts to remove (Step 4):** `jlewalski`, `mwrobel`, `bmielczarek`, `kropiak`, `sidziniak`, `kfuchsig`.
 
 ## NVMe canonical paths (unchanged)
 
@@ -107,20 +105,21 @@ ls /nas/ml_data/mrcogito/checkpoints/
 test -d /nas/ml_data/archive_odra/home/gw && echo "gw archive OK"
 ```
 
-### Step 2 — Odra: clean `/home` — **NEXT**
+### Step 2 — Odra: clean `/home` — **DONE**
 
-Removes all user accounts except `ksopyla` and `pgorecki`. For `gw`, checks that the NAS
-archive exists at `archive_odra/home/gw/` before deleting `/home/gw` (~428G NVMe). No
-symlinks, no NAS rsync in this script.
+One-time sudo cleanup on Odra (2026-06-24). Only `/home/ksopyla` and `/home/pgorecki` remain.
+The helper script was removed from the repo after use (security).
+
+**Verify:**
 
 ```bash
 ssh odra
-sudo bash ~/dev/MrCogito/scripts/cleanup_odra_gw_sudo.sh
+df -h /home
+ls /home
+test ! -e /home/gw && echo "gw home removed OK"
 ```
 
-Expected: only `/home/ksopyla` and `/home/pgorecki` remain; NVMe `/home` frees several hundred GB.
-
-### Step 3 — Polonez: `goodwrite_ml` → sdb (~475G)
+### Step 3 — Polonez: `goodwrite_ml` → sdb (~475G) — **NEXT**
 
 ```bash
 ssh polonez
@@ -136,12 +135,16 @@ rm -rf ~/dev/goodwrite_ml.bak
 
 ### Step 4 — Polonez: delete inactive users (~111G NVMe)
 
+Run on Polonez with sudo — **no repo script** (one-time ops, not version-controlled):
+
 ```bash
 ssh polonez
-sudo bash ~/dev/MrCogito/scripts/cleanup_polonez_users_sudo.sh
+for u in jlewalski mwrobel bmielczarek kropiak sidziniak kfuchsig; do
+  sudo userdel -r "$u" 2>/dev/null || echo "skip: $u"
+done
+sudo rm -rf /data/mrcogito/home_archive
+df -h /home
 ```
-
-Also removes partial sdb `home_archive/` if present.
 
 ### Step 5 — Optional later
 
@@ -175,9 +178,9 @@ du -sh /nas/ml_data/mrcogito/checkpoints /nas/ml_data/archive_odra/home/gw
 |------|---------|
 | `scripts/remote_paths.sh` | Canonical NVMe env vars for launchers |
 | `scripts/finish_goodwrite_symlink.sh` | After goodwrite rsync to sdb |
-| `scripts/cleanup_odra_gw_sudo.sh` | Odra: `userdel -r` all users except `ksopyla`/`pgorecki`; gw requires NAS archive |
-| `scripts/cleanup_polonez_users_sudo.sh` | Polonez: `userdel -r` inactive users + wipe sdb mistake |
 | `.cursor/skills/remote-servers/SKILL.md` | Live ops reference (must match this spec) |
+
+**Not in repo:** one-time sudo user-cleanup scripts (removed after Odra run — do not re-commit).
 
 ## Workflow after cleanup
 
