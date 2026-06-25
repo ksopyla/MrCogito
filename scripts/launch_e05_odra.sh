@@ -44,7 +44,7 @@ export TRAIN_NUM_PROC="${TRAIN_NUM_PROC:-8}"
 export TEST_NUM_PROC="${TEST_NUM_PROC:-4}"
 export DATALOADER_NUM_WORKERS=4
 
-MIX_RECIPE="${MIX_RECIPE:-smollm3_inspired_2k_e05warmup}"
+MIX_RECIPE="${MIX_RECIPE:-smollm3_inspired_2k_e05}"
 DATASETS_TOK_DIR="${HF_HOME}/../datasets_tok"
 MANIFEST="${MANIFEST:-${DATASETS_TOK_DIR}/${MIX_RECIPE}_manifest.json}"
 

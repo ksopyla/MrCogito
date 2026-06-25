@@ -30,7 +30,7 @@ The `decoder_context_window` config field remains (the control arm needs `None`)
 | Knob | Value |
 |------|-------|
 | Objective | `prefix_suffix` |
-| Mix | `smollm3_inspired_2k` (recipe) |
+| Mix | `smollm3_inspired_2k_e05` (recipe, incl. DCLM) |
 | Seq len | 2048 |
 | K (fixed) | 128 |
 | Arch | H768 / T256 / L6 / C128 / D4, SwiGLU + RMSNorm + RoPE |
