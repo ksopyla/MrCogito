@@ -1,0 +1,85 @@
+{
+  "mix_id": "smollm3_inspired_2k_e05warmup",
+  "description": "E05 warmup mix: SmolLM3-inspired sources without DCLM, with shard caps for fast parallel download+tokenize. FineWeb-Edu reused from existing cache.",
+  "objective_compatibility": [
+    "reconstruction",
+    "prefix_suffix"
+  ],
+  "seq_len_target": 2048,
+  "long_context_policy": {
+    "target_min_pct_docs_over_2k": 18.0,
+    "target_min_pct_docs_over_4k": 6.0,
+    "notes": "FinePDFs carries the long tail; reasoning boosters add coherent structure."
+  },
+  "sources": [
+    {
+      "name": "fineweb_edu",
+      "hf_id": "HuggingFaceFW/fineweb-edu",
+      "subset": "sample-10BT",
+      "split": "train",
+      "text_columns": ["text"],
+      "weight": 0.35,
+      "max_shards": 6,
+      "max_samples": 2000000,
+      "parquet_glob": "sample/10BT/*.parquet"
+    },
+    {
+      "name": "finepdfs_100BT",
+      "hf_id": "HuggingFaceFW/finepdfs_100BT",
+      "subset": "default",
+      "split": "train",
+      "text_columns": ["text"],
+      "weight": 0.25,
+      "max_shards": 8,
+      "max_samples": 1200000,
+      "notes": "Long coherent document backbone. 8 flat shards."
+    },
+    {
+      "name": "stack_edu_python",
+      "hf_id": "meryyllebr543/stack-edu-huggingface",
+      "subset": "python",
+      "split": "train",
+      "text_columns": ["text"],
+      "weight": 0.15,
+      "max_shards": 15,
+      "max_samples": 1000000
+    },
+    {
+      "name": "finemath_3plus",
+      "hf_id": "HuggingFaceTB/finemath",
+      "subset": "finemath-3plus",
+      "split": "train",
+      "text_columns": ["text"],
+      "weight": 0.15,
+      "max_shards": 10,
+      "max_samples": 1000000
+    },
+    {
+      "name": "big_reasoning_traces",
+      "hf_id": "allenai/big-reasoning-traces",
+      "subset": "DeepSeek",
+      "split": "train",
+      "text_columns": ["text"],
+      "weight": 0.05,
+      "max_shards": 8,
+      "max_samples": 400000
+    },
+    {
+      "name": "openmathreasoning_cot",
+      "hf_id": "nvidia/OpenMathReasoning",
+      "subset": "default",
+      "split": "cot",
+      "text_columns": ["problem", "generated_solution"],
+      "weight": 0.05,
+      "max_shards": 6,
+      "max_samples": 300000,
+      "parquet_glob": "data/cot-*.parquet",
+      "notes": "Reasoning long-tail booster; cot split only."
+    }
+  ],
+  "expected_length_profile_from_2026_06_20_sample": {
+    "estimated_docs_over_2k_pct": 21.3,
+    "estimated_docs_over_4k_pct": 8.8,
+    "estimation_notes": "Inherited from smollm3_inspired_2k; DCLM removal slightly raises long-doc share."
+  }
+}

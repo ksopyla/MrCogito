@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from datasets import load_dataset, interleave_datasets, concatenate_datasets
+from datasets import load_dataset, load_from_disk, interleave_datasets, concatenate_datasets
 from transformers import DataCollatorForWholeWordMask
 from transformers.utils import logging
 
@@ -648,6 +648,48 @@ def load_and_preprocess_dataset_mix(
     logger.info(
         f"[mix] interleaved train={len(train_ds):,} (probs={[round(p, 3) for p in probabilities]}) "
         f"| eval={len(test_ds):,}"
+    )
+    return train_ds, test_ds
+
+
+def load_pretokenized_mix(manifest_path):
+    """Load a pre-tokenized mix produced by `scripts/pretokenize_mix.py`.
+
+    Reads the manifest JSON, `load_from_disk`s each source's train/eval dirs,
+    interleaves train parts by the manifest weights, and concatenates eval parts.
+    Instant — no download, no tokenization. Returns (train_ds, test_ds).
+    """
+    manifest_path = Path(manifest_path)
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"Pretokenized manifest not found: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text())
+    logger.info(
+        f"[pretokenized] loading mix '{manifest.get('mix_id')}' from {manifest_path}"
+        f" (seq={manifest.get('max_seq_length')}, obj={manifest.get('objective')})"
+    )
+
+    train_parts, eval_parts, weights = [], [], []
+    for src in manifest["sources"]:
+        name = src["name"]
+        tr = load_from_disk(src["train_path"])
+        ev = load_from_disk(src["eval_path"])
+        train_parts.append(tr)
+        eval_parts.append(ev)
+        weights.append(float(src.get("weight", 1.0)))
+        logger.info(f"[pretokenized]   '{name}': {len(tr):,} train / {len(ev):,} eval rows")
+
+    total_w = sum(weights)
+    probabilities = [w / total_w for w in weights]
+    train_ds = interleave_datasets(
+        train_parts,
+        probabilities=probabilities,
+        seed=manifest.get("seed", 42),
+        stopping_strategy="all_exhausted",
+    )
+    test_ds = concatenate_datasets(eval_parts)
+    logger.info(
+        f"[pretokenized] interleaved train={len(train_ds):,}"
+        f" (probs={[round(p, 3) for p in probabilities]}) | eval={len(test_ds):,}"
     )
     return train_ds, test_ds
 

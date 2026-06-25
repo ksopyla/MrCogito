@@ -37,6 +37,7 @@ from data.data_collators import DataCollatorForPrefixGeneration, DataCollatorFor
 from data.dataset_preprocess import (
     load_and_preprocess_dataset_mix,
     load_and_preprocess_text_dataset,
+    load_pretokenized_mix,
 )
 from nn.concept_encoder import ConceptEncoderConfig
 from nn.concept_encoder_perceiver import (
@@ -249,6 +250,12 @@ class DataTrainingArguments:
         default=None,
         metadata={"help": "Optional JSON object that overrides source weights at runtime, "
                   "e.g. '{\"finepdfs_100BT\":0.6,\"fineweb_edu\":0.2,\"finemath_3plus\":0.2}'."},
+    )
+    pretokenized_manifest: Optional[str] = field(
+        default=None,
+        metadata={"help": "Path to a manifest JSON written by scripts/pretokenize_mix.py. "
+                  "If set, loads pre-tokenized sources via load_from_disk (instant, no download). "
+                  "Overrides dataset_mix/dataset_mix_recipe when present."},
     )
     tokenizer_name: str = field(default="answerdotai/ModernBERT-base")
     max_seq_length: int = field(default=512)
@@ -698,50 +705,54 @@ def main():
     )
 
     with training_args.main_process_first(desc="loading and tokenizing dataset"):
-        selected_mix = data_args.dataset_mix_recipe or data_args.dataset_mix
-        if data_args.dataset_mix_recipe and data_args.dataset_mix:
-            logger.warning(
-                "Both dataset_mix_recipe and dataset_mix were provided. "
-                f"Using dataset_mix_recipe='{data_args.dataset_mix_recipe}' and ignoring "
-                f"dataset_mix='{data_args.dataset_mix}'."
-            )
-
-        if selected_mix:
-            logger.info(f"Loading dataset mix: {selected_mix}")
-            if data_args.dataset_mix_weight_override:
-                try:
-                    preview_override = json.loads(data_args.dataset_mix_weight_override)
-                except Exception:
-                    preview_override = data_args.dataset_mix_weight_override
-                logger.info(f"Applying mix weight override: {preview_override}")
-            train_ds, test_ds = load_and_preprocess_dataset_mix(
-                tokenizer,
-                selected_mix,
-                mix_weight_override=data_args.dataset_mix_weight_override,
-                test_size_percent=data_args.test_size_percent,
-                max_seq_length=data_args.max_seq_length,
-                dataset_cache_dir=data_args.dataset_cache_dir,
-                train_num_proc=data_args.train_num_proc,
-                test_num_proc=data_args.test_num_proc,
-                append_eos_token_id=append_eos_token_id,
-                split_seed=training_args.seed,
-                interleave_seed=training_args.seed,
-            )
+        if data_args.pretokenized_manifest:
+            logger.info(f"Loading pre-tokenized mix from manifest: {data_args.pretokenized_manifest}")
+            train_ds, test_ds = load_pretokenized_mix(data_args.pretokenized_manifest)
         else:
-            logger.info(f"Loading dataset: {data_args.dataset_name}")
-            train_ds, test_ds = load_and_preprocess_text_dataset(
-                tokenizer,
-                data_args.dataset_name,
-                data_args.dataset_name_subset,
-                "text",
-                test_size_percent=data_args.test_size_percent,
-                max_seq_length=data_args.max_seq_length,
-                dataset_cache_dir=data_args.dataset_cache_dir,
-                train_num_proc=data_args.train_num_proc,
-                test_num_proc=data_args.test_num_proc,
-                append_eos_token_id=append_eos_token_id,
-                split_seed=training_args.seed,
-            )
+            selected_mix = data_args.dataset_mix_recipe or data_args.dataset_mix
+            if data_args.dataset_mix_recipe and data_args.dataset_mix:
+                logger.warning(
+                    "Both dataset_mix_recipe and dataset_mix were provided. "
+                    f"Using dataset_mix_recipe='{data_args.dataset_mix_recipe}' and ignoring "
+                    f"dataset_mix='{data_args.dataset_mix}'."
+                )
+
+            if selected_mix:
+                logger.info(f"Loading dataset mix: {selected_mix}")
+                if data_args.dataset_mix_weight_override:
+                    try:
+                        preview_override = json.loads(data_args.dataset_mix_weight_override)
+                    except Exception:
+                        preview_override = data_args.dataset_mix_weight_override
+                    logger.info(f"Applying mix weight override: {preview_override}")
+                train_ds, test_ds = load_and_preprocess_dataset_mix(
+                    tokenizer,
+                    selected_mix,
+                    mix_weight_override=data_args.dataset_mix_weight_override,
+                    test_size_percent=data_args.test_size_percent,
+                    max_seq_length=data_args.max_seq_length,
+                    dataset_cache_dir=data_args.dataset_cache_dir,
+                    train_num_proc=data_args.train_num_proc,
+                    test_num_proc=data_args.test_num_proc,
+                    append_eos_token_id=append_eos_token_id,
+                    split_seed=training_args.seed,
+                    interleave_seed=training_args.seed,
+                )
+            else:
+                logger.info(f"Loading dataset: {data_args.dataset_name}")
+                train_ds, test_ds = load_and_preprocess_text_dataset(
+                    tokenizer,
+                    data_args.dataset_name,
+                    data_args.dataset_name_subset,
+                    "text",
+                    test_size_percent=data_args.test_size_percent,
+                    max_seq_length=data_args.max_seq_length,
+                    dataset_cache_dir=data_args.dataset_cache_dir,
+                    train_num_proc=data_args.train_num_proc,
+                    test_num_proc=data_args.test_num_proc,
+                    append_eos_token_id=append_eos_token_id,
+                    split_seed=training_args.seed,
+                )
 
     logger.info(f"Train dataset size: {len(train_ds):,}")
     logger.info(f"Test dataset size: {len(test_ds):,}")

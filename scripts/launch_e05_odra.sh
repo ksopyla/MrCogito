@@ -1,6 +1,10 @@
 #!/bin/bash
-# E05 windowed prefix→suffix warmup on Odra (smollm3_inspired_2k, K=128, seq 2K).
-# Pretokenizes once into HF_DATASETS_CACHE, then launches DDP training (cache reused).
+# E05 windowed prefix→suffix warmup on Odra (smollm3_inspired_2k_e05warmup, K=128, seq 2K).
+# Two phases:
+#   1) pretokenize: parallel per-source parquet download + tokenize + save_to_disk
+#      (scripts/pretokenize_mix.py). Cached under ~/dev/hf_home/datasets_tok.
+#   2) train: DDP, loads the pretokenized manifest via load_from_disk (instant).
+# Re-run training only (cache warm): SKIP_PRETOKENIZE=1
 set -euo pipefail
 
 export PATH="${HOME}/.local/bin:${PATH}"
@@ -12,7 +16,6 @@ source "${SCRIPT_DIR}/remote_paths.sh"
 export EXPERIMENT_ID="${EXPERIMENT_ID:-E05}"
 export DECODER_TYPE=causal_ar
 export DECODER_CONTEXT_WINDOW="${DECODER_CONTEXT_WINDOW:-128}"
-export DATASET_MIX_RECIPE="${DATASET_MIX_RECIPE:-smollm3_inspired_2k}"
 export MAX_SEQ_LENGTH=2048
 export OBJECTIVE_VARIANT=prefix_suffix
 export HIDDEN_SIZE=768
@@ -41,52 +44,38 @@ export TRAIN_NUM_PROC="${TRAIN_NUM_PROC:-8}"
 export TEST_NUM_PROC="${TEST_NUM_PROC:-4}"
 export DATALOADER_NUM_WORKERS=4
 
+MIX_RECIPE="${MIX_RECIPE:-smollm3_inspired_2k_e05warmup}"
+DATASETS_TOK_DIR="${HF_HOME}/../datasets_tok"
+MANIFEST="${MANIFEST:-${DATASETS_TOK_DIR}/${MIX_RECIPE}_manifest.json}"
+
 echo "=== E05 Odra launch ==="
-echo "EXPERIMENT_ID=${EXPERIMENT_ID}"
-echo "DECODER_CONTEXT_WINDOW=${DECODER_CONTEXT_WINDOW:-<full causal>}"
-echo "DATASET_MIX_RECIPE=${DATASET_MIX_RECIPE}"
-echo "HF_DATASETS_CACHE=${HF_DATASETS_CACHE}"
+echo "EXPERIMENT_ID=${EXPERIMENT_ID}  DECODER_CONTEXT_WINDOW=${DECODER_CONTEXT_WINDOW:-<full causal>}"
+echo "MIX_RECIPE=${MIX_RECIPE}  MAX_SEQ_LENGTH=${MAX_SEQ_LENGTH}"
+echo "MANIFEST=${MANIFEST}"
 echo "PER_DEVICE_BATCH_SIZE=${PER_DEVICE_BATCH_SIZE} × GPUs × GRAD_ACCUM=${GRADIENT_ACCUMULATION_STEPS}"
 
 if [ "${SKIP_PRETOKENIZE:-0}" != "1" ]; then
-    echo "=== Pretokenizing mix (single process, warms HF map cache) ==="
-    uv run python - <<'PY'
-import os
-from transformers import AutoTokenizer
-
-from data.dataset_preprocess import load_and_preprocess_dataset_mix
-from training.train_perceiver_denoise import resolve_append_eos_token_id
-
-cache = os.environ["HF_DATASETS_CACHE"]
-recipe = os.environ["DATASET_MIX_RECIPE"]
-max_len = int(os.environ["MAX_SEQ_LENGTH"])
-seed = int(os.environ["SEED"])
-train_proc = int(os.environ.get("TRAIN_NUM_PROC", "8"))
-test_proc = int(os.environ.get("TEST_NUM_PROC", "4"))
-objective = os.environ["OBJECTIVE_VARIANT"]
-
-tokenizer = AutoTokenizer.from_pretrained(os.environ["TOKENIZER_NAME"])
-if tokenizer.pad_token_id is None:
-    tokenizer.pad_token = tokenizer.eos_token
-append_eos = resolve_append_eos_token_id(
-    objective, is_causal_ar=True, eos_token_id=tokenizer.eos_token_id
-)
-
-train_ds, test_ds = load_and_preprocess_dataset_mix(
-    tokenizer,
-    recipe,
-    max_seq_length=max_len,
-    dataset_cache_dir=cache,
-    train_num_proc=train_proc,
-    test_num_proc=test_proc,
-    append_eos_token_id=append_eos,
-    split_seed=seed,
-    interleave_seed=seed,
-)
-print(f"Pretokenize OK: train={len(train_ds):,} eval={len(test_ds):,} cache={cache}")
-PY
+    echo "=== Phase 1: pretokenize mix (parallel download + tokenize) ==="
+    uv run python scripts/pretokenize_mix.py \
+        --mix "${MIX_RECIPE}" \
+        --tokenizer "${TOKENIZER_NAME}" \
+        --max_seq_length "${MAX_SEQ_LENGTH}" \
+        --cache_dir "${DATASETS_TOK_DIR}" \
+        --raw_dir "${HF_HOME}/../datasets_raw" \
+        --manifest "${MANIFEST}" \
+        --objective "${OBJECTIVE_VARIANT}" \
+        --seed "${SEED}" \
+        --train_num_proc "${TRAIN_NUM_PROC}" \
+        --test_num_proc "${TEST_NUM_PROC}" \
+        --download_workers "${DOWNLOAD_WORKERS:-8}" \
+        --jobs "${PRETOK_JOBS:-1}"
 else
     echo "=== Skipping pretokenize (SKIP_PRETOKENIZE=1) ==="
+fi
+
+if [ ! -f "${MANIFEST}" ]; then
+    echo "ERROR: manifest not found at ${MANIFEST} — pretokenize failed?"
+    exit 1
 fi
 
 echo "=== W&B identity preflight ==="
@@ -114,5 +103,10 @@ print("job_type:", identity.job_type)
 print("tags:", ", ".join(identity.tags))
 PY
 
-echo "=== Starting training ==="
+# Training uses the pretokenized manifest (load_from_disk, instant) — no dataset_mix needed.
+export PRETOKENIZED_MANIFEST="${MANIFEST}"
+unset DATASET_MIX_RECIPE
+unset DATASET_MIX
+
+echo "=== Phase 2: starting training (pretokenized manifest) ==="
 exec bash "${SCRIPT_DIR}/train_perceiver_denoise_multigpu.sh"

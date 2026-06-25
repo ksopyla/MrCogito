@@ -61,6 +61,9 @@ DATASET_SUBSET="${DATASET_SUBSET:-}"
 DATASET_MIX="${DATASET_MIX:-}"
 # Preferred recipe-based mix config (path or id under data/mix_recipes/).
 DATASET_MIX_RECIPE="${DATASET_MIX_RECIPE:-}"
+# E05: path to a manifest JSON from scripts/pretokenize_mix.py. When set, training
+# loads pre-tokenized sources via load_from_disk (instant) and ignores dataset_mix*.
+PRETOKENIZED_MANIFEST="${PRETOKENIZED_MANIFEST:-}"
 TOKENIZER_NAME="${TOKENIZER_NAME:-answerdotai/ModernBERT-base}"
 MAX_SEQ_LENGTH="${MAX_SEQ_LENGTH:-512}"
 DELETION_RATE="${DELETION_RATE:-0.6}"
@@ -118,6 +121,9 @@ if [ -n "$DATASET_MIX" ]; then
 fi
 if [ -n "$DATASET_MIX_RECIPE" ]; then
     MIX_ARGS+=(--dataset_mix_recipe "$DATASET_MIX_RECIPE")
+fi
+if [ -n "$PRETOKENIZED_MANIFEST" ]; then
+    MIX_ARGS+=(--pretokenized_manifest "$PRETOKENIZED_MANIFEST")
 fi
 
 ANCHOR_ARGS=()
