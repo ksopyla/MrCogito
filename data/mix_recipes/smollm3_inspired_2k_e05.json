@@ -45,8 +45,8 @@
       "text_columns": ["text"],
       "weight": 0.15,
       "max_samples": 1000000,
-      "file_globs": ["python.parquet", "javascript.parquet"],
-      "notes": "Stack-edu is one giant parquet per language at repo root. Select python + javascript (node/react/etc) only — the other 13 language files total ~190 GB and are out of scope."
+      "file_globs": ["python.parquet", "javascript.parquet", "typescript.parquet", "markdown.parquet"],
+      "notes": "Stack-edu is one giant parquet per language at repo root. Select python + javascript (node/react/etc) + typescript + markdown only — the other 11 language files (~150 GB) are out of scope."
     },
     {
       "name": "finepdfs_100BT",
