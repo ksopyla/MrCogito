@@ -230,6 +230,41 @@ def download_parquets(items: list[tuple[str, int | None]], raw_dir: Path, worker
     return sorted(paths)
 
 
+def _archive_source_raw(spec: dict, name: str, raw_archive_dir: Path, download_workers: int) -> None:
+    """Download a source's raw files and move them to the NAS archive (tokenizer-agnostic).
+
+    Skips files already present in the archive with a matching size, so re-runs are
+    cheap. Used both for cached sources (tokenize skipped) and as a standalone pass.
+    """
+    archive_dst = raw_archive_dir / name
+    archive_dst.mkdir(parents=True, exist_ok=True)
+    logger.info(f"[{name}] archiving raw to {archive_dst}")
+    items = list_file_urls(spec)
+    # Filter out files already archived with the right size.
+    to_fetch = []
+    for url, sz in items:
+        fname = Path(url).name
+        dst = archive_dst / fname
+        if dst.exists() and (sz is None or dst.stat().st_size == sz):
+            continue
+        to_fetch.append((url, sz))
+    if not to_fetch:
+        logger.info(f"[{name}] raw already fully archived — nothing to do")
+        return
+    logger.info(f"[{name}] {len(to_fetch)}/{len(items)} files to fetch for archive")
+    tmp_raw = raw_archive_dir.parent / "_raw_staging" / name
+    paths = download_parquets(to_fetch, tmp_raw, download_workers)
+    for p in paths:
+        dst = archive_dst / p.name
+        try:
+            p.replace(dst)
+        except OSError:
+            import shutil
+            shutil.copy2(p, dst)
+            p.unlink(missing_ok=True)
+    logger.info(f"[{name}] raw archive complete ({len(paths)} files)")
+
+
 def tokenize_source(
     spec: dict,
     tokenizer,
@@ -251,9 +286,12 @@ def tokenize_source(
     manifest_entry: dict[str, Any] = {"name": name, "weight": spec.get("weight", 1.0), "path": str(tok_dir)}
 
     if train_dir.exists() and (train_dir / "dataset_info.json").exists():
-        logger.info(f"[{name}] tokenized cache exists at {tok_dir} — skipping")
+        logger.info(f"[{name}] tokenized cache exists at {tok_dir} — skipping tokenize")
         manifest_entry["train_path"] = str(train_dir)
         manifest_entry["eval_path"] = str(eval_dir)
+        # Even when tokenize is skipped, ensure raw is archived if requested.
+        if raw_archive_dir is not None:
+            _archive_source_raw(spec, name, raw_archive_dir, download_workers)
         return manifest_entry
 
     logger.info(f"[{name}] resolving file URLs")
@@ -335,6 +373,7 @@ def main():
     p.add_argument("--cache_dir", default=None, help="Tokenized cache root (default: $HF_DATASETS_CACHE/../datasets_tok)")
     p.add_argument("--raw_dir", default=None, help="Raw parquet root (default: $HF_DATASETS_CACHE/../datasets_raw)")
     p.add_argument("--raw_archive_dir", default=None, help="If set, move raw parquet/zst here (per-source subdir) after tokenizing instead of deleting — a tokenizer-agnostic archive for future re-tokenization. E.g. /nas/ml_data/mrcogito/hf_datasets/raw")
+    p.add_argument("--archive_raw_only", action="store_true", help="Only download + archive raw files to --raw_archive_dir for ALL sources (no tokenize). Use to populate the NAS archive for sources already tokenized under another tokenizer.")
     p.add_argument("--manifest", default=None, help="Manifest JSON path (default: <cache_dir>/<mix>_manifest.json)")
     p.add_argument("--test_size_percent", type=float, default=0.1)
     p.add_argument("--seed", type=int, default=42)
@@ -376,6 +415,18 @@ def main():
 
     logger.info(f"Mix: {mix_id} | sources: {[s.get('name') for s in sources]} | seq={args.max_seq_length}")
     logger.info(f"Cache: {cache_root} | raw: {raw_root} | manifest: {manifest_path}")
+
+    if args.archive_raw_only:
+        if raw_archive_root is None:
+            parser.error("--archive_raw_only requires --raw_archive_dir")
+        logger.info(f"=== ARCHIVE-RAW-ONLY: populating {raw_archive_root} (no tokenize) ===")
+        for spec in sources:
+            name = spec.get("name", spec["hf_id"])
+            t0 = time.time()
+            _archive_source_raw(spec, name, raw_archive_root, args.download_workers)
+            logger.info(f"[{name}] archive elapsed {time.time()-t0:.0f}s")
+        logger.info("Archive-only pass complete.")
+        return
 
     entries: list[dict] = []
     if args.jobs <= 1:
