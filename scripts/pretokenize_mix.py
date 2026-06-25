@@ -102,18 +102,20 @@ def list_file_urls(spec: dict) -> list[str]:
         name = Path(file_glob).name
         recursive = spec.get("recursive", False)
         entries = _list_recursive(repo, parent) if recursive else _api_list(repo, parent)
-        if name == "*":
-            files = [e["path"] for e in entries if any(e.get("path", "").endswith(s) for s in suffixes)]
-        elif name.endswith("*"):
-            stem = name[:-1]
+        # Glob forms supported: "*.parquet", "*.jsonl.zst", "cot-*.parquet", "*"
+        if "*" not in name:
+            files = [e["path"] for e in entries if e.get("path", "") == file_glob]
+        else:
+            # Split on the single '*' into a prefix and a suffix.
+            star = name.index("*")
+            prefix, suffix = name[:star], name[star + 1:]
             files = [
                 e["path"]
                 for e in entries
                 if any(e.get("path", "").endswith(s) for s in suffixes)
-                and Path(e["path"]).name.startswith(stem)
+                and Path(e["path"]).name.startswith(prefix)
+                and Path(e["path"]).name.endswith(suffix)
             ]
-        else:
-            files = [e["path"] for e in entries if e.get("path", "") == file_glob]
     elif spec.get("recursive"):
         entries = _list_recursive(repo, subset)
         files = [e["path"] for e in entries if any(e.get("path", "").endswith(s) for s in suffixes)]
