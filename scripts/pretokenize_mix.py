@@ -242,6 +242,7 @@ def tokenize_source(
     train_num_proc: int,
     test_num_proc: int,
     download_workers: int,
+    raw_archive_dir: Path | None = None,
 ) -> dict:
     name = spec.get("name", spec["hf_id"])
     tok_dir = cache_dir / f"{name}"
@@ -295,12 +296,33 @@ def tokenize_source(
     manifest_entry["train_rows"] = len(src_train)
     manifest_entry["eval_rows"] = len(src_eval)
 
-    # Free raw parquet to keep disk bounded.
-    for p in paths:
-        try:
-            p.unlink()
-        except OSError:
-            pass
+    # Archive raw parquet/zst to NAS (tokenizer-agnostic) so a future tokenizer
+    # switch can re-tokenize without re-downloading; then free NVMe. If no archive
+    # dir is configured, delete the raw files to keep NVMe bounded.
+    if raw_archive_dir is not None:
+        archive_src = raw_archive_dir / name
+        archive_dst = raw_archive_dir / name
+        archive_dst.mkdir(parents=True, exist_ok=True)
+        for p in paths:
+            dst = archive_dst / p.name
+            if dst.exists() and dst.stat().st_size == p.stat().st_size:
+                p.unlink(missing_ok=True)
+                continue
+            logger.info(f"[{name}] archiving raw {p.name} → {dst}")
+            try:
+                p.replace(dst)
+            except OSError:
+                # Cross-device (NVMe → NAS) move falls back to copy+delete.
+                import shutil
+                shutil.copy2(p, dst)
+                p.unlink(missing_ok=True)
+        logger.info(f"[{name}] raw archived to {archive_dst}")
+    else:
+        for p in paths:
+            try:
+                p.unlink(missing_ok=True)
+            except OSError:
+                pass
     logger.info(f"[{name}] DONE train={len(src_train):,} eval={len(src_eval):,} → {tok_dir}")
     return manifest_entry
 
@@ -312,6 +334,7 @@ def main():
     p.add_argument("--max_seq_length", type=int, default=2048)
     p.add_argument("--cache_dir", default=None, help="Tokenized cache root (default: $HF_DATASETS_CACHE/../datasets_tok)")
     p.add_argument("--raw_dir", default=None, help="Raw parquet root (default: $HF_DATASETS_CACHE/../datasets_raw)")
+    p.add_argument("--raw_archive_dir", default=None, help="If set, move raw parquet/zst here (per-source subdir) after tokenizing instead of deleting — a tokenizer-agnostic archive for future re-tokenization. E.g. /nas/ml_data/mrcogito/hf_datasets/raw")
     p.add_argument("--manifest", default=None, help="Manifest JSON path (default: <cache_dir>/<mix>_manifest.json)")
     p.add_argument("--test_size_percent", type=float, default=0.1)
     p.add_argument("--seed", type=int, default=42)
@@ -330,6 +353,10 @@ def main():
     raw_root = Path(args.raw_dir or os.path.join(os.path.dirname(hf_cache), "datasets_raw"))
     cache_root.mkdir(parents=True, exist_ok=True)
     (raw_root).mkdir(parents=True, exist_ok=True)
+    raw_archive_root = Path(args.raw_archive_dir) if args.raw_archive_dir else None
+    if raw_archive_root is not None:
+        raw_archive_root.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Raw archive (tokenizer-agnostic): {raw_archive_root}")
 
     from data.dataset_preprocess import _resolve_mix_sources
     sources, meta = _resolve_mix_sources(args.mix)
@@ -360,6 +387,7 @@ def main():
                     cache_root, raw_root / spec.get("name", spec["hf_id"]),
                     args.test_size_percent, args.seed, args.train_num_proc,
                     args.test_num_proc, args.download_workers,
+                    raw_archive_dir=raw_archive_root,
                 )
                 entries.append(entry)
                 logger.info(f"[{entry['name']}] elapsed {time.time()-t0:.0f}s")
@@ -374,7 +402,7 @@ def main():
             futs = {}
             for spec in sources:
                 futs[ex.submit(
-                    _proc_worker, spec, args, cache_root, raw_root, append_eos,
+                    _proc_worker, spec, args, cache_root, raw_root, append_eos, raw_archive_root,
                 )] = spec.get("name")
             for fut in as_completed(futs):
                 entries.append(fut.result())
@@ -396,7 +424,7 @@ def main():
     logger.info(f"Total sources: {len(entries)} | rows: {sum(e.get('train_rows',0) for e in entries):,} train")
 
 
-def _proc_worker(spec, args, cache_root, raw_root, append_eos):
+def _proc_worker(spec, args, cache_root, raw_root, append_eos, raw_archive_root=None):
     """Process-pool worker for --jobs>1."""
     from transformers import AutoTokenizer
     from training.train_perceiver_denoise import resolve_append_eos_token_id as _r
@@ -408,6 +436,7 @@ def _proc_worker(spec, args, cache_root, raw_root, append_eos):
         cache_root, raw_root / spec.get("name", spec["hf_id"]),
         args.test_size_percent, args.seed, args.train_num_proc,
         args.test_num_proc, args.download_workers,
+        raw_archive_dir=raw_archive_root,
     )
 
 

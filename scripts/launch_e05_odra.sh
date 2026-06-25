@@ -47,6 +47,9 @@ export DATALOADER_NUM_WORKERS=4
 MIX_RECIPE="${MIX_RECIPE:-smollm3_inspired_2k_e05}"
 DATASETS_TOK_DIR="${HF_HOME}/../datasets_tok"
 MANIFEST="${MANIFEST:-${DATASETS_TOK_DIR}/${MIX_RECIPE}_manifest.json}"
+# Archive raw parquet/zst to NAS after tokenizing (tokenizer-agnostic, survives a
+# future tokenizer switch). Set RAW_ARCHIVE_DIR= to disable. NAS is slow but write-once.
+RAW_ARCHIVE_DIR="${RAW_ARCHIVE_DIR:-/nas/ml_data/mrcogito/hf_datasets/raw}"
 
 echo "=== E05 Odra launch ==="
 echo "EXPERIMENT_ID=${EXPERIMENT_ID}  DECODER_CONTEXT_WINDOW=${DECODER_CONTEXT_WINDOW:-<full causal>}"
@@ -68,7 +71,8 @@ if [ "${SKIP_PRETOKENIZE:-0}" != "1" ]; then
         --train_num_proc "${TRAIN_NUM_PROC}" \
         --test_num_proc "${TEST_NUM_PROC}" \
         --download_workers "${DOWNLOAD_WORKERS:-8}" \
-        --jobs "${PRETOK_JOBS:-1}"
+        --jobs "${PRETOK_JOBS:-1}" \
+        ${RAW_ARCHIVE_DIR:+--raw_archive_dir "${RAW_ARCHIVE_DIR}"}
 else
     echo "=== Skipping pretokenize (SKIP_PRETOKENIZE=1) ==="
 fi
