@@ -147,7 +147,7 @@ def list_file_urls(spec: dict) -> list[tuple[str, int | None]]:
 list_parquet_urls = list_file_urls
 
 
-def _download_one(url: str, dest: Path, expected_size: int | None = None, retries: int = 3) -> Path:
+def _download_one(url: str, dest: Path, expected_size: int | None = None, retries: int = 5) -> Path:
     """Download `url` to `dest` with Content-Length validation and retry.
 
     Verifies the final size against the HTTP Content-Length when available, and
@@ -195,15 +195,28 @@ def _download_one(url: str, dest: Path, expected_size: int | None = None, retrie
 def download_parquets(items: list[tuple[str, int | None]], raw_dir: Path, workers: int) -> list[Path]:
     raw_dir.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
+    failed: list[str] = []
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futs = {
             ex.submit(_download_one, url, raw_dir / Path(url).name, sz): url
             for url, sz in items
         }
         for i, fut in enumerate(as_completed(futs), 1):
-            p = fut.result()  # raises on failure -> surfaces the error loudly
-            paths.append(p)
-            logger.info(f"  downloaded [{i}/{len(items)}] {p.name} ({p.stat().st_size // (1 << 20)} MB)")
+            url = futs[fut]
+            try:
+                p = fut.result()
+                paths.append(p)
+                logger.info(f"  downloaded [{i}/{len(items)}] {p.name} ({p.stat().st_size // (1 << 20)} MB)")
+            except Exception as e:
+                # A few flaky shards (DCLM CDN short-reads) must not kill the whole
+                # source — skip and continue. We over-cap by a few shards in the recipe
+                # so losing 1-2 still meets max_samples.
+                failed.append(url)
+                logger.error(f"  SKIPPED {Path(url).name} after retries: {e}")
+    if failed:
+        logger.warning(f"  {len(failed)} file(s) skipped: {[Path(u).name for u in failed]}")
+    if not paths:
+        raise RuntimeError(f"All {len(items)} downloads failed for {raw_dir}")
     return sorted(paths)
 
 

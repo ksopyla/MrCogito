@@ -30,7 +30,7 @@
       "split": "train",
       "text_columns": ["text"],
       "weight": 0.20,
-      "max_shards": 30,
+      "max_shards": 35,
       "max_samples": 1500000,
       "file_suffix": ".jsonl.zst",
       "recursive": true,
