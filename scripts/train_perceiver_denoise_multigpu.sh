@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+# Ensure uv (and thus `uv run python`) is on PATH when invoked from byobu/non-login shells.
+export PATH="${HOME}/.local/bin:${PATH}"
+
 echo "=== Perceiver Denoising Multi-GPU Training ==="
 echo "Default profile: Odra A1 reconstruction baseline"
 
@@ -137,7 +140,7 @@ if [ "$ANCHOR_LOSS" = "true" ]; then
     )
 fi
 
-accelerate launch \
+uv run accelerate launch \
     --num_processes="$NUM_GPUS" \
     --num_machines=1 \
     --mixed_precision=bf16 \
@@ -207,4 +210,4 @@ accelerate launch \
     "${MIX_ARGS[@]}" \
     "${ANCHOR_ARGS[@]}" \
     "${RESUME_ARGS[@]}" \
-    2>&1 | python scripts/clean_tee.py "$SHELL_LOG"
+    2>&1 | uv run python scripts/clean_tee.py "$SHELL_LOG"
