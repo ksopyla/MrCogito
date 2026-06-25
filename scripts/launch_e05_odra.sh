@@ -3,6 +3,8 @@
 # Pretokenizes once into HF_DATASETS_CACHE, then launches DDP training (cache reused).
 set -euo pipefail
 
+export PATH="${HOME}/.local/bin:${PATH}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/remote_paths.sh
 source "${SCRIPT_DIR}/remote_paths.sh"
