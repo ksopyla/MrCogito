@@ -76,11 +76,14 @@ def _list_recursive(repo: str, subpath: str, timeout: int = 60) -> list[dict]:
     return files
 
 
-def list_file_urls(spec: dict) -> list[str]:
-    """Return the file URLs for a source (parquet or .jsonl.zst), capped to max_shards.
+def list_file_urls(spec: dict) -> list[tuple[str, int | None]]:
+    """Return (url, expected_size) pairs for a source, capped to max_shards.
+
+    `expected_size` is the HF Hub-reported file size in bytes when available
+    (used to validate downloads), else None.
 
     Supports:
-      - explicit `data_files` (filtered to parquet/zst)
+      - explicit `data_files` (filtered to parquet/zst; size unknown -> None)
       - `parquet_glob` / `file_glob` like "sample/10BT/*.parquet" or "data/cot-*.parquet"
       - a `subset` dir (listed, optionally recursive via `recursive: true`)
       - `file_suffix` to select non-parquet files (e.g. ".jsonl.zst")
@@ -93,80 +96,114 @@ def list_file_urls(spec: dict) -> list[str]:
     if file_suffix:
         suffixes = (file_suffix,)
 
-    if explicit:
-        return [u for u in explicit if u.endswith(suffixes)][: spec.get("max_shards") or len(explicit)]
+    def _pick(entries: list[dict]) -> list[tuple[str, int | None]]:
+        out = []
+        for e in entries:
+            p = e.get("path", "")
+            if any(p.endswith(s) for s in suffixes):
+                out.append((p, e.get("size")))
+        return out
 
-    file_glob = spec.get("file_glob") or spec.get("parquet_glob")
-    if file_glob:
-        parent = str(Path(file_glob).parent)
-        name = Path(file_glob).name
-        recursive = spec.get("recursive", False)
-        entries = _list_recursive(repo, parent) if recursive else _api_list(repo, parent)
-        # Glob forms supported: "*.parquet", "*.jsonl.zst", "cot-*.parquet", "*"
-        if "*" not in name:
-            files = [e["path"] for e in entries if e.get("path", "") == file_glob]
-        else:
-            # Split on the single '*' into a prefix and a suffix.
-            star = name.index("*")
-            prefix, suffix = name[:star], name[star + 1:]
-            files = [
-                e["path"]
-                for e in entries
-                if any(e.get("path", "").endswith(s) for s in suffixes)
-                and Path(e["path"]).name.startswith(prefix)
-                and Path(e["path"]).name.endswith(suffix)
-            ]
-    elif spec.get("recursive"):
-        entries = _list_recursive(repo, subset)
-        files = [e["path"] for e in entries if any(e.get("path", "").endswith(s) for s in suffixes)]
-    elif subset:
-        entries = _api_list(repo, subset)
-        files = [e["path"] for e in entries if any(e.get("path", "").endswith(s) for s in suffixes)]
+    picked: list[tuple[str, int | None]] = []
+    if explicit:
+        picked = [(u, None) for u in explicit if u.endswith(suffixes)]
     else:
-        entries = _api_list(repo, "")
-        files = [e["path"] for e in entries if any(e.get("path", "").endswith(s) for s in suffixes)]
+        file_glob = spec.get("file_glob") or spec.get("parquet_glob")
+        if file_glob:
+            parent = str(Path(file_glob).parent)
+            name = Path(file_glob).name
+            recursive = spec.get("recursive", False)
+            entries = _list_recursive(repo, parent) if recursive else _api_list(repo, parent)
+            if "*" not in name:
+                picked = [(e["path"], e.get("size")) for e in entries if e.get("path", "") == file_glob]
+            else:
+                star = name.index("*")
+                prefix, suf = name[:star], name[star + 1:]
+                picked = [
+                    (e["path"], e.get("size"))
+                    for e in entries
+                    if any(e.get("path", "").endswith(s) for s in suffixes)
+                    and Path(e["path"]).name.startswith(prefix)
+                    and Path(e["path"]).name.endswith(suf)
+                ]
+        elif spec.get("recursive"):
+            picked = _pick(_list_recursive(repo, subset))
+        elif subset:
+            picked = _pick(_api_list(repo, subset))
+        else:
+            picked = _pick(_api_list(repo, ""))
 
     cap = spec.get("max_shards")
     if cap:
-        files = files[:cap]
-    if not files:
+        picked = picked[:cap]
+    if not picked:
         raise RuntimeError(
             f"No files ({suffixes}) found for {repo} subset={subset!r} glob={file_glob!r}"
         )
-    return [HF_RESOLVE.format(repo=repo, path=f) for f in files]
+    return [(HF_RESOLVE.format(repo=repo, path=f), sz) for f, sz in picked]
 
 
 # Back-compat alias.
 list_parquet_urls = list_file_urls
 
 
-def _download_one(url: str, dest: Path) -> Path:
+def _download_one(url: str, dest: Path, expected_size: int | None = None, retries: int = 3) -> Path:
+    """Download `url` to `dest` with Content-Length validation and retry.
+
+    Verifies the final size against the HTTP Content-Length when available, and
+    retries on short reads / connection resets. A partial `.part` file is always
+    removed before a retry so we never append to a truncated body.
+    """
     if dest.exists() and dest.stat().st_size > 0:
-        return dest
+        size = dest.stat().st_size
+        if expected_size is None or size == expected_size:
+            return dest
+        logger.warning(f"  existing {dest.name} is short ({size} < {expected_size}) — re-downloading")
+        dest.unlink()
+
     tmp = dest.with_suffix(dest.suffix + ".part")
-    req = urllib.request.Request(url, headers={"User-Agent": "pretokenize_mix/1.0"})
-    with urllib.request.urlopen(req, timeout=300) as r, open(tmp, "wb") as f:
-        while True:
-            chunk = r.read(1 << 20)
-            if not chunk:
-                break
-            f.write(chunk)
-    tmp.rename(dest)
-    return dest
+    last_err: Exception | None = None
+    for attempt in range(1, retries + 1):
+        if tmp.exists():
+            tmp.unlink()
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "pretokenize_mix/1.0"})
+            with urllib.request.urlopen(req, timeout=300) as r:
+                clen = int(r.headers.get("Content-Length", 0)) or None
+                got = 0
+                with open(tmp, "wb") as f:
+                    while True:
+                        chunk = r.read(1 << 20)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        got += len(chunk)
+                target = expected_size or clen
+                if target and got != target:
+                    raise IOError(f"short read: got {got} of {target} bytes")
+                if target is None and got == 0:
+                    raise IOError("empty response")
+            tmp.rename(dest)
+            return dest
+        except Exception as e:
+            last_err = e
+            logger.warning(f"  download {dest.name} attempt {attempt}/{retries} failed: {e}")
+            time.sleep(2 * attempt)
+    raise RuntimeError(f"Failed to download {url} after {retries} attempts: {last_err}")
 
 
-def download_parquets(urls: list[str], raw_dir: Path, workers: int) -> list[Path]:
+def download_parquets(items: list[tuple[str, int | None]], raw_dir: Path, workers: int) -> list[Path]:
     raw_dir.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futs = {
-            ex.submit(_download_one, url, raw_dir / Path(url).name): url
-            for url in urls
+            ex.submit(_download_one, url, raw_dir / Path(url).name, sz): url
+            for url, sz in items
         }
         for i, fut in enumerate(as_completed(futs), 1):
-            p = fut.result()
+            p = fut.result()  # raises on failure -> surfaces the error loudly
             paths.append(p)
-            logger.info(f"  downloaded [{i}/{len(urls)}] {p.name} ({p.stat().st_size // (1 << 20)} MB)")
+            logger.info(f"  downloaded [{i}/{len(items)}] {p.name} ({p.stat().st_size // (1 << 20)} MB)")
     return sorted(paths)
 
 
@@ -196,9 +233,9 @@ def tokenize_source(
         return manifest_entry
 
     logger.info(f"[{name}] resolving file URLs")
-    urls = list_file_urls(spec)
-    logger.info(f"[{name}] {len(urls)} files to download")
-    paths = download_parquets(urls, raw_dir, download_workers)
+    items = list_file_urls(spec)
+    logger.info(f"[{name}] {len(items)} files to download")
+    paths = download_parquets(items, raw_dir, download_workers)
 
     # Pick the loader by file extension: parquet -> parquet, .jsonl.zst/.zst/.jsonl -> json.
     is_json = any(p.suffix in (".zst", ".jsonl") or str(p).endswith(".jsonl.zst") for p in paths)
