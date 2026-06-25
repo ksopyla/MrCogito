@@ -55,6 +55,7 @@ import os
 from transformers import AutoTokenizer
 
 from data.dataset_preprocess import load_and_preprocess_dataset_mix
+from training.train_perceiver_denoise import resolve_append_eos_token_id
 
 cache = os.environ["HF_DATASETS_CACHE"]
 recipe = os.environ["DATASET_MIX_RECIPE"]
@@ -62,8 +63,15 @@ max_len = int(os.environ["MAX_SEQ_LENGTH"])
 seed = int(os.environ["SEED"])
 train_proc = int(os.environ.get("TRAIN_NUM_PROC", "8"))
 test_proc = int(os.environ.get("TEST_NUM_PROC", "4"))
+objective = os.environ["OBJECTIVE_VARIANT"]
 
 tokenizer = AutoTokenizer.from_pretrained(os.environ["TOKENIZER_NAME"])
+if tokenizer.pad_token_id is None:
+    tokenizer.pad_token = tokenizer.eos_token
+append_eos = resolve_append_eos_token_id(
+    objective, is_causal_ar=True, eos_token_id=tokenizer.eos_token_id
+)
+
 train_ds, test_ds = load_and_preprocess_dataset_mix(
     tokenizer,
     recipe,
@@ -71,6 +79,7 @@ train_ds, test_ds = load_and_preprocess_dataset_mix(
     dataset_cache_dir=cache,
     train_num_proc=train_proc,
     test_num_proc=test_proc,
+    append_eos_token_id=append_eos,
     split_seed=seed,
     interleave_seed=seed,
 )
