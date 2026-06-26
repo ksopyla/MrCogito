@@ -1,13 +1,14 @@
 #!/usr/bin/env python
-"""Locate the memory wall in the long-context forward: per-layer peak allocation.
+"""Locate the memory wall in the long-context forward: per-PHASE peak allocation.
 
 The round-1 note showed forward-only peak ~= full (fwd+bwd) peak — backward only
 recomputes the forward transient under checkpointing, so the wall is the FORWARD
-transient of the largest layer. This script registers forward hooks on each
-encoder/decoder layer that reset+record the CUDA peak counter, reporting each
-layer's transient peak so we know whether the encoder BiXT layers or the decoder
-AR layers dominate, and which lever (finer ckpt / sharding / smaller intermediate)
-attacks the actual bottleneck.
+transient. This drives the three phases MANUALLY (encoder -> decoder -> lm_head+CE),
+resetting the CUDA peak counter before each, so each phase reports its own peak
+(including the retained state live at its start). The max across phases == the
+global forward peak (phases are sequential), which must match bench_memory's
+fwd_peak — and tells us whether the encoder, the decoder, or the output head is
+the wall, and the per-phase slope in N.
 
 Runs WITH grad (model.train()) but NO backward, matching the bench fwd_only reading.
 """
@@ -34,7 +35,7 @@ def build_config(args) -> ConceptEncoderConfig:
         norm_type="rmsnorm", use_bixt=True, pad_token_id=0, bos_token_id=1,
         eos_token_id=2, tie_word_embeddings=False,
         decoder_attn_impl="chunked_window", decoder_attn_chunk_size=2048,
-        chunked_ce_block_size=2048,
+        chunked_ce_block_size=args.ce_block,
     )
     if args.window and args.window > 0:
         cfg["decoder_context_window"] = args.window
@@ -57,6 +58,7 @@ def main():
     p.add_argument("--dec_layers", type=int, default=4)
     p.add_argument("--intermediate", type=int, default=2048)
     p.add_argument("--num_heads", type=int, default=8)
+    p.add_argument("--ce_block", type=int, default=2048)
     p.add_argument("--no_ckpt", action="store_true", help="Disable gradient checkpointing.")
     args = p.parse_args()
 
@@ -68,24 +70,7 @@ def main():
     if not args.no_ckpt:
         model.gradient_checkpointing_enable()
 
-    peaks: dict[str, float] = {}
-
-    def mk(name: str):
-        def pre(_mod, _inp):
-            torch.cuda.reset_peak_memory_stats()
-        def post(_mod, _inp, _out):
-            torch.cuda.synchronize()
-            peaks[name] = torch.cuda.max_memory_allocated()
-        return pre, post
-
-    for i, layer in enumerate(model.encoder.layers):
-        pre, post = mk(f"enc.{i}")
-        layer.register_forward_pre_hook(pre)
-        layer.register_forward_hook(post)
-    for j, layer in enumerate(model.decoder.layers):
-        pre, post = mk(f"dec.{j}")
-        layer.register_forward_pre_hook(pre)
-        layer.register_forward_hook(post)
+    weights_alloc = torch.cuda.memory_allocated()
 
     B, N = args.batch_size, args.seq_len
     pid = torch.randint(3, 49152, (B, N), device=device)
@@ -93,18 +78,35 @@ def main():
     sid = torch.randint(3, 49152, (B, N), device=device)
     sm = torch.ones(B, N, dtype=torch.long, device=device)
     lab = sid.clone()
+    dec_in = model._shift_right(sid)
+    dec_kpm = (sm == 0)  # SDPA convention: True = ignore (all-real here -> all False)
 
-    torch.cuda.reset_peak_memory_stats()
-    torch.cuda.synchronize()
-    out = model(prefix_input_ids=pid, prefix_attention_mask=pm,
-                suffix_input_ids=sid, suffix_attention_mask=sm, labels=lab)
-    torch.cuda.synchronize()
-    total = torch.cuda.max_memory_allocated()
+    phases = []
+
+    def run_phase(name, fn):
+        torch.cuda.reset_peak_memory_stats()
+        torch.cuda.synchronize()
+        out = fn()
+        torch.cuda.synchronize()
+        peak = torch.cuda.max_memory_allocated()
+        alloc = torch.cuda.memory_allocated()
+        phases.append({"name": name, "peak_MB": mb(peak), "alloc_after_MB": mb(alloc)})
+        return out
+
+    concepts = run_phase("encoder", lambda: model.encode_concepts(
+        input_ids=pid, attention_mask=pm, return_dict=True).last_hidden_state)
+    hidden = run_phase("decoder", lambda: model.decode_hidden(
+        concepts, dec_in, key_padding_mask=dec_kpm))
+    loss = run_phase("lm_head+CE", lambda: model._chunked_teacher_forced_ce(
+        hidden, lab, args.ce_block))
+
     print(json.dumps({
         "seq_len": N, "batch": B, "window": args.window, "ckpt": not args.no_ckpt,
-        "total_fwd_peak_MB": mb(total),
-        "loss": round(out.loss.item(), 4),
-        "per_layer_peak_MB": {k: mb(v) for k, v in sorted(peaks.items())},
+        "ce_block": args.ce_block,
+        "weights_alloc_MB": mb(weights_alloc),
+        "phases": phases,
+        "global_peak_MB": round(max(ph["peak_MB"] for ph in phases), 1),
+        "loss": round(loss.item(), 4),
     }))
 
 
