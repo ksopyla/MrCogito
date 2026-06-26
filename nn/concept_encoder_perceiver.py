@@ -1193,6 +1193,8 @@ class ConceptCausalDecoderStack(nn.Module):
         # E05: sliding-window causal context (None = full causal). Built lazily per
         # forward and cached by (T, device) since the boolean mask is content-independent.
         self.context_window = getattr(config, "decoder_context_window", None)
+        self.attn_impl = getattr(config, "decoder_attn_impl", "sdpa")
+        self.attn_chunk_size = int(getattr(config, "decoder_attn_chunk_size", 2048) or 2048)
         self._window_mask_cache: dict = {}
 
     def embed(
@@ -1233,7 +1235,13 @@ class ConceptCausalDecoderStack(nn.Module):
             rope = _build_rope_cache(
                 T, self._head_dim, self._rope_theta, h.device, h.dtype
             )
-        attn_mask = self._sliding_window_mask(T, h.device)
+        # Chunked windowed attention builds its mask per-chunk internally (O(N*K)), so
+        # skip the O(N^2) full mask materialisation — at long N the int64 [N,N] diff in
+        # build_sliding_window_causal_mask alone is ~32 GB at N=65536.
+        if self.attn_impl == "chunked_window" and self.context_window is not None:
+            attn_mask = None
+        else:
+            attn_mask = self._sliding_window_mask(T, h.device)
         for layer in self.layers:
             h = layer(h, concepts, rope=rope, attn_mask=attn_mask,
                       key_padding_mask=key_padding_mask)
