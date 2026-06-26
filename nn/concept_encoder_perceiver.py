@@ -1461,6 +1461,49 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         )
         return self.lm_head(hidden)
 
+    def decode_hidden(
+        self,
+        concept_repr: torch.Tensor,
+        decoder_input_ids: torch.LongTensor,
+        word_dropout_p: float = 0.0,
+        key_padding_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Decoder output BEFORE the lm_head — used by the chunked-CE path (F2) so the
+        lm_head+CE can run in N-blocks without materialising [B,N,V] logits."""
+        return self.decoder(
+            decoder_input_ids, concept_repr,
+            word_dropout_p=word_dropout_p, key_padding_mask=key_padding_mask,
+        )
+
+    def _chunked_teacher_forced_ce(
+        self, hidden: torch.Tensor, labels: torch.LongTensor, block_size: int,
+    ) -> torch.Tensor:
+        """O(N*V) -> O(block*V) memory cross-entropy for long context (F2).
+
+        Computes lm_head + CE in blocks over the N axis so the full [B,N,V] logits
+        tensor is never materialised (and the fp32 CE upcast stays block-sized).
+        Equivalent to _teacher_forced_ce(decode_logits(...), labels) up to floating
+        point order. Used only in the training forward (encode_decode_loss) when
+        config.chunked_ce_block_size > 0; ablation/eval keep the full-logits path.
+        """
+        B, T, H = hidden.shape
+        total = torch.zeros((), device=hidden.device, dtype=hidden.dtype)
+        counted = 0
+        for s in range(0, T, block_size):
+            e = min(s + block_size, T)
+            logits_blk = self.lm_head(hidden[:, s:e, :])                 # [B, blk, V]
+            lbl_blk = labels[:, s:e]                                     # [B, blk]
+            ce_blk = F.cross_entropy(
+                logits_blk.reshape(-1, logits_blk.size(-1)),
+                lbl_blk.reshape(-1),
+                ignore_index=-100,
+                reduction="sum",
+            )
+            total = total + ce_blk
+        # mean over non-ignored positions = total_sum / count
+        count = (labels != -100).sum().clamp(min=1)
+        return total.to(torch.float32) / count
+
     @staticmethod
     def _teacher_forced_ce(logits: torch.Tensor, labels: torch.LongTensor) -> torch.Tensor:
         """Next-token CE for logits produced from ALREADY shift-right-ed decoder inputs.
@@ -1572,6 +1615,20 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         dec_key_padding = None
         if target_attention_mask is not None:
             dec_key_padding = target_attention_mask == 0  # [B, T] True = ignore (SDPA convention)
+        ce_block = int(getattr(self.config, "chunked_ce_block_size", 0) or 0)
+        if ce_block > 0 and self.training and labels is not None:
+            # F2: chunked lm_head + CE — never materialise [B,N,V] (the O(N*V) spike,
+            # ~6 GB at N=16384, V=49152). Compute hidden, then loss in N-blocks.
+            hidden = self.decode_hidden(
+                concept_repr, decoder_input_ids,
+                word_dropout_p=word_dropout_p, key_padding_mask=dec_key_padding,
+            )
+            task_loss = self._chunked_teacher_forced_ce(hidden, labels, ce_block)
+            if self.loss_manager.is_enabled:
+                loss = self.loss_manager(task_loss=task_loss, concept_repr=concept_repr)
+            else:
+                loss = task_loss
+            return loss, None, encoder_outputs
         logits = self.decode_logits(
             concept_repr, decoder_input_ids,
             word_dropout_p=word_dropout_p, key_padding_mask=dec_key_padding,

@@ -262,6 +262,34 @@ def test_chunked_window_attention_with_padding_mask():
     assert torch.isfinite(out).all()
 
 
+def test_chunked_ce_matches_full_ce():
+    """F2: the chunked lm_head+CE matches the full-logits CE (mean over non-ignored)."""
+    torch.manual_seed(2)
+    B, T, H, V = 2, 64, 16, 40
+    cfg = _tiny_config()
+    cfg.vocab_size = V
+    cfg.hidden_size = H
+    cfg.token_embedding_dim = H
+    cfg.num_attention_heads = 4
+    cfg.max_sequence_length = T
+    model = ConceptEncoderForConditionalLM(cfg)
+    hidden = torch.randn(B, T, H, requires_grad=True)
+    labels = torch.randint(0, V, (B, T))
+    labels[0, -8:] = -100  # some ignored
+    # Reference: full logits -> CE (mean over non-ignored)
+    ref_logits = model.lm_head(hidden)
+    ref = torch.nn.functional.cross_entropy(
+        ref_logits.reshape(-1, V), labels.reshape(-1), ignore_index=-100)
+    chk = model._chunked_teacher_forced_ce(hidden.detach().requires_grad_(True), labels, block_size=16)
+    assert torch.allclose(ref, chk, atol=1e-4, rtol=1e-4), (
+        f"chunked CE diverged: ref={ref.item()} chk={chk.item()}")
+    # backward flows through lm_head (chunked path uses it internally)
+    model.zero_grad()
+    chk.backward()
+    assert model.lm_head.weight.grad is not None
+    assert torch.isfinite(model.lm_head.weight.grad).all()
+
+
 def test_long_context_mix_is_registered_and_normalisable():
     from data.dataset_preprocess import DATASET_MIXES
 

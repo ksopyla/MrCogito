@@ -123,6 +123,9 @@ fi
 if [ -n "${DECODER_ATTN_CHUNK_SIZE:-}" ]; then
     WINDOW_ARGS+=(--decoder_attn_chunk_size "$DECODER_ATTN_CHUNK_SIZE")
 fi
+if [ -n "${CHUNKED_CE_BLOCK_SIZE:-}" ]; then
+    WINDOW_ARGS+=(--chunked_ce_block_size "$CHUNKED_CE_BLOCK_SIZE")
+fi
 
 # E05: pass --dataset_mix only when set (overrides the single dataset path).
 MIX_ARGS=()

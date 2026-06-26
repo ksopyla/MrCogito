@@ -120,6 +120,9 @@ class ConceptEncoderConfig(PretrainedConfig):
         # attention for long context (E05+). Only used when decoder_context_window is set.
         decoder_attn_impl: str = "sdpa",
         decoder_attn_chunk_size: int = 2048,
+        # F2: chunked lm_head+CE in N-blocks (0 = off, materialise full [B,N,V]).
+        # Caps the O(N*V) logits+fp32-CE spike at long N / large vocab.
+        chunked_ce_block_size: int = 0,
         norm_type: str = "layernorm",
         rope_theta: float = 10000.0,
         checkpoint_family: Optional[str] = None,
@@ -182,6 +185,7 @@ class ConceptEncoderConfig(PretrainedConfig):
         self.decoder_context_window = decoder_context_window
         self.decoder_attn_impl = decoder_attn_impl
         self.decoder_attn_chunk_size = decoder_attn_chunk_size
+        self.chunked_ce_block_size = chunked_ce_block_size
         self.norm_type = norm_type
         self.rope_theta = rope_theta
         # decoder_posonly: True for TSDAE/PosOnly checkpoints — decoder queries use position

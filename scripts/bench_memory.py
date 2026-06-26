@@ -62,6 +62,8 @@ def build_config(args) -> ConceptEncoderConfig:
     if args.decoder_attn_impl and args.decoder_attn_impl != "sdpa":
         cfg["decoder_attn_impl"] = args.decoder_attn_impl
         cfg["decoder_attn_chunk_size"] = args.decoder_attn_chunk_size
+    if args.chunked_ce_block_size and args.chunked_ce_block_size > 0:
+        cfg["chunked_ce_block_size"] = args.chunked_ce_block_size
     return ConceptEncoderConfig(**cfg)
 
 
@@ -160,6 +162,7 @@ def main():
     p.add_argument("--decoder_context_window", type=int, default=128)
     p.add_argument("--decoder_attn_impl", default="sdpa", choices=["sdpa", "chunked_window"])
     p.add_argument("--decoder_attn_chunk_size", type=int, default=2048)
+    p.add_argument("--chunked_ce_block_size", type=int, default=0)
     p.add_argument("--hidden_size", type=int, default=768)
     p.add_argument("--token_emb", type=int, default=256)
     p.add_argument("--concept_num", type=int, default=128)

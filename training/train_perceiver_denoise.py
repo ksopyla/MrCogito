@@ -146,6 +146,13 @@ class ModelArguments:
         metadata={"help": "Query chunk size for decoder_attn_impl='chunked_window'. Larger = "
                   "fewer kernel launches but higher peak; default 2048."},
     )
+    chunked_ce_block_size: int = field(
+        default=0,
+        metadata={"help": "F2 long-context: compute lm_head+CE in N-blocks of this size so "
+                  "the full [B,N,V] logits + fp32 CE upcast are never materialised (the O(N*V) "
+                  "spike). 0 = off (materialise full logits, legacy). Training-only; ablation/eval "
+                  "keep the full-logits path."},
+    )
     hidden_act: str = field(
         default="gelu",
         metadata={"help": "FFN activation. 'silu' makes the gated FFN SwiGLU; 'gelu' = GEGLU (legacy)."},
@@ -621,6 +628,7 @@ def build_perceiver_denoise_config(
         decoder_context_window=model_args.decoder_context_window,
         decoder_attn_impl=getattr(model_args, "decoder_attn_impl", "sdpa"),
         decoder_attn_chunk_size=getattr(model_args, "decoder_attn_chunk_size", 2048),
+        chunked_ce_block_size=getattr(model_args, "chunked_ce_block_size", 0),
         norm_type=model_args.norm_type,
         checkpoint_family=checkpoint_family,
         evaluation_contract_version=1,
