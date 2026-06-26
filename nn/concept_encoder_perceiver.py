@@ -953,6 +953,41 @@ def build_sliding_window_causal_mask(
     return mask.to(dtype) if dtype == torch.bool else mask
 
 
+def _combine_self_attn_mask(
+    attn_mask: Optional[torch.Tensor],
+    key_padding_mask: Optional[torch.Tensor],
+    batch: int,
+    seq_len: int,
+    device,
+) -> Tuple[Optional[torch.Tensor], bool]:
+    """Fold the sliding-window causal mask and the [B, T] padding mask into one SDPA mask.
+
+    SDPA accepts a single ``attn_mask``; there is no separate key-padding arg. Both
+    constraints here are key-side, so they AND as a bool mask (True = attend).
+
+    - ``attn_mask``: [T, T] bool sliding-window causal (True = attend), or None (full causal).
+    - ``key_padding_mask``: [B, T] bool (True = pad/IGNORE), or None.
+    Returns ``(mask, is_causal)``:
+    - neither set  -> (None, True)  -> the cheap flash is_causal kernel (full causal).
+    - only window  -> (attn_mask, False) as before (E05 windowed path).
+    - padding set  -> a [B, 1, T, T] bool mask = (causal-or-full) AND (not pad); is_causal=False.
+    """
+    if key_padding_mask is None:
+        return attn_mask, attn_mask is None
+    # keep: [B, T] bool, True = real key (not padded)
+    keep = ~key_padding_mask.bool().view(batch, 1, 1, seq_len)  # [B,1,1,T]
+    if attn_mask is not None:
+        win = attn_mask.bool().view(1, 1, seq_len, seq_len)     # [1,1,T,T]
+        mask = win & keep
+    else:
+        # Full-causal upper bound via is_causal=True would conflict with an explicit mask,
+        # so materialise a causal mask and AND with the padding keep-mask.
+        idx = torch.arange(seq_len, device=device)
+        causal = idx.view(seq_len, 1) >= idx.view(1, seq_len)   # [T,T]
+        mask = causal.view(1, 1, seq_len, seq_len) & keep
+    return mask, False
+
+
 def _rotate_half(x: torch.Tensor) -> torch.Tensor:
     half = x.shape[-1] // 2
     x1, x2 = x[..., :half], x[..., half:]
@@ -1012,7 +1047,9 @@ class ConceptCausalDecoderLayer(nn.Module):
         self.act_fn = ACT2FN[config.hidden_act]
 
     def _self_attention(
-        self, x: torch.Tensor, rope, attn_mask: Optional[torch.Tensor] = None
+        self, x: torch.Tensor, rope,
+        attn_mask: Optional[torch.Tensor] = None,
+        key_padding_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         B, T, _ = x.shape
         h, d = self.num_heads, self.head_dim
@@ -1023,13 +1060,16 @@ class ConceptCausalDecoderLayer(nn.Module):
             cos, sin = rope
             q = _apply_rope(q, cos, sin)
             k = _apply_rope(k, cos, sin)
-        # attn_mask carries the sliding-window causal pattern (E05); when None we use the
-        # cheap flash-friendly is_causal path (full causal context, E01/E02/E03).
+        # SDPA takes a single mask; fold the [B, T] padding mask (True = ignore) into the
+        # attention mask. Both the sliding-window causal pattern (E05) and the padding mask
+        # are key-side constraints, so we AND them as a bool mask broadcastable to
+        # [B, h, T, T]. When neither is set we keep the cheap flash-friendly is_causal path.
+        sdpa_attn_mask, is_causal = _combine_self_attn_mask(attn_mask, key_padding_mask, B, T, x.device)
         attn = F.scaled_dot_product_attention(
             q, k, v,
-            attn_mask=attn_mask,
+            attn_mask=sdpa_attn_mask,
             dropout_p=self.attn_dropout_p if self.training else 0.0,
-            is_causal=attn_mask is None,
+            is_causal=is_causal,
         )                                                     # [B, h, T, d]
         attn = attn.transpose(1, 2).reshape(B, T, self.hidden_size)
         return self.self_out(attn)
@@ -1040,8 +1080,15 @@ class ConceptCausalDecoderLayer(nn.Module):
         concepts: torch.Tensor,
         rope=None,
         attn_mask: Optional[torch.Tensor] = None,
+        key_padding_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        h = h + self._self_attention(self.pre_self_norm(h), rope, attn_mask=attn_mask)
+        h = h + self._self_attention(
+            self.pre_self_norm(h), rope, attn_mask=attn_mask, key_padding_mask=key_padding_mask
+        )
+        # Cross-attention keys are the C concepts (all valid — no concept-side padding), so
+        # only the self-attention needs the suffix padding mask. Padded query positions'
+        # cross-attn outputs are discarded by labels=-100 downstream, so masking them on the
+        # query side is unnecessary (and MHA has no query-mask arg).
         cross_out, _ = self.cross_attn(
             self.pre_cross_norm(h), concepts, concepts, need_weights=False
         )
@@ -1123,6 +1170,7 @@ class ConceptCausalDecoderStack(nn.Module):
         decoder_input_ids: torch.LongTensor,
         concepts: torch.Tensor,
         word_dropout_p: float = 0.0,
+        key_padding_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         h = self.embed(decoder_input_ids, word_dropout_p=word_dropout_p)   # [B, T, H]
         T = h.size(1)
@@ -1133,7 +1181,8 @@ class ConceptCausalDecoderStack(nn.Module):
             )
         attn_mask = self._sliding_window_mask(T, h.device)
         for layer in self.layers:
-            h = layer(h, concepts, rope=rope, attn_mask=attn_mask)
+            h = layer(h, concepts, rope=rope, attn_mask=attn_mask,
+                      key_padding_mask=key_padding_mask)
         return self.output_norm(h)
 
     def _sliding_window_mask(self, seq_len: int, device) -> Optional[torch.Tensor]:
@@ -1325,8 +1374,12 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         concept_repr: torch.Tensor,
         decoder_input_ids: torch.LongTensor,
         word_dropout_p: float = 0.0,
+        key_padding_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        hidden = self.decoder(decoder_input_ids, concept_repr, word_dropout_p=word_dropout_p)
+        hidden = self.decoder(
+            decoder_input_ids, concept_repr,
+            word_dropout_p=word_dropout_p, key_padding_mask=key_padding_mask,
+        )
         return self.lm_head(hidden)
 
     @staticmethod
@@ -1409,6 +1462,7 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         encoder_attention_mask: Optional[torch.Tensor],
         target_input_ids: torch.LongTensor,
         labels: Optional[torch.LongTensor],
+        target_attention_mask: Optional[torch.Tensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
     ) -> Tuple[Optional[torch.Tensor], torch.Tensor, BaseModelOutput]:
@@ -1418,6 +1472,11 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         prefix→suffix: ``target == suffix``) AND auxiliary-loss callers (the E03 anchor in
         PerceiverDenoiseTrainer). Centralising it keeps the decoder loss from drifting between
         call sites — the class of bug behind the E01 double-shift.
+
+        ``target_attention_mask`` [B, T] (1 = real, 0 = pad) optionally masks padded decoder
+        positions out of self-attention so real queries don't attend pad noise at long seq
+        lengths (E05/2K). Labels=-100 already drops them from the loss; this keeps the forward
+        clean. None falls back to the prior unmasked behaviour.
 
         Returns ``(loss, logits, encoder_outputs)``; ``loss`` is None when ``labels`` is None.
         """
@@ -1431,7 +1490,13 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         concept_repr = encoder_outputs.last_hidden_state
         decoder_input_ids = self._shift_right(target_input_ids)
         word_dropout_p = self.config.decoder_word_dropout if self.training else 0.0
-        logits = self.decode_logits(concept_repr, decoder_input_ids, word_dropout_p=word_dropout_p)
+        dec_key_padding = None
+        if target_attention_mask is not None:
+            dec_key_padding = target_attention_mask == 0  # [B, T] True = ignore (SDPA convention)
+        logits = self.decode_logits(
+            concept_repr, decoder_input_ids,
+            word_dropout_p=word_dropout_p, key_padding_mask=dec_key_padding,
+        )
         loss = self._loss_from_logits(logits, labels, concept_repr)
         return loss, logits, encoder_outputs
 
@@ -1476,15 +1541,20 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
             encoder_attention_mask = attention_mask
             decoder_input_ids = self._shift_right(input_ids)
 
+        # Match training's decoder padding mask: labels=-100 marks padded positions, so a
+        # real-position mask is labels != -100. Keeps the ablation forward consistent with
+        # the training forward (E05/2K) so the deltas aren't confounded by pad noise.
+        dec_key_padding = labels == -100
+
         was_training = self.training
         self.eval()
         concepts = self.encode_concepts(
             input_ids=encoder_input_ids, attention_mask=encoder_attention_mask, return_dict=True
         ).last_hidden_state
-        logits_intact = self.decode_logits(concepts, decoder_input_ids)
-        logits_zero = self.decode_logits(torch.zeros_like(concepts), decoder_input_ids)
+        logits_intact = self.decode_logits(concepts, decoder_input_ids, key_padding_mask=dec_key_padding)
+        logits_zero = self.decode_logits(torch.zeros_like(concepts), decoder_input_ids, key_padding_mask=dec_key_padding)
         perm = torch.randperm(concepts.size(0), device=concepts.device)
-        logits_shuffle = self.decode_logits(concepts[perm], decoder_input_ids)
+        logits_shuffle = self.decode_logits(concepts[perm], decoder_input_ids, key_padding_mask=dec_key_padding)
 
         ce_intact = self._teacher_forced_ce(logits_intact, labels)
         ce_zero = self._teacher_forced_ce(logits_zero, labels)
@@ -1525,7 +1595,8 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         train_wd = float(getattr(self.config, "decoder_word_dropout", 0.0) or 0.0)
         if train_wd > 0.0:
             ce_intact_wd = self._teacher_forced_ce(
-                self.decode_logits(concepts, decoder_input_ids, word_dropout_p=train_wd),
+                self.decode_logits(concepts, decoder_input_ids, word_dropout_p=train_wd,
+                                   key_padding_mask=dec_key_padding),
                 labels,
             )
             metrics["ce_intact_wd"] = ce_intact_wd.item()
@@ -1550,7 +1621,7 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> MaskedLMOutput:
-        del token_type_ids, special_tokens_mask, suffix_attention_mask
+        del token_type_ids, special_tokens_mask
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         if prefix_input_ids is not None:
@@ -1561,6 +1632,7 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
                 prefix_attention_mask,
                 suffix_input_ids,
                 labels,
+                target_attention_mask=suffix_attention_mask,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
             )
@@ -1581,6 +1653,7 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
             attention_mask,
             input_ids,
             labels,
+            target_attention_mask=attention_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
         )

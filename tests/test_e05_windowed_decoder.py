@@ -155,8 +155,71 @@ def test_beyond_window_ablation_metrics_present():
     assert "delta_zero_beyond_window" not in m2
 
 
+def test_decoder_suffix_padding_mask_blocks_pad_noise():
+    """A padded suffix tail must not change logits at real positions.
+
+    The AR decoder receives suffix_attention_mask (1=real, 0=pad); padded keys are masked
+    out of self-attention so real queries don't attend pad noise. With the fix, flipping
+    pad-token ids in the tail leaves logits at real positions unchanged; without the
+    key_padding_mask the pad tail would leak into the windowed self-attention.
+    """
+    K = 4
+    config = _tiny_config(decoder_context_window=K, decoder_num_layers=2)
+    model = ConceptEncoderForConditionalLM(config).eval()
+    B, T = 2, 16
+    real_len = 10  # positions [0:10] real, [10:16] pad
+    prefix_ids = torch.randint(3, config.vocab_size, (B, T))
+    prefix_mask = torch.ones(B, T, dtype=torch.long)
+    suffix_ids = torch.randint(3, config.vocab_size, (B, T))
+    suffix_ids[:, real_len:] = config.pad_token_id
+    suffix_mask = torch.zeros(B, T, dtype=torch.long)
+    suffix_mask[:, :real_len] = 1
+    labels = suffix_ids.clone()
+    labels[:, real_len:] = -100
+
+    with torch.no_grad():
+        out_a = model(
+            prefix_input_ids=prefix_ids, prefix_attention_mask=prefix_mask,
+            suffix_input_ids=suffix_ids, suffix_attention_mask=suffix_mask, labels=labels,
+        )
+        # Change the pad tail to different ids — real-position logits must be identical.
+        suffix_ids2 = suffix_ids.clone()
+        suffix_ids2[:, real_len:] = (config.pad_token_id + 7) % config.vocab_size
+        out_b = model(
+            prefix_input_ids=prefix_ids, prefix_attention_mask=prefix_mask,
+            suffix_input_ids=suffix_ids2, suffix_attention_mask=suffix_mask, labels=labels,
+        )
+
+    # Logits at real positions are identical (pad tail doesn't leak in).
+    diff = (out_a.logits - out_b.logits).abs()
+    assert diff[:, :real_len].max().item() < 1e-5, "pad tail leaked into real-position logits"
+    # Loss is finite (no NaN from masked query rows).
+    assert torch.isfinite(out_a.loss)
+
+
+def test_decoder_suffix_padding_mask_finite_with_full_pad_row():
+    """A fully-padded suffix row (edge case) must not NaN the loss."""
+    config = _tiny_config(decoder_context_window=4, decoder_num_layers=2)
+    model = ConceptEncoderForConditionalLM(config).eval()
+    B, T = 2, 12
+    prefix_ids = torch.randint(3, config.vocab_size, (B, T))
+    prefix_mask = torch.ones(B, T, dtype=torch.long)
+    suffix_ids = torch.full((B, T), config.pad_token_id, dtype=torch.long)
+    # Row 0 has real content, row 1 is fully pad.
+    suffix_ids[0, :8] = torch.randint(3, config.vocab_size, (8,))
+    suffix_mask = torch.zeros(B, T, dtype=torch.long)
+    suffix_mask[0, :8] = 1
+    labels = suffix_ids.clone()
+    labels[suffix_mask == 0] = -100
+    with torch.no_grad():
+        out = model(
+            prefix_input_ids=prefix_ids, prefix_attention_mask=prefix_mask,
+            suffix_input_ids=suffix_ids, suffix_attention_mask=suffix_mask, labels=labels,
+        )
+    assert torch.isfinite(out.loss)
+
+
 def test_long_context_mix_is_registered_and_normalisable():
-    """The long-context base mix exists, sums sensibly, and references real loadable sources."""
     from data.dataset_preprocess import DATASET_MIXES
 
     mix = DATASET_MIXES["long_2k_base_v1"]

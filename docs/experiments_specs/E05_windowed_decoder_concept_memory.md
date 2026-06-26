@@ -1,6 +1,6 @@
 # E05 — Windowed decoder + concepts as cross-window memory
 
-- **Status:** foundation implemented 2026-06-18; docs reconciled 2026-06-25; **launching on Odra** (Polonez down).
+- **Status:** foundation implemented 2026-06-18; docs reconciled 2026-06-25; **launching on Odra** (Polonez down). **2026-06-26: first launch DIVERGED at step ~20 (LR 3e-4 / warmup 500 too hot for seq-2048 + windowed mask; grad_norm → 500k, beyond-window Δzero went negative — kill gate MET at 43% budget). Stopped. Fixed a latent AR-decoder padding-mask bug (suffix_attention_mask was discarded) and made LR/warmup/eval-steps env-overridable. Sanity relaunch pending: LR 1e-4 / warmup 1500 / 0.05 epoch.**
 - **Plan:** [E05_windowed_decoder_concept_memory_plan.md](E05_windowed_decoder_concept_memory_plan.md)
 - **Owner:** Krzysztof Sopyla · opened 2026-06-14
 

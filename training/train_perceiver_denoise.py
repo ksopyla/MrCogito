@@ -335,8 +335,10 @@ class PerceiverDenoiseTrainer(Trainer):
         labels = inputs["labels"]
 
         # encode_decode_loss is the SAME recipe forward() uses → the anchor path cannot drift.
+        # Pass the target mask so the decoder self-attn matches the forward() behaviour (E05/2K).
         task_loss, logits, encoder_outputs = base_model.encode_decode_loss(
-            input_ids, attention_mask, input_ids, labels
+            input_ids, attention_mask, input_ids, labels,
+            target_attention_mask=attention_mask,
         )
         concept_repr = encoder_outputs.last_hidden_state
         anchor_mse = self._anchor_mse(base_model, input_ids, labels, concept_repr)
