@@ -1326,6 +1326,69 @@ def masked_standardized_mse(
     return sq.sum() / denom
 
 
+class ChunkedLMHeadCE(torch.autograd.Function):
+    """Memory-optimal lm_head + next-token CE: O(block*V) peak instead of O(N*V).
+
+    The naive chunked loop (lm_head per block + CE, accumulating a scalar loss) is
+    numerically fine, but under autograd it RETAINS every block's logits for backward
+    -> the whole [B,N,V] lives in the graph. Measured (2026-06-26 phased profile) this
+    is the dominant memory term at long N: ~6.4 GB retained at N=65536/V=49152, i.e. F2
+    did not actually cap memory on the training path. This Function saves ONLY the
+    hidden states + labels and RECOMPUTES lm_head per block in backward via
+    torch.autograd.grad, so the only large tensors materialised are the [B,N,H] hidden
+    gradient and the [V,H] weight gradient. Numerically equivalent to full CE (mean
+    over non-ignored positions) up to floating-point order; forward is the same chunked
+    sum/count. lm_head is bias-free (nn.Linear(H, V, bias=False)).
+    """
+
+    @staticmethod
+    def forward(ctx, hidden, weight, labels, block_size, ignore_index=-100):
+        B, N, H = hidden.shape
+        V = weight.shape[0]
+        total = hidden.new_zeros(())
+        for s in range(0, N, block_size):
+            e = min(s + block_size, N)
+            logits = F.linear(hidden[:, s:e, :], weight)            # [B, blk, V]
+            ce = F.cross_entropy(
+                logits.reshape(-1, V), labels[:, s:e].reshape(-1),
+                ignore_index=ignore_index, reduction="sum",
+            )
+            total = total + ce
+        count = (labels != ignore_index).sum().clamp(min=1)
+        ctx.save_for_backward(hidden, labels)
+        ctx.weight = weight
+        ctx.block_size = block_size
+        ctx.ignore_index = ignore_index
+        ctx.count = count
+        return total.to(torch.float32) / count
+
+    @staticmethod
+    def backward(ctx, grad_out):
+        hidden, labels = ctx.saved_tensors
+        weight = ctx.weight
+        block_size, ignore_index, count = ctx.block_size, ctx.ignore_index, ctx.count
+        B, N, H = hidden.shape
+        V = weight.shape[0]
+        grad_hidden = torch.zeros_like(hidden)
+        grad_weight = torch.zeros_like(weight)
+        scale = grad_out / count
+        for s in range(0, N, block_size):
+            e = min(s + block_size, N)
+            hb = hidden[:, s:e, :].detach().requires_grad_(True)
+            wb = weight.detach().requires_grad_(True)
+            with torch.enable_grad():
+                logits = F.linear(hb, wb)
+                ce = F.cross_entropy(
+                    logits.reshape(-1, V), labels[:, s:e].reshape(-1),
+                    ignore_index=ignore_index, reduction="sum",
+                )
+                gh, gw = torch.autograd.grad(ce, (hb, wb))
+            grad_hidden[:, s:e, :] = gh * scale
+            grad_weight.add_(gw * scale)
+        # grads for (labels, block_size, ignore_index) — non-differentiable
+        return grad_hidden, grad_weight, None, None, None
+
+
 class ConceptEncoderForConditionalLM(PreTrainedModel):
     """Encoder → concepts → autoregressive concept-conditioned decoder.
 
@@ -1478,31 +1541,20 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
     def _chunked_teacher_forced_ce(
         self, hidden: torch.Tensor, labels: torch.LongTensor, block_size: int,
     ) -> torch.Tensor:
-        """O(N*V) -> O(block*V) memory cross-entropy for long context (F2).
+        """O(N*V) -> O(block*V) memory cross-entropy for long context (F2, fixed).
 
-        Computes lm_head + CE in blocks over the N axis so the full [B,N,V] logits
-        tensor is never materialised (and the fp32 CE upcast stays block-sized).
-        Equivalent to _teacher_forced_ce(decode_logits(...), labels) up to floating
-        point order. Used only in the training forward (encode_decode_loss) when
+        Delegates to ChunkedLMHeadCE: a custom autograd Function that saves only the
+        hidden states (NOT the per-block logits) and recomputes lm_head per block in
+        backward. The plain loop accumulates a correct loss but RETAINS every block's
+        logits in the autograd graph -> effectively [B,N,V] (the dominant memory term
+        at long N; ~6.4 GB at 65k/V49152). The custom Function makes the training path
+        truly O(block*V) peak while staying numerically equivalent to full CE (mean
+        over non-ignored positions). Used only in the training forward when
         config.chunked_ce_block_size > 0; ablation/eval keep the full-logits path.
         """
-        B, T, H = hidden.shape
-        total = torch.zeros((), device=hidden.device, dtype=hidden.dtype)
-        counted = 0
-        for s in range(0, T, block_size):
-            e = min(s + block_size, T)
-            logits_blk = self.lm_head(hidden[:, s:e, :])                 # [B, blk, V]
-            lbl_blk = labels[:, s:e]                                     # [B, blk]
-            ce_blk = F.cross_entropy(
-                logits_blk.reshape(-1, logits_blk.size(-1)),
-                lbl_blk.reshape(-1),
-                ignore_index=-100,
-                reduction="sum",
-            )
-            total = total + ce_blk
-        # mean over non-ignored positions = total_sum / count
-        count = (labels != -100).sum().clamp(min=1)
-        return total.to(torch.float32) / count
+        return ChunkedLMHeadCE.apply(
+            hidden, self.lm_head.weight, labels, block_size,
+        )
 
     @staticmethod
     def _teacher_forced_ce(logits: torch.Tensor, labels: torch.LongTensor) -> torch.Tensor:
