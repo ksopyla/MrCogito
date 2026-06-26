@@ -600,6 +600,11 @@ class ConceptEncoder(PreTrainedModel):
         else:
             self.layers = nn.ModuleList([ConceptEncoderLayer(config) for _ in range(config.num_hidden_layers)])
         self._use_bixt = getattr(config, "use_bixt", False)
+        # Manual gradient checkpointing (long context): when enabled, each encoder layer's
+        # forward is wrapped in torch.utils.checkpoint so activations are dropped and
+        # recomputed in backward — trades ~30% compute for a large activation-memory cut.
+        # Set via .gradient_checkpointing_enable() / the model's _set_gradient_checkpointing.
+        self.gradient_checkpointing = False
         # Dropout [hidden_dropout_prob]
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         # Output layer normalization [hidden_size=concept_dim]
@@ -729,7 +734,26 @@ class ConceptEncoder(PreTrainedModel):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
-            if self._use_bixt:
+            if self.gradient_checkpointing and self.training:
+                # Recompute layer activations in backward to cap activation memory at long N.
+                # use_reentrant=False is the recommended modern path (non-reentrant).
+                def _enc_fwd(concepts, tokens, mask, _layer=layer, _bixt=self._use_bixt):
+                    if _bixt:
+                        return _layer(concept_representations=concepts, token_embeddings=tokens,
+                                      attention_mask=mask)
+                    return _layer(concept_representations=concepts, token_embeddings=tokens,
+                                  attention_mask=mask)
+                if self._use_bixt:
+                    hidden_states, token_embeddings = torch.utils.checkpoint.checkpoint(
+                        _enc_fwd, hidden_states, token_embeddings, key_padding_mask,
+                        use_reentrant=False,
+                    )
+                else:
+                    hidden_states = torch.utils.checkpoint.checkpoint(
+                        _enc_fwd, hidden_states, token_embeddings, key_padding_mask,
+                        use_reentrant=False,
+                    )
+            elif self._use_bixt:
                 hidden_states, token_embeddings = layer(
                     concept_representations=hidden_states,
                     token_embeddings=token_embeddings,

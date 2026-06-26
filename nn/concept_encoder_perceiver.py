@@ -1195,6 +1195,7 @@ class ConceptCausalDecoderStack(nn.Module):
         self.context_window = getattr(config, "decoder_context_window", None)
         self.attn_impl = getattr(config, "decoder_attn_impl", "sdpa")
         self.attn_chunk_size = int(getattr(config, "decoder_attn_chunk_size", 2048) or 2048)
+        self.gradient_checkpointing = False
         self._window_mask_cache: dict = {}
 
     def embed(
@@ -1243,8 +1244,16 @@ class ConceptCausalDecoderStack(nn.Module):
         else:
             attn_mask = self._sliding_window_mask(T, h.device)
         for layer in self.layers:
-            h = layer(h, concepts, rope=rope, attn_mask=attn_mask,
-                      key_padding_mask=key_padding_mask)
+            if self.gradient_checkpointing and self.training:
+                def _dec_fwd(hh, conc, _rope, _amask, _kpm, _layer=layer):
+                    return _layer(hh, conc, rope=_rope, attn_mask=_amask, key_padding_mask=_kpm)
+                h = torch.utils.checkpoint.checkpoint(
+                    _dec_fwd, h, concepts, rope, attn_mask, key_padding_mask,
+                    use_reentrant=False,
+                )
+            else:
+                h = layer(h, concepts, rope=rope, attn_mask=attn_mask,
+                          key_padding_mask=key_padding_mask)
         return self.output_norm(h)
 
     def _sliding_window_mask(self, seq_len: int, device) -> Optional[torch.Tensor]:
@@ -1347,6 +1356,7 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
     config_class = ConceptEncoderConfig
     base_model_prefix = "concept_encoder"
     _tied_weights_keys = ["lm_head.weight"]
+    supports_gradient_checkpointing = True
 
     def __init__(
         self,
@@ -1370,6 +1380,13 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
 
         if config.tie_word_embeddings and config.token_embedding_dim == config.hidden_size:
             self._tie_or_clone_weights(self.lm_head, self.decoder.token_embeddings)
+
+    def _set_gradient_checkpointing(self, enable=True, gradient_checkpointing_func=None):
+        # Propagate the HF Trainer's gradient_checkpointing flag to the custom encoder
+        # and decoder stacks, whose layer loops wrap each layer in torch.utils.checkpoint
+        # when the flag is on (long-context activation-memory control).
+        self.encoder.gradient_checkpointing = bool(enable)
+        self.decoder.gradient_checkpointing = bool(enable)
 
     def anchor_predict(self, concept_repr: torch.Tensor, seq_length: int) -> torch.Tensor:
         """Per-token teacher-hidden-state predictions from concepts (E03 anchor). [B,C,H]->[B,N,Ht]."""
