@@ -135,6 +135,17 @@ class ModelArguments:
                   "(sliding-window). None = full causal context (E01/E02/E03). When set, "
                   "out-of-window context is only reachable through the concepts."},
     )
+    decoder_attn_impl: str = field(
+        default="sdpa",
+        metadata={"help": "Decoder self-attn backend. 'sdpa' (default, byte-unchanged) or "
+                  "'chunked_window' — O(N*K) memory windowed attention for long context. "
+                  "Only applies when decoder_context_window is set."},
+    )
+    decoder_attn_chunk_size: int = field(
+        default=2048,
+        metadata={"help": "Query chunk size for decoder_attn_impl='chunked_window'. Larger = "
+                  "fewer kernel launches but higher peak; default 2048."},
+    )
     hidden_act: str = field(
         default="gelu",
         metadata={"help": "FFN activation. 'silu' makes the gated FFN SwiGLU; 'gelu' = GEGLU (legacy)."},
@@ -608,6 +619,8 @@ def build_perceiver_denoise_config(
         decoder_pos_type=model_args.decoder_pos_type,
         decoder_word_dropout=model_args.decoder_word_dropout,
         decoder_context_window=model_args.decoder_context_window,
+        decoder_attn_impl=getattr(model_args, "decoder_attn_impl", "sdpa"),
+        decoder_attn_chunk_size=getattr(model_args, "decoder_attn_chunk_size", 2048),
         norm_type=model_args.norm_type,
         checkpoint_family=checkpoint_family,
         evaluation_contract_version=1,

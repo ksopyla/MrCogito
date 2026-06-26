@@ -116,6 +116,10 @@ class ConceptEncoderConfig(PretrainedConfig):
         decoder_word_dropout: float = 0.0,
         decoder_pos_type: str = "learned",
         decoder_context_window: Optional[int] = None,
+        # "sdpa" (default, byte-unchanged) | "chunked_window" — O(N*K) memory windowed
+        # attention for long context (E05+). Only used when decoder_context_window is set.
+        decoder_attn_impl: str = "sdpa",
+        decoder_attn_chunk_size: int = 2048,
         norm_type: str = "layernorm",
         rope_theta: float = 10000.0,
         checkpoint_family: Optional[str] = None,
@@ -176,6 +180,8 @@ class ConceptEncoderConfig(PretrainedConfig):
         # When set, out-of-window context is only reachable through the C concepts, making
         # them the sole carrier of cross-window (long-range) information.
         self.decoder_context_window = decoder_context_window
+        self.decoder_attn_impl = decoder_attn_impl
+        self.decoder_attn_chunk_size = decoder_attn_chunk_size
         self.norm_type = norm_type
         self.rope_theta = rope_theta
         # decoder_posonly: True for TSDAE/PosOnly checkpoints — decoder queries use position

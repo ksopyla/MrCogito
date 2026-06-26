@@ -988,6 +988,44 @@ def _combine_self_attn_mask(
     return mask, False
 
 
+def _chunked_window_causal_attention(
+    q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
+    window: int, chunk_size: int = 2048,
+    key_padding_mask: Optional[torch.Tensor] = None,
+    dropout_p: float = 0.0,
+) -> torch.Tensor:
+    """O(N*K) memory sliding-window causal attention for long context.
+
+    Computes causal + last-``window`` attention in blocks over the query axis. Each
+    query chunk only loads its union key window ``[s-window+1, e)`` (width <= chunk+K-1),
+    so the attention matrix materialised is O(chunk * (chunk+K)) — independent of N —
+    and total memory is O(N*K). Numerically equivalent to the full bool-mask SDPA path
+    within bf16 precision (verified). Hardware-agnostic (no Hopper/flex needed).
+
+    q, k, v: [B, h, N, d]. ``key_padding_mask`` [B, N] (True = pad/ignore) is folded
+    per chunk (only the loaded key window is masked). Returns [B, h, N, d].
+    """
+    B, h, N, d = q.shape
+    out = torch.empty_like(q)
+    kpm = key_padding_mask
+    for s in range(0, N, chunk_size):
+        e = min(s + chunk_size, N)
+        qch = q[:, :, s:e, :]                                  # [B,h,qc,d]
+        ks = max(0, s - window + 1)                            # union of query windows in [s,e)
+        kch = k[:, :, ks:e, :]                                 # [B,h,kc,d]
+        vch = v[:, :, ks:e, :]
+        qi = torch.arange(s, e, device=q.device)[:, None]      # [qc,1]
+        kj = torch.arange(ks, e, device=q.device)[None, :]     # [1,kc]
+        mask = (kj <= qi) & (qi - kj < window)                 # [qc,kc] causal+last-K
+        if kpm is not None:
+            keep = ~kpm[:, ks:e].bool()                        # [B,kc]
+            mask = mask[None, None, :, :] & keep[:, None, None, :]
+        out[:, :, s:e, :] = F.scaled_dot_product_attention(
+            qch, kch, vch, attn_mask=mask, is_causal=False, dropout_p=dropout_p,
+        )
+    return out
+
+
 def _rotate_half(x: torch.Tensor) -> torch.Tensor:
     half = x.shape[-1] // 2
     x1, x2 = x[..., :half], x[..., half:]
@@ -1022,6 +1060,9 @@ class ConceptCausalDecoderLayer(nn.Module):
         self.head_dim = self.hidden_size // self.num_heads
         self.use_rope = config.decoder_pos_type == "rope"
         self.attn_dropout_p = config.attention_probs_dropout_prob
+        self.attn_impl = getattr(config, "decoder_attn_impl", "sdpa")
+        self.attn_chunk_size = int(getattr(config, "decoder_attn_chunk_size", 2048) or 2048)
+        self.context_window = getattr(config, "decoder_context_window", None)
 
         # --- causal self-attention (manual q/k/v for RoPE) ---
         self.pre_self_norm = build_norm(config.norm_type, config.hidden_size)
@@ -1060,6 +1101,19 @@ class ConceptCausalDecoderLayer(nn.Module):
             cos, sin = rope
             q = _apply_rope(q, cos, sin)
             k = _apply_rope(k, cos, sin)
+        # Long-context path: O(N*K) memory chunked windowed attention. Used when a
+        # sliding window is set AND the chunked impl is selected; the full bool SDPA
+        # mask would materialise O(N^2) and OOM past ~16K on a 3090. Numerically
+        # equivalent to the SDPA-math path within bf16 precision.
+        if self.attn_impl == "chunked_window" and self.context_window is not None:
+            attn = _chunked_window_causal_attention(
+                q, k, v, window=self.context_window,
+                chunk_size=self.attn_chunk_size,
+                key_padding_mask=key_padding_mask,
+                dropout_p=self.attn_dropout_p if self.training else 0.0,
+            )                                                     # [B, h, T, d]
+            attn = attn.transpose(1, 2).reshape(B, T, self.hidden_size)
+            return self.self_out(attn)
         # SDPA takes a single mask; fold the [B, T] padding mask (True = ignore) into the
         # attention mask. Both the sliding-window causal pattern (E05) and the padding mask
         # are key-side constraints, so we AND them as a bool mask broadcastable to

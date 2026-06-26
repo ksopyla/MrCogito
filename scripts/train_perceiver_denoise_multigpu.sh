@@ -116,6 +116,13 @@ WINDOW_ARGS=()
 if [ -n "$DECODER_CONTEXT_WINDOW" ]; then
     WINDOW_ARGS+=(--decoder_context_window "$DECODER_CONTEXT_WINDOW")
 fi
+# Long-context: O(N*K) memory windowed attention backend (optional). Default empty = sdpa.
+if [ -n "${DECODER_ATTN_IMPL:-}" ]; then
+    WINDOW_ARGS+=(--decoder_attn_impl "$DECODER_ATTN_IMPL")
+fi
+if [ -n "${DECODER_ATTN_CHUNK_SIZE:-}" ]; then
+    WINDOW_ARGS+=(--decoder_attn_chunk_size "$DECODER_ATTN_CHUNK_SIZE")
+fi
 
 # E05: pass --dataset_mix only when set (overrides the single dataset path).
 MIX_ARGS=()

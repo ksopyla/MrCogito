@@ -219,6 +219,49 @@ def test_decoder_suffix_padding_mask_finite_with_full_pad_row():
     assert torch.isfinite(out.loss)
 
 
+def test_chunked_window_attention_matches_sdpa():
+    """The O(N*K) chunked windowed attention is numerically equivalent to the full
+    bool-mask SDPA path (within bf16 precision) — required so E05 results stay valid
+    when decoder_attn_impl='chunked_window'."""
+    from nn.concept_encoder_perceiver import _chunked_window_causal_attention
+    torch.manual_seed(0)
+    B, h, N, d, K = 2, 4, 512, 16, 64
+    q = torch.randn(B, h, N, d, dtype=torch.bfloat16)
+    k = torch.randn(B, h, N, d, dtype=torch.bfloat16)
+    v = torch.randn(B, h, N, d, dtype=torch.bfloat16)
+    idx = torch.arange(N)
+    causal = idx[:, None] >= idx[None, :]
+    win = idx[:, None] - idx[None, :] < K
+    mask = (causal & win)[None, None, :, :]
+    ref = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=mask, is_causal=False)
+    chk = _chunked_window_causal_attention(q, k, v, window=K, chunk_size=128)
+    assert torch.allclose(ref, chk, atol=1e-2, rtol=1e-2), (
+        f"chunked window attn diverged: max diff {(ref - chk).abs().max().item()}"
+    )
+
+
+def test_chunked_window_attention_with_padding_mask():
+    """Padding mask is folded per chunk: padded keys are ignored, real output matches
+    the no-pad reference on the real-prefix subset."""
+    from nn.concept_encoder_perceiver import _chunked_window_causal_attention
+    torch.manual_seed(1)
+    B, h, N, d, K = 1, 2, 256, 16, 32
+    real = 200
+    q = torch.randn(B, h, N, d, dtype=torch.bfloat16)
+    k = torch.randn(B, h, N, d, dtype=torch.bfloat16)
+    v = torch.randn(B, h, N, d, dtype=torch.bfloat16)
+    kpm = torch.zeros(B, N, dtype=torch.bool)
+    kpm[:, real:] = True  # pad tail
+    out = _chunked_window_causal_attention(q, k, v, window=K, chunk_size=64, key_padding_mask=kpm)
+    # Reference on the real prefix only (no padding).
+    ref = _chunked_window_causal_attention(q[:, :, :real, :], k[:, :, :real, :], v[:, :, :real, :],
+                                           window=K, chunk_size=64)
+    assert torch.allclose(out[:, :, :real, :], ref, atol=1e-2, rtol=1e-2), (
+        f"padding mask broke real-prefix output: max diff {(out[:,:,:real,:]-ref).abs().max().item()}"
+    )
+    assert torch.isfinite(out).all()
+
+
 def test_long_context_mix_is_registered_and_normalisable():
     from data.dataset_preprocess import DATASET_MIXES
 
