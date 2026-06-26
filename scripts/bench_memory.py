@@ -120,6 +120,30 @@ def run(args):
             labels=labels,
         )
         loss = out.loss
+        torch.cuda.synchronize()
+        # Peak after the FORWARD only (before backward). With gradient checkpointing
+        # this is small (activations dropped); without it, it is the full stored set.
+        # The difference (fwd_only no-ckpt) - (fwd_only ckpt) = all stored activations
+        # that checkpointing saves — the lever for finer-ckpt / CPU-offload decisions.
+        fwd_peak = torch.cuda.max_memory_allocated()
+        if args.fwd_only:
+            dt = time.time() - t0
+            row = {
+                "event": "step", "phase": "fwd_only", "step": step, "seq_len": N,
+                "window": args.decoder_context_window or 0,
+                "loss": round(loss.item(), 4), "dt_s": round(dt, 3),
+                "fwd_peak_MB": fmt_mb(fwd_peak),
+                "peak_alloc_MB": fmt_mb(fwd_peak),
+                "peak_reserved_MB": fmt_mb(torch.cuda.max_memory_reserved()),
+                "bf16": args.bf16, "vocab": config.vocab_size,
+                "ckpt": args.gradient_checkpointing, "batch": B,
+            }
+            print(json.dumps(row))
+            results.append(row)
+            if not torch.isfinite(loss):
+                print(json.dumps({"event": "non_finite_loss", "step": step}))
+                break
+            continue
         loss.backward()
         torch.cuda.synchronize()
         opt.step()
@@ -128,14 +152,14 @@ def run(args):
         peak_alloc = torch.cuda.max_memory_allocated()
         peak_reserved = torch.cuda.max_memory_reserved()
         row = {
-            "event": "step", "step": step, "seq_len": N,
+            "event": "step", "phase": "full", "step": step, "seq_len": N,
             "window": args.decoder_context_window or 0,
             "loss": round(loss.item(), 4), "dt_s": round(dt, 3),
+            "fwd_peak_MB": fmt_mb(fwd_peak),
             "peak_alloc_MB": fmt_mb(peak_alloc),
             "peak_reserved_MB": fmt_mb(peak_reserved),
             "bf16": args.bf16, "vocab": config.vocab_size,
-            "ckpt": args.gradient_checkpointing,
-            "batch": B,
+            "ckpt": args.gradient_checkpointing, "batch": B,
         }
         print(json.dumps(row))
         results.append(row)
@@ -174,6 +198,9 @@ def main():
     p.add_argument("--no_bf16", dest="bf16", action="store_false")
     p.add_argument("--full_vocab", action="store_true", help="Use V=49152 (real lm_head); default V=1024 to isolate attention mem")
     p.add_argument("--gradient_checkpointing", action="store_true")
+    p.add_argument("--fwd_only", action="store_true",
+                   help="Skip backward+step; report forward-only peak. Compare ckpt on/off "
+                        "to isolate the stored activations checkpointing saves.")
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--results_csv", default=None)
     args = p.parse_args()
