@@ -26,23 +26,25 @@ from nn.concept_encoder_perceiver import ConceptEncoderForConditionalLM
 
 
 def load_real_tokens(tokenizer_name: str, context: int, n_seqs: int, device):
-    """Load cached wikitext-103, tokenize with SmolLM2, chunk into fixed-length seqs."""
+    """Load cached wikitext-103, tokenize with SmolLM2 (streaming, bounded), chunk into
+    fixed-length EOS-terminated sequences. Stops as soon as it has enough tokens."""
     from transformers import AutoTokenizer
     from datasets import load_dataset
     tok = AutoTokenizer.from_pretrained(tokenizer_name)
     ds = load_dataset("Salesforce/wikitext", "wikitext-103-raw-v1", split="train")
-    # concat enough text, tokenize once, chunk into fixed-length (EOS-joined) sequences
-    text = "\n\n".join(t for t in ds["text"] if len(t) > 200)
-    ids = tok(text, add_special_tokens=False)["input_ids"]
-    ids = ids[: n_seqs * (context + 1)]
     eos = tok.eos_token_id or 0
-    seqs = []
-    for i in range(n_seqs):
-        chunk = ids[i * context:(i + 1) * context]
-        chunk = chunk + [eos] if len(chunk) == context else chunk
-        seqs.append(chunk[:context])
-    x = torch.tensor(seqs, dtype=torch.long, device=device)  # [n_seqs, context]
-    return x
+    target = n_seqs * context + context
+    ids: list[int] = []
+    for t in ds["text"]:
+        if len(t) < 200:
+            continue
+        ids.extend(tok(t, add_special_tokens=False)["input_ids"])
+        ids.append(eos)
+        if len(ids) >= target:
+            break
+    ids = ids[: n_seqs * context]
+    seqs = [ids[i * context:(i + 1) * context] for i in range(n_seqs)]
+    return torch.tensor(seqs, dtype=torch.long, device=device)  # [n_seqs, context]
 
 
 def build_model(context, window):
