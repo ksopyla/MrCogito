@@ -51,6 +51,8 @@ def main():
     p.add_argument("--batch_size", type=int, default=1)
     p.add_argument("--decoder_context_window", type=int, default=128)
     p.add_argument("--chunked_ce_block_size", type=int, default=2048)
+    p.add_argument("--optim", choices=["adamw", "adafactor"], default="adamw",
+                   help="adamw (fp32 m+v states) | adafactor (factored states, ~4x less optimizer memory)")
     p.add_argument("--seed", type=int, default=42)
     args = p.parse_args()
 
@@ -69,7 +71,14 @@ def main():
     model.set_sequence_parallel(dist.group.WORLD)
     model.gradient_checkpointing_enable()
     model.train()
-    opt = torch.optim.AdamW(model.parameters(), lr=1e-4, fused=True)
+    if args.optim == "adafactor":
+        # Factored second moment + no per-element first moment -> ~4x less state than AdamW.
+        opt = torch.optim.Adafactor(
+            model.parameters(), lr=1e-4, relative_step=False, scale_parameter=False,
+            warmup_init=False, eps=(1e-30, 1e-3),
+        )
+    else:
+        opt = torch.optim.AdamW(model.parameters(), lr=1e-4, fused=True)
 
     n_params = sum(p.numel() for p in model.parameters())
     if rank == 0:
