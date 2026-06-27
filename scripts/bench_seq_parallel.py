@@ -72,11 +72,9 @@ def main():
     model.gradient_checkpointing_enable()
     model.train()
     if args.optim == "adafactor":
-        # Factored second moment + no per-element first moment -> ~4x less state than AdamW.
-        opt = torch.optim.Adafactor(
-            model.parameters(), lr=1e-4, relative_step=False, scale_parameter=False,
-            warmup_init=False, eps=(1e-30, 1e-3),
-        )
+        # Factored second moment + no per-element first moment -> ~4x less state than AdamW
+        # (torch 2.11 Adafactor API: lr + beta2_decay, factored by default).
+        opt = torch.optim.Adafactor(model.parameters(), lr=1e-4, eps=(None, 1e-3))
     else:
         opt = torch.optim.AdamW(model.parameters(), lr=1e-4, fused=True)
 
