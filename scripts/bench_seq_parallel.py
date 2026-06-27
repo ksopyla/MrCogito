@@ -51,8 +51,10 @@ def main():
     p.add_argument("--batch_size", type=int, default=1)
     p.add_argument("--decoder_context_window", type=int, default=128)
     p.add_argument("--chunked_ce_block_size", type=int, default=2048)
-    p.add_argument("--optim", choices=["adamw", "adafactor"], default="adamw",
-                   help="adamw (fp32 m+v states) | adafactor (factored states, ~4x less optimizer memory)")
+    p.add_argument("--optim", choices=["adamw", "adafactor", "muon"], default="adamw",
+                   help="adamw (fp32 m+v states) | adafactor (factored states) | "
+                        "muon (orthogonalized momentum; ~1/2 AdamW memory + faster convergence; "
+                        "matrix params via Newton-Schulz, embeddings/head via AdamW)")
     p.add_argument("--seed", type=int, default=42)
     args = p.parse_args()
 
@@ -75,6 +77,9 @@ def main():
         # Factored second moment + no per-element first moment -> ~4x less state than AdamW
         # (torch 2.11 Adafactor API: lr + beta2_decay, factored by default).
         opt = torch.optim.Adafactor(model.parameters(), lr=1e-4, eps=(None, 1e-3))
+    elif args.optim == "muon":
+        from nn.muon import Muon
+        opt = Muon(model.parameters(), lr=0.02, adamw_lr=2e-3)
     else:
         opt = torch.optim.AdamW(model.parameters(), lr=1e-4, fused=True)
 
