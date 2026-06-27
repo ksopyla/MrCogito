@@ -14,6 +14,37 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-06-27] - Robust pretokenize for huge docs; pretokenized-as-standard data path
+
+**Why:** The live mix loader (`load_dataset`) cannot cap huge recursive sources — DCLM
+(27,838 `.jsonl.zst`) downloaded for ~190h, and a gigantic DCLM web doc killed a `num_proc`
+tokenize worker (opaque "subprocess abruptly died"). Tokenization must be separated from
+training so the long-context mix (DCLM, FinePDFs) is tractable and reusable across the E05
+1-ep/5-ep arms and future phases (SFT, SFT+reasoning).
+
+**Impact:**
+- `data/dataset_preprocess.py` — `_make_tokenize_fn` gains an opt-in `max_chars` param that
+  pre-truncates raw text BEFORE the Fast tokenizer scans it (lossless for the kept
+  `max_seq_length` tokens; default `None` = backward-compatible).
+- `scripts/pretokenize_mix.py` — passes `PRETOKENIZE_MAX_CHARS` (default 100k) and adds a
+  `num_proc=1` fallback so a dead worker surfaces the real error instead of the generic
+  multiprocessing message.
+- `docs/experiments_specs/E05_windowed_decoder_concept_memory.md` — switches the launch
+  workflow to pretokenize → manifest → train (`PRETOKENIZED_MANIFEST`); live
+  `DATASET_MIX_RECIPE` kept only as a small-dataset fallback. Documents the same spine as the
+  standard data path for future phases (objective-agnostic manifest + one tokenize mode + one
+  collator per phase). Records the staged 1ep/5ep proving plan, calibrated batch (8×2,
+  effective 48), LR 1e-4 / warmup 1500.
+
+**Verified:** DCLM tokenized cleanly (1.495M docs, ~11.5 min, no crash); the full e05 mix
+pretokenized (7 sources, 4.93M train rows); E05 1-epoch training launched from the manifest
+and passed the divergence kill-gate (step ~200: loss 14.28, grad_norm 3.4 — vs the 2026-06-26
+divergence at grad_norm 500k).
+
+**After pull:** no action for existing runs (defaults unchanged). For mix training, prefer
+`scripts/pretokenize_mix.py` → `PRETOKENIZED_MANIFEST` over live `DATASET_MIX_RECIPE` for any
+source with `file_glob`/`recursive`/`max_shards` (DCLM, FinePDFs, …).
+
 ## [2026-06-20] - Fix W&B MCP auth (hosted bridge)
 
 **Why:** Local `wandb-mcp-server` pulls `wandb>=0.27.1`, whose Public API path goes through
