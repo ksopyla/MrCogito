@@ -106,7 +106,14 @@ uv run python scripts/bench_memory.py --seq_len 65536 --steps 2 --batch_size 1 \
 
 ## Next (not done — deferred per scope)
 
-- Chunked/streamed encoder cross-attention (the O(C·N) similarity at 1M).
-- DDP/FSDP memory split across the 3×3090 to reach 256K-1M.
+> **→ Addressed in Round 2 (2026-06-27):** see
+> [long_context_memory_optimization_round2_2026_06_27.md](long_context_memory_optimization_round2_2026_06_27.md).
+> The real wall turned out to be the **output head** (F2 was retaining `[B,N,V]` in the
+> autograd graph), not the encoder — fixed by `ChunkedLMHeadCE`. **256K now fits on one
+> card**, and **sequence parallelism reaches 1M on 3× 3090**. The chunked-encoder item below
+> was correctly **not** needed (the user's call).
+
+- Chunked/streamed encoder cross-attention (the O(C·N) similarity at 1M). — **not needed** at ≤1M.
+- DDP/FSDP memory split across the 3×3090 to reach 256K-1M. — **done via sequence parallelism (F6)**.
 - FlexAttention on Hopper (when available) for a fused windowed kernel.
 - E02 long-context: capped at ~32K by its O(N²) attention — the windowed E05 path is the long-context answer.
