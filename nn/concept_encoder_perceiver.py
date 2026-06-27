@@ -922,14 +922,16 @@ class ConceptEncoderForMaskedLMPerceiverPosOnly(ConceptEncoderForDenoisingPercei
 # ConceptEncoderConfig.decoder_type == "causal_ar".
 
 
-def _build_rope_cache(seq_len: int, head_dim: int, theta: float, device, dtype):
+def _build_rope_cache(seq_len: int, head_dim: int, theta: float, device, dtype, offset: int = 0):
     """Precompute rotary cos/sin tables of shape [seq_len, head_dim] (Su et al. 2021).
 
     head_dim must be even. Returns (cos, sin) ready to broadcast over [B, n_heads, T, head_dim].
+    ``offset`` shifts the positions (for sequence parallelism: a shard at global offset
+    ``rank*shard_len`` must use its GLOBAL positions so RoPE encodes the true location).
     """
     half = head_dim // 2
     inv_freq = 1.0 / (theta ** (torch.arange(0, half, device=device).float() / half))
-    positions = torch.arange(seq_len, device=device).float()
+    positions = torch.arange(offset, offset + seq_len, device=device).float()
     freqs = torch.outer(positions, inv_freq)              # [T, half]
     emb = torch.cat([freqs, freqs], dim=-1)               # [T, head_dim]
     return emb.cos().to(dtype), emb.sin().to(dtype)
@@ -1228,13 +1230,14 @@ class ConceptCausalDecoderStack(nn.Module):
         concepts: torch.Tensor,
         word_dropout_p: float = 0.0,
         key_padding_mask: Optional[torch.Tensor] = None,
+        position_offset: int = 0,
     ) -> torch.Tensor:
         h = self.embed(decoder_input_ids, word_dropout_p=word_dropout_p)   # [B, T, H]
         T = h.size(1)
         rope = None
         if self.use_rope:
             rope = _build_rope_cache(
-                T, self._head_dim, self._rope_theta, h.device, h.dtype
+                T, self._head_dim, self._rope_theta, h.device, h.dtype, offset=position_offset
             )
         # Chunked windowed attention builds its mask per-chunk internally (O(N*K)), so
         # skip the O(N^2) full mask materialisation — at long N the int64 [N,N] diff in
@@ -1430,6 +1433,9 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         self.config = config
         self.encoder = ConceptEncoder(config)
         self.decoder = ConceptCausalDecoderStack(config)
+        # F6: sequence-parallel process group (None = single GPU, byte-unchanged).
+        self._sp_pg = None
+        self._sp_world = 1
         self.set_loss_config(loss_config)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         # E03: lean auxiliary head built ONLY when anchor_loss is enabled, so anchor_loss=False
@@ -1450,6 +1456,37 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         # when the flag is on (long-context activation-memory control).
         self.encoder.gradient_checkpointing = bool(enable)
         self.decoder.gradient_checkpointing = bool(enable)
+
+    def set_sequence_parallel(self, pg):
+        """Enable F6 sequence parallelism: shard the token axis across ``pg`` ranks.
+
+        The encoder BiXT uses a global-softmax cross-attention (concepts replicated);
+        the decoder runs locally per shard (windowed self-attn + cross-attn to the
+        replicated concepts); the CE is summed per shard and all-reduced. Wrap the model
+        in DDP so parameter gradients (each rank's shard-local contribution) are summed.
+        """
+        import torch.distributed as dist
+        self._sp_pg = pg
+        self._sp_world = dist.get_world_size(pg) if dist.is_available() and dist.is_initialized() else 1
+        self.encoder.set_sequence_parallel(pg)
+
+    def _sp_boundary_mask(self) -> int:
+        """Decoder positions to drop (-100) at each non-first shard boundary.
+
+        The windowed self-attn receptive field after L layers of window K is ~L*(K-1);
+        a boundary position whose field reaches into the predecessor shard (which it
+        cannot see) gets a wrong hidden state, so those positions are dropped from the
+        loss. We mask L*K (a safe over-estimate; the extra positions dropped are valid
+        but few, and are dropped identically in the equivalent single-GPU reference).
+        Concepts (global, replicated) still carry all cross-shard dependencies."""
+        cfg = self.config
+        bm = getattr(cfg, "sp_boundary_mask", None)
+        if bm is not None:
+            return int(bm)
+        window = getattr(cfg, "decoder_context_window", None)
+        if not window:
+            return 0
+        return int(cfg.decoder_num_layers) * int(window)
 
     def anchor_predict(self, concept_repr: torch.Tensor, seq_length: int) -> torch.Tensor:
         """Per-token teacher-hidden-state predictions from concepts (E03 anchor). [B,C,H]->[B,N,Ht]."""
@@ -1488,6 +1525,7 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = True,
+        position_offset: int = 0,
     ):
         return self.encoder(
             input_ids=input_ids,
@@ -1495,6 +1533,7 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            position_offset=position_offset,
         )
 
     def pool_concepts(self, concept_repr: torch.Tensor) -> torch.Tensor:
@@ -1517,10 +1556,12 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         decoder_input_ids: torch.LongTensor,
         word_dropout_p: float = 0.0,
         key_padding_mask: Optional[torch.Tensor] = None,
+        position_offset: int = 0,
     ) -> torch.Tensor:
         hidden = self.decoder(
             decoder_input_ids, concept_repr,
             word_dropout_p=word_dropout_p, key_padding_mask=key_padding_mask,
+            position_offset=position_offset,
         )
         return self.lm_head(hidden)
 
@@ -1530,12 +1571,14 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         decoder_input_ids: torch.LongTensor,
         word_dropout_p: float = 0.0,
         key_padding_mask: Optional[torch.Tensor] = None,
+        position_offset: int = 0,
     ) -> torch.Tensor:
         """Decoder output BEFORE the lm_head — used by the chunked-CE path (F2) so the
         lm_head+CE can run in N-blocks without materialising [B,N,V] logits."""
         return self.decoder(
             decoder_input_ids, concept_repr,
             word_dropout_p=word_dropout_p, key_padding_mask=key_padding_mask,
+            position_offset=position_offset,
         )
 
     def _chunked_teacher_forced_ce(
@@ -1654,14 +1697,51 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
 
         Returns ``(loss, logits, encoder_outputs)``; ``loss`` is None when ``labels`` is None.
         """
+        # F6: sequence parallelism — shard the token axis across ranks. Each rank keeps a
+        # contiguous 1/P slice of prefix/suffix/labels; the encoder BiXT then runs the
+        # global-softmax path (concepts come out replicated) and the decoder runs locally.
+        sp_pg = getattr(self, "_sp_pg", None)
+        pos_offset = 0
+        if sp_pg is not None and encoder_input_ids is not None:
+            import torch.distributed as dist
+            world = dist.get_world_size(sp_pg)
+            rank = dist.get_rank(sp_pg)
+            N = encoder_input_ids.size(1)
+            assert N % world == 0, f"seq len {N} not divisible by SP world {world}"
+            s = N // world
+            pos_offset = rank * s  # GLOBAL position of this shard's first token
+
+            def _shard(t):
+                return None if t is None else t[:, rank * s:(rank + 1) * s]
+
+            encoder_input_ids = _shard(encoder_input_ids)
+            encoder_attention_mask = _shard(encoder_attention_mask)
+            target_input_ids = _shard(target_input_ids)
+            target_attention_mask = _shard(target_attention_mask)
+            if labels is not None:
+                labels = _shard(labels).clone()
+                bm = self._sp_boundary_mask()
+                if bm > 0 and rank > 0:
+                    # drop boundary positions whose windowed self-attn can't see the
+                    # predecessor shard (rank 0 has none). Global concepts still carry
+                    # cross-shard deps; only the local window is discontinuous here.
+                    labels[:, :bm] = -100
+
         encoder_outputs = self.encode_concepts(
             input_ids=encoder_input_ids,
             attention_mask=encoder_attention_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=True,
+            position_offset=pos_offset,
         )
         concept_repr = encoder_outputs.last_hidden_state
+        if sp_pg is not None:
+            # Concepts-grad barrier: the decoder shards each emit a PARTIAL d(loss)/d(concepts);
+            # the encoder must see the SUM (all-reduced) so token-side params pick up the
+            # cross-shard terms (rank s's loss depends on rank r's tokens via shared concepts).
+            from nn.sequence_parallel import AllReduceGrad
+            concept_repr = AllReduceGrad.apply(concept_repr, sp_pg)
         decoder_input_ids = self._shift_right(target_input_ids)
         word_dropout_p = self.config.decoder_word_dropout if self.training else 0.0
         dec_key_padding = None
@@ -1674,8 +1754,25 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
             hidden = self.decode_hidden(
                 concept_repr, decoder_input_ids,
                 word_dropout_p=word_dropout_p, key_padding_mask=dec_key_padding,
+                position_offset=pos_offset,
             )
             task_loss = self._chunked_teacher_forced_ce(hidden, labels, ce_block)
+            if sp_pg is not None:
+                # task_loss = sum_local / count_local. Build a loss whose VALUE is the
+                # global mean (total_sum / total_count, identical on all ranks) but whose
+                # GRADIENT is (1/total_count) d(sum_local) — so DDP's grad all-reduce sums
+                # the per-shard contributions into the exact global gradient. Concept
+                # regularisation is unsupported in SP (the loss_manager must be off, as it
+                # is for E05 prefix_suffix); only the CE term is parallelised here.
+                import torch.distributed as dist
+                count_local = (labels != -100).sum().clamp(min=1)
+                sum_local = task_loss * count_local              # raw CE sum over this shard (graph)
+                total_count = count_local.clone()
+                dist.all_reduce(total_count, op=dist.ReduceOp.SUM, group=sp_pg)
+                total_sum = sum_local.detach().clone()
+                dist.all_reduce(total_sum, op=dist.ReduceOp.SUM, group=sp_pg)
+                loss = sum_local / total_count + (total_sum - sum_local.detach()) / total_count
+                return loss, None, encoder_outputs
             if self.loss_manager.is_enabled:
                 loss = self.loss_manager(task_loss=task_loss, concept_repr=concept_repr)
             else:
@@ -1684,6 +1781,7 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         logits = self.decode_logits(
             concept_repr, decoder_input_ids,
             word_dropout_p=word_dropout_p, key_padding_mask=dec_key_padding,
+            position_offset=pos_offset,
         )
         loss = self._loss_from_logits(logits, labels, concept_repr)
         return loss, logits, encoder_outputs
