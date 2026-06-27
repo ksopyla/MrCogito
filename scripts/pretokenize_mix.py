@@ -319,12 +319,29 @@ def tokenize_source(
     split_ds = ds.train_test_split(test_size=eval_size, seed=seed)
     src_train, src_eval = split_ds["train"], split_ds["test"]
 
-    tokenize_fn = _make_tokenize_fn(tokenizer, max_seq_length, append_eos_token_id)
+    # Pre-truncate gigantic web/PDF docs so the Fast tokenizer never scans a huge string
+    # (it would OOM/crash a num_proc worker even though truncation=max_seq_length discards
+    # all but ~8k chars). Env-overridable; default 100k chars >> 2048 tokens.
+    max_chars = int(os.environ.get("PRETOKENIZE_MAX_CHARS", "100000"))
+    tokenize_fn = _make_tokenize_fn(tokenizer, max_seq_length, append_eos_token_id, max_chars=max_chars)
+
+    def _map_resilient(ds, num_proc, **kw):
+        """map() with a num_proc=1 fallback: if a worker dies opaquely ('subprocess
+        abruptly died'), retry single-process so the real error (MemoryError / bad row)
+        surfaces instead of the generic multiprocessing message."""
+        try:
+            return ds.map(tokenize_fn, batched=True, num_proc=num_proc, **kw)
+        except RuntimeError as e:
+            if num_proc and num_proc > 1 and "abruptly died" in str(e):
+                logger.warning(f"[{name}] multiprocessing map died ({e}); retrying num_proc=1 to surface the real error")
+                return ds.map(tokenize_fn, batched=True, num_proc=1, **kw)
+            raise
+
     ntr = max(1, min(train_num_proc, len(src_train)))
     nte = max(1, min(test_num_proc, len(src_eval)))
-    logger.info(f"[{name}] tokenizing train={len(src_train):,} (proc={ntr}) eval={len(src_eval):,} (proc={nte})")
-    src_train = src_train.map(tokenize_fn, batched=True, num_proc=ntr, remove_columns=["text"])
-    src_eval = src_eval.map(tokenize_fn, batched=True, num_proc=nte, remove_columns=["text"])
+    logger.info(f"[{name}] tokenizing train={len(src_train):,} (proc={ntr}, max_chars={max_chars}) eval={len(src_eval):,} (proc={nte})")
+    src_train = _map_resilient(src_train, ntr, remove_columns=["text"])
+    src_eval = _map_resilient(src_eval, nte, remove_columns=["text"])
 
     # save_to_disk cannot save an interleave; here we save train and eval separately.
     src_train.save_to_disk(str(train_dir))

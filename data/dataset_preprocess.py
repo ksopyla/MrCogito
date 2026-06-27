@@ -13,15 +13,23 @@ logger = logging.get_logger(__name__)
 MIX_RECIPES_DIR = Path(__file__).resolve().parent / "mix_recipes"
 
 
-def _make_tokenize_fn(tokenizer, max_seq_length, append_eos_token_id):
+def _make_tokenize_fn(tokenizer, max_seq_length, append_eos_token_id, max_chars=None):
     """Build the batched tokenize function shared by the single-source and mix loaders.
 
     append_eos_token_id is None  -> legacy pad-to-max_length path (perceiver MLM etc.).
     append_eos_token_id is set    -> variable-length rows with one EOS appended (AR / long-context),
                                      padding deferred to the data collator.
+    max_chars -> if set, truncate each raw text to this many characters BEFORE tokenizing.
+        Guards against gigantic web/PDF docs OOM-ing or crashing a tokenize worker: the Fast
+        tokenizer scans the *whole* input string even though ``truncation=max_seq_length``
+        discards all but ~8k chars, so a 100MB DCLM web page can kill a ``num_proc`` worker
+        before truncation runs. Lossless for the kept tokens when ``max_chars`` >> max_seq_length.
+        Default ``None`` preserves the original behaviour (no pre-truncation).
     """
     def tokenize_batch_function(examples):
         text_batch = examples["text"]
+        if max_chars:
+            text_batch = [t[:max_chars] if t and len(t) > max_chars else t for t in text_batch]
         if append_eos_token_id is None:
             return tokenizer(
                 text_batch,
