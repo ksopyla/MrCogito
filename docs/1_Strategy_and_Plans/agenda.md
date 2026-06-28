@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-06-27 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [../experiments/](../experiments/).
+**Updated:** 2026-06-28 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [../experiments/](../experiments/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -79,6 +79,14 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
    - **Cross-tokenizer / dim embedding-transfer module** for warm-start — **FVT/OMP (vocab) + truncated
      SVD (dim)**; bare PCA covers only the dim leg. Build when the first warm-start run needs it (E03
      does not — it trains from scratch with a *frozen* teacher).
+   - **Compute audit + W&B compute panel — DONE 2026-06-28** (instrumentation, post-hoc). `analysis/run_compute_audit.py`
+     reads already-logged W&B system metrics and writes `compute/gpu_hours`, `compute/energy_kwh` (trapezoidal integral of
+     per-GPU `powerWatts`), `compute/max_tokens`, `compute/loss_tokens_est` + ratios into each run's W&B summary, so a
+     native W&B custom panel (grouped by `compute/group_for_panel`) compares runs on compute spent — primarily within a
+     `wandb_group` (same experiment, varying data mix / optimization / hyperparameters). No training-loop change / no
+     throughput tax; fires automatically via the `experiment-evaluate` run-level preamble. Structural gates hard-fail,
+     plausibility gates write-with-flag, synthetic integrator unit-tested. Spec:
+     [compute_audit_wandb_panel.md](../engineering_specs/compute_audit_wandb_panel.md). Audited 5 past runs (E01/E02/E05/perceiver).
 7. **Parked / not scheduled:** the **token↔concept asymmetry sweep** (`token_embedding_dim` 128/256/512,
    the former "E03") is demoted to a **P1-era E02 ablation**, not a headline experiment. Further knobs
    later (optimizer Muon/Lion, longer context, `C`-vs-`N` scaling, encoder-side RoPE).

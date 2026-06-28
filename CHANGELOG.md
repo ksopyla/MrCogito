@@ -14,6 +14,61 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-06-28] - Post-hoc compute audit (GPU-h, energy, tokens) + W&B compute panel
+
+**Why:** Comparing runs on compute spent — especially within a `wandb_group`
+(same experiment, varying data mix / optimization / hyperparameters) — needed
+GPU-hours, total energy, and training-token numbers that W&B does not log as
+scalars and HF Trainer does not provide (`train/total_flos` is 0 for the custom
+`ConceptEncoder`; `include_num_input_tokens_seen` is off and would add a
+per-micro-step DDP sync + startup dataloader enumeration). The data already
+lives in W&B system metrics (`system/gpu.{i}.powerWatts` ~7.5 s cadence,
+`_runtime`, config knobs), so a post-hoc audit covers past and future runs with
+no training-loop change and no throughput tax.
+
+**Impact:**
+- New `analysis/run_compute_audit.py` — reads W&B via `run.history(stream='system',
+  samples=1e6)` (full-res), integrates per-GPU power trapezoidally with real `dt`
+  (gap-splitting >60 s) into `compute/energy_kwh`; computes `compute/gpu_hours`
+  (`runtime × world_size / 3600`), `compute/max_tokens` (`global_step × grad_accum
+  × pbs × world_size × max_seq_length`), a flagged `compute/loss_tokens_est`
+  (per-family loss fraction; run-name fallback for older runs without
+  `model_family`), and four derived ratios. Writes `compute/*` back into each
+  finished run's W&B summary (deferred for running runs) and emits a CSV +
+  matplotlib comparison chart + per-run JSON to `Cache/Evaluation_reports/compute_audit/`.
+  Structural gates hard-fail (gpu-count mismatch / missing config →
+  `compute/audit_state=failed`, no scalars written); plausibility gates
+  write-with-flag (avg-power bounds, trapezoid-vs-avg, summary-vs-ts-span).
+  `compute/group_for_panel` = `wandb_group` or architecture-prefix, so older runs
+  without `wandb_group` still group in the panel.
+- New `tests/test_compute_audit.py` — synthetic integrator falsification anchor
+  (constant-power and linear-ramp exact-energy, gap-splitting), gate logic, token
+  math, per-family loss fraction, running-run write-back deferral, offline FakeRun
+  (no network). 24 tests.
+- `experiment-evaluate` skill — run-level "Compute audit" preamble before Tier 0
+  (W&B-only, no GPU, once per training run) so the audit fires automatically when a
+  run is evaluated; script-inventory row + outputs/handoff updated.
+- `experiment-track` skill — compute scalars added to "reconstruct run facts",
+  the compute-budget judgment factor (prefer audited scalars; note
+  `compute/audit_state`), and a `Compute` row in the run-report template.
+- `docs/engineering_specs/compute_audit_wandb_panel.md` — frozen engineering spec
+  (grill-me decisions, target design, W&B panel spec the user builds once, validation).
+
+**Verified:** Dry-run + live audit on 5 runs (`concept_ar_prefix_*` E02/E05,
+`concept_ar_*` E01, `perceiver_denoise_*`); `compute/*` scalars persisted to the 4
+finished runs' W&B summaries (read back confirmed); numbers cross-checked (run2
+290.7 GPU-h, 61.4 kWh ≈ 4×210 W×261,630 s/3.6e6; 24.5 B max-tokens). Full pytest
+suite: 194 passed, 9 skipped. The running E05 run is `running-partial` (write-back
+deferred — re-run after it finishes).
+
+**After pull:** the W&B compute panel is built once manually in the UI from the
+spec (bar charts on `compute/gpu_hours` / `compute/energy_kwh` / `compute/max_tokens`
++ a table panel, grouped by `compute/group_for_panel`); thereafter it auto-populates
+for every audited run. No training-loop or model changes.
+
+**Related:** `docs/engineering_specs/compute_audit_wandb_panel.md`,
+`docs/1_Strategy_and_Plans/agenda.md` -> instrumentation / compute comparability.
+
 ## [2026-06-27] - Robust pretokenize for huge docs; pretokenized-as-standard data path
 
 **Why:** The live mix loader (`load_dataset`) cannot cap huge recursive sources — DCLM
