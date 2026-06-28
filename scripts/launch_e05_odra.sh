@@ -43,7 +43,7 @@ export WARMUP_STEPS="${WARMUP_STEPS:-2000}"
 export MAX_GRAD_NORM="${MAX_GRAD_NORM:-0.5}"
 export LOGGING_STEPS="${LOGGING_STEPS:-200}"
 export EVAL_STEPS="${EVAL_STEPS:-4000}"
-export SAVE_STEPS="${SAVE_STEPS:-2000}"
+export SAVE_STEPS="${SAVE_STEPS:-4000}"     # must be a multiple of EVAL_STEPS (HF load_best_model_at_end invariant)
 export SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-5}"
 export DDP_TIMEOUT="${DDP_TIMEOUT:-14400}"
 # 2026-06-28: batch 12 at seq 2048 needs expandable_segments to avoid fragmentation OOM.
