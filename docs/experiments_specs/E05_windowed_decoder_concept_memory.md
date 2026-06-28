@@ -60,38 +60,37 @@ uv run python scripts/pretokenize_mix.py \
 # → writes $HF_DATASETS_CACHE/../datasets_tok/smollm3_inspired_2k_e05_manifest.json
 ```
 
-### Training — loads the manifest (instant, no tokenization at train time)
+### Training — `scripts/launch_e05_odra.sh` (the canonical E05 launcher)
+The launcher sets the full E05 env (architecture, mix manifest, retuned optimization knobs),
+runs the pretokenize phase (idempotent — skips if the manifest exists), does the W&B identity
+preflight, then `exec`s `scripts/train_perceiver_denoise_multigpu.sh`. Defaults are the
+2026-06-28 retune; override any knob by exporting it before the call.
+
 ```bash
-# Shared arch env (set once per byobu window); only NUM_EPOCHS + the window differ per arm.
-export DECODER_TYPE=causal_ar
-export PRETOKENIZED_MANIFEST=/home/ksopyla/dev/hf_home/datasets_tok/smollm3_inspired_2k_e05_manifest.json
-export MAX_SEQ_LENGTH=2048
-export OBJECTIVE_VARIANT=prefix_suffix
-export HIDDEN_SIZE=768 TOKEN_EMBEDDING_DIM=256 NUM_LAYERS=6 CONCEPT_NUM=128
-export DECODER_NUM_LAYERS=4 INTERMEDIATE_SIZE=2048 HIDDEN_ACT=silu
-export NORM_TYPE=rmsnorm DECODER_POS_TYPE=rope
-export TOKENIZER_NAME=HuggingFaceTB/SmolLM2-135M
-# --- 2026-06-28 retune (LR 1e-4 / warmup 1500 diverged at step ~40k / epoch 0.19) ---
-export LEARNING_RATE=5e-5 WARMUP_STEPS=2000
-export MAX_GRAD_NORM=0.5
-export PER_DEVICE_BATCH_SIZE=12 GRADIENT_ACCUMULATION_STEPS=2   # effective batch 72; ~23 GB/GPU at seq 2048
-export EVAL_STEPS=4000 SAVE_STEPS=2000
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+# Stage 1: E05 0.5-epoch, windowed arm (prove stable training + de-collapse).
+# Manifest already cached on Odra from the 2026-06-27 pretokenize, so SKIP_PRETOKENIZE=1.
+SKIP_PRETOKENIZE=1 \
+  bash scripts/launch_e05_odra.sh
 
-# --- Stage 1: E05 0.5-epoch, windowed arm (prove stable training + de-collapse) ---
-EXPERIMENT_ID=E05 DECODER_CONTEXT_WINDOW=128 NUM_EPOCHS=0.5 \
-  bash scripts/train_perceiver_denoise_multigpu.sh
+# Stage 2a: E05-long matched A/B, windowed arm (after 0.5-ep stability is proven).
+SKIP_PRETOKENIZE=1 NUM_EPOCHS=1 \
+  bash scripts/launch_e05_odra.sh
 
-# --- Stage 2a: E05-long matched A/B, windowed arm (after 0.5-ep stability is proven) ---
-EXPERIMENT_ID=E05 DECODER_CONTEXT_WINDOW=128 NUM_EPOCHS=1 \
-  bash scripts/train_perceiver_denoise_multigpu.sh
-
-# --- Stage 2b: E05-long matched control (full causal; omit the window) ---
-EXPERIMENT_ID=E05 NUM_EPOCHS=1 \
-  bash scripts/train_perceiver_denoise_multigpu.sh
+# Stage 2b: matched control (full causal; unset the window).
+SKIP_PRETOKENIZE=1 NUM_EPOCHS=1 DECODER_CONTEXT_WINDOW= \
+  bash scripts/launch_e05_odra.sh
 ```
 
-**Note on `MAX_GRAD_NORM`:** the launcher needs `--max_grad_norm` wired through (see `scripts/train_perceiver_denoise_multigpu.sh`). If unset, HF Trainer's default of 1.0 applies — explicit 0.5 is the 2026-06-28 retune. The 2026-06-28 divergence had pre-clip grad_norm up to 903; post-clip 1.0 still let bad-direction updates dominate the late-run loss landscape, so the tighter 0.5 cap is the second stability lever alongside the halved LR.
+The current `launch_e05_odra.sh` defaults reflect the 2026-06-28 retune:
+LR `5e-5`, warmup `2000`, `MAX_GRAD_NORM=0.5`, per-device batch `12` × grad-accum `2`
+(effective 72 across 3 GPUs), `EVAL_STEPS=4000`, `SAVE_STEPS=2000`, `NUM_EPOCHS=0.5`,
+`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`.
+
+**Note on `MAX_GRAD_NORM`:** `train_perceiver_denoise_multigpu.sh` wires `--max_grad_norm`
+through the `MAX_GRAD_NORM` env-var (default 1.0 = HF Trainer default). The explicit 0.5 is the
+2026-06-28 retune — the 2026-06-28 divergence had pre-clip grad_norm up to 903; post-clip 1.0
+still let bad-direction updates dominate the late-run loss landscape, so the tighter 0.5 cap is
+the second stability lever alongside the halved LR.
 
 Matched control (Stage 2b): identical to 2a but with `DECODER_CONTEXT_WINDOW` unset (the window
 defaults to `None` = full causal). Run 2a and 2b on the same seed/budget; **all three arms load the

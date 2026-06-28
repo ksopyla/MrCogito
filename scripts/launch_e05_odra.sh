@@ -1,5 +1,8 @@
 #!/bin/bash
-# E05 windowed prefix→suffix warmup on Odra (smollm3_inspired_2k_e05warmup, K=128, seq 2K).
+# E05 windowed prefix→suffix on Odra (smollm3_inspired_2k_e05, K=128, seq 2K).
+# Defaults are the 2026-06-28 retune (attempt 3): LR 5e-5, max_grad_norm 0.5,
+# batch 12, epochs 0.5, after attempt 2 diverged at step 40k under LR 1e-4 / clip 1.0.
+# Override any knob by exporting it before invocation.
 # Two phases:
 #   1) pretokenize: parallel per-source parquet download + tokenize + save_to_disk
 #      (scripts/pretokenize_mix.py). Cached under ~/dev/hf_home/datasets_tok.
@@ -29,17 +32,22 @@ export NORM_TYPE=rmsnorm
 export DECODER_POS_TYPE=rope
 export TOKENIZER_NAME=HuggingFaceTB/SmolLM2-135M
 export SEED=42
-export NUM_EPOCHS="${NUM_EPOCHS:-0.3}"
-export PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-2}"
-export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-8}"
+export NUM_EPOCHS="${NUM_EPOCHS:-0.5}"
+export PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-12}"
+export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-2}"   # effective 12*2*3=72
 export EVAL_BATCH_SIZE=4
-export LEARNING_RATE="${LEARNING_RATE:-3e-4}"
-export WARMUP_STEPS="${WARMUP_STEPS:-500}"
-export LOGGING_STEPS="${LOGGING_STEPS:-100}"
-export EVAL_STEPS="${EVAL_STEPS:-1000}"
-export SAVE_STEPS="${SAVE_STEPS:-1000}"
-export SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-3}"
+# 2026-06-28 retune (attempt 2 diverged at step 40k under LR 1e-4 / clip 1.0).
+# Lower peak LR, explicit tighter grad clip, bigger batch (smoother gradients).
+export LEARNING_RATE="${LEARNING_RATE:-5e-5}"
+export WARMUP_STEPS="${WARMUP_STEPS:-2000}"
+export MAX_GRAD_NORM="${MAX_GRAD_NORM:-0.5}"
+export LOGGING_STEPS="${LOGGING_STEPS:-200}"
+export EVAL_STEPS="${EVAL_STEPS:-4000}"
+export SAVE_STEPS="${SAVE_STEPS:-2000}"
+export SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-5}"
 export DDP_TIMEOUT="${DDP_TIMEOUT:-14400}"
+# 2026-06-28: batch 12 at seq 2048 needs expandable_segments to avoid fragmentation OOM.
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 export TRAIN_NUM_PROC="${TRAIN_NUM_PROC:-8}"
 export TEST_NUM_PROC="${TEST_NUM_PROC:-4}"
 export DATALOADER_NUM_WORKERS=4
