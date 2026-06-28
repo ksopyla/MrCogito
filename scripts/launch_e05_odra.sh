@@ -1,7 +1,8 @@
 #!/bin/bash
 # E05 windowed prefix→suffix on Odra (smollm3_inspired_2k_e05, K=128, seq 2K).
 # Defaults are the 2026-06-28 retune (attempt 3): LR 5e-5, max_grad_norm 0.5,
-# batch 12, epochs 0.5, after attempt 2 diverged at step 40k under LR 1e-4 / clip 1.0.
+# batch 10, epochs 0.5, after attempt 2 diverged at step 40k under LR 1e-4 / clip 1.0.
+# (batch 12 OOM'd on GPU 2 during loss FP32 upcast — pulled back to 10.)
 # Override any knob by exporting it before invocation.
 # Two phases:
 #   1) pretokenize: parallel per-source parquet download + tokenize + save_to_disk
@@ -33,8 +34,8 @@ export DECODER_POS_TYPE=rope
 export TOKENIZER_NAME=HuggingFaceTB/SmolLM2-135M
 export SEED=42
 export NUM_EPOCHS="${NUM_EPOCHS:-0.5}"
-export PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-12}"
-export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-2}"   # effective 12*2*3=72
+export PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-10}"
+export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-2}"   # effective 10*2*3=60
 export EVAL_BATCH_SIZE=4
 # 2026-06-28 retune (attempt 2 diverged at step 40k under LR 1e-4 / clip 1.0).
 # Lower peak LR, explicit tighter grad clip, bigger batch (smoother gradients).
