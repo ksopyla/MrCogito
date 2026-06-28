@@ -116,6 +116,20 @@ class ConceptEncoderConfig(PretrainedConfig):
         decoder_word_dropout: float = 0.0,
         decoder_pos_type: str = "learned",
         decoder_context_window: Optional[int] = None,
+        # "sdpa" (default, byte-unchanged) | "chunked_window" — O(N*K) memory windowed
+        # attention for long context (E05+). Only used when decoder_context_window is set.
+        decoder_attn_impl: str = "sdpa",
+        decoder_attn_chunk_size: int = 2048,
+        # F2: chunked lm_head+CE in N-blocks (0 = off, materialise full [B,N,V]).
+        # Caps the O(N*V) logits+fp32-CE spike at long N / large vocab.
+        chunked_ce_block_size: int = 0,
+        # F6: sequence parallelism — shard the token axis across GPUs for 1M+ context.
+        # sp_boundary_mask: leading decoder positions to drop (-100) at every non-first
+        # shard boundary, where the windowed self-attn cannot see the predecessor shard
+        # (= decoder_num_layers*(window-1) when a window is set). The concepts (global,
+        # replicated) still carry all cross-shard deps; only the LOCAL window is split.
+        # The runtime process group is attached via model.set_sequence_parallel(pg).
+        sp_boundary_mask: Optional[int] = None,
         norm_type: str = "layernorm",
         rope_theta: float = 10000.0,
         checkpoint_family: Optional[str] = None,
@@ -176,6 +190,10 @@ class ConceptEncoderConfig(PretrainedConfig):
         # When set, out-of-window context is only reachable through the C concepts, making
         # them the sole carrier of cross-window (long-range) information.
         self.decoder_context_window = decoder_context_window
+        self.decoder_attn_impl = decoder_attn_impl
+        self.decoder_attn_chunk_size = decoder_attn_chunk_size
+        self.chunked_ce_block_size = chunked_ce_block_size
+        self.sp_boundary_mask = sp_boundary_mask
         self.norm_type = norm_type
         self.rope_theta = rope_theta
         # decoder_posonly: True for TSDAE/PosOnly checkpoints — decoder queries use position
@@ -363,6 +381,10 @@ class BiXTCrossAttention(nn.Module):
             self.attn_drop_tok = None
             self.proj_tok = None
             self.proj_drop_tok = None
+        # F6: when set (a torch.distributed group), the token (key) axis is sharded
+        # across ranks and the lat<-tok softmax is computed globally via
+        # DistLatTokAttention (concepts replicated). None = single-GPU path.
+        self.seq_parallel_pg = None
 
     def forward(
         self,
@@ -389,7 +411,13 @@ class BiXTCrossAttention(nn.Module):
         rv_t = self.rv_tok(x_tok).reshape(B, N, 2, h, d).permute(2, 0, 3, 1, 4)
         r_tok, v_tok = rv_t.unbind(0)  # each [B, h, N, d]
 
-        # Similarity computed ONCE (Eq. 2)
+        # Sequence-parallel: x_tok is this rank's token shard, x_lat is replicated;
+        # the lat<-tok softmax is GLOBAL over the token axis (DistLatTokAttention, which
+        # also all-reduces the concept-side grad so the replicated concepts stay correct).
+        if self.seq_parallel_pg is not None:
+            return self._forward_seq_parallel(r_lat, r_tok, v_tok, v_lat, B, M, N, key_padding_mask)
+
+        # --- Single-GPU: similarity computed ONCE (Eq. 2) ---
         S = (r_lat @ r_tok.transpose(-2, -1)) * self.scale  # [B, h, M, N]
 
         # --- Lat ← Tok: mask padded token positions before softmax ---
@@ -413,6 +441,29 @@ class BiXTCrossAttention(nn.Module):
             tok_out = (A_tok @ v_lat).transpose(1, 2).reshape(B, N, self.dim_attn)
             tok_out = self.proj_drop_tok(self.proj_tok(tok_out))
 
+        return lat_out, tok_out
+
+    def _forward_seq_parallel(self, r_lat, r_tok, v_tok, v_lat, B, M, N, key_padding_mask):
+        """Distributed lat<-tok (GLOBAL softmax over the sharded token axis) + local
+        tok<-lat. Concepts are replicated, so only the lat<-tok direction needs a
+        collective (DistLatTokAttention, which computes S internally and all-reduces the
+        concept-side grad); tok<-lat is a local softmax over the replicated concepts.
+        Attention-weight dropout is dropped here (it would partition the global softmax);
+        projection dropout remains. Activated by set_sequence_parallel.
+        """
+        from nn.sequence_parallel import DistLatTokAttention, LocalTokLatAttention
+
+        pg = self.seq_parallel_pg
+        lat = DistLatTokAttention.apply(r_lat, r_tok, v_tok, self.scale,
+                                        key_padding_mask, pg)        # [B,h,M,d] replicated
+        lat_out = lat.transpose(1, 2).reshape(B, M, self.dim_attn)
+        lat_out = self.proj_drop_lat(self.proj_lat(lat_out))
+
+        tok_out = None
+        if self.update_tokens:
+            tok = LocalTokLatAttention.apply(r_lat, r_tok, v_lat, self.scale, pg)  # [B,h,N,d]
+            tok_out = tok.transpose(1, 2).reshape(B, N, self.dim_attn)
+            tok_out = self.proj_drop_tok(self.proj_tok(tok_out))
         return lat_out, tok_out
 
 
@@ -474,6 +525,11 @@ class BiConceptEncoderLayer(nn.Module):
         self.Wo_lat = nn.Linear(config.intermediate_size, dim_lat)
         self.wi_dropout_lat = nn.Dropout(config.hidden_dropout_prob)
         self.act_fn = ACT2FN[config.hidden_act]
+
+    def set_sequence_parallel(self, pg):
+        """Attach the sequence-parallel process group so the BiXT cross-attention uses
+        the distributed (global-softmax) path for the sharded token axis."""
+        self.bixt_cross_attn.seq_parallel_pg = pg
 
     def forward(
         self,
@@ -594,12 +650,27 @@ class ConceptEncoder(PreTrainedModel):
         else:
             self.layers = nn.ModuleList([ConceptEncoderLayer(config) for _ in range(config.num_hidden_layers)])
         self._use_bixt = getattr(config, "use_bixt", False)
+        # Manual gradient checkpointing (long context): when enabled, each encoder layer's
+        # forward is wrapped in torch.utils.checkpoint so activations are dropped and
+        # recomputed in backward — trades ~30% compute for a large activation-memory cut.
+        # Set via .gradient_checkpointing_enable() / the model's _set_gradient_checkpointing.
+        self.gradient_checkpointing = False
+        # F6: sequence-parallel process group (None = single GPU). When set, the token
+        # axis is sharded across ranks and each BiXT layer uses the global-softmax path.
+        self.seq_parallel_pg = None
         # Dropout [hidden_dropout_prob]
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         # Output layer normalization [hidden_size=concept_dim]
         self.output_layer_norm = build_norm(config.norm_type, config.hidden_size, eps=1e-12)
 
         self.post_init()
+
+    def set_sequence_parallel(self, pg):
+        """Enable sequence parallelism: shard the token axis across ``pg`` ranks."""
+        self.seq_parallel_pg = pg
+        for layer in self.layers:
+            if hasattr(layer, "set_sequence_parallel"):
+                layer.set_sequence_parallel(pg)
     
     @staticmethod
     def _create_sinusoidal_embeddings(num_positions: int, dim: int) -> torch.Tensor:
@@ -669,6 +740,7 @@ class ConceptEncoder(PreTrainedModel):
         output_attentions: bool = False,
         output_hidden_states: bool = False,
         return_dict: bool = True,
+        position_offset: int = 0,
     ):
         """
         Args:
@@ -677,6 +749,8 @@ class ConceptEncoder(PreTrainedModel):
             output_attentions (bool): Whether to return cross-attention probs from each layer.
             output_hidden_states (bool): Whether to return concept_representations from each layer.
             return_dict (bool): If True, return a BaseModelOutput or dict instead of a tuple.
+            position_offset (int): global position of the first token (sequence parallelism:
+                a shard at offset ``rank*shard_len`` must use GLOBAL positions).
 
         Returns:
             BaseModelOutput or tuple(last_hidden_state, hidden_states, attentions)
@@ -684,7 +758,8 @@ class ConceptEncoder(PreTrainedModel):
         batch_size, seq_length = input_ids.size()
 
         # 1) Token embeddings (in token_embedding_dim space)
-        position_ids = torch.arange(seq_length, device=input_ids.device).unsqueeze(0).expand_as(input_ids)
+        position_ids = torch.arange(position_offset, position_offset + seq_length,
+                                    device=input_ids.device).unsqueeze(0).expand_as(input_ids)
         token_embeddings = self.token_embeddings(input_ids) + self.token_position_embeddings(position_ids)
         
         # Project token embeddings to hidden_size if Dimension Inversion is active
@@ -723,7 +798,26 @@ class ConceptEncoder(PreTrainedModel):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
-            if self._use_bixt:
+            if self.gradient_checkpointing and self.training:
+                # Recompute layer activations in backward to cap activation memory at long N.
+                # use_reentrant=False is the recommended modern path (non-reentrant).
+                def _enc_fwd(concepts, tokens, mask, _layer=layer, _bixt=self._use_bixt):
+                    if _bixt:
+                        return _layer(concept_representations=concepts, token_embeddings=tokens,
+                                      attention_mask=mask)
+                    return _layer(concept_representations=concepts, token_embeddings=tokens,
+                                  attention_mask=mask)
+                if self._use_bixt:
+                    hidden_states, token_embeddings = torch.utils.checkpoint.checkpoint(
+                        _enc_fwd, hidden_states, token_embeddings, key_padding_mask,
+                        use_reentrant=False,
+                    )
+                else:
+                    hidden_states = torch.utils.checkpoint.checkpoint(
+                        _enc_fwd, hidden_states, token_embeddings, key_padding_mask,
+                        use_reentrant=False,
+                    )
+            elif self._use_bixt:
                 hidden_states, token_embeddings = layer(
                     concept_representations=hidden_states,
                     token_embeddings=token_embeddings,

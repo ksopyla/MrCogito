@@ -11,6 +11,7 @@ Maintained perceiver training path:
 
 import os
 import sys
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
@@ -36,6 +37,7 @@ from data.data_collators import DataCollatorForPrefixGeneration, DataCollatorFor
 from data.dataset_preprocess import (
     load_and_preprocess_dataset_mix,
     load_and_preprocess_text_dataset,
+    load_pretokenized_mix,
 )
 from nn.concept_encoder import ConceptEncoderConfig
 from nn.concept_encoder_perceiver import (
@@ -132,6 +134,24 @@ class ModelArguments:
         metadata={"help": "E05: restrict causal_ar decoder self-attention to the last K tokens "
                   "(sliding-window). None = full causal context (E01/E02/E03). When set, "
                   "out-of-window context is only reachable through the concepts."},
+    )
+    decoder_attn_impl: str = field(
+        default="sdpa",
+        metadata={"help": "Decoder self-attn backend. 'sdpa' (default, byte-unchanged) or "
+                  "'chunked_window' — O(N*K) memory windowed attention for long context. "
+                  "Only applies when decoder_context_window is set."},
+    )
+    decoder_attn_chunk_size: int = field(
+        default=2048,
+        metadata={"help": "Query chunk size for decoder_attn_impl='chunked_window'. Larger = "
+                  "fewer kernel launches but higher peak; default 2048."},
+    )
+    chunked_ce_block_size: int = field(
+        default=0,
+        metadata={"help": "F2 long-context: compute lm_head+CE in N-blocks of this size so "
+                  "the full [B,N,V] logits + fp32 CE upcast are never materialised (the O(N*V) "
+                  "spike). 0 = off (materialise full logits, legacy). Training-only; ablation/eval "
+                  "keep the full-logits path."},
     )
     hidden_act: str = field(
         default="gelu",
@@ -235,9 +255,25 @@ class DataTrainingArguments:
     dataset_name_subset: Optional[str] = field(default=None)
     dataset_mix: Optional[str] = field(
         default=None,
-        metadata={"help": "E05: name of a registered multi-dataset mix in "
-                  "data.dataset_preprocess.DATASET_MIXES (e.g. 'e05_long_2k'). When set, "
+        metadata={"help": "Name of a registered multi-dataset mix in "
+                  "data.dataset_preprocess.DATASET_MIXES (e.g. 'long_2k_base_v1'). When set, "
                   "overrides dataset_name/dataset_name_subset and interleaves the mix."},
+    )
+    dataset_mix_recipe: Optional[str] = field(
+        default=None,
+        metadata={"help": "Path or id of a JSON mix recipe (data/mix_recipes/*.json). "
+                  "Preferred over dataset_mix for configurable long-context pretraining."},
+    )
+    dataset_mix_weight_override: Optional[str] = field(
+        default=None,
+        metadata={"help": "Optional JSON object that overrides source weights at runtime, "
+                  "e.g. '{\"finepdfs_100BT\":0.6,\"fineweb_edu\":0.2,\"finemath_3plus\":0.2}'."},
+    )
+    pretokenized_manifest: Optional[str] = field(
+        default=None,
+        metadata={"help": "Path to a manifest JSON written by scripts/pretokenize_mix.py. "
+                  "If set, loads pre-tokenized sources via load_from_disk (instant, no download). "
+                  "Overrides dataset_mix/dataset_mix_recipe when present."},
     )
     tokenizer_name: str = field(default="answerdotai/ModernBERT-base")
     max_seq_length: int = field(default=512)
@@ -317,8 +353,10 @@ class PerceiverDenoiseTrainer(Trainer):
         labels = inputs["labels"]
 
         # encode_decode_loss is the SAME recipe forward() uses → the anchor path cannot drift.
+        # Pass the target mask so the decoder self-attn matches the forward() behaviour (E05/2K).
         task_loss, logits, encoder_outputs = base_model.encode_decode_loss(
-            input_ids, attention_mask, input_ids, labels
+            input_ids, attention_mask, input_ids, labels,
+            target_attention_mask=attention_mask,
         )
         concept_repr = encoder_outputs.last_hidden_state
         anchor_mse = self._anchor_mse(base_model, input_ids, labels, concept_repr)
@@ -588,6 +626,9 @@ def build_perceiver_denoise_config(
         decoder_pos_type=model_args.decoder_pos_type,
         decoder_word_dropout=model_args.decoder_word_dropout,
         decoder_context_window=model_args.decoder_context_window,
+        decoder_attn_impl=getattr(model_args, "decoder_attn_impl", "sdpa"),
+        decoder_attn_chunk_size=getattr(model_args, "decoder_attn_chunk_size", 2048),
+        chunked_ce_block_size=getattr(model_args, "chunked_ce_block_size", 0),
         norm_type=model_args.norm_type,
         checkpoint_family=checkpoint_family,
         evaluation_contract_version=1,
@@ -656,6 +697,8 @@ def main():
             "Prefix ratio min": data_args.prefix_ratio_min,
             "Prefix ratio max": data_args.prefix_ratio_max,
             "Split strategy": data_args.split_strategy,
+            "Dataset mix (registry)": data_args.dataset_mix,
+            "Dataset mix recipe": data_args.dataset_mix_recipe,
         },
     )
 
@@ -685,35 +728,54 @@ def main():
     )
 
     with training_args.main_process_first(desc="loading and tokenizing dataset"):
-        if data_args.dataset_mix:
-            logger.info(f"Loading dataset mix: {data_args.dataset_mix}")
-            train_ds, test_ds = load_and_preprocess_dataset_mix(
-                tokenizer,
-                data_args.dataset_mix,
-                test_size_percent=data_args.test_size_percent,
-                max_seq_length=data_args.max_seq_length,
-                dataset_cache_dir=data_args.dataset_cache_dir,
-                train_num_proc=data_args.train_num_proc,
-                test_num_proc=data_args.test_num_proc,
-                append_eos_token_id=append_eos_token_id,
-                split_seed=training_args.seed,
-                interleave_seed=training_args.seed,
-            )
+        if data_args.pretokenized_manifest:
+            logger.info(f"Loading pre-tokenized mix from manifest: {data_args.pretokenized_manifest}")
+            train_ds, test_ds = load_pretokenized_mix(data_args.pretokenized_manifest)
         else:
-            logger.info(f"Loading dataset: {data_args.dataset_name}")
-            train_ds, test_ds = load_and_preprocess_text_dataset(
-                tokenizer,
-                data_args.dataset_name,
-                data_args.dataset_name_subset,
-                "text",
-                test_size_percent=data_args.test_size_percent,
-                max_seq_length=data_args.max_seq_length,
-                dataset_cache_dir=data_args.dataset_cache_dir,
-                train_num_proc=data_args.train_num_proc,
-                test_num_proc=data_args.test_num_proc,
-                append_eos_token_id=append_eos_token_id,
-                split_seed=training_args.seed,
-            )
+            selected_mix = data_args.dataset_mix_recipe or data_args.dataset_mix
+            if data_args.dataset_mix_recipe and data_args.dataset_mix:
+                logger.warning(
+                    "Both dataset_mix_recipe and dataset_mix were provided. "
+                    f"Using dataset_mix_recipe='{data_args.dataset_mix_recipe}' and ignoring "
+                    f"dataset_mix='{data_args.dataset_mix}'."
+                )
+
+            if selected_mix:
+                logger.info(f"Loading dataset mix: {selected_mix}")
+                if data_args.dataset_mix_weight_override:
+                    try:
+                        preview_override = json.loads(data_args.dataset_mix_weight_override)
+                    except Exception:
+                        preview_override = data_args.dataset_mix_weight_override
+                    logger.info(f"Applying mix weight override: {preview_override}")
+                train_ds, test_ds = load_and_preprocess_dataset_mix(
+                    tokenizer,
+                    selected_mix,
+                    mix_weight_override=data_args.dataset_mix_weight_override,
+                    test_size_percent=data_args.test_size_percent,
+                    max_seq_length=data_args.max_seq_length,
+                    dataset_cache_dir=data_args.dataset_cache_dir,
+                    train_num_proc=data_args.train_num_proc,
+                    test_num_proc=data_args.test_num_proc,
+                    append_eos_token_id=append_eos_token_id,
+                    split_seed=training_args.seed,
+                    interleave_seed=training_args.seed,
+                )
+            else:
+                logger.info(f"Loading dataset: {data_args.dataset_name}")
+                train_ds, test_ds = load_and_preprocess_text_dataset(
+                    tokenizer,
+                    data_args.dataset_name,
+                    data_args.dataset_name_subset,
+                    "text",
+                    test_size_percent=data_args.test_size_percent,
+                    max_seq_length=data_args.max_seq_length,
+                    dataset_cache_dir=data_args.dataset_cache_dir,
+                    train_num_proc=data_args.train_num_proc,
+                    test_num_proc=data_args.test_num_proc,
+                    append_eos_token_id=append_eos_token_id,
+                    split_seed=training_args.seed,
+                )
 
     logger.info(f"Train dataset size: {len(train_ds):,}")
     logger.info(f"Test dataset size: {len(test_ds):,}")
@@ -826,6 +888,8 @@ def main():
         "Prefix ratio min": data_args.prefix_ratio_min,
         "Prefix ratio max": data_args.prefix_ratio_max,
         "Split strategy": data_args.split_strategy,
+        "Dataset mix (registry)": data_args.dataset_mix,
+        "Dataset mix recipe": data_args.dataset_mix_recipe,
     }
     if model_args.objective_variant == OBJECTIVE_RECONSTRUCTION_CONTRASTIVE:
         training_extra_fields["Contrastive weight"] = model_args.contrastive_weight
@@ -865,6 +929,9 @@ def main():
             "min_prefix_content": data_args.min_prefix_content,
             "min_suffix_content": data_args.min_suffix_content,
             "split_strategy": data_args.split_strategy,
+            "dataset_mix": data_args.dataset_mix,
+            "dataset_mix_recipe": data_args.dataset_mix_recipe,
+            "dataset_mix_weight_override": data_args.dataset_mix_weight_override,
         },
     )
 
@@ -953,8 +1020,22 @@ def main():
         f"C{config.concept_num} token_emb={config.token_embedding_dim} "
         f"act={config.hidden_act} norm={config.norm_type} bixt={model_args.use_bixt}"
     )
-    logger.info(f"  Data            : {data_args.dataset_name} {data_args.dataset_name_subset or ''} "
-                f"tokenizer={data_args.tokenizer_name} max_seq={data_args.max_seq_length}")
+    if data_args.dataset_mix_recipe or data_args.dataset_mix:
+        selected_mix = data_args.dataset_mix_recipe or data_args.dataset_mix
+        logger.info(
+            f"  Data            : mix={selected_mix} tokenizer={data_args.tokenizer_name} "
+            f"max_seq={data_args.max_seq_length}"
+            + (
+                f" weight_override={data_args.dataset_mix_weight_override}"
+                if data_args.dataset_mix_weight_override
+                else ""
+            )
+        )
+    else:
+        logger.info(
+            f"  Data            : {data_args.dataset_name} {data_args.dataset_name_subset or ''} "
+            f"tokenizer={data_args.tokenizer_name} max_seq={data_args.max_seq_length}"
+        )
     logger.info(f"  Eval collator   : seeded={getattr(eval_data_collator, 'seed', None)} "
                 f"(deterministic held-out corruption)")
     logger.info("=" * 60)

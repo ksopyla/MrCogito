@@ -1,22 +1,35 @@
+import json
 import os
+from pathlib import Path
+from typing import Any
+
 import torch
-from datasets import load_dataset, interleave_datasets, concatenate_datasets
+from datasets import load_dataset, load_from_disk, interleave_datasets, concatenate_datasets
 from transformers import DataCollatorForWholeWordMask
 from transformers.utils import logging
 
 
 logger = logging.get_logger(__name__)
+MIX_RECIPES_DIR = Path(__file__).resolve().parent / "mix_recipes"
 
 
-def _make_tokenize_fn(tokenizer, max_seq_length, append_eos_token_id):
+def _make_tokenize_fn(tokenizer, max_seq_length, append_eos_token_id, max_chars=None):
     """Build the batched tokenize function shared by the single-source and mix loaders.
 
     append_eos_token_id is None  -> legacy pad-to-max_length path (perceiver MLM etc.).
-    append_eos_token_id is set    -> variable-length rows with one EOS appended (AR / E05),
+    append_eos_token_id is set    -> variable-length rows with one EOS appended (AR / long-context),
                                      padding deferred to the data collator.
+    max_chars -> if set, truncate each raw text to this many characters BEFORE tokenizing.
+        Guards against gigantic web/PDF docs OOM-ing or crashing a tokenize worker: the Fast
+        tokenizer scans the *whole* input string even though ``truncation=max_seq_length``
+        discards all but ~8k chars, so a 100MB DCLM web page can kill a ``num_proc`` worker
+        before truncation runs. Lossless for the kept tokens when ``max_chars`` >> max_seq_length.
+        Default ``None`` preserves the original behaviour (no pre-truncation).
     """
     def tokenize_batch_function(examples):
         text_batch = examples["text"]
+        if max_chars:
+            text_batch = [t[:max_chars] if t and len(t) > max_chars else t for t in text_batch]
         if append_eos_token_id is None:
             return tokenizer(
                 text_batch,
@@ -178,7 +191,7 @@ def load_and_preprocess_text_dataset(
 
 
 # ---------------------------------------------------------------------------
-# E05 — multi-dataset mixes for long-context training
+# Multi-dataset mixes for long-context pretraining
 # ---------------------------------------------------------------------------
 # A "mix" is a list of source specs interleaved by sampling probability (weight).
 # Each spec mirrors analysis/long_dataset_candidates.json so the mixes stay in sync
@@ -191,14 +204,14 @@ def load_and_preprocess_text_dataset(
 #   weight       interleave sampling probability (normalised across the mix)
 #   max_samples  per-source row cap (downloads only train[:N]) to bound disk/compute
 #
-# E05 "long_2k" rationale (1k-row seqlen sample, SmolLM2-135M tokenizer):
+# long_2k_base_v1 rationale (1k-row seqlen sample, SmolLM2-135M tokenizer):
 #   FinePDFs  34.2% docs > 2k  -> the long-range backbone (real coherent documents)
 #   FineWeb-Edu 8.6% > 2k      -> quality web + continuity with the E01-E04 baseline
 #   FineMath-3+ 14.7% > 2k     -> coherent math/reasoning structure
 # Short docs are NOT packed (no fake long-range signal); they simply don't exercise the
 # window difference. Cross-window dependencies come from the long tail (FinePDFs-dominant).
 DATASET_MIXES = {
-    "e05_long_2k": [
+    "long_2k_base_v1": [
         {
             "name": "finepdfs_100BT",
             "hf_id": "HuggingFaceFW/finepdfs_100BT",
@@ -233,6 +246,245 @@ DATASET_MIXES = {
         },
     ],
 }
+
+
+def _normalize_mix_source_spec(spec: dict[str, Any], *, source_idx: int, mix_label: str) -> dict[str, Any]:
+    """Normalize one source spec into the internal loader contract.
+
+    Supports both `hf_id` and `dataset` keys for HF compatibility.
+    Supports either `text_columns` or a single `text_column`.
+    """
+    if not isinstance(spec, dict):
+        raise ValueError(f"{mix_label}: source #{source_idx} must be an object, got {type(spec)!r}")
+
+    out = dict(spec)
+
+    if "hf_id" not in out and "dataset" in out:
+        out["hf_id"] = out["dataset"]
+
+    if "text_columns" not in out and out.get("text_column"):
+        out["text_columns"] = [out["text_column"]]
+
+    text_columns = out.get("text_columns")
+    if text_columns is None:
+        out["text_columns"] = ["text"]
+    elif isinstance(text_columns, str):
+        out["text_columns"] = [text_columns]
+    elif isinstance(text_columns, list):
+        out["text_columns"] = [str(c) for c in text_columns if c]
+        if not out["text_columns"]:
+            raise ValueError(f"{mix_label}: source #{source_idx} has empty text_columns")
+    else:
+        raise ValueError(
+            f"{mix_label}: source #{source_idx} has invalid text_columns type: {type(text_columns)!r}"
+        )
+
+    data_files = out.get("data_files")
+    if data_files is not None:
+        if isinstance(data_files, str):
+            data_files = [data_files]
+        if not isinstance(data_files, list):
+            raise ValueError(f"{mix_label}: source #{source_idx} data_files must be string or list")
+        data_files = [str(p) for p in data_files if p]
+        if not data_files:
+            raise ValueError(f"{mix_label}: source #{source_idx} has empty data_files")
+        out["data_files"] = data_files
+
+    if not out.get("hf_id") and not out.get("data_files"):
+        raise ValueError(
+            f"{mix_label}: source #{source_idx} must define either hf_id/dataset or data_files"
+        )
+
+    subset = out.get("subset")
+    out["subset"] = None if subset in ("", None) else subset
+    out["split"] = out.get("split", "train")
+
+    out["weight"] = float(out.get("weight", 1.0))
+    if out["weight"] <= 0:
+        raise ValueError(f"{mix_label}: source #{source_idx} has non-positive weight={out['weight']}")
+
+    if out.get("max_samples") is not None:
+        out["max_samples"] = int(out["max_samples"])
+        if out["max_samples"] <= 0:
+            raise ValueError(
+                f"{mix_label}: source #{source_idx} has non-positive max_samples={out['max_samples']}"
+            )
+
+    return out
+
+
+def _resolve_mix_recipe_path(mix_recipe: str) -> Path:
+    """Resolve a mix recipe path or short id.
+
+    Accepted forms:
+      - absolute/relative path to a JSON file
+      - short id, resolved in data/mix_recipes/<id>.json
+    """
+    candidate = Path(mix_recipe).expanduser()
+    if candidate.exists():
+        return candidate.resolve()
+
+    if not candidate.is_absolute():
+        cwd_candidate = (Path.cwd() / candidate).resolve()
+        if cwd_candidate.exists():
+            return cwd_candidate
+
+    stem = mix_recipe[:-5] if mix_recipe.endswith(".json") else mix_recipe
+    packaged = MIX_RECIPES_DIR / f"{stem}.json"
+    if packaged.exists():
+        return packaged.resolve()
+
+    raise ValueError(
+        f"Could not resolve dataset mix recipe '{mix_recipe}'. "
+        f"Checked direct path, cwd-relative path, and {MIX_RECIPES_DIR / (stem + '.json')}."
+    )
+
+
+def load_mix_recipe(mix_recipe: str) -> dict[str, Any]:
+    """Load a JSON recipe with top-level metadata + sources list.
+
+    Backward compatible with "list only" JSON (treated as top-level sources array).
+    """
+    recipe_path = _resolve_mix_recipe_path(mix_recipe)
+    with recipe_path.open("r", encoding="utf-8") as f:
+        payload = json.load(f)
+
+    if isinstance(payload, list):
+        payload = {"mix_id": recipe_path.stem, "sources": payload}
+    if not isinstance(payload, dict):
+        raise ValueError(f"Mix recipe at {recipe_path} must be an object or list.")
+    if "sources" not in payload:
+        raise ValueError(f"Mix recipe at {recipe_path} is missing required top-level key 'sources'.")
+    if not isinstance(payload["sources"], list) or not payload["sources"]:
+        raise ValueError(f"Mix recipe at {recipe_path} must provide a non-empty 'sources' list.")
+
+    mix_id = payload.get("mix_id", recipe_path.stem)
+    sources = [
+        _normalize_mix_source_spec(spec, source_idx=i, mix_label=f"mix_recipe:{mix_id}")
+        for i, spec in enumerate(payload["sources"])
+    ]
+
+    recipe = dict(payload)
+    recipe["mix_id"] = mix_id
+    recipe["sources"] = sources
+    recipe["_recipe_path"] = str(recipe_path)
+    return recipe
+
+
+def _resolve_mix_sources(mix: str | list[dict[str, Any]] | dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Resolve mix input into normalized source specs + metadata.
+
+    Supports:
+      - registered DATASET_MIXES key
+      - recipe id/path string
+      - inline list of source specs
+      - dict with top-level "sources"
+    """
+    if isinstance(mix, str):
+        if mix in DATASET_MIXES:
+            sources = [
+                _normalize_mix_source_spec(spec, source_idx=i, mix_label=f"mix:{mix}")
+                for i, spec in enumerate(DATASET_MIXES[mix])
+            ]
+            return sources, {"mix_origin": "registry", "mix_id": mix}
+
+        recipe = load_mix_recipe(mix)
+        return recipe["sources"], {
+            "mix_origin": "recipe",
+            "mix_id": recipe["mix_id"],
+            "mix_recipe_path": recipe["_recipe_path"],
+        }
+
+    if isinstance(mix, list):
+        sources = [
+            _normalize_mix_source_spec(spec, source_idx=i, mix_label="mix:inline")
+            for i, spec in enumerate(mix)
+        ]
+        return sources, {"mix_origin": "inline", "mix_id": "inline_mix"}
+
+    if isinstance(mix, dict) and "sources" in mix:
+        mix_id = mix.get("mix_id", "inline_mix")
+        sources = [
+            _normalize_mix_source_spec(spec, source_idx=i, mix_label=f"mix:{mix_id}")
+            for i, spec in enumerate(mix["sources"])
+        ]
+        return sources, {"mix_origin": "inline_recipe", "mix_id": mix_id}
+
+    raise ValueError(
+        "mix must be a registered mix name, recipe path/id, source list, "
+        "or dict with top-level 'sources'."
+    )
+
+
+def resolve_mix_sources(mix: str | list[dict[str, Any]] | dict[str, Any]) -> list[dict[str, Any]]:
+    """Public helper for tooling/tests: resolve any supported mix input into source specs."""
+    sources, _ = _resolve_mix_sources(mix)
+    return sources
+
+
+def _parse_mix_weight_override(mix_weight_override: str | dict[str, float] | None) -> dict[str, float]:
+    if mix_weight_override is None:
+        return {}
+    if isinstance(mix_weight_override, dict):
+        override = mix_weight_override
+    elif isinstance(mix_weight_override, str):
+        raw = mix_weight_override.strip()
+        if not raw:
+            return {}
+        override = json.loads(raw)
+    else:
+        raise ValueError(
+            f"mix_weight_override must be dict/JSON string/None, got {type(mix_weight_override)!r}"
+        )
+    if not isinstance(override, dict):
+        raise ValueError("mix_weight_override must decode to an object mapping source->weight.")
+    parsed = {str(k): float(v) for k, v in override.items()}
+    for key, weight in parsed.items():
+        if weight <= 0:
+            raise ValueError(f"mix_weight_override has non-positive weight for '{key}': {weight}")
+    return parsed
+
+
+def _apply_mix_weight_override(
+    sources: list[dict[str, Any]],
+    mix_weight_override: str | dict[str, float] | None,
+) -> list[dict[str, Any]]:
+    override = _parse_mix_weight_override(mix_weight_override)
+    if not override:
+        return [dict(spec) for spec in sources]
+
+    updated = [dict(spec) for spec in sources]
+    used_keys = set()
+    available_keys = set()
+
+    for spec in updated:
+        candidate_keys = []
+        if spec.get("name"):
+            candidate_keys.append(str(spec["name"]))
+        if spec.get("hf_id"):
+            candidate_keys.append(str(spec["hf_id"]))
+        available_keys.update(candidate_keys)
+        for key in candidate_keys:
+            if key in override:
+                spec["weight"] = float(override[key])
+                used_keys.add(key)
+                break
+
+    unknown = set(override.keys()) - used_keys
+    if unknown:
+        raise ValueError(
+            f"mix_weight_override contains unknown source key(s): {sorted(unknown)}. "
+            f"Available source keys: {sorted(available_keys)}"
+        )
+    return updated
+
+
+def apply_mix_weight_override(
+    sources: list[dict[str, Any]],
+    mix_weight_override: str | dict[str, float] | None,
+) -> list[dict[str, Any]]:
+    """Public helper for tooling/tests: apply runtime weight overrides to source specs."""
+    return _apply_mix_weight_override(sources, mix_weight_override)
 
 
 def _stringify(value):
@@ -275,17 +527,58 @@ def _load_mix_source(spec, cache_dir):
     if max_samples:
         split = f"{split}[:{int(max_samples)}]"
     data_files = spec.get("data_files")
-    if data_files:
-        ds = load_dataset("parquet", data_files=data_files, split=split, cache_dir=cache_dir)
-    else:
-        subset = spec.get("subset") or None
-        ds = load_dataset(spec["hf_id"], subset, split=split, cache_dir=cache_dir)
+
+    token = spec.get("hf_token")
+    token_env = spec.get("hf_token_env")
+    if token is None and token_env:
+        token = os.environ.get(str(token_env))
+
+    def _load_one(source_hf_id, source_subset, source_data_files):
+        common_kwargs = {"split": split, "cache_dir": cache_dir}
+        if token is not None:
+            common_kwargs["token"] = token
+        if spec.get("revision"):
+            common_kwargs["revision"] = spec["revision"]
+
+        if source_data_files:
+            return load_dataset(
+                "parquet",
+                data_files=source_data_files,
+                **common_kwargs,
+            )
+        dataset_kwargs = {}
+        if spec.get("data_dir"):
+            dataset_kwargs["data_dir"] = spec["data_dir"]
+        if spec.get("trust_remote_code") is not None:
+            dataset_kwargs["trust_remote_code"] = bool(spec["trust_remote_code"])
+        return load_dataset(
+            source_hf_id,
+            source_subset,
+            **dataset_kwargs,
+            **common_kwargs,
+        )
+
+    try:
+        ds = _load_one(spec.get("hf_id"), spec.get("subset") or None, data_files)
+    except Exception as exc:
+        fallback_hf_id = spec.get("fallback_hf_id")
+        fallback_data_files = spec.get("fallback_data_files")
+        fallback_subset = spec.get("fallback_subset", spec.get("subset"))
+        if not fallback_hf_id and not fallback_data_files:
+            raise
+        source_name = spec.get("name", spec.get("hf_id", "unknown_source"))
+        logger.warning(
+            f"[mix] source '{source_name}' failed to load ({exc}); falling back to "
+            f"{fallback_hf_id or 'parquet:data_files'}"
+        )
+        ds = _load_one(fallback_hf_id, fallback_subset, fallback_data_files)
     return _normalize_to_text_column(ds, spec.get("text_columns"))
 
 
 def load_and_preprocess_dataset_mix(
     tokenizer,
     mix,
+    mix_weight_override=None,
     test_size_percent=0.1,
     max_seq_length=2048,
     dataset_cache_dir=None,
@@ -295,9 +588,17 @@ def load_and_preprocess_dataset_mix(
     split_seed=42,
     interleave_seed=42,
 ):
-    """Load + tokenize a weighted mix of text datasets for long-context training (E05).
+    """Load + tokenize a weighted mix of text datasets for long-context pretraining.
 
-    `mix` is either a registered name in DATASET_MIXES or a list of source specs.
+    `mix` can be:
+      - a registered name in DATASET_MIXES
+      - a recipe id/path (JSON in data/mix_recipes/)
+      - an inline source list
+      - an inline recipe dict {"sources":[...]}
+
+    `mix_weight_override` optionally overrides source weights at runtime (dict or JSON string)
+    using source `name` (preferred) or `hf_id` keys.
+
     Per source: load (capped), normalise to 'text', hold out a small eval slice, tokenize.
     Train parts are interleaved by normalised weight (stopping_strategy='all_exhausted');
     eval parts are concatenated into one representative multi-source holdout.
@@ -311,9 +612,18 @@ def load_and_preprocess_dataset_mix(
     else:
         cache_dir = os.path.abspath(dataset_cache_dir)
 
-    sources = DATASET_MIXES[mix] if isinstance(mix, str) else list(mix)
+    sources, mix_meta = _resolve_mix_sources(mix)
+    sources = _apply_mix_weight_override(sources, mix_weight_override)
     if not sources:
         raise ValueError(f"Empty dataset mix: {mix!r}")
+    logger.info(
+        f"[mix] resolved '{mix_meta.get('mix_id')}' from {mix_meta.get('mix_origin')}"
+        + (
+            f" ({mix_meta.get('mix_recipe_path')})"
+            if mix_meta.get("mix_recipe_path")
+            else ""
+        )
+    )
 
     tokenize_fn = _make_tokenize_fn(tokenizer, max_seq_length, append_eos_token_id)
 
@@ -346,6 +656,48 @@ def load_and_preprocess_dataset_mix(
     logger.info(
         f"[mix] interleaved train={len(train_ds):,} (probs={[round(p, 3) for p in probabilities]}) "
         f"| eval={len(test_ds):,}"
+    )
+    return train_ds, test_ds
+
+
+def load_pretokenized_mix(manifest_path):
+    """Load a pre-tokenized mix produced by `scripts/pretokenize_mix.py`.
+
+    Reads the manifest JSON, `load_from_disk`s each source's train/eval dirs,
+    interleaves train parts by the manifest weights, and concatenates eval parts.
+    Instant — no download, no tokenization. Returns (train_ds, test_ds).
+    """
+    manifest_path = Path(manifest_path)
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"Pretokenized manifest not found: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text())
+    logger.info(
+        f"[pretokenized] loading mix '{manifest.get('mix_id')}' from {manifest_path}"
+        f" (seq={manifest.get('max_seq_length')}, obj={manifest.get('objective')})"
+    )
+
+    train_parts, eval_parts, weights = [], [], []
+    for src in manifest["sources"]:
+        name = src["name"]
+        tr = load_from_disk(src["train_path"])
+        ev = load_from_disk(src["eval_path"])
+        train_parts.append(tr)
+        eval_parts.append(ev)
+        weights.append(float(src.get("weight", 1.0)))
+        logger.info(f"[pretokenized]   '{name}': {len(tr):,} train / {len(ev):,} eval rows")
+
+    total_w = sum(weights)
+    probabilities = [w / total_w for w in weights]
+    train_ds = interleave_datasets(
+        train_parts,
+        probabilities=probabilities,
+        seed=manifest.get("seed", 42),
+        stopping_strategy="all_exhausted",
+    )
+    test_ds = concatenate_datasets(eval_parts)
+    logger.info(
+        f"[pretokenized] interleaved train={len(train_ds):,}"
+        f" (probs={[round(p, 3) for p in probabilities]}) | eval={len(test_ds):,}"
     )
     return train_ds, test_ds
 

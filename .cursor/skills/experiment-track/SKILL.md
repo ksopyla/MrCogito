@@ -63,6 +63,7 @@ Skip `docs/5_Archive/` and any `> **OBSOLETE — ...**` section — that content
    - objective and important training protocol details
    - epochs or global steps
    - evaluation route and benchmark coverage
+   - compute: `compute/gpu_hours`, `compute/energy_kwh`, `compute/max_tokens`, `compute/loss_tokens_est` + `compute/audit_state`/`compute/flag` (from the run's W&B summary, written by the compute audit — see `experiment-evaluate` run-level preamble; run the audit first if these are missing)
 
 2. Extract the evidence:
    - concept geometry metrics
@@ -96,6 +97,13 @@ Judge in this order:
 2. zero-shot semantic signal
 3. supervised pair-task results
 4. training protocol, compute budget, and checkpoint maturity
+
+For the compute-budget factor, prefer the audited `compute/*` scalars (GPU-hours,
+energy kWh, max tokens) over hand-estimates, and note `compute/audit_state`: a
+`flagged` or `running-partial` number is approximate (read `compute/flag`). Raw
+GPU-hours/energy are meaningful within a `wandb_group` (matched setup); across
+regimes use the derived ratios (`compute/tokens_per_gpu_hour`,
+`compute/energy_per_billion_tokens`).
 
 Use the experiment spec's success/kill criteria as anchors, not as blind pass/fail switches.
 
@@ -223,6 +231,7 @@ Use this structure for non-trivial runs and keep it close to the current reports
 | Epochs | ... |
 | Effective batch | ... |
 | Throughput | ... |
+| Compute | GPU-h, kWh, max-tokens (`compute/*` from the compute audit; note `compute/audit_state`) |
 
 ## Training Outcome
 <short paragraph>

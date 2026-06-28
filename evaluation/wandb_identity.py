@@ -44,6 +44,21 @@ def parse_checkpoint_step_from_path(model_path: str) -> Optional[int]:
     return int(match.group(1))
 
 
+def infer_checkpoint_id(
+    *,
+    source_checkpoint_path: str,
+    source_training_run_id: Optional[str],
+    source_checkpoint_step: Optional[int],
+) -> Optional[str]:
+    if source_checkpoint_step is not None:
+        return f"checkpoint-{source_checkpoint_step}"
+    if source_training_run_id:
+        basename = os.path.basename((source_checkpoint_path or "").rstrip("/"))
+        if basename == source_training_run_id:
+            return "final_model"
+    return None
+
+
 def parse_training_run_id_from_model_path(model_path: str) -> Optional[str]:
     if not model_path:
         return None
@@ -205,8 +220,9 @@ def lineage_to_wandb_config(lineage: EvalLineage) -> Dict[str, Any]:
     config = asdict(lineage)
     # Legacy compatibility: old dashboards/scripts expected `source_run_id`.
     config["source_run_id"] = lineage.source_training_run_id
-    if lineage.source_checkpoint_step is not None:
-        config["source_checkpoint_id"] = f"checkpoint-{lineage.source_checkpoint_step}"
-    else:
-        config["source_checkpoint_id"] = None
+    config["source_checkpoint_id"] = infer_checkpoint_id(
+        source_checkpoint_path=lineage.source_checkpoint_path,
+        source_training_run_id=lineage.source_training_run_id,
+        source_checkpoint_step=lineage.source_checkpoint_step,
+    )
     return config

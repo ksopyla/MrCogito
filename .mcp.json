@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "wandb": {
+      "command": "bash",
+      "args": [".cursor/scripts/wandb-mcp.sh"]
+    }
+  }
+}

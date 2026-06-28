@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv sync)",
+      "Bash(uv lock)",
+      "Bash(uv add:*)",
+      "Bash(uv run pytest:*)",
+      "Bash(uv run python:*)",
+      "Bash(rg:*)",
+      "Bash(fd:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git fetch:*)",
+      "Bash(git ls-files:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(gh pr:*)",
+      "Bash(gh issue:*)",
+      "Bash(gh run:*)",
+      "Bash(ssh odra:*)",
+      "Bash(ssh polonez:*)",
+      "Bash(ls:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(df:*)",
+      "Bash(du:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(nvidia-smi:*)"
+    ]
+  }
+}

@@ -13,13 +13,10 @@ set -o pipefail
 
 echo "=== PAWS Evaluation for Concept Encoder ==="
 
-PROJECT_ROOT="/home/ksopyla/dev/MrCogito"
-if [ ! -d "$PROJECT_ROOT" ]; then
-    PROJECT_ROOT="$(pwd)"
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/remote_paths.sh
+source "${SCRIPT_DIR}/remote_paths.sh"
 
-export HF_HOME="${PROJECT_ROOT}/../hf_home"
-export HF_DATASETS_CACHE="${PROJECT_ROOT}/../hf_home/datasets"
 export TOKENIZERS_PARALLELISM=false
 
 # Python runs via `uv run`; ensure uv is on PATH for non-interactive SSH.
@@ -32,6 +29,8 @@ MODEL_PATH="${MODEL_PATH_OVERRIDE:-${PROJECT_ROOT}/Cache/Training/REPLACE_WITH_P
 MODEL_TYPE="${MODEL_TYPE_OVERRIDE:-perceiver_denoise}"
 # =============================================================================
 
+echo "  Project Root: $PROJECT_ROOT"
+echo "  HF Cache: $HF_HOME"
 echo "  Model Type: $MODEL_TYPE"
 echo "  Model Path: $MODEL_PATH"
 echo ""

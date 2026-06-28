@@ -14,6 +14,92 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-06-28] - Post-hoc compute audit (GPU-h, energy, tokens) + W&B compute panel
+
+**Why:** Comparing runs on compute spent — especially within a `wandb_group`
+(same experiment, varying data mix / optimization / hyperparameters) — needed
+GPU-hours, total energy, and training-token numbers that W&B does not log as
+scalars and HF Trainer does not provide (`train/total_flos` is 0 for the custom
+`ConceptEncoder`; `include_num_input_tokens_seen` is off and would add a
+per-micro-step DDP sync + startup dataloader enumeration). The data already
+lives in W&B system metrics (`system/gpu.{i}.powerWatts` ~7.5 s cadence,
+`_runtime`, config knobs), so a post-hoc audit covers past and future runs with
+no training-loop change and no throughput tax.
+
+**Impact:**
+- New `analysis/run_compute_audit.py` — reads W&B via `run.history(stream='system',
+  samples=1e6)` (full-res), integrates per-GPU power trapezoidally with real `dt`
+  (gap-splitting >60 s) into `compute/energy_kwh`; computes `compute/gpu_hours`
+  (`runtime × world_size / 3600`), `compute/max_tokens` (`global_step × grad_accum
+  × pbs × world_size × max_seq_length`), a flagged `compute/loss_tokens_est`
+  (per-family loss fraction; run-name fallback for older runs without
+  `model_family`), and four derived ratios. Writes `compute/*` back into each
+  finished run's W&B summary (deferred for running runs) and emits a CSV +
+  matplotlib comparison chart + per-run JSON to `Cache/Evaluation_reports/compute_audit/`.
+  Structural gates hard-fail (gpu-count mismatch / missing config →
+  `compute/audit_state=failed`, no scalars written); plausibility gates
+  write-with-flag (avg-power bounds, trapezoid-vs-avg, summary-vs-ts-span).
+  `compute/group_for_panel` = `wandb_group` or architecture-prefix, so older runs
+  without `wandb_group` still group in the panel.
+- New `tests/test_compute_audit.py` — synthetic integrator falsification anchor
+  (constant-power and linear-ramp exact-energy, gap-splitting), gate logic, token
+  math, per-family loss fraction, running-run write-back deferral, offline FakeRun
+  (no network). 24 tests.
+- `experiment-evaluate` skill — run-level "Compute audit" preamble before Tier 0
+  (W&B-only, no GPU, once per training run) so the audit fires automatically when a
+  run is evaluated; script-inventory row + outputs/handoff updated.
+- `experiment-track` skill — compute scalars added to "reconstruct run facts",
+  the compute-budget judgment factor (prefer audited scalars; note
+  `compute/audit_state`), and a `Compute` row in the run-report template.
+- `docs/engineering_specs/compute_audit_wandb_panel.md` — frozen engineering spec
+  (grill-me decisions, target design, W&B panel spec the user builds once, validation).
+
+**Verified:** Dry-run + live audit on 5 runs (`concept_ar_prefix_*` E02/E05,
+`concept_ar_*` E01, `perceiver_denoise_*`); `compute/*` scalars persisted to the 4
+finished runs' W&B summaries (read back confirmed); numbers cross-checked (run2
+290.7 GPU-h, 61.4 kWh ≈ 4×210 W×261,630 s/3.6e6; 24.5 B max-tokens). Full pytest
+suite: 194 passed, 9 skipped. The running E05 run is `running-partial` (write-back
+deferred — re-run after it finishes).
+
+**After pull:** the W&B compute panel is built once manually in the UI from the
+spec (bar charts on `compute/gpu_hours` / `compute/energy_kwh` / `compute/max_tokens`
++ a table panel, grouped by `compute/group_for_panel`); thereafter it auto-populates
+for every audited run. No training-loop or model changes.
+
+**Related:** `docs/engineering_specs/compute_audit_wandb_panel.md`,
+`docs/1_Strategy_and_Plans/agenda.md` -> instrumentation / compute comparability.
+
+## [2026-06-27] - Robust pretokenize for huge docs; pretokenized-as-standard data path
+
+**Why:** The live mix loader (`load_dataset`) cannot cap huge recursive sources — DCLM
+(27,838 `.jsonl.zst`) downloaded for ~190h, and a gigantic DCLM web doc killed a `num_proc`
+tokenize worker (opaque "subprocess abruptly died"). Tokenization must be separated from
+training so the long-context mix (DCLM, FinePDFs) is tractable and reusable across the E05
+1-ep/5-ep arms and future phases (SFT, SFT+reasoning).
+
+**Impact:**
+- `data/dataset_preprocess.py` — `_make_tokenize_fn` gains an opt-in `max_chars` param that
+  pre-truncates raw text BEFORE the Fast tokenizer scans it (lossless for the kept
+  `max_seq_length` tokens; default `None` = backward-compatible).
+- `scripts/pretokenize_mix.py` — passes `PRETOKENIZE_MAX_CHARS` (default 100k) and adds a
+  `num_proc=1` fallback so a dead worker surfaces the real error instead of the generic
+  multiprocessing message.
+- `docs/experiments_specs/E05_windowed_decoder_concept_memory.md` — switches the launch
+  workflow to pretokenize → manifest → train (`PRETOKENIZED_MANIFEST`); live
+  `DATASET_MIX_RECIPE` kept only as a small-dataset fallback. Documents the same spine as the
+  standard data path for future phases (objective-agnostic manifest + one tokenize mode + one
+  collator per phase). Records the staged 1ep/5ep proving plan, calibrated batch (8×2,
+  effective 48), LR 1e-4 / warmup 1500.
+
+**Verified:** DCLM tokenized cleanly (1.495M docs, ~11.5 min, no crash); the full e05 mix
+pretokenized (7 sources, 4.93M train rows); E05 1-epoch training launched from the manifest
+and passed the divergence kill-gate (step ~200: loss 14.28, grad_norm 3.4 — vs the 2026-06-26
+divergence at grad_norm 500k).
+
+**After pull:** no action for existing runs (defaults unchanged). For mix training, prefer
+`scripts/pretokenize_mix.py` → `PRETOKENIZED_MANIFEST` over live `DATASET_MIX_RECIPE` for any
+source with `file_glob`/`recursive`/`max_shards` (DCLM, FinePDFs, …).
+
 ## [2026-06-20] - Fix W&B MCP auth (hosted bridge)
 
 **Why:** Local `wandb-mcp-server` pulls `wandb>=0.27.1`, whose Public API path goes through
@@ -45,7 +131,7 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   which uses `is_causal=(mask is None)` (keeps the flash path when no window). `concept_ablation_ce(...,
   window_k=K)` adds beyond/within-window deltas (`delta_{zero,shuffle}_beyond_window`) — the E05 long-range
   memory gate. **Note:** stacked window layers reach ≈ `L·(K−1)` back (depth grows the receptive field).
-- **`data/dataset_preprocess.py`** — `load_and_preprocess_dataset_mix()` + `DATASET_MIXES["e05_long_2k"]`
+- **`data/dataset_preprocess.py`** — `load_and_preprocess_dataset_mix()` + `DATASET_MIXES["long_2k_base_v1"]`
   (FinePDFs-100BT 0.50 / FineWeb-Edu sample-10BT 0.30 / FineMath-3+ 0.20), weighted `interleave_datasets`;
   tokenize fn refactored to module-level `_make_tokenize_fn` (shared with the single-dataset path). No packing.
 - **`training/train_perceiver_denoise.py`** — `--decoder_context_window`, `--dataset_mix`; trainer logs

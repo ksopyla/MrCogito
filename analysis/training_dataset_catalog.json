@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-18",
+  "updated": "2026-06-20",
   "purpose": "Reference catalog of public training datasets cited by recent open models (SmolLM, OLMo, Ouro, Qwen, etc.). Used by playground/training_dataset_catalog.ipynb and long_dataset_seq_len_analysis.ipynb.",
   "models": [
     {
@@ -455,7 +455,9 @@
         "qwen3"
       ],
       "load_notes": "HF default config is code shards; web subsets may need separate collection URLs",
-      "measurement": null
+      "measurement": null,
+      "dataset_rows": "217,499,877",
+      "dataset_rows_source": "HF size API default/train"
     },
     {
       "id": "dolmino_mix",
@@ -531,23 +533,27 @@
         "dolma"
       ],
       "load_notes": "datasets>=3.0 rejects legacy script; needs parquet conversion or old datasets pin",
-      "measurement": null
+      "measurement": null,
+      "dataset_rows": "~38.8M",
+      "dataset_rows_source": "HF dataset card v2 statistics: s2orc train 8,242,162 + s2ag train 30,569,017"
     },
     {
       "id": "nemotron_cc",
       "hf_id": "nvidia/Nemotron-CC-v2",
-      "subset": "various (Sample public)",
+      "subset": "High-Quality | High-Quality-Synthetic | Medium-High-Quality | Medium-Quality | Diverse-QA | Translated-Diverse-QA",
       "hf_url": "https://huggingface.co/datasets/nvidia/Nemotron-CC-v2",
-      "scale": "6.3T tokens",
+      "scale": "~6.6T tokens total (v2: 8,971 parquet files, ~10.3 TB on disk)",
       "type": "pretrain",
-      "domains": "refined Common Crawl",
-      "typical_length": "web; Ouro uses 16k seq in anneal \u2014 implies moderate+",
-      "variety": "high-quality web; Ouro primary corpus",
+      "domains": "refined Common Crawl (EN + multilingual synthetic QA); v2 adds 8 extra CC snapshots 2024-2025 + Qwen3-30B-A3B rephrasing",
+      "typical_length": "web; Ouro anneal uses 16k seq \u2014 implies moderate-to-long tail",
+      "variety": "high-quality web; Ouro primary corpus (v1, 6.3T); v2 succeeds v1 (no longer on HF)",
       "used_by": [
         "ouro"
       ],
-      "load_notes": "Gated \u2014 requires HF auth + license acceptance",
-      "measurement": null
+      "load_notes": "Gated (manual): visit https://huggingface.co/datasets/nvidia/Nemotron-CC-v2 and click Agree to unlock. Account ksopyla authenticated but terms not yet accepted. Original v1 (nvidia/Nemotron-CC, 6.3T, used by Ouro) no longer exists on HF \u2014 v2 is the successor.",
+      "measurement": null,
+      "dataset_rows": "\u2014",
+      "dataset_rows_source": "terms not yet accepted; file metadata available: 8,971 files across 6 configs (HQ: 843, HQ-Synth: 3,216, MHQ: 618, MQ: 2,502, DiverseQA: 1,249, TranslatedQA: 543)"
     },
     {
       "id": "map_cc",
@@ -842,8 +848,10 @@
       "used_by": [
         "smollm3"
       ],
-      "load_notes": "Higher precision than full FineWeb-2",
-      "measurement": null
+      "load_notes": "Higher precision than full FineWeb-2; per-language configs (rus_Cyrl, cmn_Hani, deu_Latn, ...); top 10% of FineWeb-2 by XLM-RoBERTa quality score",
+      "measurement": null,
+      "dataset_rows": "380,138,261",
+      "dataset_rows_source": "HF size API (total across 20 language subsets)"
     },
     {
       "id": "ultra_fineweb",
@@ -858,8 +866,10 @@
       "used_by": [
         "ouro"
       ],
-      "load_notes": "EN and ZH configs; Apache-2.0",
-      "measurement": null
+      "load_notes": "EN and ZH configs; Apache-2.0; also includes Ultra-FineWeb-L3 (400B+ EN + 200B+ ZH synthetic Q&A layer, 2026)",
+      "measurement": null,
+      "dataset_rows": "1,290,261,453",
+      "dataset_rows_source": "HF size API default/train (EN+ZH combined)"
     },
     {
       "id": "refinecode",
@@ -941,6 +951,63 @@
       ],
       "load_notes": "MDS format",
       "measurement": null
+    },
+    {
+      "id": "nemotron_climblmix",
+      "hf_id": "nvidia/Nemotron-ClimbMix",
+      "subset": null,
+      "hf_url": "https://huggingface.co/datasets/nvidia/Nemotron-ClimbMix",
+      "scale": "400B tokens",
+      "type": "pretrain",
+      "domains": "web (Nemotron-CC + smollm-corpus filtered via CLIMB; 1000 topic clusters, 20 semantic sub-clusters)",
+      "typical_length": "web-scale; stored as pre-packed GPT-2 token sequences (~430k tokens/row on HF)",
+      "variety": "CLIMB-optimized: topic-clustered, ad-filtered + educational-scored; outperforms Llama-3.2-1B by 2% on 12 reasoning tasks under equal token budget",
+      "used_by": [],
+      "load_notes": "Pre-tokenized with GPT-2; run detokenize_climbmix.py for raw text. For directly usable raw text use OptimalScale/ClimbMix (see optimalscale_climblmix). Note: ClimbMix token_count column is cluster-level average (~677), not per-document — tokenize text directly. CC BY-NC 4.0 (research only). Paper: arXiv:2504.13161 (NeurIPS 2025 D&B spotlight). Parquet format.",
+      "measurement": null,
+      "dataset_rows": "929,519 tokenized seqs / ~395M est. raw docs",
+      "dataset_rows_source": "HF page (929k pre-packed GPT-2 seqs; 395M estimated from OptimalScale/ClimbMix mirror)"
+    },
+    {
+      "id": "optimalscale_climblmix",
+      "hf_id": "OptimalScale/ClimbMix",
+      "subset": null,
+      "hf_url": "https://huggingface.co/datasets/OptimalScale/ClimbMix",
+      "scale": "400B tokens",
+      "type": "pretrain",
+      "domains": "web (same content as nvidia/Nemotron-ClimbMix; CLIMB-optimized from Nemotron-CC + smollm-corpus)",
+      "typical_length": "web-scale; token_count column available for per-doc length",
+      "variety": "CLIMB-optimized: 20 semantic clusters, ad-filtered + educational-scored; cluster_id column labels each doc",
+      "used_by": [],
+      "load_notes": "Community raw-text mirror of nvidia/Nemotron-ClimbMix (not official NVIDIA). 100 JSONL files. Columns: text, token_count (cluster-level avg — NOT per-doc), cluster_id. No gating. CC BY-NC 4.0 (research only). Use this for training instead of the official pre-tokenized version.",
+      "measurement": {
+        "text_column": "text"
+      },
+      "sample_name": "optimalscale_climblmix",
+      "dataset_rows": "~395M",
+      "dataset_rows_source": "HF estimated row count (1,794,054 parquet rows / 395,295,740 estimated docs)"
+    },
+    {
+      "id": "optimalscale_climbllab",
+      "hf_id": "OptimalScale/ClimbLab",
+      "subset": "cluster_1 ... cluster_20",
+      "hf_url": "https://huggingface.co/datasets/OptimalScale/ClimbLab",
+      "scale": "1.2T tokens (20 semantic clusters x 100 parquet files each)",
+      "type": "pretrain research corpus",
+      "domains": "web (Nemotron-CC + smollm-corpus; filtered into 1000 topic groups then 20 macro-clusters)",
+      "typical_length": "web-scale; text column only",
+      "variety": "research playground: full parent corpus of ClimbMix; each cluster_N subset isolates a semantic topic area for mixture ablations",
+      "used_by": [],
+      "load_notes": "Community raw-text mirror of nvidia/Nemotron-ClimbLab (not official NVIDIA). 2,000 parquet files across 20 cluster folders (cluster_1 to cluster_20, 100 files each). Single column: text. No named HF subsets — use data_files to target a cluster. No gating. CC BY-NC 4.0 (research only). Use for data-mixture ablations.",
+      "measurement": {
+        "text_column": "text",
+        "data_files": [
+          "https://huggingface.co/datasets/OptimalScale/ClimbLab/resolve/main/cluster_1/cluster_1_001.parquet"
+        ]
+      },
+      "sample_name": "optimalscale_climbllab_cluster1",
+      "dataset_rows": "~1.24B",
+      "dataset_rows_source": "HF estimated row count (1,668,456 parquet rows / 1,240,969,840 estimated docs), 3.08 TB"
     }
   ]
 }

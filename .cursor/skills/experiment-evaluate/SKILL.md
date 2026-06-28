@@ -25,6 +25,7 @@ the AR decoder uses its concepts (E01/E02), or reproduce a prior evaluation prot
 ## Script Inventory (the complete map)
 | Aspect | Script | Covers | Families |
 |---|---|---|---|
+| **Compute audit (run-level)** | `analysis/run_compute_audit.py` | GPU-hours, total energy (kWh, trapezoidal integral of per-GPU powerWatts), max training tokens + per-family loss-token estimate, derived ratios; writes `compute/*` to the run's W&B summary for the compute panel | all (reads W&B, no checkpoint) |
 | **Concept geometry** + **AR ablation ΔCE** + **generation samples** | `analysis/run_concept_analysis.py` | effective rank, collapse, diversity; for `concept_ar` also concept-zero/shuffle/floor ΔCE and greedy AR samples | all (AR extras: `concept_ar`) |
 | Geometry metric library | `analysis/concept_analysis.py` | `compute_concept_geometry_metrics` (imported by the runner) | — (library) |
 | Weight/health sanity | `analysis/check_model_health.py` | NaN/Inf, weight stats, dead units before fine-tuning | all |
@@ -83,6 +84,26 @@ LAST="$RUN_ROOT/checkpoint-<last_step>"
 ```
 
 ## The Tiered Pipeline (cost/signal order)
+
+### Run-level preamble — Compute audit (W&B-only, no GPU, once per training run)
+Runs once per **training run** (not per checkpoint), before the per-checkpoint
+tiers. Reads already-logged W&B system metrics + config and writes
+`compute/gpu_hours`, `compute/energy_kwh`, `compute/max_tokens`,
+`compute/loss_tokens_est` + ratios into the run's W&B summary so the compute
+panel (see `docs/engineering_specs/compute_audit_wandb_panel.md`) populates
+automatically. No checkpoint, no GPU — runs on macOS or the server.
+```bash
+uv run python analysis/run_compute_audit.py --run-id <run_id> \
+  --out-dir Cache/Evaluation_reports/compute_audit/
+```
+- Structural hard-fail → `compute/audit_state=failed` (inspect the per-run JSON;
+  do **not** cite that run's compute numbers).
+- Plausibility flag → `compute/audit_state=flagged` (scalars still written; read
+  `compute/flag`).
+- Still-running runs → `compute/audit_state=running-partial`; the local artifact
+  is emitted but summary write-back is deferred (re-run after the run finishes).
+`--dry-run` computes + writes the local artifact without touching W&B. Batch via
+`--group <wandb_group>` or `--tag <tag>`.
 
 ### Tier 0 — Health / sanity (seconds, do once per checkpoint)
 Catch numerical corruption before spending GPU time.
@@ -198,6 +219,7 @@ Repeat the whole pipeline for `$LAST`, changing the output JSON / report labels.
 - Shell log path, usually `Cache/logs/eval_<id>_<timestamp>.log`.
 - Concept-analysis JSON (geometry + `concept_ablation` + `generation_samples`) in `Cache/Evaluation_reports/`.
 - Benchmark CSVs in `Cache/Evaluation_reports/`.
+- Compute-audit CSV + chart in `Cache/Evaluation_reports/compute_audit/` and `compute/*` scalars on the run's W&B summary (from the run-level preamble).
 - W&B run URLs for STS-B / SICK / PAWS / GLUE.
 - Checkpoint paths and `checkpoint_family` metadata.
 
@@ -205,7 +227,9 @@ For the handoff to `experiment-track`, report: best + last checkpoint paths; con
 effective rank and key collapse/diversity metrics; concept-ablation Δzero/Δshuffle (and the
 no-concept floor); STS-B zero-shot Pearson/Spearman; SICK relatedness Pearson/Spearman;
 SICK entailment accuracy; PAWS accuracy/F1; GLUE semantic-subset scores; a generation-sample
-snippet; and any failed task with its first traceback line.
+snippet; **compute scalars** (`compute/gpu_hours`, `compute/energy_kwh`, `compute/max_tokens`,
+`compute/loss_tokens_est` + `compute/audit_state`/`compute/flag` from the run-level preamble);
+and any failed task with its first traceback line.
 
 ## Interpreting Results
 - **Within-sample concept RankMe** is the collapse gate (see Tier 1); slot-mean rank is only a

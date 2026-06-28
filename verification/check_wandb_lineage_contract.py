@@ -43,8 +43,10 @@ def is_linked(run: Any) -> bool:
     run_id = cfg.get("source_training_run_id")
     group = cfg.get("source_training_group")
     step = cfg.get("source_checkpoint_step")
+    checkpoint_id = cfg.get("source_checkpoint_id")
     status = cfg.get("lineage_status")
-    return bool(run_id and group and step is not None and status == "linked")
+    has_checkpoint_ref = (step is not None) or (checkpoint_id == "final_model")
+    return bool(run_id and group and has_checkpoint_ref and status == "linked")
 
 
 def main() -> int:

@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+# Ensure uv (and thus `uv run python`) is on PATH when invoked from byobu/non-login shells.
+export PATH="${HOME}/.local/bin:${PATH}"
+
 echo "=== Perceiver Denoising Multi-GPU Training ==="
 echo "Default profile: Odra A1 reconstruction baseline"
 
@@ -20,18 +23,16 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-max_split_size_mb:512
 export OMP_NUM_THREADS=8
 export TOKENIZERS_PARALLELISM=false
 
-PROJECT_ROOT="/home/ksopyla/dev/MrCogito"
-if [ ! -d "$PROJECT_ROOT" ]; then
-    PROJECT_ROOT="$(pwd)"
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/remote_paths.sh
+source "${SCRIPT_DIR}/remote_paths.sh"
 
-export HF_HOME="${PROJECT_ROOT}/../hf_home"
-export HF_DATASETS_CACHE="${PROJECT_ROOT}/../hf_home/datasets"
-OUTPUT_DIR="${PROJECT_ROOT}/Cache/Training"
-LOGGING_DIR="${PROJECT_ROOT}/Cache/logs"
 SHELL_LOG="${LOGGING_DIR}/shell_perceiver_denoise_$(date +%Y%m%d_%H%M%S).log"
 
-mkdir -p "$OUTPUT_DIR" "$LOGGING_DIR" "$HF_DATASETS_CACHE"
+echo "HF_HOME=${HF_HOME}"
+echo "HF_DATASETS_CACHE=${HF_DATASETS_CACHE}"
+echo "OUTPUT_DIR=${OUTPUT_DIR}"
+echo "LOGGING_DIR=${LOGGING_DIR}"
 
 # Default experiment profile:
 # A1 on Odra = clean perceiver_denoise reconstruction baseline
@@ -59,8 +60,13 @@ ANCHOR_STANDARDIZE="${ANCHOR_STANDARDIZE:-true}"
 ANCHOR_HEAD_LAYERS="${ANCHOR_HEAD_LAYERS:-2}"
 DATASET_NAME="${DATASET_NAME:-JeanKaddour/minipile}"
 DATASET_SUBSET="${DATASET_SUBSET:-}"
-# E05: registered multi-dataset mix name (e.g. e05_long_2k). Empty = single dataset above.
+# Registered multi-dataset mix name (e.g. long_2k_base_v1). Empty = single dataset above.
 DATASET_MIX="${DATASET_MIX:-}"
+# Preferred recipe-based mix config (path or id under data/mix_recipes/).
+DATASET_MIX_RECIPE="${DATASET_MIX_RECIPE:-}"
+# E05: path to a manifest JSON from scripts/pretokenize_mix.py. When set, training
+# loads pre-tokenized sources via load_from_disk (instant) and ignores dataset_mix*.
+PRETOKENIZED_MANIFEST="${PRETOKENIZED_MANIFEST:-}"
 TOKENIZER_NAME="${TOKENIZER_NAME:-answerdotai/ModernBERT-base}"
 MAX_SEQ_LENGTH="${MAX_SEQ_LENGTH:-512}"
 DELETION_RATE="${DELETION_RATE:-0.6}"
@@ -110,11 +116,27 @@ WINDOW_ARGS=()
 if [ -n "$DECODER_CONTEXT_WINDOW" ]; then
     WINDOW_ARGS+=(--decoder_context_window "$DECODER_CONTEXT_WINDOW")
 fi
+# Long-context: O(N*K) memory windowed attention backend (optional). Default empty = sdpa.
+if [ -n "${DECODER_ATTN_IMPL:-}" ]; then
+    WINDOW_ARGS+=(--decoder_attn_impl "$DECODER_ATTN_IMPL")
+fi
+if [ -n "${DECODER_ATTN_CHUNK_SIZE:-}" ]; then
+    WINDOW_ARGS+=(--decoder_attn_chunk_size "$DECODER_ATTN_CHUNK_SIZE")
+fi
+if [ -n "${CHUNKED_CE_BLOCK_SIZE:-}" ]; then
+    WINDOW_ARGS+=(--chunked_ce_block_size "$CHUNKED_CE_BLOCK_SIZE")
+fi
 
 # E05: pass --dataset_mix only when set (overrides the single dataset path).
 MIX_ARGS=()
 if [ -n "$DATASET_MIX" ]; then
     MIX_ARGS+=(--dataset_mix "$DATASET_MIX")
+fi
+if [ -n "$DATASET_MIX_RECIPE" ]; then
+    MIX_ARGS+=(--dataset_mix_recipe "$DATASET_MIX_RECIPE")
+fi
+if [ -n "$PRETOKENIZED_MANIFEST" ]; then
+    MIX_ARGS+=(--pretokenized_manifest "$PRETOKENIZED_MANIFEST")
 fi
 
 ANCHOR_ARGS=()
@@ -128,7 +150,7 @@ if [ "$ANCHOR_LOSS" = "true" ]; then
     )
 fi
 
-accelerate launch \
+uv run accelerate launch \
     --num_processes="$NUM_GPUS" \
     --num_machines=1 \
     --mixed_precision=bf16 \
@@ -198,4 +220,4 @@ accelerate launch \
     "${MIX_ARGS[@]}" \
     "${ANCHOR_ARGS[@]}" \
     "${RESUME_ARGS[@]}" \
-    2>&1 | python scripts/clean_tee.py "$SHELL_LOG"
+    2>&1 | uv run python scripts/clean_tee.py "$SHELL_LOG"
