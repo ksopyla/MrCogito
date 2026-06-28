@@ -27,32 +27,16 @@ if [ -d "$HOME/.local/bin" ]; then
     export PATH="$HOME/.local/bin:$PATH"
 fi
 
-# Load .env for HF_TOKEN (enables HF Hub model download without manual login)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/remote_paths.sh
+source "${SCRIPT_DIR}/remote_paths.sh"
+
+# Load .env for HF_TOKEN (enables HF Hub model download without manual login)
 ENV_FILE="$(dirname "$SCRIPT_DIR")/.env"
 if [ -f "$ENV_FILE" ]; then
     set -a; source "$ENV_FILE" 2>/dev/null || true; set +a
 fi
 
-# --- Configuration ---
-
-# Project root - automatically detect or set hardcoded
-# Adapting to Odra server path structure
-PROJECT_ROOT="/home/ksopyla/dev/MrCogito"
-
-if [ ! -d "$PROJECT_ROOT" ]; then
-    echo "Warning: Project root $PROJECT_ROOT not found. Using current directory."
-    PROJECT_ROOT="$(pwd)"
-fi
-
-# Set HuggingFace cache directories (Consistent with training script)
-export HF_HOME="${PROJECT_ROOT}/../hf_home"
-export HF_DATASETS_CACHE="${PROJECT_ROOT}/../hf_home/datasets"
-
-# Unset deprecated variable to avoid warnings
-unset TRANSFORMERS_CACHE
-
-# Suppress tokenizer parallelism fork warning (harmless, but noisy)
 export TOKENIZERS_PARALLELISM=false
 
 # Model Configuration - set both together!

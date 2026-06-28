@@ -155,8 +155,142 @@ def test_beyond_window_ablation_metrics_present():
     assert "delta_zero_beyond_window" not in m2
 
 
+def test_decoder_suffix_padding_mask_blocks_pad_noise():
+    """A padded suffix tail must not change logits at real positions.
+
+    The AR decoder receives suffix_attention_mask (1=real, 0=pad); padded keys are masked
+    out of self-attention so real queries don't attend pad noise. With the fix, flipping
+    pad-token ids in the tail leaves logits at real positions unchanged; without the
+    key_padding_mask the pad tail would leak into the windowed self-attention.
+    """
+    K = 4
+    config = _tiny_config(decoder_context_window=K, decoder_num_layers=2)
+    model = ConceptEncoderForConditionalLM(config).eval()
+    B, T = 2, 16
+    real_len = 10  # positions [0:10] real, [10:16] pad
+    prefix_ids = torch.randint(3, config.vocab_size, (B, T))
+    prefix_mask = torch.ones(B, T, dtype=torch.long)
+    suffix_ids = torch.randint(3, config.vocab_size, (B, T))
+    suffix_ids[:, real_len:] = config.pad_token_id
+    suffix_mask = torch.zeros(B, T, dtype=torch.long)
+    suffix_mask[:, :real_len] = 1
+    labels = suffix_ids.clone()
+    labels[:, real_len:] = -100
+
+    with torch.no_grad():
+        out_a = model(
+            prefix_input_ids=prefix_ids, prefix_attention_mask=prefix_mask,
+            suffix_input_ids=suffix_ids, suffix_attention_mask=suffix_mask, labels=labels,
+        )
+        # Change the pad tail to different ids — real-position logits must be identical.
+        suffix_ids2 = suffix_ids.clone()
+        suffix_ids2[:, real_len:] = (config.pad_token_id + 7) % config.vocab_size
+        out_b = model(
+            prefix_input_ids=prefix_ids, prefix_attention_mask=prefix_mask,
+            suffix_input_ids=suffix_ids2, suffix_attention_mask=suffix_mask, labels=labels,
+        )
+
+    # Logits at real positions are identical (pad tail doesn't leak in).
+    diff = (out_a.logits - out_b.logits).abs()
+    assert diff[:, :real_len].max().item() < 1e-5, "pad tail leaked into real-position logits"
+    # Loss is finite (no NaN from masked query rows).
+    assert torch.isfinite(out_a.loss)
+
+
+def test_decoder_suffix_padding_mask_finite_with_full_pad_row():
+    """A fully-padded suffix row (edge case) must not NaN the loss."""
+    config = _tiny_config(decoder_context_window=4, decoder_num_layers=2)
+    model = ConceptEncoderForConditionalLM(config).eval()
+    B, T = 2, 12
+    prefix_ids = torch.randint(3, config.vocab_size, (B, T))
+    prefix_mask = torch.ones(B, T, dtype=torch.long)
+    suffix_ids = torch.full((B, T), config.pad_token_id, dtype=torch.long)
+    # Row 0 has real content, row 1 is fully pad.
+    suffix_ids[0, :8] = torch.randint(3, config.vocab_size, (8,))
+    suffix_mask = torch.zeros(B, T, dtype=torch.long)
+    suffix_mask[0, :8] = 1
+    labels = suffix_ids.clone()
+    labels[suffix_mask == 0] = -100
+    with torch.no_grad():
+        out = model(
+            prefix_input_ids=prefix_ids, prefix_attention_mask=prefix_mask,
+            suffix_input_ids=suffix_ids, suffix_attention_mask=suffix_mask, labels=labels,
+        )
+    assert torch.isfinite(out.loss)
+
+
+def test_chunked_window_attention_matches_sdpa():
+    """The O(N*K) chunked windowed attention is numerically equivalent to the full
+    bool-mask SDPA path (within bf16 precision) — required so E05 results stay valid
+    when decoder_attn_impl='chunked_window'."""
+    from nn.concept_encoder_perceiver import _chunked_window_causal_attention
+    torch.manual_seed(0)
+    B, h, N, d, K = 2, 4, 512, 16, 64
+    q = torch.randn(B, h, N, d, dtype=torch.bfloat16)
+    k = torch.randn(B, h, N, d, dtype=torch.bfloat16)
+    v = torch.randn(B, h, N, d, dtype=torch.bfloat16)
+    idx = torch.arange(N)
+    causal = idx[:, None] >= idx[None, :]
+    win = idx[:, None] - idx[None, :] < K
+    mask = (causal & win)[None, None, :, :]
+    ref = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=mask, is_causal=False)
+    chk = _chunked_window_causal_attention(q, k, v, window=K, chunk_size=128)
+    assert torch.allclose(ref, chk, atol=1e-2, rtol=1e-2), (
+        f"chunked window attn diverged: max diff {(ref - chk).abs().max().item()}"
+    )
+
+
+def test_chunked_window_attention_with_padding_mask():
+    """Padding mask is folded per chunk: padded keys are ignored, real output matches
+    the no-pad reference on the real-prefix subset."""
+    from nn.concept_encoder_perceiver import _chunked_window_causal_attention
+    torch.manual_seed(1)
+    B, h, N, d, K = 1, 2, 256, 16, 32
+    real = 200
+    q = torch.randn(B, h, N, d, dtype=torch.bfloat16)
+    k = torch.randn(B, h, N, d, dtype=torch.bfloat16)
+    v = torch.randn(B, h, N, d, dtype=torch.bfloat16)
+    kpm = torch.zeros(B, N, dtype=torch.bool)
+    kpm[:, real:] = True  # pad tail
+    out = _chunked_window_causal_attention(q, k, v, window=K, chunk_size=64, key_padding_mask=kpm)
+    # Reference on the real prefix only (no padding).
+    ref = _chunked_window_causal_attention(q[:, :, :real, :], k[:, :, :real, :], v[:, :, :real, :],
+                                           window=K, chunk_size=64)
+    assert torch.allclose(out[:, :, :real, :], ref, atol=1e-2, rtol=1e-2), (
+        f"padding mask broke real-prefix output: max diff {(out[:,:,:real,:]-ref).abs().max().item()}"
+    )
+    assert torch.isfinite(out).all()
+
+
+def test_chunked_ce_matches_full_ce():
+    """F2: the chunked lm_head+CE matches the full-logits CE (mean over non-ignored)."""
+    torch.manual_seed(2)
+    B, T, H, V = 2, 64, 16, 40
+    cfg = _tiny_config()
+    cfg.vocab_size = V
+    cfg.hidden_size = H
+    cfg.token_embedding_dim = H
+    cfg.num_attention_heads = 4
+    cfg.max_sequence_length = T
+    model = ConceptEncoderForConditionalLM(cfg)
+    hidden = torch.randn(B, T, H, requires_grad=True)
+    labels = torch.randint(0, V, (B, T))
+    labels[0, -8:] = -100  # some ignored
+    # Reference: full logits -> CE (mean over non-ignored)
+    ref_logits = model.lm_head(hidden)
+    ref = torch.nn.functional.cross_entropy(
+        ref_logits.reshape(-1, V), labels.reshape(-1), ignore_index=-100)
+    chk = model._chunked_teacher_forced_ce(hidden.detach().requires_grad_(True), labels, block_size=16)
+    assert torch.allclose(ref, chk, atol=1e-4, rtol=1e-4), (
+        f"chunked CE diverged: ref={ref.item()} chk={chk.item()}")
+    # backward flows through lm_head (chunked path uses it internally)
+    model.zero_grad()
+    chk.backward()
+    assert model.lm_head.weight.grad is not None
+    assert torch.isfinite(model.lm_head.weight.grad).all()
+
+
 def test_long_context_mix_is_registered_and_normalisable():
-    """The long-context base mix exists, sums sensibly, and references real loadable sources."""
     from data.dataset_preprocess import DATASET_MIXES
 
     mix = DATASET_MIXES["long_2k_base_v1"]
@@ -170,3 +304,30 @@ def test_long_context_mix_is_registered_and_normalisable():
     # FinePDFs (the long-doc backbone) carries the most weight.
     backbone = max(mix, key=lambda s: s["weight"])
     assert "finepdfs" in backbone["name"].lower()
+
+
+def test_smollm3_inspired_2k_recipe_loads_and_is_well_formed():
+    """The actual E05 launch mix (smollm3_inspired_2k) loads as a recipe, sums to 1.0,
+    is objective-compatible with prefix_suffix, and carries the projected >2K long-context
+    tail that E05's concept-memory gate depends on."""
+    from data.dataset_preprocess import load_mix_recipe
+
+    recipe = load_mix_recipe("smollm3_inspired_2k")
+    assert recipe["mix_id"] == "smollm3_inspired_2k"
+    sources = recipe["sources"]
+    assert len(sources) >= 2
+    total_w = sum(s["weight"] for s in sources)
+    assert abs(total_w - 1.0) < 1e-6, f"weights sum to {total_w}, expected 1.0"
+    for spec in sources:
+        assert spec.get("hf_id") or spec.get("data_files")
+        assert spec.get("text_columns")
+        assert spec.get("max_samples", 0) > 0
+    # E05 launches with prefix_suffix; the recipe must declare it compatible.
+    compat = recipe.get("objective_compatibility", [])
+    assert "prefix_suffix" in compat, f"recipe not prefix_suffix-compatible: {compat}"
+    # The long-context tail that forces cross-window routing through concepts.
+    profile = recipe.get("expected_length_profile_from_2026_06_20_sample", {})
+    assert profile.get("estimated_docs_over_2k_pct", 0) >= 18.0, (
+        f"recipe >2K tail too small for E05: {profile}"
+    )
+    assert int(recipe.get("seq_len_target", 0)) == 2048

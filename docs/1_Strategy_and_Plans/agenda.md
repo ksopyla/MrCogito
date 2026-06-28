@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-06-20 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [../experiments/](../experiments/).
+**Updated:** 2026-06-28 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [../experiments/](../experiments/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -18,11 +18,11 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 
 ## Current focus
 - **Move from collapse diagnosis to the next architecture test.** E01–E04 are done and evaluated. E02-long (STS-B 0.714, RankMe 246) remains the semantic leader; its Tier-2.5 probe (2026-06-20) confirms distributed concept information hidden from mean pooling (SICK mean −0.203 → attention 0.133, Δ+0.336; PAWS mixed). E03 anchor helps at 0.3 ep reconstruction but should stay an auxiliary lever, not the main research direction. E04 shows bypass removal improves geometry (within-sample RankMe 108, cross-sample 178) but not E02-level semantics.
-- **Run state (2026-06-20):** E04 DONE on Odra; E02-long pool probe DONE on Polonez (`concept_ar_prefix_H768L6C128D4_20260614_101305`, ck-296000). **Odra free; Polonez free after eval.** Next main candidate: **E05 from scratch with prefix→suffix objective** — matched full-causal vs windowed-causal context, concepts as the only cross-window memory.
+- **Run state (2026-06-27):** long-context engineering rounds 1–2 done (F1–F4, F2′, F6 sequence parallelism → 1M on 3× 3090; F7 Muon) — see "what we've explored"; **Odra now free for E05.** **Active: E05 staged proving plan** — (1) 1-epoch windowed arm with an early divergence kill-gate, then (2) E05-long 5-epoch matched A/B (windowed + full-causal control); mix `smollm3_inspired_2k_e05`, LR 1e-4 / warmup 1500 (the 2026-06-26 fix; 3e-4 / 500 diverged). Concepts as the only cross-window memory.
 - **Queued (sequential — one experiment per server):**
   1. ~~**E03 matched control**~~ **DONE 2026-06-18**
   2. ~~**E04 parallel decoder**~~ **DONE 2026-06-20** — see "what we've explored".
-  3. **E05 windowed decoder from scratch, prefix→suffix objective** — [(spec)](../experiments_specs/E05_windowed_decoder_concept_memory.md) · foundation implemented; amend the spec/plan from reconstruction to prefix→suffix before launch.
+  3. **E05 windowed decoder, staged proving on Odra** — [(spec)](../experiments_specs/E05_windowed_decoder_concept_memory.md) · foundation implemented; spec updated 2026-06-27. Mix `smollm3_inspired_2k_e05`, LR 1e-4 / warmup 1500 (3e-4 / 500 diverged 2026-06-26). **(1)** 1-epoch windowed arm (early divergence kill-gate; proves stable training + 1-ep de-collapse), **(2)** E05-long 5-epoch matched A/B (windowed + full-causal control; tests windowed > control on beyond-window Δ + de-collapse-with-scale vs E02-long). K=128 fixed; C scales with N, never K.
   4. **Prefix→suffix + anchor (auxiliary ablation, not main focus):** useful only if E05 needs an anchor/control read, not the default next run.
   5. **Decoder-weakening ablation (sibling of E03):** same E01/E02 stack, single change `DECODER_WORD_DROPOUT=0.5`. Needs a frozen spec before the full run.
 
@@ -40,10 +40,13 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 5. **E05 — windowed decoder + concepts as cross-window memory** [(spec)](../experiments_specs/E05_windowed_decoder_concept_memory.md) · [(plan)](../experiments_specs/E05_windowed_decoder_concept_memory_plan.md)
    *(largest lift; long-context program; **foundation implemented 2026-06-18**, E04 gate cleared).*
    Local window for fluency + concepts as the ONLY cross-window carrier (Gist/ICAE/AutoCompressor-style).
-   **Scoped to seq-len 2K + a long-doc dataset mix** (`DATASET_MIX=long_2k_base_v1`: FinePDFs 0.50 / FineWeb-Edu 0.30 /
-   FineMath-3+ 0.20). Single change = `DECODER_CONTEXT_WINDOW=K` (default 256) on `causal_ar`; matched window-ON/OFF
-   pair; gate = beyond-window concept-ablation Δ (`run_concept_analysis.py --ablation_window_k K`) + RankMe.
-   **Caveat:** stacked window layers reach ≈ `L·(K−1)` back — pick K against depth, not K alone. This is the 10M-token bet's Stage-A.
+   **Scoped to seq-len 2K + a long-doc dataset mix** (`DATASET_MIX_RECIPE=smollm3_inspired_2k`: SmolLM3-inspired mix with
+   explicit long-tail boosters, ~21% docs >2K). Single change = `DECODER_CONTEXT_WINDOW=128` (fixed) on `causal_ar` +
+   `prefix_suffix` objective; matched window-ON/OFF pair; gate = beyond-window concept-ablation Δ
+   (`run_concept_analysis.py --ablation_window_k 128`, co-reported at 508 for the concept-only read) + RankMe.
+   **K is a fixed coherence window (128), never scaled to N** — the concept count C is what scales with N (per vision);
+   raising K would reintroduce O(N·K) local decoding and defeat the bottleneck. Depth caveat: stacked window layers reach
+   ≈ `L·(K−1)` ≈ 508 back; if the gate is weak, lower depth or raise seq-len — do not raise K. This is the 10M-token bet's Stage-A.
 6. **E06 — latent-space prediction** [(spec)](../experiments/E06_latent_space_prediction.md)
    *(reuses E03 machinery).* Anchor promoted from auxiliary to primary objective (JEPA/data2vec/CPC) —
    learning signal entirely in representation space, no token bypass.
@@ -76,6 +79,14 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
    - **Cross-tokenizer / dim embedding-transfer module** for warm-start — **FVT/OMP (vocab) + truncated
      SVD (dim)**; bare PCA covers only the dim leg. Build when the first warm-start run needs it (E03
      does not — it trains from scratch with a *frozen* teacher).
+   - **Compute audit + W&B compute panel — DONE 2026-06-28** (instrumentation, post-hoc). `analysis/run_compute_audit.py`
+     reads already-logged W&B system metrics and writes `compute/gpu_hours`, `compute/energy_kwh` (trapezoidal integral of
+     per-GPU `powerWatts`), `compute/max_tokens`, `compute/loss_tokens_est` + ratios into each run's W&B summary, so a
+     native W&B custom panel (grouped by `compute/group_for_panel`) compares runs on compute spent — primarily within a
+     `wandb_group` (same experiment, varying data mix / optimization / hyperparameters). No training-loop change / no
+     throughput tax; fires automatically via the `experiment-evaluate` run-level preamble. Structural gates hard-fail,
+     plausibility gates write-with-flag, synthetic integrator unit-tested. Spec:
+     [compute_audit_wandb_panel.md](../engineering_specs/compute_audit_wandb_panel.md). Audited 5 past runs (E01/E02/E05/perceiver).
 7. **Parked / not scheduled:** the **token↔concept asymmetry sweep** (`token_embedding_dim` 128/256/512,
    the former "E03") is demoted to a **P1-era E02 ablation**, not a headline experiment. Further knobs
    later (optimizer Muon/Lion, longer context, `C`-vs-`N` scaling, encoder-side RoPE).
@@ -94,6 +105,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 - **E02-long — prefix→suffix, 5 epochs (FineWeb-Edu, Polonez, eval 2026-06-18; Tier-2.5 probe 2026-06-20):** **the most important reframe so far.** Longer prefix→suffix training **de-collapses** concepts: slot rank rises 5.9 → 11.6 → 16.7 across 0.3/1/5 epochs — the *opposite* of E01 reconstruction (rank 14.6 → 4.6 over 1 epoch). Upgraded metrics show genuinely healthy geometry (RankMe 245.9, anisotropy 0.32, mean concept cosine 0.124, 63 dims for 95% var). STS-B 0.714 (new project best, +0.012 over 1-ep E02) plateaus despite 5× budget + much richer geometry. Tier-2.5 confirms the extra structure is partly distributed across slots: SICK relatedness improves from mean **P −0.203** to attention **P 0.133** (Δ**+0.336**), while PAWS is mixed (accuracy +0.037, F1 −0.051). **Takeaway:** "concept collapse" is **objective-dependent, not universal** — prefix→suffix improves with scale and is the right objective basis for E05. See [run report](../2_Experiments_Registry/run_reports/e02_long_5epoch_20260618.md).
 - **E04 — parallel Perceiver-IO decoder, reconstruction (FineWeb-Edu, Odra, eval 2026-06-20):** removes the AR bypass (no token self-attention). **Within-sample RankMe 107.8**, cross-sample RankMe 177.8 (+27 vs E03 control); STS-B 0.532 > control 0.485 but << E02 0.702. Tier-2.5 pool probe: SICK ΔPearson **+0.22** (mean −0.07 → attn 0.16) — distributed geometry partially hidden from mean pool; PAWS inconclusive; absolute semantics still weak. See [run report](../2_Experiments_Registry/run_reports/e04_parallel_decoder_20260620.md).
 - **Anchor status after E03/E02-long:** anchoring concepts to frozen pretrained per-token hidden states helps reconstruction relative to a matched control, but it is an auxiliary/de-risking lever, not the main research direction. The architecture-first path is E05 from scratch with prefix→suffix.
+- **Long-context engineering, round 2 (2026-06-27):** the real memory wall was the **output head**, not the encoder — F2's chunked CE secretly retained `[B,N,V]` in the autograd graph (fixed by `ChunkedLMHeadCE`; **256K now fits on one 3090**). **Sequence parallelism (F6) reaches 1M context on 3× 3090 at 22.6 GB/GPU** (validated ≡ single-GPU to ~1e-6 in loss + all grads). **Muon** converges ~2× faster than AdamW on wikitext-103. 10M is the hardware ceiling for 24 GB cards (needs 80 GB cards / ~30 GPUs). Full note: [long_context_memory_optimization_round2_2026_06_27.md](../4_Research_Notes/long_context_memory_optimization_round2_2026_06_27.md).
 - Full history (with caveats): [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md); older roadmap + TODO diary in [5_Archive/](../5_Archive/).
 
 ## Not active right now (still part of the Vision)

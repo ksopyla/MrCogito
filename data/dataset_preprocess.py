@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from datasets import load_dataset, interleave_datasets, concatenate_datasets
+from datasets import load_dataset, load_from_disk, interleave_datasets, concatenate_datasets
 from transformers import DataCollatorForWholeWordMask
 from transformers.utils import logging
 
@@ -13,15 +13,23 @@ logger = logging.get_logger(__name__)
 MIX_RECIPES_DIR = Path(__file__).resolve().parent / "mix_recipes"
 
 
-def _make_tokenize_fn(tokenizer, max_seq_length, append_eos_token_id):
+def _make_tokenize_fn(tokenizer, max_seq_length, append_eos_token_id, max_chars=None):
     """Build the batched tokenize function shared by the single-source and mix loaders.
 
     append_eos_token_id is None  -> legacy pad-to-max_length path (perceiver MLM etc.).
     append_eos_token_id is set    -> variable-length rows with one EOS appended (AR / long-context),
                                      padding deferred to the data collator.
+    max_chars -> if set, truncate each raw text to this many characters BEFORE tokenizing.
+        Guards against gigantic web/PDF docs OOM-ing or crashing a tokenize worker: the Fast
+        tokenizer scans the *whole* input string even though ``truncation=max_seq_length``
+        discards all but ~8k chars, so a 100MB DCLM web page can kill a ``num_proc`` worker
+        before truncation runs. Lossless for the kept tokens when ``max_chars`` >> max_seq_length.
+        Default ``None`` preserves the original behaviour (no pre-truncation).
     """
     def tokenize_batch_function(examples):
         text_batch = examples["text"]
+        if max_chars:
+            text_batch = [t[:max_chars] if t and len(t) > max_chars else t for t in text_batch]
         if append_eos_token_id is None:
             return tokenizer(
                 text_batch,
@@ -648,6 +656,48 @@ def load_and_preprocess_dataset_mix(
     logger.info(
         f"[mix] interleaved train={len(train_ds):,} (probs={[round(p, 3) for p in probabilities]}) "
         f"| eval={len(test_ds):,}"
+    )
+    return train_ds, test_ds
+
+
+def load_pretokenized_mix(manifest_path):
+    """Load a pre-tokenized mix produced by `scripts/pretokenize_mix.py`.
+
+    Reads the manifest JSON, `load_from_disk`s each source's train/eval dirs,
+    interleaves train parts by the manifest weights, and concatenates eval parts.
+    Instant — no download, no tokenization. Returns (train_ds, test_ds).
+    """
+    manifest_path = Path(manifest_path)
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"Pretokenized manifest not found: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text())
+    logger.info(
+        f"[pretokenized] loading mix '{manifest.get('mix_id')}' from {manifest_path}"
+        f" (seq={manifest.get('max_seq_length')}, obj={manifest.get('objective')})"
+    )
+
+    train_parts, eval_parts, weights = [], [], []
+    for src in manifest["sources"]:
+        name = src["name"]
+        tr = load_from_disk(src["train_path"])
+        ev = load_from_disk(src["eval_path"])
+        train_parts.append(tr)
+        eval_parts.append(ev)
+        weights.append(float(src.get("weight", 1.0)))
+        logger.info(f"[pretokenized]   '{name}': {len(tr):,} train / {len(ev):,} eval rows")
+
+    total_w = sum(weights)
+    probabilities = [w / total_w for w in weights]
+    train_ds = interleave_datasets(
+        train_parts,
+        probabilities=probabilities,
+        seed=manifest.get("seed", 42),
+        stopping_strategy="all_exhausted",
+    )
+    test_ds = concatenate_datasets(eval_parts)
+    logger.info(
+        f"[pretokenized] interleaved train={len(train_ds):,}"
+        f" (probs={[round(p, 3) for p in probabilities]}) | eval={len(test_ds):,}"
     )
     return train_ds, test_ds
 
