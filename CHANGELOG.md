@@ -57,8 +57,13 @@ no training-loop change and no throughput tax.
 **Verified:** Dry-run + live audit on 5 runs (`concept_ar_prefix_*` E02/E05,
 `concept_ar_*` E01, `perceiver_denoise_*`); `compute/*` scalars persisted to the 4
 finished runs' W&B summaries (read back confirmed); numbers cross-checked (run2
-290.7 GPU-h, 61.4 kWh ≈ 4×210 W×261,630 s/3.6e6; 24.5 B max-tokens). Full pytest
-suite: 194 passed, 9 skipped. The running E05 run is `running-partial` (write-back
+290.7 GPU-h, 61.4 kWh ≈ 4×210 W×261,630 s/3.6e6; 24.5 B max-tokens). Added
+`compute/max_tokens_b` (tokens in billions) so the grouped "compute profile"
+panel can show GPU-hours / energy / tokens on one linear axis (raw tokens ~1e9
+dominate); these are **stable absolute values** (comparable across past and future
+runs — cohort-relative `%` was rejected because a future heavier run would rescale
+everything), with a `_profile.png` chart mirroring the panel. Full pytest suite:
+198 passed, 9 skipped. The running E05 run is `running-partial` (write-back
 deferred — re-run after it finishes).
 
 **After pull:** the W&B compute panel is built once manually in the UI from the
