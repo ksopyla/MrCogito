@@ -88,6 +88,11 @@ LOGGING_STEPS="${LOGGING_STEPS:-200}"
 EVAL_STEPS="${EVAL_STEPS:-2000}"
 SAVE_STEPS="${SAVE_STEPS:-2000}"
 SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-5}"
+# Max gradient norm for clipping. HF Trainer default is 1.0; lower it (e.g. 0.5)
+# as a stability lever when divergence is the failure mode (2026-06-28 E05 had
+# pre-clip grad_norm up to 903; the default 1.0 still let bad-direction updates
+# dominate the late-run loss landscape).
+MAX_GRAD_NORM="${MAX_GRAD_NORM:-1.0}"
 SAVE_SAFETENSORS="${SAVE_SAFETENSORS:-True}"
 SEED="${SEED:-42}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-4}"
@@ -207,6 +212,7 @@ uv run accelerate launch \
     --dataloader_num_workers "$DATALOADER_NUM_WORKERS" \
     --gradient_checkpointing False \
     --optim "adamw_torch_fused" \
+    --max_grad_norm "$MAX_GRAD_NORM" \
     --lr_scheduler_type "cosine" \
     --report_to "wandb" \
     --save_safetensors "$SAVE_SAFETENSORS" \

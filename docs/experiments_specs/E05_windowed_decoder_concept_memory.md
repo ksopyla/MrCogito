@@ -1,6 +1,6 @@
 # E05 — Windowed decoder + concepts as cross-window memory
 
-- **Status:** foundation implemented 2026-06-18; docs reconciled 2026-06-25. **2026-06-26: first launch DIVERGED at step ~20 (LR 3e-4 / warmup 500 too hot for seq-2048 + windowed mask; grad_norm → 500k, beyond-window Δzero went negative — kill gate MET at 43% budget). Stopped. Fixed a latent AR-decoder padding-mask bug (suffix_attention_mask was discarded) and made LR/warmup/eval-steps env-overridable.** **2026-06-27: staged proving plan on Odra (3× 3090), mix `smollm3_inspired_2k_e05`, LR 1e-4 / warmup 1500 — (1) E05 1-epoch windowed arm with an early divergence kill-gate, then (2) E05-long 5-epoch matched A/B (windowed + full-causal control) to test de-collapse-with-scale and windowed > control on beyond-window Δ.** **Data-pipeline fix (2026-06-27): the mix is pretokenized via `scripts/pretokenize_mix.py` (the live `load_dataset` path can't cap DCLM's 27,838 `.jsonl.zst` files — ~190 h — and a huge DCLM doc killed a tokenize worker; pretokenize honors `max_shards` and adds a `PRETOKENIZE_MAX_CHARS` huge-doc guard + a `num_proc=1` fallback). Training loads the manifest via `PRETOKENIZED_MANIFEST` (instant `load_from_disk`). This pretokenize→manifest→train spine is the standard data path for all future phases (SFT, SFT+reasoning).**
+- **Status:** foundation implemented 2026-06-18; docs reconciled 2026-06-25. **2026-06-26: first launch DIVERGED at step ~20 (LR 3e-4 / warmup 500 too hot for seq-2048 + windowed mask; grad_norm → 500k, beyond-window Δzero went negative — kill gate MET at 43% budget). Stopped. Fixed a latent AR-decoder padding-mask bug (suffix_attention_mask was discarded) and made LR/warmup/eval-steps env-overridable.** **2026-06-27: staged proving plan on Odra (3× 3090), mix `smollm3_inspired_2k_e05`, LR 1e-4 / warmup 1500 — (1) E05 1-epoch windowed arm with an early divergence kill-gate, then (2) E05-long 5-epoch matched A/B (windowed + full-causal control) to test de-collapse-with-scale and windowed > control on beyond-window Δ.** **Data-pipeline fix (2026-06-27): the mix is pretokenized via `scripts/pretokenize_mix.py` (the live `load_dataset` path can't cap DCLM's 27,838 `.jsonl.zst` files — ~190 h — and a huge DCLM doc killed a tokenize worker; pretokenize honors `max_shards` and adds a `PRETOKENIZE_MAX_CHARS` huge-doc guard + a `num_proc=1` fallback). Training loads the manifest via `PRETOKENIZED_MANIFEST` (instant `load_from_disk`). This pretokenize→manifest→train spine is the standard data path for all future phases (SFT, SFT+reasoning).** **2026-06-28: the LR 1e-4 / warmup 1500 attempt (`concept_ar_prefix_H768L6C128D4_20260627_192407`) DIVERGED at step ~40k (epoch 0.19, 5.2B tokens seen) — eval_loss 3.32 → 4.03, grad_norm escalated 9 → 56 → 219 → 903 (post-clip 1.0 but bad-direction updates dominated), within-sample RankMe was healthy (59.8) before divergence then collapsed. Best checkpoint-40000 preserved; fast eval on Odra: Tier 0 ✓, Tier 1 within-sample RankMe 59.8 ✓, early-Δshuffle 0.85 ✓, beyond-window Δshuffle 0.35 (below Stage 2 0.5 target). Compute: 81.3 GPU-h / 17.78 kWh / 5.21B tokens (`compute/max_tokens_b`). Re-scoped to 0.5 epoch (~7B tokens, comparable to E02-long's 5-ep compute-hours) and retuned optimization: LR 5e-5, warmup 2000, `max_grad_norm=0.5`, per-device batch 12, eval_steps 4000.**
 - **Plan:** [E05_windowed_decoder_concept_memory_plan.md](E05_windowed_decoder_concept_memory_plan.md)
 - **Owner:** Krzysztof Sopyla · opened 2026-06-14
 
@@ -35,11 +35,13 @@ The `decoder_context_window` config field remains (the control arm needs `None`)
 | K (fixed) | 128 |
 | Arch | H768 / T256 / L6 / C128 / D4, SwiGLU + RMSNorm + RoPE |
 | Tokenizer | SmolLM2-135M |
-| Budget | **Staged proving:** (1) 1 epoch, windowed arm only + early divergence kill-gate; (2) E05-long 5 epoch, matched A/B (windowed + full-causal control) |
-| LR / warmup | 1e-4 / 1500 (the 2026-06-26 fix; 3e-4 / 500 diverged) |
-| Batch (per-device × accum) | 8 × 2 = effective 48 (calibrated 2026-06-27; ~12 GB/GPU plain-CE, throughput knee) |
+| Budget | **Staged proving:** (1) **0.5-epoch windowed arm** (≈ 7B tokens ≈ 110 GPU-h, comparable in compute-hours to E02-long's 5-epoch 24.5B-token / 290 GPU-h run — starts the rank-rises-with-scale regime at this architecture's seq-2048 token budget), with an early divergence kill-gate; (2) E05-long matched A/B (windowed + full-causal control) once 0.5-ep stability is proven |
+| LR / warmup | **5e-5 / 2000** (the 2026-06-28 retune; LR 1e-4 / warmup 1500 diverged at step ~40k / epoch 0.19 — pre-clip grad_norm escalated 9 → 903 while cosine LR was still ~8.5e-5; pre-2026-06-26 LR 3e-4 / warmup 500 diverged at step ~20) |
+| `max_grad_norm` | **0.5** (explicit; HF default 1.0 let bad-direction updates through during the 2026-06-28 divergence) |
+| Batch (per-device × accum) | **12 × 2 = effective 72** (calibrated 2026-06-28: ~23 GB/GPU at seq 2048 with `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`; was 8 × 2 = 48 before — bigger batch raises per-GPU power toward TDP and smooths gradients) |
+| Eval steps | 4000 (was 2000; halves eval-idle GPU-2 stalls; checkpoint still every 2000 via `save_steps`) |
 | Server | Odra (3×3090) |
-| Data path | **Pretokenize once → train from manifest.** The mix has huge sources (DCLM 27,838 `.jsonl.zst`; FinePDFs 28 GB) that the live `load_dataset` path cannot cap — it tried to download all 27,838 DCLM files (~190 h). `scripts/pretokenize_mix.py` honors `max_shards` (DCLM→35 files) and writes a manifest the trainer loads instantly via `PRETOKENIZED_MANIFEST`. Reusable across the 1-ep + 5-ep A/B arms. |
+| Data path | **Pretokenize once → train from manifest.** The mix has huge sources (DCLM 27,838 `.jsonl.zst`; FinePDFs 28 GB) that the live `load_dataset` path cannot cap — it tried to download all 27,838 DCLM files (~190 h). `scripts/pretokenize_mix.py` honors `max_shards` (DCLM→35 files) and writes a manifest the trainer loads instantly via `PRETOKENIZED_MANIFEST`. Reusable across the 0.5-ep + matched A/B arms. |
 
 There is **no dedicated E05 launcher script**. The workflow is two env-var invocations of shared scripts: (1) `scripts/pretokenize_mix.py` (one-time per mix), (2) `scripts/train_perceiver_denoise_multigpu.sh` with `PRETOKENIZED_MANIFEST` (replaces the live `DATASET_MIX_RECIPE` path, which is retained only as a small-dataset fallback). The launcher already wires `PRETOKENIZED_MANIFEST` and `DECODER_CONTEXT_WINDOW` (passed only when set, so prior launches are unchanged).
 
@@ -69,21 +71,27 @@ export HIDDEN_SIZE=768 TOKEN_EMBEDDING_DIM=256 NUM_LAYERS=6 CONCEPT_NUM=128
 export DECODER_NUM_LAYERS=4 INTERMEDIATE_SIZE=2048 HIDDEN_ACT=silu
 export NORM_TYPE=rmsnorm DECODER_POS_TYPE=rope
 export TOKENIZER_NAME=HuggingFaceTB/SmolLM2-135M
-export LEARNING_RATE=1e-4 WARMUP_STEPS=1500          # the 2026-06-26 fix (3e-4/500 diverged)
-export PER_DEVICE_BATCH_SIZE=8 GRADIENT_ACCUMULATION_STEPS=2   # calibrated 2026-06-27: effective batch 48; ~12 GB/GPU, throughput knee
+# --- 2026-06-28 retune (LR 1e-4 / warmup 1500 diverged at step ~40k / epoch 0.19) ---
+export LEARNING_RATE=5e-5 WARMUP_STEPS=2000
+export MAX_GRAD_NORM=0.5
+export PER_DEVICE_BATCH_SIZE=12 GRADIENT_ACCUMULATION_STEPS=2   # effective batch 72; ~23 GB/GPU at seq 2048
+export EVAL_STEPS=4000 SAVE_STEPS=2000
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-# --- Stage 1: E05 1-epoch, windowed arm (prove stable training + de-collapse) ---
+# --- Stage 1: E05 0.5-epoch, windowed arm (prove stable training + de-collapse) ---
+EXPERIMENT_ID=E05 DECODER_CONTEXT_WINDOW=128 NUM_EPOCHS=0.5 \
+  bash scripts/train_perceiver_denoise_multigpu.sh
+
+# --- Stage 2a: E05-long matched A/B, windowed arm (after 0.5-ep stability is proven) ---
 EXPERIMENT_ID=E05 DECODER_CONTEXT_WINDOW=128 NUM_EPOCHS=1 \
   bash scripts/train_perceiver_denoise_multigpu.sh
 
-# --- Stage 2a: E05-long 5-epoch, windowed arm ---
-EXPERIMENT_ID=E05 DECODER_CONTEXT_WINDOW=128 NUM_EPOCHS=5 \
-  bash scripts/train_perceiver_denoise_multigpu.sh
-
-# --- Stage 2b: E05-long 5-epoch, matched control (full causal; omit the window) ---
-EXPERIMENT_ID=E05 NUM_EPOCHS=5 \
+# --- Stage 2b: E05-long matched control (full causal; omit the window) ---
+EXPERIMENT_ID=E05 NUM_EPOCHS=1 \
   bash scripts/train_perceiver_denoise_multigpu.sh
 ```
+
+**Note on `MAX_GRAD_NORM`:** the launcher needs `--max_grad_norm` wired through (see `scripts/train_perceiver_denoise_multigpu.sh`). If unset, HF Trainer's default of 1.0 applies — explicit 0.5 is the 2026-06-28 retune. The 2026-06-28 divergence had pre-clip grad_norm up to 903; post-clip 1.0 still let bad-direction updates dominate the late-run loss landscape, so the tighter 0.5 cap is the second stability lever alongside the halved LR.
 
 Matched control (Stage 2b): identical to 2a but with `DECODER_CONTEXT_WINDOW` unset (the window
 defaults to `None` = full causal). Run 2a and 2b on the same seed/budget; **all three arms load the
@@ -96,11 +104,11 @@ This **pretokenize → manifest → train** pipeline is the standard data path f
 - **SFT+reasoning (Phase 5):** a `reasoning` tokenize mode (CoT traces) on the same spine.
 
 ## Success / kill
-- **Stage 1 early kill-gate (1 ep, windowed):** if grad_norm > 1e4, loss goes non-finite, or beyond-window Δzero < 0 within the first ~100 steps, stop — same divergence signature as 2026-06-26.
-- **Stage 1 read (1 ep, windowed):** beyond-window Δzero & Δshuffle ≥ 0.3 nats (a 1-ep checkpoint is below the 5-ep target but must be positive and rising); STS-B ≥ 0.62; RankMe rises vs init. If Δ < 0.2 nats at 1 ep, do **not** spend the 5-ep budget — stop and diagnose.
-- **Stage 2 primary (5 ep, A/B):** beyond-window Δzero & Δshuffle ≥ 0.5 nats **AND** windowed > control (`--ablation_window_k 128`); co-report the clean concept-only read at `--ablation_window_k 508`.
+- **Stage 1 early kill-gate (0.5 ep, windowed):** if grad_norm > 1e4, loss goes non-finite, or beyond-window Δzero < 0 within the first ~100 steps, stop — same divergence signature as 2026-06-26 / 2026-06-28. **2026-06-28 addition:** also stop if eval_loss rises monotonically over **3 consecutive eval points** (12k steps at `EVAL_STEPS=4000`) — the 2026-06-28 divergence signature was eval_loss climbing from step 40k onward; catching that explicitly avoids burning GPU-hours on a known-failing trajectory.
+- **Stage 1 read (0.5 ep, windowed):** beyond-window Δzero & Δshuffle ≥ 0.3 nats (a 0.5-ep checkpoint is below the matched-A/B target but must be positive and rising); STS-B ≥ 0.62; within-sample RankMe rises vs init. If Δ < 0.2 nats at 0.5 ep, do **not** spend the matched A/B budget — stop and diagnose.
+- **Stage 2 primary (matched A/B, ≥1 ep):** beyond-window Δzero & Δshuffle ≥ 0.5 nats **AND** windowed > control (`--ablation_window_k 128`); co-report the clean concept-only read at `--ablation_window_k 508`.
 - **Stage 2 co-primary:** STS-B ≥ 0.65 (stretch 0.71 vs E02-long).
-- **Stage 2 de-collapse-with-scale read:** RankMe / slot rank at 5 ep > at 1 ep (mirror the E02-long 5.9 → 11.6 → 16.7 rise across 0.3 / 1 / 5 ep).
+- **Stage 2 de-collapse-with-scale read:** within-sample RankMe at matched-A/B > at 0.5 ep (mirror the E02-long 5.9 → 11.6 → 16.7 rise across 0.3 / 1 / 5 ep).
 - **Kill @ 25% budget (any arm):** beyond-window Δ < 0.2 nats → stop.
 
 ### Reading the gate: K-slice vs true local reach
@@ -114,5 +122,5 @@ The K-slice Δ must clear the primary threshold; the 508-slice Δ is the robustn
 
 ## Result
 <Filled in AFTER by experiment-track.>
-- Run id: `<run_id>` · WandB: <link>
-- Verdict: —
+- Run id: `concept_ar_prefix_H768L6C128D4_20260627_192407` · WandB: [Link](https://wandb.ai/ksopyla/MrCogito/runs/concept_ar_prefix_H768L6C128D4_20260627_192407) · Run report: [e05_attempt2_diverged_20260628.md](../2_Experiments_Registry/run_reports/e05_attempt2_diverged_20260628.md)
+- Verdict: **attempt 2 — DIVERGED (optimization failure, architecture sound).** Best checkpoint-40000 (eval_loss 3.317, within-sample RankMe 59.8, Δshuffle_beyond 0.35) clears the Stage 1 floor. Retuned (LR 5e-5 / clip 0.5 / batch 12) and re-scoped to 0.5 ep for attempt 3.
