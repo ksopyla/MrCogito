@@ -60,31 +60,37 @@ uv run python scripts/pretokenize_mix.py \
 # → writes $HF_DATASETS_CACHE/../datasets_tok/smollm3_inspired_2k_e05_manifest.json
 ```
 
-### Training — `scripts/launch_e05_odra.sh` (the canonical E05 launcher)
-The launcher sets the full E05 env (architecture, mix manifest, retuned optimization knobs),
-runs the pretokenize phase (idempotent — skips if the manifest exists), does the W&B identity
-preflight, then `exec`s `scripts/train_perceiver_denoise_multigpu.sh`. Defaults are the
-2026-06-28 retune; override any knob by exporting it before the call.
+### Training — `scripts/launch_e05.sh` (the canonical E05 launcher; both A/B arms)
+A thin wrapper that pins the E05 protocol (architecture, mix, objective, K=128, seq 2K) and the
+token-matched effective batch, then `exec`s the generic `scripts/train_perceiver_denoise_multigpu.sh`
+(which owns all training defaults + the accelerate invocation + the gated pretokenize phase, run
+when `PRETOKENIZE_MIX` is set). The optimizer is selected by `OPTIMIZER=adam|muon` — the A/B single
+variable; override any other knob by exporting it before the call.
 
 ```bash
-# Stage 1: E05 0.5-epoch, windowed arm (prove stable training + de-collapse).
-# Manifest already cached on Odra from the 2026-06-27 pretokenize, so SKIP_PRETOKENIZE=1.
-SKIP_PRETOKENIZE=1 \
-  bash scripts/launch_e05_odra.sh
+# Adam arm (Odra). The 1-epoch run crashed and resumes from its last checkpoint:
+SKIP_PRETOKENIZE=1 RESUME_FROM_CHECKPOINT=Cache/Training/<run>/checkpoint-<step> \
+  OPTIMIZER=adam bash scripts/launch_e05.sh
 
-# Stage 2a: E05-long matched A/B, windowed arm (after 0.5-ep stability is proven).
-SKIP_PRETOKENIZE=1 NUM_EPOCHS=1 \
-  bash scripts/launch_e05_odra.sh
+# Muon arm (Polonez, fresh) — token-matched to the Adam arm: same seed/model/mix/effective-batch/
+# epochs, only the optimizer + its LR differ. Pretokenize runs once on Polonez (its own manifest);
+# bump workers for speed (output is identical): TRAIN_NUM_PROC=32 TEST_NUM_PROC=8.
+OPTIMIZER=muon bash scripts/launch_e05.sh
 
-# Stage 2b: matched control (full causal; unset the window).
-SKIP_PRETOKENIZE=1 NUM_EPOCHS=1 DECODER_CONTEXT_WINDOW= \
-  bash scripts/launch_e05_odra.sh
+# Matched full-causal control (unset the window).
+SKIP_PRETOKENIZE=1 OPTIMIZER=adam DECODER_CONTEXT_WINDOW= bash scripts/launch_e05.sh
 ```
 
-The current `launch_e05_odra.sh` defaults reflect the 2026-06-28 retune:
-LR `5e-5`, warmup `2000`, `MAX_GRAD_NORM=0.5`, per-device batch `12` × grad-accum `2`
-(effective 72 across 3 GPUs), `EVAL_STEPS=4000`, `SAVE_STEPS=2000`, `NUM_EPOCHS=0.5`,
+`launch_e05.sh` pins (2026-06-28 retune + 2026-06-29 dedup):
+LR `5e-5` (adam) / `0.02` (muon matrix) + `MUON_ADAMW_LR=2e-3` fallback, warmup `2000`,
+`MAX_GRAD_NORM=0.5`, per-device batch `8` (Odra, 3 GPU) / `6` (Polonez, 4 GPU) × grad-accum `3`
+→ **effective batch 72 on both** (identical tokens/step), `EVAL_STEPS=4000`, `SAVE_STEPS=4000`,
+`NUM_EPOCHS=0.5` (default — **MUST match the live Adam arm**; the resumed Odra run may be 1 epoch),
 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`.
+
+**A/B cleanliness caveat:** the Adam arm is the crash-then-resumed Odra run; the Muon arm is fresh
+from seed 42. Identical init/data/tokens, but the resume is a noted confound on the Adam arm (resume
+step, LR-schedule offset) — record it in the run report when interpreting the optimizer comparison.
 
 **Note on `MAX_GRAD_NORM`:** `train_perceiver_denoise_multigpu.sh` wires `--max_grad_norm`
 through the `MAX_GRAD_NORM` env-var (default 1.0 = HF Trainer default). The explicit 0.5 is the

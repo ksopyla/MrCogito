@@ -289,6 +289,31 @@ class DataTrainingArguments:
     split_strategy: str = field(default="sentence_boundary")
 
 
+@dataclass
+class OptimizerArguments:
+    """Optimizer selection. `optimizer` picks the family ("adam" = the HF default
+    adamw_torch_fused, or "muon" = nn.muon.Muon); the remaining fields parameterize the Muon
+    branch only (see PerceiverDenoiseTrainer.create_optimizer). The LR is `--learning_rate` for
+    both families; for Muon it is the matrix LR and `muon_adamw_lr` is the fallback LR for the
+    embedding / lm_head / 1D params Muon does not orthogonalize (nn.muon.Muon).
+
+    We use our own `--optimizer` flag rather than HF's `--optim` because HF coerces `--optim` to
+    its OptimizerNames enum in TrainingArguments.__post_init__, which rejects the "muon" string."""
+    optimizer: str = field(
+        default="adam",
+        metadata={"help": "Optimizer family: 'adam' (HF adamw_torch_fused) or 'muon' (nn.muon.Muon)."},
+    )
+    muon_adamw_lr: float = field(
+        default=2e-3,
+        metadata={"help": "Muon only: AdamW LR for the non-orthogonalized fallback params "
+                  "(embeddings, lm_head, norms, biases). The matrix LR is --learning_rate."},
+    )
+    muon_momentum: float = field(
+        default=0.95,
+        metadata={"help": "Muon only: momentum coefficient for the Muon momentum buffer."},
+    )
+
+
 class PerceiverDenoiseTrainer(Trainer):
     def __init__(
         self,
@@ -303,6 +328,9 @@ class PerceiverDenoiseTrainer(Trainer):
         anchor_loss_weight: float = 0.5,
         anchor_standardize: bool = True,
         anchor_model_name: Optional[str] = None,
+        optimizer_choice: str = "adam",
+        muon_adamw_lr: float = 2e-3,
+        muon_momentum: float = 0.95,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -312,6 +340,10 @@ class PerceiverDenoiseTrainer(Trainer):
         self.compute_concept_ablation = compute_concept_ablation
         self.concept_ablation_batches = concept_ablation_batches
         self.eval_data_collator = eval_data_collator
+        # Optimizer selection (used by create_optimizer): "adam" = HF default, "muon" = nn.muon.Muon.
+        self.optimizer_choice = optimizer_choice
+        self.muon_adamw_lr = muon_adamw_lr
+        self.muon_momentum = muon_momentum
         # E03: frozen teacher held on the trainer (NOT a model submodule → never checkpointed).
         self.anchor_loss = anchor_loss
         self.anchor_loss_weight = anchor_loss_weight
@@ -325,6 +357,27 @@ class PerceiverDenoiseTrainer(Trainer):
             teacher.eval()
             teacher.requires_grad_(False)
             self.anchor_teacher = teacher.to(self.args.device)
+
+    def create_optimizer(self):
+        """Build the optimizer. Routes `--optimizer muon` to `nn.muon.Muon` (2D weight matrices via
+        Newton-Schulz orthogonalization; AdamW fallback for embeddings/lm_head/1D params). The
+        default (`--optimizer adam`) falls through to the HF Trainer default (adamw_torch_fused),
+        so the non-Muon path is byte-unchanged. Overriding create_optimizer is the HF-sanctioned
+        pattern for custom optimizers.
+
+        `--learning_rate` becomes Muon's matrix LR; `muon_adamw_lr` is the fallback LR. The cosine
+        LR scheduler (create_scheduler) wraps `self.optimizer` and schedules the `lr` group as usual."""
+        if self.optimizer_choice == "muon":
+            from nn.muon import Muon
+            self.optimizer = Muon(
+                self.model.parameters(),
+                lr=self.args.learning_rate,
+                momentum=self.muon_momentum,
+                adamw_lr=self.muon_adamw_lr,
+                weight_decay=self.args.weight_decay,
+            )
+            return self.optimizer
+        return super().create_optimizer()
 
     def _anchor_mse(
         self,
@@ -653,8 +706,10 @@ def main():
     else:
         logging.set_verbosity_error()
 
-    parser = HfArgumentParser((ModelArguments, LossArguments, DataTrainingArguments, TrainingArguments))
-    model_args, loss_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    parser = HfArgumentParser(
+        (ModelArguments, LossArguments, DataTrainingArguments, OptimizerArguments, TrainingArguments)
+    )
+    model_args, loss_args, data_args, optim_args, training_args = parser.parse_args_into_dataclasses()
 
     if model_args.objective_variant not in VALID_OBJECTIVES:
         raise ValueError(
@@ -890,6 +945,7 @@ def main():
         "Split strategy": data_args.split_strategy,
         "Dataset mix (registry)": data_args.dataset_mix,
         "Dataset mix recipe": data_args.dataset_mix_recipe,
+        "Optimizer": optim_args.optimizer,
     }
     if model_args.objective_variant == OBJECTIVE_RECONSTRUCTION_CONTRASTIVE:
         training_extra_fields["Contrastive weight"] = model_args.contrastive_weight
@@ -906,7 +962,7 @@ def main():
         run_identifier,
         job_type=wandb_identity.job_type,
         model_type=model_type_str,
-        wandb_tags=wandb_identity.tags,
+        wandb_tags=[*wandb_identity.tags, f"optim-{optim_args.optimizer}"],
         extra_config={
             **wandb_identity.to_config(),
             "deletion_rate": data_args.deletion_rate,
@@ -932,6 +988,9 @@ def main():
             "dataset_mix": data_args.dataset_mix,
             "dataset_mix_recipe": data_args.dataset_mix_recipe,
             "dataset_mix_weight_override": data_args.dataset_mix_weight_override,
+            "optimizer": optim_args.optimizer,
+            "muon_adamw_lr": optim_args.muon_adamw_lr,
+            "muon_momentum": optim_args.muon_momentum,
         },
     )
 
@@ -985,6 +1044,9 @@ def main():
         anchor_loss_weight=model_args.anchor_loss_weight,
         anchor_standardize=model_args.anchor_standardize,
         anchor_model_name=model_args.anchor_model_name,
+        optimizer_choice=optim_args.optimizer,
+        muon_adamw_lr=optim_args.muon_adamw_lr,
+        muon_momentum=optim_args.muon_momentum,
     )
 
     decoder_desc = (

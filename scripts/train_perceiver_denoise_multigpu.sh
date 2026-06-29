@@ -93,6 +93,11 @@ SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-5}"
 # pre-clip grad_norm up to 903; the default 1.0 still let bad-direction updates
 # dominate the late-run loss landscape).
 MAX_GRAD_NORM="${MAX_GRAD_NORM:-1.0}"
+# Optimizer family: 'adam' (HF adamw_torch_fused, the default) or 'muon' (nn.muon.Muon — matrix
+# params via Newton-Schulz orthogonalization, AdamW fallback for embeddings/lm_head/1D). HF --optim
+# below stays adamw_torch_fused in both cases (a valid enum value HF coerces --optim to); our
+# --optimizer flag is the real selector (see PerceiverDenoiseTrainer.create_optimizer).
+OPTIMIZER="${OPTIMIZER:-adam}"
 SAVE_SAFETENSORS="${SAVE_SAFETENSORS:-True}"
 SEED="${SEED:-42}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-4}"
@@ -108,6 +113,45 @@ DDP_TIMEOUT="${DDP_TIMEOUT:-1800}"
 # (created before TrainingArguments parsing; --ddp_timeout alone is too late
 # to protect the first-time preprocessing barrier).
 export DDP_TIMEOUT
+
+# Long-context 2-phase flow: when PRETOKENIZE_MIX names a mix recipe, download + tokenize it
+# offline (scripts/pretokenize_mix.py) into a manifest, then train from load_from_disk (instant).
+# Re-run training only (cache warm): SKIP_PRETOKENIZE=1. Lives in the generic launcher so the flow
+# is a reusable capability for any long-context mix experiment, not E05-specific.
+PRETOKENIZE_MIX="${PRETOKENIZE_MIX:-}"
+if [ -n "$PRETOKENIZE_MIX" ]; then
+    DATASETS_TOK_DIR="${HF_HOME}/../datasets_tok"
+    MANIFEST="${MANIFEST:-${DATASETS_TOK_DIR}/${PRETOKENIZE_MIX}_manifest.json}"
+    # Archive raw parquet/zst to NAS after tokenizing (tokenizer-agnostic, survives a tokenizer
+    # switch). Set RAW_ARCHIVE_DIR= to disable. NAS is slow but write-once.
+    RAW_ARCHIVE_DIR="${RAW_ARCHIVE_DIR:-/nas/ml_data/mrcogito/hf_datasets/raw}"
+    if [ "${SKIP_PRETOKENIZE:-0}" != "1" ]; then
+        echo "=== Phase 1: pretokenize mix '$PRETOKENIZE_MIX' (parallel download + tokenize) ==="
+        uv run python scripts/pretokenize_mix.py \
+            --mix "$PRETOKENIZE_MIX" \
+            --tokenizer "$TOKENIZER_NAME" \
+            --max_seq_length "$MAX_SEQ_LENGTH" \
+            --cache_dir "$DATASETS_TOK_DIR" \
+            --raw_dir "${HF_HOME}/../datasets_raw" \
+            --manifest "$MANIFEST" \
+            --objective "$OBJECTIVE_VARIANT" \
+            --seed "$SEED" \
+            --train_num_proc "$TRAIN_NUM_PROC" \
+            --test_num_proc "$TEST_NUM_PROC" \
+            --download_workers "${DOWNLOAD_WORKERS:-8}" \
+            --jobs "${PRETOK_JOBS:-1}" \
+            ${RAW_ARCHIVE_DIR:+--raw_archive_dir "$RAW_ARCHIVE_DIR"}
+    else
+        echo "=== Skipping pretokenize (SKIP_PRETOKENIZE=1); using manifest $MANIFEST ==="
+    fi
+    if [ ! -f "$MANIFEST" ]; then
+        echo "ERROR: manifest not found at $MANIFEST — pretokenize failed?"
+        exit 1
+    fi
+    # Training loads the pretokenized manifest (instant) — make sure dataset_mix* don't override it.
+    export PRETOKENIZED_MANIFEST="$MANIFEST"
+    unset DATASET_MIX_RECIPE DATASET_MIX
+fi
 
 RESUME_ARGS=()
 if [ -n "$RESUME_FROM_CHECKPOINT" ]; then
@@ -154,6 +198,13 @@ if [ "$ANCHOR_LOSS" = "true" ]; then
         --anchor_head_layers "$ANCHOR_HEAD_LAYERS"
     )
 fi
+
+# Optimizer selection (--optimizer is our flag; HF --optim stays adamw_torch_fused for both arms).
+OPTIM_ARGS=(--optimizer "$OPTIMIZER")
+if [ "$OPTIMIZER" = "muon" ]; then
+    OPTIM_ARGS+=(--muon_adamw_lr "${MUON_ADAMW_LR:-2e-3}" --muon_momentum "${MUON_MOMENTUM:-0.95}")
+fi
+echo "Optimizer: $OPTIMIZER"
 
 uv run accelerate launch \
     --num_processes="$NUM_GPUS" \
@@ -225,5 +276,6 @@ uv run accelerate launch \
     "${WINDOW_ARGS[@]}" \
     "${MIX_ARGS[@]}" \
     "${ANCHOR_ARGS[@]}" \
+    "${OPTIM_ARGS[@]}" \
     "${RESUME_ARGS[@]}" \
     2>&1 | uv run python scripts/clean_tee.py "$SHELL_LOG"
