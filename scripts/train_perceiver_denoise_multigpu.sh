@@ -148,9 +148,12 @@ if [ -n "$PRETOKENIZE_MIX" ]; then
         echo "ERROR: manifest not found at $MANIFEST — pretokenize failed?"
         exit 1
     fi
-    # Training loads the pretokenized manifest (instant) — make sure dataset_mix* don't override it.
+    # Training loads the pretokenized manifest (instant) — clear dataset_mix* so MIX_ARGS doesn't
+    # also pass them (set empty, not unset: the launcher runs under `set -u`, which treats unset as
+    # an error when MIX_ARGS later does [ -n "$DATASET_MIX" ]).
     export PRETOKENIZED_MANIFEST="$MANIFEST"
-    unset DATASET_MIX_RECIPE DATASET_MIX
+    DATASET_MIX_RECIPE=""
+    DATASET_MIX=""
 fi
 
 RESUME_ARGS=()
