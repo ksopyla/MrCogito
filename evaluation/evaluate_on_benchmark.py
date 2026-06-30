@@ -397,18 +397,33 @@ def _architecture_id_from_config(config: ConceptEncoderConfig) -> str | None:
     return f"{family}_H{config.hidden_size}L{config.num_hidden_layers}C{config.concept_num}"
 
 
+def _resolve_tokenizer_name(args, model=None) -> str:
+    """Pick the tokenizer identifier to load and to put in W&B tags.
+
+    Thin wrapper over `evaluation.wandb_identity.resolve_tokenizer_name_for_tag`
+    using args + the loaded model's config. See that helper for precedence.
+    """
+    from evaluation.wandb_identity import resolve_tokenizer_name_for_tag
+
+    return resolve_tokenizer_name_for_tag(
+        arg_tokenizer_name=getattr(args, "tokenizer_name", None),
+        arg_model_name_or_path=getattr(args, "model_name_or_path", None),
+        config_tokenizer_name=getattr(getattr(model, "config", None), "tokenizer_name", None),
+    )
+
+
 def run_zero_shot_stsb(args):
     """Evaluate sentence-pair cosine similarity without fine-tuning."""
     benchmark_name = "stsb_zero_shot"
     cfg = BENCHMARKS[benchmark_name]
-    tokenizer_name = args.tokenizer_name or args.model_name_or_path
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
-
     model, route = load_concept_model(args, benchmark_name)
     if route.model_mode != "sentence_pair":
         raise ValueError(
             "Zero-shot STS-B requires a sentence-pair evaluation route with separate sentence encoding."
         )
+
+    tokenizer_name = _resolve_tokenizer_name(args, model)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device).eval()
@@ -601,10 +616,9 @@ def run_benchmark(args, benchmark_name):
     logger.info(f"  Why: {cfg['why']}")
     logger.info(f"{'='*60}")
 
-    tokenizer_name = args.tokenizer_name or args.model_name_or_path
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
-
     model, route = load_concept_model(args, benchmark_name)
+    tokenizer_name = _resolve_tokenizer_name(args, model)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
 
     if args.freeze_encoder and hasattr(model, "encoder"):
         frozen = 0
