@@ -14,6 +14,36 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-06-30] - Eval-script fixes: wandb tag truncation + SmolLM2 pad_token
+
+**Why:** the E05 attempt 3 eval pipeline (`eval-runner`) aborted at `wandb.init()`
+with a 74-char tag built from the checkpoint path. Two latent bugs surfaced
+together; both are pre-existing and would have blocked any SmolLM2-based
+checkpoint eval, not just E05.
+
+**Changes:**
+- `evaluation/wandb_identity.py` — `_safe_tag_value` truncated the *value* to
+  64 chars but callers prepended `prefix:`, so `tokenizer:<value>` could be
+  up to 75 chars (wandb rejects any tag > 64). New `_safe_prefixed_tag(prefix,
+  value)` reserves room for the prefix+colon and truncates the value so the
+  total is always ≤ 64. New `resolve_tokenizer_name_for_tag` prefers
+  `model.config.tokenizer_name` (the canonical HF id stored at training time)
+  when the CLI arg is a local path — so tags read
+  `tokenizer:huggingfacetb-smollm2-135m` instead of a truncated checkpoint dir.
+- `evaluation/evaluate_on_benchmark.py`, `evaluation/evaluate_model_on_glue.py`
+  — SmolLM2's tokenizer ships without a `pad_token`; `AutoTokenizer.from_pretrained`
+  doesn't honor the model config's `pad_token_id`. All batch-encoding eval
+  entrypoints now set `pad_token = eos_token` right after load. STS-B / SICK /
+  PAWS / GLUE would otherwise crash with "Asking to pad but the tokenizer does
+  not have a padding token".
+- `tests/test_wandb_lineage.py` — 7 regression tests covering long-path
+  truncation, hub-id-vs-path disambiguation, and the fallback chain.
+
+**Impact:** eval pipeline runs end-to-end on SmolLM2 checkpoints. Commits
+`730e607` (tag fix) + `70e1fd2` (pad_token fix).
+
+---
+
 ## [2026-06-28] - Post-hoc compute audit (GPU-h, energy, tokens) + W&B compute panel
 
 **Why:** Comparing runs on compute spent — especially within a `wandb_group`
