@@ -424,6 +424,11 @@ def run_zero_shot_stsb(args):
 
     tokenizer_name = _resolve_tokenizer_name(args, model)
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
+    # SmolLM2 (and some other causal-LM tokenizers) ship without a pad token.
+    # The trained model used pad_token_id = eos_token_id = 0; mirror that here
+    # so dataset preprocessing can batch-encode sentence pairs.
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token or tokenizer.bos_token
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device).eval()
@@ -619,6 +624,8 @@ def run_benchmark(args, benchmark_name):
     model, route = load_concept_model(args, benchmark_name)
     tokenizer_name = _resolve_tokenizer_name(args, model)
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token or tokenizer.bos_token
 
     if args.freeze_encoder and hasattr(model, "encoder"):
         frozen = 0

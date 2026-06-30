@@ -1014,6 +1014,10 @@ def finetune_model_on_glue(args):
         default_tokenizer = "bert-base-cased"
         logger.warning(f"Attempting fallback to default tokenizer: {default_tokenizer}")
         tokenizer = AutoTokenizer.from_pretrained(default_tokenizer, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
+    # SmolLM2 (and some other causal-LM tokenizers) ship without a pad token.
+    # The trained model used pad_token_id = eos_token_id = 0; mirror that here.
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token or tokenizer.bos_token
     
     # Load and initialize model based on model type
     concept_model_types = ["weighted_mlm", "perceiver_denoise", "concept_ar", "diffusion_mlm", "prefix_diffusion"]
