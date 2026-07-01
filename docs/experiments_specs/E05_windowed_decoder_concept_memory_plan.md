@@ -97,3 +97,46 @@ def build_sliding_window_causal_mask(seq_len, window, device, dtype=torch.bool):
 #   interleave_datasets(parts, probabilities=weights, stopping_strategy="all_exhausted")
 #   + concatenate_datasets(eval_parts)
 ```
+
+## 10. Optimizer A/B (Adam vs Muon) — divergence + root cause + mitigations (2026-07-01)
+
+E05 ran an optimizer A/B: Adam (attempt 3, completed, eval_loss 3.83) vs **Muon** (`nn/muon.py`,
+fresh, token-matched). Muon converges ~5× faster then **diverges** — a recorded finding, not a
+dead end. Full detail: [run report](../2_Experiments_Registry/run_reports/e05_muon_divergence_rootcause_20260701.md).
+
+- **What:** Muon diverged at LR 0.02 (onset ~step 3k) and 0.01 (onset ~step 4.5k) — grad_norm
+  0.3 → millions, loss climbing, surviving `max_grad_norm=0.5`. Adam (5e-5) stable to 0.5 ep.
+  Positive signal: Muon eval_loss **3.34** at step 4k vs Adam's ~5.40.
+- **Root cause (confirmed vs our config + Moonlight arXiv:2502.16982 / Kimi K2 MuonClip /
+  Jianlin Su QK-Clip):** Muon's full-rank orthogonalized updates grow every weight singular
+  direction uniformly; in the **Q·K + lm_head bilinear couplings** this runs away (MaxLogit/
+  MaxOutput explosion → delayed grad spike). Three enablers in our config:
+  1. **Muon weight decay = 0.0** (HF default; launcher didn't set it). Moonlight: wd is the
+     long-horizon stabilizer (their wd=0.1); wd=0 → weight-RMS grows unbounded. **Prime suspect.**
+  2. **`adamw_lr = 2e-3`** for the lm_head/embed fallback — anomalously high (refs use ≤ muon_lr,
+     often 2e-6); over-updates the lm_head (the output-logit bilinear form). **Co-conspirator.**
+  3. Update scale Keller `√max(1, A/B)` vs Moonshot `0.2·√max(A,B)` — candidate (deferred).
+- **Calibration blind spot:** the LR-0.01 calibration used `NUM_EPOCHS=0.05` → a compressed cosine
+  that decayed LR before step 4,500, so the sustained-LR onset never triggered. **Lesson: calibrate
+  under sustained peak LR (`constant_with_warmup`), not a short cosine.**
+
+### Mitigations implemented (2026-07-01)
+- `scripts/train_perceiver_denoise_multigpu.sh`: wired `WEIGHT_DECAY` (→ HF `--weight_decay` →
+  `create_optimizer` → `nn.muon.Muon`) + `LR_SCHEDULER_TYPE` (default cosine; `constant_with_warmup`
+  for sustained-LR calibration) knobs.
+- `scripts/launch_e05.sh` Muon branch now defaults: `LEARNING_RATE=0.01`, `MUON_ADAMW_LR=2e-4`
+  (was 2e-3), `WEIGHT_DECAY=0.1` (was 0.0). Adam branch unchanged (LR 5e-5, wd 0.0).
+- **Deferred (next-tier):** Moonshot update scale `0.2·√max(A,B)` in `nn/muon.py` (one-line, but
+  changes LR semantics → needs LR retune); QK-Clip/QK-Norm (Kimi K2 MuonClip) — directly caps the
+  MaxLogit runaway; more invasive (model attention code).
+- **A/B caveat:** Muon wd=0.1 vs Adam wd=0.0 = two variables. Accept it ("wd=0.1 is what Muon needs")
+  or re-run Adam at wd=0.1 for a single-variable A/B. **Decision pending.**
+
+### Reuse map for the mitigation plumbing
+| Component | Change | Where |
+|---|---|---|
+| `PerceiverDenoiseTrainer.create_optimizer` | already passes `self.args.weight_decay` → `Muon(weight_decay=...)` | `training/train_perceiver_denoise.py` |
+| launcher weight-decay + scheduler knobs | new `WEIGHT_DECAY`, `LR_SCHEDULER_TYPE` env → `--weight_decay`, `--lr_scheduler_type` | `scripts/train_perceiver_denoise_multigpu.sh` |
+| E05 Muon-arm defaults | wd 0.1, adamw_lr 2e-4, LR 0.01 | `scripts/launch_e05.sh` |
+| `OptimizerArguments.muon_adamw_lr` | already wired (env `MUON_ADAMW_LR`) | `training/train_perceiver_denoise.py` |
+

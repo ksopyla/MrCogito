@@ -98,6 +98,14 @@ MAX_GRAD_NORM="${MAX_GRAD_NORM:-1.0}"
 # below stays adamw_torch_fused in both cases (a valid enum value HF coerces --optim to); our
 # --optimizer flag is the real selector (see PerceiverDenoiseTrainer.create_optimizer).
 OPTIMIZER="${OPTIMIZER:-adam}"
+# Decoupled weight decay (HF --weight_decay). For Muon it reaches nn.muon.Muon via
+# PerceiverDenoiseTrainer.create_optimizer. 2026-07-01: Muon diverged on E05 at wd=0.0 (the default) —
+# Moonlight (arXiv:2502.16982) shows wd is Muon's long-horizon stabilizer (their wd=0.1); set 0.1 for Muon.
+WEIGHT_DECAY="${WEIGHT_DECAY:-0.0}"
+# LR schedule. Calibrations should use constant_with_warmup so peak LR is SUSTAINED through the danger
+# zone — a short cosine decays LR before the delayed-onset region (the 2026-07-01 LR-0.01 calibration
+# blind spot: it looked stable but the full run's sustained-LR schedule diverged at ~step 4.5k).
+LR_SCHEDULER_TYPE="${LR_SCHEDULER_TYPE:-cosine}"
 SAVE_SAFETENSORS="${SAVE_SAFETENSORS:-True}"
 SEED="${SEED:-42}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-4}"
@@ -267,7 +275,8 @@ uv run accelerate launch \
     --gradient_checkpointing False \
     --optim "adamw_torch_fused" \
     --max_grad_norm "$MAX_GRAD_NORM" \
-    --lr_scheduler_type "cosine" \
+    --weight_decay "$WEIGHT_DECAY" \
+    --lr_scheduler_type "$LR_SCHEDULER_TYPE" \
     --report_to "wandb" \
     --save_safetensors "$SAVE_SAFETENSORS" \
     --overwrite_output_dir True \

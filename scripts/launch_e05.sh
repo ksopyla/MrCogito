@@ -45,12 +45,20 @@ export PRETOKENIZE_MIX="${PRETOKENIZE_MIX:-smollm3_inspired_2k_e05}"
 OPTIMIZER="${OPTIMIZER:-adam}"
 export OPTIMIZER
 if [ "$OPTIMIZER" = "muon" ]; then
-    # Muon: matrix LR ~0.02 (validated on wikitext-103, ~2× faster than AdamW). Fallback LR for
-    # embeddings/lm_head/1D is MUON_ADAMW_LR (default 2e-3, wired by the generic launcher).
-    export LEARNING_RATE="${LEARNING_RATE:-0.02}"
+    # Muon. 2026-07-01: DIVERGED on E05 at LR 0.02 (onset ~step 3k) AND 0.01 (onset ~step 4.5k) —
+    # delayed-onset grad_norm explosion. Root cause (confirmed): full-rank orthogonalized updates grow
+    # weight spectral norms (esp. in the Q·K + lm_head bilinear couplings) with NO weight decay to curb
+    # it, compounded by an over-hot lm_head fallback LR. Mitigations baked in below per Moonlight
+    # (arXiv:2502.16982): weight_decay 0.1 (was 0.0) + MUON_ADAMW_LR 2e-4 (was 2e-3). LR 0.01 (0.02
+    # diverged faster). MUST re-confirm stability with a constant_with_warmup calibration that sustains
+    # peak LR past the onset region. Full root-cause + mitigations: run report
+    # e05_muon_divergence_rootcause_20260701.md.
+    export LEARNING_RATE="${LEARNING_RATE:-0.01}"
+    export MUON_ADAMW_LR="${MUON_ADAMW_LR:-2e-4}"      # was 2e-3 — over-updates lm_head (output logits)
+    export WEIGHT_DECAY="${WEIGHT_DECAY:-0.1}"         # Moonlight: wd=0.1 is Muon's long-horizon stabilizer
 else
-    # Adam (E05 attempt-3 retune): LR 5e-5, max_grad_norm 0.5 — attempt 2 diverged at step 40k
-    # under LR 1e-4 / clip 1.0; cosine-kept-hot + HF-default clip let bad-direction updates dominate.
+    # Adam (E05 attempt-3 retune): LR 5e-5, max_grad_norm 0.5 — stable to 0.5 ep (eval_loss 3.83).
+    # attempt 2 diverged at step 40k under LR 1e-4 / clip 1.0.
     export LEARNING_RATE="${LEARNING_RATE:-5e-5}"
 fi
 

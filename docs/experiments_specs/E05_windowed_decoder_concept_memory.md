@@ -72,21 +72,27 @@ variable; override any other knob by exporting it before the call.
 SKIP_PRETOKENIZE=1 RESUME_FROM_CHECKPOINT=Cache/Training/<run>/checkpoint-<step> \
   OPTIMIZER=adam bash scripts/launch_e05.sh
 
-# Muon arm (Polonez, fresh) — token-matched to the Adam arm: same seed/model/mix/effective-batch/
-# epochs, only the optimizer + its LR differ. Pretokenize runs once on Polonez (its own manifest);
-# bump workers for speed (output is identical): TRAIN_NUM_PROC=32 TEST_NUM_PROC=8.
-OPTIMIZER=muon bash scripts/launch_e05.sh
+# Muon arm (Odra, fresh — Polonez is down 2026-07-01; same 3×3090 as Adam = cleaner A/B anyway).
+# 2026-07-01: Muon DIVERGED at LR 0.02 (onset ~step 3k) and 0.01 (onset ~step 4.5k) — root cause +
+# mitigations in run report e05_muon_divergence_rootcause_20260701.md. launch_e05.sh now bakes in the
+# Moonlight mitigations (WEIGHT_DECAY=0.1, MUON_ADAMW_LR=2e-4, LR 0.01). Re-confirm with a SUSTAINED-LR
+# calibration first (constant_with_warmup — a short cosine decays LR before the onset region):
+LR_SCHEDULER_TYPE=constant_with_warmup NUM_EPOCHS=0.05 OPTIMIZER=muon WANDB_MODE=disabled \
+  SKIP_PRETOKENIZE=1 bash scripts/launch_e05.sh    # calibrate (sustained peak LR past the onset)
+OPTIMIZER=muon SKIP_PRETOKENIZE=1 bash scripts/launch_e05.sh   # full run (0.5 ep) once stable
 
 # Matched full-causal control (unset the window).
 SKIP_PRETOKENIZE=1 OPTIMIZER=adam DECODER_CONTEXT_WINDOW= bash scripts/launch_e05.sh
 ```
 
-`launch_e05.sh` pins (2026-06-28 retune + 2026-06-29 dedup):
-LR `5e-5` (adam) / `0.02` (muon matrix) + `MUON_ADAMW_LR=2e-3` fallback, warmup `2000`,
-`MAX_GRAD_NORM=0.5`, per-device batch `8` (Odra, 3 GPU) / `6` (Polonez, 4 GPU) × grad-accum `3`
-→ **effective batch 72 on both** (identical tokens/step), `EVAL_STEPS=4000`, `SAVE_STEPS=4000`,
-`NUM_EPOCHS=0.5` (default — **MUST match the live Adam arm**; the resumed Odra run may be 1 epoch),
-`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`.
+`launch_e05.sh` pins (2026-06-28 retune + 2026-06-29 dedup + 2026-07-01 Muon mitigations):
+LR `5e-5` (adam) / `0.01` (muon matrix; 0.02 diverged faster) + `MUON_ADAMW_LR=2e-4` (was 2e-3 — over-hot
+lm_head) + `WEIGHT_DECAY=0.1` for muon (was 0.0 — Moonlight stabilizer; adam stays 0.0), warmup `2000`,
+`MAX_GRAD_NORM=0.5`, per-device batch `8` (Odra, 3 GPU) × grad-accum `3` → **effective batch 72**
+(identical tokens/step), `EVAL_STEPS=4000`, `SAVE_STEPS=4000`, `NUM_EPOCHS=0.5`,
+`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`. **A/B cleanliness caveat:** Muon uses `WEIGHT_DECAY=0.1`
+while Adam ran at 0.0 — wd is part of "what Muon needs to be stable" (or re-run Adam at 0.1 for a
+single-variable A/B); optimizer LR necessarily differs (Adam 5e-5 vs Muon 0.01, each at its appropriate LR).
 
 **A/B cleanliness caveat:** the Adam arm is the crash-then-resumed Odra run; the Muon arm is fresh
 from seed 42. Identical init/data/tokens, but the resume is a noted confound on the Adam arm (resume
@@ -129,3 +135,4 @@ The K-slice Δ must clear the primary threshold; the 508-slice Δ is the robustn
 <Filled in AFTER by experiment-track.>
 - Attempt 2 (diverged): Run id `concept_ar_prefix_H768L6C128D4_20260627_192407` · WandB [Link](https://wandb.ai/ksopyla/MrCogito/runs/concept_ar_prefix_H768L6C128D4_20260627_192407) · Run report [e05_attempt2_diverged_20260628.md](../2_Experiments_Registry/run_reports/e05_attempt2_diverged_20260628.md). **Verdict: attempt 2 — DIVERGED (optimization failure, architecture sound).** Best checkpoint-40000 (eval_loss 3.317, within-sample RankMe 59.8, Δshuffle_beyond 0.35) clears the Stage 1 floor. Retuned (LR 5e-5 / clip 0.5 / batch 12) and re-scoped to 0.5 ep for attempt 3.
 - Attempt 3 (completed): Run id `concept_ar_prefix_H768L6C128D4_20260629_093840` · WandB [Link](https://wandb.ai/ksopyla/MrCogito/runs/concept_ar_prefix_H768L6C128D4_20260629_093840) · Run report [e05_attempt3_completed_20260630.md](../2_Experiments_Registry/run_reports/e05_attempt3_completed_20260630.md). **Verdict: STAGE 1 PASS / STAGE 2 NOT YET MET.** Optimization win — LR 5e-5 + clip 0.5 + batch 8×accum3 (effective 72) is the proven-stable recipe for the K=128 windowed decoder (no divergence, 0.5 ep / 10.2B tokens / 68.2 GPU-h). Concept health OK: within-sample RankMe **37.67** (not collapsed), Δzero_beyond **6.99** (decoder reads concepts). **Semantic quality weak:** Δshuffle_beyond **0.39** (Stage 1 floor ≥0.3 ✓, Stage 2 target ≥0.5 ✗); **STS-B zero-shot 0.452 below both trivial floors** (token-embed-mean 0.486, teacher-hidden-mean 0.460); free-running generations are repetition loops (token-F1 0.149). SICK-R 0.183, SICK-E 0.634, PAWS 0.550/0.253, GLUE MRPC 0.669/0.778, GLUE STSB 0.354/0.341. Not an architectural dead-end (cf. attempt 2 divergence) — a "more training / stronger objective" signal. Matched A/B now justified. Two eval-script bugs fixed during eval: wandb tag truncation (`730e607`), SmolLM2 pad_token (`70e1fd2`).
+- **Muon A/B (diverged, 2026-07-01):** Adam-vs-Muon optimizer A/B. Muon arms `concept_ar_prefix_H768L6C128D4_20260701_084351` (LR 0.02, [W&B](https://wandb.ai/ksopyla/MrCogito/runs/concept_ar_prefix_H768L6C128D4_20260701_084351)) + `..._20260701_194042` (LR 0.01, [W&B](https://wandb.ai/ksopyla/MrCogito/runs/concept_ar_prefix_H768L6C128D4_20260701_194042)) · Run report [e05_muon_divergence_rootcause_20260701.md](../2_Experiments_Registry/run_reports/e05_muon_divergence_rootcause_20260701.md). **Verdict: Muon diverges on E05 at both LRs (delayed onset ~step 3k/4.5k) — but converges ~5× faster first** (eval_loss **3.34** at step 4k vs Adam's ~5.40). Root cause: Muon's full-rank orthogonalized updates grow weight spectral norms (Q·K + lm_head bilinear couplings) with **no weight decay** to curb it + over-hot `adamw_lr=2e-3`; survives `max_grad_norm=0.5`. Mitigations implemented (`WEIGHT_DECAY=0.1`, `MUON_ADAMW_LR=2e-4`, sustained-LR `constant_with_warmup` calibration); retry pending.
