@@ -372,15 +372,39 @@ def setup_file_logging(log_dir: Optional[str] = None):
     logger.info(f"Logging to file: {log_filepath}")
 
 
+def resolve_dataset_identifier(data_args) -> str:
+    """Return the dataset identifier that actually trained the model.
+
+    Mirrors the data-loading priority in train_perceiver_denoise.main():
+    pretokenized manifest → dataset_mix_recipe → dataset_mix → dataset_name.
+    The default ``dataset_name`` (e.g. ``JeanKaddour/minipile``) is misleading
+    when a long-context mix is in use, because it is left untouched while the
+    real data comes from the mix/manifest.
+    """
+    manifest = getattr(data_args, "pretokenized_manifest", None)
+    if manifest:
+        return manifest
+    mix_recipe = getattr(data_args, "dataset_mix_recipe", None)
+    if mix_recipe:
+        return mix_recipe
+    mix = getattr(data_args, "dataset_mix", None)
+    if mix:
+        return mix
+    return data_args.dataset_name
+
+
 def log_data_config(data_args, extra_fields: Optional[Dict[str, Any]] = None):
     """Log standardized 'Data Configuration' section to console."""
     if not is_main_process():
         return
+    effective_dataset = resolve_dataset_identifier(data_args)
     logger.info("=" * 60)
     logger.info("Data Configuration")
     logger.info("=" * 60)
-    logger.info(f"Dataset: {data_args.dataset_name}")
-    if getattr(data_args, "dataset_name_subset", None):
+    logger.info(f"Dataset: {effective_dataset}")
+    if effective_dataset == data_args.dataset_name and getattr(
+        data_args, "dataset_name_subset", None
+    ):
         logger.info(f"Dataset subset: {data_args.dataset_name_subset}")
     logger.info(f"Tokenizer: {data_args.tokenizer_name}")
     logger.info(f"Max sequence length: {data_args.max_seq_length}")
@@ -630,6 +654,20 @@ def init_wandb(
     if loss_config.is_enabled:
         tags.append(f"losses:{'+'.join(loss_config.concept_losses)}")
 
+    # Effective dataset: prefer mix recipe / mix / pretokenized manifest over the
+    # bare dataset_name (which stays at its default when a mix is in use). This is
+    # what actually trained the model; the bare dataset_name is still kept below as
+    # a separate config field for completeness.
+    effective_dataset = resolve_dataset_identifier(data_args)
+    if effective_dataset and effective_dataset not in tags:
+        tags.append(effective_dataset)
+
+    # The real optimizer family (selected by our --optimizer flag). HF's --optim is
+    # kept at "adamw_torch_fused" for both arms because HF coerces --optim to its enum
+    # and rejects "muon"; without this override the misleading HF value would surface
+    # in the config under the "optim" key.
+    effective_optim = identity_config.get("optimizer") or getattr(training_args, "optim", None)
+
     wandb_config: Dict[str, Any] = {
         "model_type": model_type,
         "hidden_size": config.hidden_size,
@@ -644,7 +682,8 @@ def init_wandb(
         "trainable_params": trainable_params,
         "concept_losses": loss_config.concept_losses,
         "loss_weighting": loss_config.weighting_strategy,
-        "dataset_name": data_args.dataset_name,
+        "dataset_name": effective_dataset,
+        "dataset_name_hf_default": data_args.dataset_name,
         "tokenizer_name": data_args.tokenizer_name,
         "max_seq_length": data_args.max_seq_length,
         "compare_family": identity_config.get("model_family", model_type),
@@ -655,6 +694,8 @@ def init_wandb(
         **{f"git_{k}": v for k, v in get_git_info().items()},
         **{k: v for k, v in vars(training_args).items() if not k.startswith("_")},
     }
+    if effective_optim:
+        wandb_config["optim"] = effective_optim
     if extra_config:
         wandb_config.update(extra_config)
 
@@ -667,6 +708,6 @@ def init_wandb(
         tags=tags,
         group=base_id,
         sync_tensorboard=True,
-        notes=notes or f"Model: {model_type}, Dataset: {data_args.dataset_name}",
+        notes=notes or f"Model: {model_type}, Dataset: {effective_dataset}",
     )
     logger.info(f"W&B run: {wandb.run.id} / {wandb.run.name}")
