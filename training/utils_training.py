@@ -657,10 +657,15 @@ def init_wandb(
     # Effective dataset: prefer mix recipe / mix / pretokenized manifest over the
     # bare dataset_name (which stays at its default when a mix is in use). This is
     # what actually trained the model; the bare dataset_name is still kept below as
-    # a separate config field for completeness.
+    # a separate config field for completeness. For the TAG, use a short form: a
+    # pretokenized manifest PATH is ~90 chars and wandb rejects tags > 64 chars
+    # (crashed wandb.init on pretokenized runs, 2026-07-01) — use the manifest basename.
     effective_dataset = resolve_dataset_identifier(data_args)
-    if effective_dataset and effective_dataset not in tags:
-        tags.append(effective_dataset)
+    dataset_tag = effective_dataset.rsplit("/", 1)[-1] if (
+        effective_dataset and "/" in effective_dataset
+    ) else effective_dataset
+    if dataset_tag and dataset_tag not in tags:
+        tags.append(dataset_tag)
 
     # The real optimizer family (selected by our --optimizer flag). HF's --optim is
     # kept at "adamw_torch_fused" for both arms because HF coerces --optim to its enum
@@ -698,6 +703,10 @@ def init_wandb(
         wandb_config["optim"] = effective_optim
     if extra_config:
         wandb_config.update(extra_config)
+
+    # W&B tags are capped at 64 chars (a longer tag raises a pydantic ValidationError
+    # in wandb.init). Clamp as a safety net so no future long tag crashes the run.
+    tags = [str(t)[:64] for t in tags if t]
 
     wandb.init(
         project="MrCogito",
