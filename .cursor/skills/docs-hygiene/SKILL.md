@@ -42,9 +42,9 @@ Classify each file before editing it:
 | Class | Files | Cleaning rule |
 |---|---|---|
 | **Source-of-truth / plan** | `agenda.md`, `docs/experiments_specs/<ID>.md`, `training_eval_matrix.md`, `vision_and_goals.md` | Prune hard to current state. Completed/abandoned detail → compress to a tombstone or move to archive. Resolve every contradiction. Keep `agenda.md` to ~1 screen. |
-| **Append-only ledger** | `master_experiment_log.md`, `2_Experiments_Registry/run_reports/*`, `4_Research_Notes/*` | **Never delete or rewrite results.** Only add a dated note when a later result supersedes an earlier *interpretation*. |
+| **Append-only ledger** | `master_experiment_log.md`, `2_Experiments_Registry/run_reports/*`, dated `4_Research_Notes/*_*.md` (root-cause diagnoses and failure analyses with date-stamped filenames) | **Never delete or rewrite results.** Only add a dated note when a later result supersedes an earlier *interpretation*. |
 | **Idea / proposal** | `experiment_ideas/*` | Mark `ADOPTED` / `REJECTED` / `SUPERSEDED`. Rejected ideas keep a one-line reason; archive the file once it no longer informs decisions. |
-| **Notes / review / drafts** | `research-notes/*`, `literature_review/*`, `sprind_frontier_ai/*`, `prompts/*`, `debugging/*` | Correct outdated claims in place; mark obsolete sections. These rarely need archiving unless fully dead. |
+| **Notes / review / drafts** | undated `4_Research_Notes/*.md` (concept analysis framework, embedding-space theory, evaluation strategy, research ideas — project-internal notes), `literature_review/*` (external paper reviews), `sprind_frontier_ai/*`, `prompts/*`, `debugging/*` | Correct outdated claims in place; mark obsolete sections. These rarely need archiving unless fully dead. |
 | **Archive** | `5_Archive/*` | Terminal. Must carry an OBSOLETE header. Don't re-clean content; only fix the header/pointers. |
 
 ## Workflow

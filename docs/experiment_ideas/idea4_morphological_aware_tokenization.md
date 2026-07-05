@@ -21,7 +21,7 @@ The procedure:
 
 ## Morphological aware tokenization intuitions and hypothesis
 
-Following the [concept_encoder_notes](../concept_encoder_notes.md#idea-4---morphological-aware-tokenization) that for better concept encoding we need to use the multiple token masking, we should use the morphological aware tokenization. 
+Following the [concept_encoder_notes](../4_Research_Notes/concept_encoder_notes.md#idea-4---morphological-aware-tokenization) that for better concept encoding we need to use the multiple token masking, we should use the morphological aware tokenization.
 Current tokenizers are not able to properly tokenize the words with morphological variations and split the words for root  and morphemes.
 Intuition behind this: root and morphemes contains meaning
 

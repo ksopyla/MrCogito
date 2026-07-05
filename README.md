@@ -151,7 +151,8 @@ Text is the first proving ground because it gives fast iteration, mature dataset
 │   ├── experiments/             # Frozen experiment specs and plans
 │   ├── 2_Experiments_Registry/   # Run ledger and reports
 │   ├── 3_Evaluations_and_Baselines/
-│   ├── 4_Research_Notes/
+│   ├── 4_Research_Notes/         # Internal notes: dated diagnoses (append-only) + undated frameworks/strategy
+│   ├── literature_review/        # External paper / publication reviews (topical, ### TL;DR per paper)
 │   └── 5_Archive/               # Historical plans (not current truth)
 ├── parked/                     # Revivable but inactive experiment families
 ├── tests/

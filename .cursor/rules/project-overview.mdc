@@ -29,7 +29,8 @@ The live agenda is `docs/1_Strategy_and_Plans/agenda.md` (slim daily driver — 
     - `engineering_specs/` — one frozen spec per engineering change 
     - `2_Experiments_Registry/` — master experiment log, run reports (append-only result ledger)
     - `3_Evaluations_and_Baselines/` — canonical baselines, comparative studies
-    - `4_Research_Notes/` — root cause analyses, diagnoses
+    - `4_Research_Notes/` — internal research notes. Two sub-classes: dated root-cause diagnoses / failure analyses (append-only ledger — never rewrite results) and undated mutable notes (concept analysis framework, embedding-space theory, evaluation strategy, research ideas — correct in place, mark obsolete sections)
+    - `literature_review/` — external paper / publication reviews. Topical filenames (no dates), one or more papers per file with `### TL;DR` each. Canonical source for past reviews referenced by the `research-scout` / `research-explain` / `research-synthesis` skills
     - `5_Archive/` — superseded roadmaps/plans (HISTORICAL — see Docs hygiene below)
 - `Cache/` — files synced from remote servers (gitignored content)
     - `Training/` — model checkpoints and optimizer states

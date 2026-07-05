@@ -82,6 +82,14 @@ Do not use unofficial paywall-bypass sources. If a paper is paywalled, use the o
 - Related: other papers it builds on or contradicts (with links).
 ```
 
+## Where Notes Live
+
+External paper / publication reviews go in `docs/literature_review/` (topical filenames, one or more papers per file with `### TL;DR` each — see the `research-synthesis` skill's Folder Conventions). Do not save lightweight per-call outputs there; that folder is for substantial reviews only.
+
+Internal diagnoses and analyses go in `docs/4_Research_Notes/` (dated, append-only — the failure analyses and root-cause notes live here).
+
+The legacy `docs/research-notes/` folder has been removed; everything is now under one of the two folders above.
+
 ## Output Format
 
 ```markdown
