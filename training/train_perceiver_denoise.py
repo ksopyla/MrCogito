@@ -33,12 +33,17 @@ from transformers.modeling_outputs import MaskedLMOutput
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data.data_collators import DataCollatorForPrefixGeneration, DataCollatorForTSDAE
+from data.data_collators import (
+    DataCollatorForCausalLM,
+    DataCollatorForPrefixGeneration,
+    DataCollatorForTSDAE,
+)
 from data.dataset_preprocess import (
     load_and_preprocess_dataset_mix,
     load_and_preprocess_text_dataset,
     load_pretokenized_mix,
 )
+from nn.backbone_concept_lm import BackboneConceptConfig, BackboneConceptLM
 from nn.concept_encoder import ConceptEncoderConfig
 from nn.concept_encoder_perceiver import (
     ConceptEncoderForConditionalLM,
@@ -46,6 +51,7 @@ from nn.concept_encoder_perceiver import (
 )
 from nn.loss_manager import ConceptLossStepCallback, LossConfig, get_available_losses
 from training.utils_training import (
+    WandbRunIdentity,
     broadcast_object,
     build_perceiver_wandb_identity,
     init_wandb,
@@ -65,10 +71,12 @@ logger = logging.get_logger(__name__)
 OBJECTIVE_RECONSTRUCTION = "reconstruction"
 OBJECTIVE_RECONSTRUCTION_CONTRASTIVE = "reconstruction+contrastive"
 OBJECTIVE_PREFIX_SUFFIX = "prefix_suffix"
+OBJECTIVE_CAUSAL_LM = "causal_lm"   # E10 backbone-concept family: plain next-token CE
 VALID_OBJECTIVES = {
     OBJECTIVE_RECONSTRUCTION,
     OBJECTIVE_RECONSTRUCTION_CONTRASTIVE,
     OBJECTIVE_PREFIX_SUFFIX,
+    OBJECTIVE_CAUSAL_LM,
 }
 
 
@@ -90,6 +98,7 @@ def resolve_append_eos_token_id(objective_variant, is_causal_ar, eos_token_id):
         OBJECTIVE_RECONSTRUCTION,
         OBJECTIVE_RECONSTRUCTION_CONTRASTIVE,
         OBJECTIVE_PREFIX_SUFFIX,
+        OBJECTIVE_CAUSAL_LM,   # EOS marks the document boundary the LM must learn
     )
     if eos_token_id is not None and (is_causal_ar or objective_appends_eos):
         return eos_token_id
@@ -211,6 +220,31 @@ class ModelArguments:
     anchor_head_layers: int = field(
         default=2,
         metadata={"help": "Lean anchor head depth (PerceiverDecoderLayer blocks); keep small."},
+    )
+    # E10 — pretrained-backbone concept memory (BackboneConceptLM). Default None keeps every
+    # existing model family byte-identical; setting backbone_model selects the new family
+    # (requires objective_variant='causal_lm').
+    backbone_model: Optional[str] = field(
+        default=None,
+        metadata={"help": "E10: HF id of the frozen pretrained decoder to graft concepts onto "
+                  "(e.g. google/gemma-3-1b-pt). None = the classic concept-encoder families."},
+    )
+    concept_block: int = field(
+        default=512,
+        metadata={"help": "E10: block size = write cadence; must equal the backbone's sliding "
+                  "window (Gemma-3-1B: 512)."},
+    )
+    concept_io_mode: str = field(
+        default="global_kv",
+        metadata={"help": "E10: concept read/write mechanism. 'global_kv' (E10 Design C); "
+                  "'mem_tokens' (E11) / 'kv_prefix' (E12) are follow-up specs."},
+    )
+    lora_r: int = field(default=16, metadata={"help": "E10: LoRA rank on the backbone (0 = off)."})
+    lora_alpha: int = field(default=32, metadata={"help": "E10: LoRA alpha."})
+    lora_dropout: float = field(default=0.05, metadata={"help": "E10: LoRA dropout."})
+    lora_targets: str = field(
+        default="q_proj,k_proj,v_proj,o_proj",
+        metadata={"help": "E10: comma-separated LoRA target module names."},
     )
 
 
@@ -563,7 +597,8 @@ class PerceiverDenoiseTrainer(Trainer):
         # or a plain forward objective with no extra manual auxiliary. The anchor and contrastive
         # objectives fall through to the manual path below (training only).
         if not model.training or (
-            self.objective_variant in {OBJECTIVE_RECONSTRUCTION, OBJECTIVE_PREFIX_SUFFIX}
+            self.objective_variant
+            in {OBJECTIVE_RECONSTRUCTION, OBJECTIVE_PREFIX_SUFFIX, OBJECTIVE_CAUSAL_LM}
             and not self.anchor_loss
         ):
             outputs = model(**inputs)
@@ -722,6 +757,23 @@ def main():
             f"Expected one of {sorted(VALID_DECODER_TYPES)}."
         )
     is_causal_ar = model_args.decoder_type == DECODER_CAUSAL_AR
+    is_backbone = model_args.backbone_model is not None
+    if is_backbone and model_args.objective_variant != OBJECTIVE_CAUSAL_LM:
+        raise ValueError(
+            "backbone_model (E10) requires objective_variant='causal_lm'; "
+            f"got {model_args.objective_variant!r}."
+        )
+    if model_args.objective_variant == OBJECTIVE_CAUSAL_LM and not is_backbone:
+        raise ValueError("objective_variant='causal_lm' requires --backbone_model (E10).")
+    if is_backbone and model_args.anchor_loss:
+        raise ValueError("anchor_loss is not supported by the backbone-concept family.")
+    if is_backbone and loss_args.concept_losses and loss_args.concept_losses.lower() != "none":
+        raise ValueError("concept_losses are not wired into the backbone-concept family (E10).")
+    if is_backbone and model_args.model_name_or_path:
+        raise ValueError(
+            "model_name_or_path warm-start is the concept-encoder path; the backbone family "
+            "initializes from backbone_model directly."
+        )
     if is_causal_ar and model_args.objective_variant == OBJECTIVE_RECONSTRUCTION_CONTRASTIVE:
         raise ValueError(
             "decoder_type='causal_ar' supports objective_variant='reconstruction' or "
@@ -836,15 +888,35 @@ def main():
     logger.info(f"Test dataset size: {len(test_ds):,}")
     logger.info("=" * 60)
 
-    config = build_perceiver_denoise_config(tokenizer, model_args, data_args)
     loss_config = loss_args.to_loss_config()
     log_loss_config(loss_config)
 
-    model_class = ConceptEncoderForConditionalLM if is_causal_ar else ConceptEncoderForDenoisingPerceiver
-    logger.info(f"Initializing {model_class.__name__}")
-    model = model_class(config, loss_config=loss_config)
+    if is_backbone:
+        config = BackboneConceptConfig(
+            backbone_model=model_args.backbone_model,
+            concept_num=model_args.concept_num,
+            concept_block=model_args.concept_block,
+            concept_io_mode=model_args.concept_io_mode,
+            lora_r=model_args.lora_r,
+            lora_alpha=model_args.lora_alpha,
+            lora_dropout=model_args.lora_dropout,
+            lora_targets=model_args.lora_targets,
+            tokenizer_name=data_args.tokenizer_name,
+        )
+        config.pretraining_objective = "causal_lm_block_recurrent"
+        logger.info(
+            f"Initializing BackboneConceptLM (backbone={model_args.backbone_model}, "
+            f"C={model_args.concept_num}, K={model_args.concept_block}, "
+            f"io={model_args.concept_io_mode}, lora_r={model_args.lora_r})"
+        )
+        model = BackboneConceptLM.from_pretrained_backbone(config)
+    else:
+        config = build_perceiver_denoise_config(tokenizer, model_args, data_args)
+        model_class = ConceptEncoderForConditionalLM if is_causal_ar else ConceptEncoderForDenoisingPerceiver
+        logger.info(f"Initializing {model_class.__name__}")
+        model = model_class(config, loss_config=loss_config)
 
-    if model_args.model_name_or_path:
+    if model_args.model_name_or_path and not is_backbone:
         logger.info(f"Warm-starting encoder from {model_args.model_name_or_path}")
         pretrained = model_class.from_pretrained(
             model_args.model_name_or_path,
@@ -853,7 +925,9 @@ def main():
         model.encoder.load_state_dict(pretrained.encoder.state_dict(), strict=False)
         logger.info("Loaded pretrained encoder weights. Decoder and objective head use the current config.")
 
-    if is_causal_ar:
+    if is_backbone:
+        model_type_str = "backbone_concept"
+    elif is_causal_ar:
         model_type_str = "concept_ar"
         if model_args.objective_variant == OBJECTIVE_PREFIX_SUFFIX:
             model_type_str += "_prefix"
@@ -902,19 +976,43 @@ def main():
         logger.info(f"torch.compile(dynamic=True, backend='{backend}')")
         model = torch.compile(model, dynamic=True, fullgraph=False, backend=backend)
 
-    wandb_identity = build_perceiver_wandb_identity(
-        decoder_type=model_args.decoder_type,
-        objective_variant=model_args.objective_variant,
-        hidden_size=model_args.hidden_size,
-        num_hidden_layers=model_args.num_hidden_layers,
-        concept_num=model_args.concept_num,
-        decoder_num_layers=model_args.decoder_num_layers,
-        checkpoint_family=config.checkpoint_family,
-        pretraining_objective=config.pretraining_objective,
-        use_bixt=model_args.use_bixt,
-        anchor_loss=model_args.anchor_loss,
-        experiment_id=os.environ.get("WANDB_EXPERIMENT_ID") or os.environ.get("EXPERIMENT_ID"),
-    )
+    env_experiment_id = os.environ.get("WANDB_EXPERIMENT_ID") or os.environ.get("EXPERIMENT_ID")
+    if is_backbone:
+        backbone_short = model_args.backbone_model.split("/")[-1].replace("-", "_")
+        architecture_id = (
+            f"backbone_concept_{backbone_short}"
+            f"_C{model_args.concept_num}K{model_args.concept_block}"
+        )
+        resolved_experiment = env_experiment_id or "E10"
+        wandb_identity = WandbRunIdentity(
+            experiment_id=resolved_experiment,
+            model_family="backbone_concept",
+            objective_family="causal_lm",
+            architecture_id=architecture_id,
+            group=f"{resolved_experiment}_{architecture_id}",
+            job_type="train_backbone_causal_lm",
+            tags=[
+                "train", "concept-encoder", "decoder:autoregressive", "task:generation",
+                "backbone_concept", model_args.backbone_model,
+                f"io-{model_args.concept_io_mode}", "causal_lm",
+                "concept-arm" if model_args.concept_num > 0 else "control-arm",
+                resolved_experiment,
+            ],
+        )
+    else:
+        wandb_identity = build_perceiver_wandb_identity(
+            decoder_type=model_args.decoder_type,
+            objective_variant=model_args.objective_variant,
+            hidden_size=model_args.hidden_size,
+            num_hidden_layers=model_args.num_hidden_layers,
+            concept_num=model_args.concept_num,
+            decoder_num_layers=model_args.decoder_num_layers,
+            checkpoint_family=config.checkpoint_family,
+            pretraining_objective=config.pretraining_objective,
+            use_bixt=model_args.use_bixt,
+            anchor_loss=model_args.anchor_loss,
+            experiment_id=env_experiment_id,
+        )
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_identifier = (
@@ -997,7 +1095,12 @@ def main():
     # Train collator samples fresh corruption per call; the eval collator is seeded
     # so the held-out set always sees the same deletions / split points (stable
     # eval_loss, fair best-checkpoint selection).
-    if model_args.objective_variant == OBJECTIVE_PREFIX_SUFFIX:
+    if model_args.objective_variant == OBJECTIVE_CAUSAL_LM:
+        # No corruption/splitting is sampled, so the same (deterministic) collator serves
+        # both train and eval.
+        data_collator = DataCollatorForCausalLM(tokenizer, max_length=data_args.max_seq_length)
+        eval_data_collator = DataCollatorForCausalLM(tokenizer, max_length=data_args.max_seq_length)
+    elif model_args.objective_variant == OBJECTIVE_PREFIX_SUFFIX:
         prefix_collator_kwargs = dict(
             max_length=data_args.max_seq_length,
             prefix_ratio_min=data_args.prefix_ratio_min,
@@ -1038,7 +1141,7 @@ def main():
         objective_variant=model_args.objective_variant,
         contrastive_weight=model_args.contrastive_weight,
         contrastive_temperature=model_args.contrastive_temperature,
-        compute_concept_ablation=is_causal_ar,
+        compute_concept_ablation=is_causal_ar or (is_backbone and model_args.concept_num > 0),
         eval_data_collator=eval_data_collator,
         anchor_loss=model_args.anchor_loss,
         anchor_loss_weight=model_args.anchor_loss_weight,
@@ -1049,13 +1152,25 @@ def main():
         muon_momentum=optim_args.muon_momentum,
     )
 
-    decoder_desc = (
-        f"causal_ar (AR, {model_args.decoder_num_layers}L, pos={model_args.decoder_pos_type}, "
-        f"word_dropout={model_args.decoder_word_dropout})"
-        if is_causal_ar
-        else f"perceiver_posonly ({model_args.decoder_num_layers}L)"
-    )
-    if model_args.objective_variant == OBJECTIVE_PREFIX_SUFFIX:
+    if is_backbone:
+        decoder_desc = (
+            f"backbone_concept ({model_args.backbone_model}, frozen+LoRA r={model_args.lora_r}, "
+            f"C={model_args.concept_num}, K={model_args.concept_block}, "
+            f"io={model_args.concept_io_mode})"
+        )
+    else:
+        decoder_desc = (
+            f"causal_ar (AR, {model_args.decoder_num_layers}L, pos={model_args.decoder_pos_type}, "
+            f"word_dropout={model_args.decoder_word_dropout})"
+            if is_causal_ar
+            else f"perceiver_posonly ({model_args.decoder_num_layers}L)"
+        )
+    if model_args.objective_variant == OBJECTIVE_CAUSAL_LM:
+        objective_desc = (
+            f"causal_lm (block-recurrent next-token CE, block K={model_args.concept_block}, "
+            f"concepts={'on' if model_args.concept_num > 0 else 'OFF (control arm)'})"
+        )
+    elif model_args.objective_variant == OBJECTIVE_PREFIX_SUFFIX:
         objective_desc = (
             f"prefix_suffix (encoder sees prefix {data_args.prefix_ratio_min:.2f}-"
             f"{data_args.prefix_ratio_max:.2f} via {data_args.split_strategy}, decoder generates suffix)"
@@ -1077,11 +1192,18 @@ def main():
     logger.info(f"  Pretraining obj : {config.pretraining_objective}")
     logger.info(f"  Objective       : {objective_desc}")
     logger.info(f"  Decoder         : {decoder_desc}")
-    logger.info(
-        f"  Encoder         : H{config.hidden_size} L{config.num_hidden_layers} "
-        f"C{config.concept_num} token_emb={config.token_embedding_dim} "
-        f"act={config.hidden_act} norm={config.norm_type} bixt={model_args.use_bixt}"
-    )
+    if is_backbone:
+        logger.info(
+            f"  Backbone        : {model_args.backbone_model} "
+            f"C{config.concept_num} K{config.concept_block} lora_r={config.lora_r} "
+            f"targets={config.lora_targets}"
+        )
+    else:
+        logger.info(
+            f"  Encoder         : H{config.hidden_size} L{config.num_hidden_layers} "
+            f"C{config.concept_num} token_emb={config.token_embedding_dim} "
+            f"act={config.hidden_act} norm={config.norm_type} bixt={model_args.use_bixt}"
+        )
     if data_args.dataset_mix_recipe or data_args.dataset_mix:
         selected_mix = data_args.dataset_mix_recipe or data_args.dataset_mix
         logger.info(

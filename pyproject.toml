@@ -37,6 +37,7 @@ dependencies = [
     # Fused Triton kernels (cross-entropy, +20% throughput, -60% memory).
     # Linux-only because it depends on Triton + CUDA.
     "liger-kernel>=0.5.0; sys_platform == 'linux'",
+    "peft>=0.19.1",
 ]
 
 # PEP 735 dependency groups (managed by uv).

@@ -399,7 +399,7 @@ def main():
     p.add_argument("--download_workers", type=int, default=8, help="Parallel shard downloads per source")
     p.add_argument("--jobs", type=int, default=1, help="Concurrent sources (1 = sequential, safer)")
     p.add_argument("--only", default=None, help="Comma-separated source names to process")
-    p.add_argument("--objective", default="prefix_suffix", choices=["prefix_suffix", "reconstruction", "reconstruction+contrastive"])
+    p.add_argument("--objective", default="prefix_suffix", choices=["prefix_suffix", "reconstruction", "reconstruction+contrastive", "causal_lm"])
     args = p.parse_args()
 
     from training.train_perceiver_denoise import resolve_append_eos_token_id

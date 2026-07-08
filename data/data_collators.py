@@ -160,6 +160,59 @@ class DataCollatorForTSDAE:
         }
 
 
+class DataCollatorForCausalLM:
+    """Plain next-token-LM collator (E10 backbone-concept family).
+
+    Pads variable-length pretokenized rows to the batch max (capped at max_length) and
+    mirrors input_ids into labels with -100 at padding. Shifting happens inside the model.
+
+    Output contract:
+        input_ids      : [B, S]
+        attention_mask : [B, S]  1 = real, 0 = pad
+        labels         : [B, S]  input_ids with -100 at pad
+    """
+
+    def __init__(self, tokenizer, max_length: int = 2048):
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+        if tokenizer.pad_token_id is None:
+            raise ValueError("DataCollatorForCausalLM requires a tokenizer with a pad token.")
+        self.pad_token_id = tokenizer.pad_token_id
+        self._vocab_size = len(tokenizer) if hasattr(tokenizer, "__len__") else None
+
+    def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
+        input_ids_list = [f["input_ids"] for f in features]
+        max_len = min(max(len(x) for x in input_ids_list), self.max_length)
+        batch_size = len(input_ids_list)
+
+        input_ids = torch.full((batch_size, max_len), self.pad_token_id, dtype=torch.long)
+        attention_mask = torch.zeros(batch_size, max_len, dtype=torch.long)
+        for i, ids in enumerate(input_ids_list):
+            if isinstance(ids, torch.Tensor):
+                ids = ids.tolist()
+            length = min(len(ids), max_len)
+            input_ids[i, :length] = torch.tensor(ids[:length], dtype=torch.long)
+            attention_mask[i, :length] = 1
+
+        labels = input_ids.clone()
+        labels[attention_mask == 0] = -100
+
+        if self._vocab_size is not None:
+            ids_min = int(input_ids.min().item())
+            ids_max = int(input_ids.max().item())
+            if ids_min < 0 or ids_max >= self._vocab_size:
+                raise ValueError(
+                    f"DataCollatorForCausalLM produced input_ids outside tokenizer range: "
+                    f"min={ids_min}, max={ids_max}, vocab_size={self._vocab_size}"
+                )
+
+        return {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "labels": labels,
+        }
+
+
 class DataCollatorForPrefixGeneration:
     """
     SODA-inspired collator: split each document into prefix (encoder) and

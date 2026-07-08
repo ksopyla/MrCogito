@@ -98,6 +98,17 @@ MAX_GRAD_NORM="${MAX_GRAD_NORM:-1.0}"
 # below stays adamw_torch_fused in both cases (a valid enum value HF coerces --optim to); our
 # --optimizer flag is the real selector (see PerceiverDenoiseTrainer.create_optimizer).
 OPTIMIZER="${OPTIMIZER:-adam}"
+# E10 — pretrained-backbone concept memory. Empty BACKBONE_MODEL keeps every existing
+# family byte-identical; setting it selects BackboneConceptLM (objective causal_lm).
+BACKBONE_MODEL="${BACKBONE_MODEL:-}"
+CONCEPT_BLOCK="${CONCEPT_BLOCK:-512}"
+CONCEPT_IO_MODE="${CONCEPT_IO_MODE:-global_kv}"
+LORA_R="${LORA_R:-16}"
+LORA_ALPHA="${LORA_ALPHA:-32}"
+LORA_DROPOUT="${LORA_DROPOUT:-0.05}"
+LORA_TARGETS="${LORA_TARGETS:-q_proj,k_proj,v_proj,o_proj}"
+# HF gradient checkpointing (needed by the 1B-backbone family at seq 2048 on 24 GB cards).
+GRADIENT_CHECKPOINTING="${GRADIENT_CHECKPOINTING:-False}"
 # Decoupled weight decay (HF --weight_decay). For Muon it reaches nn.muon.Muon via
 # PerceiverDenoiseTrainer.create_optimizer. 2026-07-01: Muon diverged on E05 at wd=0.0 (the default) —
 # Moonlight (arXiv:2502.16982) shows wd is Muon's long-horizon stabilizer (their wd=0.1); set 0.1 for Muon.
@@ -128,7 +139,9 @@ export DDP_TIMEOUT
 # is a reusable capability for any long-context mix experiment, not E05-specific.
 PRETOKENIZE_MIX="${PRETOKENIZE_MIX:-}"
 if [ -n "$PRETOKENIZE_MIX" ]; then
-    DATASETS_TOK_DIR="${HF_HOME}/../datasets_tok"
+    # Overridable so a tokenizer switch (e.g. E10's Gemma tokenizer) gets its own cache tree
+    # instead of colliding with the SmolLM2-tokenized per-source dirs.
+    DATASETS_TOK_DIR="${DATASETS_TOK_DIR:-${HF_HOME}/../datasets_tok}"
     MANIFEST="${MANIFEST:-${DATASETS_TOK_DIR}/${PRETOKENIZE_MIX}_manifest.json}"
     # Archive raw parquet/zst to NAS after tokenizing (tokenizer-agnostic, survives a tokenizer
     # switch). Set RAW_ARCHIVE_DIR= to disable. NAS is slow but write-once.
@@ -210,6 +223,21 @@ if [ "$ANCHOR_LOSS" = "true" ]; then
     )
 fi
 
+# E10: backbone-concept family args, only passed when BACKBONE_MODEL is set so every
+# existing family's invocation stays byte-identical.
+BACKBONE_ARGS=()
+if [ -n "$BACKBONE_MODEL" ]; then
+    BACKBONE_ARGS+=(
+        --backbone_model "$BACKBONE_MODEL"
+        --concept_block "$CONCEPT_BLOCK"
+        --concept_io_mode "$CONCEPT_IO_MODE"
+        --lora_r "$LORA_R"
+        --lora_alpha "$LORA_ALPHA"
+        --lora_dropout "$LORA_DROPOUT"
+        --lora_targets "$LORA_TARGETS"
+    )
+fi
+
 # Optimizer selection (--optimizer is our flag; HF --optim stays adamw_torch_fused for both arms).
 OPTIM_ARGS=(--optimizer "$OPTIMIZER")
 if [ "$OPTIMIZER" = "muon" ]; then
@@ -272,7 +300,7 @@ uv run accelerate launch \
     --ddp_find_unused_parameters False \
     --dataloader_pin_memory True \
     --dataloader_num_workers "$DATALOADER_NUM_WORKERS" \
-    --gradient_checkpointing False \
+    --gradient_checkpointing "$GRADIENT_CHECKPOINTING" \
     --optim "adamw_torch_fused" \
     --max_grad_norm "$MAX_GRAD_NORM" \
     --weight_decay "$WEIGHT_DECAY" \
@@ -288,6 +316,7 @@ uv run accelerate launch \
     "${WINDOW_ARGS[@]}" \
     "${MIX_ARGS[@]}" \
     "${ANCHOR_ARGS[@]}" \
+    "${BACKBONE_ARGS[@]}" \
     "${OPTIM_ARGS[@]}" \
     "${RESUME_ARGS[@]}" \
     2>&1 | uv run python scripts/clean_tee.py "$SHELL_LOG"
