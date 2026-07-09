@@ -391,8 +391,8 @@ def main():
     p.add_argument("--mix", required=True, help="Recipe id/path or registered mix name")
     p.add_argument("--tokenizer", default="HuggingFaceTB/SmolLM2-135M")
     p.add_argument("--max_seq_length", type=int, default=2048)
-    p.add_argument("--cache_dir", default=None, help="Tokenized cache root (default: $HF_HOME/datasets_tok — INSIDE HF_HOME, per remote-servers SKILL.md)")
-    p.add_argument("--raw_dir", default=None, help="Raw parquet root (default: $HF_HOME/datasets_raw)")
+    p.add_argument("--cache_dir", default=None, help="Tokenized cache root (default: $DATASETS_TOK_DIR from remote_paths.sh, or $HF_HOME/datasets_tok — the canonical pre-tokenized corpora tree, per remote-servers SKILL.md)")
+    p.add_argument("--raw_dir", default=None, help="Raw parquet root (default: $DATASETS_RAW_DIR, or $HF_HOME/datasets_raw)")
     p.add_argument("--raw_archive_dir", default=None, help="If set, move raw parquet/zst here (per-source subdir) after tokenizing instead of deleting — a tokenizer-agnostic archive for future re-tokenization. E.g. /nas/ml_data/mrcogito/hf_datasets/raw")
     p.add_argument("--archive_raw_only", action="store_true", help="Only download + archive raw files to --raw_archive_dir for ALL sources (no tokenize). Use to populate the NAS archive for sources already tokenized under another tokenizer.")
     p.add_argument("--manifest", default=None, help="Manifest JSON path (default: <cache_dir>/<mix>_manifest.json)")
@@ -408,14 +408,32 @@ def main():
 
     from training.train_perceiver_denoise import resolve_append_eos_token_id
 
-    hf_cache = os.environ.get("HF_DATASETS_CACHE", os.path.expanduser("~/dev/hf_home/datasets"))
-    hf_home = os.environ.get("HF_HOME", os.path.dirname(hf_cache))
-    # Canonical location per remote-servers SKILL.md: tokenized corpora live INSIDE HF_HOME
-    # (~/dev/hf_home/datasets_tok), as a sibling of hub/ and datasets/.
-    cache_root = Path(args.cache_dir or os.path.join(hf_home, "datasets_tok"))
-    raw_root = Path(args.raw_dir or os.path.join(hf_home, "datasets_raw"))
+    # Load .env (HF_TOKEN, HF_HOME on local macOS) so direct invocation without a bash
+    # launcher still resolves the same paths. Existing env vars take precedence
+    # (load_dotenv does not overwrite), so launcher-set HF_HOME wins on the servers.
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
+    # Single source of truth: HF_HOME. Everything else is a sibling subdir of it.
+    # On the servers remote_paths.sh exports HF_HOME=/home/ksopyla/dev/hf_home and the
+    # sibling trees DATASETS_TOK_DIR / DATASETS_RAW_DIR; on local macOS .env sets an
+    # absolute HF_HOME (e.g. /Users/.../MrCogito/Cache/hf_home). Do NOT hardcode
+    # server paths here.
+    hf_home = os.environ.get("HF_HOME")
+    if not hf_home:
+        raise RuntimeError(
+            "HF_HOME is not set. Source scripts/remote_paths.sh (servers) or ensure "
+            ".env defines HF_HOME (local)."
+        )
+    hf_home = os.path.abspath(hf_home)
+
+    cache_root = Path(args.cache_dir or os.environ.get("DATASETS_TOK_DIR") or os.path.join(hf_home, "datasets_tok"))
+    raw_root = Path(args.raw_dir or os.environ.get("DATASETS_RAW_DIR") or os.path.join(hf_home, "datasets_raw"))
     cache_root.mkdir(parents=True, exist_ok=True)
-    (raw_root).mkdir(parents=True, exist_ok=True)
+    raw_root.mkdir(parents=True, exist_ok=True)
     raw_archive_root = Path(args.raw_archive_dir) if args.raw_archive_dir else None
     if raw_archive_root is not None:
         raw_archive_root.mkdir(parents=True, exist_ok=True)

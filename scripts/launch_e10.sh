@@ -38,6 +38,12 @@ export SEED=42
 export PRETOKENIZE_MIX="${PRETOKENIZE_MIX:-smollm3_inspired_2k_e05}"
 export DATASETS_TOK_DIR="${DATASETS_TOK_DIR:-${HF_HOME}/datasets_tok_gemma}"
 export MANIFEST="${MANIFEST:-${DATASETS_TOK_DIR}/${PRETOKENIZE_MIX}_gemma_manifest.json}"
+# Re-tokenize straight from the NAS raw archive (populated by the E05 pretokenize pass)
+# instead of re-downloading ~150 GB of shards into the transient NVMe raw dir. The
+# pretokenize script detects raw_dir == raw_archive_dir and skips the post-tokenize
+# unlink that would otherwise delete the archive shards themselves.
+export DATASETS_RAW_DIR="${DATASETS_RAW_DIR:-/nas/ml_data/mrcogito/hf_datasets/raw}"
+export RAW_ARCHIVE_DIR="${RAW_ARCHIVE_DIR:-/nas/ml_data/mrcogito/hf_datasets/raw}"
 
 # ---- Optimization (LoRA-typical; the backbone is frozen) ----
 export LEARNING_RATE="${LEARNING_RATE:-1e-4}"

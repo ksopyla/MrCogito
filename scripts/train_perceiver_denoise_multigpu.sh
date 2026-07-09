@@ -31,6 +31,8 @@ SHELL_LOG="${LOGGING_DIR}/shell_perceiver_denoise_$(date +%Y%m%d_%H%M%S).log"
 
 echo "HF_HOME=${HF_HOME}"
 echo "HF_DATASETS_CACHE=${HF_DATASETS_CACHE}"
+echo "DATASETS_TOK_DIR=${DATASETS_TOK_DIR}"
+echo "DATASETS_RAW_DIR=${DATASETS_RAW_DIR}"
 echo "OUTPUT_DIR=${OUTPUT_DIR}"
 echo "LOGGING_DIR=${LOGGING_DIR}"
 
@@ -139,9 +141,9 @@ export DDP_TIMEOUT
 # is a reusable capability for any long-context mix experiment, not E05-specific.
 PRETOKENIZE_MIX="${PRETOKENIZE_MIX:-}"
 if [ -n "$PRETOKENIZE_MIX" ]; then
-    # Canonical location per remote-servers SKILL.md: tokenized corpora live INSIDE HF_HOME
-    # (~/dev/hf_home/datasets_tok), as a sibling of hub/ and datasets/. Overridable so a tokenizer
-    # switch (e.g. E10's Gemma tokenizer) gets its own tree under the same root.
+    # DATASETS_TOK_DIR / DATASETS_RAW_DIR are exported by remote_paths.sh as the canonical
+    # pre-tokenized / raw-download trees under HF_HOME. Override DATASETS_TOK_DIR (and MANIFEST)
+    # to give a tokenizer switch its own tree (e.g. E10's Gemma → datasets_tok_gemma).
     DATASETS_TOK_DIR="${DATASETS_TOK_DIR:-${HF_HOME}/datasets_tok}"
     MANIFEST="${MANIFEST:-${DATASETS_TOK_DIR}/${PRETOKENIZE_MIX}_manifest.json}"
     # Archive raw parquet/zst to NAS after tokenizing (tokenizer-agnostic, survives a tokenizer
@@ -154,7 +156,7 @@ if [ -n "$PRETOKENIZE_MIX" ]; then
             --tokenizer "$TOKENIZER_NAME" \
             --max_seq_length "$MAX_SEQ_LENGTH" \
             --cache_dir "$DATASETS_TOK_DIR" \
-            --raw_dir "${RAW_DIR:-${HF_HOME}/datasets_raw}" \
+            --raw_dir "$DATASETS_RAW_DIR" \
             --manifest "$MANIFEST" \
             --objective "$OBJECTIVE_VARIANT" \
             --seed "$SEED" \
