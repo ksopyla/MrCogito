@@ -19,6 +19,23 @@ if [ ! -d "$PROJECT_ROOT" ]; then
     PROJECT_ROOT="$(pwd)"
 fi
 
+# Load .env (HF_TOKEN, WANDB_API_KEY, and optionally HF_HOME) if present. Existing
+# env vars take precedence (load_dotenv-style: we only set unset vars), so explicit
+# exports in launchers always win. Sourced here so every child process (accelerate,
+# training entrypoint, eval scripts) inherits HF_TOKEN without each one needing its
+# own load_dotenv() call.
+if [ -z "${HF_TOKEN:-}" ] && [ -f "${PROJECT_ROOT}/.env" ]; then
+    while IFS='=' read -r key val; do
+        # skip comments and blank lines
+        case "$key" in
+            ''|\#*) continue ;;
+        esac
+        if [ -z "${!key:-}" ]; then
+            export "$key=$val"
+        fi
+    done < "${PROJECT_ROOT}/.env"
+fi
+
 # Only set HF_HOME/HF_DATASETS_CACHE if not already inherited from the environment
 # (e.g. when a launcher re-sources this after .env loaded it). `:=` would clobber an
 # intentional empty value, so guard explicitly.
@@ -30,10 +47,14 @@ if [ -z "${HF_DATASETS_CACHE:-}" ]; then
 fi
 
 # Pre-tokenized corpora and transient raw downloads live as siblings of datasets/.
-# Tokenizer-specific trees (e.g. datasets_tok_gemma) are a launcher override of
-# DATASETS_TOK_DIR; do not hardcode them here.
-export DATASETS_TOK_DIR="${HF_HOME}/datasets_tok"
-export DATASETS_RAW_DIR="${HF_HOME}/datasets_raw"
+# A tokenizer switch (e.g. E10's Gemma) overrides DATASETS_TOK_DIR in its launcher
+# BEFORE sourcing this script (or re-exports after); we only set the default here.
+if [ -z "${DATASETS_TOK_DIR:-}" ]; then
+    export DATASETS_TOK_DIR="${HF_HOME}/datasets_tok"
+fi
+if [ -z "${DATASETS_RAW_DIR:-}" ]; then
+    export DATASETS_RAW_DIR="${HF_HOME}/datasets_raw"
+fi
 
 OUTPUT_DIR="${PROJECT_ROOT}/Cache/Training"
 LOGGING_DIR="${PROJECT_ROOT}/Cache/logs"

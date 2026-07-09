@@ -16,6 +16,21 @@ set -euo pipefail
 export PATH="${HOME}/.local/bin:${PATH}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="/home/ksopyla/dev/MrCogito"
+[ -d "$PROJECT_ROOT" ] || PROJECT_ROOT="$(pwd)"
+
+# ---- Data path overrides (set BEFORE sourcing remote_paths.sh; that script only
+#      assigns DATASETS_*_DIR when unset, so this pre-set wins). E10 re-tokenizes
+#      the E05 mix with the Gemma tokenizer into its OWN tree (never collides with
+#      the SmolLM2 datasets_tok), and reads raw shards straight from the NAS archive
+#      (populated by the E05 pass) to avoid re-downloading ~150 GB. ----
+export DATASETS_TOK_DIR="${DATASETS_TOK_DIR:-${PROJECT_ROOT}/../hf_home/datasets_tok_gemma}"
+# Re-tokenize straight from the NAS raw archive. The pretokenize script detects
+# raw_dir == raw_archive_dir and skips the post-tokenize unlink that would
+# otherwise delete the archive shards themselves.
+export DATASETS_RAW_DIR="${DATASETS_RAW_DIR:-/nas/ml_data/mrcogito/hf_datasets/raw}"
+export RAW_ARCHIVE_DIR="${RAW_ARCHIVE_DIR:-/nas/ml_data/mrcogito/hf_datasets/raw}"
+
 # shellcheck source=scripts/remote_paths.sh
 source "${SCRIPT_DIR}/remote_paths.sh"
 
@@ -32,18 +47,9 @@ export TOKENIZER_NAME=google/gemma-3-1b-pt
 export MAX_SEQ_LENGTH=2048
 export SEED=42
 
-# ---- Data: the proven E05 2K mix, RE-tokenized with the Gemma tokenizer into its own
-#      cache tree under the canonical HF_HOME root (never collides with the SmolLM2 per-source
-#      dirs; lives inside hf_home per remote-servers SKILL.md). ----
+# ---- Pretokenize pins ----
 export PRETOKENIZE_MIX="${PRETOKENIZE_MIX:-smollm3_inspired_2k_e05}"
-export DATASETS_TOK_DIR="${DATASETS_TOK_DIR:-${HF_HOME}/datasets_tok_gemma}"
 export MANIFEST="${MANIFEST:-${DATASETS_TOK_DIR}/${PRETOKENIZE_MIX}_gemma_manifest.json}"
-# Re-tokenize straight from the NAS raw archive (populated by the E05 pretokenize pass)
-# instead of re-downloading ~150 GB of shards into the transient NVMe raw dir. The
-# pretokenize script detects raw_dir == raw_archive_dir and skips the post-tokenize
-# unlink that would otherwise delete the archive shards themselves.
-export DATASETS_RAW_DIR="${DATASETS_RAW_DIR:-/nas/ml_data/mrcogito/hf_datasets/raw}"
-export RAW_ARCHIVE_DIR="${RAW_ARCHIVE_DIR:-/nas/ml_data/mrcogito/hf_datasets/raw}"
 
 # ---- Optimization (LoRA-typical; the backbone is frozen) ----
 export LEARNING_RATE="${LEARNING_RATE:-1e-4}"
@@ -76,6 +82,9 @@ export NUM_EPOCHS="${NUM_EPOCHS:-0.1}"
 echo "=== E10 launch (backbone=${BACKBONE_MODEL}, C=${CONCEPT_NUM}, ${NUM_GPUS} GPUs, effective batch $((PER_DEVICE_BATCH_SIZE * NUM_GPUS * GRADIENT_ACCUMULATION_STEPS))) ==="
 echo "  arm=$([ "${CONCEPT_NUM}" = "0" ] && echo control || echo concept)  io=${CONCEPT_IO_MODE}  K=${CONCEPT_BLOCK}  lora_r=${LORA_R}"
 echo "  mix=${PRETOKENIZE_MIX} (Gemma tokenizer) seq=${MAX_SEQ_LENGTH}  LR=${LEARNING_RATE}  epochs=${NUM_EPOCHS} (MUST match the other arm)"
+echo "  DATASETS_TOK_DIR=${DATASETS_TOK_DIR}"
+echo "  DATASETS_RAW_DIR=${DATASETS_RAW_DIR}"
+echo "  MANIFEST=${MANIFEST}"
 
 # Delegate everything else (defaults, pretokenize, accelerate launch) to the generic launcher.
 exec bash "${SCRIPT_DIR}/train_perceiver_denoise_multigpu.sh"
