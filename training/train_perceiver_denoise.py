@@ -947,7 +947,10 @@ def main():
         model_description="BiXT perceiver denoising pretraining",
     )
 
-    if torch.cuda.is_available() and is_main_process():
+    if torch.cuda.is_available() and is_main_process() and not is_backbone:
+        # Flash-Attention v2 probe: meaningful only for the concept-encoder family (it
+        # checks the encoder's cross-attn shape [num_heads, concept_num, head_dim]). The
+        # backbone family uses the backbone's native attention, so the probe is skipped.
         _num_heads = config.num_attention_heads
         _head_dim = config.hidden_size // _num_heads
         try:
@@ -979,11 +982,12 @@ def main():
     env_experiment_id = os.environ.get("WANDB_EXPERIMENT_ID") or os.environ.get("EXPERIMENT_ID")
     if is_backbone:
         backbone_short = model_args.backbone_model.split("/")[-1].replace("-", "_")
-        architecture_id = (
-            f"backbone_concept_{backbone_short}"
-            f"_C{model_args.concept_num}K{model_args.concept_block}"
-        )
+        # Architecture id is shared by BOTH arms (the A/B variable is concept_num, surfaced
+        # as a tag below) so they land in the SAME W&B group and filter together — same
+        # convention as E05's optimizer A/B sharing one group.
+        architecture_id = f"backbone_concept_{backbone_short}_K{model_args.concept_block}"
         resolved_experiment = env_experiment_id or "E10"
+        arm_tag = "concept-arm" if model_args.concept_num > 0 else "control-arm"
         wandb_identity = WandbRunIdentity(
             experiment_id=resolved_experiment,
             model_family="backbone_concept",
@@ -995,7 +999,8 @@ def main():
                 "train", "concept-encoder", "decoder:autoregressive", "task:generation",
                 "backbone_concept", model_args.backbone_model,
                 f"io-{model_args.concept_io_mode}", "causal_lm",
-                "concept-arm" if model_args.concept_num > 0 else "control-arm",
+                arm_tag,
+                f"lora_r{model_args.lora_r}",
                 resolved_experiment,
             ],
         )
@@ -1015,8 +1020,13 @@ def main():
         )
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Backbone family: distinguish the two arms in the run_id (and so the checkpoint dir
+    # and W&B run name) — they share a group but must not collide on disk/W&B.
+    arm_suffix = ""
+    if is_backbone:
+        arm_suffix = "_concept" if model_args.concept_num > 0 else "_control"
     run_identifier = (
-        f"{wandb_identity.architecture_id}_{timestamp}"
+        f"{wandb_identity.architecture_id}{arm_suffix}_{timestamp}"
     )
     # The timestamp is wall-clock, so each DDP rank would otherwise compute its
     # own run_id (and may straddle a second boundary). Broadcast rank 0's id so
@@ -1089,6 +1099,22 @@ def main():
             "optimizer": optim_args.optimizer,
             "muon_adamw_lr": optim_args.muon_adamw_lr,
             "muon_momentum": optim_args.muon_momentum,
+            **(
+                # E10 backbone-concept graft knobs (also surfaces trainable_params explicitly
+                # — the LoRA fraction is the headline number for this family).
+                {
+                    "backbone_model": model_args.backbone_model,
+                    "concept_block": model_args.concept_block,
+                    "concept_io_mode": model_args.concept_io_mode,
+                    "lora_r": model_args.lora_r,
+                    "lora_alpha": model_args.lora_alpha,
+                    "lora_dropout": model_args.lora_dropout,
+                    "lora_targets": model_args.lora_targets,
+                    "global_attention_mode": config.global_attention_mode,
+                    "arm": "concept" if model_args.concept_num > 0 else "control",
+                }
+                if is_backbone else {}
+            ),
         },
     )
 

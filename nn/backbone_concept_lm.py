@@ -87,6 +87,21 @@ class BackboneConceptConfig(PretrainedConfig):
         self.global_attention_mode = global_attention_mode
         self.checkpoint_family = checkpoint_family
         self.tokenizer_name = tokenizer_name
+        # Facade: mirror the backbone's headline dims onto this config so the shared
+        # training/wandb plumbing (which was written for the flat concept-encoder config
+        # and reads config.hidden_size / num_attention_heads / etc. unconditionally) gets
+        # real values instead of AttributeError. The authoritative backbone config stays
+        # in self.backbone_config; these are the few fields the shared code touches.
+        bb = backbone_config or {}
+        self.hidden_size = bb.get("hidden_size")
+        self.num_hidden_layers = bb.get("num_hidden_layers")
+        self.num_attention_heads = bb.get("num_attention_heads")
+        self.intermediate_size = bb.get("intermediate_size")
+        self.vocab_size = bb.get("vocab_size")
+        self.token_embedding_dim = bb.get("hidden_size")   # backbone embedding == hidden
+        self.max_sequence_length = bb.get("max_position_embeddings")
+        self.head_dim = bb.get("head_dim")
+        self.sliding_window = bb.get("sliding_window")
         kwargs.setdefault("tie_word_embeddings", True)
         super().__init__(**kwargs)
 

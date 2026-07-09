@@ -247,3 +247,53 @@ def test_causal_lm_collator():
     assert batch["attention_mask"][0].sum() == 3
     assert (batch["labels"][0, 3:] == -100).all()
     assert (batch["labels"][1] != -100).all()
+
+
+def test_config_facade_attributes_for_shared_plumbing():
+    """init_wandb / the FA probe / the encoder-log line read config.hidden_size,
+    num_attention_heads, etc. unconditionally. BackboneConceptConfig must mirror the
+    backbone's headline dims so that plumbing gets real values, not AttributeError."""
+    from transformers.models.gemma3.configuration_gemma3 import Gemma3TextConfig
+    bb = Gemma3TextConfig(
+        vocab_size=256, hidden_size=64, intermediate_size=128, num_hidden_layers=6,
+        num_attention_heads=2, num_key_value_heads=1, head_dim=32, sliding_window=8,
+        max_position_embeddings=128,
+    )
+    cfg = BackboneConceptConfig(
+        backbone_model="tiny", backbone_config=bb.to_dict(),
+        concept_num=4, concept_block=8,
+    )
+    for attr, expected in [
+        ("hidden_size", 64), ("num_hidden_layers", 6), ("num_attention_heads", 2),
+        ("intermediate_size", 128), ("vocab_size", 256), ("token_embedding_dim", 64),
+        ("max_sequence_length", 128), ("head_dim", 32), ("sliding_window", 8),
+        ("concept_num", 4), ("checkpoint_family", "backbone_concept"),
+    ]:
+        assert getattr(cfg, attr) == expected, f"{attr}={getattr(cfg, attr, 'MISSING')}"
+
+
+def test_wandb_identity_both_arms_share_group_differ_on_arm_tag():
+    """The concept/control A/B must share ONE W&B group (so they filter together, like
+    E05's optimizer A/B) and differ on the arm tag."""
+    from training.utils_training import WandbRunIdentity
+
+    def build(concept_num):
+        backbone_model = "google/gemma-3-1b-pt"
+        backbone_short = backbone_model.split("/")[-1].replace("-", "_")
+        arch = f"backbone_concept_{backbone_short}_K512"
+        resolved = "E10"
+        arm = "concept-arm" if concept_num > 0 else "control-arm"
+        return WandbRunIdentity(
+            experiment_id=resolved, model_family="backbone_concept",
+            objective_family="causal_lm", architecture_id=arch,
+            group=f"{resolved}_{arch}", job_type="train_backbone_causal_lm",
+            tags=["train", arm, "lora_r16", resolved],
+        )
+
+    concept = build(128)
+    control = build(0)
+    assert concept.group == control.group              # SAME group (the A/B invariant)
+    assert concept.job_type == control.job_type
+    assert "concept-arm" in concept.tags
+    assert "control-arm" in control.tags
+    assert concept.architecture_id == control.architecture_id
