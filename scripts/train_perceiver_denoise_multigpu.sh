@@ -154,7 +154,7 @@ if [ -n "$PRETOKENIZE_MIX" ]; then
             --tokenizer "$TOKENIZER_NAME" \
             --max_seq_length "$MAX_SEQ_LENGTH" \
             --cache_dir "$DATASETS_TOK_DIR" \
-            --raw_dir "${HF_HOME}/datasets_raw" \
+            --raw_dir "${RAW_DIR:-${HF_HOME}/datasets_raw}" \
             --manifest "$MANIFEST" \
             --objective "$OBJECTIVE_VARIANT" \
             --seed "$SEED" \

@@ -360,6 +360,10 @@ def tokenize_source(
         archive_dst.mkdir(parents=True, exist_ok=True)
         for p in paths:
             dst = archive_dst / p.name
+            if dst.exists() and p.resolve() == dst.resolve():
+                # Tokenizing straight from the archive (--raw_dir == --raw_archive_dir):
+                # source IS the archive file — unlinking would destroy the archive.
+                continue
             if dst.exists() and dst.stat().st_size == p.stat().st_size:
                 p.unlink(missing_ok=True)
                 continue

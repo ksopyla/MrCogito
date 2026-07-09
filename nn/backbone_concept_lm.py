@@ -244,11 +244,19 @@ class BackboneConceptLM(PreTrainedModel):
                 self.hidden_size, config.write_num_heads, gate_init=config.write_gate_init
             )
             layers = self.backbone.model.layers
+            n_wrapped = 0
             for i, layer in enumerate(layers):
                 if layer.attention_type == "full_attention":
                     layers[i] = GlobalLayerWithConceptRead(
                         layer, self._concept_state, config.read_gate_init
                     )
+                    n_wrapped += 1
+            if n_wrapped == 0:
+                raise ValueError(
+                    "No 'full_attention' layers found in the backbone — the concept read "
+                    "graft would be a silent no-op. Check the backbone's layer_types "
+                    f"(got: {[l.attention_type for l in layers]})."
+                )
         else:
             self.concept_init = None
             self.write_head = None
