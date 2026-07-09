@@ -252,43 +252,60 @@ def compute_within_sample_concept_rank(concept_repr: torch.Tensor) -> Dict[str, 
     This is the object "concept collapse" is really about, and the one neither
     ``effective_rank`` (SVD of the BATCH-AVERAGED slot matrix → slot redundancy) nor
     ``compute_representation_manifold_metrics`` (RankMe of CROSS-sample pooled embeddings →
-    embedding diversity) measures. For each sample we take its ``[C, H]`` concept matrix,
-    center it over concepts, and compute RankMe = ``exp(entropy(normalized singular values))``;
-    we report the mean and std over the batch.
+    embedding diversity) measures. For each sample we take its ``[C, H]`` concept matrix
+    and compute RankMe = ``exp(entropy(normalized singular values))``; we report the mean
+    and std over the batch.
+
+    Two variants are reported, because each alone is ambiguous:
+    - **raw** (uncentered): if all C concepts share one direction (true rank-1 collapse),
+      one singular value dominates → rank ~1. But a HEALTHY set with a large shared mean
+      offset (transformer anisotropy) also reads low here.
+    - **centered** (mean concept subtracted per sample): removes the shared offset and
+      measures the rank of the residuals. High centered + low raw = "one big common
+      direction plus rich residuals" (offset, not collapse). Low on BOTH = genuine collapse.
 
     Args:
         concept_repr: ``[B, C, H]`` raw concept representations.
 
     Returns:
-        ``within_sample_rankme_mean``, ``within_sample_rankme_std`` (NaN-safe).
+        ``within_sample_rankme_mean``, ``within_sample_rankme_std``,
+        ``within_sample_rankme_centered_mean``, ``within_sample_rankme_centered_std``
+        (NaN-safe).
     """
     metrics: Dict[str, float] = {
         'within_sample_rankme_mean': float('nan'),
         'within_sample_rankme_std': float('nan'),
+        'within_sample_rankme_centered_mean': float('nan'),
+        'within_sample_rankme_centered_std': float('nan'),
     }
     if concept_repr.dim() != 3 or concept_repr.shape[0] < 1 or concept_repr.shape[1] < 2:
         return metrics
 
+    def _rankme(m: torch.Tensor) -> float:
+        S = torch.linalg.svdvals(m)
+        p = S / (S.sum() + 1e-12)
+        entropy = -(p * (p + 1e-12).log()).sum()
+        return entropy.exp().item()
+
     x = concept_repr.float()
-    per_sample = []
+    per_sample_raw = []
+    per_sample_centered = []
     for i in range(x.shape[0]):
         m = x[i]                                   # [C, H]
-        # RankMe (Garrido et al. 2023) on the RAW concept matrix — NOT centered:
-        # if all C concepts share one direction (collapse), one singular value
-        # dominates → rank ~1; centering would remove that shared direction and
-        # wrongly report the residual noise as high rank.
         try:
-            S = torch.linalg.svdvals(m)
-            p = S / (S.sum() + 1e-12)
-            entropy = -(p * (p + 1e-12).log()).sum()
-            per_sample.append(entropy.exp().item())
+            per_sample_raw.append(_rankme(m))
+            per_sample_centered.append(_rankme(m - m.mean(dim=0, keepdim=True)))
         except Exception:
             continue
 
-    if per_sample:
-        t = torch.tensor(per_sample)
+    if per_sample_raw:
+        t = torch.tensor(per_sample_raw)
         metrics['within_sample_rankme_mean'] = t.mean().item()
         metrics['within_sample_rankme_std'] = t.std(unbiased=False).item()
+    if per_sample_centered:
+        t = torch.tensor(per_sample_centered)
+        metrics['within_sample_rankme_centered_mean'] = t.mean().item()
+        metrics['within_sample_rankme_centered_std'] = t.std(unbiased=False).item()
     return metrics
 
 
