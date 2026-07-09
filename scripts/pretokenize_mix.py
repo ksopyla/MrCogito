@@ -387,8 +387,8 @@ def main():
     p.add_argument("--mix", required=True, help="Recipe id/path or registered mix name")
     p.add_argument("--tokenizer", default="HuggingFaceTB/SmolLM2-135M")
     p.add_argument("--max_seq_length", type=int, default=2048)
-    p.add_argument("--cache_dir", default=None, help="Tokenized cache root (default: $HF_DATASETS_CACHE/../datasets_tok)")
-    p.add_argument("--raw_dir", default=None, help="Raw parquet root (default: $HF_DATASETS_CACHE/../datasets_raw)")
+    p.add_argument("--cache_dir", default=None, help="Tokenized cache root (default: $HF_HOME/datasets_tok — INSIDE HF_HOME, per remote-servers SKILL.md)")
+    p.add_argument("--raw_dir", default=None, help="Raw parquet root (default: $HF_HOME/datasets_raw)")
     p.add_argument("--raw_archive_dir", default=None, help="If set, move raw parquet/zst here (per-source subdir) after tokenizing instead of deleting — a tokenizer-agnostic archive for future re-tokenization. E.g. /nas/ml_data/mrcogito/hf_datasets/raw")
     p.add_argument("--archive_raw_only", action="store_true", help="Only download + archive raw files to --raw_archive_dir for ALL sources (no tokenize). Use to populate the NAS archive for sources already tokenized under another tokenizer.")
     p.add_argument("--manifest", default=None, help="Manifest JSON path (default: <cache_dir>/<mix>_manifest.json)")
@@ -405,8 +405,11 @@ def main():
     from training.train_perceiver_denoise import resolve_append_eos_token_id
 
     hf_cache = os.environ.get("HF_DATASETS_CACHE", os.path.expanduser("~/dev/hf_home/datasets"))
-    cache_root = Path(args.cache_dir or os.path.join(os.path.dirname(hf_cache), "datasets_tok"))
-    raw_root = Path(args.raw_dir or os.path.join(os.path.dirname(hf_cache), "datasets_raw"))
+    hf_home = os.environ.get("HF_HOME", os.path.dirname(hf_cache))
+    # Canonical location per remote-servers SKILL.md: tokenized corpora live INSIDE HF_HOME
+    # (~/dev/hf_home/datasets_tok), as a sibling of hub/ and datasets/.
+    cache_root = Path(args.cache_dir or os.path.join(hf_home, "datasets_tok"))
+    raw_root = Path(args.raw_dir or os.path.join(hf_home, "datasets_raw"))
     cache_root.mkdir(parents=True, exist_ok=True)
     (raw_root).mkdir(parents=True, exist_ok=True)
     raw_archive_root = Path(args.raw_archive_dir) if args.raw_archive_dir else None

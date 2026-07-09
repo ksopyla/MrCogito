@@ -33,9 +33,10 @@ export MAX_SEQ_LENGTH=2048
 export SEED=42
 
 # ---- Data: the proven E05 2K mix, RE-tokenized with the Gemma tokenizer into its own
-#      cache tree (never collides with the SmolLM2 per-source dirs). ----
+#      cache tree under the canonical HF_HOME root (never collides with the SmolLM2 per-source
+#      dirs; lives inside hf_home per remote-servers SKILL.md). ----
 export PRETOKENIZE_MIX="${PRETOKENIZE_MIX:-smollm3_inspired_2k_e05}"
-export DATASETS_TOK_DIR="${DATASETS_TOK_DIR:-${HF_HOME}/../datasets_tok_gemma}"
+export DATASETS_TOK_DIR="${DATASETS_TOK_DIR:-${HF_HOME}/datasets_tok_gemma}"
 export MANIFEST="${MANIFEST:-${DATASETS_TOK_DIR}/${PRETOKENIZE_MIX}_gemma_manifest.json}"
 
 # ---- Optimization (LoRA-typical; the backbone is frozen) ----

@@ -139,9 +139,10 @@ export DDP_TIMEOUT
 # is a reusable capability for any long-context mix experiment, not E05-specific.
 PRETOKENIZE_MIX="${PRETOKENIZE_MIX:-}"
 if [ -n "$PRETOKENIZE_MIX" ]; then
-    # Overridable so a tokenizer switch (e.g. E10's Gemma tokenizer) gets its own cache tree
-    # instead of colliding with the SmolLM2-tokenized per-source dirs.
-    DATASETS_TOK_DIR="${DATASETS_TOK_DIR:-${HF_HOME}/../datasets_tok}"
+    # Canonical location per remote-servers SKILL.md: tokenized corpora live INSIDE HF_HOME
+    # (~/dev/hf_home/datasets_tok), as a sibling of hub/ and datasets/. Overridable so a tokenizer
+    # switch (e.g. E10's Gemma tokenizer) gets its own tree under the same root.
+    DATASETS_TOK_DIR="${DATASETS_TOK_DIR:-${HF_HOME}/datasets_tok}"
     MANIFEST="${MANIFEST:-${DATASETS_TOK_DIR}/${PRETOKENIZE_MIX}_manifest.json}"
     # Archive raw parquet/zst to NAS after tokenizing (tokenizer-agnostic, survives a tokenizer
     # switch). Set RAW_ARCHIVE_DIR= to disable. NAS is slow but write-once.
