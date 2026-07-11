@@ -246,3 +246,63 @@ def test_pretokenized_manifest_loads_disk_datasets_without_hub_access(
 
     assert train_ds["input_ids"] == [[1, 2, 3], [4, 5]]
     assert eval_ds["input_ids"] == [[6, 7]]
+
+
+def test_dataset_mix_integrates_split_tokenize_interleave_and_eval(monkeypatch, tmp_path):
+    loaded = []
+
+    def fake_load_mix_source(spec, cache_dir):
+        loaded.append((spec["name"], cache_dir))
+        return Dataset.from_dict(
+            {
+                "text": [
+                    f"{spec['name']} sample {index} with enough words"
+                    for index in range(6)
+                ]
+            }
+        )
+
+    monkeypatch.setattr(
+        dataset_preprocess_module,
+        "_load_mix_source",
+        fake_load_mix_source,
+    )
+    mix = [
+        {
+            "name": "source_a",
+            "hf_id": "acme/source-a",
+            "text_columns": ["text"],
+            "split": "train",
+            "weight": 0.75,
+        },
+        {
+            "name": "source_b",
+            "hf_id": "acme/source-b",
+            "text_columns": ["text"],
+            "split": "train",
+            "weight": 0.25,
+        },
+    ]
+
+    train_ds, eval_ds = dataset_preprocess_module.load_and_preprocess_dataset_mix(
+        tokenizer=FakeTokenizer(),
+        mix=mix,
+        test_size_percent=0.2,
+        max_seq_length=8,
+        dataset_cache_dir=str(tmp_path / "hf_home" / "datasets"),
+        train_num_proc=1,
+        test_num_proc=1,
+        split_seed=7,
+        interleave_seed=11,
+    )
+
+    assert loaded == [
+        ("source_a", str(tmp_path / "hf_home" / "datasets")),
+        ("source_b", str(tmp_path / "hf_home" / "datasets")),
+    ]
+    assert len(train_ds) >= 10
+    assert len(eval_ds) == 2
+    assert {"input_ids", "attention_mask", "special_tokens_mask"}.issubset(
+        train_ds.column_names
+    )
+    assert "text" not in train_ds.column_names

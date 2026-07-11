@@ -65,6 +65,19 @@ from training.utils_training import (
 logger = logging.get_logger(__name__)
 
 
+def build_argument_parser() -> HfArgumentParser:
+    """Build the canonical CLI parser in its compatibility-sensitive tuple order."""
+    return HfArgumentParser(
+        (
+            ModelArguments,
+            LossArguments,
+            DataTrainingArguments,
+            OptimizerArguments,
+            TrainingArguments,
+        )
+    )
+
+
 def main():
     setup_distributed()
 
@@ -74,15 +87,7 @@ def main():
     else:
         logging.set_verbosity_error()
 
-    parser = HfArgumentParser(
-        (
-            ModelArguments,
-            LossArguments,
-            DataTrainingArguments,
-            OptimizerArguments,
-            TrainingArguments,
-        )
-    )
+    parser = build_argument_parser()
     (
         model_args,
         loss_args,

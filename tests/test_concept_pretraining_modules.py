@@ -190,6 +190,73 @@ def test_data_factory_prioritizes_recipe_over_registry_mix(monkeypatch):
     assert captured["interleave_seed"] == 7
 
 
+def test_data_factory_uses_registry_mix_when_no_recipe(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        factories,
+        "load_and_preprocess_dataset_mix",
+        lambda tokenizer, selected_mix, **kwargs: captured.update(
+            selected_mix=selected_mix,
+            **kwargs,
+        )
+        or ([1], [2]),
+    )
+    monkeypatch.setattr(
+        factories,
+        "load_and_preprocess_text_dataset",
+        lambda *args, **kwargs: pytest.fail("direct Hub route must not run"),
+    )
+
+    factories.load_pretraining_datasets(
+        tokenizer=object(),
+        data_args=_dataset_args(dataset_mix="long_2k_base_v1"),
+        training_args=_training_args(seed=11),
+        append_eos_token_id=2,
+    )
+
+    assert captured["selected_mix"] == "long_2k_base_v1"
+    assert captured["dataset_cache_dir"] == "/cache/hf_home/datasets"
+    assert captured["split_seed"] == 11
+    assert captured["interleave_seed"] == 11
+
+
+def test_data_factory_caps_eval_deterministically(monkeypatch):
+    class EvaluationDataset:
+        def __init__(self):
+            self.shuffle_seed = None
+            self.selected = None
+
+        def __len__(self):
+            return 10 if self.selected is None else len(self.selected)
+
+        def shuffle(self, seed):
+            self.shuffle_seed = seed
+            return self
+
+        def select(self, indices):
+            self.selected = list(indices)
+            return self
+
+    evaluation = EvaluationDataset()
+    monkeypatch.setattr(
+        factories,
+        "load_and_preprocess_text_dataset",
+        lambda *args, **kwargs: ([1, 2], evaluation),
+    )
+
+    _, actual_eval = factories.load_pretraining_datasets(
+        tokenizer=object(),
+        data_args=_dataset_args(max_eval_samples=3),
+        training_args=_training_args(seed=19),
+        append_eos_token_id=2,
+    )
+
+    assert actual_eval is evaluation
+    assert evaluation.shuffle_seed == 19
+    assert evaluation.selected == [0, 1, 2]
+    assert len(actual_eval) == 3
+
+
 def test_data_factory_keeps_direct_hub_route_and_cache(monkeypatch):
     captured = {}
     monkeypatch.setattr(

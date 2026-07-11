@@ -137,6 +137,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
      arguments/validation, custom Trainer behavior, and model/data/collator/identity factories live in neutral
      `training/concept_pretraining_*` modules. `train_concept_pretraining.py` is now the canonical
      multi-family command; `train_perceiver_denoise.py` remains a temporary compatibility wrapper.
+     Post-Stage-2 hardening adds executable CLI→`main()`→Trainer/W&B/data/save and Bash
+     env→canonical-parser contracts for E05/E10 profiles (310 passed, 9 skipped).
      Next: Stage 3 launcher-role clarification without changing experiment protocols. Spec:
      [training_pipeline_modularization.md](../engineering_specs/training_pipeline_modularization.md).
 7. **Parked / not scheduled:** the **token↔concept asymmetry sweep** (`token_embedding_dim` 128/256/512,

@@ -3,9 +3,11 @@ import logging
 import os
 import subprocess
 import sys
+from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 import torch
 
 from training import utils_training
@@ -224,6 +226,79 @@ def test_setup_run_dirs_preserves_workspace_cache_layout():
     assert args.push_to_hub is False
     assert args.remove_unused_columns is False
     assert args.fp16 is False
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        (
+            {
+                "pretokenized_manifest": "/cache/datasets_tok/manifest.json",
+                "dataset_mix_recipe": "recipe",
+                "dataset_mix": "registry",
+                "dataset_name": "direct",
+            },
+            "/cache/datasets_tok/manifest.json",
+        ),
+        (
+            {
+                "pretokenized_manifest": None,
+                "dataset_mix_recipe": "recipe",
+                "dataset_mix": "registry",
+                "dataset_name": "direct",
+            },
+            "recipe",
+        ),
+        (
+            {
+                "pretokenized_manifest": None,
+                "dataset_mix_recipe": None,
+                "dataset_mix": "registry",
+                "dataset_name": "direct",
+            },
+            "registry",
+        ),
+        (
+            {
+                "pretokenized_manifest": None,
+                "dataset_mix_recipe": None,
+                "dataset_mix": None,
+                "dataset_name": "direct",
+            },
+            "direct",
+        ),
+    ],
+)
+def test_resolve_dataset_identifier_matches_loader_priority(values, expected):
+    assert utils_training.resolve_dataset_identifier(SimpleNamespace(**values)) == expected
+
+
+def test_setup_distributed_applies_exported_timeout_to_first_process_group(
+    monkeypatch,
+):
+    captured = {}
+    monkeypatch.setenv("LOCAL_RANK", "2")
+    monkeypatch.setenv("DDP_TIMEOUT", "7200")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.distributed, "is_initialized", lambda: False)
+    monkeypatch.setattr(
+        torch.distributed,
+        "init_process_group",
+        lambda **kwargs: captured.update(init=kwargs),
+    )
+    monkeypatch.setattr(
+        torch.cuda,
+        "set_device",
+        lambda rank: captured.update(device=rank),
+    )
+
+    local_rank = utils_training.setup_distributed()
+
+    assert local_rank == 2
+    assert captured["init"]["backend"] == "nccl"
+    assert captured["init"]["device_id"] == torch.device("cuda:2")
+    assert captured["init"]["timeout"] == timedelta(minutes=120)
+    assert captured["device"] == 2
 
 
 def _source_remote_paths(tmp_path, extra_env=None):

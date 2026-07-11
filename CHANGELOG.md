@@ -14,6 +14,34 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-07-11] - Training pipeline contract test hardening
+
+**Why:** module-level tests covered the extracted pieces, but the highest-risk boundaries remained
+under-tested: Bash environment variables becoming Python arguments, the canonical `main()`
+assembling the runtime, and parsed values reaching Trainer, W&B, data routes, and final saves.
+
+**Impact:** training refactors now fail locally if they drop or misroute representative E05/E10
+arguments, cache paths, direct/pretokenized/mix data selection, logging/W&B metadata, resume state,
+optimizer settings, DDP timeout, or final artifacts. No model, data, checkpoint, or W&B identity
+changed.
+
+**What changed:**
+- [tested] representative E05 and E10 CLI profiles through the canonical parser, the complete
+  family/objective validation matrix, config mapping, and model-family routing.
+- [tested] direct-Hub and pretokenized `main()` orchestration through logging, factories, W&B,
+  Trainer construction, resume, and final saves; added one real CPU Trainer optimizer step with
+  loss logging.
+- [tested] the generic Bash launcher end-to-end with command capture, including Hugging Face cache
+  propagation, manifest precedence, exact-token guards/calculation, optional experiment arguments,
+  Muon settings, and the first-process-group DDP timeout.
+- [tested] registered-mix routing, deterministic eval caps, effective-dataset priority, and a local
+  two-source split/tokenize/interleave/eval integration.
+- [fixed] empty optional argument arrays now expand safely under macOS Bash 3 with `set -u`; Linux
+  launcher arguments are unchanged.
+- [verified] 30 new tests; full suite: 310 passed, 9 skipped; launcher syntax passes.
+
+---
+
 ## [2026-07-11] - Training refactor Stage 2 canonical entrypoint
 
 **Why:** the historical `train_perceiver_denoise.py` name described only the original parallel

@@ -349,11 +349,11 @@ uv run accelerate launch \
     --load_best_model_at_end True \
     --metric_for_best_model "eval_loss" \
     --greater_is_better False \
-    "${WINDOW_ARGS[@]}" \
-    "${MIX_ARGS[@]}" \
-    "${EVAL_DATA_ARGS[@]}" \
-    "${ANCHOR_ARGS[@]}" \
-    "${BACKBONE_ARGS[@]}" \
-    "${OPTIM_ARGS[@]}" \
-    "${RESUME_ARGS[@]}" \
+    ${WINDOW_ARGS[@]+"${WINDOW_ARGS[@]}"} \
+    ${MIX_ARGS[@]+"${MIX_ARGS[@]}"} \
+    ${EVAL_DATA_ARGS[@]+"${EVAL_DATA_ARGS[@]}"} \
+    ${ANCHOR_ARGS[@]+"${ANCHOR_ARGS[@]}"} \
+    ${BACKBONE_ARGS[@]+"${BACKBONE_ARGS[@]}"} \
+    ${OPTIM_ARGS[@]+"${OPTIM_ARGS[@]}"} \
+    ${RESUME_ARGS[@]+"${RESUME_ARGS[@]}"} \
     2>&1 | uv run python scripts/clean_tee.py "$SHELL_LOG"

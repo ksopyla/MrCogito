@@ -1,13 +1,13 @@
 # Training pipeline modularization
 
 - **Type:** engineering refactor, not an `E0NN` experiment.
-- **Status:** Stages 0–2 complete (2026-07-11); Stage 3 launcher-role clarification is next.
+- **Status:** Stages 0–2 and post-Stage-2 contract hardening complete (2026-07-11); Stage 3 launcher-role clarification is next.
 - **Serves:** every maintained and revivable training family.
 - **Primary goal:** make training code easier to maintain and safer for AI-assisted changes without changing model behavior, data, logging, artifact layout, or historical identity.
 
 ## Why this is needed
 
-`training/train_perceiver_denoise.py` is the maintained training hub, but it now owns multiple model families and objectives:
+`training/train_concept_pretraining.py` is the maintained training hub, but it now owns multiple model families and objectives:
 
 - parallel Perceiver reconstruction,
 - concept-conditioned AR reconstruction,
@@ -147,6 +147,24 @@ Generic and experiment launchers intentionally retain their existing filenames u
 but the generic launcher now invokes the canonical Python entrypoint. Frozen experiment specs,
 append-only result ledgers, historical run reports, and older changelog entries retain the path
 that was true when those experiments and changes were recorded.
+
+#### Post-Stage-2 contract hardening
+
+- [done 2026-07-11] Parse representative E05 and E10 command lines through the canonical
+  `HfArgumentParser` and assert values in every argument group.
+- [done 2026-07-11] Exercise `main()` orchestration for direct-Hub and pretokenized routes,
+  including logging setup, data/model/collator factories, W&B config, Trainer construction,
+  resume handling, and final model/tokenizer saves.
+- [done 2026-07-11] Execute the generic Bash launcher against capture shims and parse its generated
+  training arguments; cover cache propagation, exact-token budgeting, pretokenized reuse, optional
+  arguments, Muon parameters, and exported DDP timeout.
+- [done 2026-07-11] Cover the complete family/objective rejection matrix, config/model routing,
+  registered mixes, deterministic eval caps, multi-source split/tokenize/interleave, effective
+  dataset identity, and one real CPU Trainer optimizer step with loss logging.
+- [fixed 2026-07-11] Make empty optional launcher arrays safe under macOS Bash 3 with `set -u`;
+  generated Linux training arguments are unchanged.
+- [verified 2026-07-11] 30 new tests; full suite: 310 passed, 9 skipped. Generic launcher syntax
+  and captured parser compatibility pass without GPU, network, or W&B access.
 
 ### Stage 3 — clarify launcher roles
 
