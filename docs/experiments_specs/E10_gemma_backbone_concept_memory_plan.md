@@ -122,7 +122,8 @@ trained control arm).
   batch 8 × accum 3 (19.97 GiB peak; batch 10 OOM); Polonez uses batch 6 × accum 3, preserving
   effective batch 72 and 24 samples per microstep on both arms. The completed manifest is counted
   exactly and converted to the epoch fraction for a 2B non-padding-token target (rounding ≤ one
-  optimizer batch); ~10%-budget checkpoints
+  optimizer batch); the count is an 8-worker reducing map with console throughput/ETA and a
+  manifest-hash-keyed atomic cache shared by both arms. ~10%-budget checkpoints
   are retained for matched 50%/100% exposure comparisons. Training-time eval is a deterministic
   2,048-row subset; the final paired protocol uses the frozen full evaluation manifests.
   Arms: default = concept arm; `CONCEPT_NUM=0 bash scripts/launch_e10.sh` = control.

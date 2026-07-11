@@ -44,9 +44,11 @@ opening directly, and can be analyzed from saved checkpoints through the canonic
   weight gradient; resume now restores Trainer/optimizer/scheduler/RNG state; final saves use
   `<run>/final` instead of duplicating `<run>/<run>`.
 - [added] exact manifest token counting/checksum and a 2B non-padding-token target schedule
-  (deterministic rounding within one optimizer batch);
-  retained ~10%-budget checkpoints support matched 50%/100% A/B comparisons, while live eval
+  (deterministic rounding within one optimizer batch); retained ~10%-budget checkpoints support
+  matched 50%/100% A/B comparisons, while live eval
   uses a deterministic 2,048-row subset.
+- [optimized] the one-time token count now uses an 8-worker reducing `Dataset.map`, reports
+  progress/ETA, selects only `input_ids`, and atomically caches the result beside the manifest.
 - [added] recurrence-specific static and previous-block-only ablations plus
   `run_e10_comparison.py` for paired concept/control 2K/8K CE, local regression, RankMe, and
   bootstrap CIs. Stage 0 can now use one frozen held-out long-doc manifest paired across lengths.

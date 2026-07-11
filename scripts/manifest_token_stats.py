@@ -7,15 +7,27 @@ import argparse
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import sys
+import time
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from data.dataset_preprocess import load_pretokenized_mix
 
 
-def compute_stats(manifest_path: Path, target_tokens: int, effective_batch: int) -> dict:
+def _count_token_batch(batch: dict) -> dict:
+    """Reduce one map batch to one scalar row (picklable for Dataset.map workers)."""
+    return {"token_count": [sum(len(ids) for ids in batch["input_ids"])]}
+
+
+def compute_stats(
+    manifest_path: Path,
+    target_tokens: int,
+    effective_batch: int,
+    num_proc: int | None = None,
+) -> dict:
     manifest_hash = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
     cache_path = manifest_path.with_suffix(manifest_path.suffix + ".token_stats.json")
     if cache_path.exists():
@@ -28,9 +40,33 @@ def compute_stats(manifest_path: Path, target_tokens: int, effective_batch: int)
             return cached
 
     train_ds, eval_ds = load_pretokenized_mix(manifest_path)
-    train_tokens = 0
-    for batch in train_ds.iter(batch_size=8192):
-        train_tokens += sum(len(ids) for ids in batch["input_ids"])
+    workers = max(1, min(num_proc or min(8, os.cpu_count() or 1), len(train_ds)))
+    started = time.monotonic()
+    print(
+        f"Counting tokens across {len(train_ds):,} interleaved rows "
+        f"with {workers} workers...",
+        file=sys.stderr,
+        flush=True,
+    )
+    token_ds = train_ds.select_columns(["input_ids"])
+    partials = token_ds.map(
+        _count_token_batch,
+        batched=True,
+        batch_size=8192,
+        num_proc=workers,
+        remove_columns=token_ds.column_names,
+        keep_in_memory=True,
+        load_from_cache_file=False,
+        desc="Exact token count",
+    )
+    train_tokens = sum(partials["token_count"])
+    elapsed = time.monotonic() - started
+    print(
+        f"Counted {train_tokens:,} tokens in {elapsed:.1f}s "
+        f"({len(train_ds) / max(elapsed, 1e-9):,.0f} rows/s).",
+        file=sys.stderr,
+        flush=True,
+    )
     if train_tokens <= 0:
         raise ValueError(f"Manifest has no training tokens: {manifest_path}")
 
@@ -48,7 +84,9 @@ def compute_stats(manifest_path: Path, target_tokens: int, effective_batch: int)
         "effective_batch": effective_batch,
         "estimated_optimizer_steps": optimizer_steps,
     }
-    cache_path.write_text(json.dumps(stats, indent=2))
+    temporary_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
+    temporary_path.write_text(json.dumps(stats, indent=2))
+    temporary_path.replace(cache_path)
     return stats
 
 
@@ -58,13 +96,24 @@ def main() -> None:
     parser.add_argument("--target_tokens", type=int, required=True)
     parser.add_argument("--effective_batch", type=int, required=True)
     parser.add_argument(
+        "--num_proc",
+        type=int,
+        default=None,
+        help="Parallel Dataset.map workers (default: min(8, CPU count)).",
+    )
+    parser.add_argument(
         "--field",
         choices=["epochs_for_target", "estimated_optimizer_steps"],
         default=None,
         help="Print one machine-readable value instead of the JSON report.",
     )
     args = parser.parse_args()
-    stats = compute_stats(args.manifest, args.target_tokens, args.effective_batch)
+    stats = compute_stats(
+        args.manifest,
+        args.target_tokens,
+        args.effective_batch,
+        num_proc=args.num_proc,
+    )
     if args.field:
         print(stats[args.field])
     else:

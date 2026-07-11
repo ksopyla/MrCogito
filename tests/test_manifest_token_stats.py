@@ -2,6 +2,7 @@ import json
 
 from datasets import Dataset
 
+from data.dataset_preprocess import load_pretokenized_mix
 from scripts.manifest_token_stats import compute_stats
 
 
@@ -26,9 +27,12 @@ def test_manifest_token_stats_counts_interleaved_tokens(tmp_path):
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps({"mix_id": "tiny", "seed": 42, "sources": sources}))
 
-    stats = compute_stats(manifest, target_tokens=100, effective_batch=4)
+    train_ds, _ = load_pretokenized_mix(manifest)
+    expected_tokens = sum(len(row["input_ids"]) for row in train_ds)
+    stats = compute_stats(manifest, target_tokens=100, effective_batch=4, num_proc=2)
     assert stats["train_rows"] > 0
-    assert stats["full_epoch_tokens"] > 0
+    assert stats["full_epoch_tokens"] == expected_tokens
     assert stats["epochs_for_target"] == 100 / stats["full_epoch_tokens"]
     assert stats["estimated_optimizer_steps"] > 0
-    assert compute_stats(manifest, 100, 4) == stats  # cached result is stable
+    assert compute_stats(manifest, 100, 4, num_proc=1) == stats  # cached result is stable
+    assert not list(tmp_path.glob("*.tmp"))
