@@ -38,11 +38,12 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import urllib.request
 from datasets import load_dataset
-from transformers import AutoTokenizer
+from transformers import AutoConfig, AutoTokenizer
 
 from data.dataset_preprocess import (
     _normalize_to_text_column,
     _make_tokenize_fn,
+    configure_text_tokenizer_for_model_vocab,
 )
 
 logger = logging.getLogger("pretokenize_mix")
@@ -451,6 +452,16 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
+    model_vocab_size = AutoConfig.from_pretrained(args.tokenizer).vocab_size
+    split_special_tokens = configure_text_tokenizer_for_model_vocab(
+        tokenizer, model_vocab_size
+    )
+    if split_special_tokens:
+        logger.warning(
+            "Tokenizer has ids beyond the text-model vocabulary "
+            f"({len(tokenizer)} > {model_vocab_size}); splitting literal special-token "
+            "strings to prevent invalid embedding indices."
+        )
     append_eos = resolve_append_eos_token_id(
         args.objective, is_causal_ar=True, eos_token_id=tokenizer.eos_token_id
     )
@@ -505,6 +516,8 @@ def main():
         "mix_origin": meta.get("mix_origin"),
         "mix_recipe_path": meta.get("mix_recipe_path"),
         "tokenizer": args.tokenizer,
+        "model_vocab_size": model_vocab_size,
+        "split_special_tokens": split_special_tokens,
         "max_seq_length": args.max_seq_length,
         "objective": args.objective,
         "append_eos_token_id": append_eos,
@@ -519,11 +532,14 @@ def main():
 
 def _proc_worker(spec, args, cache_root, raw_root, append_eos, raw_archive_root=None):
     """Process-pool worker for --jobs>1."""
-    from transformers import AutoTokenizer
+    from transformers import AutoConfig, AutoTokenizer
     from training.train_perceiver_denoise import resolve_append_eos_token_id as _r
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
+    configure_text_tokenizer_for_model_vocab(
+        tokenizer, AutoConfig.from_pretrained(args.tokenizer).vocab_size
+    )
     return tokenize_source(
         spec, tokenizer, args.max_seq_length, append_eos,
         cache_root, raw_root / spec.get("name", spec["hf_id"]),

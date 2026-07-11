@@ -83,6 +83,9 @@ trained control arm).
   (=input_ids, −100 at pad). Blocking is internal to the model forward (same principle as E09's plan).
 - **Gemma tokenizer:** has real `pad_token` (`<pad>`, id 0) + `bos` — collator uses them; BOS
   prepended by the tokenizer during pretokenize (`add_bos_token=True` default for Gemma).
+  Gemma's tokenizer-only `<image_soft_token>` id 262144 is outside the text model's embedding
+  range `[0,262144)`; pretokenization therefore splits literal special-token strings as ordinary
+  text, and the causal collator validates against the model (not tokenizer) vocabulary.
 - **8K extrapolation eval:** small fineweb-edu long-doc slice pretokenized at 8192 (eval-only
   manifest; used by Stage 0 + final eval, not by training).
 
@@ -112,7 +115,9 @@ trained control arm).
   `concept_num` reuses the existing arg.
 - **Launcher:** `scripts/launch_e10.sh` (pattern of `launch_e05.sh`): pins `BACKBONE_MODEL`,
   `OBJECTIVE_VARIANT=causal_lm`, `TOKENIZER_NAME=google/gemma-3-1b-pt`, seq 2048, the Gemma manifest
-  name, LR 1e-4 / warmup 500 / clip 0.5, bf16 + gradient checkpointing, batch 4×accum 6.
+  name, LR 1e-4 / warmup 500 / clip 0.5, bf16 + gradient checkpointing. Odra calibration selected
+  batch 8 × accum 3 (19.97 GiB peak; batch 10 OOM); Polonez uses batch 6 × accum 3, preserving
+  effective batch 72 and 24 samples per microstep on both arms.
   Arms: default = concept arm; `CONCEPT_NUM=0 bash scripts/launch_e10.sh` = control.
 - **Stage 0:** `analysis/run_e10_stage0.py` — loads the untrained wrapper twice
   (`global_attention_mode=full` vs `windowed`, `concept_num=0`) and reports per-position-bucket CE on

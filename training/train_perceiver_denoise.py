@@ -39,6 +39,7 @@ from data.data_collators import (
     DataCollatorForTSDAE,
 )
 from data.dataset_preprocess import (
+    configure_text_tokenizer_for_model_vocab,
     load_and_preprocess_dataset_mix,
     load_and_preprocess_text_dataset,
     load_pretokenized_mix,
@@ -837,6 +838,20 @@ def main():
             f"({tokenizer.pad_token!r}, pad_id={tokenizer.pad_token_id})."
         )
 
+    if is_backbone:
+        backbone_text_config = AutoConfig.from_pretrained(
+            model_args.backbone_model,
+            cache_dir=data_args.dataset_cache_dir,
+        )
+        if configure_text_tokenizer_for_model_vocab(
+            tokenizer, backbone_text_config.vocab_size
+        ):
+            logger.warning(
+                "Tokenizer exposes ids beyond the text backbone vocabulary "
+                f"({len(tokenizer)} > {backbone_text_config.vocab_size}); literal special-token "
+                "strings will be split as ordinary text to prevent invalid embedding indices."
+            )
+
     # Append EOS so preprocessing stays variable-length (padding=False) for both decoder families;
     # see resolve_append_eos_token_id for the full rationale (fixes the perceiver pad-mask bug and
     # keeps E04 on the same data contract as its E03 causal_ar baseline).
@@ -1134,8 +1149,12 @@ def main():
     if model_args.objective_variant == OBJECTIVE_CAUSAL_LM:
         # No corruption/splitting is sampled, so the same (deterministic) collator serves
         # both train and eval.
-        data_collator = DataCollatorForCausalLM(tokenizer, max_length=data_args.max_seq_length)
-        eval_data_collator = DataCollatorForCausalLM(tokenizer, max_length=data_args.max_seq_length)
+        causal_collator_kwargs = {
+            "max_length": data_args.max_seq_length,
+            "model_vocab_size": model.backbone.config.vocab_size,
+        }
+        data_collator = DataCollatorForCausalLM(tokenizer, **causal_collator_kwargs)
+        eval_data_collator = DataCollatorForCausalLM(tokenizer, **causal_collator_kwargs)
     elif model_args.objective_variant == OBJECTIVE_PREFIX_SUFFIX:
         prefix_collator_kwargs = dict(
             max_length=data_args.max_seq_length,

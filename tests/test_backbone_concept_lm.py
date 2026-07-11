@@ -8,6 +8,7 @@ import pytest
 import torch
 
 from data.data_collators import DataCollatorForCausalLM
+from data.dataset_preprocess import configure_text_tokenizer_for_model_vocab
 from nn.backbone_concept_lm import BackboneConceptConfig, BackboneConceptLM
 
 VOCAB = 256
@@ -274,6 +275,25 @@ def test_causal_lm_collator():
     assert batch["attention_mask"][0].sum() == 3
     assert (batch["labels"][0, 3:] == -100).all()
     assert (batch["labels"][1] != -100).all()
+
+    model_bounded = DataCollatorForCausalLM(
+        TokStub(), max_length=16, model_vocab_size=VOCAB - 1
+    )
+    with pytest.raises(ValueError, match="outside model vocabulary range"):
+        model_bounded([{"input_ids": [5, VOCAB - 1]}])
+
+
+def test_text_tokenizer_splits_out_of_model_special_tokens():
+    class TokStub:
+        split_special_tokens = False
+
+        def __len__(self):
+            return 101
+
+    tokenizer = TokStub()
+    assert configure_text_tokenizer_for_model_vocab(tokenizer, 100)
+    assert tokenizer.split_special_tokens is True
+    assert not configure_text_tokenizer_for_model_vocab(tokenizer, 101)
 
 
 def test_config_facade_attributes_for_shared_plumbing():

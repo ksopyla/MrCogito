@@ -97,7 +97,9 @@ data mix, budget, seed. Control arm differs ONLY in `CONCEPT_NUM=0`.
   fineweb-edu long-doc set pretokenized at 8192 (Stage-0/extrapolation eval only, not training).
 - **Compute:** Odra 3× RTX 3090 (concept arm), Polonez (control arm, can run in parallel).
   Budget **~2B tokens per arm** (LoRA fine-tune; ICAE/RMT-scale), est. ~50–70 GPU-h per arm.
-  bf16, gradient checkpointing on, per-device batch tuned to fit (start 4 × accum 6).
+  bf16, gradient checkpointing on, effective batch 72. Odra calibration (2026-07-11):
+  per-device 8 × 3 GPUs × accum 3 (19.97 GiB peak; batch 10 OOM); matched Polonez control:
+  per-device 6 × 4 GPUs × accum 3.
 - **Steps / epochs:** ~0.1 epoch of the mix (≈2B tokens); cosine LR 1e-4 (LoRA-typical), warmup 500,
   `max_grad_norm` 0.5, seed 42.
 - **Launch:** `bash scripts/launch_e10.sh` (thin wrapper over the shared launcher, pattern of
@@ -111,11 +113,13 @@ data mix, budget, seed. Control arm differs ONLY in `CONCEPT_NUM=0`.
     (existing model families byte-identical when `BACKBONE_MODEL` is unset).
   - `peft` added as a dependency (LoRA).
 - **Readiness audit (2026-07-11):** corrected the launcher to the frozen effective batch 72
-  (`4 × 3 GPUs × accum 6` on Odra; matched by `3 × 4 × 6` on Polonez); aligned live Δshuffle with
+  (calibrated as `8 × 3 GPUs × accum 3` on Odra; matched by `6 × 4 × 3` on Polonez); aligned live Δshuffle with
   the pre-registered ≥1024 region; added live within-sample RankMe + read/write-gate telemetry;
   enabled `backbone_concept` Tier-1 geometry/ablation checkpoint analysis; and added a production
   gradient-checkpointing regression test. The mix now explicitly declares `causal_lm`
-  compatibility. Local targeted suite: 32 passed.
+  compatibility. A calibration-discovered tokenizer-only multimodal id outside the text model
+  vocabulary is sanitized during tokenization and model-bounded in the collator. Local targeted
+  suite: 33 passed.
 - **Known deviations from prior-line assumptions (accepted, recorded):** token embeddings are the
   backbone's native 1152-dim (frozen — the "tiny token embedding" asymmetry applies to our write-op
   economics, not the backbone's embedding table); the SmolLM2 tokenizer is replaced by Gemma's

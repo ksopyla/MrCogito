@@ -26,15 +26,20 @@ decision unreliable.
 opening directly, and can be analyzed from saved checkpoints through the canonical Tier-1 runner.
 
 **What changed:**
-- [fixed] E10 launcher default from effective batch 24 to 72 (`4 × 3 × accum 6` on Odra;
-  matched as `3 × 4 × accum 6` on Polonez).
+- [fixed] E10 launcher default from effective batch 24 to 72. Odra calibration selected
+  `8 × 3 GPUs × accum 3` (19.97 GiB peak; batch 10 OOM); the matched Polonez control uses
+  `6 × 4 × accum 3`.
 - [fixed] recurrent concept ablation now separates the explicit-carry region `[K,2K)` from
   true beyond-carry positions `≥2K`; E10's Δshuffle gate therefore matches the spec's ≥1024
   region instead of being diluted/inflated by locally reachable context.
 - [added] live within-sample raw/centered RankMe and tanh read/write-gate telemetry at each
   evaluation; added `backbone_concept` support to the held-out Tier-1 geometry/ablation runner.
 - [tested] production gradient-checkpointing concept/write gradient path and E10 Tier-1
-  ablation-contract normalization; 32 targeted tests pass.
+  ablation-contract normalization; 33 targeted tests pass.
+- [fixed] Gemma tokenizer/model vocabulary mismatch: the tokenizer-only multimodal
+  `<image_soft_token>` id 262144 exceeds the text backbone's 262144-entry embedding table.
+  Pretokenization now splits literal special-token strings as ordinary text and the causal
+  collator validates against the model vocabulary, preventing a delayed CUDA index assert.
 - [docs/data] declared `causal_lm` compatibility on the reused 2K mix and reconciled the E10
   spec, implementation plan, and agenda.
 

@@ -13,6 +13,25 @@ logger = logging.get_logger(__name__)
 MIX_RECIPES_DIR = Path(__file__).resolve().parent / "mix_recipes"
 
 
+def configure_text_tokenizer_for_model_vocab(tokenizer, model_vocab_size: int) -> bool:
+    """Prevent tokenizer-only multimodal tokens from exceeding text-model embeddings.
+
+    Gemma-3's tokenizer includes ``<image_soft_token>`` at id 262144 while
+    ``gemma-3-1b-pt`` has text embeddings for ids 0..262143. A literal occurrence in web
+    text would otherwise become an invalid embedding index. When the tokenizer is larger
+    than the model, split literal special-token strings into ordinary text.
+    """
+    if len(tokenizer) <= model_vocab_size:
+        return False
+    if not hasattr(tokenizer, "split_special_tokens"):
+        raise ValueError(
+            f"Tokenizer has {len(tokenizer)} ids but model supports {model_vocab_size}, "
+            "and this tokenizer cannot split out-of-range special tokens."
+        )
+    tokenizer.split_special_tokens = True
+    return True
+
+
 def _make_tokenize_fn(tokenizer, max_seq_length, append_eos_token_id, max_chars=None):
     """Build the batched tokenize function shared by the single-source and mix loaders.
 

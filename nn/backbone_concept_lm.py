@@ -105,6 +105,19 @@ class BackboneConceptConfig(PretrainedConfig):
         kwargs.setdefault("tie_word_embeddings", True)
         super().__init__(**kwargs)
 
+    def sync_backbone_facade(self, backbone_config: dict) -> None:
+        """Refresh shared-plumbing dimensions after loading the hub backbone config."""
+        self.backbone_config = backbone_config
+        self.hidden_size = backbone_config.get("hidden_size")
+        self.num_hidden_layers = backbone_config.get("num_hidden_layers")
+        self.num_attention_heads = backbone_config.get("num_attention_heads")
+        self.intermediate_size = backbone_config.get("intermediate_size")
+        self.vocab_size = backbone_config.get("vocab_size")
+        self.token_embedding_dim = backbone_config.get("hidden_size")
+        self.max_sequence_length = backbone_config.get("max_position_embeddings")
+        self.head_dim = backbone_config.get("head_dim")
+        self.sliding_window = backbone_config.get("sliding_window")
+
 
 class ConceptReadBranch(nn.Module):
     """Cross-attention read of the concept state, reusing the wrapped Gemma3Attention's own
@@ -209,8 +222,7 @@ class BackboneConceptLM(PreTrainedModel):
             backbone = Gemma3ForCausalLM(Gemma3TextConfig(**config.backbone_config))
         self.backbone = backbone
         bb_cfg = self.backbone.config
-        if config.backbone_config is None:
-            config.backbone_config = bb_cfg.to_dict()
+        config.sync_backbone_facade(bb_cfg.to_dict())
         if getattr(bb_cfg, "final_logit_softcapping", None):
             raise ValueError("ChunkedLMHeadCE path assumes no final_logit_softcapping.")
         if config.concept_block != bb_cfg.sliding_window:
@@ -267,7 +279,7 @@ class BackboneConceptLM(PreTrainedModel):
         """Initial-training path: load the backbone weights from the hub, then graft."""
         from transformers import Gemma3ForCausalLM
         backbone = Gemma3ForCausalLM.from_pretrained(config.backbone_model, **backbone_kwargs)
-        config.backbone_config = backbone.config.to_dict()
+        config.sync_backbone_facade(backbone.config.to_dict())
         return cls(config, backbone=backbone)
 
     def _init_weights(self, module):

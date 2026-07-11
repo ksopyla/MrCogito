@@ -172,13 +172,17 @@ class DataCollatorForCausalLM:
         labels         : [B, S]  input_ids with -100 at pad
     """
 
-    def __init__(self, tokenizer, max_length: int = 2048):
+    def __init__(self, tokenizer, max_length: int = 2048, model_vocab_size: int | None = None):
         self.tokenizer = tokenizer
         self.max_length = max_length
         if tokenizer.pad_token_id is None:
             raise ValueError("DataCollatorForCausalLM requires a tokenizer with a pad token.")
         self.pad_token_id = tokenizer.pad_token_id
-        self._vocab_size = len(tokenizer) if hasattr(tokenizer, "__len__") else None
+        self._vocab_size = (
+            model_vocab_size
+            if model_vocab_size is not None
+            else (len(tokenizer) if hasattr(tokenizer, "__len__") else None)
+        )
 
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
         input_ids_list = [f["input_ids"] for f in features]
@@ -202,7 +206,7 @@ class DataCollatorForCausalLM:
             ids_max = int(input_ids.max().item())
             if ids_min < 0 or ids_max >= self._vocab_size:
                 raise ValueError(
-                    f"DataCollatorForCausalLM produced input_ids outside tokenizer range: "
+                    f"DataCollatorForCausalLM produced input_ids outside model vocabulary range: "
                     f"min={ids_min}, max={ids_max}, vocab_size={self._vocab_size}"
                 )
 

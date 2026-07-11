@@ -27,10 +27,11 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [E10](../experiments_specs/E10_gemma_backbone_concept_memory.md) + plan; **foundation implemented
   2026-07-08** (`nn/backbone_concept_lm.py`, `causal_lm` objective, `scripts/launch_e10.sh`,
   checkpoint Tier-1 support). **Readiness audit passed 2026-07-11:** launcher restored to the
-  frozen effective batch 72; live Δshuffle now uses the decisive ≥1024 region; live
-  within-sample RankMe + read/write gates are logged; production gradient-checkpointing is
-  regression-tested (32 targeted tests green). **Stage 0 gate PASSED 2026-07-09** (macOS MPS,
-  zero GPU spend):
+  frozen effective batch 72 (Odra calibration: batch 8 × accum 3, 19.97 GiB peak; batch 10 OOM);
+  the tokenizer-only multimodal id outside Gemma's text vocabulary is sanitized/model-bounded;
+  live Δshuffle now uses the decisive ≥1024 region; live within-sample RankMe + read/write gates
+  are logged; production gradient-checkpointing is regression-tested (33 targeted tests green).
+  **Stage 0 gate PASSED 2026-07-09** (macOS MPS, zero GPU spend):
   the full-vs-blockwise CE gap G at positions ≥ 1024 is **0.284 nats at seq 2048** (5.7× the
   0.05 gate) and grows gently with length (2K→16K: 0.284 → 0.365; G(8K)/G(2K)=1.12×), so
   the spec as-written (train 2K, eval 8K) is a clean extrapolation bet — no curriculum
