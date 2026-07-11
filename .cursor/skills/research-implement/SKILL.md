@@ -89,8 +89,13 @@ Imports: `from training.utils_training import (init_wandb, is_main_process, log_
 Checklist for new/modified entrypoints: `setup_distributed()` first · verbosity set per-rank · dataset sizes logged after load · Flash-Attn probe after model init · `use_cpu=False` + eval/save step guards after `setup_run_dirs` · `is_main_process()` guard on `wandb.finish()`.
 
 ## Training bash launchers
-Reference: `scripts/train_perceiver_denoise_multigpu.sh`. Pattern: set CUDA/NCCL/HF env → declare `"${VAR:-default}"` knobs → `accelerate launch --num_processes=$NUM_GPUS --multi_gpu --mixed_precision=bf16 training/<entrypoint>.py --args …` → pipe through `scripts/clean_tee.py` to `Cache/logs/`.
-- To run a **new experiment variant**: add `"${VAR:-default}"` knobs and pass the new config arg to the **existing** launcher — do not copy the script. Override at launch time (`HIDDEN_SIZE=768 bash scripts/train_perceiver_denoise_multigpu.sh`).
+Reference: `scripts/train_concept_pretraining_multigpu.sh`. Pattern: set CUDA/NCCL/HF env → declare `"${VAR:-default}"` knobs → `accelerate launch --num_processes=$NUM_GPUS --multi_gpu --mixed_precision=bf16 training/<entrypoint>.py --args …` → pipe through `scripts/clean_tee.py` to `Cache/logs/`.
+- To run a **new experiment variant**: add reusable `"${VAR:-default}"` knobs and pass the new config arg to the **existing generic runner** — do not copy it. Override at launch time (`HIDDEN_SIZE=768 bash scripts/train_concept_pretraining_multigpu.sh`).
+- Keep `scripts/launch_eNN.sh` experiment wrappers thin: pin only that experiment's protocol and
+  delegate to the generic runner. Multi-step prerequisite/evaluation flows belong in explicit
+  `launch_eNN_pipeline.sh` orchestrators. See `scripts/README.md`.
+- `scripts/train_perceiver_denoise_multigpu.sh` is a temporary compatibility wrapper; never add
+  arguments, defaults, or orchestration to it.
 - Always expose and set checkpoint retention for training launchers (`SAVE_TOTAL_LIMIT`, passed to
   `--save_total_limit`). Full-corpus runs with frequent saves can fill `/home` if retention is
   unbounded; default to a small finite value (3–5) unless the experiment explicitly needs every

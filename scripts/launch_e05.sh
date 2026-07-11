@@ -4,9 +4,9 @@
 #   OPTIMIZER=muon   bash scripts/launch_e05.sh   # Muon arm (Polonez) — fresh, token-matched to Adam
 #
 # This wrapper pins the E05 protocol (model config, mix, objective, K=128, seq 2K) and the
-# token-matched effective batch, then delegates to the GENERIC launcher (train_perceiver_denoise_
-# multigpu.sh), which owns ALL training defaults + the accelerate invocation + the gated
-# pretokenize phase. Override any knob by exporting it before invocation.
+# token-matched effective batch, then delegates to the GENERIC
+# train_concept_pretraining_multigpu.sh launcher, which owns ALL training defaults + the
+# accelerate invocation + the gated pretokenize phase. Override any knob before invocation.
 #
 # A/B invariant: both arms share seed/model/mix/effective-batch/epochs; ONLY the optimizer (and its
 # LR) differ. NUM_EPOCHS MUST match the live Adam arm so both see identical tokens — confirm it.
@@ -118,4 +118,4 @@ print("tags:", ", ".join(identity.tags), f"optim-{os.environ.get('OPTIMIZER','ad
 PY
 
 # Delegate everything else (defaults, pretokenize, accelerate launch) to the generic launcher.
-exec bash "${SCRIPT_DIR}/train_perceiver_denoise_multigpu.sh"
+exec bash "${SCRIPT_DIR}/train_concept_pretraining_multigpu.sh"

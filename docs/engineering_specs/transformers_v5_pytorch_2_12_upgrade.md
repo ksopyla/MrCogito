@@ -24,7 +24,7 @@ CUDA index: keep `pytorch-cu128` for now (2.12 still publishes cu128 wheels, jus
 - transformers v5 ships a **minor every week**. Staying on `<5` means every weekly release is a release we cannot consume, including bug fixes for models we touch (ModernBERT, SmolLM2/3, Qwen2/3, Llama 3.x).
 - Several v5 removals **directly hit our launchers and training glue** (see inventory below). The longer we stay on 4.x, the more code we write against an API that is already gone upstream.
 - torch 2.12 is low-risk and brings a free ~100× win for `analysis/run_concept_analysis.py` (`torch.linalg.eigh` on CUDA → cuSolver backend). No reason to defer it independently.
-- **Deferred until E05 attempt-3 finishes** because the upgrade touches `scripts/train_perceiver_denoise_multigpu.sh` and `training/utils_training.py` — the exact files an in-flight run depends on. Mid-run edits there are a real source of "why did this checkpoint sequence break" confusion.
+- **Deferred until E05 attempt-3 finishes** because the upgrade touches `scripts/train_concept_pretraining_multigpu.sh` and `training/utils_training.py` — the exact files an in-flight run depends on. Mid-run edits there are a real source of "why did this checkpoint sequence break" confusion.
 
 ## What breaks today (concrete inventory against this codebase)
 
@@ -33,13 +33,13 @@ This is the result of a codebase-wide scan against the v5 migration guide and th
 ### Hard breaks — v5 (launch / training glue)
 
 1. **`TrainingArguments.overwrite_output_dir` removed (no deprecation).** Passed as `--overwrite_output_dir True` in:
-   - `scripts/train_perceiver_denoise_multigpu.sh:273` (the main launcher, used by E05)
+   - `scripts/train_concept_pretraining_multigpu.sh` (the main launcher, used by E05)
    - `parked/scripts/train_recursive_mlm.sh:187`
    - `parked/scripts/train_diffusion_multigpu.sh:205`
    - `parked/scripts/train_prefix_diffusion_multigpu.sh:202`
    - `verification/verify_prefix_diffusion_wikitext_smoke.py:79`
 2. **`TrainingArguments.logging_dir` removed (no deprecation; use `TENSORBOARD_LOGGING_DIR` env var).** Passed as `--logging_dir` in:
-   - `scripts/train_perceiver_denoise_multigpu.sh:259`
+   - `scripts/train_concept_pretraining_multigpu.sh`
    - `parked/scripts/train_recursive_mlm.sh:175`
    - `parked/scripts/train_diffusion_multigpu.sh:192`
    - `parked/scripts/train_prefix_diffusion_multigpu.sh:189`
@@ -119,7 +119,7 @@ Rationale for `transformers>=5.10` (not `>=5.0`): 5.10.x is the version vLLM syn
 
 ### B. Launcher / glue changes
 
-**`scripts/train_perceiver_denoise_multigpu.sh`** (and the three `parked/scripts/*` mirrors):
+**`scripts/train_concept_pretraining_multigpu.sh`** (and the three `parked/scripts/*` mirrors):
 - Remove `--overwrite_output_dir True` (v5 removed; `resume_from_checkpoint` covers the resume case).
 - Remove `--logging_dir "$LOGGING_DIR"` and add `export TENSORBOARD_LOGGING_DIR="$LOGGING_DIR"` near the top of the script (before the `accelerate launch` call).
 - Keep `--warmup_steps` (int form, still accepted).
@@ -198,7 +198,7 @@ Sequenced so that each step leaves the repo in a state where `uv run pytest test
 - **Do not run training yet.** The launchers are still broken.
 
 ### Step 2 — Launcher + training glue (section B)
-- Edit `scripts/train_perceiver_denoise_multigpu.sh` (drop `--overwrite_output_dir`, drop `--logging_dir`, add `export TENSORBOARD_LOGGING_DIR`).
+- Edit `scripts/train_concept_pretraining_multigpu.sh` (drop `--overwrite_output_dir`, drop `--logging_dir`, add `export TENSORBOARD_LOGGING_DIR`).
 - Mirror the same edits in `parked/scripts/train_recursive_mlm.sh`, `parked/scripts/train_diffusion_multigpu.sh`, `parked/scripts/train_prefix_diffusion_multigpu.sh`.
 - Edit `training/utils_training.py` to write the computed logging path to `TENSORBOARD_LOGGING_DIR` instead of the removed attribute.
 - Edit `verification/verify_prefix_diffusion_wikitext_smoke.py`.
@@ -236,7 +236,7 @@ Sequenced so that each step leaves the repo in a state where `uv run pytest test
 ### Step 8 — Remote verification (Odra)
 - `git push -u origin HEAD` and `ssh` to Odra.
 - `git pull` on the branch, `uv sync` (pulls the cu128 torch 2.12 wheels + liger-kernel update).
-- Run `scripts/train_perceiver_denoise_multigpu.sh` with a tiny config (1 step, batch 2, 1 GPU) to confirm the launcher + DDP + Trainer path works on CUDA under v5 + torch 2.12.
+- Run `scripts/train_concept_pretraining_multigpu.sh` with a tiny config (1 step, batch 2, 1 GPU) to confirm the launcher + DDP + Trainer path works on CUDA under v5 + torch 2.12.
 - Confirm W&B logging still works (transformers v5 + hub 1.0 changed some internal logging paths).
 - Confirm checkpoint save/load round-trips (50 GB shards — verify the file lands and `from_pretrained` reads it).
 

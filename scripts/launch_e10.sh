@@ -5,7 +5,7 @@
 #
 # Pins the E10 protocol (frozen gemma-3-1b-pt + LoRA, block K=512 = Gemma's sliding window,
 # Gemma-tokenized mix at seq 2048, plain causal_lm objective) and delegates to the GENERIC
-# launcher (train_perceiver_denoise_multigpu.sh), which owns training defaults + the gated
+# launcher (train_concept_pretraining_multigpu.sh), which owns training defaults + the gated
 # pretokenize phase + the accelerate invocation. Override any knob by exporting it first.
 #
 # Arm invariant: both arms share backbone/LoRA/masks/mix/seed/effective-batch/epochs; ONLY
@@ -94,4 +94,4 @@ echo "  DATASETS_RAW_DIR=${DATASETS_RAW_DIR}"
 echo "  MANIFEST=${MANIFEST}"
 
 # Delegate everything else (defaults, pretokenize, accelerate launch) to the generic launcher.
-exec bash "${SCRIPT_DIR}/train_perceiver_denoise_multigpu.sh"
+exec bash "${SCRIPT_DIR}/train_concept_pretraining_multigpu.sh"

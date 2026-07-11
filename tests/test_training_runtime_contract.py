@@ -17,6 +17,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REMOTE_PATHS_SCRIPT = REPO_ROOT / "scripts" / "remote_paths.sh"
 CANONICAL_ENTRYPOINT = REPO_ROOT / "training" / "train_concept_pretraining.py"
 LEGACY_ENTRYPOINT = REPO_ROOT / "training" / "train_perceiver_denoise.py"
+CANONICAL_LAUNCHER = REPO_ROOT / "scripts" / "train_concept_pretraining_multigpu.sh"
+LEGACY_LAUNCHER = REPO_ROOT / "scripts" / "train_perceiver_denoise_multigpu.sh"
+E10_PIPELINE = REPO_ROOT / "scripts" / "launch_e10_pipeline.sh"
 TRAINING_ENTRYPOINTS = [
     CANONICAL_ENTRYPOINT,
     REPO_ROOT / "training" / "train_mlm.py",
@@ -47,12 +50,26 @@ def test_canonical_and_legacy_entrypoints_expose_compatible_cli_help():
 
 
 def test_generic_launcher_targets_canonical_entrypoint():
-    launcher = (
-        REPO_ROOT / "scripts" / "train_perceiver_denoise_multigpu.sh"
-    ).read_text(encoding="utf-8")
+    launcher = CANONICAL_LAUNCHER.read_text(encoding="utf-8")
 
     assert "training/train_concept_pretraining.py" in launcher
     assert "training/train_perceiver_denoise.py" not in launcher
+
+
+def test_legacy_generic_launcher_is_a_thin_compatibility_wrapper():
+    launcher = LEGACY_LAUNCHER.read_text(encoding="utf-8")
+
+    assert "train_concept_pretraining_multigpu.sh" in launcher
+    assert "accelerate launch" not in launcher
+    assert "training/train_" not in launcher
+
+
+def test_e10_pipeline_delegates_to_protocol_wrapper_not_generic_runner():
+    pipeline = E10_PIPELINE.read_text(encoding="utf-8")
+
+    assert "exec bash scripts/launch_e10.sh" in pipeline
+    assert "train_concept_pretraining_multigpu.sh" not in pipeline
+    assert "train_perceiver_denoise_multigpu.sh" not in pipeline
 
 
 def test_all_training_entrypoints_use_shared_logging_contract():

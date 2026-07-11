@@ -31,7 +31,7 @@
 - **Data:** <dataset + size>
 - **Compute:** <machine, GPUs, est. GPU-hours>
 - **Steps / epochs:** <budget>
-- **Launch:** `<exact command + env-var overrides on the shared bash launcher, e.g. HIDDEN_SIZE=768 bash scripts/train_perceiver_denoise_multigpu.sh>`
+- **Launch:** `<exact command + env-var overrides on the shared bash launcher, e.g. HIDDEN_SIZE=768 bash scripts/train_concept_pretraining_multigpu.sh>`
 - **New foundation code (if any):** <reusable module added via research-implement, or "none — config only">
 
 ## Result

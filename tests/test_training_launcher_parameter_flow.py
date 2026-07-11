@@ -6,7 +6,10 @@ from training.train_concept_pretraining import build_argument_parser
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-LAUNCHER = REPO_ROOT / "scripts" / "train_perceiver_denoise_multigpu.sh"
+LAUNCHER = REPO_ROOT / "scripts" / "train_concept_pretraining_multigpu.sh"
+LEGACY_LAUNCHER = REPO_ROOT / "scripts" / "train_perceiver_denoise_multigpu.sh"
+E05_LAUNCHER = REPO_ROOT / "scripts" / "launch_e05.sh"
+E10_LAUNCHER = REPO_ROOT / "scripts" / "launch_e10.sh"
 
 
 def _write_executable(path, contents):
@@ -14,9 +17,9 @@ def _write_executable(path, contents):
     path.chmod(0o755)
 
 
-def _run_launcher(tmp_path, extra_env):
+def _run_launcher(tmp_path, extra_env, launcher=LAUNCHER):
     bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
+    bin_dir.mkdir(exist_ok=True)
     capture_path = tmp_path / "accelerate.args"
     ddp_capture_path = tmp_path / "ddp_timeout.txt"
     _write_executable(
@@ -62,7 +65,7 @@ fi
     )
     env.update(extra_env)
     result = subprocess.run(
-        ["bash", str(LAUNCHER)],
+        ["bash", str(launcher)],
         cwd=tmp_path,
         env=env,
         capture_output=True,
@@ -174,3 +177,68 @@ def test_launcher_rejects_exact_token_budget_without_manifest(tmp_path):
     assert result.returncode != 0
     assert "TARGET_TOKENS requires PRETOKENIZED_MANIFEST" in result.stdout
     assert args == []
+
+
+def test_legacy_launcher_generates_identical_training_arguments(tmp_path):
+    canonical_result, canonical_args, _ = _run_launcher(tmp_path, {})
+    legacy_result, legacy_args, _ = _run_launcher(
+        tmp_path,
+        {},
+        launcher=LEGACY_LAUNCHER,
+    )
+
+    assert canonical_result.returncode == 0, canonical_result.stderr
+    assert legacy_result.returncode == 0, legacy_result.stderr
+    assert legacy_args == canonical_args
+
+
+def test_e05_protocol_wrapper_pins_profile_and_delegates(tmp_path):
+    manifest = tmp_path / "e05_manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    result, args, _ = _run_launcher(
+        tmp_path,
+        {
+            "SKIP_PRETOKENIZE": "1",
+            "MANIFEST": str(manifest),
+        },
+        launcher=E05_LAUNCHER,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "training/train_concept_pretraining.py" in args
+    assert _value_after(args, "--decoder_type") == "causal_ar"
+    assert _value_after(args, "--objective_variant") == "prefix_suffix"
+    assert _value_after(args, "--decoder_context_window") == "128"
+    assert _value_after(args, "--hidden_size") == "768"
+    assert _value_after(args, "--token_embedding_dim") == "256"
+    assert _value_after(args, "--max_seq_length") == "2048"
+    assert _value_after(args, "--pretokenized_manifest") == str(manifest)
+
+
+def test_e10_protocol_wrapper_pins_backbone_and_delegates(tmp_path):
+    data_root = tmp_path / "e10_data"
+    data_root.mkdir()
+    manifest = data_root / "e10_manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    result, args, _ = _run_launcher(
+        tmp_path,
+        {
+            "DATASETS_TOK_DIR": str(data_root),
+            "DATASETS_RAW_DIR": str(tmp_path / "raw"),
+            "RAW_ARCHIVE_DIR": str(tmp_path / "raw"),
+            "SKIP_PRETOKENIZE": "1",
+            "MANIFEST": str(manifest),
+            "TARGET_TOKENS": "",
+        },
+        launcher=E10_LAUNCHER,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "training/train_concept_pretraining.py" in args
+    assert _value_after(args, "--backbone_model") == "google/gemma-3-1b-pt"
+    assert _value_after(args, "--objective_variant") == "causal_lm"
+    assert _value_after(args, "--concept_num") == "128"
+    assert _value_after(args, "--concept_block") == "512"
+    assert _value_after(args, "--concept_io_mode") == "global_kv"
+    assert _value_after(args, "--tokenizer_name") == "google/gemma-3-1b-pt"
+    assert _value_after(args, "--pretokenized_manifest") == str(manifest)

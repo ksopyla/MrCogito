@@ -73,9 +73,11 @@ All run/eval entrypoints live under `scripts/`:
 | Script | Role |
 |---|---|
 | `scripts/remote_paths.sh` | Sourced by every launcher; sets all path/env vars above + `mkdir`s them. |
-| `scripts/train_perceiver_denoise_multigpu.sh` | **The generic training launcher.** Auto-detects GPUs, runs `accelerate launch --multi_gpu --mixed_precision=bf16`, owns ALL training defaults + the gated pretokenize phase. Override any knob via env vars (never fork). |
+| `scripts/train_concept_pretraining_multigpu.sh` | **The generic training launcher.** Auto-detects GPUs, runs `accelerate launch --multi_gpu --mixed_precision=bf16`, owns ALL training defaults + the gated pretokenize phase. Override any knob via env vars (never fork). |
+| `scripts/train_perceiver_denoise_multigpu.sh` | Temporary compatibility wrapper for the old generic-launcher path; never add behavior here. |
 | `scripts/launch_e05.sh` | E05 wrapper — pins E05 protocol (causal_ar, K=128, seq 2K, mix) and delegates to the generic launcher. |
 | `scripts/launch_e10.sh` | E10 wrapper — pins Gemma-3-1B backbone + LoRA + Gemma-tokenized mix, delegates to the generic launcher. |
+| `scripts/launch_e10_pipeline.sh` | E10 orchestration pipeline — waits for prerequisites, runs the Stage-0 gate and pretokenization, then invokes `launch_e10.sh`. |
 | `scripts/pretokenize_mix.py` | Parallel download + tokenize a mix into `DATASETS_TOK_DIR`, write a manifest training consumes via `--pretokenized_manifest`. |
 | `scripts/evaluate_concept_encoder_glue.sh` | GLUE eval (`all\|all-glue\|mrpc\|stsb\|qqp\|mnli-matched\|...`). |
 | `scripts/evaluate_concept_encoder_sick.sh` | SICK eval (`sick_relatedness\|sick_entailment\|sick_all`). |
@@ -187,7 +189,7 @@ Re-run training only (cache warm): `SKIP_PRETOKENIZE=1`.
 EXPERIMENT_ID=E03 DECODER_TYPE=causal_ar HIDDEN_SIZE=768 NUM_LAYERS=8 CONCEPT_NUM=128 \
 DATASET_NAME=HuggingFaceFW/fineweb-edu DATASET_SUBSET=sample-10BT \
 TOKENIZER_NAME=HuggingFaceTB/SmolLM2-135M PER_DEVICE_BATCH_SIZE=8 NUM_EPOCHS=1 \
-bash scripts/train_perceiver_denoise_multigpu.sh
+bash scripts/train_concept_pretraining_multigpu.sh
 ```
 For a new model size, run a **tiny calibration** before the full launch: cached/small
 dataset or very short step/epoch budget, sweep `PER_DEVICE_BATCH_SIZE` upward, watch

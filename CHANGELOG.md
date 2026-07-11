@@ -14,6 +14,34 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-07-11] - Training refactor Stage 3 launcher roles
+
+**Why:** the generic multi-family launcher still carried the original Perceiver-denoising name,
+while experiment wrappers and orchestration pipelines had distinct responsibilities that were
+encoded only in comments and operational knowledge.
+
+**Impact:** new ad hoc maintained-family runs use
+`scripts/train_concept_pretraining_multigpu.sh`. Existing commands using
+`train_perceiver_denoise_multigpu.sh` continue to generate the same training arguments through a
+thin compatibility wrapper. E05/E10 protocols, preprocessing, logging paths, W&B identities,
+checkpoint layout, and parked launchers are unchanged.
+
+**What changed:**
+- [renamed] the generic runner to `scripts/train_concept_pretraining_multigpu.sh`; retained the old
+  path as an executable compatibility wrapper.
+- [clarified] `launch_e05.sh` and `launch_e10.sh` are protocol wrappers, while
+  `launch_e10_pipeline.sh` is a prerequisite/gate/pretokenization orchestration pipeline.
+- [documented] launcher roles and change policy in `scripts/README.md`, README, workspace guidance,
+  and operational skills.
+- [preserved] frozen experiment specs, append-only ledgers, historical reports, and parked
+  recursive/diffusion launchers retain their recorded paths and semantics.
+- [tested] canonical and compatibility runners produce identical captured arguments; E05 and E10
+  wrappers preserve their architecture, objective, tokenizer, data, and backbone pins; the E10
+  pipeline remains chained through its protocol wrapper.
+- [verified] full suite: 315 passed, 9 skipped; all live training launchers pass Bash syntax checks.
+
+---
+
 ## [2026-07-11] - Training pipeline contract test hardening
 
 **Why:** module-level tests covered the extracted pieces, but the highest-risk boundaries remained

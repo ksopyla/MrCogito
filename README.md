@@ -146,7 +146,7 @@ Text is the first proving ground because it gives fast iteration, mature dataset
 │   └── utils_training.py
 ├── evaluation/                 # GLUE, STS-B, PAWS/SICK, checkpoint routing
 ├── analysis/                   # Concept-rank and geometry analysis
-├── scripts/                    # Local and multi-GPU launch scripts
+├── scripts/                    # Generic runner, experiment wrappers, pipelines, and utilities
 ├── docs/
 │   ├── 1_Strategy_and_Plans/     # Current agenda and long-term vision
 │   ├── experiments/             # Frozen experiment specs and plans
@@ -205,8 +205,12 @@ uv run python training/train_concept_pretraining.py \
 Remote multi-GPU launchers live in `scripts/`, for example:
 
 ```bash
-bash scripts/train_perceiver_denoise_multigpu.sh
+bash scripts/train_concept_pretraining_multigpu.sh
 ```
+
+Experiment protocols use thin wrappers such as `scripts/launch_e05.sh` and
+`scripts/launch_e10.sh`; see `scripts/README.md` for launcher roles. The historical
+`train_perceiver_denoise_multigpu.sh` path remains a temporary compatibility wrapper.
 
 Evaluate a checkpoint:
 

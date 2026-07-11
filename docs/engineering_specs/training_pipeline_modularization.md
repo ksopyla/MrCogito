@@ -1,7 +1,7 @@
 # Training pipeline modularization
 
 - **Type:** engineering refactor, not an `E0NN` experiment.
-- **Status:** Stages 0–2 and post-Stage-2 contract hardening complete (2026-07-11); Stage 3 launcher-role clarification is next.
+- **Status:** Stages 0–3 complete (2026-07-11); Stage 4 retired-path decisions are next.
 - **Serves:** every maintained and revivable training family.
 - **Primary goal:** make training code easier to maintain and safer for AI-assisted changes without changing model behavior, data, logging, artifact layout, or historical identity.
 
@@ -168,10 +168,22 @@ that was true when those experiments and changes were recorded.
 
 ### Stage 3 — clarify launcher roles
 
-- Keep one generic runner and thin `launch_eNN.sh` protocol wrappers.
-- Document generic runner versus experiment wrapper versus orchestration pipeline.
-- Rename or reorganize launchers only with compatibility shims and reference checks.
-- Remove obsolete operational scripts only after confirming they have no users.
+- [done 2026-07-11] Keep one canonical generic runner:
+  `scripts/train_concept_pretraining_multigpu.sh`.
+- [done 2026-07-11] Retain `scripts/train_perceiver_denoise_multigpu.sh` as a thin executable
+  compatibility wrapper for one migration window.
+- [done 2026-07-11] Keep `launch_e05.sh` and `launch_e10.sh` as experiment protocol wrappers that
+  pin environment values and delegate to the generic runner.
+- [done 2026-07-11] Keep `launch_e10_pipeline.sh` as an orchestration pipeline that owns
+  prerequisites and composes the E10 protocol wrapper.
+- [done 2026-07-11] Document generic runner versus experiment wrapper versus orchestration pipeline
+  in `scripts/README.md`, README, and operational skills.
+- [done 2026-07-11] Preserve frozen experiment specs, append-only ledgers, run reports, and parked
+  launchers under the names that were true for their recorded work.
+- [verified 2026-07-11] Canonical and compatibility launchers generate identical training
+  arguments; E05 and E10 wrappers retain their protocol pins; the E10 pipeline delegates through
+  its protocol wrapper; full suite: 315 passed, 9 skipped. All live training launchers pass Bash
+  syntax checks.
 
 ### Stage 4 — prune retired training paths
 

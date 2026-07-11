@@ -22,7 +22,8 @@ The live agenda is `docs/1_Strategy_and_Plans/agenda.md` (slim daily driver — 
 - `analysis/` — `run_concept_analysis.py` (effective rank, cosine similarities), `check_model_health.py`
 - `parked/` — set-aside model families (recursive, diffusion, prefix-diffusion) with their training scripts and tests; revivable, do not modify casually
 - `playground/` — exploration and learning only (mainly notebooks), not production
-- `scripts/` — bash launchers for training/eval on remote GPU servers, sync and upload utilities
+- `scripts/` — canonical generic training runner, thin experiment wrappers, orchestration
+  pipelines, eval launchers, sync/upload utilities; role map in `scripts/README.md`
 - `docs/` — documentation, research logs, goals and hypotheses
     - `1_Strategy_and_Plans/` — `agenda.md` (slim living agenda, current truth), `vision_and_goals.md`, `training_eval_matrix.md`
     - `experiments_specs/` — one frozen spec per experiment (`E0NN_*.md`) + its `_plan.md`; implementation is a config over the shared foundation
