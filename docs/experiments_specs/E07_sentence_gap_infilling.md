@@ -1,6 +1,6 @@
 # E07 — Sentence-gap / boundary-only long-span infilling
 
-- **Status:** draft
+- **Status:** rejected as not aligned with vision, this is just auxilary experiemtn, not solving the main problem
 - **Serves:** the [agenda](../1_Strategy_and_Plans/agenda.md) collapse focus. A pure **objective** change that makes the target intrinsically global: mask whole sentences (or long interior spans) and regenerate them from the concepts, with the decoder denied the within-span tokens — so the early span positions cannot be served by local context (the same mechanism behind E02's strong early-Δ, generalized to interior, bidirectional spans). Grounded in SpanBERT boundary-only [1907.10529] and PEGASUS gap-sentence generation [1912.08777]; the literature is explicit that **long spans help only when within-span tokens are hidden** (T5 μ=10 ≤ μ=3 otherwise).
 - **Implementation plan:** E07_sentence_gap_infilling_plan.md *(to author after approval)*
 - **Owner / dates:** Krzysztof Sopyla · opened 2026-06-14 · closed —

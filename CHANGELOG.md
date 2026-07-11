@@ -14,6 +14,114 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-07-08] - E10 foundation: pretrained-backbone concept memory (Gemma-3 graft, Design C)
+
+**Why:** the platform pivot (spec
+`docs/experiments_specs/E10_gemma_backbone_concept_memory.md`): stop paying the
+from-scratch language-acquisition cost per run — graft the concept read/write
+machinery onto a frozen pretrained decoder (`google/gemma-3-1b-pt`, whose
+5-sliding:1-global layer pattern is a ready-made socket) and make the concepts a
+gated recurrent memory written per 512-token block (the E09 write design,
+executed on the backbone). Recurrent encode == recurrent decode: no separate
+encoder, unbounded input length at fixed memory, O(N·(K+C)).
+
+**What changed:**
+- [added] `nn/backbone_concept_lm.py` — `BackboneConceptLM` + `BackboneConceptConfig`
+  (new config-selectable model family, `concept_io_mode="global_kv"`; E11
+  `mem_tokens` / E12 `kv_prefix` land here later). Frozen backbone + peft LoRA
+  (`inject_adapter_in_model`); mask-dict surgery windows ALL token↔token
+  attention; the 4 global layers get a zero-init tanh-gated concept read using
+  their own (LoRA-adapted) q/k/v/o projections, no RoPE on the read (position-free
+  memory ⇒ length-extrapolation-safe); `ConceptWriteHead` reuses
+  `BiXTCrossAttention(update_tokens=False)` with zero-init α + sandwich RMSNorm;
+  block-recurrent forward with one-block carry, per-block position reset, and
+  `ChunkedLMHeadCE` (the 262K-vocab [B,S,V] logits are never materialized);
+  `per_position_ce` (blockwise / single_windowed / full_attention scorers),
+  `concept_ablation_ce` + `encode_concepts` matching the trainer's eval-hook
+  contract. Zero-init property: gates at 0 ⇒ block loop == plain window-masked
+  Gemma for the first two blocks, harder history truncation beyond (that truncated
+  context is exactly the concepts' channel); `concept_num=0` = the control arm.
+- [added] `data/data_collators.py:DataCollatorForCausalLM` — plain next-token-LM
+  collator (pad to batch max, labels −100 at pad).
+- [changed] `training/train_perceiver_denoise.py` — new `objective_variant`
+  `causal_lm` + `--backbone_model`/`--concept_block`/`--concept_io_mode`/`--lora_*`
+  args; backbone branch for model build, collator, W&B identity
+  (`backbone_concept` family, concept-arm/control-arm tags); default path
+  byte-identical when `backbone_model` unset.
+- [changed] `scripts/train_perceiver_denoise_multigpu.sh` — `BACKBONE_ARGS`
+  (gated on `BACKBONE_MODEL`), `GRADIENT_CHECKPOINTING` knob (was hardcoded
+  False), `DATASETS_TOK_DIR` overridable (tokenizer-switch cache isolation).
+- [added] `scripts/launch_e10.sh` — E10 protocol wrapper (concept arm default,
+  `CONCEPT_NUM=0` control arm; Gemma-tokenized `smollm3_inspired_2k_e05` mix into
+  its own `datasets_tok_gemma` tree).
+- [added] `analysis/run_e10_stage0.py` — Stage-0 go/no-go: full-attention vs
+  blockwise-truncated CE gap G by position bucket at seq 2048/8192.
+- [changed] `scripts/pretokenize_mix.py` — `--objective causal_lm` choice.
+- [added] `tests/test_backbone_concept_lm.py` — 14 tests on a tiny random
+  Gemma3 config (no hub): zero-init equivalence (blocks 0–1 exact vs
+  single windowed forward + deliberate divergence beyond), padding/ragged blocks,
+  loss==per-position mean, gradient reach (gate/LoRA at init; z0/write with open
+  gates), block causality (no future leak), read-effect, ablation contract,
+  encode shape, control-arm guards, save/load roundtrip, collator. Full suite
+  242 passed / 9 skipped.
+- [added] dependency `peft` 0.19.1 (`pyproject.toml`, `uv.lock`).
+- [docs] specs E10 (+plan), E11/E12 (design-only, queued); agenda Current focus
+  updated (E10 is the next run; E08 composes on top later; E09 folded into E10).
+
+**Known deviations (recorded in the spec):** Gemma tokenizer (262K vocab)
+replaces SmolLM2 ⇒ CE not comparable with E01–E09; backbone-native 1152-dim
+token embeddings (the tiny-token-embedding asymmetry applies to the write-op
+economics, not the frozen embedding table).
+
+---
+
+## [2026-07-07] - Tier-1 eval data-protocol upgrade: held-out, 2K, length-stratified, seeded
+
+**Why:** a review of the concept-health measures found the metric *design* sound
+(geometry / ΔCE-usage / faithfulness are deliberately orthogonal) but the *data
+protocol* feeding them flawed: `run_concept_analysis.py` streamed the first ~320
+docs of the **train** split (train-contaminated — training's holdout is a seeded
+split of the same data), truncated everything to a single 512-token length (so
+seq-2048 windowed E05 checkpoints were measured at a quarter of their trained
+length and the L3 compression curve collapsed to one bucket), used an unseeded
+`randperm` shuffle (with ~1 identity fixed point per batch, diluting Δshuffle),
+judged hard Δ gates on point estimates, and silently fell back to the ModernBERT
+tokenizer on load failure.
+
+**What changed:**
+- [changed] `analysis/run_concept_analysis.py` — new `--eval_source
+  {holdout,pretokenized,stream}` (default `holdout` reproduces the training
+  eval split via `_select_train_eval_splits`; `pretokenized` consumes a
+  pretokenize-mix manifest's eval split; legacy `stream` kept behind a loud
+  contamination warning); default seq **2048** with length-stratified batches
+  (`--length_buckets`, per-bucket geometry + ΔCE in report/JSON); `--seed`
+  seeds everything; ablation deltas reported ± per-batch std; recommendation
+  verdict re-keyed on within-sample RankMe with C-scaled thresholds (was: the
+  demoted slot-mean rank); tokenizer fallback removed (fails loudly,
+  `--tokenizer_name` to override); JSON carries `data_protocol_version`.
+- [changed] `nn/concept_encoder_perceiver.py` — `concept_ablation_ce` shuffle is
+  now a random cyclic shift (guaranteed derangement, consistent with the
+  specificity eval's `roll(1)`).
+- [changed] `analysis/concept_analysis.py` — within-sample RankMe now also
+  reports a **centered** variant to disambiguate shared-offset anisotropy
+  (raw low / centered high) from genuine collapse (both low).
+- [added] `tests/test_run_concept_analysis_protocol.py` — bucket parsing,
+  std/per-bucket aggregation, derangement guarantee, centered-vs-raw RankMe.
+- [docs] `docs/engineering_specs/concept_information_eval_upgrade.md` (dated
+  section), `.cursor/skills/experiment-evaluate/SKILL.md` (Tier-1 commands +
+  fixed stale doc pointer), dated "not comparable" notes in
+  `master_experiment_log.md` and the E02-long / E05-attempt-3 / E05-Muon run
+  reports.
+
+**Impact:** pre-2026-07-07 Tier-1 numbers (RankMe, recon-contract Δzero/Δshuffle,
+round-trip, compression curve) are internally comparable but NOT comparable with
+post-upgrade numbers; recompute planned for E02-long and the E05 variants.
+Training-time W&B `concept_ablation/*` (real holdout) and STS-B/SICK/PAWS/GLUE
+are unaffected. Note: the derangement change also shifts training-time Δshuffle
+logging slightly (removes the fixed-point dilution).
+
+---
+
 ## [2026-06-30] - Eval-script fixes: wandb tag truncation + SmolLM2 pad_token
 
 **Why:** the E05 attempt 3 eval pipeline (`eval-runner`) aborted at `wandb.init()`

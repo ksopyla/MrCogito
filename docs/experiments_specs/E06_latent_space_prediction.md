@@ -1,6 +1,6 @@
 # E06 — Latent-space prediction (anchor as the primary objective)
 
-- **Status:** draft (gate behind E03; reuses E03 machinery)
+- **Status:** rejected as not aligned with vision, this is just auxilary experiemtn, not solving the main problem
 - **Serves:** the [agenda](../1_Strategy_and_Plans/agenda.md) collapse focus and the "**reason in latent space**" Vision. Removes the token-level bypass *entirely* by moving the learning signal out of token space: the concepts must predict a frozen teacher's per-token **representations**, not reconstruct tokens. JEPA / data2vec / CPC family ([2301.08243], [2202.03555], [1807.03748]).
 - **Implementation plan:** E06_latent_space_prediction_plan.md *(to author after approval)*
 - **Owner / dates:** Krzysztof Sopyla · opened 2026-06-14 · closed —
