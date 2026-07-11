@@ -46,6 +46,10 @@ opening directly, and can be analyzed from saved checkpoints through the canonic
 - [fixed] E10 defaults backbone gradient checkpointing to the non-reentrant PyTorch path.
   Reentrant checkpoint hooks marked block-reused LoRA parameters ready multiple times under DDP
   and aborted the first production launch before step 1.
+- [fixed] the training banner now resolves the effective pretokenized manifest instead of printing
+  the unused default MiniPile argument; causal-LM eval collation is labeled deterministic/no
+  corruption. Gemma Trainer-facing special-token configs are explicitly aligned to canonical
+  tokenizer IDs (PAD=0, BOS=2, EOS=1), eliminating one benign warning per DDP rank.
 - [added] exact manifest token counting/checksum and a 2B non-padding-token target schedule
   (deterministic rounding within one optimizer batch); retained ~10%-budget checkpoints support
   matched 50%/100% A/B comparisons, while live eval

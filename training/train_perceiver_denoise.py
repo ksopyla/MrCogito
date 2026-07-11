@@ -62,6 +62,7 @@ from training.utils_training import (
     log_model_info,
     log_system_info,
     log_training_config,
+    resolve_dataset_identifier,
     setup_distributed,
     setup_file_logging,
     setup_run_dirs,
@@ -104,6 +105,32 @@ def resolve_append_eos_token_id(objective_variant, is_causal_ar, eos_token_id):
     if eos_token_id is not None and (is_causal_ar or objective_appends_eos):
         return eos_token_id
     return None
+
+
+def align_special_tokens_for_training(model, tokenizer) -> dict:
+    """Align Trainer-facing configs to the tokenizer's canonical scalar token ids.
+
+    Gemma's generation config includes ``eos_token_id=[1, 106]`` for chat generation,
+    while its text tokenizer uses EOS=1. Trainer aligns this automatically on every DDP
+    rank and emits one warning per rank. E10 is next-token pretraining (not generation),
+    so make that existing scalar training contract explicit before Trainer construction.
+    """
+    changes = {}
+    for name in ("pad_token_id", "bos_token_id", "eos_token_id"):
+        token_id = getattr(tokenizer, name, None)
+        if token_id is None:
+            continue
+        for config_name, config in (
+            ("config", getattr(model, "config", None)),
+            ("generation_config", getattr(model, "generation_config", None)),
+        ):
+            if config is None:
+                continue
+            previous = getattr(config, name, None)
+            if previous != token_id:
+                changes[f"{config_name}.{name}"] = {"from": previous, "to": token_id}
+                setattr(config, name, token_id)
+    return changes
 
 
 DECODER_PERCEIVER_POSONLY = "perceiver_posonly"
@@ -1214,6 +1241,14 @@ def main():
     if loss_config.warmup_steps > 0:
         callbacks.append(ConceptLossStepCallback())
 
+    if is_backbone:
+        special_token_changes = align_special_tokens_for_training(model, tokenizer)
+        if special_token_changes and is_main_process():
+            logger.info(
+                "Aligned backbone training special-token configs to tokenizer ids: "
+                f"{special_token_changes}"
+            )
+
     trainer = PerceiverDenoiseTrainer(
         model=model,
         args=training_args,
@@ -1288,24 +1323,23 @@ def main():
             f"C{config.concept_num} token_emb={config.token_embedding_dim} "
             f"act={config.hidden_act} norm={config.norm_type} bixt={model_args.use_bixt}"
         )
-    if data_args.dataset_mix_recipe or data_args.dataset_mix:
-        selected_mix = data_args.dataset_mix_recipe or data_args.dataset_mix
-        logger.info(
-            f"  Data            : mix={selected_mix} tokenizer={data_args.tokenizer_name} "
-            f"max_seq={data_args.max_seq_length}"
-            + (
-                f" weight_override={data_args.dataset_mix_weight_override}"
-                if data_args.dataset_mix_weight_override
-                else ""
-            )
+    effective_dataset = resolve_dataset_identifier(data_args)
+    logger.info(
+        f"  Data            : {effective_dataset} tokenizer={data_args.tokenizer_name} "
+        f"max_seq={data_args.max_seq_length}"
+        + (
+            f" weight_override={data_args.dataset_mix_weight_override}"
+            if data_args.dataset_mix_weight_override
+            else ""
         )
+    )
+    if model_args.objective_variant == OBJECTIVE_CAUSAL_LM:
+        logger.info("  Eval collator   : deterministic=True (causal LM; no corruption)")
     else:
         logger.info(
-            f"  Data            : {data_args.dataset_name} {data_args.dataset_name_subset or ''} "
-            f"tokenizer={data_args.tokenizer_name} max_seq={data_args.max_seq_length}"
+            f"  Eval collator   : seeded={getattr(eval_data_collator, 'seed', None)} "
+            f"(deterministic held-out corruption)"
         )
-    logger.info(f"  Eval collator   : seeded={getattr(eval_data_collator, 'seed', None)} "
-                f"(deterministic held-out corruption)")
     logger.info("=" * 60)
     trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
 

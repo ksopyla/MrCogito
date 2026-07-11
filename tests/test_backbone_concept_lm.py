@@ -6,11 +6,13 @@ All tests run on a tiny RANDOM Gemma3TextConfig (no hub access): 6 layers with t
 
 import pytest
 import torch
+from transformers import GenerationConfig
 
 from data.data_collators import DataCollatorForCausalLM
 from data.dataset_preprocess import configure_text_tokenizer_for_model_vocab
 from analysis.run_e10_comparison import evaluate_length
 from nn.backbone_concept_lm import BackboneConceptConfig, BackboneConceptLM
+from training.train_perceiver_denoise import align_special_tokens_for_training
 
 VOCAB = 256
 K = 8   # sliding window == concept block
@@ -336,6 +338,25 @@ def test_text_tokenizer_splits_out_of_model_special_tokens():
     assert configure_text_tokenizer_for_model_vocab(tokenizer, 100)
     assert tokenizer.split_special_tokens is True
     assert not configure_text_tokenizer_for_model_vocab(tokenizer, 101)
+
+
+def test_training_special_tokens_align_generation_config_without_warning_path():
+    class TokStub:
+        pad_token_id = 0
+        bos_token_id = 2
+        eos_token_id = 1
+
+    model = make_model(concept_num=4)
+    model.generation_config = GenerationConfig(
+        pad_token_id=0, bos_token_id=2, eos_token_id=[1, 106]
+    )
+    changes = align_special_tokens_for_training(model, TokStub())
+
+    assert model.config.pad_token_id == 0
+    assert model.config.bos_token_id == 2
+    assert model.config.eos_token_id == 1
+    assert model.generation_config.eos_token_id == 1
+    assert changes["generation_config.eos_token_id"] == {"from": [1, 106], "to": 1}
 
 
 def test_config_facade_attributes_for_shared_plumbing():

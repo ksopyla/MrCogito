@@ -83,6 +83,9 @@ trained control arm).
   (=input_ids, −100 at pad). Blocking is internal to the model forward (same principle as E09's plan).
 - **Gemma tokenizer:** has real `pad_token` (`<pad>`, id 0) + `bos` — collator uses them; BOS
   prepended by the tokenizer during pretokenize (`add_bos_token=True` default for Gemma).
+  Before Trainer construction, model/generation configs are explicitly aligned to canonical
+  tokenizer PAD/BOS/EOS ids 0/2/1; startup logs the effective manifest rather than the unused
+  fallback `dataset_name`.
   Gemma's tokenizer-only `<image_soft_token>` id 262144 is outside the text model's embedding
   range `[0,262144)`; pretokenization therefore splits literal special-token strings as ordinary
   text, and the causal collator validates against the model (not tokenizer) vocabulary.
