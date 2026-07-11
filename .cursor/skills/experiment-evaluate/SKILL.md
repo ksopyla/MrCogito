@@ -17,6 +17,12 @@ when a kill gate trips. **Honor explicit narrow requests literally**: if the use
 task; if they ask for "STS-B" run just Tier 2. Never expand a narrow request into the full
 suite, and never silently skip a tier on a full run.
 
+**The run-level compute audit is a gate, not optional** — run it first (before Tier 0) on any
+training run whose W&B summary lacks `compute/audit_state` (see the run-level preamble below).
+It is idempotent and macOS-runnable, and `experiment-track` treats its output as a hard
+precondition. A narrow request may skip the per-checkpoint tiers, but do not hand off to
+`experiment-track` while the run still lacks `compute/audit_state`.
+
 ## When To Use
 After training produced checkpoints and the user asks to evaluate, compare best/last
 checkpoints, check concept health/collapse, run STS-B / SICK / PAWS / GLUE, measure whether
@@ -86,6 +92,16 @@ LAST="$RUN_ROOT/checkpoint-<last_step>"
 ## The Tiered Pipeline (cost/signal order)
 
 ### Run-level preamble — Compute audit (W&B-only, no GPU, once per training run)
+**This is a gate, not a preamble in name only.** A run that was never audited has *no*
+`compute/*` keys at all (not even `compute/audit_state=failed`) — the absence is silent, which
+is exactly how a finished run can get tracked without a compute profile. So check first, then
+run. The audit is **idempotent** (re-running overwrites with identical values), so when in
+doubt just run it rather than reasoning about whether you already did.
+```bash
+# Preflight: has the audit run on this run? MISSING => run it now.
+uv run python -c "import wandb; print(wandb.Api().run('ksopyla/MrCogito/<run_id>').summary.get('compute/audit_state','MISSING'))"
+```
+
 Runs once per **training run** (not per checkpoint), before the per-checkpoint
 tiers. Reads already-logged W&B system metrics + config and writes
 `compute/gpu_hours`, `compute/energy_kwh`, `compute/max_tokens`,
@@ -115,24 +131,48 @@ Gate: no NaN/Inf, no all-dead layers. If it fails, stop and inspect the checkpoi
 ### Tier 1 — Concept geometry + AR concept-ablation + samples (fast, the primary gate)
 One command produces geometry for any family, plus (for `concept_ar`) the concept-ablation
 ΔCE and qualitative generation samples — the **decisive E01/E02 evidence**.
+
+**Data protocol (2026-07-07):** Tier 1 now runs on **genuinely held-out, length-stratified,
+seeded** data at **seq 2048** by default. For 2K-mix runs (E05+), point it at the run's
+pretokenized manifest (the exact training eval split); for single-dataset runs use
+`--eval_source holdout` with the run's split seed. The legacy first-N-of-train-stream
+protocol is `--eval_source stream` — **train-contaminated**, only for reproducing old
+numbers. Numbers produced before this upgrade (all E01–E05 evals up to 2026-07-07) are
+**not comparable** with post-upgrade numbers.
 ```bash
+# 2K-mix runs (E05+): the pretokenized eval split is the authoritative held-out source
+uv run python analysis/run_concept_analysis.py \
+  --model_path "$BEST" \
+  --model_type concept_ar \
+  --eval_source pretokenized \
+  --pretokenized_manifest <the run's pretokenize manifest.json> \
+  --output_json "Cache/Evaluation_reports/<run_id>_best_concept_analysis.json" \
+  --num_batches 24 --batch_size 8 --max_seq_length 2048 \
+  --ablation_batches 8 --num_samples 4
+
+# single-dataset runs (E01/E02): reproduce the training holdout split
 uv run python analysis/run_concept_analysis.py \
   --model_path "$BEST" \
   --model_type concept_ar \
   --dataset HuggingFaceFW/fineweb-edu --dataset_config sample-10BT \
-  --output_json "Cache/Evaluation_reports/<run_id>_best_concept_analysis.json" \
-  --num_batches 20 --batch_size 16 \
-  --ablation_batches 8 --num_samples 4
+  --eval_source holdout --split_seed 42 --test_size_percent 0.1 \
+  --output_json "Cache/Evaluation_reports/<run_id>_best_concept_analysis.json"
 ```
-For `perceiver_denoise` / `weighted_mlm`, drop the AR-only flags and use their dataset
-(geometry is computed from the encoder for every family).
+Batches are stratified over token-length buckets (`--length_buckets`, default
+`256,512,1024` → buckets up to 2048), so geometry, ΔCE, and the L3 compression curve
+are measured per length regime; deltas are reported **± per-batch std** (a gate cleared
+by less than one std is not decisively cleared). For `perceiver_denoise` / `weighted_mlm`,
+drop the AR-only flags and use their dataset (geometry is computed from the encoder for
+every family).
 
 Gates:
 - **Rank — read the right number** (three distinct objects, do not conflate; see
-  `docs/3_Evaluations_and_Baselines/concept_information_eval_upgrade.md`):
+  `docs/engineering_specs/concept_information_eval_upgrade.md`):
   - **PRIMARY de-collapse = within-sample concept-set RankMe** (`within_sample_rankme_mean`):
     how many independent directions ONE input's `C` concepts span. This is what "collapse"
-    actually means. Judge de-collapse on this.
+    actually means. Judge de-collapse on this. Read it together with the **centered**
+    variant (`within_sample_rankme_centered_mean`): raw low + centered high = shared-offset
+    anisotropy (not collapse); low on both = genuine collapse.
   - **SECONDARY diagnostic = slot-mean effective rank** (`global_effective_rank`, the old
     "rank N/128"): SVD of the *batch-averaged* slots → slot redundancy, not per-input rank.
     Keep as a diagnostic only; collapsed history ~5–10/128.
@@ -228,8 +268,9 @@ effective rank and key collapse/diversity metrics; concept-ablation Δzero/Δshu
 no-concept floor); STS-B zero-shot Pearson/Spearman; SICK relatedness Pearson/Spearman;
 SICK entailment accuracy; PAWS accuracy/F1; GLUE semantic-subset scores; a generation-sample
 snippet; **compute scalars** (`compute/gpu_hours`, `compute/energy_kwh`, `compute/max_tokens`,
-`compute/loss_tokens_est` + `compute/audit_state`/`compute/flag` from the run-level preamble);
-and any failed task with its first traceback line.
+`compute/loss_tokens_est` + `compute/audit_state`/`compute/flag` from the run-level preamble) —
+this is a **hard precondition**: if `compute/audit_state` is absent the audit was never run, so
+run the preamble now and do not hand off without it; and any failed task with its first traceback line.
 
 ## Interpreting Results
 - **Within-sample concept RankMe** is the collapse gate (see Tier 1); slot-mean rank is only a

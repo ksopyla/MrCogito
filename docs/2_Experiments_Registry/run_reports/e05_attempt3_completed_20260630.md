@@ -73,6 +73,14 @@ Batch 8 was the **third** choice (12 OOM'd in <10 min on GPU 2; 10 held 6 h then
 
 ## Concept Health
 
+> **⚠️ 2026-07-07 — Tier-1 metrics below use the OLD data protocol** (first-N of the streaming
+> FineWeb-Edu *train* split → train-contaminated for the mix's fineweb portion; single 512-token
+> length despite the model training at seq 2048; unseeded shuffle). The seq-512 truncation
+> particularly distorts this WINDOWED (K=128) checkpoint: beyond-window deltas were measured on
+> at most 384 beyond-window positions instead of ~1900. Recompute with
+> `--eval_source pretokenized` (the run's own eval split) at seq 2048 is planned. W&B suffix-CE
+> `concept_ablation/*` and STS-B/SICK/PAWS/GLUE numbers are unaffected.
+
 **Tier 0 (`check_model_health.py`):** clean — no NaN/Inf, no all-dead layers. (Subagent ran Tier 0 on `checkpoint-69142`.)
 
 **Tier 1 (`run_concept_analysis.py`, on `checkpoint-69142`):** report at

@@ -1839,7 +1839,16 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         ).last_hidden_state
         logits_intact = self.decode_logits(concepts, decoder_input_ids, key_padding_mask=dec_key_padding)
         logits_zero = self.decode_logits(torch.zeros_like(concepts), decoder_input_ids, key_padding_mask=dec_key_padding)
-        perm = torch.randperm(concepts.size(0), device=concepts.device)
+        # Shuffle = random cyclic shift, NOT randperm: randperm leaves ~1 fixed point per
+        # batch in expectation (a sample keeping its own concepts), diluting delta_shuffle.
+        # A shift in [1, B-1] is a guaranteed derangement, consistent with the
+        # latent-specificity eval (analysis/concept_generation_eval.py uses roll(1)).
+        bsz = concepts.size(0)
+        if bsz > 1:
+            shift = int(torch.randint(1, bsz, (1,)).item())
+        else:
+            shift = 0  # degenerate batch: shuffle == intact, delta_shuffle will be ~0
+        perm = torch.roll(torch.arange(bsz, device=concepts.device), shifts=shift)
         logits_shuffle = self.decode_logits(concepts[perm], decoder_input_ids, key_padding_mask=dec_key_padding)
 
         ce_intact = self._teacher_forced_ce(logits_intact, labels)

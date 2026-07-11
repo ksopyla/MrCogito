@@ -63,7 +63,7 @@ Skip `docs/5_Archive/` and any `> **OBSOLETE — ...**` section — that content
    - objective and important training protocol details
    - epochs or global steps
    - evaluation route and benchmark coverage
-   - compute: `compute/gpu_hours`, `compute/energy_kwh`, `compute/max_tokens`, `compute/loss_tokens_est` + `compute/audit_state`/`compute/flag` (from the run's W&B summary, written by the compute audit — see `experiment-evaluate` run-level preamble; run the audit first if these are missing)
+   - compute: `compute/gpu_hours`, `compute/energy_kwh`, `compute/max_tokens`, `compute/loss_tokens_est` + `compute/audit_state`/`compute/flag` (from the run's W&B summary, written by the compute audit — see `experiment-evaluate` run-level preamble). **Hard precondition:** if the summary lacks `compute/audit_state`, the audit was never run — and the absence is silent (no `compute/*` keys at all, not even `failed`). Stop and run `uv run python analysis/run_compute_audit.py --run-id <run_id>` (macOS-runnable, seconds) before recording; do not hand-estimate compute and proceed.
 
 2. Extract the evidence:
    - concept geometry metrics

@@ -113,6 +113,47 @@ Each step is a config/flag over existing scripts; no new training fork; backward
 
 ---
 
+# Data-protocol upgrade (2026-07-07) — held-out, 2K, length-stratified, seeded
+
+A review of the Tier-1 pipeline found the *metrics* sound but the *data protocol* feeding them flawed.
+Implemented in `analysis/run_concept_analysis.py` (+ `analysis/concept_analysis.py`,
+`nn/concept_encoder_perceiver.py`); tests in `tests/test_run_concept_analysis_protocol.py`.
+
+**Flaws fixed:**
+1. **Train contamination.** The runner streamed `split="train"` and took the first ~320 docs — almost
+   all trained-on (training's holdout is a seeded `train_test_split` of the same split). Ablation CE,
+   round-trip recovery, and generation samples were inflated by memorization. Now `--eval_source
+   holdout` (reproduces the training split via the same `_select_train_eval_splits` + seed) or
+   `--eval_source pretokenized` (the run's own pretokenized eval split — authoritative for E05+ 2K
+   mixes) are the defaults; the legacy behavior survives only as `--eval_source stream` with a loud
+   contamination warning.
+2. **Degenerate length distribution.** Everything was truncated to a single 512-token length, so the
+   L3 compression curve collapsed to one bucket and geometry was measured in one regime — and seq-2048
+   windowed checkpoints (E05) were evaluated at a quarter of their trained length. Default
+   `--max_seq_length` is now **2048** and batches are stratified over `--length_buckets`
+   (default `256,512,1024` → four buckets); geometry, ΔCE, and within-sample RankMe are also
+   reported **per bucket**.
+3. **No seeds / no variance.** `torch.randperm` (shuffle ablation) and anisotropy pair-sampling were
+   unseeded and Δ gates were judged on point estimates. Now `--seed` seeds everything; deltas are
+   reported **± per-batch std** (gate cleared by < 1 std ≠ decisively cleared). The shuffle
+   permutation is a **random cyclic shift (guaranteed derangement)** — `randperm` left ~1 fixed point
+   per batch in expectation, diluting Δshuffle and disagreeing with the specificity eval's `roll(1)`.
+4. **Uncentered-RankMe ambiguity.** Within-sample RankMe on the raw `[C,H]` matrix conflates a shared
+   mean offset (transformer anisotropy) with collapse. A **centered variant**
+   (`within_sample_rankme_centered_mean`) is now reported alongside: raw low + centered high =
+   shared-offset anisotropy; low on both = genuine collapse. The runner's recommendation verdict is
+   now keyed on within-sample RankMe (was: the demoted slot-mean rank) with C-scaled thresholds.
+5. **Silent tokenizer fallback.** On any tokenizer-load failure the runner silently fell back to
+   `answerdotai/ModernBERT-base` — garbage metrics that look valid for SmolLM2-family checkpoints.
+   Now it fails loudly; `--tokenizer_name` overrides explicitly.
+
+**Comparability rule:** numbers produced before 2026-07-07 are internally comparable but not
+comparable with post-upgrade numbers. The registry and affected run reports (E02-long, E05 attempt 3,
+E05 Muon) carry dated notes; recompute for those checkpoints is the follow-up. Training-time W&B
+`concept_ablation/*` (real eval holdout) and STS-B/SICK/PAWS/GLUE are unaffected.
+
+---
+
 # Staged eval ladder (from the 2026-06-15 literature scan)
 
 Four parallel `research-scout` scans (representation probing, long-context compression, latent
