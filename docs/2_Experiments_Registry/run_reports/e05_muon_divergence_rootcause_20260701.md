@@ -71,4 +71,77 @@ Adding wd=0.1 to Muon (Adam ran at wd=0.0) makes **two** variables differ. Optio
 
 ## Status
 
-Muon arm **diverged at both LRs; killed**. Mitigation knobs (wd, adamw_lr, sustained-LR scheduler) implemented + tested (24 tests pass). Next: calibrate the fixed Muon (LR 0.01, wd 0.1, adamw_lr 2e-4, `constant_with_warmup`) under sustained peak LR past step ~6k; if stable → full run. The eval-3.34 signal justifies the retry.
+**Update (2026-07-02): the retry SUCCEEDED.** The fixed Muon run — `concept_ar_prefix_H768L6C128D4_20260702_031956` (LR 0.01, wd 0.1, adamw_lr 2e-4, sustained-LR-calibrated) — **completed 0.5 ep with eval_loss 2.606** (vs Adam's 3.83 — ~5× faster convergence + 1.22 nats lower), **stable end-to-end** (grad_norm ~0.5–1.6 through the whole run, no divergence; the sustained-LR calibration correctly predicted it). The fixes (wd=0.1 + adamw_lr=2e-4) tamed the Moonlight spectral-growth mechanism, exactly as diagnosed.
+
+**Open:** concept geometry + STS-B/RankMe/Δshuffle semantics on the Muon checkpoint are **pending the eval suite** — eval_loss is an optimization signal, not a concept-semantics signal (Adam had eval_loss 3.83 but STS-B only 0.45). The A/B's research verdict waits for `experiment-evaluate`.
+
+(Original status, 2026-07-01: Muon arm diverged at both LRs and was killed; mitigation knobs implemented + tested; retry pending.)
+
+## Evaluation (2026-07-04) — head-to-head vs Adam (attempt 3)
+
+> **⚠️ 2026-07-07 — Tier-1 rows below (RankMe, slot rank, anisotropy, recon-contract
+> Δzero/Δshuffle incl. beyond-window) use the OLD data protocol** (streaming-train first-N →
+> train-contaminated; seq 512 on a seq-2048-trained windowed model; unseeded). The Adam-vs-Muon
+> *comparison* stays fair (same flawed protocol on both arms), but absolutes are suspect and the
+> seq-512 truncation dilutes the beyond-window gate. Recompute planned with the pretokenized eval
+> split at seq 2048. STS-B / SICK / PAWS / GLUE rows and W&B suffix-CE ablations are unaffected.
+
+Checkpoint `concept_ar_prefix_H768L6C128D4_20260702_031956/checkpoint-69142` (best=last), `model_type concept_ar`, evaluated on Odra via the experiment-evaluate tiered suite (Tier 0 health → Tier 1 geometry+AR-ablation → Tier 2 zero-shot STS-B + floors → Tier 2.5 frozen mean-vs-attention probe → Tier 3 SICK/PAWS/GLUE). Health: no NaN/Inf (the `check_model_health` rc=1 is a benign `concept_ar` loader-recognition gap, not a defect). GLUE QQP/MNLI still running (downstream footnotes).
+
+| metric | Adam (att 3) | **Muon** | Δ | direction |
+|---|---|---|---|---|
+| eval_loss (suffix CE) | 3.83 | **2.606** | −1.22 | Muon's headline optimization win |
+| **STS-B zero-shot** (Pearson / Spearman) | 0.452 / 0.472 | **0.518 / 0.610** | **+0.066 / +0.138** | ✅ Muon now clears both floors |
+| trivial floors (token-embed / teacher-mean) | 0.486 / 0.460 | (same) | — | Adam sat *below* both; Muon is *above* |
+| SICK-R Pearson | 0.183 | **0.302** | **+0.119** | ✅ |
+| SICK-E acc | 0.634 | **0.733** | **+0.099** | ✅ |
+| PAWS acc / F1 | 0.550 / 0.253 | 0.567 / 0.202 | +0.017 / −0.051 | mixed |
+| GLUE MRPC acc / F1 | 0.669 / 0.778 | **0.725 / 0.830** | +0.056 / +0.052 | ✅ |
+| GLUE STSB Pearson | 0.354 | **0.532** | **+0.178** | ✅ |
+| GLUE QQP / MNLI-m | 0.734 / 0.498 | *running* | — | — |
+| cross-sample manifold RankMe | 113.9 | **218.4** | **+104.5** | ✅ more diverse pooled embeddings |
+| mean→attention probe Δ (SICK-R, frozen) | +0.336 | **+0.052** | −0.284 | ❌ info NOT distributed across slots |
+| **within-sample RankMe** (PRIMARY de-collapse) | 37.67 | **10.57** | **−27.1** | ❌ **much MORE collapsed** |
+| slot-mean effective rank | 4.76 | 3.38 | −1.4 | ❌ (diagnostic) |
+| anisotropy | 0.682 | 0.771 | +0.089 | ❌ narrower cone |
+| **Δshuffle_beyond (K=128)** (E05 long-range gate) | 0.39 | **0.209** | **−0.181** | ❌ fails Stage-1 floor ≥0.3 |
+| **Δzero_beyond** | 6.99 | **0.414** | **−6.58** | ❌ decoder barely depends on beyond-window concepts |
+| (within-window Δzero / Δshuffle) | — | 1.098 / 0.894 | — | within-window concepts ARE used |
+| greedy generations | repetition loops | repetition loops | — | degenerate either way |
+
+**Generation samples (Muon, greedy, concept-conditioned):** *"I have no idea how much I have done, but I have no idea…"* / *"The children were not alone in the play, and the children were not alone in the play…"* / *"The virus is transmitted through the body through the body's immune system…"* — fluent-local, semantically-empty repetition loops.
+
+Artifacts (Odra): concept-analysis JSON `Cache/Evaluation_reports/concept_ar_prefix_H768L6C128D4_20260702_031956_concept_analysis.json`; GLUE CSVs `glue-{mrpc,stsb,...}-checkpoint-69142-74M-20260704_*`; STS-B W&B `nbu3p0nk`; eval log `Cache/logs/eval_e05_muon_20260704_120122.log`.
+
+## Tentative initial conclusions — ⚠️ NOT DECISIVE (pending discussion + literature)
+
+*Flagged tentative — single run per arm, one confound open, and the authoritative prefix→suffix ablation not yet read. Do not treat as a verdict.*
+
+1. **Lower loss ≠ better concepts (now shown, not just suspected).** Muon's 1.22-nat-lower eval_loss came with **harder concept collapse** (within-sample RankMe 10.6 vs 37.7) and **worse long-range concept-dependence** (Δzero_beyond 0.41 vs 6.99). The downstream-semantic gains (STS-B, SICK, GLUE) look driven by **better decoder within-window fluency (the bypass)**, not richer concept content.
+2. **Optimizer pressure may amplify the bypass.** Faster/harder optimization (Muon ~5× faster) on a *bypass-able* windowed-AR objective tentatively made the concept bottleneck *worse*, not better — consistent with the project's decoder-bypass thesis.
+3. **Tentative agenda read:** the fix for concept collapse is an *objective* change (bypass-free: E06 latent prediction, E04 parallel decoder, decoder-weakening), **not** a better optimizer (Adam→Muon barely moves, even regresses, the concept gates). Reinforces E06 next.
+
+## Open questions / confounds for the deeper discussion (bring literature)
+- **wd confound:** Muon ran wd=0.1, Adam wd=0.0. Could the concept collapse be driven by **wd=0.1** (weight decay shrinking the concept representations) rather than the optimizer? Needs Adam@wd=0.1 to isolate. Literature: does decoupled weight decay shrink representation rank / encourage collapse?
+- **Authoritative ablation not read:** the Δshuffle/Δzero above use the *reconstruction* contract (`run_concept_analysis.py`); for a prefix→suffix run the authoritative suffix-CE `concept_ablation/*` is in the training W&B — not yet pulled. Reconstruction-contract numbers may understate prefix→suffix concept usage.
+- **Single seed / single run** per arm — no error bars; RankMe 10.6 vs 37.7 is a large gap but un-replicated.
+- **Is the RankMe regression a measurement sensitivity** (batch size, num_batches=20) or real? Adam's 37.7 used the same method, so the comparison is fair, but worth confirming.
+- **Literature to bring in:** optimizer choice vs representation collapse / posterior collapse in VAEs & bottlenecks; does Muon's full-rank update specifically encourage low-rank *representations* (opposite of its weight updates)? decoder-bypass / informative-bottleneck theory.
+
+## Compute audit + E02-long-matched 2-ep run (2026-07-04)
+
+Authoritative post-hoc compute audit (`analysis/run_compute_audit.py`, dry-run):
+
+| run | epochs | GPU-h | energy (kWh) | max-tokens | tok/GPU-h | GPU-h/Btok |
+|---|---|---|---|---|---|---|
+| **E02-long** (`...20260614_101305`, seq 512, 4 GPU) | 5 | **290.7** | 61.4 | **24.5 B** | 84.3 M | 11.86 |
+| E05 Muon 0.5ep (`...20260702_031956`, seq 2048, 3 GPU) | 0.5 | **75.6** | 21.4 | 10.2 B | **134.9 M** | 7.41 |
+| E05 Adam 0.5ep (`...20260629_093840`, seq 2048, 3 GPU) | 0.5 | 68.2 | 18.2 | 10.2 B | — | — |
+
+**E05 is ~1.6× cheaper per token than E02-long** (134.9 vs 84.3 M tok/GPU-h): the windowed K=128 decoder replaces E02's full-context O(N²) decoder attention, and the 2K mix is pre-tokenized. This **decouples the two matching axes**:
+- **Match compute-time (GPU-h) → ~1.9 ep → epoch=2** = 302 GPU-h ≈ E02-long's 290.7 (**+4%**), but **40.8 B tokens (1.66× E02-long)**.
+- Match tokens → ~1.2 ep = 24.5 B tokens, but only 181 GPU-h.
+
+**Decision: epoch=2** — matches E02-long *compute-time* (the stated goal); the token overshoot is benign (more exposure at matched compute supports the "is it under-trained?" hypothesis, not less).
+
+**E05 Muon 2-ep run LAUNCHED 2026-07-04 22:50 CEST (Odra, fresh):** `OPTIMIZER=muon NUM_EPOCHS=2 bash scripts/launch_e05.sh`, byobu `E05-muon-2ep`, shell log `Cache/logs/shell_perceiver_denoise_20260704_225057.log`. Same stabilized recipe (LR 0.01, wd 0.1, `adamw_lr` 2e-4, eff batch 72, 9,956,348 interleaved mix). **Total optimization steps = 276,566** (~4.5 days wall-clock ≈ ~300 GPU-h ≈ E02-long). **Fresh** run, not resume — HF restores the cosine `scheduler.pt` anchored to the original 0.5-ep endpoint, so extending epochs on resume leaves LR≈0 on the added portion (gotcha); a fresh run gives a clean warmup+cosine and Muon-stability. First logged row: loss 12.09 / grad_norm 2.01 / lr 0.000995 (warmup); all 3 GPUs 97–100%. ⚠️ **Not a matched A/B** — the Adam arm is 0.5ep; this 2-ep Muon tests the "does more compute de-collapse it?" question *against E02-long*, not against Adam.
