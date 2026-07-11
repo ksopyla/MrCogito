@@ -457,7 +457,7 @@ def main():
     p.add_argument("--objective", default="prefix_suffix", choices=["prefix_suffix", "reconstruction", "reconstruction+contrastive", "causal_lm"])
     args = p.parse_args()
 
-    from training.train_perceiver_denoise import resolve_append_eos_token_id
+    from training.concept_pretraining_objectives import resolve_append_eos_token_id
 
     # Load .env (HF_TOKEN, HF_HOME on local macOS) so direct invocation without a bash
     # launcher still resolves the same paths. Existing env vars take precedence
@@ -592,7 +592,7 @@ def main():
 def _proc_worker(spec, args, cache_root, raw_root, append_eos, raw_archive_root=None):
     """Process-pool worker for --jobs>1."""
     from transformers import AutoConfig, AutoTokenizer
-    from training.train_perceiver_denoise import resolve_append_eos_token_id as _r
+    from training.concept_pretraining_objectives import resolve_append_eos_token_id as _r
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token

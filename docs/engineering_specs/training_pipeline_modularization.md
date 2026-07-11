@@ -1,7 +1,7 @@
 # Training pipeline modularization
 
 - **Type:** engineering refactor, not an `E0NN` experiment.
-- **Status:** Stage 0 contract baseline complete (2026-07-11); Stage 1 extraction is next.
+- **Status:** Stages 0–1 complete (2026-07-11); Stage 2 active-entrypoint naming is next.
 - **Serves:** every maintained and revivable training family.
 - **Primary goal:** make training code easier to maintain and safer for AI-assisted changes without changing model behavior, data, logging, artifact layout, or historical identity.
 
@@ -114,11 +114,24 @@ The old recursive MLM implementation is a removal candidate because the current 
 
 ### Stage 1 — extract neutral modules
 
-- Move objective/argument validation out of the entrypoint.
-- Move the custom Trainer implementation to a dedicated module.
-- Extract model, collator, data-route, and identity factories.
-- Re-export currently imported symbols during migration.
-- Keep the existing entrypoint and launcher commands operational.
+- [done 2026-07-11] Move import-light objective/decoder constants and EOS preprocessing policy to
+  `training/concept_pretraining_objectives.py`; preprocessing scripts import this leaf module
+  without loading the Trainer/model stack.
+- [done 2026-07-11] Move argument dataclasses and family compatibility validation to
+  `training/concept_pretraining_args.py`.
+- [done 2026-07-11] Move the custom Trainer implementation to
+  `training/concept_pretraining_trainer.py`.
+- [done 2026-07-11] Extract model, collator, data-route, and identity factories to
+  `training/concept_pretraining_factories.py`.
+- [done 2026-07-11] Re-export currently imported symbols during migration.
+- [done 2026-07-11] Keep the existing entrypoint and launcher commands operational.
+
+The historical `training/train_perceiver_denoise.py` path is now an orchestration and compatibility
+surface. Existing imports of `ModelArguments`, `DataTrainingArguments`,
+`PerceiverDenoiseTrainer`, `build_perceiver_denoise_config`,
+`resolve_append_eos_token_id`, and `align_special_tokens_for_training` continue to resolve from
+that module. Data-source priority, objective-specific collators, model/W&B identities, logging,
+run directories, final saves, and launcher commands are unchanged.
 
 ### Stage 2 — correct active naming
 

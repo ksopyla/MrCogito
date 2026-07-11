@@ -14,6 +14,38 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-07-11] - Training refactor Stage 1 neutral extraction
+
+**Why:** `training/train_perceiver_denoise.py` combined CLI schemas, compatibility validation,
+custom Trainer behavior, data routing, collator selection, model construction, and W&B identity
+with runtime orchestration. That coupling made small training changes difficult to review and
+increased the chance of unrelated behavior drift.
+
+**Impact:** the historical entrypoint and launcher commands remain operational, and its public
+imports remain compatible. Training behavior, console/file/W&B logging, dataset priority and
+processing, Hugging Face caches, workspace `Cache/` paths, checkpoint metadata, and W&B identities
+are unchanged.
+
+**What changed:**
+- [refactored] import-light objective constants and EOS policy into
+  `training/concept_pretraining_objectives.py`; preprocessing no longer imports the full training
+  entrypoint for this shared policy.
+- [refactored] argument dataclasses and family compatibility validation into
+  `training/concept_pretraining_args.py`.
+- [refactored] custom loss, anchor, Muon, deterministic-eval, concept-ablation, and geometry Trainer
+  behavior into `training/concept_pretraining_trainer.py`.
+- [refactored] direct/pretokenized/mix data routing plus model, collator, special-token, and W&B
+  identity construction into `training/concept_pretraining_factories.py`.
+- [compatibility] `training/train_perceiver_denoise.py` re-exports its previously imported public
+  symbols and remains the canonical command during this migration stage.
+- [tested] added extraction-boundary tests for re-exports, validation, data-source priority, cache
+  propagation, objective-specific collators, deterministic eval seeds, E10 W&B grouping, and
+  distributed arm-specific run ids.
+- [verified] full suite: 278 passed, 9 skipped; preprocessing CLI import smoke passed; no linter or
+  whitespace diagnostics.
+
+---
+
 ## [2026-07-11] - Training refactor Stage 0 contract baseline
 
 **Why:** the maintained training entrypoint now serves several model/objective families, while
