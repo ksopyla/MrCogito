@@ -174,6 +174,8 @@ def test_gradients_reach_concepts_with_gradient_checkpointing():
     model = make_model(concept_num=4)
     model.train()
     model.gradient_checkpointing_enable()
+    checkpoint_func = model.backbone.model.layers[0]._gradient_checkpointing_func
+    assert checkpoint_func.keywords["use_reentrant"] is False
     model.backbone.model.layers[5].gate.data.fill_(0.5)
     model.write_head.alpha.data.fill_(0.3)
     input_ids, attention_mask, labels = make_batch(B=2, S=24)

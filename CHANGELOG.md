@@ -43,6 +43,9 @@ opening directly, and can be analyzed from saved checkpoints through the canonic
 - [fixed] frozen Gemma LM-head CE backward no longer allocates/computes a ~1.1 GiB fp32
   weight gradient; resume now restores Trainer/optimizer/scheduler/RNG state; final saves use
   `<run>/final` instead of duplicating `<run>/<run>`.
+- [fixed] E10 defaults backbone gradient checkpointing to the non-reentrant PyTorch path.
+  Reentrant checkpoint hooks marked block-reused LoRA parameters ready multiple times under DDP
+  and aborted the first production launch before step 1.
 - [added] exact manifest token counting/checksum and a 2B non-padding-token target schedule
   (deterministic rounding within one optimizer batch); retained ~10%-budget checkpoints support
   matched 50%/100% A/B comparisons, while live eval

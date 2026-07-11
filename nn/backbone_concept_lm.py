@@ -304,6 +304,12 @@ class BackboneConceptLM(PreTrainedModel):
         return self.concept_init is not None
 
     def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
+        if gradient_checkpointing_kwargs is None:
+            # Reentrant checkpointing registers a backward hook each time a shared LoRA
+            # parameter is used. E10 reuses each backbone layer across sequence blocks, so
+            # DDP sees the same LoRA parameter marked ready multiple times. The modern
+            # non-reentrant path supports this shared-parameter recurrence correctly.
+            gradient_checkpointing_kwargs = {"use_reentrant": False}
         self.backbone.gradient_checkpointing_enable(
             gradient_checkpointing_kwargs=gradient_checkpointing_kwargs
         )

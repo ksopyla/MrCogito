@@ -151,7 +151,8 @@ trained control arm).
    dict the trainer averages, with the decisive "beyond" region beginning at `2K`;
    `encode_concepts(...).last_hidden_state` is `[B,C,H]`.
 7. **Production checkpointing path:** open read/write gates retain nonzero concept and BiXT gradients
-   with `gradient_checkpointing=True`.
+   with non-reentrant `gradient_checkpointing=True`; DDP must not use reentrant hooks because LoRA
+   parameters are reused across recurrent blocks.
 - **Tier-1 checkpoint analysis:** `analysis/run_concept_analysis.py --model_type backbone_concept`
   runs held-out geometry + recurrent concept-ablation on saved E10 checkpoints (generation-only
   extras remain disabled because E10 has no separate concept-to-text decoder).
@@ -163,8 +164,9 @@ trained control arm).
 - **Risk — gated repo access on the servers.** `gemma-3-1b-pt` license is accepted for `ksopyla`
   (verified 2026-07-08 locally); Odra/Polonez use the same token via `.env`. *Fallback:* none needed.
 - **Risk — hooks/wrappers vs gradient checkpointing.** Wrapper modules (not hooks) hold the read
-  branch, so `GradientCheckpointingLayer` recompute stays consistent. *Cheapest signal:* grad-reach
-  test with `gradient_checkpointing=True` variant.
+  branch, so non-reentrant `GradientCheckpointingLayer` recompute stays consistent without DDP's
+  `mark ready twice` failure on block-reused LoRA parameters. *Cheapest signal:* grad-reach test
+  asserts `use_reentrant=False`.
 - **Risk — read branch never opens (g stays ~0).** *Cheapest signal:* log `tanh(g_ℓ)`, `tanh(α)` +
   Δshuffle each eval; spec kill-gate at 50% budget. *Fallback:* init `g` at small positive; per-head
   gates.
