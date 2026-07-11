@@ -40,6 +40,19 @@ opening directly, and can be analyzed from saved checkpoints through the canonic
   `<image_soft_token>` id 262144 exceeds the text backbone's 262144-entry embedding table.
   Pretokenization now splits literal special-token strings as ordinary text and the causal
   collator validates against the model vocabulary, preventing a delayed CUDA index assert.
+- [fixed] frozen Gemma LM-head CE backward no longer allocates/computes a ~1.1 GiB fp32
+  weight gradient; resume now restores Trainer/optimizer/scheduler/RNG state; final saves use
+  `<run>/final` instead of duplicating `<run>/<run>`.
+- [added] exact manifest token counting/checksum and a 2B non-padding-token target schedule
+  (deterministic rounding within one optimizer batch);
+  retained ~10%-budget checkpoints support matched 50%/100% A/B comparisons, while live eval
+  uses a deterministic 2,048-row subset.
+- [added] recurrence-specific static and previous-block-only ablations plus
+  `run_e10_comparison.py` for paired concept/control 2K/8K CE, local regression, RankMe, and
+  bootstrap CIs. Stage 0 can now use one frozen held-out long-doc manifest paired across lengths.
+- [hardened] pretoken caches require complete train+eval artifacts and persist a tokenizer /
+  revision / sequence / objective-source fingerprint; eval-only manifests support immutable 8K
+  protocol data. DDP loss is globally token-weighted across unequal rank padding.
 - [docs/data] declared `causal_lm` compatibility on the reused 2K mix and reconciled the E10
   spec, implementation plan, and agenda.
 

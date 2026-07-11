@@ -375,9 +375,14 @@ class BackboneConceptLM(PreTrainedModel):
         input_ids: torch.Tensor,
         attention_mask: Optional[torch.Tensor],
         labels: Optional[torch.Tensor],
-        concept_mode: str = "real",           # "real" | "shuffle" | "zero"
+        concept_mode: str = "real",  # real | shuffle | zero | static | one_block
         per_position: bool = False,
     ):
+        valid_modes = {"real", "shuffle", "zero", "static", "one_block"}
+        if concept_mode not in valid_modes:
+            raise ValueError(
+                f"Unknown concept_mode={concept_mode!r}; expected one of {sorted(valid_modes)}."
+            )
         B, S = input_ids.shape
         K = self.config.concept_block
         if attention_mask is None:
@@ -426,10 +431,15 @@ class BackboneConceptLM(PreTrainedModel):
                     total_ce = total_ce + ce_sum
                     total_cnt = total_cnt + cnt
 
-            if use_concepts:
+            if use_concepts and concept_mode != "static":
                 h_blk = h[:, -blk_len:]
                 blk_pad = attention_mask[:, s:e] == 0
-                z = self.write_head(z, h_blk, blk_pad)
+                write_base = (
+                    self.concept_init.unsqueeze(0).expand(B, -1, -1)
+                    if concept_mode == "one_block"
+                    else z
+                )
+                z = self.write_head(write_base, h_blk, blk_pad)
 
         self._concept_state["z"] = None
         self._concept_state["shuffle"] = False
@@ -438,7 +448,21 @@ class BackboneConceptLM(PreTrainedModel):
             return pos_ce, z
         loss = None
         if labels is not None:
-            loss = total_ce / total_cnt.clamp(min=1).to(total_ce.dtype)
+            denominator = total_cnt.clone()
+            world_size = 1
+            if torch.distributed.is_available() and torch.distributed.is_initialized():
+                torch.distributed.all_reduce(
+                    denominator, op=torch.distributed.ReduceOp.SUM
+                )
+                world_size = torch.distributed.get_world_size()
+            # DDP averages rank gradients. Multiplying each rank's local CE sum by
+            # world_size/global_count makes that average equal the true global token mean,
+            # even when right-padding yields unequal valid-token counts across ranks.
+            loss = (
+                total_ce
+                * world_size
+                / denominator.clamp(min=1).to(total_ce.dtype)
+            )
             if use_concepts and torch.is_grad_enabled():
                 # DDP (find_unused_parameters=False): tie the final write's params into the
                 # graph even for single-block batches; contributes exactly zero.
@@ -540,7 +564,7 @@ class BackboneConceptLM(PreTrainedModel):
         K = self.config.concept_block
         beyond_start = 2 * K
         results = {}
-        for name in ("real", "shuffle", "zero"):
+        for name in ("real", "shuffle", "zero", "static", "one_block"):
             pos_ce = self.per_position_ce(
                 input_ids, attention_mask, labels, mode="blockwise", concept_mode=name
             )
@@ -561,6 +585,14 @@ class BackboneConceptLM(PreTrainedModel):
             if f"ce_zero{region}" in results and f"ce_real{region}" in results:
                 results[f"delta_zero{region}"] = (
                     results[f"ce_zero{region}"] - results[f"ce_real{region}"]
+                )
+            if f"ce_static{region}" in results and f"ce_real{region}" in results:
+                results[f"delta_static{region}"] = (
+                    results[f"ce_static{region}"] - results[f"ce_real{region}"]
+                )
+            if f"ce_one_block{region}" in results and f"ce_real{region}" in results:
+                results[f"delta_one_block{region}"] = (
+                    results[f"ce_one_block{region}"] - results[f"ce_real{region}"]
                 )
         return results
 

@@ -82,6 +82,7 @@ CONCEPT_LOSSES="${CONCEPT_LOSSES:-none}"
 LOSS_WEIGHT="${LOSS_WEIGHT:-0.02}"
 PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-16}"
 EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE:-8}"
+MAX_EVAL_SAMPLES="${MAX_EVAL_SAMPLES:-}"
 GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-2}"
 LEARNING_RATE="${LEARNING_RATE:-3e-4}"
 NUM_EPOCHS="${NUM_EPOCHS:-20}"
@@ -140,6 +141,7 @@ export DDP_TIMEOUT
 # Re-run training only (cache warm): SKIP_PRETOKENIZE=1. Lives in the generic launcher so the flow
 # is a reusable capability for any long-context mix experiment, not E05-specific.
 PRETOKENIZE_MIX="${PRETOKENIZE_MIX:-}"
+TARGET_TOKENS="${TARGET_TOKENS:-}"
 if [ -n "$PRETOKENIZE_MIX" ]; then
     # DATASETS_TOK_DIR / DATASETS_RAW_DIR are exported by remote_paths.sh as the canonical
     # pre-tokenized / raw-download trees under HF_HOME. Override DATASETS_TOK_DIR (and MANIFEST)
@@ -180,6 +182,32 @@ if [ -n "$PRETOKENIZE_MIX" ]; then
     DATASET_MIX=""
 fi
 
+if [ -n "$TARGET_TOKENS" ]; then
+    if [ -z "$PRETOKENIZED_MANIFEST" ]; then
+        echo "ERROR: TARGET_TOKENS requires PRETOKENIZED_MANIFEST for exact counting."
+        exit 1
+    fi
+    EFFECTIVE_BATCH=$((PER_DEVICE_BATCH_SIZE * NUM_GPUS * GRADIENT_ACCUMULATION_STEPS))
+    NUM_EPOCHS=$(uv run python scripts/manifest_token_stats.py \
+        --manifest "$PRETOKENIZED_MANIFEST" \
+        --target_tokens "$TARGET_TOKENS" \
+        --effective_batch "$EFFECTIVE_BATCH" \
+        --field epochs_for_target)
+    ESTIMATED_STEPS=$(uv run python scripts/manifest_token_stats.py \
+        --manifest "$PRETOKENIZED_MANIFEST" \
+        --target_tokens "$TARGET_TOKENS" \
+        --effective_batch "$EFFECTIVE_BATCH" \
+        --field estimated_optimizer_steps)
+    echo "Exact token budget: target=${TARGET_TOKENS} epochs=${NUM_EPOCHS} estimated_steps=${ESTIMATED_STEPS}"
+    export TARGET_TOKENS ESTIMATED_STEPS
+    if [ "${AUTO_INTERVALS:-0}" = "1" ]; then
+        EVAL_STEPS=$((ESTIMATED_STEPS / 10))
+        [ "$EVAL_STEPS" -ge 1 ] || EVAL_STEPS=1
+        SAVE_STEPS="$EVAL_STEPS"
+        echo "Auto intervals: eval/save every ${EVAL_STEPS} steps (~10% of token budget)"
+    fi
+fi
+
 RESUME_ARGS=()
 if [ -n "$RESUME_FROM_CHECKPOINT" ]; then
     RESUME_ARGS+=(--resume_from_checkpoint "$RESUME_FROM_CHECKPOINT")
@@ -213,6 +241,11 @@ if [ -n "$DATASET_MIX_RECIPE" ]; then
 fi
 if [ -n "$PRETOKENIZED_MANIFEST" ]; then
     MIX_ARGS+=(--pretokenized_manifest "$PRETOKENIZED_MANIFEST")
+fi
+
+EVAL_DATA_ARGS=()
+if [ -n "$MAX_EVAL_SAMPLES" ]; then
+    EVAL_DATA_ARGS+=(--max_eval_samples "$MAX_EVAL_SAMPLES")
 fi
 
 ANCHOR_ARGS=()
@@ -318,6 +351,7 @@ uv run accelerate launch \
     --greater_is_better False \
     "${WINDOW_ARGS[@]}" \
     "${MIX_ARGS[@]}" \
+    "${EVAL_DATA_ARGS[@]}" \
     "${ANCHOR_ARGS[@]}" \
     "${BACKBONE_ARGS[@]}" \
     "${OPTIM_ARGS[@]}" \

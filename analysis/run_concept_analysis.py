@@ -740,10 +740,14 @@ def main():
             if "delta_shuffle_beyond" in ablation:
                 dzb = ablation["delta_zero_beyond"]
                 dshb = ablation["delta_shuffle_beyond"]
+                dst = ablation.get("delta_static_beyond", float("nan"))
+                d1b = ablation.get("delta_one_block_beyond", float("nan"))
                 gshb = "✓ content-bearing memory" if dshb >= 0.1 else "✗ no long-range content"
                 boundary = 2 * getattr(model.config, "concept_block", 512)
                 print(f"  Δzero  (>={boundary})      : {dzb:.4f}")
                 print(f"  Δshuffle (>={boundary})    : {dshb:.4f}   {gshb}   ← E10 GATE")
+                print(f"  Δstatic (>={boundary})     : {dst:.4f}   ← recurrent vs learned static state")
+                print(f"  Δone-block (>={boundary})  : {d1b:.4f}   ← accumulated vs prior-block-only")
             # E05 long-range memory gate: beyond-window positions (t >= K) cannot reach
             # far-back tokens locally, so a large gap there = concepts carry cross-window memory.
             if "delta_zero_beyond_window" in ablation:

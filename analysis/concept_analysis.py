@@ -275,6 +275,9 @@ def compute_within_sample_concept_rank(concept_repr: torch.Tensor) -> Dict[str, 
     metrics: Dict[str, float] = {
         'within_sample_rankme_mean': float('nan'),
         'within_sample_rankme_std': float('nan'),
+        'within_sample_rankme_median': float('nan'),
+        'within_sample_rankme_p10': float('nan'),
+        'within_sample_rankme_min': float('nan'),
         'within_sample_rankme_centered_mean': float('nan'),
         'within_sample_rankme_centered_std': float('nan'),
     }
@@ -302,6 +305,9 @@ def compute_within_sample_concept_rank(concept_repr: torch.Tensor) -> Dict[str, 
         t = torch.tensor(per_sample_raw)
         metrics['within_sample_rankme_mean'] = t.mean().item()
         metrics['within_sample_rankme_std'] = t.std(unbiased=False).item()
+        metrics['within_sample_rankme_median'] = t.median().item()
+        metrics['within_sample_rankme_p10'] = torch.quantile(t, 0.1).item()
+        metrics['within_sample_rankme_min'] = t.min().item()
     if per_sample_centered:
         t = torch.tensor(per_sample_centered)
         metrics['within_sample_rankme_centered_mean'] = t.mean().item()

@@ -279,16 +279,46 @@ def tokenize_source(
     test_num_proc: int,
     download_workers: int,
     raw_archive_dir: Path | None = None,
+    eval_only: bool = False,
 ) -> dict:
     name = spec.get("name", spec["hf_id"])
     tok_dir = cache_dir / f"{name}"
     train_dir = tok_dir / "train"
     eval_dir = tok_dir / "eval"
+    metadata_path = tok_dir / "cache_meta.json"
+    expected_metadata = {
+        "tokenizer": getattr(tokenizer, "name_or_path", None),
+        "tokenizer_revision": getattr(tokenizer, "init_kwargs", {}).get("_commit_hash"),
+        "tokenizer_size": len(tokenizer),
+        "split_special_tokens": bool(getattr(tokenizer, "split_special_tokens", False)),
+        "max_seq_length": max_seq_length,
+        "append_eos_token_id": append_eos_token_id,
+        "test_size_percent": test_size_percent,
+        "seed": seed,
+        "eval_only": eval_only,
+        "source_spec_sha256": hashlib.sha256(
+            json.dumps(spec, sort_keys=True).encode()
+        ).hexdigest(),
+    }
     manifest_entry: dict[str, Any] = {"name": name, "weight": spec.get("weight", 1.0), "path": str(tok_dir)}
 
-    if train_dir.exists() and (train_dir / "dataset_info.json").exists():
+    train_ready = train_dir.exists() and (train_dir / "dataset_info.json").exists()
+    eval_ready = eval_dir.exists() and (eval_dir / "dataset_info.json").exists()
+    if eval_ready and (eval_only or train_ready):
+        if metadata_path.exists():
+            actual_metadata = json.loads(metadata_path.read_text())
+            if actual_metadata != expected_metadata:
+                raise ValueError(
+                    f"[{name}] tokenized cache fingerprint mismatch at {tok_dir}. "
+                    "Use a configuration-keyed cache directory or remove the stale cache."
+                )
+        else:
+            logger.warning(
+                f"[{name}] legacy cache has no fingerprint at {metadata_path}; "
+                "reusing for backward compatibility."
+            )
         logger.info(f"[{name}] tokenized cache exists at {tok_dir} — skipping tokenize")
-        manifest_entry["train_path"] = str(train_dir)
+        manifest_entry["train_path"] = None if eval_only else str(train_dir)
         manifest_entry["eval_path"] = str(eval_dir)
         # Even when tokenize is skipped, ensure raw is archived if requested.
         if raw_archive_dir is not None:
@@ -338,19 +368,28 @@ def tokenize_source(
                 return ds.map(tokenize_fn, batched=True, num_proc=1, **kw)
             raise
 
-    ntr = max(1, min(train_num_proc, len(src_train)))
     nte = max(1, min(test_num_proc, len(src_eval)))
-    logger.info(f"[{name}] tokenizing train={len(src_train):,} (proc={ntr}, max_chars={max_chars}) eval={len(src_eval):,} (proc={nte})")
-    src_train = _map_resilient(src_train, ntr, remove_columns=["text"])
+    if eval_only:
+        logger.info(
+            f"[{name}] eval-only tokenization: eval={len(src_eval):,} "
+            f"(proc={nte}, max_chars={max_chars})"
+        )
+    else:
+        ntr = max(1, min(train_num_proc, len(src_train)))
+        logger.info(f"[{name}] tokenizing train={len(src_train):,} (proc={ntr}, max_chars={max_chars}) eval={len(src_eval):,} (proc={nte})")
+        src_train = _map_resilient(src_train, ntr, remove_columns=["text"])
     src_eval = _map_resilient(src_eval, nte, remove_columns=["text"])
 
     # save_to_disk cannot save an interleave; here we save train and eval separately.
-    src_train.save_to_disk(str(train_dir))
+    if not eval_only:
+        src_train.save_to_disk(str(train_dir))
     src_eval.save_to_disk(str(eval_dir))
-    manifest_entry["train_path"] = str(train_dir)
+    manifest_entry["train_path"] = None if eval_only else str(train_dir)
     manifest_entry["eval_path"] = str(eval_dir)
-    manifest_entry["train_rows"] = len(src_train)
+    manifest_entry["train_rows"] = 0 if eval_only else len(src_train)
     manifest_entry["eval_rows"] = len(src_eval)
+    tok_dir.mkdir(parents=True, exist_ok=True)
+    metadata_path.write_text(json.dumps(expected_metadata, indent=2))
 
     # Archive raw parquet/zst to NAS (tokenizer-agnostic) so a future tokenizer
     # switch can re-tokenize without re-downloading; then free NVMe. If no archive
@@ -383,7 +422,10 @@ def tokenize_source(
                 p.unlink(missing_ok=True)
             except OSError:
                 pass
-    logger.info(f"[{name}] DONE train={len(src_train):,} eval={len(src_eval):,} → {tok_dir}")
+    logger.info(
+        f"[{name}] DONE train={0 if eval_only else len(src_train):,} "
+        f"eval={len(src_eval):,} → {tok_dir}"
+    )
     return manifest_entry
 
 
@@ -396,6 +438,7 @@ def main():
     p.add_argument("--raw_dir", default=None, help="Raw parquet root (default: $DATASETS_RAW_DIR, or $HF_HOME/datasets_raw)")
     p.add_argument("--raw_archive_dir", default=None, help="If set, move raw parquet/zst here (per-source subdir) after tokenizing instead of deleting — a tokenizer-agnostic archive for future re-tokenization. E.g. /nas/ml_data/mrcogito/hf_datasets/raw")
     p.add_argument("--archive_raw_only", action="store_true", help="Only download + archive raw files to --raw_archive_dir for ALL sources (no tokenize). Use to populate the NAS archive for sources already tokenized under another tokenizer.")
+    p.add_argument("--eval_only", action="store_true", help="Tokenize and save only the deterministic eval split (for frozen long-context evaluation manifests).")
     p.add_argument("--manifest", default=None, help="Manifest JSON path (default: <cache_dir>/<mix>_manifest.json)")
     p.add_argument("--test_size_percent", type=float, default=0.1)
     p.add_argument("--seed", type=int, default=42)
@@ -492,6 +535,7 @@ def main():
                     args.test_size_percent, args.seed, args.train_num_proc,
                     args.test_num_proc, args.download_workers,
                     raw_archive_dir=raw_archive_root,
+                    eval_only=args.eval_only,
                 )
                 entries.append(entry)
                 logger.info(f"[{entry['name']}] elapsed {time.time()-t0:.0f}s")
@@ -518,6 +562,7 @@ def main():
         "tokenizer": args.tokenizer,
         "model_vocab_size": model_vocab_size,
         "split_special_tokens": split_special_tokens,
+        "eval_only": args.eval_only,
         "max_seq_length": args.max_seq_length,
         "objective": args.objective,
         "append_eos_token_id": append_eos,
@@ -546,6 +591,7 @@ def _proc_worker(spec, args, cache_root, raw_root, append_eos, raw_archive_root=
         args.test_size_percent, args.seed, args.train_num_proc,
         args.test_num_proc, args.download_workers,
         raw_archive_dir=raw_archive_root,
+        eval_only=args.eval_only,
     )
 
 

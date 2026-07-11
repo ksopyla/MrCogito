@@ -313,6 +313,11 @@ class DataTrainingArguments:
     tokenizer_name: str = field(default="answerdotai/ModernBERT-base")
     max_seq_length: int = field(default=512)
     test_size_percent: float = field(default=0.1)
+    max_eval_samples: Optional[int] = field(
+        default=None,
+        metadata={"help": "Optional deterministic cap for training-time evaluation. "
+                  "Final evaluation should use the full frozen held-out protocol."},
+    )
     dataset_cache_dir: Optional[str] = field(default=None)
     deletion_rate: float = field(default=0.6)
     train_num_proc: int = field(default=8)
@@ -575,7 +580,12 @@ class PerceiverDenoiseTrainer(Trainer):
                 f"concept_geometry/{name}": value for name, value in within.items()
             })
             return metrics
-        except Exception:
+        except Exception as exc:
+            if getattr(base_model.config, "checkpoint_family", None) == "backbone_concept":
+                raise RuntimeError(
+                    "E10 within-sample RankMe is a registered kill gate and failed to compute."
+                ) from exc
+            logger.warning(f"Concept geometry probe failed: {exc}")
             return {}
 
     def evaluate(self, *args, **kwargs):
@@ -909,6 +919,15 @@ def main():
                     split_seed=training_args.seed,
                 )
 
+    if data_args.max_eval_samples and len(test_ds) > data_args.max_eval_samples:
+        test_ds = test_ds.shuffle(seed=training_args.seed).select(
+            range(data_args.max_eval_samples)
+        )
+        logger.info(
+            f"Capped training-time eval to {len(test_ds):,} deterministic samples "
+            f"(full held-out size was larger)."
+        )
+
     logger.info(f"Train dataset size: {len(train_ds):,}")
     logger.info(f"Test dataset size: {len(test_ds):,}")
     logger.info("=" * 60)
@@ -934,7 +953,10 @@ def main():
             f"C={model_args.concept_num}, K={model_args.concept_block}, "
             f"io={model_args.concept_io_mode}, lora_r={model_args.lora_r})"
         )
-        model = BackboneConceptLM.from_pretrained_backbone(config)
+        backbone_load_kwargs = {}
+        if training_args.bf16:
+            backbone_load_kwargs["dtype"] = torch.bfloat16
+        model = BackboneConceptLM.from_pretrained_backbone(config, **backbone_load_kwargs)
     else:
         config = build_perceiver_denoise_config(tokenizer, model_args, data_args)
         model_class = ConceptEncoderForConditionalLM if is_causal_ar else ConceptEncoderForDenoisingPerceiver
@@ -1121,6 +1143,13 @@ def main():
             "dataset_mix": data_args.dataset_mix,
             "dataset_mix_recipe": data_args.dataset_mix_recipe,
             "dataset_mix_weight_override": data_args.dataset_mix_weight_override,
+            "pretokenized_manifest": data_args.pretokenized_manifest,
+            "target_tokens": (
+                int(os.environ["TARGET_TOKENS"]) if os.environ.get("TARGET_TOKENS") else None
+            ),
+            "estimated_optimizer_steps": (
+                int(os.environ["ESTIMATED_STEPS"]) if os.environ.get("ESTIMATED_STEPS") else None
+            ),
             "optimizer": optim_args.optimizer,
             "muon_adamw_lr": optim_args.muon_adamw_lr,
             "muon_momentum": optim_args.muon_momentum,
@@ -1278,9 +1307,9 @@ def main():
     logger.info(f"  Eval collator   : seeded={getattr(eval_data_collator, 'seed', None)} "
                 f"(deterministic held-out corruption)")
     logger.info("=" * 60)
-    trainer.train()
+    trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
 
-    final_path = os.path.join(training_args.output_dir, run_identifier)
+    final_path = os.path.join(training_args.output_dir, "final")
     trainer.save_model(final_path)
     tokenizer.save_pretrained(final_path)
     logger.info(f"Saved model to: {final_path}")

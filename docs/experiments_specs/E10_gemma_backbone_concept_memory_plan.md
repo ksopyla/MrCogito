@@ -87,12 +87,15 @@ trained control arm).
   range `[0,262144)`; pretokenization therefore splits literal special-token strings as ordinary
   text, and the causal collator validates against the model (not tokenizer) vocabulary.
 - **8K extrapolation eval:** small fineweb-edu long-doc slice pretokenized at 8192 (eval-only
-  manifest; used by Stage 0 + final eval, not by training).
+  manifest; used by Stage 0 + final eval, not by training). It is frozen before training,
+  disjoint under the same seeded source split, and supplies the same documents truncated to
+  2K/8K for paired comparisons.
 
 ## 5. Loss & training objective
 - **Loss:** plain next-token CE (shifted inside the model per block), token-weighted across blocks.
   No `loss_manager` component (keeps the platform introduction to one signal); concept regularizers
-  are follow-up levers.
+  are follow-up levers. DDP uses the global valid-token denominator across ranks; the frozen
+  LM-head custom backward computes hidden gradients only (no 262K×1152 weight-gradient allocation).
 - **Objective:** new `objective_variant="causal_lm"` in the entrypoint (added to `VALID_OBJECTIVES`
   and to the trainer's fast path — `compute_loss` already routes plain objectives through
   `model(**inputs)`, `training/train_perceiver_denoise.py:560-570`).
@@ -117,11 +120,19 @@ trained control arm).
   `OBJECTIVE_VARIANT=causal_lm`, `TOKENIZER_NAME=google/gemma-3-1b-pt`, seq 2048, the Gemma manifest
   name, LR 1e-4 / warmup 500 / clip 0.5, bf16 + gradient checkpointing. Odra calibration selected
   batch 8 × accum 3 (19.97 GiB peak; batch 10 OOM); Polonez uses batch 6 × accum 3, preserving
-  effective batch 72 and 24 samples per microstep on both arms.
+  effective batch 72 and 24 samples per microstep on both arms. The completed manifest is counted
+  exactly and converted to the epoch fraction for a 2B non-padding-token target (rounding ≤ one
+  optimizer batch); ~10%-budget checkpoints
+  are retained for matched 50%/100% exposure comparisons. Training-time eval is a deterministic
+  2,048-row subset; the final paired protocol uses the frozen full evaluation manifests.
   Arms: default = concept arm; `CONCEPT_NUM=0 bash scripts/launch_e10.sh` = control.
 - **Stage 0:** `analysis/run_e10_stage0.py` — loads the untrained wrapper twice
   (`global_attention_mode=full` vs `windowed`, `concept_num=0`) and reports per-position-bucket CE on
-  the held-out slice at 2048 + 8192 → the gap **G** (spec gate ≥ 0.05 nats).
+  the same frozen held-out documents truncated to 2048 + 8192 → the gap **G** (spec gate ≥ 0.05).
+- **Final mechanism evaluation:** `analysis/run_e10_comparison.py` loads matched concept/control
+  checkpoints and reports paired CE improvement, recovery fraction, local regression,
+  real-vs-static / previous-block-only / shuffled-state recurrence attribution, within-sample
+  RankMe, and paired-bootstrap confidence intervals.
 
 ## 7. Tests & smoke
 `tests/test_backbone_concept_lm.py`, all on a **tiny random `Gemma3TextConfig`** (H=64, L=6 with

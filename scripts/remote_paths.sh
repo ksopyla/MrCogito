@@ -24,7 +24,7 @@ fi
 # exports in launchers always win. Sourced here so every child process (accelerate,
 # training entrypoint, eval scripts) inherits HF_TOKEN without each one needing its
 # own load_dotenv() call.
-if [ -z "${HF_TOKEN:-}" ] && [ -f "${PROJECT_ROOT}/.env" ]; then
+if [ -f "${PROJECT_ROOT}/.env" ]; then
     while IFS='=' read -r key val; do
         # skip comments and blank lines
         case "$key" in

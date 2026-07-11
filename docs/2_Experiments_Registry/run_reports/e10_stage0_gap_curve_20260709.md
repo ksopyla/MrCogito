@@ -1,5 +1,12 @@
 # E10 Stage 0 — full-vs-blockwise CE gap G vs length (GO, clean extrapolation bet)
 
+> **SUPERSEDED INTERPRETATION — 2026-07-11:** The numeric measurement remains recorded, but
+> calling this split “held-out” was incorrect: it came from the same FineWeb-Edu source namespace
+> used by training and selected different documents independently at each length. Do not use these
+> G values for final recovery fractions. Before training, rerun Stage 0 on the frozen,
+> train-disjoint 8K eval-only manifest with the same documents truncated to 2K/8K; append that
+> report as the operative gate.
+
 **Date:** 2026-07-09
 **Machine:** macOS (Apple Silicon, MPS, fp32, `PYTORCH_ENABLE_MPS_FALLBACK=1`)
 **Run ID:** — (no training; prerequisite measurement, zero GPU spend)

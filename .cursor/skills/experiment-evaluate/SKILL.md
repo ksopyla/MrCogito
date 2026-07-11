@@ -32,7 +32,8 @@ the AR decoder uses its concepts (E01/E02), or reproduce a prior evaluation prot
 | Aspect | Script | Covers | Families |
 |---|---|---|---|
 | **Compute audit (run-level)** | `analysis/run_compute_audit.py` | GPU-hours, total energy (kWh, trapezoidal integral of per-GPU powerWatts), max training tokens + per-family loss-token estimate, derived ratios; writes `compute/*` to the run's W&B summary for the compute panel | all (reads W&B, no checkpoint) |
-| **Concept geometry** + **AR ablation ΔCE** + **generation samples** | `analysis/run_concept_analysis.py` | effective rank, collapse, diversity; for `concept_ar` also concept-zero/shuffle/floor ΔCE and greedy AR samples | all (AR extras: `concept_ar`) |
+| **Concept geometry** + **AR ablation ΔCE** + **generation samples** | `analysis/run_concept_analysis.py` | effective rank, collapse, diversity; for `concept_ar` and `backbone_concept` also concept ablations (generation extras remain `concept_ar` only) | all |
+| **E10 paired mechanism evaluation** | `analysis/run_e10_comparison.py` | matched-token concept-vs-control CE, static/one-block/shuffle recurrence attribution, local regression, 2K/8K recovery and paired bootstrap CIs | `backbone_concept` |
 | Geometry metric library | `analysis/concept_analysis.py` | `compute_concept_geometry_metrics` (imported by the runner) | — (library) |
 | Weight/health sanity | `analysis/check_model_health.py` | NaN/Inf, weight stats, dead units before fine-tuning | all |
 | Zero-shot STS-B + SICK + PAWS | `evaluation/evaluate_on_benchmark.py` | `stsb_zero_shot`, `sick_relatedness`, `sick_entailment`, `paws` | all |
@@ -57,6 +58,10 @@ exploratory `analysis/concept_analysis_notebook.ipynb`.
   `evaluation_contract_version`), so no override is needed.
 - Older maintained families use their native type: `perceiver_denoise`, `weighted_mlm`.
   (`diffusion_mlm` / `prefix_diffusion` model code is parked; revive before evaluating.)
+- `backbone_concept` (E10) uses `run_concept_analysis.py --model_type backbone_concept` for
+  Tier-1 geometry/within-arm ablations. Its decisive result is the paired
+  `run_e10_comparison.py` protocol at matched 50% and 100% token checkpoints; generic
+  STS-B/SICK/GLUE routing is not part of the E10 mechanism gate.
 
 ## Checkpoints To Evaluate
 For every serious run, evaluate at least:
@@ -164,6 +169,21 @@ are measured per length regime; deltas are reported **± per-batch std** (a gate
 by less than one std is not decisively cleared). For `perceiver_denoise` / `weighted_mlm`,
 drop the AR-only flags and use their dataset (geometry is computed from the encoder for
 every family).
+
+**E10 paired checkpoint gate** (run at matched ~50% and 100% token checkpoints):
+```bash
+uv run python analysis/run_e10_comparison.py \
+  --concept_checkpoint "$CONCEPT_CKPT" \
+  --control_checkpoint "$CONTROL_CKPT" \
+  --eval "2048:$E10_EVAL8K_MANIFEST:0.2840" \
+  --eval "8192:$E10_EVAL8K_MANIFEST:0.3176" \
+  --num_docs 64 --batch_size 1 \
+  --output "Cache/Evaluation_reports/e10_paired_<exposure>.json"
+```
+Use the frozen, train-disjoint 8K eval-only manifest; both lengths must use the same documents
+truncated to length. Replace the Stage-0 G values if the paired held-out Stage-0 rerun changes
+them. A utility win over control is insufficient by itself: real recurrence must also beat the
+learned-static and previous-block-only states with paired CIs excluding zero.
 
 Gates:
 - **Rank — read the right number** (three distinct objects, do not conflate; see

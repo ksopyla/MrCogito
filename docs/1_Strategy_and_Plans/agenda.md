@@ -26,16 +26,17 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   decode (no separate encoder, unbounded input at fixed memory, O(N·(K+C))). Spec
   [E10](../experiments_specs/E10_gemma_backbone_concept_memory.md) + plan; **foundation implemented
   2026-07-08** (`nn/backbone_concept_lm.py`, `causal_lm` objective, `scripts/launch_e10.sh`,
-  checkpoint Tier-1 support). **Readiness audit passed 2026-07-11:** launcher restored to the
-  frozen effective batch 72 (Odra calibration: batch 8 × accum 3, 19.97 GiB peak; batch 10 OOM);
-  the tokenizer-only multimodal id outside Gemma's text vocabulary is sanitized/model-bounded;
-  live Δshuffle now uses the decisive ≥1024 region; live within-sample RankMe + read/write gates
-  are logged; production gradient-checkpointing is regression-tested (33 targeted tests green).
-  **Stage 0 gate PASSED 2026-07-09** (macOS MPS, zero GPU spend):
-  the full-vs-blockwise CE gap G at positions ≥ 1024 is **0.284 nats at seq 2048** (5.7× the
-  0.05 gate) and grows gently with length (2K→16K: 0.284 → 0.365; G(8K)/G(2K)=1.12×), so
-  the spec as-written (train 2K, eval 8K) is a clean extrapolation bet — no curriculum
-  amendment, no seq re-scope. See [report](../2_Experiments_Registry/run_reports/e10_stage0_gap_curve_20260709.md).
+  checkpoint Tier-1 support). **Readiness follow-up 2026-07-11:** the first auto-chain was stopped
+  during raw preprocessing before any training tokens after independent review found recovery and
+  attribution gaps. Exact 2B-token budgeting, resumable/fixed-exposure checkpoints, frozen-head
+  memory, recurrence-specific static/previous-block ablations, paired 2K/8K comparison, immutable
+  held-out manifests, decisive ≥1024 Δshuffle, within-sample RankMe/read-write gates, and Gemma
+  vocabulary bounds are now implemented (Odra calibration remains batch 8 × accum 3, 19.97 GiB).
+  **Stage 0 provisional gate PASSED 2026-07-09**, but its source was mislabeled held-out: the
+  streaming FineWeb sample overlapped the training source namespace. Its G values (0.284 at 2K;
+  0.318 at 8K) are provisional only and must be superseded by the frozen train-disjoint paired
+  8K manifest rerun before launch. See
+  [report](../2_Experiments_Registry/run_reports/e10_stage0_gap_curve_20260709.md).
   Arms: concept (default) vs `CONCEPT_NUM=0` control, token-matched. Design variants queued as
   design-only specs: [E11](../experiments_specs/E11_memtoken_concept_memory.md) (in-sequence
   mem-tokens, backbone-agnostic) and [E12](../experiments_specs/E12_perlayer_kv_prefix_concepts.md)

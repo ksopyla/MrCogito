@@ -1373,21 +1373,26 @@ class ChunkedLMHeadCE(torch.autograd.Function):
         B, N, H = hidden.shape
         V = weight.shape[0]
         grad_hidden = torch.zeros_like(hidden)
-        grad_weight = torch.zeros_like(weight)
+        need_weight_grad = ctx.needs_input_grad[1]
+        grad_weight = torch.zeros_like(weight) if need_weight_grad else None
         scale = grad_out / count
         for s in range(0, N, block_size):
             e = min(s + block_size, N)
             hb = hidden[:, s:e, :].detach().requires_grad_(True)
-            wb = weight.detach().requires_grad_(True)
+            wb = weight.detach().requires_grad_(need_weight_grad)
             with torch.enable_grad():
                 logits = F.linear(hb, wb)
                 ce = F.cross_entropy(
                     logits.reshape(-1, V), labels[:, s:e].reshape(-1),
                     ignore_index=ignore_index, reduction="sum",
                 )
-                gh, gw = torch.autograd.grad(ce, (hb, wb))
+                if need_weight_grad:
+                    gh, gw = torch.autograd.grad(ce, (hb, wb))
+                else:
+                    (gh,) = torch.autograd.grad(ce, (hb,))
             grad_hidden[:, s:e, :] = gh * scale
-            grad_weight.add_(gw * scale)
+            if need_weight_grad:
+                grad_weight.add_(gw * scale)
         # grads for (labels, block_size, ignore_index) — non-differentiable
         return grad_hidden, grad_weight, None, None, None
 

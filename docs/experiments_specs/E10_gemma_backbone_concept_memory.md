@@ -73,6 +73,11 @@ data mix, budget, seed. Control arm differs ONLY in `CONCEPT_NUM=0`.
 - **PRIMARY (decisive):** at the final checkpoint, concept-arm CE at positions ≥ 1024 is below the
   matched control arm by **≥ 0.4·G** (concepts recover ≥ 40% of the long-range gap) on the held-out
   eval split at seq 2048.
+- **RECURRENCE ATTRIBUTION (co-primary):** on the same paired documents/positions, real recurrent
+  state beats (a) the learned static `z0`/read branch with writes disabled by **≥ 0.05 nats** at
+  2K and (b) a previous-block-only state by **≥ 0.02 nats** at 8K; paired-bootstrap 95% CIs must
+  exclude zero. Concept-vs-no-concept measures utility; these within-arm ablations establish that
+  any gain comes from accumulated document memory rather than static prompt/additional capacity.
 - **Length extrapolation (the 10M-path signal):** at eval seq 8192 (16 blocks — 4× the training
   horizon), concept arm still beats control at positions ≥ 1024 by **≥ 0.2·G₈ₖ** (no state
   collapse with block count).
@@ -85,23 +90,29 @@ data mix, budget, seed. Control arm differs ONLY in `CONCEPT_NUM=0`.
 
 ## Kill criteria (set BEFORE running)
 - **Stage 0 gate:** G < 0.05 nats at seq 2048 → do not train; re-scope to longer sequences first.
-- **Training:** concept arm minus control at positions ≥ 1024 is **≤ 0.01 nats at 50% of budget**
-  (gate never learned to open / state carries nothing) → stop, report the ablation read.
+- **Training:** define paired improvement as `control CE − concept CE`. At the matched 50%-token
+  checkpoints, stop if improvement at positions ≥1024 is **≤ 0.01 nats**; if the control is not
+  yet available, use the within-arm recurrence proxy `static CE − recurrent CE ≤ 0.01` together
+  with near-zero read/write gates, then confirm against control before any extension.
 - **Collapse:** within-sample RankMe of the concept state < 0.15·C at any eval, or eval CE rising
   over 3 consecutive evals (divergence signature) → stop.
 
 ## Plan
 - **Data:** the proven `smollm3_inspired_2k_e05` mix recipe, **re-pretokenized with the Gemma
   tokenizer** (`google/gemma-3-1b-pt`, 262K vocab) at seq 2048 → new manifest
-  `smollm3_inspired_2k_e05` under the Gemma tokenizer cache key. Held-out 8K eval slice: a small
-  fineweb-edu long-doc set pretokenized at 8192 (Stage-0/extrapolation eval only, not training).
+  `smollm3_inspired_2k_e05` under the Gemma tokenizer cache key. Before training, freeze a
+  deterministic, train-disjoint FineWeb-Edu eval-only manifest at 8192; the same long documents
+  truncated to 2K and 8K are used for paired Stage-0 and final comparisons.
 - **Compute:** Odra 3× RTX 3090 (concept arm), Polonez (control arm, can run in parallel).
   Budget **~2B tokens per arm** (LoRA fine-tune; ICAE/RMT-scale), est. ~50–70 GPU-h per arm.
   bf16, gradient checkpointing on, effective batch 72. Odra calibration (2026-07-11):
   per-device 8 × 3 GPUs × accum 3 (19.97 GiB peak; batch 10 OOM); matched Polonez control:
   per-device 6 × 4 GPUs × accum 3.
-- **Steps / epochs:** ~0.1 epoch of the mix (≈2B tokens); cosine LR 1e-4 (LoRA-typical), warmup 500,
-  `max_grad_norm` 0.5, seed 42.
+- **Steps / epochs:** 2B non-padding Gemma-token target per arm (deterministic rounding ≤ one
+  optimizer batch); derive the epoch fraction and optimizer steps from the completed manifest
+  checksum/token count. Save fixed ~10%-budget
+  checkpoints and compare the arms at matched 50% and 100% token exposure. Cosine LR 1e-4
+  (LoRA-typical), warmup 500, `max_grad_norm` 0.5, seed 42.
 - **Launch:** `bash scripts/launch_e10.sh` (thin wrapper over the shared launcher, pattern of
   `launch_e05.sh`) — concept arm default; control arm: `CONCEPT_NUM=0 bash scripts/launch_e10.sh`.
 - **New foundation code (reusable, config-selectable — via `research-implement`):**

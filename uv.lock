@@ -1272,7 +1272,7 @@ requires-dist = [
     { name = "torchvision", marker = "sys_platform != 'linux' and sys_platform != 'win32'", specifier = ">=0.24.0" },
     { name = "torchvision", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = ">=0.24.0", index = "https://download.pytorch.org/whl/cu128" },
     { name = "tqdm", specifier = ">=4.66.4,<5" },
-    { name = "transformers", specifier = ">=4.47.1,<5" },
+    { name = "transformers", specifier = ">=4.57.6,<5" },
     { name = "wandb", specifier = ">=0.23.1,<0.24" },
     { name = "wheel", specifier = ">=0.42.0" },
 ]

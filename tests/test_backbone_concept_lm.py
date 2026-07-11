@@ -9,6 +9,7 @@ import torch
 
 from data.data_collators import DataCollatorForCausalLM
 from data.dataset_preprocess import configure_text_tokenizer_for_model_vocab
+from analysis.run_e10_comparison import evaluate_length
 from nn.backbone_concept_lm import BackboneConceptConfig, BackboneConceptLM
 
 VOCAB = 256
@@ -216,9 +217,48 @@ def test_concept_ablation_ce_contract():
     input_ids, attention_mask, labels = make_batch(B=2, S=24)
     metrics = model.concept_ablation_ce(input_ids, attention_mask, labels)
     for key in ("ce_real", "ce_shuffle", "ce_zero", "delta_shuffle", "delta_zero",
-                "ce_real_carry", "ce_real_beyond", "delta_zero_beyond"):
+                "ce_static", "ce_one_block", "delta_static_beyond",
+                "delta_one_block_beyond", "ce_real_carry", "ce_real_beyond",
+                "delta_zero_beyond"):
         assert key in metrics, f"missing {key}"
         assert isinstance(metrics[key], float) and metrics[key] == metrics[key]  # not NaN
+
+
+def test_recurrence_ablation_modes_isolate_static_and_one_block_memory():
+    model = make_model(concept_num=4)
+    model.backbone.model.layers[5].gate.data.fill_(0.8)
+    model.write_head.alpha.data.fill_(0.5)
+    input_ids, attention_mask, labels = make_batch(B=2, S=32)
+    real = model.per_position_ce(
+        input_ids, attention_mask, labels, concept_mode="real"
+    )
+    static = model.per_position_ce(
+        input_ids, attention_mask, labels, concept_mode="static"
+    )
+    one_block = model.per_position_ce(
+        input_ids, attention_mask, labels, concept_mode="one_block"
+    )
+    beyond = slice(2 * K, None)
+    assert not torch.allclose(real[:, beyond], static[:, beyond], equal_nan=True)
+    # Recurrent and previous-block-only states first diverge after two writes.
+    assert not torch.allclose(real[:, 3 * K :], one_block[:, 3 * K :], equal_nan=True)
+
+
+def test_e10_paired_comparison_contract():
+    concept = make_model(concept_num=4)
+    control = make_model(concept_num=0)
+    concept.backbone.model.layers[5].gate.data.fill_(0.8)
+    concept.write_head.alpha.data.fill_(0.5)
+    rows, _, _ = make_batch(B=3, S=32)
+    report = evaluate_length(
+        concept, control, rows, seq_len=32, gap=0.2,
+        batch_size=2, device="cpu", seed=42,
+    )
+    assert report["beyond_local_start"] == 2 * K
+    assert "control_minus_concept_beyond_1024" in report
+    assert "static_minus_recurrent_beyond_1024" in report
+    assert "one_block_minus_recurrent_beyond_1024" in report
+    assert report["concept_rank"]["within_sample_rankme_mean"] > 0
 
 
 def test_concept_gate_metrics_contract():

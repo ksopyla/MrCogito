@@ -22,6 +22,7 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
 
 import torch
 
@@ -35,6 +36,7 @@ from datasets import load_dataset            # noqa: E402
 from transformers import AutoTokenizer       # noqa: E402
 
 from nn.backbone_concept_lm import BackboneConceptConfig, BackboneConceptLM  # noqa: E402
+from analysis.run_e10_comparison import load_eval_rows  # noqa: E402
 
 BUCKETS = [(0, 512), (512, 1024), (1024, 2048), (2048, 4096), (4096, 8192),
            (8192, 16384), (16384, 32768)]
@@ -83,6 +85,12 @@ def main():
     p.add_argument("--batch_size", type=int, default=2)
     p.add_argument("--dataset", default="HuggingFaceFW/fineweb-edu")
     p.add_argument("--dataset_subset", default="sample-10BT")
+    p.add_argument(
+        "--eval_manifest",
+        default=None,
+        help="Frozen pretokenized eval-only manifest. When set, all sequence lengths use "
+             "the same long documents truncated to length (paired and train-disjoint).",
+    )
     p.add_argument("--concept_block", type=int, default=512)
     p.add_argument("--output", default=None)
     args = p.parse_args()
@@ -102,9 +110,20 @@ def main():
     model.to(device).eval()
 
     report = {"backbone": args.backbone, "num_docs": args.num_docs, "seq_lens": {}}
+    paired_rows = None
+    if args.eval_manifest:
+        paired_rows = load_eval_rows(
+            Path(args.eval_manifest), max(args.seq_lens), args.num_docs, seed=42
+        )
+        report["eval_manifest"] = args.eval_manifest
+        report["paired_documents_across_lengths"] = True
     for seq_len in args.seq_lens:
         print(f"\n=== seq_len {seq_len}: collecting {args.num_docs} docs ===")
-        input_ids = collect_docs(tokenizer, seq_len, args.num_docs, args.dataset, args.dataset_subset)
+        input_ids = (
+            paired_rows[:, :seq_len]
+            if paired_rows is not None
+            else collect_docs(tokenizer, seq_len, args.num_docs, args.dataset, args.dataset_subset)
+        )
         ce_full = score(model, input_ids, "full_attention", args.batch_size, device)
         ce_win = score(model, input_ids, "blockwise", args.batch_size, device)
 

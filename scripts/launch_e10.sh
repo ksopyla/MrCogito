@@ -61,8 +61,10 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 
 export EVAL_STEPS="${EVAL_STEPS:-2000}"
 export SAVE_STEPS="${SAVE_STEPS:-2000}"        # multiple of EVAL_STEPS (load_best_model_at_end)
-export SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-3}"   # full checkpoints carry the 1B backbone
+export AUTO_INTERVALS="${AUTO_INTERVALS:-1}"   # exact ~10% token-budget intervals, incl. ~50%
+export SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-12}"  # retain fixed 10%-budget checkpoints for paired A/B
 export EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE:-2}"
+export MAX_EVAL_SAMPLES="${MAX_EVAL_SAMPLES:-2048}"  # deterministic live gates; full frozen eval is separate
 export DDP_TIMEOUT="${DDP_TIMEOUT:-14400}"
 
 # ---- Token-matched arms: identical effective batch 72 on both servers ----
@@ -79,12 +81,14 @@ else
 fi
 export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-3}"
 
-# ---- Budget: ~2B tokens (LoRA fine-tune, ICAE/RMT scale). MUST match across arms. ----
-export NUM_EPOCHS="${NUM_EPOCHS:-0.1}"
+# ---- Budget: 2B non-padding-token target from the completed Gemma manifest. ----
+# The generic launcher computes the epoch fraction/steps (rounding ≤ one optimizer batch).
+export TARGET_TOKENS="${TARGET_TOKENS:-2000000000}"
+export NUM_EPOCHS="${NUM_EPOCHS:-0.1}"  # fallback only; overridden from exact manifest stats
 
 echo "=== E10 launch (backbone=${BACKBONE_MODEL}, C=${CONCEPT_NUM}, ${NUM_GPUS} GPUs, effective batch $((PER_DEVICE_BATCH_SIZE * NUM_GPUS * GRADIENT_ACCUMULATION_STEPS))) ==="
 echo "  arm=$([ "${CONCEPT_NUM}" = "0" ] && echo control || echo concept)  io=${CONCEPT_IO_MODE}  K=${CONCEPT_BLOCK}  lora_r=${LORA_R}"
-echo "  mix=${PRETOKENIZE_MIX} (Gemma tokenizer) seq=${MAX_SEQ_LENGTH}  LR=${LEARNING_RATE}  epochs=${NUM_EPOCHS} (MUST match the other arm)"
+echo "  mix=${PRETOKENIZE_MIX} (Gemma tokenizer) seq=${MAX_SEQ_LENGTH}  LR=${LEARNING_RATE}  target_tokens=${TARGET_TOKENS}"
 echo "  DATASETS_TOK_DIR=${DATASETS_TOK_DIR}"
 echo "  DATASETS_RAW_DIR=${DATASETS_RAW_DIR}"
 echo "  MANIFEST=${MANIFEST}"
