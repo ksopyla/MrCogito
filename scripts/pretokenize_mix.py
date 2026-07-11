@@ -346,7 +346,8 @@ def tokenize_source(
         logger.info(f"[{name}] capped to max_samples={max_samples}")
 
     n = len(ds)
-    eval_size = max(1, min(int(n * test_size_percent), n - 1, 5000))
+    eval_cap = int(spec.get("eval_sample_cap", 5000))
+    eval_size = max(1, min(int(n * test_size_percent), n - 1, eval_cap))
     split_ds = ds.train_test_split(test_size=eval_size, seed=seed)
     src_train, src_eval = split_ds["train"], split_ds["test"]
 

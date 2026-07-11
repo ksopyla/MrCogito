@@ -10,7 +10,7 @@ cd "$PROJECT_ROOT"
 # shellcheck source=scripts/remote_paths.sh
 source "${SCRIPT_DIR}/remote_paths.sh"
 
-EVAL_CACHE="${EVAL_CACHE:-${HF_HOME}/datasets_tok_gemma_e10_eval8k_12k}"
+EVAL_CACHE="${EVAL_CACHE:-${HF_HOME}/datasets_tok_gemma_e10_eval8k_12k_v2}"
 EVAL_MANIFEST="${EVAL_MANIFEST:-${EVAL_CACHE}/e10_frozen_eval8k_manifest.json}"
 STAGE0_OUTPUT="${PROJECT_ROOT}/Cache/e10_stage0_frozen_heldout.json"
 TRAIN_CACHE="${HF_HOME}/datasets_tok_gemma"
