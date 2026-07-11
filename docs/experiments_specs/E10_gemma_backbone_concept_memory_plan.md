@@ -123,7 +123,9 @@ trained control arm).
   effective batch 72 and 24 samples per microstep on both arms. The completed manifest is counted
   exactly and converted to the epoch fraction for a 2B non-padding-token target (rounding ≤ one
   optimizer batch); the count is an 8-worker reducing map with console throughput/ETA and a
-  manifest-hash-keyed atomic cache shared by both arms. ~10%-budget checkpoints
+  manifest-hash-keyed atomic cache shared by both arms. Weighted `all_exhausted` interleave
+  indices use a vectorized implementation verified sequence-identical to Hugging Face, avoiding
+  a separate single-core startup bottleneck. ~10%-budget checkpoints
   are retained for matched 50%/100% exposure comparisons. Training-time eval is a deterministic
   2,048-row subset; the final paired protocol uses the frozen full evaluation manifests.
   Arms: default = concept arm; `CONCEPT_NUM=0 bash scripts/launch_e10.sh` = control.

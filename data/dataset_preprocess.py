@@ -3,14 +3,68 @@ import os
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
-from datasets import load_dataset, load_from_disk, interleave_datasets, concatenate_datasets
+from datasets import concatenate_datasets, load_dataset, load_from_disk
 from transformers import DataCollatorForWholeWordMask
 from transformers.utils import logging
 
 
 logger = logging.get_logger(__name__)
 MIX_RECIPES_DIR = Path(__file__).resolve().parent / "mix_recipes"
+
+
+def _fast_weighted_all_exhausted_interleave(datasets, probabilities, seed):
+    """Vectorized equivalent of HF's weighted map-style ``all_exhausted`` interleave.
+
+    ``datasets.interleave_datasets`` generates one source choice at a time in Python. At
+    ~10M rows that can take hours before training even starts. HF draws choices in chunks
+    of 1,000 from ``np.random.default_rng(seed)``; process each chunk source-by-source while
+    preserving the same cyclic row indices and exact stop position.
+    """
+    if not datasets:
+        raise ValueError("Cannot interleave an empty dataset list.")
+    lengths = np.asarray([len(dataset) for dataset in datasets], dtype=np.int64)
+    if np.any(lengths <= 0):
+        raise ValueError("Weighted interleave requires every source dataset to be non-empty.")
+
+    probabilities = np.asarray(probabilities, dtype=np.float64)
+    probabilities = probabilities / probabilities.sum()
+    offsets = np.concatenate(([0], np.cumsum(lengths[:-1]))).astype(np.int64)
+    current = np.zeros(len(datasets), dtype=np.int64)
+    exhausted = np.zeros(len(datasets), dtype=bool)
+    rng = np.random.default_rng(seed)
+    index_chunks = []
+
+    while not exhausted.all():
+        choices = rng.choice(len(datasets), size=1000, p=probabilities)
+
+        # HF stops immediately after the last never-exhausted source reaches its end.
+        remaining = np.flatnonzero(~exhausted)
+        final_positions = []
+        for source_idx in remaining:
+            positions = np.flatnonzero(choices == source_idx)
+            needed = lengths[source_idx] - current[source_idx]
+            if len(positions) < needed:
+                break
+            final_positions.append(positions[needed - 1])
+        else:
+            choices = choices[: max(final_positions) + 1]
+
+        global_indices = np.empty(len(choices), dtype=np.int64)
+        for source_idx in range(len(datasets)):
+            positions = np.flatnonzero(choices == source_idx)
+            if not len(positions):
+                continue
+            source_rows = current[source_idx] + np.arange(len(positions), dtype=np.int64)
+            global_indices[positions] = offsets[source_idx] + source_rows % lengths[source_idx]
+            if source_rows[-1] >= lengths[source_idx] - 1:
+                exhausted[source_idx] = True
+            current[source_idx] = (source_rows[-1] + 1) % lengths[source_idx]
+        index_chunks.append(global_indices)
+
+    combined = concatenate_datasets(datasets)
+    return combined.select(np.concatenate(index_chunks))
 
 
 def configure_text_tokenizer_for_model_vocab(tokenizer, model_vocab_size: int) -> bool:
@@ -665,11 +719,8 @@ def load_and_preprocess_dataset_mix(
 
     total_w = sum(weights)
     probabilities = [w / total_w for w in weights]
-    train_ds = interleave_datasets(
-        train_parts,
-        probabilities=probabilities,
-        seed=interleave_seed,
-        stopping_strategy="all_exhausted",
+    train_ds = _fast_weighted_all_exhausted_interleave(
+        train_parts, probabilities, interleave_seed
     )
     test_ds = concatenate_datasets(eval_parts)
     logger.info(
@@ -707,11 +758,8 @@ def load_pretokenized_mix(manifest_path):
 
     total_w = sum(weights)
     probabilities = [w / total_w for w in weights]
-    train_ds = interleave_datasets(
-        train_parts,
-        probabilities=probabilities,
-        seed=manifest.get("seed", 42),
-        stopping_strategy="all_exhausted",
+    train_ds = _fast_weighted_all_exhausted_interleave(
+        train_parts, probabilities, manifest.get("seed", 42)
     )
     test_ds = concatenate_datasets(eval_parts)
     logger.info(

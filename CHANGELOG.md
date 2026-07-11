@@ -49,6 +49,9 @@ opening directly, and can be analyzed from saved checkpoints through the canonic
   uses a deterministic 2,048-row subset.
 - [optimized] the one-time token count now uses an 8-worker reducing `Dataset.map`, reports
   progress/ETA, selects only `input_ids`, and atomically caches the result beside the manifest.
+- [optimized] weighted `all_exhausted` dataset interleaving now vectorizes Hugging Face's exact
+  1,000-choice RNG protocol instead of appending one row index per Python iteration. This removes
+  the single-core multi-hour startup cost for both token counting and Trainer dataset loading.
 - [added] recurrence-specific static and previous-block-only ablations plus
   `run_e10_comparison.py` for paired concept/control 2K/8K CE, local regression, RankMe, and
   bootstrap CIs. Stage 0 can now use one frozen held-out long-doc manifest paired across lengths.

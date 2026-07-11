@@ -2,11 +2,37 @@ import os
 import sys
 
 import pytest
-from datasets import Dataset, DatasetDict
+from datasets import Dataset, DatasetDict, interleave_datasets
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from data import dataset_preprocess as dataset_preprocess_module
+
+
+@pytest.mark.parametrize(
+    ("lengths", "probabilities", "seed"),
+    [
+        ([3, 5], [0.7, 0.3], 42),
+        ([2, 4, 7], [0.2, 0.3, 0.5], 7),
+        ([1, 9, 3], [0.05, 0.8, 0.15], 123),
+    ],
+)
+def test_fast_weighted_interleave_matches_huggingface(lengths, probabilities, seed):
+    parts = []
+    offset = 0
+    for length in lengths:
+        parts.append(Dataset.from_dict({"row_id": list(range(offset, offset + length))}))
+        offset += length
+    expected = interleave_datasets(
+        parts,
+        probabilities=probabilities,
+        seed=seed,
+        stopping_strategy="all_exhausted",
+    )
+    actual = dataset_preprocess_module._fast_weighted_all_exhausted_interleave(
+        parts, probabilities, seed
+    )
+    assert actual["row_id"] == expected["row_id"]
 
 
 class FakeTokenizer:
