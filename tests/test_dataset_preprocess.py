@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 
@@ -153,3 +154,95 @@ def test_raises_when_requested_text_column_missing(monkeypatch, tmp_path):
             train_num_proc=1,
             test_num_proc=1,
         )
+
+
+def test_direct_huggingface_dataset_uses_configured_cache_dir(monkeypatch, tmp_path):
+    captured = {}
+    dataset = DatasetDict(
+        {
+            "train": Dataset.from_dict({"text": ["train one", "train two"]}),
+            "validation": Dataset.from_dict({"text": ["validation one"]}),
+        }
+    )
+
+    def fake_load_dataset(dataset_path, subset, cache_dir):
+        captured.update(
+            dataset_path=dataset_path,
+            subset=subset,
+            cache_dir=cache_dir,
+        )
+        return dataset
+
+    monkeypatch.setattr(dataset_preprocess_module, "load_dataset", fake_load_dataset)
+
+    train_ds, eval_ds = dataset_preprocess_module.load_and_preprocess_text_dataset(
+        tokenizer=FakeTokenizer(),
+        dataset_hf_path="Salesforce/wikitext",
+        dataset_name_subset="wikitext-103-v1",
+        text_column_name="text",
+        dataset_cache_dir=str(tmp_path / "hf_home" / "datasets"),
+        train_num_proc=1,
+        test_num_proc=1,
+    )
+
+    assert captured == {
+        "dataset_path": "Salesforce/wikitext",
+        "subset": "wikitext-103-v1",
+        "cache_dir": str(tmp_path / "hf_home" / "datasets"),
+    }
+    assert len(train_ds) == 2
+    assert len(eval_ds) == 1
+
+
+def test_pretokenized_manifest_loads_disk_datasets_without_hub_access(
+    monkeypatch,
+    tmp_path,
+):
+    train_path = tmp_path / "datasets_tok" / "source" / "train"
+    eval_path = tmp_path / "datasets_tok" / "source" / "eval"
+    Dataset.from_dict(
+        {
+            "input_ids": [[1, 2, 3], [4, 5]],
+            "attention_mask": [[1, 1, 1], [1, 1]],
+        }
+    ).save_to_disk(train_path)
+    Dataset.from_dict(
+        {
+            "input_ids": [[6, 7]],
+            "attention_mask": [[1, 1]],
+        }
+    ).save_to_disk(eval_path)
+
+    manifest_path = tmp_path / "datasets_tok" / "example_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "mix_id": "contract_mix",
+                "max_seq_length": 16,
+                "objective": "prefix_suffix",
+                "seed": 42,
+                "sources": [
+                    {
+                        "name": "source",
+                        "weight": 1.0,
+                        "train_path": str(train_path),
+                        "eval_path": str(eval_path),
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        dataset_preprocess_module,
+        "load_dataset",
+        lambda *args, **kwargs: pytest.fail(
+            "Pretokenized manifests must not access the Hugging Face Hub."
+        ),
+    )
+
+    train_ds, eval_ds = dataset_preprocess_module.load_pretokenized_mix(manifest_path)
+
+    assert train_ds["input_ids"] == [[1, 2, 3], [4, 5]]
+    assert eval_ds["input_ids"] == [[6, 7]]

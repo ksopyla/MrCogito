@@ -131,6 +131,12 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
      throughput tax; fires automatically via the `experiment-evaluate` run-level preamble. Structural gates hard-fail,
      plausibility gates write-with-flag, synthetic integrator unit-tested. Spec:
      [compute_audit_wandb_panel.md](../engineering_specs/compute_audit_wandb_panel.md). Audited 5 past runs (E01/E02/E05/perceiver).
+   - **Training pipeline modularization — Stage 0 DONE 2026-07-11.** Before splitting or renaming
+     the multi-family training entrypoint, executable contracts now pin console/file/W&B logging,
+     direct Hub and pretokenized data routes, Hugging Face cache roles, workspace `Cache/` paths,
+     and historical checkpoint/W&B identities. Next: Stage 1 neutral module extraction with no
+     entrypoint rename. Spec:
+     [training_pipeline_modularization.md](../engineering_specs/training_pipeline_modularization.md).
 7. **Parked / not scheduled:** the **token↔concept asymmetry sweep** (`token_embedding_dim` 128/256/512,
    the former "E03") is demoted to a **P1-era E02 ablation**, not a headline experiment. Further knobs
    later (optimizer Muon/Lion, longer context, `C`-vs-`N` scaling, encoder-side RoPE).

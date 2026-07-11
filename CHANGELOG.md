@@ -14,6 +14,32 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-07-11] - Training refactor Stage 0 contract baseline
+
+**Why:** the maintained training entrypoint now serves several model/objective families, while
+parked training families duplicate parts of the runtime pipeline. Modularizing that code without
+first pinning its external behavior risks changing datasets, W&B lineage, logs, cache locations,
+or checkpoint compatibility under the guise of a structural refactor.
+
+**Impact:** no production training behavior changed. The next extraction stage now has executable
+compatibility gates for console/file/W&B logging, direct and pretokenized Hugging Face data,
+canonical cache roles, and the workspace `Cache/` artifact layout.
+
+**What changed:**
+- [docs] added the staged
+  [training pipeline modularization spec](docs/engineering_specs/training_pipeline_modularization.md),
+  including immutable logging, data, cache, checkpoint, W&B, and parked-code contracts.
+- [tested] every active/parked training entrypoint still uses the shared logging helpers; W&B
+  project/group/run identity, effective dataset metadata, and bounded tags are characterized.
+- [tested] direct Hub loading retains the configured `HF_DATASETS_CACHE`, while pretokenized
+  manifests load `save_to_disk()` datasets without Hub access.
+- [tested] `scripts/remote_paths.sh` retains the `datasets` / `datasets_tok` / `datasets_raw`
+  roles, honors explicit overrides, and keeps `Cache/Training` plus `Cache/logs`.
+- [verified] 40 focused training/data/W&B/evaluation-lineage tests pass; touched tests have no
+  linter diagnostics.
+
+---
+
 ## [2026-07-11] - E10 pre-launch protocol and observability audit
 
 **Why:** the E10 Stage-0 architecture was sound, but the launch wrapper had drifted from the
