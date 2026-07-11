@@ -12,10 +12,12 @@ from training import concept_pretraining_args as args_module
 from training import concept_pretraining_factories as factories
 from training import concept_pretraining_objectives as objectives
 from training import concept_pretraining_trainer as trainer_module
+from training import train_concept_pretraining as canonical_entrypoint
 from training import train_perceiver_denoise as legacy_entrypoint
 
 
 def test_legacy_entrypoint_reexports_extracted_public_symbols():
+    assert legacy_entrypoint.main is canonical_entrypoint.main
     assert legacy_entrypoint.ModelArguments is args_module.ModelArguments
     assert legacy_entrypoint.LossArguments is args_module.LossArguments
     assert legacy_entrypoint.DataTrainingArguments is args_module.DataTrainingArguments

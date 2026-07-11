@@ -14,6 +14,33 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-07-11] - Training refactor Stage 2 canonical entrypoint
+
+**Why:** the historical `train_perceiver_denoise.py` name described only the original parallel
+reconstruction model, but the maintained command now trains Perceiver reconstruction, concept AR,
+prefix-to-suffix generation, windowed decoding, anchors, and pretrained-backbone concept memory.
+
+**Impact:** new commands and live documentation use the accurate
+`training/train_concept_pretraining.py` path. The old path remains executable and re-exports its
+public symbols for one migration window. Logging, data processing, Hugging Face caches, workspace
+artifacts, CLI flags, checkpoint metadata, and W&B identities are unchanged.
+
+**What changed:**
+- [renamed] the multi-family orchestration implementation to
+  `training/train_concept_pretraining.py`.
+- [compatibility] retained `training/train_perceiver_denoise.py` as a thin executable/import
+  wrapper.
+- [updated] the generic launcher and local smoke command, maintained tests, README, training/eval
+  matrix, workspace rule, and training skills to use the canonical path.
+- [preserved] frozen experiment specs, append-only ledgers, historical reports, and older changelog
+  entries keep the entrypoint path that was true when recorded; launcher filenames are deferred to
+  Stage 3.
+- [tested] both canonical and compatibility CLIs expose the same model/data arguments; the generic
+  launcher targets the canonical path.
+- [verified] full suite: 280 passed, 9 skipped; live launcher syntax and linter diagnostics pass.
+
+---
+
 ## [2026-07-11] - Training refactor Stage 1 neutral extraction
 
 **Why:** `training/train_perceiver_denoise.py` combined CLI schemas, compatibility validation,

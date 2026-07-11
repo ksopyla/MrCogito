@@ -8,8 +8,8 @@ This table is the current source of truth for which training paths are actively 
 
 | Family / path | Status | Training entrypoint | Objective | Single-input evaluation | Pair-input evaluation | Zero-shot STS-B | Notes |
 |---|---|---|---|---|---|---|---|
-| `perceiver_denoise` | Maintained | `training/train_perceiver_denoise.py` | TSDAE-style token deletion + full-sequence reconstruction, optional `reconstruction+contrastive` | `ViaDecoder` | `ConceptEncoderForSentencePairClassification` with separate encoding | Yes | Canonical perceiver research path. Uses BiXT + stacked position-only decoder. |
-| `concept_ar` / `concept_ar_prefix` | Maintained current focus | `training/train_perceiver_denoise.py --decoder_type causal_ar` | E01: AR denoising reconstruction; E02: prefix-to-suffix AR generation (`--objective_variant prefix_suffix`) | Weighted concept pooling over encoder concepts | Sentence-pair route with separate encoding | Yes | Shared encoder->AR-decoder foundation. New W&B runs log distinct groups/job types such as `E01_concept_ar_H...` and `E02_concept_ar_prefix_H...`. |
+| `perceiver_denoise` | Maintained | `training/train_concept_pretraining.py` | TSDAE-style token deletion + full-sequence reconstruction, optional `reconstruction+contrastive` | `ViaDecoder` | `ConceptEncoderForSentencePairClassification` with separate encoding | Yes | Canonical perceiver research path. Uses BiXT + stacked position-only decoder. |
+| `concept_ar` / `concept_ar_prefix` | Maintained current focus | `training/train_concept_pretraining.py --decoder_type causal_ar` | E01: AR denoising reconstruction; E02: prefix-to-suffix AR generation (`--objective_variant prefix_suffix`) | Weighted concept pooling over encoder concepts | Sentence-pair route with separate encoding | Yes | Shared encoder->AR-decoder foundation. New W&B runs log distinct groups/job types such as `E01_concept_ar_H...` and `E02_concept_ar_prefix_H...`. |
 | `weighted_mlm` | Maintained baseline | `training/train_mlm.py --model_type weighted_mlm` | Sparse MLM | Weighted concept pooling classifier | Legacy sentence-pair route from `evaluate_model_on_glue.py` | No dedicated canonical route | Kept as the simple MLM baseline for comparison. |
 | `diffusion_mlm` | **Parked** (`parked/`) | `parked/training/train_diffusion.py` | Masked diffusion self-reconstruction | — | — | — | Explored; concept rank stayed low so far. Set aside for now, likely to revisit. Existing checkpoints still evaluate via encoder-only routing into perceiver heads. See `parked/README.md`. |
 | `prefix_diffusion` | **Parked** (`parked/`) | `parked/training/train_prefix_diffusion.py` | Prefix-to-suffix diffusion generation | — | — | — | Explored (random init) with low concept rank so far. Set aside, to revisit — especially with warm-start. See `parked/README.md`. |
@@ -40,7 +40,7 @@ This table is the current source of truth for which training paths are actively 
 ## Practical Summary
 
 - If you want the maintained perceiver path, use `perceiver_denoise`.
-- If you want the current encoder->AR decoder path, use `concept_ar` (`reconstruction`) or `concept_ar_prefix` (`prefix_suffix`) through `training/train_perceiver_denoise.py`.
+- If you want the maintained concept-pretraining path, use `training/train_concept_pretraining.py`; select `concept_ar` (`reconstruction`) or `concept_ar_prefix` (`prefix_suffix`) with its decoder/objective flags. The old `training/train_perceiver_denoise.py` path is a temporary compatibility wrapper.
 - If you want the simple MLM baseline, use `weighted_mlm`.
 - Recursion and diffusion are **parked** in `parked/` (revivable) — see `parked/README.md`.
 - Current work is tracked as small, well-defined increments in `agenda.md` + `docs/experiments_specs/`; the direction is exploratory.

@@ -86,7 +86,8 @@ All run/eval entrypoints live under `scripts/`:
 Parked families (set-aside; revive, don't modify casually): `parked/scripts/train_recursive_mlm.sh`,
 `parked/scripts/train_diffusion_multigpu.sh`, `parked/scripts/train_prefix_diffusion_multigpu.sh`.
 
-Python entrypoints: `training/train_perceiver_denoise.py` (main),
+Python entrypoints: `training/train_concept_pretraining.py` (main;
+`training/train_perceiver_denoise.py` is a temporary compatibility wrapper),
 `analysis/run_concept_analysis.py`, `analysis/check_model_health.py`,
 `evaluation/evaluate_on_benchmark.py`, `evaluation/evaluate_model_on_glue.py`.
 

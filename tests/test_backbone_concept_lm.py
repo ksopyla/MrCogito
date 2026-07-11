@@ -12,7 +12,7 @@ from data.data_collators import DataCollatorForCausalLM
 from data.dataset_preprocess import configure_text_tokenizer_for_model_vocab
 from analysis.run_e10_comparison import evaluate_length
 from nn.backbone_concept_lm import BackboneConceptConfig, BackboneConceptLM
-from training.train_perceiver_denoise import align_special_tokens_for_training
+from training.train_concept_pretraining import align_special_tokens_for_training
 
 VOCAB = 256
 K = 8   # sliding window == concept block

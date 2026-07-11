@@ -1,7 +1,7 @@
 # Training pipeline modularization
 
 - **Type:** engineering refactor, not an `E0NN` experiment.
-- **Status:** Stages 0–1 complete (2026-07-11); Stage 2 active-entrypoint naming is next.
+- **Status:** Stages 0–2 complete (2026-07-11); Stage 3 launcher-role clarification is next.
 - **Serves:** every maintained and revivable training family.
 - **Primary goal:** make training code easier to maintain and safer for AI-assisted changes without changing model behavior, data, logging, artifact layout, or historical identity.
 
@@ -135,10 +135,18 @@ run directories, final saves, and launcher commands are unchanged.
 
 ### Stage 2 — correct active naming
 
-- Introduce `training/train_concept_pretraining.py` as the canonical multi-family entrypoint.
-- Keep `training/train_perceiver_denoise.py` as a compatibility wrapper for one migration window.
-- Update live scripts, tests, skills, and implementation-path documentation.
-- Preserve all checkpoint and W&B identities.
+- [done 2026-07-11] Introduce `training/train_concept_pretraining.py` as the canonical
+  multi-family entrypoint.
+- [done 2026-07-11] Keep `training/train_perceiver_denoise.py` as an executable compatibility
+  wrapper for one migration window.
+- [done 2026-07-11] Update live scripts, tests, skills, rules, README, and implementation-path
+  documentation.
+- [done 2026-07-11] Preserve all checkpoint and W&B identities.
+
+Generic and experiment launchers intentionally retain their existing filenames until Stage 3,
+but the generic launcher now invokes the canonical Python entrypoint. Frozen experiment specs,
+append-only result ledgers, historical run reports, and older changelog entries retain the path
+that was true when those experiments and changes were recorded.
 
 ### Stage 3 — clarify launcher roles
 

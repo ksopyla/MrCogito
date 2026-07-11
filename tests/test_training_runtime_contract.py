@@ -2,6 +2,7 @@ import ast
 import logging
 import os
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -12,13 +13,44 @@ from training import utils_training
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REMOTE_PATHS_SCRIPT = REPO_ROOT / "scripts" / "remote_paths.sh"
+CANONICAL_ENTRYPOINT = REPO_ROOT / "training" / "train_concept_pretraining.py"
+LEGACY_ENTRYPOINT = REPO_ROOT / "training" / "train_perceiver_denoise.py"
 TRAINING_ENTRYPOINTS = [
-    REPO_ROOT / "training" / "train_perceiver_denoise.py",
+    CANONICAL_ENTRYPOINT,
     REPO_ROOT / "training" / "train_mlm.py",
     REPO_ROOT / "parked" / "training" / "train_diffusion.py",
     REPO_ROOT / "parked" / "training" / "train_prefix_diffusion.py",
     REPO_ROOT / "parked" / "training" / "train_recursive_mlm.py",
 ]
+
+
+def test_canonical_and_legacy_entrypoints_expose_compatible_cli_help():
+    required_flags = {
+        "--objective_variant",
+        "--decoder_type",
+        "--pretokenized_manifest",
+        "--dataset_mix_recipe",
+        "--backbone_model",
+    }
+
+    for entrypoint in (CANONICAL_ENTRYPOINT, LEGACY_ENTRYPOINT):
+        result = subprocess.run(
+            [sys.executable, str(entrypoint), "--help"],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert all(flag in result.stdout for flag in required_flags)
+
+
+def test_generic_launcher_targets_canonical_entrypoint():
+    launcher = (
+        REPO_ROOT / "scripts" / "train_perceiver_denoise_multigpu.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "training/train_concept_pretraining.py" in launcher
+    assert "training/train_perceiver_denoise.py" not in launcher
 
 
 def test_all_training_entrypoints_use_shared_logging_contract():

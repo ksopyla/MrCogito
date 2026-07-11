@@ -58,7 +58,7 @@ When a spec decides to revive a parked family, do NOT just import from `parked/`
 Review honestly while unparking: only restore what the spec needs, flag anything that no longer fits the current direction, and don't silently resurrect dead assumptions. If large parts conflict with the current foundation, say so and prefer reimplementing that piece as a fresh reusable component over force-fitting old code.
 
 ## Training entrypoint init standard
-Every `training/train_*.py` `main()` follows this exact sequence; canonical reference `training/train_perceiver_denoise.py` / `training/train_mlm.py`, helpers in `training/utils_training.py`.
+Every `training/train_*.py` `main()` follows this exact sequence; canonical reference `training/train_concept_pretraining.py` / `training/train_mlm.py`, helpers in `training/utils_training.py`. `training/train_perceiver_denoise.py` is a temporary compatibility wrapper and is not the implementation reference.
 
 ```python
 def main():

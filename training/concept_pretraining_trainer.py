@@ -16,8 +16,7 @@ from training.concept_pretraining_objectives import (
 from training.utils_training import is_main_process
 
 
-# Keep the historical logger name so extraction does not change log records.
-logger = logging.get_logger("training.train_perceiver_denoise")
+logger = logging.get_logger("training.train_concept_pretraining")
 
 
 class PerceiverDenoiseTrainer(Trainer):

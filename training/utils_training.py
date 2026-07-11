@@ -375,7 +375,7 @@ def setup_file_logging(log_dir: Optional[str] = None):
 def resolve_dataset_identifier(data_args) -> str:
     """Return the dataset identifier that actually trained the model.
 
-    Mirrors the data-loading priority in train_perceiver_denoise.main():
+    Mirrors the data-loading priority in train_concept_pretraining.main():
     pretokenized manifest → dataset_mix_recipe → dataset_mix → dataset_name.
     The default ``dataset_name`` (e.g. ``JeanKaddour/minipile``) is misleading
     when a long-context mix is in use, because it is left untouched while the

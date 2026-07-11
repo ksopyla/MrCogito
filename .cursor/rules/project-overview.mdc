@@ -16,7 +16,7 @@ The live agenda is `docs/1_Strategy_and_Plans/agenda.md` (slim daily driver — 
 
 ## Key Directories
 - `nn/` — active model implementations: `concept_encoder_perceiver.py` (main Perceiver/BiXT-style family, incl. the concept-conditioned AR decoder), `concept_encoder.py`, `concept_encoder_weighted.py`, `loss_manager.py`, `concept_losses.py`
-- `training/` — training entrypoints (`train_perceiver_denoise.py` is the main one) and `utils_training.py`
+- `training/` — training entrypoints (`train_concept_pretraining.py` is the main multi-family one; `train_perceiver_denoise.py` is a compatibility wrapper) and `utils_training.py`
 - `data/` — `data_collators.py` (all collators), `dataset_preprocess.py`
 - `evaluation/` — benchmark eval scripts, checkpoint loading and eval routing
 - `analysis/` — `run_concept_analysis.py` (effective rank, cosine similarities), `check_model_health.py`

@@ -85,7 +85,7 @@ This is the result of a codebase-wide scan against the v5 migration guide and th
 
 Confirmed by scan — these are the v5 removals that would have bitten a typical project but do not bite us:
 
-- `Trainer(tokenizer=...)` → already using `processing_class=tokenizer` everywhere (`training/train_perceiver_denoise.py:977`, `training/train_mlm.py:518`, `parked/training/*`, `parked/scripts/*`).
+- `Trainer(tokenizer=...)` → already using `processing_class=tokenizer` everywhere (`training/train_concept_pretraining.py`, `training/train_mlm.py`, `parked/training/*`, `parked/scripts/*`).
 - `use_auth_token` — not used anywhere.
 - `load_in_4bit` / `load_in_8bit` — not used (we use `quantization_config` patterns or none).
 - `AutoModelWithLMHead`, `AutoModelForVision2Seq` — not imported.
@@ -230,7 +230,7 @@ Sequenced so that each step leaves the repo in a state where `uv run pytest test
 - `uv sync` on macOS.
 - `uv run pytest tests/ -v` — full suite green.
 - `uv run python verification/torch_test.py` — torch + MPS sanity.
-- Smoke-run `training/train_perceiver_denoise.py` on a tiny dataset (e.g. 100 samples, 2 steps) on MPS to confirm the Trainer path works end-to-end under v5.
+- Smoke-run `training/train_concept_pretraining.py` on a tiny dataset (e.g. 100 samples, 2 steps) on MPS to confirm the Trainer path works end-to-end under v5.
 - Commit: `test: v5/torch-2.12 local smoke passes` (only if any test additions were needed; otherwise skip).
 
 ### Step 8 — Remote verification (Odra)

@@ -19,7 +19,7 @@ Current code is close, but still too rigid for iterative mix work:
 
 - Loader entrypoint: `data/dataset_preprocess.py:load_and_preprocess_dataset_mix()`
 - Single-source path: `data/dataset_preprocess.py:load_and_preprocess_text_dataset()`
-- Training integration: `training/train_perceiver_denoise.py` (`DataTrainingArguments.dataset_mix`, `main()` mix routing)
+- Training integration: `training/train_concept_pretraining.py` (`DataTrainingArguments.dataset_mix`, `main()` mix routing)
 - Existing long-context mix: `DATASET_MIXES["long_2k_base_v1"]`
 - Existing collators:
   - `DataCollatorForTSDAE` (reconstruction)
@@ -52,7 +52,8 @@ Implemented in `data/dataset_preprocess.py`:
 
 ### 3) Training args (implemented)
 
-Implemented in `training/train_perceiver_denoise.py` `DataTrainingArguments`:
+Implemented in `training/concept_pretraining_args.py` `DataTrainingArguments`, routed by
+`training/train_concept_pretraining.py`:
 - `dataset_mix_recipe: Optional[str] = None` (path or mix id)
 - `dataset_mix_weight_override: Optional[str] = None` (JSON string, optional quick sweeps)
 

@@ -286,7 +286,7 @@ uv run accelerate launch \
     --num_machines=1 \
     --mixed_precision=bf16 \
     --multi_gpu \
-    training/train_perceiver_denoise.py \
+    training/train_concept_pretraining.py \
     --hidden_size "$HIDDEN_SIZE" \
     --token_embedding_dim "$TOKEN_EMBEDDING_DIM" \
     --num_hidden_layers "$NUM_LAYERS" \

@@ -6,7 +6,7 @@ from transformers import TrainingArguments
 
 from nn.concept_encoder_perceiver import ConceptEncoderForConditionalLM
 from nn.muon import Muon
-from training.train_perceiver_denoise import (
+from training.train_concept_pretraining import (
     DataTrainingArguments,
     ModelArguments,
     PerceiverDenoiseTrainer,

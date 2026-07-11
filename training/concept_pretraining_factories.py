@@ -40,8 +40,7 @@ from training.utils_training import (
 )
 
 
-# Keep the historical logger name so extraction does not change log records.
-logger = logging.get_logger("training.train_perceiver_denoise")
+logger = logging.get_logger("training.train_concept_pretraining")
 
 
 def align_special_tokens_for_training(model, tokenizer) -> dict:

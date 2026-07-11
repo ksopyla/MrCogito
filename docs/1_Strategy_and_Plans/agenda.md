@@ -131,12 +131,13 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
      throughput tax; fires automatically via the `experiment-evaluate` run-level preamble. Structural gates hard-fail,
      plausibility gates write-with-flag, synthetic integrator unit-tested. Spec:
      [compute_audit_wandb_panel.md](../engineering_specs/compute_audit_wandb_panel.md). Audited 5 past runs (E01/E02/E05/perceiver).
-   - **Training pipeline modularization — Stages 0–1 DONE 2026-07-11.** Executable contracts pin
+   - **Training pipeline modularization — Stages 0–2 DONE 2026-07-11.** Executable contracts pin
      console/file/W&B logging, direct Hub and pretokenized data routes, Hugging Face cache roles,
      workspace `Cache/` paths, and historical checkpoint/W&B identities. Objective policy,
      arguments/validation, custom Trainer behavior, and model/data/collator/identity factories live in neutral
-     `training/concept_pretraining_*` modules; `train_perceiver_denoise.py` remains the compatible
-     orchestration command. Next: Stage 2 active-entrypoint naming with a compatibility wrapper. Spec:
+     `training/concept_pretraining_*` modules. `train_concept_pretraining.py` is now the canonical
+     multi-family command; `train_perceiver_denoise.py` remains a temporary compatibility wrapper.
+     Next: Stage 3 launcher-role clarification without changing experiment protocols. Spec:
      [training_pipeline_modularization.md](../engineering_specs/training_pipeline_modularization.md).
 7. **Parked / not scheduled:** the **token↔concept asymmetry sweep** (`token_embedding_dim` 128/256/512,
    the former "E03") is demoted to a **P1-era E02 ablation**, not a headline experiment. Further knobs

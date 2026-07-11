@@ -139,7 +139,8 @@ Text is the first proving ground because it gives fast iteration, mature dataset
 │   ├── concept_losses.py
 │   └── loss_manager.py
 ├── training/                   # Training entrypoints and shared utilities
-│   ├── train_perceiver_denoise.py
+│   ├── train_concept_pretraining.py
+│   ├── train_perceiver_denoise.py  # Temporary compatibility wrapper
 │   ├── train_mlm.py
 │   ├── train_prefix_diffusion.py
 │   └── utils_training.py
@@ -195,7 +196,7 @@ uv run pytest tests/ -v
 Main maintained training entrypoint:
 
 ```bash
-uv run python training/train_perceiver_denoise.py \
+uv run python training/train_concept_pretraining.py \
   --hidden_size 512 \
   --num_hidden_layers 6 \
   --concept_num 128
