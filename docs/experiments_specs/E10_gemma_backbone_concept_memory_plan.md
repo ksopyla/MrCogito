@@ -1,6 +1,7 @@
 # E10 — Implementation Plan (Gemma-3-1B backbone concept memory, Design C)
 
-- **Spec:** [E10_gemma_backbone_concept_memory.md](E10_gemma_backbone_concept_memory.md) · **Status:** draft
+- **Spec:** [E10_gemma_backbone_concept_memory.md](E10_gemma_backbone_concept_memory.md) ·
+  **Status:** implemented; readiness-audited 2026-07-11; awaiting Odra calibration/launch
 - **Authored by:** `implementation-plan` · for → `research-implement`
 
 > The HOW for the spec's platform change: frozen `google/gemma-3-1b-pt` + LoRA, global layers
@@ -25,7 +26,7 @@
 | `Gemma3ForCausalLM` / `Gemma3TextModel` | reuse as-is (frozen; **mask-dict input** at `modeling_gemma3.py:533` `if not isinstance(causal_mask_mapping := attention_mask, dict)` is the surgery hook) | site-packages `transformers/models/gemma3/modeling_gemma3.py` |
 | `Gemma3Attention.q_proj/k_proj/v_proj/o_proj`, `q_norm/k_norm`, `scaling` | **reuse by reference** inside the concept-read branch (no new attention weights; LoRA-adapted automatically) | same, `:263-341` |
 | `BiXTCrossAttention` (`update_tokens=False`) | reuse as-is = the concept **write op** (dim_lat=dim_tok=1152) | `nn/concept_encoder.py:335` |
-| `PerceiverDenoiseTrainer` eval hooks (`concept_ablation_ce`, `encode_concepts` duck-typing; `window_k=getattr(config,'decoder_context_window',None)`) | reuse as-is — implement the same method contract on the new model | `training/train_perceiver_denoise.py:442-534` |
+| `PerceiverDenoiseTrainer` eval hooks (`concept_ablation_ce`, `encode_concepts` duck-typing) | reuse + align E10 live gates: within-sample RankMe, read/write gates, Δshuffle at positions ≥2K (≥1024) | `training/train_perceiver_denoise.py` |
 | `DataCollatorForPrefixGeneration` | NOT used (E10 is plain next-token CE) | `data/data_collators.py:163` |
 | **`DataCollatorForCausalLM`** | **NEW** — pad-to-batch-max `input_ids`/`attention_mask`/`labels(-100 at pad)`; seedless (no corruption) | `data/data_collators.py` |
 | **`BackboneConceptLM` + `BackboneConceptConfig` + `ConceptReadBranch` + `GlobalLayerWithConceptRead` + `ConceptWriteHead`** | **NEW — reusable, config-selectable** (`concept_io_mode="global_kv"`; E11 `mem_tokens` / E12 `kv_prefix` land here later) | `nn/backbone_concept_lm.py` |
@@ -94,8 +95,9 @@ trained control arm).
   `model(**inputs)`, `training/train_perceiver_denoise.py:560-570`).
 - **Trainable params:** LoRA adapters (backbone, all 26 layers' q/k/v/o) + read gates `g_ℓ` (4
   scalars) + write head (BiXT + norms + α) + `z0` [C,H]. Backbone weights + embeddings + lm_head
-  frozen. Final block's write is skipped during training (its output is never read; avoids dead
-  compute).
+  frozen. The final write remains zero-connected to the loss so short single-block batches keep
+  every write parameter in the DDP graph (`find_unused_parameters=False`); it contributes no
+  optimization signal unless a later block reads the state.
 
 ## 6. Config & launch
 - **`BackboneConceptConfig`** (new `PretrainedConfig`, `model_type="backbone_concept"`):
@@ -127,7 +129,13 @@ trained control arm).
 4. **No-leak (block causality):** perturbing block b's tokens leaves blocks < b logits unchanged.
 5. **Read-gate effect:** with `g_ℓ` forced >0 and shuffled z, beyond-carry logits change (read is live).
 6. **Ablation contract:** `concept_ablation_ce(input_ids, mask, labels, window_k=None)` returns the
-   dict the trainer averages; `encode_concepts(...).last_hidden_state` is `[B,C,H]`.
+   dict the trainer averages, with the decisive "beyond" region beginning at `2K`;
+   `encode_concepts(...).last_hidden_state` is `[B,C,H]`.
+7. **Production checkpointing path:** open read/write gates retain nonzero concept and BiXT gradients
+   with `gradient_checkpointing=True`.
+- **Tier-1 checkpoint analysis:** `analysis/run_concept_analysis.py --model_type backbone_concept`
+  runs held-out geometry + recurrent concept-ablation on saved E10 checkpoints (generation-only
+  extras remain disabled because E10 has no separate concept-to-text decoder).
 - **Local MPS smoke:** tiny config, 3 optimizer steps on random batches — loss finite and decreasing.
 
 ## 8. Risks & tradeoffs

@@ -166,6 +166,22 @@ def test_gradients_reach_concept_state_with_open_gates():
     assert bixt_grads and any(g.abs().sum() > 0 for g in bixt_grads)
 
 
+def test_gradients_reach_concepts_with_gradient_checkpointing():
+    """The production launcher enables checkpointing; the wrapped global layer and its
+    mutable per-block concept state must still preserve read/write gradients."""
+    model = make_model(concept_num=4)
+    model.train()
+    model.gradient_checkpointing_enable()
+    model.backbone.model.layers[5].gate.data.fill_(0.5)
+    model.write_head.alpha.data.fill_(0.3)
+    input_ids, attention_mask, labels = make_batch(B=2, S=24)
+    model(input_ids, attention_mask, labels=labels).loss.backward()
+    assert model.concept_init.grad is not None and model.concept_init.grad.abs().sum() > 0
+    assert model.write_head.alpha.grad is not None and model.write_head.alpha.grad.abs() > 0
+    bixt_grads = [p.grad for p in model.write_head.bixt.parameters() if p.grad is not None]
+    assert bixt_grads and any(g.abs().sum() > 0 for g in bixt_grads)
+
+
 def test_no_leak_from_future_blocks():
     """Perturbing block 2's tokens must not change CE in blocks 0-1 (block causality of both
     the windowed attention and the write recurrence), even with open gates."""
@@ -199,9 +215,20 @@ def test_concept_ablation_ce_contract():
     input_ids, attention_mask, labels = make_batch(B=2, S=24)
     metrics = model.concept_ablation_ce(input_ids, attention_mask, labels)
     for key in ("ce_real", "ce_shuffle", "ce_zero", "delta_shuffle", "delta_zero",
-                "ce_real_beyond", "delta_zero_beyond"):
+                "ce_real_carry", "ce_real_beyond", "delta_zero_beyond"):
         assert key in metrics, f"missing {key}"
         assert isinstance(metrics[key], float) and metrics[key] == metrics[key]  # not NaN
+
+
+def test_concept_gate_metrics_contract():
+    model = make_model(concept_num=4)
+    model.backbone.model.layers[5].gate.data.fill_(0.5)
+    model.write_head.alpha.data.fill_(0.3)
+    metrics = model.concept_gate_metrics()
+    assert metrics["concept_gates/read_0"] == pytest.approx(torch.tanh(torch.tensor(0.5)).item())
+    assert metrics["concept_gates/read_layer_5"] == metrics["concept_gates/read_0"]
+    assert metrics["concept_gates/write"] == pytest.approx(torch.tanh(torch.tensor(0.3)).item())
+    assert make_model(concept_num=0).concept_gate_metrics() == {}
 
 
 def test_encode_concepts_shape():

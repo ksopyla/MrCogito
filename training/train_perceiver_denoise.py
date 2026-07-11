@@ -540,17 +540,20 @@ class PerceiverDenoiseTrainer(Trainer):
             return {}
         out = {f"concept_ablation/{k}": v / n for k, v in sums.items()}
         out.update(rank_metrics)
+        if hasattr(base_model, "concept_gate_metrics"):
+            out.update(base_model.concept_gate_metrics())
         if anchor_n > 0:
             out["anchor/mse_eval"] = anchor_sum / anchor_n
         return out
 
     @torch.no_grad()
     def _concept_effective_rank(self, base_model, input_ids, attention_mask) -> dict:
-        """Effective rank (nuclear/spectral norm of the mean concept matrix).
+        """Log both the legacy slot-mean rank and the primary within-sample RankMe.
 
-        The collapse gate: low effective rank means the C concepts are redundant
-        (occupy few dimensions). Logged each eval so de-collapse is visible live.
-        Matches analysis/concept_analysis.compute_concept_geometry_metrics.
+        The slot-mean metric measures redundancy after averaging over the batch and can
+        hide per-document collapse. E10's pre-registered kill gate is the within-sample
+        RankMe of each [C,H] state, so it must be available during training rather than
+        only in a post-hoc analysis.
         """
         try:
             concepts = base_model.encode_concepts(
@@ -560,10 +563,17 @@ class PerceiverDenoiseTrainer(Trainer):
             s = torch.linalg.svdvals(concept_mean)
             eff_rank = (s.sum() / (s.max() + 1e-8)).item()
             max_rank = min(concept_mean.shape)
-            return {
+            metrics = {
                 "concept_geometry/effective_rank": eff_rank,
                 "concept_geometry/effective_rank_normalized": eff_rank / max_rank,
             }
+            from analysis.concept_analysis import compute_within_sample_concept_rank
+
+            within = compute_within_sample_concept_rank(concepts)
+            metrics.update({
+                f"concept_geometry/{name}": value for name, value in within.items()
+            })
+            return metrics
         except Exception:
             return {}
 

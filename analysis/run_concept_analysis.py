@@ -69,6 +69,7 @@ from nn.concept_encoder_perceiver import (
     ConceptEncoderForConditionalLM,
     ConceptEncoderForDenoisingPerceiver,
 )
+from nn.backbone_concept_lm import BackboneConceptLM
 from nn.concept_encoder_weighted import ConceptEncoderForMaskedLMWeighted
 from analysis.concept_analysis import (
     compute_concept_geometry_metrics,
@@ -84,10 +85,12 @@ from data.dataset_preprocess import _select_train_eval_splits, load_pretokenized
 
 # Diffusion families (diffusion_mlm, prefix_diffusion) are parked in `parked/`;
 # revive their MODEL_CLASSES entries alongside the parked model code if needed.
-# concept_ar (E01) exposes .encoder like the others, so geometry analysis just works.
+# BackboneConceptLM exposes the same encode_concepts / concept_ablation_ce contracts,
+# but intentionally has no separate encoder module or standalone generation decoder.
 MODEL_CLASSES = {
     "perceiver_denoise": ConceptEncoderForDenoisingPerceiver,
     "concept_ar": ConceptEncoderForConditionalLM,
+    "backbone_concept": BackboneConceptLM,
     "weighted_mlm": ConceptEncoderForMaskedLMWeighted,
 }
 
@@ -327,6 +330,13 @@ def compute_ar_concept_ablation(model, batches, device, window_k=None):
         labels = input_ids.clone()
         labels[attention_mask == 0] = -100
         m = model.concept_ablation_ce(input_ids, attention_mask, labels, window_k=window_k)
+        # The classic concept_ar family names the reference path "intact"; E10 names it
+        # "real". Normalize aliases here so aggregation/reporting works for both contracts.
+        for suffix in ("", "_early", "_carry", "_beyond"):
+            real_key = f"ce_real{suffix}"
+            intact_key = f"ce_intact{suffix}"
+            if real_key in m and intact_key not in m:
+                m[intact_key] = m[real_key]
         m["_bucket"] = batch.get("bucket", "all")
         per_batch.append(m)
     if not per_batch:
@@ -428,6 +438,7 @@ def main():
         raise RuntimeError("No batches collected — check eval_source/dataset arguments.")
 
     is_concept_ar = args.model_type == "concept_ar"
+    has_ablation = args.model_type in {"concept_ar", "backbone_concept"}
 
     all_metrics = []
     concept_reprs = []
@@ -440,11 +451,11 @@ def main():
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
 
-            # Forward pass — grab concepts from encoder directly
-            encoder_out = model.encoder(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                return_dict=True,
+            # Forward pass — use the public concept contract. The classic families expose
+            # both .encoder and encode_concepts; E10 is recurrent encode==decode and only
+            # has encode_concepts.
+            encoder_out = model.encode_concepts(
+                input_ids=input_ids, attention_mask=attention_mask, return_dict=True
             )
             concepts = encoder_out.last_hidden_state.float()  # [B, C, H]
 
@@ -453,7 +464,7 @@ def main():
             concept_reprs.append(concepts.cpu())
             bucket_of_batch.append(batch["bucket"])
 
-    if is_concept_ar:
+    if has_ablation:
         # Round-robin across buckets so ΔCE covers every length regime.
         by_bucket = {}
         for batch in batches:
@@ -674,11 +685,11 @@ def main():
 
     print("=" * 65)
 
-    # --- concept_ar: ablation ΔCE + qualitative generation samples ---
+    # --- concept-ablation ΔCE; standalone generation extras remain concept_ar-only ---
     ablation = {}
     samples = []
     gen_faith = {}
-    if is_concept_ar:
+    if has_ablation:
         # E05: beyond-window deltas. Explicit --ablation_window_k wins; else fall back to the
         # checkpoint's own window (None for full-context controls → no beyond-window metrics).
         window_k = args.ablation_window_k
@@ -703,8 +714,12 @@ def main():
             gsh = "✓ uses concepts" if dsh >= 0.5 else "✗ near-collapse"
             print(f"  Δzero  (zero-intact) : {dz:.4f} ± {dz_std:.4f}   {gz}")
             print(f"  Δshuffle             : {dsh:.4f} ± {dsh_std:.4f}   {gsh}   (stronger test)")
-            print("  E01 gate: Δzero AND Δshuffle ≥ 0.5 nats. (± = std over batches; a gate "
-                  "cleared by less than one std is not decisively cleared.)")
+            if args.model_type == "backbone_concept":
+                print("  E10 decisive gate is Δshuffle_beyond ≥ 0.1 at positions >=2K "
+                      "(>=1024 for K=512); all-position deltas are diagnostic.")
+            else:
+                print("  E01 gate: Δzero AND Δshuffle ≥ 0.5 nats. (± = std over batches; a gate "
+                      "cleared by less than one std is not decisively cleared.)")
             per_bucket = ablation.get("per_bucket", {})
             if len(per_bucket) > 1:
                 print("  By length bucket (ce_intact / Δzero / Δshuffle):")
@@ -719,8 +734,16 @@ def main():
                 dze, dshe = ablation["delta_zero_early"], ablation["delta_shuffle_early"]
                 gze = "✓ uses concepts" if dze >= 0.5 else "✗ near-collapse"
                 gshe = "✓ uses concepts" if dshe >= 0.5 else "✗ near-collapse"
-                print(f"  Δzero  (early-pos)   : {dze:.4f}   {gze}   ← PRIMARY (less bypass dilution)")
-                print(f"  Δshuffle (early-pos) : {dshe:.4f}   {gshe}   ← PRIMARY")
+                qualifier = "" if args.model_type == "backbone_concept" else "   ← PRIMARY"
+                print(f"  Δzero  (early-pos)   : {dze:.4f}   {gze}{qualifier}")
+                print(f"  Δshuffle (early-pos) : {dshe:.4f}   {gshe}{qualifier}")
+            if "delta_shuffle_beyond" in ablation:
+                dzb = ablation["delta_zero_beyond"]
+                dshb = ablation["delta_shuffle_beyond"]
+                gshb = "✓ content-bearing memory" if dshb >= 0.1 else "✗ no long-range content"
+                boundary = 2 * getattr(model.config, "concept_block", 512)
+                print(f"  Δzero  (>={boundary})      : {dzb:.4f}")
+                print(f"  Δshuffle (>={boundary})    : {dshb:.4f}   {gshb}   ← E10 GATE")
             # E05 long-range memory gate: beyond-window positions (t >= K) cannot reach
             # far-back tokens locally, so a large gap there = concepts carry cross-window memory.
             if "delta_zero_beyond_window" in ablation:
@@ -738,7 +761,7 @@ def main():
                       "understates quality" if gap > 0.5 else "✓ clean/train conditions agree")
                 print(f"  CE intact (train-matched word-dropout): {ablation['ce_intact_wd']:.4f}")
                 print(f"  Gap clean-vs-wd      : {gap:.4f}   {gw}")
-        if args.generation_eval:
+        if is_concept_ar and args.generation_eval:
             # concept_generation_eval expects (input_ids, attention_mask) tuples.
             ablation_pairs = [(b["input_ids"], b["attention_mask"]) for b in ablation_batches]
             try:
@@ -774,12 +797,13 @@ def main():
                               f"acc {r['teacher_forced_token_acc']:.3f}  ({r['n_tokens']} tok)")
         else:
             gen_faith = {}
-        try:
-            samples = generate_ar_samples(model, tokenizer, sample_texts, device,
-                                          max_new_tokens=args.max_new_tokens,
-                                          max_seq_length=args.max_seq_length)
-        except Exception as e:
-            print(f"\n[concept_ar] generation samples skipped: {e}")
+        if is_concept_ar:
+            try:
+                samples = generate_ar_samples(model, tokenizer, sample_texts, device,
+                                              max_new_tokens=args.max_new_tokens,
+                                              max_seq_length=args.max_seq_length)
+            except Exception as e:
+                print(f"\n[concept_ar] generation samples skipped: {e}")
         if samples:
             print()
             print("─── AR Generation Samples (greedy, concept-conditioned) ────")

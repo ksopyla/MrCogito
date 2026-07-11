@@ -65,16 +65,18 @@ export SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-3}"   # full checkpoints carry the 
 export EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE:-2}"
 export DDP_TIMEOUT="${DDP_TIMEOUT:-14400}"
 
-# ---- Token-matched arms: identical effective batch 24 on both servers ----
-#   Odra   (3 GPU): 4 x 3 x 2 = 24
-#   Polonez (4 GPU): 3 x 4 x 2 = 24
+# ---- Token-matched arms: identical effective batch 72 on both servers ----
+# This is the frozen protocol's 4/GPU x accum6 starting point on Odra. Polonez
+# uses 3/GPU so the matched control keeps the same tokens per optimizer update.
+#   Odra    (3 GPU): 4 x 3 x 6 = 72
+#   Polonez (4 GPU): 3 x 4 x 6 = 72
 NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
 if [ "$NUM_GPUS" -eq 4 ]; then
     export PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-3}"
 else
     export PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-4}"
 fi
-export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-2}"
+export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-6}"
 
 # ---- Budget: ~2B tokens (LoRA fine-tune, ICAE/RMT scale). MUST match across arms. ----
 export NUM_EPOCHS="${NUM_EPOCHS:-0.1}"

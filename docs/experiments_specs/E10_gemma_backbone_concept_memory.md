@@ -77,7 +77,8 @@ data mix, budget, seed. Control arm differs ONLY in `CONCEPT_NUM=0`.
   horizon), concept arm still beats control at positions ≥ 1024 by **≥ 0.2·G₈ₖ** (no state
   collapse with block count).
 - **Ablation sanity:** Δshuffle (real vs batch-shuffled concept state) **≥ 0.1 nats** at
-  beyond-local positions — the decoder reads the *content* of the state, not just its presence.
+  positions ≥ 1024 (past the explicit one-block carry) — the decoder reads the *content* of the
+  recurrent state, not merely its presence or redundant information still available locally.
 - **MUST-NOT-REGRESS:** concept-arm CE at positions < 512 (pure local regime) within **+0.02 nats**
   of control (concepts must not tax short-range fluency); within-sample RankMe of the final concept
   state ≥ 0.3·C (no collapse of the recurrent state).
@@ -109,6 +110,12 @@ data mix, budget, seed. Control arm differs ONLY in `CONCEPT_NUM=0`.
   - `BACKBONE_MODEL` / `CONCEPT_NUM` / block + LoRA knobs wired through the shared entrypoint
     (existing model families byte-identical when `BACKBONE_MODEL` is unset).
   - `peft` added as a dependency (LoRA).
+- **Readiness audit (2026-07-11):** corrected the launcher to the frozen effective batch 72
+  (`4 × 3 GPUs × accum 6` on Odra; matched by `3 × 4 × 6` on Polonez); aligned live Δshuffle with
+  the pre-registered ≥1024 region; added live within-sample RankMe + read/write-gate telemetry;
+  enabled `backbone_concept` Tier-1 geometry/ablation checkpoint analysis; and added a production
+  gradient-checkpointing regression test. The mix now explicitly declares `causal_lm`
+  compatibility. Local targeted suite: 32 passed.
 - **Known deviations from prior-line assumptions (accepted, recorded):** token embeddings are the
   backbone's native 1152-dim (frozen — the "tiny token embedding" asymmetry applies to our write-op
   economics, not the backbone's embedding table); the SmolLM2 tokenizer is replaced by Gemma's

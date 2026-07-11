@@ -14,6 +14,34 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-07-11] - E10 pre-launch protocol and observability audit
+
+**Why:** the E10 Stage-0 architecture was sound, but the launch wrapper had drifted from the
+frozen effective batch and the live diagnostics did not measure the pre-registered long-range
+and collapse gates. Launching a ~2B-token arm in that state would make the 50%-budget kill
+decision unreliable.
+
+**Impact:** E10 now launches with the specified optimizer-update batch, reports the decisive
+≥1024 concept-content signal and within-sample collapse metric during training, exposes gate
+opening directly, and can be analyzed from saved checkpoints through the canonical Tier-1 runner.
+
+**What changed:**
+- [fixed] E10 launcher default from effective batch 24 to 72 (`4 × 3 × accum 6` on Odra;
+  matched as `3 × 4 × accum 6` on Polonez).
+- [fixed] recurrent concept ablation now separates the explicit-carry region `[K,2K)` from
+  true beyond-carry positions `≥2K`; E10's Δshuffle gate therefore matches the spec's ≥1024
+  region instead of being diluted/inflated by locally reachable context.
+- [added] live within-sample raw/centered RankMe and tanh read/write-gate telemetry at each
+  evaluation; added `backbone_concept` support to the held-out Tier-1 geometry/ablation runner.
+- [tested] production gradient-checkpointing concept/write gradient path and E10 Tier-1
+  ablation-contract normalization; 32 targeted tests pass.
+- [docs/data] declared `causal_lm` compatibility on the reused 2K mix and reconciled the E10
+  spec, implementation plan, and agenda.
+
+**Related:** `docs/experiments_specs/E10_gemma_backbone_concept_memory.md`
+
+---
+
 ## [2026-07-08] - E10 foundation: pretrained-backbone concept memory (Gemma-3 graft, Design C)
 
 **Why:** the platform pivot (spec

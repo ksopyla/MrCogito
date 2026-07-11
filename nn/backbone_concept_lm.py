@@ -516,23 +516,32 @@ class BackboneConceptLM(PreTrainedModel):
         window_k: Optional[int] = None,
     ) -> dict:
         """Does the decoder read the concept *content*? CE with real vs batch-shuffled vs
-        zeroed concept state, split at the block boundary: positions ≥ K can only see
-        past-window context through the concepts ("beyond"), positions < K cannot ("early")."""
+        zeroed concept state, split by protocol reach.
+
+        Positions < K are purely local. Positions [K, 2K) still have the complete preceding
+        block in the explicit carry and therefore do not require recurrent memory. Only
+        positions >= 2K are beyond the one-block-carry control's direct reach; this is the
+        decisive E10 region (>=1024 for K=512).
+        """
         if not self.has_concepts:
             return {}
         K = self.config.concept_block
+        beyond_start = 2 * K
         results = {}
         for name in ("real", "shuffle", "zero"):
             pos_ce = self.per_position_ce(
                 input_ids, attention_mask, labels, mode="blockwise", concept_mode=name
             )
             early = pos_ce[:, :K]
-            beyond = pos_ce[:, K:]
+            carry = pos_ce[:, K:beyond_start]
+            beyond = pos_ce[:, beyond_start:]
             results[f"ce_{name}"] = float(pos_ce.nanmean().item())
             results[f"ce_{name}_early"] = float(early.nanmean().item())
+            if carry.numel() > 0 and not torch.isnan(carry).all():
+                results[f"ce_{name}_carry"] = float(carry.nanmean().item())
             if beyond.numel() > 0 and not torch.isnan(beyond).all():
                 results[f"ce_{name}_beyond"] = float(beyond.nanmean().item())
-        for region in ("", "_early", "_beyond"):
+        for region in ("", "_early", "_carry", "_beyond"):
             if f"ce_shuffle{region}" in results and f"ce_real{region}" in results:
                 results[f"delta_shuffle{region}"] = (
                     results[f"ce_shuffle{region}"] - results[f"ce_real{region}"]
@@ -542,3 +551,18 @@ class BackboneConceptLM(PreTrainedModel):
                     results[f"ce_zero{region}"] - results[f"ce_real{region}"]
                 )
         return results
+
+    @torch.no_grad()
+    def concept_gate_metrics(self) -> dict[str, float]:
+        """Current effective read/write gates for E10 live monitoring."""
+        if not self.has_concepts:
+            return {}
+        metrics = {"concept_gates/write": float(torch.tanh(self.write_head.alpha).item())}
+        read_idx = 0
+        for layer_idx, layer in enumerate(self.backbone.model.layers):
+            if isinstance(layer, GlobalLayerWithConceptRead):
+                value = float(torch.tanh(layer.gate).item())
+                metrics[f"concept_gates/read_{read_idx}"] = value
+                metrics[f"concept_gates/read_layer_{layer_idx}"] = value
+                read_idx += 1
+        return metrics

@@ -10,6 +10,7 @@ import torch
 from analysis.run_concept_analysis import parse_length_buckets, compute_ar_concept_ablation
 from analysis.concept_analysis import compute_within_sample_concept_rank
 from nn.concept_encoder_perceiver import ConceptEncoderForConditionalLM
+from tests.test_backbone_concept_lm import make_batch as make_backbone_batch, make_model as make_backbone_model
 from tests.test_concept_ar_decoder import _tiny_config
 
 
@@ -38,6 +39,19 @@ def test_ablation_aggregator_reports_std_and_per_bucket():
     for v in m["per_bucket"].values():
         assert v["n"] == 1
         assert "delta_shuffle" in v
+
+
+def test_backbone_ablation_contract_is_normalized_for_tier1():
+    model = make_backbone_model(concept_num=4)
+    model.backbone.model.layers[5].gate.data.fill_(0.5)
+    model.write_head.alpha.data.fill_(0.3)
+    ids, mask, _ = make_backbone_batch(B=2, S=24)
+    m = compute_ar_concept_ablation(
+        model, [{"input_ids": ids, "attention_mask": mask, "bucket": "(16,24]"}], "cpu"
+    )
+    assert m["ce_intact"] == m["ce_real"]
+    assert "delta_shuffle_beyond" in m
+    assert m["per_bucket"]["(16,24]"]["n"] == 1
 
 
 def test_shuffle_ablation_is_derangement():
