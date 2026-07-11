@@ -1,7 +1,7 @@
 # Training pipeline modularization
 
 - **Type:** engineering refactor, not an `E0NN` experiment.
-- **Status:** Stages 0–3 complete (2026-07-11); Stage 4 retired-path decisions are next.
+- **Status:** Complete — Stages 0–4 (2026-07-11).
 - **Serves:** every maintained and revivable training family.
 - **Primary goal:** make training code easier to maintain and safer for AI-assisted changes without changing model behavior, data, logging, artifact layout, or historical identity.
 
@@ -187,10 +187,22 @@ that was true when those experiments and changes were recorded.
 
 ### Stage 4 — prune retired training paths
 
-- Resolve the `weighted_mlm` training decision.
-- Remove the superseded recursive MLM implementation with a tombstone and preserved git history.
-- Keep diffusion parked and revivable.
-- Reconcile live docs and skills without rewriting the append-only experiment ledger or historical run reports.
+- [done 2026-07-11] Move the weighted-MLM trainer to
+  `parked/training/train_weighted_mlm.py` for reproduction only. Keep
+  `nn/concept_encoder_weighted.py` and evaluation routing live so 18 historical W&B
+  runs/checkpoints remain loadable.
+- [done 2026-07-11] Remove the six-file recursive-MLM/TRM fork after confirming it has no W&B or
+  experiment-ledger run. Preserve its rationale and recovery pointers in `parked/README.md`, git
+  history, and `pre-consolidation-20260605`; E09 carries recurrence forward as a config-selectable
+  component over the maintained AR foundation.
+- [done 2026-07-11] Keep masked diffusion and prefix diffusion parked and revivable without
+  modifying their code, launchers, or checkpoint-evaluation routes.
+- [done 2026-07-11] Reconcile live README, training/evaluation matrix, engineering plans, tests,
+  rules, and skills without rewriting the append-only experiment ledger, run reports, dated
+  diagnoses, archived plans, or older changelog entries.
+- [verified 2026-07-11] Parked weighted-MLM CLI remains executable; weighted evaluation routing
+  and checkpoint round-trip plus all maintained/parked contracts pass. Full suite: 319 passed,
+  9 skipped.
 
 ## Verification gates
 

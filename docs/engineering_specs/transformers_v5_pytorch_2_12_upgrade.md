@@ -34,13 +34,11 @@ This is the result of a codebase-wide scan against the v5 migration guide and th
 
 1. **`TrainingArguments.overwrite_output_dir` removed (no deprecation).** Passed as `--overwrite_output_dir True` in:
    - `scripts/train_concept_pretraining_multigpu.sh` (the main launcher, used by E05)
-   - `parked/scripts/train_recursive_mlm.sh:187`
    - `parked/scripts/train_diffusion_multigpu.sh:205`
    - `parked/scripts/train_prefix_diffusion_multigpu.sh:202`
    - `verification/verify_prefix_diffusion_wikitext_smoke.py:79`
 2. **`TrainingArguments.logging_dir` removed (no deprecation; use `TENSORBOARD_LOGGING_DIR` env var).** Passed as `--logging_dir` in:
    - `scripts/train_concept_pretraining_multigpu.sh`
-   - `parked/scripts/train_recursive_mlm.sh:175`
    - `parked/scripts/train_diffusion_multigpu.sh:192`
    - `parked/scripts/train_prefix_diffusion_multigpu.sh:189`
    - `verification/verify_prefix_diffusion_wikitext_smoke.py:31, 71`
@@ -62,7 +60,7 @@ This is the result of a codebase-wide scan against the v5 migration guide and th
 
 8. **Default `_init_weights` now auto-applied to subclasses.** Our custom models subclass `PreTrainedModel` and may rely on bespoke init:
    - `nn/concept_encoder.py`, `nn/concept_encoder_perceiver.py`, `nn/concept_encoder_weighted.py`
-   - `parked/nn/concept_encoder_diffusion.py`, `parked/nn/concept_encoder_recursive.py`, `parked/nn/concept_encoder_recursive_mlm.py`
+   - `parked/nn/concept_encoder_diffusion.py`
    
    Per the migration guide, v5 will silently re-initialise any `nn.Parameter` / `nn.Linear` / `nn.Embedding` it finds unless the subclass overrides `_init_weights`. **Action:** add an explicit `_init_weights` to each (even a no-op `pass` if the `__init__` does its own init), so the v5 default does not clobber trained-from-scratch weights.
 
@@ -85,7 +83,7 @@ This is the result of a codebase-wide scan against the v5 migration guide and th
 
 Confirmed by scan — these are the v5 removals that would have bitten a typical project but do not bite us:
 
-- `Trainer(tokenizer=...)` → already using `processing_class=tokenizer` everywhere (`training/train_concept_pretraining.py`, `training/train_mlm.py`, `parked/training/*`, `parked/scripts/*`).
+- `Trainer(tokenizer=...)` → already using `processing_class=tokenizer` everywhere (`training/train_concept_pretraining.py`, `parked/training/*`, `parked/scripts/*`).
 - `use_auth_token` — not used anywhere.
 - `load_in_4bit` / `load_in_8bit` — not used (we use `quantization_config` patterns or none).
 - `AutoModelWithLMHead`, `AutoModelForVision2Seq` — not imported.
@@ -199,7 +197,7 @@ Sequenced so that each step leaves the repo in a state where `uv run pytest test
 
 ### Step 2 — Launcher + training glue (section B)
 - Edit `scripts/train_concept_pretraining_multigpu.sh` (drop `--overwrite_output_dir`, drop `--logging_dir`, add `export TENSORBOARD_LOGGING_DIR`).
-- Mirror the same edits in `parked/scripts/train_recursive_mlm.sh`, `parked/scripts/train_diffusion_multigpu.sh`, `parked/scripts/train_prefix_diffusion_multigpu.sh`.
+- Mirror the same edits in `parked/scripts/train_diffusion_multigpu.sh` and `parked/scripts/train_prefix_diffusion_multigpu.sh`.
 - Edit `training/utils_training.py` to write the computed logging path to `TENSORBOARD_LOGGING_DIR` instead of the removed attribute.
 - Edit `verification/verify_prefix_diffusion_wikitext_smoke.py`.
 - Edit `evaluation/evaluate_model_on_glue.py` (both `logging_dir` and `--no_cuda`).
@@ -211,7 +209,8 @@ Sequenced so that each step leaves the repo in a state where `uv run pytest test
 - Commit: `refactor: rename additional_special_tokens → extra_special_tokens, drop encode_plus`.
 
 ### Step 4 — Custom-model `_init_weights` audit (section D)
-- For each of `nn/concept_encoder.py`, `nn/concept_encoder_perceiver.py`, `nn/concept_encoder_weighted.py`, and the three `parked/nn/concept_encoder_*.py`:
+- For each of `nn/concept_encoder.py`, `nn/concept_encoder_perceiver.py`,
+  `nn/concept_encoder_weighted.py`, and `parked/nn/concept_encoder_diffusion.py`:
   - read `__init__`, decide bespoke-vs-default init,
   - add `_init_weights` override if bespoke.
 - Add a regression test `tests/test_model_init_v5.py` that builds each model on a fixed seed and asserts `state_dict()` matches a pre-recorded hash (generated on the **pre-upgrade** `dev` branch). This is the falsification anchor for "v5 silently re-init my weights".

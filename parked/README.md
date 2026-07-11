@@ -10,8 +10,17 @@ Pre-parking snapshot tag: `pre-consolidation-20260605`.
 ## Contents
 | Family | Why parked | Files |
 |---|---|---|
-| **Recursive** (concept refinement / TRM-style weight-tied encoder) | Not the current focus. Recursive / latent reasoning stays part of the long-term Vision and will likely be explored later, possibly with a different approach. | `nn/concept_encoder_recursive.py`, `nn/concept_encoder_recursive_mlm.py`, `training/train_recursive_mlm.py`, `tests/test_recursive_*.py`, `scripts/train_recursive_mlm.sh` |
+| **Weighted MLM trainer** | Historical comparison baseline with 18 W&B training runs (latest 2026-02-07), but no current experiment builds on sparse MLM training. The model/evaluation classes remain live so checkpoints still load and benchmark. | `training/train_weighted_mlm.py` |
 | **Diffusion** (masked-diffusion + prefix-diffusion decoders) | Explored on MiniPile / WikiText-103; concept effective rank stayed low so far. Set aside for now and likely to be revisited (e.g. with warm-start, or as an alternative decoder). | `nn/concept_encoder_diffusion.py`, `training/train_diffusion.py`, `training/train_prefix_diffusion.py`, `tests/test_diffusion.py`, `tests/test_prefix_diffusion.py`, `scripts/train_diffusion_multigpu.sh`, `scripts/train_prefix_diffusion_multigpu.sh` |
+
+## Retired snapshots
+
+- **Recursive MLM / TRM-style weight-tied encoder — retired 2026-07-11.** No recursive training
+  run was recorded in W&B or the experiment ledger, and the old sparse-MLM fork no longer matches
+  the recurrent-memory direction in E09. Its six implementation/training/test/launcher files were
+  removed from `parked/`; git history and snapshot tag `pre-consolidation-20260605` preserve them.
+  Future recurrence is implemented as a config-selectable component over the maintained
+  concept-pretraining foundation, not by reviving this fork.
 
 ## Reviving a family
 1. Open a spec in `docs/experiments_specs/` with a materially new ingredient (e.g. warm-start) — see the "what we've explored" learnings in `agenda.md` first.

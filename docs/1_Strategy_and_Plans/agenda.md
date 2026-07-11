@@ -131,7 +131,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
      throughput tax; fires automatically via the `experiment-evaluate` run-level preamble. Structural gates hard-fail,
      plausibility gates write-with-flag, synthetic integrator unit-tested. Spec:
      [compute_audit_wandb_panel.md](../engineering_specs/compute_audit_wandb_panel.md). Audited 5 past runs (E01/E02/E05/perceiver).
-   - **Training pipeline modularization — Stages 0–3 DONE 2026-07-11.** Executable contracts pin
+   - **Training pipeline modularization — COMPLETE (Stages 0–4), 2026-07-11.** Executable contracts pin
      console/file/W&B logging, direct Hub and pretokenized data routes, Hugging Face cache roles,
      workspace `Cache/` paths, and historical checkpoint/W&B identities. Objective policy,
      arguments/validation, custom Trainer behavior, and model/data/collator/identity factories live in neutral
@@ -141,8 +141,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
      env→canonical-parser contracts for E05/E10 profiles. The launcher layer now has one canonical
      generic runner (`train_concept_pretraining_multigpu.sh`), thin E05/E10 protocol wrappers, and
      an explicit E10 orchestration pipeline; the old generic path remains a compatibility wrapper
-     (315 passed, 9 skipped). Next: Stage 4 retired-path decisions for weighted MLM and recursive
-     MLM while preserving parked diffusion/prefix diffusion. Spec:
+     (319 passed, 9 skipped). Weighted MLM training is now reproduction-only
+     under `parked/` while checkpoint evaluation stays live; the unrun recursive-MLM fork is
+     retired in git history in favor of E09-style recurrence on the shared foundation. Diffusion
+     and prefix diffusion remain parked and revivable. Spec:
      [training_pipeline_modularization.md](../engineering_specs/training_pipeline_modularization.md).
 7. **Parked / not scheduled:** the **token↔concept asymmetry sweep** (`token_embedding_dim` 128/256/512,
    the former "E03") is demoted to a **P1-era E02 ablation**, not a headline experiment. Further knobs

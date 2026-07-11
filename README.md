@@ -134,16 +134,14 @@ Text is the first proving ground because it gives fast iteration, mature dataset
 ├── nn/                         # Core PyTorch model components
 │   ├── concept_encoder.py        # Shared config, encoder, BiXT-style blocks
 │   ├── concept_encoder_perceiver.py
-│   ├── concept_encoder_weighted.py
-│   ├── concept_encoder_recursive_mlm.py
+│   ├── concept_encoder_weighted.py  # Historical-checkpoint evaluation support
 │   ├── concept_losses.py
 │   └── loss_manager.py
 ├── training/                   # Training entrypoints and shared utilities
 │   ├── train_concept_pretraining.py
 │   ├── train_perceiver_denoise.py  # Temporary compatibility wrapper
-│   ├── train_mlm.py
-│   ├── train_prefix_diffusion.py
 │   └── utils_training.py
+├── parked/                     # Weighted-MLM trainer + revivable diffusion snapshots
 ├── evaluation/                 # GLUE, STS-B, PAWS/SICK, checkpoint routing
 ├── analysis/                   # Concept-rank and geometry analysis
 ├── scripts/                    # Generic runner, experiment wrappers, pipelines, and utilities
@@ -248,7 +246,10 @@ This is an active research repository — public, MIT-licensed, and intentionall
 - **Long-term vision:** [`docs/1_Strategy_and_Plans/vision_and_goals.md`](docs/1_Strategy_and_Plans/vision_and_goals.md)
 - **Live agenda & experiments:** [`docs/1_Strategy_and_Plans/agenda.md`](docs/1_Strategy_and_Plans/agenda.md) · [`docs/experiments_specs/`](docs/experiments_specs/)
 - **Live experiment tracking:** the open [Weights & Biases project](https://wandb.ai/ksopyla/MrCogito) — every run, public.
-- Historical diffusion and recursive branches are parked, not discarded.
+- Diffusion and prefix diffusion remain parked and revivable. The historical weighted-MLM trainer
+  is parked for reproduction while its model stays loadable for evaluation. The superseded
+  recursive-MLM fork is preserved in git history; recurrent-memory research continues through E09
+  on the shared concept-pretraining foundation.
 
 ---
 

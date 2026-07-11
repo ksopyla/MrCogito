@@ -19,7 +19,9 @@ the right module below. Default to **extending** an existing module; add new cod
 ## Codebase map (what you build on)
 - **Config + encoder** — `nn/concept_encoder.py`: `ConceptEncoderConfig`, `ConceptEncoder` (N tokens → C concepts), layers `ConceptEncoderLayer` (cross-attn) and `BiConceptEncoderLayer` / `BiXTCrossAttention` (BiXT). Key knobs: `hidden_size` H, `concept_num` C, `token_embedding_dim` (token↔concept asymmetry), `num_hidden_layers`, `use_bixt`.
 - **Decoders / heads** — `nn/concept_encoder_perceiver.py`: `PerceiverDecoderLayer` / `PerceiverDecoderStack` (position/query cross-attention to concepts), `ConceptEncoderForDenoisingPerceiver` (maintained denoise model), `…ForSequenceClassificationViaDecoder`, `…ForSentencePairClassification`, `…ForSequenceClassificationPerceiver` (eval heads), `…PosOnly`.
-- **Baseline** — `nn/concept_encoder_weighted.py`: `weighted_mlm` model + weighted-pool classifier.
+- **Historical baseline support** — `nn/concept_encoder_weighted.py`: `weighted_mlm` model +
+  weighted-pool classifier remain live so old checkpoints evaluate; its reproducibility-only
+  trainer is parked at `parked/training/train_weighted_mlm.py`.
 - **Losses** — `nn/loss_manager.py` (`LossManager`, `LossConfig`, loss components, `ConceptLossStepCallback`, `register_loss`) + `nn/concept_losses.py` (functional losses + concept metrics).
 - **Data** — `data/data_collators.py` (collators, e.g. TSDAE/denoise) and `data/dataset_preprocess.py`.
 - **Eval / analysis** — `evaluation/concept_eval_routing.py` (checkpoint → eval route), `concept_checkpoint_loader.py`, `evaluate_model_on_glue.py`, `evaluate_on_benchmark.py`; `analysis/run_concept_analysis.py` + `analysis/concept_analysis.py` (effective rank, pairwise similarity, singular values).
@@ -58,7 +60,11 @@ When a spec decides to revive a parked family, do NOT just import from `parked/`
 Review honestly while unparking: only restore what the spec needs, flag anything that no longer fits the current direction, and don't silently resurrect dead assumptions. If large parts conflict with the current foundation, say so and prefer reimplementing that piece as a fresh reusable component over force-fitting old code.
 
 ## Training entrypoint init standard
-Every `training/train_*.py` `main()` follows this exact sequence; canonical reference `training/train_concept_pretraining.py` / `training/train_mlm.py`, helpers in `training/utils_training.py`. `training/train_perceiver_denoise.py` is a temporary compatibility wrapper and is not the implementation reference.
+Every maintained `training/train_*.py` `main()` follows this exact sequence; canonical reference
+`training/train_concept_pretraining.py`, helpers in `training/utils_training.py`.
+`training/train_perceiver_denoise.py` is a temporary compatibility wrapper and is not the
+implementation reference. Parked reproducibility trainers preserve the same logging sequence but
+are not templates for new work.
 
 ```python
 def main():

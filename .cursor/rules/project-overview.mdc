@@ -20,7 +20,9 @@ The live agenda is `docs/1_Strategy_and_Plans/agenda.md` (slim daily driver — 
 - `data/` — `data_collators.py` (all collators), `dataset_preprocess.py`
 - `evaluation/` — benchmark eval scripts, checkpoint loading and eval routing
 - `analysis/` — `run_concept_analysis.py` (effective rank, cosine similarities), `check_model_health.py`
-- `parked/` — set-aside model families (recursive, diffusion, prefix-diffusion) with their training scripts and tests; revivable, do not modify casually
+- `parked/` — reproducibility-only weighted-MLM trainer plus set-aside diffusion/prefix-diffusion
+  families; revivable snapshots, do not modify casually. The superseded recursive-MLM fork is
+  preserved in git history; new recurrence work uses the shared maintained foundation.
 - `playground/` — exploration and learning only (mainly notebooks), not production
 - `scripts/` — canonical generic training runner, thin experiment wrappers, orchestration
   pipelines, eval launchers, sync/upload utilities; role map in `scripts/README.md`

@@ -111,7 +111,10 @@ Match the output to the question:
 - "Summarize this paper for our project." → one synthesis-template entry plus mapping and verdict.
 - "What are the current trends in X?" → 3–7 trend bullets with citations, then a single-paragraph "what matters for MrCogito".
 - "Should we implement Y?" → architecture mapping, smallest local test, risks, and a clear Adopt / Adapt / Watch / Reject.
-- "Compare X with our `recursive_mlm` / `perceiver_mlm` / `diffusion_mlm` / `weighted_mlm`." → a small comparison table on attention pattern, objective, normalization, and conditioning, then a delta paragraph.
+- "Compare X with our retired `recursive_mlm` / historical `perceiver_mlm` / parked
+  `diffusion_mlm` / historical `weighted_mlm`." → a small comparison table on attention pattern,
+  objective, normalization, and conditioning, then a delta paragraph. Use git/ledger evidence for
+  retired families; do not imply they are maintained launch paths.
 - "Update the roadmap or vision." → propose minimal, dated edits to `docs/1_Strategy_and_Plans/*` referencing the synthesized evidence.
 
 ## Past Reviews

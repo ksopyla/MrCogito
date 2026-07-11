@@ -37,8 +37,9 @@ CONCEPT_NUM=0 bash scripts/launch_e10.sh
 - Do not copy the generic launcher for a model variant.
 - Preserve compatibility paths for one migration window and test that they generate identical
   training arguments.
-- Parked recursive and diffusion launchers remain under `parked/scripts/`; they are snapshots, not
-  maintained runner templates.
+- Parked diffusion and prefix-diffusion launchers remain under `parked/scripts/`; they are
+  snapshots, not maintained runner templates. Weighted MLM retains only a parked Python trainer,
+  and the superseded recursive-MLM fork is preserved in git history.
 
 Evaluation, tokenization, upload, sync, and server-setup scripts are utilities rather than training
 launchers. Their command-specific usage lives in each script and the relevant project skill.

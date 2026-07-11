@@ -14,6 +14,35 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-07-11] - Training refactor Stage 4 retired paths
+
+**Why:** the active training tree still exposed sparse weighted-MLM as a maintained command, while
+the parked tree carried an unrun recursive-MLM fork that no longer represented the project's
+recurrent-memory direction.
+
+**Impact:** new research has one maintained concept-pretraining foundation. Historical weighted-MLM
+checkpoints keep their live model and evaluation routes, with the trainer retained under `parked/`
+for exact reproduction. Diffusion and prefix diffusion remain parked and revivable. The old
+recursive-MLM implementation is recoverable from git but no longer appears as a viable current
+training family.
+
+**What changed:**
+- [parked] moved `training/train_mlm.py` to the accurately named
+  `parked/training/train_weighted_mlm.py`; corrected its repository import path and retained its
+  logging, data, W&B, and CLI behavior.
+- [preserved] kept `nn/concept_encoder_weighted.py`, weighted checkpoint routing, benchmark
+  choices, and 18 historical W&B runs intact.
+- [retired] removed the isolated recursive encoder/model/trainer/tests/launcher after confirming
+  there is no recursive W&B or experiment-ledger run; added a recovery tombstone pointing to git
+  history and `pre-consolidation-20260605`.
+- [preserved] made no code or protocol changes to masked diffusion or prefix diffusion.
+- [reconciled] current matrix, README, engineering plan, tests, rules, and skills while preserving
+  frozen results, run reports, dated diagnoses, archived plans, and historical changelog entries.
+- [verified] parked weighted-MLM CLI help, historical evaluation routing, and checkpoint round-trip
+  succeed; full suite: 319 passed, 9 skipped.
+
+---
+
 ## [2026-07-11] - Training refactor Stage 3 launcher roles
 
 **Why:** the generic multi-family launcher still carried the original Perceiver-denoising name,

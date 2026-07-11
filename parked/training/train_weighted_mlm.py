@@ -1,7 +1,15 @@
+"""Reproducibility-only trainer for the historical weighted-MLM baseline.
+
+New research uses ``training/train_concept_pretraining.py``. The weighted model
+remains in ``nn/`` because historical checkpoints still have evaluation support.
+"""
+
 import sys
 import os
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 
 import wandb
 from datetime import datetime

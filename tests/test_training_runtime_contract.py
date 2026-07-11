@@ -20,12 +20,13 @@ LEGACY_ENTRYPOINT = REPO_ROOT / "training" / "train_perceiver_denoise.py"
 CANONICAL_LAUNCHER = REPO_ROOT / "scripts" / "train_concept_pretraining_multigpu.sh"
 LEGACY_LAUNCHER = REPO_ROOT / "scripts" / "train_perceiver_denoise_multigpu.sh"
 E10_PIPELINE = REPO_ROOT / "scripts" / "launch_e10_pipeline.sh"
+WEIGHTED_MLM_TRAINER = REPO_ROOT / "parked" / "training" / "train_weighted_mlm.py"
+RECURSIVE_TOMBSTONE = REPO_ROOT / "parked" / "README.md"
 TRAINING_ENTRYPOINTS = [
     CANONICAL_ENTRYPOINT,
-    REPO_ROOT / "training" / "train_mlm.py",
+    WEIGHTED_MLM_TRAINER,
     REPO_ROOT / "parked" / "training" / "train_diffusion.py",
     REPO_ROOT / "parked" / "training" / "train_prefix_diffusion.py",
-    REPO_ROOT / "parked" / "training" / "train_recursive_mlm.py",
 ]
 
 
@@ -70,6 +71,32 @@ def test_e10_pipeline_delegates_to_protocol_wrapper_not_generic_runner():
     assert "exec bash scripts/launch_e10.sh" in pipeline
     assert "train_concept_pretraining_multigpu.sh" not in pipeline
     assert "train_perceiver_denoise_multigpu.sh" not in pipeline
+
+
+def test_retired_training_paths_keep_reproducibility_and_tombstone_contracts():
+    assert not (REPO_ROOT / "training" / "train_mlm.py").exists()
+    assert WEIGHTED_MLM_TRAINER.exists()
+    assert (REPO_ROOT / "nn" / "concept_encoder_weighted.py").exists()
+    assert not (
+        REPO_ROOT / "parked" / "training" / "train_recursive_mlm.py"
+    ).exists()
+    assert "Recursive MLM / TRM-style weight-tied encoder" in (
+        RECURSIVE_TOMBSTONE.read_text(encoding="utf-8")
+    )
+
+
+def test_parked_weighted_mlm_trainer_keeps_cli_for_reproducibility():
+    result = subprocess.run(
+        [sys.executable, str(WEIGHTED_MLM_TRAINER), "--help"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "--model_type" in result.stdout
+    assert "--mlm_probability" in result.stdout
+    assert "--concept_losses" in result.stdout
 
 
 def test_all_training_entrypoints_use_shared_logging_contract():

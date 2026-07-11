@@ -85,8 +85,10 @@ All run/eval entrypoints live under `scripts/`:
 | `scripts/sync_evaluation_reports.sh` | Pull eval reports to local (`SSH_HOST=odra` to target odra; `--upload`/`--two-way`/`--dry-run`). |
 | `scripts/clean_tee.py` | Tee filter the launchers pipe through → `SHELL_LOG` (strips progress spam). |
 
-Parked families (set-aside; revive, don't modify casually): `parked/scripts/train_recursive_mlm.sh`,
-`parked/scripts/train_diffusion_multigpu.sh`, `parked/scripts/train_prefix_diffusion_multigpu.sh`.
+Parked training paths (reproduce/revive, don't modify casually):
+`parked/training/train_weighted_mlm.py`, `parked/scripts/train_diffusion_multigpu.sh`,
+`parked/scripts/train_prefix_diffusion_multigpu.sh`. The old recursive-MLM fork was retired;
+recurrence experiments extend the maintained concept-pretraining foundation instead.
 
 Python entrypoints: `training/train_concept_pretraining.py` (main;
 `training/train_perceiver_denoise.py` is a temporary compatibility wrapper),

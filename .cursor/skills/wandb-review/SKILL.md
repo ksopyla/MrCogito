@@ -47,7 +47,8 @@ When grouping runs, prefer these dimensions:
 
 1. **Model family** — tag or config `model_type` / run-name prefix:
    `concept_ar`, `concept_ar_prefix`, `perceiver_denoise`, `weighted_mlm`,
-   `diffusion_mlm`, `prefix_diffusion`, `recursive_mlm`
+   `diffusion_mlm`, `prefix_diffusion`. `weighted_mlm` is historical; the retired
+   `recursive_mlm` fork has no recorded project run.
 2. **Architecture** — config keys: `hidden_size`, `num_hidden_layers`, `concept_num`,
    `token_embedding_dim`, `intermediate_size`
 3. **Objective** — config `objective_variant`, `objective_family`,
