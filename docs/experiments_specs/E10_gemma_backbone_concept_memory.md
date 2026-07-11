@@ -1,6 +1,6 @@
 # E10 — Pretrained-backbone concept memory (Gemma-3-1B graft: global→concept read + recurrent write)
 
-- **Status:** draft
+- **Status:** stage-0 passed (2026-07-09); awaiting training launch. Stage-0 gate G(pos≥1024) ≥ 0.05 nats cleared decisively at every measured length (2K **0.284** / 4K 0.314 / 8K 0.318 / 16K 0.365 nats; G(8K)/G(2K) = 1.12× gentle growth → no curriculum amendment, spec as-written is well-posed). See [run report](../2_Experiments_Registry/run_reports/e10_stage0_gap_curve_20260709.md).
 - **Serves:** the platform pivot decided 2026-07-08 — stop paying the from-scratch language-acquisition
   cost on every run; graft the concept machinery onto a **pretrained decoder** and make the C concepts a
   **running memory** (E09's write op) with **windowed generation** (E05's coherence window). This is the
@@ -121,6 +121,58 @@ data mix, budget, seed. Control arm differs ONLY in `CONCEPT_NUM=0`.
 - Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
 - Verdict: promising | mixed | regression | killed — <one line>
 
+## Follow-ups (indicative path, not a committed schedule)
+
+E10 is the **mechanism test** for fixed-memory block recurrence on a real LM. It trains at seq
+2048 and evaluates extrapolation at 8K (4×). The project's stated Vision
+(`docs/1_Strategy_and_Plans/vision_and_goals.md`) targets 1M-token context (C scaling to 8K–16K,
+128× compression); 10M is the hardware ceiling on 24 GB cards (needs 80 GB / ~30 GPUs per the
+F6 sequence-parallelism work, 2026-06-27). The gap between E10 and that Vision is large by design —
+E10 exists to falsify (or validate) the one architectural property the whole long-context bet
+depends on: **fixed-memory recurrence over unbounded input** (block size 512, write every block,
+positions reset per block ⇒ per-block compute and memory are constant in sequence length; the same
+architecture that trains at 2K can in principle run at 2K / 8K / 32K / 128K / 1M / 10M — the loop
+just iterates more times).
+
+The path from E10 to the 1M/10M Vision is staged. Each step is **conditional on E10's outcome** —
+this is an indicative plan, not a committed schedule.
+
+| Stage | Length | What it tests | Trigger condition |
+|---|---|---|---|
+| **E10** (this spec) | train 2K, eval 8K | does the recurrence work at all? does the concept arm beat the matched control? | Stage 0 GO (cleared 2026-07-09, G₂ₖ = 0.284); awaiting GPU |
+| **E10 extrapolation probe** (no retraining) | eval 16K, 32K, 64K on the trained checkpoint | how far does a 2K-trained recurrence actually extrapolate before the state collapses or saturates? | always — cheap, single-GPU, runs after E10 |
+| **C-scaling sweep** | train 2K with C ∈ {128, 256, 512, 1024}, eval 8K | is 128 enough at longer reach, or does the bottleneck need more slots? | E10 PRIMARY passes but extrapolation regresses → suspect information capacity |
+| **Length-curriculum arm** | train 2K-majority + 4K/8K tail (LongLoRA-style) | does training on longer docs extend the recurrence's reach? | E10 extrapolation criterion fails (concept state collapses past 8K) |
+| **Mechanism-variant A/B** | E11 (in-sequence mem-tokens) vs E12 (per-layer KV prefix) | is "global→concept" (Design C) the right read path, or is depth-starved? | E10 read gates g_ℓ stay near zero (Stage 0 of E10 flags this); E11/E12 specs already drafted |
+| **1M demonstration** | eval 1M on 3× 3090 (F6 sequence parallelism) | does the unrolled loop hold useful state over ~2K blocks? | the extrapolation probe above stays healthy to at least 64K |
+
+### What E10 deliberately does NOT prove about 1M/10M (recorded so we don't fool ourselves)
+
+1. **It tests 4× extrapolation (2K→8K), not 500× (2K→1M).** The recurrent-state collapse failure
+   mode (Infini-attention §D warning; the spec's RankMe kill-gate exists for this) could manifest
+   anywhere between 8K and 1M even if 8K is fine. The extrapolation probe is the cheap first read.
+2. **C is fixed at 128, the 2K-regime number from the Vision table.** Whether 128 slots suffice at
+   1M is the C-scaling sweep's question. The within-sample RankMe guard is the leading indicator:
+   if rank stays healthy as inference length grows, 128 may suffice; if it collapses past 32K, the
+   bottleneck needs more slots.
+3. **Linear ≠ free.** O(N·(K+C)) is linear in N, but at N=1M with K=512 that is ~2K blocks × a
+   per-block forward of a 1B model — hours per sequence on a 3090 even with the concept machinery.
+   The Vision's 1M claim is "tractable vs O(N²) full attention", not "fast".
+
+### Falsification branches (decide before spending the next budget tier)
+
+- **E10 PRIMARY fails** (concept arm ≈ control at positions ≥ 1024) → concepts carry nothing the
+  window doesn't on a pretrained backbone. The global→concept design is wrong; pivot to E11/E12
+  before any longer-context work.
+- **E10 PRIMARY passes but extrapolation collapses past 8K** → the recurrence works in-distribution
+  but doesn't generalize. Trigger the length-curriculum arm; if that also fails, the fixed-C
+  recurrence paradigm is in trouble and the Vision's "C scales with N" leg needs a mechanism for
+  *growing* C at inference (not just training a bigger fixed C).
+- **E10 read gates stay near zero** → the global-layer read path is depth-starved or mis-initialized.
+  Pivot to E12 (per-layer KV prefix) which injects at every layer, not just the 4 global ones.
+- **E10 passes cleanly on all five criteria** → proceed to the extrapolation probe, then C-scaling,
+  then the 1M demonstration, in that order.
+
 ## References
 - Design discussion (2026-07-07/08 chat): Design C chosen over A (in-sequence mem-tokens → E11) and
   B (per-layer KV prefix → E12).
@@ -129,3 +181,6 @@ data mix, budget, seed. Control arm differs ONLY in `CONCEPT_NUM=0`.
   collapse warning → zero-init gate + RankMe kill-gate).
 - LongLoRA (arXiv:2309.12307) — attention-pattern surgery + LoRA on a pretrained LM works.
 - Gemma 3 (google/gemma-3-1b-pt): 26L, H1152, SWA 512, 5:1 local:global — the ready-made socket.
+- Stage 0 results (2026-07-09): `docs/2_Experiments_Registry/run_reports/e10_stage0_gap_curve_20260709.md`
+  — G(pos≥1024) ≥ 0.05 gate cleared at every measured length (2K/4K/8K/16K); G(8K)/G(2K) = 1.12×
+  (gentle growth ⇒ no curriculum amendment, spec as-written is well-posed).

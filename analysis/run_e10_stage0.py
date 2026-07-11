@@ -36,7 +36,8 @@ from transformers import AutoTokenizer       # noqa: E402
 
 from nn.backbone_concept_lm import BackboneConceptConfig, BackboneConceptLM  # noqa: E402
 
-BUCKETS = [(0, 512), (512, 1024), (1024, 2048), (2048, 4096), (4096, 8192)]
+BUCKETS = [(0, 512), (512, 1024), (1024, 2048), (2048, 4096), (4096, 8192),
+           (8192, 16384), (16384, 32768)]
 
 
 def collect_docs(tokenizer, seq_len: int, num_docs: int, dataset: str, subset: str):
@@ -77,7 +78,7 @@ def bucket_means(pos_ce: torch.Tensor) -> dict:
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--backbone", default="google/gemma-3-1b-pt")
-    p.add_argument("--seq_lens", type=int, nargs="+", default=[2048, 8192])
+    p.add_argument("--seq_lens", type=int, nargs="+", default=[2048, 4096, 8192, 16384])
     p.add_argument("--num_docs", type=int, default=64)
     p.add_argument("--batch_size", type=int, default=2)
     p.add_argument("--dataset", default="HuggingFaceFW/fineweb-edu")
@@ -124,6 +125,60 @@ def main():
                   f"{win_b.get(k, float('nan')) - full_b[k]:7.4f}")
         verdict = "GO (>= 0.05)" if gap_beyond >= 0.05 else "NO-GO (< 0.05) — re-scope seq/eval"
         print(f"G (positions >= 1024) = {gap_beyond:.4f} nats → {verdict}")
+
+        # Checkpoint after each length so an OOM/crash at a longer seq still leaves
+        # the shorter-length results on disk.
+        if args.output:
+            with open(args.output, "w") as f:
+                json.dump(report, f, indent=2)
+
+    # Decision-tree summary: classify the G-vs-length curve and emit a recommendation.
+    # Logic mirrors the discussion in chat (2026-07-09): the spec's training seq should
+    # be the shortest length at which the concept mechanism could plausibly matter, and
+    # the eval horizon should be 2-4x that. A steep G growth past the training horizon
+    # argues for a length-curriculum amendment; a flat G everywhere means concepts have
+    # nothing to close and the hypothesis must be re-scoped before any GPU spend.
+    print("\n=== G curve (beyond-1024 gap vs length) ===")
+    curve = [(int(s), entry["G_beyond_1024"]) for s, entry in report["seq_lens"].items()]
+    for s, g in curve:
+        flag = "(above gate)" if g >= 0.05 else "(below gate)"
+        print(f"  seq {s:>5}: G = {g:.4f} nats  {flag}")
+    report["G_curve"] = [{"seq_len": s, "G_beyond_1024": g} for s, g in curve]
+
+    seqs_above = [s for s, g in curve if g >= 0.05]
+    recommendation = {}
+    if not seqs_above:
+        msg = ("G < 0.05 at every measured length. The windowed backbone doesn't hurt "
+               "Gemma even at the longest eval. Concepts have nothing to close; re-scope "
+               "the hypothesis (or push seq/eval longer) before any training spend.")
+        action = "REScope"
+        recommendation["shortest_viable_seq"] = None
+    else:
+        shortest_viable = min(seqs_above)
+        recommendation["shortest_viable_seq"] = shortest_viable
+        if shortest_viable <= 2048:
+            g_2k = next((g for s, g in curve if s == 2048), None)
+            g_8k = next((g for s, g in curve if s == 8192), None)
+            ratio_8k = (g_8k / g_2k) if (g_2k and g_2k > 0 and g_8k is not None) else None
+            recommendation["G_8K_over_G_2K"] = round(ratio_8k, 2) if ratio_8k else None
+            if ratio_8k is not None and ratio_8k >= 3.0:
+                msg = (f"G crosses 0.05 at seq {shortest_viable} but grows steeply "
+                       f"(G(8K)/G(2K) = {ratio_8k:.2f}x). Recommend a 2K-majority + "
+                       "4-8K-tail length curriculum (LongLoRA-style) so the recurrence "
+                       "learns to stay long. Eval horizon stays at 8K.")
+                action = "ADD_CURRICULUM"
+            else:
+                msg = ("G crosses 0.05 at seq 2048 and grows gently with length. Spec "
+                       "as-written (train 2K, eval 8K) is a clean extrapolation bet.")
+                action = "KEEP_SPEC"
+        else:
+            msg = (f"2K is too short (gate fails at 2048). Bump TRAINING seq to "
+                   f"{shortest_viable}; eval horizon should be 2-4x that.")
+            action = "BUMP_TRAIN_SEQ"
+    recommendation["action"] = action
+    recommendation["rationale"] = msg
+    report["recommendation"] = recommendation
+    print(f"\nVERDICT [{action}]: {msg}")
 
     if args.output:
         with open(args.output, "w") as f:
