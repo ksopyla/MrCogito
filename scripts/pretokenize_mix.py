@@ -447,6 +447,12 @@ def main():
     p.add_argument("--download_workers", type=int, default=8, help="Parallel shard downloads per source")
     p.add_argument("--jobs", type=int, default=1, help="Concurrent sources (1 = sequential, safer)")
     p.add_argument("--only", default=None, help="Comma-separated source names to process")
+    p.add_argument(
+        "--eval_sample_cap",
+        type=int,
+        default=None,
+        help="Override each selected source's deterministic eval-row cap.",
+    )
     p.add_argument("--objective", default="prefix_suffix", choices=["prefix_suffix", "reconstruction", "reconstruction+contrastive", "causal_lm"])
     args = p.parse_args()
 
@@ -491,6 +497,13 @@ def main():
     if args.only:
         wanted = set(s.strip() for s in args.only.split(","))
         sources = [s for s in sources if s.get("name") in wanted]
+    if args.eval_sample_cap is not None:
+        if args.eval_sample_cap <= 0:
+            raise ValueError("--eval_sample_cap must be positive.")
+        sources = [
+            {**source, "eval_sample_cap": args.eval_sample_cap}
+            for source in sources
+        ]
 
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     if tokenizer.pad_token_id is None:
