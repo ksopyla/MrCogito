@@ -199,6 +199,7 @@ def test_main_wires_cli_data_logs_wandb_trainer_and_final_save(
     assert trainer_kwargs["data_collator"] == "train-collator"
     assert trainer_kwargs["objective_variant"] == "prefix_suffix"
     assert trainer_kwargs["optimizer_choice"] == "muon"
+    assert trainer_kwargs["concept_memory_lr"] is None
     assert trainer_kwargs["muon_adamw_lr"] == pytest.approx(2e-4)
     assert trainer_kwargs["muon_momentum"] == pytest.approx(0.95)
     assert calls["train_resume"] == "/cache/checkpoint-10"
@@ -214,6 +215,7 @@ def test_main_wires_cli_data_logs_wandb_trainer_and_final_save(
     )
     assert init_kwargs["extra_config"]["target_tokens"] == 1_000_000
     assert init_kwargs["extra_config"]["estimated_optimizer_steps"] == 42
+    assert init_kwargs["extra_config"]["concept_memory_lr"] is None
 
     final_path = str(output_dir / "final")
     assert calls["model_save"] == final_path

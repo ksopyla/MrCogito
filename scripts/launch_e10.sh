@@ -41,6 +41,9 @@ export OBJECTIVE_VARIANT=causal_lm
 export CONCEPT_NUM="${CONCEPT_NUM:-128}"
 export CONCEPT_BLOCK=512                       # MUST equal the backbone's sliding window
 export CONCEPT_IO_MODE="${CONCEPT_IO_MODE:-global_kv}"
+export READ_CONCEPT_NORM="${READ_CONCEPT_NORM:-false}"
+export READ_GATE_INIT="${READ_GATE_INIT:-0.0}"
+export WRITE_GATE_INIT="${WRITE_GATE_INIT:-0.0}"
 export LORA_R="${LORA_R:-16}"
 export LORA_ALPHA="${LORA_ALPHA:-32}"
 export TOKENIZER_NAME=google/gemma-3-1b-pt
@@ -53,6 +56,7 @@ export MANIFEST="${MANIFEST:-${DATASETS_TOK_DIR}/${PRETOKENIZE_MIX}_gemma_manife
 
 # ---- Optimization (LoRA-typical; the backbone is frozen) ----
 export LEARNING_RATE="${LEARNING_RATE:-1e-4}"
+export CONCEPT_MEMORY_LR="${CONCEPT_MEMORY_LR:-}"
 export WARMUP_STEPS="${WARMUP_STEPS:-500}"
 export MAX_GRAD_NORM="${MAX_GRAD_NORM:-0.5}"
 export WEIGHT_DECAY="${WEIGHT_DECAY:-0.0}"
@@ -88,7 +92,8 @@ export NUM_EPOCHS="${NUM_EPOCHS:-0.1}"  # fallback only; overridden from exact m
 
 echo "=== E10 launch (backbone=${BACKBONE_MODEL}, C=${CONCEPT_NUM}, ${NUM_GPUS} GPUs, effective batch $((PER_DEVICE_BATCH_SIZE * NUM_GPUS * GRADIENT_ACCUMULATION_STEPS))) ==="
 echo "  arm=$([ "${CONCEPT_NUM}" = "0" ] && echo control || echo concept)  io=${CONCEPT_IO_MODE}  K=${CONCEPT_BLOCK}  lora_r=${LORA_R}"
-echo "  mix=${PRETOKENIZE_MIX} (Gemma tokenizer) seq=${MAX_SEQ_LENGTH}  LR=${LEARNING_RATE}  target_tokens=${TARGET_TOKENS}"
+echo "  read_norm=${READ_CONCEPT_NORM}  read_gate_init=${READ_GATE_INIT}  write_gate_init=${WRITE_GATE_INIT}"
+echo "  mix=${PRETOKENIZE_MIX} (Gemma tokenizer) seq=${MAX_SEQ_LENGTH}  LR=${LEARNING_RATE}  concept_LR=${CONCEPT_MEMORY_LR:-same}  target_tokens=${TARGET_TOKENS}"
 echo "  DATASETS_TOK_DIR=${DATASETS_TOK_DIR}"
 echo "  DATASETS_RAW_DIR=${DATASETS_RAW_DIR}"
 echo "  MANIFEST=${MANIFEST}"

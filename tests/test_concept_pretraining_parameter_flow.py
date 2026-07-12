@@ -88,8 +88,16 @@ def test_parser_maps_e10_profile_into_model_data_and_training_args(tmp_path):
                 "512",
                 "--concept_io_mode",
                 "global_kv",
+                "--read_concept_norm",
+                "true",
+                "--read_gate_init",
+                "0.01",
+                "--write_gate_init",
+                "0.01",
                 "--lora_r",
                 "16",
+                "--concept_memory_lr",
+                "3e-4",
                 "--pretokenized_manifest",
                 "/cache/hf_home/datasets_tok_gemma/e10_manifest.json",
                 "--max_eval_samples",
@@ -109,10 +117,14 @@ def test_parser_maps_e10_profile_into_model_data_and_training_args(tmp_path):
     assert model_args.concept_num == 0
     assert model_args.concept_block == 512
     assert model_args.concept_io_mode == "global_kv"
+    assert model_args.read_concept_norm is True
+    assert model_args.read_gate_init == pytest.approx(0.01)
+    assert model_args.write_gate_init == pytest.approx(0.01)
     assert model_args.lora_r == 16
     assert data_args.pretokenized_manifest.endswith("e10_manifest.json")
     assert data_args.max_eval_samples == 2048
     assert optim_args.optimizer == "adam"
+    assert optim_args.concept_memory_lr == pytest.approx(3e-4)
     assert training_args.gradient_checkpointing is True
 
 
@@ -327,6 +339,9 @@ def test_model_factory_routes_backbone_and_bf16(monkeypatch):
             decoder_type=DECODER_CAUSAL_AR,
             objective_variant=OBJECTIVE_CAUSAL_LM,
             backbone_model="google/gemma-3-1b-pt",
+            read_concept_norm=True,
+            read_gate_init=0.01,
+            write_gate_init=0.01,
         ),
         data_args=DataTrainingArguments(tokenizer_name="google/gemma-3-1b-pt"),
         training_args=SimpleNamespace(bf16=True),
@@ -337,6 +352,9 @@ def test_model_factory_routes_backbone_and_bf16(monkeypatch):
 
     assert isinstance(model, FakeBackboneModel)
     assert config.backbone_model == "google/gemma-3-1b-pt"
+    assert config.read_concept_norm is True
+    assert config.read_gate_init == pytest.approx(0.01)
+    assert config.write_gate_init == pytest.approx(0.01)
     assert captured["kwargs"]["dtype"].is_floating_point
     assert str(captured["kwargs"]["dtype"]) == "torch.bfloat16"
     assert model_type == "backbone_concept"

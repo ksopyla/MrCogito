@@ -6,6 +6,7 @@ All tests run on a tiny RANDOM Gemma3TextConfig (no hub access): 6 layers with t
 
 import pytest
 import torch
+import torch.nn as nn
 from transformers import GenerationConfig
 
 from data.data_collators import DataCollatorForCausalLM
@@ -40,9 +41,9 @@ def tiny_backbone_dict():
     )
 
 
-def make_model(concept_num=4, lora_r=2, seed=0):
+def make_model(concept_num=4, lora_r=2, seed=0, **config_overrides):
     torch.manual_seed(seed)
-    cfg = BackboneConceptConfig(
+    config_kwargs = dict(
         backbone_model="tiny-random-gemma3",
         backbone_config=tiny_backbone_dict(),
         concept_num=concept_num,
@@ -51,6 +52,8 @@ def make_model(concept_num=4, lora_r=2, seed=0):
         lora_r=lora_r,
         lora_dropout=0.0,
     )
+    config_kwargs.update(config_overrides)
+    cfg = BackboneConceptConfig(**config_kwargs)
     model = BackboneConceptLM(cfg)
     model.eval()
     return model
@@ -82,6 +85,59 @@ def test_global_layer_wrapped_and_control_not():
     assert all(t == "Gemma3DecoderLayer" for t in types[:5])
     control = make_model(concept_num=0)
     assert all(type(l).__name__ == "Gemma3DecoderLayer" for l in control.backbone.model.layers)
+
+
+def test_read_concept_norm_is_optional_and_normalizes_low_rms_state():
+    default = make_model(concept_num=4)
+    enabled = make_model(concept_num=4, read_concept_norm=True)
+    assert isinstance(default.backbone.model.layers[5].read_branch.concept_norm, nn.Identity)
+    assert isinstance(enabled.backbone.model.layers[5].read_branch.concept_norm, nn.RMSNorm)
+    assert not any("read_branch.concept_norm.weight" in key for key in default.state_dict())
+    assert any("read_branch.concept_norm.weight" in key for key in enabled.state_dict())
+
+    z = torch.randn(2, 4, H) * 0.03
+    normalized = enabled.backbone.model.layers[5].read_branch.concept_norm(z)
+    assert normalized.square().mean().sqrt().item() == pytest.approx(1.0, abs=2e-3)
+
+
+def test_read_concept_norm_forward_and_roundtrip(tmp_path):
+    model = make_model(concept_num=4, read_concept_norm=True)
+    input_ids, attention_mask, labels = make_batch(B=2, S=24)
+    assert torch.isfinite(model(input_ids, attention_mask, labels=labels).loss)
+    model.save_pretrained(tmp_path / "norm_ckpt")
+    reloaded = BackboneConceptLM.from_pretrained(tmp_path / "norm_ckpt")
+    assert isinstance(reloaded.backbone.model.layers[5].read_branch.concept_norm, nn.RMSNorm)
+    assert torch.equal(
+        model.backbone.model.layers[5].read_branch.concept_norm.weight,
+        reloaded.backbone.model.layers[5].read_branch.concept_norm.weight,
+    )
+
+
+def test_nonzero_gate_init_opens_full_memory_gradient_path():
+    model = make_model(
+        concept_num=4,
+        read_concept_norm=True,
+        read_gate_init=0.01,
+        write_gate_init=0.01,
+    )
+    model.train()
+    layer = model.backbone.model.layers[5]
+    assert layer.gate.item() == pytest.approx(0.01)
+    assert model.write_head.alpha.item() == pytest.approx(0.01)
+    input_ids, attention_mask, labels = make_batch(B=2, S=24)
+    model(input_ids, attention_mask, labels=labels).loss.backward()
+
+    assert layer.read_branch.concept_norm.weight.grad is not None
+    assert layer.read_branch.concept_norm.weight.grad.abs().sum() > 0
+    assert model.concept_init.grad is not None and model.concept_init.grad.abs().sum() > 0
+    bixt_grads = [p.grad for p in model.write_head.bixt.parameters() if p.grad is not None]
+    assert bixt_grads and any(grad.abs().sum() > 0 for grad in bixt_grads)
+    lora_b_grads = [
+        parameter.grad
+        for name, parameter in model.named_parameters()
+        if "lora_B" in name and parameter.grad is not None
+    ]
+    assert lora_b_grads and any(grad.abs().sum() > 0 for grad in lora_b_grads)
 
 
 def test_zero_init_equivalence_blockloop_vs_single_windowed_first_two_blocks():

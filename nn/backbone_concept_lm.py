@@ -61,6 +61,7 @@ class BackboneConceptConfig(PretrainedConfig):
         concept_block: int = 512,
         concept_io_mode: str = "global_kv",   # E11: "mem_tokens" · E12: "kv_prefix"
         write_num_heads: int = 4,
+        read_concept_norm: bool = False,
         read_gate_init: float = 0.0,
         write_gate_init: float = 0.0,
         lora_r: int = 16,
@@ -78,6 +79,7 @@ class BackboneConceptConfig(PretrainedConfig):
         self.concept_block = concept_block
         self.concept_io_mode = concept_io_mode
         self.write_num_heads = write_num_heads
+        self.read_concept_norm = read_concept_norm
         self.read_gate_init = read_gate_init
         self.write_gate_init = write_gate_init
         self.lora_r = lora_r
@@ -124,13 +126,28 @@ class ConceptReadBranch(nn.Module):
     q/k/v/o projections (LoRA-adapted automatically). No RoPE on either side — the concept
     memory is a position-free set, so the read is length-extrapolation-safe by construction."""
 
+    def __init__(
+        self,
+        hidden_size: int,
+        *,
+        normalize_concepts: bool = False,
+        rms_norm_eps: Optional[float] = None,
+    ):
+        super().__init__()
+        self.concept_norm = (
+            nn.RMSNorm(hidden_size, eps=rms_norm_eps)
+            if normalize_concepts
+            else nn.Identity()
+        )
+
     def forward(self, x_normed: torch.Tensor, z: torch.Tensor, attn: nn.Module) -> torch.Tensor:
         B, Q, _ = x_normed.shape
         C = z.shape[1]
         hd = attn.head_dim
+        z_read = self.concept_norm(z).to(x_normed.dtype)
         q = attn.q_proj(x_normed).view(B, Q, -1, hd).transpose(1, 2)   # [B, nH, Q, hd]
-        k = attn.k_proj(z).view(B, C, -1, hd).transpose(1, 2)          # [B, nKV, C, hd]
-        v = attn.v_proj(z).view(B, C, -1, hd).transpose(1, 2)
+        k = attn.k_proj(z_read).view(B, C, -1, hd).transpose(1, 2)     # [B, nKV, C, hd]
+        v = attn.v_proj(z_read).view(B, C, -1, hd).transpose(1, 2)
         q = attn.q_norm(q)
         k = attn.k_norm(k)
         if attn.num_key_value_groups > 1:
@@ -146,12 +163,28 @@ class GlobalLayerWithConceptRead(nn.Module):
     then adds a tanh-gated (zero-init) concept read. The concept state arrives through a
     shared mutable holder set by `BackboneConceptLM` before each block forward."""
 
-    def __init__(self, layer: nn.Module, state_holder: dict, gate_init: float):
+    def __init__(
+        self,
+        layer: nn.Module,
+        state_holder: dict,
+        gate_init: float,
+        *,
+        hidden_size: int,
+        normalize_concepts: bool = False,
+        rms_norm_eps: Optional[float] = None,
+    ):
         super().__init__()
         self.layer = layer
         self.attention_type = layer.attention_type   # read by Gemma3TextModel.forward's mask routing
         self._state = state_holder                    # plain dict, not a submodule
-        self.read_branch = ConceptReadBranch()
+        self.read_branch = ConceptReadBranch(
+            hidden_size,
+            normalize_concepts=normalize_concepts,
+            rms_norm_eps=rms_norm_eps,
+        )
+        if normalize_concepts:
+            reference = layer.input_layernorm.weight
+            self.read_branch.concept_norm.to(device=reference.device, dtype=reference.dtype)
         self.gate = nn.Parameter(torch.tensor(float(gate_init)))
 
     def forward(self, hidden_states, *args, **kwargs):
@@ -260,7 +293,12 @@ class BackboneConceptLM(PreTrainedModel):
             for i, layer in enumerate(layers):
                 if layer.attention_type == "full_attention":
                     layers[i] = GlobalLayerWithConceptRead(
-                        layer, self._concept_state, config.read_gate_init
+                        layer,
+                        self._concept_state,
+                        config.read_gate_init,
+                        hidden_size=self.hidden_size,
+                        normalize_concepts=config.read_concept_norm,
+                        rms_norm_eps=getattr(bb_cfg, "rms_norm_eps", None),
                     )
                     n_wrapped += 1
             if n_wrapped == 0:

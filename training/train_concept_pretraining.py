@@ -100,6 +100,13 @@ def main():
         model_args,
         loss_args,
     )
+    if optim_args.concept_memory_lr is not None:
+        if optim_args.concept_memory_lr <= 0:
+            raise ValueError("concept_memory_lr must be a positive float when set.")
+        if not is_backbone:
+            raise ValueError("concept_memory_lr requires --backbone_model.")
+        if optim_args.optimizer != "adam":
+            raise ValueError("concept_memory_lr is only supported with --optimizer adam.")
 
     set_seed(training_args.seed)
     log_system_info()
@@ -265,6 +272,7 @@ def main():
         "Dataset mix (registry)": data_args.dataset_mix,
         "Dataset mix recipe": data_args.dataset_mix_recipe,
         "Optimizer": optim_args.optimizer,
+        "Concept memory LR": optim_args.concept_memory_lr,
     }
     if model_args.objective_variant == OBJECTIVE_RECONSTRUCTION_CONTRASTIVE:
         training_extra_fields["Contrastive weight"] = model_args.contrastive_weight
@@ -321,6 +329,7 @@ def main():
                 else None
             ),
             "optimizer": optim_args.optimizer,
+            "concept_memory_lr": optim_args.concept_memory_lr,
             "muon_adamw_lr": optim_args.muon_adamw_lr,
             "muon_momentum": optim_args.muon_momentum,
             **(
@@ -328,6 +337,9 @@ def main():
                     "backbone_model": model_args.backbone_model,
                     "concept_block": model_args.concept_block,
                     "concept_io_mode": model_args.concept_io_mode,
+                    "read_concept_norm": model_args.read_concept_norm,
+                    "read_gate_init": model_args.read_gate_init,
+                    "write_gate_init": model_args.write_gate_init,
                     "lora_r": model_args.lora_r,
                     "lora_alpha": model_args.lora_alpha,
                     "lora_dropout": model_args.lora_dropout,
@@ -383,6 +395,7 @@ def main():
         anchor_standardize=model_args.anchor_standardize,
         anchor_model_name=model_args.anchor_model_name,
         optimizer_choice=optim_args.optimizer,
+        concept_memory_lr=optim_args.concept_memory_lr,
         muon_adamw_lr=optim_args.muon_adamw_lr,
         muon_momentum=optim_args.muon_momentum,
     )

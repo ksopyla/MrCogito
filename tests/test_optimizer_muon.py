@@ -2,8 +2,10 @@
 the default (`--optimizer adam`) path is byte-unchanged. CPU-only; no dataloader needed
 (create_optimizer only touches self.model + self.args)."""
 import torch
+import pytest
 from transformers import TrainingArguments
 
+from nn.backbone_concept_lm import BackboneConceptConfig, BackboneConceptLM
 from nn.concept_encoder_perceiver import ConceptEncoderForConditionalLM
 from nn.muon import Muon
 from training.train_concept_pretraining import (
@@ -70,6 +72,61 @@ def _trainer(tmp_path, optimizer_choice):
     )
 
 
+def _tiny_backbone():
+    config = BackboneConceptConfig(
+        backbone_model="tiny-random-gemma3",
+        backbone_config={
+            "vocab_size": 128,
+            "hidden_size": 64,
+            "intermediate_size": 128,
+            "num_hidden_layers": 6,
+            "num_attention_heads": 2,
+            "num_key_value_heads": 1,
+            "head_dim": 32,
+            "query_pre_attn_scalar": 32,
+            "sliding_window": 8,
+            "max_position_embeddings": 64,
+            "rope_theta": 1_000_000.0,
+            "rope_local_base_freq": 10_000.0,
+            "pad_token_id": 0,
+            "bos_token_id": 2,
+            "eos_token_id": 1,
+            "attention_dropout": 0.0,
+        },
+        concept_num=4,
+        concept_block=8,
+        write_num_heads=2,
+        read_concept_norm=True,
+        read_gate_init=0.01,
+        write_gate_init=0.01,
+        lora_r=2,
+        lora_dropout=0.0,
+    )
+    return BackboneConceptLM(config)
+
+
+def _backbone_trainer(tmp_path, *, optimizer_choice="adam", concept_memory_lr=3e-4):
+    args = TrainingArguments(
+        output_dir=str(tmp_path),
+        optim="adamw_torch",
+        learning_rate=1e-4,
+        weight_decay=0.1,
+        per_device_train_batch_size=1,
+        report_to="none",
+        disable_tqdm=True,
+        use_cpu=True,
+    )
+    return PerceiverDenoiseTrainer(
+        model=_tiny_backbone(),
+        args=args,
+        objective_variant="causal_lm",
+        contrastive_weight=0.3,
+        contrastive_temperature=0.05,
+        optimizer_choice=optimizer_choice,
+        concept_memory_lr=concept_memory_lr,
+    )
+
+
 def test_muon_routes_through_trainer(tmp_path):
     trainer = _trainer(tmp_path, optimizer_choice="muon")
     trainer.create_optimizer()
@@ -92,3 +149,53 @@ def test_muon_step_runs(tmp_path):
     p.grad = torch.ones_like(p)
     trainer.optimizer.step()  # must not raise
     assert torch.isfinite(p).all()
+
+
+def test_backbone_differential_adamw_partitions_every_trainable_once(tmp_path):
+    trainer = _backbone_trainer(tmp_path)
+    optimizer = trainer.create_optimizer()
+    assert isinstance(optimizer, torch.optim.AdamW)
+
+    grouped_ids = [
+        id(parameter)
+        for group in optimizer.param_groups
+        for parameter in group["params"]
+    ]
+    trainable_ids = [
+        id(parameter)
+        for parameter in trainer.model.parameters()
+        if parameter.requires_grad
+    ]
+    assert len(grouped_ids) == len(set(grouped_ids))
+    assert set(grouped_ids) == set(trainable_ids)
+
+    groups = {group["group_name"]: group for group in optimizer.param_groups}
+    assert {name.removesuffix("_no_decay").removesuffix("_decay") for name in groups} == {
+        "lora",
+        "concept_memory",
+    }
+    assert all(
+        group["lr"] == pytest.approx(3e-4)
+        for name, group in groups.items()
+        if name.startswith("concept_memory")
+    )
+    assert all(
+        group["lr"] == pytest.approx(1e-4)
+        for name, group in groups.items()
+        if name.startswith("lora")
+    )
+    assert any(group["weight_decay"] == pytest.approx(0.0) for group in groups.values())
+    assert any(group["weight_decay"] == pytest.approx(0.1) for group in groups.values())
+
+
+def test_differential_adamw_fails_on_unknown_trainable_parameter(tmp_path):
+    trainer = _backbone_trainer(tmp_path)
+    trainer.model.unclassified_trainable = torch.nn.Parameter(torch.ones(1))
+    with pytest.raises(ValueError, match="unclassified trainable"):
+        trainer.create_optimizer()
+
+
+def test_differential_concept_lr_rejects_muon(tmp_path):
+    trainer = _backbone_trainer(tmp_path, optimizer_choice="muon")
+    with pytest.raises(ValueError, match="only supported with optimizer='adam'"):
+        trainer.create_optimizer()

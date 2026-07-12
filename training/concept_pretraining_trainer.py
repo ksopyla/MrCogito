@@ -34,6 +34,7 @@ class PerceiverDenoiseTrainer(Trainer):
         anchor_standardize: bool = True,
         anchor_model_name: Optional[str] = None,
         optimizer_choice: str = "adam",
+        concept_memory_lr: Optional[float] = None,
         muon_adamw_lr: float = 2e-3,
         muon_momentum: float = 0.95,
         **kwargs,
@@ -46,6 +47,7 @@ class PerceiverDenoiseTrainer(Trainer):
         self.concept_ablation_batches = concept_ablation_batches
         self.eval_data_collator = eval_data_collator
         self.optimizer_choice = optimizer_choice
+        self.concept_memory_lr = concept_memory_lr
         self.muon_adamw_lr = muon_adamw_lr
         self.muon_momentum = muon_momentum
         self.anchor_loss = anchor_loss
@@ -64,6 +66,11 @@ class PerceiverDenoiseTrainer(Trainer):
     def create_optimizer(self):
         """Build the configured Adam or Muon optimizer."""
         if self.optimizer_choice == "muon":
+            if self.concept_memory_lr is not None:
+                raise ValueError(
+                    "concept_memory_lr is only supported with optimizer='adam'; "
+                    "Muon routes parameters by tensor shape rather than E10 parameter role."
+                )
             from nn.muon import Muon
 
             self.optimizer = Muon(
@@ -74,7 +81,92 @@ class PerceiverDenoiseTrainer(Trainer):
                 weight_decay=self.args.weight_decay,
             )
             return self.optimizer
+        if self.concept_memory_lr is not None:
+            return self._create_backbone_differential_adamw()
         return super().create_optimizer()
+
+    @staticmethod
+    def _backbone_parameter_role(name: str) -> str:
+        """Classify E10 trainables for differential AdamW; fail closed on future drift."""
+        if name.startswith("module."):
+            name = name[len("module.") :]
+        if "lora_A" in name or "lora_B" in name:
+            return "lora"
+        if (
+            name == "concept_init"
+            or name.startswith("write_head.")
+            or name.endswith(".gate")
+            or ".read_branch.concept_norm." in name
+        ):
+            return "concept_memory"
+        return "unknown"
+
+    def _create_backbone_differential_adamw(self):
+        if self.concept_memory_lr is None or self.concept_memory_lr <= 0:
+            raise ValueError("concept_memory_lr must be a positive float when set.")
+        family = getattr(self.model.config, "checkpoint_family", None)
+        if family != "backbone_concept":
+            raise ValueError(
+                "concept_memory_lr requires the backbone_concept family; "
+                f"got checkpoint_family={family!r}."
+            )
+
+        decay_names = set(self.get_decay_parameter_names(self.model))
+        buckets = {
+            ("lora", True): [],
+            ("lora", False): [],
+            ("concept_memory", True): [],
+            ("concept_memory", False): [],
+        }
+        unknown = []
+        for name, parameter in self.model.named_parameters():
+            if not parameter.requires_grad:
+                continue
+            role = self._backbone_parameter_role(name)
+            if role == "unknown":
+                unknown.append(name)
+                continue
+            # Preserve the usual no-decay treatment for gains, biases, and scalar gates.
+            use_decay = name in decay_names and parameter.ndim >= 2
+            buckets[(role, use_decay)].append(parameter)
+        if unknown:
+            preview = ", ".join(unknown[:8])
+            raise ValueError(
+                "Differential AdamW found unclassified trainable backbone parameters: "
+                f"{preview}"
+            )
+
+        grouped_parameters = []
+        for (role, use_decay), parameters in buckets.items():
+            if not parameters:
+                continue
+            grouped_parameters.append(
+                {
+                    "params": parameters,
+                    "lr": (
+                        self.concept_memory_lr
+                        if role == "concept_memory"
+                        else self.args.learning_rate
+                    ),
+                    "weight_decay": self.args.weight_decay if use_decay else 0.0,
+                    "group_name": f"{role}_{'decay' if use_decay else 'no_decay'}",
+                }
+            )
+
+        optimizer_cls, optimizer_kwargs = self.get_optimizer_cls_and_kwargs(
+            self.args, self.model
+        )
+        self.optimizer = optimizer_cls(grouped_parameters, **optimizer_kwargs)
+        logger.info(
+            "Differential AdamW: LoRA LR=%g, concept-memory LR=%g, groups=%s",
+            self.args.learning_rate,
+            self.concept_memory_lr,
+            [
+                (group["group_name"], len(group["params"]), group["weight_decay"])
+                for group in grouped_parameters
+            ],
+        )
+        return self.optimizer
 
     def _anchor_mse(
         self,

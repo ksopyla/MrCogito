@@ -1,7 +1,9 @@
 # E10 — Implementation Plan (Gemma-3-1B backbone concept memory, Design C)
 
 - **Spec:** [E10_gemma_backbone_concept_memory.md](E10_gemma_backbone_concept_memory.md) ·
-  **Status:** implemented; readiness-audited 2026-07-11; awaiting Odra calibration/launch
+  **Status:** implemented; 100M concept-arm pilot completed 2026-07-11 with a negative
+  recurrence signal; matched control pending
+- **Pilot result:** [E10 100M concept-arm run report](../2_Experiments_Registry/run_reports/e10_100m_concept_pilot_20260711.md)
 - **Authored by:** `implementation-plan` · for → `research-implement`
 
 > The HOW for the spec's platform change: frozen `google/gemma-3-1b-pt` + LoRA, global layers

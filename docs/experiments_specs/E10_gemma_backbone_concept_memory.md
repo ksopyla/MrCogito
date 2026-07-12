@@ -1,6 +1,6 @@
 # E10 — Pretrained-backbone concept memory (Gemma-3-1B graft: global→concept read + recurrent write)
 
-- **Status:** stage-0 passed (2026-07-09); awaiting training launch. Stage-0 gate G(pos≥1024) ≥ 0.05 nats cleared decisively at every measured length (2K **0.284** / 4K 0.314 / 8K 0.318 / 16K 0.365 nats; G(8K)/G(2K) = 1.12× gentle growth → no curriculum amendment, spec as-written is well-posed). See [run report](../2_Experiments_Registry/run_reports/e10_stage0_gap_curve_20260709.md).
+- **Status:** **in progress — 100M concept-arm pilot completed 2026-07-11 with a negative recurrence signal; matched control pending.** The pilot was stable and non-collapsed, but all beyond-local recurrent-state ablations remained <0.001 nats. Do not extend the concept arm to 2B before the matched 100M control and paired comparison. Stage-0 gate G(pos≥1024) ≥ 0.05 nats cleared at every measured length (2K **0.284** / 4K 0.314 / 8K 0.318 / 16K 0.365 nats; see the protocol caveat in the linked [run report](../2_Experiments_Registry/run_reports/e10_stage0_gap_curve_20260709.md)).
 - **Serves:** the platform pivot decided 2026-07-08 — stop paying the from-scratch language-acquisition
   cost on every run; graft the concept machinery onto a **pretrained decoder** and make the C concepts a
   **running memory** (E09's write op) with **windowed generation** (E05's coherence window). This is the
@@ -137,11 +137,10 @@ data mix, budget, seed. Control arm differs ONLY in `CONCEPT_NUM=0`.
   (pretrained-backbone constraint), so CE numbers are **not** comparable with E01–E09.
 
 ## Result
-<Filled in AFTER, by experiment-track. Link out; do not paste full results here.>
-- Run id: `<run_id>`
-- WandB: <link>
-- Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
-- Verdict: promising | mixed | regression | killed — <one line>
+- Run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260711_152847` (100M concept-arm pilot)
+- WandB: [training run](https://wandb.ai/ksopyla/MrCogito/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260711_152847)
+- Run report: [e10_100m_concept_pilot_20260711.md](../2_Experiments_Registry/run_reports/e10_100m_concept_pilot_20260711.md)
+- Verdict: **inconclusive / negative pilot signal** — stable, non-collapsed concepts (RankMe 77.1; centered 123.1), but no measurable recurrent-memory utility; the matched control is required for the PRIMARY verdict.
 
 ## Follow-ups (indicative path, not a committed schedule)
 
@@ -161,7 +160,7 @@ this is an indicative plan, not a committed schedule.
 
 | Stage | Length | What it tests | Trigger condition |
 |---|---|---|---|
-| **E10** (this spec) | train 2K, eval 8K | does the recurrence work at all? does the concept arm beat the matched control? | Stage 0 GO (cleared 2026-07-09, G₂ₖ = 0.284); awaiting GPU |
+| **E10** (this spec) | train 2K, eval 8K | does the recurrence work at all? does the concept arm beat the matched control? | 100M concept pilot complete: recurrence null; matched control pending |
 | **E10 extrapolation probe** (no retraining) | eval 16K, 32K, 64K on the trained checkpoint | how far does a 2K-trained recurrence actually extrapolate before the state collapses or saturates? | always — cheap, single-GPU, runs after E10 |
 | **C-scaling sweep** | train 2K with C ∈ {128, 256, 512, 1024}, eval 8K | is 128 enough at longer reach, or does the bottleneck need more slots? | E10 PRIMARY passes but extrapolation regresses → suspect information capacity |
 | **Length-curriculum arm** | train 2K-majority + 4K/8K tail (LongLoRA-style) | does training on longer docs extend the recurrence's reach? | E10 extrapolation criterion fails (concept state collapses past 8K) |

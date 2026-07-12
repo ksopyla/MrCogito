@@ -102,11 +102,15 @@ MAX_GRAD_NORM="${MAX_GRAD_NORM:-1.0}"
 # below stays adamw_torch_fused in both cases (a valid enum value HF coerces --optim to); our
 # --optimizer flag is the real selector (see PerceiverDenoiseTrainer.create_optimizer).
 OPTIMIZER="${OPTIMIZER:-adam}"
+CONCEPT_MEMORY_LR="${CONCEPT_MEMORY_LR:-}"
 # E10 — pretrained-backbone concept memory. Empty BACKBONE_MODEL keeps every existing
 # family byte-identical; setting it selects BackboneConceptLM (objective causal_lm).
 BACKBONE_MODEL="${BACKBONE_MODEL:-}"
 CONCEPT_BLOCK="${CONCEPT_BLOCK:-512}"
 CONCEPT_IO_MODE="${CONCEPT_IO_MODE:-global_kv}"
+READ_CONCEPT_NORM="${READ_CONCEPT_NORM:-false}"
+READ_GATE_INIT="${READ_GATE_INIT:-0.0}"
+WRITE_GATE_INIT="${WRITE_GATE_INIT:-0.0}"
 LORA_R="${LORA_R:-16}"
 LORA_ALPHA="${LORA_ALPHA:-32}"
 LORA_DROPOUT="${LORA_DROPOUT:-0.05}"
@@ -268,11 +272,17 @@ if [ -n "$BACKBONE_MODEL" ]; then
         --backbone_model "$BACKBONE_MODEL"
         --concept_block "$CONCEPT_BLOCK"
         --concept_io_mode "$CONCEPT_IO_MODE"
+        --read_concept_norm "$READ_CONCEPT_NORM"
+        --read_gate_init "$READ_GATE_INIT"
+        --write_gate_init "$WRITE_GATE_INIT"
         --lora_r "$LORA_R"
         --lora_alpha "$LORA_ALPHA"
         --lora_dropout "$LORA_DROPOUT"
         --lora_targets "$LORA_TARGETS"
     )
+    if [ -n "$CONCEPT_MEMORY_LR" ]; then
+        BACKBONE_ARGS+=(--concept_memory_lr "$CONCEPT_MEMORY_LR")
+    fi
 fi
 
 # Optimizer selection (--optimizer is our flag; HF --optim stays adamw_torch_fused for both arms).

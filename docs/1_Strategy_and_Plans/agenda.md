@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-07-09 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [../experiments/](../experiments/).
+**Updated:** 2026-07-12 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [../experiments/](../experiments/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -17,7 +17,7 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **Platform pivot (2026-07-08) — E10: pretrained-backbone concept memory. E10 IS THE NEXT RUN.**
+- **Platform pivot (2026-07-08) — E10: pretrained-backbone concept memory. 100M CONCEPT PILOT COMPLETE; MATCHED CONTROL PENDING.**
   Decision: stop paying the from-scratch language-acquisition cost per run (the E05 lesson: stable
   optimization + used-but-semantically-empty concepts at <200M scale); graft the concept machinery
   onto frozen **`google/gemma-3-1b-pt`** + LoRA. Design C ("global→concept"): Gemma's 4 global
@@ -34,9 +34,23 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   vocabulary bounds are now implemented (Odra calibration remains batch 8 × accum 3, 19.97 GiB).
   **Stage 0 provisional gate PASSED 2026-07-09**, but its source was mislabeled held-out: the
   streaming FineWeb sample overlapped the training source namespace. Its G values (0.284 at 2K;
-  0.318 at 8K) are provisional only and must be superseded by the frozen train-disjoint paired
-  8K manifest rerun before launch. See
+  0.318 at 8K) remain provisional in the registry and must be superseded by the frozen
+  train-disjoint paired 8K result before calculating the final recovery fraction. See
   [report](../2_Experiments_Registry/run_reports/e10_stage0_gap_curve_20260709.md).
+  **First training result (2026-07-11):** the bounded 100M-token concept arm completed stably
+  (1,449 steps, 18.77 GPU-h, eval CE 1.845→1.815). Concept-set geometry stayed non-collapsed
+  (final within-sample RankMe 77.1, centered 123.1), but the recurrent mechanism was null:
+  Δshuffle/static/zero/one-block at positions ≥1024 all stayed below 0.001 nats despite gates
+  opening to ~0.07. Do not extend this arm to 2B. The PRIMARY concept-vs-control result remains
+  unresolved until a matched 100M `CONCEPT_NUM=0` arm is available; recurrence attribution is
+  already unmet. See [pilot report](../2_Experiments_Registry/run_reports/e10_100m_concept_pilot_20260711.md).
+  **Approved recovery sequence (2026-07-12; one 50M Odra run at a time):**
+  [E10b](../experiments_specs/E10b_normalized_concept_read.md) normalizes concept values before
+  read K/V; [E10c](../experiments_specs/E10c_nonzero_memory_gates.md) then changes only the serial
+  read/write gate-init policy from 0 to 0.01; [E10d](../experiments_specs/E10d_differential_concept_lr.md)
+  then changes only the concept-memory AdamW LR from 1e-4 to 3e-4. All retain seq 2K, the current
+  Gemma manifest, plain CE, LoRA LR 1e-4, AdamW, and fresh initialization. Reflect after all three
+  before changing length, data, objective, or optimizer family.
   Arms: concept (default) vs `CONCEPT_NUM=0` control, token-matched. Design variants queued as
   design-only specs: [E11](../experiments_specs/E11_memtoken_concept_memory.md) (in-sequence
   mem-tokens, backbone-agnostic) and [E12](../experiments_specs/E12_perlayer_kv_prefix_concepts.md)
@@ -151,6 +165,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
    later (optimizer Muon/Lion, longer context, `C`-vs-`N` scaling, encoder-side RoPE).
 
 ## What we've explored so far (evidence, not verdicts)
+- **E10 100M concept-arm pilot (Gemma-3-1B, Odra, 2026-07-11):** stable and non-collapsed
+  (RankMe 77.1; centered 123.1), but every beyond-local recurrent-state ablation was <0.001 nats;
+  the matched control is still required before judging the primary recovery criterion. See
+  [run report](../2_Experiments_Registry/run_reports/e10_100m_concept_pilot_20260711.md).
 - **Reference baseline:** `perceiver_mlm_H512L6C128_20260208_211633` — just a comparison anchor (MRPC 82.7 / STS-B 0.650 via ViaDecoder; concept effective rank ~5/128). Not a target, not "good."
 - **MLM + concept losses** (combined / kendall_gal / fixed): pushing concept diversity tended to cost downstream semantics — a tension worth remembering.
 - **Diffusion (self-reconstruction, ELBO, VICReg) and prefix diffusion:** explored on MiniPile / WikiText-103; concept effective rank stayed low so far. Code in `parked/`. **2026-06-13 lit scan (CALM/ELF/Cosmos/LDLM/Nemotron):** our 5 failures match a *known* failure mode — an **unvalidated bottleneck + decoder bypass**, not just bugs. Reviving needs a materially-new ingredient (frozen-encoder MSE anchor + concept-dropout/CFG, ideally warm-start), not a re-run. For "do concepts carry semantics?", **AR + ΔCE is the cleaner probe** than diffusion.

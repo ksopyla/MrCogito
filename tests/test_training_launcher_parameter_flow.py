@@ -240,5 +240,38 @@ def test_e10_protocol_wrapper_pins_backbone_and_delegates(tmp_path):
     assert _value_after(args, "--concept_num") == "128"
     assert _value_after(args, "--concept_block") == "512"
     assert _value_after(args, "--concept_io_mode") == "global_kv"
+    assert _value_after(args, "--read_concept_norm") == "false"
+    assert _value_after(args, "--read_gate_init") == "0.0"
+    assert _value_after(args, "--write_gate_init") == "0.0"
+    assert "--concept_memory_lr" not in args
     assert _value_after(args, "--tokenizer_name") == "google/gemma-3-1b-pt"
     assert _value_after(args, "--pretokenized_manifest") == str(manifest)
+
+
+def test_e10_protocol_wrapper_forwards_recovery_sequence_overrides(tmp_path):
+    data_root = tmp_path / "e10_recovery_data"
+    data_root.mkdir()
+    manifest = data_root / "e10_manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    result, args, _ = _run_launcher(
+        tmp_path,
+        {
+            "DATASETS_TOK_DIR": str(data_root),
+            "DATASETS_RAW_DIR": str(tmp_path / "raw"),
+            "RAW_ARCHIVE_DIR": str(tmp_path / "raw"),
+            "SKIP_PRETOKENIZE": "1",
+            "MANIFEST": str(manifest),
+            "TARGET_TOKENS": "",
+            "READ_CONCEPT_NORM": "true",
+            "READ_GATE_INIT": "0.01",
+            "WRITE_GATE_INIT": "0.01",
+            "CONCEPT_MEMORY_LR": "3e-4",
+        },
+        launcher=E10_LAUNCHER,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert _value_after(args, "--read_concept_norm") == "true"
+    assert _value_after(args, "--read_gate_init") == "0.01"
+    assert _value_after(args, "--write_gate_init") == "0.01"
+    assert _value_after(args, "--concept_memory_lr") == "3e-4"

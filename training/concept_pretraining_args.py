@@ -169,6 +169,21 @@ class ModelArguments:
             "'mem_tokens' (E11) / 'kv_prefix' (E12) are follow-up specs."
         },
     )
+    read_concept_norm: bool = field(
+        default=False,
+        metadata={
+            "help": "E10b: RMS-normalize recurrent concepts before the global-layer "
+            "concept-read K/V projections."
+        },
+    )
+    read_gate_init: float = field(
+        default=0.0,
+        metadata={"help": "E10c: raw tanh-gate initialization for every concept read."},
+    )
+    write_gate_init: float = field(
+        default=0.0,
+        metadata={"help": "E10c: raw tanh-gate initialization for the recurrent BiXT write."},
+    )
     lora_r: int = field(default=16, metadata={"help": "E10: LoRA rank on the backbone (0 = off)."})
     lora_alpha: int = field(default=32, metadata={"help": "E10: LoRA alpha."})
     lora_dropout: float = field(default=0.05, metadata={"help": "E10: LoRA dropout."})
@@ -280,6 +295,13 @@ class OptimizerArguments:
         metadata={
             "help": "Optimizer family: 'adam' (HF adamw_torch_fused) or "
             "'muon' (nn.muon.Muon)."
+        },
+    )
+    concept_memory_lr: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": "E10d: optional AdamW LR for concept_init, write head, read gates, "
+            "and read norms. None keeps the existing single-LR optimizer path."
         },
     )
     muon_adamw_lr: float = field(

@@ -14,6 +14,32 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-07-12] - E10 concept-path calibration controls
+
+**Why:** E10's 100M pilot kept diverse concepts but showed <0.001-nat recurrent-state
+dependence, with low-scale concept reads and concept-path updates far below LoRA.
+
+**Impact:** the same pretrained-Gemma architecture can now isolate three cumulative recovery
+tests without changing data or objective: normalized concept reads, small-live memory gates,
+and a higher AdamW LR for newly initialized concept-memory parameters. Defaults reproduce E10.
+
+**What changed:**
+- [added] optional per-global-layer RMSNorm before concept-read K/V projections.
+- [exposed] backward-compatible read/write gate initialization through model args, factory,
+  launcher, checkpoints, and W&B config.
+- [added] exhaustive AdamW parameter grouping for an optional concept-memory LR; LoRA retains
+  the base LR, scalar/norm parameters remain no-decay, unknown trainables fail closed, and Muon
+  rejects the incompatible option.
+- [tested] zero-init equivalence and old defaults, normalized-read checkpoint round-trip,
+  first-step gradients with 0.01 gates, optimizer partitioning, parser/factory plumbing, and
+  shell env-to-CLI propagation.
+
+**Related:** [E10b](docs/experiments_specs/E10b_normalized_concept_read.md) →
+[E10c](docs/experiments_specs/E10c_nonzero_memory_gates.md) →
+[E10d](docs/experiments_specs/E10d_differential_concept_lr.md)
+
+---
+
 ## [2026-07-12] - Portable remote path contract
 
 **Why:** the training refactor contract suite passed locally but its isolated cache-path test
