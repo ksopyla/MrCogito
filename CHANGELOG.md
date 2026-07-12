@@ -14,6 +14,20 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-07-12] - Portable remote path contract
+
+**Why:** the training refactor contract suite passed locally but its isolated cache-path test
+resolved Odra's real checkout when run on Odra, instead of the test workspace.
+
+**Impact:** launchers keep the same canonical Odra/Polonez path by default, while tests and
+explicit tooling can safely override `PROJECT_ROOT`.
+
+**What changed:**
+- [fixed] made `scripts/remote_paths.sh` preserve an explicit `PROJECT_ROOT`.
+- [fixed] made the runtime-contract harness set its isolated project root explicitly.
+
+---
+
 ## [2026-07-11] - Training refactor Stage 4 retired paths
 
 **Why:** the active training tree still exposed sparse weighted-MLM as a maintained command, while

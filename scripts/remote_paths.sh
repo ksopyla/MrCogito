@@ -14,7 +14,7 @@
 #   source "${SCRIPT_DIR}/remote_paths.sh"
 #   # or from parked/scripts/: source "${SCRIPT_DIR}/../../scripts/remote_paths.sh"
 
-PROJECT_ROOT="/home/ksopyla/dev/MrCogito"
+PROJECT_ROOT="${PROJECT_ROOT:-/home/ksopyla/dev/MrCogito}"
 if [ ! -d "$PROJECT_ROOT" ]; then
     PROJECT_ROOT="$(pwd)"
 fi

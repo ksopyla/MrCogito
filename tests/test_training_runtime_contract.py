@@ -355,6 +355,7 @@ def _source_remote_paths(tmp_path, extra_env=None):
     ):
         env.pop(name, None)
     env["REMOTE_PATHS_SCRIPT"] = str(REMOTE_PATHS_SCRIPT)
+    env["PROJECT_ROOT"] = str(tmp_path)
     env["HF_HOME"] = str(tmp_path / "hf_home")
     env.update(extra_env or {})
 
