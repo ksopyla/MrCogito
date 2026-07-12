@@ -1,9 +1,9 @@
 # E10b — Normalized concept read interface
 
-- **Status:** active — approved 2026-07-12; implementation and 50M Odra pilot authorized
+- **Status:** killed 2026-07-12 at the pre-registered ~25M-token gate
 - **Serves:** E10's null recurrent-memory diagnosis: repair the measured concept-value scale mismatch without changing Gemma, the objective, data, sequence length, or optimizer
 - **Implementation plan:** [E10b_normalized_concept_read_plan.md](E10b_normalized_concept_read_plan.md)
-- **Owner / dates:** Krzysztof Sopyła · opened 2026-07-12 · closed —
+- **Owner / dates:** Krzysztof Sopyła · opened 2026-07-12 · closed 2026-07-12
 
 > One experiment = one hypothesis = one changed variable. The broader follow-up ideas
 > (4K training, a new long-document mix, nonzero gates, differential concept LR, and Muon)
@@ -86,8 +86,7 @@ data mix, or optimizer family.
 
 ## Result
 
-<Filled in AFTER, by experiment-track.>
-- Run id: —
-- WandB: —
-- Run report: —
-- Verdict: —
+- Run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260712_133258`
+- WandB: [training run](https://wandb.ai/ksopyla/MrCogito/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260712_133258)
+- Run report: [e10b_normalized_concept_read_20260712.md](../2_Experiments_Registry/run_reports/e10b_normalized_concept_read_20260712.md)
+- Verdict: **killed** — at step 360, beyond-local static−real was +0.000371 and Δshuffle +0.000179, both below the 0.002-nat kill threshold; geometry and local CE remained healthy, so read-side RMSNorm alone did not repair recurrent usage.
