@@ -1,6 +1,6 @@
 ---
 name: server-checker
-model: composer-2.5
+model: gpt-5.6-terra[]
 description: Read-only telemetry scout for the Odra and Polonez GPU servers. Checks server health (disk/GPU/CPU/RAM), processes and Byobu sessions, training/evaluation/pretokenization progress, checkpoints and W&B identity, and crash evidence from system/GPU logs. Computes compact progress statistics and evidence-based ETAs when possible, audits disk-cleanup candidates without deleting them, and returns only a concise digest so noisy SSH/log output stays out of the main agent's context. Does NOT launch, stop, modify, or clean anything.
 readonly: true
 is_background: true
