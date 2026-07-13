@@ -265,6 +265,13 @@ class DataTrainingArguments:
             "Overrides dataset_mix/dataset_mix_recipe when present."
         },
     )
+    preserve_precomputed_labels: bool = field(
+        default=False,
+        metadata={
+            "help": "For causal_lm manifests, preserve each row's precomputed sparse labels "
+            "instead of mirroring input_ids. Default false reproduces E10."
+        },
+    )
     tokenizer_name: str = field(default="answerdotai/ModernBERT-base")
     max_seq_length: int = field(default=512)
     test_size_percent: float = field(default=0.1)

@@ -10,6 +10,7 @@ LAUNCHER = REPO_ROOT / "scripts" / "train_concept_pretraining_multigpu.sh"
 LEGACY_LAUNCHER = REPO_ROOT / "scripts" / "train_perceiver_denoise_multigpu.sh"
 E05_LAUNCHER = REPO_ROOT / "scripts" / "launch_e05.sh"
 E10_LAUNCHER = REPO_ROOT / "scripts" / "launch_e10.sh"
+E14_LAUNCHER = REPO_ROOT / "scripts" / "launch_e14.sh"
 
 
 def _write_executable(path, contents):
@@ -275,3 +276,34 @@ def test_e10_protocol_wrapper_forwards_recovery_sequence_overrides(tmp_path):
     assert _value_after(args, "--read_gate_init") == "0.01"
     assert _value_after(args, "--write_gate_init") == "0.01"
     assert _value_after(args, "--concept_memory_lr") == "3e-4"
+
+
+def test_e14_protocol_wrapper_pins_forced_recall_profile(tmp_path):
+    data_root = tmp_path / "e14_data"
+    data_root.mkdir()
+    manifest = data_root / "e14_delayed_recall_gemma_manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    result, args, _ = _run_launcher(
+        tmp_path,
+        {
+            "DATASETS_TOK_DIR": str(data_root),
+            "DATASETS_RAW_DIR": str(tmp_path / "raw"),
+            "RAW_ARCHIVE_DIR": str(tmp_path / "raw"),
+            "MANIFEST": str(manifest),
+        },
+        launcher=E14_LAUNCHER,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert _value_after(args, "--backbone_model") == "google/gemma-3-1b-pt"
+    assert _value_after(args, "--pretokenized_manifest") == str(manifest)
+    assert _value_after(args, "--preserve_precomputed_labels") == "true"
+    assert _value_after(args, "--per_device_train_batch_size") == "2"
+    assert _value_after(args, "--gradient_accumulation_steps") == "1"
+    assert _value_after(args, "--read_concept_norm") == "true"
+    assert _value_after(args, "--read_gate_init") == "0.01"
+    assert _value_after(args, "--write_gate_init") == "0.01"
+    assert _value_after(args, "--concept_memory_lr") == "3e-4"
+    assert _value_after(args, "--warmup_steps") == "50"
+    assert _value_after(args, "--eval_steps") == "164"
+    assert _value_after(args, "--save_steps") == "164"

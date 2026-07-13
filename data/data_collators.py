@@ -165,6 +165,8 @@ class DataCollatorForCausalLM:
 
     Pads variable-length pretokenized rows to the batch max (capped at max_length) and
     mirrors input_ids into labels with -100 at padding. Shifting happens inside the model.
+    When ``preserve_precomputed_labels=True``, sparse row-level label masks are padded and
+    truncated in lockstep instead (used by forced-memory diagnostics).
 
     Output contract:
         input_ids      : [B, S]
@@ -172,9 +174,16 @@ class DataCollatorForCausalLM:
         labels         : [B, S]  input_ids with -100 at pad
     """
 
-    def __init__(self, tokenizer, max_length: int = 2048, model_vocab_size: int | None = None):
+    def __init__(
+        self,
+        tokenizer,
+        max_length: int = 2048,
+        model_vocab_size: int | None = None,
+        preserve_precomputed_labels: bool = False,
+    ):
         self.tokenizer = tokenizer
         self.max_length = max_length
+        self.preserve_precomputed_labels = preserve_precomputed_labels
         if tokenizer.pad_token_id is None:
             raise ValueError("DataCollatorForCausalLM requires a tokenizer with a pad token.")
         self.pad_token_id = tokenizer.pad_token_id
@@ -191,15 +200,29 @@ class DataCollatorForCausalLM:
 
         input_ids = torch.full((batch_size, max_len), self.pad_token_id, dtype=torch.long)
         attention_mask = torch.zeros(batch_size, max_len, dtype=torch.long)
+        labels = torch.full((batch_size, max_len), -100, dtype=torch.long)
+        if self.preserve_precomputed_labels and not all("labels" in feature for feature in features):
+            raise ValueError(
+                "preserve_precomputed_labels=True requires labels on every feature."
+            )
         for i, ids in enumerate(input_ids_list):
             if isinstance(ids, torch.Tensor):
                 ids = ids.tolist()
             length = min(len(ids), max_len)
             input_ids[i, :length] = torch.tensor(ids[:length], dtype=torch.long)
             attention_mask[i, :length] = 1
-
-        labels = input_ids.clone()
-        labels[attention_mask == 0] = -100
+            if self.preserve_precomputed_labels:
+                row_labels = features[i]["labels"]
+                if isinstance(row_labels, torch.Tensor):
+                    row_labels = row_labels.tolist()
+                if len(row_labels) != len(ids):
+                    raise ValueError(
+                        "Precomputed labels must have the same length as input_ids."
+                    )
+                labels[i, :length] = torch.tensor(row_labels[:length], dtype=torch.long)
+        if not self.preserve_precomputed_labels:
+            labels = input_ids.clone()
+            labels[attention_mask == 0] = -100
 
         if self._vocab_size is not None:
             ids_min = int(input_ids.min().item())
@@ -209,6 +232,16 @@ class DataCollatorForCausalLM:
                     f"DataCollatorForCausalLM produced input_ids outside model vocabulary range: "
                     f"min={ids_min}, max={ids_max}, vocab_size={self._vocab_size}"
                 )
+            valid_labels = labels[labels != -100]
+            if valid_labels.numel() > 0:
+                label_min = int(valid_labels.min().item())
+                label_max = int(valid_labels.max().item())
+                if label_min < 0 or label_max >= self._vocab_size:
+                    raise ValueError(
+                        "DataCollatorForCausalLM produced labels outside model vocabulary "
+                        f"range: min={label_min}, max={label_max}, "
+                        f"vocab_size={self._vocab_size}"
+                    )
 
         return {
             "input_ids": input_ids,

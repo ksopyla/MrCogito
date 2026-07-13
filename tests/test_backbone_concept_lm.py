@@ -304,6 +304,55 @@ def test_recurrence_ablation_modes_isolate_static_and_one_block_memory():
     assert not torch.allclose(real[:, 3 * K :], one_block[:, 3 * K :], equal_nan=True)
 
 
+def test_sparse_per_position_metrics_and_explicit_pair_permutation():
+    model = make_model(concept_num=4)
+    model.backbone.model.layers[5].gate.data.fill_(0.8)
+    model.write_head.alpha.data.fill_(0.5)
+    input_ids, attention_mask, _ = make_batch(B=2, S=32)
+    labels = torch.full_like(input_ids, -100)
+    labels[:, 3 * K + 1] = input_ids[:, 3 * K + 1]
+
+    real = model.per_position_metrics(input_ids, attention_mask, labels)
+    assert torch.isfinite(real["ce"]).sum() == 2
+    assert (real["predictions"] != -100).sum() == 2
+
+    shuffled = model.per_position_metrics(
+        input_ids,
+        attention_mask,
+        labels,
+        concept_mode="shuffle",
+    )
+    permuted = model.per_position_metrics(
+        input_ids,
+        attention_mask,
+        labels,
+        concept_mode="permutation",
+        concept_permutation=torch.tensor([1, 0]),
+    )
+    _assert_close_where_valid(shuffled["ce"], permuted["ce"], atol=1e-6)
+    assert torch.equal(shuffled["predictions"], permuted["predictions"])
+
+
+def test_explicit_concept_permutation_rejects_invalid_maps():
+    model = make_model(concept_num=4)
+    input_ids, attention_mask, labels = make_batch(B=2, S=24)
+    with pytest.raises(ValueError, match="requires concept_permutation"):
+        model.per_position_metrics(
+            input_ids,
+            attention_mask,
+            labels,
+            concept_mode="permutation",
+        )
+    with pytest.raises(ValueError, match="bijection"):
+        model.per_position_metrics(
+            input_ids,
+            attention_mask,
+            labels,
+            concept_mode="permutation",
+            concept_permutation=torch.tensor([0, 0]),
+        )
+
+
 def test_e10_paired_comparison_contract():
     concept = make_model(concept_num=4)
     control = make_model(concept_num=0)
@@ -381,6 +430,40 @@ def test_causal_lm_collator():
     )
     with pytest.raises(ValueError, match="outside model vocabulary range"):
         model_bounded([{"input_ids": [5, VOCAB - 1]}])
+
+
+def test_causal_lm_collator_preserves_sparse_precomputed_labels():
+    class TokStub:
+        pad_token_id = 0
+
+        def __len__(self):
+            return VOCAB
+
+    collator = DataCollatorForCausalLM(
+        TokStub(),
+        max_length=5,
+        preserve_precomputed_labels=True,
+    )
+    batch = collator(
+        [
+            {"input_ids": [5, 6, 7], "labels": [-100, -100, 7]},
+            {
+                "input_ids": [8, 9, 10, 11, 12, 13],
+                "labels": [-100, 9, -100, -100, -100, 13],
+            },
+        ]
+    )
+    assert batch["labels"].tolist() == [
+        [-100, -100, 7, -100, -100],
+        [-100, 9, -100, -100, -100],
+    ]
+    with pytest.raises(ValueError, match="requires labels on every feature"):
+        collator(
+            [
+                {"input_ids": [5], "labels": [-100]},
+                {"input_ids": [6]},
+            ]
+        )
 
 
 def test_text_tokenizer_splits_out_of_model_special_tokens():

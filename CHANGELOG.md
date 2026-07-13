@@ -14,6 +14,33 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-07-13] - Forced delayed-recall memory diagnostic
+
+**Why:** E10 through E10e retained diverse concept states but never developed measurable
+persistent-memory dependence under natural plain-token CE, leaving the memory mechanism
+confounded with a weak training signal.
+
+**Impact:** the unchanged E10e architecture can now be tested on a counterfactual task where
+only block-1 memory identifies a block-4 answer. Sparse labels and deterministic donor
+interventions provide direct CE, accuracy, and paired-bootstrap gates before any E12/E13 pivot.
+
+**What changed:**
+- [added] deterministic Gemma-tokenized delayed-recall data and manifest generation with
+  balanced single-token values, train/eval-disjoint counterfactual twins, and block-2/3
+  memory-age views.
+- [added] opt-in preservation of precomputed causal-LM label masks; defaults preserve all
+  existing E10 behavior.
+- [added] sparse per-position CE/top-1 model instrumentation and explicit batch concept-state
+  permutation for conflicting-donor evaluation without changing the real recurrent path.
+- [added] paired delayed-recall checkpoint evaluation, E14's thin protocol wrapper, and
+  parser/launcher/model/data regression coverage.
+- [verified] Gemma tokenizer artifact build, end-to-end tiny-checkpoint evaluator smoke, and
+  full local suite: 333 passed, 9 skipped.
+
+**Related:** [E14](docs/experiments_specs/E14_forced_delayed_recall_memory.md)
+
+---
+
 ## [2026-07-12] - E10 concept-path calibration controls
 
 **Why:** E10's 100M pilot kept diverse concepts but showed <0.001-nat recurrent-state

@@ -12,6 +12,7 @@ its protocol without copying the shared launcher.
 | `launch_e05.sh` | Experiment protocol wrapper | E05 architecture, data, optimizer-arm, stability, and token-budget pins |
 | `launch_e10.sh` | Experiment protocol wrapper | E10 backbone/concept-control arms, Gemma data paths, LoRA, and token-budget pins |
 | `launch_e10_pipeline.sh` | Orchestration pipeline | Waits for prerequisites, runs the E10 gate and pretokenization, then invokes `launch_e10.sh` |
+| `launch_e14.sh` | Experiment protocol wrapper | E10e architecture with sparse-label forced delayed recall and its 2M-token checkpoint gate |
 | `test_perceiver_denoise_local.ps1` | Local smoke | Small reconstruction smoke against the canonical Python entrypoint |
 
 Use the generic runner for ad hoc maintained-family training:
@@ -26,6 +27,7 @@ Use an experiment wrapper when reproducing or continuing its frozen protocol:
 ```bash
 bash scripts/launch_e05.sh
 CONCEPT_NUM=0 bash scripts/launch_e10.sh
+bash scripts/launch_e14.sh
 ```
 
 ## Change policy

@@ -191,7 +191,10 @@ class GlobalLayerWithConceptRead(nn.Module):
         outputs = self.layer(hidden_states, *args, **kwargs)
         z = self._state.get("z")
         if z is not None:
-            if self._state.get("shuffle"):
+            permutation = self._state.get("permutation")
+            if permutation is not None:
+                z = z.index_select(0, permutation)
+            elif self._state.get("shuffle"):
                 z = torch.roll(z, shifts=1, dims=0)   # batch derangement (ablation)
             x = self.layer.input_layernorm(hidden_states)
             read = self.read_branch(x, z.to(hidden_states.dtype), self.layer.self_attn)
@@ -280,7 +283,11 @@ class BackboneConceptLM(PreTrainedModel):
             self.backbone = inject_adapter_in_model(lora_cfg, self.backbone)
 
         # --- concept machinery (skipped entirely for the concept_num=0 control arm) ---
-        self._concept_state: dict = {"z": None, "shuffle": False}
+        self._concept_state: dict = {
+            "z": None,
+            "shuffle": False,
+            "permutation": None,
+        }
         if config.concept_num > 0:
             self.concept_init = nn.Parameter(
                 torch.randn(config.concept_num, self.hidden_size) * (self.hidden_size ** -0.5)
@@ -396,22 +403,41 @@ class BackboneConceptLM(PreTrainedModel):
         return mean * count, count
 
     @torch.no_grad()
+    def _per_position_metrics_from_hidden(self, pred_hidden, targets, chunk: int = 256):
+        """Eval-only CE/top-1 at targeted positions without dense ``[B,T,V]`` logits."""
+        B, T, _ = pred_hidden.shape
+        out_ce = pred_hidden.new_full((B, T), float("nan"), dtype=torch.float32)
+        out_predictions = targets.new_full((B, T), IGNORE_INDEX)
+        valid = targets != IGNORE_INDEX
+        if not valid.any():
+            return out_ce, out_predictions
+
+        selected_hidden = pred_hidden[valid]
+        selected_targets = targets[valid]
+        selected_ce = pred_hidden.new_empty(
+            selected_targets.shape, dtype=torch.float32
+        )
+        selected_predictions = selected_targets.new_empty(selected_targets.shape)
+        weight = self.backbone.lm_head.weight
+        for s in range(0, len(selected_targets), chunk):
+            e = min(s + chunk, len(selected_targets))
+            logits = F.linear(selected_hidden[s:e], weight).float()
+            selected_ce[s:e] = F.cross_entropy(
+                logits,
+                selected_targets[s:e],
+                reduction="none",
+            )
+            selected_predictions[s:e] = logits.argmax(dim=-1)
+        out_ce[valid] = selected_ce
+        out_predictions[valid] = selected_predictions
+        return out_ce, out_predictions
+
+    @torch.no_grad()
     def _per_position_ce_from_hidden(self, pred_hidden, targets, chunk: int = 256):
         """[B, T] CE per target position (nan where label ignored). Eval-only."""
-        B, T, _ = pred_hidden.shape
-        out = pred_hidden.new_full((B, T), float("nan"), dtype=torch.float32)
-        weight = self.backbone.lm_head.weight
-        for s in range(0, T, chunk):
-            e = min(s + chunk, T)
-            logits = F.linear(pred_hidden[:, s:e], weight).float()
-            ce = F.cross_entropy(
-                logits.reshape(-1, logits.shape[-1]),
-                targets[:, s:e].reshape(-1),
-                ignore_index=IGNORE_INDEX, reduction="none",
-            ).view(B, e - s)
-            valid = targets[:, s:e] != IGNORE_INDEX
-            out[:, s:e] = torch.where(valid, ce, torch.full_like(ce, float("nan")))
-        return out
+        return self._per_position_metrics_from_hidden(
+            pred_hidden, targets, chunk=chunk
+        )[0]
 
     # ------------------------------------------------------------------ core block loop
     def _forward_blocks(
@@ -419,15 +445,41 @@ class BackboneConceptLM(PreTrainedModel):
         input_ids: torch.Tensor,
         attention_mask: Optional[torch.Tensor],
         labels: Optional[torch.Tensor],
-        concept_mode: str = "real",  # real | shuffle | zero | static | one_block
+        concept_mode: str = "real",  # real | shuffle | zero | static | one_block | permutation
+        concept_permutation: Optional[torch.Tensor] = None,
         per_position: bool = False,
+        return_predictions: bool = False,
     ):
-        valid_modes = {"real", "shuffle", "zero", "static", "one_block"}
+        valid_modes = {"real", "shuffle", "zero", "static", "one_block", "permutation"}
         if concept_mode not in valid_modes:
             raise ValueError(
                 f"Unknown concept_mode={concept_mode!r}; expected one of {sorted(valid_modes)}."
             )
         B, S = input_ids.shape
+        if return_predictions and not per_position:
+            raise ValueError("return_predictions=True requires per_position=True.")
+        if concept_mode == "permutation":
+            if concept_permutation is None:
+                raise ValueError(
+                    "concept_mode='permutation' requires concept_permutation."
+                )
+            concept_permutation = concept_permutation.to(
+                device=input_ids.device, dtype=torch.long
+            )
+            if concept_permutation.shape != (B,):
+                raise ValueError(
+                    f"concept_permutation must have shape ({B},), got "
+                    f"{tuple(concept_permutation.shape)}."
+                )
+            if not torch.equal(
+                concept_permutation.sort().values,
+                torch.arange(B, device=input_ids.device),
+            ):
+                raise ValueError("concept_permutation must be a bijection over the batch.")
+        elif concept_permutation is not None:
+            raise ValueError(
+                "concept_permutation is only valid with concept_mode='permutation'."
+            )
         K = self.config.concept_block
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids)
@@ -436,11 +488,19 @@ class BackboneConceptLM(PreTrainedModel):
         use_concepts = self.has_concepts and concept_mode != "zero"
         z = self.concept_init.unsqueeze(0).expand(B, -1, -1) if use_concepts else None
         self._concept_state["shuffle"] = concept_mode == "shuffle"
+        self._concept_state["permutation"] = (
+            concept_permutation if concept_mode == "permutation" else None
+        )
 
         total_ce = input_ids.new_zeros((), dtype=torch.float32)
         total_cnt = input_ids.new_zeros((), dtype=torch.long)
         pos_ce = (
             input_ids.new_full((B, S), float("nan"), dtype=torch.float32) if per_position else None
+        )
+        pos_predictions = (
+            input_ids.new_full((B, S), IGNORE_INDEX)
+            if per_position and return_predictions
+            else None
         )
 
         n_blocks = math.ceil(S / K)
@@ -468,8 +528,15 @@ class BackboneConceptLM(PreTrainedModel):
                     pred_h = h[:, carry_len - 1 : carry_len - 1 + blk_len]
                     tgt = labels[:, s:e]
                 if per_position:
-                    ce = self._per_position_ce_from_hidden(pred_h, tgt)
+                    if return_predictions:
+                        ce, predictions = self._per_position_metrics_from_hidden(
+                            pred_h, tgt
+                        )
+                    else:
+                        ce = self._per_position_ce_from_hidden(pred_h, tgt)
                     pos_ce[:, (s + 1 if b == 0 else s) : e] = ce
+                    if return_predictions:
+                        pos_predictions[:, (s + 1 if b == 0 else s) : e] = predictions
                 else:
                     ce_sum, cnt = self._lm_ce_sum(pred_h, tgt)
                     total_ce = total_ce + ce_sum
@@ -487,8 +554,11 @@ class BackboneConceptLM(PreTrainedModel):
 
         self._concept_state["z"] = None
         self._concept_state["shuffle"] = False
+        self._concept_state["permutation"] = None
 
         if per_position:
+            if return_predictions:
+                return pos_ce, pos_predictions, z
             return pos_ce, z
         loss = None
         if labels is not None:
@@ -538,6 +608,7 @@ class BackboneConceptLM(PreTrainedModel):
         labels: Optional[torch.Tensor] = None,
         mode: str = "blockwise",              # "blockwise" | "single_windowed" | "full_attention"
         concept_mode: str = "real",
+        concept_permutation: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """[B, S] next-token CE per position (nan where untargeted). The Stage-0 /
         extrapolation-eval workhorse. "single_windowed" (one forward, every layer window-
@@ -550,9 +621,16 @@ class BackboneConceptLM(PreTrainedModel):
             )
         if mode == "blockwise":
             pos_ce, _ = self._forward_blocks(
-                input_ids, attention_mask, labels, concept_mode=concept_mode, per_position=True
+                input_ids,
+                attention_mask,
+                labels,
+                concept_mode=concept_mode,
+                concept_permutation=concept_permutation,
+                per_position=True,
             )
             return pos_ce
+        if concept_permutation is not None:
+            raise ValueError("concept_permutation is only supported in blockwise mode.")
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids)
         dtype = self.backbone.model.embed_tokens.weight.dtype
@@ -577,6 +655,43 @@ class BackboneConceptLM(PreTrainedModel):
         pos_ce = input_ids.new_full((B, S), float("nan"), dtype=torch.float32)
         pos_ce[:, 1:] = self._per_position_ce_from_hidden(h[:, :-1], labels[:, 1:])
         return pos_ce
+
+    @torch.no_grad()
+    def per_position_metrics(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        labels: Optional[torch.Tensor] = None,
+        concept_mode: str = "real",
+        concept_permutation: Optional[torch.Tensor] = None,
+    ) -> dict[str, torch.Tensor]:
+        """Blockwise next-token CE and top-1 predictions at targeted positions.
+
+        Returns ``ce`` as ``[B,S]`` with NaN at ignored labels and ``predictions``
+        as ``[B,S]`` with ``IGNORE_INDEX`` at ignored labels. Logits are projected
+        only for targeted positions, which keeps sparse-answer evaluation cheap at
+        large vocabularies.
+        """
+        if labels is None:
+            labels = torch.where(
+                (
+                    attention_mask
+                    if attention_mask is not None
+                    else torch.ones_like(input_ids)
+                ).bool(),
+                input_ids,
+                torch.full_like(input_ids, IGNORE_INDEX),
+            )
+        pos_ce, predictions, _ = self._forward_blocks(
+            input_ids,
+            attention_mask,
+            labels,
+            concept_mode=concept_mode,
+            concept_permutation=concept_permutation,
+            per_position=True,
+            return_predictions=True,
+        )
+        return {"ce": pos_ce, "predictions": predictions}
 
     @torch.no_grad()
     def encode_concepts(self, input_ids, attention_mask=None, return_dict=True, **kwargs):

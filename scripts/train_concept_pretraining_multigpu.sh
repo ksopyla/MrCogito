@@ -70,6 +70,7 @@ DATASET_MIX_RECIPE="${DATASET_MIX_RECIPE:-}"
 # E05: path to a manifest JSON from scripts/pretokenize_mix.py. When set, training
 # loads pre-tokenized sources via load_from_disk (instant) and ignores dataset_mix*.
 PRETOKENIZED_MANIFEST="${PRETOKENIZED_MANIFEST:-}"
+PRESERVE_PRECOMPUTED_LABELS="${PRESERVE_PRECOMPUTED_LABELS:-false}"
 TOKENIZER_NAME="${TOKENIZER_NAME:-answerdotai/ModernBERT-base}"
 MAX_SEQ_LENGTH="${MAX_SEQ_LENGTH:-512}"
 DELETION_RATE="${DELETION_RATE:-0.6}"
@@ -321,6 +322,7 @@ uv run accelerate launch \
     --dataset_name_subset "$DATASET_SUBSET" \
     --tokenizer_name "$TOKENIZER_NAME" \
     --max_seq_length "$MAX_SEQ_LENGTH" \
+    --preserve_precomputed_labels "$PRESERVE_PRECOMPUTED_LABELS" \
     --dataset_cache_dir "$HF_DATASETS_CACHE" \
     --train_num_proc "$TRAIN_NUM_PROC" \
     --test_num_proc "$TEST_NUM_PROC" \

@@ -318,6 +318,7 @@ def main():
             "dataset_mix_recipe": data_args.dataset_mix_recipe,
             "dataset_mix_weight_override": data_args.dataset_mix_weight_override,
             "pretokenized_manifest": data_args.pretokenized_manifest,
+            "preserve_precomputed_labels": data_args.preserve_precomputed_labels,
             "target_tokens": (
                 int(os.environ["TARGET_TOKENS"])
                 if os.environ.get("TARGET_TOKENS")

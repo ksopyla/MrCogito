@@ -100,6 +100,8 @@ def test_parser_maps_e10_profile_into_model_data_and_training_args(tmp_path):
                 "3e-4",
                 "--pretokenized_manifest",
                 "/cache/hf_home/datasets_tok_gemma/e10_manifest.json",
+                "--preserve_precomputed_labels",
+                "true",
                 "--max_eval_samples",
                 "2048",
                 "--gradient_checkpointing",
@@ -122,6 +124,7 @@ def test_parser_maps_e10_profile_into_model_data_and_training_args(tmp_path):
     assert model_args.write_gate_init == pytest.approx(0.01)
     assert model_args.lora_r == 16
     assert data_args.pretokenized_manifest.endswith("e10_manifest.json")
+    assert data_args.preserve_precomputed_labels is True
     assert data_args.max_eval_samples == 2048
     assert optim_args.optimizer == "adam"
     assert optim_args.concept_memory_lr == pytest.approx(3e-4)

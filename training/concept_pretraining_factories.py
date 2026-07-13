@@ -372,6 +372,7 @@ def build_pretraining_collators(
         causal_collator_kwargs = {
             "max_length": data_args.max_seq_length,
             "model_vocab_size": model.backbone.config.vocab_size,
+            "preserve_precomputed_labels": data_args.preserve_precomputed_labels,
         }
         data_collator = DataCollatorForCausalLM(tokenizer, **causal_collator_kwargs)
         eval_data_collator = DataCollatorForCausalLM(
