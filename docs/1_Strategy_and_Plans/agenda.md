@@ -197,3 +197,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 
 ## Not active right now (still part of the Vision)
 Recursive concept refinement is now **scheduled as E04** (gated on E03 de-collapse + the eval foundation), and diffusion decode is a **deferred staged program** (see roadmap) — both revivable from `parked/`. Instruction SFT, long-context, and audio remain long-term Vision only. Multi-agent latent communication stays the Stage-2 headline (see [team_brief](../sprind_frontier_ai/team_brief.md)).
+- **Immediate diagnostic (approved) — [E15 supervision-calibrated delayed recall](../experiments_specs/E15_supervision_calibrated_delayed_recall.md):**
+  resume E14's exact checkpoint/data/objective and change only supervised-answer exposure.
+  Pause at 6,000 labels for a block-2 competence gate, then cap at 12,000 labels. A passed
+  block-2 control makes a failed block-4 causal-memory gate an interpretable E10e interface
+  result; a failed block-2 control kills the sparse objective protocol instead.
