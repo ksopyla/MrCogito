@@ -1,9 +1,9 @@
 # E14 — Forced delayed-recall concept memory
 
-- **Status:** draft — approved 2026-07-13; freezes active at launch
+- **Status:** killed
 - **Serves:** determine whether E10e's recurrent global→concept mechanism can learn and causally use information that has no local-token bypass before changing the memory interface
 - **Implementation plan:** [E14_forced_delayed_recall_memory_plan.md](E14_forced_delayed_recall_memory_plan.md) *(authored after spec approval)*
-- **Owner / dates:** Krzysztof Sopyla · opened 2026-07-13
+- **Owner / dates:** Krzysztof Sopyla · opened 2026-07-13 · closed 2026-07-13
 
 > One experiment = one hypothesis = one changed variable. The spec is frozen once
 > training starts; results belong in the registry and run report.
@@ -81,8 +81,8 @@ it does **not** establish transfer to natural long-context language modeling.
   No E14-specific model class or training entrypoint.
 
 ## Result
-*Pending.*
-- Run id: —
-- WandB: —
-- Run report: —
-- Verdict: —
+- Run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260713_172219`
+- WandB: https://wandb.ai/ksopyla/MrCogito/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260713_172219
+- Run report: `docs/2_Experiments_Registry/run_reports/e14_forced_delayed_recall_gate_20260713.md`
+- Verdict: killed — all 2M-token memory margins were <0.01 nats, but block-2 accuracy also
+  remained at chance, so the architecture result is inconclusive rather than a read/write verdict.

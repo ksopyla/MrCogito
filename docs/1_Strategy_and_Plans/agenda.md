@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-07-12 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [../experiments/](../experiments/).
+**Updated:** 2026-07-13 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [../experiments/](../experiments/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -163,6 +163,12 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 7. **Parked / not scheduled:** the **token↔concept asymmetry sweep** (`token_embedding_dim` 128/256/512,
    the former "E03") is demoted to a **P1-era E02 ablation**, not a headline experiment. Further knobs
    later (optimizer Muon/Lion, longer context, `C`-vs-`N` scaling, encoder-side RoPE).
+- **E14 forced delayed recall (Gemma-3-1B, Odra, 2026-07-13):** the registered 2M-token stop
+  fired (all block-4 memory margins <0.0036 nats), while healthy geometry persisted (RankMe 91.4).
+  Because the block-2 explicit-carry control also stayed at chance after only 984 supervised
+  answers, the run exposed an input-token-vs-supervision budgeting flaw rather than isolating
+  writer retention or read integration. See
+  [run report](../2_Experiments_Registry/run_reports/e14_forced_delayed_recall_gate_20260713.md).
 
 ## What we've explored so far (evidence, not verdicts)
 - **E10 100M concept-arm pilot (Gemma-3-1B, Odra, 2026-07-11):** stable and non-collapsed
