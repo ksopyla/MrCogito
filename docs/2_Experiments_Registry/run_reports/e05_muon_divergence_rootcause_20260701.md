@@ -8,7 +8,7 @@
 **Adam baseline (stable, the A/B control):** `concept_ar_prefix_H768L6C128D4_20260629_093840` — eval_loss 3.83 (see [attempt-3 report](e05_attempt3_completed_20260630.md))
 **Optimizer:** `nn/muon.py` `Muon` (NS5 orthogonalization for 2D matrices, aspect ≤ 8; AdamW fallback for embeddings/lm_head/1D)
 **Git commit (plumbing):** `2f0bb51` (Muon + launcher dedup), `f5951da` (`set -u` fix), mitigation knobs added 2026-07-01
-**Related TODO:** E05 optimizer A/B in `docs/experiments_specs/E05_windowed_decoder_concept_memory.md`
+**Related TODO:** E05 optimizer A/B in `docs/experiments_specs/done_failed/E05_windowed_decoder_concept_memory.md`
 
 ---
 

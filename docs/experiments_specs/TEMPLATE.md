@@ -1,6 +1,6 @@
 # E0NN — <short title>
 
-- **Status:** draft | active | done | killed
+- **Status:** draft | approved | active | done | killed | canceled
 - **Serves:** <the focus / direction in agenda.md this small increment serves>
 - **Implementation plan:** [E0NN_..._plan.md](E0NN_..._plan.md) *(authored by `implementation-plan`; the HOW)*
 - **Owner / dates:** <name> · opened YYYY-MM-DD · closed YYYY-MM-DD
@@ -9,6 +9,8 @@
 > two things, split it into two specs. Implementation is args/config over the shared
 > entrypoint (env-var overrides on the bash launcher), never a new fork. The spec is
 > **frozen once a run starts**; results live in the registry and run report, not here.
+> New specs live in `ahead/`. When closed, move the spec and plan together to
+> `done_success/`, `done_failed/`, or `canceled/` according to the lifecycle rules in README.
 
 ## Hypothesis
 <One falsifiable sentence: "If we do X, then metric Y will move to Z, because ...">

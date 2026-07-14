@@ -38,7 +38,9 @@ Before claiming relevance, read what is currently true about the project:
 
 - `.cursor/rules/project-overview.mdc`
 - `docs/1_Strategy_and_Plans/vision_and_goals.md`
-- `docs/1_Strategy_and_Plans/agenda.md` (current focus + "what we've explored" learnings) and the active `docs/experiments_specs/<ID>.md` specs
+- `docs/1_Strategy_and_Plans/agenda.md` (current focus + "what we've explored" learnings) and
+  active specs under `docs/experiments_specs/ahead/`; consult terminal lifecycle folders only
+  for relevant prior evidence
 - The `nn/`, `training/`, or `evaluation/` files that the question actually touches
 
 Treat `docs/5_Archive/` and any `> **OBSOLETE — ...**` or `~~struck-through~~` content as historical only — do not ground current relevance judgments in it (see `project-overview.mdc` → Docs Hygiene).

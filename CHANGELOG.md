@@ -6,11 +6,58 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 **Relationship to other docs:**
 - This file: *What* changed in code and *when* (engineering log)
 - `docs/2_Experiments_Registry/master_experiment_log.md`: *What* training runs produced which results (science log)
-- `docs/1_Strategy_and_Plans/agenda.md`: *What* to do next (slim living agenda) + `docs/experiments_specs/<ID>.md` specs
+- `docs/1_Strategy_and_Plans/agenda.md`: *What* to do next (slim living agenda) +
+  `docs/experiments_specs/<lifecycle>/<ID>.md` specs
 
 The `git_tag` column in the master experiment log links each training run to the
 exact code version. Tag format: `arch/{feature}` for architecture changes,
 `train/{run_id}` before launching a training run.
+
+---
+
+## [2026-07-14] - E16a optimizer A/B launch protocol
+
+**Why:** E16 remained stable but causally unused at 50M tokens; E16a tests whether
+optimizer efficiency changes that trajectory before context length and data are scaled.
+
+**Impact:** the shared depth-recurrent architecture can run a reproducible, unattended
+100M-token Adam-versus-Muon comparison with matched model, data, initialization, and
+evaluation cadence.
+
+**What changed:**
+- [added] a thin E16a protocol wrapper that pins the implemented shared-depth architecture
+  and selects either calibrated differential AdamW or the stabilized Muon recipe.
+- [added] a fail-fast sequential Adam→Muon pipeline for exclusive use of Odra's GPUs.
+- [tested] optimizer-specific LR/weight-decay propagation, shared E16 invariants, invalid
+  optimizer rejection, pipeline ordering, and existing Muon/backbone optimizer contracts.
+
+**Related:** [E16a](docs/experiments_specs/ahead/E16a_muon_optimizer_ab.md)
+
+---
+
+## [2026-07-13] - Shared depth-recurrent concept workspace
+
+**Why:** E10e updated one shared concept state only after a full 26-layer block, so every
+concept-reading depth saw the same stale state and persistent causal use remained negligible.
+
+**Impact:** the backbone-concept family can now test repeated depth-wise refinement of one
+coherent state without changing the backbone, read interface, objective, data, or legacy E10
+checkpoint behavior.
+
+**What changed:**
+- [added] config-selectable `shared_depth_recurrent` execution that discovers Gemma's global
+  layers, applies one tied BiXT write after each concept read, and gives each depth its own
+  scalar gate.
+- [preserved] the default `global_kv` monolithic path, legacy scalar write gate and checkpoint
+  keys, `concept_num=0` control path, all recurrent-state ablations, and existing eval APIs.
+- [added] checkpoint-safe explicit Gemma layer execution: recurrent state is passed to reads
+  explicitly and updated only in the parent block loop after checkpointed layers return.
+- [extended] per-depth gate telemetry and differential optimizer coverage for depth gates.
+- [tested] native-loop equivalence with concepts disabled, interleaved write ordering and state
+  chaining, all ablations, finite gradients, checkpointed gradient equivalence, checkpoint
+  round-trip, control compatibility, CLI/launcher propagation, and optimizer routing.
+
+**Related:** [E16](docs/experiments_specs/done_failed/E16_shared_depth_recurrent_concepts.md)
 
 ---
 
@@ -37,7 +84,7 @@ interventions provide direct CE, accuracy, and paired-bootstrap gates before any
 - [verified] Gemma tokenizer artifact build, end-to-end tiny-checkpoint evaluator smoke, and
   full local suite: 333 passed, 9 skipped.
 
-**Related:** [E14](docs/experiments_specs/E14_forced_delayed_recall_memory.md)
+**Related:** [E14](docs/experiments_specs/done_failed/E14_forced_delayed_recall_memory.md)
 
 ---
 
@@ -61,9 +108,9 @@ and a higher AdamW LR for newly initialized concept-memory parameters. Defaults 
   first-step gradients with 0.01 gates, optimizer partitioning, parser/factory plumbing, and
   shell env-to-CLI propagation.
 
-**Related:** [E10b](docs/experiments_specs/E10b_normalized_concept_read.md) →
-[E10c](docs/experiments_specs/E10c_nonzero_memory_gates.md) →
-[E10d](docs/experiments_specs/E10d_differential_concept_lr.md)
+**Related:** [E10b](docs/experiments_specs/done_failed/E10b_normalized_concept_read.md) →
+[E10c](docs/experiments_specs/done_failed/E10c_nonzero_memory_gates.md) →
+[E10d](docs/experiments_specs/done_failed/E10d_differential_concept_lr.md)
 
 ---
 
@@ -305,14 +352,14 @@ opening directly, and can be analyzed from saved checkpoints through the canonic
 - [docs/data] declared `causal_lm` compatibility on the reused 2K mix and reconciled the E10
   spec, implementation plan, and agenda.
 
-**Related:** `docs/experiments_specs/E10_gemma_backbone_concept_memory.md`
+**Related:** `docs/experiments_specs/done_failed/E10_gemma_backbone_concept_memory.md`
 
 ---
 
 ## [2026-07-08] - E10 foundation: pretrained-backbone concept memory (Gemma-3 graft, Design C)
 
 **Why:** the platform pivot (spec
-`docs/experiments_specs/E10_gemma_backbone_concept_memory.md`): stop paying the
+`docs/experiments_specs/done_failed/E10_gemma_backbone_concept_memory.md`): stop paying the
 from-scratch language-acquisition cost per run — graft the concept read/write
 machinery onto a frozen pretrained decoder (`google/gemma-3-1b-pt`, whose
 5-sliding:1-global layer pattern is a ready-made socket) and make the concepts a
@@ -522,7 +569,7 @@ training so the long-context mix (DCLM, FinePDFs) is tractable and reusable acro
 - `scripts/pretokenize_mix.py` — passes `PRETOKENIZE_MAX_CHARS` (default 100k) and adds a
   `num_proc=1` fallback so a dead worker surfaces the real error instead of the generic
   multiprocessing message.
-- `docs/experiments_specs/E05_windowed_decoder_concept_memory.md` — switches the launch
+- `docs/experiments_specs/done_failed/E05_windowed_decoder_concept_memory.md` — switches the launch
   workflow to pretokenize → manifest → train (`PRETOKENIZED_MANIFEST`); live
   `DATASET_MIX_RECIPE` kept only as a small-dataset fallback. Documents the same spine as the
   standard data path for future phases (objective-agnostic manifest + one tokenize mode + one
@@ -662,7 +709,7 @@ source with `file_glob`/`recursive`/`max_shards` (DCLM, FinePDFs, …).
 
 **What changed:**
 - [fixed] `training/utils_training.py`, `training/train_perceiver_denoise.py` - make W&B identity anchor-aware (`E03`, `train_concept_ar_anchor_reconstruction`, `anchor`/`anchor-on` tags) and log anchor config explicitly.
-- [updated] `.cursor/skills/experiment-run/SKILL.md`, `docs/experiments_specs/E03_concept_anchor_decollapse.md`, `docs/experiments_specs/E03_concept_anchor_decollapse_plan.md` - add W&B preflight guidance and `EXPERIMENT_ID=E03` to E03 launch recipes, including the matched control.
+- [updated] `.cursor/skills/experiment-run/SKILL.md`, `docs/experiments_specs/done_success/E03_concept_anchor_decollapse.md`, `docs/experiments_specs/done_success/E03_concept_anchor_decollapse_plan.md` - add W&B preflight guidance and `EXPERIMENT_ID=E03` to E03 launch recipes, including the matched control.
 - [added] `tests/test_wandb_identity.py` - regression coverage for E03 anchor W&B identity.
 
 ## [2026-06-13] - Standardize W&B identity for shared perceiver/AR training
@@ -726,7 +773,7 @@ source with `file_glob`/`recursive`/`max_shards` (DCLM, FinePDFs, …).
 - [fixed] `analysis/run_concept_analysis.py` — ablation labels now mask padding positionally via `attention_mask` instead of by `pad_token_id` (pad=eos safe); prints the matched-word-dropout CE and the clean-vs-wd gap; documents that offline ablation encodes the full clean sequence (absolute CE not comparable with training eval).
 - [added] tests: seeded-collator determinism, unseeded resampling, pad=eos TSDAE label/visibility contract (`tests/test_tsdae_collator.py`); eval-mode forced word-dropout, `ce_intact_wd` reporting (`tests/test_concept_ar_decoder.py`).
 
-**Related:** `docs/experiments_specs/E01_concept_ar_decoder.md` (rerun uses these fixes), E01 warm-up review (eval CE divergence diagnosis)
+**Related:** `docs/experiments_specs/done_failed/E01_concept_ar_decoder.md` (rerun uses these fixes), E01 warm-up review (eval CE divergence diagnosis)
 
 ## [2026-06-14] - Make E03 anchor runs W&B-identifiable
 

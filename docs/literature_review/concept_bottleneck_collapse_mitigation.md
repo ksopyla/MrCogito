@@ -64,7 +64,7 @@ A weak/shallow decoder *cannot* do the reconstruction work, so the latent must. 
 
 ---
 
-## 4. Concrete recommendation for E05 (→ spec [E05c](../experiments_specs/E05c_anticollapse_extension.md))
+## 4. Concrete recommendation for E05 (→ spec [E05c](../experiments_specs/ahead/E05c_anticollapse_extension.md))
 
 **Two minimal, additive, proven levers, each mapped to a diagnosed sub-mechanism:**
 
@@ -92,4 +92,4 @@ A weak/shallow decoder *cannot* do the reconstruction work, so the latent must. 
 - Orthogonal Regularization for SSL — arXiv:2411.00392 (NeurIPS 2024)
 - Concept Bottleneck Models — arXiv:2007.04612 (ICML 2020); Label-Free CBMs — arXiv:2304.06129
 
-*Related: E05 run report [`e05_muon_long_2ep_collapsed_20260709.md`](../2_Experiments_Registry/run_reports/e05_muon_long_2ep_collapsed_20260709.md); E05 spec [`E05_windowed_decoder_concept_memory.md`](../experiments_specs/E05_windowed_decoder_concept_memory.md); control spec [`E05b_wd_confound_control.md`](../experiments_specs/E05b_wd_confound_control.md); extension spec [`E05c_anticollapse_extension.md`](../experiments_specs/E05c_anticollapse_extension.md).*
+*Related: E05 run report [`e05_muon_long_2ep_collapsed_20260709.md`](../2_Experiments_Registry/run_reports/e05_muon_long_2ep_collapsed_20260709.md); E05 spec [`E05_windowed_decoder_concept_memory.md`](../experiments_specs/done_failed/E05_windowed_decoder_concept_memory.md); control spec [`E05b_wd_confound_control.md`](../experiments_specs/done_success/E05b_wd_confound_control.md); extension spec [`E05c_anticollapse_extension.md`](../experiments_specs/ahead/E05c_anticollapse_extension.md).*

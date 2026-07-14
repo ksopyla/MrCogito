@@ -9,7 +9,7 @@
 **Last checkpoint:** `Cache/Training/concept_ar_prefix_H768L6C128D4_20260704_225659/checkpoint-276566` (eval_loss 2.584, epoch 2.0)
 **Git commit:** `a37b451` (training); Tier-1 eval-protocol upgrade `4d25b81` deployed during eval
 **Git tag:** —
-**Related TODO:** E05 optimizer A/B in `docs/experiments_specs/E05_windowed_decoder_concept_memory.md`
+**Related TODO:** E05 optimizer A/B in `docs/experiments_specs/done_failed/E05_windowed_decoder_concept_memory.md`
 
 ---
 
@@ -195,8 +195,8 @@ Quantified from W&B history (the raw, pre-whitening, pre-clip `train/grad_norm` 
 1. **Record and move on.** This run closes the E05 windowed-decoder track's "more training" branch. The Adam-vs-Muon A/B research verdict (pending since 2026-07-04) is now *decentralized*: both optimizers fail the concept gates on the windowed decoder; the difference is degree-of-collapse, not pass/fail.
 2. **The agenda's pivot to E10 (pretrained-backbone concept memory) remains the headline** and this run reinforces it — the from-scratch windowed decoder at <200M scale produces used-but-semantically-empty concepts regardless of optimizer or budget.
 3. **Targeted mechanistic follow-ups (cheap, in flight 2026-07-09) — not a broad re-investment in E05 from-scratch:** the deep-dive above turns the open `wd` confound into a *decisive, cheap* test and proposes a minimal bypass-free/anti-collapse objective.
-   - **Control (settles the wd driver):** Adam @ wd=0.1, 0.5 ep, otherwise identical to attempt-3 (wd=0.0). Prediction: it collapses (slower than Muon) ⇒ wd is the proximate collapse driver; if it stays healthy ⇒ Muon's full-rank dynamics are. Spec: [E05b_wd_confound_control.md](../../experiments_specs/E05b_wd_confound_control.md). Also raises `SAVE_TOTAL_LIMIT` + lower `EVAL_STEPS` so pre-crossover checkpoints survive and the collapse is visible live (the `save_total_limit=5` gap above must not recur).
-   - **Anti-collapse extension (tests if the collapse is objective-fixable):** add a genuinely non-bypassable signal — decoder suffix corruption (destroy the local tokens the bypass copies) + a VICReg-style variance+covariance penalty on the concept matrix (directly counteract the rank-1 collapse / wd shrinkage). Spec: [E05c_anticollapse_extension.md](../../experiments_specs/E05c_anticollapse_extension.md). Literature: [concept_bottleneck_collapse_mitigation.md](../../literature_review/concept_bottleneck_collapse_mitigation.md).
+   - **Control (settles the wd driver):** Adam @ wd=0.1, 0.5 ep, otherwise identical to attempt-3 (wd=0.0). Prediction: it collapses (slower than Muon) ⇒ wd is the proximate collapse driver; if it stays healthy ⇒ Muon's full-rank dynamics are. Spec: [E05b_wd_confound_control.md](../../experiments_specs/done_success/E05b_wd_confound_control.md). Also raises `SAVE_TOTAL_LIMIT` + lower `EVAL_STEPS` so pre-crossover checkpoints survive and the collapse is visible live (the `save_total_limit=5` gap above must not recur).
+   - **Anti-collapse extension (tests if the collapse is objective-fixable):** add a genuinely non-bypassable signal — decoder suffix corruption (destroy the local tokens the bypass copies) + a VICReg-style variance+covariance penalty on the concept matrix (directly counteract the rank-1 collapse / wd shrinkage). Spec: [E05c_anticollapse_extension.md](../../experiments_specs/ahead/E05c_anticollapse_extension.md). Literature: [concept_bottleneck_collapse_mitigation.md](../../literature_review/concept_bottleneck_collapse_mitigation.md).
 4. **Optional cleanup (low priority):** recompute the 0.5-ep Muon + Adam att-3 under the new Tier-1 protocol to remove the protocol-split confound in the Concept Health table.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/E05_windowed_decoder_concept_memory.md`, `agenda.md`, prior run report [e05_muon_divergence_rootcause_20260701.md](e05_muon_divergence_rootcause_20260701.md)*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_failed/E05_windowed_decoder_concept_memory.md`, `agenda.md`, prior run report [e05_muon_divergence_rootcause_20260701.md](e05_muon_divergence_rootcause_20260701.md)*

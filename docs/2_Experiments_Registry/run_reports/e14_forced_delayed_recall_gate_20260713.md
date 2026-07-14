@@ -79,4 +79,4 @@ uses denser delayed-recall queries. Only after that positive control passes can 
 failure distinguish writer retention (favoring E11/input-gated writes) from read integration
 (favoring E12).
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/E14_forced_delayed_recall_memory.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_failed/E14_forced_delayed_recall_memory.md`, `agenda.md`*

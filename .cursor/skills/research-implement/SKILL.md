@@ -6,8 +6,8 @@ description: Implement and extend the Concept Encoder PyTorch foundation (nn/, t
 # Research Implement (Concept Encoder codebase)
 
 This is the **implementation half** of the workflow: `experiment-design` produces a
-frozen spec in `docs/experiments_specs/<ID>.md`, `implementation-plan` produces the repo-rooted
-design in `docs/experiments_specs/<ID>_plan.md`; this skill turns them into code in the
+frozen spec in `docs/experiments_specs/ahead/<ID>.md`, `implementation-plan` produces the repo-rooted
+design in `docs/experiments_specs/ahead/<ID>_plan.md`; this skill turns them into code in the
 **shared foundation**. Implement *exactly* the spec's single change — nothing more.
 
 Read the spec (`Builds-on` + `The single change`) **and its `<ID>_plan.md`** (reuse map,
@@ -35,7 +35,7 @@ the right module below. Default to **extending** an existing module; add new cod
 ## How to add capability (configs over forks)
 1. Put the code in the right home: encoder layer → `nn/concept_encoder.py`; decoder/head → `nn/concept_encoder_perceiver.py`; loss → `nn/loss_manager.py` (`register_loss`); collator → `data/data_collators.py`.
 2. Expose it through config: add a field to `ConceptEncoderConfig` (or `LossConfig`) and select the variant by a config/CLI value. Register model types in the entrypoint's `MODEL_REGISTRY`.
-3. **Never** create `training/train_<idea>.py` or `nn/concept_encoder_<idea>.py` per experiment. One shared entrypoint; experiments are args/configs (see `.cursor/rules/experiment-discipline.mdc`).
+3. **Never** create `training/train_<idea>.py` or `nn/concept_encoder_<idea>.py` per experiment. One shared entrypoint; experiments are args/configs (see `.cursor/rules/project-overview.mdc`).
 4. Document `forward()` input/output shapes (`[B, N, H]` → `[B, C, H]` → …) in the docstring. Add a small unit test in `tests/` for the new module (tiny random tensors, shape + loss-finite checks).
 
 ## Reproducibility — do NOT break old experiments

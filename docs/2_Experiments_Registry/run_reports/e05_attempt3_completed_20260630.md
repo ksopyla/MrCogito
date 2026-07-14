@@ -9,7 +9,7 @@
 **Eval checkpoint:** `checkpoint-69142` (final saved; functionally near-identical to best)
 **Git commit:** `f5951da` (training) · `730e607` + `70e1fd2` (eval-script fixes applied during this eval)
 **Git tag:** —
-**Related TODO:** E05 in `docs/experiments_specs/E05_windowed_decoder_concept_memory.md`
+**Related TODO:** E05 in `docs/experiments_specs/done_failed/E05_windowed_decoder_concept_memory.md`
 
 ---
 
@@ -209,4 +209,4 @@ as a downstream-ready model.
   2. SmolLM2's tokenizer ships without a `pad_token`; `AutoTokenizer.from_pretrained` doesn't honor the model config's `pad_token_id`. All three eval entrypoints (`evaluate_on_benchmark.py`, `evaluate_model_on_glue.py`) now set `pad_token = eos_token` right after load. STS-B / SICK / PAWS / GLUE all batch-encode pairs and would crash with "Asking to pad but the tokenizer does not have a padding token" without this.
   Both fixes have regression tests in `tests/test_wandb_lineage.py`.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/E05_windowed_decoder_concept_memory.md`, `agenda.md`, `run_reports/e05_attempt2_diverged_20260628.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_failed/E05_windowed_decoder_concept_memory.md`, `agenda.md`, `run_reports/e05_attempt2_diverged_20260628.md`*

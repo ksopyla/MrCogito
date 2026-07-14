@@ -11,7 +11,7 @@ two modes:
                      the receptive field by ~(W-1) per layer, ≈13K tokens for 26 layers).
 The per-position-bucket difference (blockwise − full) is the gap G the concepts must close.
 Spec gate: G >= 0.05 nats averaged over positions >= 1024 at seq 2048, else re-scope before
-training. Spec: docs/experiments_specs/E10_gemma_backbone_concept_memory.md
+training. Spec: docs/experiments_specs/done_failed/E10_gemma_backbone_concept_memory.md
 
 Usage (GPU server):
   uv run python analysis/run_e10_stage0.py --seq_lens 2048 8192 --num_docs 64 --output Cache/e10_stage0.json

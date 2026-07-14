@@ -21,8 +21,9 @@ HARDER than a full-sequence windowed forward (stacked SWA layers widen the recep
 what the concepts must supply. `concept_num=0` skips the concept machinery entirely and is the
 matched training control arm (identical block protocol → clean A/B attribution).
 
-Specs: docs/experiments_specs/E10_gemma_backbone_concept_memory.md and
-docs/experiments_specs/E16_shared_depth_recurrent_concepts.md (+ their _plan.md files).
+Specs: docs/experiments_specs/done_failed/E10_gemma_backbone_concept_memory.md and
+docs/experiments_specs/done_failed/E16_shared_depth_recurrent_concepts.md
+(+ their _plan.md files).
 """
 
 from __future__ import annotations

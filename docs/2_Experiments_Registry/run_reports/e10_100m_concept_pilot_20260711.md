@@ -8,7 +8,7 @@
 **Best checkpoint:** `Cache/Training/backbone_concept_gemma_3_1b_pt_K512_concept_20260711_152847/checkpoint-1440` (copied to `final/`; final eval_loss 1.815)
 **Git commit:** `6411356`
 **Git tag:** —
-**Related TODO:** E10 100M concept-arm pilot — [spec](../../experiments_specs/E10_gemma_backbone_concept_memory.md)
+**Related TODO:** E10 100M concept-arm pilot — [spec](../../experiments_specs/done_failed/E10_gemma_backbone_concept_memory.md)
 
 ---
 
@@ -78,4 +78,4 @@ The result is therefore stronger than “under-observed” but weaker than a ful
 
 **Verdict: INCONCLUSIVE / NEGATIVE PILOT SIGNAL.** Preserve the checkpoints and run metadata; do not extend the concept arm to 2B. If E10 attribution is to be completed, run the matched 100M-token no-concept control and apply the paired 2K/8K comparison. Regardless of the control outcome, the recurrent-attribution co-primary is currently unmet and should be treated as the central finding.
 
-*Related: `master_experiment_log.md`, [E10 spec](../../experiments_specs/E10_gemma_backbone_concept_memory.md), `agenda.md`.*
+*Related: `master_experiment_log.md`, [E10 spec](../../experiments_specs/done_failed/E10_gemma_backbone_concept_memory.md), `agenda.md`.*

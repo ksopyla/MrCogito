@@ -9,7 +9,7 @@
 # pretokenize phase + the accelerate invocation. Override any knob by exporting it first.
 #
 # Arm invariant: both arms share backbone/LoRA/masks/mix/seed/effective-batch/epochs; ONLY
-# CONCEPT_NUM differs. Spec: docs/experiments_specs/E10_gemma_backbone_concept_memory.md
+# CONCEPT_NUM differs. Spec: docs/experiments_specs/done_failed/E10_gemma_backbone_concept_memory.md
 # (run Stage 0 — analysis/run_e10_stage0.py — BEFORE training; gap G >= 0.05 nats gates the run).
 set -euo pipefail
 

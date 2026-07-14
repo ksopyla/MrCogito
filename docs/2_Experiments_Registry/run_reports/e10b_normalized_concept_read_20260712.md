@@ -8,7 +8,7 @@
 **Best checkpoint:** `Cache/Training/backbone_concept_gemma_3_1b_pt_K512_concept_20260712_133258/checkpoint-360`
 **Git commit:** `a7b2f62`
 **Git tag:** —
-**Related TODO:** E10b read-side RMSNorm — [spec](../../experiments_specs/E10b_normalized_concept_read.md)
+**Related TODO:** E10b read-side RMSNorm — [spec](../../experiments_specs/done_failed/E10b_normalized_concept_read.md)
 
 ---
 
@@ -61,4 +61,4 @@ The carry-only response suggests the path can influence the immediately followin
 
 **Verdict: KILLED AT THE PRE-REGISTERED 25M GATE.** Do not spend the remaining E10b budget. Advance to E10c with the same normalized read and small 0.01 read/write gate initialization, holding all other factors fixed.
 
-*Related: `master_experiment_log.md`, [E10b spec](../../experiments_specs/E10b_normalized_concept_read.md), `agenda.md`.*
+*Related: `master_experiment_log.md`, [E10b spec](../../experiments_specs/done_failed/E10b_normalized_concept_read.md), `agenda.md`.*

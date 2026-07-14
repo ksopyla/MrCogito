@@ -8,7 +8,7 @@
 **Best checkpoint:** `Cache/Training/concept_ar_prefix_H768L6C128D4_20260709_214837/checkpoint-69142` (best=last; eval_loss declined monotonically to 3.641)
 **Git commit:** `4d25b81` (Odra checkout at launch; model code unchanged from the `a37b451` Muon arms — E05b is config-only)
 **Git tag:** —
-**Related TODO:** E05 wd-confound control — [spec](../../experiments_specs/E05b_wd_confound_control.md); diagnoses the 2-ep Muon collapse ([report](e05_muon_long_2ep_collapsed_20260709.md)).
+**Related TODO:** E05 wd-confound control — [spec](../../experiments_specs/done_success/E05b_wd_confound_control.md); diagnoses the 2-ep Muon collapse ([report](e05_muon_long_2ep_collapsed_20260709.md)).
 
 ---
 
@@ -92,4 +92,4 @@ Implications:
 3. **E05d (VICReg) stays well-motivated** as the optimizer-agnostic anti-collapse regularizer (belt-and-suspenders).
 4. **E10 (pretrained-backbone pivot) stays the headline**; this control was a cheap, bounded mechanistic side-quest, now concluded.
 
-*Related: `master_experiment_log.md`, [E05b spec](../../experiments_specs/E05b_wd_confound_control.md), [2-ep Muon collapse report](e05_muon_long_2ep_collapsed_20260709.md), [anti-collapse lit note](../../literature_review/concept_bottleneck_collapse_mitigation.md), `agenda.md`.*
+*Related: `master_experiment_log.md`, [E05b spec](../../experiments_specs/done_success/E05b_wd_confound_control.md), [2-ep Muon collapse report](e05_muon_long_2ep_collapsed_20260709.md), [anti-collapse lit note](../../literature_review/concept_bottleneck_collapse_mitigation.md), `agenda.md`.*

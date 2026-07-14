@@ -1,6 +1,6 @@
 ---
 name: experiment-track
-description: Record and interpret completed Concept Encoder training and evaluation results. Use after a run or benchmark finishes to update `docs/2_Experiments_Registry/master_experiment_log.md`, the experiment's spec in `docs/experiments_specs/<ID>.md` (Status + Result), the "what we've explored" learnings in `docs/1_Strategy_and_Plans/agenda.md`, and short reports in `docs/2_Experiments_Registry/run_reports/`. Judge results against the experiment's own success/kill criteria and the current focus, using fair baseline comparisons that consider model size, objective difficulty, data regime, checkpoint maturity, and compute. Not for remote execution, literature review, or choosing the next experiment family.
+description: Record and interpret completed Concept Encoder training and evaluation results. Use after a run or benchmark finishes to update `docs/2_Experiments_Registry/master_experiment_log.md`, the experiment's spec in `docs/experiments_specs/ahead/<ID>.md` (Status + Result), the "what we've explored" learnings in `docs/1_Strategy_and_Plans/agenda.md`, and short reports in `docs/2_Experiments_Registry/run_reports/`. Judge results against the experiment's own success/kill criteria and the current focus, using fair baseline comparisons that consider model size, objective difficulty, data regime, checkpoint maturity, and compute. Not for remote execution, literature review, or choosing the next experiment family.
 ---
 
 # Experiment Track
@@ -28,7 +28,7 @@ Do not use this skill to decide which hypothesis to test next. Use `research-syn
 - a training run or evaluation sweep finished and needs documentation
 - `WandB`, shell logs, `Cache/Evaluation_reports`, or checkpoint metadata need to be turned into a concise summary
 - `docs/2_Experiments_Registry/master_experiment_log.md` needs a new row or row update
-- the experiment spec `docs/experiments_specs/<ID>.md` needs its `Status` flipped to `done`/`killed` and its `Result` link filled
+- the experiment spec `docs/experiments_specs/ahead/<ID>.md` needs its `Status` and `Result` filled before moving the spec/plan pair to its terminal lifecycle folder
 - the `docs/1_Strategy_and_Plans/agenda.md` "what we've explored" learnings need a one-line update
 - a short report should be added to `docs/2_Experiments_Registry/run_reports/`
 
@@ -43,7 +43,7 @@ Do not use this skill to decide which hypothesis to test next. Use `research-syn
 ## Read This Context First
 Skip `docs/5_Archive/` and any `> **OBSOLETE — ...**` section — that content is historical, not current truth (see `project-overview.mdc` → Docs Hygiene). Read:
 1. `docs/1_Strategy_and_Plans/agenda.md` (current focus + "what we've explored" learnings)
-2. the experiment's spec `docs/experiments_specs/<ID>.md` (its hypothesis + success/kill criteria)
+2. the experiment's spec `docs/experiments_specs/ahead/<ID>.md` (its hypothesis + success/kill criteria)
 3. `docs/2_Experiments_Registry/master_experiment_log.md`
 4. the relevant existing run report, if one exists
 5. available evidence:
@@ -87,9 +87,25 @@ Skip `docs/5_Archive/` and any `> **OBSOLETE — ...**` section — that content
 
 5. Update the docs:
    - `docs/2_Experiments_Registry/master_experiment_log.md` (the row)
-   - the experiment spec `docs/experiments_specs/<ID>.md` (`Status` → done/killed, fill `Result`)
+   - the experiment spec `docs/experiments_specs/ahead/<ID>.md` (`Status` → done/killed, fill `Result`, then move the pair)
    - the `docs/1_Strategy_and_Plans/agenda.md` "what we've explored" learnings (one line)
    - a short `docs/2_Experiments_Registry/run_reports/<run_name>.md` when needed
+
+6. Assign the terminal lifecycle from the experiment's own registered question:
+   - `done_success/` — the decisive success criterion passed, or a control produced the
+     pre-registered decisive answer it was designed to provide
+   - `done_failed/` — the run completed or hit its kill gate without establishing the proposed
+     mechanism; mixed partial positives stay here when the decisive criterion failed
+   - `canceled/` is not a result verdict; use it only for an explicitly rejected, superseded, or
+     abandoned spec that did not produce a completed experiment
+   Draft cancellation is normally owned by `docs-hygiene`; a run that hits a kill gate belongs
+   in `done_failed/`, never `canceled/`.
+   Move the spec and `_plan.md` together, then repair links:
+   - search the repository for `experiments_specs.*<ID>` and links to both filenames
+   - update `agenda.md`, run reports, CHANGELOG entries being touched, cross-spec links, code
+     comments, and catalog metadata
+   - fix outbound `../` depth inside the moved files
+   - verify all non-placeholder Markdown links resolve
 
 ## How To Judge Results Like A Project-Aware Researcher
 Judge in this order:
@@ -127,7 +143,7 @@ Useful interpretation rules:
 
 ## Documentation Rules
 - `master_experiment_log.md`: keep the row dense and factual. Include the key metric, the fair comparison point, and a one-sentence takeaway.
-- `docs/experiments_specs/<ID>.md`: flip `Status` to `done`/`killed` and fill the `Result` block (run id, WandB, run-report link, one-line verdict). Do not paste full results back into the spec.
+- `docs/experiments_specs/ahead/<ID>.md`: flip `Status` to `done`/`killed` and fill the `Result` block (run id, WandB, run-report link, one-line verdict). Do not paste full results back into the spec. Then move the spec and plan together to `done_success/` or `done_failed/`.
 - `agenda.md`: add/update a one-line "what we've explored" entry (neutral, evidence-based — not a verdict) and move the experiment off Current focus.
 - `run_reports/`: keep reports short unless the user explicitly wants a deeper note.
 - Do not open a full research note by default. Use `research-synthesis` (which can spawn `research-scout` for source fetching) or a separate note only when the result requires deeper literature-backed analysis or a new cross-run diagnosis.
@@ -144,7 +160,8 @@ Use these date rules:
 - `master_experiment_log.md` evaluation row `Date`: evaluation date, not checkpoint training date.
 - `run_reports/<name>_YYYYMMDD.md` filename date: the decisive evaluation or write-up date used for that report.
 - Run report `**Date:**`: the same decisive result date used for the report, not necessarily the run start date.
-- `docs/experiments_specs/<ID>.md` and `agenda.md`: keep separate dates for separate events such as training-done vs evaluation-done; record them with explicit `YYYY-MM-DD`.
+- `docs/experiments_specs/<lifecycle>/<ID>.md` and `agenda.md`: keep separate dates for
+  separate events such as training-done vs evaluation-done; record them with explicit `YYYY-MM-DD`.
 
 Prefer source order:
 1. checkpoint `config.json` and saved metadata
@@ -167,7 +184,7 @@ Prefer source order:
 - Use `--` for unavailable metric cells and `—` for absent git tags or truly not-applicable entries, matching the current file.
 - `Conclusion / Takeaway` should be short, factual, and usually start with a bold status phrase such as `**TODO 10A — MIXED.**` when that context exists.
 
-### `docs/experiments_specs/<ID>.md` (the spec) and `docs/1_Strategy_and_Plans/agenda.md`
+### `docs/experiments_specs/<lifecycle>/<ID>.md` (the spec) and `docs/1_Strategy_and_Plans/agenda.md`
 - Do NOT rewrite the frozen spec body (hypothesis, builds-on, single change, criteria). Only set `Status` and fill the `Result` block.
 - `Result` block: run id, WandB link, run-report path, and a one-line verdict (`promising`/`mixed`/`regression`/`killed`) judged against that spec's own success/kill criteria.
 - Keep experiment IDs stable; never reuse an ID.
@@ -248,7 +265,7 @@ Use this structure for non-trivial runs and keep it close to the current reports
 ## Decision
 <1 short paragraph with the immediate next action>
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/<ID>.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/<lifecycle>/<ID>.md`, `agenda.md`*
 ```
 
 ## Output Expectations

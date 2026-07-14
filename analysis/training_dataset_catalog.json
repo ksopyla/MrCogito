@@ -262,7 +262,7 @@
       "org": "MrCogito",
       "total_tokens": "10B sample",
       "sources": [
-        "docs/experiments_specs/E02_*.md"
+        "docs/experiments_specs/done_success/E02_ar_prefix_suffix.md"
       ],
       "stages": [
         {
@@ -280,7 +280,7 @@
       "org": "MrCogito",
       "total_tokens": "staged",
       "sources": [
-        "docs/experiments_specs/E05_windowed_decoder_concept_memory.md"
+        "docs/experiments_specs/done_failed/E05_windowed_decoder_concept_memory.md"
       ],
       "stages": [
         {

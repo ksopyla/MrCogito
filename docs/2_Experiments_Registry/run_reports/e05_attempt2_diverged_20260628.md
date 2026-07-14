@@ -8,7 +8,7 @@
 **Best checkpoint:** `Cache/Training/concept_ar_prefix_H768L6C128D4_20260627_192407/checkpoint-40000`
 **Git commit:** `e44ad84`
 **Git tag:** —
-**Related TODO:** E05 in `docs/experiments_specs/E05_windowed_decoder_concept_memory.md`
+**Related TODO:** E05 in `docs/experiments_specs/done_failed/E05_windowed_decoder_concept_memory.md`
 
 ---
 
@@ -106,4 +106,4 @@ Speculatively added an explicit **"3 consecutive rising eval_loss points"** earl
 - Polonez had a local unstaged change to `scripts/train_perceiver_denoise_multigpu.sh`; stashed. Both stashes remain on the respective servers.
 - The 2026-06-28 retune adds `MAX_GRAD_NORM` env-var wiring to `scripts/train_perceiver_denoise_multigpu.sh` (the launcher previously relied on HF Trainer's default 1.0).
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/E05_windowed_decoder_concept_memory.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_failed/E05_windowed_decoder_concept_memory.md`, `agenda.md`*

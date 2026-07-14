@@ -8,7 +8,7 @@
 **Best checkpoint:** `Cache/Training/concept_ar_prefix_H768L6C128D4_20260613_134159/checkpoint-78000`
 **Git commit:** `b66bf2e`
 **Git tag:** `arch/perceiver-denoise-reset-47-gb66b`
-**Related TODO:** E02 in `docs/experiments_specs/E02_ar_prefix_suffix.md`
+**Related TODO:** E02 in `docs/experiments_specs/done_success/E02_ar_prefix_suffix.md`
 
 ---
 
@@ -121,4 +121,4 @@ E02 is the most semantically capable checkpoint the project has produced. The pr
 
 The next step is E03 (frozen-encoder hidden-state anchor), which addresses the root cause: concept collapse. E03 does not assume a different objective — it adds an auxiliary MSE loss orthogonal to the AR signal, so it can in principle be combined with either E01 or E02's objective once validated.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/E02_ar_prefix_suffix.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E02_ar_prefix_suffix.md`, `agenda.md`*

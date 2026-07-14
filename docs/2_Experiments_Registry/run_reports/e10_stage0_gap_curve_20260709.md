@@ -17,7 +17,7 @@
 **Eval data:** `HuggingFaceFW/fineweb-edu` `sample-10BT`, streaming split, 64 docs per length (truncated to seq_len, kept only if ≥ seq_len tokens)
 **Git commit:** working-tree edits to `analysis/run_e10_stage0.py` (BUCKETS extended through 32K; default `--seq_lens` → `[2048, 4096, 8192, 16384]`; added per-length checkpoint + post-loop decision-tree summary)
 **Git tag:** —
-**Related TODO:** E10 Stage-0 gate in `docs/experiments_specs/E10_gemma_backbone_concept_memory.md` (Success criteria → Stage 0)
+**Related TODO:** E10 Stage-0 gate in `docs/experiments_specs/done_failed/E10_gemma_backbone_concept_memory.md` (Success criteria → Stage 0)
 
 ---
 
@@ -83,4 +83,4 @@ Two structural observations:
 - **16K docs are rare in fineweb-edu `sample-10BT`.** All four lengths hit the n=64 target without the script's "only N docs found" warning firing, but the 16K row is closest to the scarcity edge. If future Stage-0 re-runs go longer than 16K, switch the eval-data source to a dedicated long-doc set (FinePDFs or PG-19) to avoid the warning.
 - **MPS fp32 fit at 16K** without OOM — the 16K×16K attention matrices on the 4 global layers in `full_attention` mode were fine on this Mac's unified memory. A CUDA run on a 24 GB 3090 would use bf16 and be ~10–20× faster.
 
-*Related: `docs/experiments_specs/E10_gemma_backbone_concept_memory.md` (Stage 0 gate), `master_experiment_log.md` (Evaluation Experiments section), `agenda.md` (Current focus).*
+*Related: `docs/experiments_specs/done_failed/E10_gemma_backbone_concept_memory.md` (Stage 0 gate), `master_experiment_log.md` (Evaluation Experiments section), `agenda.md` (Current focus).*
