@@ -263,6 +263,7 @@ def test_e10_protocol_wrapper_forwards_recovery_sequence_overrides(tmp_path):
             "SKIP_PRETOKENIZE": "1",
             "MANIFEST": str(manifest),
             "TARGET_TOKENS": "",
+            "CONCEPT_IO_MODE": "shared_depth_recurrent",
             "READ_CONCEPT_NORM": "true",
             "READ_GATE_INIT": "0.01",
             "WRITE_GATE_INIT": "0.01",
@@ -272,6 +273,7 @@ def test_e10_protocol_wrapper_forwards_recovery_sequence_overrides(tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
+    assert _value_after(args, "--concept_io_mode") == "shared_depth_recurrent"
     assert _value_after(args, "--read_concept_norm") == "true"
     assert _value_after(args, "--read_gate_init") == "0.01"
     assert _value_after(args, "--write_gate_init") == "0.01"

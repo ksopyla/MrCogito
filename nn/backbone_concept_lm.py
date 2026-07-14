@@ -1,4 +1,4 @@
-"""E10 — Pretrained-backbone concept memory (Design C: global→concept read + recurrent write).
+"""Pretrained-backbone concept memory (E10 global-KV and E16 shared-depth recurrence).
 
 Grafts the MrCogito concept machinery onto a frozen pretrained decoder (Gemma-3 family):
 
@@ -21,7 +21,8 @@ HARDER than a full-sequence windowed forward (stacked SWA layers widen the recep
 what the concepts must supply. `concept_num=0` skips the concept machinery entirely and is the
 matched training control arm (identical block protocol → clean A/B attribution).
 
-Spec: docs/experiments_specs/E10_gemma_backbone_concept_memory.md (+ _plan.md).
+Specs: docs/experiments_specs/E10_gemma_backbone_concept_memory.md and
+docs/experiments_specs/E16_shared_depth_recurrent_concepts.md (+ their _plan.md files).
 """
 
 from __future__ import annotations
@@ -59,7 +60,7 @@ class BackboneConceptConfig(PretrainedConfig):
         backbone_config: Optional[dict] = None,
         concept_num: int = 128,
         concept_block: int = 512,
-        concept_io_mode: str = "global_kv",   # E11: "mem_tokens" · E12: "kv_prefix"
+        concept_io_mode: str = "global_kv",   # E16: "shared_depth_recurrent"
         write_num_heads: int = 4,
         read_concept_norm: bool = False,
         read_gate_init: float = 0.0,
@@ -187,9 +188,19 @@ class GlobalLayerWithConceptRead(nn.Module):
             self.read_branch.concept_norm.to(device=reference.device, dtype=reference.dtype)
         self.gate = nn.Parameter(torch.tensor(float(gate_init)))
 
-    def forward(self, hidden_states, *args, **kwargs):
+    _STATE_UNSET = object()
+
+    def forward(
+        self,
+        hidden_states,
+        *args,
+        concept_state=_STATE_UNSET,
+        **kwargs,
+    ):
         outputs = self.layer(hidden_states, *args, **kwargs)
-        z = self._state.get("z")
+        # E10's monolithic backbone path uses the mutable holder. E16 passes the
+        # state explicitly so checkpoint replay never observes a later recurrent state.
+        z = self._state.get("z") if concept_state is self._STATE_UNSET else concept_state
         if z is not None:
             permutation = self._state.get("permutation")
             if permutation is not None:
@@ -204,11 +215,20 @@ class GlobalLayerWithConceptRead(nn.Module):
 
 
 class ConceptWriteHead(nn.Module):
-    """Gated recurrent concept write (E09 design): z ← z + tanh(α)·RMSNorm(BiXT_lat←tok(z, h)).
-    α is zero-init ⇒ identity at step 0. Rows whose block is entirely padding are left
-    untouched (and their would-be NaN softmax is neutralized before the gate)."""
+    """Tied recurrent concept writer with legacy or depth-specific scalar gates.
 
-    def __init__(self, hidden_size: int, num_heads: int, gate_init: float = 0.0):
+    The BiXT and normalization weights are always shared. ``global_kv`` owns the
+    checkpoint-compatible scalar ``alpha``; ``shared_depth_recurrent`` owns one
+    ``depth_alphas`` entry per discovered global layer.
+    """
+
+    def __init__(
+        self,
+        hidden_size: int,
+        num_heads: int,
+        gate_init: float = 0.0,
+        num_depth_gates: int = 0,
+    ):
         super().__init__()
         self.bixt = BiXTCrossAttention(
             dim_lat=hidden_size, dim_tok=hidden_size, dim_attn=hidden_size,
@@ -217,23 +237,45 @@ class ConceptWriteHead(nn.Module):
         self.norm_lat = nn.RMSNorm(hidden_size)
         self.norm_tok = nn.RMSNorm(hidden_size)
         self.sandwich = nn.RMSNorm(hidden_size)   # Ouro-style anti-collapse post-norm
-        self.alpha = nn.Parameter(torch.tensor(float(gate_init)))
+        if num_depth_gates:
+            self.register_parameter("alpha", None)
+            self.depth_alphas = nn.Parameter(
+                torch.full((num_depth_gates,), float(gate_init))
+            )
+        else:
+            self.alpha = nn.Parameter(torch.tensor(float(gate_init)))
+            self.register_parameter("depth_alphas", None)
 
-    def forward(self, z: torch.Tensor, h_block: torch.Tensor, pad_mask: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        z: torch.Tensor,
+        h_block: torch.Tensor,
+        pad_mask: torch.Tensor,
+        *,
+        depth_index: Optional[int] = None,
+    ) -> torch.Tensor:
         # pad_mask: [B, Kb] bool, True = padding.
+        if self.depth_alphas is None:
+            if depth_index is not None:
+                raise ValueError("depth_index is only valid for depth-gated writes.")
+            alpha = self.alpha
+        else:
+            if depth_index is None:
+                raise ValueError("depth_index is required for depth-gated writes.")
+            alpha = self.depth_alphas[depth_index]
         valid_row = (~pad_mask).any(dim=1)                     # [B]
         safe_pad = pad_mask.clone()
         safe_pad[~valid_row, 0] = False                        # avoid all -inf softmax rows
         lat, _ = self.bixt(
             self.norm_lat(z), self.norm_tok(h_block).to(z.dtype), key_padding_mask=safe_pad
         )
-        update = torch.tanh(self.alpha) * self.sandwich(lat)
+        update = torch.tanh(alpha) * self.sandwich(lat)
         update = update * valid_row.view(-1, 1, 1).to(update.dtype)
         return z + update
 
 
 class BackboneConceptLM(PreTrainedModel):
-    """Frozen pretrained decoder + LoRA + concept read/write graft (Design C / `global_kv`)."""
+    """Frozen pretrained decoder + LoRA + config-selected shared concept memory."""
 
     config_class = BackboneConceptConfig
     base_model_prefix = "backbone_concept"
@@ -243,10 +285,11 @@ class BackboneConceptLM(PreTrainedModel):
 
     def __init__(self, config: BackboneConceptConfig, backbone: Optional[nn.Module] = None):
         super().__init__(config)
-        if config.concept_io_mode != "global_kv":
+        valid_io_modes = {"global_kv", "shared_depth_recurrent"}
+        if config.concept_io_mode not in valid_io_modes:
             raise NotImplementedError(
-                f"concept_io_mode={config.concept_io_mode!r} is a follow-up spec (E11/E12); "
-                "only 'global_kv' (E10) is implemented."
+                f"concept_io_mode={config.concept_io_mode!r} is not implemented; "
+                f"expected one of {sorted(valid_io_modes)}."
             )
         if backbone is None:
             if not config.backbone_config:
@@ -288,15 +331,31 @@ class BackboneConceptLM(PreTrainedModel):
             "shuffle": False,
             "permutation": None,
         }
+        layers = self.backbone.model.layers
+        self.global_layer_indices = tuple(
+            i for i, layer in enumerate(layers)
+            if layer.attention_type == "full_attention"
+        )
         if config.concept_num > 0:
+            if not self.global_layer_indices:
+                raise ValueError(
+                    "No 'full_attention' layers found in the backbone — the concept read "
+                    "graft would be a silent no-op. Check the backbone's layer_types "
+                    f"(got: {[layer.attention_type for layer in layers]})."
+                )
             self.concept_init = nn.Parameter(
                 torch.randn(config.concept_num, self.hidden_size) * (self.hidden_size ** -0.5)
             )
             self.write_head = ConceptWriteHead(
-                self.hidden_size, config.write_num_heads, gate_init=config.write_gate_init
+                self.hidden_size,
+                config.write_num_heads,
+                gate_init=config.write_gate_init,
+                num_depth_gates=(
+                    len(self.global_layer_indices)
+                    if config.concept_io_mode == "shared_depth_recurrent"
+                    else 0
+                ),
             )
-            layers = self.backbone.model.layers
-            n_wrapped = 0
             for i, layer in enumerate(layers):
                 if layer.attention_type == "full_attention":
                     layers[i] = GlobalLayerWithConceptRead(
@@ -307,13 +366,6 @@ class BackboneConceptLM(PreTrainedModel):
                         normalize_concepts=config.read_concept_norm,
                         rms_norm_eps=getattr(bb_cfg, "rms_norm_eps", None),
                     )
-                    n_wrapped += 1
-            if n_wrapped == 0:
-                raise ValueError(
-                    "No 'full_attention' layers found in the backbone — the concept read "
-                    "graft would be a silent no-op. Check the backbone's layer_types "
-                    f"(got: {[l.attention_type for l in layers]})."
-                )
         else:
             self.concept_init = None
             self.write_head = None
@@ -440,6 +492,80 @@ class BackboneConceptLM(PreTrainedModel):
         )[0]
 
     # ------------------------------------------------------------------ core block loop
+    def _forward_shared_depth_block(
+        self,
+        inputs_embeds: torch.Tensor,
+        attention_masks: dict[str, torch.Tensor],
+        z: Optional[torch.Tensor],
+        *,
+        block_len: int,
+        block_pad_mask: torch.Tensor,
+        concept_mode: str,
+    ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """Execute one Gemma block and interleave tied concept writes.
+
+        Shapes: token embeddings ``[B,Q,H]`` and state ``[B,C,H]`` produce final
+        token states ``[B,Q,H]`` plus the refined shared state ``[B,C,H]``.
+        This mirrors the no-cache Gemma3TextModel layer loop, while passing ``z``
+        explicitly to concept reads and mutating it only after layer forwards return.
+        """
+        text_model = self.backbone.model
+        cache_position = torch.arange(
+            inputs_embeds.shape[1], device=inputs_embeds.device
+        )
+        position_ids = cache_position.unsqueeze(0)
+        hidden_states = inputs_embeds
+        position_embeddings_global = text_model.rotary_emb(
+            hidden_states, position_ids
+        )
+        position_embeddings_local = text_model.rotary_emb_local(
+            hidden_states, position_ids
+        )
+
+        depth_index = 0
+        for decoder_layer in text_model.layers[: text_model.config.num_hidden_layers]:
+            layer_kwargs = {
+                "position_embeddings_global": position_embeddings_global,
+                "position_embeddings_local": position_embeddings_local,
+                "attention_mask": attention_masks[decoder_layer.attention_type],
+                "position_ids": position_ids,
+                "past_key_values": None,
+                "output_attentions": False,
+                "use_cache": False,
+                "cache_position": cache_position,
+            }
+            if isinstance(decoder_layer, GlobalLayerWithConceptRead):
+                layer_outputs = decoder_layer(
+                    hidden_states,
+                    concept_state=z,
+                    **layer_kwargs,
+                )
+            else:
+                layer_outputs = decoder_layer(hidden_states, **layer_kwargs)
+            hidden_states = layer_outputs[0]
+
+            if isinstance(decoder_layer, GlobalLayerWithConceptRead):
+                if z is not None and concept_mode != "static":
+                    write_base = (
+                        self.concept_init.unsqueeze(0).expand(z.shape[0], -1, -1)
+                        if concept_mode == "one_block"
+                        else z
+                    )
+                    z = self.write_head(
+                        write_base,
+                        hidden_states[:, -block_len:],
+                        block_pad_mask,
+                        depth_index=depth_index,
+                    )
+                depth_index += 1
+
+        if depth_index != len(self.global_layer_indices):
+            raise RuntimeError(
+                "Shared-depth execution saw a different number of global layers "
+                f"({depth_index}) than construction ({len(self.global_layer_indices)})."
+            )
+        return text_model.norm(hidden_states), z
+
     def _forward_blocks(
         self,
         input_ids: torch.Tensor,
@@ -512,12 +638,30 @@ class BackboneConceptLM(PreTrainedModel):
             dec_mask = attention_mask[:, lo:e]
             mask4d = self._windowed_causal_mask(dec_mask, dtype)
             self._concept_state["z"] = z
-            out = self.backbone.model(
-                inputs_embeds=self.backbone.model.embed_tokens(dec_ids),
-                attention_mask={"full_attention": mask4d, "sliding_attention": mask4d},
-                use_cache=False,
-            )
-            h = out.last_hidden_state                                   # [B, Q, H]
+            attention_masks = {
+                "full_attention": mask4d,
+                "sliding_attention": mask4d,
+            }
+            inputs_embeds = self.backbone.model.embed_tokens(dec_ids)
+            if (
+                self.config.concept_io_mode == "shared_depth_recurrent"
+                and self.has_concepts
+            ):
+                h, z = self._forward_shared_depth_block(
+                    inputs_embeds,
+                    attention_masks,
+                    z,
+                    block_len=blk_len,
+                    block_pad_mask=attention_mask[:, s:e] == 0,
+                    concept_mode=concept_mode,
+                )
+            else:
+                out = self.backbone.model(
+                    inputs_embeds=inputs_embeds,
+                    attention_mask=attention_masks,
+                    use_cache=False,
+                )
+                h = out.last_hidden_state                               # [B, Q, H]
 
             if labels is not None:
                 if b == 0:
@@ -542,7 +686,11 @@ class BackboneConceptLM(PreTrainedModel):
                     total_ce = total_ce + ce_sum
                     total_cnt = total_cnt + cnt
 
-            if use_concepts and concept_mode != "static":
+            if (
+                self.config.concept_io_mode == "global_kv"
+                and use_concepts
+                and concept_mode != "static"
+            ):
                 h_blk = h[:, -blk_len:]
                 blk_pad = attention_mask[:, s:e] == 0
                 write_base = (
@@ -757,10 +905,23 @@ class BackboneConceptLM(PreTrainedModel):
 
     @torch.no_grad()
     def concept_gate_metrics(self) -> dict[str, float]:
-        """Current effective read/write gates for E10 live monitoring."""
+        """Current effective read/write gates for E10/E16 live monitoring."""
         if not self.has_concepts:
             return {}
-        metrics = {"concept_gates/write": float(torch.tanh(self.write_head.alpha).item())}
+        if self.config.concept_io_mode == "global_kv":
+            metrics = {
+                "concept_gates/write": float(
+                    torch.tanh(self.write_head.alpha).item()
+                )
+            }
+        else:
+            metrics = {}
+            for depth_index, layer_index in enumerate(self.global_layer_indices):
+                value = float(
+                    torch.tanh(self.write_head.depth_alphas[depth_index]).item()
+                )
+                metrics[f"concept_gates/write_{depth_index}"] = value
+                metrics[f"concept_gates/write_layer_{layer_index}"] = value
         read_idx = 0
         for layer_idx, layer in enumerate(self.backbone.model.layers):
             if isinstance(layer, GlobalLayerWithConceptRead):

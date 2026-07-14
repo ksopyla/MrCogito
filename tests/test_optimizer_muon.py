@@ -72,7 +72,7 @@ def _trainer(tmp_path, optimizer_choice):
     )
 
 
-def _tiny_backbone():
+def _tiny_backbone(concept_io_mode="global_kv"):
     config = BackboneConceptConfig(
         backbone_model="tiny-random-gemma3",
         backbone_config={
@@ -95,6 +95,7 @@ def _tiny_backbone():
         },
         concept_num=4,
         concept_block=8,
+        concept_io_mode=concept_io_mode,
         write_num_heads=2,
         read_concept_norm=True,
         read_gate_init=0.01,
@@ -105,7 +106,13 @@ def _tiny_backbone():
     return BackboneConceptLM(config)
 
 
-def _backbone_trainer(tmp_path, *, optimizer_choice="adam", concept_memory_lr=3e-4):
+def _backbone_trainer(
+    tmp_path,
+    *,
+    optimizer_choice="adam",
+    concept_memory_lr=3e-4,
+    concept_io_mode="global_kv",
+):
     args = TrainingArguments(
         output_dir=str(tmp_path),
         optim="adamw_torch",
@@ -117,7 +124,7 @@ def _backbone_trainer(tmp_path, *, optimizer_choice="adam", concept_memory_lr=3e
         use_cpu=True,
     )
     return PerceiverDenoiseTrainer(
-        model=_tiny_backbone(),
+        model=_tiny_backbone(concept_io_mode),
         args=args,
         objective_variant="causal_lm",
         contrastive_weight=0.3,
@@ -186,6 +193,22 @@ def test_backbone_differential_adamw_partitions_every_trainable_once(tmp_path):
     )
     assert any(group["weight_decay"] == pytest.approx(0.0) for group in groups.values())
     assert any(group["weight_decay"] == pytest.approx(0.1) for group in groups.values())
+
+
+def test_shared_depth_gates_use_concept_memory_optimizer_group(tmp_path):
+    trainer = _backbone_trainer(
+        tmp_path,
+        concept_io_mode="shared_depth_recurrent",
+    )
+    optimizer = trainer.create_optimizer()
+    depth_gate = trainer.model.write_head.depth_alphas
+    matching_groups = [
+        group for group in optimizer.param_groups
+        if any(parameter is depth_gate for parameter in group["params"])
+    ]
+    assert len(matching_groups) == 1
+    assert matching_groups[0]["group_name"] == "concept_memory_no_decay"
+    assert matching_groups[0]["lr"] == pytest.approx(3e-4)
 
 
 def test_differential_adamw_fails_on_unknown_trainable_parameter(tmp_path):

@@ -165,8 +165,9 @@ class ModelArguments:
     concept_io_mode: str = field(
         default="global_kv",
         metadata={
-            "help": "E10: concept read/write mechanism. 'global_kv' (E10 Design C); "
-            "'mem_tokens' (E11) / 'kv_prefix' (E12) are follow-up specs."
+            "help": "Backbone concept read/write mechanism: 'global_kv' keeps E10's "
+            "single post-block write; 'shared_depth_recurrent' (E16) applies one tied "
+            "write after each global concept-reading layer."
         },
     )
     read_concept_norm: bool = field(

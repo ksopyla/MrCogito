@@ -41,6 +41,12 @@ def tiny_backbone_dict():
     )
 
 
+def two_global_backbone_dict():
+    config = tiny_backbone_dict()
+    config["num_hidden_layers"] = 12
+    return config
+
+
 def make_model(concept_num=4, lora_r=2, seed=0, **config_overrides):
     torch.manual_seed(seed)
     config_kwargs = dict(
@@ -85,6 +91,77 @@ def test_global_layer_wrapped_and_control_not():
     assert all(t == "Gemma3DecoderLayer" for t in types[:5])
     control = make_model(concept_num=0)
     assert all(type(l).__name__ == "Gemma3DecoderLayer" for l in control.backbone.model.layers)
+
+
+def test_shared_depth_mode_discovers_global_layers_and_builds_depth_gates():
+    model = make_model(
+        backbone_config=two_global_backbone_dict(),
+        concept_io_mode="shared_depth_recurrent",
+        write_gate_init=0.01,
+    )
+    assert model.global_layer_indices == (5, 11)
+    assert model.write_head.alpha is None
+    assert model.write_head.depth_alphas.shape == (2,)
+    assert model.write_head.depth_alphas.tolist() == pytest.approx([0.01, 0.01])
+
+    legacy = make_model(backbone_config=two_global_backbone_dict())
+    assert legacy.write_head.alpha.ndim == 0
+    assert legacy.write_head.depth_alphas is None
+
+
+def test_shared_depth_writes_once_after_each_global_layer_and_chains_state():
+    model = make_model(
+        backbone_config=two_global_backbone_dict(),
+        concept_io_mode="shared_depth_recurrent",
+        read_gate_init=0.2,
+        write_gate_init=0.3,
+    )
+    reads = []
+    writes = []
+    depth_indices = []
+    for layer_index in model.global_layer_indices:
+        branch = model.backbone.model.layers[layer_index].read_branch
+        original_read = branch.forward
+
+        def tracked_read(x, z, attn, *, _original=original_read):
+            reads.append(z.detach().clone())
+            return _original(x, z, attn)
+
+        branch.forward = tracked_read
+
+    original_write = model.write_head.forward
+
+    def tracked_write(*args, **kwargs):
+        depth_indices.append(kwargs["depth_index"])
+        output = original_write(*args, **kwargs)
+        writes.append(output.detach().clone())
+        return output
+
+    model.write_head.forward = tracked_write
+    input_ids, attention_mask, _ = make_batch(B=2, S=K)
+    final_state = model.encode_concepts(input_ids, attention_mask).last_hidden_state
+
+    assert depth_indices == [0, 1]
+    assert len(reads) == len(writes) == 2
+    assert torch.equal(reads[1], writes[0])
+    assert torch.equal(final_state, writes[1])
+
+
+def test_shared_depth_explicit_loop_matches_native_gemma_when_concepts_disabled():
+    shared = make_model(
+        backbone_config=two_global_backbone_dict(),
+        concept_io_mode="shared_depth_recurrent",
+        seed=7,
+    )
+    legacy = make_model(backbone_config=two_global_backbone_dict(), seed=7)
+    input_ids, attention_mask, labels = make_batch(B=2, S=2 * K)
+    shared_ce = shared.per_position_ce(
+        input_ids, attention_mask, labels, concept_mode="zero"
+    )
+    legacy_ce = legacy.per_position_ce(
+        input_ids, attention_mask, labels, concept_mode="zero"
+    )
+    _assert_close_where_valid(shared_ce, legacy_ce, atol=1e-6)
 
 
 def test_read_concept_norm_is_optional_and_normalizes_low_rms_state():
@@ -244,6 +321,66 @@ def test_gradients_reach_concepts_with_gradient_checkpointing():
     assert bixt_grads and any(g.abs().sum() > 0 for g in bixt_grads)
 
 
+def test_shared_depth_gates_and_writer_receive_finite_gradients():
+    model = make_model(
+        backbone_config=two_global_backbone_dict(),
+        concept_io_mode="shared_depth_recurrent",
+        read_concept_norm=True,
+        read_gate_init=0.01,
+        write_gate_init=0.01,
+    )
+    model.train()
+    input_ids, attention_mask, labels = make_batch(B=2, S=2 * K)
+    loss = model(input_ids, attention_mask, labels=labels).loss
+    loss.backward()
+
+    assert torch.isfinite(loss)
+    assert model.write_head.depth_alphas.grad is not None
+    assert torch.isfinite(model.write_head.depth_alphas.grad).all()
+    writer_grads = [
+        parameter.grad
+        for parameter in model.write_head.parameters()
+        if parameter is not model.write_head.depth_alphas
+    ]
+    assert writer_grads
+    assert all(gradient is not None and torch.isfinite(gradient).all()
+               for gradient in writer_grads)
+
+
+def test_shared_depth_non_reentrant_checkpointing_matches_plain_gradients():
+    plain = make_model(
+        backbone_config=two_global_backbone_dict(),
+        concept_io_mode="shared_depth_recurrent",
+        read_gate_init=0.1,
+        write_gate_init=0.1,
+        seed=9,
+    )
+    checkpointed = make_model(
+        backbone_config=two_global_backbone_dict(),
+        concept_io_mode="shared_depth_recurrent",
+        read_gate_init=0.1,
+        write_gate_init=0.1,
+        seed=9,
+    )
+    plain.train()
+    checkpointed.train()
+    checkpointed.gradient_checkpointing_enable()
+    input_ids, attention_mask, labels = make_batch(B=2, S=2 * K, seed=4)
+
+    plain_loss = plain(input_ids, attention_mask, labels=labels).loss
+    checkpointed_loss = checkpointed(input_ids, attention_mask, labels=labels).loss
+    plain_loss.backward()
+    checkpointed_loss.backward()
+
+    assert torch.allclose(plain_loss, checkpointed_loss, atol=1e-6)
+    assert torch.allclose(
+        plain.write_head.depth_alphas.grad,
+        checkpointed.write_head.depth_alphas.grad,
+        atol=1e-6,
+    )
+    assert torch.isfinite(checkpointed.write_head.depth_alphas.grad).all()
+
+
 def test_no_leak_from_future_blocks():
     """Perturbing block 2's tokens must not change CE in blocks 0-1 (block causality of both
     the windowed attention and the write recurrence), even with open gates."""
@@ -282,6 +419,32 @@ def test_concept_ablation_ce_contract():
                 "delta_zero_beyond"):
         assert key in metrics, f"missing {key}"
         assert isinstance(metrics[key], float) and metrics[key] == metrics[key]  # not NaN
+
+
+@pytest.mark.parametrize(
+    "concept_mode",
+    ["real", "static", "zero", "shuffle", "one_block", "permutation"],
+)
+def test_shared_depth_preserves_all_ablation_modes(concept_mode):
+    model = make_model(
+        backbone_config=two_global_backbone_dict(),
+        concept_io_mode="shared_depth_recurrent",
+        read_gate_init=0.2,
+        write_gate_init=0.2,
+    )
+    input_ids, attention_mask, labels = make_batch(B=2, S=2 * K)
+    kwargs = {}
+    if concept_mode == "permutation":
+        kwargs["concept_permutation"] = torch.tensor([1, 0])
+    metrics = model.per_position_metrics(
+        input_ids,
+        attention_mask,
+        labels,
+        concept_mode=concept_mode,
+        **kwargs,
+    )
+    assert set(metrics) == {"ce", "predictions"}
+    assert torch.isfinite(metrics["ce"][~torch.isnan(metrics["ce"])]).all()
 
 
 def test_recurrence_ablation_modes_isolate_static_and_one_block_memory():
@@ -381,6 +544,20 @@ def test_concept_gate_metrics_contract():
     assert make_model(concept_num=0).concept_gate_metrics() == {}
 
 
+def test_shared_depth_gate_metrics_expose_depth_and_layer_keys():
+    model = make_model(
+        backbone_config=two_global_backbone_dict(),
+        concept_io_mode="shared_depth_recurrent",
+    )
+    model.write_head.depth_alphas.data.copy_(torch.tensor([0.2, -0.3]))
+    metrics = model.concept_gate_metrics()
+    for depth_index, layer_index in enumerate((5, 11)):
+        expected = torch.tanh(model.write_head.depth_alphas[depth_index]).item()
+        assert metrics[f"concept_gates/write_{depth_index}"] == pytest.approx(expected)
+        assert metrics[f"concept_gates/write_layer_{layer_index}"] == pytest.approx(expected)
+    assert "concept_gates/write" not in metrics
+
+
 def test_encode_concepts_shape():
     model = make_model(concept_num=4)
     input_ids, attention_mask, _ = make_batch(B=3, S=20)
@@ -409,6 +586,45 @@ def test_save_load_roundtrip(tmp_path):
     reloaded.eval()
     ce_after = reloaded.per_position_ce(input_ids, attention_mask, labels, mode="blockwise")
     _assert_close_where_valid(ce_before, ce_after, atol=1e-5)
+
+
+def test_shared_depth_save_load_roundtrip_preserves_mode_gates_loss_and_state(tmp_path):
+    model = make_model(
+        backbone_config=two_global_backbone_dict(),
+        concept_io_mode="shared_depth_recurrent",
+        read_gate_init=0.2,
+        write_gate_init=0.3,
+    )
+    model.write_head.depth_alphas.data.copy_(torch.tensor([0.25, -0.15]))
+    input_ids, attention_mask, labels = make_batch(B=2, S=2 * K)
+    loss_before = model(input_ids, attention_mask, labels=labels).loss
+    state_before = model.encode_concepts(input_ids, attention_mask).last_hidden_state
+
+    model.save_pretrained(tmp_path / "shared_depth_ckpt")
+    reloaded = BackboneConceptLM.from_pretrained(tmp_path / "shared_depth_ckpt")
+    reloaded.eval()
+    loss_after = reloaded(input_ids, attention_mask, labels=labels).loss
+    state_after = reloaded.encode_concepts(input_ids, attention_mask).last_hidden_state
+
+    assert reloaded.config.concept_io_mode == "shared_depth_recurrent"
+    assert torch.equal(
+        model.write_head.depth_alphas, reloaded.write_head.depth_alphas
+    )
+    assert torch.allclose(loss_before, loss_after, atol=1e-6)
+    assert torch.allclose(state_before, state_after, atol=1e-6)
+
+
+def test_shared_depth_concept_zero_keeps_legacy_control_path():
+    shared = make_model(
+        concept_num=0,
+        concept_io_mode="shared_depth_recurrent",
+        seed=13,
+    )
+    legacy = make_model(concept_num=0, concept_io_mode="global_kv", seed=13)
+    input_ids, attention_mask, labels = make_batch(B=2, S=2 * K)
+    shared_ce = shared.per_position_ce(input_ids, attention_mask, labels)
+    legacy_ce = legacy.per_position_ce(input_ids, attention_mask, labels)
+    _assert_close_where_valid(shared_ce, legacy_ce, atol=1e-6)
 
 
 def test_causal_lm_collator():

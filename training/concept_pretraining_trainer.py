@@ -87,7 +87,11 @@ class PerceiverDenoiseTrainer(Trainer):
 
     @staticmethod
     def _backbone_parameter_role(name: str) -> str:
-        """Classify E10 trainables for differential AdamW; fail closed on future drift."""
+        """Classify backbone-concept trainables for differential AdamW.
+
+        ``write_head.*`` deliberately includes E16's depth-specific gates alongside
+        the shared writer, while unknown future trainables still fail closed.
+        """
         if name.startswith("module."):
             name = name[len("module.") :]
         if "lora_A" in name or "lora_B" in name:

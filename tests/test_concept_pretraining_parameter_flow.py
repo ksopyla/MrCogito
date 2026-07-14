@@ -131,6 +131,23 @@ def test_parser_maps_e10_profile_into_model_data_and_training_args(tmp_path):
     assert training_args.gradient_checkpointing is True
 
 
+def test_parser_accepts_shared_depth_recurrent_mode(tmp_path):
+    parser = build_argument_parser()
+    model_args, _, _, _, _ = parser.parse_args_into_dataclasses(
+        args=[
+            "--backbone_model",
+            "google/gemma-3-1b-pt",
+            "--objective_variant",
+            "causal_lm",
+            "--concept_io_mode",
+            "shared_depth_recurrent",
+            "--output_dir",
+            str(tmp_path),
+        ]
+    )
+    assert model_args.concept_io_mode == "shared_depth_recurrent"
+
+
 @pytest.mark.parametrize(
     ("model_args", "loss_args", "message"),
     [
