@@ -1,6 +1,6 @@
 # E16 — Shared depth-recurrent concept workspace (E13 variant)
 
-- **Status:** draft
+- **Status:** active — Odra 50M pilot launching 2026-07-14 after batch-12 calibration
 - **Serves:** the post-E10 platform pivot toward concepts that are formed, repeatedly refined, and carried as one coherent latent reasoning state
 - **Implementation plan:** [E16_shared_depth_recurrent_concepts_plan.md](E16_shared_depth_recurrent_concepts_plan.md) *(authored after this spec is approved)*
 - **Owner / dates:** Krzysztof Sopyła · opened 2026-07-13 · closed —
