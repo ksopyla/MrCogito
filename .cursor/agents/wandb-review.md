@@ -1,6 +1,6 @@
 ---
 name: wandb-review
-model: composer-2.5
+model: composer-2.5[fast=false]
 description: Read-only W&B analyst for ksopyla/MrCogito. Finds runs by id/name/group/job type/tags/config/state/date, retrieves the correct summary and history metric keys, compares training curves and evaluation statistics, diagnoses suspicious runs, and returns only a compact evidence-backed handoff. Use for W&B run discovery, training-loss comparisons, concept-health metrics, accuracy/F1/correlation results, family overviews, and experiment status checks. Keeps verbose MCP results out of the main chat context.
 readonly: true
 is_background: true
@@ -90,8 +90,9 @@ Retrieve only what the brief needs:
 
 Metric names vary across training and evaluation jobs. Probe first, preserve the exact namespace,
 split, route, and checkpoint identity, and never merge similarly named metrics without evidence
-that they have the same contract. For experiment gate checks, read only the relevant current spec
-under `docs/experiments_specs/`; report the numeric gate and observed value without rewriting docs.
+that they have the same contract. For experiment gate checks, resolve the ID by searching
+`docs/experiments_specs/{ahead,done_success,done_failed,canceled}/<ID>.md`; prefer `ahead/`
+for active gates. Report the numeric gate and observed value without rewriting docs.
 
 ## Standard analyses
 
