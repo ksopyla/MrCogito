@@ -11,6 +11,8 @@ LEGACY_LAUNCHER = REPO_ROOT / "scripts" / "train_perceiver_denoise_multigpu.sh"
 E05_LAUNCHER = REPO_ROOT / "scripts" / "launch_e05.sh"
 E10_LAUNCHER = REPO_ROOT / "scripts" / "launch_e10.sh"
 E14_LAUNCHER = REPO_ROOT / "scripts" / "launch_e14.sh"
+E16A_LAUNCHER = REPO_ROOT / "scripts" / "launch_e16a.sh"
+E16A_PIPELINE = REPO_ROOT / "scripts" / "launch_e16a_pipeline.sh"
 
 
 def _write_executable(path, contents):
@@ -309,3 +311,72 @@ def test_e14_protocol_wrapper_pins_forced_recall_profile(tmp_path):
     assert _value_after(args, "--warmup_steps") == "50"
     assert _value_after(args, "--eval_steps") == "164"
     assert _value_after(args, "--save_steps") == "164"
+
+
+def _run_e16a_arm(tmp_path, optimizer):
+    data_root = tmp_path / f"e16a_{optimizer}_data"
+    data_root.mkdir()
+    manifest = data_root / "smollm3_inspired_2k_e05_gemma_manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    return _run_launcher(
+        tmp_path,
+        {
+            "DATASETS_TOK_DIR": str(data_root),
+            "DATASETS_RAW_DIR": str(tmp_path / "raw"),
+            "RAW_ARCHIVE_DIR": str(tmp_path / "raw"),
+            "MANIFEST": str(manifest),
+            "OPTIMIZER": optimizer,
+        },
+        launcher=E16A_LAUNCHER,
+    )
+
+
+def test_e16a_adam_arm_pins_matched_protocol(tmp_path):
+    result, args, _ = _run_e16a_arm(tmp_path, "adam")
+
+    assert result.returncode == 0, result.stderr
+    assert _value_after(args, "--concept_io_mode") == "shared_depth_recurrent"
+    assert _value_after(args, "--read_concept_norm") == "true"
+    assert _value_after(args, "--read_gate_init") == "0.01"
+    assert _value_after(args, "--write_gate_init") == "0.01"
+    assert _value_after(args, "--max_seq_length") == "2048"
+    assert _value_after(args, "--optimizer") == "adam"
+    assert _value_after(args, "--learning_rate") == "1e-4"
+    assert _value_after(args, "--concept_memory_lr") == "3e-4"
+    assert _value_after(args, "--weight_decay") == "0.0"
+    assert _value_after(args, "--warmup_steps") == "100"
+    assert _value_after(args, "--num_train_epochs") == "7.5"
+
+
+def test_e16a_muon_arm_pins_stabilized_recipe(tmp_path):
+    result, args, _ = _run_e16a_arm(tmp_path, "muon")
+
+    assert result.returncode == 0, result.stderr
+    assert _value_after(args, "--concept_io_mode") == "shared_depth_recurrent"
+    assert _value_after(args, "--optimizer") == "muon"
+    assert _value_after(args, "--learning_rate") == "0.01"
+    assert _value_after(args, "--muon_adamw_lr") == "2e-4"
+    assert _value_after(args, "--muon_momentum") == "0.95"
+    assert _value_after(args, "--weight_decay") == "0.1"
+    assert "--concept_memory_lr" not in args
+
+
+def test_e16a_rejects_unknown_optimizer_before_delegating(tmp_path):
+    result, args, _ = _run_launcher(
+        tmp_path,
+        {"OPTIMIZER": "unknown"},
+        launcher=E16A_LAUNCHER,
+    )
+
+    assert result.returncode == 2
+    assert "must be 'adam' or 'muon'" in result.stderr
+    assert args == []
+
+
+def test_e16a_pipeline_orders_arms_and_stops_on_failure():
+    pipeline = E16A_PIPELINE.read_text(encoding="utf-8")
+
+    assert "set -euo pipefail" in pipeline
+    assert pipeline.index("__E16A_ADAM_START__") < pipeline.index("__E16A_ADAM_COMPLETE__")
+    assert pipeline.index("__E16A_ADAM_COMPLETE__") < pipeline.index("__E16A_MUON_START__")
+    assert pipeline.index("__E16A_MUON_START__") < pipeline.index("__E16A_MUON_COMPLETE__")
