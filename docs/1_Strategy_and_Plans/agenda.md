@@ -20,12 +20,14 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **E16a optimizer A/B active on Odra (2026-07-14):** Muon's sustained-LR
-  calibration passed at matrix LR 0.01; an unattended fresh Adam→Muon pair is now
-  running at 100M tokens per arm under the existing 2K E16 protocol. Causal
-  concept-use deltas and RankMe—not CE alone—select the optimizer for a possible
-  E16b 4K/500M–1B long-document scale-up. Spec:
-  [E16a](../experiments_specs/ahead/E16a_muon_optimizer_ab.md).
+- **E16b bold long-context Muon 1B (2026-07-15):** user-authorized compound
+  scale-up of the E16 shared-depth workspace — seq **4096**, long-doc mix
+  `smollm3_inspired_4k_e16b`, Muon, **1B tokens**. Soft safety kills only; no
+  early mechanism abort. Spec:
+  [E16b](../experiments_specs/ahead/E16b_longctx_muon_1b.md).
+- **E16a optimizer A/B complete (2026-07-15):** Muon beat Adam on CE/RankMe/gates
+  at 100M/2K but both failed the ≥0.01 causal-use gate (Muon min-beyond 0.00284).
+  User overrode the "do not select Muon" rule for the E16b scale-up.
 - **Platform pivot (2026-07-08) — pretrained backbone retained; E10 global→concept memory branch closed.**
   Decision: stop paying the from-scratch language-acquisition cost per run (the E05 lesson: stable
   optimization + used-but-semantically-empty concepts at <200M scale); graft the concept machinery

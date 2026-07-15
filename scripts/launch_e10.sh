@@ -47,7 +47,7 @@ export WRITE_GATE_INIT="${WRITE_GATE_INIT:-0.0}"
 export LORA_R="${LORA_R:-16}"
 export LORA_ALPHA="${LORA_ALPHA:-32}"
 export TOKENIZER_NAME=google/gemma-3-1b-pt
-export MAX_SEQ_LENGTH=2048
+export MAX_SEQ_LENGTH="${MAX_SEQ_LENGTH:-2048}"
 export SEED=42
 
 # ---- Pretokenize pins ----

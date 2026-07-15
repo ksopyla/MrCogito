@@ -15,6 +15,25 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-07-15] - E16b long-context Muon 1B protocol
+
+**Why:** Short 2K cautious pilots (E10–E16a) kept concepts geometrically healthy
+but never unlocked persistent causal use. The next bet needs longer documents,
+more tokens, and Muon together.
+
+**Impact:** the shared depth-recurrent architecture can train at seq 4096 on a
+long-document Gemma mix for a 1B-token Muon run without a model fork.
+
+**What changed:**
+- [added] `smollm3_inspired_4k_e16b` mix recipe upweighting FinePDFs/DCLM for 4K.
+- [added] thin `scripts/launch_e16b.sh` pinning Muon + 4K + 1B over `launch_e10.sh`.
+- [fixed] `launch_e10.sh` now allows `MAX_SEQ_LENGTH` override (default remains 2048).
+- [tested] mix weight/policy contract and E16b launcher parameter flow.
+
+**Related:** [E16b](docs/experiments_specs/ahead/E16b_longctx_muon_1b.md)
+
+---
+
 ## [2026-07-14] - E16a optimizer A/B launch protocol
 
 **Why:** E16 remained stable but causally unused at 50M tokens; E16a tests whether

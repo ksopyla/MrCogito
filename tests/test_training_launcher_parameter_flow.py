@@ -13,6 +13,7 @@ E10_LAUNCHER = REPO_ROOT / "scripts" / "launch_e10.sh"
 E14_LAUNCHER = REPO_ROOT / "scripts" / "launch_e14.sh"
 E16A_LAUNCHER = REPO_ROOT / "scripts" / "launch_e16a.sh"
 E16A_PIPELINE = REPO_ROOT / "scripts" / "launch_e16a_pipeline.sh"
+E16B_LAUNCHER = REPO_ROOT / "scripts" / "launch_e16b.sh"
 
 
 def _write_executable(path, contents):
@@ -380,3 +381,57 @@ def test_e16a_pipeline_orders_arms_and_stops_on_failure():
     assert pipeline.index("__E16A_ADAM_START__") < pipeline.index("__E16A_ADAM_COMPLETE__")
     assert pipeline.index("__E16A_ADAM_COMPLETE__") < pipeline.index("__E16A_MUON_START__")
     assert pipeline.index("__E16A_MUON_START__") < pipeline.index("__E16A_MUON_COMPLETE__")
+
+
+def test_e16b_pins_longctx_muon_1b_protocol(tmp_path):
+    data_root = tmp_path / "e16b_data"
+    data_root.mkdir()
+    manifest = data_root / "smollm3_inspired_4k_e16b_gemma_manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    result, args, _ = _run_launcher(
+        tmp_path,
+        {
+            "DATASETS_TOK_DIR": str(data_root),
+            "DATASETS_RAW_DIR": str(tmp_path / "raw"),
+            "RAW_ARCHIVE_DIR": str(tmp_path / "raw"),
+            "MANIFEST": str(manifest),
+            "TARGET_TOKENS": "",
+        },
+        launcher=E16B_LAUNCHER,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert _value_after(args, "--concept_io_mode") == "shared_depth_recurrent"
+    assert _value_after(args, "--max_seq_length") == "4096"
+    assert _value_after(args, "--optimizer") == "muon"
+    assert _value_after(args, "--learning_rate") == "0.01"
+    assert _value_after(args, "--muon_adamw_lr") == "2e-4"
+    assert _value_after(args, "--weight_decay") == "0.1"
+    assert _value_after(args, "--warmup_steps") == "500"
+    assert _value_after(args, "--per_device_train_batch_size") == "4"
+    assert _value_after(args, "--gradient_accumulation_steps") == "6"
+    assert _value_after(args, "--pretokenized_manifest") == str(manifest)
+    assert "--concept_memory_lr" not in args
+
+
+def test_e10_accepts_max_seq_length_override(tmp_path):
+    data_root = tmp_path / "e10_4k_data"
+    data_root.mkdir()
+    manifest = data_root / "manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    result, args, _ = _run_launcher(
+        tmp_path,
+        {
+            "DATASETS_TOK_DIR": str(data_root),
+            "DATASETS_RAW_DIR": str(tmp_path / "raw"),
+            "RAW_ARCHIVE_DIR": str(tmp_path / "raw"),
+            "SKIP_PRETOKENIZE": "1",
+            "MANIFEST": str(manifest),
+            "TARGET_TOKENS": "",
+            "MAX_SEQ_LENGTH": "4096",
+        },
+        launcher=E10_LAUNCHER,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert _value_after(args, "--max_seq_length") == "4096"
