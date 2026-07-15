@@ -25,9 +25,11 @@ more tokens, and Muon together.
 long-document Gemma mix for a 1B-token Muon run without a model fork.
 
 **What changed:**
-- [added] `smollm3_inspired_4k_e16b` mix recipe upweighting FinePDFs/DCLM for 4K.
+- [added] `e16b_long_4k_v1` long-document mix (FinePDFs + PG19 + Wikipedia +
+  DCLM/FineWeb/Stack); superseded the short-lived FinePDFs-heavy 4K draft.
 - [added] thin `scripts/launch_e16b.sh` pinning Muon + 4K + 1B over `launch_e10.sh`.
 - [fixed] `launch_e10.sh` now allows `MAX_SEQ_LENGTH` override (default remains 2048).
+- [fixed] E16b 4K corpora isolated under `datasets_tok_gemma_4k` (avoids 2K fingerprint clash).
 - [tested] mix weight/policy contract and E16b launcher parameter flow.
 
 **Related:** [E16b](docs/experiments_specs/ahead/E16b_longctx_muon_1b.md)

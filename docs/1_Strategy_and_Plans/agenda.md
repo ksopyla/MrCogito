@@ -22,7 +22,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 ## Current focus
 - **E16b bold long-context Muon 1B (2026-07-15):** user-authorized compound
   scale-up of the E16 shared-depth workspace — seq **4096**, long-doc mix
-  `smollm3_inspired_4k_e16b`, Muon, **1B tokens**. Soft safety kills only; no
+  `e16b_long_4k_v1`, Muon, **1B tokens**. Soft safety kills only; no
   early mechanism abort. Spec:
   [E16b](../experiments_specs/ahead/E16b_longctx_muon_1b.md).
 - **E16a optimizer A/B complete (2026-07-15):** Muon beat Adam on CE/RankMe/gates

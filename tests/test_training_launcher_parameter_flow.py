@@ -386,7 +386,7 @@ def test_e16a_pipeline_orders_arms_and_stops_on_failure():
 def test_e16b_pins_longctx_muon_1b_protocol(tmp_path):
     data_root = tmp_path / "e16b_data"
     data_root.mkdir()
-    manifest = data_root / "smollm3_inspired_4k_e16b_gemma_manifest.json"
+    manifest = data_root / "e16b_long_4k_v1_gemma_manifest.json"
     manifest.write_text("{}", encoding="utf-8")
     result, args, _ = _run_launcher(
         tmp_path,
@@ -395,7 +395,7 @@ def test_e16b_pins_longctx_muon_1b_protocol(tmp_path):
             "DATASETS_RAW_DIR": str(tmp_path / "raw"),
             "RAW_ARCHIVE_DIR": str(tmp_path / "raw"),
             "MANIFEST": str(manifest),
-            "TARGET_TOKENS": "",
+            "TARGET_TOKENS": "1000000000",
         },
         launcher=E16B_LAUNCHER,
     )

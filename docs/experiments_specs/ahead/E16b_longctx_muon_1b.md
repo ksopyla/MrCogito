@@ -1,6 +1,6 @@
 # E16b — Long-context Muon scale-up of the shared depth-recurrent workspace
 
-- **Status:** approved — user-authorized bold compound scale-up 2026-07-15 (4K + long mix + Muon + 1B)
+- **Status:** active — 4K Gemma pretok launched on Odra 2026-07-15; Muon 1B train follows calibration
 - **Serves:** test whether the E16 shared concept workspace becomes causally useful when given genuine multi-block documents, Muon optimization, and ~10× more tokens than E16a
 - **Implementation plan:** [E16b_longctx_muon_1b_plan.md](E16b_longctx_muon_1b_plan.md)
 - **Owner / dates:** Krzysztof Sopyła · opened 2026-07-15 · closed —
@@ -43,7 +43,7 @@ Relative to E16a Muon:
 | Factor | E16a Muon | E16b |
 |---|---|---|
 | Sequence length | 2048 | **4096** |
-| Data mix | `smollm3_inspired_2k_e05` | **`smollm3_inspired_4k_e16b`** |
+| Data mix | `smollm3_inspired_2k_e05` | **`e16b_long_4k_v1`** |
 | Token budget | 100M | **1B** |
 | Optimizer | Muon 0.01 / wd 0.1 / adamw_lr 2e-4 | same Muon recipe |
 | Architecture | shared_depth_recurrent C=128 K=512 | unchanged |
@@ -85,8 +85,9 @@ Only hard safety stops — no early mechanism kill that would abort a bold scale
 ## Plan
 
 - **Architecture:** E16 shared depth-recurrent; 4K ⇒ 8 concept blocks per sequence.
-- **Data:** new recipe `data/mix_recipes/smollm3_inspired_4k_e16b.json`; Gemma
-  pretokenize to `datasets_tok_gemma` at `max_seq_length=4096`.
+- **Data:** recipe `data/mix_recipes/e16b_long_4k_v1.json` (FinePDFs + PG19 +
+  Wikipedia long tier, DCLM/FineWeb/Stack fluency); Gemma pretokenize to
+  `datasets_tok_gemma_4k` at `max_seq_length=4096`.
 - **Compute:** Odra 3× RTX 3090; calibrate microbatch at 4K before full launch;
   preserve effective batch 72. Expected wall time on the order of several days.
 - **Steps:** `TARGET_TOKENS=1000000000`, warmup 500, Muon recipe from E16a,

@@ -1,6 +1,6 @@
 # E16b — Long-Context Muon 1B Implementation Plan
 
-- **Spec:** [E16b_longctx_muon_1b.md](E16b_longctx_muon_1b.md) · **Status:** approved
+- **Spec:** [E16b_longctx_muon_1b.md](E16b_longctx_muon_1b.md) · **Status:** implemented
 - **Authored by:** `implementation-plan` · for → `research-implement`
 
 > Compound scale-up authorized by the user. Architecture stays E16; change the
@@ -21,7 +21,7 @@
 | `BackboneConceptLM` shared-depth path | reuse | `nn/backbone_concept_lm.py` |
 | Muon optimizer | reuse E16a recipe | `nn/muon.py`, trainer |
 | Recipe loader / pretokenize | reuse | `data/dataset_preprocess.py`, `scripts/pretokenize_mix.py` |
-| 4K mix recipe | **new** | `data/mix_recipes/smollm3_inspired_4k_e16b.json` |
+| 4K mix recipe | **new** | `data/mix_recipes/e16b_long_4k_v1.json` |
 | E10 launcher | reuse with overrides | `scripts/launch_e10.sh` |
 | E16b protocol wrapper | **new** | `scripts/launch_e16b.sh` |
 | Launcher tests | extend | `tests/test_training_launcher_parameter_flow.py` |
@@ -44,18 +44,18 @@ matching the longer carry distance.
 
 ## 4. Inputs & data
 
-- Recipe: `smollm3_inspired_4k_e16b` (FinePDFs 0.28, DCLM 0.22, FineWeb-Edu 0.18,
-  Stack-Edu 0.12, FineMath 0.10, reasoning tails 0.10).
+- Recipe: `e16b_long_4k_v1` (FinePDFs 0.30, PG19 0.18, DCLM 0.15, Wikipedia-en
+  0.12, FineWeb-Edu 0.10, Stack-Edu 0.10, FineMath 0.05).
 - Pretokenize on Odra:
   ```bash
   uv run python scripts/pretokenize_mix.py \
-    --mix smollm3_inspired_4k_e16b \
+    --mix e16b_long_4k_v1 \
     --tokenizer google/gemma-3-1b-pt \
     --max_seq_length 4096 \
     --cache_dir "$DATASETS_TOK_DIR" \
     --raw_dir "$RAW_ARCHIVE_DIR" \
     --raw_archive_dir "$RAW_ARCHIVE_DIR" \
-    --manifest "$DATASETS_TOK_DIR/smollm3_inspired_4k_e16b_gemma_manifest.json" \
+    --manifest "$DATASETS_TOK_DIR/e16b_long_4k_v1_gemma_manifest.json" \
     --objective causal_lm --seed 42 \
     --train_num_proc 8 --test_num_proc 4 --jobs 1
   ```
@@ -82,7 +82,7 @@ MUON_MOMENTUM=0.95
 WEIGHT_DECAY=0.1
 CONCEPT_MEMORY_LR=
 MAX_SEQ_LENGTH=4096          # must override launch_e10's hardcoded 2048
-PRETOKENIZE_MIX=smollm3_inspired_4k_e16b
+PRETOKENIZE_MIX=e16b_long_4k_v1
 TARGET_TOKENS=1000000000
 WARMUP_STEPS=500
 AUTO_INTERVALS=1
