@@ -29,11 +29,13 @@ export SKIP_PRETOKENIZE="${SKIP_PRETOKENIZE:-1}"
 export LOGGING_STEPS="${LOGGING_STEPS:-20}"
 
 # Keep 4K tokenized corpora out of the immutable 2K Gemma cache tree.
+# Hard-pin the 4K tree: `remote_paths.sh` exports DATASETS_TOK_DIR=datasets_tok,
+# and `${VAR:-default}` would incorrectly keep that 2K/generic path.
 SCRIPT_DIR_ABS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT_HINT="/home/ksopyla/dev/MrCogito"
 [ -d "$PROJECT_ROOT_HINT" ] || PROJECT_ROOT_HINT="$(cd "${SCRIPT_DIR_ABS}/.." && pwd)"
-export DATASETS_TOK_DIR="${DATASETS_TOK_DIR:-${PROJECT_ROOT_HINT}/../hf_home/datasets_tok_gemma_4k}"
-export MANIFEST="${MANIFEST:-${DATASETS_TOK_DIR}/${PRETOKENIZE_MIX}_gemma_manifest.json}"
+export DATASETS_TOK_DIR="${PROJECT_ROOT_HINT}/../hf_home/datasets_tok_gemma_4k"
+export MANIFEST="${DATASETS_TOK_DIR}/${PRETOKENIZE_MIX}_gemma_manifest.json"
 
 # 4K default microbatch is conservative; override after Odra calibration.
 # Effective batch target remains 72: per_device * num_gpus * accum.
