@@ -15,6 +15,26 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-07-18] - Deductive stories dataset pipeline (v0)
+
+**Why:**
+- Need a graph-first, solver-verified long-context deduction corpus for train+eval
+  (windowed AR / Gemma concepts / diffusion), with Azure OpenAI narrative expansion.
+
+**Impact:**
+- Can generate detective + SE-debug stories with exact-match gold, template firewall,
+  dual length views, and HF export; mix snippet ready at 5% after publish.
+
+**What changed:**
+- [added] `data/deductive_stories/` — schema, solvers, Azure writer/judge, filters, export
+- [added] `scripts/build_deductive_stories.py` — graph|expand|filter|split|export|pilot
+- [added] `tests/test_deductive_stories.py`, mix recipe snippet, Azure vars in `.env.example`
+- [added] `docs/engineering_specs/deductive_stories_synthetic_dataset.md`
+
+**Related:** `docs/engineering_specs/deductive_stories_synthetic_dataset.md`
+
+---
+
 ## [2026-07-15] - E16b long-context Muon 1B protocol
 
 **Why:** Short 2K cautious pilots (E10–E16a) kept concepts geometrically healthy

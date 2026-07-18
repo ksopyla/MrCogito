@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-07-14 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-07-18 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,6 +20,10 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **Deductive stories dataset (eng, 2026-07-18):** graph-first synthetic long narratives
+  (detective + SE debug) with solver gold + Azure OpenAI expansion. Spec:
+  [deductive_stories_synthetic_dataset.md](../engineering_specs/deductive_stories_synthetic_dataset.md).
+  Pilot: `uv run python scripts/build_deductive_stories.py pilot --domain detective --mock-llm`.
 - **E16b bold long-context Muon 1B (2026-07-15):** user-authorized compound
   scale-up of the E16 shared-depth workspace — seq **4096**, long-doc mix
   `e16b_long_4k_v1`, Muon, **1B tokens**. Soft safety kills only; no
