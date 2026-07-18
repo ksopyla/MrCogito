@@ -342,7 +342,10 @@ def compute_ar_concept_ablation(model, batches, device, window_k=None):
     if not per_batch:
         return {}
 
-    keys = [k for k in per_batch[0] if k != "_bucket"]
+    # Union keys across batches: short sequences omit _beyond/_carry, so taking only
+    # per_batch[0]'s keys silently drops the E10/E16b long-range gate when a short
+    # bucket is sampled first.
+    keys = sorted({k for m in per_batch for k in m if k != "_bucket"})
     out = {}
     for k in keys:
         vals = [m[k] for m in per_batch if k in m]
