@@ -44,6 +44,7 @@ from data.dataset_preprocess import (
     _normalize_to_text_column,
     _make_tokenize_fn,
     configure_text_tokenizer_for_model_vocab,
+    filter_rows_outside_model_vocab,
 )
 
 logger = logging.getLogger("pretokenize_mix")
@@ -280,6 +281,7 @@ def tokenize_source(
     download_workers: int,
     raw_archive_dir: Path | None = None,
     eval_only: bool = False,
+    model_vocab_size: int | None = None,
 ) -> dict:
     name = spec.get("name", spec["hf_id"])
     tok_dir = cache_dir / f"{name}"
@@ -355,7 +357,13 @@ def tokenize_source(
     # (it would OOM/crash a num_proc worker even though truncation=max_seq_length discards
     # all but ~8k chars). Env-overridable; default 100k chars >> 2048 tokens.
     max_chars = int(os.environ.get("PRETOKENIZE_MAX_CHARS", "100000"))
-    tokenize_fn = _make_tokenize_fn(tokenizer, max_seq_length, append_eos_token_id, max_chars=max_chars)
+    tokenize_fn = _make_tokenize_fn(
+        tokenizer,
+        max_seq_length,
+        append_eos_token_id,
+        max_chars=max_chars,
+        model_vocab_size=model_vocab_size,
+    )
 
     def _map_resilient(ds, num_proc, **kw):
         """map() with a num_proc=1 fallback: if a worker dies opaquely ('subprocess
@@ -369,6 +377,19 @@ def tokenize_source(
                 return ds.map(tokenize_fn, batched=True, num_proc=1, **kw)
             raise
 
+    def _drop_oov(ds, split_name: str, num_proc: int):
+        if model_vocab_size is None:
+            return ds
+        filtered, dropped = filter_rows_outside_model_vocab(
+            ds, model_vocab_size, num_proc=num_proc
+        )
+        if dropped:
+            logger.warning(
+                f"[{name}] dropped {dropped} {split_name} rows with input_ids outside "
+                f"[0, {model_vocab_size}) before writing pretok cache"
+            )
+        return filtered
+
     nte = max(1, min(test_num_proc, len(src_eval)))
     if eval_only:
         logger.info(
@@ -379,7 +400,9 @@ def tokenize_source(
         ntr = max(1, min(train_num_proc, len(src_train)))
         logger.info(f"[{name}] tokenizing train={len(src_train):,} (proc={ntr}, max_chars={max_chars}) eval={len(src_eval):,} (proc={nte})")
         src_train = _map_resilient(src_train, ntr, remove_columns=["text"])
+        src_train = _drop_oov(src_train, "train", ntr)
     src_eval = _map_resilient(src_eval, nte, remove_columns=["text"])
+    src_eval = _drop_oov(src_eval, "eval", nte)
 
     # save_to_disk cannot save an interleave; here we save train and eval separately.
     if not eval_only:
@@ -550,6 +573,7 @@ def main():
                     args.test_num_proc, args.download_workers,
                     raw_archive_dir=raw_archive_root,
                     eval_only=args.eval_only,
+                    model_vocab_size=model_vocab_size,
                 )
                 entries.append(entry)
                 logger.info(f"[{entry['name']}] elapsed {time.time()-t0:.0f}s")
@@ -592,13 +616,11 @@ def main():
 def _proc_worker(spec, args, cache_root, raw_root, append_eos, raw_archive_root=None):
     """Process-pool worker for --jobs>1."""
     from transformers import AutoConfig, AutoTokenizer
-    from training.concept_pretraining_objectives import resolve_append_eos_token_id as _r
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
-    configure_text_tokenizer_for_model_vocab(
-        tokenizer, AutoConfig.from_pretrained(args.tokenizer).vocab_size
-    )
+    model_vocab_size = AutoConfig.from_pretrained(args.tokenizer).vocab_size
+    configure_text_tokenizer_for_model_vocab(tokenizer, model_vocab_size)
     return tokenize_source(
         spec, tokenizer, args.max_seq_length, append_eos,
         cache_root, raw_root / spec.get("name", spec["hf_id"]),
@@ -606,6 +628,7 @@ def _proc_worker(spec, args, cache_root, raw_root, append_eos, raw_archive_root=
         args.test_num_proc, args.download_workers,
         raw_archive_dir=raw_archive_root,
         eval_only=args.eval_only,
+        model_vocab_size=model_vocab_size,
     )
 
 

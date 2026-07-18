@@ -86,7 +86,13 @@ def configure_text_tokenizer_for_model_vocab(tokenizer, model_vocab_size: int) -
     return True
 
 
-def _make_tokenize_fn(tokenizer, max_seq_length, append_eos_token_id, max_chars=None):
+def _make_tokenize_fn(
+    tokenizer,
+    max_seq_length,
+    append_eos_token_id,
+    max_chars=None,
+    model_vocab_size: int | None = None,
+):
     """Build the batched tokenize function shared by the single-source and mix loaders.
 
     append_eos_token_id is None  -> legacy pad-to-max_length path (perceiver MLM etc.).
@@ -98,34 +104,86 @@ def _make_tokenize_fn(tokenizer, max_seq_length, append_eos_token_id, max_chars=
         discards all but ~8k chars, so a 100MB DCLM web page can kill a ``num_proc`` worker
         before truncation runs. Lossless for the kept tokens when ``max_chars`` >> max_seq_length.
         Default ``None`` preserves the original behaviour (no pre-truncation).
+    model_vocab_size -> when set, pass ``split_special_tokens`` explicitly into each
+        tokenizer call (survives ``datasets.map`` multiprocessing better than relying on a
+        pickled attribute alone) and refuse batches that still contain out-of-range ids.
     """
+    # Explicit kwarg: attribute-only config can be lost when tokenizers are re-loaded in
+    # map workers, which would re-admit tokenizer-only multimodal ids (e.g. Gemma image soft).
+    split_special_tokens = bool(getattr(tokenizer, "split_special_tokens", False))
+    if model_vocab_size is not None and len(tokenizer) > model_vocab_size:
+        split_special_tokens = True
+
     def tokenize_batch_function(examples):
         text_batch = examples["text"]
         if max_chars:
             text_batch = [t[:max_chars] if t and len(t) > max_chars else t for t in text_batch]
+        tokenize_kwargs = {"return_special_tokens_mask": True}
+        if split_special_tokens:
+            tokenize_kwargs["split_special_tokens"] = True
         if append_eos_token_id is None:
-            return tokenizer(
+            out = tokenizer(
                 text_batch,
                 padding="max_length",
                 truncation=True,
                 max_length=max_seq_length,
-                return_special_tokens_mask=True,
+                **tokenize_kwargs,
             )
-        out = tokenizer(
-            text_batch,
-            padding=False,
-            truncation=True,
-            max_length=max_seq_length - 1,
-            return_special_tokens_mask=True,
-        )
-        out["input_ids"] = [ids + [append_eos_token_id] for ids in out["input_ids"]]
-        if "attention_mask" in out:
-            out["attention_mask"] = [m + [1] for m in out["attention_mask"]]
-        if "special_tokens_mask" in out:
-            out["special_tokens_mask"] = [s + [1] for s in out["special_tokens_mask"]]
+        else:
+            out = tokenizer(
+                text_batch,
+                padding=False,
+                truncation=True,
+                max_length=max_seq_length - 1,
+                **tokenize_kwargs,
+            )
+            out["input_ids"] = [ids + [append_eos_token_id] for ids in out["input_ids"]]
+            if "attention_mask" in out:
+                out["attention_mask"] = [m + [1] for m in out["attention_mask"]]
+            if "special_tokens_mask" in out:
+                out["special_tokens_mask"] = [s + [1] for s in out["special_tokens_mask"]]
+        if model_vocab_size is not None:
+            for ids in out["input_ids"]:
+                if not ids:
+                    continue
+                ids_min = min(ids)
+                ids_max = max(ids)
+                if ids_min < 0 or ids_max >= model_vocab_size:
+                    raise ValueError(
+                        "Tokenizer produced input_ids outside model vocabulary range: "
+                        f"min={ids_min}, max={ids_max}, model_vocab_size={model_vocab_size}. "
+                        "Drop or repair the offending raw text before writing pretok cache."
+                    )
         return out
 
     return tokenize_batch_function
+
+
+def filter_rows_outside_model_vocab(dataset, model_vocab_size: int, num_proc: int = 1):
+    """Drop pretokenized rows whose ``input_ids`` fall outside ``[0, model_vocab_size)``.
+
+    Used as a post-tokenize safety net for rare corrupt / out-of-range ids that slip past
+    the per-batch check (e.g. legacy caches written before validation existed).
+    Returns ``(filtered_dataset, n_dropped)``.
+    """
+    before = len(dataset)
+
+    def keep(batch):
+        out = []
+        for ids in batch["input_ids"]:
+            if not ids:
+                out.append(False)
+                continue
+            out.append(min(ids) >= 0 and max(ids) < model_vocab_size)
+        return out
+
+    filtered = dataset.filter(
+        keep,
+        batched=True,
+        batch_size=4096,
+        num_proc=max(1, num_proc),
+    )
+    return filtered, before - len(filtered)
 
 
 

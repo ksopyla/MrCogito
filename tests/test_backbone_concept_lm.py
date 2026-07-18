@@ -641,11 +641,15 @@ def test_causal_lm_collator():
     assert (batch["labels"][0, 3:] == -100).all()
     assert (batch["labels"][1] != -100).all()
 
+    class TokStubWithUnk(TokStub):
+        unk_token_id = 1
+
     model_bounded = DataCollatorForCausalLM(
-        TokStub(), max_length=16, model_vocab_size=VOCAB - 1
+        TokStubWithUnk(), max_length=16, model_vocab_size=VOCAB - 1
     )
-    with pytest.raises(ValueError, match="outside model vocabulary range"):
-        model_bounded([{"input_ids": [5, VOCAB - 1]}])
+    clamped = model_bounded([{"input_ids": [5, VOCAB - 1]}])
+    assert clamped["input_ids"][0, 1].item() == 1  # unk replacement
+    assert clamped["labels"][0, 1].item() == -100
 
 
 def test_causal_lm_collator_preserves_sparse_precomputed_labels():
@@ -693,6 +697,44 @@ def test_text_tokenizer_splits_out_of_model_special_tokens():
     assert configure_text_tokenizer_for_model_vocab(tokenizer, 100)
     assert tokenizer.split_special_tokens is True
     assert not configure_text_tokenizer_for_model_vocab(tokenizer, 101)
+
+
+def test_tokenize_fn_rejects_ids_outside_model_vocab():
+    from data.dataset_preprocess import _make_tokenize_fn
+
+    class TokStub:
+        split_special_tokens = False
+
+        def __len__(self):
+            return 101
+
+        def __call__(self, texts, **kwargs):
+            assert kwargs.get("split_special_tokens") is True
+            # Pretend the tokenizer still emitted a tokenizer-only id.
+            return {"input_ids": [[0, 100]], "attention_mask": [[1, 1]]}
+
+    tokenize = _make_tokenize_fn(
+        TokStub(), max_seq_length=8, append_eos_token_id=None, model_vocab_size=100
+    )
+    with pytest.raises(ValueError, match="outside model vocabulary range"):
+        tokenize({"text": ["hello"]})
+
+
+def test_filter_rows_outside_model_vocab():
+    from datasets import Dataset
+
+    from data.dataset_preprocess import filter_rows_outside_model_vocab
+
+    ds = Dataset.from_dict(
+        {
+            "input_ids": [[1, 2, 3], [1, 99], [4, 5]],
+            "attention_mask": [[1, 1, 1], [1, 1], [1, 1]],
+        }
+    )
+    filtered, dropped = filter_rows_outside_model_vocab(ds, model_vocab_size=10)
+    assert dropped == 1
+    assert len(filtered) == 2
+    assert filtered["input_ids"] == [[1, 2, 3], [4, 5]]
 
 
 def test_training_special_tokens_align_generation_config_without_warning_path():

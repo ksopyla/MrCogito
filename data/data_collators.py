@@ -187,11 +187,16 @@ class DataCollatorForCausalLM:
         if tokenizer.pad_token_id is None:
             raise ValueError("DataCollatorForCausalLM requires a tokenizer with a pad token.")
         self.pad_token_id = tokenizer.pad_token_id
+        unk = getattr(tokenizer, "unk_token_id", None)
+        self._oov_replacement_id = (
+            unk if unk is not None and unk != tokenizer.pad_token_id else self.pad_token_id
+        )
         self._vocab_size = (
             model_vocab_size
             if model_vocab_size is not None
             else (len(tokenizer) if hasattr(tokenizer, "__len__") else None)
         )
+        self._oov_clamp_warned = False
 
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
         input_ids_list = [f["input_ids"] for f in features]
@@ -225,13 +230,26 @@ class DataCollatorForCausalLM:
             labels[attention_mask == 0] = -100
 
         if self._vocab_size is not None:
-            ids_min = int(input_ids.min().item())
-            ids_max = int(input_ids.max().item())
-            if ids_min < 0 or ids_max >= self._vocab_size:
-                raise ValueError(
-                    f"DataCollatorForCausalLM produced input_ids outside model vocabulary range: "
-                    f"min={ids_min}, max={ids_max}, vocab_size={self._vocab_size}"
-                )
+            # Rare pretok / arrow corruption can leave a few ids far above the model
+            # vocab (including values beyond tokenizer length). Clamp to unk and ignore
+            # those positions in the loss rather than crashing a long run.
+            oov_mask = (input_ids < 0) | (input_ids >= self._vocab_size)
+            if oov_mask.any():
+                if not self._oov_clamp_warned:
+                    ids_min = int(input_ids.min().item())
+                    ids_max = int(input_ids.max().item())
+                    n_oov = int(oov_mask.sum().item())
+                    print(
+                        "WARNING: DataCollatorForCausalLM clamped out-of-vocab input_ids "
+                        f"(n={n_oov}, min={ids_min}, max={ids_max}, "
+                        f"vocab_size={self._vocab_size}) to id={self._oov_replacement_id}; "
+                        "labels at those positions set to -100."
+                    )
+                    self._oov_clamp_warned = True
+                input_ids = input_ids.clone()
+                labels = labels.clone()
+                input_ids[oov_mask] = self._oov_replacement_id
+                labels[oov_mask] = -100
             valid_labels = labels[labels != -100]
             if valid_labels.numel() > 0:
                 label_min = int(valid_labels.min().item())
