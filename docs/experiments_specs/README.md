@@ -1,8 +1,13 @@
 # Experiments
 
 Two files per experiment, joined by the `<ID>`:
-- `<lifecycle>/<ID>.md` — the **frozen spec** (*intent*): one hypothesis, the foundation it builds on, the one variable it changes, success/kill criteria decided **before** running. From [TEMPLATE.md](TEMPLATE.md).
-- `<lifecycle>/<ID>_plan.md` — the **implementation plan** (*design*): which modules to reuse/extend, the forward pass with shapes, inputs/data, loss, config, launch, tests, risks. From [PLAN_TEMPLATE.md](PLAN_TEMPLATE.md).
+- `<lifecycle>/<ID>.md` — the **frozen spec** (*intent*): one coherent architectural
+  hypothesis, the foundation it builds on, what is materially new, success/kill criteria
+  decided **before** running. From [TEMPLATE.md](TEMPLATE.md). Prefer bold bets over
+  micro-A/Bs; see `project-overview.mdc` → Research Stance.
+- `<lifecycle>/<ID>_plan.md` — the **implementation plan** (*design*): which modules to
+  reuse/extend, the forward pass with shapes, inputs/data, loss, config, launch, tests,
+  risks. From [PLAN_TEMPLATE.md](PLAN_TEMPLATE.md). Plans must not water down a bold spec.
 
 The *implementation* is never a new script — it is args/config over the shared foundation
 (env-var overrides on the existing bash launcher). See `.cursor/rules/project-overview.mdc`.

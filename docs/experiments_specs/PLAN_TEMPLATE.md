@@ -3,13 +3,15 @@
 - **Spec:** [E0NN_*.md](E0NN_*.md) · **Status:** draft | approved | implemented
 - **Authored by:** `implementation-plan` · for → `research-implement`
 
-> The HOW for the spec's single change. Repo-rooted: cite real classes/paths you read.
-> Reuse-first; new code only as a reusable, config-selectable foundation component.
+> The HOW for the spec's **architectural bet**. Repo-rooted: cite real classes/paths you read.
+> Reuse infra; invent mechanism when the bet needs it. New code only as a reusable,
+> config-selectable foundation component. Do **not** derisk a bold spec into a safe retread.
 
 ## 1. Source & fit
-- **Origin:** <prior result / paper / vision / idea> — link `research-explain` walkthrough and/or `docs/literature_review/<file>.md#anchor`.
+- **Origin:** <prior result / paper / vision / cross-domain analogy / idea> — link `research-explain` walkthrough and/or `docs/literature_review/<file>.md#anchor`.
 - **Synthesis verdict:** <Adopt / Adapt — one line from research-synthesis; what we take, what we drop>.
-- **Architecture mapping (ONE):** this touches <encoder | concept bottleneck | reasoning | decoder/head | loss | data>.
+- **Architecture mapping:** this touches <encoder | concept bottleneck | reasoning | decoder/head | loss | data> (a coherent bet may span more than one — say so).
+- **Boldness check:** <confirm this plan implements the novel claim, not a safer substitute>.
 
 ## 2. Reuse map (read the modules first)
 | Component | Action | Where |

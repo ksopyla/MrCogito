@@ -1,6 +1,6 @@
 ---
 name: research-implement
-description: Implement and extend the Concept Encoder PyTorch foundation (nn/, training/, data/, evaluation/) from an approved experiment spec and its implementation plan. Use when writing or modifying encoder/reasoning/decoder modules, losses, data collators, the training entrypoint, or training bash launchers in this codebase. Knows the existing modules and the encode→reason→decode patterns, adds capability as reusable config-selectable components (never per-experiment forks), and preserves old code/checkpoints for reproducibility. Not for experiment scoping (experiment-design), writing the design plan (implementation-plan), result logging (experiment-track), or doc cleanup (docs-hygiene).
+description: Implement and extend the Concept Encoder PyTorch foundation (nn/, training/, data/, evaluation/) from an approved experiment spec and its implementation plan. Use when writing or modifying encoder/reasoning/decoder modules, losses, data collators, the training entrypoint, or training bash launchers in this codebase. Implements bold architectural bets faithfully (no safe-pattern substitution), adds capability as reusable config-selectable components (never per-experiment forks), and preserves old code/checkpoints for reproducibility. Not for experiment scoping (experiment-design), writing the design plan (implementation-plan), result logging (experiment-track), or doc cleanup (docs-hygiene).
 ---
 
 # Research Implement (Concept Encoder codebase)
@@ -8,9 +8,22 @@ description: Implement and extend the Concept Encoder PyTorch foundation (nn/, t
 This is the **implementation half** of the workflow: `experiment-design` produces a
 frozen spec in `docs/experiments_specs/ahead/<ID>.md`, `implementation-plan` produces the repo-rooted
 design in `docs/experiments_specs/ahead/<ID>_plan.md`; this skill turns them into code in the
-**shared foundation**. Implement *exactly* the spec's single change — nothing more.
+**shared foundation**. Implement the spec's coherent architectural bet — nothing more, and
+**nothing safely substituted**.
 
-Read the spec (`Builds-on` + `The single change`) **and its `<ID>_plan.md`** (reuse map,
+## Research stance (do not fall into safe bets)
+This project hunts for a **novel architecture**. When implementing:
+- Implement the bold mechanism the spec named. Do **not** quietly replace it with a familiar
+  pattern that "should work" (e.g. plain cross-attn without the proposed FFN/dynamics;
+  SVD/pretrained warm-start when the spec asked for a different inductive bias; shrinking a
+  new reasoner into another Perceiver block).
+- If the plan waters down a bold spec into a retread, hand back to `implementation-plan` /
+  `experiment-design` — do not "be helpful" by shipping the safe version.
+- Reuse modules for *infrastructure* (config, registry, loss_manager, launchers, eval
+  contract). Do not reuse old *architectural defaults* just because they are already in-tree.
+- New capability stays **config-selectable** and reusable; bold ≠ fork a `train_<idea>.py`.
+
+Read the spec (`Builds-on` + the architectural change) **and its `<ID>_plan.md`** (reuse map,
 forward pass, data, loss, config, tests) before touching code — follow the plan; if it is
 missing or wrong, hand back to `implementation-plan` rather than improvising. Then locate
 the right module below. Default to **extending** an existing module; add new code only as a
@@ -28,9 +41,10 @@ the right module below. Default to **extending** an existing module; add new cod
 - **Parked (revivable, do NOT import from the live tree)** — `parked/` (recursive, diffusion families). See `parked/README.md`.
 
 ## The three patterns — name which one you're touching
-- **ENCODING:** cross-attention compresses N input tokens → C concept vectors, O(C·N). BiXT is the bidirectional variant; token↔concept asymmetry via `token_embedding_dim ≠ hidden_size`. This is the part prone to **collapse** — always check effective rank / pairwise similarity (`run_concept_analysis.py`) when you change it.
-- **REASONING (latent):** concept → concept refinement over the C concepts (e.g. weight-tied iterations — currently in `parked/` recursive). Any new reasoning block operates concept→concept and must be a **config-selectable** module, not hard-wired.
-- **DECODING:** produce tokens/logits from concepts via query cross-attention to concepts (`PerceiverDecoderStack`) → `lm_head`; `ViaDecoder` reuses the decoder for classification. New generation heads (e.g. autoregressive) are **concept-conditioned** and live here as reusable heads. Keep decoding O(C·N) — do **not** reintroduce O(N²) token self-attention (a past regression).
+These are the **current in-tree patterns**, not a mandate to only ship cross-attn retreads. New encode/reason/decode mechanisms belong here as config-selectable modules when the spec asks for them.
+- **ENCODING:** today, cross-attention often compresses N input tokens → C concept vectors, O(C·N). BiXT is the bidirectional variant; token↔concept asymmetry via `token_embedding_dim ≠ hidden_size`. Encoding is prone to **collapse** — check effective rank / pairwise similarity (`run_concept_analysis.py`) when you change it. Do not default every new idea to "cross-attn ± FFN" or pretrained-SVD token init unless the spec says so.
+- **REASONING (latent):** concept → concept refinement over the C concepts (e.g. weight-tied iterations — currently in `parked/` recursive). Any new reasoning block operates concept→concept and must be a **config-selectable** module, not hard-wired. This is where bold dynamical / iterative / memory bets usually land.
+- **DECODING:** produce tokens/logits from concepts via query cross-attention to concepts (`PerceiverDecoderStack`) → `lm_head`; `ViaDecoder` reuses the decoder for classification. New generation heads (e.g. autoregressive) are **concept-conditioned** and live here as reusable heads. Prefer O(C·N); do **not** silently reintroduce O(N²) token self-attention (a past regression) unless the approved spec explicitly challenges that tradeoff.
 
 ## How to add capability (configs over forks)
 1. Put the code in the right home: encoder layer → `nn/concept_encoder.py`; decoder/head → `nn/concept_encoder_perceiver.py`; loss → `nn/loss_manager.py` (`register_loss`); collator → `data/data_collators.py`.
