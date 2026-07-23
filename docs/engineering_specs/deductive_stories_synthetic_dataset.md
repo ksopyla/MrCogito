@@ -1,7 +1,15 @@
 # Deductive Stories — synthetic long-context dataset (engineering spec)
 
+> **SEPARATE PROJECT (2026-07-19).** Intent and design below stay as the research
+> trace. The in-repo v0 prototype (shallow graph → blunt LLM expansion) produced
+> quality far below a hard long-context deduction corpus and was **removed from
+> MrCogito**. Implement and iterate this dataset in its **own repository**; only
+> consume a finished HF dataset here via mix recipes / eval. Do not re-land the
+> generation pipeline under `data/` until that external project meets the quality
+> bar in this spec.
+
 - **Type:** engineering foundation (dataset generation + HF publish + mix integration). **Not** an `E0NN` experiment.
-- **Status:** implemented v0 (2026-07-18): schema + detective/se_debug solvers, Azure OpenAI expand/judge, filters, length views, CLI, tests. Pilot via `--mock-llm`; live Azure via `.env`.
+- **Status:** **deferred to a separate repo** (2026-07-19). Spec retained as the design contract. In-MrCogito code/prototype removed after Azure pilot showed insufficient narrative / hardness quality.
 - **Owner:** Krzysztof Sopyla
 - **Serves:** hard train+eval signal for windowed-AR (E05/E10 family), Gemma concept memory (E16), Concept-Flow (E08), and revived concept-conditioned masked diffusion — i.e. “can concepts carry multi-hop deduction over long narrative?”
 - **Primary goal:** ship a **graph-first, solver-verified**, multi-domain long narrative corpus with **1–5 exact-match questions**, published on Hugging Face, and wired into existing recipe→pretok mixes without contaminating the frozen eval split.
@@ -389,4 +397,5 @@ Ship is “done” when:
 ## Changelog
 
 - **2026-07-18** — Spec opened from grill session: C/B/D/A + dual-length + staged noise + v0 detective/SE + size/mix/cost/HF contracts locked.
-- **2026-07-18** — v0 implemented under `data/deductive_stories/` + `scripts/build_deductive_stories.py`; Azure OpenAI env wired; logistics/riddle stubs for v1.
+- **2026-07-18** — v0 prototyped under `data/deductive_stories/` + `scripts/build_deductive_stories.py` (Azure OpenAI); Azure smoke passed fidelity checks but narrative quality was too low (fact dumps, not hard deduction stories).
+- **2026-07-19** — **Code removed from MrCogito**; this eng spec kept as the design trace. Next implementation belongs in a **separate project/repo**; MrCogito will only ingest a published HF dataset when quality is adequate.
