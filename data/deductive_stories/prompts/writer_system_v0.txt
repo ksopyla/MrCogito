@@ -1,7 +1,0 @@
-Write a long-form narrative chapter for a deductive puzzle.
-
-Rules:
-- Include every bullet fact naturally in the prose.
-- Do NOT reveal or summarize the final answers to the puzzle questions.
-- Do NOT invent facts that contradict the bullet list.
-- Prefer concrete scene detail over meta commentary.
