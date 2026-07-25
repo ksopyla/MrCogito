@@ -73,6 +73,15 @@ A small set of learned **concept queries** cross-attends to the full input seque
 
 This is not just an efficiency trick. The bottleneck is meant to **force abstraction**: concepts become the model's working memory, the object reasoning operates on, and the interface decoders read from.
 
+### Two complementary platforms
+
+The project explores the same concept-bottleneck idea in two complementary settings:
+
+1. **From-scratch concept encoder** (`ConceptEncoder` / Perceiver–BiXT family) — train the encoder, reasoning surface, and decoder end-to-end. Useful for objective and geometry studies (prefix→suffix AR, windowed decode, STS-B probes).
+2. **Pretrained LM + concept workspace** (`BackboneConceptLM`) — freeze a strong token model ([Gemma-3-1B](https://huggingface.co/google/gemma-3-1b-pt)), adapt it lightly with LoRA, and attach a small set of **shared depth-recurrent concepts** that read from and write into selected backbone depths as the sequence is consumed in blocks (`K` tokens → one concept update). The backbone keeps local fluency; the concepts are meant to carry multi-block state.
+
+The Gemma path asks a sharper mechanism question: *when next-token loss can already be solved from local context, do concepts ever become causally necessary?* Recent long-context training (seq 4096, long-document mix, ~1B tokens) cleared that gate — concept ablations hurt beyond-local positions by a large margin while geometry stayed healthy. That does **not** close the from-scratch path or latent-reasoning / diffusion threads; it marks one validated regime worth exploring further. Details live in the [agenda](docs/1_Strategy_and_Plans/agenda.md) and [E16b run report](docs/2_Experiments_Registry/run_reports/e16b_longctx_muon_1b_20260725.md).
+
 ---
 
 ## How the Project Works
@@ -99,6 +108,7 @@ The project has already run many small-scale experiments. The useful lesson is n
 - **Parallel decoders are not enough.** Position-only reconstruction can train a useful probe, but it does not prove the model can *generate*.
 - **Bidirectional token ↔ concept interaction matters.** The token side and concept side must evolve together; static token embeddings leave the bottleneck too weak.
 - **Concept collapse is measurable.** Effective rank, pairwise concept cosine, STS-B, and concept-ablation loss are all tracked, because loss curves alone can be misleading.
+- **Operating regime matters as much as interface design.** On frozen Gemma-3-1B, short-context plain CE kept healthy concept geometry but near-zero beyond-local causal use; the same shared-depth workspace under longer documents and more compute became load-bearing. Architecture and data/length pressure have to be judged together.
 
 The method is deliberately incremental: **one experiment, one changed variable, explicit success and kill criteria.** Past runs are treated as evidence that improved understanding — not as wins or losses.
 
@@ -246,10 +256,11 @@ This is an active research repository — public, MIT-licensed, and intentionall
 - **Long-term vision:** [`docs/1_Strategy_and_Plans/vision_and_goals.md`](docs/1_Strategy_and_Plans/vision_and_goals.md)
 - **Live agenda & experiments:** [`docs/1_Strategy_and_Plans/agenda.md`](docs/1_Strategy_and_Plans/agenda.md) · [`docs/experiments_specs/`](docs/experiments_specs/)
 - **Live experiment tracking:** the open [Weights & Biases project](https://wandb.ai/ksopyla/MrCogito) — every run, public.
+- **Current platforms:** from-scratch concept AR / Perceiver family, plus the Gemma-3-1B + LoRA shared-depth concept workspace (`nn/backbone_concept_lm.py`). Long-context Gemma training cleared a causal-use gate; semantic and reasoning follow-ups are open alongside E08 / diffusion / other designs.
 - Diffusion and prefix diffusion remain parked and revivable. The historical weighted-MLM trainer
   is parked for reproduction while its model stays loadable for evaluation. The superseded
-  recursive-MLM fork is preserved in git history; recurrent-memory research continues through E09
-  on the shared concept-pretraining foundation.
+  recursive-MLM fork is preserved in git history; recurrent-memory research continues on the
+  shared concept-pretraining and backbone-concept foundations.
 
 ---
 
