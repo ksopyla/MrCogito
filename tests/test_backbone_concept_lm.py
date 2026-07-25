@@ -804,3 +804,32 @@ def test_wandb_identity_both_arms_share_group_differ_on_arm_tag():
     assert "concept-arm" in concept.tags
     assert "control-arm" in control.tags
     assert concept.architecture_id == control.architecture_id
+
+
+def test_next_token_logits_and_generate_shapes():
+    model = make_model(
+        backbone_config=two_global_backbone_dict(),
+        concept_io_mode="shared_depth_recurrent",
+        read_gate_init=0.2,
+        write_gate_init=0.2,
+    )
+    input_ids, attention_mask, _ = make_batch(B=2, S=K + 3)
+    logits = model.next_token_logits(input_ids, attention_mask)
+    assert logits.shape == (2, VOCAB)
+    assert torch.isfinite(logits).all()
+
+    greedy = model.generate(
+        input_ids[:1], attention_mask[:1], max_new_tokens=4, do_sample=False
+    )
+    assert greedy.shape == (1, input_ids.shape[1] + 4)
+
+    sampled = model.generate(
+        input_ids[:1],
+        attention_mask[:1],
+        max_new_tokens=3,
+        do_sample=True,
+        temperature=0.9,
+        top_k=20,
+        top_p=0.9,
+    )
+    assert sampled.shape == (1, input_ids.shape[1] + 3)

@@ -576,6 +576,7 @@ class BackboneConceptLM(PreTrainedModel):
         concept_permutation: Optional[torch.Tensor] = None,
         per_position: bool = False,
         return_predictions: bool = False,
+        return_last_hidden: bool = False,
     ):
         valid_modes = {"real", "shuffle", "zero", "static", "one_block", "permutation"}
         if concept_mode not in valid_modes:
@@ -585,6 +586,10 @@ class BackboneConceptLM(PreTrainedModel):
         B, S = input_ids.shape
         if return_predictions and not per_position:
             raise ValueError("return_predictions=True requires per_position=True.")
+        if return_last_hidden and (per_position or return_predictions):
+            raise ValueError(
+                "return_last_hidden cannot be combined with per_position/return_predictions."
+            )
         if concept_mode == "permutation":
             if concept_permutation is None:
                 raise ValueError(
@@ -631,6 +636,7 @@ class BackboneConceptLM(PreTrainedModel):
         )
 
         n_blocks = math.ceil(S / K)
+        last_hidden = None
         for b in range(n_blocks):
             s, e = b * K, min((b + 1) * K, S)
             blk_len = e - s
@@ -663,6 +669,10 @@ class BackboneConceptLM(PreTrainedModel):
                     use_cache=False,
                 )
                 h = out.last_hidden_state                               # [B, Q, H]
+
+            if return_last_hidden and b == n_blocks - 1:
+                # Last new token in this block sits at the end of the (carry+)block window.
+                last_hidden = h[:, -1].contiguous()
 
             if labels is not None:
                 if b == 0:
@@ -705,6 +715,10 @@ class BackboneConceptLM(PreTrainedModel):
         self._concept_state["shuffle"] = False
         self._concept_state["permutation"] = None
 
+        if return_last_hidden:
+            if last_hidden is None:
+                raise RuntimeError("return_last_hidden requested but no blocks were run.")
+            return last_hidden
         if per_position:
             if return_predictions:
                 return pos_ce, pos_predictions, z
@@ -850,6 +864,95 @@ class BackboneConceptLM(PreTrainedModel):
             raise RuntimeError("encode_concepts requires concept_num > 0.")
         _, z = self._forward_blocks(input_ids, attention_mask, labels=None)
         return BaseModelOutput(last_hidden_state=z)
+
+    @torch.no_grad()
+    def next_token_logits(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        concept_mode: str = "real",
+    ) -> torch.Tensor:
+        """Logits for the token immediately after ``input_ids``. Shape ``[B, V]``.
+
+        Re-runs the block-recurrent forward (no KV cache). Intended for short
+        interactive generation / playground use, not long free-running decode.
+        """
+        last_hidden = self._forward_blocks(
+            input_ids,
+            attention_mask,
+            labels=None,
+            concept_mode=concept_mode,
+            return_last_hidden=True,
+        )
+        return F.linear(last_hidden, self.backbone.lm_head.weight)
+
+    @torch.no_grad()
+    def generate(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        *,
+        max_new_tokens: int = 64,
+        do_sample: bool = False,
+        temperature: float = 1.0,
+        top_k: int = 0,
+        top_p: float = 1.0,
+        eos_token_id: Optional[int] = None,
+        concept_mode: str = "real",
+    ) -> torch.Tensor:
+        """Greedy or sampled continuation of ``input_ids`` (returns full sequences).
+
+        Each step re-encodes the growing prefix through the concept block loop.
+        Keep ``max_new_tokens`` modest on CPU/MPS.
+        """
+        if input_ids.ndim != 2:
+            raise ValueError(f"input_ids must be [B, S], got {tuple(input_ids.shape)}")
+        if eos_token_id is None:
+            eos_token_id = self.config.eos_token_id
+        cur = input_ids
+        mask = attention_mask if attention_mask is not None else torch.ones_like(cur)
+        finished = torch.zeros(cur.shape[0], dtype=torch.bool, device=cur.device)
+        for _ in range(max_new_tokens):
+            logits = self.next_token_logits(cur, mask, concept_mode=concept_mode)
+            if do_sample:
+                logits = logits.float()
+                if temperature <= 0:
+                    raise ValueError("temperature must be > 0 when do_sample=True")
+                logits = logits / temperature
+                if top_k and top_k > 0:
+                    kth = torch.topk(logits, min(top_k, logits.size(-1)), dim=-1).values[:, -1]
+                    logits = logits.masked_fill(logits < kth.unsqueeze(-1), float("-inf"))
+                if top_p < 1.0:
+                    sorted_logits, sorted_idx = torch.sort(logits, descending=True, dim=-1)
+                    probs = torch.softmax(sorted_logits, dim=-1)
+                    cum = probs.cumsum(dim=-1)
+                    remove = cum > top_p
+                    remove[..., 1:] = remove[..., :-1].clone()
+                    remove[..., 0] = False
+                    sorted_logits = sorted_logits.masked_fill(remove, float("-inf"))
+                    logits = torch.full_like(logits, float("-inf")).scatter(
+                        -1, sorted_idx, sorted_logits
+                    )
+                probs = torch.softmax(logits, dim=-1)
+                next_id = torch.multinomial(probs, num_samples=1)
+            else:
+                next_id = logits.argmax(dim=-1, keepdim=True)
+            if finished.any():
+                pad_id = self.config.pad_token_id
+                if pad_id is None:
+                    pad_id = eos_token_id if eos_token_id is not None else 0
+                next_id = torch.where(
+                    finished.view(-1, 1),
+                    torch.full_like(next_id, pad_id),
+                    next_id,
+                )
+            cur = torch.cat([cur, next_id], dim=1)
+            mask = torch.cat([mask, (~finished).long().view(-1, 1)], dim=1)
+            if eos_token_id is not None:
+                finished = finished | (next_id.squeeze(-1) == eos_token_id)
+                if bool(finished.all()):
+                    break
+        return cur
 
     @torch.no_grad()
     def concept_ablation_ce(
