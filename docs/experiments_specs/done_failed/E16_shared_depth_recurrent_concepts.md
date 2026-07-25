@@ -1,6 +1,6 @@
 # E16 — Shared depth-recurrent concept workspace (E13 variant)
 
-- **Status:** done / failed mechanism gate — 50M pilot completed 2026-07-14
+- **Status:** done / failed mechanism gate under 2K CE — 50M pilot completed 2026-07-14 — architecture later succeeded under long-context in E16b
 - **Serves:** the post-E10 platform pivot toward concepts that are formed, repeatedly refined, and carried as one coherent latent reasoning state
 - **Implementation plan:** [E16_shared_depth_recurrent_concepts_plan.md](E16_shared_depth_recurrent_concepts_plan.md) *(authored after this spec is approved)*
 - **Owner / dates:** Krzysztof Sopyła · opened 2026-07-13 · closed 2026-07-14
@@ -132,8 +132,8 @@ recurrent-state ablations.
 - Run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260714_075403`
 - WandB: [Link](https://wandb.ai/ksopyla/MrCogito/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260714_075403)
 - Run report: no dedicated report yet; W&B is the source for this lifecycle update
-- Verdict: **failed mechanism gate** — the 50M run finished with healthy geometry
+- Verdict: **failed mechanism gate under 2K CE** — the 50M run finished with healthy geometry
   (within-sample RankMe 62.2; centered 125.0) and eval CE 1.8122, but final
   beyond-local static/shuffle deltas were only +0.000499/+0.001018 nats. Both are
   below the 0.01 success gate, so depth-wise shared-state updates did not establish
-  persistent causal concept use.
+  persistent causal concept use *in the short-context regime*.

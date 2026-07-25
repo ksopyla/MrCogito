@@ -1,9 +1,9 @@
 # E16b — Long-context Muon scale-up of the shared depth-recurrent workspace
 
-- **Status:** active — 4K Gemma pretok launched on Odra 2026-07-15; Muon 1B train follows calibration
+- **Status:** done / success — primary causal-use gate cleared (train finished 2026-07-20; Tier-1 eval 2026-07-25); validated long-context path
 - **Serves:** test whether the E16 shared concept workspace becomes causally useful when given genuine multi-block documents, Muon optimization, and ~10× more tokens than E16a
 - **Implementation plan:** [E16b_longctx_muon_1b_plan.md](E16b_longctx_muon_1b_plan.md)
-- **Owner / dates:** Krzysztof Sopyła · opened 2026-07-15 · closed —
+- **Owner / dates:** Krzysztof Sopyła · opened 2026-07-15 · closed 2026-07-25
 
 > This is an intentional multi-factor research bet, not a single-variable A/B.
 > E10–E16a cautious calibrations kept geometry healthy but never unlocked persistent
@@ -103,8 +103,7 @@ Only hard safety stops — no early mechanism kill that would abort a bold scale
 
 ## Result
 
-<Filled in AFTER, by experiment-track.>
-- Run id: —
-- WandB: —
-- Run report: —
-- Verdict: —
+- Run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260718_150850`
+- WandB: https://wandb.ai/ksopyla/MrCogito/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260718_150850
+- Run report: [e16b_longctx_muon_1b_20260725.md](../../2_Experiments_Registry/run_reports/e16b_longctx_muon_1b_20260725.md)
+- Verdict: **success / promising** — primary `min(Δstatic, Δshuffle)_beyond ≥ 0.01` cleared by a large margin (offline Δshuffle≥1024 **2.47**, RankMe **101**, Δone-block **0.58**). Longer context + more compute unlocked causal concept use that short 2K CE runs did not. One validated path; keep exploring (semantic probe open) alongside other routes (E08, diffusion, …).

@@ -1,6 +1,6 @@
 # E16b — Long-Context Muon 1B Implementation Plan
 
-- **Spec:** [E16b_longctx_muon_1b.md](E16b_longctx_muon_1b.md) · **Status:** implemented
+- **Spec:** [E16b_longctx_muon_1b.md](E16b_longctx_muon_1b.md) · **Status:** done / success (Tier-1 2026-07-25) · validated long-context path
 - **Authored by:** `implementation-plan` · for → `research-implement`
 
 > Compound scale-up authorized by the user. Architecture stays E16; change the

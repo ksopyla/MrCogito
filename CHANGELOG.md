@@ -50,7 +50,7 @@ long-document Gemma mix for a 1B-token Muon run without a model fork.
 - [fixed] E16b 4K corpora isolated under `datasets_tok_gemma_4k` (avoids 2K fingerprint clash).
 - [tested] mix weight/policy contract and E16b launcher parameter flow.
 
-**Related:** [E16b](docs/experiments_specs/ahead/E16b_longctx_muon_1b.md)
+**Related:** [E16b](docs/experiments_specs/done_success/E16b_longctx_muon_1b.md)
 
 ---
 
@@ -70,7 +70,7 @@ evaluation cadence.
 - [tested] optimizer-specific LR/weight-decay propagation, shared E16 invariants, invalid
   optimizer rejection, pipeline ordering, and existing Muon/backbone optimizer contracts.
 
-**Related:** [E16a](docs/experiments_specs/ahead/E16a_muon_optimizer_ab.md)
+**Related:** [E16a](docs/experiments_specs/done_failed/E16a_muon_optimizer_ab.md)
 
 ---
 

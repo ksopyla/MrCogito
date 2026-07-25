@@ -1,9 +1,9 @@
 # E16a — Shared depth-recurrent workspace optimizer A/B at 100M
 
-- **Status:** active — Muon calibration passed; unattended Adam→Muon pair launched on Odra 2026-07-14
+- **Status:** done / failed short-ctx causal-use gate — both arms completed 2026-07-15
 - **Serves:** test the user's compute/optimization hypothesis for E16 before changing context length or data
 - **Implementation plan:** [E16a_muon_optimizer_ab_plan.md](E16a_muon_optimizer_ab_plan.md)
-- **Owner / dates:** Krzysztof Sopyła · opened 2026-07-14 · closed —
+- **Owner / dates:** Krzysztof Sopyła · opened 2026-07-14 · closed 2026-07-25
 
 > E16a is a matched 2K, 100M-token optimizer comparison. Both arms use the
 > implemented E16 architecture and the same fresh initialization, data order, token
@@ -134,9 +134,8 @@ E16b. Lower eval loss alone is not success.
 
 ## Result
 
-<Filled in AFTER, by experiment-track.>
-- Adam run id: —
-- Muon run id: —
-- WandB: —
-- Run report: —
-- Verdict: —
+- Adam run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260714_211016`
+- Muon run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260715_034606`
+- WandB: [Adam](https://wandb.ai/ksopyla/MrCogito/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260714_211016) · [Muon](https://wandb.ai/ksopyla/MrCogito/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260715_034606)
+- Run report: covered in [E16b run report](../../2_Experiments_Registry/run_reports/e16b_longctx_muon_1b_20260725.md) (fair baseline table)
+- Verdict: **failed ≥0.01 causal-use gate at 100M/2K** — Muon beat Adam (min-beyond 0.00284 vs ~0.00086; RankMe 97 vs 59) but both failed. User overrode "do not select Muon" for E16b.

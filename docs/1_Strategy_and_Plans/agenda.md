@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-07-19 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-07-25 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,180 +20,58 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **E16b bold long-context Muon 1B (2026-07-15):** user-authorized compound
-  scale-up of the E16 shared-depth workspace — seq **4096**, long-doc mix
-  `e16b_long_4k_v1`, Muon, **1B tokens**. Soft safety kills only; no
-  early mechanism abort. Spec:
-  [E16b](../experiments_specs/ahead/E16b_longctx_muon_1b.md).
-- **E16a optimizer A/B complete (2026-07-15):** Muon beat Adam on CE/RankMe/gates
-  at 100M/2K but both failed the ≥0.01 causal-use gate (Muon min-beyond 0.00284).
-  User overrode the "do not select Muon" rule for the E16b scale-up.
-- **Platform pivot (2026-07-08) — pretrained backbone retained; E10 global→concept memory branch closed.**
-  Decision: stop paying the from-scratch language-acquisition cost per run (the E05 lesson: stable
-  optimization + used-but-semantically-empty concepts at <200M scale); graft the concept machinery
-  onto frozen **`google/gemma-3-1b-pt`** + LoRA. Design C ("global→concept"): Gemma's 4 global
-  layers lose full-attention reach and read C=128 concept slots instead; concepts become a gated
-  recurrent state written per 512-token block (the E09 write op); recurrent encode == recurrent
-  decode (no separate encoder, unbounded input at fixed memory, O(N·(K+C))). Spec
-  [E10](../experiments_specs/done_failed/E10_gemma_backbone_concept_memory.md) + plan; **foundation implemented
-  2026-07-08** (`nn/backbone_concept_lm.py`, `causal_lm` objective, `scripts/launch_e10.sh`,
-  checkpoint Tier-1 support). **Readiness follow-up 2026-07-11:** the first auto-chain was stopped
-  during raw preprocessing before any training tokens after independent review found recovery and
-  attribution gaps. Exact 2B-token budgeting, resumable/fixed-exposure checkpoints, frozen-head
-  memory, recurrence-specific static/previous-block ablations, paired 2K/8K comparison, immutable
-  held-out manifests, decisive ≥1024 Δshuffle, within-sample RankMe/read-write gates, and Gemma
-  vocabulary bounds are now implemented (Odra calibration remains batch 8 × accum 3, 19.97 GiB).
-  **Stage 0 provisional gate PASSED 2026-07-09**, but its source was mislabeled held-out: the
-  streaming FineWeb sample overlapped the training source namespace. Its G values (0.284 at 2K;
-  0.318 at 8K) remain provisional in the registry and must be superseded by the frozen
-  train-disjoint paired 8K result before calculating the final recovery fraction. See
-  [report](../2_Experiments_Registry/run_reports/e10_stage0_gap_curve_20260709.md).
-  **First training result (2026-07-11):** the bounded 100M-token concept arm completed stably
-  (1,449 steps, 18.77 GPU-h, eval CE 1.845→1.815). Concept-set geometry stayed non-collapsed
-  (final within-sample RankMe 77.1, centered 123.1), but the recurrent mechanism was null:
-  Δshuffle/static/zero/one-block at positions ≥1024 all stayed below 0.001 nats despite gates
-  opening to ~0.07. Do not extend this arm to 2B. The original concept-vs-control recovery
-  fraction remains unmeasured, but the recurrence attribution gate and all E10b–E10e
-  calibration follow-ups failed, so that missing control is no longer queued. See
-  [pilot report](../2_Experiments_Registry/run_reports/e10_100m_concept_pilot_20260711.md).
-  **Calibration recovery sequence complete (2026-07-12/13):**
-  [E10b](../experiments_specs/done_failed/E10b_normalized_concept_read.md), [E10c](../experiments_specs/done_failed/E10c_nonzero_memory_gates.md),
-  and [E10d](../experiments_specs/done_failed/E10d_differential_concept_lr.md) each failed their pre-registered
-  ~25M recurrence gates despite healthy geometry and local CE. The user-authorized 100M endurance
-  diagnostic [E10e](../experiments_specs/done_failed/E10e_calibrated_memory_100m.md) completed with the full
-  calibrated stack: CE and raw RankMe improved over original E10, but final beyond-local static and
-  shuffle deltas were only +0.000962/+0.001613 nats (both below 0.01); its step-720 midpoint also
-  met the <0.002-nat kill condition. Do not spend further plain-CE budget on the current
-  global→concept interface; move to an interface or forced-use-signal change.
-  **Forced-use diagnostic complete (2026-07-13):**
-  [E14](../experiments_specs/done_failed/E14_forced_delayed_recall_memory.md) stopped at its 2.015M-token
-  gate: static/zero/donor margins were +0.00182/+0.00350/+0.00237 nats, all below 0.01.
-  This does not yet select E11 versus E12: only 984 answer labels had been seen, and the block-2
-  explicit-carry positive control stayed at chance (1.95% vs 1.56%). The immediate open question
-  is supervision-calibrated task learnability before another memory-interface run.
-  Arms: concept (default) vs `CONCEPT_NUM=0` control, token-matched. Design variants queued as
-  design-only specs: [E11](../experiments_specs/ahead/E11_memtoken_concept_memory.md) (in-sequence
-  mem-tokens, backbone-agnostic) and [E12](../experiments_specs/ahead/E12_perlayer_kv_prefix_concepts.md)
-  (shared-state per-layer KV prefix, only if E10's read proves depth-starved).
-  [E13](../experiments_specs/ahead/E13_layerwise_recurrent_kv_memory.md) is gated behind a live E12:
-  it replaces E12's shared memory with 26 layer-specific recurrent K/V memories and tied
-  per-layer writes, testing a fixed-size approximation to a transformer KV cache. E08
-  (Concept-Flow reasoner) stays valuable but moves behind E10 — reasoning composes on top of
-  whichever platform wins; E09's recurrence mechanism is *folded into* E10 (its from-scratch
-  framing is superseded).
-- **Strategic direction (2026-07-02) — Paradigm A: encode→reason→decode, decoding-as-thought-crystallization.** New training paradigm + architecture; spec [E08](../experiments_specs/ahead/E08_concept_flow_reasoner.md). A teacher-trace-distilled **Concept-Flow reasoner** (iterative flow over the C concept bottleneck) is inserted between the E02-long encoder and AR decoder — it attacks the E05 failure (empty concepts, STS-B 0.452) with a strong reasoning-trace signal instead of an auxiliary objective. ~~E08 is the next run.~~ *(2026-07-08: E10 runs first — see the platform pivot above; E08 composes on top of the winning platform.)* Data: new `concept_flow_reasoning_2k` mix (existing DeepSeek-class CoT traces, ~50/50 reasoning/fluency). The E05-long matched A/B drops to an optional diagnostic; E06 (latent prediction) is a fallback; the parked TRM-style recursion is superseded (the flow reasoner *is* recursion done right). A local Qwen3-30B-A3B teacher (AWQ, fits one 3090) is banked for future custom-gen / RL / eval, not E08's data path.
-- **Move from collapse diagnosis to the next architecture test.** E01–E04 are done and evaluated. E02-long (STS-B 0.714, RankMe 246) remains the semantic leader; its Tier-2.5 probe (2026-06-20) confirms distributed concept information hidden from mean pooling (SICK mean −0.203 → attention 0.133, Δ+0.336; PAWS mixed). E03 anchor helps at 0.3 ep reconstruction but should stay an auxiliary lever, not the main research direction. E04 shows bypass removal improves geometry (within-sample RankMe 108, cross-sample 178) but not E02-level semantics.
-- **Run state (2026-06-30):** long-context engineering rounds 1–2 done (F1–F4, F2′, F6 sequence parallelism → 1M on 3× 3090; F7 Muon). **E05 attempt 3 (`_20260629_093840`) EVALUATED — STAGE 1 PASS / STAGE 2 NOT YET MET.** Training: 0.5 ep / 10.2B tokens / 68.2 GPU-h, no divergence; LR 5e-5 + clip 0.5 + batch 8×accum3 (effective 72) is the proven-stable recipe for the K=128 windowed decoder. Eval: within-sample RankMe **37.67** (not collapsed), Δzero_beyond **6.99** (decoder reads concepts), Δshuffle_beyond **0.39** (Stage 1 floor ≥0.3 ✓, Stage 2 target ≥0.5 ✗). **STS-B zero-shot 0.452 — below both trivial floors** (token-embed-mean 0.486, teacher-hidden-mean 0.460); free-running generations are repetition loops. **Read:** optimization succeeded, concept bottleneck is *used* but not yet *semantically rich* — a "more training / stronger objective" signal, not an architectural dead-end. Matched A/B now justified. See [run report](../2_Experiments_Registry/run_reports/e05_attempt3_completed_20260630.md). **E05 attempt 2 (`_20260627_192407`) DIVERGED at step 40k** — kept as the divergence reference.
-- **Queued (sequential — one experiment per server):**
-  1. ~~**E03 matched control**~~ **DONE 2026-06-18**
-  2. ~~**E04 parallel decoder**~~ **DONE 2026-06-20** — see "what we've explored".
-  3. **E05 windowed decoder, staged proving on Odra** — [(spec)](../experiments_specs/done_failed/E05_windowed_decoder_concept_memory.md) · foundation implemented; spec updated 2026-06-27. Mix `smollm3_inspired_2k_e05`, LR 1e-4 / warmup 1500 (3e-4 / 500 diverged 2026-06-26). **(1)** 1-epoch windowed arm (early divergence kill-gate; proves stable training + 1-ep de-collapse), **(2)** E05-long 5-epoch matched A/B (windowed + full-causal control; tests windowed > control on beyond-window Δ + de-collapse-with-scale vs E02-long). K=128 fixed; C scales with N, never K.
-  4. **Prefix→suffix + anchor (auxiliary ablation, not main focus):** useful only if E05 needs an anchor/control read, not the default next run.
-  5. **Decoder-weakening ablation (sibling of E03):** same E01/E02 stack, single change `DECODER_WORD_DROPOUT=0.5`. Needs a frozen spec before the full run.
+- **Priority shift after E16b (eval 2026-07-25) — one validated path, not the only one.**
+  Shared depth-recurrent concepts on frozen Gemma-3-1B cleared the causal-use gate
+  under longer context + more compute: seq **4096**, mix `e16b_long_4k_v1`, Muon,
+  **1B** tokens. Offline Tier-1: RankMe **101**, Δshuffle/Δstatic≥1024 **2.47/2.35**,
+  Δone-block≥1024 **0.58**. Spec:
+  [done_success/E16b](../experiments_specs/done_success/E16b_longctx_muon_1b.md) ·
+  [run report](../2_Experiments_Registry/run_reports/e16b_longctx_muon_1b_20260725.md).
+  **Why this matters for next work:** healthy RankMe was already present in E10–E16a;
+  short **2K / ≤100M plain CE** rarely forced multi-block persistence, while E16b’s
+  longer docs (8 concept blocks) + scale did. So long-context shared-depth is a
+  **proven-useful regime** worth exploring further — not a claim that other routes
+  are dead.
+- **Near-term on the E16b path:** semantic probe (STS-B + floors on `checkpoint-7900`);
+  then synthesis for factor isolation and/or reasoning pressure on the same platform.
+- **Still open / still wanted:** [E08 Concept-Flow reasoner](../experiments_specs/ahead/E08_concept_flow_reasoner.md)
+  (latent reasoning composition — preferably on a platform that already carries
+  concepts), diffusion revive from `parked/` if a materially new ingredient appears,
+  and design-only [E11](../experiments_specs/ahead/E11_memtoken_concept_memory.md) /
+  [E12](../experiments_specs/ahead/E12_perlayer_kv_prefix_concepts.md) /
+  [E13](../experiments_specs/ahead/E13_layerwise_recurrent_kv_memory.md).
+  Priorities shifted; exploration stays multi-path.
+- **Background references:** E02-long remains the from-scratch semantic reference
+  (STS-B 0.714). E10–E16a / E14–E15 remain valid evidence about short-ctx / sparse
+  recall regimes — lower priority for the next budget, not erased.
 
-### Series roadmap (plan-ahead; each step = ONE variable vs the prior, re-scoped as its own spec)
-1. **E01 — AR decoder from scratch** *(done 2026-06-14, mixed).* Modern baseline line: encoder→AR decoder, FineWeb-Edu, SmolLM2 tokenizer, SwiGLU + RMSNorm + RoPE(decoder), ~135M. Best at checkpoint-4000 (Δshuffle 1.50, STS-B 0.556); collapses to rank 4.64 by end. New metric established: concept-ablation ΔCE.
+### Series roadmap (genealogy; each step was ONE variable — see explored ledger)
+1. **E01 — AR decoder from scratch** *(done 2026-06-14, mixed).*
 2. **E02 — objective:** [prefix→suffix AR generation](../experiments_specs/done_success/E02_ar_prefix_suffix.md)
-   *(done 2026-06-14, mixed/positive; STS-B 0.702 new project best).* Stronger semantic pressure than reconstruction; concepts are compact but semantically loaded.
-3. **E03 — de-collapse via frozen-encoder anchor** *(anchor-ON warmup done 2026-06-15; control queued).*
-   Gate (updated): judge on the **per-sample manifold RankMe + early-Δ**, co-primary with zero-shot
-   STS-B (not the slot-mean rank, which understates the geometry). **The shared Stage-A for the two bets below.**
-   Sibling cheap ablation: **decoder-weakening** (`DECODER_WORD_DROPOUT=0.5`) — see Queue above.
+   *(done 2026-06-14, mixed/positive; STS-B 0.702).*
+3. **E03 — de-collapse via frozen-encoder anchor** *(done).*
 4. **E04 — concept-only parallel decoder** [(spec)](../experiments_specs/done_success/E04_concept_only_parallel_decoder.md)
-   *(done 2026-06-20, mixed).* Parallel Perceiver-IO decoder removes AR bypass. Within-sample RankMe 108,
-   cross-sample RankMe 178 (+27 vs E03 control); STS-B 0.532 > control 0.485 but << E02 0.702.
-5. **E05 — windowed decoder + concepts as cross-window memory** [(spec)](../experiments_specs/done_failed/E05_windowed_decoder_concept_memory.md) · [(plan)](../experiments_specs/done_failed/E05_windowed_decoder_concept_memory_plan.md)
-   *(largest lift; long-context program; **foundation implemented 2026-06-18**, E04 gate cleared).*
-   Local window for fluency + concepts as the ONLY cross-window carrier (Gist/ICAE/AutoCompressor-style).
-   **Scoped to seq-len 2K + a long-doc dataset mix** (`DATASET_MIX_RECIPE=smollm3_inspired_2k_e05`: SmolLM3-inspired mix with
-   explicit long-tail boosters, ~21% docs >2K). Single change = `DECODER_CONTEXT_WINDOW=128` (fixed) on `causal_ar` +
-   `prefix_suffix` objective; matched window-ON/OFF pair; gate = beyond-window concept-ablation Δ
-   (`run_concept_analysis.py --ablation_window_k 128`, co-reported at 508 for the concept-only read) + RankMe.
-   **2026-06-28: attempt 2 diverged at step 40k (epoch 0.19, 5.2B tokens).** Same signature as attempt 1 but delayed
-   (LR 1e-4 vs 3e-4): eval_loss climb, grad_norm escalation to ~900, RankMe halving post-onset. Best checkpoint-40000
-   preserved and fast-evaled — clears Stage 1 floor (within-sample RankMe 59.8, Δshuffle_beyond 0.35 ≥ 0.3, Δshuffle_early
-   0.85). **Architecture sound; divergence is optimization-side.** Retuned for attempt 3: LR 5e-5, `max_grad_norm` 0.5
-   (now wired through launcher), batch 12, re-scoped to 0.5 ep (~7B tokens ≈ E02-long's compute-hours). Compute: 81.3
-   GPU-h / 17.78 kWh / 5.21B tokens. See [run report](../2_Experiments_Registry/run_reports/e05_attempt2_diverged_20260628.md).
-   **K is a fixed coherence window (128), never scaled to N** — the concept count C is what scales with N (per vision);
-   raising K would reintroduce O(N·K) local decoding and defeat the bottleneck. Depth caveat: stacked window layers reach
-   ≈ `L·(K−1)` ≈ 508 back; if the gate is weak, lower depth or raise seq-len — do not raise K. This is the 10M-token bet's Stage-A.
-6. **E06 — latent-space prediction** [(spec)](../experiments_specs/canceled/E06_latent_space_prediction.md)
-   *(reuses E03 machinery).* Anchor promoted from auxiliary to primary objective (JEPA/data2vec/CPC) —
-   learning signal entirely in representation space, no token bypass.
-7. **E07 — sentence-gap / boundary-only infilling** [(spec)](../experiments_specs/canceled/E07_sentence_gap_infilling.md)
-   *(objective change vs E02).* Regenerate removed whole sentences; forces global aggregation through
-   concepts (SpanBERT/PEGASUS). Sibling cheap ablation still available: decoder-weakening (`DECODER_WORD_DROPOUT=0.5`).
-8. **E08 — Concept-Flow reasoner** *(was "recursion / Ouro"; the flow reasoner subsumes recursion — see [spec](../experiments_specs/ahead/E08_concept_flow_reasoner.md)).*
-   **Paradigm A:** teacher-trace-distilled flow-matching over the C concept bottleneck (encode→reason→decode, crystallization). Warm-starts from E02-long; data = `concept_flow_reasoning_2k` (existing DeepSeek-class CoT traces, not on-the-fly teacher gen). Supersedes a separate Ouro/TRM port — the flow reasoner is recursion done right (weight-tied K-steps + sandwich-norm + timestep conditioning). **Fresh 2025-26 lit folded in:** bare recursion *amplifies* collapse (LoopFormer [2602.11451] / Dong-2021), so it needs the anti-collapse machinery; Ouro ([2510.25741]) has no "pendulum noise" (its recipe is sandwich-RMSNorm + entropy depth allocator); latent-reasoning headline gains are task-selective + audit-prone (TRM [2512.11847], Huginn [2507.02199], Coconut audits), so build an audit-resistant depth bench (single-pass canonical baseline, no task-id leakage, step-curves not just Pass@1).
-9. **Diffusion decode — deferred staged program** (not scheduled). Revive **only** as Stage-A
-   (E03 anchor, recon-validated) → Stage-B **ELF-style flow + concept-conditioning dropout/CFG**.
-   **CALM is *not* a diffusion decoder**; a bare random-init AdaLN-Zero re-run repeats the 5 prior
-   diffusion failures — do not. (NB: masked-diffusion/MaskGIT now also a candidate bypass-free decoder for E04/E05.)
-6. **Engineering (parallel; not `E0NN` experiments):**
-   - **Canonical eval protocol** — tiers, what each measures, and when to run them, live in
-     [evaluation_protocol.md](../3_Evaluations_and_Baselines/evaluation_protocol.md). Research track =
-     Tiers L0–L4 (direction-finding); **`lighteval` is a separate external-comparability track**,
-     deferred until the backbone is proven and we scale (SmolLM2-135M subset for ~135M; SmolLM3 list for
-     1B–3B). Don't merge logic; unify the interface.
-   - **Concept-information eval upgrade — DONE 2026-06-15** (eval-foundation, read-only). Fixes the
-     core misalignment that semantic probes mean-pool away the concept structure: adds (1) within-sample
-     concept RankMe as the PRIMARY de-collapse metric (slot-mean rank → secondary; cross-sample RankMe
-     → relabeled embedding-diversity), (2) trivial-floor STS-B baselines (`--baseline`), (3) a
-     frozen-encoder attention-pool probe (`--pool_mode attention`) that makes distributed-across-concepts
-     info visible. GLUE full-finetune demoted from concept-content evidence. Spec:
-     [concept_information_eval_upgrade.md](../engineering_specs/concept_information_eval_upgrade.md).
-     **Follow-up (needs a GPU box):** re-run the probe + baselines on E01/E02/E03 best checkpoints to
-     see whether the anchor buys distributed information that mean-pool was hiding.
-   - **Tier-1 eval data-protocol upgrade — DONE 2026-07-07** (eval-foundation). The Tier-1 *data*
-     was flawed: `run_concept_analysis.py` read the first N docs of the streaming **train** split
-     (train-contaminated), at a single 512-token length (mismatching seq-2048 runs and flattening the
-     L3 compression curve), unseeded, with a `randperm` shuffle that left identity fixed points. Now:
-     `--eval_source holdout|pretokenized` (genuine held-out data; pretokenized eval split for 2K
-     mixes), seq-2048 default with length-stratified buckets + per-bucket metrics, seeded everything,
-     Δ ± per-batch std, derangement shuffle, centered within-sample RankMe variant (offset vs
-     collapse), verdict keyed on the PRIMARY metric, tokenizer fallback removed. **Pre-2026-07-07
-     Tier-1 numbers are not comparable with new ones** (dated notes in the registry + E02-long/E05
-     run reports). **Follow-up (GPU):** recompute Tier-1 for E02-long best, E05 Adam (attempt 3),
-     and E05 Muon 0.5 ep under the new protocol (the E05 Muon 2-ep run was the first evaluated
-     natively under the new protocol, 2026-07-09). Spec: dated
-     section in [concept_information_eval_upgrade.md](../engineering_specs/concept_information_eval_upgrade.md).
-   - **Cross-tokenizer / dim embedding-transfer module** for warm-start — **FVT/OMP (vocab) + truncated
-     SVD (dim)**; bare PCA covers only the dim leg. Build when the first warm-start run needs it (E03
-     does not — it trains from scratch with a *frozen* teacher).
-   - **Compute audit + W&B compute panel — DONE 2026-06-28** (instrumentation, post-hoc). `analysis/run_compute_audit.py`
-     reads already-logged W&B system metrics and writes `compute/gpu_hours`, `compute/energy_kwh` (trapezoidal integral of
-     per-GPU `powerWatts`), `compute/max_tokens`, `compute/loss_tokens_est` + ratios into each run's W&B summary, so a
-     native W&B custom panel (grouped by `compute/group_for_panel`) compares runs on compute spent — primarily within a
-     `wandb_group` (same experiment, varying data mix / optimization / hyperparameters). No training-loop change / no
-     throughput tax; fires automatically via the `experiment-evaluate` run-level preamble. Structural gates hard-fail,
-     plausibility gates write-with-flag, synthetic integrator unit-tested. Spec:
-     [compute_audit_wandb_panel.md](../engineering_specs/compute_audit_wandb_panel.md). Audited 5 past runs (E01/E02/E05/perceiver).
-   - **Training pipeline modularization — COMPLETE (Stages 0–4), 2026-07-11.** Executable contracts pin
-     console/file/W&B logging, direct Hub and pretokenized data routes, Hugging Face cache roles,
-     workspace `Cache/` paths, and historical checkpoint/W&B identities. Objective policy,
-     arguments/validation, custom Trainer behavior, and model/data/collator/identity factories live in neutral
-     `training/concept_pretraining_*` modules. `train_concept_pretraining.py` is now the canonical
-     multi-family command; `train_perceiver_denoise.py` remains a temporary compatibility wrapper.
-     Post-Stage-2 hardening adds executable CLI→`main()`→Trainer/W&B/data/save and Bash
-     env→canonical-parser contracts for E05/E10 profiles. The launcher layer now has one canonical
-     generic runner (`train_concept_pretraining_multigpu.sh`), thin E05/E10 protocol wrappers, and
-     an explicit E10 orchestration pipeline; the old generic path remains a compatibility wrapper
-     (319 passed, 9 skipped). Weighted MLM training is now reproduction-only
-     under `parked/` while checkpoint evaluation stays live; the unrun recursive-MLM fork is
-     retired in git history in favor of E09-style recurrence on the shared foundation. Diffusion
-     and prefix diffusion remain parked and revivable. Spec:
-     [training_pipeline_modularization.md](../engineering_specs/training_pipeline_modularization.md).
-7. **Parked / not scheduled:** the **token↔concept asymmetry sweep** (`token_embedding_dim` 128/256/512,
-   the former "E03") is demoted to a **P1-era E02 ablation**, not a headline experiment. Further knobs
-   later (optimizer Muon/Lion, longer context, `C`-vs-`N` scaling, encoder-side RoPE).
+   *(done 2026-06-20, mixed).*
+5. **E05 — windowed decoder** [(spec)](../experiments_specs/done_failed/E05_windowed_decoder_concept_memory.md)
+   *(done_failed — used but semantically empty at <200M; motivated the Gemma pivot).*
+6. **E10–E16a short-ctx Gemma line** *(done_failed / mixed — useful regime evidence; see ledger).*
+7. **E16b long-ctx Muon** *(done_success 2026-07-25 — validated long-context path; follow-ups + other routes still open).*
 
 ## What we've explored so far (evidence, not verdicts)
+- **E16b long-context Muon 1B (Gemma-3-1B, Odra, train 2026-07-18→20, Tier-1 2026-07-25) — SUCCESS:**
+  shared-depth workspace at seq 4096 on `e16b_long_4k_v1` with Muon for 1B tokens
+  reached offline RankMe **101** and Δshuffle/Δstatic≥1024 **2.47/2.35** (clears the
+  0.01 gate by a large margin; E16a Muon was 0.0028 at 100M/2K). Δone-block≥1024
+  **0.58** shows accumulated multi-block state. **Reading:** longer context + more
+  compute unlocked causal concept use that short 2K CE did not; this is one valid
+  path to keep exploring (semantic probe still open; compound factors not isolated).
+  See [run report](../2_Experiments_Registry/run_reports/e16b_longctx_muon_1b_20260725.md).
 - **E16 shared depth-recurrent workspace (Gemma-3-1B, Odra, 2026-07-14):**
   the 50M run kept healthy geometry (within-sample RankMe 62.2; centered 125.0) and
   eval CE 1.8122, but beyond-local static/shuffle deltas were only
   +0.000499/+0.001018 nats, both below 0.01. Interleaved tied writes at four Gemma
-  depths did not establish persistent causal concept use. See
+  depths did not establish persistent causal concept use *under 2K CE*; the same
+  architecture later cleared the gate under E16b’s long-context regime. See
   [spec](../experiments_specs/done_failed/E16_shared_depth_recurrent_concepts.md).
 - **E15 supervision-calibrated delayed recall (Gemma-3-1B, Odra, 2026-07-13):** after
   resuming E14 to 12,000 total answer labels, the block-2 explicit-carry control was still
@@ -241,4 +119,14 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 - Full history (with caveats): [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md); older roadmap + TODO diary in [5_Archive/](../5_Archive/).
 
 ## Not active right now (still part of the Vision)
-Recursive concept refinement is now **scheduled as E04** (gated on E03 de-collapse + the eval foundation), and diffusion decode is a **deferred staged program** (see roadmap) — both revivable from `parked/`. Instruction SFT, long-context, and audio remain long-term Vision only. Multi-agent latent communication stays the Stage-2 headline (see [team_brief](../sprind_frontier_ai/team_brief.md)).
+Recursive concept refinement and latent reasoning remain Vision goals — E08 and related
+ideas stay in play; a platform that already carries concepts (e.g. E16b) is a natural
+place to compose them, but from-scratch and other bases are not ruled out. Diffusion
+decode stays parked/revivable from `parked/`. Instruction SFT, long-context, and audio
+remain long-term Vision only. Multi-agent latent communication stays the Stage-2
+headline (see [team_brief](../sprind_frontier_ai/team_brief.md)).
+
+## Engineering notes (not live experiments)
+Canonical eval protocol, Tier-1 data-protocol upgrade, compute audit, and training-pipeline
+modularization are done — see `docs/engineering_specs/` and
+[evaluation_protocol.md](../3_Evaluations_and_Baselines/evaluation_protocol.md).

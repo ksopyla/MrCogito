@@ -1,6 +1,6 @@
 # E16a — Shared Depth-Recurrent Workspace Optimizer A/B Implementation Plan
 
-- **Spec:** [E16a_muon_optimizer_ab.md](E16a_muon_optimizer_ab.md) · **Status:** implemented
+- **Spec:** [E16a_muon_optimizer_ab.md](E16a_muon_optimizer_ab.md) · **Status:** done / failed short-ctx gate
 - **Authored by:** `implementation-plan` · for → `research-implement`
 
 > Scope is exactly the spec's optimizer-recipe comparison. Architecture, data,
