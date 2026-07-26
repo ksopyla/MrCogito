@@ -1,6 +1,6 @@
 # MrCogito: Concept Encoder Research Vision and Goals
 
-> **Note (2026-07-26):** This file is the long-term **Vision** and still stands. Day-to-day work is tracked in **[agenda.md](agenda.md)** as small, well-defined increments. The path *within* this Vision is under active exploration and genuinely open — the phases and sub-goals below are an **indicative direction, not a committed schedule**. SPRIND pitch material lives in `docs/sprind_frontier_ai/`; this file keeps the research north star only.
+> **Note (2026-07-26):** This file is the long-term **Vision** and still stands. Day-to-day work is tracked in **[agenda.md](agenda.md)** as small, well-defined increments. The path *within* this Vision is under active exploration and genuinely open — the phases and sub-goals below are an **indicative direction, not a committed schedule**. 
 
 **The bet, in one sentence:** build a foundation model where input is compressed into latent concept vectors, refined by a recursive reasoning core, and decoded back to the target modality — and where multiple such models can eventually cooperate by exchanging concept vectors directly, not text.
 
