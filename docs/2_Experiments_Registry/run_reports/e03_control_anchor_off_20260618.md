@@ -8,7 +8,7 @@
 **Best checkpoint:** `Cache/Training/concept_ar_H768L6C128D4_20260615_211458/checkpoint-10000`
 **Git commit:** `0c14061`
 **Git tag:** —
-**Related TODO:** E03 in `docs/experiments_specs/E03_concept_anchor_decollapse.md`
+**Related TODO:** E03 in `docs/experiments_specs/done_success/E03_concept_anchor_decollapse.md`
 
 ---
 
@@ -144,4 +144,4 @@ either (a) a matched **full-epoch** E03 pair, or (b) higher-value — combine th
 **prefix→suffix** objective, which already de-collapses on its own over long training (E02-long),
 to test whether the anchor adds on top of the stronger objective rather than rescuing the weaker one.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/E03_concept_anchor_decollapse.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E03_concept_anchor_decollapse.md`, `agenda.md`*

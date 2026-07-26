@@ -38,11 +38,13 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import urllib.request
 from datasets import load_dataset
-from transformers import AutoTokenizer
+from transformers import AutoConfig, AutoTokenizer
 
 from data.dataset_preprocess import (
     _normalize_to_text_column,
     _make_tokenize_fn,
+    configure_text_tokenizer_for_model_vocab,
+    filter_rows_outside_model_vocab,
 )
 
 logger = logging.getLogger("pretokenize_mix")
@@ -278,16 +280,47 @@ def tokenize_source(
     test_num_proc: int,
     download_workers: int,
     raw_archive_dir: Path | None = None,
+    eval_only: bool = False,
+    model_vocab_size: int | None = None,
 ) -> dict:
     name = spec.get("name", spec["hf_id"])
     tok_dir = cache_dir / f"{name}"
     train_dir = tok_dir / "train"
     eval_dir = tok_dir / "eval"
+    metadata_path = tok_dir / "cache_meta.json"
+    expected_metadata = {
+        "tokenizer": getattr(tokenizer, "name_or_path", None),
+        "tokenizer_revision": getattr(tokenizer, "init_kwargs", {}).get("_commit_hash"),
+        "tokenizer_size": len(tokenizer),
+        "split_special_tokens": bool(getattr(tokenizer, "split_special_tokens", False)),
+        "max_seq_length": max_seq_length,
+        "append_eos_token_id": append_eos_token_id,
+        "test_size_percent": test_size_percent,
+        "seed": seed,
+        "eval_only": eval_only,
+        "source_spec_sha256": hashlib.sha256(
+            json.dumps(spec, sort_keys=True).encode()
+        ).hexdigest(),
+    }
     manifest_entry: dict[str, Any] = {"name": name, "weight": spec.get("weight", 1.0), "path": str(tok_dir)}
 
-    if train_dir.exists() and (train_dir / "dataset_info.json").exists():
+    train_ready = train_dir.exists() and (train_dir / "dataset_info.json").exists()
+    eval_ready = eval_dir.exists() and (eval_dir / "dataset_info.json").exists()
+    if eval_ready and (eval_only or train_ready):
+        if metadata_path.exists():
+            actual_metadata = json.loads(metadata_path.read_text())
+            if actual_metadata != expected_metadata:
+                raise ValueError(
+                    f"[{name}] tokenized cache fingerprint mismatch at {tok_dir}. "
+                    "Use a configuration-keyed cache directory or remove the stale cache."
+                )
+        else:
+            logger.warning(
+                f"[{name}] legacy cache has no fingerprint at {metadata_path}; "
+                "reusing for backward compatibility."
+            )
         logger.info(f"[{name}] tokenized cache exists at {tok_dir} — skipping tokenize")
-        manifest_entry["train_path"] = str(train_dir)
+        manifest_entry["train_path"] = None if eval_only else str(train_dir)
         manifest_entry["eval_path"] = str(eval_dir)
         # Even when tokenize is skipped, ensure raw is archived if requested.
         if raw_archive_dir is not None:
@@ -315,7 +348,8 @@ def tokenize_source(
         logger.info(f"[{name}] capped to max_samples={max_samples}")
 
     n = len(ds)
-    eval_size = max(1, min(int(n * test_size_percent), n - 1, 5000))
+    eval_cap = int(spec.get("eval_sample_cap", 5000))
+    eval_size = max(1, min(int(n * test_size_percent), n - 1, eval_cap))
     split_ds = ds.train_test_split(test_size=eval_size, seed=seed)
     src_train, src_eval = split_ds["train"], split_ds["test"]
 
@@ -323,7 +357,13 @@ def tokenize_source(
     # (it would OOM/crash a num_proc worker even though truncation=max_seq_length discards
     # all but ~8k chars). Env-overridable; default 100k chars >> 2048 tokens.
     max_chars = int(os.environ.get("PRETOKENIZE_MAX_CHARS", "100000"))
-    tokenize_fn = _make_tokenize_fn(tokenizer, max_seq_length, append_eos_token_id, max_chars=max_chars)
+    tokenize_fn = _make_tokenize_fn(
+        tokenizer,
+        max_seq_length,
+        append_eos_token_id,
+        max_chars=max_chars,
+        model_vocab_size=model_vocab_size,
+    )
 
     def _map_resilient(ds, num_proc, **kw):
         """map() with a num_proc=1 fallback: if a worker dies opaquely ('subprocess
@@ -337,19 +377,43 @@ def tokenize_source(
                 return ds.map(tokenize_fn, batched=True, num_proc=1, **kw)
             raise
 
-    ntr = max(1, min(train_num_proc, len(src_train)))
+    def _drop_oov(ds, split_name: str, num_proc: int):
+        if model_vocab_size is None:
+            return ds
+        filtered, dropped = filter_rows_outside_model_vocab(
+            ds, model_vocab_size, num_proc=num_proc
+        )
+        if dropped:
+            logger.warning(
+                f"[{name}] dropped {dropped} {split_name} rows with input_ids outside "
+                f"[0, {model_vocab_size}) before writing pretok cache"
+            )
+        return filtered
+
     nte = max(1, min(test_num_proc, len(src_eval)))
-    logger.info(f"[{name}] tokenizing train={len(src_train):,} (proc={ntr}, max_chars={max_chars}) eval={len(src_eval):,} (proc={nte})")
-    src_train = _map_resilient(src_train, ntr, remove_columns=["text"])
+    if eval_only:
+        logger.info(
+            f"[{name}] eval-only tokenization: eval={len(src_eval):,} "
+            f"(proc={nte}, max_chars={max_chars})"
+        )
+    else:
+        ntr = max(1, min(train_num_proc, len(src_train)))
+        logger.info(f"[{name}] tokenizing train={len(src_train):,} (proc={ntr}, max_chars={max_chars}) eval={len(src_eval):,} (proc={nte})")
+        src_train = _map_resilient(src_train, ntr, remove_columns=["text"])
+        src_train = _drop_oov(src_train, "train", ntr)
     src_eval = _map_resilient(src_eval, nte, remove_columns=["text"])
+    src_eval = _drop_oov(src_eval, "eval", nte)
 
     # save_to_disk cannot save an interleave; here we save train and eval separately.
-    src_train.save_to_disk(str(train_dir))
+    if not eval_only:
+        src_train.save_to_disk(str(train_dir))
     src_eval.save_to_disk(str(eval_dir))
-    manifest_entry["train_path"] = str(train_dir)
+    manifest_entry["train_path"] = None if eval_only else str(train_dir)
     manifest_entry["eval_path"] = str(eval_dir)
-    manifest_entry["train_rows"] = len(src_train)
+    manifest_entry["train_rows"] = 0 if eval_only else len(src_train)
     manifest_entry["eval_rows"] = len(src_eval)
+    tok_dir.mkdir(parents=True, exist_ok=True)
+    metadata_path.write_text(json.dumps(expected_metadata, indent=2))
 
     # Archive raw parquet/zst to NAS (tokenizer-agnostic) so a future tokenizer
     # switch can re-tokenize without re-downloading; then free NVMe. If no archive
@@ -360,6 +424,10 @@ def tokenize_source(
         archive_dst.mkdir(parents=True, exist_ok=True)
         for p in paths:
             dst = archive_dst / p.name
+            if dst.exists() and p.resolve() == dst.resolve():
+                # Tokenizing straight from the archive (--raw_dir == --raw_archive_dir):
+                # source IS the archive file — unlinking would destroy the archive.
+                continue
             if dst.exists() and dst.stat().st_size == p.stat().st_size:
                 p.unlink(missing_ok=True)
                 continue
@@ -378,7 +446,10 @@ def tokenize_source(
                 p.unlink(missing_ok=True)
             except OSError:
                 pass
-    logger.info(f"[{name}] DONE train={len(src_train):,} eval={len(src_eval):,} → {tok_dir}")
+    logger.info(
+        f"[{name}] DONE train={0 if eval_only else len(src_train):,} "
+        f"eval={len(src_eval):,} → {tok_dir}"
+    )
     return manifest_entry
 
 
@@ -387,10 +458,11 @@ def main():
     p.add_argument("--mix", required=True, help="Recipe id/path or registered mix name")
     p.add_argument("--tokenizer", default="HuggingFaceTB/SmolLM2-135M")
     p.add_argument("--max_seq_length", type=int, default=2048)
-    p.add_argument("--cache_dir", default=None, help="Tokenized cache root (default: $HF_DATASETS_CACHE/../datasets_tok)")
-    p.add_argument("--raw_dir", default=None, help="Raw parquet root (default: $HF_DATASETS_CACHE/../datasets_raw)")
+    p.add_argument("--cache_dir", default=None, help="Tokenized cache root (default: $DATASETS_TOK_DIR from remote_paths.sh, or $HF_HOME/datasets_tok — the canonical pre-tokenized corpora tree, per remote-servers SKILL.md)")
+    p.add_argument("--raw_dir", default=None, help="Raw parquet root (default: $DATASETS_RAW_DIR, or $HF_HOME/datasets_raw)")
     p.add_argument("--raw_archive_dir", default=None, help="If set, move raw parquet/zst here (per-source subdir) after tokenizing instead of deleting — a tokenizer-agnostic archive for future re-tokenization. E.g. /nas/ml_data/mrcogito/hf_datasets/raw")
     p.add_argument("--archive_raw_only", action="store_true", help="Only download + archive raw files to --raw_archive_dir for ALL sources (no tokenize). Use to populate the NAS archive for sources already tokenized under another tokenizer.")
+    p.add_argument("--eval_only", action="store_true", help="Tokenize and save only the deterministic eval split (for frozen long-context evaluation manifests).")
     p.add_argument("--manifest", default=None, help="Manifest JSON path (default: <cache_dir>/<mix>_manifest.json)")
     p.add_argument("--test_size_percent", type=float, default=0.1)
     p.add_argument("--seed", type=int, default=42)
@@ -399,16 +471,43 @@ def main():
     p.add_argument("--download_workers", type=int, default=8, help="Parallel shard downloads per source")
     p.add_argument("--jobs", type=int, default=1, help="Concurrent sources (1 = sequential, safer)")
     p.add_argument("--only", default=None, help="Comma-separated source names to process")
-    p.add_argument("--objective", default="prefix_suffix", choices=["prefix_suffix", "reconstruction", "reconstruction+contrastive"])
+    p.add_argument(
+        "--eval_sample_cap",
+        type=int,
+        default=None,
+        help="Override each selected source's deterministic eval-row cap.",
+    )
+    p.add_argument("--objective", default="prefix_suffix", choices=["prefix_suffix", "reconstruction", "reconstruction+contrastive", "causal_lm"])
     args = p.parse_args()
 
-    from training.train_perceiver_denoise import resolve_append_eos_token_id
+    from training.concept_pretraining_objectives import resolve_append_eos_token_id
 
-    hf_cache = os.environ.get("HF_DATASETS_CACHE", os.path.expanduser("~/dev/hf_home/datasets"))
-    cache_root = Path(args.cache_dir or os.path.join(os.path.dirname(hf_cache), "datasets_tok"))
-    raw_root = Path(args.raw_dir or os.path.join(os.path.dirname(hf_cache), "datasets_raw"))
+    # Load .env (HF_TOKEN, HF_HOME on local macOS) so direct invocation without a bash
+    # launcher still resolves the same paths. Existing env vars take precedence
+    # (load_dotenv does not overwrite), so launcher-set HF_HOME wins on the servers.
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
+    # Single source of truth: HF_HOME. Everything else is a sibling subdir of it.
+    # On the servers remote_paths.sh exports HF_HOME=/home/ksopyla/dev/hf_home and the
+    # sibling trees DATASETS_TOK_DIR / DATASETS_RAW_DIR; on local macOS .env sets an
+    # absolute HF_HOME (e.g. /Users/.../MrCogito/Cache/hf_home). Do NOT hardcode
+    # server paths here.
+    hf_home = os.environ.get("HF_HOME")
+    if not hf_home:
+        raise RuntimeError(
+            "HF_HOME is not set. Source scripts/remote_paths.sh (servers) or ensure "
+            ".env defines HF_HOME (local)."
+        )
+    hf_home = os.path.abspath(hf_home)
+
+    cache_root = Path(args.cache_dir or os.environ.get("DATASETS_TOK_DIR") or os.path.join(hf_home, "datasets_tok"))
+    raw_root = Path(args.raw_dir or os.environ.get("DATASETS_RAW_DIR") or os.path.join(hf_home, "datasets_raw"))
     cache_root.mkdir(parents=True, exist_ok=True)
-    (raw_root).mkdir(parents=True, exist_ok=True)
+    raw_root.mkdir(parents=True, exist_ok=True)
     raw_archive_root = Path(args.raw_archive_dir) if args.raw_archive_dir else None
     if raw_archive_root is not None:
         raw_archive_root.mkdir(parents=True, exist_ok=True)
@@ -422,10 +521,27 @@ def main():
     if args.only:
         wanted = set(s.strip() for s in args.only.split(","))
         sources = [s for s in sources if s.get("name") in wanted]
+    if args.eval_sample_cap is not None:
+        if args.eval_sample_cap <= 0:
+            raise ValueError("--eval_sample_cap must be positive.")
+        sources = [
+            {**source, "eval_sample_cap": args.eval_sample_cap}
+            for source in sources
+        ]
 
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
+    model_vocab_size = AutoConfig.from_pretrained(args.tokenizer).vocab_size
+    split_special_tokens = configure_text_tokenizer_for_model_vocab(
+        tokenizer, model_vocab_size
+    )
+    if split_special_tokens:
+        logger.warning(
+            "Tokenizer has ids beyond the text-model vocabulary "
+            f"({len(tokenizer)} > {model_vocab_size}); splitting literal special-token "
+            "strings to prevent invalid embedding indices."
+        )
     append_eos = resolve_append_eos_token_id(
         args.objective, is_causal_ar=True, eos_token_id=tokenizer.eos_token_id
     )
@@ -456,6 +572,8 @@ def main():
                     args.test_size_percent, args.seed, args.train_num_proc,
                     args.test_num_proc, args.download_workers,
                     raw_archive_dir=raw_archive_root,
+                    eval_only=args.eval_only,
+                    model_vocab_size=model_vocab_size,
                 )
                 entries.append(entry)
                 logger.info(f"[{entry['name']}] elapsed {time.time()-t0:.0f}s")
@@ -480,6 +598,9 @@ def main():
         "mix_origin": meta.get("mix_origin"),
         "mix_recipe_path": meta.get("mix_recipe_path"),
         "tokenizer": args.tokenizer,
+        "model_vocab_size": model_vocab_size,
+        "split_special_tokens": split_special_tokens,
+        "eval_only": args.eval_only,
         "max_seq_length": args.max_seq_length,
         "objective": args.objective,
         "append_eos_token_id": append_eos,
@@ -494,17 +615,20 @@ def main():
 
 def _proc_worker(spec, args, cache_root, raw_root, append_eos, raw_archive_root=None):
     """Process-pool worker for --jobs>1."""
-    from transformers import AutoTokenizer
-    from training.train_perceiver_denoise import resolve_append_eos_token_id as _r
+    from transformers import AutoConfig, AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
+    model_vocab_size = AutoConfig.from_pretrained(args.tokenizer).vocab_size
+    configure_text_tokenizer_for_model_vocab(tokenizer, model_vocab_size)
     return tokenize_source(
         spec, tokenizer, args.max_seq_length, append_eos,
         cache_root, raw_root / spec.get("name", spec["hf_id"]),
         args.test_size_percent, args.seed, args.train_num_proc,
         args.test_num_proc, args.download_workers,
         raw_archive_dir=raw_archive_root,
+        eval_only=args.eval_only,
+        model_vocab_size=model_vocab_size,
     )
 
 

@@ -8,7 +8,7 @@
 **Best checkpoint:** `Cache/Training/concept_ar_H768L6C128D4_20260614_164206/checkpoint-19000`
 **Git commit:** `0c14061`
 **Git tag:** —
-**Related TODO:** E03 in `docs/experiments_specs/E03_concept_anchor_decollapse.md`
+**Related TODO:** E03 in `docs/experiments_specs/done_success/E03_concept_anchor_decollapse.md`
 
 > **Note:** This run was launched without `EXPERIMENT_ID=E03` so W&B shows no experiment tag.
 > The matched control arm (anchor-OFF) is queued as the next Odra run.
@@ -148,4 +148,4 @@ evaluate the spec's de-collapse criteria. The full E03 verdict is deferred until
 compared. If the control arm also passes its kill gates, the next step is a matched full-epoch
 pair (1 epoch each) for the definitive STS-B and rank comparison.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/E03_concept_anchor_decollapse.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E03_concept_anchor_decollapse.md`, `agenda.md`*

@@ -3,7 +3,8 @@
   "description": "E05 mix: SmolLM3-inspired sources INCLUDING DCLM, with intelligent shard caps for fast parallel download+tokenize. DCLM uses recursive .jsonl.zst listing (~61k rows/file).",
   "objective_compatibility": [
     "reconstruction",
-    "prefix_suffix"
+    "prefix_suffix",
+    "causal_lm"
   ],
   "seq_len_target": 2048,
   "long_context_policy": {

@@ -30,11 +30,86 @@ class EvalLineage:
 
 
 def _safe_tag_value(raw: str, *, max_len: int = 64) -> str:
-    value = raw.strip().lower()
+    """Sanitize a free-form string into a wandb-tag-safe value (no prefix).
+
+    The returned string contains only `[a-z0-9._:-]` and is at most `max_len`
+    chars. Used standalone or as the value part of a `prefix:value` tag — see
+    `_safe_prefixed_tag` for the latter, which truncates the *value* so the
+    full `prefix:value` tag stays under the wandb 64-char limit.
+    """
+    value = (raw or "").strip().lower()
     value = value.replace("/", "-")
     value = re.sub(r"[^a-z0-9._:-]+", "-", value)
     value = re.sub(r"-{2,}", "-", value).strip("-")
-    return value[:max_len] or "unknown"
+    return (value or "unknown")[:max_len]
+
+
+def _safe_prefixed_tag(prefix: str, raw_value: str, *, max_total: int = 64) -> str:
+    """Build a wandb tag `prefix:value` whose TOTAL length is ≤ max_total.
+
+    Wandb enforces the 64-char limit on the full tag string, not on the value,
+    so a naive `f"tokenizer:{_safe_tag_value(name)}"` can produce 64 +
+    len("tokenizer:") = 75-char tags and fail `wandb.init(tags=...)`. This
+    helper reserves room for the prefix and colon before truncating the value.
+    """
+    prefix = (prefix or "").rstrip(":")
+    if not prefix:
+        return _safe_tag_value(raw_value, max_len=max_total)
+    budget = max_total - len(prefix) - 1  # 1 for the ':'
+    if budget < 1:
+        # Prefix itself is at/over the limit; degrade to the prefix only.
+        return prefix[:max_total]
+    value = _safe_tag_value(raw_value, max_len=budget)
+    return f"{prefix}:{value}"
+
+
+def resolve_tokenizer_name_for_tag(
+    *,
+    arg_tokenizer_name: Optional[str],
+    arg_model_name_or_path: Optional[str],
+    config_tokenizer_name: Optional[str],
+) -> str:
+    """Pick the tokenizer identifier to put in W&B tags.
+
+    Precedence:
+      1. `arg_tokenizer_name` if it looks like a HF Hub id (`org/name`, not a
+         local path — i.e. contains '/' but is not absolute and not an existing dir).
+      2. `config_tokenizer_name` if present (the canonical id stored at training time).
+      3. `arg_tokenizer_name` as given (whatever the user passed).
+      4. `arg_model_name_or_path` as a final fallback.
+
+    This avoids two failure modes:
+      - A bare local checkpoint path leaking into the wandb tag (which broke
+        `wandb.init` with a 74-char tag — see build_namespaced_eval_tags).
+      - A short checkpoint dir hiding the real tokenizer id from dashboards.
+    """
+    arg_tok = (arg_tokenizer_name or "").strip()
+    arg_model = (arg_model_name_or_path or "").strip()
+
+    def _looks_like_hub_id(s: str) -> bool:
+        """True if `s` looks like a HF Hub id rather than a local path.
+
+        - `org/name` (exactly one `/`, not absolute/relative, not an existing dir).
+        - A bare single token with no path separators (e.g. `gpt2`).
+        - False for any multi-segment path (`a/b/c`), absolute paths, relative
+          paths, or existing local directories.
+        """
+        if not s:
+            return False
+        if s.startswith("/") or s.startswith("./") or s.startswith("../"):
+            return False
+        if os.path.isdir(s):
+            return False
+        if "/" not in s:
+            # Bare single token like `gpt2` — accept unless it has a path-like suffix.
+            return not s.endswith(("/", "\\"))
+        return s.count("/") == 1
+
+    if _looks_like_hub_id(arg_tok):
+        return arg_tok
+    if config_tokenizer_name:
+        return config_tokenizer_name
+    return arg_tok or arg_model
 
 
 def parse_checkpoint_step_from_path(model_path: str) -> Optional[int]:
@@ -198,17 +273,17 @@ def build_namespaced_eval_tags(
     tags.extend(
         [
             "job:eval",
-            f"benchmark:{_safe_tag_value(benchmark)}",
-            f"family:{_safe_tag_value(model_family)}",
+            _safe_prefixed_tag("benchmark", benchmark),
+            _safe_prefixed_tag("family", model_family),
             f"size:{params_m}M",
-            f"tokenizer:{_safe_tag_value(tokenizer_name)}",
+            _safe_prefixed_tag("tokenizer", tokenizer_name),
             f"lineage:{lineage.lineage_status}",
         ]
     )
     if objective_family:
-        tags.append(f"objective:{_safe_tag_value(objective_family)}")
+        tags.append(_safe_prefixed_tag("objective", objective_family))
     if lineage.source_training_experiment_id:
-        tags.append(f"exp:{_safe_tag_value(lineage.source_training_experiment_id)}")
+        tags.append(_safe_prefixed_tag("exp", lineage.source_training_experiment_id))
     if lineage.source_checkpoint_step is not None:
         tags.append(f"ckpt_step:{lineage.source_checkpoint_step}")
     if lineage.source_checkpoint_epoch is not None:

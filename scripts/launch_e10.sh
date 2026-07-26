@@ -1,0 +1,102 @@
+#!/bin/bash
+# E10 — pretrained-backbone concept memory (Gemma-3-1B graft, Design C).
+#   bash scripts/launch_e10.sh                    # concept arm (C=128)
+#   CONCEPT_NUM=0 bash scripts/launch_e10.sh      # matched no-concept control arm
+#
+# Pins the E10 protocol (frozen gemma-3-1b-pt + LoRA, block K=512 = Gemma's sliding window,
+# Gemma-tokenized mix at seq 2048, plain causal_lm objective) and delegates to the GENERIC
+# launcher (train_concept_pretraining_multigpu.sh), which owns training defaults + the gated
+# pretokenize phase + the accelerate invocation. Override any knob by exporting it first.
+#
+# Arm invariant: both arms share backbone/LoRA/masks/mix/seed/effective-batch/epochs; ONLY
+# CONCEPT_NUM differs. Spec: docs/experiments_specs/done_failed/E10_gemma_backbone_concept_memory.md
+# (run Stage 0 — analysis/run_e10_stage0.py — BEFORE training; gap G >= 0.05 nats gates the run).
+set -euo pipefail
+
+export PATH="${HOME}/.local/bin:${PATH}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="/home/ksopyla/dev/MrCogito"
+[ -d "$PROJECT_ROOT" ] || PROJECT_ROOT="$(pwd)"
+
+# ---- Data path overrides (set BEFORE sourcing remote_paths.sh; that script only
+#      assigns DATASETS_*_DIR when unset, so this pre-set wins). E10 re-tokenizes
+#      the E05 mix with the Gemma tokenizer into its OWN tree (never collides with
+#      the SmolLM2 datasets_tok), and reads raw shards straight from the NAS archive
+#      (populated by the E05 pass) to avoid re-downloading ~150 GB. ----
+export DATASETS_TOK_DIR="${DATASETS_TOK_DIR:-${PROJECT_ROOT}/../hf_home/datasets_tok_gemma}"
+# Re-tokenize straight from the NAS raw archive. The pretokenize script detects
+# raw_dir == raw_archive_dir and skips the post-tokenize unlink that would
+# otherwise delete the archive shards themselves.
+export DATASETS_RAW_DIR="${DATASETS_RAW_DIR:-/nas/ml_data/mrcogito/hf_datasets/raw}"
+export RAW_ARCHIVE_DIR="${RAW_ARCHIVE_DIR:-/nas/ml_data/mrcogito/hf_datasets/raw}"
+
+# shellcheck source=scripts/remote_paths.sh
+source "${SCRIPT_DIR}/remote_paths.sh"
+
+# ---- Identity + E10 protocol pins ----
+export EXPERIMENT_ID="${EXPERIMENT_ID:-E10}"
+export BACKBONE_MODEL="${BACKBONE_MODEL:-google/gemma-3-1b-pt}"
+export OBJECTIVE_VARIANT=causal_lm
+export CONCEPT_NUM="${CONCEPT_NUM:-128}"
+export CONCEPT_BLOCK=512                       # MUST equal the backbone's sliding window
+export CONCEPT_IO_MODE="${CONCEPT_IO_MODE:-global_kv}"
+export READ_CONCEPT_NORM="${READ_CONCEPT_NORM:-false}"
+export READ_GATE_INIT="${READ_GATE_INIT:-0.0}"
+export WRITE_GATE_INIT="${WRITE_GATE_INIT:-0.0}"
+export LORA_R="${LORA_R:-16}"
+export LORA_ALPHA="${LORA_ALPHA:-32}"
+export TOKENIZER_NAME=google/gemma-3-1b-pt
+export MAX_SEQ_LENGTH="${MAX_SEQ_LENGTH:-2048}"
+export SEED=42
+
+# ---- Pretokenize pins ----
+export PRETOKENIZE_MIX="${PRETOKENIZE_MIX:-smollm3_inspired_2k_e05}"
+export MANIFEST="${MANIFEST:-${DATASETS_TOK_DIR}/${PRETOKENIZE_MIX}_gemma_manifest.json}"
+
+# ---- Optimization (LoRA-typical; the backbone is frozen) ----
+export LEARNING_RATE="${LEARNING_RATE:-1e-4}"
+export CONCEPT_MEMORY_LR="${CONCEPT_MEMORY_LR:-}"
+export WARMUP_STEPS="${WARMUP_STEPS:-500}"
+export MAX_GRAD_NORM="${MAX_GRAD_NORM:-0.5}"
+export WEIGHT_DECAY="${WEIGHT_DECAY:-0.0}"
+export GRADIENT_CHECKPOINTING=True             # 1B backbone at seq 2048 on 24 GB cards
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+
+export EVAL_STEPS="${EVAL_STEPS:-2000}"
+export SAVE_STEPS="${SAVE_STEPS:-2000}"        # multiple of EVAL_STEPS (load_best_model_at_end)
+export AUTO_INTERVALS="${AUTO_INTERVALS:-1}"   # exact ~10% token-budget intervals, incl. ~50%
+export SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-12}"  # retain fixed 10%-budget checkpoints for paired A/B
+export EVAL_BATCH_SIZE="${EVAL_BATCH_SIZE:-2}"
+export MAX_EVAL_SAMPLES="${MAX_EVAL_SAMPLES:-2048}"  # deterministic live gates; full frozen eval is separate
+export DDP_TIMEOUT="${DDP_TIMEOUT:-14400}"
+
+# ---- Token-matched arms: identical effective batch 72 on both servers ----
+# The 2026-07-11 Odra calibration found batch 8 stable at 19.97 GiB peak while
+# batch 10 OOMed; use the largest stable microbatch with >3 GiB DDP headroom.
+# Polonez uses 6/GPU so both arms still see 24 samples/microstep and 72/update.
+#   Odra    (3 GPU): 8 x 3 x 3 = 72
+#   Polonez (4 GPU): 6 x 4 x 3 = 72
+NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
+if [ "$NUM_GPUS" -eq 4 ]; then
+    export PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-6}"
+else
+    export PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-8}"
+fi
+export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-3}"
+
+# ---- Budget: 2B non-padding-token target from the completed Gemma manifest. ----
+# The generic launcher computes the epoch fraction/steps (rounding ≤ one optimizer batch).
+export TARGET_TOKENS="${TARGET_TOKENS:-2000000000}"
+export NUM_EPOCHS="${NUM_EPOCHS:-0.1}"  # fallback only; overridden from exact manifest stats
+
+echo "=== E10 launch (backbone=${BACKBONE_MODEL}, C=${CONCEPT_NUM}, ${NUM_GPUS} GPUs, effective batch $((PER_DEVICE_BATCH_SIZE * NUM_GPUS * GRADIENT_ACCUMULATION_STEPS))) ==="
+echo "  arm=$([ "${CONCEPT_NUM}" = "0" ] && echo control || echo concept)  io=${CONCEPT_IO_MODE}  K=${CONCEPT_BLOCK}  lora_r=${LORA_R}"
+echo "  read_norm=${READ_CONCEPT_NORM}  read_gate_init=${READ_GATE_INIT}  write_gate_init=${WRITE_GATE_INIT}"
+echo "  mix=${PRETOKENIZE_MIX} (Gemma tokenizer) seq=${MAX_SEQ_LENGTH}  LR=${LEARNING_RATE}  concept_LR=${CONCEPT_MEMORY_LR:-same}  target_tokens=${TARGET_TOKENS}"
+echo "  DATASETS_TOK_DIR=${DATASETS_TOK_DIR}"
+echo "  DATASETS_RAW_DIR=${DATASETS_RAW_DIR}"
+echo "  MANIFEST=${MANIFEST}"
+
+# Delegate everything else (defaults, pretokenize, accelerate launch) to the generic launcher.
+exec bash "${SCRIPT_DIR}/train_concept_pretraining_multigpu.sh"

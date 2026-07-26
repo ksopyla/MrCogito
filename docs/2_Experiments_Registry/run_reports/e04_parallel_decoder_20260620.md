@@ -8,7 +8,7 @@
 **Best checkpoint:** `Cache/Training/perceiver_denoise_H768L6C128D4_20260618_200645/checkpoint-66000`
 **Git commit:** `224fdc1`
 **Git tag:** —
-**Related TODO:** E04 in `docs/experiments_specs/E04_concept_only_parallel_decoder.md`
+**Related TODO:** E04 in `docs/experiments_specs/done_success/E04_concept_only_parallel_decoder.md`
 
 ---
 
@@ -175,4 +175,4 @@ absolute semantics well below E02. Tier-2.5 probe **partially validates** distri
 decoder or anchor (combine levers); (2) same probe on E02-long to test whether its RankMe 246
 similarly exceeds mean-pool readout; (3) E05 windowed decoder (gate cleared).
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/E04_concept_only_parallel_decoder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E04_concept_only_parallel_decoder.md`, `agenda.md`*

@@ -4,6 +4,19 @@ from evaluation.concept_eval_routing import resolve_concept_eval_route
 from nn.concept_encoder import ConceptEncoderConfig
 
 
+def test_weighted_mlm_historical_checkpoint_route_remains_supported():
+    route = resolve_concept_eval_route(
+        config=ConceptEncoderConfig(),
+        requested_model_type="weighted_mlm",
+        has_pair_inputs=True,
+    )
+
+    assert route.checkpoint_family == "weighted_mlm"
+    assert route.model_mode == "weighted_pool"
+    assert route.pair_input_mode == "concatenated"
+    assert route.load_mode == "full"
+
+
 def test_diffusion_pair_tasks_require_metadata_contract():
     config = ConceptEncoderConfig()
 

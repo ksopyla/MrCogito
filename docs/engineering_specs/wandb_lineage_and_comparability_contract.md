@@ -128,7 +128,8 @@ Changes:
 ### Step 4 — harden training identity consistency
 
 Files:
-- `training/train_perceiver_denoise.py`
+- `training/train_concept_pretraining.py`
+- `training/train_perceiver_denoise.py` (temporary compatibility wrapper)
 - `training/utils_training.py`
 - `tests/test_wandb_identity.py`
 

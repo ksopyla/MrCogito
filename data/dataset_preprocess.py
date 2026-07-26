@@ -3,8 +3,9 @@ import os
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
-from datasets import load_dataset, load_from_disk, interleave_datasets, concatenate_datasets
+from datasets import concatenate_datasets, load_dataset, load_from_disk
 from transformers import DataCollatorForWholeWordMask
 from transformers.utils import logging
 
@@ -13,7 +14,85 @@ logger = logging.get_logger(__name__)
 MIX_RECIPES_DIR = Path(__file__).resolve().parent / "mix_recipes"
 
 
-def _make_tokenize_fn(tokenizer, max_seq_length, append_eos_token_id, max_chars=None):
+def _fast_weighted_all_exhausted_interleave(datasets, probabilities, seed):
+    """Vectorized equivalent of HF's weighted map-style ``all_exhausted`` interleave.
+
+    ``datasets.interleave_datasets`` generates one source choice at a time in Python. At
+    ~10M rows that can take hours before training even starts. HF draws choices in chunks
+    of 1,000 from ``np.random.default_rng(seed)``; process each chunk source-by-source while
+    preserving the same cyclic row indices and exact stop position.
+    """
+    if not datasets:
+        raise ValueError("Cannot interleave an empty dataset list.")
+    lengths = np.asarray([len(dataset) for dataset in datasets], dtype=np.int64)
+    if np.any(lengths <= 0):
+        raise ValueError("Weighted interleave requires every source dataset to be non-empty.")
+
+    probabilities = np.asarray(probabilities, dtype=np.float64)
+    probabilities = probabilities / probabilities.sum()
+    offsets = np.concatenate(([0], np.cumsum(lengths[:-1]))).astype(np.int64)
+    current = np.zeros(len(datasets), dtype=np.int64)
+    exhausted = np.zeros(len(datasets), dtype=bool)
+    rng = np.random.default_rng(seed)
+    index_chunks = []
+
+    while not exhausted.all():
+        choices = rng.choice(len(datasets), size=1000, p=probabilities)
+
+        # HF stops immediately after the last never-exhausted source reaches its end.
+        remaining = np.flatnonzero(~exhausted)
+        final_positions = []
+        for source_idx in remaining:
+            positions = np.flatnonzero(choices == source_idx)
+            needed = lengths[source_idx] - current[source_idx]
+            if len(positions) < needed:
+                break
+            final_positions.append(positions[needed - 1])
+        else:
+            choices = choices[: max(final_positions) + 1]
+
+        global_indices = np.empty(len(choices), dtype=np.int64)
+        for source_idx in range(len(datasets)):
+            positions = np.flatnonzero(choices == source_idx)
+            if not len(positions):
+                continue
+            source_rows = current[source_idx] + np.arange(len(positions), dtype=np.int64)
+            global_indices[positions] = offsets[source_idx] + source_rows % lengths[source_idx]
+            if source_rows[-1] >= lengths[source_idx] - 1:
+                exhausted[source_idx] = True
+            current[source_idx] = (source_rows[-1] + 1) % lengths[source_idx]
+        index_chunks.append(global_indices)
+
+    combined = concatenate_datasets(datasets)
+    return combined.select(np.concatenate(index_chunks))
+
+
+def configure_text_tokenizer_for_model_vocab(tokenizer, model_vocab_size: int) -> bool:
+    """Prevent tokenizer-only multimodal tokens from exceeding text-model embeddings.
+
+    Gemma-3's tokenizer includes ``<image_soft_token>`` at id 262144 while
+    ``gemma-3-1b-pt`` has text embeddings for ids 0..262143. A literal occurrence in web
+    text would otherwise become an invalid embedding index. When the tokenizer is larger
+    than the model, split literal special-token strings into ordinary text.
+    """
+    if len(tokenizer) <= model_vocab_size:
+        return False
+    if not hasattr(tokenizer, "split_special_tokens"):
+        raise ValueError(
+            f"Tokenizer has {len(tokenizer)} ids but model supports {model_vocab_size}, "
+            "and this tokenizer cannot split out-of-range special tokens."
+        )
+    tokenizer.split_special_tokens = True
+    return True
+
+
+def _make_tokenize_fn(
+    tokenizer,
+    max_seq_length,
+    append_eos_token_id,
+    max_chars=None,
+    model_vocab_size: int | None = None,
+):
     """Build the batched tokenize function shared by the single-source and mix loaders.
 
     append_eos_token_id is None  -> legacy pad-to-max_length path (perceiver MLM etc.).
@@ -25,34 +104,86 @@ def _make_tokenize_fn(tokenizer, max_seq_length, append_eos_token_id, max_chars=
         discards all but ~8k chars, so a 100MB DCLM web page can kill a ``num_proc`` worker
         before truncation runs. Lossless for the kept tokens when ``max_chars`` >> max_seq_length.
         Default ``None`` preserves the original behaviour (no pre-truncation).
+    model_vocab_size -> when set, pass ``split_special_tokens`` explicitly into each
+        tokenizer call (survives ``datasets.map`` multiprocessing better than relying on a
+        pickled attribute alone) and refuse batches that still contain out-of-range ids.
     """
+    # Explicit kwarg: attribute-only config can be lost when tokenizers are re-loaded in
+    # map workers, which would re-admit tokenizer-only multimodal ids (e.g. Gemma image soft).
+    split_special_tokens = bool(getattr(tokenizer, "split_special_tokens", False))
+    if model_vocab_size is not None and len(tokenizer) > model_vocab_size:
+        split_special_tokens = True
+
     def tokenize_batch_function(examples):
         text_batch = examples["text"]
         if max_chars:
             text_batch = [t[:max_chars] if t and len(t) > max_chars else t for t in text_batch]
+        tokenize_kwargs = {"return_special_tokens_mask": True}
+        if split_special_tokens:
+            tokenize_kwargs["split_special_tokens"] = True
         if append_eos_token_id is None:
-            return tokenizer(
+            out = tokenizer(
                 text_batch,
                 padding="max_length",
                 truncation=True,
                 max_length=max_seq_length,
-                return_special_tokens_mask=True,
+                **tokenize_kwargs,
             )
-        out = tokenizer(
-            text_batch,
-            padding=False,
-            truncation=True,
-            max_length=max_seq_length - 1,
-            return_special_tokens_mask=True,
-        )
-        out["input_ids"] = [ids + [append_eos_token_id] for ids in out["input_ids"]]
-        if "attention_mask" in out:
-            out["attention_mask"] = [m + [1] for m in out["attention_mask"]]
-        if "special_tokens_mask" in out:
-            out["special_tokens_mask"] = [s + [1] for s in out["special_tokens_mask"]]
+        else:
+            out = tokenizer(
+                text_batch,
+                padding=False,
+                truncation=True,
+                max_length=max_seq_length - 1,
+                **tokenize_kwargs,
+            )
+            out["input_ids"] = [ids + [append_eos_token_id] for ids in out["input_ids"]]
+            if "attention_mask" in out:
+                out["attention_mask"] = [m + [1] for m in out["attention_mask"]]
+            if "special_tokens_mask" in out:
+                out["special_tokens_mask"] = [s + [1] for s in out["special_tokens_mask"]]
+        if model_vocab_size is not None:
+            for ids in out["input_ids"]:
+                if not ids:
+                    continue
+                ids_min = min(ids)
+                ids_max = max(ids)
+                if ids_min < 0 or ids_max >= model_vocab_size:
+                    raise ValueError(
+                        "Tokenizer produced input_ids outside model vocabulary range: "
+                        f"min={ids_min}, max={ids_max}, model_vocab_size={model_vocab_size}. "
+                        "Drop or repair the offending raw text before writing pretok cache."
+                    )
         return out
 
     return tokenize_batch_function
+
+
+def filter_rows_outside_model_vocab(dataset, model_vocab_size: int, num_proc: int = 1):
+    """Drop pretokenized rows whose ``input_ids`` fall outside ``[0, model_vocab_size)``.
+
+    Used as a post-tokenize safety net for rare corrupt / out-of-range ids that slip past
+    the per-batch check (e.g. legacy caches written before validation existed).
+    Returns ``(filtered_dataset, n_dropped)``.
+    """
+    before = len(dataset)
+
+    def keep(batch):
+        out = []
+        for ids in batch["input_ids"]:
+            if not ids:
+                out.append(False)
+                continue
+            out.append(min(ids) >= 0 and max(ids) < model_vocab_size)
+        return out
+
+    filtered = dataset.filter(
+        keep,
+        batched=True,
+        batch_size=4096,
+        num_proc=max(1, num_proc),
+    )
+    return filtered, before - len(filtered)
 
 
 
@@ -646,11 +777,8 @@ def load_and_preprocess_dataset_mix(
 
     total_w = sum(weights)
     probabilities = [w / total_w for w in weights]
-    train_ds = interleave_datasets(
-        train_parts,
-        probabilities=probabilities,
-        seed=interleave_seed,
-        stopping_strategy="all_exhausted",
+    train_ds = _fast_weighted_all_exhausted_interleave(
+        train_parts, probabilities, interleave_seed
     )
     test_ds = concatenate_datasets(eval_parts)
     logger.info(
@@ -688,11 +816,8 @@ def load_pretokenized_mix(manifest_path):
 
     total_w = sum(weights)
     probabilities = [w / total_w for w in weights]
-    train_ds = interleave_datasets(
-        train_parts,
-        probabilities=probabilities,
-        seed=manifest.get("seed", 42),
-        stopping_strategy="all_exhausted",
+    train_ds = _fast_weighted_all_exhausted_interleave(
+        train_parts, probabilities, manifest.get("seed", 42)
     )
     test_ds = concatenate_datasets(eval_parts)
     logger.info(

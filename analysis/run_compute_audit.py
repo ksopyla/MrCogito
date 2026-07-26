@@ -425,6 +425,7 @@ def audit_run(run, write_back: bool) -> Dict[str, Any]:
         "compute/gpu_hours": gpu_hours,
         "compute/energy_kwh": energy_kwh,
         "compute/max_tokens": max_tokens,
+        "compute/max_tokens_b": (max_tokens / 1e9) if max_tokens else None,
         "compute/loss_tokens_est": loss_tokens_est,
         "compute/tokens_per_gpu_hour": tokens_per_gpu_hour,
         "compute/energy_per_gpu_hour_kw": energy_per_gpu_hour_kw,
@@ -477,6 +478,15 @@ def audit_run(run, write_back: bool) -> Dict[str, Any]:
             for k, v in scalars.items():
                 if v is not None:
                     run.summary[k] = v
+            # Best-effort cleanup of stale cohort-relative _pct keys from a prior
+            # audit version. Done AFTER the base write so a cleanup failure can't
+            # block the real scalars; per-key so one missing key is harmless.
+            for stale in ("compute/gpu_hours_pct", "compute/energy_kwh_pct",
+                          "compute/max_tokens_pct"):
+                try:
+                    del run.summary[stale]
+                except Exception:
+                    pass
             run.summary.update()
             rec["writeback"] = True
         except Exception as e:
@@ -496,10 +506,10 @@ CSV_COLUMNS = [
     "model_family", "objective_family", "dataset_name", "world_size",
     "max_seq_length", "num_train_epochs", "git_commit", "url",
     "compute/gpu_hours", "compute/energy_kwh", "compute/max_tokens",
-    "compute/loss_tokens_est", "compute/tokens_per_gpu_hour",
-    "compute/energy_per_gpu_hour_kw", "compute/gpu_hours_per_billion_tokens",
-    "compute/energy_per_billion_tokens", "compute/runtime_source",
-    "compute/flag", "error",
+    "compute/max_tokens_b", "compute/loss_tokens_est",
+    "compute/tokens_per_gpu_hour", "compute/energy_per_gpu_hour_kw",
+    "compute/gpu_hours_per_billion_tokens", "compute/energy_per_billion_tokens",
+    "compute/runtime_source", "compute/flag", "error",
 ]
 
 
@@ -526,7 +536,8 @@ def emit_csv(records: List[Dict[str, Any]], path: str) -> None:
             row["git_commit"] = rec.get("git_commit") or ""
             row["url"] = rec.get("url", "")
             for k in ("compute/gpu_hours", "compute/energy_kwh", "compute/max_tokens",
-                      "compute/loss_tokens_est", "compute/tokens_per_gpu_hour",
+                      "compute/max_tokens_b", "compute/loss_tokens_est",
+                      "compute/tokens_per_gpu_hour",
                       "compute/energy_per_gpu_hour_kw",
                       "compute/gpu_hours_per_billion_tokens",
                       "compute/energy_per_billion_tokens",
@@ -600,6 +611,51 @@ def emit_chart(records: List[Dict[str, Any]], png_path: str) -> None:
     plt.close(fig)
 
 
+def emit_profile_chart(records: List[Dict[str, Any]], png_path: str) -> None:
+    """Grouped 'compute profile' bar chart: the three absolute headline metrics per
+    run, with ``max_tokens`` rescaled to billions so it shares the GPU-hours / energy
+    range (raw tokens are ~1e9 and would dominate a shared linear axis). Stable
+    absolute values — comparable across past and future runs. Mirrors the W&B
+    grouped panel."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    ok = [r for r in records
+          if not r.get("gate_failed_structural")
+          and r.get("scalars", {}).get("compute/gpu_hours") is not None]
+    if not ok:
+        return
+    names = [r["run_name"] for r in ok]
+    # max_tokens rescaled to billions; gpu_hours and energy_kwh in their native units.
+    metrics = [("compute/gpu_hours", "GPU-hours", lambda x: x),
+               ("compute/energy_kwh", "Energy (kWh)", lambda x: x),
+               ("compute/max_tokens", "Max tokens (B)", lambda x: x / 1e9)]
+    n = len(names)
+    m = len(metrics)
+    width = 0.8 / m
+    x = np.arange(n)
+    fig, ax = plt.subplots(figsize=(max(9, 1.6 * n), 5))
+    cmap = plt.get_cmap("tab10")
+    for j, (key, label, scale) in enumerate(metrics):
+        raw = [r["scalars"].get(key) for r in ok]
+        v = [scale(r) if r is not None else None for r in raw]
+        bars = ax.bar(x + (j - (m - 1) / 2) * width, v, width, label=label,
+                      color=cmap(j))
+        for b, val in zip(bars, v):
+            if val is not None:
+                ax.text(b.get_x() + b.get_width() / 2, b.get_height(),
+                        f"{val:.1f}", ha="center", va="bottom", fontsize=7)
+    ax.set_xticks(x)
+    ax.set_xticklabels(names, rotation=30, ha="right", fontsize=8)
+    ax.set_ylabel("GPU-hours · kWh · tokens (B)  [absolute, native units]")
+    ax.set_title("Compute profile (absolute; max_tokens in billions)")
+    ax.legend(loc="upper right", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(png_path, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+
+
 def expand_run_ids(api, entity: str, project: str,
                    run_ids: List[str], group: Optional[str],
                    tag: Optional[str]) -> List[str]:
@@ -622,6 +678,67 @@ def expand_run_ids(api, entity: str, project: str,
     return out
 
 
+# ---------------------------------------------------------------------------
+# Dashboard run: long-form wandb.Table for the Custom Chart grouped panel
+# ---------------------------------------------------------------------------
+#
+# The W&B built-in Bar Chart cannot cluster N metrics per run, and a Custom
+# Chart with a Vega-Lite ``fold`` transform over summary scalars is fragile
+# (the ``${field:...}`` substitution often fails inside ``fold``). The robust
+# path (the one W&B's own docs use for grouped bars) is to log a long-form
+# ``wandb.Table`` — one row per (run, metric) — to a dedicated dashboard run,
+# then point a Custom Chart (Vega grouped-bar preset) at it.
+
+DASHBOARD_RUN_NAME = "compute_profile_dashboard"
+TABLE_KEY = "compute_profile"
+PROFILE_METRICS = (
+    ("GPU-hours", "compute/gpu_hours"),
+    ("Energy (kWh)", "compute/energy_kwh"),
+    ("Max tokens (B)", "compute/max_tokens_b"),
+)
+
+
+def log_profile_table(records: List[Dict[str, Any]],
+                      entity: str, project: str,
+                      dashboard_name: str = DASHBOARD_RUN_NAME) -> str:
+    """Log a long-form ``compute_profile`` wandb.Table to a dashboard run.
+
+    Columns: run_name, wandb_group, metric, value, audit_state.
+    The dashboard run is tagged ``compute-dashboard``; re-running overwrites the
+    table (so the panel always reflects the latest audit). A Custom Chart in the
+    workspace with the grouped-bar preset + ``summaryTable: compute_profile``
+    renders the 3-metrics-per-run cluster directly.
+    """
+    rows: List[List[Any]] = []
+    for rec in records:
+        if rec.get("gate_failed_structural"):
+            continue
+        sc = rec.get("scalars", {})
+        run_name = rec.get("run_name", "")
+        group = rec.get("group_for_panel") or rec.get("wandb_group") or ""
+        state = sc.get("compute/audit_state", "")
+        for label, key in PROFILE_METRICS:
+            v = sc.get(key)
+            if v is None:
+                continue
+            rows.append([run_name, group, label, float(v), state])
+
+    run = wandb.init(
+        project=project, entity=entity,
+        name=dashboard_name, id=dashboard_name,
+        resume="allow", tags=["compute-dashboard"], group=None,
+        config={"kind": "compute_profile_dashboard"},
+    )
+    table = wandb.Table(
+        columns=["run_name", "wandb_group", "metric", "value", "audit_state"],
+        data=rows,
+    )
+    wandb.log({TABLE_KEY: table})
+    url = run.url
+    run.finish()
+    return url
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     p = argparse.ArgumentParser(description="Post-hoc compute audit for W&B training runs.")
     p.add_argument("--run-id", action="append", default=[], dest="run_ids")
@@ -632,6 +749,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--out-dir", default="Cache/Evaluation_reports/compute_audit/")
     p.add_argument("--dry-run", action="store_true",
                    help="Compute + local artifact only; no W&B summary write-back.")
+    p.add_argument("--log-table", action="store_true",
+                   help="Log a long-form compute_profile wandb.Table to a dashboard run "
+                        "(compute_profile_dashboard) so a Custom Chart grouped-bar panel "
+                        "renders the 3 metrics per run. Use when the built-in bar chart "
+                        "can't cluster metrics per run.")
     args = p.parse_args(argv)
 
     api = wandb.Api()
@@ -678,12 +800,24 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     csv_path = os.path.join(args.out_dir, f"{stamp}_summary.csv")
     png_path = os.path.join(args.out_dir, f"{stamp}_comparison.png")
+    profile_path = os.path.join(args.out_dir, f"{stamp}_profile.png")
     json_path = os.path.join(args.out_dir, f"{stamp}_per_run.json")
     emit_csv(records, csv_path)
     emit_chart(records, png_path)
+    emit_profile_chart(records, profile_path)
     with open(json_path, "w") as f:
         json.dump(records, f, indent=2, default=str)
-    print(f"\nWrote:\n  {csv_path}\n  {png_path}\n  {json_path}")
+    print(f"\nWrote:\n  {csv_path}\n  {png_path}\n  {profile_path}\n  {json_path}")
+
+    if args.log_table:
+        try:
+            url = log_profile_table(records, args.entity, args.project)
+            print(f"\nLogged compute_profile wandb.Table to dashboard run:\n  {url}")
+            print(f"Table key: '{TABLE_KEY}'. In the W&B workspace, add a Custom Chart, "
+                  "pick the 'Grouped bar chart' preset, set summaryTable to "
+                  f"'{TABLE_KEY}', X=run_name, Group=metric, Y=value.")
+        except Exception as e:
+            print(f"\n--log-table failed: {e!r}")
     return 0
 
 

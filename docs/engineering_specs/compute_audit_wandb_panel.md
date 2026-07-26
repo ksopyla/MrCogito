@@ -65,6 +65,7 @@ Per audited run, computed scalars (all written to `run.summary` for finished run
 | `compute/gpu_hours` | `runtime × world_size / 3600` (`train/train_runtime` if present else `_runtime`) |
 | `compute/energy_kwh` | `Σ_gpu trapezoid(powerWatts over dt) / 3.6e6` |
 | `compute/max_tokens` | `global_step × grad_accum × per_device_train_batch_size × world_size × max_seq_length` |
+| `compute/max_tokens_b` | `compute/max_tokens / 1e9` (billions — rescaled so it shares the GPU-hours/energy range; raw tokens ~1e9 dominate a shared axis) |
 | `compute/loss_tokens_est` | `compute/max_tokens × loss_fraction` (per-family, flagged) |
 | `compute/tokens_per_gpu_hour` | `compute/max_tokens / compute/gpu_hours` |
 | `compute/energy_per_gpu_hour_kw` | `compute/energy_kwh / compute/gpu_hours` (= avg kW per GPU; sanity metric) |
@@ -80,6 +81,16 @@ Per-family `loss_fraction` (flagged approximate; exact loss tokens are a separat
 - `reconstruction` (E01/E04) → `1.0` (predict full sequence; loss on all non-pad positions).
 - `weighted_mlm` → masking rate from config.
 - unknown family → skip `compute/loss_tokens_est`, append `"loss_fraction:unknown"` to `compute/flag`.
+
+Grouped profile scale: the three headline metrics have different units and raw
+magnitudes differ by ~1e7 (tokens ~1e9 vs GPU-hours ~1e2). For a single grouped
+bar per run, use the **absolute** scalars with `max_tokens` rescaled to billions
+(`compute/max_tokens_b`): GPU-hours (~35–290), energy (~11–61 kWh), tokens (~1.5–24.5 B)
+all land in a comparable numeric range on one linear axis. These are **stable
+absolute values** — comparable across past and future runs without re-normalization
+(rejected cohort-relative `%` because a future heavier run would rescale
+everything). The grouped bar is a pragmatic "compute profile at a glance"; for
+exact per-metric reads use the per-metric panels (each on its own correct axis).
 
 Retrieval (Step 1 spike — verify the exact call):
 - `api = wandb.Api(); run = api.run(f"{entity}/{project}/{run_id}")`.
@@ -146,15 +157,16 @@ Gate: structural hard-fail → `compute/audit_state=failed` (inspect the per-run
 ### W&B panel spec (user builds once — the agent cannot)
 
 In the `ksopyla/MrCogito` workspace:
-1. **Bar chart panels** (add panel → Bar Chart), one each with y-axis:
+1. **Compute profile (grouped, absolute, one scale)** — Bar Chart with the three metrics as the Metric set, using `compute/max_tokens_b` (not raw `compute/max_tokens`): `compute/gpu_hours`, `compute/energy_kwh`, `compute/max_tokens_b`. **Group by run name / run id** so the three bars cluster per run. `max_tokens` is rescaled to billions so it shares the GPU-hours/energy range (raw tokens ~1e9 would dominate). These are stable absolute values — comparable across past and future runs. This is the "how much compute · how many tokens · how efficient (power)" trio per run.
+2. **Per-metric bar panels (absolute, each on its own correct scale)** — Bar Chart panels, one each with y-axis:
    - `compute/gpu_hours`
    - `compute/energy_kwh`
-   - `compute/max_tokens`
+   - `compute/max_tokens_b` (billions)
    - (optional) `compute/loss_tokens_est`, `compute/tokens_per_gpu_hour`, `compute/energy_per_gpu_hour_kw`
-   - Group/color by `wandb_group` (or `config.wandb_group`).
-2. **Table panel** (add panel → Table) with columns: run name, `wandb_group`, `compute/gpu_hours`, `compute/energy_kwh`, `compute/max_tokens`, `compute/loss_tokens_est`, the four ratios, `compute/audit_state`, `compute/flag`.
-3. **Filtering / compare 2–3:** use the workspace run-set filter — filter by `wandb_group` (e.g. `E02_concept_ar_prefix_H768L6C128D4`) or multi-select specific run names; all panels update to show exactly those runs. Save the workspace as a named view (e.g. "Compute comparison").
-4. Hover shows config tags (`world_size`, `max_seq_length`, `num_train_epochs`, `state`, `dataset_name`) automatically because they are in each run's config.
+   - Group/color by `compute/group_for_panel` (handles old runs without `wandb_group`).
+3. **Table panel** — columns: run name, `compute/group_for_panel`, `compute/gpu_hours`, `compute/energy_kwh`, `compute/max_tokens_b`, `compute/loss_tokens_est`, the four ratios, `compute/audit_state`, `compute/flag`.
+4. **Filtering / compare 2–3:** use the workspace run-set filter — filter by `compute/group_for_panel` (e.g. `E02_concept_ar_prefix_H768L6C128D4`) or multi-select specific run names; all panels update to show exactly those runs. Save as a named view (e.g. "Compute comparison").
+5. Hover shows config tags (`world_size`, `max_seq_length`, `num_train_epochs`, `state`, `dataset_name`) automatically because they are in each run's config.
 
 Caveat to document in the panel/view description: raw bars are meaningful within a `wandb_group` (matched setup); across regimes use the ratios and read `compute/audit_state`/`compute/flag`.
 

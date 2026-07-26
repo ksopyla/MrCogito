@@ -10,7 +10,7 @@ Use this skill to produce a faithful, plain-language walkthrough of an AI/ML pap
 Pair with:
 
 - `research-scout` agent — fetch papers, repos, and model cards when the user has not provided them.
-- `research-synthesis` skill — when the user wants Adopt / Adapt / Watch / Reject and a smallest local test after the explanation.
+- `research-synthesis` skill — when the user wants Adopt / Adapt / Watch / Reject and a bold falsifiable next bet after the explanation.
 
 This skill is paper-internal by default. Project mapping (to MrCogito's concept reasoning model) is optional and short; deep verdicts belong to `research-synthesis`.
 

@@ -5,31 +5,55 @@ alwaysApply: true
 
 ## Project Overview
 
-This is a research project exploring "concept reasoning" as a way to reason about long sequences of text or audio. The focus is on gaining insight and knowledge through experimentation. Do not treat this as a well-defined engineering project — we explore the concept-reasoning paradigm in different ways, and the direction is genuinely open.
+This is a **research project hunting for a novel architecture**, not an engineering product iterating on a known recipe. The goal is insight: invent and stress-test concept-reasoning designs that nobody has shipped yet. Treat the direction as genuinely open. Do not behave like a cautious ML eng team optimizing a proven baseline.
 
-**Concept reasoning model** — a novel architecture that compresses long sequences (text/audio) into a small set of semantic "concepts" (e.g. 128/256/512 concepts from 4–64× longer token sequences) via cross-attention, diffusion, recursive encoding, etc., then reasons from those concepts. This fits the "concept bottleneck", knowledge compression, and latent-space reasoning paradigms.
+**Concept reasoning model** — a novel architecture that compresses long sequences (text/audio) into a small set of semantic "concepts" (e.g. 128/256/512 concepts from 4–64× longer token sequences) via cross-attention, diffusion, recursive encoding, etc., then reasons from those concepts. This fits the "concept bottleneck", knowledge compression, and latent-space reasoning paradigms — but those labels are starting points, not a mandate to stay inside Perceiver/cross-attn orthodoxy.
 
 Full vision and goals: `docs/1_Strategy_and_Plans/vision_and_goals.md`.
 The live agenda is `docs/1_Strategy_and_Plans/agenda.md` (slim daily driver — read it for current focus); per-experiment specs in `docs/experiments_specs/`.
 
 **Author**: Krzysztof Sopyla (krzysztof.sopyla@gmail.com, https://github.com/ksopyla)
 
+## Research Stance — be bold (non-negotiable for agents)
+
+We are trying to **find** a new architecture. That requires bold hypotheses, analogies across fields, and a willingness to be wrong. Safe micro-experiments that only retune known patterns waste the research budget.
+
+**Prefer**
+- Coherent architectural bets with a clear falsifiable claim (a new encode / reason / decode mechanism, a new inductive bias, a new objective tied to theory).
+- Connecting ideas across papers *and* across maths, physics, biology, dynamical systems, information theory, neuroscience — look for good analogies, not just nearest-neighbor citations.
+- Material novelty: something that would be surprising if it worked; something competitors are not already shipping as a default.
+- Making mistakes early and killing bad ideas with explicit kill criteria.
+
+**Avoid by default**
+- Tiny A/B knobs, optimizer swaps, and ablations framed as the main experiment. A/B and ablations are worthwhile *after* something works, to understand *why* — not as the research program itself.
+- Repeating old ideas from prior specs/runs with only cosmetic changes (same cross-attn stack, same init tricks, same asymmetry, different LR).
+- Safe bets that only recycle proven patterns, e.g. "cross-attention without feedforward", "small token embeddings warm-started from a pretrained model via SVD / PCA / truncated factors", or other incremental retreads of what we already tried.
+- Shrinking every idea into the smallest local tweak until nothing novel remains.
+
+**Still required (discipline ≠ caution)**
+- Spec before code; falsifiable success and kill criteria; configs over per-experiment forks; do not break old checkpoint loadability.
+- One coherent hypothesis per experiment (a bold composition can be one idea — do not split a single architectural bet into five micro-A/Bs).
+
 ## Key Directories
 - `nn/` — active model implementations: `concept_encoder_perceiver.py` (main Perceiver/BiXT-style family, incl. the concept-conditioned AR decoder), `concept_encoder.py`, `concept_encoder_weighted.py`, `loss_manager.py`, `concept_losses.py`
-- `training/` — training entrypoints (`train_perceiver_denoise.py` is the main one) and `utils_training.py`
+- `training/` — training entrypoints (`train_concept_pretraining.py` is the main multi-family one; `train_perceiver_denoise.py` is a compatibility wrapper) and `utils_training.py`
 - `data/` — `data_collators.py` (all collators), `dataset_preprocess.py`
 - `evaluation/` — benchmark eval scripts, checkpoint loading and eval routing
 - `analysis/` — `run_concept_analysis.py` (effective rank, cosine similarities), `check_model_health.py`
-- `parked/` — set-aside model families (recursive, diffusion, prefix-diffusion) with their training scripts and tests; revivable, do not modify casually
+- `parked/` — reproducibility-only weighted-MLM trainer plus set-aside diffusion/prefix-diffusion
+  families; revivable snapshots, do not modify casually. The superseded recursive-MLM fork is
+  preserved in git history; new recurrence work uses the shared maintained foundation.
 - `playground/` — exploration and learning only (mainly notebooks), not production
-- `scripts/` — bash launchers for training/eval on remote GPU servers, sync and upload utilities
+- `scripts/` — canonical generic training runner, thin experiment wrappers, orchestration
+  pipelines, eval launchers, sync/upload utilities; role map in `scripts/README.md`
 - `docs/` — documentation, research logs, goals and hypotheses
     - `1_Strategy_and_Plans/` — `agenda.md` (slim living agenda, current truth), `vision_and_goals.md`, `training_eval_matrix.md`
     - `experiments_specs/` — one frozen spec per experiment (`E0NN_*.md`) + its `_plan.md`; implementation is a config over the shared foundation
     - `engineering_specs/` — one frozen spec per engineering change 
     - `2_Experiments_Registry/` — master experiment log, run reports (append-only result ledger)
     - `3_Evaluations_and_Baselines/` — canonical baselines, comparative studies
-    - `4_Research_Notes/` — root cause analyses, diagnoses
+    - `4_Research_Notes/` — internal research notes. Two sub-classes: dated root-cause diagnoses / failure analyses (append-only ledger — never rewrite results) and undated mutable notes (concept analysis framework, embedding-space theory, evaluation strategy, research ideas — correct in place, mark obsolete sections)
+    - `literature_review/` — external paper / publication reviews. Topical filenames (no dates), one or more papers per file with `### TL;DR` each. Canonical source for past reviews referenced by the `research-scout` / `research-explain` / `research-synthesis` skills
     - `5_Archive/` — superseded roadmaps/plans (HISTORICAL — see Docs hygiene below)
 - `Cache/` — files synced from remote servers (gitignored content)
     - `Training/` — model checkpoints and optimizer states
@@ -47,17 +71,23 @@ Docs drift over time: old ideas, superseded facts, and dead actions accumulate a
     - anything under `docs/5_Archive/`, and
     - any file or section that opens with an `> **OBSOLETE — YYYY-MM-DD**` callout, or a claim struck through as `~~revised~~`.
 - **Current truth lives in `docs/1_Strategy_and_Plans/agenda.md`** (the slim living agenda — the daily driver) plus per-experiment specs in `docs/experiments_specs/`, `training_eval_matrix.md`, and `vision_and_goals.md`. The old `roadmap.md` and `active_todos.md` are archived in `docs/5_Archive/` (historical). When docs disagree, trust order is: code + git + `CHANGELOG.md` → `2_Experiments_Registry/` ledger → `agenda.md` + `docs/experiments_specs/` → notes/ideas/drafts.
-- **Experiments are scoped specs, not forks.** Every experiment has a frozen spec in `docs/experiments_specs/<ID>.md` and runs as args/config over the shared foundation — never a new training script per idea (see the `experiment-design` skill).
+- **Experiments are scoped specs, not forks.** Every experiment has a frozen spec in
+  `docs/experiments_specs/<lifecycle>/<ID>.md` and runs as args/config over the shared
+  foundation — never a new training script per idea (see the `experiment-design` skill).
+  Lifecycle folders are `ahead/`, `done_success/`, `done_failed/`, and `canceled/`;
+  keep a spec and its implementation plan together. Resolve an ID by searching all lifecycle
+  folders; never assume a flat root path.
 
 ## Research Pipeline (skills, in order)
-Input (prior result / idea / vision / paper) →
+Input (prior result / idea / vision / paper / cross-domain analogy) →
 `research-scout` (fetch sources) → `research-explain` (how it works, shapes) →
-`research-synthesis` (fit? tradeoffs? Adopt/Adapt/Watch/Reject) →
-`experiment-design` (frame ONE experiment → `docs/experiments_specs/<ID>.md`) →
-`implementation-plan` (repo-rooted HOW → `docs/experiments_specs/<ID>_plan.md`) →
-`research-implement` (build on the shared foundation) →
+`research-synthesis` (connect ideas; bold Adapt bets; Adopt/Adapt/Watch/Reject) →
+`experiment-design` (frame ONE coherent architectural bet → `docs/experiments_specs/ahead/<ID>.md`) →
+`implementation-plan` (repo-rooted HOW → `docs/experiments_specs/ahead/<ID>_plan.md`) →
+`research-implement` (build the bet on the shared foundation — do not substitute a safe retread) →
 `experiment-run` (launch/monitor on Odra/Polonez) → `experiment-evaluate` (tiered eval pipeline) →
 `experiment-track` (results → `master_experiment_log.md`). `docs-hygiene` keeps docs lean.
 Canonical homes: intent → specs/plans; results → `master_experiment_log.md`; live memory → `agenda.md`.
+A/B and ablations belong after a positive signal, not as the default pipeline output.
 - **`2_Experiments_Registry/` is append-only.** Never delete or rewrite recorded results; later results may add a dated note that supersedes an earlier *interpretation*.
 - **Cleaning, pruning, deduplicating, or archiving docs is the job of the `docs-hygiene` skill.** Do not bulk-delete stale docs ad hoc from other skills; flag drift and hand off to `docs-hygiene`.

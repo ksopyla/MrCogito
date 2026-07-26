@@ -32,7 +32,7 @@ The project-wide convention "treat `docs/5_Archive/` and `> **OBSOLETE — ...**
 When two docs disagree, the later/lower-level source wins:
 1. Code + git history + `CHANGELOG.md`
 2. `docs/2_Experiments_Registry/master_experiment_log.md` and `run_reports/` (the append-only result ledger)
-3. `docs/1_Strategy_and_Plans/agenda.md` + `docs/experiments_specs/<ID>.md` specs, `training_eval_matrix.md` (current plan/state)
+3. `docs/1_Strategy_and_Plans/agenda.md` + `docs/experiments_specs/<lifecycle>/<ID>.md` specs, `training_eval_matrix.md` (current plan/state)
 4. `docs/1_Strategy_and_Plans/vision_and_goals.md`
 Everything else (notes, idea files, literature review, application drafts) is downstream and may be corrected against the above.
 
@@ -41,10 +41,10 @@ Classify each file before editing it:
 
 | Class | Files | Cleaning rule |
 |---|---|---|
-| **Source-of-truth / plan** | `agenda.md`, `docs/experiments_specs/<ID>.md`, `training_eval_matrix.md`, `vision_and_goals.md` | Prune hard to current state. Completed/abandoned detail → compress to a tombstone or move to archive. Resolve every contradiction. Keep `agenda.md` to ~1 screen. |
-| **Append-only ledger** | `master_experiment_log.md`, `2_Experiments_Registry/run_reports/*`, `4_Research_Notes/*` | **Never delete or rewrite results.** Only add a dated note when a later result supersedes an earlier *interpretation*. |
+| **Source-of-truth / plan** | `agenda.md`, `docs/experiments_specs/<lifecycle>/<ID>.md`, `training_eval_matrix.md`, `vision_and_goals.md` | Prune hard to current state. Completed/abandoned detail → compress to a tombstone or move to archive. Resolve every contradiction. Keep `agenda.md` to ~1 screen. |
+| **Append-only ledger** | `master_experiment_log.md`, `2_Experiments_Registry/run_reports/*`, dated `4_Research_Notes/*_*.md` (root-cause diagnoses and failure analyses with date-stamped filenames) | **Never delete or rewrite results.** Only add a dated note when a later result supersedes an earlier *interpretation*. |
 | **Idea / proposal** | `experiment_ideas/*` | Mark `ADOPTED` / `REJECTED` / `SUPERSEDED`. Rejected ideas keep a one-line reason; archive the file once it no longer informs decisions. |
-| **Notes / review / drafts** | `research-notes/*`, `literature_review/*`, `sprind_frontier_ai/*`, `prompts/*`, `debugging/*` | Correct outdated claims in place; mark obsolete sections. These rarely need archiving unless fully dead. |
+| **Notes / review / drafts** | undated `4_Research_Notes/*.md` (concept analysis framework, embedding-space theory, evaluation strategy, research ideas — project-internal notes), `literature_review/*` (external paper reviews), `sprind_frontier_ai/*`, `prompts/*`, `debugging/*` | Correct outdated claims in place; mark obsolete sections. These rarely need archiving unless fully dead. |
 | **Archive** | `5_Archive/*` | Terminal. Must carry an OBSOLETE header. Don't re-clean content; only fix the header/pointers. |
 
 ## Workflow
@@ -80,6 +80,12 @@ Docs hygiene progress:
 | **TOMBSTONE** | Abandoned/superseded but worth remembering | replace the verbose block with one line: what + why-dead + gate/date + pointer (see Decision test) |
 | **ARCHIVE** | Whole file/section is historical | add OBSOLETE header, `git mv` to `5_Archive/` (or move section under an "Abandoned" heading) |
 | **DELETE** | Pure duplicate/noise, zero memory value | remove (git retains history) |
+
+Experiment lifecycle moves are not archival: keep each spec and its `_plan.md` together under
+`ahead/`, `done_success/`, `done_failed/`, or `canceled/`. Use the registry and run reports to
+classify completed work; a decisive control may be `done_success/` even when it falsifies the
+proposed mechanism. Reserve `canceled/` for explicitly rejected, superseded, or abandoned specs
+that did not produce a completed experimental result.
 
 **Decision test (TOMBSTONE vs DELETE).** Keep a tombstone if dropping it risks **repeating a failed experiment or re-opening a settled decision**. Otherwise delete. When unsure, tombstone — it costs one line.
 

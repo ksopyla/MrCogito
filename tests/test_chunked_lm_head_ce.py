@@ -61,6 +61,21 @@ def test_weight_grad_matches_full():
         assert torch.allclose(wr, wc, atol=1e-4), f"bs={bs}: max abs diff {(wr - wc).abs().max()}"
 
 
+def test_frozen_weight_skips_gradient_but_preserves_hidden_gradient():
+    torch.manual_seed(1)
+    hidden0 = torch.randn(2, 32, 16)
+    weight = torch.randn(50, 16)  # frozen: requires_grad=False
+    labels = torch.randint(0, 50, (2, 32))
+
+    h_ref = hidden0.clone().requires_grad_(True)
+    _full_ce(h_ref, weight, labels).backward()
+    h_chk = hidden0.clone().requires_grad_(True)
+    ChunkedLMHeadCE.apply(h_chk, weight, labels, 8).backward()
+
+    assert weight.grad is None
+    assert torch.allclose(h_ref.grad, h_chk.grad, atol=1e-4)
+
+
 def test_grad_zero_at_ignored_positions():
     """Gradients at ignored (label=-100) positions must be exactly zero in both paths."""
     _, _, hr, hc, _, _ = _run(16, ignore=True)

@@ -1,11 +1,13 @@
 ---
 name: research-synthesis
-description: Synthesize external AI/ML research into decisions and direction for the Concept reasoning model project. Use this skill whenever the user asks how a paper, technique, repo, or trend relates to MrCogito, what to take from a paper, how to connect ideas across papers, what experiments a finding implies, whether to implement a method, how external work compares with current architecture, or wants to evolve the roadmap, vision, or research direction based on external evidence — even when they do not explicitly say "synthesize". Pair with the `research-scout` agent which gathers source material; this skill turns that material into project-grounded recommendations and concrete next steps.
+description: Synthesize external AI/ML research into bold, falsifiable direction for the Concept reasoning model project. Use whenever the user asks how a paper, technique, repo, or trend relates to MrCogito, what to take from a paper, how to connect ideas across papers or across maths/physics/biology, what experiments a finding implies, whether to implement a method, or wants to evolve roadmap/vision from external evidence. Prefers novel architectural Adapt compositions over tiny safe A/Bs. Pair with research-scout for sources; this skill turns material into project-grounded recommendations.
 ---
 
 # Research Synthesis for the Concept Reasoning Model
 
 Use this skill to translate external research into decisions for MrCogito's "Concept reasoning model": a concept bottleneck that compresses long token sequences into a small set of semantic concept tokens and reasons over them, text-first with an audio extension.
+
+This project is hunting for a **novel architecture**. Synthesis should **connect** ideas (across papers and across maths / physics / biology / dynamical systems / information theory / neuroscience), propose bold Adapt compositions, and avoid defaulting to "smallest safe A/B of a proven block". A/B and ablations come *after* a positive signal. See `project-overview.mdc` → Research Stance.
 
 When fresh external evidence is needed (latest papers, GitHub repos, model cards, benchmarks), spawn the `research-scout` agent and feed its findings into this workflow. This skill is about analysis and synthesis, not search.
 
@@ -21,7 +23,7 @@ Synthesis Progress:
 - [ ] Step 4: Extract thesis, technique, evidence, and code per source
 - [ ] Step 5: Map each idea onto the Concept reasoning model
 - [ ] Step 6: Connect ideas across sources
-- [ ] Step 7: Recommend an action with the smallest local test
+- [ ] Step 7: Recommend a bold, falsifiable next bet (kill criteria + diagnostics; A/B only if something already works)
 - [ ] Step 8: Cite everything; surface what is uncertain
 ```
 
@@ -38,7 +40,9 @@ Before claiming relevance, read what is currently true about the project:
 
 - `.cursor/rules/project-overview.mdc`
 - `docs/1_Strategy_and_Plans/vision_and_goals.md`
-- `docs/1_Strategy_and_Plans/agenda.md` (current focus + "what we've explored" learnings) and the active `docs/experiments_specs/<ID>.md` specs
+- `docs/1_Strategy_and_Plans/agenda.md` (current focus + "what we've explored" learnings) and
+  active specs under `docs/experiments_specs/ahead/`; consult terminal lifecycle folders only
+  for relevant prior evidence
 - The `nn/`, `training/`, or `evaluation/` files that the question actually touches
 
 Treat `docs/5_Archive/` and any `> **OBSOLETE — ...**` or `~~struck-through~~` content as historical only — do not ground current relevance judgments in it (see `project-overview.mdc` → Docs Hygiene).
@@ -76,11 +80,17 @@ Look for these patterns; details and pitfalls are in [references/synthesis-patte
 - **Composition**: independent techniques that stack along different axes (objective, architecture, data).
 - **Lineage**: a new SoTA paper refines an older idea; the older paper often clarifies what is essential.
 
-### Step 7: Recommend with the smallest local test
+### Step 7: Recommend a bold, falsifiable next bet
 
-For every recommendation, propose the smallest local test that would falsify or support the idea, using diagnostics already in the project (effective rank, pairwise concept similarity, STS-B, paraphrase or NLI tasks, prefix generation loss, suffix perplexity, generation coherence). Do not jump to full-scale training as a first step.
+For every recommendation, propose a **coherent architectural bet** (or a clear Reject/Watch), not a tiny knob tweak. State:
+- the novel claim (what would be surprising if it worked),
+- how ideas connect (papers and/or cross-domain analogy),
+- numeric success + kill criteria,
+- which project diagnostics falsify it early (effective rank, pairwise concept similarity, STS-B, paraphrase/NLI, prefix/suffix loss, generation coherence).
 
-If you cannot specify a smallest test, the recommendation is not concrete enough yet.
+Prefer one bold Adapt composition over five micro-A/Bs. Use a cheap smoke / subset run to *kill* a bad bet early — not to replace the bet with a safer retread. Full-scale training is fine when the hypothesis needs it; do not invent a "smallest local A/B" that strips out the novelty.
+
+If you cannot name a falsifiable claim and a kill signal, the recommendation is not concrete enough yet.
 
 ### Step 8: Cite and flag uncertainty
 
@@ -97,7 +107,8 @@ Use this structure per paper that matters. Keep it tight; skip fields that do no
 - Evidence: benchmarks, scale, ablation strength; what is convincing or weak.
 - Code: official repo + framework, or "no PyTorch implementation found".
 - MrCogito mapping: which part of our system it touches and what would change.
-- Smallest test: a local experiment or module modification that would prove value.
+- Bold next bet: the coherent architectural experiment (or why Watch/Reject); kill signal + diagnostics. Not a micro-A/B unless dissecting a win.
+- Cross-domain hook (optional): maths / physics / biology / info-theory analogy that strengthens the Adapt.
 - Risk: why it might not transfer here.
 - Verdict: Adopt / Adapt / Watch / Reject, with one-line justification.
 ```
@@ -110,8 +121,11 @@ Match the output to the question:
 
 - "Summarize this paper for our project." → one synthesis-template entry plus mapping and verdict.
 - "What are the current trends in X?" → 3–7 trend bullets with citations, then a single-paragraph "what matters for MrCogito".
-- "Should we implement Y?" → architecture mapping, smallest local test, risks, and a clear Adopt / Adapt / Watch / Reject.
-- "Compare X with our `recursive_mlm` / `perceiver_mlm` / `diffusion_mlm` / `weighted_mlm`." → a small comparison table on attention pattern, objective, normalization, and conditioning, then a delta paragraph.
+- "Should we implement Y?" → architecture mapping, bold falsifiable bet + kill criteria, risks, and a clear Adopt / Adapt / Watch / Reject.
+- "Compare X with our retired `recursive_mlm` / historical `perceiver_mlm` / parked
+  `diffusion_mlm` / historical `weighted_mlm`." → a small comparison table on attention pattern,
+  objective, normalization, and conditioning, then a delta paragraph. Use git/ledger evidence for
+  retired families; do not imply they are maintained launch paths.
 - "Update the roadmap or vision." → propose minimal, dated edits to `docs/1_Strategy_and_Plans/*` referencing the synthesized evidence.
 
 ## Past Reviews
@@ -144,8 +158,8 @@ Use this order before doing fresh literature work:
 ## When to Hand Off
 
 - Need fresh papers, repos, or model cards → spawn the `research-scout` agent.
-- Need a deep walkthrough of a paper or repo (architecture, forward pass with shapes, training, gradient flow, decoding) before judging fit → use the `research-explain` skill, then return here for the verdict and smallest local test.
-- Verdict is Adopt/Adapt and you want to build it → hand off to `experiment-design` (frame one experiment), then `implementation-plan` (turn this verdict + the frame into a repo-rooted build plan).
+- Need a deep walkthrough of a paper or repo (architecture, forward pass with shapes, training, gradient flow, decoding) before judging fit → use the `research-explain` skill, then return here for the verdict and bold next bet.
+- Verdict is Adopt/Adapt and you want to build it → hand off to `experiment-design` (frame one coherent architectural bet), then `implementation-plan` (turn this verdict + the frame into a repo-rooted build plan).
 - Need to record results of a finished run → use the `experiment-track` skill.
 - Need to ship a code change driven by this synthesis → use the `engineering-change-tracking` skill once the change is implemented.
 - A direction shift makes existing roadmap/vision/notes stale or self-contradictory → mark the superseded claim, then hand off bulk pruning/archiving to the `docs-hygiene` skill.
@@ -153,4 +167,4 @@ Use this order before doing fresh literature work:
 ## Reference Files
 
 - [references/concept-architecture-invariants.md](references/concept-architecture-invariants.md) — what stays true across roadmap changes; the substrate for relevance judgments.
-- [references/synthesis-patterns.md](references/synthesis-patterns.md) — connection patterns, Adopt/Adapt/Watch/Reject heuristics, common pitfalls, and the smallest-test principle.
+- [references/synthesis-patterns.md](references/synthesis-patterns.md) — connection patterns, Adopt/Adapt/Watch/Reject heuristics, common pitfalls, and the falsifiable-bet principle.

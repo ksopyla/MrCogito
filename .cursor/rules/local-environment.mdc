@@ -10,7 +10,7 @@ alwaysApply: true
 ## Local Environment
 - macOS (Apple Silicon, arm64), zsh. No NVIDIA GPU — Apple MPS for smoke tests only; real training runs on Polonez/Odra (see the `experiment-run` skill).
 - Python 3.12 pinned via `.python-version`; deps managed by [uv](https://docs.astral.sh/uv/) (`uv.lock` is committed).
-- Secrets/env in `.env` (copy from `.env.example`, never commit), loaded via python-dotenv by training/eval scripts. Includes `PYTORCH_ENABLE_MPS_FALLBACK=1` and project-local `HF_HOME=./Cache/hf_home`.
+- Secrets/env in `.env` (copy from `.env.example`, never commit), loaded via python-dotenv by training/eval scripts. Includes `PYTORCH_ENABLE_MPS_FALLBACK=1` and a project-local `HF_HOME` (absolute path, e.g. `/Users/.../MrCogito/Cache/hf_home`). On the GPU servers `HF_HOME` is overridden by `scripts/remote_paths.sh`; the HF_HOME tree has three role-specific subdirs: `datasets/` (raw `load_dataset()` cache = `HF_DATASETS_CACHE`), `datasets_tok/` (pre-tokenized corpora = `DATASETS_TOK_DIR`), `datasets_raw/` (transient raw downloads = `DATASETS_RAW_DIR`).
 - `liger-kernel` is Linux-only (CUDA + Triton), conditionally excluded on macOS in `pyproject.toml`. Do not import it from cross-platform code.
 
 ## Common Commands

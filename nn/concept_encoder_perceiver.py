@@ -1373,21 +1373,26 @@ class ChunkedLMHeadCE(torch.autograd.Function):
         B, N, H = hidden.shape
         V = weight.shape[0]
         grad_hidden = torch.zeros_like(hidden)
-        grad_weight = torch.zeros_like(weight)
+        need_weight_grad = ctx.needs_input_grad[1]
+        grad_weight = torch.zeros_like(weight) if need_weight_grad else None
         scale = grad_out / count
         for s in range(0, N, block_size):
             e = min(s + block_size, N)
             hb = hidden[:, s:e, :].detach().requires_grad_(True)
-            wb = weight.detach().requires_grad_(True)
+            wb = weight.detach().requires_grad_(need_weight_grad)
             with torch.enable_grad():
                 logits = F.linear(hb, wb)
                 ce = F.cross_entropy(
                     logits.reshape(-1, V), labels[:, s:e].reshape(-1),
                     ignore_index=ignore_index, reduction="sum",
                 )
-                gh, gw = torch.autograd.grad(ce, (hb, wb))
+                if need_weight_grad:
+                    gh, gw = torch.autograd.grad(ce, (hb, wb))
+                else:
+                    (gh,) = torch.autograd.grad(ce, (hb,))
             grad_hidden[:, s:e, :] = gh * scale
-            grad_weight.add_(gw * scale)
+            if need_weight_grad:
+                grad_weight.add_(gw * scale)
         # grads for (labels, block_size, ignore_index) — non-differentiable
         return grad_hidden, grad_weight, None, None, None
 
@@ -1839,7 +1844,16 @@ class ConceptEncoderForConditionalLM(PreTrainedModel):
         ).last_hidden_state
         logits_intact = self.decode_logits(concepts, decoder_input_ids, key_padding_mask=dec_key_padding)
         logits_zero = self.decode_logits(torch.zeros_like(concepts), decoder_input_ids, key_padding_mask=dec_key_padding)
-        perm = torch.randperm(concepts.size(0), device=concepts.device)
+        # Shuffle = random cyclic shift, NOT randperm: randperm leaves ~1 fixed point per
+        # batch in expectation (a sample keeping its own concepts), diluting delta_shuffle.
+        # A shift in [1, B-1] is a guaranteed derangement, consistent with the
+        # latent-specificity eval (analysis/concept_generation_eval.py uses roll(1)).
+        bsz = concepts.size(0)
+        if bsz > 1:
+            shift = int(torch.randint(1, bsz, (1,)).item())
+        else:
+            shift = 0  # degenerate batch: shuffle == intact, delta_shuffle will be ~0
+        perm = torch.roll(torch.arange(bsz, device=concepts.device), shifts=shift)
         logits_shuffle = self.decode_logits(concepts[perm], decoder_input_ids, key_padding_mask=dec_key_padding)
 
         ce_intact = self._teacher_forced_ce(logits_intact, labels)

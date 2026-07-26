@@ -160,6 +160,114 @@ class DataCollatorForTSDAE:
         }
 
 
+class DataCollatorForCausalLM:
+    """Plain next-token-LM collator (E10 backbone-concept family).
+
+    Pads variable-length pretokenized rows to the batch max (capped at max_length) and
+    mirrors input_ids into labels with -100 at padding. Shifting happens inside the model.
+    When ``preserve_precomputed_labels=True``, sparse row-level label masks are padded and
+    truncated in lockstep instead (used by forced-memory diagnostics).
+
+    Output contract:
+        input_ids      : [B, S]
+        attention_mask : [B, S]  1 = real, 0 = pad
+        labels         : [B, S]  input_ids with -100 at pad
+    """
+
+    def __init__(
+        self,
+        tokenizer,
+        max_length: int = 2048,
+        model_vocab_size: int | None = None,
+        preserve_precomputed_labels: bool = False,
+    ):
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+        self.preserve_precomputed_labels = preserve_precomputed_labels
+        if tokenizer.pad_token_id is None:
+            raise ValueError("DataCollatorForCausalLM requires a tokenizer with a pad token.")
+        self.pad_token_id = tokenizer.pad_token_id
+        unk = getattr(tokenizer, "unk_token_id", None)
+        self._oov_replacement_id = (
+            unk if unk is not None and unk != tokenizer.pad_token_id else self.pad_token_id
+        )
+        self._vocab_size = (
+            model_vocab_size
+            if model_vocab_size is not None
+            else (len(tokenizer) if hasattr(tokenizer, "__len__") else None)
+        )
+        self._oov_clamp_warned = False
+
+    def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
+        input_ids_list = [f["input_ids"] for f in features]
+        max_len = min(max(len(x) for x in input_ids_list), self.max_length)
+        batch_size = len(input_ids_list)
+
+        input_ids = torch.full((batch_size, max_len), self.pad_token_id, dtype=torch.long)
+        attention_mask = torch.zeros(batch_size, max_len, dtype=torch.long)
+        labels = torch.full((batch_size, max_len), -100, dtype=torch.long)
+        if self.preserve_precomputed_labels and not all("labels" in feature for feature in features):
+            raise ValueError(
+                "preserve_precomputed_labels=True requires labels on every feature."
+            )
+        for i, ids in enumerate(input_ids_list):
+            if isinstance(ids, torch.Tensor):
+                ids = ids.tolist()
+            length = min(len(ids), max_len)
+            input_ids[i, :length] = torch.tensor(ids[:length], dtype=torch.long)
+            attention_mask[i, :length] = 1
+            if self.preserve_precomputed_labels:
+                row_labels = features[i]["labels"]
+                if isinstance(row_labels, torch.Tensor):
+                    row_labels = row_labels.tolist()
+                if len(row_labels) != len(ids):
+                    raise ValueError(
+                        "Precomputed labels must have the same length as input_ids."
+                    )
+                labels[i, :length] = torch.tensor(row_labels[:length], dtype=torch.long)
+        if not self.preserve_precomputed_labels:
+            labels = input_ids.clone()
+            labels[attention_mask == 0] = -100
+
+        if self._vocab_size is not None:
+            # Rare pretok / arrow corruption can leave a few ids far above the model
+            # vocab (including values beyond tokenizer length). Clamp to unk and ignore
+            # those positions in the loss rather than crashing a long run.
+            oov_mask = (input_ids < 0) | (input_ids >= self._vocab_size)
+            if oov_mask.any():
+                if not self._oov_clamp_warned:
+                    ids_min = int(input_ids.min().item())
+                    ids_max = int(input_ids.max().item())
+                    n_oov = int(oov_mask.sum().item())
+                    print(
+                        "WARNING: DataCollatorForCausalLM clamped out-of-vocab input_ids "
+                        f"(n={n_oov}, min={ids_min}, max={ids_max}, "
+                        f"vocab_size={self._vocab_size}) to id={self._oov_replacement_id}; "
+                        "labels at those positions set to -100."
+                    )
+                    self._oov_clamp_warned = True
+                input_ids = input_ids.clone()
+                labels = labels.clone()
+                input_ids[oov_mask] = self._oov_replacement_id
+                labels[oov_mask] = -100
+            valid_labels = labels[labels != -100]
+            if valid_labels.numel() > 0:
+                label_min = int(valid_labels.min().item())
+                label_max = int(valid_labels.max().item())
+                if label_min < 0 or label_max >= self._vocab_size:
+                    raise ValueError(
+                        "DataCollatorForCausalLM produced labels outside model vocabulary "
+                        f"range: min={label_min}, max={label_max}, "
+                        f"vocab_size={self._vocab_size}"
+                    )
+
+        return {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "labels": labels,
+        }
+
+
 class DataCollatorForPrefixGeneration:
     """
     SODA-inspired collator: split each document into prefix (encoder) and

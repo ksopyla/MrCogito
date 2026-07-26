@@ -966,29 +966,45 @@ def finetune_model_on_glue(args):
     """
     # Set seed for reproducibility
     set_seed(args.seed)
-    
-    # Determine tokenizer name
-    # Strategy:
-    # 1. If tokenizer_name is explicitly provided, use it (highest priority)
-    # 2. If not, try to load tokenizer from the model directory (best practice)
-    # 3. If not available, check if model config has 'tokenizer_name' stored (traceability)
-    # 4. Fallback to model_name_or_path (works for HF Hub models)
-    
-    tokenizer_name = args.tokenizer_name
-    
-    if not tokenizer_name:
-        # Check if tokenizer files exist in the model directory
-        if os.path.isdir(args.model_name_or_path) and any(f.startswith("vocab") or f.startswith("tokenizer") for f in os.listdir(args.model_name_or_path)):
-            tokenizer_name = args.model_name_or_path
-            logger.info(f"Found tokenizer files in model directory. Using: {tokenizer_name}")
-        # Check if config has stored tokenizer name
-        elif hasattr(model, "config") and hasattr(model.config, "tokenizer_name"):
-            tokenizer_name = model.config.tokenizer_name
-            logger.info(f"Using stored tokenizer name from model config: {tokenizer_name}")
-        else:
-            tokenizer_name = args.model_name_or_path
-            logger.info(f"Fallback: Using model path as tokenizer name: {tokenizer_name}")
-    
+
+    # Resolve the tokenizer identifier. NOTE: `--tokenizer_name` may be a local
+    # checkpoint dir (when callers pass the training checkpoint path for both
+    # `--model_name_or_path` and `--tokenizer_name`). We still need to LOAD the
+    # tokenizer from that dir (the tokenizer files live there), but for the W&B
+    # tag we want the canonical HF id stored in `model.config.tokenizer_name`.
+    # `tokenizer_name_for_load` vs `tokenizer_name_for_tag` separates these.
+    from evaluation.wandb_identity import resolve_tokenizer_name_for_tag
+
+    # Load model first so config is available for tag resolution below.
+    # (load_concept_model_for_glue is defined further down in this module.)
+    model = None
+    config_tokenizer_name = None
+    try:
+        # The HF model is loaded later in this function; peek at config.json
+        # directly so we can resolve the tokenizer name without a duplicate load.
+        import json as _json
+
+        cfg_path = os.path.join(args.model_name_or_path, "config.json")
+        if os.path.isfile(cfg_path):
+            with open(cfg_path) as _f:
+                _cfg = _json.load(_f)
+            config_tokenizer_name = _cfg.get("tokenizer_name")
+    except Exception:
+        pass
+
+    tokenizer_name_for_tag = resolve_tokenizer_name_for_tag(
+        arg_tokenizer_name=args.tokenizer_name,
+        arg_model_name_or_path=args.model_name_or_path,
+        config_tokenizer_name=config_tokenizer_name,
+    )
+    # For LOADING the tokenizer we still prefer the explicitly-passed path
+    # (the tokenizer files ship inside the checkpoint dir).
+    tokenizer_name = args.tokenizer_name or args.model_name_or_path
+    logger.info(
+        f"Tokenizer: load='{tokenizer_name}'  tag='{tokenizer_name_for_tag}'"
+        + (f"  (config: '{config_tokenizer_name}')" if config_tokenizer_name else "")
+    )
+
     # Load tokenizer
     try:
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
@@ -998,6 +1014,10 @@ def finetune_model_on_glue(args):
         default_tokenizer = "bert-base-cased"
         logger.warning(f"Attempting fallback to default tokenizer: {default_tokenizer}")
         tokenizer = AutoTokenizer.from_pretrained(default_tokenizer, cache_dir=TOKENIZER_CACHE_DIR, token=hf_token)
+    # SmolLM2 (and some other causal-LM tokenizers) ship without a pad token.
+    # The trained model used pad_token_id = eos_token_id = 0; mirror that here.
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token or tokenizer.bos_token
     
     # Load and initialize model based on model type
     concept_model_types = ["weighted_mlm", "perceiver_denoise", "concept_ar", "diffusion_mlm", "prefix_diffusion"]
@@ -1226,7 +1246,7 @@ def finetune_model_on_glue(args):
         model_family=model_family,
         objective_family=objective_family,
         params_m=params_m,
-        tokenizer_name=tokenizer_name,
+        tokenizer_name=tokenizer_name_for_tag,
         lineage=lineage,
         extra_tags=[
             "glue",
@@ -1247,7 +1267,7 @@ def finetune_model_on_glue(args):
             model_family=model_family,
             params_m=params_m,
             objective_family=objective_family,
-            tokenizer_name=tokenizer_name,
+            tokenizer_name=tokenizer_name_for_tag,
             architecture_id=architecture_id,
         )
     )

@@ -133,3 +133,102 @@ def test_infer_checkpoint_id_final_model():
         )
         == "final_model"
     )
+
+
+# --- Prefixed-tag truncation regression (E05 attempt 3 eval crash, 2026-06-30) ---
+
+def test_prefixed_tag_truncates_long_value_to_fit_total_limit():
+    """The wandb.init crash that aborted the E05 attempt 3 eval-runner came from
+    a 74-char `tokenizer:` tag built from a long checkpoint path. The total tag
+    (prefix + ':' + value) must stay ≤ 64, not just the value.
+    """
+    from evaluation.wandb_identity import _safe_prefixed_tag
+
+    long_path = (
+        "Cache/Training/concept_ar_prefix_H768L6C128D4_20260629_093840/checkpoint-69142"
+    )
+    tag = _safe_prefixed_tag("tokenizer", long_path)
+    assert len(tag) <= 64
+    assert tag.startswith("tokenizer:")
+
+
+def test_prefixed_tag_preserves_short_hf_id():
+    from evaluation.wandb_identity import _safe_prefixed_tag
+
+    assert (
+        _safe_prefixed_tag("tokenizer", "HuggingFaceTB/SmolLM2-135M")
+        == "tokenizer:huggingfacetb-smollm2-135m"
+    )
+
+
+def test_prefixed_tag_empty_prefix_degrades_to_safe_value():
+    from evaluation.wandb_identity import _safe_prefixed_tag
+
+    assert _safe_prefixed_tag("", "HuggingFaceTB/SmolLM2-135M") == "huggingfacetb-smollm2-135m"
+
+
+# --- Tokenizer-name resolution for tags ---
+
+def test_resolve_tokenizer_name_prefers_config_when_arg_is_path():
+    """When the caller passed the checkpoint PATH as --tokenizer_name (common
+    when reusing the training command's args), the canonical HF id from the
+    model config should win for the tag."""
+    from evaluation.wandb_identity import resolve_tokenizer_name_for_tag
+
+    assert (
+        resolve_tokenizer_name_for_tag(
+            arg_tokenizer_name="Cache/Training/foo/checkpoint-69142",
+            arg_model_name_or_path="Cache/Training/foo/checkpoint-69142",
+            config_tokenizer_name="HuggingFaceTB/SmolLM2-135M",
+        )
+        == "HuggingFaceTB/SmolLM2-135M"
+    )
+
+
+def test_resolve_tokenizer_name_absolute_path_arg_uses_config():
+    from evaluation.wandb_identity import resolve_tokenizer_name_for_tag
+
+    assert (
+        resolve_tokenizer_name_for_tag(
+            arg_tokenizer_name="/abs/path/checkpoint-69142",
+            arg_model_name_or_path="/abs/path/checkpoint-69142",
+            config_tokenizer_name="HuggingFaceTB/SmolLM2-135M",
+        )
+        == "HuggingFaceTB/SmolLM2-135M"
+    )
+
+
+def test_resolve_tokenizer_name_hub_id_arg_wins_over_config():
+    from evaluation.wandb_identity import resolve_tokenizer_name_for_tag
+
+    # org/name form
+    assert (
+        resolve_tokenizer_name_for_tag(
+            arg_tokenizer_name="HuggingFaceTB/SmolLM2-135M",
+            arg_model_name_or_path="/foo",
+            config_tokenizer_name="other/tok",
+        )
+        == "HuggingFaceTB/SmolLM2-135M"
+    )
+    # bare single-token id (no slash) also wins
+    assert (
+        resolve_tokenizer_name_for_tag(
+            arg_tokenizer_name="gpt2",
+            arg_model_name_or_path="/foo",
+            config_tokenizer_name="other/tok",
+        )
+        == "gpt2"
+    )
+
+
+def test_resolve_tokenizer_name_falls_back_to_model_path_when_no_config():
+    from evaluation.wandb_identity import resolve_tokenizer_name_for_tag
+
+    assert (
+        resolve_tokenizer_name_for_tag(
+            arg_tokenizer_name=None,
+            arg_model_name_or_path="some-hf-model",
+            config_tokenizer_name=None,
+        )
+        == "some-hf-model"
+    )

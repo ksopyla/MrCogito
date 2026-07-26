@@ -21,6 +21,17 @@ def test_load_mix_recipe_from_packaged_id():
         assert src["weight"] > 0
 
 
+def test_e16b_4k_mix_recipe_weights_and_policy():
+    recipe = load_mix_recipe("e16b_long_4k_v1")
+    assert recipe["mix_id"] == "e16b_long_4k_v1"
+    assert recipe["seq_len_target"] == 4096
+    total = sum(src["weight"] for src in recipe["sources"])
+    assert abs(total - 1.0) < 1e-9
+    names = {src["name"] for src in recipe["sources"]}
+    assert {"finepdfs_100BT", "pg19", "wikipedia_en", "dclm_baseline"}.issubset(names)
+    assert recipe["long_context_policy"]["target_min_pct_docs_over_4k"] >= 20.0
+
+
 def test_resolve_mix_sources_supports_registry_mixes():
     sources = resolve_mix_sources("long_2k_base_v1")
     assert len(sources) == len(DATASET_MIXES["long_2k_base_v1"])

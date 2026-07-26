@@ -6,11 +6,530 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 **Relationship to other docs:**
 - This file: *What* changed in code and *when* (engineering log)
 - `docs/2_Experiments_Registry/master_experiment_log.md`: *What* training runs produced which results (science log)
-- `docs/1_Strategy_and_Plans/agenda.md`: *What* to do next (slim living agenda) + `docs/experiments_specs/<ID>.md` specs
+- `docs/1_Strategy_and_Plans/agenda.md`: *What* to do next (slim living agenda) +
+  `docs/experiments_specs/<lifecycle>/<ID>.md` specs
 
 The `git_tag` column in the master experiment log links each training run to the
 exact code version. Tag format: `arch/{feature}` for architecture changes,
 `train/{run_id}` before launching a training run.
+
+---
+
+## [2026-07-19] - Remove low-quality deductive-stories prototype
+
+**Why:**
+- In-repo synthetic narrative pipeline produced quality far below the intended hard
+  long-context deduction dataset; better as a separate repository.
+
+**Impact:**
+- MrCogito no longer ships deductive-stories generation code, eng spec, or Azure
+  dataset-generation env knobs.
+
+**What changed:**
+- [removed] `data/deductive_stories/`, `scripts/build_deductive_stories.py`, tests,
+  mix snippet, eng spec; dropped `openai` dependency added for that prototype
+
+**Related:** `docs/1_Strategy_and_Plans/agenda.md`
+
+---
+
+## [2026-07-15] - E16b long-context Muon 1B protocol
+
+**Why:** Short 2K cautious pilots (E10–E16a) kept concepts geometrically healthy
+but never unlocked persistent causal use. The next bet needs longer documents,
+more tokens, and Muon together.
+
+**Impact:** the shared depth-recurrent architecture can train at seq 4096 on a
+long-document Gemma mix for a 1B-token Muon run without a model fork.
+
+**What changed:**
+- [added] `e16b_long_4k_v1` long-document mix (FinePDFs + PG19 + Wikipedia +
+  DCLM/FineWeb/Stack); superseded the short-lived FinePDFs-heavy 4K draft.
+- [added] thin `scripts/launch_e16b.sh` pinning Muon + 4K + 1B over `launch_e10.sh`.
+- [fixed] `launch_e10.sh` now allows `MAX_SEQ_LENGTH` override (default remains 2048).
+- [fixed] E16b 4K corpora isolated under `datasets_tok_gemma_4k` (avoids 2K fingerprint clash).
+- [tested] mix weight/policy contract and E16b launcher parameter flow.
+
+**Related:** [E16b](docs/experiments_specs/done_success/E16b_longctx_muon_1b.md)
+
+---
+
+## [2026-07-14] - E16a optimizer A/B launch protocol
+
+**Why:** E16 remained stable but causally unused at 50M tokens; E16a tests whether
+optimizer efficiency changes that trajectory before context length and data are scaled.
+
+**Impact:** the shared depth-recurrent architecture can run a reproducible, unattended
+100M-token Adam-versus-Muon comparison with matched model, data, initialization, and
+evaluation cadence.
+
+**What changed:**
+- [added] a thin E16a protocol wrapper that pins the implemented shared-depth architecture
+  and selects either calibrated differential AdamW or the stabilized Muon recipe.
+- [added] a fail-fast sequential Adam→Muon pipeline for exclusive use of Odra's GPUs.
+- [tested] optimizer-specific LR/weight-decay propagation, shared E16 invariants, invalid
+  optimizer rejection, pipeline ordering, and existing Muon/backbone optimizer contracts.
+
+**Related:** [E16a](docs/experiments_specs/done_failed/E16a_muon_optimizer_ab.md)
+
+---
+
+## [2026-07-13] - Shared depth-recurrent concept workspace
+
+**Why:** E10e updated one shared concept state only after a full 26-layer block, so every
+concept-reading depth saw the same stale state and persistent causal use remained negligible.
+
+**Impact:** the backbone-concept family can now test repeated depth-wise refinement of one
+coherent state without changing the backbone, read interface, objective, data, or legacy E10
+checkpoint behavior.
+
+**What changed:**
+- [added] config-selectable `shared_depth_recurrent` execution that discovers Gemma's global
+  layers, applies one tied BiXT write after each concept read, and gives each depth its own
+  scalar gate.
+- [preserved] the default `global_kv` monolithic path, legacy scalar write gate and checkpoint
+  keys, `concept_num=0` control path, all recurrent-state ablations, and existing eval APIs.
+- [added] checkpoint-safe explicit Gemma layer execution: recurrent state is passed to reads
+  explicitly and updated only in the parent block loop after checkpointed layers return.
+- [extended] per-depth gate telemetry and differential optimizer coverage for depth gates.
+- [tested] native-loop equivalence with concepts disabled, interleaved write ordering and state
+  chaining, all ablations, finite gradients, checkpointed gradient equivalence, checkpoint
+  round-trip, control compatibility, CLI/launcher propagation, and optimizer routing.
+
+**Related:** [E16](docs/experiments_specs/done_failed/E16_shared_depth_recurrent_concepts.md)
+
+---
+
+## [2026-07-13] - Forced delayed-recall memory diagnostic
+
+**Why:** E10 through E10e retained diverse concept states but never developed measurable
+persistent-memory dependence under natural plain-token CE, leaving the memory mechanism
+confounded with a weak training signal.
+
+**Impact:** the unchanged E10e architecture can now be tested on a counterfactual task where
+only block-1 memory identifies a block-4 answer. Sparse labels and deterministic donor
+interventions provide direct CE, accuracy, and paired-bootstrap gates before any E12/E13 pivot.
+
+**What changed:**
+- [added] deterministic Gemma-tokenized delayed-recall data and manifest generation with
+  balanced single-token values, train/eval-disjoint counterfactual twins, and block-2/3
+  memory-age views.
+- [added] opt-in preservation of precomputed causal-LM label masks; defaults preserve all
+  existing E10 behavior.
+- [added] sparse per-position CE/top-1 model instrumentation and explicit batch concept-state
+  permutation for conflicting-donor evaluation without changing the real recurrent path.
+- [added] paired delayed-recall checkpoint evaluation, E14's thin protocol wrapper, and
+  parser/launcher/model/data regression coverage.
+- [verified] Gemma tokenizer artifact build, end-to-end tiny-checkpoint evaluator smoke, and
+  full local suite: 333 passed, 9 skipped.
+
+**Related:** [E14](docs/experiments_specs/done_failed/E14_forced_delayed_recall_memory.md)
+
+---
+
+## [2026-07-12] - E10 concept-path calibration controls
+
+**Why:** E10's 100M pilot kept diverse concepts but showed <0.001-nat recurrent-state
+dependence, with low-scale concept reads and concept-path updates far below LoRA.
+
+**Impact:** the same pretrained-Gemma architecture can now isolate three cumulative recovery
+tests without changing data or objective: normalized concept reads, small-live memory gates,
+and a higher AdamW LR for newly initialized concept-memory parameters. Defaults reproduce E10.
+
+**What changed:**
+- [added] optional per-global-layer RMSNorm before concept-read K/V projections.
+- [exposed] backward-compatible read/write gate initialization through model args, factory,
+  launcher, checkpoints, and W&B config.
+- [added] exhaustive AdamW parameter grouping for an optional concept-memory LR; LoRA retains
+  the base LR, scalar/norm parameters remain no-decay, unknown trainables fail closed, and Muon
+  rejects the incompatible option.
+- [tested] zero-init equivalence and old defaults, normalized-read checkpoint round-trip,
+  first-step gradients with 0.01 gates, optimizer partitioning, parser/factory plumbing, and
+  shell env-to-CLI propagation.
+
+**Related:** [E10b](docs/experiments_specs/done_failed/E10b_normalized_concept_read.md) →
+[E10c](docs/experiments_specs/done_failed/E10c_nonzero_memory_gates.md) →
+[E10d](docs/experiments_specs/done_failed/E10d_differential_concept_lr.md)
+
+---
+
+## [2026-07-12] - Portable remote path contract
+
+**Why:** the training refactor contract suite passed locally but its isolated cache-path test
+resolved Odra's real checkout when run on Odra, instead of the test workspace.
+
+**Impact:** launchers keep the same canonical Odra/Polonez path by default, while tests and
+explicit tooling can safely override `PROJECT_ROOT`.
+
+**What changed:**
+- [fixed] made `scripts/remote_paths.sh` preserve an explicit `PROJECT_ROOT`.
+- [fixed] made the runtime-contract harness set its isolated project root explicitly.
+
+---
+
+## [2026-07-11] - Training refactor Stage 4 retired paths
+
+**Why:** the active training tree still exposed sparse weighted-MLM as a maintained command, while
+the parked tree carried an unrun recursive-MLM fork that no longer represented the project's
+recurrent-memory direction.
+
+**Impact:** new research has one maintained concept-pretraining foundation. Historical weighted-MLM
+checkpoints keep their live model and evaluation routes, with the trainer retained under `parked/`
+for exact reproduction. Diffusion and prefix diffusion remain parked and revivable. The old
+recursive-MLM implementation is recoverable from git but no longer appears as a viable current
+training family.
+
+**What changed:**
+- [parked] moved `training/train_mlm.py` to the accurately named
+  `parked/training/train_weighted_mlm.py`; corrected its repository import path and retained its
+  logging, data, W&B, and CLI behavior.
+- [preserved] kept `nn/concept_encoder_weighted.py`, weighted checkpoint routing, benchmark
+  choices, and 18 historical W&B runs intact.
+- [retired] removed the isolated recursive encoder/model/trainer/tests/launcher after confirming
+  there is no recursive W&B or experiment-ledger run; added a recovery tombstone pointing to git
+  history and `pre-consolidation-20260605`.
+- [preserved] made no code or protocol changes to masked diffusion or prefix diffusion.
+- [reconciled] current matrix, README, engineering plan, tests, rules, and skills while preserving
+  frozen results, run reports, dated diagnoses, archived plans, and historical changelog entries.
+- [verified] parked weighted-MLM CLI help, historical evaluation routing, and checkpoint round-trip
+  succeed; full suite: 319 passed, 9 skipped.
+
+---
+
+## [2026-07-11] - Training refactor Stage 3 launcher roles
+
+**Why:** the generic multi-family launcher still carried the original Perceiver-denoising name,
+while experiment wrappers and orchestration pipelines had distinct responsibilities that were
+encoded only in comments and operational knowledge.
+
+**Impact:** new ad hoc maintained-family runs use
+`scripts/train_concept_pretraining_multigpu.sh`. Existing commands using
+`train_perceiver_denoise_multigpu.sh` continue to generate the same training arguments through a
+thin compatibility wrapper. E05/E10 protocols, preprocessing, logging paths, W&B identities,
+checkpoint layout, and parked launchers are unchanged.
+
+**What changed:**
+- [renamed] the generic runner to `scripts/train_concept_pretraining_multigpu.sh`; retained the old
+  path as an executable compatibility wrapper.
+- [clarified] `launch_e05.sh` and `launch_e10.sh` are protocol wrappers, while
+  `launch_e10_pipeline.sh` is a prerequisite/gate/pretokenization orchestration pipeline.
+- [documented] launcher roles and change policy in `scripts/README.md`, README, workspace guidance,
+  and operational skills.
+- [preserved] frozen experiment specs, append-only ledgers, historical reports, and parked
+  recursive/diffusion launchers retain their recorded paths and semantics.
+- [tested] canonical and compatibility runners produce identical captured arguments; E05 and E10
+  wrappers preserve their architecture, objective, tokenizer, data, and backbone pins; the E10
+  pipeline remains chained through its protocol wrapper.
+- [verified] full suite: 315 passed, 9 skipped; all live training launchers pass Bash syntax checks.
+
+---
+
+## [2026-07-11] - Training pipeline contract test hardening
+
+**Why:** module-level tests covered the extracted pieces, but the highest-risk boundaries remained
+under-tested: Bash environment variables becoming Python arguments, the canonical `main()`
+assembling the runtime, and parsed values reaching Trainer, W&B, data routes, and final saves.
+
+**Impact:** training refactors now fail locally if they drop or misroute representative E05/E10
+arguments, cache paths, direct/pretokenized/mix data selection, logging/W&B metadata, resume state,
+optimizer settings, DDP timeout, or final artifacts. No model, data, checkpoint, or W&B identity
+changed.
+
+**What changed:**
+- [tested] representative E05 and E10 CLI profiles through the canonical parser, the complete
+  family/objective validation matrix, config mapping, and model-family routing.
+- [tested] direct-Hub and pretokenized `main()` orchestration through logging, factories, W&B,
+  Trainer construction, resume, and final saves; added one real CPU Trainer optimizer step with
+  loss logging.
+- [tested] the generic Bash launcher end-to-end with command capture, including Hugging Face cache
+  propagation, manifest precedence, exact-token guards/calculation, optional experiment arguments,
+  Muon settings, and the first-process-group DDP timeout.
+- [tested] registered-mix routing, deterministic eval caps, effective-dataset priority, and a local
+  two-source split/tokenize/interleave/eval integration.
+- [fixed] empty optional argument arrays now expand safely under macOS Bash 3 with `set -u`; Linux
+  launcher arguments are unchanged.
+- [verified] 30 new tests; full suite: 310 passed, 9 skipped; launcher syntax passes.
+
+---
+
+## [2026-07-11] - Training refactor Stage 2 canonical entrypoint
+
+**Why:** the historical `train_perceiver_denoise.py` name described only the original parallel
+reconstruction model, but the maintained command now trains Perceiver reconstruction, concept AR,
+prefix-to-suffix generation, windowed decoding, anchors, and pretrained-backbone concept memory.
+
+**Impact:** new commands and live documentation use the accurate
+`training/train_concept_pretraining.py` path. The old path remains executable and re-exports its
+public symbols for one migration window. Logging, data processing, Hugging Face caches, workspace
+artifacts, CLI flags, checkpoint metadata, and W&B identities are unchanged.
+
+**What changed:**
+- [renamed] the multi-family orchestration implementation to
+  `training/train_concept_pretraining.py`.
+- [compatibility] retained `training/train_perceiver_denoise.py` as a thin executable/import
+  wrapper.
+- [updated] the generic launcher and local smoke command, maintained tests, README, training/eval
+  matrix, workspace rule, and training skills to use the canonical path.
+- [preserved] frozen experiment specs, append-only ledgers, historical reports, and older changelog
+  entries keep the entrypoint path that was true when recorded; launcher filenames are deferred to
+  Stage 3.
+- [tested] both canonical and compatibility CLIs expose the same model/data arguments; the generic
+  launcher targets the canonical path.
+- [verified] full suite: 280 passed, 9 skipped; live launcher syntax and linter diagnostics pass.
+
+---
+
+## [2026-07-11] - Training refactor Stage 1 neutral extraction
+
+**Why:** `training/train_perceiver_denoise.py` combined CLI schemas, compatibility validation,
+custom Trainer behavior, data routing, collator selection, model construction, and W&B identity
+with runtime orchestration. That coupling made small training changes difficult to review and
+increased the chance of unrelated behavior drift.
+
+**Impact:** the historical entrypoint and launcher commands remain operational, and its public
+imports remain compatible. Training behavior, console/file/W&B logging, dataset priority and
+processing, Hugging Face caches, workspace `Cache/` paths, checkpoint metadata, and W&B identities
+are unchanged.
+
+**What changed:**
+- [refactored] import-light objective constants and EOS policy into
+  `training/concept_pretraining_objectives.py`; preprocessing no longer imports the full training
+  entrypoint for this shared policy.
+- [refactored] argument dataclasses and family compatibility validation into
+  `training/concept_pretraining_args.py`.
+- [refactored] custom loss, anchor, Muon, deterministic-eval, concept-ablation, and geometry Trainer
+  behavior into `training/concept_pretraining_trainer.py`.
+- [refactored] direct/pretokenized/mix data routing plus model, collator, special-token, and W&B
+  identity construction into `training/concept_pretraining_factories.py`.
+- [compatibility] `training/train_perceiver_denoise.py` re-exports its previously imported public
+  symbols and remains the canonical command during this migration stage.
+- [tested] added extraction-boundary tests for re-exports, validation, data-source priority, cache
+  propagation, objective-specific collators, deterministic eval seeds, E10 W&B grouping, and
+  distributed arm-specific run ids.
+- [verified] full suite: 278 passed, 9 skipped; preprocessing CLI import smoke passed; no linter or
+  whitespace diagnostics.
+
+---
+
+## [2026-07-11] - Training refactor Stage 0 contract baseline
+
+**Why:** the maintained training entrypoint now serves several model/objective families, while
+parked training families duplicate parts of the runtime pipeline. Modularizing that code without
+first pinning its external behavior risks changing datasets, W&B lineage, logs, cache locations,
+or checkpoint compatibility under the guise of a structural refactor.
+
+**Impact:** no production training behavior changed. The next extraction stage now has executable
+compatibility gates for console/file/W&B logging, direct and pretokenized Hugging Face data,
+canonical cache roles, and the workspace `Cache/` artifact layout.
+
+**What changed:**
+- [docs] added the staged
+  [training pipeline modularization spec](docs/engineering_specs/training_pipeline_modularization.md),
+  including immutable logging, data, cache, checkpoint, W&B, and parked-code contracts.
+- [tested] every active/parked training entrypoint still uses the shared logging helpers; W&B
+  project/group/run identity, effective dataset metadata, and bounded tags are characterized.
+- [tested] direct Hub loading retains the configured `HF_DATASETS_CACHE`, while pretokenized
+  manifests load `save_to_disk()` datasets without Hub access.
+- [tested] `scripts/remote_paths.sh` retains the `datasets` / `datasets_tok` / `datasets_raw`
+  roles, honors explicit overrides, and keeps `Cache/Training` plus `Cache/logs`.
+- [verified] 40 focused training/data/W&B/evaluation-lineage tests pass; touched tests have no
+  linter diagnostics.
+
+---
+
+## [2026-07-11] - E10 pre-launch protocol and observability audit
+
+**Why:** the E10 Stage-0 architecture was sound, but the launch wrapper had drifted from the
+frozen effective batch and the live diagnostics did not measure the pre-registered long-range
+and collapse gates. Launching a ~2B-token arm in that state would make the 50%-budget kill
+decision unreliable.
+
+**Impact:** E10 now launches with the specified optimizer-update batch, reports the decisive
+≥1024 concept-content signal and within-sample collapse metric during training, exposes gate
+opening directly, and can be analyzed from saved checkpoints through the canonical Tier-1 runner.
+
+**What changed:**
+- [fixed] E10 launcher default from effective batch 24 to 72. Odra calibration selected
+  `8 × 3 GPUs × accum 3` (19.97 GiB peak; batch 10 OOM); the matched Polonez control uses
+  `6 × 4 × accum 3`.
+- [fixed] recurrent concept ablation now separates the explicit-carry region `[K,2K)` from
+  true beyond-carry positions `≥2K`; E10's Δshuffle gate therefore matches the spec's ≥1024
+  region instead of being diluted/inflated by locally reachable context.
+- [added] live within-sample raw/centered RankMe and tanh read/write-gate telemetry at each
+  evaluation; added `backbone_concept` support to the held-out Tier-1 geometry/ablation runner.
+- [tested] production gradient-checkpointing concept/write gradient path and E10 Tier-1
+  ablation-contract normalization; 33 targeted tests pass.
+- [fixed] Gemma tokenizer/model vocabulary mismatch: the tokenizer-only multimodal
+  `<image_soft_token>` id 262144 exceeds the text backbone's 262144-entry embedding table.
+  Pretokenization now splits literal special-token strings as ordinary text and the causal
+  collator validates against the model vocabulary, preventing a delayed CUDA index assert.
+- [fixed] frozen Gemma LM-head CE backward no longer allocates/computes a ~1.1 GiB fp32
+  weight gradient; resume now restores Trainer/optimizer/scheduler/RNG state; final saves use
+  `<run>/final` instead of duplicating `<run>/<run>`.
+- [fixed] E10 defaults backbone gradient checkpointing to the non-reentrant PyTorch path.
+  Reentrant checkpoint hooks marked block-reused LoRA parameters ready multiple times under DDP
+  and aborted the first production launch before step 1.
+- [fixed] the training banner now resolves the effective pretokenized manifest instead of printing
+  the unused default MiniPile argument; causal-LM eval collation is labeled deterministic/no
+  corruption. Gemma Trainer-facing special-token configs are explicitly aligned to canonical
+  tokenizer IDs (PAD=0, BOS=2, EOS=1), eliminating one benign warning per DDP rank.
+- [added] exact manifest token counting/checksum and a 2B non-padding-token target schedule
+  (deterministic rounding within one optimizer batch); retained ~10%-budget checkpoints support
+  matched 50%/100% A/B comparisons, while live eval
+  uses a deterministic 2,048-row subset.
+- [optimized] the one-time token count now uses an 8-worker reducing `Dataset.map`, reports
+  progress/ETA, selects only `input_ids`, and atomically caches the result beside the manifest.
+- [optimized] weighted `all_exhausted` dataset interleaving now vectorizes Hugging Face's exact
+  1,000-choice RNG protocol instead of appending one row index per Python iteration. This removes
+  the single-core multi-hour startup cost for both token counting and Trainer dataset loading.
+- [added] recurrence-specific static and previous-block-only ablations plus
+  `run_e10_comparison.py` for paired concept/control 2K/8K CE, local regression, RankMe, and
+  bootstrap CIs. Stage 0 can now use one frozen held-out long-doc manifest paired across lengths.
+- [hardened] pretoken caches require complete train+eval artifacts and persist a tokenizer /
+  revision / sequence / objective-source fingerprint; eval-only manifests support immutable 8K
+  protocol data. DDP loss is globally token-weighted across unequal rank padding.
+- [docs/data] declared `causal_lm` compatibility on the reused 2K mix and reconciled the E10
+  spec, implementation plan, and agenda.
+
+**Related:** `docs/experiments_specs/done_failed/E10_gemma_backbone_concept_memory.md`
+
+---
+
+## [2026-07-08] - E10 foundation: pretrained-backbone concept memory (Gemma-3 graft, Design C)
+
+**Why:** the platform pivot (spec
+`docs/experiments_specs/done_failed/E10_gemma_backbone_concept_memory.md`): stop paying the
+from-scratch language-acquisition cost per run — graft the concept read/write
+machinery onto a frozen pretrained decoder (`google/gemma-3-1b-pt`, whose
+5-sliding:1-global layer pattern is a ready-made socket) and make the concepts a
+gated recurrent memory written per 512-token block (the E09 write design,
+executed on the backbone). Recurrent encode == recurrent decode: no separate
+encoder, unbounded input length at fixed memory, O(N·(K+C)).
+
+**What changed:**
+- [added] `nn/backbone_concept_lm.py` — `BackboneConceptLM` + `BackboneConceptConfig`
+  (new config-selectable model family, `concept_io_mode="global_kv"`; E11
+  `mem_tokens` / E12 `kv_prefix` land here later). Frozen backbone + peft LoRA
+  (`inject_adapter_in_model`); mask-dict surgery windows ALL token↔token
+  attention; the 4 global layers get a zero-init tanh-gated concept read using
+  their own (LoRA-adapted) q/k/v/o projections, no RoPE on the read (position-free
+  memory ⇒ length-extrapolation-safe); `ConceptWriteHead` reuses
+  `BiXTCrossAttention(update_tokens=False)` with zero-init α + sandwich RMSNorm;
+  block-recurrent forward with one-block carry, per-block position reset, and
+  `ChunkedLMHeadCE` (the 262K-vocab [B,S,V] logits are never materialized);
+  `per_position_ce` (blockwise / single_windowed / full_attention scorers),
+  `concept_ablation_ce` + `encode_concepts` matching the trainer's eval-hook
+  contract. Zero-init property: gates at 0 ⇒ block loop == plain window-masked
+  Gemma for the first two blocks, harder history truncation beyond (that truncated
+  context is exactly the concepts' channel); `concept_num=0` = the control arm.
+- [added] `data/data_collators.py:DataCollatorForCausalLM` — plain next-token-LM
+  collator (pad to batch max, labels −100 at pad).
+- [changed] `training/train_perceiver_denoise.py` — new `objective_variant`
+  `causal_lm` + `--backbone_model`/`--concept_block`/`--concept_io_mode`/`--lora_*`
+  args; backbone branch for model build, collator, W&B identity
+  (`backbone_concept` family, concept-arm/control-arm tags); default path
+  byte-identical when `backbone_model` unset.
+- [changed] `scripts/train_perceiver_denoise_multigpu.sh` — `BACKBONE_ARGS`
+  (gated on `BACKBONE_MODEL`), `GRADIENT_CHECKPOINTING` knob (was hardcoded
+  False), `DATASETS_TOK_DIR` overridable (tokenizer-switch cache isolation).
+- [added] `scripts/launch_e10.sh` — E10 protocol wrapper (concept arm default,
+  `CONCEPT_NUM=0` control arm; Gemma-tokenized `smollm3_inspired_2k_e05` mix into
+  its own `datasets_tok_gemma` tree).
+- [added] `analysis/run_e10_stage0.py` — Stage-0 go/no-go: full-attention vs
+  blockwise-truncated CE gap G by position bucket at seq 2048/8192.
+- [changed] `scripts/pretokenize_mix.py` — `--objective causal_lm` choice.
+- [added] `tests/test_backbone_concept_lm.py` — 14 tests on a tiny random
+  Gemma3 config (no hub): zero-init equivalence (blocks 0–1 exact vs
+  single windowed forward + deliberate divergence beyond), padding/ragged blocks,
+  loss==per-position mean, gradient reach (gate/LoRA at init; z0/write with open
+  gates), block causality (no future leak), read-effect, ablation contract,
+  encode shape, control-arm guards, save/load roundtrip, collator. Full suite
+  242 passed / 9 skipped.
+- [added] dependency `peft` 0.19.1 (`pyproject.toml`, `uv.lock`).
+- [docs] specs E10 (+plan), E11/E12 (design-only, queued); agenda Current focus
+  updated (E10 is the next run; E08 composes on top later; E09 folded into E10).
+
+**Known deviations (recorded in the spec):** Gemma tokenizer (262K vocab)
+replaces SmolLM2 ⇒ CE not comparable with E01–E09; backbone-native 1152-dim
+token embeddings (the tiny-token-embedding asymmetry applies to the write-op
+economics, not the frozen embedding table).
+
+---
+
+## [2026-07-07] - Tier-1 eval data-protocol upgrade: held-out, 2K, length-stratified, seeded
+
+**Why:** a review of the concept-health measures found the metric *design* sound
+(geometry / ΔCE-usage / faithfulness are deliberately orthogonal) but the *data
+protocol* feeding them flawed: `run_concept_analysis.py` streamed the first ~320
+docs of the **train** split (train-contaminated — training's holdout is a seeded
+split of the same data), truncated everything to a single 512-token length (so
+seq-2048 windowed E05 checkpoints were measured at a quarter of their trained
+length and the L3 compression curve collapsed to one bucket), used an unseeded
+`randperm` shuffle (with ~1 identity fixed point per batch, diluting Δshuffle),
+judged hard Δ gates on point estimates, and silently fell back to the ModernBERT
+tokenizer on load failure.
+
+**What changed:**
+- [changed] `analysis/run_concept_analysis.py` — new `--eval_source
+  {holdout,pretokenized,stream}` (default `holdout` reproduces the training
+  eval split via `_select_train_eval_splits`; `pretokenized` consumes a
+  pretokenize-mix manifest's eval split; legacy `stream` kept behind a loud
+  contamination warning); default seq **2048** with length-stratified batches
+  (`--length_buckets`, per-bucket geometry + ΔCE in report/JSON); `--seed`
+  seeds everything; ablation deltas reported ± per-batch std; recommendation
+  verdict re-keyed on within-sample RankMe with C-scaled thresholds (was: the
+  demoted slot-mean rank); tokenizer fallback removed (fails loudly,
+  `--tokenizer_name` to override); JSON carries `data_protocol_version`.
+- [changed] `nn/concept_encoder_perceiver.py` — `concept_ablation_ce` shuffle is
+  now a random cyclic shift (guaranteed derangement, consistent with the
+  specificity eval's `roll(1)`).
+- [changed] `analysis/concept_analysis.py` — within-sample RankMe now also
+  reports a **centered** variant to disambiguate shared-offset anisotropy
+  (raw low / centered high) from genuine collapse (both low).
+- [added] `tests/test_run_concept_analysis_protocol.py` — bucket parsing,
+  std/per-bucket aggregation, derangement guarantee, centered-vs-raw RankMe.
+- [docs] `docs/engineering_specs/concept_information_eval_upgrade.md` (dated
+  section), `.cursor/skills/experiment-evaluate/SKILL.md` (Tier-1 commands +
+  fixed stale doc pointer), dated "not comparable" notes in
+  `master_experiment_log.md` and the E02-long / E05-attempt-3 / E05-Muon run
+  reports.
+
+**Impact:** pre-2026-07-07 Tier-1 numbers (RankMe, recon-contract Δzero/Δshuffle,
+round-trip, compression curve) are internally comparable but NOT comparable with
+post-upgrade numbers; recompute planned for E02-long and the E05 variants.
+Training-time W&B `concept_ablation/*` (real holdout) and STS-B/SICK/PAWS/GLUE
+are unaffected. Note: the derangement change also shifts training-time Δshuffle
+logging slightly (removes the fixed-point dilution).
+
+---
+
+## [2026-06-30] - Eval-script fixes: wandb tag truncation + SmolLM2 pad_token
+
+**Why:** the E05 attempt 3 eval pipeline (`eval-runner`) aborted at `wandb.init()`
+with a 74-char tag built from the checkpoint path. Two latent bugs surfaced
+together; both are pre-existing and would have blocked any SmolLM2-based
+checkpoint eval, not just E05.
+
+**Changes:**
+- `evaluation/wandb_identity.py` — `_safe_tag_value` truncated the *value* to
+  64 chars but callers prepended `prefix:`, so `tokenizer:<value>` could be
+  up to 75 chars (wandb rejects any tag > 64). New `_safe_prefixed_tag(prefix,
+  value)` reserves room for the prefix+colon and truncates the value so the
+  total is always ≤ 64. New `resolve_tokenizer_name_for_tag` prefers
+  `model.config.tokenizer_name` (the canonical HF id stored at training time)
+  when the CLI arg is a local path — so tags read
+  `tokenizer:huggingfacetb-smollm2-135m` instead of a truncated checkpoint dir.
+- `evaluation/evaluate_on_benchmark.py`, `evaluation/evaluate_model_on_glue.py`
+  — SmolLM2's tokenizer ships without a `pad_token`; `AutoTokenizer.from_pretrained`
+  doesn't honor the model config's `pad_token_id`. All batch-encoding eval
+  entrypoints now set `pad_token = eos_token` right after load. STS-B / SICK /
+  PAWS / GLUE would otherwise crash with "Asking to pad but the tokenizer does
+  not have a padding token".
+- `tests/test_wandb_lineage.py` — 7 regression tests covering long-path
+  truncation, hub-id-vs-path disambiguation, and the fallback chain.
+
+**Impact:** eval pipeline runs end-to-end on SmolLM2 checkpoints. Commits
+`730e607` (tag fix) + `70e1fd2` (pad_token fix).
 
 ---
 
@@ -57,8 +576,13 @@ no training-loop change and no throughput tax.
 **Verified:** Dry-run + live audit on 5 runs (`concept_ar_prefix_*` E02/E05,
 `concept_ar_*` E01, `perceiver_denoise_*`); `compute/*` scalars persisted to the 4
 finished runs' W&B summaries (read back confirmed); numbers cross-checked (run2
-290.7 GPU-h, 61.4 kWh ≈ 4×210 W×261,630 s/3.6e6; 24.5 B max-tokens). Full pytest
-suite: 194 passed, 9 skipped. The running E05 run is `running-partial` (write-back
+290.7 GPU-h, 61.4 kWh ≈ 4×210 W×261,630 s/3.6e6; 24.5 B max-tokens). Added
+`compute/max_tokens_b` (tokens in billions) so the grouped "compute profile"
+panel can show GPU-hours / energy / tokens on one linear axis (raw tokens ~1e9
+dominate); these are **stable absolute values** (comparable across past and future
+runs — cohort-relative `%` was rejected because a future heavier run would rescale
+everything), with a `_profile.png` chart mirroring the panel. Full pytest suite:
+198 passed, 9 skipped. The running E05 run is `running-partial` (write-back
 deferred — re-run after it finishes).
 
 **After pull:** the W&B compute panel is built once manually in the UI from the
@@ -84,7 +608,7 @@ training so the long-context mix (DCLM, FinePDFs) is tractable and reusable acro
 - `scripts/pretokenize_mix.py` — passes `PRETOKENIZE_MAX_CHARS` (default 100k) and adds a
   `num_proc=1` fallback so a dead worker surfaces the real error instead of the generic
   multiprocessing message.
-- `docs/experiments_specs/E05_windowed_decoder_concept_memory.md` — switches the launch
+- `docs/experiments_specs/done_failed/E05_windowed_decoder_concept_memory.md` — switches the launch
   workflow to pretokenize → manifest → train (`PRETOKENIZED_MANIFEST`); live
   `DATASET_MIX_RECIPE` kept only as a small-dataset fallback. Documents the same spine as the
   standard data path for future phases (objective-agnostic manifest + one tokenize mode + one
@@ -224,7 +748,7 @@ source with `file_glob`/`recursive`/`max_shards` (DCLM, FinePDFs, …).
 
 **What changed:**
 - [fixed] `training/utils_training.py`, `training/train_perceiver_denoise.py` - make W&B identity anchor-aware (`E03`, `train_concept_ar_anchor_reconstruction`, `anchor`/`anchor-on` tags) and log anchor config explicitly.
-- [updated] `.cursor/skills/experiment-run/SKILL.md`, `docs/experiments_specs/E03_concept_anchor_decollapse.md`, `docs/experiments_specs/E03_concept_anchor_decollapse_plan.md` - add W&B preflight guidance and `EXPERIMENT_ID=E03` to E03 launch recipes, including the matched control.
+- [updated] `.cursor/skills/experiment-run/SKILL.md`, `docs/experiments_specs/done_success/E03_concept_anchor_decollapse.md`, `docs/experiments_specs/done_success/E03_concept_anchor_decollapse_plan.md` - add W&B preflight guidance and `EXPERIMENT_ID=E03` to E03 launch recipes, including the matched control.
 - [added] `tests/test_wandb_identity.py` - regression coverage for E03 anchor W&B identity.
 
 ## [2026-06-13] - Standardize W&B identity for shared perceiver/AR training
@@ -288,7 +812,7 @@ source with `file_glob`/`recursive`/`max_shards` (DCLM, FinePDFs, …).
 - [fixed] `analysis/run_concept_analysis.py` — ablation labels now mask padding positionally via `attention_mask` instead of by `pad_token_id` (pad=eos safe); prints the matched-word-dropout CE and the clean-vs-wd gap; documents that offline ablation encodes the full clean sequence (absolute CE not comparable with training eval).
 - [added] tests: seeded-collator determinism, unseeded resampling, pad=eos TSDAE label/visibility contract (`tests/test_tsdae_collator.py`); eval-mode forced word-dropout, `ce_intact_wd` reporting (`tests/test_concept_ar_decoder.py`).
 
-**Related:** `docs/experiments_specs/E01_concept_ar_decoder.md` (rerun uses these fixes), E01 warm-up review (eval CE divergence diagnosis)
+**Related:** `docs/experiments_specs/done_failed/E01_concept_ar_decoder.md` (rerun uses these fixes), E01 warm-up review (eval CE divergence diagnosis)
 
 ## [2026-06-14] - Make E03 anchor runs W&B-identifiable
 

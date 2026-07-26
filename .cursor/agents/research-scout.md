@@ -1,6 +1,6 @@
 ---
 name: research-scout
-model: composer-2.5[]
+model: composer-2.5[fast=false]
 description: Source-material scout for the Concept reasoning model project. Goes out, searches arXiv, OpenReview, ACL Anthology, PMLR, NeurIPS/ICLR/ICML/ACL proceedings, Hugging Face Papers, and GitHub for current SoTA, paper details, and reference implementations, and returns concise, well-cited notes. Use whenever fresh external evidence is needed — latest papers, GitHub repos, model cards, benchmarks, trend scans. Project-specific synthesis (Adopt/Adapt/Watch/Reject, plans) is done by the research-synthesis skill, not by this agent.
 readonly: true
 is_background: true
@@ -81,6 +81,14 @@ Do not use unofficial paywall-bypass sources. If a paper is paywalled, use the o
 - Code: GitHub URL, framework, license, maintenance signal.
 - Related: other papers it builds on or contradicts (with links).
 ```
+
+## Where Notes Live
+
+External paper / publication reviews go in `docs/literature_review/` (topical filenames, one or more papers per file with `### TL;DR` each — see the `research-synthesis` skill's Folder Conventions). Do not save lightweight per-call outputs there; that folder is for substantial reviews only.
+
+Internal diagnoses and analyses go in `docs/4_Research_Notes/` (dated, append-only — the failure analyses and root-cause notes live here).
+
+The legacy `docs/research-notes/` folder has been removed; everything is now under one of the two folders above.
 
 ## Output Format
 

@@ -1,0 +1,84 @@
+{
+  "mix_id": "concept_flow_reasoning_2k",
+  "description": "E08 Concept-Flow mix: reasoning-trace-heavy distillation data (problem->CoT->answer) for the flow reasoner's concept-space targets, balanced with a web/code fluency replay so the warm-started crystallizer holds STS-B. Reasoning ~50%, fluency ~50% (a ~5x boost in reasoning share vs smollm3_inspired_2k_e05).",
+  "objective_compatibility": [
+    "reasoning_distillation",
+    "prefix_suffix"
+  ],
+  "seq_len_target": 2048,
+  "long_context_policy": {
+    "target_min_pct_docs_over_2k": 15.0,
+    "target_min_pct_docs_over_4k": 5.0,
+    "notes": "Reasoning traces skew long, but at seq 2048 traces exceeding ~2K (problem+solution) are filtered to keep the full answer visible. A 4K long-trace variant is a CF-1 option, not E08."
+  },
+  "sources": [
+    {
+      "name": "openmathreasoning_cot",
+      "hf_id": "nvidia/OpenMathReasoning",
+      "subset": "default",
+      "split": "cot",
+      "text_columns": ["problem", "generated_solution"],
+      "weight": 0.30,
+      "max_shards": 8,
+      "max_samples": 800000,
+      "file_glob": "data/cot-*.parquet",
+      "notes": "PRIMARY reasoning source. Explicit problem + generated_solution columns let the reasoning_distillation collator encode the question and the trace SEPARATELY (question -> z0, trace/answer -> flow targets). cot split only."
+    },
+    {
+      "name": "big_reasoning_traces",
+      "hf_id": "allenai/big-reasoning-traces",
+      "subset": "DeepSeek",
+      "split": "train",
+      "text_columns": ["text"],
+      "weight": 0.20,
+      "max_shards": 8,
+      "max_samples": 600000,
+      "notes": "Diverse long DeepSeek CoT traces; also stresses cross-window concept memory. Flat text column -> collator falls back to prefix_suffix-style splitting for the flow target."
+    },
+    {
+      "name": "fineweb_edu",
+      "hf_id": "HuggingFaceFW/fineweb-edu",
+      "subset": "sample-10BT",
+      "split": "train",
+      "text_columns": ["text"],
+      "weight": 0.25,
+      "max_shards": 6,
+      "max_samples": 1500000,
+      "file_glob": "sample/10BT/*.parquet",
+      "notes": "Web fluency replay to retain STS-B / language ability in the warm-started crystallizer."
+    },
+    {
+      "name": "dclm_baseline",
+      "hf_id": "mlfoundations/dclm-baseline-1.0",
+      "subset": "default",
+      "split": "train",
+      "text_columns": ["text"],
+      "weight": 0.15,
+      "max_shards": 35,
+      "max_samples": 1200000,
+      "file_suffix": ".jsonl.zst",
+      "recursive": true,
+      "file_glob": "global-shard_01_of_10/*",
+      "notes": "Broad web long-context fluency."
+    },
+    {
+      "name": "stack_edu_python",
+      "hf_id": "meryyllebr543/stack-edu-huggingface",
+      "subset": "python",
+      "split": "train",
+      "text_columns": ["text"],
+      "weight": 0.10,
+      "max_samples": 500000,
+      "file_globs": ["python.parquet"],
+      "notes": "Code fluency replay."
+    }
+  ],
+  "expected_length_profile_from_2026_06_20_sample": {
+    "estimated_docs_over_2k_pct": 18.0,
+    "estimated_docs_over_4k_pct": 6.0,
+    "estimation_notes": "Reasoning traces lift the long tail vs pure web mixes, but seq-2048 filtering caps it. Re-measure with analysis/dataset_seqlen_distribution.py after the recipe is finalized."
+  },
+  "variants": {
+    "reasoning_heavy_60_40": "Bump openmathreasoning_cot -> 0.40, big_reasoning_traces -> 0.20 (reasoning 60%); trim fineweb_edu -> 0.18, dclm -> 0.12. Use only if the 50/50 keystone holds STS-B >= 0.65 and we want a stronger reasoning signal."
+  }
+}

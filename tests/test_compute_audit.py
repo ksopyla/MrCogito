@@ -352,3 +352,29 @@ def test_audit_run_group_for_panel_falls_back_to_arch_prefix():
     assert rec["scalars"]["compute/group_for_panel"] == "perceiver_denoise_H512L6C128D3"
     # reconstruction -> loss_fraction 1.0
     assert rec["scalars"]["compute/loss_tokens_est"] == rec["scalars"]["compute/max_tokens"]
+    # max_tokens rescaled to billions for the grouped profile panel
+    assert abs(rec["scalars"]["compute/max_tokens_b"]
+               - rec["scalars"]["compute/max_tokens"] / 1e9) < 1e-6
+
+
+def test_audit_run_writeback_removes_stale_pct_keys():
+    """Re-auditing a run that has stale _pct keys (from a prior version) drops them."""
+    df = make_power_df(3600, 7.5, 4, 250.0)
+    cfg = prefix_suffix_cfg(world=4)
+    summary = {"_runtime": 3605, "train_runtime": 3600, "global_step": 1000,
+               # simulate stale keys written by the previous cohort-pct version
+               "compute/gpu_hours_pct": 100.0, "compute/energy_kwh_pct": 100.0,
+               "compute/max_tokens_pct": 100.0}
+    run = FakeRun("concept_ar_prefix_X_20260601_000000", "finished", summary, cfg, df)
+    rec = audit_run(run, write_back=True)
+    assert rec["writeback"] is True
+    assert "compute/gpu_hours_pct" not in run.summary
+    assert "compute/energy_kwh_pct" not in run.summary
+    assert "compute/max_tokens_pct" not in run.summary
+    assert "compute/gpu_hours" in run.summary
+
+
+# ---------------------------------------------------------------------------
+# (cohort-relative _pct removed — kept absolute rescaled units instead, so the
+# panel stays comparable across future runs without re-normalization)
+# ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ from nn.concept_encoder_perceiver import (
     ConceptEncoderForSequenceClassificationViaDecoder,
     ConceptEncoderForSentencePairClassification,
 )
-from training.train_perceiver_denoise import (
+from training.train_concept_pretraining import (
     DataTrainingArguments,
     ModelArguments,
     build_perceiver_denoise_config,

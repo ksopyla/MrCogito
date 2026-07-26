@@ -10,7 +10,7 @@ Set-Location $ProjectRoot
 
 Write-Host "=== Perceiver Denoising Local Smoke Test ===" -ForegroundColor Cyan
 
-poetry run python training/train_perceiver_denoise.py `
+poetry run python training/train_concept_pretraining.py `
     --hidden_size 64 `
     --token_embedding_dim 64 `
     --num_hidden_layers 2 `
