@@ -85,8 +85,12 @@ Skip `docs/5_Archive/` and any `> **OBSOLETE — ...**` section — that content
    - explain why, not just what the metric was
    - recommend only the immediate next action justified by the evidence
 
-5. Update the docs:
-   - `docs/2_Experiments_Registry/master_experiment_log.md` (the row)
+5. Update the docs (in this order):
+   - `docs/2_Experiments_Registry/master_experiment_log.md`:
+     1. **Experiment Index** — upsert the ID row (Recent closed / Ahead / Canceled) with spec + report links
+     2. **Training Runs** — append one lean row (or Evaluation Experiments for zero-train evals)
+     3. **Focus note** — only when the result changes current priority
+     4. **Run reports** list — add the new report near the top
    - the experiment spec `docs/experiments_specs/ahead/<ID>.md` (`Status` → done/killed, fill `Result`, then move the pair)
    - the `docs/1_Strategy_and_Plans/agenda.md` "what we've explored" learnings (one line)
    - a short `docs/2_Experiments_Registry/run_reports/<run_name>.md` when needed
@@ -142,8 +146,10 @@ Useful interpretation rules:
 - Partial spot-checks should produce partial conclusions, not broad track verdicts.
 
 ## Documentation Rules
-- `master_experiment_log.md`: keep the row dense and factual. Include the key metric, the fair comparison point, and a one-sentence takeaway.
-- `docs/experiments_specs/ahead/<ID>.md`: flip `Status` to `done`/`killed` and fill the `Result` block (run id, WandB, run-report link, one-line verdict). Do not paste full results back into the spec. Then move the spec and plan together to `done_success/` or `done_failed/`.
+- `master_experiment_log.md` is an **index**, not a lab notebook. Specs hold intent/criteria; run reports hold deep metrics. Never paste multi-paragraph analysis into log cells.
+- Always keep **Experiment Index** and **Training Runs** in sync for the same ID (index = one row per ID; training = one row per run).
+- Every E-numbered row must link to its lifecycle spec path (`../experiments_specs/<lifecycle>/<ID>_….md`). Search all lifecycle folders — never assume `ahead/`.
+- `docs/experiments_specs/<lifecycle>/<ID>.md`: flip `Status` to `done`/`killed` and fill the `Result` block (run id, WandB, run-report link, one-line verdict). Do not paste full results back into the spec. Then move the spec and plan together to `done_success/` or `done_failed/`.
 - `agenda.md`: add/update a one-line "what we've explored" entry (neutral, evidence-based — not a verdict) and move the experiment off Current focus.
 - `run_reports/`: keep reports short unless the user explicitly wants a deeper note.
 - Do not open a full research note by default. Use `research-synthesis` (which can spawn `research-scout` for source fetching) or a separate note only when the result requires deeper literature-backed analysis or a new cross-run diagnosis.
@@ -156,8 +162,9 @@ Useful interpretation rules:
 - If sources disagree, say so explicitly in the note or report instead of silently normalizing them.
 
 Use these date rules:
-- `master_experiment_log.md` training row `Date`: training start date, usually from the `run_id` or the training `WandB` run start.
-- `master_experiment_log.md` evaluation row `Date`: evaluation date, not checkpoint training date.
+- `master_experiment_log.md` Training Runs `Date`: training start date, usually from the `run_id` or the training `WandB` run start.
+- `master_experiment_log.md` Evaluation Experiments `Date`: evaluation date, not checkpoint training date.
+- `master_experiment_log.md` Experiment Index has no date column; order Recent closed newest-first and rely on linked reports for dates.
 - `run_reports/<name>_YYYYMMDD.md` filename date: the decisive evaluation or write-up date used for that report.
 - Run report `**Date:**`: the same decisive result date used for the report, not necessarily the run start date.
 - `docs/experiments_specs/<lifecycle>/<ID>.md` and `agenda.md`: keep separate dates for
@@ -172,17 +179,50 @@ Prefer source order:
 ## File-Specific Format Rules
 
 ### `docs/2_Experiments_Registry/master_experiment_log.md`
-- Do not change the table schema unless the user explicitly asks.
-- Add training checkpoints to `## Training Runs`.
-- Add standalone evaluation sweeps to `## Evaluation Experiments (Zero Training Cost)`.
-- Keep one row per run or evaluation sweep.
-- Keep the row compact. Use the existing columns and phrasing style.
-- Use backticks for run ids, tags, and checkpoint names.
-- Use bold only for the most important metrics or verdict phrases.
-- Use `<br>` inside table cells when listing multiple scores or links.
-- Use `[Link](...)` for a single `WandB` run URL; use named links only when several evaluation runs belong in the same cell.
-- Use `--` for unavailable metric cells and `—` for absent git tags or truly not-applicable entries, matching the current file.
-- `Conclusion / Takeaway` should be short, factual, and usually start with a bold status phrase such as `**TODO 10A — MIXED.**` when that context exists.
+
+File layout (do not invent new top-level sections without user ask):
+
+1. Purpose + “Need → Where” routing table
+2. Focus note (blockquote) — only when priority changes
+3. Protocol notes (blockquote) — rare, durable caveats
+4. `## Experiment Index` — primary human/agent navigation
+5. `## Training Runs` — append-only chronological ledger
+6. `## Evaluation Experiments (Zero Training Cost)`
+7. `## Architecture notes (pointers only)` — short links, no essays
+8. `## Run reports` — newest-first link list
+
+#### Experiment Index (required on every track)
+- One row per experiment **ID** (not per run). Multiple arms of one ID share one index row; point at the decisive report.
+- Subsections: `### Recent closed (…)`, `### Ahead / open`, `### Canceled (no run)`.
+- Newest closed IDs at the **top** of Recent closed.
+- Columns: `ID | What | Lifecycle | Key result | Spec · report` (Ahead/Canceled may drop Lifecycle / Key result).
+- `What` = short title (no hypothesis essay). `Key result` = one metric phrase + outcome, not a paragraph.
+- Spec link must use the **current** lifecycle folder after any move (`done_success/` / `done_failed/` / `canceled/` / `ahead/`).
+- When closing an ID: move it from Ahead → Recent closed; update lifecycle in the link; add/refresh the report link.
+- Keep the one-line **Genealogy** pointer in sync when the series advances.
+
+#### Training Runs (append-only)
+- Columns (fixed schema): `Date | Exp | Run ID | Setup | Key metrics | Verdict | Links`
+- `Date` = training start date (from `run_id` / W&B start).
+- `Exp` = experiment ID (`E16b`) or `—` for pre-ID historical runs.
+- `Run ID` in backticks; one row per training run (append at the **bottom**).
+- `Setup` = family · size · objective · data/budget in ~8–12 words.
+- `Key metrics` = 2–4 headline numbers only (rank/RankMe, decisive Δ, STS-B, loss).
+- `Verdict` = **one short sentence** (status word + why). No multi-sentence essays.
+- `Links` = `spec` (if E-numbered) · `report` (if exists) · `W&B`, joined with ` · `.
+- Never start a row with `||` or `|||` — every data row starts with exactly one `|`.
+- Do **not** reintroduce the old 14-column schema (Epochs / Concept Losses / Task Loss / Eff. Rank / GLUE / Speed / Git Tag as separate columns). Those details belong in the run report.
+
+#### Evaluation Experiments
+- Columns: `Date | Eval | Source | Key scores | Verdict | Links`
+- `Date` = evaluation date, not training start.
+- One row per eval sweep; link spec/report when applicable.
+
+#### Style
+- Backticks for run ids and checkpoint names.
+- Bold only for decisive metrics or status words.
+- Prefer ` · ` separators over `<br>` in cells (keep cells single-line when possible).
+- Use `—` for not-applicable Exp / missing links.
 
 ### `docs/experiments_specs/<lifecycle>/<ID>.md` (the spec) and `docs/1_Strategy_and_Plans/agenda.md`
 - Do NOT rewrite the frozen spec body (hypothesis, builds-on, single change, criteria). Only set `Status` and fill the `Result` block.

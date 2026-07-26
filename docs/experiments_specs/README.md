@@ -30,7 +30,9 @@ the root, and never reuse an ID found in any lifecycle folder.
 ## Where things live (no duplicate logs)
 - **Intent / criteria** → `docs/experiments_specs/<lifecycle>/<ID>.md` (spec) and
   `<lifecycle>/<ID>_plan.md` (design).
-- **Results** → `docs/2_Experiments_Registry/master_experiment_log.md` (canonical, append-only) + run reports. The specs are *not* a results log.
+- **Results index** → `docs/2_Experiments_Registry/master_experiment_log.md`
+  (Experiment Index + lean Training Runs — append-only, scannable; not a lab notebook).
+  Deep metrics → `run_reports/`. Specs are *not* a results log.
 - **Live one-line memory** → `docs/1_Strategy_and_Plans/agenda.md` (pointers into the ledger).
 
 ## Lifecycle
