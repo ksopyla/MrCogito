@@ -28,7 +28,8 @@ All `.cursor/...` paths above are valid in this checkout (skills are also mirror
   context window**, not the main chat. Honor that: return **only** the compact evidence bundle
   defined in the canonical file. Do not paste full logs/JSON into your return message.
 - Tools available: `Bash`, `Read`, `Grep`, `Glob`. Reach the servers with `ssh odra` /
-  `ssh polonez` (aliases are in the user's `~/.ssh/config`, ports 2203 / 2205).
+  `ssh polonez` (HostName/Port live in local `~/.ssh/config` / gitignored
+  `remote-servers` — do not put domain or port numbers in public repo files).
 - Do not improvise thresholds, commands, or verdicts. Read the first traceback line before any
   retry; classify (OOM / NCCL / import / dataset-cache / shape-config) and report it.
 - Interpretation and recording belong to the main agent's `experiment-track` skill — explicitly
