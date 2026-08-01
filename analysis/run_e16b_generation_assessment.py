@@ -181,7 +181,8 @@ def _e16b_next_token_logits(model, input_ids: torch.Tensor, attention_mask: torc
 
 @torch.no_grad()
 def _e16b_generate_loop(model, input_ids, attention_mask, *, max_new: int, greedy: bool,
-                        temperature: float, top_p: float, top_k: int, concept_mode: str):
+                        temperature: float, top_p: float, top_k: int, concept_mode: str,
+                        rep_penalty: float = 1.0):
     if hasattr(model, "generate"):
         return model.generate(
             input_ids, attention_mask,
@@ -190,6 +191,7 @@ def _e16b_generate_loop(model, input_ids, attention_mask, *, max_new: int, greed
             temperature=temperature if not greedy else 1.0,
             top_k=top_k if not greedy else 0,
             top_p=top_p if not greedy else 1.0,
+            repetition_penalty=rep_penalty,
             concept_mode=concept_mode,
         )
     cur = input_ids
@@ -198,6 +200,11 @@ def _e16b_generate_loop(model, input_ids, attention_mask, *, max_new: int, greed
     finished = torch.zeros(cur.shape[0], dtype=torch.bool, device=cur.device)
     for _ in range(max_new):
         logits = _e16b_next_token_logits(model, cur, mask, concept_mode)
+        # Repetition penalty (HF/CTRL style) over the full context (fallback path).
+        if rep_penalty and rep_penalty != 1.0:
+            score = logits.gather(-1, cur)
+            score = torch.where(score > 0, score / rep_penalty, score * rep_penalty)
+            logits = logits.scatter(-1, cur, score)
         if greedy:
             next_id = logits.argmax(dim=-1, keepdim=True)
         else:
@@ -231,7 +238,7 @@ def _e16b_generate_loop(model, input_ids, attention_mask, *, max_new: int, greed
 @torch.no_grad()
 def gen_e16b(model, tokenizer, prompt: str, device, *, max_new: int, max_prompt: int,
              greedy: bool, temperature: float, top_p: float, top_k: int,
-             concept_mode: str, seed: int) -> Dict:
+             concept_mode: str, seed: int, rep_penalty: float = 1.0) -> Dict:
     torch.manual_seed(seed)
     enc = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=max_prompt,
                     add_special_tokens=True)
@@ -241,7 +248,7 @@ def gen_e16b(model, tokenizer, prompt: str, device, *, max_new: int, max_prompt:
     out = _e16b_generate_loop(
         model, input_ids, attention_mask,
         max_new=max_new, greedy=greedy, temperature=temperature,
-        top_p=top_p, top_k=top_k, concept_mode=concept_mode,
+        top_p=top_p, top_k=top_k, concept_mode=concept_mode, rep_penalty=rep_penalty,
     )
     dt = time.time() - t0
     gen_ids = out[0, input_ids.shape[1]:].tolist()
@@ -260,7 +267,7 @@ def gen_e16b(model, tokenizer, prompt: str, device, *, max_new: int, max_prompt:
 @torch.no_grad()
 def gen_base(model, tokenizer, prompt: str, device, *, max_new: int, max_prompt: int,
              greedy: bool, temperature: float, top_p: float, top_k: int,
-             seed: int) -> Dict:
+             seed: int, rep_penalty: float = 1.0) -> Dict:
     torch.manual_seed(seed)
     enc = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=max_prompt,
                     add_special_tokens=True)
@@ -272,6 +279,7 @@ def gen_base(model, tokenizer, prompt: str, device, *, max_new: int, max_prompt:
         do_sample=not greedy,
         pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
         eos_token_id=tokenizer.eos_token_id,
+        repetition_penalty=rep_penalty,
     )
     if not greedy:
         gen_kwargs.update(temperature=temperature, top_p=top_p, top_k=top_k or 50)
@@ -351,6 +359,14 @@ def parse_args():
     p.add_argument("--skip_chat", action="store_true")
     p.add_argument("--sample", action="store_true",
                    help="Also run nucleus sampling (T=0.8, top_p=0.95) on short prompts.")
+    p.add_argument("--repetition_penalty", type=float, default=1.0,
+                   help="HF/CTRL repetition penalty for BOTH E16b and base generate "
+                        "(1.0 = off). The Layer-0 decode band-aid the 2026-08-01 report "
+                        "recommended but had not yet tested.")
+    p.add_argument("--extra_concept_modes", nargs="+", default=[],
+                   help="Extra E16b concept modes to add to Part A short-prompt sweeps "
+                        "(e.g. 'frozen' = prompt-encoded z, read-only decode — the "
+                        "Layer-0 freeze-z probe). 'static' also accepted.")
     return p.parse_args()
 
 
@@ -390,7 +406,7 @@ def main():
             e16b, tok_e, prompt, device,
             max_new=args.max_new_tokens, max_prompt=1024,
             greedy=greedy, temperature=temperature, top_p=top_p, top_k=top_k,
-            concept_mode=concept_mode, seed=args.seed,
+            concept_mode=concept_mode, seed=args.seed, rep_penalty=args.repetition_penalty,
         )
         row = {
             "model": "e16b",
@@ -413,7 +429,7 @@ def main():
                 base, tok_b, prompt, device,
                 max_new=args.max_new_tokens, max_prompt=1024,
                 greedy=greedy, temperature=temperature, top_p=top_p, top_k=top_k,
-                seed=args.seed,
+                seed=args.seed, rep_penalty=args.repetition_penalty,
             )
             brow = {
                 "model": "gemma3_1b_pt",
@@ -431,18 +447,18 @@ def main():
                   f"d1={sb['distinct_1']:.3f} r3={sb['rep_3']:.3f} n={rb['n_tokens']} "
                   f"{rb['seconds']:.1f}s | {brow['text_preview']!r}")
 
-    print("\n=== Part A: short-prompt continuation / chat ===")
+    partA_modes = ["real", "zero"] + list(args.extra_concept_modes)
+    print(f"\n=== Part A: short-prompt continuation / chat (modes={partA_modes}) ===")
     for p in prompts:
-        run_short("continuation", p, "greedy", "real")
-        run_short("continuation", p, "greedy", "zero")
+        for cm in partA_modes:
+            run_short("continuation", p, "greedy", cm)
     if not args.skip_chat:
         for msg in chat_msgs:
             run_short("chat", format_gemma_chat(msg), "greedy", "real")
     if args.sample:
         for p in prompts[:4]:
-            run_short("continuation", p, "sample", "real")
-            if base is not None:
-                pass  # base already paired inside run_short when concept_mode=real
+            for cm in partA_modes:
+                run_short("continuation", p, "sample", cm)
 
     # Aggregates
     def filt(**kw):
@@ -452,10 +468,6 @@ def main():
         return rows
 
     aggregates = {
-        "e16b_real_cont_greedy": mean_by_length(filt(model="e16b", concept_mode="real",
-                                                     prompt_style="continuation", decode="greedy")),
-        "e16b_zero_cont_greedy": mean_by_length(filt(model="e16b", concept_mode="zero",
-                                                     prompt_style="continuation", decode="greedy")),
         "e16b_real_chat_greedy": mean_by_length(filt(model="e16b", concept_mode="real",
                                                      prompt_style="chat", decode="greedy")),
         "base_cont_greedy": mean_by_length(filt(model="gemma3_1b_pt", prompt_style="continuation",
@@ -463,9 +475,13 @@ def main():
         "base_chat_greedy": mean_by_length(filt(model="gemma3_1b_pt", prompt_style="chat",
                                                 decode="greedy")),
     }
+    for cm in partA_modes:
+        aggregates[f"e16b_{cm}_cont_greedy"] = mean_by_length(
+            filt(model="e16b", concept_mode=cm, prompt_style="continuation", decode="greedy"))
     if args.sample:
-        aggregates["e16b_real_cont_sample"] = mean_by_length(
-            filt(model="e16b", concept_mode="real", prompt_style="continuation", decode="sample"))
+        for cm in partA_modes:
+            aggregates[f"e16b_{cm}_cont_sample"] = mean_by_length(
+                filt(model="e16b", concept_mode=cm, prompt_style="continuation", decode="sample"))
         aggregates["base_cont_sample"] = mean_by_length(
             filt(model="gemma3_1b_pt", prompt_style="continuation", decode="sample"))
 
@@ -500,7 +516,7 @@ def main():
                     e16b, tok_e, prompt, device,
                     max_new=args.ctx_max_new_tokens, max_prompt=L,
                     greedy=True, temperature=1.0, top_p=1.0, top_k=0,
-                    concept_mode="real", seed=args.seed,
+                    concept_mode="real", seed=args.seed, rep_penalty=args.repetition_penalty,
                 )
                 row = {
                     "model": "e16b",
@@ -524,7 +540,7 @@ def main():
                         base, tok_b, prompt, device,
                         max_new=args.ctx_max_new_tokens, max_prompt=L,
                         greedy=True, temperature=1.0, top_p=1.0, top_k=0,
-                        seed=args.seed,
+                        seed=args.seed, rep_penalty=args.repetition_penalty,
                     )
                     brow = {
                         "model": "gemma3_1b_pt",

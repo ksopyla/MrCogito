@@ -577,6 +577,7 @@ class BackboneConceptLM(PreTrainedModel):
         per_position: bool = False,
         return_predictions: bool = False,
         return_last_hidden: bool = False,
+        initial_concepts: Optional[torch.Tensor] = None,
     ):
         valid_modes = {"real", "shuffle", "zero", "static", "one_block", "permutation"}
         if concept_mode not in valid_modes:
@@ -618,7 +619,17 @@ class BackboneConceptLM(PreTrainedModel):
         dtype = self.backbone.model.embed_tokens.weight.dtype
 
         use_concepts = self.has_concepts and concept_mode != "zero"
-        z = self.concept_init.unsqueeze(0).expand(B, -1, -1) if use_concepts else None
+        if use_concepts:
+            # ``initial_concepts`` ([B, C, H]) overrides the learned concept_init —
+            # used by the ``frozen`` decode path (prompt-encoded z, read-only). The
+            # default expands the learned init as before.
+            z = (
+                initial_concepts
+                if initial_concepts is not None
+                else self.concept_init.unsqueeze(0).expand(B, -1, -1)
+            )
+        else:
+            z = None
         self._concept_state["shuffle"] = concept_mode == "shuffle"
         self._concept_state["permutation"] = (
             concept_permutation if concept_mode == "permutation" else None
@@ -871,6 +882,7 @@ class BackboneConceptLM(PreTrainedModel):
         input_ids: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
         concept_mode: str = "real",
+        initial_concepts: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Logits for the token immediately after ``input_ids``. Shape ``[B, V]``.
 
@@ -886,6 +898,7 @@ class BackboneConceptLM(PreTrainedModel):
             labels=None,
             concept_mode=concept_mode,
             return_last_hidden=True,
+            initial_concepts=initial_concepts,
         )
         weight = self.backbone.lm_head.weight.float()
         return F.linear(last_hidden.float(), weight)
@@ -917,6 +930,11 @@ class BackboneConceptLM(PreTrainedModel):
         ``repetition_penalty``, negative logits multiplied). Values >1 break the
         greedy fixed-point loops that otherwise dominate long free-running decode
         from a base concept-LM (the E16b repetition symptom).
+
+        ``concept_mode="frozen"`` encodes the prompt into the concept state WITH
+        writes, then decodes read-only (no writes from the model's own tokens) — a
+        zero-training-cost probe of whether self-generated concept writes drive the
+        free-run repetition (the E16b Layer-0 "freeze-z" diagnostic).
         """
         if input_ids.ndim != 2:
             raise ValueError(f"input_ids must be [B, S], got {tuple(input_ids.shape)}")
@@ -925,8 +943,22 @@ class BackboneConceptLM(PreTrainedModel):
         cur = input_ids
         mask = attention_mask if attention_mask is not None else torch.ones_like(cur)
         finished = torch.zeros(cur.shape[0], dtype=torch.bool, device=cur.device)
+        # ``frozen`` concept decode (Layer-0 free-run probe): encode the prompt into
+        # the concept state WITH writes, then decode read-only (no writes from the
+        # model's own tokens). Falsifies "self-generated writes poison free-run" at
+        # zero training cost. Internally maps to a ``static`` (read-only) forward
+        # seeded by the prompt-encoded ``z``.
+        frozen_z = None
+        fwd_mode = concept_mode
+        if concept_mode == "frozen":
+            if not self.has_concepts:
+                raise ValueError("concept_mode='frozen' requires concept_num > 0.")
+            frozen_z = self.encode_concepts(input_ids, mask).last_hidden_state  # [B, C, H]
+            fwd_mode = "static"
         for _ in range(max_new_tokens):
-            logits = self.next_token_logits(cur, mask, concept_mode=concept_mode)
+            logits = self.next_token_logits(
+                cur, mask, concept_mode=fwd_mode, initial_concepts=frozen_z,
+            )
             if not torch.isfinite(logits).all():
                 raise RuntimeError(
                     "next_token_logits produced non-finite values. On Apple MPS this "
