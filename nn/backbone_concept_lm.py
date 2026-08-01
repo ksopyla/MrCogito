@@ -876,6 +876,9 @@ class BackboneConceptLM(PreTrainedModel):
 
         Re-runs the block-recurrent forward (no KV cache). Intended for short
         interactive generation / playground use, not long free-running decode.
+
+        The LM-head projection is always computed in float32 so MPS float16
+        models still yield finite sampling logits.
         """
         last_hidden = self._forward_blocks(
             input_ids,
@@ -884,7 +887,8 @@ class BackboneConceptLM(PreTrainedModel):
             concept_mode=concept_mode,
             return_last_hidden=True,
         )
-        return F.linear(last_hidden, self.backbone.lm_head.weight)
+        weight = self.backbone.lm_head.weight.float()
+        return F.linear(last_hidden.float(), weight)
 
     @torch.no_grad()
     def generate(
@@ -897,6 +901,7 @@ class BackboneConceptLM(PreTrainedModel):
         temperature: float = 1.0,
         top_k: int = 0,
         top_p: float = 1.0,
+        repetition_penalty: float = 1.0,
         eos_token_id: Optional[int] = None,
         concept_mode: str = "real",
     ) -> torch.Tensor:
@@ -904,6 +909,14 @@ class BackboneConceptLM(PreTrainedModel):
 
         Each step re-encodes the growing prefix through the concept block loop.
         Keep ``max_new_tokens`` modest on CPU/MPS.
+
+        On Apple MPS, load the model in ``float32`` (fp16 forwards often NaN).
+
+        ``repetition_penalty`` (HF/CTRL style, default 1.0 = off): each step lowers
+        the score of every token already in the context (positive logits divided by
+        ``repetition_penalty``, negative logits multiplied). Values >1 break the
+        greedy fixed-point loops that otherwise dominate long free-running decode
+        from a base concept-LM (the E16b repetition symptom).
         """
         if input_ids.ndim != 2:
             raise ValueError(f"input_ids must be [B, S], got {tuple(input_ids.shape)}")
@@ -914,8 +927,22 @@ class BackboneConceptLM(PreTrainedModel):
         finished = torch.zeros(cur.shape[0], dtype=torch.bool, device=cur.device)
         for _ in range(max_new_tokens):
             logits = self.next_token_logits(cur, mask, concept_mode=concept_mode)
+            if not torch.isfinite(logits).all():
+                raise RuntimeError(
+                    "next_token_logits produced non-finite values. On Apple MPS this "
+                    "usually means the model was loaded in float16 — reload with "
+                    "dtype=torch.float32 (see playground/e16b_generation_playground.ipynb)."
+                )
+            logits = logits.float()
+            # Repetition penalty (HF / CTRL style) over the full context seen so far.
+            # rp>1 depresses already-used tokens; rp=1.0 reproduces prior behaviour.
+            if repetition_penalty and repetition_penalty != 1.0:
+                score = logits.gather(-1, cur)                       # [B, T] seen-token logits
+                score = torch.where(
+                    score > 0, score / repetition_penalty, score * repetition_penalty,
+                )
+                logits = logits.scatter(-1, cur, score)
             if do_sample:
-                logits = logits.float()
                 if temperature <= 0:
                     raise ValueError("temperature must be > 0 when do_sample=True")
                 logits = logits / temperature
@@ -924,8 +951,8 @@ class BackboneConceptLM(PreTrainedModel):
                     logits = logits.masked_fill(logits < kth.unsqueeze(-1), float("-inf"))
                 if top_p < 1.0:
                     sorted_logits, sorted_idx = torch.sort(logits, descending=True, dim=-1)
-                    probs = torch.softmax(sorted_logits, dim=-1)
-                    cum = probs.cumsum(dim=-1)
+                    sl_probs = torch.softmax(sorted_logits, dim=-1)
+                    cum = sl_probs.cumsum(dim=-1)
                     remove = cum > top_p
                     remove[..., 1:] = remove[..., :-1].clone()
                     remove[..., 0] = False
@@ -934,6 +961,20 @@ class BackboneConceptLM(PreTrainedModel):
                         -1, sorted_idx, sorted_logits
                     )
                 probs = torch.softmax(logits, dim=-1)
+                # Bulletproof sampling distribution: the prior multinomial crash lived
+                # here. Strip NaN/Inf, clamp >=0, renormalise, and replace any
+                # degenerate (all-masked) row with a one-hot at the argmax BEFORE
+                # multinomial ever sees it.
+                probs = torch.nan_to_num(probs, nan=0.0, posinf=0.0, neginf=0.0).clamp_min(0.0)
+                sums = probs.sum(dim=-1, keepdim=True)
+                probs = probs / sums.clamp_min(1e-20)
+                if bool((sums <= 0).any()):
+                    finite_logits = logits.masked_fill(~torch.isfinite(logits), float("-inf"))
+                    fallback = finite_logits.argmax(dim=-1)
+                    onehot = torch.zeros_like(probs)
+                    onehot[torch.arange(probs.size(0), device=probs.device), fallback] = 1.0
+                    deg = (sums <= 0).to(probs.dtype)
+                    probs = deg * onehot + (1.0 - deg) * probs
                 next_id = torch.multinomial(probs, num_samples=1)
             else:
                 next_id = logits.argmax(dim=-1, keepdim=True)

@@ -130,4 +130,9 @@ regime next, without discarding other directions.
 3. **Next focus:** semantic probe (STS-B + floors) on this checkpoint; continue
    exploring this route; also keep E08 / diffusion / other design-only ideas available.
 
+> **Follow-up (2026-08-01):** Tier-1.5 free-run generation vs base Gemma shows a
+> separate failure mode (continuation loops; `zero`≫`real`; chat SFT not the fix).
+> Mechanism verdict above is unchanged. See
+> [e16b_generation_quality_assessment_20260801.md](e16b_generation_quality_assessment_20260801.md).
+
 *Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E16b_longctx_muon_1b.md`, `agenda.md`*

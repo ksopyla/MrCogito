@@ -16,10 +16,10 @@ This skill focuses on evaluation results. Training details matter only insofar a
 
 **Running the evaluations and the script pipeline are owned by `experiment-evaluate`** — the
 single source of truth for *how to evaluate* (tiered health → concept geometry + AR
-concept-ablation ΔCE + samples → zero-shot STS-B → supervised SICK/PAWS/GLUE), which scripts
-cover which aspect, and the exact `uv` commands. This skill consumes the evidence
-`experiment-evaluate` produces and records *what it means*. When you need to (re)run any
-metric on a checkpoint, switch to `experiment-evaluate`.
+concept-ablation ΔCE + samples → generation vibe-check metrics → zero-shot STS-B →
+supervised SICK/PAWS/GLUE), which scripts cover which aspect, and the exact `uv` commands.
+This skill consumes the evidence `experiment-evaluate` produces and records *what it means*.
+When you need to (re)run any metric on a checkpoint, switch to `experiment-evaluate`.
 
 Do not use this skill for generic refactors, architecture cleanup, or standalone `CHANGELOG.md` updates. Use `engineering-change-tracking` for code-change traceability.
 Do not use this skill to decide which hypothesis to test next. Use `research-synthesis` to choose experiments based on external evidence and project invariants.
@@ -67,6 +67,8 @@ Skip `docs/5_Archive/` and any `> **OBSOLETE — ...**` section — that content
 
 2. Extract the evidence:
    - concept geometry metrics
+   - generation vibe-check metrics (`distinct_1` / `rep_3` at length cutoffs, one sample
+     snippet; from `*_generation_quality.json` when present)
    - zero-shot semantic metrics
    - supervised benchmark results
    - training stability signals

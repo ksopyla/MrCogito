@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-07-25 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-08-01 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -32,8 +32,13 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   longer docs (8 concept blocks) + scale did. So long-context shared-depth is a
   **proven-useful regime** worth exploring further — not a claim that other routes
   are dead.
-- **Near-term on the E16b path:** semantic probe (STS-B + floors on `checkpoint-7900`);
-  then synthesis for factor isolation and/or reasoning pressure on the same platform.
+- **Near-term on the E16b path:** free-run generation is an open failure mode on the
+  same platform (Tier-1.5 2026-08-01: `real`@256 REP-3 **0.94** vs base **0.71** /
+  base-sample **0.03**; `zero`≫`real`; longer prompts hurt E16b free-run) — next fix
+  is frozen-concept / free-run-stable decode, **not** chat SFT; see
+  [gen report](../2_Experiments_Registry/run_reports/e16b_generation_quality_assessment_20260801.md).
+  Semantic probe (STS-B + floors on `checkpoint-7900`) remains useful and orthogonal;
+  then synthesis for factor isolation and/or reasoning pressure.
 - **Still open / still wanted:** [E08 Concept-Flow reasoner](../experiments_specs/ahead/E08_concept_flow_reasoner.md)
   (latent reasoning composition — preferably on a platform that already carries
   concepts), diffusion revive from `parked/` if a materially new ingredient appears,
@@ -58,13 +63,20 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 7. **E16b long-ctx Muon** *(done_success 2026-07-25 — validated long-context path; follow-ups + other routes still open).*
 
 ## What we've explored so far (evidence, not verdicts)
+- **E16b free-run generation vs base Gemma (Odra, Tier-1.5, 2026-08-01) — FAIL on generation, mechanism intact:**
+  matched continuation bank + context sweep on `checkpoint-7900` vs `gemma-3-1b-pt`.
+  E16b `real` greedy @256: distinct-1 **0.04** / REP-3 **0.94** (digit/punctuation
+  attractors); `zero` healthier than `real`; base sample @256 REP-3 **0.03**. Longer
+  prompt prefixes help base and hurt E16b free-run. Chat template is not the fix.
+  See [report](../2_Experiments_Registry/run_reports/e16b_generation_quality_assessment_20260801.md).
 - **E16b long-context Muon 1B (Gemma-3-1B, Odra, train 2026-07-18→20, Tier-1 2026-07-25) — SUCCESS:**
   shared-depth workspace at seq 4096 on `e16b_long_4k_v1` with Muon for 1B tokens
   reached offline RankMe **101** and Δshuffle/Δstatic≥1024 **2.47/2.35** (clears the
   0.01 gate by a large margin; E16a Muon was 0.0028 at 100M/2K). Δone-block≥1024
   **0.58** shows accumulated multi-block state. **Reading:** longer context + more
   compute unlocked causal concept use that short 2K CE did not; this is one valid
-  path to keep exploring (semantic probe still open; compound factors not isolated).
+  path to keep exploring (semantic probe still open; compound factors not isolated;
+  free-run generation separately failed — see Aug 1 report).
   See [run report](../2_Experiments_Registry/run_reports/e16b_longctx_muon_1b_20260725.md).
 - **E16 shared depth-recurrent workspace (Gemma-3-1B, Odra, 2026-07-14):**
   the 50M run kept healthy geometry (within-sample RankMe 62.2; centered 125.0) and

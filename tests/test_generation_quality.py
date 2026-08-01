@@ -235,3 +235,20 @@ def test_summarize_generation_keys_present():
               "repetition_1", "repetition_2", "rep_3", "length_binned_diversity"):
         assert k in summary
     assert summary["length_binned_diversity"]["bin_size"] == 8
+
+
+def test_summarize_generation_at_lengths_prefixes():
+    from evaluation.generation_quality import summarize_generation_at_lengths
+    ids = list(range(100))
+    by_len = summarize_generation_at_lengths(ids, [32, 64, 128, 256], decoder_window_k=16)
+    assert set(by_len) == {"32", "64"}
+    assert by_len["32"]["n_tokens"] == 32
+    assert by_len["64"]["n_tokens"] == 64
+
+
+def test_format_gemma_chat_wraps_turns():
+    from evaluation.generation_quality import format_gemma_chat
+    s = format_gemma_chat("Hello")
+    assert s.startswith("<start_of_turn>user\nHello")
+    assert s.endswith("<start_of_turn>model\n")
+    assert "<end_of_turn>" in s

@@ -141,6 +141,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-07-09 | E10 Stage-0 gap G | untrained Gemma-3-1B wrapper | G(2K)=0.284 (≥0.05 gate) | Decisive GO for E10 training | [report](run_reports/e10_stage0_gap_curve_20260709.md) |
 | 2026-07-11 | E10 Stage-0 protocol audit | protocol only | prior G not train-disjoint | Recompute before launch | — |
 | 2026-07-25 | E16b Tier-1 | E16b ckpt-7900/7905 | RankMe 101 · Δshuf/static 2.47/2.35 · Δone-block 0.58 | PASS — confirms training trajectory | [E16b](../experiments_specs/done_success/E16b_longctx_muon_1b.md) · [report](run_reports/e16b_longctx_muon_1b_20260725.md) |
+| 2026-08-01 | E16b Tier-1.5 gen | E16b ckpt-7900 vs gemma-3-1b-pt | real@256 d1/r3 **0.04/0.94** · base **0.16/0.71** · sample base **0.49/0.03**; zero≫real; long prompt hurts E16b | Free-run FAIL — mechanism intact; chat SFT not the fix | [report](run_reports/e16b_generation_quality_assessment_20260801.md) |
 
 **ViaDecoder baselines (L6 canonical, 2026-02-22):** MRPC F1 82.73 · STS-B P 0.650 · QQP F1 73.35 · MNLI-m 59.75 · MNLI-mm 60.90 — full note in [report](run_reports/via_decoder_eval_20260222.md).
 
@@ -157,6 +158,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 
 Newest first:
 
+- [E16b free-run generation vs base Gemma (Aug 1)](run_reports/e16b_generation_quality_assessment_20260801.md)
 - [E16b long-context Muon 1B (Jul 25)](run_reports/e16b_longctx_muon_1b_20260725.md)
 - [E15 delayed recall (Jul 13)](run_reports/e15_supervision_calibrated_delayed_recall_20260713.md)
 - [E14 delayed recall gate (Jul 13)](run_reports/e14_forced_delayed_recall_gate_20260713.md)
