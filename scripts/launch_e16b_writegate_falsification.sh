@@ -39,6 +39,12 @@ export WEIGHT_DECAY=0.1
 export CONCEPT_MEMORY_LR=
 export MAX_SEQ_LENGTH=4096
 export PRETOKENIZE_MIX=e16b_long_4k_v1
+# e16b_long_4k_v1 lives in the 4k tokenized dir; launch_e10.sh defaults to the non-4k dir.
+SCRIPT_DIR_ABS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT_HINT="/home/ksopyla/dev/MrCogito"
+[ -d "$PROJECT_ROOT_HINT" ] || PROJECT_ROOT_HINT="$(cd "${SCRIPT_DIR_ABS}/.." && pwd)"
+export DATASETS_TOK_DIR="${PROJECT_ROOT_HINT}/../hf_home/datasets_tok_gemma_4k"
+export MANIFEST="${DATASETS_TOK_DIR}/${PRETOKENIZE_MIX}_gemma_manifest.json"
 export TARGET_TOKENS=100000000
 export WARMUP_STEPS=50
 export AUTO_INTERVALS=1
