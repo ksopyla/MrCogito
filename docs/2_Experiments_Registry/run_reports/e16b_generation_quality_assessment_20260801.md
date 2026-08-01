@@ -238,3 +238,119 @@ Odra run supersedes it for base comparison and context-length claims.
 
 *Related: [e16b_longctx_muon_1b_20260725.md](e16b_longctx_muon_1b_20260725.md),
 `agenda.md`, `experiment-evaluate` Tier 1.5.*
+
+---
+
+## Follow-up — Layer-0 decode probe (2026-08-01, same day)
+
+**Goal:** test the two Layer-0 conditions this report recommended but had **not** yet
+run — `repetition_penalty` and the **freeze-z / read-only decode** (`concept_mode=
+"frozen"`: encode the prompt into `z` with writes, then decode read-only).
+
+**Runner:** `analysis/run_e16b_generation_assessment.py` with new `--repetition_penalty`
+and `--extra_concept_modes` flags; launcher `scripts/launch_e16b_layer0_probe.sh`
+(commit `8a6bafa`, git-synced to Odra). **Artifact:**
+`Cache/Evaluation_reports/e16b_ckpt7900_layer0_probe.json` (Odra, bf16, GPU0, ~15 min;
+rp=1.2, modes real/zero/frozen, +sample, +base Gemma, gen→1024, 4 prompts × 2 long docs).
+*n falls to 1–2 at the 256/512/1024 cutoffs (continuations EOS early — itself a
+degeneration signal); numbers below are directional, and the prompt-context sweep
+(n=2/cell) is the most robust signal.*
+
+### Result — refines the mechanism
+
+| condition (greedy, rp=1.2) | d1@256 | r3@256 | signature |
+|---|---|---|---|
+| e16b `real` | ~0.31 | ~0.45 | number-list junk (`1. 2. 3. …`) |
+| e16b `frozen` (prompt-`z`, read-only) | ~0.42 | ~0.25 | markdown-table junk |
+| **e16b `zero` (concepts off)** | **0.74** | **0.01** | **fluent, base-like prose** |
+| base Gemma | 0.78 | 0.00 | fluent prose |
+
+Prompt-context sweep: e16b collapses at **L=1024** (d1 **0.29** / r3 **0.58**) while
+base stays clean (d1 0.55) — the degeneration worsens past the 2K (= 2×K) boundary.
+Sampling fully fixes e16b `real` (d1 0.86–0.97, r3≈0); `repetition_penalty=1.2` does not.
+
+**Three findings that re-rank the fix:**
+
+1. **`frozen` does NOT rescue free-run** — it degenerates like `real` (tables / lists).
+   This **refutes failure mode (2)** above ("self-generated writes poison free-run"): if
+   the writes were the poison, freezing them would fix it. It doesn't.
+2. **`zero` (concepts off) is the only fluent mode**, base-like at every length. So the
+   frozen backbone + LoRA + windowed-global-attention are **not** the problem — we did
+   **not** break Gemma's fluency. The degeneration lives entirely in the **concept READ
+   pathway**.
+3. **Sampling fixes `real`; `repetition_penalty` does not.** The attractor is escaped by
+   noise, not by token-level penalties — the `1. 2. 3.` / table-cell tokens are diverse,
+   so HF repetition penalty can't catch them (a `no_repeat_ngram_size` would).
+
+### Refined mechanism
+
+W&B shows the **write gates stayed ≈0** while **read gates opened to 0.85–0.88**. So the
+concept state `z` is effectively the learned **constant** `concept_init`, near-identical
+across blocks and batch elements (this is also why `real` == `shuffle` in the earlier CPU
+vibe-check). Wide-open reads then inject a **constant directional bias**
+`tanh(gate)·read(z) ≈ 0.69·read(concept_init)` into every global layer. Under greedy
+argmax that constant bias is a fixed-point / structured attractor — the FinePDF
+table/outline patterns in the training mix.
+
+`zero` removes the bias → fluent. Sampling adds noise → leaves the attractor. `frozen`
+keeps a near-constant `z` (writes ≈ 0) → same attractor. **Root cause = dead write path
++ wide-open reads of the resulting static memory.**
+
+### Updated decision (supersedes the "Layer 1A" recommendation in the main body)
+
+- **Chat SFT: still no** — more clearly than before. `zero` proves the continuation
+  objective and the backbone are sound; the bug is the concept pathway, orthogonal to
+  instruction-following.
+- **Deprioritize Layer 1A (read-only-suffix):** inference-`frozen` already degenerates.
+- **New primary bets, in order:**
+  1. **Revive the write path.** Diagnose why the write gates never moved (gate init
+     scale; the `concept_memory_lr` group was `null` in the run config; whether the BiXT
+     write actually receives gradient under `shared_depth_recurrent`). If `z` becomes
+     block-varying, reads turn informative instead of a constant bias.
+  2. **Free-run CE stage.** Short continued training on the model's own *sampling*
+     continuations (± unlikelihood on repeated n-grams) to close the teacher-forced /
+     free-run gap — with free-run `distinct_1` / REP-3 logged as a first-class gate, not
+     CE alone.
+- **Inference band-aids (interactive only):** sampling + `no_repeat_ngram_size` (not
+  `repetition_penalty` alone). Implemented this run: `repetition_penalty` and
+  `concept_mode="frozen"` in `BackboneConceptLM.generate`, plus bulletproof sampling
+  (closes the playground `multinomial` NaN crash).
+
+### Step (a) — write-path diagnostic (2026-08-01, read-only, no GPU)
+
+**Verdict: not a config bug — a gradient-starvation / cold-start trap.**
+
+Under E16b's Muon optimizer, `nn/muon.py:88` routes every `ndim>=2` matrix to Muon
+(lr 0.01) and every <2D param (norms, biases, **both gate families**) to the **AdamW
+fallback at `muon_adamw_lr=2e-4`**. So the read gates (`gate`, 0-D) and the write gates
+(`write_head.depth_alphas`, shape `[4]`) were trained with the **same optimizer and same
+LR (2e-4)**. The `concept_memory_lr` differential-LR path exists but is **adam-only**
+(`concept_pretraining_trainer.py:69`, raises under Muon) and was off
+(`CONCEPT_MEMORY_LR=""` in `launch_e16b.sh`), so it played no role. → The writes **were**
+trained, not starved of LR.
+
+Since both gate families had identical optimization yet reads opened to 0.85–0.88 while
+writes held at ±0.05, the cause is **gradient magnitude**:
+
+1. **Cold-start coupling.** A write only matters through later *reads*
+   (`∂loss/∂z ∝ how open the reads are`). At init both gates = 0.01, so reads barely
+   pass gradient into `z` → the write gate gets ≈0 gradient → it cannot grow.
+2. **Self-attenuation.** The write is `tanh(alpha)·sandwich(lat)`; the gradient to
+   `alpha` is itself scaled by the write's tiny magnitude.
+3. **No residual pressure.** Once the read pathway co-adapted with the **learned
+   constant** `concept_init` (Muon-trained) to fit next-token CE, varying `z` gave
+   little extra CE → near-zero residual gradient → writes stay in the ≈0 basin.
+
+Net: the model converged to **"read a learned constant, never write"** — exactly the
+static-memory attractor that breaks free-run generation. (The single-block graph tie-in
+`loss + 0.0*z.sum()` feeds gradient to the write *weights* but **zero to
+`depth_alphas`**, so the gate scalar depends entirely on the recurrent read path.)
+
+**This sharpens fix (1)'s levers — none of them is "set `concept_memory_lr`":**
+- **(1-i) Non-zero write init** (cheapest): init `write_gate_init` ~0.3–0.5 so writes
+  contribute from step 1 → immediate gradient → reads+writes co-train. Tests the
+  cold-start hypothesis directly.
+- **(1-ii) Auxiliary write-supervising loss** (most robust): a small loss that makes `z`
+  predict/summarize its block directly (block-token reconstruction or a concept anchor),
+  giving the write head gradient *independent of the reads*.
+- **(1-iii) Curriculum:** a memory phase (writes open, reads closed) before opening reads.

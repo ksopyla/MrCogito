@@ -34,8 +34,20 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   are dead.
 - **Near-term on the E16b path:** free-run generation is an open failure mode on the
   same platform (Tier-1.5 2026-08-01: `real`@256 REP-3 **0.94** vs base **0.71** /
-  base-sample **0.03**; `zero`≫`real`; longer prompts hurt E16b free-run) — next fix
-  is frozen-concept / free-run-stable decode, **not** chat SFT; see
+  base-sample **0.03**; longer prompts hurt E16b free-run). **Layer-0 decode probe (same
+  day) localized it:** `zero` (concepts off) is the only fluent mode; `frozen` (read-only
+  decode) degenerates like `real`, so the driver is the **concept READ pathway reading a
+  near-static `z`** (write gates stayed ≈0) — not self-writes, and not the backbone (`zero`
+  is base-like). Fix is **not** chat SFT. Root cause
+  ([diagnosis](../2_Experiments_Registry/run_reports/e16b_write_path_and_topology_diagnosis_20260801.md)):
+  the shared-depth topology starves the writes (cold-start + 'altruistic-write' asymmetry +
+  multi-depth conflict in one accumulator). Specced structural fix =
+  **[E17 — 4-bank per-global-layer concept memory](../experiments_specs/ahead/E17_four_bank_concept_memory.md)**
+  (draft, awaiting approval): private banks make each write 'selfish' (a layer reads the bank
+  it wrote) → clean gradient → write gates open → effective `a` (BAPO) restored → the
+  constant-bias degeneration disappears. BAPO caveat: this is a write-dynamics /
+  generation-stability fix, **not** a reasoning-capacity claim (Thm 10). Free-run CE stage
+  and read-only-suffix are secondary. See
   [gen report](../2_Experiments_Registry/run_reports/e16b_generation_quality_assessment_20260801.md).
   Semantic probe (STS-B + floors on `checkpoint-7900`) remains useful and orthogonal;
   then synthesis for factor isolation and/or reasoning pressure.
@@ -66,9 +78,16 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 - **E16b free-run generation vs base Gemma (Odra, Tier-1.5, 2026-08-01) — FAIL on generation, mechanism intact:**
   matched continuation bank + context sweep on `checkpoint-7900` vs `gemma-3-1b-pt`.
   E16b `real` greedy @256: distinct-1 **0.04** / REP-3 **0.94** (digit/punctuation
-  attractors); `zero` healthier than `real`; base sample @256 REP-3 **0.03**. Longer
-  prompt prefixes help base and hurt E16b free-run. Chat template is not the fix.
-  See [report](../2_Experiments_Registry/run_reports/e16b_generation_quality_assessment_20260801.md).
+  attractors); base sample @256 REP-3 **0.03**. Longer prompt prefixes help base and
+  hurt E16b free-run. Chat template is not the fix.
+  **Layer-0 decode probe (same day, rp=1.2 + `frozen` mode, commit `8a6bafa`):** `zero`
+  is the *only* fluent mode (greedy d1@256 **0.74** / r3 **0.01**, base-like); `frozen`
+  degenerates like `real` → **refutes "self-writes poison free-run"**; the driver is the
+  **concept read pathway** reading a near-static `z` (write gates ≈0 → z ≈ learned
+  constant). `repetition_penalty` doesn't help (turns loops into structured junk);
+  sampling does. Backbone + LoRA + windowed-global-attention are sound (`zero` is
+  fluent) — we did **not** break Gemma. See
+  [report](../2_Experiments_Registry/run_reports/e16b_generation_quality_assessment_20260801.md).
 - **E16b long-context Muon 1B (Gemma-3-1B, Odra, train 2026-07-18→20, Tier-1 2026-07-25) — SUCCESS:**
   shared-depth workspace at seq 4096 on `e16b_long_4k_v1` with Muon for 1B tokens
   reached offline RankMe **101** and Δshuffle/Δstatic≥1024 **2.47/2.35** (clears the

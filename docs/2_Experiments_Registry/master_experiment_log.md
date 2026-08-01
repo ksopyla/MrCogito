@@ -62,6 +62,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 | E11 | In-sequence memory-token concepts (Design A) | design-only | [E11](../experiments_specs/ahead/E11_memtoken_concept_memory.md) |
 | E12 | Per-layer KV-prefix concepts (Design B) | design-only | [E12](../experiments_specs/ahead/E12_perlayer_kv_prefix_concepts.md) |
 | E13 | Layer-wise recurrent KV-memory | draft (gated on E12) | [E13](../experiments_specs/ahead/E13_layerwise_recurrent_kv_memory.md) |
+| E17 | 4-bank per-global-layer concept memory (E16b write-path fix) | draft (awaiting approval) | [E17](../experiments_specs/ahead/E17_four_bank_concept_memory.md) · [diagnosis](../run_reports/e16b_write_path_and_topology_diagnosis_20260801.md) |
 
 ### Canceled (no run)
 
