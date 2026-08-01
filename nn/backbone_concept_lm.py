@@ -286,7 +286,7 @@ class BackboneConceptLM(PreTrainedModel):
 
     def __init__(self, config: BackboneConceptConfig, backbone: Optional[nn.Module] = None):
         super().__init__(config)
-        valid_io_modes = {"global_kv", "shared_depth_recurrent"}
+        valid_io_modes = {"global_kv", "shared_depth_recurrent", "per_layer_banks"}
         if config.concept_io_mode not in valid_io_modes:
             raise NotImplementedError(
                 f"concept_io_mode={config.concept_io_mode!r} is not implemented; "
@@ -344,16 +344,28 @@ class BackboneConceptLM(PreTrainedModel):
                     "graft would be a silent no-op. Check the backbone's layer_types "
                     f"(got: {[layer.attention_type for layer in layers]})."
                 )
+            num_global = len(self.global_layer_indices)
+            # per_layer_banks gives each global layer its OWN concept bank, so the learned
+            # initial state is [G, C, H] (one init per bank); shared modes keep the single
+            # [C, H] init. The machinery (tied ConceptWriteHead, gates) is identical.
+            per_layer = config.concept_io_mode == "per_layer_banks"
+            init_shape = (
+                (num_global, config.concept_num, self.hidden_size)
+                if per_layer
+                else (config.concept_num, self.hidden_size)
+            )
             self.concept_init = nn.Parameter(
-                torch.randn(config.concept_num, self.hidden_size) * (self.hidden_size ** -0.5)
+                torch.randn(*init_shape) * (self.hidden_size ** -0.5)
             )
             self.write_head = ConceptWriteHead(
                 self.hidden_size,
                 config.write_num_heads,
                 gate_init=config.write_gate_init,
+                # per-bank writes (per_layer_banks) and per-depth writes
+                # (shared_depth_recurrent) each need one gate per global layer.
                 num_depth_gates=(
-                    len(self.global_layer_indices)
-                    if config.concept_io_mode == "shared_depth_recurrent"
+                    num_global
+                    if config.concept_io_mode in ("shared_depth_recurrent", "per_layer_banks")
                     else 0
                 ),
             )
@@ -567,6 +579,78 @@ class BackboneConceptLM(PreTrainedModel):
             )
         return text_model.norm(hidden_states), z
 
+    def _forward_per_layer_banks_block(
+        self,
+        inputs_embeds: torch.Tensor,
+        attention_masks: dict[str, torch.Tensor],
+        z_banks: Optional[torch.Tensor],
+        *,
+        block_len: int,
+        block_pad_mask: torch.Tensor,
+        concept_mode: str,
+    ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """One Gemma block where each global layer reads AND writes its OWN concept bank.
+
+        Mirrors ``_forward_shared_depth_block`` but the state ``z_banks`` is ``[B, G, C, H]``
+        (G private banks, one per global layer). Global layer g reads ``z_banks[:, g]`` and
+        writes back to ``z_banks[:, g]`` via the tied ``ConceptWriteHead`` (gated by
+        ``depth_alphas[g]``); it never sees another bank. Sliding layers are unchanged.
+
+        Because each bank is touched by exactly one layer, the per-bank writes are
+        independent within a block — bank updates are accumulated by list reassignment
+        (autograd-safe) and re-stacked at the end. ``z_banks=None`` (concept_mode='zero')
+        runs the block with no concept reads/writes and returns ``None``.
+        """
+        text_model = self.backbone.model
+        cache_position = torch.arange(inputs_embeds.shape[1], device=inputs_embeds.device)
+        position_ids = cache_position.unsqueeze(0)
+        hidden_states = inputs_embeds
+        position_embeddings_global = text_model.rotary_emb(hidden_states, position_ids)
+        position_embeddings_local = text_model.rotary_emb_local(hidden_states, position_ids)
+
+        G = len(self.global_layer_indices)
+        banks = list(z_banks.unbind(dim=1)) if z_banks is not None else [None] * G
+        depth_index = 0
+        for decoder_layer in text_model.layers[: text_model.config.num_hidden_layers]:
+            layer_kwargs = {
+                "position_embeddings_global": position_embeddings_global,
+                "position_embeddings_local": position_embeddings_local,
+                "attention_mask": attention_masks[decoder_layer.attention_type],
+                "position_ids": position_ids,
+                "past_key_values": None,
+                "output_attentions": False,
+                "use_cache": False,
+                "cache_position": cache_position,
+            }
+            if isinstance(decoder_layer, GlobalLayerWithConceptRead):
+                z_g = banks[depth_index]                       # this layer's private bank [B, C, H]
+                layer_outputs = decoder_layer(hidden_states, concept_state=z_g, **layer_kwargs)
+                hidden_states = layer_outputs[0]
+                if z_g is not None and concept_mode != "static":
+                    write_base = (
+                        self.concept_init[depth_index].unsqueeze(0).expand_as(z_g)
+                        if concept_mode == "one_block"
+                        else z_g
+                    )
+                    banks[depth_index] = self.write_head(
+                        write_base,
+                        hidden_states[:, -block_len:],
+                        block_pad_mask,
+                        depth_index=depth_index,
+                    )
+                depth_index += 1
+            else:
+                layer_outputs = decoder_layer(hidden_states, **layer_kwargs)
+                hidden_states = layer_outputs[0]
+
+        if depth_index != G:
+            raise RuntimeError(
+                "per_layer_banks execution saw a different number of global layers "
+                f"({depth_index}) than construction ({G})."
+            )
+        out_state = None if z_banks is None else torch.stack(banks, dim=1)  # [B, G, C, H]
+        return text_model.norm(hidden_states), out_state
+
     def _forward_blocks(
         self,
         input_ids: torch.Tensor,
@@ -619,17 +703,22 @@ class BackboneConceptLM(PreTrainedModel):
         dtype = self.backbone.model.embed_tokens.weight.dtype
 
         use_concepts = self.has_concepts and concept_mode != "zero"
+        per_layer = self.config.concept_io_mode == "per_layer_banks"
         if use_concepts:
-            # ``initial_concepts`` ([B, C, H]) overrides the learned concept_init —
-            # used by the ``frozen`` decode path (prompt-encoded z, read-only). The
-            # default expands the learned init as before.
-            z = (
-                initial_concepts
-                if initial_concepts is not None
-                else self.concept_init.unsqueeze(0).expand(B, -1, -1)
-            )
+            # ``initial_concepts`` overrides the learned init — used by the ``frozen``
+            # decode path (prompt-encoded state, read-only). Shape is mode-dependent:
+            # [B, C, H] for the shared modes, [B, G, C, H] for per_layer_banks.
+            if initial_concepts is not None:
+                z = initial_concepts
+            elif per_layer:
+                z = self.concept_init.unsqueeze(0).expand(B, -1, -1, -1)  # [B, G, C, H]
+            else:
+                z = self.concept_init.unsqueeze(0).expand(B, -1, -1)      # [B, C, H]
         else:
             z = None
+        # shuffle/permutation are applied per-read inside GlobalLayerWithConceptRead (on
+        # the passed bank for per_layer_banks), identical to the shared modes — so a
+        # shuffled/permuted read sees another sequence's concept content post-write.
         self._concept_state["shuffle"] = concept_mode == "shuffle"
         self._concept_state["permutation"] = (
             concept_permutation if concept_mode == "permutation" else None
@@ -662,17 +751,27 @@ class BackboneConceptLM(PreTrainedModel):
             }
             inputs_embeds = self.backbone.model.embed_tokens(dec_ids)
             if (
-                self.config.concept_io_mode == "shared_depth_recurrent"
+                self.config.concept_io_mode in ("shared_depth_recurrent", "per_layer_banks")
                 and self.has_concepts
             ):
-                h, z = self._forward_shared_depth_block(
-                    inputs_embeds,
-                    attention_masks,
-                    z,
-                    block_len=blk_len,
-                    block_pad_mask=attention_mask[:, s:e] == 0,
-                    concept_mode=concept_mode,
-                )
+                if self.config.concept_io_mode == "per_layer_banks":
+                    h, z = self._forward_per_layer_banks_block(
+                        inputs_embeds,
+                        attention_masks,
+                        z,
+                        block_len=blk_len,
+                        block_pad_mask=attention_mask[:, s:e] == 0,
+                        concept_mode=concept_mode,
+                    )
+                else:
+                    h, z = self._forward_shared_depth_block(
+                        inputs_embeds,
+                        attention_masks,
+                        z,
+                        block_len=blk_len,
+                        block_pad_mask=attention_mask[:, s:e] == 0,
+                        concept_mode=concept_mode,
+                    )
             else:
                 out = self.backbone.model(
                     inputs_embeds=inputs_embeds,
@@ -874,6 +973,10 @@ class BackboneConceptLM(PreTrainedModel):
         if not self.has_concepts:
             raise RuntimeError("encode_concepts requires concept_num > 0.")
         _, z = self._forward_blocks(input_ids, attention_mask, labels=None)
+        # per_layer_banks carries G banks [B, G, C, H]; expose the last bank [B, C, H] so
+        # the downstream geometry/ablation probes (which expect [B, C, H]) work unchanged.
+        if self.config.concept_io_mode == "per_layer_banks":
+            z = z[:, -1]
         return BaseModelOutput(last_hidden_state=z)
 
     @torch.no_grad()
@@ -953,7 +1056,9 @@ class BackboneConceptLM(PreTrainedModel):
         if concept_mode == "frozen":
             if not self.has_concepts:
                 raise ValueError("concept_mode='frozen' requires concept_num > 0.")
-            frozen_z = self.encode_concepts(input_ids, mask).last_hidden_state  # [B, C, H]
+            # Full concept state after prompt-encoding: [B, C, H] for the shared modes,
+            # [B, G, C, H] for per_layer_banks (encode_concepts exposes only the last bank).
+            _, frozen_z = self._forward_blocks(input_ids, mask, labels=None, concept_mode="real")
             fwd_mode = "static"
         for _ in range(max_new_tokens):
             logits = self.next_token_logits(

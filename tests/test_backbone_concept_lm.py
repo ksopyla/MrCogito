@@ -833,3 +833,89 @@ def test_next_token_logits_and_generate_shapes():
         top_p=0.9,
     )
     assert sampled.shape == (1, input_ids.shape[1] + 3)
+
+
+# ------------------------------------------------------------------ E17 per_layer_banks
+
+def _perlayer_model(**overrides):
+    """Two-global-bank BackboneConceptLM (G=2 banks at global layers 5, 11) for E17 tests."""
+    return make_model(
+        backbone_config=two_global_backbone_dict(),
+        concept_io_mode="per_layer_banks",
+        concept_num=4,
+        read_gate_init=0.2,
+        write_gate_init=0.2,
+        **overrides,
+    )
+
+
+def _trainable_params(m):
+    return sum(p.numel() for p in m.parameters() if p.requires_grad)
+
+
+def test_per_layer_banks_builds_and_param_count():
+    # two_global_backbone_dict -> global layers at indices 5, 11 -> G = 2 banks.
+    G = 2
+    shared = make_model(
+        backbone_config=two_global_backbone_dict(),
+        concept_io_mode="shared_depth_recurrent",
+        concept_num=4,
+    )
+    perlayer = _perlayer_model()
+    assert tuple(perlayer.concept_init.shape) == (G, 4, H)          # one init per bank
+    assert tuple(perlayer.write_head.depth_alphas.shape) == (G,)    # one write gate per bank
+    # Machinery (tied writer + per-layer gates) is identical; only bank inits differ.
+    assert abs(_trainable_params(perlayer) - _trainable_params(shared)) == (G - 1) * 4 * H
+
+
+@pytest.mark.parametrize("concept_mode", ["real", "static", "zero", "shuffle", "one_block"])
+def test_per_layer_banks_ablation_modes_finite(concept_mode):
+    model = _perlayer_model()
+    input_ids, attention_mask, labels = make_batch(B=2, S=2 * K)
+    metrics = model.per_position_metrics(
+        input_ids, attention_mask, labels, concept_mode=concept_mode
+    )
+    assert set(metrics) == {"ce", "predictions"}
+    assert torch.isfinite(metrics["ce"][~torch.isnan(metrics["ce"])]).all()
+
+
+def test_per_layer_banks_write_is_per_bank():
+    # Each bank is written by exactly one layer; batch-shuffling the banks changes
+    # beyond-window CE (the bank carries per-sequence content).
+    model = _perlayer_model()
+    model.backbone.model.layers[5].gate.data.fill_(0.8)
+    model.write_head.depth_alphas.data.fill_(0.5)
+    input_ids, attention_mask, labels = make_batch(B=2, S=4 * K)
+    real = model.per_position_ce(input_ids, attention_mask, labels, concept_mode="real")
+    shuf = model.per_position_ce(input_ids, attention_mask, labels, concept_mode="shuffle")
+    beyond = slice(2 * K, None)
+    assert not torch.allclose(real[:, beyond], shuf[:, beyond], equal_nan=True)
+
+
+def test_per_layer_banks_encode_concepts_exposes_last_bank():
+    # encode_concepts must return [B, C, H] (last bank) for probe compatibility, not [B, G, C, H].
+    model = _perlayer_model()
+    input_ids, attention_mask, _ = make_batch(B=2, S=2 * K)
+    out = model.encode_concepts(input_ids, attention_mask)
+    assert tuple(out.last_hidden_state.shape) == (2, 4, H)
+
+
+def test_per_layer_banks_checkpoint_roundtrip(tmp_path):
+    model = _perlayer_model()
+    input_ids, attention_mask, labels = make_batch(B=2, S=2 * K)
+    ce_a = model.per_position_ce(input_ids, attention_mask, labels, concept_mode="real")
+    p = tmp_path / "e17_ckpt"
+    model.save_pretrained(p)
+    reloaded = BackboneConceptLM.from_pretrained(p)
+    ce_b = reloaded.per_position_ce(input_ids, attention_mask, labels, concept_mode="real")
+    assert torch.allclose(ce_a, ce_b, equal_nan=True)
+
+
+def test_per_layer_banks_generate_frozen_finite():
+    # The frozen decode path must work banked: encode prompt -> all banks -> read-only decode.
+    model = _perlayer_model()
+    ids = torch.randint(3, VOCAB, (1, 2 * K))
+    mask = torch.ones_like(ids)
+    out = model.generate(ids, mask, max_new_tokens=6, concept_mode="frozen", eos_token_id=9999)
+    assert out.shape[0] == 1 and out.shape[1] >= 2 * K
+    assert torch.isfinite(out.float()).all()
