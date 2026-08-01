@@ -43,11 +43,13 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   the shared-depth topology starves the writes (cold-start + 'altruistic-write' asymmetry +
   multi-depth conflict in one accumulator). Specced structural fix =
   **[E17 — 4-bank per-global-layer concept memory](../experiments_specs/ahead/E17_four_bank_concept_memory.md)**
-  (draft, awaiting approval): private banks make each write 'selfish' (a layer reads the bank
-  it wrote) → clean gradient → write gates open → effective `a` (BAPO) restored → the
-  constant-bias degeneration disappears. BAPO caveat: this is a write-dynamics /
-  generation-stability fix, **not** a reasoning-capacity claim (Thm 10). Free-run CE stage
-  and read-only-suffix are secondary. See
+  (running on Polonez, 1B tok, report @100M): private banks make each write 'selfish' (a layer
+  reads the bank it wrote) → clean gradient → write gates open → effective `a` (BAPO) restored →
+  the constant-bias degeneration disappears. BAPO caveat: this is a write-dynamics /
+  generation-stability fix, **not** a reasoning-capacity claim (Thm 10). Free-run CE stage and
+  read-only-suffix are secondary. **Conditional follow-up captured:** if E17's single *tied*
+  writer caps quality, [E17a](../experiments_specs/ahead/E17a_untied_per_bank_writers.md) (4
+  untied per-bank writers) isolates writer specialization — run only if E17 activates it. See
   [gen report](../2_Experiments_Registry/run_reports/e16b_generation_quality_assessment_20260801.md).
   Semantic probe (STS-B + floors on `checkpoint-7900`) remains useful and orthogonal;
   then synthesis for factor isolation and/or reasoning pressure.
