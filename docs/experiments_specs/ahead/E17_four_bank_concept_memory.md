@@ -1,8 +1,8 @@
 # E17 — Four-bank per-global-layer concept memory (the write-path structural fix)
 
-- **Status:** approved 2026-08-01 — implementation plan in progress. **Run target: Polonez
-  (4× RTX 3090), 1B tokens (matching E16b), report at 100M.** No early kill on verdict
-  metrics (see Kill criteria).
+- **Status:** active — running on Polonez (100M done, continuing to 1B). **Topology NOT
+  falsified:** the 100M init-0.01 run is confounded by the cold-start gate init (gates stay dead
+  on *both* topologies at init 0.01); the fair test is per-layer + init 0.3 (next).
 - **Serves:** the E16b platform's open failure mode — free-run generation degeneration caused
   by a dead concept write path. Restores effective concept bandwidth (BAPO channel `a`) by
   privatizing the memory so each write gets a clean "self" gradient.
@@ -152,20 +152,25 @@ Stop ONLY for genuine divergence / instability:
   Implement via `research-implement` after the plan; extend the shared args/config/launcher
   plumbing and tests; **no new training script**.
 
-## Result
-**FALSIFIED at the 100M checkpoint (step 790)** — the per-bank write gates stayed dead
-(`write_0..3 = 0.0014 / 0.0109 / 0.0067 / -0.0033`, `|tanh(α)| ≤ 0.011`, init 0.01),
-indistinguishable from E16b's dead ±0.05 and flatter at the same point. Privatizing the banks did
-**not** give the write gate a usable gradient → the shared-depth **topology is not the dead-write
-cause**. The run continues toward 1B (no-early-kill policy) but the gate trajectory is the decisive
-metric here and has flatlined. The cause is the cold-start **initialization**, confirmed by the Odra
-write-init falsification (gates held open at `WRITE_GATE_INIT=0.3`). E17a (untied writers) is now moot
-→ `canceled/`. See
+## Result (100M checkpoint — running; topology NOT falsified)
+**E17 is the right topology to test, not a failure.** At the 100M checkpoint (step 790) the per-bank
+write gates stayed dead (`write_0..3 = 0.0014 / 0.0109 / 0.0067 / -0.0033`, `|tanh(α)| ≤ 0.011`,
+init 0.01) — but this is the **cold-start init confound**, not a topology verdict: the Odra
+write-init falsification shows init 0.01 deadens the gates on *both* topologies (init 0.3 holds them
+open at 0.20–0.32 on the *same* shared topology). With the gates inert, E17's per-layer write
+structure never engaged, so the topology's effect on concept quality / generation is **unmeasured**.
+E17 is a progression of E16b (per-layer = the transformer's natural per-layer-private-memory
+structure; the E13 direction) and remains the bet to pursue — to be evaluated **with open gates
+(init 0.3)**: per-layer + init 0.3 vs shared + init 0.3 is the decisive test. The init-0.01 run
+continues to 1B on Polonez (a record under the cold-start confound). Separately, init 0.3 opens the
+gates and free-run diversity recovers at 100M — encouraging, **not** success (needs proper
+generation-quality assessment at scale). E17a (untied writers) remains a valid future variant. See
 [report](../../2_Experiments_Registry/run_reports/e17_falsified_init_is_the_cause_20260802.md).
-- Run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260801_211805` (Polonez)
+- Run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260801_211805` (Polonez, continuing to 1B)
 - WandB: https://wandb.ai/ksopyla/MrCogito/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260801_211805
 - Run report: `docs/2_Experiments_Registry/run_reports/e17_falsified_init_is_the_cause_20260802.md`
-- Verdict: **falsified (topology not the cause)** — 100M checkpoint; the write-init fix is next.
+- Verdict: **topology not falsified — confounded by cold-start init at 100M; the fair (open-gate)
+  topology test is next.**
 
 ## References
 - Diagnosis backing: [E16b write-path & topology diagnosis](../../2_Experiments_Registry/run_reports/e16b_write_path_and_topology_diagnosis_20260801.md)

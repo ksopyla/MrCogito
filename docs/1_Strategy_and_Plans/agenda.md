@@ -41,14 +41,17 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   is base-like). Fix is **not** chat SFT. Root cause
   ([diagnosis](../2_Experiments_Registry/run_reports/e16b_write_path_and_topology_diagnosis_20260801.md)):
   the shared-depth topology starves the writes (cold-start + 'altruistic-write' asymmetry +
-  multi-depth conflict in one accumulator). **Topology fix FALSIFIED: E17** (4-bank per-layer
-  memory, Polonez) per-bank write gates stayed dead at 100M (`|tanh(α)|≤0.011`, init 0.01) —
-  privatizing the banks did not open them; the shared-depth topology is **not** the cause. **The
-  cause is the cold-start INIT:** the Odra write-init falsification (`WRITE_GATE_INIT=0.3`, shared
-  topology) **held the gates open (0.20–0.32)** at 100M. → Next: `shared_depth_recurrent` + init 0.3,
-  1B tok, **with free-run diversity** (distinct-1/REP-3) to confirm generation recovers (cause 2a
-  confirmed; the cheap falsification found it). E17a (untied writers) → canceled (moot while gates
-  are dead from init). See
+  multi-depth conflict in one accumulator). **E17 (per-layer topology) is the right bet — NOT falsified.** E17 (4-bank per-layer memory,
+  Polonez) is the well-motivated progression of E16b (per-layer = the transformer's natural
+  per-layer-private-memory structure; the E13 direction; respects depth specialization). Its 100M
+  run had dead write gates (`|tanh(α)|≤0.011`, init 0.01) — but that is the **cold-start init
+  confound**: the Odra write-init falsification (`WRITE_GATE_INIT=0.3`, same shared topology) held
+  gates open (0.20–0.32), so init 0.01 deadens gates on *both* topologies and E17's per-layer write
+  structure never engaged → **the topology is untested, not disproved.** The fair test is per-layer
+  + init 0.3 vs shared + init 0.3. Separately, init 0.3 → free-run `real` distinct-1@256 = 0.29
+  (E16b 0.04), `real ≥ zero`, coherent prose — **encouraging, not success** (needs proper
+  generation-quality assessment at scale). E17 (init 0.01) continues to 1B; E17a (untied writers)
+  remains a valid future variant. See
   [E17/init report](../2_Experiments_Registry/run_reports/e17_falsified_init_is_the_cause_20260802.md)
   · [gen report](../2_Experiments_Registry/run_reports/e16b_generation_quality_assessment_20260801.md).
   Semantic probe (STS-B + floors on `checkpoint-7900`) remains useful and orthogonal;
