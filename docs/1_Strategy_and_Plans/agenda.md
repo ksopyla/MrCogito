@@ -41,16 +41,16 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   is base-like). Fix is **not** chat SFT. Root cause
   ([diagnosis](../2_Experiments_Registry/run_reports/e16b_write_path_and_topology_diagnosis_20260801.md)):
   the shared-depth topology starves the writes (cold-start + 'altruistic-write' asymmetry +
-  multi-depth conflict in one accumulator). Specced structural fix =
-  **[E17 — 4-bank per-global-layer concept memory](../experiments_specs/ahead/E17_four_bank_concept_memory.md)**
-  (running on Polonez, 1B tok, report @100M): private banks make each write 'selfish' (a layer
-  reads the bank it wrote) → clean gradient → write gates open → effective `a` (BAPO) restored →
-  the constant-bias degeneration disappears. BAPO caveat: this is a write-dynamics /
-  generation-stability fix, **not** a reasoning-capacity claim (Thm 10). Free-run CE stage and
-  read-only-suffix are secondary. **Conditional follow-up captured:** if E17's single *tied*
-  writer caps quality, [E17a](../experiments_specs/ahead/E17a_untied_per_bank_writers.md) (4
-  untied per-bank writers) isolates writer specialization — run only if E17 activates it. See
-  [gen report](../2_Experiments_Registry/run_reports/e16b_generation_quality_assessment_20260801.md).
+  multi-depth conflict in one accumulator). **Topology fix FALSIFIED: E17** (4-bank per-layer
+  memory, Polonez) per-bank write gates stayed dead at 100M (`|tanh(α)|≤0.011`, init 0.01) —
+  privatizing the banks did not open them; the shared-depth topology is **not** the cause. **The
+  cause is the cold-start INIT:** the Odra write-init falsification (`WRITE_GATE_INIT=0.3`, shared
+  topology) **held the gates open (0.20–0.32)** at 100M. → Next: `shared_depth_recurrent` + init 0.3,
+  1B tok, **with free-run diversity** (distinct-1/REP-3) to confirm generation recovers (cause 2a
+  confirmed; the cheap falsification found it). E17a (untied writers) → canceled (moot while gates
+  are dead from init). See
+  [E17/init report](../2_Experiments_Registry/run_reports/e17_falsified_init_is_the_cause_20260802.md)
+  · [gen report](../2_Experiments_Registry/run_reports/e16b_generation_quality_assessment_20260801.md).
   Semantic probe (STS-B + floors on `checkpoint-7900`) remains useful and orthogonal;
   then synthesis for factor isolation and/or reasoning pressure.
 - **Still open / still wanted:** [E08 Concept-Flow reasoner](../experiments_specs/ahead/E08_concept_flow_reasoner.md)

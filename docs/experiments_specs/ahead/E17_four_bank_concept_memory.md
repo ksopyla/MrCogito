@@ -153,11 +153,19 @@ Stop ONLY for genuine divergence / instability:
   plumbing and tests; **no new training script**.
 
 ## Result
-<Filled in AFTER, by experiment-track.>
-- Run id: —
-- WandB: —
-- Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
-- Verdict: —
+**FALSIFIED at the 100M checkpoint (step 790)** — the per-bank write gates stayed dead
+(`write_0..3 = 0.0014 / 0.0109 / 0.0067 / -0.0033`, `|tanh(α)| ≤ 0.011`, init 0.01),
+indistinguishable from E16b's dead ±0.05 and flatter at the same point. Privatizing the banks did
+**not** give the write gate a usable gradient → the shared-depth **topology is not the dead-write
+cause**. The run continues toward 1B (no-early-kill policy) but the gate trajectory is the decisive
+metric here and has flatlined. The cause is the cold-start **initialization**, confirmed by the Odra
+write-init falsification (gates held open at `WRITE_GATE_INIT=0.3`). E17a (untied writers) is now moot
+→ `canceled/`. See
+[report](../../2_Experiments_Registry/run_reports/e17_falsified_init_is_the_cause_20260802.md).
+- Run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260801_211805` (Polonez)
+- WandB: https://wandb.ai/ksopyla/MrCogito/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260801_211805
+- Run report: `docs/2_Experiments_Registry/run_reports/e17_falsified_init_is_the_cause_20260802.md`
+- Verdict: **falsified (topology not the cause)** — 100M checkpoint; the write-init fix is next.
 
 ## References
 - Diagnosis backing: [E16b write-path & topology diagnosis](../../2_Experiments_Registry/run_reports/e16b_write_path_and_topology_diagnosis_20260801.md)
