@@ -83,3 +83,26 @@ E17's first launch died in pretokenize on invalid UTF-8 in `finepdfs_100BT` (`_m
 resilient to parquet string decode errors). Workaround: staged E16b's already-tokenized data
 Odra→NAS→Polonez. Proper fix (read text as binary, decode `errors='replace'`) captured as a TODO at
 `scripts/pretokenize_mix.py:_map_resilient` (commit `53c1334`).
+
+## 7. Update (2026-08-02): CONFIRMED — init 0.3 recovers generation (100M)
+The decisive test ran: the generation-quality assessment on the Odra init-0.3 checkpoint
+(`...20260801_203613/checkpoint-791`, ~100M, write gates OPEN 0.20–0.32) vs base Gemma — a clean
+single-variable isolation vs E16b (same `shared_depth_recurrent` topology; only the write-gate init
+differs).
+
+| condition (greedy @256) | E16b (init 0.01, dead gates) | **init-0.3 (gates open)** | base |
+|---|---|---|---|
+| `real` distinct-1 | ~0.04 | **0.29** | 0.19 |
+| `real` REP-3 | ~0.94 | **0.42** | 0.67 |
+| `real` sample distinct-1 | — | **0.45** | 0.49 |
+
+- **`real ≥ zero`** (0.29 vs 0.28) — the E16b inversion (concepts-on *worse* than off) is gone.
+- Text stays in coherent prose ("…Alice… set off on her adventure…") instead of E16b's `1. 2. 3.` collapse.
+- Context sweep (128–2048 prompt tokens): in base's ballpark, no catastrophic collapse.
+
+**Verdict: the write-gate init is the fix, confirmed by single-variable isolation.** Same topology as
+E16b, only init differs → gates open → generation recovers to ≈ base. The dead-write-gate cause of
+E16b's repetition is corroborated end-to-end (cause → mechanism → symptom → fix). Next: scale the
+init-0.3 config to 1B and adopt free-run diversity as a standing training gate. Artifacts:
+`Cache/Evaluation_reports/e16bfg_ckpt791_generation.json`,
+`Cache/logs/eval_falsif_ckpt791_20260802_074204.log`.
