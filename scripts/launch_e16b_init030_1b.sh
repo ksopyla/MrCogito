@@ -7,11 +7,15 @@
 # the full init-0.3 model for a proper generation-quality assessment. Same shared_depth_recurrent
 # architecture as E16b; only the write-gate init differs (0.3 vs 0.01).
 #
-# Measured throughput (2026-08-03, W&B vs E16b original ...20260718_150850):
-#   E16b original: 17.45 s/step, 38.3 h wall, 114.9 GPU-h, 7905 steps.
-#   This run:      37.6 s/step (2.15x slower) -> ~82.5 h total, completion ~Aug 5.
-#   Cause: thermal throttle in the un-AC'd room (GPU2 ~87C, clock 1695 vs 1845 MHz) — the same
-#   heat issue that takes down Polonez now throttles Odra. Steps for 1B = 7905 (unchanged).
+# Measured throughput (2026-08-03, W&B; corrected after a like-for-like comparison):
+#   This run (Odra resumed segment, step 800->4000): ~37.5 s/step.
+#   E16b original (Odra resumed segment, step 4000->7900): ~34.7 s/step — within ~8%.
+#   E16b's summary "17.45 s/step" was a whole-run average contaminated by a faster pre-resume
+#   segment (it itself resumed from checkpoint-3950) — NOT comparable; there is NO 2.15x
+#   regression and NO thermal throttle. init-0.3's GPUs are fully utilized (~347 W / 82C); E16b's
+#   were under-utilized/idle-stalled (40-51% power, 70-79C). Configs identical (bf16,
+#   grad-checkpointing, batch 4 x accum 6, seq 4096, muon, 3 GPUs). ~37.5 s/step is the normal
+#   Odra resumed-segment rate -> completion ~Aug 5 (~11:00Z). Steps for 1B = 7905 (unchanged).
 #
 # Resume semantics: HF Trainer recreates the LR scheduler for the new TARGET_TOKENS at init, then
 # loads last_epoch=791 from the checkpoint — so the LR continues at the 1B-schedule value (near
