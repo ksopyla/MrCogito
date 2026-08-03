@@ -7,6 +7,12 @@
 # the full init-0.3 model for a proper generation-quality assessment. Same shared_depth_recurrent
 # architecture as E16b; only the write-gate init differs (0.3 vs 0.01).
 #
+# Measured throughput (2026-08-03, W&B vs E16b original ...20260718_150850):
+#   E16b original: 17.45 s/step, 38.3 h wall, 114.9 GPU-h, 7905 steps.
+#   This run:      37.6 s/step (2.15x slower) -> ~82.5 h total, completion ~Aug 5.
+#   Cause: thermal throttle in the un-AC'd room (GPU2 ~87C, clock 1695 vs 1845 MHz) — the same
+#   heat issue that takes down Polonez now throttles Odra. Steps for 1B = 7905 (unchanged).
+#
 # Resume semantics: HF Trainer recreates the LR scheduler for the new TARGET_TOKENS at init, then
 # loads last_epoch=791 from the checkpoint — so the LR continues at the 1B-schedule value (near
 # peak at step 791), not the decayed 100M value. Optimizer (Muon) state is loaded from the checkpoint.
