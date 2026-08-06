@@ -47,10 +47,11 @@ PROJECT_ROOT_HINT="/home/ksopyla/dev/MrCogito"
 [ -d "$PROJECT_ROOT_HINT" ] || PROJECT_ROOT_HINT="$(cd "${SCRIPT_DIR_ABS}/.." && pwd)"
 export DATASETS_TOK_DIR="${PROJECT_ROOT_HINT}/../hf_home/datasets_tok_gemma_4k"
 export MANIFEST="${DATASETS_TOK_DIR}/${PRETOKENIZE_MIX}_gemma_manifest.json"
-export RESUME_FROM_CHECKPOINT="${PROJECT_ROOT_HINT}/Cache/Training/backbone_concept_gemma_3_1b_pt_K512_concept_20260801_203613/checkpoint-791"
-export PER_DEVICE_BATCH_SIZE=4
-export GRADIENT_ACCUMULATION_STEPS=6
-echo "=== E16b init-0.3 -> 1B (resume from checkpoint-791 ~100M, Odra 3x3090) ==="
+export RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-${PROJECT_ROOT_HINT}/Cache/Training/backbone_concept_gemma_3_1b_pt_K512_concept_20260801_203613/checkpoint-791}"
+export PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-4}"
+export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-6}"
+NGPU=$(nvidia-smi -L 2>/dev/null | wc -l); NGPU=${NGPU:-1}
+echo "=== E16b init-0.3 -> 1B (resume from checkpoint; host GPUs=${NGPU}) ==="
 echo "  io=${CONCEPT_IO_MODE} write_gate_init=${WRITE_GATE_INIT} seq=${MAX_SEQ_LENGTH} target_tokens=${TARGET_TOKENS} warmup=${WARMUP_STEPS}"
-echo "  resume=${RESUME_FROM_CHECKPOINT}  eff_batch=$((PER_DEVICE_BATCH_SIZE*3*GRADIENT_ACCUMULATION_STEPS)) (Odra 3 GPUs)"
+echo "  resume=${RESUME_FROM_CHECKPOINT}  per_device=${PER_DEVICE_BATCH_SIZE} accum=${GRADIENT_ACCUMULATION_STEPS} eff_batch=$((PER_DEVICE_BATCH_SIZE*NGPU*GRADIENT_ACCUMULATION_STEPS)) (${NGPU} GPUs)"
 exec bash "${SCRIPT_DIR}/launch_e10.sh"
