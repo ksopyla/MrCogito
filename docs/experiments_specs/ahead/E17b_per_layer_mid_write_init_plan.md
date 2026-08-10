@@ -46,3 +46,6 @@ Compare to:
 - 0.1: tanh≈0.1 = E17's own open-gate success floor; log-mid between 0.01 and 0.3.
   If 100M kill trips (`|tanh|<0.05` all depths), escalate to 0.15 or 0.2 — do not jump to 0.3
   first.
+
+## Tracking note
+Live focus for this draft is also recorded in `master_experiment_log.md` focus note (2026-08-10). Agenda body update may follow separately if the title-line secret scan blocks the edit.
