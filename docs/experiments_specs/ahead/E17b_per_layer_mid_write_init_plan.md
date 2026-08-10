@@ -26,6 +26,8 @@ Confirm before start:
 - Manifest present: `$DATASETS_TOK_DIR/e16b_long_4k_v1_gemma_manifest.json`
   (`launch_e17b.sh` points `DATASETS_TOK_DIR` at `datasets_tok_gemma_4k`).
 - W&B group/tags pick up `EXPERIMENT_ID=E17b`.
+- Batch defaults (post 2026-08-10 calib): `PER_DEVICE_BATCH_SIZE=8`,
+  `GRADIENT_ACCUMULATION_STEPS=1` (override freely; do not force eff-batch 72).
 
 ## Eval protocol
 **100M = monitor only** (log write gates / Δbeyond / RankMe; optional light gen sniff).
