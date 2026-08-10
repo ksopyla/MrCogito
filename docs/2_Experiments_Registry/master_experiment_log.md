@@ -11,14 +11,14 @@ experiment specs; deep metrics and interpretation live in run reports. Live focu
 | What are we doing now? | [`agenda.md`](../1_Strategy_and_Plans/agenda.md) |
 | Full metric dump / fair baselines | `run_reports/` |
 
-> **Focus note (2026-08-10) — E17 init-0.01 closed; open-gate fair test next.** E17
-> per-layer banks at matched init 0.01 finished 1B without opening writes (`|tanh|≤0.033`)
-> or clearing absolute free-run bar (`real`@256 **0.21/0.59** vs need ≥0.5/≤0.25). Relative
-> to E16b free-run (**0.04/0.94**) it is healthier (prose, `real≈zero`, long prompts help),
-> but the topology remains **confounded**, not falsified. Next bet: per-layer + init 0.3 vs
-> shared + init 0.3 with Tier-1.5 at 100M **and** 1B. Spec:
-> [E17](../experiments_specs/done_failed/E17_four_bank_concept_memory.md) ·
-> [report](run_reports/e17_lowinit_1b_generation_20260810.md).
+> **Focus note (2026-08-10) — E17 partially successful; E17b mid-init next.** E17
+> per-layer + init 0.01 finished 1B with dead writes but **healthier free-run than E16b**
+> (`real`@256 **0.21/0.59** vs **0.04/0.94**). Shared init-0.3 opens mechanism
+> (Δbeyond **1.69**) yet free-run stays broken (**0.06/0.90**). Next: **E17b** per-layer +
+> `WRITE_GATE_INIT=0.1`. Specs:
+> [E17](../experiments_specs/done_success/E17_four_bank_concept_memory.md) ·
+> [E17b draft](../experiments_specs/ahead/E17b_per_layer_mid_write_init.md) ·
+> [init-0.3 report](run_reports/e16b_shared_init030_1b_20260810.md).
 
 > **Prior focus (2026-07-25) — E16b success.** Shared depth-recurrent concepts on Gemma at
 > seq **4096** + long-doc mix + Muon + **1B** tokens cleared the beyond-local causal-use gate
@@ -45,7 +45,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 
 | ID | What | Lifecycle | Key result | Spec · report |
 |---|---|---|---|---|
-| E17 | 4-bank per-layer concept memory (init 0.01 vs E16b) | done_failed | writes dead @1B; gen `real`@256 **0.21/0.59** (E16b **0.04/0.94**) — bar missed, topology still confounded | [E17](../experiments_specs/done_failed/E17_four_bank_concept_memory.md) · [report](run_reports/e17_lowinit_1b_generation_20260810.md) |
+| E17 | 4-bank per-layer concept memory (init 0.01 vs E16b) | done_success (mixed) | gen `real`@256 **0.21/0.59** vs E16b **0.04/0.94** — partial free-run win; writes still dead | [E17](../experiments_specs/done_success/E17_four_bank_concept_memory.md) · [report](run_reports/e17_lowinit_1b_generation_20260810.md) |
 | E16b | Long-ctx Muon scale-up of shared-depth workspace | done_success | RankMe 101 · Δ≥1024 **2.47/2.35** — causal-use gate cleared | [E16b](../experiments_specs/done_success/E16b_longctx_muon_1b.md) · [report](run_reports/e16b_longctx_muon_1b_20260725.md) |
 | E16a | Shared-depth optimizer A/B at 100M / 2K | done_failed | Both arms failed ≥0.01; Muon best short-ctx (0.0028) | [E16a](../experiments_specs/done_failed/E16a_muon_optimizer_ab.md) |
 | E16 | Shared depth-recurrent workspace (50M / 2K) | done_failed | Failed 2K gate; same arch later succeeded as E16b | [E16](../experiments_specs/done_failed/E16_shared_depth_recurrent_concepts.md) |
@@ -73,7 +73,8 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 | E11 | In-sequence memory-token concepts (Design A) | design-only | [E11](../experiments_specs/ahead/E11_memtoken_concept_memory.md) |
 | E12 | Per-layer KV-prefix concepts (Design B) | design-only | [E12](../experiments_specs/ahead/E12_perlayer_kv_prefix_concepts.md) |
 | E13 | Layer-wise recurrent KV-memory | draft (gated on E12) | [E13](../experiments_specs/ahead/E13_layerwise_recurrent_kv_memory.md) |
-| E17a | Untied per-bank writers (4 writers) — counterfactual to E17 | draft (conditional on the open-gate E17 test; not run) | [E17a](../experiments_specs/ahead/E17a_untied_per_bank_writers.md) |
+| E17b | Per-layer banks + mid write init 0.1 | active (Polonez, launching 1B; 100M monitor-only) | [E17b](../experiments_specs/ahead/E17b_per_layer_mid_write_init.md) · [plan](../experiments_specs/ahead/E17b_per_layer_mid_write_init_plan.md) |
+| E17a | Untied per-bank writers (4 writers) — counterfactual to E17 | draft (conditional on open-gate E17b) | [E17a](../experiments_specs/ahead/E17a_untied_per_bank_writers.md) |
 
 ### Canceled (no run)
 
@@ -83,7 +84,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 | E07 | Sentence-gap / boundary-only infilling | [E07](../experiments_specs/canceled/E07_sentence_gap_infilling.md) |
 | E09 | Gated recurrent concept memory (superseded by E10) | [E09](../experiments_specs/canceled/E09_recurrent_concept_memory.md) |
 
-**Genealogy (one variable at a time):** E01 → E02 → E03 → E04 → E05 → E10…E16a (short-ctx) → **E16b** (long-ctx success) → **E17** (per-layer init-0.01 done_failed; open-gate pending). See [`agenda.md`](../1_Strategy_and_Plans/agenda.md) for the living reading.
+**Genealogy (one variable at a time):** E01 → E02 → E03 → E04 → E05 → E10…E16a (short-ctx) → **E16b** (long-ctx success) → **E17** (per-layer init-0.01 partial success) → **E17b** (per-layer mid-init draft). See [`agenda.md`](../1_Strategy_and_Plans/agenda.md) for the living reading.
 
 ---
 
@@ -131,8 +132,11 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-07-14 | E16a | `backbone_concept_gemma_3_1b_pt_K512_concept_20260714_211016` | shared-depth Adam · 100M / 2K | RankMe 59 · min-beyond ≈0.0009 | FAILED ≥0.01 at 100M/2K. | [spec](../experiments_specs/done_failed/E16a_muon_optimizer_ab.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260714_211016) |
 | 2026-07-15 | E16a | `backbone_concept_gemma_3_1b_pt_K512_concept_20260715_034606` | shared-depth Muon · 100M / 2K | RankMe 97 · min-beyond 0.0028 | Best short-ctx but still failed ≥0.01; Muon used in E16b. | [spec](../experiments_specs/done_failed/E16a_muon_optimizer_ab.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260715_034606) |
 | 2026-07-18 | E16b | `backbone_concept_gemma_3_1b_pt_K512_concept_20260718_150850` | shared-depth Muon · seq **4096** · 1B | RankMe **101** · Δshuf/static≥1024 **2.47/2.35** | SUCCESS — beyond-local causal use cleared (~235× gate). | [spec](../experiments_specs/done_success/E16b_longctx_muon_1b.md) · [report](run_reports/e16b_longctx_muon_1b_20260725.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260718_150850) |
-| 2026-08-01 | E17 | `backbone_concept_gemma_3_1b_pt_K512_concept_20260801_211805` | per_layer_banks · init 0.01 · 100M | writes ≤0.011 · RankMe 123 | 100M report — cold-start confound; continued to 1B. | [spec](../experiments_specs/done_failed/E17_four_bank_concept_memory.md) · [report](run_reports/e17_falsified_init_is_the_cause_20260802.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260801_211805) |
-| 2026-08-07 | E17 | `backbone_concept_gemma_3_1b_pt_K512_concept_20260807_195730` | per_layer_banks · init 0.01 · 1B | RankMe 98 · Δbeyond 0.004 · gen **0.21/0.59** | FAILED criteria — writes dead; relative gen lift vs E16b. | [spec](../experiments_specs/done_failed/E17_four_bank_concept_memory.md) · [report](run_reports/e17_lowinit_1b_generation_20260810.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260807_195730) |
+| 2026-08-01 | E17 | `backbone_concept_gemma_3_1b_pt_K512_concept_20260801_211805` | per_layer_banks · init 0.01 · 100M | writes ≤0.011 · RankMe 123 | 100M report — cold-start confound; continued to 1B. | [spec](../experiments_specs/done_success/E17_four_bank_concept_memory.md) · [report](run_reports/e17_falsified_init_is_the_cause_20260802.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260801_211805) |
+| 2026-08-07 | E17 | `backbone_concept_gemma_3_1b_pt_K512_concept_20260807_195730` | per_layer_banks · init 0.01 · 1B | RankMe 98 · Δbeyond 0.004 · gen **0.21/0.59** | MIXED / partial — free-run lift vs E16b; writes dead. | [spec](../experiments_specs/done_success/E17_four_bank_concept_memory.md) · [report](run_reports/e17_lowinit_1b_generation_20260810.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260807_195730) |
+| 2026-08-07 | — | `backbone_concept_gemma_3_1b_pt_K512_concept_20260807_090248` | shared-depth · init **0.3** · 1B | Δshuf_beyond **1.69** · gen **0.06/0.90** | Mechanism open; free-run still E16b-broken. | [report](run_reports/e16b_shared_init030_1b_20260810.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260807_090248) |
+
+| 2026-08-10 | E17b | `backbone_concept_gemma_3_1b_pt_K512_concept_20260810_120432` | per_layer_banks · init **0.1** · 1B (running) | — | STARTED — 100M monitor-only; verdict at 1B. | [spec](../experiments_specs/ahead/E17b_per_layer_mid_write_init.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260810_120432) |
 
 ---
 
@@ -156,7 +160,8 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-07-11 | E10 Stage-0 protocol audit | protocol only | prior G not train-disjoint | Recompute before launch | — |
 | 2026-07-25 | E16b Tier-1 | E16b ckpt-7900/7905 | RankMe 101 · Δshuf/static 2.47/2.35 · Δone-block 0.58 | PASS — confirms training trajectory | [E16b](../experiments_specs/done_success/E16b_longctx_muon_1b.md) · [report](run_reports/e16b_longctx_muon_1b_20260725.md) |
 | 2026-08-01 | E16b Tier-1.5 gen | E16b ckpt-7900 vs gemma-3-1b-pt | real@256 d1/r3 **0.04/0.94** · base **0.16/0.71** · sample base **0.49/0.03**; zero≫real; long prompt hurts E16b | Free-run FAIL — mechanism intact; chat SFT not the fix | [report](run_reports/e16b_generation_quality_assessment_20260801.md) |
-| 2026-08-10 | E17 Tier-1.5 gen | E17 low-init ckpt-7900 vs base / E16b | real@256 **0.21/0.59** · zero **0.21/0.53** · base **0.16/0.71** · E16b **0.04/0.94**; long prompt helps E17 | Absolute bar missed; relative lift vs E16b; writes still dead | [report](run_reports/e17_lowinit_1b_generation_20260810.md) |
+| 2026-08-10 | E17 Tier-1.5 gen | E17 low-init ckpt-7900 vs base / E16b | real@256 **0.21/0.59** · zero **0.21/0.53** · base **0.16/0.71** · E16b **0.04/0.94**; long prompt helps E17 | Partial free-run win vs E16b; absolute bar open; writes dead | [report](run_reports/e17_lowinit_1b_generation_20260810.md) |
+| 2026-08-10 | shared init-0.3 Tier-1.5 | `…20260807_090248` ckpt-7905 | Δbeyond **1.69** · real@256 **0.06/0.90** · zero≫real · digit attractors | Mechanism↑ free-run still FAIL on shared | [report](run_reports/e16b_shared_init030_1b_20260810.md) |
 
 **ViaDecoder baselines (L6 canonical, 2026-02-22):** MRPC F1 82.73 · STS-B P 0.650 · QQP F1 73.35 · MNLI-m 59.75 · MNLI-mm 60.90 — full note in [report](run_reports/via_decoder_eval_20260222.md).
 
@@ -173,6 +178,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 
 Newest first:
 
+- [Shared init-0.3 @1B control (Aug 10)](run_reports/e16b_shared_init030_1b_20260810.md)
 - [E17 low-init 1B generation vs E16b (Aug 10)](run_reports/e17_lowinit_1b_generation_20260810.md)
 - [E17 / init-is-the-cause (Aug 2)](run_reports/e17_falsified_init_is_the_cause_20260802.md)
 - [E16b free-run generation vs base Gemma (Aug 1)](run_reports/e16b_generation_quality_assessment_20260801.md)

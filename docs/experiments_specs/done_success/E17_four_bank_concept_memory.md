@@ -1,8 +1,8 @@
 # E17 — Four-bank per-global-layer concept memory (the write-path structural fix)
 
-- **Status:** done_failed (2026-08-10) — init-0.01 / 1B completed; registered success criteria
-  missed (writes stayed dead; free-run below absolute bar). **Topology still NOT fairly
-  falsified** (cold-start confound persisted through 1B); open-gate fair test is next.
+- **Status:** done_success (2026-08-10) — **partially successful / mixed.** Absolute
+  write-gate + free-run bars missed, but free-run clearly healthier than E16b under matched
+  init/budget; topology still needs an open-gate fair test (E17b).
 - **Serves:** the E16b platform's open failure mode — free-run generation degeneration caused
   by a dead concept write path. Restores effective concept bandwidth (BAPO channel `a`) by
   privatizing the memory so each write gets a clean "self" gradient.
@@ -153,7 +153,7 @@ Stop ONLY for genuine divergence / instability:
   plumbing and tests; **no new training script**.
 
 ## Result
-**1B init-0.01 arm — done_failed on registered criteria; topology still untested fairly.**
+**1B init-0.01 arm — partially successful / mixed; topology still untested fairly under open gates.**
 Full 1B finished on Polonez (`…20260807_195730`, best `checkpoint-7900`). Write gates stayed
 near-dead (`write_0..3 = 0.017 / 0.033 / 0.012 / −0.013`, `|tanh| ≤ 0.033 ≪ 0.1`);
 Δshuffle/static_beyond **0.004 / 0.003** (need ≥0.01); RankMe **98** (geometry OK). Matched
@@ -167,8 +167,8 @@ See [1B gen report](../../2_Experiments_Registry/run_reports/e17_lowinit_1b_gene
 - Run id (100M start): `backbone_concept_gemma_3_1b_pt_K512_concept_20260801_211805`
 - WandB: https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260807_195730
 - Run report: `docs/2_Experiments_Registry/run_reports/e17_lowinit_1b_generation_20260810.md`
-- Verdict: **killed / done_failed** on mechanism + absolute generation criteria; relative free-run
-  lift vs E16b; topology still confounded — fair open-gate A/B is next.
+- Verdict: **mixed / partially successful** — relative free-run lift vs E16b without digit
+  collapse; mechanism bar missed (writes dead); next is E17b (per-layer + mid init 0.1).
 
 ## References
 - Diagnosis backing: [E16b write-path & topology diagnosis](../../2_Experiments_Registry/run_reports/e16b_write_path_and_topology_diagnosis_20260801.md)
