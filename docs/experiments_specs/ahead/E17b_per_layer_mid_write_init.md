@@ -96,10 +96,10 @@ and continue to 1B.
 - **New foundation code:** none — config only.
 
 ## Result
-- Run id: —
-- WandB: —
+- Run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260810_120432` (Polonez, started 2026-08-10)
+- WandB: https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260810_120432
 - Run report: —
-- Verdict: —
+- Verdict: — (training; 100M = monitor only; verdict at 1B)
 
 ## References
 - E17 partial success: [spec](../done_success/E17_four_bank_concept_memory.md) ·

@@ -136,6 +136,8 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-08-07 | E17 | `backbone_concept_gemma_3_1b_pt_K512_concept_20260807_195730` | per_layer_banks · init 0.01 · 1B | RankMe 98 · Δbeyond 0.004 · gen **0.21/0.59** | MIXED / partial — free-run lift vs E16b; writes dead. | [spec](../experiments_specs/done_success/E17_four_bank_concept_memory.md) · [report](run_reports/e17_lowinit_1b_generation_20260810.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260807_195730) |
 | 2026-08-07 | — | `backbone_concept_gemma_3_1b_pt_K512_concept_20260807_090248` | shared-depth · init **0.3** · 1B | Δshuf_beyond **1.69** · gen **0.06/0.90** | Mechanism open; free-run still E16b-broken. | [report](run_reports/e16b_shared_init030_1b_20260810.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260807_090248) |
 
+| 2026-08-10 | E17b | `backbone_concept_gemma_3_1b_pt_K512_concept_20260810_120432` | per_layer_banks · init **0.1** · 1B (running) | — | STARTED — 100M monitor-only; verdict at 1B. | [spec](../experiments_specs/ahead/E17b_per_layer_mid_write_init.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260810_120432) |
+
 ---
 
 ## Evaluation Experiments (Zero Training Cost)
