@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-08-01 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-08-10 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -32,30 +32,18 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   longer docs (8 concept blocks) + scale did. So long-context shared-depth is a
   **proven-useful regime** worth exploring further — not a claim that other routes
   are dead.
-- **Near-term on the E16b path:** free-run generation is an open failure mode on the
-  same platform (Tier-1.5 2026-08-01: `real`@256 REP-3 **0.94** vs base **0.71** /
-  base-sample **0.03**; longer prompts hurt E16b free-run). **Layer-0 decode probe (same
-  day) localized it:** `zero` (concepts off) is the only fluent mode; `frozen` (read-only
-  decode) degenerates like `real`, so the driver is the **concept READ pathway reading a
-  near-static `z`** (write gates stayed ≈0) — not self-writes, and not the backbone (`zero`
-  is base-like). Fix is **not** chat SFT. Root cause
-  ([diagnosis](../2_Experiments_Registry/run_reports/e16b_write_path_and_topology_diagnosis_20260801.md)):
-  the shared-depth topology starves the writes (cold-start + 'altruistic-write' asymmetry +
-  multi-depth conflict in one accumulator). **E17 (per-layer topology) is the right bet — NOT falsified.** E17 (4-bank per-layer memory,
-  Polonez) is the well-motivated progression of E16b (per-layer = the transformer's natural
-  per-layer-private-memory structure; the E13 direction; respects depth specialization). Its 100M
-  run had dead write gates (`|tanh(α)|≤0.011`, init 0.01) — but that is the **cold-start init
-  confound**: the Odra write-init falsification (`WRITE_GATE_INIT=0.3`, same shared topology) held
-  gates open (0.20–0.32), so init 0.01 deadens gates on *both* topologies and E17's per-layer write
-  structure never engaged → **the topology is untested, not disproved.** The fair test is per-layer
-  + init 0.3 vs shared + init 0.3. Separately, init 0.3 → free-run `real` distinct-1@256 = 0.29
-  (E16b 0.04), `real ≥ zero`, coherent prose — **encouraging, not success** (needs proper
-  generation-quality assessment at scale). E17 (init 0.01) continues to 1B; E17a (untied writers)
-  remains a valid future variant. See
-  [E17/init report](../2_Experiments_Registry/run_reports/e17_falsified_init_is_the_cause_20260802.md)
-  · [gen report](../2_Experiments_Registry/run_reports/e16b_generation_quality_assessment_20260801.md).
-  Semantic probe (STS-B + floors on `checkpoint-7900`) remains useful and orthogonal;
-  then synthesis for factor isolation and/or reasoning pressure.
+- **Near-term after E17 init-0.01 (eval 2026-08-10):** the matched-init per-layer arm finished
+  1B without opening writes (`|tanh|≤0.033`) or clearing the absolute free-run bar
+  (`real`@256 **0.21/0.59** vs need ≥0.5/≤0.25), but is clearly healthier than E16b free-run
+  (**0.04/0.94**): prose instead of digit attractors, `real≈zero`, longer prompts help. Spec
+  closed as [done_failed/E17](../experiments_specs/done_failed/E17_four_bank_concept_memory.md)
+  · [1B gen report](../2_Experiments_Registry/run_reports/e17_lowinit_1b_generation_20260810.md).
+  **Topology remains untested fairly** (cold-start confound through 1B). Next: open-gate fair
+  A/B — per-layer + `WRITE_GATE_INIT=0.3` vs shared + init 0.3 — with Tier-1.5 at 100M **and**
+  1B (the shared init-0.3 100M sniff of d1=0.29 did **not** hold at 1B: `real`@256 **0.06/0.90**).
+  E17a (untied writers) stays conditional. E16b mechanism success + free-run failure diagnosis
+  still stand ([gen](../2_Experiments_Registry/run_reports/e16b_generation_quality_assessment_20260801.md)
+  · [write-path](../2_Experiments_Registry/run_reports/e16b_write_path_and_topology_diagnosis_20260801.md)).
 - **Still open / still wanted:** [E08 Concept-Flow reasoner](../experiments_specs/ahead/E08_concept_flow_reasoner.md)
   (latent reasoning composition — preferably on a platform that already carries
   concepts), diffusion revive from `parked/` if a materially new ingredient appears,
@@ -78,8 +66,15 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
    *(done_failed — used but semantically empty at <200M; motivated the Gemma pivot).*
 6. **E10–E16a short-ctx Gemma line** *(done_failed / mixed — useful regime evidence; see ledger).*
 7. **E16b long-ctx Muon** *(done_success 2026-07-25 — validated long-context path; follow-ups + other routes still open).*
+8. **E17 four-bank per-layer (init 0.01)** *(done_failed 2026-08-10 — criteria missed; open-gate fair test next).*
 
 ## What we've explored so far (evidence, not verdicts)
+- **E17 low-init 1B (per_layer_banks, Polonez, train 2026-08-07→10, Tier-1.5 2026-08-10):**
+  matched init 0.01 vs E16b finished 1B with writes still dead (`|tanh|≤0.033`), Δbeyond ~0.004,
+  RankMe 98. Free-run `real` greedy @256 **0.21/0.59** (E16b **0.04/0.94**; base **0.16/0.71**) —
+  absolute success bar missed; relative lift vs E16b (prose, `real≈zero`, long prompts help).
+  Topology still confounded. See
+  [report](../2_Experiments_Registry/run_reports/e17_lowinit_1b_generation_20260810.md).
 - **E16b free-run generation vs base Gemma (Odra, Tier-1.5, 2026-08-01) — FAIL on generation, mechanism intact:**
   matched continuation bank + context sweep on `checkpoint-7900` vs `gemma-3-1b-pt`.
   E16b `real` greedy @256: distinct-1 **0.04** / REP-3 **0.94** (digit/punctuation
