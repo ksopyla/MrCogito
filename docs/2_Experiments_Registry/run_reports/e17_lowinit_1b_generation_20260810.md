@@ -10,7 +10,7 @@
 **Last checkpoint:** `…/checkpoint-7905`
 **Git commit:** `4833bf2`
 **Git tag:** —
-**Related TODO:** E17 open-gate fair test (per-layer + init 0.3 vs shared + init 0.3)
+**Related TODO:** E17b per-layer + mid write init 0.1
 
 **Artifacts:**
 - Matched assessment (vs base Gemma): `Cache/Evaluation_reports/…20260807_195730_ckpt7900_generation_assessment.json`
@@ -101,9 +101,11 @@ The parallel shared + init-0.3 run at 1B (`…090248`) collapsing back to E16b-l
 
 ## Decision
 
-- Close E17 init-0.01 / 1B as **done_failed** on registered criteria (mechanism + absolute generation bar).
+- Close E17 init-0.01 / 1B as **partially successful / mixed** (relative free-run win vs E16b;
+  absolute mechanism + gen bars still open).
 - Do **not** treat this as topology falsification — writes never engaged; confound persists.
-- Next: open-gate fair A/B (new ID / E17 continuation with `WRITE_GATE_INIT=0.3`), with Tier-1.5 as a first-class gate at 100M **and** 1B (the 100M-only sniff is insufficient).
+- Next: **E17b** per-layer + mid `WRITE_GATE_INIT=0.1` (not 0.3 — shared+0.3 @1B still
+  free-run-broken). Tier-1.5 mandatory at 100M **and** 1B.
 - E17a (untied writers) stays conditional on a live-gate per-layer result.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/done_failed/E17_four_bank_concept_memory.md`, `agenda.md`, [100M init report](e17_falsified_init_is_the_cause_20260802.md), [E16b gen report](e16b_generation_quality_assessment_20260801.md)*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E17_four_bank_concept_memory.md`, `agenda.md`, [100M init report](e17_falsified_init_is_the_cause_20260802.md), [E16b gen report](e16b_generation_quality_assessment_20260801.md)*
