@@ -73,7 +73,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 | E11 | In-sequence memory-token concepts (Design A) | design-only | [E11](../experiments_specs/ahead/E11_memtoken_concept_memory.md) |
 | E12 | Per-layer KV-prefix concepts (Design B) | design-only | [E12](../experiments_specs/ahead/E12_perlayer_kv_prefix_concepts.md) |
 | E13 | Layer-wise recurrent KV-memory | draft (gated on E12) | [E13](../experiments_specs/ahead/E13_layerwise_recurrent_kv_memory.md) |
-| E17b | Per-layer banks + mid write init 0.1 | draft (awaiting launch approval) | [E17b](../experiments_specs/ahead/E17b_per_layer_mid_write_init.md) · [plan](../experiments_specs/ahead/E17b_per_layer_mid_write_init_plan.md) |
+| E17b | Per-layer banks + mid write init 0.1 | active (Polonez, launching 1B; 100M monitor-only) | [E17b](../experiments_specs/ahead/E17b_per_layer_mid_write_init.md) · [plan](../experiments_specs/ahead/E17b_per_layer_mid_write_init_plan.md) |
 | E17a | Untied per-bank writers (4 writers) — counterfactual to E17 | draft (conditional on open-gate E17b) | [E17a](../experiments_specs/ahead/E17a_untied_per_bank_writers.md) |
 
 ### Canceled (no run)

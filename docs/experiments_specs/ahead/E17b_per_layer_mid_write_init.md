@@ -1,6 +1,6 @@
 # E17b — Per-layer banks with mid write-gate init (0.1)
 
-- **Status:** draft — awaiting approval to launch on Polonez
+- **Status:** active — launching on Polonez (2026-08-10), `WRITE_GATE_INIT=0.1`, full 1B
 - **Serves:** free-run recovery on the E16b long-context platform, now that E17
   (init 0.01) showed a **partial** free-run lift with dead writes, and shared init 0.3
   showed that opening writes alone does **not** fix free-run on shared topology.
@@ -13,11 +13,12 @@
 ## Hypothesis
 If E17's four per-layer concept banks are trained with `WRITE_GATE_INIT=0.1`
 (tanh≈0.1 — the registered open-gate floor, midway in log-space between the dead
-cold-start 0.01 and the aggressive shared-control 0.3), then by **100M tokens** all
-four write gates stay at `|tanh(α)| ≥ 0.1`, and by **1B tokens** free-run `real`
-greedy distinct-1@256 reaches **≥ 0.5** with REP-3@256 **≤ 0.25** and `real ≥ zero`
-— because the banks get a live write path (unlike E17 init 0.01) without the shared
-topology's free-run poison that accompanied init 0.3 on `shared_depth_recurrent`.
+cold-start 0.01 and the aggressive shared-control 0.3), then by **1B tokens** the write
+gates will be live (`|tanh(α)| ≥ 0.1` on all four depths) and free-run `real` greedy
+distinct-1@256 reaches **≥ 0.5** with REP-3@256 **≤ 0.25** and `real ≥ zero` — because
+the banks get a live write path (unlike E17 init 0.01) without the shared topology's
+free-run poison that accompanied init 0.3 on `shared_depth_recurrent`. **100M is a
+monitor checkpoint only** (gate curves historically need more than ~100M to move).
 
 ## Builds-on
 - **Foundation:** `nn/backbone_concept_lm.py` `concept_io_mode="per_layer_banks"` (E17);
@@ -57,24 +58,29 @@ win and the shared-0.3 free-run failure. This is the missing cell of the 2×2
 knob hunt.
 
 ## Success criteria (set BEFORE running)
-Evaluate at **100M** (report checkpoint) and re-confirm at **1B**:
+**Verdict is at 1B.** The 100M checkpoint is for monitoring only (log write gates,
+Δbeyond, RankMe, optional quick gen sniff) — not a stop / pass gate.
 
-- **Mechanism:** all 4 write gates `|tanh(α)| ≥ 0.1` at 100M and at 1B (no depth drifts
-  to ~0 the way shared write_1 did under init 0.3).
-- **Primary — free-run:** `real` greedy distinct-1@256 **≥ 0.5** AND REP-3@256 **≤ 0.25**,
-  with **`real ≥ zero`**, via `analysis/run_e16b_generation_assessment.py` vs base Gemma.
-- **Effective `a`:** per-bank (or aggregate) Δshuffle_beyond **≥ 0.01** and Δstatic_beyond
-  **≥ 0.01** at positions ≥1024.
-- **No free-run regression vs E17:** `real`@256 distinct-1 **≥ 0.21** even if the absolute
-  bar is missed (must not collapse back to E16b/shared-0.3 ~0.05).
+- **Mechanism (1B):** all 4 write gates `|tanh(α)| ≥ 0.1` (no depth drifts to ~0 the way
+  shared write_1 did under init 0.3). Report the 100M values as trajectory, not as fail.
+- **Primary — free-run (1B):** `real` greedy distinct-1@256 **≥ 0.5** AND REP-3@256
+  **≤ 0.25**, with **`real ≥ zero`**, via `analysis/run_e16b_generation_assessment.py`
+  vs base Gemma.
+- **Effective `a` (1B):** per-bank (or aggregate) Δshuffle_beyond **≥ 0.01** and
+  Δstatic_beyond **≥ 0.01** at positions ≥1024.
+- **No free-run regression vs E17 (1B):** `real`@256 distinct-1 **≥ 0.21** even if the
+  absolute bar is missed (must not collapse back to E16b/shared-0.3 ~0.05).
 - **Geometry:** within-sample RankMe ≥ 38.4/128.
 
 ## Kill criteria (set BEFORE running)
-Same stability kills as E17 (non-finite loss/grads; eval CE rising three evals; RankMe
-< 19.2). **Do not early-stop on free-run at 100M alone** — shared-0.3 taught that 100M
-gen sniffs lie — but **do** require writes still open at 100M; if all four `|tanh| < 0.05`
-at the 100M report checkpoint, stop (cold-start confound repeating; raise init rather
-than burn 1B).
+Stability only — same as E17:
+- Non-finite loss or gradients.
+- Held-out eval CE rising at three consecutive evaluations.
+- Any bank's within-sample RankMe < 19.2/128 (geometric collapse).
+
+**Do not early-stop on write-gate values or free-run diversity at 100M.** Past runs
+showed ~100M is too few steps for write gates to reliably bang open; monitor the curve
+and continue to 1B.
 
 ## Plan
 - **Data:** `e16b_long_4k_v1` (immutable, same as E16b/E17).
