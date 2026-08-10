@@ -123,6 +123,6 @@ and untied capacity is unnecessary.
 - Verdict: —
 
 ## References
-- E17 (baseline, running): [spec](E17_four_bank_concept_memory.md) · [plan](E17_four_bank_concept_memory_plan.md)
+- E17 (baseline, done_failed init-0.01 / 1B): [spec](../done_failed/E17_four_bank_concept_memory.md) · [plan](../done_failed/E17_four_bank_concept_memory_plan.md)
 - E16b write-path/topology diagnosis: [report](../../2_Experiments_Registry/run_reports/e16b_write_path_and_topology_diagnosis_20260801.md)
 - E13 (full 26-layer per-layer memory): [spec](E13_layerwise_recurrent_kv_memory.md) — same "tie the writer by default, untie as a follow-up" discipline

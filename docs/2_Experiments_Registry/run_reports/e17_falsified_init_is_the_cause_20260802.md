@@ -10,7 +10,7 @@ link stability.)*
 **Runs:**
 - **E17** — `backbone_concept_gemma_3_1b_pt_K512_concept_20260801_211805` (Polonez, `per_layer_banks`, init 0.01). [W&B](https://wandb.ai/ksopyla/MrCogito/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260801_211805).
 - **Odra write-init falsification** — `backbone_concept_gemma_3_1b_pt_K512_concept_20260801_203613` (Odra, `shared_depth_recurrent`, `WRITE_GATE_INIT=0.3`).
-**Related:** [E17 spec](../../experiments_specs/ahead/E17_four_bank_concept_memory.md) · [write-path diagnosis](e16b_write_path_and_topology_diagnosis_20260801.md) · [E16b generation report](e16b_generation_quality_assessment_20260801.md)
+**Related:** [E17 spec](../../experiments_specs/done_failed/E17_four_bank_concept_memory.md) · [1B gen report](e17_lowinit_1b_generation_20260810.md) · [write-path diagnosis](e16b_write_path_and_topology_diagnosis_20260801.md) · [E16b generation report](e16b_generation_quality_assessment_20260801.md)
 
 ---
 

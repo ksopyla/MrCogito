@@ -1,13 +1,13 @@
 # E17 — Four-bank per-global-layer concept memory (the write-path structural fix)
 
-- **Status:** active — running on Polonez (100M done, continuing to 1B). **Topology NOT
-  falsified:** the 100M init-0.01 run is confounded by the cold-start gate init (gates stay dead
-  on *both* topologies at init 0.01); the fair test is per-layer + init 0.3 (next).
+- **Status:** done_failed (2026-08-10) — init-0.01 / 1B completed; registered success criteria
+  missed (writes stayed dead; free-run below absolute bar). **Topology still NOT fairly
+  falsified** (cold-start confound persisted through 1B); open-gate fair test is next.
 - **Serves:** the E16b platform's open failure mode — free-run generation degeneration caused
   by a dead concept write path. Restores effective concept bandwidth (BAPO channel `a`) by
   privatizing the memory so each write gets a clean "self" gradient.
 - **Implementation plan:** [E17_four_bank_concept_memory_plan.md](E17_four_bank_concept_memory_plan.md) *(authored by `implementation-plan` after approval; the HOW)*
-- **Owner / dates:** Krzysztof Sopyła · opened 2026-08-01 · closed —
+- **Owner / dates:** Krzysztof Sopyła · opened 2026-08-01 · closed 2026-08-10
 
 > One experiment = one changed variable vs E16b: the **concept-state topology**. Everything
 > else — backbone, LoRA, K, C, objective, data, optimizer, gate init, parameter count — is
@@ -152,29 +152,27 @@ Stop ONLY for genuine divergence / instability:
   Implement via `research-implement` after the plan; extend the shared args/config/launcher
   plumbing and tests; **no new training script**.
 
-## Result (100M checkpoint — running; topology NOT falsified)
-**E17 is the right topology to test, not a failure.** At the 100M checkpoint (step 790) the per-bank
-write gates stayed dead (`write_0..3 = 0.0014 / 0.0109 / 0.0067 / -0.0033`, `|tanh(α)| ≤ 0.011`,
-init 0.01) — but this is the **cold-start init confound**, not a topology verdict: the Odra
-write-init falsification shows init 0.01 deadens the gates on *both* topologies (init 0.3 holds them
-open at 0.20–0.32 on the *same* shared topology). With the gates inert, E17's per-layer write
-structure never engaged, so the topology's effect on concept quality / generation is **unmeasured**.
-E17 is a progression of E16b (per-layer = the transformer's natural per-layer-private-memory
-structure; the E13 direction) and remains the bet to pursue — to be evaluated **with open gates
-(init 0.3)**: per-layer + init 0.3 vs shared + init 0.3 is the decisive test. The init-0.01 run
-continues to 1B on Polonez (a record under the cold-start confound). Separately, init 0.3 opens the
-gates and free-run diversity recovers at 100M — encouraging, **not** success (needs proper
-generation-quality assessment at scale). E17a (untied writers) remains a valid future variant. See
-[report](../../2_Experiments_Registry/run_reports/e17_falsified_init_is_the_cause_20260802.md).
-- Run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260801_211805` (Polonez, continuing to 1B)
-- WandB: https://wandb.ai/ksopyla/MrCogito/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260801_211805
-- Run report: `docs/2_Experiments_Registry/run_reports/e17_falsified_init_is_the_cause_20260802.md`
-- Verdict: **topology not falsified — confounded by cold-start init at 100M; the fair (open-gate)
-  topology test is next.**
+## Result
+**1B init-0.01 arm — done_failed on registered criteria; topology still untested fairly.**
+Full 1B finished on Polonez (`…20260807_195730`, best `checkpoint-7900`). Write gates stayed
+near-dead (`write_0..3 = 0.017 / 0.033 / 0.012 / −0.013`, `|tanh| ≤ 0.033 ≪ 0.1`);
+Δshuffle/static_beyond **0.004 / 0.003** (need ≥0.01); RankMe **98** (geometry OK). Matched
+Tier-1.5 vs E16b: `real` greedy @256 distinct-1 / REP-3 = **0.208 / 0.593** (E16b was
+**0.04 / 0.94**; base 0.16 / 0.71) — relative free-run improvement and `real ≈ zero`, stays in
+prose, longer prompts help — but **misses** absolute success bar (d1≥0.5, REP-3≤0.25). Cold-start
+confound persists through 1B, so per-layer writes never engaged; open-gate fair test remains next.
+See [1B gen report](../../2_Experiments_Registry/run_reports/e17_lowinit_1b_generation_20260810.md)
+· [100M init report](../../2_Experiments_Registry/run_reports/e17_falsified_init_is_the_cause_20260802.md).
+- Run id (1B): `backbone_concept_gemma_3_1b_pt_K512_concept_20260807_195730`
+- Run id (100M start): `backbone_concept_gemma_3_1b_pt_K512_concept_20260801_211805`
+- WandB: https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260807_195730
+- Run report: `docs/2_Experiments_Registry/run_reports/e17_lowinit_1b_generation_20260810.md`
+- Verdict: **killed / done_failed** on mechanism + absolute generation criteria; relative free-run
+  lift vs E16b; topology still confounded — fair open-gate A/B is next.
 
 ## References
 - Diagnosis backing: [E16b write-path & topology diagnosis](../../2_Experiments_Registry/run_reports/e16b_write_path_and_topology_diagnosis_20260801.md)
 - Decoding failure + Layer-0 probe: [E16b generation quality report](../../2_Experiments_Registry/run_reports/e16b_generation_quality_assessment_20260801.md)
 - E16b (baseline): [spec](../done_success/E16b_longctx_muon_1b.md) · [mechanism report](../../2_Experiments_Registry/run_reports/e16b_longctx_muon_1b_20260725.md)
-- E13 (full 26-layer per-layer memory, distinct bet): [spec](E13_layerwise_recurrent_kv_memory.md)
+- E13 (full 26-layer per-layer memory, distinct bet): [spec](../ahead/E13_layerwise_recurrent_kv_memory.md)
 - BAPO / information-flow lens: [literature review](../../literature_review/reasoning_bandwidth_information_flow.md)

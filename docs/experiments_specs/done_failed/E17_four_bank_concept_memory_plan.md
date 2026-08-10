@@ -1,6 +1,6 @@
 # E17 — Four-bank per-global-layer concept memory — Implementation Plan
 
-- **Spec:** [E17_four_bank_concept_memory.md](E17_four_bank_concept_memory.md) · **Status:** approved → plan
+- **Spec:** [E17_four_bank_concept_memory.md](E17_four_bank_concept_memory.md) · **Status:** done_failed with spec (2026-08-10)
 - **Authored by:** `implementation-plan` · for → `research-implement`
 - **Diagnosis backing:** [e16b_write_path_and_topology_diagnosis_20260801.md](../../2_Experiments_Registry/run_reports/e16b_write_path_and_topology_diagnosis_20260801.md)
 

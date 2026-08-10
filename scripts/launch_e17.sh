@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # E17 — 4-bank per-global-layer concept memory (the E16b write-path structural fix).
-# Spec: docs/experiments_specs/ahead/E17_four_bank_concept_memory.md (+ _plan.md).
+# Spec: docs/experiments_specs/done_failed/E17_four_bank_concept_memory.md (+ _plan.md).
 #
 # Per-layer concept banks make each write "selfish" (a layer reads the bank it wrote last
 # block), giving the write gate a clean gradient the shared topology denies it. Identical
