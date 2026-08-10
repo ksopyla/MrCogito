@@ -84,9 +84,11 @@ and continue to 1B.
 
 ## Plan
 - **Data:** `e16b_long_4k_v1` (immutable, same as E16b/E17).
-- **Compute:** Polonez 4×3090; ≈ E17 wall (~58 h / ~230 GPU-h at 1B).
-- **Steps:** 1B tokens, warmup 500, eff batch 72, report @100M + full Tier-1.5 there
-  and at 1B.
+- **Compute:** Polonez 4×3090; wall-time optimized microbatch (see Result). Token
+  budget still 1B — effective batch is **not** locked to 72.
+- **Steps:** 1B tokens, warmup 500, report @100M + full Tier-1.5 there
+  and at 1B. Default launch: `PER_DEVICE_BATCH_SIZE=8`, `GRADIENT_ACCUMULATION_STEPS=1`
+  (eff batch 32; 2026-08-10 calib — largest stable microbatch with best samples/s).
 - **Launch:**
   ```bash
   bash scripts/launch_e17b.sh
@@ -96,9 +98,13 @@ and continue to 1B.
 - **New foundation code:** none — config only.
 
 ## Result
-- Run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260810_120432` (Polonez, started 2026-08-10)
-- WandB: https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260810_120432
-- Run report: —
+- Run id (aborted underfilled smoke): `backbone_concept_gemma_3_1b_pt_K512_concept_20260810_120432`
+  — killed 2026-08-10 ~13:07Z after ~120 steps @ bs=3/accum=6 (~9 GiB/24 GiB VRAM).
+- Batch calibration (Polonez, accum=1): bs4 OK 11.0 GiB · bs6 OK 15.3 GiB · **bs8 OK 21.5 GiB
+  (best samples/s)** · bs10 OK 23.7 GiB but slower · bs12 OOM. Chose **bs=8, accum=1**.
+- Restart run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260810_135711`
+  (Polonez, started 2026-08-10 13:57:13Z, 17785 steps, eff batch 32).
+- WandB: https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260810_135711
 - Verdict: — (training; 100M = monitor only; verdict at 1B)
 
 ## References

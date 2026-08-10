@@ -88,6 +88,9 @@ MAX_EVAL_SAMPLES="${MAX_EVAL_SAMPLES:-}"
 GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-2}"
 LEARNING_RATE="${LEARNING_RATE:-3e-4}"
 NUM_EPOCHS="${NUM_EPOCHS:-20}"
+# Optional hard step cap (HF TrainingArguments --max_steps). Empty = epoch budget only.
+# Use for VRAM / throughput calibration: MAX_STEPS=30 LOGGING_STEPS=5 …
+MAX_STEPS="${MAX_STEPS:-}"
 WARMUP_STEPS="${WARMUP_STEPS:-1500}"
 LOGGING_STEPS="${LOGGING_STEPS:-200}"
 EVAL_STEPS="${EVAL_STEPS:-2000}"
@@ -129,6 +132,12 @@ LR_SCHEDULER_TYPE="${LR_SCHEDULER_TYPE:-cosine}"
 SAVE_SAFETENSORS="${SAVE_SAFETENSORS:-True}"
 SEED="${SEED:-42}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-4}"
+# HF Trainer --report_to (wandb|none|…). Use none for short VRAM calibrations.
+REPORT_TO="${REPORT_TO:-wandb}"
+# When set (e.g. calibration), skip checkpointing / load_best so short max_steps runs exit cleanly.
+LOAD_BEST_MODEL_AT_END="${LOAD_BEST_MODEL_AT_END:-True}"
+SAVE_STRATEGY="${SAVE_STRATEGY:-steps}"
+EVAL_STRATEGY="${EVAL_STRATEGY:-steps}"
 # FineWeb-Edu one-off tokenization: use Polonez headroom (32–48); keep Odra defaults modest.
 TRAIN_NUM_PROC="${TRAIN_NUM_PROC:-8}"
 TEST_NUM_PROC="${TEST_NUM_PROC:-4}"
@@ -333,11 +342,12 @@ uv run accelerate launch \
     --gradient_accumulation_steps "$GRADIENT_ACCUMULATION_STEPS" \
     --learning_rate "$LEARNING_RATE" \
     --num_train_epochs "$NUM_EPOCHS" \
+    ${MAX_STEPS:+--max_steps "$MAX_STEPS"} \
     --warmup_steps "$WARMUP_STEPS" \
     --logging_steps "$LOGGING_STEPS" \
-    --eval_strategy "steps" \
+    --eval_strategy "$EVAL_STRATEGY" \
     --eval_steps "$EVAL_STEPS" \
-    --save_strategy "steps" \
+    --save_strategy "$SAVE_STRATEGY" \
     --save_steps "$SAVE_STEPS" \
     --save_total_limit "$SAVE_TOTAL_LIMIT" \
     --output_dir "$OUTPUT_DIR" \
@@ -354,12 +364,12 @@ uv run accelerate launch \
     --max_grad_norm "$MAX_GRAD_NORM" \
     --weight_decay "$WEIGHT_DECAY" \
     --lr_scheduler_type "$LR_SCHEDULER_TYPE" \
-    --report_to "wandb" \
+    --report_to "$REPORT_TO" \
     --save_safetensors "$SAVE_SAFETENSORS" \
     --overwrite_output_dir True \
     --remove_unused_columns True \
     --disable_tqdm True \
-    --load_best_model_at_end True \
+    --load_best_model_at_end "$LOAD_BEST_MODEL_AT_END" \
     --metric_for_best_model "eval_loss" \
     --greater_is_better False \
     ${WINDOW_ARGS[@]+"${WINDOW_ARGS[@]}"} \
