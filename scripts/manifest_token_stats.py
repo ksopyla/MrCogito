@@ -30,14 +30,47 @@ def compute_stats(
 ) -> dict:
     manifest_hash = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
     cache_path = manifest_path.with_suffix(manifest_path.suffix + ".token_stats.json")
+    cached: dict | None = None
     if cache_path.exists():
         cached = json.loads(cache_path.read_text())
         if (
             cached.get("manifest_sha256") == manifest_hash
             and cached.get("target_tokens") == target_tokens
             and cached.get("effective_batch") == effective_batch
+            and "epochs_for_target" in cached
+            and "estimated_optimizer_steps" in cached
         ):
             return cached
+        # Reuse the expensive exact token count when only effective_batch (or
+        # derived step math) changes — critical for batch-size calibration sweeps.
+        if (
+            cached.get("manifest_sha256") == manifest_hash
+            and isinstance(cached.get("full_epoch_tokens"), (int, float))
+            and cached.get("full_epoch_tokens") > 0
+            and isinstance(cached.get("train_rows"), int)
+            and cached.get("train_rows") > 0
+        ):
+            train_tokens = int(cached["full_epoch_tokens"])
+            train_rows = int(cached["train_rows"])
+            epochs = target_tokens / train_tokens
+            optimizer_steps = math.ceil(train_rows * epochs / effective_batch)
+            stats = {
+                **cached,
+                "target_tokens": target_tokens,
+                "epochs_for_target": epochs,
+                "effective_batch": effective_batch,
+                "estimated_optimizer_steps": optimizer_steps,
+            }
+            temporary_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
+            temporary_path.write_text(json.dumps(stats, indent=2))
+            temporary_path.replace(cache_path)
+            print(
+                f"Reused cached token count ({train_tokens:,}); "
+                f"recomputed steps for effective_batch={effective_batch} → {optimizer_steps}.",
+                file=sys.stderr,
+                flush=True,
+            )
+            return stats
 
     train_ds, eval_ds = load_pretokenized_mix(manifest_path)
     workers = max(1, min(num_proc or min(8, os.cpu_count() or 1), len(train_ds)))

@@ -35,4 +35,11 @@ def test_manifest_token_stats_counts_interleaved_tokens(tmp_path):
     assert stats["epochs_for_target"] == 100 / stats["full_epoch_tokens"]
     assert stats["estimated_optimizer_steps"] > 0
     assert compute_stats(manifest, 100, 4, num_proc=1) == stats  # cached result is stable
+    # Changing only effective_batch must reuse the token count (no recount).
+    stats_bs8 = compute_stats(manifest, 100, 8, num_proc=1)
+    assert stats_bs8["full_epoch_tokens"] == stats["full_epoch_tokens"]
+    assert stats_bs8["effective_batch"] == 8
+    assert stats_bs8["estimated_optimizer_steps"] == __import__("math").ceil(
+        stats["train_rows"] * stats_bs8["epochs_for_target"] / 8
+    )
     assert not list(tmp_path.glob("*.tmp"))
