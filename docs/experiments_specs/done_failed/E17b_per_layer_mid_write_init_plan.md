@@ -1,6 +1,6 @@
 # E17b — Implementation plan (per-layer + WRITE_GATE_INIT=0.1)
 
-- **Spec:** [E17b_per_layer_mid_write_init.md](E17b_per_layer_mid_write_init.md) · **Status:** active (launching)
+- **Spec:** [E17b_per_layer_mid_write_init.md](E17b_per_layer_mid_write_init.md) · **Status:** done_failed (eval 2026-08-13)
 - **HOW only:** config / launcher / eval protocol over the existing E17 foundation.
 
 ## Code / config

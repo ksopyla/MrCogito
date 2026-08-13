@@ -1,11 +1,11 @@
 # E17b — Per-layer banks with mid write-gate init (0.1)
 
-- **Status:** active — launching on Polonez (2026-08-10), `WRITE_GATE_INIT=0.1`, full 1B
+- **Status:** done_failed — 1B finished 2026-08-13; mid-init not sticky, absolute bars missed
 - **Serves:** free-run recovery on the E16b long-context platform, now that E17
   (init 0.01) showed a **partial** free-run lift with dead writes, and shared init 0.3
   showed that opening writes alone does **not** fix free-run on shared topology.
 - **Implementation plan:** [E17b_per_layer_mid_write_init_plan.md](E17b_per_layer_mid_write_init_plan.md)
-- **Owner / dates:** Krzysztof Sopyła · opened 2026-08-10 · closed —
+- **Owner / dates:** Krzysztof Sopyła · opened 2026-08-10 · closed 2026-08-13
 
 > One experiment = one changed variable vs E17: **`WRITE_GATE_INIT` 0.01 → 0.1**.
 > Topology stays `per_layer_banks`. Everything else matched to E17 / E16b.
@@ -102,10 +102,13 @@ and continue to 1B.
   — killed 2026-08-10 ~13:07Z after ~120 steps @ bs=3/accum=6 (~9 GiB/24 GiB VRAM).
 - Batch calibration (Polonez, accum=1): bs4 OK 11.0 GiB · bs6 OK 15.3 GiB · **bs8 OK 21.5 GiB
   (best samples/s)** · bs10 OK 23.7 GiB but slower · bs12 OOM. Chose **bs=8, accum=1**.
-- Restart run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260810_135711`
-  (Polonez, started 2026-08-10 13:57:13Z, 17785 steps, eff batch 32).
+- Restart / decisive run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260810_135711`
+  (Polonez, train 2026-08-10→13, 17785 steps, eff batch 32).
 - WandB: https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260810_135711
-- Verdict: — (training; 100M = monitor only; verdict at 1B)
+- Run report: [e17b_per_layer_mid_write_init_20260813.md](../../2_Experiments_Registry/run_reports/e17b_per_layer_mid_write_init_20260813.md)
+- Verdict: **killed** — writes opened near ~100M (max \|tanh\| 0.14) then closed to ~0.05 by 1B;
+  Δshuf_beyond ~0.004–0.006; free-run `real`@256 **0.20/0.60** (≈E17, ≪ absolute bar;
+  still ≫ E16b). Geometry RankMe 68 PASS.
 
 ## References
 - E17 partial success: [spec](../done_success/E17_four_bank_concept_memory.md) ·

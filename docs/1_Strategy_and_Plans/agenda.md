@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-08-10 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-08-13 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -32,17 +32,17 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   longer docs (8 concept blocks) + scale did. So long-context shared-depth is a
   **proven-useful regime** worth exploring further — not a claim that other routes
   are dead.
-- **Near-term after E17 init-0.01 (eval 2026-08-10):** the matched-init per-layer arm finished
-  1B without opening writes (`|tanh|≤0.033`) or clearing the absolute free-run bar
-  (`real`@256 **0.21/0.59** vs need ≥0.5/≤0.25), but is clearly healthier than E16b free-run
-  (**0.04/0.94**): prose instead of digit attractors, `real≈zero`, longer prompts help. Spec
-  closed as [done_failed/E17](../experiments_specs/done_failed/E17_four_bank_concept_memory.md)
-  · [1B gen report](../2_Experiments_Registry/run_reports/e17_lowinit_1b_generation_20260810.md).
-  **Topology remains untested fairly** (cold-start confound through 1B). Next: open-gate fair
-  A/B — per-layer + `WRITE_GATE_INIT=0.3` vs shared + init 0.3 — with Tier-1.5 at 100M **and**
-  1B (the shared init-0.3 100M sniff of d1=0.29 did **not** hold at 1B: `real`@256 **0.06/0.90**).
-  E17a (untied writers) stays conditional. E16b mechanism success + free-run failure diagnosis
-  still stand ([gen](../2_Experiments_Registry/run_reports/e16b_generation_quality_assessment_20260801.md)
+- **Near-term after E17b mid-init 0.1 (eval 2026-08-13):** per-layer + `WRITE_GATE_INIT=0.1`
+  finished 1B without sticky writes (opened ~0.14 at ~100M, closed to ~0.05 by 1B) and without
+  clearing the absolute free-run bar (`real`@256 **0.20/0.60** ≈ E17 **0.21/0.59**, still ≫
+  E16b **0.04/0.94**). Spec closed as
+  [done_failed/E17b](../experiments_specs/done_failed/E17b_per_layer_mid_write_init.md) ·
+  [report](../2_Experiments_Registry/run_reports/e17b_per_layer_mid_write_init_20260813.md).
+  **Next justified cell:** fair open-gate A/B — **per-layer + init 0.3** vs the already-run
+  shared + init 0.3 (Δbeyond **1.69**, free-run **0.06/0.90**). Soft mid-init alone is not
+  sticky under plain CE. E17a (untied writers) stays conditional on a sticky open-gate
+  per-layer result. E16b mechanism success + free-run failure diagnosis still stand
+  ([gen](../2_Experiments_Registry/run_reports/e16b_generation_quality_assessment_20260801.md)
   · [write-path](../2_Experiments_Registry/run_reports/e16b_write_path_and_topology_diagnosis_20260801.md)).
 - **Still open / still wanted:** [E08 Concept-Flow reasoner](../experiments_specs/ahead/E08_concept_flow_reasoner.md)
   (latent reasoning composition — preferably on a platform that already carries
@@ -53,7 +53,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   Priorities shifted; exploration stays multi-path.
 - **Background references:** E02-long remains the from-scratch semantic reference
   (STS-B 0.714). E10–E16a / E14–E15 remain valid evidence about short-ctx / sparse
-  recall regimes — lower priority for the next budget, not erased.
+  recall regimes — lower priority for the next budget, not erased. E17 init-0.01
+  ([done_success/E17](../experiments_specs/done_success/E17_four_bank_concept_memory.md) ·
+  [1B gen](../2_Experiments_Registry/run_reports/e17_lowinit_1b_generation_20260810.md))
+  remains the per-layer free-run baseline.
 
 ### Series roadmap (genealogy; each step was ONE variable — see explored ledger)
 1. **E01 — AR decoder from scratch** *(done 2026-06-14, mixed).*
@@ -66,9 +69,15 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
    *(done_failed — used but semantically empty at <200M; motivated the Gemma pivot).*
 6. **E10–E16a short-ctx Gemma line** *(done_failed / mixed — useful regime evidence; see ledger).*
 7. **E16b long-ctx Muon** *(done_success 2026-07-25 — validated long-context path; follow-ups + other routes still open).*
-8. **E17 four-bank per-layer (init 0.01)** *(done_failed 2026-08-10 — criteria missed; open-gate fair test next).*
+8. **E17 four-bank per-layer (init 0.01)** *(done_success mixed 2026-08-10 — relative free-run win; writes dead).*
+9. **E17b per-layer mid write-init 0.1** *(done_failed 2026-08-13 — mid-init not sticky; free-run ≈E17).*
 
 ## What we've explored so far (evidence, not verdicts)
+- **E17b mid-init 0.1 (per_layer_banks, Polonez, train 2026-08-10→13, Tier-1+1.5 2026-08-13):**
+  write gates opened near ~100M (max \|tanh\| 0.14) then closed to ~0.05 by 1B; RankMe 68;
+  Δshuf/static≥1024 **0.0055/0.0033**; free-run `real` greedy @256 **0.20/0.60** (E17 **0.21/0.59**;
+  E16b **0.04/0.94**). Mid write-init alone is not sticky under plain CE. See
+  [report](../2_Experiments_Registry/run_reports/e17b_per_layer_mid_write_init_20260813.md).
 - **E17 low-init 1B (per_layer_banks, Polonez, train 2026-08-07→10, Tier-1.5 2026-08-10):**
   matched init 0.01 vs E16b finished 1B with writes still dead (`|tanh|≤0.033`), Δbeyond ~0.004,
   RankMe 98. Free-run `real` greedy @256 **0.21/0.59** (E16b **0.04/0.94**; base **0.16/0.71**) —
