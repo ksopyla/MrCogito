@@ -1,6 +1,6 @@
 # E17c — Depth-private gated working memory — Implementation Plan
 
-- **Spec:** [E17c_depth_private_working_memory.md](E17c_depth_private_working_memory.md) · **Status:** approved and implemented; verification pending
+- **Spec:** [E17c_depth_private_working_memory.md](E17c_depth_private_working_memory.md) · **Status:** implemented and smoke-verified (`a30f0f5`); full training pending
 - **Authored by:** `implementation-plan` · for → `research-implement`
 
 > Implement the full E17c claim: depth-private read/write spaces, selective replacement

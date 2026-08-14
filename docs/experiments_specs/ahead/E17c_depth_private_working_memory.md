@@ -1,6 +1,6 @@
 # E17c — Depth-private gated working memory under causal carry pressure
 
-- **Status:** implemented; local and Polonez verification pending
+- **Status:** implemented and smoke-verified; full training not launched
 - **Serves:** Priority 1 / SG1–SG2: make Gemma's concept banks carry content-bearing
   cross-block working state that remains useful for generation.
 - **Implementation plan:** [E17c_depth_private_working_memory_plan.md](E17c_depth_private_working_memory_plan.md)
@@ -169,6 +169,33 @@ To be filled by `experiment-track`.
 - WandB: —
 - Run report: —
 - Verdict: —
+
+## Implementation verification (2026-08-14; not an experiment verdict)
+- **Code:** `a30f0f5` on the E17c implementation branch. Defaults retain E17b's
+  `backbone_qkv` + tied additive writer path and state-dict keys.
+- **Local:** full suite `381 passed, 9 skipped`; a three-step H=64/C=4/two-bank smoke
+  produced finite losses `5.581 → 5.542 → 5.507`, all-bank/permutation diagnostics,
+  checkpoint round-trip, and generation.
+- **Polonez GPU guard:** the first attempt exposed a BF16-candidate/FP32-state interpolation
+  mismatch before step 1. Commit `809661b` fixes it and adds an autocast regression; a
+  one-step 4×3090 guard then completed and saved normally.
+- **50-step matched smoke:** run
+  `backbone_concept_gemma_3_1b_pt_K512_concept_20260814_084543`
+  (W&B, project configured by the training environment)
+  finished at effective batch 72 with 51.41M trainable parameters. W&B API comparison
+  confirms the same immutable `e16b_long_4k_v1` manifest, Gemma tokenizer, seq=4096,
+  causal-LM objective, C=128/K=512, LoRA r=16/alpha=32, seed 42, Muon
+  `0.01 / 2e-4 / 0.95 / wd=0.1`, job type, and standard eval/ablation keys as
+  E16b/E17/E17b. The smoke additionally logged carryless, permutation, per-bank, and
+  update/state metrics.
+- **Telemetry guard:** eval initially overwrote the last sampled pressure fraction with
+  zero. Commit `a30f0f5` preserves training telemetry; follow-up run
+  `..._20260814_091224` logged `memory_pressure/observed_fraction=0.4167`.
+- **Smoke observations only:** normal eval loss was 2.822 on two held-out samples and
+  all metrics were finite. Dynamic update gates after 50 steps were
+  `0.0022 / 0.0083 / 0.0439 / 0.0041`; this rapid closing is a risk signal, not a
+  kill verdict at this tiny budget. Use the preregistered 100M gate and ≥24 held-out
+  batches for the scientific decision.
 
 ## References
 - [E17b failed mid-init run](../done_failed/E17b_per_layer_mid_write_init.md) ·

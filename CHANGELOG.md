@@ -40,8 +40,9 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   fraction, so W&B reports the intervention rate instead of a misleading zero
 - [preserved] the default E17b read/write path, model family, collator, data manifest,
   optimizer/evaluation plumbing, and W&B identity contract
-- [coverage] legacy construction, private-cell gradients, causal pressure masking, weighted
-  CE, causality, per-bank ablations, checkpoint round-trip, and launcher parameter flow
+- [tested] legacy construction, private-cell gradients, causal pressure masking, weighted
+  CE, causality, per-bank ablations, checkpoint round-trip, launcher parameter flow, the
+  full 381-test suite, and matched one-/50-step Polonez BF16+DDP+W&B runs
 
 **Related:** [E17c](docs/experiments_specs/ahead/E17c_depth_private_working_memory.md)
 

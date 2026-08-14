@@ -80,7 +80,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 
 | ID | What | Status | Spec |
 |---|---|---|---|
-| E17c | Depth-private gated working memory + causal carry pressure | draft | [E17c](../experiments_specs/ahead/E17c_depth_private_working_memory.md) |
+| E17c | Depth-private gated working memory + causal carry pressure | implemented + smoke-verified; full run pending | [E17c](../experiments_specs/ahead/E17c_depth_private_working_memory.md) |
 | E08 | Concept-Flow reasoner (encode→reason→decode) | draft | [E08](../experiments_specs/ahead/E08_concept_flow_reasoner.md) |
 | E05c | Decoder word-dropout on suffix (anti-bypass) | on hold / unrun | [E05c](../experiments_specs/ahead/E05c_anticollapse_extension.md) |
 | E05d | VICReg on concept matrix | on hold / design-only | [E05d](../experiments_specs/ahead/E05d_concept_vicreg.md) |
