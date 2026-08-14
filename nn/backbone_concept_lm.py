@@ -1125,7 +1125,14 @@ class BackboneConceptLM(PreTrainedModel):
         loss = None
         if labels is not None:
             pressure_multiplier = self.config.memory_pressure_weight - 1.0
-            weighted_pressure = pressure_multiplier > 0.0 and pressure_cnt.item() > 0
+            # This branch must be identical on every DDP rank. A local ``pressure_cnt``
+            # check can diverge when Bernoulli sampling selects no rows on one rank,
+            # yielding mismatched all-reduce dtypes (long vs float).
+            weighted_pressure = (
+                pressure_multiplier > 0.0
+                and self.config.memory_pressure_tokens > 0
+                and self.config.memory_carry_dropout > 0.0
+            )
             if weighted_pressure:
                 numerator = total_ce + pressure_multiplier * pressure_ce
                 denominator = (
