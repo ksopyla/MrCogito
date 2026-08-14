@@ -168,10 +168,12 @@ def main():
     )
     train_lengths = None
     if data_args.batch_packing_mode == "length_group":
+        length_cache_num_proc = os.environ.get("LENGTH_CACHE_NUM_PROC")
         with training_args.main_process_first(desc="preparing sequence-length cache"):
             train_lengths = compute_or_load_interleaved_lengths(
                 data_args.pretokenized_manifest,
                 train_ds=train_ds,
+                num_proc=int(length_cache_num_proc) if length_cache_num_proc else None,
             )
         if is_main_process():
             logger.info(

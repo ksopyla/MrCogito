@@ -75,6 +75,9 @@ PRESERVE_PRECOMPUTED_LABELS="${PRESERVE_PRECOMPUTED_LABELS:-false}"
 # concatenate documents or alter tokenization. "none" preserves historical runs.
 BATCH_PACKING_MODE="${BATCH_PACKING_MODE:-none}"
 LENGTH_GROUP_MEGA_BATCH_MULT="${LENGTH_GROUP_MEGA_BATCH_MULT:-20}"
+# Optional datasets.map workers for the length sidecar (default in Python: min(32, cpu-2)).
+LENGTH_CACHE_NUM_PROC="${LENGTH_CACHE_NUM_PROC:-}"
+export LENGTH_CACHE_NUM_PROC
 TOKENIZER_NAME="${TOKENIZER_NAME:-answerdotai/ModernBERT-base}"
 MAX_SEQ_LENGTH="${MAX_SEQ_LENGTH:-512}"
 DELETION_RATE="${DELETION_RATE:-0.6}"

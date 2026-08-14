@@ -15,6 +15,32 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-08-14] - Parallel Hugging Face length cache
+
+**Why:**
+- The E17c 300M launch never reached step 0 because rank 0 scanned 16.6M interleaved
+  rows with a single-process `Dataset.iter()`. Pretokenization already uses
+  `datasets.map` + `save_to_disk`; the length sidecar did not.
+
+**Impact:**
+- Length grouping builds (or loads) a standard Hugging Face Arrow dataset beside the
+  manifest. First-run scans use multiprocess `map`; later launches are a `load_from_disk`
+  of one `int32` column. Legacy `*.lengths.npz` files are ignored and deleted on rewrite.
+
+**What changed:**
+- [train] `data/length_cache.py` computes lengths with picklable `Dataset.map` and
+  stores `{manifest}.lengths/` via `save_to_disk`; cache hits use Arrow `to_numpy`
+  rather than Python `Dataset.__getitem__` formatting
+- [train] `scripts/manifest_length_cache.py` accepts `--num_proc` and inspects the Arrow
+  sidecar without reloading the mix when the cache is valid
+- [train] `scripts/launch_e17c.sh` sets `LENGTH_CACHE_NUM_PROC=32` for the Polonez rebuild
+- [tested] Arrow roundtrip, cache-hit skip, seed/row invalidation, `num_proc` equality,
+  leftover `.tmp`/`.old` cleanup, and rejection of the old npz format
+
+**Related:** [pad-free / low-padding training](docs/engineering_specs/pad_free_variable_length_training.md)
+
+---
+
 ## [2026-08-14] - E17c implementation audit and 300M first-run budget
 
 **Why:**

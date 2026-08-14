@@ -292,6 +292,7 @@ def test_e17c_wrapper_reuses_e16b_data_wandb_and_evaluation_protocol(tmp_path):
     assert _value_after(args, "--num_train_epochs") == "7.5"
     assert _value_after(args, "--report_to") == "wandb"
     assert _value_after(args, "--eval_strategy") == "no"
+    assert 'LENGTH_CACHE_NUM_PROC="${LENGTH_CACHE_NUM_PROC:-32}"' in E17C_LAUNCHER.read_text()
 
 
 def test_e10_protocol_wrapper_forwards_recovery_sequence_overrides(tmp_path):
