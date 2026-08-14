@@ -65,7 +65,11 @@ def _length_batch(batch: dict) -> dict:
 
 
 def _lengths_from_dataset(length_ds: Dataset) -> np.ndarray:
-    return np.asarray(length_ds.with_format("numpy")["length"], dtype=np.int32)
+    """Zero-copy Arrow int32 column → numpy. Avoid Dataset.__getitem__ formatting."""
+    column = length_ds.data.table.column("length")
+    if hasattr(column, "combine_chunks"):
+        column = column.combine_chunks()
+    return np.asarray(column.to_numpy(), dtype=np.int32)
 
 
 def _valid_cached_lengths(
@@ -178,7 +182,6 @@ def _compute_lengths(
         "remove_columns": token_ds.column_names,
         "features": _LENGTH_FEATURES,
         "load_from_cache_file": False,
-        "keep_in_memory": True,
         "desc": "Sequence lengths",
     }
     if num_proc > 1:

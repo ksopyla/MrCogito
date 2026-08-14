@@ -29,7 +29,8 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 **What changed:**
 - [train] `data/length_cache.py` computes lengths with picklable `Dataset.map` and
-  stores `{manifest}.lengths/` via `save_to_disk`
+  stores `{manifest}.lengths/` via `save_to_disk`; cache hits use Arrow `to_numpy`
+  rather than Python `Dataset.__getitem__` formatting
 - [train] `scripts/manifest_length_cache.py` accepts `--num_proc` and inspects the Arrow
   sidecar without reloading the mix when the cache is valid
 - [train] `scripts/launch_e17c.sh` sets `LENGTH_CACHE_NUM_PROC=32` for the Polonez rebuild
