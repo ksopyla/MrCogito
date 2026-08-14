@@ -999,6 +999,10 @@ def test_e17c_gated_replace_equation_and_padded_identity():
         actual = writer(z, h, pad)
     assert torch.allclose(actual, expected, atol=1e-6)
     assert writer._last_update_gate_mean == pytest.approx(0.25, abs=1e-6)
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        mixed_precision = writer(z, h, pad)
+    assert mixed_precision.dtype == z.dtype
+    assert torch.isfinite(mixed_precision).all()
 
 
 def test_e17c_three_block_gradients_reach_every_private_cell():

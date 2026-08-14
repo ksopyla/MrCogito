@@ -367,9 +367,11 @@ class ConceptWriteHead(nn.Module):
                 self.norm_tok(h_block).to(z.dtype),
                 key_padding_mask=safe_pad,
             )
-            candidate = self.sandwich(lat)
+            # Autocast emits BF16 attention/norm outputs while the learned concept
+            # state intentionally remains FP32. ``torch.lerp`` requires one dtype.
+            candidate = self.sandwich(lat).to(z.dtype)
             gate_input = torch.cat([self.norm_lat(z), candidate], dim=-1)
-            update_gate = torch.sigmoid(self.update_gate(gate_input))
+            update_gate = torch.sigmoid(self.update_gate(gate_input)).to(z.dtype)
             next_z = torch.lerp(z, candidate, update_gate)
             next_z = torch.where(valid_row.view(-1, 1, 1), next_z, z)
             with torch.no_grad():

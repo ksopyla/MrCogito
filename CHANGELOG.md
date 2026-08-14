@@ -34,6 +34,8 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   update/state telemetry, and a thin E17c launcher over the existing Gemma training path
 - [fixed] the E16b wrapper now honors explicit 4K cache/manifest overrides for isolated
   launcher verification; its default immutable 4K path remains unchanged
+- [fixed] gated replacement casts autocast BF16 candidates/gates back to the FP32 recurrent
+  state dtype before interpolation, preventing the first-step mixed-precision crash
 - [preserved] the default E17b read/write path, model family, collator, data manifest,
   optimizer/evaluation plumbing, and W&B identity contract
 - [coverage] legacy construction, private-cell gradients, causal pressure masking, weighted
