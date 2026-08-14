@@ -24,7 +24,7 @@ Companion to [`pad_free_variable_length_training.md`](./pad_free_variable_length
 |---|---|---|
 | Pretok train is **map-style**, not `IterableDataset` | `data/dataset_preprocess.py` `_fast_weighted_all_exhausted_interleave` → `concatenate_datasets` + `select(indices)` | Random-access `Sampler` is legal on interleaved pretok |
 | Interleave seed lives in the manifest | `load_pretokenized_mix` uses `manifest["seed"]` | Length cache must key on **interleaved** index space (= manifest bytes + that seed) |
-| Sidecar cache pattern already exists | `scripts/manifest_token_stats.py` → `manifest.json.token_stats.json` | Mirror for lengths: `manifest.json.lengths.npz` |
+| Sidecar cache pattern already exists | `scripts/manifest_token_stats.py` → `manifest.json.token_stats.json` | Mirror for lengths: `manifest.json.lengths/` (HF Arrow via `save_to_disk`) |
 | Collator already pad-to-batch-max | `data/data_collators.py` `DataCollatorForCausalLM` | Phase 1 leaves collator **unchanged** |
 | Trainer has a gated sampler override | `training/concept_pretraining_trainer.py` `PerceiverDenoiseTrainer` | `none` delegates to HF; `length_group` supplies one shared sortish stream and Accelerate shards it |
 | Launcher is env → CLI | `scripts/train_concept_pretraining_multigpu.sh` | New `BATCH_PACKING_MODE` env → `--batch_packing_mode` |
@@ -41,27 +41,19 @@ Next to a pretok manifest (same directory as today):
 ```text
 $DATASETS_TOK_DIR/e16b_long_4k_v1_gemma_manifest.json
 $DATASETS_TOK_DIR/e16b_long_4k_v1_gemma_manifest.json.token_stats.json   # existing
-$DATASETS_TOK_DIR/e16b_long_4k_v1_gemma_manifest.json.lengths.npz         # NEW
+$DATASETS_TOK_DIR/e16b_long_4k_v1_gemma_manifest.json.lengths/            # HF Arrow dataset
+$DATASETS_TOK_DIR/e16b_long_4k_v1_gemma_manifest.json.lengths.meta.json
 ```
 
-**`.lengths.npz` contents**
+**`.lengths/` contents** — a one-column Hugging Face dataset (`save_to_disk`):
 
-| key | dtype | meaning |
+| column | dtype | meaning |
 |---|---|---|
-| `lengths` | `int32[N]` | `len(input_ids)` for interleaved train row `i ∈ [0, N)` |
-| `manifest_sha256` | `U64` (or stored in sidecar JSON; prefer JSON meta — see below) | invalidation |
-| `n_rows` | scalar | must equal `len(train_ds)` after `load_pretokenized_mix` |
-| `max_seq_length` | scalar | from manifest (sanity) |
-| `seed` | scalar | manifest interleave seed |
+| `length` | `int32` | `len(input_ids)` for interleaved train row `i ∈ [0, N)` |
 
-Prefer a **two-file** pattern (matches token_stats readability + npz density):
+**`.lengths.meta.json`** holds invalidation fields: `manifest_sha256`, `n_rows`, `seed`, `max_seq_length`, `format=hf_datasets_arrow`.
 
-```text
-manifest.json.lengths.npz          # only array: lengths
-manifest.json.lengths.meta.json    # sha256, n_rows, seed, max_seq_length, created_at
-```
-
-Or single JSON meta embedding a path — keep npz for the array (N can be millions).
+The first npz sidecar (`*.lengths.npz`) is obsolete; a successful rewrite deletes it.
 
 **Invalidation:** recompute if `manifest_sha256` mismatches `sha256(manifest bytes)` OR `n_rows != len(train_ds)` OR `seed` mismatch. Same atomic write as token_stats (`*.tmp` → `replace`).
 
@@ -73,7 +65,7 @@ from pathlib import Path
 import numpy as np
 
 def length_cache_paths(manifest_path: Path) -> tuple[Path, Path]:
-    """Return (npz_path, meta_path) beside the manifest."""
+    """Return (dataset_dir, meta_path) beside the manifest."""
     ...
 
 def compute_or_load_interleaved_lengths(
@@ -86,10 +78,10 @@ def compute_or_load_interleaved_lengths(
     """Return int32[N] lengths aligned to load_pretokenized_mix(train) indices.
 
     Implementation sketch:
-      1. Load/validate meta + npz.
-      2. On miss: map over train_ds.select_columns(["input_ids"]) with
-         batched len() reduce (same worker pattern as scripts/manifest_token_stats.py).
-      3. Atomic write npz + meta.
+      1. Load/validate meta + Arrow length dataset.
+      2. On miss: Dataset.map over train_ds.select_columns(["input_ids"]) with
+         batched len() (same worker pattern as scripts/manifest_token_stats.py / pretokenize).
+      3. Atomic save_to_disk + meta.
     """
     ...
 
@@ -104,7 +96,7 @@ def assert_lengths_match_dataset(lengths: np.ndarray, dataset) -> None:
 # scripts/manifest_length_cache.py
 uv run python scripts/manifest_length_cache.py \
   --manifest "$DATASETS_TOK_DIR/e16b_long_4k_v1_gemma_manifest.json" \
-  [--force] [--num_proc 8]
+  [--force] [--num_proc 32]
 # prints path + n_rows + length histogram summary (p50/p90/p99/max)
 ```
 
@@ -350,7 +342,7 @@ All-reduce: `real_tokens` and `padded_tokens` sum across ranks; `pad_ratio` from
 **Length cache**
 - [x] Add `data/length_cache.py` (`compute_or_load_interleaved_lengths`)
 - [x] Add `scripts/manifest_length_cache.py` CLI
-- [x] Sidecar: `*.lengths.npz` + `*.lengths.meta.json` next to pretok manifest
+- [x] Sidecar: `*.lengths/` (HF Arrow) + `*.lengths.meta.json` next to pretok manifest
 - [x] Invalidate on manifest sha256 / n_rows / seed mismatch (atomic write)
 - [x] Tests: `tests/test_length_cache.py`
 

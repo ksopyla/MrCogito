@@ -35,10 +35,14 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   E17b “concepts as memory” diagnosis confirmed the cell is faithful (dedicated reads,
   untied gated writers, carry pressure); residual risk is the remaining 50% local carry
   and gate-closing, not a missing idea. The first full Polonez launch is the **300M**
-  mechanism-verdict budget (`scripts/launch_e17c.sh`), not 1B.
+  mechanism-verdict budget (`scripts/launch_e17c.sh`), not 1B. The 2026-08-14 attempt
+  never reached step 0: rank 0 sat in a serial `Dataset.iter()` length scan over 16.6M
+  rows. That cache is now a parallel `datasets.map` + `save_to_disk` Arrow sidecar;
+  precompute it before relaunch so DDP is not blocked on a first-run scan.
 - **4K training efficiency:** E17c now opts into cached, bounded length grouping over the
-  unchanged interleaved manifest (`483f3fa`; full suite `388 passed, 9 skipped`). It
-  preserves documents and source weights, uses Accelerate's normal 4-GPU sharding, and logs
+  unchanged interleaved manifest. Lengths live in `*.lengths/` (Hugging Face Arrow,
+  `datasets.map` workers) rather than a rank-0 Python `iter()` / `.npz`. It preserves
+  documents and source weights, uses Accelerate's normal 4-GPU sharding, and logs
   global padding/useful-token throughput. Keep this separate from the 1M-context
   architecture: length grouping reduces rectangular waste now, while true variable-length
   attention and boundary-safe packing remain required.

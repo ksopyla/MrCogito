@@ -108,7 +108,7 @@ index stream and lets Hugging Face Accelerate perform its normal disjoint rank s
 **Design**
 - Add `LengthGroupedSampler` (HF-style) or in-house `TokenBudgetBatchSampler` selectable via env:
   - `BATCH_PACKING_MODE=none|length_group|token_budget` (default `none` for checkpoint comparability).
-- Precompute lengths once from pretok Arrow (`len(input_ids)`) into a sidecar cache next to the manifest (same pattern as `*.token_stats.json`).
+- Precompute lengths once from pretok Arrow (`len(input_ids)`) into a Hugging Face `save_to_disk` sidecar next to the manifest (`*.lengths/` + `*.lengths.meta.json`), using parallel `datasets.map` — the same processing path as pretokenization, not a serial Python `iter()`.
 - Group indices into mega-batches of similar length, then shuffle groups (preserve SGD noise).
 - Keep `DataCollatorForCausalLM` unchanged (still pad-to-batch-max — but batch max ≈ group max).
 

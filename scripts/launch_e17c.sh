@@ -24,6 +24,8 @@ export MAX_SEQ_LENGTH=4096
 export PRETOKENIZE_MIX=e16b_long_4k_v1
 export BATCH_PACKING_MODE="${BATCH_PACKING_MODE:-length_group}"
 export LENGTH_GROUP_MEGA_BATCH_MULT="${LENGTH_GROUP_MEGA_BATCH_MULT:-20}"
+# Parallel Hugging Face datasets.map workers for the length sidecar (rank 0).
+export LENGTH_CACHE_NUM_PROC="${LENGTH_CACHE_NUM_PROC:-32}"
 # First full run is the 300M mechanism-verdict budget (100M kill / 300M primary
 # carryless Δpermutation). Override to 1000000000 only after that gate passes; a
 # later 1B run uses its own cosine, not a continuation of this scheduler.
