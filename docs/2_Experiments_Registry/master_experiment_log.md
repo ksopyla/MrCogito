@@ -11,11 +11,21 @@ experiment specs; deep metrics and interpretation live in run reports. Live focu
 | What are we doing now? | [`agenda.md`](../1_Strategy_and_Plans/agenda.md) |
 | Full metric dump / fair baselines | `run_reports/` |
 
-> **Focus note (2026-08-13) — E17b mid-init failed; fair init-0.3 per-layer still open.**
+> **Focus note (2026-08-14) — E17c depth-private gated working memory.**
+> The architecture/evaluation audit found that E16/E16b shared-depth writes can carry
+> current-block future information into later same-block global layers, so their large
+> teacher-forced ΔCE is not clean causal-memory evidence. E17/E17b are block-causal but
+> their additive tied writers close under plain CE. E17c keeps four prior-block banks and
+> jointly tests depth-private read/write spaces, selective replacement, and causal carry
+> pressure. Decisive gate: carryless first-64 `Δpermutation ≥0.20` by 300M.
+> [Spec](../experiments_specs/ahead/E17c_depth_private_working_memory.md) ·
+> [plan](../experiments_specs/ahead/E17c_depth_private_working_memory_plan.md).
+
+> **Prior focus (2026-08-13) — E17b mid-init failed; init-0.3 cell was left open.**
 > Per-layer + `WRITE_GATE_INIT=0.1` finished 1B with writes that opened near ~100M then
 > closed (~0.05); free-run `real`@256 **0.20/0.60** ≈ E17, still ≪ absolute bar and ≫ E16b.
-> Mid-init alone is not sticky. Next justified cell: **per-layer + init 0.3** vs the
-> already-run shared+0.3 control. Specs:
+> Mid-init alone is not sticky. The then-proposed **per-layer + init 0.3** cell was
+> superseded by the 2026-08-14 architecture/evaluation audit above. References:
 > [E17b](../experiments_specs/done_failed/E17b_per_layer_mid_write_init.md) ·
 > [report](run_reports/e17b_per_layer_mid_write_init_20260813.md) ·
 > [E17](../experiments_specs/done_success/E17_four_bank_concept_memory.md).
@@ -26,6 +36,8 @@ experiment specs; deep metrics and interpretation live in run reports. Live focu
 > Long-context shared-depth is **one validated path**; other directions (E08, diffusion,
 > design-only alternatives) stay open. Spec:
 > [E16b](../experiments_specs/done_success/E16b_longctx_muon_1b.md) · [run report](run_reports/e16b_longctx_muon_1b_20260725.md).
+> **Historical interpretation only:** the 2026-08-14 focus note supersedes the causal-use
+> reading because later same-block layers can read current-block BiXT writes.
 
 
 > **⚠️ Tier-1 metric protocol note (2026-07-07).** `run_concept_analysis.py` numbers recorded
@@ -47,7 +59,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 |---|---|---|---|---|
 | E17b | Per-layer banks + mid write init 0.1 | done_failed | writes closed after ~100M open; gen `real`@256 **0.20/0.60** ≈E17; Δbeyond ~0.005 | [E17b](../experiments_specs/done_failed/E17b_per_layer_mid_write_init.md) · [report](run_reports/e17b_per_layer_mid_write_init_20260813.md) |
 | E17 | 4-bank per-layer concept memory (init 0.01 vs E16b) | done_success (mixed) | gen `real`@256 **0.21/0.59** vs E16b **0.04/0.94** — partial free-run win; writes still dead | [E17](../experiments_specs/done_success/E17_four_bank_concept_memory.md) · [report](run_reports/e17_lowinit_1b_generation_20260810.md) |
-| E16b | Long-ctx Muon scale-up of shared-depth workspace | done_success | RankMe 101 · Δ≥1024 **2.47/2.35** — causal-use gate cleared | [E16b](../experiments_specs/done_success/E16b_longctx_muon_1b.md) · [report](run_reports/e16b_longctx_muon_1b_20260725.md) |
+| E16b | Long-ctx Muon scale-up of shared-depth workspace | done_success | RankMe 101 · Δ≥1024 **2.47/2.35**; causal interpretation revised 2026-08-14 | [E16b](../experiments_specs/done_success/E16b_longctx_muon_1b.md) · [report](run_reports/e16b_longctx_muon_1b_20260725.md) |
 | E16a | Shared-depth optimizer A/B at 100M / 2K | done_failed | Both arms failed ≥0.01; Muon best short-ctx (0.0028) | [E16a](../experiments_specs/done_failed/E16a_muon_optimizer_ab.md) |
 | E16 | Shared depth-recurrent workspace (50M / 2K) | done_failed | Failed 2K gate; same arch later succeeded as E16b | [E16](../experiments_specs/done_failed/E16_shared_depth_recurrent_concepts.md) |
 | E15 | Supervision-calibrated delayed recall | done_failed | 12k labels; block-2 still at chance — protocol kill | [E15](../experiments_specs/done_failed/E15_supervision_calibrated_delayed_recall.md) · [report](run_reports/e15_supervision_calibrated_delayed_recall_20260713.md) |
@@ -68,6 +80,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 
 | ID | What | Status | Spec |
 |---|---|---|---|
+| E17c | Depth-private gated working memory + causal carry pressure | draft | [E17c](../experiments_specs/ahead/E17c_depth_private_working_memory.md) |
 | E08 | Concept-Flow reasoner (encode→reason→decode) | draft | [E08](../experiments_specs/ahead/E08_concept_flow_reasoner.md) |
 | E05c | Decoder word-dropout on suffix (anti-bypass) | on hold / unrun | [E05c](../experiments_specs/ahead/E05c_anticollapse_extension.md) |
 | E05d | VICReg on concept matrix | on hold / design-only | [E05d](../experiments_specs/ahead/E05d_concept_vicreg.md) |
@@ -84,7 +97,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 | E07 | Sentence-gap / boundary-only infilling | [E07](../experiments_specs/canceled/E07_sentence_gap_infilling.md) |
 | E09 | Gated recurrent concept memory (superseded by E10) | [E09](../experiments_specs/canceled/E09_recurrent_concept_memory.md) |
 
-**Genealogy (one variable at a time):** E01 → E02 → E03 → E04 → E05 → E10…E16a (short-ctx) → **E16b** (long-ctx success) → **E17** (per-layer init-0.01 partial success) → **E17b** (per-layer mid-init 0.1 failed) → next fair cell per-layer+init-0.3. See [`agenda.md`](../1_Strategy_and_Plans/agenda.md) for the living reading.
+**Genealogy:** E01 → E02 → E03 → E04 → E05 → E10…E16a (short-ctx) → **E16b** (historical shared-depth result; causal interpretation revised 2026-08-14) → **E17** (causal per-layer init-0.01 partial success) → **E17b** (mid-init 0.1 failed) → **E17c** (depth-private gated cell + causal carry pressure). See [`agenda.md`](../1_Strategy_and_Plans/agenda.md) for the living reading.
 
 ---
 

@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-08-13 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-08-14 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,30 +20,28 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **Priority shift after E16b (eval 2026-07-25) — one validated path, not the only one.**
-  Shared depth-recurrent concepts on frozen Gemma-3-1B cleared the causal-use gate
-  under longer context + more compute: seq **4096**, mix `e16b_long_4k_v1`, Muon,
-  **1B** tokens. Offline Tier-1: RankMe **101**, Δshuffle/Δstatic≥1024 **2.47/2.35**,
-  Δone-block≥1024 **0.58**. Spec:
-  [done_success/E16b](../experiments_specs/done_success/E16b_longctx_muon_1b.md) ·
-  [run report](../2_Experiments_Registry/run_reports/e16b_longctx_muon_1b_20260725.md).
-  **Why this matters for next work:** healthy RankMe was already present in E10–E16a;
-  short **2K / ≤100M plain CE** rarely forced multi-block persistence, while E16b’s
-  longer docs (8 concept blocks) + scale did. So long-context shared-depth is a
-  **proven-useful regime** worth exploring further — not a claim that other routes
-  are dead.
-- **Near-term after E17b mid-init 0.1 (eval 2026-08-13):** per-layer + `WRITE_GATE_INIT=0.1`
-  finished 1B without sticky writes (opened ~0.14 at ~100M, closed to ~0.05 by 1B) and without
-  clearing the absolute free-run bar (`real`@256 **0.20/0.60** ≈ E17 **0.21/0.59**, still ≫
-  E16b **0.04/0.94**). Spec closed as
-  [done_failed/E17b](../experiments_specs/done_failed/E17b_per_layer_mid_write_init.md) ·
-  [report](../2_Experiments_Registry/run_reports/e17b_per_layer_mid_write_init_20260813.md).
-  **Next justified cell:** fair open-gate A/B — **per-layer + init 0.3** vs the already-run
-  shared + init 0.3 (Δbeyond **1.69**, free-run **0.06/0.90**). Soft mid-init alone is not
-  sticky under plain CE. E17a (untied writers) stays conditional on a sticky open-gate
-  per-layer result. E16b mechanism success + free-run failure diagnosis still stand
-  ([gen](../2_Experiments_Registry/run_reports/e16b_generation_quality_assessment_20260801.md)
-  · [write-path](../2_Experiments_Registry/run_reports/e16b_write_path_and_topology_diagnosis_20260801.md)).
+- **Current experiment — [E17c depth-private gated working memory](../experiments_specs/ahead/E17c_depth_private_working_memory.md)**
+  ([implementation plan](../experiments_specs/ahead/E17c_depth_private_working_memory_plan.md)).
+  E17c keeps E17's strictly block-causal four-bank topology and makes each depth a complete
+  private memory cell: dedicated read projections, an untied BiXT writer, selective
+  retain/replace dynamics, and causal carry dropout so prior-block information is sometimes
+  available only through concepts. The decisive pre-registered gate is carryless first-64
+  `Δpermutation ≥0.20` by 300M; a null at 100M (`<0.05`) kills early.
+- **Why the previous next step changed (architecture/evaluation audit 2026-08-14):**
+  E17b's mid-init writes briefly opened then closed, showing that another scalar-init cell
+  does not address the learning incentive. More importantly, E16/E16b
+  `shared_depth_recurrent` writes current-block information after an early global layer and
+  rereads that state at later global layers in the **same block**; its BiXT writer is not
+  token-causal. The large E16b/shared+0.3 teacher-forced ΔCE therefore cannot be treated as
+  clean causal-memory evidence. Preserve those runs as historical results, but do not use
+  shared-depth as the target topology. E17/E17b avoid this leak because each layer rereads
+  only its own prior-block bank.
+- **What E17/E17b actually established:** the per-layer family keeps free-run in prose
+  (`real`@256 **0.20/0.60** vs shared E16b **0.04/0.94**) and is block-causal, but plain
+  next-token CE does not sustain content-bearing writes (`Δshuffle_beyond≈0.004–0.006`).
+  E17c therefore tests a working-memory **cell + information-pressure** hypothesis rather
+  than per-layer + init 0.3. E17a's untied-additive writer remains a possible post-positive
+  ablation, not a prerequisite.
 - **Still open / still wanted:** [E08 Concept-Flow reasoner](../experiments_specs/ahead/E08_concept_flow_reasoner.md)
   (latent reasoning composition — preferably on a platform that already carries
   concepts), diffusion revive from `parked/` if a materially new ingredient appears,
@@ -58,7 +56,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [1B gen](../2_Experiments_Registry/run_reports/e17_lowinit_1b_generation_20260810.md))
   remains the per-layer free-run baseline.
 
-### Series roadmap (genealogy; each step was ONE variable — see explored ledger)
+### Series roadmap (genealogy; each step is one registered coherent bet)
 1. **E01 — AR decoder from scratch** *(done 2026-06-14, mixed).*
 2. **E02 — objective:** [prefix→suffix AR generation](../experiments_specs/done_success/E02_ar_prefix_suffix.md)
    *(done 2026-06-14, mixed/positive; STS-B 0.702).*
@@ -71,6 +69,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 7. **E16b long-ctx Muon** *(done_success 2026-07-25 — validated long-context path; follow-ups + other routes still open).*
 8. **E17 four-bank per-layer (init 0.01)** *(done_success mixed 2026-08-10 — relative free-run win; writes dead).*
 9. **E17b per-layer mid write-init 0.1** *(done_failed 2026-08-13 — mid-init not sticky; free-run ≈E17).*
+10. **E17c depth-private gated working memory + causal carry pressure** *(draft 2026-08-14).*
 
 ## What we've explored so far (evidence, not verdicts)
 - **E17b mid-init 0.1 (per_layer_banks, Polonez, train 2026-08-10→13, Tier-1+1.5 2026-08-13):**
@@ -82,9 +81,9 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   matched init 0.01 vs E16b finished 1B with writes still dead (`|tanh|≤0.033`), Δbeyond ~0.004,
   RankMe 98. Free-run `real` greedy @256 **0.21/0.59** (E16b **0.04/0.94**; base **0.16/0.71**) —
   absolute success bar missed; relative lift vs E16b (prose, `real≈zero`, long prompts help).
-  Topology still confounded. See
+  The topology is block-causal, but its write mechanism never engaged. See
   [report](../2_Experiments_Registry/run_reports/e17_lowinit_1b_generation_20260810.md).
-- **E16b free-run generation vs base Gemma (Odra, Tier-1.5, 2026-08-01) — FAIL on generation, mechanism intact:**
+- **E16b free-run generation vs base Gemma (Odra, Tier-1.5, 2026-08-01) — FAIL on generation; teacher-forced mechanism interpretation revised 2026-08-14:**
   matched continuation bank + context sweep on `checkpoint-7900` vs `gemma-3-1b-pt`.
   E16b `real` greedy @256: distinct-1 **0.04** / REP-3 **0.94** (digit/punctuation
   attractors); base sample @256 REP-3 **0.03**. Longer prompt prefixes help base and
@@ -97,21 +96,23 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   sampling does. Backbone + LoRA + windowed-global-attention are sound (`zero` is
   fluent) — we did **not** break Gemma. See
   [report](../2_Experiments_Registry/run_reports/e16b_generation_quality_assessment_20260801.md).
-- **E16b long-context Muon 1B (Gemma-3-1B, Odra, train 2026-07-18→20, Tier-1 2026-07-25) — SUCCESS:**
+- **E16b long-context Muon 1B (Gemma-3-1B, Odra, train 2026-07-18→20, Tier-1 2026-07-25) — recorded success; causal interpretation revised 2026-08-14:**
   shared-depth workspace at seq 4096 on `e16b_long_4k_v1` with Muon for 1B tokens
   reached offline RankMe **101** and Δshuffle/Δstatic≥1024 **2.47/2.35** (clears the
   0.01 gate by a large margin; E16a Muon was 0.0028 at 100M/2K). Δone-block≥1024
-  **0.58** shows accumulated multi-block state. **Reading:** longer context + more
-  compute unlocked causal concept use that short 2K CE did not; this is one valid
-  path to keep exploring (semantic probe still open; compound factors not isolated;
-  free-run generation separately failed — see Aug 1 report).
+  **0.58** showed accumulated multi-block state under the registered protocol. **Revised
+  reading:** the implementation rereads non-token-causal current-block writes at later
+  same-block depths, so these deltas establish predictive use but not clean causal
+  cross-block memory. Free-run separately failed; retain the numbers as historical
+  evidence, but do not build new work on the shared-depth topology.
   See [run report](../2_Experiments_Registry/run_reports/e16b_longctx_muon_1b_20260725.md).
 - **E16 shared depth-recurrent workspace (Gemma-3-1B, Odra, 2026-07-14):**
   the 50M run kept healthy geometry (within-sample RankMe 62.2; centered 125.0) and
   eval CE 1.8122, but beyond-local static/shuffle deltas were only
   +0.000499/+0.001018 nats, both below 0.01. Interleaved tied writes at four Gemma
-  depths did not establish persistent causal concept use *under 2K CE*; the same
-  architecture later cleared the gate under E16b’s long-context regime. See
+  depths did not establish persistent concept use *under 2K CE*; the same architecture
+  later cleared the registered metric under E16b’s long-context regime, whose causal
+  interpretation was revised on 2026-08-14. See
   [spec](../experiments_specs/done_failed/E16_shared_depth_recurrent_concepts.md).
 - **E15 supervision-calibrated delayed recall (Gemma-3-1B, Odra, 2026-07-13):** after
   resuming E14 to 12,000 total answer labels, the block-2 explicit-carry control was still
@@ -160,8 +161,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 
 ## Not active right now (still part of the Vision)
 Recursive concept refinement and latent reasoning remain Vision goals — E08 and related
-ideas stay in play; a platform that already carries concepts (e.g. E16b) is a natural
-place to compose them, but from-scratch and other bases are not ruled out. Diffusion
+ideas stay in play; compose them only after a strictly causal platform (E17c or a later
+successor) demonstrably carries content. From-scratch and other bases are not ruled out. Diffusion
 decode stays parked/revivable from `parked/`. Instruction SFT, long-context, and audio
 remain long-term Vision only. Multi-agent latent communication stays the Stage-2
 headline (see [team_brief](../sprind_frontier_ai/team_brief.md)).
