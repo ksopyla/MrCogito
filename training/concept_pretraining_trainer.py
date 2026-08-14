@@ -1,5 +1,6 @@
 """Custom Trainer behavior shared by concept-pretraining model families."""
 
+import time
 from typing import Optional
 
 import torch
@@ -7,6 +8,7 @@ import torch.nn.functional as F
 from transformers import AutoModel, Trainer, logging
 from transformers.modeling_outputs import MaskedLMOutput
 
+from data.length_grouped_sampler import CachedLengthGroupedSampler
 from nn.concept_encoder_perceiver import ConceptEncoderForDenoisingPerceiver
 from training.concept_pretraining_objectives import (
     OBJECTIVE_CAUSAL_LM,
@@ -37,6 +39,9 @@ class PerceiverDenoiseTrainer(Trainer):
         concept_memory_lr: Optional[float] = None,
         muon_adamw_lr: float = 2e-3,
         muon_momentum: float = 0.95,
+        batch_packing_mode: str = "none",
+        train_lengths=None,
+        length_group_mega_batch_mult: int = 20,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -50,6 +55,17 @@ class PerceiverDenoiseTrainer(Trainer):
         self.concept_memory_lr = concept_memory_lr
         self.muon_adamw_lr = muon_adamw_lr
         self.muon_momentum = muon_momentum
+        self.batch_packing_mode = batch_packing_mode
+        self.train_lengths = train_lengths
+        self.length_group_mega_batch_mult = length_group_mega_batch_mult
+        self._padding_totals = {
+            "real_tokens": 0.0,
+            "padded_tokens": 0.0,
+            "rows": 0.0,
+            "batch_max_length": 0.0,
+            "batches": 0.0,
+        }
+        self._padding_window_started: float | None = None
         self.anchor_loss = anchor_loss
         self.anchor_loss_weight = anchor_loss_weight
         self.anchor_standardize = anchor_standardize
@@ -62,6 +78,100 @@ class PerceiverDenoiseTrainer(Trainer):
             teacher.eval()
             teacher.requires_grad_(False)
             self.anchor_teacher = teacher.to(self.args.device)
+
+    def _get_train_sampler(self, train_dataset=None):
+        dataset = train_dataset if train_dataset is not None else self.train_dataset
+        if self.batch_packing_mode == "none":
+            return super()._get_train_sampler(train_dataset)
+        if self.batch_packing_mode != "length_group":
+            raise ValueError(f"Unknown batch_packing_mode={self.batch_packing_mode!r}.")
+        if dataset is None or not hasattr(dataset, "__len__"):
+            raise ValueError("length_group requires a map-style training dataset.")
+        if self.train_lengths is None:
+            raise ValueError("length_group requires cached train_lengths.")
+        if len(self.train_lengths) != len(dataset):
+            raise ValueError(
+                f"Cached lengths contain {len(self.train_lengths)} rows but the "
+                f"training dataset contains {len(dataset)}."
+            )
+        if self.args.group_by_length:
+            raise ValueError(
+                "Do not combine TrainingArguments.group_by_length with "
+                "batch_packing_mode='length_group'."
+            )
+        # Match HF's native behavior: grouping spans one gradient-accumulation
+        # window, while Accelerate remains responsible for disjoint DDP sharding.
+        grouping_batch_size = (
+            self.args.train_batch_size * self.args.gradient_accumulation_steps
+        )
+        return CachedLengthGroupedSampler(
+            self.train_lengths,
+            grouping_batch_size,
+            seed=self.args.seed,
+            mega_batch_mult=self.length_group_mega_batch_mult,
+        )
+
+    def _record_padding_metrics(self, attention_mask: torch.Tensor | None) -> None:
+        if attention_mask is None or attention_mask.ndim != 2:
+            return
+        if self._padding_window_started is None:
+            self._padding_window_started = time.perf_counter()
+        real_tokens = float(attention_mask.detach().sum().item())
+        slots = float(attention_mask.numel())
+        self._padding_totals["real_tokens"] += real_tokens
+        self._padding_totals["padded_tokens"] += slots - real_tokens
+        self._padding_totals["rows"] += float(attention_mask.shape[0])
+        self._padding_totals["batch_max_length"] += float(attention_mask.shape[1])
+        self._padding_totals["batches"] += 1.0
+
+    def _flush_padding_metrics(self) -> dict[str, float]:
+        if self._padding_totals["batches"] == 0:
+            return {}
+        keys = (
+            "real_tokens",
+            "padded_tokens",
+            "rows",
+            "batch_max_length",
+            "batches",
+        )
+        values = torch.tensor(
+            [self._padding_totals[key] for key in keys],
+            dtype=torch.float64,
+            device=self.args.device,
+        )
+        elapsed = torch.tensor(
+            max(
+                time.perf_counter() - (self._padding_window_started or time.perf_counter()),
+                1e-9,
+            ),
+            dtype=torch.float64,
+            device=self.args.device,
+        )
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            torch.distributed.all_reduce(values, op=torch.distributed.ReduceOp.SUM)
+            torch.distributed.all_reduce(elapsed, op=torch.distributed.ReduceOp.MAX)
+        real_tokens, padded_tokens, rows, max_lengths, batches = values.tolist()
+        total_slots = real_tokens + padded_tokens
+        metrics = {
+            "data/pad_ratio": padded_tokens / total_slots if total_slots else 0.0,
+            "data/real_tokens_per_batch": real_tokens / batches,
+            "data/padded_tokens_per_batch": padded_tokens / batches,
+            "data/mean_sequence_length": real_tokens / rows,
+            "data/mean_batch_max_length": max_lengths / batches,
+            "perf/real_tokens_per_second": real_tokens / float(elapsed.item()),
+        }
+        for key in self._padding_totals:
+            self._padding_totals[key] = 0.0
+        self._padding_window_started = None
+        return metrics
+
+    def log(self, logs: dict[str, float], start_time: Optional[float] = None) -> None:
+        # Trainer's periodic training log runs on every rank, so distributed
+        # reduction is safe there. Evaluation extensions may call ``log`` on
+        # rank zero only; never enter a collective from those calls.
+        if "loss" in logs:
+            logs = {**logs, **self._flush_padding_metrics()}
+        super().log(logs, start_time=start_time)
 
     def create_optimizer(self):
         """Build the configured Adam or Muon optimizer."""
@@ -412,6 +522,8 @@ class PerceiverDenoiseTrainer(Trainer):
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         del num_items_in_batch
+        if model.training:
+            self._record_padding_metrics(inputs.get("attention_mask"))
         if not model.training or (
             self.objective_variant
             in {OBJECTIVE_RECONSTRUCTION, OBJECTIVE_PREFIX_SUFFIX, OBJECTIVE_CAUSAL_LM}

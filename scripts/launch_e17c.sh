@@ -22,6 +22,8 @@ export READ_GATE_INIT=0.1
 # Match E16b/E17/E17b data, optimization, and token-budget protocol.
 export MAX_SEQ_LENGTH=4096
 export PRETOKENIZE_MIX=e16b_long_4k_v1
+export BATCH_PACKING_MODE="${BATCH_PACKING_MODE:-length_group}"
+export LENGTH_GROUP_MEGA_BATCH_MULT="${LENGTH_GROUP_MEGA_BATCH_MULT:-20}"
 export TARGET_TOKENS="${TARGET_TOKENS:-1000000000}"
 export SKIP_PRETOKENIZE="${SKIP_PRETOKENIZE:-1}"
 export OPTIMIZER=muon

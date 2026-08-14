@@ -18,6 +18,7 @@ from transformers import (
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from data.dataset_preprocess import configure_text_tokenizer_for_model_vocab
+from data.length_cache import compute_or_load_interleaved_lengths
 from nn.loss_manager import ConceptLossStepCallback
 from training.concept_pretraining_args import (
     DataTrainingArguments,
@@ -165,6 +166,22 @@ def main():
         training_args,
         append_eos_token_id,
     )
+    train_lengths = None
+    if data_args.batch_packing_mode == "length_group":
+        with training_args.main_process_first(desc="preparing sequence-length cache"):
+            train_lengths = compute_or_load_interleaved_lengths(
+                data_args.pretokenized_manifest,
+                train_ds=train_ds,
+            )
+        if is_main_process():
+            logger.info(
+                "Length-grouped training: rows=%s min=%s mean=%.1f max=%s window=%s",
+                f"{len(train_lengths):,}",
+                int(train_lengths.min()),
+                float(train_lengths.mean()),
+                int(train_lengths.max()),
+                data_args.length_group_mega_batch_mult,
+            )
 
     loss_config = loss_args.to_loss_config()
     log_loss_config(loss_config)
@@ -271,6 +288,8 @@ def main():
         "Split strategy": data_args.split_strategy,
         "Dataset mix (registry)": data_args.dataset_mix,
         "Dataset mix recipe": data_args.dataset_mix_recipe,
+        "Batch packing mode": data_args.batch_packing_mode,
+        "Length-group window": data_args.length_group_mega_batch_mult,
         "Optimizer": optim_args.optimizer,
         "Concept memory LR": optim_args.concept_memory_lr,
     }
@@ -319,6 +338,8 @@ def main():
             "dataset_mix_weight_override": data_args.dataset_mix_weight_override,
             "pretokenized_manifest": data_args.pretokenized_manifest,
             "preserve_precomputed_labels": data_args.preserve_precomputed_labels,
+            "batch_packing_mode": data_args.batch_packing_mode,
+            "length_group_mega_batch_mult": data_args.length_group_mega_batch_mult,
             "target_tokens": (
                 int(os.environ["TARGET_TOKENS"])
                 if os.environ.get("TARGET_TOKENS")
@@ -406,6 +427,9 @@ def main():
         concept_memory_lr=optim_args.concept_memory_lr,
         muon_adamw_lr=optim_args.muon_adamw_lr,
         muon_momentum=optim_args.muon_momentum,
+        batch_packing_mode=data_args.batch_packing_mode,
+        train_lengths=train_lengths,
+        length_group_mega_batch_mult=data_args.length_group_mega_batch_mult,
     )
 
     if is_backbone:

@@ -196,6 +196,10 @@ To be filled by `experiment-track`.
   `0.0022 / 0.0083 / 0.0439 / 0.0041`; this rapid closing is a risk signal, not a
   kill verdict at this tiny budget. Use the preregistered 100M gate and ≥24 held-out
   batches for the scientific decision.
+- **Pending full-run efficiency path:** the E17c launcher now enables cached bounded
+  length grouping over the same immutable 4K manifest. No rows, source weights, document
+  boundaries, labels, or token budget change. Padding and real-token throughput are logged
+  globally; a 4-GPU Polonez comparison remains required before claiming a speedup.
 
 ## References
 - [E17b failed mid-init run](../done_failed/E17b_per_layer_mid_write_init.md) ·

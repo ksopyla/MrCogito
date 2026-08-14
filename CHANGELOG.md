@@ -15,6 +15,34 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-08-14] - Cached length-grouped training
+
+**Why:**
+- E17b showed that raising the 4K microbatch could reduce useful-token throughput because
+  heterogeneous rows made pad-to-batch-max execute substantially more empty token slots.
+
+**Impact:**
+- Pretokenized runs can group nearby lengths inside bounded, deterministically reshuffled
+  windows while preserving every row, source weight, document boundary, and legacy default.
+- E17c enables the mode for its pending 4-GPU run. This is a 4K efficiency improvement,
+  not the future million-token attention solution; true variable-length kernels and
+  boundary-safe packing remain later phases.
+
+**What changed:**
+- [added] manifest-keyed `int32` length sidecars with atomic invalidation and a standalone
+  cache inspection command
+- [added] an epoch-seeded sortish sampler using bounded 20-window grouping while leaving
+  Accelerate responsible for disjoint DDP batch sharding
+- [added] globally reduced padding, sequence-length, and real-token throughput telemetry
+- [preserved] `BATCH_PACKING_MODE=none` for historical launchers and the existing causal
+  collator/model path; length grouping never concatenates documents
+- [tested] cache invalidation, padding reduction, epoch reshuffle, simulated 4-rank
+  disjointness/length alignment, trainer metrics, and launcher parameter flow
+
+**Related:** [pad-free / low-padding training](docs/engineering_specs/pad_free_variable_length_training.md)
+
+---
+
 ## [2026-08-14] - E17c depth-private gated working memory
 
 **Why:**

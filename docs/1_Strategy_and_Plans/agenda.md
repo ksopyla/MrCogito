@@ -32,6 +32,11 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   E16b/E17 data, optimizer, and evaluation contracts. All new metrics logged. The smoke
   showed rapid update-gate closing, so do not infer mechanism success; the 100M
   preregistered gate is the next decision point.
+- **4K training efficiency:** E17c now opts into cached, bounded length grouping over the
+  unchanged interleaved manifest. It preserves documents and source weights, uses
+  Accelerate's normal 4-GPU sharding, and logs global padding/useful-token throughput.
+  Keep this separate from the 1M-context architecture: length grouping reduces rectangular
+  waste now, while true variable-length attention and boundary-safe packing remain required.
 - **Why the previous next step changed (architecture/evaluation audit 2026-08-14):**
   E17b's mid-init writes briefly opened then closed, showing that another scalar-init cell
   does not address the learning incentive. More importantly, E16/E16b
