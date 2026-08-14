@@ -262,6 +262,8 @@ def test_e17c_wrapper_reuses_e16b_data_wandb_and_evaluation_protocol(tmp_path):
         tmp_path,
         {
             "DATASETS_TOK_DIR": str(data_root),
+            "DATASETS_RAW_DIR": str(tmp_path / "raw"),
+            "RAW_ARCHIVE_DIR": str(tmp_path / "raw"),
             "MANIFEST": str(manifest),
             "SKIP_PRETOKENIZE": "1",
             "MAX_STEPS": "2",

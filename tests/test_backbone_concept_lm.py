@@ -843,14 +843,15 @@ def test_next_token_logits_and_generate_shapes():
 
 def _perlayer_model(**overrides):
     """Two-global-bank BackboneConceptLM (G=2 banks at global layers 5, 11) for E17 tests."""
-    return make_model(
+    defaults = dict(
         backbone_config=two_global_backbone_dict(),
         concept_io_mode="per_layer_banks",
         concept_num=4,
         read_gate_init=0.2,
         write_gate_init=0.2,
-        **overrides,
     )
+    defaults.update(overrides)
+    return make_model(**defaults)
 
 
 def _e17c_model(**overrides):
