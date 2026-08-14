@@ -45,8 +45,8 @@ def _valid_cached_lengths(
             if metadata.get(key) != expected.get(key):
                 return None
         with np.load(npz_path, allow_pickle=False) as archive:
-            lengths = archive["lengths"]
-        if lengths.dtype != np.int32 or lengths.shape != (expected["n_rows"],):
+            lengths = np.array(archive["lengths"], dtype=np.int32, copy=True)
+        if lengths.shape != (expected["n_rows"],):
             return None
         if lengths.size and bool(np.any(lengths < 1)):
             return None
@@ -95,8 +95,6 @@ def compute_or_load_interleaved_lengths(
     lengths = _compute_lengths(train_ds)
     npz_tmp = Path(f"{npz_path}.tmp")
     meta_tmp = Path(f"{meta_path}.tmp")
-    with npz_tmp.open("wb") as handle:
-        np.savez_compressed(handle, lengths=lengths)
     metadata = {
         **expected,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -104,7 +102,13 @@ def compute_or_load_interleaved_lengths(
         "mean_length": float(lengths.mean()) if lengths.size else None,
         "max_length": int(lengths.max()) if lengths.size else None,
     }
-    meta_tmp.write_text(json.dumps(metadata, indent=2) + "\n")
-    npz_tmp.replace(npz_path)
-    meta_tmp.replace(meta_path)
+    try:
+        with npz_tmp.open("wb") as handle:
+            np.savez_compressed(handle, lengths=lengths)
+        meta_tmp.write_text(json.dumps(metadata, indent=2) + "\n")
+        npz_tmp.replace(npz_path)
+        meta_tmp.replace(meta_path)
+    finally:
+        npz_tmp.unlink(missing_ok=True)
+        meta_tmp.unlink(missing_ok=True)
     return lengths

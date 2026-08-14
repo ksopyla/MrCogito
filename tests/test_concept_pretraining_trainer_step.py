@@ -120,3 +120,9 @@ def test_padding_metrics_are_added_to_the_next_trainer_log(tmp_path):
     assert logged["data/mean_sequence_length"] == 3.0
     assert logged["data/mean_batch_max_length"] == 4.0
     assert logged["perf/real_tokens_per_second"] > 0
+
+    trainer.log({"train_loss": 1.0})
+    assert "data/pad_ratio" not in trainer.state.log_history[-1]
+
+    trainer.log({"eval_loss": 1.0})
+    assert "data/pad_ratio" not in trainer.state.log_history[-1]

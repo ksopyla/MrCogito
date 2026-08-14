@@ -39,6 +39,8 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 - [tested] cache invalidation, padding reduction, epoch reshuffle, simulated 4-rank
   disjointness/length alignment, trainer metrics, launcher parameter flow, Python
   compilation, and the full `388 passed, 9 skipped` suite
+- [fixed] padding telemetry always participates in DDP reduction, including empty
+  local windows, and flushes the last incomplete window on the final `train_loss` log
 
 **Related:** [pad-free / low-padding training](docs/engineering_specs/pad_free_variable_length_training.md)
 

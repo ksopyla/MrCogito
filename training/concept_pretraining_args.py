@@ -314,7 +314,8 @@ class DataTrainingArguments:
     length_group_mega_batch_mult: int = field(
         default=20,
         metadata={
-            "help": "Number of optimizer microbatches in each local sortish window."
+            "help": "Sortish window multiplier. Each shuffled window contains this many "
+            "(per-device batch × gradient accumulation) examples before sorting by length."
         },
     )
     tokenizer_name: str = field(default="answerdotai/ModernBERT-base")

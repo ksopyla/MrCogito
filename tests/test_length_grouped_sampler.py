@@ -22,7 +22,7 @@ def test_length_grouping_is_reproducible_and_reshuffles_by_epoch():
         lengths,
         batch_size=18,
         seed=42,
-        mega_batch_mult=50,
+        mega_batch_mult=20,
     )
 
     epoch_zero = list(sampler)
@@ -32,7 +32,7 @@ def test_length_grouping_is_reproducible_and_reshuffles_by_epoch():
             lengths,
             batch_size=18,
             seed=42,
-            mega_batch_mult=50,
+            mega_batch_mult=20,
         )
     )
 
@@ -47,7 +47,7 @@ def test_length_grouping_reduces_padding_for_e17c_microbatches():
             lengths,
             batch_size=3 * 6,
             seed=42,
-            mega_batch_mult=50,
+            mega_batch_mult=20,
         )
     )
     baseline = list(
@@ -70,7 +70,7 @@ def test_four_gpu_batch_sharding_is_disjoint_and_length_aligned():
             lengths,
             batch_size=3 * 6,
             seed=7,
-            mega_batch_mult=50,
+            mega_batch_mult=20,
         )
     )
     local_batch_size = 3

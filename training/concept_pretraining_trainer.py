@@ -125,8 +125,6 @@ class PerceiverDenoiseTrainer(Trainer):
         self._padding_totals["batches"] += 1.0
 
     def _flush_padding_metrics(self) -> dict[str, float]:
-        if self._padding_totals["batches"] == 0:
-            return {}
         keys = (
             "real_tokens",
             "padded_tokens",
@@ -147,12 +145,19 @@ class PerceiverDenoiseTrainer(Trainer):
             dtype=torch.float64,
             device=self.args.device,
         )
+        # Always reduce when DDP is up, even if this rank saw zero batches.
+        # Returning early on a rank-local empty window would hang the collective.
         if torch.distributed.is_available() and torch.distributed.is_initialized():
             torch.distributed.all_reduce(values, op=torch.distributed.ReduceOp.SUM)
             torch.distributed.all_reduce(elapsed, op=torch.distributed.ReduceOp.MAX)
+        for key in self._padding_totals:
+            self._padding_totals[key] = 0.0
+        self._padding_window_started = None
         real_tokens, padded_tokens, rows, max_lengths, batches = values.tolist()
+        if batches == 0:
+            return {}
         total_slots = real_tokens + padded_tokens
-        metrics = {
+        return {
             "data/pad_ratio": padded_tokens / total_slots if total_slots else 0.0,
             "data/real_tokens_per_batch": real_tokens / batches,
             "data/padded_tokens_per_batch": padded_tokens / batches,
@@ -160,16 +165,12 @@ class PerceiverDenoiseTrainer(Trainer):
             "data/mean_batch_max_length": max_lengths / batches,
             "perf/real_tokens_per_second": real_tokens / float(elapsed.item()),
         }
-        for key in self._padding_totals:
-            self._padding_totals[key] = 0.0
-        self._padding_window_started = None
-        return metrics
 
     def log(self, logs: dict[str, float], start_time: Optional[float] = None) -> None:
-        # Trainer's periodic training log runs on every rank, so distributed
-        # reduction is safe there. Evaluation extensions may call ``log`` on
-        # rank zero only; never enter a collective from those calls.
-        if "loss" in logs:
+        # Periodic training logs use ``loss`` on every rank. The final train()
+        # summary uses ``train_loss``, also on every rank. Rank-zero-only eval
+        # and ablation logs use neither key, so they must not enter a collective.
+        if "loss" in logs or "train_loss" in logs:
             logs = {**logs, **self._flush_padding_metrics()}
         super().log(logs, start_time=start_time)
 
