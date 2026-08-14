@@ -3,7 +3,8 @@
 Companion to [`pad_free_variable_length_training.md`](./pad_free_variable_length_training.md).
 **Scope:** Phase 0–1 implementation contract and retained design rationale.
 
-- **Status:** implemented locally (2026-08-14); Polonez throughput benchmark pending
+- **Status:** implemented and locally verified (2026-08-14; `388 passed, 9 skipped`);
+  Polonez throughput benchmark pending
 - **Phase covered:** Phase 0 (pad_ratio metrics) + Phase 1 (length_group sampler)
 - **Non-goals here:** token-budget sampler (Phase 2), FA varlen / packing (Phase 3)
 

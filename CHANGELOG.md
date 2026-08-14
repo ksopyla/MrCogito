@@ -37,7 +37,8 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 - [preserved] `BATCH_PACKING_MODE=none` for historical launchers and the existing causal
   collator/model path; length grouping never concatenates documents
 - [tested] cache invalidation, padding reduction, epoch reshuffle, simulated 4-rank
-  disjointness/length alignment, trainer metrics, and launcher parameter flow
+  disjointness/length alignment, trainer metrics, launcher parameter flow, Python
+  compilation, and the full `388 passed, 9 skipped` suite
 
 **Related:** [pad-free / low-padding training](docs/engineering_specs/pad_free_variable_length_training.md)
 

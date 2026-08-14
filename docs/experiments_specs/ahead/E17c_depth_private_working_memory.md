@@ -199,7 +199,8 @@ To be filled by `experiment-track`.
 - **Pending full-run efficiency path:** the E17c launcher now enables cached bounded
   length grouping over the same immutable 4K manifest. No rows, source weights, document
   boundaries, labels, or token budget change. Padding and real-token throughput are logged
-  globally; a 4-GPU Polonez comparison remains required before claiming a speedup.
+  globally. The full local suite passes (`388 passed, 9 skipped`); a 4-GPU Polonez
+  comparison remains required before claiming a speedup.
 
 ## References
 - [E17b failed mid-init run](../done_failed/E17b_per_layer_mid_write_init.md) ·
