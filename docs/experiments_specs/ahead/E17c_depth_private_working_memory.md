@@ -1,6 +1,6 @@
 # E17c — Depth-private gated working memory under causal carry pressure
 
-- **Status:** draft
+- **Status:** implemented; local and Polonez verification pending
 - **Serves:** Priority 1 / SG1–SG2: make Gemma's concept banks carry content-bearing
   cross-block working state that remains useful for generation.
 - **Implementation plan:** [E17c_depth_private_working_memory_plan.md](E17c_depth_private_working_memory_plan.md)

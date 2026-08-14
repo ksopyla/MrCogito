@@ -233,6 +233,13 @@ def build_pretraining_model(
             read_concept_norm=model_args.read_concept_norm,
             read_gate_init=model_args.read_gate_init,
             write_gate_init=model_args.write_gate_init,
+            concept_read_mode=model_args.concept_read_mode,
+            tie_concept_writer=model_args.tie_concept_writer,
+            concept_write_mode=model_args.concept_write_mode,
+            write_update_gate_init=model_args.write_update_gate_init,
+            memory_carry_dropout=model_args.memory_carry_dropout,
+            memory_pressure_tokens=model_args.memory_pressure_tokens,
+            memory_pressure_weight=model_args.memory_pressure_weight,
             lora_r=model_args.lora_r,
             lora_alpha=model_args.lora_alpha,
             lora_dropout=model_args.lora_dropout,
@@ -243,7 +250,9 @@ def build_pretraining_model(
         logger.info(
             f"Initializing BackboneConceptLM (backbone={model_args.backbone_model}, "
             f"C={model_args.concept_num}, K={model_args.concept_block}, "
-            f"io={model_args.concept_io_mode}, lora_r={model_args.lora_r})"
+            f"io={model_args.concept_io_mode}, read={model_args.concept_read_mode}, "
+            f"write={model_args.concept_write_mode}, tied={model_args.tie_concept_writer}, "
+            f"lora_r={model_args.lora_r})"
         )
         backbone_load_kwargs = {}
         if training_args.bf16:

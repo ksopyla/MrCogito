@@ -445,6 +445,7 @@ def main():
 
     all_metrics = []
     concept_reprs = []
+    bank_concept_reprs = {}
     bucket_of_batch = []
     ablation_batches = []   # dicts {input_ids, attention_mask, bucket} for concept_ar ΔCE
     sample_texts = []       # raw texts for concept_ar generation samples
@@ -457,10 +458,23 @@ def main():
             # Forward pass — use the public concept contract. The classic families expose
             # both .encoder and encode_concepts; E10 is recurrent encode==decode and only
             # has encode_concepts.
-            encoder_out = model.encode_concepts(
-                input_ids=input_ids, attention_mask=attention_mask, return_dict=True
-            )
-            concepts = encoder_out.last_hidden_state.float()  # [B, C, H]
+            if (
+                hasattr(model, "encode_concept_banks")
+                and getattr(model.config, "concept_io_mode", None) == "per_layer_banks"
+            ):
+                banks = model.encode_concept_banks(
+                    input_ids=input_ids, attention_mask=attention_mask
+                ).float()
+                concepts = banks[:, -1]
+                for bank_index in range(banks.shape[1]):
+                    bank_concept_reprs.setdefault(bank_index, []).append(
+                        banks[:, bank_index].cpu()
+                    )
+            else:
+                encoder_out = model.encode_concepts(
+                    input_ids=input_ids, attention_mask=attention_mask, return_dict=True
+                )
+                concepts = encoder_out.last_hidden_state.float()  # [B, C, H]
 
             batch_metrics = compute_concept_geometry_metrics(concepts.cpu())
             all_metrics.append(batch_metrics)
@@ -527,6 +541,12 @@ def main():
     # and manifold_rankme (cross-sample embedding diversity).
     within = compute_within_sample_concept_rank(all_concepts)
     agg.update(within)
+    per_bank_geometry = {}
+    for bank_index, parts in sorted(bank_concept_reprs.items()):
+        bank_concepts = torch.cat(parts, dim=0)
+        bank_metrics = compute_concept_geometry_metrics(bank_concepts)
+        bank_metrics.update(compute_within_sample_concept_rank(bank_concepts))
+        per_bank_geometry[f"bank_{bank_index}"] = bank_metrics
 
     # Per-length-bucket within-sample RankMe: is de-collapse length-dependent?
     per_bucket_rankme = {}
@@ -578,6 +598,15 @@ def main():
         for bucket, v in per_bucket_rankme.items():
             print(f"      {bucket:>12s} : {v['within_sample_rankme_mean']:.2f} / "
                   f"{v['within_sample_rankme_centered_mean']:.2f}   (n={v['n_samples']})")
+    if per_bank_geometry:
+        print("    By depth-private bank (raw / centered RankMe / mean cosine):")
+        for bank_name, values in per_bank_geometry.items():
+            print(
+                f"      {bank_name:>12s} : "
+                f"{values['within_sample_rankme_mean']:.2f} / "
+                f"{values['within_sample_rankme_centered_mean']:.2f} / "
+                f"{values['mean_concept_similarity']:.4f}"
+            )
 
     print()
     print("─── Collapse Detection (SECONDARY diagnostics) ─────────────")
@@ -835,6 +864,7 @@ def main():
         "global_effective_rank_normalized": global_eff_rank_norm,
         "top5_singular_values": singular_values[:5],
         "per_bucket_within_sample_rankme": per_bucket_rankme,
+        "per_bank_geometry": per_bank_geometry,
     }
     if ablation:
         result["concept_ablation"] = ablation

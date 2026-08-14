@@ -14,6 +14,7 @@ E14_LAUNCHER = REPO_ROOT / "scripts" / "launch_e14.sh"
 E16A_LAUNCHER = REPO_ROOT / "scripts" / "launch_e16a.sh"
 E16A_PIPELINE = REPO_ROOT / "scripts" / "launch_e16a_pipeline.sh"
 E16B_LAUNCHER = REPO_ROOT / "scripts" / "launch_e16b.sh"
+E17C_LAUNCHER = REPO_ROOT / "scripts" / "launch_e17c.sh"
 
 
 def _write_executable(path, contents):
@@ -250,6 +251,41 @@ def test_e10_protocol_wrapper_pins_backbone_and_delegates(tmp_path):
     assert "--concept_memory_lr" not in args
     assert _value_after(args, "--tokenizer_name") == "google/gemma-3-1b-pt"
     assert _value_after(args, "--pretokenized_manifest") == str(manifest)
+
+
+def test_e17c_wrapper_reuses_e16b_data_wandb_and_evaluation_protocol(tmp_path):
+    data_root = tmp_path / "gemma_4k"
+    data_root.mkdir()
+    manifest = data_root / "e16b_long_4k_v1_gemma_manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    result, args, _ = _run_launcher(
+        tmp_path,
+        {
+            "DATASETS_TOK_DIR": str(data_root),
+            "MANIFEST": str(manifest),
+            "SKIP_PRETOKENIZE": "1",
+            "MAX_STEPS": "2",
+            "REPORT_TO": "wandb",
+            "EVAL_STRATEGY": "no",
+            "SAVE_STRATEGY": "no",
+            "LOAD_BEST_MODEL_AT_END": "False",
+        },
+        launcher=E17C_LAUNCHER,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert _value_after(args, "--pretokenized_manifest") == str(manifest)
+    assert _value_after(args, "--max_seq_length") == "4096"
+    assert _value_after(args, "--objective_variant") == "causal_lm"
+    assert _value_after(args, "--concept_io_mode") == "per_layer_banks"
+    assert _value_after(args, "--concept_read_mode") == "dedicated"
+    assert _value_after(args, "--tie_concept_writer") == "false"
+    assert _value_after(args, "--concept_write_mode") == "gated_replace"
+    assert _value_after(args, "--memory_carry_dropout") == "0.5"
+    assert _value_after(args, "--memory_pressure_tokens") == "64"
+    assert _value_after(args, "--memory_pressure_weight") == "4.0"
+    assert _value_after(args, "--report_to") == "wandb"
+    assert _value_after(args, "--eval_strategy") == "no"
 
 
 def test_e10_protocol_wrapper_forwards_recovery_sequence_overrides(tmp_path):

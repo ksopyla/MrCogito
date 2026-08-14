@@ -12,7 +12,11 @@ from transformers import GenerationConfig
 from data.data_collators import DataCollatorForCausalLM
 from data.dataset_preprocess import configure_text_tokenizer_for_model_vocab
 from analysis.run_e10_comparison import evaluate_length
-from nn.backbone_concept_lm import BackboneConceptConfig, BackboneConceptLM
+from nn.backbone_concept_lm import (
+    BackboneConceptConfig,
+    BackboneConceptLM,
+    ConceptWriteHead,
+)
 from training.train_concept_pretraining import align_special_tokens_for_training
 
 VOCAB = 256
@@ -849,6 +853,23 @@ def _perlayer_model(**overrides):
     )
 
 
+def _e17c_model(**overrides):
+    """Tiny two-bank E17c with the registered architecture and pressure defaults."""
+    defaults = dict(
+        concept_read_mode="dedicated",
+        tie_concept_writer=False,
+        concept_write_mode="gated_replace",
+        write_update_gate_init=0.25,
+        read_concept_norm=True,
+        read_gate_init=0.1,
+        memory_carry_dropout=0.5,
+        memory_pressure_tokens=2,
+        memory_pressure_weight=4.0,
+    )
+    defaults.update(overrides)
+    return _perlayer_model(**defaults)
+
+
 def _trainable_params(m):
     return sum(p.numel() for p in m.parameters() if p.requires_grad)
 
@@ -919,3 +940,190 @@ def test_per_layer_banks_generate_frozen_finite():
     out = model.generate(ids, mask, max_new_tokens=6, concept_mode="frozen", eos_token_id=9999)
     assert out.shape[0] == 1 and out.shape[1] >= 2 * K
     assert torch.isfinite(out.float()).all()
+
+
+# ------------------------------------------------------------------ E17c
+
+
+def test_e17c_legacy_defaults_preserve_e17b_module_contract():
+    legacy = _perlayer_model()
+    assert legacy.config.concept_read_mode == "backbone_qkv"
+    assert legacy.config.tie_concept_writer is True
+    assert legacy.config.concept_write_mode == "additive"
+    assert legacy.write_head is not None and legacy.write_heads is None
+    keys = set(legacy.state_dict())
+    assert "write_head.depth_alphas" in keys
+    assert not any(key.startswith("write_heads.") for key in keys)
+    assert not any(".read_branch.q_proj." in key for key in keys)
+
+
+def test_e17c_builds_depth_private_readers_and_writers():
+    model = _e17c_model()
+    assert model.write_head is None
+    assert len(model.write_heads) == 2
+    assert model.write_heads[0] is not model.write_heads[1]
+    assert (
+        model.write_heads[0].bixt.rv_lat.weight
+        is not model.write_heads[1].bixt.rv_lat.weight
+    )
+    readers = [
+        model.backbone.model.layers[index].read_branch
+        for index in model.global_layer_indices
+    ]
+    assert all(reader.mode == "dedicated" for reader in readers)
+    assert readers[0].q_proj.weight is not readers[1].q_proj.weight
+
+
+def test_e17c_gated_replace_equation_and_padded_identity():
+    torch.manual_seed(11)
+    writer = ConceptWriteHead(
+        H,
+        num_heads=2,
+        update_mode="gated_replace",
+        update_gate_init=0.25,
+    ).eval()
+    z = torch.randn(2, 4, H)
+    h = torch.randn(2, K, H)
+    pad = torch.zeros(2, K, dtype=torch.bool)
+    pad[1] = True
+    safe_pad = pad.clone()
+    safe_pad[1, 0] = False
+    with torch.no_grad():
+        lat, _ = writer.bixt(
+            writer.norm_lat(z), writer.norm_tok(h), key_padding_mask=safe_pad
+        )
+        candidate = writer.sandwich(lat)
+        expected = torch.lerp(z, candidate, torch.full((2, 4, 1), 0.25))
+        expected[1] = z[1]
+        actual = writer(z, h, pad)
+    assert torch.allclose(actual, expected, atol=1e-6)
+    assert writer._last_update_gate_mean == pytest.approx(0.25, abs=1e-6)
+
+
+def test_e17c_three_block_gradients_reach_every_private_cell():
+    model = _e17c_model(memory_carry_dropout=1.0)
+    model.train()
+    input_ids, attention_mask, labels = make_batch(B=2, S=3 * K)
+    loss = model(input_ids, attention_mask, labels).loss
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert model.concept_init.grad is not None
+    assert model.concept_init.grad.abs().sum() > 0
+    for layer_index, writer in zip(model.global_layer_indices, model.write_heads):
+        reader = model.backbone.model.layers[layer_index]
+        assert reader.gate.grad is not None and reader.gate.grad.abs().sum() > 0
+        assert (
+            reader.read_branch.q_proj.weight.grad is not None
+            and reader.read_branch.q_proj.weight.grad.abs().sum() > 0
+        )
+        assert (
+            writer.update_gate.weight.grad is not None
+            and writer.update_gate.weight.grad.abs().sum() > 0
+        )
+        assert any(
+            parameter.grad is not None and parameter.grad.abs().sum() > 0
+            for parameter in writer.bixt.parameters()
+        )
+    lora_grads = [
+        parameter.grad
+        for name, parameter in model.named_parameters()
+        if "lora_" in name and parameter.requires_grad
+    ]
+    assert lora_grads and any(
+        grad is not None and grad.abs().sum() > 0 for grad in lora_grads
+    )
+
+
+def test_e17c_pressure_masks_only_prior_carry_and_keeps_bos_sentinel():
+    model = _e17c_model(memory_carry_dropout=1.0)
+    model.train()
+    input_ids, attention_mask, labels = make_batch(B=2, S=2 * K)
+    seen_ids = []
+
+    def capture_ids(_module, args):
+        seen_ids.append(args[0].detach().clone())
+
+    handle = model.backbone.model.embed_tokens.register_forward_pre_hook(capture_ids)
+    try:
+        model(input_ids, attention_mask, labels)
+    finally:
+        handle.remove()
+    assert len(seen_ids) == 2
+    carry = seen_ids[1][:, :K]
+    assert torch.equal(carry[:, :-1], torch.zeros_like(carry[:, :-1]))
+    assert torch.equal(carry[:, -1], torch.full_like(carry[:, -1], 2))
+    assert torch.equal(seen_ids[1][:, K:], input_ids[:, K:])
+    assert model._last_pressure_fraction == pytest.approx(1.0)
+
+
+def test_e17c_weighted_pressure_ce_matches_per_position_reference():
+    model = _e17c_model(memory_carry_dropout=1.0)
+    input_ids, attention_mask, labels = make_batch(B=2, S=3 * K, pad_row_from=2 * K + 3)
+    model.eval()
+    pos_ce = model.per_position_ce(
+        input_ids,
+        attention_mask,
+        labels,
+        carry_policy="drop_after_first",
+    )
+    pressure_mask = torch.zeros_like(pos_ce, dtype=torch.bool)
+    for block_index in range(1, 3):
+        start = block_index * K
+        pressure_mask[:, start : start + 2] = True
+    valid = ~torch.isnan(pos_ce)
+    selected = valid & pressure_mask
+    reference = (
+        pos_ce[valid].sum() + 3.0 * pos_ce[selected].sum()
+    ) / (valid.sum() + 3.0 * selected.sum())
+    model.train()
+    actual = model(input_ids, attention_mask, labels).loss
+    assert torch.allclose(actual, reference, atol=2e-4)
+
+
+@pytest.mark.parametrize("forced_pressure", [False, True])
+def test_e17c_intra_block_causality(forced_pressure):
+    model = _e17c_model()
+    model.eval()
+    input_ids, attention_mask, labels = make_batch(B=2, S=3 * K)
+    changed_ids = input_ids.clone()
+    changed_labels = labels.clone()
+    changed_ids[:, 2 * K + 5 :] = torch.flip(changed_ids[:, 2 * K + 5 :], dims=[1])
+    changed_labels[:, 2 * K + 5 :] = changed_ids[:, 2 * K + 5 :]
+    carry_policy = "drop_after_first" if forced_pressure else "normal"
+    before = model.per_position_ce(
+        input_ids, attention_mask, labels, carry_policy=carry_policy
+    )
+    after = model.per_position_ce(
+        changed_ids, attention_mask, changed_labels, carry_policy=carry_policy
+    )
+    _assert_close_where_valid(before[:, : 2 * K + 5], after[:, : 2 * K + 5])
+
+
+def test_e17c_bank_api_ablation_and_checkpoint_roundtrip(tmp_path):
+    model = _e17c_model(memory_carry_dropout=0.0, memory_pressure_tokens=0, memory_pressure_weight=1.0)
+    input_ids, attention_mask, labels = make_batch(B=2, S=3 * K)
+    banks = model.encode_concept_banks(input_ids, attention_mask)
+    exposed = model.encode_concepts(input_ids, attention_mask).last_hidden_state
+    assert banks.shape == (2, 2, 4, H)
+    assert torch.allclose(exposed, banks[:, -1])
+    permutation = torch.tensor([1, 0])
+    for bank_index in range(2):
+        ce = model.per_position_ce(
+            input_ids,
+            attention_mask,
+            labels,
+            concept_mode="permutation",
+            concept_permutation=permutation,
+            concept_bank_index=bank_index,
+        )
+        assert torch.isfinite(ce[~torch.isnan(ce)]).all()
+    metrics = model.concept_ablation_ce(input_ids, attention_mask, labels)
+    assert "pressure_delta_permutation_first64" in metrics
+    assert "delta_permutation_bank_0_beyond" in metrics
+    path = tmp_path / "e17c"
+    model.save_pretrained(path)
+    reloaded = BackboneConceptLM.from_pretrained(path)
+    assert reloaded.config.concept_read_mode == "dedicated"
+    assert reloaded.config.tie_concept_writer is False
+    restored = reloaded.encode_concept_banks(input_ids, attention_mask)
+    assert torch.allclose(banks, restored)

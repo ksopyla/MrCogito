@@ -185,6 +185,36 @@ class ModelArguments:
         default=0.0,
         metadata={"help": "E10c: raw tanh-gate initialization for the recurrent BiXT write."},
     )
+    concept_read_mode: str = field(
+        default="backbone_qkv",
+        metadata={
+            "help": "Concept read projections: backbone_qkv (legacy E17b) or dedicated."
+        },
+    )
+    tie_concept_writer: bool = field(
+        default=True,
+        metadata={"help": "Share one concept writer across global depths (legacy behavior)."},
+    )
+    concept_write_mode: str = field(
+        default="additive",
+        metadata={"help": "Concept state transition: additive or gated_replace."},
+    )
+    write_update_gate_init: float = field(
+        default=0.25,
+        metadata={"help": "Initial sigmoid update probability for gated replacement."},
+    )
+    memory_carry_dropout: float = field(
+        default=0.0,
+        metadata={"help": "Per-example probability of dropping prior-block token carry."},
+    )
+    memory_pressure_tokens: int = field(
+        default=0,
+        metadata={"help": "Early current-block targets upweighted under carry pressure."},
+    )
+    memory_pressure_weight: float = field(
+        default=1.0,
+        metadata={"help": "CE weight for pressured early targets (must be >=1)."},
+    )
     lora_r: int = field(default=16, metadata={"help": "E10: LoRA rank on the backbone (0 = off)."})
     lora_alpha: int = field(default=32, metadata={"help": "E10: LoRA alpha."})
     lora_dropout: float = field(default=0.05, metadata={"help": "E10: LoRA dropout."})

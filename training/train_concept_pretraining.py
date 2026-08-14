@@ -341,6 +341,13 @@ def main():
                     "read_concept_norm": model_args.read_concept_norm,
                     "read_gate_init": model_args.read_gate_init,
                     "write_gate_init": model_args.write_gate_init,
+                    "concept_read_mode": model_args.concept_read_mode,
+                    "tie_concept_writer": model_args.tie_concept_writer,
+                    "concept_write_mode": model_args.concept_write_mode,
+                    "write_update_gate_init": model_args.write_update_gate_init,
+                    "memory_carry_dropout": model_args.memory_carry_dropout,
+                    "memory_pressure_tokens": model_args.memory_pressure_tokens,
+                    "memory_pressure_weight": model_args.memory_pressure_weight,
                     "lora_r": model_args.lora_r,
                     "lora_alpha": model_args.lora_alpha,
                     "lora_dropout": model_args.lora_dropout,
@@ -405,7 +412,9 @@ def main():
         decoder_desc = (
             f"backbone_concept ({model_args.backbone_model}, "
             f"frozen+LoRA r={model_args.lora_r}, C={model_args.concept_num}, "
-            f"K={model_args.concept_block}, io={model_args.concept_io_mode})"
+            f"K={model_args.concept_block}, io={model_args.concept_io_mode}, "
+            f"read={model_args.concept_read_mode}, write={model_args.concept_write_mode}, "
+            f"tied_writer={model_args.tie_concept_writer})"
         )
     else:
         decoder_desc = (

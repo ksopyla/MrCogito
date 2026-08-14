@@ -69,7 +69,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 7. **E16b long-ctx Muon** *(done_success 2026-07-25 — validated long-context path; follow-ups + other routes still open).*
 8. **E17 four-bank per-layer (init 0.01)** *(done_success mixed 2026-08-10 — relative free-run win; writes dead).*
 9. **E17b per-layer mid write-init 0.1** *(done_failed 2026-08-13 — mid-init not sticky; free-run ≈E17).*
-10. **E17c depth-private gated working memory + causal carry pressure** *(draft 2026-08-14).*
+10. **E17c depth-private gated working memory + causal carry pressure** *(implemented 2026-08-14; verification pending).*
 
 ## What we've explored so far (evidence, not verdicts)
 - **E17b mid-init 0.1 (per_layer_banks, Polonez, train 2026-08-10→13, Tier-1+1.5 2026-08-13):**
