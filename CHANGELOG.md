@@ -15,6 +15,39 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-08-14] - E17c depth-private gated working memory
+
+**Why:**
+- E17/E17b's private state tensors remained coupled to Gemma QKV and one tied additive
+  writer, while ordinary causal LM loss rewarded the explicit local carry instead of
+  durable concept content.
+
+**Impact:**
+- The shared backbone-concept family can train strictly block-causal, depth-private
+  working-memory cells and directly test their necessity under deterministic carryless
+  evaluation without changing E17b defaults or checkpoint keys.
+
+**What changed:**
+- [added] config-selectable dedicated concept reads, untied BiXT writers, content-gated
+  retain/replace dynamics, per-example causal carry dropout, and weighted early-token CE
+- [added] all-bank geometry, per-bank permutation, carryless first-64 diagnostics, dynamic
+  update/state telemetry, and a thin E17c launcher over the existing Gemma training path
+- [fixed] the E16b wrapper now honors explicit 4K cache/manifest overrides for isolated
+  launcher verification; its default immutable 4K path remains unchanged
+- [fixed] gated replacement casts autocast BF16 candidates/gates back to the FP32 recurrent
+  state dtype before interpolation, preventing the first-step mixed-precision crash
+- [fixed] eval/ablation forwards no longer overwrite the last observed training carry-drop
+  fraction, so W&B reports the intervention rate instead of a misleading zero
+- [preserved] the default E17b read/write path, model family, collator, data manifest,
+  optimizer/evaluation plumbing, and W&B identity contract
+- [tested] legacy construction, private-cell gradients, causal pressure masking, weighted
+  CE, causality, per-bank ablations, checkpoint round-trip, launcher parameter flow, the
+  full 381-test suite, and matched one-/50-step Polonez BF16+DDP+W&B runs
+
+**Related:** [E17c](docs/experiments_specs/ahead/E17c_depth_private_working_memory.md)
+
+---
+
 ## [2026-07-19] - Remove low-quality deductive-stories prototype
 
 **Why:**

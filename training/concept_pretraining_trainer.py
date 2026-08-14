@@ -307,11 +307,23 @@ class PerceiverDenoiseTrainer(Trainer):
     @torch.no_grad()
     def _concept_effective_rank(self, base_model, input_ids, attention_mask) -> dict:
         try:
-            concepts = base_model.encode_concepts(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                return_dict=True,
-            ).last_hidden_state.float()
+            banks = None
+            if (
+                hasattr(base_model, "encode_concept_banks")
+                and getattr(base_model.config, "concept_io_mode", None)
+                == "per_layer_banks"
+            ):
+                banks = base_model.encode_concept_banks(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                ).float()
+                concepts = banks[:, -1]
+            else:
+                concepts = base_model.encode_concepts(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    return_dict=True,
+                ).last_hidden_state.float()
             concept_mean = concepts.mean(dim=0)
             singular_values = torch.linalg.svdvals(concept_mean)
             effective_rank = (
@@ -331,6 +343,40 @@ class PerceiverDenoiseTrainer(Trainer):
                     for name, value in within.items()
                 }
             )
+            if banks is not None:
+                from analysis.concept_analysis import compute_concept_geometry_metrics
+
+                rankme_by_bank = []
+                for bank_index in range(banks.shape[1]):
+                    bank = banks[:, bank_index]
+                    bank_within = compute_within_sample_concept_rank(bank)
+                    bank_geometry = compute_concept_geometry_metrics(bank)
+                    prefix = f"concept_geometry/bank_{bank_index}"
+                    metrics.update(
+                        {
+                            f"{prefix}/{name}": value
+                            for name, value in bank_within.items()
+                        }
+                    )
+                    metrics[f"{prefix}/mean_concept_similarity"] = bank_geometry[
+                        "mean_concept_similarity"
+                    ]
+                    metrics[f"{prefix}/max_concept_similarity"] = bank_geometry[
+                        "max_concept_similarity"
+                    ]
+                    rankme_by_bank.append(
+                        bank_within["within_sample_rankme_mean"]
+                    )
+                rank_tensor = torch.tensor(rankme_by_bank, dtype=torch.float32)
+                metrics["concept_geometry/banks_rankme_min"] = float(
+                    rank_tensor.min().item()
+                )
+                metrics["concept_geometry/banks_rankme_median"] = float(
+                    rank_tensor.median().item()
+                )
+                metrics["concept_geometry/banks_rankme_max"] = float(
+                    rank_tensor.max().item()
+                )
             return metrics
         except Exception as exc:
             if getattr(base_model.config, "checkpoint_family", None) == "backbone_concept":

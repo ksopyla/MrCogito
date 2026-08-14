@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # E17b — E17 per-layer banks with mid write-gate init (WRITE_GATE_INIT=0.1).
-# Spec: docs/experiments_specs/ahead/E17b_per_layer_mid_write_init.md (+ _plan.md).
+# Spec: docs/experiments_specs/done_failed/E17b_per_layer_mid_write_init.md (+ _plan.md).
 #
 # Single variable vs E17: WRITE_GATE_INIT 0.01 → 0.1. Self-contained so it does not
 # depend on editing launch_e17.sh defaults.
