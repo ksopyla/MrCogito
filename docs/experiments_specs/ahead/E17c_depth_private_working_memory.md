@@ -1,6 +1,7 @@
 # E17c — Depth-private gated working memory under causal carry pressure
 
-- **Status:** implemented and smoke-verified; full training not launched
+- **Status:** implemented and smoke-verified; first full Polonez run is the 300M
+  mechanism-verdict budget (not a silent 1B continuation)
 - **Serves:** Priority 1 / SG1–SG2: make Gemma's concept banks carry content-bearing
   cross-block working state that remains useful for generation.
 - **Implementation plan:** [E17c_depth_private_working_memory_plan.md](E17c_depth_private_working_memory_plan.md)
@@ -137,13 +138,21 @@ on the immutable held-out split.
 - **Data:** immutable `e16b_long_4k_v1` Gemma-tokenized manifest; raw causal LM,
   max sequence 4096. `DataCollatorForCausalLM` unchanged; pressure is applied inside
   the block-recurrent model after collation.
-- **Compute:** Polonez, 4× RTX 3090. Run a 50-step VRAM/throughput calibration; full
-  1B is expected to exceed E17b's 280 GPU-h because four readers and writers are
-  independent. The 100M/300M gates cap a negative result.
-- **Steps / epochs:** exact 1B non-padding-token ceiling; warmup 500; reports at
-  100M, 300M, and 1B. Batch size is selected by calibration and logged; token budget,
-  not optimizer-step count, is matched.
+- **Compute:** Polonez, 4× RTX 3090. The 50-step VRAM/throughput calibration is done
+  (effective batch 72). The first full launch is **300M non-padding tokens** — the
+  preregistered mechanism verdict — not 1B. A later 1B quality run is a separate
+  cosine over 1B and is launched only if this 300M gate passes.
+- **Steps / epochs:** exact 300M non-padding-token ceiling; warmup 500; `AUTO_INTERVALS=1`
+  evaluates about every 10% of this budget (~30M tokens), so the 100M kill is read at
+  the nearest ~90–120M checkpoint and the 300M verdict at the final checkpoint. Token
+  budget, not optimizer-step count, is matched. Do not treat this scheduler as the
+  first 300M of a 1B cosine.
 - **Launch:**
+  ```bash
+  SKIP_PRETOKENIZE=1 bash scripts/launch_e17c.sh
+  ```
+  The wrapper pins `TARGET_TOKENS=300000000` plus the E17c cell knobs, length grouping,
+  and the E16b/E17 data/optim protocol. Equivalent explicit env:
   ```bash
   EXPERIMENT_ID=E17c CONCEPT_IO_MODE=per_layer_banks \
   CONCEPT_READ_MODE=dedicated TIE_CONCEPT_WRITER=false \
@@ -153,7 +162,7 @@ on the immutable held-out split.
   OPTIMIZER=muon LEARNING_RATE=0.01 MUON_ADAMW_LR=2e-4 MUON_MOMENTUM=0.95 \
   WEIGHT_DECAY=0.1 CONCEPT_MEMORY_LR= \
   MAX_SEQ_LENGTH=4096 PRETOKENIZE_MIX=e16b_long_4k_v1 \
-  TARGET_TOKENS=1000000000 WARMUP_STEPS=500 AUTO_INTERVALS=1 \
+  TARGET_TOKENS=300000000 WARMUP_STEPS=500 AUTO_INTERVALS=1 \
   SAVE_TOTAL_LIMIT=12 SKIP_PRETOKENIZE=1 \
   bash scripts/launch_e10.sh
   ```
@@ -201,6 +210,43 @@ To be filled by `experiment-track`.
   boundaries, labels, or token budget change. Padding and real-token throughput are logged
   globally. The full local suite passes (`388 passed, 9 skipped`); a 4-GPU Polonez
   comparison remains required before claiming a speedup.
+
+## Implementation audit vs E17b diagnosis (2026-08-14; not an experiment verdict)
+
+The cell in `nn/backbone_concept_lm.py` matches the frozen spec and the reason E17b
+failed to use concepts as memory. This is not another write-init A/B.
+
+E17b's failure, restated: training is ordinary block-recurrent causal LM, not
+prefix–suffix. Each block still sees the previous K=512 tokens, so durable writes are
+optional. E17/E17b privatized only the state tensor: reads reused Gemma QKV/O, one tied
+additive BiXT writer served layers 5/11/17/23, and a global `tanh` scalar could close
+the whole write path. Mid-init 0.1 opened near 100M then closed (`Δshuffle_beyond≈0.0055`,
+writes ≤0.049). E16 same-block reread is a different leak; E17 already avoided it.
+
+| E17b failure | E17c response | In the code? |
+|---|---|---|
+| Shared bank / same-block reread | `per_layer_banks`; layer `g` reads/writes only `z[:,g]`; write is not read until the next block | yes |
+| Reads reuse Gemma QKV/O | `concept_read_mode=dedicated`: own `q_proj`/`kv_proj`/`o_proj` + norms; query is post-layer `outputs[0]` | yes |
+| Tied additive writer + global `tanh` valve | `tie_concept_writer=false`; `gated_replace`; no `alpha`/`depth_alphas`; per-slot sigmoid init 0.25 | yes |
+| BiXT/read should own a projection space | dedicated read; each writer owns `BiXTCrossAttention(update_tokens=False)` | yes |
+| Write after each 512-token block | write after each global layer on `hidden_states[:, -block_len:]` | yes |
+| Local K-carry bypass | train-only Bernoulli(0.5) mask of prior carry, BOS at `carry[-1]`, first-64 CE ×4 | yes |
+| Causal vs prefix–suffix confusion | still causal LM; pressure is carry dropout, not a suffix decoder | yes |
+
+Designed residual risk, not missing implementation: 50% of post-first blocks still have
+the E17b local carry; generation always has it; the 50-step smoke already showed update
+gates collapsing (`0.002 / 0.008 / 0.044 / 0.004`). The 100M carryless `Δpermutation`
+gate is the first scientific decision. Read valves remain global `tanh` scalars
+(`READ_GATE_INIT=0.1`); E17b's *reads* opened and *writes* died, so that is intentional.
+`update_gate.weight` is `[1, 2H]`, so Muon falls back to AdamW on that matrix.
+
+Protocol gaps left unchanged on purpose (they do not mean the cell is missing):
+- live W&B `pressure_delta_permutation_first64` uses every post-first block, including
+  block 1; the preregistered number is blocks 2–7.
+- live training ablation is 5 batches; Adopt/Reject uses ≥24 held-out batches offline.
+- plan tests for explicit cross-block causality, same-block-reread instrumentation,
+  checkpointed-mask determinism, and a frozen pre-change numerical snapshot are not all
+  present; intra-block causality and pressure-mask tests are.
 
 ## References
 - [E17b failed mid-init run](../done_failed/E17b_per_layer_mid_write_init.md) ·

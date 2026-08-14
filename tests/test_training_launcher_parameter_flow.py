@@ -288,6 +288,8 @@ def test_e17c_wrapper_reuses_e16b_data_wandb_and_evaluation_protocol(tmp_path):
     assert _value_after(args, "--memory_carry_dropout") == "0.5"
     assert _value_after(args, "--memory_pressure_tokens") == "64"
     assert _value_after(args, "--memory_pressure_weight") == "4.0"
+    assert "target=300000000" in result.stdout
+    assert _value_after(args, "--num_train_epochs") == "7.5"
     assert _value_after(args, "--report_to") == "wandb"
     assert _value_after(args, "--eval_strategy") == "no"
 

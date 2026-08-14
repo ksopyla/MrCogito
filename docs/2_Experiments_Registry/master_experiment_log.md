@@ -18,6 +18,8 @@ experiment specs; deep metrics and interpretation live in run reports. Live focu
 > their additive tied writers close under plain CE. E17c keeps four prior-block banks and
 > jointly tests depth-private read/write spaces, selective replacement, and causal carry
 > pressure. Decisive gate: carryless first-64 `Δpermutation ≥0.20` by 300M.
+> The implementation audit (2026-08-14) found the cell faithful to that diagnosis;
+> the first full Polonez launch is the 300M mechanism-verdict budget, not 1B.
 > [Spec](../experiments_specs/ahead/E17c_depth_private_working_memory.md) ·
 > [plan](../experiments_specs/ahead/E17c_depth_private_working_memory_plan.md).
 

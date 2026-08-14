@@ -31,7 +31,11 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   (`381 passed, 9 skipped`) and completed a matched 50-step Polonez/W&B smoke with the
   E16b/E17 data, optimizer, and evaluation contracts. All new metrics logged. The smoke
   showed rapid update-gate closing, so do not infer mechanism success; the 100M
-  preregistered gate is the next decision point.
+  preregistered gate is the next decision point. An implementation audit against the
+  E17b “concepts as memory” diagnosis confirmed the cell is faithful (dedicated reads,
+  untied gated writers, carry pressure); residual risk is the remaining 50% local carry
+  and gate-closing, not a missing idea. The first full Polonez launch is the **300M**
+  mechanism-verdict budget (`scripts/launch_e17c.sh`), not 1B.
 - **4K training efficiency:** E17c now opts into cached, bounded length grouping over the
   unchanged interleaved manifest (`483f3fa`; full suite `388 passed, 9 skipped`). It
   preserves documents and source weights, uses Accelerate's normal 4-GPU sharding, and logs
@@ -80,7 +84,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 7. **E16b long-ctx Muon** *(done_success 2026-07-25 — validated long-context path; follow-ups + other routes still open).*
 8. **E17 four-bank per-layer (init 0.01)** *(done_success mixed 2026-08-10 — relative free-run win; writes dead).*
 9. **E17b per-layer mid write-init 0.1** *(done_failed 2026-08-13 — mid-init not sticky; free-run ≈E17).*
-10. **E17c depth-private gated working memory + causal carry pressure** *(implemented + smoke-verified 2026-08-14; full run pending).*
+10. **E17c depth-private gated working memory + causal carry pressure** *(implemented + smoke-verified 2026-08-14; first full run is 300M on Polonez).*
 
 ## What we've explored so far (evidence, not verdicts)
 - **E17b mid-init 0.1 (per_layer_banks, Polonez, train 2026-08-10→13, Tier-1+1.5 2026-08-13):**

@@ -15,6 +15,30 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-08-14] - E17c implementation audit and 300M first-run budget
+
+**Why:**
+- The E17c cell needed an explicit check against the E17b “concepts as memory” diagnosis
+  before spending a full Polonez run, and the first scientific decision is the 300M
+  mechanism verdict rather than a 1B cosine.
+
+**Impact:**
+- The frozen spec records that dedicated reads, untied gated writers, and carry pressure
+  are implemented as specified. Residual risk is the remaining local-carry bypass and
+  gate-closing, not a missing idea.
+- `scripts/launch_e17c.sh` now defaults to 300M non-padding tokens. A later 1B quality
+  run is a separate scheduler and is launched only if this gate passes.
+
+**What changed:**
+- [docs] E17c spec/plan, agenda, and experiment index record the implementation audit
+  and the 300M first-run budget
+- [train] `scripts/launch_e17c.sh` pins `TARGET_TOKENS=300000000`; launcher test asserts
+  the pin
+
+**Related:** [E17c](docs/experiments_specs/ahead/E17c_depth_private_working_memory.md)
+
+---
+
 ## [2026-08-14] - Cached length-grouped training
 
 **Why:**
