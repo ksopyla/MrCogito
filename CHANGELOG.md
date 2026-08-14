@@ -32,6 +32,8 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   retain/replace dynamics, per-example causal carry dropout, and weighted early-token CE
 - [added] all-bank geometry, per-bank permutation, carryless first-64 diagnostics, dynamic
   update/state telemetry, and a thin E17c launcher over the existing Gemma training path
+- [fixed] the E16b wrapper now honors explicit 4K cache/manifest overrides for isolated
+  launcher verification; its default immutable 4K path remains unchanged
 - [preserved] the default E17b read/write path, model family, collator, data manifest,
   optimizer/evaluation plumbing, and W&B identity contract
 - [coverage] legacy construction, private-cell gradients, causal pressure masking, weighted
