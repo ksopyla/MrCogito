@@ -303,6 +303,21 @@ class DataTrainingArguments:
             "instead of mirroring input_ids. Default false reproduces E10."
         },
     )
+    batch_packing_mode: str = field(
+        default="none",
+        metadata={
+            "help": "Training pad-reduction mode: 'none' or 'length_group'. "
+            "Length grouping preserves rows and only reorders examples inside bounded "
+            "shuffled windows."
+        },
+    )
+    length_group_mega_batch_mult: int = field(
+        default=20,
+        metadata={
+            "help": "Sortish window multiplier. Each shuffled window contains this many "
+            "(per-device batch × gradient accumulation) examples before sorting by length."
+        },
+    )
     tokenizer_name: str = field(default="answerdotai/ModernBERT-base")
     max_seq_length: int = field(default=512)
     test_size_percent: float = field(default=0.1)
@@ -322,6 +337,21 @@ class DataTrainingArguments:
     min_prefix_content: int = field(default=5)
     min_suffix_content: int = field(default=10)
     split_strategy: str = field(default="sentence_boundary")
+
+    def __post_init__(self) -> None:
+        valid_modes = {"none", "length_group"}
+        if self.batch_packing_mode not in valid_modes:
+            raise ValueError(
+                f"batch_packing_mode must be one of {sorted(valid_modes)}, "
+                f"got {self.batch_packing_mode!r}."
+            )
+        if self.length_group_mega_batch_mult < 1:
+            raise ValueError("length_group_mega_batch_mult must be positive.")
+        if self.batch_packing_mode == "length_group" and not self.pretokenized_manifest:
+            raise ValueError(
+                "batch_packing_mode='length_group' requires --pretokenized_manifest "
+                "so cached lengths stay aligned with the interleaved dataset."
+            )
 
 
 @dataclass

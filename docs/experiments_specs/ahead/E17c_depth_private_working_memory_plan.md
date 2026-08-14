@@ -1,6 +1,6 @@
 # E17c — Depth-private gated working memory — Implementation Plan
 
-- **Spec:** [E17c_depth_private_working_memory.md](E17c_depth_private_working_memory.md) · **Status:** implemented and smoke-verified (`a30f0f5`); full training pending
+- **Spec:** [E17c_depth_private_working_memory.md](E17c_depth_private_working_memory.md) · **Status:** implemented and smoke-verified (`a30f0f5`); first full launch is the 300M mechanism-verdict budget on Polonez
 - **Authored by:** `implementation-plan` · for → `research-implement`
 
 > Implement the full E17c claim: depth-private read/write spaces, selective replacement
@@ -239,10 +239,13 @@ export MEMORY_PRESSURE_TOKENS=64
 export MEMORY_PRESSURE_WEIGHT=4.0
 export READ_CONCEPT_NORM=true
 export READ_GATE_INIT=0.1
+export TARGET_TOKENS="${TARGET_TOKENS:-300000000}"
 exec bash "${SCRIPT_DIR}/launch_e10.sh"
 ```
 
-The full equivalent command is frozen in the spec. `scripts/launch_e17b.sh` must remain
+The wrapper's default token budget is the 300M mechanism verdict, not 1B. A later 1B
+quality run is a separate cosine and is launched only if this gate passes. The full
+equivalent command is frozen in the spec. `scripts/launch_e17b.sh` must remain
 unchanged and runnable.
 
 ## 7. Evaluation contract

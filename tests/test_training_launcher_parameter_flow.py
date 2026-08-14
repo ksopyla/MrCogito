@@ -278,6 +278,8 @@ def test_e17c_wrapper_reuses_e16b_data_wandb_and_evaluation_protocol(tmp_path):
     assert result.returncode == 0, result.stderr
     assert _value_after(args, "--pretokenized_manifest") == str(manifest)
     assert _value_after(args, "--max_seq_length") == "4096"
+    assert _value_after(args, "--batch_packing_mode") == "length_group"
+    assert _value_after(args, "--length_group_mega_batch_mult") == "20"
     assert _value_after(args, "--objective_variant") == "causal_lm"
     assert _value_after(args, "--concept_io_mode") == "per_layer_banks"
     assert _value_after(args, "--concept_read_mode") == "dedicated"
@@ -286,6 +288,8 @@ def test_e17c_wrapper_reuses_e16b_data_wandb_and_evaluation_protocol(tmp_path):
     assert _value_after(args, "--memory_carry_dropout") == "0.5"
     assert _value_after(args, "--memory_pressure_tokens") == "64"
     assert _value_after(args, "--memory_pressure_weight") == "4.0"
+    assert "target=300000000" in result.stdout
+    assert _value_after(args, "--num_train_epochs") == "7.5"
     assert _value_after(args, "--report_to") == "wandb"
     assert _value_after(args, "--eval_strategy") == "no"
 

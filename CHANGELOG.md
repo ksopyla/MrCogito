@@ -15,6 +15,61 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-08-14] - E17c implementation audit and 300M first-run budget
+
+**Why:**
+- The E17c cell needed an explicit check against the E17b “concepts as memory” diagnosis
+  before spending a full Polonez run, and the first scientific decision is the 300M
+  mechanism verdict rather than a 1B cosine.
+
+**Impact:**
+- The frozen spec records that dedicated reads, untied gated writers, and carry pressure
+  are implemented as specified. Residual risk is the remaining local-carry bypass and
+  gate-closing, not a missing idea.
+- `scripts/launch_e17c.sh` now defaults to 300M non-padding tokens. A later 1B quality
+  run is a separate scheduler and is launched only if this gate passes.
+
+**What changed:**
+- [docs] E17c spec/plan, agenda, and experiment index record the implementation audit
+  and the 300M first-run budget
+- [train] `scripts/launch_e17c.sh` pins `TARGET_TOKENS=300000000`; launcher test asserts
+  the pin
+
+**Related:** [E17c](docs/experiments_specs/ahead/E17c_depth_private_working_memory.md)
+
+---
+
+## [2026-08-14] - Cached length-grouped training
+
+**Why:**
+- E17b showed that raising the 4K microbatch could reduce useful-token throughput because
+  heterogeneous rows made pad-to-batch-max execute substantially more empty token slots.
+
+**Impact:**
+- Pretokenized runs can group nearby lengths inside bounded, deterministically reshuffled
+  windows while preserving every row, source weight, document boundary, and legacy default.
+- E17c enables the mode for its pending 4-GPU run. This is a 4K efficiency improvement,
+  not the future million-token attention solution; true variable-length kernels and
+  boundary-safe packing remain later phases.
+
+**What changed:**
+- [added] manifest-keyed `int32` length sidecars with atomic invalidation and a standalone
+  cache inspection command
+- [added] an epoch-seeded sortish sampler using bounded 20-window grouping while leaving
+  Accelerate responsible for disjoint DDP batch sharding
+- [added] globally reduced padding, sequence-length, and real-token throughput telemetry
+- [preserved] `BATCH_PACKING_MODE=none` for historical launchers and the existing causal
+  collator/model path; length grouping never concatenates documents
+- [tested] cache invalidation, padding reduction, epoch reshuffle, simulated 4-rank
+  disjointness/length alignment, trainer metrics, launcher parameter flow, Python
+  compilation, and the full `388 passed, 9 skipped` suite
+- [fixed] padding telemetry always participates in DDP reduction, including empty
+  local windows, and flushes the last incomplete window on the final `train_loss` log
+
+**Related:** [pad-free / low-padding training](docs/engineering_specs/pad_free_variable_length_training.md)
+
+---
+
 ## [2026-08-14] - E17c depth-private gated working memory
 
 **Why:**

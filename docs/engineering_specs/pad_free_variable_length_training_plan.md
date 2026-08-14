@@ -1,11 +1,20 @@
 # Phase-1 plan — LengthGroupedSampler + length cache (pad-free eng)
 
 Companion to [`pad_free_variable_length_training.md`](./pad_free_variable_length_training.md).
-**Scope:** design + concrete API / wiring sketch only. No production sampler yet.
+**Scope:** Phase 0–1 implementation contract and retained design rationale.
 
-- **Status:** design handoff (2026-08-10)
+- **Status:** implemented and locally verified (2026-08-14; `388 passed, 9 skipped`);
+  Polonez throughput benchmark pending
 - **Phase covered:** Phase 0 (pad_ratio metrics) + Phase 1 (length_group sampler)
 - **Non-goals here:** token-budget sampler (Phase 2), FA varlen / packing (Phase 3)
+
+> **Implementation note — 2026-08-14:** production uses
+> `CachedLengthGroupedSampler` with a deterministic 20-window default. It deliberately
+> emits the same full index stream on every process and leaves disjoint rank sharding to
+> Hugging Face Accelerate, matching Trainer's native sampler contract. The earlier sketches
+> below in which the custom sampler owns `world_size`/`rank` are superseded; double-sharding
+> would be incorrect. Length grouping is enabled for E17c, while all historical launchers
+> retain `BATCH_PACKING_MODE=none`.
 
 ---
 
@@ -17,7 +26,7 @@ Companion to [`pad_free_variable_length_training.md`](./pad_free_variable_length
 | Interleave seed lives in the manifest | `load_pretokenized_mix` uses `manifest["seed"]` | Length cache must key on **interleaved** index space (= manifest bytes + that seed) |
 | Sidecar cache pattern already exists | `scripts/manifest_token_stats.py` → `manifest.json.token_stats.json` | Mirror for lengths: `manifest.json.lengths.npz` |
 | Collator already pad-to-batch-max | `data/data_collators.py` `DataCollatorForCausalLM` | Phase 1 leaves collator **unchanged** |
-| Trainer does not override samplers today | `training/concept_pretraining_trainer.py` `PerceiverDenoiseTrainer` | Add `_get_train_sampler` override; default path stays HF `DistributedSampler` |
+| Trainer has a gated sampler override | `training/concept_pretraining_trainer.py` `PerceiverDenoiseTrainer` | `none` delegates to HF; `length_group` supplies one shared sortish stream and Accelerate shards it |
 | Launcher is env → CLI | `scripts/train_concept_pretraining_multigpu.sh` | New `BATCH_PACKING_MODE` env → `--batch_packing_mode` |
 | HF ships `LengthGroupedSampler` + `group_by_length` | `transformers.trainer_pt_utils` (pin `transformers>=4.57.6,<5`) | Reuse algorithm; **do not** enable bare `--group_by_length` (it re-scans lengths every launch) |
 
@@ -115,7 +124,7 @@ guarantees `lengths[i]` matches `train_ds[i]`.
 
 ## 2. Exact API — LengthGroupedSampler
 
-### 2.1 Module (`data/length_grouped_sampler.py` — new)
+### 2.1 Module (`data/length_grouped_sampler.py`)
 
 Prefer wrapping HF’s algorithm with an explicit lengths array (avoid dataset walk):
 
@@ -124,21 +133,19 @@ Prefer wrapping HF’s algorithm with an explicit lengths array (avoid dataset w
 from torch.utils.data import Sampler
 import numpy as np
 
-class ManifestLengthGroupedSampler(Sampler[int]):
+class CachedLengthGroupedSampler(Sampler[int]):
     """HF-style length grouping over a precomputed lengths array.
 
-    Mega-batch size = batch_size * world_size * mega_batch_mult
-    (default mega_batch_mult=1 matches HF LengthGroupedSampler defaults).
+    Mega-batch size = batch_size * mega_batch_mult. Production defaults to 20:
+    enough local similarity without globally sorting an epoch.
 
     Algorithm (same as transformers.trainer_pt_utils.LengthGroupedSampler):
       1. permutation of [0, N) with generator seeded by `seed + epoch`
       2. split into mega-batches of size mega
       3. sort each mega-batch by lengths[i] descending
       4. flatten → list of indices
-      5. if distributed: emit only indices for this rank's microbatches
-         (stride by world_size over consecutive batch_size chunks)
-
-    CRITICAL: do NOT wrap with DistributedSampler. This class owns rank slicing.
+      5. emit the full deterministic stream; Accelerate shards dataloader batches
+         across ranks using its standard Trainer path
     """
 
     def __init__(
@@ -146,11 +153,8 @@ class ManifestLengthGroupedSampler(Sampler[int]):
         lengths: np.ndarray | list[int],
         batch_size: int,
         *,
-        world_size: int = 1,
-        rank: int = 0,
         seed: int = 0,
-        mega_batch_mult: int = 1,
-        drop_last: bool = False,
+        mega_batch_mult: int = 20,
     ): ...
 
     def set_epoch(self, epoch: int) -> None:
@@ -163,8 +167,8 @@ class ManifestLengthGroupedSampler(Sampler[int]):
 
 **Reuse note:** implementation may call
 `transformers.trainer_pt_utils.get_length_grouped_indices(lengths, batch_size, ...)`
-then apply rank slicing — keep our class so we inject `np.ndarray` lengths and
-own DDP semantics explicitly.
+with an explicit generator seeded by `seed + epoch`. Keep our class so cached
+`np.ndarray` lengths avoid a dataset rescan and epoch reshuffling is deterministic.
 
 ### 2.2 Config surface
 
@@ -179,7 +183,7 @@ batch_packing_mode: str = field(
     },
 )
 length_group_mega_batch_mult: int = field(
-    default=1,
+    default=20,
     metadata={"help": "Mega-batch multiplier for length_group (HF-compatible)."},
 )
 ```
@@ -188,7 +192,7 @@ length_group_mega_batch_mult: int = field(
 
 ```bash
 BATCH_PACKING_MODE="${BATCH_PACKING_MODE:-none}"   # none|length_group|token_budget
-LENGTH_GROUP_MEGA_BATCH_MULT="${LENGTH_GROUP_MEGA_BATCH_MULT:-1}"
+LENGTH_GROUP_MEGA_BATCH_MULT="${LENGTH_GROUP_MEGA_BATCH_MULT:-20}"
 
 # pass through:
 #   --batch_packing_mode "$BATCH_PACKING_MODE"
@@ -220,7 +224,7 @@ Default **`none`** preserves E17b checkpoint / curve comparability.
 # training/concept_pretraining_trainer.py  (sketch only)
 class PerceiverDenoiseTrainer(Trainer):
     def __init__(self, *args, batch_packing_mode: str = "none",
-                 train_lengths=None, length_group_mega_batch_mult: int = 1, **kwargs):
+                 train_lengths=None, length_group_mega_batch_mult: int = 20, **kwargs):
         self.batch_packing_mode = batch_packing_mode
         self.train_lengths = train_lengths
         self.length_group_mega_batch_mult = length_group_mega_batch_mult
@@ -249,19 +253,14 @@ class PerceiverDenoiseTrainer(Trainer):
         if self.args.group_by_length:
             raise ValueError(
                 "Do not combine --group_by_length with --batch_packing_mode=length_group; "
-                "our sampler owns length grouping + DDP rank slicing."
+                "the cached sampler owns length grouping."
             )
 
-        world_size = 1 if self.args.world_size is None else self.args.world_size
-        rank = 0 if self.args.process_index is None else self.args.process_index
-        return ManifestLengthGroupedSampler(
+        return CachedLengthGroupedSampler(
             lengths=self.train_lengths,
-            batch_size=self.args.per_device_train_batch_size,
-            world_size=world_size,
-            rank=rank,
+            batch_size=self.args.train_batch_size * self.args.gradient_accumulation_steps,
             seed=self.args.seed,
             mega_batch_mult=self.length_group_mega_batch_mult,
-            drop_last=self.args.dataloader_drop_last,
         )
 ```
 
@@ -269,11 +268,11 @@ class PerceiverDenoiseTrainer(Trainer):
 
 | Do | Don’t |
 |---|---|
-| Let `ManifestLengthGroupedSampler` take `world_size` / `rank` and emit **disjoint** index streams | Nest `DistributedSampler(LengthGroupedSampler(...))` — double-sharding, hang / skew |
-| Implement `set_epoch` so Trainer reshuffles each epoch | Rely on process-local RNG without a shared seed — ranks would disagree on mega-batches |
-| Keep identical `lengths` array on every rank (load same npz) | Rank-0-only length compute without barrier / broadcast of cache path |
+| Emit one identical deterministic index stream and let Accelerate shard prepared dataloader batches | Pre-shard in the sampler and let Accelerate shard again — that double-shards |
+| Implement `set_epoch` so Trainer/Accelerate reshuffles each epoch | Rely on process-local RNG without a shared seed — ranks could disagree |
+| Keep identical `lengths` arrays on every rank after a main-process-first cache barrier | Let several ranks race to rewrite a missing cache |
 | Keep `DataLoader(shuffle=False)` when a custom sampler is set (HF already does this) | Enable HF `--group_by_length` in parallel |
-| Verify `__len__` per rank ≈ `ceil(N / (batch * world)) * batch` (or drop_last policy) | Allow unequal step counts across ranks without `dataloader_drop_last` / accelerator join |
+| Simulate 4-rank batch assignment and verify disjoint union + similar concurrent maxima | Assume single-process sampler tests prove distributed alignment |
 
 **Accelerate / DDP:** `accelerate launch` + HF Trainer already sets `world_size` / `process_index`. Our override replaces only the train sampler; DDP gradient sync is unchanged. Uneven **compute** per step (one rank’s bucket still longer) remains possible — Phase 0 metrics expose it; Phase 2 token-budget addresses it.
 
@@ -308,19 +307,15 @@ Log under a stable namespace (rank0 after local compute; all-reduce sums for glo
 | Key | Definition | Notes |
 |---|---|---|
 | `data/pad_ratio` | `1 - real_tokens / (B * L_max)` | Primary success metric; median ≤ 0.10 under length_group |
-| `data/real_tokens` | `attention_mask.sum()` (or `labels != -100`) | Per microbatch, pre-accum |
-| `data/padded_tokens` | `B * L_max - real_tokens` | |
-| `data/mean_L` | `real_tokens / B` | Mean true length in microbatch |
-| `data/max_L` | `L_max` (= `input_ids.size(1)`) | |
-| `data/batch_rows` | `B` | Useful when Phase 2 varies B |
-| `perf/tokens_per_sec_real` | `global_real_tokens / wall_delta` | Contrast with any padded tok/s |
-| `data/pad_ratio_running_median` | optional window median | Stabilise vs step noise |
+| `data/real_tokens_per_batch` | globally summed real tokens / microbatches | Logging-window mean |
+| `data/padded_tokens_per_batch` | globally summed pad slots / microbatches | Logging-window mean |
+| `data/mean_sequence_length` | real tokens / rows | |
+| `data/mean_batch_max_length` | sum of local batch maxima / microbatches | Exposes rank shape |
+| `perf/real_tokens_per_second` | global real tokens / wall delta | Contrast with padded throughput |
 
-**Hook options (pick one in implement):**
-
-1. **Preferred:** small `PadRatioCallback(TrainerCallback)` in `training/` — `on_log` / custom `on_step_end` reading last batch stats stashed by collator or trainer.
-2. **Alt:** thin wrapper around `DataCollatorForCausalLM` that records last-batch stats (collator stays pad-to-batch-max; wrapper only measures). Avoid mutating collator class API if possible.
-3. **Alt:** inside `PerceiverDenoiseTrainer.compute_loss` when `attention_mask` present — simplest, but mixes metrics into loss path.
+**Implemented hook:** `PerceiverDenoiseTrainer.compute_loss` accumulates detached mask
+counts and the regular all-rank training `log({"loss": ...})` reduces and flushes them.
+Rank-zero-only evaluation extension logs never enter the collective.
 
 All-reduce: `real_tokens` and `padded_tokens` sum across ranks; `pad_ratio` from globals. Do not average per-rank pad_ratios (biased if length skew across ranks).
 
@@ -348,28 +343,27 @@ All-reduce: `real_tokens` and `padded_tokens` sum across ranks; `pad_ratio` from
 ### Phase 1 — implementation checklist (length_group)
 
 **Phase 0 (metrics, can land first / same PR)**
-- [ ] Add pad-ratio helper + W&B keys: `data/pad_ratio`, `data/real_tokens`,
-      `data/padded_tokens`, `data/mean_L`, `data/max_L`, `perf/tokens_per_sec_real`
-- [ ] Wire callback or trainer hook; all-reduce token sums before ratio
+- [x] Add stable W&B padding/length/useful-throughput keys
+- [x] Wire trainer hook; all-reduce token sums before ratio
 - [ ] Confirm E17b-like `bs=8` baseline logs pad_ratio ≳ 0.5 on `e16b_long_4k_v1`
 
 **Length cache**
-- [ ] Add `data/length_cache.py` (`compute_or_load_interleaved_lengths`)
-- [ ] Add `scripts/manifest_length_cache.py` CLI
-- [ ] Sidecar: `*.lengths.npz` + `*.lengths.meta.json` next to pretok manifest
-- [ ] Invalidate on manifest sha256 / n_rows / seed mismatch (atomic write)
-- [ ] Tests: `tests/test_length_cache.py`
+- [x] Add `data/length_cache.py` (`compute_or_load_interleaved_lengths`)
+- [x] Add `scripts/manifest_length_cache.py` CLI
+- [x] Sidecar: `*.lengths.npz` + `*.lengths.meta.json` next to pretok manifest
+- [x] Invalidate on manifest sha256 / n_rows / seed mismatch (atomic write)
+- [x] Tests: `tests/test_length_cache.py`
 
 **Sampler + Trainer**
-- [ ] Add `data/length_grouped_sampler.py` (`ManifestLengthGroupedSampler`)
-- [ ] Extend `DataTrainingArguments`: `batch_packing_mode`, `length_group_mega_batch_mult`
-- [ ] Override `PerceiverDenoiseTrainer._get_train_sampler` (no DistributedSampler nest)
-- [ ] Gate: pretok manifest required; reject IterableDataset; reject HF `--group_by_length` combo
-- [ ] Pass `--batch_packing_mode` from `scripts/train_concept_pretraining_multigpu.sh`
+- [x] Add `data/length_grouped_sampler.py` (`CachedLengthGroupedSampler`)
+- [x] Extend `DataTrainingArguments`: `batch_packing_mode`, `length_group_mega_batch_mult`
+- [x] Override `PerceiverDenoiseTrainer._get_train_sampler`; Accelerate owns rank sharding
+- [x] Gate: pretok manifest required; reject non-map datasets and HF `--group_by_length`
+- [x] Pass `--batch_packing_mode` from `scripts/train_concept_pretraining_multigpu.sh`
       via `BATCH_PACKING_MODE` (default `none`)
-- [ ] Leave `DataCollatorForCausalLM` unchanged
-- [ ] Tests: `tests/test_length_grouped_sampler.py`, `tests/test_length_grouped_sampler_ddp.py`,
-      `tests/test_batch_packing_mode_gates.py`
+- [x] Leave `DataCollatorForCausalLM` unchanged
+- [x] Tests cover padding reduction, deterministic epochs, simulated 4-rank assignment,
+      trainer wiring/metrics, cache gates, and launcher flow
 
 **Polonez smoke (falsify)**
 - [ ] Same E17b config `bs=8 accum=1` seq4k, `BATCH_PACKING_MODE=length_group`
@@ -405,6 +399,6 @@ All-reduce: `real_tokens` and `padded_tokens` sum across ranks; `pad_ratio` from
 
 1. Phase 1 = **sampler + sidecar only**; collator and BackboneConceptLM forward stay put.
 2. Lengths are for the **interleaved** pretok train index space, cached beside the manifest like token_stats.
-3. DDP: custom sampler owns rank split — **never** wrap with `DistributedSampler`.
+3. DDP: custom sampler emits one shared stream; Accelerate owns rank sharding.
 4. Interleaved pretok is already map-style — no IterableDataset conflict today; still fail closed if streaming appears.
 5. Default `BATCH_PACKING_MODE=none` until Polonez smoke clears success criteria.

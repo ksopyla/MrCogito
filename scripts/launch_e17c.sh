@@ -22,7 +22,12 @@ export READ_GATE_INIT=0.1
 # Match E16b/E17/E17b data, optimization, and token-budget protocol.
 export MAX_SEQ_LENGTH=4096
 export PRETOKENIZE_MIX=e16b_long_4k_v1
-export TARGET_TOKENS="${TARGET_TOKENS:-1000000000}"
+export BATCH_PACKING_MODE="${BATCH_PACKING_MODE:-length_group}"
+export LENGTH_GROUP_MEGA_BATCH_MULT="${LENGTH_GROUP_MEGA_BATCH_MULT:-20}"
+# First full run is the 300M mechanism-verdict budget (100M kill / 300M primary
+# carryless Δpermutation). Override to 1000000000 only after that gate passes; a
+# later 1B run uses its own cosine, not a continuation of this scheduler.
+export TARGET_TOKENS="${TARGET_TOKENS:-300000000}"
 export SKIP_PRETOKENIZE="${SKIP_PRETOKENIZE:-1}"
 export OPTIMIZER=muon
 export LEARNING_RATE="${LEARNING_RATE:-0.01}"

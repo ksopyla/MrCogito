@@ -100,6 +100,11 @@ Hook: trainer callback or collator-side stats → W&B.
 
 ### Phase 1 — Length-grouped sampler (primary recommendation)
 
+**Implemented 2026-08-14:** cached bounded sortish sampling is available through
+`BATCH_PACKING_MODE=length_group`; the historical default remains `none`. E17c enables a
+20-window profile for its pending 4-GPU run. The sampler creates one deterministic global
+index stream and lets Hugging Face Accelerate perform its normal disjoint rank sharding.
+
 **Design**
 - Add `LengthGroupedSampler` (HF-style) or in-house `TokenBudgetBatchSampler` selectable via env:
   - `BATCH_PACKING_MODE=none|length_group|token_budget` (default `none` for checkpoint comparability).
@@ -175,11 +180,11 @@ ModernBERT’s lesson we **cannot** copy blindly: their model owns unpadding ins
 
 ## Implementation checklist
 
-- [ ] Phase 0: pad_ratio W&B metric  
-- [ ] Phase 1: length cache + `LengthGroupedSampler` + launcher flag  
-- [ ] Phase 1: Polonez smoke vs E17b `bs=8` baseline  
-- [ ] Phase 2 (optional): token-budget sampler  
-- [ ] Phase 3 (gated): Gemma FA packing smoke → concept `z`-reset packing design  
+- [x] Phase 0: pad_ratio W&B metric
+- [x] Phase 1: length cache + `LengthGroupedSampler` + launcher flag
+- [ ] Phase 1: Polonez smoke vs E17b `bs=8` baseline
+- [ ] Phase 2 (optional): token-budget sampler
+- [ ] Phase 3 (gated): Gemma FA packing smoke → concept `z`-reset packing design
 
 **Phase 0–1 API / DDP / tests / W&B handoff:** see companion plan
 [`pad_free_variable_length_training_plan.md`](./pad_free_variable_length_training_plan.md)
