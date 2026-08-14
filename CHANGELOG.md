@@ -36,6 +36,8 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   launcher verification; its default immutable 4K path remains unchanged
 - [fixed] gated replacement casts autocast BF16 candidates/gates back to the FP32 recurrent
   state dtype before interpolation, preventing the first-step mixed-precision crash
+- [fixed] eval/ablation forwards no longer overwrite the last observed training carry-drop
+  fraction, so W&B reports the intervention rate instead of a misleading zero
 - [preserved] the default E17b read/write path, model family, collator, data manifest,
   optimizer/evaluation plumbing, and W&B identity contract
 - [coverage] legacy construction, private-cell gradients, causal pressure masking, weighted

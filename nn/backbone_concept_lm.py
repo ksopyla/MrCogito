@@ -1110,11 +1110,14 @@ class BackboneConceptLM(PreTrainedModel):
         self._concept_state["z"] = None
         self._concept_state["shuffle"] = False
         self._concept_state["permutation"] = None
-        self._last_pressure_fraction = (
-            pressured_examples / eligible_pressure_examples
-            if eligible_pressure_examples
-            else 0.0
-        )
+        # Preserve the latest *training* intervention rate for eval-time telemetry.
+        # Deterministic normal/carryless analysis forwards must not overwrite it.
+        if self.training and carry_policy == "normal":
+            self._last_pressure_fraction = (
+                pressured_examples / eligible_pressure_examples
+                if eligible_pressure_examples
+                else 0.0
+            )
 
         if return_last_hidden:
             if last_hidden is None:

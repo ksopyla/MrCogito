@@ -1059,6 +1059,9 @@ def test_e17c_pressure_masks_only_prior_carry_and_keeps_bos_sentinel():
     assert torch.equal(carry[:, -1], torch.full_like(carry[:, -1], 2))
     assert torch.equal(seen_ids[1][:, K:], input_ids[:, K:])
     assert model._last_pressure_fraction == pytest.approx(1.0)
+    model.eval()
+    model.per_position_ce(input_ids, attention_mask, labels)
+    assert model._last_pressure_fraction == pytest.approx(1.0)
 
 
 def test_e17c_weighted_pressure_ce_matches_per_position_reference():
