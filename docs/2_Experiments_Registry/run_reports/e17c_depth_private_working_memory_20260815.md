@@ -14,7 +14,7 @@
 **Artifacts:**
 - Carryless perm gate (B=2, ≥2048-token holdout, 24 batches): `Cache/Evaluation_reports/…133241_best_perm_gate.json` · `…_last_perm_gate.json`
 - Tier-1 geometry (seq 4096, B=1 so permutation skipped): `…_best_concept_analysis.json` · `…_last_concept_analysis.json`
-- Matched generation assessment vs base Gemma: `…_ckpt2370_generation_assessment.json`
+- Matched generation assessment vs base Gemma: `…_ckpt2370_generation_assessment.json` · last `…_ckpt2372_generation_assessment.json`
 - Tier 1.5 quality runner (8 prompts × continuation/chat × 4 modes): `…_best_generation_quality.json`
 - Compute audit: `Cache/Evaluation_reports/compute_audit/20260815_085659_*`
 
@@ -87,7 +87,7 @@ Short-prompt continuation, greedy, mean over 6 prompts (`run_e16b_generation_ass
 | **E17 low-init `real`** | **0.208** | **0.593** |
 | **E16b `real`** | **0.04** | **0.94** |
 
-`real` ≈ `shuffle` ≈ `static`; `zero` is slightly less repetitive. 300M gen kill (REP-3>0.80 **and** worse than zero) does **not** fire. 1B utility bar (d1≥0.25 and REP-3≤0.50 with `real≥zero`) is close but unmet at 300M.
+`real` ≈ `shuffle` ≈ `static`; `zero` is slightly less repetitive. Last (`checkpoint-2372`, same protocol, no base/chat) is `real`@256 **0.188/0.634** (`zero` 0.178/0.595) — same family, a bit more repetitive than best. 300M gen kill (REP-3>0.80 **and** worse than zero) does **not** fire. 1B utility bar (d1≥0.25 and REP-3≤0.50 with `real≥zero`) is close but unmet at 300M.
 
 Snippet (`real`, greedy, prompt *The future of renewable energy depends on*): "the ability to store energy. The ability to store energy is a key factor in the success of renewable energy. The ability to the store energy is a key factor in…"
 
