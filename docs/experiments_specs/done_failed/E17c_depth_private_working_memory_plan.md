@@ -1,6 +1,6 @@
 # E17c — Depth-private gated working memory — Implementation Plan
 
-- **Spec:** [E17c_depth_private_working_memory.md](E17c_depth_private_working_memory.md) · **Status:** implemented and smoke-verified (`a30f0f5`); first full launch is the 300M mechanism-verdict budget on Polonez
+- **Spec:** [E17c_depth_private_working_memory.md](E17c_depth_private_working_memory.md) · **Status:** done_failed mixed (eval 2026-08-15)
 - **Authored by:** `implementation-plan` · for → `research-implement`
 
 > Implement the full E17c claim: depth-private read/write spaces, selective replacement

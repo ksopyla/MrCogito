@@ -61,7 +61,7 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 - [train] `scripts/launch_e17c.sh` pins `TARGET_TOKENS=300000000`; launcher test asserts
   the pin
 
-**Related:** [E17c](docs/experiments_specs/ahead/E17c_depth_private_working_memory.md)
+**Related:** [E17c](docs/experiments_specs/done_failed/E17c_depth_private_working_memory.md)
 
 ---
 
@@ -125,7 +125,7 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   CE, causality, per-bank ablations, checkpoint round-trip, launcher parameter flow, the
   full 381-test suite, and matched one-/50-step Polonez BF16+DDP+W&B runs
 
-**Related:** [E17c](docs/experiments_specs/ahead/E17c_depth_private_working_memory.md)
+**Related:** [E17c](docs/experiments_specs/done_failed/E17c_depth_private_working_memory.md)
 
 ---
 

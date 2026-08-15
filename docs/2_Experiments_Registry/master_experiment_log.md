@@ -11,7 +11,16 @@ experiment specs; deep metrics and interpretation live in run reports. Live focu
 | What are we doing now? | [`agenda.md`](../1_Strategy_and_Plans/agenda.md) |
 | Full metric dump / fair baselines | `run_reports/` |
 
-> **Focus note (2026-08-14) — E17c depth-private gated working memory.**
+> **Focus note (2026-08-15) — E17c 300M mixed; do not launch 1B.**
+> Carryless first-64 Δpermutation **0.594** CI [0.543, 0.645] cleared the registered
+> ≥0.20 gate (almost all layer-5 / bank 0). Geometry collapsed (RankMe **6.75**, bank 1
+> **1.84**) and normal-context Δpermutation_beyond **0.013** stayed under the 0.02 stop.
+> Free-run `real`@256 **0.23/0.53** ≈ E17. Causal carry dropout can force concept use;
+> this cell is not a generation-memory platform and more tokens will not fix transfer.
+> [Spec](../experiments_specs/done_failed/E17c_depth_private_working_memory.md) ·
+> [report](run_reports/e17c_depth_private_working_memory_20260815.md).
+
+> **Prior focus (2026-08-14) — E17c depth-private gated working memory.**
 > The architecture/evaluation audit found that E16/E16b shared-depth writes can carry
 > current-block future information into later same-block global layers, so their large
 > teacher-forced ΔCE is not clean causal-memory evidence. E17/E17b are block-causal but
@@ -20,8 +29,8 @@ experiment specs; deep metrics and interpretation live in run reports. Live focu
 > pressure. Decisive gate: carryless first-64 `Δpermutation ≥0.20` by 300M.
 > The implementation audit (2026-08-14) found the cell faithful to that diagnosis;
 > the first full Polonez launch is the 300M mechanism-verdict budget, not 1B.
-> [Spec](../experiments_specs/ahead/E17c_depth_private_working_memory.md) ·
-> [plan](../experiments_specs/ahead/E17c_depth_private_working_memory_plan.md).
+> [Spec](../experiments_specs/done_failed/E17c_depth_private_working_memory.md) ·
+> [plan](../experiments_specs/done_failed/E17c_depth_private_working_memory_plan.md).
 
 > **Prior focus (2026-08-13) — E17b mid-init failed; init-0.3 cell was left open.**
 > Per-layer + `WRITE_GATE_INIT=0.1` finished 1B with writes that opened near ~100M then
@@ -59,6 +68,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 
 | ID | What | Lifecycle | Key result | Spec · report |
 |---|---|---|---|---|
+| E17c | Depth-private gated working memory + causal carry pressure | done_failed (mixed) | carryless Δperm **0.59** PASS; RankMe **6.7** kill; Δbeyond **0.013** no 1B; gen `real`@256 **0.23/0.53** | [E17c](../experiments_specs/done_failed/E17c_depth_private_working_memory.md) · [report](run_reports/e17c_depth_private_working_memory_20260815.md) |
 | E17b | Per-layer banks + mid write init 0.1 | done_failed | writes closed after ~100M open; gen `real`@256 **0.20/0.60** ≈E17; Δbeyond ~0.005 | [E17b](../experiments_specs/done_failed/E17b_per_layer_mid_write_init.md) · [report](run_reports/e17b_per_layer_mid_write_init_20260813.md) |
 | E17 | 4-bank per-layer concept memory (init 0.01 vs E16b) | done_success (mixed) | gen `real`@256 **0.21/0.59** vs E16b **0.04/0.94** — partial free-run win; writes still dead | [E17](../experiments_specs/done_success/E17_four_bank_concept_memory.md) · [report](run_reports/e17_lowinit_1b_generation_20260810.md) |
 | E16b | Long-ctx Muon scale-up of shared-depth workspace | done_success | RankMe 101 · Δ≥1024 **2.47/2.35**; causal interpretation revised 2026-08-14 | [E16b](../experiments_specs/done_success/E16b_longctx_muon_1b.md) · [report](run_reports/e16b_longctx_muon_1b_20260725.md) |
@@ -82,7 +92,6 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 
 | ID | What | Status | Spec |
 |---|---|---|---|
-| E17c | Depth-private gated working memory + causal carry pressure | implemented + smoke-verified; full run pending | [E17c](../experiments_specs/ahead/E17c_depth_private_working_memory.md) |
 | E08 | Concept-Flow reasoner (encode→reason→decode) | draft | [E08](../experiments_specs/ahead/E08_concept_flow_reasoner.md) |
 | E05c | Decoder word-dropout on suffix (anti-bypass) | on hold / unrun | [E05c](../experiments_specs/ahead/E05c_anticollapse_extension.md) |
 | E05d | VICReg on concept matrix | on hold / design-only | [E05d](../experiments_specs/ahead/E05d_concept_vicreg.md) |
@@ -99,7 +108,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 | E07 | Sentence-gap / boundary-only infilling | [E07](../experiments_specs/canceled/E07_sentence_gap_infilling.md) |
 | E09 | Gated recurrent concept memory (superseded by E10) | [E09](../experiments_specs/canceled/E09_recurrent_concept_memory.md) |
 
-**Genealogy:** E01 → E02 → E03 → E04 → E05 → E10…E16a (short-ctx) → **E16b** (historical shared-depth result; causal interpretation revised 2026-08-14) → **E17** (causal per-layer init-0.01 partial success) → **E17b** (mid-init 0.1 failed) → **E17c** (depth-private gated cell + causal carry pressure). See [`agenda.md`](../1_Strategy_and_Plans/agenda.md) for the living reading.
+**Genealogy:** E01 → E02 → E03 → E04 → E05 → E10…E16a (short-ctx) → **E16b** (historical shared-depth result; causal interpretation revised 2026-08-14) → **E17** (causal per-layer init-0.01 partial success) → **E17b** (mid-init 0.1 failed) → **E17c** (gated cell + carry pressure; 300M mixed — carryless PASS, geometry collapsed). See [`agenda.md`](../1_Strategy_and_Plans/agenda.md) for the living reading.
 
 ---
 
@@ -153,6 +162,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 
 | 2026-08-10 | E17b | `backbone_concept_gemma_3_1b_pt_K512_concept_20260810_120432` | per_layer_banks · init **0.1** · aborted smoke | — | ABORTED — underfilled bs=3; restarted as `…135711`. | [spec](../experiments_specs/done_failed/E17b_per_layer_mid_write_init.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260810_120432) |
 | 2026-08-10 | E17b | `backbone_concept_gemma_3_1b_pt_K512_concept_20260810_135711` | per_layer_banks · init **0.1** · 1B · bs8 | RankMe 68 · Δbeyond ~0.005 · gen **0.20/0.60** | FAILED — mid-init not sticky; free-run ≈E17, mechanism null. | [spec](../experiments_specs/done_failed/E17b_per_layer_mid_write_init.md) · [report](run_reports/e17b_per_layer_mid_write_init_20260813.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260810_135711) |
+| 2026-08-14 | E17c | `backbone_concept_gemma_3_1b_pt_K512_concept_20260814_133241` | gated_replace + carry dropout · 300M | carryless Δperm **0.59** · RankMe **6.7** · gen **0.23/0.53** | MIXED — pressure works (bank 0); geometry collapsed; no 1B. | [spec](../experiments_specs/done_failed/E17c_depth_private_working_memory.md) · [report](run_reports/e17c_depth_private_working_memory_20260815.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260814_133241) |
 
 ---
 
@@ -179,6 +189,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-08-10 | E17 Tier-1.5 gen | E17 low-init ckpt-7900 vs base / E16b | real@256 **0.21/0.59** · zero **0.21/0.53** · base **0.16/0.71** · E16b **0.04/0.94**; long prompt helps E17 | Partial free-run win vs E16b; absolute bar open; writes dead | [report](run_reports/e17_lowinit_1b_generation_20260810.md) |
 | 2026-08-10 | shared init-0.3 Tier-1.5 | `…20260807_090248` ckpt-7905 | Δbeyond **1.69** · real@256 **0.06/0.90** · zero≫real · digit attractors | Mechanism↑ free-run still FAIL on shared | [report](run_reports/e16b_shared_init030_1b_20260810.md) |
 | 2026-08-13 | E17b Tier-1 + Tier-1.5 | E17b ckpt-17780/17785 vs base / E17 / E16b | RankMe **68** · Δ≥1024 **0.0055/0.0033** · real@256 **0.20/0.60** · zero **0.14/0.71** · E17 **0.21/0.59** · E16b **0.04/0.94** | Mid-init FAIL — writes closed; free-run ≈E17 | [report](run_reports/e17b_per_layer_mid_write_init_20260813.md) |
+| 2026-08-15 | E17c Tier-1 + carryless perm + Tier-1.5 | E17c ckpt-2370 vs base / E17 / E17b | carryless Δperm **0.59** CI[0.54,0.64] · RankMe **6.7** · Δbeyond **0.013** · real@256 **0.23/0.53** · zero **0.23/0.49** | Carryless PASS; geometry kill; no 1B | [report](run_reports/e17c_depth_private_working_memory_20260815.md) |
 
 **ViaDecoder baselines (L6 canonical, 2026-02-22):** MRPC F1 82.73 · STS-B P 0.650 · QQP F1 73.35 · MNLI-m 59.75 · MNLI-mm 60.90 — full note in [report](run_reports/via_decoder_eval_20260222.md).
 
@@ -195,6 +206,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 
 Newest first:
 
+- [E17c depth-private gated WM 300M (Aug 15)](run_reports/e17c_depth_private_working_memory_20260815.md)
 - [E17b mid write-init 1B (Aug 13)](run_reports/e17b_per_layer_mid_write_init_20260813.md)
 - [Shared init-0.3 @1B control (Aug 10)](run_reports/e16b_shared_init030_1b_20260810.md)
 - [E17 low-init 1B generation vs E16b (Aug 10)](run_reports/e17_lowinit_1b_generation_20260810.md)
