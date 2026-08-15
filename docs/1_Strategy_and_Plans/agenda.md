@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-08-14 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-08-15 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,47 +20,14 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **Current experiment — [E17c depth-private gated working memory](../experiments_specs/ahead/E17c_depth_private_working_memory.md)**
-  ([implementation plan](../experiments_specs/ahead/E17c_depth_private_working_memory_plan.md)).
-  E17c keeps E17's strictly block-causal four-bank topology and makes each depth a complete
-  private memory cell: dedicated read projections, an untied BiXT writer, selective
-  retain/replace dynamics, and causal carry dropout so prior-block information is sometimes
-  available only through concepts. The decisive pre-registered gate is carryless first-64
-  `Δpermutation ≥0.20` by 300M; a null at 100M (`<0.05`) kills early.
-- **Implementation state (2026-08-14):** code `a30f0f5` is locally green
-  (`381 passed, 9 skipped`) and completed a matched 50-step Polonez/W&B smoke with the
-  E16b/E17 data, optimizer, and evaluation contracts. All new metrics logged. The smoke
-  showed rapid update-gate closing, so do not infer mechanism success; the 100M
-  preregistered gate is the next decision point. An implementation audit against the
-  E17b “concepts as memory” diagnosis confirmed the cell is faithful (dedicated reads,
-  untied gated writers, carry pressure); residual risk is the remaining 50% local carry
-  and gate-closing, not a missing idea. The first full Polonez launch is the **300M**
-  mechanism-verdict budget (`scripts/launch_e17c.sh`), not 1B. The 2026-08-14 attempt
-  never reached step 0: rank 0 sat in a serial `Dataset.iter()` length scan over 16.6M
-  rows. That cache is now a parallel `datasets.map` + `save_to_disk` Arrow sidecar;
-  precompute it before relaunch so DDP is not blocked on a first-run scan.
-- **4K training efficiency:** E17c now opts into cached, bounded length grouping over the
-  unchanged interleaved manifest. Lengths live in `*.lengths/` (Hugging Face Arrow,
-  `datasets.map` workers) rather than a rank-0 Python `iter()` / `.npz`. It preserves
-  documents and source weights, uses Accelerate's normal 4-GPU sharding, and logs
-  global padding/useful-token throughput. Keep this separate from the 1M-context
-  architecture: length grouping reduces rectangular waste now, while true variable-length
-  attention and boundary-safe packing remain required.
-- **Why the previous next step changed (architecture/evaluation audit 2026-08-14):**
-  E17b's mid-init writes briefly opened then closed, showing that another scalar-init cell
-  does not address the learning incentive. More importantly, E16/E16b
-  `shared_depth_recurrent` writes current-block information after an early global layer and
-  rereads that state at later global layers in the **same block**; its BiXT writer is not
-  token-causal. The large E16b/shared+0.3 teacher-forced ΔCE therefore cannot be treated as
-  clean causal-memory evidence. Preserve those runs as historical results, but do not use
-  shared-depth as the target topology. E17/E17b avoid this leak because each layer rereads
-  only its own prior-block bank.
-- **What E17/E17b actually established:** the per-layer family keeps free-run in prose
-  (`real`@256 **0.20/0.60** vs shared E16b **0.04/0.94**) and is block-causal, but plain
-  next-token CE does not sustain content-bearing writes (`Δshuffle_beyond≈0.004–0.006`).
-  E17c therefore tests a working-memory **cell + information-pressure** hypothesis rather
-  than per-layer + init 0.3. E17a's untied-additive writer remains a possible post-positive
-  ablation, not a prerequisite.
+- **E17c 300M closed (2026-08-15).** Carryless first-64 Δpermutation **0.594** CI [0.543, 0.645]
+  cleared the registered ≥0.20 gate, almost entirely in bank 0 / layer 5. Geometry collapsed
+  (RankMe **6.75**, bank 1 **1.84**) and normal-context Δpermutation_beyond **0.013** missed the
+  0.02 stop, so **do not launch 1B**. Free-run `real`@256 **0.23/0.53** stays in the E17 family
+  (`real≈shuffle`). Spec:
+  [E17c](../experiments_specs/done_failed/E17c_depth_private_working_memory.md) ·
+  [report](../2_Experiments_Registry/run_reports/e17c_depth_private_working_memory_20260815.md).
+  The next architectural bet is unset; do not retune this cell with more tokens.
 - **Still open / still wanted:** [E08 Concept-Flow reasoner](../experiments_specs/ahead/E08_concept_flow_reasoner.md)
   (latent reasoning composition — preferably on a platform that already carries
   concepts), diffusion revive from `parked/` if a materially new ingredient appears,
@@ -73,7 +40,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   recall regimes — lower priority for the next budget, not erased. E17 init-0.01
   ([done_success/E17](../experiments_specs/done_success/E17_four_bank_concept_memory.md) ·
   [1B gen](../2_Experiments_Registry/run_reports/e17_lowinit_1b_generation_20260810.md))
-  remains the per-layer free-run baseline.
+  remains the per-layer free-run baseline. E17c showed that causal carry dropout can
+  force concept use without making that use survive ordinary CE or keep RankMe healthy.
 
 ### Series roadmap (genealogy; each step is one registered coherent bet)
 1. **E01 — AR decoder from scratch** *(done 2026-06-14, mixed).*
@@ -88,9 +56,16 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 7. **E16b long-ctx Muon** *(done_success 2026-07-25 — validated long-context path; follow-ups + other routes still open).*
 8. **E17 four-bank per-layer (init 0.01)** *(done_success mixed 2026-08-10 — relative free-run win; writes dead).*
 9. **E17b per-layer mid write-init 0.1** *(done_failed 2026-08-13 — mid-init not sticky; free-run ≈E17).*
-10. **E17c depth-private gated working memory + causal carry pressure** *(implemented + smoke-verified 2026-08-14; first full run is 300M on Polonez).*
+10. **E17c depth-private gated working memory + causal carry pressure** *(done_failed mixed 2026-08-15 — carryless Δperm 0.59 PASS; RankMe 6.7 / Δbeyond 0.013 kill 1B).*
 
 ## What we've explored so far (evidence, not verdicts)
+- **E17c gated cell + carry pressure (per_layer_banks, Polonez, train 2026-08-14, eval 2026-08-15):**
+  300M run `…20260814_133241`. Carryless first-64 Δpermutation **0.594** CI [0.543, 0.645]
+  (bank 0 **0.38**; others ≤0.03). RankMe **6.75** (bank 1 **1.84**). Normal-context
+  Δpermutation_beyond **0.013**. Free-run `real` greedy @256 **0.23/0.53** (E17b **0.20/0.60**;
+  E17 **0.21/0.59**). Pressure forces concept use when carry is dropped; it does not
+  transfer to ordinary CE or keep geometry healthy. Do not 1B. See
+  [report](../2_Experiments_Registry/run_reports/e17c_depth_private_working_memory_20260815.md).
 - **E17b mid-init 0.1 (per_layer_banks, Polonez, train 2026-08-10→13, Tier-1+1.5 2026-08-13):**
   write gates opened near ~100M (max \|tanh\| 0.14) then closed to ~0.05 by 1B; RankMe 68;
   Δshuf/static≥1024 **0.0055/0.0033**; free-run `real` greedy @256 **0.20/0.60** (E17 **0.21/0.59**;
@@ -180,8 +155,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 
 ## Not active right now (still part of the Vision)
 Recursive concept refinement and latent reasoning remain Vision goals — E08 and related
-ideas stay in play; compose them only after a strictly causal platform (E17c or a later
-successor) demonstrably carries content. From-scratch and other bases are not ruled out. Diffusion
+ideas stay in play; compose them only after a strictly causal platform demonstrably carries
+content. E17c's carryless signal is not that platform. From-scratch and other bases are not ruled out. Diffusion
 decode stays parked/revivable from `parked/`. Instruction SFT, long-context, and audio
 remain long-term Vision only. Multi-agent latent communication stays the Stage-2
 headline (see [team_brief](../sprind_frontier_ai/team_brief.md)).

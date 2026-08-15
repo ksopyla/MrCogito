@@ -1,11 +1,10 @@
 # E17c — Depth-private gated working memory under causal carry pressure
 
-- **Status:** implemented and smoke-verified; first full Polonez run is the 300M
-  mechanism-verdict budget (not a silent 1B continuation)
+- **Status:** done_failed (mixed) — 300M finished 2026-08-15; carryless Δperm PASS, geometry collapsed, no 1B
 - **Serves:** Priority 1 / SG1–SG2: make Gemma's concept banks carry content-bearing
   cross-block working state that remains useful for generation.
 - **Implementation plan:** [E17c_depth_private_working_memory_plan.md](E17c_depth_private_working_memory_plan.md)
-- **Owner / dates:** Krzysztof Sopyła · opened 2026-08-14
+- **Owner / dates:** Krzysztof Sopyła · opened 2026-08-14 · trained 2026-08-14 · closed 2026-08-15
 
 > E17c is one coherent bet about what a usable recurrent working memory requires:
 > a depth-private state transition in its own representation space, trained where the
@@ -173,11 +172,10 @@ on the immutable held-out split.
   All defaults reproduce E17b.
 
 ## Result
-To be filled by `experiment-track`.
-- Run id: —
-- WandB: —
-- Run report: —
-- Verdict: —
+- Run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260814_133241` (Polonez, 300M, 2372 steps; best `checkpoint-2370`)
+- WandB: run `backbone_concept_gemma_3_1b_pt_K512_concept_20260814_133241` (same W&B entity/project as the E17/E17b training runs)
+- Run report: [e17c_depth_private_working_memory_20260815.md](../../2_Experiments_Registry/run_reports/e17c_depth_private_working_memory_20260815.md)
+- Verdict: **mixed / killed for 1B** — carryless first-64 Δpermutation **0.594** CI [0.543, 0.645] clears the 300M ≥0.20 gate (almost all bank 0); RankMe **6.75** (bank 1 **1.84**) hits the collapse kill; normal-context Δpermutation_beyond **0.013** < 0.02 so do not spend 1B; free-run `real`@256 **0.23/0.53** ≈ E17.
 
 ## Implementation verification (2026-08-14; not an experiment verdict)
 - **Code:** `a30f0f5` on the E17c implementation branch. Defaults retain E17b's
@@ -249,7 +247,7 @@ Protocol gaps left unchanged on purpose (they do not mean the cell is missing):
   present; intra-block causality and pressure-mask tests are.
 
 ## References
-- [E17b failed mid-init run](../done_failed/E17b_per_layer_mid_write_init.md) ·
+- [E17b failed mid-init run](E17b_per_layer_mid_write_init.md) ·
   [report](../../2_Experiments_Registry/run_reports/e17b_per_layer_mid_write_init_20260813.md)
 - [E17 per-layer baseline](../done_success/E17_four_bank_concept_memory.md) ·
   [report](../../2_Experiments_Registry/run_reports/e17_lowinit_1b_generation_20260810.md)
