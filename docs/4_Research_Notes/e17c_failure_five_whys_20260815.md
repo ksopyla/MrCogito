@@ -92,6 +92,25 @@ Carry dropout is a real anti-bypass for *block starts*. It is not an anti-bypass
 
 ---
 
+## Literature confirmation (2026-08-15 scouts)
+
+Five independent searches converge on the same diagnosis. None of the standard recurrent-LM
+recipes train with a harder memory path and then decode with the easy local shortcut.
+
+| Why | Convergent claim | Anchors |
+|---|---|---|
+| 2 · train/test | Tr-XL / RMT / Block-Recurrent / Infini / MEGABYTE keep **local + memory both on** at train *and* decode. CFG drops condition at ~10–20% and **mixes both branches at sample time**; p=0.5 hurts the conditional path. Block-Recurrent documents a local optimum that **ignores recurrent state** when the window is always present. | [Tr-XL](https://arxiv.org/abs/1901.02860) · [CFG](https://arxiv.org/abs/2207.12598) · [Block-Recurrent](https://arxiv.org/abs/2203.07852) · [Sun et al.](https://arxiv.org/abs/2109.09115) |
+| 3 · bank 0 only | Additive residual is a broadcast: an early write stays in the stream. **One recurrent layer beats stacked identical ones**; RMT uses one global mem interface; ARMT's layerwise tokens without a distinct update rule do not add capacity. Open gates ≠ unique contribution. | [Elhage et al.](https://transformer-circuits.pub/2021/framework) · [Block-Recurrent §4.3](https://arxiv.org/abs/2203.07852) · [RMT](https://arxiv.org/abs/2207.06881) · [ARMT](https://arxiv.org/abs/2407.04841) |
+| 4 · RankMe | Infini writes are **bounded additive**; Block-Recurrent prefers remember-biased / EMA gates, not g→0.84 overwrite. Slot Attention needs **competition over slots**; a shared writer without that partitions nothing. Jing/VICReg/RankMe: CE on a gist task supplies no variance floor. | [Infini-attention](https://arxiv.org/abs/2404.07143) · [Slot Attention](https://arxiv.org/abs/2006.15055) · [Jing et al.](https://arxiv.org/abs/2110.09348) · [VICReg](https://arxiv.org/abs/2105.04906) |
+| 5 · fill-in | Segment **fronts** are where memory matters (Tr-XL motivation; Block-Recurrent App. G.1 CE spikes at segment starts). Local ~512 is enough for most tokens ([Sun et al.](https://aclanthology.org/2021.emnlp-main.62/); Rae & Razavi SRM≈512). **Shrinking the window** is what makes memory necessary (SWAX; "large-window laziness"). | [Rae & Razavi](https://aclanthology.org/2020.acl-main.672/) · [SWAX](https://arxiv.org/abs/2509.24552) · [arXiv:2606.15378](https://arxiv.org/abs/2606.15378) |
+| objective | Vanilla CE learns shortcuts, not slots ([Bachmann & Nagarajan](https://arxiv.org/abs/2403.06963)); ICL-style recall is often **transient** under CE ([Singh et al.](https://arxiv.org/abs/2311.08360)). Copy/NTM decode with **no teacher inputs**; MQAR is the sharper recall diagnostic than single-query AR. | [Zoology/MQAR](https://arxiv.org/abs/2312.04927) · [NTM](https://arxiv.org/abs/1410.5401) · [RMT/ARMT](https://arxiv.org/abs/2407.04841) |
+
+**Tension, not a contradiction:** CFG-style dropout wants a *weaker* p and dual-branch decode; anti-shortcut dropout wants a *harder* train path. Both agree that **p=0.5 + always-on shortcut at generate** is the mismatched recipe. Scheduled sampling pulls the other way (make train look like easy decode) and is the wrong tool if the goal is forcing the memory route.
+
+The intra-block 0–64 vs 64–512 split is rarely published; closest analogues are Tr-XL "front of segment" and Block-Recurrent segment-start spikes, not position bins inside W=512.
+
+---
+
 ## What is missing (the information constraint, not another gate init)
 
 1. **A constraint that stays active after the local window fills.** Mask/drop current-block
