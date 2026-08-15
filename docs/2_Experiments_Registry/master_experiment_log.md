@@ -11,14 +11,16 @@ experiment specs; deep metrics and interpretation live in run reports. Live focu
 | What are we doing now? | [`agenda.md`](../1_Strategy_and_Plans/agenda.md) |
 | Full metric dump / fair baselines | `run_reports/` |
 
-> **Focus note (2026-08-15) — E18 addressable concept RAM (draft); E17c 300M mixed, no 1B.**
+> **Focus note (2026-08-15) — E17d addressable concept RAM (draft + plan); E17c 300M mixed, no 1B.**
 > E17c carryless first-64 Δpermutation **0.594** CI [0.543, 0.645] cleared ≥0.20
 > (almost all layer-5 / bank 0) while RankMe collapsed to **6.75** and
 > Δpermutation_beyond **0.013** missed the 0.02 stop. Dense `gated_replace` of all
-> 128 slots is the diagnosed mechanism. The next registered bet is **E18**: slots
-> are RAM addresses with sparse top-k write/read and unused-slot invariance, under
-> the same carry pressure. Spec is draft — no launch until approved + planned.
-> [E18](../experiments_specs/ahead/E18_addressable_concept_ram.md) ·
+> 128 slots is the diagnosed mechanism. The next registered bet is **E17d** (same
+> E17 family; drafted as E18, unused): slots are RAM addresses with sparse top-k
+> write/read and unused-slot invariance, under the same carry pressure. No launch
+> until go-ahead.
+> [E17d](../experiments_specs/ahead/E17d_addressable_concept_ram.md) ·
+> [plan](../experiments_specs/ahead/E17d_addressable_concept_ram_plan.md) ·
 > [review](../literature_review/addressable_memory.md) ·
 > [E17c](../experiments_specs/done_failed/E17c_depth_private_working_memory.md) ·
 > [report](run_reports/e17c_depth_private_working_memory_20260815.md).
@@ -110,7 +112,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 | E11 | In-sequence memory-token concepts (Design A) | design-only | [E11](../experiments_specs/ahead/E11_memtoken_concept_memory.md) |
 | E12 | Per-layer KV-prefix concepts (Design B) | design-only | [E12](../experiments_specs/ahead/E12_perlayer_kv_prefix_concepts.md) |
 | E13 | Layer-wise recurrent KV-memory | draft (gated on E12) | [E13](../experiments_specs/ahead/E13_layerwise_recurrent_kv_memory.md) |
-| E18 | Addressable concept RAM (sparse location write/read) | draft (awaiting approval) | [E18](../experiments_specs/ahead/E18_addressable_concept_ram.md) |
+| E17d | Addressable concept RAM (sparse location write/read) | draft + plan (awaiting go-ahead) | [E17d](../experiments_specs/ahead/E17d_addressable_concept_ram.md) · [plan](../experiments_specs/ahead/E17d_addressable_concept_ram_plan.md) |
 | E17a | Untied per-bank writers (4 writers) — counterfactual to E17 | draft (do not run; E17c already untied writers) | [E17a](../experiments_specs/ahead/E17a_untied_per_bank_writers.md) |
 
 ### Canceled (no run)
@@ -121,7 +123,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 | E07 | Sentence-gap / boundary-only infilling | [E07](../experiments_specs/canceled/E07_sentence_gap_infilling.md) |
 | E09 | Gated recurrent concept memory (superseded by E10) | [E09](../experiments_specs/canceled/E09_recurrent_concept_memory.md) |
 
-**Genealogy:** E01 → E02 → E03 → E04 → E05 → E10…E16a (short-ctx) → **E16b** (historical shared-depth result; causal interpretation revised 2026-08-14) → **E17** (causal per-layer init-0.01 partial success) → **E17b** (mid-init 0.1 failed) → **E17c** (gated cell + carry pressure; 300M mixed — carryless PASS, geometry collapsed) → **E18** (draft: addressable RAM). See [`agenda.md`](../1_Strategy_and_Plans/agenda.md) for the living reading.
+**Genealogy:** E01 → E02 → E03 → E04 → E05 → E10…E16a (short-ctx) → **E16b** (historical shared-depth result; causal interpretation revised 2026-08-14) → **E17** (causal per-layer init-0.01 partial success) → **E17b** (mid-init 0.1 failed) → **E17c** (gated cell + carry pressure; 300M mixed — carryless PASS, geometry collapsed) → **E17d** (draft: addressable RAM). See [`agenda.md`](../1_Strategy_and_Plans/agenda.md) for the living reading.
 
 ---
 

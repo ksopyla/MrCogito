@@ -1,13 +1,16 @@
-# E18 — Addressable concept RAM (sparse location write/read)
+# E17d — Addressable concept RAM (sparse location write/read)
 
-- **Status:** draft — design-only until implementation-plan + go-ahead; do not
-  launch. No code until this spec is approved.
+- **Status:** draft — spec + plan written; no code until go-ahead
 - **Serves:** Priority 1 / the E17 family platform bet: make Gemma's concept
   banks a *working memory*, now with the inductive bias E17c lacked — slots are
   **addresses**, not a densely mixed latent soup. Keep exploring this
   architecture; do not retune E17c with more tokens.
-- **Implementation plan:** *(not yet written — `implementation-plan` after
-  approval)*
+- **Implementation plan:** [E17d_addressable_concept_ram_plan.md](E17d_addressable_concept_ram_plan.md)
+- **ID note:** drafted as E18, renamed to **E17d**. No other experiment occupied
+  E18. This is the same family as E17–E17c (`per_layer_banks` + carry pressure on
+  Gemma-3-1B); letter suffixes are the project's family-variant scheme (E10b–e,
+  E16a–b, E17a–c). E18 stays free for a later new family. GitHub PR #18 is not
+  an experiment ID.
 - **Owner / dates:** Krzysztof Sopyła · opened 2026-08-15 · closed —
 
 > One experiment = one coherent architectural hypothesis: **concept banks are
@@ -48,7 +51,7 @@ being Hopfield-averaged into one bank.
   no-pressure control (Δbeyond 0.0055, writes closed, RankMe 68).
 - **Materially new:** E17c privatized the cell and forced the path, but still
   **updated all 128 slots every block** (`gated_replace` interpolates every
-  row). E18 gives slots *positions*, sparse write, sparse read, and the unused-
+  row). E17d gives slots *positions*, sparse write, sparse read, and the unused-
   slot invariant. That is a different memory datatype, not a retune of α, k, or
   pressure weight.
 
@@ -114,7 +117,7 @@ is that **the same pressure on a RAM does not collapse**, because the mixer
 cannot dump the whole suffix into every slot. Dropping pressure would re-run
 the E17b failure mode and would not test the RAM hypothesis.
 
-**Out of scope (follow-ups only if E18 passes):** DNC temporal links; NTM shift
+**Out of scope (follow-ups only if E17d passes):** DNC temporal links; NTM shift
 convolution; GSA/DeltaNet/Titans associative matrices; E11 in-sequence
 mem-tokens; changing C/K/backbone/LoRA/optimizer/data mix; synthetic copy/bAbI
 curriculum; E08 latent reasoning; raising write-init or pressure weight; 1B
@@ -185,12 +188,12 @@ a separate 1B cosine.
   90–120M checkpoint.
 - **Launch (after implementation):**
   ```bash
-  SKIP_PRETOKENIZE=1 bash scripts/launch_e18.sh
+  SKIP_PRETOKENIZE=1 bash scripts/launch_e17d.sh
   ```
-  Wrapper pins the E18 cell, then delegates to `launch_e10.sh`. Equivalent
+  Wrapper pins the E17d cell, then delegates to `launch_e10.sh`. Equivalent
   explicit env:
   ```bash
-  EXPERIMENT_ID=E18 CONCEPT_IO_MODE=per_layer_banks \
+  EXPERIMENT_ID=E17d CONCEPT_IO_MODE=per_layer_banks \
   CONCEPT_READ_MODE=addressed_topk CONCEPT_WRITE_MODE=addressed_erase_add \
   TIE_CONCEPT_WRITER=false ADDRESS_WRITE_TOPK=4 ADDRESS_READ_TOPK=8 \
   ADDRESS_ALLOCATION=1 CONCEPT_STATE_INIT=zeros \

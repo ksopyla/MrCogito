@@ -20,14 +20,16 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **E18 Addressable concept RAM (draft, 2026-08-15).** Next architectural bet on the
-  E17 platform: treat each bank as a **RAM with positions** — sparse top-k
-  location/content/allocation writes (unaddressed slots exactly unchanged) and
-  sparse top-k reads — under the same causal carry pressure that forced use in
-  E17c. Do **not** retune E17c with more tokens; do **not** launch E18 until the
-  spec is approved and an implementation plan exists. Spec:
-  [E18](../experiments_specs/ahead/E18_addressable_concept_ram.md) · review:
-  [addressable_memory.md](../literature_review/addressable_memory.md).
+- **E17d Addressable concept RAM (draft + plan, 2026-08-15).** Next architectural
+  bet on the E17 platform: treat each bank as a **RAM with positions** — sparse
+  top-k location/content/allocation writes (unaddressed slots exactly unchanged)
+  and sparse top-k reads — under the same causal carry pressure that forced use
+  in E17c. Do **not** retune E17c with more tokens; do **not** launch E17d until
+  go-ahead (spec-before-code). Spec:
+  [E17d](../experiments_specs/ahead/E17d_addressable_concept_ram.md) ·
+  [plan](../experiments_specs/ahead/E17d_addressable_concept_ram_plan.md) ·
+  review: [addressable_memory.md](../literature_review/addressable_memory.md).
+  ID was drafted as E18; renamed to E17d (same family as E17c; E18 was unused).
 - **E17c 300M closed (2026-08-15).** Carryless first-64 Δpermutation **0.594** CI [0.543, 0.645]
   cleared the registered ≥0.20 gate, almost entirely in bank 0 / layer 5. Geometry collapsed
   (RankMe **6.75**, bank 1 **1.84**) and normal-context Δpermutation_beyond **0.013** missed the
@@ -43,7 +45,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [E12](../experiments_specs/ahead/E12_perlayer_kv_prefix_concepts.md) /
   [E13](../experiments_specs/ahead/E13_layerwise_recurrent_kv_memory.md).
   E11 remains a *different* graft (dense mem-tokens in-sequence), not a substitute
-  for E18. Do not run [E17a](../experiments_specs/ahead/E17a_untied_per_bank_writers.md)
+  for E17d. Do not run [E17a](../experiments_specs/ahead/E17a_untied_per_bank_writers.md)
   (E17c already untied writers). Priorities shifted; exploration stays multi-path.
 - **Background references:** E02-long remains the from-scratch semantic reference
   (STS-B 0.714). E10–E16a / E14–E15 remain valid evidence about short-ctx / sparse
@@ -67,16 +69,16 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 8. **E17 four-bank per-layer (init 0.01)** *(done_success mixed 2026-08-10 — relative free-run win; writes dead).*
 9. **E17b per-layer mid write-init 0.1** *(done_failed 2026-08-13 — mid-init not sticky; free-run ≈E17).*
 10. **E17c depth-private gated working memory + causal carry pressure** *(done_failed mixed 2026-08-15 — carryless Δperm 0.59 PASS; RankMe 6.7 / Δbeyond 0.013 kill 1B).*
-11. **E18 addressable concept RAM** *(draft 2026-08-15 — sparse location write/read + unused-slot invariant, same pressure; not yet implemented).*
+11. **E17d addressable concept RAM** *(draft 2026-08-15 — sparse location write/read + unused-slot invariant, same pressure; not yet implemented).*
 
 ## What we've explored so far (evidence, not verdicts)
 - **Addressable RAM as the E17c follow-up (design, 2026-08-15):** NTM/DNC/SAM vs
   GSA/Hopfield/Infini: dense softmax/gated writes have no unused-slot invariant
-  and predict the RankMe collapse E17c measured. Next registered bet is E18
+  and predict the RankMe collapse E17c measured. Next registered bet is E17d
   (sparse top-k erase-add + top-k read, location embeddings + allocation), not
   another E17c cosine. See
   [addressable_memory.md](../literature_review/addressable_memory.md) ·
-  [E18](../experiments_specs/ahead/E18_addressable_concept_ram.md).
+  [E17d](../experiments_specs/ahead/E17d_addressable_concept_ram.md).
 - **E17c gated cell + carry pressure (per_layer_banks, Polonez, train 2026-08-14, eval 2026-08-15):**
   300M run `…20260814_133241`. Carryless first-64 Δpermutation **0.594** CI [0.543, 0.645]
   (bank 0 **0.38**; others ≤0.03). RankMe **6.75** (bank 1 **1.84**). Normal-context
