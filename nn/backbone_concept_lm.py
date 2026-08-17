@@ -41,6 +41,13 @@ from nn.concept_encoder import BiXTCrossAttention
 from nn.concept_encoder_perceiver import ChunkedLMHeadCE
 
 IGNORE_INDEX = -100
+# Intra-block CE bins named after the K=512 protocol; offsets scale with concept_block.
+INTRA_BLOCK_BINS = (
+    ("0_64", 0.0, 0.125),
+    ("64_128", 0.125, 0.25),
+    ("128_256", 0.25, 0.5),
+    ("256_512", 0.5, 1.0),
+)
 
 
 class BackboneConceptConfig(PretrainedConfig):
@@ -70,6 +77,8 @@ class BackboneConceptConfig(PretrainedConfig):
         tie_concept_writer: bool = True,
         concept_write_mode: str = "additive",
         write_update_gate_init: float = 0.25,
+        concept_read_placement: str = "post_layer",
+        inference_carry_policy: str = "normal",
         memory_carry_dropout: float = 0.0,
         memory_pressure_tokens: int = 0,
         memory_pressure_weight: float = 1.0,
@@ -92,9 +101,11 @@ class BackboneConceptConfig(PretrainedConfig):
         self.read_gate_init = read_gate_init
         self.write_gate_init = write_gate_init
         self.concept_read_mode = concept_read_mode
+        self.concept_read_placement = concept_read_placement
         self.tie_concept_writer = tie_concept_writer
         self.concept_write_mode = concept_write_mode
         self.write_update_gate_init = write_update_gate_init
+        self.inference_carry_policy = inference_carry_policy
         self.memory_carry_dropout = memory_carry_dropout
         self.memory_pressure_tokens = memory_pressure_tokens
         self.memory_pressure_weight = memory_pressure_weight
@@ -228,10 +239,52 @@ class ConceptReadBranch(nn.Module):
         return attn.o_proj(o)
 
 
+class _AttnWithConceptResidual(nn.Module):
+    """Add a concept cross-attn mix onto the token-attention output (before FFN).
+
+    Owns only the original token attention. Read weights stay on the parent
+    ``GlobalLayerWithConceptRead`` so state_dict keys remain ``*.read_branch.*`` /
+    ``*.gate``. The parent is stored without ``nn.Module`` registration (a cycle
+    would otherwise form: wrapper ⊂ layer ⊂ parent).
+    """
+
+    def __init__(self, original_attn: nn.Module):
+        super().__init__()
+        self.original_attn = original_attn
+        # Gemma3DecoderLayer reads this on ``self.self_attn`` before calling it.
+        self.is_sliding = getattr(original_attn, "is_sliding", False)
+
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.original_attn, name)
+
+    def forward(self, hidden_states, *args, **kwargs):
+        out = self.original_attn(hidden_states, *args, **kwargs)
+        owner = getattr(self, "_owner", None)
+        z = None if owner is None else owner._read_z
+        if z is None:
+            return out
+        tok = out[0] if isinstance(out, tuple) else out
+        read = owner.read_branch(
+            hidden_states, z.to(hidden_states.dtype), self.original_attn
+        )
+        mixed = tok + torch.tanh(owner.gate) * read
+        if isinstance(out, tuple):
+            return (mixed,) + tuple(out[1:])
+        return mixed
+
+
 class GlobalLayerWithConceptRead(nn.Module):
-    """Wraps one of the backbone's global decoder layers: runs the original layer unchanged,
-    then adds a tanh-gated (zero-init) concept read. The concept state arrives through a
-    shared mutable holder set by `BackboneConceptLM` before each block forward."""
+    """Wraps one of the backbone's global decoder layers with a tanh-gated concept read.
+
+    ``post_layer`` (default, E17c): run the original layer, then add the concept mix
+    after FFN. ``attn_residual`` (E17d): wrap ``layer.self_attn`` so the mix lands in
+    the attention residual and the FFN sees the assimilated stream. The concept state
+    arrives through a shared mutable holder (E10) or an explicit ``concept_state``
+    argument (E16/E17) so checkpoint replay never observes a later recurrent state.
+    """
 
     def __init__(
         self,
@@ -241,14 +294,22 @@ class GlobalLayerWithConceptRead(nn.Module):
         *,
         hidden_size: int,
         read_mode: str = "backbone_qkv",
+        read_placement: str = "post_layer",
         read_num_heads: int = 4,
         normalize_concepts: bool = False,
         rms_norm_eps: Optional[float] = None,
     ):
         super().__init__()
+        if read_placement not in {"post_layer", "attn_residual"}:
+            raise ValueError(
+                f"Unknown concept_read_placement {read_placement!r}; "
+                "expected 'post_layer' or 'attn_residual'."
+            )
         self.layer = layer
         self.attention_type = layer.attention_type   # read by Gemma3TextModel.forward's mask routing
+        self.read_placement = read_placement
         self._state = state_holder                    # plain dict, not a submodule
+        self._read_z = None
         self.read_branch = ConceptReadBranch(
             hidden_size,
             mode=read_mode,
@@ -260,8 +321,29 @@ class GlobalLayerWithConceptRead(nn.Module):
             reference = layer.input_layernorm.weight
             self.read_branch.to(device=reference.device, dtype=reference.dtype)
         self.gate = nn.Parameter(torch.tensor(float(gate_init)))
+        if read_placement == "attn_residual":
+            wrapper = _AttnWithConceptResidual(layer.self_attn)
+            layer.self_attn = wrapper
+            # Avoid registering this wrapper's parent (cycle).
+            object.__setattr__(wrapper, "_owner", self)
 
     _STATE_UNSET = object()
+
+    def _resolve_read_state(self, concept_state):
+        if concept_state is self._STATE_UNSET:
+            z = self._state.get("z")
+        else:
+            z = concept_state
+        if z is None:
+            return None
+        # Holder-based ablations (shared/global_kv). Banked execution permutes the
+        # tensor before passing ``concept_state`` and leaves these flags unset.
+        permutation = self._state.get("permutation")
+        if permutation is not None:
+            z = z.index_select(0, permutation)
+        elif self._state.get("shuffle"):
+            z = torch.roll(z, shifts=1, dims=0)
+        return z
 
     def forward(
         self,
@@ -270,16 +352,16 @@ class GlobalLayerWithConceptRead(nn.Module):
         concept_state=_STATE_UNSET,
         **kwargs,
     ):
+        z = self._resolve_read_state(concept_state)
+        if self.read_placement == "attn_residual":
+            self._read_z = z
+            try:
+                return self.layer(hidden_states, *args, **kwargs)
+            finally:
+                self._read_z = None
+
         outputs = self.layer(hidden_states, *args, **kwargs)
-        # E10's monolithic backbone path uses the mutable holder. E16 passes the
-        # state explicitly so checkpoint replay never observes a later recurrent state.
-        z = self._state.get("z") if concept_state is self._STATE_UNSET else concept_state
         if z is not None:
-            permutation = self._state.get("permutation")
-            if permutation is not None:
-                z = z.index_select(0, permutation)
-            elif self._state.get("shuffle"):
-                z = torch.roll(z, shifts=1, dims=0)   # batch derangement (ablation)
             # E17c's dedicated branch queries the post-layer representation. The legacy
             # branch deliberately keeps its pre-layer normalized query for exact E17b numerics.
             x = (
@@ -438,6 +520,16 @@ class BackboneConceptLM(PreTrainedModel):
             raise ValueError("memory_pressure_weight must be >= 1.")
         if not 0.0 < config.write_update_gate_init < 1.0:
             raise ValueError("write_update_gate_init must lie strictly between 0 and 1.")
+        if config.concept_read_placement not in {"post_layer", "attn_residual"}:
+            raise ValueError(
+                "concept_read_placement must be 'post_layer' or 'attn_residual', got "
+                f"{config.concept_read_placement!r}."
+            )
+        if config.inference_carry_policy not in {"normal", "drop_after_first"}:
+            raise ValueError(
+                "inference_carry_policy must be 'normal' or 'drop_after_first', got "
+                f"{config.inference_carry_policy!r}."
+            )
         pressure_active = (
             config.memory_carry_dropout > 0.0
             or config.memory_pressure_tokens > 0
@@ -554,6 +646,7 @@ class BackboneConceptLM(PreTrainedModel):
                     ConceptWriteHead(
                         self.hidden_size,
                         config.write_num_heads,
+                        gate_init=config.write_gate_init,
                         update_mode=config.concept_write_mode,
                         update_gate_init=config.write_update_gate_init,
                     )
@@ -567,6 +660,7 @@ class BackboneConceptLM(PreTrainedModel):
                         config.read_gate_init,
                         hidden_size=self.hidden_size,
                         read_mode=config.concept_read_mode,
+                        read_placement=config.concept_read_placement,
                         read_num_heads=config.write_num_heads,
                         normalize_concepts=config.read_concept_norm,
                         rms_norm_eps=getattr(bb_cfg, "rms_norm_eps", None),
@@ -615,6 +709,19 @@ class BackboneConceptLM(PreTrainedModel):
         if self.write_head is None:
             raise RuntimeError("Concept writer requested for a model without concepts.")
         return self.write_head
+
+    def _resolve_carry_policy(self, carry_policy: Optional[str] = None) -> str:
+        """Explicit ``carry_policy`` wins; else train keeps Bernoulli dropout, eval uses config."""
+        if carry_policy is None:
+            if self.training:
+                carry_policy = "normal"
+            else:
+                carry_policy = getattr(self.config, "inference_carry_policy", "normal")
+        if carry_policy not in {"normal", "drop_after_first"}:
+            raise ValueError(
+                f"Unknown carry_policy={carry_policy!r}; expected normal or drop_after_first."
+            )
+        return carry_policy
 
     def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
         if gradient_checkpointing_kwargs is None:
@@ -875,7 +982,7 @@ class BackboneConceptLM(PreTrainedModel):
         labels: Optional[torch.Tensor],
         concept_mode: str = "real",  # real | shuffle | zero | static | one_block | permutation
         concept_permutation: Optional[torch.Tensor] = None,
-        carry_policy: str = "normal",
+        carry_policy: Optional[str] = None,
         concept_bank_index: Optional[int] = None,
         per_position: bool = False,
         return_predictions: bool = False,
@@ -887,10 +994,7 @@ class BackboneConceptLM(PreTrainedModel):
             raise ValueError(
                 f"Unknown concept_mode={concept_mode!r}; expected one of {sorted(valid_modes)}."
             )
-        if carry_policy not in {"normal", "drop_after_first"}:
-            raise ValueError(
-                f"Unknown carry_policy={carry_policy!r}; expected normal or drop_after_first."
-            )
+        carry_policy = self._resolve_carry_policy(carry_policy)
         B, S = input_ids.shape
         if return_predictions and not per_position:
             raise ValueError("return_predictions=True requires per_position=True.")
@@ -1330,6 +1434,7 @@ class BackboneConceptLM(PreTrainedModel):
         attention_mask: Optional[torch.Tensor] = None,
         concept_mode: str = "real",
         initial_concepts: Optional[torch.Tensor] = None,
+        carry_policy: Optional[str] = None,
     ) -> torch.Tensor:
         """Logits for the token immediately after ``input_ids``. Shape ``[B, V]``.
 
@@ -1344,6 +1449,7 @@ class BackboneConceptLM(PreTrainedModel):
             attention_mask,
             labels=None,
             concept_mode=concept_mode,
+            carry_policy=carry_policy,
             return_last_hidden=True,
             initial_concepts=initial_concepts,
         )
@@ -1364,6 +1470,7 @@ class BackboneConceptLM(PreTrainedModel):
         repetition_penalty: float = 1.0,
         eos_token_id: Optional[int] = None,
         concept_mode: str = "real",
+        carry_policy: Optional[str] = None,
     ) -> torch.Tensor:
         """Greedy or sampled continuation of ``input_ids`` (returns full sequences).
 
@@ -1382,6 +1489,9 @@ class BackboneConceptLM(PreTrainedModel):
         writes, then decodes read-only (no writes from the model's own tokens) — a
         zero-training-cost probe of whether self-generated concept writes drive the
         free-run repetition (the E16b Layer-0 "freeze-z" diagnostic).
+
+        Carry policy defaults to ``config.inference_carry_policy`` (E17d:
+        ``drop_after_first`` so previous windows exist only as concept banks).
         """
         if input_ids.ndim != 2:
             raise ValueError(f"input_ids must be [B, S], got {tuple(input_ids.shape)}")
@@ -1397,16 +1507,24 @@ class BackboneConceptLM(PreTrainedModel):
         # seeded by the prompt-encoded ``z``.
         frozen_z = None
         fwd_mode = concept_mode
+        resolved_carry = self._resolve_carry_policy(carry_policy)
         if concept_mode == "frozen":
             if not self.has_concepts:
                 raise ValueError("concept_mode='frozen' requires concept_num > 0.")
             # Full concept state after prompt-encoding: [B, C, H] for the shared modes,
             # [B, G, C, H] for per_layer_banks (encode_concepts exposes only the last bank).
-            _, frozen_z = self._forward_blocks(input_ids, mask, labels=None, concept_mode="real")
+            _, frozen_z = self._forward_blocks(
+                input_ids,
+                mask,
+                labels=None,
+                concept_mode="real",
+                carry_policy=resolved_carry,
+            )
             fwd_mode = "static"
         for _ in range(max_new_tokens):
             logits = self.next_token_logits(
                 cur, mask, concept_mode=fwd_mode, initial_concepts=frozen_z,
+                carry_policy=resolved_carry,
             )
             if not torch.isfinite(logits).all():
                 raise RuntimeError(
@@ -1475,6 +1593,23 @@ class BackboneConceptLM(PreTrainedModel):
                 if bool(finished.all()):
                     break
         return cur
+
+    @torch.no_grad()
+    def _intra_block_bin_mean(
+        self, values: torch.Tensor, start_frac: float, end_frac: float
+    ) -> float:
+        """Mean CE on post-first blocks in ``[start_frac, end_frac)`` of each K-block."""
+        K = self.config.concept_block
+        parts = []
+        for block_index in range(1, math.ceil(values.shape[1] / K)):
+            start = block_index * K + int(start_frac * K)
+            stop = min(block_index * K + int(end_frac * K), values.shape[1])
+            if stop > start:
+                parts.append(values[:, start:stop].reshape(-1))
+        if not parts:
+            return float("nan")
+        selected = torch.cat(parts)
+        return float(selected.nanmean().item())
 
     @torch.no_grad()
     def concept_ablation_ce(
@@ -1602,6 +1737,19 @@ class BackboneConceptLM(PreTrainedModel):
                 - results["pressure_ce_real_first64"]
             )
 
+            # E17d primary: late intra-block bins under forced no-carry. Names follow
+            # the K=512 protocol; offsets scale with concept_block (K=8 tests use K/2:K).
+            for bin_name, start_frac, end_frac in INTRA_BLOCK_BINS:
+                real_bin = self._intra_block_bin_mean(
+                    pressure_real, start_frac, end_frac
+                )
+                perm_bin = self._intra_block_bin_mean(
+                    pressure_perm, start_frac, end_frac
+                )
+                results[f"ce_real_block_{bin_name}"] = real_bin
+                results[f"ce_permutation_block_{bin_name}"] = perm_bin
+                results[f"delta_permutation_block_{bin_name}"] = perm_bin - real_bin
+
             for bank_index in range(len(self.global_layer_indices)):
                 bank_perm = self.per_position_ce(
                     input_ids,
@@ -1637,6 +1785,11 @@ class BackboneConceptLM(PreTrainedModel):
                 results[f"pressure_delta_permutation_bank_{bank_index}_first64"] = (
                     bank_pressure_ce - results["pressure_ce_real_first64"]
                 )
+                late_bank = self._intra_block_bin_mean(bank_pressure, 0.5, 1.0)
+                results[f"ce_permutation_bank_{bank_index}_block_256_512"] = late_bank
+                results[f"delta_permutation_bank_{bank_index}_block_256_512"] = (
+                    late_bank - results["ce_real_block_256_512"]
+                )
         return results
 
     @torch.no_grad()
@@ -1670,9 +1823,15 @@ class BackboneConceptLM(PreTrainedModel):
         else:
             metrics = {}
             for depth_index, layer_index in enumerate(self.global_layer_indices):
-                value = float(
-                    torch.tanh(self.write_head.depth_alphas[depth_index]).item()
-                )
+                writer = self._writer_for_depth(depth_index)
+                if writer.depth_alphas is not None:
+                    value = float(
+                        torch.tanh(writer.depth_alphas[depth_index]).item()
+                    )
+                elif writer.alpha is not None:
+                    value = float(torch.tanh(writer.alpha).item())
+                else:
+                    continue
                 metrics[f"concept_gates/write_{depth_index}"] = value
                 metrics[f"concept_gates/write_layer_{layer_index}"] = value
         read_idx = 0

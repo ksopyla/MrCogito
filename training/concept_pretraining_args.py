@@ -191,6 +191,20 @@ class ModelArguments:
             "help": "Concept read projections: backbone_qkv (legacy E17b) or dedicated."
         },
     )
+    concept_read_placement: str = field(
+        default="post_layer",
+        metadata={
+            "help": "Where the concept mix is added: post_layer (E17c sidecar after FFN) "
+            "or attn_residual (E17d mix inside the attention residual before FFN)."
+        },
+    )
+    inference_carry_policy: str = field(
+        default="normal",
+        metadata={
+            "help": "Eval/generate carry policy when carry_policy is omitted: normal "
+            "(keep previous-block tokens) or drop_after_first (concepts-only history)."
+        },
+    )
     tie_concept_writer: bool = field(
         default=True,
         metadata={"help": "Share one concept writer across global depths (legacy behavior)."},
