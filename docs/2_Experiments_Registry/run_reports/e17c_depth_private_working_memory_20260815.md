@@ -103,6 +103,10 @@ So the pressure objective does what it was designed to do on the tokens it rewei
 
 ## Decision
 
-**Do not launch 1B.** Treat E17c as a mixed 300M close: keep the carryless bank-0 signal as evidence that causal carry dropout can force concept use, and treat collapsed RankMe + non-transfer to normal CE as the kill for this cell as a generation memory platform. Next bet (not this track) has to explain why only the earliest bank absorbed the pressure and why the other three banks stayed near-static under open update gates.
+**Do not launch 1B.** Treat E17c as a mixed 300M close: keep the carryless bank-0 signal as evidence that causal carry dropout can force concept use, and treat collapsed RankMe + non-transfer to normal CE as the kill for this cell as a generation memory platform. Next bet (not this track) has to keep memory necessary *after* the local window refills — carry dropout only trains a block-boundary gist (see the five-whys note).
+
+## Notes
+
+A 16-batch position-bin diagnostic on `checkpoint-2370` shows carryless Δpermutation **0.60 / 0.12 / 0.056 / 0.026** on intra-block bins 0–64 / 64–128 / 128–256 / 256–512 (with-carry all ~0.013). Absolute first-64 CE: with carry **2.00**, carryless real **2.84**, carryless perm **3.45**. Full five-whys: [`e17c_failure_five_whys_20260815.md`](../../4_Research_Notes/e17c_failure_five_whys_20260815.md).
 
 *Related: `master_experiment_log.md`, `docs/experiments_specs/done_failed/E17c_depth_private_working_memory.md`, `agenda.md`*

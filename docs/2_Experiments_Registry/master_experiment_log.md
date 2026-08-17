@@ -197,6 +197,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 
 ## Architecture notes (pointers only)
 
+- **2026-08-15 — E17c gist-not-memory:** carry dropout only trains a block-boundary gist (carryless Δperm 0.60→0.026 across intra-block bins). Note: [`e17c_failure_five_whys_20260815.md`](../4_Research_Notes/e17c_failure_five_whys_20260815.md).
 - **2026-02-21 — abandon MLM primary:** diagnosis in [`mlm_perceiver_diagnosis_20260221.md`](../4_Research_Notes/mlm_perceiver_diagnosis_20260221.md); BiXT + TSDAE path followed.
 - **2026-02-23 — diffusion decoder redesign:** remove O(N²) self-attn → xattn-only + AdaLN-Zero. Detail in CHANGELOG `[2026-02-23]` and [report](run_reports/diffusion_L2_failure_20260221.md).
 
