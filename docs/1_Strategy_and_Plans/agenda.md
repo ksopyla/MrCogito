@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-08-15 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-08-17 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,14 +20,18 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **E17c 300M closed (2026-08-15).** Carryless first-64 Δpermutation **0.594** CI [0.543, 0.645]
-  cleared the registered ≥0.20 gate, almost entirely in bank 0 / layer 5. Geometry collapsed
-  (RankMe **6.75**, bank 1 **1.84**) and normal-context Δpermutation_beyond **0.013** missed the
-  0.02 stop, so **do not launch 1B**. Free-run `real`@256 **0.23/0.53** stays in the E17 family
-  (`real≈shuffle`). Spec:
+- **E17d draft (2026-08-17), awaiting approval.** Keep the four global concept banks.
+  Change their *job*: mix current tokens with each bank inside the attention residual
+  (Gemma global-attention replacement), with no 512-token carry at train or generate.
+  Do not collapse to one bank; E17c's bank-0 monopoly was a sidecar + gist-loss artifact,
+  not a falsification of depth abstraction. Spec:
+  [E17d](../experiments_specs/ahead/E17d_global_concept_assimilation.md).
+  Not implemented. Do not launch 1B on E17c.
+- **E17c 300M closed (2026-08-15).** Carryless first-64 Δpermutation **0.594**, almost
+  entirely bank 0; RankMe **6.75**; Δpermutation_beyond **0.013**; free-run `real≈shuffle`.
+  Spec:
   [E17c](../experiments_specs/done_failed/E17c_depth_private_working_memory.md) ·
   [report](../2_Experiments_Registry/run_reports/e17c_depth_private_working_memory_20260815.md).
-  The next architectural bet is unset; do not retune this cell with more tokens.
 - **Still open / still wanted:** [E08 Concept-Flow reasoner](../experiments_specs/ahead/E08_concept_flow_reasoner.md)
   (latent reasoning composition — preferably on a platform that already carries
   concepts), diffusion revive from `parked/` if a materially new ingredient appears,
@@ -57,6 +61,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 8. **E17 four-bank per-layer (init 0.01)** *(done_success mixed 2026-08-10 — relative free-run win; writes dead).*
 9. **E17b per-layer mid write-init 0.1** *(done_failed 2026-08-13 — mid-init not sticky; free-run ≈E17).*
 10. **E17c depth-private gated working memory + causal carry pressure** *(done_failed mixed 2026-08-15 — carryless Δperm 0.59 PASS; RankMe 6.7 / Δbeyond 0.013 kill 1B).*
+11. **E17d depth-private concept layers as global-attention replacement** *(draft 2026-08-17 — four banks kept; read moves into the attention residual; token carry off).*
 
 ## What we've explored so far (evidence, not verdicts)
 - **E17c gated cell + carry pressure (per_layer_banks, Polonez, train 2026-08-14, eval 2026-08-15):**
