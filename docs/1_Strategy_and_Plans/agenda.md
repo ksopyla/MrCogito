@@ -20,10 +20,12 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **E17d implemented, 300M Polonez launch (2026-08-17).** Four global concept banks stay.
+- **E17d implemented, 300M Polonez running (2026-08-17).** Four global concept banks stay.
   Mix sits in the attention residual (Gemma global-attention job); previous windows exist
   only as those banks at train, eval, and `generate()`. Writes stay once per 512-token
-  window. Spec:
+  window. Live run
+  `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_125416` (Byobu `E17d`;
+  ignore aborted smoke `…124945`). Spec:
   [E17d](../experiments_specs/ahead/E17d_global_concept_assimilation.md) ·
   [plan](../experiments_specs/ahead/E17d_global_concept_assimilation_plan.md).
   Launch: `SKIP_PRETOKENIZE=1 bash scripts/launch_e17d.sh` (`TARGET_TOKENS=300000000`).
@@ -62,7 +64,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 8. **E17 four-bank per-layer (init 0.01)** *(done_success mixed 2026-08-10 — relative free-run win; writes dead).*
 9. **E17b per-layer mid write-init 0.1** *(done_failed 2026-08-13 — mid-init not sticky; free-run ≈E17).*
 10. **E17c depth-private gated working memory + causal carry pressure** *(done_failed mixed 2026-08-15 — carryless Δperm 0.59 PASS; RankMe 6.7 / Δbeyond 0.013 kill 1B).*
-11. **E17d depth-private concept layers as global-attention replacement** *(active 2026-08-17 — attn-residual read; per-window write; token carry off; 300M Polonez).*
+11. **E17d depth-private concept layers as global-attention replacement** *(active 2026-08-17 — attn-residual read; per-window write; token carry off; 300M Polonez run `…20260817_125416`).*
 
 ## What we've explored so far (evidence, not verdicts)
 - **E17c gated cell + carry pressure (per_layer_banks, Polonez, train 2026-08-14, eval 2026-08-15):**

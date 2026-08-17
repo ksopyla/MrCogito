@@ -5,6 +5,8 @@
 - **Token budget:** **300M** non-padding tokens (`TARGET_TOKENS=300000000`), same
   mechanism-verdict cadence as E17c. A 300B budget is not runnable on 4× RTX 3090
   (~1000× E17c) and is not this experiment.
+- **Live run:** `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_125416`
+  (Polonez, Byobu `E17d`, commit `f865be2`). Ignore aborted smoke `…20260817_124945`.
 
 > Implement the spec's job change: four depth-private banks stay; each former global
 > layer mixes its bank **inside the attention residual**; previous windows exist only as
@@ -138,8 +140,12 @@ adds the concept branch on the same normalized `x` the attention received, and
 returns the same output signature (tensor or `(hidden, weights, ...)`). Proxy
 `is_sliding` (Gemma3DecoderLayer reads it on `self.self_attn` before the call).
 Do not register the parent as a submodule of the wrapper (cycle). Then
-`GlobalLayerWithConceptRead.forward` runs `self.layer(...)` **without** a second
-post-layer add.
+`GlobalLayerWithConceptRead.forward` must **not** add a second post-layer mix.
+When Gemma's `GradientCheckpointingLayer` is on, pass `z` as a tensor argument to
+`torch.utils.checkpoint.checkpoint(_run, hidden_states, z, use_reentrant=False)` and
+call `self.layer.forward(...)` (skip the nested wrapper). Smuggling `z` on
+`_read_z` and then calling `self.layer(...)` lets recompute run after the attribute
+is cleared (Polonez smoke `…124945`: 100 vs 72 saved tensors).
 
 `read_gate` stays (init 0.1) so a random dedicated read does not blow pretrained residuals
 at step 0. Placement, not deleting the scale, is the bet. Query is the **pre-attn
@@ -248,9 +254,10 @@ Local smoke: `uv run pytest tests/test_backbone_concept_lm.py tests/test_trainin
   not another read-placement tweak.
 - **Risk:** wrapping `self_attn` breaks if Gemma's attention return signature changes,
   or if GradientCheckpointingLayer recomputes after `_read_z` is cleared.
-  **Fallback:** branch on tuple vs tensor; pass `z` as a checkpoint tensor input and
-  call `layer.forward` (skip nested Gemma checkpoint). Tested with
-  `gradient_checkpointing_enable()` on the tiny Gemma3TextConfig.
+  **Mitigation (shipped):** branch on tuple vs tensor; pass `z` as a checkpoint tensor
+  input and call `layer.forward` (skip nested Gemma checkpoint). Covered by
+  `test_e17d_gradient_checkpointing_backward_finite`. First Polonez smoke
+  (`…124945`) hit this; the live run is the replay fix.
 - **Risk:** `tanh(0.1)` still lets the mix die. **Signal:** read-gate telemetry at 100M;
   if all `|tanh| < 0.02` and late-bin is dead, that is the same kill, not a silent
   raise-init A/B in this run.

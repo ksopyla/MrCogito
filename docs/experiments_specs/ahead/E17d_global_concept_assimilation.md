@@ -1,6 +1,6 @@
 # E17d — Depth-private concept layers as global-attention replacement
 
-- **Status:** active (implemented; 300M Polonez)
+- **Status:** active (implemented; 300M Polonez running)
 - **Serves:** Priority 1 / SG1–SG2: make Gemma's four former global layers assimilate
   long-range context through concepts, at every position, the way full attention used to.
 - **Implementation plan:** [E17d_global_concept_assimilation_plan.md](E17d_global_concept_assimilation_plan.md)
@@ -174,15 +174,17 @@ comparison.
   TARGET_TOKENS=300000000 SKIP_PRETOKENIZE=1 \
   bash scripts/launch_e10.sh
   ```
-  `generate()` and Trainer eval must honor `inference_carry_policy="drop_after_first"`.
-  Today `generate()` hard-codes `carry_policy="normal"`; that is in-scope foundation work.
+  `generate()` and Trainer eval honor `inference_carry_policy="drop_after_first"`
+  (implemented; no longer hard-coded to `"normal"`).
 - **New foundation code:** config-selectable read placement (`attn_residual` vs today's
   `post_layer`); generate-time carry policy; additive writes already exist. No new
   model class or training fork. Defaults keep E17c loadable.
 
 ## Result
-<Filled in AFTER, by experiment-track.>
-- Run id: `<run_id>`
-- WandB: <run id only>
-- Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
-- Verdict: promising | mixed | regression | killed — <one line>
+<Filled in AFTER, by experiment-track. Launch identity only for now.>
+- Run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_125416`
+  (Polonez Byobu `E17d`, 300M, 2372 steps; ignore aborted smoke `…20260817_124945`)
+- WandB: `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_125416`
+- Git tag: `train/backbone_concept_gemma_3_1b_pt_K512_concept_20260817_125416`
+- Run report: pending
+- Verdict: pending — 100M kill ~step 790; 300M verdict ~step 2372

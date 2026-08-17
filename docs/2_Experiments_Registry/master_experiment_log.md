@@ -100,7 +100,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 
 | ID | What | Status | Spec |
 |---|---|---|---|
-| E17d | Depth-private concept layers as global-attention replacement | active (300M) | [E17d](../experiments_specs/ahead/E17d_global_concept_assimilation.md) |
+| E17d | Depth-private concept layers as global-attention replacement | active (300M running) | [E17d](../experiments_specs/ahead/E17d_global_concept_assimilation.md) |
 | E08 | Concept-Flow reasoner (encode→reason→decode) | draft | [E08](../experiments_specs/ahead/E08_concept_flow_reasoner.md) |
 | E05c | Decoder word-dropout on suffix (anti-bypass) | on hold / unrun | [E05c](../experiments_specs/ahead/E05c_anticollapse_extension.md) |
 | E05d | VICReg on concept matrix | on hold / design-only | [E05d](../experiments_specs/ahead/E05d_concept_vicreg.md) |
@@ -172,6 +172,8 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-08-10 | E17b | `backbone_concept_gemma_3_1b_pt_K512_concept_20260810_120432` | per_layer_banks · init **0.1** · aborted smoke | — | ABORTED — underfilled bs=3; restarted as `…135711`. | [spec](../experiments_specs/done_failed/E17b_per_layer_mid_write_init.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260810_120432) |
 | 2026-08-10 | E17b | `backbone_concept_gemma_3_1b_pt_K512_concept_20260810_135711` | per_layer_banks · init **0.1** · 1B · bs8 | RankMe 68 · Δbeyond ~0.005 · gen **0.20/0.60** | FAILED — mid-init not sticky; free-run ≈E17, mechanism null. | [spec](../experiments_specs/done_failed/E17b_per_layer_mid_write_init.md) · [report](run_reports/e17b_per_layer_mid_write_init_20260813.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260810_135711) |
 | 2026-08-14 | E17c | `backbone_concept_gemma_3_1b_pt_K512_concept_20260814_133241` | gated_replace + carry dropout · 300M | carryless Δperm **0.59** · RankMe **6.7** · gen **0.23/0.53** | MIXED — pressure works (bank 0); geometry collapsed; no 1B. | [spec](../experiments_specs/done_failed/E17c_depth_private_working_memory.md) · [report](run_reports/e17c_depth_private_working_memory_20260815.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260814_133241) |
+| 2026-08-17 | E17d | `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_124945` | attn-residual + no token carry · aborted smoke | CheckpointError at step 0 | ABORTED — nested Gemma checkpoint dropped `z`; restarted as `…125416`. | [spec](../experiments_specs/ahead/E17d_global_concept_assimilation.md) |
+| 2026-08-17 | E17d | `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_125416` | attn-residual + no token carry · 300M | warmup loss 14.91→14.67 (steps 20–60) | RUNNING — Polonez Byobu `E17d`; 2372 steps. | [spec](../experiments_specs/ahead/E17d_global_concept_assimilation.md) |
 
 ---
 
