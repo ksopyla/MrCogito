@@ -27,7 +27,7 @@ Five addressing primitives appear again and again. They are not interchangeable:
 | **Hash / product key** (Kanerva SDM, Lample product keys) | Cue → sparse hard locations | Yes (top-k only) |
 | **Dense mix** (softmax over all C, BiXT, Infini Hebbian, GSA convex combo) | There is no unused location | **No** |
 
-E17/E17b/E17c sit in the last row. E17d is a bet on the first four.
+E17/E17b/E17c sit in the last row. E18 is a bet on the first four.
 
 ---
 
@@ -279,7 +279,7 @@ Mistral-7B → GSA beats RWKV6/Mamba/T2R-to-GLA on a few billion tokens.
 Closest 2024 "slots as RAM" inside LMs, and a cautionary tale: **learned write
 intensity without an unused-slot invariant is still dense**. E17c's per-slot
 sigmoid is GSA-like; it opened the gates and still collapsed. Do not Adapt GSA
-as the E17d cell. Keep it as the "gated dense slot write already failed here"
+as the E18 cell. Keep it as the "gated dense slot write already failed here"
 baseline.
 
 ---
@@ -310,7 +310,7 @@ integrity collapse.
 Best published "graft a memory pool onto a frozen pretrained LM" recipe — the
 engineering analogue of our Gemma+LoRA graft. But it does **not** learn WHERE
 to write, and it reads every slot. K≪N is the only sparsity. E11 (mem-tokens in
-sequence) is closer to MemoryLLM/RMT than to NTM. E17d should not copy the
+sequence) is closer to MemoryLLM/RMT than to NTM. E18 should not copy the
 random-drop write.
 
 ---
@@ -351,7 +351,7 @@ index. They are the wrong address primitive for "write to position i":
 - **Titans / Nested Learning** (https://arxiv.org/abs/2501.00663,
   https://arxiv.org/abs/2512.24695): surprise-gated test-time gradient into an
   MLP. "Where to write" = which parameters the gradient hits. No official
-  Google PyTorch. Watch for later; not E17d.
+  Google PyTorch. Watch for later; not E18.
 
 **Memory Mosaics** (ICLR 2025 https://arxiv.org/abs/2405.06394; v2
 https://arxiv.org/abs/2507.03285; archived

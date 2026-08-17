@@ -1,9 +1,9 @@
-# E17d — Addressable concept RAM — Implementation Plan
+# E18 — Addressable concept RAM — Implementation Plan
 
-- **Spec:** [E17d_addressable_concept_ram.md](E17d_addressable_concept_ram.md) · **Status:** draft
+- **Spec:** [E18_addressable_concept_ram.md](E18_addressable_concept_ram.md) · **Status:** draft
 - **Authored by:** `implementation-plan` · for → `research-implement`
 
-> Implement the full E17d claim: concept banks are RAM with positions, sparse
+> Implement the full E18 claim: concept banks are RAM with positions, sparse
 > top-k erase-add writes, sparse top-k reads, and unused-slot invariance, under
 > E17c's causal carry pressure. Do **not** keep BiXT/`gated_replace` "for a first
 > version." Preserve E17b/E17c by putting every new behavior behind
@@ -51,7 +51,7 @@
 | `build_pretraining_model` | pass the new fields | `training/concept_pretraining_factories.py` |
 | `PerceiverDenoiseTrainer` | already logs `concept_gate_metrics()`; no new callback | `training/concept_pretraining_trainer.py` |
 | Generic launcher | env/CLI pass-through only | `scripts/train_concept_pretraining_multigpu.sh` |
-| Thin wrapper | pin E17d env, delegate to `launch_e10.sh` | `scripts/launch_e17d.sh` (new, like `launch_e17c.sh`) |
+| Thin wrapper | pin E18 env, delegate to `launch_e10.sh` | `scripts/launch_e18.sh` (new, like `launch_e17c.sh`) |
 | Analysis | RankMe of written vs unwritten slots from usage/write-mass | `analysis/run_concept_analysis.py` |
 | Generation assessment | reuse as-is | `analysis/run_e16b_generation_assessment.py` |
 | Tests | extend existing backbone suite | `tests/test_backbone_concept_lm.py` |
@@ -125,7 +125,7 @@ controller     Linear(H, 3H+3)      # per head: k_loc, k_cnt, add, erase_logit, 
 
 `GlobalLayerWithConceptRead` at depth `g` stores a reference to
 `_writer_for_depth(g).address_emb` (tied writer ⇒ all four layers share one
-book; E17d is untied ⇒ four books). Address embeddings are parameters, not
+book; E18 is untied ⇒ four books). Address embeddings are parameters, not
 sequence state.
 
 ### 3.3 Sparse write (replaces BiXT `gated_replace`)
@@ -192,7 +192,7 @@ def forward(self, z, h_block, pad_mask, *, depth_index=None, usage=None):
 
 `_writer_for_depth` callers in the per-layer loop unpack only when
 `writer.update_mode == "addressed_erase_add"`. Shared-depth / global_kv never
-take this mode in E17d (validate in `__init__`: addressed modes require
+take this mode in E18 (validate in `__init__`: addressed modes require
 `per_layer_banks`).
 
 ### 3.4 Sparse read (replaces dense SDPA over C)
@@ -235,7 +235,7 @@ support**.
 ### 3.6 `concept_init`
 `concept_state_init="gaussian"` (default): today's
 `randn * H^-0.5` (`nn/backbone_concept_lm.py` ~529).
-`"zeros"`: `nn.Parameter(torch.zeros(G, C, H))`, still trainable. E17d uses
+`"zeros"`: `nn.Parameter(torch.zeros(G, C, H))`, still trainable. E18 uses
 zeros so blank rows are identical and **location + allocation** must choose
 where to write (DNC/SAM empty-memory lesson). Do not freeze `concept_init`.
 
@@ -264,7 +264,7 @@ where to write (DNC/SAM empty-memory lesson). Do not freeze `concept_init`.
 
 New `BackboneConceptConfig` / `ModelArguments` fields (defaults = legacy):
 
-| Field | Default | E17d |
+| Field | Default | E18 |
 |---|---|---|
 | `concept_read_mode` | `"backbone_qkv"` | `"addressed_topk"` |
 | `concept_write_mode` | `"additive"` | `"addressed_erase_add"` |
@@ -289,7 +289,7 @@ Validation in `BackboneConceptLM.__init__` (extend the existing block at ~423):
 - `addressed_erase_add` requires `address_write_topk ∈ [1, C]`
 - `concept_state_init ∈ {gaussian, zeros}`
 - `0 < address_usage_mu ≤ 1`; `address_allocation_scale ≥ 0`
-- E17d launcher sets **both** addressed read and write; the foundation may
+- E18 launcher sets **both** addressed read and write; the foundation may
   accept mixed modes for later ablations, but this run does not mix.
 
 `training/concept_pretraining_factories.py` passes every new field next to the
@@ -301,10 +301,10 @@ Generic runner `scripts/train_concept_pretraining_multigpu.sh`: add
 `ADDRESS_ALLOCATION`, `ADDRESS_ALLOCATION_SCALE`, `ADDRESS_USAGE_MU` with
 legacy defaults and `--` pass-through. Do not copy the runner.
 
-Thin wrapper `scripts/launch_e17d.sh` (clone `launch_e17c.sh` structure):
+Thin wrapper `scripts/launch_e18.sh` (clone `launch_e17c.sh` structure):
 
 ```bash
-export EXPERIMENT_ID="${EXPERIMENT_ID:-E17d}"
+export EXPERIMENT_ID="${EXPERIMENT_ID:-E18}"
 export CONCEPT_IO_MODE=per_layer_banks
 export CONCEPT_READ_MODE=addressed_topk
 export CONCEPT_WRITE_MODE=addressed_erase_add
@@ -373,7 +373,7 @@ Extend `tests/test_backbone_concept_lm.py` (no parallel test module):
     tests with addressed modes + pressure on/off.
 11. **Usage carry:** usage after block 0 is nonzero; block 1 write sees that
     usage (allocation scores differ vs a zeroed usage clone).
-12. **Checkpoint round-trip:** E17d save/load preserves config, four address
+12. **Checkpoint round-trip:** E18 save/load preserves config, four address
     books, loss, banks, generation. An E17c checkpoint still loads (no
     unexpected missing *legacy* keys).
 13. **Ablation modes:** `real/zero/shuffle/permutation/static/one_block/frozen`
@@ -395,9 +395,9 @@ nonzero address_emb grads, per-bank address metrics present.
 Before remote training:
 
 ```bash
-EXPERIMENT_ID=E17d MAX_STEPS=50 REPORT_TO=none \
+EXPERIMENT_ID=E18 MAX_STEPS=50 REPORT_TO=none \
 LOAD_BEST_MODEL_AT_END=False SAVE_STRATEGY=no EVAL_STRATEGY=no \
-bash scripts/launch_e17d.sh
+bash scripts/launch_e18.sh
 ```
 
 Record peak VRAM, samples/s, trainable params by component (address books +
@@ -428,7 +428,7 @@ controllers vs E17c's BiXT). Do not silently change C/K/k/pressure to fit.
   must rise or the bet fails honestly. Do not change the RankMe definition
   post hoc to exclude zeros without a spec amendment.
 - **Fallback:** none inside this run. Failure → kill, then a follow-up spec
-  (soft k, non-zero init, or dense read) — not a silent rewrite of E17d.
+  (soft k, non-zero init, or dense read) — not a silent rewrite of E18.
 
 ## 9. Code sketches (`# sketch` — decisions, not demos)
 
@@ -476,7 +476,7 @@ layers[i] = GlobalLayerWithConceptRead(
 2. `ConceptWriteHead` `addressed_erase_add` (no BiXT) + unused-slot tests.
 3. Thread `usage` through `_forward_blocks` / `_forward_per_layer_banks_block`.
 4. `ConceptReadBranch` `addressed_topk` + shared `address_emb` wiring.
-5. `concept_state_init=zeros`, config/args/factory/launcher/`launch_e17d.sh`.
+5. `concept_state_init=zeros`, config/args/factory/launcher/`launch_e18.sh`.
 6. `concept_gate_metrics` + analysis RankMe split.
 7. Causality / checkpoint / legacy regression tests.
 8. Tiny local smoke, then 50-step Polonez guard. No 300M until tests are green.
