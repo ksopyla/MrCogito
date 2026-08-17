@@ -1,34 +1,60 @@
 #!/usr/bin/env bash
-# Short VRAM / throughput calibration for E17d (seq 4096, attn-residual, no token carry).
-# Goal: fill 4x RTX 3090s. Default packing=none so peak VRAM is the 4096-token worst
-# case (length_group underfills short buckets). Effective batch is restored after the
-# sweep by lowering GRADIENT_ACCUMULATION_STEPS so 4 * bs * accum stays near 72, the
-# E16b/E17/E17c token-budget invariant. TARGET_TOKENS stays 300M on the real launch.
+# Short throughput / VRAM calibration for E17d (seq 4096, attn-residual, no token carry).
+#
+# Rank by **real tokens/sec** under production packing (`length_group`). Filling the
+# 3090s is a constraint, not the objective: E17b showed pad-to-batch-max at bs=8
+# filled VRAM and *slowed* training vs bs=3. After length grouping, raise
+# per-device microbatch only while tok/s rises and 4096-token buckets stay
+# ~1–2 GiB under 24 GiB. Restore effective batch ~72 via accumulation so the
+# 300M token budget keeps a comparable optimizer-step count to E17c.
 #
 # Usage (Polonez, GPUs idle):
 #   bash scripts/calibrate_e17d_batch.sh
-#   ONLY_BS="6 8 9 10 12" ACCUM=1 MAX_STEPS=16 bash scripts/calibrate_e17d_batch.sh
+#   ONLY_BS="3 4 6 8 10 12" PACKING=length_group MAX_STEPS=20 bash scripts/calibrate_e17d_batch.sh
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}/.."
 
-ONLY_BS="${ONLY_BS:-6 8 9 10 12}"
+ONLY_BS="${ONLY_BS:-3 4 6 8 10 12}"
 ACCUM="${ACCUM:-1}"
-MAX_STEPS="${MAX_STEPS:-16}"
+MAX_STEPS="${MAX_STEPS:-20}"
 LOGGING_STEPS="${LOGGING_STEPS:-4}"
-PACKING="${PACKING:-none}"
+PACKING="${PACKING:-length_group}"
 RESULTS_FILE="${RESULTS_FILE:-Cache/logs/e17d_batch_calibration_$(date +%Y%m%d_%H%M%S).tsv}"
 mkdir -p "$(dirname "$RESULTS_FILE")"
-echo -e "per_device\taccum\teff_batch\tpeak_mem_mib\tmax_batch_len\ttok_s\tstatus\twall_s\tlog" | tee "$RESULTS_FILE"
+echo -e "per_device\taccum\tpacking\teff_batch\tpeak_mem_mib\tmax_batch_len\tpad_ratio\ttok_s\tstatus\twall_s\tlog" | tee "$RESULTS_FILE"
 
 NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
+
+_avg_last_metric() {
+  local log="$1" key="$2"
+  python3 - "$log" "$key" <<'PY'
+import re, sys
+path, key = sys.argv[1], sys.argv[2]
+pat = re.compile(re.escape(key) + r"': ([0-9.eE+-]+)")
+vals = []
+with open(path, errors="replace") as f:
+    for line in f:
+        if "{'loss'" not in line and '{"loss"' not in line:
+            continue
+        m = pat.search(line)
+        if m:
+            vals.append(float(m.group(1)))
+if not vals:
+    print("")
+    raise SystemExit
+# Drop the first logging window (compile / cache warmup).
+use = vals[1:] if len(vals) > 1 else vals
+print(sum(use) / len(use))
+PY
+}
 
 for BS in $ONLY_BS; do
   EFF=$((BS * NUM_GPUS * ACCUM))
   echo "=== calibrating PER_DEVICE=${BS} ACCUM=${ACCUM} eff_batch=${EFF} packing=${PACKING} (${NUM_GPUS} GPUs) ==="
   STAMP=$(date +%Y%m%d_%H%M%S)
-  LOG="Cache/logs/calib_e17d_bs${BS}_a${ACCUM}_${STAMP}.log"
-  MEM_LOG="Cache/logs/calib_e17d_bs${BS}_a${ACCUM}_mem_${STAMP}.csv"
+  LOG="Cache/logs/calib_e17d_bs${BS}_a${ACCUM}_${PACKING}_${STAMP}.log"
+  MEM_LOG="Cache/logs/calib_e17d_bs${BS}_a${ACCUM}_${PACKING}_mem_${STAMP}.csv"
   (
     echo "timestamp,gpu,mem_used_mib"
     while true; do
@@ -65,10 +91,9 @@ for BS in $ONLY_BS; do
   kill "$MEM_PID" 2>/dev/null || true
   wait "$MEM_PID" 2>/dev/null || true
   PEAK=$(awk -F, 'NR>1{if($3+0>m)m=$3+0}END{print m+0}' "$MEM_LOG")
-  TOK_S=$(grep -o "perf/real_tokens_per_second': [^,}]*" "$LOG" | tail -1 | awk -F': ' '{print $2}')
-  TOK_S="${TOK_S:-}"
-  MAX_LEN=$(grep -o "data/mean_batch_max_length': [^,}]*" "$LOG" | tail -1 | awk -F': ' '{print $2}')
-  MAX_LEN="${MAX_LEN:-}"
+  TOK_S=$(_avg_last_metric "$LOG" "perf/real_tokens_per_second" || true)
+  MAX_LEN=$(_avg_last_metric "$LOG" "data/mean_batch_max_length" || true)
+  PAD=$(_avg_last_metric "$LOG" "data/pad_ratio" || true)
   if grep -q 'CUDA out of memory\|OutOfMemoryError' "$LOG"; then
     STATUS=OOM
   elif [[ $RC -ne 0 ]]; then
@@ -79,9 +104,9 @@ for BS in $ONLY_BS; do
     STATUS=UNKNOWN
   fi
   WALL=$((END_TS - START_TS))
-  echo -e "${BS}\t${ACCUM}\t${EFF}\t${PEAK}\t${MAX_LEN}\t${TOK_S}\t${STATUS}\t${WALL}\t${LOG}" | tee -a "$RESULTS_FILE"
+  echo -e "${BS}\t${ACCUM}\t${PACKING}\t${EFF}\t${PEAK}\t${MAX_LEN}\t${PAD}\t${TOK_S}\t${STATUS}\t${WALL}\t${LOG}" | tee -a "$RESULTS_FILE"
   if [[ "$STATUS" == "OOM" ]]; then
-    echo "OOM at bs=${BS}; stopping sweep."
+    echo "OOM at bs=${BS}; stopping sweep (larger bs will too)."
     break
   fi
   sleep 3
@@ -97,39 +122,56 @@ with open(path) as f:
     header = f.readline()
     for line in f:
         parts = line.rstrip("\n").split("\t")
-        if len(parts) < 7:
+        if len(parts) < 9:
             continue
-        bs, accum, eff, peak, max_len, tok_s, status = parts[:7]
+        bs, accum, packing, eff, peak, max_len, pad, tok_s, status = parts[:9]
         if status != "OK":
             continue
         try:
             peak_i = int(float(peak))
         except ValueError:
             continue
-        if peak_i > 22528:  # leave ~2 GiB on 24 GiB
+        if peak_i > 23000:  # need ~1 GiB headroom on 24576
+            print(f"skip bs={bs}: peak {peak_i} MiB too close to 24 GiB")
             continue
         try:
             tok = float(tok_s) if tok_s else 0.0
         except ValueError:
             tok = 0.0
-        rows.append((int(bs), peak_i, tok, max_len))
+        rows.append({
+            "bs": int(bs),
+            "peak": peak_i,
+            "tok": tok,
+            "max_len": max_len,
+            "pad": pad,
+            "packing": packing,
+        })
 if not rows:
-    print("No OK row with peak <= 22 GiB. Inspect the TSV.")
-    sys.exit(0)
-# Prefer highest microbatch that still has headroom; break ties on tok/s.
-rows.sort(key=lambda r: (r[0], r[2]))
-bs, peak, tok, max_len = rows[-1]
+    print("No OK row with VRAM headroom. Inspect the TSV.")
+    raise SystemExit(0)
+
+# Primary rank: real tokens/sec. GPU fill is only a feasibility filter.
+rows.sort(key=lambda r: r["tok"], reverse=True)
+print("Ranked by real tokens/sec (length_group production packing):")
+for r in rows:
+    print(
+        f"  bs={r['bs']:>2}  tok/s={r['tok']:.0f}  peak={r['peak']}MiB  "
+        f"mean_batch_max_len={r['max_len']}  pad_ratio={r['pad']}"
+    )
+best = rows[0]
+bs = best["bs"]
 target_eff = 72
 best_acc, best_err = 1, abs(bs * n_gpus * 1 - target_eff)
 for acc in range(1, 9):
     err = abs(bs * n_gpus * acc - target_eff)
-    if err < best_err:
+    if err < best_err or (err == best_err and acc > best_acc):
+        # prefer the accum that hits 72; if tied, larger accum is closer to E17c step count
         best_acc, best_err = acc, err
 eff = bs * n_gpus * best_acc
 print(
     f"Recommend PER_DEVICE_BATCH_SIZE={bs} GRADIENT_ACCUMULATION_STEPS={best_acc} "
-    f"eff_batch={eff} (target 72, err {best_err}) peak={peak}MiB tok/s={tok:.0f} "
-    f"mean_batch_max_len={max_len}"
+    f"eff_batch={eff} (E17c target 72, |err|={best_err}) because tok/s={best['tok']:.0f} "
+    f"is highest with peak={best['peak']}MiB under length_group."
 )
 print("Keep TARGET_TOKENS=300000000. Do not resume the aborted underfilled run.")
 PY
