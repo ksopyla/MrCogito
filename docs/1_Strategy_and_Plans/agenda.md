@@ -20,10 +20,10 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **E17d implemented, 300M Polonez relaunch after tok/s calib (2026-08-17).**
-  `length_group` sweep picked **bs=8 accum=2** (9089 real tok/s, peak 14.4 GiB) over
-  the aborted bs=3 run (`…125416`, ~8771 tok/s, ~7.4 GiB). Token budget stays 300M.
-  Ignore `…124945` (checkpoint bug) and `…125416` (underfilled). Spec:
+- **E17d implemented, 300M Polonez running after tok/s calib (2026-08-17).**
+  Live run `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_141227` (Byobu `E17d`;
+  bs=8 accum=2, ~11k real tok/s, ~14.5 GiB). Token budget stays 300M (2668 steps).
+  Ignore `…124945` (checkpoint bug) and `…125416` (bs=3 underfilled). Spec:
   [E17d](../experiments_specs/ahead/E17d_global_concept_assimilation.md) ·
   [plan](../experiments_specs/ahead/E17d_global_concept_assimilation_plan.md).
   Launch: `SKIP_PRETOKENIZE=1 bash scripts/launch_e17d.sh`. Not 300B. Do not launch
@@ -62,7 +62,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 8. **E17 four-bank per-layer (init 0.01)** *(done_success mixed 2026-08-10 — relative free-run win; writes dead).*
 9. **E17b per-layer mid write-init 0.1** *(done_failed 2026-08-13 — mid-init not sticky; free-run ≈E17).*
 10. **E17c depth-private gated working memory + causal carry pressure** *(done_failed mixed 2026-08-15 — carryless Δperm 0.59 PASS; RankMe 6.7 / Δbeyond 0.013 kill 1B).*
-11. **E17d depth-private concept layers as global-attention replacement** *(active 2026-08-17 — attn-residual read; per-window write; token carry off; 300M Polonez run `…20260817_125416`).*
+11. **E17d depth-private concept layers as global-attention replacement** *(active 2026-08-17 — attn-residual read; per-window write; token carry off; 300M Polonez run `…20260817_141227`, bs=8).*
 
 ## What we've explored so far (evidence, not verdicts)
 - **E17c gated cell + carry pressure (per_layer_banks, Polonez, train 2026-08-14, eval 2026-08-15):**

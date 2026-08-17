@@ -15,7 +15,9 @@ experiment specs; deep metrics and interpretation live in run reports. Live focu
 > Four depth-private banks stay. Each former Gemma global layer mixes its bank inside the
 > attention residual; previous windows exist only as those banks at train, eval, and
 > `generate()`. Additive writes, uniform CE, 300M non-padding tokens on Polonez (not 300B,
-> not 1B). Primary gate: late-bin (256–512) Δperm ≥ 0.10 with ≥3/4 banks participating.
+> not 1B). Live run `…20260817_141227` at bs=8 accum=2 after a tok/s calib (not the
+> aborted bs=3 `…125416`). Primary gate: late-bin (256–512) Δperm ≥ 0.10 with ≥3/4
+> banks participating.
 > [Spec](../experiments_specs/ahead/E17d_global_concept_assimilation.md) ·
 > [plan](../experiments_specs/ahead/E17d_global_concept_assimilation_plan.md).
 
@@ -174,6 +176,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-08-14 | E17c | `backbone_concept_gemma_3_1b_pt_K512_concept_20260814_133241` | gated_replace + carry dropout · 300M | carryless Δperm **0.59** · RankMe **6.7** · gen **0.23/0.53** | MIXED — pressure works (bank 0); geometry collapsed; no 1B. | [spec](../experiments_specs/done_failed/E17c_depth_private_working_memory.md) · [report](run_reports/e17c_depth_private_working_memory_20260815.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260814_133241) |
 | 2026-08-17 | E17d | `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_124945` | attn-residual + no token carry · aborted smoke | CheckpointError at step 0 | ABORTED — nested Gemma checkpoint dropped `z`; restarted as `…125416`. | [spec](../experiments_specs/ahead/E17d_global_concept_assimilation.md) |
 | 2026-08-17 | E17d | `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_125416` | attn-residual + no token carry · 300M · bs3 | ~9k tok/s · ~7.4 GiB | ABORTED — underfilled; length_group calib picked bs8 (~9089 tok/s). | [spec](../experiments_specs/ahead/E17d_global_concept_assimilation.md) |
+| 2026-08-17 | E17d | `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_141227` | attn-residual + no token carry · 300M · bs8/accum2 | warmup loss 4.97→4.90 · ~11k tok/s · ~14.5 GiB | RUNNING — Polonez Byobu `E17d`; 2668 steps; 300M tokens. | [spec](../experiments_specs/ahead/E17d_global_concept_assimilation.md) |
 
 ---
 

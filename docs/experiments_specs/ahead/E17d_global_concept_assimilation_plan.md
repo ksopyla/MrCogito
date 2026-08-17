@@ -5,8 +5,9 @@
 - **Token budget:** **300M** non-padding tokens (`TARGET_TOKENS=300000000`), same
   mechanism-verdict cadence as E17c. A 300B budget is not runnable on 4× RTX 3090
   (~1000× E17c) and is not this experiment.
-- **Live run:** `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_125416`
-  (Polonez, Byobu `E17d`, commit `f865be2`). Ignore aborted smoke `…20260817_124945`.
+- **Live run:** `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_141227`
+  (Polonez, Byobu `E17d`, bs=8 accum=2, commit `c91ef68`). Ignore aborted
+  `…124945` (checkpoint) and `…125416` (bs=3 underfilled).
 
 > Implement the spec's job change: four depth-private banks stay; each former global
 > layer mixes its bank **inside the attention residual**; previous windows exist only as

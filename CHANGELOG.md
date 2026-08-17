@@ -40,7 +40,7 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 - [tested] `tests/test_backbone_concept_lm.py` E17d suite including gradient-checkpoint replay; launcher pin test
 
 **Git tag:** `arch/e17d-global-concept-assimilation` ·
-`train/backbone_concept_gemma_3_1b_pt_K512_concept_20260817_125416`
+`train/backbone_concept_gemma_3_1b_pt_K512_concept_20260817_141227`
 **Related:** [E17d](docs/experiments_specs/ahead/E17d_global_concept_assimilation.md)
 
 ---

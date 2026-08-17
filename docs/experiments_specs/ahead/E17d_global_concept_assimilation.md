@@ -185,7 +185,10 @@ comparison.
 
 ## Result
 <Filled in AFTER, by experiment-track. Launch identity only for now.>
-- Aborted: `…20260817_124945` (checkpoint replay) and `…20260817_125416` (bs=3 underfilled).
-- Run id: pending relaunch at bs=8 accum=2, TARGET_TOKENS=300000000
+- Run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_141227`
+  (Polonez Byobu `E17d`, 300M, bs=8 accum=2, 2668 steps)
+- WandB: `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_141227`
+- Git tag: `train/backbone_concept_gemma_3_1b_pt_K512_concept_20260817_141227`
+- Aborted: `…20260817_124945` (checkpoint replay) and `…20260817_125416` (bs=3 underfilled)
 - Run report: pending
-- Verdict: pending
+- Verdict: pending — 100M kill ~step 890; 300M verdict ~step 2668
