@@ -34,7 +34,9 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 - [arch] `nn/backbone_concept_lm.py` — `concept_read_placement`, wrapped
   `_AttnWithConceptResidual`, `_resolve_carry_policy`, intra-block ablation bins,
   untied additive `gate_init`, additive `concept_gate_metrics`
-- [train] `scripts/launch_e17d.sh`, generic launcher + `ModelArguments` knobs
+- [train] `scripts/launch_e17d.sh`, generic launcher + `ModelArguments` knobs;
+  Polonez `length_group` sweep ranked by real tok/s selected bs=8 accum=2
+  (effective batch 64; 300M token budget unchanged)
 - [tested] `tests/test_backbone_concept_lm.py` E17d suite including gradient-checkpoint replay; launcher pin test
 
 **Git tag:** `arch/e17d-global-concept-assimilation` ·

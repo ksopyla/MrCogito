@@ -226,7 +226,10 @@ MEMORY_PRESSURE_WEIGHT=1.0
 READ_CONCEPT_NORM=true
 READ_GATE_INIT=0.1
 TARGET_TOKENS=300000000
-# plus the E16b/E17 data/optim block copied from launch_e17c.sh
+PER_DEVICE_BATCH_SIZE=8
+GRADIENT_ACCUMULATION_STEPS=2
+# 300M token budget unchanged. 2026-08-17 length_group sweep ranked by
+# real tok/s: bs8 9089 > bs3 8771; accum=2 → effective batch 64 (near E17c 72).
 ```
 
 ## 7. Tests & smoke

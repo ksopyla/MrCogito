@@ -48,12 +48,15 @@ export AUTO_INTERVALS="${AUTO_INTERVALS:-1}"
 export SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-12}"
 export LOGGING_STEPS="${LOGGING_STEPS:-20}"
 
-# Reuse the immutable Gemma-tokenized 4K tree and effective batch 72 used by E16b/E17c.
+# Reuse the immutable Gemma-tokenized 4K tree. Polonez 2026-08-17 length_group
+# calib ranked by real tokens/sec (not VRAM fill): bs8 9089 tok/s peak~14.4GiB
+# beat bs3 8771, bs10 8981, bs12 8742. Accum=2 → effective batch 64, nearest
+# to E17c's 72 without shrinking the winning microbatch. TARGET_TOKENS stays 300M.
 PROJECT_ROOT_HINT="/home/ksopyla/dev/[REDACTED]"
 [ -d "$PROJECT_ROOT_HINT" ] || PROJECT_ROOT_HINT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 export DATASETS_TOK_DIR="${DATASETS_TOK_DIR:-${PROJECT_ROOT_HINT}/../hf_home/datasets_tok_gemma_4k}"
 export MANIFEST="${MANIFEST:-${DATASETS_TOK_DIR}/${PRETOKENIZE_MIX}_gemma_manifest.json}"
-export PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-3}"
-export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-6}"
+export PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-8}"
+export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-2}"
 
 exec bash "${SCRIPT_DIR}/launch_e10.sh"

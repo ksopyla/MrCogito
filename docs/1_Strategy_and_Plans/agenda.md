@@ -20,16 +20,14 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **E17d implemented, 300M Polonez running (2026-08-17).** Four global concept banks stay.
-  Mix sits in the attention residual (Gemma global-attention job); previous windows exist
-  only as those banks at train, eval, and `generate()`. Writes stay once per 512-token
-  window. Live run
-  `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_125416` (Byobu `E17d`;
-  ignore aborted smoke `…124945`). Spec:
+- **E17d implemented, 300M Polonez relaunch after tok/s calib (2026-08-17).**
+  `length_group` sweep picked **bs=8 accum=2** (9089 real tok/s, peak 14.4 GiB) over
+  the aborted bs=3 run (`…125416`, ~8771 tok/s, ~7.4 GiB). Token budget stays 300M.
+  Ignore `…124945` (checkpoint bug) and `…125416` (underfilled). Spec:
   [E17d](../experiments_specs/ahead/E17d_global_concept_assimilation.md) ·
   [plan](../experiments_specs/ahead/E17d_global_concept_assimilation_plan.md).
-  Launch: `SKIP_PRETOKENIZE=1 bash scripts/launch_e17d.sh` (`TARGET_TOKENS=300000000`).
-  Not 300B. Do not launch 1B unless the 300M late-bin gate passes. ID stays E17d.
+  Launch: `SKIP_PRETOKENIZE=1 bash scripts/launch_e17d.sh`. Not 300B. Do not launch
+  1B unless the 300M late-bin gate passes. ID stays E17d.
 - **E17c 300M closed (2026-08-15).** Carryless first-64 Δpermutation **0.594**, almost
   entirely bank 0; RankMe **6.75**; Δpermutation_beyond **0.013**; free-run `real≈shuffle`.
   Spec:

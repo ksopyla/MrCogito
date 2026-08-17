@@ -333,6 +333,8 @@ def test_e17d_wrapper_pins_attn_residual_and_no_carry_protocol(tmp_path):
     assert _value_after(args, "--memory_pressure_weight") == "1.0"
     assert "target=300000000" in result.stdout
     assert _value_after(args, "--num_train_epochs") == "7.5"
+    assert _value_after(args, "--per_device_train_batch_size") == "8"
+    assert _value_after(args, "--gradient_accumulation_steps") == "2"
 
 
 def test_e10_protocol_wrapper_forwards_recovery_sequence_overrides(tmp_path):

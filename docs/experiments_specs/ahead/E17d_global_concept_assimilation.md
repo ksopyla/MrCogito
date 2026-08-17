@@ -158,7 +158,10 @@ comparison.
 ## Plan
 - **Data:** immutable `e16b_long_4k_v1` Gemma-tokenized mix; causal LM; seq 4096.
   Pressure/upweight is **off**.
-- **Compute:** Polonez, 4× RTX 3090, effective batch 72, **300M** non-padding tokens.
+- **Compute:** Polonez, 4× RTX 3090, **300M** non-padding tokens. Microbatch is
+  `PER_DEVICE_BATCH_SIZE=8` × accum `2` (effective batch **64**) after a 2026-08-17
+  `length_group` sweep ranked by real tokens/sec (bs8 9089 tok/s beat bs3 8771 and
+  bs10 8981). Token budget stays E17c's 300M; do not resume the aborted bs=3 run.
   Same 100M / 300M cadence as E17c. Not 1B.
 - **Launch (after approval + implementation):** wrapper `scripts/launch_e17d.sh` pinning
   the knobs below, then `launch_e10.sh`.
@@ -182,9 +185,7 @@ comparison.
 
 ## Result
 <Filled in AFTER, by experiment-track. Launch identity only for now.>
-- Run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_125416`
-  (Polonez Byobu `E17d`, 300M, 2372 steps; ignore aborted smoke `…20260817_124945`)
-- WandB: `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_125416`
-- Git tag: `train/backbone_concept_gemma_3_1b_pt_K512_concept_20260817_125416`
+- Aborted: `…20260817_124945` (checkpoint replay) and `…20260817_125416` (bs=3 underfilled).
+- Run id: pending relaunch at bs=8 accum=2, TARGET_TOKENS=300000000
 - Run report: pending
-- Verdict: pending — 100M kill ~step 790; 300M verdict ~step 2372
+- Verdict: pending
