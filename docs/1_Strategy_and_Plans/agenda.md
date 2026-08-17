@@ -28,9 +28,12 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [plan](../experiments_specs/ahead/E17d_global_concept_assimilation_plan.md).
   Launch: `SKIP_PRETOKENIZE=1 bash scripts/launch_e17d.sh`. Not 300B. Do not launch
   1B unless the 300M late-bin gate passes. ID stays E17d.
-- **E17c 300M closed (2026-08-15).** Carryless first-64 Δpermutation **0.594**, almost
-  entirely bank 0; RankMe **6.75**; Δpermutation_beyond **0.013**; free-run `real≈shuffle`.
-  Spec:
+- **E17c 300M closed (2026-08-15).** Carryless first-64 Δpermutation **0.594** CI [0.543, 0.645]
+  cleared the registered ≥0.20 gate, almost entirely in bank 0 / layer 5. Geometry collapsed
+  (RankMe **6.75**, bank 1 **1.84**) and normal-context Δpermutation_beyond **0.013** missed the
+  0.02 stop, so **do not launch 1B**. Free-run `real`@256 **0.23/0.53** stays in the E17 family
+  (`real≈shuffle`). Carry dropout only trains a block-boundary gist (see
+  [five-whys](../4_Research_Notes/e17c_failure_five_whys_20260815.md)). Spec:
   [E17c](../experiments_specs/done_failed/E17c_depth_private_working_memory.md) ·
   [report](../2_Experiments_Registry/run_reports/e17c_depth_private_working_memory_20260815.md).
 - **Still open / still wanted:** [E08 Concept-Flow reasoner](../experiments_specs/ahead/E08_concept_flow_reasoner.md)
@@ -71,7 +74,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   Δpermutation_beyond **0.013**. Free-run `real` greedy @256 **0.23/0.53** (E17b **0.20/0.60**;
   E17 **0.21/0.59**). Pressure forces concept use when carry is dropped; it does not
   transfer to ordinary CE or keep geometry healthy. Do not 1B. See
-  [report](../2_Experiments_Registry/run_reports/e17c_depth_private_working_memory_20260815.md).
+  [report](../2_Experiments_Registry/run_reports/e17c_depth_private_working_memory_20260815.md)
+  and [five-whys](../4_Research_Notes/e17c_failure_five_whys_20260815.md).
 - **E17b mid-init 0.1 (per_layer_banks, Polonez, train 2026-08-10→13, Tier-1+1.5 2026-08-13):**
   write gates opened near ~100M (max \|tanh\| 0.14) then closed to ~0.05 by 1B; RankMe 68;
   Δshuf/static≥1024 **0.0055/0.0033**; free-run `real` greedy @256 **0.20/0.60** (E17 **0.21/0.59**;
