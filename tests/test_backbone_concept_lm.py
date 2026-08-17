@@ -1336,3 +1336,15 @@ def test_e17d_late_bin_ablation_keys_and_finite_loss():
         model.zero_grad()
     assert torch.isfinite(loss)
 
+
+def test_e17d_gradient_checkpointing_backward_finite():
+    model = _e17d_model()
+    model.train()
+    model.gradient_checkpointing_enable()
+    input_ids, attention_mask, labels = make_batch(B=2, S=2 * K)
+    loss = model(input_ids, attention_mask, labels).loss
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert model.concept_init.grad is not None
+    assert model.concept_init.grad.abs().sum() > 0
+

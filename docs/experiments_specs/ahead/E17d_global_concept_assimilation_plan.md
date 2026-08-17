@@ -246,9 +246,11 @@ Local smoke: `uv run pytest tests/test_backbone_concept_lm.py tests/test_trainin
   with a true global mix. **Cheapest signal:** 100M late-bin (256–512) all-bank Δperm
   `< 0.03` or only bank 0 participates — kill, then the objective has to change (MQAR),
   not another read-placement tweak.
-- **Risk:** wrapping `self_attn` breaks if Gemma's attention return signature changes.
-  **Fallback:** branch on tuple vs tensor; test on the tiny Gemma3TextConfig the suite
-  already builds.
+- **Risk:** wrapping `self_attn` breaks if Gemma's attention return signature changes,
+  or if GradientCheckpointingLayer recomputes after `_read_z` is cleared.
+  **Fallback:** branch on tuple vs tensor; pass `z` as a checkpoint tensor input and
+  call `layer.forward` (skip nested Gemma checkpoint). Tested with
+  `gradient_checkpointing_enable()` on the tiny Gemma3TextConfig.
 - **Risk:** `tanh(0.1)` still lets the mix die. **Signal:** read-gate telemetry at 100M;
   if all `|tanh| < 0.02` and late-bin is dead, that is the same kill, not a silent
   raise-init A/B in this run.

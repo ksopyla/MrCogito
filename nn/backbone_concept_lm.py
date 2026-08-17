@@ -354,11 +354,30 @@ class GlobalLayerWithConceptRead(nn.Module):
     ):
         z = self._resolve_read_state(concept_state)
         if self.read_placement == "attn_residual":
-            self._read_z = z
-            try:
-                return self.layer(hidden_states, *args, **kwargs)
-            finally:
-                self._read_z = None
+            # The mix lives inside the Gemma layer, which is a GradientCheckpointingLayer.
+            # Smuggling z via ``_read_z`` and then calling ``self.layer(...)`` lets the
+            # inner checkpoint recompute after we cleared the attribute (100 vs 72 saved
+            # tensors). Pass z as a checkpoint input and call ``.forward`` to skip the
+            # nested Gemma checkpoint wrapper.
+            def _run(h, z_in):
+                self._read_z = z_in
+                try:
+                    return self.layer.forward(h, *args, **kwargs)
+                finally:
+                    self._read_z = None
+
+            if z is None:
+                return self.layer.forward(hidden_states, *args, **kwargs)
+            use_ckpt = (
+                bool(getattr(self.layer, "gradient_checkpointing", False))
+                and self.training
+                and torch.is_grad_enabled()
+            )
+            if use_ckpt:
+                return torch.utils.checkpoint.checkpoint(
+                    _run, hidden_states, z, use_reentrant=False
+                )
+            return _run(hidden_states, z)
 
         outputs = self.layer(hidden_states, *args, **kwargs)
         if z is not None:

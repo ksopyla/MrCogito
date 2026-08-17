@@ -35,7 +35,7 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   `_AttnWithConceptResidual`, `_resolve_carry_policy`, intra-block ablation bins,
   untied additive `gate_init`, additive `concept_gate_metrics`
 - [train] `scripts/launch_e17d.sh`, generic launcher + `ModelArguments` knobs
-- [tested] `tests/test_backbone_concept_lm.py` E17d suite; launcher pin test
+- [tested] `tests/test_backbone_concept_lm.py` E17d suite including gradient-checkpoint replay; launcher pin test
 
 **Git tag:** `arch/e17d-global-concept-assimilation`
 **Related:** [E17d](docs/experiments_specs/ahead/E17d_global_concept_assimilation.md)
