@@ -30,6 +30,11 @@ The field splits into four families:
   same block that does causal attention. Closest published design to "refresh the C
   concepts with a learned rule as you generate" — and the source of the strongest
   "iterated small memory degrades" evidence.
+- **E. Addressable RAM (sparse location write/read)**: NTM / DNC / SAM / product
+  keys — slots are *positions*; unaddressed rows stay unchanged. This is a
+  different axis from A–D (writable-vs-frozen). After E17c's dense
+  `gated_replace` collapse, it is the live counterfactual. Full review:
+  [`addressable_memory.md`](addressable_memory.md).
 
 Related reviews already in the repo (do not duplicate): the progenitor
 **Memory Transformer (2020)** is reviewed in
