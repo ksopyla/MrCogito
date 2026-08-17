@@ -1,9 +1,9 @@
 # E17d — Depth-private concept layers as global-attention replacement
 
-- **Status:** draft (awaiting approval; not approved, not implemented)
+- **Status:** draft (plan ready; awaiting approval; not implemented)
 - **Serves:** Priority 1 / SG1–SG2: make Gemma's four former global layers assimilate
   long-range context through concepts, at every position, the way full attention used to.
-- **Implementation plan:** *(not yet written — `implementation-plan` after this spec is approved)*
+- **Implementation plan:** [E17d_global_concept_assimilation_plan.md](E17d_global_concept_assimilation_plan.md)
 - **Owner / dates:** Krzysztof Sopyła · opened 2026-08-17 · closed —
 
 > E17d is one coherent bet: **the four global concept layers keep their depth-private
@@ -73,10 +73,30 @@ E17d (global-attention replacement, inside the layer):
   # uniform CE: no first-64 upweight
 ```
 
+**When banks update (same schedule as E17c; E17d does not move the write).**
+A 4096-token document is eight windows of K=512. Each of the four banks is a notebook
+for one global layer. Updates are **after each window**, not at the end of the document.
+
+Inside window `b` (tokens `b·512 … (b+1)·512`):
+
+1. Layer 5 **reads** bank 5 as it was after window `b-1` (empty on window 0).
+2. It mixes that into the current tokens, then the FFN runs.
+3. It **writes** bank 5 from this window's layer-5 hidden states. That new notebook is
+   **not** used again until window `b+1`.
+4. Local layers 6–10 never read a bank. They see the *hidden stream* that layer 5 already
+   mixed — that is assimilation for the next layer.
+5. Layer 11 **reads its own** bank 11 from window `b-1`. It does **not** read the bank-5
+   write that just happened. Then it writes bank 11 for window `b+1`.
+6. Same pattern at 17 and 23.
+
+So: four notebooks, each updated once per 512-token window, after its layer finishes
+that window. Next layer in the *same* window uses the mixed hidden state, not the other
+layer's new notebook. Next *window* is when each layer rereads its own updated notebook.
+
 **Why later banks can still have a job.** After layer 5 assimilates `z_5`, local layers
 6–10 process that mix (this is wanted: it *is* assimilation). Layer 11 then mixes
 *higher-level current tokens* with `z_11`, which was written from layer-11 hidden states
-of previous blocks. That is the same reason Gemma's second global layer is not redundant
+of previous windows. That is the same reason Gemma's second global layer is not redundant
 with the first: it attends to a transformed sequence, not to a gist already dumped into
 the residual. E17c's bank 0 monopoly happened because the sidecar wrote a collapsed
 topic summary into `h` after layer 5, and banks 1–3 were asked to store the same summary.
@@ -141,21 +161,21 @@ comparison.
 - **Compute:** Polonez, 4× RTX 3090, effective batch 72, **300M** non-padding tokens.
   Same 100M / 300M cadence as E17c. Not 1B.
 - **Launch (after approval + implementation):** wrapper `scripts/launch_e17d.sh` pinning
-  the knobs below, then `launch_e10.sh`. Draft env (names may gain a
-  `CONCEPT_READ_PLACEMENT` flag during implement):
+  the knobs below, then `launch_e10.sh`.
   ```bash
   EXPERIMENT_ID=E17d CONCEPT_IO_MODE=per_layer_banks \
   CONCEPT_READ_MODE=dedicated CONCEPT_READ_PLACEMENT=attn_residual \
   TIE_CONCEPT_WRITER=false CONCEPT_WRITE_MODE=additive WRITE_GATE_INIT=0.1 \
-  MEMORY_CARRY_DROPOUT=1.0 MEMORY_PRESSURE_TOKENS=0 MEMORY_PRESSURE_WEIGHT=1.0 \
-  READ_CONCEPT_NORM=true \
+  MEMORY_CARRY_DROPOUT=1.0 INFERENCE_CARRY_POLICY=drop_after_first \
+  MEMORY_PRESSURE_TOKENS=0 MEMORY_PRESSURE_WEIGHT=1.0 \
+  READ_CONCEPT_NORM=true READ_GATE_INIT=0.1 \
   OPTIMIZER=muon LEARNING_RATE=0.01 MUON_ADAMW_LR=2e-4 \
   MAX_SEQ_LENGTH=4096 PRETOKENIZE_MIX=e16b_long_4k_v1 \
   TARGET_TOKENS=300000000 SKIP_PRETOKENIZE=1 \
   bash scripts/launch_e10.sh
   ```
-  `generate()` must honor `carry_policy="drop_after_first"` (or equivalent always-off
-  carry). Today it hard-codes `normal`; that is in-scope foundation work.
+  `generate()` and Trainer eval must honor `inference_carry_policy="drop_after_first"`.
+  Today `generate()` hard-codes `carry_policy="normal"`; that is in-scope foundation work.
 - **New foundation code:** config-selectable read placement (`attn_residual` vs today's
   `post_layer`); generate-time carry policy; additive writes already exist. No new
   model class or training fork. Defaults keep E17c loadable.
