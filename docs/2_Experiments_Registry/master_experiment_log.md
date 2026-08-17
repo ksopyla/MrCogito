@@ -11,7 +11,15 @@ experiment specs; deep metrics and interpretation live in run reports. Live focu
 | What are we doing now? | [`agenda.md`](../1_Strategy_and_Plans/agenda.md) |
 | Full metric dump / fair baselines | `run_reports/` |
 
-> **Focus note (2026-08-15) — E17c 300M mixed; do not launch 1B.**
+> **Focus note (2026-08-17) — E17d 300M: global-attention concept layers, no token carry.**
+> Four depth-private banks stay. Each former Gemma global layer mixes its bank inside the
+> attention residual; previous windows exist only as those banks at train, eval, and
+> `generate()`. Additive writes, uniform CE, 300M non-padding tokens on Polonez (not 300B,
+> not 1B). Primary gate: late-bin (256–512) Δperm ≥ 0.10 with ≥3/4 banks participating.
+> [Spec](../experiments_specs/ahead/E17d_global_concept_assimilation.md) ·
+> [plan](../experiments_specs/ahead/E17d_global_concept_assimilation_plan.md).
+
+> **Prior focus (2026-08-15) — E17c 300M mixed; do not launch 1B.**
 > Carryless first-64 Δpermutation **0.594** CI [0.543, 0.645] cleared the registered
 > ≥0.20 gate (almost all layer-5 / bank 0). Geometry collapsed (RankMe **6.75**, bank 1
 > **1.84**) and normal-context Δpermutation_beyond **0.013** stayed under the 0.02 stop.
@@ -92,6 +100,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 
 | ID | What | Status | Spec |
 |---|---|---|---|
+| E17d | Depth-private concept layers as global-attention replacement | active (300M) | [E17d](../experiments_specs/ahead/E17d_global_concept_assimilation.md) |
 | E08 | Concept-Flow reasoner (encode→reason→decode) | draft | [E08](../experiments_specs/ahead/E08_concept_flow_reasoner.md) |
 | E05c | Decoder word-dropout on suffix (anti-bypass) | on hold / unrun | [E05c](../experiments_specs/ahead/E05c_anticollapse_extension.md) |
 | E05d | VICReg on concept matrix | on hold / design-only | [E05d](../experiments_specs/ahead/E05d_concept_vicreg.md) |
@@ -108,7 +117,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 | E07 | Sentence-gap / boundary-only infilling | [E07](../experiments_specs/canceled/E07_sentence_gap_infilling.md) |
 | E09 | Gated recurrent concept memory (superseded by E10) | [E09](../experiments_specs/canceled/E09_recurrent_concept_memory.md) |
 
-**Genealogy:** E01 → E02 → E03 → E04 → E05 → E10…E16a (short-ctx) → **E16b** (historical shared-depth result; causal interpretation revised 2026-08-14) → **E17** (causal per-layer init-0.01 partial success) → **E17b** (mid-init 0.1 failed) → **E17c** (gated cell + carry pressure; 300M mixed — carryless PASS, geometry collapsed). See [`agenda.md`](../1_Strategy_and_Plans/agenda.md) for the living reading.
+**Genealogy:** E01 → E02 → E03 → E04 → E05 → E10…E16a (short-ctx) → **E16b** (historical shared-depth result; causal interpretation revised 2026-08-14) → **E17** (causal per-layer init-0.01 partial success) → **E17b** (mid-init 0.1 failed) → **E17c** (gated cell + carry pressure; 300M mixed — carryless PASS, geometry collapsed) → **E17d** (attn-residual global mix, no token carry; 300M). See [`agenda.md`](../1_Strategy_and_Plans/agenda.md) for the living reading.
 
 ---
 

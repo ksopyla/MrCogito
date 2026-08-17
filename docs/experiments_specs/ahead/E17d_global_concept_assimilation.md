@@ -1,6 +1,6 @@
 # E17d — Depth-private concept layers as global-attention replacement
 
-- **Status:** draft (plan ready; awaiting approval; not implemented)
+- **Status:** active (implemented; 300M Polonez)
 - **Serves:** Priority 1 / SG1–SG2: make Gemma's four former global layers assimilate
   long-range context through concepts, at every position, the way full attention used to.
 - **Implementation plan:** [E17d_global_concept_assimilation_plan.md](E17d_global_concept_assimilation_plan.md)

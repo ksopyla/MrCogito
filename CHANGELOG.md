@@ -15,6 +15,33 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-08-17] - E17d global-attention concept layers
+
+**Why:**
+- E17c's four banks were optional post-FFN sidecars with a 512-token cheat sheet at
+  decode. Carry dropout trained a block-start gist (first-64 Δperm 0.59, almost all
+  bank 0) that vanished by tokens 256–512. The friend's claim is that Gemma's four
+  global layers should assimilate long-range context the way full attention used to.
+
+**Impact:**
+- Concept mix can sit in the attention residual before FFN (`attn_residual`). Eval and
+  `generate()` honor `inference_carry_policy`, so E17d can drop the token carry at
+  train and decode. Untied additive writers now receive `write_gate_init` (they were
+  stuck at 0.0). Late intra-block permutation bins are logged. Defaults keep E17c
+  checkpoints loadable.
+
+**What changed:**
+- [arch] `nn/backbone_concept_lm.py` — `concept_read_placement`, wrapped
+  `_AttnWithConceptResidual`, `_resolve_carry_policy`, intra-block ablation bins,
+  untied additive `gate_init`, additive `concept_gate_metrics`
+- [train] `scripts/launch_e17d.sh`, generic launcher + `ModelArguments` knobs
+- [tested] `tests/test_backbone_concept_lm.py` E17d suite; launcher pin test
+
+**Git tag:** `arch/e17d-global-concept-assimilation`
+**Related:** [E17d](docs/experiments_specs/ahead/E17d_global_concept_assimilation.md)
+
+---
+
 ## [2026-08-14] - Parallel Hugging Face length cache
 
 **Why:**

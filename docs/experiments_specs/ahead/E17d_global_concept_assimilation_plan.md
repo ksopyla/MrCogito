@@ -1,7 +1,10 @@
 # E17d — Depth-private concept layers as global-attention replacement — Implementation Plan
 
-- **Spec:** [E17d_global_concept_assimilation.md](E17d_global_concept_assimilation.md) · **Status:** draft (awaiting approval)
+- **Spec:** [E17d_global_concept_assimilation.md](E17d_global_concept_assimilation.md) · **Status:** implemented
 - **Authored by:** `implementation-plan` · for → `research-implement`
+- **Token budget:** **300M** non-padding tokens (`TARGET_TOKENS=300000000`), same
+  mechanism-verdict cadence as E17c. A 300B budget is not runnable on 4× RTX 3090
+  (~1000× E17c) and is not this experiment.
 
 > Implement the spec's job change: four depth-private banks stay; each former global
 > layer mixes its bank **inside the attention residual**; previous windows exist only as
@@ -41,7 +44,8 @@
 | `BackboneConceptConfig` | extend: `concept_read_placement="post_layer"` (default) and `inference_carry_policy="normal"` (default) | `nn/backbone_concept_lm.py` |
 | `ConceptReadBranch` | reuse as-is (dedicated Q/K/V/O already exist) | `nn/backbone_concept_lm.py` |
 | `GlobalLayerWithConceptRead` | extend: `attn_residual` wraps `self.layer.self_attn` so concept mix is added to the attention sublayer output **before** FFN; `post_layer` keeps today's sidecar | `nn/backbone_concept_lm.py` |
-| `ConceptWriteHead` | reuse `update_mode="additive"` (already implemented). E17d does not use `gated_replace` | `nn/backbone_concept_lm.py` |
+| `ConceptWriteHead` | reuse `update_mode="additive"`. **Must pass `gate_init=config.write_gate_init` into untied `write_heads`** — today's ModuleList omits it, so `alpha` stays 0.0 and additive E17d writes would be dead at init | `nn/backbone_concept_lm.py` |
+| `concept_gate_metrics` | fix: else-branch currently uses `self.write_head.depth_alphas` and crashes when `write_head is None` (untied). Use `_writer_for_depth` + `alpha` or `depth_alphas` | `nn/backbone_concept_lm.py` |
 | `_forward_per_layer_banks_block` | reuse write timing: read bank `g`, run layer `g`, write bank `g` from `hidden_states[:, -block_len:]`. Do **not** let layer 11 read layer 5's just-written bank | `nn/backbone_concept_lm.py` |
 | `_forward_blocks` | extend: default `carry_policy` at eval/`generate` follows `inference_carry_policy`; training Bernoulli dropout unchanged | `nn/backbone_concept_lm.py` |
 | `generate` / `next_token_logits` | extend: pass `carry_policy` (today hard-codes `normal`) | `nn/backbone_concept_lm.py` |
@@ -129,10 +133,13 @@ h        = h + FFN(LN(h))                     # unchanged Gemma MLP
 ```
 
 Implementation: at wrap time, if `concept_read_placement=="attn_residual"`, replace
-`layer.self_attn` with a tiny module that calls the original attention, adds the concept
-branch on the same normalized `x` the attention received, and returns the same output
-signature (tensor or `(hidden, weights, ...)`). Then `GlobalLayerWithConceptRead.forward`
-runs `self.layer(...)` **without** a second post-layer add.
+`layer.self_attn` with `_AttnWithConceptResidual` that calls the original attention,
+adds the concept branch on the same normalized `x` the attention received, and
+returns the same output signature (tensor or `(hidden, weights, ...)`). Proxy
+`is_sliding` (Gemma3DecoderLayer reads it on `self.self_attn` before the call).
+Do not register the parent as a submodule of the wrapper (cycle). Then
+`GlobalLayerWithConceptRead.forward` runs `self.layer(...)` **without** a second
+post-layer add.
 
 `read_gate` stays (init 0.1) so a random dedicated read does not blow pretrained residuals
 at step 0. Placement, not deleting the scale, is the bet. Query is the **pre-attn
@@ -231,8 +238,8 @@ Extend `tests/test_backbone_concept_lm.py` (tiny random Gemma, K=8, H=64). Asser
   (name may map to `K/2:K` on the tiny K=8 model).
 - Additive writer + `attn_residual` : finite 3-step loss, no NaN.
 
-Local smoke after implement (not this PR): existing pytest file; no 300M launch until
-the spec is approved and the unit tests above are green.
+Local smoke: `uv run pytest tests/test_backbone_concept_lm.py tests/test_training_launcher_parameter_flow.py -q`
+(tiny random Gemma, K=8). 300M Polonez launch is `SKIP_PRETOKENIZE=1 bash scripts/launch_e17d.sh`.
 
 ## 8. Risks & tradeoffs
 - **Risk:** FinePDFs CE still does not need previous windows after ~64 local tokens, even

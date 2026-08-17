@@ -20,14 +20,14 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **E17d draft + plan (2026-08-17), awaiting approval.** Keep the four global concept
-  banks. Mix each bank inside the attention residual (Gemma global-attention job), with
-  no 512-token carry at train or generate. Writes stay **once per 512-token window**,
-  after that global layer; the next layer in the same window uses the mixed hidden
-  state, not the other bank's new write. Spec:
+- **E17d implemented, 300M Polonez launch (2026-08-17).** Four global concept banks stay.
+  Mix sits in the attention residual (Gemma global-attention job); previous windows exist
+  only as those banks at train, eval, and `generate()`. Writes stay once per 512-token
+  window. Spec:
   [E17d](../experiments_specs/ahead/E17d_global_concept_assimilation.md) ·
   [plan](../experiments_specs/ahead/E17d_global_concept_assimilation_plan.md).
-  Not implemented. Do not launch 1B on E17c. ID stays E17d (`E18` is claimed elsewhere).
+  Launch: `SKIP_PRETOKENIZE=1 bash scripts/launch_e17d.sh` (`TARGET_TOKENS=300000000`).
+  Not 300B. Do not launch 1B unless the 300M late-bin gate passes. ID stays E17d.
 - **E17c 300M closed (2026-08-15).** Carryless first-64 Δpermutation **0.594**, almost
   entirely bank 0; RankMe **6.75**; Δpermutation_beyond **0.013**; free-run `real≈shuffle`.
   Spec:
@@ -62,7 +62,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 8. **E17 four-bank per-layer (init 0.01)** *(done_success mixed 2026-08-10 — relative free-run win; writes dead).*
 9. **E17b per-layer mid write-init 0.1** *(done_failed 2026-08-13 — mid-init not sticky; free-run ≈E17).*
 10. **E17c depth-private gated working memory + causal carry pressure** *(done_failed mixed 2026-08-15 — carryless Δperm 0.59 PASS; RankMe 6.7 / Δbeyond 0.013 kill 1B).*
-11. **E17d depth-private concept layers as global-attention replacement** *(draft+plan 2026-08-17 — four banks kept; attn-residual read; per-window write; token carry off).*
+11. **E17d depth-private concept layers as global-attention replacement** *(active 2026-08-17 — attn-residual read; per-window write; token carry off; 300M Polonez).*
 
 ## What we've explored so far (evidence, not verdicts)
 - **E17c gated cell + carry pressure (per_layer_banks, Polonez, train 2026-08-14, eval 2026-08-15):**
