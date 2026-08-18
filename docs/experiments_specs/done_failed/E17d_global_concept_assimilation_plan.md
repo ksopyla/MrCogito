@@ -1,6 +1,6 @@
 # E17d — Depth-private concept layers as global-attention replacement — Implementation Plan
 
-- **Spec:** [E17d_global_concept_assimilation.md](E17d_global_concept_assimilation.md) · **Status:** implemented
+- **Spec:** [E17d_global_concept_assimilation.md](E17d_global_concept_assimilation.md) · **Status:** done_failed mixed (eval 2026-08-18)
 - **Authored by:** `implementation-plan` · for → `research-implement`
 - **Token budget:** **300M** non-padding tokens (`TARGET_TOKENS=300000000`), same
   mechanism-verdict cadence as E17c. A 300B budget is not runnable on 4× RTX 3090
