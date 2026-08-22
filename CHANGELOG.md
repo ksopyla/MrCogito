@@ -65,7 +65,7 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 **Git tag:** `arch/e17d-global-concept-assimilation` ·
 `train/backbone_concept_gemma_3_1b_pt_K512_concept_20260817_141227`
-**Related:** [E17d](docs/experiments_specs/ahead/E17d_global_concept_assimilation.md)
+**Related:** [E17d](docs/experiments_specs/done_failed/E17d_global_concept_assimilation.md)
 
 ---
 

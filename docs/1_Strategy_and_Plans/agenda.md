@@ -28,12 +28,12 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [E17e](../experiments_specs/ahead/E17e_starved_local_window.md) ·
   [plan](../experiments_specs/ahead/E17e_starved_local_window_plan.md).
   Shell log: `Cache/logs/shell_perceiver_denoise_20260822_120532.log`.
-- **E17d 300M eval (2026-08-18).** Late-bin 256–512 Δperm **0.044** CI [0.039, 0.049]
-  missed ≥0.10; RankMe **43.2–76.8** and eval_loss **2.365** passed; gen `real`@256
-  **0.185/0.595** (`real=shuffle`). First-64 Δperm **0.75** is multi-bank. The
-  remaining cause is a sufficient K=512 local computer — that is E17e's starve.
-  Spec still lives in `ahead/` on `dev` until the eval-track close lands.
-  Run `…20260817_141227` `checkpoint-2660`. **Do not launch 1B.**
+- **E17d 300M closed (train 2026-08-17, eval 2026-08-18).** Late-bin 256–512 Δperm
+  **0.044** CI [0.039, 0.049] missed ≥0.10; RankMe **43.2–76.8** and eval_loss **2.365**
+  passed; gen `real`@256 **0.185/0.595** (`real=shuffle`). First-64 Δperm **0.75** is
+  multi-bank (unlike E17c). **Do not launch 1B.** Spec:
+  [E17d](../experiments_specs/done_failed/E17d_global_concept_assimilation.md) ·
+  [report](../2_Experiments_Registry/run_reports/e17d_global_concept_assimilation_20260818.md).
 - **E17c 300M closed (2026-08-15).** Carryless first-64 Δpermutation **0.594** CI [0.543, 0.645]
   cleared the registered ≥0.20 gate, almost entirely in bank 0 / layer 5. Geometry collapsed
   (RankMe **6.75**, bank 1 **1.84**) and normal-context Δpermutation_beyond **0.013** missed the
@@ -71,16 +71,18 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 8. **E17 four-bank per-layer (init 0.01)** *(done_success mixed 2026-08-10 — relative free-run win; writes dead).*
 9. **E17b per-layer mid write-init 0.1** *(done_failed 2026-08-13 — mid-init not sticky; free-run ≈E17).*
 10. **E17c depth-private gated working memory + causal carry pressure** *(done_failed mixed 2026-08-15 — carryless Δperm 0.59 PASS; RankMe 6.7 / Δbeyond 0.013 kill 1B).*
-11. **E17d depth-private concept layers as global-attention replacement** *(300M eval 2026-08-18 — RankMe PASS, late-bin Δperm 0.044 miss; no 1B).*
-12. **E17e starve the local window to K=256** *(approved 2026-08-22 — E17d cell, W=256; 300M late-half gate).*
+11. **E17d depth-private concept layers as global-attention replacement** *(done_failed mixed 2026-08-18 — RankMe 43–77 PASS; late-bin Δperm 0.044 miss; no 1B).*
+12. **E17e starve the local window to K=256** *(300M running 2026-08-22 — E17d cell, W=256; late-half gate).*
 
 ## What we've explored so far (evidence, not verdicts)
 - **E17d attn-residual global mix, no token carry (per_layer_banks, Polonez, train 2026-08-17, eval 2026-08-18):**
   300M run `…20260817_141227`. Late-bin 256–512 Δperm **0.044** CI [0.039, 0.049]
   (E17c **0.026**). RankMe **43.2 / 58.7 / 65.9 / 76.8**. Carryless first-64 Δperm **0.75**
   (banks 0.13 / 0.21 / 0.08 / 0.05 — not a bank-0 monopoly). Free-run `real` greedy @256
-  **0.185/0.595** (`real=shuffle`). Attn-residual + dropped carry keeps geometry healthy
-  and spreads the *block-start* gist; it does not assimilate late-page tokens. Do not 1B.
+  **0.185/0.595** (`real=shuffle`; E17c **0.23/0.53**). Attn-residual + dropped carry
+  keeps geometry healthy and spreads the *block-start* gist; it does not assimilate
+  late-page tokens. Do not 1B. See
+  [report](../2_Experiments_Registry/run_reports/e17d_global_concept_assimilation_20260818.md).
   Next registered starve: [E17e](../experiments_specs/ahead/E17e_starved_local_window.md).
 - **E17c gated cell + carry pressure (per_layer_banks, Polonez, train 2026-08-14, eval 2026-08-15):**
   300M run `…20260814_133241`. Carryless first-64 Δpermutation **0.594** CI [0.543, 0.645]

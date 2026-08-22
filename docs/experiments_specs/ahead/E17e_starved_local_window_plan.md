@@ -19,7 +19,7 @@
   the block-start gist (first-64 Δperm 0.75, multi-bank) but late-half Δperm
   stays **0.044**. Five-whys: after ~64 tokens the K=512 local softmax already
   solves FinePDFs CE. See
-  [E17d spec](../ahead/E17d_global_concept_assimilation.md) and
+  [E17d spec](../done_failed/E17d_global_concept_assimilation.md) and
   [five-whys](../../4_Research_Notes/e17c_failure_five_whys_20260815.md).
 - **Synthesis verdict:** **Adapt** the SWA-hybrid starve (Infini / NHA w shrink):
   memory is unused until the window cannot cover next-token CE. Take E17d's cell;
