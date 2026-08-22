@@ -15,6 +15,30 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-08-22] - E17e starve local window (K=256)
+
+**Why:**
+- E17d's late-page Δperm stayed 0.044 with a healthy concept geometry. The remaining
+  cause is Gemma's 512-token local softmax, which already covers FinePDFs CE after
+  ~64 tokens of a new window.
+
+**Impact:**
+- `concept_block` is the authority for the local window and write cadence. Loaded
+  Gemma `sliding_window` (config + each `Gemma3Attention`) is aligned to it, so
+  K=256 launches without raising. `launch_e10.sh` honors a caller `CONCEPT_BLOCK`.
+
+**What changed:**
+- [arch] `nn/backbone_concept_lm.py` — `align_backbone_sliding_window`
+- [train] `scripts/launch_e17e.sh`, `scripts/launch_e10.sh` default-not-overwrite
+  `CONCEPT_BLOCK`, E17d wrapper pins 512
+- [tested] E17e align / write-cadence / launcher pin tests
+
+**Git tag:** `arch/e17e-starved-local-window` ·
+`train/backbone_concept_gemma_3_1b_pt_K256_concept_20260822_120601`
+**Related:** [E17e](docs/experiments_specs/ahead/E17e_starved_local_window.md)
+
+---
+
 ## [2026-08-17] - E17d global-attention concept layers
 
 **Why:**

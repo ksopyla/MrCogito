@@ -158,8 +158,9 @@ class ModelArguments:
     concept_block: int = field(
         default=512,
         metadata={
-            "help": "E10: block size = write cadence; must equal the backbone's sliding "
-            "window (Gemma-3-1B: 512)."
+            "help": "E10: block size = write cadence and local token window. The graft "
+            "aligns the backbone's sliding_window to this value (hub Gemma-3-1B "
+            "ships 512; E17e uses 256)."
         },
     )
     concept_io_mode: str = field(

@@ -18,6 +18,7 @@ from nn.backbone_concept_lm import (
     ConceptWriteHead,
     GlobalLayerWithConceptRead,
     _AttnWithConceptResidual,
+    align_backbone_sliding_window,
 )
 from training.train_concept_pretraining import align_special_tokens_for_training
 
@@ -1347,4 +1348,71 @@ def test_e17d_gradient_checkpointing_backward_finite():
     assert torch.isfinite(loss)
     assert model.concept_init.grad is not None
     assert model.concept_init.grad.abs().sum() > 0
+
+
+# ------------------------------------------------------------------ E17e
+
+
+def _attn_sliding_window(module):
+    attn = getattr(module, "self_attn", None)
+    if attn is None:
+        return None
+    return getattr(attn, "sliding_window", None)
+
+
+def test_e17e_aligns_gemma_sliding_window_to_concept_block():
+    bb = two_global_backbone_dict()
+    assert bb["sliding_window"] == K
+    model = _e17d_model(concept_block=4, backbone_config=bb)
+    assert model.config.concept_block == 4
+    assert model.backbone.config.sliding_window == 4
+    assert model.config.sliding_window == 4
+    for layer in model.backbone.model.layers:
+        inner = layer.layer if isinstance(layer, GlobalLayerWithConceptRead) else layer
+        assert _attn_sliding_window(inner) == 4
+    mask = model._windowed_causal_mask(
+        torch.ones(1, 6, dtype=torch.long), torch.float32
+    )
+    assert float(mask[0, 0, 5, 2]) == 0.0
+    assert mask[0, 0, 5, 0] < 0
+
+
+def test_e17e_matched_window_is_noop_align():
+    model = _e17d_model()
+    assert model.config.concept_block == K
+    assert model.backbone.config.sliding_window == K
+    align_backbone_sliding_window(model.backbone, K)
+    assert model.backbone.config.sliding_window == K
+
+
+def test_e17e_write_cadence_scales_with_concept_block():
+    input_ids, attention_mask, labels = make_batch(B=2, S=3 * K)
+
+    def count_writes(model):
+        n = 0
+        originals = []
+        for head in model.write_heads:
+            real = head.forward
+
+            def counted(*args, _real=real, **kwargs):
+                nonlocal n
+                n += 1
+                return _real(*args, **kwargs)
+
+            originals.append((head, real))
+            head.forward = counted
+        model.eval()
+        with torch.no_grad():
+            model(input_ids, attention_mask, labels)
+        for head, real in originals:
+            head.forward = real
+        return n
+
+    k8 = _e17d_model()
+    k4 = _e17d_model(concept_block=4)
+    assert count_writes(k8) == 3 * len(k8.global_layer_indices)
+    assert count_writes(k4) == 6 * len(k4.global_layer_indices)
+    metrics = k4.concept_ablation_ce(input_ids, attention_mask, labels)
+    assert "delta_permutation_block_256_512" in metrics
+
 

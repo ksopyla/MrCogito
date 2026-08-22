@@ -16,6 +16,7 @@ E16A_PIPELINE = REPO_ROOT / "scripts" / "launch_e16a_pipeline.sh"
 E16B_LAUNCHER = REPO_ROOT / "scripts" / "launch_e16b.sh"
 E17C_LAUNCHER = REPO_ROOT / "scripts" / "launch_e17c.sh"
 E17D_LAUNCHER = REPO_ROOT / "scripts" / "launch_e17d.sh"
+E17E_LAUNCHER = REPO_ROOT / "scripts" / "launch_e17e.sh"
 
 
 def _write_executable(path, contents):
@@ -333,6 +334,63 @@ def test_e17d_wrapper_pins_attn_residual_and_no_carry_protocol(tmp_path):
     assert _value_after(args, "--memory_pressure_weight") == "1.0"
     assert "target=300000000" in result.stdout
     assert _value_after(args, "--num_train_epochs") == "7.5"
+    assert _value_after(args, "--per_device_train_batch_size") == "8"
+    assert _value_after(args, "--gradient_accumulation_steps") == "2"
+    assert _value_after(args, "--concept_block") == "512"
+
+
+def test_e10_protocol_wrapper_honors_concept_block_override(tmp_path):
+    data_root = tmp_path / "e10_data"
+    data_root.mkdir()
+    manifest = data_root / "e10_manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    result, args, _ = _run_launcher(
+        tmp_path,
+        {
+            "DATASETS_TOK_DIR": str(data_root),
+            "DATASETS_RAW_DIR": str(tmp_path / "raw"),
+            "RAW_ARCHIVE_DIR": str(tmp_path / "raw"),
+            "SKIP_PRETOKENIZE": "1",
+            "MANIFEST": str(manifest),
+            "TARGET_TOKENS": "",
+            "CONCEPT_BLOCK": "256",
+        },
+        launcher=E10_LAUNCHER,
+    )
+    assert result.returncode == 0, result.stderr
+    assert _value_after(args, "--concept_block") == "256"
+
+
+def test_e17e_wrapper_pins_k256_starve_on_e17d_cell(tmp_path):
+    data_root = tmp_path / "gemma_4k"
+    data_root.mkdir()
+    manifest = data_root / "e16b_long_4k_v1_gemma_manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    result, args, _ = _run_launcher(
+        tmp_path,
+        {
+            "DATASETS_TOK_DIR": str(data_root),
+            "DATASETS_RAW_DIR": str(tmp_path / "raw"),
+            "RAW_ARCHIVE_DIR": str(tmp_path / "raw"),
+            "MANIFEST": str(manifest),
+            "SKIP_PRETOKENIZE": "1",
+            "MAX_STEPS": "2",
+            "REPORT_TO": "wandb",
+            "EVAL_STRATEGY": "no",
+            "SAVE_STRATEGY": "no",
+            "LOAD_BEST_MODEL_AT_END": "False",
+        },
+        launcher=E17E_LAUNCHER,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert _value_after(args, "--concept_block") == "256"
+    assert _value_after(args, "--concept_read_placement") == "attn_residual"
+    assert _value_after(args, "--inference_carry_policy") == "drop_after_first"
+    assert _value_after(args, "--memory_carry_dropout") == "1.0"
+    assert _value_after(args, "--concept_write_mode") == "additive"
+    assert _value_after(args, "--tie_concept_writer") == "false"
+    assert "target=300000000" in result.stdout
     assert _value_after(args, "--per_device_train_batch_size") == "8"
     assert _value_after(args, "--gradient_accumulation_steps") == "2"
 

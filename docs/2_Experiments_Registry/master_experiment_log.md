@@ -11,7 +11,13 @@ experiment specs; deep metrics and interpretation live in run reports. Live focu
 | What are we doing now? | [`agenda.md`](../1_Strategy_and_Plans/agenda.md) |
 | Full metric dump / fair baselines | `run_reports/` |
 
-> **Focus note (2026-08-18) — E17d 300M mixed; do not launch 1B.**
+> **Focus note (2026-08-22) — E17e 300M running on Polonez.**
+> Live run `backbone_concept_gemma_3_1b_pt_K256_concept_20260822_120601` (Byobu
+> `E17e`, bs=8 accum=2, K=256). Primary gate: late-half Δperm ≥ 0.10 at 300M.
+> Baseline E17d `…20260817_141227` late-bin **0.044**. Do not 1B unless the gate
+> passes. Spec: [E17e](../experiments_specs/ahead/E17e_starved_local_window.md).
+
+> **Prior focus (2026-08-18) — E17d 300M mixed; do not launch 1B.**
 > Attn-residual concept mix + no token carry finished 300M with healthy RankMe
 > (**43.2–76.8**) and eval_loss **2.365**, but late-bin 256–512 Δperm **0.044**
 > CI [0.039, 0.049] missed ≥0.10. First-64 Δperm **0.75** is multi-bank (bank 1
@@ -111,6 +117,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 
 | ID | What | Status | Spec |
 |---|---|---|---|
+| E17e | Starve the local window (K=256) on the E17d cell | active (300M running) | [E17e](../experiments_specs/ahead/E17e_starved_local_window.md) |
 | E08 | Concept-Flow reasoner (encode→reason→decode) | draft | [E08](../experiments_specs/ahead/E08_concept_flow_reasoner.md) |
 | E05c | Decoder word-dropout on suffix (anti-bypass) | on hold / unrun | [E05c](../experiments_specs/ahead/E05c_anticollapse_extension.md) |
 | E05d | VICReg on concept matrix | on hold / design-only | [E05d](../experiments_specs/ahead/E05d_concept_vicreg.md) |
@@ -127,7 +134,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 | E07 | Sentence-gap / boundary-only infilling | [E07](../experiments_specs/canceled/E07_sentence_gap_infilling.md) |
 | E09 | Gated recurrent concept memory (superseded by E10) | [E09](../experiments_specs/canceled/E09_recurrent_concept_memory.md) |
 
-**Genealogy:** E01 → E02 → E03 → E04 → E05 → E10…E16a (short-ctx) → **E16b** (historical shared-depth result; causal interpretation revised 2026-08-14) → **E17** (causal per-layer init-0.01 partial success) → **E17b** (mid-init 0.1 failed) → **E17c** (gated cell + carry pressure; 300M mixed — carryless PASS, geometry collapsed) → **E17d** (attn-residual global mix, no token carry; 300M mixed — RankMe PASS, late-bin miss). See [`agenda.md`](../1_Strategy_and_Plans/agenda.md) for the living reading.
+**Genealogy:** E01 → E02 → E03 → E04 → E05 → E10…E16a (short-ctx) → **E16b** (historical shared-depth result; causal interpretation revised 2026-08-14) → **E17** (causal per-layer init-0.01 partial success) → **E17b** (mid-init 0.1 failed) → **E17c** (gated cell + carry pressure; 300M mixed — carryless PASS, geometry collapsed) → **E17d** (attn-residual global mix, no token carry; 300M mixed — RankMe PASS, late-bin miss) → **E17e** (K=256 starve). See [`agenda.md`](../1_Strategy_and_Plans/agenda.md) for the living reading.
 
 ---
 
@@ -184,7 +191,8 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-08-14 | E17c | `backbone_concept_gemma_3_1b_pt_K512_concept_20260814_133241` | gated_replace + carry dropout · 300M | carryless Δperm **0.59** · RankMe **6.7** · gen **0.23/0.53** | MIXED — pressure works (bank 0); geometry collapsed; no 1B. | [spec](../experiments_specs/done_failed/E17c_depth_private_working_memory.md) · [report](run_reports/e17c_depth_private_working_memory_20260815.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260814_133241) |
 | 2026-08-17 | E17d | `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_124945` | attn-residual + no token carry · aborted smoke | CheckpointError at step 0 | ABORTED — nested Gemma checkpoint dropped `z`; restarted as `…125416`. | [spec](../experiments_specs/done_failed/E17d_global_concept_assimilation.md) |
 | 2026-08-17 | E17d | `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_125416` | attn-residual + no token carry · 300M · bs3 | ~9k tok/s · ~7.4 GiB | ABORTED — underfilled; length_group calib picked bs8 (~9089 tok/s). | [spec](../experiments_specs/done_failed/E17d_global_concept_assimilation.md) |
-| 2026-08-17 | E17d | `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_141227` | attn-residual + no token carry · 300M · bs8/accum2 | late-bin Δperm **0.044** · RankMe **43–77** · gen **0.185/0.595** | MIXED — geometry PASS; late-page assimilation FAIL; no 1B. | [spec](../experiments_specs/done_failed/E17d_global_concept_assimilation.md) · [report](run_reports/e17d_global_concept_assimilation_20260818.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K512_concept_20260817_141227) |
+| 2026-08-17 | E17d | `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_141227` | attn-residual + no token carry · 300M · bs8/accum2 | late-bin Δperm **0.044** · RankMe **43–77** · gen **0.185/0.595** | MIXED — geometry PASS; late-page assimilation FAIL; no 1B. | [spec](../experiments_specs/done_failed/E17d_global_concept_assimilation.md) · [report](run_reports/e17d_global_concept_assimilation_20260818.md) |
+| 2026-08-22 | E17e | `backbone_concept_gemma_3_1b_pt_K256_concept_20260822_120601` | E17d cell · K=256 starve · 300M · bs8/accum2 | loss 5.30→5.21 · ~11.0k tok/s · ~15.3 GiB | RUNNING — Polonez Byobu `E17e`; 2668 steps; 300M tokens. | [spec](../experiments_specs/ahead/E17e_starved_local_window.md) |
 
 ---
 

@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-08-18 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-08-22 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,6 +20,14 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **E17e 300M running on Polonez (launched 2026-08-22).** Live run
+  `backbone_concept_gemma_3_1b_pt_K256_concept_20260822_120601` (Byobu `E17e`;
+  commit `3e59b97`; bs=8 accum=2; K=256; ~11.0k real tok/s; ~15.3 GiB). 2668 steps.
+  Primary gate: late-half of each 256-token window Δperm ≥ 0.10 at 300M. Do not
+  launch 1B unless that gate passes. Spec:
+  [E17e](../experiments_specs/ahead/E17e_starved_local_window.md) ·
+  [plan](../experiments_specs/ahead/E17e_starved_local_window_plan.md).
+  Shell log: `Cache/logs/shell_perceiver_denoise_20260822_120532.log`.
 - **E17d 300M closed (train 2026-08-17, eval 2026-08-18).** Late-bin 256–512 Δperm
   **0.044** CI [0.039, 0.049] missed ≥0.10; RankMe **43.2–76.8** and eval_loss **2.365**
   passed; gen `real`@256 **0.185/0.595** (`real=shuffle`). First-64 Δperm **0.75** is
@@ -64,6 +72,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 9. **E17b per-layer mid write-init 0.1** *(done_failed 2026-08-13 — mid-init not sticky; free-run ≈E17).*
 10. **E17c depth-private gated working memory + causal carry pressure** *(done_failed mixed 2026-08-15 — carryless Δperm 0.59 PASS; RankMe 6.7 / Δbeyond 0.013 kill 1B).*
 11. **E17d depth-private concept layers as global-attention replacement** *(done_failed mixed 2026-08-18 — RankMe 43–77 PASS; late-bin Δperm 0.044 miss; no 1B).*
+12. **E17e starve the local window to K=256** *(300M running 2026-08-22 — E17d cell, W=256; late-half gate).*
 
 ## What we've explored so far (evidence, not verdicts)
 - **E17d attn-residual global mix, no token carry (per_layer_banks, Polonez, train 2026-08-17, eval 2026-08-18):**
@@ -74,6 +83,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   keeps geometry healthy and spreads the *block-start* gist; it does not assimilate
   late-page tokens. Do not 1B. See
   [report](../2_Experiments_Registry/run_reports/e17d_global_concept_assimilation_20260818.md).
+  Next registered starve: [E17e](../experiments_specs/ahead/E17e_starved_local_window.md).
 - **E17c gated cell + carry pressure (per_layer_banks, Polonez, train 2026-08-14, eval 2026-08-15):**
   300M run `…20260814_133241`. Carryless first-64 Δpermutation **0.594** CI [0.543, 0.645]
   (bank 0 **0.38**; others ≤0.03). RankMe **6.75** (bank 1 **1.84**). Normal-context
