@@ -50,6 +50,45 @@ INTRA_BLOCK_BINS = (
 )
 
 
+def _backbone_decoder_layers(backbone: nn.Module):
+    """Yield Gemma decoder layers whether the root is a text model or a wrapper."""
+    model = getattr(backbone, "model", backbone)
+    layers = getattr(model, "layers", None)
+    if layers is None:
+        inner = getattr(model, "language_model", None)
+        layers = getattr(inner, "layers", None)
+    if layers is None:
+        return
+    yield from layers
+
+
+def align_backbone_sliding_window(backbone: nn.Module, concept_block: int) -> None:
+    """Make every Gemma sliding-window copy equal ``concept_block``.
+
+    ``concept_block`` is the authority for write cadence and the local token mask.
+    Hub Gemma-3-1B ships ``sliding_window=512`` on the text config *and* copies it
+    onto each ``Gemma3Attention`` at init. Starving that window (E17e K=256) must
+    patch both, or construction raises and native Gemma masks would still be 512.
+    Matching values are a no-op so E10–E17d load paths stay unchanged.
+    """
+    k = int(concept_block)
+    if k <= 0:
+        raise ValueError(f"concept_block must be a positive window, got {concept_block}.")
+    configs = [getattr(backbone, "config", None)]
+    text_cfg = getattr(configs[0], "text_config", None) if configs[0] is not None else None
+    if text_cfg is not None:
+        configs.append(text_cfg)
+    for cfg in configs:
+        if cfg is not None and hasattr(cfg, "sliding_window"):
+            cfg.sliding_window = k
+    for layer in _backbone_decoder_layers(backbone):
+        if hasattr(layer, "sliding_window"):
+            layer.sliding_window = k
+        attn = getattr(layer, "self_attn", None)
+        if attn is not None and hasattr(attn, "sliding_window"):
+            attn.sliding_window = k
+
+
 class BackboneConceptConfig(PretrainedConfig):
     """Config for `BackboneConceptLM`.
 
@@ -583,6 +622,7 @@ class BackboneConceptLM(PreTrainedModel):
                 )
             from transformers import Gemma3ForCausalLM, Gemma3TextConfig
             backbone = Gemma3ForCausalLM(Gemma3TextConfig(**config.backbone_config))
+        align_backbone_sliding_window(backbone, config.concept_block)
         self.backbone = backbone
         bb_cfg = self.backbone.config
         config.sync_backbone_facade(bb_cfg.to_dict())
