@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-08-17 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-08-22 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,14 +20,20 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **E17d implemented, 300M Polonez running after tok/s calib (2026-08-17).**
-  Live run `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_141227` (Byobu `E17d`;
-  bs=8 accum=2, ~11k real tok/s, ~14.5 GiB). Token budget stays 300M (2668 steps).
-  Ignore `…124945` (checkpoint bug) and `…125416` (bs=3 underfilled). Spec:
-  [E17d](../experiments_specs/ahead/E17d_global_concept_assimilation.md) ·
-  [plan](../experiments_specs/ahead/E17d_global_concept_assimilation_plan.md).
-  Launch: `SKIP_PRETOKENIZE=1 bash scripts/launch_e17d.sh`. Not 300B. Do not launch
-  1B unless the 300M late-bin gate passes. ID stays E17d.
+- **E17e approved (2026-08-22): starve the local window to K=256.** Keep the E17d
+  attn-residual four-bank cell and no token carry; cut Gemma's local softmax and
+  the write cadence from 512 to 256. Primary gate: late-half of each 256-token
+  window (`delta_permutation_block_256_512` = offsets 128–256) Δperm ≥ 0.10 at
+  300M. Do not warm-start E17d. Do not launch 1B unless that gate passes. Spec:
+  [E17e](../experiments_specs/ahead/E17e_starved_local_window.md) ·
+  [plan](../experiments_specs/ahead/E17e_starved_local_window_plan.md).
+  Launch: `SKIP_PRETOKENIZE=1 bash scripts/launch_e17e.sh`.
+- **E17d 300M eval (2026-08-18).** Late-bin 256–512 Δperm **0.044** CI [0.039, 0.049]
+  missed ≥0.10; RankMe **43.2–76.8** and eval_loss **2.365** passed; gen `real`@256
+  **0.185/0.595** (`real=shuffle`). First-64 Δperm **0.75** is multi-bank. The
+  remaining cause is a sufficient K=512 local computer — that is E17e's starve.
+  Spec still lives in `ahead/` on `dev` until the eval-track close lands.
+  Run `…20260817_141227` `checkpoint-2660`. **Do not launch 1B.**
 - **E17c 300M closed (2026-08-15).** Carryless first-64 Δpermutation **0.594** CI [0.543, 0.645]
   cleared the registered ≥0.20 gate, almost entirely in bank 0 / layer 5. Geometry collapsed
   (RankMe **6.75**, bank 1 **1.84**) and normal-context Δpermutation_beyond **0.013** missed the
@@ -65,9 +71,17 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 8. **E17 four-bank per-layer (init 0.01)** *(done_success mixed 2026-08-10 — relative free-run win; writes dead).*
 9. **E17b per-layer mid write-init 0.1** *(done_failed 2026-08-13 — mid-init not sticky; free-run ≈E17).*
 10. **E17c depth-private gated working memory + causal carry pressure** *(done_failed mixed 2026-08-15 — carryless Δperm 0.59 PASS; RankMe 6.7 / Δbeyond 0.013 kill 1B).*
-11. **E17d depth-private concept layers as global-attention replacement** *(active 2026-08-17 — attn-residual read; per-window write; token carry off; 300M Polonez run `…20260817_141227`, bs=8).*
+11. **E17d depth-private concept layers as global-attention replacement** *(300M eval 2026-08-18 — RankMe PASS, late-bin Δperm 0.044 miss; no 1B).*
+12. **E17e starve the local window to K=256** *(approved 2026-08-22 — E17d cell, W=256; 300M late-half gate).*
 
 ## What we've explored so far (evidence, not verdicts)
+- **E17d attn-residual global mix, no token carry (per_layer_banks, Polonez, train 2026-08-17, eval 2026-08-18):**
+  300M run `…20260817_141227`. Late-bin 256–512 Δperm **0.044** CI [0.039, 0.049]
+  (E17c **0.026**). RankMe **43.2 / 58.7 / 65.9 / 76.8**. Carryless first-64 Δperm **0.75**
+  (banks 0.13 / 0.21 / 0.08 / 0.05 — not a bank-0 monopoly). Free-run `real` greedy @256
+  **0.185/0.595** (`real=shuffle`). Attn-residual + dropped carry keeps geometry healthy
+  and spreads the *block-start* gist; it does not assimilate late-page tokens. Do not 1B.
+  Next registered starve: [E17e](../experiments_specs/ahead/E17e_starved_local_window.md).
 - **E17c gated cell + carry pressure (per_layer_banks, Polonez, train 2026-08-14, eval 2026-08-15):**
   300M run `…20260814_133241`. Carryless first-64 Δpermutation **0.594** CI [0.543, 0.645]
   (bank 0 **0.38**; others ≤0.03). RankMe **6.75** (bank 1 **1.84**). Normal-context

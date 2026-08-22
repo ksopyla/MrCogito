@@ -11,7 +11,13 @@ experiment specs; deep metrics and interpretation live in run reports. Live focu
 | What are we doing now? | [`agenda.md`](../1_Strategy_and_Plans/agenda.md) |
 | Full metric dump / fair baselines | `run_reports/` |
 
-> **Focus note (2026-08-17) — E17d 300M: global-attention concept layers, no token carry.**
+> **Focus note (2026-08-22) — E17e K=256 starve; do not 1B until late-half gate.**
+> Keep the E17d cell; cut local window and write cadence from 512 to 256. Primary
+> gate: late-half of each 256-token window Δperm ≥ 0.10 at 300M. Baseline is E17d
+> `…20260817_141227` late-bin **0.044**. Spec:
+> [E17e](../experiments_specs/ahead/E17e_starved_local_window.md).
+
+> **Prior focus (2026-08-17) — E17d 300M: global-attention concept layers, no token carry.**
 > Four depth-private banks stay. Each former Gemma global layer mixes its bank inside the
 > attention residual; previous windows exist only as those banks at train, eval, and
 > `generate()`. Additive writes, uniform CE, 300M non-padding tokens on Polonez (not 300B,
@@ -102,7 +108,8 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 
 | ID | What | Status | Spec |
 |---|---|---|---|
-| E17d | Depth-private concept layers as global-attention replacement | active (300M running) | [E17d](../experiments_specs/ahead/E17d_global_concept_assimilation.md) |
+| E17e | Starve the local window (K=256) on the E17d cell | approved | [E17e](../experiments_specs/ahead/E17e_starved_local_window.md) |
+| E17d | Depth-private concept layers as global-attention replacement | active (300M; eval 2026-08-18 late-bin 0.044) | [E17d](../experiments_specs/ahead/E17d_global_concept_assimilation.md) |
 | E08 | Concept-Flow reasoner (encode→reason→decode) | draft | [E08](../experiments_specs/ahead/E08_concept_flow_reasoner.md) |
 | E05c | Decoder word-dropout on suffix (anti-bypass) | on hold / unrun | [E05c](../experiments_specs/ahead/E05c_anticollapse_extension.md) |
 | E05d | VICReg on concept matrix | on hold / design-only | [E05d](../experiments_specs/ahead/E05d_concept_vicreg.md) |
@@ -119,7 +126,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 | E07 | Sentence-gap / boundary-only infilling | [E07](../experiments_specs/canceled/E07_sentence_gap_infilling.md) |
 | E09 | Gated recurrent concept memory (superseded by E10) | [E09](../experiments_specs/canceled/E09_recurrent_concept_memory.md) |
 
-**Genealogy:** E01 → E02 → E03 → E04 → E05 → E10…E16a (short-ctx) → **E16b** (historical shared-depth result; causal interpretation revised 2026-08-14) → **E17** (causal per-layer init-0.01 partial success) → **E17b** (mid-init 0.1 failed) → **E17c** (gated cell + carry pressure; 300M mixed — carryless PASS, geometry collapsed) → **E17d** (attn-residual global mix, no token carry; 300M). See [`agenda.md`](../1_Strategy_and_Plans/agenda.md) for the living reading.
+**Genealogy:** E01 → E02 → E03 → E04 → E05 → E10…E16a (short-ctx) → **E16b** (historical shared-depth result; causal interpretation revised 2026-08-14) → **E17** (causal per-layer init-0.01 partial success) → **E17b** (mid-init 0.1 failed) → **E17c** (gated cell + carry pressure; 300M mixed — carryless PASS, geometry collapsed) → **E17d** (attn-residual global mix, no token carry; 300M late-bin 0.044) → **E17e** (K=256 starve). See [`agenda.md`](../1_Strategy_and_Plans/agenda.md) for the living reading.
 
 ---
 
