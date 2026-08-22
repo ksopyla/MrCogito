@@ -1,10 +1,10 @@
 # E17e — Starve the local window (K=256)
 
-- **Status:** approved (named 2026-08-22; implement as config over E17d)
+- **Status:** active (300M Polonez running)
 - **Serves:** Priority 1 / SG1–SG2: make previous-window concepts necessary for FinePDFs
   next-token CE by cutting the local computer in half, instead of retuning gates.
 - **Implementation plan:** [E17e_starved_local_window_plan.md](E17e_starved_local_window_plan.md)
-- **Owner / dates:** Krzysztof Sopyła · opened 2026-08-22 · closed —
+- **Owner / dates:** Krzysztof Sopyła · opened 2026-08-22 · trained 2026-08-22 · closed —
 
 > E17e is one coherent bet: **keep E17d's four depth-private attn-residual concept
 > layers and no token carry, and shrink the local token window / write cadence from
@@ -142,8 +142,7 @@ Same immutable held-out split as E17d. Default forward is already carryless.
   `CONCEPT_BLOCK` instead of overwriting 512. No new model class.
 
 ## Result
-<Filled in AFTER, by experiment-track. Link out; do not paste full results here.>
-- Run id: `<run_id>`
-- WandB: <link>
-- Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
-- Verdict: promising | mixed | regression | killed — <one line>
+- Run id: `backbone_concept_gemma_3_1b_pt_K256_concept_20260822_120601` (Polonez, 300M running)
+- WandB: run `backbone_concept_gemma_3_1b_pt_K256_concept_20260822_120601`
+- Run report: *(after close, by experiment-track)*
+- Verdict: *running* — loss 5.30→5.21 (first two logs), ~11.0k tok/s, ~15.3 GiB, 2668 steps

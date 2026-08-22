@@ -20,14 +20,14 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **E17e approved (2026-08-22): starve the local window to K=256.** Keep the E17d
-  attn-residual four-bank cell and no token carry; cut Gemma's local softmax and
-  the write cadence from 512 to 256. Primary gate: late-half of each 256-token
-  window (`delta_permutation_block_256_512` = offsets 128–256) Δperm ≥ 0.10 at
-  300M. Do not warm-start E17d. Do not launch 1B unless that gate passes. Spec:
+- **E17e 300M running on Polonez (launched 2026-08-22).** Live run
+  `backbone_concept_gemma_3_1b_pt_K256_concept_20260822_120601` (Byobu `E17e`;
+  commit `3e59b97`; bs=8 accum=2; K=256; ~11.0k real tok/s; ~15.3 GiB). 2668 steps.
+  Primary gate: late-half of each 256-token window Δperm ≥ 0.10 at 300M. Do not
+  launch 1B unless that gate passes. Spec:
   [E17e](../experiments_specs/ahead/E17e_starved_local_window.md) ·
   [plan](../experiments_specs/ahead/E17e_starved_local_window_plan.md).
-  Launch: `SKIP_PRETOKENIZE=1 bash scripts/launch_e17e.sh`.
+  Shell log: `Cache/logs/shell_perceiver_denoise_20260822_120532.log`.
 - **E17d 300M eval (2026-08-18).** Late-bin 256–512 Δperm **0.044** CI [0.039, 0.049]
   missed ≥0.10; RankMe **43.2–76.8** and eval_loss **2.365** passed; gen `real`@256
   **0.185/0.595** (`real=shuffle`). First-64 Δperm **0.75** is multi-bank. The

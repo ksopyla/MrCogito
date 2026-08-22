@@ -33,6 +33,8 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   `CONCEPT_BLOCK`, E17d wrapper pins 512
 - [tested] E17e align / write-cadence / launcher pin tests
 
+**Git tag:** `arch/e17e-starved-local-window` ·
+`train/backbone_concept_gemma_3_1b_pt_K256_concept_20260822_120601`
 **Related:** [E17e](docs/experiments_specs/ahead/E17e_starved_local_window.md)
 
 ---

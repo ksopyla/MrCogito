@@ -3,6 +3,8 @@
 - **Spec:** [E17e_starved_local_window.md](E17e_starved_local_window.md) · **Status:** implemented
 - **Authored by:** `implementation-plan` · for → `research-implement`
 - **Token budget:** **300M** non-padding tokens (`TARGET_TOKENS=300000000`).
+- **Live run:** `backbone_concept_gemma_3_1b_pt_K256_concept_20260822_120601`
+  (Polonez, Byobu `E17e`, bs=8 accum=2, commit `3e59b97`).
 - **ID:** **E17e**. `E18` is already claimed on an unmerged addressable-RAM branch.
 
 > Implement the spec's starve: E17d cell unchanged; `concept_block=256` is the

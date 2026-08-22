@@ -11,11 +11,11 @@ experiment specs; deep metrics and interpretation live in run reports. Live focu
 | What are we doing now? | [`agenda.md`](../1_Strategy_and_Plans/agenda.md) |
 | Full metric dump / fair baselines | `run_reports/` |
 
-> **Focus note (2026-08-22) — E17e K=256 starve; do not 1B until late-half gate.**
-> Keep the E17d cell; cut local window and write cadence from 512 to 256. Primary
-> gate: late-half of each 256-token window Δperm ≥ 0.10 at 300M. Baseline is E17d
-> `…20260817_141227` late-bin **0.044**. Spec:
-> [E17e](../experiments_specs/ahead/E17e_starved_local_window.md).
+> **Focus note (2026-08-22) — E17e 300M running on Polonez.**
+> Live run `backbone_concept_gemma_3_1b_pt_K256_concept_20260822_120601` (Byobu
+> `E17e`, bs=8 accum=2, K=256). Primary gate: late-half Δperm ≥ 0.10 at 300M.
+> Baseline E17d `…20260817_141227` late-bin **0.044**. Do not 1B unless the gate
+> passes. Spec: [E17e](../experiments_specs/ahead/E17e_starved_local_window.md).
 
 > **Prior focus (2026-08-17) — E17d 300M: global-attention concept layers, no token carry.**
 > Four depth-private banks stay. Each former Gemma global layer mixes its bank inside the
@@ -108,7 +108,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 
 | ID | What | Status | Spec |
 |---|---|---|---|
-| E17e | Starve the local window (K=256) on the E17d cell | approved | [E17e](../experiments_specs/ahead/E17e_starved_local_window.md) |
+| E17e | Starve the local window (K=256) on the E17d cell | active (300M running) | [E17e](../experiments_specs/ahead/E17e_starved_local_window.md) |
 | E17d | Depth-private concept layers as global-attention replacement | active (300M; eval 2026-08-18 late-bin 0.044) | [E17d](../experiments_specs/ahead/E17d_global_concept_assimilation.md) |
 | E08 | Concept-Flow reasoner (encode→reason→decode) | draft | [E08](../experiments_specs/ahead/E08_concept_flow_reasoner.md) |
 | E05c | Decoder word-dropout on suffix (anti-bypass) | on hold / unrun | [E05c](../experiments_specs/ahead/E05c_anticollapse_extension.md) |
@@ -184,6 +184,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-08-17 | E17d | `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_124945` | attn-residual + no token carry · aborted smoke | CheckpointError at step 0 | ABORTED — nested Gemma checkpoint dropped `z`; restarted as `…125416`. | [spec](../experiments_specs/ahead/E17d_global_concept_assimilation.md) |
 | 2026-08-17 | E17d | `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_125416` | attn-residual + no token carry · 300M · bs3 | ~9k tok/s · ~7.4 GiB | ABORTED — underfilled; length_group calib picked bs8 (~9089 tok/s). | [spec](../experiments_specs/ahead/E17d_global_concept_assimilation.md) |
 | 2026-08-17 | E17d | `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_141227` | attn-residual + no token carry · 300M · bs8/accum2 | warmup loss 4.97→4.90 · ~11k tok/s · ~14.5 GiB | RUNNING — Polonez Byobu `E17d`; 2668 steps; 300M tokens. | [spec](../experiments_specs/ahead/E17d_global_concept_assimilation.md) |
+| 2026-08-22 | E17e | `backbone_concept_gemma_3_1b_pt_K256_concept_20260822_120601` | E17d cell · K=256 starve · 300M · bs8/accum2 | loss 5.30→5.21 · ~11.0k tok/s · ~15.3 GiB | RUNNING — Polonez Byobu `E17e`; 2668 steps; 300M tokens. | [spec](../experiments_specs/ahead/E17e_starved_local_window.md) |
 
 ---
 
