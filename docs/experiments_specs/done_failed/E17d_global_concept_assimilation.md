@@ -1,10 +1,10 @@
 # E17d — Depth-private concept layers as global-attention replacement
 
-- **Status:** active (implemented; 300M Polonez running)
+- **Status:** done_failed (mixed) — 300M finished 2026-08-18; geometry PASS, late-bin Δperm FAIL, no 1B
 - **Serves:** Priority 1 / SG1–SG2: make Gemma's four former global layers assimilate
   long-range context through concepts, at every position, the way full attention used to.
 - **Implementation plan:** [E17d_global_concept_assimilation_plan.md](E17d_global_concept_assimilation_plan.md)
-- **Owner / dates:** Krzysztof Sopyła · opened 2026-08-17 · closed —
+- **Owner / dates:** Krzysztof Sopyła · opened 2026-08-17 · trained 2026-08-17 · closed 2026-08-18
 
 > E17d is one coherent bet: **the four global concept layers keep their depth-private
 > banks, but they stop being optional memory sidecars and start doing the job Gemma's
@@ -184,11 +184,7 @@ comparison.
   model class or training fork. Defaults keep E17c loadable.
 
 ## Result
-<Filled in AFTER, by experiment-track. Launch identity only for now.>
-- Run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_141227`
-  (Polonez Byobu `E17d`, 300M, bs=8 accum=2, 2668 steps)
-- WandB: `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_141227`
-- Git tag: `train/backbone_concept_gemma_3_1b_pt_K512_concept_20260817_141227`
-- Aborted: `…20260817_124945` (checkpoint replay) and `…20260817_125416` (bs=3 underfilled)
-- Run report: pending
-- Verdict: pending — 100M kill ~step 890; 300M verdict ~step 2668
+- Run id: `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_141227` (Polonez, 300M, 2668 steps; best `checkpoint-2660`)
+- WandB: run `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_141227` (same W&B entity/project as the E17/E17c training runs)
+- Run report: [e17d_global_concept_assimilation_20260818.md](../../2_Experiments_Registry/run_reports/e17d_global_concept_assimilation_20260818.md)
+- Verdict: **mixed / killed for 1B** — late-bin 256–512 Δperm **0.044** CI [0.039, 0.049] misses ≥0.10; RankMe **43.2–76.8** PASS; eval_loss **2.365** PASS; gen `real`@256 **0.185/0.595** (`real=shuffle`). First-64 Δperm **0.75** is multi-bank, not E17c's bank-0 monopoly.
