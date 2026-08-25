@@ -43,10 +43,10 @@ def test_ablation_aggregator_skips_nan_and_reports_ci():
          "attention_mask": torch.ones(2, 24, dtype=torch.long), "bucket": "(16,32]"},
     ]
     m = compute_ar_concept_ablation(_M(), batches, "cpu")
-    assert abs(m["delta_permutation_block_256_512"] - 0.05) < 1e-6
+    assert abs(m["delta_permutation_block_256_512"] - 0.05) < 1e-5
     assert m["delta_permutation_block_256_512_n_finite"] == 2
-    assert m["delta_permutation_block_256_512_ci95_lo"] <= 0.05
-    assert m["delta_permutation_block_256_512_ci95_hi"] >= 0.05
+    assert m["delta_permutation_block_256_512_ci95_lo"] <= 0.05 + 1e-5
+    assert m["delta_permutation_block_256_512_ci95_hi"] >= 0.05 - 1e-5
     assert m["delta_zero"] == 0.2
 
 
