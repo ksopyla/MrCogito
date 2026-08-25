@@ -22,6 +22,34 @@ def test_parse_length_buckets_covers_range():
     assert parse_length_buckets("512", 512) == [(0, 512)]
 
 
+def test_ablation_aggregator_skips_nan_and_reports_ci():
+    # Short-doc NaNs must not poison the mean (E17d late-bin JSON trap).
+    class _M(torch.nn.Module):
+        def concept_ablation_ce(self, input_ids, attention_mask, labels, window_k=None):
+            n = input_ids.shape[1]
+            late = 0.05 if n >= 16 else float("nan")
+            return {
+                "ce_real": 1.0, "ce_zero": 1.2, "ce_shuffle": 1.1,
+                "delta_zero": 0.2, "delta_shuffle": 0.1,
+                "delta_permutation_block_256_512": late,
+            }
+
+    batches = [
+        {"input_ids": torch.ones(2, 20, dtype=torch.long),
+         "attention_mask": torch.ones(2, 20, dtype=torch.long), "bucket": "(16,32]"},
+        {"input_ids": torch.ones(2, 8, dtype=torch.long),
+         "attention_mask": torch.ones(2, 8, dtype=torch.long), "bucket": "(0,8]"},
+        {"input_ids": torch.ones(2, 24, dtype=torch.long),
+         "attention_mask": torch.ones(2, 24, dtype=torch.long), "bucket": "(16,32]"},
+    ]
+    m = compute_ar_concept_ablation(_M(), batches, "cpu")
+    assert abs(m["delta_permutation_block_256_512"] - 0.05) < 1e-6
+    assert m["delta_permutation_block_256_512_n_finite"] == 2
+    assert m["delta_permutation_block_256_512_ci95_lo"] <= 0.05
+    assert m["delta_permutation_block_256_512_ci95_hi"] >= 0.05
+    assert m["delta_zero"] == 0.2
+
+
 def test_ablation_aggregator_reports_std_and_per_bucket():
     torch.manual_seed(0)
     cfg = _tiny_config()
