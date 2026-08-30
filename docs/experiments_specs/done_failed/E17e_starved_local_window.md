@@ -1,10 +1,10 @@
 # E17e — Starve the local window (K=256)
 
-- **Status:** active (300M Polonez running)
+- **Status:** done_failed (mixed) — 300M finished 2026-08-22; eval 2026-08-25; late-half Δperm barely PASS on best, gen FAIL, no 1B
 - **Serves:** Priority 1 / SG1–SG2: make previous-window concepts necessary for FinePDFs
   next-token CE by cutting the local computer in half, instead of retuning gates.
 - **Implementation plan:** [E17e_starved_local_window_plan.md](E17e_starved_local_window_plan.md)
-- **Owner / dates:** Krzysztof Sopyła · opened 2026-08-22 · trained 2026-08-22 · closed —
+- **Owner / dates:** Krzysztof Sopyła · opened 2026-08-22 · trained 2026-08-22 · closed 2026-08-25
 
 > E17e is one coherent bet: **keep E17d's four depth-private attn-residual concept
 > layers and no token carry, and shrink the local token window / write cadence from
@@ -142,7 +142,7 @@ Same immutable held-out split as E17d. Default forward is already carryless.
   `CONCEPT_BLOCK` instead of overwriting 512. No new model class.
 
 ## Result
-- Run id: `backbone_concept_gemma_3_1b_pt_K256_concept_20260822_120601` (Polonez, 300M running)
-- WandB: run `backbone_concept_gemma_3_1b_pt_K256_concept_20260822_120601`
-- Run report: *(after close, by experiment-track)*
-- Verdict: *running* — loss 5.30→5.21 (first two logs), ~11.0k tok/s, ~15.3 GiB, 2668 steps
+- Run id: `backbone_concept_gemma_3_1b_pt_K256_concept_20260822_120601` (Polonez, 300M, 2668 steps; best `checkpoint-2660`)
+- WandB: run `backbone_concept_gemma_3_1b_pt_K256_concept_20260822_120601` (same W&B entity/project as the E17d training run)
+- Run report: [e17e_starved_local_window_20260825.md](../../2_Experiments_Registry/run_reports/e17e_starved_local_window_20260825.md)
+- Verdict: **mixed / killed for 1B** — late-half Δperm **0.104** CI [0.095, 0.114] on best (last **0.097** miss); RankMe **31–57** PASS; eval_loss **2.464** PASS; gen `real`@256 **0.162/0.686** (`real=shuffle`). Starve lifted E17d's 0.044; gist-not-memory shape unchanged.
