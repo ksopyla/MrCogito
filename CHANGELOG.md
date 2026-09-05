@@ -15,6 +15,174 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-08-22] - E17e starve local window (K=256)
+
+**Why:**
+- E17d's late-page Δperm stayed 0.044 with a healthy concept geometry. The remaining
+  cause is Gemma's 512-token local softmax, which already covers FinePDFs CE after
+  ~64 tokens of a new window.
+
+**Impact:**
+- `concept_block` is the authority for the local window and write cadence. Loaded
+  Gemma `sliding_window` (config + each `Gemma3Attention`) is aligned to it, so
+  K=256 launches without raising. `launch_e10.sh` honors a caller `CONCEPT_BLOCK`.
+
+**What changed:**
+- [arch] `nn/backbone_concept_lm.py` — `align_backbone_sliding_window`
+- [train] `scripts/launch_e17e.sh`, `scripts/launch_e10.sh` default-not-overwrite
+  `CONCEPT_BLOCK`, E17d wrapper pins 512
+- [tested] E17e align / write-cadence / launcher pin tests
+
+**Git tag:** `arch/e17e-starved-local-window` ·
+`train/backbone_concept_gemma_3_1b_pt_K256_concept_20260822_120601`
+**Related:** [E17e](docs/experiments_specs/done_failed/E17e_starved_local_window.md)
+
+---
+
+## [2026-08-17] - E17d global-attention concept layers
+
+**Why:**
+- E17c's four banks were optional post-FFN sidecars with a 512-token cheat sheet at
+  decode. Carry dropout trained a block-start gist (first-64 Δperm 0.59, almost all
+  bank 0) that vanished by tokens 256–512. The friend's claim is that Gemma's four
+  global layers should assimilate long-range context the way full attention used to.
+
+**Impact:**
+- Concept mix can sit in the attention residual before FFN (`attn_residual`). Eval and
+  `generate()` honor `inference_carry_policy`, so E17d can drop the token carry at
+  train and decode. Untied additive writers now receive `write_gate_init` (they were
+  stuck at 0.0). Late intra-block permutation bins are logged. Defaults keep E17c
+  checkpoints loadable.
+
+**What changed:**
+- [arch] `nn/backbone_concept_lm.py` — `concept_read_placement`, wrapped
+  `_AttnWithConceptResidual`, `_resolve_carry_policy`, intra-block ablation bins,
+  untied additive `gate_init`, additive `concept_gate_metrics`
+- [train] `scripts/launch_e17d.sh`, generic launcher + `ModelArguments` knobs;
+  Polonez `length_group` sweep ranked by real tok/s selected bs=8 accum=2
+  (effective batch 64; 300M token budget unchanged)
+- [tested] `tests/test_backbone_concept_lm.py` E17d suite including gradient-checkpoint replay; launcher pin test
+
+**Git tag:** `arch/e17d-global-concept-assimilation` ·
+`train/backbone_concept_gemma_3_1b_pt_K512_concept_20260817_141227`
+**Related:** [E17d](docs/experiments_specs/done_failed/E17d_global_concept_assimilation.md)
+
+---
+
+## [2026-08-14] - Parallel Hugging Face length cache
+
+**Why:**
+- The E17c 300M launch never reached step 0 because rank 0 scanned 16.6M interleaved
+  rows with a single-process `Dataset.iter()`. Pretokenization already uses
+  `datasets.map` + `save_to_disk`; the length sidecar did not.
+
+**Impact:**
+- Length grouping builds (or loads) a standard Hugging Face Arrow dataset beside the
+  manifest. First-run scans use multiprocess `map`; later launches are a `load_from_disk`
+  of one `int32` column. Legacy `*.lengths.npz` files are ignored and deleted on rewrite.
+
+**What changed:**
+- [train] `data/length_cache.py` computes lengths with picklable `Dataset.map` and
+  stores `{manifest}.lengths/` via `save_to_disk`; cache hits use Arrow `to_numpy`
+  rather than Python `Dataset.__getitem__` formatting
+- [train] `scripts/manifest_length_cache.py` accepts `--num_proc` and inspects the Arrow
+  sidecar without reloading the mix when the cache is valid
+- [train] `scripts/launch_e17c.sh` sets `LENGTH_CACHE_NUM_PROC=32` for the Polonez rebuild
+- [tested] Arrow roundtrip, cache-hit skip, seed/row invalidation, `num_proc` equality,
+  leftover `.tmp`/`.old` cleanup, and rejection of the old npz format
+
+**Related:** [pad-free / low-padding training](docs/engineering_specs/pad_free_variable_length_training.md)
+
+---
+
+## [2026-08-14] - E17c implementation audit and 300M first-run budget
+
+**Why:**
+- The E17c cell needed an explicit check against the E17b “concepts as memory” diagnosis
+  before spending a full Polonez run, and the first scientific decision is the 300M
+  mechanism verdict rather than a 1B cosine.
+
+**Impact:**
+- The frozen spec records that dedicated reads, untied gated writers, and carry pressure
+  are implemented as specified. Residual risk is the remaining local-carry bypass and
+  gate-closing, not a missing idea.
+- `scripts/launch_e17c.sh` now defaults to 300M non-padding tokens. A later 1B quality
+  run is a separate scheduler and is launched only if this gate passes.
+
+**What changed:**
+- [docs] E17c spec/plan, agenda, and experiment index record the implementation audit
+  and the 300M first-run budget
+- [train] `scripts/launch_e17c.sh` pins `TARGET_TOKENS=300000000`; launcher test asserts
+  the pin
+
+**Related:** [E17c](docs/experiments_specs/done_failed/E17c_depth_private_working_memory.md)
+
+---
+
+## [2026-08-14] - Cached length-grouped training
+
+**Why:**
+- E17b showed that raising the 4K microbatch could reduce useful-token throughput because
+  heterogeneous rows made pad-to-batch-max execute substantially more empty token slots.
+
+**Impact:**
+- Pretokenized runs can group nearby lengths inside bounded, deterministically reshuffled
+  windows while preserving every row, source weight, document boundary, and legacy default.
+- E17c enables the mode for its pending 4-GPU run. This is a 4K efficiency improvement,
+  not the future million-token attention solution; true variable-length kernels and
+  boundary-safe packing remain later phases.
+
+**What changed:**
+- [added] manifest-keyed `int32` length sidecars with atomic invalidation and a standalone
+  cache inspection command
+- [added] an epoch-seeded sortish sampler using bounded 20-window grouping while leaving
+  Accelerate responsible for disjoint DDP batch sharding
+- [added] globally reduced padding, sequence-length, and real-token throughput telemetry
+- [preserved] `BATCH_PACKING_MODE=none` for historical launchers and the existing causal
+  collator/model path; length grouping never concatenates documents
+- [tested] cache invalidation, padding reduction, epoch reshuffle, simulated 4-rank
+  disjointness/length alignment, trainer metrics, launcher parameter flow, Python
+  compilation, and the full `388 passed, 9 skipped` suite
+- [fixed] padding telemetry always participates in DDP reduction, including empty
+  local windows, and flushes the last incomplete window on the final `train_loss` log
+
+**Related:** [pad-free / low-padding training](docs/engineering_specs/pad_free_variable_length_training.md)
+
+---
+
+## [2026-08-14] - E17c depth-private gated working memory
+
+**Why:**
+- E17/E17b's private state tensors remained coupled to Gemma QKV and one tied additive
+  writer, while ordinary causal LM loss rewarded the explicit local carry instead of
+  durable concept content.
+
+**Impact:**
+- The shared backbone-concept family can train strictly block-causal, depth-private
+  working-memory cells and directly test their necessity under deterministic carryless
+  evaluation without changing E17b defaults or checkpoint keys.
+
+**What changed:**
+- [added] config-selectable dedicated concept reads, untied BiXT writers, content-gated
+  retain/replace dynamics, per-example causal carry dropout, and weighted early-token CE
+- [added] all-bank geometry, per-bank permutation, carryless first-64 diagnostics, dynamic
+  update/state telemetry, and a thin E17c launcher over the existing Gemma training path
+- [fixed] the E16b wrapper now honors explicit 4K cache/manifest overrides for isolated
+  launcher verification; its default immutable 4K path remains unchanged
+- [fixed] gated replacement casts autocast BF16 candidates/gates back to the FP32 recurrent
+  state dtype before interpolation, preventing the first-step mixed-precision crash
+- [fixed] eval/ablation forwards no longer overwrite the last observed training carry-drop
+  fraction, so W&B reports the intervention rate instead of a misleading zero
+- [preserved] the default E17b read/write path, model family, collator, data manifest,
+  optimizer/evaluation plumbing, and W&B identity contract
+- [tested] legacy construction, private-cell gradients, causal pressure masking, weighted
+  CE, causality, per-bank ablations, checkpoint round-trip, launcher parameter flow, the
+  full 381-test suite, and matched one-/50-step Polonez BF16+DDP+W&B runs
+
+**Related:** [E17c](docs/experiments_specs/done_failed/E17c_depth_private_working_memory.md)
+
+---
+
 ## [2026-07-19] - Remove low-quality deductive-stories prototype
 
 **Why:**

@@ -129,6 +129,10 @@ def parse_args():
     p.add_argument("--test_size_percent", type=float, default=0.1,
                    help="holdout: the training run's test_size_percent (training default 0.1).")
     p.add_argument("--max_seq_length", type=int, default=2048)
+    p.add_argument("--min_seq_length", type=int, default=0,
+                   help="Drop eval rows shorter than this after truncation. Use 2048 "
+                        "for the E17c/d/e long-doc permutation gate so short buckets "
+                        "cannot poison intra-block late-half means with NaN.")
     p.add_argument("--length_buckets", default="256,512,1024",
                    help="Comma-separated interior token-length bucket edges. With max_seq_length "
                         "2048 the default gives buckets (0,256] (256,512] (512,1024] (1024,2048]. "
@@ -187,6 +191,8 @@ def iter_eval_token_rows(args, tokenizer):
             ids = row["input_ids"][: args.max_seq_length]
             if len(ids) < 8:
                 continue
+            if args.min_seq_length and len(ids) < args.min_seq_length:
+                continue
             yield ids, tokenizer.decode(ids, skip_special_tokens=True)
         return
 
@@ -203,7 +209,10 @@ def iter_eval_token_rows(args, tokenizer):
             text = (row.get("text") or "").strip()
             if len(text) < 20:
                 continue
-            yield _tokenize(text), text
+            ids = _tokenize(text)
+            if args.min_seq_length and len(ids) < args.min_seq_length:
+                continue
+            yield ids, text
         return
 
     # stream: the legacy protocol — first docs of the streaming TRAIN split. Almost
@@ -220,7 +229,10 @@ def iter_eval_token_rows(args, tokenizer):
         text = (sample.get("text") or "").strip()
         if len(text) < 20:
             continue
-        yield _tokenize(text), text
+        ids = _tokenize(text)
+        if args.min_seq_length and len(ids) < args.min_seq_length:
+            continue
+        yield ids, text
 
 
 def parse_length_buckets(spec: str, max_seq_length: int):
@@ -349,10 +361,24 @@ def compute_ar_concept_ablation(model, batches, device, window_k=None):
     out = {}
     for k in keys:
         vals = [m[k] for m in per_batch if k in m]
-        out[k] = sum(vals) / len(vals)
-        if k.startswith("delta_") and len(vals) > 1:
+        finite = [float(v) for v in vals if v == v]
+        if not finite:
+            out[k] = float("nan")
+            continue
+        out[k] = sum(finite) / len(finite)
+        if k.startswith("delta_") and len(finite) > 1:
             mean = out[k]
-            out[f"{k}_std"] = (sum((v - mean) ** 2 for v in vals) / len(vals)) ** 0.5
+            out[f"{k}_std"] = (sum((v - mean) ** 2 for v in finite) / len(finite)) ** 0.5
+            rng = torch.Generator().manual_seed(0)
+            boots = []
+            t = torch.tensor(finite, dtype=torch.float64)
+            for _ in range(2000):
+                idx = torch.randint(0, len(finite), (len(finite),), generator=rng)
+                boots.append(float(t[idx].mean()))
+            boots_t = torch.tensor(boots)
+            out[f"{k}_ci95_lo"] = float(torch.quantile(boots_t, 0.025))
+            out[f"{k}_ci95_hi"] = float(torch.quantile(boots_t, 0.975))
+            out[f"{k}_n_finite"] = len(finite)
 
     per_bucket = {}
     for m in per_batch:
@@ -445,6 +471,7 @@ def main():
 
     all_metrics = []
     concept_reprs = []
+    bank_concept_reprs = {}
     bucket_of_batch = []
     ablation_batches = []   # dicts {input_ids, attention_mask, bucket} for concept_ar ΔCE
     sample_texts = []       # raw texts for concept_ar generation samples
@@ -457,10 +484,23 @@ def main():
             # Forward pass — use the public concept contract. The classic families expose
             # both .encoder and encode_concepts; E10 is recurrent encode==decode and only
             # has encode_concepts.
-            encoder_out = model.encode_concepts(
-                input_ids=input_ids, attention_mask=attention_mask, return_dict=True
-            )
-            concepts = encoder_out.last_hidden_state.float()  # [B, C, H]
+            if (
+                hasattr(model, "encode_concept_banks")
+                and getattr(model.config, "concept_io_mode", None) == "per_layer_banks"
+            ):
+                banks = model.encode_concept_banks(
+                    input_ids=input_ids, attention_mask=attention_mask
+                ).float()
+                concepts = banks[:, -1]
+                for bank_index in range(banks.shape[1]):
+                    bank_concept_reprs.setdefault(bank_index, []).append(
+                        banks[:, bank_index].cpu()
+                    )
+            else:
+                encoder_out = model.encode_concepts(
+                    input_ids=input_ids, attention_mask=attention_mask, return_dict=True
+                )
+                concepts = encoder_out.last_hidden_state.float()  # [B, C, H]
 
             batch_metrics = compute_concept_geometry_metrics(concepts.cpu())
             all_metrics.append(batch_metrics)
@@ -527,6 +567,12 @@ def main():
     # and manifold_rankme (cross-sample embedding diversity).
     within = compute_within_sample_concept_rank(all_concepts)
     agg.update(within)
+    per_bank_geometry = {}
+    for bank_index, parts in sorted(bank_concept_reprs.items()):
+        bank_concepts = torch.cat(parts, dim=0)
+        bank_metrics = compute_concept_geometry_metrics(bank_concepts)
+        bank_metrics.update(compute_within_sample_concept_rank(bank_concepts))
+        per_bank_geometry[f"bank_{bank_index}"] = bank_metrics
 
     # Per-length-bucket within-sample RankMe: is de-collapse length-dependent?
     per_bucket_rankme = {}
@@ -578,6 +624,15 @@ def main():
         for bucket, v in per_bucket_rankme.items():
             print(f"      {bucket:>12s} : {v['within_sample_rankme_mean']:.2f} / "
                   f"{v['within_sample_rankme_centered_mean']:.2f}   (n={v['n_samples']})")
+    if per_bank_geometry:
+        print("    By depth-private bank (raw / centered RankMe / mean cosine):")
+        for bank_name, values in per_bank_geometry.items():
+            print(
+                f"      {bank_name:>12s} : "
+                f"{values['within_sample_rankme_mean']:.2f} / "
+                f"{values['within_sample_rankme_centered_mean']:.2f} / "
+                f"{values['mean_concept_similarity']:.4f}"
+            )
 
     print()
     print("─── Collapse Detection (SECONDARY diagnostics) ─────────────")
@@ -720,6 +775,20 @@ def main():
             if args.model_type == "backbone_concept":
                 print("  E10 decisive gate is Δshuffle_beyond ≥ 0.1 at positions >=2K "
                       "(>=1024 for K=512); all-position deltas are diagnostic.")
+                late = ablation.get("delta_permutation_block_256_512")
+                if late is not None:
+                    lo = ablation.get("delta_permutation_block_256_512_ci95_lo", float("nan"))
+                    hi = ablation.get("delta_permutation_block_256_512_ci95_hi", float("nan"))
+                    nfin = ablation.get("delta_permutation_block_256_512_n_finite", "?")
+                    print(f"  late-half Δperm (block_256_512) : {late:.4f}  "
+                          f"CI95 [{lo:.4f}, {hi:.4f}]  n_finite={nfin}")
+                    for bank in range(4):
+                        bk = f"delta_permutation_bank_{bank}_block_256_512"
+                        if bk in ablation:
+                            blo = ablation.get(f"{bk}_ci95_lo", float("nan"))
+                            bhi = ablation.get(f"{bk}_ci95_hi", float("nan"))
+                            print(f"    bank {bank} late-half Δperm : {ablation[bk]:.4f}  "
+                                  f"CI95 [{blo:.4f}, {bhi:.4f}]")
             else:
                 print("  E01 gate: Δzero AND Δshuffle ≥ 0.5 nats. (± = std over batches; a gate "
                       "cleared by less than one std is not decisively cleared.)")
@@ -835,6 +904,7 @@ def main():
         "global_effective_rank_normalized": global_eff_rank_norm,
         "top5_singular_values": singular_values[:5],
         "per_bucket_within_sample_rankme": per_bucket_rankme,
+        "per_bank_geometry": per_bank_geometry,
     }
     if ablation:
         result["concept_ablation"] = ablation

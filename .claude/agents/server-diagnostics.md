@@ -27,7 +27,8 @@ All `.cursor/...` paths above are valid in this checkout (skills are also mirror
   your own context window**, not the main chat. Honor that: return **only** the compact digest
   defined in the canonical file. Do not paste full logs/JSON/CSV into your return message.
 - Tools available: `Bash`, `Read`, `Grep`, `Glob`. Reach the servers with `ssh odra` /
-  `ssh polonez` (aliases are in the user's `~/.ssh/config`, ports 2203 / 2205); both are
+  `ssh polonez` (HostName/Port live in local `~/.ssh/config` / gitignored
+  `remote-servers` — do not put domain or port numbers in public repo files); both are
   pre-approved in `.claude/settings.json`.
 - **Read-only everywhere:** no writes/deletes, no launching or stopping training/eval, no
   `scp`/`rsync`, no `git push`, no interactive sessions (`byobu attach`, `top`, `tail -f`). Use

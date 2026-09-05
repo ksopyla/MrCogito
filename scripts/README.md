@@ -13,6 +13,10 @@ its protocol without copying the shared launcher.
 | `launch_e10.sh` | Experiment protocol wrapper | E10 backbone/concept-control arms, Gemma data paths, LoRA, and token-budget pins |
 | `launch_e10_pipeline.sh` | Orchestration pipeline | Waits for prerequisites, runs the E10 gate and pretokenization, then invokes `launch_e10.sh` |
 | `launch_e14.sh` | Experiment protocol wrapper | E10e architecture with sparse-label forced delayed recall and its 2M-token checkpoint gate |
+| `launch_e17c.sh` | Experiment protocol wrapper | E17c depth-private gated cell + carry pressure |
+| `launch_e17d.sh` | Experiment protocol wrapper | E17d attn-residual global concept layers, no token carry, 300M |
+| `launch_e17e.sh` | Experiment protocol wrapper | E17e starve: E17d cell + `CONCEPT_BLOCK=256`, 300M |
+| `calibrate_e17d_batch.sh` | Throughput/VRAM sweep | E17d per-device batch on 4×3090; rank by real tok/s under `length_group`; VRAM is a constraint; restore eff. batch ~72 via accum |
 | `test_perceiver_denoise_local.ps1` | Local smoke | Small reconstruction smoke against the canonical Python entrypoint |
 
 Use the generic runner for ad hoc maintained-family training:

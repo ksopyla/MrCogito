@@ -1,7 +1,7 @@
 ---
 name: eval-runner
 model: composer-2.5
-description: Remote executor for the Concept Encoder evaluation pipeline. Runs the experiment-evaluate tiered suite (health → concept geometry + AR ablation + samples → zero-shot STS-B → supervised SICK/PAWS/GLUE) on the Polonez/Odra GPU servers, monitors progress, tolerates per-task failures, and returns ONLY a compact evidence bundle. Keeps noisy SSH/uv/download/training-step output out of the main chat context. Use to run an evaluation suite on one or more checkpoints. Does NOT interpret results into Adopt/Reject verdicts or write the registry — that is the main agent's experiment-track skill.
+description: Remote executor for the Concept Encoder evaluation pipeline. Runs the experiment-evaluate tiered suite (health → concept geometry + AR ablation + samples → generation vibe-check metrics → zero-shot STS-B → supervised SICK/PAWS/GLUE) on the Polonez/Odra GPU servers, monitors progress, tolerates per-task failures, and returns ONLY a compact evidence bundle. Keeps noisy SSH/uv/download/training-step output out of the main chat context. Use to run an evaluation suite on one or more checkpoints. Does NOT interpret results into Adopt/Reject verdicts or write the registry — that is the main agent's experiment-track skill.
 is_background: true
 ---
 
@@ -31,14 +31,15 @@ Read the evaluation protocol before doing anything else:
 
 Follow the skill's **Default Behavior**: run all tiers in cost/signal order (Tier 0 → Tier 3)
 and stop early only when a kill gate trips — **unless** the brief asks for a narrow eval
-(e.g. "STS-B only", "MRPC only", "concept analysis only"), in which case run exactly that and
-nothing more. Never expand a narrow request; never silently skip a tier on a full run.
+(e.g. "STS-B only", "MRPC only", "concept analysis only", "generation quality / vibe check
+only"), in which case run exactly that and nothing more. Never expand a narrow request; never
+silently skip a tier on a full run.
 
 ## Inputs you expect from the brief
 - Checkpoint path(s) under `Cache/Training/<run_id>/checkpoint-<step>` (typically **best** and
   **last**). If only a run_id is given, resolve best (lowest `eval_loss` / `load_best_model_at_end`)
   and last yourself.
-- `--model_type` (`concept_ar` | `perceiver_denoise` | `weighted_mlm`).
+- `--model_type` (`concept_ar` | `backbone_concept` | `perceiver_denoise` | `weighted_mlm`).
 - Which tiers / tasks to run (default: full pipeline).
 - Target server (default Polonez).
 If a required input is genuinely ambiguous and you cannot infer a safe default, state the
@@ -60,18 +61,22 @@ assumption you made in the return bundle rather than stalling.
 2. **Set checkpoint variables once** (`RUN_ROOT`, `BEST`, `LAST`) as in the skill.
 3. **Run tiers in order**, wrapping each command in the skill's **failure-tolerant wrapper**
    so one task's failure does not discard later evidence. Collect `FAILED=(name:code …)`.
+   Include **Tier 1.5** (`analysis/run_generation_quality.py`) for `concept_ar` and
+   `backbone_concept` on a full suite — skip it for families without a free-run decode path.
 4. **Monitor, don't blind-poll.** For long suites, check progress with short reads of the
    shell log and `nvidia-smi`/`ls -lt Cache/Training` rather than streaming everything:
    ```bash
    LOG=$(ls -t Cache/logs/*eval*.log 2>/dev/null | head -1)
-   rg -n "Pearson|Spearman|effective rank|concept_ablation|Traceback|CUDA out of memory|nan|Saving" "$LOG"
+   rg -n "Pearson|Spearman|effective rank|concept_ablation|distinct-|rep-3|generation quality|Traceback|CUDA out of memory|nan|Saving" "$LOG"
    ```
 5. **Respect known pitfalls** from the skill: `run_concept_analysis.py` may abort during
    Python finalization *after* writing its JSON — if the report and `--output_json` are
    complete, treat metrics as usable. AR ablation/generation are wrapped in try/except inside
    the runner; if they error, geometry + JSON still complete (note the skip reason). For the
    authoritative E02 suffix-CE Δzero/Δshuffle, read the training `evaluate` step
-   (`concept_ablation/*` in W&B), not the reconstruction-contract ablation.
+   (`concept_ablation/*` in W&B), not the reconstruction-contract ablation. Generation
+   vibe-check metrics live in `*_generation_quality.json` (`aggregate_by_length`,
+   `free_generation`, optional `suffix_ce_by_position`) — quote numbers + one short snippet.
 6. **Do not relaunch a failed task before reading its first traceback line.** Classify
    (OOM, NCCL, import, dataset/cache, shape/config) and report it; only retry if clearly safe
    (e.g. transient download).
@@ -102,8 +107,16 @@ traceback).
 - effective rank (best/last) vs gate
 - collapse/diversity key metrics
 - concept_ablation Δzero / Δshuffle (and no-concept floor) vs gate; note contract used
-- one short generation-sample snippet
+- one short Tier-1 generation-sample snippet
 - JSON path(s)
+
+### Tier 1.5 — Generation vibe check
+- `distinct_1` / `rep_3` at key length cutoffs (from `aggregate_by_length`)
+- length-binned diversity trend (flat/rising vs collapsing past K)
+- `backbone_concept` only: real vs zero/shuffle/static condition deltas
+- optional `suffix_ce_by_position` early Δ / beyond-window trend (`concept_ar`)
+- one short free-run / continuation snippet
+- JSON path(s): `Cache/Evaluation_reports/<run_id>_*_generation_quality.json`
 
 ### Tier 2 — Zero-shot STS-B
 - Pearson / Spearman (best/last) vs gate
@@ -122,7 +135,7 @@ traceback).
 ## Rules
 - Read `experiment-evaluate/SKILL.md` first; follow its commands, model-type rules, and gates
   verbatim. Do not improvise thresholds.
-- Pass `--model_type concept_ar` directly; do not resurrect the old
+- Pass `--model_type concept_ar` (or `backbone_concept`) directly; do not resurrect the old
   `MODEL_TYPE_OVERRIDE=perceiver_denoise` workaround.
 - Do not evaluate tiny duplicate rank-artifact directories from distributed training.
 - One experiment per server; don't run multiple fine-tuning suites on one GPU unless you set

@@ -368,7 +368,17 @@ def tokenize_source(
     def _map_resilient(ds, num_proc, **kw):
         """map() with a num_proc=1 fallback: if a worker dies opaquely ('subprocess
         abruptly died'), retry single-process so the real error (MemoryError / bad row)
-        surfaces instead of the generic multiprocessing message."""
+        surfaces instead of the generic multiprocessing message.
+
+        KNOWN LIMITATION (hit by E17 Polonez pretokenize on finepdfs_100BT, 2026-08-01):
+        this is NOT resilient to per-row ``UnicodeDecodeError``. PDF-extracted text can
+        contain invalid UTF-8 bytes stored in a parquet *string* column; pyarrow's strict
+        string→Python decode raises on access — inside ``ds.map``'s batch materialization,
+        *before* ``tokenize_fn`` runs — so neither ``tokenize_fn`` nor this wrapper can
+        catch/skip it. Workaround used for E17: stage the already-tokenized data from a
+        host that pretokenized successfully (Odra, July). PROPER FIX (TODO): load the text
+        column as binary (``Value('binary')`` / pyarrow schema override) and decode with
+        ``errors='replace'`` in ``tokenize_fn``, or pre-sanitize the parquet at read time."""
         try:
             return ds.map(tokenize_fn, batched=True, num_proc=num_proc, **kw)
         except RuntimeError as e:

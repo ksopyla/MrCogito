@@ -46,7 +46,6 @@ This is a **control** — success is a *decisive read*, not a directional pass:
 - **Either way:** also confirms whether the wd-vs-Muon confound (open since 2026-07-04) is wd or optimizer — long overdue, and cheap.
 
 ## Result
-<Filled in AFTER, by experiment-track.>
 - Run id: `concept_ar_prefix_H768L6C128D4_20260709_214837`
 - WandB: [link](https://wandb.ai/ksopyla/MrCogito/runs/concept_ar_prefix_H768L6C128D4_20260709_214837)
 - Run report: `docs/2_Experiments_Registry/run_reports/e05b_wd_confound_control_20260711.md`

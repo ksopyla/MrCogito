@@ -158,8 +158,9 @@ class ModelArguments:
     concept_block: int = field(
         default=512,
         metadata={
-            "help": "E10: block size = write cadence; must equal the backbone's sliding "
-            "window (Gemma-3-1B: 512)."
+            "help": "E10: block size = write cadence and local token window. The graft "
+            "aligns the backbone's sliding_window to this value (hub Gemma-3-1B "
+            "ships 512; E17e uses 256)."
         },
     )
     concept_io_mode: str = field(
@@ -184,6 +185,50 @@ class ModelArguments:
     write_gate_init: float = field(
         default=0.0,
         metadata={"help": "E10c: raw tanh-gate initialization for the recurrent BiXT write."},
+    )
+    concept_read_mode: str = field(
+        default="backbone_qkv",
+        metadata={
+            "help": "Concept read projections: backbone_qkv (legacy E17b) or dedicated."
+        },
+    )
+    concept_read_placement: str = field(
+        default="post_layer",
+        metadata={
+            "help": "Where the concept mix is added: post_layer (E17c sidecar after FFN) "
+            "or attn_residual (E17d mix inside the attention residual before FFN)."
+        },
+    )
+    inference_carry_policy: str = field(
+        default="normal",
+        metadata={
+            "help": "Eval/generate carry policy when carry_policy is omitted: normal "
+            "(keep previous-block tokens) or drop_after_first (concepts-only history)."
+        },
+    )
+    tie_concept_writer: bool = field(
+        default=True,
+        metadata={"help": "Share one concept writer across global depths (legacy behavior)."},
+    )
+    concept_write_mode: str = field(
+        default="additive",
+        metadata={"help": "Concept state transition: additive or gated_replace."},
+    )
+    write_update_gate_init: float = field(
+        default=0.25,
+        metadata={"help": "Initial sigmoid update probability for gated replacement."},
+    )
+    memory_carry_dropout: float = field(
+        default=0.0,
+        metadata={"help": "Per-example probability of dropping prior-block token carry."},
+    )
+    memory_pressure_tokens: int = field(
+        default=0,
+        metadata={"help": "Early current-block targets upweighted under carry pressure."},
+    )
+    memory_pressure_weight: float = field(
+        default=1.0,
+        metadata={"help": "CE weight for pressured early targets (must be >=1)."},
     )
     lora_r: int = field(default=16, metadata={"help": "E10: LoRA rank on the backbone (0 = off)."})
     lora_alpha: int = field(default=32, metadata={"help": "E10: LoRA alpha."})
@@ -273,6 +318,21 @@ class DataTrainingArguments:
             "instead of mirroring input_ids. Default false reproduces E10."
         },
     )
+    batch_packing_mode: str = field(
+        default="none",
+        metadata={
+            "help": "Training pad-reduction mode: 'none' or 'length_group'. "
+            "Length grouping preserves rows and only reorders examples inside bounded "
+            "shuffled windows."
+        },
+    )
+    length_group_mega_batch_mult: int = field(
+        default=20,
+        metadata={
+            "help": "Sortish window multiplier. Each shuffled window contains this many "
+            "(per-device batch × gradient accumulation) examples before sorting by length."
+        },
+    )
     tokenizer_name: str = field(default="answerdotai/ModernBERT-base")
     max_seq_length: int = field(default=512)
     test_size_percent: float = field(default=0.1)
@@ -292,6 +352,21 @@ class DataTrainingArguments:
     min_prefix_content: int = field(default=5)
     min_suffix_content: int = field(default=10)
     split_strategy: str = field(default="sentence_boundary")
+
+    def __post_init__(self) -> None:
+        valid_modes = {"none", "length_group"}
+        if self.batch_packing_mode not in valid_modes:
+            raise ValueError(
+                f"batch_packing_mode must be one of {sorted(valid_modes)}, "
+                f"got {self.batch_packing_mode!r}."
+            )
+        if self.length_group_mega_batch_mult < 1:
+            raise ValueError("length_group_mega_batch_mult must be positive.")
+        if self.batch_packing_mode == "length_group" and not self.pretokenized_manifest:
+            raise ValueError(
+                "batch_packing_mode='length_group' requires --pretokenized_manifest "
+                "so cached lengths stay aligned with the interleaved dataset."
+            )
 
 
 @dataclass

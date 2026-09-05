@@ -18,6 +18,7 @@ from transformers import (
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from data.dataset_preprocess import configure_text_tokenizer_for_model_vocab
+from data.length_cache import compute_or_load_interleaved_lengths
 from nn.loss_manager import ConceptLossStepCallback
 from training.concept_pretraining_args import (
     DataTrainingArguments,
@@ -165,6 +166,24 @@ def main():
         training_args,
         append_eos_token_id,
     )
+    train_lengths = None
+    if data_args.batch_packing_mode == "length_group":
+        length_cache_num_proc = os.environ.get("LENGTH_CACHE_NUM_PROC")
+        with training_args.main_process_first(desc="preparing sequence-length cache"):
+            train_lengths = compute_or_load_interleaved_lengths(
+                data_args.pretokenized_manifest,
+                train_ds=train_ds,
+                num_proc=int(length_cache_num_proc) if length_cache_num_proc else None,
+            )
+        if is_main_process():
+            logger.info(
+                "Length-grouped training: rows=%s min=%s mean=%.1f max=%s window=%s",
+                f"{len(train_lengths):,}",
+                int(train_lengths.min()),
+                float(train_lengths.mean()),
+                int(train_lengths.max()),
+                data_args.length_group_mega_batch_mult,
+            )
 
     loss_config = loss_args.to_loss_config()
     log_loss_config(loss_config)
@@ -271,6 +290,8 @@ def main():
         "Split strategy": data_args.split_strategy,
         "Dataset mix (registry)": data_args.dataset_mix,
         "Dataset mix recipe": data_args.dataset_mix_recipe,
+        "Batch packing mode": data_args.batch_packing_mode,
+        "Length-group window": data_args.length_group_mega_batch_mult,
         "Optimizer": optim_args.optimizer,
         "Concept memory LR": optim_args.concept_memory_lr,
     }
@@ -319,6 +340,8 @@ def main():
             "dataset_mix_weight_override": data_args.dataset_mix_weight_override,
             "pretokenized_manifest": data_args.pretokenized_manifest,
             "preserve_precomputed_labels": data_args.preserve_precomputed_labels,
+            "batch_packing_mode": data_args.batch_packing_mode,
+            "length_group_mega_batch_mult": data_args.length_group_mega_batch_mult,
             "target_tokens": (
                 int(os.environ["TARGET_TOKENS"])
                 if os.environ.get("TARGET_TOKENS")
@@ -341,6 +364,15 @@ def main():
                     "read_concept_norm": model_args.read_concept_norm,
                     "read_gate_init": model_args.read_gate_init,
                     "write_gate_init": model_args.write_gate_init,
+                    "concept_read_mode": model_args.concept_read_mode,
+                    "concept_read_placement": model_args.concept_read_placement,
+                    "tie_concept_writer": model_args.tie_concept_writer,
+                    "concept_write_mode": model_args.concept_write_mode,
+                    "write_update_gate_init": model_args.write_update_gate_init,
+                    "inference_carry_policy": model_args.inference_carry_policy,
+                    "memory_carry_dropout": model_args.memory_carry_dropout,
+                    "memory_pressure_tokens": model_args.memory_pressure_tokens,
+                    "memory_pressure_weight": model_args.memory_pressure_weight,
                     "lora_r": model_args.lora_r,
                     "lora_alpha": model_args.lora_alpha,
                     "lora_dropout": model_args.lora_dropout,
@@ -399,13 +431,20 @@ def main():
         concept_memory_lr=optim_args.concept_memory_lr,
         muon_adamw_lr=optim_args.muon_adamw_lr,
         muon_momentum=optim_args.muon_momentum,
+        batch_packing_mode=data_args.batch_packing_mode,
+        train_lengths=train_lengths,
+        length_group_mega_batch_mult=data_args.length_group_mega_batch_mult,
     )
 
     if is_backbone:
         decoder_desc = (
             f"backbone_concept ({model_args.backbone_model}, "
             f"frozen+LoRA r={model_args.lora_r}, C={model_args.concept_num}, "
-            f"K={model_args.concept_block}, io={model_args.concept_io_mode})"
+            f"K={model_args.concept_block}, io={model_args.concept_io_mode}, "
+            f"read={model_args.concept_read_mode}/{model_args.concept_read_placement}, "
+            f"write={model_args.concept_write_mode}, "
+            f"tied_writer={model_args.tie_concept_writer}, "
+            f"infer_carry={model_args.inference_carry_policy})"
         )
     else:
         decoder_desc = (

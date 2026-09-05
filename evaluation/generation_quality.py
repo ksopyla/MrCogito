@@ -481,3 +481,106 @@ def summarize_generation(generated_ids: Sequence[int], *, decoder_window_k: int 
             generated_ids, bin_size=decoder_window_k, ns=(1, 2),
         ),
     }
+
+
+def summarize_generation_at_lengths(
+    generated_ids: Sequence[int],
+    lengths: Sequence[int],
+    *,
+    decoder_window_k: int = 128,
+) -> Dict[str, Dict[str, object]]:
+    """Diversity summaries of prefixes of `generated_ids` at each requested length.
+
+    Keys are stringified lengths. Prefixes longer than the available sequence are
+    skipped (so a 2K generation can still report 512/1024 cutoffs).
+    """
+    out: Dict[str, Dict[str, object]] = {}
+    n = len(generated_ids)
+    for L in lengths:
+        if L <= 0 or L > n:
+            continue
+        out[str(int(L))] = summarize_generation(
+            generated_ids[: int(L)], decoder_window_k=decoder_window_k,
+        )
+    return out
+
+
+def format_gemma_chat(user_message: str, *, system: Optional[str] = None) -> str:
+    """Gemma-3 turn format (base PT checkpoints have no tokenizer chat_template).
+
+    Used to probe whether an instruction-shaped prompt changes free-run quality
+    relative to plain continuation. Not SFT — the model was not chat-trained.
+    """
+    parts: List[str] = []
+    if system:
+        parts.append(f"<start_of_turn>user\n{system}\n\n{user_message}<end_of_turn>\n")
+    else:
+        parts.append(f"<start_of_turn>user\n{user_message}<end_of_turn>\n")
+    parts.append("<start_of_turn>model\n")
+    return "".join(parts)
+
+
+@torch.no_grad()
+def generate_continuation(
+    model,
+    tokenizer: "PreTrainedTokenizerBase",
+    prompt: str,
+    device,
+    *,
+    max_new_tokens: int = 256,
+    max_prompt_len: int = 2048,
+    greedy: bool = True,
+    temperature: float = 0.0,
+    top_k: int = 0,
+    top_p: float = 1.0,
+    seed: Optional[int] = None,
+    concept_mode: str = "real",
+) -> Dict[str, object]:
+    """True causal continuation for `BackboneConceptLM` (and compatible generate APIs).
+
+    Unlike `generate_free_running` (concept_ar encode→BOS-decode), the model sees the
+    prompt tokens directly and appends. `concept_mode` is forwarded when supported
+    (real / zero / shuffle / static / one_block) so concept impact can be measured
+    on the same prompt.
+    """
+    if seed is not None:
+        torch.manual_seed(int(seed))
+
+    enc = tokenizer(
+        prompt,
+        truncation=True,
+        max_length=max_prompt_len,
+        return_tensors="pt",
+        add_special_tokens=True,
+    )
+    input_ids = enc["input_ids"].to(device)
+    attention_mask = enc.get("attention_mask")
+    if attention_mask is not None:
+        attention_mask = attention_mask.to(device)
+
+    gen_kwargs = dict(
+        max_new_tokens=max_new_tokens,
+        do_sample=not greedy and temperature > 0,
+        temperature=max(temperature, 1e-5) if temperature else 1.0,
+        top_k=top_k or 0,
+        top_p=top_p if top_p else 1.0,
+    )
+    # BackboneConceptLM.generate accepts concept_mode; HF-style models may not.
+    try:
+        out_ids = model.generate(
+            input_ids, attention_mask, concept_mode=concept_mode, **gen_kwargs,
+        )
+    except TypeError:
+        out_ids = model.generate(input_ids, attention_mask=attention_mask, **gen_kwargs)
+
+    prompt_len = int(input_ids.size(1))
+    gen_ids = out_ids[0, prompt_len:].tolist()
+    return {
+        "text": tokenizer.decode(gen_ids, skip_special_tokens=True).strip(),
+        "ids": gen_ids,
+        "n_tokens": len(gen_ids),
+        "prompt_ids": input_ids[0].tolist(),
+        "prompt_n_tokens": prompt_len,
+        "full_ids": out_ids[0].tolist(),
+        "concept_mode": concept_mode,
+    }

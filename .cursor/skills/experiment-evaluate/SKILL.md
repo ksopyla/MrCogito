@@ -1,6 +1,6 @@
 ---
 name: experiment-evaluate
-description: The single source of truth for evaluating MrCogito Concept Encoder checkpoints. Knows every evaluation script and runs a tiered pipeline (health → concept geometry + AR concept-ablation ΔCE + generation samples → zero-shot STS-B → supervised SICK/PAWS/GLUE) via uv. Use after training finishes, when comparing best vs last checkpoints, checking concept health, running any benchmark, or preparing evaluation evidence before experiment-track. Supports concept_ar (E01/E02) and the older perceiver_denoise / weighted_mlm families.
+description: The single source of truth for evaluating MrCogito Concept Encoder checkpoints. Knows every evaluation script and runs a tiered pipeline (health → concept geometry + AR concept-ablation ΔCE + generation samples → generation vibe-check metrics → zero-shot STS-B → supervised SICK/PAWS/GLUE) via uv. Use after training finishes, when comparing best vs last checkpoints, checking concept health, running the generation vibe check, running any benchmark, or preparing evaluation evidence before experiment-track. Supports concept_ar (E01/E02), backbone_concept (E10/E16), and the older perceiver_denoise / weighted_mlm families.
 ---
 
 # Experiment Evaluate
@@ -13,7 +13,8 @@ which links back here for the "how").
 ## Default Behavior (read this first)
 By **default, run all tiers in cost/signal order** (Tier 0 → Tier 3) and stop early only
 when a kill gate trips. **Honor explicit narrow requests literally**: if the user asks for
-"only concept analysis" run just Tier 1; if they ask for "MRPC only" run just that GLUE
+"only concept analysis" run just Tier 1; if they ask for "generation quality", "vibe check",
+or "generation metrics" run just Tier 1.5; if they ask for "MRPC only" run just that GLUE
 task; if they ask for "STS-B" run just Tier 2. Never expand a narrow request into the full
 suite, and never silently skip a tier on a full run.
 
@@ -25,14 +26,17 @@ precondition. A narrow request may skip the per-checkpoint tiers, but do not han
 
 ## When To Use
 After training produced checkpoints and the user asks to evaluate, compare best/last
-checkpoints, check concept health/collapse, run STS-B / SICK / PAWS / GLUE, measure whether
+checkpoints, check concept health/collapse, run the generation vibe check (diversity /
+repetition / length-binned metrics), run STS-B / SICK / PAWS / GLUE, measure whether
 the AR decoder uses its concepts (E01/E02), or reproduce a prior evaluation protocol.
 
 ## Script Inventory (the complete map)
 | Aspect | Script | Covers | Families |
 |---|---|---|---|
 | **Compute audit (run-level)** | `analysis/run_compute_audit.py` | GPU-hours, total energy (kWh, trapezoidal integral of per-GPU powerWatts), max training tokens + per-family loss-token estimate, derived ratios; writes `compute/*` to the run's W&B summary for the compute panel | all (reads W&B, no checkpoint) |
-| **Concept geometry** + **AR ablation ΔCE** + **generation samples** | `analysis/run_concept_analysis.py` | effective rank, collapse, diversity; for `concept_ar` and `backbone_concept` also concept ablations (generation extras remain `concept_ar` only) | all |
+| **Concept geometry** + **AR ablation ΔCE** + **generation samples** | `analysis/run_concept_analysis.py` | effective rank, collapse, diversity; for `concept_ar` and `backbone_concept` also concept ablations (short qualitative generation extras remain `concept_ar` only) | all |
+| **Generation vibe check** (metrics + samples) | `analysis/run_generation_quality.py` | free-run / continuation diversity (distinct-n, REP-3, length-binned profile, by-length cutoffs); optional suffix-CE-by-position (`concept_ar`); concept_mode ablations (`backbone_concept`) | `concept_ar`, `backbone_concept` |
+| Generation metric library | `evaluation/generation_quality.py` | `distinct_n` / `repetition_rate` / `repetition_conditional` / `summarize_generation` / `generate_free_running` / `generate_continuation` / `compute_suffix_ce_by_position` (imported by the runner + notebooks) | — (library) |
 | **E10 paired mechanism evaluation** | `analysis/run_e10_comparison.py` | matched-token concept-vs-control CE, static/one-block/shuffle recurrence attribution, local regression, 2K/8K recovery and paired bootstrap CIs | `backbone_concept` |
 | Geometry metric library | `analysis/concept_analysis.py` | `compute_concept_geometry_metrics` (imported by the runner) | — (library) |
 | Weight/health sanity | `analysis/check_model_health.py` | NaN/Inf, weight stats, dead units before fine-tuning | all |
@@ -203,11 +207,76 @@ Gates:
   concepts); E02 needs **Δshuffle ≥ 1.0** and **Δzero ≥ 2.0** on suffix CE. Shuffle is the
   stronger test. The intact model must beat the zero/no-concept floor by the same margin.
 - Samples: held-out generations should be qualitatively coherent (E01 #4 / E02 #4).
+  These short samples from `run_concept_analysis.py` are a coherence sniff only — the
+  **quantitative generation vibe check** is Tier 1.5.
 
 > Note: `run_concept_analysis.py` ablation uses the **reconstruction** contract (encoder
 > sees the clean sequence). For a prefix→suffix (E02) run, the authoritative suffix-CE
 > Δzero/Δshuffle are logged by the training `evaluate` step (`concept_ablation/*` in W&B);
 > read those for the final E02 verdict.
+
+### Tier 1.5 — Generation vibe check (metrics + free-run samples)
+The **vibe check of generation**: does the model keep producing novel tokens past the
+decoder window, or does it fall into fluent-local / semantically-empty repetition loops?
+Tier 1's short samples answer "does it look coherent?"; this tier answers with numbers —
+`distinct-n`, `repetition_rate`, REP-3 (Welleck), length-binned diversity, and (for
+`concept_ar`) optional suffix-CE-by-position. Library: `evaluation/generation_quality.py`;
+CLI: `analysis/run_generation_quality.py`. Run for every serious `concept_ar` /
+`backbone_concept` checkpoint after Tier 1 clears (or as a narrow request on its own).
+
+```bash
+# concept_ar (E01/E02/E05): free-run from BOS + diversity; skip suffix-CE unless probing
+# the E09 Stage-0 "frozen snapshot + K-window" wall
+uv run python analysis/run_generation_quality.py \
+  --model_path "$BEST" \
+  --model_type concept_ar \
+  --no_suffix_ce \
+  --free_generation_max_new_tokens 512 \
+  --length_cutoffs 64 128 256 512 \
+  --output_json "Cache/Evaluation_reports/<run_id>_best_generation_quality.json"
+
+# backbone_concept (E10/E16): true causal continuation + concept_mode ablations +
+# chat-template probe; long cutoffs match the long-context claim
+uv run python analysis/run_generation_quality.py \
+  --model_path "$BEST" \
+  --model_type backbone_concept \
+  --no_suffix_ce \
+  --free_generation_max_new_tokens 2048 \
+  --length_cutoffs 512 1024 2048 4096 8192 16384 \
+  --prompt_styles continuation chat \
+  --concept_modes real zero shuffle static \
+  --output_json "Cache/Evaluation_reports/<run_id>_best_generation_quality.json"
+
+# E09 Stage-0 only (concept_ar): suffix-CE-by-position without free-gen cost
+uv run python analysis/run_generation_quality.py \
+  --model_path "$BEST" \
+  --model_type concept_ar \
+  --no_free_generation \
+  --num_batches 10 --batch_size 4 --max_seq_length 2048 \
+  --output_json "Cache/Evaluation_reports/<run_id>_best_suffix_ce.json"
+```
+
+Read the report:
+- **`aggregate_by_length`** — mean `distinct_1` / `rep_3` at each cutoff. A profile that
+  *falls* (distinct↓, REP-3↑) past the decoder K-window is the repetition-loop signature
+  (E05/E02-long failure mode). Flat-or-rising distinct-n is healthy novelty.
+- **`free_generation[].summary.length_binned_diversity`** — per-window distinct-n aligned
+  to `decoder_context_window` / `concept_block` (E05: 128). Same signal, finer grain.
+- **`aggregate_by_condition`** (`backbone_concept`) — compare `continuation|real` vs
+  `zero` / `shuffle` / `static` at matched lengths; if real ≈ zero on diversity *and*
+  the text is empty loops, concepts are not carrying generation.
+- **`suffix_ce_by_position`** (`concept_ar`, optional) — rising `ce_intact_by_bin` past
+  `window_k`, or growing `delta_shuffle_by_bin`, is the frozen-memory wall (E09 Stage-0
+  kill gate); a flat curve falsifies the need for writable memory at no training cost.
+- Always quote **one short text snippet** next to the metrics — numbers without a sample
+  are not a vibe check.
+
+Gates (interpretive, not hard STS-B-style thresholds unless the experiment spec sets them):
+- High `rep_3` (≥ ~0.3–0.5) with collapsing length-binned distinct-1 → treat as a generation
+  kill / strong regression signal for long-decode claims.
+- `backbone_concept`: `real` must beat `zero`/`shuffle` on usable text *or* the concept
+  ablation already failed in Tier 1 — do not claim long-context generation without both.
+- Skip this tier for `perceiver_denoise` / `weighted_mlm` (no free-run decode path here).
 
 ### Tier 2 — Zero-shot STS-B (fast semantic gate, no fine-tuning)
 ```bash
@@ -278,6 +347,8 @@ Repeat the whole pipeline for `$LAST`, changing the output JSON / report labels.
 ## Outputs To Collect
 - Shell log path, usually `Cache/logs/eval_<id>_<timestamp>.log`.
 - Concept-analysis JSON (geometry + `concept_ablation` + `generation_samples`) in `Cache/Evaluation_reports/`.
+- Generation-quality JSON (diversity metrics + free-run / continuation samples + optional
+  `suffix_ce_by_position`) in `Cache/Evaluation_reports/<run_id>_*_generation_quality.json`.
 - Benchmark CSVs in `Cache/Evaluation_reports/`.
 - Compute-audit CSV + chart in `Cache/Evaluation_reports/compute_audit/` and `compute/*` scalars on the run's W&B summary (from the run-level preamble).
 - W&B run URLs for STS-B / SICK / PAWS / GLUE.
@@ -285,9 +356,11 @@ Repeat the whole pipeline for `$LAST`, changing the output JSON / report labels.
 
 For the handoff to `experiment-track`, report: best + last checkpoint paths; concept
 effective rank and key collapse/diversity metrics; concept-ablation Δzero/Δshuffle (and the
-no-concept floor); STS-B zero-shot Pearson/Spearman; SICK relatedness Pearson/Spearman;
-SICK entailment accuracy; PAWS accuracy/F1; GLUE semantic-subset scores; a generation-sample
-snippet; **compute scalars** (`compute/gpu_hours`, `compute/energy_kwh`, `compute/max_tokens`,
+no-concept floor); **generation vibe-check** (`distinct_1` / `rep_3` at key length cutoffs,
+plus one short sample snippet — and for `backbone_concept`, real-vs-zero/shuffle condition
+deltas); STS-B zero-shot Pearson/Spearman; SICK relatedness Pearson/Spearman;
+SICK entailment accuracy; PAWS accuracy/F1; GLUE semantic-subset scores; **compute scalars**
+(`compute/gpu_hours`, `compute/energy_kwh`, `compute/max_tokens`,
 `compute/loss_tokens_est` + `compute/audit_state`/`compute/flag` from the run-level preamble) —
 this is a **hard precondition**: if `compute/audit_state` is absent the audit was never run, so
 run the preamble now and do not hand off without it; and any failed task with its first traceback line.
@@ -303,6 +376,9 @@ run the preamble now and do not hand off without it; and any failed task with it
 - Concept-ablation ΔCE is the E01/E02 *primary* signal: small Δ on reconstruction can mean
   "task too easy from left context", which is exactly why E02 (prefix→suffix) is the decisive
   semantic test — judge E01 ablation against its own threshold, not E02's.
+- Generation vibe check (Tier 1.5) catches the *other* failure mode ablation misses: fluent
+  local text that is a repetition loop. Collapsing `distinct_1` / rising `rep_3` past K is
+  a generation kill even when CE looks fine. Always pair the numbers with one sample snippet.
 - Zero-shot STS-B is the fastest semantic gate; clear it before expensive fine-tuning.
 - If train loss improves but eval CE worsens, GLUE/SICK/PAWS become essential before calling
   a run useful.
@@ -319,6 +395,10 @@ run the preamble now and do not hand off without it; and any failed task with it
   treat the metrics as usable and continue under the failure-tolerant wrapper.
 - AR ablation / generation are wrapped in try/except inside the runner: if they error, the
   geometry report and JSON still complete — check the printed skip reason.
+- `run_generation_quality.py` loads with `local_files_only=True` first; if the tokenizer
+  fetch fails offline, retry after confirming the checkpoint directory is complete. For
+  `backbone_concept`, `--concept_modes` other than `real` are ignored on `concept_ar`.
+  Suffix-CE is `concept_ar`-only — other families print a skip and continue free-gen.
 - A `trust_remote_code` warning that then loads via parquet is usually harmless.
 - If a task fails, read the first traceback before rerunning; do not blindly relaunch.
 
