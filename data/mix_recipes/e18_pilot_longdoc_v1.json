@@ -1,0 +1,58 @@
+{
+  "mix_id": "e18_pilot_longdoc_v1",
+  "description": "E18 Perceiver AR v2 pilot mix (Polonez, 125M): PG-19 books for genuine >8k dependencies, FinePDFs for long coherent documents, FineWeb-Edu + stack-edu python for short-context fluency. Tokenized once at seq 32768 (SmolLM3 = Llama-3 vocabulary); training truncates to MAX_SEQ_LENGTH for the 8k stage. No cross-doc packing (per-document rows; right padding).",
+  "objective_compatibility": ["causal_lm"],
+  "seq_len_target": 32768,
+  "long_context_policy": {
+    "target_min_pct_docs_over_8k": 35.0,
+    "target_min_pct_docs_over_16k": 20.0,
+    "notes": "Long tier = PG-19 + FinePDFs. Eval rows >= 32k from PG-19 feed the position-bucket probe."
+  },
+  "sources": [
+    {
+      "name": "pg19",
+      "hf_id": "emozilla/pg19",
+      "subset": "default",
+      "split": "train",
+      "text_columns": ["text"],
+      "weight": 0.40,
+      "max_shards": 23,
+      "max_samples": 24000,
+      "file_glob": "data/train-*.parquet",
+      "notes": "Book-length narrative; ~28k books. Decontaminate the PG-19 test/validation books before any published number."
+    },
+    {
+      "name": "finepdfs_100BT",
+      "hf_id": "HuggingFaceFW/finepdfs_100BT",
+      "subset": "default",
+      "split": "train",
+      "text_columns": ["text"],
+      "weight": 0.20,
+      "max_shards": 12,
+      "max_samples": 600000,
+      "file_glob": "data/*.parquet",
+      "notes": "Long coherent PDFs (~20% > 4k tokens)."
+    },
+    {
+      "name": "fineweb_edu",
+      "hf_id": "HuggingFaceFW/fineweb-edu",
+      "subset": "sample-10BT",
+      "split": "train",
+      "text_columns": ["text"],
+      "weight": 0.30,
+      "max_shards": 8,
+      "max_samples": 1500000,
+      "file_glob": "sample/10BT/*.parquet"
+    },
+    {
+      "name": "stack_edu_py",
+      "hf_id": "meryyllebr543/stack-edu-huggingface",
+      "subset": "python",
+      "split": "train",
+      "text_columns": ["text"],
+      "weight": 0.10,
+      "max_samples": 400000,
+      "file_globs": ["python.parquet"]
+    }
+  ]
+}

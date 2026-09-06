@@ -137,6 +137,31 @@ LORA_DROPOUT="${LORA_DROPOUT:-0.05}"
 LORA_TARGETS="${LORA_TARGETS:-q_proj,k_proj,v_proj,o_proj}"
 # HF gradient checkpointing (needed by the 1B-backbone family at seq 2048 on 24 GB cards).
 GRADIENT_CHECKPOINTING="${GRADIENT_CHECKPOINTING:-False}"
+# E18 — Perceiver AR v2 family (nn/perceiver_ar_lm.py). MODEL_FAMILY=auto keeps every existing
+# family byte-identical; MODEL_FAMILY=perceiver_ar selects the from-scratch one-global-read LM and
+# passes the PAR_* knobs below (see docs/experiments_specs/ahead/E18_perceiver_ar_v2_baseline_plan.md).
+MODEL_FAMILY="${MODEL_FAMILY:-auto}"
+PAR_MODE="${PAR_MODE:-perceiver}"                   # | dense (matched control)
+PAR_PRE_LAYERS="${PAR_PRE_LAYERS:-2}"
+PAR_PRE_WINDOW="${PAR_PRE_WINDOW:-1024}"
+PAR_GLOBAL_LAYERS="${PAR_GLOBAL_LAYERS:-1}"
+PAR_BLOCK="${PAR_BLOCK:-4096}"
+NUM_ATTENTION_HEADS="${NUM_ATTENTION_HEADS:-}"      # empty = hidden_size / HEAD_DIM
+NUM_KV_HEADS="${NUM_KV_HEADS:-2}"
+HEAD_DIM="${HEAD_DIM:-128}"
+PAR_NGRAM_ORDERS="${PAR_NGRAM_ORDERS:-2,3}"
+PAR_NGRAM_BUCKETS="${PAR_NGRAM_BUCKETS:-131072}"
+PAR_VALUE_EMBED_LAYERS="${PAR_VALUE_EMBED_LAYERS:-0,7,14}"
+PAR_VALUE_EMBED_DIM="${PAR_VALUE_EMBED_DIM:-64}"
+PAR_NOPE_EVERY="${PAR_NOPE_EVERY:-4}"
+ROPE_THETA="${ROPE_THETA:-500000.0}"
+ATTN_BACKEND="${ATTN_BACKEND:-flex}"                # sdpa | flex | flash
+ATTN_PAD_MULTIPLE="${ATTN_PAD_MULTIPLE:-2048}"
+LOGIT_SOFTCAP="${LOGIT_SOFTCAP:-30.0}"
+Z_LOSS="${Z_LOSS:-1e-4}"
+USE_LIGER="${USE_LIGER:-True}"
+BLOCK_ATTENTION_MODE="${BLOCK_ATTENTION_MODE:-causal}"
+WRITE_BACK_HOOK="${WRITE_BACK_HOOK:-False}"
 # Decoupled weight decay (HF --weight_decay). For Muon it reaches nn.muon.Muon via
 # PerceiverDenoiseTrainer.create_optimizer. 2026-07-01: Muon diverged on E05 at wd=0.0 (the default) —
 # Moonlight (arXiv:2502.16982) shows wd is Muon's long-horizon stabilizer (their wd=0.1); set 0.1 for Muon.
@@ -320,6 +345,39 @@ if [ -n "$BACKBONE_MODEL" ]; then
     fi
 fi
 
+# E18: Perceiver AR v2 family args, only passed when MODEL_FAMILY=perceiver_ar so every existing
+# family's invocation stays byte-identical. Eval keeps loss only (no [B,S,V] logits gathering).
+PAR_ARGS=()
+if [ "$MODEL_FAMILY" = "perceiver_ar" ]; then
+    PAR_ARGS+=(
+        --model_family "$MODEL_FAMILY"
+        --par_mode "$PAR_MODE"
+        --par_pre_layers "$PAR_PRE_LAYERS"
+        --par_pre_window "$PAR_PRE_WINDOW"
+        --par_global_layers "$PAR_GLOBAL_LAYERS"
+        --par_block "$PAR_BLOCK"
+        --num_kv_heads "$NUM_KV_HEADS"
+        --head_dim "$HEAD_DIM"
+        --par_ngram_orders "$PAR_NGRAM_ORDERS"
+        --par_ngram_buckets "$PAR_NGRAM_BUCKETS"
+        --par_value_embed_layers "$PAR_VALUE_EMBED_LAYERS"
+        --par_value_embed_dim "$PAR_VALUE_EMBED_DIM"
+        --par_nope_every "$PAR_NOPE_EVERY"
+        --rope_theta "$ROPE_THETA"
+        --attn_backend "$ATTN_BACKEND"
+        --attn_pad_multiple "$ATTN_PAD_MULTIPLE"
+        --logit_softcap "$LOGIT_SOFTCAP"
+        --z_loss "$Z_LOSS"
+        --use_liger "$USE_LIGER"
+        --block_attention_mode "$BLOCK_ATTENTION_MODE"
+        --write_back_hook "$WRITE_BACK_HOOK"
+        --prediction_loss_only True
+    )
+    if [ -n "$NUM_ATTENTION_HEADS" ]; then
+        PAR_ARGS+=(--num_attention_heads "$NUM_ATTENTION_HEADS")
+    fi
+fi
+
 # Optimizer selection (--optimizer is our flag; HF --optim stays adamw_torch_fused for both arms).
 OPTIM_ARGS=(--optimizer "$OPTIMIZER")
 if [ "$OPTIMIZER" = "muon" ]; then
@@ -404,6 +462,7 @@ uv run accelerate launch \
     ${EVAL_DATA_ARGS[@]+"${EVAL_DATA_ARGS[@]}"} \
     ${ANCHOR_ARGS[@]+"${ANCHOR_ARGS[@]}"} \
     ${BACKBONE_ARGS[@]+"${BACKBONE_ARGS[@]}"} \
+    ${PAR_ARGS[@]+"${PAR_ARGS[@]}"} \
     ${OPTIM_ARGS[@]+"${OPTIM_ARGS[@]}"} \
     ${RESUME_ARGS[@]+"${RESUME_ARGS[@]}"} \
     2>&1 | uv run python scripts/clean_tee.py "$SHELL_LOG"

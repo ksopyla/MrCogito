@@ -133,6 +133,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 | E12 | Per-layer KV-prefix concepts (Design B) | design-only | [E12](../experiments_specs/ahead/E12_perlayer_kv_prefix_concepts.md) |
 | E13 | Layer-wise recurrent KV-memory | draft (gated on E12) | [E13](../experiments_specs/ahead/E13_layerwise_recurrent_kv_memory.md) |
 | E17a | Untied per-bank writers (4 writers) — counterfactual to E17 | draft (conditional on sticky open-gate per-layer) | [E17a](../experiments_specs/ahead/E17a_untied_per_bank_writers.md) |
+| E18 | Perceiver AR v2 — one global read, window-N stack, every token trained (VC-facing long-context platform; family root for E19–E21) | approved (pilot on Polonez pending; AWS main run needs go) | [E18](../experiments_specs/ahead/E18_perceiver_ar_v2_baseline.md) · [plan](../experiments_specs/ahead/E18_perceiver_ar_v2_baseline_plan.md) |
 
 ### Canceled (no run)
 

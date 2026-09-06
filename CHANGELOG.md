@@ -15,6 +15,37 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-06] - E18 Perceiver AR v2 family (`perceiver_ar`) on the shared training spine
+
+**Why:**
+- New VC-facing long-context platform: a from-scratch LM with tiny hashed n-gram input
+  embeddings, a sliding-window pre-encoder, ONE full-causal global read (the only unbounded
+  KV cache) and a deep window-N stack, trained on every token. Spec
+  `docs/experiments_specs/ahead/E18_perceiver_ar_v2_baseline.md`; feasibility note
+  `docs/4_Research_Notes/perceiver_ar_modern_reproduction_feasibility.md`.
+
+**Impact:**
+- `model_family=perceiver_ar` + `objective_variant=causal_lm` selects the family; every other
+  family's argument flow is byte-identical (`MODEL_FAMILY=auto` default; `PAR_*` knobs are passed
+  only for this family). Hooks for E19 (`write_back_hook`) and E20 (`block_attention_mode`) are
+  config-only.
+
+**What changed:**
+- [added] `nn/perceiver_ar_lm.py` — `PerceiverARConfig`, `PerceiverARLM`, per-layer attention
+  patterns (`swa`/`full`), sdpa/flex/flash backends with one mask predicate, hashed n-gram
+  embeddings, value embeddings, U-net skips, chunked soft-capped CE + z-loss (Liger fast path),
+  `prefix_kv()`, no-cache `generate()`, `analytic_param_count()`.
+- [changed] `training/concept_pretraining_args.py` (E18 fields + validation),
+  `training/concept_pretraining_factories.py` (factory, W&B identity, collator vocab lookup),
+  `training/train_concept_pretraining.py` (skip the concept-family flash probe),
+  `scripts/train_concept_pretraining_multigpu.sh` (`MODEL_FAMILY` / `PAR_*` env knobs,
+  `--prediction_loss_only` for this family).
+- [added] `scripts/launch_e18.sh`, `data/mix_recipes/e18_pilot_longdoc_v1.json`,
+  `evaluation/long_context_probes.py` (position buckets, passkey, copy),
+  `scripts/build_copy_task_dataset.py`, `verification/e18_cpu_smoke.py`.
+- [added] tests: `tests/test_perceiver_ar_lm.py`, `tests/test_launch_e18.py`,
+  `tests/test_long_context_probes.py`.
+
 ## [2026-08-22] - E17e starve local window (K=256)
 
 **Why:**

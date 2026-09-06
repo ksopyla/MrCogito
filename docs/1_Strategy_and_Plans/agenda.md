@@ -20,6 +20,18 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-09-06 — new family: Perceiver AR v2 (E18) as the VC-facing long-context platform.**
+  A from-scratch ≈600M-dense LM: tiny hashed n-gram input embeddings → 2 sliding-window
+  pre-encoder layers → **one** full-causal global read → 20 window-4096 layers; every token
+  trained; one-layer prefix KV cache (~1 GB at 1M tokens). Spec
+  [E18](../experiments_specs/ahead/E18_perceiver_ar_v2_baseline.md) · plan
+  [E18_plan](../experiments_specs/ahead/E18_perceiver_ar_v2_baseline_plan.md) · feasibility
+  [note](../4_Research_Notes/perceiver_ar_modern_reproduction_feasibility.md). Pilot (125M, 8k→32k)
+  on Polonez gates P1–P4 before any AWS spend; matched dense control inside the experiment.
+  Planned follow-ups on the same platform (separate specs, hooks landed in E18): **E19** latent
+  write-back reasoning steps, **E20** block-diffusion decoder adaptation, **E21** latent
+  agent-to-agent messages. Compute: AWS credits for E18 main; Jean Zay (verify normalized-hour
+  cap: 50k normalized ≈ 12.5k H100-h) for E19–E21.
 - **E17e 300M closed (train 2026-08-22, eval 2026-08-25).** Late-half Δperm
   **0.104** CI [0.095, 0.114] on best `checkpoint-2660` (last **0.097** miss);
   RankMe **31.5–57.4** and eval_loss **2.464** passed; gen `real`@256

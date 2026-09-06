@@ -224,6 +224,8 @@ def build_pretraining_model(
     is_backbone,
 ):
     """Construct the selected model family and preserve warm-start behavior."""
+    if getattr(model_args, "model_family", "auto") == "perceiver_ar":
+        return _build_perceiver_ar_model(tokenizer, model_args, data_args)
     if is_backbone:
         config = BackboneConceptConfig(
             backbone_model=model_args.backbone_model,
@@ -305,6 +307,64 @@ def build_pretraining_model(
     return model, config, model_type
 
 
+def _parse_int_tuple(spec: str) -> tuple[int, ...]:
+    spec = (spec or "").strip()
+    if not spec:
+        return ()
+    return tuple(int(x) for x in spec.split(",") if x.strip())
+
+
+def _build_perceiver_ar_model(tokenizer, model_args, data_args):
+    """E18 — from-scratch Perceiver AR v2 (nn/perceiver_ar_lm.py)."""
+    from nn.perceiver_ar_lm import PerceiverARConfig, PerceiverARLM, analytic_param_count
+
+    config = PerceiverARConfig(
+        vocab_size=len(tokenizer),
+        hidden_size=model_args.hidden_size,
+        intermediate_size=model_args.intermediate_size,
+        token_embedding_dim=model_args.token_embedding_dim,
+        par_mode=model_args.par_mode,
+        pre_layers=model_args.par_pre_layers,
+        pre_window=model_args.par_pre_window,
+        global_layers=model_args.par_global_layers,
+        stack_layers=model_args.num_hidden_layers,
+        block=model_args.par_block,
+        num_attention_heads=model_args.num_attention_heads,
+        num_kv_heads=model_args.num_kv_heads,
+        head_dim=model_args.head_dim,
+        rope_theta=model_args.rope_theta,
+        nope_every=model_args.par_nope_every,
+        ngram_orders=_parse_int_tuple(model_args.par_ngram_orders),
+        ngram_buckets=model_args.par_ngram_buckets,
+        value_embed_layers=_parse_int_tuple(model_args.par_value_embed_layers),
+        value_embed_dim=model_args.par_value_embed_dim,
+        logit_softcap=model_args.logit_softcap,
+        z_loss=model_args.z_loss,
+        chunked_ce_block_size=model_args.chunked_ce_block_size or 2048,
+        use_liger=model_args.use_liger,
+        attn_backend=model_args.attn_backend,
+        attn_pad_multiple=model_args.attn_pad_multiple,
+        block_attention_mode=model_args.block_attention_mode,
+        write_back_hook=model_args.write_back_hook,
+        pad_token_id=tokenizer.pad_token_id,
+        bos_token_id=tokenizer.bos_token_id if tokenizer.bos_token_id is not None else tokenizer.eos_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+        max_sequence_length=data_args.max_seq_length,
+        tokenizer_name=data_args.tokenizer_name,
+    )
+    model = PerceiverARLM(config)
+    pb = analytic_param_count(config)
+    logger.info(
+        f"Initializing PerceiverARLM ({config.par_mode}): patterns={config.layer_patterns()[:3]}…"
+        f"{config.layer_patterns()[-1]} layers={config.total_layers} d={config.hidden_size} "
+        f"heads={config.num_attention_heads}/{config.num_kv_heads} block={config.block} "
+        f"backend={config.attn_backend} | params dense={pb.dense/1e6:.1f}M "
+        f"sparse={pb.sparse_tables/1e6:.1f}M total={pb.total/1e6:.1f}M"
+    )
+    model_type = "perceiver_ar" + ("_dense" if config.par_mode == "dense" else "")
+    return model, config, model_type
+
+
 def build_training_wandb_identity(
     model_args,
     config,
@@ -313,6 +373,32 @@ def build_training_wandb_identity(
     experiment_id=None,
 ):
     """Build the existing W&B identity for backbone and concept-encoder families."""
+    if getattr(model_args, "model_family", "auto") == "perceiver_ar":
+        resolved_experiment = experiment_id or "E18"
+        arm = "dense-control" if model_args.par_mode == "dense" else "perceiver-arm"
+        architecture_id = (
+            f"perceiver_ar_{model_args.par_mode}_H{model_args.hidden_size}"
+            f"L{model_args.par_pre_layers}g{model_args.par_global_layers}s{model_args.num_hidden_layers}"
+            f"N{model_args.par_block}"
+        )
+        return WandbRunIdentity(
+            experiment_id=resolved_experiment,
+            model_family="perceiver_ar",
+            objective_family="causal_lm",
+            architecture_id=architecture_id,
+            group=f"{resolved_experiment}_{architecture_id}",
+            job_type="train_perceiver_ar_causal_lm",
+            tags=[
+                "train",
+                "perceiver_ar",
+                "decoder:autoregressive",
+                "task:generation",
+                "causal_lm",
+                arm,
+                f"backend-{model_args.attn_backend}",
+                resolved_experiment,
+            ],
+        )
     if is_backbone:
         backbone_short = model_args.backbone_model.split("/")[-1].replace("-", "_")
         architecture_id = (
@@ -382,9 +468,10 @@ def build_pretraining_collators(
 ):
     """Return stochastic train and deterministic evaluation collators."""
     if model_args.objective_variant == OBJECTIVE_CAUSAL_LM:
+        vocab_owner = model.backbone if hasattr(model, "backbone") else model
         causal_collator_kwargs = {
             "max_length": data_args.max_seq_length,
-            "model_vocab_size": model.backbone.config.vocab_size,
+            "model_vocab_size": vocab_owner.config.vocab_size,
             "preserve_precomputed_labels": data_args.preserve_precomputed_labels,
         }
         data_collator = DataCollatorForCausalLM(tokenizer, **causal_collator_kwargs)

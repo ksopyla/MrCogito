@@ -16,6 +16,8 @@ its protocol without copying the shared launcher.
 | `launch_e17c.sh` | Experiment protocol wrapper | E17c depth-private gated cell + carry pressure |
 | `launch_e17d.sh` | Experiment protocol wrapper | E17d attn-residual global concept layers, no token carry, 300M |
 | `launch_e17e.sh` | Experiment protocol wrapper | E17e starve: E17d cell + `CONCEPT_BLOCK=256`, 300M |
+| `launch_e18.sh` | Experiment protocol wrapper | E18 Perceiver AR v2 pilot: `perceiver_ar` family pins (125M, N=2048, SmolLM3 tokenizer, Muon triple), `E18_STAGE=8k\|32k`, `PAR_MODE=dense` control, `E18_TASK=copy` (P2) |
+| `build_copy_task_dataset.py` | Data utility | Mirrored-copy manifest for the E18 P2 gate (`labels` = -100 on the first half) |
 | `calibrate_e17d_batch.sh` | Throughput/VRAM sweep | E17d per-device batch on 4×3090; rank by real tok/s under `length_group`; VRAM is a constraint; restore eff. batch ~72 via accum |
 | `test_perceiver_denoise_local.ps1` | Local smoke | Small reconstruction smoke against the canonical Python entrypoint |
 

@@ -237,6 +237,47 @@ class ModelArguments:
         default="q_proj,k_proj,v_proj,o_proj",
         metadata={"help": "E10: comma-separated LoRA target module names."},
     )
+    # ---- E18 Perceiver AR v2 family (nn/perceiver_ar_lm.py). Defaults keep every other
+    # family byte-identical; only model_family='perceiver_ar' reads the par_* knobs.
+    model_family: str = field(
+        default="auto",
+        metadata={
+            "help": "auto (legacy selection via decoder_type/backbone_model) | perceiver_ar "
+            "(E18 from-scratch one-global-read LM; requires objective_variant='causal_lm')."
+        },
+    )
+    par_mode: str = field(
+        default="perceiver",
+        metadata={"help": "E18: 'perceiver' (swa pre → 1 global → swa(N) stack) or 'dense' control."},
+    )
+    par_pre_layers: int = field(default=2, metadata={"help": "E18: sliding-window pre-encoder layers."})
+    par_pre_window: int = field(default=1024, metadata={"help": "E18: pre-encoder window."})
+    par_global_layers: int = field(default=1, metadata={"help": "E18: full-causal global read layers."})
+    par_block: int = field(default=4096, metadata={"help": "E18: N — window of the stack layers."})
+    num_attention_heads: Optional[int] = field(
+        default=None, metadata={"help": "E18: query heads (default hidden_size // head_dim)."}
+    )
+    num_kv_heads: int = field(default=2, metadata={"help": "E18: GQA key/value heads."})
+    head_dim: int = field(default=128, metadata={"help": "E18: per-head dim."})
+    par_ngram_orders: str = field(default="2,3", metadata={"help": "E18: hashed n-gram orders."})
+    par_ngram_buckets: int = field(default=131072, metadata={"help": "E18: buckets per n-gram table."})
+    par_value_embed_layers: str = field(
+        default="0,7,14", metadata={"help": "E18: layer indices receiving value embeddings."}
+    )
+    par_value_embed_dim: int = field(default=64, metadata={"help": "E18: value-embedding table dim."})
+    par_nope_every: int = field(default=4, metadata={"help": "E18: every k-th stack layer has no RoPE (0=off)."})
+    rope_theta: float = field(default=500000.0, metadata={"help": "E18: RoPE base."})
+    attn_backend: str = field(default="flex", metadata={"help": "E18: sdpa | flex | flash."})
+    attn_pad_multiple: int = field(
+        default=2048, metadata={"help": "E18: pad S to a multiple (bounds flex recompiles)."}
+    )
+    logit_softcap: float = field(default=30.0, metadata={"help": "E18: tanh logit soft-cap (0=off)."})
+    z_loss: float = field(default=1e-4, metadata={"help": "E18: z-loss coefficient."})
+    use_liger: bool = field(default=True, metadata={"help": "E18: Liger fused linear CE when available."})
+    block_attention_mode: str = field(
+        default="causal", metadata={"help": "E18 hook: causal | bidirectional (E20)."}
+    )
+    write_back_hook: bool = field(default=False, metadata={"help": "E18 hook: add write_back_proj (E19)."})
 
 
 @dataclass
@@ -418,6 +459,20 @@ def validate_training_configuration(
 
     is_causal_ar = model_args.decoder_type == DECODER_CAUSAL_AR
     is_backbone = model_args.backbone_model is not None
+    model_family = getattr(model_args, "model_family", "auto")
+    if model_family not in {"auto", "perceiver_ar"}:
+        raise ValueError(f"Unknown model_family: {model_family!r} (expected 'auto' or 'perceiver_ar').")
+    if model_family == "perceiver_ar":
+        if model_args.objective_variant != OBJECTIVE_CAUSAL_LM:
+            raise ValueError("model_family='perceiver_ar' (E18) requires objective_variant='causal_lm'.")
+        if is_backbone:
+            raise ValueError("model_family='perceiver_ar' is a from-scratch family; do not set backbone_model.")
+        if model_args.anchor_loss:
+            raise ValueError("anchor_loss is not supported by the perceiver_ar family.")
+        if loss_args.concept_losses and loss_args.concept_losses.lower() != "none":
+            raise ValueError("concept_losses are not wired into the perceiver_ar family.")
+        # The E18 family is neither the concept-AR nor the backbone family.
+        return False, False
     if is_backbone and model_args.objective_variant != OBJECTIVE_CAUSAL_LM:
         raise ValueError(
             "backbone_model (E10) requires objective_variant='causal_lm'; "
