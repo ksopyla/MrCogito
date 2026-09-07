@@ -341,19 +341,22 @@ def tokenize_source(
         logger.info(f"[{name}] loading {len(paths)} parquet files")
         ds = load_dataset("parquet", data_files=[str(p) for p in paths], split="train")
     ds = _normalize_to_text_column(ds, spec.get("text_columns"))
-    # Invalid UTF-8 inside a parquet *string* column raises UnicodeDecodeError in pyarrow's
-    # to_pylist() during map() batch materialization — before tokenize_fn runs (hit on
-    # finepdfs 2026-08-01 and stack-edu 2026-09-07). Cast the column to binary (zero-copy) so
-    # rows arrive as bytes; tokenize_fn decodes with errors="replace".
-    from datasets import Value as _Value
-
-    ds = ds.cast_column("text", _Value("binary"))
-    logger.info(f"[{name}] text column cast to binary (utf-8 errors will be replaced)")
 
     max_samples = spec.get("max_samples")
     if max_samples and len(ds) > max_samples:
         ds = ds.select(range(max_samples))
         logger.info(f"[{name}] capped to max_samples={max_samples}")
+
+    # Invalid UTF-8 inside a parquet *string* column raises UnicodeDecodeError in pyarrow's
+    # to_pylist() during map() batch materialization — before tokenize_fn runs (hit on
+    # finepdfs 2026-08-01 and stack-edu 2026-09-07). Cast the column to binary so rows arrive
+    # as bytes; tokenize_fn decodes with errors="replace". Done AFTER the max_samples cap:
+    # cast_column materialises a new arrow table, and casting all 25M stack-edu rows cost
+    # ~60 GB of cache for 400k kept rows.
+    from datasets import Value as _Value
+
+    ds = ds.cast_column("text", _Value("binary"))
+    logger.info(f"[{name}] text column cast to binary (utf-8 errors will be replaced)")
 
     n = len(ds)
     eval_cap = int(spec.get("eval_sample_cap", 5000))
