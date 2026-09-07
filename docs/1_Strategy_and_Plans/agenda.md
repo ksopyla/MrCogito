@@ -32,6 +32,12 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   write-back reasoning steps, **E20** block-diffusion decoder adaptation, **E21** latent
   agent-to-agent messages. Compute: AWS credits for E18 main; Jean Zay (verify normalized-hour
   cap: 50k normalized ≈ 12.5k H100-h) for E19–E21.
+  **2026-09-07 status:** stage A (8k, 125M) stopped at 1.0B tokens (eval loss 3.79, `checkpoint-9030`);
+  dense control (1B) → stage B (32k warm start) chained on Polonez. Landed for the main run:
+  `BATCH_PACKING_MODE=pack` (doc-masked packing, tested), multi-node launcher knobs, Nemotron
+  recipe `e18_main_stage1_v1`, and the AWS one-pager
+  [E18_main_run_aws_plan](../experiments_specs/ahead/E18_main_run_aws_plan.md) (~$20K for
+  stage 1 + dense + long stages; needs pilot gates, Nemotron code-set access, p5 quota).
 - **E17e 300M closed (train 2026-08-22, eval 2026-08-25).** Late-half Δperm
   **0.104** CI [0.095, 0.114] on best `checkpoint-2660` (last **0.097** miss);
   RankMe **31.5–57.4** and eval_loss **2.464** passed; gen `real`@256
