@@ -82,16 +82,24 @@ def compute_stats(
         flush=True,
     )
     token_ds = train_ds.select_columns(["input_ids"])
-    partials = token_ds.map(
-        _count_token_batch,
+    map_kwargs = dict(
         batched=True,
         batch_size=8192,
-        num_proc=workers,
         remove_columns=token_ds.column_names,
         keep_in_memory=True,
         load_from_cache_file=False,
         desc="Exact token count",
     )
+    try:
+        partials = token_ds.map(_count_token_batch, num_proc=workers, **map_kwargs)
+    except RuntimeError as e:
+        # Polonez (2026-09-07): forked datasets.map workers die at random ("abruptly died").
+        # A single-process count is slower but always finishes; the result is cached.
+        if workers > 1 and "abruptly died" in str(e):
+            print("datasets.map workers died; retrying token count single-process", file=sys.stderr, flush=True)
+            partials = token_ds.map(_count_token_batch, **map_kwargs)
+        else:
+            raise
     train_tokens = sum(partials["token_count"])
     elapsed = time.monotonic() - started
     print(

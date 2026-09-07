@@ -186,7 +186,17 @@ def _compute_lengths(
     }
     if num_proc > 1:
         map_kwargs["num_proc"] = num_proc
-    length_ds = token_ds.map(**map_kwargs)
+    try:
+        length_ds = token_ds.map(**map_kwargs)
+    except RuntimeError as e:
+        # Forked map workers can die at random on some hosts ("abruptly died"); fall back to
+        # a single-process pass rather than failing the launch.
+        if num_proc > 1 and "abruptly died" in str(e):
+            logger.warning("datasets.map workers died computing lengths; retrying single-process")
+            map_kwargs.pop("num_proc", None)
+            length_ds = token_ds.map(**map_kwargs)
+        else:
+            raise
     elapsed = time.monotonic() - started
     logger.info(
         f"Computed sequence lengths in {elapsed:.1f}s "

@@ -57,6 +57,10 @@ export MAX_EVAL_SAMPLES="${MAX_EVAL_SAMPLES:-256}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 # Low-padding sortish batching (remote sampler, 2026-08): PG-19 8k rows next to short web rows.
 export BATCH_PACKING_MODE="${BATCH_PACKING_MODE:-length_group}"
+# Polonez 2026-09-07: forked worker processes (DataLoader workers, datasets.map pools) die at
+# random with SIGABRT on this host. Data is pretokenized, so main-process loading is cheap.
+export DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-0}"
+export LENGTH_CACHE_NUM_PROC="${LENGTH_CACHE_NUM_PROC:-1}"
 
 # --- data: one tokenized tree per (tokenizer, seq length) so TARGET_TOKENS counts real tokens ---
 PROJECT_ROOT_HINT="/home/ksopyla/dev/MrCogito"
