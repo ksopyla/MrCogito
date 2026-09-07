@@ -78,6 +78,29 @@ not only the absolute).
 | P3 long-context use | ⏳ | needs stage B vs these baselines |
 | P4 architecture tax | ✅ (interim) | 27.95k tok/s (perceiver) vs 27.0–27.4k tok/s (dense, first hour) at 8k → ≈ 1.02×, far above the 60% floor. At 8k with block 2048 the attention savings are small, so parity is the expected outcome; the real saving shows at 32k+ |
 
+## P2 copy task — what the tiny CPU study says (2026-09-07)
+
+`verification/e18_copy_tiny.py` (0.97M-param models, context 130, batch 32, AdamW 3e-3, CPU; the same task
+construction as the 32k dataset):
+
+| variant | task | result @600 steps |
+|---|---|---|
+| perceiver (pre 1@16, global 1, stack 2@32) | mirror | floor (5.47) — also at 2,000 steps |
+| dense (4 full layers) | mirror | floor — also at 1,500 steps |
+| dense | plain copy | learns (CE 2.6, still falling) |
+| perceiver pre@16 | plain copy | floor — also at 2,000 steps |
+| perceiver pre@64 or pre@128 (pre-layer sees the offset) | plain copy | learns fast (CE 0.75–2.2) |
+| perceiver pre@16, stack window 128 (stack full) | plain copy | floor |
+| perceiver pre@16 + value embeddings on the global layer | plain copy | learns, slowly (CE 3.0 @600, 2.2 @1,500) |
+| perceiver pre@16 + `swa_sink` | plain copy | floor |
+
+Reading: (1) mirrored copy is the wrong gate for RoPE-only models at this budget (the dense control fails
+too); (2) plain copy is solved instantly by whichever layer can *see* the offset **and has a value
+embedding** (token identity in V); the global layer without a value embedding never learned it, with one
+it learns but slowly. The pilot's `PAR_VALUE_EMBED_LAYERS=0,4,8` leaves the global layer (index 1) without
+one — fix for the P2 rerun and worth carrying into the main run. Spec P2 amended accordingly (plain copy
+at 32k, offset 16k). Builder: `scripts/build_copy_task_dataset.py --task copy`.
+
 ## Operational notes
 
 - The queued waiters for dense / stage B grepped the log for an exit marker that was only echoed to the

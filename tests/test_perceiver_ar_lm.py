@@ -334,3 +334,63 @@ def test_flex_matches_sdpa_cuda():
                      doc_ids=None, backend="sdpa")
         got = attend(q, k, v, pattern=pattern, window=window, key_valid=None, doc_ids=None, backend="flex")
         assert torch.allclose(ref, got.float(), atol=2e-2, rtol=2e-2)
+
+
+# ------------------------------------------------------------------ swa sink
+
+
+def naive_sink_mask(S, window, doc_ids=None, b=0):
+    m = torch.zeros(S, S, dtype=torch.bool)
+    for q in range(S):
+        anchor = 0
+        if doc_ids is not None:
+            anchor = q
+            while anchor > 0 and int(doc_ids[b, anchor - 1]) == int(doc_ids[b, q]):
+                anchor -= 1
+        for kv in range(S):
+            ok = kv <= q and (abs(q - kv) < window or kv == anchor)
+            if doc_ids is not None:
+                ok = ok and int(doc_ids[b, q]) == int(doc_ids[b, kv])
+            m[q, kv] = ok
+    return m
+
+
+def test_swa_sink_mask_matches_naive_unpacked_and_packed():
+    S, window = 14, 3
+    pred = make_mask_pred("swa", window, None, None, causal=True, sink=True)
+    q = torch.arange(S)[:, None].expand(S, S)
+    kv = torch.arange(S)[None, :].expand(S, S)
+    got = pred(torch.zeros_like(q), torch.zeros_like(q), q, kv)
+    assert torch.equal(got, naive_sink_mask(S, window))
+    dense = dense_bool_mask(S, "swa", window, None, None, "cpu", causal=True, batch=1, sink=True)[0, 0]
+    assert torch.equal(dense, naive_sink_mask(S, window))
+    # packed: anchor is the first token of the query's document
+    doc_ids = torch.tensor([[0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2]])
+    pos = torch.tensor([[0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 5, 0, 1, 2]])
+    sink_pos = torch.arange(S)[None] - pos
+    pred = make_mask_pred("swa", window, None, doc_ids, causal=True, sink=True, sink_pos=sink_pos)
+    got = pred(torch.zeros_like(q), torch.zeros_like(q), q, kv)
+    assert torch.equal(got, naive_sink_mask(S, window, doc_ids))
+    dense = dense_bool_mask(S, "swa", window, None, doc_ids, "cpu", causal=True, batch=1, sink=True, sink_pos=sink_pos)[0, 0]
+    assert torch.equal(dense, naive_sink_mask(S, window, doc_ids))
+
+
+@torch.no_grad()
+def test_swa_sink_packed_equals_unpacked_per_token_loss():
+    torch.manual_seed(1)
+    cfg = tiny_cfg(swa_sink=True)
+    model = PerceiverARLM(cfg).eval()
+    for p in model.parameters():
+        if p.ndim == 2:
+            p.normal_(0, 0.2)
+    docs = [torch.randint(3, V, (1, n)) for n in (7, 9, 5)]
+    ref = torch.cat([model(d, labels=d.clone(), return_per_token_loss=True)[1][0] for d in docs])
+    ids = torch.cat(docs, dim=1)
+    doc_ids = torch.cat([torch.full((1, d.shape[1]), i) for i, d in enumerate(docs)], dim=1)
+    labels = ids.clone()
+    starts = torch.zeros_like(ids, dtype=torch.bool)
+    starts[:, 1:] = doc_ids[:, 1:] != doc_ids[:, :-1]
+    labels[starts] = -100
+    _, per, valid = model(ids, labels=labels, doc_ids=doc_ids, return_per_token_loss=True)
+    ref_valid = torch.cat([model(d, labels=d.clone(), return_per_token_loss=True)[2][0] for d in docs])
+    torch.testing.assert_close(per[0][valid[0]], ref[ref_valid], rtol=1e-4, atol=1e-4)

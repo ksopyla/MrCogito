@@ -334,6 +334,7 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
         head_dim=model_args.head_dim,
         rope_theta=model_args.rope_theta,
         nope_every=model_args.par_nope_every,
+        swa_sink=bool(getattr(model_args, "par_swa_sink", False)),
         ngram_orders=_parse_int_tuple(model_args.par_ngram_orders),
         ngram_buckets=model_args.par_ngram_buckets,
         value_embed_layers=_parse_int_tuple(model_args.par_value_embed_layers),

@@ -266,6 +266,7 @@ class ModelArguments:
     )
     par_value_embed_dim: int = field(default=64, metadata={"help": "E18: value-embedding table dim."})
     par_nope_every: int = field(default=4, metadata={"help": "E18: every k-th stack layer has no RoPE (0=off)."})
+    par_swa_sink: bool = field(default=False, metadata={"help": "E18: windowed layers may also attend to the document's first token (absolute-position signal for position-based retrieval)."})
     rope_theta: float = field(default=500000.0, metadata={"help": "E18: RoPE base."})
     attn_backend: str = field(default="flex", metadata={"help": "E18: sdpa | flex | flash."})
     attn_pad_multiple: int = field(

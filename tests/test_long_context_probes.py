@@ -72,3 +72,15 @@ def test_argmax_tokens_matches_full_logits():
         full = model(input_ids=x).logits[0].argmax(-1)
     assert torch.equal(argmax_tokens(model, x, 0, 22, chunk=5), full[:22])
     assert torch.equal(argmax_tokens(model, x, 23 - 4, 23 - 1), full[-4:-1])
+
+
+def test_copy_rows_plain_copy_variant():
+    from scripts.build_copy_task_dataset import make_rows
+
+    rows = make_rows(2, 18, 10, 20, bos=1, eos=2, seed=0, task="copy")
+    for r in rows:
+        ids, labels = r["input_ids"], r["labels"]
+        half = (18 - 2) // 2
+        assert ids[1 + half : 1 + 2 * half] == ids[1 : 1 + half]
+        assert labels[: 1 + half] == [-100] * (1 + half)
+        assert labels[1 + half :] == ids[1 + half :]

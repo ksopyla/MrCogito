@@ -43,6 +43,17 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   contract, packed == unpacked per-token losses, flex memo == sdpa);
   `verification/e18_cpu_smoke.py` gains `SMOKE_PACKING=pack`.
 
+- `nn/perceiver_ar_lm.py`: `swa_sink` config knob (`--par_swa_sink` / `PAR_SWA_SINK`): windowed
+  layers may also attend to the document's first token (per-document anchor under packing);
+  flex/sdpa only; tests vs naive masks and packed == unpacked. Off by default.
+- `hidden_states()` on `PerceiverARLM`; `evaluation/long_context_probes.py` passkey/copy probes
+  project the head in chunks (full S×V logits OOM'd at 16k+); flex `create_block_mask` compiled
+  on CUDA for every mask (eager path materialised ~8 GB of index grids at 32k).
+- `verification/e18_copy_tiny.py` (new): CPU study of the P2 copy task; `scripts/build_copy_task_dataset.py
+  --task copy|mirror`. Finding: mirrored copy is not learned by this family *or* the dense control
+  at small budgets; plain copy is, provided the retrieving layer has a value embedding → P2 amended
+  to plain copy and `PAR_VALUE_EMBED_LAYERS` should include the global layer.
+
 **Ops (Polonez, E18 pilot):** stage A stopped at checkpoint-9030 (1.0B tokens, eval loss
 3.79); the log-grep waiters never fired (exit marker went to the terminal, not the log) and
 were replaced by one chained job `Cache/jobs/e18_dense_then_stageB.sh` (dense control 1B →

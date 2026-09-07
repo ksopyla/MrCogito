@@ -232,7 +232,7 @@ def test_block_mask_memo_is_shared_across_layers():
         pytest.skip(f"flex_attention unavailable on CPU here: {exc}")
     out2 = attend(q, k, v, pattern="swa", window=5, key_valid=None, doc_ids=doc_ids,
                   backend="flex", block_masks=memo)
-    assert list(memo.keys()) == [("swa", 5, True)]
+    assert list(memo.keys()) == [("swa", 5, True, False)]
     ref = attend(q, k, v, pattern="swa", window=5, key_valid=None, doc_ids=doc_ids, backend="sdpa")
     torch.testing.assert_close(out1, out2)
     torch.testing.assert_close(out1, ref, rtol=1e-4, atol=1e-4)

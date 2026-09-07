@@ -80,6 +80,7 @@ class PerceiverARConfig(PretrainedConfig):
         attn_backend: str = "flex",           # "sdpa" | "flex" | "flash"
         attn_pad_multiple: int = 2048,
         block_attention_mode: str = "causal", # "causal" | "bidirectional" (E20)
+        swa_sink: bool = False,               # windowed layers may also attend to the document's first token
         write_back_hook: bool = False,        # E19 — adds write_back_proj params when True
         init_std: float = 0.02,
         pad_token_id: int = 0,
@@ -121,6 +122,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.attn_backend = attn_backend
         self.attn_pad_multiple = attn_pad_multiple
         self.block_attention_mode = block_attention_mode
+        self.swa_sink = swa_sink
         self.write_back_hook = write_back_hook
         self.init_std = init_std
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -180,19 +182,30 @@ def make_mask_pred(
     key_valid: Optional[torch.Tensor],
     doc_ids: Optional[torch.Tensor],
     causal: bool = True,
+    sink: bool = False,
+    sink_pos: Optional[torch.Tensor] = None,
 ) -> Callable[[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]:
     """Return mask_mod(b, h, q, kv) -> bool with FlexAttention semantics.
 
     Rules: causal (kv <= q) unless bidirectional; sliding window (q - kv < window) for
     `swa`; padded keys masked except the diagonal (keeps every query row non-empty);
-    cross-document attention masked when `doc_ids` is given.
+    cross-document attention masked when `doc_ids` is given. With `sink=True` a `swa`
+    query may additionally attend to its document's first token (`sink_pos[b, q]`, or
+    position 0 when `sink_pos` is None): with RoPE that single extra key gives every
+    windowed layer an absolute-position signal (q·k_0 is a function of q's position) that a
+    purely relative, windowed stack otherwise never has — needed for position-based
+    retrieval such as copy at a fixed offset (E18 gate P2).
     """
 
     def pred(b, h, q, kv):
         ok = (kv <= q) if causal else (kv >= 0)
         if pattern == "swa":
             dist = q - kv
-            ok = ok & (dist < window) & (dist > -window)
+            in_win = (dist < window) & (dist > -window)
+            if sink:
+                anchor = sink_pos[b, q] if sink_pos is not None else torch.zeros_like(q)
+                in_win = in_win | (kv == anchor)
+            ok = ok & in_win
         if key_valid is not None:
             ok = ok & (key_valid[b, kv] | (kv == q))
         if doc_ids is not None:
@@ -211,6 +224,8 @@ def dense_bool_mask(
     device,
     causal: bool = True,
     batch: int = 1,
+    sink: bool = False,
+    sink_pos: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """[B,1,S,S] boolean mask (True = attend) — reference path used by `sdpa`."""
     q = torch.arange(S, device=device)[:, None]
@@ -218,8 +233,15 @@ def dense_bool_mask(
     ok = (kv <= q) if causal else torch.ones(S, S, dtype=torch.bool, device=device)
     if pattern == "swa":
         dist = q - kv
-        ok = ok & (dist < window) & (dist > -window)
-    ok = ok[None, None].expand(batch, 1, S, S)
+        in_win = (dist < window) & (dist > -window)
+        if sink:
+            if sink_pos is None:
+                in_win = in_win | (kv == 0)
+            else:
+                anchor = (kv[None, None] == sink_pos[:, None, :, None])  # [B,1,S,S]
+                in_win = in_win[None, None] | anchor
+        ok = ok & in_win
+    ok = ok[None, None].expand(batch, 1, S, S) if ok.dim() == 2 else ok.expand(batch, 1, S, S)
     if key_valid is not None:
         kv_ok = key_valid.bool()[:, None, None, :] | torch.eye(S, dtype=torch.bool, device=device)[None, None]
         ok = ok & kv_ok
@@ -255,16 +277,17 @@ def _get_flex():
     return _flex_attention_fn
 
 
-def _flex_block_mask(S, pattern, window, key_valid, doc_ids, device, causal, batch):
+def _flex_block_mask(S, pattern, window, key_valid, doc_ids, device, causal, batch,
+                     sink=False, sink_pos=None):
     from torch.nn.attention.flex_attention import create_block_mask
 
-    batch_dependent = key_valid is not None or doc_ids is not None
+    batch_dependent = key_valid is not None or doc_ids is not None or sink_pos is not None
     key = None
     if not batch_dependent:
-        key = (S, pattern, window, causal, str(device))
+        key = (S, pattern, window, causal, sink, str(device))
         if key in _FLEX_CACHE:
             return _FLEX_CACHE[key]
-    pred = make_mask_pred(pattern, window, key_valid, doc_ids, causal=causal)
+    pred = make_mask_pred(pattern, window, key_valid, doc_ids, causal=causal, sink=sink, sink_pos=sink_pos)
     # Always compile the mask build on CUDA: the eager path materialises int64 (Q_LEN, KV_LEN)
     # index grids (~8 GB transient at 32k, impossible at 256k); the compiled path works
     # block by block. CPU keeps the eager path (no inductor cost in unit tests).
@@ -290,6 +313,8 @@ def attend(
     causal: bool = True,
     cu_seqlens: Optional[torch.Tensor] = None,
     block_masks: Optional[dict] = None,
+    sink: bool = False,
+    sink_pos: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
     """Attention with the E18 pattern semantics. Returns [B,S,h,dh].
 
@@ -300,14 +325,17 @@ def attend(
     B, S, h, dh = q.shape
     g = k.shape[2]
     if backend == "flash":
+        if sink and pattern == "swa":
+            raise NotImplementedError("swa_sink is not expressible with flash-attn window_size; use flex")
         return _attend_flash(q, k, v, pattern, window, causal, cu_seqlens, key_valid)
     qt, kt, vt = (t.transpose(1, 2) for t in (q, k, v))  # [B,h/g,S,dh]
     if backend == "flex":
-        memo_key = (pattern, window, causal)
+        memo_key = (pattern, window, causal, sink)
         if block_masks is not None and memo_key in block_masks:
             bm = block_masks[memo_key]
         else:
-            bm = _flex_block_mask(S, pattern, window, key_valid, doc_ids, q.device, causal, B)
+            bm = _flex_block_mask(S, pattern, window, key_valid, doc_ids, q.device, causal, B,
+                                  sink=sink, sink_pos=sink_pos)
             if block_masks is not None:
                 block_masks[memo_key] = bm
         qt, kt, vt = qt.contiguous(), kt.contiguous(), vt.contiguous()
@@ -321,7 +349,8 @@ def attend(
     if pattern == "full" and key_valid is None and doc_ids is None and causal:
         out = F.scaled_dot_product_attention(qt, kt, vt, is_causal=True)
     else:
-        mask = dense_bool_mask(S, pattern, window, key_valid, doc_ids, q.device, causal, B)
+        mask = dense_bool_mask(S, pattern, window, key_valid, doc_ids, q.device, causal, B,
+                               sink=sink, sink_pos=sink_pos)
         out = F.scaled_dot_product_attention(qt, kt, vt, attn_mask=mask)
     return out.transpose(1, 2)
 
@@ -431,6 +460,7 @@ class Attention(nn.Module):
         self.layer_idx = layer_idx
         self.backend = cfg.attn_backend
         self.causal = True
+        self.sink = bool(getattr(cfg, "swa_sink", False)) and pattern == "swa"
         self.wq = nn.Linear(d, h * dh, bias=False)
         self.wk = nn.Linear(d, g * dh, bias=False)
         self.wv = nn.Linear(d, g * dh, bias=False)
@@ -450,7 +480,7 @@ class Attention(nn.Module):
         v = self.wv(x).view(B, S, self.g, self.dh)
         return k, v
 
-    def forward(self, x, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None):
+    def forward(self, x, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None, sink_pos=None):
         B, S, _ = x.shape
         q = self.q_norm(self.wq(x).view(B, S, self.h, self.dh))
         k, v = self.kv(x)
@@ -462,7 +492,7 @@ class Attention(nn.Module):
         o = attend(
             q, k, v, pattern=self.pattern, window=self.window, key_valid=key_valid,
             doc_ids=doc_ids, backend=self.backend, causal=self.causal, cu_seqlens=cu_seqlens,
-            block_masks=block_masks,
+            block_masks=block_masks, sink=self.sink, sink_pos=sink_pos,
         )
         return self.wo(o.reshape(B, S, self.h * self.dh))
 
@@ -492,14 +522,14 @@ class Block(nn.Module):
         self.beta = nn.Parameter(torch.tensor(0.0))
         self.sigma = nn.Parameter(torch.tensor(0.0)) if has_skip else None
 
-    def forward(self, x, x0, skip, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None):
+    def forward(self, x, x0, skip, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None, sink_pos=None):
         x = self.alpha * x + self.beta * x0
         if skip is not None:
             if self.sigma is None:
                 raise RuntimeError("skip passed to a layer built without a U-net skip weight")
             x = x + self.sigma * skip
         x = x + self.attn(self.attn_norm(x), ids=ids, cos=cos, sin=sin, key_valid=key_valid,
-                          doc_ids=doc_ids, cu_seqlens=cu_seqlens, block_masks=block_masks)
+                          doc_ids=doc_ids, cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos)
         x = x + self.mlp(self.mlp_norm(x))
         return x
 
@@ -710,10 +740,14 @@ class PerceiverARLM(PreTrainedModel):
         # batch-dependent, and without the memo every layer (and every checkpoint recompute)
         # would call create_block_mask again on the same (B, S) grid.
         block_masks: Optional[dict] = {} if cfg.attn_backend == "flex" else None
+        # sink anchor = first token of each document (position 0 when unpacked)
+        sink_pos = None
+        if cfg.swa_sink and doc_ids is not None:
+            sink_pos = (torch.arange(S, device=input_ids.device)[None].expand(B, S) - pos)
         for i, layer in enumerate(self.layers):
             skip = skips.pop() if (i >= n - n_skip and skips) else None
             kwargs = dict(ids=input_ids, cos=cos, sin=sin, key_valid=key_valid, doc_ids=doc_ids,
-                          cu_seqlens=cu_seqlens, block_masks=block_masks)
+                          cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos)
             if self.gradient_checkpointing and self.training:
                 # partial binds THIS layer/kwargs (a lambda would capture the loop variables
                 # by reference and re-run the last layer in backward).

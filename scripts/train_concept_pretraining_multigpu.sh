@@ -157,6 +157,7 @@ PAR_NGRAM_BUCKETS="${PAR_NGRAM_BUCKETS:-131072}"
 PAR_VALUE_EMBED_LAYERS="${PAR_VALUE_EMBED_LAYERS:-0,7,14}"
 PAR_VALUE_EMBED_DIM="${PAR_VALUE_EMBED_DIM:-64}"
 PAR_NOPE_EVERY="${PAR_NOPE_EVERY:-4}"
+PAR_SWA_SINK="${PAR_SWA_SINK:-False}"           # windowed layers also see the doc's first token
 ROPE_THETA="${ROPE_THETA:-500000.0}"
 ATTN_BACKEND="${ATTN_BACKEND:-flex}"                # sdpa | flex | flash
 ATTN_PAD_MULTIPLE="${ATTN_PAD_MULTIPLE:-2048}"
@@ -368,7 +369,8 @@ if [ "$MODEL_FAMILY" = "perceiver_ar" ]; then
         --par_ngram_buckets "$PAR_NGRAM_BUCKETS"
         --par_value_embed_layers "$PAR_VALUE_EMBED_LAYERS"
         --par_value_embed_dim "$PAR_VALUE_EMBED_DIM"
-        --par_nope_every "$PAR_NOPE_EVERY"
+        --par_nope_every "$PAR_NOPE_EVERY" \
+        --par_swa_sink "$PAR_SWA_SINK"
         --rope_theta "$ROPE_THETA"
         --attn_backend "$ATTN_BACKEND"
         --attn_pad_multiple "$ATTN_PAD_MULTIPLE"
