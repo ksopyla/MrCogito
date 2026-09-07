@@ -265,9 +265,12 @@ def _flex_block_mask(S, pattern, window, key_valid, doc_ids, device, causal, bat
         if key in _FLEX_CACHE:
             return _FLEX_CACHE[key]
     pred = make_mask_pred(pattern, window, key_valid, doc_ids, causal=causal)
+    # Always compile the mask build on CUDA: the eager path materialises int64 (Q_LEN, KV_LEN)
+    # index grids (~8 GB transient at 32k, impossible at 256k); the compiled path works
+    # block by block. CPU keeps the eager path (no inductor cost in unit tests).
     bm = create_block_mask(
         pred, B=batch if batch_dependent else None, H=None, Q_LEN=S, KV_LEN=S, device=device,
-        _compile=bool(batch_dependent and torch.cuda.is_available()),
+        _compile=torch.cuda.is_available(),
     )
     if key is not None:
         _FLEX_CACHE[key] = bm
