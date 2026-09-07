@@ -16,19 +16,36 @@ import random
 import shutil
 from pathlib import Path
 
-from datasets import Dataset
+import numpy as np
+from datasets import Dataset, Features, Sequence, Value
+
+FEATURES = Features({"input_ids": Sequence(Value("int32")), "labels": Sequence(Value("int32"))})
+
+
+def iter_rows(n_rows: int, context: int, vocab_lo: int, vocab_hi: int, bos: int, eos: int, seed: int):
+    """Yield rows one at a time (numpy RNG; int32 columns) so arrow never sees one giant list."""
+    rng = np.random.default_rng(seed)
+    half = (context - 2) // 2
+    for _ in range(n_rows):
+        a = rng.integers(vocab_lo, vocab_hi, size=half, dtype=np.int32)
+        mirrored = a[::-1]
+        ids = np.concatenate([[bos], a, mirrored, [eos]]).astype(np.int32)
+        labels = np.concatenate([np.full(1 + half, -100, dtype=np.int32), mirrored, [eos]]).astype(np.int32)
+        yield {"input_ids": ids.tolist(), "labels": labels.tolist()}
 
 
 def make_rows(n_rows: int, context: int, vocab_lo: int, vocab_hi: int, bos: int, eos: int, seed: int):
-    rng = random.Random(seed)
-    half = (context - 2) // 2
-    rows = []
-    for _ in range(n_rows):
-        a = [rng.randint(vocab_lo, vocab_hi - 1) for _ in range(half)]
-        ids = [bos] + a + a[::-1] + [eos]
-        labels = [-100] * (1 + half) + a[::-1] + [eos]
-        rows.append({"input_ids": ids, "labels": labels})
-    return rows
+    return list(iter_rows(n_rows, context, vocab_lo, vocab_hi, bos, eos, seed))
+
+
+def save_rows(path, n_rows, context, vocab_lo, vocab_hi, bos, eos, seed):
+    ds = Dataset.from_generator(
+        iter_rows,
+        features=FEATURES,
+        gen_kwargs=dict(n_rows=n_rows, context=context, vocab_lo=vocab_lo, vocab_hi=vocab_hi, bos=bos, eos=eos, seed=seed),
+        keep_in_memory=False,
+    )
+    ds.save_to_disk(str(path))
 
 
 def main():
@@ -52,8 +69,8 @@ def main():
             raise SystemExit(f"{out} exists (use --overwrite)")
         shutil.rmtree(out)
     train_path, eval_path = out / "train", out / "eval"
-    Dataset.from_list(make_rows(args.n_train, args.context, args.vocab_lo, args.vocab_hi, args.bos, args.eos, args.seed)).save_to_disk(str(train_path))
-    Dataset.from_list(make_rows(args.n_eval, args.context, args.vocab_lo, args.vocab_hi, args.bos, args.eos, args.seed + 1)).save_to_disk(str(eval_path))
+    save_rows(train_path, args.n_train, args.context, args.vocab_lo, args.vocab_hi, args.bos, args.eos, args.seed)
+    save_rows(eval_path, args.n_eval, args.context, args.vocab_lo, args.vocab_hi, args.bos, args.eos, args.seed + 1)
     manifest = {
         "mix_id": f"copy_{args.context}",
         "objective": "causal_lm",
