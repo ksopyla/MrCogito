@@ -1,7 +1,9 @@
 {
   "mix_id": "e18_pilot_longdoc_v1",
-  "description": "E18 Perceiver AR v2 pilot mix (Polonez, 125M): PG-19 books for genuine >8k dependencies, FinePDFs for long coherent documents, FineWeb-Edu + stack-edu python for short-context fluency. Tokenized once at seq 32768 (SmolLM3 = Llama-3 vocabulary); training truncates to MAX_SEQ_LENGTH for the 8k stage. No cross-doc packing (per-document rows; right padding).",
-  "objective_compatibility": ["causal_lm"],
+  "description": "E18 Perceiver AR v2 pilot mix (Polonez, 125M): PG-19 books for genuine >8k dependencies, FinePDFs for long coherent documents, FineWeb-Edu + stack-edu python for short-context fluency. Tokenized once at seq 32768 (SmolLM3 = Llama-3 vocabulary); training truncates to MAX_SEQ_LENGTH for the 8k stage. No cross-doc packing (per-document rows; right padding). Weights are per ROW; chosen for token share (pg19 rows ~8k tok, finepdfs ~3k, web ~1k): ~24% pg19 / 36% finepdfs / 28% fineweb / 11% code by tokens, so a 2B-token stage sees each PG-19 book ~3x rather than ~9x.",
+  "objective_compatibility": [
+    "causal_lm"
+  ],
   "seq_len_target": 32768,
   "long_context_policy": {
     "target_min_pct_docs_over_8k": 35.0,
@@ -14,8 +16,10 @@
       "hf_id": "emozilla/pg19",
       "subset": "default",
       "split": "train",
-      "text_columns": ["text"],
-      "weight": 0.40,
+      "text_columns": [
+        "text"
+      ],
+      "weight": 0.06,
       "max_shards": 23,
       "max_samples": 24000,
       "file_glob": "data/train-*.parquet",
@@ -26,8 +30,10 @@
       "hf_id": "HuggingFaceFW/finepdfs_100BT",
       "subset": "default",
       "split": "train",
-      "text_columns": ["text"],
-      "weight": 0.20,
+      "text_columns": [
+        "text"
+      ],
+      "weight": 0.24,
       "max_shards": 12,
       "max_samples": 600000,
       "file_glob": "data/*.parquet",
@@ -38,8 +44,10 @@
       "hf_id": "HuggingFaceFW/fineweb-edu",
       "subset": "sample-10BT",
       "split": "train",
-      "text_columns": ["text"],
-      "weight": 0.30,
+      "text_columns": [
+        "text"
+      ],
+      "weight": 0.55,
       "max_shards": 8,
       "max_samples": 1500000,
       "file_glob": "sample/10BT/*.parquet"
@@ -49,10 +57,14 @@
       "hf_id": "meryyllebr543/stack-edu-huggingface",
       "subset": "python",
       "split": "train",
-      "text_columns": ["text"],
-      "weight": 0.10,
+      "text_columns": [
+        "text"
+      ],
+      "weight": 0.15,
       "max_samples": 400000,
-      "file_globs": ["python.parquet"]
+      "file_globs": [
+        "python.parquet"
+      ]
     }
   ]
 }
