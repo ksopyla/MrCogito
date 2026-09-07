@@ -116,6 +116,12 @@ def _make_tokenize_fn(
 
     def tokenize_batch_function(examples):
         text_batch = examples["text"]
+        # Binary-cast text (pretokenize_mix) arrives as bytes: decode leniently. Plain str
+        # rows (legacy loaders / tests) pass through unchanged.
+        text_batch = [
+            t.decode("utf-8", errors="replace") if isinstance(t, (bytes, bytearray)) else t
+            for t in text_batch
+        ]
         if max_chars:
             text_batch = [t[:max_chars] if t and len(t) > max_chars else t for t in text_batch]
         tokenize_kwargs = {"return_special_tokens_mask": True}
