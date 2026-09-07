@@ -452,20 +452,24 @@ class SwiGLU(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, cfg: PerceiverARConfig, layer_idx: int, pattern: str, window: int):
+    def __init__(self, cfg: PerceiverARConfig, layer_idx: int, pattern: str, window: int, has_skip: bool = False):
         super().__init__()
         self.attn_norm = nn.RMSNorm(cfg.hidden_size)
         self.attn = Attention(cfg, layer_idx, pattern, window)
         self.mlp_norm = nn.RMSNorm(cfg.hidden_size)
         self.mlp = SwiGLU(cfg.hidden_size, cfg.intermediate_size)
-        # x0 re-injection (α=1, β=0 at init → identity) and U-net skip weight (σ=0 at init).
+        # x0 re-injection (α=1, β=0 at init → identity) and, only on layers that consume a
+        # U-net skip, its weight σ (0 at init). Layers without a skip get no σ so every
+        # parameter participates in every forward (DDP unused-parameter check).
         self.alpha = nn.Parameter(torch.tensor(1.0))
         self.beta = nn.Parameter(torch.tensor(0.0))
-        self.sigma = nn.Parameter(torch.tensor(0.0))
+        self.sigma = nn.Parameter(torch.tensor(0.0)) if has_skip else None
 
     def forward(self, x, x0, skip, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens):
         x = self.alpha * x + self.beta * x0
         if skip is not None:
+            if self.sigma is None:
+                raise RuntimeError("skip passed to a layer built without a U-net skip weight")
             x = x + self.sigma * skip
         x = x + self.attn(self.attn_norm(x), ids=ids, cos=cos, sin=sin, key_valid=key_valid,
                           doc_ids=doc_ids, cu_seqlens=cu_seqlens)
@@ -559,8 +563,11 @@ class PerceiverARLM(PreTrainedModel):
         cfg = config
         self.embed = TinyHashedEmbedding(cfg)
         patterns = cfg.layer_patterns()
+        n = len(patterns)
+        n_skip = n // 2
+        # U-net: layers [0, n_skip) push skips; layers [n - n_skip, n) pop them in reverse.
         self.layers = nn.ModuleList(
-            [Block(cfg, i, p, w) for i, (p, w) in enumerate(patterns)]
+            [Block(cfg, i, p, w, has_skip=(i >= n - n_skip)) for i, (p, w) in enumerate(patterns)]
         )
         stack_start = cfg.pre_layers + cfg.global_layers if cfg.par_mode == "perceiver" else 0
         for i, layer in enumerate(self.layers):
@@ -811,8 +818,8 @@ def analytic_param_count(cfg: PerceiverARConfig) -> ParamBreakdown:
     d, ff, e, V = cfg.hidden_size, cfg.intermediate_size, cfg.token_embedding_dim, cfg.vocab_size
     h, g, dh = cfg.num_attention_heads, cfg.num_kv_heads, cfg.head_dim
     L = cfg.total_layers
-    per_layer = (d * h * dh) + 2 * (d * g * dh) + (h * dh * d) + 3 * d * ff + 2 * d + 2 * dh + 3
-    dense = L * per_layer
+    per_layer = (d * h * dh) + 2 * (d * g * dh) + (h * dh * d) + 3 * d * ff + 2 * d + 2 * dh + 2
+    dense = L * per_layer + (L // 2)                # + one σ per skip-consuming layer
     dense += V * e + 2 * e * d + d * d + d          # tok table + up0/up1/up2 + norm
     dense += d + d * V                              # final norm + head
     if cfg.write_back_hook:

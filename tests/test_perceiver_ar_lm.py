@@ -237,7 +237,10 @@ def test_zero_init_invariants_and_hooks():
     for layer in model.layers:
         assert float(layer.attn.wo.weight.abs().sum()) == 0.0
         assert float(layer.mlp.down.weight.abs().sum()) == 0.0
-        assert float(layer.beta) == 0.0 and float(layer.sigma) == 0.0 and float(layer.alpha) == 1.0
+        assert float(layer.beta) == 0.0 and float(layer.alpha) == 1.0
+        assert layer.sigma is None or float(layer.sigma) == 0.0
+    n = len(model.layers)
+    assert [l.sigma is not None for l in model.layers] == [i >= n - n // 2 for i in range(n)]
     assert float(model.write_back_proj.weight.abs().sum()) == 0.0
     # at init every block is the identity -> hidden == x0 for all positions
     ids = torch.randint(3, V, (1, 7))
@@ -263,6 +266,18 @@ def test_doc_ids_block_cross_document_attention():
     lp = model(input_ids=packed, doc_ids=doc).logits[0, 5:]
     lb = model(input_ids=b).logits[0]
     assert torch.allclose(lp, lb, atol=1e-4)
+
+
+def test_every_parameter_receives_a_gradient():
+    """DDP with find_unused_parameters=False requires every parameter in every forward."""
+    torch.manual_seed(8)
+    for mode in ("perceiver", "dense"):
+        cfg = tiny_cfg(par_mode=mode)
+        model = PerceiverARLM(cfg).train()
+        ids = torch.randint(3, V, (2, 9))
+        model(input_ids=ids, labels=ids.clone()).loss.backward()
+        missing = [n for n, p in model.named_parameters() if p.requires_grad and p.grad is None]
+        assert not missing, missing
 
 
 def test_generate_runs():
