@@ -100,6 +100,7 @@ which spent depth on a compressed summary channel `a` and found it unused under 
 
 ## Result
 <Filled in AFTER, by experiment-track. Link out; do not paste full results here.>
+- **Interim 2026-09-07 (pilot in progress):** stage A `perceiver_ar_perceiver_H768L1g1s12N2048_20260907_080943` stopped at 1.0B tokens (eval 3.790); P1 ✅, P4 ✅ (throughput parity at 8k), P3 pending stage B, P2 deferred. Report: `docs/2_Experiments_Registry/run_reports/e18_pilot_stageA_20260907.md`.
 - Run id: `<run_id>`
 - WandB: <link>
 - Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
