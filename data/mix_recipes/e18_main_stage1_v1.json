@@ -1,0 +1,160 @@
+{
+  "mix_id": "e18_main_stage1_v1",
+  "description": "E18 Perceiver AR v2 MAIN run, stage 1 (AWS H100, <600M params, seq 32k->256k with batch_packing_mode=pack). Nemotron-CC-v2.1 organic web as the bulk (High-Quality + Medium-High-Quality), a capped slice of HQ-Synthetic, FinePDFs + PG-19 as the long-document tier, Nemotron-Pretraining-Specialized-v1 (CC-BY-4.0) for math/STEM, stack-edu python for code. Weights are per ROW (HF interleave); they were solved from token-share targets with the mean row lengths in `token_share_targets` and MUST be re-checked with scripts/manifest_token_stats.py after pretokenization (row lengths differ per subset). Shard caps size the pool to ~350B tokens; the AWS plan fixes TARGET_TOKENS. Licences: Nemotron-CC-v2.1 = NVIDIA Data Access Agreement (commercial OK; synthetic subsets carry Qwen/DeepSeek/Phi-4 pass-through terms); Specialized-v1 = CC-BY-4.0; ClimbMix/ClimbLab deliberately excluded (CC-BY-NC). Gated repos need HF_TOKEN with approved access (ksopyla has Nemotron-CC-v2.1 / v2; Nemotron-CC-Code-v1 and Nemotron-Pretraining-Code-v2 were NOT yet approved on 2026-09-07 — swap stack_edu_py for nemotron_cc_code_v1 once granted).",
+  "objective_compatibility": [
+    "causal_lm"
+  ],
+  "seq_len_target": 262144,
+  "long_context_policy": {
+    "target_min_pct_docs_over_8k": 12.0,
+    "target_min_pct_docs_over_16k": 6.0,
+    "notes": "Packing (batch_packing_mode=pack) makes every training sequence full-length; the long tier (FinePDFs, PG-19, math textbooks) supplies the genuine >8k dependencies. PG-19 test/validation books must be removed before any published PG-19 number (see evaluation/long_context_probes.py)."
+  },
+  "token_share_targets": {
+    "nemotron_cc_v21_hq": 0.27,
+    "nemotron_cc_v21_mhq": 0.13,
+    "nemotron_cc_v21_hq_synth": 0.15,
+    "nemotron_cc_v21_hq_translated": 0.03,
+    "nemotron_cc_v21_dqa": 0.02,
+    "finepdfs_100BT": 0.20,
+    "pg19": 0.05,
+    "stack_edu_py": 0.08,
+    "nemotron_math_textbooks": 0.04,
+    "nemotron_stem_sft": 0.03,
+    "assumed_mean_tokens_per_row": {
+      "nemotron_cc_*": 900,
+      "nemotron_cc_v21_hq_synth": 700,
+      "finepdfs_100BT": 3000,
+      "pg19": 60000,
+      "stack_edu_py": 1500,
+      "nemotron_math_textbooks": 2000,
+      "nemotron_stem_sft": 1500
+    }
+  },
+  "sources": [
+    {
+      "name": "nemotron_cc_v21_hq",
+      "hf_id": "nvidia/Nemotron-CC-v2.1",
+      "subset": "High-Quality",
+      "split": "train",
+      "text_columns": [
+        "text"
+      ],
+      "weight": 0.345,
+      "max_shards": 20,
+      "notes": "All 20 shards (~26B tokens, ~1.5M rows/shard). Organic Common Crawl, top quality bucket."
+    },
+    {
+      "name": "nemotron_cc_v21_mhq",
+      "hf_id": "nvidia/Nemotron-CC-v2.1",
+      "subset": "Medium-High-Quality",
+      "split": "train",
+      "text_columns": [
+        "text"
+      ],
+      "weight": 0.165,
+      "max_shards": 12,
+      "notes": "All 12 shards (~16.9B tokens)."
+    },
+    {
+      "name": "nemotron_cc_v21_hq_synth",
+      "hf_id": "nvidia/Nemotron-CC-v2.1",
+      "subset": "High-Quality-Synthetic",
+      "split": "train",
+      "text_columns": [
+        "text"
+      ],
+      "weight": 0.245,
+      "max_shards": 40,
+      "notes": "40 of 86 shards (~43B tokens). Rephrased / QA-style synthetic web; capped so organic text dominates."
+    },
+    {
+      "name": "nemotron_cc_v21_hq_translated",
+      "hf_id": "nvidia/Nemotron-CC-v2.1",
+      "subset": "High-Quality-Translated-To-English",
+      "split": "train",
+      "text_columns": [
+        "text"
+      ],
+      "weight": 0.038,
+      "max_shards": 10,
+      "notes": "10 of 42 shards (~9B tokens). Machine-translated non-English web; small share for topical breadth."
+    },
+    {
+      "name": "nemotron_cc_v21_dqa",
+      "hf_id": "nvidia/Nemotron-CC-v2.1",
+      "subset": "High-Quality-DQA",
+      "split": "train",
+      "text_columns": [
+        "text"
+      ],
+      "weight": 0.028,
+      "max_shards": 6,
+      "notes": "Diverse-QA rewrites (~6B tokens); short rows."
+    },
+    {
+      "name": "finepdfs_100BT",
+      "hf_id": "HuggingFaceFW/finepdfs_100BT",
+      "subset": "default",
+      "split": "train",
+      "text_columns": [
+        "text"
+      ],
+      "weight": 0.077,
+      "max_shards": 60,
+      "file_glob": "data/*.parquet",
+      "notes": "60 of 100 shards (~60B tokens). Long coherent PDFs; the main >4k tier. Shards are validated after download (scripts/pretokenize_mix.py)."
+    },
+    {
+      "name": "pg19",
+      "hf_id": "emozilla/pg19",
+      "subset": "default",
+      "split": "train",
+      "text_columns": [
+        "text"
+      ],
+      "weight": 0.001,
+      "max_shards": 23,
+      "file_glob": "data/train-*.parquet",
+      "notes": "All ~28k books (~3B tokens). Book-length rows; weight is per ROW so 0.001 already means ~5% of tokens. Decontaminate against the PG-19 test/validation split before reporting."
+    },
+    {
+      "name": "stack_edu_py",
+      "hf_id": "meryyllebr543/stack-edu-huggingface",
+      "subset": "python",
+      "split": "train",
+      "text_columns": [
+        "text"
+      ],
+      "weight": 0.061,
+      "file_globs": [
+        "python.parquet"
+      ],
+      "notes": "Code placeholder (open licence). Replace by nvidia/Nemotron-CC-Code-v1 (subset data, 167 shards, 427.9B tokens) once HF access is approved; keep the same weight."
+    },
+    {
+      "name": "nemotron_math_textbooks",
+      "hf_id": "nvidia/Nemotron-Pretraining-Specialized-v1",
+      "subset": "Nemotron-Pretraining-Math-Textbooks",
+      "split": "train",
+      "text_columns": [
+        "text"
+      ],
+      "weight": 0.023,
+      "max_shards": 13,
+      "notes": "All 13 shards (~25B tokens, CC-BY-4.0). Textbook-style math; long coherent rows."
+    },
+    {
+      "name": "nemotron_stem_sft",
+      "hf_id": "nvidia/Nemotron-Pretraining-Specialized-v1",
+      "subset": "Nemotron-Pretraining-STEM-SFT",
+      "split": "train",
+      "text_columns": [
+        "text"
+      ],
+      "weight": 0.017,
+      "max_shards": 30,
+      "notes": "30 of 104 shards (CC-BY-4.0). STEM Q/A in plain text; small share, no chat template."
+    }
+  ]
+}

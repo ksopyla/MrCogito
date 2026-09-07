@@ -28,7 +28,7 @@
 | `validate_training_configuration` | extend: `model_family` arg; `causal_lm` allowed when `model_family == "perceiver_ar"` | `training/concept_pretraining_args.py:298` |
 | `build_pretraining_model` / `build_training_wandb_identity` | extend: third branch → `PerceiverARLM`; identity `model_family="perceiver_ar"`, `objective_family="causal_lm"` | `training/concept_pretraining_factories.py:216,295` |
 | `DataCollatorForCausalLM` | reuse as-is for the pilot (per-document rows, right padding, labels = ids with −100 at pad) | `data/data_collators.py:163` |
-| `PackedCausalLMCollator` | **new** (before AWS): concatenates rows to `max_seq_length`, emits `doc_ids [B,S]`; used by the flash-varlen and flex doc masks | `data/data_collators.py` |
+| `PackedDataset` + `DataCollatorForCausalLM(doc_ids)` | **done 2026-09-07** (`batch_packing_mode=pack`): seeded best-fit bins of whole rows to `max_seq_length` (99.8% fill), cached beside the manifest; collator pads `doc_ids [B,S]` with −1 and sets −100 at doc starts; flex doc masks memoised per forward | `data/packed_dataset.py`, `data/data_collators.py` |
 | `Muon` | reuse; shape routing already sends embedding tables / lm_head / scalars to AdamW | `nn/muon.py:45` |
 | `ChunkedLMHeadCE` | replace for this family by `chunked_softcap_ce` (checkpointed chunks, supports logit soft-cap) + Liger fused-linear-CE fast path when importable | new in `nn/perceiver_ar_lm.py` |
 | `pretokenize_mix.py` + recipes | reuse; new recipe `e18_pilot_longdoc_v1.json` (SmolLM3 tokenizer, `--objective causal_lm`) | `scripts/pretokenize_mix.py`, `data/mix_recipes/` |
@@ -80,8 +80,9 @@ with E19/E21 (they need it) — tracked, not blocking P1–P4.
   stack-edu python 0.10; eval split deterministic (`test_size_percent` 0.5 → capped rows).
   Tokenizer `HuggingFaceTB/SmolLM3-3B` (verify `len(tok)==128256` and ids identical to
   `meta-llama/Llama-3.2-1B` on a 10k-sentence probe; recorded in the run report).
-- **Collator:** pilot = `DataCollatorForCausalLM(max_length=MAX_SEQ_LENGTH)`; main = `PackedCausalLMCollator`
-  (doc_ids → masks). Model reads `attention_mask` (key_valid) and optional `doc_ids`.
+- **Collator:** pilot = `DataCollatorForCausalLM(max_length=MAX_SEQ_LENGTH)` with `length_group`; main =
+  `BATCH_PACKING_MODE=pack` (`PackedDataset` → same collator emits `doc_ids` → masks). Model reads
+  `attention_mask` (key_valid) and optional `doc_ids`; packed per-token losses == per-document losses (tested).
 - **Probes** (`evaluation/long_context_probes.py`): (1) per-position CE on PG-19 eval rows ≥ 16k tokens,
   buckets `[0,8k)`, `[8k,32k)`; (2) passkey: filler from PG-19 eval, 5-digit key at depths
   {0.1…0.9}, question suffix, metric = argmax accuracy over the 5 answer tokens (teacher-forced);
@@ -126,8 +127,10 @@ with E19/E21 (they need it) — tracked, not blocking P1–P4.
   32k → `1 × 8` (0.25M tokens/step + doc-length loss weighting by count, HF default).
 - **Main run (AWS, H100, not launched by this plan):** `HIDDEN_SIZE=1280 NUM_LAYERS=20 INTERMEDIATE_SIZE=3456
   NUM_KV_HEADS=2 PAR_PRE_LAYERS=2 PAR_PRE_WINDOW=1024 PAR_BLOCK=4096 PAR_NGRAM_BUCKETS=131072 ATTN_BACKEND=flash`
-  + packed collator + Nemotron recipe (separate `e18_main_stage1_v1.json`); Slurm/EC2 launcher is a
-  follow-up engineering spec once P1–P4 pass.
+  `BATCH_PACKING_MODE=pack` + Nemotron recipe `data/mix_recipes/e18_main_stage1_v1.json` (written 2026-09-07;
+  Nemotron-CC-v2.1 accessible, Nemotron code sets still gated) + multi-node launch via `NUM_MACHINES /
+  MACHINE_RANK / MAIN_PROCESS_IP` in the generic launcher; EC2 orchestration (capacity block, S3 checkpoints)
+  is a follow-up engineering spec once P1–P4 pass.
 
 ## 7. Tests & smoke
 - `tests/test_perceiver_ar_lm.py` (CPU, tiny dims, `attn_backend=sdpa`):

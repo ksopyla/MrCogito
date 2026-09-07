@@ -55,7 +55,9 @@ export AUTO_INTERVALS="${AUTO_INTERVALS:-1}"
 export SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-6}"
 export MAX_EVAL_SAMPLES="${MAX_EVAL_SAMPLES:-256}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
-# Low-padding sortish batching (remote sampler, 2026-08): PG-19 8k rows next to short web rows.
+# Pilot: low-padding sortish batching (one document per row). The AWS main run uses
+# BATCH_PACKING_MODE=pack (documents concatenated to MAX_SEQ_LENGTH, doc_ids masks) so every
+# sequence is full-length; keep length_group here so stage A/B/dense stay comparable.
 export BATCH_PACKING_MODE="${BATCH_PACKING_MODE:-length_group}"
 # Polonez 2026-09-07: forked worker processes (DataLoader workers, datasets.map pools) die at
 # random with SIGABRT on this host. Data is pretokenized, so main-process loading is cheap.

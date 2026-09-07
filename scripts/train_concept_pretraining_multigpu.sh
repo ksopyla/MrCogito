@@ -15,6 +15,8 @@ if [ "$NUM_GPUS" -le 0 ]; then
 fi
 
 GPU_IDS=$(seq -s, 0 $((NUM_GPUS - 1)))
+# Nodes in a multi-node job (see the accelerate launch block); 1 = single node.
+NUM_MACHINES="${NUM_MACHINES:-1}"
 export CUDA_VISIBLE_DEVICES="$GPU_IDS"
 export NCCL_DEBUG=WARN
 # Allow callers to override the allocator config (e.g. expandable_segments:True to
@@ -71,8 +73,9 @@ DATASET_MIX_RECIPE="${DATASET_MIX_RECIPE:-}"
 # loads pre-tokenized sources via load_from_disk (instant) and ignores dataset_mix*.
 PRETOKENIZED_MANIFEST="${PRETOKENIZED_MANIFEST:-}"
 PRESERVE_PRECOMPUTED_LABELS="${PRESERVE_PRECOMPUTED_LABELS:-false}"
-# Low-padding sortish sampling. This changes only train-row order; it does not
-# concatenate documents or alter tokenization. "none" preserves historical runs.
+# Train batching: "none" (historical), "length_group" (sortish sampling; reorders rows only)
+# or "pack" (whole documents concatenated to MAX_SEQ_LENGTH with per-token doc_ids; the
+# model masks cross-document attention — perceiver_ar only; see data/packed_dataset.py).
 BATCH_PACKING_MODE="${BATCH_PACKING_MODE:-none}"
 LENGTH_GROUP_MEGA_BATCH_MULT="${LENGTH_GROUP_MEGA_BATCH_MULT:-20}"
 # Optional datasets.map workers for the length sidecar (default in Python: min(32, cpu-2)).
@@ -246,7 +249,7 @@ if [ -n "$TARGET_TOKENS" ]; then
         echo "ERROR: TARGET_TOKENS requires PRETOKENIZED_MANIFEST for exact counting."
         exit 1
     fi
-    EFFECTIVE_BATCH=$((PER_DEVICE_BATCH_SIZE * NUM_GPUS * GRADIENT_ACCUMULATION_STEPS))
+    EFFECTIVE_BATCH=$((PER_DEVICE_BATCH_SIZE * NUM_GPUS * NUM_MACHINES * GRADIENT_ACCUMULATION_STEPS))
     NUM_EPOCHS=$(uv run python scripts/manifest_token_stats.py \
         --manifest "$PRETOKENIZED_MANIFEST" \
         --target_tokens "$TARGET_TOKENS" \
@@ -392,9 +395,22 @@ if [ "$OPTIMIZER" = "muon" ]; then
 fi
 echo "Optimizer: $OPTIMIZER"
 
+# Multi-node (AWS p5 / Slurm): every node runs this script with NUM_MACHINES, MACHINE_RANK,
+# MAIN_PROCESS_IP, MAIN_PROCESS_PORT set (torchrun-style rendezvous). NUM_GPUS is the local
+# GPU count; total processes = NUM_GPUS × NUM_MACHINES. Single-node defaults are unchanged.
+MULTI_NODE_ARGS=()
+if [ "$NUM_MACHINES" -gt 1 ]; then
+    : "${MACHINE_RANK:?MACHINE_RANK required when NUM_MACHINES > 1}"
+    : "${MAIN_PROCESS_IP:?MAIN_PROCESS_IP required when NUM_MACHINES > 1}"
+    MULTI_NODE_ARGS+=(--machine_rank "$MACHINE_RANK" --main_process_ip "$MAIN_PROCESS_IP"
+                      --main_process_port "${MAIN_PROCESS_PORT:-29500}" --same_network)
+    echo "Multi-node: machines=$NUM_MACHINES rank=$MACHINE_RANK main=$MAIN_PROCESS_IP:${MAIN_PROCESS_PORT:-29500}"
+fi
+
 uv run accelerate launch \
-    --num_processes="$NUM_GPUS" \
-    --num_machines=1 \
+    --num_processes="$((NUM_GPUS * NUM_MACHINES))" \
+    --num_machines="$NUM_MACHINES" \
+    ${MULTI_NODE_ARGS[@]+"${MULTI_NODE_ARGS[@]}"} \
     --mixed_precision=bf16 \
     --multi_gpu \
     training/train_concept_pretraining.py \

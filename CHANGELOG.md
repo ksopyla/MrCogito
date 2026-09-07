@@ -15,6 +15,41 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-07] - Document packing (`batch_packing_mode=pack`), E18 main-run recipe, multi-node launch
+
+**Why:**
+- Long-context training beyond 32k cannot be fed one document per row: short web rows would
+  leave most of the window unused. Packing whole documents into full-length sequences with
+  per-token `doc_ids` keeps every sequence full while the model masks cross-document attention.
+
+**Changed:**
+- `data/packed_dataset.py` (new): seeded best-fit packing of rows into `max_seq_length` bins
+  (99.8% fill at 8k / 99.9% at 32k on a 2.7M-row distribution, ~5 s), cached next to the
+  manifest as `<manifest>.packed_c{S}_s{seed}.npz`; `PackedDataset` yields concatenated
+  `input_ids` + `doc_ids`.
+- `DataCollatorForCausalLM`: pads `doc_ids` with −1 and sets labels to −100 at document
+  starts; unchanged when features carry no `doc_ids`.
+- `nn/perceiver_ar_lm.py`: per-forward block-mask memo (`block_masks`) so batch-dependent
+  flex masks are built once per pattern instead of once per layer and checkpoint recompute.
+- `train_concept_pretraining.py` / args / trainer: `pack` mode reuses the length cache and
+  requires a forward that accepts `doc_ids` (perceiver_ar); padding metrics use float32 on MPS.
+- `scripts/train_concept_pretraining_multigpu.sh`: `NUM_MACHINES`, `MACHINE_RANK`,
+  `MAIN_PROCESS_IP`, `MAIN_PROCESS_PORT` pass through to `accelerate launch`; effective batch
+  and token budgeting include `NUM_MACHINES`. Single-node behaviour unchanged.
+- `data/mix_recipes/e18_main_stage1_v1.json` (new): Nemotron-CC-v2.1 (HQ, MHQ, capped
+  HQ-Synthetic, translated, DQA) + FinePDFs + PG-19 + Specialized-v1 math/STEM + stack-edu
+  python, row weights solved from token-share targets. Nemotron code sets still gated.
+- Tests: `tests/test_packed_dataset.py` (coverage, capacity, determinism, cache, collator
+  contract, packed == unpacked per-token losses, flex memo == sdpa);
+  `verification/e18_cpu_smoke.py` gains `SMOKE_PACKING=pack`.
+
+**Ops (Polonez, E18 pilot):** stage A stopped at checkpoint-9030 (1.0B tokens, eval loss
+3.79); the log-grep waiters never fired (exit marker went to the terminal, not the log) and
+were replaced by one chained job `Cache/jobs/e18_dense_then_stageB.sh` (dense control 1B →
+stage B 32k warm-started from checkpoint-9030) with `.exit` marker files.
+
+---
+
 ## [2026-09-06] - E18 Perceiver AR v2 family (`perceiver_ar`) on the shared training spine
 
 **Why:**
