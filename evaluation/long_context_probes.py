@@ -59,6 +59,26 @@ def load_eval_rows(manifest: str, min_len: int, max_rows: int) -> list[list[int]
 
 
 @torch.no_grad()
+def argmax_tokens(model, x: torch.Tensor, start: int, end: int, chunk: int = 2048) -> torch.Tensor:
+    """Greedy next-token predictions for hidden positions [start, end) of x [1, S].
+
+    Uses `model.hidden_states` + a chunked head projection so memory stays O(chunk × V)
+    instead of O(S × V): full logits at 32k are 16 GB, which is why the passkey / copy probes
+    OOM'd next to a training run. Argmax is invariant to the tanh soft-cap, so it is skipped.
+    """
+    h = model.hidden_states(x)[0]  # [S, d]
+    S = h.shape[0]
+    start = start % S if start < 0 else start
+    end = S if end is None else (end % S if end < 0 else end)
+    weight = model.lm_head.weight
+    preds = []
+    for lo in range(start, end, chunk):
+        hi = min(lo + chunk, end)
+        preds.append(torch.nn.functional.linear(h[lo:hi], weight).argmax(-1))
+    return torch.cat(preds) if preds else h.new_zeros(0, dtype=torch.long)
+
+
+@torch.no_grad()
 def per_token_ce(model, ids: list[int], device: str, max_len: int) -> torch.Tensor:
     x = torch.tensor(ids[:max_len], device=device)[None]
     _, per, valid = model(input_ids=x, labels=x.clone(), return_per_token_loss=True)
@@ -116,9 +136,8 @@ def probe_passkey(model, args, device) -> dict:
                 filler = rows[(trial * 7 + int(depth * 10)) % len(rows)]
                 ids, answer = build_passkey(tok, filler, L, depth, rng)
                 x = torch.tensor(ids, device=device)[None]
-                logits = model(input_ids=x).logits[0]
                 n = len(answer)
-                pred = logits[-n - 1 : -1].argmax(-1).tolist()
+                pred = argmax_tokens(model, x, x.shape[1] - n - 1, x.shape[1] - 1).tolist()
                 correct += int(pred == answer)
                 total += 1
         results[f"passkey@{L}"] = correct / total
@@ -133,9 +152,8 @@ def probe_copy(model, args, device) -> dict:
     for r in ds:
         x = torch.tensor(r["input_ids"], device=device)[None]
         labels = torch.tensor(r["labels"], device=device)[None]
-        logits = model(input_ids=x).logits[0]
         tgt = labels[0, 1:]
-        pred = logits[:-1].argmax(-1)
+        pred = argmax_tokens(model, x, 0, x.shape[1] - 1)
         m = tgt != -100
         correct += int((pred[m] == tgt[m]).sum())
         total += int(m.sum())

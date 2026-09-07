@@ -728,6 +728,24 @@ class PerceiverARLM(PreTrainedModel):
         return x
 
     # -- forward ----------------------------------------------------------------------
+    def hidden_states(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        doc_ids: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Final-norm hidden states [B, S, d] without materialising logits.
+
+        Probes that only need argmax at a few positions (passkey, copy) project
+        `hidden_states(...)[:, positions]` with `lm_head.weight` themselves: full logits at
+        S=32k are 16 GB in fp32 (S × V), the hidden states are 50 MB.
+        """
+        input_ids, attention_mask, _, doc_ids, S_orig = self._pad_inputs(
+            input_ids, attention_mask, None, doc_ids
+        )
+        x = self._run_layers(input_ids, attention_mask, doc_ids, None)
+        return self.final_norm(x)[:, :S_orig]
+
     def forward(
         self,
         input_ids: torch.Tensor,

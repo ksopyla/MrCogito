@@ -48,3 +48,27 @@ def test_per_token_ce_buckets_sum_to_total():
     assert per.shape == (19,)
     x = torch.tensor(ids)[None]
     assert torch.allclose(model(input_ids=x, labels=x.clone()).loss, per.mean(), atol=1e-5)
+
+
+def test_argmax_tokens_matches_full_logits():
+    import torch
+    from nn.perceiver_ar_lm import PerceiverARConfig, PerceiverARLM
+    from evaluation.long_context_probes import argmax_tokens
+
+    torch.manual_seed(0)
+    cfg = PerceiverARConfig(
+        vocab_size=97, hidden_size=32, intermediate_size=64, token_embedding_dim=8,
+        pre_layers=1, pre_window=4, global_layers=1, stack_layers=2, block=6,
+        num_attention_heads=4, num_kv_heads=2, head_dim=8, ngram_buckets=64,
+        value_embed_layers=(0,), value_embed_dim=4, use_liger=False, attn_backend="sdpa",
+        attn_pad_multiple=1, chunked_ce_block_size=5,
+    )
+    model = PerceiverARLM(cfg).eval()
+    for p in model.parameters():
+        if p.ndim == 2:
+            p.data.normal_(0, 0.2)
+    x = torch.randint(3, 97, (1, 23))
+    with torch.no_grad():
+        full = model(input_ids=x).logits[0].argmax(-1)
+    assert torch.equal(argmax_tokens(model, x, 0, 22, chunk=5), full[:22])
+    assert torch.equal(argmax_tokens(model, x, 23 - 4, 23 - 1), full[-4:-1])
