@@ -267,6 +267,15 @@ def _archive_source_raw(spec: dict, name: str, raw_archive_dir: Path, download_w
     logger.info(f"[{name}] raw archive complete ({len(paths)} files)")
 
 
+_SPEC_KEYS_IGNORED_BY_FINGERPRINT = ("weight", "notes")
+
+
+def _spec_fingerprint(spec: dict) -> str:
+    """sha256 of the source spec without mix-level knobs that do not change tokenization."""
+    core = {k: v for k, v in spec.items() if k not in _SPEC_KEYS_IGNORED_BY_FINGERPRINT}
+    return hashlib.sha256(json.dumps(core, sort_keys=True).encode()).hexdigest()
+
+
 def tokenize_source(
     spec: dict,
     tokenizer,
@@ -298,10 +307,12 @@ def tokenize_source(
         "test_size_percent": test_size_percent,
         "seed": seed,
         "eval_only": eval_only,
-        "source_spec_sha256": hashlib.sha256(
-            json.dumps(spec, sort_keys=True).encode()
-        ).hexdigest(),
+        # Fingerprint only the parts of the spec that change the tokenized rows. `weight`
+        # and `notes` are mix-level knobs (rebalanced without re-tokenizing, 2026-09-07).
+        "source_spec_sha256": _spec_fingerprint(spec),
     }
+    # Caches written before the fingerprint excluded weight/notes hashed the full spec.
+    legacy_fingerprint = hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()
     manifest_entry: dict[str, Any] = {"name": name, "weight": spec.get("weight", 1.0), "path": str(tok_dir)}
 
     train_ready = train_dir.exists() and (train_dir / "dataset_info.json").exists()
@@ -309,6 +320,8 @@ def tokenize_source(
     if eval_ready and (eval_only or train_ready):
         if metadata_path.exists():
             actual_metadata = json.loads(metadata_path.read_text())
+            if actual_metadata.get("source_spec_sha256") == legacy_fingerprint:
+                actual_metadata = {**actual_metadata, "source_spec_sha256": expected_metadata["source_spec_sha256"]}
             if actual_metadata != expected_metadata:
                 raise ValueError(
                     f"[{name}] tokenized cache fingerprint mismatch at {tok_dir}. "
