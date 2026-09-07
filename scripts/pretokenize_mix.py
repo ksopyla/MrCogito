@@ -159,6 +159,20 @@ def list_file_urls(spec: dict) -> list[tuple[str, int | None]]:
 list_parquet_urls = list_file_urls
 
 
+def _validate_parquet(path: Path) -> None:
+    """Read every row group of a freshly downloaded parquet shard so a corrupt body
+    (e.g. 'Corrupt snappy compressed data' from a bad CDN copy, finepdfs 2026-09-07) is
+    caught here and retried, instead of killing a multi-hour tokenize run later."""
+    if path.suffix != ".parquet" and not str(path).endswith(".parquet.part"):
+        return
+    import pyarrow.parquet as pq
+
+    pf = pq.ParquetFile(str(path))
+    first_col = [pf.schema_arrow.names[0]] if pf.schema_arrow.names else None
+    for i in range(pf.num_row_groups):
+        pf.read_row_group(i, columns=first_col)
+
+
 def _download_one(url: str, dest: Path, expected_size: int | None = None, retries: int = 5) -> Path:
     """Download `url` to `dest` with Content-Length validation and retry.
 
@@ -169,7 +183,12 @@ def _download_one(url: str, dest: Path, expected_size: int | None = None, retrie
     if dest.exists() and dest.stat().st_size > 0:
         size = dest.stat().st_size
         if expected_size is None or size == expected_size:
-            return dest
+            try:
+                _validate_parquet(dest)
+                return dest
+            except Exception as e:  # corrupt leftover from an earlier download
+                logger.warning(f"  existing {dest.name} failed validation ({e}) — re-downloading")
+                dest.unlink()
         logger.warning(f"  existing {dest.name} is short ({size} < {expected_size}) — re-downloading")
         dest.unlink()
 
@@ -195,6 +214,7 @@ def _download_one(url: str, dest: Path, expected_size: int | None = None, retrie
                     raise IOError(f"short read: got {got} of {target} bytes")
                 if target is None and got == 0:
                     raise IOError("empty response")
+            _validate_parquet(tmp)
             tmp.rename(dest)
             return dest
         except Exception as e:
