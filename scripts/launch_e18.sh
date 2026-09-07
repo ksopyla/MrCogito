@@ -6,6 +6,7 @@
 #   E18_STAGE=32k MODEL_NAME_OR_PATH=<stageA/final> bash scripts/launch_e18.sh  # stage B: seq 32k, 0.5B, warm start
 #   PAR_MODE=dense bash scripts/launch_e18.sh                     # matched dense control (stage A)
 #   E18_TASK=copy bash scripts/launch_e18.sh                      # P2 copy task (6 layers, seq 32k)
+#   E18_TASK=copy PRETOKENIZED_MANIFEST=.../copy_plain_32k_manifest.json ...  # plain-copy variant (spec P2 amendment)
 #
 # First run tokenizes the mix (SKIP_PRETOKENIZE=0); later runs reuse the manifest.
 set -euo pipefail
@@ -88,7 +89,9 @@ if [ "$E18_TASK" = "copy" ]; then
     export EVAL_STEPS="${EVAL_STEPS:-500}"
     export SAVE_STEPS="${SAVE_STEPS:-500}"
     export AUTO_INTERVALS=0
-    export PAR_VALUE_EMBED_LAYERS="0,3"
+    # Value embeddings on the pre-layer (0), the GLOBAL layer (1) and one stack layer: the CPU study
+    # (verification/e18_copy_tiny.py) showed the retrieving layer needs a value embedding to copy.
+    export PAR_VALUE_EMBED_LAYERS="${E18_COPY_VALUE_EMBED_LAYERS:-0,1,4}"
     export PRETOKENIZE_MIX=""
 else
     export PRETOKENIZE_MIX="${PRETOKENIZE_MIX:-e18_pilot_longdoc_v1}"
