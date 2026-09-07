@@ -362,9 +362,11 @@ class DataTrainingArguments:
     batch_packing_mode: str = field(
         default="none",
         metadata={
-            "help": "Training pad-reduction mode: 'none' or 'length_group'. "
+            "help": "Training pad-reduction mode: 'none', 'length_group' or 'pack'. "
             "Length grouping preserves rows and only reorders examples inside bounded "
-            "shuffled windows."
+            "shuffled windows. 'pack' concatenates whole documents into max_seq_length "
+            "sequences with per-token doc_ids (model masks cross-document attention); "
+            "requires a model family whose forward accepts doc_ids (perceiver_ar)."
         },
     )
     length_group_mega_batch_mult: int = field(
@@ -395,7 +397,7 @@ class DataTrainingArguments:
     split_strategy: str = field(default="sentence_boundary")
 
     def __post_init__(self) -> None:
-        valid_modes = {"none", "length_group"}
+        valid_modes = {"none", "length_group", "pack"}
         if self.batch_packing_mode not in valid_modes:
             raise ValueError(
                 f"batch_packing_mode must be one of {sorted(valid_modes)}, "
@@ -403,9 +405,9 @@ class DataTrainingArguments:
             )
         if self.length_group_mega_batch_mult < 1:
             raise ValueError("length_group_mega_batch_mult must be positive.")
-        if self.batch_packing_mode == "length_group" and not self.pretokenized_manifest:
+        if self.batch_packing_mode in ("length_group", "pack") and not self.pretokenized_manifest:
             raise ValueError(
-                "batch_packing_mode='length_group' requires --pretokenized_manifest "
+                f"batch_packing_mode={self.batch_packing_mode!r} requires --pretokenized_manifest "
                 "so cached lengths stay aligned with the interleaved dataset."
             )
 

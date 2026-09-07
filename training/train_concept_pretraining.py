@@ -19,6 +19,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from data.dataset_preprocess import configure_text_tokenizer_for_model_vocab
 from data.length_cache import compute_or_load_interleaved_lengths
+from data.packed_dataset import PackedDataset, build_or_load_packed_bins, packing_stats
 from nn.loss_manager import ConceptLossStepCallback
 from training.concept_pretraining_args import (
     DataTrainingArguments,
@@ -167,7 +168,7 @@ def main():
         append_eos_token_id,
     )
     train_lengths = None
-    if data_args.batch_packing_mode == "length_group":
+    if data_args.batch_packing_mode in ("length_group", "pack"):
         length_cache_num_proc = os.environ.get("LENGTH_CACHE_NUM_PROC")
         with training_args.main_process_first(desc="preparing sequence-length cache"):
             train_lengths = compute_or_load_interleaved_lengths(
@@ -197,6 +198,41 @@ def main():
         is_causal_ar=is_causal_ar,
         is_backbone=is_backbone,
     )
+
+    if data_args.batch_packing_mode == "pack":
+        import inspect
+
+        if "doc_ids" not in inspect.signature(model.forward).parameters:
+            raise ValueError(
+                "batch_packing_mode='pack' needs a model whose forward accepts doc_ids "
+                f"(cross-document masking); {type(model).__name__} does not."
+            )
+        with training_args.main_process_first(desc="building packed bins"):
+            bins = build_or_load_packed_bins(
+                data_args.pretokenized_manifest,
+                train_lengths,
+                capacity=data_args.max_seq_length,
+                seed=training_args.seed,
+            )
+        pack_stats = packing_stats(bins, train_lengths, data_args.max_seq_length)
+        train_ds = PackedDataset(
+            train_ds,
+            bins,
+            capacity=data_args.max_seq_length,
+            preserve_labels=data_args.preserve_precomputed_labels,
+        )
+        if is_main_process():
+            logger.info(
+                "Packed training: rows=%s bins=%s fill=%.3f rows/bin mean=%.1f max=%d "
+                "truncated_rows=%d capacity=%d",
+                f"{int(pack_stats['num_rows']):,}",
+                f"{int(pack_stats['num_bins']):,}",
+                pack_stats["fill_ratio"],
+                pack_stats["mean_rows_per_bin"],
+                int(pack_stats["max_rows_per_bin"]),
+                int(pack_stats["truncated_rows"]),
+                data_args.max_seq_length,
+            )
 
     log_model_info(
         model,

@@ -82,6 +82,8 @@ def main() -> int:
             "--prediction_loss_only", "True", "--remove_unused_columns", "True",
             "--disable_tqdm", "True", "--dataloader_num_workers", "0", "--seed", "1",
             "--max_eval_samples", "4",
+            # SMOKE_PACKING=pack exercises the packed-document path (doc_ids masks).
+            "--batch_packing_mode", os.environ.get("SMOKE_PACKING", "none"),
         ]
         # Public tokenizer only: drop any (possibly expired) local HF token so the smoke never
         # fails on credentials. Set SMOKE_KEEP_TOKEN=1 to keep the ambient token.

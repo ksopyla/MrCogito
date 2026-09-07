@@ -81,7 +81,9 @@ class PerceiverDenoiseTrainer(Trainer):
 
     def _get_train_sampler(self, train_dataset=None):
         dataset = train_dataset if train_dataset is not None else self.train_dataset
-        if self.batch_packing_mode == "none":
+        if self.batch_packing_mode in ("none", "pack"):
+            # 'pack' already materialised fixed-size bins (data.packed_dataset.PackedDataset);
+            # HF's random sampler shuffles bins and Accelerate shards them across ranks.
             return super()._get_train_sampler(train_dataset)
         if self.batch_packing_mode != "length_group":
             raise ValueError(f"Unknown batch_packing_mode={self.batch_packing_mode!r}.")
@@ -132,9 +134,11 @@ class PerceiverDenoiseTrainer(Trainer):
             "batch_max_length",
             "batches",
         )
+        # MPS (local smoke on Apple silicon) has no float64; counts fit float32 there.
+        acc_dtype = torch.float32 if self.args.device.type == "mps" else torch.float64
         values = torch.tensor(
             [self._padding_totals[key] for key in keys],
-            dtype=torch.float64,
+            dtype=acc_dtype,
             device=self.args.device,
         )
         elapsed = torch.tensor(
@@ -142,7 +146,7 @@ class PerceiverDenoiseTrainer(Trainer):
                 time.perf_counter() - (self._padding_window_started or time.perf_counter()),
                 1e-9,
             ),
-            dtype=torch.float64,
+            dtype=acc_dtype,
             device=self.args.device,
         )
         # Always reduce when DDP is up, even if this rank saw zero batches.

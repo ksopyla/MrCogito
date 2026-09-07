@@ -286,15 +286,27 @@ def attend(
     backend: str,
     causal: bool = True,
     cu_seqlens: Optional[torch.Tensor] = None,
+    block_masks: Optional[dict] = None,
 ) -> torch.Tensor:
-    """Attention with the E18 pattern semantics. Returns [B,S,h,dh]."""
+    """Attention with the E18 pattern semantics. Returns [B,S,h,dh].
+
+    `block_masks` is an optional per-forward memo for batch-dependent flex masks (padding or
+    packed doc_ids): the same (pattern, window, causal) mask is shared by every layer of one
+    forward (and its checkpoint recompute) instead of being rebuilt per layer.
+    """
     B, S, h, dh = q.shape
     g = k.shape[2]
     if backend == "flash":
         return _attend_flash(q, k, v, pattern, window, causal, cu_seqlens, key_valid)
     qt, kt, vt = (t.transpose(1, 2) for t in (q, k, v))  # [B,h/g,S,dh]
     if backend == "flex":
-        bm = _flex_block_mask(S, pattern, window, key_valid, doc_ids, q.device, causal, B)
+        memo_key = (pattern, window, causal)
+        if block_masks is not None and memo_key in block_masks:
+            bm = block_masks[memo_key]
+        else:
+            bm = _flex_block_mask(S, pattern, window, key_valid, doc_ids, q.device, causal, B)
+            if block_masks is not None:
+                block_masks[memo_key] = bm
         qt, kt, vt = qt.contiguous(), kt.contiguous(), vt.contiguous()
         out = _get_flex()(qt, kt, vt, block_mask=bm, enable_gqa=(g != h))
         return out.transpose(1, 2)
@@ -435,7 +447,7 @@ class Attention(nn.Module):
         v = self.wv(x).view(B, S, self.g, self.dh)
         return k, v
 
-    def forward(self, x, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens):
+    def forward(self, x, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None):
         B, S, _ = x.shape
         q = self.q_norm(self.wq(x).view(B, S, self.h, self.dh))
         k, v = self.kv(x)
@@ -447,6 +459,7 @@ class Attention(nn.Module):
         o = attend(
             q, k, v, pattern=self.pattern, window=self.window, key_valid=key_valid,
             doc_ids=doc_ids, backend=self.backend, causal=self.causal, cu_seqlens=cu_seqlens,
+            block_masks=block_masks,
         )
         return self.wo(o.reshape(B, S, self.h * self.dh))
 
@@ -476,14 +489,14 @@ class Block(nn.Module):
         self.beta = nn.Parameter(torch.tensor(0.0))
         self.sigma = nn.Parameter(torch.tensor(0.0)) if has_skip else None
 
-    def forward(self, x, x0, skip, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens):
+    def forward(self, x, x0, skip, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None):
         x = self.alpha * x + self.beta * x0
         if skip is not None:
             if self.sigma is None:
                 raise RuntimeError("skip passed to a layer built without a U-net skip weight")
             x = x + self.sigma * skip
         x = x + self.attn(self.attn_norm(x), ids=ids, cos=cos, sin=sin, key_valid=key_valid,
-                          doc_ids=doc_ids, cu_seqlens=cu_seqlens)
+                          doc_ids=doc_ids, cu_seqlens=cu_seqlens, block_masks=block_masks)
         x = x + self.mlp(self.mlp_norm(x))
         return x
 
@@ -690,10 +703,14 @@ class PerceiverARLM(PreTrainedModel):
         n = len(self.layers)
         n_skip = n // 2
         skips: list[torch.Tensor] = []
+        # One block-mask memo per forward: padding / packed doc_ids make the flex mask
+        # batch-dependent, and without the memo every layer (and every checkpoint recompute)
+        # would call create_block_mask again on the same (B, S) grid.
+        block_masks: Optional[dict] = {} if cfg.attn_backend == "flex" else None
         for i, layer in enumerate(self.layers):
             skip = skips.pop() if (i >= n - n_skip and skips) else None
             kwargs = dict(ids=input_ids, cos=cos, sin=sin, key_valid=key_valid, doc_ids=doc_ids,
-                          cu_seqlens=cu_seqlens)
+                          cu_seqlens=cu_seqlens, block_masks=block_masks)
             if self.gradient_checkpointing and self.training:
                 # partial binds THIS layer/kwargs (a lambda would capture the loop variables
                 # by reference and re-run the last layer in backward).
