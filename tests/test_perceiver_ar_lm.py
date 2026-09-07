@@ -280,6 +280,12 @@ def test_every_parameter_receives_a_gradient():
         assert not missing, missing
 
 
+def test_forward_has_no_var_kwargs_so_trainer_scales_accumulation():
+    import inspect
+    params = inspect.signature(PerceiverARLM.forward).parameters.values()
+    assert not any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params)
+
+
 def test_generate_runs():
     cfg = tiny_cfg()
     model = PerceiverARLM(cfg)

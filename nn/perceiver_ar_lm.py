@@ -706,8 +706,11 @@ class PerceiverARLM(PreTrainedModel):
         cu_seqlens: Optional[torch.Tensor] = None,
         return_per_token_loss: bool = False,
         return_logits: bool = False,
-        **unused,
     ):
+        # NOTE: no **kwargs here on purpose. HF Trainer treats any VAR_KEYWORD forward as a
+        # model that normalizes its own loss by num_items_in_batch and then skips the division
+        # by gradient_accumulation_steps (loss and grad-clip off by accum×). This forward
+        # returns a per-microbatch mean; the Trainer must do the accumulation scaling.
         cfg = self.config
         input_ids, attention_mask, labels, doc_ids, S_orig = self._pad_inputs(
             input_ids, attention_mask, labels, doc_ids
