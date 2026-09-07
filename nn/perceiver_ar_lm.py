@@ -238,6 +238,17 @@ def _get_flex():
         from torch.nn.attention.flex_attention import flex_attention
 
         if torch.cuda.is_available():
+            # Every (pattern, window) closure × grad-mode × batch/sequence shape is a separate
+            # dynamo graph. The default cache_size_limit (8) is exceeded as soon as eval runs
+            # next to training, and dynamo then silently falls back to EAGER flex_attention,
+            # whose dense-math kernel materialises the S×S scores (48 GB at 32k) → OOM.
+            import torch._dynamo.config as dyn_cfg
+
+            dyn_cfg.cache_size_limit = max(int(getattr(dyn_cfg, "cache_size_limit", 8)), 128)
+            if hasattr(dyn_cfg, "accumulated_cache_size_limit"):
+                dyn_cfg.accumulated_cache_size_limit = max(
+                    int(dyn_cfg.accumulated_cache_size_limit), 1024
+                )
             _flex_attention_fn = torch.compile(flex_attention, dynamic=False)
         else:
             _flex_attention_fn = flex_attention
