@@ -286,6 +286,28 @@ def test_forward_has_no_var_kwargs_so_trainer_scales_accumulation():
     assert not any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params)
 
 
+def test_factory_warm_start_round_trip(tmp_path):
+    from types import SimpleNamespace
+    from training.concept_pretraining_factories import _build_perceiver_ar_model
+
+    class Tok:
+        pad_token_id, bos_token_id, eos_token_id = 0, 1, 2
+        def __len__(self):
+            return V
+    args = dict(hidden_size=32, intermediate_size=64, token_embedding_dim=8, par_mode="perceiver",
+                par_pre_layers=1, par_pre_window=4, par_global_layers=1, num_hidden_layers=2, par_block=6,
+                num_attention_heads=4, num_kv_heads=2, head_dim=8, rope_theta=1e4, par_nope_every=0,
+                par_ngram_orders="2", par_ngram_buckets=16, par_value_embed_layers="0", par_value_embed_dim=4,
+                logit_softcap=30.0, z_loss=0.0, chunked_ce_block_size=4, use_liger=False, attn_backend="sdpa",
+                attn_pad_multiple=1, block_attention_mode="causal", write_back_hook=False, model_name_or_path=None)
+    data = SimpleNamespace(max_seq_length=16, tokenizer_name="x")
+    m1, _, _ = _build_perceiver_ar_model(Tok(), SimpleNamespace(**args), data)
+    m1.save_pretrained(tmp_path / "final")
+    m2, _, _ = _build_perceiver_ar_model(Tok(), SimpleNamespace(**{**args, "model_name_or_path": str(tmp_path / "final")}), data)
+    ids = torch.randint(3, V, (1, 7))
+    assert torch.allclose(m1(input_ids=ids).logits, m2(input_ids=ids).logits, atol=1e-6)
+
+
 def test_generate_runs():
     cfg = tiny_cfg()
     model = PerceiverARLM(cfg)

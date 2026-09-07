@@ -162,6 +162,9 @@ Z_LOSS="${Z_LOSS:-1e-4}"
 USE_LIGER="${USE_LIGER:-True}"
 BLOCK_ATTENTION_MODE="${BLOCK_ATTENTION_MODE:-causal}"
 WRITE_BACK_HOOK="${WRITE_BACK_HOOK:-False}"
+# Optional weight-only warm start (concept-encoder families: encoder weights; perceiver_ar: full
+# state dict from a saved `final/` dir). Empty = random init.
+MODEL_NAME_OR_PATH="${MODEL_NAME_OR_PATH:-}"
 # Decoupled weight decay (HF --weight_decay). For Muon it reaches nn.muon.Muon via
 # PerceiverDenoiseTrainer.create_optimizer. 2026-07-01: Muon diverged on E05 at wd=0.0 (the default) —
 # Moonlight (arXiv:2502.16982) shows wd is Muon's long-horizon stabilizer (their wd=0.1); set 0.1 for Muon.
@@ -377,6 +380,10 @@ if [ "$MODEL_FAMILY" = "perceiver_ar" ]; then
         PAR_ARGS+=(--num_attention_heads "$NUM_ATTENTION_HEADS")
     fi
 fi
+WARM_ARGS=()
+if [ -n "$MODEL_NAME_OR_PATH" ]; then
+    WARM_ARGS+=(--model_name_or_path "$MODEL_NAME_OR_PATH")
+fi
 
 # Optimizer selection (--optimizer is our flag; HF --optim stays adamw_torch_fused for both arms).
 OPTIM_ARGS=(--optimizer "$OPTIMIZER")
@@ -463,6 +470,7 @@ uv run accelerate launch \
     ${ANCHOR_ARGS[@]+"${ANCHOR_ARGS[@]}"} \
     ${BACKBONE_ARGS[@]+"${BACKBONE_ARGS[@]}"} \
     ${PAR_ARGS[@]+"${PAR_ARGS[@]}"} \
+    ${WARM_ARGS[@]+"${WARM_ARGS[@]}"} \
     ${OPTIM_ARGS[@]+"${OPTIM_ARGS[@]}"} \
     ${RESUME_ARGS[@]+"${RESUME_ARGS[@]}"} \
     2>&1 | uv run python scripts/clean_tee.py "$SHELL_LOG"

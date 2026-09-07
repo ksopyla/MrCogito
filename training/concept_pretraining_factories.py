@@ -353,6 +353,22 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
         tokenizer_name=data_args.tokenizer_name,
     )
     model = PerceiverARLM(config)
+    if model_args.model_name_or_path:
+        # Weight-only warm start (E18 stage B from stage A's `final/`): fresh optimizer and
+        # schedule, same architecture. HF --resume_from_checkpoint would instead carry the
+        # previous run's global_step into the new token budget.
+        import os
+        from safetensors.torch import load_file
+
+        weights = os.path.join(model_args.model_name_or_path, "model.safetensors")
+        state = load_file(weights)
+        missing, unexpected = model.load_state_dict(state, strict=False)
+        if unexpected or any(not k.startswith("write_back_proj") for k in missing):
+            raise ValueError(
+                f"perceiver_ar warm start mismatch from {weights}: missing={missing[:5]} "
+                f"unexpected={unexpected[:5]}"
+            )
+        logger.info(f"Warm-started PerceiverARLM weights from {weights} (missing={missing})")
     pb = analytic_param_count(config)
     logger.info(
         f"Initializing PerceiverARLM ({config.par_mode}): patterns={config.layer_patterns()[:3]}…"

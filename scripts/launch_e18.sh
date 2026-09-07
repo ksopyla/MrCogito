@@ -3,7 +3,7 @@
 # and delegates to the generic launcher. Spec: docs/experiments_specs/ahead/E18_perceiver_ar_v2_baseline.md
 #
 #   bash scripts/launch_e18.sh                                    # stage A: 125M, seq 8k, 2B tokens
-#   E18_STAGE=32k RESUME_FROM_CHECKPOINT=<ckpt> bash scripts/launch_e18.sh   # stage B: seq 32k, 0.5B
+#   E18_STAGE=32k MODEL_NAME_OR_PATH=<stageA/final> bash scripts/launch_e18.sh  # stage B: seq 32k, 0.5B, warm start
 #   PAR_MODE=dense bash scripts/launch_e18.sh                     # matched dense control (stage A)
 #   E18_TASK=copy bash scripts/launch_e18.sh                      # P2 copy task (6 layers, seq 32k)
 #
