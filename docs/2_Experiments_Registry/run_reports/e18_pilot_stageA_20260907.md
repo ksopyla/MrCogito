@@ -126,6 +126,24 @@ it learns but slowly. The pilot's `PAR_VALUE_EMBED_LAYERS=0,4,8` leaves the glob
 one — fix for the P2 rerun and worth carrying into the main run. Spec P2 amended accordingly (plain copy
 at 32k, offset 16k). Builder: `scripts/build_copy_task_dataset.py --task copy`.
 
+**Real-scale confirmation (accidental early run, 2026-09-08):** a waiter-script bug (checked the stage-B
+exit *file's existence*, not its exit *code*) fired the corrected P2 config — plain copy at 32k, value
+embeddings on layers 0/1/4 — right after stage B's first (failed) attempt, well before the intended
+trigger. The training itself was valid: fresh 6-layer model, Muon, real 32k data.
+
+| epoch | eval loss |
+|---|---|
+| 0.13 | 5.530 (still at the uniform floor) |
+| 0.27 | 0.0047 |
+| 0.40 | 0.00067 |
+| 0.53 | 0.00018 |
+| 0.66 | **0.000087** |
+
+It crashed at epoch 0.66 on the single corrupt label (see below), before completing its 1.0-epoch budget.
+This confirms the tiny-study diagnosis at pilot scale: **P2 (amended) converges to near-zero loss fast**
+once the retrieving layer has a value embedding. The waiter bug is fixed (`Cache/jobs/e18_stageB_then_copy.sh`
+gates correctly); the properly-triggered rerun after stage B will give a clean, complete accuracy number.
+
 ## Operational notes
 
 - The queued waiters for dense / stage B grepped the log for an exit marker that was only echoed to the
