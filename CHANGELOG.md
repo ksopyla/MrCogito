@@ -57,6 +57,11 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   at small budgets; plain copy is, provided the retrieving layer has a value embedding → P2 amended
   to plain copy and `PAR_VALUE_EMBED_LAYERS` should include the global layer.
 
+- 2026-09-08: `DataCollatorForCausalLM` ignores out-of-vocab *precomputed* labels (−100 + warning)
+  instead of raising (one corrupt int32 in 983M copy-task labels killed the P2 run); `launch_e18.sh`
+  sets `DDP_TIMEOUT=10800` (rank-0 length-cache build for the 32k manifest took 37 min > NCCL's 30);
+  `NUM_GPUS` is overridable in the generic launcher.
+
 **Ops (Polonez, E18 pilot):** stage A stopped at checkpoint-9030 (1.0B tokens, eval loss
 3.79); the log-grep waiters never fired (exit marker went to the terminal, not the log) and
 were replaced by one chained job `Cache/jobs/e18_dense_then_stageB.sh` (dense control 1B →

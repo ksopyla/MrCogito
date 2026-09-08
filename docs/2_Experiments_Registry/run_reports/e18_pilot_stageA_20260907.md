@@ -69,14 +69,39 @@ Low, as expected for 125M at 1B tokens with no retrieval-style data; this is the
 beat (P3 asks for ≥ 90% at 32k after the 32k stage, which is a hard bar at this scale — read the delta,
 not only the absolute).
 
+## Dense control (1.0B tokens, same budget) — P1 and the 32k baselines
+
+Run `perceiver_ar_dense_H768L1g1s12N2048_20260907_193351` (`PAR_MODE=dense`, all 14 layers full-causal, otherwise
+identical), 9,033 steps, finished 2026-09-08 06:00 UTC, ~27.4k tok/s.
+
+| | Perceiver (stage A) | dense control |
+|---|---|---|
+| eval loss @ 1.0B tokens | 3.790 | **3.786** |
+| train loss @ 31M / 44M / 91M tokens | 6.144 / 5.800 / 4.958 | 6.151 / 5.816 / 4.966 |
+| throughput, 4×3090, seq 8k | 27.95k tok/s | ~27.4k tok/s |
+
+**P1 (≤ 1% gap at equal tokens): ✅ 0.1%.** P4 (≥ 60% of dense throughput): ✅ ≈ 1.02×.
+
+Same 32k probes on the dense `final` (8 PG-19 rows ≥ 32k; both models trained at 8k only):
+
+| bucket | [0, 2k) | [2k, 8k) | [8k, 16k) | [16k, 32k) |
+|---|---|---|---|---|
+| Perceiver CE | 3.192 | 2.940 | 2.645 | **2.611** |
+| dense CE | 3.207 | **2.843** | **2.567** | 2.664 |
+
+Dense (full attention, RoPE extrapolated 4× past training) is ~3% better inside 16k but *turns up* in the
+16k–32k bucket; the Perceiver keeps improving with distance. Passkey: dense 0.375 / 0.35 / 0.15 / 0.075 / 0.0
+at 2k–32k, i.e. identical to the Perceiver within noise. Stage B (32k training) is measured against the
+Perceiver's own 8k row above (P3: ≥ 2% relative on the ≥ 8k buckets).
+
 ## Gate status so far
 
 | gate | status | evidence |
 |---|---|---|
-| P1 equivalence tests | ✅ | `tests/test_perceiver_ar_lm.py`, `tests/test_packed_dataset.py` (flex == sdpa == naive masks; packed == unpacked per-token loss) |
+| P1 equivalence + parity | ✅ | tests (flex == sdpa == naive masks; packed == unpacked per-token loss); eval loss 3.790 vs dense 3.786 at 1.0B tokens (0.1%) |
 | P2 copy task | ⏸ deferred | two runs stuck at ln(256); checkpoint-500 kept; rerun when GPUs are free |
 | P3 long-context use | ⏳ | needs stage B vs these baselines |
-| P4 architecture tax | ✅ (interim) | 27.95k tok/s (perceiver) vs 27.0–27.4k tok/s (dense, first hour) at 8k → ≈ 1.02×, far above the 60% floor. At 8k with block 2048 the attention savings are small, so parity is the expected outcome; the real saving shows at 32k+ |
+| P4 architecture tax | ✅ | 27.95k tok/s (perceiver) vs ~27.4k tok/s (dense, full run) at 8k → ≈ 1.02×, far above the 60% floor. At 8k with block 2048 the attention savings are small, so parity is the expected outcome; the real saving shows at 32k+ |
 
 ## P2 copy task — what the tiny CPU study says (2026-09-07)
 
@@ -111,6 +136,12 @@ at 32k, offset 16k). Builder: `scripts/build_copy_task_dataset.py --task copy`.
   the head in chunks from `hidden_states()` instead of building S×V logits (`16a2653`).
 - Dense control equal-token check-ins (train loss): 31M tokens 6.144 vs 6.151; 44M tokens 5.800 vs 5.816
   (perceiver vs dense) — parity, as P1 expects.
+- **Stage B first attempt died (2026-09-08 06:35)**: NCCL watchdog timeout (30 min) while rank 0 computed the
+  32k manifest's sequence-length cache single-process (~37 min on this host). Fix: `DDP_TIMEOUT=10800` in
+  `launch_e18.sh`, cache precomputed out-of-band, chain relaunched (`Cache/jobs/e18_stageB_then_copy.sh`).
+- **P2 plain-copy first attempt died**: one label value of 2^31−100 among 983M in the freshly built arrow
+  dataset (single corrupt int32; input_ids clean). Collator now ignores out-of-vocab precomputed labels
+  (−100) with a warning instead of aborting.
 
 ## Next
 
