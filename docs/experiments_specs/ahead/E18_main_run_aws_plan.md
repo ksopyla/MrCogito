@@ -13,8 +13,8 @@ Nothing here is launched until the user says go.
 | 2 | P2 copy task solved (or explained) | me, rerun from `checkpoint-500` when GPUs free | two runs stuck at ln(256); deferred |
 | 3 | Packed-document training path (`BATCH_PACKING_MODE=pack`) | done, tested (packed == unpacked per-token loss) | ✅ `e7be9f6` |
 | 4 | Multi-node launch (`NUM_MACHINES`, `MACHINE_RANK`, `MAIN_PROCESS_IP`) | done in the generic launcher; untested on real multi-node | ✅ `a663137`, needs a 2-node dry run |
-| 5 | Main-run recipe `data/mix_recipes/e18_main_stage1_v1.json` | written; row weights need re-check with `manifest_token_stats.py` after pretokenization | ✅ draft |
-| 6 | HF access: Nemotron-CC-v2.1 ✅, Nemotron-CC-Code-v1 / Nemotron-Pretraining-Code-v2 ❌ | **user** (request access on the Hub) | pending |
+| 5 | Main-run recipe `data/mix_recipes/e18_main_stage1_v1.json` | **Nemotron-first** (user decision 2026-09-07): 13 of 15 sources are Nemotron (CC-v2.1 web, Code-v1 synthetic code, CC-Math-v1, Specialized-v1/v1.2, SFT-v1); only the long-document tier (FinePDFs, PG-19) is external. Row weights need re-check with `manifest_token_stats.py` after pretokenization | ✅ v1 |
+| 6 | HF access: CC-v2.1 / CC-v2 / CC-Math-v1 / Code-v1 / SFT-v1 / Specialized ✅; **Nemotron-CC-Code-v1 and Nemotron-Pretraining-Code-v2 requested 2026-09-07** (Company Meridian21Lab, krzysztof.sopyla@meridian21lab.com, NVIDIA Data Agreement for Model Training accepted) | NVIDIA approval (manual) | pending — swap in per the recipe's `pending_swap` note |
 | 7 | AWS: p5 Capacity Block quota, S3 bucket, IAM for the nodes, EFA-enabled AMI with CUDA 12.8+ | **user / AWS account** | pending |
 | 8 | FA3 backend (`ATTN_BACKEND=flash`) validated on one H100 against flex (loss identical to 1e-3) | me, first hour of the block | pending |
 | 9 | PG-19 test/validation decontamination of the training pool | me, before any reported PG-19 number | pending |

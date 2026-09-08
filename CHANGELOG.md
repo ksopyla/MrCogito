@@ -36,9 +36,12 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 - `scripts/train_concept_pretraining_multigpu.sh`: `NUM_MACHINES`, `MACHINE_RANK`,
   `MAIN_PROCESS_IP`, `MAIN_PROCESS_PORT` pass through to `accelerate launch`; effective batch
   and token budgeting include `NUM_MACHINES`. Single-node behaviour unchanged.
-- `data/mix_recipes/e18_main_stage1_v1.json` (new): Nemotron-CC-v2.1 (HQ, MHQ, capped
-  HQ-Synthetic, translated, DQA) + FinePDFs + PG-19 + Specialized-v1 math/STEM + stack-edu
-  python, row weights solved from token-share targets. Nemotron code sets still gated.
+- `data/mix_recipes/e18_main_stage1_v1.json` (new, Nemotron-first per user decision): Nemotron-CC-v2.1
+  (HQ, MHQ, capped HQ-Synthetic, translated, DQA), Nemotron-Pretraining-Code-v1 Synthetic-Code,
+  Nemotron-CC-Math-v1 4plus, Specialized-v1 (math textbooks, RQA, STEM-SFT, wiki rewrite),
+  Specialized-v1.2 fact-seeking, SFT-v1 general; FinePDFs + PG-19 remain as the only non-Nemotron
+  long-document tier. Row weights solved from token-share targets. Access to Nemotron-CC-Code-v1
+  and Nemotron-Pretraining-Code-v2 requested on the Hub for Meridian21Lab (pending NVIDIA approval).
 - Tests: `tests/test_packed_dataset.py` (coverage, capacity, determinism, cache, collator
   contract, packed == unpacked per-token losses, flex memo == sdpa);
   `verification/e18_cpu_smoke.py` gains `SMOKE_PACKING=pack`.
