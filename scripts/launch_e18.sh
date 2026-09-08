@@ -56,6 +56,10 @@ export AUTO_INTERVALS="${AUTO_INTERVALS:-1}"
 export SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-6}"
 export MAX_EVAL_SAMPLES="${MAX_EVAL_SAMPLES:-256}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+# First launch on a new manifest computes the sequence-length cache on rank 0 (single process on
+# Polonez, ~37 min for the 32k manifest) while the other ranks wait in a collective: the NCCL
+# default of 30 min killed stage B (2026-09-08). Generous timeout; it only matters when waiting.
+export DDP_TIMEOUT="${DDP_TIMEOUT:-10800}"
 # Pilot: low-padding sortish batching (one document per row). The AWS main run uses
 # BATCH_PACKING_MODE=pack (documents concatenated to MAX_SEQ_LENGTH, doc_ids masks) so every
 # sequence is full-length; keep length_group here so stage A/B/dense stay comparable.

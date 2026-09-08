@@ -272,6 +272,20 @@ class DataCollatorForCausalLM:
                 labels = labels.clone()
                 input_ids[oov_mask] = self._oov_replacement_id
                 labels[oov_mask] = -100
+            if self.preserve_precomputed_labels:
+                # Precomputed label columns can carry the same rare storage corruption as
+                # input_ids (2026-09-08: one value of 2^31-100 in 983M copy-task labels).
+                # Ignore those positions instead of aborting a multi-hour run.
+                bad_labels = (labels != -100) & ((labels < 0) | (labels >= self._vocab_size))
+                if bad_labels.any():
+                    if not self._oov_clamp_warned:
+                        print(
+                            "WARNING: DataCollatorForCausalLM ignored out-of-vocab precomputed "
+                            f"labels (n={int(bad_labels.sum().item())}, "
+                            f"vocab_size={self._vocab_size}); set to -100."
+                        )
+                        self._oov_clamp_warned = True
+                    labels = labels.masked_fill(bad_labels, -100)
             valid_labels = labels[labels != -100]
             if valid_labels.numel() > 0:
                 label_min = int(valid_labels.min().item())

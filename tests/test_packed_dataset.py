@@ -236,3 +236,10 @@ def test_block_mask_memo_is_shared_across_layers():
     ref = attend(q, k, v, pattern="swa", window=5, key_valid=None, doc_ids=doc_ids, backend="sdpa")
     torch.testing.assert_close(out1, out2)
     torch.testing.assert_close(out1, ref, rtol=1e-4, atol=1e-4)
+
+
+def test_corrupt_precomputed_label_is_ignored_not_fatal():
+    collator = DataCollatorForCausalLM(_Tok(), max_length=16, model_vocab_size=V, preserve_precomputed_labels=True)
+    ids = [5, 6, 7, 8]
+    batch = collator([{"input_ids": ids, "labels": [-100, 6, 2147483548, 8]}])
+    assert batch["labels"].tolist() == [[-100, 6, -100, 8]]

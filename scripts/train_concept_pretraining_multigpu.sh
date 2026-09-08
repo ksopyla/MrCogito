@@ -8,7 +8,8 @@ export PATH="${HOME}/.local/bin:${PATH}"
 echo "=== Concept Pretraining Multi-GPU Training ==="
 echo "Default profile: Odra A1 reconstruction baseline"
 
-NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
+# NUM_GPUS may be preset (e.g. NUM_GPUS=1 for a single-process cache-building or smoke run).
+NUM_GPUS="${NUM_GPUS:-$(nvidia-smi --list-gpus | wc -l)}"
 if [ "$NUM_GPUS" -le 0 ]; then
     echo "ERROR: No GPUs detected."
     exit 1
