@@ -52,6 +52,9 @@ def main():
     p.add_argument("--no_qk_norm", action="store_true", help="replace q/k RMSNorm by identity")
     p.add_argument("--task", choices=["mirror", "copy"], default="mirror")
     p.add_argument("--sink", action="store_true", help="swa_sink: windowed layers also attend to token 0")
+    p.add_argument("--global_positions", default="", help="comma list: absolute layer index of each global read")
+    p.add_argument("--global_nope", action="store_true", help="global read without RoPE (content-only)")
+    p.add_argument("--global_logit_scale", choices=["none", "log"], default="none", help="SSMax-style log(n) query scale on the global read")
     args = p.parse_args()
 
     torch.manual_seed(args.seed)
@@ -66,6 +69,8 @@ def main():
         value_embed_layers=tuple(int(x) for x in args.value_embed_layers.split(",") if x != ""),
         use_liger=False, attn_backend="sdpa", attn_pad_multiple=1, chunked_ce_block_size=64,
         pad_token_id=0, bos_token_id=bos, eos_token_id=eos, swa_sink=args.sink,
+        global_positions=tuple(int(x) for x in args.global_positions.split(",") if x != "") or None,
+        global_nope=args.global_nope, global_logit_scale=args.global_logit_scale, global_scale_ref=args.context,
     )
     model = PerceiverARLM(cfg)
     for layer in model.layers:
@@ -88,7 +93,8 @@ def main():
     floor = math.log(args.vocab_slice)
     print(f"task={args.task} mode={args.mode} params={n_params/1e6:.2f}M context={args.context} block={args.block} "
           f"pre={args.pre_layers}@{args.pre_window} global={args.global_layers} stack={args.stack_layers} ve={args.value_embed_layers} "
-          f"uniform-floor={floor:.3f} opt={args.optimizer} lr={args.lr} qk_gain={args.qk_gain} no_qk_norm={args.no_qk_norm} sink={args.sink}")
+          f"uniform-floor={floor:.3f} opt={args.optimizer} lr={args.lr} qk_gain={args.qk_gain} no_qk_norm={args.no_qk_norm} sink={args.sink} "
+          f"gpos={args.global_positions or 'default'} gnope={args.global_nope} gscale={args.global_logit_scale}")
     t0 = time.time()
     model.train()
     for step in range(1, args.steps + 1):

@@ -160,6 +160,9 @@ PAR_VALUE_EMBED_LAYERS="${PAR_VALUE_EMBED_LAYERS:-0,7,14}"
 PAR_VALUE_EMBED_DIM="${PAR_VALUE_EMBED_DIM:-64}"
 PAR_NOPE_EVERY="${PAR_NOPE_EVERY:-4}"
 PAR_SWA_SINK="${PAR_SWA_SINK:-False}"           # windowed layers also see the doc's first token
+PAR_GLOBAL_NOPE="${PAR_GLOBAL_NOPE:-False}"     # global read(s) without RoPE (content-only retrieval)
+PAR_GLOBAL_LOGIT_SCALE="${PAR_GLOBAL_LOGIT_SCALE:-none}"   # 'log' = SSMax-style q *= s*log(n) on the global read(s)
+PAR_GLOBAL_SCALE_REF="${PAR_GLOBAL_SCALE_REF:-8192}"
 ROPE_THETA="${ROPE_THETA:-500000.0}"
 ATTN_BACKEND="${ATTN_BACKEND:-flex}"                # sdpa | flex | flash
 ATTN_PAD_MULTIPLE="${ATTN_PAD_MULTIPLE:-2048}"
@@ -374,6 +377,9 @@ if [ "$MODEL_FAMILY" = "perceiver_ar" ]; then
         --par_value_embed_dim "$PAR_VALUE_EMBED_DIM"
         --par_nope_every "$PAR_NOPE_EVERY" \
         --par_swa_sink "$PAR_SWA_SINK"
+        --par_global_nope "$PAR_GLOBAL_NOPE"
+        --par_global_logit_scale "$PAR_GLOBAL_LOGIT_SCALE"
+        --par_global_scale_ref "$PAR_GLOBAL_SCALE_REF"
         --rope_theta "$ROPE_THETA"
         --attn_backend "$ATTN_BACKEND"
         --attn_pad_multiple "$ATTN_PAD_MULTIPLE"

@@ -546,3 +546,83 @@ def test_prefix_kv_matches_the_kv_computed_inside_forward(positions):
     k_ref = apply_rope(k_ref, cos, sin)
     k, v = model.prefix_kv(x)
     assert torch.allclose(k, k_ref, atol=1e-6) and torch.allclose(v, v_ref, atol=1e-6)
+
+
+# ------------------------------------------------------------------ 1M hardening knobs (default off)
+
+
+def test_hardening_knobs_default_off_is_byte_identical_and_validated():
+    cfg = tiny_cfg()
+    assert cfg.global_nope is False and cfg.global_logit_scale == "none"
+    model = PerceiverARLM(cfg)
+    assert all(l.attn.logit_scale is None for l in model.layers)
+    assert model.layers[cfg.global_layer_index].attn.use_rope is True
+    assert sum(p.numel() for p in model.parameters()) == analytic_param_count(cfg).total
+    with pytest.raises(ValueError):
+        tiny_cfg(global_logit_scale="sqrt")
+    with pytest.raises(ValueError):
+        tiny_cfg(global_scale_ref=1)
+
+
+def test_global_nope_removes_rope_only_from_the_global_read():
+    cfg = tiny_cfg(pre_layers=1, global_layers=1, stack_layers=3, nope_every=0, global_nope=True)
+    model = PerceiverARLM(cfg)
+    assert [l.attn.use_rope for l in model.layers] == [True, False, True, True, True]
+    mid = tiny_cfg(pre_layers=1, global_layers=1, stack_layers=3, nope_every=0, global_nope=True, global_positions=(3,))
+    assert [l.attn.use_rope for l in PerceiverARLM(mid).layers] == [True, True, True, False, True]
+    # prefix_kv follows the flag: keys of a NoPE read carry no rotation (equal to raw k_norm(wk(h)))
+    torch.manual_seed(0)
+    m = PerceiverARLM(cfg).eval()
+    seen = {}
+    h = m.layers[1].attn.register_forward_hook(lambda mod, i, o: seen.setdefault("h", i[0].detach().clone()))
+    x = torch.randint(3, V, (1, 7))
+    with torch.no_grad():
+        m(input_ids=x)
+        k, v = m.prefix_kv(x)
+    h.remove()
+    k_raw, _ = m.layers[1].attn.kv(seen["h"])
+    assert torch.allclose(k, k_raw, atol=1e-6)
+
+
+def test_global_logit_scale_log_scales_queries_by_log_visible_keys():
+    ref = 8
+    cfg = tiny_cfg(pre_layers=1, global_layers=1, stack_layers=2, global_logit_scale="log", global_scale_ref=ref)
+    model = PerceiverARLM(cfg).eval()
+    gi = cfg.global_layer_index
+    assert model.layers[gi].attn.logit_scale is not None
+    assert all(model.layers[i].attn.logit_scale is None for i in range(len(model.layers)) if i != gi)
+    assert sum(p.numel() for p in model.parameters()) == analytic_param_count(cfg).total
+    assert abs(float(model.layers[gi].attn.logit_scale) - 1.0 / math.log(ref)) < 1e-6
+    # factor(n_visible) = s * log(n): 0 at the first token, exactly 1 at n = ref, > 1 beyond
+    S = 16
+    pos = model._positions(S, 1, None, torch.device("cpu"))
+    factor = float(model.layers[gi].attn.logit_scale) * torch.log((pos[0] + 1).float())
+    assert float(factor[0]) == 0.0
+    assert abs(float(factor[ref - 1]) - 1.0) < 1e-6
+    assert float(factor[-1]) > 1.0
+    # forward runs (pos is plumbed through Block -> Attention) and a missing pos is a hard error
+    x = torch.randint(3, V, (1, S))
+    with torch.no_grad():
+        assert torch.isfinite(model(input_ids=x, labels=x.clone()).loss)
+    from nn.perceiver_ar_lm import rope_cos_sin
+    cos, sin = rope_cos_sin(pos, cfg.head_dim, cfg.rope_theta, torch.float32)
+    with pytest.raises(RuntimeError):
+        model.layers[gi].attn(torch.zeros(1, S, cfg.hidden_size), ids=x, cos=cos, sin=sin, key_valid=None,
+                              doc_ids=None, cu_seqlens=None, pos=None)
+
+
+def test_global_logit_scale_changes_output_once_attention_writes():
+    torch.manual_seed(0)
+    ref = 8
+    cfg = tiny_cfg(pre_layers=1, global_layers=1, stack_layers=2, global_logit_scale="log", global_scale_ref=ref)
+    model = PerceiverARLM(cfg).eval()
+    for layer in model.layers:
+        layer.attn.wo.weight.data.normal_(0, 0.2)
+    x = torch.randint(3, V, (1, 16))
+    with torch.no_grad():
+        base = model(input_ids=x).logits.clone()
+        model.layers[cfg.global_layer_index].attn.logit_scale.data.mul_(2.0)
+        doubled = model(input_ids=x).logits
+    # position ref-1 predicts from n_visible=ref keys... but its q is scaled by factor(ref-1)=1 -> 2 after doubling:
+    # every position's logits may change; the first token (factor 0) cannot change through the global read
+    assert not torch.allclose(base[0, ref:], doubled[0, ref:])

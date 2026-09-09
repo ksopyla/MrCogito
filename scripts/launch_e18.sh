@@ -34,6 +34,9 @@ export PAR_PRE_LAYERS="${PAR_PRE_LAYERS:-1}"
 export PAR_PRE_WINDOW="${PAR_PRE_WINDOW:-512}"
 export PAR_GLOBAL_LAYERS="${PAR_GLOBAL_LAYERS:-1}"
 export PAR_GLOBAL_POSITIONS="${PAR_GLOBAL_POSITIONS:-}"   # empty = after the pre-encoder; "7" = mid-depth arm
+export PAR_GLOBAL_NOPE="${PAR_GLOBAL_NOPE:-False}"        # 1M hardening (iteration 3): content-only global read
+export PAR_GLOBAL_LOGIT_SCALE="${PAR_GLOBAL_LOGIT_SCALE:-none}"   # 1M hardening: 'log' = SSMax on the global read
+export PAR_GLOBAL_SCALE_REF="${PAR_GLOBAL_SCALE_REF:-8192}"
 export PAR_BLOCK="${PAR_BLOCK:-2048}"
 export PAR_NGRAM_BUCKETS="${PAR_NGRAM_BUCKETS:-65536}"
 export PAR_VALUE_EMBED_LAYERS="${PAR_VALUE_EMBED_LAYERS:-0,4,8}"

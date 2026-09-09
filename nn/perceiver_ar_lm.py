@@ -26,6 +26,7 @@ Hooks for the family (config fields only — no parameters unless enabled):
 from __future__ import annotations
 
 import logging
+import math
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
@@ -68,6 +69,9 @@ class PerceiverARConfig(PretrainedConfig):
         head_dim: int = 128,
         rope_theta: float = 500000.0,
         nope_every: int = 4,                  # every k-th stack layer has no RoPE (SmolLM3); 0 = off
+        global_nope: bool = False,            # global read(s) without RoPE: content-only retrieval (iRoPE-style)
+        global_logit_scale: str = "none",     # "log": q *= s*log(n_visible) on full layers (SSMax; anti-dilution)
+        global_scale_ref: int = 8192,         # n at which the log scale equals 1 at init (s = 1/log(ref))
         # input
         ngram_orders: tuple[int, ...] = (2, 3),
         ngram_buckets: int = 131072,
@@ -114,6 +118,9 @@ class PerceiverARConfig(PretrainedConfig):
         self.head_dim = head_dim
         self.rope_theta = rope_theta
         self.nope_every = nope_every
+        self.global_nope = bool(global_nope)
+        self.global_logit_scale = global_logit_scale
+        self.global_scale_ref = int(global_scale_ref)
         self.ngram_orders = tuple(int(o) for o in ngram_orders)
         self.ngram_buckets = ngram_buckets
         self.value_embed_layers = tuple(int(l) for l in value_embed_layers)
@@ -149,6 +156,10 @@ class PerceiverARConfig(PretrainedConfig):
             raise ValueError(f"unknown attn_backend {self.attn_backend!r}")
         if self.block_attention_mode not in {"causal", "bidirectional"}:
             raise ValueError("block_attention_mode must be 'causal' or 'bidirectional'")
+        if self.global_logit_scale not in {"none", "log"}:
+            raise ValueError("global_logit_scale must be 'none' or 'log'")
+        if self.global_scale_ref < 2:
+            raise ValueError("global_scale_ref must be >= 2")
         if self.global_layers < 1 and self.par_mode == "perceiver":
             logger.warning("perceiver mode with global_layers=0: a purely local model (ablation only)")
         if self.global_positions is not None:
@@ -501,6 +512,11 @@ class Attention(nn.Module):
         self.q_norm = nn.RMSNorm(dh)
         self.k_norm = nn.RMSNorm(dh)
         self.use_rope = True
+        # SSMax-style length-aware query scale on the unbounded read: q *= s * log(n_visible).
+        # s is learnable, initialised so the factor is exactly 1 at n = global_scale_ref.
+        self.logit_scale = None
+        if pattern == "full" and getattr(cfg, "global_logit_scale", "none") == "log":
+            self.logit_scale = nn.Parameter(torch.tensor(1.0 / math.log(cfg.global_scale_ref)))
         self.value_embed = None
         if layer_idx in cfg.value_embed_layers:
             self.value_embed = nn.Embedding(cfg.vocab_size, cfg.value_embed_dim)
@@ -513,12 +529,17 @@ class Attention(nn.Module):
         v = self.wv(x).view(B, S, self.g, self.dh)
         return k, v
 
-    def forward(self, x, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None, sink_pos=None):
+    def forward(self, x, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None, sink_pos=None, pos=None):
         B, S, _ = x.shape
         q = self.q_norm(self.wq(x).view(B, S, self.h, self.dh))
         k, v = self.kv(x)
         if self.use_rope:
             q, k = apply_rope(q, cos, sin), apply_rope(k, cos, sin)
+        if self.logit_scale is not None:
+            if pos is None:
+                raise RuntimeError("global_logit_scale='log' needs per-token positions")
+            n_vis = (pos + 1).to(q.dtype)                      # keys a causal query can see (doc-local)
+            q = q * (self.logit_scale * torch.log(n_vis))[:, :, None, None]
         if self.value_embed is not None:
             ve = self.value_proj(self.value_embed(ids)).view(B, S, self.g, self.dh)
             v = v + self.value_lambda * ve
@@ -566,10 +587,10 @@ class Block(nn.Module):
             x = x + self.sigma * skip
         return x
 
-    def forward(self, x, x0, skip, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None, sink_pos=None):
+    def forward(self, x, x0, skip, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None, sink_pos=None, pos=None):
         x = self.mix(x, x0, skip)
         x = x + self.attn(self.attn_norm(x), ids=ids, cos=cos, sin=sin, key_valid=key_valid,
-                          doc_ids=doc_ids, cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos)
+                          doc_ids=doc_ids, cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos, pos=pos)
         x = x + self.mlp(self.mlp_norm(x))
         return x
 
@@ -672,6 +693,9 @@ class PerceiverARLM(PreTrainedModel):
                 layer.attn.use_rope = False
             if cfg.block_attention_mode == "bidirectional":
                 layer.attn.causal = False
+        if cfg.global_nope:
+            for i in cfg.resolved_global_positions:
+                self.layers[i].attn.use_rope = False
         self.final_norm = nn.RMSNorm(cfg.hidden_size)
         self.lm_head = nn.Linear(cfg.hidden_size, cfg.vocab_size, bias=False)
         if cfg.write_back_hook:
@@ -821,7 +845,7 @@ class PerceiverARLM(PreTrainedModel):
                 # exactly what layer i's attn_norm receives (used by prefix_kv)
                 return layer.mix(x, x0, skip)
             kwargs = dict(ids=input_ids, cos=cos, sin=sin, key_valid=key_valid, doc_ids=doc_ids,
-                          cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos)
+                          cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos, pos=pos)
             if self.gradient_checkpointing and self.training:
                 # partial binds THIS layer/kwargs (a lambda would capture the loop variables
                 # by reference and re-run the last layer in backward).
@@ -980,6 +1004,8 @@ def analytic_param_count(cfg: PerceiverARConfig) -> ParamBreakdown:
     dense += d + d * V                              # final norm + head
     if cfg.write_back_hook:
         dense += d * 2 * g * dh
+    if getattr(cfg, "global_logit_scale", "none") == "log":
+        dense += sum(1 for pat, _ in cfg.layer_patterns() if pat == "full")   # one scalar per full layer
     sparse = len(cfg.ngram_orders) * cfg.ngram_buckets * e
     n_ve = sum(1 for i in range(L) if i in cfg.value_embed_layers)
     sparse += n_ve * (V * cfg.value_embed_dim)
