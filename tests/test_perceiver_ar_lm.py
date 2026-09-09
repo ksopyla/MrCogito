@@ -472,3 +472,77 @@ def test_reach_override_is_noop_without_a_global_layer():
             b = model(input_ids=x).logits
     assert touched == []
     assert torch.allclose(a, b, atol=1e-6)
+
+
+# ------------------------------------------------------------------ global-read position knob
+
+
+def test_global_positions_default_is_identical_to_legacy_layout():
+    cfg = tiny_cfg(pre_layers=1, global_layers=1, stack_layers=4)
+    assert cfg.resolved_global_positions == (1,)
+    assert cfg.layer_patterns() == [("swa", 4), ("full", 0)] + [("swa", 6)] * 4
+    assert cfg.global_layer_index == 1
+    assert cfg.stack_indices == [2, 3, 4, 5]
+    explicit = tiny_cfg(pre_layers=1, global_layers=1, stack_layers=4, global_positions=(1,))
+    assert explicit.layer_patterns() == cfg.layer_patterns()
+    m_default, m_explicit = PerceiverARLM(cfg), PerceiverARLM(explicit)
+    flags = lambda m: [(l.attn.pattern, l.attn.window, l.attn.use_rope, l.attn.causal) for l in m.layers]
+    assert flags(m_default) == flags(m_explicit)
+    # NoPE every 2nd stack layer (nope_every=2 in tiny_cfg): stack layers are 2,3,4,5 -> NoPE on 3 and 5
+    assert [l.attn.use_rope for l in m_default.layers] == [True, True, True, False, True, False]
+
+
+def test_global_positions_mid_depth_and_validation():
+    cfg = tiny_cfg(pre_layers=1, global_layers=1, stack_layers=4, global_positions=(3,))
+    assert cfg.layer_patterns() == [("swa", 4), ("swa", 6), ("swa", 6), ("full", 0), ("swa", 6), ("swa", 6)]
+    assert cfg.global_layer_index == 3
+    assert cfg.stack_indices == [1, 2, 4, 5]
+    model = PerceiverARLM(cfg)
+    assert model.full_layer_indices == [3]
+    # NoPE counts over stack layers only: [1,2,4,5] -> 2nd and 4th = layers 2 and 5; the global keeps RoPE
+    assert [l.attn.use_rope for l in model.layers] == [True, True, False, True, True, False]
+    # two reads, one at the bottom and one mid-depth
+    two = tiny_cfg(pre_layers=1, global_layers=2, stack_layers=4, global_positions=(1, 4))
+    assert [p for p, _ in two.layer_patterns()] == ["swa", "full", "swa", "swa", "full", "swa", "swa"]  # 1+2+4 layers
+    assert two.global_layer_index == 1
+    # dense ignores positions
+    dense = tiny_cfg(par_mode="dense", pre_layers=1, global_layers=1, stack_layers=4, global_positions=(3,))
+    assert dense.layer_patterns() == [("full", 0)] * 6 and dense.stack_indices == list(range(6))
+    for bad in [(1, 2), (9,), (-1,)]:
+        with pytest.raises(ValueError):
+            tiny_cfg(pre_layers=1, global_layers=1, stack_layers=4, global_positions=bad)
+    with pytest.raises(ValueError):
+        tiny_cfg(pre_layers=1, global_layers=2, stack_layers=4, global_positions=(2, 2))
+
+
+@pytest.mark.parametrize("positions", [None, (4,)])
+def test_prefix_kv_matches_the_kv_computed_inside_forward(positions):
+    """prefix_kv must reproduce the global layer's K/V bit-for-bit — including when that layer sits
+    in the U-net's skip-consuming half (positions=(4,) with 6 layers: layers 3..5 consume skips)."""
+    torch.manual_seed(0)
+    cfg = tiny_cfg(pre_layers=1, global_layers=1, stack_layers=4, global_positions=positions, nope_every=0)
+    model = PerceiverARLM(cfg).eval()
+    for layer in model.layers:  # give every path signal (wo/down are zero-init; sigma/beta are 0)
+        layer.attn.wo.weight.data.normal_(0, 0.2)
+        layer.mlp.down.weight.data.normal_(0, 0.2)
+        layer.beta.data.fill_(0.3)
+        if layer.sigma is not None:
+            layer.sigma.data.fill_(0.5)
+    gi = cfg.global_layer_index
+    assert gi == (1 if positions is None else 4)
+    assert (model.layers[gi].sigma is not None) == (positions is not None)
+    seen = {}
+    def hook(mod, inp, out):
+        seen["h"] = inp[0].detach().clone()
+    handle = model.layers[gi].attn.register_forward_hook(hook)
+    x = torch.randint(3, V, (2, 9))
+    with torch.no_grad():
+        model(input_ids=x)
+    handle.remove()
+    k_ref, v_ref = model.layers[gi].attn.kv(seen["h"])
+    pos = model._positions(9, 2, None, x.device)
+    from nn.perceiver_ar_lm import apply_rope, rope_cos_sin
+    cos, sin = rope_cos_sin(pos, cfg.head_dim, cfg.rope_theta, k_ref.dtype)
+    k_ref = apply_rope(k_ref, cos, sin)
+    k, v = model.prefix_kv(x)
+    assert torch.allclose(k, k_ref, atol=1e-6) and torch.allclose(v, v_ref, atol=1e-6)

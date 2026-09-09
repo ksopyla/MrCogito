@@ -91,3 +91,16 @@ def test_e18_dense_control_and_copy_task(tmp_path):
     assert _value_after(args, "--num_hidden_layers") == "6"
     assert _value_after(args, "--preserve_precomputed_labels") == "true"
     assert _value_after(args, "--pretokenized_manifest").endswith("copy_32k_manifest.json")
+
+
+def test_e18_global_positions_flow_to_config(tmp_path):
+    result, args, _ = _run_stage(tmp_path, {})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _value_after(args, "--par_global_positions") == ""
+    model_args, *_ = _parse(args)
+    assert model_args.par_global_positions == ""
+    result, args, _ = _run_stage(tmp_path, {"PAR_GLOBAL_POSITIONS": "7"})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _value_after(args, "--par_global_positions") == "7"
+    model_args, *_ = _parse(args)
+    assert model_args.par_global_positions == "7"

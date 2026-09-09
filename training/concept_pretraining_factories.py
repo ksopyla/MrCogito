@@ -327,6 +327,7 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
         pre_layers=model_args.par_pre_layers,
         pre_window=model_args.par_pre_window,
         global_layers=model_args.par_global_layers,
+        global_positions=_parse_int_tuple(getattr(model_args, "par_global_positions", "")) or None,
         stack_layers=model_args.num_hidden_layers,
         block=model_args.par_block,
         num_attention_heads=model_args.num_attention_heads,
@@ -393,9 +394,11 @@ def build_training_wandb_identity(
     if getattr(model_args, "model_family", "auto") == "perceiver_ar":
         resolved_experiment = experiment_id or "E18"
         arm = "dense-control" if model_args.par_mode == "dense" else "perceiver-arm"
+        gpos = getattr(model_args, "par_global_positions", "") or ""
+        gpos_tag = f"@{gpos.replace(',', '-')}" if gpos.strip() else ""
         architecture_id = (
             f"perceiver_ar_{model_args.par_mode}_H{model_args.hidden_size}"
-            f"L{model_args.par_pre_layers}g{model_args.par_global_layers}s{model_args.num_hidden_layers}"
+            f"L{model_args.par_pre_layers}g{model_args.par_global_layers}{gpos_tag}s{model_args.num_hidden_layers}"
             f"N{model_args.par_block}"
         )
         return WandbRunIdentity(

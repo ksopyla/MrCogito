@@ -59,6 +59,7 @@ class PerceiverARConfig(PretrainedConfig):
         pre_layers: int = 2,
         pre_window: int = 1024,
         global_layers: int = 1,
+        global_positions: Optional[tuple[int, ...]] = None,  # explicit layer indices of the global read(s)
         stack_layers: int = 20,
         block: int = 4096,                    # N — window of the stack layers
         # heads / positions
@@ -105,6 +106,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.pre_layers = pre_layers
         self.pre_window = pre_window
         self.global_layers = global_layers
+        self.global_positions = tuple(int(p) for p in global_positions) if global_positions else None
         self.stack_layers = stack_layers
         self.block = block
         self.num_attention_heads = num_attention_heads or (hidden_size // head_dim)
@@ -149,27 +151,57 @@ class PerceiverARConfig(PretrainedConfig):
             raise ValueError("block_attention_mode must be 'causal' or 'bidirectional'")
         if self.global_layers < 1 and self.par_mode == "perceiver":
             logger.warning("perceiver mode with global_layers=0: a purely local model (ablation only)")
+        if self.global_positions is not None:
+            n = self.pre_layers + self.global_layers + self.stack_layers
+            if len(self.global_positions) != self.global_layers:
+                raise ValueError("global_positions must list exactly global_layers indices")
+            if len(set(self.global_positions)) != len(self.global_positions):
+                raise ValueError("global_positions must be distinct")
+            if any(p < 0 or p >= n for p in self.global_positions):
+                raise ValueError(f"global_positions must lie in [0, {n})")
 
     @property
     def total_layers(self) -> int:
-        if self.par_mode == "dense":
-            return self.pre_layers + self.global_layers + self.stack_layers
         return self.pre_layers + self.global_layers + self.stack_layers
+
+    @property
+    def resolved_global_positions(self) -> tuple[int, ...]:
+        """Layer indices of the global read(s). Default: the `global_layers` layers right after
+        the pre-encoder (E18). `global_positions` moves them anywhere — e.g. mid-depth, so the
+        read's queries are formed by half the stack (E18 reach-ablation follow-up)."""
+        if self.par_mode == "dense":
+            return ()
+        if self.global_positions is not None:
+            return self.global_positions
+        return tuple(range(self.pre_layers, self.pre_layers + self.global_layers))
+
+    @property
+    def stack_indices(self) -> list[int]:
+        """Layers governed by the stack rules (NoPE every k-th, E20 bidirectional): every layer in
+        dense mode; every non-pre, non-global layer in perceiver mode."""
+        if self.par_mode == "dense":
+            return list(range(self.total_layers))
+        g = set(self.resolved_global_positions)
+        return [i for i in range(self.pre_layers, self.total_layers) if i not in g]
 
     def layer_patterns(self) -> list[tuple[str, int]]:
         """Per-layer (pattern, window). Dense = all full causal with the same layer count."""
         if self.par_mode == "dense":
             return [("full", 0)] * self.total_layers
-        return (
-            [("swa", self.pre_window)] * self.pre_layers
-            + [("full", 0)] * self.global_layers
-            + [("swa", self.block)] * self.stack_layers
+        pats = [("swa", self.pre_window)] * self.pre_layers + [("swa", self.block)] * (
+            self.global_layers + self.stack_layers
         )
+        for p in self.resolved_global_positions:
+            pats[p] = ("full", 0)
+        return pats
 
     @property
     def global_layer_index(self) -> int:
         """Index of the (first) global read layer — the one-layer prefix cache / message space."""
-        return self.pre_layers if self.par_mode == "perceiver" else 0
+        if self.par_mode == "dense":
+            return 0
+        g = self.resolved_global_positions
+        return min(g) if g else self.pre_layers
 
 
 # --------------------------------------------------------------------------------------
@@ -523,12 +555,19 @@ class Block(nn.Module):
         self.beta = nn.Parameter(torch.tensor(0.0))
         self.sigma = nn.Parameter(torch.tensor(0.0)) if has_skip else None
 
-    def forward(self, x, x0, skip, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None, sink_pos=None):
+    def mix(self, x, x0, skip):
+        """The residual-stream input this block's attention actually sees: x0 re-injection plus
+        the U-net skip. Shared by `forward` and by `PerceiverARLM._run_layers(capture_input_of=)`
+        so `prefix_kv` reconstructs the global layer's K/V exactly, wherever that layer sits."""
         x = self.alpha * x + self.beta * x0
         if skip is not None:
             if self.sigma is None:
                 raise RuntimeError("skip passed to a layer built without a U-net skip weight")
             x = x + self.sigma * skip
+        return x
+
+    def forward(self, x, x0, skip, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None, sink_pos=None):
+        x = self.mix(x, x0, skip)
         x = x + self.attn(self.attn_norm(x), ids=ids, cos=cos, sin=sin, key_valid=key_valid,
                           doc_ids=doc_ids, cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos)
         x = x + self.mlp(self.mlp_norm(x))
@@ -627,11 +666,11 @@ class PerceiverARLM(PreTrainedModel):
         self.layers = nn.ModuleList(
             [Block(cfg, i, p, w, has_skip=(i >= n - n_skip)) for i, (p, w) in enumerate(patterns)]
         )
-        stack_start = cfg.pre_layers + cfg.global_layers if cfg.par_mode == "perceiver" else 0
-        for i, layer in enumerate(self.layers):
-            if cfg.nope_every and i >= stack_start and ((i - stack_start + 1) % cfg.nope_every == 0):
+        for j, i in enumerate(cfg.stack_indices):
+            layer = self.layers[i]
+            if cfg.nope_every and ((j + 1) % cfg.nope_every == 0):
                 layer.attn.use_rope = False
-            if cfg.block_attention_mode == "bidirectional" and i >= stack_start:
+            if cfg.block_attention_mode == "bidirectional":
                 layer.attn.causal = False
         self.final_norm = nn.RMSNorm(cfg.hidden_size)
         self.lm_head = nn.Linear(cfg.hidden_size, cfg.vocab_size, bias=False)
@@ -755,7 +794,7 @@ class PerceiverARLM(PreTrainedModel):
         right_padded = bool((m.cumprod(dim=1) == m).all())
         return not right_padded
 
-    def _run_layers(self, input_ids, attention_mask, doc_ids, cu_seqlens, stop_after: Optional[int] = None):
+    def _run_layers(self, input_ids, attention_mask, doc_ids, cu_seqlens, capture_input_of: Optional[int] = None):
         cfg = self.config
         B, S = input_ids.shape
         key_valid = None
@@ -778,6 +817,9 @@ class PerceiverARLM(PreTrainedModel):
             sink_pos = (torch.arange(S, device=input_ids.device)[None].expand(B, S) - pos)
         for i, layer in enumerate(self.layers):
             skip = skips.pop() if (i >= n - n_skip and skips) else None
+            if capture_input_of is not None and i == capture_input_of:
+                # exactly what layer i's attn_norm receives (used by prefix_kv)
+                return layer.mix(x, x0, skip)
             kwargs = dict(ids=input_ids, cos=cos, sin=sin, key_valid=key_valid, doc_ids=doc_ids,
                           cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos)
             if self.gradient_checkpointing and self.training:
@@ -789,8 +831,6 @@ class PerceiverARLM(PreTrainedModel):
                 x = layer(x, x0, skip, **kwargs)
             if i < n_skip:
                 skips.append(x)
-            if stop_after is not None and i == stop_after:
-                return x
         return x
 
     # -- forward ----------------------------------------------------------------------
@@ -884,11 +924,9 @@ class PerceiverARLM(PreTrainedModel):
             raise RuntimeError("prefix_kv needs a global read layer")
         gi = cfg.global_layer_index
         input_ids, attention_mask, _, doc_ids, S = self._pad_inputs(input_ids, attention_mask, None, doc_ids)
-        x = self._run_layers(input_ids, attention_mask, doc_ids, None, stop_after=gi - 1) if gi > 0 else None
-        if x is None:
-            x = self.embed(input_ids, doc_ids)
+        x_in = self._run_layers(input_ids, attention_mask, doc_ids, None, capture_input_of=gi)
         layer = self.layers[gi]
-        h = layer.attn_norm(layer.alpha * x + layer.beta * self.embed(input_ids, doc_ids))
+        h = layer.attn_norm(x_in)
         k, v = layer.attn.kv(h)
         pos = self._positions(input_ids.shape[1], input_ids.shape[0], doc_ids, input_ids.device)
         cos, sin = rope_cos_sin(pos, cfg.head_dim, cfg.rope_theta, k.dtype)

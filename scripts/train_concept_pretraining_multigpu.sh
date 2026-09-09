@@ -149,6 +149,7 @@ PAR_MODE="${PAR_MODE:-perceiver}"                   # | dense (matched control)
 PAR_PRE_LAYERS="${PAR_PRE_LAYERS:-2}"
 PAR_PRE_WINDOW="${PAR_PRE_WINDOW:-1024}"
 PAR_GLOBAL_LAYERS="${PAR_GLOBAL_LAYERS:-1}"
+PAR_GLOBAL_POSITIONS="${PAR_GLOBAL_POSITIONS:-}"   # e.g. "7" = one global read at mid-depth; empty = after the pre-encoder
 PAR_BLOCK="${PAR_BLOCK:-4096}"
 NUM_ATTENTION_HEADS="${NUM_ATTENTION_HEADS:-}"      # empty = hidden_size / HEAD_DIM
 NUM_KV_HEADS="${NUM_KV_HEADS:-2}"
@@ -363,6 +364,7 @@ if [ "$MODEL_FAMILY" = "perceiver_ar" ]; then
         --par_pre_layers "$PAR_PRE_LAYERS"
         --par_pre_window "$PAR_PRE_WINDOW"
         --par_global_layers "$PAR_GLOBAL_LAYERS"
+        --par_global_positions "$PAR_GLOBAL_POSITIONS"
         --par_block "$PAR_BLOCK"
         --num_kv_heads "$NUM_KV_HEADS"
         --head_dim "$HEAD_DIM"

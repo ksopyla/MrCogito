@@ -253,6 +253,10 @@ class ModelArguments:
     par_pre_layers: int = field(default=2, metadata={"help": "E18: sliding-window pre-encoder layers."})
     par_pre_window: int = field(default=1024, metadata={"help": "E18: pre-encoder window."})
     par_global_layers: int = field(default=1, metadata={"help": "E18: full-causal global read layers."})
+    par_global_positions: str = field(
+        default="",
+        metadata={"help": "E18: comma list of absolute layer indices for the global read(s); empty = right after the pre-encoder. Must list par_global_layers entries."},
+    )
     par_block: int = field(default=4096, metadata={"help": "E18: N — window of the stack layers."})
     num_attention_heads: Optional[int] = field(
         default=None, metadata={"help": "E18: query heads (default hidden_size // head_dim)."}
