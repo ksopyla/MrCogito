@@ -50,7 +50,11 @@ export MUON_MOMENTUM="${MUON_MOMENTUM:-0.95}"
 export WEIGHT_DECAY="${WEIGHT_DECAY:-0.1}"
 export MAX_GRAD_NORM="${MAX_GRAD_NORM:-0.5}"
 export LR_SCHEDULER_TYPE="${LR_SCHEDULER_TYPE:-constant_with_warmup}"
-export WARMUP_STEPS="${WARMUP_STEPS:-500}"
+# Stage-aware default: 500 for the from-scratch 8k stage, 100 for the warm-started 32k stage.
+# (Was shadowed: the generic default above the stage block used to win, so stage B re-warmed
+# a converged model for 500 steps at full lr — 2026-09-08 regression, see run report.)
+if [ "$E18_STAGE" = "32k" ]; then _E18_WARMUP_DEFAULT=100; else _E18_WARMUP_DEFAULT=500; fi
+export WARMUP_STEPS="${WARMUP_STEPS:-$_E18_WARMUP_DEFAULT}"
 export LOGGING_STEPS="${LOGGING_STEPS:-20}"
 export AUTO_INTERVALS="${AUTO_INTERVALS:-1}"
 export SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-6}"
@@ -106,7 +110,6 @@ else
         export TARGET_TOKENS="${TARGET_TOKENS:-500000000}"
         export PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-1}"
         export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-8}"
-        export WARMUP_STEPS="${WARMUP_STEPS:-100}"
     else
         export MAX_SEQ_LENGTH=8192
         export TARGET_TOKENS="${TARGET_TOKENS:-2000000000}"

@@ -67,6 +67,17 @@ def test_e18_stage_b_switches_to_32k_and_own_tok_tree(tmp_path):
     assert _value_after(args, "--max_seq_length") == "32768"
     assert _value_after(args, "--per_device_train_batch_size") == "1"
     assert _value_after(args, "--gradient_accumulation_steps") == "8"
+    # regression: the 32k stage's short warmup used to be shadowed by the generic 500 default
+    assert _value_after(args, "--warmup_steps") == "100"
+
+
+def test_e18_warmup_default_is_stage_aware_and_overridable(tmp_path):
+    result, args, _ = _run_stage(tmp_path, {})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _value_after(args, "--warmup_steps") == "500"
+    result, args, _ = _run_stage(tmp_path, {"E18_STAGE": "32k", "WARMUP_STEPS": "37"})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _value_after(args, "--warmup_steps") == "37"
 
 
 def test_e18_dense_control_and_copy_task(tmp_path):
