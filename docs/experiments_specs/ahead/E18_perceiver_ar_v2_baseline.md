@@ -76,6 +76,21 @@ which spent depth on a compressed summary channel `a` and found it unused under 
 - P2 copy task: mirrored copy at 32k context, ≥ **99%** token accuracy on held-out sequences.
   *Amendment 2026-09-07 (before any P2 result is claimed):* the tiny CPU study `verification/e18_copy_tiny.py` shows that the **mirrored** variant is not learned within 1,500 steps by this family **or by the dense control** (reversal needs a position-varying offset; RoPE-only models have no absolute-position channel), while **plain forward copy** (fixed offset = half the context) is learned quickly — but only by a layer that (a) can see the offset and (b) carries a value embedding. P2 is therefore scored on **plain copy at 32k (offset 16k, ≥ 99%)**, which is exactly the retrieval the single global read must implement, with mirrored copy kept as a stretch/ablation. Two config consequences: value embeddings must include the global layer (`PAR_VALUE_EMBED_LAYERS` = `0,1,…` for `pre_layers=1`), and the P2 run needs thousands of steps (the two 500-step attempts were uninformative). `--par_swa_sink` (windowed layers also see the doc's first token) was added and tested but did not change the tiny result.
 - P3 long-context use: at equal tokens, the 32k-context stage's eval loss on PG-19 validation tokens at positions ≥ 8k is ≥ **2%** lower (relative) than the 8k-context run's; passkey retrieval at 32k ≥ **90%**.
+  *Amendment 2026-09-09 (after stage B, before any P3 verdict):* as written P3 is confounded twice — by
+  optimizer history across runs (stage B warm-started weights only at lr 0.01 with a 500-step re-warmup,
+  launcher bug `ec6d99b`, and ended uniformly ~2% worse at *every* position) and by the intrinsic
+  later-in-document difficulty gradient (the dense 8k control's CE falls with position too). It is also
+  **unmeasurable at the pilot geometry**: 12 × 2048 stack windows reach ~24.6k inside a 32k context, so the
+  global read has nothing to carry. The paired **reach ablation** (`PerceiverARLM.reach_override`,
+  `--probe reach`; report [e18_reach_ablation_20260909](../../2_Experiments_Registry/run_reports/e18_reach_ablation_20260909.md))
+  replaces the cross-run comparison: same tokens, same weights, only the read's window changes. On stage A/B
+  the bottom read is worth **+0.0003 nats**; the dense control extracts **+0.035 nats** from the same 2k–8k
+  reach (the prize exists). P3 is re-scored on **iteration-2 geometry arms** (seq 8k, stack window 256, 0.5B
+  tokens, 125M): A bottom read / C no read / B mid-depth read (`PAR_GLOBAL_POSITIONS=7`). **Pass:** A (or B)
+  beats C by ≥ 1% eval loss at equal tokens *and* its reach-Δ at [2k,8k) is > 0 at ≥ 3σ. **Fail:** A ≈ C and
+  B ≈ C → a single read cannot serve language at this scale; do not launch AWS on the E18 design. Passkey at
+  32k ≥ 90% is dropped as a pilot gate (all three 125M/1B-token models score ≈ 0; it is a scale/data question,
+  see the main-run synthetic-retrieval mix) and replaced by the P2 copy result as the retrieval evidence.
 - P4 architecture tax: training throughput (tokens/s/GPU) at M=8k ≥ **60%** of the matched dense 125M control on the same cards.
 
 **Main (AWS, 594M dense):**
@@ -102,6 +117,13 @@ which spent depth on a compressed summary channel `a` and found it unused under 
 ## Result
 <Filled in AFTER, by experiment-track. Link out; do not paste full results here.>
 - **Interim 2026-09-07 (pilot in progress):** stage A `perceiver_ar_perceiver_H768L1g1s12N2048_20260907_080943` stopped at 1.0B tokens (eval 3.790); P1 ✅, P4 ✅ (throughput parity at 8k), P3 pending stage B, P2 deferred. Report: `docs/2_Experiments_Registry/run_reports/e18_pilot_stageA_20260907.md`.
+- **Interim 2026-09-09:** dense control done (P1 ✅ 0.1%, P4 ✅ 1.02×). **P2 ✅** plain copy at 32k, offset 16k:
+  **99.9998%** token accuracy (`perceiver_ar_perceiver_H768L1g1s6N2048_20260908_230306`). Stage B
+  (`…s12N2048_20260908_145256`, 0.5B @ 32k) finished but is an optimizer regression (uniform +2% at all
+  positions; weights-only restart at lr 0.01) — **not a P3 verdict**. Reach ablation: the bottom global read
+  carries ~0 nats of LM loss at 8k–32k (stack reach covers the context); report
+  `docs/2_Experiments_Registry/run_reports/e18_reach_ablation_20260909.md`. **Iteration-2 geometry arms
+  launched on Polonez 2026-09-09 14:11 UTC** (`Cache/jobs/e18_geometry_arms.sh`, A → C → B).
 - Run id: `<run_id>`
 - WandB: <link>
 - Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`

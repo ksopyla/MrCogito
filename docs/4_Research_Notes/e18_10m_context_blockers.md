@@ -28,10 +28,13 @@ Per-token forward FLOPs decompose as `1.62 GFLOP (everything else) + 2560·M (th
 1. **The global layer is still O(M²).** At 10M it is 94% of forward FLOPs; training costs
    85 GFLOP/token, **17× the 8k cost**. The architecture makes long context *affordable*, not
    sub-quadratic. This alone rules out training at 10M on any budget we will have.
-2. **U-net skip memory.** [`_run_layers`](../../nn/perceiver_ar_lm.py) holds `n//2 = 11` live
-   `[B,S,d]` tensors that gradient checkpointing does **not** free: 7.4 GB at 256k, **28 GB at 1M**,
-   **282 GB at 10M**. This bites before the quadratic term and is the first thing to fix — it also
-   constrains the planned 512k stage 3.
+2. **Retained activations.** With per-layer gradient checkpointing every layer input `[B,S,d]` is
+   kept for recompute: 23 × 2.56 GB = **59 GB at 1M**, 590 GB at 10M (bf16, batch 1, d=1280). The
+   U-net skips add nothing on top — each pushed skip *is* the next layer's retained input, the same
+   tensor — but they cap coarser checkpointing at ~L/2 retained tensors, so the floor with the best
+   schedule is still **~28 GB at 1M, ~280 GB at 10M**. 1M training therefore needs context
+   parallelism (`nn/sequence_parallel.py`) regardless; 512k (stage 3) is tight on 80 GB.
+   *(Corrected 2026-09-09: an earlier version of this note called the skips an extra cost.)*
 3. **Prefill wall.** ~284 PFLOP ≈ **17 minutes** on one H100. Fine for batch/offline, fatal for
    interactive. Needs chunked/streaming prefill with cache persistence to be usable at all.
 4. **Positions.** RoPE θ=5e5 is nowhere near 10M; needs a YaRN/NoPE strategy validated at that
@@ -46,4 +49,5 @@ The useful asymmetry: **there is exactly one global layer**, so each fix is inst
 - **Learned K/V compression of the prefix** — pool 10M token-keys into ~500k latent slots. This is
   where the project's original *concept vector* idea returns, in the one place it is cheap to test
   against an honest uncompressed baseline.
-- **Make U-net skips checkpointable** (or drop them above some context) — cheap, do this first.
+- **Checkpoint groups of layers + context parallelism** for the 512k/1M stages; dropping the U-net
+  above some depth would lower the retained-activation floor from ~L/2 to ~L/k.

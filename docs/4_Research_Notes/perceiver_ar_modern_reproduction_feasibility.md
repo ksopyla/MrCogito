@@ -176,7 +176,7 @@ Same skeleton — long input → one causal cross-attend → deep latent stack �
 **Train at 256k, extend to 512k in a short final stage, demonstrate 1M at inference.**
 
 > Beyond 1M: see [e18_10m_context_blockers.md](e18_10m_context_blockers.md) — the KV cache and decode
-> latency stay fine at 10M, but the O(M²) global layer, the U-net skip memory and a 17-minute prefill
+> latency stay fine at 10M, but the O(M²) global layer, the retained-activation floor and a 17-minute prefill
 > do not. Parked, not on any current path.
 
 | | 256k | 512k | 1M |

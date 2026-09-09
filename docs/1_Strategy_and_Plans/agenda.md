@@ -38,6 +38,12 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   recipe `e18_main_stage1_v1`, and the AWS one-pager
   [E18_main_run_aws_plan](../experiments_specs/ahead/E18_main_run_aws_plan.md) (~$20K for
   stage 1 + dense + long stages; needs pilot gates, Nemotron code-set access, p5 quota).
+  **2026-09-09 status:** P1 ✅ P2 ✅ (copy@32k 99.9998%) P4 ✅; stage B is an optimizer regression, not a
+  P3 result. New instrument: paired **reach ablation** (`--probe reach`) — the bottom global read carries
+  ~0 nats of LM loss at the pilot geometry (stack reach ≥ context) while the dense control shows the
+  0.035–0.10 nat prize exists. P3 amended to geometry arms (N=256 @ 8k: bottom / none / **mid-depth**
+  read, `PAR_GLOBAL_POSITIONS`), running on Polonez. AWS go/no-go waits on them. 10M blockers parked in
+  `docs/4_Research_Notes/e18_10m_context_blockers.md`.
 - **E17e 300M closed (train 2026-08-22, eval 2026-08-25).** Late-half Δperm
   **0.104** CI [0.095, 0.114] on best `checkpoint-2660` (last **0.097** miss);
   RankMe **31.5–57.4** and eval_loss **2.464** passed; gen `real`@256
