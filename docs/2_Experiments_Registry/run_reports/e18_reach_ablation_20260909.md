@@ -109,6 +109,46 @@ free** — keep RoPE on the read for stage 1 of the main run, and treat NoPE as 
 after a pilot-scale copy check (a 6-layer 32k copy run with `PAR_GLOBAL_NOPE=True`, ~3 GPU-h). The
 log-length scale costs nothing on this task and is the cheaper anti-dilution measure for 1M.
 
+## Iteration 2 — geometry arms (seq 8k, stack window N=256, 0.5B tokens, 125M)
+
+Launched 2026-09-09 14:11 UTC (`Cache/jobs/e18_geometry_arms.sh`, A → C → B). Same data, optimizer and
+batch as stage A; only `PAR_BLOCK=256` (chained stack reach ≈ 3.1k, so 62% of the 8k context is beyond
+the stack) and the read's presence/position differ.
+
+### Arm A — bottom global read (the E18 design) — `perceiver_ar_perceiver_H768L1g1s12N256_20260909_141145`
+
+Eval loss (256 rows, seq 8k) every 0.05B tokens: 5.541 4.893 4.619 4.462 4.360 4.276 4.205 4.156 4.122
+**4.090**. Against stage A (N=2048) at equal tokens: 0.2B **4.462 vs 4.386** (+1.7%), 0.4B **4.156 vs
+4.065** (+2.2%) — the N=256 geometry costs ~2% overall (12 layers lose their direct 256–2048 context;
+one read cannot replace twelve). Throughput 19.8k tok/s (vs 28k at N=2048: window-256 masks are mostly
+partial 128-blocks in flex, the slow path; irrelevant at the main run's N=4096). 7.0 GPU-h.
+
+**Reach ablation, 64 rows (paired Δ vs full, + = worse without reach):**
+
+| read window | [0,2k) | [2k,8k) | [8k,16k) (beyond training length) |
+|---|---|---|---|
+| → 256 | +0.0292 ±0.0012 | **+0.0343 ±0.0010** | +0.0320 ±0.0008 |
+| → 512 | +0.0210 ±0.0011 | +0.0303 ±0.0009 | +0.0280 ±0.0008 |
+| → 2048 | 0 | **+0.0239 ±0.0009** | +0.0225 ±0.0007 |
+| → 8192 | 0 | 0 | **+0.0217 ±0.0007** |
+
+Per-token tail (read → 256): **27.5% of tokens worse by > 0.1 nats vs 17.5% better**, worst-1% mean
++1.03 nats, max +5.1 — an asymmetric, heavy tail: a used retrieval channel (contrast stage A: 0.9% vs
+0.9%, symmetric).
+
+**Reading.** (i) **H1 confirmed at first order:** when the stack cannot reach, the same bottom read that
+was worth 0.0002 nats in stage A becomes worth **0.024 nats for 2k–8k reach** (120×) and is used on a
+quarter of all tokens. (ii) **Magnitude vs dense:** the dense control extracts 0.035 nats from 2k–8k
+direct access at *every* layer; the single bottom read recovers ~⅔ of that. The missing third is the
+H2 residual (shallow queries / one layer) that arm B tests. (iii) **Extrapolation:** at positions
+8k–16k, beyond the 8k training length, the read's access to keys > 8k back is worth +0.022 nats — the
+read generalises past its training range, which the dense control did not (its far reach *hurt* there).
+(iv) Net value still to be read from arm C: the ablation bounds the read's trained-in worth at ~0.03
+nats (0.8%), so the pre-registered "A beats C by ≥ 1%" may land at the edge; the 3σ reach-Δ condition is
+met by 25σ.
+
+### Arm C — no global read — running since 21:15 UTC · Arm B — read at mid-depth — queued
+
 ## Next (iteration 2, needs a go)
 
 Three matched 125M arms at seq 8k, **stack window N=256** (chained reach ≈ 3.1k, so 62% of the context is
