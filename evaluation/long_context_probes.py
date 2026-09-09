@@ -111,6 +111,26 @@ def _bucket_labels(edges: list[int]) -> list[str]:
     return labels
 
 
+def reach_tail_stats(delta: torch.Tensor, thresh: float = 0.1) -> dict:
+    """Distribution of per-token Δ = CE(W) − CE(full). A retrieval channel used on a few tokens
+    shows up here (fraction of tokens that got much worse, mean of the worst 1%) even when the
+    bucket mean is ~0."""
+    d = delta.float()
+    n = int(d.numel())
+    if n == 0:
+        return {"n_tokens": 0}
+    k = max(1, n // 100)
+    worst = torch.topk(d, k).values
+    return {
+        "n_tokens": n,
+        f"frac_worse_gt_{thresh}": float((d > thresh).float().mean()),
+        f"frac_better_gt_{thresh}": float((d < -thresh).float().mean()),
+        "top1pct_mean": float(worst.mean()),
+        "max": float(d.max()),
+        "min": float(d.min()),
+    }
+
+
 def probe_reach(model, args, device) -> dict:
     """Paired reach ablation over `--reach_windows` (comma list; 'full' = unrestricted).
 
@@ -131,15 +151,22 @@ def probe_reach(model, args, device) -> dict:
         windows.append(None)
     labels = _bucket_labels(edges)
     per_row: dict[str, list[list[float]]] = {}
+    per_tok: dict[str, torch.Tensor] = {}   # concatenated per-token CE over all rows (tail stats)
     touched: list[int] = []
     for w in windows:
         key = "full" if w is None else str(w)
         with model.reach_override(w) as t:
             touched = t or touched
-            per_row[key] = [bucket_means(per_token_ce(model, ids, device, edges[-1]), edges) for ids in rows]
+            toks = [per_token_ce(model, ids, device, edges[-1]) for ids in rows]
+            per_row[key] = [bucket_means(pt, edges) for pt in toks]
+            per_tok[key] = torch.cat(toks)
     base = torch.tensor(per_row["full"])  # [rows, buckets]
     out: dict = {"rows": len(rows), "buckets": labels, "windows": [k for k in per_row],
-                 "touched_layers": touched, "ce": {}, "delta_vs_full": {}}
+                 "touched_layers": touched, "ce": {}, "delta_vs_full": {}, "tail": {}}
+    for key, pt in per_tok.items():
+        if key == "full":
+            continue
+        out["tail"][key] = reach_tail_stats(pt - per_tok["full"])
     for key, vals in per_row.items():
         t = torch.tensor(vals)
         out["ce"][key] = {lab: float(t[:, b].mean()) for b, lab in enumerate(labels)}

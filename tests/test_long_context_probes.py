@@ -175,3 +175,34 @@ def test_reach_window_flag_applies_to_any_probe(tmp_path):
             b = probe_copy(model, args, "cpu")
     assert a["rows"] == 2 and b["rows"] == 2
     assert 0.0 <= a["copy_token_accuracy"] <= 1.0 and 0.0 <= b["copy_token_accuracy"] <= 1.0
+
+
+def test_reach_tail_stats_and_probe_reports_them(tmp_path):
+    import json
+    import types
+    import torch
+    from datasets import Dataset
+    from evaluation.long_context_probes import probe_reach, reach_tail_stats
+
+    d = torch.tensor([0.0, 0.05, 0.5, -0.3, 0.2] + [0.0] * 95)
+    st = reach_tail_stats(d, thresh=0.1)
+    assert st["n_tokens"] == 100
+    assert abs(st["frac_worse_gt_0.1"] - 0.02) < 1e-9 and abs(st["frac_better_gt_0.1"] - 0.01) < 1e-9
+    assert abs(st["max"] - 0.5) < 1e-6 and abs(st["min"] + 0.3) < 1e-6
+    assert abs(st["top1pct_mean"] - 0.5) < 1e-6  # top 1% of 100 = 1 token
+    assert reach_tail_stats(torch.zeros(0)) == {"n_tokens": 0}
+
+    model = _tiny_model()
+    torch.manual_seed(3)
+    rows = [{"input_ids": torch.randint(3, 97, (24,)).tolist()} for _ in range(2)]
+    ds_dir = tmp_path / "eval"
+    Dataset.from_list(rows).save_to_disk(str(ds_dir))
+    manifest = tmp_path / "m.json"
+    manifest.write_text(json.dumps({"sources": [{"eval_path": str(ds_dir)}]}))
+    args = types.SimpleNamespace(buckets="8,24", manifest=str(manifest), max_rows=8, reach_windows="8,24,full")
+    res = probe_reach(model, args, "cpu")
+    assert set(res["tail"]) == {"8", "24"}
+    assert res["tail"]["8"]["n_tokens"] == 2 * 23
+    # a window covering the whole sequence changes nothing anywhere
+    assert res["tail"]["24"]["max"] == 0.0 and res["tail"]["24"]["min"] == 0.0
+    assert res["tail"]["8"]["max"] > 0.0 or res["tail"]["8"]["min"] < 0.0
