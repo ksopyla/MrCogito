@@ -9,7 +9,7 @@ Nothing here is launched until the user says go.
 
 | # | Precondition | Owner | Status 2026-09-07 |
 |---|---|---|---|
-| 1 | Pilot gates P1 (parity vs dense at 8k), P3 (position buckets improve at 32k), P4 (passkey @32k) pass | me, from stage A/dense/stage B on Polonez | dense control + stage B running (chain `Cache/jobs/e18_dense_then_stageB.sh`) |
+| 1 | Pilot gates: P1 ✅ (0.1%), P2 ✅ (copy@32k 99.9998%), P4 ✅ (1.02×); **P3 re-scored on the geometry arms** (reach ablation, spec amendment 2026-09-09) — stage B was an optimizer regression, not a P3 result | me, arms A/C/B running on Polonez (`Cache/jobs/e18_geometry_arms.sh`) | ⏳ |
 | 2 | P2 copy task solved (or explained) | me, rerun from `checkpoint-500` when GPUs free | two runs stuck at ln(256); deferred |
 | 3 | Packed-document training path (`BATCH_PACKING_MODE=pack`) | done, tested (packed == unpacked per-token loss) | ✅ `e7be9f6` |
 | 4 | Multi-node launch (`NUM_MACHINES`, `MACHINE_RANK`, `MAIN_PROCESS_IP`) | done in the generic launcher; untested on real multi-node | ✅ `a663137`, needs a 2-node dry run |
@@ -77,7 +77,17 @@ Proposal: one **2-node × 7-day** block runs 1a and 1b in parallel (one node eac
    context-extension step), `PER_DEVICE_BATCH_SIZE=1 GRADIENT_ACCUMULATION_STEPS=8` → 2M tokens/step,
    `TARGET_TOKENS=3e11`, `SAVE_STEPS` every ~2 h, `SAVE_TOTAL_LIMIT=3`, a cron `aws s3 sync` of
    the run dir every 30 min, `AUTO_INTERVALS=1`, eval on PG-19 validation buckets + passkey.
-6. **Stage 2 → 3:** warm start from 1a `final` (`MODEL_NAME_OR_PATH`), `MAX_SEQ_LENGTH=262144` then
+6. **Stage 2 → 3 — context-extension protocol (hard rule, from the stage-B regression 2026-09-08):**
+   never restart a converged model at the peak lr with a fresh optimizer. Stage B did exactly that
+   (weights-only `MODEL_NAME_OR_PATH`, Muon 0.01, 500-step re-warmup, no decay) and came out uniformly
+   ~2% worse at every position after 0.5B tokens. For each extension stage: (a) prefer
+   `--resume_from_checkpoint` so Muon momentum carries over, with `max_steps` extended for the new
+   budget; if the dataset/seq change makes resume impractical, warm-start weights at **≤ 20% of peak lr**
+   (Muon 2e-3 / AdamW 4e-5) with ≤ 100 warmup steps and a **decay to zero** over the stage (WSD tail or
+   cosine); (b) `BATCH_PACKING_MODE=pack` so every sequence is full-length; (c) keep ~⅔ short data in the
+   mix to protect short-context loss; (d) before committing the stage, run the reach probe on the
+   warm-start checkpoint at the new length (a model that already extrapolates needs a gentler stage).
+   Mechanics: warm start from 1a `final`, `MAX_SEQ_LENGTH=262144` then
    `524288` with `ROPE_THETA` raised (YaRN factor recorded in the run report), 2 nodes via
    `NUM_MACHINES=2`, `ATTN_PAD_MULTIPLE=4096`.
 7. **Evals** per M1–M4, then `experiment-track`.
