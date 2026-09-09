@@ -26,6 +26,7 @@ Hooks for the family (config fields only — no parameters unless enabled):
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
 from typing import Callable, Optional
@@ -676,6 +677,37 @@ class PerceiverARLM(PreTrainedModel):
     def global_kv_space(self) -> tuple[int, int]:
         """(kv_heads, head_dim) of the global read layer — the message/prefix format."""
         return self.config.num_kv_heads, self.config.head_dim
+
+    @property
+    def full_layer_indices(self) -> list[int]:
+        """Layers currently attending with the unbounded `full` pattern (the global read in
+        perceiver mode; every layer in dense mode)."""
+        return [i for i, l in enumerate(self.layers) if l.attn.pattern == "full"]
+
+    @contextmanager
+    def reach_override(self, window: Optional[int]):
+        """Eval-time reach ablation (E18 P3 instrument): for the duration of the block every
+        `full` layer attends as `swa(window)` instead — the global read(s) in perceiver mode,
+        every layer in dense mode. `window=None` is a no-op. Weights, tokens and the local stack
+        are untouched, so a paired comparison against the unrestricted model isolates how much
+        the loss at position p depends on *direct* access to keys further than `window` back.
+        Positions p < window see exactly the same keys and therefore compute exactly the same
+        loss — a built-in check for the probe. Yields the list of touched layer indices."""
+        if window is None:
+            yield []
+            return
+        if int(window) < 1:
+            raise ValueError("reach_override window must be >= 1 or None")
+        originals: list[tuple[int, str, int]] = []
+        for i in self.full_layer_indices:
+            attn = self.layers[i].attn
+            originals.append((i, attn.pattern, attn.window))
+            attn.pattern, attn.window = "swa", int(window)
+        try:
+            yield [i for i, _, _ in originals]
+        finally:
+            for i, pat, win in originals:
+                self.layers[i].attn.pattern, self.layers[i].attn.window = pat, win
 
     # -- helpers ----------------------------------------------------------------------
     @staticmethod

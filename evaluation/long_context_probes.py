@@ -6,6 +6,14 @@ Three probes, all teacher-forced (no generation needed, so they run at 32k on a 
   * position-bucketed CE on long documents  — does context beyond 8k lower the loss?
   * passkey retrieval                        — argmax accuracy over the 5 answer digits
   * copy task                                — token accuracy on the mirrored second half
+  * reach ablation (paired)                  — same rows, same weights, the global read restricted
+                                               to swa(W) for several W: does the loss at far
+                                               positions depend on DIRECT access to far keys?
+                                               Confound-free (no second run, no position-difficulty
+                                               gradient); reports paired Δ with a standard error.
+
+Any probe accepts `--reach_window W` (e.g. the P2 copy model with W below the copy offset is the
+positive control: accuracy must collapse if the global read is the retrieval channel).
 
 Usage:
   uv run python evaluation/long_context_probes.py --checkpoint <dir> --probe buckets \
@@ -83,6 +91,72 @@ def per_token_ce(model, ids: list[int], device: str, max_len: int) -> torch.Tens
     x = torch.tensor(ids[:max_len], device=device)[None]
     _, per, valid = model(input_ids=x, labels=x.clone(), return_per_token_loss=True)
     return per[0][valid[0]].float().cpu()
+
+
+def bucket_means(per: torch.Tensor, edges: list[int]) -> list[float]:
+    """Mean per-token CE inside consecutive position buckets [0,e0), [e0,e1), ... ."""
+    out, lo = [], 0
+    for hi in edges:
+        seg = per[lo:hi]
+        out.append(float(seg.mean()) if seg.numel() else float("nan"))
+        lo = hi
+    return out
+
+
+def _bucket_labels(edges: list[int]) -> list[str]:
+    labels, lo = [], 0
+    for hi in edges:
+        labels.append(f"[{lo},{hi})")
+        lo = hi
+    return labels
+
+
+def probe_reach(model, args, device) -> dict:
+    """Paired reach ablation over `--reach_windows` (comma list; 'full' = unrestricted).
+
+    For every window W the same rows are scored with every `full` layer restricted to swa(W);
+    Δ(W) = CE(W) − CE(full) per row and bucket, reported as mean ± standard error over rows.
+    Buckets entirely below W are computed from exactly the same keys, so their Δ is the numerical
+    noise floor of the backend (exactly 0 on the sdpa/fp32 path).
+    """
+    edges = [int(x) for x in args.buckets.split(",")]
+    rows = load_eval_rows(args.manifest, min_len=edges[-1], max_rows=args.max_rows)
+    if not rows:
+        raise SystemExit(f"no eval rows with >= {edges[-1]} tokens in {args.manifest}")
+    windows: list[int | None] = []
+    for w in args.reach_windows.split(","):
+        w = w.strip()
+        windows.append(None if w == "full" else int(w))
+    if None not in windows:
+        windows.append(None)
+    labels = _bucket_labels(edges)
+    per_row: dict[str, list[list[float]]] = {}
+    touched: list[int] = []
+    for w in windows:
+        key = "full" if w is None else str(w)
+        with model.reach_override(w) as t:
+            touched = t or touched
+            per_row[key] = [bucket_means(per_token_ce(model, ids, device, edges[-1]), edges) for ids in rows]
+    base = torch.tensor(per_row["full"])  # [rows, buckets]
+    out: dict = {"rows": len(rows), "buckets": labels, "windows": [k for k in per_row],
+                 "touched_layers": touched, "ce": {}, "delta_vs_full": {}}
+    for key, vals in per_row.items():
+        t = torch.tensor(vals)
+        out["ce"][key] = {lab: float(t[:, b].mean()) for b, lab in enumerate(labels)}
+        if key == "full":
+            continue
+        d = t - base
+        n = d.shape[0]
+        out["delta_vs_full"][key] = {
+            lab: {
+                "mean": float(d[:, b].mean()),
+                "se": float(d[:, b].std(unbiased=True) / (n ** 0.5)) if n > 1 else float("nan"),
+                "n": n,
+            }
+            for b, lab in enumerate(labels)
+        }
+    out["per_row"] = per_row
+    return out
 
 
 def probe_buckets(model, args, device) -> dict:
@@ -163,7 +237,11 @@ def probe_copy(model, args, device) -> dict:
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--checkpoint", required=True)
-    p.add_argument("--probe", choices=["buckets", "passkey", "copy"], required=True)
+    p.add_argument("--probe", choices=["buckets", "passkey", "copy", "reach"], required=True)
+    p.add_argument("--reach_window", type=int, default=None,
+                   help="restrict every full layer to swa(W) for this probe (positive-control runs)")
+    p.add_argument("--reach_windows", default="512,2048,8192,full",
+                   help="--probe reach: comma list of windows to sweep ('full' = unrestricted)")
     p.add_argument("--manifest", default=None)
     p.add_argument("--tokenizer", default="HuggingFaceTB/SmolLM3-3B")
     p.add_argument("--buckets", default="8192,32768")
@@ -177,9 +255,13 @@ def main():
     args = p.parse_args()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = load_model(args.checkpoint, device, args.attn_backend)
-    fn = {"buckets": probe_buckets, "passkey": probe_passkey, "copy": probe_copy}[args.probe]
-    res = fn(model, args, device)
+    fn = {"buckets": probe_buckets, "passkey": probe_passkey, "copy": probe_copy, "reach": probe_reach}[args.probe]
+    with model.reach_override(args.reach_window) as touched:
+        res = fn(model, args, device)
     res["checkpoint"] = args.checkpoint
+    if args.reach_window is not None:
+        res["reach_window"] = args.reach_window
+        res["touched_layers"] = touched
     print(json.dumps(res, indent=2))
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)

@@ -394,3 +394,81 @@ def test_swa_sink_packed_equals_unpacked_per_token_loss():
     _, per, valid = model(ids, labels=labels, doc_ids=doc_ids, return_per_token_loss=True)
     ref_valid = torch.cat([model(d, labels=d.clone(), return_per_token_loss=True)[2][0] for d in docs])
     torch.testing.assert_close(per[0][valid[0]], ref[ref_valid], rtol=1e-4, atol=1e-4)
+
+
+# ------------------------------------------------------------------ reach ablation (E18 P3 instrument)
+
+
+def _randomize_residual_writers(model, std=0.2):
+    """wo / down are zero-init, so attention contributes nothing at init; give them signal."""
+    for layer in model.layers:
+        layer.attn.wo.weight.data.normal_(0, std)
+        layer.mlp.down.weight.data.normal_(0, std)
+
+
+def test_reach_override_touches_only_full_layers_and_restores():
+    cfg = tiny_cfg(pre_layers=1, global_layers=1, stack_layers=3)
+    model = PerceiverARLM(cfg).eval()
+    before = [(l.attn.pattern, l.attn.window) for l in model.layers]
+    assert model.full_layer_indices == [cfg.global_layer_index]
+    with model.reach_override(4) as touched:
+        assert touched == [cfg.global_layer_index]
+        assert model.layers[touched[0]].attn.pattern == "swa"
+        assert model.layers[touched[0]].attn.window == 4
+        others = [(l.attn.pattern, l.attn.window) for i, l in enumerate(model.layers) if i not in touched]
+        assert others == [b for i, b in enumerate(before) if i not in touched]
+    assert [(l.attn.pattern, l.attn.window) for l in model.layers] == before
+    # None is a no-op
+    with model.reach_override(None) as touched:
+        assert touched == []
+        assert [(l.attn.pattern, l.attn.window) for l in model.layers] == before
+    # dense: every layer is touched
+    dense = PerceiverARLM(tiny_cfg(par_mode="dense", pre_layers=1, global_layers=1, stack_layers=3)).eval()
+    with dense.reach_override(3) as touched:
+        assert touched == list(range(len(dense.layers)))
+        assert all(l.attn.pattern == "swa" and l.attn.window == 3 for l in dense.layers)
+    assert all(l.attn.pattern == "full" for l in dense.layers)
+    # restore also runs on exceptions
+    with pytest.raises(RuntimeError):
+        with model.reach_override(2):
+            raise RuntimeError("boom")
+    assert [(l.attn.pattern, l.attn.window) for l in model.layers] == before
+    with pytest.raises(ValueError):
+        with model.reach_override(0):
+            pass
+
+
+def test_reach_override_exact_below_window_and_different_beyond():
+    torch.manual_seed(0)
+    cfg = tiny_cfg(pre_layers=1, pre_window=3, global_layers=1, stack_layers=2, block=3, nope_every=0)
+    model = PerceiverARLM(cfg).eval()
+    _randomize_residual_writers(model)
+    S, W = 20, 8
+    x = torch.randint(3, V, (1, S))
+    with torch.no_grad():
+        _, full, _ = model(input_ids=x, labels=x.clone(), return_per_token_loss=True)
+        with model.reach_override(W):
+            _, cut, _ = model(input_ids=x, labels=x.clone(), return_per_token_loss=True)
+    # per-token CE index t is the loss at position t (predicting t+1): positions < W identical
+    assert torch.allclose(full[0, :W], cut[0, :W], atol=1e-6)
+    # beyond the window the global read lost keys -> the loss changes somewhere
+    assert not torch.allclose(full[0, W:], cut[0, W:], atol=1e-6)
+    # a window covering the whole sequence is the identity
+    with torch.no_grad(), model.reach_override(S):
+        _, same, _ = model(input_ids=x, labels=x.clone(), return_per_token_loss=True)
+    assert torch.allclose(full, same, atol=1e-6)
+
+
+def test_reach_override_is_noop_without_a_global_layer():
+    torch.manual_seed(0)
+    cfg = tiny_cfg(pre_layers=1, global_layers=0, stack_layers=3)
+    model = PerceiverARLM(cfg).eval()
+    _randomize_residual_writers(model)
+    assert model.full_layer_indices == []
+    x = torch.randint(3, V, (1, 15))
+    with torch.no_grad():
+        a = model(input_ids=x).logits
+        with model.reach_override(2) as touched:
+            b = model(input_ids=x).logits
+    assert touched == []
+    assert torch.allclose(a, b, atol=1e-6)
