@@ -90,6 +90,25 @@ load-bearing when the stack cannot reach (256k+); **H2** a single read at depth 
 formed by one SWA-512 layer, can only do lexical matching (copy) and never semantic retrieval for LM.
 The dense control cannot separate them. A geometry where the stack's reach ≪ context can.
 
+## Hardening pre-checks on the P2 mechanism (tiny CPU study, 2026-09-09)
+
+`verification/e18_copy_tiny.py --task copy --pre_window 16 --value_embed_layers 0,1` (0.98M params, context
+130, AdamW 3e-3, single seed — indicative only). Eval CE / token accuracy on plain copy (fixed offset):
+
+| variant | @950 | @1450 | @2950 | reading |
+|---|---|---|---|---|
+| baseline: RoPE read at the bottom | 2.20 / 0.17 | 4.64 / 0.10 (spike) | **1.11 / 0.51** | learns; noisy at this lr |
+| `--global_logit_scale log` (SSMax on the read) | 2.03 / 0.22 | 1.68 / 0.27 | — | ≥ baseline, no spike; **safe to enable** |
+| `--global_positions 2` (read at mid-depth) | 3.63 / 0.05 | 2.26 / 0.19 | — | learns, slower start; positional copy survives a deep read |
+| `--global_nope` (content-only read) | 5.54 / 0.015 | 5.54 / 0.015 | 5.22 / 0.022 | **floor for ~1,900 steps**, then a slow descent |
+
+The P2 copy mechanism is **position-based**: with RoPE the read attends at a fixed relative offset and
+reads the value embedding; without RoPE it must build an induction circuit through the pre-encoder,
+which only starts forming after ~1,900 steps here and is ~10× slower. So `PAR_GLOBAL_NOPE` is **not
+free** — keep RoPE on the read for stage 1 of the main run, and treat NoPE as a stage-2/3 option only
+after a pilot-scale copy check (a 6-layer 32k copy run with `PAR_GLOBAL_NOPE=True`, ~3 GPU-h). The
+log-length scale costs nothing on this task and is the cheaper anti-dilution measure for 1M.
+
 ## Next (iteration 2, needs a go)
 
 Three matched 125M arms at seq 8k, **stack window N=256** (chained reach ≈ 3.1k, so 62% of the context is
