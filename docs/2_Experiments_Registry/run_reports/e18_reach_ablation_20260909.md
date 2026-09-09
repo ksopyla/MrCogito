@@ -59,6 +59,11 @@ bridge 16k on its own: **the global read is the retrieval channel** when the tas
 
 Absolute CE (stage A, full): 3.192 / 2.940 / 2.645 / 2.611 on the 32k rows; 3.801 / 4.035 / 4.040 on the 16k rows.
 
+**Per-token tail (stage A, 64 rows, 1.05M tokens; `SA_reach16k_tail.json`)** — rules out a sparse retrieval
+signal hiding behind the ~0 mean: read → 512: 0.91% of tokens worse by > 0.1 nats, **0.89% better** by
+> 0.1 nats (worst-1% mean +0.14, max +1.37, min −1.57); read → 2048: 0.26% worse vs 0.25% better. A used
+channel would be asymmetric (many worse, few better); this is symmetric perturbation.
+
 ## Reading
 
 1. **The bottom global read contributes ≈ 0.0003 nats (0.01%) to language-model loss at 8k–32k**, on
