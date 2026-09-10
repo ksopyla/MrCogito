@@ -120,6 +120,12 @@ not an add-on.
   Arm 0: same with the LM manifest. Arm D: `PAR_MODE=dense MODEL_NAME_OR_PATH=<dense final>`.
   Probes: `evaluation/long_context_probes.py --probe passkey --context_lengths 8192,32768,65536,131072`,
   `--probe buckets`, `--probe reach --reach_windows 8192,full` on the passkey set.
+- **Data verified 2026-09-10 (Polonez, `Cache/jobs/e18b_prep.sh`):** 6,000 train / 200 eval rows at exactly 32,768
+  tokens; merged manifest `e18b_lm_ret05_manifest.json` — row weight **0.00457** (base mean row 2,858 tokens →
+  achieved token share **5.0%**), retrieval source `in_eval: false`; token stats 8.18B tokens/epoch (the
+  all-exhausted interleave cycles the 6k rows ≈ 2.1×), length cache 2.73M rows (mean 2,994). Decoded row check:
+  label density 8.1% mean (4.8–13.2%) ≈ 2.6k supervised tokens/row; 24 items in row 0; first target's source
+  2,967 tokens earlier; keys are three ordinary subword tokens, values and filler are real PG-19/FinePDFs text.
 - **New foundation code:** `scripts/build_retrieval_mix_dataset.py` (reusable, task-family flags,
   writes arrow + merged manifest; tests: label density, no eval leakage, reserved-token framing);
   `evaluation/long_context_probes.py`: passkey filler from concatenated rows for lengths beyond the
