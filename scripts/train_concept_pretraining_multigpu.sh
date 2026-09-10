@@ -419,12 +419,19 @@ if [ "$NUM_MACHINES" -gt 1 ]; then
     echo "Multi-node: machines=$NUM_MACHINES rank=$MACHINE_RANK main=$MAIN_PROCESS_IP:${MAIN_PROCESS_PORT:-29500}"
 fi
 
+# accelerate rejects --multi_gpu with a single process ("You need to use at least 2 processes"),
+# which is exactly the NUM_GPUS=1 calibration / smoke path. Pass it only when it applies.
+MULTI_GPU_ARGS=()
+if [ "$((NUM_GPUS * NUM_MACHINES))" -gt 1 ]; then
+    MULTI_GPU_ARGS+=(--multi_gpu)
+fi
+
 uv run accelerate launch \
     --num_processes="$((NUM_GPUS * NUM_MACHINES))" \
     --num_machines="$NUM_MACHINES" \
     ${MULTI_NODE_ARGS[@]+"${MULTI_NODE_ARGS[@]}"} \
+    ${MULTI_GPU_ARGS[@]+"${MULTI_GPU_ARGS[@]}"} \
     --mixed_precision=bf16 \
-    --multi_gpu \
     training/train_concept_pretraining.py \
     --hidden_size "$HIDDEN_SIZE" \
     --token_embedding_dim "$TOKEN_EMBEDDING_DIM" \
