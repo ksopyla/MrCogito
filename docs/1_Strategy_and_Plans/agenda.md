@@ -44,6 +44,18 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   0.035–0.10 nat prize exists. P3 amended to geometry arms (N=256 @ 8k: bottom / none / **mid-depth**
   read, `PAR_GLOBAL_POSITIONS`), running on Polonez. AWS go/no-go waits on them. 10M blockers parked in
   `docs/4_Research_Notes/e18_10m_context_blockers.md`.
+  **2026-09-10 — arms A and C in, B running:** the bottom read is *used* when the stack cannot reach
+  (0.03 nats, 27% of tokens, extrapolates past 8k) but a read-free model matches it (4.091 vs 4.090):
+  **used, not useful for LM loss**. The stack window sets the loss; the read is a retrieval organ (P2)
+  at a 1 KB/token cache. E18's headline hypothesis is falsified at pilot scale; the platform is validated.
+  **AWS on the current spec: no.** Next, drafted and awaiting go:
+  [E18b](../experiments_specs/ahead/E18b_retrieval_trained_read.md) — 5% dense-label synthetic retrieval
+  in the 32k mix; claim = the read becomes a *general, length-extrapolating* retriever (passkey 0% → ≥ 90%
+  @32k, ≥ 80% @128k) at ≤ 0.5% LM cost, with a protocol control (stage B redo) and a dense control; this is
+  the gate for a re-scoped main run (M2 → RULER/NIAH). Then
+  [E18c](../experiments_specs/ahead/E18c_concept_compressed_read.md) — pool the read's K/V into one concept
+  slot per 16 tokens and measure *retrieval retention*: the Vision's compression bet, in the one place it
+  is measurable, and the 10M-cache path.
 - **E17e 300M closed (train 2026-08-22, eval 2026-08-25).** Late-half Δperm
   **0.104** CI [0.095, 0.114] on best `checkpoint-2660` (last **0.097** miss);
   RankMe **31.5–57.4** and eval_loss **2.464** passed; gen `real`@256
