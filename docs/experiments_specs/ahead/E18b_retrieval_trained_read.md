@@ -1,8 +1,8 @@
 # E18b — Retrieval-trained single read: does dense retrieval supervision turn the global read into a general, length-extrapolating retriever?
 
-- **Status:** draft (awaiting go; no code written)
+- **Status:** approved (user go 2026-09-10; building)
 - **Serves:** the re-scoped E18 long-context platform — *retrieval-class* long context at a 1 KB/token cache, dense-parity short-context quality — and the E19/E21 hooks (a read that retrieves is the message space they need). Decides the AWS main run.
-- **Implementation plan:** *(to be authored by `implementation-plan` after approval)*
+- **Implementation plan:** [E18b_retrieval_trained_read_plan.md](E18b_retrieval_trained_read_plan.md) *(authored by `implementation-plan`; the HOW)*
 - **Owner / dates:** Krzysztof Sopyla · opened 2026-09-10 · closed —
 
 > Follow-up to [E18](E18_perceiver_ar_v2_baseline.md). What E18's pilot established
