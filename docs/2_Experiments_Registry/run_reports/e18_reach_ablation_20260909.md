@@ -147,7 +147,38 @@ read generalises past its training range, which the dense control did not (its f
 nats (0.8%), so the pre-registered "A beats C by ≥ 1%" may land at the edge; the 3σ reach-Δ condition is
 met by 25σ.
 
-### Arm C — no global read — running since 21:15 UTC · Arm B — read at mid-depth — queued
+### Arm C — no global read — `perceiver_ar_perceiver_H768L1g0s13N256_20260909_211550`
+
+Same 14 layers / 278.7M params (the read's slot is a 13th SWA-256 stack layer). Eval loss every 0.05B:
+5.555 4.897 4.627 4.486 4.377 4.282 4.211 4.161 4.121 **4.091**. C − A per eval: +0.014 +0.004 +0.008
++0.024 +0.017 +0.006 +0.006 +0.005 −0.001 **+0.001** — arm A led by up to 0.024 at 0.2B and the gap
+closed by 0.45B. Reach probe: `touched_layers = []`, every Δ exactly 0 (the built-in negative control).
+
+| bucket CE (64 rows) | arm A, read intact | **arm C, no read** |
+|---|---|---|
+| [0,2k) @8k rows | 4.0802 | **4.0796** |
+| [2k,8k) @8k rows | 4.2749 | **4.2736** |
+| [8k,16k) @16k rows | 4.2882 | **4.2859** |
+
+**Pre-registered test: A beats C by ≥ 1% — FAILED (A − C = −0.001 nats, −0.02%).** The reach-Δ
+condition passed at 25σ, so the two readings together are unambiguous: **the bottom read is used but
+not useful.** Arm A learned to route ~0.03 nats of its computation through the read (removing it
+post hoc costs that much), but a model that never had it reaches the same loss, marginally better,
+through the 13-layer SWA stack (chained reach ~3.1k) and the hashed n-gram input. The ablation Δ
+measured dependence, not marginal value; arm C measured value.
+
+**Ranking at 0.5B tokens, seq 8k:** dense ≈ stage A (N=2048 + read) ≈ **4.00** ≪ arm A (N=256 + read)
+≈ arm C (N=256) ≈ **4.09**. The 2.2% between the groups is the stack window; the read moves nothing.
+
+**Reading for the 1M goal.** Next-token loss on natural text gains nothing measurable from a single
+bottom read beyond ~3× the stack's chained reach, at this scale. This matches Perceiver AR's own "no gain
+past 2k" and the literature's small long-context loss gains; it is not expected to reverse at 256k. What
+the read *does* deliver is exact retrieval (P2: 99.9998% at a 16k offset; arm A routes 27% of tokens
+through it when present) at a 1 KB/token cache. **M2's "≥ 3% lower loss on positions ≥ 8k than dense"
+should be dropped or re-scoped**; the retrieval targets (RULER / NIAH with synthetic retrieval in the mix)
+are the honest 1M claim. Arm B decides whether a *deeper* read changes the loss picture.
+
+### Arm B — read at mid-depth (`PAR_GLOBAL_POSITIONS=7`) — running since 2026-09-10 04:09 UTC
 
 ## Next (iteration 2, needs a go)
 

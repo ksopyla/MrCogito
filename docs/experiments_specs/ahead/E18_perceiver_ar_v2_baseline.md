@@ -124,6 +124,11 @@ which spent depth on a compressed summary channel `a` and found it unused under 
   carries ~0 nats of LM loss at 8k–32k (stack reach covers the context); report
   `docs/2_Experiments_Registry/run_reports/e18_reach_ablation_20260909.md`. **Iteration-2 geometry arms
   launched on Polonez 2026-09-09 14:11 UTC** (`Cache/jobs/e18_geometry_arms.sh`, A → C → B).
+- **Interim 2026-09-10 (arms A, C done; B running):** arm A (bottom read, N=256) eval **4.090**; arm C (no
+  read, same params) **4.091**. Reach-Δ on A = +0.024–0.034 nats (25σ, used on 27% of tokens) but **A − C
+  = −0.001**: the amended P3 **fails** its ≥ 1% condition — the bottom read is used but adds no loss a
+  read-free stack cannot recover. Dense ≈ stage A ≈ 4.00 at equal tokens; the 2.2% gap is the stack
+  window, not the read. Arm B (mid-depth) pending; M2's loss target is to be re-scoped toward retrieval.
 - Run id: `<run_id>`
 - WandB: <link>
 - Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
