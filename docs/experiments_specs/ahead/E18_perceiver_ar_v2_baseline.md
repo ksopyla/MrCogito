@@ -128,7 +128,12 @@ which spent depth on a compressed summary channel `a` and found it unused under 
   read, same params) **4.091**. Reach-Δ on A = +0.024–0.034 nats (25σ, used on 27% of tokens) but **A − C
   = −0.001**: the amended P3 **fails** its ≥ 1% condition — the bottom read is used but adds no loss a
   read-free stack cannot recover. Dense ≈ stage A ≈ 4.00 at equal tokens; the 2.2% gap is the stack
-  window, not the read. Arm B (mid-depth) pending; M2's loss target is to be re-scoped toward retrieval.
+  window, not the read. M2's loss target is re-scoped toward retrieval.
+- **Interim 2026-09-10 (all three arms done):** arm B (mid-depth read, `PAR_GLOBAL_POSITIONS=7`) eval
+  **4.090** — identical to A and C — and its read is **5.7× less depended upon** than the bottom read
+  (Δ +0.0042 vs +0.0239 nats). Depth does not rescue the read; the bottom placement is confirmed for the
+  main run. Iteration-2 verdict: **used, not useful** for LM loss. E18's headline hypothesis is falsified
+  at pilot scale; the platform (P1 parity, P2 retrieval, 1 KB/token cache) stands. Next: **E18b**.
 - Run id: `<run_id>`
 - WandB: <link>
 - Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`

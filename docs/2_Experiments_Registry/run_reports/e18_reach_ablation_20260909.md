@@ -178,7 +178,39 @@ through it when present) at a 1 KB/token cache. **M2's "≥ 3% lower loss on pos
 should be dropped or re-scoped**; the retrieval targets (RULER / NIAH with synthetic retrieval in the mix)
 are the honest 1M claim. Arm B decides whether a *deeper* read changes the loss picture.
 
-### Arm B — read at mid-depth (`PAR_GLOBAL_POSITIONS=7`) — running since 2026-09-10 04:09 UTC
+### Arm B — read at mid-depth (`PAR_GLOBAL_POSITIONS=7`) — `perceiver_ar_perceiver_H768L1g1@7s12N256_20260910_040940`
+
+Eval loss every 0.05B: 5.549 4.897 4.624 4.466 4.363 4.282 4.207 4.163 4.126 **4.090** — identical to
+arm A (4.090) and arm C (4.091) at every check-in within ±0.003. Reach ablation (`touched_layers=[7]`):
+
+| read window | [0,2k) | [2k,8k) | [8k,16k) | arm A's Δ at [2k,8k) for comparison |
+|---|---|---|---|---|
+| → 256 | +0.0117 ±0.0009 | +0.0131 ±0.0006 | +0.0111 ±0.0006 | +0.0343 |
+| → 512 | +0.0074 ±0.0007 | +0.0097 ±0.0006 | +0.0074 ±0.0005 | +0.0303 |
+| → 2048 | 0 | **+0.0042 ±0.0004** | +0.0020 ±0.0003 | **+0.0239** |
+
+Tail (read → 256): 21.1% worse vs 16.8% better (arm A: 27.5% vs 17.5%).
+
+**Reading.** Depth does not rescue the read: a mid-depth read reaches the *same* loss and is **5.7×
+less depended upon** than the bottom one (0.0042 vs 0.0239 nats at window 2048). The mechanism is
+straightforward — by layer 7 the local stack has already gathered ~7×256 ≈ 1.8k of context into every
+query position, so the read's marginal information is smaller; at layer 1 its keys and queries are the
+most distinct from what the stack can supply. **H2 (shallow queries) is rejected**, and the bottom
+placement of E18's original design is confirmed as the one that gets used most. Combined with arm C,
+the iteration-2 verdict is complete: **the read's LM value is ~0 wherever it sits; its value is
+retrieval** (P2, and the reach-Δ asymmetry).
+
+### Iteration-2 summary
+
+| arm | read | eval @0.5B | read's Δ @[2k,8k), window 2048 |
+|---|---|---|---|
+| A | bottom (layer 1) | 4.090 | +0.0239 ±0.0009 |
+| B | mid-depth (layer 7) | 4.090 | +0.0042 ±0.0004 |
+| C | none | 4.091 | — (negative control: all Δ exactly 0) |
+
+Amended P3: **reach-Δ > 0 at 3σ ✅ (25σ, arm A); "A beats C by ≥ 1%" ❌ (−0.02%)**. Verdict: *used, not
+useful*. Follow-up: [E18b](../../experiments_specs/ahead/E18b_retrieval_trained_read.md) tests whether
+dense retrieval supervision makes the read a general retriever; the read stays at the bottom.
 
 ## Next (iteration 2, needs a go)
 
