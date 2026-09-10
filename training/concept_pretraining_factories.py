@@ -492,10 +492,12 @@ def build_pretraining_collators(
     """Return stochastic train and deterministic evaluation collators."""
     if model_args.objective_variant == OBJECTIVE_CAUSAL_LM:
         vocab_owner = model.backbone if hasattr(model, "backbone") else model
+        markers_spec = (getattr(data_args, "loss_span_markers", "") or "").strip()
         causal_collator_kwargs = {
             "max_length": data_args.max_seq_length,
             "model_vocab_size": vocab_owner.config.vocab_size,
             "preserve_precomputed_labels": data_args.preserve_precomputed_labels,
+            "loss_span_markers": tuple(int(x) for x in markers_spec.split(",")) if markers_spec else None,
         }
         data_collator = DataCollatorForCausalLM(tokenizer, **causal_collator_kwargs)
         eval_data_collator = DataCollatorForCausalLM(

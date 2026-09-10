@@ -816,9 +816,17 @@ def load_pretokenized_mix(manifest_path):
         tr = load_from_disk(src["train_path"])
         ev = load_from_disk(src["eval_path"])
         train_parts.append(tr)
-        eval_parts.append(ev)
+        # "in_eval": false keeps a source out of the trainer's eval set (E18b: synthetic retrieval
+        # rows train the model but must not move the LM eval loss the arms are compared on).
+        if bool(src.get("in_eval", True)):
+            eval_parts.append(ev)
         weights.append(float(src.get("weight", 1.0)))
-        logger.info(f"[pretokenized]   '{name}': {len(tr):,} train / {len(ev):,} eval rows")
+        logger.info(
+            f"[pretokenized]   '{name}': {len(tr):,} train / {len(ev):,} eval rows"
+            + ("" if bool(src.get("in_eval", True)) else " (excluded from eval)")
+        )
+    if not eval_parts:
+        raise ValueError("Every source is marked in_eval=false; the trainer needs at least one eval source.")
 
     total_w = sum(weights)
     probabilities = [w / total_w for w in weights]

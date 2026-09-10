@@ -367,6 +367,14 @@ class DataTrainingArguments:
             "instead of mirroring input_ids. Default false reproduces E10."
         },
     )
+    loss_span_markers: str = field(
+        default="",
+        metadata={
+            "help": "E18b: 'start_id,end_id' — rows containing start_id get labels only inside "
+            "START..END spans (dense-label retrieval rows sharing a manifest with LM shards); "
+            "other rows stay plain LM. Exclusive with preserve_precomputed_labels."
+        },
+    )
     batch_packing_mode: str = field(
         default="none",
         metadata={
@@ -413,6 +421,14 @@ class DataTrainingArguments:
             )
         if self.length_group_mega_batch_mult < 1:
             raise ValueError("length_group_mega_batch_mult must be positive.")
+        if self.loss_span_markers.strip():
+            parts = [x.strip() for x in self.loss_span_markers.split(",") if x.strip()]
+            if len(parts) != 2 or not all(x.lstrip("-").isdigit() for x in parts):
+                raise ValueError("loss_span_markers must be 'start_id,end_id' (two integers).")
+            if int(parts[0]) == int(parts[1]) or min(int(parts[0]), int(parts[1])) < 0:
+                raise ValueError("loss_span_markers must be two distinct non-negative ids.")
+            if self.preserve_precomputed_labels:
+                raise ValueError("loss_span_markers and preserve_precomputed_labels are mutually exclusive.")
         if self.batch_packing_mode in ("length_group", "pack") and not self.pretokenized_manifest:
             raise ValueError(
                 f"batch_packing_mode={self.batch_packing_mode!r} requires --pretokenized_manifest "

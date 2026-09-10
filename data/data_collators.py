@@ -160,6 +160,29 @@ class DataCollatorForTSDAE:
         }
 
 
+def labels_from_span_markers(ids, start: int, end: int) -> list[int]:
+    """Next-token labels for a row that frames its supervised spans with two reserved ids.
+
+    Rule (E18b retrieval rows, no `labels` column needed so the row keeps the LM shard schema):
+    -100 everywhere except the tokens strictly after a START up to and including the next END;
+    START itself is never a target; an unmatched START labels through the row end (a span cut by
+    truncation is still valid supervision). Rows without START are the caller's business (plain LM).
+    """
+    if isinstance(ids, torch.Tensor):
+        ids = ids.tolist()
+    out = [-100] * len(ids)
+    inside = False
+    for i, t in enumerate(ids):
+        if t == start:
+            inside = True          # (re)open; the marker is not a target
+            continue
+        if inside:
+            out[i] = int(t)
+            if t == end:
+                inside = False
+    return out
+
+
 class DataCollatorForCausalLM:
     """Plain next-token-LM collator (E10 backbone-concept family).
 
@@ -167,6 +190,10 @@ class DataCollatorForCausalLM:
     mirrors input_ids into labels with -100 at padding. Shifting happens inside the model.
     When ``preserve_precomputed_labels=True``, sparse row-level label masks are padded and
     truncated in lockstep instead (used by forced-memory diagnostics).
+    When ``loss_span_markers=(start_id, end_id)`` is set, a row that contains ``start_id`` gets
+    labels only inside its START..END spans (``labels_from_span_markers``); every other row is
+    plain LM. This lets dense-label retrieval rows share a manifest with LM shards that carry no
+    ``labels`` column (E18b). Mutually exclusive with ``preserve_precomputed_labels``.
 
     Packed rows (``data.packed_dataset.PackedDataset``) carry a per-token ``doc_ids`` list.
     When present it is padded with -1 and returned, and the label at every document start
@@ -186,10 +213,19 @@ class DataCollatorForCausalLM:
         max_length: int = 2048,
         model_vocab_size: int | None = None,
         preserve_precomputed_labels: bool = False,
+        loss_span_markers: tuple[int, int] | None = None,
     ):
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.preserve_precomputed_labels = preserve_precomputed_labels
+        if loss_span_markers is not None:
+            if preserve_precomputed_labels:
+                raise ValueError("loss_span_markers and preserve_precomputed_labels are mutually exclusive.")
+            start, end = (int(x) for x in loss_span_markers)
+            if start == end or start < 0 or end < 0:
+                raise ValueError("loss_span_markers must be two distinct non-negative ids.")
+            loss_span_markers = (start, end)
+        self.loss_span_markers = loss_span_markers
         if tokenizer.pad_token_id is None:
             raise ValueError("DataCollatorForCausalLM requires a tokenizer with a pad token.")
         self.pad_token_id = tokenizer.pad_token_id
@@ -245,6 +281,15 @@ class DataCollatorForCausalLM:
         if not self.preserve_precomputed_labels:
             labels = input_ids.clone()
             labels[attention_mask == 0] = -100
+            if self.loss_span_markers is not None:
+                start, end = self.loss_span_markers
+                for i, ids in enumerate(input_ids_list):
+                    if isinstance(ids, torch.Tensor):
+                        ids = ids.tolist()
+                    length = min(len(ids), max_len)
+                    row = ids[:length]
+                    if start in row:
+                        labels[i, :length] = torch.tensor(labels_from_span_markers(row, start, end), dtype=torch.long)
         if packed:
             # first token of every document (t > 0) must not be a next-token target
             starts = torch.zeros_like(attention_mask, dtype=torch.bool)

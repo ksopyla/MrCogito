@@ -209,10 +209,24 @@ def probe_buckets(model, args, device) -> dict:
     return out
 
 
-def build_passkey(tokenizer, filler_ids: list[int], context_len: int, depth: float, rng) -> tuple[list[int], list[int]]:
+def build_filler(rows: list[list[int]], start_row: int, budget: int) -> list[int]:
+    """Concatenate eval rows cyclically from `start_row` until at least `budget` ids (lets the
+    passkey probe run at lengths beyond the tokenized row length, e.g. 128k on a 32k tree)."""
+    out: list[int] = []
+    i = start_row
+    while len(out) < budget:
+        out.extend(rows[i % len(rows)])
+        i += 1
+    return out[:budget]
+
+
+def build_passkey(tokenizer, filler_ids: list[int], context_len: int, depth: float, rng,
+                  frame: list[int] | None = None) -> tuple[list[int], list[int]]:
     key = f"{rng.randint(0, 99999):05d}"
     needle = tokenizer.encode(f" The pass key is {key}. Remember it. ", add_special_tokens=False)
     question = tokenizer.encode(" What is the pass key? The pass key is", add_special_tokens=False)
+    if frame:
+        question = question + list(frame)   # diagnostic: end the question with the training frame token
     answer = tokenizer.encode(f" {key}", add_special_tokens=False)
     budget = context_len - len(needle) - len(question) - len(answer)
     filler = filler_ids[:budget]
@@ -225,17 +239,20 @@ def probe_passkey(model, args, device) -> dict:
     from transformers import AutoTokenizer
 
     tok = AutoTokenizer.from_pretrained(args.tokenizer)
-    rows = load_eval_rows(args.manifest, min_len=max(int(x) for x in args.context_lengths.split(",")), max_rows=args.max_rows)
+    lengths = [int(x) for x in args.context_lengths.split(",")]
+    # filler rows need not be as long as the context: pieces are concatenated (build_filler)
+    rows = load_eval_rows(args.manifest, min_len=min(8192, max(lengths)), max_rows=args.max_rows)
     if not rows:
         raise SystemExit("no filler rows long enough")
     rng = random.Random(args.seed)
+    frame = [int(args.frame_token)] if getattr(args, "frame_token", None) is not None else None
     results = {}
-    for L in (int(x) for x in args.context_lengths.split(",")):
+    for L in lengths:
         correct = total = 0
         for depth in (0.1, 0.3, 0.5, 0.7, 0.9):
             for trial in range(args.trials):
-                filler = rows[(trial * 7 + int(depth * 10)) % len(rows)]
-                ids, answer = build_passkey(tok, filler, L, depth, rng)
+                filler = build_filler(rows, (trial * 7 + int(depth * 10)) % len(rows), L)
+                ids, answer = build_passkey(tok, filler, L, depth, rng, frame=frame)
                 x = torch.tensor(ids, device=device)[None]
                 n = len(answer)
                 pred = argmax_tokens(model, x, x.shape[1] - n - 1, x.shape[1] - 1).tolist()
@@ -245,26 +262,70 @@ def probe_passkey(model, args, device) -> dict:
     return results
 
 
+def _accuracy_on_labels(model, ids: list[int], labels: list[int], device) -> tuple[int, int]:
+    """(#correct, #labelled) greedy next-token accuracy on the positions whose label != -100."""
+    x = torch.tensor(ids, device=device)[None]
+    tgt = torch.tensor(labels, device=device)[1:]
+    pred = argmax_tokens(model, x, 0, x.shape[1] - 1)
+    m = tgt != -100
+    return int((pred[m] == tgt[m]).sum()), int(m.sum())
+
+
 def probe_copy(model, args, device) -> dict:
     from datasets import load_from_disk
 
     ds = load_from_disk(args.copy_dataset)
     correct = total = 0
     for r in ds:
-        x = torch.tensor(r["input_ids"], device=device)[None]
-        labels = torch.tensor(r["labels"], device=device)[None]
-        tgt = labels[0, 1:]
-        pred = argmax_tokens(model, x, 0, x.shape[1] - 1)
-        m = tgt != -100
-        correct += int((pred[m] == tgt[m]).sum())
-        total += int(m.sum())
+        c, n = _accuracy_on_labels(model, list(r["input_ids"]), list(r["labels"]), device)
+        correct += c
+        total += n
     return {"copy_token_accuracy": correct / max(total, 1), "rows": len(ds)}
+
+
+def probe_tasks(model, args, device) -> dict:
+    """Greedy accuracy on the marked spans of held-out retrieval rows (E18b training-task accuracy).
+    Labels are derived exactly as the training collator derives them (`labels_from_span_markers`),
+    so the number is the training objective's accuracy, not a separate format."""
+    from datasets import load_from_disk
+
+    from data.data_collators import labels_from_span_markers
+
+    start, end = (int(x) for x in args.markers.split(","))
+    ds = load_from_disk(args.tasks_dataset)
+    correct = total = rows = 0
+    first_tok_correct = first_tok_total = 0
+    for r in ds:
+        ids = list(r["input_ids"])
+        if args.max_rows and rows >= args.max_rows:
+            break
+        labels = labels_from_span_markers(ids, start, end)
+        c, n = _accuracy_on_labels(model, ids, labels, device)
+        correct += c
+        total += n
+        # the first token after START is the pure retrieval decision (the rest is copy-continuation)
+        x = torch.tensor(ids, device=device)[None]
+        pred = argmax_tokens(model, x, 0, x.shape[1] - 1)
+        for i, t in enumerate(ids[:-1]):
+            if t == start and labels[i + 1] != -100:
+                first_tok_total += 1
+                first_tok_correct += int(int(pred[i]) == labels[i + 1])
+        rows += 1
+    return {
+        "tasks_token_accuracy": correct / max(total, 1),
+        "tasks_first_token_accuracy": first_tok_correct / max(first_tok_total, 1),
+        "labelled_tokens": total, "rows": rows,
+    }
 
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--checkpoint", required=True)
-    p.add_argument("--probe", choices=["buckets", "passkey", "copy", "reach"], required=True)
+    p.add_argument("--probe", choices=["buckets", "passkey", "copy", "reach", "tasks"], required=True)
+    p.add_argument("--tasks_dataset", default=None, help="--probe tasks: arrow dir of held-out retrieval rows")
+    p.add_argument("--markers", default="128103,128104", help="--probe tasks: 'start_id,end_id'")
+    p.add_argument("--frame_token", type=int, default=None,
+                   help="passkey diagnostic: append this id to the question (the training frame token)")
     p.add_argument("--reach_window", type=int, default=None,
                    help="restrict every full layer to swa(W) for this probe (positive-control runs)")
     p.add_argument("--reach_windows", default="512,2048,8192,full",
@@ -282,13 +343,16 @@ def main():
     args = p.parse_args()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = load_model(args.checkpoint, device, args.attn_backend)
-    fn = {"buckets": probe_buckets, "passkey": probe_passkey, "copy": probe_copy, "reach": probe_reach}[args.probe]
+    fn = {"buckets": probe_buckets, "passkey": probe_passkey, "copy": probe_copy, "reach": probe_reach,
+          "tasks": probe_tasks}[args.probe]
     with model.reach_override(args.reach_window) as touched:
         res = fn(model, args, device)
     res["checkpoint"] = args.checkpoint
     if args.reach_window is not None:
         res["reach_window"] = args.reach_window
         res["touched_layers"] = touched
+    if getattr(args, "frame_token", None) is not None:
+        res["frame_token"] = args.frame_token
     print(json.dumps(res, indent=2))
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)

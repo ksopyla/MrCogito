@@ -104,3 +104,20 @@ def test_e18_global_positions_flow_to_config(tmp_path):
     assert _value_after(args, "--par_global_positions") == "7"
     model_args, *_ = _parse(args)
     assert model_args.par_global_positions == "7"
+
+
+def test_e18b_markers_and_manifest_override_flow(tmp_path):
+    result, args, _ = _run_stage(tmp_path, {})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _value_after(args, "--loss_span_markers") == ""
+    merged = tmp_path / "tok" / "e18b_lm_ret05_manifest.json"
+    merged.write_text("{}", encoding="utf-8")
+    result, args, _ = _run_stage(tmp_path, {
+        "E18_STAGE": "32k", "LOSS_SPAN_MARKERS": "128103,128104",
+        "MANIFEST": str(merged), "PRETOKENIZED_MANIFEST": str(merged),
+    })
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _value_after(args, "--loss_span_markers") == "128103,128104"
+    assert _value_after(args, "--pretokenized_manifest") == str(merged)
+    model_args, loss_args, data_args, optim_args, training_args = _parse(args)
+    assert data_args.loss_span_markers == "128103,128104"

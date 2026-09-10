@@ -206,3 +206,41 @@ def test_reach_tail_stats_and_probe_reports_them(tmp_path):
     # a window covering the whole sequence changes nothing anywhere
     assert res["tail"]["24"]["max"] == 0.0 and res["tail"]["24"]["min"] == 0.0
     assert res["tail"]["8"]["max"] > 0.0 or res["tail"]["8"]["min"] < 0.0
+
+
+def test_build_filler_concatenates_rows_cyclically_to_budget():
+    from evaluation.long_context_probes import build_filler
+
+    rows = [[1, 2, 3], [4, 5], [6]]
+    assert build_filler(rows, 0, 7) == [1, 2, 3, 4, 5, 6, 1]
+    assert build_filler(rows, 2, 4) == [6, 1, 2, 3]
+    assert len(build_filler(rows, 1, 100)) == 100
+
+
+def test_passkey_frame_token_ends_the_question():
+    tok = _Tok()
+    filler = [5] * 3000
+    ids, answer = build_passkey(tok, filler, 512, 0.5, __import__("random").Random(0), frame=[999])
+    assert len(ids) == 512 and ids[-len(answer):] == answer
+    assert ids[-len(answer) - 1] == 999  # the frame token sits right before the answer
+
+
+def test_probe_tasks_counts_marked_positions(tmp_path):
+    import types
+    import torch
+    from datasets import Dataset
+    from data.data_collators import labels_from_span_markers
+    from evaluation.long_context_probes import probe_tasks
+
+    model = _tiny_model()
+    S, E = 90, 91
+    rows = [{"input_ids": [1, 5, 6, 7, 8, 9, S, 10, 11, E, 12, 13, 5, 6, S, 14, E, 2]},
+            {"input_ids": [1, 20, 21, S, 22, E, 23, 24, 25, 2]}]
+    ds_dir = tmp_path / "tasks"
+    Dataset.from_list(rows).save_to_disk(str(ds_dir))
+    args = types.SimpleNamespace(tasks_dataset=str(ds_dir), markers=f"{S},{E}", max_rows=0)
+    with torch.no_grad():
+        res = probe_tasks(model, args, "cpu")
+    expected = sum(sum(l != -100 for l in labels_from_span_markers(r["input_ids"], S, E)[1:]) for r in rows)
+    assert res["rows"] == 2 and res["labelled_tokens"] == expected == 7  # 3+2 in row 1, 2 in row 2
+    assert 0.0 <= res["tasks_token_accuracy"] <= 1.0 and 0.0 <= res["tasks_first_token_accuracy"] <= 1.0

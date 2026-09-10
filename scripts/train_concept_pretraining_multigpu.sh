@@ -74,6 +74,7 @@ DATASET_MIX_RECIPE="${DATASET_MIX_RECIPE:-}"
 # loads pre-tokenized sources via load_from_disk (instant) and ignores dataset_mix*.
 PRETOKENIZED_MANIFEST="${PRETOKENIZED_MANIFEST:-}"
 PRESERVE_PRECOMPUTED_LABELS="${PRESERVE_PRECOMPUTED_LABELS:-false}"
+LOSS_SPAN_MARKERS="${LOSS_SPAN_MARKERS:-}"      # E18b: "start_id,end_id" -> labels only inside marked spans on rows that carry them
 # Train batching: "none" (historical), "length_group" (sortish sampling; reorders rows only)
 # or "pack" (whole documents concatenated to MAX_SEQ_LENGTH with per-token doc_ids; the
 # model masks cross-document attention — perceiver_ar only; see data/packed_dataset.py).
@@ -449,6 +450,7 @@ uv run accelerate launch \
     --tokenizer_name "$TOKENIZER_NAME" \
     --max_seq_length "$MAX_SEQ_LENGTH" \
     --preserve_precomputed_labels "$PRESERVE_PRECOMPUTED_LABELS" \
+    --loss_span_markers "$LOSS_SPAN_MARKERS" \
     --batch_packing_mode "$BATCH_PACKING_MODE" \
     --length_group_mega_batch_mult "$LENGTH_GROUP_MEGA_BATCH_MULT" \
     --dataset_cache_dir "$HF_DATASETS_CACHE" \
