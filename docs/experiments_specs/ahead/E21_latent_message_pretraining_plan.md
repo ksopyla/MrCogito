@@ -102,7 +102,7 @@ term dropped) and slots masked. `real` = no override.
   (no re-pretokenization); the boundary on LM rows is drawn **in the collator** (`frac = 0.5`,
   `P ~ U[min, L − min]`, `min = 4096`, seeded per epoch by the trainer's generator), so data prep is the
   6 000 + 200 retrieval rows only (minutes on CPU).
-- **Boundary token:** `128105` (`<|reserved_special_token_102|>`, next free after E18b's START/END).
+- **Boundary token:** `128105` (`<|reserved_special_token_97|>` in the SmolLM3 tokenizer, next free after E18b's START/END).
 - **Boundary-aware retrieval row:** `BOS filler [KEY v]… filler(≥min_gap) M filler [KEY START v END]… filler EOS`
   — every source before `M`, every target after it (the builder's chunk `n` is split around `M`).
 - **Packing:** `BATCH_PACKING_MODE=length_group` (as E18b); the collator applies the boundary per document,
@@ -165,7 +165,7 @@ The length cache and token stats of the new manifest are precomputed in the prep
 - **Slot RoPE extrapolation:** slot positions are block ends inside the trained span at 32k; at 64k/128k
   the same extrapolation question as E18b applies — the probe sweep answers it.
 - **Boundary token in the LM stream:** the model sees `M` as input at P (receiver knows where it starts);
-  predicting `M` is masked. A literal `<|reserved_special_token_102|>` in web text is negligible.
+  predicting `M` is masked. A literal `<|reserved_special_token_97|>` in web text is negligible.
 - **Throughput:** +`nb` keys on the read (6% at r = 16, +100% at r = 1 for arm U — arm U is ~10% slower
   overall); compressor cost is one softmax over r per block.
 - **Memory:** slot K/V `[B, 2048, 2, 128]` bf16 ≈ 2 MB — negligible.

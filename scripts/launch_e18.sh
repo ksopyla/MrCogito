@@ -37,7 +37,7 @@ export PAR_GLOBAL_POSITIONS="${PAR_GLOBAL_POSITIONS:-}"   # empty = after the pr
 export PAR_GLOBAL_NOPE="${PAR_GLOBAL_NOPE:-False}"        # 1M hardening (iteration 3): content-only global read
 export PAR_GLOBAL_LOGIT_SCALE="${PAR_GLOBAL_LOGIT_SCALE:-none}"   # 1M hardening: 'log' = SSMax on the global read
 export PAR_GLOBAL_SCALE_REF="${PAR_GLOBAL_SCALE_REF:-8192}"
-export PAR_MESSAGE_BOUNDARY_TOKEN="${PAR_MESSAGE_BOUNDARY_TOKEN:--1}"   # E21: sender|receiver boundary id (-1 = off; 128105 = <|reserved_special_token_102|>)
+export PAR_MESSAGE_BOUNDARY_TOKEN="${PAR_MESSAGE_BOUNDARY_TOKEN:--1}"   # E21: sender|receiver boundary id (-1 = off; 128105 = <|reserved_special_token_97|>)
 export PAR_MESSAGE_COMPRESS_RATIO="${PAR_MESSAGE_COMPRESS_RATIO:-16}"  # E21: prefix tokens per message slot (1 = arm U)
 export MESSAGE_BOUNDARY_FRAC="${MESSAGE_BOUNDARY_FRAC:-0.0}"           # E21: share of training documents that get a boundary
 export MESSAGE_BOUNDARY_MIN="${MESSAGE_BOUNDARY_MIN:-4096}"

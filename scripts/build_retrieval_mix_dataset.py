@@ -37,7 +37,7 @@ from pathlib import Path
 import numpy as np
 from datasets import Dataset, load_from_disk
 
-DEFAULT_START, DEFAULT_END = 128103, 128104  # <|reserved_special_token_100|>, <|reserved_special_token_101|>
+DEFAULT_START, DEFAULT_END = 128103, 128104  # <|reserved_special_token_95|>, <|reserved_special_token_96|> in the SmolLM3 tokenizer
 DEFAULT_BOS, DEFAULT_EOS = 128000, 128012  # <|begin_of_text|>, <|im_end|> (the mix's append_eos_token_id)
 LM_COLUMNS = ("input_ids", "attention_mask", "special_tokens_mask")
 
@@ -235,7 +235,7 @@ def main():
     p.add_argument("--base_mean_row_tokens", type=float, default=None)
     p.add_argument("--boundary_id", type=int, default=None,
                    help="E21: reserved sender|receiver boundary id placed between the last source and the first "
-                        "target (default: none; 128105 = <|reserved_special_token_102|>)")
+                        "target (default: none; 128105 = <|reserved_special_token_97|>)")
     p.add_argument("--overwrite", action="store_true")
     args = p.parse_args()
     if args.boundary_id is not None and args.boundary_id in (args.start_id, args.end_id, args.bos, args.eos):
