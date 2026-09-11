@@ -38,6 +38,19 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [positioning_and_funding](positioning_and_funding.md) · new reviews in `docs/literature_review/`
   (`frontier_open_models_architecture`, `long_context_architectures_training`, `latent_agent_communication`,
   `latent_reasoning_looped_depth`, `small_lm_training_recipes`). E18b stays as specified.
+  **2026-09-11 status (evening):** the **evaluation layer** the E18/E21 decisions were missing is in
+  (`docs/engineering_specs/long_context_reasoning_eval_layer.md`): lm-evaluation-harness `perceiver_ar`
+  adapter (SmolLM2-card task tiers, public reference rows) + teacher-forced RULER-lite (`passkey`,
+  `multikey`, `vt`, `fwe`, `buckets`, `reach`) behind one runner (`scripts/eval_perceiver_ar_suite.sh`)
+  and one markdown aggregator. **E21 is implemented** as config over the E18 foundation
+  ([plan](../experiments_specs/ahead/E21_latent_message_pretraining_plan.md); CHANGELOG 2026-09-11):
+  boundary token + `KVCompressor` slots on the global read, collator-drawn boundaries, boundary-aware
+  E18b rows (`--boundary_id`), `--probe message` (real / none / swapped / raw). Deviation from the
+  spec, recorded in the plan: compression applies only to keys that cross the boundary (E18c's
+  always-on compressor is not a dependency any more). Next, in order and only when Polonez is free:
+  baseline suite on stage-A `checkpoint-9030`, dense control, E18b arms R / 0 / R2 finals +
+  SmolLM2-135M reference → E21 data prep (`e21_lm95_ret05_boundary_manifest.json`) → 1-GPU / 4-GPU
+  smoke → E21 launch from the E18b-R warm start.
 - **2026-09-06 — new family: Perceiver AR v2 (E18) as the VC-facing long-context platform.**
   A from-scratch ≈600M-dense LM: tiny hashed n-gram input embeddings → 2 sliding-window
   pre-encoder layers → **one** full-causal global read → 20 window-4096 layers; every token

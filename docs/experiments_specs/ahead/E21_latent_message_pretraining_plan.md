@@ -1,6 +1,6 @@
 # E21 — Implementation Plan
 
-- **Spec:** [E21_latent_message_pretraining.md](E21_latent_message_pretraining.md) · **Status:** approved for implementation (user: "plan carefully the e21 implementation, test it on Polonez", 2026-09-11)
+- **Spec:** [E21_latent_message_pretraining.md](E21_latent_message_pretraining.md) · **Status:** implemented 2026-09-11 (commits `4e98760`, `2d9f547` + builder/probe follow-up on `cursor/strategy-sota-review-2026-09-e212`; 513 unit tests green on CPU); awaiting Polonez data prep + smoke (server busy with E18b arm R2)
 - **Authored by:** `implementation-plan` · for → `research-implement`
 - **Gate before the run:** the `perceiver_ar` evaluation layer (`docs/engineering_specs/long_context_reasoning_eval_layer.md`) has produced baseline rows for the E18 checkpoints that E21 warm-starts from.
 

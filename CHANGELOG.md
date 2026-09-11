@@ -15,6 +15,46 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-11] - E21 latent-message pretraining: boundary token + `KVCompressor` on the Perceiver AR global read
+
+**Why:**
+- E21 (`docs/experiments_specs/ahead/E21_latent_message_pretraining.md`, plan
+  `E21_latent_message_pretraining_plan.md`) asks whether a model trained to read its own prefix
+  only through a few compressed slots learns a latent *message* that carries the prefix — the
+  encode → reason step of the vision, tested inside the E18 foundation instead of a new stack.
+  Implemented as config over the shared `perceiver_ar` family; every E18 checkpoint still loads
+  (the two compressor tensors are the only new parameters, zero-init = mean pooling).
+
+**Changed:**
+- `nn/perceiver_ar_lm.py`: `PerceiverARConfig.message_boundary_token_id` (−1 = off) and
+  `message_compress_ratio`; `MessageCtx` / `make_message_mask_pred` / `dense_message_mask`
+  (raw keys never cross the boundary; receivers see slots of complete sender blocks of their own
+  document); `KVCompressor` (attention-pooled K/V per kv-head + zero-init residual, one slot per
+  `ratio` prefix tokens; ratio 1 = the uncompressed arm U); `attend_message` (flex block mask
+  over `S + n_slots` keys, dense sdpa fallback); local layers and the n-gram hash see the boundary
+  as a document start (`local_doc_ids = doc·K + side`). Probe controls `message_override`
+  (`none` / `swapped` / `raw`), `prefix_kv(as_message=True)` and the receiver-only
+  `forward(message_kv=..., position_offset=P)`. Flash backend refused when the message is on.
+- `data/data_collators.py`: `DataCollatorForCausalLM(message_boundary=(id, frac, min), seed)`
+  draws a deterministic per-row boundary at `P ~ U[min, L−min)` for a `frac` share of long
+  documents (token replaced, label −100; packed rows per document; eval collator never inserts).
+- `training/concept_pretraining_args.py` / `concept_pretraining_factories.py`:
+  `--par_message_boundary_token_id`, `--par_message_compress_ratio`, `--message_boundary_frac`,
+  `--message_boundary_min`; compressor allowed as a fresh module on warm start.
+- `scripts/train_concept_pretraining_multigpu.sh`, `scripts/launch_e18.sh`:
+  `PAR_MESSAGE_BOUNDARY_TOKEN`, `PAR_MESSAGE_COMPRESS_RATIO`, `MESSAGE_BOUNDARY_FRAC`,
+  `MESSAGE_BOUNDARY_MIN`.
+- `scripts/build_retrieval_mix_dataset.py --boundary_id`: keyed-recall rows with every source
+  before and every target after the boundary (recall must pass through the message slots).
+- `evaluation/long_context_probes.py --probe message`: paired real / none / swapped / raw
+  receiver-CE ablation on real text (`message_gain@L`, `message_specificity@L`,
+  `compression_cost@L`, per-span deltas with standard errors, sender-side noise floor);
+  `MESSAGE_SPANS` knob in `scripts/eval_perceiver_ar_suite.sh`.
+- Tests: `tests/test_perceiver_ar_message.py` (off-path identity, warm-start load, mask
+  semantics, severance of logits and gradients, r=1 ≡ raw, swapped ≡ other row, round trip
+  of the receiver-only forward, packed rows, padding), collator / launcher / builder / probe
+  tests. `tests/test_launch_e18.py` now parses the bf16-pinned protocol on GPU-less machines.
+
 ## [2026-09-11] - Evaluation layer for `perceiver_ar`: lm-eval-harness reasoning + RULER-lite long context
 
 **Why:**
