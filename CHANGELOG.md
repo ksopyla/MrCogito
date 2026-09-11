@@ -50,10 +50,19 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   receiver-CE ablation on real text (`message_gain@L`, `message_specificity@L`,
   `compression_cost@L`, per-span deltas with standard errors, sender-side noise floor);
   `MESSAGE_SPANS` knob in `scripts/eval_perceiver_ar_suite.sh`.
+- `training/concept_pretraining_trainer.py`: `data/message_rows_frac` and
+  `data/receiver_token_frac` telemetry next to the padding metrics when the model has a boundary id.
+- Launch-time data scans removed: `data/length_cache.py` derives row lengths from the Arrow list
+  offsets of the interleaved mix (bit-identical to the 2.73M-row Polonez cache, < 1 s instead of
+  ~37 min); `scripts/manifest_token_stats.py` sums the length sidecar / offsets instead of
+  re-reading every token (equal to the scanned total on `e18b_lm_ret05`). Both keep the map scan
+  as fallback.
 - Tests: `tests/test_perceiver_ar_message.py` (off-path identity, warm-start load, mask
   semantics, severance of logits and gradients, r=1 ≡ raw, swapped ≡ other row, round trip
-  of the receiver-only forward, packed rows, padding), collator / launcher / builder / probe
-  tests. `tests/test_launch_e18.py` now parses the bf16-pinned protocol on GPU-less machines.
+  of the receiver-only forward, packed rows, padding), collator / launcher / builder / probe /
+  telemetry / length-cache tests. `tests/test_launch_e18.py` now parses the bf16-pinned protocol
+  on GPU-less machines. A CPU end-to-end run through `launch_e18.sh`'s argument flow (E18 tiny →
+  E21 warm start → train → eval → save) passed locally.
 
 ## [2026-09-11] - Evaluation layer for `perceiver_ar`: lm-eval-harness reasoning + RULER-lite long context
 
