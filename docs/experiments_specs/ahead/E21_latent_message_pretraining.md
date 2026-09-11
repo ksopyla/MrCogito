@@ -1,8 +1,8 @@
 # E21 — Latent-message pretraining: one model, split into sender and receiver, that may only talk through its compressed global read
 
-- **Status:** draft — proposed by the 2026-09-11 strategy review; **awaiting user go**. Depends on E18c's `KVCompressor` code (not on E18c's run result); warm-starts from E18b arm R if available, else stage A.
+- **Status:** approved 2026-09-11 (user go: plan + implement + Polonez smoke); in implementation. Depends on E18c's `KVCompressor` code (not on E18c's run result); warm-starts from E18b arm R if available, else stage A.
 - **Serves:** the Vision's three cells at once — compress long context into concept slots (priority 2), reason from them (priority 1/3), and **latent agent-to-agent communication** (priority 4) — by making the latent message the *training objective* rather than the last demo. Rationale: [strategy synthesis](../../4_Research_Notes/strategy_synthesis_latent_channel_20260911.md) · positioning: [positioning_and_funding](../../1_Strategy_and_Plans/positioning_and_funding.md) · literature: [latent_agent_communication](../../literature_review/latent_agent_communication.md).
-- **Implementation plan:** *(to be authored by `implementation-plan` after go)*
+- **Implementation plan:** [E21_latent_message_pretraining_plan.md](E21_latent_message_pretraining_plan.md) (2026-09-11; compression applies only to keys crossing the boundary — see plan §1 for the deliberate deviation from the E18c-style sketch below)
 - **Owner / dates:** Krzysztof Sopyla · opened 2026-09-11 · closed —
 
 > The E18 family was originally sequenced platform (E18) → retrieval read (E18b) → compressed read
