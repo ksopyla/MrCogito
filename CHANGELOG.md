@@ -15,6 +15,34 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-11] - Evaluation layer for `perceiver_ar`: lm-eval-harness reasoning + RULER-lite long context
+
+**Why:**
+- E18/E21 decisions rested on training CE and a single hand-launched passkey probe. The family
+  had no reasoning evaluation and no long-context test beyond needle retrieval, and nothing
+  was comparable across checkpoints or to public models. Decision record:
+  `docs/engineering_specs/long_context_reasoning_eval_layer.md`.
+
+**Changed:**
+- `evaluation/lm_eval_perceiver_ar.py` (new): registers `perceiver_ar` as an lm-evaluation-harness
+  `HFLM` subclass (sdpa, `attn_pad_multiple=1`, softcapped logits scored as trained; `generate`
+  deliberately unsupported).
+- `evaluation/run_lm_eval_suite.py` (new): `core` / `full` tiers over the SmolLM2-card task set,
+  `--hf_model` reference rows, per-tag JSON + `summary.csv` upsert.
+- `evaluation/long_context_probes.py`: teacher-forced RULER-lite probes `multikey`, `vt`
+  (variable tracking), `fwe` (frequent-words extraction) with exact / token / first-token
+  accuracy per length; `--probe suite` runs several probes from one model load with per-probe
+  error capture; tokenizer resolved from the checkpoint dir before the SmolLM3 default.
+- `evaluation/summarize_eval_suite.py` (new): one markdown table across tags from the lm-eval CSV
+  and the long-context / reach JSONs.
+- `scripts/eval_perceiver_ar_suite.sh` (new): health → lm-eval ∥ long-context suite + reach on two
+  GPUs, failure tolerant, outputs under `Cache/eval/<tag>/` and `Cache/Evaluation_reports/lm_eval/`.
+- `analysis/check_model_health.py`: `--model_type perceiver_ar`; forward/loss checks drop
+  tokenizer keys the model does not accept.
+- Tests: `tests/test_lm_eval_perceiver_ar.py`, `tests/test_summarize_eval_suite.py`, new probe
+  builder / suite tests in `tests/test_long_context_probes.py`.
+- `.cursor/skills/experiment-evaluate/SKILL.md`: `perceiver_ar` inventory rows and pipeline section.
+
 ## [2026-09-07] - Document packing (`batch_packing_mode=pack`), E18 main-run recipe, multi-node launch
 
 **Why:**

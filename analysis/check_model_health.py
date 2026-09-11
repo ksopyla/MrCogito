@@ -11,6 +11,9 @@ Usage:
 
     # Detailed weight inspection
     python analysis/check_model_health.py --model_path ./Cache/Training/MODEL_NAME --detailed
+
+    # E18 Perceiver AR checkpoint (tokenizer resolved from the checkpoint dir / SmolLM3 default)
+    python analysis/check_model_health.py --model_path ./Cache/Training/RUN/checkpoint-N --model_type perceiver_ar
 """
 
 import sys
@@ -194,6 +197,16 @@ def check_parameter_health(model):
     
     return len(issues_found) == 0
 
+def _model_inputs(model, inputs):
+    """Drop tokenizer outputs the model's forward() does not accept (e.g. token_type_ids for
+    the Perceiver AR family) so the health checks stay model-agnostic."""
+    import inspect
+    params = inspect.signature(model.forward).parameters
+    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return inputs
+    return {k: v for k, v in inputs.items() if k in params}
+
+
 def check_forward_pass(model, tokenizer):
     """Check if forward pass produces reasonable outputs."""
     print("\n" + "="*80)
@@ -219,7 +232,7 @@ def check_forward_pass(model, tokenizer):
     
     with torch.no_grad():
         try:
-            outputs = model(**inputs)
+            outputs = model(**_model_inputs(model, inputs))
             logits = outputs.logits
             
             # Check logits
@@ -281,7 +294,7 @@ def check_loss_computation(model, tokenizer):
     
     with torch.no_grad():
         try:
-            outputs = model(**inputs, labels=labels)
+            outputs = model(**_model_inputs(model, inputs), labels=labels)
             loss = outputs.loss
             
             print(f"Loss value: {loss.item():.4f}")
@@ -356,7 +369,9 @@ def check_concept_embeddings(model):
 def main():
     parser = argparse.ArgumentParser(description="Check Concept Encoder model health")
     parser.add_argument("--model_path", type=str, required=True, help="Path to trained model")
-    parser.add_argument("--model_type", type=str, default="weighted_mlm", help="Model type")
+    parser.add_argument("--model_type", type=str, default="weighted_mlm",
+                        choices=["weighted_mlm", "perceiver_mlm", "perceiver_denoise", "perceiver_ar"],
+                        help="Model type")
     parser.add_argument("--tokenizer_name", type=str, default="bert-base-uncased", help="Tokenizer to use")
     parser.add_argument("--detailed", action="store_true", help="Run detailed weight inspection (like inspect_checkpoint.py)")
     
@@ -380,6 +395,18 @@ def main():
             model = ConceptEncoderForMaskedLMPerceiver.from_pretrained(args.model_path)
         elif args.model_type == "perceiver_denoise":
             model = ConceptEncoderForDenoisingPerceiver.from_pretrained(args.model_path)
+        elif args.model_type == "perceiver_ar":
+            # E18 family: no concept embeddings; forward(input_ids, attention_mask, labels)
+            # is a plain causal LM. Load with the eval-friendly config (sdpa, no 2048 padding).
+            from evaluation.lm_eval_perceiver_ar import load_perceiver_ar_for_eval
+            from evaluation.long_context_probes import resolve_tokenizer_name
+            dev = "cuda" if torch.cuda.is_available() else "cpu"
+            model = load_perceiver_ar_for_eval(
+                args.model_path, device=dev,
+                dtype=torch.bfloat16 if dev == "cuda" else torch.float32,
+            )
+            if args.tokenizer_name == parser.get_default("tokenizer_name"):
+                args.tokenizer_name = resolve_tokenizer_name(args.model_path)
         else:
             raise ValueError(f"Unsupported model type: {args.model_type}")
         
@@ -403,6 +430,8 @@ def main():
     print(f"\nLoading tokenizer: {args.tokenizer_name}...")
     try:
         tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
         print("[OK] Tokenizer loaded successfully")
     except Exception as e:
         print(f"[X] Failed to load tokenizer: {e}")
