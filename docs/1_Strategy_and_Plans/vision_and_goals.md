@@ -22,6 +22,16 @@ Instead of operating on raw tokens (text) or codec frames (audio), the model com
 
 Near-term research focus remains **priority 1** (concept quality + concept-conditioned generation + recursive refinement). Priorities 2–5 are vision context and Stage-later bets — do not pull them into the critical path until the gate for the previous priority is clear.
 
+> **Proposed amendment (2026-09-11, awaiting decision):** the strategy review
+> ([synthesis](../4_Research_Notes/strategy_synthesis_latent_channel_20260911.md)) argues that
+> priority 4's *mechanism* — a sender→receiver latent message with no raw-text path — is the
+> **training objective** that makes priorities 1 and 2 achievable (E02 de-collapsed for exactly this
+> reason; every CE-trained concept memory in E05–E18 went dead), not a Stage-later demo. Under that
+> reading the dependency arrow reverses: the concept channel is trained *as* a message
+> ([E21](../experiments_specs/ahead/E21_latent_message_pretraining.md)), and long context (priority 2),
+> reasoning bandwidth (priority 3) and A2A (priority 4) become three probes on one trained artifact.
+> The Vision's goals are unchanged; only the order of attack is.
+
 ---
 
 ## Why this stack — semantic bandwidth

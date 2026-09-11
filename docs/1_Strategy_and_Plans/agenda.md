@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-08-27 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-09-11 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,6 +20,24 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-09-11 — strategy review (branch `cursor/strategy-sota-review-2026-09-e212`; proposal, awaiting go).**
+  Internal ledger + frontier sweep (Qwen3.8 / Qwen3.8-Flash-Next, DeepSeek V4 / **V4.1-Flash**, GLM-5.3-Flash,
+  long-context, latent reasoning, latent A2A, VC landscape, small-LM recipes). Two facts change the plan:
+  (1) **DeepSeek-V4.1-Flash (2026-09-10) ships the E18 skeleton** — a causal encoder whose final states are
+  projected once into the decoder's global KV (890 B/token, 1M ctx); "one contextualised global read at
+  ~1 KB/token" is now table stakes, not a moat. (2) Fifteen of our experiments say a compressed channel
+  carries nothing unless the objective can be satisfied **only** through it (E02 worked, E05/E10–E17/E18-arm-C
+  did not); the frontier still trains every such cache under plain CE and talks to other models in text.
+  **Proposal:** make the sender→receiver latent message the *pretraining objective* on the E18 platform —
+  [E21 latent-message pretraining](../experiments_specs/ahead/E21_latent_message_pretraining.md) (message
+  boundary severs the local stack, the global read sees the prefix only as r=16 slots, shared weights, CE +
+  E18b rows; `none`/`swapped`/`raw` causal probes) — pulled forward ahead of E19/E20; E18c's compressor is
+  its code dependency, E18b-R its warm start. Synthesis:
+  [strategy_synthesis_latent_channel_20260911](../4_Research_Notes/strategy_synthesis_latent_channel_20260911.md) ·
+  positioning & funding lanes (SPRIND NFAI, Jean Zay, CEE seed; the one-number demo):
+  [positioning_and_funding](positioning_and_funding.md) · new reviews in `docs/literature_review/`
+  (`frontier_open_models_architecture`, `long_context_architectures_training`, `latent_agent_communication`,
+  `latent_reasoning_looped_depth`, `small_lm_training_recipes`). E18b stays as specified.
 - **2026-09-06 — new family: Perceiver AR v2 (E18) as the VC-facing long-context platform.**
   A from-scratch ≈600M-dense LM: tiny hashed n-gram input embeddings → 2 sliding-window
   pre-encoder layers → **one** full-causal global read → 20 window-4096 layers; every token
@@ -225,9 +243,11 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 Recursive concept refinement and latent reasoning remain Vision goals — E08 and related
 ideas stay in play; compose them only after a strictly causal platform demonstrably carries
 content. E17c's carryless signal is not that platform. From-scratch and other bases are not ruled out. Diffusion
-decode stays parked/revivable from `parked/`. Instruction SFT, long-context, and audio
-remain long-term Vision only. Multi-agent latent communication stays the Stage-2
-headline (see [team_brief](../sprind_frontier_ai/team_brief.md)).
+decode stays parked/revivable from `parked/`. Instruction SFT and audio remain long-term
+Vision only. Multi-agent latent communication was the Stage-2 headline (see
+[team_brief](../sprind_frontier_ai/team_brief.md)); the 2026-09-11 review proposes it becomes the
+*training objective* ([E21](../experiments_specs/ahead/E21_latent_message_pretraining.md)) — see
+Current focus.
 
 ## Engineering notes (not live experiments)
 Canonical eval protocol, Tier-1 data-protocol upgrade, compute audit, and training-pipeline
