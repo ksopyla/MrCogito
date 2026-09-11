@@ -12,6 +12,9 @@ class _Tok:
     def encode(self, text, add_special_tokens=False):
         return [ord(c) % 200 + 10 for c in text]
 
+    def decode(self, ids):
+        return "".join(chr(i - 10) for i in ids)
+
 
 def test_passkey_places_key_at_depth_and_ends_with_answer():
     tok = _Tok()
@@ -223,6 +226,123 @@ def test_passkey_frame_token_ends_the_question():
     ids, answer = build_passkey(tok, filler, 512, 0.5, __import__("random").Random(0), frame=[999])
     assert len(ids) == 512 and ids[-len(answer):] == answer
     assert ids[-len(answer) - 1] == 999  # the frame token sits right before the answer
+
+
+def test_multikey_has_n_needles_and_asks_for_the_target():
+    import random
+    import re
+    from evaluation.long_context_probes import build_multikey
+
+    tok = _Tok()
+    filler = [ord("~") - 10 + 10] * 6000   # '~' filler decodes cleanly
+    for depth in (0.1, 0.5, 0.9):
+        ids, answer = build_multikey(tok, filler, 2048, depth, random.Random(1), n_keys=4)
+        assert len(ids) == 2048 and ids[-len(answer):] == answer
+        text = tok.decode(ids)
+        needles = re.findall(r"The pass key for (\w+) is (\d{5})\.", text)
+        assert len(needles) == 4
+        m = re.search(r"What is the pass key for (\w+)\? The pass key for \1 is (\d{5})$", text)
+        assert m is not None
+        target_name, target_key = m.group(1), m.group(2)
+        assert dict(needles)[target_name] == target_key
+        # the target needle sits at the requested depth
+        pos = text.index(f"The pass key for {target_name} is") / len(text)
+        assert abs(pos - depth) < 0.12, (depth, pos)
+
+
+def test_variable_tracking_chain_is_ordered_and_answer_lists_the_chain():
+    import random
+    import re
+    from evaluation.long_context_probes import build_variable_tracking
+
+    tok = _Tok()
+    filler = [ord("~")] * 8000
+    ids, answer = build_variable_tracking(tok, filler, 3000, 0.2, random.Random(3), hops=3, n_chains=2)
+    assert len(ids) == 3000 and ids[-len(answer):] == answer
+    text = tok.decode(ids)
+    value = re.search(r"assigned the value (\d{5})", text).group(1)
+    names = re.search(r"the variables are ((?:[A-Z]{3} ?)+)$", text).group(1).split()
+    assert len(names) == 3
+    stmts = {v: text.index(f"VAR {v} = ") for v in names}
+    assert text[stmts[names[0]]:].startswith(f"VAR {names[0]} = {value}")
+    for i in range(1, 3):
+        assert stmts[names[i]] > stmts[names[i - 1]]                      # hop i after its source
+        assert text[stmts[names[i]]:].startswith(f"VAR {names[i]} = {names[i-1]}")
+    # a distractor chain with another value is present
+    assert len(set(re.findall(r"VAR [A-Z]{3} = (\d{5})", text))) == 2
+
+
+def test_frequent_words_answer_is_the_top3_by_count():
+    import random
+    from collections import Counter
+    from evaluation.long_context_probes import build_frequent_words
+
+    tok = _Tok()
+    ids, answer = build_frequent_words(tok, 4000, random.Random(5), n_answer=3)
+    assert 0.9 * 4000 <= len(ids) <= 4000 and ids[-len(answer):] == answer
+    text = tok.decode(ids)
+    body = text.split("Coded text:")[1].split(" Question:")[0]
+    counts = Counter(body.split())
+    top = [w for w, _ in counts.most_common(3)]
+    assert tok.decode(answer).split() == top
+    c = [counts[w] for w in top]
+    assert c[0] > c[1] > c[2]
+
+
+def test_score_answer_and_aggregate_semantics():
+    import torch
+    from evaluation.long_context_probes import _aggregate, _score_answer
+
+    model = _tiny_model()
+    ids = list(range(3, 30))
+    answer = ids[-3:]
+    s = _score_answer(model, ids, answer, "cpu")
+    assert set(s) == {"exact", "tok_correct", "tok_total", "first"} and s["tok_total"] == 3
+    # greedy predictions of the trailing span equal the model's own argmax there
+    x = torch.tensor(ids)[None]
+    with torch.no_grad():
+        pred = model(input_ids=x).logits[0].argmax(-1)[-4:-1].tolist()
+    assert s["exact"] == int(pred == answer) and s["first"] == int(pred[0] == answer[0])
+    agg = _aggregate([{"exact": 1, "tok_correct": 3, "tok_total": 3, "first": 1},
+                      {"exact": 0, "tok_correct": 1, "tok_total": 3, "first": 0}])
+    assert agg == {"exact": 0.5, "token_acc": 4 / 6, "first_token_acc": 0.5, "n": 2}
+
+
+def test_probe_suite_runs_several_probes_with_one_model(tmp_path, monkeypatch):
+    import json
+    import types
+    import torch
+    from datasets import Dataset
+    import evaluation.long_context_probes as lcp
+
+    model = _tiny_model()
+    torch.manual_seed(4)
+    rows = [{"input_ids": torch.randint(3, 97, (64,)).tolist()} for _ in range(3)]
+    ds_dir = tmp_path / "eval"
+    Dataset.from_list(rows).save_to_disk(str(ds_dir))
+    manifest = tmp_path / "m.json"
+    manifest.write_text(json.dumps({"sources": [{"eval_path": str(ds_dir)}]}))
+    class _SmallTok:  # ids must fit the tiny model's 97-token vocabulary
+        def encode(self, text, add_special_tokens=False):
+            return [ord(c) % 90 + 5 for c in text]
+
+    monkeypatch.setattr(lcp, "_load_tokenizer", lambda args: _SmallTok())
+    args = types.SimpleNamespace(
+        suite="fwe,buckets,multikey", manifest=str(manifest), max_rows=8, context_lengths="48",
+        trials=1, seed=0, buckets="16,48", n_keys=2, checkpoint="x", tokenizer=None,
+    )
+    res = lcp.probe_suite(model, args, "cpu")
+    assert res["suite"] == ["fwe", "buckets", "multikey"]
+    assert "fwe@48" in res["results"]["fwe"] and 0.0 <= res["results"]["fwe"]["fwe@48"] <= 1.0
+    assert "ce[0,16)" in res["results"]["buckets"]
+    assert "multikey@48" in res["results"]["multikey"]
+    assert res["errors"] == {}
+    assert set(res["elapsed_s"]) == {"fwe", "buckets", "multikey"}
+    # a broken probe is recorded, the others still complete
+    monkeypatch.setitem(lcp.PROBES, "boom", lambda m, a, d: 1 / 0)
+    args.suite = "boom,fwe"
+    res = lcp.probe_suite(model, args, "cpu")
+    assert "ZeroDivisionError" in res["errors"]["boom"] and "fwe@48" in res["results"]["fwe"]
 
 
 def test_probe_tasks_counts_marked_positions(tmp_path):
