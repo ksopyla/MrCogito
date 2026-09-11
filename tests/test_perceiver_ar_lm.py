@@ -626,3 +626,64 @@ def test_global_logit_scale_changes_output_once_attention_writes():
     # position ref-1 predicts from n_visible=ref keys... but its q is scaled by factor(ref-1)=1 -> 2 after doubling:
     # every position's logits may change; the first token (factor 0) cannot change through the global read
     assert not torch.allclose(base[0, ref:], doubled[0, ref:])
+
+
+# ------------------------------------------------------------------ warm start with fresh value embeddings
+
+
+def test_warm_start_accepts_fresh_value_embeddings_but_not_real_mismatches(tmp_path):
+    """E18b R2 adds a value embedding to the global read that the stage-A checkpoint lacks; the
+    warm start must tolerate exactly those fresh parameters and still reject genuine mismatches."""
+    from safetensors.torch import save_file
+
+    from training.concept_pretraining_factories import _build_perceiver_ar_model
+
+    torch.manual_seed(0)
+    src = PerceiverARLM(tiny_cfg(value_embed_layers=(0, 3)))
+    ckpt = tmp_path / "ckpt"
+    ckpt.mkdir()
+    save_file(src.state_dict(), str(ckpt / "model.safetensors"))
+
+    class _Tok:
+        pad_token_id, bos_token_id, eos_token_id = 0, 1, 2
+
+        def __len__(self):
+            return V
+
+    class _MA:  # the fields _build_perceiver_ar_model reads
+        model_family = "perceiver_ar"; par_mode = "perceiver"; hidden_size = 32
+        intermediate_size = 64; token_embedding_dim = 8; par_pre_layers = 1; par_pre_window = 4
+        par_global_layers = 1; par_global_positions = ""; num_hidden_layers = 3; par_block = 6
+        num_attention_heads = 4; num_kv_heads = 2; head_dim = 8; rope_theta = 10000.0
+        par_nope_every = 2; par_swa_sink = False; par_global_nope = False
+        par_global_logit_scale = "none"; par_global_scale_ref = 8192
+        par_ngram_orders = "2,3"; par_ngram_buckets = 64; par_value_embed_dim = 4
+        logit_softcap = 30.0; z_loss = 1e-4; chunked_ce_block_size = 5; use_liger = False
+        attn_backend = "sdpa"; attn_pad_multiple = 1; block_attention_mode = "causal"
+        write_back_hook = False; model_name_or_path = str(ckpt)
+        par_value_embed_layers = "0,1,3"          # adds one on the global read (layer 1)
+
+    class _DA:
+        max_seq_length = 64; tokenizer_name = "x"
+
+    model, cfg, _ = _build_perceiver_ar_model(_Tok(), _MA(), _DA())
+    assert model.layers[1].attn.value_embed is not None       # the fresh one exists
+    assert cfg.global_layer_index == 1
+    # every pre-existing weight was actually loaded
+    assert torch.allclose(model.layers[0].attn.wq.weight, src.layers[0].attn.wq.weight)
+    assert torch.allclose(model.layers[0].attn.value_embed.weight, src.layers[0].attn.value_embed.weight)
+
+    # a checkpoint genuinely missing a real weight is still rejected by our guard
+    partial = {k: v for k, v in src.state_dict().items() if k != "lm_head.weight"}
+    bad = tmp_path / "bad"
+    bad.mkdir()
+    save_file(partial, str(bad / "model.safetensors"))
+    _MA.model_name_or_path = str(bad)
+    with pytest.raises(ValueError, match="warm start mismatch"):
+        _build_perceiver_ar_model(_Tok(), _MA(), _DA())
+
+    # a width change is caught by torch's own shape check
+    _MA.model_name_or_path = str(ckpt)
+    _MA.hidden_size = 64
+    with pytest.raises(RuntimeError, match="size mismatch"):
+        _build_perceiver_ar_model(_Tok(), _MA(), _DA())

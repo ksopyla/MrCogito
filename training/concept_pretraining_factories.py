@@ -1,6 +1,7 @@
 """Model, data, collator, and identity factories for concept pretraining."""
 
 import json
+import re
 from datetime import datetime
 
 import torch
@@ -368,10 +369,22 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
         weights = os.path.join(model_args.model_name_or_path, "model.safetensors")
         state = load_file(weights)
         missing, unexpected = model.load_state_dict(state, strict=False)
-        if unexpected or any(not k.startswith("write_back_proj") for k in missing):
+        # Tolerated fresh parameters: the E19 write-back hook, and value embeddings added to a
+        # layer the checkpoint did not have one on (E18b R2 adds one to the global read, which the
+        # P2 copy result says the retrieving layer needs). Their init is already ~0.3% of |v|, so
+        # the warm start is effectively unchanged at step 0. Anything else is a real mismatch.
+        _ALLOWED_FRESH = ("write_back_proj", "value_embed", "value_proj", "value_lambda")
+        unexplained = [k for k in missing if not any(tag in k for tag in _ALLOWED_FRESH)]
+        if unexpected or unexplained:
             raise ValueError(
-                f"perceiver_ar warm start mismatch from {weights}: missing={missing[:5]} "
+                f"perceiver_ar warm start mismatch from {weights}: missing={unexplained[:5]} "
                 f"unexpected={unexpected[:5]}"
+            )
+        fresh_ve = sorted({int(m.group(1)) for k in missing if (m := re.match(r"layers\.(\d+)\.attn\.value_", k))})
+        if fresh_ve:
+            logger.info(
+                f"Warm start adds fresh value embeddings on layer(s) {fresh_ve} "
+                f"(global read = layer {config.global_layer_index})"
             )
         logger.info(f"Warm-started PerceiverARLM weights from {weights} (missing={missing})")
     pb = analytic_param_count(config)
