@@ -103,17 +103,32 @@ the no-channel arm (E18 arm C). RankMe/slot-rank alone say nothing about use.
   a channel onto a **frozen text-pretrained** model with a projector or aligner; audits show part of
   the gains are generic-prefix steering; every shipping protocol (MCP GA, A2A v1.0, Agents SDK) is
   text. No funded company sells a latent envelope.
-- **Latent reasoning:** see §2b below (scout pending at the time of writing; the ledger's own reading
-  — Ouro-style pretrained recurrence over post-hoc fine-tuning, task-selective gains, measurement as
-  the bottleneck — stands).
+- **Latent reasoning:** see §2b below.
 - **Recipes:** Muon (NorMuon/Polar Express) + wd + RMS-matched scale ≈ 2× AdamW; data mix and stage
   decay beat every knob; MTP hurts below ~1B; z-loss in cooldown; WSD; NoPE on the read is not free
   (our tiny study and Qwen's ablation agree). A ~600M at 300B–1T tokens should land at HellaSwag
   58–65 / ARC-C 35–48 / MMLU 28–40.
 
-### 2b. Latent reasoning (to be completed from the scout)
+### 2b. Latent reasoning — what trains and wins at ≤ 3B
 
-<!-- LATENT_REASONING_SECTION -->
+Full review: [`latent_reasoning_looped_depth.md`](../literature_review/latent_reasoning_looped_depth.md).
+The field split into two lines. **Pretrained recurrence** (Ouro 1.4B/2.6B at 7.7T tokens ≈ 3–12B
+transformers, the only shipped looped LM; Huginn 3.5B; Mixture-of-Recursions 135M–1.7B; PonderLM;
+Thoughtbubbles) wins at scale but shows *efficiency*, not reasoning leaps, and probes find no CoT-like
+mechanism. **Continuous CoT by fine-tuning** (Coconut → CODI → SIM-CoT → LOTUS, Jun 2026) reached
+GSM8K *parity* with explicit CoT at 3B only once **every latent step gets its own supervision**
+(SIM-CoT's auxiliary decoder, LOTUS's parallel per-latent CE); without it latents collapse or learn
+shortcuts (2025–26 audits). No frontier lab ships latent reasoning; `reasoning_effort` scales text.
+
+Two consequences for us. (i) The recurring failure — a latent nothing supervises densely — is the
+same failure as our dead concept channels; the recurring fix — per-step dense signal — is what the
+E21 receiver provides for free, since the receiver's CE depends on the slots at every position. So
+**E19's reasoning steps should refine the message, not the token stream**, and its metric is
+"receiver gain and recall-through-message rise with the number of refinement steps K" — a
+recurrent-depth claim measured on a channel that cannot be bypassed. (ii) Benchmarks that reliably
+show latent gains at ≤ 3B are planning/graph tasks (ProsQA/ProntoQA) and BAPO-hard synthetics, not
+GSM8K; we should carry those, and the ledger's older reading (Ouro not TRM; gains task-selective;
+measurement is the bottleneck) stands.
 
 ## 3. The advantage others are not taking
 
