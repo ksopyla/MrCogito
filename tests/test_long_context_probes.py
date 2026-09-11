@@ -345,6 +345,69 @@ def test_probe_suite_runs_several_probes_with_one_model(tmp_path, monkeypatch):
     assert "ZeroDivisionError" in res["errors"]["boom"] and "fwe@48" in res["results"]["fwe"]
 
 
+def test_probe_message_paired_modes_and_sender_invariance(tmp_path):
+    """E21 probe on CPU: 4 rows, boundary at L/2, 4 channel modes; sender CE identical across
+    modes, receiver CE differs between none/real/raw, swapped uses the other row's message."""
+    import json
+    import types
+    import torch
+    from datasets import Dataset
+    import evaluation.long_context_probes as lcp
+    from nn.perceiver_ar_lm import PerceiverARConfig, PerceiverARLM
+
+    torch.manual_seed(6)
+    cfg = PerceiverARConfig(
+        vocab_size=97, hidden_size=32, intermediate_size=64, token_embedding_dim=8,
+        pre_layers=1, pre_window=3, global_layers=1, stack_layers=2, block=3, nope_every=0,
+        num_attention_heads=4, num_kv_heads=2, head_dim=8, ngram_buckets=64,
+        value_embed_layers=(0,), value_embed_dim=4, use_liger=False, attn_backend="sdpa",
+        attn_pad_multiple=1, chunked_ce_block_size=5, z_loss=0.0,
+        message_boundary_token_id=96, message_compress_ratio=2,
+    )
+    model = PerceiverARLM(cfg).eval()
+    for layer in model.layers:
+        layer.attn.wo.weight.data.normal_(0, 0.2)
+        layer.mlp.down.weight.data.normal_(0, 0.2)
+    gi = cfg.global_layer_index
+    model.layers[gi].attn.compressor.delta.weight.data.normal_(0, 0.1)  # a non-trivial (non-mean-pool) message
+    rows = [{"input_ids": torch.randint(3, 96, (40,)).tolist()} for _ in range(5)]  # odd count -> last dropped
+    ds_dir = tmp_path / "eval"
+    Dataset.from_list(rows).save_to_disk(str(ds_dir))
+    manifest = tmp_path / "m.json"
+    manifest.write_text(json.dumps({"sources": [{"eval_path": str(ds_dir)}]}))
+    args = types.SimpleNamespace(manifest=str(manifest), max_rows=8, context_lengths="32", message_depth=0.5,
+                                 message_spans="4,12")
+    res = lcp.probe_message(model, args, "cpu")
+    assert res["rows"] == 4 and res["P"]["32"] == 16 and res["boundary_token_id"] == 96
+    assert res["spans"] == ["[0,4)", "[4,12)"] and res["modes"] == ["real", "none", "swapped", "raw"]
+    ce = res["ce"]["32"]
+    assert set(ce) == {"real", "none", "swapped", "raw"}
+    # sender tokens never see the message: bit-identical CE before the boundary in every mode
+    assert all(v < 1e-5 for v in res["sender_noise"]["32"].values())
+    # the channel changes receiver CE (real vs none vs raw differ; swapped differs from real)
+    assert ce["real"]["[0,4)"] != ce["none"]["[0,4)"]
+    assert ce["raw"]["[0,4)"] != ce["real"]["[0,4)"]
+    assert ce["swapped"]["[0,4)"] != ce["real"]["[0,4)"]
+    d = res["delta_vs_real"]["32"]
+    assert set(d) == {"none", "swapped", "raw"} and d["none"]["[0,4)"]["n"] == 4
+    assert abs(d["none"]["[0,4)"]["mean"] - (ce["none"]["[0,4)"] - ce["real"]["[0,4)"])) < 1e-6
+    assert abs(res["message_gain@32"] - d["none"]["[0,4)"]["mean"]) < 1e-6
+    assert abs(res["compression_cost@32"] - (ce["real"]["[0,4)"] - ce["raw"]["[0,4)"])) < 1e-6
+    # `real` matches a direct forward with the boundary inserted (the override is restored afterwards)
+    x = torch.tensor([rows[0]["input_ids"][:32], rows[1]["input_ids"][:32]])
+    x[:, 16] = 96
+    with torch.no_grad():
+        _, per, _ = model(input_ids=x, labels=x.clone(), return_per_token_loss=True)
+    expect = lcp.bucket_means(per[0].float()[16:], [4, 12])
+    assert all(abs(a - b) < 1e-5 for a, b in zip(res["per_row"]["32"]["real"][0], expect))
+    assert model._message_override == "real"
+    # a plain E18 checkpoint (no boundary id) is refused
+    plain = _tiny_model()
+    import pytest
+    with pytest.raises(SystemExit):
+        lcp.probe_message(plain, args, "cpu")
+
+
 def test_probe_tasks_counts_marked_positions(tmp_path):
     import types
     import torch

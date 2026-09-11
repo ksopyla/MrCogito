@@ -14,7 +14,8 @@
 #   CONTEXT_LENGTHS=8192,32768     RULER-lite lengths (add 65536,131072 for the long sweep)
 #   BUCKETS=8192,32768             perplexity length buckets over MANIFEST rows
 #   TRIALS=8 MAX_ROWS=64           synthetic trials per (probe, length) / manifest rows per bucket
-#   PROBES=passkey,multikey,vt,fwe,buckets
+#   PROBES=passkey,multikey,vt,fwe,buckets   (E21 checkpoints: append ,message for the paired
+#                                  real/none/swapped/raw message ablation; MESSAGE_SPANS=512,4096)
 #   MANIFEST=...                   pretokenized manifest for filler + buckets
 #                                  (default: $DATASETS_TOK_DIR/../datasets_tok_smollm3_32k/e18b_lm_ret05_manifest.json)
 #   ATTN_BACKEND=flex              long-context backend (flex for >= 8k; sdpa for short)
@@ -48,6 +49,7 @@ BUCKETS="${BUCKETS:-8192,32768}"
 TRIALS="${TRIALS:-8}"
 MAX_ROWS="${MAX_ROWS:-64}"
 PROBES="${PROBES:-passkey,multikey,vt,fwe,buckets}"
+MESSAGE_SPANS="${MESSAGE_SPANS:-512,4096}"   # E21 message probe CE spans after the boundary
 ATTN_BACKEND="${ATTN_BACKEND:-flex}"
 MANIFEST="${MANIFEST:-${DATASETS_TOK_DIR}/../datasets_tok_smollm3_32k/e18b_lm_ret05_manifest.json}"
 HF_MODEL="${HF_MODEL:-}"
@@ -108,7 +110,8 @@ lmeval() {
 longctx() {
   uv run python evaluation/long_context_probes.py --checkpoint "$CKPT" --probe suite --suite "$PROBES" \
     --attn_backend "$ATTN_BACKEND" --manifest "$MANIFEST" --context_lengths "$CONTEXT_LENGTHS" \
-    --buckets "$BUCKETS" --trials "$TRIALS" --max_rows "$MAX_ROWS" --out "$OUT/longctx_suite.json"
+    --buckets "$BUCKETS" --trials "$TRIALS" --max_rows "$MAX_ROWS" --message_spans "$MESSAGE_SPANS" \
+    --out "$OUT/longctx_suite.json"
 }
 
 # --- Reach: which window the full layers actually use (positive control for the global read) ---

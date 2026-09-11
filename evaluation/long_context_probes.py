@@ -15,6 +15,9 @@ All probes are teacher-forced (no generation needed, so they run at 32k–128k o
   * reach     — paired reach ablation: same rows, same weights, the global read restricted to
                 swa(W) for several W — does the loss at far positions depend on DIRECT access to
                 far keys? Confound-free; reports paired Δ with a standard error.
+  * message   — E21 paired message ablation: the boundary is inserted mid-row and receiver CE is
+                compared under real / none / swapped / raw message modes (value, specificity and
+                compression cost of the latent message; needs an E21 checkpoint)
   * suite     — several of the above in ONE process (model loaded and compiled once), merged JSON
 
 The synthetic probes are a teacher-forced RULER-lite for *base* LMs: scored by greedy argmax on
@@ -567,9 +570,90 @@ def probe_tasks(model, args, device) -> dict:
     }
 
 
+def probe_message(model, args, device) -> dict:
+    """E21 paired message ablation on real text (model must have `message_boundary_token_id`).
+
+    Every eval row (truncated to L for each `--context_lengths`) gets the boundary at
+    P = int(L · `--message_depth`); rows are scored in pairs so the `swapped` control reads the
+    OTHER row's message. Per-token CE is bucketed relative to P with `--message_spans` edges
+    ([P, P+e0), [P+e0, P+e1), ...) under the four channel modes:
+
+      real    — the trained compressed message                         (the model)
+      none    — receivers get no slots: the severed-context floor      (Δ>0 ⇒ the message carries information)
+      swapped — the neighbouring row's message: a WRONG message         (Δ vs none ⇒ content-specific, not a bias)
+      raw     — uncompressed prefix K/V across the boundary: the ceiling (Δ<0 ⇒ what compression costs)
+
+    Sender tokens never see the message, so their CE must be identical in every mode; the maximum
+    absolute sender difference is reported as the numerical noise floor (`sender_noise`).
+    Δ(mode) = CE(mode) − CE(real) per row and span, reported as mean ± standard error over rows.
+    """
+    cfg = model.config
+    if not getattr(cfg, "message_enabled", False):
+        raise SystemExit("--probe message needs a checkpoint with message_boundary_token_id >= 0 (E21)")
+    boundary = int(cfg.message_boundary_token_id)
+    lengths = [int(x) for x in args.context_lengths.split(",")]
+    edges = [int(x) for x in args.message_spans.split(",")]
+    labels = _bucket_labels(edges)
+    modes = ("real", "none", "swapped", "raw")
+    rows = load_eval_rows(args.manifest, min_len=max(lengths), max_rows=args.max_rows)
+    rows = [ids for ids in rows if boundary not in ids]
+    if len(rows) < 2:
+        raise SystemExit(f"need >= 2 eval rows with >= {max(lengths)} tokens (without the boundary id) in {args.manifest}")
+    if len(rows) % 2:
+        rows = rows[:-1]
+    out: dict = {"rows": len(rows), "boundary_token_id": boundary, "spans": labels, "modes": list(modes),
+                 "compress_ratio": int(cfg.message_compress_ratio), "P": {}, "ce": {}, "delta_vs_real": {},
+                 "sender_noise": {}}
+    for L in lengths:
+        P = max(1, min(L - 2, int(L * float(args.message_depth))))
+        out["P"][str(L)] = P
+        per_row: dict[str, list[list[float]]] = {m: [] for m in modes}
+        sender: dict[str, list[torch.Tensor]] = {m: [] for m in modes}
+        for i in range(0, len(rows), 2):
+            x = torch.tensor([rows[i][:L], rows[i + 1][:L]], device=device)
+            x[:, P] = boundary
+            for mode in modes:
+                with torch.no_grad(), model.message_override(mode):
+                    _, per, valid = model(input_ids=x, labels=x.clone(), return_per_token_loss=True)
+                per = per.float().cpu()
+                for b in range(2):
+                    pt = per[b]
+                    per_row[mode].append(bucket_means(pt[P:], edges))   # pt[P] predicts token P+1
+                    sender[mode].append(pt[: P - 1])                     # pt[P-1] would predict the boundary itself
+        base = torch.tensor(per_row["real"])  # [rows, spans]
+        out["ce"][str(L)] = {}
+        out["delta_vs_real"][str(L)] = {}
+        out["sender_noise"][str(L)] = {}
+        for mode in modes:
+            t = torch.tensor(per_row[mode])
+            out["ce"][str(L)][mode] = {lab: float(t[:, b].mean()) for b, lab in enumerate(labels)}
+            noise = torch.stack([(a - r).abs().max() for a, r in zip(sender[mode], sender["real"])])
+            out["sender_noise"][str(L)][mode] = float(noise.max())
+            if mode == "real":
+                continue
+            d = t - base
+            n = d.shape[0]
+            out["delta_vs_real"][str(L)][mode] = {
+                lab: {
+                    "mean": float(d[:, b].mean()),
+                    "se": float(d[:, b].std(unbiased=True) / (n ** 0.5)) if n > 1 else float("nan"),
+                    "n": n,
+                }
+                for b, lab in enumerate(labels)
+            }
+        # flat keys for the suite aggregator: message value / specificity / compression cost on the first span
+        first = labels[0]
+        ce = out["ce"][str(L)]
+        out[f"message_gain@{L}"] = ce["none"][first] - ce["real"][first]
+        out[f"message_specificity@{L}"] = ce["swapped"][first] - ce["real"][first]
+        out[f"compression_cost@{L}"] = ce["real"][first] - ce["raw"][first]
+        out.setdefault("per_row", {})[str(L)] = per_row
+    return out
+
+
 PROBES = {
     "buckets": probe_buckets, "passkey": probe_passkey, "multikey": probe_multikey, "vt": probe_vt,
-    "fwe": probe_fwe, "copy": probe_copy, "reach": probe_reach, "tasks": probe_tasks,
+    "fwe": probe_fwe, "copy": probe_copy, "reach": probe_reach, "tasks": probe_tasks, "message": probe_message,
 }
 
 
@@ -590,6 +674,10 @@ def main():
                    help="restrict every full layer to swa(W) for this probe (positive-control runs)")
     p.add_argument("--reach_windows", default="512,2048,8192,full",
                    help="--probe reach: comma list of windows to sweep ('full' = unrestricted)")
+    p.add_argument("--message_depth", type=float, default=0.5,
+                   help="--probe message: boundary position as a fraction of the row length")
+    p.add_argument("--message_spans", default="512,4096",
+                   help="--probe message: CE span edges after the boundary ([P,P+e0), [P+e0,P+e1), ...)")
     p.add_argument("--manifest", default=None)
     p.add_argument("--tokenizer", default=DEFAULT_TOKENIZER,
                    help="default: the tokenizer saved in the checkpoint dir, else the family default")

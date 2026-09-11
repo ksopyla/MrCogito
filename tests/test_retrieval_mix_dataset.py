@@ -135,6 +135,58 @@ def test_merge_manifest_scales_base_and_excludes_retrieval_from_eval(base_manife
     assert man["sources"][0]["weight"] == 0.5  # base untouched
 
 
+BOUNDARY = 95
+
+
+def test_boundary_row_puts_every_source_before_and_every_target_after_it(base_manifest):
+    path, man = base_manifest
+    paths = [s["train_path"] for s in man["sources"]]
+    rows = list(iter_rows(8, paths, seed=11, boundary=BOUNDARY, **ROW_KW))
+    plain = list(iter_rows(8, paths, seed=11, **ROW_KW))
+    for r, q in zip(rows, plain):
+        ids, sp = r["input_ids"], r["special_tokens_mask"]
+        assert len(ids) == 512 and len(q["input_ids"]) == 512  # the boundary replaces one filler token
+        assert ids.count(BOUNDARY) == 1
+        P = ids.index(BOUNDARY)
+        assert sp[P] == 1 and ids[0] == BOS and ids[-1] == EOS
+        assert [i for i, s in enumerate(sp) if s] == [
+            i for i, t in enumerate(ids) if t in (BOS, EOS, START, END, BOUNDARY)]
+        targets = _targets(ids)
+        assert targets and all(i > P for i, _, _ in targets)
+        for i, key, value in targets:
+            pat = key + value
+            hits = [j for j in range(0, i - len(pat)) if ids[j:j + len(pat)] == pat]
+            assert hits and hits[0] + len(pat) <= P, "source must be a sender token"
+            assert i - hits[0] >= ROW_KW["min_gap"]
+        # the marker rule is unaffected: the boundary is never a label
+        labels = labels_from_span_markers(ids, START, END)
+        assert labels[P] == -100 and BOUNDARY not in labels
+    assert len({r["input_ids"].index(BOUNDARY) for r in rows}) > 1  # offset inside chunk n is random
+
+
+def test_cli_boundary_flag_records_meta_and_masks_special(base_manifest, tmp_path):
+    path, man = base_manifest
+    out_dir, out_man = tmp_path / "ret_b", tmp_path / "merged_b.json"
+    cmd = [sys.executable, "scripts/build_retrieval_mix_dataset.py", "--base_manifest", str(path),
+           "--fraction", "0.05", "--n_train", "2", "--n_eval", "1", "--context", "512",
+           "--out_dir", str(out_dir), "--out_manifest", str(out_man), "--seed", "0",
+           "--start_id", str(START), "--end_id", str(END), "--bos", str(BOS), "--eos", str(EOS),
+           "--key_lo", str(KEY_LO), "--key_hi", str(KEY_HI), "--items", "2", "3", "--short_len", "4", "6",
+           "--span_len", "8", "16", "--min_gap", "64", "--base_mean_row_tokens", "80",
+           "--boundary_id", str(BOUNDARY)]
+    res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(Path(__file__).resolve().parents[1]))
+    assert res.returncode == 0, res.stdout + res.stderr
+    from datasets import load_from_disk
+    tr = load_from_disk(str(out_dir / "train"))
+    for r in tr:
+        assert r["input_ids"].count(BOUNDARY) == 1
+        assert r["special_tokens_mask"][r["input_ids"].index(BOUNDARY)] == 1
+    assert json.loads(out_man.read_text())["retrieval_meta"]["boundary_id"] == BOUNDARY
+    bad = subprocess.run(cmd[:-1] + [str(START)], capture_output=True, text=True,
+                         cwd=str(Path(__file__).resolve().parents[1]))
+    assert bad.returncode != 0 and "boundary_id" in bad.stderr
+
+
 def test_cli_end_to_end_writes_arrow_and_manifest(base_manifest, tmp_path):
     path, man = base_manifest
     out_dir, out_man = tmp_path / "ret", tmp_path / "merged.json"

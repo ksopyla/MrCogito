@@ -14,6 +14,10 @@ with ordinary sources. Every target follows its source by at least `--min_gap` t
 and targets are otherwise randomly placed. Values mix short (lookup-like) and long (span-copy)
 lengths. No passkey / needle format is generated — that is the held-out transfer probe.
 
+E21 (`--boundary_id`): one reserved boundary id is placed between the last source and the first
+target (row length unchanged), so all sources are *sender* tokens and all targets *receiver*
+tokens — the recall must pass through the compressed message slots of the Perceiver AR global read.
+
   uv run python scripts/build_retrieval_mix_dataset.py --base_manifest $M32 --fraction 0.05 \
       --n_train 6000 --n_eval 200 --out_dir $TOK/e18b_retrieval_32k \
       --out_manifest $TOK/e18b_lm_ret05_manifest.json
@@ -105,8 +109,13 @@ def sample_items(rng, n_items, short_len, span_len, key_lo, key_hi, key_len, p_s
 
 
 def build_row(rng, filler: FillerStream, *, context, items, short_len, span_len, min_gap, key_lo, key_hi,
-              key_len, start, end, bos, eos, min_chunk=16, max_item_frac=0.6):
-    """One row of exactly `context` ids + its special_tokens_mask. Returns (ids, special)."""
+              key_len, start, end, bos, eos, min_chunk=16, max_item_frac=0.6, boundary=None):
+    """One row of exactly `context` ids + its special_tokens_mask. Returns (ids, special).
+
+    `boundary` (E21): reserved id placed at a random offset inside chunk n — the filler between the
+    last source and the first target — replacing one filler token, so every source is a *sender*
+    token and every target a *receiver* token and recall must flow through the message slots.
+    """
     S = context
     for _ in range(50):
         n = int(rng.integers(items[0], items[1] + 1))
@@ -134,24 +143,33 @@ def build_row(rng, filler: FillerStream, *, context, items, short_len, span_len,
         ids.extend(filler.take(m))
         special.extend([0] * m)
 
+    def add_chunk(idx):
+        if boundary is not None and idx == n:
+            before = int(rng.integers(0, chunks[idx]))
+            add_filler(before)
+            ids.append(boundary); special.append(1)
+            add_filler(chunks[idx] - 1 - before)
+        else:
+            add_filler(chunks[idx])
+
     ci = 0
-    add_filler(chunks[ci]); ci += 1
+    add_chunk(ci); ci += 1
     for i in rng.permutation(n):
         key, _ = its[i]
         ids.extend(key + values[i]); special.extend([0] * (len(key) + len(values[i])))
-        add_filler(chunks[ci]); ci += 1
+        add_chunk(ci); ci += 1
     for i in rng.permutation(n):
         key, _ = its[i]
         ids.extend(key); special.extend([0] * len(key))
         ids.append(start); special.append(1)
         ids.extend(values[i]); special.extend([0] * len(values[i]))
         ids.append(end); special.append(1)
-        add_filler(chunks[ci]); ci += 1
+        add_chunk(ci); ci += 1
     ids.append(eos); special.append(1)
     assert len(ids) == S and len(special) == S, (len(ids), S)
     # filler pieces keep their internal document terminators (and a value span may cross one):
     # the mask must flag every special id wherever it sits, exactly as the tokenizer would.
-    specials = {bos, eos, start, end}
+    specials = {bos, eos, start, end} | ({boundary} if boundary is not None else set())
     special = [1 if t in specials else 0 for t in ids]
     return ids, special
 
@@ -215,8 +233,13 @@ def main():
     p.add_argument("--filler_sources", default="", help="comma list of base source names (default: all)")
     p.add_argument("--filler_rows_cap", type=int, default=20000, help="rows visited per filler source")
     p.add_argument("--base_mean_row_tokens", type=float, default=None)
+    p.add_argument("--boundary_id", type=int, default=None,
+                   help="E21: reserved sender|receiver boundary id placed between the last source and the first "
+                        "target (default: none; 128105 = <|reserved_special_token_102|>)")
     p.add_argument("--overwrite", action="store_true")
     args = p.parse_args()
+    if args.boundary_id is not None and args.boundary_id in (args.start_id, args.end_id, args.bos, args.eos):
+        raise SystemExit("--boundary_id must differ from --start_id/--end_id/--bos/--eos")
 
     base_path = Path(args.base_manifest)
     base = json.loads(base_path.read_text())
@@ -238,7 +261,7 @@ def main():
         context=args.context, items=tuple(args.items), short_len=tuple(args.short_len),
         span_len=tuple(args.span_len), min_gap=args.min_gap, key_lo=args.key_lo, key_hi=args.key_hi,
         key_len=args.key_len, start=args.start_id, end=args.end_id, bos=args.bos, eos=args.eos,
-        rows_cap=args.filler_rows_cap,
+        rows_cap=args.filler_rows_cap, boundary=args.boundary_id,
     )
     for split, n, seed in (("train", args.n_train, args.seed), ("eval", args.n_eval, args.seed + 1)):
         # NOTE: list-valued gen_kwargs are treated as shards by `from_generator` (the generator
@@ -257,6 +280,7 @@ def main():
         "key_range": [args.key_lo, args.key_hi], "key_len": args.key_len, "items": list(args.items),
         "short_len": list(args.short_len), "span_len": list(args.span_len), "min_gap": args.min_gap,
         "seed": args.seed, "context": args.context, "filler_sources": [s["name"] for s in sources],
+        "boundary_id": args.boundary_id,
         "base_mean_row_tokens": m_bar, "target_token_fraction": args.fraction, "row_weight": w,
         "achieved_token_fraction": token_share_for_row_weight(w, m_bar, args.context),
     }
