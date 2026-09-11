@@ -270,3 +270,34 @@ def test_boundary_forward_trains_and_padding_is_safe():
     gi = model.config.global_layer_index
     assert model.layers[gi].attn.compressor.u.grad is not None
     assert torch.isfinite(model.layers[gi].attn.compressor.u.grad).all()
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="flex needs CUDA")
+def test_message_flex_matches_sdpa_cuda():
+    """Whole-model parity of the flex block-mask path (raw keys ‖ slots, KV_LEN = S + n_slots) with
+    the dense sdpa mask, in every probe mode, plus a finite backward through the compressor."""
+    import copy
+
+    kw = dict(hidden_size=128, intermediate_size=256, num_attention_heads=4, num_kv_heads=2, head_dim=64,
+              block=128, pre_window=64, attn_pad_multiple=128, message_boundary_token_id=M, message_compress_ratio=8)
+    sdpa = make_model(seed=0, **kw).cuda().to(torch.bfloat16)
+    torch.manual_seed(0)
+    flex = PerceiverARLM(cfg(attn_backend="flex", **kw)).cuda().to(torch.bfloat16)
+    flex.load_state_dict(copy.deepcopy(sdpa.state_dict()))
+    flex.eval()
+    gi = sdpa.config.global_layer_index
+    with torch.no_grad():   # a non-trivial message (delta is zero-init)
+        for m in (sdpa, flex):
+            m.layers[gi].attn.compressor.delta.weight.normal_(0, 0.05)
+    S, P = 1024, 400
+    x = with_boundary(rand_ids(2, S, seed=3), P).cuda()
+    for mode in ("real", "none", "swapped", "raw"):
+        with torch.no_grad(), sdpa.message_override(mode), flex.message_override(mode):
+            a = sdpa(input_ids=x).logits.float()
+            b = flex(input_ids=x).logits.float()
+        scale = a.abs().max().item()
+        assert (a - b).abs().max().item() < 0.05 * scale, (mode, (a - b).abs().max().item(), scale)
+    out = flex.train()(input_ids=x, labels=x.clone())
+    out.loss.backward()
+    g = flex.layers[gi].attn.compressor.u.grad
+    assert g is not None and torch.isfinite(g).all() and g.abs().sum() > 0
