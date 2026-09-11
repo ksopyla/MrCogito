@@ -352,6 +352,8 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
         attn_pad_multiple=model_args.attn_pad_multiple,
         block_attention_mode=model_args.block_attention_mode,
         write_back_hook=model_args.write_back_hook,
+        message_boundary_token_id=int(getattr(model_args, "par_message_boundary_token_id", -1)),
+        message_compress_ratio=int(getattr(model_args, "par_message_compress_ratio", 16)),
         pad_token_id=tokenizer.pad_token_id,
         bos_token_id=tokenizer.bos_token_id if tokenizer.bos_token_id is not None else tokenizer.eos_token_id,
         eos_token_id=tokenizer.eos_token_id,
@@ -373,7 +375,8 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
         # layer the checkpoint did not have one on (E18b R2 adds one to the global read, which the
         # P2 copy result says the retrieving layer needs). Their init is already ~0.3% of |v|, so
         # the warm start is effectively unchanged at step 0. Anything else is a real mismatch.
-        _ALLOWED_FRESH = ("write_back_proj", "value_embed", "value_proj", "value_lambda")
+        # E21 adds the zero-init KVCompressor on the global read (mean-pool at step 0).
+        _ALLOWED_FRESH = ("write_back_proj", "value_embed", "value_proj", "value_lambda", "compressor")
         unexplained = [k for k in missing if not any(tag in k for tag in _ALLOWED_FRESH)]
         if unexpected or unexplained:
             raise ValueError(
@@ -512,7 +515,22 @@ def build_pretraining_collators(
             "preserve_precomputed_labels": data_args.preserve_precomputed_labels,
             "loss_span_markers": tuple(int(x) for x in markers_spec.split(",")) if markers_spec else None,
         }
-        data_collator = DataCollatorForCausalLM(tokenizer, **causal_collator_kwargs)
+        # E21: the train collator draws message boundaries; the eval collator never does, so the
+        # trainer's eval loss stays the ordinary-row LM loss (comparable with the warm-start run).
+        boundary_frac = float(getattr(data_args, "message_boundary_frac", 0.0) or 0.0)
+        train_extra = {}
+        if boundary_frac > 0:
+            tok_id = int(getattr(vocab_owner.config, "message_boundary_token_id", -1))
+            if tok_id < 0:
+                raise ValueError(
+                    "message_boundary_frac > 0 needs a model with message_boundary_token_id >= 0 "
+                    "(perceiver_ar --par_message_boundary_token_id)."
+                )
+            train_extra = {
+                "message_boundary": (tok_id, boundary_frac, int(data_args.message_boundary_min)),
+                "seed": int(getattr(training_args, "seed", 0) or 0),
+            }
+        data_collator = DataCollatorForCausalLM(tokenizer, **causal_collator_kwargs, **train_extra)
         eval_data_collator = DataCollatorForCausalLM(
             tokenizer,
             **causal_collator_kwargs,

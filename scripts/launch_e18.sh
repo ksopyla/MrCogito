@@ -37,6 +37,10 @@ export PAR_GLOBAL_POSITIONS="${PAR_GLOBAL_POSITIONS:-}"   # empty = after the pr
 export PAR_GLOBAL_NOPE="${PAR_GLOBAL_NOPE:-False}"        # 1M hardening (iteration 3): content-only global read
 export PAR_GLOBAL_LOGIT_SCALE="${PAR_GLOBAL_LOGIT_SCALE:-none}"   # 1M hardening: 'log' = SSMax on the global read
 export PAR_GLOBAL_SCALE_REF="${PAR_GLOBAL_SCALE_REF:-8192}"
+export PAR_MESSAGE_BOUNDARY_TOKEN="${PAR_MESSAGE_BOUNDARY_TOKEN:--1}"   # E21: sender|receiver boundary id (-1 = off; 128105 = <|reserved_special_token_102|>)
+export PAR_MESSAGE_COMPRESS_RATIO="${PAR_MESSAGE_COMPRESS_RATIO:-16}"  # E21: prefix tokens per message slot (1 = arm U)
+export MESSAGE_BOUNDARY_FRAC="${MESSAGE_BOUNDARY_FRAC:-0.0}"           # E21: share of training documents that get a boundary
+export MESSAGE_BOUNDARY_MIN="${MESSAGE_BOUNDARY_MIN:-4096}"
 export PAR_BLOCK="${PAR_BLOCK:-2048}"
 export PAR_NGRAM_BUCKETS="${PAR_NGRAM_BUCKETS:-65536}"
 export PAR_VALUE_EMBED_LAYERS="${PAR_VALUE_EMBED_LAYERS:-0,4,8}"
@@ -124,6 +128,9 @@ fi
 echo "=== E18 Perceiver AR v2 pilot — task=${E18_TASK} stage=${E18_STAGE} mode=${PAR_MODE} ==="
 echo "  H=${HIDDEN_SIZE} stack=${NUM_LAYERS} pre=${PAR_PRE_LAYERS}@${PAR_PRE_WINDOW} global=${PAR_GLOBAL_LAYERS} N=${PAR_BLOCK}"
 echo "  seq=${MAX_SEQ_LENGTH} backend=${ATTN_BACKEND} tok_dir=${DATASETS_TOK_DIR}"
+if [ "${PAR_MESSAGE_BOUNDARY_TOKEN}" != "-1" ]; then
+  echo "  E21 message: boundary_token=${PAR_MESSAGE_BOUNDARY_TOKEN} ratio=${PAR_MESSAGE_COMPRESS_RATIO} frac=${MESSAGE_BOUNDARY_FRAC} min=${MESSAGE_BOUNDARY_MIN}"
+fi
 echo "  muon lr=${LEARNING_RATE} adamw=${MUON_ADAMW_LR} wd=${WEIGHT_DECAY} batch/gpu=${PER_DEVICE_BATCH_SIZE} accum=${GRADIENT_ACCUMULATION_STEPS}"
 
 exec bash "${SCRIPT_DIR}/train_concept_pretraining_multigpu.sh"

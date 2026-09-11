@@ -274,6 +274,8 @@ class ModelArguments:
     par_global_logit_scale: str = field(default="none", metadata={"help": "E18: 'log' = SSMax-style q *= s*log(n_visible) on the global read(s) (anti-dilution at long context)."})
     par_global_scale_ref: int = field(default=8192, metadata={"help": "E18: n_visible at which the log scale is 1 at init."})
     par_swa_sink: bool = field(default=False, metadata={"help": "E18: windowed layers may also attend to the document's first token (absolute-position signal for position-based retrieval)."})
+    par_message_boundary_token_id: int = field(default=-1, metadata={"help": "E21: reserved id that splits a row into sender | receiver (local layers severed, prefix read only as compressed slots). -1 = off."})
+    par_message_compress_ratio: int = field(default=16, metadata={"help": "E21: prefix tokens per message slot on the global read (1 = uncompressed arm U)."})
     rope_theta: float = field(default=500000.0, metadata={"help": "E18: RoPE base."})
     attn_backend: str = field(default="flex", metadata={"help": "E18: sdpa | flex | flash."})
     attn_pad_multiple: int = field(
@@ -375,6 +377,18 @@ class DataTrainingArguments:
             "other rows stay plain LM. Exclusive with preserve_precomputed_labels."
         },
     )
+    message_boundary_frac: float = field(
+        default=0.0,
+        metadata={
+            "help": "E21: fraction of training documents (>= 2*message_boundary_min tokens) that get the "
+            "model's message_boundary_token_id at P ~ U[min, L-min) (token replaced, label -100). "
+            "0 = off. Needs model_family=perceiver_ar with par_message_boundary_token_id >= 0."
+        },
+    )
+    message_boundary_min: int = field(
+        default=4096,
+        metadata={"help": "E21: minimum sender and receiver length around a drawn boundary."},
+    )
     batch_packing_mode: str = field(
         default="none",
         metadata={
@@ -421,6 +435,10 @@ class DataTrainingArguments:
             )
         if self.length_group_mega_batch_mult < 1:
             raise ValueError("length_group_mega_batch_mult must be positive.")
+        if not 0.0 <= self.message_boundary_frac <= 1.0:
+            raise ValueError("message_boundary_frac must lie in [0, 1].")
+        if self.message_boundary_min < 1:
+            raise ValueError("message_boundary_min must be >= 1.")
         if self.loss_span_markers.strip():
             parts = [x.strip() for x in self.loss_span_markers.split(",") if x.strip()]
             if len(parts) != 2 or not all(x.lstrip("-").isdigit() for x in parts):

@@ -200,6 +200,13 @@ class DataCollatorForCausalLM:
     is set to -100 so no token is trained to predict the first token of the next document
     (the model shifts labels by one internally).
 
+    ``message_boundary=(token_id, frac, min_len)`` (E21): with probability ``frac`` a document of
+    length ``L >= 2*min_len`` (the row, or each document of a packed row) gets the token at
+    position ``P ~ U[min_len, L - min_len)`` **replacing** the token there; the label at ``P`` is
+    -100 (the boundary is not predictable). Documents that already contain the id (boundary-aware
+    retrieval rows) are left alone. ``P`` is a deterministic function of ``(seed, row content)``, so
+    DataLoader workers never draw correlated boundaries and a row keeps its ``P`` across epochs.
+
     Output contract:
         input_ids      : [B, S]
         attention_mask : [B, S]  1 = real, 0 = pad
@@ -214,10 +221,21 @@ class DataCollatorForCausalLM:
         model_vocab_size: int | None = None,
         preserve_precomputed_labels: bool = False,
         loss_span_markers: tuple[int, int] | None = None,
+        message_boundary: tuple[int, float, int] | None = None,
+        seed: int = 0,
     ):
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.preserve_precomputed_labels = preserve_precomputed_labels
+        if message_boundary is not None:
+            tok, frac, min_len = int(message_boundary[0]), float(message_boundary[1]), int(message_boundary[2])
+            if tok < 0 or not 0.0 <= frac <= 1.0 or min_len < 1:
+                raise ValueError("message_boundary must be (token_id >= 0, frac in [0,1], min_len >= 1).")
+            if loss_span_markers is not None and tok in tuple(int(x) for x in loss_span_markers):
+                raise ValueError("message_boundary token must differ from the loss_span_markers.")
+            message_boundary = (tok, frac, min_len) if frac > 0 else None
+        self.message_boundary = message_boundary
+        self.seed = int(seed)
         if loss_span_markers is not None:
             if preserve_precomputed_labels:
                 raise ValueError("loss_span_markers and preserve_precomputed_labels are mutually exclusive.")
@@ -239,6 +257,38 @@ class DataCollatorForCausalLM:
             else (len(tokenizer) if hasattr(tokenizer, "__len__") else None)
         )
         self._oov_clamp_warned = False
+
+    def _draw_message_boundaries(self, input_ids, attention_mask, doc_ids) -> list[tuple[int, int]]:
+        """(row, P) pairs for the E21 boundary: per document, with prob `frac`, P ~ U[min, L-min)."""
+        import numpy as np
+
+        tok, frac, min_len = self.message_boundary
+        out: list[tuple[int, int]] = []
+        for i in range(input_ids.shape[0]):
+            length = int(attention_mask[i].sum().item())
+            if length == 0:
+                continue
+            row = input_ids[i, :length]
+            if doc_ids is None:
+                spans = [(0, length)]
+            else:
+                d = doc_ids[i, :length]
+                cuts = [0] + (torch.nonzero(d[1:] != d[:-1]).flatten() + 1).tolist() + [length]
+                spans = [(a, b) for a, b in zip(cuts[:-1], cuts[1:]) if int(d[a]) >= 0]
+            # content-keyed stream: identical across workers / epochs for the same row
+            head = row[: min(8, length)].tolist()
+            rng = np.random.default_rng([self.seed, length, *head])
+            for a, b in spans:
+                L = b - a
+                if L < 2 * min_len:
+                    continue
+                if bool((row[a:b] == tok).any()):
+                    continue                     # boundary-aware row: already carries its boundary
+                if rng.random() >= frac:
+                    continue
+                P = a + int(rng.integers(min_len, L - min_len))
+                out.append((i, P))
+        return out
 
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
         input_ids_list = [f["input_ids"] for f in features]
@@ -278,18 +328,24 @@ class DataCollatorForCausalLM:
                         "Precomputed labels must have the same length as input_ids."
                     )
                 labels[i, :length] = torch.tensor(row_labels[:length], dtype=torch.long)
+        boundary_at = None
+        if self.message_boundary is not None:
+            boundary_at = self._draw_message_boundaries(input_ids, attention_mask, doc_ids)
+            for i, P in boundary_at:
+                input_ids[i, P] = self.message_boundary[0]
         if not self.preserve_precomputed_labels:
             labels = input_ids.clone()
             labels[attention_mask == 0] = -100
             if self.loss_span_markers is not None:
                 start, end = self.loss_span_markers
-                for i, ids in enumerate(input_ids_list):
-                    if isinstance(ids, torch.Tensor):
-                        ids = ids.tolist()
-                    length = min(len(ids), max_len)
-                    row = ids[:length]
+                for i in range(batch_size):
+                    length = int(attention_mask[i].sum().item())
+                    row = input_ids[i, :length].tolist()
                     if start in row:
                         labels[i, :length] = torch.tensor(labels_from_span_markers(row, start, end), dtype=torch.long)
+        if boundary_at:
+            for i, P in boundary_at:
+                labels[i, P] = -100
         if packed:
             # first token of every document (t > 0) must not be a next-token target
             starts = torch.zeros_like(attention_mask, dtype=torch.bool)
