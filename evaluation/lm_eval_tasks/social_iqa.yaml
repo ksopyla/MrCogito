@@ -1,0 +1,21 @@
+# Override of lm-eval's built-in `social_iqa` (tasks/siqa/siqa.yaml, same prompt, same metric).
+# `allenai/social_i_qa` on the Hub is still a script-based dataset (social_i_qa.py); datasets>=4
+# refuses loading scripts, so we read the Hub's auto-converted parquet branch instead.
+task: social_iqa
+dataset_path: allenai/social_i_qa
+dataset_name: null
+dataset_kwargs:
+  revision: refs/convert/parquet
+output_type: multiple_choice
+training_split: train
+validation_split: validation
+doc_to_text: "Q: {{context}} {{question}}\nA:"
+target_delimiter: " "
+doc_to_choice: "{{[answerA, answerB, answerC]}}"
+doc_to_target: "{{ (label|int) - 1 }}"
+metric_list:
+  - metric: acc
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 0.0
