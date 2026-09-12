@@ -26,7 +26,11 @@ laptop `~/.ssh`, VPN, or the gitignored `remote-servers` skill.
 3. Connect with `ssh odra` or `ssh polonez`. Project layout and run workflow:
    `experiment-run` skill.
 4. Smoke test: `ssh odra 'hostname; nvidia-smi -L'`
-5. Never print, commit, or log private keys, HostName, or Port values. Prefer
+5. If Odra is powered off, wake it from Polonez (same LAN) with
+   `python3 ~/bin/wake-host.py odra`, then retry `ssh odra`. MAC/IP/broadcast
+   stay in gitignored `.cursor/skills/remote-servers/wake-on-lan.md` and in
+   `~/.config/wol/` on both hosts — never commit those.
+6. Never print, commit, or log private keys, HostName, or Port values. Prefer
    Runtime Secrets (redacted) over plain Environment Variables.
 
 ### Skills available in Cloud
