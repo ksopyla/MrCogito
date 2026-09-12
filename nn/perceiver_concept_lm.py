@@ -238,7 +238,8 @@ class ConceptPooler(nn.Module):
         self.wo = nn.Linear(h * dh, d, bias=False)
         self.q_norm = nn.RMSNorm(dh)
         self.k_norm = nn.RMSNorm(dh)
-        self.pos_bias = nn.Parameter(torch.zeros(self.r, h)) if cfg.pool_pos_bias else None
+        # Flat so the shape-routed Muon optimizer treats it as a bias (AdamW), not a matrix to orthogonalise.
+        self.pos_bias = nn.Parameter(torch.zeros(self.r * h)) if cfg.pool_pos_bias else None
 
     def forward(self, h: torch.Tensor, ok: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """h [B,S,d], ok [B,S] bool → (slots [B,C,d], slot_valid [B,C]). S must be a multiple of r."""
@@ -259,7 +260,7 @@ class ConceptPooler(nn.Module):
         q = self.q_norm(self.q)                                             # [c,H,dh]
         logits = torch.einsum("chd,bnrhd->bnchr", q, k) / math.sqrt(dh)    # [B,nb,c,H,r]
         if self.pos_bias is not None:
-            logits = logits + self.pos_bias.t()[None, None, None]          # [H,r]
+            logits = logits + self.pos_bias.view(r, H).t()[None, None, None]   # [H,r]
         logits = logits.masked_fill(~okb[:, :, None, None, :], float("-inf"))
         w = torch.softmax(logits.float(), dim=-1)
         w = torch.nan_to_num(w, nan=0.0).to(v.dtype)                        # all-masked block → 0
