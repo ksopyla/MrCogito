@@ -102,6 +102,44 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   PIDs instead.
 - Job scripts launched from Byobu on Polonez must `export PATH="$HOME/.local/bin:$PATH"` (`uv`
   is not on the non-interactive shell's PATH).
+- `wikitext` `loglikelihood_rolling` OOMed on a 3090 (one `[B, S, 128k]` fp32 logits tensor,
+  15.7 GiB). `evaluation/lm_eval_perceiver_ar.py` `_model_call` now returns log-probs computed
+  in row chunks of ≤ 2 GiB (harness `log_softmax` is idempotent on log-probs), and
+  `--batch_size` defaults to `auto` (the harness probes a batch per request type: 64 for
+  multiple-choice, 7 for rolling at 32k). Row chunking is unit-tested for exactness.
+- First results (E18 stage A / dense / E18b arms / SmolLM2-135M) are recorded in
+  `docs/2_Experiments_Registry/run_reports/e18_baseline_eval_suite_20260912.md`.
+
+## [2026-09-12] - E21 first Polonez smokes: three blockers fixed
+
+**Fixed:**
+- `scripts/train_concept_pretraining_multigpu.sh`: `--ddp_backend nccl` is emitted only when
+  `NUM_GPUS * NUM_MACHINES > 1`. With one process accelerate's simple launcher sets no
+  `LOCAL_RANK`, and the explicit backend made transformers' `PartialState` query an
+  uninitialised process group ("Default process group has not been initialized") — the
+  1-GPU calibration / smoke path was dead.
+- `nn/perceiver_ar_lm.py`: the E21 message flex kernel did not compile on RTX 3090s (sm86) at
+  S = 32k / head_dim 128 / bf16 — "No valid triton configs … Required: 102400 Hardware
+  limit: 101376". Every tensor a `mask_mod` captures is gathered into an integer tile inside the
+  Triton template; the predicate captured four int64 buffers (`doc`, `side`, `slot_doc`,
+  `slot_side`) and landed 1 KB over the 99 KB shared-memory budget (the E18 predicate captures
+  one). `make_message_mask_pred` now captures two int32 tags (`doc * M + side`, M = 2·n_sides;
+  slot tags likewise, −1 for pad / invalid): "same doc and side" is one equality, "same doc,
+  earlier side" is the range test `0 < tag_q − slot_tag < n_sides`, the `raw` override uses
+  `floor(tag / M)`. `MessageCtx` gains `n_sides`, `tag_stride()`, `tags()`; the dense reference
+  mask also rejects invalid slots explicitly. Measured at B=2 × 32k, h=6/g=2, dh=128: four int64
+  buffers fail; four int32 49 ms, two int64 tags 50 ms, two int32 tags 47 ms fwd+bwd; block
+  mask ≡ dense mask in every override mode on packed 3-side / padded rows (new unit test also
+  asserts the closure holds int32/bool only); flex vs sdpa parity 1 bf16 ulp. Note: fp32 at
+  head_dim 128 needs 148 KB and cannot run through flex on a 3090 for any pattern — train and
+  evaluate in bf16 there.
+- `data/data_collators.py` `_draw_message_boundaries`: a document of exactly `2 * min_len`
+  tokens made `rng.integers(min_len, L - min_len)` an empty range (`ValueError: low >= high`
+  in the 4-GPU smoke). Both sides need ≥ `min_len` tokens after the boundary replaces position
+  P, so such documents are skipped (`L <= 2 * min_len`). Regression test added.
+- `tests/test_perceiver_ar_message.py::test_message_flex_matches_sdpa_cuda` drew different
+  random `compressor.delta` weights for the two models and failed for a reason unrelated to
+  the kernels; the sdpa model is perturbed once and its `state_dict` copied.
 
 ## [2026-09-07] - Document packing (`batch_packing_mode=pack`), E18 main-run recipe, multi-node launch
 
