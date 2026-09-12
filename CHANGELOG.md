@@ -15,6 +15,55 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-12] - E22 `perceiver_concept` family: encoder → positional concept array → latent transformer → segment-confined decoder
+
+**Why:**
+- The Perceiver-style encoder→concepts→decoder idea had never been trained with the three
+  conditions the ledger and the 2026 frontier agree on (no raw long-range bypass at any layer,
+  positional slot allocation, contextualise before pooling), nor with a transformer *over* the
+  concept array. E18/E21 have one K/V read and no latent stack. Spec:
+  `docs/experiments_specs/ahead/E22_perceiver_concept_lm.md`; rationale:
+  `docs/4_Research_Notes/perceiver_revisit_synthesis_20260912.md`.
+
+**Changed:**
+- `nn/perceiver_concept_lm.py` (new): `PerceiverConceptConfig`, `ConceptPooler` (mean-pool +
+  zero-init learned-query attention per block of `concept_ratio` tokens, flat positional bias),
+  `ConceptCrossAttention` / `attend_cross` (token queries → concept K/V, RoPE both sides, flex
+  block mask or sdpa reference, learned null slot so no query row is empty), `DecoderBlock`
+  (segment-confined self-attention via segment-augmented doc ids → cross-attention → SwiGLU),
+  `PerceiverConceptLM` (`forward` with Liger/chunked CE, `hidden_states`, `concepts()`,
+  `concept_override(real|none|shuffled)`, gradient checkpointing per block),
+  `analytic_param_count` with a compute / dense-table / sparse-table breakdown. Reuses the
+  E18 primitives by import; `nn/perceiver_ar_lm.py` is untouched.
+- `nn/perceiver_families.py` (new): `checkpoint_family`, `load_perceiver_lm` — one loader for
+  `perceiver_ar` and `perceiver_concept` checkpoints.
+- `training/concept_pretraining_args.py`: `model_family=perceiver_concept`, `pcl_*` knobs;
+  `training/concept_pretraining_factories.py`: `_build_perceiver_concept_model`, W&B identity
+  (`perceiver_concept_H..e..r..c..l..d..s..`), refuses `dataset_mix_weight_override` on a
+  pretokenized manifest (length / packing caches are keyed by the manifest file);
+  `training/train_concept_pretraining.py`: skips the concept-attention probe for both from-scratch families.
+- `scripts/train_concept_pretraining_multigpu.sh`: `PCL_*` env knobs behind
+  `MODEL_FAMILY=perceiver_concept`; `DATASET_MIX_WEIGHT_OVERRIDE` plumbing (recipe path).
+- `scripts/launch_e22.sh` (new): arms `A` (the bet), `C` (`concept_mode=none`), `dense`
+  (`perceiver_ar` `PAR_MODE=dense`, 18 layers); packed 32k rows, keyed-recall span labels,
+  effective batch 24 rows, `E22_SMOKE=1` calibration path.
+- `scripts/write_manifest_variant.py` (new): re-weighted copy of a pretokenized manifest from
+  token-share targets (mean row tokens measured per source).
+- `evaluation/long_context_probes.py`: family-aware `load_model`; `--probe concept` (paired
+  `real` / `none` / `shuffled` CE per position bucket with tail stats).
+  `evaluation/lm_eval_perceiver_ar.py`, `analysis/check_model_health.py`,
+  `scripts/eval_perceiver_ar_suite.sh`: accept the new family (suite runs the concept probe
+  where E18 ran the reach probe).
+- Tests: `tests/test_perceiver_concept_lm.py` (causality through the concept path, structural
+  closure, concepts as the only long-range path, straddling-document pooling, packed isolation,
+  padding invariance, per-token loss contract, save/load, flex ≡ sdpa on CUDA),
+  `tests/test_launch_e22.py`.
+
+**Calibration (Odra 3090, 32k, flex, bf16, grad-ckpt, 2026-09-12):** arm A 317.4M total /
+127.9M compute; B=2: 11.4 GiB peak, ~19.8k tok/s/GPU; arm C: 8.0 GiB, ~29k tok/s/GPU.
+
+---
+
 ## [2026-09-11] - Evaluation layer for `perceiver_ar`: lm-eval-harness reasoning + RULER-lite long context
 
 **Why:**

@@ -20,8 +20,17 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-12 — E18 family closed; no AWS run on either spec.** Open question worth one cheap run
-  (below). Nothing else is active on GPU.
+- **2026-09-12 — E22 Perceiver Concept LM (from scratch, 32k).** KS's call after the
+  [Perceiver revisit synthesis](../4_Research_Notes/perceiver_revisit_synthesis_20260912.md):
+  rebuild encoder → concept array → latent transformer → decoder with the three laws the ledger
+  and the frontier agree on (no raw bypass past the decoder's segment, positional slots
+  C = S/16, contextualise before pooling) and a transformer *over* the slots. Spec
+  [E22](../experiments_specs/ahead/E22_perceiver_concept_lm.md) · plan
+  [E22_plan](../experiments_specs/ahead/E22_perceiver_concept_lm_plan.md) · family
+  `perceiver_concept` (`nn/perceiver_concept_lm.py`), `scripts/launch_e22.sh`. Arms: A (the bet),
+  C (decoder never reads the array), dense control. Odra runs A/C; Polonez is on the E21 chain
+  (arm R since 09:37 UTC) and takes the dense control after. Gates S1–S4 / K1–K4 in the spec.
+- **E18 family closed (2026-09-12); no AWS run on either spec.** One cheap open question (below).
 
 ## What we've explored so far
 - **2026-09-12 — E18 / E18b (one global read):** a from-scratch 125M LM whose only unbounded layer is
