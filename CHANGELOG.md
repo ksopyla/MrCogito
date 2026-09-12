@@ -15,6 +15,24 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-12] - Document waking Odra from Polonez
+
+**Why:**
+- Odra can sit powered off; agents and operators need a findable Wake-on-LAN
+  command without putting LAN MAC/IP in the public repo.
+
+**Impact:**
+- From Polonez: `python3 ~/bin/wake-host.py odra`. Pointers in `AGENTS.md` and
+  `experiment-run`. Full MAC/IP/persistence notes stay gitignored under
+  `.cursor/skills/remote-servers/wake-on-lan.md` and `~/.config/wol/` on both hosts.
+
+**What changed:**
+- [docs] `AGENTS.md`, `.cursor/skills/experiment-run/SKILL.md` — wake command only
+
+**Related:** gitignored `.cursor/skills/remote-servers/wake-on-lan.md`
+
+---
+
 ## [2026-08-22] - E17e starve local window (K=256)
 
 **Why:**

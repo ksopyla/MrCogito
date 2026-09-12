@@ -99,8 +99,12 @@ Python entrypoints: `training/train_concept_pretraining.py` (main;
 
 ## Server configuration and resource use
 
-For hardware specs (CPU cores, RAM, GPU count, disk free) see `remote-servers`. The
-**budget guidance below is run-specific** and lives here:
+For hardware specs (CPU cores, RAM, GPU count, disk free) see `remote-servers`.
+If Odra is powered off, wake it from Polonez (same LAN) with
+`python3 ~/bin/wake-host.py odra`. MAC/IP and persistence live in the gitignored
+`remote-servers` skill (`wake-on-lan.md`) and in `~/.config/wol/` on both hosts;
+do not copy those into this file. The **budget guidance below is run-specific**
+and lives here:
 
 - **Python env:** prefer `uv` (`uv sync` + `uv run …`). On a legacy Poetry-only
   server, run `uv sync` to provision; do not migrate a working remote env mid-run
