@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-09-11 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-09-12 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -51,6 +51,15 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   baseline suite on stage-A `checkpoint-9030`, dense control, E18b arms R / 0 / R2 finals +
   SmolLM2-135M reference → E21 data prep (`e21_lm95_ret05_boundary_manifest.json`) → 1-GPU / 4-GPU
   smoke → E21 launch from the E18b-R warm start.
+  **2026-09-12 status:** baseline suite done and recorded
+  ([report](../2_Experiments_Registry/run_reports/e18_baseline_eval_suite_20260912.md)); **E18b closed
+  → `done_failed`** (task not learned, passkey 0; see "explored"). E21 data prep done (6,000 boundary-aware
+  rows, manifest + length cache). Two Polonez blockers fixed on the way: the 1-GPU smoke crashed on
+  `--ddp_backend nccl` without a process group (launcher gates it on > 1 process), and the E21 message
+  flex kernel did not compile on the 3090s at 32k / head_dim 128 (four captured int64 mask buffers →
+  1 KB over the 99 KB shared-memory limit; now two int32 tags, 47 ms fwd+bwd at B=2 × 32k). Smokes
+  rerun (`Cache/jobs/e21_smoke2.sh`) → chain `Cache/jobs/e21_chain.sh`: arm **R** (r=16) then arm **U**
+  (r=1), 0.5B tokens each from the E18b-R `final`, then the eval suite + `--probe message`.
 - **2026-09-06 — new family: Perceiver AR v2 (E18) as the VC-facing long-context platform.**
   A from-scratch ≈600M-dense LM: tiny hashed n-gram input embeddings → 2 sliding-window
   pre-encoder layers → **one** full-causal global read → 20 window-4096 layers; every token
@@ -80,7 +89,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   **used, not useful for LM loss**. The stack window sets the loss; the read is a retrieval organ (P2)
   at a 1 KB/token cache. E18's headline hypothesis is falsified at pilot scale; the platform is validated.
   **AWS on the current spec: no.** Next, drafted and awaiting go:
-  [E18b](../experiments_specs/ahead/E18b_retrieval_trained_read.md) — 5% dense-label synthetic retrieval
+  [E18b](../experiments_specs/done_failed/E18b_retrieval_trained_read.md) — 5% dense-label synthetic retrieval
   in the 32k mix; claim = the read becomes a *general, length-extrapolating* retriever (passkey 0% → ≥ 90%
   @32k, ≥ 80% @128k) at ≤ 0.5% LM cost, with a protocol control (stage B redo) and a dense control; this is
   the gate for a re-scoped main run (M2 → RULER/NIAH). Then
@@ -142,6 +151,15 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 12. **E17e starve the local window to K=256** *(done_failed mixed 2026-08-25 — late-half 0.104 on best, last 0.097, gen 0.16/0.69; no 1B).*
 
 ## What we've explored so far (evidence, not verdicts)
+- **E18b retrieval-trained single read (perceiver_ar 125M, Polonez, train 2026-09-10 → 09-11, eval 2026-09-12):**
+  arms R (95% LM + 5% dense-label retrieval rows) / 0 (LM only) / R2 (R + value embed on the read) /
+  T (retrieval rows only, 350M tok), 0.5B tokens @32k from stage-A `checkpoint-9030`. Passkey @32k **0**
+  on every arm (also 64k / 128k); held-out task first-token accuracy R **4.2%** ≈ arm 0's **2.4%**, T **4.5%**
+  — the lookup was not learned, so the transfer question was never reached. LM cost of the mix +0.04%;
+  the extension protocol no longer regresses (CE[8k,32k) 3.567 vs stage A 3.912). First pass of the eval
+  layer on all E18 checkpoints: lm-eval 0-shot avg 0.348 (1.0B tok, perceiver = dense) → 0.36 (E18b arms)
+  vs SmolLM2-135M 0.447; no E18 checkpoint solves any RULER-lite probe. See
+  [report](../2_Experiments_Registry/run_reports/e18_baseline_eval_suite_20260912.md).
 - **E17e starve local window K=256 (per_layer_banks, Polonez, train 2026-08-22, eval 2026-08-25):**
   300M run `…20260822_120601`. Late-half of each 256-token window Δperm **0.104**
   CI [0.095, 0.114] on best (last **0.097**). RankMe **31.5 / 34.9 / 31.2 / 57.4**.

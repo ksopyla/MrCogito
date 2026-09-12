@@ -1,11 +1,11 @@
 # E18b — Retrieval-trained single read: does dense retrieval supervision turn the global read into a general, length-extrapolating retriever?
 
-- **Status:** approved (user go 2026-09-10; building)
+- **Status:** killed (arms trained 2026-09-10 → 2026-09-11; evaluated 2026-09-12) — see Result
 - **Serves:** the re-scoped E18 long-context platform — *retrieval-class* long context at a 1 KB/token cache, dense-parity short-context quality — and the E19/E21 hooks (a read that retrieves is the message space they need). Decides the AWS main run.
 - **Implementation plan:** [E18b_retrieval_trained_read_plan.md](E18b_retrieval_trained_read_plan.md) *(authored by `implementation-plan`; the HOW)*
-- **Owner / dates:** Krzysztof Sopyla · opened 2026-09-10 · closed —
+- **Owner / dates:** Krzysztof Sopyla · opened 2026-09-10 · closed 2026-09-12
 
-> Follow-up to [E18](E18_perceiver_ar_v2_baseline.md). What E18's pilot established
+> Follow-up to [E18](../ahead/E18_perceiver_ar_v2_baseline.md). What E18's pilot established
 > ([reach ablation + geometry arms](../../2_Experiments_Registry/run_reports/e18_reach_ablation_20260909.md)):
 > the single global read is **free** at short context (P1), is a **working exact-retrieval organ** when
 > labels demand it (P2: 99.9998% copy at a 16k offset; cut its reach two tokens short → 0.4%), is
@@ -28,7 +28,7 @@ read extrapolated beyond 8k while the dense control's far reach hurt).
 ## Builds-on
 - **Foundation:** `nn/perceiver_ar_lm.py` (`perceiver_ar` family, unchanged), `scripts/launch_e18.sh`
   (`E18_STAGE=32k` with the **corrected extension protocol**: warm start at ≤ 20% peak lr, 100-step
-  warmup, decay — [AWS plan step 6](E18_main_run_aws_plan.md)), `scripts/build_copy_task_dataset.py`
+  warmup, decay — [AWS plan step 6](../ahead/E18_main_run_aws_plan.md)), `scripts/build_copy_task_dataset.py`
   (pattern for the new builder), pretokenized-manifest flow (multi-source manifests with weights),
   `evaluation/long_context_probes.py` (`--probe passkey`, `--probe reach`, `--probe buckets`).
 - **Init / checkpoint:** warm start from stage A `perceiver_ar_perceiver_H768L1g1s12N2048_20260907_080943/checkpoint-9030`
@@ -141,7 +141,15 @@ not an add-on.
   reachable at this cost*; the platform stays as the E19/E21 substrate.
 
 ## Result
-<Filled in AFTER, by experiment-track. Link out; do not paste full results here.>
-- Run ids: `<R>`, `<0>`, `<D>`
-- Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
-- Verdict: promising | mixed | regression | killed — <one line>
+- Run ids: R `perceiver_ar_perceiver_H768L1g1s12N2048_20260910_184948` · 0 `perceiver_ar_perceiver_H768L1g1s12N2048_20260911_021311` ·
+  R2 (R + value embedding on the read, added 2026-09-11) `perceiver_ar_perceiver_H768L1g1s12N2048_20260911_130626` ·
+  T (retrieval rows only, 350M tokens, learnability control, added 2026-09-11) `perceiver_ar_perceiver_H768L1g1s12N2048_20260911_210251` ·
+  D `perceiver_ar_dense_H768L1g1s12N2048_20260911_100947` (terminated after 78 steps; not evaluated)
+- WandB: job type `train_perceiver_ar_causal_lm`, run names = run ids
+- Run report: [e18_baseline_eval_suite_20260912.md](../../2_Experiments_Registry/run_reports/e18_baseline_eval_suite_20260912.md)
+- Verdict (2026-09-12): **killed** — S1 fails (passkey @32k **0** on every arm, also at 64k/128k); S3 passes (arm R LM loss
+  +0.04% vs arm 0); S4 passes (arm 0 ≤ stage A at every bucket). K1's premise is unmet: the training task itself was not
+  learned (held-out first-token accuracy R 4.2% ≈ arm 0's 2.4%, task-only arm T 4.5%; token accuracy ≈ 0.31 on all arms is
+  the LM predicting natural-text values). The fix iteration (more task families) is not run: the bottleneck is learnability
+  of the dense-label lookup by a plain-CE read at this label budget and framing, not the mix fraction. AWS main run stays
+  **no** on the current E18 spec; the platform is the E21 substrate.
