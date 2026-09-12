@@ -1,6 +1,6 @@
 ---
 name: wandb-review
-model: composer-2.5[fast=false]
+model: grok-4.6[effort=high,fast=false]
 description: Read-only W&B analyst for ksopyla/MrCogito. Finds runs by id/name/group/job type/tags/config/state/date, retrieves the correct summary and history metric keys, compares training curves and evaluation statistics, diagnoses suspicious runs, and returns only a compact evidence-backed handoff. Use for W&B run discovery, training-loss comparisons, concept-health metrics, accuracy/F1/correlation results, family overviews, and experiment status checks. Keeps verbose MCP results out of the main chat context.
 readonly: true
 is_background: true
