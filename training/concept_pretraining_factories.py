@@ -349,6 +349,7 @@ def _build_perceiver_concept_model(tokenizer, model_args, data_args):
         dec_segment=model_args.pcl_dec_segment,
         dec_local=model_args.pcl_dec_local,
         concept_mode=model_args.pcl_concept_mode,
+        concept_xattn_scope=model_args.pcl_concept_xattn_scope,
         xattn_kv_heads=model_args.pcl_xattn_kv_heads,
         num_attention_heads=model_args.num_attention_heads,
         num_kv_heads=model_args.num_kv_heads,
@@ -390,7 +391,7 @@ def _build_perceiver_concept_model(tokenizer, model_args, data_args):
         f"Initializing PerceiverConceptLM: enc={config.enc_layers}×swa{config.enc_window} "
         f"r={config.concept_ratio} c={config.concept_slots} latent={config.latent_layers}×{config.latent_repeats} "
         f"dec={config.dec_layers}×{config.dec_local}{config.dec_segment} concepts={config.concept_mode} "
-        f"d={config.hidden_size} heads={config.num_attention_heads}/{config.num_kv_heads} "
+        f"xattn_scope={config.concept_xattn_scope} d={config.hidden_size} heads={config.num_attention_heads}/{config.num_kv_heads} "
         f"backend={config.attn_backend} | params compute={pb.compute/1e6:.1f}M dense={pb.dense/1e6:.1f}M "
         f"sparse={pb.sparse_tables/1e6:.1f}M total={pb.total/1e6:.1f}M"
     )
@@ -494,11 +495,13 @@ def build_training_wandb_identity(
         resolved_experiment = experiment_id or "E22"
         arm = "noconcept-control" if model_args.pcl_concept_mode == "none" else "concept-arm"
         rep = f"x{model_args.pcl_latent_repeats}" if model_args.pcl_latent_repeats > 1 else ""
+        # "x" marks the exclusive cross-attention scope (E23); E22's causal scope keeps the bare id.
+        scope = "x" if getattr(model_args, "pcl_concept_xattn_scope", "causal") == "exclusive" else ""
         architecture_id = (
             f"perceiver_concept_H{model_args.hidden_size}"
             f"e{model_args.pcl_enc_layers}r{model_args.pcl_concept_ratio}c{model_args.pcl_concept_slots}"
             f"l{model_args.pcl_latent_layers}{rep}d{model_args.pcl_dec_layers}"
-            f"{'s' if model_args.pcl_dec_local == 'block' else 'w'}{model_args.pcl_dec_segment}"
+            f"{'s' if model_args.pcl_dec_local == 'block' else 'w'}{model_args.pcl_dec_segment}{scope}"
         )
         return WandbRunIdentity(
             experiment_id=resolved_experiment,

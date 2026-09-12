@@ -178,6 +178,7 @@ PCL_DEC_LAYERS="${PCL_DEC_LAYERS:-8}"
 PCL_DEC_SEGMENT="${PCL_DEC_SEGMENT:-1024}"
 PCL_DEC_LOCAL="${PCL_DEC_LOCAL:-block}"             # block (segment reset) | swa
 PCL_CONCEPT_MODE="${PCL_CONCEPT_MODE:-full}"        # full | none (arm C control)
+PCL_CONCEPT_XATTN_SCOPE="${PCL_CONCEPT_XATTN_SCOPE:-causal}"   # causal (E22) | exclusive (E23: slots before the raw window only)
 PCL_XATTN_KV_HEADS="${PCL_XATTN_KV_HEADS:-2}"
 PCL_ENC_VALUE_EMBED_LAYERS="${PCL_ENC_VALUE_EMBED_LAYERS:-0,3}"
 PCL_DEC_VALUE_EMBED_LAYERS="${PCL_DEC_VALUE_EMBED_LAYERS:-0}"
@@ -429,6 +430,7 @@ if [ "$MODEL_FAMILY" = "perceiver_concept" ]; then
         --pcl_dec_segment "$PCL_DEC_SEGMENT"
         --pcl_dec_local "$PCL_DEC_LOCAL"
         --pcl_concept_mode "$PCL_CONCEPT_MODE"
+        --pcl_concept_xattn_scope "$PCL_CONCEPT_XATTN_SCOPE"
         --pcl_xattn_kv_heads "$PCL_XATTN_KV_HEADS"
         --pcl_enc_value_embed_layers "$PCL_ENC_VALUE_EMBED_LAYERS"
         --pcl_dec_value_embed_layers "$PCL_DEC_VALUE_EMBED_LAYERS"

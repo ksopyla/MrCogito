@@ -88,6 +88,11 @@ class PerceiverConceptConfig(PretrainedConfig):
         dec_segment: int = 1024,
         dec_local: str = "block",          # "block" (segment-reset) | "swa" (sliding window dec_segment)
         concept_mode: str = "full",        # "full" | "none" (arm C: decoder never reads the array)
+        # Which slots a token may read. "causal": every slot ending at or before the token (E22 as
+        # run — includes slots inside the token's own raw segment). "exclusive": only slots that end
+        # before the token's raw window begins, so the array is a *pure* long-range channel and the
+        # raw segment is the only local one (E23).
+        concept_xattn_scope: str = "causal",
         xattn_kv_heads: int = 2,
         # heads / positions
         num_attention_heads: Optional[int] = None,
@@ -137,6 +142,7 @@ class PerceiverConceptConfig(PretrainedConfig):
         self.dec_segment = int(dec_segment)
         self.dec_local = dec_local
         self.concept_mode = concept_mode
+        self.concept_xattn_scope = concept_xattn_scope
         self.xattn_kv_heads = int(xattn_kv_heads)
         self.num_attention_heads = num_attention_heads or (hidden_size // head_dim)
         self.num_kv_heads = num_kv_heads
@@ -180,6 +186,8 @@ class PerceiverConceptConfig(PretrainedConfig):
             raise ValueError("dec_local must be 'block' or 'swa'")
         if self.concept_mode not in {"full", "none"}:
             raise ValueError("concept_mode must be 'full' or 'none'")
+        if self.concept_xattn_scope not in {"causal", "exclusive"}:
+            raise ValueError("concept_xattn_scope must be 'causal' or 'exclusive'")
         if self.concept_ratio < 1 or self.concept_slots < 1:
             raise ValueError("concept_ratio and concept_slots must be >= 1")
         if self.latent_repeats < 1:
@@ -276,14 +284,33 @@ class ConceptPooler(nn.Module):
 # --------------------------------------------------------------------------------------
 
 
-def _cross_mask_pred(cpos, cdoc, cvalid, pos, doc):
+_XATTN_SCOPES = ("causal", "exclusive", "local_only")
+
+
+def raw_span(S: int, dec_local: str, dec_segment: int, device) -> torch.Tensor:
+    """For every absolute row index t, how many earlier tokens the decoder's raw self-attention
+    already covers: `t mod segment` for segment-reset decoders, `segment − 1` for a sliding
+    window. A slot whose block ends inside that span summarises tokens the decoder can read
+    raw; a slot ending before it is the *only* route to its tokens. Returns [S] (long)."""
+    t = torch.arange(S, device=device)
+    if dec_local == "block":
+        return t % dec_segment
+    return torch.full_like(t, dec_segment - 1)
+
+
+def _cross_mask_pred(cpos, cdoc, cvalid, pos, doc, span, scope: str):
     """Slot 0 is the learned null slot, visible to every query (no query row is ever empty —
     a sink the decoder can attend to when nothing earlier is relevant, and a NaN guard for
     both backends). Every other slot is visible iff it ended at or before the query's position
-    inside the same document."""
+    inside the same document (`causal`), further restricted to slots ending *before* the query's
+    raw window (`exclusive`: pos(slot) < pos(q) − span(q)) or to the complement — slots inside
+    the raw window (`local_only`, an eval-time instrument)."""
 
     def pred(b, hh, q, kv):
         content = (cpos[b, kv] <= pos[b, q]) & (cdoc[b, kv] == doc[b, q]) & cvalid[b, kv]
+        if scope != "causal":
+            far = cpos[b, kv] < pos[b, q] - span[q]
+            content = content & (far if scope == "exclusive" else ~far)
         return (kv == 0) | content
 
     return pred
@@ -299,23 +326,27 @@ def attend_cross(
     cvalid: torch.Tensor,   # [B,C]  slot exists
     pos: torch.Tensor,      # [B,S]
     doc: torch.Tensor,      # [B,S]
+    span: torch.Tensor,     # [S]    raw_span() — tokens before t the raw self-attention covers
+    scope: str,             # causal | exclusive | local_only
     backend: str,
     memo: Optional[dict] = None,
 ) -> torch.Tensor:
-    """Token t attends to the null slot plus slots with pos(slot) ≤ pos(t) in its document.
+    """Token t attends to the null slot plus the slots `scope` admits in its document.
     Returns [B,S,h,dh]."""
+    if scope not in _XATTN_SCOPES:
+        raise ValueError(f"scope must be one of {_XATTN_SCOPES}, got {scope!r}")
     B, S, h, dh = q.shape
     C, g = k.shape[1], k.shape[2]
     qt, kt, vt = (t.transpose(1, 2) for t in (q, k, v))
     if backend == "flex":
         from torch.nn.attention.flex_attention import create_block_mask
 
-        key = ("xattn", S, C)
+        key = ("xattn", S, C, scope)
         if memo is not None and key in memo:
             bm = memo[key]
         else:
             bm = create_block_mask(
-                _cross_mask_pred(cpos, cdoc, cvalid, pos, doc), B=B, H=None, Q_LEN=S, KV_LEN=C,
+                _cross_mask_pred(cpos, cdoc, cvalid, pos, doc, span, scope), B=B, H=None, Q_LEN=S, KV_LEN=C,
                 device=q.device, _compile=torch.cuda.is_available(),
             )
             if memo is not None:
@@ -326,6 +357,9 @@ def attend_cross(
         kt = kt.repeat_interleave(h // g, dim=1)
         vt = vt.repeat_interleave(h // g, dim=1)
     mask = (cpos[:, None, :] <= pos[:, :, None]) & (cdoc[:, None, :] == doc[:, :, None]) & cvalid[:, None, :]
+    if scope != "causal":
+        far = cpos[:, None, :] < (pos - span[None]) [:, :, None]
+        mask = mask & (far if scope == "exclusive" else ~far)
     mask[:, :, 0] = True
     out = F.scaled_dot_product_attention(qt, kt, vt, attn_mask=mask[:, None])   # [B,1,S,C]
     return out.transpose(1, 2)
@@ -351,12 +385,12 @@ class ConceptCrossAttention(nn.Module):
         v = self.wv(z).view(B, C, self.g, self.dh)
         return apply_rope(k, ccos, csin), v
 
-    def forward(self, x, kv, *, cos, sin, cpos, cdoc, cvalid, pos, doc, memo):
+    def forward(self, x, kv, *, cos, sin, cpos, cdoc, cvalid, pos, doc, span, scope, memo):
         B, S, _ = x.shape
         q = apply_rope(self.q_norm(self.wq(x).view(B, S, self.h, self.dh)), cos, sin)
         k, v = kv
         o = attend_cross(q, k, v, cpos=cpos, cdoc=cdoc, cvalid=cvalid, pos=pos, doc=doc,
-                         backend=self.backend, memo=memo)
+                         span=span, scope=scope, backend=self.backend, memo=memo)
         return self.wo(o.reshape(B, S, self.h * self.dh))
 
 
@@ -381,13 +415,13 @@ class DecoderBlock(nn.Module):
         self.beta = nn.Parameter(torch.tensor(0.0))
 
     def forward(self, x, x0, kv, *, ids, cos, sin, key_valid, seg_ids, block_masks, xmemo,
-                cpos, cdoc, cvalid, pos, doc, concepts_on: bool):
+                cpos, cdoc, cvalid, pos, doc, span, scope, concepts_on: bool):
         x = self.alpha * x + self.beta * x0
         x = x + self.attn(self.attn_norm(x), ids=ids, cos=cos, sin=sin, key_valid=key_valid,
                           doc_ids=seg_ids, cu_seqlens=None, block_masks=block_masks, sink_pos=None, pos=pos)
         if self.has_xattn and concepts_on:
             x = x + self.xattn(self.xattn_norm(x), kv, cos=cos, sin=sin, cpos=cpos, cdoc=cdoc,
-                               cvalid=cvalid, pos=pos, doc=doc, memo=xmemo)
+                               cvalid=cvalid, pos=pos, doc=doc, span=span, scope=scope, memo=xmemo)
         x = x + self.mlp(self.mlp_norm(x))
         return x
 
@@ -489,17 +523,23 @@ class PerceiverConceptLM(PreTrainedModel):
         self.gradient_checkpointing = False
 
     # -- probes ---------------------------------------------------------------------
+    CONCEPT_OVERRIDES = ("real", "none", "shuffled", "near", "far")
+
     @contextmanager
     def concept_override(self, mode: Optional[str]):
         """Eval-time concept ablation (E22 S1 instrument). `none`: the decoder's cross-attention
         output is dropped (the array is invisible; segment-local raw context only). `shuffled`:
         every row reads the concept array of the *next* row in the batch (content check — a
-        generic prior would survive, real content would not). `real` / None: no-op."""
+        generic prior would survive, real content would not). `near`: only slots whose block ends
+        inside the token's raw window stay visible (the array as extra *local* capacity). `far`:
+        only slots ending before the raw window (the array as the long-range channel —
+        identical to `real` for a model trained with `concept_xattn_scope='exclusive'`).
+        `real` / None: no-op."""
         if mode in (None, "real"):
             yield
             return
-        if mode not in {"none", "shuffled"}:
-            raise ValueError("concept_override must be one of real|none|shuffled")
+        if mode not in self.CONCEPT_OVERRIDES:
+            raise ValueError(f"concept_override must be one of {'|'.join(self.CONCEPT_OVERRIDES)}")
         prev = self._concept_override
         self._concept_override = mode
         try:
@@ -642,11 +682,14 @@ class PerceiverConceptLM(PreTrainedModel):
             seg_ids = doc * (S // cfg.dec_segment + 2) + seg
         else:
             seg_ids = doc
+        span = raw_span(S, cfg.dec_local, cfg.dec_segment, dev)
+        scope = {"near": "local_only", "far": "exclusive"}.get(self._concept_override, cfg.concept_xattn_scope)
         xmemo: Optional[dict] = {} if cfg.attn_backend == "flex" else None
         y = x0
         dec_kwargs = dict(ids=input_ids, cos=cos, sin=sin, key_valid=key_valid, seg_ids=seg_ids,
                           block_masks=({} if cfg.attn_backend == "flex" else None), xmemo=xmemo,
-                          cpos=cpos, cdoc=cdoc, cvalid=cvalid, pos=pos, doc=doc, concepts_on=concepts_on)
+                          cpos=cpos, cdoc=cdoc, cvalid=cvalid, pos=pos, doc=doc, span=span, scope=scope,
+                          concepts_on=concepts_on)
         for layer in self.dec_layers:
             kv = layer.xattn.kv(z, ccos, csin) if (layer.has_xattn and concepts_on) else None
             if ckpt:

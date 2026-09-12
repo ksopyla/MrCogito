@@ -300,14 +300,102 @@ def test_save_load_roundtrip(tmp_path):
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="flex needs CUDA")
-def test_flex_matches_sdpa_cuda():
+@pytest.mark.parametrize("scope", ["causal", "exclusive"])
+@pytest.mark.parametrize("override", ["real", "near", "far"])
+def test_flex_matches_sdpa_cuda(scope, override):
     ids = rand_ids(2, 256).cuda()
-    kw = dict(dec_segment=64, concept_ratio=16, head_dim=16, hidden_size=64)   # flex needs head_dim >= 16
+    kw = dict(dec_segment=64, concept_ratio=16, head_dim=16, hidden_size=64,   # flex needs head_dim >= 16
+              concept_xattn_scope=scope)
     a = make_model(tiny_cfg(attn_pad_multiple=1, **kw)).cuda()
     b = make_model(tiny_cfg(attn_pad_multiple=128, attn_backend="flex", **kw)).cuda()
     b.load_state_dict(a.state_dict())
     doc = torch.zeros(2, 256, dtype=torch.long, device="cuda")
     doc[1, 100:] = 1
-    la = a(input_ids=ids, doc_ids=doc).logits
-    lb = b(input_ids=ids, doc_ids=doc).logits
+    with a.concept_override(override), b.concept_override(override):
+        la = a(input_ids=ids, doc_ids=doc).logits
+        lb = b(input_ids=ids, doc_ids=doc).logits
     assert torch.allclose(la, lb, atol=2e-2, rtol=2e-2)
+
+
+# ------------------------------------------------------------------ cross-attention scope (E23)
+
+
+def _visible_slots(scope, dec_local, S=24, r=4, seg=8):
+    """Read the cross-attention mask through the kernel: zero keys make attention uniform over the
+    visible slots, one-hot values make the output the indicator of the visible set."""
+    from nn.perceiver_concept_lm import attend_cross, raw_span
+
+    C = S // r + 1                                   # null slot + one slot per block
+    q = torch.zeros(1, S, 1, C)
+    k = torch.zeros(1, C, 1, C)
+    v = torch.eye(C)[None, :, None, :]               # v[slot] = e_slot
+    cpos = torch.tensor([[0] + [(j + 1) * r - 1 for j in range(S // r)]])
+    cdoc = torch.tensor([[-3] + [0] * (S // r)])
+    cvalid = torch.ones(1, C, dtype=torch.bool)
+    pos = torch.arange(S)[None]
+    doc = torch.zeros(1, S, dtype=torch.long)
+    out = attend_cross(q, k, v, cpos=cpos, cdoc=cdoc, cvalid=cvalid, pos=pos, doc=doc,
+                       span=raw_span(S, dec_local, seg, "cpu"), scope=scope, backend="sdpa")[0, :, 0]
+    return [set((out[t] > 0).nonzero().flatten().tolist()) for t in range(S)]
+
+
+def test_xattn_scope_masks_block_decoder():
+    causal = _visible_slots("causal", "block")
+    excl = _visible_slots("exclusive", "block")
+    local = _visible_slots("local_only", "block")
+    # Slots (1-based; 0 = null) end at 3, 7, 11, 15, 19, 23. Segment 1 = tokens 8..15.
+    assert causal[12] == {0, 1, 2, 3}          # every slot ending at or before 12
+    assert excl[12] == {0, 1, 2}               # only slots ending before the segment start (8)
+    assert local[12] == {0, 3}                 # only the slot inside the segment (ends at 11)
+    assert excl[7] == {0} and local[7] == {0, 1, 2} == causal[7]   # segment 0: no far slot exists
+    assert excl[16] == {0, 1, 2, 3, 4}         # first token of segment 2 sees all of segments 0–1
+    for t in range(24):
+        assert excl[t] | local[t] == causal[t] and excl[t] & local[t] == {0}   # a partition, null shared
+
+
+def test_xattn_scope_masks_swa_decoder():
+    excl = _visible_slots("exclusive", "swa")
+    causal = _visible_slots("causal", "swa")
+    # window 8: token 12 reads tokens 5..12 raw, so only the slot ending at 3 is far
+    assert excl[12] == {0, 1}
+    assert excl[20] == {0, 1, 2, 3}            # raw 13..20 → slots ending at 3, 7, 11
+    assert causal[20] == {0, 1, 2, 3, 4, 5}
+
+
+def test_far_override_equals_exclusive_scope_model():
+    """`far` on an E22 (causal-scope) checkpoint is exactly the E23 exclusive-scope forward with
+    the same weights; `near` and `far` both differ from `real` on the causal model."""
+    ids = rand_ids(2, 40)
+    a = make_model(tiny_cfg(dec_segment=8))
+    b = make_model(tiny_cfg(dec_segment=8, concept_xattn_scope="exclusive"))
+    b.load_state_dict(a.state_dict())
+    real = a(input_ids=ids).logits
+    with a.concept_override("far"):
+        far = a(input_ids=ids).logits
+    with a.concept_override("near"):
+        near = a(input_ids=ids).logits
+    assert torch.allclose(far, b(input_ids=ids).logits, atol=1e-6)
+    assert not torch.allclose(real, far, atol=1e-5)
+    assert not torch.allclose(real, near, atol=1e-5)
+    # segment 0 has no far slot: `far` there equals the array-free forward (zero null slot)
+    with a.concept_override("none"):
+        none = a(input_ids=ids).logits
+    assert torch.allclose(far[:, :8], none[:, :8], atol=1e-5)
+    assert not torch.allclose(far[:, 8:], none[:, 8:], atol=1e-5)
+    # on the exclusive model `far` is a no-op and `near` leaves only the null slot
+    with b.concept_override("far"):
+        assert torch.allclose(b(input_ids=ids).logits, far, atol=1e-6)
+
+
+def test_exclusive_scope_config_roundtrip_and_default(tmp_path):
+    with pytest.raises(ValueError):
+        tiny_cfg(concept_xattn_scope="bogus")
+    assert tiny_cfg().concept_xattn_scope == "causal"          # E22 checkpoints load unchanged
+    m = make_model(tiny_cfg(concept_xattn_scope="exclusive"))
+    m.save_pretrained(tmp_path)
+    from nn.perceiver_families import load_perceiver_lm
+
+    m2 = load_perceiver_lm(str(tmp_path), "cpu", dtype=torch.float32)
+    assert m2.config.concept_xattn_scope == "exclusive"
+    ids = rand_ids(1, 24)
+    assert torch.allclose(m(input_ids=ids).logits, m2(input_ids=ids).logits, atol=1e-5)

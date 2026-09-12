@@ -47,6 +47,7 @@ case "$E22_ARM" in
     export PCL_DEC_SEGMENT="${PCL_DEC_SEGMENT:-1024}"
     export PCL_DEC_LOCAL="${PCL_DEC_LOCAL:-block}"
     export PCL_CONCEPT_MODE="$([ "$E22_ARM" = "C" ] && echo none || echo "${PCL_CONCEPT_MODE:-full}")"
+    export PCL_CONCEPT_XATTN_SCOPE="${PCL_CONCEPT_XATTN_SCOPE:-causal}"   # E23: exclusive
     export NUM_LAYERS="${PCL_ENC_LAYERS}"   # legacy arg; the family ignores it
     ;;
   dense)

@@ -567,11 +567,15 @@ def probe_concept(model, args, device) -> dict:
     """Paired concept ablation for the `perceiver_concept` family (E22 S1 instrument).
 
     The same rows are scored with the concept array `real`, `none` (the decoder's cross-attention
-    dropped: segment-local raw context only) and `shuffled` (each row reads the array of another
-    row — a generic prior survives this, real content does not). Δ = CE(mode) − CE(real) per
-    position bucket, mean ± standard error over rows. Rows are scored two at a time so `shuffled`
-    has a partner. Tokens in the first concept block (positions < concept_ratio) see no slot and
-    are identical under every mode, which is the built-in noise-floor check.
+    dropped: segment-local raw context only), `shuffled` (each row reads the array of another
+    row — a generic prior survives this, real content does not), `near` (only slots inside the
+    token's raw segment stay visible — the array as extra local capacity) and `far` (only slots
+    ending before the raw segment — the array as the long-range channel). Δ = CE(mode) − CE(real)
+    per position bucket, mean ± standard error over rows. Rows are scored two at a time so
+    `shuffled` has a partner. Tokens in the first concept block (positions < concept_ratio) see no
+    slot and are identical under every mode, which is the built-in noise-floor check. The E22
+    diagnosis (2026-09-12) reads `near` vs `far`: Δ_far ≈ 0 with Δ_near ≈ Δ_none means the array is
+    used as local depth, not as memory.
     """
     if not hasattr(model, "concept_override"):
         raise SystemExit("--probe concept needs a perceiver_concept checkpoint")
@@ -582,7 +586,9 @@ def probe_concept(model, args, device) -> dict:
     if len(rows) % 2:
         rows = rows[:-1]
     labels = _bucket_labels(edges)
-    modes = ["real", "none", "shuffled"]
+    modes = [m.strip() for m in args.concept_modes.split(",") if m.strip()]
+    if modes[:1] != ["real"]:
+        raise SystemExit("--concept_modes must start with 'real' (the paired reference)")
     per_row: dict[str, list[list[float]]] = {m: [] for m in modes}
     per_tok: dict[str, list[torch.Tensor]] = {m: [] for m in modes}
     for i in range(0, len(rows), 2):
@@ -639,6 +645,8 @@ def main():
                    help="restrict every full layer to swa(W) for this probe (positive-control runs)")
     p.add_argument("--reach_windows", default="512,2048,8192,full",
                    help="--probe reach: comma list of windows to sweep ('full' = unrestricted)")
+    p.add_argument("--concept_modes", default="real,none,shuffled,near,far",
+                   help="--probe concept: comma list of concept_override modes (must start with 'real')")
     p.add_argument("--manifest", default=None)
     p.add_argument("--tokenizer", default=DEFAULT_TOKENIZER,
                    help="default: the tokenizer saved in the checkpoint dir, else the family default")

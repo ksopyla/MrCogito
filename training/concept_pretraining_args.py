@@ -262,6 +262,7 @@ class ModelArguments:
     pcl_dec_segment: int = field(default=1024, metadata={"help": "E22: decoder segment (block mode) or sliding window (swa mode), in tokens."})
     pcl_dec_local: str = field(default="block", metadata={"help": "E22: 'block' = self-attn reset at segment boundaries (structural closure); 'swa' = sliding window."})
     pcl_concept_mode: str = field(default="full", metadata={"help": "E22: 'full' = decoder reads the concept array; 'none' = arm C control (no cross-attention)."})
+    pcl_concept_xattn_scope: str = field(default="causal", metadata={"help": "E22/E23: 'causal' = a token reads every slot ending at or before it (incl. its own raw segment); 'exclusive' = only slots ending before its raw window (pure long-range channel)."})
     pcl_xattn_kv_heads: int = field(default=2, metadata={"help": "E22: kv-heads of the concept cross-attention."})
     pcl_enc_value_embed_layers: str = field(default="0,3", metadata={"help": "E22: encoder layers with a value embedding."})
     pcl_dec_value_embed_layers: str = field(default="0", metadata={"help": "E22: decoder layers with a value embedding."})
@@ -523,6 +524,8 @@ def validate_training_configuration(
                 raise ValueError("pcl_dec_local must be 'block' or 'swa'.")
             if model_args.pcl_concept_mode not in {"full", "none"}:
                 raise ValueError("pcl_concept_mode must be 'full' or 'none'.")
+            if model_args.pcl_concept_xattn_scope not in {"causal", "exclusive"}:
+                raise ValueError("pcl_concept_xattn_scope must be 'causal' or 'exclusive'.")
         # The E18 / E22 families are neither the concept-AR nor the backbone family.
         return False, False
     if is_backbone and model_args.objective_variant != OBJECTIVE_CAUSAL_LM:
