@@ -90,8 +90,14 @@ export BATCH_PACKING_MODE="${BATCH_PACKING_MODE:-pack}"
 export LOSS_SPAN_MARKERS="${LOSS_SPAN_MARKERS:-128103,128104}"   # E18b keyed-recall rows: labels inside START..END
 export TRAIN_NUM_PROC="${TRAIN_NUM_PROC:-8}"
 export TEST_NUM_PROC="${TEST_NUM_PROC:-4}"
-export PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-1}"
-export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-5}"
+# Effective batch fixed at 24 packed 32k rows (~0.79M tokens/step) on either server:
+# 2 rows/GPU × 3 GPUs × accum 4 (Odra) or × 4 GPUs × accum 3 (Polonez). Calibrated 2026-09-12 on a
+# 3090: arm A at B=2 peaks at 11.4 GiB and ~19.8k tok/s/GPU; arm C 8.0 GiB / ~29k tok/s/GPU.
+_E22_GPUS="$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')"; [ "${_E22_GPUS:-0}" -ge 1 ] || _E22_GPUS=1
+export PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-2}"
+_E22_ROWS="${E22_EFFECTIVE_ROWS:-24}"
+export GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-$(( _E22_ROWS / (PER_DEVICE_BATCH_SIZE * _E22_GPUS) ))}"
+[ "$GRADIENT_ACCUMULATION_STEPS" -ge 1 ] || export GRADIENT_ACCUMULATION_STEPS=1
 export AUTO_INTERVALS=0
 if [ "$E22_SMOKE" = "1" ]; then
     export MAX_STEPS="${MAX_STEPS:-30}"
@@ -101,10 +107,10 @@ if [ "$E22_SMOKE" = "1" ]; then
     export REPORT_TO="${REPORT_TO:-none}"
     export MAX_EVAL_SAMPLES=8
 else
-    # 0.5B tokens ≈ 1,000 optimizer steps at ~0.49M packed tokens / step (3 GPUs × accum 5 × 32k).
+    # 0.5B tokens ≈ 640 optimizer steps at ~0.79M packed tokens / step.
     export TARGET_TOKENS="${TARGET_TOKENS:-500000000}"
-    export EVAL_STEPS="${EVAL_STEPS:-100}"
-    export SAVE_STEPS="${SAVE_STEPS:-100}"
+    export EVAL_STEPS="${EVAL_STEPS:-80}"
+    export SAVE_STEPS="${SAVE_STEPS:-80}"
 fi
 
 if [ ! -f "$PRETOKENIZED_MANIFEST" ]; then
