@@ -1,7 +1,7 @@
 # E18 main run on AWS — launch plan (draft 2026-09-07, awaiting pilot gates + explicit go)
 
-Companion to [E18](E18_perceiver_ar_v2_baseline.md) (gates M1–M4) and
-[E18_plan](E18_perceiver_ar_v2_baseline_plan.md) (implementation). This page is the one-pager
+Companion to [E18](../done_failed/E18_perceiver_ar_v2_baseline.md) (gates M1–M4) and
+[E18_plan](../done_failed/E18_perceiver_ar_v2_baseline_plan.md) (implementation). This page is the one-pager
 for the go/no-go: what gets trained, on what, for how much, and what must be true first.
 Nothing here is launched until the user says go.
 
@@ -9,7 +9,7 @@ Nothing here is launched until the user says go.
 
 | # | Precondition | Owner | Status 2026-09-07 |
 |---|---|---|---|
-| 1 | Pilot gates: P1 ✅ (0.1%), P2 ✅ (copy@32k 99.9998%), P4 ✅ (1.02×); **P3 (amended) ❌** — arm C (no read) matches arm A (4.091 vs 4.090): the read is used, not useful for LM loss. **New gate: [E18b](E18b_retrieval_trained_read.md) S1–S4** (trained retrieval transfers and extrapolates at ≤ 0.5% LM cost). **M2 is re-scoped to retrieval** (RULER ≥ 80 @128k, NIAH ≥ 95% @256k / ≥ 80% @1M); the "≥ 3% lower loss" clause is dropped. Stage-1 mix gains 5% dense-label retrieval rows; read position per E18 arm B | me | ⏳ E18b |
+| 1 | **BLOCKED 2026-09-12 — do not launch.** E18 and E18b are both `done_failed` ([verdict](../../2_Experiments_Registry/run_reports/e18_family_verdict_20260912.md)): the read adds no LM loss a read-free stack cannot recover, and cannot be taught content-addressed retrieval (4.49% vs the dense control's 99.33% on the same task). Original row: P1 ✅ (0.1%), P2 ✅ (copy@32k 99.9998%), P4 ✅ (1.02×); **P3 (amended) ❌** — arm C (no read) matches arm A (4.091 vs 4.090): the read is used, not useful for LM loss. **New gate: [E18b](../done_failed/E18b_retrieval_trained_read.md) S1–S4** (trained retrieval transfers and extrapolates at ≤ 0.5% LM cost). **M2 is re-scoped to retrieval** (RULER ≥ 80 @128k, NIAH ≥ 95% @256k / ≥ 80% @1M); the "≥ 3% lower loss" clause is dropped. Stage-1 mix gains 5% dense-label retrieval rows; read position per E18 arm B | me | ⏳ E18b |
 | 2 | P2 copy task solved (or explained) | me, rerun from `checkpoint-500` when GPUs free | two runs stuck at ln(256); deferred |
 | 3 | Packed-document training path (`BATCH_PACKING_MODE=pack`) | done, tested (packed == unpacked per-token loss) | ✅ `e7be9f6` |
 | 4 | Multi-node launch (`NUM_MACHINES`, `MACHINE_RANK`, `MAIN_PROCESS_IP`) | done in the generic launcher; untested on real multi-node | ✅ `a663137`, needs a 2-node dry run |

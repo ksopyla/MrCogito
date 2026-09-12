@@ -1,9 +1,9 @@
 # E18 — Perceiver AR v2: one global read, deep local stack, every token trained
 
-- **Status:** approved (design discussed 2026-09-06; pilot authorized on Polonez; AWS main run pending explicit go)
+- **Status:** killed 2026-09-12 — long-context-loss hypothesis falsified at pilot scale; AWS main run not launched
 - **Serves:** the **VC-facing long-context family** — a from-scratch < 600M-dense-parameter language model that trains with 256k causal context on every token and demonstrates 1M-token context at inference, as the platform for latent reasoning (E19), block-diffusion decoding (E20), and latent agent-to-agent messages (E21). Feasibility and literature: [perceiver_ar_modern_reproduction_feasibility.md](../../4_Research_Notes/perceiver_ar_modern_reproduction_feasibility.md).
 - **Implementation plan:** [E18_perceiver_ar_v2_baseline_plan.md](E18_perceiver_ar_v2_baseline_plan.md) *(authored by `implementation-plan`; the HOW)*
-- **Owner / dates:** Krzysztof Sopyla · opened 2026-09-06 · closed —
+- **Owner / dates:** Krzysztof Sopyla · opened 2026-09-06 · closed 2026-09-12
 
 > **Family note.** E18 is the platform run. It carries one architectural bet (below) and one
 > within-experiment control (a dense decoder-only transformer at matched parameters, tokens and
@@ -134,7 +134,7 @@ which spent depth on a compressed summary channel `a` and found it unused under 
   (Δ +0.0042 vs +0.0239 nats). Depth does not rescue the read; the bottom placement is confirmed for the
   main run. Iteration-2 verdict: **used, not useful** for LM loss. E18's headline hypothesis is falsified
   at pilot scale; the platform (P1 parity, P2 retrieval, 1 KB/token cache) stands. Next: **E18b**.
-- Run id: `<run_id>`
-- WandB: <link>
-- Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
-- Verdict: promising | mixed | regression | killed — <one line>
+- Run ids: `perceiver_ar_perceiver_H768L1g1s12N2048_20260907_080943` (stage A) · `perceiver_ar_dense_H768L1g1s12N2048_20260907_193351` (dense control) · `perceiver_ar_perceiver_H768L1g1s6N2048_20260908_230306` (P2) · geometry arms `…N256_20260909_141145` (A) / `…g0s13N256_20260909_211550` (C) / `…g1@7s12N256_20260910_040940` (B)
+- Run report: [e18_family_verdict_20260912.md](../../2_Experiments_Registry/run_reports/e18_family_verdict_20260912.md) · [reach ablation](../../2_Experiments_Registry/run_reports/e18_reach_ablation_20260909.md) · [stage A](../../2_Experiments_Registry/run_reports/e18_pilot_stageA_20260907.md)
+- Gates: P1 ✅ (0.1% of dense) · P2 ✅ (copy@32k **99.9998%**) · P4 ✅ (1.02×) · **P3 ❌** (amended; arm C with no read scores 4.091 vs arm A's 4.090)
+- Verdict: **killed** — the single global read is free and does exact positional retrieval, but adds no next-token loss a read-free stack cannot recover; the long-context-loss claim is falsified. Follow-up E18b also failed; see the family verdict report.

@@ -1,7 +1,7 @@
 # E18 — reach ablation: does the single global read carry long-range information? (2026-09-09)
 
 **Date:** 2026-09-09 · **Machine:** Polonez, GPU 0, no training · **Git:** `1a89736` (probe), `515820e` (global_positions knob)
-**Spec:** [E18](../../experiments_specs/ahead/E18_perceiver_ar_v2_baseline.md) · stage A/B/dense: [e18_pilot_stageA_20260907.md](e18_pilot_stageA_20260907.md)
+**Spec:** [E18](../../experiments_specs/done_failed/E18_perceiver_ar_v2_baseline.md) · stage A/B/dense: [e18_pilot_stageA_20260907.md](e18_pilot_stageA_20260907.md)
 **Artifacts:** `Cache/eval/e18/reach/*.json` on Polonez (per-row bucket CE for every window) · job `Cache/jobs/e18_reach.sh` · log `Cache/logs/e18_reach.log`
 
 ---
@@ -209,7 +209,7 @@ retrieval** (P2, and the reach-Δ asymmetry).
 | C | none | 4.091 | — (negative control: all Δ exactly 0) |
 
 Amended P3: **reach-Δ > 0 at 3σ ✅ (25σ, arm A); "A beats C by ≥ 1%" ❌ (−0.02%)**. Verdict: *used, not
-useful*. Follow-up: [E18b](../../experiments_specs/ahead/E18b_retrieval_trained_read.md) tests whether
+useful*. Follow-up: [E18b](../../experiments_specs/done_failed/E18b_retrieval_trained_read.md) tests whether
 dense retrieval supervision makes the read a general retriever; the read stays at the bottom.
 
 ## Next (iteration 2, needs a go)

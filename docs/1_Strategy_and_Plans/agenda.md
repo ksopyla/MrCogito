@@ -20,42 +20,33 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-06 — new family: Perceiver AR v2 (E18) as the VC-facing long-context platform.**
-  A from-scratch ≈600M-dense LM: tiny hashed n-gram input embeddings → 2 sliding-window
-  pre-encoder layers → **one** full-causal global read → 20 window-4096 layers; every token
-  trained; one-layer prefix KV cache (~1 GB at 1M tokens). Spec
-  [E18](../experiments_specs/ahead/E18_perceiver_ar_v2_baseline.md) · plan
-  [E18_plan](../experiments_specs/ahead/E18_perceiver_ar_v2_baseline_plan.md) · feasibility
-  [note](../4_Research_Notes/perceiver_ar_modern_reproduction_feasibility.md). Pilot (125M, 8k→32k)
-  on Polonez gates P1–P4 before any AWS spend; matched dense control inside the experiment.
-  Planned follow-ups on the same platform (separate specs, hooks landed in E18): **E19** latent
-  write-back reasoning steps, **E20** block-diffusion decoder adaptation, **E21** latent
-  agent-to-agent messages. Compute: AWS credits for E18 main; Jean Zay (verify normalized-hour
-  cap: 50k normalized ≈ 12.5k H100-h) for E19–E21.
-  **2026-09-07 status:** stage A (8k, 125M) stopped at 1.0B tokens (eval loss 3.79, `checkpoint-9030`);
-  dense control (1B) → stage B (32k warm start) chained on Polonez. Landed for the main run:
-  `BATCH_PACKING_MODE=pack` (doc-masked packing, tested), multi-node launcher knobs, Nemotron
-  recipe `e18_main_stage1_v1`, and the AWS one-pager
-  [E18_main_run_aws_plan](../experiments_specs/ahead/E18_main_run_aws_plan.md) (~$20K for
-  stage 1 + dense + long stages; needs pilot gates, Nemotron code-set access, p5 quota).
-  **2026-09-09 status:** P1 ✅ P2 ✅ (copy@32k 99.9998%) P4 ✅; stage B is an optimizer regression, not a
-  P3 result. New instrument: paired **reach ablation** (`--probe reach`) — the bottom global read carries
-  ~0 nats of LM loss at the pilot geometry (stack reach ≥ context) while the dense control shows the
-  0.035–0.10 nat prize exists. P3 amended to geometry arms (N=256 @ 8k: bottom / none / **mid-depth**
-  read, `PAR_GLOBAL_POSITIONS`), running on Polonez. AWS go/no-go waits on them. 10M blockers parked in
-  `docs/4_Research_Notes/e18_10m_context_blockers.md`.
-  **2026-09-10 — arms A and C in, B running:** the bottom read is *used* when the stack cannot reach
-  (0.03 nats, 27% of tokens, extrapolates past 8k) but a read-free model matches it (4.091 vs 4.090):
-  **used, not useful for LM loss**. The stack window sets the loss; the read is a retrieval organ (P2)
-  at a 1 KB/token cache. E18's headline hypothesis is falsified at pilot scale; the platform is validated.
-  **AWS on the current spec: no.** Next, drafted and awaiting go:
-  [E18b](../experiments_specs/ahead/E18b_retrieval_trained_read.md) — 5% dense-label synthetic retrieval
-  in the 32k mix; claim = the read becomes a *general, length-extrapolating* retriever (passkey 0% → ≥ 90%
-  @32k, ≥ 80% @128k) at ≤ 0.5% LM cost, with a protocol control (stage B redo) and a dense control; this is
-  the gate for a re-scoped main run (M2 → RULER/NIAH). Then
-  [E18c](../experiments_specs/ahead/E18c_concept_compressed_read.md) — pool the read's K/V into one concept
-  slot per 16 tokens and measure *retrieval retention*: the Vision's compression bet, in the one place it
-  is measurable, and the 10M-cache path.
+- **2026-09-12 — E18 family closed; no AWS run on either spec.** Open question worth one cheap run
+  (below). Nothing else is active on GPU.
+
+## What we've explored so far
+- **2026-09-12 — E18 / E18b (one global read):** a from-scratch 125M LM whose only unbounded layer is
+  a single full-causal read. It is **free** (eval 3.790 vs matched dense 3.786, 1.02× throughput) and
+  does exact **positional** retrieval (plain copy @32k offset 16k: **99.9998%**; cutting its reach two
+  tokens short → 0.4%). But a model with **no read at all** reaches the same loss (arm C **4.091** vs
+  arm A **4.090**), and placement does not change that (arm B, read at layer 7, also 4.090 and depended
+  on 5.7× less): next-token prediction never supervises long-range addressing, so the read is *used but
+  not useful*. E18b then tried to supply that gradient with dense-label keyed-recall rows: first-token
+  accuracy moved 2.4% → 4.2% (5% mix) → 4.4% (+ value embedding on the read) → **4.49%** (100% task
+  data, ~20× supervision), passkey 0.0 throughout. The **dense control on the identical task reached
+  99.33% and transferred to passkey 0.725 @32k** — so the task is learnable at this scale and the
+  architecture is the cause. Read structurally, the pilot is an encoder-decoder with a **1-layer
+  encoder**, 1 cross-attention and a 12-layer decoder; we asked one local layer to produce keys
+  discriminative enough to be content-addressed. Banked regardless: the context-extension protocol fix
+  (weights-only restart at peak lr cost ~2%; resuming at ≤20% lr with decay gains ~12% at 32k), a
+  reusable paired **reach-ablation** instrument, and a 1 KB/token cache that is 23× under dense.
+  Specs [E18](../experiments_specs/done_failed/E18_perceiver_ar_v2_baseline.md) ·
+  [E18b](../experiments_specs/done_failed/E18b_retrieval_trained_read.md) ·
+  [verdict report](../2_Experiments_Registry/run_reports/e18_family_verdict_20260912.md).
+  **One cheap open question:** move the read to mid-depth (`PAR_GLOBAL_POSITIONS=7` makes everything
+  below it a 7-layer encoder, deepening queries *and* keys, with no change to the cache and no LM cost).
+  Staged as `Cache/jobs/e18b_mid_taskonly.sh`, ~1.4 GPU-h, not launched.
+  [E18c](../experiments_specs/ahead/E18c_concept_compressed_read.md) (compress the read's K/V) is
+  **blocked**: it needs a functional retrieval channel, which we do not have.
 - **E17e 300M closed (train 2026-08-22, eval 2026-08-25).** Late-half Δperm
   **0.104** CI [0.095, 0.114] on best `checkpoint-2660` (last **0.097** miss);
   RankMe **31.5–57.4** and eval_loss **2.464** passed; gen `real`@256

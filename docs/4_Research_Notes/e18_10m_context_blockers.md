@@ -6,7 +6,7 @@ Parking note for later. E18's single global read makes **1M context comfortable 
 512k trainable; **10M is a different regime**. This records which walls we hit and in what order, so
 nobody re-derives it. Numbers use the E18 main config (`d=1280`, 10 q-heads × 128, `g=2` kv-heads,
 23 layers, stack window `N=4096`, 594M dense) — see
-[E18 spec](../experiments_specs/ahead/E18_perceiver_ar_v2_baseline.md) and
+[E18 spec](../experiments_specs/done_failed/E18_perceiver_ar_v2_baseline.md) and
 [feasibility note](perceiver_ar_modern_reproduction_feasibility.md).
 
 Per-token forward FLOPs decompose as `1.62 GFLOP (everything else) + 2560·M (the global layer)`:

@@ -1,9 +1,9 @@
 # E18b — Retrieval-trained single read: does dense retrieval supervision turn the global read into a general, length-extrapolating retriever?
 
-- **Status:** approved (user go 2026-09-10; building)
+- **Status:** killed 2026-09-12 — retrieval claim falsified for a read at layer 1; dense control (DT) is the decisive evidence
 - **Serves:** the re-scoped E18 long-context platform — *retrieval-class* long context at a 1 KB/token cache, dense-parity short-context quality — and the E19/E21 hooks (a read that retrieves is the message space they need). Decides the AWS main run.
 - **Implementation plan:** [E18b_retrieval_trained_read_plan.md](E18b_retrieval_trained_read_plan.md) *(authored by `implementation-plan`; the HOW)*
-- **Owner / dates:** Krzysztof Sopyla · opened 2026-09-10 · closed —
+- **Owner / dates:** Krzysztof Sopyla · opened 2026-09-10 · closed 2026-09-12
 
 > Follow-up to [E18](E18_perceiver_ar_v2_baseline.md). What E18's pilot established
 > ([reach ablation + geometry arms](../../2_Experiments_Registry/run_reports/e18_reach_ablation_20260909.md)):
@@ -28,7 +28,7 @@ read extrapolated beyond 8k while the dense control's far reach hurt).
 ## Builds-on
 - **Foundation:** `nn/perceiver_ar_lm.py` (`perceiver_ar` family, unchanged), `scripts/launch_e18.sh`
   (`E18_STAGE=32k` with the **corrected extension protocol**: warm start at ≤ 20% peak lr, 100-step
-  warmup, decay — [AWS plan step 6](E18_main_run_aws_plan.md)), `scripts/build_copy_task_dataset.py`
+  warmup, decay — [AWS plan step 6](../ahead/E18_main_run_aws_plan.md)), `scripts/build_copy_task_dataset.py`
   (pattern for the new builder), pretokenized-manifest flow (multi-source manifests with weights),
   `evaluation/long_context_probes.py` (`--probe passkey`, `--probe reach`, `--probe buckets`).
 - **Init / checkpoint:** warm start from stage A `perceiver_ar_perceiver_H768L1g1s12N2048_20260907_080943/checkpoint-9030`
@@ -142,6 +142,7 @@ not an add-on.
 
 ## Result
 <Filled in AFTER, by experiment-track. Link out; do not paste full results here.>
-- Run ids: `<R>`, `<0>`, `<D>`
-- Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
-- Verdict: promising | mixed | regression | killed — <one line>
+- Run ids: `perceiver_ar_perceiver_H768L1g1s12N2048_20260910_184948` (R) · `…_20260911_021311` (0) · `…_20260911_130626` (R2, value embed on the read) · `…_20260911_210251` (T, 100% task) · `perceiver_ar_dense_H768L1g1s12N2048_20260912_062402` (**DT**, dense control)
+- Run report: [e18_family_verdict_20260912.md](../../2_Experiments_Registry/run_reports/e18_family_verdict_20260912.md)
+- Gates: **S1 ❌** (passkey@32k 0.0 vs ≥90%) · **S2 ❌** (0.0 @128k) · S3 ✅ (mix costs ≤0.25% LM) · **S4 ✅** (corrected extension protocol beats stage A by ~12% at every bucket) · S5 — (dense wins outright)
+- Verdict: **killed** — first-token accuracy on the training task moved 2.4% → 4.49% across 5% and 100% task-data arms; the dense control on the *same* task reached **99.33%** and transferred to passkey at **0.725** @32k. The task is learnable at this scale; a single read at layer 1 cannot learn content addressing. K1 as written never fired (it assumed the task would be mastered).

@@ -7,7 +7,7 @@
 **Raw log:** `Cache/logs/e18_stageA_20260907_080923.log` · `Cache/logs/training_20260907_080939.log`
 **Last checkpoint (= stop point):** `Cache/Training/perceiver_ar_perceiver_H768L1g1s12N2048_20260907_080943/checkpoint-9030` (1.0B tokens; no `final/` — stopped by design, see below)
 **Git commit:** `5c0e3dd` (Polonez tree at launch 08:09 UTC; later commits that day touched only pretokenization and docs)
-**Spec:** [E18](../../experiments_specs/ahead/E18_perceiver_ar_v2_baseline.md) · [plan](../../experiments_specs/ahead/E18_perceiver_ar_v2_baseline_plan.md)
+**Spec:** [E18](../../experiments_specs/done_failed/E18_perceiver_ar_v2_baseline.md) · [plan](../../experiments_specs/done_failed/E18_perceiver_ar_v2_baseline_plan.md)
 
 **Artifacts:**
 - Position-bucket CE at 32k on PG-19 eval rows: `Cache/eval/e18/stageA_ckpt9030_buckets32k.json`
