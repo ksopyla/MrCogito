@@ -651,6 +651,22 @@ def test_message_boundary_inserted_per_document_with_masked_label_and_range():
     assert out["input_ids"][0].tolist() == pre and out["labels"][0, 5] == M   # not our boundary: normal label
 
 
+def test_message_boundary_skips_documents_of_exactly_twice_min_len():
+    """L == 2 * min_len made `rng.integers(min_len, L - min_len)` an empty range (ValueError
+    'low >= high' in the 4-GPU E21 smoke); such documents get no boundary, L == 2 * min_len + 1 gets
+    the single admissible P = min_len."""
+    col = DataCollatorForCausalLM(_Tok(), max_length=64, model_vocab_size=V,
+                                  message_boundary=(M, 1.0, 4), seed=0)
+    batch = col([{"input_ids": [10 + j for j in range(8)]}, {"input_ids": [10 + j for j in range(9)]}])
+    assert M not in batch["input_ids"][0].tolist()
+    ids1 = batch["input_ids"][1].tolist()
+    assert ids1.count(M) == 1 and ids1.index(M) == 4
+    ids = [20 + j for j in range(8)] + [40 + j for j in range(9)]
+    doc = [0] * 8 + [1] * 9
+    out = col([{"input_ids": ids, "doc_ids": doc}])["input_ids"][0].tolist()
+    assert M not in out[:8] and out.index(M) == 8 + 4
+
+
 def test_message_boundary_is_deterministic_per_row_and_respects_frac():
     rows = [[10 + ((7 * j + i) % 60) for j in range(30)] for i in range(40)]
     a = DataCollatorForCausalLM(_Tok(), max_length=64, model_vocab_size=V, message_boundary=(M, 0.5, 4), seed=1)

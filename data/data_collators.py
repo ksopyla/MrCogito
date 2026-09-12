@@ -280,7 +280,9 @@ class DataCollatorForCausalLM:
             rng = np.random.default_rng([self.seed, length, *head])
             for a, b in spans:
                 L = b - a
-                if L < 2 * min_len:
+                # the boundary replaces position P; sender [a, P) and receiver (P, b) both need
+                # >= min_len tokens, so P in [min_len, L - min_len) must be non-empty: L > 2 * min_len
+                if L <= 2 * min_len:
                     continue
                 if bool((row[a:b] == tok).any()):
                     continue                     # boundary-aware row: already carries its boundary
