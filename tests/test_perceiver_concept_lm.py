@@ -298,8 +298,9 @@ def test_save_load_roundtrip(tmp_path):
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="flex needs CUDA")
 def test_flex_matches_sdpa_cuda():
     ids = rand_ids(2, 256).cuda()
-    a = make_model(tiny_cfg(attn_pad_multiple=1, dec_segment=64, concept_ratio=16)).cuda()
-    b = make_model(tiny_cfg(attn_pad_multiple=128, attn_backend="flex", dec_segment=64, concept_ratio=16)).cuda()
+    kw = dict(dec_segment=64, concept_ratio=16, head_dim=16, hidden_size=64)   # flex needs head_dim >= 16
+    a = make_model(tiny_cfg(attn_pad_multiple=1, **kw)).cuda()
+    b = make_model(tiny_cfg(attn_pad_multiple=128, attn_backend="flex", **kw)).cuda()
     b.load_state_dict(a.state_dict())
     doc = torch.zeros(2, 256, dtype=torch.long, device="cuda")
     doc[1, 100:] = 1
