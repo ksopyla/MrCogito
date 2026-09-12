@@ -21,7 +21,7 @@ useful under plain next-token CE at 32k.
 
 | run id | arm | what it tested | status |
 |---|---|---|---|
-| `perceiver_concept_H768e6r16c1l4d8s1024_20260912_131735` (+ `_resumed`) | **A** | the bet | 560 steps · ≈ 0.28B tokens (56% of the 0.5B pilot) · evaluated |
+| `perceiver_concept_H768e6r16c1l4d8s1024_20260912_131735` (+ `_resumed`) | **A** | the bet | 560 steps · ≈ 0.44B tokens (24 × 32k rows/step; 88% of the 0.5B pilot) · evaluated |
 | `perceiver_concept_H768e6r16c1l4d8s1024_20260912_152511` | **C** | same decoder, no encoder / array / cross-attention | 560 steps · evaluated |
 | `perceiver_concept_H768e6r16c1l4d8s1024_20260912_143726` | A′ | duplicate arm A on Polonez | final archived to NAS; not evaluated separately |
 | `perceiver_ar_dense_H768L0g0s18N2048_20260912_161135` | dense | 18-layer full-causal control | crashed ≈ step 390 (`ENOSPC`); `checkpoint-320` lost in the cleanup sweep |

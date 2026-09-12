@@ -139,8 +139,8 @@ selecting, inside natural text, the tokens whose information *is* in the compres
   30% dense-label rows ≈ **40%** of the total loss on far-determined tokens — the share the
   Hypothesis assumes. Pin `--far_repeat_ngram 4`, `--far_repeat_weight 8`.
 - **Compute:** Odra 3×3090 for arms A and C (≈ 12 GPU-h each at 32k, E22 calibration: 560 steps ≈ 6.5 h
-  for 0.28B); Polonez 4×3090 for arm D after the `goodwrite_ml` move completes.
-- **Steps / epochs:** 0.5B tokens per arm, effective batch ≈ 0.5M tokens, Muon 0.01 / AdamW 2e-4 / wd
+  for 0.44B); Polonez 4×3090 for arm D after the `goodwrite_ml` move completes.
+- **Steps / epochs:** 0.5B tokens per arm (≈ 640 steps), effective batch 24 packed 32k rows ≈ 0.79M tokens, Muon 0.01 / AdamW 2e-4 / wd
   0.1 / clip 0.5, 100-step warmup, cosine to 10% — the E22 schedule, unchanged.
 - **Launch:** `bash scripts/launch_e23.sh` (arm A = `PCL_CONCEPT_XATTN_SCOPE=exclusive FAR_REPEAT_WEIGHT=8`
   on the E23 manifest) · `E23_ARM=C bash scripts/launch_e23.sh` · `E23_ARM=dense bash scripts/launch_e23.sh`.

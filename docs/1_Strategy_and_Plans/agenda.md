@@ -38,7 +38,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 ## What we've explored so far
 - **2026-09-12 — E22 Perceiver Concept LM (from scratch, 32k; killed same day).** First ledger design
   with positional slots (1 / 16 tokens), a transformer *over* the slots and a decoder with no raw route
-  past its 1024-token segment, trained under plain CE (+5% keyed recall) to 0.28B tokens on Odra. The
+  past its 1024-token segment, trained under plain CE (+5% keyed recall) to 0.44B tokens (88% of budget) on Odra. The
   array is **live** (Δ_none 0.25 nats, > 10σ) and **diverse** (RankMe 265/768, learned-query pooler
   alive), yet **arm A = arm C** on far tokens (4.167 vs 4.172; C is an 8-layer segment-only decoder at half
   the compute), passkey 0.0, keyed recall 4.8% vs a 3.5% floor. A `near`/`far` ablation added after the

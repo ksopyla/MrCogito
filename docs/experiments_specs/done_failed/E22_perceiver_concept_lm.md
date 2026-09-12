@@ -1,6 +1,6 @@
 # E22 — Perceiver Concept LM: encoder → positional concept array → latent transformer → block-local decoder, from scratch at 32k
 
-- **Status:** approved 2026-09-12 (KS: "design the experiment and implement it … make it right and modern, with proper long data set and long evaluation … iterate on this architecture") · ran 2026-09-12 (Odra A/C, 0.28B tokens each) · **killed 2026-09-12 — K1 met, S1/S2/S4 missed, S5 passed** → `done_failed`; successor [E23](../ahead/E23_exclusive_concept_channel.md)
+- **Status:** approved 2026-09-12 (KS: "design the experiment and implement it … make it right and modern, with proper long data set and long evaluation … iterate on this architecture") · ran 2026-09-12 (Odra A/C, 560 steps ≈ 0.44B tokens each, 88% of budget) · **killed 2026-09-12 — K1 met, S1/S2/S4 missed, S5 passed** → `done_failed`; successor [E23](../ahead/E23_exclusive_concept_channel.md)
 - **Serves:** the Vision's priorities 1–2 directly — compress long text into a length-proportional concept array, *reason over the array* (concept↔concept attention, depth as a knob), decode from it — as the platform the latent-message (E21/E19) and 1M/10M work will run on. Rationale and evidence: [Perceiver revisit synthesis 2026-09-12](../../4_Research_Notes/perceiver_revisit_synthesis_20260912.md).
 - **Implementation plan:** [E22_perceiver_concept_lm_plan.md](E22_perceiver_concept_lm_plan.md)
 - **Owner / dates:** Krzysztof Sopyla · opened 2026-09-12 · closed 2026-09-12
@@ -144,7 +144,7 @@ encoder window ≥ 256, loss on uncompressed tokens interleaved with compressed 
 
 ## Result
 - Run ids: A `perceiver_concept_H768e6r16c1l4d8s1024_20260912_131735` (+ `_resumed`), C `…_152511`
-  (Odra, 560 steps ≈ 0.28B tokens each); A′ `…_143726` (Polonez, duplicate); dense
+  (Odra, 560 steps × 24 packed 32k rows ≈ 0.44B tokens each, 88% of the 0.5B budget); A′ `…_143726` (Polonez, duplicate); dense
   `perceiver_ar_dense_H768L0g0s18N2048_20260912_161135` (crashed ≈ step 390, checkpoint lost).
 - Run report: [e22_pilot_verdict_20260912](../../2_Experiments_Registry/run_reports/e22_pilot_verdict_20260912.md) ·
   root cause: [e22_root_cause_20260912](../../4_Research_Notes/e22_root_cause_20260912.md)
