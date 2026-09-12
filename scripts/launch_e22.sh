@@ -1,7 +1,7 @@
 #!/bin/bash
 # E22 — Perceiver Concept LM pilot launcher (Odra 3×3090 / Polonez 4×3090). Thin wrapper: pins
 # the pilot protocol and delegates to the generic launcher.
-# Spec: docs/experiments_specs/ahead/E22_perceiver_concept_lm.md
+# Spec: docs/experiments_specs/done_failed/E22_perceiver_concept_lm.md
 #
 #   bash scripts/launch_e22.sh                       # arm A: the bet (encoder → concepts → latent → decoder)
 #   E22_ARM=C bash scripts/launch_e22.sh             # arm C: same model, decoder never reads the array

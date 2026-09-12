@@ -2,7 +2,7 @@
 decoder, trained from scratch on every token (E22).
 
 Family `perceiver_concept`, selected via `model_family=perceiver_concept` in the shared training
-entrypoint. Spec: docs/experiments_specs/ahead/E22_perceiver_concept_lm.md.
+entrypoint. Spec: docs/experiments_specs/done_failed/E22_perceiver_concept_lm.md.
 
     ids ─► TinyHashedEmbedding (e=256 + hashed 2/3-grams → d)                          x0 [B,S,d]
         ─► ENCODER   [swa(enc_window)] × enc_layers, causal, doc-masked                h  [B,S,d]

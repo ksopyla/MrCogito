@@ -1,9 +1,9 @@
 # E22 — Perceiver Concept LM: encoder → positional concept array → latent transformer → block-local decoder, from scratch at 32k
 
-- **Status:** approved 2026-09-12 (KS: "design the experiment and implement it … make it right and modern, with proper long data set and long evaluation … iterate on this architecture") · implementing
+- **Status:** approved 2026-09-12 (KS: "design the experiment and implement it … make it right and modern, with proper long data set and long evaluation … iterate on this architecture") · ran 2026-09-12 (Odra A/C, 0.28B tokens each) · **killed 2026-09-12 — K1 met, S1/S2/S4 missed, S5 passed** → `done_failed`; successor [E23](../ahead/E23_exclusive_concept_channel.md)
 - **Serves:** the Vision's priorities 1–2 directly — compress long text into a length-proportional concept array, *reason over the array* (concept↔concept attention, depth as a knob), decode from it — as the platform the latent-message (E21/E19) and 1M/10M work will run on. Rationale and evidence: [Perceiver revisit synthesis 2026-09-12](../../4_Research_Notes/perceiver_revisit_synthesis_20260912.md).
 - **Implementation plan:** [E22_perceiver_concept_lm_plan.md](E22_perceiver_concept_lm_plan.md)
-- **Owner / dates:** Krzysztof Sopyla · opened 2026-09-12 · closed —
+- **Owner / dates:** Krzysztof Sopyla · opened 2026-09-12 · closed 2026-09-12
 
 > One coherent architectural bet: the encoder→concepts→decoder Perceiver idea rebuilt on the
 > three laws the ledger and the frontier agree on (no raw long-range bypass at any layer;
@@ -143,7 +143,14 @@ encoder window ≥ 256, loss on uncompressed tokens interleaved with compressed 
   stage on a PG-19/ProLong-heavy mix.
 
 ## Result
-<Filled in AFTER, by experiment-track. Link out; do not paste full results here.>
-- Run ids: `<A>`, `<C>`, `<dense>` · WandB: <link>
-- Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
-- Verdict: promising | mixed | regression | killed — <one line>
+- Run ids: A `perceiver_concept_H768e6r16c1l4d8s1024_20260912_131735` (+ `_resumed`), C `…_152511`
+  (Odra, 560 steps ≈ 0.28B tokens each); A′ `…_143726` (Polonez, duplicate); dense
+  `perceiver_ar_dense_H768L0g0s18N2048_20260912_161135` (crashed ≈ step 390, checkpoint lost).
+- Run report: [e22_pilot_verdict_20260912](../../2_Experiments_Registry/run_reports/e22_pilot_verdict_20260912.md) ·
+  root cause: [e22_root_cause_20260912](../../4_Research_Notes/e22_root_cause_20260912.md)
+- Verdict: **killed** — arm A = arm C on far tokens (S2 ratio ≈ 1.00, K1 met); Δ_none 0.25 but 0.22 of it
+  already inside segment 0; the far slots' marginal is **0.05 nats, flat 1k→32k** (`near`/`far` ablation);
+  passkey 0.0, keyed recall 4.8% (S4); RankMe 265 (S5 ✅ — the array is diverse, the decoder just never
+  reads it for content). Root causes: CE on natural text pays ≈ 0.05 nats for far context at this scale,
+  and the `cpos ≤ pos` mask let the array serve as local depth. Successor: E23 (exclusive scope + an
+  objective that pays for far content).

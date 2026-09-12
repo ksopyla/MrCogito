@@ -1,6 +1,6 @@
 # E22 — Implementation Plan
 
-- **Spec:** [E22_perceiver_concept_lm.md](E22_perceiver_concept_lm.md) · **Status:** implementing 2026-09-12
+- **Spec:** [E22_perceiver_concept_lm.md](E22_perceiver_concept_lm.md) · **Status:** implemented and run 2026-09-12 · experiment killed 2026-09-12 (see spec Result); the family and this plan remain the foundation E23 builds on
 - **Authored by:** `implementation-plan` · for → `research-implement`
 
 > The HOW for: *a from-scratch Perceiver concept LM — SWA encoder → one pooled slot per r tokens →

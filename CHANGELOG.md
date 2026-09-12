@@ -15,6 +15,41 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-12] - `perceiver_concept`: `concept_xattn_scope` (exclusive channel) + `near`/`far` concept ablations
+
+**Why:**
+- The E22 concept probe showed Δ_none ≈ 0.22 nats already inside the first 1024-token segment, where
+  the decoder has the whole raw context and no far slot exists, and CE(shuffled) < CE(none) at 16k–32k.
+  The `cpos ≤ pos` cross-attention mask let a token read up to 63 slots from its own raw segment, so
+  the array was never the *only* route for anything. This change makes the diagnosis measurable
+  (which slots carry the loss) and the fix selectable for E23. Diagnosis:
+  `docs/4_Research_Notes/e22_root_cause_20260912.md`.
+
+**Changed:**
+- `nn/perceiver_concept_lm.py`: `PerceiverConceptConfig.concept_xattn_scope = causal | exclusive`
+  (default `causal` = E22 as run; old checkpoints load unchanged). `raw_span()` gives, per row index,
+  how many earlier tokens the decoder's raw self-attention covers (`t mod segment` for `block`,
+  `segment − 1` for `swa`); `_cross_mask_pred` / `attend_cross` take `span` + `scope` and admit, under
+  `exclusive`, only slots with `pos(slot) < pos(t) − span(t)` (plus the null slot). Flex and SDPA share
+  the rule; the flex block-mask memo is keyed by scope. `concept_override` gains `near` (only slots
+  inside the raw window remain) and `far` (only slots before it remain); `far` on a causal checkpoint
+  equals the exclusive-scope forward with the same weights.
+- `evaluation/long_context_probes.py`: `--probe concept` scores `real,none,shuffled,near,far` by
+  default; `--concept_modes` overrides (must start with `real`).
+- `training/concept_pretraining_args.py` (`--pcl_concept_xattn_scope`, validated),
+  `training/concept_pretraining_factories.py` (config plumbing, init log, W&B architecture id gets a
+  trailing `x` for the exclusive scope), `scripts/train_concept_pretraining_multigpu.sh` and
+  `scripts/launch_e22.sh` (`PCL_CONCEPT_XATTN_SCOPE`).
+- `tests/test_perceiver_concept_lm.py`: mask partition tests for `block` and `swa` decoders
+  (exclusive ∪ local_only = causal, intersection = null slot), `far` == exclusive-model equivalence,
+  config round trip, flex/SDPA equivalence parametrised over scope × override (CUDA; passed on Odra).
+
+**Docs (experiment-track):** E22 spec + plan moved to `docs/experiments_specs/done_failed/`
+(Status / Result filled); run report `run_reports/e22_pilot_verdict_20260912.md`; ledger rows;
+agenda Current focus → E23; new spec `docs/experiments_specs/ahead/E23_exclusive_concept_channel.md`.
+
+---
+
 ## [2026-09-12] - E22 `perceiver_concept` family: encoder → positional concept array → latent transformer → segment-confined decoder
 
 **Why:**
@@ -22,7 +57,7 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   conditions the ledger and the 2026 frontier agree on (no raw long-range bypass at any layer,
   positional slot allocation, contextualise before pooling), nor with a transformer *over* the
   concept array. E18/E21 have one K/V read and no latent stack. Spec:
-  `docs/experiments_specs/ahead/E22_perceiver_concept_lm.md`; rationale:
+  `docs/experiments_specs/done_failed/E22_perceiver_concept_lm.md` (moved from `ahead/` when the experiment closed); rationale:
   `docs/4_Research_Notes/perceiver_revisit_synthesis_20260912.md`.
 
 **Changed:**
