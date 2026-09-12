@@ -107,6 +107,17 @@ neither was in Perceiver-MLM, E01–E05 or E10–E17.
 
 ## 3. E18 reread: why one global read is not the 10M answer, and what it did prove
 
+**Parameter count, corrected (KS, 2026-09-12).** The E18 docs call the pilot "125M". That is a
+shape label (a GPT-2-small stack: d = 768, 14 layers), not a count. From `analytic_param_count`
+on the `scripts/launch_e18.sh` config: 14 layers **88.1M** + embedding MLP 1.0M + token table
+(128,256 × 256) 32.8M + **untied `lm_head` (768 × 128,256) 98.5M** = 220.5M "dense" as the
+factory logs it, plus lookup tables (2/3-gram 33.6M, three value-embedding tables 24.6M) =
+**278.7M total**, which is what W&B's `num_parameters` reports. Only **89M** of it is transformer
+compute; 190M is vocabulary-sized tables, and the untied 128k-vocab head alone is 45% of the dense
+parameters at this width. No E18 conclusion changes (every arm and the dense control share the
+count), but "learnable at 125M" should read "learnable with an 89M stack and a 128k-vocab head",
+and every E18/E18b/E21 doc that says 125M should carry the breakdown.
+
 Structurally E18 is `[SWA-1024]×2 → [FULL causal]×1 → [SWA-4096]×20`: a **1-layer encoder**, one
 cross-attention, a 12–20-layer decoder ([verdict](../2_Experiments_Registry/run_reports/e18_family_verdict_20260912.md)).
 Proven: dense parity (3.790 vs 3.786), throughput parity, exact **positional** retrieval through the
@@ -316,7 +327,7 @@ does not have — and what the encoder → reasoning → decoder vision needs �
 interaction (no latent transformer), a refinement loop, a deeper encoder, and structural (rather
 than stochastic, q = 0.5) closure. Those are exactly the arms of the next spec, and they are only
 interpretable **after** E21 answers "can pooled slots carry suffix-relevant content at all at
-125M / 32k" (K1 / K2). So: run E21 first (≈ 25 GPU-h), with the two E18 pre-checks in §3 alongside.
+the pilot scale / 32k" (K1 / K2). So: run E21 first (≈ 25 GPU-h), with the two E18 pre-checks in §3 alongside.
 
 **E22 (to be framed by `experiment-design`) — hierarchical positional concept core.** One coherent
 bet: on the E18/E21 platform, make closure structural (decoder stack = SWA-256 + slot reads only, no
