@@ -92,6 +92,8 @@ def _make_tokenize_fn(
     append_eos_token_id,
     max_chars=None,
     model_vocab_size: int | None = None,
+    chunk_long_docs: bool = False,
+    min_tokens: int = 0,
 ):
     """Build the batched tokenize function shared by the single-source and mix loaders.
 
@@ -107,7 +109,15 @@ def _make_tokenize_fn(
     model_vocab_size -> when set, pass ``split_special_tokens`` explicitly into each
         tokenizer call (survives ``datasets.map`` multiprocessing better than relying on a
         pickled attribute alone) and refuse batches that still contain out-of-range ids.
+    chunk_long_docs -> (AR path only) tokenize each document in full (up to ``max_chars``) and
+        emit ⌈L / (max_seq_length − 2)⌉ rows of ``[BOS] chunk [EOS]`` instead of one truncated
+        row, so a 100k-token book yields three 32k rows rather than its first 32k tokens (E22
+        long-document trees). The batched ``map`` may therefore return more rows than it got.
+    min_tokens -> (AR path only) drop rows shorter than this many tokens (after chunking).
     """
+    if chunk_long_docs and append_eos_token_id is None:
+        raise ValueError("chunk_long_docs requires the AR path (append_eos_token_id set)")
+    bos_id = getattr(tokenizer, "bos_token_id", None)
     # Explicit kwarg: attribute-only config can be lost when tokenizers are re-loaded in
     # map workers, which would re-admit tokenizer-only multimodal ids (e.g. Gemma image soft).
     split_special_tokens = bool(getattr(tokenizer, "split_special_tokens", False))
@@ -135,6 +145,25 @@ def _make_tokenize_fn(
                 max_length=max_seq_length,
                 **tokenize_kwargs,
             )
+        elif chunk_long_docs:
+            body = max_seq_length - 2 if bos_id is not None else max_seq_length - 1
+            full = tokenizer(text_batch, padding=False, truncation=False, add_special_tokens=False,
+                             **tokenize_kwargs)
+            rows: list[list[int]] = []
+            for ids in full["input_ids"]:
+                for s in range(0, max(len(ids), 1), body):
+                    chunk = ids[s : s + body]
+                    if not chunk:
+                        continue
+                    row = ([bos_id] if bos_id is not None else []) + chunk + [append_eos_token_id]
+                    if len(row) >= max(int(min_tokens), 1):
+                        rows.append(row)
+            out = {"input_ids": rows, "attention_mask": [[1] * len(r) for r in rows]}
+            if "special_tokens_mask" in full:
+                out["special_tokens_mask"] = [
+                    ([1] if bos_id is not None else []) + [0] * (len(r) - (2 if bos_id is not None else 1)) + [1]
+                    for r in rows
+                ]
         else:
             out = tokenizer(
                 text_batch,
@@ -148,6 +177,9 @@ def _make_tokenize_fn(
                 out["attention_mask"] = [m + [1] for m in out["attention_mask"]]
             if "special_tokens_mask" in out:
                 out["special_tokens_mask"] = [s + [1] for s in out["special_tokens_mask"]]
+            if min_tokens and int(min_tokens) > 1:
+                keep = [i for i, ids in enumerate(out["input_ids"]) if len(ids) >= int(min_tokens)]
+                out = {k: [v[i] for i in keep] for k, v in out.items()}
         if model_vocab_size is not None:
             for ids in out["input_ids"]:
                 if not ids:
