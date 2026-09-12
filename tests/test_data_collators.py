@@ -621,3 +621,82 @@ def test_collator_markers_with_packed_doc_ids():
     assert lab[:5] == [-100, -100, -100, 3, E]
     assert lab[5] == -100          # document start is never a target (packed rule still applies)
     assert lab[6:] == [-100, -100]  # the marked row keeps -100 outside its spans
+
+
+# ------------------------------------------------------------------ E21 message boundary
+M = 92
+
+
+def test_message_boundary_inserted_per_document_with_masked_label_and_range():
+    col = DataCollatorForCausalLM(_Tok(), max_length=64, model_vocab_size=V,
+                                  message_boundary=(M, 1.0, 4), seed=0)
+    rows = [[10 + (j % 50) for j in range(i, i + 20)] for i in range(6)]
+    batch = col([{"input_ids": r} for r in rows])
+    for i in range(6):
+        ids = batch["input_ids"][i].tolist()
+        assert ids.count(M) == 1
+        P = ids.index(M)
+        assert 4 <= P < 20 - 4
+        assert batch["labels"][i, P] == -100
+        # every other position is plain LM
+        exp = rows[i][:]
+        exp[P] = -100
+        assert batch["labels"][i].tolist() == exp
+    # too short for 2*min_len -> untouched
+    short = col([{"input_ids": [5, 6, 7, 8, 9, 10, 11]}])
+    assert M not in short["input_ids"][0].tolist()
+    # rows that already carry the boundary (boundary-aware retrieval rows) are left alone
+    pre = [3, 4, 5, 6, 7, M, 8, 9, 10, 11, 12, 13]
+    out = col([{"input_ids": pre}])
+    assert out["input_ids"][0].tolist() == pre and out["labels"][0, 5] == M   # not our boundary: normal label
+
+
+def test_message_boundary_skips_documents_of_exactly_twice_min_len():
+    """L == 2 * min_len made `rng.integers(min_len, L - min_len)` an empty range (ValueError
+    'low >= high' in the 4-GPU E21 smoke); such documents get no boundary, L == 2 * min_len + 1 gets
+    the single admissible P = min_len."""
+    col = DataCollatorForCausalLM(_Tok(), max_length=64, model_vocab_size=V,
+                                  message_boundary=(M, 1.0, 4), seed=0)
+    batch = col([{"input_ids": [10 + j for j in range(8)]}, {"input_ids": [10 + j for j in range(9)]}])
+    assert M not in batch["input_ids"][0].tolist()
+    ids1 = batch["input_ids"][1].tolist()
+    assert ids1.count(M) == 1 and ids1.index(M) == 4
+    ids = [20 + j for j in range(8)] + [40 + j for j in range(9)]
+    doc = [0] * 8 + [1] * 9
+    out = col([{"input_ids": ids, "doc_ids": doc}])["input_ids"][0].tolist()
+    assert M not in out[:8] and out.index(M) == 8 + 4
+
+
+def test_message_boundary_is_deterministic_per_row_and_respects_frac():
+    rows = [[10 + ((7 * j + i) % 60) for j in range(30)] for i in range(40)]
+    a = DataCollatorForCausalLM(_Tok(), max_length=64, model_vocab_size=V, message_boundary=(M, 0.5, 4), seed=1)
+    b = DataCollatorForCausalLM(_Tok(), max_length=64, model_vocab_size=V, message_boundary=(M, 0.5, 4), seed=1)
+    ba = a([{"input_ids": r} for r in rows])
+    bb = b([{"input_ids": r} for r in reversed(rows)])
+    # same row -> same P regardless of batch position / collator instance
+    for i, r in enumerate(rows):
+        assert ba["input_ids"][i].tolist() == bb["input_ids"][39 - i].tolist()
+    n = sum(M in ba["input_ids"][i].tolist() for i in range(40))
+    assert 8 <= n <= 32                                   # ~50% of 40 rows
+    c = DataCollatorForCausalLM(_Tok(), max_length=64, model_vocab_size=V, message_boundary=(M, 0.0, 4))
+    assert c.message_boundary is None                     # frac 0 == off
+
+
+def test_message_boundary_packed_rows_and_validation():
+    col = DataCollatorForCausalLM(_Tok(), max_length=64, model_vocab_size=V,
+                                  message_boundary=(M, 1.0, 3), loss_span_markers=(S, E))
+    ids = [20 + j for j in range(10)] + [40 + j for j in range(10)] + [S, 5, E]
+    doc = [0] * 10 + [1] * 10 + [2] * 3
+    batch = col([{"input_ids": ids, "doc_ids": doc}])
+    out = batch["input_ids"][0].tolist()
+    P0 = [i for i in range(0, 10) if out[i] == M]
+    P1 = [i for i in range(10, 20) if out[i] == M]
+    assert len(P0) == 1 and len(P1) == 1 and M not in out[20:]        # doc 2 too short
+    assert 3 <= P0[0] < 7 and 13 <= P1[0] < 17
+    lab = batch["labels"][0].tolist()
+    assert lab[P0[0]] == -100 and lab[P1[0]] == -100 and lab[10] == -100 and lab[20] == -100
+    assert lab[21:] == [5, E]                                          # marker rule still applies
+    with pytest.raises(ValueError):
+        DataCollatorForCausalLM(_Tok(), model_vocab_size=V, message_boundary=(S, 0.5, 4), loss_span_markers=(S, E))
+    with pytest.raises(ValueError):
+        DataCollatorForCausalLM(_Tok(), model_vocab_size=V, message_boundary=(M, 1.5, 4))

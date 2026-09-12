@@ -126,3 +126,26 @@ def test_padding_metrics_are_added_to_the_next_trainer_log(tmp_path):
 
     trainer.log({"eval_loss": 1.0})
     assert "data/pad_ratio" not in trainer.state.log_history[-1]
+    assert "data/message_rows_frac" not in trainer.state.log_history[0]  # no boundary id -> no E21 keys
+
+
+def test_message_boundary_telemetry_counts_rows_and_receiver_tokens(tmp_path):
+    args = TrainingArguments(output_dir=str(tmp_path), report_to="none", use_cpu=True)
+    trainer = PerceiverDenoiseTrainer(
+        model=_TinyLossModel(), args=args, train_dataset=_TinyDataset(), objective_variant="reconstruction",
+        contrastive_weight=0.3, contrastive_temperature=0.05, message_boundary_token_id=9,
+    )
+    ids = torch.tensor([[1, 2, 9, 4, 5, 6],      # boundary at 2 -> 3 receiver tokens
+                        [1, 2, 3, 4, 0, 0],      # no boundary (padded)
+                        [9, 2, 3, 4, 5, 0],      # boundary first -> 4 receiver tokens (pad excluded)
+                        [1, 2, 3, 4, 5, 9]])     # boundary last -> 0 receiver tokens
+    am = torch.tensor([[1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 0, 0], [1, 1, 1, 1, 1, 0], [1, 1, 1, 1, 1, 1]])
+    trainer._record_padding_metrics(am, ids)
+    trainer.log({"loss": 1.0})
+    logged = trainer.state.log_history[-1]
+    assert logged["data/message_rows_frac"] == 0.75
+    assert abs(logged["data/receiver_token_frac"] - 7 / 21) < 1e-9
+    # padded positions carrying the id do not count
+    trainer._record_padding_metrics(torch.tensor([[1, 1, 0]]), torch.tensor([[1, 2, 9]]))
+    trainer.log({"loss": 1.0})
+    assert trainer.state.log_history[-1]["data/message_rows_frac"] == 0.0

@@ -1,6 +1,8 @@
 """E18 launcher protocol tests (scripts/launch_e18.sh → generic launcher → canonical parser)."""
 from pathlib import Path
 
+import torch
+
 from tests.test_training_launcher_parameter_flow import _run_launcher, _value_after
 from training.train_concept_pretraining import build_argument_parser
 
@@ -15,6 +17,9 @@ def _parse(args):
         if flag in parser_args:
             i = parser_args.index(flag)
             del parser_args[i : i + 2]
+    if not torch.cuda.is_available():
+        # the launcher pins bf16; TrainingArguments rejects that on a GPU-less box unless use_cpu
+        parser_args += ["--use_cpu", "True"]
     return build_argument_parser().parse_args_into_dataclasses(parser_args)
 
 
@@ -121,3 +126,31 @@ def test_e18b_markers_and_manifest_override_flow(tmp_path):
     assert _value_after(args, "--pretokenized_manifest") == str(merged)
     model_args, loss_args, data_args, optim_args, training_args = _parse(args)
     assert data_args.loss_span_markers == "128103,128104"
+
+
+def test_e21_message_knobs_default_off_and_flow_to_config(tmp_path):
+    result, args, _ = _run_stage(tmp_path, {})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _value_after(args, "--par_message_boundary_token_id") == "-1"
+    assert _value_after(args, "--message_boundary_frac") == "0.0"
+    assert "E21 message:" not in result.stdout
+    model_args, loss_args, data_args, optim_args, training_args = _parse(args)
+    assert model_args.par_message_boundary_token_id == -1
+    assert data_args.message_boundary_frac == 0.0
+
+    result, args, _ = _run_stage(tmp_path, {
+        "E18_STAGE": "32k",
+        "PAR_MESSAGE_BOUNDARY_TOKEN": "128105", "PAR_MESSAGE_COMPRESS_RATIO": "8",
+        "MESSAGE_BOUNDARY_FRAC": "0.5", "MESSAGE_BOUNDARY_MIN": "2048",
+    })
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "E21 message: boundary_token=128105 ratio=8 frac=0.5 min=2048" in result.stdout
+    assert _value_after(args, "--par_message_boundary_token_id") == "128105"
+    assert _value_after(args, "--par_message_compress_ratio") == "8"
+    assert _value_after(args, "--message_boundary_frac") == "0.5"
+    assert _value_after(args, "--message_boundary_min") == "2048"
+    model_args, loss_args, data_args, optim_args, training_args = _parse(args)
+    assert model_args.par_message_boundary_token_id == 128105
+    assert model_args.par_message_compress_ratio == 8
+    assert data_args.message_boundary_frac == 0.5
+    assert data_args.message_boundary_min == 2048

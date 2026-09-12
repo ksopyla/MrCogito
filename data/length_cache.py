@@ -163,6 +163,41 @@ def load_length_cache(manifest_path: str | Path) -> np.ndarray | None:
     return _valid_cached_lengths(dataset_dir, meta_path, expected)
 
 
+def _lengths_from_list_offsets(train_ds) -> np.ndarray | None:
+    """Row lengths straight from the Arrow list offsets of ``input_ids`` — no token bytes read.
+
+    A pretokenized mix is ``concatenate_datasets(shards).select(indices)``: the table holds
+    every source row once and ``_indices`` is the interleave order. The list offsets are a
+    4- or 8-byte-per-row buffer, so this takes seconds where the batched ``map`` over the
+    token column takes ~40 min for a 2.7M-row / 7.8B-token mix. Returns None when the
+    layout is not a plain (large) list column so the caller can fall back to the scan.
+    """
+    try:
+        import pyarrow as pa
+
+        table = train_ds.data.table
+        column = table.column("input_ids")
+        parts: list[np.ndarray] = []
+        for chunk in column.chunks:
+            if not pa.types.is_list(chunk.type) and not pa.types.is_large_list(chunk.type):
+                return None
+            if chunk.null_count:
+                return None
+            offsets = np.asarray(chunk.offsets.to_numpy(zero_copy_only=False), dtype=np.int64)
+            parts.append(offsets[1:] - offsets[:-1])
+        base = np.concatenate(parts) if parts else np.zeros(0, dtype=np.int64)
+        indices = getattr(train_ds, "_indices", None)
+        if indices is not None:
+            idx = np.asarray(indices.column(0).to_numpy(zero_copy_only=False), dtype=np.int64)
+            base = base[idx]
+        if base.shape != (len(train_ds),) or (base.size and base.max() > np.iinfo(np.int32).max):
+            return None
+        return base.astype(np.int32)
+    except Exception as e:  # noqa: BLE001 — any layout surprise falls back to the exact scan
+        logger.warning(f"Fast length path from Arrow offsets unavailable ({type(e).__name__}: {e}); scanning.")
+        return None
+
+
 def _compute_lengths(
     train_ds,
     *,
@@ -230,9 +265,19 @@ def compute_or_load_interleaved_lengths(
             )
             return cached
 
-    workers = _default_num_proc(len(train_ds), num_proc)
-    length_ds = _compute_lengths(train_ds, num_proc=workers)
-    lengths = _lengths_from_dataset(length_ds)
+    workers: int | None = None
+    started = time.monotonic()
+    lengths = _lengths_from_list_offsets(train_ds)
+    if lengths is not None:
+        logger.info(
+            f"Computed {lengths.size:,} sequence lengths from Arrow list offsets in "
+            f"{time.monotonic() - started:.1f}s."
+        )
+        length_ds = _length_dataset_from_array(lengths)
+    else:
+        workers = _default_num_proc(len(train_ds), num_proc)
+        length_ds = _compute_lengths(train_ds, num_proc=workers)
+        lengths = _lengths_from_dataset(length_ds)
     if lengths.shape != (expected["n_rows"],):
         raise RuntimeError(
             f"Length map produced {lengths.size} rows but the train dataset has "
@@ -248,6 +293,7 @@ def compute_or_load_interleaved_lengths(
         "mean_length": float(lengths.mean()) if lengths.size else None,
         "max_length": int(lengths.max()) if lengths.size else None,
         "num_proc": workers,
+        "method": "arrow_list_offsets" if workers is None else "datasets_map",
     }
     _atomic_save_length_dataset(length_ds, dataset_dir)
     _write_metadata(meta_path, metadata)

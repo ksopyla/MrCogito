@@ -1,27 +1,42 @@
 #!/usr/bin/env python
-"""Long-context probes for the Perceiver AR v2 family (E18 pilot gates P2/P3).
+"""Long-context probes for the Perceiver AR v2 family (E18 pilot gates P2/P3; E18b/E18c/E21 suite).
 
-Three probes, all teacher-forced (no generation needed, so they run at 32k on a 3090):
+All probes are teacher-forced (no generation needed, so they run at 32k–128k on a 3090):
 
-  * position-bucketed CE on long documents  — does context beyond 8k lower the loss?
-  * passkey retrieval                        — argmax accuracy over the 5 answer digits
-  * copy task                                — token accuracy on the mirrored second half
-  * reach ablation (paired)                  — same rows, same weights, the global read restricted
-                                               to swa(W) for several W: does the loss at far
-                                               positions depend on DIRECT access to far keys?
-                                               Confound-free (no second run, no position-difficulty
-                                               gradient); reports paired Δ with a standard error.
+  * buckets   — position-bucketed CE on long documents: does context beyond 8k lower the loss?
+  * passkey   — NIAH-single: argmax accuracy over the 5 answer digits (RULER `niah_single`)
+  * multikey  — NIAH-multikey: the target key among n_keys distractor keys (RULER `niah_multikey`)
+  * vt        — variable tracking: hops-long assignment chains scattered in the filler; the answer
+                is the ordered list of variables holding the queried value (RULER `vt`)
+  * fwe       — frequent-words extraction: the three most frequent coded words of a shuffled
+                list (RULER `fwe`, the aggregation axis; no filler)
+  * copy      — token accuracy on the second half of a copy row (E18 gate P2)
+  * tasks     — greedy accuracy on the marked spans of held-out E18b retrieval rows
+  * reach     — paired reach ablation: same rows, same weights, the global read restricted to
+                swa(W) for several W — does the loss at far positions depend on DIRECT access to
+                far keys? Confound-free; reports paired Δ with a standard error.
+  * message   — E21 paired message ablation: the boundary is inserted mid-row and receiver CE is
+                compared under real / none / swapped / raw message modes (value, specificity and
+                compression cost of the latent message; needs an E21 checkpoint)
+  * suite     — several of the above in ONE process (model loaded and compiled once), merged JSON
+
+The synthetic probes are a teacher-forced RULER-lite for *base* LMs: scored by greedy argmax on
+the answer tokens given the gold prefix, which equals greedy generation's exact match whenever the
+first answer token is right and needs no decode loop, instruction following or chat template. The
+generation-based `ruler` group of lm-eval becomes the drop-in once a checkpoint is instruction
+tuned and `generate()` is KV-cached (E18 main run).
 
 Any probe accepts `--reach_window W` (e.g. the P2 copy model with W below the copy offset is the
 positive control: accuracy must collapse if the global read is the retrieval channel).
 
 Usage:
   uv run python evaluation/long_context_probes.py --checkpoint <dir> --probe buckets \
-      --manifest <eval manifest> --max_seq_length 32768 --buckets 8192,32768
+      --manifest <eval manifest> --buckets 2048,8192,16384,32768
   uv run python evaluation/long_context_probes.py --checkpoint <dir> --probe passkey \
       --manifest <eval manifest> --context_lengths 4096,8192,16384,32768
-  uv run python evaluation/long_context_probes.py --checkpoint <dir> --probe copy \
-      --copy_dataset <arrow dir>
+  uv run python evaluation/long_context_probes.py --checkpoint <dir> --probe suite \
+      --suite passkey,multikey,vt,fwe,buckets --manifest <eval manifest> \
+      --context_lengths 8192,32768 --trials 4 --out Cache/eval/<tag>/longctx_suite.json
 """
 from __future__ import annotations
 
@@ -39,6 +54,19 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from nn.perceiver_ar_lm import PerceiverARConfig, PerceiverARLM  # noqa: E402
 
 
+DEFAULT_TOKENIZER = "HuggingFaceTB/SmolLM3-3B"
+
+
+def resolve_tokenizer_name(checkpoint: str, tokenizer: str | None = None) -> str:
+    """Explicit name wins; else the tokenizer saved next to the weights; else the family default."""
+    if tokenizer:
+        return tokenizer
+    ck = Path(checkpoint)
+    if (ck / "tokenizer.json").exists() or (ck / "tokenizer_config.json").exists():
+        return str(ck)
+    return DEFAULT_TOKENIZER
+
+
 def load_model(checkpoint: str, device: str, attn_backend: str | None = None) -> PerceiverARLM:
     cfg = PerceiverARConfig.from_pretrained(checkpoint)
     if attn_backend:
@@ -48,6 +76,14 @@ def load_model(checkpoint: str, device: str, attn_backend: str | None = None) ->
     if device.startswith("cuda"):
         model.to(torch.bfloat16)
     return model
+
+
+def _load_tokenizer(args):
+    from transformers import AutoTokenizer
+
+    name = getattr(args, "tokenizer", None)
+    explicit = name if name not in (None, "", DEFAULT_TOKENIZER) else None
+    return AutoTokenizer.from_pretrained(resolve_tokenizer_name(args.checkpoint, explicit))
 
 
 def load_eval_rows(manifest: str, min_len: int, max_rows: int) -> list[list[int]]:
@@ -236,9 +272,7 @@ def build_passkey(tokenizer, filler_ids: list[int], context_len: int, depth: flo
 
 
 def probe_passkey(model, args, device) -> dict:
-    from transformers import AutoTokenizer
-
-    tok = AutoTokenizer.from_pretrained(args.tokenizer)
+    tok = _load_tokenizer(args)
     lengths = [int(x) for x in args.context_lengths.split(",")]
     # filler rows need not be as long as the context: pieces are concatenated (build_filler)
     rows = load_eval_rows(args.manifest, min_len=min(8192, max(lengths)), max_rows=args.max_rows)
@@ -260,6 +294,224 @@ def probe_passkey(model, args, device) -> dict:
                 total += 1
         results[f"passkey@{L}"] = correct / total
     return results
+
+
+# --------------------------------------------------------------------------------------
+# RULER-lite synthetic tasks (teacher-forced; see module docstring)
+# --------------------------------------------------------------------------------------
+
+_KEY_NAMES = [
+    "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet",
+    "kilo", "lima", "mike", "november", "oscar", "papa", "quebec", "romeo", "sierra", "tango",
+    "uniform", "victor", "whiskey", "xray", "yankee", "zulu",
+]
+DEPTHS = (0.1, 0.3, 0.5, 0.7, 0.9)
+
+
+def _insert_at_depths(filler: list[int], pieces: list[tuple[float, list[int]]]) -> list[int]:
+    """Splice token pieces into `filler` at fractional depths (sorted; stable for equal depths)."""
+    out: list[int] = []
+    prev = 0
+    for depth, piece in sorted(pieces, key=lambda p: p[0]):
+        cut = int(len(filler) * depth)
+        out.extend(filler[prev:cut])
+        out.extend(piece)
+        prev = cut
+    out.extend(filler[prev:])
+    return out
+
+
+def _score_answer(model, ids: list[int], answer: list[int], device) -> dict:
+    """Greedy predictions for the trailing `answer` span of `ids` given the gold prefix."""
+    x = torch.tensor(ids, device=device)[None]
+    n = len(answer)
+    pred = argmax_tokens(model, x, x.shape[1] - n - 1, x.shape[1] - 1).tolist()
+    return {
+        "exact": int(pred == answer),
+        "tok_correct": sum(int(a == b) for a, b in zip(pred, answer)),
+        "tok_total": n,
+        "first": int(pred[0] == answer[0]) if n else 0,
+    }
+
+
+def _aggregate(scores: list[dict]) -> dict:
+    n = max(len(scores), 1)
+    return {
+        "exact": sum(s["exact"] for s in scores) / n,
+        "token_acc": sum(s["tok_correct"] for s in scores) / max(sum(s["tok_total"] for s in scores), 1),
+        "first_token_acc": sum(s["first"] for s in scores) / n,
+        "n": len(scores),
+    }
+
+
+def build_multikey(tokenizer, filler_ids: list[int], context_len: int, depth: float, rng,
+                   n_keys: int = 4) -> tuple[list[int], list[int]]:
+    """NIAH-multikey: `n_keys` "The pass key for <name> is <key>." needles (one target at `depth`,
+    distractors at random depths), question about the target name. Distractor keys share the
+    format, so the read must address by *name*, not by the needle template (RULER `niah_multikey`)."""
+    names = rng.sample(_KEY_NAMES, n_keys)
+    keys = [f"{rng.randint(0, 99999):05d}" for _ in names]
+    target = 0
+    needles = [tokenizer.encode(f" The pass key for {nm} is {k}. Remember it. ", add_special_tokens=False)
+               for nm, k in zip(names, keys)]
+    question = tokenizer.encode(f" What is the pass key for {names[target]}? The pass key for {names[target]} is",
+                                add_special_tokens=False)
+    answer = tokenizer.encode(f" {keys[target]}", add_special_tokens=False)
+    budget = context_len - sum(len(n) for n in needles) - len(question) - len(answer)
+    filler = filler_ids[:budget]
+    depths = [depth] + [rng.uniform(0.05, 0.95) for _ in range(n_keys - 1)]
+    ids = _insert_at_depths(filler, list(zip(depths, needles))) + question + answer
+    return ids, answer
+
+
+def build_variable_tracking(tokenizer, filler_ids: list[int], context_len: int, depth: float, rng,
+                            hops: int = 3, n_chains: int = 2) -> tuple[list[int], list[int]]:
+    """RULER `vt`: `n_chains` assignment chains ("VAR ABC = 12345", "VAR DEF = ABC", ...) whose
+    statements are scattered from `depth` toward the end of the filler; the question names a
+    value and the answer lists every variable that holds it, in chain order (multi-hop retrieval)."""
+    def var_name():
+        return "".join(rng.choice("ABCDEFGHJKLMNPQRSTUVWXYZ") for _ in range(3))
+
+    used: set[str] = set()
+    chains: list[tuple[str, list[str]]] = []
+    for _ in range(n_chains):
+        names = []
+        while len(names) < hops:
+            v = var_name()
+            if v not in used:
+                used.add(v)
+                names.append(v)
+        chains.append((f"{rng.randint(10000, 99999)}", names))
+    pieces: list[tuple[float, list[int]]] = []
+    for value, names in chains:
+        stmts = [f" VAR {names[0]} = {value} "] + [f" VAR {names[i]} = {names[i-1]} " for i in range(1, hops)]
+        # chain statements in order, from `depth` toward the end; a later hop never precedes its source
+        span = max(0.02, (0.95 - depth) / max(hops, 1))
+        for i, s in enumerate(stmts):
+            d = min(0.95, depth + i * span + rng.uniform(0.0, span * 0.5))
+            pieces.append((d, tokenizer.encode(s, add_special_tokens=False)))
+    value, names = chains[0]
+    question = tokenizer.encode(
+        f" Question: Find all variables that are assigned the value {value}. Answer: the variables are",
+        add_special_tokens=False)
+    answer = tokenizer.encode(" " + " ".join(names), add_special_tokens=False)
+    budget = context_len - sum(len(p) for _, p in pieces) - len(question) - len(answer)
+    filler = filler_ids[:budget]
+    ids = _insert_at_depths(filler, pieces) + question + answer
+    return ids, answer
+
+
+def build_frequent_words(tokenizer, context_len: int, rng, n_answer: int = 3,
+                         vocab_words: int = 40) -> tuple[list[int], list[int]]:
+    """RULER `fwe` (aggregation): a shuffled list of coded words whose frequencies follow a
+    steep power law; the answer is the `n_answer` most frequent words in order. Counts of the top
+    words are made strictly decreasing so the answer is well defined. No filler: the list itself
+    fills `context_len`."""
+    def coded_word():
+        return "".join(rng.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(rng.randint(3, 5)))
+
+    words: list[str] = []
+    while len(words) < vocab_words:
+        w = coded_word()
+        if w not in words:
+            words.append(w)
+    header = tokenizer.encode(" Read the following coded text and track the frequency of each coded word."
+                              " Coded text:", add_special_tokens=False)
+    question = tokenizer.encode(
+        f" Question: What are the {n_answer} most frequently appeared words in the above coded text?"
+        f" Answer: the {n_answer} most frequently appeared words are", add_special_tokens=False)
+    answer = tokenizer.encode(" " + " ".join(words[:n_answer]), add_special_tokens=False)
+    budget = context_len - len(header) - len(question) - len(answer)
+    pieces = [tokenizer.encode(" " + w, add_special_tokens=False) for w in words]
+    # Zipf-like weights; the answer words get strictly decreasing, dominant counts. The scale is
+    # chosen so the expected token count of the list equals the budget (Σ count_i · len_i).
+    weights = [1.0 / ((i + 1) ** 2.0) for i in range(vocab_words)]
+    total = sum(weights)
+    expected_tokens_per_unit = sum(w / total * len(p) for w, p in zip(weights, pieces))
+    n_items = max(vocab_words * 2, int(budget / max(expected_tokens_per_unit, 1e-6)))
+    counts = [max(1, int(n_items * w / total)) for w in weights]
+    for i in range(1, n_answer + 1):
+        if counts[i] >= counts[i - 1]:
+            counts[i] = counts[i - 1] - 1
+    items: list[int] = []
+    for i, c in enumerate(counts):
+        items.extend([i] * c)
+    rng.shuffle(items)
+    body: list[int] = []
+    for i in items:
+        if len(body) + len(pieces[i]) > budget:
+            break
+        body.extend(pieces[i])
+    ids = header + body + question + answer
+    return ids, answer
+
+
+def _synthetic_probe(model, args, device, builder, name: str, with_filler: bool = True) -> dict:
+    tok = _load_tokenizer(args)
+    lengths = [int(x) for x in args.context_lengths.split(",")]
+    rows = None
+    if with_filler:
+        rows = load_eval_rows(args.manifest, min_len=min(8192, max(lengths)), max_rows=args.max_rows)
+        if not rows:
+            raise SystemExit("no filler rows long enough")
+    rng = random.Random(args.seed)
+    results: dict = {}
+    for L in lengths:
+        scores: list[dict] = []
+        depths = DEPTHS if with_filler else (0.5,)
+        for depth in depths:
+            for trial in range(args.trials):
+                if with_filler:
+                    filler = build_filler(rows, (trial * 7 + int(depth * 10)) % len(rows), L)
+                    ids, answer = builder(tok, filler, L, depth, rng)
+                else:
+                    ids, answer = builder(tok, L, rng)
+                if len(ids) > L:
+                    ids = ids[-L:]
+                scores.append(_score_answer(model, ids, answer, device))
+        agg = _aggregate(scores)
+        results[f"{name}@{L}"] = agg["exact"]
+        results[f"{name}_token_acc@{L}"] = agg["token_acc"]
+        results[f"{name}_first_token_acc@{L}"] = agg["first_token_acc"]
+        results[f"{name}_n@{L}"] = agg["n"]
+    return results
+
+
+def probe_multikey(model, args, device) -> dict:
+    n_keys = int(getattr(args, "n_keys", 4))
+    return _synthetic_probe(model, args, device,
+                            lambda t, f, L, d, r: build_multikey(t, f, L, d, r, n_keys=n_keys), "multikey")
+
+
+def probe_vt(model, args, device) -> dict:
+    hops = int(getattr(args, "vt_hops", 3))
+    chains = int(getattr(args, "vt_chains", 2))
+    return _synthetic_probe(model, args, device,
+                            lambda t, f, L, d, r: build_variable_tracking(t, f, L, d, r, hops=hops, n_chains=chains),
+                            "vt")
+
+
+def probe_fwe(model, args, device) -> dict:
+    return _synthetic_probe(model, args, device,
+                            lambda t, L, r: build_frequent_words(t, L, r), "fwe", with_filler=False)
+
+
+def probe_suite(model, args, device) -> dict:
+    """Run several probes with one loaded model; per-probe failures are recorded, not fatal."""
+    import time
+    import traceback
+
+    names = [s.strip() for s in args.suite.split(",") if s.strip()]
+    out: dict = {"suite": names, "results": {}, "errors": {}, "elapsed_s": {}}
+    for name in names:
+        fn = PROBES[name]
+        t0 = time.time()
+        try:
+            out["results"][name] = fn(model, args, device)
+        except Exception as e:  # noqa: BLE001 — one failing probe must not discard the others
+            out["errors"][name] = f"{type(e).__name__}: {e}\n{traceback.format_exc(limit=3)}"
+        out["elapsed_s"][name] = round(time.time() - t0, 1)
+    return out
 
 
 def _accuracy_on_labels(model, ids: list[int], labels: list[int], device) -> tuple[int, int]:
@@ -318,10 +570,102 @@ def probe_tasks(model, args, device) -> dict:
     }
 
 
+def probe_message(model, args, device) -> dict:
+    """E21 paired message ablation on real text (model must have `message_boundary_token_id`).
+
+    Every eval row (truncated to L for each `--context_lengths`) gets the boundary at
+    P = int(L · `--message_depth`); rows are scored in pairs so the `swapped` control reads the
+    OTHER row's message. Per-token CE is bucketed relative to P with `--message_spans` edges
+    ([P, P+e0), [P+e0, P+e1), ...) under the four channel modes:
+
+      real    — the trained compressed message                         (the model)
+      none    — receivers get no slots: the severed-context floor      (Δ>0 ⇒ the message carries information)
+      swapped — the neighbouring row's message: a WRONG message         (Δ vs none ⇒ content-specific, not a bias)
+      raw     — uncompressed prefix K/V across the boundary: the ceiling (Δ<0 ⇒ what compression costs)
+
+    Sender tokens never see the message, so their CE must be identical in every mode; the maximum
+    absolute sender difference is reported as the numerical noise floor (`sender_noise`).
+    Δ(mode) = CE(mode) − CE(real) per row and span, reported as mean ± standard error over rows.
+    """
+    cfg = model.config
+    if not getattr(cfg, "message_enabled", False):
+        raise SystemExit("--probe message needs a checkpoint with message_boundary_token_id >= 0 (E21)")
+    boundary = int(cfg.message_boundary_token_id)
+    lengths = [int(x) for x in args.context_lengths.split(",")]
+    edges = [int(x) for x in args.message_spans.split(",")]
+    labels = _bucket_labels(edges)
+    modes = ("real", "none", "swapped", "raw")
+    rows = load_eval_rows(args.manifest, min_len=max(lengths), max_rows=args.max_rows)
+    rows = [ids for ids in rows if boundary not in ids]
+    if len(rows) < 2:
+        raise SystemExit(f"need >= 2 eval rows with >= {max(lengths)} tokens (without the boundary id) in {args.manifest}")
+    if len(rows) % 2:
+        rows = rows[:-1]
+    out: dict = {"rows": len(rows), "boundary_token_id": boundary, "spans": labels, "modes": list(modes),
+                 "compress_ratio": int(cfg.message_compress_ratio), "P": {}, "ce": {}, "delta_vs_real": {},
+                 "sender_noise": {}}
+    for L in lengths:
+        P = max(1, min(L - 2, int(L * float(args.message_depth))))
+        out["P"][str(L)] = P
+        per_row: dict[str, list[list[float]]] = {m: [] for m in modes}
+        sender: dict[str, list[torch.Tensor]] = {m: [] for m in modes}
+        for i in range(0, len(rows), 2):
+            x = torch.tensor([rows[i][:L], rows[i + 1][:L]], device=device)
+            x[:, P] = boundary
+            for mode in modes:
+                with torch.no_grad(), model.message_override(mode):
+                    _, per, valid = model(input_ids=x, labels=x.clone(), return_per_token_loss=True)
+                per = per.float().cpu()
+                for b in range(2):
+                    pt = per[b]
+                    per_row[mode].append(bucket_means(pt[P:], edges))   # pt[P] predicts token P+1
+                    sender[mode].append(pt[: P - 1])                     # pt[P-1] would predict the boundary itself
+        base = torch.tensor(per_row["real"])  # [rows, spans]
+        out["ce"][str(L)] = {}
+        out["delta_vs_real"][str(L)] = {}
+        out["sender_noise"][str(L)] = {}
+        for mode in modes:
+            t = torch.tensor(per_row[mode])
+            out["ce"][str(L)][mode] = {lab: float(t[:, b].mean()) for b, lab in enumerate(labels)}
+            noise = torch.stack([(a - r).abs().max() for a, r in zip(sender[mode], sender["real"])])
+            out["sender_noise"][str(L)][mode] = float(noise.max())
+            if mode == "real":
+                continue
+            d = t - base
+            n = d.shape[0]
+            out["delta_vs_real"][str(L)][mode] = {
+                lab: {
+                    "mean": float(d[:, b].mean()),
+                    "se": float(d[:, b].std(unbiased=True) / (n ** 0.5)) if n > 1 else float("nan"),
+                    "n": n,
+                }
+                for b, lab in enumerate(labels)
+            }
+        # flat keys for the suite aggregator: message value / specificity / compression cost on the first span
+        first = labels[0]
+        ce = out["ce"][str(L)]
+        out[f"message_gain@{L}"] = ce["none"][first] - ce["real"][first]
+        out[f"message_specificity@{L}"] = ce["swapped"][first] - ce["real"][first]
+        out[f"compression_cost@{L}"] = ce["real"][first] - ce["raw"][first]
+        out.setdefault("per_row", {})[str(L)] = per_row
+    return out
+
+
+PROBES = {
+    "buckets": probe_buckets, "passkey": probe_passkey, "multikey": probe_multikey, "vt": probe_vt,
+    "fwe": probe_fwe, "copy": probe_copy, "reach": probe_reach, "tasks": probe_tasks, "message": probe_message,
+}
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--checkpoint", required=True)
-    p.add_argument("--probe", choices=["buckets", "passkey", "copy", "reach", "tasks"], required=True)
+    p.add_argument("--probe", choices=sorted(PROBES) + ["suite"], required=True)
+    p.add_argument("--suite", default="passkey,multikey,vt,fwe,buckets",
+                   help="--probe suite: comma list of probes to run with one loaded model")
+    p.add_argument("--n_keys", type=int, default=4, help="multikey: needles per row (1 target)")
+    p.add_argument("--vt_hops", type=int, default=3, help="vt: assignments per chain")
+    p.add_argument("--vt_chains", type=int, default=2, help="vt: chains per row (1 queried)")
     p.add_argument("--tasks_dataset", default=None, help="--probe tasks: arrow dir of held-out retrieval rows")
     p.add_argument("--markers", default="128103,128104", help="--probe tasks: 'start_id,end_id'")
     p.add_argument("--frame_token", type=int, default=None,
@@ -330,8 +674,13 @@ def main():
                    help="restrict every full layer to swa(W) for this probe (positive-control runs)")
     p.add_argument("--reach_windows", default="512,2048,8192,full",
                    help="--probe reach: comma list of windows to sweep ('full' = unrestricted)")
+    p.add_argument("--message_depth", type=float, default=0.5,
+                   help="--probe message: boundary position as a fraction of the row length")
+    p.add_argument("--message_spans", default="512,4096",
+                   help="--probe message: CE span edges after the boundary ([P,P+e0), [P+e0,P+e1), ...)")
     p.add_argument("--manifest", default=None)
-    p.add_argument("--tokenizer", default="HuggingFaceTB/SmolLM3-3B")
+    p.add_argument("--tokenizer", default=DEFAULT_TOKENIZER,
+                   help="default: the tokenizer saved in the checkpoint dir, else the family default")
     p.add_argument("--buckets", default="8192,32768")
     p.add_argument("--context_lengths", default="4096,8192,16384,32768")
     p.add_argument("--trials", type=int, default=4)
@@ -343,11 +692,13 @@ def main():
     args = p.parse_args()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = load_model(args.checkpoint, device, args.attn_backend)
-    fn = {"buckets": probe_buckets, "passkey": probe_passkey, "copy": probe_copy, "reach": probe_reach,
-          "tasks": probe_tasks}[args.probe]
+    fn = probe_suite if args.probe == "suite" else PROBES[args.probe]
     with model.reach_override(args.reach_window) as touched:
         res = fn(model, args, device)
     res["checkpoint"] = args.checkpoint
+    res["probe"] = args.probe
+    res["context_lengths"] = args.context_lengths
+    res["seed"] = args.seed
     if args.reach_window is not None:
         res["reach_window"] = args.reach_window
         res["touched_layers"] = touched

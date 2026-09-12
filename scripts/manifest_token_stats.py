@@ -15,11 +15,27 @@ import time
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from data.dataset_preprocess import load_pretokenized_mix
+from data.length_cache import _lengths_from_list_offsets, load_length_cache
 
 
 def _count_token_batch(batch: dict) -> dict:
     """Reduce one map batch to one scalar row (picklable for Dataset.map workers)."""
     return {"token_count": [sum(len(ids) for ids in batch["input_ids"])]}
+
+
+def _fast_token_count(manifest_path: Path, train_ds) -> int | None:
+    """Exact train-token total without reading token bytes: the manifest's length sidecar if it is
+    valid for this manifest, else the Arrow list offsets of the interleaved mix. None → scan."""
+    lengths = load_length_cache(manifest_path)
+    source = "length cache"
+    if lengths is None or lengths.shape != (len(train_ds),):
+        lengths = _lengths_from_list_offsets(train_ds)
+        source = "Arrow list offsets"
+    if lengths is None:
+        return None
+    total = int(lengths.astype("int64").sum())
+    print(f"Token count from {source}: {total:,} tokens over {len(train_ds):,} rows.", file=sys.stderr, flush=True)
+    return total
 
 
 def compute_stats(
@@ -73,34 +89,36 @@ def compute_stats(
             return stats
 
     train_ds, eval_ds = load_pretokenized_mix(manifest_path)
-    workers = max(1, min(num_proc or min(8, os.cpu_count() or 1), len(train_ds)))
     started = time.monotonic()
-    print(
-        f"Counting tokens across {len(train_ds):,} interleaved rows "
-        f"with {workers} workers...",
-        file=sys.stderr,
-        flush=True,
-    )
-    token_ds = train_ds.select_columns(["input_ids"])
-    map_kwargs = dict(
-        batched=True,
-        batch_size=8192,
-        remove_columns=token_ds.column_names,
-        keep_in_memory=True,
-        load_from_cache_file=False,
-        desc="Exact token count",
-    )
-    try:
-        partials = token_ds.map(_count_token_batch, num_proc=workers, **map_kwargs)
-    except RuntimeError as e:
-        # Polonez (2026-09-07): forked datasets.map workers die at random ("abruptly died").
-        # A single-process count is slower but always finishes; the result is cached.
-        if workers > 1 and "abruptly died" in str(e):
-            print("datasets.map workers died; retrying token count single-process", file=sys.stderr, flush=True)
-            partials = token_ds.map(_count_token_batch, **map_kwargs)
-        else:
-            raise
-    train_tokens = sum(partials["token_count"])
+    train_tokens = _fast_token_count(manifest_path, train_ds)
+    if train_tokens is None:
+        workers = max(1, min(num_proc or min(8, os.cpu_count() or 1), len(train_ds)))
+        print(
+            f"Counting tokens across {len(train_ds):,} interleaved rows "
+            f"with {workers} workers...",
+            file=sys.stderr,
+            flush=True,
+        )
+        token_ds = train_ds.select_columns(["input_ids"])
+        map_kwargs = dict(
+            batched=True,
+            batch_size=8192,
+            remove_columns=token_ds.column_names,
+            keep_in_memory=True,
+            load_from_cache_file=False,
+            desc="Exact token count",
+        )
+        try:
+            partials = token_ds.map(_count_token_batch, num_proc=workers, **map_kwargs)
+        except RuntimeError as e:
+            # Polonez (2026-09-07): forked datasets.map workers die at random ("abruptly died").
+            # A single-process count is slower but always finishes; the result is cached.
+            if workers > 1 and "abruptly died" in str(e):
+                print("datasets.map workers died; retrying token count single-process", file=sys.stderr, flush=True)
+                partials = token_ds.map(_count_token_batch, **map_kwargs)
+            else:
+                raise
+        train_tokens = sum(partials["token_count"])
     elapsed = time.monotonic() - started
     print(
         f"Counted {train_tokens:,} tokens in {elapsed:.1f}s "

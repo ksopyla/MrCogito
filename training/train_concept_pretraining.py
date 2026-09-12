@@ -445,6 +445,7 @@ def main():
                 f"{special_token_changes}"
             )
 
+    boundary_id = getattr(getattr(model, "config", None), "message_boundary_token_id", None)
     trainer = PerceiverDenoiseTrainer(
         model=model,
         args=training_args,
@@ -471,6 +472,7 @@ def main():
         batch_packing_mode=data_args.batch_packing_mode,
         train_lengths=train_lengths,
         length_group_mega_batch_mult=data_args.length_group_mega_batch_mult,
+        message_boundary_token_id=-1 if boundary_id is None else int(boundary_id),
     )
 
     if is_backbone:

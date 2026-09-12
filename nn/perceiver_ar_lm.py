@@ -22,6 +22,12 @@ Hooks for the family (config fields only — no parameters unless enabled):
     layer's K/V space, exposed via `prefix_kv()` / `global_kv_space` so latent thoughts and
     agent messages (E21) can be appended to the prefix cache.
   * `block_attention_mode` (E20): `causal` (E18) | `bidirectional` (block-diffusion adaptation).
+  * `message_boundary_token_id` / `message_compress_ratio` (E21): a reserved token splits a row
+    into sender | receiver. Windowed layers and the n-gram tables treat it as a document start;
+    the global read lets receivers see the prefix only as `KVCompressor` slots (one per `ratio`
+    tokens, in the read's own K/V space). `prefix_kv(as_message=True)` returns those slots and
+    `forward(message_kv=..., position_offset=P)` is the receiver-only forward (the message hook).
+    Off by default → byte-identical to E18.
 """
 from __future__ import annotations
 
@@ -88,6 +94,8 @@ class PerceiverARConfig(PretrainedConfig):
         block_attention_mode: str = "causal", # "causal" | "bidirectional" (E20)
         swa_sink: bool = False,               # windowed layers may also attend to the document's first token
         write_back_hook: bool = False,        # E19 — adds write_back_proj params when True
+        message_boundary_token_id: int = -1,  # E21 — reserved id that splits a row into sender | receiver (-1 = off)
+        message_compress_ratio: int = 16,     # E21 — prefix tokens per message slot (1 = uncompressed, arm U)
         init_std: float = 0.02,
         pad_token_id: int = 0,
         bos_token_id: int = 1,
@@ -134,6 +142,8 @@ class PerceiverARConfig(PretrainedConfig):
         self.block_attention_mode = block_attention_mode
         self.swa_sink = swa_sink
         self.write_back_hook = write_back_hook
+        self.message_boundary_token_id = int(message_boundary_token_id)
+        self.message_compress_ratio = int(message_compress_ratio)
         self.init_std = init_std
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
         self.checkpoint_family = "perceiver_ar"
@@ -170,6 +180,21 @@ class PerceiverARConfig(PretrainedConfig):
                 raise ValueError("global_positions must be distinct")
             if any(p < 0 or p >= n for p in self.global_positions):
                 raise ValueError(f"global_positions must lie in [0, {n})")
+        if self.message_compress_ratio < 1:
+            raise ValueError("message_compress_ratio must be >= 1")
+        if self.message_enabled:
+            if self.message_boundary_token_id >= self.vocab_size:
+                raise ValueError("message_boundary_token_id must be a vocabulary id")
+            if self.par_mode != "perceiver" or self.global_layers < 1:
+                raise ValueError("the message boundary needs perceiver mode with >= 1 global read layer")
+            if self.attn_backend == "flash":
+                raise ValueError("message boundary is not expressible with the flash backend; use flex or sdpa")
+
+    @property
+    def message_enabled(self) -> bool:
+        """E21: rows may carry a sender|receiver boundary token; receivers read the prefix only
+        through compressed slots of the global read."""
+        return self.message_boundary_token_id >= 0
 
     @property
     def total_layers(self) -> int:
@@ -292,6 +317,197 @@ def dense_bool_mask(
     if doc_ids is not None:
         ok = ok & (doc_ids[:, None, :, None] == doc_ids[:, None, None, :])
     return ok
+
+
+# --------------------------------------------------------------------------------------
+# E21 message boundary: sender | receiver split of a row, prefix visible only as slots
+# --------------------------------------------------------------------------------------
+
+
+@dataclass
+class MessageCtx:
+    """Per-forward geometry of the E21 message boundary (built once in `_run_layers`).
+
+    `side[b, t]` counts boundary tokens seen so far inside t's document (0 = sender, ≥ 1 =
+    receiver). Local layers and the n-gram hashes treat a side change as a document start
+    (`local_doc_ids`). On the global read a query may use raw keys only from its own side and,
+    when it is a receiver, the compressed *slots* of every earlier side of its document.
+    Slot `j` covers absolute positions [j·r, (j+1)·r); it is addressable only when the block is
+    homogeneous in (document, side) — `slot_doc[b, j]` is that document (−1 otherwise).
+    """
+
+    side: torch.Tensor          # [B,S] int64
+    doc: torch.Tensor           # [B,S] int64 — original document ids (pad / invalid = -1)
+    local_doc_ids: torch.Tensor  # [B,S] int64 — doc ⊕ side, fed to swa layers and the n-gram tables
+    slot_doc: torch.Tensor      # [B,nb] int64
+    slot_side: torch.Tensor     # [B,nb] int64
+    slot_pos: torch.Tensor      # [B,nb] int64 — RoPE position of each slot (its block's last token)
+    n_sides: int = 0            # max(side) + 1 over the batch; 0 = derive lazily from `side`
+    override: str = "real"      # "real" | "none" | "swapped" | "raw"
+    external: Optional[tuple[torch.Tensor, torch.Tensor]] = None  # (k̄, v̄) given by a receiver-only forward
+
+    @property
+    def n_slots(self) -> int:
+        return int(self.slot_doc.shape[1])
+
+    def tag_stride(self) -> int:
+        """Stride M of the (doc, side) → `doc * M + side` tag; M = 2·n_sides keeps the slot range
+        test `0 < tag_q − slot_tag < n_sides` false for every other document."""
+        k = self.n_sides or int(self.side.max().item()) + 1
+        return 2 * k
+
+    def tags(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """int32 `tag` [B,S] and `slot_tag` [B,nb]: `doc * M + side`, −1 for pad / invalid slots."""
+        m = self.tag_stride()
+        tag = torch.where(self.doc < 0, torch.full_like(self.doc, -1), self.doc * m + self.side)
+        slot_tag = torch.where(self.slot_doc < 0, torch.full_like(self.slot_doc, -1),
+                               self.slot_doc * m + self.slot_side)
+        return tag.to(torch.int32), slot_tag.to(torch.int32)
+
+
+def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Tensor]):
+    """mask_mod over KV = raw keys [0, S) ‖ slot keys [S, S + nb) for the global read.
+
+    The predicate captures two int32 tag buffers rather than the four int64 buffers
+    (`doc`, `side`, `slot_doc`, `slot_side`): every captured tensor is gathered into an integer
+    tile inside the Triton template, and with head_dim 128 / bf16 the four int64 tiles push the
+    kernel past the 99 KB shared-memory limit of sm86 (RTX 3090) — "No valid triton configs …
+    Required: 102400 Hardware limit: 101376". With `tag = doc * M + side` (M = 2·n_sides),
+    "same document and same side" is one equality and "same document, earlier side" is the
+    range test `0 < tag_q − slot_tag < n_sides`. `dense_message_mask` is the reference semantics.
+    """
+    nb = ctx.n_slots
+    m = ctx.tag_stride()
+    n_sides = m // 2
+    tag, slot_tag = ctx.tags()
+    raw_cross = ctx.override == "raw"
+    slots_on = ctx.override not in ("none", "raw")
+
+    def pred(b, h, q, kv):
+        is_raw = kv < S
+        j = torch.where(is_raw, kv, kv - S)
+        js = torch.clamp(j, max=max(nb - 1, 0))
+        tq = tag[b, q]
+        tj = tag[b, j]
+        if raw_cross:
+            same = torch.div(tj, m, rounding_mode="floor") == torch.div(tq, m, rounding_mode="floor")
+        else:
+            same = tj == tq
+        raw_ok = (j <= q) & same
+        if key_valid is not None:
+            raw_ok = raw_ok & (key_valid[b, j] | (j == q))
+        if not slots_on:
+            return raw_ok & is_raw
+        s = slot_tag[b, js]
+        d = tq - s
+        # `j < nb`: KV_LEN = S + nb is not a block multiple; keep the padded tail explicitly off.
+        slot_ok = (j < nb) & (s >= 0) & (d > 0) & (d < n_sides)
+        return torch.where(is_raw, raw_ok, slot_ok)
+
+    return pred
+
+
+def dense_message_mask(S: int, ctx: MessageCtx, key_valid: Optional[torch.Tensor], device) -> torch.Tensor:
+    """[B,1,S,S+nb] boolean mask (True = attend) — reference path used by `sdpa`."""
+    side, doc = ctx.side, ctx.doc
+    B = side.shape[0]
+    q = torch.arange(S, device=device)[:, None]
+    j = torch.arange(S, device=device)[None, :]
+    raw = (j <= q)[None, None] & (doc[:, None, :, None] == doc[:, None, None, :])
+    if ctx.override != "raw":
+        raw = raw & (side[:, None, :, None] == side[:, None, None, :])
+    if key_valid is not None:
+        raw = raw & (key_valid.bool()[:, None, None, :] | torch.eye(S, dtype=torch.bool, device=device)[None, None])
+    slot = (
+        (side[:, None, :, None] >= 1)
+        & (ctx.slot_doc[:, None, None, :] >= 0)
+        & (ctx.slot_doc[:, None, None, :] == doc[:, None, :, None])
+        & (ctx.slot_side[:, None, None, :] < side[:, None, :, None])
+    )
+    if ctx.override in ("none", "raw"):
+        slot = torch.zeros_like(slot)
+    return torch.cat([raw.expand(B, 1, S, S), slot], dim=-1)
+
+
+class KVCompressor(nn.Module):
+    """One message slot per `ratio` prefix tokens, in the global read's K/V space (E21 / E18c).
+
+    Slot = attention-pooled block: weights softmax_j(h_j · u_g) per kv-head (u zero-init → uniform =
+    mean pool), keys pooled *before* `k_norm`, plus a zero-init linear correction from the block's
+    mean hidden state. At init this is exact mean pooling; with `ratio=1` every slot is one token's
+    K/V exactly (the uncompressed arm U). RoPE is applied by the caller at the slot's position.
+    """
+
+    def __init__(self, cfg: PerceiverARConfig):
+        super().__init__()
+        self.ratio = int(cfg.message_compress_ratio)
+        self.g, self.dh = cfg.num_kv_heads, cfg.head_dim
+        self.u = nn.Parameter(torch.zeros(self.g, cfg.hidden_size))
+        self.delta = nn.Linear(cfg.hidden_size, 2 * self.g * self.dh, bias=False)
+        nn.init.zeros_(self.delta.weight)
+
+    def n_slots(self, S: int) -> int:
+        return -(-S // self.ratio)
+
+    def forward(self, h, k_raw, v, k_norm, valid: Optional[torch.Tensor] = None):
+        """h [B,S,d] (attn-normed block input), k_raw/v [B,S,g,dh] (k before k_norm) →
+        (k̄, v̄) each [B,nb,g,dh]; `valid` [B,S] excludes tokens from the pooling."""
+        B, S, d = h.shape
+        r, g, dh = self.ratio, self.g, self.dh
+        nb = self.n_slots(S)
+        pad = nb * r - S
+        if pad:
+            h = F.pad(h, (0, 0, 0, pad))
+            k_raw = F.pad(k_raw, (0, 0, 0, 0, 0, pad))
+            v = F.pad(v, (0, 0, 0, 0, 0, pad))
+        ok = torch.ones(B, S, dtype=torch.bool, device=h.device) if valid is None else valid.bool()
+        if pad:
+            ok = F.pad(ok, (0, pad), value=False)
+        ok = ok.view(B, nb, r)
+        hb = h.view(B, nb, r, d)
+        scores = torch.einsum("bnrd,gd->bnrg", hb, self.u.to(hb.dtype))
+        scores = scores.masked_fill(~ok[..., None], float("-inf"))
+        w = torch.softmax(scores.float(), dim=2)
+        w = torch.nan_to_num(w, nan=0.0).to(hb.dtype)             # all-pad blocks → zero slot (never addressed)
+        k_bar = torch.einsum("bnrg,bnrgd->bngd", w, k_raw.view(B, nb, r, g, dh))
+        v_bar = torch.einsum("bnrg,bnrgd->bngd", w, v.view(B, nb, r, g, dh))
+        cnt = ok.sum(dim=2, keepdim=True).clamp(min=1).to(hb.dtype)
+        h_mean = (hb * ok[..., None].to(hb.dtype)).sum(dim=2) / cnt      # [B,nb,d]
+        dk, dv = self.delta(h_mean).view(B, nb, 2, g, dh).unbind(dim=2)
+        return k_norm(k_bar) + dk, v_bar + dv
+
+
+def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend, block_masks=None):
+    """Global read over raw keys ‖ message slots with the E21 mask. Returns [B,S,h,dh]."""
+    B, S, h, dh = q.shape
+    g = k.shape[2]
+    if backend == "flash":
+        raise NotImplementedError("message boundary needs flex or sdpa")
+    K = torch.cat([k, k_bar.to(k.dtype)], dim=1)
+    V = torch.cat([v, v_bar.to(v.dtype)], dim=1)
+    qt, kt, vt = (t.transpose(1, 2) for t in (q, K, V))
+    if backend == "flex":
+        from torch.nn.attention.flex_attention import create_block_mask
+
+        memo_key = ("message", ctx.override, ctx.n_slots)
+        if block_masks is not None and memo_key in block_masks:
+            bm = block_masks[memo_key]
+        else:
+            pred = make_message_mask_pred(S, ctx, key_valid)
+            bm = create_block_mask(pred, B=B, H=None, Q_LEN=S, KV_LEN=S + ctx.n_slots, device=q.device,
+                                   _compile=torch.cuda.is_available())
+            if block_masks is not None:
+                block_masks[memo_key] = bm
+        qt, kt, vt = qt.contiguous(), kt.contiguous(), vt.contiguous()
+        out = _get_flex()(qt, kt, vt, block_mask=bm, enable_gqa=(g != h))
+        return out.transpose(1, 2)
+    if g != h:
+        rep = h // g
+        kt = kt.repeat_interleave(rep, dim=1)
+        vt = vt.repeat_interleave(rep, dim=1)
+    mask = dense_message_mask(S, ctx, key_valid, q.device)
+    out = F.scaled_dot_product_attention(qt, kt, vt, attn_mask=mask)
+    return out.transpose(1, 2)
 
 
 _FLEX_CACHE: dict = {}
@@ -522,17 +738,40 @@ class Attention(nn.Module):
             self.value_embed = nn.Embedding(cfg.vocab_size, cfg.value_embed_dim)
             self.value_proj = nn.Linear(cfg.value_embed_dim, g * dh, bias=False)
             self.value_lambda = nn.Parameter(torch.tensor(0.5))
+        # E21: the global read(s) own the message compressor (slots live in this layer's K/V space).
+        self.compressor = KVCompressor(cfg) if (cfg.message_enabled and pattern == "full") else None
 
-    def kv(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def kv_raw(self, x: torch.Tensor, ids: Optional[torch.Tensor] = None) -> tuple[torch.Tensor, torch.Tensor]:
+        """(k before k_norm, v incl. the value-embedding term) — the pooling inputs of the compressor."""
         B, S, _ = x.shape
-        k = self.k_norm(self.wk(x).view(B, S, self.g, self.dh))
+        k_raw = self.wk(x).view(B, S, self.g, self.dh)
         v = self.wv(x).view(B, S, self.g, self.dh)
-        return k, v
+        if self.value_embed is not None and ids is not None:
+            ve = self.value_proj(self.value_embed(ids)).view(B, S, self.g, self.dh)
+            v = v + self.value_lambda * ve
+        return k_raw, v
 
-    def forward(self, x, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None, sink_pos=None, pos=None):
+    def kv(self, x: torch.Tensor, ids: Optional[torch.Tensor] = None) -> tuple[torch.Tensor, torch.Tensor]:
+        k_raw, v = self.kv_raw(x, ids)
+        return self.k_norm(k_raw), v
+
+    def message_slots(self, x, k_raw, v, ctx: MessageCtx, key_valid, cfg_rope_theta: float):
+        """(k̄, v̄) [B,nb,g,dh] for this forward: external slots (receiver-only forward) or the
+        compressor over the block input, RoPE'd at each slot's position."""
+        if ctx.external is not None:
+            return ctx.external
+        k_bar, v_bar = self.compressor(x, k_raw, v, self.k_norm, key_valid)
+        if self.use_rope:
+            cos_s, sin_s = rope_cos_sin(ctx.slot_pos, self.dh, cfg_rope_theta, k_bar.dtype)
+            k_bar = apply_rope(k_bar, cos_s, sin_s)
+        return k_bar, v_bar
+
+    def forward(self, x, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None, sink_pos=None, pos=None,
+                message: Optional[MessageCtx] = None, rope_theta: float = 500000.0):
         B, S, _ = x.shape
         q = self.q_norm(self.wq(x).view(B, S, self.h, self.dh))
-        k, v = self.kv(x)
+        k_raw, v = self.kv_raw(x, ids)
+        k = self.k_norm(k_raw)
         if self.use_rope:
             q, k = apply_rope(q, cos, sin), apply_rope(k, cos, sin)
         if self.logit_scale is not None:
@@ -540,15 +779,24 @@ class Attention(nn.Module):
                 raise RuntimeError("global_logit_scale='log' needs per-token positions")
             n_vis = (pos + 1).to(q.dtype)                      # keys a causal query can see (doc-local)
             q = q * (self.logit_scale * torch.log(n_vis))[:, :, None, None]
-        if self.value_embed is not None:
-            ve = self.value_proj(self.value_embed(ids)).view(B, S, self.g, self.dh)
-            v = v + self.value_lambda * ve
+        if message is not None and self.compressor is not None:
+            k_bar, v_bar = self.message_slots(x, k_raw, v, message, key_valid, rope_theta)
+            if message.override == "swapped":
+                k_bar, v_bar = k_bar.roll(1, dims=0), v_bar.roll(1, dims=0)
+            o = attend_message(q, k, v, k_bar, v_bar, ctx=message, key_valid=key_valid,
+                               backend=self.backend, block_masks=block_masks)
+            return self.wo(o.reshape(B, S, self.h * self.dh))
         o = attend(
             q, k, v, pattern=self.pattern, window=self.window, key_valid=key_valid,
             doc_ids=doc_ids, backend=self.backend, causal=self.causal, cu_seqlens=cu_seqlens,
             block_masks=block_masks, sink=self.sink, sink_pos=sink_pos,
         )
-        return self.wo(o.reshape(B, S, self.h * self.dh))
+        o = self.wo(o.reshape(B, S, self.h * self.dh))
+        if self.compressor is not None:
+            # No boundary in this micro-batch: touch the compressor so DDP sees every parameter
+            # used (zero contribution, constant graph).
+            o = o + 0.0 * (self.compressor.u.sum() + self.compressor.delta.weight.sum()).to(o.dtype)
+        return o
 
 
 class SwiGLU(nn.Module):
@@ -587,10 +835,12 @@ class Block(nn.Module):
             x = x + self.sigma * skip
         return x
 
-    def forward(self, x, x0, skip, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None, sink_pos=None, pos=None):
+    def forward(self, x, x0, skip, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None, sink_pos=None, pos=None,
+                message=None, rope_theta=500000.0):
         x = self.mix(x, x0, skip)
         x = x + self.attn(self.attn_norm(x), ids=ids, cos=cos, sin=sin, key_valid=key_valid,
-                          doc_ids=doc_ids, cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos, pos=pos)
+                          doc_ids=doc_ids, cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos, pos=pos,
+                          message=message, rope_theta=rope_theta)
         x = x + self.mlp(self.mlp_norm(x))
         return x
 
@@ -703,11 +953,14 @@ class PerceiverARLM(PreTrainedModel):
             self.write_back_proj = nn.Linear(cfg.hidden_size, 2 * g * dh, bias=False)
         self.gradient_checkpointing = False
         self._flce = None
+        self._message_override = "real"
         self.post_init()
         # Zero-init the residual-writing projections (muP-like, modded-nanogpt).
         for layer in self.layers:
             nn.init.zeros_(layer.attn.wo.weight)
             nn.init.zeros_(layer.mlp.down.weight)
+            if layer.attn.compressor is not None:
+                nn.init.zeros_(layer.attn.compressor.delta.weight)   # post_init re-inits Linears
         if cfg.write_back_hook:
             nn.init.zeros_(self.write_back_proj.weight)
 
@@ -772,6 +1025,80 @@ class PerceiverARLM(PreTrainedModel):
             for i, pat, win in originals:
                 self.layers[i].attn.pattern, self.layers[i].attn.window = pat, win
 
+    @contextmanager
+    def message_override(self, mode: Optional[str]):
+        """E21 probe control for the message channel: `none` (receivers get no slots — the floor),
+        `swapped` (slots of the neighbouring batch row — a wrong message), `raw` (receivers read
+        the uncompressed prefix K/V across the boundary — the ceiling), `real` / None (no-op).
+        Local layers stay severed in every mode, so the paired differences isolate the channel."""
+        if mode in (None, "real"):
+            yield
+            return
+        if mode not in ("none", "swapped", "raw"):
+            raise ValueError(f"unknown message_override {mode!r}")
+        prev = self._message_override
+        self._message_override = mode
+        try:
+            yield
+        finally:
+            self._message_override = prev
+
+    # -- E21 message geometry ---------------------------------------------------------
+    @staticmethod
+    def _doc_starts(doc: torch.Tensor) -> torch.Tensor:
+        starts = torch.ones_like(doc, dtype=torch.bool)
+        starts[:, 1:] = doc[:, 1:] != doc[:, :-1]
+        return starts
+
+    def _message_context(
+        self,
+        input_ids: torch.Tensor,
+        doc_ids: Optional[torch.Tensor],
+        key_valid: Optional[torch.Tensor],
+        pos: torch.Tensor,
+        external: Optional[tuple] = None,
+    ) -> Optional[MessageCtx]:
+        """Build the boundary geometry, or None when nothing in the batch is a receiver."""
+        cfg = self.config
+        B, S = input_ids.shape
+        dev = input_ids.device
+        r = cfg.message_compress_ratio
+        doc = doc_ids.clone() if doc_ids is not None else torch.zeros(B, S, dtype=torch.long, device=dev)
+        if key_valid is not None:
+            doc = doc.masked_fill(~key_valid.bool(), -1)
+        if external is not None:
+            # receiver-only forward: every token is side 1 of one document, slots come from outside
+            k_bar, v_bar, slot_pos = external
+            nb = k_bar.shape[1]
+            side = torch.ones(B, S, dtype=torch.long, device=dev)
+            return MessageCtx(
+                side=side, doc=doc, local_doc_ids=doc,
+                slot_doc=torch.zeros(B, nb, dtype=torch.long, device=dev),
+                slot_side=torch.zeros(B, nb, dtype=torch.long, device=dev),
+                slot_pos=slot_pos.to(dev).expand(B, nb) if slot_pos.dim() == 1 else slot_pos.to(dev),
+                n_sides=2, override=self._message_override, external=(k_bar, v_bar),
+            )
+        is_b = input_ids == cfg.message_boundary_token_id
+        if not bool(is_b.any()):
+            return None
+        starts = self._doc_starts(doc)
+        cum = is_b.long().cumsum(dim=1)
+        base = torch.cummax(torch.where(starts, cum - is_b.long(), torch.zeros_like(cum)), dim=1).values
+        side = cum - base                                             # boundaries seen inside the doc
+        K = int(side.max().item()) + 1
+        local = torch.where(doc < 0, doc, doc * K + side)
+        nb = -(-S // r)
+        pad = nb * r - S
+        docp = F.pad(doc, (0, pad), value=-1).view(B, nb, r)
+        sidep = F.pad(side, (0, pad), value=-1).view(B, nb, r)
+        homog = (docp == docp[..., :1]).all(dim=2) & (sidep == sidep[..., :1]).all(dim=2) & (docp[..., 0] >= 0)
+        slot_doc = torch.where(homog, docp[..., 0], torch.full_like(docp[..., 0], -1))
+        slot_side = torch.where(homog, sidep[..., 0], torch.zeros_like(sidep[..., 0]))
+        end_idx = (torch.arange(nb, device=dev) * r + (r - 1)).clamp(max=S - 1)
+        slot_pos = pos[:, end_idx]
+        return MessageCtx(side=side, doc=doc, local_doc_ids=local, slot_doc=slot_doc, slot_side=slot_side,
+                          slot_pos=slot_pos, n_sides=K, override=self._message_override)
+
     # -- helpers ----------------------------------------------------------------------
     @staticmethod
     def _positions(S: int, B: int, doc_ids: Optional[torch.Tensor], device) -> torch.Tensor:
@@ -818,14 +1145,24 @@ class PerceiverARLM(PreTrainedModel):
         right_padded = bool((m.cumprod(dim=1) == m).all())
         return not right_padded
 
-    def _run_layers(self, input_ids, attention_mask, doc_ids, cu_seqlens, capture_input_of: Optional[int] = None):
+    def _run_layers(self, input_ids, attention_mask, doc_ids, cu_seqlens, capture_input_of: Optional[int] = None,
+                    message_kv: Optional[tuple] = None, position_offset: int = 0):
         cfg = self.config
         B, S = input_ids.shape
         key_valid = None
         if self._needs_key_mask(attention_mask, cfg.block_attention_mode == "causal"):
             key_valid = attention_mask.bool()
-        x0 = self.embed(input_ids, doc_ids)
-        pos = self._positions(S, B, doc_ids, input_ids.device)
+        pos0 = self._positions(S, B, doc_ids, input_ids.device)
+        pos = pos0 + int(position_offset) if position_offset else pos0
+        # E21: a boundary token splits documents into sender | receiver. Local layers and the
+        # n-gram tables see the boundary as a document start; the global read gets a MessageCtx.
+        msg = None
+        local_doc = doc_ids
+        if cfg.message_enabled:
+            msg = self._message_context(input_ids, doc_ids, key_valid, pos, external=message_kv)
+            if msg is not None:
+                local_doc = msg.local_doc_ids
+        x0 = self.embed(input_ids, local_doc)
         cos, sin = rope_cos_sin(pos, cfg.head_dim, cfg.rope_theta, x0.dtype)
         x = x0
         n = len(self.layers)
@@ -835,17 +1172,21 @@ class PerceiverARLM(PreTrainedModel):
         # batch-dependent, and without the memo every layer (and every checkpoint recompute)
         # would call create_block_mask again on the same (B, S) grid.
         block_masks: Optional[dict] = {} if cfg.attn_backend == "flex" else None
-        # sink anchor = first token of each document (position 0 when unpacked)
+        # sink anchor = first token of each (local) document (position 0 when unpacked)
         sink_pos = None
-        if cfg.swa_sink and doc_ids is not None:
-            sink_pos = (torch.arange(S, device=input_ids.device)[None].expand(B, S) - pos)
+        if cfg.swa_sink and local_doc is not None:
+            local_pos = pos0 if local_doc is doc_ids else self._positions(S, B, local_doc, input_ids.device)
+            sink_pos = (torch.arange(S, device=input_ids.device)[None].expand(B, S) - local_pos)
         for i, layer in enumerate(self.layers):
             skip = skips.pop() if (i >= n - n_skip and skips) else None
             if capture_input_of is not None and i == capture_input_of:
                 # exactly what layer i's attn_norm receives (used by prefix_kv)
                 return layer.mix(x, x0, skip)
-            kwargs = dict(ids=input_ids, cos=cos, sin=sin, key_valid=key_valid, doc_ids=doc_ids,
-                          cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos, pos=pos)
+            is_global = layer.attn.pattern == "full" and layer.attn.compressor is not None
+            kwargs = dict(ids=input_ids, cos=cos, sin=sin, key_valid=key_valid,
+                          doc_ids=(doc_ids if is_global else local_doc),
+                          cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos, pos=pos,
+                          message=(msg if is_global else None), rope_theta=cfg.rope_theta)
             if self.gradient_checkpointing and self.training:
                 # partial binds THIS layer/kwargs (a lambda would capture the loop variables
                 # by reference and re-run the last layer in backward).
@@ -885,16 +1226,25 @@ class PerceiverARLM(PreTrainedModel):
         cu_seqlens: Optional[torch.Tensor] = None,
         return_per_token_loss: bool = False,
         return_logits: bool = False,
+        message_kv: Optional[tuple] = None,
+        position_offset: int = 0,
     ):
         # NOTE: no **kwargs here on purpose. HF Trainer treats any VAR_KEYWORD forward as a
         # model that normalizes its own loss by num_items_in_batch and then skips the division
         # by gradient_accumulation_steps (loss and grad-clip off by accum×). This forward
         # returns a per-microbatch mean; the Trainer must do the accumulation scaling.
+        #
+        # `message_kv=(k̄, v̄, slot_pos)` + `position_offset=P` is the E21 receiver-only forward:
+        # `input_ids` are the tokens from the boundary on, and the prefix is present only as the
+        # given slots (what `prefix_kv(..., as_message=True)` returns).
         cfg = self.config
+        if message_kv is not None and not cfg.message_enabled:
+            raise RuntimeError("message_kv needs message_boundary_token_id >= 0")
         input_ids, attention_mask, labels, doc_ids, S_orig = self._pad_inputs(
             input_ids, attention_mask, labels, doc_ids
         )
-        x = self._run_layers(input_ids, attention_mask, doc_ids, cu_seqlens)
+        x = self._run_layers(input_ids, attention_mask, doc_ids, cu_seqlens,
+                             message_kv=message_kv, position_offset=position_offset)
         h = self.final_norm(x)
 
         if labels is None or return_logits:
@@ -940,9 +1290,15 @@ class PerceiverARLM(PreTrainedModel):
 
     # -- family hooks ---------------------------------------------------------------
     @torch.no_grad()
-    def prefix_kv(self, input_ids, attention_mask=None, doc_ids=None):
+    def prefix_kv(self, input_ids, attention_mask=None, doc_ids=None, as_message: bool = False):
         """K/V of the global read layer for `input_ids` — the one-layer prefix cache and the
-        message object for E19/E21. Returns (k, v) each [B,S,g,dh] (RoPE applied to k)."""
+        message object for E19/E21. Returns (k, v) each [B,S,g,dh] (RoPE applied to k).
+
+        `as_message=True` (E21) returns the **compressed message** instead: (k̄, v̄, slot_pos) with
+        one slot per `message_compress_ratio` tokens, complete blocks only (⌊S/r⌋ slots — exactly
+        the slots a receiver of the concatenated row would be allowed to read). Feed it to
+        `forward(receiver_ids, message_kv=..., position_offset=S)`.
+        """
         cfg = self.config
         if cfg.par_mode == "perceiver" and cfg.global_layers < 1:
             raise RuntimeError("prefix_kv needs a global read layer")
@@ -951,8 +1307,22 @@ class PerceiverARLM(PreTrainedModel):
         x_in = self._run_layers(input_ids, attention_mask, doc_ids, None, capture_input_of=gi)
         layer = self.layers[gi]
         h = layer.attn_norm(x_in)
-        k, v = layer.attn.kv(h)
         pos = self._positions(input_ids.shape[1], input_ids.shape[0], doc_ids, input_ids.device)
+        if as_message:
+            if layer.attn.compressor is None:
+                raise RuntimeError("as_message needs message_boundary_token_id >= 0")
+            r = cfg.message_compress_ratio
+            n_full = S // r
+            k_raw, v = layer.attn.kv_raw(h, input_ids)
+            k_bar, v_bar = layer.attn.compressor(h, k_raw, v, layer.attn.k_norm)
+            k_bar, v_bar = k_bar[:, :n_full], v_bar[:, :n_full]
+            end_idx = torch.arange(n_full, device=input_ids.device) * r + (r - 1)
+            slot_pos = pos[:, end_idx]
+            if layer.attn.use_rope:
+                cos_s, sin_s = rope_cos_sin(slot_pos, cfg.head_dim, cfg.rope_theta, k_bar.dtype)
+                k_bar = apply_rope(k_bar, cos_s, sin_s)
+            return k_bar, v_bar, slot_pos
+        k, v = layer.attn.kv(h, input_ids)
         cos, sin = rope_cos_sin(pos, cfg.head_dim, cfg.rope_theta, k.dtype)
         if layer.attn.use_rope:
             k = apply_rope(k, cos, sin)
@@ -1006,6 +1376,9 @@ def analytic_param_count(cfg: PerceiverARConfig) -> ParamBreakdown:
         dense += d * 2 * g * dh
     if getattr(cfg, "global_logit_scale", "none") == "log":
         dense += sum(1 for pat, _ in cfg.layer_patterns() if pat == "full")   # one scalar per full layer
+    if getattr(cfg, "message_enabled", False):
+        n_full = sum(1 for pat, _ in cfg.layer_patterns() if pat == "full")
+        dense += n_full * (g * d + d * 2 * g * dh)                             # KVCompressor: u + delta
     sparse = len(cfg.ngram_orders) * cfg.ngram_buckets * e
     n_ve = sum(1 for i in range(L) if i in cfg.value_embed_layers)
     sparse += n_ve * (V * cfg.value_embed_dim)

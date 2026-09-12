@@ -96,10 +96,11 @@ experiment specs; deep metrics and interpretation live in run reports. Live focu
 Primary navigation for humans and agents. One row per experiment ID. Resolve a missing path by
 searching all lifecycle folders under `docs/experiments_specs/` — never assume `ahead/`.
 
-### Recent closed (2026-06 → 2026-08)
+### Recent closed (2026-06 → 2026-09)
 
 | ID | What | Lifecycle | Key result | Spec · report |
 |---|---|---|---|---|
+| E18b | Retrieval-trained single read (5% dense-label rows in the 32k mix; arms R / 0 / R2 / T) | done_failed | passkey@32k **0** on every arm (S1 fail); task first-token acc 4.2% ≈ arm 0's 2.4%, task-only arm T 4.5% — task not learned (K1 premise unmet); LM cost +0.04% (S3 pass), protocol control pass (S4) | [E18b](../experiments_specs/done_failed/E18b_retrieval_trained_read.md) · [report](run_reports/e18_baseline_eval_suite_20260912.md) |
 | E17e | Starve the local window (K=256) on the E17d cell | done_failed (mixed) | late-half Δperm **0.104** best (last **0.097**); RankMe **31–57**; gen `real`@256 **0.162/0.686**; no 1B | [E17e](../experiments_specs/done_failed/E17e_starved_local_window.md) · [report](run_reports/e17e_starved_local_window_20260825.md) |
 | E17d | Depth-private concept layers as global-attention replacement | done_failed (mixed) | late-bin Δperm **0.044** miss; RankMe **43–77** PASS; gen `real`@256 **0.185/0.595**; no 1B | [E17d](../experiments_specs/done_failed/E17d_global_concept_assimilation.md) · [report](run_reports/e17d_global_concept_assimilation_20260818.md) |
 | E17c | Depth-private gated working memory + causal carry pressure | done_failed (mixed) | carryless Δperm **0.59** PASS; RankMe **6.7** kill; Δbeyond **0.013** no 1B; gen `real`@256 **0.23/0.53** | [E17c](../experiments_specs/done_failed/E17c_depth_private_working_memory.md) · [report](run_reports/e17c_depth_private_working_memory_20260815.md) |
@@ -133,7 +134,8 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 | E12 | Per-layer KV-prefix concepts (Design B) | design-only | [E12](../experiments_specs/ahead/E12_perlayer_kv_prefix_concepts.md) |
 | E13 | Layer-wise recurrent KV-memory | draft (gated on E12) | [E13](../experiments_specs/ahead/E13_layerwise_recurrent_kv_memory.md) |
 | E17a | Untied per-bank writers (4 writers) — counterfactual to E17 | draft (conditional on sticky open-gate per-layer) | [E17a](../experiments_specs/ahead/E17a_untied_per_bank_writers.md) |
-| E18 | Perceiver AR v2 — one global read, window-N stack, every token trained (VC-facing long-context platform; family root for E19–E21) | approved (pilot on Polonez pending; AWS main run needs go) | [E18](../experiments_specs/ahead/E18_perceiver_ar_v2_baseline.md) · [plan](../experiments_specs/ahead/E18_perceiver_ar_v2_baseline_plan.md) |
+| E18 | Perceiver AR v2 — one global read, window-N stack, every token trained (VC-facing long-context platform; family root for E19–E21) | pilot done on Polonez (P1 ✅ P2 ✅ P4 ✅; P3 → reach ablation: the read carries ≈ 0 nats of LM loss); AWS main run **no** on the current spec; platform is the E21 substrate | [E18](../experiments_specs/ahead/E18_perceiver_ar_v2_baseline.md) · [plan](../experiments_specs/ahead/E18_perceiver_ar_v2_baseline_plan.md) · [stage A](run_reports/e18_pilot_stageA_20260907.md) · [reach](run_reports/e18_reach_ablation_20260909.md) · [eval suite](run_reports/e18_baseline_eval_suite_20260912.md) |
+| E21 | Latent-message pretraining on the E18 platform (boundary severs the local stack; global read sees the prefix as r=16 slots; `none`/`swapped`/`raw` probes) | implemented; smokes on Polonez 2026-09-12; arms R (r=16) → U (r=1) queued from the E18b-R warm start | [E21](../experiments_specs/ahead/E21_latent_message_pretraining.md) · [plan](../experiments_specs/ahead/E21_latent_message_pretraining_plan.md) |
 
 ### Canceled (no run)
 
@@ -143,7 +145,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 | E07 | Sentence-gap / boundary-only infilling | [E07](../experiments_specs/canceled/E07_sentence_gap_infilling.md) |
 | E09 | Gated recurrent concept memory (superseded by E10) | [E09](../experiments_specs/canceled/E09_recurrent_concept_memory.md) |
 
-**Genealogy:** E01 → E02 → E03 → E04 → E05 → E10…E16a (short-ctx) → **E16b** (historical shared-depth result; causal interpretation revised 2026-08-14) → **E17** (causal per-layer init-0.01 partial success) → **E17b** (mid-init 0.1 failed) → **E17c** (gated cell + carry pressure; 300M mixed — carryless PASS, geometry collapsed) → **E17d** (attn-residual global mix, no token carry; 300M mixed — RankMe PASS, late-bin miss) → **E17e** (K=256 starve; 300M mixed — late-half 0.104 on best, gen fail, no 1B). See [`agenda.md`](../1_Strategy_and_Plans/agenda.md) for the living reading.
+**Genealogy:** E01 → E02 → E03 → E04 → E05 → E10…E16a (short-ctx) → **E16b** (historical shared-depth result; causal interpretation revised 2026-08-14) → **E17** (causal per-layer init-0.01 partial success) → **E17b** (mid-init 0.1 failed) → **E17c** (gated cell + carry pressure; 300M mixed — carryless PASS, geometry collapsed) → **E17d** (attn-residual global mix, no token carry; 300M mixed — RankMe PASS, late-bin miss) → **E17e** (K=256 starve; 300M mixed — late-half 0.104 on best, gen fail, no 1B) → **E18** (new family: Perceiver AR v2 platform; pilot: read is free, retrieves under dense labels, carries ≈ 0 nats of LM loss) → **E18b** (5% retrieval mix; task not learned, passkey 0) → **E21** (latent message as the pretraining objective; running). See [`agenda.md`](../1_Strategy_and_Plans/agenda.md) for the living reading.
 
 ---
 
@@ -202,6 +204,13 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-08-17 | E17d | `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_125416` | attn-residual + no token carry · 300M · bs3 | ~9k tok/s · ~7.4 GiB | ABORTED — underfilled; length_group calib picked bs8 (~9089 tok/s). | [spec](../experiments_specs/done_failed/E17d_global_concept_assimilation.md) |
 | 2026-08-17 | E17d | `backbone_concept_gemma_3_1b_pt_K512_concept_20260817_141227` | attn-residual + no token carry · 300M · bs8/accum2 | late-bin Δperm **0.044** · RankMe **43–77** · gen **0.185/0.595** | MIXED — geometry PASS; late-page assimilation FAIL; no 1B. | [spec](../experiments_specs/done_failed/E17d_global_concept_assimilation.md) · [report](run_reports/e17d_global_concept_assimilation_20260818.md) |
 | 2026-08-22 | E17e | `backbone_concept_gemma_3_1b_pt_K256_concept_20260822_120601` | E17d cell · K=256 starve · 300M · bs8/accum2 | late-half Δperm **0.104** · RankMe **31–57** · gen **0.162/0.686** | MIXED — starve lifted E17d 0.044; last 0.097 miss; gen fail; no 1B. | [spec](../experiments_specs/done_failed/E17e_starved_local_window.md) · [report](run_reports/e17e_starved_local_window_20260825.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/backbone_concept_gemma_3_1b_pt_K256_concept_20260822_120601) |
+| 2026-09-07 | E18 | `perceiver_ar_perceiver_H768L1g1s12N2048_20260907_080943` | perceiver_ar 125M · seq 8k · longdoc mix · stopped at 1.0B tok | eval loss 3.79 · 28k tok/s (4×3090) · lm-eval avg 0.348 · wikitext ppl 109 | Stage A pilot — stable; equal-token match to the dense control (P1). | [spec](../experiments_specs/ahead/E18_perceiver_ar_v2_baseline.md) · [report](run_reports/e18_pilot_stageA_20260907.md) · [eval](run_reports/e18_baseline_eval_suite_20260912.md) |
+| 2026-09-07 | E18 | `perceiver_ar_dense_H768L1g1s12N2048_20260907_193351` | dense control · same depth/width · seq 8k · 1.0B tok | lm-eval avg 0.348 · wikitext ppl 110 · Δ(read→512) +0.12 | Matched dense control — P1/P4 pass; full attention hurts past 8k. | [spec](../experiments_specs/ahead/E18_perceiver_ar_v2_baseline.md) · [report](run_reports/e18_reach_ablation_20260909.md) · [eval](run_reports/e18_baseline_eval_suite_20260912.md) |
+| 2026-09-10 | E18b | `perceiver_ar_perceiver_H768L1g1s12N2048_20260910_184948` | arm R · 95% LM + 5% retrieval rows · seq 32k · 0.5B tok · warm start stage A | eval loss **3.5221** · passkey@32k **0** · task first-token 4.2% · lm-eval avg 0.361 | KILLED — task not learned; no transfer to passkey. | [spec](../experiments_specs/done_failed/E18b_retrieval_trained_read.md) · [report](run_reports/e18_baseline_eval_suite_20260912.md) |
+| 2026-09-11 | E18b | `perceiver_ar_perceiver_H768L1g1s12N2048_20260911_021311` | arm 0 · LM rows only · seq 32k · 0.5B tok (protocol control) | eval loss **3.5208** · CE[8k,32k) 3.567 (stage A 3.912) · lm-eval avg 0.362 | Protocol control PASS (S4) — extension no longer regresses. | [spec](../experiments_specs/done_failed/E18b_retrieval_trained_read.md) · [report](run_reports/e18_baseline_eval_suite_20260912.md) |
+| 2026-09-11 | E18b | `perceiver_ar_dense_H768L1g1s12N2048_20260911_100947` | arm D · dense 32k control | — (78 steps) | TERMINATED (SIGTERM) to queue arm R2; not evaluated. | [spec](../experiments_specs/done_failed/E18b_retrieval_trained_read.md) |
+| 2026-09-11 | E18b | `perceiver_ar_perceiver_H768L1g1s12N2048_20260911_130626` | arm R2 · arm R + value embedding on the global read · 0.5B tok | eval loss 3.5221 · task first-token 4.4% · passkey@32k 0 | Value embed on the read changed nothing (≈ arm R to 6 digits). | [spec](../experiments_specs/done_failed/E18b_retrieval_trained_read.md) · [report](run_reports/e18_baseline_eval_suite_20260912.md) |
+| 2026-09-11 | E18b | `perceiver_ar_perceiver_H768L1g1s12N2048_20260911_210251` | arm T · retrieval rows only · 350M tok (learnability control) | task first-token **4.5%** · token acc 0.319 · passkey@8k 0.125 / @32k 0 | Task-only training does not learn the lookup — K1's premise unmet. | [spec](../experiments_specs/done_failed/E18b_retrieval_trained_read.md) · [report](run_reports/e18_baseline_eval_suite_20260912.md) |
 
 ---
 
@@ -232,6 +241,9 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-08-18 | E17d Tier-1 + late-bin perm + Tier-1.5 | E17d ckpt-2660 vs base / E17c | late-bin Δperm **0.044** CI[0.039,0.049] · RankMe **43–77** · first-64 Δperm **0.75** · real@256 **0.185/0.595** · zero **0.24/0.45** | Geometry PASS; late-page FAIL; no 1B | [report](run_reports/e17d_global_concept_assimilation_20260818.md) |
 | 2026-08-25 | E17e Tier-1 + late-half perm + Tier-1.5 | E17e ckpt-2660 vs base / E17d | late-half Δperm **0.104** CI[0.095,0.114] · last **0.097** · RankMe **31–57** · real@256 **0.162/0.686** (`real=shuffle`) | Starve lift vs 0.044; gen FAIL; no 1B | [report](run_reports/e17e_starved_local_window_20260825.md) |
 
+| 2026-09-09 | E18 reach ablation (paired Δ CE, global read windowed) | stage A ck-9030 · stage B · dense control · P2 copy model | perceiver Δ(read→512) **+0.0006** · dense Δ(all→512) **+0.12** / (→2048) **+0.03** · copy@16k-offset 0.99994 → **0.004** two tokens short | Read is a working retrieval organ under dense labels but carries ≈ 0 nats of LM loss | [E18](../experiments_specs/ahead/E18_perceiver_ar_v2_baseline.md) · [report](run_reports/e18_reach_ablation_20260909.md) |
+| 2026-09-12 | Long-context + reasoning eval layer, first pass (lm-eval 0-shot tiers + RULER-lite) | stage A ck-9030 · dense 1B · E18b arms 0 / R / R2 · SmolLM2-135M | lm-eval avg **0.348 / 0.348 / 0.362 / 0.361 / 0.361 / 0.447** · wikitext ppl 109 / 110 / 74 / 74 / 74 / 23 · passkey@32k **0** everywhere · CE[8k,32k) 3.91 → 3.56 (E18b arms) | Perceiver = dense at equal tokens; no E18 checkpoint retrieves; E18b task not learned | [E18b](../experiments_specs/done_failed/E18b_retrieval_trained_read.md) · [report](run_reports/e18_baseline_eval_suite_20260912.md) |
+
 **ViaDecoder baselines (L6 canonical, 2026-02-22):** MRPC F1 82.73 · STS-B P 0.650 · QQP F1 73.35 · MNLI-m 59.75 · MNLI-mm 60.90 — full note in [report](run_reports/via_decoder_eval_20260222.md).
 
 ---
@@ -250,6 +262,9 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 
 Newest first:
 
+- [E18 / E18b eval-layer first pass + retrieval-mix arms (Sep 12)](run_reports/e18_baseline_eval_suite_20260912.md)
+- [E18 reach ablation — does the single read carry long-range information? (Sep 9)](run_reports/e18_reach_ablation_20260909.md)
+- [E18 pilot stage A 125M @8k (Sep 7)](run_reports/e18_pilot_stageA_20260907.md)
 - [E17e starve local window K=256 300M (Aug 25)](run_reports/e17e_starved_local_window_20260825.md)
 - [E17d global-attention concept layers 300M (Aug 18)](run_reports/e17d_global_concept_assimilation_20260818.md)
 - [E17c depth-private gated WM 300M (Aug 15)](run_reports/e17c_depth_private_working_memory_20260815.md)

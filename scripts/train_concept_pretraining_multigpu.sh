@@ -75,6 +75,8 @@ DATASET_MIX_RECIPE="${DATASET_MIX_RECIPE:-}"
 PRETOKENIZED_MANIFEST="${PRETOKENIZED_MANIFEST:-}"
 PRESERVE_PRECOMPUTED_LABELS="${PRESERVE_PRECOMPUTED_LABELS:-false}"
 LOSS_SPAN_MARKERS="${LOSS_SPAN_MARKERS:-}"      # E18b: "start_id,end_id" -> labels only inside marked spans on rows that carry them
+MESSAGE_BOUNDARY_FRAC="${MESSAGE_BOUNDARY_FRAC:-0.0}"   # E21: share of training documents that get a sender|receiver boundary (needs PAR_MESSAGE_BOUNDARY_TOKEN)
+MESSAGE_BOUNDARY_MIN="${MESSAGE_BOUNDARY_MIN:-4096}"    # E21: min sender / receiver length around the drawn boundary
 # Train batching: "none" (historical), "length_group" (sortish sampling; reorders rows only)
 # or "pack" (whole documents concatenated to MAX_SEQ_LENGTH with per-token doc_ids; the
 # model masks cross-document attention — perceiver_ar only; see data/packed_dataset.py).
@@ -164,6 +166,8 @@ PAR_SWA_SINK="${PAR_SWA_SINK:-False}"           # windowed layers also see the d
 PAR_GLOBAL_NOPE="${PAR_GLOBAL_NOPE:-False}"     # global read(s) without RoPE (content-only retrieval)
 PAR_GLOBAL_LOGIT_SCALE="${PAR_GLOBAL_LOGIT_SCALE:-none}"   # 'log' = SSMax-style q *= s*log(n) on the global read(s)
 PAR_GLOBAL_SCALE_REF="${PAR_GLOBAL_SCALE_REF:-8192}"
+PAR_MESSAGE_BOUNDARY_TOKEN="${PAR_MESSAGE_BOUNDARY_TOKEN:--1}"   # E21: reserved id of the message boundary (-1 = off)
+PAR_MESSAGE_COMPRESS_RATIO="${PAR_MESSAGE_COMPRESS_RATIO:-16}"  # E21: prefix tokens per message slot (1 = uncompressed arm U)
 ROPE_THETA="${ROPE_THETA:-500000.0}"
 ATTN_BACKEND="${ATTN_BACKEND:-flex}"                # sdpa | flex | flash
 ATTN_PAD_MULTIPLE="${ATTN_PAD_MULTIPLE:-2048}"
@@ -381,6 +385,8 @@ if [ "$MODEL_FAMILY" = "perceiver_ar" ]; then
         --par_global_nope "$PAR_GLOBAL_NOPE"
         --par_global_logit_scale "$PAR_GLOBAL_LOGIT_SCALE"
         --par_global_scale_ref "$PAR_GLOBAL_SCALE_REF"
+        --par_message_boundary_token_id "$PAR_MESSAGE_BOUNDARY_TOKEN"
+        --par_message_compress_ratio "$PAR_MESSAGE_COMPRESS_RATIO"
         --rope_theta "$ROPE_THETA"
         --attn_backend "$ATTN_BACKEND"
         --attn_pad_multiple "$ATTN_PAD_MULTIPLE"
@@ -422,8 +428,13 @@ fi
 # accelerate rejects --multi_gpu with a single process ("You need to use at least 2 processes"),
 # which is exactly the NUM_GPUS=1 calibration / smoke path. Pass it only when it applies.
 MULTI_GPU_ARGS=()
+# `--ddp_backend nccl` only for a real process group: with a single process accelerate's simple
+# launcher sets no LOCAL_RANK, and a passed backend then makes PartialState query an
+# uninitialised group ("Default process group has not been initialized").
+DDP_ARGS=()
 if [ "$((NUM_GPUS * NUM_MACHINES))" -gt 1 ]; then
     MULTI_GPU_ARGS+=(--multi_gpu)
+    DDP_ARGS+=(--ddp_backend nccl)
 fi
 
 uv run accelerate launch \
@@ -458,6 +469,8 @@ uv run accelerate launch \
     --max_seq_length "$MAX_SEQ_LENGTH" \
     --preserve_precomputed_labels "$PRESERVE_PRECOMPUTED_LABELS" \
     --loss_span_markers "$LOSS_SPAN_MARKERS" \
+    --message_boundary_frac "$MESSAGE_BOUNDARY_FRAC" \
+    --message_boundary_min "$MESSAGE_BOUNDARY_MIN" \
     --batch_packing_mode "$BATCH_PACKING_MODE" \
     --length_group_mega_batch_mult "$LENGTH_GROUP_MEGA_BATCH_MULT" \
     --dataset_cache_dir "$HF_DATASETS_CACHE" \
@@ -482,7 +495,7 @@ uv run accelerate launch \
     --logging_dir "$LOGGING_DIR" \
     --seed "$SEED" \
     --bf16 \
-    --ddp_backend "nccl" \
+    ${DDP_ARGS[@]+"${DDP_ARGS[@]}"} \
     --ddp_timeout "$DDP_TIMEOUT" \
     --ddp_find_unused_parameters False \
     --dataloader_pin_memory True \

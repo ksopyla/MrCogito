@@ -6,7 +6,9 @@ description: The single source of truth for evaluating MrCogito Concept Encoder 
 # Experiment Evaluate
 
 The **one place** that defines *how to evaluate* a Concept Encoder checkpoint and *which
-script covers which aspect*. It runs the evaluation; it does not launch training
+script covers which aspect*. Families: `concept_ar` (E01/E02), `backbone_concept` (E10/E16),
+`perceiver_ar` (E18/E21 — lm-eval-harness reasoning + teacher-forced RULER-lite long context,
+see "Perceiver AR pipeline" below), and the older `perceiver_denoise` / `weighted_mlm`. It runs the evaluation; it does not launch training
 (`experiment-run`) and does not write conclusions into the registry (`experiment-track`,
 which links back here for the "how").
 
@@ -48,6 +50,10 @@ the AR decoder uses its concepts (E01/E02), or reproduce a prior evaluation prot
 | PAWS launcher | `scripts/evaluate_concept_encoder_paws.sh` | thin `uv` wrapper over `evaluate_on_benchmark.py` | all |
 | GLUE launcher | `scripts/evaluate_concept_encoder_glue.sh` | thin `uv` wrapper over `evaluate_model_on_glue.py` | all |
 | Report sync | `scripts/sync_evaluation_reports.sh` | pull `Cache/Evaluation_reports/*` from remote | — |
+| **Reasoning (lm-eval-harness)** | `evaluation/run_lm_eval_suite.py` + adapter `evaluation/lm_eval_perceiver_ar.py` | 0-shot loglikelihood MC: hellaswag / arc / piqa / winogrande / openbookqa / boolq / siqa / csqa / lambada / wikitext (`--tier full` adds mmlu, sciq, copa); `--hf_model` gives reference rows (SmolLM2) through the same path; `summary.csv` upsert per tag | `perceiver_ar` (+ any HF causal LM) |
+| **Long context (RULER-lite, teacher-forced)** | `evaluation/long_context_probes.py --probe suite` | passkey, multi-key NIAH, variable tracking, frequent-words extraction, CE length buckets, plus `--probe reach` (window positive-control) and `--probe tasks` (E18b training-task accuracy) | `perceiver_ar` |
+| **Perceiver AR suite launcher** | `scripts/eval_perceiver_ar_suite.sh` | health + lm-eval + long-context suite + reach in one failure-tolerant call, two GPUs in parallel | `perceiver_ar` |
+| Suite aggregator | `evaluation/summarize_eval_suite.py` | one markdown table across tags (reasoning block + long-context block), `-` for missing pieces | — |
 
 **Out of scope of this skill** (do not pull in): tokenizer studies
 (`analysis/evaluate_tokenizers_comprehensive.py`, `scripts/evaluate_tokenizers.sh`) and the
@@ -66,6 +72,11 @@ exploratory `analysis/concept_analysis_notebook.ipynb`.
   Tier-1 geometry/within-arm ablations. Its decisive result is the paired
   `run_e10_comparison.py` protocol at matched 50% and 100% token checkpoints; generic
   STS-B/SICK/GLUE routing is not part of the E10 mechanism gate.
+- `perceiver_ar` (E18 / E21, `nn/perceiver_ar_lm.py`) has **no concepts to analyse** and no
+  sentence-pair route: the concept-geometry tiers, STS-B/SICK/PAWS/GLUE do not apply. Use the
+  dedicated **Perceiver AR pipeline** below (reasoning via lm-eval-harness + long-context via
+  the teacher-forced RULER-lite suite). Decision record:
+  `docs/engineering_specs/long_context_reasoning_eval_layer.md`.
 
 ## Checkpoints To Evaluate
 For every serious run, evaluate at least:
@@ -343,6 +354,47 @@ MODEL_PATH_OVERRIDE="$BEST" MODEL_TYPE_OVERRIDE=concept_ar TOKENIZER_NAME_OVERRI
 > at most a downstream-utility footnote. STS-B/SICK/PAWS remain the cheap semantic gates.
 
 Repeat the whole pipeline for `$LAST`, changing the output JSON / report labels.
+
+## Perceiver AR pipeline (`perceiver_ar`: E18 / E21)
+Two axes, both **teacher-forced / loglikelihood** (a ~125M base model cannot follow instructions
+and the family has no HF-compatible KV-cache `generate`, so generation-based RULER / LongBench
+are deferred until an instruct-tuned checkpoint exists):
+
+- **Reasoning** — lm-evaluation-harness through the registered `perceiver_ar` HFLM subclass
+  (`evaluation/lm_eval_perceiver_ar.py`; loads with `sdpa` + `attn_pad_multiple=1`, scores the
+  tanh-softcapped logits exactly as trained). `core` tier = hellaswag, arc_easy, arc_challenge,
+  piqa, winogrande, openbookqa, boolq, social_iqa, commonsense_qa, lambada_openai, wikitext
+  (the SmolLM2 model-card set → the reference rows are directly comparable). Main metric is
+  `acc_norm` where the card uses it, `word_perplexity` for wikitext; `avg_acc` over the acc tasks.
+- **Long context** — `evaluation/long_context_probes.py --probe suite` with
+  `passkey,multikey,vt,fwe,buckets` at `--context_lengths 8192,32768` (add `65536,131072` for the
+  extrapolation sweep; `--attn_backend flex` for anything ≥ 8k). Each synthetic probe reports
+  exact match, token accuracy and first-token accuracy per length; `buckets` reports held-out CE
+  per length bucket from the manifest's eval split. `--probe reach` (window sweep of the full
+  layers) is the positive control that tells whether the global read is used at all.
+
+One-call launcher (health → lm-eval on `LMEVAL_GPU` ∥ long-context + reach on `LONGCTX_GPU`):
+```bash
+byobu new-session -d -s EVAL_<tag>
+CONTEXT_LENGTHS=8192,32768 TIER=core bash scripts/eval_perceiver_ar_suite.sh \
+  Cache/Training/<run_id>/checkpoint-<step> <tag>
+# reference rows (lm-eval only):
+HF_MODEL=HuggingFaceTB/SmolLM2-135M bash scripts/eval_perceiver_ar_suite.sh - smollm2_135m
+# compare:
+uv run python evaluation/summarize_eval_suite.py --tags <tag_a>,<tag_b>,smollm2_135m --out Cache/eval/summary.md
+```
+Outputs: `Cache/eval/<tag>/{health.log,longctx_suite.json,reach.json,summary.md}`,
+`Cache/Evaluation_reports/lm_eval/<tag>.json` + `summary.csv`, log in `Cache/logs/eval_<tag>_*.log`.
+Smoke first with `LIMIT=20 CONTEXT_LENGTHS=8192 TRIALS=2 MAX_ROWS=8`.
+
+Interpretation rules: (1) judge reasoning **against the reference row at matched params and
+tokens** (SmolLM2-135M saw 2T tokens; a 20–50B-token E18 checkpoint is expected well below it —
+the useful number is the *gap trend* across our checkpoints, not the absolute); (2) the
+long-context kill signal is `passkey`/`multikey` exact match collapsing at the first length beyond
+the training window while `buckets` CE stays flat (fluent but blind); (3) `vt` and `fwe` need
+aggregation over the whole context — a model that passes passkey but scores 0 on `fwe` retrieves,
+it does not reason over the context; (4) a `reach` curve flat from 2048 to `full` means the
+global read is unused and every long-context number is a SWA artefact.
 
 ## Outputs To Collect
 - Shell log path, usually `Cache/logs/eval_<id>_<timestamp>.log`.

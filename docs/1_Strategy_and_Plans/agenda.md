@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-08-27 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-09-12 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,6 +20,46 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-09-11 — strategy review (branch `cursor/strategy-sota-review-2026-09-e212`; proposal, awaiting go).**
+  Internal ledger + frontier sweep (Qwen3.8 / Qwen3.8-Flash-Next, DeepSeek V4 / **V4.1-Flash**, GLM-5.3-Flash,
+  long-context, latent reasoning, latent A2A, VC landscape, small-LM recipes). Two facts change the plan:
+  (1) **DeepSeek-V4.1-Flash (2026-09-10) ships the E18 skeleton** — a causal encoder whose final states are
+  projected once into the decoder's global KV (890 B/token, 1M ctx); "one contextualised global read at
+  ~1 KB/token" is now table stakes, not a moat. (2) Fifteen of our experiments say a compressed channel
+  carries nothing unless the objective can be satisfied **only** through it (E02 worked, E05/E10–E17/E18-arm-C
+  did not); the frontier still trains every such cache under plain CE and talks to other models in text.
+  **Proposal:** make the sender→receiver latent message the *pretraining objective* on the E18 platform —
+  [E21 latent-message pretraining](../experiments_specs/ahead/E21_latent_message_pretraining.md) (message
+  boundary severs the local stack, the global read sees the prefix only as r=16 slots, shared weights, CE +
+  E18b rows; `none`/`swapped`/`raw` causal probes) — pulled forward ahead of E19/E20; E18c's compressor is
+  its code dependency, E18b-R its warm start. Synthesis:
+  [strategy_synthesis_latent_channel_20260911](../4_Research_Notes/strategy_synthesis_latent_channel_20260911.md) ·
+  positioning & funding lanes (SPRIND NFAI, Jean Zay, CEE seed; the one-number demo):
+  [positioning_and_funding](positioning_and_funding.md) · new reviews in `docs/literature_review/`
+  (`frontier_open_models_architecture`, `long_context_architectures_training`, `latent_agent_communication`,
+  `latent_reasoning_looped_depth`, `small_lm_training_recipes`). E18b stays as specified.
+  **2026-09-11 status (evening):** the **evaluation layer** the E18/E21 decisions were missing is in
+  (`docs/engineering_specs/long_context_reasoning_eval_layer.md`): lm-evaluation-harness `perceiver_ar`
+  adapter (SmolLM2-card task tiers, public reference rows) + teacher-forced RULER-lite (`passkey`,
+  `multikey`, `vt`, `fwe`, `buckets`, `reach`) behind one runner (`scripts/eval_perceiver_ar_suite.sh`)
+  and one markdown aggregator. **E21 is implemented** as config over the E18 foundation
+  ([plan](../experiments_specs/ahead/E21_latent_message_pretraining_plan.md); CHANGELOG 2026-09-11):
+  boundary token + `KVCompressor` slots on the global read, collator-drawn boundaries, boundary-aware
+  E18b rows (`--boundary_id`), `--probe message` (real / none / swapped / raw). Deviation from the
+  spec, recorded in the plan: compression applies only to keys that cross the boundary (E18c's
+  always-on compressor is not a dependency any more). Next, in order and only when Polonez is free:
+  baseline suite on stage-A `checkpoint-9030`, dense control, E18b arms R / 0 / R2 finals +
+  SmolLM2-135M reference → E21 data prep (`e21_lm95_ret05_boundary_manifest.json`) → 1-GPU / 4-GPU
+  smoke → E21 launch from the E18b-R warm start.
+  **2026-09-12 status:** baseline suite done and recorded
+  ([report](../2_Experiments_Registry/run_reports/e18_baseline_eval_suite_20260912.md)); **E18b closed
+  → `done_failed`** (task not learned, passkey 0; see "explored"). E21 data prep done (6,000 boundary-aware
+  rows, manifest + length cache). Two Polonez blockers fixed on the way: the 1-GPU smoke crashed on
+  `--ddp_backend nccl` without a process group (launcher gates it on > 1 process), and the E21 message
+  flex kernel did not compile on the 3090s at 32k / head_dim 128 (four captured int64 mask buffers →
+  1 KB over the 99 KB shared-memory limit; now two int32 tags, 47 ms fwd+bwd at B=2 × 32k). Smokes
+  rerun (`Cache/jobs/e21_smoke2.sh`) → chain `Cache/jobs/e21_chain.sh`: arm **R** (r=16) then arm **U**
+  (r=1), 0.5B tokens each from the E18b-R `final`, then the eval suite + `--probe message`.
 - **2026-09-06 — new family: Perceiver AR v2 (E18) as the VC-facing long-context platform.**
   A from-scratch ≈600M-dense LM: tiny hashed n-gram input embeddings → 2 sliding-window
   pre-encoder layers → **one** full-causal global read → 20 window-4096 layers; every token
@@ -49,7 +89,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   **used, not useful for LM loss**. The stack window sets the loss; the read is a retrieval organ (P2)
   at a 1 KB/token cache. E18's headline hypothesis is falsified at pilot scale; the platform is validated.
   **AWS on the current spec: no.** Next, drafted and awaiting go:
-  [E18b](../experiments_specs/ahead/E18b_retrieval_trained_read.md) — 5% dense-label synthetic retrieval
+  [E18b](../experiments_specs/done_failed/E18b_retrieval_trained_read.md) — 5% dense-label synthetic retrieval
   in the 32k mix; claim = the read becomes a *general, length-extrapolating* retriever (passkey 0% → ≥ 90%
   @32k, ≥ 80% @128k) at ≤ 0.5% LM cost, with a protocol control (stage B redo) and a dense control; this is
   the gate for a re-scoped main run (M2 → RULER/NIAH). Then
@@ -111,6 +151,15 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 12. **E17e starve the local window to K=256** *(done_failed mixed 2026-08-25 — late-half 0.104 on best, last 0.097, gen 0.16/0.69; no 1B).*
 
 ## What we've explored so far (evidence, not verdicts)
+- **E18b retrieval-trained single read (perceiver_ar 125M, Polonez, train 2026-09-10 → 09-11, eval 2026-09-12):**
+  arms R (95% LM + 5% dense-label retrieval rows) / 0 (LM only) / R2 (R + value embed on the read) /
+  T (retrieval rows only, 350M tok), 0.5B tokens @32k from stage-A `checkpoint-9030`. Passkey @32k **0**
+  on every arm (also 64k / 128k); held-out task first-token accuracy R **4.2%** ≈ arm 0's **2.4%**, T **4.5%**
+  — the lookup was not learned, so the transfer question was never reached. LM cost of the mix +0.04%;
+  the extension protocol no longer regresses (CE[8k,32k) 3.567 vs stage A 3.912). First pass of the eval
+  layer on all E18 checkpoints: lm-eval 0-shot avg 0.348 (1.0B tok, perceiver = dense) → 0.36 (E18b arms)
+  vs SmolLM2-135M 0.447; no E18 checkpoint solves any RULER-lite probe. See
+  [report](../2_Experiments_Registry/run_reports/e18_baseline_eval_suite_20260912.md).
 - **E17e starve local window K=256 (per_layer_banks, Polonez, train 2026-08-22, eval 2026-08-25):**
   300M run `…20260822_120601`. Late-half of each 256-token window Δperm **0.104**
   CI [0.095, 0.114] on best (last **0.097**). RankMe **31.5 / 34.9 / 31.2 / 57.4**.
@@ -225,9 +274,11 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 Recursive concept refinement and latent reasoning remain Vision goals — E08 and related
 ideas stay in play; compose them only after a strictly causal platform demonstrably carries
 content. E17c's carryless signal is not that platform. From-scratch and other bases are not ruled out. Diffusion
-decode stays parked/revivable from `parked/`. Instruction SFT, long-context, and audio
-remain long-term Vision only. Multi-agent latent communication stays the Stage-2
-headline (see [team_brief](../sprind_frontier_ai/team_brief.md)).
+decode stays parked/revivable from `parked/`. Instruction SFT and audio remain long-term
+Vision only. Multi-agent latent communication was the Stage-2 headline (see
+[team_brief](../sprind_frontier_ai/team_brief.md)); the 2026-09-11 review proposes it becomes the
+*training objective* ([E21](../experiments_specs/ahead/E21_latent_message_pretraining.md)) — see
+Current focus.
 
 ## Engineering notes (not live experiments)
 Canonical eval protocol, Tier-1 data-protocol upgrade, compute audit, and training-pipeline

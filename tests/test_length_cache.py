@@ -39,6 +39,46 @@ def _make_dataset(lengths: list[int]) -> Dataset:
     return Dataset.from_dict({"input_ids": [[1] * n for n in lengths]})
 
 
+def test_arrow_offsets_fast_path_matches_scan_on_interleaved_mix(tmp_path: Path):
+    """The fast path reads list offsets of the concatenated table and applies the select
+    indices; it must equal the exact map over `input_ids` on a saved-to-disk interleaved mix."""
+    from datasets import concatenate_datasets
+    from data.length_cache import _compute_lengths, _lengths_from_dataset, _lengths_from_list_offsets
+
+    rng = np.random.default_rng(0)
+    parts = []
+    for i in range(3):
+        lens = rng.integers(1, 40, size=50).tolist()
+        ds = Dataset.from_dict({"input_ids": [[i + 1] * n for n in lens]})
+        ds.save_to_disk(str(tmp_path / f"src{i}"))
+        parts.append(load_from_disk(str(tmp_path / f"src{i}")))
+    idx = rng.permutation(150)[:120]
+    mix = concatenate_datasets(parts).select(idx)
+    fast = _lengths_from_list_offsets(mix)
+    assert fast is not None and fast.dtype == np.int32 and fast.shape == (120,)
+    exact = _lengths_from_dataset(_compute_lengths(mix, num_proc=1))
+    np.testing.assert_array_equal(fast, exact)
+    np.testing.assert_array_equal(fast, np.array([len(r) for r in mix["input_ids"]], dtype=np.int32))
+    # a sliced (shard-like) view keeps the offsets consistent
+    sub = parts[1].select(range(10, 30))
+    np.testing.assert_array_equal(_lengths_from_list_offsets(sub), [len(r) for r in sub["input_ids"]])
+    # compute_or_load uses the fast path and records it
+    manifest = _write_manifest(tmp_path / "m")
+    with patch("data.length_cache._compute_lengths", side_effect=AssertionError("scan must not run")):
+        out = compute_or_load_interleaved_lengths(manifest, train_ds=mix)
+    np.testing.assert_array_equal(out, exact)
+    meta = json.loads(length_cache_paths(manifest)[1].read_text())
+    assert meta["method"] == "arrow_list_offsets" and meta["num_proc"] is None
+
+
+def test_arrow_offsets_fast_path_falls_back_on_odd_layouts():
+    from data.length_cache import _lengths_from_list_offsets
+
+    ds = Dataset.from_dict({"input_ids": [[1, 2], None, [3]]})  # nulls -> not a plain list column
+    assert _lengths_from_list_offsets(ds) is None
+    assert _lengths_from_list_offsets(Dataset.from_dict({"text": ["a", "b"]})) is None  # no input_ids
+
+
 def test_length_batch_helper_returns_int_lengths():
     out = _length_batch({"input_ids": [[1, 2, 3], [4], []]})
     assert out == {"length": [3, 1, 0]}

@@ -42,9 +42,13 @@ class PerceiverDenoiseTrainer(Trainer):
         batch_packing_mode: str = "none",
         train_lengths=None,
         length_group_mega_batch_mult: int = 20,
+        message_boundary_token_id: int = -1,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        # E21 telemetry: rows carrying the sender|receiver boundary and the share of real tokens
+        # that sit after it (the tokens whose CE depends on the message channel).
+        self.message_boundary_token_id = int(message_boundary_token_id)
         self.objective_variant = objective_variant
         self.contrastive_weight = contrastive_weight
         self.contrastive_temperature = contrastive_temperature
@@ -64,6 +68,8 @@ class PerceiverDenoiseTrainer(Trainer):
             "rows": 0.0,
             "batch_max_length": 0.0,
             "batches": 0.0,
+            "boundary_rows": 0.0,
+            "receiver_tokens": 0.0,
         }
         self._padding_window_started: float | None = None
         self.anchor_loss = anchor_loss
@@ -113,11 +119,18 @@ class PerceiverDenoiseTrainer(Trainer):
             mega_batch_mult=self.length_group_mega_batch_mult,
         )
 
-    def _record_padding_metrics(self, attention_mask: torch.Tensor | None) -> None:
+    def _record_padding_metrics(
+        self, attention_mask: torch.Tensor | None, input_ids: torch.Tensor | None = None
+    ) -> None:
         if attention_mask is None or attention_mask.ndim != 2:
             return
         if self._padding_window_started is None:
             self._padding_window_started = time.perf_counter()
+        if self.message_boundary_token_id >= 0 and input_ids is not None and input_ids.shape == attention_mask.shape:
+            is_b = (input_ids == self.message_boundary_token_id) & attention_mask.bool()
+            after = (is_b.long().cumsum(dim=1) > 0) & attention_mask.bool() & ~is_b
+            self._padding_totals["boundary_rows"] += float(is_b.any(dim=1).sum().item())
+            self._padding_totals["receiver_tokens"] += float(after.sum().item())
         real_tokens = float(attention_mask.detach().sum().item())
         slots = float(attention_mask.numel())
         self._padding_totals["real_tokens"] += real_tokens
@@ -133,6 +146,8 @@ class PerceiverDenoiseTrainer(Trainer):
             "rows",
             "batch_max_length",
             "batches",
+            "boundary_rows",
+            "receiver_tokens",
         )
         # MPS (local smoke on Apple silicon) has no float64; counts fit float32 there.
         acc_dtype = torch.float32 if self.args.device.type == "mps" else torch.float64
@@ -157,11 +172,11 @@ class PerceiverDenoiseTrainer(Trainer):
         for key in self._padding_totals:
             self._padding_totals[key] = 0.0
         self._padding_window_started = None
-        real_tokens, padded_tokens, rows, max_lengths, batches = values.tolist()
+        real_tokens, padded_tokens, rows, max_lengths, batches, boundary_rows, receiver_tokens = values.tolist()
         if batches == 0:
             return {}
         total_slots = real_tokens + padded_tokens
-        return {
+        out = {
             "data/pad_ratio": padded_tokens / total_slots if total_slots else 0.0,
             "data/real_tokens_per_batch": real_tokens / batches,
             "data/padded_tokens_per_batch": padded_tokens / batches,
@@ -169,6 +184,10 @@ class PerceiverDenoiseTrainer(Trainer):
             "data/mean_batch_max_length": max_lengths / batches,
             "perf/real_tokens_per_second": real_tokens / float(elapsed.item()),
         }
+        if self.message_boundary_token_id >= 0:
+            out["data/message_rows_frac"] = boundary_rows / rows if rows else 0.0
+            out["data/receiver_token_frac"] = receiver_tokens / real_tokens if real_tokens else 0.0
+        return out
 
     def log(self, logs: dict[str, float], start_time: Optional[float] = None) -> None:
         # Periodic training logs use ``loss`` on every rank. The final train()
@@ -528,7 +547,7 @@ class PerceiverDenoiseTrainer(Trainer):
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         del num_items_in_batch
         if model.training:
-            self._record_padding_metrics(inputs.get("attention_mask"))
+            self._record_padding_metrics(inputs.get("attention_mask"), inputs.get("input_ids"))
         if not model.training or (
             self.objective_variant
             in {OBJECTIVE_RECONSTRUCTION, OBJECTIVE_PREFIX_SUFFIX, OBJECTIVE_CAUSAL_LM}

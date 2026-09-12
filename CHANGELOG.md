@@ -15,6 +15,132 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-11] - E21 latent-message pretraining: boundary token + `KVCompressor` on the Perceiver AR global read
+
+**Why:**
+- E21 (`docs/experiments_specs/ahead/E21_latent_message_pretraining.md`, plan
+  `E21_latent_message_pretraining_plan.md`) asks whether a model trained to read its own prefix
+  only through a few compressed slots learns a latent *message* that carries the prefix — the
+  encode → reason step of the vision, tested inside the E18 foundation instead of a new stack.
+  Implemented as config over the shared `perceiver_ar` family; every E18 checkpoint still loads
+  (the two compressor tensors are the only new parameters, zero-init = mean pooling).
+
+**Changed:**
+- `nn/perceiver_ar_lm.py`: `PerceiverARConfig.message_boundary_token_id` (−1 = off) and
+  `message_compress_ratio`; `MessageCtx` / `make_message_mask_pred` / `dense_message_mask`
+  (raw keys never cross the boundary; receivers see slots of complete sender blocks of their own
+  document); `KVCompressor` (attention-pooled K/V per kv-head + zero-init residual, one slot per
+  `ratio` prefix tokens; ratio 1 = the uncompressed arm U); `attend_message` (flex block mask
+  over `S + n_slots` keys, dense sdpa fallback); local layers and the n-gram hash see the boundary
+  as a document start (`local_doc_ids = doc·K + side`). Probe controls `message_override`
+  (`none` / `swapped` / `raw`), `prefix_kv(as_message=True)` and the receiver-only
+  `forward(message_kv=..., position_offset=P)`. Flash backend refused when the message is on.
+- `data/data_collators.py`: `DataCollatorForCausalLM(message_boundary=(id, frac, min), seed)`
+  draws a deterministic per-row boundary at `P ~ U[min, L−min)` for a `frac` share of long
+  documents (token replaced, label −100; packed rows per document; eval collator never inserts).
+- `training/concept_pretraining_args.py` / `concept_pretraining_factories.py`:
+  `--par_message_boundary_token_id`, `--par_message_compress_ratio`, `--message_boundary_frac`,
+  `--message_boundary_min`; compressor allowed as a fresh module on warm start.
+- `scripts/train_concept_pretraining_multigpu.sh`, `scripts/launch_e18.sh`:
+  `PAR_MESSAGE_BOUNDARY_TOKEN`, `PAR_MESSAGE_COMPRESS_RATIO`, `MESSAGE_BOUNDARY_FRAC`,
+  `MESSAGE_BOUNDARY_MIN`.
+- `scripts/build_retrieval_mix_dataset.py --boundary_id`: keyed-recall rows with every source
+  before and every target after the boundary (recall must pass through the message slots).
+- `evaluation/long_context_probes.py --probe message`: paired real / none / swapped / raw
+  receiver-CE ablation on real text (`message_gain@L`, `message_specificity@L`,
+  `compression_cost@L`, per-span deltas with standard errors, sender-side noise floor);
+  `MESSAGE_SPANS` knob in `scripts/eval_perceiver_ar_suite.sh`.
+- `training/concept_pretraining_trainer.py`: `data/message_rows_frac` and
+  `data/receiver_token_frac` telemetry next to the padding metrics when the model has a boundary id.
+- Launch-time data scans removed: `data/length_cache.py` derives row lengths from the Arrow list
+  offsets of the interleaved mix (bit-identical to the 2.73M-row Polonez cache, < 1 s instead of
+  ~37 min); `scripts/manifest_token_stats.py` sums the length sidecar / offsets instead of
+  re-reading every token (equal to the scanned total on `e18b_lm_ret05`). Both keep the map scan
+  as fallback.
+- Tests: `tests/test_perceiver_ar_message.py` (off-path identity, warm-start load, mask
+  semantics, severance of logits and gradients, r=1 ≡ raw, swapped ≡ other row, round trip
+  of the receiver-only forward, packed rows, padding), collator / launcher / builder / probe /
+  telemetry / length-cache tests. `tests/test_launch_e18.py` now parses the bf16-pinned protocol
+  on GPU-less machines. A CPU end-to-end run through `launch_e18.sh`'s argument flow (E18 tiny →
+  E21 warm start → train → eval → save) passed locally.
+
+## [2026-09-11] - Evaluation layer for `perceiver_ar`: lm-eval-harness reasoning + RULER-lite long context
+
+**Why:**
+- E18/E21 decisions rested on training CE and a single hand-launched passkey probe. The family
+  had no reasoning evaluation and no long-context test beyond needle retrieval, and nothing
+  was comparable across checkpoints or to public models. Decision record:
+  `docs/engineering_specs/long_context_reasoning_eval_layer.md`.
+
+**Changed:**
+- `evaluation/lm_eval_perceiver_ar.py` (new): registers `perceiver_ar` as an lm-evaluation-harness
+  `HFLM` subclass (sdpa, `attn_pad_multiple=1`, softcapped logits scored as trained; `generate`
+  deliberately unsupported).
+- `evaluation/run_lm_eval_suite.py` (new): `core` / `full` tiers over the SmolLM2-card task set,
+  `--hf_model` reference rows, per-tag JSON + `summary.csv` upsert.
+- `evaluation/long_context_probes.py`: teacher-forced RULER-lite probes `multikey`, `vt`
+  (variable tracking), `fwe` (frequent-words extraction) with exact / token / first-token
+  accuracy per length; `--probe suite` runs several probes from one model load with per-probe
+  error capture; tokenizer resolved from the checkpoint dir before the SmolLM3 default.
+- `evaluation/summarize_eval_suite.py` (new): one markdown table across tags from the lm-eval CSV
+  and the long-context / reach JSONs.
+- `scripts/eval_perceiver_ar_suite.sh` (new): health → lm-eval ∥ long-context suite + reach on two
+  GPUs, failure tolerant, outputs under `Cache/eval/<tag>/` and `Cache/Evaluation_reports/lm_eval/`.
+- `analysis/check_model_health.py`: `--model_type perceiver_ar`; forward/loss checks drop
+  tokenizer keys the model does not accept.
+- Tests: `tests/test_lm_eval_perceiver_ar.py`, `tests/test_summarize_eval_suite.py`, new probe
+  builder / suite tests in `tests/test_long_context_probes.py`.
+- `.cursor/skills/experiment-evaluate/SKILL.md`: `perceiver_ar` inventory rows and pipeline section.
+
+**Fixed (2026-09-12, first Polonez run):**
+- `social_iqa` aborted the whole harness run: `allenai/social_i_qa` is still a script dataset and
+  datasets 4.x refuses loading scripts. `evaluation/lm_eval_tasks/social_iqa.yaml` overrides the
+  built-in task (same prompt and metric) with `revision: refs/convert/parquet`; the runner passes
+  a `TaskManager(include_path=evaluation/lm_eval_tasks)` so the override shadows the built-in.
+- `scripts/eval_perceiver_ar_suite.sh` hung after both halves finished: under `exec > >(tee …)`
+  a bare `wait` (bash ≥ 5.1) also waits for the `tee` process substitution. Waits on the two half
+  PIDs instead.
+- Job scripts launched from Byobu on Polonez must `export PATH="$HOME/.local/bin:$PATH"` (`uv`
+  is not on the non-interactive shell's PATH).
+- `wikitext` `loglikelihood_rolling` OOMed on a 3090 (one `[B, S, 128k]` fp32 logits tensor,
+  15.7 GiB). `evaluation/lm_eval_perceiver_ar.py` `_model_call` now returns log-probs computed
+  in row chunks of ≤ 2 GiB (harness `log_softmax` is idempotent on log-probs), and
+  `--batch_size` defaults to `auto` (the harness probes a batch per request type: 64 for
+  multiple-choice, 7 for rolling at 32k). Row chunking is unit-tested for exactness.
+- First results (E18 stage A / dense / E18b arms / SmolLM2-135M) are recorded in
+  `docs/2_Experiments_Registry/run_reports/e18_baseline_eval_suite_20260912.md`.
+
+## [2026-09-12] - E21 first Polonez smokes: three blockers fixed
+
+**Fixed:**
+- `scripts/train_concept_pretraining_multigpu.sh`: `--ddp_backend nccl` is emitted only when
+  `NUM_GPUS * NUM_MACHINES > 1`. With one process accelerate's simple launcher sets no
+  `LOCAL_RANK`, and the explicit backend made transformers' `PartialState` query an
+  uninitialised process group ("Default process group has not been initialized") — the
+  1-GPU calibration / smoke path was dead.
+- `nn/perceiver_ar_lm.py`: the E21 message flex kernel did not compile on RTX 3090s (sm86) at
+  S = 32k / head_dim 128 / bf16 — "No valid triton configs … Required: 102400 Hardware
+  limit: 101376". Every tensor a `mask_mod` captures is gathered into an integer tile inside the
+  Triton template; the predicate captured four int64 buffers (`doc`, `side`, `slot_doc`,
+  `slot_side`) and landed 1 KB over the 99 KB shared-memory budget (the E18 predicate captures
+  one). `make_message_mask_pred` now captures two int32 tags (`doc * M + side`, M = 2·n_sides;
+  slot tags likewise, −1 for pad / invalid): "same doc and side" is one equality, "same doc,
+  earlier side" is the range test `0 < tag_q − slot_tag < n_sides`, the `raw` override uses
+  `floor(tag / M)`. `MessageCtx` gains `n_sides`, `tag_stride()`, `tags()`; the dense reference
+  mask also rejects invalid slots explicitly. Measured at B=2 × 32k, h=6/g=2, dh=128: four int64
+  buffers fail; four int32 49 ms, two int64 tags 50 ms, two int32 tags 47 ms fwd+bwd; block
+  mask ≡ dense mask in every override mode on packed 3-side / padded rows (new unit test also
+  asserts the closure holds int32/bool only); flex vs sdpa parity 1 bf16 ulp. Note: fp32 at
+  head_dim 128 needs 148 KB and cannot run through flex on a 3090 for any pattern — train and
+  evaluate in bf16 there.
+- `data/data_collators.py` `_draw_message_boundaries`: a document of exactly `2 * min_len`
+  tokens made `rng.integers(min_len, L - min_len)` an empty range (`ValueError: low >= high`
+  in the 4-GPU smoke). Both sides need ≥ `min_len` tokens after the boundary replaces position
+  P, so such documents are skipped (`L <= 2 * min_len`). Regression test added.
+- `tests/test_perceiver_ar_message.py::test_message_flex_matches_sdpa_cuda` drew different
+  random `compressor.delta` weights for the two models and failed for a reason unrelated to
+  the kernels; the sdpa model is perturbed once and its `state_dict` copied.
+
 ## [2026-09-07] - Document packing (`batch_packing_mode=pack`), E18 main-run recipe, multi-node launch
 
 **Why:**

@@ -209,7 +209,7 @@ retrieval** (P2, and the reach-Δ asymmetry).
 | C | none | 4.091 | — (negative control: all Δ exactly 0) |
 
 Amended P3: **reach-Δ > 0 at 3σ ✅ (25σ, arm A); "A beats C by ≥ 1%" ❌ (−0.02%)**. Verdict: *used, not
-useful*. Follow-up: [E18b](../../experiments_specs/ahead/E18b_retrieval_trained_read.md) tests whether
+useful*. Follow-up: [E18b](../../experiments_specs/done_failed/E18b_retrieval_trained_read.md) tests whether
 dense retrieval supervision makes the read a general retriever; the read stays at the bottom.
 
 ## Next (iteration 2, needs a go)
