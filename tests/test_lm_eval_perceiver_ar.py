@@ -136,6 +136,7 @@ def test_suite_runner_end_to_end_on_tiny_checkpoint(tmp_path, monkeypatch):
     def fake_simple_evaluate(model, tasks, **kw):
         captured["model"] = model
         captured["tasks"] = tasks
+        captured["task_manager"] = kw.get("task_manager")
         return {"results": {"piqa": {"acc_norm,none": 0.5, "acc,none": 0.49}}, "versions": {"piqa": 1},
                 "n-samples": {"piqa": {"original": 10, "effective": 10}}, "config": {"model": "perceiver_ar"}}
 
@@ -148,6 +149,11 @@ def test_suite_runner_end_to_end_on_tiny_checkpoint(tmp_path, monkeypatch):
     assert rc == 0
     assert captured["tasks"] == ["piqa"]
     assert type(captured["model"]).__name__ == "PerceiverARLMEval"
+    # the runner's TaskManager must carry the repo-local overrides (social_iqa read from parquet)
+    tm = captured["task_manager"]
+    assert tm.task_index["social_iqa"]["yaml_path"].startswith(str(runner.TASK_OVERRIDES_DIR))
+    assert tm._get_config("social_iqa")["dataset_kwargs"] == {"revision": "refs/convert/parquet"}
+    assert "hellaswag" in tm.task_index  # built-in tasks stay registered next to the overrides
     payload = json.loads((out_dir / "tiny.json").read_text())
     assert payload["results"]["piqa"]["acc_norm,none"] == 0.5 and payload["model_kind"] == "perceiver_ar"
     csv_text = (out_dir / "summary.csv").read_text()

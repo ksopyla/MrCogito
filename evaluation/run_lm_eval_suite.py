@@ -36,6 +36,11 @@ CORE_TASKS = [
 ]
 FULL_EXTRA = ["mmlu", "sciq", "copa"]
 
+# Task yamls that override built-in harness tasks of the same name (later include paths win in
+# `TaskManager`). Currently: `social_iqa` read from the Hub's parquet branch because datasets>=4
+# refuses the dataset's loading script.
+TASK_OVERRIDES_DIR = Path(__file__).resolve().parent / "lm_eval_tasks"
+
 # Metric reported per task in the summary row (the one the model cards quote).
 MAIN_METRIC = {
     "hellaswag": "acc_norm", "arc_easy": "acc_norm", "arc_challenge": "acc_norm", "piqa": "acc_norm",
@@ -144,12 +149,14 @@ def main(argv=None):
         pass  # "auto" / "auto:N"
 
     import lm_eval
+    from lm_eval.tasks import TaskManager
 
     t0 = time.time()
     lm, model_kind, model_ref = build_model(args)
     res = lm_eval.simple_evaluate(
         model=lm,
         tasks=tasks,
+        task_manager=TaskManager(include_path=str(TASK_OVERRIDES_DIR)),
         num_fewshot=args.num_fewshot,
         limit=args.limit,
         random_seed=args.seed,
