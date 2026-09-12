@@ -51,9 +51,13 @@ re-read on 2026-09-12 for the DeepSeek / Qwen claims (URLs inline). Anything not
    [card](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash)). Qwen3.8-Flash-Next compresses
    the prefix into a **fixed-size** GDN state in 3 of 4 layers and keeps one full/sparse layer in
    four because "no finite-state memory reproduces exact retrieval"
-   ([report](https://arxiv.org/html/2608.30320)). So: *positional pooling works at scale*; *encoder
-   depth matters*; *exact recall needs a raw or indexed path*; *pooled slots never talk to each
-   other* in any shipped model.
+   ([report](https://arxiv.org/html/2608.30320)). Outside the labs, **LCLM** (Jun 2026,
+   [arXiv:2606.09659](https://arxiv.org/abs/2606.09659)) ran a from-scratch architecture sweep of
+   encoder→latent→decoder compressors at 16× and scaled the winner to 0.6B-enc / 4B-dec at 1:4–1:16:
+   one latent per block, mean pooling > CLS pooling, encoder window ≥ 256, loss on uncompressed
+   tokens interleaved with compressed spans. So: *positional pooling works at scale*; *encoder depth
+   / window matters*; *exact recall needs a raw or indexed path*; *pooled slots never talk to each
+   other* in any shipped model (and LCLM's one attempt at that did not move CE).
 3. **What is still unoccupied** (unchanged from the 2026-09-11 note, now sharper): (a) a latent
    array whose slots **interact** (slot-to-slot self-attention / a refinement loop) — HCA/CSA entries
    are pooled independently and only ever read; (b) slots trained as a **message** another copy
@@ -135,8 +139,10 @@ every layer instead of compressing it after layer 1
   KV; partial RoPE (last 64 dims) with a `−i` rotation on the outputs so pooled values carry relative
   positions; learnable attention sinks; MQA over pooled entries. Training: 4K → 16K → 64K → 1M;
   dense attention for the first 1T tokens, then sparse; Muon (RMS 0.18 rescale, wd 0.1) + AdamW for
-  embeddings/head/norms; MTP 0.3 → 0.1. MRCR-1M 83.5 (Pro-Max), CorpusQA-1M 62.0; retrieval flat to
-  128K, degrading beyond. KV cache ≈ 2% of a BF16 GQA-8 baseline at 1M.
+  embeddings/head/norms; MTP 0.3 → 0.1. MRCR-1M **83.5 MMR%** (Pro-Max; the 8-needle accuracy at 1M
+  is ≈ 0.59 per the [HF blog](https://huggingface.co/blog/deepseekv4) — do not conflate the two
+  metrics), CorpusQA-1M 62.0; retrieval flat to 128K, degrading beyond. KV cache ≈ 2% of a BF16
+  GQA-8 baseline at 1M.
 - **Correction to the 2026-09-11 note.** It says the frontier compresses "in bytes, not in count …
   still one slot per token". That is true of **V4.1-Flash's CSA2** (r = 2 in the encoder, r = 1 in
   the decoder) but **false for V4's HCA**: 128:1 in slot count, positionally allocated, per layer,
@@ -181,7 +187,34 @@ every layer instead of compressing it after layer 1
   multikey, which is what E18b already showed for a *learned* channel and what E21's `raw` arm U
   controls for.
 
-### 4.4 Convergence table (what to copy, what is still ours)
+### 4.4 The closest published cousin of the revisit: LCLM (Jun 2026)
+**End-to-End Context Compression at Scale** — Li, McLeish, … Goldstein, Lotfi, Goldblum, Izmailov
+([arXiv:2606.09659](https://arxiv.org/abs/2606.09659)). An encoder maps **each contiguous block of N
+tokens to one latent token** (positional allocation again), an MLP adapter projects it, a decoder
+consumes latents as context. They ran a **from-scratch architecture sweep** (Qwen3-0.6B-shaped enc +
+dec, 38B tokens, 16×) and then continually pre-trained 0.6B-enc / 4B-dec at 1:4, 1:8, 1:16 on
+350B tokens; the result sits on a new RULER / LongBench Pareto frontier vs KV-eviction methods.
+Findings that transfer directly to a Perceiver v3 design, in their words: **mean pooling beats
+CLS/EOS-token pooling** (concat ≈ mean; concat wins at 4×, mean at 16×); **encoder window W matters
+a lot** — W = N (16) → 256 is a large gain, 256 → 1024 a smaller one (contextualise before you
+pool: the depth law); **causal encoder mask**; an **attention adapter (one self-attention layer over
+the latent sequence) did *not* beat an MLP adapter on pre-training loss**; training format =
+**interleaved compressed / uncompressed segments with loss only on uncompressed tokens** (E02's
+receiver framing, generalised to many boundaries per row — this is E21's objective); an
+**auxiliary reconstruction task** to keep fine-grained detail for exact retrieval; staged
+training when warm-starting; and an agent that **skims the compressed view and `EXPAND`s a raw
+512-token chunk on demand** recovers exact-match NIAH — the "coarse slots + fine raw path" split
+that DeepSeek implements with HCA + CSA. Two implications for us: E21's design is independently
+validated at 4B scale (positional slots, interleaved boundaries, loss through the latents), and
+the E22 "slots talk to each other" claim has one negative data point on *loss* — it must be judged
+on aggregation / multi-hop tasks, where loss and downstream diverge (Qwen's lesson), not on CE.
+Related 2026 items from the scout (not re-read): Latent Context Compilation
+([arXiv:2602.21221](https://arxiv.org/html/2602.21221), inference-time distillation to buffer
+tokens, up to 32×), Baseten's STILL (a Perceiver bottleneck cross-attending the full KV into a
+compact KV, KL-distilled; blog only), Parcae (stable looped LM + loop scaling laws at ~1.3B,
+[arXiv:2604.12946](https://arxiv.org/pdf/2604.12946)).
+
+### 4.5 Convergence table (what to copy, what is still ours)
 
 | Mechanism | DeepSeek V4 / V4.1 | Qwen3.8-Next | Ours (dev / strategy branch) |
 |---|---|---|---|
@@ -218,23 +251,47 @@ every layer instead of compressing it after layer 1
    K weight-tied steps, re-readable across steps per BAPO/Pfau) and that is **trained as a message**
    (E21) is the Perceiver vision restated on the frontier's substrate. It is cheap (O(C²) with
    C ≪ N), it is the only place "reasoning bandwidth" can be measured (gain vs K on BAPO-hard and
-   RULER aggregation tasks), and no lab has an incentive to re-pretrain for it.
+   RULER aggregation tasks), and no lab has an incentive to re-pretrain for it. **Tension to carry
+   into the spec:** LCLM's sweep found one self-attention layer over the latent sequence did not
+   lower pre-training *loss* vs an MLP adapter (§4.4). If slot interaction pays, it will show on
+   aggregation / multi-hop and on the receiver gain, not on CE — which is exactly where Qwen and
+   our own E05 say loss and capability diverge. A spec whose only gate is CE would miss it either way.
 
 ## 6. Modernisation: what to port, what to retire
 
-Feature gap between the historical concept encoder and the maintained platform (details in the code
-audit appended in §8):
+Code audit of `dev` @ `e6434e6` (explore pass, 2026-09-12). The historical concept encoder is
+`nn/concept_encoder.py` (`ConceptEncoderConfig` L43–224; classic `ConceptEncoderLayer` L226–332;
+`BiXTCrossAttention` L335–444; `BiConceptEncoderLayer` L470–577; `ConceptEncoder` L579+) consumed by
+`ConceptEncoderForConditionalLM` (`nn/concept_encoder_perceiver.py` ~L1400–1970, per-layer
+cross-attention to the `[B,C,H]` concepts, `ConceptCausalDecoderLayer` L1044–1154). The maintained
+platform is `nn/perceiver_ar_lm.py` (family `perceiver_ar`).
 
-| Feature | `nn/concept_encoder.py` (Perceiver / BiXT, E01–E05) | `nn/perceiver_ar_lm.py` (E18 platform) |
+| Feature | `nn/concept_encoder.py` + `ConceptEncoderForConditionalLM` (E01–E05) | `nn/perceiver_ar_lm.py` (E18 platform) |
 |---|---|---|
-| Attention kernel | `nn.MultiheadAttention` (no FlashAttention path with masks in training) | FlexAttention block masks / SDPA / FA, compiled |
-| Token positions in the encoder | learned absolute `token_position_embeddings` | RoPE, document-aware positions |
-| Norm / FFN | LayerNorm + GEGLU defaults (RMSNorm / SwiGLU optional) | RMSNorm + SwiGLU |
-| QK-norm, GQA, softcap, z-loss, value embeddings, U-net skips | none | all present |
-| Input | full-width token embeddings (or `token_embedding_dim` + projection) | tiny embed + hashed 2/3-gram tables |
-| Long context | sequence parallel via BiXT global-softmax path (1M validated on 3 × 3090) | block-swept read, `prefix_kv()`, `reach_override`, `KVCompressor` + message boundary (branch) |
-| Output head | `ChunkedLMHeadCE` | chunked / Liger fused CE |
-| Optimiser | Muon available | Muon + AdamW split, calibrated (wd 0.1, adamw 2e-4) |
+| Latent count | fixed `nn.Embedding(concept_num, H)`, free latents expanded per batch (L621–625) | none on `dev` (`concept_num=0`; global read); per-block slots = `KVCompressor` on the strategy branch |
+| Concept ↔ token attention | classic: uni-directional C←T via `nn.MultiheadAttention`; BiXT: shared similarity, **manual matmul + softmax** (L335–444) | block-swept causal read via FlexAttention / SDPA / FA (L347–419) |
+| Token positions in the encoder | **learned absolute** `token_position_embeddings` (L600–609); concept positions default `none` | RoPE with document-aware positions, NoPE-every-k, optional global NoPE / SSMax (L483–496, L690–698) |
+| Norm / FFN | **Pre-LN, LayerNorm + GEGLU defaults**; RMSNorm / SwiGLU opt-in (L30–41, L261–266) | RMSNorm + SwiGLU (L554–562) |
+| QK-norm · GQA · softcap · z-loss · value embeddings · U-net skips · zero-init out-proj | none | all present (L512–513, L68, L607–657, L520–545, L565–588, L707–710) |
+| Input | full-width token embeddings or `token_embedding_dim` + projection | tiny embed + hashed 2/3-gram tables (`TinyHashedEmbedding`, L455–475) |
+| Decoder self-attention | manual QKV + optional RoPE + SDPA; sliding window `decoder_context_window` (E05) | GQA, QK-norm, SWA stack, one global read |
+| Long-context path | sequence parallel via the BiXT global-softmax path (1M validated on 3 × 3090, 2026-06-27) | `prefix_kv()` (L943–959), `reach_override()` (L751–773), `write_back_proj` params (zero-init, **not wired into `forward`**, L701–712); `KVCompressor` + `message_boundary` **absent on `dev`**, present on the strategy branch |
+| Output head | `ChunkedLMHeadCE` (L1332–1397) | chunked CE / Liger fused CE |
+| Optimiser | Muon available (`nn/muon.py`) | Muon + AdamW split, calibrated (wd 0.1, adamw 2e-4) |
+| Tests | `tests/test_concept_encoder_layer.py` (default non-BiXT path); BiXT only indirectly | E18/E21 test suites (513 green on the branch) |
+
+Registered families on `dev` (`training/concept_pretraining_factories.py`): `perceiver_ar`,
+`backbone_concept`, `concept_ar` (+`_prefix` / `_bixt`), `perceiver_denoise` (+`_bixt` /
+`_contrastive`); objectives `reconstruction`, `reconstruction+contrastive`, `prefix_suffix`,
+`causal_lm`. The `concept_ar` / `perceiver_denoise` families remain loadable for E01–E05 checkpoints.
+
+What the frontier speedrun stack looks like now, for calibration (modded-nanogpt record #89,
+2026-07-17, 1.23 min to 3.28 on 8×H100; [README](https://github.com/KellerJordan/modded-nanogpt)):
+RoPE + QK-norm + ReLU², **NorMuon with Polar Express**, value embeddings + U-net/MUDD skips, a
+GPU-resident **bigram hash embedding**, logit softcap + FP8 head, FA3 with long–short sliding
+windows and dynamic YaRN, MTP, simplified hyper-connections, cautious weight decay. Relative to that,
+`perceiver_ar_lm.py` lacks NorMuon/Polar Express, FP8 head, long–short SWA warm-up and
+hyper-connections; none of these touches the load-bearing question.
 
 **Recommendation:** do not modernise `concept_encoder.py` in place (checkpoint loadability for
 E01–E05 must be preserved anyway). Implement the slot array as a config-selectable component of
@@ -273,6 +330,12 @@ points on aggregation while passkey through the raw+CSA-style path stays ≥ 0.9
 loss on ordinary rows within 1% of the K = 0 control. Kill: flat gain-vs-K after one iteration
 (K = 8), or aggregation < K = 0. Diagnostics: RankMe of the slot array per level, reach ablation,
 `none` / `swapped`, cache bytes/token (target 64 B at level 1, 4 B at level 2 → 10M = 640 MB + 40 MB).
+Ingredients to lift from the frontier into the plan, not to re-derive: mean/softmax pooling with a
+learnable positional bias (HCA; LCLM found mean > CLS-token pooling), encoder window ≥ 256 tokens
+before pooling (LCLM), a small raw window as the only uncompressed path (DeepSeek 128), QK-norm on
+pooled KV and block-end partial RoPE (DeepSeek), an auxiliary reconstruction / retrieval row mix so
+slots keep fine-grained detail (LCLM; E18b rows), and dense attention on the coarse level with an
+indexed fine level (HCA + CSA; LCLM's `EXPAND` agent).
 Cross-domain hook: hierarchical pooling + a recurrent core over the coarse level is a cortical
 column / thalamocortical loop — fast local state, slow global refinement — and BAPO Thm 8 in
 continuous form (constant per-step bandwidth over C slots, K steps).
