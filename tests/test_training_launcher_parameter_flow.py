@@ -129,8 +129,9 @@ def test_launcher_e05_profile_reaches_canonical_parser(tmp_path):
     assert ddp_capture_path.read_text(encoding="utf-8").strip() == "7200"
 
     parser_args = args[entrypoint_index + 1 :]
-    ddp_backend_index = parser_args.index("--ddp_backend")
-    del parser_args[ddp_backend_index : ddp_backend_index + 2]
+    if "--ddp_backend" in parser_args:          # only emitted for multi-process launches
+        ddp_backend_index = parser_args.index("--ddp_backend")
+        del parser_args[ddp_backend_index : ddp_backend_index + 2]
     parser_args.remove("--bf16")
     model_args, _, data_args, optim_args, training_args = (
         build_argument_parser().parse_args_into_dataclasses(args=parser_args)
@@ -587,8 +588,12 @@ def test_multi_gpu_flag_only_when_more_than_one_process(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
     assert "--multi_gpu" not in args
     assert "--num_processes=1" in args          # passed as a single --flag=value token
+    # a passed --ddp_backend makes accelerate's PartialState query a process group that the
+    # single-process simple launcher never creates -> only emitted with > 1 process
+    assert "--ddp_backend" not in args
 
     result, args, _ = _run_launcher(tmp_path, {"NUM_GPUS": "4"})
     assert result.returncode == 0, result.stdout + result.stderr
     assert "--multi_gpu" in args
     assert "--num_processes=4" in args
+    assert args[args.index("--ddp_backend") + 1] == "nccl"
