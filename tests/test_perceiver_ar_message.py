@@ -138,6 +138,49 @@ def test_message_mask_no_raw_key_crosses_the_boundary_and_slots_are_side_gated()
         assert dense.any(dim=1).all()   # no empty query row (sdpa would NaN)
 
 
+def test_message_pred_equals_dense_mask_on_packed_multi_side_rows_and_captures_int32_only():
+    """The tag-based flex predicate (two int32 buffers) is the dense reference mask exactly, on
+    packed rows with several documents, up to three sides per document, padding and invalid
+    (straddling) slots; and it captures no int64 tensor (four int64 tiles blew the sm86 shared
+    memory budget at head_dim 128)."""
+    torch.manual_seed(7)
+    B, S, r = 2, 48, 4
+    doc = torch.tensor([[0] * 20 + [1] * 28, [2] * 16 + [3] * 24 + [-1] * 8])
+    side = torch.zeros(B, S, dtype=torch.long)
+    side[0, 9:14] = 1; side[0, 14:20] = 2            # doc 0: three sides
+    side[0, 35:] = 1                                  # doc 1: two sides
+    side[1, 6:16] = 1                                 # doc 2: two sides
+    side[1, 30:40] = 1                                # doc 3: two sides, then pad
+    key_valid = doc >= 0
+    nb = S // r
+    docp, sidep = doc.view(B, nb, r), side.view(B, nb, r)
+    homog = (docp == docp[..., :1]).all(-1) & (sidep == sidep[..., :1]).all(-1) & (docp[..., 0] >= 0)
+    slot_doc = torch.where(homog, docp[..., 0], torch.full_like(docp[..., 0], -1))
+    slot_side = torch.where(homog, sidep[..., 0], torch.zeros_like(sidep[..., 0]))
+    assert (slot_doc < 0).sum() >= 3
+    qi = torch.arange(S)[:, None]
+    kj = torch.arange(S + nb)[None, :]
+    for kv_ok in (None, key_valid):
+        for override in ("real", "none", "swapped", "raw"):
+            ctx = _ctx(side, doc, slot_doc, slot_side, override)
+            assert ctx.n_sides == 0 and ctx.tag_stride() == 6      # lazily derived: 3 sides
+            pred = make_message_mask_pred(S, ctx, kv_ok)
+            for cell in pred.__closure__:
+                v = cell.cell_contents
+                if torch.is_tensor(v):
+                    assert v.dtype in (torch.int32, torch.bool), v.dtype
+            got = torch.stack([pred(torch.tensor(b), torch.tensor(0), qi, kj) for b in range(B)])
+            ref = dense_message_mask(S, ctx, kv_ok, "cpu")[:, 0]
+            rows = key_valid if kv_ok is not None else torch.ones_like(key_valid)
+            assert torch.equal(got[rows], ref[rows]), (override, kv_ok is not None)
+    # sanity on the geometry itself: doc 0's side-2 tokens see the two complete side-0 blocks of
+    # their own document (blocks 2 and 3 straddle a side change), none of doc 1's
+    ctx = _ctx(side, doc, slot_doc, slot_side, "real")
+    slot = dense_message_mask(S, ctx, None, "cpu")[0, 0, :, S:]
+    expect = (slot_doc[0] == 0) & (slot_side[0] < 2)
+    assert torch.equal(slot[19], expect) and expect.sum() == 2
+
+
 def test_kv_compressor_is_mean_pool_at_init_and_identity_at_ratio_one():
     c = cfg(message_boundary_token_id=M, message_compress_ratio=4)
     comp = KVCompressor(c)

@@ -342,6 +342,7 @@ class MessageCtx:
     slot_doc: torch.Tensor      # [B,nb] int64
     slot_side: torch.Tensor     # [B,nb] int64
     slot_pos: torch.Tensor      # [B,nb] int64 — RoPE position of each slot (its block's last token)
+    n_sides: int = 0            # max(side) + 1 over the batch; 0 = derive lazily from `side`
     override: str = "real"      # "real" | "none" | "swapped" | "raw"
     external: Optional[tuple[torch.Tensor, torch.Tensor]] = None  # (k̄, v̄) given by a receiver-only forward
 
@@ -349,11 +350,36 @@ class MessageCtx:
     def n_slots(self) -> int:
         return int(self.slot_doc.shape[1])
 
+    def tag_stride(self) -> int:
+        """Stride M of the (doc, side) → `doc * M + side` tag; M = 2·n_sides keeps the slot range
+        test `0 < tag_q − slot_tag < n_sides` false for every other document."""
+        k = self.n_sides or int(self.side.max().item()) + 1
+        return 2 * k
+
+    def tags(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """int32 `tag` [B,S] and `slot_tag` [B,nb]: `doc * M + side`, −1 for pad / invalid slots."""
+        m = self.tag_stride()
+        tag = torch.where(self.doc < 0, torch.full_like(self.doc, -1), self.doc * m + self.side)
+        slot_tag = torch.where(self.slot_doc < 0, torch.full_like(self.slot_doc, -1),
+                               self.slot_doc * m + self.slot_side)
+        return tag.to(torch.int32), slot_tag.to(torch.int32)
+
 
 def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Tensor]):
-    """mask_mod over KV = raw keys [0, S) ‖ slot keys [S, S + nb) for the global read."""
-    side, doc, slot_doc, slot_side = ctx.side, ctx.doc, ctx.slot_doc, ctx.slot_side
+    """mask_mod over KV = raw keys [0, S) ‖ slot keys [S, S + nb) for the global read.
+
+    The predicate captures two int32 tag buffers rather than the four int64 buffers
+    (`doc`, `side`, `slot_doc`, `slot_side`): every captured tensor is gathered into an integer
+    tile inside the Triton template, and with head_dim 128 / bf16 the four int64 tiles push the
+    kernel past the 99 KB shared-memory limit of sm86 (RTX 3090) — "No valid triton configs …
+    Required: 102400 Hardware limit: 101376". With `tag = doc * M + side` (M = 2·n_sides),
+    "same document and same side" is one equality and "same document, earlier side" is the
+    range test `0 < tag_q − slot_tag < n_sides`. `dense_message_mask` is the reference semantics.
+    """
     nb = ctx.n_slots
+    m = ctx.tag_stride()
+    n_sides = m // 2
+    tag, slot_tag = ctx.tags()
     raw_cross = ctx.override == "raw"
     slots_on = ctx.override not in ("none", "raw")
 
@@ -361,14 +387,21 @@ def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Te
         is_raw = kv < S
         j = torch.where(is_raw, kv, kv - S)
         js = torch.clamp(j, max=max(nb - 1, 0))
-        raw_ok = (j <= q) & (doc[b, j] == doc[b, q])
-        if not raw_cross:
-            raw_ok = raw_ok & (side[b, j] == side[b, q])
+        tq = tag[b, q]
+        tj = tag[b, j]
+        if raw_cross:
+            same = torch.div(tj, m, rounding_mode="floor") == torch.div(tq, m, rounding_mode="floor")
+        else:
+            same = tj == tq
+        raw_ok = (j <= q) & same
         if key_valid is not None:
             raw_ok = raw_ok & (key_valid[b, j] | (j == q))
-        slot_ok = (side[b, q] >= 1) & (slot_doc[b, js] == doc[b, q]) & (slot_side[b, js] < side[b, q])
         if not slots_on:
-            slot_ok = slot_ok & False
+            return raw_ok & is_raw
+        s = slot_tag[b, js]
+        d = tq - s
+        # `j < nb`: KV_LEN = S + nb is not a block multiple; keep the padded tail explicitly off.
+        slot_ok = (j < nb) & (s >= 0) & (d > 0) & (d < n_sides)
         return torch.where(is_raw, raw_ok, slot_ok)
 
     return pred
@@ -387,6 +420,7 @@ def dense_message_mask(S: int, ctx: MessageCtx, key_valid: Optional[torch.Tensor
         raw = raw & (key_valid.bool()[:, None, None, :] | torch.eye(S, dtype=torch.bool, device=device)[None, None])
     slot = (
         (side[:, None, :, None] >= 1)
+        & (ctx.slot_doc[:, None, None, :] >= 0)
         & (ctx.slot_doc[:, None, None, :] == doc[:, None, :, None])
         & (ctx.slot_side[:, None, None, :] < side[:, None, :, None])
     )
@@ -1042,7 +1076,7 @@ class PerceiverARLM(PreTrainedModel):
                 slot_doc=torch.zeros(B, nb, dtype=torch.long, device=dev),
                 slot_side=torch.zeros(B, nb, dtype=torch.long, device=dev),
                 slot_pos=slot_pos.to(dev).expand(B, nb) if slot_pos.dim() == 1 else slot_pos.to(dev),
-                override=self._message_override, external=(k_bar, v_bar),
+                n_sides=2, override=self._message_override, external=(k_bar, v_bar),
             )
         is_b = input_ids == cfg.message_boundary_token_id
         if not bool(is_b.any()):
@@ -1063,7 +1097,7 @@ class PerceiverARLM(PreTrainedModel):
         end_idx = (torch.arange(nb, device=dev) * r + (r - 1)).clamp(max=S - 1)
         slot_pos = pos[:, end_idx]
         return MessageCtx(side=side, doc=doc, local_doc_ids=local, slot_doc=slot_doc, slot_side=slot_side,
-                          slot_pos=slot_pos, override=self._message_override)
+                          slot_pos=slot_pos, n_sides=K, override=self._message_override)
 
     # -- helpers ----------------------------------------------------------------------
     @staticmethod
