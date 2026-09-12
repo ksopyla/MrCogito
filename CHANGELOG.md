@@ -92,6 +92,17 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   builder / suite tests in `tests/test_long_context_probes.py`.
 - `.cursor/skills/experiment-evaluate/SKILL.md`: `perceiver_ar` inventory rows and pipeline section.
 
+**Fixed (2026-09-12, first Polonez run):**
+- `social_iqa` aborted the whole harness run: `allenai/social_i_qa` is still a script dataset and
+  datasets 4.x refuses loading scripts. `evaluation/lm_eval_tasks/social_iqa.yaml` overrides the
+  built-in task (same prompt and metric) with `revision: refs/convert/parquet`; the runner passes
+  a `TaskManager(include_path=evaluation/lm_eval_tasks)` so the override shadows the built-in.
+- `scripts/eval_perceiver_ar_suite.sh` hung after both halves finished: under `exec > >(tee …)`
+  a bare `wait` (bash ≥ 5.1) also waits for the `tee` process substitution. Waits on the two half
+  PIDs instead.
+- Job scripts launched from Byobu on Polonez must `export PATH="$HOME/.local/bin:$PATH"` (`uv`
+  is not on the non-interactive shell's PATH).
+
 ## [2026-09-07] - Document packing (`batch_packing_mode=pack`), E18 main-run recipe, multi-node launch
 
 **Why:**
