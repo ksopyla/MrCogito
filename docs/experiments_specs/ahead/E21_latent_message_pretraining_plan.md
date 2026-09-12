@@ -132,6 +132,13 @@ TARGET_TOKENS=500000000 PER_DEVICE_BATCH_SIZE=2 GRADIENT_ACCUMULATION_STEPS=4 ba
 ```
 The length cache and token stats of the new manifest are precomputed in the prep job (E18b lesson).
 
+**Signal share (measured 2026-09-12 on the length cache, 2,730,485 rows / 8.18B tokens, mean row 2,994):**
+rows ≥ 4096 (`MESSAGE_BOUNDARY_MIN`) are 14.0% of rows but **76.2% of tokens** (≥ 8192: 68.6%,
+≥ 16384: 58.6%). With `MESSAGE_BOUNDARY_FRAC=0.5` about 38% of all tokens sit in message rows and roughly
+19% of loss tokens are receiver tokens whose only route to the prefix is the message. Per-step
+`data/message_rows_frac` is therefore small and length-group dependent (0.3 in the ≥ 8k groups, 0 in the
+short-row groups of the 1-GPU smoke) — read it together with `data/receiver_token_frac`, not alone.
+
 ## 7. Tests & smoke
 - `tests/test_perceiver_ar_message.py` (new, tiny cfg, CPU/sdpa):
   1. boundary off (`token_id=-1`) ⇒ state dict and logits byte-identical to a model built from the same
