@@ -233,3 +233,7 @@ headline (see [team_brief](../sprind_frontier_ai/team_brief.md)).
 Canonical eval protocol, Tier-1 data-protocol upgrade, compute audit, and training-pipeline
 modularization are done — see `docs/engineering_specs/` and
 [evaluation_protocol.md](../3_Evaluations_and_Baselines/evaluation_protocol.md).
+**2026-09-12 — `perceiver_ar` eval layer on `dev`:** lm-evaluation-harness adapter + SmolLM2-card
+0-shot tiers, teacher-forced RULER-lite (`passkey`, `multikey`, `vt`, `fwe`, `buckets`, `reach`),
+health check, two-GPU runner `scripts/eval_perceiver_ar_suite.sh`. Spec:
+[long_context_reasoning_eval_layer.md](../engineering_specs/long_context_reasoning_eval_layer.md).

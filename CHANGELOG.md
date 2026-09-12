@@ -53,6 +53,11 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   PIDs instead.
 - Job scripts launched from Byobu on Polonez must `export PATH="$HOME/.local/bin:$PATH"` (`uv`
   is not on the non-interactive shell's PATH).
+- `wikitext` `loglikelihood_rolling` OOMed on a 3090 (one `[B, S, 128k]` fp32 logits tensor,
+  15.7 GiB). `evaluation/lm_eval_perceiver_ar.py` `_model_call` now returns log-probs computed
+  in row chunks of ≤ 2 GiB (harness `log_softmax` is idempotent on log-probs), and
+  `--batch_size` defaults to `auto` (the harness probes a batch per request type: 64 for
+  multiple-choice, 7 for rolling at 32k). Row chunking is unit-tested for exactness.
 
 ## [2026-09-07] - Document packing (`batch_packing_mode=pack`), E18 main-run recipe, multi-node launch
 
