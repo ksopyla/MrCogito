@@ -281,14 +281,13 @@ def test_message_flex_matches_sdpa_cuda():
     kw = dict(hidden_size=128, intermediate_size=256, num_attention_heads=4, num_kv_heads=2, head_dim=64,
               block=128, pre_window=64, attn_pad_multiple=128, message_boundary_token_id=M, message_compress_ratio=8)
     sdpa = make_model(seed=0, **kw).cuda().to(torch.bfloat16)
+    gi = sdpa.config.global_layer_index
+    with torch.no_grad():   # a non-trivial message (delta is zero-init); drawn once, shared below
+        sdpa.layers[gi].attn.compressor.delta.weight.normal_(0, 0.05)
     torch.manual_seed(0)
     flex = PerceiverARLM(cfg(attn_backend="flex", **kw)).cuda().to(torch.bfloat16)
     flex.load_state_dict(copy.deepcopy(sdpa.state_dict()))
     flex.eval()
-    gi = sdpa.config.global_layer_index
-    with torch.no_grad():   # a non-trivial message (delta is zero-init)
-        for m in (sdpa, flex):
-            m.layers[gi].attn.compressor.delta.weight.normal_(0, 0.05)
     S, P = 1024, 400
     x = with_boundary(rand_ids(2, S, seed=3), P).cuda()
     for mode in ("real", "none", "swapped", "raw"):
