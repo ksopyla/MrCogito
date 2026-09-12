@@ -89,6 +89,25 @@ def test_loglikelihood_matches_manual_softcapped_logprobs(tmp_path):
     assert isinstance(greedy, bool)
 
 
+def test_model_call_returns_logprobs_and_row_chunking_is_exact(tmp_path, monkeypatch):
+    """`_model_call` hands the harness normalised log-probs (its own log_softmax is then a
+    no-op) and the row-chunked path used for 2048-token rolling requests equals one big call."""
+    import evaluation.lm_eval_perceiver_ar as adapter
+
+    ck, _, _ = _save_checkpoint(tmp_path)
+    lm = adapter.PerceiverARLMEval(pretrained=str(ck), device="cpu", batch_size=4, max_length=24)
+    inps = torch.tensor([[4, 5, 6, 7], [8, 9, 10, 11], [3, 3, 4, 4], [12, 1, 2, 5], [6, 6, 6, 6]])
+    whole = lm._model_call(inps)
+    assert torch.allclose(whole.exp().sum(-1), torch.ones(whole.shape[:2]), atol=1e-4)
+    assert torch.allclose(torch.log_softmax(whole, dim=-1), whole, atol=1e-5)
+    with torch.no_grad():
+        ref = torch.log_softmax(lm.model(input_ids=inps).logits, dim=-1)
+    assert torch.allclose(whole, ref, atol=1e-5)
+    monkeypatch.setattr(adapter.PerceiverARLMEval, "LOGITS_CHUNK_BYTES", 2 * inps.shape[1] * V * 4)  # 2 rows/chunk
+    chunked = lm._model_call(inps)
+    assert torch.allclose(chunked, ref, atol=1e-5)
+
+
 def test_generate_until_is_explicitly_unsupported(tmp_path):
     import evaluation.lm_eval_perceiver_ar as adapter
 

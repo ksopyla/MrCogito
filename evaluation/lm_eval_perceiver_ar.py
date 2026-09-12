@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Optional
 
 import torch
+import torch.nn.functional as F
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
@@ -121,11 +122,26 @@ class PerceiverARLMEval(HFLM):
         )
         self.checkpoint_path = pretrained
 
+    # fp32 [rows, S, vocab] budget per forward chunk; the full-batch output is allocated once.
+    LOGITS_CHUNK_BYTES = 2 * 1024**3
+
     def _model_call(self, inps: torch.Tensor, attn_mask=None, labels=None) -> torch.Tensor:
         # Causal-only family: the harness right-pads and never passes an attention mask here.
         assert attn_mask is None and labels is None, "perceiver_ar is a causal-only eval model"
+        # The harness applies `log_softmax` to what we return and never reads raw logits, so we
+        # hand back log-probabilities (idempotent under its log_softmax). Computing them in row
+        # chunks bounds the peak at one full fp32 [B, S, V] tensor instead of the ~4 copies the
+        # softcap + log_softmax path would materialise for a 128k vocabulary at 2048 tokens.
+        B, S = inps.shape
+        V = int(self.model.config.vocab_size)
+        rows = max(1, self.LOGITS_CHUNK_BYTES // (S * V * 4))
         with torch.no_grad():
-            return self.model(input_ids=inps).logits
+            if rows >= B:
+                return F.log_softmax(self.model(input_ids=inps).logits, dim=-1)
+            out = torch.empty(B, S, V, dtype=torch.float32, device=inps.device)
+            for i in range(0, B, rows):
+                out[i:i + rows] = F.log_softmax(self.model(input_ids=inps[i:i + rows]).logits, dim=-1)
+            return out
 
     def _model_generate(self, context, max_length: int, stop, **generation_kwargs):
         raise NotImplementedError(

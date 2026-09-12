@@ -10,7 +10,7 @@
 # Knobs (env):
 #   LMEVAL_GPU=0 LONGCTX_GPU=1     GPU per half (same index -> sequential)
 #   TIER=core|full  LIMIT=         lm-eval tier / examples-per-task cap (smoke)
-#   MAX_LENGTH=2048 BATCH_SIZE=16  lm-eval context cap (loglikelihood tasks are short) / batch
+#   MAX_LENGTH=2048 BATCH_SIZE=auto  lm-eval context cap / batch (auto = harness probes what fits)
 #   CONTEXT_LENGTHS=8192,32768     RULER-lite lengths (add 65536,131072 for the long sweep)
 #   BUCKETS=8192,32768             perplexity length buckets over MANIFEST rows
 #   TRIALS=8 MAX_ROWS=64           synthetic trials per (probe, length) / manifest rows per bucket
@@ -42,7 +42,7 @@ LONGCTX_GPU="${LONGCTX_GPU:-1}"
 TIER="${TIER:-core}"
 LIMIT="${LIMIT:-}"
 MAX_LENGTH="${MAX_LENGTH:-2048}"
-BATCH_SIZE="${BATCH_SIZE:-16}"
+BATCH_SIZE="${BATCH_SIZE:-auto}"
 CONTEXT_LENGTHS="${CONTEXT_LENGTHS:-8192,32768}"
 BUCKETS="${BUCKETS:-8192,32768}"
 TRIALS="${TRIALS:-8}"

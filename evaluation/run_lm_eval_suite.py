@@ -129,7 +129,9 @@ def main(argv=None):
     p.add_argument("--num_fewshot", type=int, default=0)
     p.add_argument("--limit", type=int, default=None, help="examples per task (smoke tests)")
     p.add_argument("--max_length", type=int, default=2048)
-    p.add_argument("--batch_size", default="16")
+    p.add_argument("--batch_size", default="auto",
+                   help="int, or 'auto' (harness probes the largest batch that fits per request "
+                        "type: short multiple-choice rows vs 2048-token rolling windows)")
     p.add_argument("--tokenizer", default=None)
     p.add_argument("--attn_backend", default="sdpa", help="perceiver_ar only: sdpa (default) | flex")
     p.add_argument("--device", default="cuda")
