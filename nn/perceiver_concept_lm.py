@@ -421,18 +421,29 @@ class PerceiverConceptLM(PreTrainedModel):
         super().__init__(config)
         cfg = config
         self.embed = TinyHashedEmbedding(cfg)
-        enc_view = _CfgView(cfg, value_embed_layers=cfg.enc_value_embed_layers)
-        lat_view = _CfgView(cfg, value_embed_layers=())
-        self.enc_layers = nn.ModuleList(
-            [Block(enc_view, i, "swa", cfg.enc_window, has_skip=False) for i in range(cfg.enc_layers)]
-        )
-        self.pooler = ConceptPooler(cfg)
-        self.latent_layers = nn.ModuleList(
-            [Block(lat_view, 1000 + i, "full", 0, has_skip=False) for i in range(cfg.latent_layers)]
-        )
-        self.concept_norm = nn.RMSNorm(cfg.hidden_size)
-        # Learned null slot, prepended to the array the decoder reads (see _cross_mask_pred).
-        self.null_slot = nn.Parameter(torch.zeros(cfg.hidden_size))
+        self.has_concepts = cfg.concept_mode == "full"
+        if self.has_concepts:
+            enc_view = _CfgView(cfg, value_embed_layers=cfg.enc_value_embed_layers)
+            lat_view = _CfgView(cfg, value_embed_layers=())
+            self.enc_layers = nn.ModuleList(
+                [Block(enc_view, i, "swa", cfg.enc_window, has_skip=False) for i in range(cfg.enc_layers)]
+            )
+            self.pooler = ConceptPooler(cfg)
+            self.latent_layers = nn.ModuleList(
+                [Block(lat_view, 1000 + i, "full", 0, has_skip=False) for i in range(cfg.latent_layers)]
+            )
+            self.concept_norm = nn.RMSNorm(cfg.hidden_size)
+            # Learned null slot, prepended to the array the decoder reads (see _cross_mask_pred).
+            self.null_slot = nn.Parameter(torch.zeros(cfg.hidden_size))
+        else:
+            # Arm C: the decoder never reads the array, so the encoder → pooler → latent path would
+            # receive no gradient (DDP rejects unused parameters). The control is the segment-only
+            # decoder over the same embedding and head.
+            self.enc_layers = nn.ModuleList()
+            self.pooler = None
+            self.latent_layers = nn.ModuleList()
+            self.concept_norm = None
+            self.null_slot = None
         self.dec_layers = nn.ModuleList([DecoderBlock(cfg, i) for i in range(cfg.dec_layers)])
         self.final_norm = nn.RMSNorm(cfg.hidden_size)
         self.lm_head = nn.Linear(cfg.hidden_size, cfg.vocab_size, bias=False)
@@ -449,7 +460,8 @@ class PerceiverConceptLM(PreTrainedModel):
             nn.init.zeros_(layer.mlp.down.weight)
             if layer.has_xattn:
                 nn.init.zeros_(layer.xattn.wo.weight)
-        nn.init.zeros_(self.pooler.wo.weight)
+        if self.pooler is not None:
+            nn.init.zeros_(self.pooler.wo.weight)
 
     # -- HF plumbing ----------------------------------------------------------------
     def _init_weights(self, module):
@@ -550,11 +562,16 @@ class PerceiverConceptLM(PreTrainedModel):
         cos, sin = cos.to(x0.dtype), sin.to(x0.dtype)
         block_masks: Optional[dict] = {} if cfg.attn_backend == "flex" else None
         ckpt = self.gradient_checkpointing and self.training
+        doc_attn = doc if (doc_ids is not None or key_valid is not None) else None
+        if not self.has_concepts:
+            if return_concepts:
+                raise RuntimeError("concept_mode='none' builds no concept array")
+            return self._run_decoder(x0, input_ids, doc, pos, cos, sin, key_valid, None, None, None, None,
+                                     None, None, concepts_on=False, ckpt=ckpt)
 
         # ---- encoder -------------------------------------------------------------
         # Unpacked, unpadded rows need no document mask: keep the token masks batch-independent
         # (cacheable) in that case, exactly as the E18 stack does.
-        doc_attn = doc if (doc_ids is not None or key_valid is not None) else None
         h = x0
         enc_kwargs = dict(ids=input_ids, cos=cos, sin=sin, key_valid=key_valid, doc_ids=doc_attn,
                           cu_seqlens=None, block_masks=block_masks, sink_pos=None, pos=pos)
@@ -599,7 +616,7 @@ class PerceiverConceptLM(PreTrainedModel):
 
         # ---- decoder ---------------------------------------------------------------
         mode = self._concept_override
-        concepts_on = cfg.concept_mode == "full" and mode != "none"
+        concepts_on = mode != "none"
         if concepts_on and mode == "shuffled":
             z, cvalid, cpos, cdoc = (t.roll(1, dims=0) for t in (z, cvalid, cpos, cdoc))
         # Prepend the null slot (index 0, always visible), then re-tile for flex.
@@ -612,6 +629,14 @@ class PerceiverConceptLM(PreTrainedModel):
             z, cvalid, cpos, cdoc = _pad_slots(z, cvalid, cpos, cdoc, _FLEX_KV_MULTIPLE - C % _FLEX_KV_MULTIPLE)
         ccos, csin = rope_cos_sin(cpos, cfg.head_dim, cfg.rope_theta, torch.float32)
         ccos, csin = ccos.to(x0.dtype), csin.to(x0.dtype)
+        return self._run_decoder(x0, input_ids, doc, pos, cos, sin, key_valid, z, ccos, csin, cpos, cdoc,
+                                 cvalid, concepts_on=concepts_on, ckpt=ckpt)
+
+    def _run_decoder(self, x0, input_ids, doc, pos, cos, sin, key_valid, z, ccos, csin, cpos, cdoc, cvalid,
+                     *, concepts_on: bool, ckpt: bool):
+        cfg = self.config
+        B, S = input_ids.shape
+        dev = input_ids.device
         if cfg.dec_local == "block":
             seg = torch.arange(S, device=dev)[None] // cfg.dec_segment
             seg_ids = doc * (S // cfg.dec_segment + 2) + seg
@@ -749,16 +774,18 @@ def analytic_param_count(cfg: PerceiverConceptConfig) -> ParamBreakdown:
     attn = (d * h * dh) + 2 * (d * g * dh) + (h * dh * d) + 2 * dh        # wq wk wv wo + q/k norms
     mlp = 3 * d * ff
     block = attn + mlp + 2 * d + 2                                        # two norms + alpha, beta
-    compute = (cfg.enc_layers + cfg.latent_layers) * block
     xattn = (d * h * dh) + 2 * (d * gx * dh) + (h * dh * d) + 2 * dh + d  # + its norm
-    dec_block = block + (xattn if cfg.concept_mode == "full" else 0)
-    compute += cfg.dec_layers * dec_block
-    # pooler: norm + q + wk wv wo + q/k norms + pos bias
-    compute += d + cfg.concept_slots * h * dh + 2 * (d * g * dh) + (h * dh * d) + 2 * dh
-    compute += (cfg.concept_ratio * h if cfg.pool_pos_bias else 0)
+    full = cfg.concept_mode == "full"
+    compute = cfg.dec_layers * (block + (xattn if full else 0))
     compute += 2 * e * d + d * d + d                                      # embed MLP + norm
-    compute += 3 * d                                                      # concept_norm + final_norm + null slot
-    n_ve = len(cfg.enc_value_embed_layers) + len(cfg.dec_value_embed_layers)
+    compute += d                                                          # final_norm
+    if full:
+        compute += (cfg.enc_layers + cfg.latent_layers) * block
+        # pooler: norm + q + wk wv wo + q/k norms + pos bias
+        compute += d + cfg.concept_slots * h * dh + 2 * (d * g * dh) + (h * dh * d) + 2 * dh
+        compute += (cfg.concept_ratio * h if cfg.pool_pos_bias else 0)
+        compute += 2 * d                                                  # concept_norm + null slot
+    n_ve = len(cfg.dec_value_embed_layers) + (len(cfg.enc_value_embed_layers) if full else 0)
     compute += n_ve * (cfg.value_embed_dim * g * dh + 1)                  # value_proj + lambda
     dense_tables = V * e + d * V
     sparse = len(cfg.ngram_orders) * cfg.ngram_buckets * e + n_ve * V * cfg.value_embed_dim

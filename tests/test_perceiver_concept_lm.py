@@ -48,7 +48,8 @@ def make_model(cfg, seed=0, live_concepts=True):
                 layer.mlp.down.weight.normal_(0, 0.05)
                 if layer.has_xattn:
                     layer.xattn.wo.weight.normal_(0, 0.05)
-            m.pooler.wo.weight.normal_(0, 0.05)
+            if m.pooler is not None:
+                m.pooler.wo.weight.normal_(0, 0.05)
     return m
 
 
@@ -77,6 +78,9 @@ def test_no_concept_control_has_no_cross_attention():
     cfg = tiny_cfg(concept_mode="none")
     m = make_model(cfg)
     assert all(not l.has_xattn for l in m.dec_layers)
+    assert m.pooler is None and len(m.enc_layers) == 0 and len(m.latent_layers) == 0   # no dead parameters (DDP)
+    with pytest.raises(RuntimeError):
+        m.concepts(rand_ids(1, 16))
     assert analytic_param_count(cfg).total == sum(p.numel() for p in m.parameters())
     ids = rand_ids(2, 24)
     assert torch.isfinite(m(input_ids=ids, labels=ids.clone()).loss)
