@@ -64,15 +64,11 @@ def resolve_tokenizer_name(checkpoint: str, tokenizer: str | None = None) -> str
     return DEFAULT_TOKENIZER
 
 
-def load_model(checkpoint: str, device: str, attn_backend: str | None = None) -> PerceiverARLM:
-    cfg = PerceiverARConfig.from_pretrained(checkpoint)
-    if attn_backend:
-        cfg.attn_backend = attn_backend
-    model = PerceiverARLM.from_pretrained(checkpoint, config=cfg)
-    model.to(device).eval()
-    if device.startswith("cuda"):
-        model.to(torch.bfloat16)
-    return model
+def load_model(checkpoint: str, device: str, attn_backend: str | None = None):
+    """Loads `perceiver_ar` (E18) or `perceiver_concept` (E22) from the checkpoint's config."""
+    from nn.perceiver_families import load_perceiver_lm
+
+    return load_perceiver_lm(checkpoint, device, attn_backend)
 
 
 def _load_tokenizer(args):
@@ -567,9 +563,62 @@ def probe_tasks(model, args, device) -> dict:
     }
 
 
+def probe_concept(model, args, device) -> dict:
+    """Paired concept ablation for the `perceiver_concept` family (E22 S1 instrument).
+
+    The same rows are scored with the concept array `real`, `none` (the decoder's cross-attention
+    dropped: segment-local raw context only) and `shuffled` (each row reads the array of another
+    row — a generic prior survives this, real content does not). Δ = CE(mode) − CE(real) per
+    position bucket, mean ± standard error over rows. Rows are scored two at a time so `shuffled`
+    has a partner. Tokens in the first concept block (positions < concept_ratio) see no slot and
+    are identical under every mode, which is the built-in noise-floor check.
+    """
+    if not hasattr(model, "concept_override"):
+        raise SystemExit("--probe concept needs a perceiver_concept checkpoint")
+    edges = [int(x) for x in args.buckets.split(",")]
+    rows = load_eval_rows(args.manifest, min_len=edges[-1], max_rows=args.max_rows)
+    if len(rows) < 2:
+        raise SystemExit(f"need >= 2 eval rows with >= {edges[-1]} tokens in {args.manifest}")
+    if len(rows) % 2:
+        rows = rows[:-1]
+    labels = _bucket_labels(edges)
+    modes = ["real", "none", "shuffled"]
+    per_row: dict[str, list[list[float]]] = {m: [] for m in modes}
+    per_tok: dict[str, list[torch.Tensor]] = {m: [] for m in modes}
+    for i in range(0, len(rows), 2):
+        pair = [ids[: edges[-1]] for ids in rows[i : i + 2]]
+        x = torch.tensor(pair, device=device)
+        for mode in modes:
+            with torch.no_grad(), model.concept_override(mode):
+                _, per, valid = model(input_ids=x, labels=x.clone(), return_per_token_loss=True)
+            for b in range(2):
+                pt = per[b][valid[b]].float().cpu()
+                per_row[mode].append(bucket_means(pt, edges))
+                per_tok[mode].append(pt)
+    base = torch.tensor(per_row["real"])
+    out: dict = {"rows": len(rows), "buckets": labels, "modes": modes, "ce": {}, "delta_vs_real": {}, "tail": {}}
+    for mode in modes:
+        t = torch.tensor(per_row[mode])
+        out["ce"][mode] = {lab: float(t[:, b].mean()) for b, lab in enumerate(labels)}
+        if mode == "real":
+            continue
+        d = t - base
+        n = d.shape[0]
+        out["delta_vs_real"][mode] = {
+            lab: {"mean": float(d[:, b].mean()),
+                  "se": float(d[:, b].std(unbiased=True) / (n ** 0.5)) if n > 1 else float("nan"),
+                  "n": n}
+            for b, lab in enumerate(labels)
+        }
+        out["tail"][mode] = reach_tail_stats(torch.cat(per_tok[mode]) - torch.cat(per_tok["real"]))
+    out["per_row"] = per_row
+    return out
+
+
 PROBES = {
     "buckets": probe_buckets, "passkey": probe_passkey, "multikey": probe_multikey, "vt": probe_vt,
     "fwe": probe_fwe, "copy": probe_copy, "reach": probe_reach, "tasks": probe_tasks,
+    "concept": probe_concept,
 }
 
 

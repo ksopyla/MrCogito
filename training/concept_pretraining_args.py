@@ -243,9 +243,28 @@ class ModelArguments:
         default="auto",
         metadata={
             "help": "auto (legacy selection via decoder_type/backbone_model) | perceiver_ar "
-            "(E18 from-scratch one-global-read LM; requires objective_variant='causal_lm')."
+            "(E18 from-scratch one-global-read LM) | perceiver_concept (E22 encoder → concept array → "
+            "latent transformer → segment-confined decoder). Both require objective_variant='causal_lm'."
         },
     )
+    # ---- E22 Perceiver Concept LM family (nn/perceiver_concept_lm.py). Only read when
+    # model_family='perceiver_concept'. Shared knobs: hidden_size, intermediate_size,
+    # token_embedding_dim, num_kv_heads, head_dim, rope_theta, par_ngram_*, par_value_embed_dim,
+    # logit_softcap, z_loss, use_liger, attn_backend, attn_pad_multiple, chunked_ce_block_size.
+    pcl_enc_layers: int = field(default=6, metadata={"help": "E22: causal sliding-window encoder layers over tokens."})
+    pcl_enc_window: int = field(default=512, metadata={"help": "E22: encoder attention window."})
+    pcl_concept_ratio: int = field(default=16, metadata={"help": "E22: tokens per concept block (r)."})
+    pcl_concept_slots: int = field(default=1, metadata={"help": "E22: learned-query slots per block (c)."})
+    pcl_pool_pos_bias: bool = field(default=True, metadata={"help": "E22: learnable within-block positional bias on the pooling logits."})
+    pcl_latent_layers: int = field(default=4, metadata={"help": "E22: causal transformer layers over the concept array."})
+    pcl_latent_repeats: int = field(default=1, metadata={"help": "E22: weight-tied repeats of the latent stack (K; reasoning-depth knob)."})
+    pcl_dec_layers: int = field(default=8, metadata={"help": "E22: decoder layers (segment-confined self-attn + concept cross-attn + SwiGLU)."})
+    pcl_dec_segment: int = field(default=1024, metadata={"help": "E22: decoder segment (block mode) or sliding window (swa mode), in tokens."})
+    pcl_dec_local: str = field(default="block", metadata={"help": "E22: 'block' = self-attn reset at segment boundaries (structural closure); 'swa' = sliding window."})
+    pcl_concept_mode: str = field(default="full", metadata={"help": "E22: 'full' = decoder reads the concept array; 'none' = arm C control (no cross-attention)."})
+    pcl_xattn_kv_heads: int = field(default=2, metadata={"help": "E22: kv-heads of the concept cross-attention."})
+    pcl_enc_value_embed_layers: str = field(default="0,3", metadata={"help": "E22: encoder layers with a value embedding."})
+    pcl_dec_value_embed_layers: str = field(default="0", metadata={"help": "E22: decoder layers with a value embedding."})
     par_mode: str = field(
         default="perceiver",
         metadata={"help": "E18: 'perceiver' (swa pre → 1 global → swa(N) stack) or 'dense' control."},
@@ -486,18 +505,25 @@ def validate_training_configuration(
     is_causal_ar = model_args.decoder_type == DECODER_CAUSAL_AR
     is_backbone = model_args.backbone_model is not None
     model_family = getattr(model_args, "model_family", "auto")
-    if model_family not in {"auto", "perceiver_ar"}:
-        raise ValueError(f"Unknown model_family: {model_family!r} (expected 'auto' or 'perceiver_ar').")
-    if model_family == "perceiver_ar":
+    if model_family not in {"auto", "perceiver_ar", "perceiver_concept"}:
+        raise ValueError(
+            f"Unknown model_family: {model_family!r} (expected 'auto', 'perceiver_ar' or 'perceiver_concept')."
+        )
+    if model_family in {"perceiver_ar", "perceiver_concept"}:
         if model_args.objective_variant != OBJECTIVE_CAUSAL_LM:
-            raise ValueError("model_family='perceiver_ar' (E18) requires objective_variant='causal_lm'.")
+            raise ValueError(f"model_family={model_family!r} requires objective_variant='causal_lm'.")
         if is_backbone:
-            raise ValueError("model_family='perceiver_ar' is a from-scratch family; do not set backbone_model.")
+            raise ValueError(f"model_family={model_family!r} is a from-scratch family; do not set backbone_model.")
         if model_args.anchor_loss:
-            raise ValueError("anchor_loss is not supported by the perceiver_ar family.")
+            raise ValueError(f"anchor_loss is not supported by the {model_family} family.")
         if loss_args.concept_losses and loss_args.concept_losses.lower() != "none":
-            raise ValueError("concept_losses are not wired into the perceiver_ar family.")
-        # The E18 family is neither the concept-AR nor the backbone family.
+            raise ValueError(f"concept_losses are not wired into the {model_family} family.")
+        if model_family == "perceiver_concept":
+            if model_args.pcl_dec_local not in {"block", "swa"}:
+                raise ValueError("pcl_dec_local must be 'block' or 'swa'.")
+            if model_args.pcl_concept_mode not in {"full", "none"}:
+                raise ValueError("pcl_concept_mode must be 'full' or 'none'.")
+        # The E18 / E22 families are neither the concept-AR nor the backbone family.
         return False, False
     if is_backbone and model_args.objective_variant != OBJECTIVE_CAUSAL_LM:
         raise ValueError(

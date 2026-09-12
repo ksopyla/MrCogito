@@ -148,6 +148,14 @@ def load_pretraining_datasets(
     """Load the selected pretokenized, recipe, registry-mix, or direct-Hub route."""
     with training_args.main_process_first(desc="loading and tokenizing dataset"):
         if data_args.pretokenized_manifest:
+            if data_args.dataset_mix_weight_override:
+                # The sequence-length / packing caches are keyed by the manifest file, so a
+                # runtime re-weighting of a pretokenized mix would silently misalign them.
+                raise ValueError(
+                    "dataset_mix_weight_override is not applied to a pretokenized_manifest; write a "
+                    "new manifest JSON with the desired source weights instead (see "
+                    "scripts/write_manifest_variant.py)."
+                )
             logger.info(
                 f"Loading pre-tokenized mix from manifest: "
                 f"{data_args.pretokenized_manifest}"
@@ -227,6 +235,8 @@ def build_pretraining_model(
     """Construct the selected model family and preserve warm-start behavior."""
     if getattr(model_args, "model_family", "auto") == "perceiver_ar":
         return _build_perceiver_ar_model(tokenizer, model_args, data_args)
+    if getattr(model_args, "model_family", "auto") == "perceiver_concept":
+        return _build_perceiver_concept_model(tokenizer, model_args, data_args)
     if is_backbone:
         config = BackboneConceptConfig(
             backbone_model=model_args.backbone_model,
@@ -313,6 +323,79 @@ def _parse_int_tuple(spec: str) -> tuple[int, ...]:
     if not spec:
         return ()
     return tuple(int(x) for x in spec.split(",") if x.strip())
+
+
+def _build_perceiver_concept_model(tokenizer, model_args, data_args):
+    """E22 — from-scratch Perceiver Concept LM (nn/perceiver_concept_lm.py)."""
+    from nn.perceiver_concept_lm import (
+        PerceiverConceptConfig,
+        PerceiverConceptLM,
+        analytic_param_count as pcl_param_count,
+    )
+
+    config = PerceiverConceptConfig(
+        vocab_size=len(tokenizer),
+        hidden_size=model_args.hidden_size,
+        intermediate_size=model_args.intermediate_size,
+        token_embedding_dim=model_args.token_embedding_dim,
+        enc_layers=model_args.pcl_enc_layers,
+        enc_window=model_args.pcl_enc_window,
+        concept_ratio=model_args.pcl_concept_ratio,
+        concept_slots=model_args.pcl_concept_slots,
+        pool_pos_bias=bool(model_args.pcl_pool_pos_bias),
+        latent_layers=model_args.pcl_latent_layers,
+        latent_repeats=model_args.pcl_latent_repeats,
+        dec_layers=model_args.pcl_dec_layers,
+        dec_segment=model_args.pcl_dec_segment,
+        dec_local=model_args.pcl_dec_local,
+        concept_mode=model_args.pcl_concept_mode,
+        xattn_kv_heads=model_args.pcl_xattn_kv_heads,
+        num_attention_heads=model_args.num_attention_heads,
+        num_kv_heads=model_args.num_kv_heads,
+        head_dim=model_args.head_dim,
+        rope_theta=model_args.rope_theta,
+        ngram_orders=_parse_int_tuple(model_args.par_ngram_orders),
+        ngram_buckets=model_args.par_ngram_buckets,
+        enc_value_embed_layers=_parse_int_tuple(model_args.pcl_enc_value_embed_layers),
+        dec_value_embed_layers=_parse_int_tuple(model_args.pcl_dec_value_embed_layers),
+        value_embed_dim=model_args.par_value_embed_dim,
+        logit_softcap=model_args.logit_softcap,
+        z_loss=model_args.z_loss,
+        chunked_ce_block_size=model_args.chunked_ce_block_size or 2048,
+        use_liger=model_args.use_liger,
+        attn_backend=model_args.attn_backend,
+        attn_pad_multiple=model_args.attn_pad_multiple,
+        pad_token_id=tokenizer.pad_token_id,
+        bos_token_id=tokenizer.bos_token_id if tokenizer.bos_token_id is not None else tokenizer.eos_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+        max_sequence_length=data_args.max_seq_length,
+        tokenizer_name=data_args.tokenizer_name,
+    )
+    model = PerceiverConceptLM(config)
+    if model_args.model_name_or_path:
+        import os
+        from safetensors.torch import load_file
+
+        weights = os.path.join(model_args.model_name_or_path, "model.safetensors")
+        state = load_file(weights)
+        missing, unexpected = model.load_state_dict(state, strict=False)
+        if unexpected or missing:
+            raise ValueError(
+                f"perceiver_concept warm start mismatch from {weights}: missing={missing[:5]} "
+                f"unexpected={unexpected[:5]}"
+            )
+        logger.info(f"Warm-started PerceiverConceptLM weights from {weights}")
+    pb = pcl_param_count(config)
+    logger.info(
+        f"Initializing PerceiverConceptLM: enc={config.enc_layers}×swa{config.enc_window} "
+        f"r={config.concept_ratio} c={config.concept_slots} latent={config.latent_layers}×{config.latent_repeats} "
+        f"dec={config.dec_layers}×{config.dec_local}{config.dec_segment} concepts={config.concept_mode} "
+        f"d={config.hidden_size} heads={config.num_attention_heads}/{config.num_kv_heads} "
+        f"backend={config.attn_backend} | params compute={pb.compute/1e6:.1f}M dense={pb.dense/1e6:.1f}M "
+        f"sparse={pb.sparse_tables/1e6:.1f}M total={pb.total/1e6:.1f}M"
+    )
+    model_type = "perceiver_concept" + ("_noconcept" if config.concept_mode == "none" else "")
+    return model, config, model_type
 
 
 def _build_perceiver_ar_model(tokenizer, model_args, data_args):
@@ -407,6 +490,35 @@ def build_training_wandb_identity(
     experiment_id=None,
 ):
     """Build the existing W&B identity for backbone and concept-encoder families."""
+    if getattr(model_args, "model_family", "auto") == "perceiver_concept":
+        resolved_experiment = experiment_id or "E22"
+        arm = "noconcept-control" if model_args.pcl_concept_mode == "none" else "concept-arm"
+        rep = f"x{model_args.pcl_latent_repeats}" if model_args.pcl_latent_repeats > 1 else ""
+        architecture_id = (
+            f"perceiver_concept_H{model_args.hidden_size}"
+            f"e{model_args.pcl_enc_layers}r{model_args.pcl_concept_ratio}c{model_args.pcl_concept_slots}"
+            f"l{model_args.pcl_latent_layers}{rep}d{model_args.pcl_dec_layers}"
+            f"{'s' if model_args.pcl_dec_local == 'block' else 'w'}{model_args.pcl_dec_segment}"
+        )
+        return WandbRunIdentity(
+            experiment_id=resolved_experiment,
+            model_family="perceiver_concept",
+            objective_family="causal_lm",
+            architecture_id=architecture_id,
+            group=f"{resolved_experiment}_{architecture_id}",
+            job_type="train_perceiver_concept_causal_lm",
+            tags=[
+                "train",
+                "perceiver_concept",
+                "concept-encoder",
+                "decoder:autoregressive",
+                "task:generation",
+                "causal_lm",
+                arm,
+                f"backend-{model_args.attn_backend}",
+                resolved_experiment,
+            ],
+        )
     if getattr(model_args, "model_family", "auto") == "perceiver_ar":
         resolved_experiment = experiment_id or "E18"
         arm = "dense-control" if model_args.par_mode == "dense" else "perceiver-arm"
