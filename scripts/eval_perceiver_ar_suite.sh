@@ -133,9 +133,11 @@ longctx_half() {
 if [ "$LMEVAL_GPU" = "$LONGCTX_GPU" ]; then
   lmeval_half; longctx_half
 else
-  lmeval_half &
-  longctx_half &
-  wait
+  # Explicit PIDs: with `exec > >(tee ...)` a bare `wait` (bash >= 5.1) also waits for the
+  # tee process substitution, which only exits when this script does -> deadlock.
+  lmeval_half & P_LM=$!
+  longctx_half & P_LC=$!
+  wait "$P_LM" "$P_LC"
 fi
 
 echo; echo "=== summary for ${TAG} ==="
