@@ -99,6 +99,23 @@ def test_encdec_sinusoidal_positions_differ():
     assert not torch.allclose(pe[0], pe[1])
 
 
+def test_calibrated_recipes_construct_at_every_scale():
+    from data.bapo_ladder import CALIBRATED_RECIPES, UNCALIBRATED_AT_TINY, resolve_recipe
+
+    assert resolve_recipe("recall_single").task == "recall"
+    assert resolve_recipe("recall_single").overrides["n_distractors"] == 0
+    assert resolve_recipe("select_1decoy").overrides == {"n_distractors": 0, "n_decoys": 1}
+    for scale in SCALES:
+        for rec in CALIBRATED_RECIPES.values():
+            cfg = config_for(scale, rec.task, **rec.overrides)
+            assert cfg.seq_len == SCALES[scale].seq_len
+            assert cfg.answer_len >= 1
+    # Uncalibrated hunts still construct (they are not scored until S0).
+    for rec in UNCALIBRATED_AT_TINY.values():
+        cfg = config_for("tiny", rec.task, **rec.overrides)
+        assert cfg.task == rec.task
+
+
 def test_recall_single_fact_still_respects_min_gap():
     from data.symbolic_tasks import generate_row
 

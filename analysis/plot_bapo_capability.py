@@ -9,7 +9,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+
+from data.bapo_ladder import TASK_DISPLAY_ORDER
 
 import matplotlib
 
@@ -39,7 +44,7 @@ def _load(in_dir: Path) -> list[dict]:
         bundles.append(json.loads(p.read_text()))
     if not bundles:
         raise SystemExit(f"no rung JSON files in {in_dir}")
-    order = {t: i for i, t in enumerate(("far_copy", "recall", "select", "chain_ordered", "chain", "unique", "match3", "count", "majority"))}
+    order = {t: i for i, t in enumerate(TASK_DISPLAY_ORDER)}
     bundles.sort(key=lambda b: (order.get(b["task"], 99), b["task"]))
     return bundles
 

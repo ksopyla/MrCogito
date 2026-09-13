@@ -26,6 +26,7 @@ Protocol
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sys
 import time
@@ -37,15 +38,30 @@ import torch
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from data.bapo_ladder import (  # noqa: E402
+    CALIBRATED_RECIPES,
     SCALES,
     SOLVABLE_ACC,
     TINY_PROOF_TASKS,
     config_for,
+    resolve_recipe,
     rung_card,
 )
 from data.symbolic_tasks import generate_row  # noqa: E402
 from evaluation.bapo_metrics import info_report  # noqa: E402
 from evaluation.bapo_models import ARCHES, ArchSpec, arch_cache, build_model, n_params  # noqa: E402
+
+
+def amp_ctx(device: torch.device, amp: str):
+    """bf16 autocast on CUDA; off on CPU. fp16 is opt-in (no GradScaler — prefer bf16)."""
+    if amp == "off" or device.type != "cuda":
+        return contextlib.nullcontext()
+    want = amp
+    if amp == "auto":
+        want = "bf16" if torch.cuda.is_bf16_supported() else "off"
+    if want == "off":
+        return contextlib.nullcontext()
+    dtype = torch.bfloat16 if want == "bf16" else torch.float16
+    return torch.autocast(device_type="cuda", dtype=dtype)
 
 
 def make_batch(cfg, rng, batch: int, device):
@@ -56,19 +72,21 @@ def make_batch(cfg, rng, batch: int, device):
 
 
 @torch.no_grad()
-def evaluate(model, batches) -> dict:
+def evaluate(model, batches, *, amp: str, device: torch.device) -> dict:
     model.eval()
     ce_sum, n, hits = 0.0, 0, 0
+    ctx = amp_ctx(device, amp)
     for ids, labels in batches:
-        out = model(ids, labels=labels, return_per_token_loss=True)
-        if isinstance(out, tuple):
-            _lm, per, valid = out
-        else:
-            raise RuntimeError("model did not return per-token loss")
-        ce_sum += float(per[valid].sum())
+        with ctx:
+            out = model(ids, labels=labels, return_per_token_loss=True)
+            if isinstance(out, tuple):
+                _lm, per, valid = out
+            else:
+                raise RuntimeError("model did not return per-token loss")
+            packed = model(ids, return_logits=True)
+            logits = packed.logits if hasattr(packed, "logits") else packed
+        ce_sum += float(per[valid].float().sum())
         n += int(valid.sum())
-        packed = model(ids, return_logits=True)
-        logits = packed.logits if hasattr(packed, "logits") else packed
         pred = logits[:, :-1].argmax(-1)
         tgt = labels[:, 1:]
         m = tgt != -100
@@ -104,15 +122,16 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
     best_acc = -1.0
     for step in range(1, steps + 1):
         ids, labels = make_batch(cfg, rng, args.batch, device)
-        out = model(ids, labels=labels)
-        loss = out.loss if hasattr(out, "loss") else out[0].loss
+        with amp_ctx(device, args.amp):
+            out = model(ids, labels=labels)
+            loss = out.loss if hasattr(out, "loss") else out[0].loss
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
         sched.step()
         opt.zero_grad(set_to_none=True)
         if step % args.eval_every == 0 or step == steps:
-            ev = evaluate(model, eval_batches)
+            ev = evaluate(model, eval_batches, amp=args.amp, device=device)
             trace.append({"step": step, **ev, "sec": time.time() - t0})
             print(
                 f"  [{arch}] step {step:5d}  train {float(loss.detach()):.4f}  "
@@ -147,21 +166,26 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
     }
 
 
-def run_rung(task: str, args) -> dict:
+def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
     scale = SCALES[args.scale]
-    over = {
-        k: v
-        for k, v in {
-            "n_distractors": args.n_distractors,
-            "n_decoys": args.n_decoys,
-            "key_len": args.key_len,
-            "value_len": args.value_len,
-            "hops": args.hops,
-            "span_len": args.span_len,
-        }.items()
-        if v is not None
-    }
-    cfg = config_for(scale, task, **over)
+    recipe = resolve_recipe(recipe_name or task)
+    display = recipe.name if recipe_name else task
+    over = dict(recipe.overrides)
+    over.update(
+        {
+            k: v
+            for k, v in {
+                "n_distractors": args.n_distractors,
+                "n_decoys": args.n_decoys,
+                "key_len": args.key_len,
+                "value_len": args.value_len,
+                "hops": args.hops,
+                "span_len": args.span_len,
+            }.items()
+            if v is not None
+        }
+    )
+    cfg = config_for(scale, recipe.task, **over)
     spec = ArchSpec(
         name="shared",
         hidden=args.hidden,
@@ -174,15 +198,16 @@ def run_rung(task: str, args) -> dict:
         head_dim=args.head_dim,
         value_embed_layers=tuple(int(x) for x in args.value_embed_layers.split(",") if x.strip()),
     )
-    card = rung_card(scale, task, **over)
+    card = rung_card(scale, recipe.task, **over)
     eval_rng = np.random.default_rng(args.seed + 99)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     eval_batches = [make_batch(cfg, eval_rng, args.batch, device) for _ in range(max(1, args.eval_rows // args.batch))]
     print(
-        f"\n=== {task} @ {scale.name}  seq={cfg.seq_len} gap={cfg.min_gap} "
+        f"\n=== {display} ({recipe.task}) @ {scale.name}  seq={cfg.seq_len} gap={cfg.min_gap} "
         f"window={scale.local_window} prize={card['prize_bits']:.2f} bits  "
         f"answer_len={cfg.answer_len} (target {card['target_answer_len']})  "
-        f"floor={card['floor_nats']:.4f} nats  chance={card['chance_acc']:.3f}  device={device} ===",
+        f"floor={card['floor_nats']:.4f} nats  chance={card['chance_acc']:.3f}  "
+        f"device={device} amp={args.amp} ===",
         flush=True,
     )
     arches = list(args.arch)
@@ -219,7 +244,7 @@ def run_rung(task: str, args) -> dict:
         ok = dacc >= SOLVABLE_ACC
         notes.append(("dense >= 75% (task is solvable here)", ok, f"acc={dacc:.3f}"))
         calibrated = calibrated and ok
-    if "e18_local" in results and task not in {"count", "majority"}:
+    if "e18_local" in results and recipe.task not in {"count", "majority"}:
         lacc = results["e18_local"]["final"]["acc"]
         # Local arm should not substantially beat chance on retrieval rungs.
         leak = lacc > card["chance_acc"] + 0.15
@@ -230,7 +255,9 @@ def run_rung(task: str, args) -> dict:
     for name, ok, detail in notes:
         print(f"  [{'ok' if ok else 'FAIL'}] {name}: {detail}")
     return {
-        "task": task,
+        "task": display,
+        "generator_task": recipe.task,
+        "recipe": recipe.name,
         "scale": scale.name,
         "card": card,
         "calibrated": calibrated,
@@ -241,6 +268,7 @@ def run_rung(task: str, args) -> dict:
         "dense_steps_used": dense_steps_used,
         "batch": args.batch,
         "seed": args.seed,
+        "amp": args.amp,
         "pack": {
             "answer_len": cfg.answer_len,
             "key_len": cfg.key_len,
@@ -258,6 +286,13 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--scale", default="tiny", choices=list(SCALES))
     p.add_argument("--task", nargs="+", default=list(TINY_PROOF_TASKS))
+    p.add_argument(
+        "--recipe",
+        nargs="+",
+        default=None,
+        help="named recipes (far_copy, recall_single, select_1decoy, chain_ordered, …). "
+        "Overrides --task. Use calibrated recipes to score E18; default --task still hunts the harder MATCH2/chain rungs.",
+    )
     p.add_argument("--arch", nargs="+", default=["dense", "e18", "encdec"], choices=list(ARCHES))
     p.add_argument("--hidden", type=int, default=128)
     p.add_argument("--pre_layers", type=int, default=1)
@@ -304,6 +339,12 @@ def main() -> int:
     p.add_argument("--max_params", type=int, default=100_000_000)
     p.add_argument("--threads", type=int, default=4)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument(
+        "--amp",
+        default="auto",
+        choices=("auto", "bf16", "fp16", "off"),
+        help="CUDA autocast. auto=bf16 when supported, off on CPU. Use off to match the CPU tiny numbers bit-for-bit.",
+    )
     p.add_argument("--out", default=None, help="directory for JSON bundles (one file per task)")
     args = p.parse_args()
 
@@ -312,24 +353,29 @@ def main() -> int:
     if out_dir:
         out_dir.mkdir(parents=True, exist_ok=True)
 
+    names = list(args.recipe) if args.recipe else list(args.task)
     bundles = []
-    for task in args.task:
-        bundle = run_rung(task, args)
+    for name in names:
+        bundle = run_rung(name, args, recipe_name=name)
         bundles.append(bundle)
         if out_dir:
-            path = out_dir / f"{args.scale}_{task}.json"
+            path = out_dir / f"{args.scale}_{bundle['task']}.json"
             path.write_text(json.dumps(bundle, indent=2))
             print(f"wrote {path}")
 
     if out_dir:
         summary = {
             "scale": args.scale,
-            "tasks": args.task,
+            "recipes": names,
+            "tasks": [b["task"] for b in bundles],
             "arches": args.arch,
             "solvable_acc": SOLVABLE_ACC,
+            "calibrated_recipes": list(CALIBRATED_RECIPES),
+            "amp": args.amp,
             "rungs": [
                 {
                     "task": b["task"],
+                    "generator_task": b.get("generator_task"),
                     "calibrated": b["calibrated"],
                     "acc": {a: r["final"]["acc"] for a, r in b["results"].items()},
                     "information_flow": {a: r["info"]["information_flow"] for a, r in b["results"].items()},

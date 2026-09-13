@@ -40,6 +40,79 @@ USER_CORE_TASKS: tuple[str, ...] = (
 HARD_TASKS: tuple[str, ...] = ("unique", "match3", "count", "majority")
 TINY_PROOF_TASKS: tuple[str, ...] = USER_CORE_TASKS  # what the CPU calibration always runs
 
+
+@dataclass(frozen=True)
+class Recipe:
+    """A named (generator task + overrides) pair. Display name may differ from `task`."""
+
+    name: str
+    task: str
+    overrides: dict
+    note: str = ""
+
+
+# Rungs whose dense control has been shown to hit SOLVABLE_ACC at tiny H=128 / packed
+# answers. Use these for E18 scoring and for the first GPU scale-up. Default generator
+# configs (2–3 MATCH2 items, shuffled chain) stay as harder hunts — do not score E18 there
+# until a new S0 hunt passes.
+CALIBRATED_RECIPES: dict[str, Recipe] = {
+    "far_copy": Recipe("far_copy", "far_copy", {}, "INDEX / positional copy"),
+    "recall_single": Recipe(
+        "recall_single",
+        "recall",
+        {"n_distractors": 0},
+        "one planted key; content addressing without a MATCH2 contrast set",
+    ),
+    "select_1decoy": Recipe(
+        "select_1decoy",
+        "select",
+        {"n_distractors": 0, "n_decoys": 1},
+        "keymark vs one decoy — a type cue, not MATCH2",
+    ),
+    "chain_ordered": Recipe("chain_ordered", "chain_ordered", {}, "in-order DFA hops"),
+}
+
+# Explicitly uncalibrated at tiny H=128 / ≤4000 steps. Kept as named hunts so we do not
+# silently score E18 on an ill-posed rung.
+UNCALIBRATED_AT_TINY: dict[str, Recipe] = {
+    "recall": Recipe("recall", "recall", {}, "default MATCH2 (2 distractors); dense ~30% @3200"),
+    "select": Recipe("select", "select", {}, "multi-item + decoys; dense ~39% @3200"),
+    "chain": Recipe("chain", "chain", {}, "shuffled REACHABILITY; dense ~34% @3200"),
+    "chain_shuffled": Recipe(
+        "chain_shuffled",
+        "chain",
+        {"n_distractors": 0},
+        "no distractors; dense still ~34% @4000 — composition wall, not an E18 kill",
+    ),
+}
+
+# Plot / CSV display order. Recipe names first, then generator names, then BAPO-hard extras.
+TASK_DISPLAY_ORDER: tuple[str, ...] = (
+    "far_copy",
+    "recall_single",
+    "recall",
+    "select_1decoy",
+    "select",
+    "chain_ordered",
+    "chain_shuffled",
+    "chain",
+    "unique",
+    "match3",
+    "count",
+    "majority",
+)
+
+
+def resolve_recipe(name: str) -> Recipe:
+    if name in CALIBRATED_RECIPES:
+        return CALIBRATED_RECIPES[name]
+    if name in UNCALIBRATED_AT_TINY:
+        return UNCALIBRATED_AT_TINY[name]
+    if name in TASKS:
+        return Recipe(name, name, {}, "")
+    known = sorted(set(CALIBRATED_RECIPES) | set(UNCALIBRATED_AT_TINY) | set(TASKS))
+    raise ValueError(f"unknown recipe {name!r}; expected one of {known}")
+
 # Which config field is the supervised span. Growing it is how packed CE gets a gradient
 # (Arm-A: span=8 stayed at chance, span=32 hit 99%). count/majority are 1-token by design.
 _ANSWER_FIELD: dict[str, str] = {
@@ -202,15 +275,20 @@ def ladder_cards(scale: str, tasks: tuple[str, ...] | None = None) -> list[dict]
 
 __all__ = [
     "AGGREGATION_TASKS",
+    "CALIBRATED_RECIPES",
     "HARD_TASKS",
     "RETRIEVAL_TASKS",
+    "Recipe",
     "SCALES",
     "SOLVABLE_ACC",
+    "TASK_DISPLAY_ORDER",
     "TINY_PROOF_TASKS",
+    "UNCALIBRATED_AT_TINY",
     "USER_CORE_TASKS",
     "config_for",
     "ladder_cards",
     "pack_overrides",
+    "resolve_recipe",
     "rung_card",
     "target_answer_len",
 ]

@@ -15,6 +15,22 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-13] - BAPO calibrated recipes, CUDA AMP, plot task order
+
+**Why:**
+- Tiny S0 hunts showed which DNA rungs are actually solvable at 0.6M. Scoring E18 on the
+  default MATCH2 / shuffled-chain generators would have been a false kill. Medium GPU runs
+  need bf16 and a named recipe so `--n_distractors 0` is not applied to every task in one job.
+
+**What changed:**
+- [added] `data/bapo_ladder.py` `CALIBRATED_RECIPES` / `UNCALIBRATED_AT_TINY` / `resolve_recipe`
+- [added] probe `--recipe` and `--amp auto` (CUDA bf16)
+- [fixed] `analysis/plot_bapo_capability.py` display order (`far_copy` → recall → select → chain)
+
+**Does not:** close E24 or launch 16k/128k.
+
+---
+
 ## [2026-09-13] - BAPO ladder: packed answers, dense-first K1, VE on the global read
 
 **Why:**

@@ -85,6 +85,28 @@ The probe trains **dense first**. Other arches are skipped on a rung whose dense
 75% after `--steps * --k1_mult` (K1, default 4×). Compressed models then train for
 `max(--steps, dense_steps_used)` so they are not starved relative to the control.
 
+### Named recipes
+
+Default `--task` still generates the harder MATCH2 / shuffled-chain hunts. Those are **not**
+tiny-solvable at 0.6M / 4000 steps. Score E18 only on `CALIBRATED_RECIPES`:
+
+| `--recipe` | generator | what it measures | tiny dense (H=128) |
+|---|---|---|---|
+| `far_copy` | `far_copy` | positional INDEX / bandwidth | **99.4%** |
+| `recall_single` | `recall`, `n_distractors=0` | content addressing, one planted key | **99.2%** |
+| `select_1decoy` | `select`, 0 distractors + 1 decoy | type-cue (`keymark` vs `decoy`), not MATCH2 | **99.2%** |
+| `chain_ordered` | `chain_ordered` | in-order DFA hops | **93.1%** |
+
+Still uncalibrated at tiny (do not score E18): default `recall` / `select` (MATCH2), shuffled
+`chain` even with `n_distractors=0` (~34%). `--recipe chain_shuffled` is a hunt, not a gate.
+
+```bash
+# score E18 on the calibrated set
+uv run python verification/bapo_capability_probe.py \
+    --scale tiny --recipe far_copy recall_single select_1decoy chain_ordered \
+    --arch dense e18 encdec e18_local --out Cache/bapo_tiny_calibrated
+```
+
 ## Scales (`data/bapo_ladder.py`)
 
 | scale | seq_len | min_gap | local_window | where |
@@ -99,10 +121,12 @@ The probe trains **dense first**. Other arches are skipped on a rung whose dense
 ## How to run
 
 ```bash
-# tiny core (far_copy, recall, select, chain_ordered, chain) + three architectures
+# calibrated tiny set (the numbers that are allowed to score E18)
 uv run python verification/bapo_capability_probe.py \
-    --scale tiny --arch dense e18 encdec e18_local \
-    --out Cache/bapo_tiny
+    --scale tiny --recipe far_copy recall_single select_1decoy chain_ordered \
+    --arch dense e18 encdec e18_local \
+    --out Cache/bapo_tiny_calibrated
+```
 
 uv run python analysis/plot_bapo_capability.py \
     --in_dir Cache/bapo_tiny --out_dir Cache/bapo_tiny/plots
@@ -113,19 +137,21 @@ effective vs nominal bytes/token, plus `capability_table.csv`.
 
 ## Medium / large (GPU, still <100M)
 
-Tiny is the solvability proof. Medium (4k, 16k) and large (32k, 128k) reuse the same probe.
-Do not launch them until every tiny user-core rung has dense ≥ 75%. Suggested first GPU rung:
+Tiny is the solvability proof. Scale up **only the calibrated recipes** (the default MATCH2 and
+shuffled-chain generators are still ill-posed at 0.6M). Suggested first GPU rung, AMP on:
 
 ```bash
-# Odra/Polonez, after tiny S0. Hidden 256 ≈ a few million params.
+# Odra/Polonez. Hidden 256 ≈ a few million params. CUDA bf16 via --amp auto.
 uv run python verification/bapo_capability_probe.py \
-    --scale medium --arch dense e18 encdec e18_local \
+    --scale medium --recipe far_copy recall_single select_1decoy chain_ordered \
+    --arch dense e18 encdec e18_local \
     --hidden 256 --steps 2000 --batch 8 --eval_every 100 --eval_rows 32 \
     --out Cache/bapo_medium
 ```
 
-`large` / `large_128k` need a smaller batch and activation checkpointing if VRAM is tight;
-the architecture factory already caps `--max_params 100000000`.
+`--scale medium_16k` / `large` / `large_128k` need a smaller batch if VRAM is tight;
+the architecture factory already caps `--max_params 100000000`. Do not launch shuffled `chain`
+or multi-item MATCH2 at those lengths until a dense control hits 75% at the same hidden size.
 
 ## Non-goals
 
