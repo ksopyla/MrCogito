@@ -1,7 +1,7 @@
 # E25 — E21 capability limits on a calibrated BAPO DNA ladder (one rung at a time)
 
-- **Status:** active (tiny INDEX near-pass at 8k; tiny MATCH wall at 8k ~10 bits;
-  `select_1decoy` next). Keep in `ahead/`. Do not score 512 or Glyph yet.
+- **Status:** active (tiny INDEX near-pass; MATCH wall ~10 bits; select type-cue wall
+  ~1.5 bits; `chain_ordered` next). Keep in `ahead/`. Do not score 512 or Glyph yet.
 - **Serves:** the Vision's "does the compressed channel carry *addressable* content, and how
   many bits?" question, now on **E21** (exclusive compressed read) rather than E18's raw
   one-global-read. Observation base for later gating / compression. Reuses E24's DNA instrument.
@@ -90,12 +90,12 @@ pretraining run; this is the cheap controlled exam that spec's K1/K2 needed and 
   (off by default; byte-identical to E18). Probe arch `e21`. No new `train_*.py`.
 
 ## Result
-- Run id: `e25_tiny_far_copy` · `e25_tiny_far_copy_remainder` · `e25_tiny_far_copy_query_align` · `e25_tiny_far_copy_e21_steps` · `e25_tiny_recall_single` · `e25_tiny_recall_single_e21_steps`
+- Run id: `e25_tiny_far_copy` · `e25_tiny_far_copy_remainder` · `e25_tiny_far_copy_query_align` · `e25_tiny_far_copy_e21_steps` · `e25_tiny_recall_single` · `e25_tiny_recall_single_e21_steps` · `e25_tiny_select_1decoy`
 - WandB: n/a (probe; no `compute/*`)
-- Run reports: [`tiny`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) · [`remainder`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) · [`QUERY-align`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_query_align_20260913.md) · [`INDEX extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_e21_steps_20260913.md) · [`recall`](../../2_Experiments_Registry/run_reports/e25_tiny_recall_single_20260913.md) · [`recall extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_recall_single_e21_steps_20260913.md)
-- Verdict: **mixed** — tiny INDEX near-pass at 8k (47.01 vs 47.29 bits). Tiny MATCH:
-  dense **31.4 bits**, E18 **0**, E21 **3.19 bits @2850** / **9.81 bits @8000** (flow 0.307).
-  Beats E18; fails 0.75× dense (23.5 bits). Acc plateaus ~45–48%. Next: `select_1decoy`.
+- Run reports: [`tiny`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) · [`remainder`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) · [`QUERY-align`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_query_align_20260913.md) · [`INDEX extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_e21_steps_20260913.md) · [`recall`](../../2_Experiments_Registry/run_reports/e25_tiny_recall_single_20260913.md) · [`recall extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_recall_single_e21_steps_20260913.md) · [`select`](../../2_Experiments_Registry/run_reports/e25_tiny_select_1decoy_20260913.md)
+- Verdict: **mixed** — tiny INDEX near-pass at 8k (47.01 vs 47.29 bits). Tiny MATCH: E21
+  **9.81 bits @8k** vs E18 0 / dense 31. Tiny select: dense **31.3 bits**, E18 **23.2 bits**,
+  E21 **1.47 bits / flow 0.046** (type-cue wall; K3 borderline). Next: `chain_ordered`.
 
 ## Follow-up (rung 1b — remainder pooling)
 Ran. S1 **FAIL** at 2400 (12.7 bits). Geometry stacking did not help.
@@ -114,5 +114,8 @@ Ran 8000 steps. E21 **9.81 bits / flow 0.307** (best acc 48.5% @7700) vs 0.75× 
 0.735. MATCH wall vs dense; still beats E18's 0 bits. Do not 16k.
 
 ## Follow-up (rung 3 — tiny select_1decoy)
-Next ONE DNA rung: marker-cue select (E24 E18 was 87%). Dense S0 in the same JSON. Not Glyph.
-Not seq=512 (no GPU).
+Ran at 1900 steps. Dense S0 **PASS**. E18 **23.2 bits**. E21 **1.47 bits / flow 0.046**
+(type-cue wall; K3 borderline). Do not extra-step this rung.
+
+## Follow-up (rung 4 — tiny chain_ordered)
+Next ONE DNA rung: in-order DFA hops (E24 E18 97.5%). Dense S0 in the same JSON. Not Glyph.

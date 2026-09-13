@@ -151,7 +151,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 | E18c | Concept-compressed read (pool prefix K/V into 1 slot per 16 tokens) | **blocked** — compresses a *functional* retrieval channel; E18b showed we do not have one | [E18c](../experiments_specs/ahead/E18c_concept_compressed_read.md) |
 | E23 | Exclusive concept channel: E22 platform with `concept_xattn_scope=exclusive` and an objective that pays for far content (far-repeat-weighted CE + 30% dense-label long-range rows) | **ahead** — spec written 2026-09-12, not launched | [E23](../experiments_specs/ahead/E23_exclusive_concept_channel.md) |
 | E24 | E18 capability limits on a BAPO DNA ladder vs dense decoder-only and encoder-decoder | **ahead** — tiny + 512/1024 GPU measured (S1 pass @512, S1 fail @1024, S2 recall wall); 4k S0 open | [E24](../experiments_specs/ahead/E24_e18_bapo_capability_ladder.md) · [tiny](run_reports/e24_tiny_bapo_ladder_20260913.md) · [bridge](run_reports/e24_bridge512_bapo_ladder_20260913.md) |
-| E25 | E21 exclusive compressed read on the BAPO DNA ladder, one calibrated rung at a time | **ahead** — tiny INDEX near-pass at 8k; tiny MATCH wall E21 **9.81 bits** @8k vs E18 0 / dense 31; select_1decoy next | [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) · [tiny](run_reports/e25_tiny_far_copy_20260913.md) · [remainder](run_reports/e25_tiny_far_copy_remainder_20260913.md) · [QUERY-align](run_reports/e25_tiny_far_copy_query_align_20260913.md) · [INDEX extra steps](run_reports/e25_tiny_far_copy_e21_steps_20260913.md) · [recall](run_reports/e25_tiny_recall_single_20260913.md) · [recall extra steps](run_reports/e25_tiny_recall_single_e21_steps_20260913.md) |
+| E25 | E21 exclusive compressed read on the BAPO DNA ladder, one calibrated rung at a time | **ahead** — INDEX near-pass; MATCH wall 9.81 bits; select type-cue wall 1.47 bits; chain_ordered next | [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) · [tiny](run_reports/e25_tiny_far_copy_20260913.md) · [remainder](run_reports/e25_tiny_far_copy_remainder_20260913.md) · [QUERY-align](run_reports/e25_tiny_far_copy_query_align_20260913.md) · [INDEX extra steps](run_reports/e25_tiny_far_copy_e21_steps_20260913.md) · [recall](run_reports/e25_tiny_recall_single_20260913.md) · [recall extra steps](run_reports/e25_tiny_recall_single_e21_steps_20260913.md) · [select](run_reports/e25_tiny_select_1decoy_20260913.md) |
 
 ### Canceled (no run)
 
@@ -243,6 +243,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-09-13 | E25 | `e25_tiny_far_copy_e21_steps` | seq=128 complete-block E21 · 8000 steps · CPU | E21 **84.6%** / **47.01 bits** / flow **0.734** (best 86.6% @7700) vs 0.75× E18 47.29 / 0.739 | NEAR-PASS — 2400-step S1 fail was budget. | [spec](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) · [report](run_reports/e25_tiny_far_copy_e21_steps_20260913.md) |
 | 2026-09-13 | E25 | `e25_tiny_recall_single` | DNA `recall_single` · E21 r=16 complete-block · H=128 · seq=128 · CPU · git `c9f94bc` | dense **99.2%** / 31.4 bits · E18 **0** · E21 **37.9%** / **3.19 bits** (flow 0.100) · `e18_local` 0 | MIXED — slots beat E18 MATCH wall; fail 0.75× dense. Still climbing. | [spec](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) · [report](run_reports/e25_tiny_recall_single_20260913.md) |
 | 2026-09-13 | E25 | `e25_tiny_recall_single_e21_steps` | seq=128 complete-block E21 · 8000 steps · CPU · git `697122e` | E21 **45.1%** / **9.81 bits** / flow **0.307** (best 48.5% @7700) vs 0.75× dense 23.5 / 0.735 | MIXED — MATCH wall vs dense; extra budget does not close it. | [spec](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) · [report](run_reports/e25_tiny_recall_single_e21_steps_20260913.md) |
+| 2026-09-13 | E25 | `e25_tiny_select_1decoy` | DNA `select_1decoy` · E21 r=16 · H=128 · seq=128 · CPU · git `f977fab` | dense **99.2%** / 31.3 bits · E18 **82.3%** / 23.2 · E21 **33.0%** / **1.47 bits** (flow 0.046) · `e18_local` 0 | MIXED — type-cue wall; K3 borderline. | [spec](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) · [report](run_reports/e25_tiny_select_1decoy_20260913.md) |
 
 ---
 
@@ -282,6 +283,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-09-13 | E25 tiny far_copy extra steps | seq=128 complete-block E21, 8k, CPU | E21 flow **0.734** / 47.01 bits vs 0.75× E18 0.739 / 47.29 | Near-pass; INDEX is slow not dead | [spec](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) · [report](run_reports/e25_tiny_far_copy_e21_steps_20260913.md) |
 | 2026-09-13 | E25 tiny recall_single | on-the-fly DNA, no checkpoint, CPU | E21 flow **0.100** / 3.19 bits vs E18 **0** / dense 0.980 / 31.4 · `e18_local` 0 | Slots beat E18 MATCH; content wall vs dense | [spec](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) · [report](run_reports/e25_tiny_recall_single_20260913.md) |
 | 2026-09-13 | E25 tiny recall extra steps | seq=128 complete-block E21, 8k, CPU | E21 flow **0.307** / 9.81 bits vs 0.75× dense 0.735 / 23.5 · E18 0 | MATCH wall vs dense; extra budget not enough | [spec](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) · [report](run_reports/e25_tiny_recall_single_e21_steps_20260913.md) |
+| 2026-09-13 | E25 tiny select_1decoy | on-the-fly DNA, no checkpoint, CPU | E21 flow **0.046** / 1.47 bits vs E18 0.724 / 23.2 · dense 0.978 / 31.3 | Type-cue wall; K3 borderline | [spec](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) · [report](run_reports/e25_tiny_select_1decoy_20260913.md) |
 
 **ViaDecoder baselines (L6 canonical, 2026-02-22):** MRPC F1 82.73 · STS-B P 0.650 · QQP F1 73.35 · MNLI-m 59.75 · MNLI-mm 60.90 — full note in [report](run_reports/via_decoder_eval_20260222.md).
 
@@ -302,6 +304,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 
 Newest first:
 
+- [E25 tiny select_1decoy — E21 vs E18 vs dense (Sep 13)](run_reports/e25_tiny_select_1decoy_20260913.md)
 - [E25 tiny recall extra steps — E21 8k MATCH wall (Sep 13)](run_reports/e25_tiny_recall_single_e21_steps_20260913.md)
 - [E25 tiny recall_single — E21 vs E18 vs dense (Sep 13)](run_reports/e25_tiny_recall_single_20260913.md)
 - [E25 tiny far_copy extra steps — E21 8k near-pass (Sep 13)](run_reports/e25_tiny_far_copy_e21_steps_20260913.md)
