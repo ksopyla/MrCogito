@@ -15,6 +15,22 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-13] - Symbolic probe: live LR, wall-clock JSON, CUDA if present
+
+**Why:**
+- Mapping the exclusive-scope length×difficulty frontier needs a schedule that cannot
+  fake-ceil (OneCycle horizon = expected finish stalled improved Arm A at 49%) and a
+  JSON log of examples/params/steps/acc/CE/LR/seq/r/task/hops/wall.
+
+**Added:**
+- `verification/symbolic_channel_probe.py`: `--sched warmup_constant` (warmup then
+  constant LR), `--floor_patience_steps` (kill a run still at chance), per-arm
+  `summary` with wall-clock and LR, `cuda` when `torch.cuda.is_available()`.
+- `verification/run_scale_job.sh`: `SCALE_OUT_DIR` (default `scale/`, campaign uses
+  `/opt/cursor/artifacts/scale_hard`).
+
+---
+
 ## [2026-09-13] - Symbolic probe: early-stop at target accuracy + example accounting
 
 **Why:**

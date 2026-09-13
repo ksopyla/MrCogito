@@ -51,10 +51,10 @@ from nn.perceiver_concept_lm import PerceiverConceptConfig, PerceiverConceptLM  
 ARMS = ("A", "C", "D")
 
 
-def make_batch(cfg: SymbolicTaskConfig, rng: np.random.Generator, batch: int):
+def make_batch(cfg: SymbolicTaskConfig, rng: np.random.Generator, batch: int, device: torch.device):
     rows = [generate_row(cfg, rng) for _ in range(batch)]
-    ids = torch.from_numpy(np.stack([r.input_ids for r in rows])).long()
-    labels = torch.from_numpy(np.stack([r.labels for r in rows])).long()
+    ids = torch.from_numpy(np.stack([r.input_ids for r in rows])).long().to(device)
+    labels = torch.from_numpy(np.stack([r.labels for r in rows])).long().to(device)
     return ids, labels
 
 
@@ -125,17 +125,33 @@ def evaluate(model, batches, override: str | None = None) -> dict:
     return {"ce_nats": ce_sum / max(n, 1), "acc": hits / max(n, 1), "tokens": n}
 
 
-def train_arm(arm: str, cfg: SymbolicTaskConfig, args, eval_batches) -> dict:
-    model = build_model(arm, cfg, args)
+def make_scheduler(opt, args):
+    """OneCycle needs a horizon ≥ 2× time-to-95%; warmup+constant does not."""
+    if args.sched == "onecycle":
+        return torch.optim.lr_scheduler.OneCycleLR(
+            opt, max_lr=args.lr, total_steps=args.steps, pct_start=0.1, anneal_strategy="cos"
+        )
+    warmup = max(1, args.warmup_steps)
+
+    def lr_lambda(epoch: int) -> float:
+        if epoch < warmup:
+            return float(epoch + 1) / warmup
+        return 1.0
+
+    return torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
+
+
+def train_arm(arm: str, cfg: SymbolicTaskConfig, args, eval_batches, device: torch.device) -> dict:
+    model = build_model(arm, cfg, args).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01, betas=(0.9, 0.95))
-    sched = torch.optim.lr_scheduler.OneCycleLR(
-        opt, max_lr=args.lr, total_steps=args.steps, pct_start=0.1, anneal_strategy="cos"
-    )
+    sched = make_scheduler(opt, args)
     rng = np.random.default_rng(args.seed + 1000)
     t0, trace = time.time(), []
+    chance = chance_accuracy(cfg)
+    stop_reason = "budget"
     for step in range(1, args.steps + 1):
-        ids, labels = make_batch(cfg, rng, args.batch)
+        ids, labels = make_batch(cfg, rng, args.batch, device)
         out = model(ids, labels=labels)
         out.loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -144,23 +160,57 @@ def train_arm(arm: str, cfg: SymbolicTaskConfig, args, eval_batches) -> dict:
         opt.zero_grad(set_to_none=True)
         if step % args.eval_every == 0 or step == args.steps:
             ev = evaluate(model, eval_batches)
-            trace.append({"step": step, "examples": step * args.batch, **ev})
+            lr_now = float(opt.param_groups[0]["lr"])
+            wall_s = time.time() - t0
+            trace.append(
+                {
+                    "step": step,
+                    "examples": step * args.batch,
+                    "lr": lr_now,
+                    "wall_s": wall_s,
+                    **ev,
+                }
+            )
             examples = step * args.batch
             print(
                 f"  [{arm}] step {step:5d}  examples {examples:7d}  train {float(out.loss.detach()):.4f}  "
-                f"eval CE {ev['ce_nats']:.4f}  acc {ev['acc']:.3f}  "
-                f"({(time.time() - t0) / step:.2f} s/step)",
+                f"eval CE {ev['ce_nats']:.4f}  acc {ev['acc']:.3f}  lr {lr_now:.2e}  "
+                f"({wall_s / step:.2f} s/step)",
                 flush=True,
             )
             if args.target_acc > 0 and ev["acc"] >= args.target_acc:
+                stop_reason = "target_acc"
                 print(f"  [{arm}] early stop: acc {ev['acc']:.3f} >= {args.target_acc}", flush=True)
                 break
+            if (
+                args.floor_patience_steps > 0
+                and step >= args.floor_patience_steps
+                and ev["acc"] < chance + 0.05
+            ):
+                stop_reason = "floor_patience"
+                print(
+                    f"  [{arm}] floor kill: acc {ev['acc']:.3f} still at chance after {step} steps",
+                    flush=True,
+                )
+                break
+    wall_s = time.time() - t0
+    last = trace[-1]
     result = {
         "arm": arm,
         "params": n_params,
-        "examples_seen": trace[-1]["step"] * args.batch,
-        "supervised_tokens_seen": trace[-1]["step"] * args.batch * cfg.answer_len,
-        "final": trace[-1],
+        "examples_seen": last["step"] * args.batch,
+        "supervised_tokens_seen": last["step"] * args.batch * cfg.answer_len,
+        "steps": last["step"],
+        "acc": last["acc"],
+        "ce": last["ce_nats"],
+        "lr": args.lr,
+        "seq": cfg.seq_len,
+        "r": args.ratio,
+        "task": cfg.task,
+        "hops": args.hops,
+        "wall_s": wall_s,
+        "stop_reason": stop_reason,
+        "final": last,
         "trace": trace,
     }
     if arm == "A":
@@ -203,10 +253,15 @@ def main() -> int:
     p.add_argument("--steps", type=int, default=1500)
     p.add_argument("--batch", type=int, default=32)
     p.add_argument("--lr", type=float, default=3e-3)
+    p.add_argument("--sched", default="onecycle", choices=["onecycle", "warmup_constant"],
+                   help="onecycle needs horizon ≥ 2× time-to-95%; warmup_constant stays live")
+    p.add_argument("--warmup_steps", type=int, default=200)
     p.add_argument("--eval_every", type=int, default=100)
     p.add_argument("--eval_rows", type=int, default=128)
     p.add_argument("--target_acc", type=float, default=0.0,
                    help="stop this arm when eval accuracy reaches this (0 = run all steps)")
+    p.add_argument("--floor_patience_steps", type=int, default=0,
+                   help="stop if still at chance after this many steps (0 = never)")
     p.add_argument("--arms", nargs="+", default=list(ARMS), choices=list(ARMS))
     p.add_argument("--threads", type=int, default=4)
     p.add_argument("--seed", type=int, default=0)
@@ -215,6 +270,8 @@ def main() -> int:
     args = p.parse_args()
 
     torch.set_num_threads(args.threads)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"device={device}", flush=True)
     cfg = SymbolicTaskConfig(
         task=args.task,
         seq_len=args.seq_len,
@@ -237,7 +294,8 @@ def main() -> int:
 
     eval_rng = np.random.default_rng(args.seed + 99)
     eval_batches = [
-        make_batch(cfg, eval_rng, args.batch) for _ in range(max(1, args.eval_rows // args.batch))
+        make_batch(cfg, eval_rng, args.batch, device)
+        for _ in range(max(1, args.eval_rows // args.batch))
     ]
 
     print(
@@ -251,7 +309,7 @@ def main() -> int:
     results = {}
     for arm in args.arms:
         print(f"--- arm {arm} ---", flush=True)
-        results[arm] = train_arm(arm, cfg, args, eval_batches)
+        results[arm] = train_arm(arm, cfg, args, eval_batches, device)
 
     print("\n=== verdict ===")
     print(f"floor (no route to the evidence): {floor:.4f} nats, acc {chance:.3f}")
@@ -267,12 +325,32 @@ def main() -> int:
                 f"acc {r['ablate_none']['acc']:.3f}   | far slots only: "
                 f"CE {r['ablate_far']['ce_nats']:.4f} acc {r['ablate_far']['acc']:.3f}"
             )
+    summary = {
+        arm: {
+            "arm": arm,
+            "params": r["params"],
+            "examples_seen": r["examples_seen"],
+            "steps": r["steps"],
+            "acc": r["acc"],
+            "ce": r["ce"],
+            "lr": r["lr"],
+            "seq": r["seq"],
+            "r": r["r"],
+            "task": r["task"],
+            "hops": r["hops"],
+            "wall_s": r["wall_s"],
+            "stop_reason": r["stop_reason"],
+        }
+        for arm, r in results.items()
+    }
     bundle = {
         "run_name": args.run_name,
         "task": args.task,
         "floor_nats": floor,
         "chance_acc": chance,
+        "device": str(device),
         "config": vars(args),
+        "summary": summary,
         "results": results,
     }
     if args.out:
