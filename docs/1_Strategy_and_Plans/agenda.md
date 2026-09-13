@@ -20,9 +20,10 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-13 — E25 E21 capability ladder (tiny limits + 512 INDEX wall at r=16 and r=64).**
-  Tiny INDEX near-pass at 8k. GPU seq=512 right-align: E18 **64 bits**; E21 r=16 **0 bits**;
-  E21 r=64 **0 bits** (8 slots, still chance). Slot count is not the wall. Next: r=1 exclusive.
+- **2026-09-13 — E25 E21 capability ladder (tiny limits + 512 INDEX wall at r=16 / r=64 / r=1).**
+  Tiny INDEX near-pass at 8k. GPU seq=512 right-align: E18 **64 bits**; E21 r=16 / r=64 / r=1
+  all **0 bits**. Compression is not the 512 killer; exclusive QUERY cut is, even with
+  identity token KV. Next: `message_override=raw`.
   Spec [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) ·
   [rung 1](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) ·
   [remainder](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) ·
@@ -34,7 +35,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [chain](../2_Experiments_Registry/run_reports/e25_tiny_chain_ordered_20260913.md) ·
   [chain extra steps](../2_Experiments_Registry/run_reports/e25_tiny_chain_ordered_e21_steps_20260913.md) ·
   [512 r=16](../2_Experiments_Registry/run_reports/e25_bridge512_far_copy_20260913.md) ·
-  [512 r=64](../2_Experiments_Registry/run_reports/e25_bridge512_r64_far_copy_20260913.md).
+  [512 r=64](../2_Experiments_Registry/run_reports/e25_bridge512_r64_far_copy_20260913.md) ·
+  [512 r=1](../2_Experiments_Registry/run_reports/e25_bridge512_r1_far_copy_20260913.md).
   Do not relabel E18 scores as E21.
 - **2026-09-13 — E24 BAPO DNA ladder (tiny + GPU bridge 512/1024; 4k S0 open).** Packed tiny
   seq=128 / 0.59M: E18 matches dense on positional `far_copy` (99.2% vs 99.4%) and recovers
@@ -68,6 +70,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-13 — E25 GPU seq=512 far_copy r=1 (Odra, identity slots).** Dense **100% / 63.95
+  bits** (S0). E18 **100% / 63.94 bits**. E21 **25.1% / 0.00 bits**. Exclusive QUERY cut is
+  the 512 killer even with full token KV. `e18_local` 0 bits (K2).
+  [report](../2_Experiments_Registry/run_reports/e25_bridge512_r1_far_copy_20260913.md).
 - **2026-09-13 — E25 GPU seq=512 far_copy r=64 (Odra, ~8 slots).** Dense **100% / 63.3 bits**
   (S0). E18 **100% / 63.9 bits**. E21 **25.1% / 0.01 bits**. Same floor as r=16. Slot count
   is not the 512 wall. `e18_local` 0 bits (K2).
