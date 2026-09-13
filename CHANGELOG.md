@@ -30,6 +30,7 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-13] - Symbolic long-context task suite with closed-form information floors
 
 **Why:**
 - E22 measured a concept channel with data whose long-range information content was unknown: the
