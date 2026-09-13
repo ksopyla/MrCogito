@@ -20,21 +20,19 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-13 — E24 BAPO DNA ladder (tiny + GPU bridge 512/1024; 4k S0 open).** Packed tiny
+- **2026-09-13 — E24 BAPO DNA ladder (tiny + 512/1024/2k/4k INDEX; 16k not started).** Packed tiny
   seq=128 / 0.59M: E18 matches dense on positional `far_copy` (99.2% vs 99.4%) and recovers
-  **0 bits** on keyed `recall`. GPU right-align INDEX: E18 **100% / 64 bits at seq=512**,
-  **0 bits at seq=1024** while dense is 99.9%. 512 `recall_single` at a fixed offset is still
-  E18 0 bits (not a find-the-mark failure). Advertised 4k spread is K1. Spec
+  **0 bits** on keyed `recall`. GPU right-align INDEX: E18 **100% / 64 bits at seq=512**;
+  1024 H=256 none is 0 bits but SSMax `log` or H=512 restore 64 bits; **2048 and 4k E18
+  stay at 0 bits** while dense is 100%/99%. 4k INDEX S0 is closed (16M + warm residuals,
+  two seeds). 4k `recall_single` is K1. Spec
   [E24](../experiments_specs/ahead/E24_e18_bapo_capability_ladder.md) ·
-  [tiny report](../2_Experiments_Registry/run_reports/e24_tiny_bapo_ladder_20260913.md) ·
-  [bridge report](../2_Experiments_Registry/run_reports/e24_bridge512_bapo_ladder_20260913.md) ·
-  foundation [bapo_capability_ladder.md](../engineering_specs/bapo_capability_ladder.md).
-  **Glyph (same day, not a new E-id):** A=4 DNA stays the exact-floor bandwidth control;
-  iid filler is a toy noise model. A second family — typed vocab 16/32, Markov/Dyck/arith
-  haystacks, reverse / every-k / filter / Dyck-close / fact-in-Markov — is specified and
-  generated in `data/glyph_tasks.py`. Do not score E18 on Glyph until a dense S0 hits 75%.
-  Named DNA scales `bridge` (512) and `bridge_1k` (1024) are the first GPU INDEX rungs;
-  advertised 4k spread is K1. Note
+  [tiny](../2_Experiments_Registry/run_reports/e24_tiny_bapo_ladder_20260913.md) ·
+  [bridge](../2_Experiments_Registry/run_reports/e24_bridge512_bapo_ladder_20260913.md) ·
+  [medium 4k](../2_Experiments_Registry/run_reports/e24_medium_4k_bapo_ladder_20260913.md).
+  **Glyph (same day, not a new E-id):** dense S0 calibrates `copy_span` (99%) and
+  `fact_markov_single` (99%); E18 matches both with a chance local arm. `reverse` /
+  `every_k` / `filter_mod` stay K1. Note
   [glyph_capability_ladder.md](../4_Research_Notes/glyph_capability_ladder.md).
 - **2026-09-12 — E23 Exclusive concept channel (spec ready, not launched).** E22 closed the same
   day (below): the array was live and diverse but CE read it as a document embedding — the far slots
@@ -52,11 +50,16 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-13 — E24 medium 4k INDEX (Polonez/Odra).** Dense 16M + `--warm_residuals`
+  right-align: **99.3% / 63.1 bits** (seed 0) and **99.5%** (seed 1). E18 on that exact
+  recipe: **0 bits @8000**. Seq=2048 H=512 dense 100%, E18 0 bits with and without SSMax.
+  1024 H=256 none 0 bits is dilution (SSMax log and H=512 both 64 bits). 4k recall K1.
+  Glyph tiny: `copy_span` and `fact_markov_single` E18 ≈ dense; reverse/every_k/filter_mod K1.
+  [report](../2_Experiments_Registry/run_reports/e24_medium_4k_bapo_ladder_20260913.md).
 - **2026-09-13 — E24 GPU bridge (Polonez/Odra, right-align INDEX).** Seq=512 `far_copy`:
-  E18 **100% / 63.9 bits** vs dense 99.7% (S1 pass). Seq=1024 `far_copy`: dense **99.9% /
-  64 bits**, E18 **0 bits** (S1 fail). 512 `recall_single` at a *fixed* offset: dense 32 bits,
-  E18 **0 bits** @2500 steps — the content wall is not “find the mark”. 4k spread is K1;
-  4k right-align 16M once hit 74% (missed the gate by 1 pt). 
+  E18 **100% / 63.9 bits** vs dense 99.7% (S1 pass). Seq=1024 `far_copy` H=256 none: dense
+  **99.9% / 64 bits**, E18 **0 bits** (later unstuck by SSMax / H=512). 512 `recall_single`
+  at a *fixed* offset: dense 32 bits, E18 **0 bits** @2500 steps. 4k spread is K1.
   [report](../2_Experiments_Registry/run_reports/e24_bridge512_bapo_ladder_20260913.md).
 - **2026-09-13 — E24 tiny BAPO ladder (CPU, 0.59M).** Packed DNA rungs with a 75% dense control:
   E18 copies 63/64 bits (`far_copy` 99.2% ≈ dense 99.4%) and follows in-order hops (`chain_ordered`

@@ -1,6 +1,6 @@
 # E24 — E18 capability limits on a BAPO DNA ladder
 
-- **Status:** in progress (tiny DNA measured; GPU bridge 512/1024 measured; 4k S0 not closed). **2026-09-13:** a second
+- **Status:** in progress (tiny DNA measured; GPU 512/1024/2k/4k INDEX measured; 4k S0 closed; 16k not started). **2026-09-13:** a second
   family (Glyph: typed vocab 16/32, structured noise) is specified and implemented as
   config-selectable generators; it does **not** change this experiment's DNA hypothesis.
   See [`glyph_capability_ladder.md`](../../4_Research_Notes/glyph_capability_ladder.md).
@@ -91,7 +91,7 @@ measurement instrument with a falsifiable capability claim, not a LR sweep.
   baseline, probe, plots. No new `train_*.py`.
 
 ## Result
-- Run id: `bapo_tiny_packed` (CPU) + `bapo_bridge512` (Polonez/Odra GPU)
+- Run id: `bapo_tiny_packed` (CPU) + `bapo_bridge512` + `right4k_warm` / `b2k_h512_warm` (Polonez/Odra GPU) + `bapo_glyph_tiny_s0` (Cloud CPU)
 - WandB: n/a (probe; no `compute/*`)
-- Run reports: [`e24_tiny_bapo_ladder_20260913.md`](../../2_Experiments_Registry/run_reports/e24_tiny_bapo_ladder_20260913.md) · [`e24_bridge512_bapo_ladder_20260913.md`](../../2_Experiments_Registry/run_reports/e24_bridge512_bapo_ladder_20260913.md)
-- Verdict: **mixed** — S1 pass at seq=128 and **512** right-align `far_copy` (E18 100% / 64 bits); **S1 fail at 1024** (dense 99.9% / 64 bits, E18 **0 bits**). S2 holds on 512 `recall_single` even with fixed offset (E18 0 bits vs dense 32). 4k spread and 512 chain are K1. Do not score E18 at 4k until a dense replica is ≥75%.
+- Run reports: [`e24_tiny_bapo_ladder_20260913.md`](../../2_Experiments_Registry/run_reports/e24_tiny_bapo_ladder_20260913.md) · [`e24_bridge512_bapo_ladder_20260913.md`](../../2_Experiments_Registry/run_reports/e24_bridge512_bapo_ladder_20260913.md) · [`e24_medium_4k_bapo_ladder_20260913.md`](../../2_Experiments_Registry/run_reports/e24_medium_4k_bapo_ladder_20260913.md)
+- Verdict: **mixed** — S1 pass at 128, 512, and 1024 once width/SSMax is enough; **S1 fail at 2048 and 4k** (dense 100%/99% / 64 bits, E18 **0 bits**). 1024 H=256 none is a dilution miss, not a hard one-read limit (SSMax log and H=512 both recover 64 bits). 4k INDEX S0 is closed (16M + `--warm_residuals`, two seeds ≥99%); 4k `recall_single` is K1. Glyph tiny `copy_span` and `fact_markov_single` calibrate and E18 matches dense there. 16k–128k unmeasured. Stay in `ahead/`.

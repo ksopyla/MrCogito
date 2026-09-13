@@ -75,19 +75,16 @@ control does not do that. Right-align isolates INDEX.
 | **K1** | Honoured: no E18 numbers on 4k spread, 512 chain, 2048 copy. |
 | **K2** | `e18_local` stayed near chance on every scored retrieval rung. |
 
-## In flight (do not treat as results)
+## Later the same day (do not rewrite the table above)
 
-- 4k right-align H=512 16M, 8000-step replica (`r4k_g1024_long`)
-- 4k right-align H=768 ~48M (`r4k_h768`)
-- 1024 E18 with SSMax `log` scale and with H=512 (dilution / width hunts after the 0-bit fail)
+1024 H=256 / `logit_scale=none` remains a real 0-bit measurement. It is **not** a hard
+one-global-read limit: SSMax `log` at the same 2.73M and H=512 MHA both recover 64 bits
+(E18 100%). That unstick does **not** extend to seq=2048. 4k INDEX S0 closed with
+`--warm_residuals` (two seeds 99%); E18 on that exact recipe is 0 bits @8000. Full
+table: [`e24_medium_4k_bapo_ladder_20260913.md`](e24_medium_4k_bapo_ladder_20260913.md).
 
 ## Concept Health
 
 Not a language-model run. Effective `a` is recovered bits. At seq=512 copy, E18’s 128 B/tok
-cache recovers 64 bits; on 512 recall and 1024 copy the same cache recovers 0.
-
-## Immediate next action
-
-Keep 4k as an S0 hunt until a dense seed is ≥75% **and** a replica confirms. Do not score E18
-there. The load-bearing follow-up is whether 1024 INDEX is an E18 width/dilution failure
-(SSMax / H=512 hunts) or a hard one-global-read limit.
+cache recovers 64 bits; on 512 recall the same cache recovers 0. At 1024, recovered bits
+are 64 or 0 depending on width/SSMax, not on whether a global read exists.

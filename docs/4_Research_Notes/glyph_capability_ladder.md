@@ -1,8 +1,10 @@
 # Glyph: a typed-vocab, structured-noise capability family
 
-**Date:** 2026-09-13 · **Status:** specified + generators implemented; **not** an E0NN
-and **not** a replacement for the DNA ladder. DNA A=4 remains the exact-floor control.
-E18 is scored on Glyph only after a matched dense control hits 75%.
+**Date:** 2026-09-13 · **Status:** specified + generators implemented; **tiny dense S0
+run**. Calibrated: `copy_span` (dense 99.0% / 94.7 bits, E18 99.3% / 94.7 bits) and
+`fact_markov_single` (dense 99.2% / 47.5 bits, E18 99.1% / 47.4 bits). K1:
+`reverse` 36%, `every_k` 16%, `filter_mod` 68% (missed 75%). **Not** an E0NN and
+**not** a replacement for the DNA ladder. DNA A=4 remains the exact-floor control.
 
 Does **not** derail E23 (exclusive concept channel) and does **not** duplicate the
 sibling `perceiver_concept` Arm-A 100% `far_copy` exam.
@@ -262,7 +264,8 @@ Labels cover `[y]` only. Verifier = solvability proof.
 - DNA suite **untouched**. Probe default is still the DNA tiny core.
 - Same `info_report` recovered-bits / information-flow / bytes/token (duck-typed
   `n_symbols` = answer class).
-- Dense ≥ 75% protocol unchanged. Glyph recipes are **uncalibrated** until an S0.
+- Dense ≥ 75% protocol unchanged. Tiny S0 (2026-09-13): `copy_span` and
+  `fact_markov_single` calibrated; `reverse` / `every_k` / `filter_mod` still K1.
 
 **Still paper:** `arith_eval`, decoder-side `filter_pattern`, SCAN OOD splits,
 `noise=mixed` as the default medium haystack (code supports it; recipes still
@@ -273,24 +276,17 @@ language checkpoints (already a different eval layer).
 
 ---
 
-## Next calibration step (CPU, not Odra)
+## Tiny S0 (done 2026-09-13)
 
-Odra medium DNA (`E24_fc` / `E24_rs` / `E24_sel`) stays up. Do not launch Glyph there.
+CPU dense-only then E18 on calibrated rungs. Numbers:
+[`e24_medium_4k_bapo_ladder_20260913.md`](../2_Experiments_Registry/run_reports/e24_medium_4k_bapo_ladder_20260913.md).
 
-```bash
-# CPU S0 — dense only, packed tiny, Markov haystack
-uv run python verification/bapo_capability_probe.py \
-    --scale tiny --recipe copy_span reverse every_k filter_mod fact_markov_single \
-    --arch dense --out Cache/bapo_glyph_tiny_s0
-```
+Permutation / filter rungs remain K1. Do not score E18 there. `dyck_close` and
+shuffled chain are still hunts. Width 16 is a cheaper S0 if 32 is slow; it cannot
+run Dyck-2 / story / hop.
 
-Then, only on rungs that hit 75%: add `e18 e18_local encdec`. `dyck_close` and
-shuffled chain are hunts. Width 16 is a cheaper S0 if 32 is slow; it cannot run
-Dyck-2 / story / hop.
-
-If dense misses 75% on `reverse` after 4× steps and packed span: **K1**, pack harder
-or drop noise to `iid` *only as a generator debug*, then put Markov back. Do not
-score E18 on an iid Glyph reverse and claim structured-noise results.
+If a later pack of `reverse` still misses 75% after 4× steps: **K1**. Do not score
+E18 on an iid Glyph reverse and claim structured-noise results.
 
 ---
 
