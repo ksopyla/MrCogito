@@ -15,6 +15,24 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-14] - E21 in-place raw token KV (`message_inplace_raw_kv`, default off)
+
+**Why:**
+- Seq=512 in-place identity slots scored 0 bits. Raw override copies 64 bits on the same
+  sdpa backend. Isolates compressor values vs the exclusive `~replace` leak mask.
+
+**Impact:**
+- Default concat and compressor-inplace paths are unchanged. With inplace on,
+  `--message_inplace_raw_kv` writes token K/V into `replace` positions; receivers still
+  cannot see uncompressed remainder.
+
+**What changed:**
+- [added] `PerceiverARConfig.message_inplace_raw_kv` in `nn/perceiver_ar_lm.py`
+- [added] probe `--message_inplace_raw_kv`; ArchSpec field
+- [added] tests in `tests/test_perceiver_ar_message.py` and `tests/test_bapo_ladder.py`
+
+**Does not:** turn the flag on by default, change remainder pooling, or break E18 checkpoints.
+
 ## [2026-09-13] - E21 in-place sender-prefix slots (`message_slots_inplace`, default off)
 
 **Why:**

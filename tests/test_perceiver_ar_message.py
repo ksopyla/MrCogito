@@ -293,6 +293,60 @@ def test_inplace_hides_uncompressed_remainder_from_receivers():
         assert not torch.allclose(a[0, P:], blk[0, P:], atol=1e-5)
 
 
+def test_inplace_raw_kv_default_off_is_inert_and_skips_compressor_when_on():
+    """`--message_inplace_raw_kv` default off (concat/inplace compressor unchanged).
+    When on with inplace, token K/V is used: scrambling the compressor does not move
+    receiver logits. Exclusive remainder hiding still holds. Concat ignores the flag."""
+    x = with_boundary(rand_ids(2, 14, seed=3), 8)
+    concat = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=2)
+    concat_flag = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=2,
+                             message_inplace_raw_kv=True)
+    ip = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=2,
+                    message_slots_inplace=True)
+    ip_off = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=2,
+                        message_slots_inplace=True, message_inplace_raw_kv=False)
+    ip_raw = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=2,
+                        message_slots_inplace=True, message_inplace_raw_kv=True)
+    with torch.no_grad():
+        assert torch.allclose(concat(x).logits, concat_flag(x).logits, atol=1e-6)
+        assert torch.allclose(ip(x).logits, ip_off(x).logits, atol=1e-6)
+        assert not torch.allclose(ip(x).logits[:, 8:], ip_raw(x).logits[:, 8:], atol=1e-4)
+        gi = ip_raw.config.global_layer_index
+        before = ip_raw(x).logits
+        ip_raw.layers[gi].attn.compressor.u.data.normal_(0, 5.0)
+        ip_raw.layers[gi].attn.compressor.delta.weight.data.normal_(0, 5.0)
+        after = ip_raw(x).logits
+        assert torch.allclose(before, after, atol=1e-5)
+
+
+def test_inplace_raw_kv_r1_matches_raw_override():
+    """r=1 + inplace raw token KV: same length-S geometry and token values as override=raw."""
+    x = with_boundary(rand_ids(2, 14, seed=3), 8)
+    raw_kv = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                        message_slots_inplace=True, message_inplace_raw_kv=True)
+    raw_m = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1)
+    with torch.no_grad():
+        with raw_m.message_override("raw"):
+            raw = raw_m(x).logits
+        assert torch.allclose(raw_kv(x).logits, raw, atol=1e-4)
+
+
+def test_inplace_raw_kv_hides_uncompressed_remainder_from_receivers():
+    """Raw token KV under inplace still hides the incomplete last sender block."""
+    model = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=3,
+                       message_slots_inplace=True, message_inplace_raw_kv=True)
+    S, P = 16, 10
+    x = with_boundary(rand_ids(1, S, seed=4), P)
+    y_rem = x.clone()
+    y_rem[0, P - 1] = (y_rem[0, P - 1] + 7) % 80 + 3
+    y_blk = x.clone()
+    y_blk[0, 2] = (y_blk[0, 2] + 7) % 80 + 3
+    with torch.no_grad():
+        a, rem, blk = model(x).logits, model(y_rem).logits, model(y_blk).logits
+        assert torch.allclose(a[0, P:], rem[0, P:], atol=1e-5)
+        assert not torch.allclose(a[0, P:], blk[0, P:], atol=1e-5)
+
+
 def test_receiver_only_round_trip_via_prefix_kv_as_message():
     """S6: a second process holding only `prefix_kv(prefix, as_message=True)` reproduces the
     receiver's logits."""

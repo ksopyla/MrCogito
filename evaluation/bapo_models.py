@@ -10,6 +10,8 @@ Architectures
                incomplete last sender block. Probe `--message_override raw|none|swapped` wraps the
                e21 forward in `model.message_override` (default `real` slots).
                `--message_slots_inplace` writes slots into sender prefix positions (KV_LEN=S).
+               `--message_inplace_raw_kv` (with inplace) copies token K/V into those positions
+               instead of compressor slots; exclusive remainder hiding stays on.
 - `encdec`     Symmetric encoder-decoder: bidirectional prefix encoder, suffix-only decoder with
                cross-attention. Prefix information cannot take a raw route into the suffix.
 """
@@ -51,6 +53,7 @@ class ArchSpec:
     message_boundary_token_id: int = -1
     message_pool_remainder: bool = False
     message_slots_inplace: bool = False
+    message_inplace_raw_kv: bool = False
 
 
 def _n_heads(hidden: int, head_dim: int) -> int:
@@ -131,6 +134,7 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         message_compress_ratio=spec.message_compress_ratio if arch == "e21" else 16,
         message_pool_remainder=bool(spec.message_pool_remainder) if arch == "e21" else False,
         message_slots_inplace=bool(spec.message_slots_inplace) if arch == "e21" else False,
+        message_inplace_raw_kv=bool(spec.message_inplace_raw_kv) if arch == "e21" else False,
         pad_token_id=pad_id,
         bos_token_id=bos_id,
         eos_token_id=eos_id,

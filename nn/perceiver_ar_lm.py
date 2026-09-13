@@ -27,7 +27,10 @@ Hooks for the family (config fields only — no parameters unless enabled):
     document start; the global read lets receivers see the prefix only as `KVCompressor`
     slots (one per `ratio` tokens, in the read's own K/V space). Complete homogeneous
     blocks only by default; `message_pool_remainder` also pools the incomplete last sender
-    block. Off by default (`id=-1`) so E18 checkpoints stay byte-identical.
+    block. `message_slots_inplace` writes slots into sender prefix positions (KV_LEN=S).
+    `message_inplace_raw_kv` (requires inplace) copies token K/V into those positions
+    instead of compressor slots; the exclusive `~replace` mask still hides uncompressed
+    remainder. Off by default (`id=-1`) so E18 checkpoints stay byte-identical.
     `prefix_kv(as_message=True)` returns those slots.
 """
 from __future__ import annotations
@@ -99,6 +102,7 @@ class PerceiverARConfig(PretrainedConfig):
         message_compress_ratio: int = 16,     # E21 — prefix tokens per message slot (1 = uncompressed, arm U)
         message_pool_remainder: bool = False, # E21 — pool the incomplete last sender block (default: complete blocks only)
         message_slots_inplace: bool = False,  # E21 — write slots into sender prefix positions (KV_LEN=S; default concat)
+        message_inplace_raw_kv: bool = False,  # E21 — inplace: token K/V at replace positions (skip compressor values)
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -150,6 +154,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_compress_ratio = int(message_compress_ratio)
         self.message_pool_remainder = bool(message_pool_remainder)
         self.message_slots_inplace = bool(message_slots_inplace)
+        self.message_inplace_raw_kv = bool(message_inplace_raw_kv)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -483,6 +488,7 @@ class MessageCtx:
     pool_valid: Optional[torch.Tensor] = None  # [B,S] tokens that enter compressor slots (remainder path)
     ratio: int = 1              # message_compress_ratio (scatter width for inplace)
     inplace: bool = False       # True: slots overwrite sender prefix K/V; KV_LEN stays S
+    inplace_raw_kv: bool = False  # True: keep token K/V at replace positions (skip compressor)
 
     @property
     def n_slots(self) -> int:
@@ -571,13 +577,17 @@ def mix_inplace_kv(k, v, k_bar, v_bar, ctx: MessageCtx):
 
     `k`/`v` and `k_bar`/`v_bar` are un-RoPE'd. Returns mixed K/V at length S and `replace`
     [B,S] (True = this prefix position holds a slot, not uncompressed sender KV).
+    When `ctx.inplace_raw_kv`, keep token K/V at those positions (skip compressor values)
+    and still return the same `replace` mask so receivers cannot see uncompressed remainder.
     """
     B, S, g, dh = k.shape
     r = max(int(ctx.ratio), 1)
-    k_exp = k_bar.repeat_interleave(r, dim=1)[:, :S]
-    v_exp = v_bar.repeat_interleave(r, dim=1)[:, :S]
     valid_tok = (ctx.slot_doc >= 0).repeat_interleave(r, dim=1)[:, :S]
     replace = valid_tok & (ctx.side == 0) & (ctx.doc >= 0)
+    if getattr(ctx, "inplace_raw_kv", False):
+        return k, v, replace
+    k_exp = k_bar.repeat_interleave(r, dim=1)[:, :S]
+    v_exp = v_bar.repeat_interleave(r, dim=1)[:, :S]
     k_mix = torch.where(replace[..., None, None], k_exp.to(k.dtype), k)
     v_mix = torch.where(replace[..., None, None], v_exp.to(v.dtype), v)
     return k_mix, v_mix, replace
@@ -877,10 +887,14 @@ class Attention(nn.Module):
             and message.external is None
         )
         if use_inplace:
-            k_bar, v_bar = self.message_slots(x, k_raw, v, message, key_valid, rope_theta, rope=False)
-            if message.override == "swapped":
-                k_bar, v_bar = k_bar.roll(1, dims=0), v_bar.roll(1, dims=0)
-            k_mix, v_mix, replace = mix_inplace_kv(k_un, v, k_bar, v_bar, message)
+            raw_kv = bool(getattr(message, "inplace_raw_kv", False))
+            if raw_kv:
+                k_mix, v_mix, replace = mix_inplace_kv(k_un, v, k_un, v, message)
+            else:
+                k_bar, v_bar = self.message_slots(x, k_raw, v, message, key_valid, rope_theta, rope=False)
+                if message.override == "swapped":
+                    k_bar, v_bar = k_bar.roll(1, dims=0), v_bar.roll(1, dims=0)
+                k_mix, v_mix, replace = mix_inplace_kv(k_un, v, k_bar, v_bar, message)
             if self.use_rope:
                 q = apply_rope(q, cos, sin)
                 k_mix = apply_rope(k_mix, cos, sin)
@@ -893,7 +907,10 @@ class Attention(nn.Module):
                 q, k_mix, v_mix, ctx=message, replace=replace, key_valid=key_valid,
                 backend=self.backend, block_masks=block_masks,
             )
-            return self.wo(o.reshape(B, S, self.h * self.dh))
+            out = self.wo(o.reshape(B, S, self.h * self.dh))
+            if raw_kv:
+                out = out + 0.0 * (self.compressor.u.sum() + self.compressor.delta.weight.sum()).to(out.dtype)
+            return out
         k = k_un
         if self.use_rope:
             q, k = apply_rope(q, cos, sin), apply_rope(k, cos, sin)
@@ -1202,6 +1219,7 @@ class PerceiverARLM(PreTrainedModel):
                 slot_pos=slot_pos.to(dev).expand(B, nb) if slot_pos.dim() == 1 else slot_pos.to(dev),
                 n_sides=2, override=self._message_override, external=(k_bar, v_bar),
                 ratio=r, inplace=cfg.message_slots_inplace,
+                inplace_raw_kv=cfg.message_inplace_raw_kv,
             )
         is_b = input_ids == cfg.message_boundary_token_id
         if not bool(is_b.any()):
@@ -1240,7 +1258,8 @@ class PerceiverARLM(PreTrainedModel):
             slot_pos = pos.gather(1, end_abs)
         return MessageCtx(side=side, doc=doc, local_doc_ids=local, slot_doc=slot_doc, slot_side=slot_side,
                           slot_pos=slot_pos, n_sides=K, override=self._message_override,
-                          pool_valid=pool_valid, ratio=r, inplace=cfg.message_slots_inplace)
+                          pool_valid=pool_valid, ratio=r, inplace=cfg.message_slots_inplace,
+                          inplace_raw_kv=cfg.message_inplace_raw_kv)
 
     # -- helpers ----------------------------------------------------------------------
     @staticmethod
