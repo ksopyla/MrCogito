@@ -254,7 +254,7 @@ def main() -> int:
     p.add_argument("--batch", type=int, default=32)
     p.add_argument("--lr", type=float, default=3e-3)
     p.add_argument("--sched", default="onecycle", choices=["onecycle", "warmup_constant"],
-                   help="onecycle needs horizon ≥ 2× time-to-95%; warmup_constant stays live")
+                   help="onecycle needs horizon at least 2x time-to-95pct; warmup_constant stays live")
     p.add_argument("--warmup_steps", type=int, default=200)
     p.add_argument("--eval_every", type=int, default=100)
     p.add_argument("--eval_rows", type=int, default=128)

@@ -36,6 +36,8 @@ was not.
 | span=8 (8× less loss per row) | 1.35M | >96,000 | — | — | — | **25% (chance)** |
 | OneCycle horizon=3k | 1.35M | 96,000 wasted | 3,000 | 3.07M | ~8 min | **49%** |
 
+![Improved Arm A on 32-letter far_copy — examples, not width, bind 99%](arm_a_scale_to_100.png)
+
 Arm D on the same exam: **0.60M params, ~64k examples, 100%**, ~2 min. So the notebook student
 needs **~1.5× the examples** and about **5× the wall-clock** (the encoder+pooler+latent+cross-attn
 is slower per step: 0.25 s vs 0.07 s).
