@@ -15,6 +15,21 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-13] - Symbolic probe: early-stop at target accuracy + example accounting
+
+**Why:**
+- Mapping “what does improved Arm A need for ~100% on `far_copy`?” required counting unique rows
+  seen and not wasting CPU after the gate. A 3k OneCycle horizon had produced a fake 49% ceiling
+  on the same model that later reached 99.9% with a longer horizon and `--target_acc 0.99`.
+
+**Added:**
+- `verification/symbolic_channel_probe.py`: `--target_acc`, `--token_embedding_dim`, `--run_name`;
+  logs `examples` / `examples_seen` / `supervised_tokens_seen`.
+- `verification/run_scale_job.sh`: thin wrapper so long CLI lines cannot wrap inside tmux.
+- Limits: `docs/4_Research_Notes/symbolic_arm_a_100pct_limits_20260913.md`.
+
+---
+
 ## [2026-09-13] - Symbolic long-context task suite with closed-form information floors
 
 **Why:**
