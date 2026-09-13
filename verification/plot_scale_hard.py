@@ -145,7 +145,13 @@ def parse_log_bundle(log_path: Path, json_hint: Path | None = None) -> dict | No
     last = rows[-1]
     floor_kill = "floor kill" in text
     stop = "floor_patience" if floor_kill else "in_progress"
-    params = 5_107_858 if arm == "A" else 2_267_977
+    name = log_path.stem
+    if arm == "A":
+        params = 5_107_858
+    elif "D9" in name:
+        params = 4_974_227  # 9 decoder layers, param-matched to 5.11M A
+    else:
+        params = 2_267_977
     return {
         "run_name": log_path.stem,
         "task": task,
@@ -642,6 +648,108 @@ def plot_combined(cells, probes, stubs, easy_a, easy_3, r16, outfile: Path) -> N
     plt.close(fig)
 
 
+def plot_steps_sizes_acc(cells: list[dict], easy_a, easy_3, outfile: Path) -> None:
+    """The comparison the scaling-law goal asked for: steps, sizes, accuracies."""
+    fig, axes = plt.subplots(1, 3, figsize=(16.2, 5.0))
+
+    ax = axes[0]
+    ax.axhline(BAR, color="0.35", ls="--", lw=1.0)
+    ax.axhline(CHANCE, color="0.65", ls=":", lw=1.0)
+    for b in cells:
+        for arm in b["results"]:
+            _, steps, ys = traces(b, arm)
+            ax.plot(
+                steps,
+                ys,
+                color=cell_color(b, arm),
+                ls=style_for(arm, bool(b.get("in_progress")))["ls"],
+                lw=1.8,
+                label=label_for(b, arm, "(live)" if b.get("in_progress") else ""),
+            )
+    ax.set_xlabel("optimizer steps")
+    ax.set_ylabel("eval accuracy")
+    ax.set_ylim(-0.02, 1.05)
+    ax.set_title("Accuracy vs steps")
+    ax.legend(fontsize=6.5, loc="lower right")
+    ax.grid(True, alpha=0.3)
+
+    ax2 = axes[1]
+    ax2.axhline(BAR, color="0.35", ls="--", lw=1.0)
+    ax2.axhline(CHANCE, color="0.65", ls=":", lw=1.0)
+    for b in cells:
+        for arm in b["results"]:
+            rec = b["results"][arm]
+            acc = rec.get("acc", rec.get("final", {}).get("acc", 0))
+            params = rec["params"] / 1e6
+            ax2.scatter(
+                params,
+                acc,
+                s=90,
+                c=cell_color(b, arm),
+                marker={"A": "o", "C": "D", "D": "s"}[arm],
+                zorder=3,
+            )
+            ax2.annotate(
+                difficulty_key(b),
+                (params, acc),
+                textcoords="offset points",
+                xytext=(5, 4),
+                fontsize=7,
+            )
+    if easy_a:
+        acc = easy_a["results"]["A"]["final"]["acc"]
+        ax2.scatter(easy_a["results"]["A"]["params"] / 1e6, acc, s=70, c="0.5", marker="o")
+        ax2.annotate("A seq128", (1.35, acc), textcoords="offset points", xytext=(5, 4), fontsize=7, color="0.4")
+    ax2.set_xlabel("params (M)")
+    ax2.set_ylabel("final eval accuracy")
+    ax2.set_xlim(0, 10)
+    ax2.set_ylim(-0.02, 1.05)
+    ax2.set_title("Size vs accuracy (<10M)")
+    ax2.grid(True, alpha=0.3)
+
+    ax3 = axes[2]
+    for b in cells:
+        if b["config"].get("task") != "far_copy":
+            continue
+        for arm in b["results"]:
+            rec = b["results"][arm]
+            acc = rec.get("acc", rec.get("final", {}).get("acc", 0))
+            if acc < BAR:
+                continue
+            xs, _, ys = traces(b, arm)
+            e95 = examples_to_bar(xs, ys)
+            if e95 is None:
+                continue
+            ax3.scatter(
+                b["config"]["seq_len"],
+                e95 / 1000.0,
+                s=90,
+                c=cell_color(b, arm),
+                marker={"A": "o", "C": "D", "D": "s"}[arm],
+                zorder=3,
+            )
+            ax3.annotate(
+                f"{arm} {rec['params']/1e6:.2f}M",
+                (b["config"]["seq_len"], e95 / 1000.0),
+                textcoords="offset points",
+                xytext=(5, 4),
+                fontsize=7,
+            )
+    ax3.set_xlabel("seq_len (far_copy cells that hit 95%)")
+    ax3.set_ylabel("examples to ≥95% (thousands)")
+    ax3.set_title("Data to 95% vs length")
+    ax3.grid(True, alpha=0.3)
+
+    fig.suptitle(
+        "Exclusive-scope concept slots <10M · steps · sizes · accuracies · 95% bar",
+        fontsize=12,
+    )
+    fig.tight_layout()
+    fig.savefig(outfile, dpi=140)
+    fig.savefig(HARD / outfile.name, dpi=140)
+    plt.close(fig)
+
+
 def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     HARD.mkdir(parents=True, exist_ok=True)
@@ -669,7 +777,7 @@ def main() -> int:
         r16,
         "steps",
         OUT_DIR / "harder_accuracy_vs_steps.png",
-        "Harder cells: accuracy vs steps  (batch 32, warmup-constant lr=1e-3)",
+        "Harder cells: accuracy vs steps  (batch 32, warmup-constant; LR searched per cell)",
     )
     plot_difficulty(cells, stubs, easy_a, easy_3, OUT_DIR / "harder_difficulty_vs_accuracy.png")
     plot_lr(probes, OUT_DIR / "harder_lr_probe.png")
@@ -694,12 +802,15 @@ def main() -> int:
         (OUT_DIR / dst).write_bytes(data)
         (HARD / dst).write_bytes(data)
 
+    plot_steps_sizes_acc(cells, easy_a, easy_3, OUT_DIR / "harder_steps_sizes_accuracies.png")
+
     print(f"wrote {OUT_DIR / 'harder_accuracy_vs_examples.png'}", flush=True)
     print(f"wrote {OUT_DIR / 'harder_accuracy_vs_steps.png'}", flush=True)
     print(f"wrote {OUT_DIR / 'harder_difficulty_vs_accuracy.png'}", flush=True)
     print(f"wrote {OUT_DIR / 'harder_lr_probe.png'}", flush=True)
     print(f"wrote {OUT_DIR / 'harder_params_vs_max_seq.png'}", flush=True)
     print(f"wrote {OUT_DIR / 'concept_slot_scaling_frontier.png'}", flush=True)
+    print(f"wrote {OUT_DIR / 'harder_steps_sizes_accuracies.png'}", flush=True)
     return 0
 
 
