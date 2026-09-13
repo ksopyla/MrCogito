@@ -12,6 +12,8 @@ Architectures
                `--message_slots_inplace` writes slots into sender prefix positions (KV_LEN=S).
                `--message_inplace_raw_kv` (with inplace) copies token K/V into those positions
                instead of compressor slots; exclusive remainder hiding stays on.
+               `--message_identity_slots` bypasses learned compressor `u`/`delta` (r=1: hard
+               token K/V copy through the slot/scatter path, not inplace_raw_kv).
 - `encdec`     Symmetric encoder-decoder: bidirectional prefix encoder, suffix-only decoder with
                cross-attention. Prefix information cannot take a raw route into the suffix.
 """
@@ -54,6 +56,7 @@ class ArchSpec:
     message_pool_remainder: bool = False
     message_slots_inplace: bool = False
     message_inplace_raw_kv: bool = False
+    message_identity_slots: bool = False
 
 
 def _n_heads(hidden: int, head_dim: int) -> int:
@@ -135,6 +138,7 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         message_pool_remainder=bool(spec.message_pool_remainder) if arch == "e21" else False,
         message_slots_inplace=bool(spec.message_slots_inplace) if arch == "e21" else False,
         message_inplace_raw_kv=bool(spec.message_inplace_raw_kv) if arch == "e21" else False,
+        message_identity_slots=bool(spec.message_identity_slots) if arch == "e21" else False,
         pad_token_id=pad_id,
         bos_token_id=bos_id,
         eos_token_id=eos_id,

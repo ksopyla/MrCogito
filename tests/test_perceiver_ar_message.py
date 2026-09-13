@@ -202,6 +202,27 @@ def test_kv_compressor_is_mean_pool_at_init_and_identity_at_ratio_one():
     assert not torch.allclose(k2[:, 0], k_norm(k_raw[:, :4].mean(1)), atol=1e-4)
 
 
+def test_identity_slots_r1_equals_token_kv_even_after_scrambling_u_delta():
+    """`--message_identity_slots` bypasses u/delta: r=1 is k_norm(k_raw), v at init and after scramble."""
+    k_norm = torch.nn.RMSNorm(cfg().head_dim)
+    B, S, g, dh, d = 2, 10, cfg().num_kv_heads, cfg().head_dim, cfg().hidden_size
+    h = torch.randn(B, S, d)
+    k_raw, v = torch.randn(B, S, g, dh), torch.randn(B, S, g, dh)
+    ident = KVCompressor(cfg(message_boundary_token_id=M, message_compress_ratio=1,
+                             message_identity_slots=True))
+    k1, v1 = ident(h, k_raw, v, k_norm)
+    assert torch.allclose(k1, k_norm(k_raw), atol=1e-6) and torch.allclose(v1, v, atol=1e-6)
+    ident.u.data.normal_(0, 5.0)
+    ident.delta.weight.data.normal_(0, 5.0)
+    k2, v2 = ident(h, k_raw, v, k_norm)
+    assert torch.allclose(k2, k_norm(k_raw), atol=1e-6) and torch.allclose(v2, v, atol=1e-6)
+    off = KVCompressor(cfg(message_boundary_token_id=M, message_compress_ratio=1))
+    assert off.identity_slots is False
+    off.delta.weight.data.normal_(0, 5.0)
+    k_off, _ = off(h, k_raw, v, k_norm)
+    assert not torch.allclose(k_off, k_norm(k_raw), atol=1e-4)
+
+
 # ------------------------------------------------------------------ severance / channel isolation
 
 
@@ -345,6 +366,30 @@ def test_inplace_raw_kv_hides_uncompressed_remainder_from_receivers():
         a, rem, blk = model(x).logits, model(y_rem).logits, model(y_blk).logits
         assert torch.allclose(a[0, P:], rem[0, P:], atol=1e-5)
         assert not torch.allclose(a[0, P:], blk[0, P:], atol=1e-5)
+
+
+def test_inplace_identity_slots_uses_scatter_not_raw_kv_and_ignores_u():
+    """Inplace + identity_slots still goes through compressor/scatter (raw_kv off).
+    Scrambling u/delta must not move logits. r=1 matches inplace raw token KV at init."""
+    x = with_boundary(rand_ids(2, 14, seed=3), 8)
+    ident = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                       message_slots_inplace=True, message_identity_slots=True)
+    raw_kv = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                        message_slots_inplace=True, message_inplace_raw_kv=True)
+    learned = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                         message_slots_inplace=True)
+    assert ident.config.message_inplace_raw_kv is False
+    assert ident.config.message_identity_slots is True
+    with torch.no_grad():
+        assert torch.allclose(ident(x).logits, raw_kv(x).logits, atol=1e-4)
+        gi = ident.config.global_layer_index
+        before = ident(x).logits
+        ident.layers[gi].attn.compressor.u.data.normal_(0, 5.0)
+        ident.layers[gi].attn.compressor.delta.weight.data.normal_(0, 5.0)
+        after = ident(x).logits
+        assert torch.allclose(before, after, atol=1e-5)
+        learned.layers[gi].attn.compressor.delta.weight.data.normal_(0, 5.0)
+        assert not torch.allclose(learned(x).logits[:, 8:], ident(x).logits[:, 8:], atol=1e-4)
 
 
 def test_receiver_only_round_trip_via_prefix_kv_as_message():

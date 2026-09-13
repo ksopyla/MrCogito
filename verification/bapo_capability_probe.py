@@ -149,7 +149,8 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             f"msg_remainder={getattr(model.config, 'message_pool_remainder', False)}  "
             f"msg_override={args.message_override if arch == 'e21' else '-'}  "
             f"msg_inplace={getattr(model.config, 'message_slots_inplace', False) if arch == 'e21' else '-'}  "
-            f"msg_rawkv={getattr(model.config, 'message_inplace_raw_kv', False) if arch == 'e21' else '-'}",
+            f"msg_rawkv={getattr(model.config, 'message_inplace_raw_kv', False) if arch == 'e21' else '-'}  "
+            f"msg_idslots={getattr(model.config, 'message_identity_slots', False) if arch == 'e21' else '-'}",
             flush=True,
         )
     override = args.message_override if arch == "e21" else "real"
@@ -262,6 +263,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         message_pool_remainder=args.message_pool_remainder,
         message_slots_inplace=args.message_slots_inplace,
         message_inplace_raw_kv=args.message_inplace_raw_kv,
+        message_identity_slots=args.message_identity_slots,
     )
     card = rung_card(scale, recipe.task, **over)
     card["local_window"] = window
@@ -353,6 +355,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             "message_pool_remainder": args.message_pool_remainder,
             "message_slots_inplace": args.message_slots_inplace,
             "message_inplace_raw_kv": args.message_inplace_raw_kv,
+            "message_identity_slots": args.message_identity_slots,
         },
         "pack": {
             "answer_len": cfg.answer_len,
@@ -437,6 +440,13 @@ def main() -> int:
         default=False,
         help="E21: with --message_slots_inplace, copy token K/V into replace positions "
         "(skip compressor values). Exclusive ~replace mask stays on. Default off.",
+    )
+    p.add_argument(
+        "--message_identity_slots",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="E21: bypass KVCompressor u/delta (frozen mean; r=1 is a hard token K/V copy). "
+        "Still goes through the slot/scatter path. Default off.",
     )
     p.add_argument("--seq_len", type=int, default=None, help="override scale seq_len (S0 hunts)")
     p.add_argument("--min_gap", type=int, default=None, help="override scale min_gap (S0 hunts)")

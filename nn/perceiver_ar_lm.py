@@ -30,7 +30,9 @@ Hooks for the family (config fields only — no parameters unless enabled):
     block. `message_slots_inplace` writes slots into sender prefix positions (KV_LEN=S).
     `message_inplace_raw_kv` (requires inplace) copies token K/V into those positions
     instead of compressor slots; the exclusive `~replace` mask still hides uncompressed
-    remainder. Off by default (`id=-1`) so E18 checkpoints stay byte-identical.
+    remainder. `message_identity_slots` bypasses learned `u`/`delta` so each slot is a
+    frozen mean (r=1: hard copy of token K/V after `k_norm`). Off by default (`id=-1`)
+    so E18 checkpoints stay byte-identical.
     `prefix_kv(as_message=True)` returns those slots.
 """
 from __future__ import annotations
@@ -103,6 +105,7 @@ class PerceiverARConfig(PretrainedConfig):
         message_pool_remainder: bool = False, # E21 — pool the incomplete last sender block (default: complete blocks only)
         message_slots_inplace: bool = False,  # E21 — write slots into sender prefix positions (KV_LEN=S; default concat)
         message_inplace_raw_kv: bool = False,  # E21 — inplace: token K/V at replace positions (skip compressor values)
+        message_identity_slots: bool = False,  # E21 — bypass compressor u/delta (r=1: hard token K/V copy)
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -155,6 +158,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_pool_remainder = bool(message_pool_remainder)
         self.message_slots_inplace = bool(message_slots_inplace)
         self.message_inplace_raw_kv = bool(message_inplace_raw_kv)
+        self.message_identity_slots = bool(message_identity_slots)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -663,13 +667,16 @@ class KVCompressor(nn.Module):
     Slot = attention-pooled block: weights softmax_j(h_j · u_g) per kv-head (u zero-init → uniform =
     mean pool), keys pooled *before* `k_norm`, plus a zero-init linear correction from the block's
     mean hidden state. At init this is exact mean pooling; with `ratio=1` every slot is one token's
-    K/V exactly (the uncompressed arm U). RoPE is applied by the caller at the slot's position.
+    K/V exactly (the uncompressed arm U) *until* `u`/`delta` move. `identity_slots` bypasses
+    `u`/`delta` for a frozen mean (r=1: hard copy of `k_norm(k_raw)`, `v`). RoPE is applied by
+    the caller at the slot's position.
     """
 
     def __init__(self, cfg: PerceiverARConfig):
         super().__init__()
         self.ratio = int(cfg.message_compress_ratio)
         self.g, self.dh = cfg.num_kv_heads, cfg.head_dim
+        self.identity_slots = bool(getattr(cfg, "message_identity_slots", False))
         self.u = nn.Parameter(torch.zeros(self.g, cfg.hidden_size))
         self.delta = nn.Linear(cfg.hidden_size, 2 * self.g * self.dh, bias=False)
         nn.init.zeros_(self.delta.weight)
@@ -692,6 +699,13 @@ class KVCompressor(nn.Module):
         if pad:
             ok = F.pad(ok, (0, pad), value=False)
         ok = ok.view(B, nb, r)
+        if self.identity_slots:
+            w = ok.to(dtype=k_raw.dtype)
+            w = w / w.sum(dim=2, keepdim=True).clamp(min=1)
+            k_bar = torch.einsum("bnr,bnrgd->bngd", w, k_raw.view(B, nb, r, g, dh))
+            v_bar = torch.einsum("bnr,bnrgd->bngd", w, v.view(B, nb, r, g, dh))
+            z = (self.u.sum() + self.delta.weight.sum()).to(k_bar.dtype) * 0.0
+            return k_norm(k_bar) + z, v_bar + z
         hb = h.view(B, nb, r, d)
         scores = torch.einsum("bnrd,gd->bnrg", hb, self.u.to(hb.dtype))
         scores = scores.masked_fill(~ok[..., None], float("-inf"))

@@ -15,6 +15,24 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-14] - E21 hard-identity slots (`message_identity_slots`, default off)
+
+**Why:**
+- In-place compressor r=1 scored 0 bits; in-place raw token KV copied 63 bits. Isolates
+  learned `u`/`delta` from the compressor/scatter path.
+
+**Impact:**
+- Default learned pool is unchanged. `--message_identity_slots` bypasses `u`/`delta`
+  (r=1: hard copy of `k_norm(k_raw)`, `v`). Still scatters through inplace when that flag
+  is on; does not skip the compressor the way `--message_inplace_raw_kv` does.
+
+**What changed:**
+- [added] `PerceiverARConfig.message_identity_slots` in `nn/perceiver_ar_lm.py`
+- [added] probe `--message_identity_slots`; ArchSpec field
+- [added] tests in `tests/test_perceiver_ar_message.py` and `tests/test_bapo_ladder.py`
+
+**Does not:** turn the flag on by default, skip inplace scatter, or break E18 checkpoints.
+
 ## [2026-09-14] - E21 in-place raw token KV (`message_inplace_raw_kv`, default off)
 
 **Why:**
