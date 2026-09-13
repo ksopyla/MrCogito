@@ -181,11 +181,15 @@ noise” — exactly “filter / every-k-th” with a known noise process.
 **Noisy recall** inserts noise tokens between KV pairs.
 
 ### The exam they actually ran
-Vocab typically 8–64, sequences of `(key, value)` pairs then queries; mapping is
-fresh per row. Selective copy: a subset of positions marked as data, the rest
-noise; emit the data in order. Compression: autoencoder reconstruction of a
-sequence from a short latent. They train for minutes at width 128 and treat the
-score as a unit test predictive of LM scaling (MAD’s claim).
+The MAD CLI default is `--vocab-size 16` ([`train.py`](https://github.com/athms/mad-lab/blob/0f49a452/train.py));
+the paper sweeps **16 / 32 / 64 / 128**. That is the precedent for Glyph-16/32 —
+not 32 arbitrary ids, but the same closed sizes MAD used as architecture unit tests.
+Sequences are `(key, value)` pairs then queries; the mapping is fresh per row.
+Selective copy: a subset of positions marked as data, the rest noise; emit the data
+in order (seq 256–1024, 16–96 tokens copied). Noisy recall has a separate
+`--noise-vocab-size` and `--frac-noise` (iid inserted tokens). Compression:
+autoencoder reconstruction from a short latent. They train for minutes at width
+128 and treat the score as a unit test predictive of LM scaling (MAD’s claim).
 
 ### Verdict
 **Adapt** selective copy (Glyph `filter_mod`, `every_k`) and noisy recall (Glyph

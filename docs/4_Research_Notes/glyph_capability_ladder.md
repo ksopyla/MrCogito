@@ -94,7 +94,9 @@ instrument. That is one family.
 
 ## Typed vocab (16 and 32)
 
-Not 32 arbitrary ids. Each id has a *role* a local LM can model.
+Not 32 arbitrary ids. Each id has a *role* a local LM can model. MAD’s unit tests
+default to vocab 16 and sweep 16/32/64/128 ([arXiv:2403.17844](https://arxiv.org/abs/2403.17844));
+we take those sizes and type the ids.
 
 **Glyph-32 (canonical), ids 0..31**
 
