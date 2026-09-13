@@ -101,11 +101,26 @@ uncompressed tokens interleaved with compressed spans for the same reason; E23 g
 selecting, inside natural text, the tokens whose information *is* in the compressed span.
 
 ## Success criteria (set BEFORE running; Odra 3×3090, 32k, 0.5B tokens per arm)
-- **S1 memory on natural text:** paired ablation (`--probe concept`, modes `real | none | shuffled`;
-  under exclusive scope `far` ≡ `real`) on ≥ 64 held-out PG-19 rows ≥ 32k: **CE(none) − CE(real) ≥ 0.10
-  nats** on tokens with ≥ 4096 of history (2× E22's far marginal) and **≥ 0.5 nats on far-repeat tokens**;
-  CE(shuffled) − CE(real) ≥ 0.5 × Δ_none on far-repeat tokens (content, not prior). Segment-0 Δ must be
-  0.00 ± 0.01 in every mode (built-in control; a nonzero value is a bug, not a result).
+> **Every threshold below is a fraction of a ceiling this project has measured.** E22's S1 asked for
+> 0.30 nats of far-context value when E18's reach ablation had already shown a *dense* transformer
+> extracting only 0.035–0.10 nats from the same distances at the same scale — unreachable by any
+> architecture ([root cause §7.1](../../4_Research_Notes/e22_root_cause_20260912.md)). On **natural text
+> the prize is ~0.1 nats and that is physics, not architecture**, so E23 does not gate on an absolute
+> natural-text number; it gates relative to the dense ceiling measured on the E23 mix (pre-flight, below)
+> and absolutely only where a control has demonstrated the number is reachable (E18b dense: keyed recall
+> 99.3%, passkey 0.725 at a comparable budget).
+- **S1 memory on natural text (relative to the measured ceiling):** paired ablation (`--probe concept`,
+  modes `real | none | shuffled`; under exclusive scope `far` ≡ `real`) on ≥ 64 held-out PG-19 rows
+  ≥ 32k, on tokens with ≥ 4096 of history: **CE(none) − CE(real) ≥ 0.6 × R**, where **R** is the dense
+  far-reach prize measured pre-flight on the same rows (arm D, `--probe reach`, window 1024 → full;
+  E18's comparable figures were 0.035 mixed / 0.099 PG-19, so expect R ≈ 0.10 and a gate ≈ 0.06 —
+  E22 delivered 0.05, i.e. ≈ 0.5 × R, so this asks for a real but achievable step). Reported, not gated:
+  Δ as a fraction of R. **Segment-0 Δ must be 0.00 ± 0.01** in every mode (built-in control; a nonzero
+  value is a bug, not a result).
+- **S1b memory where the information actually lives (absolute, the primary loss gate):** on far-repeat
+  tokens (the ≈ 2.5% of natural-text tokens whose target is copyable only from beyond the raw segment —
+  by construction I(far; target) is large there, so a large Δ is physically available):
+  **CE(none) − CE(real) ≥ 0.5 nats** and **CE(shuffled) − CE(real) ≥ 0.5 × Δ_none** (content, not prior).
 - **S2 useful, not just used:** arm A ≤ **0.90 ×** arm C CE on far-repeat tokens ≥ 4096; held-out
   keyed-recall first-token accuracy (`--probe tasks`) ≥ **50%** and ≥ 0.5 × arm D's.
 - **S3 transfer to unseen formats (the reasoning-side probes):** passkey @32k with the needle ≥ 4096
@@ -113,6 +128,10 @@ selecting, inside natural text, the tokens whose information *is* in the compres
 - **S4 price:** arm A natural-text CE (all tokens) within **3%** of arm D; on [0, 1k) within **2%** of
   arm C (exclusivity costs nothing locally — E22 measured the near-slot marginal at 0.03).
 - **S5 geometry (diagnostic):** RankMe(z) ≥ 128; adjacent-slot cosine reported (E22: 265 / 0.69).
+- **Reported, never gated at this budget:** bits per byte on the standard eval rows next to
+  pythia-160m / SmolLM2-135M reference rows (E22 arm A 1.472 vs 1.265 / 0.989 — a 680–4500× token
+  deficit, so the absolute gap carries no architectural information), and the lm-eval 0-shot suite,
+  which is at chance below ~10B tokens ([root cause §7.2–7.3](../../4_Research_Notes/e22_root_cause_20260912.md)).
 
 ## Kill criteria (set BEFORE running)
 - **K1 read cannot address the array:** at 50% of budget, keyed-recall first-token < **10%** while arm D
