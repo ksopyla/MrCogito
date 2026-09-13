@@ -150,9 +150,13 @@ selecting, inside natural text, the tokens whose information *is* in the compres
 ## Plan
 - **Data:** `e23_longmix_32k_manifest.json` on Polonez (then NAS → Odra): the E22 natural-text sources at
   70% of tokens + keyed recall 15% (`scripts/build_retrieval_mix_dataset.py --min_gap 4096`) + far
-  span copy 7.5% + multi-hop vt 7.5% (two new small builders, same LM-shard schema and marker
-  protocol). Written as a new manifest via `scripts/write_manifest_variant.py` — never
-  `dataset_mix_weight_override`. Far-repeat weights are computed in the collator (no stored labels).
+  span copy 7.5% + multi-hop chain 7.5% — the last two from
+  `scripts/build_symbolic_dataset.py --task far_copy chain --lm_columns_only --sym_lo <reserved>
+  --min_gap 4096` ([suite spec](../../engineering_specs/symbolic_long_context_suite.md)), which emits
+  exactly the LM shard columns and frames the supervised span with the `answer`/`end` markers the
+  collator already understands. Written as a new manifest via `scripts/write_manifest_variant.py` —
+  never `dataset_mix_weight_override`. Far-repeat weights are computed in the collator (no stored
+  labels).
   **Pre-launch instrument (zero GPU) — measured 2026-09-12 on Polonez** (E22 mix train shards,
   segment 1024, 4-gram context + target, most recent earlier occurrence before the segment start):
   far-repeat share PG-19 **1.14%** of tokens (1.28% beyond 4k; near-repeat 1.01%), FinePDFs **5.69%**
@@ -160,6 +164,15 @@ selecting, inside natural text, the tokens whose information *is* in the compres
   (3-gram: ≈ 3.7%). At w = 8 that is ≈ **17%** of the natural-text loss (3-gram: 23%), and with the
   30% dense-label rows ≈ **40%** of the total loss on far-determined tokens — the share the
   Hypothesis assumes. Pin `--far_repeat_ngram 4`, `--far_repeat_weight 8`.
+- **Pre-flight mechanism gate (zero GPU, CPU-minutes — run BEFORE committing 36 GPU-h):**
+  `uv run python verification/symbolic_channel_probe.py --task recall` and `--task far_copy`. These
+  train a tiny arm A under the *same* exclusive scope against a segment-confined arm C on symbolic
+  rows whose floor is exact ([suite spec](../../engineering_specs/symbolic_long_context_suite.md)).
+  Arm C must sit at the floor (instrument self-check); if arm A cannot beat the floor on `recall`,
+  the read cannot address the array even when the objective pays the maximum possible amount and the
+  channel is the only route — in which case exclusive scope on natural text will not save it, and
+  K1's fallback (a different *read*, or arm A1's block-local encoder) should be tried first rather
+  than after 36 GPU-h. Record the numbers in the run report either way.
 - **Pre-flight ceiling measurement (required before S1 can be judged; ≈ 1 GPU-h):** run arm D first and
   probe it with `--probe reach` (window 1024 → 2048 → 8192 → full) on the S1 eval rows to obtain **R**,
   the dense far-reach prize on the E23 mix. S1's threshold is 0.6 × R, so R must exist before the gate
@@ -176,8 +189,9 @@ selecting, inside natural text, the tokens whose information *is* in the compres
   exclusive model `far` must equal `real` to 1e-3 — a second built-in check).
 - **New foundation code (reusable, config-selectable):** far-repeat per-token loss weights in the
   causal-LM collator (`--far_repeat_weight`, `--far_repeat_ngram 4`, window = `dec_segment`) consumed by
-  the per-token loss path both families already expose; far-copy and vt training-row builders; the
-  `launch_e23.sh` wrapper. No change to `nn/perceiver_concept_lm.py` beyond `0f4b4f9`.
+  the per-token loss path both families already expose; the `launch_e23.sh` wrapper. The far-copy and
+  chain builders now exist (`data/symbolic_tasks.py` + `scripts/build_symbolic_dataset.py`). No change
+  to `nn/perceiver_concept_lm.py` beyond `0f4b4f9`.
 - **Registered post-signal iterations (only after S1–S2 pass):** latent repeats K ∈ {2, 4} (the
   reasoning-bandwidth curve on vt hops); r ∈ {8, 32}; hierarchical r = 16 / 256 for the 128k–1M stage;
   **receiver-only decoding** — score a query segment given *only* the array of a different context

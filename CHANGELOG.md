@@ -15,6 +15,45 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-13] - Symbolic long-context task suite with closed-form information floors
+
+**Why:**
+- E22 measured a concept channel with data whose long-range information content was unknown: the
+  whole natural-text prize for far context is ~0.05 nats at pilot scale, the pre-registered gate
+  asked for 0.30, and the run could not separate "the objective does not pay", "the read cannot
+  address the array" and "the write blurred the content". These generators remove that ambiguity —
+  the supervised tokens are determined by evidence at a controlled distance and independent of
+  everything local, so the prize is `ln(n_symbols)` (28× the text prize) and the floor for a model
+  that cannot reach the evidence is **exact**, which is what `experiment-design`'s "cite a measured
+  ceiling" rule needs. Spec: `docs/engineering_specs/symbolic_long_context_suite.md`.
+
+**Added:**
+- `data/symbolic_tasks.py`: `SymbolicVocab` / `SymbolicTaskConfig` / `generate_row` / `iter_rows`
+  plus `floor_nats` and `chance_accuracy`. Four tasks, one mechanism each — `recall` (content
+  addressing), `far_copy` (channel bandwidth, sweep `span_len`), `chain` (composition over slots,
+  edges shuffled out of reading order), `count` (aggregation; the first task in this family designed
+  so a compressive bottleneck could *beat* exact attention rather than merely lose less). Rows
+  guarantee `gap >= min_gap + 1`, so a raw window of `min_gap` provably cannot see the evidence for
+  either `dec_local` mode; nothing is memorisable across rows.
+- `scripts/build_symbolic_dataset.py`: one manifest source per `--task`; default schema
+  `input_ids`/`labels`/`gap` for diagnostics, `--lm_columns_only` for the exact columns
+  `pretokenize_mix.py` writes so rows mix into a text corpus (`--sym_lo` reserves an id slice,
+  supervision via the recorded `answer`/`end` markers). The manifest records the floor per source.
+- `verification/symbolic_channel_probe.py`: CPU falsification probe — tiny arm A
+  (`concept_xattn_scope=exclusive`, the array as the only route) vs arm C (`concept_mode=none`)
+  against the floor, with same-weights `concept_override("none"|"far")` attribution. Arm C sitting
+  at the floor is the instrument's self-check for a leaky task.
+- `tests/test_symbolic_tasks.py`: 36 tests. Beyond shapes and determinism, the three load-bearing
+  properties are tested rather than asserted — solvable from the evidence (each task solved by
+  following its construction), not solvable locally (uniform answer marginal, independence from the
+  query key, and a memorising local-window oracle at chance on held-out rows), and floor correctness
+  (`_binomial_mod_entropy` vs a 400k-draw Monte Carlo). Both label routes are cross-checked.
+
+**Wired:** supplies E23's two outstanding dense-label builders (far span copy, multi-hop chain) and
+adds a zero-GPU pre-flight mechanism gate to its plan.
+
+---
+
 ## [2026-09-13] - `analysis/geometry_cost_model.py`: analytic FLOP + decode-state model for concept geometries
 
 **Why:**
