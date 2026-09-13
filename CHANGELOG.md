@@ -15,6 +15,20 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-13] - HARDER concept-slot scaling plots + frontier note
+
+**Why:**
+- The exclusive-scope <10M campaign needed a snapshot of completed cells (seq256 r=8 / r=32,
+  chain hops=3) against the 95% bar, with in-flight runs marked, not a new training fork.
+
+**Added:**
+- `verification/plot_scale_hard.py` writes
+  `concept_slot_harder_learning_curves.png` and `concept_slot_scaling_frontier.png`
+  (easy seq128 points on the frontier scatter; incomplete logs plotted as in-progress).
+- Dated note: `docs/4_Research_Notes/concept_slot_scaling_frontier_20260913.md`.
+
+---
+
 ## [2026-09-13] - Symbolic probe: live LR, wall-clock JSON, CUDA if present
 
 **Why:**
