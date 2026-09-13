@@ -15,6 +15,30 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-13] - `analysis/geometry_cost_model.py`: analytic FLOP + decode-state model for concept geometries
+
+**Why:**
+- Every spec in this family claims a compute/state win over a matched dense baseline, and until now the
+  claim was asserted from the pooling ratio rather than computed. Asked why the concept geometry is
+  cheaper, the arithmetic showed the answer is narrower than assumed: the decode-state win is structural
+  (192×) but the compute win is a **constant 36×**, because the read is dense over slots and therefore
+  still O(S²/r). That materially constrains the 1M/10M goal, so the model belongs in the repo where
+  future specs and the K4 throughput gate can re-run it. Analysis:
+  `docs/4_Research_Notes/e22_root_cause_20260912.md` §7.5.
+
+**Added:**
+- `analysis/geometry_cost_model.py`: prices `perceiver_ar --par_mode dense` against `perceiver_concept`
+  at any context length. Splits forward FLOPs into the terms quadratic in S (per component: encoder,
+  decoder self, cross, latent) and the per-token terms, and splits decode cache into bounded (fixed
+  windows) and unbounded (grows with S) bytes per token. Flags mirror the real config knobs
+  (`--ratio`, `--dec_segment`, `--enc_window`, `--exclusive`) plus two counterfactual knobs used to
+  locate the next bottleneck: `--cross_topk` (selective slot read) and `--latent_window`.
+
+**Verified:** closed-form asymptotes reproduced by the script — 34.8× for the built geometry (predicted
+`r·L_dense/L_dec` = 36×) and 1053× with a top-64 read (predicted `r²·L_dense/L_latent` = 1152×).
+
+---
+
 ## [2026-09-12] - `perceiver_concept`: `concept_xattn_scope` (exclusive channel) + `near`/`far` concept ablations
 
 **Why:**

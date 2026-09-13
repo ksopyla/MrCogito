@@ -54,6 +54,17 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   Spec [E22](../experiments_specs/done_failed/E22_perceiver_concept_lm.md) ·
   [report](../2_Experiments_Registry/run_reports/e22_pilot_verdict_20260912.md) ·
   [root cause](../4_Research_Notes/e22_root_cause_20260912.md).
+- **2026-09-13 — the family's compute win is a constant, not an asymptote** (analytic, zero GPU-days,
+  `analysis/geometry_cost_model.py`). The E22 geometry cuts decode state 192× (18 KB/token of dense KV
+  → 96 B/token of array; 180 GB → 0.96 GB at 10M) and that *is* structural. But the *read* is dense —
+  every token scores every visible slot — so cross-attention stays O(S²/r) and is 94% of arm A's FLOPs
+  at 10M; the whole-model saving converges to `r·L_dense/L_dec` = **36×** at any context length. A
+  selective top-k read raises the ceiling to `r²·L_dense/L_latent` = 1152× but then the full-causal
+  latent stack becomes the wall; only with a windowed/hierarchical latent stack does the model become
+  per-token-work bound (1288× at 10M and growing with S). **Consequence for the 1M/10M goal: a
+  selective read and a non-global latent stack are not optimisations, they are requirements** — and
+  since E22 showed the dense read fails to *use* far slots anyway, forcing it to name what it wants is
+  plausibly the same fix twice. Design constraint for E23's successor; E23 stays one bet.
 - **2026-09-12 — E18 / E18b (one global read):** a from-scratch 125M LM whose only unbounded layer is
   a single full-causal read. It is **free** (eval 3.790 vs matched dense 3.786, 1.02× throughput) and
   does exact **positional** retrieval (plain copy @32k offset 16k: **99.9998%**; cutting its reach two
