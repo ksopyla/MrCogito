@@ -26,6 +26,7 @@ BUDGET = 64_000
 STEP_RE = re.compile(
     r"\[([ACD])\] step\s+(\d+)\s+examples\s+(\d+)\s+"
     r"train\s+([\d.]+)\s+eval CE\s+([\d.]+)\s+acc\s+([\d.]+)"
+    r"(?:\s+lr\s+[\d.e+-]+\s+\(([\d.]+) s/step\))?"
 )
 META_SKIP = {"campaign_index.json", "campaign_meta.json", "winner_lr.json"}
 
@@ -46,6 +47,15 @@ def traces(bundle: dict, arm: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     steps = np.array([p["step"] for p in tr], dtype=float)
     ys = np.array([p["acc"] for p in tr], dtype=float)
     return xs, steps, ys
+
+
+def wall_trace(bundle: dict, arm: str) -> tuple[np.ndarray, np.ndarray] | None:
+    tr = bundle["results"][arm]["trace"]
+    if not tr or "wall_s" not in tr[0]:
+        return None
+    walls = np.array([p["wall_s"] for p in tr], dtype=float)
+    ys = np.array([p["acc"] for p in tr], dtype=float)
+    return walls, ys
 
 
 def acc_at(xs: np.ndarray, ys: np.ndarray, budget: float) -> tuple[float, bool]:
@@ -117,14 +127,15 @@ def parse_log_bundle(log_path: Path, json_hint: Path | None = None) -> dict | No
     arm = None
     for m in STEP_RE.finditer(text):
         arm = m.group(1)
-        rows.append(
-            {
-                "step": int(m.group(2)),
-                "examples": int(m.group(3)),
-                "ce_nats": float(m.group(5)),
-                "acc": float(m.group(6)),
-            }
-        )
+        rec = {
+            "step": int(m.group(2)),
+            "examples": int(m.group(3)),
+            "ce_nats": float(m.group(5)),
+            "acc": float(m.group(6)),
+        }
+        if m.group(7):
+            rec["wall_s"] = float(m.group(2)) * float(m.group(7))
+        rows.append(rec)
     if not rows or arm is None:
         return None
     hint = load(json_hint) if json_hint else None
@@ -750,6 +761,75 @@ def plot_steps_sizes_acc(cells: list[dict], easy_a, easy_3, outfile: Path) -> No
     plt.close(fig)
 
 
+def plot_compute_matched(cells: list[dict], outfile: Path) -> None:
+    """Same-compute view: accuracy vs wall-clock, plus params×data for 95% hits."""
+    fig, axes = plt.subplots(1, 2, figsize=(13.4, 5.2))
+    ax = axes[0]
+    ax.axhline(BAR, color="0.35", ls="--", lw=1.0)
+    ax.axhline(CHANCE, color="0.65", ls=":", lw=1.0)
+    for b in cells:
+        for arm in b["results"]:
+            wt = wall_trace(b, arm)
+            if wt is None:
+                continue
+            walls, ys = wt
+            ax.plot(
+                walls / 60.0,
+                ys,
+                color=cell_color(b, arm),
+                ls=style_for(arm, bool(b.get("in_progress")))["ls"],
+                lw=1.8,
+                label=label_for(b, arm, "(live)" if b.get("in_progress") else ""),
+            )
+    ax.set_xlabel("wall-clock (minutes)")
+    ax.set_ylabel("eval accuracy")
+    ax.set_ylim(-0.02, 1.05)
+    ax.set_title("Accuracy vs compute (wall)")
+    ax.legend(fontsize=6.5, loc="lower right")
+    ax.grid(True, alpha=0.3)
+
+    ax2 = axes[1]
+    rows = []
+    for b in cells:
+        for arm in b["results"]:
+            rec = b["results"][arm]
+            acc = rec.get("acc", rec.get("final", {}).get("acc", 0))
+            xs, _, ys = traces(b, arm)
+            e95 = examples_to_bar(xs, ys)
+            wt = wall_trace(b, arm)
+            wall95 = None
+            if wt is not None and e95 is not None:
+                walls, wys = wt
+                hit = np.where(ys >= BAR)[0]
+                if len(hit):
+                    wall95 = float(walls[hit[0]])
+            rows.append(
+                {
+                    "label": f"{arm} {difficulty_key(b)}",
+                    "arm": arm,
+                    "params_m": rec["params"] / 1e6,
+                    "acc": acc,
+                    "e95": e95,
+                    "wall95_min": None if wall95 is None else wall95 / 60.0,
+                }
+            )
+    labels = [r["label"] for r in rows if r["e95"] is not None]
+    e95s = [r["e95"] / 1000.0 for r in rows if r["e95"] is not None]
+    colors = [{"A": "#1f77b4", "C": "#2ca02c", "D": "#d62728"}[r["arm"]] for r in rows if r["e95"] is not None]
+    ax2.barh(range(len(labels)), e95s, color=colors)
+    ax2.set_yticks(range(len(labels)))
+    ax2.set_yticklabels(labels, fontsize=7)
+    ax2.set_xlabel("examples to ≥95% (thousands)")
+    ax2.set_title("Data to 95% (missing = not yet)")
+    ax2.grid(True, axis="x", alpha=0.3)
+    fig.suptitle("Same-compute / same-data view  ·  exclusive-scope <10M  ·  95% bar", fontsize=12)
+    fig.tight_layout()
+    fig.savefig(outfile, dpi=140)
+    fig.savefig(HARD / outfile.name, dpi=140)
+    plt.close(fig)
+    (OUT_DIR / "harder_compute_matched.json").write_text(json.dumps(rows, indent=2))
+
+
 def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     HARD.mkdir(parents=True, exist_ok=True)
@@ -803,6 +883,7 @@ def main() -> int:
         (HARD / dst).write_bytes(data)
 
     plot_steps_sizes_acc(cells, easy_a, easy_3, OUT_DIR / "harder_steps_sizes_accuracies.png")
+    plot_compute_matched(cells, OUT_DIR / "harder_compute_matched.png")
 
     print(f"wrote {OUT_DIR / 'harder_accuracy_vs_examples.png'}", flush=True)
     print(f"wrote {OUT_DIR / 'harder_accuracy_vs_steps.png'}", flush=True)
@@ -811,6 +892,7 @@ def main() -> int:
     print(f"wrote {OUT_DIR / 'harder_params_vs_max_seq.png'}", flush=True)
     print(f"wrote {OUT_DIR / 'concept_slot_scaling_frontier.png'}", flush=True)
     print(f"wrote {OUT_DIR / 'harder_steps_sizes_accuracies.png'}", flush=True)
+    print(f"wrote {OUT_DIR / 'harder_compute_matched.png'}", flush=True)
     return 0
 
 
