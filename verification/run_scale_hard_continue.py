@@ -110,11 +110,12 @@ def search_lr(prefix: str, arm: str, lrs: tuple[float, ...], **cell) -> tuple[fl
     return ranked[0][0], ranked[0][1]
 
 
-def far_copy(seq: int, ratio: int) -> dict:
+def far_copy(seq: int, ratio: int, min_gap: int | None = None) -> dict:
+    gap = 32 if min_gap is None else min_gap
     return {
         "task": "far_copy",
         "seq_len": seq,
-        "min_gap": 32,
+        "min_gap": gap,
         "span_len": 32,
         "ratio": ratio,
         "dec_segment": 32,
@@ -232,8 +233,8 @@ def main() -> int:
     else:
         print("KILL chain h2: D missed 95% — exam still too hard", flush=True)
 
-    # --- 4. Length: seq=1024 r=8 A, LR search (do not shrink) ---
-    s1024 = far_copy(1024, 8)
+    # --- 4. Length: seq=1024 r=8 with min_gap=256 (reach, not padding) ---
+    s1024 = far_copy(1024, 8, min_gap=256)
     lr1024, a_probe = search_lr("cell_seq1024_r8", "A", (1e-4, 3e-4, 1e-3), **s1024)
     if acc(a_probe, "A") >= TARGET:
         print(f"seq1024 A hit 95% on LR probe lr={lr1024:.0e}", flush=True)

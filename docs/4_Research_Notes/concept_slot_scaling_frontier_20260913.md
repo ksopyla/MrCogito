@@ -122,6 +122,9 @@ Not a Kaplan-style fit — too few cells. The measured pattern is:
 - hops=2 chain with longer answers (pack the loss like span=32) — hops=3/key=8
   was an exam kill.
 - Seq>512 far_copy on GPU; nothing here is a language-model result.
+- True reach (`min_gap = seq/4`) is queued in `verification/run_scale_hard_reach.py`
+  after the live D9 / r=16 / hops=2 queue. Do not treat seq512 min_gap=32 as a
+  480-token memory exam.
 
 ## In flight — param-matched D on seq512 (2026-09-13, live)
 
