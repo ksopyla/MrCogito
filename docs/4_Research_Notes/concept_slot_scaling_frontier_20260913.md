@@ -99,6 +99,23 @@ The skill is in the slots. C stays at the floor on every new (seq, min_gap) and 
 - **LR is not portable.** 3e-3 trains 1.35M/seq128; 1e-3 trains 5.11M/seq256; 3e-4
   trains 5.11M/seq512. Search LR per (hidden, seq) or the channel looks dead.
 
+## Working law (measured, 95% bar, hidden frozen at 256 / 5.11M)
+
+Not a Kaplan-style fit — too few cells. The measured pattern is:
+
+1. **Length is cheap at r=8.** A solves `far_copy` through seq=512. Examples-to-95% did
+   **not** grow with seq (96k at 256 → 72k at 512 once LR dropped to 3e-4). Wall did
+   (36 min → 76 min). Lengthening seq without stretching `min_gap` adds slots, not reach.
+2. **Compression is the binding axis.** r=8 solved; r=32 (32 letters in 1 of 8 slots)
+   is **87.9% at 256k**, miss. Do not shrink width to chase this — spend examples or
+   change the write.
+3. **Composition at hops=3 / 8-token answers is an exam kill**, including for dense D.
+   Not an exclusive-slot failure.
+4. **C stays on the floor** on every new (seq, min_gap) and on chain. The exam does not leak.
+5. **D matching matters.** Width-matched 2.27M D solves seq256 and misses seq512.
+   Param-matched 4.97M D is in flight (46% @ 56k). Until that cell hits or misses 95%,
+   "A beats D at seq512" is not a same-parameter claim.
+
 ## Still unknown
 
 - Whether r=32 A crosses 95% with more than 256k examples at the same 5.11M.

@@ -761,6 +761,105 @@ def plot_steps_sizes_acc(cells: list[dict], easy_a, easy_3, outfile: Path) -> No
     plt.close(fig)
 
 
+def plot_working_law(cells: list[dict], easy_a, easy_3, outfile: Path) -> None:
+    """Measured working law: length vs compression vs composition at frozen <10M."""
+    fig, axes = plt.subplots(1, 3, figsize=(15.6, 5.0))
+
+    ax = axes[0]
+    for b in cells:
+        if b["config"].get("task") != "far_copy" or b["config"].get("ratio") != 8:
+            continue
+        for arm in b["results"]:
+            if arm == "C":
+                continue
+            rec = b["results"][arm]
+            xs, _, ys = traces(b, arm)
+            e95 = examples_to_bar(xs, ys)
+            seq = b["config"]["seq_len"]
+            if e95 is not None:
+                ax.scatter(
+                    seq,
+                    e95 / 1000.0,
+                    s=110,
+                    c=cell_color(b, arm),
+                    marker={"A": "o", "D": "s"}[arm],
+                    zorder=3,
+                    label=f"{arm} {rec['params']/1e6:.2f}M ≥95%",
+                )
+            else:
+                ax.scatter(
+                    seq,
+                    rec.get("acc", rec.get("final", {}).get("acc", 0)) * 100,
+                    s=80,
+                    c=cell_color(b, arm),
+                    marker="x",
+                    zorder=3,
+                    label=f"{arm} {rec['params']/1e6:.2f}M miss (acc on right axis)",
+                )
+    if easy_a:
+        xs, _, ys = traces(easy_a, "A")
+        e95 = examples_to_bar(xs, ys)
+        if e95:
+            ax.scatter(128, e95 / 1000.0, s=90, c="0.5", marker="o", label="A 1.35M seq128 ≥95%")
+    ax.set_xlabel("seq_len (far_copy, r=8)")
+    ax.set_ylabel("examples to ≥95% (thousands)")
+    ax.set_title("Length: E95 does not grow with S")
+    ax.legend(fontsize=6.5)
+    ax.grid(True, alpha=0.3)
+
+    ax2 = axes[1]
+    ax2.axhline(BAR, color="0.35", ls="--", lw=1.0)
+    for b in cells:
+        if b["config"].get("task") != "far_copy":
+            continue
+        if "A" not in b["results"]:
+            continue
+        rec = b["results"]["A"]
+        acc = rec.get("acc", rec.get("final", {}).get("acc", 0))
+        r = b["config"]["ratio"]
+        seq = b["config"]["seq_len"]
+        ax2.scatter(r, acc, s=120, marker="o", zorder=3)
+        ax2.annotate(f"seq{seq}", (r, acc), textcoords="offset points", xytext=(6, 4), fontsize=8)
+    if easy_a:
+        ax2.scatter(8, easy_a["results"]["A"]["final"]["acc"], s=80, c="0.5")
+        ax2.annotate("seq128", (8, easy_a["results"]["A"]["final"]["acc"]), textcoords="offset points", xytext=(6, 4), fontsize=7, color="0.4")
+    ax2.set_xlabel("pooling ratio r (tokens/slot)")
+    ax2.set_ylabel("final accuracy (Arm A)")
+    ax2.set_ylim(-0.02, 1.05)
+    ax2.set_title("Compression: r=32 is the miss")
+    ax2.grid(True, alpha=0.3)
+
+    ax3 = axes[2]
+    ax3.axhline(BAR, color="0.35", ls="--", lw=1.0)
+    ax3.axhline(CHANCE, color="0.65", ls=":", lw=1.0)
+    labels, accs, cols = [], [], []
+    for b in cells:
+        if b["config"].get("task") != "chain":
+            continue
+        for arm in b["results"]:
+            rec = b["results"][arm]
+            labels.append(f"{arm} hops={b['config'].get('hops')}")
+            accs.append(rec.get("acc", rec.get("final", {}).get("acc", 0)))
+            cols.append({"A": "#1f77b4", "C": "#2ca02c", "D": "#d62728"}[arm])
+    if labels:
+        ax3.bar(range(len(labels)), accs, color=cols)
+        ax3.set_xticks(range(len(labels)))
+        ax3.set_xticklabels(labels, rotation=20, ha="right", fontsize=8)
+    ax3.set_ylabel("final accuracy")
+    ax3.set_ylim(-0.02, 1.05)
+    ax3.set_title("Composition: hops=3 is an exam kill")
+    ax3.grid(True, axis="y", alpha=0.3)
+
+    fig.suptitle(
+        "Working law  ·  exclusive slots <10M  ·  95% bar  ·  length easy, compression hard, hops=3 unsolvable",
+        fontsize=11,
+    )
+    fig.tight_layout()
+    fig.savefig(outfile, dpi=140)
+    fig.savefig(HARD / outfile.name, dpi=140)
+    plt.close(fig)
+
+
 def plot_compute_matched(cells: list[dict], outfile: Path) -> None:
     """Same-compute view: accuracy vs wall-clock, plus params×data for 95% hits."""
     fig, axes = plt.subplots(1, 2, figsize=(13.4, 5.2))
@@ -884,6 +983,7 @@ def main() -> int:
 
     plot_steps_sizes_acc(cells, easy_a, easy_3, OUT_DIR / "harder_steps_sizes_accuracies.png")
     plot_compute_matched(cells, OUT_DIR / "harder_compute_matched.png")
+    plot_working_law(cells, easy_a, easy_3, OUT_DIR / "exclusive_slot_working_law.png")
 
     print(f"wrote {OUT_DIR / 'harder_accuracy_vs_examples.png'}", flush=True)
     print(f"wrote {OUT_DIR / 'harder_accuracy_vs_steps.png'}", flush=True)
@@ -892,7 +992,7 @@ def main() -> int:
     print(f"wrote {OUT_DIR / 'harder_params_vs_max_seq.png'}", flush=True)
     print(f"wrote {OUT_DIR / 'concept_slot_scaling_frontier.png'}", flush=True)
     print(f"wrote {OUT_DIR / 'harder_steps_sizes_accuracies.png'}", flush=True)
-    print(f"wrote {OUT_DIR / 'harder_compute_matched.png'}", flush=True)
+    print(f"wrote {OUT_DIR / 'exclusive_slot_working_law.png'}", flush=True)
     return 0
 
 
