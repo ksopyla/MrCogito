@@ -15,6 +15,24 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-13] - E21 remainder-block pooling (config flag, default off)
+
+**Why:**
+- Tiny far_copy E21 recovered 17.7 bits (S1 fail) with complete-block-only slots. A 32-token
+  span often sits in the incomplete last sender block next to QUERY. Experiment 1 must stay
+  reproducible, so remainder pooling is a flag, not a silent default change.
+
+**Impact:**
+- `message_pool_remainder=False` (default) is byte-identical to the first E25 rung.
+- Probe `--message_pool_remainder` scores the one architecture change on the same recipe.
+
+**What changed:**
+- [added] `PerceiverARConfig.message_pool_remainder` in `nn/perceiver_ar_lm.py`
+- [added] probe `--message_pool_remainder`; ArchSpec field
+- [added] remainder-slot tests in `tests/test_perceiver_ar_message.py`
+
+**Does not:** turn remainder on by default, score recall/512, or change E18 checkpoints.
+
 ## [2026-09-13] - E21 message boundary + KVCompressor on the BAPO probe (E25)
 
 **Why:**

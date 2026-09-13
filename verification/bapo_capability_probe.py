@@ -133,7 +133,8 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             f"backend={getattr(model.config, 'attn_backend', '-')}  "
             f"zero_resid={getattr(model.config, 'zero_init_residuals', True)}  "
             f"msg_boundary={getattr(model.config, 'message_boundary_token_id', -1)}  "
-            f"msg_r={getattr(model.config, 'message_compress_ratio', '-')}",
+            f"msg_r={getattr(model.config, 'message_compress_ratio', '-')}  "
+            f"msg_remainder={getattr(model.config, 'message_pool_remainder', False)}",
             flush=True,
         )
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01, betas=(0.9, 0.95))
@@ -240,6 +241,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         zero_init_residuals=not args.warm_residuals,
         message_compress_ratio=args.message_ratio,
         message_boundary_token_id=_boundary_token_id(cfg),
+        message_pool_remainder=args.message_pool_remainder,
     )
     card = rung_card(scale, recipe.task, **over)
     card["local_window"] = window
@@ -383,6 +385,12 @@ def main() -> int:
         type=int,
         default=16,
         help="E21 KVCompressor ratio (prefix tokens per slot). Ignored for other arches.",
+    )
+    p.add_argument(
+        "--message_pool_remainder",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="E21: pool the incomplete last sender block. Default off (experiment 1 complete-block-only).",
     )
     p.add_argument("--seq_len", type=int, default=None, help="override scale seq_len (S0 hunts)")
     p.add_argument("--min_gap", type=int, default=None, help="override scale min_gap (S0 hunts)")

@@ -25,9 +25,10 @@ Hooks for the family (config fields only — no parameters unless enabled):
   * `message_boundary_token_id` / `message_compress_ratio` (E21): a reserved token splits a
     row into sender | receiver. Local layers and n-gram tables treat the boundary as a
     document start; the global read lets receivers see the prefix only as `KVCompressor`
-    slots (one per `ratio` tokens, in the read's own K/V space). Off by default (`id=-1`)
-    so E18 checkpoints stay byte-identical. `prefix_kv(as_message=True)` returns those
-    slots.
+    slots (one per `ratio` tokens, in the read's own K/V space). Complete homogeneous
+    blocks only by default; `message_pool_remainder` also pools the incomplete last sender
+    block. Off by default (`id=-1`) so E18 checkpoints stay byte-identical.
+    `prefix_kv(as_message=True)` returns those slots.
 """
 from __future__ import annotations
 
@@ -96,6 +97,7 @@ class PerceiverARConfig(PretrainedConfig):
         write_back_hook: bool = False,        # E19 — adds write_back_proj params when True
         message_boundary_token_id: int = -1,  # E21 — reserved id that splits sender | receiver (-1 = off)
         message_compress_ratio: int = 16,     # E21 — prefix tokens per message slot (1 = uncompressed, arm U)
+        message_pool_remainder: bool = False, # E21 — pool the incomplete last sender block (default: complete blocks only)
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -145,6 +147,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.write_back_hook = write_back_hook
         self.message_boundary_token_id = int(message_boundary_token_id)
         self.message_compress_ratio = int(message_compress_ratio)
+        self.message_pool_remainder = bool(message_pool_remainder)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -460,8 +463,10 @@ class MessageCtx:
     receiver). Local layers and the n-gram hashes treat a side change as a document start
     (`local_doc_ids`). On the global read a query may use raw keys only from its own side and,
     when it is a receiver, the compressed *slots* of every earlier side of its document.
-    Slot `j` covers absolute positions [j·r, (j+1)·r); it is addressable only when the block is
-    homogeneous in (document, side) — `slot_doc[b, j]` is that document (−1 otherwise).
+    Slot `j` covers absolute positions [j·r, (j+1)·r). By default it is addressable only when
+    the block is homogeneous in (document, side) — `slot_doc[b, j]` is that document (−1
+    otherwise). With `message_pool_remainder`, a mixed block still emits a slot from the first
+    run of (doc, side) in that block (the incomplete last sender block next to QUERY).
     """
 
     side: torch.Tensor          # [B,S] int64
@@ -473,6 +478,7 @@ class MessageCtx:
     n_sides: int = 0            # max(side) + 1 over the batch; 0 = derive lazily from `side`
     override: str = "real"      # "real" | "none" | "swapped" | "raw"
     external: Optional[tuple[torch.Tensor, torch.Tensor]] = None  # (k̄, v̄) given by a receiver-only forward
+    pool_valid: Optional[torch.Tensor] = None  # [B,S] tokens that enter compressor slots (remainder path)
 
     @property
     def n_slots(self) -> int:
@@ -761,7 +767,11 @@ class Attention(nn.Module):
         compressor over the block input, RoPE'd at each slot's position."""
         if ctx.external is not None:
             return ctx.external
-        k_bar, v_bar = self.compressor(x, k_raw, v, self.k_norm, key_valid)
+        valid = key_valid
+        if ctx.pool_valid is not None:
+            pv = ctx.pool_valid.bool()
+            valid = pv if valid is None else (valid.bool() & pv)
+        k_bar, v_bar = self.compressor(x, k_raw, v, self.k_norm, valid)
         if self.use_rope:
             cos_s, sin_s = rope_cos_sin(ctx.slot_pos, self.dh, cfg_rope_theta, k_bar.dtype)
             k_bar = apply_rope(k_bar, cos_s, sin_s)
@@ -1098,8 +1108,26 @@ class PerceiverARLM(PreTrainedModel):
         slot_side = torch.where(homog, sidep[..., 0], torch.zeros_like(sidep[..., 0]))
         end_idx = (torch.arange(nb, device=dev) * r + (r - 1)).clamp(max=S - 1)
         slot_pos = pos[:, end_idx]
+        pool_valid = None
+        if cfg.message_pool_remainder:
+            first_doc, first_side = docp[..., 0], sidep[..., 0]
+            same = (
+                (docp == first_doc[..., None])
+                & (sidep == first_side[..., None])
+                & (first_doc[..., None] >= 0)
+            )
+            live = same.any(dim=2)
+            slot_doc = torch.where(live, first_doc, torch.full_like(first_doc, -1))
+            slot_side = torch.where(live, first_side.clamp(min=0), torch.zeros_like(first_side))
+            pool_ok = same & live[..., None]
+            pool_valid = pool_ok.reshape(B, nb * r)[:, :S]
+            idx = torch.arange(r, device=dev)
+            last = (same.to(torch.long) * (idx + 1)).amax(dim=2).clamp(min=1) - 1
+            end_abs = (torch.arange(nb, device=dev) * r + last).clamp(max=S - 1)
+            slot_pos = pos.gather(1, end_abs)
         return MessageCtx(side=side, doc=doc, local_doc_ids=local, slot_doc=slot_doc, slot_side=slot_side,
-                          slot_pos=slot_pos, n_sides=K, override=self._message_override)
+                          slot_pos=slot_pos, n_sides=K, override=self._message_override,
+                          pool_valid=pool_valid)
 
     # -- helpers ----------------------------------------------------------------------
     @staticmethod
@@ -1288,8 +1316,9 @@ class PerceiverARLM(PreTrainedModel):
         message object for E19/E21. Returns (k, v) each [B,S,g,dh] (RoPE applied to k).
 
         `as_message=True` (E21) returns the **compressed message** instead: (k̄, v̄, slot_pos) with
-        one slot per `message_compress_ratio` tokens, complete blocks only (⌊S/r⌋ slots — exactly
-        the slots a receiver of the concatenated row would be allowed to read). Feed it to
+        one slot per `message_compress_ratio` tokens. Default is complete blocks only (⌊S/r⌋
+        slots — exactly the slots a receiver of the concatenated row would be allowed to read).
+        `message_pool_remainder` also keeps the last incomplete block. Feed it to
         `forward(receiver_ids, message_kv=..., position_offset=S)`.
         """
         cfg = self.config
@@ -1305,11 +1334,11 @@ class PerceiverARLM(PreTrainedModel):
             if layer.attn.compressor is None:
                 raise RuntimeError("as_message needs message_boundary_token_id >= 0")
             r = cfg.message_compress_ratio
-            n_full = S // r
+            n_keep = -(-S // r) if cfg.message_pool_remainder else S // r
             k_raw, v = layer.attn.kv_raw(h, input_ids)
             k_bar, v_bar = layer.attn.compressor(h, k_raw, v, layer.attn.k_norm)
-            k_bar, v_bar = k_bar[:, :n_full], v_bar[:, :n_full]
-            end_idx = torch.arange(n_full, device=input_ids.device) * r + (r - 1)
+            k_bar, v_bar = k_bar[:, :n_keep], v_bar[:, :n_keep]
+            end_idx = (torch.arange(n_keep, device=input_ids.device) * r + (r - 1)).clamp(max=max(S - 1, 0))
             slot_pos = pos[:, end_idx]
             if layer.attn.use_rope:
                 cos_s, sin_s = rope_cos_sin(slot_pos, cfg.head_dim, cfg.rope_theta, k_bar.dtype)

@@ -274,6 +274,50 @@ def test_receiver_only_round_trip_via_prefix_kv_as_message():
     assert k7.shape[1] == 2 and pos7.tolist() == [[2, 5]]
 
 
+def test_remainder_pooling_produces_last_incomplete_sender_slot():
+    """QUERY that is not r-aligned drops the straddling block unless message_pool_remainder."""
+    r, S, P = 4, 18, 10
+    # sender 0..9 (2 full blocks + remainder 8,9); QUERY at 10; block [8,11] straddles
+    off = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=r)
+    on = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=r,
+                    message_pool_remainder=True)
+    assert off.config.message_pool_remainder is False
+    x = with_boundary(rand_ids(1, S, seed=11), P)
+    pos = on._positions(S, 1, None, x.device)
+    with torch.no_grad():
+        ctx_off = off._message_context(x, None, None, pos)
+        ctx_on = on._message_context(x, None, None, pos)
+    assert ctx_off.slot_doc[0, 2].item() == -1
+    assert ctx_off.pool_valid is None
+    assert ctx_on.slot_doc[0, 2].item() == 0
+    assert ctx_on.slot_side[0, 2].item() == 0
+    assert ctx_on.pool_valid[0, 8:12].tolist() == [True, True, False, False]
+    mask_on = dense_message_mask(S, ctx_on, None, "cpu")[0, 0]
+    mask_off = dense_message_mask(S, ctx_off, None, "cpu")[0, 0]
+    assert bool(mask_on[P, S + 2]) and not bool(mask_off[P, S + 2])
+    gi = on.config.global_layer_index
+    layer = on.layers[gi]
+    with torch.no_grad():
+        h = layer.attn_norm(on._run_layers(x, None, None, None, capture_input_of=gi))
+        k_raw, v = layer.attn.kv_raw(h, x)
+        _, v_c = layer.attn.compressor(h, k_raw, v, layer.attn.k_norm, ctx_on.pool_valid)
+    assert torch.allclose(v_c[:, 2], v[:, 8:10].mean(1), atol=1e-5)
+    with torch.no_grad():
+        assert torch.isfinite(on(x, labels=x).loss)
+
+
+def test_prefix_kv_as_message_keeps_remainder_block_when_flag_on():
+    off = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=3)
+    on = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=3,
+                    message_pool_remainder=True)
+    x = rand_ids(1, 7, seed=5)
+    with torch.no_grad():
+        k_off, _, pos_off = off.prefix_kv(x, as_message=True)
+        k_on, _, pos_on = on.prefix_kv(x, as_message=True)
+    assert k_off.shape[1] == 2 and pos_off.tolist() == [[2, 5]]
+    assert k_on.shape[1] == 3 and pos_on.tolist() == [[2, 5, 6]]
+
+
 def test_packed_rows_each_document_has_its_own_boundary():
     model = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=2)
     S = 16
@@ -298,6 +342,15 @@ def test_packed_rows_each_document_has_its_own_boundary():
     with torch.no_grad():
         out = model(x, doc_ids=doc, labels=x)
     assert torch.isfinite(out.loss)
+    rem = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=2,
+                     message_pool_remainder=True)
+    with torch.no_grad():
+        ctx_r = rem._message_context(x, doc, None, rem._positions(S, 1, doc, x.device))
+    # straddling [4,5] becomes a sender-0 remainder slot (token 4 only)
+    assert ctx_r.slot_doc.tolist() == [[0, 0, 0, 0, 1, 1, 1, 1]]
+    assert ctx_r.slot_side.tolist() == [[0, 0, 0, 1, 0, 0, 1, 1]]
+    mask_r = dense_message_mask(S, ctx_r, None, "cpu")[0, 0]
+    assert mask_r[6, S:].tolist() == [True, True, True, False, False, False, False, False]
 
 
 def test_boundary_forward_trains_and_padding_is_safe():

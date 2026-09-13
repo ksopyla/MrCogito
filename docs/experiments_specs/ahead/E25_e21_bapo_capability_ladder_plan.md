@@ -56,6 +56,7 @@ At init `u=0`, `delta=0` → mean-pool per complete block. `ratio=1` is arm U (o
 - **New config fields** (defaults keep E18 checkpoints loadable):
   `PerceiverARConfig.message_boundary_token_id = -1`
   `PerceiverARConfig.message_compress_ratio = 16`
+  `PerceiverARConfig.message_pool_remainder = False` (rung 1b; off = experiment 1)
 - **Probe:** `ArchSpec.message_compress_ratio`; `--arch e21`.
 - **Launch:**
   `uv run python verification/bapo_capability_probe.py --scale tiny --recipe far_copy --arch dense e18 e21 e18_local --out /opt/cursor/artifacts/e25_tiny_far_copy`

@@ -6,6 +6,8 @@ Architectures
 - `e18`        Perceiver AR, one global read + SWA stack (the E18 architecture).
 - `e18_local`  E18 with `global_layers=0`: local window only. Retrieval rungs must sit at the floor.
 - `e21`        E18 plus a message boundary at `query` and prefix keys as `KVCompressor` slots (r=16).
+               Complete homogeneous blocks by default; `--message_pool_remainder` also pools the
+               incomplete last sender block.
 - `encdec`     Symmetric encoder-decoder: bidirectional prefix encoder, suffix-only decoder with
                cross-attention. Prefix information cannot take a raw route into the suffix.
 """
@@ -45,6 +47,7 @@ class ArchSpec:
     zero_init_residuals: bool = True
     message_compress_ratio: int = 16
     message_boundary_token_id: int = -1
+    message_pool_remainder: bool = False
 
 
 def _n_heads(hidden: int, head_dim: int) -> int:
@@ -123,6 +126,7 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
             spec.message_boundary_token_id if arch == "e21" else -1
         ),
         message_compress_ratio=spec.message_compress_ratio if arch == "e21" else 16,
+        message_pool_remainder=bool(spec.message_pool_remainder) if arch == "e21" else False,
         pad_token_id=pad_id,
         bos_token_id=bos_id,
         eos_token_id=eos_id,

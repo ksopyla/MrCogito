@@ -95,3 +95,8 @@ pretraining run; this is the cheap controlled exam that spec's K1/K2 needed and 
 - WandB: n/a (probe; no `compute/*`)
 - Run report: [`e25_tiny_far_copy_20260913.md`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md)
 - Verdict: **mixed** — S0/K2 pass; S1 fail (E21 **17.7 bits** / flow **0.277** vs E18 63.0 / 0.985; need ≥47 bits). K3 not triggered (51.5% vs chance 25%, still climbing). Slot channel is live and lossy: complete-block-only pooling drops up to 15 tokens next to QUERY. Do not score recall or 512 until remainder pooling is scored on this same rung.
+
+## Follow-up (rung 1b — remainder pooling)
+One architecture change after the mixed first rung: `message_pool_remainder` (default **False**,
+so the JSON above stays reproducible). Probe `--message_pool_remainder`. Same tiny packed
+`far_copy`, same S1 (≥0.75× E18 bits). Extra step budget is not a substitute.
