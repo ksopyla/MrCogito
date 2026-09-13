@@ -20,15 +20,18 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-13 — E25 E21 capability ladder (tiny INDEX near-pass at 8k; recall_single next).**
+- **2026-09-13 — E25 E21 capability ladder (tiny INDEX near-pass; tiny recall 3.19 bits).**
   At 2400 steps E21 far_copy is 17.7 / 12.7 / 8.7 bits (complete / remainder / QUERY-align).
   At **8000 steps** complete-block E21 **84.6% / 47.01 bits / flow 0.734** vs 0.75× E18 47.29 /
-  0.739 (near-pass). 2400 fail was budget. Next: tiny `recall_single`. Spec
+  0.739 (near-pass). Tiny `recall_single`: dense **99.2% / 31 bits**, E18 **0**, E21
+  **37.9% / 3.19 bits / flow 0.100** at 2850 (beats E18 MATCH; fails 0.75× dense). Next:
+  extra steps on the same recall. Spec
   [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) ·
   [rung 1](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) ·
   [remainder](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) ·
   [QUERY-align](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_query_align_20260913.md) ·
-  [extra steps](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_e21_steps_20260913.md).
+  [INDEX extra steps](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_e21_steps_20260913.md) ·
+  [recall](../2_Experiments_Registry/run_reports/e25_tiny_recall_single_20260913.md).
   Do not relabel E18 scores as E21.
 - **2026-09-13 — E24 BAPO DNA ladder (tiny + GPU bridge 512/1024; 4k S0 open).** Packed tiny
   seq=128 / 0.59M: E18 matches dense on positional `far_copy` (99.2% vs 99.4%) and recovers
@@ -62,6 +65,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-13 — E25 tiny recall_single (CPU, 2850).** Dense **99.2% / 31.4 bits** (S0).
+  E18 **25.3% / 0 bits**. E21 **37.9% / 3.19 bits / flow 0.100**. `e18_local` 0 bits (K2).
+  Slots weakly beat E18's MATCH wall; 0.75× dense (23.5 bits) fails. Still climbing.
+  [report](../2_Experiments_Registry/run_reports/e25_tiny_recall_single_20260913.md).
 - **2026-09-13 — E25 tiny far_copy extra steps (CPU, 8k).** Complete-block E21 **84.6% /
   47.01 bits / flow 0.734** (best acc 86.6% @7700) vs 0.75× E18 47.29 / 0.739. Near-pass;
   2400-step S1 fail was budget.

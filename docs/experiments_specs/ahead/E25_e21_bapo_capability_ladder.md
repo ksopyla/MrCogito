@@ -1,7 +1,7 @@
 # E25 — E21 capability limits on a calibrated BAPO DNA ladder (one rung at a time)
 
-- **Status:** active (tiny INDEX near-pass at 8k; `recall_single` next). Keep in `ahead/`.
-  Do not score 512 or Glyph yet.
+- **Status:** active (tiny INDEX near-pass at 8k; tiny `recall_single` 3.19 bits at 2850,
+  extra steps next). Keep in `ahead/`. Do not score 512 or Glyph yet.
 - **Serves:** the Vision's "does the compressed channel carry *addressable* content, and how
   many bits?" question, now on **E21** (exclusive compressed read) rather than E18's raw
   one-global-read. Observation base for later gating / compression. Reuses E24's DNA instrument.
@@ -90,10 +90,13 @@ pretraining run; this is the cheap controlled exam that spec's K1/K2 needed and 
   (off by default; byte-identical to E18). Probe arch `e21`. No new `train_*.py`.
 
 ## Result
-- Run id: `e25_tiny_far_copy` · `e25_tiny_far_copy_remainder` · `e25_tiny_far_copy_query_align` · `e25_tiny_far_copy_e21_steps`
+- Run id: `e25_tiny_far_copy` · `e25_tiny_far_copy_remainder` · `e25_tiny_far_copy_query_align` · `e25_tiny_far_copy_e21_steps` · `e25_tiny_recall_single`
 - WandB: n/a (probe; no `compute/*`)
-- Run reports: [`tiny`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) · [`remainder`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) · [`QUERY-align`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_query_align_20260913.md) · [`extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_e21_steps_20260913.md)
-- Verdict: **mixed / INDEX near-pass** — at 2400 steps complete-block 17.7 bits, remainder 12.7, QUERY-align 8.7 (all S1 fail). At **8000 steps** complete-block E21 **47.01 bits / flow 0.734** vs 0.75× E18 = 47.29 / 0.739 (near-pass). 2400-step fail was budget. Next: tiny `recall_single`.
+- Run reports: [`tiny`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) · [`remainder`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) · [`QUERY-align`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_query_align_20260913.md) · [`INDEX extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_e21_steps_20260913.md) · [`recall`](../../2_Experiments_Registry/run_reports/e25_tiny_recall_single_20260913.md)
+- Verdict: **mixed** — tiny INDEX near-pass at 8k (47.01 vs 47.29 bits). Tiny `recall_single`:
+  dense **99.2% / 31.4 bits** (S0), E18 **0 bits**, E21 **37.9% / 3.19 bits / flow 0.100** at
+  2850 (beats E18 MATCH wall; fails 0.75× dense = 23.5 bits). K3 not hit; still climbing.
+  Next: extra steps on the same recall rung.
 
 ## Follow-up (rung 1b — remainder pooling)
 Ran. S1 **FAIL** at 2400 (12.7 bits). Geometry stacking did not help.
@@ -105,4 +108,8 @@ Ran seq=132. S1 **FAIL** at 2950 (8.7 bits). Complete coverage ≠ the missing b
 Ran 8000 steps on seq=128 complete-block E21. **NEAR-PASS** (47.01 vs 47.29 bits). Channel is slow INDEX, not dead.
 
 ## Follow-up (rung 2 — tiny recall_single)
-Next ONE harder task: keyed recall (E18's 0-bit content wall). Dense S0 in the same JSON. Not 512, not Glyph.
+Ran at 2850 steps. Dense S0 **PASS**. E18 0 bits. E21 **3.19 bits** (not chance; not dense).
+
+## Follow-up (rung 2b — extra steps on tiny recall)
+Next ONE change: 8000 steps on seq=128 complete-block E21 (`--no-dense_first --arch e21`).
+Dense/E18 ceilings stay the 2850 JSON. Not architecture stacking, not 512, not Glyph.
