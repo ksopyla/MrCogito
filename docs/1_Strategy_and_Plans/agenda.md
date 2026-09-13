@@ -37,10 +37,11 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 
 ## What we've explored so far
 - **2026-09-13 — HARDER exclusive-slot scaling (CPU, 95% bar, hidden frozen at 256 / 5.11M).**
-  Seq256 r=8 far_copy: A hits **95.0% at 96k examples**; C stays at chance; D hits 95% at
-  ~65–72k. Seq256 r=32: A **87.9% at 256k and still climbing** (not a kill). Chain hops=3: A
-  floor-killed at chance after 128k; D still in flight. Seq512 not started. LR 3e-3 (easy-end
-  winner) floor-kills this geometry; frozen LR is **1e-3**. Do not shrink the model.
+  Far_copy r=8: A hits 95% at seq256 (96k examples, lr=1e-3) and **97% at seq512
+  (72k examples, lr=3e-4)**. C stays at chance on every new geometry. Width-matched
+  D solves seq256 (99% @ 72k) but **misses seq512** (~30% across 1e-3/3e-4/3e-3).
+  r=32 (8 slots): A **87.9% at 256k**, miss 95%. Chain hops=3 / key_len=8: **A and D
+  both floor-killed** (exam too hard). LR is not portable from the 1.35M toy.
   [note](../4_Research_Notes/concept_slot_scaling_frontier_20260913.md).
 - **2026-09-12 — E22 Perceiver Concept LM (from scratch, 32k; killed same day).** First ledger design
   with positional slots (1 / 16 tokens), a transformer *over* the slots and a decoder with no raw route

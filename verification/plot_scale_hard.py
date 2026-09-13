@@ -193,6 +193,8 @@ def collect_hard() -> tuple[list[dict], list[dict], list[dict]]:
     for p in sorted(HARD.glob("*.json")):
         if p.name in META_SKIP:
             continue
+        if "stuck" in p.name or p.name.endswith("_slow.json"):
+            continue
         b = load(p)
         if not b or "results" not in b:
             continue
@@ -208,6 +210,8 @@ def collect_hard() -> tuple[list[dict], list[dict], list[dict]]:
     # Live logs without JSON yet (chain D, …).
     for log in sorted(HARD.glob("cell_*.log")):
         if log.stem in seen_names:
+            continue
+        if "stuck" in log.name or "slow" in log.name:
             continue
         parsed = parse_log_bundle(log)
         if parsed:
@@ -239,6 +243,9 @@ def cell_color(bundle: dict, arm: str) -> str:
         ("A", "chain h3 seq256"): "#6a3d9a",
         ("D", "chain h3 seq256"): "#e6550d",
         ("C", "chain h3 seq256"): "#74c476",
+        ("A", "seq512 r=8"): "#0b3d91",
+        ("D", "seq512 r=8"): "#a50f15",
+        ("C", "seq512 r=8"): "#41ab5d",
     }
     return palette.get((arm, key), style_for(arm)["color"])
 
@@ -452,7 +459,7 @@ def plot_difficulty(cells: list[dict], stubs: list[dict], easy_a, easy_3, outfil
     ax2.grid(True, axis="y", alpha=0.3)
 
     fig.suptitle(
-        "Harder cells  ·  exclusive-scope <10M  ·  95% bar  ·  CPU  ·  campaign still thin",
+        "Harder cells  ·  exclusive-scope <10M  ·  95% bar  ·  CPU",
         fontsize=11,
     )
     fig.tight_layout()
@@ -516,7 +523,7 @@ def plot_params_vs_seq(cells: list[dict], easy_a, easy_3, outfile: Path) -> None
             )
     ax.set_xlabel("seq_len (far_copy, span 32, r=8 cells that actually hit 95%)")
     ax.set_ylabel("params (M)")
-    ax.set_title("Params vs seq at ≥95%  — sparse: seq512 unmeasured, r=32 A missed")
+    ax.set_title("Params vs seq at ≥95%  (r=32 A missed 95%; width-matched D missed seq512)")
     ax.set_ylim(0, 10)
     ax.axhline(10, color="0.5", ls="--", lw=0.8, label="<10M target")
     ax.grid(True, alpha=0.3)

@@ -18,16 +18,16 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 ## [2026-09-13] - HARDER concept-slot scaling plots + frontier note
 
 **Why:**
-- The exclusive-scope <10M campaign needed a snapshot of completed cells (seq256 r=8 / r=32,
-  chain hops=3) against the 95% bar, with in-flight runs marked, not a new training fork.
+- The exclusive-scope <10M campaign needed a closed length×compression×composition
+  snapshot against the 95% bar (seq256, r=32, chain hops=3, seq512), not a new
+  training fork.
 
 **Added:**
-- `verification/plot_scale_hard.py` writes dedicated snake_case panels
-  (`harder_accuracy_vs_examples.png`, `harder_accuracy_vs_steps.png`,
-  `harder_difficulty_vs_accuracy.png`, `harder_lr_probe.png`,
-  `harder_params_vs_max_seq.png`) plus `concept_slot_scaling_frontier.png`.
-  Skips the r=32 D reuse stub as a second curve; parses in-progress chain logs.
-- Dated note: `docs/4_Research_Notes/concept_slot_scaling_frontier_20260913.md`.
+- `verification/plot_scale_hard.py` writes dedicated snake_case panels plus
+  `concept_slot_scaling_frontier.png`.
+- Dated note: `docs/4_Research_Notes/concept_slot_scaling_frontier_20260913.md`
+  (seq512 A 97% @ 72k / 3e-4; width-matched D misses seq512; r=32 A 87.9%;
+  chain is an exam kill for both A and D).
 
 ---
 

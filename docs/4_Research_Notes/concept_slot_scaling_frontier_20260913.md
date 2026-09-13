@@ -5,8 +5,8 @@
 **Instrument:** `verification/symbolic_channel_probe.py` over
 `data/symbolic_tasks.py`. Campaign runner: `verification/run_scale_hard_campaign.py`.
 JSON: `/opt/cursor/artifacts/scale_hard/` (inventory:
-`/opt/cursor/artifacts/harder_campaign_inventory.json`). Plots rebuilt 2026-09-13
-from those logs (no retraining):
+`/opt/cursor/artifacts/harder_campaign_inventory.json`). Plots rebuilt after seq512
+closed (2026-09-13):
 [`harder_accuracy_vs_examples.png`](/opt/cursor/artifacts/harder_accuracy_vs_examples.png),
 [`harder_accuracy_vs_steps.png`](/opt/cursor/artifacts/harder_accuracy_vs_steps.png),
 [`harder_difficulty_vs_accuracy.png`](/opt/cursor/artifacts/harder_difficulty_vs_accuracy.png),
@@ -41,64 +41,84 @@ dec=4, tok_emb=32 → **5.11M**. C/D drop encoder/pooler/latent → **2.27M**.
 - Easy end (already measured, do not rerun): seq=128, r=8, hidden=128, ~1.35M A /
   0.60M C,D. See `/opt/cursor/artifacts/scale/` and the 100% limits note.
 
-## Results so far
+## Results (campaign closed)
 
-Winner LR = **1e-3**. 3e-3 and 6e-3 (the easy-end LRs) floor-kill this geometry.
+Winner LR on seq256 r=8 = **1e-3**. 3e-3 and 6e-3 (the easy-end LRs) floor-kill that
+geometry. Seq512 A needed a further drop to **3e-4** (1e-3 stuck at chance for 2250
+steps). **Tune LR per geometry; it is not portable from the 1.35M toy.**
 
 | run | arm | params | LR | seq | r | task | hops | examples | steps | acc | CE | 95%? | stop |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| easy seq128 r=8 | A | 1.35M | 3e-3 | 128 | 8 | far_copy | 2 | 56k (interp ~51k) | 1,750 | 98.2% → 99.9% @ 96k | 0.053 | **yes** | target 99% |
+| easy seq128 r=8 | A | 1.35M | 3e-3 | 128 | 8 | far_copy | 2 | ~51k / 96k | 1,750 / 3,000 | 95% / 99.9% | 0.053 | **yes** | target 99% |
 | easy seq128 r=8 | C | 0.60M | 3e-3 | 128 | 8 | far_copy | 2 | 96k | 3,000 | 25% | 1.386 | no (floor) | budget |
-| easy seq128 r=8 | D | 0.60M | 3e-3 | 128 | 8 | far_copy | 2 | 32k (interp ~25k) | 1,000 | 99.7% → 100% @ 64k | 0.012 | **yes** | budget |
-| easy seq128 r=16 | A | 1.35M | 3e-3 | 128 | 16 | far_copy | 2 | 120k (interp ~112k) | 3,750 | 96.2% → 99.1% @ 184k | 0.025 | **yes** | target 99% |
+| easy seq128 r=8 | D | 0.60M | 3e-3 | 128 | 8 | far_copy | 2 | ~25k / 64k | 1,000 / 2,000 | 99.7% / 100% | 0.012 | **yes** | budget |
+| easy seq128 r=16 | A | 1.35M | 3e-3 | 128 | 16 | far_copy | 2 | ~112k / 184k | 3,750 / 5,750 | 96% / 99.1% | 0.025 | **yes** | target 99% |
 | lr1e03_a_seq256_r8 | A | 5.11M | 1e-3 | 256 | 8 | far_copy | 2 | 25.6k | 800 | 63.6% | 0.830 | no (probe) | budget |
 | lr3e03_a_seq256_r8 | A | 5.11M | 3e-3 | 256 | 8 | far_copy | 2 | 25.6k | 800 | 25.1% | 1.386 | no | floor_patience |
 | lr6e03_a_seq256_r8 | A | 5.11M | 6e-3 | 256 | 8 | far_copy | 2 | 25.6k | 800 | 25.1% | 1.386 | no | floor_patience |
 | cell_seq256_r8_A | A | 5.11M | 1e-3 | 256 | 8 | far_copy | 2 | **96k** | 3,000 | **95.02%** | 0.135 | **yes** | target_acc |
 | cell_seq256_r8_C | C | 2.27M | 1e-3 | 256 | 8 | far_copy | 2 | 48k | 1,500 | 25.4% | 1.386 | no (floor) | budget |
-| cell_seq256_r8_D | D | 2.27M | 1e-3 | 256 | 8 | far_copy | 2 | **72k** (interp ~65k) | 2,250 | **99.17%** | 0.025 | **yes** | target_acc |
-| cell_seq256_r32_A | A | 5.11M | 1e-3 | 256 | 32 | far_copy | 2 | 256k | 8,000 | **87.9%** | 0.258 | **no**, still climbing | budget |
-| cell_seq256_r32_D | D | 2.27M | 1e-3 | 256 | — | far_copy | 2 | 72k | 2,250 | 99.17% | 0.025 | **yes** (reuse: D ignores r) | target_acc |
+| cell_seq256_r8_D | D | 2.27M | 1e-3 | 256 | 8 | far_copy | 2 | **72k** | 2,250 | **99.17%** | 0.025 | **yes** | target_acc |
+| cell_seq256_r32_A | A | 5.11M | 1e-3 | 256 | 32 | far_copy | 2 | 256k | 8,000 | **87.9%** | 0.258 | **no** | budget |
+| cell_seq256_r32_D | D | 2.27M | 1e-3 | 256 | — | far_copy | 2 | 72k | 2,250 | 99.17% | 0.025 | **yes** (D ignores r) | reuse |
 | cell_chain_h3_A | A | 5.11M | 1e-3 | 256 | 8 | chain | 3 | 128k | 4,000 | 23.7% | 1.387 | no | floor_patience |
-| cell_chain_h3_D | D | 2.27M | 1e-3 | 256 | 8 | chain | 3 | 48k+ | 1,500+ | ~25% | ~1.387 | unknown | **in flight** (still chance at 48k; D far_copy took off ~48–56k) |
-| cell_chain_h3_C | C | — | — | 256 | 8 | chain | 3 | — | — | — | — | — | not started |
-| cell_seq512_r8_A/C/D | — | — | — | 512 | 8 | far_copy | 2 | — | — | — | — | — | not started |
+| cell_chain_h3_D | D | 2.27M | 1e-3 | 256 | 8 | chain | 3 | 128k | 4,000 | 23.7% | 1.386 | no | floor_patience |
+| cell_chain_h3_C | C | 2.27M | 1e-3 | 256 | 8 | chain | 3 | 48k | 1,500 | 25.1% | 1.386 | no (floor) | budget |
+| cell_seq512_r8_A | A | 5.11M | **3e-4** | 512 | 8 | far_copy | 2 | **72k** | 2,250 | **97.05%** | 0.082 | **yes** | target_acc |
+| cell_seq512_r8_C | C | 2.27M | 1e-3 | 512 | 8 | far_copy | 2 | 38k | 1,200 | 25.4% | 1.386 | no (floor) | budget |
+| cell_seq512_r8_D | D | 2.27M | 3e-4 | 512 | 8 | far_copy | 2 | 96k | 3,000 | **29.9%** | 1.337 | **no** | budget |
+| seq512 D lr=1e-3 | D | 2.27M | 1e-3 | 512 | 8 | far_copy | 2 | 104k | 3,250 | 27.8% | 1.343 | no | retuned |
+| seq512 D lr=3e-3 | D | 2.27M | 3e-3 | 512 | 8 | far_copy | 2 | 64k | 2,000 | 25.2% | 1.368 | no | retuned |
+| seq512 A lr=1e-3 | A | 5.11M | 1e-3 | 512 | 8 | far_copy | 2 | 72k | 2,250 | 24.5% | 1.386 | no | retuned to 3e-4 |
 
-Array ablation on every finished A that left chance: removing the array returns ~25%.
-The skill is in the slots.
+Array ablation on every finished A that left chance: removing the array returns ~24–26%.
+The skill is in the slots. C stays at the floor on every new (seq, min_gap) and on chain.
 
 ## Kill / success against the 95% bar
 
 - **Success (copy, 2× length, r=8):** 5.11M exclusive-slot A hits 95% at 96k unique
-  examples. C stays at the floor (exam does not leak). D hits 95% earlier (~65–72k)
-  and 99% by 72k, cheaper per step. Doubling seq at fixed r costs A about **1.7×**
-  examples versus the seq128 95% point (~51k → 96k).
-- **Open, not a kill (copy, 4× compression):** r=32 (8 slots, span occupies 1 slot)
-  reaches 87.9% at the 256k / 8k-step budget and is still rising. Same 5.11M; do **not**
-  shrink. More examples at this width is the next measurement, not a smaller model.
-- **Fail so far (composition):** chain hops=3, key/value length 8, is floor-killed
-  for A at 128k. That is not yet a concept-architecture kill: D has not finished,
-  so we do not know whether the exam is solvable at this budget.
-- **LR is not portable from the easy end.** 3e-3, which trained the 1.35M seq128
-  model, is lethal at hidden=256 / seq=256. Search LR per geometry.
+  examples. C stays at the floor. D hits 95% earlier (~65–72k). Doubling seq at
+  fixed r costs A about **1.7×** examples versus the seq128 95% point (~51k → 96k).
+- **Success (copy, 4× length, r=8, lower LR):** 5.11M A hits **97% at 72k examples**
+  on seq=512 (64 slots) once LR is 3e-4. Example-count did **not** grow with length;
+  the binding knob is LR. 1e-3, which won seq256, is lethal at seq512.
+- **A beats width-matched D at seq512.** The 2.27M 4-layer dense decoder never left
+  ~25–30% across 1e-3 / 3e-4 / 3e-3 through 64–104k examples. Caveat: D is
+  **width-matched, not param-matched** (no encoder/latent). A param-matched dense
+  stack might still solve it. Under the stated matching rule, the exclusive array
+  is the only arm that carries a 32-letter span across a 512-token row at this
+  depth.
+- **Miss, not a kill (copy, 4× compression):** r=32 (8 slots, span occupies 1 slot)
+  reaches **87.9% at 256k / 8k steps** and is still slowly climbing. Same 5.11M.
+  The 95% bar is not met at this budget. D ignores r and is the seq256 D curve.
+- **Exam kill (composition):** chain hops=3, key_len=8, seq=256: **both A and D**
+  floor-killed at chance after 128k. C at floor (no leak). Per protocol this is
+  **too hard for this budget**, not a concept-architecture failure. Short answers
+  (8 supervised tokens) plus 3-hop lookup is the likely starve, same family as
+  span=8 far_copy on the easy exam.
+- **LR is not portable.** 3e-3 trains 1.35M/seq128; 1e-3 trains 5.11M/seq256; 3e-4
+  trains 5.11M/seq512. Search LR per (hidden, seq) or the channel looks dead.
 
-## Still unknown / in flight
+## Still unknown
 
-- `cell_chain_h3_D` (running): if D hits 95%, hops=3 is a real exclusive-slot miss
-  at 5.11M. If D also stays at chance, kill the cell as "exam too hard", not an A fail.
-- `cell_chain_h3_C` and the whole **seq=512 r=8** triple have not started.
 - Whether r=32 A crosses 95% with more than 256k examples at the same 5.11M.
-- Seq>256 far_copy, hops>3, and a param-matched (not just width-matched) C/D.
-- Nothing here is a language-model result. It is a closed-form channel exam.
+- Whether a **param-matched** D (deeper decoder, ~5M) solves seq512.
+- hops=2 chain with longer answers (pack the loss like span=32) — hops=3/key=8
+  was an exam kill.
+- Seq>512 far_copy on GPU; nothing here is a language-model result.
 
 ## One-sentence frontier
 
-The longest / hardest task a **<10M exclusive-slot** model has actually solved so far
-is **`far_copy` seq=256, r=8, span=32 (32 slots), 5.11M params, 95.0% at 96k examples**;
-r=32 is close but unsolved at 256k, and 3-hop chain is still at chance.
+A **<10M exclusive-slot** model (5.11M, hidden 256) hits the 95% bar on
+**`far_copy` through seq=512, r=8, span=32 (64 slots)** at ~10^5 examples if LR is
+tuned down with length; it **misses 95% at r=32** (87.9% @ 256k); **3-hop chain
+with 8-token answers is unsolvable for both A and D** at this budget; and at
+seq=512 the exclusive array **succeeds where a width-matched 4-layer dense
+decoder does not**.
 
 ## What not to do next
 
 Do not shrink hidden size. The easy campaign already showed 0.12M solves seq128; the
-harder campaign is a **length / compression / hops** law at a frozen <10M width.
-Keep A at hidden=256 (5.11M) and spend examples, not width cuts.
+harder campaign is a **length / compression / hops / LR** law at a frozen <10M
+width. Keep A at hidden=256 (5.11M). Next spend is more examples at r=32, a
+param-matched D at seq512, or packed-loss chain — not a tinier model.
