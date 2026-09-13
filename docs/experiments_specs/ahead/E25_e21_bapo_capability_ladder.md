@@ -1,8 +1,7 @@
 # E25 — E21 capability limits on a calibrated BAPO DNA ladder (one rung at a time)
 
-- **Status:** active (rung 1 mixed; remainder pooling next). Keep in `ahead/` — only tiny
-  packed `far_copy` ran; K3 not hit. E24's dense / E18 / `e18_local` numbers are reused
-  controls, not E21 scores.
+- **Status:** active (rungs 1 + 1b mixed; QUERY-align next). Keep in `ahead/` — K3 not hit.
+  Do not score recall or 512. E24 dense / E18 / `e18_local` numbers are reused controls.
 - **Serves:** the Vision's "does the compressed channel carry *addressable* content, and how
   many bits?" question, now on **E21** (exclusive compressed read) rather than E18's raw
   one-global-read. Observation base for later gating / compression. Reuses E24's DNA instrument.
@@ -91,12 +90,15 @@ pretraining run; this is the cheap controlled exam that spec's K1/K2 needed and 
   (off by default; byte-identical to E18). Probe arch `e21`. No new `train_*.py`.
 
 ## Result
-- Run id: `e25_tiny_far_copy` (CPU, git `73f2a31`)
+- Run id: `e25_tiny_far_copy` (CPU, git `73f2a31`) · `e25_tiny_far_copy_remainder` (CPU, git `8b76ba5`)
 - WandB: n/a (probe; no `compute/*`)
-- Run report: [`e25_tiny_far_copy_20260913.md`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md)
-- Verdict: **mixed** — S0/K2 pass; S1 fail (E21 **17.7 bits** / flow **0.277** vs E18 63.0 / 0.985; need ≥47 bits). K3 not triggered (51.5% vs chance 25%, still climbing). Slot channel is live and lossy: complete-block-only pooling drops up to 15 tokens next to QUERY. Do not score recall or 512 until remainder pooling is scored on this same rung.
+- Run reports: [`e25_tiny_far_copy_20260913.md`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) · [`e25_tiny_far_copy_remainder_20260913.md`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md)
+- Verdict: **mixed** — both rungs S0/K2 pass, S1 fail, K3 not hit. Complete-block-only E21 **17.7 bits** / flow **0.277**. Remainder pooling **12.7 bits** / flow **0.199** (not better). Slot channel is live and lossy; dropping the last sender block was not the INDEX wall. Do not score recall or 512.
 
 ## Follow-up (rung 1b — remainder pooling)
-One architecture change after the mixed first rung: `message_pool_remainder` (default **False**,
-so the JSON above stays reproducible). Probe `--message_pool_remainder`. Same tiny packed
-`far_copy`, same S1 (≥0.75× E18 bits). Extra step budget is not a substitute.
+Ran. S1 **FAIL** (12.7 bits vs ≥47). K3 not triggered. Stop architecture stacking on the compressor.
+
+## Follow-up (rung 1c — align QUERY to r)
+Next ONE change: land QUERY on an r-aligned complete block. Tiny packed `far_copy` with
+`--seq_len 132` puts QUERY at 96 = 6×16 (remainder off). Recalibrate dense S0 at seq=132
+before scoring E21. Same S1. Extra steps only if alignment also fails while still climbing.

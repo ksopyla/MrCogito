@@ -151,7 +151,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 | E18c | Concept-compressed read (pool prefix K/V into 1 slot per 16 tokens) | **blocked** — compresses a *functional* retrieval channel; E18b showed we do not have one | [E18c](../experiments_specs/ahead/E18c_concept_compressed_read.md) |
 | E23 | Exclusive concept channel: E22 platform with `concept_xattn_scope=exclusive` and an objective that pays for far content (far-repeat-weighted CE + 30% dense-label long-range rows) | **ahead** — spec written 2026-09-12, not launched | [E23](../experiments_specs/ahead/E23_exclusive_concept_channel.md) |
 | E24 | E18 capability limits on a BAPO DNA ladder vs dense decoder-only and encoder-decoder | **ahead** — tiny + 512/1024 GPU measured (S1 pass @512, S1 fail @1024, S2 recall wall); 4k S0 open | [E24](../experiments_specs/ahead/E24_e18_bapo_capability_ladder.md) · [tiny](run_reports/e24_tiny_bapo_ladder_20260913.md) · [bridge](run_reports/e24_bridge512_bapo_ladder_20260913.md) |
-| E25 | E21 exclusive compressed read on the BAPO DNA ladder, one calibrated rung at a time | **ahead** — tiny `far_copy` mixed (S1 fail 17.7 bits / flow 0.277; K3 not hit); remainder pooling next | [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) · [tiny](run_reports/e25_tiny_far_copy_20260913.md) |
+| E25 | E21 exclusive compressed read on the BAPO DNA ladder, one calibrated rung at a time | **ahead** — tiny `far_copy` mixed (S1 fail 17.7 then 12.7 bits with remainder; K3 not hit); QUERY-align next | [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) · [tiny](run_reports/e25_tiny_far_copy_20260913.md) · [remainder](run_reports/e25_tiny_far_copy_remainder_20260913.md) |
 
 ### Canceled (no run)
 
@@ -238,6 +238,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-09-13 | E24 | `bapo_tiny_packed` + S0 hunts | DNA BAPO probe · H=128 · ~0.59M · seq=128 · CPU · packed span | `far_copy` E18 **99.2%** / 63 bits vs dense 99.4%; `recall_single` E18 **0 bits** vs dense 31; `chain_ordered` 97.5% vs 93%; shuffled chain dense 33.5% K1 | MIXED — positional pass, content wall, composition uncalibrated. No W&B / `compute/*`. | [spec](../experiments_specs/ahead/E24_e18_bapo_capability_ladder.md) · [report](run_reports/e24_tiny_bapo_ladder_20260913.md) |
 | 2026-09-13 | E24 | `bapo_bridge512` | GPU right-align INDEX · Polonez/Odra · <3M | seq=512 copy E18 **100% / 64 bits**; seq=1024 copy dense 99.9% E18 **0 bits**; 512 recall E18 **0 bits** @2500 vs dense 32 | MIXED — S1 dies between 512 and 1024; S2 is query-key not position. 4k S0 open. | [spec](../experiments_specs/ahead/E24_e18_bapo_capability_ladder.md) · [report](run_reports/e24_bridge512_bapo_ladder_20260913.md) |
 | 2026-09-13 | E25 | `e25_tiny_far_copy` | DNA BAPO probe · E21 r=16 complete-block-only · H=128 · seq=128 · CPU | `far_copy` dense **99.4%** / 63 bits · E18 **99.2%** / 63 · E21 **51.5%** / **17.7 bits** (flow 0.277) · `e18_local` 0 bits | MIXED — S1 fail, K3 not hit; remainder next to QUERY was not pooled. No W&B / `compute/*`. | [spec](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) · [report](run_reports/e25_tiny_far_copy_20260913.md) |
+| 2026-09-13 | E25 | `e25_tiny_far_copy_remainder` | same recipe · `message_pool_remainder` · CPU · git `8b76ba5` | dense **99.4%** / 63 · E18 **99.2%** / 63 · E21 **47.6%** / **12.7 bits** (flow 0.199) · `e18_local` 0 | MIXED — remainder did not lift S1; stop stacking compressor tricks. | [spec](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) · [report](run_reports/e25_tiny_far_copy_remainder_20260913.md) |
 
 ---
 
@@ -272,6 +273,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-09-13 | E24 tiny BAPO probe | on-the-fly DNA rungs, no checkpoint | `far_copy` flow 0.985 vs 0.989 · `recall_single` 0 vs 0.980 · `chain_ordered` 0.945 vs 0.896 · shuffled uncalibrated | Tiny observation base; do not score E18 on K1 rungs | [spec](../experiments_specs/ahead/E24_e18_bapo_capability_ladder.md) · [report](run_reports/e24_tiny_bapo_ladder_20260913.md) |
 | 2026-09-13 | E24 bridge 512/1024 probe | right-align DNA, Polonez/Odra, no checkpoint | 512 copy E18 flow **0.999** vs 0.992 · 1024 copy E18 **0** vs 0.994 · 512 recall E18 **0** vs 0.992 | S1 dies at 1024; S2 is query-key | [spec](../experiments_specs/ahead/E24_e18_bapo_capability_ladder.md) · [report](run_reports/e24_bridge512_bapo_ladder_20260913.md) |
 | 2026-09-13 | E25 tiny far_copy probe | on-the-fly DNA, no checkpoint, CPU | E21 flow **0.277** / 17.7 bits vs E18 0.985 / 63 · dense 0.989 · `e18_local` 0 | S1 fail; slot channel live and lossy; remainder pooling next | [spec](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) · [report](run_reports/e25_tiny_far_copy_20260913.md) |
+| 2026-09-13 | E25 tiny far_copy remainder | on-the-fly DNA, `message_pool_remainder`, CPU | E21 flow **0.199** / 12.7 bits vs E18 0.985 / 63 · complete-block 0.277 / 17.7 | Remainder did not close INDEX; QUERY-align next | [spec](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) · [report](run_reports/e25_tiny_far_copy_remainder_20260913.md) |
 
 **ViaDecoder baselines (L6 canonical, 2026-02-22):** MRPC F1 82.73 · STS-B P 0.650 · QQP F1 73.35 · MNLI-m 59.75 · MNLI-mm 60.90 — full note in [report](run_reports/via_decoder_eval_20260222.md).
 
@@ -292,6 +294,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 
 Newest first:
 
+- [E25 tiny far_copy remainder pooling — E21 vs E18 vs dense (Sep 13)](run_reports/e25_tiny_far_copy_remainder_20260913.md)
 - [E25 tiny far_copy — E21 vs E18 vs dense (Sep 13)](run_reports/e25_tiny_far_copy_20260913.md)
 - [E24 bridge 512/1024 BAPO ladder — E18 vs dense (Sep 13)](run_reports/e24_bridge512_bapo_ladder_20260913.md)
 - [E24 tiny BAPO ladder — E18 vs dense vs encoder-decoder (Sep 13)](run_reports/e24_tiny_bapo_ladder_20260913.md)

@@ -20,13 +20,14 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-13 — E25 E21 capability ladder (tiny far_copy mixed; remainder pooling next).**
-  Packed seq=128 / 64 bits, complete-block-only slots: dense **99.4% / 63.3 bits**, E18
-  **99.2% / 63.0**, E21 **51.5% / 17.7 bits** (flow 0.277), `e18_local` chance. S1 fail,
-  K3 not hit — live lossy slot channel, not a dead read. Next ONE change: pool the incomplete
-  last sender block (`message_pool_remainder`, default off). Do not score recall or 512 yet.
-  Spec [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) ·
-  [report](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md).
+- **2026-09-13 — E25 E21 capability ladder (tiny far_copy wall on remainder; QUERY-align next).**
+  Complete-block-only: dense **99.4% / 63.3 bits**, E18 **99.2% / 63.0**, E21 **51.5% / 17.7 bits**
+  (flow 0.277). Remainder pooling: E21 **47.6% / 12.7 bits** (flow 0.199) — S1 still fail, not
+  chance, not better. Next ONE change: `--seq_len 132` so QUERY sits on r=16 (pos 96); dense S0
+  first. Do not score recall or 512. Spec
+  [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) ·
+  [rung 1](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) ·
+  [remainder](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md).
   Do not relabel E18 scores as E21.
 - **2026-09-13 — E24 BAPO DNA ladder (tiny + GPU bridge 512/1024; 4k S0 open).** Packed tiny
   seq=128 / 0.59M: E18 matches dense on positional `far_copy` (99.2% vs 99.4%) and recovers
@@ -60,6 +61,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-13 — E25 tiny far_copy remainder pooling (CPU).** Same recipe as rung 1 with
+  `message_pool_remainder`. Dense/E18 replica-match. E21 **47.6% / 12.7 bits** (flow 0.199)
+  vs complete-block-only 17.7 bits. Remainder did not close INDEX. K3 not hit.
+  [report](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md).
 - **2026-09-13 — E25 tiny far_copy (CPU, complete-block-only E21).** Dense 99.4% / 63 bits
   (S0 = E24 replica). E18 99.2% / 63 bits. E21 **51.5% / 17.7 bits** (flow 0.277 vs 0.75×
   gate). `e18_local` 0 bits (K2). Remainder tokens next to QUERY were not pooled.
