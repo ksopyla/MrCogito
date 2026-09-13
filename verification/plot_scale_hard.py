@@ -86,9 +86,13 @@ def is_lr_probe(bundle: dict, path: Path) -> bool:
 
 def difficulty_key(bundle: dict) -> str:
     cfg = bundle["config"]
+    name = str(bundle.get("run_name") or "")
     if cfg.get("task") == "chain":
         return f"chain h{cfg.get('hops')} seq{cfg['seq_len']}"
-    return f"seq{cfg['seq_len']} r={cfg['ratio']}"
+    key = f"seq{cfg['seq_len']} r={cfg['ratio']}"
+    if "D9" in name:
+        key += " D9"
+    return key
 
 
 def label_for(bundle: dict, arm: str, extra: str = "") -> str:
@@ -246,6 +250,11 @@ def cell_color(bundle: dict, arm: str) -> str:
         ("A", "seq512 r=8"): "#0b3d91",
         ("D", "seq512 r=8"): "#a50f15",
         ("C", "seq512 r=8"): "#41ab5d",
+        ("D", "seq512 r=8 D9"): "#fb6a4a",
+        ("A", "seq256 r=16"): "#2171b5",
+        ("A", "seq1024 r=8"): "#081d58",
+        ("A", "chain h2 seq512"): "#9e9ac8",
+        ("D", "chain h2 seq512"): "#fd8d3c",
     }
     return palette.get((arm, key), style_for(arm)["color"])
 
