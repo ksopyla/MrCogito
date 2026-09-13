@@ -102,10 +102,34 @@ The skill is in the slots. C stays at the floor on every new (seq, min_gap) and 
 ## Still unknown
 
 - Whether r=32 A crosses 95% with more than 256k examples at the same 5.11M.
-- Whether a **param-matched** D (deeper decoder, ~5M) solves seq512.
 - hops=2 chain with longer answers (pack the loss like span=32) — hops=3/key=8
   was an exam kill.
 - Seq>512 far_copy on GPU; nothing here is a language-model result.
+
+## In flight — param-matched D on seq512 (2026-09-13, live)
+
+Width-matched D (4 layers, 2.27M) missed seq512 at ~30%. The goal needs the same
+parameter regime, so D was deepened to **9 decoder layers = 4.97M** (closest to
+A's 5.11M without shrinking A). Same exam, LR **3e-4**, CPU.
+
+Live log `/opt/cursor/artifacts/scale_hard/cell_seq512_r8_D9.log` (not finished):
+
+| examples | steps | acc | CE |
+|---|---|---|---|
+| 8k | 250 | 25.9% | 1.390 |
+| 24k | 750 | 28.5% | 1.349 |
+| 32k | 1,000 | 30.8% | 1.317 |
+| 40k | 1,250 | 35.1% | 1.258 |
+| 48k | 1,500 | 41.1% | 1.111 |
+| 56k | 1,750 | **45.9%** | 1.034 |
+
+CE is monotonically falling. This is a takeoff, not a floor. 4-layer D was 28%
+at 56k. A on this cell was **83% at 32k and 97% at 72k**. D9 is in the same
+parameter band but is **behind on data**: at 56k A was already over the 95% bar
+and D9 is at 46%. Wall is similar per step (A 2.03 s/step, D9 1.94 s/step), so
+if D9 later hits 95% it will have spent more examples *and* more wall-clock.
+
+Queued after this cell (frozen hidden=256): r=16, packed hops=2 chain, seq=1024.
 
 ## One-sentence frontier
 
