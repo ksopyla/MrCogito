@@ -116,7 +116,8 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             f"  [{arch}] {params/1e6:.3f}M  patterns={patterns}  "
             f"kv={getattr(model.config, 'num_kv_heads', '-')}  "
             f"logit_scale={getattr(model.config, 'global_logit_scale', '-')}  "
-            f"backend={getattr(model.config, 'attn_backend', '-')}",
+            f"backend={getattr(model.config, 'attn_backend', '-')}  "
+            f"zero_resid={getattr(model.config, 'zero_init_residuals', True)}",
             flush=True,
         )
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01, betas=(0.9, 0.95))
@@ -213,6 +214,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         attn_backend=args.attn_backend,
         global_logit_scale=args.global_logit_scale,
         z_loss=args.z_loss,
+        zero_init_residuals=not args.warm_residuals,
     )
     card = rung_card(scale, recipe.task, **over)
     card["local_window"] = window
@@ -298,6 +300,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             "attn_backend": args.attn_backend,
             "hidden": args.hidden,
             "stack_layers": args.stack_layers,
+            "warm_residuals": args.warm_residuals,
         },
         "pack": {
             "answer_len": cfg.answer_len,
@@ -345,6 +348,11 @@ def main() -> int:
     )
     p.add_argument("--attn_backend", default="sdpa", choices=("sdpa", "flex", "flash"))
     p.add_argument("--z_loss", type=float, default=1e-4)
+    p.add_argument(
+        "--warm_residuals",
+        action="store_true",
+        help="Do not zero-init attn.wo / mlp.down. Needed so a 512+ needle can open the residual read.",
+    )
     p.add_argument("--seq_len", type=int, default=None, help="override scale seq_len (S0 hunts)")
     p.add_argument("--min_gap", type=int, default=None, help="override scale min_gap (S0 hunts)")
     p.add_argument("--local_window", type=int, default=None, help="override scale local_window")

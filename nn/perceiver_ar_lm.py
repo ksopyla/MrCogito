@@ -89,6 +89,7 @@ class PerceiverARConfig(PretrainedConfig):
         swa_sink: bool = False,               # windowed layers may also attend to the document's first token
         write_back_hook: bool = False,        # E19 — adds write_back_proj params when True
         init_std: float = 0.02,
+        zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
         bos_token_id: int = 1,
         eos_token_id: int = 2,
@@ -135,6 +136,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.swa_sink = swa_sink
         self.write_back_hook = write_back_hook
         self.init_std = init_std
+        self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
         self.checkpoint_family = "perceiver_ar"
         self.pretraining_objective = "causal_lm"
@@ -705,11 +707,14 @@ class PerceiverARLM(PreTrainedModel):
         self._flce = None
         self.post_init()
         # Zero-init the residual-writing projections (muP-like, modded-nanogpt).
-        for layer in self.layers:
-            nn.init.zeros_(layer.attn.wo.weight)
-            nn.init.zeros_(layer.mlp.down.weight)
-        if cfg.write_back_hook:
-            nn.init.zeros_(self.write_back_proj.weight)
+        # At seq≥512 the 1/S attention mass is too small to open a dead `wo`; the probe can
+        # disable this (see `zero_init_residuals=False`) without changing E18 checkpoints.
+        if cfg.zero_init_residuals:
+            for layer in self.layers:
+                nn.init.zeros_(layer.attn.wo.weight)
+                nn.init.zeros_(layer.mlp.down.weight)
+            if cfg.write_back_hook:
+                nn.init.zeros_(self.write_back_proj.weight)
 
     # -- HF plumbing ----------------------------------------------------------------
     def _init_weights(self, module):

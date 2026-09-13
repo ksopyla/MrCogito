@@ -41,6 +41,7 @@ class ArchSpec:
     attn_backend: str = "sdpa"
     global_logit_scale: str = "none"  # "log" = SSMax anti-dilution on full layers
     z_loss: float = 1e-4
+    zero_init_residuals: bool = True
 
 
 def _n_heads(hidden: int, head_dim: int) -> int:
@@ -110,6 +111,7 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         swa_sink=True,
         global_logit_scale=spec.global_logit_scale,
         z_loss=spec.z_loss,
+        zero_init_residuals=spec.zero_init_residuals,
         pad_token_id=pad_id,
         bos_token_id=bos_id,
         eos_token_id=eos_id,

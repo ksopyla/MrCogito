@@ -187,6 +187,30 @@ def test_ssmax_and_mha_factory():
     assert any(layer.attn.logit_scale is not None for layer in model.layers)
 
 
+def test_warm_residuals_leave_wo_nonzero():
+    cfg = config_for("tiny", "far_copy")
+    cold = build_model(
+        "dense",
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=0, bos_id=1, eos_id=2,
+        spec=ArchSpec(name="dense", hidden=32, head_dim=16, zero_init_residuals=True),
+        seed=0,
+    )
+    warm = build_model(
+        "dense",
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=0, bos_id=1, eos_id=2,
+        spec=ArchSpec(name="dense", hidden=32, head_dim=16, zero_init_residuals=False),
+        seed=0,
+    )
+    assert all(float(layer.attn.wo.weight.detach().abs().sum()) == 0.0 for layer in cold.layers)
+    assert any(float(layer.attn.wo.weight.detach().abs().sum()) > 0.0 for layer in warm.layers)
+
+
 @pytest.mark.parametrize("arch", ["dense", "e18", "e18_local", "encdec"])
 def test_factory_builds_under_100m(arch):
     cfg = config_for("tiny", "recall")

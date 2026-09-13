@@ -15,6 +15,22 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-13] - Warm residual init for BAPO 512+ S0 hunts
+
+**Why:**
+- GPU isolation: dense far_copy learns at seq=128 (bf16 82%) and slowly at seq=256
+  (70% @5k, still climbing) but is **dead at seq=512** even at 16M / 4000 steps. Same
+  zero-init `attn.wo` that hid the concept-channel read. At 512+ the 1/S attention mass
+  cannot open a dead residual write, so CE sits at ln(4) forever.
+
+**What changed:**
+- [added] `PerceiverARConfig.zero_init_residuals` (default True = E18 checkpoints)
+- [added] probe `--warm_residuals` for S0 hunts at 512 / 4k
+
+**Does not:** change E18 training defaults.
+
+---
+
 ## [2026-09-13] - BAPO probe S0 hunt knobs (4k dense was stuck at chance)
 
 **Why:**
