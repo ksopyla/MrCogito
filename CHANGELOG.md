@@ -15,6 +15,33 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-13] - BAPO DNA capability ladder (E18 vs dense vs encoder-decoder)
+
+**Why:**
+- The DNA-alphabet suite made long-range information *measurable*, and a sibling agent is
+  mapping `perceiver_concept` Arm A to 100% far_copy at seq=128. We still had no calibrated
+  way to ask the same questions of **E18** at tiny → 4k–16k → 32k–128k, no BAPO-hard tasks
+  (shuffled vs ordered chains, unique, match3, majority, signal-vs-noise), no encoder-decoder
+  control, and no bits/token plots. E18b already showed positional copy works and content
+  addressing does not, on text-shaped rows whose prize was unknown. Spec:
+  `docs/engineering_specs/bapo_capability_ladder.md` · experiment
+  `docs/experiments_specs/ahead/E24_e18_bapo_capability_ladder.md`.
+
+**Added:**
+- `data/symbolic_tasks.py`: `select`, `chain_ordered`, `unique`, `match3`, `majority`; `decoy`
+  control; `BAPO_CLASS` / retrieval vs aggregation split; `prize_bits`.
+- `data/bapo_ladder.py`: named scales `tiny` … `large_128k` and the 75% solvability gate.
+- `evaluation/bapo_metrics.py`: recovered bits, information flow, bits/token, bytes/token,
+  nominal BAPO `(a, b)` from the KV cache.
+- `nn/encdec_lm.py`: suffix-only decoder with cross-attention to a bidirectional prefix encoder
+  (probe baseline, not a training family).
+- `verification/bapo_capability_probe.py` + `analysis/plot_bapo_capability.py`.
+- Tests: new-task oracles, floors, every (scale, task) constructs, all four arches train a step.
+
+**Does not:** touch the `perceiver_concept` 100% far_copy exam or launch medium/large GPU runs.
+
+---
+
 ## [2026-09-13] - Symbolic long-context task suite with closed-form information floors
 
 **Why:**

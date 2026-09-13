@@ -106,6 +106,8 @@ def main() -> None:
     p.add_argument("--n_distractors", type=int, default=7)
     p.add_argument("--hops", type=int, default=3)
     p.add_argument("--count_mod", type=int, default=4)
+    p.add_argument("--n_decoys", type=int, default=8)
+    p.add_argument("--n_duplicates", type=int, default=4)
     p.add_argument("--n_train", type=int, default=20000)
     p.add_argument("--n_eval", type=int, default=256)
     p.add_argument("--floor_window", type=int, default=None,
@@ -138,6 +140,8 @@ def main() -> None:
         n_distractors=args.n_distractors,
         hops=args.hops,
         count_mod=args.count_mod,
+        n_decoys=args.n_decoys,
+        n_duplicates=args.n_duplicates,
     )
     window = args.floor_window if args.floor_window is not None else args.min_gap - 1
     sources = []
@@ -164,6 +168,7 @@ def main() -> None:
                 "floor_window": window,
                 "floor_nats_per_supervised_token": round(floor_nats(cfg, window), 6),
                 "chance_accuracy": round(chance_accuracy(cfg), 6),
+                "bapo_class": cfg.bapo_class,
             }
         )
 

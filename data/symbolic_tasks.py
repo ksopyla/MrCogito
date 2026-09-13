@@ -18,17 +18,27 @@ which the supervised tokens are *determined* by evidence at a controlled distanc
 
 Tasks, and the mechanism each one isolates
 ------------------------------------------
-- `recall`     — content addressing. One of several key/value blocks is queried at the end.
-                 The array must be *addressed* by content, not by position.
-- `far_copy`   — channel bandwidth. A span from far back must be reproduced verbatim; sweeping
-                 `span_len` measures how many bits the channel actually carries.
-- `chain`      — composition over slots. `a->b`, `b->c`, `c->d` are scattered in random order,
-                 so answering requires several dependent lookups *inside* the latent space.
-- `count`      — aggregation. Report the count of a queried symbol (mod `count_mod`) over the
-                 whole sequence. Unlike the others, this cannot be solved by retrieving one
-                 site: it needs a running statistic. This is the one task where a compressive
-                 bottleneck should have a *structural advantage* over exact attention, which
-                 must re-derive the statistic from the whole prefix every time.
+- `recall`         — content addressing (BAPO MATCH2 / INDEX family). One of several
+                     `key -> value` blocks is queried at the end; the read must address by
+                     content, not by position.
+- `far_copy`       — channel bandwidth. A marked span must be reproduced verbatim; sweeping
+                     `span_len` measures how many bits the channel actually carries. `span_len=1`
+                     is the BAPO INDEX control.
+- `select`         — signal vs noise. Like `recall`, but the body is padded with `decoy` blocks
+                     of the same shape whose keys never match the query. The model must ignore
+                     them.
+- `chain_ordered`   — logical chain `A->B`, `B->C`, `C->D` in *reading order* (a DFA / running
+                     register is enough: BAPO-easy).
+- `chain`          — the same hops *shuffled* (BAPO REACHABILITY-hard): answering requires
+                     several dependent lookups by content, not a left-to-right scan.
+- `unique`         — BAPO UNIQUE / Σ-hard. Duplicate facts appear twice; exactly one fact
+                     appears once. Report its value. No query key is given.
+- `match3`         — BAPO MATCH3-hard. Exactly one fact is planted three times; every other
+                     fact appears once. Report that value.
+- `count`          — aggregation. Count of a queried symbol over the whole body, mod
+                     `count_mod`. A compressive bottleneck can keep O(1) state; exact attention
+                     must re-derive the statistic from the whole prefix.
+- `majority`       — BAPO MAJORITY-hard. Report the unique majority symbol of the body.
 
 Role in the research program
 ----------------------------
@@ -53,15 +63,47 @@ from typing import Iterator, Sequence
 
 import numpy as np
 
-TASKS: tuple[str, ...] = ("recall", "far_copy", "chain", "count")
+TASKS: tuple[str, ...] = (
+    "recall",
+    "far_copy",
+    "select",
+    "chain",
+    "chain_ordered",
+    "unique",
+    "match3",
+    "count",
+    "majority",
+)
+
+# Retrieval-style: evidence is a far block, floor is ln(A) when window <= min_gap.
+RETRIEVAL_TASKS: frozenset[str] = frozenset(
+    {"recall", "far_copy", "select", "chain", "chain_ordered", "unique", "match3"}
+)
+# Aggregation-style: evidence is the whole body; floor depends on how much of the body is visible.
+AGGREGATION_TASKS: frozenset[str] = frozenset({"count", "majority"})
+
+# Schnabel et al. 2025 (arXiv:2505.08140) class for each generator. "easy" = constant (a,b)
+# suffices; "hard" = bandwidth must grow with n; "sigma-hard" = must grow with vocab.
+BAPO_CLASS: dict[str, str] = {
+    "recall": "easy-match2",
+    "far_copy": "easy-index-bandwidth",
+    "select": "easy-match2-noise",
+    "chain_ordered": "easy-dfa",
+    "chain": "hard-reachability",
+    "unique": "sigma-hard",
+    "match3": "hard-match3",
+    "count": "hard-majority",
+    "majority": "hard-majority",
+}
 
 # Control symbols, in the order they are laid out above the content alphabet.
 CONTROL_NAMES: tuple[str, ...] = (
     "bos",
     "eos",
-    "keymark",   # opens a key/value block (recall)
+    "keymark",   # opens a key/value block (recall / unique / match3)
     "spanmark",  # opens a span to be copied (far_copy)
     "hop",       # opens an `x -> y` edge (chain)
+    "decoy",     # opens a fact-shaped distractor that must be ignored (select)
     "query",     # opens the question
     "answer",    # opens the supervised span (doubles as the START marker)
     "end",       # closes the supervised span (doubles as the END marker)
@@ -125,6 +167,8 @@ class SymbolicTaskConfig:
     n_distractors: int = 7
     hops: int = 3
     count_mod: int = 4
+    n_decoys: int = 8
+    n_duplicates: int = 4
 
     def __post_init__(self) -> None:
         if self.task not in TASKS:
@@ -139,8 +183,14 @@ class SymbolicTaskConfig:
                     f"count_mod ({self.count_mod}) must be <= n_symbols ({self.n_symbols}) so the "
                     "answer fits in one symbol"
                 )
-        if self.task == "chain" and self.hops < 2:
+        if self.task in {"chain", "chain_ordered"} and self.hops < 2:
             raise ValueError("chain needs hops >= 2 to require composition")
+        if self.task == "select" and self.n_decoys < 1:
+            raise ValueError("select needs n_decoys >= 1")
+        if self.task == "unique" and self.n_duplicates < 1:
+            raise ValueError("unique needs n_duplicates >= 1")
+        if self.task == "match3" and self.n_distractors < 1:
+            raise ValueError("match3 needs n_distractors >= 1 of once-only facts")
         need = self.tail_len + self.evidence_len + 1  # + BOS
         if need + self.min_gap > self.seq_len:
             raise ValueError(
@@ -158,14 +208,29 @@ class SymbolicTaskConfig:
         return {
             "recall": self.value_len,
             "far_copy": self.span_len,
+            "select": self.value_len,
             "chain": self.key_len,
+            "chain_ordered": self.key_len,
+            "unique": self.value_len,
+            "match3": self.value_len,
             "count": 1,
+            "majority": 1,
         }[self.task]
 
     @property
     def query_len(self) -> int:
         """Tokens between the `query` and `answer` markers."""
-        return {"recall": self.key_len, "far_copy": 0, "chain": self.key_len, "count": 1}[self.task]
+        return {
+            "recall": self.key_len,
+            "far_copy": 0,
+            "select": self.key_len,
+            "chain": self.key_len,
+            "chain_ordered": self.key_len,
+            "unique": 0,
+            "match3": 0,
+            "count": 1,
+            "majority": 0,
+        }[self.task]
 
     @property
     def tail_len(self) -> int:
@@ -175,13 +240,25 @@ class SymbolicTaskConfig:
     @property
     def evidence_len(self) -> int:
         """Total tokens of evidence blocks placed in the body."""
+        kv = 1 + self.key_len + self.value_len
+        hop = 1 + 2 * self.key_len
         if self.task == "recall":
-            return (self.n_distractors + 1) * (1 + self.key_len + self.value_len)
+            return (self.n_distractors + 1) * kv
         if self.task == "far_copy":
             return 1 + self.span_len
-        if self.task == "chain":
-            return (self.hops + self.n_distractors) * (1 + 2 * self.key_len)
-        return 0  # count has no localized evidence
+        if self.task == "select":
+            return (self.n_distractors + 1 + self.n_decoys) * kv
+        if self.task in {"chain", "chain_ordered"}:
+            return (self.hops + self.n_distractors) * hop
+        if self.task == "unique":
+            return (2 * self.n_duplicates + 1) * kv
+        if self.task == "match3":
+            return (3 + self.n_distractors) * kv
+        return 0  # count / majority: the whole body is the evidence
+
+    @property
+    def bapo_class(self) -> str:
+        return BAPO_CLASS[self.task]
 
     @property
     def answer_start(self) -> int:
@@ -235,6 +312,62 @@ def _place_blocks(
     return offsets
 
 
+def _emit_chain(
+    cfg: SymbolicTaskConfig,
+    rng: np.random.Generator,
+    ids: np.ndarray,
+    v: SymbolicVocab,
+    A: int,
+    evidence_hi: int,
+    *,
+    shuffle: bool,
+) -> tuple[list[int], list[int], int, dict]:
+    """Plant hop-edges and return (query_tokens, answer_tokens, evidence_end, meta).
+
+    Only *sources* must be distinct, so every edge has one unambiguous target. The terminal
+    node is a pure target and is drawn iid uniform, which keeps the floor exactly `ln(A)` per
+    token — a distinct-pool draw would leak a little information.
+    """
+
+    def sym(t: Sequence[int]) -> list[int]:
+        return [v.sym_lo + int(x) for x in t]
+
+    sources = _sample_distinct_tuples(rng, cfg.hops + cfg.n_distractors, cfg.key_len, A)
+    terminal = tuple(int(x) for x in rng.integers(0, A, size=cfg.key_len))
+    chain = [*sources[: cfg.hops], terminal]
+    chain_edges = [(chain[i], chain[i + 1]) for i in range(cfg.hops)]
+    dist_edges = [
+        (src, tuple(int(x) for x in rng.integers(0, A, size=cfg.key_len)))
+        for src in sources[cfg.hops :]
+    ]
+    if shuffle:
+        edges = chain_edges + dist_edges
+        order = rng.permutation(len(edges))
+        blocks = [[v.control("hop"), *sym(edges[i][0]), *sym(edges[i][1])] for i in order]
+        offsets = _place_blocks(rng, blocks, 1, evidence_hi)
+        chain_positions = [
+            offsets[j] + len(blocks[j]) - 1 for j, i in enumerate(order) if int(i) < cfg.hops
+        ]
+    else:
+        # Chain edges occupy the left of the body in hop order so a left-to-right scan can
+        # follow A→B→C→D; distractors fill whatever remains.
+        chain_blocks = [[v.control("hop"), *sym(s), *sym(d)] for s, d in chain_edges]
+        dist_blocks = [[v.control("hop"), *sym(s), *sym(d)] for s, d in dist_edges]
+        chain_need = sum(len(b) for b in chain_blocks)
+        dist_need = sum(len(b) for b in dist_blocks)
+        slack = (evidence_hi - 1) - chain_need - dist_need
+        slack_chain = max(0, slack // 2)
+        chain_hi = 1 + chain_need + slack_chain
+        chain_off = _place_blocks(rng, chain_blocks, 1, chain_hi)
+        dist_off = _place_blocks(rng, dist_blocks, chain_hi, evidence_hi) if dist_blocks else []
+        blocks = chain_blocks + dist_blocks
+        offsets = chain_off + dist_off
+        chain_positions = [off + len(b) - 1 for off, b in zip(chain_off, chain_blocks)]
+    for off, block in zip(offsets, blocks):
+        ids[off : off + len(block)] = block
+    return sym(chain[0]), sym(chain[-1]), max(chain_positions), {"hops": cfg.hops, "shuffled": shuffle}
+
+
 def generate_row(cfg: SymbolicTaskConfig, rng: np.random.Generator) -> SymbolicRow:
     """One row of exactly `cfg.seq_len` tokens, with the answer determined by far evidence."""
     v = cfg.vocab
@@ -273,32 +406,69 @@ def generate_row(cfg: SymbolicTaskConfig, rng: np.random.Generator) -> SymbolicR
         query_tokens, answer_tokens = [], sym(span)
         evidence_end = off + len(block) - 1
 
-    elif cfg.task == "chain":
-        # Only *sources* must be distinct, so every edge has one unambiguous target. The terminal
-        # node is a pure target and is drawn iid uniform, which keeps the floor exactly
-        # `ln(A)` per token — a distinct-pool draw would leak a little information.
-        sources = _sample_distinct_tuples(rng, cfg.hops + cfg.n_distractors, cfg.key_len, A)
-        terminal = tuple(int(x) for x in rng.integers(0, A, size=cfg.key_len))
-        chain = [*sources[: cfg.hops], terminal]
-        edges = [(chain[i], chain[i + 1]) for i in range(cfg.hops)]
-        edges += [
-            (src, tuple(int(x) for x in rng.integers(0, A, size=cfg.key_len)))
-            for src in sources[cfg.hops :]
-        ]
-        # Shuffle so the chain is not in reading order: it must be resolved by content.
-        order = rng.permutation(len(edges))
-        blocks = [[v.control("hop"), *sym(edges[i][0]), *sym(edges[i][1])] for i in order]
+    elif cfg.task == "select":
+        n_facts = cfg.n_distractors + 1
+        keys = _sample_distinct_tuples(rng, n_facts + cfg.n_decoys, cfg.key_len, A)
+        fact_vals = [tuple(int(x) for x in rng.integers(0, A, size=cfg.value_len)) for _ in range(n_facts)]
+        decoy_vals = [tuple(int(x) for x in rng.integers(0, A, size=cfg.value_len)) for _ in range(cfg.n_decoys)]
+        fact_blocks = [[v.control("keymark"), *sym(k), *sym(val)] for k, val in zip(keys[:n_facts], fact_vals)]
+        decoy_blocks = [[v.control("decoy"), *sym(k), *sym(val)] for k, val in zip(keys[n_facts:], decoy_vals)]
+        blocks = fact_blocks + decoy_blocks
         offsets = _place_blocks(rng, blocks, 1, evidence_hi)
         for off, block in zip(offsets, blocks):
             ids[off : off + len(block)] = block
-        query_tokens, answer_tokens = sym(chain[0]), sym(chain[-1])
-        # The binding constraint is the *last* hop the model still needs, i.e. the latest-placed
-        # chain edge; anything earlier is further away.
-        chain_positions = [
-            offsets[j] + len(blocks[j]) - 1 for j, i in enumerate(order) if int(i) < cfg.hops
-        ]
-        evidence_end = max(chain_positions)
-        meta = {"hops": cfg.hops}
+        pick = int(rng.integers(0, n_facts))
+        query_tokens, answer_tokens = sym(keys[pick]), sym(fact_vals[pick])
+        evidence_end = offsets[pick] + len(fact_blocks[pick]) - 1
+        meta = {"n_facts": n_facts, "n_decoys": cfg.n_decoys, "picked": pick}
+
+    elif cfg.task in {"chain", "chain_ordered"}:
+        query_tokens, answer_tokens, evidence_end, meta = _emit_chain(
+            cfg, rng, ids, v, A, evidence_hi, shuffle=cfg.task == "chain"
+        )
+
+    elif cfg.task == "unique":
+        n_keys = cfg.n_duplicates + 1
+        keys = _sample_distinct_tuples(rng, n_keys, cfg.key_len, A)
+        values = [tuple(int(x) for x in rng.integers(0, A, size=cfg.value_len)) for _ in range(n_keys)]
+        unique_key, unique_val = keys[0], values[0]
+        blocks = [[v.control("keymark"), *sym(unique_key), *sym(unique_val)]]
+        for k, val in zip(keys[1:], values[1:]):
+            blk = [v.control("keymark"), *sym(k), *sym(val)]
+            blocks.append(blk)
+            blocks.append(list(blk))
+        offsets = _place_blocks(rng, blocks, 1, evidence_hi)
+        for off, block in zip(offsets, blocks):
+            ids[off : off + len(block)] = block
+        query_tokens, answer_tokens = [], sym(unique_val)
+        evidence_end = offsets[0] + len(blocks[0]) - 1
+        meta = {"n_duplicates": cfg.n_duplicates}
+
+    elif cfg.task == "match3":
+        n_keys = cfg.n_distractors + 1
+        keys = _sample_distinct_tuples(rng, n_keys, cfg.key_len, A)
+        values = [tuple(int(x) for x in rng.integers(0, A, size=cfg.value_len)) for _ in range(n_keys)]
+        triple = [v.control("keymark"), *sym(keys[0]), *sym(values[0])]
+        blocks = [list(triple), list(triple), list(triple)]
+        blocks += [[v.control("keymark"), *sym(k), *sym(val)] for k, val in zip(keys[1:], values[1:])]
+        offsets = _place_blocks(rng, blocks, 1, evidence_hi)
+        for off, block in zip(offsets, blocks):
+            ids[off : off + len(block)] = block
+        query_tokens, answer_tokens = [], sym(values[0])
+        evidence_end = max(offsets[i] + len(blocks[i]) - 1 for i in range(3))
+        meta = {"triple_copies": 3, "n_singletons": cfg.n_distractors}
+
+    elif cfg.task == "majority":
+        winner = int(rng.integers(0, A))
+        body_len = tail_start - 1
+        ids[1:tail_start] = v.sym_lo + winner
+        n_other = max(1, body_len // 3)
+        other_pos = rng.choice(body_len, size=n_other, replace=False)
+        other_sym = (winner + 1 + rng.integers(0, A - 1, size=n_other)) % A
+        ids[1 + other_pos] = v.sym_lo + other_sym
+        query_tokens, answer_tokens = [], [v.sym_lo + winner]
+        evidence_end = tail_start - 1
+        meta = {"winner": winner, "n_other": n_other}
 
     else:  # count
         target = int(rng.integers(0, A))
@@ -383,15 +553,25 @@ def floor_nats(cfg: SymbolicTaskConfig, window: int) -> float:
     """
     if window < 1:
         raise ValueError("window must be >= 1")
-    if cfg.task == "count":
+    if cfg.task in AGGREGATION_TASKS:
         # The first answer token is predicted from position `answer_start - 1`, so the visible
         # tokens are `[answer_start - window, answer_start - 1]`. Body tokens outside that are
-        # unobserved and contribute `Binomial(n_far, 1/A)` to the count.
+        # unobserved.
         tail_start = cfg.seq_len - cfg.tail_len
         body_len = tail_start - 1
         visible_body = max(0, tail_start - max(1, cfg.answer_start - window))
         n_far = max(0, body_len - visible_body)
-        return _binomial_mod_entropy(n_far, 1.0 / cfg.n_symbols, cfg.count_mod)
+        if cfg.task == "count":
+            return _binomial_mod_entropy(n_far, 1.0 / cfg.n_symbols, cfg.count_mod)
+        # majority: planted winner is uniform over A and independent of the local window when
+        # none of the body is visible. With a visible slice the floor is row-dependent; we
+        # report ln(A) as a conservative upper bound (callers comparing architectures should
+        # use the dense arm as the measured ceiling, not this number).
+        if n_far == body_len:
+            return math.log(cfg.n_symbols)
+        if n_far == 0:
+            return 0.0
+        return math.log(cfg.n_symbols)
     if window > cfg.min_gap:
         # The evidence may fall inside the window for some rows; the floor is then row-dependent
         # and this function no longer bounds anything. Callers must keep `window <= min_gap`.
@@ -404,3 +584,20 @@ def chance_accuracy(cfg: SymbolicTaskConfig) -> float:
     if cfg.task == "count":
         return 1.0 / cfg.count_mod
     return 1.0 / cfg.n_symbols
+
+
+def chance_entropy_nats(cfg: SymbolicTaskConfig) -> float:
+    """Entropy of a uniform guess over the answer alphabet, per supervised token."""
+    if cfg.task == "count":
+        return math.log(cfg.count_mod)
+    return math.log(cfg.n_symbols)
+
+
+def prize_nats(cfg: SymbolicTaskConfig) -> float:
+    """Nats of information in the supervised span, assuming a uniform alphabet (or residue)."""
+    return cfg.answer_len * chance_entropy_nats(cfg)
+
+
+def prize_bits(cfg: SymbolicTaskConfig) -> float:
+    """Bits of information in the supervised span (the BAPO prize the channel must carry)."""
+    return prize_nats(cfg) / math.log(2)

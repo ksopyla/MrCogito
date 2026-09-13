@@ -22,6 +22,7 @@ import pytest
 
 from data.symbolic_tasks import (
     CONTROL_NAMES,
+    RETRIEVAL_TASKS,
     TASKS,
     SymbolicTaskConfig,
     SymbolicVocab,
@@ -30,6 +31,7 @@ from data.symbolic_tasks import (
     floor_nats,
     generate_row,
     iter_rows,
+    prize_bits,
 )
 
 REPO = Path(__file__).resolve().parents[1]
@@ -47,6 +49,8 @@ def cfg_for(task: str, **over) -> SymbolicTaskConfig:
         n_distractors=5,
         hops=3,
         count_mod=4,
+        n_decoys=4,
+        n_duplicates=3,
     )
     return SymbolicTaskConfig(**{**base, **over})
 
@@ -109,7 +113,7 @@ def test_row_shape_and_label_placement(task):
         assert row.input_ids.min() >= 0 and row.input_ids.max() < cfg.vocab.vocab_size
 
 
-@pytest.mark.parametrize("task", ["recall", "far_copy", "chain"])
+@pytest.mark.parametrize("task", ["recall", "far_copy", "chain", "chain_ordered", "select", "unique", "match3"])
 def test_min_gap_is_respected(task):
     """The contract `floor_nats` relies on: a raw window of `min_gap` cannot reach the evidence,
     which needs `gap >= min_gap + 1` because the window includes `answer_start - 1` itself."""
@@ -182,6 +186,100 @@ def test_chain_answer_requires_following_every_hop():
         assert list(node) == _symbols(cfg, ids[row.answer_start : row.answer_start + k])
 
 
+def test_select_ignores_decoys_and_returns_the_fact():
+    cfg = cfg_for("select")
+    v = cfg.vocab
+    for row in iter_rows(cfg, 40, seed=21):
+        ids = row.input_ids
+        query = tuple(_symbols(cfg, ids[row.answer_start - 1 - cfg.key_len : row.answer_start - 1]))
+        answer = _symbols(cfg, ids[row.answer_start : row.answer_start + cfg.value_len])
+        facts, decoys = [], []
+        for i in np.flatnonzero(ids[: row.answer_start] == v.control("keymark")):
+            k = tuple(_symbols(cfg, ids[i + 1 : i + 1 + cfg.key_len]))
+            val = _symbols(cfg, ids[i + 1 + cfg.key_len : i + 1 + cfg.key_len + cfg.value_len])
+            facts.append((k, val))
+        for i in np.flatnonzero(ids[: row.answer_start] == v.control("decoy")):
+            k = tuple(_symbols(cfg, ids[i + 1 : i + 1 + cfg.key_len]))
+            decoys.append(k)
+        matched = [val for k, val in facts if k == query]
+        assert len(matched) == 1
+        assert matched[0] == answer
+        assert query not in decoys
+        assert len(decoys) == cfg.n_decoys
+
+
+def test_unique_answer_is_the_once_only_value():
+    cfg = cfg_for("unique")
+    v = cfg.vocab
+    for row in iter_rows(cfg, 40, seed=22):
+        ids = row.input_ids
+        counts: dict[tuple, int] = {}
+        values: dict[tuple, list[int]] = {}
+        for i in np.flatnonzero(ids[: row.answer_start] == v.control("keymark")):
+            k = tuple(_symbols(cfg, ids[i + 1 : i + 1 + cfg.key_len]))
+            val = _symbols(cfg, ids[i + 1 + cfg.key_len : i + 1 + cfg.key_len + cfg.value_len])
+            counts[k] = counts.get(k, 0) + 1
+            values[k] = val
+        once = [k for k, c in counts.items() if c == 1]
+        assert len(once) == 1
+        assert values[once[0]] == _symbols(cfg, ids[row.answer_start : row.answer_start + cfg.value_len])
+        assert all(c == 2 for k, c in counts.items() if k != once[0])
+
+
+def test_match3_answer_is_the_tripled_value():
+    cfg = cfg_for("match3")
+    v = cfg.vocab
+    for row in iter_rows(cfg, 40, seed=23):
+        ids = row.input_ids
+        counts: dict[tuple, int] = {}
+        values: dict[tuple, list[int]] = {}
+        for i in np.flatnonzero(ids[: row.answer_start] == v.control("keymark")):
+            k = tuple(_symbols(cfg, ids[i + 1 : i + 1 + cfg.key_len]))
+            val = _symbols(cfg, ids[i + 1 + cfg.key_len : i + 1 + cfg.key_len + cfg.value_len])
+            counts[k] = counts.get(k, 0) + 1
+            values[k] = val
+        triples = [k for k, c in counts.items() if c == 3]
+        assert len(triples) == 1
+        assert values[triples[0]] == _symbols(cfg, ids[row.answer_start : row.answer_start + cfg.value_len])
+        assert all(c == 1 for k, c in counts.items() if k != triples[0])
+
+
+def test_majority_is_the_unique_mode_of_the_body():
+    cfg = cfg_for("majority")
+    tail_start = cfg.seq_len - cfg.tail_len
+    for row in iter_rows(cfg, 40, seed=24):
+        ids = row.input_ids
+        body = ids[1:tail_start] - cfg.sym_lo
+        counts = np.bincount(body.astype(int), minlength=cfg.n_symbols)
+        assert int(counts.argmax()) == int(ids[row.answer_start]) - cfg.sym_lo
+        assert int(np.sum(counts == counts.max())) == 1
+
+
+def test_chain_ordered_hops_are_in_reading_order():
+    cfg = cfg_for("chain_ordered", hops=3, n_distractors=5)
+    v, k = cfg.vocab, cfg.key_len
+    in_order = 0
+    rows = list(iter_rows(cfg, 40, seed=25))
+    for row in rows:
+        ids = row.input_ids
+        edges = []
+        for i in np.flatnonzero(ids[: row.answer_start - 1] == v.control("hop")):
+            edges.append(
+                (
+                    tuple(_symbols(cfg, ids[i + 1 : i + 1 + k])),
+                    tuple(_symbols(cfg, ids[i + 1 + k : i + 1 + 2 * k])),
+                )
+            )
+        lookup = dict(edges)
+        node = tuple(_symbols(cfg, ids[row.answer_start - 1 - k : row.answer_start - 1]))
+        positions = []
+        for _ in range(cfg.hops):
+            positions.append(next(j for j, (s, _) in enumerate(edges) if s == node))
+            node = lookup[node]
+        in_order += positions == sorted(positions)
+    assert in_order == len(rows), f"only {in_order}/{len(rows)} ordered rows"
+
+
 def test_count_answer_is_the_residue_over_the_whole_body():
     cfg = cfg_for("count")
     tail_start = cfg.seq_len - cfg.tail_len
@@ -243,7 +341,7 @@ def test_answer_marginal_is_uniform(task):
     assert chance_accuracy(cfg) == pytest.approx(1.0 / n_out)
 
 
-@pytest.mark.parametrize("task", ["recall", "chain"])
+@pytest.mark.parametrize("task", ["recall", "chain", "chain_ordered", "select"])
 def test_answer_is_independent_of_the_query(task):
     """The query key is the only informative thing inside a local window. If the answer were
     correlated with it, a model could score below the floor without ever reaching the evidence."""
@@ -287,11 +385,12 @@ def test_local_window_oracle_is_at_chance():
 # --------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("task", ["recall", "far_copy", "chain"])
+@pytest.mark.parametrize("task", sorted(RETRIEVAL_TASKS))
 def test_retrieval_floor_is_log_alphabet_below_min_gap(task):
     cfg = cfg_for(task)
     assert floor_nats(cfg, cfg.min_gap) == pytest.approx(math.log(cfg.n_symbols))
     assert floor_nats(cfg, cfg.min_gap + 1) == 0.0
+    assert prize_bits(cfg) == pytest.approx(cfg.answer_len * math.log(cfg.n_symbols) / math.log(2))
     assert floor_nats(cfg_for(task, n_symbols=8), 1) == pytest.approx(math.log(8))
     with pytest.raises(ValueError):
         floor_nats(cfg, 0)

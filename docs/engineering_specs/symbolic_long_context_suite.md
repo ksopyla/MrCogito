@@ -3,6 +3,9 @@
 - **Type:** engineering foundation (synthetic data generator + diagnostic probe). **Not** an `E0NN` experiment.
 - **Status:** implemented 2026-09-13. `data/symbolic_tasks.py`, `scripts/build_symbolic_dataset.py`,
   `verification/symbolic_channel_probe.py`, `tests/test_symbolic_tasks.py`.
+  **2026-09-13 extension:** BAPO-hard tasks + E18/dense/encdec probe live in
+  [bapo_capability_ladder.md](bapo_capability_ladder.md) (E24). The original four-task
+  `perceiver_concept` probe is unchanged.
 - **Owner:** Krzysztof Sopyla
 - **Serves:** E23 (supplies its two missing dense-label builders) and every later concept-channel
   experiment that needs to know whether its channel carries information *before* spending GPU-days

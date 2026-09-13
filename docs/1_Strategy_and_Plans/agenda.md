@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-09-12 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-09-13 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,6 +20,14 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-09-13 — E24 BAPO DNA ladder (tiny instrument live; medium/large not launched).** The
+  DNA-alphabet suite that made the concept channel measurable is scaled onto **E18 vs matched
+  dense decoder-only and a symmetric encoder-decoder**, with BAPO-hard tasks (shuffled chain,
+  unique, match3, majority) and information-flow scores (recovered bits, bits/token, cache
+  bytes/token). Every rung is uninterpretable until dense ≥ 75%. Sibling agents own the
+  `perceiver_concept` Arm-A 100% far_copy map at seq=128 — do not duplicate that exam. Spec
+  [E24](../experiments_specs/ahead/E24_e18_bapo_capability_ladder.md) ·
+  foundation [bapo_capability_ladder.md](../engineering_specs/bapo_capability_ladder.md).
 - **2026-09-12 — E23 Exclusive concept channel (spec ready, not launched).** E22 closed the same
   day (below): the array was live and diverse but CE read it as a document embedding — the far slots
   were worth 0.05 nats and a segment-only decoder matched the bet at half the compute. E23 keeps the
