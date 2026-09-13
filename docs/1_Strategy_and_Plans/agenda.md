@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-09-13 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-09-14 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,10 +20,10 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-13 — E25 E21 capability ladder (tiny limits; 512 concat-slot wall; raw PASS).**
+- **2026-09-14 — E25 E21 capability ladder (tiny limits; 512 concat wall; raw PASS; in-place FAIL).**
   Tiny INDEX near-pass at 8k. GPU seq=512 exclusive concat slots **0 bits** (r=16/64/1).
-  `--message_override raw` **100% / 63.96 bits** — slot routing is the killer, not
-  QUERY-as-document-start. Next: in-place slots at r=1.
+  `--message_override raw` **100% / 63.96 bits**. r=1 in-place **0 bits** — KV_LEN=S is
+  not enough. Next: exclusive mask vs in-place values (not r=16).
   Spec [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) ·
   [rung 1](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) ·
   [remainder](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) ·
@@ -37,7 +37,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [512 r=16](../2_Experiments_Registry/run_reports/e25_bridge512_far_copy_20260913.md) ·
   [512 r=64](../2_Experiments_Registry/run_reports/e25_bridge512_r64_far_copy_20260913.md) ·
   [512 r=1](../2_Experiments_Registry/run_reports/e25_bridge512_r1_far_copy_20260913.md) ·
-  [512 raw](../2_Experiments_Registry/run_reports/e25_bridge512_raw_far_copy_20260913.md).
+  [512 raw](../2_Experiments_Registry/run_reports/e25_bridge512_raw_far_copy_20260913.md) ·
+  [512 in-place r=1](../2_Experiments_Registry/run_reports/e25_bridge512_ip_r1_far_copy_20260913.md).
   Do not relabel E18 scores as E21.
 - **2026-09-13 — E24 BAPO DNA ladder (tiny + GPU bridge 512/1024; 4k S0 open).** Packed tiny
   seq=128 / 0.59M: E18 matches dense on positional `far_copy` (99.2% vs 99.4%) and recovers
@@ -71,6 +72,12 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-13 — E25 GPU seq=512 far_copy r=1 in-place (Odra).** Dense **100% / 63.95 bits**
+  (S0). E18 **100% / 63.93 bits**. E21 r=1 in-place **25.1% / 0.00 bits** @800. S1 **FAIL**.
+  K2 **PASS**. K3: chance, not climbing. KV_LEN=S is not enough; do not stack r=16.
+  Next: exclusive mask vs in-place values (not flex-vs-sdpa first; both this FAIL and the
+  raw PASS used sdpa).
+  [report](../2_Experiments_Registry/run_reports/e25_bridge512_ip_r1_far_copy_20260913.md).
 - **2026-09-13 — E25 GPU seq=512 far_copy raw override (Odra).** Dense **100% / 63.94 bits**
   (S0). E18 **99.6% / 62.23 bits**. E21 raw **100% / 63.96 bits / flow 0.999** @450. S1
   **PASS**. Local cut still on (`e18_local` 0 bits). Concat slot routing is the 512 killer.
