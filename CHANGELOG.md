@@ -15,6 +15,25 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-13] - BAPO probe S0 hunt knobs (4k dense was stuck at chance)
+
+**Why:**
+- The advertised medium protocol (seq=4096, H=256, 1 KV head, no SSMax) left dense
+  pinned at ln(4) / ~25% for 3800+ steps on every calibrated recipe. Scoring E18 there
+  would have been a false kill. The generator is valid (gap ≥ 1025, 32 packed labels);
+  the 2.2M 4-layer 1-KV control cannot find a marked span ~1–3k tokens away.
+
+**What changed:**
+- [added] probe `--kv_heads` / `--global_logit_scale` / `--attn_backend` / `--seq_len` /
+  `--min_gap` / `--local_window` / `--z_loss` so S0 can hunt a dense-solvable 4k recipe
+  without a new training script
+- [fixed] factory: a non-dividing `--kv_heads` now becomes full MHA instead of silently
+  dropping to 1 KV head
+
+**Does not:** close E24. Tiny numbers unchanged (defaults match the measured ladder).
+
+---
+
 ## [2026-09-13] - BAPO calibrated recipes, CUDA AMP, plot task order
 
 **Why:**

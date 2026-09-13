@@ -154,6 +154,39 @@ def test_encdec_forward_shapes_and_finite_loss():
     assert logits.shape == (4, cfg.seq_len, cfg.vocab.vocab_size)
 
 
+def test_seq_len_and_min_gap_overrides_construct():
+    cfg = config_for("medium", "far_copy", seq_len=512, min_gap=64)
+    assert cfg.seq_len == 512
+    assert cfg.min_gap == 64
+    assert cfg.answer_len == 32
+
+
+def test_ssmax_and_mha_factory():
+    cfg = config_for("tiny", "far_copy")
+    spec = ArchSpec(
+        name="dense",
+        hidden=64,
+        head_dim=16,
+        n_kv_heads=0,
+        global_logit_scale="log",
+        attn_backend="sdpa",
+    )
+    model = build_model(
+        "dense",
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=cfg.vocab.control("eos"),
+        bos_id=cfg.vocab.control("bos"),
+        eos_id=cfg.vocab.control("eos"),
+        spec=spec,
+        seed=0,
+    )
+    assert model.config.num_kv_heads == model.config.num_attention_heads
+    assert model.config.global_logit_scale == "log"
+    assert any(layer.attn.logit_scale is not None for layer in model.layers)
+
+
 @pytest.mark.parametrize("arch", ["dense", "e18", "e18_local", "encdec"])
 def test_factory_builds_under_100m(arch):
     cfg = config_for("tiny", "recall")

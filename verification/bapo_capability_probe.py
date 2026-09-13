@@ -46,7 +46,7 @@ from data.bapo_ladder import (  # noqa: E402
     resolve_recipe,
     rung_card,
 )
-from data.symbolic_tasks import generate_row  # noqa: E402
+from data.symbolic_tasks import floor_nats, generate_row  # noqa: E402
 from evaluation.bapo_metrics import info_report  # noqa: E402
 from evaluation.bapo_models import ARCHES, ArchSpec, arch_cache, build_model, n_params  # noqa: E402
 
@@ -110,6 +110,15 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
     params = n_params(model)
     if params > args.max_params:
         raise SystemExit(f"{arch} has {params} params > --max_params {args.max_params}")
+    if hasattr(model, "layers"):
+        patterns = [(layer.attn.pattern, layer.attn.window) for layer in model.layers]
+        print(
+            f"  [{arch}] {params/1e6:.3f}M  patterns={patterns}  "
+            f"kv={getattr(model.config, 'num_kv_heads', '-')}  "
+            f"logit_scale={getattr(model.config, 'global_logit_scale', '-')}  "
+            f"backend={getattr(model.config, 'attn_backend', '-')}",
+            flush=True,
+        )
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01, betas=(0.9, 0.95))
     warmup = max(1, min(50, steps // 10))
 
@@ -181,33 +190,44 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
                 "value_len": args.value_len,
                 "hops": args.hops,
                 "span_len": args.span_len,
+                "min_gap": args.min_gap,
+                "seq_len": args.seq_len,
             }.items()
             if v is not None
         }
     )
     cfg = config_for(scale, recipe.task, **over)
+    window = args.local_window if args.local_window is not None else scale.local_window
     spec = ArchSpec(
         name="shared",
         hidden=args.hidden,
         pre_layers=args.pre_layers,
         global_layers=args.global_layers,
         stack_layers=args.stack_layers,
-        local_window=scale.local_window,
+        local_window=window,
         enc_layers=args.enc_layers,
         dec_layers=args.dec_layers,
         head_dim=args.head_dim,
+        n_kv_heads=args.kv_heads,
         value_embed_layers=tuple(int(x) for x in args.value_embed_layers.split(",") if x.strip()),
+        attn_backend=args.attn_backend,
+        global_logit_scale=args.global_logit_scale,
+        z_loss=args.z_loss,
     )
     card = rung_card(scale, recipe.task, **over)
+    card["local_window"] = window
+    card["floor_nats"] = floor_nats(cfg, window)
     eval_rng = np.random.default_rng(args.seed + 99)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     eval_batches = [make_batch(cfg, eval_rng, args.batch, device) for _ in range(max(1, args.eval_rows // args.batch))]
+    gap_probe = [generate_row(cfg, np.random.default_rng(args.seed + 7 + i)).gap for i in range(16)]
     print(
         f"\n=== {display} ({recipe.task}) @ {scale.name}  seq={cfg.seq_len} gap={cfg.min_gap} "
-        f"window={scale.local_window} prize={card['prize_bits']:.2f} bits  "
+        f"window={window} prize={card['prize_bits']:.2f} bits  "
         f"answer_len={cfg.answer_len} (target {card['target_answer_len']})  "
         f"floor={card['floor_nats']:.4f} nats  chance={card['chance_acc']:.3f}  "
-        f"device={device} amp={args.amp} ===",
+        f"device={device} amp={args.amp}  "
+        f"row_gap[min/med/max]={min(gap_probe)}/{int(np.median(gap_probe))}/{max(gap_probe)} ===",
         flush=True,
     )
     arches = list(args.arch)
@@ -269,6 +289,16 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         "batch": args.batch,
         "seed": args.seed,
         "amp": args.amp,
+        "hunt": {
+            "seq_len": cfg.seq_len,
+            "min_gap": cfg.min_gap,
+            "local_window": window,
+            "kv_heads": args.kv_heads,
+            "global_logit_scale": args.global_logit_scale,
+            "attn_backend": args.attn_backend,
+            "hidden": args.hidden,
+            "stack_layers": args.stack_layers,
+        },
         "pack": {
             "answer_len": cfg.answer_len,
             "key_len": cfg.key_len,
@@ -301,6 +331,23 @@ def main() -> int:
     p.add_argument("--enc_layers", type=int, default=2)
     p.add_argument("--dec_layers", type=int, default=2)
     p.add_argument("--head_dim", type=int, default=32)
+    p.add_argument(
+        "--kv_heads",
+        type=int,
+        default=1,
+        help="KV heads (GQA). 0 or a non-divisor of Q heads → full MHA. Default 1 matches the tiny ladder.",
+    )
+    p.add_argument(
+        "--global_logit_scale",
+        default="none",
+        choices=("none", "log"),
+        help="SSMax-style log(n_visible) query scale on full layers (anti-dilution at 4k+).",
+    )
+    p.add_argument("--attn_backend", default="sdpa", choices=("sdpa", "flex", "flash"))
+    p.add_argument("--z_loss", type=float, default=1e-4)
+    p.add_argument("--seq_len", type=int, default=None, help="override scale seq_len (S0 hunts)")
+    p.add_argument("--min_gap", type=int, default=None, help="override scale min_gap (S0 hunts)")
+    p.add_argument("--local_window", type=int, default=None, help="override scale local_window")
     p.add_argument(
         "--value_embed_layers",
         default="0,1",

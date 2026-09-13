@@ -38,6 +38,9 @@ class ArchSpec:
     # E18 copy-tiny / 32k copy used VE on the retrieving layer. Layer 0 is the SWA pre-encoder;
     # layer 1 is the global read. Dense gets the same two tables so params stay matched.
     value_embed_layers: tuple[int, ...] = (0, 1)
+    attn_backend: str = "sdpa"
+    global_logit_scale: str = "none"  # "log" = SSMax anti-dilution on full layers
+    z_loss: float = 1e-4
 
 
 def _n_heads(hidden: int, head_dim: int) -> int:
@@ -79,6 +82,9 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         raise ValueError(f"unknown arch {arch!r}; expected one of {ARCHES}")
 
     n_heads = _n_heads(spec.hidden, spec.head_dim)
+    n_kv = spec.n_kv_heads
+    if n_kv <= 0 or n_heads % n_kv != 0:
+        n_kv = n_heads  # full MHA; do not silently drop to 1 KV head
     cfg = PerceiverARConfig(
         vocab_size=vocab_size,
         hidden_size=spec.hidden,
@@ -91,17 +97,19 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         stack_layers=stack,
         block=spec.local_window,
         num_attention_heads=n_heads,
-        num_kv_heads=spec.n_kv_heads if n_heads % spec.n_kv_heads == 0 else 1,
+        num_kv_heads=n_kv,
         head_dim=spec.head_dim,
         ngram_orders=(2,),
         ngram_buckets=256,
         value_embed_layers=spec.value_embed_layers,
         value_embed_dim=16,
         use_liger=False,
-        attn_backend="sdpa",
+        attn_backend=spec.attn_backend,
         attn_pad_multiple=1,
         chunked_ce_block_size=64,
         swa_sink=True,
+        global_logit_scale=spec.global_logit_scale,
+        z_loss=spec.z_loss,
         pad_token_id=pad_id,
         bos_token_id=bos_id,
         eos_token_id=eos_id,

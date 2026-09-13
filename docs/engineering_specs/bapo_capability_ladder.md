@@ -153,6 +153,21 @@ uv run python verification/bapo_capability_probe.py \
 the architecture factory already caps `--max_params 100000000`. Do not launch shuffled `chain`
 or multi-item MATCH2 at those lengths until a dense control hits 75% at the same hidden size.
 
+The first advertised medium recipe (H=256, 4 layers, 1 KV head, `global_logit_scale=none`,
+batch 32, 8000 dense steps) **did not** clear S0: dense stayed at chance (~25%, CE=ln(4))
+for 3800+ steps on `far_copy`, `recall_single`, and `select_1decoy`. That is K1 at this
+width — a 2.2M dense control cannot find a marked span 1–3k tokens away. Hunt a denser
+control (MHA, SSMax `log` scale, and/or H=512) with `--arch dense` until 75%, then score E18:
+
+```bash
+# S0 hunt example (dense only). Raise width / KV / SSMax until dense ≥ 75%.
+uv run python verification/bapo_capability_probe.py \
+    --scale medium --recipe far_copy --arch dense \
+    --hidden 512 --kv_heads 0 --global_logit_scale log \
+    --steps 2000 --k1_mult 1 --batch 16 --amp auto \
+    --out Cache/bapo_medium_s0
+```
+
 ## Non-goals
 
 - Not a substitute for RULER-lite / lm-eval on language checkpoints.
