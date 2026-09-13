@@ -1,27 +1,21 @@
 #!/usr/bin/env python
 """Train tiny E18 / dense / encoder-decoder models on one BAPO DNA rung.
 
-This is the scale-up of `verification/symbolic_channel_probe.py` onto the E18 architecture
-and matched dense transformers. The other agent owns the `perceiver_concept` Arm-A 100%
-map at seq=128; this probe answers a different question: *what can E18 do, at matched params,
-once each task is proven solvable?*
+This is the scale-up of `verification/symbolic_channel_probe.py` onto E18 / E21 and
+matched dense transformers. The other agent owns the `perceiver_concept` Arm-A 100%
+map at seq=128. E24 scored E18. E25 scores **E21** (message boundary + compressed slots)
+on the same DNA rungs, one at a time.
 
 Protocol
 --------
 1. Train `dense` first, up to `--steps * --k1_mult` (K1). If held-out accuracy < 75%, the rung
-   is uncalibrated — do not interpret E18 or encdec numbers (the task may be too small, too
-   few steps, or a generator bug). Other arches are skipped by default.
-2. Train `e18_local` on retrieval rungs. It must sit near chance / the analytic floor; if it
-   does not, the task leaks into the local window.
-3. Train `e18` and `encdec` under `max(--steps, dense_steps_used)` so the compressed channel
-   is not starved relative to the control.
+   is uncalibrated — do not interpret E18/E21 numbers.
+2. Train `e18_local` on retrieval rungs. It must sit near chance / the analytic floor.
+3. Train `e18` (uncompressed one-read control) and `e21` (exclusive compressed read) under
+   `max(--steps, dense_steps_used)`.
 4. Write a JSON bundle (learning traces + InfoReport) and optional plots.
 
-  # solvability proof + architecture comparison on the tiny core ladder
-  uv run python verification/bapo_capability_probe.py --scale tiny --arch dense e18 encdec e18_local
-
-  # one task
-  uv run python verification/bapo_capability_probe.py --scale tiny --task far_copy --steps 400 --out /tmp/bapo
+  uv run python verification/bapo_capability_probe.py --scale tiny --recipe far_copy --arch dense e18 e21 e18_local
 """
 from __future__ import annotations
 
@@ -71,6 +65,17 @@ def _floor(cfg, window: int) -> float:
     if isinstance(cfg, GlyphTaskConfig):
         return glyph_floor_nats(cfg, window)
     return floor_nats(cfg, window)
+
+
+def _boundary_token_id(cfg) -> int:
+    """DNA/Glyph `query` control is the E21 message boundary. Missing → off."""
+    vocab = getattr(cfg, "vocab", None)
+    if vocab is None or not hasattr(vocab, "control"):
+        return -1
+    try:
+        return int(vocab.control("query"))
+    except (KeyError, TypeError):
+        return -1
 
 
 def make_batch(cfg, rng, batch: int, device):
@@ -126,7 +131,9 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             f"kv={getattr(model.config, 'num_kv_heads', '-')}  "
             f"logit_scale={getattr(model.config, 'global_logit_scale', '-')}  "
             f"backend={getattr(model.config, 'attn_backend', '-')}  "
-            f"zero_resid={getattr(model.config, 'zero_init_residuals', True)}",
+            f"zero_resid={getattr(model.config, 'zero_init_residuals', True)}  "
+            f"msg_boundary={getattr(model.config, 'message_boundary_token_id', -1)}  "
+            f"msg_r={getattr(model.config, 'message_compress_ratio', '-')}",
             flush=True,
         )
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01, betas=(0.9, 0.95))
@@ -231,6 +238,8 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         global_logit_scale=args.global_logit_scale,
         z_loss=args.z_loss,
         zero_init_residuals=not args.warm_residuals,
+        message_compress_ratio=args.message_ratio,
+        message_boundary_token_id=_boundary_token_id(cfg),
     )
     card = rung_card(scale, recipe.task, **over)
     card["local_window"] = window
@@ -368,6 +377,12 @@ def main() -> int:
         "--warm_residuals",
         action="store_true",
         help="Do not zero-init attn.wo / mlp.down. Needed so a 512+ needle can open the residual read.",
+    )
+    p.add_argument(
+        "--message_ratio",
+        type=int,
+        default=16,
+        help="E21 KVCompressor ratio (prefix tokens per slot). Ignored for other arches.",
     )
     p.add_argument("--seq_len", type=int, default=None, help="override scale seq_len (S0 hunts)")
     p.add_argument("--min_gap", type=int, default=None, help="override scale min_gap (S0 hunts)")

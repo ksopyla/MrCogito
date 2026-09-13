@@ -25,12 +25,14 @@ import numpy as np
 ARCH_COLOR = {
     "dense": "#2166ac",
     "e18": "#b2182b",
+    "e21": "#762a83",
     "encdec": "#4daf4a",
     "e18_local": "#999999",
 }
 ARCH_LABEL = {
     "dense": "dense decoder-only",
     "e18": "E18 (one global read)",
+    "e21": "E21 (slots across QUERY)",
     "encdec": "encoder-decoder",
     "e18_local": "E18 local (no read)",
 }
@@ -55,7 +57,7 @@ def _arches(bundles: list[dict]) -> list[str]:
         for a in b["results"]:
             if a not in seen:
                 seen.append(a)
-    preferred = ["dense", "e18", "encdec", "e18_local"]
+    preferred = ["dense", "e18", "e21", "encdec", "e18_local"]
     return [a for a in preferred if a in seen] + [a for a in seen if a not in preferred]
 
 

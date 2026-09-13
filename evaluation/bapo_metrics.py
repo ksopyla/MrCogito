@@ -92,7 +92,8 @@ def kv_bytes_per_item(n_kv_heads: int, head_dim: int, bytes_per: int = BYTES_PER
 
 
 def cache_profile(arch: str, *, n_layers: int, global_layers: int, n_kv_heads: int, head_dim: int,
-                  local_window: int, seq_len: int, enc_layers: int = 0, dec_layers: int = 0) -> dict:
+                  local_window: int, seq_len: int, enc_layers: int = 0, dec_layers: int = 0,
+                  compress_ratio: int = 1) -> dict:
     """Nominal BAPO (a, b) for an architecture, in cache bytes and raw tokens.
 
     `a` is reported as unbounded KV bytes per token of context (what grows with S).
@@ -110,6 +111,14 @@ def cache_profile(arch: str, *, n_layers: int, global_layers: int, n_kv_heads: i
         return {
             "nominal_b_tokens": seq_len,  # one full causal layer sees the whole prefix
             "nominal_a_bytes": global_layers * item,
+            "bounded_kv_bytes": (n_layers - global_layers) * item * local_window,
+            "unbounded_layers": global_layers,
+        }
+    if arch == "e21":
+        r = max(int(compress_ratio), 1)
+        return {
+            "nominal_b_tokens": local_window,  # suffix self-attn is local; prefix is slots only
+            "nominal_a_bytes": global_layers * item / r,
             "bounded_kv_bytes": (n_layers - global_layers) * item * local_window,
             "unbounded_layers": global_layers,
         }

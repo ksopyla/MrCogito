@@ -33,6 +33,7 @@ bandwidth `b` (raw prefix tokens). Our architectures realise the two channels ex
 |---|---|---|
 | `dense` (`perceiver_ar`, `par_mode=dense`) | `seq_len` in every layer | residual stream, every layer |
 | `e18` (one global read + SWA stack) | `seq_len` in **one** layer; `local_window` elsewhere | one layer's KV = unbounded cache |
+| `e21` (E18 + QUERY boundary + r=16 slots) | `local_window` on the suffix; prefix only as slots | one layer's slot KV (`item / r` bytes per prefix token) |
 | `e18_local` (`global_layers=0`) | `local_window` only | 0 — must sit at the retrieval floor |
 | `encdec` (symmetric encoder-decoder) | **0** on the suffix (self-attn cannot see the prefix) | encoder KV of the whole prefix |
 

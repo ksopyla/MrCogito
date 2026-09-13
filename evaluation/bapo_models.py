@@ -5,6 +5,7 @@ Architectures
 - `dense`      Perceiver AR, `par_mode=dense`: full-causal decoder-only, same width/depth as E18.
 - `e18`        Perceiver AR, one global read + SWA stack (the E18 architecture).
 - `e18_local`  E18 with `global_layers=0`: local window only. Retrieval rungs must sit at the floor.
+- `e21`        E18 plus a message boundary at `query` and prefix keys as `KVCompressor` slots (r=16).
 - `encdec`     Symmetric encoder-decoder: bidirectional prefix encoder, suffix-only decoder with
                cross-attention. Prefix information cannot take a raw route into the suffix.
 """
@@ -20,7 +21,7 @@ from nn.encdec_lm import EncDecConfig, EncoderDecoderLM
 from nn.perceiver_ar_lm import PerceiverARConfig, PerceiverARLM
 
 
-ARCHES = ("dense", "e18", "e18_local", "encdec")
+ARCHES = ("dense", "e18", "e18_local", "e21", "encdec")
 
 
 @dataclass
@@ -42,6 +43,8 @@ class ArchSpec:
     global_logit_scale: str = "none"  # "log" = SSMax anti-dilution on full layers
     z_loss: float = 1e-4
     zero_init_residuals: bool = True
+    message_compress_ratio: int = 16
+    message_boundary_token_id: int = -1
 
 
 def _n_heads(hidden: int, head_dim: int) -> int:
@@ -72,6 +75,10 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
     if arch == "dense":
         par_mode, pre, glob, stack = "dense", spec.pre_layers, spec.global_layers, spec.stack_layers
     elif arch == "e18":
+        par_mode, pre, glob, stack = "perceiver", spec.pre_layers, spec.global_layers, spec.stack_layers
+    elif arch == "e21":
+        if spec.message_boundary_token_id < 0:
+            raise ValueError("e21 needs a message_boundary_token_id (DNA/Glyph query control)")
         par_mode, pre, glob, stack = "perceiver", spec.pre_layers, spec.global_layers, spec.stack_layers
     elif arch == "e18_local":
         par_mode, pre, glob, stack = "perceiver", spec.pre_layers, 0, spec.pre_layers + spec.global_layers + spec.stack_layers - spec.pre_layers
@@ -112,6 +119,10 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         global_logit_scale=spec.global_logit_scale,
         z_loss=spec.z_loss,
         zero_init_residuals=spec.zero_init_residuals,
+        message_boundary_token_id=(
+            spec.message_boundary_token_id if arch == "e21" else -1
+        ),
+        message_compress_ratio=spec.message_compress_ratio if arch == "e21" else 16,
         pad_token_id=pad_id,
         bos_token_id=bos_id,
         eos_token_id=eos_id,
@@ -135,6 +146,7 @@ def arch_cache(arch: str, spec: ArchSpec, seq_len: int) -> dict:
         seq_len=seq_len,
         enc_layers=spec.enc_layers,
         dec_layers=spec.dec_layers,
+        compress_ratio=spec.message_compress_ratio if arch == "e21" else 1,
     )
 
 

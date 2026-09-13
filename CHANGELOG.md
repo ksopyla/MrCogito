@@ -15,6 +15,25 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-13] - E21 message boundary + KVCompressor on the BAPO probe (E25)
+
+**Why:**
+- The capability-ladder goal was E21, not E18. E24's instrument and dense/E18 numbers stay
+  as controls. E21 is an exclusive compressed read (QUERY severs SWA; prefix is r=16 slots).
+
+**Impact:**
+- `perceiver_ar` gains config-selectable E21 (`message_boundary_token_id=-1` default, E18
+  checkpoints unchanged). Probe `--arch e21` scores it on DNA rungs. First experiment is
+  tiny packed `far_copy` only.
+
+**What changed:**
+- [added] `KVCompressor`, `MessageCtx`, `attend_message` in `nn/perceiver_ar_lm.py`
+- [added] probe arch `e21`; `--message_ratio`; DNA `query` as the boundary
+- [added] `tests/test_perceiver_ar_message.py`
+- [added] spec/plan `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`
+
+**Does not:** score recall/512/4k, change DNA generators, or relabel E24's E18 tables.
+
 ## [2026-09-13] - Glyph family: typed vocab, structured-noise capability exams
 
 **Why:**

@@ -151,6 +151,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 | E18c | Concept-compressed read (pool prefix K/V into 1 slot per 16 tokens) | **blocked** — compresses a *functional* retrieval channel; E18b showed we do not have one | [E18c](../experiments_specs/ahead/E18c_concept_compressed_read.md) |
 | E23 | Exclusive concept channel: E22 platform with `concept_xattn_scope=exclusive` and an objective that pays for far content (far-repeat-weighted CE + 30% dense-label long-range rows) | **ahead** — spec written 2026-09-12, not launched | [E23](../experiments_specs/ahead/E23_exclusive_concept_channel.md) |
 | E24 | E18 capability limits on a BAPO DNA ladder vs dense decoder-only and encoder-decoder | **ahead** — tiny + 512/1024 GPU measured (S1 pass @512, S1 fail @1024, S2 recall wall); 4k S0 open | [E24](../experiments_specs/ahead/E24_e18_bapo_capability_ladder.md) · [tiny](run_reports/e24_tiny_bapo_ladder_20260913.md) · [bridge](run_reports/e24_bridge512_bapo_ladder_20260913.md) |
+| E25 | E21 exclusive compressed read on the BAPO DNA ladder, one calibrated rung at a time | **ahead** — first rung tiny packed `far_copy` vs E24 dense/E18 controls | [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) |
 
 ### Canceled (no run)
 

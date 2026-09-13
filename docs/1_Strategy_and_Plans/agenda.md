@@ -20,6 +20,11 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-09-13 — E25 E21 capability ladder (first rung: tiny far_copy).** E24 measured E18
+  (raw one global read). E21 is different: QUERY severs the local path and the prefix is
+  visible only as r=16 slots. Reuse E24's DNA instrument, dense gate, and E18 as arm U.
+  Spec [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md). Do not relabel
+  E18 scores as E21. One rung at a time; architecture changes only after a measured wall.
 - **2026-09-13 — E24 BAPO DNA ladder (tiny + GPU bridge 512/1024; 4k S0 open).** Packed tiny
   seq=128 / 0.59M: E18 matches dense on positional `far_copy` (99.2% vs 99.4%) and recovers
   **0 bits** on keyed `recall`. GPU right-align INDEX: E18 **100% / 64 bits at seq=512**,
