@@ -28,6 +28,9 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   `summary` with wall-clock and LR, `cuda` when `torch.cuda.is_available()`.
 - `verification/run_scale_job.sh`: `SCALE_OUT_DIR` (default `scale/`, campaign uses
   `/opt/cursor/artifacts/scale_hard`).
+- `verification/run_scale_hard_campaign.py`: LR search then seq/r/chain/seq512
+  cells over the shared probe (no training fork).
+- `verification/plot_scale_hard.py`: accuracy-vs-examples + difficulty panels.
 
 ---
 
