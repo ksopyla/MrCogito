@@ -2,8 +2,9 @@
 
 - **Status:** active (tiny DNA limits; 512 exclusive *concat slots* 0 bits at r=16/64/1;
   **raw override PASSES**; **r=1 in-place learned compressor 0 bits**; **inplace raw KV
-  PASSES**; **inplace hard identity PASSES** — scatter is fine; learned `delta` wrecked
-  r=1). Keep in `ahead/`. Do not score Glyph or 1024 yet.
+  PASSES**; **inplace hard identity PASSES**; **inplace r=16 frozen mean-pool NEAR-PASS**
+  47.36 vs 47.95 bits @8k — 16-token means carry INDEX). Keep in `ahead/`. Do not score
+  Glyph or 1024 yet.
 - **Serves:** the Vision's "does the compressed channel carry *addressable* content, and how
   many bits?" question, now on **E21** (exclusive compressed read) rather than E18's raw
   one-global-read. Observation base for later gating / compression. Reuses E24's DNA instrument.
@@ -92,14 +93,16 @@ pretraining run; this is the cheap controlled exam that spec's K1/K2 needed and 
   (off by default; byte-identical to E18). Probe arch `e21`. No new `train_*.py`.
 
 ## Result
-- Run id: `e25_tiny_far_copy` · `e25_tiny_far_copy_remainder` · `e25_tiny_far_copy_query_align` · `e25_tiny_far_copy_e21_steps` · `e25_tiny_recall_single` · `e25_tiny_recall_single_e21_steps` · `e25_tiny_select_1decoy` · `e25_tiny_chain_ordered` · `e25_tiny_chain_ordered_e21_steps` · `e25_512_fc` · `e25_512_r64` · `e25_512_r1` · `e25_512_raw` · `e25_512_ip_r1` · `e25_512_ip_rawkv` · `e25_512_ip_id`
+- Run id: `e25_tiny_far_copy` · `e25_tiny_far_copy_remainder` · `e25_tiny_far_copy_query_align` · `e25_tiny_far_copy_e21_steps` · `e25_tiny_recall_single` · `e25_tiny_recall_single_e21_steps` · `e25_tiny_select_1decoy` · `e25_tiny_chain_ordered` · `e25_tiny_chain_ordered_e21_steps` · `e25_512_fc` · `e25_512_r64` · `e25_512_r1` · `e25_512_raw` · `e25_512_ip_r1` · `e25_512_ip_rawkv` · `e25_512_ip_id` · `e25_512_ip_r16_mean` · `e25_512_ip_r16_mean_s3k` · `e25_512_ip_r16_mean_s8k`
 - WandB: n/a (probe; no `compute/*`)
-- Run reports: [`tiny`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) · [`remainder`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) · [`QUERY-align`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_query_align_20260913.md) · [`INDEX extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_e21_steps_20260913.md) · [`recall`](../../2_Experiments_Registry/run_reports/e25_tiny_recall_single_20260913.md) · [`recall extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_recall_single_e21_steps_20260913.md) · [`select`](../../2_Experiments_Registry/run_reports/e25_tiny_select_1decoy_20260913.md) · [`chain`](../../2_Experiments_Registry/run_reports/e25_tiny_chain_ordered_20260913.md) · [`chain extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_chain_ordered_e21_steps_20260913.md) · [`512 r=16`](../../2_Experiments_Registry/run_reports/e25_bridge512_far_copy_20260913.md) · [`512 r=64`](../../2_Experiments_Registry/run_reports/e25_bridge512_r64_far_copy_20260913.md) · [`512 r=1`](../../2_Experiments_Registry/run_reports/e25_bridge512_r1_far_copy_20260913.md) · [`512 raw`](../../2_Experiments_Registry/run_reports/e25_bridge512_raw_far_copy_20260913.md) · [`512 in-place r=1`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_r1_far_copy_20260913.md) · [`512 in-place raw KV`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_rawkv_far_copy_20260913.md) · [`512 in-place identity`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_id_far_copy_20260913.md)
+- Run reports: [`tiny`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) · [`remainder`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) · [`QUERY-align`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_query_align_20260913.md) · [`INDEX extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_e21_steps_20260913.md) · [`recall`](../../2_Experiments_Registry/run_reports/e25_tiny_recall_single_20260913.md) · [`recall extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_recall_single_e21_steps_20260913.md) · [`select`](../../2_Experiments_Registry/run_reports/e25_tiny_select_1decoy_20260913.md) · [`chain`](../../2_Experiments_Registry/run_reports/e25_tiny_chain_ordered_20260913.md) · [`chain extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_chain_ordered_e21_steps_20260913.md) · [`512 r=16`](../../2_Experiments_Registry/run_reports/e25_bridge512_far_copy_20260913.md) · [`512 r=64`](../../2_Experiments_Registry/run_reports/e25_bridge512_r64_far_copy_20260913.md) · [`512 r=1`](../../2_Experiments_Registry/run_reports/e25_bridge512_r1_far_copy_20260913.md) · [`512 raw`](../../2_Experiments_Registry/run_reports/e25_bridge512_raw_far_copy_20260913.md) · [`512 in-place r=1`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_r1_far_copy_20260913.md) · [`512 in-place raw KV`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_rawkv_far_copy_20260913.md) · [`512 in-place identity`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_id_far_copy_20260913.md) · [`512 in-place r=16 mean`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_r16_mean_far_copy_20260914.md)
 - Verdict: **mixed.** Tiny INDEX near-pass at 8k. Tiny MATCH/select/chain walls. GPU seq=512
   exclusive concat slots **0 bits** (r=16/64/1). `--message_override raw` **PASSES** (100% /
   63.96 bits). r=1 in-place learned compressor **0 bits**. In-place raw KV **PASSES** (63.29
-  bits). In-place **hard identity PASSES** (99.8% / 62.64 bits @750). Scatter is fine;
-  learned `delta` wrecked r=1. Next: inplace r=16 frozen mean-pool.
+  bits). In-place **hard identity PASSES** (99.8% / 62.64 bits @750). In-place **r=16
+  frozen mean-pool NEAR-PASS** (84.3% / 47.36 bits @8k vs 0.75× E18 47.95). Scatter is
+  fine; 16-token means carry INDEX (slow, same shape as tiny). Next: inplace r=16 learned
+  pool.
 
 ## Follow-up (rung 1b — remainder pooling)
 Ran. S1 **FAIL** at 2400 (12.7 bits). Geometry stacking did not help.
@@ -168,6 +171,9 @@ Scatter is fine; learned `delta` wrecked claimed r=1 identity (one-token softmax
 `u`). Do not run r=16 in this turn.
 
 ## Follow-up (rung 5h — inplace r=16 frozen mean-pool)
-Next ONE change: inplace r=16 with `--message_identity_slots` (frozen mean, no learned
-`u`/`delta`), no raw_kv, same 512 `far_copy` recipe. Compression question on the trusted
-mask. Not learned pool yet. Not 1024. Not Glyph.
+Ran `--message_identity_slots` + inplace r=16 on Odra (`msg_override=real`, no raw_kv).
+Dense **100% / 63.91 bits**. E18 **100% / 63.94 bits**. E21 frozen mean **84.3% /
+47.36 bits / flow 0.740** @8000 (42.4% / 8.18 bits @800, climbing; 48.0% / 22.98 @3200;
+best 88.7% @7900). S1 **NEAR-PASS** (47.36 vs 47.95). K2 **PASS**. 16-token means carry
+INDEX at 512; not chance, not a lost span. Do not 16k. Next: inplace r=16 learned pool
+(unfreeze `u`/`delta`), no identity flag, no raw_kv. Not 1024. Not Glyph.
