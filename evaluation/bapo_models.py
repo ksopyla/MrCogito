@@ -7,7 +7,8 @@ Architectures
 - `e18_local`  E18 with `global_layers=0`: local window only. Retrieval rungs must sit at the floor.
 - `e21`        E18 plus a message boundary at `query` and prefix keys as `KVCompressor` slots (r=16).
                Complete homogeneous blocks by default; `--message_pool_remainder` also pools the
-               incomplete last sender block.
+               incomplete last sender block. Probe `--message_override raw|none|swapped` wraps the
+               e21 forward in `model.message_override` (default `real` slots).
 - `encdec`     Symmetric encoder-decoder: bidirectional prefix encoder, suffix-only decoder with
                cross-attention. Prefix information cannot take a raw route into the suffix.
 """

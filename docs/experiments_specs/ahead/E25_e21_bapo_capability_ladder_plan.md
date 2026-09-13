@@ -57,14 +57,15 @@ At init `u=0`, `delta=0` → mean-pool per complete block. `ratio=1` is arm U (o
   `PerceiverARConfig.message_boundary_token_id = -1`
   `PerceiverARConfig.message_compress_ratio = 16`
   `PerceiverARConfig.message_pool_remainder = False` (rung 1b; off = experiment 1)
-- **Probe:** `ArchSpec.message_compress_ratio`; `--arch e21`.
+- **Probe:** `ArchSpec.message_compress_ratio`; `--arch e21`; `--message_override {real,none,swapped,raw}`
+  (default `real`; wraps e21 train/eval in `model.message_override`).
 - **Launch:**
   `uv run python verification/bapo_capability_probe.py --scale tiny --recipe far_copy --arch dense e18 e21 e18_local --out /opt/cursor/artifacts/e25_tiny_far_copy`
 
 ## 7. Tests & smoke
 - `tests/test_perceiver_ar_message.py`: off-by-default byte-identical; local path severed;
   `none` / `raw` / `swapped` overrides; r=1 identity; `prefix_kv(as_message=True)` round-trip.
-- `tests/test_bapo_ladder.py`: factory builds `e21` and loss is finite.
+- `tests/test_bapo_ladder.py`: factory builds `e21` and loss is finite; `test_e21_raw_override_is_wired`.
 - Tiny probe as the first experiment (CPU).
 
 ## 8. Risks & tradeoffs

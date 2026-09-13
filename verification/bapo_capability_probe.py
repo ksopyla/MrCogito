@@ -48,6 +48,18 @@ from evaluation.bapo_metrics import info_report  # noqa: E402
 from evaluation.bapo_models import ARCHES, ArchSpec, arch_cache, build_model, n_params  # noqa: E402
 
 
+def _message_cm(model, override: str):
+    """E21 probe control: wrap forwards in `model.message_override`. Default `real` is a no-op.
+
+    `raw` keeps the QUERY document-start on local SWA / n-grams and lets the global read see
+    uncompressed prefix K/V across the boundary. Ignored when the model has no message path.
+    """
+    mode = override or "real"
+    if mode == "real" or not hasattr(model, "message_override"):
+        return contextlib.nullcontext()
+    return model.message_override(mode)
+
+
 def amp_ctx(device: torch.device, amp: str):
     """bf16 autocast on CUDA; off on CPU. fp16 is opt-in (no GradScaler — prefer bf16)."""
     if amp == "off" or device.type != "cuda":
@@ -86,12 +98,12 @@ def make_batch(cfg, rng, batch: int, device):
 
 
 @torch.no_grad()
-def evaluate(model, batches, *, amp: str, device: torch.device) -> dict:
+def evaluate(model, batches, *, amp: str, device: torch.device, message_override: str = "real") -> dict:
     model.eval()
     ce_sum, n, hits = 0.0, 0, 0
     ctx = amp_ctx(device, amp)
     for ids, labels in batches:
-        with ctx:
+        with _message_cm(model, message_override), ctx:
             out = model(ids, labels=labels, return_per_token_loss=True)
             if isinstance(out, tuple):
                 _lm, per, valid = out
@@ -134,9 +146,11 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             f"zero_resid={getattr(model.config, 'zero_init_residuals', True)}  "
             f"msg_boundary={getattr(model.config, 'message_boundary_token_id', -1)}  "
             f"msg_r={getattr(model.config, 'message_compress_ratio', '-')}  "
-            f"msg_remainder={getattr(model.config, 'message_pool_remainder', False)}",
+            f"msg_remainder={getattr(model.config, 'message_pool_remainder', False)}  "
+            f"msg_override={args.message_override if arch == 'e21' else '-'}",
             flush=True,
         )
+    override = args.message_override if arch == "e21" else "real"
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01, betas=(0.9, 0.95))
     warmup = max(1, min(50, steps // 10))
 
@@ -155,7 +169,7 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
     with sdp_cm:
         for step in range(1, steps + 1):
             ids, labels = make_batch(cfg, rng, args.batch, device)
-            with amp_ctx(device, args.amp):
+            with _message_cm(model, override), amp_ctx(device, args.amp):
                 out = model(ids, labels=labels)
                 loss = out.loss if hasattr(out, "loss") else out[0].loss
             loss.backward()
@@ -164,7 +178,9 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             sched.step()
             opt.zero_grad(set_to_none=True)
             if step % args.eval_every == 0 or step == steps:
-                ev = evaluate(model, eval_batches, amp=args.amp, device=device)
+                ev = evaluate(
+                    model, eval_batches, amp=args.amp, device=device, message_override=override
+                )
                 trace.append({"step": step, **ev, "sec": time.time() - t0})
                 print(
                     f"  [{arch}] step {step:5d}  train {float(loss.detach()):.4f}  "
@@ -328,6 +344,9 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             "hidden": args.hidden,
             "stack_layers": args.stack_layers,
             "warm_residuals": args.warm_residuals,
+            "message_ratio": args.message_ratio,
+            "message_override": args.message_override,
+            "message_pool_remainder": args.message_pool_remainder,
         },
         "pack": {
             "answer_len": cfg.answer_len,
@@ -385,6 +404,13 @@ def main() -> int:
         type=int,
         default=16,
         help="E21 KVCompressor ratio (prefix tokens per slot). Ignored for other arches.",
+    )
+    p.add_argument(
+        "--message_override",
+        default="real",
+        choices=("real", "none", "swapped", "raw"),
+        help="E21 global-read channel: real slots (default), none (floor), swapped (wrong row), "
+        "raw (uncompressed prefix K/V across QUERY; local SWA still severed). Ignored for other arches.",
     )
     p.add_argument(
         "--message_pool_remainder",

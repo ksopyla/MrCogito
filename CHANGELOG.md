@@ -15,6 +15,23 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-13] - E21 probe `--message_override` (raw / none / swapped)
+
+**Why:**
+- Seq=512 INDEX scored 0 bits at r=16, r=64, and identity r=1. Compression is not the
+  wall. The next isolation is the exclusive cut: keep QUERY as a local document start
+  but let the global read see uncompressed prefix K/V (`message_override='raw'`).
+
+**Impact:**
+- Default `real` is unchanged (exclusive slots). `--message_override raw` wraps only the
+  e21 train/eval forwards in the existing `model.message_override` context manager.
+
+**What changed:**
+- [added] probe `--message_override {real,none,swapped,raw}` in `verification/bapo_capability_probe.py`
+- [added] factory wiring test `test_e21_raw_override_is_wired` in `tests/test_bapo_ladder.py`
+
+**Does not:** change the E21 mask default, remainder pooling, or E18 checkpoints.
+
 ## [2026-09-13] - E21 remainder-block pooling (config flag, default off)
 
 **Why:**
