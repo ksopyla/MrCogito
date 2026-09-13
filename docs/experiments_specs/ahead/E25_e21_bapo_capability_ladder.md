@@ -1,7 +1,7 @@
 # E25 — E21 capability limits on a calibrated BAPO DNA ladder (one rung at a time)
 
-- **Status:** active (tiny DNA limits measured; next is GPU seq=512 INDEX). Keep in `ahead/`.
-  Do not score Glyph yet.
+- **Status:** active (tiny DNA limits + 512 INDEX wall at r=16 / 0 bits). Keep in `ahead/`.
+  Do not score Glyph or 1024 yet.
 - **Serves:** the Vision's "does the compressed channel carry *addressable* content, and how
   many bits?" question, now on **E21** (exclusive compressed read) rather than E18's raw
   one-global-read. Observation base for later gating / compression. Reuses E24's DNA instrument.
@@ -90,12 +90,12 @@ pretraining run; this is the cheap controlled exam that spec's K1/K2 needed and 
   (off by default; byte-identical to E18). Probe arch `e21`. No new `train_*.py`.
 
 ## Result
-- Run id: `e25_tiny_far_copy` · `e25_tiny_far_copy_remainder` · `e25_tiny_far_copy_query_align` · `e25_tiny_far_copy_e21_steps` · `e25_tiny_recall_single` · `e25_tiny_recall_single_e21_steps` · `e25_tiny_select_1decoy` · `e25_tiny_chain_ordered` · `e25_tiny_chain_ordered_e21_steps`
+- Run id: `e25_tiny_far_copy` · `e25_tiny_far_copy_remainder` · `e25_tiny_far_copy_query_align` · `e25_tiny_far_copy_e21_steps` · `e25_tiny_recall_single` · `e25_tiny_recall_single_e21_steps` · `e25_tiny_select_1decoy` · `e25_tiny_chain_ordered` · `e25_tiny_chain_ordered_e21_steps` · `e25_512_fc`
 - WandB: n/a (probe; no `compute/*`)
-- Run reports: [`tiny`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) · [`remainder`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) · [`QUERY-align`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_query_align_20260913.md) · [`INDEX extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_e21_steps_20260913.md) · [`recall`](../../2_Experiments_Registry/run_reports/e25_tiny_recall_single_20260913.md) · [`recall extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_recall_single_e21_steps_20260913.md) · [`select`](../../2_Experiments_Registry/run_reports/e25_tiny_select_1decoy_20260913.md) · [`chain`](../../2_Experiments_Registry/run_reports/e25_tiny_chain_ordered_20260913.md) · [`chain extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_chain_ordered_e21_steps_20260913.md)
-- Verdict: **mixed / tiny DNA limits found.** INDEX near-pass at 8k (47.01 vs 47.29 bits).
-  MATCH wall **9.81 bits @8k**. Select type-cue wall **1.47 bits**. Chain hops wall **10.02
-  bits / 49% acc @8k** (extra steps did not lift acc). Next: GPU seq=512 `far_copy`.
+- Run reports: [`tiny`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) · [`remainder`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) · [`QUERY-align`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_query_align_20260913.md) · [`INDEX extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_e21_steps_20260913.md) · [`recall`](../../2_Experiments_Registry/run_reports/e25_tiny_recall_single_20260913.md) · [`recall extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_recall_single_e21_steps_20260913.md) · [`select`](../../2_Experiments_Registry/run_reports/e25_tiny_select_1decoy_20260913.md) · [`chain`](../../2_Experiments_Registry/run_reports/e25_tiny_chain_ordered_20260913.md) · [`chain extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_chain_ordered_e21_steps_20260913.md) · [`512`](../../2_Experiments_Registry/run_reports/e25_bridge512_far_copy_20260913.md)
+- Verdict: **mixed.** Tiny INDEX near-pass at 8k. Tiny MATCH/select/chain walls. GPU seq=512
+  right-align `far_copy`: dense **61.2 bits**, E18 **63.2 bits**, E21 **0 bits / chance**
+  (S1 fail, K3). Next: r=64 at seq=512 (~8 slots), not 1024, not remainder.
 
 ## Follow-up (rung 1b — remainder pooling)
 Ran. S1 **FAIL** at 2400 (12.7 bits). Geometry stacking did not help.
@@ -126,6 +126,10 @@ Ran 8000 steps. E21 **49.4% / 10.02 bits / flow 0.386** (best 51.7% @5450). Acc 
 rise vs 3200. Composition wall. Do not 16k.
 
 ## Follow-up (rung 5 — GPU seq=512 far_copy)
-Next ONE harder DNA task: packed `far_copy` at seq=512 with dense S0 in the same JSON
-(E18 already 100% / 64 bits on E24). Recalibrate the 75% dense gate before scoring E21.
-Needs GPU. Not Glyph.
+Ran on Odra GPU 0, E24 right-align recipe. Dense S0 **PASS** (99.5% / 61.2 bits). E18 **99.4% /
+63.2 bits**. E21 **25.1% / 0 bits / flow 0** @800 (chance; not climbing). S1 **FAIL**. K2 **PASS**.
+Do not extra-step (curve is a floor). Do not 1024.
+
+## Follow-up (rung 5b — match tiny slot count)
+Next ONE change: `--message_ratio 64` at seq=512 (~8 slots, the width that near-passed tiny
+INDEX). Remainder stays off. Recalibrate dense S0 in the same JSON. Not Glyph.
