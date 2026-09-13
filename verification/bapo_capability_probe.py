@@ -8,11 +8,13 @@ once each task is proven solvable?*
 
 Protocol
 --------
-1. Train `dense` first. If held-out accuracy < 75%, the rung is uncalibrated — do not interpret
-   E18 or encdec numbers (the task may be too small, too few steps, or a generator bug).
+1. Train `dense` first, up to `--steps * --k1_mult` (K1). If held-out accuracy < 75%, the rung
+   is uncalibrated — do not interpret E18 or encdec numbers (the task may be too small, too
+   few steps, or a generator bug). Other arches are skipped by default.
 2. Train `e18_local` on retrieval rungs. It must sit near chance / the analytic floor; if it
    does not, the task leaks into the local window.
-3. Train `e18` and `encdec` under the same budget.
+3. Train `e18` and `encdec` under `max(--steps, dense_steps_used)` so the compressed channel
+   is not starved relative to the control.
 4. Write a JSON bundle (learning traces + InfoReport) and optional plots.
 
   # solvability proof + architecture comparison on the tiny core ladder
@@ -75,7 +77,7 @@ def evaluate(model, batches) -> dict:
     return {"ce_nats": ce_sum / max(n, 1), "acc": hits / max(n, 1), "tokens": n}
 
 
-def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device) -> dict:
+def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, steps: int) -> dict:
     model = build_model(
         arch,
         vocab_size=cfg.vocab.vocab_size,
@@ -91,7 +93,7 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device) -> dic
     if params > args.max_params:
         raise SystemExit(f"{arch} has {params} params > --max_params {args.max_params}")
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01, betas=(0.9, 0.95))
-    warmup = max(1, min(50, args.steps // 10))
+    warmup = max(1, min(50, steps // 10))
 
     def lr_factor(step: int) -> float:
         return min(1.0, (step + 1) / warmup)
@@ -100,7 +102,7 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device) -> dic
     rng = np.random.default_rng(args.seed + 1000 + sum(ord(c) for c in arch))
     t0, trace = time.time(), []
     best_acc = -1.0
-    for step in range(1, args.steps + 1):
+    for step in range(1, steps + 1):
         ids, labels = make_batch(cfg, rng, args.batch, device)
         out = model(ids, labels=labels)
         loss = out.loss if hasattr(out, "loss") else out[0].loss
@@ -109,7 +111,7 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device) -> dic
         opt.step()
         sched.step()
         opt.zero_grad(set_to_none=True)
-        if step % args.eval_every == 0 or step == args.steps:
+        if step % args.eval_every == 0 or step == steps:
             ev = evaluate(model, eval_batches)
             trace.append({"step": step, **ev, "sec": time.time() - t0})
             print(
@@ -158,6 +160,7 @@ def run_rung(task: str, args) -> dict:
         enc_layers=args.enc_layers,
         dec_layers=args.dec_layers,
         head_dim=args.head_dim,
+        value_embed_layers=tuple(int(x) for x in args.value_embed_layers.split(",") if x.strip()),
     )
     card = rung_card(scale, task)
     eval_rng = np.random.default_rng(args.seed + 99)
@@ -166,13 +169,26 @@ def run_rung(task: str, args) -> dict:
     print(
         f"\n=== {task} @ {scale.name}  seq={cfg.seq_len} gap={cfg.min_gap} "
         f"window={scale.local_window} prize={card['prize_bits']:.2f} bits  "
+        f"answer_len={cfg.answer_len} (target {card['target_answer_len']})  "
         f"floor={card['floor_nats']:.4f} nats  chance={card['chance_acc']:.3f}  device={device} ===",
         flush=True,
     )
+    arches = list(args.arch)
+    if args.dense_first and "dense" in arches:
+        arches = ["dense"] + [a for a in arches if a != "dense"]
     results = {}
-    for arch in args.arch:
-        print(f"--- {arch} ---", flush=True)
-        results[arch] = train_one(arch, cfg, args, eval_batches, spec, device)
+    dense_steps_used = args.steps
+    skip_rest = False
+    for arch in arches:
+        if skip_rest:
+            print(f"--- {arch} skipped (dense < {SOLVABLE_ACC:.0%} at K1; rung uncalibrated) ---", flush=True)
+            continue
+        if arch == "dense":
+            arch_steps = args.steps * args.k1_mult
+        else:
+            arch_steps = max(args.steps, dense_steps_used)
+        print(f"--- {arch}  (≤ {arch_steps} steps) ---", flush=True)
+        results[arch] = train_one(arch, cfg, args, eval_batches, spec, device, steps=arch_steps)
         print(
             f"  {arch}: {results[arch]['params']/1e6:.3f}M  acc {results[arch]['final']['acc']:.3f}  "
             f"flow {results[arch]['info']['information_flow']:.3f}  "
@@ -180,6 +196,10 @@ def run_rung(task: str, args) -> dict:
             f"B/tok {results[arch]['info']['bytes_per_input_token']:.4g}",
             flush=True,
         )
+        if arch == "dense":
+            dense_steps_used = results[arch]["final"]["step"]
+            if args.skip_uncalibrated and results[arch]["final"]["acc"] < SOLVABLE_ACC:
+                skip_rest = True
     calibrated = True
     notes = []
     if "dense" in results:
@@ -205,8 +225,20 @@ def run_rung(task: str, args) -> dict:
         "results": results,
         "hidden": args.hidden,
         "steps": args.steps,
+        "k1_mult": args.k1_mult,
+        "dense_steps_used": dense_steps_used,
         "batch": args.batch,
         "seed": args.seed,
+        "pack": {
+            "answer_len": cfg.answer_len,
+            "key_len": cfg.key_len,
+            "value_len": cfg.value_len,
+            "span_len": cfg.span_len,
+            "n_distractors": cfg.n_distractors,
+            "n_decoys": cfg.n_decoys,
+            "hops": cfg.hops,
+            "prize_bits": card["prize_bits"],
+        },
     }
 
 
@@ -222,7 +254,30 @@ def main() -> int:
     p.add_argument("--enc_layers", type=int, default=2)
     p.add_argument("--dec_layers", type=int, default=2)
     p.add_argument("--head_dim", type=int, default=32)
-    p.add_argument("--steps", type=int, default=800)
+    p.add_argument(
+        "--value_embed_layers",
+        default="0,1",
+        help="layer indices with value embeddings; 0,1 puts VE on E18's global read",
+    )
+    p.add_argument("--steps", type=int, default=800, help="advertised step budget per arch")
+    p.add_argument(
+        "--k1_mult",
+        type=int,
+        default=4,
+        help="dense may train up to steps*k1_mult (K1: 4× before declaring a rung ill-posed)",
+    )
+    p.add_argument(
+        "--dense_first",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="train dense first; skip other arches if it misses 75%% (default on)",
+    )
+    p.add_argument(
+        "--skip_uncalibrated",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="do not score E18/encdec on a rung whose dense control missed 75%%",
+    )
     p.add_argument("--batch", type=int, default=32)
     p.add_argument("--lr", type=float, default=3e-3)
     p.add_argument("--eval_every", type=int, default=50)

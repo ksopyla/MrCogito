@@ -15,6 +15,27 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-13] - BAPO ladder: packed answers, dense-first K1, VE on the global read
+
+**Why:**
+- The first tiny probe proved the instrument on packed `far_copy` (dense 85%) but left
+  `recall` / `select` / `chain` at chance because those rungs had 2–4 supervised tokens (the
+  same packed-loss trap as Arm-A span=8). Scoring E18 there would have been a false kill.
+  The probe also omitted a value embedding on E18's global read (layer 1); E18's own 32k
+  copy result used VE on the retrieving layer.
+
+**What changed:**
+- [added] `data/bapo_ladder.py` `pack_overrides` — grow answer spans toward 16/24/32 tokens
+  at tiny/tiny_wide/medium+; tiny seq_len 128 so chain keys can pack.
+- [added] probe `--dense_first` / `--k1_mult` — dense trains up to 4× steps; other arches
+  skipped if it misses 75%.
+- [added] E18/dense value embeddings on layers 0 and 1 (the global read).
+- [added] plot CE curves, uncalibrated markers, `capability_table.csv`.
+
+**Does not:** launch medium/large GPU runs.
+
+---
+
 ## [2026-09-13] - BAPO DNA capability ladder (E18 vs dense vs encoder-decoder)
 
 **Why:**

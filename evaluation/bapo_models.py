@@ -35,6 +35,9 @@ class ArchSpec:
     dec_layers: int = 2
     head_dim: int = 32
     n_kv_heads: int = 1
+    # E18 copy-tiny / 32k copy used VE on the retrieving layer. Layer 0 is the SWA pre-encoder;
+    # layer 1 is the global read. Dense gets the same two tables so params stay matched.
+    value_embed_layers: tuple[int, ...] = (0, 1)
 
 
 def _n_heads(hidden: int, head_dim: int) -> int:
@@ -92,7 +95,7 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         head_dim=spec.head_dim,
         ngram_orders=(2,),
         ngram_buckets=256,
-        value_embed_layers=(0,),
+        value_embed_layers=spec.value_embed_layers,
         value_embed_dim=16,
         use_liger=False,
         attn_backend="sdpa",

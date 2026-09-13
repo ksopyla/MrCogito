@@ -68,7 +68,8 @@ encdec:
 
 ## 8. Risks & tradeoffs
 - **Risk:** tiny budget too small → dense misses 75% → false "unsolvable". **Signal:** packed
-  `span_len=32` and 4× steps before killing a rung (K1).
+  answers (`value_len`/`key_len`/`span_len` toward 16–32 tokens) and 4× steps before killing
+  a rung (K1). Dense is trained first; other arches are not scored on an uncalibrated rung.
 - **Risk:** E18 looks good on tiny far_copy (positional) and we over-generalise. **Signal:**
   S2/S3 on recall/select/chain are the load-bearing gates.
 - **Fallback:** none architectural. If E18 matches dense on content tasks (K3), the E18b

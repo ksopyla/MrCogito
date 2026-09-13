@@ -65,7 +65,7 @@ Per held-out evaluation, against the closed-form floor:
 - `nominal_b_tokens` and `nominal_a_bytes` (unbounded KV cache bytes / token, bf16)
 
 The prize on a 32-symbol copy over A=4 is 64 bits. A model at chance recovers 0. A perfect
-copy recovers 64 bits ≈ 0.67 bits/input-token at seq=96, or 0.083 bytes/input-token.
+copy recovers 64 bits ≈ 0.50 bits/input-token at seq=128, or 0.0625 bytes/input-token.
 
 ## Protocol (the 75% solvability control)
 
@@ -75,17 +75,23 @@ Every rung is **uninterpretable** until:
    (the task is learnable; this is the measured ceiling the experiment-design rule asked for).
 2. On retrieval rungs, `e18_local` stays near chance (the task does not leak into the window).
 
-If (1) fails, increase `span_len` / steps / width — do **not** report an E18 failure. Packed
-loss (long copies) teaches faster than short answers; that is a documented limit of the
-seq=128 Arm-A exam (span=8 stuck at chance, span=32 hit 99%).
+Packed loss (long copies / long values / long chain keys) teaches faster than short answers;
+that is a documented limit of the seq=128 Arm-A exam (span=8 stuck at chance, span=32 hit 99%).
+`config_for` therefore grows the supervised span toward 16 tokens on `tiny`, 24 on `tiny_wide`,
+and 32 on medium/large, shrinking decoys only when the packed answer would not fit behind
+`min_gap`. Aggregation tasks (`count`, `majority`) stay 1-token by design.
+
+The probe trains **dense first**. Other arches are skipped on a rung whose dense control missed
+75% after `--steps * --k1_mult` (K1, default 4×). Compressed models then train for
+`max(--steps, dense_steps_used)` so they are not starved relative to the control.
 
 ## Scales (`data/bapo_ladder.py`)
 
 | scale | seq_len | min_gap | local_window | where |
 |---|---|---|---|
-| `tiny` | 96 | 16 | 16 | CPU, this probe |
-| `tiny_wide` | 256 | 32 | 32 | CPU |
-| `medium` | 4096 | 1024 | 256 | GPU, <100M |
+| `tiny` | 128 | 16 | 16 | CPU, packed answers ≥16 tokens (chain ~12) |
+| `tiny_wide` | 256 | 32 | 32 | CPU, packed ≥24 |
+| `medium` | 4096 | 1024 | 256 | GPU, packed 32, <100M |
 | `medium_16k` | 16384 | 4096 | 1024 | GPU |
 | `large` | 32768 | 8192 | 1024 | GPU |
 | `large_128k` | 131072 | 16384 | 1024 | GPU |
@@ -102,8 +108,24 @@ uv run python analysis/plot_bapo_capability.py \
     --in_dir Cache/bapo_tiny --out_dir Cache/bapo_tiny/plots
 ```
 
-Plots: learning curves, accuracy heatmap, information flow, recovered bits vs prize,
-effective vs nominal bytes/token.
+Plots: learning curves (accuracy + CE), accuracy heatmap, information flow, recovered bits vs prize,
+effective vs nominal bytes/token, plus `capability_table.csv`.
+
+## Medium / large (GPU, still <100M)
+
+Tiny is the solvability proof. Medium (4k, 16k) and large (32k, 128k) reuse the same probe.
+Do not launch them until every tiny user-core rung has dense ≥ 75%. Suggested first GPU rung:
+
+```bash
+# Odra/Polonez, after tiny S0. Hidden 256 ≈ a few million params.
+uv run python verification/bapo_capability_probe.py \
+    --scale medium --arch dense e18 encdec e18_local \
+    --hidden 256 --steps 2000 --batch 8 --eval_every 100 --eval_rows 32 \
+    --out Cache/bapo_medium
+```
+
+`large` / `large_128k` need a smaller batch and activation checkpointing if VRAM is tight;
+the architecture factory already caps `--max_params 100000000`.
 
 ## Non-goals
 

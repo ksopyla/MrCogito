@@ -32,6 +32,44 @@ def test_tiny_core_is_what_the_cpu_probe_runs():
         assert prize_bits(cfg) == pytest.approx(cfg.answer_len * math.log(cfg.n_symbols) / math.log(2))
 
 
+def test_tiny_core_answers_are_packed():
+    """Packed CE is the difference between chance and a solvable rung (Arm-A span=8 vs 32)."""
+    from data.bapo_ladder import pack_overrides, target_answer_len
+
+    assert target_answer_len("tiny") == 16
+    for task in TINY_PROOF_TASKS:
+        packed = config_for("tiny", task)
+        unpacked = config_for("tiny", task, pack=False)
+        if task in {"chain", "chain_ordered"}:
+            assert packed.answer_len >= 12, (task, packed.answer_len)
+        else:
+            assert packed.answer_len >= 16, (task, packed.answer_len)
+        over = pack_overrides("tiny", task)
+        assert over  # every user-core task has a pack field
+        assert packed.seq_len == 128
+        assert packed.answer_len >= 8, (task, packed.answer_len)
+
+
+def test_medium_retrieval_packs_to_32_supervised_tokens():
+    for task in ("far_copy", "recall", "select"):
+        cfg = config_for("medium", task)
+        assert cfg.answer_len == 32, (task, cfg.answer_len)
+    for task in ("chain", "chain_ordered"):
+        cfg = config_for("medium", task)
+        assert cfg.answer_len == 32, (task, cfg.answer_len, cfg.key_len)
+
+
+def test_pack_keeps_min_gap_contract():
+    from data.symbolic_tasks import generate_row
+
+    rng = np.random.default_rng(0)
+    for task in TINY_PROOF_TASKS:
+        cfg = config_for("tiny", task)
+        row = generate_row(cfg, rng)
+        assert row.gap >= cfg.min_gap + 1, (task, row.gap, cfg.min_gap)
+        assert row.answer_len == cfg.answer_len
+
+
 def test_info_report_perfect_recovery():
     cfg = config_for("tiny", "far_copy")
     floor = math.log(cfg.n_symbols)
@@ -41,7 +79,7 @@ def test_info_report_perfect_recovery():
         n_supervised=64,
         cfg=cfg,
         window=16,
-        nominal_b_tokens=96,
+        nominal_b_tokens=128,
         nominal_a_bytes=128.0,
     )
     assert rep.information_flow == pytest.approx(1.0)

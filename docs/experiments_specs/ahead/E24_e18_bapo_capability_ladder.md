@@ -78,8 +78,10 @@ measurement instrument with a falsifiable capability claim, not a LR sweep.
   required for tiny; `scripts/build_symbolic_dataset.py` for medium/large GPU mixes.
 - **Compute:** tiny on CPU (Cloud VM or laptop). Medium/large on Odra/Polonez, still
   `max_params < 100e6`.
-- **Steps / epochs:** tiny default 800 steps, batch 32, hidden 128 (~1M params), early-stop
-  at 99% acc. Packed `far_copy` span=32 (the seq=128 exam's lesson).
+- **Steps / epochs:** tiny default 800 steps, K1 = 4× (dense may train to 3200), batch 32,
+  hidden 128 (~1M params), early-stop at 99% acc. Answers packed to ≥16 supervised tokens
+  (`value_len` / `key_len` / `span_len`); dense is trained first and other arches are skipped
+  if it misses 75%.
 - **Launch:** `uv run python verification/bapo_capability_probe.py --scale tiny --out …`
   then `analysis/plot_bapo_capability.py`. Medium: same with `--scale medium` on GPU.
 - **New foundation code:** see the plan. Reusable: extra DNA tasks, ladder, metrics, encdec

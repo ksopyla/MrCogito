@@ -40,6 +40,18 @@ USER_CORE_TASKS: tuple[str, ...] = (
 HARD_TASKS: tuple[str, ...] = ("unique", "match3", "count", "majority")
 TINY_PROOF_TASKS: tuple[str, ...] = USER_CORE_TASKS  # what the CPU calibration always runs
 
+# Which config field is the supervised span. Growing it is how packed CE gets a gradient
+# (Arm-A: span=8 stayed at chance, span=32 hit 99%). count/majority are 1-token by design.
+_ANSWER_FIELD: dict[str, str] = {
+    "far_copy": "span_len",
+    "recall": "value_len",
+    "select": "value_len",
+    "unique": "value_len",
+    "match3": "value_len",
+    "chain": "key_len",
+    "chain_ordered": "key_len",
+}
+
 
 @dataclass(frozen=True)
 class Scale:
@@ -60,7 +72,7 @@ class Scale:
 
 
 SCALES: dict[str, Scale] = {
-    "tiny": Scale("tiny", seq_len=96, min_gap=16, local_window=16, span_len=32, n_distractors=2, hops=2, n_decoys=3, n_duplicates=2, key_len=2, value_len=4),
+    "tiny": Scale("tiny", seq_len=128, min_gap=16, local_window=16, span_len=32, n_distractors=2, hops=2, n_decoys=3, n_duplicates=2, key_len=2, value_len=4),
     "tiny_wide": Scale("tiny_wide", seq_len=256, min_gap=32, local_window=32, span_len=16, n_distractors=3, hops=3, n_decoys=6, n_duplicates=3),
     "medium": Scale("medium", seq_len=4096, min_gap=1024, local_window=256, span_len=32, n_distractors=7, hops=3, n_decoys=12, n_duplicates=4, key_len=4, value_len=4),
     "medium_16k": Scale("medium_16k", seq_len=16384, min_gap=4096, local_window=1024, span_len=32, n_distractors=7, hops=4, n_decoys=16, n_duplicates=6, key_len=4, value_len=4),
@@ -69,10 +81,8 @@ SCALES: dict[str, Scale] = {
 }
 
 
-def config_for(scale: str | Scale, task: str, **over) -> SymbolicTaskConfig:
-    sc = SCALES[scale] if isinstance(scale, str) else scale
-    kw = dict(
-        task=task,
+def _scale_kwargs(sc: Scale) -> dict:
+    return dict(
         seq_len=sc.seq_len,
         n_symbols=sc.n_symbols,
         min_gap=sc.min_gap,
@@ -85,6 +95,76 @@ def config_for(scale: str | Scale, task: str, **over) -> SymbolicTaskConfig:
         n_decoys=sc.n_decoys,
         n_duplicates=sc.n_duplicates,
     )
+
+
+def target_answer_len(scale: str | Scale) -> int:
+    """Supervised tokens we try to pack so CE can train. ~32–64 bits at A=4."""
+    sc = SCALES[scale] if isinstance(scale, str) else scale
+    if sc.seq_len <= 128:
+        return 16
+    if sc.seq_len <= 512:
+        return 24
+    return 32
+
+
+def pack_overrides(scale: str | Scale, task: str, target: int | None = None) -> dict:
+    """Grow the supervised span toward `target` tokens without unpacking the scale default.
+
+    Shrinks decoys/distractors only if the target cannot fit otherwise. Never drops
+    `hops` below 2, `n_decoys` below 1 on `select`, or `n_distractors` below 1 on
+    tasks that need a contrast set. Returns the kwargs to merge into `config_for`.
+    """
+    sc = SCALES[scale] if isinstance(scale, str) else scale
+    field = _ANSWER_FIELD.get(task)
+    if field is None:
+        return {}
+    target = target if target is not None else target_answer_len(sc)
+    base = _scale_kwargs(sc)
+    current = int(base[field])
+    want = max(current, target)
+
+    def fits(extra: dict) -> bool:
+        try:
+            SymbolicTaskConfig(task=task, **{**base, **extra})
+            return True
+        except ValueError:
+            return False
+
+    extra: dict = {}
+    if fits({field: want}):
+        extra[field] = want
+        return extra
+
+    # Shrink contrast-set size so a packed answer can still sit behind min_gap.
+    shrink_keys: list[tuple[str, int]] = []
+    if task == "select":
+        shrink_keys = [("n_decoys", 1), ("n_distractors", 1)]
+    elif task == "unique":
+        shrink_keys = [("n_duplicates", 1)]
+    elif task in {"recall", "match3", "chain", "chain_ordered"}:
+        shrink_keys = [("n_distractors", 1)]
+
+    for key, lo in shrink_keys:
+        while base[key] > lo:
+            base[key] -= 1
+            extra[key] = base[key]
+            if fits({**extra, field: want}):
+                extra[field] = want
+                return extra
+
+    # Largest packed answer that still fits after shrinking.
+    for n in range(want, current - 1, -1):
+        if fits({**extra, field: n}):
+            extra[field] = n
+            return extra
+    return extra
+
+
+def config_for(scale: str | Scale, task: str, *, pack: bool = True, **over) -> SymbolicTaskConfig:
+    sc = SCALES[scale] if isinstance(scale, str) else scale
+    kw = dict(task=task, **_scale_kwargs(sc))
+    if pack:
+        kw.update(pack_overrides(sc, task))
     kw.update(over)
     return SymbolicTaskConfig(**kw)
 
@@ -110,6 +190,8 @@ def rung_card(scale: str | Scale, task: str) -> dict:
         "solvable_acc": SOLVABLE_ACC,
         "bits_per_input_token_ceiling": prize_bits(cfg) / cfg.seq_len,
         "bytes_per_input_token_ceiling": prize_bits(cfg) / 8.0 / cfg.seq_len,
+        "packed_answer_len": cfg.answer_len,
+        "target_answer_len": target_answer_len(sc),
     }
 
 
@@ -128,5 +210,7 @@ __all__ = [
     "USER_CORE_TASKS",
     "config_for",
     "ladder_cards",
+    "pack_overrides",
     "rung_card",
+    "target_answer_len",
 ]
