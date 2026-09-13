@@ -114,6 +114,15 @@ class PerceiverConceptConfig(PretrainedConfig):
         attn_backend: str = "flex",
         attn_pad_multiple: int = 2048,
         init_std: float = 0.02,
+        # Escape hatches from the concept path's series cold start. Every residual-writing
+        # projection is zero-init (muP-like), which for the *concept* path puts two such gates
+        # between the evidence and the loss: `pooler.wo` (the only order-sensitive part of the
+        # write — the rest is a mean over the block) and `xattn.wo` (the read's output). The
+        # gradient into the read's query/key projections and into `pooler.wo` is proportional to
+        # `xattn.wo`, so at zero the channel can only learn to consume the order-free mean of the
+        # visible slots. 0.0 keeps the E22 behaviour exactly (old checkpoints load unchanged).
+        xattn_wo_init_std: float = 0.0,
+        pooler_wo_init_std: float = 0.0,
         pad_token_id: int = 0,
         bos_token_id: int = 1,
         eos_token_id: int = 2,
@@ -160,6 +169,8 @@ class PerceiverConceptConfig(PretrainedConfig):
         self.attn_backend = attn_backend
         self.attn_pad_multiple = attn_pad_multiple
         self.init_std = init_std
+        self.xattn_wo_init_std = float(xattn_wo_init_std)
+        self.pooler_wo_init_std = float(pooler_wo_init_std)
         # Fields the shared `Attention` / `Block` primitives read (E18 knobs held at their off value).
         self.swa_sink = False
         self.global_logit_scale = "none"
@@ -285,6 +296,23 @@ class ConceptPooler(nn.Module):
 
 
 _XATTN_SCOPES = ("causal", "exclusive", "local_only")
+
+
+def _init_residual_write(weight: torch.Tensor, std: float) -> None:
+    """Zero-init a residual-writing projection, or seed it at `std` to break a cold start.
+
+    Zero is the default everywhere (muP-like, modded-nanogpt). On the concept path it is not
+    free: `pooler.wo` and `xattn.wo` sit in series between the evidence and the loss, and the
+    gradient into both the read's query/key projections and `pooler.wo` is proportional to
+    `xattn.wo`, so at zero the channel can only learn to consume the order-free mean of the
+    visible slots. Measured on the symbolic `far_copy` task (floor 1.3863 nats, alphabet 4):
+    zero-init recovers 0.214 nats after a ~2000-step plateau, `std=0.02` on both recovers
+    0.544 nats with no plateau. See `docs/4_Research_Notes/concept_channel_cold_start_20260913.md`.
+    """
+    if std and std > 0:
+        nn.init.normal_(weight, mean=0.0, std=std)
+    else:
+        nn.init.zeros_(weight)
 
 
 def raw_span(S: int, dec_local: str, dec_segment: int, device) -> torch.Tensor:
@@ -493,9 +521,9 @@ class PerceiverConceptLM(PreTrainedModel):
             nn.init.zeros_(layer.attn.wo.weight)
             nn.init.zeros_(layer.mlp.down.weight)
             if layer.has_xattn:
-                nn.init.zeros_(layer.xattn.wo.weight)
+                _init_residual_write(layer.xattn.wo.weight, cfg.xattn_wo_init_std)
         if self.pooler is not None:
-            nn.init.zeros_(self.pooler.wo.weight)
+            _init_residual_write(self.pooler.wo.weight, cfg.pooler_wo_init_std)
 
     # -- HF plumbing ----------------------------------------------------------------
     def _init_weights(self, module):

@@ -350,6 +350,8 @@ def _build_perceiver_concept_model(tokenizer, model_args, data_args):
         dec_local=model_args.pcl_dec_local,
         concept_mode=model_args.pcl_concept_mode,
         concept_xattn_scope=model_args.pcl_concept_xattn_scope,
+        xattn_wo_init_std=model_args.pcl_xattn_wo_init_std,
+        pooler_wo_init_std=model_args.pcl_pooler_wo_init_std,
         xattn_kv_heads=model_args.pcl_xattn_kv_heads,
         num_attention_heads=model_args.num_attention_heads,
         num_kv_heads=model_args.num_kv_heads,

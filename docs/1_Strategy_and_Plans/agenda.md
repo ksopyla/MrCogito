@@ -54,6 +54,26 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   Spec [E22](../experiments_specs/done_failed/E22_perceiver_concept_lm.md) ·
   [report](../2_Experiments_Registry/run_reports/e22_pilot_verdict_20260912.md) ·
   [root cause](../4_Research_Notes/e22_root_cause_20260912.md).
+- **2026-09-13 — the array *can* be addressed, and a zero-init artefact was hiding it** (CPU-hours,
+  zero GPU-days, `data/symbolic_tasks.py` + `verification/symbolic_channel_probe.py`). On symbolic
+  rows whose information floor is *exact* (`far_copy`, alphabet 4, floor 1.3863 nats), three arms:
+  full raw access **0.0000** nats / 100% acc, segment-confined **1.3863** / 25% (pinned at the floor
+  for 3000 steps — the task provably does not leak), and the array as the *only* route **1.1726** /
+  42%. So the channel carries addressable far content — **the first positive evidence in this
+  family** — but recovers only 15% of what raw access does. The write and mask are not at fault: the
+  evidence moves the slots (`max|Δz|=1.68`) and the mask exposes exactly those slots, yet the answer
+  logits are bit-identical at init. Cause: **two zero-init residual gates in series** on the concept
+  path (`pooler.wo`, the only order-sensitive part of the write, and `xattn.wo`, the read's output),
+  each one's gradient proportional to the other — so the channel's only early escape is the
+  content-free *mean* of its slots, i.e. a document embedding. Seeding both recovers **17× more
+  information at matched steps (3/3 seeds)** and removes a ~2000-step plateau. This plausibly
+  reframes E22's headline result (0.17 nats of document content, 0.05 far marginal) as an **init
+  artefact rather than an architecture limit**; magnitude is seed-variable at 1.3M params and must be
+  re-measured at scale. Now config-selectable (`pcl_xattn_wo_init_std`, `pcl_pooler_wo_init_std`,
+  default `0.0` = E22). **Consequence: every new read of a new memory must have a warm output
+  projection, and the order-sensitive part of a write must be live at init.**
+  [note](../4_Research_Notes/concept_channel_cold_start_20260913.md) ·
+  [suite](../engineering_specs/symbolic_long_context_suite.md).
 - **2026-09-13 — the family's compute win is a constant, not an asymptote** (analytic, zero GPU-days,
   `analysis/geometry_cost_model.py`). The E22 geometry cuts decode state 192× (18 KB/token of dense KV
   → 96 B/token of array; 180 GB → 0.96 GB at 10M) and that *is* structural. But the *read* is dense —

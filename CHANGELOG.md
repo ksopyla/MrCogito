@@ -54,6 +54,35 @@ adds a zero-GPU pre-flight mechanism gate to its plan.
 
 ---
 
+## [2026-09-13] - `perceiver_concept`: config-selectable warm init for the concept path
+
+**Why:**
+- The first run of the symbolic probe found that the concept path has **two zero-init
+  residual-writing projections in series** between the evidence and the loss — `pooler.wo` (the
+  learned-query branch, and the only order-sensitive part of the write; the rest is a mean over the
+  block, an order-free bag) and `xattn.wo` (the read's output). The gradient into the read's
+  query/key projections *and* into `pooler.wo` is proportional to `xattn.wo`, so at zero the read
+  cannot become selective and the write cannot become order-sensitive: the channel's only early
+  escape is the content-free **mean** of its visible slots, which is exactly a document embedding.
+  That plausibly reframes E22's headline (0.17 nats of document content, 0.05 nats of far marginal)
+  as an init artefact rather than an architecture limit. On the symbolic `far_copy` probe, seeding
+  both gates at 0.02 recovered **17× more information at matched steps (3/3 seeds)** and removed a
+  ~2000-step plateau sitting exactly on the analytic floor. Evidence and caveats (the magnitude is
+  seed-variable at 1.3M params): `docs/4_Research_Notes/concept_channel_cold_start_20260913.md`.
+
+**Added:**
+- `PerceiverConceptConfig.xattn_wo_init_std` and `.pooler_wo_init_std`, applied through a shared
+  `_init_residual_write` helper. Both default to **0.0**, i.e. the E22 behaviour exactly, so all
+  existing checkpoints load and reproduce bit-for-bit; self-attention and MLP writes stay zero-init
+  regardless. Plumbed as `--pcl_xattn_wo_init_std` / `--pcl_pooler_wo_init_std` with validation, and
+  as `PCL_XATTN_WO_INIT_STD` / `PCL_POOLER_WO_INIT_STD` through
+  `scripts/train_concept_pretraining_multigpu.sh` and `scripts/launch_e22.sh`.
+- Tests: defaults are zero, both knobs are selectable and survive a config round-trip, the
+  self-attention/MLP writes are unaffected, and arm C (no pooler, no cross-attention) ignores the
+  knobs without crashing.
+
+---
+
 ## [2026-09-13] - `analysis/geometry_cost_model.py`: analytic FLOP + decode-state model for concept geometries
 
 **Why:**

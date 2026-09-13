@@ -263,6 +263,8 @@ class ModelArguments:
     pcl_dec_local: str = field(default="block", metadata={"help": "E22: 'block' = self-attn reset at segment boundaries (structural closure); 'swa' = sliding window."})
     pcl_concept_mode: str = field(default="full", metadata={"help": "E22: 'full' = decoder reads the concept array; 'none' = arm C control (no cross-attention)."})
     pcl_concept_xattn_scope: str = field(default="causal", metadata={"help": "E22/E23: 'causal' = a token reads every slot ending at or before it (incl. its own raw segment); 'exclusive' = only slots ending before its raw window (pure long-range channel)."})
+    pcl_xattn_wo_init_std: float = field(default=0.0, metadata={"help": "Init std for the decoder cross-attention output projection. 0.0 = zero-init (E22 as run). >0 breaks the concept path's series cold start; measured 2.5x more information recovered on the symbolic far_copy probe."})
+    pcl_pooler_wo_init_std: float = field(default=0.0, metadata={"help": "Init std for the pooler's learned-query output projection. 0.0 = zero-init (E22 as run), which leaves the write an order-free mean at init."})
     pcl_xattn_kv_heads: int = field(default=2, metadata={"help": "E22: kv-heads of the concept cross-attention."})
     pcl_enc_value_embed_layers: str = field(default="0,3", metadata={"help": "E22: encoder layers with a value embedding."})
     pcl_dec_value_embed_layers: str = field(default="0", metadata={"help": "E22: decoder layers with a value embedding."})
@@ -526,6 +528,9 @@ def validate_training_configuration(
                 raise ValueError("pcl_concept_mode must be 'full' or 'none'.")
             if model_args.pcl_concept_xattn_scope not in {"causal", "exclusive"}:
                 raise ValueError("pcl_concept_xattn_scope must be 'causal' or 'exclusive'.")
+            for name in ("pcl_xattn_wo_init_std", "pcl_pooler_wo_init_std"):
+                if getattr(model_args, name) < 0.0:
+                    raise ValueError(f"{name} must be >= 0.0 (0.0 = zero-init).")
         # The E18 / E22 families are neither the concept-AR nor the backbone family.
         return False, False
     if is_backbone and model_args.objective_variant != OBJECTIVE_CAUSAL_LM:

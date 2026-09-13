@@ -86,6 +86,39 @@ a distinct-pool draw would leak a little information and make the floor slightly
 - **both label routes agree** — the stored `labels` column and the marker route
   (`labels_from_span_markers` on the `answer`/`end` control ids) select the same supervised span.
 
+## First result from the instrument (2026-09-13, CPU)
+
+`far_copy`, alphabet 4, 32-symbol span, rows of 128, `dec_segment 32`, `min_gap 32`, `r = 8`,
+4 decoder layers, 3000 steps, batch 32 — floor **1.3863** nats, chance accuracy **0.250**:
+
+| arm | route to the evidence | CE (nats) | vs floor | accuracy |
+|---|---|---|---|---|
+| **D** | full raw access (`dec_segment = seq_len`) | **0.0000** | −1.3863 | **1.000** |
+| **C** | segment-confined, no array | **1.3863** | +0.0000 | **0.250** |
+| **A** | the array only (`exclusive` scope) | **1.1726** | −0.2137 | **0.423** |
+
+Both controls behave, so the middle row means something: arm C is pinned at the floor to four
+decimals across 3000 steps (the task does not leak) and arm D solves it outright (the task is
+learnable at this size). On arm A's own weights, removing the array raises CE to **1.8458** at
+chance accuracy — *worse* than the floor — so the entire gain is attributable to the array, and
+`far`-slots-only equals `real` to four decimals, confirming exclusive scope makes the array a
+purely long-range channel.
+
+Three things follow that E22 could not establish with 0.44B tokens on two GPUs:
+
+1. **The channel does carry addressable content.** This is the first positive evidence in this
+   family; E22 only ever demonstrated a document embedding plus 0.05 nats of far marginal.
+2. **It is badly bottlenecked.** It recovers 15% of the information that raw access recovers
+   (0.214 of 1.386 nats), at 42% accuracy against 100%.
+3. **The failure is in the *read*, not the write or the mask.** Perturbing only the far evidence
+   moves the slot array by `max|Δz| = 1.68`, and the mask demonstrably exposes the slots holding
+   it (slots 0–11 cover positions 0–191; the evidence ends below 188). The content is present and
+   visible; what is missing is the ability to address it.
+
+Arm A also shows a **~2000-step plateau at exactly the floor** before it escapes, which is the
+signature the `xattn_wo_init_std` / `pooler_wo_init_std` knobs were added to investigate — see
+`docs/4_Research_Notes/concept_channel_cold_start_20260913.md`.
+
 ## Interfaces
 
 **`data/symbolic_tasks.py`** — `SymbolicVocab` (id layout: `n_symbols` content symbols at

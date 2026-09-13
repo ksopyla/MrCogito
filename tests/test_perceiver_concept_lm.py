@@ -399,3 +399,54 @@ def test_exclusive_scope_config_roundtrip_and_default(tmp_path):
     assert m2.config.concept_xattn_scope == "exclusive"
     ids = rand_ids(1, 24)
     assert torch.allclose(m(input_ids=ids).logits, m2(input_ids=ids).logits, atol=1e-5)
+
+
+def test_residual_write_init_defaults_to_zero_and_is_config_selectable():
+    """The concept path has two zero-init residual gates in series (`pooler.wo`, `xattn.wo`).
+    Zero stays the default so E22 checkpoints reproduce bit-for-bit, and both are selectable."""
+    base = dict(
+        vocab_size=V, hidden_size=64, intermediate_size=128, token_embedding_dim=16,
+        enc_layers=1, enc_window=8, concept_ratio=4, latent_layers=1, dec_layers=2,
+        dec_segment=8, num_attention_heads=2, num_kv_heads=1, xattn_kv_heads=1, head_dim=32,
+        ngram_orders=(2,), ngram_buckets=64, enc_value_embed_layers=(0,),
+        dec_value_embed_layers=(0,), value_embed_dim=8, use_liger=False,
+        attn_backend="sdpa", attn_pad_multiple=8,
+    )
+    cfg = PerceiverConceptConfig(**base)
+    assert cfg.xattn_wo_init_std == 0.0 and cfg.pooler_wo_init_std == 0.0
+    m = PerceiverConceptLM(cfg)
+    assert float(m.pooler.wo.weight.abs().max()) == 0.0
+    assert all(float(l.xattn.wo.weight.abs().max()) == 0.0 for l in m.dec_layers)
+
+    seeded = PerceiverConceptLM(
+        PerceiverConceptConfig(**base, xattn_wo_init_std=0.02, pooler_wo_init_std=0.05)
+    )
+    assert float(seeded.pooler.wo.weight.abs().max()) > 0.0
+    assert all(float(l.xattn.wo.weight.abs().max()) > 0.0 for l in seeded.dec_layers)
+    # Self-attention and MLP writes stay zero-init regardless — only the concept path is affected.
+    assert all(float(l.attn.wo.weight.abs().max()) == 0.0 for l in seeded.dec_layers)
+    assert all(float(l.mlp.down.weight.abs().max()) == 0.0 for l in seeded.dec_layers)
+
+    d = seeded.config.to_dict()
+    assert d["xattn_wo_init_std"] == 0.02 and d["pooler_wo_init_std"] == 0.05
+    rt = PerceiverConceptConfig(**{k: v for k, v in d.items() if k != "model_type"})
+    assert rt.xattn_wo_init_std == 0.02 and rt.pooler_wo_init_std == 0.05
+
+
+def test_arm_c_ignores_pooler_init_knob():
+    """Arm C builds no pooler, so the knob must not crash or leak a concept path into it."""
+    m = PerceiverConceptLM(
+        PerceiverConceptConfig(
+            vocab_size=V, hidden_size=64, intermediate_size=128, token_embedding_dim=16,
+            enc_layers=1, enc_window=8, concept_ratio=4, latent_layers=1, dec_layers=2,
+            dec_segment=8, concept_mode="none", num_attention_heads=2, num_kv_heads=1,
+            xattn_kv_heads=1, head_dim=32, ngram_orders=(2,), ngram_buckets=64,
+            enc_value_embed_layers=(0,), dec_value_embed_layers=(0,), value_embed_dim=8,
+            use_liger=False, attn_backend="sdpa", attn_pad_multiple=8,
+            xattn_wo_init_std=0.02, pooler_wo_init_std=0.02,
+        )
+    )
+    assert m.pooler is None
+    assert all(not l.has_xattn for l in m.dec_layers)
+    out = m(torch.randint(0, V, (2, 16)), labels=torch.randint(0, V, (2, 16)))
+    assert torch.isfinite(out.loss)

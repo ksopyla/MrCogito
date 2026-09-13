@@ -48,6 +48,8 @@ case "$E22_ARM" in
     export PCL_DEC_LOCAL="${PCL_DEC_LOCAL:-block}"
     export PCL_CONCEPT_MODE="$([ "$E22_ARM" = "C" ] && echo none || echo "${PCL_CONCEPT_MODE:-full}")"
     export PCL_CONCEPT_XATTN_SCOPE="${PCL_CONCEPT_XATTN_SCOPE:-causal}"   # E23: exclusive
+    export PCL_XATTN_WO_INIT_STD="${PCL_XATTN_WO_INIT_STD:-0.0}"          # E22 as run = 0.0
+    export PCL_POOLER_WO_INIT_STD="${PCL_POOLER_WO_INIT_STD:-0.0}"        # E22 as run = 0.0
     export NUM_LAYERS="${PCL_ENC_LAYERS}"   # legacy arg; the family ignores it
     ;;
   dense)

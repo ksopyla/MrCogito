@@ -91,23 +91,14 @@ def build_model(arm: str, cfg: SymbolicTaskConfig, args) -> PerceiverConceptLM:
         use_liger=False,
         attn_backend="sdpa",
         attn_pad_multiple=min(args.dec_segment, dec_segment),
+        xattn_wo_init_std=args.xattn_wo_init,
+        pooler_wo_init_std=args.pooler_wo_init,
         pad_token_id=cfg.vocab.control("eos"),
         bos_token_id=cfg.vocab.control("bos"),
         eos_token_id=cfg.vocab.control("eos"),
     )
     torch.manual_seed(args.seed)
-    model = PerceiverConceptLM(conf)
-    if args.xattn_wo_init > 0:
-        # Diagnostic: the family zero-inits every residual-writing projection (muP-like). For
-        # self-attention that is harmless, but the gradient into a *cross*-attention read's
-        # query/key projections is proportional to `wo`, so a zero `wo` means the read can never
-        # become selective — it only ever learns to consume the average of the visible slots.
-        # Breaking that tie tests whether the cold start, rather than the architecture, is what
-        # pins the channel at the floor.
-        for layer in model.dec_layers:
-            if layer.has_xattn:
-                torch.nn.init.normal_(layer.xattn.wo.weight, mean=0.0, std=args.xattn_wo_init)
-    return model
+    return PerceiverConceptLM(conf)
 
 
 @torch.no_grad()
@@ -187,9 +178,16 @@ def main() -> int:
     p.add_argument("--dec_segment", type=int, default=64)
     p.add_argument("--ratio", type=int, default=16)
     p.add_argument("--scope", default="exclusive", choices=["causal", "exclusive"])
+    # The concept path has two zero-init residual gates in series between the evidence and the
+    # loss — `pooler.wo` (the only order-sensitive part of the write; the rest is a mean over the
+    # block) and `xattn.wo` (the read's output). The gradient into the read's query/key
+    # projections and into `pooler.wo` is proportional to `xattn.wo`, so at zero the channel can
+    # only learn to consume the order-free mean of the visible slots. These map straight onto the
+    # model's config fields.
     p.add_argument("--xattn_wo_init", type=float, default=0.0,
-                   help="std for the decoder cross-attention output projection (0 = the family's "
-                        "zero-init); >0 breaks the read's cold start")
+                   help="config xattn_wo_init_std (0 = the family's zero-init)")
+    p.add_argument("--pooler_wo_init", type=float, default=0.0,
+                   help="config pooler_wo_init_std (0 = the family's zero-init)")
     p.add_argument("--steps", type=int, default=1500)
     p.add_argument("--batch", type=int, default=32)
     p.add_argument("--lr", type=float, default=3e-3)

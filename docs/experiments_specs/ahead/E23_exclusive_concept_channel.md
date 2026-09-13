@@ -190,8 +190,21 @@ selecting, inside natural text, the tokens whose information *is* in the compres
 - **New foundation code (reusable, config-selectable):** far-repeat per-token loss weights in the
   causal-LM collator (`--far_repeat_weight`, `--far_repeat_ngram 4`, window = `dec_segment`) consumed by
   the per-token loss path both families already expose; the `launch_e23.sh` wrapper. The far-copy and
-  chain builders now exist (`data/symbolic_tasks.py` + `scripts/build_symbolic_dataset.py`). No change
-  to `nn/perceiver_concept_lm.py` beyond `0f4b4f9`.
+  chain builders now exist (`data/symbolic_tasks.py` + `scripts/build_symbolic_dataset.py`).
+  `nn/perceiver_concept_lm.py` gains only `xattn_wo_init_std` / `pooler_wo_init_std`, both defaulting
+  to `0.0` = the E22 behaviour, so every existing checkpoint loads and reproduces bit-for-bit.
+- **Init (changed after the CPU pre-flight, 2026-09-13):** arm A runs with
+  `PCL_XATTN_WO_INIT_STD=0.02 PCL_POOLER_WO_INIT_STD=0.02`. The concept path has two zero-init
+  residual gates in series — `pooler.wo` (the only order-sensitive part of the write) and `xattn.wo`
+  (the read's output) — and the gradient into each is proportional to the other, so at zero the
+  channel's only early escape is the content-free *mean* of its slots, i.e. a document embedding.
+  On the symbolic `far_copy` probe, seeding both recovered 17× more information at matched steps
+  (3/3 seeds) and removed a ~2000-step plateau at exactly the floor. This plausibly explains what
+  E22 measured (0.17 nats of document content, 0.05 of far marginal) as an init artefact rather than
+  an architecture limit — see
+  [the cold-start note](../../4_Research_Notes/concept_channel_cold_start_20260913.md). Effect size
+  is seed-variable at 1.3M params and must be re-measured here; arm A0 (exclusive scope, zero-init)
+  is the attribution arm if S1 passes.
 - **Registered post-signal iterations (only after S1–S2 pass):** latent repeats K ∈ {2, 4} (the
   reasoning-bandwidth curve on vt hops); r ∈ {8, 32}; hierarchical r = 16 / 256 for the 128k–1M stage;
   **receiver-only decoding** — score a query segment given *only* the array of a different context
