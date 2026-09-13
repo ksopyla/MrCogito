@@ -154,6 +154,14 @@ def test_encdec_forward_shapes_and_finite_loss():
     assert logits.shape == (4, cfg.seq_len, cfg.vocab.vocab_size)
 
 
+def test_right_align_puts_span_just_before_min_gap():
+    from data.symbolic_tasks import generate_row
+
+    cfg = config_for("tiny", "far_copy", seq_len=512, min_gap=8, evidence_align="right")
+    row = generate_row(cfg, np.random.default_rng(0))
+    assert row.gap == cfg.min_gap + 1
+
+
 def test_seq_len_and_min_gap_overrides_construct():
     cfg = config_for("medium", "far_copy", seq_len=512, min_gap=64)
     assert cfg.seq_len == 512

@@ -130,29 +130,35 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
     rng = np.random.default_rng(args.seed + 1000 + sum(ord(c) for c in arch))
     t0, trace = time.time(), []
     best_acc = -1.0
-    for step in range(1, steps + 1):
-        ids, labels = make_batch(cfg, rng, args.batch, device)
-        with amp_ctx(device, args.amp):
-            out = model(ids, labels=labels)
-            loss = out.loss if hasattr(out, "loss") else out[0].loss
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        opt.step()
-        sched.step()
-        opt.zero_grad(set_to_none=True)
-        if step % args.eval_every == 0 or step == steps:
-            ev = evaluate(model, eval_batches, amp=args.amp, device=device)
-            trace.append({"step": step, **ev, "sec": time.time() - t0})
-            print(
-                f"  [{arch}] step {step:5d}  train {float(loss.detach()):.4f}  "
-                f"eval CE {ev['ce_nats']:.4f}  acc {ev['acc']:.3f}  "
-                f"({(time.time() - t0) / step:.2f} s/step)",
-                flush=True,
-            )
-            best_acc = max(best_acc, ev["acc"])
-            if ev["acc"] >= args.early_stop_acc:
-                print(f"  [{arch}] early stop at {step} (acc {ev['acc']:.3f})", flush=True)
-                break
+    sdp_cm = contextlib.nullcontext()
+    if args.sdpa_math:
+        from torch.nn.attention import SDPBackend, sdpa_kernel
+
+        sdp_cm = sdpa_kernel(SDPBackend.MATH)
+    with sdp_cm:
+        for step in range(1, steps + 1):
+            ids, labels = make_batch(cfg, rng, args.batch, device)
+            with amp_ctx(device, args.amp):
+                out = model(ids, labels=labels)
+                loss = out.loss if hasattr(out, "loss") else out[0].loss
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            opt.step()
+            sched.step()
+            opt.zero_grad(set_to_none=True)
+            if step % args.eval_every == 0 or step == steps:
+                ev = evaluate(model, eval_batches, amp=args.amp, device=device)
+                trace.append({"step": step, **ev, "sec": time.time() - t0})
+                print(
+                    f"  [{arch}] step {step:5d}  train {float(loss.detach()):.4f}  "
+                    f"eval CE {ev['ce_nats']:.4f}  acc {ev['acc']:.3f}  "
+                    f"({(time.time() - t0) / step:.2f} s/step)",
+                    flush=True,
+                )
+                best_acc = max(best_acc, ev["acc"])
+                if ev["acc"] >= args.early_stop_acc:
+                    print(f"  [{arch}] early stop at {step} (acc {ev['acc']:.3f})", flush=True)
+                    break
     cache = arch_cache(arch, spec, cfg.seq_len)
     final = trace[-1]
     report = info_report(
@@ -193,6 +199,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
                 "span_len": args.span_len,
                 "min_gap": args.min_gap,
                 "seq_len": args.seq_len,
+                "evidence_align": args.evidence_align,
             }.items()
             if v is not None
         }
@@ -356,6 +363,17 @@ def main() -> int:
     p.add_argument("--seq_len", type=int, default=None, help="override scale seq_len (S0 hunts)")
     p.add_argument("--min_gap", type=int, default=None, help="override scale min_gap (S0 hunts)")
     p.add_argument("--local_window", type=int, default=None, help="override scale local_window")
+    p.add_argument(
+        "--evidence_align",
+        default=None,
+        choices=("spread", "right"),
+        help="spread (default) or pack evidence against min_gap (near-copy S0 at long seq)",
+    )
+    p.add_argument(
+        "--sdpa_math",
+        action="store_true",
+        help="Force PyTorch MATH SDPA (disable flash/mem-efficient kernels).",
+    )
     p.add_argument(
         "--value_embed_layers",
         default="0,1",

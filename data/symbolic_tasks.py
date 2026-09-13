@@ -169,12 +169,15 @@ class SymbolicTaskConfig:
     count_mod: int = 4
     n_decoys: int = 8
     n_duplicates: int = 4
+    # "spread" = uniform over [lo, hi) (default). "right" = pack evidence against hi
+    # (just before the min_gap), for S0 near-copy diagnostics at long seq_len.
+    evidence_align: str = "spread"
 
     def __post_init__(self) -> None:
         if self.task not in TASKS:
             raise ValueError(f"task must be one of {TASKS}, got {self.task!r}")
-        if self.min_gap < 1:
-            raise ValueError("min_gap must be >= 1")
+        if self.evidence_align not in {"spread", "right"}:
+            raise ValueError("evidence_align must be 'spread' or 'right'")
         if self.task == "count":
             if self.count_mod < 2:
                 raise ValueError("count_mod must be >= 2")
@@ -291,19 +294,29 @@ def _sample_distinct_tuples(rng: np.random.Generator, n: int, width: int, n_symb
 
 
 def _place_blocks(
-    rng: np.random.Generator, blocks: Sequence[Sequence[int]], lo: int, hi: int
+    rng: np.random.Generator,
+    blocks: Sequence[Sequence[int]],
+    lo: int,
+    hi: int,
+    *,
+    align: str = "spread",
 ) -> list[int]:
-    """Non-overlapping random offsets for `blocks` inside `[lo, hi)`, in a random order.
+    """Non-overlapping offsets for `blocks` inside `[lo, hi)`.
 
-    Offsets are returned per block (aligned with `blocks`). Raises if they cannot fit, which is
-    already excluded by `SymbolicTaskConfig.__post_init__`.
+    `spread` (default): random order, slack distributed over the interval.
+    `right`: keep block order, pack against `hi` (evidence sits just before min_gap).
     """
     total = sum(len(b) for b in blocks)
     slack = (hi - lo) - total
     if slack < 0:
         raise ValueError(f"blocks of total length {total} do not fit in [{lo}, {hi})")
-    # Distribute the slack into len(blocks)+1 gaps uniformly (stars and bars), which spreads the
-    # evidence over the whole body instead of clustering it.
+    if align == "right":
+        cursor = hi
+        offsets_rev = []
+        for block in reversed(blocks):
+            cursor -= len(block)
+            offsets_rev.append(cursor)
+        return list(reversed(offsets_rev))
     cuts = np.sort(rng.integers(0, slack + 1, size=len(blocks)))
     consumed, offsets = 0, []
     for i, block in enumerate(blocks):
@@ -344,7 +357,7 @@ def _emit_chain(
         edges = chain_edges + dist_edges
         order = rng.permutation(len(edges))
         blocks = [[v.control("hop"), *sym(edges[i][0]), *sym(edges[i][1])] for i in order]
-        offsets = _place_blocks(rng, blocks, 1, evidence_hi)
+        offsets = _place_blocks(rng, blocks, 1, evidence_hi, align=cfg.evidence_align)
         chain_positions = [
             offsets[j] + len(blocks[j]) - 1 for j, i in enumerate(order) if int(i) < cfg.hops
         ]
@@ -390,7 +403,7 @@ def generate_row(cfg: SymbolicTaskConfig, rng: np.random.Generator) -> SymbolicR
         keys = _sample_distinct_tuples(rng, n_items, cfg.key_len, A)
         values = [tuple(int(x) for x in rng.integers(0, A, size=cfg.value_len)) for _ in range(n_items)]
         blocks = [[v.control("keymark"), *sym(k), *sym(val)] for k, val in zip(keys, values)]
-        offsets = _place_blocks(rng, blocks, 1, evidence_hi)
+        offsets = _place_blocks(rng, blocks, 1, evidence_hi, align=cfg.evidence_align)
         for off, block in zip(offsets, blocks):
             ids[off : off + len(block)] = block
         pick = int(rng.integers(0, n_items))
@@ -401,7 +414,7 @@ def generate_row(cfg: SymbolicTaskConfig, rng: np.random.Generator) -> SymbolicR
     elif cfg.task == "far_copy":
         span = tuple(int(x) for x in rng.integers(0, A, size=cfg.span_len))
         block = [v.control("spanmark"), *sym(span)]
-        (off,) = _place_blocks(rng, [block], 1, evidence_hi)
+        (off,) = _place_blocks(rng, [block], 1, evidence_hi, align=cfg.evidence_align)
         ids[off : off + len(block)] = block
         query_tokens, answer_tokens = [], sym(span)
         evidence_end = off + len(block) - 1
@@ -414,7 +427,7 @@ def generate_row(cfg: SymbolicTaskConfig, rng: np.random.Generator) -> SymbolicR
         fact_blocks = [[v.control("keymark"), *sym(k), *sym(val)] for k, val in zip(keys[:n_facts], fact_vals)]
         decoy_blocks = [[v.control("decoy"), *sym(k), *sym(val)] for k, val in zip(keys[n_facts:], decoy_vals)]
         blocks = fact_blocks + decoy_blocks
-        offsets = _place_blocks(rng, blocks, 1, evidence_hi)
+        offsets = _place_blocks(rng, blocks, 1, evidence_hi, align=cfg.evidence_align)
         for off, block in zip(offsets, blocks):
             ids[off : off + len(block)] = block
         pick = int(rng.integers(0, n_facts))
@@ -437,7 +450,7 @@ def generate_row(cfg: SymbolicTaskConfig, rng: np.random.Generator) -> SymbolicR
             blk = [v.control("keymark"), *sym(k), *sym(val)]
             blocks.append(blk)
             blocks.append(list(blk))
-        offsets = _place_blocks(rng, blocks, 1, evidence_hi)
+        offsets = _place_blocks(rng, blocks, 1, evidence_hi, align=cfg.evidence_align)
         for off, block in zip(offsets, blocks):
             ids[off : off + len(block)] = block
         query_tokens, answer_tokens = [], sym(unique_val)
@@ -451,7 +464,7 @@ def generate_row(cfg: SymbolicTaskConfig, rng: np.random.Generator) -> SymbolicR
         triple = [v.control("keymark"), *sym(keys[0]), *sym(values[0])]
         blocks = [list(triple), list(triple), list(triple)]
         blocks += [[v.control("keymark"), *sym(k), *sym(val)] for k, val in zip(keys[1:], values[1:])]
-        offsets = _place_blocks(rng, blocks, 1, evidence_hi)
+        offsets = _place_blocks(rng, blocks, 1, evidence_hi, align=cfg.evidence_align)
         for off, block in zip(offsets, blocks):
             ids[off : off + len(block)] = block
         query_tokens, answer_tokens = [], sym(values[0])
