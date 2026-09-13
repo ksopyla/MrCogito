@@ -99,6 +99,12 @@ Ask whether the design is a **new inductive bias**, not only whether knobs match
 - "If it fails, at what step/metric do we stop?"
 - "What analogy or theory motivates this — or are we only copying a paper's default block?"
 
+## Pitching the experiment to the author
+The spec is the archive; the chat message is a ~150-word pitch: the idea, the bet, how we will know it
+failed, the cost, and any decision needed (≤2 options plus a recommendation). Name the arms by what they
+are ("the control with no memory"), never by letters, and do not list gate codes in chat. Follow
+`research-comms`; add any new metric, probe or arm name to `docs/glossary.md` in the same commit.
+
 ## Handoffs
 - Detailed repo-rooted plan (the HOW: modules, forward pass, data, loss, snippets) →
   `implementation-plan`; then build → `research-implement`.

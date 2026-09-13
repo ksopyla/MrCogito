@@ -15,6 +15,43 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-13] - `research-comms` skill: how findings are reported in chat
+
+**Why:**
+- An audit of three sessions (2026-09-11 → 2026-09-12) showed the author was routinely losing the
+  thread: 8,544 assistant words against 676 user words in one session; a 22-word question answered
+  with 2,579 words; "explain simply" answered with 2,221; gate codes (`S1`–`S6`, `K1`–`K4`) and arm
+  letters used as if shared, several never defined anywhere; unlabelled number pairs
+  (`0.162/0.686`). Consequences in the transcripts: the same status question asked twice, the same
+  conceptual question re-asked in simpler words, one request for a plain explanation sent twice
+  byte-identical, and "Do it iteratively without my permissions" — the author stopped reviewing.
+
+**Changed:**
+- `.cursor/skills/research-comms/SKILL.md` (new): five laws (outcome first, short first pass, no
+  private codenames, every number carries unit/direction/comparison/verdict, offer the menu), a
+  per-situation word budget table, the Brief template, naming and number laws, the depth-on-demand
+  order (analogy → diagram → proper terms → numbers → caveat), a standing analogy set, a ban list,
+  and a pre-send checklist.
+- `.cursor/skills/research-comms/examples.md` (new): six before/after rewrites of verbatim messages
+  from the audited sessions, plus a jargon → plain-language swap table.
+- `docs/glossary.md` (new): plain-language vocabulary — the "student, book and notebook" picture,
+  experiment words (arm, control, gate, ablation, probe, teacher-forced vs free-run), and a metric
+  table giving what each measures, which direction is good, and what a value roughly means
+  (loss/nats, perplexity, BPB, Δzero/Δshuffle/Δperm, reach ablation, RankMe, passkey, RULER, STS-B, σ).
+- `.cursor/rules/communication.mdc` (new, `alwaysApply: true`): the five laws in short, pointing at
+  the skill; imported into `CLAUDE.md` alongside the other canonical rules.
+- `.cursor/rules/project-overview.mdc`: `research-comms` added to the skill pipeline; `docs/glossary.md`
+  added to the docs map.
+- Reporting clauses added to `experiment-design`, `implementation-plan`, `research-implement`,
+  `experiment-run`, `experiment-evaluate`, `experiment-track`, `research-synthesis`, `research-explain`:
+  those skills own what goes in the docs, `research-comms` owns what goes in the chat.
+- `AGENTS.md`: "How to report to the author" section.
+
+**Impact:**
+- No code, training, evaluation or checkpoint behaviour changes.
+
+---
+
 ## [2026-09-11] - Evaluation layer for `perceiver_ar`: lm-eval-harness reasoning + RULER-lite long context
 
 **Why:**

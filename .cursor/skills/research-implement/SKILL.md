@@ -128,4 +128,7 @@ Reference: `scripts/train_concept_pretraining_multigpu.sh`. Pattern: set CUDA/NC
 - Preserve the O(C·N) advantage; keep AMP/bf16 + cosine schedule as in the reference launcher.
 
 ## Handoffs
+- Report what was built as a short Brief — what the system can do now that it could not before, in plain
+  words. Not a file manifest, not a list of config flags. See `research-comms`. A long autonomous stretch
+  still ends with a Brief; never close a turn on "Now let me…".
 - Scope / write the spec → `experiment-design`. Record results → `experiment-track`. Retire or prune code/docs → `docs-hygiene`. Choose research direction from literature → `research-synthesis`.

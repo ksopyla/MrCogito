@@ -473,3 +473,7 @@ At the end, print `${FAILED[*]}` and inspect the first traceback for each failed
 When the suite is done, hand the collected evidence to **`experiment-track`** to record the
 verdict in `master_experiment_log.md`, flip the experiment spec `Status`/`Result`, and update
 the `agenda.md` learnings. This skill owns *how to run*; `experiment-track` owns *what it means*.
+
+Never hand the raw metric dump to the author. What he sees is a short plain-language summary where each
+number states what it measures, which direction is good, and the verdict — see `research-comms` and the
+metric table in `docs/glossary.md`.
