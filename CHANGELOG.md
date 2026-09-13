@@ -22,9 +22,11 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   chain hops=3) against the 95% bar, with in-flight runs marked, not a new training fork.
 
 **Added:**
-- `verification/plot_scale_hard.py` writes
-  `concept_slot_harder_learning_curves.png` and `concept_slot_scaling_frontier.png`
-  (easy seq128 points on the frontier scatter; incomplete logs plotted as in-progress).
+- `verification/plot_scale_hard.py` writes dedicated snake_case panels
+  (`harder_accuracy_vs_examples.png`, `harder_accuracy_vs_steps.png`,
+  `harder_difficulty_vs_accuracy.png`, `harder_lr_probe.png`,
+  `harder_params_vs_max_seq.png`) plus `concept_slot_scaling_frontier.png`.
+  Skips the r=32 D reuse stub as a second curve; parses in-progress chain logs.
 - Dated note: `docs/4_Research_Notes/concept_slot_scaling_frontier_20260913.md`.
 
 ---

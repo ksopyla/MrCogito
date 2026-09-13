@@ -4,9 +4,17 @@
 [the seq128 ~100% limits note](symbolic_arm_a_100pct_limits_20260913.md).
 **Instrument:** `verification/symbolic_channel_probe.py` over
 `data/symbolic_tasks.py`. Campaign runner: `verification/run_scale_hard_campaign.py`.
-JSON: `/opt/cursor/artifacts/scale_hard/`. Plots:
-[`concept_slot_harder_learning_curves.png`](/opt/cursor/artifacts/concept_slot_harder_learning_curves.png),
-[`concept_slot_scaling_frontier.png`](/opt/cursor/artifacts/concept_slot_scaling_frontier.png).
+JSON: `/opt/cursor/artifacts/scale_hard/` (inventory:
+`/opt/cursor/artifacts/harder_campaign_inventory.json`). Plots rebuilt 2026-09-13
+from those logs (no retraining):
+[`harder_accuracy_vs_examples.png`](/opt/cursor/artifacts/harder_accuracy_vs_examples.png),
+[`harder_accuracy_vs_steps.png`](/opt/cursor/artifacts/harder_accuracy_vs_steps.png),
+[`harder_difficulty_vs_accuracy.png`](/opt/cursor/artifacts/harder_difficulty_vs_accuracy.png),
+[`harder_lr_probe.png`](/opt/cursor/artifacts/harder_lr_probe.png),
+[`harder_params_vs_max_seq.png`](/opt/cursor/artifacts/harder_params_vs_max_seq.png),
+[`concept_slot_scaling_frontier.png`](/opt/cursor/artifacts/concept_slot_scaling_frontier.png)
+(alias of the examples curve:
+[`concept_slot_harder_learning_curves.png`](/opt/cursor/artifacts/concept_slot_harder_learning_curves.png)).
 
 ## Hypothesis
 
@@ -52,7 +60,7 @@ Winner LR = **1e-3**. 3e-3 and 6e-3 (the easy-end LRs) floor-kill this geometry.
 | cell_seq256_r32_A | A | 5.11M | 1e-3 | 256 | 32 | far_copy | 2 | 256k | 8,000 | **87.9%** | 0.258 | **no**, still climbing | budget |
 | cell_seq256_r32_D | D | 2.27M | 1e-3 | 256 | — | far_copy | 2 | 72k | 2,250 | 99.17% | 0.025 | **yes** (reuse: D ignores r) | target_acc |
 | cell_chain_h3_A | A | 5.11M | 1e-3 | 256 | 8 | chain | 3 | 128k | 4,000 | 23.7% | 1.387 | no | floor_patience |
-| cell_chain_h3_D | D | 2.27M | 1e-3 | 256 | 8 | chain | 3 | 32k+ | 1,000+ | ~25% | ~1.388 | unknown | **in flight** (still chance) |
+| cell_chain_h3_D | D | 2.27M | 1e-3 | 256 | 8 | chain | 3 | 48k+ | 1,500+ | ~25% | ~1.387 | unknown | **in flight** (still chance at 48k; D far_copy took off ~48–56k) |
 | cell_chain_h3_C | C | — | — | 256 | 8 | chain | 3 | — | — | — | — | — | not started |
 | cell_seq512_r8_A/C/D | — | — | — | 512 | 8 | far_copy | 2 | — | — | — | — | — | not started |
 
