@@ -20,11 +20,14 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-13 — E25 E21 capability ladder (first rung: tiny far_copy).** E24 measured E18
-  (raw one global read). E21 is different: QUERY severs the local path and the prefix is
-  visible only as r=16 slots. Reuse E24's DNA instrument, dense gate, and E18 as arm U.
-  Spec [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md). Do not relabel
-  E18 scores as E21. One rung at a time; architecture changes only after a measured wall.
+- **2026-09-13 — E25 E21 capability ladder (tiny far_copy mixed; remainder pooling next).**
+  Packed seq=128 / 64 bits, complete-block-only slots: dense **99.4% / 63.3 bits**, E18
+  **99.2% / 63.0**, E21 **51.5% / 17.7 bits** (flow 0.277), `e18_local` chance. S1 fail,
+  K3 not hit — live lossy slot channel, not a dead read. Next ONE change: pool the incomplete
+  last sender block (`message_pool_remainder`, default off). Do not score recall or 512 yet.
+  Spec [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) ·
+  [report](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md).
+  Do not relabel E18 scores as E21.
 - **2026-09-13 — E24 BAPO DNA ladder (tiny + GPU bridge 512/1024; 4k S0 open).** Packed tiny
   seq=128 / 0.59M: E18 matches dense on positional `far_copy` (99.2% vs 99.4%) and recovers
   **0 bits** on keyed `recall`. GPU right-align INDEX: E18 **100% / 64 bits at seq=512**,
@@ -57,6 +60,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-13 — E25 tiny far_copy (CPU, complete-block-only E21).** Dense 99.4% / 63 bits
+  (S0 = E24 replica). E18 99.2% / 63 bits. E21 **51.5% / 17.7 bits** (flow 0.277 vs 0.75×
+  gate). `e18_local` 0 bits (K2). Remainder tokens next to QUERY were not pooled.
+  [report](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md).
 - **2026-09-13 — E24 GPU bridge (Polonez/Odra, right-align INDEX).** Seq=512 `far_copy`:
   E18 **100% / 63.9 bits** vs dense 99.7% (S1 pass). Seq=1024 `far_copy`: dense **99.9% /
   64 bits**, E18 **0 bits** (S1 fail). 512 `recall_single` at a *fixed* offset: dense 32 bits,

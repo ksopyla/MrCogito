@@ -1,7 +1,8 @@
 # E25 — E21 capability limits on a calibrated BAPO DNA ladder (one rung at a time)
 
-- **Status:** active (first rung: tiny packed `far_copy`). E21 architecture is not on the E24
-  probe; E24's dense / E18 / `e18_local` numbers are the reused controls, not E21 scores.
+- **Status:** active (rung 1 mixed; remainder pooling next). Keep in `ahead/` — only tiny
+  packed `far_copy` ran; K3 not hit. E24's dense / E18 / `e18_local` numbers are reused
+  controls, not E21 scores.
 - **Serves:** the Vision's "does the compressed channel carry *addressable* content, and how
   many bits?" question, now on **E21** (exclusive compressed read) rather than E18's raw
   one-global-read. Observation base for later gating / compression. Reuses E24's DNA instrument.
@@ -90,7 +91,7 @@ pretraining run; this is the cheap controlled exam that spec's K1/K2 needed and 
   (off by default; byte-identical to E18). Probe arch `e21`. No new `train_*.py`.
 
 ## Result
-- Run id: —
+- Run id: `e25_tiny_far_copy` (CPU, git `73f2a31`)
 - WandB: n/a (probe; no `compute/*`)
-- Run report: —
-- Verdict: —
+- Run report: [`e25_tiny_far_copy_20260913.md`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md)
+- Verdict: **mixed** — S0/K2 pass; S1 fail (E21 **17.7 bits** / flow **0.277** vs E18 63.0 / 0.985; need ≥47 bits). K3 not triggered (51.5% vs chance 25%, still climbing). Slot channel is live and lossy: complete-block-only pooling drops up to 15 tokens next to QUERY. Do not score recall or 512 until remainder pooling is scored on this same rung.
