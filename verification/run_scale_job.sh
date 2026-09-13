@@ -4,6 +4,8 @@ set -euo pipefail
 cd /workspace
 name="$1"
 shift
+outdir="${SCALE_OUT_DIR:-/opt/cursor/artifacts/scale}"
+mkdir -p "$outdir"
 uv run python verification/symbolic_channel_probe.py "$@" --run_name "$name" \
-  --out "/opt/cursor/artifacts/scale/${name}.json" \
-  2>&1 | tee "/opt/cursor/artifacts/scale/${name}.log"
+  --out "$outdir/${name}.json" \
+  2>&1 | tee "$outdir/${name}.log"

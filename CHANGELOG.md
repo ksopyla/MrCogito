@@ -15,6 +15,41 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-13] - HARDER concept-slot scaling plots + frontier note
+
+**Why:**
+- The exclusive-scope <10M campaign needed a snapshot of completed cells (seq256 r=8 / r=32,
+  chain hops=3) against the 95% bar, with in-flight runs marked, not a new training fork.
+
+**Added:**
+- `verification/plot_scale_hard.py` writes dedicated snake_case panels
+  (`harder_accuracy_vs_examples.png`, `harder_accuracy_vs_steps.png`,
+  `harder_difficulty_vs_accuracy.png`, `harder_lr_probe.png`,
+  `harder_params_vs_max_seq.png`) plus `concept_slot_scaling_frontier.png`.
+  Skips the r=32 D reuse stub as a second curve; parses in-progress chain logs.
+- Dated note: `docs/4_Research_Notes/concept_slot_scaling_frontier_20260913.md`.
+
+---
+
+## [2026-09-13] - Symbolic probe: live LR, wall-clock JSON, CUDA if present
+
+**Why:**
+- Mapping the exclusive-scope length×difficulty frontier needs a schedule that cannot
+  fake-ceil (OneCycle horizon = expected finish stalled improved Arm A at 49%) and a
+  JSON log of examples/params/steps/acc/CE/LR/seq/r/task/hops/wall.
+
+**Added:**
+- `verification/symbolic_channel_probe.py`: `--sched warmup_constant` (warmup then
+  constant LR), `--floor_patience_steps` (kill a run still at chance), per-arm
+  `summary` with wall-clock and LR, `cuda` when `torch.cuda.is_available()`.
+- `verification/run_scale_job.sh`: `SCALE_OUT_DIR` (default `scale/`, campaign uses
+  `/opt/cursor/artifacts/scale_hard`).
+- `verification/run_scale_hard_campaign.py`: LR search then seq/r/chain/seq512
+  cells over the shared probe (no training fork).
+- `verification/plot_scale_hard.py`: accuracy-vs-examples + difficulty panels.
+
+---
+
 ## [2026-09-13] - Symbolic probe: early-stop at target accuracy + example accounting
 
 **Why:**
