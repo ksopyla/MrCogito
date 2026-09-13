@@ -1,6 +1,6 @@
 # E24 — Implementation Plan
 
-- **Spec:** [E24_e18_bapo_capability_ladder.md](E24_e18_bapo_capability_ladder.md) · **Status:** implemented (tiny instrument; medium/large not launched)
+- **Spec:** [E24_e18_bapo_capability_ladder.md](E24_e18_bapo_capability_ladder.md) · **Status:** implemented (tiny measured; medium launching)
 - **Authored by:** `implementation-plan` · for → `research-implement`
 
 > The HOW for a **measurement** bet: E18's capability surface on a calibrated BAPO DNA

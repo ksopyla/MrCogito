@@ -20,13 +20,15 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-13 — E24 BAPO DNA ladder (tiny instrument live; medium/large not launched).** The
-  DNA-alphabet suite that made the concept channel measurable is scaled onto **E18 vs matched
-  dense decoder-only and a symmetric encoder-decoder**, with BAPO-hard tasks (shuffled chain,
-  unique, match3, majority) and information-flow scores (recovered bits, bits/token, cache
-  bytes/token). Every rung is uninterpretable until dense ≥ 75%. Sibling agents own the
-  `perceiver_concept` Arm-A 100% far_copy map at seq=128 — do not duplicate that exam. Spec
+- **2026-09-13 — E24 BAPO DNA ladder (tiny measured; medium launching).** Packed tiny seq=128 /
+  0.59M: E18 matches dense on positional `far_copy` (99.2% vs 99.4%, 63 of 64 bits) and on
+  in-order DFA (`chain_ordered` 97.5% ≥ dense 93%), and recovers **0 bits** on single-fact keyed
+  `recall` while dense hits 99% — the E18b content-addressing wall with a closed-form prize.
+  `select_1decoy` is a type cue, not MATCH2 (E18 87%). Shuffled chain and multi-item MATCH2 are
+  **not dense-solvable** at this size (K1; do not score E18). Encoder-decoder at 0.8M sat at
+  chance on copy after PE. Spec
   [E24](../experiments_specs/ahead/E24_e18_bapo_capability_ladder.md) ·
+  [report](../2_Experiments_Registry/run_reports/e24_tiny_bapo_ladder_20260913.md) ·
   foundation [bapo_capability_ladder.md](../engineering_specs/bapo_capability_ladder.md).
 - **2026-09-12 — E23 Exclusive concept channel (spec ready, not launched).** E22 closed the same
   day (below): the array was live and diverse but CE read it as a document embedding — the far slots
@@ -44,6 +46,12 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-13 — E24 tiny BAPO ladder (CPU, 0.59M).** Packed DNA rungs with a 75% dense control:
+  E18 copies 63/64 bits (`far_copy` 99.2% ≈ dense 99.4%) and follows in-order hops (`chain_ordered`
+  97.5%), but recovers **0 bits** on single-fact keyed recall (dense 99.2% / 31 bits). `select_1decoy`
+  is a marker-type cue (E18 87%), not MATCH2. Shuffled chain and 2–3-item MATCH2 are uncalibrated
+  (dense ~30–34%). Encoder-decoder at 0.8M is not a copy baseline. Medium 4k is the next measurement.
+  [report](../2_Experiments_Registry/run_reports/e24_tiny_bapo_ladder_20260913.md).
 - **2026-09-12 — E22 Perceiver Concept LM (from scratch, 32k; killed same day).** First ledger design
   with positional slots (1 / 16 tokens), a transformer *over* the slots and a decoder with no raw route
   past its 1024-token segment, trained under plain CE (+5% keyed recall) to 0.44B tokens (88% of budget) on Odra. The

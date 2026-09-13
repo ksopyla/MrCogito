@@ -1,6 +1,6 @@
 # E24 — E18 capability limits on a BAPO DNA ladder
 
-- **Status:** draft
+- **Status:** in progress (tiny measured; medium not closed)
 - **Serves:** the Vision's "does the long-range channel carry *addressable* content, and how
   many bits?" question, as the observation base for later gating / selective-read / compression
   work. Uses the DNA-alphabet framework that made E22/E23's channel measurable, scaled onto
@@ -88,7 +88,7 @@ measurement instrument with a falsifiable capability claim, not a LR sweep.
   baseline, probe, plots. No new `train_*.py`.
 
 ## Result
-- Run id: *(tiny calibration in this PR; medium/large not launched)*
-- WandB: n/a (CPU probe)
-- Run report: `docs/2_Experiments_Registry/run_reports/e24_tiny_bapo_ladder_20260913.md`
-- Verdict: *(filled after the tiny run)*
+- Run id: `bapo_tiny_packed` + S0 hunts (CPU, 2026-09-13); medium GPU not yet in this result
+- WandB: n/a (CPU probe; no `compute/*`)
+- Run report: [`docs/2_Experiments_Registry/run_reports/e24_tiny_bapo_ladder_20260913.md`](../../2_Experiments_Registry/run_reports/e24_tiny_bapo_ladder_20260913.md)
+- Verdict: **mixed** — S1 pass (E18 `far_copy` 99.2% ≈ dense 99.4%); S2 pass on `recall_single` (dense 99.2% / 31 bits, E18 **0 bits**); S3 incomplete (ordered DFA easy, shuffled chain uncalibrated at 33% dense); S4 plots exist. Default MATCH2 is K1 at 0.6M. Encoder-decoder at 0.8M is not a competitive copy baseline.

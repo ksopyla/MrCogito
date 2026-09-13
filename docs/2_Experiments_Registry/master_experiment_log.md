@@ -150,6 +150,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 | E17a | Untied per-bank writers (4 writers) — counterfactual to E17 | draft (conditional on sticky open-gate per-layer) | [E17a](../experiments_specs/ahead/E17a_untied_per_bank_writers.md) |
 | E18c | Concept-compressed read (pool prefix K/V into 1 slot per 16 tokens) | **blocked** — compresses a *functional* retrieval channel; E18b showed we do not have one | [E18c](../experiments_specs/ahead/E18c_concept_compressed_read.md) |
 | E23 | Exclusive concept channel: E22 platform with `concept_xattn_scope=exclusive` and an objective that pays for far content (far-repeat-weighted CE + 30% dense-label long-range rows) | **ahead** — spec written 2026-09-12, not launched | [E23](../experiments_specs/ahead/E23_exclusive_concept_channel.md) |
+| E24 | E18 capability limits on a BAPO DNA ladder vs dense decoder-only and encoder-decoder | **ahead** — tiny measured (S1 pass, S2 recall wall, shuffled chain K1); medium 4k next | [E24](../experiments_specs/ahead/E24_e18_bapo_capability_ladder.md) · [report](run_reports/e24_tiny_bapo_ladder_20260913.md) |
 
 ### Canceled (no run)
 
@@ -159,7 +160,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 | E07 | Sentence-gap / boundary-only infilling | [E07](../experiments_specs/canceled/E07_sentence_gap_infilling.md) |
 | E09 | Gated recurrent concept memory (superseded by E10) | [E09](../experiments_specs/canceled/E09_recurrent_concept_memory.md) |
 
-**Genealogy:** E01 → E02 → E03 → E04 → E05 → E10…E16a (short-ctx) → **E16b** (historical shared-depth result; causal interpretation revised 2026-08-14) → **E17** (causal per-layer init-0.01 partial success) → **E17b** (mid-init 0.1 failed) → **E17c** (gated cell + carry pressure; 300M mixed — carryless PASS, geometry collapsed) → **E17d** (attn-residual global mix, no token carry; 300M mixed — RankMe PASS, late-bin miss) → **E17e** (K=256 starve; 300M mixed — late-half 0.104 on best, gen fail, no 1B). → **E18** (from-scratch one-global-read LM; free and positionally retrieval-capable, but the read adds no LM loss) → **E18b** (retrieval supervision; falsified for a read at layer 1, dense control 99.3% vs 4.5%) → **E22** (from-scratch positional concept array + latent transformer + segment-closed decoder; array live and diverse but CE reads it as a document embedding — far marginal 0.05 nats, arm A = arm C) → **E23** (ahead: exclusive scope + an objective that pays for far content). See [`agenda.md`](../1_Strategy_and_Plans/agenda.md) for the living reading.
+**Genealogy:** E01 → E02 → E03 → E04 → E05 → E10…E16a (short-ctx) → **E16b** (historical shared-depth result; causal interpretation revised 2026-08-14) → **E17** (causal per-layer init-0.01 partial success) → **E17b** (mid-init 0.1 failed) → **E17c** (gated cell + carry pressure; 300M mixed — carryless PASS, geometry collapsed) → **E17d** (attn-residual global mix, no token carry; 300M mixed — RankMe PASS, late-bin miss) → **E17e** (K=256 starve; 300M mixed — late-half 0.104 on best, gen fail, no 1B). → **E18** (from-scratch one-global-read LM; free and positionally retrieval-capable, but the read adds no LM loss) → **E18b** (retrieval supervision; falsified for a read at layer 1, dense control 99.3% vs 4.5%) → **E22** (from-scratch positional concept array + latent transformer + segment-closed decoder; array live and diverse but CE reads it as a document embedding — far marginal 0.05 nats, arm A = arm C) → **E23** (ahead: exclusive scope + an objective that pays for far content) → **E24** (ahead: E18 vs dense on a calibrated BAPO DNA ladder). See [`agenda.md`](../1_Strategy_and_Plans/agenda.md) for the living reading.
 
 ---
 
@@ -233,6 +234,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-09-12 | E22 | `perceiver_concept_H768e6r16c1l4d8s1024_20260912_152511` | **arm C** · same decoder, no encoder / array / x-attn (63M compute) · identical protocol | eval **4.172** @560 · buckets 4.195 / 4.210 / 4.215 / 4.155 / **4.133** · recall 3.5% (floor) | S2 control — matches arm A at half the compute; K1 met. | [spec](../experiments_specs/done_failed/E22_perceiver_concept_lm.md) · [report](run_reports/e22_pilot_verdict_20260912.md) |
 | 2026-09-12 | E22 | `perceiver_concept_H768e6r16c1l4d8s1024_20260912_143726` | **arm A′** · Polonez · duplicate of arm A | final archived to NAS `e22/`; not evaluated separately | Redundant arm (protocol slip). | [spec](../experiments_specs/done_failed/E22_perceiver_concept_lm.md) |
 | 2026-09-12 | E22 | `perceiver_ar_dense_H768L0g0s18N2048_20260912_161135` | **dense control** · Polonez · 18 full-causal layers, same width / data / batch | eval **4.616** @320 vs A 4.691 / C 4.682 (+1.6%) · crashed ≈ step 390 (`ENOSPC`) · `checkpoint-320` lost in cleanup | S3 unmeasured (on track at 320); rerun from scratch if S3 is ever needed. | [spec](../experiments_specs/done_failed/E22_perceiver_concept_lm.md) · [report](run_reports/e22_pilot_verdict_20260912.md) |
+| 2026-09-13 | E24 | `bapo_tiny_packed` + S0 hunts | DNA BAPO probe · H=128 · ~0.59M · seq=128 · CPU · packed span | `far_copy` E18 **99.2%** / 63 bits vs dense 99.4%; `recall_single` E18 **0 bits** vs dense 31; `chain_ordered` 97.5% vs 93%; shuffled chain dense 33.5% K1 | MIXED — positional pass, content wall, composition uncalibrated. No W&B / `compute/*`. | [spec](../experiments_specs/ahead/E24_e18_bapo_capability_ladder.md) · [report](run_reports/e24_tiny_bapo_ladder_20260913.md) |
 
 ---
 
@@ -264,6 +266,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-08-25 | E17e Tier-1 + late-half perm + Tier-1.5 | E17e ckpt-2660 vs base / E17d | late-half Δperm **0.104** CI[0.095,0.114] · last **0.097** · RankMe **31–57** · real@256 **0.162/0.686** (`real=shuffle`) | Starve lift vs 0.044; gen FAIL; no 1B | [report](run_reports/e17e_starved_local_window_20260825.md) |
 | 2026-09-12 | E22 `near`/`far` concept ablation (new instrument, `0f4b4f9`) | E22 arm A final, 64 PG-19 rows @32k | far-slot marginal **0.054 / 0.057 / 0.059 / 0.046** (1k→32k, flat) · near-slot marginal **0.026 / 0.022 / 0.018 / 0.030** · Δ_none 0.25 · segment-0 control **0.000 / 0.220** ✓ | Array = 0.17 redundant document embedding + 0.05 far content + 0.03 local bypass; Δ_none over-states channel value 5× | [root cause](../4_Research_Notes/e22_root_cause_20260912.md) · [report](run_reports/e22_pilot_verdict_20260912.md) |
 | 2026-09-12 | E22 slot geometry (S5) | E22 arm A final, 8 rows @32k, `model.concepts()` | RankMe **265**/768 (raw 215) · adjacent-slot cos 0.69 · pairwise cos 0.56 · pooler `wo` ‖W‖ **11.2** (init 0) · null slot 0.16 | S5 PASS — array diverse, learned-query pooler alive; failure is the read/objective, not the representation | [root cause](../4_Research_Notes/e22_root_cause_20260912.md) |
+| 2026-09-13 | E24 tiny BAPO probe | on-the-fly DNA rungs, no checkpoint | `far_copy` flow 0.985 vs 0.989 · `recall_single` 0 vs 0.980 · `chain_ordered` 0.945 vs 0.896 · shuffled uncalibrated | Tiny observation base; do not score E18 on K1 rungs | [spec](../experiments_specs/ahead/E24_e18_bapo_capability_ladder.md) · [report](run_reports/e24_tiny_bapo_ladder_20260913.md) |
 
 **ViaDecoder baselines (L6 canonical, 2026-02-22):** MRPC F1 82.73 · STS-B P 0.650 · QQP F1 73.35 · MNLI-m 59.75 · MNLI-mm 60.90 — full note in [report](run_reports/via_decoder_eval_20260222.md).
 
@@ -284,6 +287,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 
 Newest first:
 
+- [E24 tiny BAPO ladder — E18 vs dense vs encoder-decoder (Sep 13)](run_reports/e24_tiny_bapo_ladder_20260913.md)
 - [E22 pilot verdict — a live, diverse concept array that the decoder reads for register, not for facts (Sep 12)](run_reports/e22_pilot_verdict_20260912.md)
 - [E18 family verdict — one global read: free, positional-retrieval capable, not a content retriever (Sep 12)](run_reports/e18_family_verdict_20260912.md)
 - [E18 reach ablation + geometry arms (Sep 9)](run_reports/e18_reach_ablation_20260909.md)
