@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-08-27 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-09-12 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,10 +20,71 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-12 — E18 family closed; no AWS run on either spec.** Open question worth one cheap run
-  (below). Nothing else is active on GPU.
+- **2026-09-12 — E23 Exclusive concept channel (spec ready, not launched).** E22 closed the same
+  day (below): the array was live and diverse but CE read it as a document embedding — the far slots
+  were worth 0.05 nats and a segment-only decoder matched the bet at half the compute. E23 keeps the
+  `perceiver_concept` platform and changes the two things the diagnosis isolates: the cross-attention
+  mask (`concept_xattn_scope=exclusive` — a token reads only slots that end before its raw segment,
+  so the array is the *only* route for everything it carries) and the objective (natural-text CE with a
+  ×8 weight on far-repeat tokens + 30% dense-label long-range rows: keyed recall, far copy, multi-hop
+  variable tracking — tokens whose targets are *determined* by far content). Gates on recall/passkey
+  and on the far marginal, with segment 0 as a built-in zero. Spec
+  [E23](../experiments_specs/ahead/E23_exclusive_concept_channel.md). Odra is free; Polonez is
+  free after the `goodwrite_ml` move. Dense control for S3 must be rerun from scratch (E22's was lost).
+- **Instrument first (zero GPU-days, before launch):** the far-repeat token mask on the E22 mix —
+  what share of tokens is far-copyable, and does that share justify the ×8 weight (target: far-repeat
+  tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-12 — E22 Perceiver Concept LM (from scratch, 32k; killed same day).** First ledger design
+  with positional slots (1 / 16 tokens), a transformer *over* the slots and a decoder with no raw route
+  past its 1024-token segment, trained under plain CE (+5% keyed recall) to 0.44B tokens (88% of budget) on Odra. The
+  array is **live** (Δ_none 0.25 nats, > 10σ) and **diverse** (RankMe 265/768, learned-query pooler
+  alive), yet **arm A = arm C** on far tokens (4.167 vs 4.172; C is an 8-layer segment-only decoder at half
+  the compute), passkey 0.0, keyed recall 4.8% vs a 3.5% floor. A `near`/`far` ablation added after the
+  run decomposes the 0.25: **0.17 is document-level content present redundantly in every slot** (a
+  document embedding — a wrong book's array beats no array at 16k–32k), **0.05 is the far slots'
+  marginal — the memory the bet was about, flat from 1k to 32k**, 0.03 is a local bypass through the
+  `cpos ≤ pos` mask (same-segment slots). Root causes: CE on natural text pays ≈ 0.05 nats for far
+  context at this scale — the array captured exactly that and the S1 gate (0.30) was unreachable by
+  construction; and the mask never made the array the only route for anything. Two laws added to the
+  revisit synthesis' three: *the objective must pay for the channel* (gate on the far marginal, never
+  Δ_none) and *exclusivity is two-sided*. Banked: the `perceiver_concept` family, the `near`/`far`
+  instrument, `concept_xattn_scope`. Lost: the dense control (disk-full crash + cleanup-sweep bug).
+  Spec [E22](../experiments_specs/done_failed/E22_perceiver_concept_lm.md) ·
+  [report](../2_Experiments_Registry/run_reports/e22_pilot_verdict_20260912.md) ·
+  [root cause](../4_Research_Notes/e22_root_cause_20260912.md).
+- **2026-09-13 — the array *can* be addressed, and a zero-init artefact was hiding it** (CPU-hours,
+  zero GPU-days, `data/symbolic_tasks.py` + `verification/symbolic_channel_probe.py`). On symbolic
+  rows whose information floor is *exact* (`far_copy`, alphabet 4, floor 1.3863 nats), three arms:
+  full raw access **0.0000** nats / 100% acc, segment-confined **1.3863** / 25% (pinned at the floor
+  for 3000 steps — the task provably does not leak), and the array as the *only* route **1.1726** /
+  42%. So the channel carries addressable far content — **the first positive evidence in this
+  family** — but recovers only 15% of what raw access does. The write and mask are not at fault: the
+  evidence moves the slots (`max|Δz|=1.68`) and the mask exposes exactly those slots, yet the answer
+  logits are bit-identical at init. Cause: **two zero-init residual gates in series** on the concept
+  path (`pooler.wo`, the only order-sensitive part of the write, and `xattn.wo`, the read's output),
+  each one's gradient proportional to the other — so the channel's only early escape is the
+  content-free *mean* of its slots, i.e. a document embedding. Seeding both recovers **17× more
+  information at matched steps (3/3 seeds)** and removes a ~2000-step plateau. This plausibly
+  reframes E22's headline result (0.17 nats of document content, 0.05 far marginal) as an **init
+  artefact rather than an architecture limit**; magnitude is seed-variable at 1.3M params and must be
+  re-measured at scale. Now config-selectable (`pcl_xattn_wo_init_std`, `pcl_pooler_wo_init_std`,
+  default `0.0` = E22). **Consequence: every new read of a new memory must have a warm output
+  projection, and the order-sensitive part of a write must be live at init.**
+  [note](../4_Research_Notes/concept_channel_cold_start_20260913.md) ·
+  [suite](../engineering_specs/symbolic_long_context_suite.md).
+- **2026-09-13 — the family's compute win is a constant, not an asymptote** (analytic, zero GPU-days,
+  `analysis/geometry_cost_model.py`). The E22 geometry cuts decode state 192× (18 KB/token of dense KV
+  → 96 B/token of array; 180 GB → 0.96 GB at 10M) and that *is* structural. But the *read* is dense —
+  every token scores every visible slot — so cross-attention stays O(S²/r) and is 94% of arm A's FLOPs
+  at 10M; the whole-model saving converges to `r·L_dense/L_dec` = **36×** at any context length. A
+  selective top-k read raises the ceiling to `r²·L_dense/L_latent` = 1152× but then the full-causal
+  latent stack becomes the wall; only with a windowed/hierarchical latent stack does the model become
+  per-token-work bound (1288× at 10M and growing with S). **Consequence for the 1M/10M goal: a
+  selective read and a non-global latent stack are not optimisations, they are requirements** — and
+  since E22 showed the dense read fails to *use* far slots anyway, forcing it to name what it wants is
+  plausibly the same fix twice. Design constraint for E23's successor; E23 stays one bet.
 - **2026-09-12 — E18 / E18b (one global read):** a from-scratch 125M LM whose only unbounded layer is
   a single full-causal read. It is **free** (eval 3.790 vs matched dense 3.786, 1.02× throughput) and
   does exact **positional** retrieval (plain copy @32k offset 16k: **99.9998%**; cutting its reach two

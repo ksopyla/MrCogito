@@ -15,6 +15,182 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-13] - Symbolic long-context task suite with closed-form information floors
+
+**Why:**
+- E22 measured a concept channel with data whose long-range information content was unknown: the
+  whole natural-text prize for far context is ~0.05 nats at pilot scale, the pre-registered gate
+  asked for 0.30, and the run could not separate "the objective does not pay", "the read cannot
+  address the array" and "the write blurred the content". These generators remove that ambiguity —
+  the supervised tokens are determined by evidence at a controlled distance and independent of
+  everything local, so the prize is `ln(n_symbols)` (28× the text prize) and the floor for a model
+  that cannot reach the evidence is **exact**, which is what `experiment-design`'s "cite a measured
+  ceiling" rule needs. Spec: `docs/engineering_specs/symbolic_long_context_suite.md`.
+
+**Added:**
+- `data/symbolic_tasks.py`: `SymbolicVocab` / `SymbolicTaskConfig` / `generate_row` / `iter_rows`
+  plus `floor_nats` and `chance_accuracy`. Four tasks, one mechanism each — `recall` (content
+  addressing), `far_copy` (channel bandwidth, sweep `span_len`), `chain` (composition over slots,
+  edges shuffled out of reading order), `count` (aggregation; the first task in this family designed
+  so a compressive bottleneck could *beat* exact attention rather than merely lose less). Rows
+  guarantee `gap >= min_gap + 1`, so a raw window of `min_gap` provably cannot see the evidence for
+  either `dec_local` mode; nothing is memorisable across rows.
+- `scripts/build_symbolic_dataset.py`: one manifest source per `--task`; default schema
+  `input_ids`/`labels`/`gap` for diagnostics, `--lm_columns_only` for the exact columns
+  `pretokenize_mix.py` writes so rows mix into a text corpus (`--sym_lo` reserves an id slice,
+  supervision via the recorded `answer`/`end` markers). The manifest records the floor per source.
+- `verification/symbolic_channel_probe.py`: CPU falsification probe — tiny arm A
+  (`concept_xattn_scope=exclusive`, the array as the only route) vs arm C (`concept_mode=none`)
+  against the floor, with same-weights `concept_override("none"|"far")` attribution. Arm C sitting
+  at the floor is the instrument's self-check for a leaky task.
+- `tests/test_symbolic_tasks.py`: 36 tests. Beyond shapes and determinism, the three load-bearing
+  properties are tested rather than asserted — solvable from the evidence (each task solved by
+  following its construction), not solvable locally (uniform answer marginal, independence from the
+  query key, and a memorising local-window oracle at chance on held-out rows), and floor correctness
+  (`_binomial_mod_entropy` vs a 400k-draw Monte Carlo). Both label routes are cross-checked.
+
+**Wired:** supplies E23's two outstanding dense-label builders (far span copy, multi-hop chain) and
+adds a zero-GPU pre-flight mechanism gate to its plan.
+
+---
+
+## [2026-09-13] - `perceiver_concept`: config-selectable warm init for the concept path
+
+**Why:**
+- The first run of the symbolic probe found that the concept path has **two zero-init
+  residual-writing projections in series** between the evidence and the loss — `pooler.wo` (the
+  learned-query branch, and the only order-sensitive part of the write; the rest is a mean over the
+  block, an order-free bag) and `xattn.wo` (the read's output). The gradient into the read's
+  query/key projections *and* into `pooler.wo` is proportional to `xattn.wo`, so at zero the read
+  cannot become selective and the write cannot become order-sensitive: the channel's only early
+  escape is the content-free **mean** of its visible slots, which is exactly a document embedding.
+  That plausibly reframes E22's headline (0.17 nats of document content, 0.05 nats of far marginal)
+  as an init artefact rather than an architecture limit. On the symbolic `far_copy` probe, seeding
+  both gates at 0.02 recovered **17× more information at matched steps (3/3 seeds)** and removed a
+  ~2000-step plateau sitting exactly on the analytic floor. Evidence and caveats (the magnitude is
+  seed-variable at 1.3M params): `docs/4_Research_Notes/concept_channel_cold_start_20260913.md`.
+
+**Added:**
+- `PerceiverConceptConfig.xattn_wo_init_std` and `.pooler_wo_init_std`, applied through a shared
+  `_init_residual_write` helper. Both default to **0.0**, i.e. the E22 behaviour exactly, so all
+  existing checkpoints load and reproduce bit-for-bit; self-attention and MLP writes stay zero-init
+  regardless. Plumbed as `--pcl_xattn_wo_init_std` / `--pcl_pooler_wo_init_std` with validation, and
+  as `PCL_XATTN_WO_INIT_STD` / `PCL_POOLER_WO_INIT_STD` through
+  `scripts/train_concept_pretraining_multigpu.sh` and `scripts/launch_e22.sh`.
+- Tests: defaults are zero, both knobs are selectable and survive a config round-trip, the
+  self-attention/MLP writes are unaffected, and arm C (no pooler, no cross-attention) ignores the
+  knobs without crashing.
+
+---
+
+## [2026-09-13] - `analysis/geometry_cost_model.py`: analytic FLOP + decode-state model for concept geometries
+
+**Why:**
+- Every spec in this family claims a compute/state win over a matched dense baseline, and until now the
+  claim was asserted from the pooling ratio rather than computed. Asked why the concept geometry is
+  cheaper, the arithmetic showed the answer is narrower than assumed: the decode-state win is structural
+  (192×) but the compute win is a **constant 36×**, because the read is dense over slots and therefore
+  still O(S²/r). That materially constrains the 1M/10M goal, so the model belongs in the repo where
+  future specs and the K4 throughput gate can re-run it. Analysis:
+  `docs/4_Research_Notes/e22_root_cause_20260912.md` §7.5.
+
+**Added:**
+- `analysis/geometry_cost_model.py`: prices `perceiver_ar --par_mode dense` against `perceiver_concept`
+  at any context length. Splits forward FLOPs into the terms quadratic in S (per component: encoder,
+  decoder self, cross, latent) and the per-token terms, and splits decode cache into bounded (fixed
+  windows) and unbounded (grows with S) bytes per token. Flags mirror the real config knobs
+  (`--ratio`, `--dec_segment`, `--enc_window`, `--exclusive`) plus two counterfactual knobs used to
+  locate the next bottleneck: `--cross_topk` (selective slot read) and `--latent_window`.
+
+**Verified:** closed-form asymptotes reproduced by the script — 34.8× for the built geometry (predicted
+`r·L_dense/L_dec` = 36×) and 1053× with a top-64 read (predicted `r²·L_dense/L_latent` = 1152×).
+
+---
+
+## [2026-09-12] - `perceiver_concept`: `concept_xattn_scope` (exclusive channel) + `near`/`far` concept ablations
+
+**Why:**
+- The E22 concept probe showed Δ_none ≈ 0.22 nats already inside the first 1024-token segment, where
+  the decoder has the whole raw context and no far slot exists, and CE(shuffled) < CE(none) at 16k–32k.
+  The `cpos ≤ pos` cross-attention mask let a token read up to 63 slots from its own raw segment, so
+  the array was never the *only* route for anything. This change makes the diagnosis measurable
+  (which slots carry the loss) and the fix selectable for E23. Diagnosis:
+  `docs/4_Research_Notes/e22_root_cause_20260912.md`.
+
+**Changed:**
+- `nn/perceiver_concept_lm.py`: `PerceiverConceptConfig.concept_xattn_scope = causal | exclusive`
+  (default `causal` = E22 as run; old checkpoints load unchanged). `raw_span()` gives, per row index,
+  how many earlier tokens the decoder's raw self-attention covers (`t mod segment` for `block`,
+  `segment − 1` for `swa`); `_cross_mask_pred` / `attend_cross` take `span` + `scope` and admit, under
+  `exclusive`, only slots with `pos(slot) < pos(t) − span(t)` (plus the null slot). Flex and SDPA share
+  the rule; the flex block-mask memo is keyed by scope. `concept_override` gains `near` (only slots
+  inside the raw window remain) and `far` (only slots before it remain); `far` on a causal checkpoint
+  equals the exclusive-scope forward with the same weights.
+- `evaluation/long_context_probes.py`: `--probe concept` scores `real,none,shuffled,near,far` by
+  default; `--concept_modes` overrides (must start with `real`).
+- `training/concept_pretraining_args.py` (`--pcl_concept_xattn_scope`, validated),
+  `training/concept_pretraining_factories.py` (config plumbing, init log, W&B architecture id gets a
+  trailing `x` for the exclusive scope), `scripts/train_concept_pretraining_multigpu.sh` and
+  `scripts/launch_e22.sh` (`PCL_CONCEPT_XATTN_SCOPE`).
+- `tests/test_perceiver_concept_lm.py`: mask partition tests for `block` and `swa` decoders
+  (exclusive ∪ local_only = causal, intersection = null slot), `far` == exclusive-model equivalence,
+  config round trip, flex/SDPA equivalence parametrised over scope × override (CUDA; passed on Odra).
+
+**Docs (experiment-track):** E22 spec + plan moved to `docs/experiments_specs/done_failed/`
+(Status / Result filled); run report `run_reports/e22_pilot_verdict_20260912.md`; ledger rows;
+agenda Current focus → E23; new spec `docs/experiments_specs/ahead/E23_exclusive_concept_channel.md`.
+
+---
+
+## [2026-09-12] - E22 `perceiver_concept` family: encoder → positional concept array → latent transformer → segment-confined decoder
+
+**Why:**
+- The Perceiver-style encoder→concepts→decoder idea had never been trained with the three
+  conditions the ledger and the 2026 frontier agree on (no raw long-range bypass at any layer,
+  positional slot allocation, contextualise before pooling), nor with a transformer *over* the
+  concept array. E18/E21 have one K/V read and no latent stack. Spec:
+  `docs/experiments_specs/done_failed/E22_perceiver_concept_lm.md` (moved from `ahead/` when the experiment closed); rationale:
+  `docs/4_Research_Notes/perceiver_revisit_synthesis_20260912.md`.
+
+**Changed:**
+- `nn/perceiver_concept_lm.py` (new): `PerceiverConceptConfig`, `ConceptPooler` (mean-pool +
+  zero-init learned-query attention per block of `concept_ratio` tokens, flat positional bias),
+  `ConceptCrossAttention` / `attend_cross` (token queries → concept K/V, RoPE both sides, flex
+  block mask or sdpa reference, learned null slot so no query row is empty), `DecoderBlock`
+  (segment-confined self-attention via segment-augmented doc ids → cross-attention → SwiGLU),
+  `PerceiverConceptLM` (`forward` with Liger/chunked CE, `hidden_states`, `concepts()`,
+  `concept_override(real|none|shuffled)`, gradient checkpointing per block),
+  `analytic_param_count` with a compute / dense-table / sparse-table breakdown. Reuses the
+  E18 primitives by import; `nn/perceiver_ar_lm.py` is untouched.
+- `nn/perceiver_families.py` (new): `checkpoint_family`, `load_perceiver_lm` — one loader for
+  `perceiver_ar` and `perceiver_concept` checkpoints.
+- `training/concept_pretraining_args.py`: `model_family=perceiver_concept`, `pcl_*` knobs;
+  `training/concept_pretraining_factories.py`: `_build_perceiver_concept_model`, W&B identity
+  (`perceiver_concept_H..e..r..c..l..d..s..`), refuses `dataset_mix_weight_override` on a
+  pretokenized manifest (length / packing caches are keyed by the manifest file);
+  `training/train_concept_pretraining.py`: skips the concept-attention probe for both from-scratch families.
+- `scripts/train_concept_pretraining_multigpu.sh`: `PCL_*` env knobs behind
+  `MODEL_FAMILY=perceiver_concept`; `DATASET_MIX_WEIGHT_OVERRIDE` plumbing (recipe path).
+- `scripts/launch_e22.sh` (new): arms `A` (the bet), `C` (`concept_mode=none`), `dense`
+  (`perceiver_ar` `PAR_MODE=dense`, 18 layers); packed 32k rows, keyed-recall span labels,
+  effective batch 24 rows, `E22_SMOKE=1` calibration path.
+- `scripts/write_manifest_variant.py` (new): re-weighted copy of a pretokenized manifest from
+  token-share targets (mean row tokens measured per source).
+- `evaluation/long_context_probes.py`: family-aware `load_model`; `--probe concept` (paired
+  `real` / `none` / `shuffled` CE per position bucket with tail stats).
+  `evaluation/lm_eval_perceiver_ar.py`, `analysis/check_model_health.py`,
+  `scripts/eval_perceiver_ar_suite.sh`: accept the new family (suite runs the concept probe
+  where E18 ran the reach probe).
+- Tests: `tests/test_perceiver_concept_lm.py` (causality through the concept path, structural
+  closure, concepts as the only long-range path, straddling-document pooling, packed isolation,
+  padding invariance, per-token loss contract, save/load, flex ≡ sdpa on CUDA),
+  `tests/test_launch_e22.py`.
+
+**Calibration (Odra 3090, 32k, flex, bf16, grad-ckpt, 2026-09-12):** arm A 317.4M total /
+127.9M compute; B=2: 11.4 GiB peak, ~19.8k tok/s/GPU; arm C: 8.0 GiB, ~29k tok/s/GPU.
+
+---
+
 ## [2026-09-11] - Evaluation layer for `perceiver_ar`: lm-eval-harness reasoning + RULER-lite long context
 
 **Why:**

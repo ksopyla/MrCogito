@@ -87,7 +87,9 @@ run_step() {   # run_step <name> <gpu> <cmd...>   -> writes $STATUS_DIR/<name>
 
 # --- Tier 0: weights + forward/loss health (fast, on the lm-eval GPU) ---
 health() {
-  uv run python analysis/check_model_health.py --model_path "$CKPT" --model_type perceiver_ar \
+  local fam
+  fam="$(uv run python -c "from nn.perceiver_families import checkpoint_family; print(checkpoint_family('$CKPT'))" 2>/dev/null || echo perceiver_ar)"
+  uv run python analysis/check_model_health.py --model_path "$CKPT" --model_type "$fam" \
     > "$OUT/health.log" 2>&1
   local code=$?
   grep -E "^\[|Loss value|Logits range|Unique predictions|FINAL|MODEL" "$OUT/health.log" | tail -12
@@ -111,11 +113,21 @@ longctx() {
     --buckets "$BUCKETS" --trials "$TRIALS" --max_rows "$MAX_ROWS" --out "$OUT/longctx_suite.json"
 }
 
-# --- Reach: which window the full layers actually use (positive control for the global read) ---
+# --- Reach: which window the full layers actually use (positive control for the global read).
+# For the perceiver_concept family (E22) the equivalent instrument is the paired concept ablation
+# (real / none / shuffled), selected automatically from the checkpoint's family.
 reach() {
-  uv run python evaluation/long_context_probes.py --checkpoint "$CKPT" --probe reach \
-    --attn_backend "$ATTN_BACKEND" --manifest "$MANIFEST" --context_lengths "$CONTEXT_LENGTHS" \
-    --trials "$TRIALS" --out "$OUT/reach.json"
+  local fam
+  fam="$(uv run python -c "from nn.perceiver_families import checkpoint_family; print(checkpoint_family('$CKPT'))" 2>/dev/null || echo perceiver_ar)"
+  if [ "$fam" = "perceiver_concept" ]; then
+    uv run python evaluation/long_context_probes.py --checkpoint "$CKPT" --probe concept \
+      --attn_backend "$ATTN_BACKEND" --manifest "$MANIFEST" --buckets "${CONCEPT_BUCKETS:-1024,4096,8192,16384,32768}" \
+      --max_rows "$MAX_ROWS" --out "$OUT/concept.json"
+  else
+    uv run python evaluation/long_context_probes.py --checkpoint "$CKPT" --probe reach \
+      --attn_backend "$ATTN_BACKEND" --manifest "$MANIFEST" --context_lengths "$CONTEXT_LENGTHS" \
+      --trials "$TRIALS" --out "$OUT/reach.json"
+  fi
 }
 
 lmeval_half() {

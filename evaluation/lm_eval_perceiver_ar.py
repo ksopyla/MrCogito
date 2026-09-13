@@ -54,12 +54,19 @@ def load_perceiver_ar_for_eval(
     attn_backend: str = "sdpa",
     attn_pad_multiple: int = 1,
 ) -> PerceiverARLM:
-    """Load a checkpoint with eval-friendly attention settings (see module docstring)."""
-    cfg = PerceiverARConfig.from_pretrained(checkpoint)
+    """Load a checkpoint with eval-friendly attention settings (see module docstring).
+    Serves both from-scratch families: E18 `perceiver_ar` and E22 `perceiver_concept`."""
+    from nn.perceiver_families import checkpoint_family
+
+    if checkpoint_family(checkpoint) == "perceiver_concept":
+        from nn.perceiver_concept_lm import PerceiverConceptConfig as Cfg, PerceiverConceptLM as Model
+    else:
+        Cfg, Model = PerceiverARConfig, PerceiverARLM
+    cfg = Cfg.from_pretrained(checkpoint)
     cfg.attn_backend = attn_backend
     cfg.attn_pad_multiple = int(attn_pad_multiple)
     cfg.use_liger = False  # fused CE is a training-time path; eval reads logits
-    model = PerceiverARLM.from_pretrained(checkpoint, config=cfg)
+    model = Model.from_pretrained(checkpoint, config=cfg)
     model.eval()
     if device.startswith("cuda") and dtype is not None:
         model.to(dtype)
