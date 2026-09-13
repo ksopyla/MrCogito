@@ -52,7 +52,7 @@ Winner LR = **1e-3**. 3e-3 and 6e-3 (the easy-end LRs) floor-kill this geometry.
 | cell_seq256_r32_A | A | 5.11M | 1e-3 | 256 | 32 | far_copy | 2 | 256k | 8,000 | **87.9%** | 0.258 | **no**, still climbing | budget |
 | cell_seq256_r32_D | D | 2.27M | 1e-3 | 256 | — | far_copy | 2 | 72k | 2,250 | 99.17% | 0.025 | **yes** (reuse: D ignores r) | target_acc |
 | cell_chain_h3_A | A | 5.11M | 1e-3 | 256 | 8 | chain | 3 | 128k | 4,000 | 23.7% | 1.387 | no | floor_patience |
-| cell_chain_h3_D | D | 2.27M | 1e-3 | 256 | 8 | chain | 3 | 16k+ | 500+ | ~25% | ~1.387 | unknown | **in flight** |
+| cell_chain_h3_D | D | 2.27M | 1e-3 | 256 | 8 | chain | 3 | 32k+ | 1,000+ | ~25% | ~1.388 | unknown | **in flight** (still chance) |
 | cell_chain_h3_C | C | — | — | 256 | 8 | chain | 3 | — | — | — | — | — | not started |
 | cell_seq512_r8_A/C/D | — | — | — | 512 | 8 | far_copy | 2 | — | — | — | — | — | not started |
 
