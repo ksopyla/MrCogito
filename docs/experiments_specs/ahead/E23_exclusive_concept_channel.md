@@ -131,12 +131,15 @@ selecting, inside natural text, the tokens whose information *is* in the compres
 - **Reported, never gated at this budget:** bits per byte on the standard eval rows next to
   pythia-160m / SmolLM2-135M reference rows (E22 arm A 1.472 vs 1.265 / 0.989 — a 680–4500× token
   deficit, so the absolute gap carries no architectural information), and the lm-eval 0-shot suite,
-  which is at chance below ~10B tokens ([root cause §7.2–7.3](../../4_Research_Notes/e22_root_cause_20260912.md)).
+  which is at chance below ~10B tokens ([root cause §7.2 + §7.6](../../4_Research_Notes/e22_root_cause_20260912.md)).
 
 ## Kill criteria (set BEFORE running)
 - **K1 read cannot address the array:** at 50% of budget, keyed-recall first-token < **10%** while arm D
   ≥ 60% → stop. Next step is a different *read* (two-stage: query the latent stack, then the slots; or
-  per-slot K/V of block-end states), **not** r / c / K — E22 cleared the encoder, pooler and array geometry.
+  per-slot K/V of block-end states) or a commensurate *write* — arm A1, encoder's last two layers confined
+  to the pooling block, because a chained SWA-512 encoder gives each slot a ≈ 3k-token blurred view rather
+  than a crisp 16-token chunk ([root cause §7.4](../../4_Research_Notes/e22_root_cause_20260912.md)).
+  **Not** r / c / K — E22 cleared the array's rank and the pooler's use of its learned query.
 - **K2 objective pays, channel does not deliver:** at 50% of budget arm A − arm C on far-repeat tokens
   ≤ 0.02 nats → same path as K1.
 - **K3 weighting instability:** eval loss rising over 3 consecutive evals or a > 2× loss spike attributable to
