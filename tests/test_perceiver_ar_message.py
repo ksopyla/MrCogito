@@ -256,6 +256,43 @@ def test_ratio_one_matches_raw_override_and_the_swap_uses_the_other_row():
         assert torch.allclose(sw[0, :P], real[0, :P], atol=1e-6)            # sender side untouched
 
 
+def test_inplace_default_off_matches_concat_and_r1_matches_raw():
+    """In-place slots default off (concat path). At r=1, in-place real ≈ raw override (same geometry)."""
+    x = with_boundary(rand_ids(2, 14, seed=3), 8)
+    concat = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1)
+    concat_on = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                           message_slots_inplace=False)
+    inplace = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                         message_slots_inplace=True)
+    with torch.no_grad():
+        assert torch.allclose(concat(x).logits, concat_on(x).logits, atol=1e-6)
+        with concat.message_override("raw"):
+            raw = concat(x).logits
+        ip = inplace(x).logits
+        assert torch.allclose(ip, raw, atol=1e-4)
+        # concat extra-KV at r=2 is not the in-place path
+        c2 = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=2)
+        i2 = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=2,
+                        message_slots_inplace=True)
+        assert not torch.allclose(c2(x).logits[:, 8:], i2(x).logits[:, 8:], atol=1e-4)
+
+
+def test_inplace_hides_uncompressed_remainder_from_receivers():
+    """Remainder-off incomplete last sender block stays invisible to receivers under in-place."""
+    model = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=3,
+                       message_slots_inplace=True)
+    S, P = 16, 10                              # sender len 10: 3 complete blocks + remainder at 9
+    x = with_boundary(rand_ids(1, S, seed=4), P)
+    y_rem = x.clone()
+    y_rem[0, P - 1] = (y_rem[0, P - 1] + 7) % 80 + 3
+    y_blk = x.clone()
+    y_blk[0, 2] = (y_blk[0, 2] + 7) % 80 + 3
+    with torch.no_grad():
+        a, rem, blk = model(x).logits, model(y_rem).logits, model(y_blk).logits
+        assert torch.allclose(a[0, P:], rem[0, P:], atol=1e-5)
+        assert not torch.allclose(a[0, P:], blk[0, P:], atol=1e-5)
+
+
 def test_receiver_only_round_trip_via_prefix_kv_as_message():
     """S6: a second process holding only `prefix_kv(prefix, as_message=True)` reproduces the
     receiver's logits."""

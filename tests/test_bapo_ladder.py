@@ -360,3 +360,36 @@ def test_e21_raw_override_is_wired():
         with _message_cm(dense, "raw"):
             d1 = dense(ids).logits
     assert torch.allclose(d0, d1, atol=1e-6)
+
+
+def test_e21_inplace_flag_is_wired_on_factory():
+    cfg = config_for("tiny", "far_copy")
+    qid = cfg.vocab.control("query")
+    spec = ArchSpec(
+        name="e21",
+        hidden=32,
+        head_dim=16,
+        local_window=16,
+        message_boundary_token_id=qid,
+        message_compress_ratio=1,
+        message_slots_inplace=True,
+        zero_init_residuals=False,
+    )
+    model = build_model(
+        "e21",
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=cfg.vocab.control("eos"),
+        bos_id=cfg.vocab.control("bos"),
+        eos_id=cfg.vocab.control("eos"),
+        spec=spec,
+        seed=0,
+    )
+    assert model.config.message_slots_inplace is True
+    torch.manual_seed(0)
+    ids = torch.randint(3, cfg.vocab.vocab_size, (2, cfg.seq_len))
+    p = cfg.seq_len // 2
+    ids[:, p] = qid
+    loss = model(ids, labels=torch.full_like(ids, -100)).loss
+    assert torch.isfinite(loss)

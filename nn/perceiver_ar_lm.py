@@ -98,6 +98,7 @@ class PerceiverARConfig(PretrainedConfig):
         message_boundary_token_id: int = -1,  # E21 — reserved id that splits sender | receiver (-1 = off)
         message_compress_ratio: int = 16,     # E21 — prefix tokens per message slot (1 = uncompressed, arm U)
         message_pool_remainder: bool = False, # E21 — pool the incomplete last sender block (default: complete blocks only)
+        message_slots_inplace: bool = False,  # E21 — write slots into sender prefix positions (KV_LEN=S; default concat)
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -148,6 +149,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_boundary_token_id = int(message_boundary_token_id)
         self.message_compress_ratio = int(message_compress_ratio)
         self.message_pool_remainder = bool(message_pool_remainder)
+        self.message_slots_inplace = bool(message_slots_inplace)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -479,6 +481,8 @@ class MessageCtx:
     override: str = "real"      # "real" | "none" | "swapped" | "raw"
     external: Optional[tuple[torch.Tensor, torch.Tensor]] = None  # (k̄, v̄) given by a receiver-only forward
     pool_valid: Optional[torch.Tensor] = None  # [B,S] tokens that enter compressor slots (remainder path)
+    ratio: int = 1              # message_compress_ratio (scatter width for inplace)
+    inplace: bool = False       # True: slots overwrite sender prefix K/V; KV_LEN stays S
 
     @property
     def n_slots(self) -> int:
@@ -560,6 +564,87 @@ def dense_message_mask(S: int, ctx: MessageCtx, key_valid: Optional[torch.Tensor
     if ctx.override in ("none", "raw"):
         slot = torch.zeros_like(slot)
     return torch.cat([raw.expand(B, 1, S, S), slot], dim=-1)
+
+
+def mix_inplace_kv(k, v, k_bar, v_bar, ctx: MessageCtx):
+    """Scatter slot K/V onto sender positions covered by a valid complete block.
+
+    `k`/`v` and `k_bar`/`v_bar` are un-RoPE'd. Returns mixed K/V at length S and `replace`
+    [B,S] (True = this prefix position holds a slot, not uncompressed sender KV).
+    """
+    B, S, g, dh = k.shape
+    r = max(int(ctx.ratio), 1)
+    k_exp = k_bar.repeat_interleave(r, dim=1)[:, :S]
+    v_exp = v_bar.repeat_interleave(r, dim=1)[:, :S]
+    valid_tok = (ctx.slot_doc >= 0).repeat_interleave(r, dim=1)[:, :S]
+    replace = valid_tok & (ctx.side == 0) & (ctx.doc >= 0)
+    k_mix = torch.where(replace[..., None, None], k_exp.to(k.dtype), k)
+    v_mix = torch.where(replace[..., None, None], v_exp.to(v.dtype), v)
+    return k_mix, v_mix, replace
+
+
+def dense_inplace_mask(S: int, ctx: MessageCtx, key_valid: Optional[torch.Tensor],
+                       replace: torch.Tensor, device) -> torch.Tensor:
+    """[B,1,S,S] — causal same-document (raw geometry) minus uncompressed sender leaks."""
+    side, doc = ctx.side, ctx.doc
+    q = torch.arange(S, device=device)[:, None]
+    j = torch.arange(S, device=device)[None, :]
+    raw = (j <= q)[None, None] & (doc[:, None, :, None] == doc[:, None, None, :])
+    if key_valid is not None:
+        raw = raw & (key_valid.bool()[:, None, None, :] | torch.eye(S, dtype=torch.bool, device=device)[None, None])
+    recv = (side >= 1)[:, None, :, None]
+    send = (side == 0)[:, None, None, :]
+    leak = recv & send & (~replace[:, None, None, :])
+    return raw & ~leak
+
+
+def make_inplace_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Tensor], replace: torch.Tensor):
+    """mask_mod over KV length S for the in-place exclusive read."""
+    m = ctx.tag_stride()
+    tag, _ = ctx.tags()
+
+    def pred(b, h, q, kv):
+        tq = tag[b, q]
+        tj = tag[b, kv]
+        same_doc = torch.div(tj, m, rounding_mode="floor") == torch.div(tq, m, rounding_mode="floor")
+        raw_ok = (kv <= q) & same_doc
+        if key_valid is not None:
+            raw_ok = raw_ok & (key_valid[b, kv] | (kv == q))
+        leak = (ctx.side[b, q] >= 1) & (ctx.side[b, kv] == 0) & (~replace[b, kv])
+        return raw_ok & ~leak
+
+    return pred
+
+
+def attend_inplace(q, k, v, *, ctx: MessageCtx, replace, key_valid, backend, block_masks=None):
+    """Global read over in-place mixed K/V (length S). Returns [B,S,h,dh]."""
+    B, S, h, dh = q.shape
+    g = k.shape[2]
+    if backend == "flash":
+        raise NotImplementedError("message boundary needs flex or sdpa")
+    qt, kt, vt = (t.transpose(1, 2) for t in (q, k, v))
+    if backend == "flex":
+        from torch.nn.attention.flex_attention import create_block_mask
+
+        memo_key = ("message_inplace", ctx.override, ctx.n_slots)
+        if block_masks is not None and memo_key in block_masks:
+            bm = block_masks[memo_key]
+        else:
+            pred = make_inplace_mask_pred(S, ctx, key_valid, replace)
+            bm = create_block_mask(pred, B=B, H=None, Q_LEN=S, KV_LEN=S, device=q.device,
+                                   _compile=torch.cuda.is_available())
+            if block_masks is not None:
+                block_masks[memo_key] = bm
+        qt, kt, vt = qt.contiguous(), kt.contiguous(), vt.contiguous()
+        out = _get_flex()(qt, kt, vt, block_mask=bm, enable_gqa=(g != h))
+        return out.transpose(1, 2)
+    if g != h:
+        rep = h // g
+        kt = kt.repeat_interleave(rep, dim=1)
+        vt = vt.repeat_interleave(rep, dim=1)
+    mask = dense_inplace_mask(S, ctx, key_valid, replace, q.device)
+    out = F.scaled_dot_product_attention(qt, kt, vt, attn_mask=mask)
+    return out.transpose(1, 2)
 
 
 class KVCompressor(nn.Module):
@@ -762,9 +847,10 @@ class Attention(nn.Module):
         k_raw, v = self.kv_raw(x, ids)
         return self.k_norm(k_raw), v
 
-    def message_slots(self, x, k_raw, v, ctx: MessageCtx, key_valid, cfg_rope_theta: float):
+    def message_slots(self, x, k_raw, v, ctx: MessageCtx, key_valid, cfg_rope_theta: float, *, rope: bool = True):
         """(k̄, v̄) [B,nb,g,dh] for this forward: external slots (receiver-only forward) or the
-        compressor over the block input, RoPE'd at each slot's position."""
+        compressor over the block input, RoPE'd at each slot's position unless `rope=False`
+        (in-place path applies token-position RoPE after scatter)."""
         if ctx.external is not None:
             return ctx.external
         valid = key_valid
@@ -772,7 +858,7 @@ class Attention(nn.Module):
             pv = ctx.pool_valid.bool()
             valid = pv if valid is None else (valid.bool() & pv)
         k_bar, v_bar = self.compressor(x, k_raw, v, self.k_norm, valid)
-        if self.use_rope:
+        if rope and self.use_rope:
             cos_s, sin_s = rope_cos_sin(ctx.slot_pos, self.dh, cfg_rope_theta, k_bar.dtype)
             k_bar = apply_rope(k_bar, cos_s, sin_s)
         return k_bar, v_bar
@@ -782,7 +868,33 @@ class Attention(nn.Module):
         B, S, _ = x.shape
         q = self.q_norm(self.wq(x).view(B, S, self.h, self.dh))
         k_raw, v = self.kv_raw(x, ids)
-        k = self.k_norm(k_raw)
+        k_un = self.k_norm(k_raw)
+        use_inplace = (
+            message is not None
+            and self.compressor is not None
+            and bool(getattr(message, "inplace", False))
+            and message.override in ("real", "swapped")
+            and message.external is None
+        )
+        if use_inplace:
+            k_bar, v_bar = self.message_slots(x, k_raw, v, message, key_valid, rope_theta, rope=False)
+            if message.override == "swapped":
+                k_bar, v_bar = k_bar.roll(1, dims=0), v_bar.roll(1, dims=0)
+            k_mix, v_mix, replace = mix_inplace_kv(k_un, v, k_bar, v_bar, message)
+            if self.use_rope:
+                q = apply_rope(q, cos, sin)
+                k_mix = apply_rope(k_mix, cos, sin)
+            if self.logit_scale is not None:
+                if pos is None:
+                    raise RuntimeError("global_logit_scale='log' needs per-token positions")
+                n_vis = (pos + 1).to(q.dtype)
+                q = q * (self.logit_scale * torch.log(n_vis))[:, :, None, None]
+            o = attend_inplace(
+                q, k_mix, v_mix, ctx=message, replace=replace, key_valid=key_valid,
+                backend=self.backend, block_masks=block_masks,
+            )
+            return self.wo(o.reshape(B, S, self.h * self.dh))
+        k = k_un
         if self.use_rope:
             q, k = apply_rope(q, cos, sin), apply_rope(k, cos, sin)
         if self.logit_scale is not None:
@@ -1089,6 +1201,7 @@ class PerceiverARLM(PreTrainedModel):
                 slot_side=torch.zeros(B, nb, dtype=torch.long, device=dev),
                 slot_pos=slot_pos.to(dev).expand(B, nb) if slot_pos.dim() == 1 else slot_pos.to(dev),
                 n_sides=2, override=self._message_override, external=(k_bar, v_bar),
+                ratio=r, inplace=cfg.message_slots_inplace,
             )
         is_b = input_ids == cfg.message_boundary_token_id
         if not bool(is_b.any()):
@@ -1127,7 +1240,7 @@ class PerceiverARLM(PreTrainedModel):
             slot_pos = pos.gather(1, end_abs)
         return MessageCtx(side=side, doc=doc, local_doc_ids=local, slot_doc=slot_doc, slot_side=slot_side,
                           slot_pos=slot_pos, n_sides=K, override=self._message_override,
-                          pool_valid=pool_valid)
+                          pool_valid=pool_valid, ratio=r, inplace=cfg.message_slots_inplace)
 
     # -- helpers ----------------------------------------------------------------------
     @staticmethod

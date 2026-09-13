@@ -147,7 +147,8 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             f"msg_boundary={getattr(model.config, 'message_boundary_token_id', -1)}  "
             f"msg_r={getattr(model.config, 'message_compress_ratio', '-')}  "
             f"msg_remainder={getattr(model.config, 'message_pool_remainder', False)}  "
-            f"msg_override={args.message_override if arch == 'e21' else '-'}",
+            f"msg_override={args.message_override if arch == 'e21' else '-'}  "
+            f"msg_inplace={getattr(model.config, 'message_slots_inplace', False) if arch == 'e21' else '-'}",
             flush=True,
         )
     override = args.message_override if arch == "e21" else "real"
@@ -258,6 +259,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         message_compress_ratio=args.message_ratio,
         message_boundary_token_id=_boundary_token_id(cfg),
         message_pool_remainder=args.message_pool_remainder,
+        message_slots_inplace=args.message_slots_inplace,
     )
     card = rung_card(scale, recipe.task, **over)
     card["local_window"] = window
@@ -347,6 +349,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             "message_ratio": args.message_ratio,
             "message_override": args.message_override,
             "message_pool_remainder": args.message_pool_remainder,
+            "message_slots_inplace": args.message_slots_inplace,
         },
         "pack": {
             "answer_len": cfg.answer_len,
@@ -417,6 +420,13 @@ def main() -> int:
         action=argparse.BooleanOptionalAction,
         default=False,
         help="E21: pool the incomplete last sender block. Default off (experiment 1 complete-block-only).",
+    )
+    p.add_argument(
+        "--message_slots_inplace",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="E21: write slot K/V into sender prefix positions (KV_LEN=S, no concat extra stream). "
+        "Default off (concat slots). Receivers still cannot see uncompressed sender tokens.",
     )
     p.add_argument("--seq_len", type=int, default=None, help="override scale seq_len (S0 hunts)")
     p.add_argument("--min_gap", type=int, default=None, help="override scale min_gap (S0 hunts)")

@@ -15,6 +15,25 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-13] - E21 in-place sender-prefix slots (`message_slots_inplace`, default off)
+
+**Why:**
+- Seq=512 exclusive concat slots scored 0 bits at r=16/64/1. `--message_override raw`
+  (in-stream prefix K/V, QUERY local-doc still on) copied 64 bits. Concat extra KV is the
+  512 killer. Next isolation: write slots into sender positions so KV_LEN stays S.
+
+**Impact:**
+- Default concat path is unchanged. `--message_slots_inplace` replaces sender complete-block
+  K/V with slots; receivers cannot see uncompressed remainder tokens. Token-position RoPE
+  after scatter.
+
+**What changed:**
+- [added] `PerceiverARConfig.message_slots_inplace` in `nn/perceiver_ar_lm.py`
+- [added] probe `--message_slots_inplace`; ArchSpec field
+- [added] in-place tests in `tests/test_perceiver_ar_message.py`
+
+**Does not:** turn in-place on by default, change remainder pooling, or break E18 checkpoints.
+
 ## [2026-09-13] - E21 probe `--message_override` (raw / none / swapped)
 
 **Why:**
