@@ -66,7 +66,7 @@ def build_model(arm: str, cfg: SymbolicTaskConfig, args) -> PerceiverConceptLM:
         vocab_size=cfg.vocab.vocab_size,
         hidden_size=args.hidden,
         intermediate_size=2 * args.hidden,
-        token_embedding_dim=32,
+        token_embedding_dim=args.token_embedding_dim,
         enc_layers=args.enc_layers,
         enc_window=args.enc_window,
         concept_ratio=args.ratio,
@@ -144,14 +144,25 @@ def train_arm(arm: str, cfg: SymbolicTaskConfig, args, eval_batches) -> dict:
         opt.zero_grad(set_to_none=True)
         if step % args.eval_every == 0 or step == args.steps:
             ev = evaluate(model, eval_batches)
-            trace.append({"step": step, **ev})
+            trace.append({"step": step, "examples": step * args.batch, **ev})
+            examples = step * args.batch
             print(
-                f"  [{arm}] step {step:5d}  train {float(out.loss.detach()):.4f}  "
+                f"  [{arm}] step {step:5d}  examples {examples:7d}  train {float(out.loss.detach()):.4f}  "
                 f"eval CE {ev['ce_nats']:.4f}  acc {ev['acc']:.3f}  "
                 f"({(time.time() - t0) / step:.2f} s/step)",
                 flush=True,
             )
-    result = {"arm": arm, "params": n_params, "final": trace[-1], "trace": trace}
+            if args.target_acc > 0 and ev["acc"] >= args.target_acc:
+                print(f"  [{arm}] early stop: acc {ev['acc']:.3f} >= {args.target_acc}", flush=True)
+                break
+    result = {
+        "arm": arm,
+        "params": n_params,
+        "examples_seen": trace[-1]["step"] * args.batch,
+        "supervised_tokens_seen": trace[-1]["step"] * args.batch * cfg.answer_len,
+        "final": trace[-1],
+        "trace": trace,
+    }
     if arm == "A":
         result["ablate_none"] = evaluate(model, eval_batches, override="none")
         result["ablate_far"] = evaluate(model, eval_batches, override="far")
@@ -171,6 +182,7 @@ def main() -> int:
     p.add_argument("--hops", type=int, default=2)
     p.add_argument("--count_mod", type=int, default=4)
     p.add_argument("--hidden", type=int, default=128)
+    p.add_argument("--token_embedding_dim", type=int, default=32)
     p.add_argument("--enc_layers", type=int, default=2)
     p.add_argument("--enc_window", type=int, default=32)
     p.add_argument("--latent_layers", type=int, default=2)
@@ -193,10 +205,13 @@ def main() -> int:
     p.add_argument("--lr", type=float, default=3e-3)
     p.add_argument("--eval_every", type=int, default=100)
     p.add_argument("--eval_rows", type=int, default=128)
+    p.add_argument("--target_acc", type=float, default=0.0,
+                   help="stop this arm when eval accuracy reaches this (0 = run all steps)")
     p.add_argument("--arms", nargs="+", default=list(ARMS), choices=list(ARMS))
     p.add_argument("--threads", type=int, default=4)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--out", default=None, help="write the result bundle as JSON")
+    p.add_argument("--run_name", default="", help="stored in the result bundle")
     args = p.parse_args()
 
     torch.set_num_threads(args.threads)
@@ -253,6 +268,7 @@ def main() -> int:
                 f"CE {r['ablate_far']['ce_nats']:.4f} acc {r['ablate_far']['acc']:.3f}"
             )
     bundle = {
+        "run_name": args.run_name,
         "task": args.task,
         "floor_nats": floor,
         "chance_acc": chance,
