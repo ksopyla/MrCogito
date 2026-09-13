@@ -12,8 +12,9 @@ Architectures
                `--message_slots_inplace` writes slots into sender prefix positions (KV_LEN=S).
                `--message_inplace_raw_kv` (with inplace) copies token K/V into those positions
                instead of compressor slots; exclusive remainder hiding stays on.
-               `--message_identity_slots` bypasses learned compressor `u`/`delta` (r=1: hard
-               token K/V copy through the slot/scatter path, not inplace_raw_kv).
+               `--message_identity_slots` bypasses learned compressor `u`/`delta` (frozen
+               mean-pool of the r tokens in each block; r=1: hard token K/V copy) through
+               the slot/scatter path, not inplace_raw_kv.
 - `encdec`     Symmetric encoder-decoder: bidirectional prefix encoder, suffix-only decoder with
                cross-attention. Prefix information cannot take a raw route into the suffix.
 """

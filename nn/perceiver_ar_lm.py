@@ -31,8 +31,8 @@ Hooks for the family (config fields only — no parameters unless enabled):
     `message_inplace_raw_kv` (requires inplace) copies token K/V into those positions
     instead of compressor slots; the exclusive `~replace` mask still hides uncompressed
     remainder. `message_identity_slots` bypasses learned `u`/`delta` so each slot is a
-    frozen mean (r=1: hard copy of token K/V after `k_norm`). Off by default (`id=-1`)
-    so E18 checkpoints stay byte-identical.
+    frozen mean of the r tokens in the block (r=1: hard copy of token K/V after `k_norm`;
+    not last-token copy). Off by default (`id=-1`) so E18 checkpoints stay byte-identical.
     `prefix_kv(as_message=True)` returns those slots.
 """
 from __future__ import annotations
@@ -105,7 +105,7 @@ class PerceiverARConfig(PretrainedConfig):
         message_pool_remainder: bool = False, # E21 — pool the incomplete last sender block (default: complete blocks only)
         message_slots_inplace: bool = False,  # E21 — write slots into sender prefix positions (KV_LEN=S; default concat)
         message_inplace_raw_kv: bool = False,  # E21 — inplace: token K/V at replace positions (skip compressor values)
-        message_identity_slots: bool = False,  # E21 — bypass compressor u/delta (r=1: hard token K/V copy)
+        message_identity_slots: bool = False,  # E21 — freeze mean-pool at any r; bypass u/delta
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -668,8 +668,9 @@ class KVCompressor(nn.Module):
     mean pool), keys pooled *before* `k_norm`, plus a zero-init linear correction from the block's
     mean hidden state. At init this is exact mean pooling; with `ratio=1` every slot is one token's
     K/V exactly (the uncompressed arm U) *until* `u`/`delta` move. `identity_slots` bypasses
-    `u`/`delta` for a frozen mean (r=1: hard copy of `k_norm(k_raw)`, `v`). RoPE is applied by
-    the caller at the slot's position.
+    `u`/`delta` for a frozen mean of valid tokens in each block of `r` (r=1: hard copy of
+    `k_norm(k_raw)`, `v`; r>1: not last-token copy). RoPE is applied by the caller at the
+    slot's position.
     """
 
     def __init__(self, cfg: PerceiverARConfig):

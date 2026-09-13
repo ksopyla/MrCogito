@@ -15,6 +15,23 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-14] - E21 identity slots: freeze mean-pool at any ratio
+
+**Why:**
+- Rung 5h asks whether 16-token means carry INDEX on the trusted inplace mask. Identity
+  already mean-pooled every block of `r`; tests now lock that r=16 is frozen mean-pool,
+  not last-token copy and not a no-op.
+
+**Impact:**
+- `--message_identity_slots` at any `message_compress_ratio` is `k_norm(mean)` / `mean(v)`
+  over valid tokens in each block. Learned `u`/`delta` stay unused. Default off.
+
+**What changed:**
+- [added] r=16 identity mean-pool tests in `tests/test_perceiver_ar_message.py`
+- [docs] comments in `nn/perceiver_ar_lm.py` and `evaluation/bapo_models.py`
+
+**Does not:** change the identity forward, turn the flag on by default, or enable remainder.
+
 ## [2026-09-14] - E21 hard-identity slots (`message_identity_slots`, default off)
 
 **Why:**
@@ -23,8 +40,9 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 **Impact:**
 - Default learned pool is unchanged. `--message_identity_slots` bypasses `u`/`delta`
-  (r=1: hard copy of `k_norm(k_raw)`, `v`). Still scatters through inplace when that flag
-  is on; does not skip the compressor the way `--message_inplace_raw_kv` does.
+  (frozen mean of each block of `r`; r=1: hard copy of `k_norm(k_raw)`, `v`). Still
+  scatters through inplace when that flag is on; does not skip the compressor the way
+  `--message_inplace_raw_kv` does.
 
 **What changed:**
 - [added] `PerceiverARConfig.message_identity_slots` in `nn/perceiver_ar_lm.py`

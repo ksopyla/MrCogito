@@ -223,6 +223,35 @@ def test_identity_slots_r1_equals_token_kv_even_after_scrambling_u_delta():
     assert not torch.allclose(k_off, k_norm(k_raw), atol=1e-4)
 
 
+def test_identity_slots_r16_is_frozen_mean_pool_not_last_token():
+    """`--message_identity_slots` at r=16 is k_norm(mean of 16) / mean(v), not last-token
+    copy and not a no-op. Scrambling u/delta must not move the slots."""
+    torch.manual_seed(0)
+    c = cfg(message_boundary_token_id=M, message_compress_ratio=16, message_identity_slots=True)
+    comp = KVCompressor(c)
+    B, S, g, dh, d = 2, 40, c.num_kv_heads, c.head_dim, c.hidden_size  # 2 full blocks + rem 8
+    h = torch.randn(B, S, d)
+    k_raw, v = torch.randn(B, S, g, dh), torch.randn(B, S, g, dh)
+    k_norm = torch.nn.RMSNorm(dh)
+    k_bar, v_bar = comp(h, k_raw, v, k_norm)
+    assert k_bar.shape == (B, 3, g, dh) and v_bar.shape == (B, 3, g, dh)
+    assert torch.allclose(k_bar[:, 0], k_norm(k_raw[:, :16].mean(1)), atol=1e-6)
+    assert torch.allclose(v_bar[:, 0], v[:, :16].mean(1), atol=1e-6)
+    assert not torch.allclose(v_bar[:, 0], v[:, 15], atol=1e-4)
+    assert not torch.allclose(k_bar[:, 0], k_norm(k_raw[:, 15]), atol=1e-4)
+    assert torch.allclose(v_bar[:, 1], v[:, 16:32].mean(1), atol=1e-6)
+    assert torch.allclose(v_bar[:, 2], v[:, 32:40].mean(1), atol=1e-6)
+    k_saved, v_saved = k_bar.clone(), v_bar.clone()
+    comp.u.data.normal_(0, 5.0)
+    comp.delta.weight.data.normal_(0, 5.0)
+    k2, v2 = comp(h, k_raw, v, k_norm)
+    assert torch.allclose(k2, k_saved, atol=1e-6) and torch.allclose(v2, v_saved, atol=1e-6)
+    learned = KVCompressor(cfg(message_boundary_token_id=M, message_compress_ratio=16))
+    learned.u.data.normal_(0, 5.0)
+    k_l, _ = learned(h, k_raw, v, k_norm)
+    assert not torch.allclose(k_l[:, 0], k_norm(k_raw[:, :16].mean(1)), atol=1e-4)
+
+
 # ------------------------------------------------------------------ severance / channel isolation
 
 
@@ -390,6 +419,25 @@ def test_inplace_identity_slots_uses_scatter_not_raw_kv_and_ignores_u():
         assert torch.allclose(before, after, atol=1e-5)
         learned.layers[gi].attn.compressor.delta.weight.data.normal_(0, 5.0)
         assert not torch.allclose(learned(x).logits[:, 8:], ident(x).logits[:, 8:], atol=1e-4)
+
+
+def test_inplace_identity_r16_is_mean_pool_not_r1_noop():
+    """Inplace identity at r=16 is not a no-op copy of every token (r=1 identity).
+    Scrambling u/delta must not move receiver logits."""
+    x = with_boundary(rand_ids(2, 32, seed=3), 16)  # sender len 16 = one r=16 block
+    r16 = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=16,
+                     message_slots_inplace=True, message_identity_slots=True)
+    r1 = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                    message_slots_inplace=True, message_identity_slots=True)
+    assert r16.config.message_inplace_raw_kv is False
+    with torch.no_grad():
+        assert not torch.allclose(r16(x).logits[:, 16:], r1(x).logits[:, 16:], atol=1e-4)
+        gi = r16.config.global_layer_index
+        before = r16(x).logits
+        r16.layers[gi].attn.compressor.u.data.normal_(0, 5.0)
+        r16.layers[gi].attn.compressor.delta.weight.data.normal_(0, 5.0)
+        after = r16(x).logits
+        assert torch.allclose(before, after, atol=1e-5)
 
 
 def test_receiver_only_round_trip_via_prefix_kv_as_message():
