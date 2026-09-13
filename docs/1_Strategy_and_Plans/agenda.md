@@ -20,10 +20,10 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-13 — E25 E21 capability ladder (INDEX near-pass; MATCH ~10 bits; select wall).**
-  Tiny INDEX at 8k: E21 **47.01 bits** vs 0.75× E18 47.29 (near-pass). Tiny MATCH: E21
-  **9.81 bits @8k** vs E18 0 / dense 31. Tiny `select_1decoy`: dense **31.3 bits**, E18
-  **23.2**, E21 **1.47 bits / flow 0.046** (type-cue wall). Next: `chain_ordered`. Spec
+- **2026-09-13 — E25 E21 capability ladder (INDEX near-pass; MATCH/select walls; chain climbing).**
+  Tiny INDEX at 8k: E21 **47.01 bits** vs 0.75× E18 47.29 (near-pass). MATCH: **9.81 bits @8k**
+  vs E18 0 / dense 31. Select: **1.47 bits** vs E18 23. Chain: dense **23.3 bits**, E18 **24.6**,
+  E21 **8.22 bits / flow 0.316** at 3200 (still climbing). Next: extra steps on chain. Spec
   [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) ·
   [rung 1](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) ·
   [remainder](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) ·
@@ -31,7 +31,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [INDEX extra steps](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_e21_steps_20260913.md) ·
   [recall](../2_Experiments_Registry/run_reports/e25_tiny_recall_single_20260913.md) ·
   [recall extra steps](../2_Experiments_Registry/run_reports/e25_tiny_recall_single_e21_steps_20260913.md) ·
-  [select](../2_Experiments_Registry/run_reports/e25_tiny_select_1decoy_20260913.md).
+  [select](../2_Experiments_Registry/run_reports/e25_tiny_select_1decoy_20260913.md) ·
+  [chain](../2_Experiments_Registry/run_reports/e25_tiny_chain_ordered_20260913.md).
   Do not relabel E18 scores as E21.
 - **2026-09-13 — E24 BAPO DNA ladder (tiny + GPU bridge 512/1024; 4k S0 open).** Packed tiny
   seq=128 / 0.59M: E18 matches dense on positional `far_copy` (99.2% vs 99.4%) and recovers
@@ -65,6 +66,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-13 — E25 tiny chain_ordered (CPU, 3200).** Dense **93.1% / 23.3 bits** (S0).
+  E18 **97.5% / 24.6 bits**. E21 **49.3% / 8.22 bits / flow 0.316**. INDEX-like half-channel;
+  still climbing. `e18_local` 0 bits.
+  [report](../2_Experiments_Registry/run_reports/e25_tiny_chain_ordered_20260913.md).
 - **2026-09-13 — E25 tiny select_1decoy (CPU, 1900).** Dense **99.2% / 31.3 bits** (S0).
   E18 **82.3% / 23.2 bits**. E21 **33.0% / 1.47 bits / flow 0.046**. Type-cue wall; K3
   borderline. `e18_local` 0 bits.
