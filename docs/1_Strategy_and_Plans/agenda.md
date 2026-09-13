@@ -74,6 +74,14 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   projection, and the order-sensitive part of a write must be live at init.**
   [note](../4_Research_Notes/concept_channel_cold_start_20260913.md) ·
   [suite](../engineering_specs/symbolic_long_context_suite.md).
+- **2026-09-13 — improved Arm A hits ~100% on 32-letter far_copy; the 49% was a dead LR schedule.**
+  Same exam, warm init, exclusive scope. Binding knob is **examples under a live schedule**, not
+  width: 1.35M reaches **99.9% at 96k examples** (two seeds), 0.38M at 112k, **0.12M at 136k**.
+  E22's `r=16` still 99%s, at **184k examples** (~1.9×). A 3k OneCycle horizon on the same 96k
+  examples stalls at 49% — the updates were enough, the LR died. Copying 8 letters (8× less loss
+  per row) stays at chance: short answers starve the channel. Arm D needs ~64k examples / ~2 min;
+  Arm A needs ~1.5× examples and ~5× wall-clock. Taking the array away after 99.9% returns chance.
+  Not a language result. [note](../4_Research_Notes/symbolic_arm_a_100pct_limits_20260913.md).
 - **2026-09-13 — the family's compute win is a constant, not an asymptote** (analytic, zero GPU-days,
   `analysis/geometry_cost_model.py`). The E22 geometry cuts decode state 192× (18 KB/token of dense KV
   → 96 B/token of array; 180 GB → 0.96 GB at 10M) and that *is* structural. But the *read* is dense —
