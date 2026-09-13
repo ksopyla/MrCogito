@@ -47,6 +47,19 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   those skills own what goes in the docs, `research-comms` owns what goes in the chat.
 - `AGENTS.md`: "How to report to the author" section.
 
+**Validation:**
+- Two rounds of a fresh agent given *only* the skill and asked to write the chat message for three
+  real cases it had not seen (the E17e close, the E18 family verdict, a raw status dump). Round one
+  produced compliant messages at 120 / 120 / 60 words and exposed six contradictions in the skill
+  (the Number law demanding a unit the ban list forbade, no budget row for a family verdict, no
+  procedure for an unlabelled pair, a self-check that the Brief template could never pass, the menu
+  vs the 60-word status budget, banned operational details with nowhere to go). All were fixed;
+  round two passed its own checklist on every line and surfaced only scope questions, which are now
+  answered in the text (table cells count toward the budget; a mid-run number with no baseline is
+  reported qualitatively; naming duties are suspended at the 60-word status budget).
+- Round two also found a real glossary gap while resolving `0.162/0.686`: `distinct-1`, `REP-3` and
+  the position-bin vocabulary ("first-64", "late half") are now in `docs/glossary.md`.
+
 **Impact:**
 - No code, training, evaluation or checkpoint behaviour changes.
 

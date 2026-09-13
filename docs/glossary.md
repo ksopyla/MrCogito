@@ -59,10 +59,18 @@ never bother to use the notebook.**
 | **passkey accuracy** | hide a password early in a long text, ask for it at the end | higher | 0.0 means the model cannot retrieve at all. |
 | **RULER / RULER-lite** | a small suite of long-context retrieval tasks: passkey, multi-key lookup, variable tracking, frequent-word counting | higher | |
 | **STS-B (zero-shot)** | do two sentences the model considers similar match human similarity ratings — our semantic-quality reference | higher | 0.714 is our best from-scratch result. |
+| **distinct-1** | share of the words the model generates that are different from each other — is it saying new things? | higher | our gate has been ≥0.20. Below that it is looping. |
+| **REP-3** | share of 3-word sequences it has already said — is it repeating itself? | lower | our gate has been ≤0.60. Quoted next to distinct-1, so a pair like `0.162/0.686` means "not diverse enough and repeating too much". |
 | **σ (sigma)** | how many standard errors away from zero a difference is | higher = more certain it is real | under 2 = noise. Over 10 = definitely real (but possibly tiny). |
 
 **Real and tiny are different things.** A difference can be 25σ and still be worth nothing. Always
 report both: is it real, and is it big enough to matter.
+
+**Position bins.** Ablation numbers are usually quoted for a slice of positions, not the whole text,
+because that is where memory could possibly help. "First-64" means the first 64 tokens after a block
+boundary — the model has just lost its local view, so memory should matter most there. "Late half" or
+"late bin" means deep into the window, far from anything local attention can reach. A number is
+meaningless without knowing which slice it came from.
 
 ---
 
