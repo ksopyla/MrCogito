@@ -370,7 +370,7 @@ def main():
     parser = argparse.ArgumentParser(description="Check Concept Encoder model health")
     parser.add_argument("--model_path", type=str, required=True, help="Path to trained model")
     parser.add_argument("--model_type", type=str, default="weighted_mlm",
-                        choices=["weighted_mlm", "perceiver_mlm", "perceiver_denoise", "perceiver_ar"],
+                        choices=["weighted_mlm", "perceiver_mlm", "perceiver_denoise", "perceiver_ar", "perceiver_concept"],
                         help="Model type")
     parser.add_argument("--tokenizer_name", type=str, default="bert-base-uncased", help="Tokenizer to use")
     parser.add_argument("--detailed", action="store_true", help="Run detailed weight inspection (like inspect_checkpoint.py)")
@@ -395,8 +395,8 @@ def main():
             model = ConceptEncoderForMaskedLMPerceiver.from_pretrained(args.model_path)
         elif args.model_type == "perceiver_denoise":
             model = ConceptEncoderForDenoisingPerceiver.from_pretrained(args.model_path)
-        elif args.model_type == "perceiver_ar":
-            # E18 family: no concept embeddings; forward(input_ids, attention_mask, labels)
+        elif args.model_type in ("perceiver_ar", "perceiver_concept"):
+            # E18 / E22 families: no concept embeddings; forward(input_ids, attention_mask, labels)
             # is a plain causal LM. Load with the eval-friendly config (sdpa, no 2048 padding).
             from evaluation.lm_eval_perceiver_ar import load_perceiver_ar_for_eval
             from evaluation.long_context_probes import resolve_tokenizer_name

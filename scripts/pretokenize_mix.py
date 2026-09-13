@@ -311,6 +311,7 @@ def tokenize_source(
     raw_archive_dir: Path | None = None,
     eval_only: bool = False,
     model_vocab_size: int | None = None,
+    keep_raw: bool = False,
 ) -> dict:
     name = spec.get("name", spec["hf_id"])
     tok_dir = cache_dir / f"{name}"
@@ -400,13 +401,18 @@ def tokenize_source(
     # Pre-truncate gigantic web/PDF docs so the Fast tokenizer never scans a huge string
     # (it would OOM/crash a num_proc worker even though truncation=max_seq_length discards
     # all but ~8k chars). Env-overridable; default 100k chars >> 2048 tokens.
-    max_chars = int(os.environ.get("PRETOKENIZE_MAX_CHARS", "100000"))
+    # A source may raise the cap (`max_chars` in its spec) — needed when `chunk_long_docs` is
+    # on, since the default 100k chars (~22k tokens) would otherwise silently cut a book at
+    # ~2/3 of one 32k row (the E18 32k trees: PG-19 rows average 22k tokens for this reason).
+    max_chars = int(spec.get("max_chars") or os.environ.get("PRETOKENIZE_MAX_CHARS", "100000"))
     tokenize_fn = _make_tokenize_fn(
         tokenizer,
         max_seq_length,
         append_eos_token_id,
         max_chars=max_chars,
         model_vocab_size=model_vocab_size,
+        chunk_long_docs=bool(spec.get("chunk_long_docs", False)),
+        min_tokens=int(spec.get("min_tokens", 0) or 0),
     )
 
     def _map_resilient(ds, num_proc, **kw):
@@ -423,12 +429,15 @@ def tokenize_source(
         host that pretokenized successfully (Odra, July). PROPER FIX (TODO): load the text
         column as binary (``Value('binary')`` / pyarrow schema override) and decode with
         ``errors='replace'`` in ``tokenize_fn``, or pre-sanitize the parquet at read time."""
+        # Whole-document chunking tokenizes multi-megabyte books: keep map batches small so
+        # a worker never holds ~1000 full books at once (spec `map_batch_size`, default 1000).
+        bs = int(spec.get("map_batch_size") or (16 if spec.get("chunk_long_docs") else 1000))
         try:
-            return ds.map(tokenize_fn, batched=True, num_proc=num_proc, **kw)
+            return ds.map(tokenize_fn, batched=True, batch_size=bs, num_proc=num_proc, **kw)
         except RuntimeError as e:
             if num_proc and num_proc > 1 and "abruptly died" in str(e):
                 logger.warning(f"[{name}] multiprocessing map died ({e}); retrying num_proc=1 to surface the real error")
-                return ds.map(tokenize_fn, batched=True, num_proc=1, **kw)
+                return ds.map(tokenize_fn, batched=True, batch_size=bs, num_proc=1, **kw)
             raise
 
     def _drop_oov(ds, split_name: str, num_proc: int):
@@ -472,7 +481,10 @@ def tokenize_source(
     # Archive raw parquet/zst to NAS (tokenizer-agnostic) so a future tokenizer
     # switch can re-tokenize without re-downloading; then free NVMe. If no archive
     # dir is configured, delete the raw files to keep NVMe bounded.
-    if raw_archive_dir is not None:
+    if keep_raw:
+        # Raw files are read in place (e.g. a symlinked NAS archive) — never move or delete them.
+        logger.info(f"[{name}] --keep_raw: raw files left untouched")
+    elif raw_archive_dir is not None:
         archive_src = raw_archive_dir / name
         archive_dst = raw_archive_dir / name
         archive_dst.mkdir(parents=True, exist_ok=True)
@@ -514,6 +526,9 @@ def main():
     p.add_argument("--max_seq_length", type=int, default=2048)
     p.add_argument("--cache_dir", default=None, help="Tokenized cache root (default: $DATASETS_TOK_DIR from remote_paths.sh, or $HF_HOME/datasets_tok — the canonical pre-tokenized corpora tree, per remote-servers SKILL.md)")
     p.add_argument("--raw_dir", default=None, help="Raw parquet root (default: $DATASETS_RAW_DIR, or $HF_HOME/datasets_raw)")
+    p.add_argument("--keep_raw", action="store_true",
+                   help="Leave raw files in place after tokenizing (no archive move, no delete) — use when "
+                        "--raw_dir/<source> is a symlink into the NAS archive so tokenization reads it directly.")
     p.add_argument("--raw_archive_dir", default=None, help="If set, move raw parquet/zst here (per-source subdir) after tokenizing instead of deleting — a tokenizer-agnostic archive for future re-tokenization. E.g. /nas/ml_data/mrcogito/hf_datasets/raw")
     p.add_argument("--archive_raw_only", action="store_true", help="Only download + archive raw files to --raw_archive_dir for ALL sources (no tokenize). Use to populate the NAS archive for sources already tokenized under another tokenizer.")
     p.add_argument("--eval_only", action="store_true", help="Tokenize and save only the deterministic eval split (for frozen long-context evaluation manifests).")
@@ -628,6 +643,7 @@ def main():
                     raw_archive_dir=raw_archive_root,
                     eval_only=args.eval_only,
                     model_vocab_size=model_vocab_size,
+                    keep_raw=args.keep_raw,
                 )
                 entries.append(entry)
                 logger.info(f"[{entry['name']}] elapsed {time.time()-t0:.0f}s")
@@ -683,6 +699,7 @@ def _proc_worker(spec, args, cache_root, raw_root, append_eos, raw_archive_root=
         raw_archive_dir=raw_archive_root,
         eval_only=args.eval_only,
         model_vocab_size=model_vocab_size,
+        keep_raw=getattr(args, "keep_raw", False),
     )
 
 

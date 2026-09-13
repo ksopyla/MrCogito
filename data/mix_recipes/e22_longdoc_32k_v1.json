@@ -1,0 +1,42 @@
+{
+  "mix_id": "e22_longdoc_32k_v1",
+  "description": "E22 long-document sources at seq 32768 (SmolLM3 = Llama-3 vocabulary). Whole documents are tokenized and CHUNKED into consecutive 32k rows ([BOS] chunk [EOS]) instead of truncated, so every PG-19 book contributes all of its ~3 rows and long PDFs are kept in full; rows shorter than min_tokens are dropped so the tier is genuinely long. Reuses the NAS raw archive (--raw_dir with per-source symlinks + --keep_raw). Combined at manifest level with the short fluency tier (fineweb_edu, stack_edu_py from the 8k tree) and the E18b keyed-recall rows via scripts/write_manifest_variant.py; weights here are placeholders (token-share targets set in the merged manifest).",
+  "objective_compatibility": ["causal_lm"],
+  "seq_len_target": 32768,
+  "long_context_policy": {
+    "target_min_pct_docs_over_8k": 60.0,
+    "target_min_pct_docs_over_16k": 40.0,
+    "notes": "pg19_chunked rows are 32k except a book's last chunk; finepdfs_long keeps PDFs >= 4096 tokens only."
+  },
+  "sources": [
+    {
+      "name": "pg19_chunked",
+      "hf_id": "emozilla/pg19",
+      "subset": "default",
+      "split": "train",
+      "text_columns": ["text"],
+      "weight": 0.5,
+      "max_shards": 23,
+      "file_glob": "data/train-*.parquet",
+      "chunk_long_docs": true,
+      "max_chars": 4000000,
+      "min_tokens": 2048,
+      "notes": "Book-length narrative; ~24k books in 23 shards (the archived set). Decontaminate PG-19 test/validation before any published number."
+    },
+    {
+      "name": "finepdfs_long",
+      "hf_id": "HuggingFaceFW/finepdfs_100BT",
+      "subset": "default",
+      "split": "train",
+      "text_columns": ["text"],
+      "weight": 0.5,
+      "max_shards": 16,
+      "file_glob": "data/*.parquet",
+      "chunk_long_docs": true,
+      "max_chars": 2000000,
+      "min_tokens": 4096,
+      "eval_sample_cap": 2000,
+      "notes": "Long coherent PDFs only (>= 4096 tokens after tokenization); 16 archived shards."
+    }
+  ]
+}

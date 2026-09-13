@@ -39,7 +39,14 @@ caution-as-default is not.
    New capability lands as a *reusable, config-selectable* foundation component (implement
    via `research-implement`).
 4. **Numeric success AND kill criteria, set before running.** No open-ended runs. Killing a
-   bold idea early is success, not failure of process.
+   bold idea early is success, not failure of process. **Every absolute-metric gate needs a
+   measured ceiling, not an aspiration** — name the control that shows the number is reachable
+   at this scale, data and budget, and set the gate as a fraction of it. E22's S1 asked the
+   concept array for 0.30 nats of far-context value when E18's own reach ablation had already
+   measured a *dense* transformer extracting 0.035–0.10 nats from the same distances at the same
+   scale: the gate was ~3× above the physical ceiling, so no architecture could have passed
+   (see `docs/4_Research_Notes/e22_root_cause_20260912.md` §7). Gates with a demonstrated
+   ceiling look like E18b's ("dense control reaches 99.3% on this task, so ask for 50%").
 5. **Builds-on is mandatory.** Name the foundation modules reused, the init/checkpoint, and
    the baseline run id + score to beat — and state **what is materially new** vs that baseline
    (not just a retune).
@@ -80,7 +87,9 @@ Ask whether the design is a **new inductive bias**, not only whether knobs match
 - [ ] 3. Frame ONE coherent architectural bet (composition OK if it is one idea); name what
       is NOT in scope (follow-up ablations after a positive signal)
 - [ ] 4. Fill Builds-on: foundation modules + init/checkpoint + baseline id & score + delta
-- [ ] 5. Set numeric success + kill criteria (aggressive enough to stop a bad bet early)
+- [ ] 5. Set numeric success + kill criteria (aggressive enough to stop a bad bet early);
+      for each absolute threshold, cite the control that measured its ceiling — or schedule the
+      cheap measurement as a pre-flight step in the Plan
 - [ ] 6. Assign the next free ID (E0NN_slug); write docs/experiments_specs/ahead/<ID>.md from TEMPLATE.md
 - [ ] 7. Specify how it runs: exact command + env-var overrides on the shared bash launcher
       (list any new FOUNDATION component — reusable, not a fork)

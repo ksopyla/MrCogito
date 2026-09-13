@@ -75,32 +75,19 @@ def compute_stats(
     train_ds, eval_ds = load_pretokenized_mix(manifest_path)
     workers = max(1, min(num_proc or min(8, os.cpu_count() or 1), len(train_ds)))
     started = time.monotonic()
+    # The trainer needs the per-row sequence-length sidecar anyway (length grouping / packing);
+    # its sum is the exact token count, so build-or-load it here instead of a second full pass
+    # over the rows (that second pass cost ~1 h per server on the 3.8M-row E22 manifest).
+    from data.length_cache import compute_or_load_interleaved_lengths
+
     print(
-        f"Counting tokens across {len(train_ds):,} interleaved rows "
-        f"with {workers} workers...",
+        f"Token count from the sequence-length sidecar of {len(train_ds):,} interleaved rows "
+        f"(build with {workers} workers if missing)...",
         file=sys.stderr,
         flush=True,
     )
-    token_ds = train_ds.select_columns(["input_ids"])
-    map_kwargs = dict(
-        batched=True,
-        batch_size=8192,
-        remove_columns=token_ds.column_names,
-        keep_in_memory=True,
-        load_from_cache_file=False,
-        desc="Exact token count",
-    )
-    try:
-        partials = token_ds.map(_count_token_batch, num_proc=workers, **map_kwargs)
-    except RuntimeError as e:
-        # Polonez (2026-09-07): forked datasets.map workers die at random ("abruptly died").
-        # A single-process count is slower but always finishes; the result is cached.
-        if workers > 1 and "abruptly died" in str(e):
-            print("datasets.map workers died; retrying token count single-process", file=sys.stderr, flush=True)
-            partials = token_ds.map(_count_token_batch, **map_kwargs)
-        else:
-            raise
-    train_tokens = sum(partials["token_count"])
+    lengths = compute_or_load_interleaved_lengths(manifest_path, train_ds=train_ds, num_proc=workers)
+    train_tokens = int(lengths.astype("int64").sum())
     elapsed = time.monotonic() - started
     print(
         f"Counted {train_tokens:,} tokens in {elapsed:.1f}s "

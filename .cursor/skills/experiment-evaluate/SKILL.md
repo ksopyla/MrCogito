@@ -387,9 +387,21 @@ Outputs: `Cache/eval/<tag>/{health.log,longctx_suite.json,reach.json,summary.md}
 `Cache/Evaluation_reports/lm_eval/<tag>.json` + `summary.csv`, log in `Cache/logs/eval_<tag>_*.log`.
 Smoke first with `LIMIT=20 CONTEXT_LENGTHS=8192 TRIALS=2 MAX_ROWS=8`.
 
-Interpretation rules: (1) judge reasoning **against the reference row at matched params and
-tokens** (SmolLM2-135M saw 2T tokens; a 20–50B-token E18 checkpoint is expected well below it —
-the useful number is the *gap trend* across our checkpoints, not the absolute); (2) the
+Interpretation rules: (0) **below ~10B training tokens the lm-eval accuracies are at chance and
+carry no signal — report them, never gate on them.** Measured on E22 at 0.44B tokens: hellaswag
+0.250 (chance 0.25), winogrande 0.495 (0.5), piqa 0.531 (0.5), arc_easy 0.292 (0.25),
+commonsense_qa 0.196 (0.2), lambada 0.009; arm A `avg_acc` 0.298 vs arm C 0.305 — i.e. the
+no-concept control "won", which is noise. At pilot scale the instruments with power are paired
+same-weight ablations (`--probe concept`, `--probe reach`: 10–25σ on ~2M tokens with a built-in
+zero) and dense-label synthetic tasks with a dense control. **Report loss as bits per byte**
+(`nats / ln2 / UTF-8 bytes` of the same decoded text) whenever comparing across tokenizers or to
+public models — our 128k-vocab per-token CE is not comparable to anything published. E22 arm A on
+its own eval rows: CE/token 4.157 → **BPB 1.472**; arm C 1.466; SmolLM2-135M **0.989**;
+pythia-160m **1.265** (same text, 2048-token prefixes). (1) judge reasoning **against the
+reference row at matched params and tokens** (SmolLM2-135M saw ~2T tokens and pythia-160m ~300B vs
+our 0.44B — 680–4500×; no public checkpoint of this size is a valid baseline at pilot budget, so
+the fair comparison is a matched internal dense control, which is part of the measurement
+apparatus and must never be deleted); (2) the
 long-context kill signal is `passkey`/`multikey` exact match collapsing at the first length beyond
 the training window while `buckets` CE stays flat (fluent but blind); (3) `vt` and `fwe` need
 aggregation over the whole context — a model that passes passkey but scores 0 on `fwe` retrieves,

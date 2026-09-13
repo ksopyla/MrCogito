@@ -164,6 +164,28 @@ PAR_SWA_SINK="${PAR_SWA_SINK:-False}"           # windowed layers also see the d
 PAR_GLOBAL_NOPE="${PAR_GLOBAL_NOPE:-False}"     # global read(s) without RoPE (content-only retrieval)
 PAR_GLOBAL_LOGIT_SCALE="${PAR_GLOBAL_LOGIT_SCALE:-none}"   # 'log' = SSMax-style q *= s*log(n) on the global read(s)
 PAR_GLOBAL_SCALE_REF="${PAR_GLOBAL_SCALE_REF:-8192}"
+# E22 — Perceiver Concept LM family (nn/perceiver_concept_lm.py), MODEL_FAMILY=perceiver_concept.
+# Shares HIDDEN_SIZE / INTERMEDIATE_SIZE / TOKEN_EMBEDDING_DIM / NUM_KV_HEADS / HEAD_DIM /
+# PAR_NGRAM_* / PAR_VALUE_EMBED_DIM / ROPE_THETA / ATTN_* / LOGIT_SOFTCAP / Z_LOSS / USE_LIGER with E18.
+PCL_ENC_LAYERS="${PCL_ENC_LAYERS:-6}"
+PCL_ENC_WINDOW="${PCL_ENC_WINDOW:-512}"
+PCL_CONCEPT_RATIO="${PCL_CONCEPT_RATIO:-16}"
+PCL_CONCEPT_SLOTS="${PCL_CONCEPT_SLOTS:-1}"
+PCL_POOL_POS_BIAS="${PCL_POOL_POS_BIAS:-True}"
+PCL_LATENT_LAYERS="${PCL_LATENT_LAYERS:-4}"
+PCL_LATENT_REPEATS="${PCL_LATENT_REPEATS:-1}"
+PCL_DEC_LAYERS="${PCL_DEC_LAYERS:-8}"
+PCL_DEC_SEGMENT="${PCL_DEC_SEGMENT:-1024}"
+PCL_DEC_LOCAL="${PCL_DEC_LOCAL:-block}"             # block (segment reset) | swa
+PCL_CONCEPT_MODE="${PCL_CONCEPT_MODE:-full}"        # full | none (arm C control)
+PCL_CONCEPT_XATTN_SCOPE="${PCL_CONCEPT_XATTN_SCOPE:-causal}"   # causal (E22) | exclusive (E23: slots before the raw window only)
+PCL_XATTN_WO_INIT_STD="${PCL_XATTN_WO_INIT_STD:-0.0}"          # 0.0 = zero-init (E22); >0 breaks the concept path cold start
+PCL_POOLER_WO_INIT_STD="${PCL_POOLER_WO_INIT_STD:-0.0}"        # 0.0 = zero-init (E22); >0 makes the write order-sensitive at init
+PCL_XATTN_KV_HEADS="${PCL_XATTN_KV_HEADS:-2}"
+PCL_ENC_VALUE_EMBED_LAYERS="${PCL_ENC_VALUE_EMBED_LAYERS:-0,3}"
+PCL_DEC_VALUE_EMBED_LAYERS="${PCL_DEC_VALUE_EMBED_LAYERS:-0}"
+# Runtime source re-weighting of a manifest / recipe mix (JSON object source -> weight).
+DATASET_MIX_WEIGHT_OVERRIDE="${DATASET_MIX_WEIGHT_OVERRIDE:-}"
 ROPE_THETA="${ROPE_THETA:-500000.0}"
 ATTN_BACKEND="${ATTN_BACKEND:-flex}"                # sdpa | flex | flash
 ATTN_PAD_MULTIPLE="${ATTN_PAD_MULTIPLE:-2048}"
@@ -394,6 +416,47 @@ if [ "$MODEL_FAMILY" = "perceiver_ar" ]; then
     if [ -n "$NUM_ATTENTION_HEADS" ]; then
         PAR_ARGS+=(--num_attention_heads "$NUM_ATTENTION_HEADS")
     fi
+fi
+# E22: Perceiver Concept LM family args, only when MODEL_FAMILY=perceiver_concept.
+if [ "$MODEL_FAMILY" = "perceiver_concept" ]; then
+    PAR_ARGS+=(
+        --model_family "$MODEL_FAMILY"
+        --pcl_enc_layers "$PCL_ENC_LAYERS"
+        --pcl_enc_window "$PCL_ENC_WINDOW"
+        --pcl_concept_ratio "$PCL_CONCEPT_RATIO"
+        --pcl_concept_slots "$PCL_CONCEPT_SLOTS"
+        --pcl_pool_pos_bias "$PCL_POOL_POS_BIAS"
+        --pcl_latent_layers "$PCL_LATENT_LAYERS"
+        --pcl_latent_repeats "$PCL_LATENT_REPEATS"
+        --pcl_dec_layers "$PCL_DEC_LAYERS"
+        --pcl_dec_segment "$PCL_DEC_SEGMENT"
+        --pcl_dec_local "$PCL_DEC_LOCAL"
+        --pcl_concept_mode "$PCL_CONCEPT_MODE"
+        --pcl_concept_xattn_scope "$PCL_CONCEPT_XATTN_SCOPE"
+        --pcl_xattn_wo_init_std "$PCL_XATTN_WO_INIT_STD"
+        --pcl_pooler_wo_init_std "$PCL_POOLER_WO_INIT_STD"
+        --pcl_xattn_kv_heads "$PCL_XATTN_KV_HEADS"
+        --pcl_enc_value_embed_layers "$PCL_ENC_VALUE_EMBED_LAYERS"
+        --pcl_dec_value_embed_layers "$PCL_DEC_VALUE_EMBED_LAYERS"
+        --num_kv_heads "$NUM_KV_HEADS"
+        --head_dim "$HEAD_DIM"
+        --par_ngram_orders "$PAR_NGRAM_ORDERS"
+        --par_ngram_buckets "$PAR_NGRAM_BUCKETS"
+        --par_value_embed_dim "$PAR_VALUE_EMBED_DIM"
+        --rope_theta "$ROPE_THETA"
+        --attn_backend "$ATTN_BACKEND"
+        --attn_pad_multiple "$ATTN_PAD_MULTIPLE"
+        --logit_softcap "$LOGIT_SOFTCAP"
+        --z_loss "$Z_LOSS"
+        --use_liger "$USE_LIGER"
+        --prediction_loss_only True
+    )
+    if [ -n "$NUM_ATTENTION_HEADS" ]; then
+        PAR_ARGS+=(--num_attention_heads "$NUM_ATTENTION_HEADS")
+    fi
+fi
+if [ -n "$DATASET_MIX_WEIGHT_OVERRIDE" ]; then
+    MIX_ARGS+=(--dataset_mix_weight_override "$DATASET_MIX_WEIGHT_OVERRIDE")
 fi
 WARM_ARGS=()
 if [ -n "$MODEL_NAME_OR_PATH" ]; then
