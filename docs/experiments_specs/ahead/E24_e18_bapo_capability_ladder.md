@@ -1,6 +1,6 @@
 # E24 — E18 capability limits on a BAPO DNA ladder
 
-- **Status:** in progress (tiny DNA measured; medium not closed). **2026-09-13:** a second
+- **Status:** in progress (tiny DNA measured; GPU bridge 512/1024 measured; 4k S0 not closed). **2026-09-13:** a second
   family (Glyph: typed vocab 16/32, structured noise) is specified and implemented as
   config-selectable generators; it does **not** change this experiment's DNA hypothesis.
   See [`glyph_capability_ladder.md`](../../4_Research_Notes/glyph_capability_ladder.md).
@@ -91,7 +91,7 @@ measurement instrument with a falsifiable capability claim, not a LR sweep.
   baseline, probe, plots. No new `train_*.py`.
 
 ## Result
-- Run id: `bapo_tiny_packed` + S0 hunts (CPU, 2026-09-13); medium GPU not yet in this result
-- WandB: n/a (CPU probe; no `compute/*`)
-- Run report: [`docs/2_Experiments_Registry/run_reports/e24_tiny_bapo_ladder_20260913.md`](../../2_Experiments_Registry/run_reports/e24_tiny_bapo_ladder_20260913.md)
-- Verdict: **mixed** — S1 pass (E18 `far_copy` 99.2% ≈ dense 99.4%); S2 pass on `recall_single` (dense 99.2% / 31 bits, E18 **0 bits**); S3 incomplete (ordered DFA easy, shuffled chain uncalibrated at 33% dense); S4 plots exist. Default MATCH2 is K1 at 0.6M. Encoder-decoder at 0.8M is not a competitive copy baseline.
+- Run id: `bapo_tiny_packed` (CPU) + `bapo_bridge512` (Polonez/Odra GPU)
+- WandB: n/a (probe; no `compute/*`)
+- Run reports: [`e24_tiny_bapo_ladder_20260913.md`](../../2_Experiments_Registry/run_reports/e24_tiny_bapo_ladder_20260913.md) · [`e24_bridge512_bapo_ladder_20260913.md`](../../2_Experiments_Registry/run_reports/e24_bridge512_bapo_ladder_20260913.md)
+- Verdict: **mixed** — S1 pass at seq=128 and **512** right-align `far_copy` (E18 100% / 64 bits); **S1 fail at 1024** (dense 99.9% / 64 bits, E18 **0 bits**). S2 holds on 512 `recall_single` even with fixed offset (E18 0 bits vs dense 32). 4k spread and 512 chain are K1. Do not score E18 at 4k until a dense replica is ≥75%.

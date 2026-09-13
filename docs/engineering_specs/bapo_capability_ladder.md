@@ -171,8 +171,9 @@ or multi-item MATCH2 at those lengths until a dense control hits 75% at the same
 The first advertised medium recipe (H=256, 4 layers, 1 KV head, `global_logit_scale=none`,
 batch 32, 8000 dense steps, **spread** placement) **did not** clear S0: dense stayed at chance
 (~25%, CE=ln(4)) for 3800+ steps on `far_copy`, `recall_single`, and `select_1decoy`. Right-align
-`far_copy` at seq=512, gap=65, H=128 **does** clear S0 (dense 99.7% @1950). 4k right-align at
-H=256 / 16M still sat at chance through 1500+ steps in S0 hunts — do not score E18 there yet.
+`far_copy` at seq=512, gap=65, H=128 **does** clear S0 (dense 99.7% @1950) and E18 matches it
+(100% / 64 bits). The same recipe at seq=1024, H=256 is dense 99.9% and **E18 0 bits** @4000.
+4k right-align at H=256 is chance; one 16M seed reached 74% (47 bits). Do not score E18 at 4k.
 
 ```bash
 # S0 hunt example. Prefer --scale bridge for 512 INDEX; raise width at 4k until dense ≥ 75%.

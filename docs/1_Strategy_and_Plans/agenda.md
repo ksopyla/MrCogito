@@ -20,15 +20,14 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-13 — E24 BAPO DNA ladder (tiny measured; medium launching).** Packed tiny seq=128 /
-  0.59M: E18 matches dense on positional `far_copy` (99.2% vs 99.4%, 63 of 64 bits) and on
-  in-order DFA (`chain_ordered` 97.5% ≥ dense 93%), and recovers **0 bits** on single-fact keyed
-  `recall` while dense hits 99% — the E18b content-addressing wall with a closed-form prize.
-  `select_1decoy` is a type cue, not MATCH2 (E18 87%). Shuffled chain and multi-item MATCH2 are
-  **not dense-solvable** at this size (K1; do not score E18). Encoder-decoder at 0.8M sat at
-  chance on copy after PE. Spec
+- **2026-09-13 — E24 BAPO DNA ladder (tiny + GPU bridge 512/1024; 4k S0 open).** Packed tiny
+  seq=128 / 0.59M: E18 matches dense on positional `far_copy` (99.2% vs 99.4%) and recovers
+  **0 bits** on keyed `recall`. GPU right-align INDEX: E18 **100% / 64 bits at seq=512**,
+  **0 bits at seq=1024** while dense is 99.9%. 512 `recall_single` at a fixed offset is still
+  E18 0 bits (not a find-the-mark failure). Advertised 4k spread is K1. Spec
   [E24](../experiments_specs/ahead/E24_e18_bapo_capability_ladder.md) ·
-  [report](../2_Experiments_Registry/run_reports/e24_tiny_bapo_ladder_20260913.md) ·
+  [tiny report](../2_Experiments_Registry/run_reports/e24_tiny_bapo_ladder_20260913.md) ·
+  [bridge report](../2_Experiments_Registry/run_reports/e24_bridge512_bapo_ladder_20260913.md) ·
   foundation [bapo_capability_ladder.md](../engineering_specs/bapo_capability_ladder.md).
   **Glyph (same day, not a new E-id):** A=4 DNA stays the exact-floor bandwidth control;
   iid filler is a toy noise model. A second family — typed vocab 16/32, Markov/Dyck/arith
@@ -53,11 +52,17 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-13 — E24 GPU bridge (Polonez/Odra, right-align INDEX).** Seq=512 `far_copy`:
+  E18 **100% / 63.9 bits** vs dense 99.7% (S1 pass). Seq=1024 `far_copy`: dense **99.9% /
+  64 bits**, E18 **0 bits** (S1 fail). 512 `recall_single` at a *fixed* offset: dense 32 bits,
+  E18 **0 bits** @2500 steps — the content wall is not “find the mark”. 4k spread is K1;
+  4k right-align 16M once hit 74% (missed the gate by 1 pt). 
+  [report](../2_Experiments_Registry/run_reports/e24_bridge512_bapo_ladder_20260913.md).
 - **2026-09-13 — E24 tiny BAPO ladder (CPU, 0.59M).** Packed DNA rungs with a 75% dense control:
   E18 copies 63/64 bits (`far_copy` 99.2% ≈ dense 99.4%) and follows in-order hops (`chain_ordered`
   97.5%), but recovers **0 bits** on single-fact keyed recall (dense 99.2% / 31 bits). `select_1decoy`
   is a marker-type cue (E18 87%), not MATCH2. Shuffled chain and 2–3-item MATCH2 are uncalibrated
-  (dense ~30–34%). Encoder-decoder at 0.8M is not a copy baseline. Medium 4k is the next measurement.
+  (dense ~30–34%). Encoder-decoder at 0.8M is not a copy baseline.
   [report](../2_Experiments_Registry/run_reports/e24_tiny_bapo_ladder_20260913.md).
 - **2026-09-12 — E22 Perceiver Concept LM (from scratch, 32k; killed same day).** First ledger design
   with positional slots (1 / 16 tokens), a transformer *over* the slots and a decoder with no raw route
