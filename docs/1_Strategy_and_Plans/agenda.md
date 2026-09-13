@@ -20,14 +20,15 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-13 — E25 E21 capability ladder (tiny far_copy wall on remainder; QUERY-align next).**
-  Complete-block-only: dense **99.4% / 63.3 bits**, E18 **99.2% / 63.0**, E21 **51.5% / 17.7 bits**
-  (flow 0.277). Remainder pooling: E21 **47.6% / 12.7 bits** (flow 0.199) — S1 still fail, not
-  chance, not better. Next ONE change: `--seq_len 132` so QUERY sits on r=16 (pos 96); dense S0
-  first. Do not score recall or 512. Spec
+- **2026-09-13 — E25 E21 capability ladder (tiny INDEX wall; extra steps next).**
+  Complete-block seq=128: E21 **51.5% / 17.7 bits**. Remainder: **47.6% / 12.7**. QUERY-align
+  seq=132: dense **99.1% / 62 bits**, E21 **40.0% / 8.7 bits** (flow 0.136). S1 fail under all
+  three; K3 not hit. Missing remainder is not the wall. Next: extra steps on seq=128
+  complete-block E21. Do not score recall or 512. Spec
   [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) ·
   [rung 1](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) ·
-  [remainder](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md).
+  [remainder](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) ·
+  [QUERY-align](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_query_align_20260913.md).
   Do not relabel E18 scores as E21.
 - **2026-09-13 — E24 BAPO DNA ladder (tiny + GPU bridge 512/1024; 4k S0 open).** Packed tiny
   seq=128 / 0.59M: E18 matches dense on positional `far_copy` (99.2% vs 99.4%) and recovers
@@ -61,6 +62,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-13 — E25 tiny far_copy QUERY-align seq=132 (CPU).** QUERY at 96 = 6×16. Dense
+  **99.1% / 62 bits**, E18 **99.2% / 63**, E21 **40.0% / 8.7 bits** (flow 0.136). Complete
+  sender coverage did not recover INDEX.
+  [report](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_query_align_20260913.md).
 - **2026-09-13 — E25 tiny far_copy remainder pooling (CPU).** Same recipe as rung 1 with
   `message_pool_remainder`. Dense/E18 replica-match. E21 **47.6% / 12.7 bits** (flow 0.199)
   vs complete-block-only 17.7 bits. Remainder did not close INDEX. K3 not hit.

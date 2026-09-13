@@ -1,7 +1,7 @@
 # E25 — E21 capability limits on a calibrated BAPO DNA ladder (one rung at a time)
 
-- **Status:** active (rungs 1 + 1b mixed; QUERY-align next). Keep in `ahead/` — K3 not hit.
-  Do not score recall or 512. E24 dense / E18 / `e18_local` numbers are reused controls.
+- **Status:** active (tiny INDEX wall under three placements; extra steps next). Keep in
+  `ahead/` — K3 not hit. Do not score recall or 512.
 - **Serves:** the Vision's "does the compressed channel carry *addressable* content, and how
   many bits?" question, now on **E21** (exclusive compressed read) rather than E18's raw
   one-global-read. Observation base for later gating / compression. Reuses E24's DNA instrument.
@@ -90,15 +90,16 @@ pretraining run; this is the cheap controlled exam that spec's K1/K2 needed and 
   (off by default; byte-identical to E18). Probe arch `e21`. No new `train_*.py`.
 
 ## Result
-- Run id: `e25_tiny_far_copy` (CPU, git `73f2a31`) · `e25_tiny_far_copy_remainder` (CPU, git `8b76ba5`)
+- Run id: `e25_tiny_far_copy` (`73f2a31`) · `e25_tiny_far_copy_remainder` (`8b76ba5`) · `e25_tiny_far_copy_query_align` (seq=132)
 - WandB: n/a (probe; no `compute/*`)
-- Run reports: [`e25_tiny_far_copy_20260913.md`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) · [`e25_tiny_far_copy_remainder_20260913.md`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md)
-- Verdict: **mixed** — both rungs S0/K2 pass, S1 fail, K3 not hit. Complete-block-only E21 **17.7 bits** / flow **0.277**. Remainder pooling **12.7 bits** / flow **0.199** (not better). Slot channel is live and lossy; dropping the last sender block was not the INDEX wall. Do not score recall or 512.
+- Run reports: [`e25_tiny_far_copy_20260913.md`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) · [`e25_tiny_far_copy_remainder_20260913.md`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) · [`e25_tiny_far_copy_query_align_20260913.md`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_query_align_20260913.md)
+- Verdict: **mixed** — three tiny `far_copy` placements all S0/K2 pass, S1 fail, K3 not hit. Complete-block **17.7 bits**, remainder **12.7**, QUERY-align seq=132 **8.7**. Slot channel is live and lossy; missing remainder was not the INDEX wall. Do not score recall or 512.
 
 ## Follow-up (rung 1b — remainder pooling)
 Ran. S1 **FAIL** (12.7 bits vs ≥47). K3 not triggered. Stop architecture stacking on the compressor.
 
 ## Follow-up (rung 1c — align QUERY to r)
-Next ONE change: land QUERY on an r-aligned complete block. Tiny packed `far_copy` with
-`--seq_len 132` puts QUERY at 96 = 6×16 (remainder off). Recalibrate dense S0 at seq=132
-before scoring E21. Same S1. Extra steps only if alignment also fails while still climbing.
+Ran `--seq_len 132` (QUERY at 96). Dense S0 **99.1% / 62 bits**. E21 **40.0% / 8.7 bits** (flow 0.136). S1 **FAIL**. Complete coverage does not recover the prize.
+
+## Follow-up (rung 1d — extra steps)
+Next ONE change: extra step budget on seq=128 complete-block E21 (best so far, still climbing at 2400). Not a new architecture. If it plateaus below 47 bits, tiny INDEX is the measured E21 limit.
