@@ -2,7 +2,10 @@
 
 - **Type:** engineering foundation (synthetic data + matched-architecture probe + plots).
   **Not** an `E0NN` experiment by itself; E24 is the first experiment that *uses* it.
-- **Status:** implemented 2026-09-13. Extends `docs/engineering_specs/symbolic_long_context_suite.md`.
+- **Status:** implemented 2026-09-13 (DNA). **2026-09-13 extension:** Family G (Glyph) —
+  typed vocab 16/32, structured noise, stack/DFA verifiers — in `data/glyph_tasks.py`.
+  DNA is untouched and remains the exact-floor control. Glyph rungs are uncalibrated
+  until a dense S0. Spec: [`glyph_capability_ladder.md`](../4_Research_Notes/glyph_capability_ladder.md).
 - **Owner:** Krzysztof Sopyla
 - **Serves:** an honest, information-theoretic capability map of E18 vs matched dense
   transformers, as the observation base for later gating / selective-read / compression work.
@@ -113,10 +116,18 @@ uv run python verification/bapo_capability_probe.py \
 |---|---|---|---|
 | `tiny` | 128 | 16 | 16 | CPU, packed answers ≥16 tokens (chain ~12) |
 | `tiny_wide` | 256 | 32 | 32 | CPU, packed ≥24 |
-| `medium` | 4096 | 1024 | 256 | GPU, packed 32, <100M |
+| `bridge` | 512 | 64 | 16 | GPU INDEX; `window < gap` so `e18_local` is a real leak control |
+| `bridge_1k` | 1024 | 64 | 16 | GPU INDEX scale-up |
+| `medium` | 4096 | 1024 | 256 | GPU, packed 32, <100M; **spread 4k is K1 until dense ≥ 75%** |
 | `medium_16k` | 16384 | 4096 | 1024 | GPU |
 | `large` | 32768 | 8192 | 1024 | GPU |
 | `large_128k` | 131072 | 16384 | 1024 | GPU |
+
+Tiny packed `far_copy` is mostly a **fixed-offset INDEX** (span in a narrow gap band). Spread
+placement at 512+ makes the span's position vary widely (content-address the `spanmark`); a
+0.6–16M 4-layer dense control does not do that. Use `--evidence_align right` for INDEX S0
+(`row.gap == min_gap+1`). Keep `local_window < min_gap` whenever scoring E18 (K2). Do not score
+E18 at 4k until a dense control hits 75% on that same recipe.
 
 ## How to run
 
@@ -141,12 +152,16 @@ Tiny is the solvability proof. Scale up **only the calibrated recipes** (the def
 shuffled-chain generators are still ill-posed at 0.6M). Suggested first GPU rung, AMP on:
 
 ```bash
-# Odra/Polonez. Hidden 256 ≈ a few million params. CUDA bf16 via --amp auto.
+# First GPU INDEX rung (not advertised 4k spread). Right-align, window < gap.
 uv run python verification/bapo_capability_probe.py \
-    --scale medium --recipe far_copy recall_single select_1decoy chain_ordered \
-    --arch dense e18 encdec e18_local \
-    --hidden 256 --steps 2000 --batch 8 --eval_every 100 --eval_rows 32 \
-    --out Cache/bapo_medium
+    --scale bridge --recipe far_copy --arch dense e18 e18_local \
+    --evidence_align right --hidden 128 --steps 800 --k1_mult 4 --amp auto \
+    --out Cache/bapo_bridge
+
+# Odra/Polonez. Do not launch this 4k spread recipe until a dense S0 hunt hits 75%.
+# uv run python verification/bapo_capability_probe.py \
+#     --scale medium --recipe far_copy --arch dense \
+#     --hidden 256 --steps 2000 --batch 8 --amp auto --out Cache/bapo_medium
 ```
 
 `--scale medium_16k` / `large` / `large_128k` need a smaller batch if VRAM is tight;
@@ -154,19 +169,53 @@ the architecture factory already caps `--max_params 100000000`. Do not launch sh
 or multi-item MATCH2 at those lengths until a dense control hits 75% at the same hidden size.
 
 The first advertised medium recipe (H=256, 4 layers, 1 KV head, `global_logit_scale=none`,
-batch 32, 8000 dense steps) **did not** clear S0: dense stayed at chance (~25%, CE=ln(4))
-for 3800+ steps on `far_copy`, `recall_single`, and `select_1decoy`. That is K1 at this
-width — a 2.2M dense control cannot find a marked span 1–3k tokens away. Hunt a denser
-control (MHA, SSMax `log` scale, and/or H=512) with `--arch dense` until 75%, then score E18:
+batch 32, 8000 dense steps, **spread** placement) **did not** clear S0: dense stayed at chance
+(~25%, CE=ln(4)) for 3800+ steps on `far_copy`, `recall_single`, and `select_1decoy`. Right-align
+`far_copy` at seq=512, gap=65, H=128 **does** clear S0 (dense 99.7% @1950). 4k right-align at
+H=256 / 16M still sat at chance through 1500+ steps in S0 hunts — do not score E18 there yet.
 
 ```bash
-# S0 hunt example (dense only). Raise width / KV / SSMax until dense ≥ 75%.
+# S0 hunt example. Prefer --scale bridge for 512 INDEX; raise width at 4k until dense ≥ 75%.
 uv run python verification/bapo_capability_probe.py \
-    --scale medium --recipe far_copy --arch dense \
-    --hidden 512 --kv_heads 0 --global_logit_scale log \
-    --steps 2000 --k1_mult 1 --batch 16 --amp auto \
-    --out Cache/bapo_medium_s0
+    --scale bridge --recipe far_copy --arch dense \
+    --evidence_align right --hidden 128 --steps 800 --k1_mult 4 --amp auto \
+    --out Cache/bapo_bridge_s0
 ```
+
+## Family G — Glyph (typed vocab, structured noise)
+
+DNA A=4 + iid filler is the exact-floor *bandwidth* instrument. It does not test
+“ignore language-like distractors” or stack/filter algorithms. Glyph is a **second
+family**, not a replacement: vocab 16/32 is typed (digits, letters, brackets, `plus`,
+`cat/dog/red/blue`, role markers), filler is Markov / valid Dyck / well-formed
+arithmetic, and each row has a stack/DFA/scan verifier. Same BAPO scores, same 75%
+dense gate, DNA generators untouched.
+
+Do **not** duplicate the sibling `perceiver_concept` Arm-A 100% DNA `far_copy` exam.
+Do **not** score E18 on Glyph until dense ≥ 75% at the same scale.
+
+| `--recipe` | generator | mechanism | notes |
+|---|---|---|---|
+| `copy_span` | `copy_span` | INDEX in a Markov haystack | positional control inside Glyph |
+| `reverse` | `reverse` | Delétang / Olsson reverse | permutation, not copy |
+| `every_k` | `every_k` | selective indexing; `k` in the query | `span[0::k]` |
+| `filter_mod` | `filter_mod` | MAD selective copy; `m` in the query | digits ≡ 0 (mod m) in order |
+| `dyck_close` | `dyck_close` | bounded Dyck-2 stack | width 32 only |
+| `fact_markov_single` | `fact_markov`, 0 distractors | MATCH2-easy in Markov filler | BABILong Adapt |
+| `story_fact` | `story_fact` | closed-word key | width 32; TinyStories Adapt |
+| `chain_ordered_noise` / `chain_shuffled_noise` | hops in structured filler | DFA vs REACHABILITY | shuffled is a hunt |
+
+```bash
+# CPU S0 (dense only). Do not score E18 until 75%. DNA 512/4k GPU hunts take priority.
+uv run python verification/bapo_capability_probe.py \
+    --scale tiny --recipe copy_span reverse every_k filter_mod fact_markov_single \
+    --arch dense --out Cache/bapo_glyph_tiny_s0
+```
+
+`--width 16|32` (default 32) and `--noise markov|dyck|arith|mixed|iid` are probe
+overrides. Layouts, floors, and kill criteria:
+[`docs/4_Research_Notes/glyph_capability_ladder.md`](../4_Research_Notes/glyph_capability_ladder.md).
+Papers: [`docs/literature_review/synthetic_capability_exams.md`](../literature_review/synthetic_capability_exams.md).
 
 ## Non-goals
 

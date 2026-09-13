@@ -30,6 +30,13 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [E24](../experiments_specs/ahead/E24_e18_bapo_capability_ladder.md) ·
   [report](../2_Experiments_Registry/run_reports/e24_tiny_bapo_ladder_20260913.md) ·
   foundation [bapo_capability_ladder.md](../engineering_specs/bapo_capability_ladder.md).
+  **Glyph (same day, not a new E-id):** A=4 DNA stays the exact-floor bandwidth control;
+  iid filler is a toy noise model. A second family — typed vocab 16/32, Markov/Dyck/arith
+  haystacks, reverse / every-k / filter / Dyck-close / fact-in-Markov — is specified and
+  generated in `data/glyph_tasks.py`. Do not score E18 on Glyph until a dense S0 hits 75%.
+  Named DNA scales `bridge` (512) and `bridge_1k` (1024) are the first GPU INDEX rungs;
+  advertised 4k spread is K1. Note
+  [glyph_capability_ladder.md](../4_Research_Notes/glyph_capability_ladder.md).
 - **2026-09-12 — E23 Exclusive concept channel (spec ready, not launched).** E22 closed the same
   day (below): the array was live and diverse but CE read it as a document embedding — the far slots
   were worth 0.05 nats and a segment-only decoder matched the bet at half the compute. E23 keeps the

@@ -39,14 +39,17 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from data.bapo_ladder import (  # noqa: E402
     CALIBRATED_RECIPES,
+    GLYPH_CORE_RECIPES,
     SCALES,
     SOLVABLE_ACC,
     TINY_PROOF_TASKS,
     config_for,
+    generate_row_for,
     resolve_recipe,
     rung_card,
 )
-from data.symbolic_tasks import floor_nats, generate_row  # noqa: E402
+from data.glyph_tasks import GlyphTaskConfig, floor_nats as glyph_floor_nats  # noqa: E402
+from data.symbolic_tasks import floor_nats  # noqa: E402
 from evaluation.bapo_metrics import info_report  # noqa: E402
 from evaluation.bapo_models import ARCHES, ArchSpec, arch_cache, build_model, n_params  # noqa: E402
 
@@ -64,8 +67,14 @@ def amp_ctx(device: torch.device, amp: str):
     return torch.autocast(device_type="cuda", dtype=dtype)
 
 
+def _floor(cfg, window: int) -> float:
+    if isinstance(cfg, GlyphTaskConfig):
+        return glyph_floor_nats(cfg, window)
+    return floor_nats(cfg, window)
+
+
 def make_batch(cfg, rng, batch: int, device):
-    rows = [generate_row(cfg, rng) for _ in range(batch)]
+    rows = [generate_row_for(cfg, rng) for _ in range(batch)]
     ids = torch.from_numpy(np.stack([r.input_ids for r in rows])).long().to(device)
     labels = torch.from_numpy(np.stack([r.labels for r in rows])).long().to(device)
     return ids, labels
@@ -187,23 +196,23 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
     recipe = resolve_recipe(recipe_name or task)
     display = recipe.name if recipe_name else task
     over = dict(recipe.overrides)
-    over.update(
-        {
-            k: v
-            for k, v in {
-                "n_distractors": args.n_distractors,
-                "n_decoys": args.n_decoys,
-                "key_len": args.key_len,
-                "value_len": args.value_len,
-                "hops": args.hops,
-                "span_len": args.span_len,
-                "min_gap": args.min_gap,
-                "seq_len": args.seq_len,
-                "evidence_align": args.evidence_align,
-            }.items()
-            if v is not None
-        }
-    )
+    cli = {
+        "n_distractors": args.n_distractors,
+        "key_len": args.key_len,
+        "value_len": args.value_len,
+        "hops": args.hops,
+        "span_len": args.span_len,
+        "min_gap": args.min_gap,
+        "seq_len": args.seq_len,
+    }
+    if recipe.family == "glyph" or recipe.task in {
+        "copy_span", "reverse", "every_k", "filter_mod", "dyck_close",
+        "fact_markov", "story_fact", "chain_ordered_noise", "chain_shuffled_noise",
+    }:
+        cli.update({"width": args.width, "noise": args.noise, "k": args.every_k, "modulus": args.modulus})
+    else:
+        cli.update({"n_decoys": args.n_decoys, "evidence_align": args.evidence_align})
+    over.update({k: v for k, v in cli.items() if v is not None})
     cfg = config_for(scale, recipe.task, **over)
     window = args.local_window if args.local_window is not None else scale.local_window
     spec = ArchSpec(
@@ -225,11 +234,11 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
     )
     card = rung_card(scale, recipe.task, **over)
     card["local_window"] = window
-    card["floor_nats"] = floor_nats(cfg, window)
+    card["floor_nats"] = _floor(cfg, window)
     eval_rng = np.random.default_rng(args.seed + 99)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     eval_batches = [make_batch(cfg, eval_rng, args.batch, device) for _ in range(max(1, args.eval_rows // args.batch))]
-    gap_probe = [generate_row(cfg, np.random.default_rng(args.seed + 7 + i)).gap for i in range(16)]
+    gap_probe = [generate_row_for(cfg, np.random.default_rng(args.seed + 7 + i)).gap for i in range(16)]
     print(
         f"\n=== {display} ({recipe.task}) @ {scale.name}  seq={cfg.seq_len} gap={cfg.min_gap} "
         f"window={window} prize={card['prize_bits']:.2f} bits  "
@@ -330,8 +339,8 @@ def main() -> int:
         "--recipe",
         nargs="+",
         default=None,
-        help="named recipes (far_copy, recall_single, select_1decoy, chain_ordered, …). "
-        "Overrides --task. Use calibrated recipes to score E18; default --task still hunts the harder MATCH2/chain rungs.",
+        help="named recipes (far_copy, recall_single, … or Glyph reverse/every_k/filter_mod/…). "
+        "Overrides --task. Use calibrated DNA recipes to score E18; Glyph rungs are uncalibrated until dense ≥ 75%.",
     )
     p.add_argument("--arch", nargs="+", default=["dense", "e18", "encdec"], choices=list(ARCHES))
     p.add_argument("--hidden", type=int, default=128)
@@ -404,6 +413,10 @@ def main() -> int:
     p.add_argument("--value_len", type=int, default=None)
     p.add_argument("--hops", type=int, default=None)
     p.add_argument("--span_len", type=int, default=None)
+    p.add_argument("--width", type=int, default=None, help="Glyph vocab width 16 or 32 (ignored for DNA)")
+    p.add_argument("--noise", default=None, help="Glyph noise: markov|dyck|arith|mixed|iid")
+    p.add_argument("--every_k", type=int, default=None, help="Glyph every_k stride")
+    p.add_argument("--modulus", type=int, default=None, help="Glyph filter_mod modulus")
     p.add_argument("--batch", type=int, default=32)
     p.add_argument("--lr", type=float, default=3e-3)
     p.add_argument("--eval_every", type=int, default=50)
@@ -444,6 +457,7 @@ def main() -> int:
             "arches": args.arch,
             "solvable_acc": SOLVABLE_ACC,
             "calibrated_recipes": list(CALIBRATED_RECIPES),
+            "glyph_core_recipes": list(GLYPH_CORE_RECIPES),
             "amp": args.amp,
             "rungs": [
                 {

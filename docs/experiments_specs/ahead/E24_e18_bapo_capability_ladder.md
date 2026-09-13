@@ -1,6 +1,9 @@
 # E24 — E18 capability limits on a BAPO DNA ladder
 
-- **Status:** in progress (tiny measured; medium not closed)
+- **Status:** in progress (tiny DNA measured; medium not closed). **2026-09-13:** a second
+  family (Glyph: typed vocab 16/32, structured noise) is specified and implemented as
+  config-selectable generators; it does **not** change this experiment's DNA hypothesis.
+  See [`glyph_capability_ladder.md`](../../4_Research_Notes/glyph_capability_ladder.md).
 - **Serves:** the Vision's "does the long-range channel carry *addressable* content, and how
   many bits?" question, as the observation base for later gating / selective-read / compression
   work. Uses the DNA-alphabet framework that made E22/E23's channel measurable, scaled onto

@@ -5,7 +5,9 @@
   `verification/symbolic_channel_probe.py`, `tests/test_symbolic_tasks.py`.
   **2026-09-13 extension:** BAPO-hard tasks + E18/dense/encdec probe live in
   [bapo_capability_ladder.md](bapo_capability_ladder.md) (E24). The original four-task
-  `perceiver_concept` probe is unchanged.
+  `perceiver_concept` probe is unchanged. **Same day:** Family G (Glyph) is a *second*
+  family with structured noise — DNA A=4 here stays the exact-floor control
+  ([glyph_capability_ladder.md](../4_Research_Notes/glyph_capability_ladder.md)).
 - **Owner:** Krzysztof Sopyla
 - **Serves:** E23 (supplies its two missing dense-label builders) and every later concept-channel
   experiment that needs to know whether its channel carries information *before* spending GPU-days

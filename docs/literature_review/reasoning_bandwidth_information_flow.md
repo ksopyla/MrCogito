@@ -15,7 +15,10 @@ Related reviews already in the repo (do not duplicate):
   **Coconut**, **Huginn**, **Ouro**, **RMT**, **Block-Recurrent** — lives in
   [`recurrent_memory_transformers.md`](recurrent_memory_transformers.md);
 - collapse / bypass fixes (TSDAE word-dropout, VICReg, JEPA) live in
-  [`concept_bottleneck_collapse_mitigation.md`](concept_bottleneck_collapse_mitigation.md).
+  [`concept_bottleneck_collapse_mitigation.md`](concept_bottleneck_collapse_mitigation.md);
+- synthetic capability *exams* (RULER, BABILong, Chomsky/Dyck, MAD/MQAR, TinyStories)
+  live in [`synthetic_capability_exams.md`](synthetic_capability_exams.md) — that file
+  is the Adapt source for the Glyph family; this file stays the BAPO theory home.
 
 ---
 

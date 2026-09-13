@@ -15,6 +15,53 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-13] - Glyph family: typed vocab, structured-noise capability exams
+
+**Why:**
+- DNA A=4 + iid filler is the right exact-floor instrument for channel *bandwidth*, but it
+  cannot test “ignore language-like distractors” or reverse/filter/Dyck algorithms. The
+  literature (RULER essay haystacks, BABILong facts-in-books, Delétang reverse/Dyck, MAD
+  selective copy, Olsson reverse) uses structured noise and typed alphabets, not 4 iid
+  symbols.
+
+**Impact:**
+- A second, config-selectable family sits beside DNA. Probe default is unchanged (Odra
+  DNA medium stays valid). Glyph rungs stay uncalibrated until a dense S0. No new
+  `train_*.py`. E23 is not derailed.
+
+**What changed:**
+- [added] `data/glyph_tasks.py` — vocab 16/32, Markov/Dyck/arith/mixed noise, verifiers
+- [added] `data/bapo_ladder.py` Glyph recipes; probe `--width` / `--noise` / `--recipe reverse …`
+- [added] `tests/test_glyph_tasks.py`
+- [added] `docs/4_Research_Notes/glyph_capability_ladder.md`,
+  `docs/literature_review/synthetic_capability_exams.md`
+
+**Does not:** close E24, launch Glyph on GPU, or touch DNA generators.
+
+---
+
+## [2026-09-13] - BAPO Glyph family + named 512/1k bridge scales
+
+**Why:**
+- DNA A=4 / iid filler is the exact-floor bandwidth instrument, not a language-like
+  distractor test. A second family (typed vocab 16/32, Markov/Dyck/arith filler) is
+  needed before claiming "ignore structured noise".
+- Advertised `--scale medium` (4k, spread placement) is K1: dense never leaves ln(4).
+  The first honest GPU INDEX rung is seq=512 with `evidence_align=right` and
+  `local_window < min_gap`. Name that scale instead of overloading `--scale tiny --seq_len 512`.
+
+**What changed:**
+- [added] `data/glyph_tasks.py` — typed-vocab tasks (`copy_span`, `reverse`, `every_k`,
+  `filter_mod`, `dyck_close`, `fact_markov`, `story_fact`, chain-in-noise). Uncalibrated
+  until a dense S0 hits 75%. DNA defaults unchanged.
+- [added] `bridge` (512) and `bridge_1k` (1024) scales; window 16, min_gap 64
+- [added] `scripts/e24_bapo_hunt.sh` — GPU hunt wrapper that does not hardcode `far_copy`
+- [added] probe `--width` / `--noise` / `--every_k` / `--modulus` and `generate_row_for`
+
+**Does not:** score E18 on Glyph or on 4k until dense ≥ 75%. Tiny DNA numbers unchanged.
+
+---
+
 ## [2026-09-13] - Warm residual init for BAPO 512+ S0 hunts
 
 **Why:**

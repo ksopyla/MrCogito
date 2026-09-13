@@ -93,6 +93,36 @@ def test_info_report_perfect_recovery():
     assert at_floor.recovered_bits == pytest.approx(0.0)
 
 
+def test_info_report_perfect_recovery_on_glyph_reverse():
+    from data.glyph_tasks import GlyphTaskConfig, prize_bits as glyph_prize
+
+    cfg = config_for("tiny", "reverse")
+    assert isinstance(cfg, GlyphTaskConfig)
+    floor = math.log(cfg.n_symbols)
+    rep = info_report(
+        ce_nats=0.0,
+        acc=1.0,
+        n_supervised=cfg.answer_len,
+        cfg=cfg,
+        window=16,
+        nominal_b_tokens=128,
+        nominal_a_bytes=128.0,
+    )
+    assert rep.information_flow == pytest.approx(1.0)
+    assert rep.recovered_bits == pytest.approx(glyph_prize(cfg), abs=1e-6)
+    at_floor = info_report(
+        ce_nats=floor,
+        acc=1.0 / cfg.n_symbols,
+        n_supervised=cfg.answer_len,
+        cfg=cfg,
+        window=16,
+        nominal_b_tokens=16,
+        nominal_a_bytes=0.0,
+    )
+    assert at_floor.information_flow == pytest.approx(0.0)
+    assert at_floor.recovered_bits == pytest.approx(0.0)
+
+
 def test_encdec_sinusoidal_positions_differ():
     pe = EncoderDecoderLM._sinusoidal(8, 32, torch.device("cpu"), torch.float32)
     assert pe.shape == (8, 32)
@@ -114,6 +144,20 @@ def test_calibrated_recipes_construct_at_every_scale():
     for rec in UNCALIBRATED_AT_TINY.values():
         cfg = config_for("tiny", rec.task, **rec.overrides)
         assert cfg.task == rec.task
+
+
+def test_bridge_scales_keep_e18_local_blind():
+    """K2: the leak control is only valid when the stack window cannot see the evidence."""
+    from data.symbolic_tasks import generate_row
+
+    for name in ("bridge", "bridge_1k"):
+        sc = SCALES[name]
+        assert sc.local_window < sc.min_gap, name
+        cfg = config_for(name, "far_copy", evidence_align="right")
+        assert cfg.seq_len == sc.seq_len
+        assert cfg.evidence_align == "right"
+        row = generate_row(cfg, np.random.default_rng(0))
+        assert row.gap == cfg.min_gap + 1, (name, row.gap, cfg.min_gap)
 
 
 def test_recall_single_fact_still_respects_min_gap():

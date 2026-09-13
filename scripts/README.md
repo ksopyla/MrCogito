@@ -51,3 +51,7 @@ bash scripts/launch_e14.sh
 
 Evaluation, tokenization, upload, sync, and server-setup scripts are utilities rather than training
 launchers. Their command-specific usage lives in each script and the relevant project skill.
+
+| Script | Role |
+|---|---|
+| `e24_bapo_hunt.sh` | E24 GPU S0/S1 wrapper: `NAME GPU [probe args…]`; uses this checkout (or `E24_WORKTREE`) |
