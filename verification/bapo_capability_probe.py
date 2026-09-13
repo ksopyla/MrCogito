@@ -149,7 +149,19 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
 
 def run_rung(task: str, args) -> dict:
     scale = SCALES[args.scale]
-    cfg = config_for(scale, task)
+    over = {
+        k: v
+        for k, v in {
+            "n_distractors": args.n_distractors,
+            "n_decoys": args.n_decoys,
+            "key_len": args.key_len,
+            "value_len": args.value_len,
+            "hops": args.hops,
+            "span_len": args.span_len,
+        }.items()
+        if v is not None
+    }
+    cfg = config_for(scale, task, **over)
     spec = ArchSpec(
         name="shared",
         hidden=args.hidden,
@@ -162,7 +174,7 @@ def run_rung(task: str, args) -> dict:
         head_dim=args.head_dim,
         value_embed_layers=tuple(int(x) for x in args.value_embed_layers.split(",") if x.strip()),
     )
-    card = rung_card(scale, task)
+    card = rung_card(scale, task, **over)
     eval_rng = np.random.default_rng(args.seed + 99)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     eval_batches = [make_batch(cfg, eval_rng, args.batch, device) for _ in range(max(1, args.eval_rows // args.batch))]
@@ -278,6 +290,12 @@ def main() -> int:
         default=True,
         help="do not score E18/encdec on a rung whose dense control missed 75%%",
     )
+    p.add_argument("--n_distractors", type=int, default=None)
+    p.add_argument("--n_decoys", type=int, default=None)
+    p.add_argument("--key_len", type=int, default=None)
+    p.add_argument("--value_len", type=int, default=None)
+    p.add_argument("--hops", type=int, default=None)
+    p.add_argument("--span_len", type=int, default=None)
     p.add_argument("--batch", type=int, default=32)
     p.add_argument("--lr", type=float, default=3e-3)
     p.add_argument("--eval_every", type=int, default=50)

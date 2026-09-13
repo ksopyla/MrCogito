@@ -31,8 +31,12 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   skipped if it misses 75%.
 - [added] E18/dense value embeddings on layers 0 and 1 (the global read).
 - [added] plot CE curves, uncalibrated markers, `capability_table.csv`.
+- [fixed] `nn/encdec_lm.py` sinusoidal positions — the first tiny run's encoder-decoder
+  sat at ~31% on copy because the encoder was a bag of tokens.
+- [added] probe `--n_distractors` / `--key_len` / … overrides for MATCH2 solvability hunts.
 
-**Does not:** launch medium/large GPU runs.
+**Does not:** launch medium/large GPU runs. Packed tiny calibrated `far_copy` and
+`chain_ordered`; MATCH2 rungs still need a smaller contrast set / more width.
 
 ---
 

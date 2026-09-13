@@ -93,6 +93,21 @@ def test_info_report_perfect_recovery():
     assert at_floor.recovered_bits == pytest.approx(0.0)
 
 
+def test_encdec_sinusoidal_positions_differ():
+    pe = EncoderDecoderLM._sinusoidal(8, 32, torch.device("cpu"), torch.float32)
+    assert pe.shape == (8, 32)
+    assert not torch.allclose(pe[0], pe[1])
+
+
+def test_recall_single_fact_still_respects_min_gap():
+    from data.symbolic_tasks import generate_row
+
+    cfg = config_for("tiny", "recall", n_distractors=0)
+    row = generate_row(cfg, np.random.default_rng(0))
+    assert cfg.n_distractors == 0
+    assert row.gap >= cfg.min_gap + 1
+
+
 def test_encdec_forward_shapes_and_finite_loss():
     from data.symbolic_tasks import generate_row
 

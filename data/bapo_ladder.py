@@ -169,10 +169,10 @@ def config_for(scale: str | Scale, task: str, *, pack: bool = True, **over) -> S
     return SymbolicTaskConfig(**kw)
 
 
-def rung_card(scale: str | Scale, task: str) -> dict:
+def rung_card(scale: str | Scale, task: str, **over) -> dict:
     """The numbers a spec / plot / gate can cite for one (scale, task)."""
     sc = SCALES[scale] if isinstance(scale, str) else scale
-    cfg = config_for(sc, task)
+    cfg = config_for(sc, task, **over)
     window = sc.local_window
     return {
         "scale": sc.name,

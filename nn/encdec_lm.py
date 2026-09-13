@@ -13,6 +13,7 @@ family — the shared entrypoint does not register it. Selected from
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 import torch
 import torch.nn as nn
@@ -115,6 +116,17 @@ class EncoderDecoderLM(nn.Module):
         elif isinstance(m, nn.Embedding):
             nn.init.normal_(m.weight, std=self.config.init_std)
 
+    @staticmethod
+    def _sinusoidal(S: int, d: int, device, dtype) -> torch.Tensor:
+        """Absolute sinusoidal positions. Without these the encoder is a bag of tokens
+        and positional far_copy is unlearnable (the first tiny run sat at ~31%)."""
+        pe = torch.zeros(S, d, device=device, dtype=dtype)
+        pos = torch.arange(S, device=device, dtype=dtype).unsqueeze(1)
+        div = torch.exp(torch.arange(0, d, 2, device=device, dtype=dtype) * (-math.log(10000.0) / d))
+        pe[:, 0::2] = torch.sin(pos * div)
+        pe[:, 1::2] = torch.cos(pos * div)
+        return pe
+
     def forward(
         self,
         input_ids: torch.Tensor,
@@ -126,7 +138,8 @@ class EncoderDecoderLM(nn.Module):
         B, S = input_ids.shape
         a0 = cfg.answer_start  # first supervised token
         marker = a0 - 1        # answer marker; decoder starts here
-        x = self.tok(input_ids)
+        pe = self._sinusoidal(S, cfg.hidden_size, input_ids.device, self.tok.weight.dtype)
+        x = self.tok(input_ids) + pe.unsqueeze(0)
         # Encoder: bidirectional on the prefix (everything before the answer marker).
         prefix = x[:, :marker]
         P = prefix.shape[1]
