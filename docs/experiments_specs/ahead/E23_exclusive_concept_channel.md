@@ -157,6 +157,12 @@ selecting, inside natural text, the tokens whose information *is* in the compres
   (3-gram: ≈ 3.7%). At w = 8 that is ≈ **17%** of the natural-text loss (3-gram: 23%), and with the
   30% dense-label rows ≈ **40%** of the total loss on far-determined tokens — the share the
   Hypothesis assumes. Pin `--far_repeat_ngram 4`, `--far_repeat_weight 8`.
+- **Pre-flight ceiling measurement (required before S1 can be judged; ≈ 1 GPU-h):** run arm D first and
+  probe it with `--probe reach` (window 1024 → 2048 → 8192 → full) on the S1 eval rows to obtain **R**,
+  the dense far-reach prize on the E23 mix. S1's threshold is 0.6 × R, so R must exist before the gate
+  does; record it in the run report. If R < 0.05 nats even on this mix, the *data* carries no far-context
+  signal, the natural-text half of the bet is unfalsifiable — say so and judge on S1b / S2 / S3 alone
+  rather than inventing a number (the E22 lesson).
 - **Compute:** Odra 3×3090 for arms A and C (≈ 12 GPU-h each at 32k, E22 calibration: 560 steps ≈ 6.5 h
   for 0.44B); Polonez 4×3090 for arm D after the `goodwrite_ml` move completes.
 - **Steps / epochs:** 0.5B tokens per arm (≈ 640 steps), effective batch 24 packed 32k rows ≈ 0.79M tokens, Muon 0.01 / AdamW 2e-4 / wd
