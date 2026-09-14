@@ -113,8 +113,8 @@ Not a Kaplan-style fit — too few cells. The measured pattern is:
    Not an exclusive-slot failure.
 4. **C stays on the floor** on every new (seq, min_gap) and on chain. The exam does not leak.
 5. **D matching matters.** Width-matched 2.27M D solves seq256 and misses seq512.
-   Param-matched 4.97M D is in flight (46% @ 56k). Until that cell hits or misses 95%,
-   "A beats D at seq512" is not a same-parameter claim.
+   Param-matched 4.97M D is in flight (60.5% @ 96k, still climbing). Until that cell
+   hits or misses 95%, "A beats D at seq512" is not a same-parameter claim.
 
 ## Still unknown
 
@@ -141,13 +141,20 @@ Live log `/opt/cursor/artifacts/scale_hard/cell_seq512_r8_D9.log` (not finished)
 | 32k | 1,000 | 30.8% | 1.317 |
 | 40k | 1,250 | 35.1% | 1.258 |
 | 48k | 1,500 | 41.1% | 1.111 |
-| 56k | 1,750 | **45.9%** | 1.034 |
+| 56k | 1,750 | 45.9% | 1.034 |
+| 64k | 2,000 | 51.4% | 0.909 |
+| 72k | 2,250 | 53.4% | 0.905 |
+| 80k | 2,500 | 56.4% | 0.807 |
+| 88k | 2,750 | 57.0% | 0.798 |
+| 96k | 3,000 | **60.5%** | 0.698 |
 
-CE is monotonically falling. This is a takeoff, not a floor. 4-layer D was 28%
-at 56k. A on this cell was **83% at 32k and 97% at 72k**. D9 is in the same
-parameter band but is **behind on data**: at 56k A was already over the 95% bar
-and D9 is at 46%. Wall is similar per step (A 2.03 s/step, D9 1.94 s/step), so
-if D9 later hits 95% it will have spent more examples *and* more wall-clock.
+Takeoff is sawtooth (eval CE stalls then drops) but the trend is up. 4-layer D
+was 28% at 56k. A on this cell was **83% at 32k and 97% at 72k**. D9 is in the
+same parameter band but **behind on data**: at 96k A was already over the 95%
+bar and D9 is at 60.5%. Wall is similar per step (A 2.03 s/step, D9 1.94 s/step).
+From 64k→96k the slope is ~2.3 pp / 8k examples; if that holds, 95% lands near
+~220k (inside the 256k / 8k-step budget, ~3× A's 72k). Train CE 0.677 vs eval
+0.698, so this is not an overfit stall.
 
 Queued after this cell (frozen hidden=256): r=16, packed hops=2 chain, seq=1024.
 
