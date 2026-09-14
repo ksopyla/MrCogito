@@ -45,7 +45,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   (~2.3× r=8 data). r=32 (8 slots): A **87.9% at 256k**, miss 95%. Chain hops=3 /
   key_len=8 **and packed hops=2 / key_len=32** are exam kills (param-matched D stays
   at chance through 128k on hops=2). True reach seq=512 min_gap=128: A **hits 95%
-  at 48k / 40 min**. Seq=1024 and reach-D9 are in flight.
+  at 48k / 40 min**; param-matched D **hits 98.3% at 32k / 32 min** (D faster on
+  this exam). C leak-check then seq=1024 are in flight.
   [note](../4_Research_Notes/concept_slot_scaling_frontier_20260913.md).
 - **2026-09-12 — E22 Perceiver Concept LM (from scratch, 32k; killed same day).** First ledger design
   with positional slots (1 / 16 tokens), a transformer *over* the slots and a decoder with no raw route

@@ -71,6 +71,7 @@ steps). **Tune LR per geometry; it is not portable from the 1.35M toy.**
 | cell_seq512_r8_D | D | 2.27M | 3e-4 | 512 | 8 | far_copy | 2 | 96k | 3,000 | **29.9%** | 1.337 | **no** | budget |
 | **cell_seq512_r8_D9** | D | **4.97M** | **3e-4** | 512 | 8 | far_copy | 2 | **120k** | 3,750 | **98.5%** | 0.042 | **yes** | target_acc |
 | **reach_seq512_A** | A | 5.11M | **3e-4** | 512 | 8 | far_copy gap128 | 2 | **48k** | 1,500 | **95.0%** | 0.140 | **yes** | target_acc |
+| **reach_seq512_D9** | D | **4.97M** | **3e-4** | 512 | 8 | far_copy gap128 | 2 | **32k** | 1,000 | **98.3%** | 0.047 | **yes** | target_acc |
 | seq512 D lr=1e-3 | D | 2.27M | 1e-3 | 512 | 8 | far_copy | 2 | 104k | 3,250 | 27.8% | 1.343 | no | retuned |
 | seq512 D lr=3e-3 | D | 2.27M | 3e-3 | 512 | 8 | far_copy | 2 | 64k | 2,000 | 25.2% | 1.368 | no | retuned |
 | seq512 A lr=1e-3 | A | 5.11M | 1e-3 | 512 | 8 | far_copy | 2 | 72k | 2,250 | 24.5% | 1.386 | no | retuned to 3e-4 |
@@ -83,9 +84,10 @@ The skill is in the slots. C stays at the floor on every new (seq, min_gap) and 
 - **Success (copy, 2× length, r=8):** 5.11M exclusive-slot A hits 95% at 96k unique
   examples. C stays at the floor. D hits 95% earlier (~65–72k). Doubling seq at
   fixed r costs A about **1.7×** examples versus the seq128 95% point (~51k → 96k).
-- **Success (true reach, seq=512 min_gap=128):** 5.11M A hits **95.0% at 48k / 40 min**.
-  Array removed → 24.5%. Farther placement than min_gap=32, fewer examples than the
-  padded cell (72k). Param-matched D on this exam is in flight.
+- **Success (true reach, seq=512 min_gap=128):** 5.11M A hits **95.0% at 48k / 40 min**
+  (ablation → 24.5%). Param-matched 4.97M D hits **98.3% at 32k / 32 min**. On this
+  farther-span exam D is *more* data-efficient than A (opposite of padded min_gap=32,
+  where A used 0.60× D's examples). Both clear 95%. C leak-check is in flight.
 - **A beats width-matched D at seq512, and is more efficient than param-matched D.**
   The 2.27M 4-layer dense decoder never left ~25–30% across 1e-3 / 3e-4 / 3e-3 through
   64–104k examples. Deepening D to **9 layers / 4.97M** (same parameter band as A's 5.11M)
@@ -122,10 +124,11 @@ Not a Kaplan-style fit — too few cells. The measured pattern is:
    32-token answers on param-matched 4.97M D (25.7% @ 128k) and hops=3 / 8-token
    answers on A and D. Not an exclusive-slot failure.
 4. **C stays on the floor** on every new (seq, min_gap) and on chain. The exam does not leak.
-5. **D matching matters, and is now closed at seq512 r=8.** Width-matched 2.27M D
-   misses seq512. Param-matched 4.97M D **hits 98.5% at 120k / 121 min**. A hits
-   97% at 72k / 76 min. Exclusive slots are the more data- and wall-efficient
-   solver in the same <10M band, not the only solver.
+5. **D matching is exam-dependent at seq512.** Width-matched 2.27M D misses padded
+   copy. Param-matched 4.97M D **hits 98.5% at 120k / 121 min** on min_gap=32 (A
+   faster: 72k / 76 min) and **98.3% at 32k / 32 min** on min_gap=128 (D faster
+   than A's 48k / 40 min). Exclusive slots are a competitive <10M solver, not
+   uniformly the data-cheapest one.
 
 ## Still unknown
 
@@ -134,7 +137,6 @@ Not a Kaplan-style fit — too few cells. The measured pattern is:
 - hops=2 packed chain is now measured: param-matched D stays at chance through
   128k. Not D-green; A skipped per protocol.
 - Seq=1024 min_gap=256 far_copy; nothing here is a language-model result.
-- Param-matched D on true-reach seq512 (in flight).
 
 ## Closed — param-matched D on seq512 (2026-09-14)
 
@@ -159,8 +161,7 @@ Early-stop at the 95% bar. Takeoff was sawtooth until 104k, then a sharp drop
 **Same-parameter verdict:** both arms solve seq512 r=8; exclusive slots use
 **0.60× examples and 0.63× wall**.
 
-In flight now: param-matched D9 on seq=512 min_gap=128, then C leak check, then
-seq=1024 min_gap=256.
+In flight now: C leak-check on seq=512 min_gap=128, then seq=1024 min_gap=256.
 
 
 ## One-sentence frontier
