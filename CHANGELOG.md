@@ -15,6 +15,23 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-14] - Scale-hard resume + live-log LR
+
+**Why:**
+- The <10M continuation / true-reach queue is hours of CPU. A crash should skip
+  finished JSON cells instead of rerunning D9.
+- Live D9 logs were plotted with a hardcoded `lr=0.001` even when the run used 3e-4.
+
+**What changed:**
+- [added] skip-if-json-exists in `verification/run_scale_hard_continue.py` and
+  `verification/run_scale_hard_reach.py`.
+- [fixed] `verification/plot_scale_hard.py` captures LR (and s/step) from live logs.
+- [added] `tests/test_plot_scale_hard.py` for the D9 param/LR parse.
+
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` HARDER exclusive-slot scaling
+
+---
+
 ## [2026-09-13] - HARDER concept-slot scaling plots + frontier note
 
 **Why:**

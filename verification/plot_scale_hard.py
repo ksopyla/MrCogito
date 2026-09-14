@@ -26,7 +26,7 @@ BUDGET = 64_000
 STEP_RE = re.compile(
     r"\[([ACD])\] step\s+(\d+)\s+examples\s+(\d+)\s+"
     r"train\s+([\d.]+)\s+eval CE\s+([\d.]+)\s+acc\s+([\d.]+)"
-    r"(?:\s+lr\s+[\d.e+-]+\s+\(([\d.]+) s/step\))?"
+    r"(?:\s+lr\s+([\d.e+-]+)\s+\(([\d.]+) s/step\))?"
 )
 META_SKIP = {"campaign_index.json", "campaign_meta.json", "winner_lr.json"}
 
@@ -134,7 +134,9 @@ def parse_log_bundle(log_path: Path, json_hint: Path | None = None) -> dict | No
             "acc": float(m.group(6)),
         }
         if m.group(7):
-            rec["wall_s"] = float(m.group(2)) * float(m.group(7))
+            rec["lr"] = float(m.group(7))
+        if m.group(8):
+            rec["wall_s"] = float(m.group(2)) * float(m.group(8))
         rows.append(rec)
     if not rows or arm is None:
         return None
@@ -163,6 +165,7 @@ def parse_log_bundle(log_path: Path, json_hint: Path | None = None) -> dict | No
         params = 4_974_227  # 9 decoder layers, param-matched to 5.11M A
     else:
         params = 2_267_977
+    lr = float(last.get("lr") or cfg.get("lr") or 0.0)
     return {
         "run_name": log_path.stem,
         "task": task,
@@ -173,6 +176,7 @@ def parse_log_bundle(log_path: Path, json_hint: Path | None = None) -> dict | No
             "hops": hops,
             "batch": 32,
             "steps": cfg.get("steps", 0),
+            "lr": lr,
         },
         "summary": {
             arm: {
@@ -182,7 +186,7 @@ def parse_log_bundle(log_path: Path, json_hint: Path | None = None) -> dict | No
                 "steps": last["step"],
                 "acc": last["acc"],
                 "ce": last["ce_nats"],
-                "lr": 0.001,
+                "lr": lr,
                 "seq": seq,
                 "r": ratio,
                 "task": task,

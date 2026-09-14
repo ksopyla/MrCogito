@@ -54,13 +54,16 @@ def _argv(name: str, kw: dict) -> list[str]:
 
 
 def run(name: str, **kw) -> dict:
+    path = OUT / f"{name}.json"
+    if path.exists():
+        print(f"SKIP {name} (json exists)", flush=True)
+        return json.loads(path.read_text())
     merged = {**REF, **kw}
     argv = _argv(name, merged)
     env = os.environ.copy()
     env["SCALE_OUT_DIR"] = str(OUT)
     print(f"\n===== {name} =====\n{' '.join(argv[3:])}\n", flush=True)
     rc = subprocess.call(argv, env=env)
-    path = OUT / f"{name}.json"
     if not path.exists():
         raise SystemExit(f"{name} produced no JSON (rc={rc})")
     return json.loads(path.read_text())
