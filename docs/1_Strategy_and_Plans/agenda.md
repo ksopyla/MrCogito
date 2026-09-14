@@ -20,7 +20,7 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-14 — E25 E21 capability ladder (tiny limits; 512 concat wall; raw PASS; inplace identity PASS; r=16 mean INDEX; MATCH remainder-on S1 through r=16; remainder-off r=10/16 chance, r=12 S1 FAIL; SELECT r=8 rem-off S1 PASS, r=12 rem-on S1 PASS, r=16 rem-on live S1 FAIL; SELECT identity PASS; 1024 MATCH r=8 rem-off H=128 S1 FAIL, H=256 log S1 PASS 60.35; 1024 SELECT r=8 rem-off H=256 log chance; 1024 SELECT r=1 identity H=256 log chance; 1024 SELECT SWA-unsever `--message_keep_local_swa` chance 0.01 bits; 1024 SELECT extra exclusive hop `--message_extra_slot_attends 1` chance 0 bits; 1024 SELECT type_marks anchors `--message_global_anchors type_marks` 0 bits @800 / 31.90 @1050 S1 FAIL vs 0.75× dense; 1024 SELECT type_marks 8k extra-step S1 FAIL 6.48 vs live E18 63.96; 1024 SELECT extra hop + unfrozen slot K/V `--message_update_slot_kv` chance 0 bits; 1024 SELECT second exclusive global layer `--global_layers 2` chance 0 bits; 1024 SELECT QUERY-side anchors `--message_global_anchors query_side` chance 0 bits (4 tokens vs 1024, extra 4); 768 SELECT r=1 identity H=256 log chance 0.01 bits; 640 SELECT r=1 identity H=256 log S1 PASS 63.95 vs 47.93 (`--seq_len 640`); 704 SELECT r=1 identity H=256 log chance 0 bits (`--seq_len 704`); 672 SELECT r=1 identity H=256 log S1 PASS 63.96 vs 47.95 (`--seq_len 672`); 688 SELECT r=1 identity H=256 log S1 PASS 62.68 vs 47.97 (`--seq_len 688`; 800 climb 31.57, extra-step 99.5% @400; wall was (688, 704]); 696 SELECT r=1 identity H=256 log S1 FAIL 0 bits (`--seq_len 696`; chance @800; wall was (688, 696]); 692 SELECT r=1 identity H=256 log S1 PASS 62.76 vs 47.91 (`--seq_len 692`; 99.8% @500; wall now (692, 696]); 696 SELECT pack_stride 32 S1 FAIL 31.67 vs 47.50 @800 / 0 bits @8k (`--message_pack_stride 32`; leftover drop to 640 slots does not rescue 696); 696 SELECT `--evidence_align spread` K1 (dense 24.7% / 0 bits @3200; e18/e21 skipped); 4k INDEX r=16 rem-off H=256 log chance vs 0.75× dense; 2048 INDEX r=16 rem-off H=256 log chance vs 0.75× dense; 1536 INDEX r=16 rem-off H=256 log chance vs 0.75× dense (shared wall (1024, 1536]); 512 chain K1; 256 hops FAIL vs dense; 256 hops `--global_layers 2` S1 PASS 25.85 vs 4.17 (E18 live 5.56; 8k not run); 512 hops `--global_layers 2` K1 dense 22.5% / 0 bits @3200 (e18/e21 skipped; 8k not run); 384 hops `--global_layers 2` K1 dense 24.5% / 0 bits @3200 (e18/e21 skipped; 8k not run); 320 hops `--global_layers 2` K1 dense 26.2% / 0 bits @3200 (e18/e21 skipped; wall (256 S0 PASS, 320 K1]; 8k not run)).**
+- **2026-09-14 — E25 E21 capability ladder (tiny limits; 512 concat wall; raw PASS; inplace identity PASS; r=16 mean INDEX; MATCH remainder-on S1 through r=16; remainder-off r=10/16 chance, r=12 S1 FAIL; SELECT r=8 rem-off S1 PASS, r=12 rem-on S1 PASS, r=16 rem-on live S1 FAIL; SELECT identity PASS; 1024 MATCH r=8 rem-off H=128 S1 FAIL, H=256 log S1 PASS 60.35; 1024 SELECT r=8 rem-off H=256 log chance; 1024 SELECT r=1 identity H=256 log chance; 1024 SELECT SWA-unsever `--message_keep_local_swa` chance 0.01 bits; 1024 SELECT extra exclusive hop `--message_extra_slot_attends 1` chance 0 bits; 1024 SELECT type_marks anchors `--message_global_anchors type_marks` 0 bits @800 / 31.90 @1050 S1 FAIL vs 0.75× dense; 1024 SELECT type_marks 8k extra-step S1 FAIL 6.48 vs live E18 63.96; 1024 SELECT extra hop + unfrozen slot K/V `--message_update_slot_kv` chance 0 bits; 1024 SELECT second exclusive global layer `--global_layers 2` chance 0 bits; 1024 SELECT QUERY-side anchors `--message_global_anchors query_side` chance 0 bits (4 tokens vs 1024, extra 4); 768 SELECT r=1 identity H=256 log chance 0.01 bits; 640 SELECT r=1 identity H=256 log S1 PASS 63.95 vs 47.93 (`--seq_len 640`); 704 SELECT r=1 identity H=256 log chance 0 bits (`--seq_len 704`); 672 SELECT r=1 identity H=256 log S1 PASS 63.96 vs 47.95 (`--seq_len 672`); 688 SELECT r=1 identity H=256 log S1 PASS 62.68 vs 47.97 (`--seq_len 688`; 800 climb 31.57, extra-step 99.5% @400; wall was (688, 704]); 696 SELECT r=1 identity H=256 log S1 FAIL 0 bits (`--seq_len 696`; chance @800; wall was (688, 696]); 692 SELECT r=1 identity H=256 log S1 PASS 62.76 vs 47.91 (`--seq_len 692`; 99.8% @500; wall now (692, 696]); 696 SELECT pack_stride 32 S1 FAIL 31.67 vs 47.50 @800 / 0 bits @8k (`--message_pack_stride 32`; leftover drop to 640 slots does not rescue 696); 696 SELECT `--evidence_align spread` K1 (dense 24.7% / 0 bits @3200; e18/e21 skipped); 4k INDEX r=16 rem-off H=256 log chance vs 0.75× dense; 2048 INDEX r=16 rem-off H=256 log chance vs 0.75× dense; 1536 INDEX r=16 rem-off H=256 log chance vs 0.75× dense (shared wall (1024, 1536]); 512 chain K1; 256 hops FAIL vs dense; 256 hops `--global_layers 2` S1 PASS 25.85 vs 4.17 (E18 live 5.56; 8k not run); 512 hops `--global_layers 2` K1 dense 22.5% / 0 bits @3200 (e18/e21 skipped; 8k not run); 384 hops `--global_layers 2` K1 dense 24.5% / 0 bits @3200 (e18/e21 skipped; 8k not run); 320 hops `--global_layers 2` K1 dense 26.2% / 0 bits @3200 (e18/e21 skipped; 8k not run); 288 hops `--global_layers 2` S0 PASS / E21 FAIL dense 93.1% / 22.20 bits @3200, E18 0, E21 0 (chance @800/@3200; vs 0.75× dense 16.65; dense wall (288 S0 PASS, 320 K1]; E21 wall (256 S1 PASS, 288 FAIL]; 8k not run)).**
   Tiny INDEX near-pass at 8k. GPU seq=512 exclusive concat slots **0 bits** (r=16/64/1).
   `--message_override raw` **100% / 63.96 bits**. r=1 in-place learned compressor **0 bits**.
   In-place raw KV **63.29 bits**. In-place hard identity **99.8% / 62.64 bits** @750.
@@ -97,8 +97,13 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   @1450). Do not score E21. 8k not run.
   Seq=320 hops `--global_layers 2` (`--scale bridge --seq_len 320`): dense
   **26.2% / 0 bits** @3200 (**S0 FAIL / K1**; e18/e21 skipped; best 27.9%
-  @2400). Do not score E21. 8k not run. Dense hops wall at glob=2 is
-  **(256 S0 PASS, 320 K1]**.
+  @2400). Do not score E21. 8k not run.
+  Seq=288 hops `--global_layers 2` (`--scale bridge --seq_len 288`): dense
+  **93.1% / 22.20 bits** @3200 (**S0 PASS**); E18 **26.8% / 0 bits**; E21
+  **24.5% / 0 bits** (chance @800 and @3200; **S1 FAIL** vs 0.75× dense
+  16.65; do not pass via 0.75×0). 8k not run. Dense hops wall at glob=2
+  is **(288 S0 PASS, 320 K1]**. E21/E18 hops wall at glob=2 is
+  **(256 S1 PASS, 288 FAIL]**.
   Seq=4096 packed `far_copy` r=16 rem-off H=256 SSMax log **25.7% / 0 bits**
   @800 (**S1 FAIL** vs 0.75× dense 47.96; E18 ~0 live; chance floor). Exclusive
   INDEX that passed at 1024 is chance at 4k. No 4k scale code change (`medium`).
@@ -162,12 +167,13 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   E18 47.71; E18 **99.9% / 63.62 bits** @600; chance every eval). Banner
   `gap=64 window=32` (32 < 64). Widening SWA does not rescue 696. Do not
   extra-step (floor). Do not 16k.
-  Next: seq=**288** packed `chain_ordered --key_len 13` `--global_layers 2`
-  (localize dense hops wall **(256 S0 PASS, 320 K1]**; do not run here).
+  Next: seq=**272** packed `chain_ordered --key_len 13` `--global_layers 2`
+  (localize E21/E18 hops wall **(256 S1 PASS, 288 FAIL]**; dense already S0
+  PASS at 288; do not run here).
   Do not reopen SELECT **(692 PASS, 696 FAIL]**. Do not seq=694. INDEX length
   extra-steps stay stopped.
   Remaining DNA walls:
-  SELECT length **(692 PASS, 696 FAIL]** leftover-drop, spread (K1), and window 32 did not close, INDEX **(1024 PASS, 1536 FAIL] shared with E18**, hops glob=2 **(256 S0 PASS, 320 K1]**, 512 chain **K1 at glob=1 and glob=2**, 256 hops
+  SELECT length **(692 PASS, 696 FAIL]** leftover-drop, spread (K1), and window 32 did not close, INDEX **(1024 PASS, 1536 FAIL] shared with E18**, hops glob=2 dense **(288 S0 PASS, 320 K1]**, hops glob=2 E21/E18 **(256 S1 PASS, 288 FAIL]**, 512 chain **K1 at glob=1 and glob=2**, 256 hops
   **FAIL at glob=1 / PASS at glob=2**. Not remainder-on. Not H=512. Not
   hops seq shrink below 256. Not Glyph. Do not restore raw global KV. Default remainder
   stays off. Default `--message_keep_local_swa` stays off. Default
@@ -230,6 +236,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [512 chain hops glob2](../2_Experiments_Registry/run_reports/e25_bridge512_chain_k13_glob2_20260914.md) ·
   [384 chain hops glob2](../2_Experiments_Registry/run_reports/e25_bridge384_chain_k13_glob2_20260914.md) ·
   [320 chain hops glob2](../2_Experiments_Registry/run_reports/e25_bridge320_chain_k13_glob2_20260914.md) ·
+  [288 chain hops glob2](../2_Experiments_Registry/run_reports/e25_bridge288_chain_k13_glob2_20260914.md) ·
   [768 select r=1 identity H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_768_ip_id_h256_select_20260914.md) ·
   [640 select r=1 identity H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_640_ip_id_h256_select_20260914.md) ·
   [704 select r=1 identity H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_704_ip_id_h256_select_20260914.md) ·
@@ -244,7 +251,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [256 chain hops glob2](../2_Experiments_Registry/run_reports/e25_bridge256_chain_k13_glob2_20260914.md) ·
   [512 chain hops glob2](../2_Experiments_Registry/run_reports/e25_bridge512_chain_k13_glob2_20260914.md) ·
   [384 chain hops glob2](../2_Experiments_Registry/run_reports/e25_bridge384_chain_k13_glob2_20260914.md) ·
-  [320 chain hops glob2](../2_Experiments_Registry/run_reports/e25_bridge320_chain_k13_glob2_20260914.md).
+  [320 chain hops glob2](../2_Experiments_Registry/run_reports/e25_bridge320_chain_k13_glob2_20260914.md) ·
+  [288 chain hops glob2](../2_Experiments_Registry/run_reports/e25_bridge288_chain_k13_glob2_20260914.md).
   Do not relabel E18 scores as E21.
 - **2026-09-13 — E24 BAPO DNA ladder (tiny + GPU bridge 512/1024; 4k S0 open).** Packed tiny
   seq=128 / 0.59M: E18 matches dense on positional `far_copy` (99.2% vs 99.4%) and recovers
@@ -278,6 +286,17 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-14 — E25 GPU seq=288 chain_ordered --key_len 13 `--global_layers 2` (Odra, H=256 log).**
+  Same 256 glob2 S1 PASS compressor at `--scale bridge --seq_len 288` (bridge
+  default is 512; window 16 < gap 64). Dense **93.1% / 22.20 bits** @3200
+  (**S0 PASS**; crossed 75% at 2200; best 98.2% @3000; 2.802M). E18 **26.8%
+  / 0 bits** (live ~0). E21 **24.5% / 0 bits** (chance @800 and @3200; **S1
+  FAIL** vs 0.75× dense 16.65; do not pass via 0.75×0). K2 PASS. Two global
+  Blocks that compose hops at 256 do not compose them at 288 for E18 or E21.
+  Dense wall **(288 S0 PASS, 320 K1]**. E21 wall **(256 S1 PASS, 288 FAIL]**.
+  8k not run. Next: seq=272 `--key_len 13` `--global_layers 2` (do not run
+  it). `--hops 1` is illegal.
+  [report](../2_Experiments_Registry/run_reports/e25_bridge288_chain_k13_glob2_20260914.md).
 - **2026-09-14 — E25 GPU seq=320 chain_ordered --key_len 13 `--global_layers 2` (Odra, H=256 log).**
   Same 256 glob2 S1 PASS compressor at `--scale bridge --seq_len 320` (bridge
   default is 512; window 16 < gap 64). Dense **26.2% / 0 bits** @3200
