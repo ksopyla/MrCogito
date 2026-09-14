@@ -128,6 +128,9 @@ Match the output to the question:
   retired families; do not imply they are maintained launch paths.
 - "Update the roadmap or vision." → propose minimal, dated edits to `docs/1_Strategy_and_Plans/*` referencing the synthesized evidence.
 
+Write the analysis to the note, and send the author a short Brief of it: what the finding changes for us,
+what I recommend, in plain words. Expand every external acronym on first use, or drop it. See `research-comms`.
+
 ## Past Reviews
 
 `docs/literature_review/` is the canonical source for past paper reviews on this project. The folder is self-indexing — there is no separate index file by design (manual indexes drift and bloat the repo).

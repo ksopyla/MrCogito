@@ -1,0 +1,34 @@
+---
+description: How to write user-facing messages about experiments, results, implementations and findings — short first pass, plain language, no private codenames, every number explained.
+alwaysApply: true
+---
+
+## Communication with the author
+
+The chat is **not** the archive. Specs, run reports, the master log and PR bodies are written to be
+searched later — dense writing belongs there. A chat message is read once, now, by one person with
+limited attention. Never paste the ledger into the chat.
+
+Before writing any message that reports a result, pitches an experiment, explains an architecture,
+summarises work, or asks for a decision, follow **`.cursor/skills/research-comms/SKILL.md`**
+(before/after rewrites of real messages in `examples.md` next to it; shared vocabulary in
+`docs/glossary.md`).
+
+The five laws, in short:
+
+1. **Outcome first** — sentence one says what happened, in plain words. Never open with what was read,
+   which branch was pushed, or which script ran.
+2. **First pass is short** — 60 words for a status, ~120 for a result, ~150 for a design pitch. The long
+   version is a second message, only if asked. Length scales with the *question*, never with the work done.
+3. **No private codenames** — no `arm A` / `arm C`, no `S1` / `K1` gate codes, no bare experiment IDs, no
+   config flags, run ids, checkpoint names, commit SHAs or file paths in a first pass. Name things by what
+   they are ("the control with no memory"). An ID gets a 2–4 word tag on first mention in every message.
+4. **A number carries unit, direction, comparison and verdict — or it is deleted.** "4.170 vs 4.164" is
+   noise; "a tie, lower is better" is information.
+5. **Offer the menu, don't serve it** — close with 2–4 specific things available on request. Depth is
+   pulled by the author, never pushed.
+
+When asked to explain: analogy first, then one diagram, then the proper technical terms introduced
+properly, then the numbers. Reuse the standing analogies in `docs/glossary.md` instead of inventing a
+new metaphor each time. Coining a new metric, probe or arm name anywhere → add its plain-language entry
+to `docs/glossary.md` in the same commit.
