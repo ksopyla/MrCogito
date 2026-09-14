@@ -268,6 +268,45 @@ def test_bridge_1k_seq_len_768_select_keeps_window_below_gap():
     assert row.input_ids.shape == (768,)
 
 
+def test_bridge_1k_seq_len_696_select_keeps_window_below_gap():
+    """SELECT length-wall hunt: override seq only; do not invent a 696 scale.
+
+    Tightens (688 PASS, 704 FAIL] on the same 1024-passing 32-token / 64-bit
+    pack (`bridge_1k`, not `bridge`). Packed `select_1decoy` plants a decoy
+    after the fact under right-align, so row.gap is > min_gap+1; the K2
+    contract is still window < gap.
+    """
+    from data.symbolic_tasks import generate_row
+
+    sc = SCALES["bridge_1k"]
+    cfg = config_for(
+        "bridge_1k",
+        "select",
+        seq_len=696,
+        evidence_align="right",
+        n_distractors=0,
+        n_decoys=1,
+    )
+    assert cfg.seq_len == 696
+    assert cfg.min_gap == sc.min_gap == 64
+    assert sc.local_window < cfg.min_gap
+    assert cfg.answer_len == 32
+    assert prize_bits(cfg) == pytest.approx(64.0)
+    bridge_cfg = config_for(
+        "bridge",
+        "select",
+        seq_len=696,
+        evidence_align="right",
+        n_distractors=0,
+        n_decoys=1,
+    )
+    assert bridge_cfg.answer_len == 24
+    row = generate_row(cfg, np.random.default_rng(0))
+    assert row.gap >= cfg.min_gap + 1
+    assert sc.local_window < row.gap
+    assert row.input_ids.shape == (696,)
+
+
 def test_bridge_1k_seq_len_688_select_keeps_window_below_gap():
     """SELECT length-wall hunt: override seq only; do not invent a 688 scale.
 
