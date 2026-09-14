@@ -487,5 +487,6 @@ verdict in `master_experiment_log.md`, flip the experiment spec `Status`/`Result
 the `agenda.md` learnings. This skill owns *how to run*; `experiment-track` owns *what it means*.
 
 Never hand the raw metric dump to the author. What he sees is a short plain-language summary where each
-number states what it measures, which direction is good, and the verdict — see `research-comms` and the
-metric table in `docs/glossary.md`.
+number states what it measures, which direction is good, and the verdict — plus **one comparison plot**
+if more than one arm or length is in the suite. See `research-comms` and the metric table in
+`docs/glossary.md`.

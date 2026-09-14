@@ -1,6 +1,6 @@
 ---
 name: research-comms
-description: How to talk to the author about experiment designs, implementations, evaluation results, status and research findings — short first, plain language, no private codenames, every number explained, depth only on request. Use before writing ANY user-facing message that reports a result, pitches an experiment, explains an architecture, summarises work, or asks for a decision. Pairs with every other skill: those decide what goes in the docs, this decides what goes in the chat. Not for writing the docs themselves (experiment-track, experiment-design, implementation-plan own those).
+description: How to talk to the author about experiment designs, implementations, evaluation results, status and research findings — short first, plain language, no private codenames, every number explained, comparison plots instead of number lists, depth only on request. Use before writing ANY user-facing message that reports a result, pitches an experiment, explains an architecture, summarises work, or asks for a decision. Pairs with every other skill: those decide what goes in the docs, this decides what goes in the chat. Not for writing the docs themselves (experiment-track, experiment-design, implementation-plan own those).
 ---
 
 # Research Comms
@@ -48,21 +48,27 @@ Full before/after rewrites of those exact messages: `examples.md` in this folder
 4. **A number carries its meaning or it is deleted.** Meaning, direction, comparison, verdict — or cut it.
 5. **Offer the menu, don't serve it.** End with 2–4 specific things I can explain on request. Depth is
    pulled by him, never pushed by me. (Optional on a status check — it rarely fits in 60 words.)
+6. **A comparison that is a series is a plot, not a list.** If two or more arms, lengths, or tasks
+   are being compared, draw one overlay (or one heatmap / frontier) instead of writing
+   `(6.66 → 5.53 → 5.02 → 4.17)` or a 12-row table. He asked for this in the Perceiver and E18
+   scaling sessions, five times, because the tables were not landing. See **Comparison plots**.
 
 ## Budgets
 
 | situation | first-pass budget | hard bans |
 |---|---|---|
 | status check ("what's the status?") | **60 words**, ≤3 bullets | tables, gate codes, Byobu/session names, GPU memory figures |
-| result summary (one run or eval finished) | **120 words**, ≤4 bullets, 0–1 tables of ≤4 rows | metric names without a gloss |
-| family / phase verdict (several runs closed at once) | **200 words**, ≤5 bullets, at most 3 of them findings (the rest: the cause, what survives) | a per-run table |
+| result summary (one run or eval finished) | **120 words**, ≤4 bullets, **1 comparison plot** if ≥2 arms/lengths | metric names without a gloss; a 12-row numbers table instead of the plot |
+| family / phase verdict (several runs closed at once) | **200 words**, ≤5 bullets, at most 3 of them findings, **1 plot** (2 if he asked "with plots") | a per-run table; a gallery of 4+ PNGs of the same story |
 | experiment pitch / design | **150 words**: the idea, the bet, the test, the cost | spec section numbering, gate lists |
 | implementation done | **120 words**: what it can do now, what changed for him | file manifests, flag names |
 | "explain X" / "why" (a pull for depth) | **400 words**, analogy + one diagram; more only if he asks again | walls of numbers, undefined terms |
-| long autonomous stretch ended | **150-word brief, mandatory** | ending a turn on "Now let me…" |
+| "summarise with plots" (explicit) | Brief + **1–2 plots**, never more | recycling the easy-exam pair when he asked for the harder one |
+| long autonomous stretch ended | **150-word brief, mandatory**; refresh the one comparison plot if a cell closed | ending a turn on "Now let me…"; closing a cell as a one-liner with no figure |
 
-Budgets count the body **including any table cells**; the closing "Ask me about" line does not. A table
-is not a loophole for smuggling the ledger into chat — if it does not fit the budget, it does not belong.
+Budgets count the body **including any table cells**; the closing "Ask me about" line does not. Plots
+do not count toward the word budget. A table is not a loophole for smuggling the ledger into chat — if
+it does not fit the budget, it does not belong.
 
 Server names (Odra, Polonez) are fine — he owns those machines; it is session names, GPU figures and
 paths that are noise.
@@ -157,6 +163,61 @@ put it next to.
 Never print a pair like `0.162/0.686` without saying what each side is and which way is good. Nine
 such unlabelled pairs appeared in a single summary.
 
+## Comparison plots
+
+He has said plots help him compare, and the transcripts agree: in **Perceiver context model** he asked
+for plots **five times**; in **E18 capability scaling** the opening `/goal` was *"Prepare the plots to
+easily compare and analyse the learning behaviours."* The only figure he actually reasoned from was a
+single overlay learning curve with a spoken color legend (*"I would like to understand better the
+arm D green line"*). Six-panel dumps, W&B-style curve/bits/flow/bytes bundles, and a 7-PNG summary
+produced no follow-up that cited a panel.
+
+**Default: one figure that answers the question just asked.** A second figure only if it is a
+*different question* (a length wall is not the same as a takeoff curve). Never four metrics of the
+same binary (accuracy, recovered bits, information flow, bytes/token are one story).
+
+### Which figure
+
+| the question is | draw this |
+|---|---|
+| who learns, who is stuck at chance | **overlay learning curve** — all arms on one axes, chance + pass-mark as drawn lines |
+| where does it break as we scale | **wall heatmap** (task × architecture, or length × architecture) |
+| how much data to hit the bar | **frontier scatter** — examples (or steps) to 95% vs difficulty; filled = hit, open = miss |
+
+Style that worked (see `overlay_curve_example.png` in this folder — synthetic, style only):
+
+- **Legend names the student, not the letter.** `"dense — can reread any page"`, `"concepts — notebook only"`, `"no notebook — last page only"`. The one time a plot was misread, he mapped the orange line onto the wrong arm because the legend said `Arm C`. Color in the caption is not enough if the names collide.
+- **Y-axis says which way is good.** `"copy accuracy (higher is better)"`.
+- **Chance / floor / 95% are lines on the chart**, not table footnotes. The flat "no notebook" line became a fact he could hold once it was drawn.
+- **Title is the question**, not the filename. `"Can the notebook carry a 32-letter string the student cannot reread?"`
+- **Claim in the alt text**, then the image, then at most a 4-row table *under* it. Tables above the plot make the figure optional.
+
+### How to ship it
+
+1. Write a short matplotlib script (or reuse `verification/plot_scale_hard.py` if this *is* that campaign). Do not add a new training family to draw a chart.
+2. Save under `/opt/cursor/artifacts/<plain_name>.png`. Embed in chat as
+   `<img src="/opt/cursor/artifacts/<name>.png" alt="<one-sentence claim>" />`.
+3. Caption in the next line: who is which color, in the standing names. Then the Brief.
+4. **Show it in the same message that has the result.** Generating `arm_a_scale_to_100.png` and
+   withholding it until he said *"give me interim results with plots"* is how he had to ask five times.
+5. When a new cell closes (a new length, a new compression, a matched dense run finishing), **refresh
+   that one comparison plot in the same message**. Scoreboard one-liners (*"seq1024 hit 95.9% at 96k"*)
+   are the comparison he asked for, delivered as a number he will miss.
+
+### Do not
+
+- Dump 4–6 related PNGs after *"plot the results"*. `harder_accuracy_vs_steps.png` was generated
+  and never even shown. Plot-harder asked for **two** and delivered two — copy that.
+- Recycle the previous exam's pair when he asked for the harder law.
+- Replace a curve with a parenthetical series. `"Eval-loss overlay of A vs C is essentially the same
+  curve (6.66 → 5.53 → …)"` is a plot you refused to draw.
+- Put `Arm A` / `Arm C` as the only legend entries. Pair with the analogy, or drop the letter.
+- Call a 2-point scatter a scaling law.
+- Paste every PNG into chat *and* a canvas. Pick one home.
+
+Plots do **not** count toward the word budget. They **do** count toward attention: one is a comparison,
+three is a gallery.
+
 ## Depth on demand — the second pass
 
 When he asks "explain", "why", "in simple words", "details", "how does it work" — that is a *pull*,
@@ -219,6 +280,7 @@ Read the draft and answer these. Any "no" means rewrite, not append.
 - [ ] Am I inside the budget for this situation?
 - [ ] Is every label something he can decode without memory?
 - [ ] Does every number have meaning, direction, comparison and verdict?
+- [ ] If I compared two or more arms/lengths/tasks: did I draw one plot, with a spoken legend, instead of a list of numbers?
 - [ ] Would he know **what to do next** after reading only the opening sentence and the recommendation line?
 - [ ] Am I answering the size of the question, or the size of my work?
 - [ ] If there is a decision to make: is it near the top, with ≤2 options and my recommendation?
