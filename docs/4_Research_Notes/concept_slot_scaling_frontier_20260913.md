@@ -57,6 +57,7 @@ steps). **Tune LR per geometry; it is not portable from the 1.35M toy.**
 | lr3e03_a_seq256_r8 | A | 5.11M | 3e-3 | 256 | 8 | far_copy | 2 | 25.6k | 800 | 25.1% | 1.386 | no | floor_patience |
 | lr6e03_a_seq256_r8 | A | 5.11M | 6e-3 | 256 | 8 | far_copy | 2 | 25.6k | 800 | 25.1% | 1.386 | no | floor_patience |
 | cell_seq256_r8_A | A | 5.11M | 1e-3 | 256 | 8 | far_copy | 2 | **96k** | 3,000 | **95.02%** | 0.135 | **yes** | target_acc |
+| **cell_seq256_r16_A** | A | 5.11M | 1e-3 | 256 | 16 | far_copy | 2 | **224k** | 7,000 | **95.7%** | 0.110 | **yes** | target_acc |
 | cell_seq256_r8_C | C | 2.27M | 1e-3 | 256 | 8 | far_copy | 2 | 48k | 1,500 | 25.4% | 1.386 | no (floor) | budget |
 | cell_seq256_r8_D | D | 2.27M | 1e-3 | 256 | 8 | far_copy | 2 | **72k** | 2,250 | **99.17%** | 0.025 | **yes** | target_acc |
 | cell_seq256_r32_A | A | 5.11M | 1e-3 | 256 | 32 | far_copy | 2 | 256k | 8,000 | **87.9%** | 0.258 | **no** | budget |
@@ -90,9 +91,10 @@ The skill is in the slots. C stays at the floor on every new (seq, min_gap) and 
   Same compute class, same data generator, ~5M params: exclusive slots need **0.60× examples
   and 0.63× wall**. Width matching was the false "D cannot solve seq512" claim; param matching
   is an **efficiency** win for the array, not a solvability claim.
-- **Miss, not a kill (copy, 4× compression):** r=32 (8 slots, span occupies 1 slot)
-  reaches **87.9% at 256k / 8k steps** and is still slowly climbing. Same 5.11M.
-  The 95% bar is not met at this budget. D ignores r and is the seq256 D curve.
+- **Success (copy, 2× compression, r=16):** 5.11M A hits **95.7% at 224k / 77 min**
+  (16 slots, span occupies 2). Ablation: array removed → 25.1%. ~**2.3×** the
+  examples r=8 needed on the same seq. r=32 (1 slot for the span) still misses
+  95% at 256k (87.9%).
 - **Exam kill (composition):** chain hops=3, key_len=8, seq=256: **both A and D**
   floor-killed at chance after 128k. C at floor (no leak). Per protocol this is
   **too hard for this budget**, not a concept-architecture failure. Short answers
@@ -108,9 +110,10 @@ Not a Kaplan-style fit — too few cells. The measured pattern is:
 1. **Length is cheap at r=8.** A solves `far_copy` through seq=512. Examples-to-95% did
    **not** grow with seq (96k at 256 → 72k at 512 once LR dropped to 3e-4). Wall did
    (36 min → 76 min). Lengthening seq without stretching `min_gap` adds slots, not reach.
-2. **Compression is the binding axis.** r=8 solved; r=32 (32 letters in 1 of 8 slots)
-   is **87.9% at 256k**, miss. Do not shrink width to chase this — spend examples or
-   change the write.
+2. **Compression is the binding axis.** r=8 solved at 96k; r=16 solved at 224k
+   (~2.3× data); r=32 missed at 256k (87.9%). Doubling tokens/slot more than
+   doubles examples-to-95%; another doubling does not finish in 256k. Do not
+   shrink width to chase this.
 3. **Composition at hops=3 / 8-token answers is an exam kill**, including for dense D.
    Not an exclusive-slot failure.
 4. **C stays on the floor** on every new (seq, min_gap) and on chain. The exam does not leak.
@@ -121,15 +124,15 @@ Not a Kaplan-style fit — too few cells. The measured pattern is:
 
 ## Still unknown
 
-- Whether r=32 A crosses 95% with more than 256k examples at the same 5.11M.
+- Whether r=32 A crosses 95% with more than 256k examples at the same 5.11M
+  (r=16 now hits 95.7% at 224k).
 - hops=2 chain with longer answers (pack the loss like span=32) — hops=3/key=8
   was an exam kill.
 - Seq>512 far_copy on GPU; nothing here is a language-model result.
 - True reach (`min_gap = seq/4`) is queued in `verification/run_scale_hard_reach.py`
-  after the live r=16 / hops=2 queue. Do not treat seq512 min_gap=32 as a
-  480-token memory exam. Seq=1024 in the live continue process still has
-  `min_gap=32` in memory (file was patched after launch); intercept that cell and
-  run the reach runner instead.
+  after packed hops=2. Do not treat seq512 min_gap=32 as a 480-token memory exam.
+  Continue.py no longer runs padded seq=1024; length with growing gap is the
+  reach runner.
 
 ## Closed — param-matched D on seq512 (2026-09-14)
 
@@ -154,19 +157,20 @@ Early-stop at the 95% bar. Takeoff was sawtooth until 104k, then a sharp drop
 **Same-parameter verdict:** both arms solve seq512 r=8; exclusive slots use
 **0.60× examples and 0.63× wall**.
 
-In flight now (frozen hidden=256): r=16 A, then packed hops=2, then intercept
-seq1024 (live continue.py still has `min_gap=32`) and run true-reach instead.
+In flight now (frozen hidden=256): packed hops=2 chain with **param-matched D9**
+(4-layer D would be a false composition kill, same mistake as seq512 copy).
+True reach is `verification/run_scale_hard_reach.py` after this queue.
 
 
 ## One-sentence frontier
 
 A **<10M exclusive-slot** model (5.11M, hidden 256) hits the 95% bar on
 **`far_copy` through seq=512, r=8, span=32 (64 slots)** at ~10^5 examples if LR is
-tuned down with length; it **misses 95% at r=32** (87.9% @ 256k); **3-hop chain
-with 8-token answers is unsolvable for both A and D** at this budget; and at
-seq=512 the exclusive array is **more data/wall-efficient than a param-matched
-4.97M dense decoder** (72k / 76 min vs 120k / 121 min), while width-matched 4-layer
-D never leaves chance.
+tuned down with length; **r=16 hits 95.7% at 224k**; it **misses 95% at r=32**
+(87.9% @ 256k); **3-hop chain with 8-token answers is unsolvable for both A and D**
+at this budget; and at seq=512 the exclusive array is **more data/wall-efficient
+than a param-matched 4.97M dense decoder** (72k / 76 min vs 120k / 121 min), while
+width-matched 4-layer D never leaves chance.
 
 ## What not to do next
 
