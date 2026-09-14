@@ -90,6 +90,23 @@ def _boundary_token_id(cfg) -> int:
         return -1
 
 
+_TYPE_MARK_NAMES = ("keymark", "decoy", "spanmark", "hop", "mark")
+
+
+def _type_mark_token_ids(cfg) -> tuple[int, ...]:
+    """Control ids that open evidence / decoy blocks (sparse type-cue anchors)."""
+    vocab = getattr(cfg, "vocab", None)
+    if vocab is None or not hasattr(vocab, "control"):
+        return ()
+    ids = []
+    for name in _TYPE_MARK_NAMES:
+        try:
+            ids.append(int(vocab.control(name)))
+        except (KeyError, TypeError):
+            continue
+    return tuple(ids)
+
+
 def make_batch(cfg, rng, batch: int, device):
     rows = [generate_row_for(cfg, rng) for _ in range(batch)]
     ids = torch.from_numpy(np.stack([r.input_ids for r in rows])).long().to(device)
@@ -152,7 +169,8 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             f"msg_rawkv={getattr(model.config, 'message_inplace_raw_kv', False) if arch == 'e21' else '-'}  "
             f"msg_idslots={getattr(model.config, 'message_identity_slots', False) if arch == 'e21' else '-'}  "
             f"msg_keepswa={getattr(model.config, 'message_keep_local_swa', False) if arch == 'e21' else '-'}  "
-            f"msg_extrahops={getattr(model.config, 'message_extra_slot_attends', 0) if arch == 'e21' else '-'}",
+            f"msg_extrahops={getattr(model.config, 'message_extra_slot_attends', 0) if arch == 'e21' else '-'}  "
+            f"msg_anchors={getattr(model.config, 'message_global_anchors', 'none') if arch == 'e21' else '-'}",
             flush=True,
         )
     override = args.message_override if arch == "e21" else "real"
@@ -268,6 +286,12 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         message_identity_slots=args.message_identity_slots,
         message_keep_local_swa=args.message_keep_local_swa,
         message_extra_slot_attends=args.message_extra_slot_attends,
+        message_global_anchors=args.message_global_anchors,
+        message_anchor_token_ids=(
+            _type_mark_token_ids(cfg)
+            if args.message_global_anchors in ("type_marks", "query_nbhd+type")
+            else ()
+        ),
     )
     card = rung_card(scale, recipe.task, **over)
     card["local_window"] = window
@@ -362,6 +386,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             "message_identity_slots": args.message_identity_slots,
             "message_keep_local_swa": args.message_keep_local_swa,
             "message_extra_slot_attends": args.message_extra_slot_attends,
+            "message_global_anchors": args.message_global_anchors,
         },
         "pack": {
             "answer_len": cfg.answer_len,
@@ -468,6 +493,16 @@ def main() -> int:
         default=0,
         help="E21: extra exclusive global attends over the *same* frozen slot K/V "
         "(queries update from the previous hop). Default 0. Not DNA --hops, not raw prefix KV.",
+    )
+    p.add_argument(
+        "--message_global_anchors",
+        default="none",
+        choices=("none", "query_nbhd", "type_marks", "query_nbhd+type"),
+        help="E21: which extra sender positions join exclusive slot K/V as raw keys. "
+        "none (default): prior exclusive slots only, E18-loadable. "
+        "type_marks: keymark/decoy/spanmark/hop/mark control tokens. "
+        "query_nbhd: 4 sender tokens immediately before QUERY (message_anchor_window). "
+        "query_nbhd+type: union. Sparse subset (count << seq), not the full raw prefix (that is E18).",
     )
     p.add_argument("--seq_len", type=int, default=None, help="override scale seq_len (S0 hunts)")
     p.add_argument("--min_gap", type=int, default=None, help="override scale min_gap (S0 hunts)")

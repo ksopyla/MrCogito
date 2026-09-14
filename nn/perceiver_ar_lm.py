@@ -39,7 +39,12 @@ Hooks for the family (config fields only — no parameters unless enabled):
     with queries updated by the previous hop — a second exclusive attend in slot
     space, not a raw prefix KV restore and not DNA `--hops`. Off by
     default (`id=-1`) so E18 checkpoints stay byte-identical.
-    `prefix_kv(as_message=True)` returns those slots.
+    `message_global_anchors` (default `none`) leaks a *sparse* set of non-slot
+    sender tokens into the exclusive global read: QUERY neighborhood (a few
+    tokens immediately before QUERY) and/or type-mark control tokens
+    (`keymark`/`decoy`/`spanmark`/`hop`/`mark`). Those positions join exclusive
+    slot K/V as raw keys; the rest of the prefix stays exclusive (not E18 raw
+    KV). `prefix_kv(as_message=True)` returns those slots.
 """
 from __future__ import annotations
 
@@ -58,6 +63,10 @@ from transformers import PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import CausalLMOutput
 
 logger = logging.getLogger(__name__)
+
+# Sparse exclusive-plus-anchors (E21). Default `none` is prior exclusive slots.
+MESSAGE_GLOBAL_ANCHORS = ("none", "query_nbhd", "type_marks", "query_nbhd+type")
+MESSAGE_QUERY_NBHD_DEFAULT = 4  # sender tokens immediately before QUERY
 
 # --------------------------------------------------------------------------------------
 # Config
@@ -114,6 +123,9 @@ class PerceiverARConfig(PretrainedConfig):
         message_identity_slots: bool = False,  # E21 — freeze mean-pool at any r; bypass u/delta
         message_keep_local_swa: bool = False,  # E21 — local SWA/n-grams still see across QUERY
         message_extra_slot_attends: int = 0,  # E21 — extra exclusive attends over frozen slots
+        message_global_anchors: str = "none",  # E21 — sparse raw keys joining exclusive slot K/V
+        message_anchor_token_ids: tuple[int, ...] = (),  # type-mark ids when anchors include type_marks
+        message_anchor_window: int = MESSAGE_QUERY_NBHD_DEFAULT,  # QUERY-nbhd width (sender tokens)
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -169,6 +181,9 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_identity_slots = bool(message_identity_slots)
         self.message_keep_local_swa = bool(message_keep_local_swa)
         self.message_extra_slot_attends = int(message_extra_slot_attends)
+        self.message_global_anchors = str(message_global_anchors or "none")
+        self.message_anchor_token_ids = tuple(int(x) for x in (message_anchor_token_ids or ()))
+        self.message_anchor_window = int(message_anchor_window)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -210,6 +225,13 @@ class PerceiverARConfig(PretrainedConfig):
             raise ValueError("message_compress_ratio must be >= 1")
         if self.message_extra_slot_attends < 0:
             raise ValueError("message_extra_slot_attends must be >= 0")
+        if self.message_global_anchors not in MESSAGE_GLOBAL_ANCHORS:
+            raise ValueError(
+                f"message_global_anchors must be one of {MESSAGE_GLOBAL_ANCHORS}, "
+                f"got {self.message_global_anchors!r}"
+            )
+        if self.message_anchor_window < 0:
+            raise ValueError("message_anchor_window must be >= 0")
         if self.message_enabled:
             if self.message_boundary_token_id >= self.vocab_size:
                 raise ValueError("message_boundary_token_id must be a vocabulary id")
@@ -217,6 +239,9 @@ class PerceiverARConfig(PretrainedConfig):
                 raise ValueError("the message boundary needs perceiver mode with >= 1 global read layer")
             if self.attn_backend == "flash":
                 raise ValueError("message boundary is not expressible with the flash backend; use flex or sdpa")
+            for tid in self.message_anchor_token_ids:
+                if tid < 0 or tid >= self.vocab_size:
+                    raise ValueError("message_anchor_token_ids must be vocabulary ids")
 
     @property
     def message_enabled(self) -> bool:
@@ -490,6 +515,8 @@ class MessageCtx:
     the block is homogeneous in (document, side) — `slot_doc[b, j]` is that document (−1
     otherwise). With `message_pool_remainder`, a mixed block still emits a slot from the first
     run of (doc, side) in that block (the incomplete last sender block next to QUERY).
+    `anchor` [B,S] marks a sparse sender subset that joins exclusive slot K/V as raw keys
+    (QUERY neighborhood and/or type marks). It is not the full prefix.
     """
 
     side: torch.Tensor          # [B,S] int64
@@ -506,6 +533,8 @@ class MessageCtx:
     inplace: bool = False       # True: slots overwrite sender prefix K/V; KV_LEN stays S
     inplace_raw_kv: bool = False  # True: keep token K/V at replace positions (skip compressor)
     extra_slot_attends: int = 0  # extra exclusive attends over the frozen slot K/V (default 0)
+    anchor: Optional[torch.Tensor] = None  # [B,S] bool — sparse raw keys joining exclusive slots
+    anchor_mode: str = "none"
 
     @property
     def n_slots(self) -> int:
@@ -526,6 +555,55 @@ class MessageCtx:
         return tag.to(torch.int32), slot_tag.to(torch.int32)
 
 
+def build_message_anchors(
+    input_ids: torch.Tensor,
+    side: torch.Tensor,
+    doc: torch.Tensor,
+    *,
+    mode: str,
+    token_ids: tuple[int, ...] = (),
+    window: int = MESSAGE_QUERY_NBHD_DEFAULT,
+) -> torch.Tensor:
+    """Sparse sender positions that join exclusive slot K/V as raw keys. [B,S] bool.
+
+    `type_marks`: control tokens in `token_ids` on the sender side (DNA keymark/decoy/
+    spanmark/hop, Glyph mark). `query_nbhd`: the `window` sender tokens immediately
+    before each QUERY (document-start of side ≥ 1). Default `none` is all-False.
+    Count is << seq: a handful of marks and/or `window` tokens per QUERY, never the
+    full prefix.
+    """
+    B, S = input_ids.shape
+    anchor = torch.zeros(B, S, dtype=torch.bool, device=input_ids.device)
+    mode = mode or "none"
+    if mode == "none":
+        return anchor
+    sender = (side == 0) & (doc >= 0)
+    if mode in ("type_marks", "query_nbhd+type") and token_ids:
+        ids = torch.tensor(list(token_ids), device=input_ids.device, dtype=input_ids.dtype)
+        is_mark = (input_ids.unsqueeze(-1) == ids).any(dim=-1)
+        anchor = anchor | (is_mark & sender)
+    if mode in ("query_nbhd", "query_nbhd+type") and int(window) > 0:
+        w = int(window)
+        is_query = torch.zeros(B, S, dtype=torch.bool, device=input_ids.device)
+        is_query[:, 0] = side[:, 0] >= 1
+        is_query[:, 1:] = (side[:, 1:] >= 1) & (side[:, :-1] == 0)
+        nbhd = torch.zeros(B, S, dtype=torch.bool, device=input_ids.device)
+        for d in range(1, w + 1):
+            at_q = is_query[:, d:]
+            same = doc[:, :-d] == doc[:, d:]
+            nbhd[:, :-d] = nbhd[:, :-d] | (at_q & same)
+        anchor = anchor | (nbhd & sender)
+    return anchor
+
+
+def exclusive_visible(replace: torch.Tensor, ctx: MessageCtx) -> torch.Tensor:
+    """In-place exclusive keys: slot replace positions ∪ sparse anchors."""
+    vis = replace
+    if ctx.anchor is not None:
+        vis = vis | ctx.anchor
+    return vis
+
+
 def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Tensor]):
     """mask_mod over KV = raw keys [0, S) ‖ slot keys [S, S + nb) for the global read.
 
@@ -543,6 +621,9 @@ def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Te
     tag, slot_tag = ctx.tags()
     raw_cross = ctx.override == "raw"
     slots_on = ctx.override not in ("none", "raw")
+    anchor = ctx.anchor
+    if anchor is None:
+        anchor = torch.zeros(tag.shape, dtype=torch.bool, device=tag.device)
 
     def pred(b, h, q, kv):
         is_raw = kv < S
@@ -550,11 +631,19 @@ def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Te
         js = torch.clamp(j, max=max(nb - 1, 0))
         tq = tag[b, q]
         tj = tag[b, j]
+        same_doc = torch.div(tj, m, rounding_mode="floor") == torch.div(tq, m, rounding_mode="floor")
         if raw_cross:
-            same = torch.div(tj, m, rounding_mode="floor") == torch.div(tq, m, rounding_mode="floor")
+            same = same_doc
         else:
             same = tj == tq
         raw_ok = (j <= q) & same
+        if not raw_cross:
+            dq = torch.div(tq, m, rounding_mode="floor")
+            dj = torch.div(tj, m, rounding_mode="floor")
+            sq = tq - dq * m
+            sj = tj - dj * m
+            anc = is_raw & (tq >= 0) & (tj >= 0) & (sq >= 1) & (sj == 0) & anchor[b, j] & same_doc
+            raw_ok = raw_ok | anc
         if key_valid is not None:
             raw_ok = raw_ok & (key_valid[b, j] | (j == q))
         if not slots_on:
@@ -573,9 +662,19 @@ def dense_message_mask(S: int, ctx: MessageCtx, key_valid: Optional[torch.Tensor
     B = side.shape[0]
     q = torch.arange(S, device=device)[:, None]
     j = torch.arange(S, device=device)[None, :]
-    raw = (j <= q)[None, None] & (doc[:, None, :, None] == doc[:, None, None, :])
-    if ctx.override != "raw":
-        raw = raw & (side[:, None, :, None] == side[:, None, None, :])
+    causal_doc = (j <= q)[None, None] & (doc[:, None, :, None] == doc[:, None, None, :])
+    if ctx.override == "raw":
+        raw = causal_doc
+    else:
+        same_side = side[:, None, :, None] == side[:, None, None, :]
+        raw = causal_doc & same_side
+        if ctx.anchor is not None:
+            anc = (
+                (side[:, None, :, None] >= 1)
+                & (side[:, None, None, :] == 0)
+                & ctx.anchor[:, None, None, :]
+            )
+            raw = raw | (causal_doc & anc)
     if key_valid is not None:
         raw = raw & (key_valid.bool()[:, None, None, :] | torch.eye(S, dtype=torch.bool, device=device)[None, None])
     slot = (
@@ -649,15 +748,16 @@ def attend_inplace(q, k, v, *, ctx: MessageCtx, replace, key_valid, backend, blo
     g = k.shape[2]
     if backend == "flash":
         raise NotImplementedError("message boundary needs flex or sdpa")
+    visible = exclusive_visible(replace, ctx)
     qt, kt, vt = (t.transpose(1, 2) for t in (q, k, v))
     if backend == "flex":
         from torch.nn.attention.flex_attention import create_block_mask
 
-        memo_key = ("message_inplace", ctx.override, ctx.n_slots)
+        memo_key = ("message_inplace", ctx.override, ctx.n_slots, getattr(ctx, "anchor_mode", "none"))
         if block_masks is not None and memo_key in block_masks:
             bm = block_masks[memo_key]
         else:
-            pred = make_inplace_mask_pred(S, ctx, key_valid, replace)
+            pred = make_inplace_mask_pred(S, ctx, key_valid, visible)
             bm = create_block_mask(pred, B=B, H=None, Q_LEN=S, KV_LEN=S, device=q.device,
                                    _compile=torch.cuda.is_available())
             if block_masks is not None:
@@ -669,7 +769,7 @@ def attend_inplace(q, k, v, *, ctx: MessageCtx, replace, key_valid, backend, blo
         rep = h // g
         kt = kt.repeat_interleave(rep, dim=1)
         vt = vt.repeat_interleave(rep, dim=1)
-    mask = dense_inplace_mask(S, ctx, key_valid, replace, q.device)
+    mask = dense_inplace_mask(S, ctx, key_valid, visible, q.device)
     out = F.scaled_dot_product_attention(qt, kt, vt, attn_mask=mask)
     return out.transpose(1, 2)
 
@@ -745,7 +845,7 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
     if backend == "flex":
         from torch.nn.attention.flex_attention import create_block_mask
 
-        memo_key = ("message", ctx.override, ctx.n_slots)
+        memo_key = ("message", ctx.override, ctx.n_slots, getattr(ctx, "anchor_mode", "none"))
         if block_masks is not None and memo_key in block_masks:
             bm = block_masks[memo_key]
         else:
@@ -1286,6 +1386,8 @@ class PerceiverARLM(PreTrainedModel):
                 ratio=r, inplace=cfg.message_slots_inplace,
                 inplace_raw_kv=cfg.message_inplace_raw_kv,
                 extra_slot_attends=int(getattr(cfg, "message_extra_slot_attends", 0) or 0),
+                anchor=torch.zeros(B, S, dtype=torch.bool, device=dev),
+                anchor_mode="none",
             )
         is_b = input_ids == cfg.message_boundary_token_id
         if not bool(is_b.any()):
@@ -1325,11 +1427,18 @@ class PerceiverARLM(PreTrainedModel):
             last = (same.to(torch.long) * (idx + 1)).amax(dim=2).clamp(min=1) - 1
             end_abs = (torch.arange(nb, device=dev) * r + last).clamp(max=S - 1)
             slot_pos = pos.gather(1, end_abs)
+        anchor_mode = str(getattr(cfg, "message_global_anchors", "none") or "none")
+        token_ids = tuple(int(x) for x in (getattr(cfg, "message_anchor_token_ids", ()) or ()))
+        window = int(getattr(cfg, "message_anchor_window", MESSAGE_QUERY_NBHD_DEFAULT) or 0)
+        anchor = build_message_anchors(
+            input_ids, side, doc, mode=anchor_mode, token_ids=token_ids, window=window,
+        )
         return MessageCtx(side=side, doc=doc, local_doc_ids=local, slot_doc=slot_doc, slot_side=slot_side,
                           slot_pos=slot_pos, n_sides=K, override=self._message_override,
                           pool_valid=pool_valid, ratio=r, inplace=cfg.message_slots_inplace,
                           inplace_raw_kv=cfg.message_inplace_raw_kv,
-                          extra_slot_attends=int(getattr(cfg, "message_extra_slot_attends", 0) or 0))
+                          extra_slot_attends=int(getattr(cfg, "message_extra_slot_attends", 0) or 0),
+                          anchor=anchor, anchor_mode=anchor_mode)
 
     # -- helpers ----------------------------------------------------------------------
     @staticmethod

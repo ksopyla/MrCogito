@@ -9,15 +9,18 @@ from unittest.mock import patch
 
 from nn.perceiver_ar_lm import (
     KVCompressor,
+    MESSAGE_QUERY_NBHD_DEFAULT,
     MessageCtx,
     PerceiverARConfig,
     PerceiverARLM,
     analytic_param_count,
     attend_inplace,
     attend_message,
+    build_message_anchors,
     dense_bool_mask,
     dense_inplace_mask,
     dense_message_mask,
+    exclusive_visible,
     make_message_mask_pred,
     mix_inplace_kv,
 )
@@ -80,6 +83,10 @@ def test_off_by_default_is_byte_identical_and_validated():
         cfg(message_boundary_token_id=M, attn_backend="flash")
     with pytest.raises(ValueError):
         cfg(message_boundary_token_id=M, message_extra_slot_attends=-1)
+    with pytest.raises(ValueError):
+        cfg(message_boundary_token_id=M, message_global_anchors="full_prefix")
+    with pytest.raises(ValueError):
+        cfg(message_boundary_token_id=M, message_anchor_window=-1)
 
 
 def test_enabled_without_boundary_token_is_inert_and_counts_params():
@@ -656,6 +663,125 @@ def test_extra_slot_attends_hides_uncompressed_remainder():
         a, rem, blk = model(x).logits, model(y_rem).logits, model(y_blk).logits
         assert torch.allclose(a[0, P:], rem[0, P:], atol=1e-5)
         assert not torch.allclose(a[0, P:], blk[0, P:], atol=1e-5)
+
+
+MARK = 91  # type-mark id; random inputs use 3..80, boundary is M=90
+
+
+def test_global_anchors_default_off_matches_prior_e21():
+    """Default `none` is byte-identical to omitting the field; no extra params."""
+    x = with_boundary(rand_ids(2, 14, seed=3), 8)
+    off = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                     message_slots_inplace=True, message_identity_slots=True)
+    expl = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                      message_slots_inplace=True, message_identity_slots=True,
+                      message_global_anchors="none")
+    on = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                    message_slots_inplace=True, message_identity_slots=True,
+                    message_global_anchors="type_marks", message_anchor_token_ids=(MARK,))
+    assert off.config.message_global_anchors == "none"
+    assert expl.config.message_global_anchors == "none"
+    assert on.config.message_global_anchors == "type_marks"
+    assert sum(p.numel() for p in off.parameters()) == sum(p.numel() for p in on.parameters())
+    with torch.no_grad():
+        assert torch.allclose(off(x).logits, expl(x).logits, atol=1e-6)
+        # no type-mark tokens in `x` → type_marks is a no-op vs prior E21
+        assert torch.allclose(off(x).logits, on(x).logits, atol=1e-6)
+
+
+def test_type_mark_anchors_join_exclusive_kv_not_full_prefix_inplace():
+    """r=4 remainder: type-mark in the incomplete block is visible; other remainder is not.
+
+    Exclusive = slots ∪ anchors, not the full sender prefix.
+    """
+    r, S, P = 4, 18, 10  # sender 0..9: two full blocks + remainder 8,9
+    off = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=r,
+                     message_slots_inplace=True, message_identity_slots=True)
+    on = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=r,
+                    message_slots_inplace=True, message_identity_slots=True,
+                    message_global_anchors="type_marks", message_anchor_token_ids=(MARK,))
+    x = with_boundary(rand_ids(1, S, seed=11), P)
+    x[0, P - 1] = MARK  # remainder type mark
+    pos = on._positions(S, 1, None, x.device)
+    with torch.no_grad():
+        ctx_off = off._message_context(x, None, None, pos)
+        ctx_on = on._message_context(x, None, None, pos)
+    assert ctx_off.anchor_mode == "none"
+    assert not bool(ctx_off.anchor[0].any())
+    assert ctx_on.anchor_mode == "type_marks"
+    assert ctx_on.anchor[0].tolist()[P - 1] is True
+    assert int(ctx_on.anchor[0].sum()) == 1
+    assert int(ctx_on.anchor[0].sum()) < S  # sparse vs seq
+    k = torch.zeros(1, S, 2, 8)
+    v = torch.zeros_like(k)
+    _, _, replace = mix_inplace_kv(k, v, k, v, ctx_on)
+    vis = exclusive_visible(replace, ctx_on)
+    assert bool(replace[0, 0]) and not bool(replace[0, P - 1])  # mark is non-slot remainder
+    assert bool(vis[0, P - 1]) and not bool(vis[0, P - 2])  # other remainder stays hidden
+    assert not bool(vis[0, :P].all())  # not full prefix
+    mask_on = dense_inplace_mask(S, ctx_on, None, vis, "cpu")
+    mask_off = dense_inplace_mask(S, ctx_off, None, exclusive_visible(replace, ctx_off), "cpu")
+    assert bool(mask_on[0, 0, P, P - 1]) and not bool(mask_off[0, 0, P, P - 1])
+    assert not bool(mask_on[0, 0, P, P - 2])
+    concat_on = dense_message_mask(S, ctx_on, None, "cpu")[0, 0]
+    concat_off = dense_message_mask(S, ctx_off, None, "cpu")[0, 0]
+    assert concat_off[P, :P].tolist() == [False] * P
+    assert bool(concat_on[P, P - 1]) and not bool(concat_on[P, P - 2])
+    y_drop = x.clone()
+    y_drop[0, P - 1] = (int(x[0, 0]) % 70) + 3
+    with torch.no_grad():
+        a_on, drop_on = on(x).logits, on(y_drop).logits
+        a_off, drop_off = off(x).logits, off(y_drop).logits
+        assert not torch.allclose(a_on[0, P:], drop_on[0, P:], atol=1e-5)
+        assert torch.allclose(a_off[0, P:], drop_off[0, P:], atol=1e-5)
+
+
+def test_query_nbhd_anchors_are_sparse_and_not_full_prefix():
+    """query_nbhd window=2 on a long remainder: only the last 2 sender tokens leak."""
+    r, S, P = 8, 20, 14  # sender 0..13; complete [0:8]; remainder 8..13 (6 tokens)
+    model = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=r,
+                       message_slots_inplace=True, message_identity_slots=True,
+                       message_global_anchors="query_nbhd", message_anchor_window=2)
+    assert MESSAGE_QUERY_NBHD_DEFAULT == 4
+    x = with_boundary(rand_ids(1, S, seed=6), P)
+    pos = model._positions(S, 1, None, x.device)
+    with torch.no_grad():
+        ctx = model._message_context(x, None, None, pos)
+    anc = ctx.anchor[0]
+    assert anc[P - 1] and anc[P - 2]
+    assert not bool(anc[P - 3])  # remainder beyond window stays a non-anchor
+    assert int(anc.sum()) == 2
+    assert int(anc.sum()) < S
+    k = torch.zeros(1, S, 2, 8)
+    _, _, replace = mix_inplace_kv(k, k, k, k, ctx)
+    vis = exclusive_visible(replace, ctx)
+    assert bool(vis[0, P - 1]) and bool(vis[0, P - 2])
+    assert not bool(vis[0, 9])  # remainder token outside nbhd and not a slot
+    assert not bool(vis[0, :P].all())
+    mask = dense_inplace_mask(S, ctx, None, vis, "cpu")
+    assert bool(mask[0, 0, P, P - 1]) and not bool(mask[0, 0, P, 9])
+    concat = dense_message_mask(S, ctx, None, "cpu")[0, 0]
+    assert bool(concat[P, P - 1]) and not bool(concat[P, 9])
+    assert concat[P, :P].float().sum() < P  # not full raw prefix
+
+
+def test_build_message_anchors_union_query_nbhd_plus_type():
+    S, P = 16, 10
+    ids = with_boundary(rand_ids(1, S, seed=2), P)
+    ids[0, 2] = MARK
+    side = torch.zeros(1, S, dtype=torch.long)
+    side[:, P:] = 1
+    doc = torch.zeros(1, S, dtype=torch.long)
+    none = build_message_anchors(ids, side, doc, mode="none", token_ids=(MARK,), window=2)
+    marks = build_message_anchors(ids, side, doc, mode="type_marks", token_ids=(MARK,), window=2)
+    nbhd = build_message_anchors(ids, side, doc, mode="query_nbhd", token_ids=(MARK,), window=2)
+    both = build_message_anchors(ids, side, doc, mode="query_nbhd+type", token_ids=(MARK,), window=2)
+    assert not bool(none.any())
+    assert marks[0].tolist()[2] and int(marks.sum()) == 1
+    assert nbhd[0, P - 1] and nbhd[0, P - 2] and not bool(nbhd[0, 2])
+    assert bool(both[0, 2]) and bool(both[0, P - 1])
+    assert int(both.sum()) == 3
+    assert int(both.sum()) < S
 
 
 def test_receiver_only_round_trip_via_prefix_kv_as_message():

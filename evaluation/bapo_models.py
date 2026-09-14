@@ -19,6 +19,10 @@ Architectures
                global read but does not treat QUERY as a SWA/n-gram document start.
                `--message_extra_slot_attends N` (default 0) re-reads the same exclusive
                slot K/V with updated queries (second hop in slot space; not raw prefix).
+               `--message_global_anchors {none,query_nbhd,type_marks,query_nbhd+type}`
+               (default `none`) leaks a sparse sender subset into exclusive slot K/V:
+               QUERY neighborhood (4 tokens before QUERY) and/or type-mark controls.
+               Still not the full raw prefix (that is E18).
 - `encdec`     Symmetric encoder-decoder: bidirectional prefix encoder, suffix-only decoder with
                cross-attention. Prefix information cannot take a raw route into the suffix.
 """
@@ -64,6 +68,9 @@ class ArchSpec:
     message_identity_slots: bool = False
     message_keep_local_swa: bool = False
     message_extra_slot_attends: int = 0
+    message_global_anchors: str = "none"
+    message_anchor_token_ids: tuple[int, ...] = ()
+    message_anchor_window: int = 4
 
 
 def _n_heads(hidden: int, head_dim: int) -> int:
@@ -148,6 +155,13 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         message_identity_slots=bool(spec.message_identity_slots) if arch == "e21" else False,
         message_keep_local_swa=bool(spec.message_keep_local_swa) if arch == "e21" else False,
         message_extra_slot_attends=int(getattr(spec, "message_extra_slot_attends", 0) or 0) if arch == "e21" else 0,
+        message_global_anchors=(
+            str(getattr(spec, "message_global_anchors", "none") or "none") if arch == "e21" else "none"
+        ),
+        message_anchor_token_ids=(
+            tuple(int(x) for x in (getattr(spec, "message_anchor_token_ids", ()) or ())) if arch == "e21" else ()
+        ),
+        message_anchor_window=int(getattr(spec, "message_anchor_window", 4) or 0) if arch == "e21" else 4,
         pad_token_id=pad_id,
         bos_token_id=bos_id,
         eos_token_id=eos_id,

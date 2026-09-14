@@ -15,6 +15,29 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-14] - E21 sparse exclusive-plus-anchors (`message_global_anchors`, default `none`)
+
+**Why:**
+- Seq=1024 packed `select_1decoy` stays at chance with r=1 identity, identity+keep_local_swa,
+  and identity+extra exclusive hop (0 bits), while uncompressed E18 copies ~64 bits. Slots
+  already carry post-pre-SWA K/V; type-cue tokens already land in r=1 identity slots. Next
+  knob: leak a *sparse* non-slot subset into the exclusive global read (QUERY neighborhood
+  and/or type markers), still not the full raw prefix (that is E18).
+
+**Impact:**
+- Default stays exclusive slots only (E18 checkpoints loadable; no new params).
+  `--message_global_anchors {none,query_nbhd,type_marks,query_nbhd+type}` adds those
+  sender positions to exclusive slot K/V as raw keys. `query_nbhd` is 4 tokens before
+  QUERY. `type_marks` are keymark/decoy/spanmark/hop/mark. Count << seq.
+
+**What changed:**
+- [added] `PerceiverARConfig.message_global_anchors` in `nn/perceiver_ar_lm.py`
+- [added] probe `--message_global_anchors`; ArchSpec fields
+- [added] tests in `tests/test_perceiver_ar_message.py` and `tests/test_bapo_ladder.py`
+
+**Does not:** restore raw global KV, enable remainder, unsever SWA, extra hops, or
+unfreeze `u`/`delta`. Default stays `none`.
+
 ## [2026-09-14] - E21 extra exclusive slot attends (`message_extra_slot_attends`, default 0)
 
 **Why:**

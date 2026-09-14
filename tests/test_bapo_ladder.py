@@ -623,6 +623,171 @@ def test_e21_extra_slot_attends_flag_is_wired_on_factory():
     assert e18.config.message_extra_slot_attends == 0
 
 
+def test_e21_global_anchors_flag_is_wired_on_factory():
+    cfg = config_for("tiny", "far_copy")
+    qid = cfg.vocab.control("query")
+    marks = (cfg.vocab.control("keymark"), cfg.vocab.control("decoy"))
+    spec = ArchSpec(
+        name="e21",
+        hidden=32,
+        head_dim=16,
+        local_window=16,
+        message_boundary_token_id=qid,
+        message_compress_ratio=1,
+        message_slots_inplace=True,
+        message_identity_slots=True,
+        message_global_anchors="type_marks",
+        message_anchor_token_ids=marks,
+        zero_init_residuals=False,
+    )
+    model = build_model(
+        "e21",
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=cfg.vocab.control("eos"),
+        bos_id=cfg.vocab.control("bos"),
+        eos_id=cfg.vocab.control("eos"),
+        spec=spec,
+        seed=0,
+    )
+    assert model.config.message_global_anchors == "type_marks"
+    assert model.config.message_anchor_token_ids == marks
+    assert model.config.message_extra_slot_attends == 0
+    assert model.config.message_keep_local_swa is False
+    torch.manual_seed(0)
+    ids = torch.randint(3, cfg.vocab.vocab_size, (2, cfg.seq_len))
+    p = cfg.seq_len // 2
+    ids[:, p] = qid
+    loss = model(ids, labels=torch.full_like(ids, -100)).loss
+    assert torch.isfinite(loss)
+    off = build_model(
+        "e21",
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=cfg.vocab.control("eos"),
+        bos_id=cfg.vocab.control("bos"),
+        eos_id=cfg.vocab.control("eos"),
+        spec=ArchSpec(
+            name="e21",
+            hidden=32,
+            head_dim=16,
+            local_window=16,
+            message_boundary_token_id=qid,
+            message_compress_ratio=1,
+            message_slots_inplace=True,
+            message_identity_slots=True,
+            zero_init_residuals=False,
+        ),
+        seed=0,
+    )
+    assert off.config.message_global_anchors == "none"
+    assert off.config.message_anchor_token_ids == ()
+    e18 = build_model(
+        "e18",
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=cfg.vocab.control("eos"),
+        bos_id=cfg.vocab.control("bos"),
+        eos_id=cfg.vocab.control("eos"),
+        spec=ArchSpec(
+            name="e18",
+            hidden=32,
+            head_dim=16,
+            local_window=16,
+            message_global_anchors="type_marks",
+            message_anchor_token_ids=marks,
+            zero_init_residuals=False,
+        ),
+        seed=0,
+    )
+    assert e18.config.message_boundary_token_id == -1
+    assert e18.config.message_global_anchors == "none"
+    assert e18.config.message_anchor_token_ids == ()
+
+
+def test_select_1decoy_type_mark_anchors_are_sparse_vs_seq():
+    """select_1decoy: 2 type marks (keymark+decoy) join exclusive K/V; count << seq.
+
+    At r=8 remainder-off they are extra raw keys, not the full prefix. At r=1 they
+    are already identity slots; the flag still marks them as anchors (2 vs 1024).
+    """
+    from nn.perceiver_ar_lm import exclusive_visible, mix_inplace_kv
+
+    cfg = config_for("bridge_1k", "select", n_distractors=0, n_decoys=1, evidence_align="right")
+    assert cfg.seq_len == 1024
+    row = generate_row_for(cfg, np.random.default_rng(0))
+    ids_np = row.input_ids
+    keymark = cfg.vocab.control("keymark")
+    decoy = cfg.vocab.control("decoy")
+    query = cfg.vocab.control("query")
+    n_marks = int((ids_np == keymark).sum() + (ids_np == decoy).sum())
+    assert n_marks == 2
+    spec = ArchSpec(
+        name="e21",
+        hidden=32,
+        head_dim=16,
+        local_window=16,
+        message_boundary_token_id=query,
+        message_compress_ratio=8,
+        message_slots_inplace=True,
+        message_identity_slots=True,
+        message_global_anchors="type_marks",
+        message_anchor_token_ids=(keymark, decoy),
+        zero_init_residuals=False,
+    )
+    model = build_model(
+        "e21",
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=cfg.vocab.control("eos"),
+        bos_id=cfg.vocab.control("bos"),
+        eos_id=cfg.vocab.control("eos"),
+        spec=spec,
+        seed=0,
+    )
+    ids = torch.from_numpy(ids_np[None].astype(np.int64))
+    pos = model._positions(ids.shape[1], 1, None, ids.device)
+    with torch.no_grad():
+        ctx = model._message_context(ids, None, None, pos)
+    S = ids.shape[1]
+    qpos = int(np.where(ids_np == query)[0][0])
+    assert int(ctx.anchor[0].sum()) == 2
+    assert int(ctx.anchor[0].sum()) < S
+    k = torch.zeros(1, S, model.config.num_kv_heads, model.config.head_dim)
+    _, _, replace = mix_inplace_kv(k, k, k, k, ctx)
+    vis = exclusive_visible(replace, ctx)
+    extra = vis & ~replace
+    assert int(ctx.anchor[0].sum()) == 2
+    assert not bool(vis[0, :qpos].all())  # exclusive is slots+anchors, not full prefix at r=8
+    assert int(extra[0, :qpos].sum()) <= 2
+    off = build_model(
+        "e21",
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=cfg.vocab.control("eos"),
+        bos_id=cfg.vocab.control("bos"),
+        eos_id=cfg.vocab.control("eos"),
+        spec=ArchSpec(
+            name="e21",
+            hidden=32,
+            head_dim=16,
+            local_window=16,
+            message_boundary_token_id=query,
+            message_compress_ratio=8,
+            message_slots_inplace=True,
+            message_identity_slots=True,
+            zero_init_residuals=False,
+        ),
+        seed=0,
+    )
+    assert off.config.message_global_anchors == "none"
+
+
 def test_select_1decoy_type_cues_land_in_r1_identity_slots():
     """SELECT keymark/decoy sit in the sender prefix (before QUERY) and are replace slots at r=1."""
     from nn.perceiver_ar_lm import dense_inplace_mask, mix_inplace_kv
