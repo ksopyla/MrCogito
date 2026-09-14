@@ -20,7 +20,7 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-14 — E25 E21 capability ladder (tiny limits; 512 concat wall; raw PASS; inplace identity PASS; r=16 mean INDEX; MATCH remainder-on S1 through r=16; remainder-off r=10/16 chance, r=12 S1 FAIL; SELECT r=8 rem-off S1 PASS, r=12 rem-on S1 PASS, r=16 rem-on live S1 FAIL; SELECT identity PASS; 1024 MATCH r=8 rem-off H=128 S1 FAIL, H=256 log S1 PASS 60.35; 1024 SELECT r=8 rem-off H=256 log chance; 1024 SELECT r=1 identity H=256 log chance; 4k INDEX r=16 rem-off H=256 log chance vs 0.75× dense; 2048 INDEX r=16 rem-off H=256 log chance vs 0.75× dense; 512 chain K1; 256 hops FAIL vs dense).**
+- **2026-09-14 — E25 E21 capability ladder (tiny limits; 512 concat wall; raw PASS; inplace identity PASS; r=16 mean INDEX; MATCH remainder-on S1 through r=16; remainder-off r=10/16 chance, r=12 S1 FAIL; SELECT r=8 rem-off S1 PASS, r=12 rem-on S1 PASS, r=16 rem-on live S1 FAIL; SELECT identity PASS; 1024 MATCH r=8 rem-off H=128 S1 FAIL, H=256 log S1 PASS 60.35; 1024 SELECT r=8 rem-off H=256 log chance; 1024 SELECT r=1 identity H=256 log chance; 1024 SELECT SWA-unsever `--message_keep_local_swa` chance 0.01 bits; 4k INDEX r=16 rem-off H=256 log chance vs 0.75× dense; 2048 INDEX r=16 rem-off H=256 log chance vs 0.75× dense; 512 chain K1; 256 hops FAIL vs dense).**
   Tiny INDEX near-pass at 8k. GPU seq=512 exclusive concat slots **0 bits** (r=16/64/1).
   `--message_override raw` **100% / 63.96 bits**. r=1 in-place learned compressor **0 bits**.
   In-place raw KV **63.29 bits**. In-place hard identity **99.8% / 62.64 bits** @750.
@@ -50,7 +50,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   log **25.7% / 0 bits** @800 (S1 FAIL vs 0.75× E18 47.89; chance floor;
   SELECT does not scale with MATCH). Seq=1024 `select_1decoy` r=1 identity
   H=256 SSMax log **25.7% / 0 bits** @800 (S1 FAIL vs 0.75× E18 47.85; chance
-  floor; exclusive SELECT dead at 1024 even with identity slots). Seq=512
+  floor; exclusive SELECT dead at 1024 even with identity slots). Seq=1024
+  `select_1decoy` r=1 identity SWA-unsever `--message_keep_local_swa` H=256
+  SSMax log **25.8% / 0.01 bits** @800 (S1 FAIL vs 0.75× E18 47.95; chance
+  floor; unsevering SWA does not rescue 1024 SELECT). Seq=512
   `select_1decoy` r=1 identity **100% / 47.98 bits** @700. Seq=512 packed
   `chain_ordered` **K1**. Seq=256 `--key_len 13` hops=2: dense **96.4% / 24.12
   bits** (S0 PASS); E18 **0 bits**; E21 **0 bits**. Hops FAIL vs 0.75× dense.
@@ -60,9 +63,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   Seq=2048 packed `far_copy` `--scale bridge_1k --seq_len 2048` r=16 rem-off
   H=256 SSMax log **25.0% / 0 bits** @800 (**S1 FAIL** vs 0.75× dense 47.84;
   E18 ~0 live; chance floor). Exclusive INDEX that passed at 1024 is chance
-  at 2048 with the same gap=64. Next: **stop INDEX length extra-steps**. Not
-  remainder-on. Not 2048 H=512. Not hops. Not Glyph. Default remainder stays
-  off elsewhere.
+  at 2048 with the same gap=64. INDEX length extra-steps are **stopped**.
+  Next: **stop 1024 SELECT knobs**. Not remainder-on. Not H=512. Not 8k on a
+  chance floor. Not hops. Not Glyph. Do not restore raw global KV. Default
+  remainder stays off. Default `--message_keep_local_swa` stays off.
   Spec [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) ·
   [rung 1](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) ·
   [remainder](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) ·
@@ -104,6 +108,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [1024 recall r=8 H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_r8_h256_recall_20260914.md) ·
   [1024 select r=8 H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_r8_h256_select_20260914.md) ·
   [1024 select r=1 identity H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_id_h256_select_20260914.md) ·
+  [1024 select SWA-unsever](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_id_keepswa_select_20260914.md) ·
   [4k INDEX r=16 H=256 log](../2_Experiments_Registry/run_reports/e25_medium_4k_ip_r16_mean_far_copy_20260914.md) ·
   [2048 INDEX r=16 H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_2k_ip_r16_mean_far_copy_20260914.md).
   Do not relabel E18 scores as E21.
@@ -139,6 +144,17 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-14 — E25 GPU seq=1024 select_1decoy r=1 identity SWA-unsever H=256 SSMax log (Odra).**
+  `--scale bridge_1k` packed SELECT, inplace identity, remainder **off**,
+  `--message_keep_local_swa`, `--hidden 256 --global_logit_scale log`. Dense
+  **100% / 63.03 bits** @200 (**S0 PASS**). E18 **100% / 63.94 bits** @400
+  (live). E21 **25.8% / 0.01 bits** @800 (chance every eval; **S1 FAIL** vs
+  0.75× E18 47.95). K2 **PASS**. Inspection: r=1 identity already covers every
+  sender token on the exclusive global read. Unsevering SWA does not bind
+  type-cue at 1024 (window 16 cannot reach gap 100). Do not extra-step
+  (floor). Do not restore raw global KV. Default `--message_keep_local_swa`
+  stays off. Next: stop 1024 SELECT knobs.
+  [report](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_id_keepswa_select_20260914.md).
 - **2026-09-14 — E25 GPU seq=2048 far_copy r=16 rem-off H=256 SSMax log (Odra).**
   `--scale bridge_1k --seq_len 2048` packed INDEX, inplace identity mean, remainder
   **off**, no raw_kv, `--hidden 256 --global_logit_scale log`, batch 32. Dense
