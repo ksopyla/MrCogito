@@ -15,6 +15,28 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-14] - E21 keep local SWA across QUERY (`message_keep_local_swa`, default off)
+
+**Why:**
+- Seq=1024 packed `select_1decoy` r=1 identity scored 0 bits while E18 copies ~64.
+  r=1 inplace identity already exposes every sender token KV to the exclusive global
+  read (not a type-cue coverage hole). The remaining E21-only cut is QUERY as a
+  SWA/n-gram document start.
+
+**Impact:**
+- Default local path stays severed. `--message_keep_local_swa` keeps exclusive
+  compressed/identity slots on the global read and lets the sliding window (and
+  n-gram hashes) see raw prefix tokens that fall inside the window. E18 checkpoints
+  stay loadable.
+
+**What changed:**
+- [added] `PerceiverARConfig.message_keep_local_swa` in `nn/perceiver_ar_lm.py`
+- [added] probe `--message_keep_local_swa`; ArchSpec field
+- [added] tests in `tests/test_perceiver_ar_message.py` and `tests/test_bapo_ladder.py`
+
+**Does not:** restore full raw global KV, turn the flag on by default, enable remainder,
+or change identity/inplace scatter.
+
 ## [2026-09-14] - BAPO probe `--seq_len 2048` on `bridge_1k`
 
 **Why:**

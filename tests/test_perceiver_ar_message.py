@@ -11,8 +11,11 @@ from nn.perceiver_ar_lm import (
     PerceiverARConfig,
     PerceiverARLM,
     analytic_param_count,
+    dense_bool_mask,
+    dense_inplace_mask,
     dense_message_mask,
     make_message_mask_pred,
+    mix_inplace_kv,
 )
 
 V = 97
@@ -438,6 +441,94 @@ def test_inplace_identity_r16_is_mean_pool_not_r1_noop():
         r16.layers[gi].attn.compressor.delta.weight.data.normal_(0, 5.0)
         after = r16(x).logits
         assert torch.allclose(before, after, atol=1e-5)
+
+
+def test_r1_identity_covers_every_sender_token_on_exclusive_global():
+    """r=1 inplace identity is not a type-cue coverage hole: every sender position is a
+    replace slot, so the exclusive global read sees identity K/V of the whole prefix."""
+    model = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                       message_slots_inplace=True, message_identity_slots=True)
+    S, P = 16, 9
+    x = with_boundary(rand_ids(1, S, seed=4), P)
+    pos = model._positions(S, 1, None, x.device)
+    with torch.no_grad():
+        ctx = model._message_context(x, None, None, pos)
+    assert ctx.ratio == 1
+    k = torch.zeros(1, S, 2, 8)
+    v = torch.zeros(1, S, 2, 8)
+    k_bar = torch.zeros(1, S, 2, 8)
+    v_bar = torch.zeros(1, S, 2, 8)
+    _, _, replace = mix_inplace_kv(k, v, k_bar, v_bar, ctx)
+    assert bool(replace[0, :P].all())
+    assert not bool(replace[0, P])
+    mask = dense_inplace_mask(S, ctx, None, replace, "cpu")
+    assert bool(mask[0, 0, P, :P].all())
+    concat = dense_message_mask(S, ctx, None, "cpu")[0, 0]
+    assert concat[P, :P].tolist() == [False] * P
+    assert concat[P, S:S + P].tolist() == [True] * P
+
+
+def test_keep_local_swa_default_off_severs_window_across_query():
+    """Default E21: QUERY is a SWA document start. Local window cannot see P-1."""
+    model = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                       message_slots_inplace=True, message_identity_slots=True)
+    assert model.config.message_keep_local_swa is False
+    S, P = 16, 9
+    x = with_boundary(rand_ids(1, S, seed=4), P)
+    pos = model._positions(S, 1, None, x.device)
+    with torch.no_grad():
+        ctx = model._message_context(x, None, None, pos)
+    assert ctx.local_doc_ids[0, P - 1].item() != ctx.local_doc_ids[0, P].item()
+    swa = dense_bool_mask(S, "swa", 4, None, ctx.local_doc_ids, "cpu", batch=1)
+    assert not bool(swa[0, 0, P, P - 1])
+    y = x.clone()
+    y[0, P - 1] = (y[0, P - 1] + 7) % 80 + 3
+    with torch.no_grad(), model.message_override("none"):
+        a, b = model(x).logits, model(y).logits
+    assert torch.allclose(a[0, P:], b[0, P:], atol=1e-5)
+
+
+def test_keep_local_swa_crosses_boundary_but_global_stays_exclusive():
+    """`--message_keep_local_swa`: SWA at QUERY can attend P-1; exclusive global mask unchanged."""
+    off = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                      message_slots_inplace=True, message_identity_slots=True)
+    on = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                     message_slots_inplace=True, message_identity_slots=True,
+                     message_keep_local_swa=True)
+    assert on.config.message_keep_local_swa is True
+    assert off.config.message_keep_local_swa is False
+    S, P = 16, 9
+    x = with_boundary(rand_ids(1, S, seed=4), P)
+    pos = on._positions(S, 1, None, x.device)
+    with torch.no_grad():
+        ctx_off = off._message_context(x, None, None, pos)
+        ctx_on = on._message_context(x, None, None, pos)
+    assert torch.equal(ctx_on.local_doc_ids, ctx_on.doc)
+    assert torch.equal(ctx_on.side, ctx_off.side)
+    assert torch.equal(ctx_on.slot_doc, ctx_off.slot_doc)
+    swa_on = dense_bool_mask(S, "swa", 4, None, ctx_on.local_doc_ids, "cpu", batch=1)
+    swa_off = dense_bool_mask(S, "swa", 4, None, ctx_off.local_doc_ids, "cpu", batch=1)
+    assert bool(swa_on[0, 0, P, P - 1])
+    assert not bool(swa_off[0, 0, P, P - 1])
+    k = torch.zeros(1, S, 2, 8)
+    v = torch.zeros(1, S, 2, 8)
+    k_bar = torch.zeros(1, S, 2, 8)
+    v_bar = torch.zeros(1, S, 2, 8)
+    _, _, replace_off = mix_inplace_kv(k, v, k_bar, v_bar, ctx_off)
+    _, _, replace_on = mix_inplace_kv(k, v, k_bar, v_bar, ctx_on)
+    assert torch.equal(replace_off, replace_on)
+    mask_off = dense_inplace_mask(S, ctx_off, None, replace_off, "cpu")
+    mask_on = dense_inplace_mask(S, ctx_on, None, replace_on, "cpu")
+    assert torch.equal(mask_off, mask_on)
+    concat_off = dense_message_mask(S, ctx_off, None, "cpu")
+    concat_on = dense_message_mask(S, ctx_on, None, "cpu")
+    assert torch.equal(concat_off, concat_on)
+    assert concat_on[0, 0, P, :P].tolist() == [False] * P
+    y = x.clone()
+    y[0, P - 1] = (y[0, P - 1] + 7) % 80 + 3
+    with torch.no_grad(), on.message_override("none"):
+        a, b = on(x).logits, on(y).logits
+    assert not torch.allclose(a[0, P:], b[0, P:], atol=1e-5)
 
 
 def test_receiver_only_round_trip_via_prefix_kv_as_message():

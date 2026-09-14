@@ -19,6 +19,8 @@
   **1024 recall r=8 rem-off H=256 SSMax log S1 PASS 60.35 vs 46.96** (MATCH at 1024 needs INDEX width, not a new pooler);
   **1024 select r=8 rem-off H=256 SSMax log S1 FAIL 0 bits** (chance @800; SELECT does not scale with MATCH);
   **1024 select r=1 identity H=256 SSMax log S1 FAIL 0 bits** (chance @800; exclusive SELECT dead at 1024 even with identity slots);
+  **next: 1024 SELECT SWA-unsever** (`--message_keep_local_swa`, default off — exclusive
+  identity slots stay; QUERY is not a SWA document start);
   **4k INDEX r=16 rem-off H=256 log S1 FAIL 0 bits** (dense 63.94 S0 PASS; E18 ~0;
   scored vs 0.75× dense 47.96; chance @800);
   **2048 INDEX r=16 rem-off H=256 log S1 FAIL 0 bits** (dense 63.79 S0 PASS; E18 ~0;
@@ -509,4 +511,15 @@ E21 **25.0% / 0 bits** @800 (chance every eval; CE at ln(4); **S1 FAIL** vs
 INDEX that passed at 1024 is chance at 2048 with the same gap=64 / window=16.
 No new scale enum (`--seq_len` override). Do not extra-step (floor). Do not
 remainder-on. Do not 2048 H=512 (dense S0 already passed). Next: **stop INDEX
-length extra-steps** (do not seq=1536). Not Glyph. Do not unfreeze `u`/`delta`.
+length extra-steps** (do not seq=1536). Then **one-knob SWA-unsever** on the
+measured 1024 SELECT identity floor. Not Glyph. Do not unfreeze `u`/`delta`.
+
+## Follow-up (rung 5ah — seq=1024 select SWA-unsever, identity slots)
+**This turn.** Inspection: r=1 inplace identity is not a type-cue coverage hole
+— every sender token is a `replace` slot on the exclusive global read. E21 fails
+1024 SELECT vs live E18 because QUERY severs SWA/n-grams, not because slots lack
+token KV. One knob: `--message_keep_local_swa` (default **off**, E18-loadable).
+Keep exclusive compressed/identity slots for the global read; do **not** treat
+QUERY as a SWA document start. Hunt: same 1024 `select_1decoy` recipe (H=256
+log, inplace r=1 identity, remainder off) plus that flag. Do not restore raw
+global KV. Do not remainder-on. Do not H=512. If chance at 800, do not extra-step 8k.

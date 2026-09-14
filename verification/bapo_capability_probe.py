@@ -150,7 +150,8 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             f"msg_override={args.message_override if arch == 'e21' else '-'}  "
             f"msg_inplace={getattr(model.config, 'message_slots_inplace', False) if arch == 'e21' else '-'}  "
             f"msg_rawkv={getattr(model.config, 'message_inplace_raw_kv', False) if arch == 'e21' else '-'}  "
-            f"msg_idslots={getattr(model.config, 'message_identity_slots', False) if arch == 'e21' else '-'}",
+            f"msg_idslots={getattr(model.config, 'message_identity_slots', False) if arch == 'e21' else '-'}  "
+            f"msg_keepswa={getattr(model.config, 'message_keep_local_swa', False) if arch == 'e21' else '-'}",
             flush=True,
         )
     override = args.message_override if arch == "e21" else "real"
@@ -264,6 +265,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         message_slots_inplace=args.message_slots_inplace,
         message_inplace_raw_kv=args.message_inplace_raw_kv,
         message_identity_slots=args.message_identity_slots,
+        message_keep_local_swa=args.message_keep_local_swa,
     )
     card = rung_card(scale, recipe.task, **over)
     card["local_window"] = window
@@ -356,6 +358,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             "message_slots_inplace": args.message_slots_inplace,
             "message_inplace_raw_kv": args.message_inplace_raw_kv,
             "message_identity_slots": args.message_identity_slots,
+            "message_keep_local_swa": args.message_keep_local_swa,
         },
         "pack": {
             "answer_len": cfg.answer_len,
@@ -447,6 +450,14 @@ def main() -> int:
         default=False,
         help="E21: bypass KVCompressor u/delta (frozen mean; r=1 is a hard token K/V copy). "
         "Still goes through the slot/scatter path. Default off.",
+    )
+    p.add_argument(
+        "--message_keep_local_swa",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="E21: do not treat QUERY as a SWA/n-gram document start. Local window still "
+        "sees raw prefix tokens inside the sliding window. Exclusive compressed/identity "
+        "slots stay on the global read. Default off (severed local path; E18-loadable).",
     )
     p.add_argument("--seq_len", type=int, default=None, help="override scale seq_len (S0 hunts)")
     p.add_argument("--min_gap", type=int, default=None, help="override scale min_gap (S0 hunts)")

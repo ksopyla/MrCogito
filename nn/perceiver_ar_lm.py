@@ -32,7 +32,10 @@ Hooks for the family (config fields only — no parameters unless enabled):
     instead of compressor slots; the exclusive `~replace` mask still hides uncompressed
     remainder. `message_identity_slots` bypasses learned `u`/`delta` so each slot is a
     frozen mean of the r tokens in the block (r=1: hard copy of token K/V after `k_norm`;
-    not last-token copy). Off by default (`id=-1`) so E18 checkpoints stay byte-identical.
+    not last-token copy). `message_keep_local_swa` (default off) keeps exclusive slots on
+    the global read but does not treat QUERY as a SWA/n-gram document start — the local
+    window still sees raw prefix tokens that fall inside the sliding window. Off by
+    default (`id=-1`) so E18 checkpoints stay byte-identical.
     `prefix_kv(as_message=True)` returns those slots.
 """
 from __future__ import annotations
@@ -106,6 +109,7 @@ class PerceiverARConfig(PretrainedConfig):
         message_slots_inplace: bool = False,  # E21 — write slots into sender prefix positions (KV_LEN=S; default concat)
         message_inplace_raw_kv: bool = False,  # E21 — inplace: token K/V at replace positions (skip compressor values)
         message_identity_slots: bool = False,  # E21 — freeze mean-pool at any r; bypass u/delta
+        message_keep_local_swa: bool = False,  # E21 — local SWA/n-grams still see across QUERY
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -159,6 +163,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_slots_inplace = bool(message_slots_inplace)
         self.message_inplace_raw_kv = bool(message_inplace_raw_kv)
         self.message_identity_slots = bool(message_identity_slots)
+        self.message_keep_local_swa = bool(message_keep_local_swa)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -472,7 +477,7 @@ class MessageCtx:
 
     `side[b, t]` counts boundary tokens seen so far inside t's document (0 = sender, ≥ 1 =
     receiver). Local layers and the n-gram hashes treat a side change as a document start
-    (`local_doc_ids`). On the global read a query may use raw keys only from its own side and,
+    (`local_doc_ids`, unless `message_keep_local_swa`). On the global read a query may use raw keys only from its own side and,
     when it is a receiver, the compressed *slots* of every earlier side of its document.
     Slot `j` covers absolute positions [j·r, (j+1)·r). By default it is addressable only when
     the block is homogeneous in (document, side) — `slot_doc[b, j]` is that document (−1
@@ -856,7 +861,7 @@ class Attention(nn.Module):
             self.value_proj = nn.Linear(cfg.value_embed_dim, g * dh, bias=False)
             self.value_lambda = nn.Parameter(torch.tensor(0.5))
         # E21: the global read(s) own the message compressor (slots live in this layer's K/V space).
-        self.compressor = KVCompressor(cfg) if (cfg.message_enabled and pattern == "full") else None
+        self.compressor = KVCompressor(cfg) if (getattr(cfg, "message_enabled", False) and pattern == "full") else None
 
     def kv_raw(self, x: torch.Tensor, ids: Optional[torch.Tensor] = None) -> tuple[torch.Tensor, torch.Tensor]:
         """(k before k_norm, v incl. the value-embedding term) — the pooling inputs of the compressor."""
@@ -1187,7 +1192,8 @@ class PerceiverARLM(PreTrainedModel):
         """E21 probe control for the message channel: `none` (receivers get no slots — the floor),
         `swapped` (slots of the neighbouring batch row — a wrong message), `raw` (receivers read
         the uncompressed prefix K/V across the boundary — the ceiling), `real` / None (no-op).
-        Local layers stay severed in every mode, so the paired differences isolate the channel."""
+        Local layers stay severed in every mode unless `message_keep_local_swa`, so the
+        paired differences isolate the channel."""
         if mode in (None, "real"):
             yield
             return
@@ -1244,7 +1250,10 @@ class PerceiverARLM(PreTrainedModel):
         base = torch.cummax(torch.where(starts, cum - is_b.long(), torch.zeros_like(cum)), dim=1).values
         side = cum - base
         K = int(side.max().item()) + 1
-        local = torch.where(doc < 0, doc, doc * K + side)
+        if getattr(cfg, "message_keep_local_swa", False):
+            local = doc
+        else:
+            local = torch.where(doc < 0, doc, doc * K + side)
         nb = -(-S // r)
         pad = nb * r - S
         docp = F.pad(doc, (0, pad), value=-1).view(B, nb, r)
