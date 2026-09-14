@@ -20,7 +20,7 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-14 — E25 E21 capability ladder (tiny limits; 512 concat wall; raw PASS; inplace identity PASS; r=16 mean INDEX; MATCH remainder-on S1 through r=16; remainder-off r=10/16 chance, r=12 S1 FAIL; SELECT r=8 rem-off S1 PASS, r=12 rem-on S1 PASS, r=16 rem-on live S1 FAIL; SELECT identity PASS; 1024 MATCH r=8 rem-off H=128 S1 FAIL, H=256 log S1 PASS 60.35; 1024 SELECT r=8 rem-off H=256 log chance; 1024 SELECT r=1 identity H=256 log chance; 1024 SELECT SWA-unsever `--message_keep_local_swa` chance 0.01 bits; 1024 SELECT extra exclusive hop `--message_extra_slot_attends 1` chance 0 bits; 1024 SELECT type_marks anchors `--message_global_anchors type_marks` 0 bits @800 / 31.90 @1050 S1 FAIL vs 0.75× dense; 1024 SELECT type_marks 8k extra-step S1 FAIL 6.48 vs live E18 63.96; 1024 SELECT extra hop + unfrozen slot K/V `--message_update_slot_kv` chance 0 bits; 4k INDEX r=16 rem-off H=256 log chance vs 0.75× dense; 2048 INDEX r=16 rem-off H=256 log chance vs 0.75× dense; 512 chain K1; 256 hops FAIL vs dense).**
+- **2026-09-14 — E25 E21 capability ladder (tiny limits; 512 concat wall; raw PASS; inplace identity PASS; r=16 mean INDEX; MATCH remainder-on S1 through r=16; remainder-off r=10/16 chance, r=12 S1 FAIL; SELECT r=8 rem-off S1 PASS, r=12 rem-on S1 PASS, r=16 rem-on live S1 FAIL; SELECT identity PASS; 1024 MATCH r=8 rem-off H=128 S1 FAIL, H=256 log S1 PASS 60.35; 1024 SELECT r=8 rem-off H=256 log chance; 1024 SELECT r=1 identity H=256 log chance; 1024 SELECT SWA-unsever `--message_keep_local_swa` chance 0.01 bits; 1024 SELECT extra exclusive hop `--message_extra_slot_attends 1` chance 0 bits; 1024 SELECT type_marks anchors `--message_global_anchors type_marks` 0 bits @800 / 31.90 @1050 S1 FAIL vs 0.75× dense; 1024 SELECT type_marks 8k extra-step S1 FAIL 6.48 vs live E18 63.96; 1024 SELECT extra hop + unfrozen slot K/V `--message_update_slot_kv` chance 0 bits; 1024 SELECT second exclusive global layer `--global_layers 2` chance 0 bits; 4k INDEX r=16 rem-off H=256 log chance vs 0.75× dense; 2048 INDEX r=16 rem-off H=256 log chance vs 0.75× dense; 512 chain K1; 256 hops FAIL vs dense).**
   Tiny INDEX near-pass at 8k. GPU seq=512 exclusive concat slots **0 bits** (r=16/64/1).
   `--message_override raw` **100% / 63.96 bits**. r=1 in-place learned compressor **0 bits**.
   In-place raw KV **63.29 bits**. In-place hard identity **99.8% / 62.64 bits** @750.
@@ -71,7 +71,11 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   H=256 SSMax log **25.7% / 0 bits** @800 (**S1 FAIL** vs 0.75× live E18
   47.85; chance every eval). Extra hop is real updated-Q / frozen-KV (not a
   no-op); rewriting slot K/V between hops still does not bind type-cue at
-  1024. Seq=512
+  1024. Seq=1024 `select_1decoy` r=1 identity **second exclusive global
+  layer** `--global_layers 2` (extra hops 0) H=256 SSMax log **25.7% / 0
+  bits** @800 (**S1 FAIL** vs 0.75× live E18 47.97; chance every eval). Two
+  full exclusive attend+FFN Blocks over slots — not extra hops and not extra
+  SWA. Seq=512
   `select_1decoy` r=1 identity **100% / 47.98 bits** @700. Seq=512 packed
   `chain_ordered` **K1**. Seq=256 `--key_len 13` hops=2: dense **96.4% / 24.12
   bits** (S0 PASS); E18 **0 bits**; E21 **0 bits**. Hops FAIL vs 0.75× dense.
@@ -88,7 +92,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   raw global KV. Default remainder stays off. Default
   `--message_keep_local_swa` stays off. Default `--message_extra_slot_attends`
   stays 0. Default `--message_update_slot_kv` stays off. Default
-  `--message_global_anchors` stays `none`.
+  `--message_global_anchors` stays `none`. Default `--global_layers` stays 1.
   Spec [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) ·
   [rung 1](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) ·
   [remainder](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) ·
@@ -135,6 +139,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [1024 select type_marks anchors](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_id_anchors_select_20260914.md) ·
   [1024 select type_marks 8k](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_id_anchors_select_s8k_20260914.md) ·
   [1024 select extra hop + unfrozen KV](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_id_updatekv_select_20260914.md) ·
+  [1024 select second global layer](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_id_glob2_select_20260914.md) ·
   [4k INDEX r=16 H=256 log](../2_Experiments_Registry/run_reports/e25_medium_4k_ip_r16_mean_far_copy_20260914.md) ·
   [2048 INDEX r=16 H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_2k_ip_r16_mean_far_copy_20260914.md).
   Do not relabel E18 scores as E21.
@@ -170,6 +175,18 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-14 — E25 GPU seq=1024 select_1decoy second exclusive global layer (Odra).**
+  `--scale bridge_1k` packed SELECT, inplace identity, remainder **off**,
+  `--global_layers 2`, extra hops 0, update_slot_kv **off**, keep_local_swa
+  **off**, anchors **none**, `--hidden 256 --global_logit_scale log`. Existing
+  flag (default 1); two full exclusive attend+FFN Blocks, not extra hops and
+  not extra SWA (`stack_layers` already 2). Dense **100% / 63.95 bits** @200
+  (**S0 PASS**). E18 **100% / 63.97 bits** @750 (live). E21 **25.7% / 0 bits**
+  @800 (chance every eval; **S1 FAIL** vs 0.75× E18 47.97). K2 **PASS**. A
+  second exclusive global Block does not rescue 1024 SELECT. Do not extra-step
+  (floor). Do not restore raw global KV. Default `--global_layers` stays 1.
+  Next: stop 1024 SELECT architecture hunts.
+  [report](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_id_glob2_select_20260914.md).
 - **2026-09-14 — E25 GPU seq=1024 select_1decoy extra hop + unfrozen slot K/V (Odra).**
   `--scale bridge_1k` packed SELECT, inplace identity, remainder **off**,
   `--message_extra_slot_attends 1 --message_update_slot_kv`, keep_local_swa
