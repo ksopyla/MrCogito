@@ -43,8 +43,9 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   Param-matched D (9 layers, 4.97M) **hits 98.5% at 120k / 121 min**; A is more
   efficient on the same exam (97% at 72k / 76 min). r=16 A **hits 95.7% at 224k**
   (~2.3× r=8 data). r=32 (8 slots): A **87.9% at 256k**, miss 95%. Chain hops=3 /
-  key_len=8: **A and D both floor-killed** (exam too hard). Packed hops=2 with
-  param-matched D9 is in flight. LR is not portable from the 1.35M toy.
+  key_len=8 **and packed hops=2 / key_len=32** are exam kills (param-matched D stays
+  at chance through 128k on hops=2). True reach (`min_gap=seq/4`) is in flight.
+  LR is not portable from the 1.35M toy.
   [note](../4_Research_Notes/concept_slot_scaling_frontier_20260913.md).
 - **2026-09-12 — E22 Perceiver Concept LM (from scratch, 32k; killed same day).** First ledger design
   with positional slots (1 / 16 tokens), a transformer *over* the slots and a decoder with no raw route

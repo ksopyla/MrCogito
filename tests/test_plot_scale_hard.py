@@ -54,3 +54,18 @@ def test_parse_log_bundle_d9_params_and_lr(tmp_path: Path):
     assert bundle["in_progress"] is True
     wall = bundle["results"]["D"]["trace"][0]["wall_s"]
     assert wall == pytest.approx(3000 * 1.94)
+
+
+def test_difficulty_key_tags_true_reach_min_gap():
+    mod = _load_plot_mod()
+    bundle = {
+        "run_name": "reach_seq512_A",
+        "config": {"task": "far_copy", "seq_len": 512, "ratio": 8, "min_gap": 128},
+    }
+    assert mod.difficulty_key(bundle) == "seq512 r=8 gap128"
+    padded = {
+        "run_name": "cell_seq512_r8_A",
+        "config": {"task": "far_copy", "seq_len": 512, "ratio": 8, "min_gap": 32},
+    }
+    assert mod.difficulty_key(padded) == "seq512 r=8"
+

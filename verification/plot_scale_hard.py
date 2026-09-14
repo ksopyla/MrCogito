@@ -100,6 +100,9 @@ def difficulty_key(bundle: dict) -> str:
     if cfg.get("task") == "chain":
         return f"chain h{cfg.get('hops')} seq{cfg['seq_len']}"
     key = f"seq{cfg['seq_len']} r={cfg['ratio']}"
+    gap = cfg.get("min_gap")
+    if gap not in (None, 32):
+        key += f" gap{gap}"
     if "D9" in name:
         key += " D9"
     return key
@@ -148,6 +151,9 @@ def parse_log_bundle(log_path: Path, json_hint: Path | None = None) -> dict | No
     if tm:
         header["task"] = tm.group(1)
         header["seq_len"] = int(tm.group(2))
+    gm = re.search(r"min_gap=(\d+)", text)
+    if gm:
+        header["min_gap"] = int(gm.group(1))
     hm = re.search(r"slots=(\d+)", text)
     if hm:
         header["slots"] = int(hm.group(1))
@@ -155,6 +161,7 @@ def parse_log_bundle(log_path: Path, json_hint: Path | None = None) -> dict | No
     seq = cfg.get("seq_len") or header.get("seq_len", 256)
     ratio = cfg.get("ratio", 8)
     hops = cfg.get("hops", 3 if task == "chain" else 2)
+    min_gap = cfg.get("min_gap") or header.get("min_gap", 32)
     last = rows[-1]
     floor_kill = "floor kill" in text
     stop = "floor_patience" if floor_kill else "in_progress"
@@ -174,6 +181,7 @@ def parse_log_bundle(log_path: Path, json_hint: Path | None = None) -> dict | No
             "seq_len": seq,
             "ratio": ratio,
             "hops": hops,
+            "min_gap": min_gap,
             "batch": 32,
             "steps": cfg.get("steps", 0),
             "lr": lr,
@@ -273,7 +281,9 @@ def cell_color(bundle: dict, arm: str) -> str:
         ("C", "seq512 r=8"): "#41ab5d",
         ("D", "seq512 r=8 D9"): "#fb6a4a",
         ("A", "seq256 r=16"): "#2171b5",
-        ("A", "seq1024 r=8"): "#081d58",
+        ("A", "seq512 r=8 gap128"): "#253494",
+        ("D", "seq512 r=8 gap128 D9"): "#cb181d",
+        ("A", "seq1024 r=8 gap256"): "#081d58",
         ("A", "chain h2 seq512"): "#9e9ac8",
         ("D", "chain h2 seq512"): "#fd8d3c",
     }

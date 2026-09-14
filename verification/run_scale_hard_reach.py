@@ -109,15 +109,20 @@ def reach_cell(seq: int) -> dict:
 
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
-    for seq in (512, 1024):
+    # No 800-step LR probes: seq512 copy at 1e-3 looked dead for 2250 steps,
+    # and hops=2 D9 was still at chance at 800. Start at the seq512 winner
+    # (3e-4); drop LR once more at seq=1024.
+    schedule = ((512, 3e-4), (1024, 1e-4))
+    for seq, lr in schedule:
         cell = reach_cell(seq)
-        print(f"\n>>> REACH seq={seq} min_gap={cell['min_gap']} r=8 slots={seq // 8}", flush=True)
-        lr, probe = search_lr(f"reach_seq{seq}", "A", (3e-4, 1e-4, 1e-3), **cell)
-        if acc(probe, "A") < TARGET:
-            a = train(f"reach_seq{seq}_A", "A", lr, 8000, TARGET, 2500, **cell)
-        else:
-            a = probe
+        print(f"\n>>> REACH seq={seq} min_gap={cell['min_gap']} r=8 slots={seq // 8} lr={lr:g}", flush=True)
+        a = train(f"reach_seq{seq}_A", "A", lr, 8000, TARGET, 2500, **cell)
         print("A", a["summary"]["A"], flush=True)
+        if acc(a, "A") < 0.30:
+            alt = 1e-4 if lr >= 3e-4 else 3e-4
+            a = train(f"reach_seq{seq}_A_lrretune", "A", alt, 8000, TARGET, 2500, **cell)
+            print("A retune", a["summary"]["A"], flush=True)
+            lr = alt
         d = train(
             f"reach_seq{seq}_D9",
             "D",

@@ -65,6 +65,7 @@ steps). **Tune LR per geometry; it is not portable from the 1.35M toy.**
 | cell_chain_h3_A | A | 5.11M | 1e-3 | 256 | 8 | chain | 3 | 128k | 4,000 | 23.7% | 1.387 | no | floor_patience |
 | cell_chain_h3_D | D | 2.27M | 1e-3 | 256 | 8 | chain | 3 | 128k | 4,000 | 23.7% | 1.386 | no | floor_patience |
 | cell_chain_h3_C | C | 2.27M | 1e-3 | 256 | 8 | chain | 3 | 48k | 1,500 | 25.1% | 1.386 | no (floor) | budget |
+| **cell_chain_h2_D9** | D | **4.97M** | 3e-4 | 512 | 8 | chain | 2 | 128k | 4,000 | 25.7% | 1.386 | no | floor_patience |
 | cell_seq512_r8_A | A | 5.11M | **3e-4** | 512 | 8 | far_copy | 2 | **72k** | 2,250 | **97.05%** | 0.082 | **yes** | target_acc |
 | cell_seq512_r8_C | C | 2.27M | 1e-3 | 512 | 8 | far_copy | 2 | 38k | 1,200 | 25.4% | 1.386 | no (floor) | budget |
 | cell_seq512_r8_D | D | 2.27M | 3e-4 | 512 | 8 | far_copy | 2 | 96k | 3,000 | **29.9%** | 1.337 | **no** | budget |
@@ -95,11 +96,12 @@ The skill is in the slots. C stays at the floor on every new (seq, min_gap) and 
   (16 slots, span occupies 2). Ablation: array removed → 25.1%. ~**2.3×** the
   examples r=8 needed on the same seq. r=32 (1 slot for the span) still misses
   95% at 256k (87.9%).
-- **Exam kill (composition):** chain hops=3, key_len=8, seq=256: **both A and D**
-  floor-killed at chance after 128k. C at floor (no leak). Per protocol this is
-  **too hard for this budget**, not a concept-architecture failure. Short answers
-  (8 supervised tokens) plus 3-hop lookup is the likely starve, same family as
-  span=8 far_copy on the easy exam.
+- **Exam kill (composition, packed hops=2):** chain hops=2, key_len=value_len=32,
+  seq=512, param-matched 4.97M D: **25.7% at 128k / 4000 steps**, CE glued to the
+  floor. Same budget where this D hit 98.5% on far_copy. Packing the loss does
+  not make composition D-green at <10M. A was not run (exam-too-hard protocol).
+- **Exam kill (composition, hops=3 / 8-token answers):** chain hops=3, key_len=8,
+  seq=256: **both A and D** floor-killed at chance after 128k. C at floor (no leak).
 - **LR is not portable.** 3e-3 trains 1.35M/seq128; 1e-3 trains 5.11M/seq256; 3e-4
   trains 5.11M/seq512. Search LR per (hidden, seq) or the channel looks dead.
 
@@ -114,8 +116,9 @@ Not a Kaplan-style fit — too few cells. The measured pattern is:
    (~2.3× data); r=32 missed at 256k (87.9%). Doubling tokens/slot more than
    doubles examples-to-95%; another doubling does not finish in 256k. Do not
    shrink width to chase this.
-3. **Composition at hops=3 / 8-token answers is an exam kill**, including for dense D.
-   Not an exclusive-slot failure.
+3. **Composition is an exam kill at this budget**, including packed hops=2 /
+   32-token answers on param-matched 4.97M D (25.7% @ 128k) and hops=3 / 8-token
+   answers on A and D. Not an exclusive-slot failure.
 4. **C stays on the floor** on every new (seq, min_gap) and on chain. The exam does not leak.
 5. **D matching matters, and is now closed at seq512 r=8.** Width-matched 2.27M D
    misses seq512. Param-matched 4.97M D **hits 98.5% at 120k / 121 min**. A hits
@@ -126,13 +129,11 @@ Not a Kaplan-style fit — too few cells. The measured pattern is:
 
 - Whether r=32 A crosses 95% with more than 256k examples at the same 5.11M
   (r=16 now hits 95.7% at 224k).
-- hops=2 chain with longer answers (pack the loss like span=32) — hops=3/key=8
-  was an exam kill.
+- hops=2 packed chain is now measured: param-matched D stays at chance through
+  128k. Not D-green; A skipped per protocol.
 - Seq>512 far_copy on GPU; nothing here is a language-model result.
-- True reach (`min_gap = seq/4`) is queued in `verification/run_scale_hard_reach.py`
-  after packed hops=2. Do not treat seq512 min_gap=32 as a 480-token memory exam.
-  Continue.py no longer runs padded seq=1024; length with growing gap is the
-  reach runner.
+- True reach (`min_gap = seq/4`) is in flight in `verification/run_scale_hard_reach.py`.
+  Do not treat seq512 min_gap=32 as a 480-token memory exam.
 
 ## Closed — param-matched D on seq512 (2026-09-14)
 
@@ -157,9 +158,8 @@ Early-stop at the 95% bar. Takeoff was sawtooth until 104k, then a sharp drop
 **Same-parameter verdict:** both arms solve seq512 r=8; exclusive slots use
 **0.60× examples and 0.63× wall**.
 
-In flight now (frozen hidden=256): packed hops=2 chain with **param-matched D9**
-(4-layer D would be a false composition kill, same mistake as seq512 copy).
-True reach is `verification/run_scale_hard_reach.py` after this queue.
+In flight now: true reach (`verification/run_scale_hard_reach.py`, min_gap =
+seq/4). Packed hops=2 is closed as an exam kill.
 
 
 ## One-sentence frontier
@@ -167,15 +167,14 @@ True reach is `verification/run_scale_hard_reach.py` after this queue.
 A **<10M exclusive-slot** model (5.11M, hidden 256) hits the 95% bar on
 **`far_copy` through seq=512, r=8, span=32 (64 slots)** at ~10^5 examples if LR is
 tuned down with length; **r=16 hits 95.7% at 224k**; it **misses 95% at r=32**
-(87.9% @ 256k); **3-hop chain with 8-token answers is unsolvable for both A and D**
-at this budget; and at seq=512 the exclusive array is **more data/wall-efficient
-than a param-matched 4.97M dense decoder** (72k / 76 min vs 120k / 121 min), while
-width-matched 4-layer D never leaves chance.
+(87.9% @ 256k); **composition (hops=3/key=8 and packed hops=2/key=32) is
+unsolvable for param-matched D** at this budget; and at seq=512 copy the exclusive
+array is **more data/wall-efficient than a param-matched 4.97M dense decoder**
+(72k / 76 min vs 120k / 121 min), while width-matched 4-layer D never leaves chance.
 
 ## What not to do next
 
 Do not shrink hidden size. The easy campaign already showed 0.12M solves seq128; the
 harder campaign is a **length / compression / hops / LR** law at a frozen <10M
-width. Keep A at hidden=256 (5.11M). Next spend is r=16 interpolation, packed-loss
-hops=2, and true reach (`min_gap = seq/4`) — not a tinier model, and not another
-width-matched D.
+width. Keep A at hidden=256 (5.11M). Next spend is true reach (`min_gap = seq/4`)
+— not a tinier model, not another hops=2 LR, and not another width-matched D.

@@ -15,6 +15,23 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-14] - True-reach runner skips 800-step LR probes
+
+**Why:**
+- Packed hops=2 D9 stayed at chance through 128k (exam kill). An 800-step probe
+  would have false-killed it even earlier. The length axis must not repeat that.
+- seq512 copy already has a winner LR (3e-4); seq=1024 starts one step lower.
+
+**What changed:**
+- [changed] `verification/run_scale_hard_reach.py` trains A then param-matched
+  D9 at a geometry-specific LR (3e-4 / 1e-4) with 2500/4000-step patience.
+- [changed] `verification/run_scale_hard_continue.py` does not 1e-4-retune
+  hops=2 after a floor kill at 25%.
+
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` HARDER exclusive-slot scaling
+
+---
+
 ## [2026-09-14] - Param-match composition; skip padded seq1024
 
 **Why:**

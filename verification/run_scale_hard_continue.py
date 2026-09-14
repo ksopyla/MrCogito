@@ -224,17 +224,6 @@ def main() -> int:
         **d9_chain,
     )
     print("chain h2 D9", d_ch["summary"]["D"], flush=True)
-    if acc(d_ch, "D") < 0.40 and stop(d_ch, "D") == "floor_patience":
-        d_ch = train(
-            "cell_chain_h2_D9_lr1e4",
-            "D",
-            1e-4,
-            steps=8000,
-            target=TARGET,
-            patience=4000,
-            **d9_chain,
-        )
-        print("chain h2 D9 lr=1e-4", d_ch["summary"]["D"], flush=True)
     lr_ch = float(d_ch["summary"]["D"].get("lr") or 3e-4)
     if acc(d_ch, "D") >= TARGET:
         a_ch = train(
