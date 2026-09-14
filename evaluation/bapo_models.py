@@ -17,6 +17,8 @@ Architectures
                the slot/scatter path, not inplace_raw_kv.
                `--message_keep_local_swa` (default off) leaves exclusive slots on the
                global read but does not treat QUERY as a SWA/n-gram document start.
+               `--message_extra_slot_attends N` (default 0) re-reads the same exclusive
+               slot K/V with updated queries (second hop in slot space; not raw prefix).
 - `encdec`     Symmetric encoder-decoder: bidirectional prefix encoder, suffix-only decoder with
                cross-attention. Prefix information cannot take a raw route into the suffix.
 """
@@ -61,6 +63,7 @@ class ArchSpec:
     message_inplace_raw_kv: bool = False
     message_identity_slots: bool = False
     message_keep_local_swa: bool = False
+    message_extra_slot_attends: int = 0
 
 
 def _n_heads(hidden: int, head_dim: int) -> int:
@@ -144,6 +147,7 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         message_inplace_raw_kv=bool(spec.message_inplace_raw_kv) if arch == "e21" else False,
         message_identity_slots=bool(spec.message_identity_slots) if arch == "e21" else False,
         message_keep_local_swa=bool(spec.message_keep_local_swa) if arch == "e21" else False,
+        message_extra_slot_attends=int(getattr(spec, "message_extra_slot_attends", 0) or 0) if arch == "e21" else 0,
         pad_token_id=pad_id,
         bos_token_id=bos_id,
         eos_token_id=eos_id,

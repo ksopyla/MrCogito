@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 import torch
 
-from data.bapo_ladder import SCALES, SOLVABLE_ACC, TINY_PROOF_TASKS, config_for, rung_card
+from data.bapo_ladder import SCALES, SOLVABLE_ACC, TINY_PROOF_TASKS, config_for, generate_row_for, rung_card
 from data.symbolic_tasks import TASKS, chance_accuracy, prize_bits
 from evaluation.bapo_metrics import info_report
 from evaluation.bapo_models import ArchSpec, build_model, n_params
@@ -540,3 +540,135 @@ def test_e21_keep_local_swa_flag_is_wired_on_factory():
         seed=0,
     )
     assert off.config.message_keep_local_swa is False
+
+
+def test_e21_extra_slot_attends_flag_is_wired_on_factory():
+    cfg = config_for("tiny", "far_copy")
+    qid = cfg.vocab.control("query")
+    spec = ArchSpec(
+        name="e21",
+        hidden=32,
+        head_dim=16,
+        local_window=16,
+        message_boundary_token_id=qid,
+        message_compress_ratio=1,
+        message_slots_inplace=True,
+        message_identity_slots=True,
+        message_extra_slot_attends=1,
+        zero_init_residuals=False,
+    )
+    model = build_model(
+        "e21",
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=cfg.vocab.control("eos"),
+        bos_id=cfg.vocab.control("bos"),
+        eos_id=cfg.vocab.control("eos"),
+        spec=spec,
+        seed=0,
+    )
+    assert model.config.message_slots_inplace is True
+    assert model.config.message_identity_slots is True
+    assert model.config.message_extra_slot_attends == 1
+    assert model.config.message_keep_local_swa is False
+    assert model.config.message_inplace_raw_kv is False
+    torch.manual_seed(0)
+    ids = torch.randint(3, cfg.vocab.vocab_size, (2, cfg.seq_len))
+    p = cfg.seq_len // 2
+    ids[:, p] = qid
+    loss = model(ids, labels=torch.full_like(ids, -100)).loss
+    assert torch.isfinite(loss)
+    off = build_model(
+        "e21",
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=cfg.vocab.control("eos"),
+        bos_id=cfg.vocab.control("bos"),
+        eos_id=cfg.vocab.control("eos"),
+        spec=ArchSpec(
+            name="e21",
+            hidden=32,
+            head_dim=16,
+            local_window=16,
+            message_boundary_token_id=qid,
+            message_compress_ratio=1,
+            message_slots_inplace=True,
+            message_identity_slots=True,
+            zero_init_residuals=False,
+        ),
+        seed=0,
+    )
+    assert off.config.message_extra_slot_attends == 0
+    e18 = build_model(
+        "e18",
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=cfg.vocab.control("eos"),
+        bos_id=cfg.vocab.control("bos"),
+        eos_id=cfg.vocab.control("eos"),
+        spec=ArchSpec(
+            name="e18",
+            hidden=32,
+            head_dim=16,
+            local_window=16,
+            message_extra_slot_attends=1,
+            zero_init_residuals=False,
+        ),
+        seed=0,
+    )
+    assert e18.config.message_boundary_token_id == -1
+    assert e18.config.message_extra_slot_attends == 0
+
+
+def test_select_1decoy_type_cues_land_in_r1_identity_slots():
+    """SELECT keymark/decoy sit in the sender prefix (before QUERY) and are replace slots at r=1."""
+    from nn.perceiver_ar_lm import dense_inplace_mask, mix_inplace_kv
+
+    cfg = config_for("tiny", "select", n_distractors=0, n_decoys=1, evidence_align="right")
+    row = generate_row_for(cfg, np.random.default_rng(0))
+    ids_np = row.input_ids
+    keymark = cfg.vocab.control("keymark")
+    decoy = cfg.vocab.control("decoy")
+    query = cfg.vocab.control("query")
+    km = int(np.where(ids_np == keymark)[0][0])
+    dc = int(np.where(ids_np == decoy)[0][0])
+    qpos = int(np.where(ids_np == query)[0][0])
+    assert km < qpos and dc < qpos
+    spec = ArchSpec(
+        name="e21",
+        hidden=32,
+        head_dim=16,
+        local_window=16,
+        message_boundary_token_id=query,
+        message_compress_ratio=1,
+        message_slots_inplace=True,
+        message_identity_slots=True,
+        message_extra_slot_attends=1,
+        zero_init_residuals=False,
+    )
+    model = build_model(
+        "e21",
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=cfg.vocab.control("eos"),
+        bos_id=cfg.vocab.control("bos"),
+        eos_id=cfg.vocab.control("eos"),
+        spec=spec,
+        seed=0,
+    )
+    ids = torch.from_numpy(ids_np[None].astype(np.int64))
+    pos = model._positions(ids.shape[1], 1, None, ids.device)
+    with torch.no_grad():
+        ctx = model._message_context(ids, None, None, pos)
+    S = ids.shape[1]
+    k = torch.zeros(1, S, model.config.num_kv_heads, model.config.head_dim)
+    v = torch.zeros_like(k)
+    _, _, replace = mix_inplace_kv(k, v, k, v, ctx)
+    assert bool(replace[0, km]) and bool(replace[0, dc])
+    assert not bool(replace[0, qpos])
+    mask = dense_inplace_mask(S, ctx, None, replace, "cpu")
+    assert bool(mask[0, 0, qpos, km]) and bool(mask[0, 0, qpos, dc])

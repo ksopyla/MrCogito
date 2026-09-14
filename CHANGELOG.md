@@ -15,6 +15,29 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-14] - E21 extra exclusive slot attends (`message_extra_slot_attends`, default 0)
+
+**Why:**
+- Seq=1024 packed `select_1decoy` stays at chance with r=1 identity (0 bits) and with
+  identity + `--message_keep_local_swa` (0.01 bits), while MATCH at the same scale
+  recovers 60.35 bits with one exclusive read. Inspection: slot K/V are already
+  post-pre-SWA mixed states (not frozen embeddings); type-cue tokens (`keymark` /
+  `decoy`) already land in r=1 identity slots. SELECT may need a second read in
+  slot space (type then value). Not E18 raw prefix KV.
+
+**Impact:**
+- Default stays one exclusive global attend (E18 checkpoints loadable; no new params).
+  `--message_extra_slot_attends N` re-reads the same frozen exclusive slot K/V with
+  queries updated from the previous hop. Not DNA `--hops`. Not `keep_local_swa`.
+
+**What changed:**
+- [added] `PerceiverARConfig.message_extra_slot_attends` in `nn/perceiver_ar_lm.py`
+- [added] probe `--message_extra_slot_attends`; ArchSpec field
+- [added] tests in `tests/test_perceiver_ar_message.py` and `tests/test_bapo_ladder.py`
+
+**Does not:** restore raw global KV, unsever SWA, enable remainder, unfreeze `u`/`delta`,
+or change the default hop count.
+
 ## [2026-09-14] - E21 keep local SWA across QUERY (`message_keep_local_swa`, default off)
 
 **Why:**

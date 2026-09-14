@@ -32,9 +32,12 @@ Hooks for the family (config fields only — no parameters unless enabled):
     instead of compressor slots; the exclusive `~replace` mask still hides uncompressed
     remainder. `message_identity_slots` bypasses learned `u`/`delta` so each slot is a
     frozen mean of the r tokens in the block (r=1: hard copy of token K/V after `k_norm`;
-    not last-token copy). `message_keep_local_swa` (default off) keeps exclusive slots on
+    not last-token copy).     `message_keep_local_swa` (default off) keeps exclusive slots on
     the global read but does not treat QUERY as a SWA/n-gram document start — the local
-    window still sees raw prefix tokens that fall inside the sliding window. Off by
+    window still sees raw prefix tokens that fall inside the sliding window.
+    `message_extra_slot_attends` (default 0) re-reads the *same* exclusive slot K/V
+    with queries updated by the previous hop — a second exclusive attend in slot
+    space, not a raw prefix KV restore and not DNA `--hops`. Off by
     default (`id=-1`) so E18 checkpoints stay byte-identical.
     `prefix_kv(as_message=True)` returns those slots.
 """
@@ -110,6 +113,7 @@ class PerceiverARConfig(PretrainedConfig):
         message_inplace_raw_kv: bool = False,  # E21 — inplace: token K/V at replace positions (skip compressor values)
         message_identity_slots: bool = False,  # E21 — freeze mean-pool at any r; bypass u/delta
         message_keep_local_swa: bool = False,  # E21 — local SWA/n-grams still see across QUERY
+        message_extra_slot_attends: int = 0,  # E21 — extra exclusive attends over frozen slots
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -164,6 +168,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_inplace_raw_kv = bool(message_inplace_raw_kv)
         self.message_identity_slots = bool(message_identity_slots)
         self.message_keep_local_swa = bool(message_keep_local_swa)
+        self.message_extra_slot_attends = int(message_extra_slot_attends)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -203,6 +208,8 @@ class PerceiverARConfig(PretrainedConfig):
                 raise ValueError(f"global_positions must lie in [0, {n})")
         if self.message_compress_ratio < 1:
             raise ValueError("message_compress_ratio must be >= 1")
+        if self.message_extra_slot_attends < 0:
+            raise ValueError("message_extra_slot_attends must be >= 0")
         if self.message_enabled:
             if self.message_boundary_token_id >= self.vocab_size:
                 raise ValueError("message_boundary_token_id must be a vocabulary id")
@@ -498,6 +505,7 @@ class MessageCtx:
     ratio: int = 1              # message_compress_ratio (scatter width for inplace)
     inplace: bool = False       # True: slots overwrite sender prefix K/V; KV_LEN stays S
     inplace_raw_kv: bool = False  # True: keep token K/V at replace positions (skip compressor)
+    extra_slot_attends: int = 0  # extra exclusive attends over the frozen slot K/V (default 0)
 
     @property
     def n_slots(self) -> int:
@@ -893,12 +901,42 @@ class Attention(nn.Module):
             k_bar = apply_rope(k_bar, cos_s, sin_s)
         return k_bar, v_bar
 
+    def _scale_q(self, q, pos):
+        if self.logit_scale is not None:
+            if pos is None:
+                raise RuntimeError("global_logit_scale='log' needs per-token positions")
+            n_vis = (pos + 1).to(q.dtype)
+            q = q * (self.logit_scale * torch.log(n_vis))[:, :, None, None]
+        return q
+
+    def _extra_exclusive_attends(self, x, out, *, extra, cos, sin, pos, attend_fn):
+        """Re-read frozen exclusive slot K/V with queries updated by the previous hop.
+
+        `attend_fn(q) -> [B,S,h,dh]`. Extra=0 is a no-op (byte-identical first hop).
+        K/V stay the snapshot from the first hop — not recomputed, not raw prefix.
+        """
+        extra = int(extra or 0)
+        if extra <= 0:
+            return out
+        B, S, _ = x.shape
+        h = x
+        for _ in range(extra):
+            h = h + out
+            q = self.q_norm(self.wq(h).view(B, S, self.h, self.dh))
+            if self.use_rope:
+                q = apply_rope(q, cos, sin)
+            q = self._scale_q(q, pos)
+            o = attend_fn(q)
+            out = self.wo(o.reshape(B, S, self.h * self.dh))
+        return out
+
     def forward(self, x, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None, sink_pos=None, pos=None,
                 message: Optional[MessageCtx] = None, rope_theta: float = 500000.0):
         B, S, _ = x.shape
         q = self.q_norm(self.wq(x).view(B, S, self.h, self.dh))
         k_raw, v = self.kv_raw(x, ids)
         k_un = self.k_norm(k_raw)
+        extra = int(getattr(message, "extra_slot_attends", 0) or 0) if message is not None else 0
         use_inplace = (
             message is not None
             and self.compressor is not None
@@ -918,34 +956,40 @@ class Attention(nn.Module):
             if self.use_rope:
                 q = apply_rope(q, cos, sin)
                 k_mix = apply_rope(k_mix, cos, sin)
-            if self.logit_scale is not None:
-                if pos is None:
-                    raise RuntimeError("global_logit_scale='log' needs per-token positions")
-                n_vis = (pos + 1).to(q.dtype)
-                q = q * (self.logit_scale * torch.log(n_vis))[:, :, None, None]
+            q = self._scale_q(q, pos)
             o = attend_inplace(
                 q, k_mix, v_mix, ctx=message, replace=replace, key_valid=key_valid,
                 backend=self.backend, block_masks=block_masks,
             )
             out = self.wo(o.reshape(B, S, self.h * self.dh))
+            out = self._extra_exclusive_attends(
+                x, out, extra=extra, cos=cos, sin=sin, pos=pos,
+                attend_fn=lambda qq: attend_inplace(
+                    qq, k_mix, v_mix, ctx=message, replace=replace, key_valid=key_valid,
+                    backend=self.backend, block_masks=block_masks,
+                ),
+            )
             if raw_kv:
                 out = out + 0.0 * (self.compressor.u.sum() + self.compressor.delta.weight.sum()).to(out.dtype)
             return out
         k = k_un
         if self.use_rope:
             q, k = apply_rope(q, cos, sin), apply_rope(k, cos, sin)
-        if self.logit_scale is not None:
-            if pos is None:
-                raise RuntimeError("global_logit_scale='log' needs per-token positions")
-            n_vis = (pos + 1).to(q.dtype)
-            q = q * (self.logit_scale * torch.log(n_vis))[:, :, None, None]
+        q = self._scale_q(q, pos)
         if message is not None and self.compressor is not None:
             k_bar, v_bar = self.message_slots(x, k_raw, v, message, key_valid, rope_theta)
             if message.override == "swapped":
                 k_bar, v_bar = k_bar.roll(1, dims=0), v_bar.roll(1, dims=0)
             o = attend_message(q, k, v, k_bar, v_bar, ctx=message, key_valid=key_valid,
                                backend=self.backend, block_masks=block_masks)
-            return self.wo(o.reshape(B, S, self.h * self.dh))
+            out = self.wo(o.reshape(B, S, self.h * self.dh))
+            return self._extra_exclusive_attends(
+                x, out, extra=extra, cos=cos, sin=sin, pos=pos,
+                attend_fn=lambda qq: attend_message(
+                    qq, k, v, k_bar, v_bar, ctx=message, key_valid=key_valid,
+                    backend=self.backend, block_masks=block_masks,
+                ),
+            )
         o = attend(
             q, k, v, pattern=self.pattern, window=self.window, key_valid=key_valid,
             doc_ids=doc_ids, backend=self.backend, causal=self.causal, cu_seqlens=cu_seqlens,
@@ -1241,6 +1285,7 @@ class PerceiverARLM(PreTrainedModel):
                 n_sides=2, override=self._message_override, external=(k_bar, v_bar),
                 ratio=r, inplace=cfg.message_slots_inplace,
                 inplace_raw_kv=cfg.message_inplace_raw_kv,
+                extra_slot_attends=int(getattr(cfg, "message_extra_slot_attends", 0) or 0),
             )
         is_b = input_ids == cfg.message_boundary_token_id
         if not bool(is_b.any()):
@@ -1283,7 +1328,8 @@ class PerceiverARLM(PreTrainedModel):
         return MessageCtx(side=side, doc=doc, local_doc_ids=local, slot_doc=slot_doc, slot_side=slot_side,
                           slot_pos=slot_pos, n_sides=K, override=self._message_override,
                           pool_valid=pool_valid, ratio=r, inplace=cfg.message_slots_inplace,
-                          inplace_raw_kv=cfg.message_inplace_raw_kv)
+                          inplace_raw_kv=cfg.message_inplace_raw_kv,
+                          extra_slot_attends=int(getattr(cfg, "message_extra_slot_attends", 0) or 0))
 
     # -- helpers ----------------------------------------------------------------------
     @staticmethod

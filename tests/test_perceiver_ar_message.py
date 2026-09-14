@@ -5,12 +5,16 @@ CPU / sdpa, tiny config."""
 import pytest
 import torch
 
+from unittest.mock import patch
+
 from nn.perceiver_ar_lm import (
     KVCompressor,
     MessageCtx,
     PerceiverARConfig,
     PerceiverARLM,
     analytic_param_count,
+    attend_inplace,
+    attend_message,
     dense_bool_mask,
     dense_inplace_mask,
     dense_message_mask,
@@ -74,6 +78,8 @@ def test_off_by_default_is_byte_identical_and_validated():
         cfg(message_boundary_token_id=M, par_mode="dense")
     with pytest.raises(ValueError):
         cfg(message_boundary_token_id=M, attn_backend="flash")
+    with pytest.raises(ValueError):
+        cfg(message_boundary_token_id=M, message_extra_slot_attends=-1)
 
 
 def test_enabled_without_boundary_token_is_inert_and_counts_params():
@@ -529,6 +535,127 @@ def test_keep_local_swa_crosses_boundary_but_global_stays_exclusive():
     with torch.no_grad(), on.message_override("none"):
         a, b = on(x).logits, on(y).logits
     assert not torch.allclose(a[0, P:], b[0, P:], atol=1e-5)
+
+
+def test_identity_kv_are_post_pre_swa_not_frozen_embeddings():
+    """r=1 inplace identity slots are projected from the residual AFTER the SWA pre-layer,
+    not from frozen/unmixed token embeddings. Knob A is already true for pre-SWA."""
+    model = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                       message_slots_inplace=True, message_identity_slots=True)
+    assert model.config.pre_layers >= 1
+    assert model.config.message_extra_slot_attends == 0
+    S, P = 16, 9
+    x = with_boundary(rand_ids(1, S, seed=4), P)
+    captured = {}
+    gi = model.config.global_layer_index
+    assert model.layers[gi].attn.pattern == "full"
+
+    def hook(mod, args):
+        captured["attn_x"] = args[0].detach()
+
+    model.layers[gi].attn.register_forward_pre_hook(hook)
+    with torch.no_grad():
+        x0 = model.embed(x)
+        _ = model(x)
+    assert captured["attn_x"].shape == x0.shape
+    assert not torch.allclose(captured["attn_x"], x0, atol=1e-4)
+
+
+def test_extra_slot_attends_default_off_is_byte_identical_and_param_matched():
+    x = with_boundary(rand_ids(2, 14, seed=3), 8)
+    off = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                     message_slots_inplace=True, message_identity_slots=True)
+    expl = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                      message_slots_inplace=True, message_identity_slots=True,
+                      message_extra_slot_attends=0)
+    one = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                     message_slots_inplace=True, message_identity_slots=True,
+                     message_extra_slot_attends=1)
+    assert off.config.message_extra_slot_attends == 0
+    assert expl.config.message_extra_slot_attends == 0
+    assert one.config.message_extra_slot_attends == 1
+    assert sum(p.numel() for p in off.parameters()) == sum(p.numel() for p in one.parameters())
+    with torch.no_grad():
+        assert torch.allclose(off(x).logits, expl(x).logits, atol=1e-6)
+        assert not torch.allclose(off(x).logits[:, 8:], one(x).logits[:, 8:], atol=1e-4)
+
+
+def test_extra_slot_attends_reuses_frozen_exclusive_kv_inplace():
+    """extra=1: two exclusive attends, identical K/V objects, no concat raw-prefix leak."""
+    model = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                       message_slots_inplace=True, message_identity_slots=True,
+                       message_extra_slot_attends=1)
+    S, P = 16, 9
+    x = with_boundary(rand_ids(1, S, seed=4), P)
+    captured = []
+    real = attend_inplace
+
+    def wrapped(q, k, v, **kw):
+        captured.append((k, v))
+        return real(q, k, v, **kw)
+
+    import nn.perceiver_ar_lm as pal
+    with torch.no_grad(), patch.object(pal, "attend_inplace", wrapped):
+        _ = model(x)
+    assert len(captured) == 2
+    assert captured[0][0] is captured[1][0]
+    assert captured[0][1] is captured[1][1]
+    assert torch.equal(captured[0][0], captured[1][0])
+    pos = model._positions(S, 1, None, x.device)
+    with torch.no_grad():
+        ctx = model._message_context(x, None, None, pos)
+    assert ctx.extra_slot_attends == 1
+    k = torch.zeros(1, S, 2, 8)
+    v = torch.zeros(1, S, 2, 8)
+    _, _, replace = mix_inplace_kv(k, v, k, v, ctx)
+    mask = dense_inplace_mask(S, ctx, None, replace, "cpu")
+    assert bool(mask[0, 0, P, :P].all())
+    concat = dense_message_mask(S, ctx, None, "cpu")[0, 0]
+    assert concat[P, :P].tolist() == [False] * P
+    assert concat[P, S:S + P].tolist() == [True] * P
+
+
+def test_extra_slot_attends_reuses_frozen_exclusive_kv_concat():
+    """Concat extra=1: two attends, frozen slot K/V, receivers still cannot see raw prefix."""
+    model = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=2,
+                       message_extra_slot_attends=1)
+    S, P = 16, 9
+    x = with_boundary(rand_ids(1, S, seed=4), P)
+    captured = []
+    real = attend_message
+
+    def wrapped(q, k, v, k_bar, v_bar, **kw):
+        captured.append((k, v, k_bar, v_bar))
+        return real(q, k, v, k_bar, v_bar, **kw)
+
+    import nn.perceiver_ar_lm as pal
+    with torch.no_grad(), patch.object(pal, "attend_message", wrapped):
+        _ = model(x)
+    assert len(captured) == 2
+    assert captured[0][2] is captured[1][2]
+    assert captured[0][3] is captured[1][3]
+    pos = model._positions(S, 1, None, x.device)
+    with torch.no_grad():
+        ctx = model._message_context(x, None, None, pos)
+    concat = dense_message_mask(S, ctx, None, "cpu")[0, 0]
+    assert concat[P, :P].tolist() == [False] * P
+
+
+def test_extra_slot_attends_hides_uncompressed_remainder():
+    """Extra exclusive hop still hides the incomplete last sender block (not raw prefix)."""
+    model = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=3,
+                       message_slots_inplace=True, message_identity_slots=True,
+                       message_extra_slot_attends=1)
+    S, P = 16, 10
+    x = with_boundary(rand_ids(1, S, seed=4), P)
+    y_rem = x.clone()
+    y_rem[0, P - 1] = (y_rem[0, P - 1] + 7) % 80 + 3
+    y_blk = x.clone()
+    y_blk[0, 2] = (y_blk[0, 2] + 7) % 80 + 3
+    with torch.no_grad():
+        a, rem, blk = model(x).logits, model(y_rem).logits, model(y_blk).logits
+        assert torch.allclose(a[0, P:], rem[0, P:], atol=1e-5)
+        assert not torch.allclose(a[0, P:], blk[0, P:], atol=1e-5)
 
 
 def test_receiver_only_round_trip_via_prefix_kv_as_message():

@@ -151,7 +151,8 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             f"msg_inplace={getattr(model.config, 'message_slots_inplace', False) if arch == 'e21' else '-'}  "
             f"msg_rawkv={getattr(model.config, 'message_inplace_raw_kv', False) if arch == 'e21' else '-'}  "
             f"msg_idslots={getattr(model.config, 'message_identity_slots', False) if arch == 'e21' else '-'}  "
-            f"msg_keepswa={getattr(model.config, 'message_keep_local_swa', False) if arch == 'e21' else '-'}",
+            f"msg_keepswa={getattr(model.config, 'message_keep_local_swa', False) if arch == 'e21' else '-'}  "
+            f"msg_extrahops={getattr(model.config, 'message_extra_slot_attends', 0) if arch == 'e21' else '-'}",
             flush=True,
         )
     override = args.message_override if arch == "e21" else "real"
@@ -266,6 +267,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         message_inplace_raw_kv=args.message_inplace_raw_kv,
         message_identity_slots=args.message_identity_slots,
         message_keep_local_swa=args.message_keep_local_swa,
+        message_extra_slot_attends=args.message_extra_slot_attends,
     )
     card = rung_card(scale, recipe.task, **over)
     card["local_window"] = window
@@ -359,6 +361,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             "message_inplace_raw_kv": args.message_inplace_raw_kv,
             "message_identity_slots": args.message_identity_slots,
             "message_keep_local_swa": args.message_keep_local_swa,
+            "message_extra_slot_attends": args.message_extra_slot_attends,
         },
         "pack": {
             "answer_len": cfg.answer_len,
@@ -458,6 +461,13 @@ def main() -> int:
         help="E21: do not treat QUERY as a SWA/n-gram document start. Local window still "
         "sees raw prefix tokens inside the sliding window. Exclusive compressed/identity "
         "slots stay on the global read. Default off (severed local path; E18-loadable).",
+    )
+    p.add_argument(
+        "--message_extra_slot_attends",
+        type=int,
+        default=0,
+        help="E21: extra exclusive global attends over the *same* frozen slot K/V "
+        "(queries update from the previous hop). Default 0. Not DNA --hops, not raw prefix KV.",
     )
     p.add_argument("--seq_len", type=int, default=None, help="override scale seq_len (S0 hunts)")
     p.add_argument("--min_gap", type=int, default=None, help="override scale min_gap (S0 hunts)")
