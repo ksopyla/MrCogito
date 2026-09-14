@@ -46,7 +46,11 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   Seq=1024 `recall_single` r=8 remainder-off H=128 **26.8% / 0.01 bits** @8000
   (S1 FAIL vs 0.75× E18 46.98). Seq=1024 `recall_single` r=8 rem-off **H=256
   SSMax log 96.5% / 60.35 bits** @8000 (S1 PASS vs 0.75× E18 46.96; MATCH at
-  1024 needs INDEX width).   Seq=1024 `select_1decoy` r=8 rem-off H=256 SSMax
+  1024 needs INDEX width). Seq=1536 `recall_single` `--scale bridge_1k
+  --seq_len 1536` r=8 rem-off H=256 SSMax log **24.7% / 0 bits** @800
+  (**S1 FAIL** vs 0.75× live E18 39.44 and vs 0.75× dense 47.74; E18 live
+  **85.8% / 52.58 bits** @800; chance every eval). Exclusive MATCH wall
+  **(1024 PASS, 1536 FAIL]**. 8k not run.   Seq=1024 `select_1decoy` r=8 rem-off H=256 SSMax
   log **25.7% / 0 bits** @800 (S1 FAIL vs 0.75× E18 47.89; chance floor;
   SELECT does not scale with MATCH). Seq=1024 `select_1decoy` r=1 identity
   H=256 SSMax log **25.7% / 0 bits** @800 (S1 FAIL vs 0.75× E18 47.85; chance
@@ -179,12 +183,12 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   E18 47.71; E18 **99.9% / 63.62 bits** @600; chance every eval). Banner
   `gap=64 window=32` (32 < 64). Widening SWA does not rescue 696. Do not
   extra-step (floor). Do not 16k.
-  Next: seq=**268** packed `chain_ordered --key_len 13` `--global_layers 2`
-  (tighten E21 hops wall **(264 S1 PASS, 272 FAIL]**; do not run here).
-  Do not seq=260. Do not reopen SELECT **(692 PASS, 696 FAIL]**. Do not
-  seq=694. INDEX length extra-steps stay stopped.
+  Next: **parent decides** (do not run here). Hops length extra-steps stay
+  stopped (not 260, not 268). INDEX length extra-steps stay stopped. Do not
+  stack MATCH compressor knobs. Do not 2048 MATCH. Do not reopen SELECT
+  **(692 PASS, 696 FAIL]**. Do not seq=694.
   Remaining DNA walls:
-  SELECT length **(692 PASS, 696 FAIL]** leftover-drop, spread (K1), and window 32 did not close, INDEX **(1024 PASS, 1536 FAIL] shared with E18**, hops glob=2 dense **(288 S0 PASS, 320 K1]**, hops glob=2 E21 **(264 S1 PASS, 272 FAIL]**, hops glob=2 E18 live-weak at 264 / live-strong at 272 / dead at 288, 512 chain **K1 at glob=1 and glob=2**, 256 hops
+  MATCH exclusive **(1024 PASS, 1536 FAIL]** (E18 live 52.58; E21 0), SELECT length **(692 PASS, 696 FAIL]** leftover-drop, spread (K1), and window 32 did not close, INDEX **(1024 PASS, 1536 FAIL] shared with E18**, hops glob=2 dense **(288 S0 PASS, 320 K1]**, hops glob=2 E21 **(264 S1 PASS, 272 FAIL]**, hops glob=2 E18 live-weak at 264 / live-strong at 272 / dead at 288, 512 chain **K1 at glob=1 and glob=2**, 256 hops
   **FAIL at glob=1 / PASS at glob=2**. Not remainder-on. Not H=512. Not
   hops seq shrink below 256. Not Glyph. Do not restore raw global KV. Default remainder
   stays off. Default `--message_keep_local_swa` stays off. Default
@@ -250,6 +254,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [288 chain hops glob2](../2_Experiments_Registry/run_reports/e25_bridge288_chain_k13_glob2_20260914.md) ·
   [272 chain hops glob2](../2_Experiments_Registry/run_reports/e25_bridge272_chain_k13_glob2_20260914.md) ·
   [264 chain hops glob2](../2_Experiments_Registry/run_reports/e25_bridge264_chain_k13_glob2_20260914.md) ·
+  [1536 MATCH r=8 H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_1536_ip_r8_h256_recall_20260914.md) ·
   [768 select r=1 identity H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_768_ip_id_h256_select_20260914.md) ·
   [640 select r=1 identity H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_640_ip_id_h256_select_20260914.md) ·
   [704 select r=1 identity H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_704_ip_id_h256_select_20260914.md) ·
@@ -301,6 +306,16 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-14 — E25 GPU seq=1536 recall_single r=8 rem-off H=256 SSMax log (Odra).**
+  `--scale bridge_1k --seq_len 1536` packed MATCH, inplace identity mean r=8,
+  remainder **off**, `--hidden 256 --global_logit_scale log`, glob_layers 1,
+  batch 32. Dense **99.9% / 63.65 bits** @500 (**S0 PASS**). E18 **85.8% /
+  52.58 bits** @800 (live, not ~0). E21 **24.7% / 0 bits** @800 (chance
+  every eval; **S1 FAIL** vs 0.75× live E18 39.44 and vs 0.75× dense
+  47.74). K2 **PASS**. Exclusive MATCH that passed at 1024 is chance at
+  1536 with leftover residue 2. Exclusive wall **(1024 PASS, 1536
+  FAIL]**. 8k not run. Next: parent decides (do not stack knobs).
+  [report](../2_Experiments_Registry/run_reports/e25_bridge1k_1536_ip_r8_h256_recall_20260914.md).
 - **2026-09-14 — E25 GPU seq=264 chain_ordered --key_len 13 `--global_layers 2` (Odra, H=256 log).**
   Same 256 glob2 S1 PASS compressor at `--scale bridge --seq_len 264` (bridge
   default is 512; window 16 < gap 64). Dense **82.3% / 17.65 bits** @3200
