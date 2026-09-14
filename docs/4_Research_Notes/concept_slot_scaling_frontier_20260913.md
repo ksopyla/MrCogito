@@ -4,17 +4,12 @@
 [the seq128 ~100% limits note](symbolic_arm_a_100pct_limits_20260913.md).
 **Instrument:** `verification/symbolic_channel_probe.py` over
 `data/symbolic_tasks.py`. Campaign runner: `verification/run_scale_hard_campaign.py`.
-JSON: `/opt/cursor/artifacts/scale_hard/` (inventory:
-`/opt/cursor/artifacts/harder_campaign_inventory.json`). Plots rebuilt after seq512
-closed (2026-09-13):
-[`harder_accuracy_vs_examples.png`](/opt/cursor/artifacts/harder_accuracy_vs_examples.png),
-[`harder_accuracy_vs_steps.png`](/opt/cursor/artifacts/harder_accuracy_vs_steps.png),
-[`harder_difficulty_vs_accuracy.png`](/opt/cursor/artifacts/harder_difficulty_vs_accuracy.png),
-[`harder_lr_probe.png`](/opt/cursor/artifacts/harder_lr_probe.png),
-[`harder_params_vs_max_seq.png`](/opt/cursor/artifacts/harder_params_vs_max_seq.png),
-[`concept_slot_scaling_frontier.png`](/opt/cursor/artifacts/concept_slot_scaling_frontier.png)
-(alias of the examples curve:
-[`concept_slot_harder_learning_curves.png`](/opt/cursor/artifacts/concept_slot_harder_learning_curves.png)).
+JSON: `/workspace/Cache/scale_hard/` (durable inventory:
+`docs/4_Research_Notes/exclusive_slot_law_inventory.json`). Plots:
+[`exclusive_slot_working_law.png`](figures/exclusive_slot_working_law.png),
+[`exclusive_slot_law_steps_sizes_acc.png`](figures/exclusive_slot_law_steps_sizes_acc.png).
+The Cursor `/opt/cursor/artifacts` FUSE store wiped mid-campaign (seq1024 A
+hit 95.9% then `Path.write_text` raised `FileNotFoundError`).
 
 ## Hypothesis
 
@@ -73,6 +68,7 @@ steps). **Tune LR per geometry; it is not portable from the 1.35M toy.**
 | **reach_seq512_A** | A | 5.11M | **3e-4** | 512 | 8 | far_copy gap128 | 2 | **48k** | 1,500 | **95.0%** | 0.140 | **yes** | target_acc |
 | **reach_seq512_D9** | D | **4.97M** | **3e-4** | 512 | 8 | far_copy gap128 | 2 | **32k** | 1,000 | **98.3%** | 0.047 | **yes** | target_acc |
 | **reach_seq512_C** | C | 2.27M | 3e-4 | 512 | 8 | far_copy gap128 | 2 | 38k | 1,200 | 25.4% | 1.386 | no (floor) | budget |
+| **reach_seq1024_A** | A | 5.11M | **1e-4** | 1024 | 8 | far_copy gap256 | 2 | **96k** | 3,000 | **95.9%** | 0.109 | **yes** | target_acc |
 | seq512 D lr=1e-3 | D | 2.27M | 1e-3 | 512 | 8 | far_copy | 2 | 104k | 3,250 | 27.8% | 1.343 | no | retuned |
 | seq512 D lr=3e-3 | D | 2.27M | 3e-3 | 512 | 8 | far_copy | 2 | 64k | 2,000 | 25.2% | 1.368 | no | retuned |
 | seq512 A lr=1e-3 | A | 5.11M | 1e-3 | 512 | 8 | far_copy | 2 | 72k | 2,250 | 24.5% | 1.386 | no | retuned to 3e-4 |
@@ -86,9 +82,14 @@ The skill is in the slots. C stays at the floor on every new (seq, min_gap) and 
   examples. C stays at the floor. D hits 95% earlier (~65–72k). Doubling seq at
   fixed r costs A about **1.7×** examples versus the seq128 95% point (~51k → 96k).
 - **Success (true reach, seq=512 min_gap=128):** 5.11M A hits **95.0% at 48k / 40 min**
-  (ablation → 24.5%). Param-matched 4.97M D hits **98.3% at 32k / 32 min**. On this
-  farther-span exam D is *more* data-efficient than A (opposite of padded min_gap=32,
-  where A used 0.60× D's examples). Both clear 95%. C leak-check is in flight.
+  (ablation → 24.5%). Param-matched 4.97M D hits **98.3% at 32k / 32 min**. C stays
+  at 25.4% (no leak). On this farther-span exam D is *more* data-efficient than A
+  (opposite of padded min_gap=32).
+- **Success (true reach, seq=1024 min_gap=256):** 5.11M A hits **95.9% at 96k / 3000
+  steps / ~5.5 h CPU** (lr=1e-4, 6.63 s/step, 128 slots). Ablation → 23.8%. Same
+  example-count as seq256 r=8. Param-matched D was not rerun: the artifact store
+  wiped during the JSON write. Durable record:
+  `docs/4_Research_Notes/exclusive_slot_law_inventory.json`.
 - **A beats width-matched D at seq512, and is more efficient than param-matched D.**
   The 2.27M 4-layer dense decoder never left ~25–30% across 1e-3 / 3e-4 / 3e-3 through
   64–104k examples. Deepening D to **9 layers / 4.97M** (same parameter band as A's 5.11M)
@@ -113,10 +114,10 @@ The skill is in the slots. C stays at the floor on every new (seq, min_gap) and 
 
 Not a Kaplan-style fit — too few cells. The measured pattern is:
 
-1. **Length is cheap at r=8, including true reach at seq=512.** A solves `far_copy`
-   through seq=512 min_gap=32 (72k / 76 min) **and** min_gap=128 (48k / 40 min,
-   ablation → 24.5%). Stretching the gap did not cost examples; E95 fell. Seq=1024
-   min_gap=256 is queued. Padded length (min_gap fixed at 32) only adds slots.
+1. **Length is cheap at r=8 through seq=1024 true reach.** A solves `far_copy`
+   seq=512 min_gap=32 (72k / 76 min), min_gap=128 (48k / 40 min), **and seq=1024
+   min_gap=256 (96k / 5.5 h wall, lr=1e-4)**. E95 stays on the order of 10^5
+   examples. Wall grows with seq because each step is denser (1.6 s → 6.6 s).
 2. **Compression is the binding axis.** r=8 solved at 96k; r=16 solved at 224k
    (~2.3× data); r=32 missed at 256k (87.9%). Doubling tokens/slot more than
    doubles examples-to-95%; another doubling does not finish in 256k. Do not
@@ -137,7 +138,8 @@ Not a Kaplan-style fit — too few cells. The measured pattern is:
   (r=16 now hits 95.7% at 224k).
 - hops=2 packed chain is now measured: param-matched D stays at chance through
   128k. Not D-green; A skipped per protocol.
-- Seq=1024 min_gap=256 far_copy; nothing here is a language-model result.
+- Seq=1024 param-matched D / C were not run (artifact store wiped as A's JSON
+  was being written). A ablation is 23.8%, so the skill is in the slots.
 
 ## Closed — param-matched D on seq512 (2026-09-14)
 
@@ -162,23 +164,32 @@ Early-stop at the 95% bar. Takeoff was sawtooth until 104k, then a sharp drop
 **Same-parameter verdict:** both arms solve seq512 r=8; exclusive slots use
 **0.60× examples and 0.63× wall**.
 
-In flight now: seq=1024 min_gap=256 A (lr=1e-4). Live 38.3% at 16k, CE 1.30,
-6.75 s/step — leaving chance. C on seq=512 min_gap=128 stayed at 25.4%.
+Closed 2026-09-14: seq=1024 min_gap=256 A hits 95.9% at 96k. Plots:
+`docs/4_Research_Notes/figures/exclusive_slot_working_law.png`,
+`docs/4_Research_Notes/figures/exclusive_slot_law_steps_sizes_acc.png`.
+
+## In flight — seq1024 matched D9 and C (2026-09-14)
+
+The scaling-law goal still needs the same compute / data / parameter-regime
+controls at the longest cell. Arm A is not rerun. JSON now lands on
+`/workspace/Cache/scale_hard` via `verification/run_scale_hard_reach_seq1024_dc.py`
+(`D9` 4.97M at lr=1e-4, then leak-check `C`). Do not shrink A.
 
 
 ## One-sentence frontier
 
 A **<10M exclusive-slot** model (5.11M, hidden 256) hits the 95% bar on
-**`far_copy` through seq=512, r=8**, both padded (`min_gap=32`, 97% @ 72k) and
-**true reach (`min_gap=128`, 95% @ 48k / 40 min)**; **r=16 hits 95.7% at 224k**;
-it **misses 95% at r=32** (87.9% @ 256k); **composition (hops=3/key=8 and packed
-hops=2/key=32) is unsolvable for param-matched D** at this budget; and at seq=512
-padded copy the exclusive array is **more data/wall-efficient than a param-matched
-4.97M dense decoder** (72k / 76 min vs 120k / 121 min).
+**`far_copy` through seq=1024, r=8, min_gap=256 (128 slots, 95.9% @ 96k)** and
+on seq=512 both padded and true-reach; **r=16 hits 95.7% at 224k**; it **misses
+95% at r=32** (87.9% @ 256k); **composition is unsolvable for param-matched D**
+at this budget; and vs a 4.97M dense decoder, exclusive slots are competitive
+on copy (sometimes cheaper, sometimes not) while width-matched 4-layer D misses
+padded seq512.
 
 ## What not to do next
 
 Do not shrink hidden size. The easy campaign already showed 0.12M solves seq128; the
 harder campaign is a **length / compression / hops / LR** law at a frozen <10M
-width. Keep A at hidden=256 (5.11M). Next spend is true reach (`min_gap = seq/4`)
-— not a tinier model, not another hops=2 LR, and not another width-matched D.
+width. Keep A at hidden=256 (5.11M). The length axis is closed through seq=1024
+true reach. Next spend after a positive signal is r=32 with more than 256k
+examples, or composition that is D-green — not a tinier model.
