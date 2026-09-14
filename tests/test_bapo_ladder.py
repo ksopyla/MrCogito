@@ -229,6 +229,32 @@ def test_bridge_1k_seq_len_2048_keeps_window_below_gap():
     assert row.input_ids.shape == (2048,)
 
 
+def test_bridge_1k_seq_len_1536_keeps_window_below_gap():
+    """INDEX length-wall bracket: override seq only; do not invent a 1536 scale.
+
+    1024 PASS / 2048 FAIL on the same r=16 identity inplace rem-off compressor.
+    Window/gap stay bridge_1k 16 < 64. Packed span stays 32 / 64-bit prize.
+    """
+    from data.symbolic_tasks import generate_row
+
+    sc = SCALES["bridge_1k"]
+    cfg = config_for("bridge_1k", "far_copy", seq_len=1536, evidence_align="right")
+    assert cfg.seq_len == 1536
+    assert cfg.min_gap == sc.min_gap == 64
+    assert sc.local_window < cfg.min_gap
+    assert sc.local_window == 16
+    assert cfg.answer_len == 32
+    assert prize_bits(cfg) == pytest.approx(64.0)
+    row = generate_row(cfg, np.random.default_rng(0))
+    assert row.gap == cfg.min_gap + 1
+    assert row.input_ids.shape == (1536,)
+    qid = cfg.vocab.control("query")
+    qpos = int(np.where(row.input_ids == qid)[0][0])
+    leftover = qpos % 16
+    assert leftover < 16
+    assert sc.local_window < row.gap
+
+
 def test_bridge_1k_seq_len_768_select_keeps_window_below_gap():
     """SELECT length-wall hunt: override seq only; do not invent a 768 scale.
 
