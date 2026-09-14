@@ -20,7 +20,7 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-14 — E25 E21 capability ladder (tiny limits; 512 concat wall; raw PASS; inplace identity PASS; r=16 mean INDEX; MATCH remainder-on S1 through r=16; remainder-off r=10/16 chance, r=12 S1 FAIL; SELECT r=8 rem-off S1 PASS, r=12 rem-on S1 PASS, r=16 rem-on live S1 FAIL; SELECT identity PASS; 1024 MATCH r=8 rem-off H=128 S1 FAIL, H=256 log S1 PASS 60.35; 1024 SELECT r=8 rem-off H=256 log chance; 1024 SELECT r=1 identity H=256 log chance; 1024 SELECT SWA-unsever `--message_keep_local_swa` chance 0.01 bits; 1024 SELECT extra exclusive hop `--message_extra_slot_attends 1` chance 0 bits; 1024 SELECT type_marks anchors `--message_global_anchors type_marks` 0 bits @800 / 31.90 @1050 S1 FAIL vs 0.75× dense; 4k INDEX r=16 rem-off H=256 log chance vs 0.75× dense; 2048 INDEX r=16 rem-off H=256 log chance vs 0.75× dense; 512 chain K1; 256 hops FAIL vs dense).**
+- **2026-09-14 — E25 E21 capability ladder (tiny limits; 512 concat wall; raw PASS; inplace identity PASS; r=16 mean INDEX; MATCH remainder-on S1 through r=16; remainder-off r=10/16 chance, r=12 S1 FAIL; SELECT r=8 rem-off S1 PASS, r=12 rem-on S1 PASS, r=16 rem-on live S1 FAIL; SELECT identity PASS; 1024 MATCH r=8 rem-off H=128 S1 FAIL, H=256 log S1 PASS 60.35; 1024 SELECT r=8 rem-off H=256 log chance; 1024 SELECT r=1 identity H=256 log chance; 1024 SELECT SWA-unsever `--message_keep_local_swa` chance 0.01 bits; 1024 SELECT extra exclusive hop `--message_extra_slot_attends 1` chance 0 bits; 1024 SELECT type_marks anchors `--message_global_anchors type_marks` 0 bits @800 / 31.90 @1050 S1 FAIL vs 0.75× dense; 1024 SELECT type_marks 8k extra-step S1 FAIL 6.48 vs live E18 63.96; 4k INDEX r=16 rem-off H=256 log chance vs 0.75× dense; 2048 INDEX r=16 rem-off H=256 log chance vs 0.75× dense; 512 chain K1; 256 hops FAIL vs dense).**
   Tiny INDEX near-pass at 8k. GPU seq=512 exclusive concat slots **0 bits** (r=16/64/1).
   `--message_override raw` **100% / 63.96 bits**. r=1 in-place learned compressor **0 bits**.
   In-place raw KV **63.29 bits**. In-place hard identity **99.8% / 62.64 bits** @750.
@@ -63,7 +63,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   @800 floor then **48.1% / 31.90 bits** @1050 (**S1 FAIL** vs 0.75× dense
   47.99; this-JSON E18 0 — do not pass via 0.75×0; vs 0.75× prior live E18
   47.94). Type-mark leak is 2 tokens vs seq=1024; at r=1 identity extra
-  non-slot count is 0. Seq=512
+  non-slot count is 0. Seq=1024 type_marks **8k extra-step** (`--no-dense_first`)
+  E18 **100% / 63.96 bits** @3250 (live); E21 **39.3% / 6.48 bits** @8000
+  (**S1 FAIL** vs 0.75× live E18 47.97; 0 @800/1050; best 14.43 bits; did
+  not climb past 31.90). Seq=512
   `select_1decoy` r=1 identity **100% / 47.98 bits** @700. Seq=512 packed
   `chain_ordered` **K1**. Seq=256 `--key_len 13` hops=2: dense **96.4% / 24.12
   bits** (S0 PASS); E18 **0 bits**; E21 **0 bits**. Hops FAIL vs 0.75× dense.
@@ -74,10 +77,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   H=256 SSMax log **25.0% / 0 bits** @800 (**S1 FAIL** vs 0.75× dense 47.84;
   E18 ~0 live; chance floor). Exclusive INDEX that passed at 1024 is chance
   at 2048 with the same gap=64. INDEX length extra-steps are **stopped**.
-  Next: **extra-step this type_marks late click to 8k** (include e18 so S1
-  has a live uncompressed control). Not remainder-on. Not H=512. Not 8k
-  on a chance floor as a new architecture. Not hops seq shrink. Not Glyph.
-  Do not restore raw global KV. Default remainder stays off. Default
+  Next: **stop 1024 SELECT extra-steps** (do not 16k). Remaining DNA walls:
+  512 chain **K1**, 256 hops **FAIL**, 2048+ INDEX shared with E18. Not
+  remainder-on. Not H=512. Not hops seq shrink. Not Glyph. Do not restore
+  raw global KV. Default remainder stays off. Default
   `--message_keep_local_swa` stays off. Default `--message_extra_slot_attends`
   stays 0. Default `--message_global_anchors` stays `none`.
   Spec [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) ·
@@ -124,6 +127,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [1024 select SWA-unsever](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_id_keepswa_select_20260914.md) ·
   [1024 select extra hop](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_id_extrahop_select_20260914.md) ·
   [1024 select type_marks anchors](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_id_anchors_select_20260914.md) ·
+  [1024 select type_marks 8k](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_id_anchors_select_s8k_20260914.md) ·
   [4k INDEX r=16 H=256 log](../2_Experiments_Registry/run_reports/e25_medium_4k_ip_r16_mean_far_copy_20260914.md) ·
   [2048 INDEX r=16 H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_2k_ip_r16_mean_far_copy_20260914.md).
   Do not relabel E18 scores as E21.
@@ -159,6 +163,16 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-14 — E25 GPU seq=1024 select_1decoy type_marks 8k extra-step (Odra).**
+  Same identity + `--message_global_anchors type_marks` recipe as the 1050
+  hunt; `--arch e18 e21 e18_local --steps 8000 --no-dense_first --k1_mult 1`.
+  Dense skipped (prior S0 **63.98**). E18 **100% / 63.96 bits** @3250 (live;
+  prior this-JSON E18 0 at 1050 was short). E21 **0 bits** @800 and @1050
+  (31.90 @1050 did not replicate), climb @4850, plateau **14.43 bits** @7100
+  / 42.9% @7850, final **39.3% / 6.48 bits** @8000 (**S1 FAIL** vs 0.75× live
+  E18 47.97). Did not climb past 31.90. K2 **PASS**. Type-mark leak still a
+  no-op at r=1 identity. Do not 16k. Next: stop 1024 SELECT extra-steps.
+  [report](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_id_anchors_select_s8k_20260914.md).
 - **2026-09-14 — E25 GPU seq=1024 select_1decoy r=1 identity type_marks anchors H=256 SSMax log (Odra).**
   `--scale bridge_1k` packed SELECT, inplace identity, remainder **off**,
   `--message_global_anchors type_marks`, extra hops 0, keep_local_swa **off**,
@@ -167,8 +181,9 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   E21 **25.7% / 0 bits** @800 then **48.1% / 31.90 bits** @1050 (**S1 FAIL**
   vs 0.75× dense 47.99; do not pass via 0.75×0). K2 **PASS**. Type-mark leak
   2 tokens vs seq=1024; at r=1 identity extra non-slot count is 0. Do not
-  extra-step this turn (800-floor chance). Default `--message_global_anchors`
-  stays `none`. Next: extra-step this late click to 8k (include e18).
+  extra-step that 800 floor as a new architecture. 8k extra-step ran as
+  `e25_1k_ip_id_anchors_select_s8k` (live E18 63.96; E21 6.48 S1 FAIL).
+  Default `--message_global_anchors` stays `none`.
   [report](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_id_anchors_select_20260914.md).
 - **2026-09-14 — E25 GPU seq=1024 select_1decoy r=1 identity extra exclusive hop H=256 SSMax log (Odra).**
   `--scale bridge_1k` packed SELECT, inplace identity, remainder **off**,
