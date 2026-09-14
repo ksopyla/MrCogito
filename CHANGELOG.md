@@ -15,6 +15,31 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-14] - E21 `--message_pack_stride` (QUERY-aligned leftover drop, default off)
+
+**Why:**
+- Exclusive identity SELECT passes at seq=692 and is chance at seq=696. Inspection:
+  `--message_pool_remainder` is a no-op at r=1 (every sender token is already an
+  identity slot). 693-696 add 4 left-filler tokens after BOS under right-align,
+  not an incomplete DNA evidence block. QUERY shifts +4. The 4-token leftover
+  vs the 32-token packed-answer stride is 14 (692) vs 18 (696).
+- Need one packing/geometry knob that can actually drop vs keep those leftover
+  tokens as exclusive identity slots, without a new attend stack or raw KV.
+
+**Impact:**
+- `--message_pack_stride N` (default 0) drops exclusive leftover sender tokens
+  vs N-token packs tiled to end at QUERY. Remainder-on keeps them as identity
+  slots. r=1 identity without this flag is unchanged. E18 checkpoints stay
+  loadable (no new parameters; default 0).
+
+**What changed:**
+- [added] `PerceiverARConfig.message_pack_stride` in `nn/perceiver_ar_lm.py`
+- [added] probe `--message_pack_stride`; `ArchSpec` field
+- [added] tests for r=1 remainder no-op vs pack_stride leftover drop on 688/692/696 SELECT
+
+**Related:** `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`
+
+
 ## [2026-09-14] - BAPO probe `--seq_len 692` on `bridge_1k` for SELECT length bracket
 
 **Why:**

@@ -309,6 +309,121 @@ def test_bridge_1k_seq_len_692_select_keeps_window_below_gap():
     assert row.input_ids.shape == (692,)
 
 
+def test_select_688_692_696_geometry_and_r1_remainder_noop_pack_stride():
+    """688/692/696 SELECT packing: 2 complete 35-token KV packs; 693-696 add 4 left-filler
+    tokens after BOS, not an incomplete evidence block. QUERY shifts +4. r=1 remainder
+    is a no-op (every sender token is already an identity slot). pack_stride=32 drops
+    QUERY-aligned leftover 10/14/18 from exclusive replace; both 692 and 696 then have
+    640 exclusive sender slots (the 4-token leftover is dropped, not a new pack).
+    """
+    from nn.perceiver_ar_lm import mix_inplace_kv
+
+    recipe_over = dict(n_distractors=0, n_decoys=1, evidence_align="right")
+    rows = {}
+    for seq in (688, 692, 696):
+        cfg = config_for("bridge_1k", "select", seq_len=seq, **recipe_over)
+        kv = 1 + cfg.key_len + cfg.value_len
+        row = generate_row_for(cfg, np.random.default_rng(0))
+        qid = cfg.vocab.control("query")
+        kid = cfg.vocab.control("keymark")
+        did = cfg.vocab.control("decoy")
+        ids = row.input_ids
+        q = int(np.where(ids == qid)[0][0])
+        fact0 = int(np.where(ids == kid)[0][0])
+        decoy0 = int(np.where(ids == did)[0][0])
+        rows[seq] = dict(cfg=cfg, q=q, fact0=fact0, decoy0=decoy0, kv=kv,
+                         sender=q, leftover32=q % 32, packs32=q // 32)
+        assert cfg.evidence_len == 2 * kv
+        assert kv == 35
+        assert cfg.answer_len == 32
+        assert prize_bits(cfg) == pytest.approx(64.0)
+        assert decoy0 == fact0 + kv
+        assert q - (decoy0 + kv) == 60  # gap filler decoy→QUERY
+    assert rows[692]["q"] - rows[688]["q"] == 4
+    assert rows[696]["q"] - rows[692]["q"] == 4
+    assert rows[696]["fact0"] - rows[692]["fact0"] == 4  # extra tokens are left filler
+    assert rows[688]["packs32"] == rows[692]["packs32"] == rows[696]["packs32"] == 20
+    assert (rows[688]["leftover32"], rows[692]["leftover32"], rows[696]["leftover32"]) == (10, 14, 18)
+    # r=1 remainder no-op vs pack_stride=32 leftover drop
+    cfg = rows[696]["cfg"]
+    qid = cfg.vocab.control("query")
+    ids = torch.from_numpy(generate_row_for(cfg, np.random.default_rng(0)).input_ids[None].astype(np.int64))
+
+    def _replace(remainder, pack_stride):
+        spec = ArchSpec(
+            name="e21",
+            hidden=32,
+            head_dim=16,
+            local_window=16,
+            message_boundary_token_id=qid,
+            message_compress_ratio=1,
+            message_slots_inplace=True,
+            message_identity_slots=True,
+            message_pool_remainder=remainder,
+            message_pack_stride=pack_stride,
+            zero_init_residuals=False,
+        )
+        model = build_model(
+            "e21",
+            vocab_size=cfg.vocab.vocab_size,
+            seq_len=cfg.seq_len,
+            answer_start=cfg.answer_start,
+            pad_id=cfg.vocab.control("eos"),
+            bos_id=cfg.vocab.control("bos"),
+            eos_id=cfg.vocab.control("eos"),
+            spec=spec,
+            seed=0,
+        )
+        pos = model._positions(ids.shape[1], 1, None, ids.device)
+        ctx = model._message_context(ids, None, None, pos)
+        k = torch.zeros(1, ids.shape[1], model.config.num_kv_heads, model.config.head_dim)
+        _, _, replace = mix_inplace_kv(k, k, k, k, ctx)
+        q = rows[696]["q"]
+        return int(replace[0, :q].sum()), model.config.message_pack_stride
+
+    n_off, _ = _replace(False, 0)
+    n_rem, _ = _replace(True, 0)
+    n_pack, stride = _replace(False, 32)
+    n_pack_rem, _ = _replace(True, 32)
+    assert n_off == n_rem == rows[696]["sender"]  # r=1 remainder is a no-op
+    assert stride == 32
+    assert n_pack == 20 * 32 == 640  # leftover 18 dropped
+    assert n_pack_rem == rows[696]["sender"]  # remainder keeps leftover as identity slots
+    # 692 vs 696 with pack_stride=32: same exclusive sender count (640)
+    cfg692 = rows[692]["cfg"]
+    ids692 = torch.from_numpy(
+        generate_row_for(cfg692, np.random.default_rng(0)).input_ids[None].astype(np.int64)
+    )
+    spec = ArchSpec(
+        name="e21",
+        hidden=32,
+        head_dim=16,
+        local_window=16,
+        message_boundary_token_id=cfg692.vocab.control("query"),
+        message_compress_ratio=1,
+        message_slots_inplace=True,
+        message_identity_slots=True,
+        message_pack_stride=32,
+        zero_init_residuals=False,
+    )
+    m692 = build_model(
+        "e21",
+        vocab_size=cfg692.vocab.vocab_size,
+        seq_len=cfg692.seq_len,
+        answer_start=cfg692.answer_start,
+        pad_id=cfg692.vocab.control("eos"),
+        bos_id=cfg692.vocab.control("bos"),
+        eos_id=cfg692.vocab.control("eos"),
+        spec=spec,
+        seed=0,
+    )
+    pos = m692._positions(ids692.shape[1], 1, None, ids692.device)
+    ctx = m692._message_context(ids692, None, None, pos)
+    k = torch.zeros(1, ids692.shape[1], m692.config.num_kv_heads, m692.config.head_dim)
+    _, _, replace = mix_inplace_kv(k, k, k, k, ctx)
+    assert int(replace[0, : rows[692]["q"]].sum()) == 640
+
+
 def test_bridge_1k_seq_len_696_select_keeps_window_below_gap():
     """SELECT length-wall hunt: override seq only; do not invent a 696 scale.
 
@@ -749,6 +864,58 @@ def test_e21_identity_slots_flag_is_wired_on_factory():
     assert model.config.message_slots_inplace is True
     assert model.config.message_identity_slots is True
     assert model.config.message_inplace_raw_kv is False
+    assert model.config.message_pack_stride == 0
+    torch.manual_seed(0)
+    ids = torch.randint(3, cfg.vocab.vocab_size, (2, cfg.seq_len))
+    p = cfg.seq_len // 2
+    ids[:, p] = qid
+    loss = model(ids, labels=torch.full_like(ids, -100)).loss
+    assert torch.isfinite(loss)
+
+
+def test_e21_pack_stride_flag_is_wired_on_factory():
+    cfg = config_for("tiny", "far_copy")
+    qid = cfg.vocab.control("query")
+    spec = ArchSpec(
+        name="e21",
+        hidden=32,
+        head_dim=16,
+        local_window=16,
+        message_boundary_token_id=qid,
+        message_compress_ratio=1,
+        message_slots_inplace=True,
+        message_identity_slots=True,
+        message_pack_stride=32,
+        zero_init_residuals=False,
+    )
+    model = build_model(
+        "e21",
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=cfg.vocab.control("eos"),
+        bos_id=cfg.vocab.control("bos"),
+        eos_id=cfg.vocab.control("eos"),
+        spec=spec,
+        seed=0,
+    )
+    assert model.config.message_pack_stride == 32
+    assert model.config.message_pool_remainder is False
+    assert model.config.message_keep_local_swa is False
+    e18 = build_model(
+        "e18",
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=cfg.vocab.control("eos"),
+        bos_id=cfg.vocab.control("bos"),
+        eos_id=cfg.vocab.control("eos"),
+        spec=ArchSpec(name="e18", hidden=32, head_dim=16, message_pack_stride=32,
+                      zero_init_residuals=False),
+        seed=0,
+    )
+    assert e18.config.message_enabled is False
+    assert e18.config.message_pack_stride == 0
     torch.manual_seed(0)
     ids = torch.randint(3, cfg.vocab.vocab_size, (2, cfg.seq_len))
     p = cfg.seq_len // 2

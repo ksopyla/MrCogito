@@ -168,6 +168,7 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             f"msg_inplace={getattr(model.config, 'message_slots_inplace', False) if arch == 'e21' else '-'}  "
             f"msg_rawkv={getattr(model.config, 'message_inplace_raw_kv', False) if arch == 'e21' else '-'}  "
             f"msg_idslots={getattr(model.config, 'message_identity_slots', False) if arch == 'e21' else '-'}  "
+            f"msg_packstride={getattr(model.config, 'message_pack_stride', 0) if arch == 'e21' else '-'}  "
             f"msg_keepswa={getattr(model.config, 'message_keep_local_swa', False) if arch == 'e21' else '-'}  "
             f"glob_layers={getattr(model.config, 'global_layers', '-')}  "
             f"msg_extrahops={getattr(model.config, 'message_extra_slot_attends', 0) if arch == 'e21' else '-'}  "
@@ -286,6 +287,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         message_slots_inplace=args.message_slots_inplace,
         message_inplace_raw_kv=args.message_inplace_raw_kv,
         message_identity_slots=args.message_identity_slots,
+        message_pack_stride=args.message_pack_stride,
         message_keep_local_swa=args.message_keep_local_swa,
         message_extra_slot_attends=args.message_extra_slot_attends,
         message_update_slot_kv=args.message_update_slot_kv,
@@ -388,6 +390,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             "message_slots_inplace": args.message_slots_inplace,
             "message_inplace_raw_kv": args.message_inplace_raw_kv,
             "message_identity_slots": args.message_identity_slots,
+            "message_pack_stride": args.message_pack_stride,
             "message_keep_local_swa": args.message_keep_local_swa,
             "message_extra_slot_attends": args.message_extra_slot_attends,
             "message_update_slot_kv": args.message_update_slot_kv,
@@ -495,6 +498,16 @@ def main() -> int:
         default=False,
         help="E21: bypass KVCompressor u/delta (frozen mean; r=1 is a hard token K/V copy). "
         "Still goes through the slot/scatter path. Default off.",
+    )
+    p.add_argument(
+        "--message_pack_stride",
+        type=int,
+        default=0,
+        help="E21: exclusive leftover vs N-token packs tiled to end at QUERY "
+        "(left leftover after BOS dropped from exclusive identity slots). "
+        "0=off (default; r=1 identity keeps every sender token). "
+        "32=DNA packed-answer stride. Remainder-on keeps leftover as identity slots. "
+        "--message_pool_remainder is a no-op at r=1 without this flag. E18-loadable.",
     )
     p.add_argument(
         "--message_keep_local_swa",

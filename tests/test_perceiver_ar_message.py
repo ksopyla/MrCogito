@@ -87,6 +87,8 @@ def test_off_by_default_is_byte_identical_and_validated():
         cfg(message_boundary_token_id=M, message_global_anchors="full_prefix")
     with pytest.raises(ValueError):
         cfg(message_boundary_token_id=M, message_anchor_window=-1)
+    with pytest.raises(ValueError):
+        cfg(message_boundary_token_id=M, message_pack_stride=-1)
 
 
 def test_enabled_without_boundary_token_is_inert_and_counts_params():
@@ -435,6 +437,63 @@ def test_inplace_identity_slots_uses_scatter_not_raw_kv_and_ignores_u():
         assert torch.allclose(before, after, atol=1e-5)
         learned.layers[gi].attn.compressor.delta.weight.data.normal_(0, 5.0)
         assert not torch.allclose(learned(x).logits[:, 8:], ident(x).logits[:, 8:], atol=1e-4)
+
+
+def test_pack_stride_default_off_is_inert_and_remainder_keeps_r1_leftover():
+    """`--message_pack_stride` default 0 is byte-identical. At r=1, remainder-on plus
+    pack_stride keeps leftover identity slots (same as stride 0)."""
+    x = with_boundary(rand_ids(2, 14, seed=3), 8)
+    off = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                     message_slots_inplace=True, message_identity_slots=True)
+    expl = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                      message_slots_inplace=True, message_identity_slots=True,
+                      message_pack_stride=0)
+    keep = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                      message_slots_inplace=True, message_identity_slots=True,
+                      message_pack_stride=32, message_pool_remainder=True)
+    assert off.config.message_pack_stride == 0
+    assert expl.config.message_pack_stride == 0
+    assert keep.config.message_pack_stride == 32
+    with torch.no_grad():
+        assert torch.allclose(off(x).logits, expl(x).logits, atol=1e-6)
+        assert torch.allclose(off(x).logits, keep(x).logits, atol=1e-6)
+
+
+def test_pack_stride_drops_query_aligned_leftover_unless_remainder():
+    """QUERY-aligned leftover [0, P % stride) is dropped from exclusive replace at r=1
+    unless remainder-on keeps those tokens as identity slots."""
+    S, P, n = 16, 10, 4
+    leftover = P % n  # 2
+    x = with_boundary(rand_ids(1, S, seed=4), P)
+    drop = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                      message_slots_inplace=True, message_identity_slots=True,
+                      message_pack_stride=n)
+    keep = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                      message_slots_inplace=True, message_identity_slots=True,
+                      message_pack_stride=n, message_pool_remainder=True)
+    pos = drop._positions(S, 1, None, x.device)
+    with torch.no_grad():
+        ctx_drop = drop._message_context(x, None, None, pos)
+        ctx_keep = keep._message_context(x, None, None, pos)
+    assert ctx_drop.slot_doc[0, :leftover].tolist() == [-1] * leftover
+    assert ctx_drop.slot_doc[0, leftover:P].tolist() == [0] * (P - leftover)
+    assert ctx_keep.slot_doc[0, :P].tolist() == [0] * P
+    k = torch.zeros(1, S, 2, 8)
+    _, _, replace_drop = mix_inplace_kv(k, k, k, k, ctx_drop)
+    _, _, replace_keep = mix_inplace_kv(k, k, k, k, ctx_keep)
+    assert replace_drop[0, :leftover].tolist() == [False] * leftover
+    assert replace_drop[0, leftover:P].tolist() == [True] * (P - leftover)
+    assert replace_keep[0, :P].tolist() == [True] * P
+    mask_drop = dense_inplace_mask(S, ctx_drop, None, replace_drop, "cpu")
+    mask_keep = dense_inplace_mask(S, ctx_keep, None, replace_keep, "cpu")
+    assert not bool(mask_drop[0, 0, P, leftover - 1])  # receiver cannot see leftover
+    assert bool(mask_drop[0, 0, P, leftover])  # first complete pack is exclusive
+    assert bool(mask_keep[0, 0, P, leftover - 1])  # remainder keeps leftover identity
+    y_pack = x.clone()
+    y_pack[0, leftover] = (y_pack[0, leftover] + 7) % 80 + 3
+    with torch.no_grad():
+        a, pack = drop(x).logits, drop(y_pack).logits
+        assert not torch.allclose(a[0, P:], pack[0, P:], atol=1e-5)
 
 
 def test_inplace_identity_r16_is_mean_pool_not_r1_noop():

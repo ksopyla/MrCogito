@@ -30,9 +30,14 @@ Hooks for the family (config fields only — no parameters unless enabled):
     block. `message_slots_inplace` writes slots into sender prefix positions (KV_LEN=S).
     `message_inplace_raw_kv` (requires inplace) copies token K/V into those positions
     instead of compressor slots; the exclusive `~replace` mask still hides uncompressed
-    remainder. `message_identity_slots` bypasses learned `u`/`delta` so each slot is a
+    remainder.     `message_identity_slots` bypasses learned `u`/`delta` so each slot is a
     frozen mean of the r tokens in the block (r=1: hard copy of token K/V after `k_norm`;
-    not last-token copy).     `message_keep_local_swa` (default off) keeps exclusive slots on
+    not last-token copy). `message_pack_stride` (default 0 = off) drops exclusive
+    leftover sender tokens vs N-token packs tiled to end at QUERY (left leftover
+    after BOS). r=1 identity otherwise keeps every sender token, so `--message_pool_remainder`
+    is a no-op at r=1; this flag is how incomplete leftover tokens are dropped vs kept
+    as identity slots (`message_pool_remainder` keeps them). E18-loadable.
+    `message_keep_local_swa` (default off) keeps exclusive slots on
     the global read but does not treat QUERY as a SWA/n-gram document start — the local
     window still sees raw prefix tokens that fall inside the sliding window.
     `message_extra_slot_attends` (default 0) re-reads the *same* exclusive slot K/V
@@ -132,6 +137,7 @@ class PerceiverARConfig(PretrainedConfig):
         message_slots_inplace: bool = False,  # E21 — write slots into sender prefix positions (KV_LEN=S; default concat)
         message_inplace_raw_kv: bool = False,  # E21 — inplace: token K/V at replace positions (skip compressor values)
         message_identity_slots: bool = False,  # E21 — freeze mean-pool at any r; bypass u/delta
+        message_pack_stride: int = 0,  # E21 — exclusive leftover vs N-token packs ending at QUERY (0=off)
         message_keep_local_swa: bool = False,  # E21 — local SWA/n-grams still see across QUERY
         message_extra_slot_attends: int = 0,  # E21 — extra exclusive attends over frozen slots
         message_update_slot_kv: bool = False,  # E21 — rewrite exclusive slot K/V between extra hops
@@ -191,6 +197,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_slots_inplace = bool(message_slots_inplace)
         self.message_inplace_raw_kv = bool(message_inplace_raw_kv)
         self.message_identity_slots = bool(message_identity_slots)
+        self.message_pack_stride = int(message_pack_stride)
         self.message_keep_local_swa = bool(message_keep_local_swa)
         self.message_extra_slot_attends = int(message_extra_slot_attends)
         self.message_update_slot_kv = bool(message_update_slot_kv)
@@ -236,6 +243,8 @@ class PerceiverARConfig(PretrainedConfig):
                 raise ValueError(f"global_positions must lie in [0, {n})")
         if self.message_compress_ratio < 1:
             raise ValueError("message_compress_ratio must be >= 1")
+        if self.message_pack_stride < 0:
+            raise ValueError("message_pack_stride must be >= 0")
         if self.message_extra_slot_attends < 0:
             raise ValueError("message_extra_slot_attends must be >= 0")
         if self.message_global_anchors not in MESSAGE_GLOBAL_ANCHORS:
@@ -530,6 +539,9 @@ class MessageCtx:
     run of (doc, side) in that block (the incomplete last sender block next to QUERY).
     `anchor` [B,S] marks a sparse sender subset that joins exclusive slot K/V as raw keys
     (QUERY neighborhood and/or type marks). It is not the full prefix.
+    `message_pack_stride>0` (remainder off) invalidates exclusive slots for the
+    QUERY-aligned left leftover `[0, P % stride)` so incomplete leftover tokens are
+    dropped rather than kept as r=1 identity slots.
     """
 
     side: torch.Tensor          # [B,S] int64
@@ -1490,6 +1502,20 @@ class PerceiverARLM(PreTrainedModel):
             last = (same.to(torch.long) * (idx + 1)).amax(dim=2).clamp(min=1) - 1
             end_abs = (torch.arange(nb, device=dev) * r + last).clamp(max=S - 1)
             slot_pos = pos.gather(1, end_abs)
+        stride = int(getattr(cfg, "message_pack_stride", 0) or 0)
+        if stride > 0 and not bool(getattr(cfg, "message_pool_remainder", False)):
+            # QUERY-aligned leftover: sender tokens in [0, P % stride) do not fill a
+            # complete pack ending at QUERY. r=1 identity would keep them; drop them
+            # from exclusive slots unless remainder-on (keep as identity slots).
+            is_q = torch.zeros(B, S, dtype=torch.bool, device=dev)
+            is_q[:, 0] = side[:, 0] >= 1
+            is_q[:, 1:] = (side[:, 1:] >= 1) & (side[:, :-1] == 0)
+            qpos = is_q.to(torch.long).argmax(dim=1)
+            leftover = torch.where(is_q.any(dim=1), qpos % stride, torch.zeros_like(qpos))
+            tok = torch.arange(S, device=dev)[None, :]
+            drop_tok = (tok < leftover[:, None]) & (side == 0) & (doc >= 0)
+            drop_slot = F.pad(drop_tok, (0, pad), value=False).view(B, nb, r).all(dim=2)
+            slot_doc = torch.where(drop_slot, torch.full_like(slot_doc, -1), slot_doc)
         anchor_mode = str(getattr(cfg, "message_global_anchors", "none") or "none")
         token_ids = tuple(int(x) for x in (getattr(cfg, "message_anchor_token_ids", ()) or ()))
         window = int(getattr(cfg, "message_anchor_window", MESSAGE_QUERY_NBHD_DEFAULT) or 0)

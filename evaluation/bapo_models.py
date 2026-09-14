@@ -15,6 +15,10 @@ Architectures
                `--message_identity_slots` bypasses learned compressor `u`/`delta` (frozen
                mean-pool of the r tokens in each block; r=1: hard token K/V copy) through
                the slot/scatter path, not inplace_raw_kv.
+               `--message_pack_stride N` (default 0=off) drops exclusive leftover sender
+               tokens vs N-token packs tiled to end at QUERY. r=1 identity otherwise
+               keeps every sender token (`--message_pool_remainder` is a no-op at r=1).
+               Remainder-on keeps the leftover as identity slots. Not the full raw prefix.
                `--message_keep_local_swa` (default off) leaves exclusive slots on the
                global read but does not treat QUERY as a SWA/n-gram document start.
                `--message_extra_slot_attends N` (default 0) re-reads the same exclusive
@@ -72,6 +76,7 @@ class ArchSpec:
     message_slots_inplace: bool = False
     message_inplace_raw_kv: bool = False
     message_identity_slots: bool = False
+    message_pack_stride: int = 0
     message_keep_local_swa: bool = False
     message_extra_slot_attends: int = 0
     message_update_slot_kv: bool = False
@@ -160,6 +165,7 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         message_slots_inplace=bool(spec.message_slots_inplace) if arch == "e21" else False,
         message_inplace_raw_kv=bool(spec.message_inplace_raw_kv) if arch == "e21" else False,
         message_identity_slots=bool(spec.message_identity_slots) if arch == "e21" else False,
+        message_pack_stride=int(getattr(spec, "message_pack_stride", 0) or 0) if arch == "e21" else 0,
         message_keep_local_swa=bool(spec.message_keep_local_swa) if arch == "e21" else False,
         message_extra_slot_attends=int(getattr(spec, "message_extra_slot_attends", 0) or 0) if arch == "e21" else 0,
         message_update_slot_kv=bool(getattr(spec, "message_update_slot_kv", False)) if arch == "e21" else False,
