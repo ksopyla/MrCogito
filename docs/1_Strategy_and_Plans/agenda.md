@@ -137,15 +137,21 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   skipped; chance every eval). QUERY 658 leftover 18 unchanged; seed-0
   fact0 **202** vs right **528**. Spread at 696 is uncalibrated. Do not
   extra-step (floor). Do not 16k.
-  Next: seq=**694** `--evidence_align right` packed SELECT same identity recipe, pack_stride 0 (do not run here).
+  Seq=696 packed `select_1decoy` `--local_window 32` r=1 identity
+  H=256 SSMax log **25.0% / 0 bits** @800 (**S1 FAIL** vs 0.75× live
+  E18 47.71; E18 **99.9% / 63.62 bits** @600; chance every eval). Banner
+  `gap=64 window=32` (32 < 64). Widening SWA does not rescue 696. Do not
+  extra-step (floor). Do not 16k.
+  Next: seq=**694** `--evidence_align right` packed SELECT same identity recipe, pack_stride 0, default window 16 (do not run here).
   Remaining DNA walls:
-  SELECT length **(692 PASS, 696 FAIL]** leftover-drop and spread did not close (spread K1), 512 chain **K1**, 256 hops
+  SELECT length **(692 PASS, 696 FAIL]** leftover-drop, spread (K1), and window 32 did not close, 512 chain **K1**, 256 hops
   **FAIL**, 2048+ INDEX shared with E18. Not remainder-on. Not H=512. Not
   hops seq shrink. Not Glyph. Do not restore raw global KV. Default remainder
   stays off. Default `--message_keep_local_swa` stays off. Default
   `--message_extra_slot_attends` stays 0. Default `--message_update_slot_kv`
   stays off. Default `--message_global_anchors` stays `none`. Default
   `--global_layers` stays 1. Default `--message_pack_stride` stays 0.
+  Default `--local_window` stays 16.
   Spec [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) ·
   [rung 1](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) ·
   [remainder](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) ·
@@ -204,7 +210,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [696 select r=1 identity H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_696_ip_id_h256_select_20260914.md) ·
   [692 select r=1 identity H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_692_ip_id_h256_select_20260914.md) ·
   [696 select pack_stride 32](../2_Experiments_Registry/run_reports/e25_bridge1k_696_pack32_ip_id_h256_select_20260914.md) ·
-  [696 select spread](../2_Experiments_Registry/run_reports/e25_bridge1k_696_spread_ip_id_h256_select_20260914.md).
+  [696 select spread](../2_Experiments_Registry/run_reports/e25_bridge1k_696_spread_ip_id_h256_select_20260914.md) ·
+  [696 select window 32](../2_Experiments_Registry/run_reports/e25_bridge1k_696_w32_ip_id_h256_select_20260914.md).
   Do not relabel E18 scores as E21.
 - **2026-09-13 — E24 BAPO DNA ladder (tiny + GPU bridge 512/1024; 4k S0 open).** Packed tiny
   seq=128 / 0.59M: E18 matches dense on positional `far_copy` (99.2% vs 99.4%) and recovers
@@ -238,6 +245,19 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-14 — E25 GPU seq=696 select `--local_window 32` (Odra).**
+  `--scale bridge_1k --seq_len 696` packed SELECT, inplace identity, remainder
+  **off**, pack_stride **0**, `--evidence_align right`, `--local_window 32`
+  (< min_gap 64), extra hops 0, update_slot_kv **off**, keep_local_swa
+  **off**, `global_layers` 1, anchors **none**, `--hidden 256
+  --global_logit_scale log`. Banner `gap=64 window=32`. QUERY **658**
+  leftover **18** (658%16=2 vs 654%16=14). Dense **99.9% / 63.87 bits**
+  @200 (**S0 PASS**). E18 **99.9% / 63.62 bits** @600 (live). E21
+  **25.0% / 0 bits** @800 (**S1 FAIL** vs 0.75× E18 47.71; chance
+  every eval). K2 **PASS**. 8k not run. Widening SWA does not rescue
+  696. Wall still **(692, 696]**. Next: seq=694 right-align same
+  identity recipe, pack_stride 0, default window 16 (do not run here).
+  [report](../2_Experiments_Registry/run_reports/e25_bridge1k_696_w32_ip_id_h256_select_20260914.md).
 - **2026-09-14 — E25 GPU seq=696 select `--evidence_align spread` (Odra).**
   `--scale bridge_1k --seq_len 696` packed SELECT, inplace identity, remainder
   **off**, pack_stride **0**, `--evidence_align spread`, extra hops 0,
