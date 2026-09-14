@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 """Plot the exclusive-scope <10M harder-cell campaign (plus the seq128 easy end as a ghost).
 
-Dedicated snake_case PNGs land in /opt/cursor/artifacts/. The r=32 D JSON is a
+Dedicated snake_case PNGs land in docs/4_Research_Notes/figures/ and
+/workspace/Cache/scale_hard. The r=32 D JSON is a
 ratio-free reuse stub of seq256 D — it is not a second training curve.
 In-progress chain D is parsed from its log if the JSON is not written yet.
 """
@@ -14,11 +15,12 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-HARD = Path("/opt/cursor/artifacts/scale_hard")
+HARD = Path("/workspace/Cache/scale_hard")
+HARD_FALLBACK = Path("/opt/cursor/artifacts/scale_hard")
 EASY_A = Path("/opt/cursor/artifacts/scale/long_data_span32.json")
 EASY_3ARM = Path("/opt/cursor/artifacts/sym_probe_far_copy.json")
 R16 = Path("/opt/cursor/artifacts/scale/r16_span32.json")
-OUT_DIR = Path("/opt/cursor/artifacts")
+OUT_DIR = Path("/workspace/docs/4_Research_Notes/figures")
 CHANCE = 0.25
 BAR = 0.95
 BUDGET = 64_000
@@ -223,11 +225,18 @@ def collect_hard() -> tuple[list[dict], list[dict], list[dict]]:
     probes: list[dict] = []
     stubs: list[dict] = []
     seen_names: set[str] = set()
-    for p in sorted(HARD.glob("*.json")):
+    json_paths: list[Path] = []
+    for folder in (HARD, HARD_FALLBACK):
+        if folder.exists():
+            json_paths.extend(sorted(folder.glob("*.json")))
+    for p in json_paths:
         if p.name in META_SKIP:
             continue
         if "stuck" in p.name or p.name.endswith("_slow.json"):
             continue
+        if p.name in seen_names:
+            continue
+        seen_names.add(p.name)
         b = load(p)
         if not b or "results" not in b:
             continue
@@ -241,7 +250,11 @@ def collect_hard() -> tuple[list[dict], list[dict], list[dict]]:
         cells.append(b)
         seen_names.add(p.stem)
     # Live logs without JSON yet (chain D, …).
-    for log in sorted(HARD.glob("cell_*.log")):
+    log_paths: list[Path] = []
+    for folder in (HARD, HARD_FALLBACK):
+        if folder.exists():
+            log_paths.extend(sorted(folder.glob("cell_*.log")))
+    for log in log_paths:
         if log.stem in seen_names:
             continue
         if "stuck" in log.name or "slow" in log.name:

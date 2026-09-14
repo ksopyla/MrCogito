@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 import time
 from pathlib import Path
@@ -49,6 +50,40 @@ from data.symbolic_tasks import (  # noqa: E402
 from nn.perceiver_concept_lm import PerceiverConceptConfig, PerceiverConceptLM  # noqa: E402
 
 ARMS = ("A", "C", "D")
+
+# Cursor's /opt/cursor/artifacts FUSE store can go size-0 mid-run. Always also
+# land JSON on the workspace disk so a finished cell is not lost.
+DURABLE_RESULT_DIRS = (
+    Path("/workspace/Cache/scale_hard"),
+    Path("/tmp/scale_hard"),
+)
+
+
+def write_result_json(requested: str | Path, payload: dict) -> list[str]:
+    """Write the result bundle to `--out` and to durable fallbacks.
+
+    Returns the paths that actually landed. Raises only if every dest failed.
+    """
+    text = json.dumps(payload, indent=2)
+    requested_path = Path(requested)
+    dests = [requested_path, *(d / requested_path.name for d in DURABLE_RESULT_DIRS)]
+    written: list[str] = []
+    errors: list[str] = []
+    seen: set[str] = set()
+    for dest in dests:
+        key = os.path.normpath(str(dest))
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(text)
+            written.append(str(dest))
+        except OSError as exc:
+            errors.append(f"{dest}: {exc}")
+    if not written:
+        raise OSError("failed to write result JSON anywhere: " + "; ".join(errors))
+    return written
 
 
 def make_batch(cfg: SymbolicTaskConfig, rng: np.random.Generator, batch: int, device: torch.device):
@@ -354,8 +389,8 @@ def main() -> int:
         "results": results,
     }
     if args.out:
-        Path(args.out).write_text(json.dumps(bundle, indent=2))
-        print(f"\nwrote {args.out}")
+        written = write_result_json(args.out, bundle)
+        print("\nwrote " + ", ".join(written))
 
     # The instrument is only interpretable if both controls behave: C must not beat the floor
     # (the task does not leak) and D must beat it clearly (the task is learnable at this scale).

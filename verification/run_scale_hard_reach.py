@@ -14,7 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-OUT = Path("/opt/cursor/artifacts/scale_hard")
+OUT = Path(os.environ.get("SCALE_OUT_DIR", "/workspace/Cache/scale_hard"))
 WRAPPER = Path("/workspace/verification/run_scale_job.sh")
 TARGET = 0.95
 
@@ -139,7 +139,7 @@ def main() -> int:
             print(f"KILL reach seq={seq}: param-matched D missed 95%", flush=True)
         if acc(a, "A") < TARGET:
             print(f"A missed 95% at seq={seq} min_gap={cell['min_gap']}", flush=True)
-    return subprocess.call(["uv", "run", "python", "/workspace/verification/plot_scale_hard.py"])
+    return subprocess.call(["uv", "run", "python", "/workspace/verification/plot_exclusive_slot_law.py"])
 
 
 if __name__ == "__main__":

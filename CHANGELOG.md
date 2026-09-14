@@ -15,6 +15,32 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-14] - Scale-hard JSON lands on workspace disk
+
+**Why:**
+- Seq=1024 exclusive-slot A hit 95.9% then `Path.write_text` raised
+  `FileNotFoundError` because `/opt/cursor/artifacts` (FUSE, size 0) vanished
+  mid-write. Matched D9/C at that length still need to run.
+
+**Impact:**
+- Finished cells survive an artifact-store wipe. The remaining seq1024 D9 and C
+  controls write to `/workspace/Cache/scale_hard` (and `/tmp/scale_hard`).
+
+**What changed:**
+- [changed] `verification/symbolic_channel_probe.py` — `write_result_json`
+  dual-writes `--out` plus durable fallbacks; raises only if every dest fails.
+- [changed] `verification/run_scale_job.sh` and the scale-hard runners default
+  `SCALE_OUT_DIR` to `/workspace/Cache/scale_hard`.
+- [added] `verification/run_scale_hard_reach_seq1024_dc.py` — D9 then C only;
+  does not rerun A.
+- [added] `verification/plot_exclusive_slot_law.py` and
+  `docs/4_Research_Notes/exclusive_slot_law_inventory.json` — comparison plots
+  that do not depend on the wiped JSON store.
+
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` HARDER exclusive-slot scaling
+
+---
+
 ## [2026-09-14] - True-reach runner skips 800-step LR probes
 
 **Why:**
