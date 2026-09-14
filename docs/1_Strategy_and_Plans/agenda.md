@@ -20,7 +20,7 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-14 — E25 E21 capability ladder (tiny limits; 512 concat wall; raw PASS; inplace identity PASS; r=16 mean INDEX; MATCH remainder-on S1 through r=16; remainder-off r=10/16 chance, r=12 S1 FAIL; SELECT r=8 rem-off S1 PASS, r=12 rem-on S1 PASS, r=16 rem-on live S1 FAIL; SELECT identity PASS; 1024 MATCH r=8 rem-off H=128 S1 FAIL, H=256 log S1 PASS 60.35; 1024 SELECT r=8 rem-off H=256 log chance; 1024 SELECT r=1 identity H=256 log chance; 512 chain K1; 256 hops FAIL vs dense).**
+- **2026-09-14 — E25 E21 capability ladder (tiny limits; 512 concat wall; raw PASS; inplace identity PASS; r=16 mean INDEX; MATCH remainder-on S1 through r=16; remainder-off r=10/16 chance, r=12 S1 FAIL; SELECT r=8 rem-off S1 PASS, r=12 rem-on S1 PASS, r=16 rem-on live S1 FAIL; SELECT identity PASS; 1024 MATCH r=8 rem-off H=128 S1 FAIL, H=256 log S1 PASS 60.35; 1024 SELECT r=8 rem-off H=256 log chance; 1024 SELECT r=1 identity H=256 log chance; 4k INDEX r=16 rem-off H=256 log chance vs 0.75× dense; 512 chain K1; 256 hops FAIL vs dense).**
   Tiny INDEX near-pass at 8k. GPU seq=512 exclusive concat slots **0 bits** (r=16/64/1).
   `--message_override raw` **100% / 63.96 bits**. r=1 in-place learned compressor **0 bits**.
   In-place raw KV **63.29 bits**. In-place hard identity **99.8% / 62.64 bits** @750.
@@ -54,8 +54,11 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   `select_1decoy` r=1 identity **100% / 47.98 bits** @700. Seq=512 packed
   `chain_ordered` **K1**. Seq=256 `--key_len 13` hops=2: dense **96.4% / 24.12
   bits** (S0 PASS); E18 **0 bits**; E21 **0 bits**. Hops FAIL vs 0.75× dense.
-  Next: **stop 1024 SELECT**. Remaining walls: 512 chain K1, 256 hops FAIL.
-  Not hops. Not remainder-on. Not extra width. Not 4k / Glyph. Default
+  Seq=4096 packed `far_copy` r=16 rem-off H=256 SSMax log **25.7% / 0 bits**
+  @800 (**S1 FAIL** vs 0.75× dense 47.96; E18 ~0 live; chance floor). Exclusive
+  INDEX that passed at 1024 is chance at 4k. No 4k scale code change (`medium`).
+  Next: seq=**2048** packed `far_copy` same compressor (localize the INDEX
+  wall). Not remainder-on. Not 4k H=512. Not hops. Not Glyph. Default
   remainder stays off elsewhere.
   Spec [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) ·
   [rung 1](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) ·
@@ -97,7 +100,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [1024 recall r=8 rem-off](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_r8_recall_20260914.md) ·
   [1024 recall r=8 H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_r8_h256_recall_20260914.md) ·
   [1024 select r=8 H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_r8_h256_select_20260914.md) ·
-  [1024 select r=1 identity H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_id_h256_select_20260914.md).
+  [1024 select r=1 identity H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_id_h256_select_20260914.md) ·
+  [4k INDEX r=16 H=256 log](../2_Experiments_Registry/run_reports/e25_medium_4k_ip_r16_mean_far_copy_20260914.md).
   Do not relabel E18 scores as E21.
 - **2026-09-13 — E24 BAPO DNA ladder (tiny + GPU bridge 512/1024; 4k S0 open).** Packed tiny
   seq=128 / 0.59M: E18 matches dense on positional `far_copy` (99.2% vs 99.4%) and recovers
@@ -131,6 +135,15 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-14 — E25 GPU seq=4096 far_copy r=16 rem-off H=256 SSMax log (Odra).**
+  `--scale medium` packed INDEX, inplace identity mean, remainder **off**, no
+  raw_kv, `--hidden 256 --global_logit_scale log`, batch 8. Dense **100% /
+  63.94 bits** @400 (**S0 PASS**). E18 **25.7% / 0 bits** (live ~0). E21
+  **25.7% / 0 bits** @800 (chance every eval; **S1 FAIL** vs 0.75× dense
+  47.96). Do not pass S1 via 0.75×0. K2 **PASS**. Exclusive INDEX that passed
+  at 1024 is chance at 4k. No 4k scale code change. Do not extra-step
+  (floor). Do not remainder-on. Do not 4k H=512.
+  [report](../2_Experiments_Registry/run_reports/e25_medium_4k_ip_r16_mean_far_copy_20260914.md).
 - **2026-09-14 — E25 GPU seq=1024 select_1decoy r=1 identity H=256 SSMax log (Odra).**
   Inplace hard identity, remainder **off**, no raw_kv, `--hidden 256 --global_logit_scale log`.
   Dense **100% / 63.96 bits** (**S0 PASS**). E18 **100% / 63.80 bits** (live).
