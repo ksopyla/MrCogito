@@ -15,6 +15,21 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-14] - Param-match composition; skip padded seq1024
+
+**Why:**
+- Width-matched 4-layer D missed seq512 copy. Using it as the hops=2 "is the exam
+  solvable?" gate would false-kill composition. Param-match D (9 layers) first.
+- seq=1024 min_gap=32 only adds padded slots; true reach is a separate runner.
+
+**What changed:**
+- [changed] `verification/run_scale_hard_continue.py` runs hops=2 against 4.97M D
+  and leaves growing-`min_gap` length to `run_scale_hard_reach.py`.
+
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` HARDER exclusive-slot scaling
+
+---
+
 ## [2026-09-14] - Scale-hard resume + live-log LR
 
 **Why:**

@@ -194,7 +194,9 @@ def main() -> int:
         )
         print("r16 A retune", a_r16["summary"]["A"], flush=True)
 
-    # --- 3. Composition: hops=2, 32-token answers (pack the loss), D first ---
+    # --- 3. Composition: hops=2, 32-token answers (pack the loss), D9 first ---
+    # Width-matched 4-layer D missed seq512 far_copy; do not let that false
+    # negative kill composition. Param-match D (9 layers, 4.97M) as on copy.
     chain = {
         "task": "chain",
         "seq_len": 512,
@@ -207,20 +209,21 @@ def main() -> int:
         "value_len": 32,
         "n_distractors": 2,
     }
-    lr_ch, d_ch_probe = search_lr("cell_chain_h2", "D", (3e-4, 1e-3, 1e-4), **chain)
+    d9_chain = {**chain, "dec_layers": D9_LAYERS}
+    lr_ch, d_ch_probe = search_lr("cell_chain_h2_D9", "D", (3e-4, 1e-3, 1e-4), **d9_chain)
     if acc(d_ch_probe, "D") >= TARGET:
         d_ch = d_ch_probe
     else:
         d_ch = train(
-            "cell_chain_h2_D",
+            "cell_chain_h2_D9",
             "D",
             lr_ch,
             steps=8000,
             target=TARGET,
             patience=4000,
-            **chain,
+            **d9_chain,
         )
-    print("chain h2 D", d_ch["summary"]["D"], flush=True)
+    print("chain h2 D9", d_ch["summary"]["D"], flush=True)
     if acc(d_ch, "D") >= TARGET:
         a_ch = train(
             "cell_chain_h2_A",
@@ -234,26 +237,11 @@ def main() -> int:
         print("chain h2 A", a_ch["summary"]["A"], flush=True)
         train("cell_chain_h2_C", "C", lr_ch, 1200, 0.0, 0, **chain)
     else:
-        print("KILL chain h2: D missed 95% — exam still too hard", flush=True)
+        print("KILL chain h2: param-matched D missed 95% — exam still too hard", flush=True)
 
-    # --- 4. Length: seq=1024 r=8 with min_gap=256 (reach, not padding) ---
-    s1024 = far_copy(1024, 8, min_gap=256)
-    lr1024, a_probe = search_lr("cell_seq1024_r8", "A", (1e-4, 3e-4, 1e-3), **s1024)
-    if acc(a_probe, "A") >= TARGET:
-        print(f"seq1024 A hit 95% on LR probe lr={lr1024:.0e}", flush=True)
-    else:
-        a1024 = train(
-            "cell_seq1024_r8_A",
-            "A",
-            lr1024,
-            steps=8000,
-            target=TARGET,
-            patience=2500,
-            **s1024,
-        )
-        print("seq1024 A", a1024["summary"]["A"], flush=True)
-
-    print("\nCONTINUE RUNS DONE — plotting\n", flush=True)
+    # Length with growing min_gap is owned by run_scale_hard_reach.py.
+    # Do not spend the queue on seq=1024 min_gap=32 (padding, not reach).
+    print("\nCONTINUE RUNS DONE — plotting; true-reach is a separate runner\n", flush=True)
     return subprocess.call(["uv", "run", "python", "/workspace/verification/plot_scale_hard.py"])
 
 
