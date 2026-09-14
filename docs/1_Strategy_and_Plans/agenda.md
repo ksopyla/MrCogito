@@ -20,7 +20,7 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-14 — E25 E21 capability ladder (tiny limits; 512 concat wall; raw PASS; inplace identity PASS; r=16 mean INDEX; MATCH r=1/r=4/r=8 PASS, r=12 S1 FAIL live, r=10 chance; SELECT identity PASS; 512 chain K1; 256 hops FAIL vs dense).**
+- **2026-09-14 — E25 E21 capability ladder (tiny limits; 512 concat wall; raw PASS; inplace identity PASS; r=16 mean INDEX; MATCH r=1/r=4/r=8 PASS, r=12 S1 FAIL live, r=10 remainder-off chance / remainder-on S1 PASS; SELECT identity PASS; 512 chain K1; 256 hops FAIL vs dense).**
   Tiny INDEX near-pass at 8k. GPU seq=512 exclusive concat slots **0 bits** (r=16/64/1).
   `--message_override raw` **100% / 63.96 bits**. r=1 in-place learned compressor **0 bits**.
   In-place raw KV **63.29 bits**. In-place hard identity **99.8% / 62.64 bits** @750.
@@ -31,10 +31,12 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   bits** @1900. Seq=512 `recall_single` r=8 frozen mean **99.1% / 47.16 bits**
   @7100. Seq=512 `recall_single` r=12 frozen mean **81.7% / 34.33 bits** @8000
   (S1 FAIL, not chance). Seq=512 `recall_single` r=10 frozen mean **25.5% / 0
-  bits** @800 (chance floor; unexpected vs r=12 live). Seq=512 `select_1decoy`
-  r=1 identity **100% / 47.98 bits** @700. Seq=512 packed `chain_ordered` **K1**.
-  Seq=256 `--key_len 13` hops=2: dense **96.4% / 24.12 bits** (S0 PASS); E18 **0
-  bits**; E21 **0 bits**. Hops FAIL vs 0.75× dense. Next: **stop MATCH r-sweeps**.
+  bits** @800 (chance floor remainder off; unexpected vs r=12 live). Seq=512
+  `recall_single` r=10 remainder-on **95.1% / 44.21 bits** @8000 (S1 PASS;
+  leftover 2 was the floor). Seq=512 `select_1decoy` r=1 identity **100% /
+  47.98 bits** @700. Seq=512 packed `chain_ordered` **K1**. Seq=256 `--key_len
+  13` hops=2: dense **96.4% / 24.12 bits** (S0 PASS); E18 **0 bits**; E21 **0
+  bits**. Hops FAIL vs 0.75× dense. Next: 512 recall **r=12 remainder-on**.
   Spec [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) ·
   [rung 1](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) ·
   [remainder](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) ·
@@ -65,7 +67,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [512 recall r=4 mean](../2_Experiments_Registry/run_reports/e25_bridge512_ip_r4_mean_recall_20260914.md) ·
   [512 recall r=8 mean](../2_Experiments_Registry/run_reports/e25_bridge512_ip_r8_mean_recall_20260914.md) ·
   [512 recall r=12 mean](../2_Experiments_Registry/run_reports/e25_bridge512_ip_r12_mean_recall_20260914.md) ·
-  [512 recall r=10 mean](../2_Experiments_Registry/run_reports/e25_bridge512_ip_r10_mean_recall_20260914.md).
+  [512 recall r=10 mean](../2_Experiments_Registry/run_reports/e25_bridge512_ip_r10_mean_recall_20260914.md) ·
+  [512 recall r=10 remainder](../2_Experiments_Registry/run_reports/e25_bridge512_ip_r10_rem_recall_20260914.md).
   Do not relabel E18 scores as E21.
 - **2026-09-13 — E24 BAPO DNA ladder (tiny + GPU bridge 512/1024; 4k S0 open).** Packed tiny
   seq=128 / 0.59M: E18 matches dense on positional `far_copy` (99.2% vs 99.4%) and recovers
@@ -99,6 +102,14 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-14 — E25 GPU seq=512 recall_single r=10 remainder-on frozen mean (Odra, H=128).**
+  Inplace identity, `--message_pool_remainder`, no raw_kv. Dense **99.9% / 47.88
+  bits** (**S0 PASS**). E18 **100% / 47.79 bits**. E21 **44.2% / 8.65 bits**
+  @800 (climbing) then **95.1% / 44.21 bits** @8000 (**S1 PASS** vs 0.75× E18
+  35.85 and vs 0.75× dense 35.91; best 96.4% @7800). K2 **PASS**. Remainder-off
+  r=10 was 0 bits at 800. Leftover 2 tokens were the floor, not the r=10 grid.
+  Next: 512 recall r=12 remainder-on. Do not 16k.
+  [report](../2_Experiments_Registry/run_reports/e25_bridge512_ip_r10_rem_recall_20260914.md).
 - **2026-09-14 — E25 GPU seq=512 recall_single r=10 in-place frozen mean (Odra, H=128).**
   Inplace identity, remainder off, no raw_kv. Dense **99.9% / 47.89 bits** (**S0
   PASS**). E18 **100% / 47.94 bits**. E21 **25.5% / 0 bits** @800 (**S1 FAIL** vs
