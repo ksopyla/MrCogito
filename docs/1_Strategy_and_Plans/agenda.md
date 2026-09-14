@@ -40,9 +40,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   Far_copy r=8: A hits 95% at seq256 (96k examples, lr=1e-3) and **97% at seq512
   (72k examples, lr=3e-4)**. C stays at chance on every new geometry. Width-matched
   D solves seq256 (99% @ 72k) but **misses seq512** (~30% across 1e-3/3e-4/3e-3).
-  Param-matched D (9 layers, 4.97M) is **in flight**: 60.5% at 96k (CE 0.698)
-  vs 4-layer D's 28% at 56k; A was already 97% by 72k. Same-parameter comparison
-  still open; D9 is slower on data.
+  Param-matched D (9 layers, 4.97M) **hits 98.5% at 120k / 121 min**; A is more
+  efficient on the same exam (97% at 72k / 76 min). r=16 A is in flight.
   r=32 (8 slots): A **87.9% at 256k**, miss 95%. Chain hops=3 / key_len=8: **A and D
   both floor-killed** (exam too hard). LR is not portable from the 1.35M toy.
   [note](../4_Research_Notes/concept_slot_scaling_frontier_20260913.md).

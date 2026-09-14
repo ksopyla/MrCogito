@@ -67,6 +67,7 @@ steps). **Tune LR per geometry; it is not portable from the 1.35M toy.**
 | cell_seq512_r8_A | A | 5.11M | **3e-4** | 512 | 8 | far_copy | 2 | **72k** | 2,250 | **97.05%** | 0.082 | **yes** | target_acc |
 | cell_seq512_r8_C | C | 2.27M | 1e-3 | 512 | 8 | far_copy | 2 | 38k | 1,200 | 25.4% | 1.386 | no (floor) | budget |
 | cell_seq512_r8_D | D | 2.27M | 3e-4 | 512 | 8 | far_copy | 2 | 96k | 3,000 | **29.9%** | 1.337 | **no** | budget |
+| **cell_seq512_r8_D9** | D | **4.97M** | **3e-4** | 512 | 8 | far_copy | 2 | **120k** | 3,750 | **98.5%** | 0.042 | **yes** | target_acc |
 | seq512 D lr=1e-3 | D | 2.27M | 1e-3 | 512 | 8 | far_copy | 2 | 104k | 3,250 | 27.8% | 1.343 | no | retuned |
 | seq512 D lr=3e-3 | D | 2.27M | 3e-3 | 512 | 8 | far_copy | 2 | 64k | 2,000 | 25.2% | 1.368 | no | retuned |
 | seq512 A lr=1e-3 | A | 5.11M | 1e-3 | 512 | 8 | far_copy | 2 | 72k | 2,250 | 24.5% | 1.386 | no | retuned to 3e-4 |
@@ -82,12 +83,13 @@ The skill is in the slots. C stays at the floor on every new (seq, min_gap) and 
 - **Success (copy, 4× length, r=8, lower LR):** 5.11M A hits **97% at 72k examples**
   on seq=512 (64 slots) once LR is 3e-4. Example-count did **not** grow with length;
   the binding knob is LR. 1e-3, which won seq256, is lethal at seq512.
-- **A beats width-matched D at seq512.** The 2.27M 4-layer dense decoder never left
-  ~25–30% across 1e-3 / 3e-4 / 3e-3 through 64–104k examples. Caveat: D is
-  **width-matched, not param-matched** (no encoder/latent). A param-matched dense
-  stack might still solve it. Under the stated matching rule, the exclusive array
-  is the only arm that carries a 32-letter span across a 512-token row at this
-  depth.
+- **A beats width-matched D at seq512, and is more efficient than param-matched D.**
+  The 2.27M 4-layer dense decoder never left ~25–30% across 1e-3 / 3e-4 / 3e-3 through
+  64–104k examples. Deepening D to **9 layers / 4.97M** (same parameter band as A's 5.11M)
+  hits **98.5% at 120k examples / 121 min**. A on the same exam hit **97% at 72k / 76 min**.
+  Same compute class, same data generator, ~5M params: exclusive slots need **0.60× examples
+  and 0.63× wall**. Width matching was the false "D cannot solve seq512" claim; param matching
+  is an **efficiency** win for the array, not a solvability claim.
 - **Miss, not a kill (copy, 4× compression):** r=32 (8 slots, span occupies 1 slot)
   reaches **87.9% at 256k / 8k steps** and is still slowly climbing. Same 5.11M.
   The 95% bar is not met at this budget. D ignores r and is the seq256 D curve.
@@ -112,9 +114,10 @@ Not a Kaplan-style fit — too few cells. The measured pattern is:
 3. **Composition at hops=3 / 8-token answers is an exam kill**, including for dense D.
    Not an exclusive-slot failure.
 4. **C stays on the floor** on every new (seq, min_gap) and on chain. The exam does not leak.
-5. **D matching matters.** Width-matched 2.27M D solves seq256 and misses seq512.
-   Param-matched 4.97M D is in flight (60.5% @ 96k, still climbing). Until that cell
-   hits or misses 95%, "A beats D at seq512" is not a same-parameter claim.
+5. **D matching matters, and is now closed at seq512 r=8.** Width-matched 2.27M D
+   misses seq512. Param-matched 4.97M D **hits 98.5% at 120k / 121 min**. A hits
+   97% at 72k / 76 min. Exclusive slots are the more data- and wall-efficient
+   solver in the same <10M band, not the only solver.
 
 ## Still unknown
 
@@ -123,40 +126,37 @@ Not a Kaplan-style fit — too few cells. The measured pattern is:
   was an exam kill.
 - Seq>512 far_copy on GPU; nothing here is a language-model result.
 - True reach (`min_gap = seq/4`) is queued in `verification/run_scale_hard_reach.py`
-  after the live D9 / r=16 / hops=2 queue. Do not treat seq512 min_gap=32 as a
-  480-token memory exam.
+  after the live r=16 / hops=2 queue. Do not treat seq512 min_gap=32 as a
+  480-token memory exam. Seq=1024 in the live continue process still has
+  `min_gap=32` in memory (file was patched after launch); intercept that cell and
+  run the reach runner instead.
 
-## In flight — param-matched D on seq512 (2026-09-13, live)
+## Closed — param-matched D on seq512 (2026-09-14)
 
-Width-matched D (4 layers, 2.27M) missed seq512 at ~30%. The goal needs the same
-parameter regime, so D was deepened to **9 decoder layers = 4.97M** (closest to
-A's 5.11M without shrinking A). Same exam, LR **3e-4**, CPU.
+Width-matched D (4 layers, 2.27M) missed seq512 at ~30%. D deepened to **9 decoder
+layers = 4.97M** (closest to A's 5.11M) on the same exam, LR **3e-4**, CPU.
+JSON: `/opt/cursor/artifacts/scale_hard/cell_seq512_r8_D9.json`.
 
-Live log `/opt/cursor/artifacts/scale_hard/cell_seq512_r8_D9.log` (not finished):
+| examples | steps | acc | CE | wall |
+|---|---|---|---|---|
+| 8k | 250 | 25.9% | 1.390 | 8 min |
+| 32k | 1,000 | 30.8% | 1.317 | 32 min |
+| 56k | 1,750 | 45.9% | 1.034 | 57 min |
+| 64k | 2,000 | 51.4% | 0.909 | 65 min |
+| 72k | 2,250 | 53.4% | 0.905 | 73 min |
+| 96k | 3,000 | 60.5% | 0.698 | 97 min |
+| 104k | 3,250 | 62.6% | 0.649 | 105 min |
+| 112k | 3,500 | 82.2% | 0.362 | 113 min |
+| **120k** | **3,750** | **98.5%** | 0.042 | **121 min** |
 
-| examples | steps | acc | CE |
-|---|---|---|---|
-| 8k | 250 | 25.9% | 1.390 |
-| 24k | 750 | 28.5% | 1.349 |
-| 32k | 1,000 | 30.8% | 1.317 |
-| 40k | 1,250 | 35.1% | 1.258 |
-| 48k | 1,500 | 41.1% | 1.111 |
-| 56k | 1,750 | 45.9% | 1.034 |
-| 64k | 2,000 | 51.4% | 0.909 |
-| 72k | 2,250 | 53.4% | 0.905 |
-| 80k | 2,500 | 56.4% | 0.807 |
-| 88k | 2,750 | 57.0% | 0.798 |
-| 96k | 3,000 | **60.5%** | 0.698 |
+Early-stop at the 95% bar. Takeoff was sawtooth until 104k, then a sharp drop
+(62.6% → 82.2% → 98.5% in 16k examples). A was already 97% at 72k / 76 min.
+**Same-parameter verdict:** both arms solve seq512 r=8; exclusive slots use
+**0.60× examples and 0.63× wall**.
 
-Takeoff is sawtooth (eval CE stalls then drops) but the trend is up. 4-layer D
-was 28% at 56k. A on this cell was **83% at 32k and 97% at 72k**. D9 is in the
-same parameter band but **behind on data**: at 96k A was already over the 95%
-bar and D9 is at 60.5%. Wall is similar per step (A 2.03 s/step, D9 1.94 s/step).
-From 64k→96k the slope is ~2.3 pp / 8k examples; if that holds, 95% lands near
-~220k (inside the 256k / 8k-step budget, ~3× A's 72k). Train CE 0.677 vs eval
-0.698, so this is not an overfit stall.
+In flight now (frozen hidden=256): r=16 A, then packed hops=2, then intercept
+seq1024 (live continue.py still has `min_gap=32`) and run true-reach instead.
 
-Queued after this cell (frozen hidden=256): r=16, packed hops=2 chain, seq=1024.
 
 ## One-sentence frontier
 
@@ -164,12 +164,14 @@ A **<10M exclusive-slot** model (5.11M, hidden 256) hits the 95% bar on
 **`far_copy` through seq=512, r=8, span=32 (64 slots)** at ~10^5 examples if LR is
 tuned down with length; it **misses 95% at r=32** (87.9% @ 256k); **3-hop chain
 with 8-token answers is unsolvable for both A and D** at this budget; and at
-seq=512 the exclusive array **succeeds where a width-matched 4-layer dense
-decoder does not**.
+seq=512 the exclusive array is **more data/wall-efficient than a param-matched
+4.97M dense decoder** (72k / 76 min vs 120k / 121 min), while width-matched 4-layer
+D never leaves chance.
 
 ## What not to do next
 
 Do not shrink hidden size. The easy campaign already showed 0.12M solves seq128; the
 harder campaign is a **length / compression / hops / LR** law at a frozen <10M
-width. Keep A at hidden=256 (5.11M). Next spend is more examples at r=32, a
-param-matched D at seq512, or packed-loss chain — not a tinier model.
+width. Keep A at hidden=256 (5.11M). Next spend is r=16 interpolation, packed-loss
+hops=2, and true reach (`min_gap = seq/4`) — not a tinier model, and not another
+width-matched D.
