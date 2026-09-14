@@ -213,6 +213,22 @@ def test_seq_len_and_min_gap_overrides_construct():
     assert cfg.answer_len == 32
 
 
+def test_bridge_1k_seq_len_2048_keeps_window_below_gap():
+    """INDEX length-wall hunt: override seq only; do not invent a 2048 scale."""
+    from data.symbolic_tasks import generate_row
+
+    sc = SCALES["bridge_1k"]
+    cfg = config_for("bridge_1k", "far_copy", seq_len=2048, evidence_align="right")
+    assert cfg.seq_len == 2048
+    assert cfg.min_gap == sc.min_gap == 64
+    assert sc.local_window < cfg.min_gap
+    assert cfg.answer_len == 32
+    assert prize_bits(cfg) == pytest.approx(64.0)
+    row = generate_row(cfg, np.random.default_rng(0))
+    assert row.gap == cfg.min_gap + 1
+    assert row.input_ids.shape == (2048,)
+
+
 def test_ssmax_and_mha_factory():
     cfg = config_for("tiny", "far_copy")
     spec = ArchSpec(
