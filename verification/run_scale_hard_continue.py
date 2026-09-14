@@ -210,20 +210,32 @@ def main() -> int:
         "n_distractors": 2,
     }
     d9_chain = {**chain, "dec_layers": D9_LAYERS}
-    lr_ch, d_ch_probe = search_lr("cell_chain_h2_D9", "D", (3e-4, 1e-3, 1e-4), **d9_chain)
-    if acc(d_ch_probe, "D") >= TARGET:
-        d_ch = d_ch_probe
-    else:
+    # No 800-step LR probe: seq512 copy D9 was still at chance at 800 steps
+    # under 3e-4 and only took off after ~1k. Floor-killing here is a false
+    # composition kill. Start at A's seq512 LR; retune only if still at chance
+    # after 4000 steps.
+    d_ch = train(
+        "cell_chain_h2_D9",
+        "D",
+        3e-4,
+        steps=8000,
+        target=TARGET,
+        patience=4000,
+        **d9_chain,
+    )
+    print("chain h2 D9", d_ch["summary"]["D"], flush=True)
+    if acc(d_ch, "D") < 0.40 and stop(d_ch, "D") == "floor_patience":
         d_ch = train(
-            "cell_chain_h2_D9",
+            "cell_chain_h2_D9_lr1e4",
             "D",
-            lr_ch,
+            1e-4,
             steps=8000,
             target=TARGET,
             patience=4000,
             **d9_chain,
         )
-    print("chain h2 D9", d_ch["summary"]["D"], flush=True)
+        print("chain h2 D9 lr=1e-4", d_ch["summary"]["D"], flush=True)
+    lr_ch = float(d_ch["summary"]["D"].get("lr") or 3e-4)
     if acc(d_ch, "D") >= TARGET:
         a_ch = train(
             "cell_chain_h2_A",
