@@ -170,6 +170,7 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             f"msg_idslots={getattr(model.config, 'message_identity_slots', False) if arch == 'e21' else '-'}  "
             f"msg_keepswa={getattr(model.config, 'message_keep_local_swa', False) if arch == 'e21' else '-'}  "
             f"msg_extrahops={getattr(model.config, 'message_extra_slot_attends', 0) if arch == 'e21' else '-'}  "
+            f"msg_updatekv={getattr(model.config, 'message_update_slot_kv', False) if arch == 'e21' else '-'}  "
             f"msg_anchors={getattr(model.config, 'message_global_anchors', 'none') if arch == 'e21' else '-'}",
             flush=True,
         )
@@ -286,6 +287,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         message_identity_slots=args.message_identity_slots,
         message_keep_local_swa=args.message_keep_local_swa,
         message_extra_slot_attends=args.message_extra_slot_attends,
+        message_update_slot_kv=args.message_update_slot_kv,
         message_global_anchors=args.message_global_anchors,
         message_anchor_token_ids=(
             _type_mark_token_ids(cfg)
@@ -386,6 +388,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             "message_identity_slots": args.message_identity_slots,
             "message_keep_local_swa": args.message_keep_local_swa,
             "message_extra_slot_attends": args.message_extra_slot_attends,
+            "message_update_slot_kv": args.message_update_slot_kv,
             "message_global_anchors": args.message_global_anchors,
         },
         "pack": {
@@ -493,6 +496,14 @@ def main() -> int:
         default=0,
         help="E21: extra exclusive global attends over the *same* frozen slot K/V "
         "(queries update from the previous hop). Default 0. Not DNA --hops, not raw prefix KV.",
+    )
+    p.add_argument(
+        "--message_update_slot_kv",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="E21: rewrite exclusive slot K/V from the post-attend residual before each "
+        "extra hop (queries and slot keys update). Default off (frozen slot K/V). "
+        "No-op when --message_extra_slot_attends is 0. Still not raw prefix KV.",
     )
     p.add_argument(
         "--message_global_anchors",

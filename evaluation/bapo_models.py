@@ -19,6 +19,8 @@ Architectures
                global read but does not treat QUERY as a SWA/n-gram document start.
                `--message_extra_slot_attends N` (default 0) re-reads the same exclusive
                slot K/V with updated queries (second hop in slot space; not raw prefix).
+               `--message_update_slot_kv` (default off) rewrites exclusive slot K/V from
+               the post-attend residual before each extra hop. Extra=0 is unchanged.
                `--message_global_anchors {none,query_nbhd,type_marks,query_nbhd+type}`
                (default `none`) leaks a sparse sender subset into exclusive slot K/V:
                QUERY neighborhood (4 tokens before QUERY) and/or type-mark controls.
@@ -68,6 +70,7 @@ class ArchSpec:
     message_identity_slots: bool = False
     message_keep_local_swa: bool = False
     message_extra_slot_attends: int = 0
+    message_update_slot_kv: bool = False
     message_global_anchors: str = "none"
     message_anchor_token_ids: tuple[int, ...] = ()
     message_anchor_window: int = 4
@@ -155,6 +158,7 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         message_identity_slots=bool(spec.message_identity_slots) if arch == "e21" else False,
         message_keep_local_swa=bool(spec.message_keep_local_swa) if arch == "e21" else False,
         message_extra_slot_attends=int(getattr(spec, "message_extra_slot_attends", 0) or 0) if arch == "e21" else 0,
+        message_update_slot_kv=bool(getattr(spec, "message_update_slot_kv", False)) if arch == "e21" else False,
         message_global_anchors=(
             str(getattr(spec, "message_global_anchors", "none") or "none") if arch == "e21" else "none"
         ),

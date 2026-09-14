@@ -15,6 +15,28 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-14] - E21 rewrite exclusive slot K/V between extra hops (`message_update_slot_kv`, default off)
+
+**Why:**
+- Seq=1024 packed `select_1decoy` stays at chance with extra exclusive hops over *frozen*
+  slot K/V (0 bits @800) while uncompressed E18 copies ~64 bits. Inspection: extra hop
+  is two sequential attends with updated Q (QUERY Q can contain type after hop 1);
+  K/V stay the first-hop snapshot. Not a no-op bug. Next knob: rewrite exclusive
+  slot K/V from the post-attend residual before the next exclusive attend.
+
+**Impact:**
+- Default stays frozen extra hops (E18 checkpoints loadable; no new params).
+  `--message_update_slot_kv` rewrites exclusive slot K/V between hops. Extra=0
+  is byte-identical to prior exclusive E21 either way. Still not raw prefix KV.
+
+**What changed:**
+- [added] `PerceiverARConfig.message_update_slot_kv` in `nn/perceiver_ar_lm.py`
+- [added] probe `--message_update_slot_kv`; ArchSpec field
+- [added] tests in `tests/test_perceiver_ar_message.py` and `tests/test_bapo_ladder.py`
+
+**Does not:** restore raw global KV, enable remainder, unsever SWA, unfreeze
+`u`/`delta`, or change the default extra-hop count (stays 0).
+
 ## [2026-09-14] - E21 sparse exclusive-plus-anchors (`message_global_anchors`, default `none`)
 
 **Why:**

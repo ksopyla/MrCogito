@@ -39,6 +39,9 @@ Hooks for the family (config fields only — no parameters unless enabled):
     with queries updated by the previous hop — a second exclusive attend in slot
     space, not a raw prefix KV restore and not DNA `--hops`. Off by
     default (`id=-1`) so E18 checkpoints stay byte-identical.
+    `message_update_slot_kv` (default off) rewrites exclusive slot K/V from the
+    post-attend residual before each extra hop (queries *and* slot keys update).
+    Extra=0 is unchanged either way; still not the full raw prefix.
     `message_global_anchors` (default `none`) leaks a *sparse* set of non-slot
     sender tokens into the exclusive global read: QUERY neighborhood (a few
     tokens immediately before QUERY) and/or type-mark control tokens
@@ -123,6 +126,7 @@ class PerceiverARConfig(PretrainedConfig):
         message_identity_slots: bool = False,  # E21 — freeze mean-pool at any r; bypass u/delta
         message_keep_local_swa: bool = False,  # E21 — local SWA/n-grams still see across QUERY
         message_extra_slot_attends: int = 0,  # E21 — extra exclusive attends over frozen slots
+        message_update_slot_kv: bool = False,  # E21 — rewrite exclusive slot K/V between extra hops
         message_global_anchors: str = "none",  # E21 — sparse raw keys joining exclusive slot K/V
         message_anchor_token_ids: tuple[int, ...] = (),  # type-mark ids when anchors include type_marks
         message_anchor_window: int = MESSAGE_QUERY_NBHD_DEFAULT,  # QUERY-nbhd width (sender tokens)
@@ -181,6 +185,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_identity_slots = bool(message_identity_slots)
         self.message_keep_local_swa = bool(message_keep_local_swa)
         self.message_extra_slot_attends = int(message_extra_slot_attends)
+        self.message_update_slot_kv = bool(message_update_slot_kv)
         self.message_global_anchors = str(message_global_anchors or "none")
         self.message_anchor_token_ids = tuple(int(x) for x in (message_anchor_token_ids or ()))
         self.message_anchor_window = int(message_anchor_window)
@@ -533,6 +538,7 @@ class MessageCtx:
     inplace: bool = False       # True: slots overwrite sender prefix K/V; KV_LEN stays S
     inplace_raw_kv: bool = False  # True: keep token K/V at replace positions (skip compressor)
     extra_slot_attends: int = 0  # extra exclusive attends over the frozen slot K/V (default 0)
+    update_slot_kv: bool = False  # rewrite exclusive slot K/V from post-attend residual
     anchor: Optional[torch.Tensor] = None  # [B,S] bool — sparse raw keys joining exclusive slots
     anchor_mode: str = "none"
 
@@ -1009,11 +1015,14 @@ class Attention(nn.Module):
             q = q * (self.logit_scale * torch.log(n_vis))[:, :, None, None]
         return q
 
-    def _extra_exclusive_attends(self, x, out, *, extra, cos, sin, pos, attend_fn):
-        """Re-read frozen exclusive slot K/V with queries updated by the previous hop.
+    def _extra_exclusive_attends(self, x, out, *, extra, cos, sin, pos, attend_fn, rewrite_kv=None):
+        """Re-read exclusive slot K/V with queries updated by the previous hop.
 
         `attend_fn(q) -> [B,S,h,dh]`. Extra=0 is a no-op (byte-identical first hop).
-        K/V stay the snapshot from the first hop — not recomputed, not raw prefix.
+        Default: K/V stay the snapshot from the first hop — not recomputed, not raw prefix.
+        When `rewrite_kv` is set (`message_update_slot_kv`), it is called with the
+        post-attend residual `h` before each extra hop and must return a new
+        `attend_fn` bound to rewritten exclusive slot K/V. Still not full prefix.
         """
         extra = int(extra or 0)
         if extra <= 0:
@@ -1026,6 +1035,8 @@ class Attention(nn.Module):
             if self.use_rope:
                 q = apply_rope(q, cos, sin)
             q = self._scale_q(q, pos)
+            if rewrite_kv is not None:
+                attend_fn = rewrite_kv(h)
             o = attend_fn(q)
             out = self.wo(o.reshape(B, S, self.h * self.dh))
         return out
@@ -1037,6 +1048,7 @@ class Attention(nn.Module):
         k_raw, v = self.kv_raw(x, ids)
         k_un = self.k_norm(k_raw)
         extra = int(getattr(message, "extra_slot_attends", 0) or 0) if message is not None else 0
+        update_kv = bool(getattr(message, "update_slot_kv", False)) if message is not None else False
         use_inplace = (
             message is not None
             and self.compressor is not None
@@ -1053,6 +1065,7 @@ class Attention(nn.Module):
                 if message.override == "swapped":
                     k_bar, v_bar = k_bar.roll(1, dims=0), v_bar.roll(1, dims=0)
                 k_mix, v_mix, replace = mix_inplace_kv(k_un, v, k_bar, v_bar, message)
+            k_tok, v_tok = k_un, v  # un-RoPE'd first-hop token K/V (non-slot positions stay these)
             if self.use_rope:
                 q = apply_rope(q, cos, sin)
                 k_mix = apply_rope(k_mix, cos, sin)
@@ -1062,12 +1075,33 @@ class Attention(nn.Module):
                 backend=self.backend, block_masks=block_masks,
             )
             out = self.wo(o.reshape(B, S, self.h * self.dh))
+
+            def _rewrite_inplace(h):
+                k_raw2, v2 = self.kv_raw(h, ids)
+                k_un2 = self.k_norm(k_raw2)
+                if raw_kv:
+                    k_bar2, v_bar2 = k_un2, v2
+                else:
+                    k_bar2, v_bar2 = self.message_slots(
+                        h, k_raw2, v2, message, key_valid, rope_theta, rope=False,
+                    )
+                    if message.override == "swapped":
+                        k_bar2, v_bar2 = k_bar2.roll(1, dims=0), v_bar2.roll(1, dims=0)
+                k_mix2, v_mix2, _ = mix_inplace_kv(k_tok, v_tok, k_bar2, v_bar2, message)
+                if self.use_rope:
+                    k_mix2 = apply_rope(k_mix2, cos, sin)
+                return lambda qq: attend_inplace(
+                    qq, k_mix2, v_mix2, ctx=message, replace=replace, key_valid=key_valid,
+                    backend=self.backend, block_masks=block_masks,
+                )
+
             out = self._extra_exclusive_attends(
                 x, out, extra=extra, cos=cos, sin=sin, pos=pos,
                 attend_fn=lambda qq: attend_inplace(
                     qq, k_mix, v_mix, ctx=message, replace=replace, key_valid=key_valid,
                     backend=self.backend, block_masks=block_masks,
                 ),
+                rewrite_kv=_rewrite_inplace if update_kv else None,
             )
             if raw_kv:
                 out = out + 0.0 * (self.compressor.u.sum() + self.compressor.delta.weight.sum()).to(out.dtype)
@@ -1083,12 +1117,24 @@ class Attention(nn.Module):
             o = attend_message(q, k, v, k_bar, v_bar, ctx=message, key_valid=key_valid,
                                backend=self.backend, block_masks=block_masks)
             out = self.wo(o.reshape(B, S, self.h * self.dh))
+
+            def _rewrite_concat(h):
+                k_raw2, v2 = self.kv_raw(h, ids)
+                k_bar2, v_bar2 = self.message_slots(h, k_raw2, v2, message, key_valid, rope_theta)
+                if message.override == "swapped":
+                    k_bar2, v_bar2 = k_bar2.roll(1, dims=0), v_bar2.roll(1, dims=0)
+                return lambda qq: attend_message(
+                    qq, k, v, k_bar2, v_bar2, ctx=message, key_valid=key_valid,
+                    backend=self.backend, block_masks=block_masks,
+                )
+
             return self._extra_exclusive_attends(
                 x, out, extra=extra, cos=cos, sin=sin, pos=pos,
                 attend_fn=lambda qq: attend_message(
                     qq, k, v, k_bar, v_bar, ctx=message, key_valid=key_valid,
                     backend=self.backend, block_masks=block_masks,
                 ),
+                rewrite_kv=_rewrite_concat if update_kv else None,
             )
         o = attend(
             q, k, v, pattern=self.pattern, window=self.window, key_valid=key_valid,
@@ -1386,6 +1432,7 @@ class PerceiverARLM(PreTrainedModel):
                 ratio=r, inplace=cfg.message_slots_inplace,
                 inplace_raw_kv=cfg.message_inplace_raw_kv,
                 extra_slot_attends=int(getattr(cfg, "message_extra_slot_attends", 0) or 0),
+                update_slot_kv=bool(getattr(cfg, "message_update_slot_kv", False)),
                 anchor=torch.zeros(B, S, dtype=torch.bool, device=dev),
                 anchor_mode="none",
             )
@@ -1438,6 +1485,7 @@ class PerceiverARLM(PreTrainedModel):
                           pool_valid=pool_valid, ratio=r, inplace=cfg.message_slots_inplace,
                           inplace_raw_kv=cfg.message_inplace_raw_kv,
                           extra_slot_attends=int(getattr(cfg, "message_extra_slot_attends", 0) or 0),
+                          update_slot_kv=bool(getattr(cfg, "message_update_slot_kv", False)),
                           anchor=anchor, anchor_mode=anchor_mode)
 
     # -- helpers ----------------------------------------------------------------------
