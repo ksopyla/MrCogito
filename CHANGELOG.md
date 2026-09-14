@@ -15,6 +15,21 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-14] - BAPO probe `--seq_len 2048` on `bridge_1k`
+
+**Why:**
+- E25 INDEX length-wall hunt needs seq=2048 without inventing a scale enum.
+  Probe already overrides `seq_len`; lock packed `far_copy` geometry
+  (`min_gap=64` > `local_window=16`, span 32 / 64-bit prize, right-align).
+
+**Impact:**
+- No new `SCALES` entry. Hunt uses `--scale bridge_1k --seq_len 2048`.
+
+**What changed:**
+- [added] `test_bridge_1k_seq_len_2048_keeps_window_below_gap` in `tests/test_bapo_ladder.py`
+
+**Does not:** change packing, window, or compressor defaults.
+
 ## [2026-09-14] - E21 identity slots: freeze mean-pool at any ratio
 
 **Why:**
