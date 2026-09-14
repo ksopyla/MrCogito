@@ -92,6 +92,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   Seq=512 hops `--global_layers 2` (same compressor): dense **22.5% / 0 bits**
   @3200 (**S0 FAIL / K1**; e18/e21 skipped; glob=1 was also K1). Do not score
   E21. 8k not run.
+  Seq=384 hops `--global_layers 2` (`--scale bridge --seq_len 384`): dense
+  **24.5% / 0 bits** @3200 (**S0 FAIL / K1**; e18/e21 skipped; best 29.1%
+  @1450). Do not score E21. 8k not run. Dense hops wall at glob=2 is
+  **(256 S0 PASS, 384 K1]**.
   Seq=4096 packed `far_copy` r=16 rem-off H=256 SSMax log **25.7% / 0 bits**
   @800 (**S1 FAIL** vs 0.75× dense 47.96; E18 ~0 live; chance floor). Exclusive
   INDEX that passed at 1024 is chance at 4k. No 4k scale code change (`medium`).
@@ -155,12 +159,12 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   E18 47.71; E18 **99.9% / 63.62 bits** @600; chance every eval). Banner
   `gap=64 window=32` (32 < 64). Widening SWA does not rescue 696. Do not
   extra-step (floor). Do not 16k.
-  Next: seq=**384** packed `chain_ordered --key_len 13` `--global_layers 2`
-  (localize dense hops wall **(256 S0 PASS, 512 K1]**; do not run here).
+  Next: seq=**320** packed `chain_ordered --key_len 13` `--global_layers 2`
+  (localize dense hops wall **(256 S0 PASS, 384 K1]**; do not run here).
   Do not reopen SELECT **(692 PASS, 696 FAIL]**. Do not seq=694. INDEX length
   extra-steps stay stopped.
   Remaining DNA walls:
-  SELECT length **(692 PASS, 696 FAIL]** leftover-drop, spread (K1), and window 32 did not close, INDEX **(1024 PASS, 1536 FAIL] shared with E18**, 512 chain **K1 at glob=1 and glob=2**, 256 hops
+  SELECT length **(692 PASS, 696 FAIL]** leftover-drop, spread (K1), and window 32 did not close, INDEX **(1024 PASS, 1536 FAIL] shared with E18**, hops glob=2 **(256 S0 PASS, 384 K1]**, 512 chain **K1 at glob=1 and glob=2**, 256 hops
   **FAIL at glob=1 / PASS at glob=2**. Not remainder-on. Not H=512. Not
   hops seq shrink below 256. Not Glyph. Do not restore raw global KV. Default remainder
   stays off. Default `--message_keep_local_swa` stays off. Default
@@ -221,6 +225,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [1536 INDEX r=16 H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_1536_ip_r16_mean_far_copy_20260914.md) ·
   [256 chain hops glob2](../2_Experiments_Registry/run_reports/e25_bridge256_chain_k13_glob2_20260914.md) ·
   [512 chain hops glob2](../2_Experiments_Registry/run_reports/e25_bridge512_chain_k13_glob2_20260914.md) ·
+  [384 chain hops glob2](../2_Experiments_Registry/run_reports/e25_bridge384_chain_k13_glob2_20260914.md) ·
   [768 select r=1 identity H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_768_ip_id_h256_select_20260914.md) ·
   [640 select r=1 identity H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_640_ip_id_h256_select_20260914.md) ·
   [704 select r=1 identity H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_704_ip_id_h256_select_20260914.md) ·
@@ -233,7 +238,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [696 select window 32](../2_Experiments_Registry/run_reports/e25_bridge1k_696_w32_ip_id_h256_select_20260914.md) ·
   [1536 INDEX r=16 H=256 log](../2_Experiments_Registry/run_reports/e25_bridge1k_1536_ip_r16_mean_far_copy_20260914.md) ·
   [256 chain hops glob2](../2_Experiments_Registry/run_reports/e25_bridge256_chain_k13_glob2_20260914.md) ·
-  [512 chain hops glob2](../2_Experiments_Registry/run_reports/e25_bridge512_chain_k13_glob2_20260914.md).
+  [512 chain hops glob2](../2_Experiments_Registry/run_reports/e25_bridge512_chain_k13_glob2_20260914.md) ·
+  [384 chain hops glob2](../2_Experiments_Registry/run_reports/e25_bridge384_chain_k13_glob2_20260914.md).
   Do not relabel E18 scores as E21.
 - **2026-09-13 — E24 BAPO DNA ladder (tiny + GPU bridge 512/1024; 4k S0 open).** Packed tiny
   seq=128 / 0.59M: E18 matches dense on positional `far_copy` (99.2% vs 99.4%) and recovers
@@ -267,6 +273,15 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-14 — E25 GPU seq=384 chain_ordered --key_len 13 `--global_layers 2` (Odra, H=256 log).**
+  Same 256 glob2 S1 PASS compressor at `--scale bridge --seq_len 384` (bridge
+  default is 512; window 16 < gap 64). Dense **24.5% / 0 bits** @3200
+  (**S0 FAIL / K1**; chance every eval; best 29.1% @1450; 2.802M). e18 / e21
+  skipped. glob=2 at 512 was also K1. Two global Blocks that compose hops at
+  256 do not make packed 384 dense-solvable. Wall **(256 S0 PASS, 384 K1]**.
+  Do not score E21. 8k not run. Next: seq=320 `--key_len 13` `--global_layers 2`
+  (do not run it). `--hops 1` is illegal.
+  [report](../2_Experiments_Registry/run_reports/e25_bridge384_chain_k13_glob2_20260914.md).
 - **2026-09-14 — E25 GPU seq=512 chain_ordered --key_len 13 `--global_layers 2` (Odra, H=256 log).**
   Same 256 glob2 S1 PASS compressor at `--scale bridge` seq=512 (no `--seq_len`;
   window 16 < gap 64). Dense **22.5% / 0 bits** @3200 (**S0 FAIL / K1**; chance
