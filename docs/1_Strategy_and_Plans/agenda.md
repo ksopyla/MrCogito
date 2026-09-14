@@ -20,7 +20,7 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-14 — E25 E21 capability ladder (tiny limits; 512 concat wall; raw PASS; inplace identity PASS; r=16 mean INDEX; 512 recall mean 0 bits; 512 recall r=1 identity MATCH PASS; 512 select r=1 identity S1 PASS).**
+- **2026-09-14 — E25 E21 capability ladder (tiny limits; 512 concat wall; raw PASS; inplace identity PASS; r=16 mean INDEX; MATCH/SELECT identity PASS; 512 chain H=128 K1).**
   Tiny INDEX near-pass at 8k. GPU seq=512 exclusive concat slots **0 bits** (r=16/64/1).
   `--message_override raw` **100% / 63.96 bits**. r=1 in-place learned compressor **0 bits**.
   In-place raw KV **63.29 bits**. In-place hard identity **99.8% / 62.64 bits** @750.
@@ -28,8 +28,9 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   **0 bits** @800. Seq=1024 frozen mean **91.2% / 53.82 bits** @8k. Seq=512
   `recall_single` frozen mean **0 bits**. Seq=512 `recall_single` r=1 identity
   **91.6% / 43.08 bits**. Seq=512 `select_1decoy` r=1 identity **100% / 47.98 bits**
-  @700 (S1 PASS vs E18 35.94 and dense 35.85). Exclusive identity does type-cue
-  select. Next: 512 `chain_ordered` r=1 identity.
+  @700 (S1 PASS vs E18 35.94 and dense 35.85). Seq=512 `chain_ordered` r=1 identity
+  H=128 **K1** (dense **24.2% / 0 bits** @3200; e18/e21 skipped). Not a hops
+  verdict. Next: 512 chain dense S0 hunt H=256 `--global_logit_scale log`.
   Spec [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) ·
   [rung 1](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) ·
   [remainder](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) ·
@@ -52,7 +53,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [1024 in-place r=16 mean](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_r16_mean_far_copy_20260914.md) ·
   [512 recall in-place r=16 mean](../2_Experiments_Registry/run_reports/e25_bridge512_ip_r16_mean_recall_20260914.md) ·
   [512 recall in-place r=1 identity](../2_Experiments_Registry/run_reports/e25_bridge512_ip_id_recall_20260914.md) ·
-  [512 select in-place r=1 identity](../2_Experiments_Registry/run_reports/e25_bridge512_ip_id_select_20260914.md).
+  [512 select in-place r=1 identity](../2_Experiments_Registry/run_reports/e25_bridge512_ip_id_select_20260914.md) ·
+  [512 chain H=128 K1](../2_Experiments_Registry/run_reports/e25_bridge512_ip_id_chain_20260914.md).
   Do not relabel E18 scores as E21.
 - **2026-09-13 — E24 BAPO DNA ladder (tiny + GPU bridge 512/1024; 4k S0 open).** Packed tiny
   seq=128 / 0.59M: E18 matches dense on positional `far_copy` (99.2% vs 99.4%) and recovers
@@ -86,6 +88,13 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-14 — E25 GPU seq=512 chain_ordered r=1 in-place hard identity (Odra, H=128).**
+  Dense **24.2% / 0 bits** @3200 (chance every eval; CE at ln(4)). **K1 / S0 FAIL.**
+  e18 / e21 / e18_local skipped. S1 and K2 not scored. Packed 512 chain is not
+  dense-solvable at this width — instrument failure, not a hops verdict. Do not
+  extra-step (floor, not a ~50% plateau). Next: 512 chain dense S0 hunt H=256
+  `--global_logit_scale log`. Skip E21 until S0.
+  [report](../2_Experiments_Registry/run_reports/e25_bridge512_ip_id_chain_20260914.md).
 - **2026-09-14 — E25 GPU seq=512 select_1decoy r=1 in-place hard identity (Odra, H=128).**
   Dense **99.9% / 47.80 bits** (S0). E18 **100% / 47.92 bits** @400 (live). E21
   identity **100% / 47.98 bits / flow 1.000** @700 (early stop). S1 **PASS**
