@@ -6,6 +6,8 @@
 `data/symbolic_tasks.py`. Campaign runner: `verification/run_scale_hard_campaign.py`.
 JSON: `/workspace/Cache/scale_hard/` (durable inventory:
 `docs/4_Research_Notes/exclusive_slot_law_inventory.json`). Plots:
+[`exclusive_slot_task_comparisons.png`](figures/exclusive_slot_task_comparisons.png)
+(per-task A=concepts vs D=dense vs C=leak),
 [`exclusive_slot_working_law.png`](figures/exclusive_slot_working_law.png),
 [`exclusive_slot_law_steps_sizes_acc.png`](figures/exclusive_slot_law_steps_sizes_acc.png).
 The Cursor `/opt/cursor/artifacts` FUSE store wiped mid-campaign (seq1024 A
@@ -174,6 +176,17 @@ The scaling-law goal still needs the same compute / data / parameter-regime
 controls at the longest cell. Arm A is not rerun. JSON now lands on
 `/workspace/Cache/scale_hard` via `verification/run_scale_hard_reach_seq1024_dc.py`
 (`D9` 4.97M at lr=1e-4, then leak-check `C`). Do not shrink A.
+
+Live snapshot from `tmux` session `scale-hard-seq1024-dc` (PID ~79146),
+`/workspace/Cache/scale_hard/reach_seq1024_dc.log`. Not a closed cell:
+
+| arm | steps | examples | acc | eval CE | s/step |
+|---|---|---|---|---|---|
+| D9 dense 9L | 250 | 8k | 25.1% | 1.391 | 10.16 |
+| D9 dense 9L | 500 | 16k | 26.4% | 1.386 | 13.03 |
+
+Still at chance. C has not started. Do not interrupt. The length axis is **not**
+closed until this D9 (and C) finish.
 
 
 ## One-sentence frontier

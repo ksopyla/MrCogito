@@ -8,6 +8,7 @@
     {"run": "easy seq128 r=8", "arm": "A", "params_m": 1.35, "lr": 3e-3, "seq": 128, "r": 8, "min_gap": 32, "task": "far_copy", "hops": 2, "examples": 51000, "steps": 1750, "acc": 0.95, "hit_95": true, "e95": 51000, "wall_min": null},
     {"run": "easy seq128 r=8", "arm": "D", "params_m": 0.60, "lr": 3e-3, "seq": 128, "r": 8, "min_gap": 32, "task": "far_copy", "hops": 2, "examples": 25000, "steps": 1000, "acc": 0.997, "hit_95": true, "e95": 25000, "wall_min": null},
     {"run": "easy seq128 r=8", "arm": "C", "params_m": 0.60, "lr": 3e-3, "seq": 128, "r": 8, "min_gap": 32, "task": "far_copy", "hops": 2, "examples": 96000, "steps": 3000, "acc": 0.25, "hit_95": false, "e95": null, "wall_min": null},
+    {"run": "easy seq128 r=16", "arm": "A", "params_m": 1.35, "lr": 3e-3, "seq": 128, "r": 16, "min_gap": 32, "task": "far_copy", "hops": 2, "examples": 112000, "steps": 3750, "acc": 0.96, "hit_95": true, "e95": 112000, "wall_min": null},
     {"run": "cell_seq256_r8_A", "arm": "A", "params_m": 5.11, "lr": 1e-3, "seq": 256, "r": 8, "min_gap": 32, "task": "far_copy", "hops": 2, "examples": 96000, "steps": 3000, "acc": 0.9502, "hit_95": true, "e95": 96000, "wall_min": 36.0},
     {"run": "cell_seq256_r8_D", "arm": "D", "params_m": 2.27, "lr": 1e-3, "seq": 256, "r": 8, "min_gap": 32, "task": "far_copy", "hops": 2, "examples": 72000, "steps": 2250, "acc": 0.9917, "hit_95": true, "e95": 72000, "wall_min": 16.0},
     {"run": "cell_seq256_r8_C", "arm": "C", "params_m": 2.27, "lr": 1e-3, "seq": 256, "r": 8, "min_gap": 32, "task": "far_copy", "hops": 2, "examples": 48000, "steps": 1500, "acc": 0.254, "hit_95": false, "e95": null, "wall_min": null},
@@ -23,6 +24,10 @@
     {"run": "reach_seq1024_A", "arm": "A", "params_m": 5.11, "lr": 1e-4, "seq": 1024, "r": 8, "min_gap": 256, "task": "far_copy", "hops": 2, "examples": 96000, "steps": 3000, "acc": 0.959, "hit_95": true, "e95": 96000, "wall_min": 331.5, "ablate_none_acc": 0.238, "note": "JSON write failed after artifact store wiped; numbers from tmux pane + probe stdout."},
     {"run": "cell_chain_h3_A", "arm": "A", "params_m": 5.11, "lr": 1e-3, "seq": 256, "r": 8, "min_gap": 32, "task": "chain", "hops": 3, "examples": 128000, "steps": 4000, "acc": 0.237, "hit_95": false, "e95": null, "wall_min": null},
     {"run": "cell_chain_h3_D", "arm": "D", "params_m": 2.27, "lr": 1e-3, "seq": 256, "r": 8, "min_gap": 32, "task": "chain", "hops": 3, "examples": 128000, "steps": 4000, "acc": 0.237, "hit_95": false, "e95": null, "wall_min": null},
+    {"run": "cell_chain_h3_C", "arm": "C", "params_m": 2.27, "lr": 1e-3, "seq": 256, "r": 8, "min_gap": 32, "task": "chain", "hops": 3, "examples": 48000, "steps": 1500, "acc": 0.251, "hit_95": false, "e95": null, "wall_min": 9.2},
     {"run": "cell_chain_h2_D9", "arm": "D", "params_m": 4.97, "lr": 3e-4, "seq": 512, "r": 8, "min_gap": 32, "task": "chain", "hops": 2, "examples": 128000, "steps": 4000, "acc": 0.2566, "hit_95": false, "e95": null, "wall_min": 117.1}
+  ],
+  "in_flight": [
+    {"run": "reach_seq1024_D9", "arm": "D", "params_m": 4.97, "lr": 1e-4, "seq": 1024, "r": 8, "min_gap": 256, "task": "far_copy", "hops": 2, "examples": 16000, "steps": 500, "acc": 0.264, "hit_95": false, "e95": null, "wall_min": null, "note": "Live CPU tmux scale-hard-seq1024-dc as of 2026-09-14. Still near chance. Do not interrupt. C has not started."}
   ]
 }

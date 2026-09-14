@@ -15,6 +15,28 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-14] - Exclusive-slot plots label A=concepts vs D=dense vs C=leak
+
+**Why:**
+- Comparison plots used letter markers without saying which arm is the
+  concept-slot model and which is the dense baseline.
+
+**Impact:**
+- Figures state A = exclusive-scope concepts, D/D9 = dense full-causal
+  baseline, C = no-concept leak check (not a baseline). Per-task grouped
+  bars cover far_copy length, compression, and chain composition.
+
+**What changed:**
+- [changed] `verification/plot_exclusive_slot_law.py` — architecture legends;
+  D vs D9 markers; hatched in-flight D9; new
+  `exclusive_slot_task_comparisons.png`.
+- [changed] `docs/4_Research_Notes/exclusive_slot_law_inventory.json` — added
+  easy r=16, chain hops=3 C, and the live seq1024 D9 snapshot (not a closed cell).
+
+**Related:** `docs/4_Research_Notes/concept_slot_scaling_frontier_20260913.md`
+
+---
+
 ## [2026-09-14] - Scale-hard JSON lands on workspace disk
 
 **Why:**
