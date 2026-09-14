@@ -15,6 +15,22 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-14] - BAPO probe `--seq_len 688` on `bridge_1k` for SELECT length bracket
+
+**Why:**
+- E25 SELECT length-wall hunt needs seq=688 (between 672 PASS and 704 chance)
+  without inventing a scale enum. Probe already overrides `seq_len`; lock packed
+  `select_1decoy` geometry (`min_gap=64` > `local_window=16`, 32-token / 64-bit
+  prize matching 1024, not the 24-token `bridge` pack).
+
+**Impact:**
+- No new `SCALES` entry. Hunt uses `--scale bridge_1k --seq_len 688`.
+
+**What changed:**
+- [added] `test_bridge_1k_seq_len_688_select_keeps_window_below_gap` in `tests/test_bapo_ladder.py`
+
+**Does not:** change packing, window, compressor defaults, or add architecture flags.
+
 ## [2026-09-14] - E21 QUERY-side neighborhood anchors (`query_side`, default off)
 
 **Why:**
