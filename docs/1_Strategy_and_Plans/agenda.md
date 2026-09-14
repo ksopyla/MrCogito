@@ -20,12 +20,14 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-14 — E25 E21 capability ladder (tiny limits; 512 concat wall; raw PASS; inplace identity PASS; r=16 mean NEAR-PASS; learned pool 0 bits).**
+- **2026-09-14 — E25 E21 capability ladder (tiny limits; 512 concat wall; raw PASS; inplace identity PASS; r=16 mean NEAR-PASS; learned pool 0 bits; 1024 mean S1 PASS).**
   Tiny INDEX near-pass at 8k. GPU seq=512 exclusive concat slots **0 bits** (r=16/64/1).
   `--message_override raw` **100% / 63.96 bits**. r=1 in-place learned compressor **0 bits**.
   In-place raw KV **63.29 bits**. In-place hard identity **99.8% / 62.64 bits** @750.
   In-place r=16 frozen mean-pool **84.3% / 47.36 bits** @8k. In-place r=16 learned pool
-  **0 bits** @800 — learning wrecks; keep frozen mean. Next: 1024 frozen mean.
+  **0 bits** @800 — learning wrecks; keep frozen mean. Seq=1024 frozen mean **91.2% /
+  53.82 bits** @8k (H=256 SSMax log; E18 live 63.12 bits). Next: 512 `recall_single`
+  frozen mean.
   Spec [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) ·
   [rung 1](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) ·
   [remainder](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) ·
@@ -44,7 +46,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [512 in-place raw KV](../2_Experiments_Registry/run_reports/e25_bridge512_ip_rawkv_far_copy_20260913.md) ·
   [512 in-place identity](../2_Experiments_Registry/run_reports/e25_bridge512_ip_id_far_copy_20260913.md) ·
   [512 in-place r=16 mean](../2_Experiments_Registry/run_reports/e25_bridge512_ip_r16_mean_far_copy_20260914.md) ·
-  [512 in-place r=16 learned](../2_Experiments_Registry/run_reports/e25_bridge512_ip_r16_learned_far_copy_20260914.md).
+  [512 in-place r=16 learned](../2_Experiments_Registry/run_reports/e25_bridge512_ip_r16_learned_far_copy_20260914.md) ·
+  [1024 in-place r=16 mean](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_r16_mean_far_copy_20260914.md).
   Do not relabel E18 scores as E21.
 - **2026-09-13 — E24 BAPO DNA ladder (tiny + GPU bridge 512/1024; 4k S0 open).** Packed tiny
   seq=128 / 0.59M: E18 matches dense on positional `far_copy` (99.2% vs 99.4%) and recovers
@@ -78,6 +81,12 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-14 — E25 GPU seq=1024 far_copy r=16 in-place frozen mean (Odra, H=256 SSMax log).**
+  Dense **100% / 63.95 bits** (S0). E18 **99.7% / 63.12 bits** @2750 (live; not dilution).
+  E21 frozen mean **91.2% / 53.82 bits / flow 0.841** @8000 (68.8% / 32.37 @3200,
+  climbing; best 92.7% @7850). S1 **PASS** (53.82 vs 47.34). K2 **PASS**. Frozen
+  16-token means carry INDEX at 1024. Do not 16k. Next: 512 `recall_single` frozen mean.
+  [report](../2_Experiments_Registry/run_reports/e25_bridge1k_ip_r16_mean_far_copy_20260914.md).
 - **2026-09-14 — E25 GPU seq=512 far_copy r=16 in-place learned pool (Odra).** Dense
   **100% / 63.94 bits** (S0). E18 **100% / 63.94 bits**. E21 learned pool **25.1% /
   0.00 bits / flow 0** @800 (chance floor). S1 **FAIL**. K2 **PASS**. Learning wrecks
