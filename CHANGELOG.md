@@ -24,7 +24,9 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 **What changed:**
 - [changed] `verification/run_scale_hard_continue.py` runs hops=2 against 4.97M D
-  and leaves growing-`min_gap` length to `run_scale_hard_reach.py`.
+  for 8000 steps at 3e-4 with 4000-step floor patience (an 800-step LR probe is a
+  false kill — seq512 copy D9 was still at chance then). Growing-`min_gap` length
+  stays on `run_scale_hard_reach.py`.
 
 **Related:** `docs/1_Strategy_and_Plans/agenda.md` HARDER exclusive-slot scaling
 
