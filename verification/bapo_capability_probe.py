@@ -522,12 +522,15 @@ def main() -> int:
     p.add_argument(
         "--message_global_anchors",
         default="none",
-        choices=("none", "query_nbhd", "type_marks", "query_nbhd+type"),
-        help="E21: which extra sender positions join exclusive slot K/V as raw keys. "
+        choices=("none", "query_nbhd", "query_side", "type_marks", "query_nbhd+type"),
+        help="E21: which extra positions join exclusive slot K/V as raw keys. "
         "none (default): prior exclusive slots only, E18-loadable. "
         "type_marks: keymark/decoy/spanmark/hop/mark control tokens. "
-        "query_nbhd: 4 sender tokens immediately before QUERY (message_anchor_window). "
-        "query_nbhd+type: union. Sparse subset (count << seq), not the full raw prefix (that is E18).",
+        "query_nbhd: 4 sender tokens immediately before QUERY (already r=1 slots). "
+        "query_side: QUERY plus a small window after the message boundary "
+        "(receiver type request; not prefix replace slots). "
+        "query_nbhd+type: union of prefix-nbhd and type_marks. "
+        "Sparse subset (count << seq), not the full raw prefix (that is E18).",
     )
     p.add_argument("--seq_len", type=int, default=None, help="override scale seq_len (S0 hunts)")
     p.add_argument("--min_gap", type=int, default=None, help="override scale min_gap (S0 hunts)")

@@ -1048,6 +1048,76 @@ def test_build_message_anchors_union_query_nbhd_plus_type():
     assert bool(both[0, 2]) and bool(both[0, P - 1])
     assert int(both.sum()) == 3
     assert int(both.sum()) < S
+    side_nbhd = build_message_anchors(ids, side, doc, mode="query_side", token_ids=(MARK,), window=2)
+    assert bool(side_nbhd[0, P]) and bool(side_nbhd[0, P + 1])
+    assert not bool(side_nbhd[0, P - 1]) and not bool(side_nbhd[0, 2])
+    assert int(side_nbhd.sum()) == 2
+    assert int(side_nbhd.sum()) < S
+
+
+def test_query_side_anchors_leak_receiver_not_prefix_slots():
+    """query_side window=4: QUERY + 3 following tokens; not sender prefix; not full prefix.
+
+    Existing query_nbhd is prefix-only (already r=1 replace slots). query_side is the
+    Knob C option that can leak tokens that are *not* identity slots.
+    """
+    r, S, P = 1, 20, 10
+    off = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=r,
+                     message_slots_inplace=True, message_identity_slots=True)
+    on = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=r,
+                    message_slots_inplace=True, message_identity_slots=True,
+                    message_global_anchors="query_side", message_anchor_window=4)
+    prefix = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=r,
+                        message_slots_inplace=True, message_identity_slots=True,
+                        message_global_anchors="query_nbhd", message_anchor_window=4)
+    assert off.config.message_global_anchors == "none"
+    assert on.config.message_global_anchors == "query_side"
+    assert MESSAGE_QUERY_NBHD_DEFAULT == 4
+    x = with_boundary(rand_ids(1, S, seed=6), P)
+    pos = on._positions(S, 1, None, x.device)
+    with torch.no_grad():
+        ctx_on = on._message_context(x, None, None, pos)
+        ctx_off = off._message_context(x, None, None, pos)
+        ctx_pre = prefix._message_context(x, None, None, pos)
+    anc = ctx_on.anchor[0]
+    assert bool(anc[P]) and bool(anc[P + 1]) and bool(anc[P + 2]) and bool(anc[P + 3])
+    assert not bool(anc[P - 1])  # sender-before-QUERY is query_nbhd, not query_side
+    assert not bool(anc[P + 4])
+    assert int(anc.sum()) == 4
+    assert int(anc.sum()) < S
+    assert not bool(ctx_off.anchor[0].any())
+    assert bool(ctx_pre.anchor[0, P - 1]) and not bool(ctx_pre.anchor[0, P])
+    k = torch.zeros(1, S, 2, 8)
+    _, _, replace = mix_inplace_kv(k, k, k, k, ctx_on)
+    vis = exclusive_visible(replace, ctx_on)
+    extra = vis & ~replace
+    assert bool(replace[0, P - 1])  # r=1 identity: sender is a replace slot
+    assert not bool(replace[0, P]) and not bool(replace[0, P + 1])
+    assert bool(extra[0, P]) and bool(extra[0, P + 1])
+    assert int(extra[0].sum()) == 4
+    assert int(extra[0].sum()) < S
+    _, _, replace_pre = mix_inplace_kv(k, k, k, k, ctx_pre)
+    extra_pre = exclusive_visible(replace_pre, ctx_pre) & ~replace_pre
+    assert int(extra_pre[0].sum()) == 0  # query_nbhd at r=1 is already slots
+    mask = dense_inplace_mask(S, ctx_on, None, vis, "cpu")
+    assert bool(mask[0, 0, P + 3, P])  # later receiver sees QUERY
+    concat = dense_message_mask(S, ctx_on, None, "cpu")[0, 0]
+    assert concat[P, :P].tolist() == [False] * P  # still not full raw prefix
+    assert bool(concat[P + 1, P])  # QUERY-side leak is in exclusive raw keys
+    concat_off = dense_message_mask(S, ctx_off, None, "cpu")[0, 0]
+    assert concat_off[P, :P].tolist() == [False] * P
+    expl = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=r,
+                      message_slots_inplace=True, message_identity_slots=True,
+                      message_global_anchors="none")
+    with torch.no_grad():
+        assert torch.allclose(off(x).logits, expl(x).logits, atol=1e-6)
+        # query_side adds QUERY-side keys; flipping a post-QUERY token still
+        # changes logits (already same-side), and prefix stays exclusive
+        y_pre = x.clone()
+        y_pre[0, P - 1] = (int(x[0, 0]) % 70) + 3
+        a_on, drop_on = on(x).logits, on(y_pre).logits
+        assert not torch.allclose(a_on[0, P:], drop_on[0, P:], atol=1e-5)  # r=1 slot covers P-1
+
 
 
 def test_receiver_only_round_trip_via_prefix_kv_as_message():

@@ -15,6 +15,29 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-14] - E21 QUERY-side neighborhood anchors (`query_side`, default off)
+
+**Why:**
+- Seq=1024 packed `select_1decoy` stays at chance after attend-stack knobs (extra hops,
+  unfrozen slot K/V, second global layer, keep_local_swa) while uncompressed E18 copies
+  ~64 bits. `type_marks` leaked keymark+decoy which are already r=1 replace slots
+  (extra non-slot count 0). Existing `query_nbhd` is 4 sender tokens *before* QUERY —
+  also r=1 slots. SELECT's type request sits at/after QUERY (query key tokens).
+
+**Impact:**
+- Default stays `none` (E18 checkpoints loadable; no new params).
+  `--message_global_anchors query_side` leaks QUERY plus a small window after the
+  message boundary into exclusive slot K/V as raw keys. Count << seq. Still not
+  the full raw prefix.
+
+**What changed:**
+- [added] `query_side` on `PerceiverARConfig.message_global_anchors` in `nn/perceiver_ar_lm.py`
+- [added] probe `--message_global_anchors query_side`
+- [added] tests in `tests/test_perceiver_ar_message.py` and `tests/test_bapo_ladder.py`
+
+**Does not:** restore raw global KV, enable remainder, unsever SWA, extra hops,
+unfreeze `u`/`delta`, or change the default (`none`).
+
 ## [2026-09-14] - E21 second exclusive global layer uses existing `global_layers` (default 1)
 
 **Why:**

@@ -994,3 +994,149 @@ def test_select_1decoy_type_cues_land_in_r1_identity_slots():
     assert not bool(replace[0, qpos])
     mask = dense_inplace_mask(S, ctx, None, replace, "cpu")
     assert bool(mask[0, 0, qpos, km]) and bool(mask[0, 0, qpos, dc])
+
+
+def test_select_1decoy_query_side_anchors_are_not_r1_prefix_slots():
+    """SELECT type request sits at/after QUERY; query_side leaks those, not r=1 slots.
+
+    `query_nbhd` (prefix before QUERY) is already identity slots at r=1 (extra 0),
+    same no-op as type_marks. `query_side` must mark QUERY + a small window after,
+    extra count << seq, default none unchanged.
+    """
+    from nn.perceiver_ar_lm import exclusive_visible, mix_inplace_kv
+
+    cfg = config_for("bridge_1k", "select", n_distractors=0, n_decoys=1, evidence_align="right")
+    assert cfg.seq_len == 1024
+    assert cfg.query_len == cfg.key_len == 2
+    row = generate_row_for(cfg, np.random.default_rng(0))
+    ids_np = row.input_ids
+    query = cfg.vocab.control("query")
+    answer = cfg.vocab.control("answer")
+    qpos = int(np.where(ids_np == query)[0][0])
+    apos = int(np.where(ids_np == answer)[0][0])
+    assert apos == qpos + 1 + cfg.query_len
+    leaked = list(range(qpos, qpos + 4))  # QUERY, key, key, ANSWER
+    assert leaked[-1] == apos
+    spec = ArchSpec(
+        name="e21",
+        hidden=32,
+        head_dim=16,
+        local_window=16,
+        message_boundary_token_id=query,
+        message_compress_ratio=1,
+        message_slots_inplace=True,
+        message_identity_slots=True,
+        message_global_anchors="query_side",
+        message_anchor_window=4,
+        zero_init_residuals=False,
+    )
+    model = build_model(
+        "e21",
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=cfg.vocab.control("eos"),
+        bos_id=cfg.vocab.control("bos"),
+        eos_id=cfg.vocab.control("eos"),
+        spec=spec,
+        seed=0,
+    )
+    assert model.config.message_global_anchors == "query_side"
+    ids = torch.from_numpy(ids_np[None].astype(np.int64))
+    pos = model._positions(ids.shape[1], 1, None, ids.device)
+    with torch.no_grad():
+        ctx = model._message_context(ids, None, None, pos)
+    S = ids.shape[1]
+    anc = ctx.anchor[0]
+    for i in leaked:
+        assert bool(anc[i]), i
+    assert not bool(anc[qpos - 1])
+    assert int(anc.sum()) == 4
+    assert int(anc.sum()) < S
+    k = torch.zeros(1, S, model.config.num_kv_heads, model.config.head_dim)
+    _, _, replace = mix_inplace_kv(k, k, k, k, ctx)
+    extra = exclusive_visible(replace, ctx) & ~replace
+    assert bool(replace[0, qpos - 1]) and not bool(replace[0, qpos])
+    for i in leaked:
+        assert not bool(replace[0, i])
+        assert bool(extra[0, i])
+    assert int(extra[0].sum()) == 4
+    assert int(extra[0].sum()) < cfg.seq_len
+    # exact tokens: QUERY, the two query-key symbols, ANSWER — not prefix slots
+    assert int(ids_np[qpos]) == query
+    assert int(ids_np[apos]) == answer
+    assert int(ids_np[qpos + 1]) != query and int(ids_np[qpos + 2]) != query
+
+    nbhd = build_model(
+        "e21",
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=cfg.vocab.control("eos"),
+        bos_id=cfg.vocab.control("bos"),
+        eos_id=cfg.vocab.control("eos"),
+        spec=ArchSpec(
+            name="e21",
+            hidden=32,
+            head_dim=16,
+            local_window=16,
+            message_boundary_token_id=query,
+            message_compress_ratio=1,
+            message_slots_inplace=True,
+            message_identity_slots=True,
+            message_global_anchors="query_nbhd",
+            message_anchor_window=4,
+            zero_init_residuals=False,
+        ),
+        seed=0,
+    )
+    with torch.no_grad():
+        ctx_n = nbhd._message_context(ids, None, None, pos)
+    _, _, replace_n = mix_inplace_kv(k, k, k, k, ctx_n)
+    extra_n = exclusive_visible(replace_n, ctx_n) & ~replace_n
+    assert int(extra_n[0].sum()) == 0
+    assert not bool(ctx_n.anchor[0, qpos])
+
+    off = build_model(
+        "e21",
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=cfg.vocab.control("eos"),
+        bos_id=cfg.vocab.control("bos"),
+        eos_id=cfg.vocab.control("eos"),
+        spec=ArchSpec(
+            name="e21",
+            hidden=32,
+            head_dim=16,
+            local_window=16,
+            message_boundary_token_id=query,
+            message_compress_ratio=1,
+            message_slots_inplace=True,
+            message_identity_slots=True,
+            zero_init_residuals=False,
+        ),
+        seed=0,
+    )
+    assert off.config.message_global_anchors == "none"
+    e18 = build_model(
+        "e18",
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=cfg.vocab.control("eos"),
+        bos_id=cfg.vocab.control("bos"),
+        eos_id=cfg.vocab.control("eos"),
+        spec=ArchSpec(
+            name="e18",
+            hidden=32,
+            head_dim=16,
+            local_window=16,
+            message_global_anchors="query_side",
+            zero_init_residuals=False,
+        ),
+        seed=0,
+    )
+    assert e18.config.message_boundary_token_id == -1
+    assert e18.config.message_global_anchors == "none"
+

@@ -46,10 +46,12 @@ Hooks for the family (config fields only — no parameters unless enabled):
     `message_update_slot_kv` (default off) rewrites exclusive slot K/V from the
     post-attend residual before each extra hop (queries *and* slot keys update).
     Extra=0 is unchanged either way; still not the full raw prefix.
-    `message_global_anchors` (default `none`) leaks a *sparse* set of non-slot
-    sender tokens into the exclusive global read: QUERY neighborhood (a few
-    tokens immediately before QUERY) and/or type-mark control tokens
-    (`keymark`/`decoy`/`spanmark`/`hop`/`mark`). Those positions join exclusive
+    `message_global_anchors` (default `none`) leaks a *sparse* set of extra
+    tokens into the exclusive global read. `query_nbhd`: a few sender tokens
+    immediately before QUERY (already r=1 replace slots). `query_side`: QUERY
+    itself plus a small window *after* the message boundary (receiver-side
+    type request; not prefix replace slots). `type_marks`:
+    `keymark`/`decoy`/`spanmark`/`hop`/`mark`. Those positions join exclusive
     slot K/V as raw keys; the rest of the prefix stays exclusive (not E18 raw
     KV). `prefix_kv(as_message=True)` returns those slots.
 """
@@ -72,8 +74,10 @@ from transformers.modeling_outputs import CausalLMOutput
 logger = logging.getLogger(__name__)
 
 # Sparse exclusive-plus-anchors (E21). Default `none` is prior exclusive slots.
-MESSAGE_GLOBAL_ANCHORS = ("none", "query_nbhd", "type_marks", "query_nbhd+type")
-MESSAGE_QUERY_NBHD_DEFAULT = 4  # sender tokens immediately before QUERY
+# `query_nbhd` = sender tokens immediately before QUERY (prefix; r=1 slots).
+# `query_side` = QUERY + window after the boundary (receiver; not prefix slots).
+MESSAGE_GLOBAL_ANCHORS = ("none", "query_nbhd", "query_side", "type_marks", "query_nbhd+type")
+MESSAGE_QUERY_NBHD_DEFAULT = 4  # sender-before or QUERY-plus-after window
 
 # --------------------------------------------------------------------------------------
 # Config
@@ -133,7 +137,7 @@ class PerceiverARConfig(PretrainedConfig):
         message_update_slot_kv: bool = False,  # E21 — rewrite exclusive slot K/V between extra hops
         message_global_anchors: str = "none",  # E21 — sparse raw keys joining exclusive slot K/V
         message_anchor_token_ids: tuple[int, ...] = (),  # type-mark ids when anchors include type_marks
-        message_anchor_window: int = MESSAGE_QUERY_NBHD_DEFAULT,  # QUERY-nbhd width (sender tokens)
+        message_anchor_window: int = MESSAGE_QUERY_NBHD_DEFAULT,  # nbhd width (query_nbhd / query_side)
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -574,13 +578,15 @@ def build_message_anchors(
     token_ids: tuple[int, ...] = (),
     window: int = MESSAGE_QUERY_NBHD_DEFAULT,
 ) -> torch.Tensor:
-    """Sparse sender positions that join exclusive slot K/V as raw keys. [B,S] bool.
+    """Sparse extra positions that join exclusive slot K/V as raw keys. [B,S] bool.
 
     `type_marks`: control tokens in `token_ids` on the sender side (DNA keymark/decoy/
     spanmark/hop, Glyph mark). `query_nbhd`: the `window` sender tokens immediately
-    before each QUERY (document-start of side ≥ 1). Default `none` is all-False.
-    Count is << seq: a handful of marks and/or `window` tokens per QUERY, never the
-    full prefix.
+    before each QUERY (document-start of side ≥ 1) — prefix, already r=1 replace
+    slots. `query_side`: QUERY itself plus the next `window-1` receiver tokens
+    (the SELECT type request lives here; not prefix replace slots). Default
+    `none` is all-False. Count is << seq: a handful of marks and/or `window`
+    tokens per QUERY, never the full prefix.
     """
     B, S = input_ids.shape
     anchor = torch.zeros(B, S, dtype=torch.bool, device=input_ids.device)
@@ -588,21 +594,30 @@ def build_message_anchors(
     if mode == "none":
         return anchor
     sender = (side == 0) & (doc >= 0)
+    is_query = torch.zeros(B, S, dtype=torch.bool, device=input_ids.device)
+    is_query[:, 0] = side[:, 0] >= 1
+    is_query[:, 1:] = (side[:, 1:] >= 1) & (side[:, :-1] == 0)
     if mode in ("type_marks", "query_nbhd+type") and token_ids:
         ids = torch.tensor(list(token_ids), device=input_ids.device, dtype=input_ids.dtype)
         is_mark = (input_ids.unsqueeze(-1) == ids).any(dim=-1)
         anchor = anchor | (is_mark & sender)
     if mode in ("query_nbhd", "query_nbhd+type") and int(window) > 0:
         w = int(window)
-        is_query = torch.zeros(B, S, dtype=torch.bool, device=input_ids.device)
-        is_query[:, 0] = side[:, 0] >= 1
-        is_query[:, 1:] = (side[:, 1:] >= 1) & (side[:, :-1] == 0)
         nbhd = torch.zeros(B, S, dtype=torch.bool, device=input_ids.device)
         for d in range(1, w + 1):
             at_q = is_query[:, d:]
             same = doc[:, :-d] == doc[:, d:]
             nbhd[:, :-d] = nbhd[:, :-d] | (at_q & same)
         anchor = anchor | (nbhd & sender)
+    if mode == "query_side" and int(window) > 0:
+        w = int(window)
+        nbhd = is_query.clone()
+        for d in range(1, w):
+            at_q = is_query[:, :-d]
+            same = doc[:, d:] == doc[:, :-d]
+            recv = side[:, d:] >= 1
+            nbhd[:, d:] = nbhd[:, d:] | (at_q & same & recv)
+        anchor = anchor | nbhd
     return anchor
 
 
@@ -649,10 +664,8 @@ def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Te
         raw_ok = (j <= q) & same
         if not raw_cross:
             dq = torch.div(tq, m, rounding_mode="floor")
-            dj = torch.div(tj, m, rounding_mode="floor")
             sq = tq - dq * m
-            sj = tj - dj * m
-            anc = is_raw & (tq >= 0) & (tj >= 0) & (sq >= 1) & (sj == 0) & anchor[b, j] & same_doc
+            anc = is_raw & (tq >= 0) & (tj >= 0) & (sq >= 1) & anchor[b, j] & same_doc
             raw_ok = raw_ok | anc
         if key_valid is not None:
             raw_ok = raw_ok & (key_valid[b, j] | (j == q))
@@ -679,11 +692,10 @@ def dense_message_mask(S: int, ctx: MessageCtx, key_valid: Optional[torch.Tensor
         same_side = side[:, None, :, None] == side[:, None, None, :]
         raw = causal_doc & same_side
         if ctx.anchor is not None:
-            anc = (
-                (side[:, None, :, None] >= 1)
-                & (side[:, None, None, :] == 0)
-                & ctx.anchor[:, None, None, :]
-            )
+            # Receiver queries may read anchored keys as extra exclusive raw
+            # (sender type_marks / query_nbhd, or QUERY-side query_side). Still
+            # causal + same-document; not the full prefix.
+            anc = (side[:, None, :, None] >= 1) & ctx.anchor[:, None, None, :]
             raw = raw | (causal_doc & anc)
     if key_valid is not None:
         raw = raw & (key_valid.bool()[:, None, None, :] | torch.eye(S, dtype=torch.bool, device=device)[None, None])

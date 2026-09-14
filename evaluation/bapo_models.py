@@ -24,10 +24,11 @@ Architectures
                `--global_layers N` (default 1) is sequential full Attention+FFN global
                blocks (E21 exclusive slots each; E18 raw prefix each). Distinct from
                `--stack_layers` (SWA local) and from extra hops inside one Attention.
-               `--message_global_anchors {none,query_nbhd,type_marks,query_nbhd+type}`
-               (default `none`) leaks a sparse sender subset into exclusive slot K/V:
-               QUERY neighborhood (4 tokens before QUERY) and/or type-mark controls.
-               Still not the full raw prefix (that is E18).
+               `--message_global_anchors {none,query_nbhd,query_side,type_marks,query_nbhd+type}`
+               (default `none`) leaks a sparse extra subset into exclusive slot K/V:
+               `query_nbhd` = 4 sender tokens before QUERY; `query_side` = QUERY plus
+               a small window after the boundary (receiver type request); and/or
+               type-mark controls. Still not the full raw prefix (that is E18).
 - `encdec`     Symmetric encoder-decoder: bidirectional prefix encoder, suffix-only decoder with
                cross-attention. Prefix information cannot take a raw route into the suffix.
 """
