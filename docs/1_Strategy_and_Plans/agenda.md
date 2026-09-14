@@ -29,8 +29,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   `recall_single` frozen mean **0 bits**. Seq=512 `recall_single` r=1 identity
   **91.6% / 43.08 bits**. Seq=512 `select_1decoy` r=1 identity **100% / 47.98 bits**
   @700. Seq=512 packed `chain_ordered` **K1** at H=128 (24.2%), H=256 log (32.4% /
-  1.10 bits), and H=512 MHA (24.1% / 0 bits). Not a hops verdict. Next: 512 chain
-  `--key_len 13` (tiny pack) H=256 log.
+  1.10 bits), H=512 MHA (24.1%), and `--key_len 13` tiny 26-bit keys (22.5% / 0
+bits). 512 context, not key packing. Next: seq=256 chain `--key_len 13` (hops=2).
   Spec [E25](../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md) ·
   [rung 1](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) ·
   [remainder](../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) ·
@@ -55,7 +55,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [512 recall in-place r=1 identity](../2_Experiments_Registry/run_reports/e25_bridge512_ip_id_recall_20260914.md) ·
   [512 select in-place r=1 identity](../2_Experiments_Registry/run_reports/e25_bridge512_ip_id_select_20260914.md) ·
   [512 chain H=128 K1](../2_Experiments_Registry/run_reports/e25_bridge512_ip_id_chain_20260914.md) ·
-  [512 chain S0 hunt](../2_Experiments_Registry/run_reports/e25_bridge512_chain_s0_20260914.md).
+  [512 chain S0 hunt](../2_Experiments_Registry/run_reports/e25_bridge512_chain_s0_20260914.md) ·
+  [512 chain key_len=13](../2_Experiments_Registry/run_reports/e25_bridge512_chain_k13_20260914.md).
   Do not relabel E18 scores as E21.
 - **2026-09-13 — E24 BAPO DNA ladder (tiny + GPU bridge 512/1024; 4k S0 open).** Packed tiny
   seq=128 / 0.59M: E18 matches dense on positional `far_copy` (99.2% vs 99.4%) and recovers
@@ -89,6 +90,12 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-14 — E25 GPU seq=512 chain_ordered --key_len 13 dense S0 (Odra, H=256 log).**
+  Tiny packed 26-bit keys, hops=2, right-align. Dense **22.5% / 0 bits** @3200
+  (**K1**; chance floor). e18 / e21 skipped. Key packing is not the remaining
+  S0 lever — 512 context is. Next: seq=256 `--key_len 13` hops=2. Do not bump width.
+  `--hops 1` is illegal. Do not run it.
+  [report](../2_Experiments_Registry/run_reports/e25_bridge512_chain_k13_20260914.md).
 - **2026-09-14 — E25 GPU seq=512 chain_ordered dense S0 hunt (Odra, H=256 log + H=512 MHA).**
   H=256 SSMax log: dense **32.4% / 1.10 bits** @3200 (**K1**). One bump H=512
   `--kv_heads 0`: dense **24.1% / 0 bits** @3200 (**K1**, harder floor). e18 / e21
