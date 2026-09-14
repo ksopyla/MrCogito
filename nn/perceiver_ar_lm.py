@@ -7,7 +7,7 @@ Training-time structure (all layers share one block; only the attention *pattern
 
     ids ─► tiny factorized embedding (e=256) + hashed 2/3-gram tables ─► MLP up-proj ─► x0
         ─► [swa(pre_window)] × pre_layers          # local pre-encoder: contextualize the history
-        ─► [full causal]     × global_layers        # the ONE global read (the only unbounded KV cache)
+        ─► [full causal]     × global_layers        # exclusive (E21) or raw (E18) global read+FFN
         ─► [swa(block)]      × stack_layers         # deep local processing over the last N tokens
         ─► RMSNorm ─► chunked soft-capped lm_head + CE (+ z-loss)
 
@@ -36,9 +36,13 @@ Hooks for the family (config fields only — no parameters unless enabled):
     the global read but does not treat QUERY as a SWA/n-gram document start — the local
     window still sees raw prefix tokens that fall inside the sliding window.
     `message_extra_slot_attends` (default 0) re-reads the *same* exclusive slot K/V
-    with queries updated by the previous hop — a second exclusive attend in slot
-    space, not a raw prefix KV restore and not DNA `--hops`. Off by
+    with queries updated by the previous hop — extra attends *inside one* Attention,
+    not a second global Block and not DNA `--hops`. Off by
     default (`id=-1`) so E18 checkpoints stay byte-identical.
+    `global_layers` (default 1) is the count of sequential full Attention+FFN
+    blocks after the pre-encoder. `global_layers=2` is a second exclusive
+    (E21) or raw (E18) global read+FFN over that layer's own slot/prefix K/V —
+    distinct from `--stack_layers` (SWA) and from extra hops inside one Attention.
     `message_update_slot_kv` (default off) rewrites exclusive slot K/V from the
     post-attend residual before each extra hop (queries *and* slot keys update).
     Extra=0 is unchanged either way; still not the full raw prefix.

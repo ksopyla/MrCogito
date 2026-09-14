@@ -15,6 +15,28 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-14] - E21 second exclusive global layer uses existing `global_layers` (default 1)
+
+**Why:**
+- Seq=1024 packed `select_1decoy` stays at chance with extra exclusive hops over frozen
+  or rewritten slot K/V (0 bits @800) while uncompressed E18 copies ~64 bits. Extra hops
+  are two sequential attends *inside one* Attention. Next knob: a second full exclusive
+  global Attention+FFN Block over slots (`global_layers=2`), not extra hops and not
+  extra SWA (`stack_layers` already 2 on prior hunts).
+
+**Impact:**
+- No new config field. Probe `--global_layers` already existed (default 1, E18-loadable).
+  `global_layers=2` is two sequential exclusive (E21) or raw (E18) global Blocks.
+  Distinct from `--stack_layers` and `--message_extra_slot_attends`. Still not raw prefix.
+
+**What changed:**
+- [docs] `nn/perceiver_ar_lm.py`, `evaluation/bapo_models.py` — distinguish the three knobs
+- [added] hunt JSON `global_layers`; probe `--global_layers` / `--stack_layers` help
+- [added] tests in `tests/test_perceiver_ar_message.py` and `tests/test_bapo_ladder.py`
+
+**Does not:** restore raw global KV, enable remainder, extra hops, unsever SWA, or
+unfreeze `u`/`delta`. Default `global_layers` stays 1.
+
 ## [2026-09-14] - E21 rewrite exclusive slot K/V between extra hops (`message_update_slot_kv`, default off)
 
 **Why:**

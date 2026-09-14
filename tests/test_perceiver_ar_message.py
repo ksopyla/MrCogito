@@ -822,6 +822,115 @@ def test_update_slot_kv_hides_uncompressed_remainder():
         assert not torch.allclose(a[0, P:], blk[0, P:], atol=1e-5)
 
 
+def test_default_global_layers_is_one_exclusive_block():
+    """Default global_layers=1 is one exclusive global Attention+FFN, extra hops 0."""
+    model = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                       message_slots_inplace=True, message_identity_slots=True)
+    assert model.config.global_layers == 1
+    assert model.config.message_extra_slot_attends == 0
+    assert model.config.stack_layers == 3
+    pats = [l.attn.pattern for l in model.layers]
+    assert pats.count("full") == 1
+    gi = model.config.global_layer_index
+    assert pats[gi] == "full"
+    assert model.layers[gi].attn.compressor is not None
+    assert sum(l.attn.compressor is not None for l in model.layers) == 1
+    assert analytic_param_count(model.config).total == sum(p.numel() for p in model.parameters())
+
+
+def test_global_layers_two_are_two_exclusive_blocks_not_extra_hops():
+    """global_layers=2: two sequential exclusive attend+FFN blocks, not extra hops / not extra SWA."""
+    one = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                     message_slots_inplace=True, message_identity_slots=True,
+                     global_layers=1, stack_layers=2)
+    two = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                     message_slots_inplace=True, message_identity_slots=True,
+                     global_layers=2, stack_layers=2)
+    hop = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                     message_slots_inplace=True, message_identity_slots=True,
+                     global_layers=1, stack_layers=2, message_extra_slot_attends=1)
+    extra_stack = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=1,
+                             message_slots_inplace=True, message_identity_slots=True,
+                             global_layers=1, stack_layers=3)
+    assert one.config.global_layers == 1
+    assert two.config.global_layers == 2
+    assert two.config.message_extra_slot_attends == 0
+    assert two.config.message_update_slot_kv is False
+    assert hop.config.message_extra_slot_attends == 1
+    assert [l.attn.pattern for l in one.layers] == ["swa", "full", "swa", "swa"]
+    assert [l.attn.pattern for l in two.layers] == ["swa", "full", "full", "swa", "swa"]
+    assert [l.attn.pattern for l in hop.layers] == ["swa", "full", "swa", "swa"]
+    assert [l.attn.pattern for l in extra_stack.layers].count("full") == 1
+    full = [i for i, l in enumerate(two.layers) if l.attn.pattern == "full"]
+    assert full == [1, 2]
+    for i in full:
+        assert two.layers[i].attn.compressor is not None
+        assert two.layers[i].mlp is not None
+    assert sum(l.attn.compressor is not None for l in two.layers) == 2
+    assert sum(l.attn.compressor is not None for l in one.layers) == 1
+    # extra hops reuse the same Attention; a second global Block adds params
+    assert sum(p.numel() for p in hop.parameters()) == sum(p.numel() for p in one.parameters())
+    assert sum(p.numel() for p in two.parameters()) > sum(p.numel() for p in one.parameters())
+    assert analytic_param_count(two.config).total == sum(p.numel() for p in two.parameters())
+
+    events = []
+    real = attend_inplace
+
+    def wrapped_attend(q, k, v, **kw):
+        events.append(("attend", id(k)))
+        return real(q, k, v, **kw)
+
+    def mlp_hook(_mod, _inp, _out):
+        events.append(("mlp1",))
+
+    S, P = 16, 9
+    x = with_boundary(rand_ids(1, S, seed=4), P)
+    import nn.perceiver_ar_lm as pal
+    handle = two.layers[1].mlp.register_forward_hook(mlp_hook)
+    try:
+        with torch.no_grad(), patch.object(pal, "attend_inplace", wrapped_attend):
+            _ = two(x)
+    finally:
+        handle.remove()
+    attends = [e for e in events if e[0] == "attend"]
+    assert len(attends) == 2
+    assert attends[0][1] != attends[1][1]  # each Block projects its own exclusive K/V
+    attend_ix = [i for i, e in enumerate(events) if e[0] == "attend"]
+    mlp_ix = [i for i, e in enumerate(events) if e[0] == "mlp1"]
+    assert len(mlp_ix) == 1
+    assert attend_ix[0] < mlp_ix[0] < attend_ix[1]  # FFN between the two exclusive reads
+
+    pos = two._positions(S, 1, None, x.device)
+    with torch.no_grad():
+        ctx = two._message_context(x, None, None, pos)
+    assert ctx.extra_slot_attends == 0
+    k = torch.zeros(1, S, 2, 8)
+    _, _, replace = mix_inplace_kv(k, k, k, k, ctx)
+    mask = dense_inplace_mask(S, ctx, None, replace, "cpu")
+    assert bool(mask[0, 0, P, :P].all())  # r=1 identity: exclusive slots cover sender
+    concat = dense_message_mask(S, ctx, None, "cpu")[0, 0]
+    assert concat[P, :P].tolist() == [False] * P  # still not raw prefix
+
+
+def test_global_layers_two_hides_uncompressed_remainder():
+    """Second exclusive global Block still hides the incomplete last sender block."""
+    model = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=3,
+                       message_slots_inplace=True, message_identity_slots=True,
+                       global_layers=2, stack_layers=2)
+    assert model.config.global_layers == 2
+    assert model.config.message_extra_slot_attends == 0
+    S, P = 16, 10
+    x = with_boundary(rand_ids(1, S, seed=4), P)
+    y_rem = x.clone()
+    y_rem[0, P - 1] = (y_rem[0, P - 1] + 7) % 80 + 3
+    y_blk = x.clone()
+    y_blk[0, 2] = (y_blk[0, 2] + 7) % 80 + 3
+    with torch.no_grad():
+        a, rem, blk = model(x).logits, model(y_rem).logits, model(y_blk).logits
+        assert torch.allclose(a[0, P:], rem[0, P:], atol=1e-5)
+        assert not torch.allclose(a[0, P:], blk[0, P:], atol=1e-5)
+
+
 MARK = 91  # type-mark id; random inputs use 3..80, boundary is M=90
 
 

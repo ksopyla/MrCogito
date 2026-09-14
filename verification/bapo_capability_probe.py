@@ -169,6 +169,7 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             f"msg_rawkv={getattr(model.config, 'message_inplace_raw_kv', False) if arch == 'e21' else '-'}  "
             f"msg_idslots={getattr(model.config, 'message_identity_slots', False) if arch == 'e21' else '-'}  "
             f"msg_keepswa={getattr(model.config, 'message_keep_local_swa', False) if arch == 'e21' else '-'}  "
+            f"glob_layers={getattr(model.config, 'global_layers', '-')}  "
             f"msg_extrahops={getattr(model.config, 'message_extra_slot_attends', 0) if arch == 'e21' else '-'}  "
             f"msg_updatekv={getattr(model.config, 'message_update_slot_kv', False) if arch == 'e21' else '-'}  "
             f"msg_anchors={getattr(model.config, 'message_global_anchors', 'none') if arch == 'e21' else '-'}",
@@ -378,6 +379,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             "global_logit_scale": args.global_logit_scale,
             "attn_backend": args.attn_backend,
             "hidden": args.hidden,
+            "global_layers": args.global_layers,
             "stack_layers": args.stack_layers,
             "warm_residuals": args.warm_residuals,
             "message_ratio": args.message_ratio,
@@ -418,8 +420,20 @@ def main() -> int:
     p.add_argument("--arch", nargs="+", default=["dense", "e18", "encdec"], choices=list(ARCHES))
     p.add_argument("--hidden", type=int, default=128)
     p.add_argument("--pre_layers", type=int, default=1)
-    p.add_argument("--global_layers", type=int, default=1)
-    p.add_argument("--stack_layers", type=int, default=2)
+    p.add_argument(
+        "--global_layers",
+        type=int,
+        default=1,
+        help="Sequential full Attention+FFN global blocks (E18 raw / E21 exclusive "
+        "slots). Default 1 (E18-loadable). Distinct from --stack_layers (SWA) and "
+        "from --message_extra_slot_attends (extra attends inside one Attention).",
+    )
+    p.add_argument(
+        "--stack_layers",
+        type=int,
+        default=2,
+        help="SWA local stack after the global read(s). Default 2. Not a second global.",
+    )
     p.add_argument("--enc_layers", type=int, default=2)
     p.add_argument("--dec_layers", type=int, default=2)
     p.add_argument("--head_dim", type=int, default=32)

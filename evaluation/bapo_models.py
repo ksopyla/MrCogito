@@ -21,6 +21,9 @@ Architectures
                slot K/V with updated queries (second hop in slot space; not raw prefix).
                `--message_update_slot_kv` (default off) rewrites exclusive slot K/V from
                the post-attend residual before each extra hop. Extra=0 is unchanged.
+               `--global_layers N` (default 1) is sequential full Attention+FFN global
+               blocks (E21 exclusive slots each; E18 raw prefix each). Distinct from
+               `--stack_layers` (SWA local) and from extra hops inside one Attention.
                `--message_global_anchors {none,query_nbhd,type_marks,query_nbhd+type}`
                (default `none`) leaks a sparse sender subset into exclusive slot K/V:
                QUERY neighborhood (4 tokens before QUERY) and/or type-mark controls.

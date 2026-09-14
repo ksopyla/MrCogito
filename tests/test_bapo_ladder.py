@@ -708,6 +708,78 @@ def test_e21_update_slot_kv_flag_is_wired_on_factory():
     assert e18.config.message_update_slot_kv is False
 
 
+def test_e21_global_layers_two_is_wired_on_factory():
+    """--global_layers 2 is two exclusive global Blocks, not extra hops and not extra SWA."""
+    cfg = config_for("tiny", "far_copy")
+    qid = cfg.vocab.control("query")
+    spec = ArchSpec(
+        name="e21",
+        hidden=32,
+        head_dim=16,
+        local_window=16,
+        pre_layers=1,
+        global_layers=2,
+        stack_layers=2,
+        message_boundary_token_id=qid,
+        message_compress_ratio=1,
+        message_slots_inplace=True,
+        message_identity_slots=True,
+        zero_init_residuals=False,
+    )
+    kw = dict(
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=cfg.vocab.control("eos"),
+        bos_id=cfg.vocab.control("bos"),
+        eos_id=cfg.vocab.control("eos"),
+        seed=0,
+    )
+    e21 = build_model("e21", spec=spec, **kw)
+    assert e21.config.global_layers == 2
+    assert e21.config.message_extra_slot_attends == 0
+    assert e21.config.message_update_slot_kv is False
+    assert e21.config.message_global_anchors == "none"
+    pats = [l.attn.pattern for l in e21.layers]
+    assert pats == ["swa", "full", "full", "swa", "swa"]
+    full = [i for i, p in enumerate(pats) if p == "full"]
+    assert full == [1, 2]
+    for i in full:
+        assert e21.layers[i].attn.compressor is not None
+    default = build_model(
+        "e21",
+        spec=ArchSpec(
+            name="e21",
+            hidden=32,
+            head_dim=16,
+            local_window=16,
+            message_boundary_token_id=qid,
+            message_compress_ratio=1,
+            message_slots_inplace=True,
+            message_identity_slots=True,
+            zero_init_residuals=False,
+        ),
+        **kw,
+    )
+    assert default.config.global_layers == 1
+    assert [l.attn.pattern for l in default.layers].count("full") == 1
+    e18 = build_model("e18", spec=spec, **kw)
+    assert e18.config.global_layers == 2
+    assert e18.config.message_boundary_token_id == -1
+    assert [l.attn.pattern for l in e18.layers] == ["swa", "full", "full", "swa", "swa"]
+    assert all(l.attn.compressor is None for l in e18.layers)
+    local = build_model("e18_local", spec=spec, **kw)
+    assert local.config.global_layers == 0
+    assert all(l.attn.pattern == "swa" for l in local.layers)
+    assert len(local.layers) == len(e21.layers)
+    torch.manual_seed(0)
+    ids = torch.randint(3, cfg.vocab.vocab_size, (2, cfg.seq_len))
+    p = cfg.seq_len // 2
+    ids[:, p] = qid
+    loss = e21(ids, labels=torch.full_like(ids, -100)).loss
+    assert torch.isfinite(loss)
+
+
 def test_e21_global_anchors_flag_is_wired_on_factory():
     cfg = config_for("tiny", "far_copy")
     qid = cfg.vocab.control("query")
