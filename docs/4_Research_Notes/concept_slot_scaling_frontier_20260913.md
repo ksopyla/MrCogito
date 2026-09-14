@@ -72,6 +72,7 @@ steps). **Tune LR per geometry; it is not portable from the 1.35M toy.**
 | **cell_seq512_r8_D9** | D | **4.97M** | **3e-4** | 512 | 8 | far_copy | 2 | **120k** | 3,750 | **98.5%** | 0.042 | **yes** | target_acc |
 | **reach_seq512_A** | A | 5.11M | **3e-4** | 512 | 8 | far_copy gap128 | 2 | **48k** | 1,500 | **95.0%** | 0.140 | **yes** | target_acc |
 | **reach_seq512_D9** | D | **4.97M** | **3e-4** | 512 | 8 | far_copy gap128 | 2 | **32k** | 1,000 | **98.3%** | 0.047 | **yes** | target_acc |
+| **reach_seq512_C** | C | 2.27M | 3e-4 | 512 | 8 | far_copy gap128 | 2 | 38k | 1,200 | 25.4% | 1.386 | no (floor) | budget |
 | seq512 D lr=1e-3 | D | 2.27M | 1e-3 | 512 | 8 | far_copy | 2 | 104k | 3,250 | 27.8% | 1.343 | no | retuned |
 | seq512 D lr=3e-3 | D | 2.27M | 3e-3 | 512 | 8 | far_copy | 2 | 64k | 2,000 | 25.2% | 1.368 | no | retuned |
 | seq512 A lr=1e-3 | A | 5.11M | 1e-3 | 512 | 8 | far_copy | 2 | 72k | 2,250 | 24.5% | 1.386 | no | retuned to 3e-4 |
@@ -161,7 +162,8 @@ Early-stop at the 95% bar. Takeoff was sawtooth until 104k, then a sharp drop
 **Same-parameter verdict:** both arms solve seq512 r=8; exclusive slots use
 **0.60× examples and 0.63× wall**.
 
-In flight now: C leak-check on seq=512 min_gap=128, then seq=1024 min_gap=256.
+In flight now: seq=1024 min_gap=256 A (lr=1e-4). Live 38.3% at 16k, CE 1.30,
+6.75 s/step — leaving chance. C on seq=512 min_gap=128 stayed at 25.4%.
 
 
 ## One-sentence frontier
