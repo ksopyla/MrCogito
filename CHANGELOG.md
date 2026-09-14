@@ -15,6 +15,31 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-14] - `research-comms`: comparison plots as the default for arm/length comparisons
+
+**Why:**
+- After the short-first skill landed, the author asked to also generate plots for comparisons,
+  citing two sessions where they actually helped: *Perceiver context model* and *E18 capability
+  scaling*. Those transcripts show the other side of the same problem: he asked for plots five
+  times in one thread; the only figure he reasoned from was a single overlay with a spoken color
+  legend ("I would like to understand better the arm D green line"). Six-panel dumps, W&B-style
+  curve/bits/flow/bytes bundles, and a 7-PNG summary produced no follow-up that cited a panel.
+  Curves were also still being dumped as parentheticals (`6.66 → 5.53 → …`).
+
+**Changed:**
+- `.cursor/skills/research-comms/SKILL.md`: sixth law (a comparison that is a series is a plot);
+  budget rows now allow 1 plot (2 if he asked "with plots"); new **Comparison plots** section
+  (which figure, how to ship it, what not to do); self-check item; style-reference PNG
+  `overlay_curve_example.png` (synthetic).
+- `.cursor/skills/research-comms/examples.md`: before/after of the parenthetical curve vs one overlay.
+- `.cursor/rules/communication.mdc`, `AGENTS.md`, `experiment-track`, `experiment-evaluate`:
+  comparison of ≥2 arms/lengths/tasks includes one plot.
+
+**Impact:**
+- No training, evaluation or checkpoint behaviour changes.
+
+---
+
 ## [2026-09-13] - HARDER concept-slot scaling plots + frontier note
 
 **Why:**

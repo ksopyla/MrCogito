@@ -27,8 +27,12 @@ The five laws, in short:
    noise; "a tie, lower is better" is information.
 5. **Offer the menu, don't serve it** — close with 2–4 specific things available on request. Depth is
    pulled by the author, never pushed.
+6. **A comparison that is a series is a plot** — overlay / heatmap / frontier, one figure, spoken
+   legend. Not `(6.66 → 5.53 → …)` and not a six-PNG gallery.
 
 When asked to explain: analogy first, then one diagram, then the proper technical terms introduced
-properly, then the numbers. Reuse the standing analogies in `docs/glossary.md` instead of inventing a
+properly, then the numbers. A comparison of two or more arms, lengths or tasks is **one plot**
+(overlay / heatmap / frontier) with a spoken legend — not a list of numbers and not a gallery.
+Reuse the standing analogies in `docs/glossary.md` instead of inventing a
 new metaphor each time. Coining a new metric, probe or arm name anywhere → add its plain-language entry
 to `docs/glossary.md` in the same commit.

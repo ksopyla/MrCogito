@@ -320,6 +320,8 @@ When using this skill, produce:
 **The chat message is not the report.** The docs written here are dense on purpose — they are the
 archive. What goes back to the author is a ~120-word Brief in plain words: what happened, what it
 means, what I recommend, plus a link. No gate codes, no arm letters, no bare metric names, every
-number with its direction and verdict. Follow `research-comms` and `docs/glossary.md`.
+number with its direction and verdict. If two or more arms, lengths or tasks are compared, include
+**one** overlay/heatmap/frontier plot (legend in standing names, chance and pass-mark as lines).
+Follow `research-comms` and `docs/glossary.md`.
 
 If the user asks for a deep external research follow-up, hand off to `research-synthesis` (which spawns `research-scout` for source material).

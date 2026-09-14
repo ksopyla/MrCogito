@@ -189,3 +189,37 @@ had shipped without one summary.
 | "`PAR_GLOBAL_POSITIONS=7`" | "move the long-range lookup to the middle of the stack" |
 | "BPB 1.467 vs pythia-160m 1.265" | "worse than a public model of our size — but that one saw 680× more text, which explains the whole gap" |
 | "K1 met and the run was killed" | "it hit the failure condition we wrote down in advance, so I stopped it" |
+| `(6.66 → 5.53 → 5.02 → 4.17)` | one overlay plot of those two curves, chance/bar drawn, legend in standing names |
+| a 6-PNG gallery of accuracy / steps / LR / difficulty / params / frontier | the **one** figure that answers the question just asked |
+
+---
+
+## 7. Comparison plot
+
+**He asked (Perceiver session, five times in one thread):** *"give me interim results with plots"* /
+*"could you summary findings, wit some plots"* / *"plot the results"* /
+*"prepare the plots with explanations for each task, I would like to knon which is a baseline
+(dense) and which are arch with concepts."*
+
+**Before — a curve dumped as a parenthetical, then a 6-plot gallery:**
+
+> Eval-loss overlay of A vs C is essentially the same curve
+> (6.66 → 5.53 → 5.02 → 4.68 → 4.44 → 4.27 → 4.17).
+>
+> *(later, after "plot the results": six PNGs — accuracy vs examples, vs steps, LR probe,
+> difficulty bars, params vs seq, frontier poster. He cited none of them. He did cite, once,
+> a single green/red/blue/orange overlay: "I would like to understand better the arm D green line".)*
+
+**After — Brief + one overlay:**
+
+> **The notebook can carry the answer — slowly.** Dense (green, can reread any page) hits the 95%
+> bar first. Concepts (purple, notebook only) get there later. No-notebook (orange) stays on the
+> chance line, so the exam is fair.
+>
+> <img src="/opt/cursor/artifacts/far_copy_overlay.png" alt="Dense hits 95% first; concepts get there later; no-notebook stays at chance, so the exam is fair." />
+>
+> Green = dense, purple = concepts, orange = no notebook. Dashed = chance (1 in 4); dotted = the 95% bar we set.
+>
+> Ask me about: why concepts are slower, or the same picture at twice the length.
+
+Style reference (synthetic, not a real run): `overlay_curve_example.png` next to this file.

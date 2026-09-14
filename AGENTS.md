@@ -13,8 +13,9 @@ The chat is not the archive. Before any message that reports a result, pitches a
 experiment, explains an architecture, summarises work, or asks for a decision,
 follow the `research-comms` skill (`.cursor/skills/research-comms/SKILL.md`) and
 the always-applied `.cursor/rules/communication.mdc`. Short first pass, plain
-words, no private codenames (`arm A`, `S1`), every number with its meaning, depth
-only when asked. Shared vocabulary: `docs/glossary.md`.
+words, no private codenames (`arm A`, `S1`), every number with its meaning, one
+comparison plot instead of a number list, depth only when asked. Shared vocabulary:
+`docs/glossary.md`.
 
 ## Cursor Cloud specific instructions
 
