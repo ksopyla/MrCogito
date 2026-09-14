@@ -3,7 +3,8 @@
 - **Status:** active (tiny DNA limits; 512 concat 0 bits; raw/identity/raw-KV PASS;
   r=16 frozen mean NEAR-PASS @512; learned pool 0 bits; **1024 frozen mean S1 PASS**
   53.82 vs 47.34 bits; **512 recall frozen mean 0 bits**; **512 recall r=1 identity
-  S1 PASS 43.08 vs 35.00**). Keep in `ahead/`. Do not score Glyph yet.
+  S1 PASS 43.08 vs 35.00**; **512 select r=1 identity S1 PASS 47.98 vs 35.94**). Keep
+  in `ahead/`. Do not score Glyph yet.
 - **Serves:** the Vision's "does the compressed channel carry *addressable* content, and how
   many bits?" question, now on **E21** (exclusive compressed read) rather than E18's raw
   one-global-read. Observation base for later gating / compression. Reuses E24's DNA instrument.
@@ -92,9 +93,9 @@ pretraining run; this is the cheap controlled exam that spec's K1/K2 needed and 
   (off by default; byte-identical to E18). Probe arch `e21`. No new `train_*.py`.
 
 ## Result
-- Run id: `e25_tiny_far_copy` · `e25_tiny_far_copy_remainder` · `e25_tiny_far_copy_query_align` · `e25_tiny_far_copy_e21_steps` · `e25_tiny_recall_single` · `e25_tiny_recall_single_e21_steps` · `e25_tiny_select_1decoy` · `e25_tiny_chain_ordered` · `e25_tiny_chain_ordered_e21_steps` · `e25_512_fc` · `e25_512_r64` · `e25_512_r1` · `e25_512_raw` · `e25_512_ip_r1` · `e25_512_ip_rawkv` · `e25_512_ip_id` · `e25_512_ip_r16_mean` · `e25_512_ip_r16_mean_s3k` · `e25_512_ip_r16_mean_s8k` · `e25_512_ip_r16_learned` · `e25_1k_ip_r16_mean` · `e25_1k_ip_r16_mean_s8k` · `e25_512_ip_r16_mean_recall` · `e25_512_ip_id_recall`
+- Run id: `e25_tiny_far_copy` · `e25_tiny_far_copy_remainder` · `e25_tiny_far_copy_query_align` · `e25_tiny_far_copy_e21_steps` · `e25_tiny_recall_single` · `e25_tiny_recall_single_e21_steps` · `e25_tiny_select_1decoy` · `e25_tiny_chain_ordered` · `e25_tiny_chain_ordered_e21_steps` · `e25_512_fc` · `e25_512_r64` · `e25_512_r1` · `e25_512_raw` · `e25_512_ip_r1` · `e25_512_ip_rawkv` · `e25_512_ip_id` · `e25_512_ip_r16_mean` · `e25_512_ip_r16_mean_s3k` · `e25_512_ip_r16_mean_s8k` · `e25_512_ip_r16_learned` · `e25_1k_ip_r16_mean` · `e25_1k_ip_r16_mean_s8k` · `e25_512_ip_r16_mean_recall` · `e25_512_ip_id_recall` · `e25_512_ip_id_select`
 - WandB: n/a (probe; no `compute/*`)
-- Run reports: [`tiny`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) · [`remainder`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) · [`QUERY-align`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_query_align_20260913.md) · [`INDEX extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_e21_steps_20260913.md) · [`recall`](../../2_Experiments_Registry/run_reports/e25_tiny_recall_single_20260913.md) · [`recall extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_recall_single_e21_steps_20260913.md) · [`select`](../../2_Experiments_Registry/run_reports/e25_tiny_select_1decoy_20260913.md) · [`chain`](../../2_Experiments_Registry/run_reports/e25_tiny_chain_ordered_20260913.md) · [`chain extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_chain_ordered_e21_steps_20260913.md) · [`512 r=16`](../../2_Experiments_Registry/run_reports/e25_bridge512_far_copy_20260913.md) · [`512 r=64`](../../2_Experiments_Registry/run_reports/e25_bridge512_r64_far_copy_20260913.md) · [`512 r=1`](../../2_Experiments_Registry/run_reports/e25_bridge512_r1_far_copy_20260913.md) · [`512 raw`](../../2_Experiments_Registry/run_reports/e25_bridge512_raw_far_copy_20260913.md) · [`512 in-place r=1`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_r1_far_copy_20260913.md) · [`512 in-place raw KV`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_rawkv_far_copy_20260913.md) · [`512 in-place identity`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_id_far_copy_20260913.md) · [`512 in-place r=16 mean`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_r16_mean_far_copy_20260914.md) · [`512 in-place r=16 learned`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_r16_learned_far_copy_20260914.md) · [`1024 in-place r=16 mean`](../../2_Experiments_Registry/run_reports/e25_bridge1k_ip_r16_mean_far_copy_20260914.md) · [`512 recall in-place r=16 mean`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_r16_mean_recall_20260914.md) · [`512 recall in-place r=1 identity`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_id_recall_20260914.md)
+- Run reports: [`tiny`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_20260913.md) · [`remainder`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_remainder_20260913.md) · [`QUERY-align`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_query_align_20260913.md) · [`INDEX extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_far_copy_e21_steps_20260913.md) · [`recall`](../../2_Experiments_Registry/run_reports/e25_tiny_recall_single_20260913.md) · [`recall extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_recall_single_e21_steps_20260913.md) · [`select`](../../2_Experiments_Registry/run_reports/e25_tiny_select_1decoy_20260913.md) · [`chain`](../../2_Experiments_Registry/run_reports/e25_tiny_chain_ordered_20260913.md) · [`chain extra steps`](../../2_Experiments_Registry/run_reports/e25_tiny_chain_ordered_e21_steps_20260913.md) · [`512 r=16`](../../2_Experiments_Registry/run_reports/e25_bridge512_far_copy_20260913.md) · [`512 r=64`](../../2_Experiments_Registry/run_reports/e25_bridge512_r64_far_copy_20260913.md) · [`512 r=1`](../../2_Experiments_Registry/run_reports/e25_bridge512_r1_far_copy_20260913.md) · [`512 raw`](../../2_Experiments_Registry/run_reports/e25_bridge512_raw_far_copy_20260913.md) · [`512 in-place r=1`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_r1_far_copy_20260913.md) · [`512 in-place raw KV`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_rawkv_far_copy_20260913.md) · [`512 in-place identity`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_id_far_copy_20260913.md) · [`512 in-place r=16 mean`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_r16_mean_far_copy_20260914.md) · [`512 in-place r=16 learned`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_r16_learned_far_copy_20260914.md) · [`1024 in-place r=16 mean`](../../2_Experiments_Registry/run_reports/e25_bridge1k_ip_r16_mean_far_copy_20260914.md) · [`512 recall in-place r=16 mean`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_r16_mean_recall_20260914.md) · [`512 recall in-place r=1 identity`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_id_recall_20260914.md) · [`512 select in-place r=1 identity`](../../2_Experiments_Registry/run_reports/e25_bridge512_ip_id_select_20260914.md)
 - Verdict: **mixed.** Tiny INDEX near-pass at 8k. Tiny MATCH/select/chain walls. GPU seq=512
   exclusive concat slots **0 bits** (r=16/64/1). `--message_override raw` **PASSES** (100% /
   63.96 bits). r=1 in-place learned compressor **0 bits**. In-place raw KV **PASSES** (63.29
@@ -107,7 +108,10 @@ pretraining run; this is the cheap controlled exam that spec's K1/K2 needed and 
   live 47.94; vs 0.75× E18 35.95 and vs 0.75× dense 35.23). Frozen means carry INDEX,
   not MATCH. Seq=512 packed `recall_single` inplace r=1 identity **S1 PASS** (91.6% /
   43.08 bits @800 vs 0.75× E18 35.00 and vs 0.75× dense 35.77). Exclusive identity
-  binds a key; r=16 pooling is the MATCH killer. Next: 512 `select_1decoy` r=1 identity.
+  binds a key; r=16 pooling is the MATCH killer. Seq=512 packed `select_1decoy`
+  inplace r=1 identity **S1 PASS** (100% / 47.98 bits @700 vs 0.75× E18 35.94 and vs
+  0.75× dense 35.85). Exclusive identity does type-cue select. Next: 512
+  `chain_ordered` r=1 identity.
 
 ## Follow-up (rung 1b — remainder pooling)
 Ran. S1 **FAIL** at 2400 (12.7 bits). Geometry stacking did not help.
@@ -214,3 +218,11 @@ E21 identity **91.6% / 43.08 bits / flow 0.897** @800 (chance through ~350; best
 35.77). K2 **PASS**. Do not 8k (S1 already PASS). Exclusive identity binds a key;
 r=16 pooling is the MATCH killer. Next: 512 `select_1decoy` r=1 identity. Not 4k.
 Not Glyph.
+
+## Follow-up (rung 5m — seq=512 select_1decoy inplace r=1 hard identity)
+Ran `--scale bridge` packed `select_1decoy` H=128 + inplace identity **r=1** on Odra
+(no raw_kv). Dense **99.9% / 47.80 bits**. E18 **100% / 47.92 bits** @400 (live).
+E21 identity **100% / 47.98 bits / flow 1.000** @700 (chance through ~500; early
+stop). S1 **PASS** (47.98 vs 35.94). Content vs 0.75× dense **PASS** (47.98 vs
+35.85). K2 **PASS**. Do not 8k. Exclusive identity does type-cue select, not only
+MATCH/INDEX. Next: 512 `chain_ordered` r=1 identity. Not 4k. Not Glyph.
