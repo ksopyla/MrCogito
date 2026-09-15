@@ -17,7 +17,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-OUT = Path("/opt/cursor/artifacts/scale_hard")
+OUT = Path(os.environ.get("SCALE_OUT_DIR", "/workspace/Cache/scale_hard"))
 WRAPPER = Path("/workspace/verification/run_scale_job.sh")
 TARGET = 0.95
 

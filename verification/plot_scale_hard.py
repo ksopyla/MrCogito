@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 """Plot the exclusive-scope <10M harder-cell campaign (plus the seq128 easy end as a ghost).
 
-Dedicated snake_case PNGs land in /opt/cursor/artifacts/. The r=32 D JSON is a
+Dedicated snake_case PNGs land in docs/4_Research_Notes/figures/ and
+/workspace/Cache/scale_hard. The r=32 D JSON is a
 ratio-free reuse stub of seq256 D — it is not a second training curve.
 In-progress chain D is parsed from its log if the JSON is not written yet.
 """
@@ -14,11 +15,12 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-HARD = Path("/opt/cursor/artifacts/scale_hard")
+HARD = Path("/workspace/Cache/scale_hard")
+HARD_FALLBACK = Path("/opt/cursor/artifacts/scale_hard")
 EASY_A = Path("/opt/cursor/artifacts/scale/long_data_span32.json")
 EASY_3ARM = Path("/opt/cursor/artifacts/sym_probe_far_copy.json")
 R16 = Path("/opt/cursor/artifacts/scale/r16_span32.json")
-OUT_DIR = Path("/opt/cursor/artifacts")
+OUT_DIR = Path("/workspace/docs/4_Research_Notes/figures")
 CHANCE = 0.25
 BAR = 0.95
 BUDGET = 64_000
@@ -26,6 +28,7 @@ BUDGET = 64_000
 STEP_RE = re.compile(
     r"\[([ACD])\] step\s+(\d+)\s+examples\s+(\d+)\s+"
     r"train\s+([\d.]+)\s+eval CE\s+([\d.]+)\s+acc\s+([\d.]+)"
+    r"(?:\s+lr\s+([\d.e+-]+)\s+\(([\d.]+) s/step\))?"
 )
 META_SKIP = {"campaign_index.json", "campaign_meta.json", "winner_lr.json"}
 
@@ -46,6 +49,15 @@ def traces(bundle: dict, arm: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     steps = np.array([p["step"] for p in tr], dtype=float)
     ys = np.array([p["acc"] for p in tr], dtype=float)
     return xs, steps, ys
+
+
+def wall_trace(bundle: dict, arm: str) -> tuple[np.ndarray, np.ndarray] | None:
+    tr = bundle["results"][arm]["trace"]
+    if not tr or "wall_s" not in tr[0]:
+        return None
+    walls = np.array([p["wall_s"] for p in tr], dtype=float)
+    ys = np.array([p["acc"] for p in tr], dtype=float)
+    return walls, ys
 
 
 def acc_at(xs: np.ndarray, ys: np.ndarray, budget: float) -> tuple[float, bool]:
@@ -86,9 +98,16 @@ def is_lr_probe(bundle: dict, path: Path) -> bool:
 
 def difficulty_key(bundle: dict) -> str:
     cfg = bundle["config"]
+    name = str(bundle.get("run_name") or "")
     if cfg.get("task") == "chain":
         return f"chain h{cfg.get('hops')} seq{cfg['seq_len']}"
-    return f"seq{cfg['seq_len']} r={cfg['ratio']}"
+    key = f"seq{cfg['seq_len']} r={cfg['ratio']}"
+    gap = cfg.get("min_gap")
+    if gap not in (None, 32):
+        key += f" gap{gap}"
+    if "D9" in name:
+        key += " D9"
+    return key
 
 
 def label_for(bundle: dict, arm: str, extra: str = "") -> str:
@@ -113,14 +132,17 @@ def parse_log_bundle(log_path: Path, json_hint: Path | None = None) -> dict | No
     arm = None
     for m in STEP_RE.finditer(text):
         arm = m.group(1)
-        rows.append(
-            {
-                "step": int(m.group(2)),
-                "examples": int(m.group(3)),
-                "ce_nats": float(m.group(5)),
-                "acc": float(m.group(6)),
-            }
-        )
+        rec = {
+            "step": int(m.group(2)),
+            "examples": int(m.group(3)),
+            "ce_nats": float(m.group(5)),
+            "acc": float(m.group(6)),
+        }
+        if m.group(7):
+            rec["lr"] = float(m.group(7))
+        if m.group(8):
+            rec["wall_s"] = float(m.group(2)) * float(m.group(8))
+        rows.append(rec)
     if not rows or arm is None:
         return None
     hint = load(json_hint) if json_hint else None
@@ -131,6 +153,9 @@ def parse_log_bundle(log_path: Path, json_hint: Path | None = None) -> dict | No
     if tm:
         header["task"] = tm.group(1)
         header["seq_len"] = int(tm.group(2))
+    gm = re.search(r"min_gap=(\d+)", text)
+    if gm:
+        header["min_gap"] = int(gm.group(1))
     hm = re.search(r"slots=(\d+)", text)
     if hm:
         header["slots"] = int(hm.group(1))
@@ -138,10 +163,18 @@ def parse_log_bundle(log_path: Path, json_hint: Path | None = None) -> dict | No
     seq = cfg.get("seq_len") or header.get("seq_len", 256)
     ratio = cfg.get("ratio", 8)
     hops = cfg.get("hops", 3 if task == "chain" else 2)
+    min_gap = cfg.get("min_gap") or header.get("min_gap", 32)
     last = rows[-1]
     floor_kill = "floor kill" in text
     stop = "floor_patience" if floor_kill else "in_progress"
-    params = 5_107_858 if arm == "A" else 2_267_977
+    name = log_path.stem
+    if arm == "A":
+        params = 5_107_858
+    elif "D9" in name:
+        params = 4_974_227  # 9 decoder layers, param-matched to 5.11M A
+    else:
+        params = 2_267_977
+    lr = float(last.get("lr") or cfg.get("lr") or 0.0)
     return {
         "run_name": log_path.stem,
         "task": task,
@@ -150,8 +183,10 @@ def parse_log_bundle(log_path: Path, json_hint: Path | None = None) -> dict | No
             "seq_len": seq,
             "ratio": ratio,
             "hops": hops,
+            "min_gap": min_gap,
             "batch": 32,
             "steps": cfg.get("steps", 0),
+            "lr": lr,
         },
         "summary": {
             arm: {
@@ -161,7 +196,7 @@ def parse_log_bundle(log_path: Path, json_hint: Path | None = None) -> dict | No
                 "steps": last["step"],
                 "acc": last["acc"],
                 "ce": last["ce_nats"],
-                "lr": 0.001,
+                "lr": lr,
                 "seq": seq,
                 "r": ratio,
                 "task": task,
@@ -190,9 +225,18 @@ def collect_hard() -> tuple[list[dict], list[dict], list[dict]]:
     probes: list[dict] = []
     stubs: list[dict] = []
     seen_names: set[str] = set()
-    for p in sorted(HARD.glob("*.json")):
+    json_paths: list[Path] = []
+    for folder in (HARD, HARD_FALLBACK):
+        if folder.exists():
+            json_paths.extend(sorted(folder.glob("*.json")))
+    for p in json_paths:
         if p.name in META_SKIP:
             continue
+        if "stuck" in p.name or p.name.endswith("_slow.json"):
+            continue
+        if p.name in seen_names:
+            continue
+        seen_names.add(p.name)
         b = load(p)
         if not b or "results" not in b:
             continue
@@ -206,8 +250,14 @@ def collect_hard() -> tuple[list[dict], list[dict], list[dict]]:
         cells.append(b)
         seen_names.add(p.stem)
     # Live logs without JSON yet (chain D, …).
-    for log in sorted(HARD.glob("cell_*.log")):
+    log_paths: list[Path] = []
+    for folder in (HARD, HARD_FALLBACK):
+        if folder.exists():
+            log_paths.extend(sorted(folder.glob("cell_*.log")))
+    for log in log_paths:
         if log.stem in seen_names:
+            continue
+        if "stuck" in log.name or "slow" in log.name:
             continue
         parsed = parse_log_bundle(log)
         if parsed:
@@ -239,6 +289,16 @@ def cell_color(bundle: dict, arm: str) -> str:
         ("A", "chain h3 seq256"): "#6a3d9a",
         ("D", "chain h3 seq256"): "#e6550d",
         ("C", "chain h3 seq256"): "#74c476",
+        ("A", "seq512 r=8"): "#0b3d91",
+        ("D", "seq512 r=8"): "#a50f15",
+        ("C", "seq512 r=8"): "#41ab5d",
+        ("D", "seq512 r=8 D9"): "#fb6a4a",
+        ("A", "seq256 r=16"): "#2171b5",
+        ("A", "seq512 r=8 gap128"): "#253494",
+        ("D", "seq512 r=8 gap128 D9"): "#cb181d",
+        ("A", "seq1024 r=8 gap256"): "#081d58",
+        ("A", "chain h2 seq512"): "#9e9ac8",
+        ("D", "chain h2 seq512"): "#fd8d3c",
     }
     return palette.get((arm, key), style_for(arm)["color"])
 
@@ -452,7 +512,7 @@ def plot_difficulty(cells: list[dict], stubs: list[dict], easy_a, easy_3, outfil
     ax2.grid(True, axis="y", alpha=0.3)
 
     fig.suptitle(
-        "Harder cells  ·  exclusive-scope <10M  ·  95% bar  ·  CPU  ·  campaign still thin",
+        "Harder cells  ·  exclusive-scope <10M  ·  95% bar  ·  CPU",
         fontsize=11,
     )
     fig.tight_layout()
@@ -516,7 +576,7 @@ def plot_params_vs_seq(cells: list[dict], easy_a, easy_3, outfile: Path) -> None
             )
     ax.set_xlabel("seq_len (far_copy, span 32, r=8 cells that actually hit 95%)")
     ax.set_ylabel("params (M)")
-    ax.set_title("Params vs seq at ≥95%  — sparse: seq512 unmeasured, r=32 A missed")
+    ax.set_title("Params vs seq at ≥95%  (r=32 A missed 95%; width-matched D missed seq512)")
     ax.set_ylim(0, 10)
     ax.axhline(10, color="0.5", ls="--", lw=0.8, label="<10M target")
     ax.grid(True, alpha=0.3)
@@ -626,6 +686,276 @@ def plot_combined(cells, probes, stubs, easy_a, easy_3, r16, outfile: Path) -> N
     plt.close(fig)
 
 
+def plot_steps_sizes_acc(cells: list[dict], easy_a, easy_3, outfile: Path) -> None:
+    """The comparison the scaling-law goal asked for: steps, sizes, accuracies."""
+    fig, axes = plt.subplots(1, 3, figsize=(16.2, 5.0))
+
+    ax = axes[0]
+    ax.axhline(BAR, color="0.35", ls="--", lw=1.0)
+    ax.axhline(CHANCE, color="0.65", ls=":", lw=1.0)
+    for b in cells:
+        for arm in b["results"]:
+            _, steps, ys = traces(b, arm)
+            ax.plot(
+                steps,
+                ys,
+                color=cell_color(b, arm),
+                ls=style_for(arm, bool(b.get("in_progress")))["ls"],
+                lw=1.8,
+                label=label_for(b, arm, "(live)" if b.get("in_progress") else ""),
+            )
+    ax.set_xlabel("optimizer steps")
+    ax.set_ylabel("eval accuracy")
+    ax.set_ylim(-0.02, 1.05)
+    ax.set_title("Accuracy vs steps")
+    ax.legend(fontsize=6.5, loc="lower right")
+    ax.grid(True, alpha=0.3)
+
+    ax2 = axes[1]
+    ax2.axhline(BAR, color="0.35", ls="--", lw=1.0)
+    ax2.axhline(CHANCE, color="0.65", ls=":", lw=1.0)
+    for b in cells:
+        for arm in b["results"]:
+            rec = b["results"][arm]
+            acc = rec.get("acc", rec.get("final", {}).get("acc", 0))
+            params = rec["params"] / 1e6
+            ax2.scatter(
+                params,
+                acc,
+                s=90,
+                c=cell_color(b, arm),
+                marker={"A": "o", "C": "D", "D": "s"}[arm],
+                zorder=3,
+            )
+            ax2.annotate(
+                difficulty_key(b),
+                (params, acc),
+                textcoords="offset points",
+                xytext=(5, 4),
+                fontsize=7,
+            )
+    if easy_a:
+        acc = easy_a["results"]["A"]["final"]["acc"]
+        ax2.scatter(easy_a["results"]["A"]["params"] / 1e6, acc, s=70, c="0.5", marker="o")
+        ax2.annotate("A seq128", (1.35, acc), textcoords="offset points", xytext=(5, 4), fontsize=7, color="0.4")
+    ax2.set_xlabel("params (M)")
+    ax2.set_ylabel("final eval accuracy")
+    ax2.set_xlim(0, 10)
+    ax2.set_ylim(-0.02, 1.05)
+    ax2.set_title("Size vs accuracy (<10M)")
+    ax2.grid(True, alpha=0.3)
+
+    ax3 = axes[2]
+    for b in cells:
+        if b["config"].get("task") != "far_copy":
+            continue
+        for arm in b["results"]:
+            rec = b["results"][arm]
+            acc = rec.get("acc", rec.get("final", {}).get("acc", 0))
+            if acc < BAR:
+                continue
+            xs, _, ys = traces(b, arm)
+            e95 = examples_to_bar(xs, ys)
+            if e95 is None:
+                continue
+            ax3.scatter(
+                b["config"]["seq_len"],
+                e95 / 1000.0,
+                s=90,
+                c=cell_color(b, arm),
+                marker={"A": "o", "C": "D", "D": "s"}[arm],
+                zorder=3,
+            )
+            ax3.annotate(
+                f"{arm} {rec['params']/1e6:.2f}M",
+                (b["config"]["seq_len"], e95 / 1000.0),
+                textcoords="offset points",
+                xytext=(5, 4),
+                fontsize=7,
+            )
+    ax3.set_xlabel("seq_len (far_copy cells that hit 95%)")
+    ax3.set_ylabel("examples to ≥95% (thousands)")
+    ax3.set_title("Data to 95% vs length")
+    ax3.grid(True, alpha=0.3)
+
+    fig.suptitle(
+        "Exclusive-scope concept slots <10M · steps · sizes · accuracies · 95% bar",
+        fontsize=12,
+    )
+    fig.tight_layout()
+    fig.savefig(outfile, dpi=140)
+    fig.savefig(HARD / outfile.name, dpi=140)
+    plt.close(fig)
+
+
+def plot_working_law(cells: list[dict], easy_a, easy_3, outfile: Path) -> None:
+    """Measured working law: length vs compression vs composition at frozen <10M."""
+    fig, axes = plt.subplots(1, 3, figsize=(15.6, 5.0))
+
+    ax = axes[0]
+    for b in cells:
+        if b["config"].get("task") != "far_copy" or b["config"].get("ratio") != 8:
+            continue
+        for arm in b["results"]:
+            if arm == "C":
+                continue
+            rec = b["results"][arm]
+            xs, _, ys = traces(b, arm)
+            e95 = examples_to_bar(xs, ys)
+            seq = b["config"]["seq_len"]
+            if e95 is not None:
+                ax.scatter(
+                    seq,
+                    e95 / 1000.0,
+                    s=110,
+                    c=cell_color(b, arm),
+                    marker={"A": "o", "D": "s"}[arm],
+                    zorder=3,
+                    label=f"{arm} {rec['params']/1e6:.2f}M ≥95%",
+                )
+            else:
+                ax.scatter(
+                    seq,
+                    rec.get("acc", rec.get("final", {}).get("acc", 0)) * 100,
+                    s=80,
+                    c=cell_color(b, arm),
+                    marker="x",
+                    zorder=3,
+                    label=f"{arm} {rec['params']/1e6:.2f}M miss (acc on right axis)",
+                )
+    if easy_a:
+        xs, _, ys = traces(easy_a, "A")
+        e95 = examples_to_bar(xs, ys)
+        if e95:
+            ax.scatter(128, e95 / 1000.0, s=90, c="0.5", marker="o", label="A 1.35M seq128 ≥95%")
+    ax.set_xlabel("seq_len (far_copy, r=8)")
+    ax.set_ylabel("examples to ≥95% (thousands)")
+    ax.set_title("Length: E95 does not grow with S")
+    ax.legend(fontsize=6.5)
+    ax.grid(True, alpha=0.3)
+
+    ax2 = axes[1]
+    ax2.axhline(BAR, color="0.35", ls="--", lw=1.0)
+    for b in cells:
+        if b["config"].get("task") != "far_copy":
+            continue
+        if "A" not in b["results"]:
+            continue
+        rec = b["results"]["A"]
+        acc = rec.get("acc", rec.get("final", {}).get("acc", 0))
+        r = b["config"]["ratio"]
+        seq = b["config"]["seq_len"]
+        ax2.scatter(r, acc, s=120, marker="o", zorder=3)
+        ax2.annotate(f"seq{seq}", (r, acc), textcoords="offset points", xytext=(6, 4), fontsize=8)
+    if easy_a:
+        ax2.scatter(8, easy_a["results"]["A"]["final"]["acc"], s=80, c="0.5")
+        ax2.annotate("seq128", (8, easy_a["results"]["A"]["final"]["acc"]), textcoords="offset points", xytext=(6, 4), fontsize=7, color="0.4")
+    ax2.set_xlabel("pooling ratio r (tokens/slot)")
+    ax2.set_ylabel("final accuracy (Arm A)")
+    ax2.set_ylim(-0.02, 1.05)
+    ax2.set_title("Compression: r=32 is the miss")
+    ax2.grid(True, alpha=0.3)
+
+    ax3 = axes[2]
+    ax3.axhline(BAR, color="0.35", ls="--", lw=1.0)
+    ax3.axhline(CHANCE, color="0.65", ls=":", lw=1.0)
+    labels, accs, cols = [], [], []
+    for b in cells:
+        if b["config"].get("task") != "chain":
+            continue
+        for arm in b["results"]:
+            rec = b["results"][arm]
+            labels.append(f"{arm} hops={b['config'].get('hops')}")
+            accs.append(rec.get("acc", rec.get("final", {}).get("acc", 0)))
+            cols.append({"A": "#1f77b4", "C": "#2ca02c", "D": "#d62728"}[arm])
+    if labels:
+        ax3.bar(range(len(labels)), accs, color=cols)
+        ax3.set_xticks(range(len(labels)))
+        ax3.set_xticklabels(labels, rotation=20, ha="right", fontsize=8)
+    ax3.set_ylabel("final accuracy")
+    ax3.set_ylim(-0.02, 1.05)
+    ax3.set_title("Composition: hops=3 is an exam kill")
+    ax3.grid(True, axis="y", alpha=0.3)
+
+    fig.suptitle(
+        "Working law  ·  exclusive slots <10M  ·  95% bar  ·  length easy, compression hard, hops=3 unsolvable",
+        fontsize=11,
+    )
+    fig.tight_layout()
+    fig.savefig(outfile, dpi=140)
+    fig.savefig(HARD / outfile.name, dpi=140)
+    plt.close(fig)
+
+
+def plot_compute_matched(cells: list[dict], outfile: Path) -> None:
+    """Same-compute view: accuracy vs wall-clock, plus params×data for 95% hits."""
+    fig, axes = plt.subplots(1, 2, figsize=(13.4, 5.2))
+    ax = axes[0]
+    ax.axhline(BAR, color="0.35", ls="--", lw=1.0)
+    ax.axhline(CHANCE, color="0.65", ls=":", lw=1.0)
+    for b in cells:
+        for arm in b["results"]:
+            wt = wall_trace(b, arm)
+            if wt is None:
+                continue
+            walls, ys = wt
+            ax.plot(
+                walls / 60.0,
+                ys,
+                color=cell_color(b, arm),
+                ls=style_for(arm, bool(b.get("in_progress")))["ls"],
+                lw=1.8,
+                label=label_for(b, arm, "(live)" if b.get("in_progress") else ""),
+            )
+    ax.set_xlabel("wall-clock (minutes)")
+    ax.set_ylabel("eval accuracy")
+    ax.set_ylim(-0.02, 1.05)
+    ax.set_title("Accuracy vs compute (wall)")
+    ax.legend(fontsize=6.5, loc="lower right")
+    ax.grid(True, alpha=0.3)
+
+    ax2 = axes[1]
+    rows = []
+    for b in cells:
+        for arm in b["results"]:
+            rec = b["results"][arm]
+            acc = rec.get("acc", rec.get("final", {}).get("acc", 0))
+            xs, _, ys = traces(b, arm)
+            e95 = examples_to_bar(xs, ys)
+            wt = wall_trace(b, arm)
+            wall95 = None
+            if wt is not None and e95 is not None:
+                walls, wys = wt
+                hit = np.where(ys >= BAR)[0]
+                if len(hit):
+                    wall95 = float(walls[hit[0]])
+            rows.append(
+                {
+                    "label": f"{arm} {difficulty_key(b)}",
+                    "arm": arm,
+                    "params_m": rec["params"] / 1e6,
+                    "acc": acc,
+                    "e95": e95,
+                    "wall95_min": None if wall95 is None else wall95 / 60.0,
+                }
+            )
+    labels = [r["label"] for r in rows if r["e95"] is not None]
+    e95s = [r["e95"] / 1000.0 for r in rows if r["e95"] is not None]
+    colors = [{"A": "#1f77b4", "C": "#2ca02c", "D": "#d62728"}[r["arm"]] for r in rows if r["e95"] is not None]
+    ax2.barh(range(len(labels)), e95s, color=colors)
+    ax2.set_yticks(range(len(labels)))
+    ax2.set_yticklabels(labels, fontsize=7)
+    ax2.set_xlabel("examples to ≥95% (thousands)")
+    ax2.set_title("Data to 95% (missing = not yet)")
+    ax2.grid(True, axis="x", alpha=0.3)
+    fig.suptitle("Same-compute / same-data view  ·  exclusive-scope <10M  ·  95% bar", fontsize=12)
+    fig.tight_layout()
+    fig.savefig(outfile, dpi=140)
+    fig.savefig(HARD / outfile.name, dpi=140)
+    plt.close(fig)
+    (OUT_DIR / "harder_compute_matched.json").write_text(json.dumps(rows, indent=2))
+
+
 def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     HARD.mkdir(parents=True, exist_ok=True)
@@ -653,7 +983,7 @@ def main() -> int:
         r16,
         "steps",
         OUT_DIR / "harder_accuracy_vs_steps.png",
-        "Harder cells: accuracy vs steps  (batch 32, warmup-constant lr=1e-3)",
+        "Harder cells: accuracy vs steps  (batch 32, warmup-constant; LR searched per cell)",
     )
     plot_difficulty(cells, stubs, easy_a, easy_3, OUT_DIR / "harder_difficulty_vs_accuracy.png")
     plot_lr(probes, OUT_DIR / "harder_lr_probe.png")
@@ -678,12 +1008,18 @@ def main() -> int:
         (OUT_DIR / dst).write_bytes(data)
         (HARD / dst).write_bytes(data)
 
+    plot_steps_sizes_acc(cells, easy_a, easy_3, OUT_DIR / "harder_steps_sizes_accuracies.png")
+    plot_compute_matched(cells, OUT_DIR / "harder_compute_matched.png")
+    plot_working_law(cells, easy_a, easy_3, OUT_DIR / "exclusive_slot_working_law.png")
+
     print(f"wrote {OUT_DIR / 'harder_accuracy_vs_examples.png'}", flush=True)
     print(f"wrote {OUT_DIR / 'harder_accuracy_vs_steps.png'}", flush=True)
     print(f"wrote {OUT_DIR / 'harder_difficulty_vs_accuracy.png'}", flush=True)
     print(f"wrote {OUT_DIR / 'harder_lr_probe.png'}", flush=True)
     print(f"wrote {OUT_DIR / 'harder_params_vs_max_seq.png'}", flush=True)
     print(f"wrote {OUT_DIR / 'concept_slot_scaling_frontier.png'}", flush=True)
+    print(f"wrote {OUT_DIR / 'harder_steps_sizes_accuracies.png'}", flush=True)
+    print(f"wrote {OUT_DIR / 'exclusive_slot_working_law.png'}", flush=True)
     return 0
 
 

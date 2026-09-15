@@ -15,11 +15,131 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-15] - Close seq1024 exclusive-slot D9 and C on the <10M law
+
+**Why:**
+- Seq1024 true-reach needed param-matched D and leak-check C before the
+  <10M exclusive-slot law could speak vs dense and vs a no-concept control.
+
+**Impact:**
+- Plots drop the hatched in-flight legend once `in_flight` is empty.
+- Inventory records D9 97.1% @ 136k and C 26.0% at the floor.
+
+**What changed:**
+- [changed] `verification/plot_exclusive_slot_law.py` — in-flight hatch only
+  when `in_flight` is non-empty.
+- [changed] `tests/test_scale_hard_io.py` — closed seq1024 D9/C inventory
+  assertions.
+
+**Related:** `docs/4_Research_Notes/concept_slot_scaling_frontier_20260913.md`
+
+---
+
+## [2026-09-14] - Exclusive-slot plots label A=concepts vs D=dense vs C=leak
+
+**Why:**
+- Comparison plots used letter markers without saying which arm is the
+  concept-slot model and which is the dense baseline.
+
+**Impact:**
+- Figures state A = exclusive-scope concepts, D/D9 = dense full-causal
+  baseline, C = no-concept leak check (not a baseline). Per-task grouped
+  bars cover far_copy length, compression, and chain composition.
+
+**What changed:**
+- [changed] `verification/plot_exclusive_slot_law.py` — architecture legends;
+  D vs D9 markers; hatched in-flight D9; new
+  `exclusive_slot_task_comparisons.png`.
+- [changed] `docs/4_Research_Notes/exclusive_slot_law_inventory.json` — added
+  easy r=16, chain hops=3 C, and the live seq1024 D9 snapshot (not a closed cell).
+
+**Related:** `docs/4_Research_Notes/concept_slot_scaling_frontier_20260913.md`
+
+---
+
+## [2026-09-14] - Scale-hard JSON lands on workspace disk
+
+**Why:**
+- Seq=1024 exclusive-slot A hit 95.9% then `Path.write_text` raised
+  `FileNotFoundError` because `/opt/cursor/artifacts` (FUSE, size 0) vanished
+  mid-write. Matched D9/C at that length still need to run.
+
+**Impact:**
+- Finished cells survive an artifact-store wipe. The remaining seq1024 D9 and C
+  controls write to `/workspace/Cache/scale_hard` (and `/tmp/scale_hard`).
+
+**What changed:**
+- [changed] `verification/symbolic_channel_probe.py` — `write_result_json`
+  dual-writes `--out` plus durable fallbacks; raises only if every dest fails.
+- [changed] `verification/run_scale_job.sh` and the scale-hard runners default
+  `SCALE_OUT_DIR` to `/workspace/Cache/scale_hard`.
+- [added] `verification/run_scale_hard_reach_seq1024_dc.py` — D9 then C only;
+  does not rerun A.
+- [added] `verification/plot_exclusive_slot_law.py` and
+  `docs/4_Research_Notes/exclusive_slot_law_inventory.json` — comparison plots
+  that do not depend on the wiped JSON store.
+
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` HARDER exclusive-slot scaling
+
+---
+
+## [2026-09-14] - True-reach runner skips 800-step LR probes
+
+**Why:**
+- Packed hops=2 D9 stayed at chance through 128k (exam kill). An 800-step probe
+  would have false-killed it even earlier. The length axis must not repeat that.
+- seq512 copy already has a winner LR (3e-4); seq=1024 starts one step lower.
+
+**What changed:**
+- [changed] `verification/run_scale_hard_reach.py` trains A then param-matched
+  D9 at a geometry-specific LR (3e-4 / 1e-4) with 2500/4000-step patience.
+- [changed] `verification/run_scale_hard_continue.py` does not 1e-4-retune
+  hops=2 after a floor kill at 25%.
+
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` HARDER exclusive-slot scaling
+
+---
+
+## [2026-09-14] - Param-match composition; skip padded seq1024
+
+**Why:**
+- Width-matched 4-layer D missed seq512 copy. Using it as the hops=2 "is the exam
+  solvable?" gate would false-kill composition. Param-match D (9 layers) first.
+- seq=1024 min_gap=32 only adds padded slots; true reach is a separate runner.
+
+**What changed:**
+- [changed] `verification/run_scale_hard_continue.py` runs hops=2 against 4.97M D
+  for 8000 steps at 3e-4 with 4000-step floor patience (an 800-step LR probe is a
+  false kill — seq512 copy D9 was still at chance then). Growing-`min_gap` length
+  stays on `run_scale_hard_reach.py`.
+
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` HARDER exclusive-slot scaling
+
+---
+
+## [2026-09-14] - Scale-hard resume + live-log LR
+
+**Why:**
+- The <10M continuation / true-reach queue is hours of CPU. A crash should skip
+  finished JSON cells instead of rerunning D9.
+- Live D9 logs were plotted with a hardcoded `lr=0.001` even when the run used 3e-4.
+
+**What changed:**
+- [added] skip-if-json-exists in `verification/run_scale_hard_continue.py` and
+  `verification/run_scale_hard_reach.py`.
+- [fixed] `verification/plot_scale_hard.py` captures LR (and s/step) from live logs.
+- [added] `tests/test_plot_scale_hard.py` for the D9 param/LR parse.
+
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` HARDER exclusive-slot scaling
+
+---
+
 ## [2026-09-13] - HARDER concept-slot scaling plots + frontier note
 
 **Why:**
-- The exclusive-scope <10M campaign needed a snapshot of completed cells (seq256 r=8 / r=32,
-  chain hops=3) against the 95% bar, with in-flight runs marked, not a new training fork.
+- The exclusive-scope <10M campaign needed a closed length×compression×composition
+  snapshot against the 95% bar (seq256, r=32, chain hops=3, seq512), not a new
+  training fork. The first merge-to-dev snapshot marked in-flight chain/seq512 cells.
 
 **Added:**
 - `verification/plot_scale_hard.py` writes dedicated snake_case panels
@@ -27,7 +147,9 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   `harder_difficulty_vs_accuracy.png`, `harder_lr_probe.png`,
   `harder_params_vs_max_seq.png`) plus `concept_slot_scaling_frontier.png`.
   Skips the r=32 D reuse stub as a second curve; parses in-progress chain logs.
-- Dated note: `docs/4_Research_Notes/concept_slot_scaling_frontier_20260913.md`.
+- Dated note: `docs/4_Research_Notes/concept_slot_scaling_frontier_20260913.md`
+  (seq512 A 97% @ 72k / 3e-4; width-matched D misses seq512; r=32 A 87.9%;
+  chain is an exam kill for both A and D).
 
 ---
 
