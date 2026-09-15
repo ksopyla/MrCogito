@@ -495,6 +495,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 
 Newest first:
 
+- [E25 original-objective completion audit — plots / bits / flow / B/tok fill (Sep 15)](run_reports/e25_original_objective_completion_audit_20260915.md)
 - [E25 DNA S0-capable USER_CORE rungs mapped at stop resolution — STOP: ladder mapped (Sep 15)](run_reports/e25_dna_s0_ladder_mapped_20260915.md)
 - [E25 bridge_1k seq=1536 `recall_single` r=1 identity H=256 log `--message_extra_slot_attends 1` — E21 S1 FAIL vs 0.75× live E18 (Sep 15)](run_reports/e25_bridge1k_1536_ip_id_h256_recall_extrahop_20260915.md)
 - [E25 bridge_1k seq=1280 `recall_single` r=8 rem-off H=256 log `--message_extra_slot_attends 1` — E21 S1 FAIL vs 0.75× live E18 (Sep 15)](run_reports/e25_bridge1k_1280_ip_r8_h256_recall_extrahop_20260915.md)

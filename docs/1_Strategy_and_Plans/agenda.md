@@ -423,6 +423,13 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-15 — E25 original-objective S2 fill (no GPU): bits / flow / B/tok for every scored probe JSON plus one comparison plot per wall.**
+  Reconstructed from existing hunt JSON (122 files, 435 arch-cells, 0 missing
+  `bytes_per_input_token`). Regenerated missing hunt-dir plots. USER_CORE map
+  unchanged (no unmapped S0-capable recipe; no hunt). Spec stays in `ahead/`.
+  [report](../2_Experiments_Registry/run_reports/e25_original_objective_completion_audit_20260915.md)
+  · [CSV](../2_Experiments_Registry/run_reports/e25_scored_rungs_bits_flow_btok.csv)
+  · [plots](../2_Experiments_Registry/run_reports/e25_plots/).
 - **2026-09-15 — E25 DNA S0-capable USER_CORE rungs mapped at stop resolution (no GPU hunt).**
   Audited `USER_CORE_TASKS` (`far_copy`, `recall`, `select`, `chain_ordered`,
   `chain`) plus calibrated aliases. Every recipe that can plausibly pass
