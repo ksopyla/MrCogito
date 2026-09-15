@@ -7,9 +7,11 @@ alwaysApply: true
 
 The chat is **not** the archive. Specs, run reports, the master log and PR bodies are written to be
 searched later — dense writing belongs there. A chat message is read once, now, by one person with
-limited attention. Never paste the ledger into the chat. The archive still has to be true: follow
-the **Ledger SOP** in **`.cursor/skills/research-comms/SKILL.md`** (examples in `examples.md`;
-vocabulary in `docs/glossary.md`).
+limited attention. Never paste the ledger into the chat. The archive still has to be true.
+
+Before writing any chat Brief, run report, spec/agenda/master-log update, or PR of a calibrated
+rung, follow **`.cursor/skills/research-comms/SKILL.md`** — five laws for chat, **Ledger SOP** for
+docs/PRs. Examples in `examples.md`; vocabulary in `docs/glossary.md`.
 
 The five laws, in short:
 
