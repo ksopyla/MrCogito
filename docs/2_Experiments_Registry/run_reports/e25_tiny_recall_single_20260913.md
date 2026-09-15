@@ -94,4 +94,4 @@ steps** on the same tiny `recall_single`, complete-block E21, 8000 steps
 (`--no-dense_first --arch e21`). Dense/E18 ceilings stay this JSON. Not seq=512 (no GPU
 here) and not Glyph.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

@@ -113,4 +113,4 @@ not 1536 H=512 (dense S0 already passed). Do not reopen SELECT **(692 PASS,
 696 FAIL]**. Remaining measured DNA walls: 512 chain **K1**, 256 hops **FAIL**.
 Not Glyph. Do not unfreeze `u`/`delta`.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

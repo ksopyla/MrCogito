@@ -100,4 +100,4 @@ raw_kv) on this recipe. One change: unfreeze `u`/`delta`. If that PASSES faster 
 mean, learning helps. If chance, learned pool wrecks r=16 the way `delta` wrecked r=1.
 Not 1024. Not Glyph. Not remainder.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

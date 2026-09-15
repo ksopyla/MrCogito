@@ -109,4 +109,4 @@ r=12 was 46.06 S1 PASS — does SELECT clear 0.75× E18 at the next-finer
 remainder-on r?). Not r=9/11. Not hops. Not 4k. Not Glyph. Not 1024. Not 16k.
 Default remainder stays off elsewhere.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

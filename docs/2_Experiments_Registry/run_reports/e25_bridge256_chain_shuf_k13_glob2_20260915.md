@@ -151,4 +151,4 @@ Next ONE (do not run): **256 `--recipe chain_shuffled` (n_distractors=0)
 whether extra shuffled distractor edges are the REACHABILITY wall versus
 shuffle of the two-edge chain itself.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

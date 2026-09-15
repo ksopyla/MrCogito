@@ -101,4 +101,4 @@ remainder-on, no r=1 identity, no extra width). Remaining measured walls: 512
 chain **K1**, 256 hops **FAIL**. Do not hops. Do not 4k. Do not Glyph. Default
 remainder stays off.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

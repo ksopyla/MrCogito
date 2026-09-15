@@ -97,4 +97,4 @@ experiment: seq=512 packed **`recall_single`**, inplace **r=1 hard identity** (d
 exclusive uncompressed KV bind a key, or only INDEX?). Not 4k. Not Glyph. Not
 learned pool. Not 1024 recall.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

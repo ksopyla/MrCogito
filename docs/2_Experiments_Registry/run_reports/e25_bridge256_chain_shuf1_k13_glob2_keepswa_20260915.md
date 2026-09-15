@@ -199,4 +199,4 @@ Code default `--message_keep_local_swa` stays **false**. Code default
 --n_distractors 1` `--key_len 13 --global_layers 2 --message_extra_slot_attends
 1` H=256 log identity** (keepswa off; the other knob at this exclusive wall).
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

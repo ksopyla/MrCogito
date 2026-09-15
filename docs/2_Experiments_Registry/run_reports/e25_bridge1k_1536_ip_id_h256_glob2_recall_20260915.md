@@ -151,4 +151,4 @@ If this had PASSed, parent may later map identity MATCH length with glob=2
 (not 1408 glob=1). Do not extra hops / keepswa / anchors in a MATCH glob=2
 follow-up. Do not hops 320. Do not SELECT 694.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

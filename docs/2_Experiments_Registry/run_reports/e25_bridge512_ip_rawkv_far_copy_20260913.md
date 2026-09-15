@@ -99,4 +99,4 @@ scatter/pool was the bug and r=16 pooling on the trusted inplace mask is the
 compression question. If it stays at chance, training still wrecks identity. Not
 r=16 yet. Not 1024. Not Glyph.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

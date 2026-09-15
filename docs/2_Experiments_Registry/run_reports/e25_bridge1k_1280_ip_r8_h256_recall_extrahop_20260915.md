@@ -170,4 +170,4 @@ Code default `--message_keep_local_swa` stays **false**. Code default
 `--global_layers` stays **1**. Next ONE (do not run): **STOP extra-hop
 transfer to MATCH pooling** (extra hop does not rescue r=8 at 1280).
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

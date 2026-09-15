@@ -92,4 +92,4 @@ one architecture change — `message_pool_remainder` (default off, so this JSON 
 reproducible) and re-run **only** this tiny packed `far_copy`. Same S1. Extra step budget
 is not a substitute.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

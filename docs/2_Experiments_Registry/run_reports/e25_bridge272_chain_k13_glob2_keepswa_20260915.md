@@ -180,4 +180,4 @@ MATCH remainder/pooling A/Bs. Code default `--message_keep_local_swa` stays
 parent may later map hops length **with SWA kept** (not 268 without the flag).
 If that map is not taken, exclusive hops wall without the flag stands at 272.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

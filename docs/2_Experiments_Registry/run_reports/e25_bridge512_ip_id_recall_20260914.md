@@ -94,4 +94,4 @@ Keep the spec in `ahead/`. MATCH-capable recipe: inplace + `--message_identity_s
 seq=512 packed **`select_1decoy`**, inplace r=1 identity (type-cue vs MATCH). Not 4k.
 Not Glyph. Not learned pool. Not 1024 recall.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

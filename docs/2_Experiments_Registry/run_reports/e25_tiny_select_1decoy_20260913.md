@@ -72,4 +72,4 @@ Record a **type-cue wall**. Keep the spec in `ahead/` (INDEX still near-pass; MA
 weakly live). Next ONE DNA rung: tiny `chain_ordered` (E24 E18 97.5% in-order hops). Dense
 S0 in the same JSON. Not Glyph. Not seq=512.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

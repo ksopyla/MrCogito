@@ -83,4 +83,4 @@ Keep the spec in `ahead/`. Stop after this 512 recording. Next ONE experiment (n
 here): **match tiny's slot cardinality** — `--message_ratio 64` at seq=512 so the prefix
 is ~8 slots, the width that near-passed tiny INDEX. Not remainder. Not Glyph. Not 1024.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

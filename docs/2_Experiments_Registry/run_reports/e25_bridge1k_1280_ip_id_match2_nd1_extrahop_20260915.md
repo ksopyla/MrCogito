@@ -175,4 +175,4 @@ Code default `--global_layers` stays **1**. Next ONE (do not run):
 (keepswa off, glob=1, same r=8 compressor as the exclusive MATCH wall;
 E18 live 63.95). Do not relabel this MATCH2 extra-hop 0 as that score.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

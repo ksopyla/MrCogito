@@ -134,4 +134,4 @@ Next ONE (do not run): seq=**512** packed `chain_ordered --key_len 13`
 `--global_layers 2` (same compressor; previously dense **K1** at one global
 layer). Recalibrate dense S0 at two global blocks. `--hops 1` is illegal.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

@@ -140,4 +140,4 @@ remainder off, **default window 16**). Existing `--seq_len`. Tightens
 pack_stride 32. Not 8k a chance floor. Not Glyph. Do not unfreeze `u`/`delta`.
 Do not restore raw global KV (that is E18).
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

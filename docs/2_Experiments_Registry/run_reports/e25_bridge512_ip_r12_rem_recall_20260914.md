@@ -106,4 +106,4 @@ inplace frozen mean **r=16 remainder-on** (remainder-off r=16 MATCH was chance
 through r=16. If still chance, 16-token means do not bind a key even with
 complete coverage. Not r=9/11. Not 16k. Default remainder stays off elsewhere.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

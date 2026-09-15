@@ -92,4 +92,4 @@ Next ONE experiment: **seq=1024 packed `far_copy`**, inplace r=16 **frozen mean*
 (`--message_identity_slots`, no learned pool, no raw_kv). One scale change. Dense
 S0 required (E24 E18 is 0 bits at 1024). Not Glyph. Not remainder.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

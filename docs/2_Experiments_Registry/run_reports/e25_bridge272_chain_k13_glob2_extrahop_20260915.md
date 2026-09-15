@@ -191,4 +191,4 @@ stays 1. Next ONE (do not run): parent may later map hops length **with
 extra hop** (not keepswa). If that map is not taken, extra hop remains the
 272 rescue alongside keepswa.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

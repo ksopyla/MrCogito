@@ -128,4 +128,4 @@ Default extra hops stay 0. Default `keep_local_swa` stays off. Next ONE:
 **K1**, 256 hops **FAIL**, 2048+ INDEX shared with E18. Not remainder-on. Not
 H=512. Not raw global KV. Not Glyph. Do not unfreeze `u`/`delta`.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

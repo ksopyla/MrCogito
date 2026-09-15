@@ -139,4 +139,4 @@ global layer** (`global_layers=2`, extra hops 0, update_slot_kv off) — a full
 block (norm+attn+MLP) over exclusive slots, not a second attend inside one
 Attention.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

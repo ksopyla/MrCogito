@@ -93,4 +93,4 @@ Keep the spec in `ahead/`. SELECT-capable recipe: inplace + `--message_identity_
 + **r=1**. Next ONE experiment: seq=512 packed **`chain_ordered`**, inplace r=1
 identity (hops vs type-cue). Not 4k. Not Glyph. Not learned pool. Not 1024.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

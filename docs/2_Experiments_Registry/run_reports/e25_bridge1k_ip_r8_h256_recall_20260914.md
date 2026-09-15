@@ -105,4 +105,4 @@ remainder-off H=256 `--global_logit_scale log`**. One change: MATCH → SELECT
 at the width that just passed. Not hops. Not remainder-on. Not r=1 identity.
 Not 4k. Not Glyph. Not 16k. Default remainder stays off.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

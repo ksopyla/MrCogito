@@ -7,7 +7,7 @@
 **Raw JSON/plots:** none
 **Git commit:** `67d0d0e` (audit base; docs SHA is this report's commit)
 **Git tag:** —
-**Related:** last hunt 1536 MATCH identity extra hop [`e25_bridge1k_1536_ip_id_h256_recall_extrahop_20260915.md`](e25_bridge1k_1536_ip_id_h256_recall_extrahop_20260915.md) · spec [`E25_e21_bapo_capability_ladder.md`](../../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md)
+**Related:** last hunt 1536 MATCH identity extra hop [`e25_bridge1k_1536_ip_id_h256_recall_extrahop_20260915.md`](e25_bridge1k_1536_ip_id_h256_recall_extrahop_20260915.md) · spec [`E25_e21_bapo_capability_ladder.md`](../../experiments_specs/done_success/E25_e21_bapo_capability_ladder.md)
 
 ---
 
@@ -72,9 +72,10 @@ pooling, MATCH identity capacity, MATCH2 length, or SELECT type-then-value.
 
 ## Decision
 
-Keep the spec in `ahead/`. Do **not** mark `done_success`. Do **not** invent a
-hunt. Code defaults unchanged (`--message_extra_slot_attends` stays 0;
-`--message_keep_local_swa` stays false; `--global_layers` stays 1 except hops
-hunts already closed). Next: **STOP: ladder mapped**.
+Parent later moved the spec/plan to `done_success/` after the original-objective
+audit. Do **not** invent a hunt. Code defaults unchanged
+(`--message_extra_slot_attends` stays 0; `--message_keep_local_swa` stays false;
+`--global_layers` stays 1 except hops hunts already closed). Next: **STOP:
+ladder mapped**.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

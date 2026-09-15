@@ -112,4 +112,4 @@ Do **not** extra-step to 16k. Do not r=8 rem-on. Do not r=2/r=6 A/B. Do not MATC
 
 Keep the spec in `ahead/`. Next ONE (do not run it): **STOP remainder stacks at 1280 r=4.** Pooling-ratio wall stands. Do not r=8 rem-on at 1280. Do not r=2/r=6. Do not MATCH 1408. Default remainder stays off. MATCH length extra-steps stay stopped. INDEX extra-steps stay stopped. Hops extra-steps stay stopped. SELECT extra-steps stay stopped. Not Glyph. Do not unfreeze `u`/`delta`. Do not 16k. Do not hops 268.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

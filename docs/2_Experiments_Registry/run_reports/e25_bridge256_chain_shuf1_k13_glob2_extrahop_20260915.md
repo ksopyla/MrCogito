@@ -177,4 +177,4 @@ default `--global_layers` stays **1**. Next ONE (do not run): **256
 --message_extra_slot_attends 1` H=256 log identity** (keepswa off; do not
 stack).
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

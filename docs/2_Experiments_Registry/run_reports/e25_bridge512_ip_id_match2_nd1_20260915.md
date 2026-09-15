@@ -142,4 +142,4 @@ full raw prefix KV (that is E18). Code defaults unchanged.
 Next ONE (do not run): **1024 MATCH2 `--n_distractors 1` H=128 identity**
 (grow 2-item MATCH2 length at the 512-passing recipe).
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

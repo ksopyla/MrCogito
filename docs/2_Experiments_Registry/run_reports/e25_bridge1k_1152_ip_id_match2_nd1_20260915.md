@@ -145,4 +145,4 @@ restore full raw prefix KV (that is E18). Do not stack keepswa / extra
 hop / glob=2 on this pin. Code defaults unchanged.
 Next ONE (do not run): **STOP MATCH2 2-item length extra-steps**.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

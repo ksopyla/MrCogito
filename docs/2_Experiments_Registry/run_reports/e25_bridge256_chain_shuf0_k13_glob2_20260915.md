@@ -156,4 +156,4 @@ Next ONE (do not run): **256 `--recipe chain --n_distractors 1 --key_len
 13 --global_layers 2` H=256 log identity** — interpolate the shuffled
 distractor wall **(n_dist=0 S1 PASS, n_dist=2 S1 FAIL]**.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

@@ -171,4 +171,4 @@ stays 1. Next ONE (do not run): seq=**268** packed `chain_ordered --key_len
 13` `--global_layers 2` (tighten the E21 hops wall **(264 S1 PASS, 272
 FAIL]**). Recalibrate dense S0. `--hops 1` is illegal.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

@@ -105,4 +105,4 @@ inplace frozen mean **r=12 remainder-on** (same architecture flag on the live
 S1-fail width; leftover 8). Not r=9/11. Not 16k. Not hops. Default remainder
 stays off elsewhere.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

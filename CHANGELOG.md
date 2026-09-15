@@ -37,7 +37,7 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 - [added] probe `--message_pack_stride`; `ArchSpec` field
 - [added] tests for r=1 remainder no-op vs pack_stride leftover drop on 688/692/696 SELECT
 
-**Related:** `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`
+**Related:** `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`
 
 
 ## [2026-09-14] - BAPO probe `--seq_len 692` on `bridge_1k` for SELECT length bracket
@@ -426,7 +426,7 @@ or change identity/inplace scatter.
 - [added] `KVCompressor`, `MessageCtx`, `attend_message` in `nn/perceiver_ar_lm.py`
 - [added] probe arch `e21`; `--message_ratio`; DNA `query` as the boundary
 - [added] `tests/test_perceiver_ar_message.py`
-- [added] spec/plan `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`
+- [added] spec/plan `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`
 
 **Does not:** score recall/512/4k, change DNA generators, or relabel E24's E18 tables.
 

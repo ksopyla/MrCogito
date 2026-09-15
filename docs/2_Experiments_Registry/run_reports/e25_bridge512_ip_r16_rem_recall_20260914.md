@@ -107,4 +107,4 @@ remainder-on through r=16. Next ONE experiment: seq=512 packed
 survive the same pooler?). Not r=9/11. Not hops. Not 4k. Not Glyph. Not 1024.
 Default remainder stays off elsewhere.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

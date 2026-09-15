@@ -150,4 +150,4 @@ stays 1. Next ONE (do not run): **STOP SELECT keepswa stacks**; wall
 **(692, 696]** stands even unsevered. If PASS had happened, parent may
 later map SELECT length with SWA kept (not 694 without the flag).
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

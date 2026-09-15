@@ -140,4 +140,4 @@ stays **off**. Default `--message_keep_local_swa` stays **off**. Default
 H=512. Not hops seq shrink. Not Glyph. Do not unfreeze `u`/`delta`. Do not
 restore raw global KV (that is E18).
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

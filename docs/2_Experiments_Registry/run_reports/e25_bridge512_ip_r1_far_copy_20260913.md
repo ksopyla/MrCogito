@@ -102,4 +102,4 @@ dense S0 in that JSON. If that PASSES, compressor values (even r=1) are the rema
 512 killer under length-S geometry. If it stays at chance, the exclusive leak mask is
 the killer vs `raw_cross`. Not flex-vs-sdpa first. Not remainder. Not 1024. Not Glyph.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

@@ -95,4 +95,4 @@ Keep the spec in `ahead/`. Working recipe: inplace + `--message_identity_slots`,
 SSMax log at 1024. Next ONE experiment: seq=512 packed **`recall_single`**, same frozen
 mean (content vs INDEX). Not 4k. Not Glyph. Not learned pool.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

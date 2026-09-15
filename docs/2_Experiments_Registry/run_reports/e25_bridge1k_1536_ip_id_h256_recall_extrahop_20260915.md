@@ -167,4 +167,4 @@ Code default `--message_keep_local_swa` stays **false**. Code default
 transfer to MATCH identity capacity** (extra hop does not rescue r=1
 identity at 1536).
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

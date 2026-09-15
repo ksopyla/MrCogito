@@ -171,4 +171,4 @@ stays **1**. Next ONE (do not run): **STOP extra-hop shuffled-distractor
 extra-steps** (do not n_dist=3). Live extra-hop shuffled S1 is packed
 n_dist=2 **22.60** (n_dist=1 **24.08** still mapped; do not relabel).
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

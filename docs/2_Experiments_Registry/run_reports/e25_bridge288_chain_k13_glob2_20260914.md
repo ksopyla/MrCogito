@@ -133,4 +133,4 @@ Next ONE (do not run): seq=**272** packed `chain_ordered --key_len 13`
 `--global_layers 2` (localize the E21/E18 hops wall **(256 S1 PASS, 288 FAIL]**;
 dense is already S0 PASS at 288). Recalibrate dense S0. `--hops 1` is illegal.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

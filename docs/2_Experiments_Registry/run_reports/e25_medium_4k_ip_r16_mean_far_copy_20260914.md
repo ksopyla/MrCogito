@@ -113,4 +113,4 @@ localize the INDEX scale wall between 1024 PASS and 4k chance. Use
 `--seq_len 2048` (probe override; no new fork). Dense-first. If E18 ~0,
 score vs 0.75× dense. Do not remainder-on. Do not 4k H=512. Do not Glyph.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

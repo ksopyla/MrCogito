@@ -83,4 +83,4 @@ the spec in `ahead/` (K3 not hit; still climbing). Next ONE cheap test is extra 
 also plateaus below 47 bits, tiny INDEX is the measured E21 limit and the next ladder rung
 is a different task only after that is written down.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

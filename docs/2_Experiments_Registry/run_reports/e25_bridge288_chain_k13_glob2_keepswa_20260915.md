@@ -135,4 +135,4 @@ remainder/pooling A/Bs. Code default `--message_keep_local_swa` stays
 later try 320 keepswa only if dense S0 is plausible (320 without the flag
 was dense K1 26.2% / 0 bits). `--hops 1` is illegal.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

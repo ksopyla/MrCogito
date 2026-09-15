@@ -107,4 +107,4 @@ off, no raw_kv) on this recipe. One change: pooling width. If that PASSES, the
 S1 wall is 10–12. If it looks like r=12 (sub-S1 climb), the S1 wall is 8–10.
 Do not 16k r=12.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

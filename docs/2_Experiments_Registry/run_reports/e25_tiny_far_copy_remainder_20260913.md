@@ -82,4 +82,4 @@ another compressor knob: land QUERY on an r-aligned complete block (`--seq_len 1
 QUERY at 96 = 6×16; remainder off) and re-run dense S0 at that length before scoring E21.
 Extra steps are a follow-up if alignment also fails while still climbing.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

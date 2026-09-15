@@ -72,4 +72,4 @@ Treat tiny packed `far_copy` as a slow but live E21 copy channel. Next ONE harde
 tiny `recall_single` (E18's 0-bit content wall), dense S0 in the same JSON. Not seq=512
 (needs GPU) and not Glyph.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

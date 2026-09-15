@@ -96,4 +96,4 @@ no learned `u`/`delta`) on this recipe. If that PASSES, frozen 16-token means ar
 INDEX channel. If chance, need a better pooler than mean (or span/block alignment).
 Not learned `u`/`delta` yet. Not 1024. Not Glyph.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

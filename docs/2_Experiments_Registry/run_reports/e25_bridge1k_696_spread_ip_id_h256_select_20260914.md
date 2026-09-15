@@ -107,4 +107,4 @@ Do **not** 8k (chance floor, not climbing). Do **not** 16k. Do not seq=694 here.
 
 Keep the spec in `ahead/`. Defaults stay: remainder off, pack_stride **0**, extra hops 0, `update_slot_kv` off, `keep_local_swa` off, `global_layers` 1, anchors `none`, `--evidence_align right` on SELECT length rungs. Stop stacking spread on 696. Next ONE (do **not** run): seq=**694** packed `select_1decoy` with the **same** 1024-passing identity recipe and **`--evidence_align right`** (pack_stride default 0, remainder off). Existing `--seq_len`. Tightens **(692, 696]** with a calibrated S0. Not spread again. Not pack_stride 32. Not 8k a chance floor. Not Glyph. Do not unfreeze `u`/`delta`. Do not restore raw global KV (that is E18).
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

@@ -111,4 +111,4 @@ Do **not** 16k. Do not seq=694. Do not restore raw global KV. Do not extra hops 
 
 Keep the spec in `ahead/`. Defaults stay: remainder off, pack_stride **0**, extra hops 0, `update_slot_kv` off, `keep_local_swa` off, `global_layers` 1, anchors `none`. Stop stacking leftover-drop on 696. Next ONE (do **not** run): seq=**696** packed `select_1decoy` with the **same** 1024-passing identity recipe and **`--evidence_align spread`** (pack_stride default 0, remainder off). QUERY index stays 658 (leftover *size* 18 unchanged); spread redistributes slack so the extra 4 tokens are not locked as left-filler after BOS (right-align fact0=528 vs spread seed-0 fact0=202). Existing flag. Not seq=694. Not a new attend stack. Not 8k a chance floor. Not Glyph. Do not unfreeze `u`/`delta`. Do not restore raw global KV (that is E18).
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

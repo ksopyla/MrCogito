@@ -101,4 +101,4 @@ Keep the spec in `ahead/`. Next ONE experiment: **inplace r=12 frozen mean**
 on this recipe. One change: pooling width. If that PASSES, the wall is nearer
 r=16. If chance, MATCH dies between 8 and 12.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

@@ -7,7 +7,7 @@
 **Raw JSON/plots:** [`e25_plots/`](e25_plots/) · CSV [`e25_scored_rungs_bits_flow_btok.csv`](e25_scored_rungs_bits_flow_btok.csv) · hunt JSON under `/opt/cursor/artifacts/e25_*/`
 **Git commit:** (this report's commit)
 **Git tag:** —
-**Related:** wall map [`e25_dna_s0_ladder_mapped_20260915.md`](e25_dna_s0_ladder_mapped_20260915.md) · spec [`E25_e21_bapo_capability_ladder.md`](../../experiments_specs/ahead/E25_e21_bapo_capability_ladder.md)
+**Related:** wall map [`e25_dna_s0_ladder_mapped_20260915.md`](e25_dna_s0_ladder_mapped_20260915.md) · spec [`E25_e21_bapo_capability_ladder.md`](../../experiments_specs/done_success/E25_e21_bapo_capability_ladder.md)
 
 ---
 
@@ -146,11 +146,11 @@ was scored one DNA rung at a time against dense solvability and uncompressed
 E18, models stayed well under 100M, USER_CORE walls are in the map, and every
 scored JSON has bits, information flow, and bytes-per-input-token with plots.
 
-Spec stays in `ahead/`. This commit does **not** move it to `done_success/`.
+Parent later moved the spec/plan to `done_success/` after accepting this audit.
 
 ## Decision
 
-Keep the spec in `ahead/`. Do **not** invent a hunt. Code defaults unchanged.
+Spec/plan are in `done_success/`. Do **not** invent a hunt. Code defaults unchanged.
 S2 / B/tok gap is **closed** from existing JSON.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

@@ -134,4 +134,4 @@ none). Tightens the SELECT length wall in (688, 696]. Not architecture
 knobs. Not 8k a chance floor. Not Glyph. Do not unfreeze `u`/`delta`. Do
 not restore raw global KV (that is E18).
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

@@ -75,4 +75,4 @@ Stop extra-stepping chain. Next ONE experiment needs GPU: seq=512 packed `far_co
 dense S0 first (E18 already 100% at 512). Not Glyph. Not 16k. Not remainder pooling.
 Keep spec in `ahead/` until a 512 rung is scored.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

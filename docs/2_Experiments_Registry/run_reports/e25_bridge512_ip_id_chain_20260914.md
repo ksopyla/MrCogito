@@ -91,4 +91,4 @@ Keep the spec in `ahead/`. Next ONE experiment: seq=512 packed **`chain_ordered`
 alive at 1024 INDEX), still dense-first. Skip E21 until S0 PASSes. Not 4k. Not
 Glyph. Not learned pool.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

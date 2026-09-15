@@ -85,4 +85,4 @@ Keep the spec in `ahead/`. Next ONE experiment: **in-place sender-prefix KV repl
 blocked from *uncompressed* sender tokens. Score **real** E21 at **r=1** first on this
 recipe. Not another override. Not remainder. Not 1024. Not Glyph.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

@@ -74,4 +74,4 @@ Record tiny MATCH as: live vs E18 (0 bits), dead vs dense (31 bits). Next ONE ex
 tiny `select_1decoy` (E24's calibrated marker-cue rung; E18 was 87%). Dense S0 in the same
 JSON. Not Glyph. Seq=512 INDEX needs GPU (none here).
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

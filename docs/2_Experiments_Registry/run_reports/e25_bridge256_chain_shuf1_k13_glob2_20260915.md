@@ -157,4 +157,4 @@ stays **1**. Code default extra hops / keep_local_swa / remainder stay off.
 Next ONE (do not run): **STOP shuffled-distractor extra-steps at this
 geometry** — wall is now **(n_dist=0 S1 PASS, n_dist=1 S1 FAIL]**.
 
-*Related: `master_experiment_log.md`, `docs/experiments_specs/ahead/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
+*Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*
