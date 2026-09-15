@@ -165,7 +165,8 @@
   **256 `--recipe chain` shuffled REACHABILITY `--key_len 13 --global_layers 2` H=256 log S1 FAIL 0 vs 17.17** (dense **93.1% / 22.89 bits** @3200 S0 PASS; E18 **0 bits**; E21 **0 bits** chance @800/@3200; scored vs 0.75× dense because E18 ≈ 0; same geometry as ordered hops S1 PASS 25.85; n_dist=2 26-bit; 8k not run; K2 PASS);
   **256 `--recipe chain_shuffled` n_dist=0 `--key_len 13 --global_layers 2` H=256 log S1 PASS 16.60 vs 12.28** (dense **99.3% / 25.66 bits** @700 S0 PASS; E18 live **71.5% / 16.37 bits** @800; E21 **71.9% / 16.60 bits** @800; vs 0.75× dense 19.24 FAIL; shuffled distractor wall was **(n_dist=0 S1 PASS, n_dist=2 S1 FAIL]**; 8k not run; K2 PASS);
   **256 `--recipe chain --n_distractors 1` `--key_len 13 --global_layers 2` H=256 log S1 FAIL 6.28 vs 19.08** (dense **86.4% / 21.54 bits** @3200 S0 PASS; E18 live **99.0% / 25.44 bits** @2450; E21 **0 bits @800** then **46.0% / 6.28 bits** @3200; vs 0.75× dense 16.16 FAIL; shuffled distractor wall **(n_dist=0 S1 PASS, n_dist=1 S1 FAIL]**; 8k not run; K2 PASS);
-  **256 `--recipe chain --n_distractors 1` `--key_len 13 --global_layers 2 --message_keep_local_swa` H=256 log S1 FAIL 14.77 vs 15.71** (dense **99.2% / 25.56 bits** @3000 S0 PASS; E18 live **80.8% / 20.95 bits** @8000; E21 **1.67 bits @800** then **6.52 @3000** then **63.8% / 14.77 bits** @8000; vs 0.75× dense 19.17 FAIL; keepswa lifts vs severed 6.28 but does not clear S1; hops 272 keepswa S1 PASS 25.55 does not transfer; 8k ran; K2 PASS).
+  **256 `--recipe chain --n_distractors 1` `--key_len 13 --global_layers 2 --message_keep_local_swa` H=256 log S1 FAIL 14.77 vs 15.71** (dense **99.2% / 25.56 bits** @3000 S0 PASS; E18 live **80.8% / 20.95 bits** @8000; E21 **1.67 bits @800** then **6.52 @3000** then **63.8% / 14.77 bits** @8000; vs 0.75× dense 19.17 FAIL; keepswa lifts vs severed 6.28 but does not clear S1; hops 272 keepswa S1 PASS 25.55 does not transfer; 8k ran; K2 PASS);
+  **256 `--recipe chain --n_distractors 1` `--key_len 13 --global_layers 2 --message_extra_slot_attends 1` H=256 log S1 PASS 24.08 vs 7.31** (dense **93.8% / 23.92 bits** @3200 S0 PASS; this-JSON E18 **47.1% / 9.75 bits** @3200; E21 **60.7% / 6.85 bits @800** then **93.6% / 24.08 bits** @3200; vs 0.75× dense 17.94 PASS; vs 0.75× prior live E18 19.08 PASS; extra hop composes extra shuffled edge without restoring SWA; keepswa off; 8k not run; K2 PASS).
   Keep in `ahead/`. Do not score Glyph yet.
 - **Serves:** the Vision's "does the compressed channel carry *addressable* content, and how
   many bits?" question, now on **E21** (exclusive compressed read) rather than E18's raw
@@ -1982,3 +1983,31 @@ run): **256 `--recipe chain --n_distractors 1 --key_len 13
 (keepswa off; do not stack). Do not hops 320. Do not glob=3 / n_dist
 extra-steps / MATCH2 length extra-steps / SELECT 694. Not Glyph. Do not
 unfreeze `u`/`delta`.
+
+## Follow-up (rung 5cb — seq=256 `--recipe chain --n_distractors 1` --key_len 13 `--global_layers 2 --message_extra_slot_attends 1`)
+Ran the architectural bet at the n_dist=1 shuffled exclusive wall
+(`--scale bridge --seq_len 256 --recipe chain --n_distractors 1
+--key_len 13 --global_layers 2 --message_extra_slot_attends 1` packed
+hops=2 n_distractors=1 26-bit prize H=256 `logit_scale=log` inplace r=1
+identity, remainder off, keepswa off, update_slot_kv off, anchors none,
+window 16 < gap 64, `--evidence_align right`) dense-first on Odra. Same
+geometry as severed n_dist=1 S1 FAIL 6.28 vs live E18 25.44 and keepswa
+S1 FAIL 14.77 vs 15.71. Recalibrated dense S0. Dense **93.8% / 23.92
+bits** @3200 (**S0 PASS**; 64.9% / 11.06 bits @800; crossed 75% at 1100;
+2.802M). This-JSON E18 **47.1% / 9.75 bits** @3200 (live, not ≈ 0; 40.3%
+/ 5.33 @800; best acc 51.1% @2600). E21 **60.7% / 6.85 bits @800** (not
+chance) then **93.6% / 24.08 bits** @3200 (left chance ~500; crossed 75%
+at 2200; best acc 95.4% / 23.85 @2300; best bits 24.13 @3000; **S1
+PASS** vs 0.75× this-JSON E18 7.31; **PASS** vs 0.75× dense 17.94;
+**PASS** vs 0.75× prior live E18 19.08). `e18_local` **0 bits** (**K2
+PASS**). Hunt exit 0. `calibrated: true`. `dense_steps_used: 3200`. Do
+**not** extra-step (S1 PASS). Do **not** 16k. Do not relabel severed
+6.28, keepswa 14.77, n_dist=0 16.60, ordered hops 25.85, or hops 272
+extra hop 25.48 as this score. Extra hop composes the extra shuffled
+edge without restoring SWA. Keepswa off. Code defaults unchanged
+(`--message_extra_slot_attends` stays 0; `--message_keep_local_swa`
+stays false; `--global_layers` stays 1 except hops hunts). Next ONE (do
+not run): **256 `--recipe chain` n_dist=2 `--key_len 13 --global_layers
+2 --message_extra_slot_attends 1` H=256 log identity** (keepswa off; do
+not stack). Do not hops 320. Do not glob=3 / keepswa stack / MATCH2
+length extra-steps / SELECT 694. Not Glyph. Do not unfreeze `u`/`delta`.
