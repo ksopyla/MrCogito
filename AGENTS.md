@@ -10,11 +10,13 @@ Project overview and local env conventions are in `.cursor/rules/`.
 ## How to report to the author
 
 The chat is not the archive. Before any message that reports a result, pitches an
-experiment, explains an architecture, summarises work, or asks for a decision,
-follow the `research-comms` skill (`.cursor/skills/research-comms/SKILL.md`) and
-the always-applied `.cursor/rules/communication.mdc`. Short first pass, plain
-words, no private codenames (`arm A`, `S1`), every number with its meaning, depth
-only when asked. Shared vocabulary: `docs/glossary.md`.
+experiment, explains an architecture, summarises work, or asks for a decision —
+and before updating a run report, spec/agenda/master-log, or PR of a calibrated
+rung — follow the `research-comms` skill (`.cursor/skills/research-comms/SKILL.md`)
+and the always-applied `.cursor/rules/communication.mdc`. Short first pass, plain
+words, no private codenames (`arm A`, `S1`) in chat, every number with its meaning,
+never relabel a control (E18 ≠ E21), one next step or STOP extra-steps, depth only
+when asked. Shared vocabulary: `docs/glossary.md`.
 
 ## Cursor Cloud specific instructions
 
@@ -41,7 +43,7 @@ laptop `~/.ssh`, VPN, or the gitignored `remote-servers` skill.
 ### Skills available in Cloud
 
 - Use committed skills under `.cursor/skills/` (`experiment-run`,
-  `experiment-evaluate`, `experiment-track`, …).
+  `experiment-evaluate`, `experiment-track`, `research-comms`, …).
 - Do **not** expect `.cursor/skills/remote-servers/` — it is gitignored. Resolve
   HostName/Port/LAN details from Dashboard Secrets + local `remote-servers` /
   `~/.ssh/config`, not from public repo files.
