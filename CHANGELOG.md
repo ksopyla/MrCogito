@@ -15,7 +15,26 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
-## [2026-09-14] - Exclusive-slot plots label A=concepts vs D=dense vs C=leak
+## [2026-09-15] - Close seq1024 exclusive-slot D9 and C on the <10M law
+
+**Why:**
+- Seq1024 true-reach needed param-matched D and leak-check C before the
+  <10M exclusive-slot law could speak vs dense and vs a no-concept control.
+
+**Impact:**
+- Plots drop the hatched in-flight legend once `in_flight` is empty.
+- Inventory records D9 97.1% @ 136k and C 26.0% at the floor.
+
+**What changed:**
+- [changed] `verification/plot_exclusive_slot_law.py` — in-flight hatch only
+  when `in_flight` is non-empty.
+- [changed] `tests/test_scale_hard_io.py` — closed seq1024 D9/C inventory
+  assertions.
+
+**Related:** `docs/4_Research_Notes/concept_slot_scaling_frontier_20260913.md`
+
+---
+
 
 **Why:**
 - Comparison plots used letter markers without saying which arm is the

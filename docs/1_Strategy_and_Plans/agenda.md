@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-09-13 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-09-15 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -36,7 +36,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
-- **2026-09-13 — HARDER exclusive-slot scaling (CPU, 95% bar, hidden frozen at 256 / 5.11M).**
+- **2026-09-15 — HARDER exclusive-slot scaling (CPU, 95% bar, hidden frozen at 256 / 5.11M).**
   Far_copy r=8: A hits 95% at seq256 (96k examples, lr=1e-3) and **97% at seq512
   (72k examples, lr=3e-4)**. C stays at chance on every new geometry. Width-matched
   D solves seq256 (99% @ 72k) but **misses seq512** (~30% across 1e-3/3e-4/3e-3).
@@ -46,12 +46,16 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   key_len=8 **and packed hops=2 / key_len=32** are exam kills (param-matched D stays
   at chance through 128k on hops=2). True reach seq=512 min_gap=128: A **hits 95%
   at 48k / 40 min**; param-matched D **hits 98.3% at 32k / 32 min** (D faster on
-  this exam). C leak-check **stays at 25.4%** (no leak). Seq=1024 min_gap=256 A
-  **hits 95.9% at 96k** (lr=1e-4, ~5.5 h, ablation 23.8%). Matched D9 and C at
-  seq=1024 are the remaining same-regime controls (A is not rerun). r=32 and
-  composition remain the misses. Durable plots:
+  this exam). C leak-check **stays at 25.4%** (no leak). Seq=1024 min_gap=256:
+  A **hits 95.9% at 96k** (lr=1e-4, ~5.5 h, ablation 23.8%); param-matched D9
+  **hits 97.1% at 136k / 4250 steps / 887 min** (A is 0.71× examples and 0.37×
+  wall); C **stays at 26.0% / −0.0002 nats** (no leak). **Law vs C/D:** a <10M
+  exclusive-slot model handles `far_copy` span=32 r=8 through seq=1024 true-reach
+  (A and D9 both clear 95%; C does not); compression through r=16 not r=32;
+  composition not at this budget. Durable plots:
   [working law](../4_Research_Notes/figures/exclusive_slot_working_law.png),
-  [steps/sizes/acc](../4_Research_Notes/figures/exclusive_slot_law_steps_sizes_acc.png).
+  [steps/sizes/acc](../4_Research_Notes/figures/exclusive_slot_law_steps_sizes_acc.png),
+  [task comparisons](../4_Research_Notes/figures/exclusive_slot_task_comparisons.png).
   [note](../4_Research_Notes/concept_slot_scaling_frontier_20260913.md).
 - **2026-09-12 — E22 Perceiver Concept LM (from scratch, 32k; killed same day).** First ledger design
   with positional slots (1 / 16 tokens), a transformer *over* the slots and a decoder with no raw route

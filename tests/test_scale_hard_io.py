@@ -53,6 +53,17 @@ def test_law_inventory_has_closed_cells_and_seq1024_a():
     assert cells[("cell_seq256_r32_A", "A")]["hit_95"] is False
     assert cells[("cell_chain_h2_D9", "D")]["hit_95"] is False
     assert cells[("reach_seq512_C", "C")]["acc"] == pytest.approx(0.2537, abs=1e-3)
+    d9 = cells[("reach_seq1024_D9", "D")]
+    assert d9["hit_95"] is True
+    assert d9["acc"] == pytest.approx(0.9707, abs=1e-3)
+    assert d9["examples"] == 136000
+    assert d9["min_gap"] == 256
+    assert d9["params_m"] == pytest.approx(4.97)
+    c1024 = cells[("reach_seq1024_C", "C")]
+    assert c1024["hit_95"] is False
+    assert c1024["acc"] == pytest.approx(0.2605, abs=1e-3)
+    assert c1024["examples"] == 38400
+    assert not inv.get("in_flight")
 
 
 def test_plot_exclusive_slot_law_writes_pngs(tmp_path: Path, monkeypatch):

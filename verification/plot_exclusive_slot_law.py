@@ -379,7 +379,8 @@ def main() -> int:
     ax.set_ylabel("eval accuracy")
     ax.set_title("far_copy length  (span=32, r=8)")
     handles = legend_handles(tuple(k for k in SERIES_ORDER if k in used), patches=True)
-    handles.append(Patch(facecolor="0.85", edgecolor="0.2", hatch="//", label="in flight (not done)"))
+    if in_flight:
+        handles.append(Patch(facecolor="0.85", edgecolor="0.2", hatch="//", label="in flight (not done)"))
     ax.legend(handles=handles, fontsize=7, loc="upper right")
     ax.grid(True, axis="y", alpha=0.3)
 
