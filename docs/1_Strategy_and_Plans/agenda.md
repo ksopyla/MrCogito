@@ -57,6 +57,12 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [steps/sizes/acc](../4_Research_Notes/figures/exclusive_slot_law_steps_sizes_acc.png),
   [task comparisons](../4_Research_Notes/figures/exclusive_slot_task_comparisons.png).
   [note](../4_Research_Notes/concept_slot_scaling_frontier_20260913.md).
+- **2026-09-13 — HARDER exclusive-slot scaling (first merge-to-dev snapshot; later cells closed 2026-09-14/15; CPU, 95% bar, hidden frozen at 256 / 5.11M).**
+  Seq256 r=8 far_copy: A hits **95.0% at 96k examples**; C stays at chance; D hits 95% at
+  ~65–72k. Seq256 r=32: A **87.9% at 256k and still climbing** (not a kill). Chain hops=3: A
+  floor-killed at chance after 128k; D still in flight. Seq512 not started. LR 3e-3 (easy-end
+  winner) floor-kills this geometry; frozen LR is **1e-3**. Do not shrink the model.
+  [note](../4_Research_Notes/concept_slot_scaling_frontier_20260913.md).
 - **2026-09-12 — E22 Perceiver Concept LM (from scratch, 32k; killed same day).** First ledger design
   with positional slots (1 / 16 tokens), a transformer *over* the slots and a decoder with no raw route
   past its 1024-token segment, trained under plain CE (+5% keyed recall) to 0.44B tokens (88% of budget) on Odra. The

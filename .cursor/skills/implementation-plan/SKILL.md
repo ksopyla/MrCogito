@@ -56,6 +56,7 @@ collators, launchers) is good; substituting the architectural idea is not.
 `docs/experiments_specs/ahead/<ID>_plan.md` from [../../../docs/experiments_specs/PLAN_TEMPLATE.md](../../../docs/experiments_specs/PLAN_TEMPLATE.md). Keep it concrete and tight — an engineering design doc, not an essay. The spec stays the source of truth for *intent*; the plan is the source of truth for *design*; both are joined by `<ID>`.
 
 ## Handoffs
+- Report the plan to the author as a short Brief, not a summary of every section — see `research-comms`.
 - Paper/repo not yet understood → `research-explain` (+ `research-scout`). Fit/decision unclear → `research-synthesis`.
 - Frame missing, too timid, or too vague → `experiment-design`.
 - Build it → `research-implement` (reads the spec **and** this plan).

@@ -12,6 +12,16 @@ JSON: `/workspace/Cache/scale_hard/` (durable inventory:
 [`exclusive_slot_law_steps_sizes_acc.png`](figures/exclusive_slot_law_steps_sizes_acc.png).
 The Cursor `/opt/cursor/artifacts` FUSE store wiped mid-campaign (seq1024 A
 hit 95.9% then `Path.write_text` raised `FileNotFoundError`).
+First merge-to-dev snapshot (2026-09-13, rebuilt from logs, no retraining):
+JSON `/opt/cursor/artifacts/scale_hard/` (inventory
+`/opt/cursor/artifacts/harder_campaign_inventory.json`); panels
+[`harder_accuracy_vs_examples.png`](/opt/cursor/artifacts/harder_accuracy_vs_examples.png),
+[`harder_accuracy_vs_steps.png`](/opt/cursor/artifacts/harder_accuracy_vs_steps.png),
+[`harder_difficulty_vs_accuracy.png`](/opt/cursor/artifacts/harder_difficulty_vs_accuracy.png),
+[`harder_lr_probe.png`](/opt/cursor/artifacts/harder_lr_probe.png),
+[`harder_params_vs_max_seq.png`](/opt/cursor/artifacts/harder_params_vs_max_seq.png),
+[`concept_slot_scaling_frontier.png`](/opt/cursor/artifacts/concept_slot_scaling_frontier.png)
+(alias [`concept_slot_harder_learning_curves.png`](/opt/cursor/artifacts/concept_slot_harder_learning_curves.png)).
 
 ## Hypothesis
 
@@ -46,18 +56,18 @@ steps). **Tune LR per geometry; it is not portable from the 1.35M toy.**
 
 | run | arm | params | LR | seq | r | task | hops | examples | steps | acc | CE | 95%? | stop |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| easy seq128 r=8 | A | 1.35M | 3e-3 | 128 | 8 | far_copy | 2 | ~51k / 96k | 1,750 / 3,000 | 95% / 99.9% | 0.053 | **yes** | target 99% |
+| easy seq128 r=8 | A | 1.35M | 3e-3 | 128 | 8 | far_copy | 2 | 56k (interp ~51k) / 96k | 1,750 / 3,000 | 98.2% → 99.9% @ 96k | 0.053 | **yes** | target 99% |
 | easy seq128 r=8 | C | 0.60M | 3e-3 | 128 | 8 | far_copy | 2 | 96k | 3,000 | 25% | 1.386 | no (floor) | budget |
-| easy seq128 r=8 | D | 0.60M | 3e-3 | 128 | 8 | far_copy | 2 | ~25k / 64k | 1,000 / 2,000 | 99.7% / 100% | 0.012 | **yes** | budget |
-| easy seq128 r=16 | A | 1.35M | 3e-3 | 128 | 16 | far_copy | 2 | ~112k / 184k | 3,750 / 5,750 | 96% / 99.1% | 0.025 | **yes** | target 99% |
+| easy seq128 r=8 | D | 0.60M | 3e-3 | 128 | 8 | far_copy | 2 | 32k (interp ~25k) / 64k | 1,000 / 2,000 | 99.7% → 100% @ 64k | 0.012 | **yes** | budget |
+| easy seq128 r=16 | A | 1.35M | 3e-3 | 128 | 16 | far_copy | 2 | 120k (interp ~112k) / 184k | 3,750 / 5,750 | 96.2% → 99.1% @ 184k | 0.025 | **yes** | target 99% |
 | lr1e03_a_seq256_r8 | A | 5.11M | 1e-3 | 256 | 8 | far_copy | 2 | 25.6k | 800 | 63.6% | 0.830 | no (probe) | budget |
 | lr3e03_a_seq256_r8 | A | 5.11M | 3e-3 | 256 | 8 | far_copy | 2 | 25.6k | 800 | 25.1% | 1.386 | no | floor_patience |
 | lr6e03_a_seq256_r8 | A | 5.11M | 6e-3 | 256 | 8 | far_copy | 2 | 25.6k | 800 | 25.1% | 1.386 | no | floor_patience |
 | cell_seq256_r8_A | A | 5.11M | 1e-3 | 256 | 8 | far_copy | 2 | **96k** | 3,000 | **95.02%** | 0.135 | **yes** | target_acc |
 | **cell_seq256_r16_A** | A | 5.11M | 1e-3 | 256 | 16 | far_copy | 2 | **224k** | 7,000 | **95.7%** | 0.110 | **yes** | target_acc |
 | cell_seq256_r8_C | C | 2.27M | 1e-3 | 256 | 8 | far_copy | 2 | 48k | 1,500 | 25.4% | 1.386 | no (floor) | budget |
-| cell_seq256_r8_D | D | 2.27M | 1e-3 | 256 | 8 | far_copy | 2 | **72k** | 2,250 | **99.17%** | 0.025 | **yes** | target_acc |
-| cell_seq256_r32_A | A | 5.11M | 1e-3 | 256 | 32 | far_copy | 2 | 256k | 8,000 | **87.9%** | 0.258 | **no** | budget |
+| cell_seq256_r8_D | D | 2.27M | 1e-3 | 256 | 8 | far_copy | 2 | **72k** (interp ~65k) | 2,250 | **99.17%** | 0.025 | **yes** | target_acc |
+| cell_seq256_r32_A | A | 5.11M | 1e-3 | 256 | 32 | far_copy | 2 | 256k | 8,000 | **87.9%** | 0.258 | **no**, still climbing | budget |
 | cell_seq256_r32_D | D | 2.27M | 1e-3 | 256 | — | far_copy | 2 | 72k | 2,250 | 99.17% | 0.025 | **yes** (D ignores r) | reuse |
 | cell_chain_h3_A | A | 5.11M | 1e-3 | 256 | 8 | chain | 3 | 128k | 4,000 | 23.7% | 1.387 | no | floor_patience |
 | cell_chain_h3_D | D | 2.27M | 1e-3 | 256 | 8 | chain | 3 | 128k | 4,000 | 23.7% | 1.386 | no | floor_patience |
