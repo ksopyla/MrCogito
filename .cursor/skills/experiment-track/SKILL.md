@@ -320,6 +320,13 @@ When using this skill, produce:
 **The chat message is not the report.** The docs written here are dense on purpose — they are the
 archive. What goes back to the author is a ~120-word Brief in plain words: what happened, what it
 means, what I recommend, plus a link. No gate codes, no arm letters, no bare metric names, every
-number with its direction and verdict. Follow `research-comms` and `docs/glossary.md`.
+number with its direction and verdict. Follow `research-comms` (Ledger SOP as well as the Brief)
+and `docs/glossary.md`. Hard rules for the files this skill writes:
+
+- Keep each architecture's numbers on that ID (never relabel E18 as E21).
+- Score S1 only after S0; skipped arms are **not scored**; never pass via `0.75 × 0`.
+- Spec `Status` is the latest rung + report link, not the campaign diary.
+- Close with **one** next step or `STOP … extra-steps`.
+- Link the comparison plot (S2); quote accuracy / recovered bits / flow / B/tok plus the prize.
 
 If the user asks for a deep external research follow-up, hand off to `research-synthesis` (which spawns `research-scout` for source material).

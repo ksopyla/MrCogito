@@ -88,8 +88,9 @@ Input (prior result / idea / vision / paper / cross-domain analogy) →
 `research-implement` (build the bet on the shared foundation — do not substitute a safe retread) →
 `experiment-run` (launch/monitor on Odra/Polonez) → `experiment-evaluate` (tiered eval pipeline) →
 `experiment-track` (results → `master_experiment_log.md`). `docs-hygiene` keeps docs lean.
-`research-comms` governs how **any** of this is reported back in chat (short, plain, no private
-codenames, numbers explained) — see `communication.mdc`; shared vocabulary in `docs/glossary.md`.
+`research-comms` governs how **any** of this is reported: chat Briefs (short, plain, no private
+codenames) and ledger/PR writeups (identity, gates, bits/flow, one cell, next-ONE) — see
+`communication.mdc`; shared vocabulary in `docs/glossary.md`.
 Canonical homes: intent → specs/plans; results → `master_experiment_log.md`; live memory → `agenda.md`.
 A/B and ablations belong after a positive signal, not as the default pipeline output.
 - **`2_Experiments_Registry/` is append-only.** Never delete or rewrite recorded results; later results may add a dated note that supersedes an earlier *interpretation*.

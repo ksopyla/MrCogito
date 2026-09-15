@@ -189,3 +189,72 @@ had shipped without one summary.
 | "`PAR_GLOBAL_POSITIONS=7`" | "move the long-range lookup to the middle of the stack" |
 | "BPB 1.467 vs pythia-160m 1.265" | "worse than a public model of our size — but that one saw 680× more text, which explains the whole gap" |
 | "K1 met and the run was killed" | "it hit the failure condition we wrote down in advance, so I stopped it" |
+| "E21 S1 PASS 63.95" when the JSON is E18 | that number is E18 (raw read); E21 was skipped or is a different row |
+| `53.82 vs 47.34` with no arms | "compressed read 53.8 bits vs the 47.3-bit bar (75% of dense); prize 64 bits" |
+| a 12-rung Status dump in chat | this cell only, plus "the map is in the run report" |
+| "next: try 1100, 1200, keep-SWA, extra hop, and 3-item" | `Next: STOP MATCH2 2-item length extra-steps.` **or** one concrete cell |
+
+---
+
+## 7. Identity — do not relabel a control
+
+**He asked:** a result for the compressed exclusive read (E21).
+
+**Before — E18's live score written as E21:**
+
+> E21 S1 PASS 63.95 bits @400. Flow 1.0 vs dense.
+
+**What is wrong:** 63.95 @400 on that recipe was the **raw-read** arm (E18). The exclusive
+slot arm was either skipped (dense K1) or a different row. Relabeling ships a false pass.
+
+**After — chat Brief, 72 words:**
+
+> **The compressed read was not scored.** The full-attention student never cleared 75% on
+> this exam (24%, zero bits after four times the budget), so we never trained the compressed
+> one — the test would have been noise.
+>
+> The earlier 64-bit pass at this length was the *raw* long-range read, a different student.
+> Details in the run report.
+>
+> Next: stop length extra-steps on this exam. Ask me about: why dense died here, or the last
+> length that *was* solvable.
+
+**After — ledger/PR gate block:**
+
+```
+S0 FAIL / K1. Dense 24.1% / 0 bits @3200 (need ≥75%).
+S1 not scored (e18 / e21 skipped). Do not relabel 1024 MATCH2 61.81 bits as this cell.
+Next: STOP MATCH2 2-item length extra-steps. Do not 1100/1200/1408.
+```
+
+---
+
+## 8. Next-ONE vs STOP extra-steps
+
+**Before — five next experiments in the close:**
+
+> Next: seq=1100, seq=1200, `--message_keep_local_swa`, extra hop, and 3-item MATCH2 at 1024.
+
+**After — one line:**
+
+> Next: **STOP MATCH2 2-item length extra-steps.** Do not 1100/1200. Do not 3-item at 1024.
+
+The 8k extra-step (same recipe, longer budget) is allowed only when the spec says so — typically
+when the 800 run was *climbing* and already past S0. Chance at the 800 floor → no extra-step.
+
+---
+
+## 9. PR of one calibrated rung (archive; density OK)
+
+Keep this order. Capability map goes *under* the cell, never instead of it.
+
+```
+Title: E25 seq=1152 MATCH2 — dense K1, E21 not scored
+
+This rung: dense 24.1% / 0 bits @3200. e18/e21 skipped.
+S0 FAIL / K1. S1 not scored. 8k not run. Plot: learning_curves.png
+Next: STOP MATCH2 2-item length extra-steps.
+
+## Capability map
+(INDEX / MATCH / SELECT / HOPS walls only — numbers that already live in a report)
+```

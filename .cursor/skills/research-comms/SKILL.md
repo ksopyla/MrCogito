@@ -1,6 +1,6 @@
 ---
 name: research-comms
-description: How to talk to the author about experiment designs, implementations, evaluation results, status and research findings — short first, plain language, no private codenames, every number explained, depth only on request. Use before writing ANY user-facing message that reports a result, pitches an experiment, explains an architecture, summarises work, or asks for a decision. Pairs with every other skill: those decide what goes in the docs, this decides what goes in the chat. Not for writing the docs themselves (experiment-track, experiment-design, implementation-plan own those).
+description: How to communicate research in this repo — chat Briefs (short, plain, no private codenames) and ledger/PR writeups (identity, gates S0/S1/K1/K2, bits/flow/bytes-per-token, one experiment at a time, plots, next-ONE vs STOP extra-steps). Use before writing ANY user-facing message, run report, spec/agenda/master-log update, or PR of a calibrated rung. Triggered as research-comms, research-comm, or research communication. File formats stay with experiment-track / experiment-design; this skill owns voice, identity, gates, and the next-step line.
 ---
 
 # Research Comms
@@ -11,6 +11,11 @@ description: How to talk to the author about experiment designs, implementations
 *searched later* — dense, indexed, number-heavy writing belongs there and should stay there. A chat
 message is written to be *read once, now, by one tired human*. These are different products. Writing
 the ledger into the chat is the failure this skill exists to stop.
+
+The archive still has to be *true*. A dense report that calls an E18 control an E21 result, scores
+a gate the dense arm never passed, or proposes seven next rungs is as broken as a 2,000-word chat.
+The **Ledger SOP** below is the procedure for those files. File *shape* (section order, log columns)
+stays with `experiment-track` / `experiment-design`.
 
 The author has said it plainly: *"most of your work and outputs I can't read and process (too much)"*.
 Treat his attention as the scarcest resource in the project — scarcer than GPU hours.
@@ -206,6 +211,8 @@ rather than inventing in the moment.
 - bold on more than ~3 phrases (one audited message had **199** bold spans — emphasis that marks
   everything marks nothing)
 - a list of options longer than 2 without a recommendation (a 7-item menu got *"Do all your best"*)
+- a control's score under the bet's ID (E18 bits labeled as E21; a skipped arm reported as a pass)
+- more than one next experiment in the close (the line is next-ONE or `STOP … extra-steps`)
 
 A banned detail is not a deleted fact — it is a fact told in words. "Relaunching with half the batch size
 and twice the accumulation, same tokens per step" carries the fix; `bs=8 accum=2` does not. The exact
@@ -222,17 +229,140 @@ Read the draft and answer these. Any "no" means rewrite, not append.
 - [ ] Would he know **what to do next** after reading only the opening sentence and the recommendation line?
 - [ ] Am I answering the size of the question, or the size of my work?
 - [ ] If there is a decision to make: is it near the top, with ≤2 options and my recommendation?
+- [ ] Did I keep each architecture's numbers on that architecture's ID (no E18-as-E21)?
+- [ ] Did I score the bet only after the solvability gate passed, and never via `0.75 × 0`?
+- [ ] Is the next action **one** step, or an explicit **STOP extra-steps** — not a menu?
+- [ ] If I compared two or more arms/lengths/tasks: is there **one** plot, not a number list?
 
 ## Working with the other skills
 
-- `experiment-design`, `implementation-plan`, `experiment-track`, `experiment-evaluate`,
-  `research-synthesis`, `research-implement` decide **what goes into the docs**. This skill decides
-  **what goes into the chat**. Dense output in the spec is correct; the same text pasted into chat is not.
+| product | format owner | this skill owns |
+|---|---|---|
+| chat message | this skill (the Brief) | everything in the five laws |
+| run report | `experiment-track` | identity, gates, bits/flow, plots, next-ONE |
+| spec `Status` / `Result` | `experiment-design` freeze; `experiment-track` close | latest-rung line, not the campaign diary |
+| `agenda.md` learnings | `experiment-track` | one line, this ID only |
+| master experiment log | `experiment-track` | one index row per ID; one run row per run |
+| PR of a calibrated rung | this skill (shape below) | this cell first, then STOP/next-ONE |
+| `CHANGELOG.md` | `engineering-change-tracking` | do not dump run metrics here |
+
+- Dense output in the spec/report is correct; the same text pasted into chat is not.
 - After writing a spec, plan or run report: the chat message is the **Brief**, plus where the rest lives
   by plain name ("the run report has it"). Not a summary of every section.
 - During long autonomous work: keep the running one-line narrations (those were consistently good), and
   **always close the turn with a Brief**. Two audited turns ran 786 and 691 messages and closed with 13
   and 11 words of internal narration — after which he had to ask *"what was implemented?"*.
+
+## Ledger SOP — docs, reports, PRs
+
+Do this in order. Any skip is a rewrite, not a footnote.
+
+### 1. Identity — never relabel a control
+
+- An architecture's numbers stay on **that** architecture's experiment ID.
+- **E18** is the raw full-causal read. **E21** is the exclusive compressed read (QUERY boundary + slots).
+  Quoting E18 accuracy as an E21 score is a false result. Same for dense, `e18_local`, encoder-decoder.
+- Do not reuse a previous cell's bits as this cell's score ("do not relabel 1024 MATCH2 61.81 as 1152").
+- If dense missed the solvability bar and the other arms were skipped: write **not scored**. Never
+  invent a pass, and never pass the bet via `0.75 × 0` because the control sat at chance.
+- A matched replica of a control in this JSON is the comparison. A remembered number from last week
+  is not, unless the spec says to cite that frozen ceiling.
+
+### 2. One experiment, one rung, one result
+
+- Chat, spec `Status`, and the top of the PR report **this closed cell**.
+- A capability map (INDEX wall, MATCH wall, SELECT wall) is archive: run report and/or PR heading
+  `## Capability map`. Not the chat Brief. Not a 200-line spec `Status` dump.
+- Mixing two IDs in one verdict sentence is allowed only when both arms are in **this** JSON, each
+  labeled (`dense 82% / E18 ~0 bits / E21 11 bits`).
+- One-experiment-at-a-time is also a *writing* rule: do not close E18 and E21 in the same Result
+  block. Two IDs → two reports, two log rows.
+
+### 3. Gates — codes in the ledger, gloss in chat
+
+Codes are **per spec**. Read that spec's Success/Kill list before scoring. The BAPO ladder's usual
+meanings (E24/E25 and copies) are:
+
+| code | what it asks | if it misses |
+|---|---|---|
+| **S0** | dense ≥ 75% in *this* replica — the exam is solvable | **K1** — do not score E18/E21 |
+| **S1** | the bet vs its control, usually ≥ 0.75 × E18 in the same run; if E18 is ~0, vs 0.75 × dense | the rung fails; do not step length/recipe |
+| **S2** | the required plots exist and are linked | write them before calling the cell closed |
+| **K1** | instrument broken (dense < 75% after `k1_mult ×` budget) | skip other arches; 8k extra-step is off |
+| **K2** | leak control (`e18_local`) above chance + 0.15 | stop; fix the generator, do not score retrieval |
+
+Chat still glosses ("it missed the bar we set for the compressed read"). Docs and PRs **use the
+codes**, defined on first use in that file (`**S1** (compressed read ≥ 75% of the raw-read control)`).
+Do not score a code the spec does not name. Do not score S1 when S0 failed.
+
+### 4. Bits, flow, bytes-per-token
+
+A ladder cell in the ledger quotes this four-tuple, plus the prize:
+
+| name | what it is | good direction |
+|---|---|---|
+| accuracy | share of answer tokens correct | higher |
+| recovered bits | how many bits of the prize the model actually got (`floor − CE`, in bits) | higher; **0 = chance** |
+| information_flow | recovered / prize, in `[0, 1]` | higher; 1 = full prize |
+| B/tok (bytes per input token) | KV/state cost of that arm | lower for the same bits |
+
+Name the prize once ("64-bit copy"). A pair like `53.82 vs 47.34 bits` must say which arm is which
+and which comparison S1 uses. `BPB` (bits per *byte* of text, tokenizer-fair LM loss) is a different
+metric — do not mix it with recovered bits. Definitions: `docs/glossary.md` and
+`docs/engineering_specs/bapo_capability_ladder.md`.
+
+### 5. Plots and artifacts
+
+- **Ledger:** JSON + plots live with the run (`/opt/cursor/artifacts/<run>/` on Cloud, or `Cache/`).
+  The run report links them. S2 is "the figure exists and is linked", not "I will plot later".
+- **Chat / PR top:** **one** comparison figure that answers the question just asked — overlay
+  learning curve (who learns vs who is stuck), wall heatmap (where it breaks as we scale), or
+  frontier scatter (how much data to hit the bar). Legend in standing names
+  (`dense — can reread any page`), not `Arm D`. Chance and pass-mark as lines.
+- Do not dump a 6-PNG gallery. Do not replace a curve with `(6.66 → 5.53 → 5.02 → 4.17)`.
+- Refresh the one figure when a new cell closes. Claim in the alt text.
+
+### 6. Next-ONE vs STOP extra-steps
+
+The last line of the report, PR, and chat Brief is **one** next action, or an explicit stop.
+
+- **Extra-step** = the same recipe, same knobs, longer budget (typically 800 → 8k with
+  `--no-dense_first` after dense already passed S0). It is not a new experiment.
+- Default policy (override only if the live spec says otherwise):
+  - 800 floor at chance → **no** extra-step.
+  - Climbing, short of S1, S0 already passed → **one** extra-step, then stop.
+  - S1 PASS, K1, or K2 → **do not** extra-step.
+- After the cell: write `Next: <one concrete step>` **or** `STOP <recipe> extra-steps`.
+  "STOP MATCH2 2-item length extra-steps. Do not 1100/1200." is a valid next action.
+- Do not offer the next length *and* the next flag *and* the next recipe in the same close.
+  Those are three experiments. Pick one, or stop.
+- The Brief's "Ask me about" line is **depth topics**, not extra experiments. The
+  recommendation / Next line is one action.
+
+### 7. Spec, agenda, master log (after `experiment-track` format)
+
+- **Spec `Status`:** one latest-rung verdict + report link. Not the campaign diary. Walls belong
+  under Result (when closing) or in the latest report.
+- **Spec `Result` (close only):** run id, WandB/artifact pointer, report link, one-line verdict
+  against *this* spec's gates. Do not paste the table back into the spec.
+- **`agenda.md`:** one "what we've explored" line for this ID (neutral, evidence, pointer).
+  Move it off Current focus when the ID closes. Do not reprint the PR body.
+- **Master log:** one Experiment Index row per ID; one Training/Eval row per run. Key result =
+  one metric phrase + outcome, not a paragraph.
+
+### 8. PR writeup of a calibrated rung
+
+PRs are archive, so density is allowed. Shape, top to bottom:
+
+1. **This rung first** — one table: arch · acc · recovered bits · flow · B/tok · step.
+2. **Gates** with numbers (`S0 PASS 82%`, `S1 FAIL 11.00 vs 13.24 bits`, `K2 PASS`, `8k not run`).
+3. **One plot** for this cell.
+4. **Next:** one step or `STOP … extra-steps`.
+5. Optional `## Capability map` *below* — walls only, no new numbers that are not in a report.
+
+Title names the ID, the rung, and the verdict (`E25 seq=1152 MATCH2 — dense K1, E21 not scored`).
+Do not mark an experiment `/goal` complete from a PR body. Do not open a second experiment's
+rung in the same PR unless the spec is a declared family close.
 
 ## Glossary duty
 

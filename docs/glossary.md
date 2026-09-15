@@ -32,9 +32,11 @@ never bother to use the notebook.**
 | term | plain meaning |
 |---|---|
 | **arm** | one version of a run in a comparison. Always name it by what it *is* ("the no-memory control"), never by a letter. |
-| **control** | the arm with the thing under test removed or replaced, so a difference can be attributed. |
+| **control** | the arm with the thing under test removed or replaced, so a difference can be attributed. Its numbers stay on **its** ID — never relabel an E18 (raw read) score as E21 (slots), or a dense score as either. |
 | **dense control / dense baseline** | a normal transformer, same size and data, full attention everywhere. The "reread any page" student. |
-| **gate** | a pass mark written down *before* the run. **Success gate** = what would make us continue; **kill gate** = what would make us stop. |
+| **gate** | a pass mark written down *before* the run. **Success gate** = what would make us continue; **kill gate** = what would make us stop. Codes (`S0`, `S1`, `K1`, `K2`) are **per spec** — always read that spec. On the BAPO ladder: **S0** = dense ≥ 75% (exam solvable); **S1** = the bet vs its control; **S2** = required plots exist; **K1** = dense missed S0, do not score the bet; **K2** = leak control above chance, stop. Chat glosses them; docs use the codes. |
+| **calibrated rung** | one (scale, recipe, length) cell whose dense control has already hit S0, so other arms may be scored. Uncalibrated recipes (default MATCH2, shuffled chain at tiny) are hunts, not gates. |
+| **extra-step** | the *same* recipe and knobs, longer budget (often 800 → 8k). Not a new experiment. Default: chance at the 800 floor → no extra-step; climbing short of S1 after S0 → one extra-step then **STOP extra-steps**. |
 | **ablation** | break one part on a trained model and re-measure. The drop is that part's contribution. |
 | **probe** | a small targeted test run after training (e.g. hide a password, ask for it later). |
 | **teacher-forced** | the model is shown the correct previous words while scoring. Easy mode; flatters memory. |
@@ -62,6 +64,10 @@ never bother to use the notebook.**
 | **distinct-1** | share of the words the model generates that are different from each other — is it saying new things? | higher | our gate has been ≥0.20. Below that it is looping. |
 | **REP-3** | share of 3-word sequences it has already said — is it repeating itself? | lower | our gate has been ≤0.60. Quoted next to distinct-1, so a pair like `0.162/0.686` means "not diverse enough and repeating too much". |
 | **σ (sigma)** | how many standard errors away from zero a difference is | higher = more certain it is real | under 2 = noise. Over 10 = definitely real (but possibly tiny). |
+| **recovered bits** | how much of a synthetic exam's known prize the model actually got (`(floor − CE) / ln(2)` × answer length) | higher | **0 = chance.** A 32-letter DNA copy is a 64-bit prize; a perfect copy recovers 64. |
+| **information_flow (flow)** | recovered / prize, in `[0, 1]` | higher | 1 = the whole prize. The usual S1 bar on the BAPO ladder is 0.75 × the control's flow (or bits). |
+| **B/tok (bytes per input token)** | KV / concept-state bytes the arm keeps per token of context | lower for the same recovered bits | E18 ~1 KB/token; E21 slots ≈ that / `r`. Not the same as **BPB** (bits per byte of *text*). |
+| **bits per input token** | recovered bits ÷ sequence length | higher | a 64-bit prize at seq=128 is 0.50 bits/input-token if flow=1. |
 
 **Real and tiny are different things.** A difference can be 25σ and still be worth nothing. Always
 report both: is it real, and is it big enough to matter.
@@ -99,4 +105,6 @@ meaningless without knowing which slice it came from.
 | the plan for one experiment, frozen before the run | `docs/experiments_specs/<lifecycle>/<ID>.md` |
 | what every run produced | `docs/2_Experiments_Registry/master_experiment_log.md` |
 | the story of one run and what it meant | `docs/2_Experiments_Registry/run_reports/` |
+| BAPO bits / flow / B/tok definitions | `docs/engineering_specs/bapo_capability_ladder.md` |
+| how to write the chat, the report, and the PR | `.cursor/skills/research-comms/SKILL.md` |
 | what changed in the code | `CHANGELOG.md` |

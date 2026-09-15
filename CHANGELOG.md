@@ -15,6 +15,29 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-15] - `research-comms` Ledger SOP: identity, gates, bits, next-ONE
+
+**Why:**
+- The skill that landed on `dev` already owns the chat Brief (short, no private codenames). Agents
+  still shipped false results in the *archive*: E18 control numbers labeled as E21, S1 scored when
+  dense missed S0, spec `Status` as a campaign diary, and five next rungs in one close.
+
+**Changed:**
+- `.cursor/skills/research-comms/SKILL.md`: Ledger SOP — never relabel a control; one experiment /
+  one rung; gates `S0`/`S1`/`K1`/`K2` (codes in docs, gloss in chat); bits / flow / B/tok;
+  one comparison plot; next-ONE vs STOP extra-steps; spec/agenda/log update rules; PR shape for a
+  calibrated rung. File formats stay with `experiment-track`.
+- `.cursor/skills/research-comms/examples.md`: identity, STOP extra-steps, and PR-rung rewrites.
+- `docs/glossary.md`: recovered bits, information_flow, B/tok, calibrated rung, extra-step; control
+  identity; S0/S1/K1/K2 gloss on **gate**.
+- Always-applied `.cursor/rules/communication.mdc`, `AGENTS.md`, `project-overview.mdc`,
+  `experiment-track`, `experiment-design`: point at the Ledger SOP.
+
+**Impact:**
+- No training, evaluation, or checkpoint behaviour changes.
+
+---
+
 ## [2026-09-13] - HARDER concept-slot scaling plots + frontier note
 
 **Why:**

@@ -47,6 +47,9 @@ caution-as-default is not.
    scale: the gate was ~3× above the physical ceiling, so no architecture could have passed
    (see `docs/4_Research_Notes/e22_root_cause_20260912.md` §7). Gates with a demonstrated
    ceiling look like E18b's ("dense control reaches 99.3% on this task, so ask for 50%").
+   On a BAPO-style ladder, name **S0** (dense solvability), **S1** (bet vs that control),
+   **K1** (do not score the bet if S0 misses), **K2** (leak). Never reuse a control's ID as
+   the bet's ID in the spec text.
 5. **Builds-on is mandatory.** Name the foundation modules reused, the init/checkpoint, and
    the baseline run id + score to beat — and state **what is materially new** vs that baseline
    (not just a retune).
@@ -112,7 +115,8 @@ Ask whether the design is a **new inductive bias**, not only whether knobs match
 The spec is the archive; the chat message is a ~150-word pitch: the idea, the bet, how we will know it
 failed, the cost, and any decision needed (≤2 options plus a recommendation). Name the arms by what they
 are ("the control with no memory"), never by letters, and do not list gate codes in chat. Follow
-`research-comms`; add any new metric, probe or arm name to `docs/glossary.md` in the same commit.
+`research-comms` (chat Brief **and** Ledger SOP: identity, gates, next-ONE); add any new metric,
+probe or arm name to `docs/glossary.md` in the same commit.
 
 ## Handoffs
 - Detailed repo-rooted plan (the HOW: modules, forward pass, data, loss, snippets) →
