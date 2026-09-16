@@ -17,6 +17,9 @@ source "${SCRIPT_DIR}/remote_paths.sh"
 SEQ="${SEQ:-1024}"
 VARIANT="${VARIANT:-fixed}"
 FAMILY="${FAMILY:-bits}"
+# shellcheck source=scripts/skip_e29_guard.sh
+source "${SCRIPT_DIR}/skip_e29_guard.sh"
+e29_park_if_bind
 COGITO_PROBE_ID="${COGITO_PROBE_ID:-ksopyla/cogito-probe-${FAMILY}}"
 PROBE_ROOT="${PROBE_ROOT:-$ROOT/Cache/concept_probes/full_1k4k}"
 PROBE_SOURCE="${PROBE_SOURCE:-hub}"   # hub | local

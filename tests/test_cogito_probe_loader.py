@@ -97,3 +97,16 @@ def test_launch_e29_wires_hops_gist_and_props_shuffle():
     assert "--shuffle_filler" in text
     assert "PAR_MODE" in text and "perceiver" in text
     assert "PAR_MESSAGE_IDENTITY_SLOTS" in text
+
+
+def test_odra_queue_skips_bind_after_bits():
+    e29 = (REPO_ROOT / "scripts" / "launch_e29.sh").read_text()
+    e28 = (REPO_ROOT / "scripts" / "launch_e28.sh").read_text()
+    cont = (REPO_ROOT / "scripts" / "e21_queue_continue.sh").read_text()
+    skip_at = e29.find("e29_park_if_bind")
+    train_at = e29.find('bash "$SCRIPT_DIR/launch_e28.sh"')
+    assert 0 <= skip_at < train_at
+    assert "e29_park_if_bind" in e28
+    assert 'SKIP_E29="${SKIP_E29:-1}"' in cont
+    assert "Do not start Hub bind" in cont
+    assert (REPO_ROOT / "scripts" / "skip_e29_guard.sh").is_file()

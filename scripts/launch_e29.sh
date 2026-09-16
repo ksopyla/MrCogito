@@ -6,8 +6,11 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=scripts/skip_e29_guard.sh
+source "${SCRIPT_DIR}/skip_e29_guard.sh"
 export EXPERIMENT_ID="${EXPERIMENT_ID:-E29}"
 export FAMILY=bind
+e29_park_if_bind
 export VARIANT="${VARIANT:-fixed}"
 export PAR_MODE="${PAR_MODE:-perceiver}"
 export PAR_MESSAGE_IDENTITY_SLOTS="${PAR_MESSAGE_IDENTITY_SLOTS:-True}"

@@ -5,6 +5,7 @@
 #
 #   WAIT_SESSION=E27 bash scripts/e21_queue_continue.sh
 #   WAIT_SESSION=E26 SKIP_E28=1 bash scripts/e21_queue_continue.sh   # other box; no second E28
+#   SKIP_E29=1 is the default: park after bits (Polonez already runs Hub bind).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -13,6 +14,10 @@ source "${SCRIPT_DIR}/remote_paths.sh"
 WAIT_SESSION="${WAIT_SESSION:-}"
 export PROBE_SOURCE="${PROBE_SOURCE:-hub}"
 SKIP_E28="${SKIP_E28:-0}"
+# Polonez owns Hub bind. Default skip so this queue parks after bits.
+SKIP_E29="${SKIP_E29:-1}"
+# shellcheck source=scripts/skip_e29_guard.sh
+source "${SCRIPT_DIR}/skip_e29_guard.sh"
 
 if [ -n "$WAIT_SESSION" ]; then
   echo "waiting for byobu session $WAIT_SESSION to exit"
@@ -105,6 +110,12 @@ fi
 
 if [ "$SKIP_E28" = "1" ]; then
   echo "SKIP_E28=1 — E29/E19 stay on the Wave B box (Hub ids, no 32k)"
+  exit 0
+fi
+
+if e29_skip_requested; then
+  echo "SKIP_E29: park after E28 bits (dense S0 → exclusive 1k → 4k if load-bearing)."
+  echo "Do not start Hub bind or E19 on this session — Polonez already runs E29."
   exit 0
 fi
 

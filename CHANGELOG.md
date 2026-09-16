@@ -15,6 +15,25 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-16] - Skip Odra Hub bind after bits
+
+**Why:**
+- Polonez already trains exclusive bind. Odra `E21_QUEUE` would have started
+  a second Hub bind after bits.
+
+**Impact:**
+- After bits (dense S0 → exclusive 1k → 4k if 1k is load-bearing) the Odra
+  queue parks. `SKIP_E29=1` or `Cache/logs/SKIP_E29` refuses bind/arith
+  launches. Bits arms still run.
+
+**What changed:**
+- [added] `scripts/skip_e29_guard.sh` — shared skip for bind/E19.
+- [changed] `scripts/e21_queue_continue.sh`, `scripts/launch_e29.sh`,
+  `scripts/launch_e28.sh` — park/refuse bind when skip is set.
+
+**Related:** `docs/experiments_specs/ahead/E29_exclusive_cogitoprobe_bind.md`
+
+---
 ## [2026-09-16] - E29 hops vs gist eval on Hub bind
 
 **Why:**

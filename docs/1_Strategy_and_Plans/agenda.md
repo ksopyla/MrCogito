@@ -25,7 +25,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   bar. Odra continues Hub bits (dense then exclusive 1k, 4k only if 1k carries
   the answer). Polonez runs exclusive bind on `ksopyla/cogito-probe-bind` with
   hop vs gist eval and a props filler-shuffle control; extra-hop loops stay
-  gated. CogitoProbe is `load_dataset("ksopyla/cogito-probe-{bits,bind,arith,props}")`
+  gated. Odra’s bits queue parks after bits and does not start a second bind.
+  CogitoProbe is `load_dataset("ksopyla/cogito-probe-{bits,bind,arith,props}")`
   (seed 20260916, full 8448/896/896; PR 41). No 32k `length_group` LM. Specs in PR 40.
 - **2026-09-12 — E23 Exclusive concept channel (spec ready, not launched).** E22 closed the same
   day (below): the array was live and diverse but CE read it as a document embedding — the far slots
