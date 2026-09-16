@@ -20,6 +20,7 @@ Protocol
 from __future__ import annotations
 
 import argparse
+import os
 import contextlib
 import json
 import sys
@@ -763,7 +764,8 @@ def main() -> int:
             run_name = args.experiment_id or (out_dir.name if out_dir else "bapo_probe")
             try:
                 wandb_run = wandb.init(
-                    entity="ksopyla",
+                    project=os.environ.get("WANDB_PROJECT"),
+                    entity=os.environ.get("WANDB_ENTITY", "ksopyla"),
                     name=run_name,
                     group=args.experiment_id or run_name,
                     job_type="bapo_probe",
