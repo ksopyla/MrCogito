@@ -2,6 +2,8 @@
 
 **Class:** dated measurement (append-only). CPU only. Does **not** rewrite
 [the seq128 ~100% limits note](symbolic_arm_a_100pct_limits_20260913.md).
+Ledger summary:
+[exclusive_slot_under10m_law_20260915](../2_Experiments_Registry/run_reports/exclusive_slot_under10m_law_20260915.md).
 **Instrument:** `verification/symbolic_channel_probe.py` over
 `data/symbolic_tasks.py`. Campaign runner: `verification/run_scale_hard_campaign.py`.
 JSON: `/workspace/Cache/scale_hard/` (durable inventory:

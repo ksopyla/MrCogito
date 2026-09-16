@@ -264,6 +264,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-08-25 | E17e Tier-1 + late-half perm + Tier-1.5 | E17e ckpt-2660 vs base / E17d | late-half Δperm **0.104** CI[0.095,0.114] · last **0.097** · RankMe **31–57** · real@256 **0.162/0.686** (`real=shuffle`) | Starve lift vs 0.044; gen FAIL; no 1B | [report](run_reports/e17e_starved_local_window_20260825.md) |
 | 2026-09-12 | E22 `near`/`far` concept ablation (new instrument, `0f4b4f9`) | E22 arm A final, 64 PG-19 rows @32k | far-slot marginal **0.054 / 0.057 / 0.059 / 0.046** (1k→32k, flat) · near-slot marginal **0.026 / 0.022 / 0.018 / 0.030** · Δ_none 0.25 · segment-0 control **0.000 / 0.220** ✓ | Array = 0.17 redundant document embedding + 0.05 far content + 0.03 local bypass; Δ_none over-states channel value 5× | [root cause](../4_Research_Notes/e22_root_cause_20260912.md) · [report](run_reports/e22_pilot_verdict_20260912.md) |
 | 2026-09-12 | E22 slot geometry (S5) | E22 arm A final, 8 rows @32k, `model.concepts()` | RankMe **265**/768 (raw 215) · adjacent-slot cos 0.69 · pairwise cos 0.56 · pooler `wo` ‖W‖ **11.2** (init 0) · null slot 0.16 | S5 PASS — array diverse, learned-query pooler alive; failure is the read/objective, not the representation | [root cause](../4_Research_Notes/e22_root_cause_20260912.md) |
+| 2026-09-15 | Exclusive-slot <10M CPU law (far_copy / compression / chain) | frozen H256 5.11M concept vs 4.97M dense-9L vs 2.27M no-notebook; 95% bar | seq1024 copy: concept **95.9% @ 96k** · dense-9L **97.1% @ 136k** · no-notebook **26%** floor; r=16 **95.7%**; r=32 **87.9% miss**; chain hops=2/3 chance | MIXED / promising-as-memory — length cheap through 1024; compression binds; composition exam-kill for dense too | [report](run_reports/exclusive_slot_under10m_law_20260915.md) · [note](../4_Research_Notes/concept_slot_scaling_frontier_20260913.md) |
 
 **ViaDecoder baselines (L6 canonical, 2026-02-22):** MRPC F1 82.73 · STS-B P 0.650 · QQP F1 73.35 · MNLI-m 59.75 · MNLI-mm 60.90 — full note in [report](run_reports/via_decoder_eval_20260222.md).
 
@@ -271,6 +272,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 
 ## Architecture notes (pointers only)
 
+- **2026-09-15 — Exclusive slots are a memory channel, not a reasoner, at <10M.** Frozen 5.11M exclusive-scope model copies a 32-letter span through seq=1024 (95.9% @ 96k) cheaper than param-matched 4.97M dense (97.1% @ 136k); no-notebook stays at chance. r=16 works, r=32 misses; multi-hop lookup is chance for concepts and dense. [report](run_reports/exclusive_slot_under10m_law_20260915.md).
 - **2026-09-12 — E22: a CE-trained concept array is a document embedding, not a memory.** Structurally closed decoder, positional slots, latent transformer — array live (Δ_none 0.25) and diverse (RankMe 265), yet the far-slot marginal is **0.05 nats flat 1k→32k** and arm C matches arm A at half the compute. Two laws added: *the objective must pay for the channel* (natural-text CE is worth ≈ 0.05 nats beyond 1k at this scale; gate on the far marginal, never Δ_none) and *exclusivity is two-sided* (`concept_xattn_scope=exclusive`). Note: [`e22_root_cause_20260912.md`](../4_Research_Notes/e22_root_cause_20260912.md).
 - **2026-08-25 — E17e starve lifts late-half, same gist shape:** K=256 on the E17d cell moved late-half Δperm 0.044 → **0.104** on best (last **0.097**); per-bank still ~0.025; gen `real`@256 **0.162/0.686**. Note: [report](run_reports/e17e_starved_local_window_20260825.md).
 - **2026-08-18 — E17d gist-not-memory with healthy geometry:** attn-residual + no token carry spreads the block-start gist (first-64 Δperm 0.75, four banks) but late-bin Δperm stays **0.044**. Note: [report](run_reports/e17d_global_concept_assimilation_20260818.md).
@@ -284,6 +286,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 
 Newest first:
 
+- [Exclusive-slot <10M working law — copy works, compression binds, composition does not (Sep 15)](run_reports/exclusive_slot_under10m_law_20260915.md)
 - [E22 pilot verdict — a live, diverse concept array that the decoder reads for register, not for facts (Sep 12)](run_reports/e22_pilot_verdict_20260912.md)
 - [E18 family verdict — one global read: free, positional-retrieval capable, not a content retriever (Sep 12)](run_reports/e18_family_verdict_20260912.md)
 - [E18 reach ablation + geometry arms (Sep 9)](run_reports/e18_reach_ablation_20260909.md)
