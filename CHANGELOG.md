@@ -49,6 +49,7 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 - [added] `scripts/launch_e27.sh`, `scripts/launch_e26.sh`, `scripts/e21_queue_eval.sh`,
   `scripts/launch_e28.sh`, `scripts/launch_e29.sh`, `scripts/e21_queue_continue.sh`,
   `evaluation/evaluate_cogito_probe.py`.
+- [changed] `scripts/launch_e28.sh` — dense S0 forces message knobs off (boundary needs perceiver).
 
 **Related:** `docs/experiments_specs/ahead/E27_hybrid_key_anchors.md`,
 `docs/experiments_specs/ahead/E26_prefix_ae_exclusive_slots.md`,

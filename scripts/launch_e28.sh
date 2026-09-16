@@ -7,6 +7,7 @@
 #   SEQ=1024 VARIANT=fixed PAR_MODE=perceiver bash scripts/launch_e28.sh
 #   SEQ=1024 VARIANT=fixed PAR_MODE=dense bash scripts/launch_e28.sh
 # Copy Wave A compressor flags via env (PAR_MESSAGE_IDENTITY_SLOTS / prefix AE / key_spans).
+# Dense S0 forces those knobs off — message boundary requires perceiver mode.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -105,12 +106,20 @@ else
   echo "E28 data: load_dataset($COGITO_PROBE_ID) seq=$SEQ variant=$VARIANT (Hub; no 32k)"
 fi
 
-if [ -z "${PAR_MESSAGE_BOUNDARY_TOKEN_ID:-}" ]; then
-  ATOM="${PROBE_ROOT}/atom_table.json"
-  if [ -f "$ATOM" ]; then
-    PAR_MESSAGE_BOUNDARY_TOKEN_ID="$(python3 -c "import json; print(json.load(open('$ATOM'))['markers']['query']['id'])")"
-  else
-    PAR_MESSAGE_BOUNDARY_TOKEN_ID="$(uv run python - <<'PY'
+if [ "$PAR_MODE" = "dense" ]; then
+  export PAR_MESSAGE_BOUNDARY_TOKEN_ID=-1
+  export PAR_MESSAGE_IDENTITY_SLOTS=False
+  export PAR_MESSAGE_GLOBAL_ANCHORS=none
+  export PAR_MESSAGE_PREFIX_AE=False
+  export PAR_MESSAGE_PREFIX_AE_WEIGHT=0.0
+  export PAR_MESSAGE_SLOTS_INPLACE=False
+else
+  if [ -z "${PAR_MESSAGE_BOUNDARY_TOKEN_ID:-}" ] || [ "${PAR_MESSAGE_BOUNDARY_TOKEN_ID}" = "-1" ]; then
+    ATOM="${PROBE_ROOT}/atom_table.json"
+    if [ -f "$ATOM" ]; then
+      PAR_MESSAGE_BOUNDARY_TOKEN_ID="$(python3 -c "import json; print(json.load(open('$ATOM'))['markers']['query']['id'])")"
+    else
+      PAR_MESSAGE_BOUNDARY_TOKEN_ID="$(uv run python - <<'PY'
 from transformers import AutoTokenizer
 t = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM3-3B", use_fast=True)
 ids = t.encode("Q", add_special_tokens=False)
@@ -119,11 +128,9 @@ if len(ids) != 1:
 print(ids[0])
 PY
 )"
+    fi
+    export PAR_MESSAGE_BOUNDARY_TOKEN_ID
   fi
-  export PAR_MESSAGE_BOUNDARY_TOKEN_ID
-fi
-
-if [ "$PAR_MODE" = "perceiver" ]; then
   export PAR_MESSAGE_COMPRESS_RATIO="${PAR_MESSAGE_COMPRESS_RATIO:-16}"
   export PAR_MESSAGE_SLOTS_INPLACE="${PAR_MESSAGE_SLOTS_INPLACE:-True}"
 fi
