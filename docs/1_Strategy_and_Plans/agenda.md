@@ -20,22 +20,25 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-12 — E23 Exclusive concept channel (spec ready, not launched).** E22 closed the same
-  day (below): the array was live and diverse but CE read it as a document embedding — the far slots
-  were worth 0.05 nats and a segment-only decoder matched the bet at half the compute. E23 keeps the
-  `perceiver_concept` platform and changes the two things the diagnosis isolates: the cross-attention
-  mask (`concept_xattn_scope=exclusive` — a token reads only slots that end before its raw segment,
-  so the array is the *only* route for everything it carries) and the objective (natural-text CE with a
-  ×8 weight on far-repeat tokens + 30% dense-label long-range rows: keyed recall, far copy, multi-hop
-  variable tracking — tokens whose targets are *determined* by far content). Gates on recall/passkey
-  and on the far marginal, with segment 0 as a built-in zero. Spec
-  [E23](../experiments_specs/ahead/E23_exclusive_concept_channel.md). Odra is free; Polonez is
-  free after the `goodwrite_ml` move. Dense control for S3 must be rerun from scratch (E22's was lost).
+- **2026-09-16 — E21 queue Wave A closed (MATCH miss); Wave B in flight.** Hybrid key spans
+  (E27) and prefix-AE slots (E26) both missed the 0.75× uncompressed-read bits bar on calibrated
+  DNA lookup at seq=512, 16-token pages. Do not retry those two write/anchor bets on that exam.
+  **E28 (CogitoProbe bits) is still training** on Odra (`E21_QUEUE`, dense solvability then exclusive
+  1k). **E29 (bind) is being started** on Polonez. Do not treat E28/E29 as done. Specs
+  [E27](../experiments_specs/done_failed/E27_hybrid_key_anchors.md) ·
+  [E26](../experiments_specs/done_failed/E26_prefix_ae_exclusive_slots.md).
+- **2026-09-12 — E23 Exclusive concept channel (spec ready, not launched).** Parallel
+  `perceiver_concept` language bet (exclusive mask + paying CE). Not replaced by the E21
+  compressor queue. Spec
+  [E23](../experiments_specs/ahead/E23_exclusive_concept_channel.md). Dense control for S3 must be
+  rerun from scratch (E22's was lost).
 - **Instrument first (zero GPU-days, before launch):** the far-repeat token mask on the E22 mix —
   what share of tokens is far-copyable, and does that share justify the ×8 weight (target: far-repeat
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-16 — E27 hybrid key-span anchors (DNA MATCH @512, 16-token pages).** Exclusive notebook recovered **3 bits** vs uncompressed **48**; collapsing the extra key tokens left the score unchanged (RankMe 1.12). [report](../2_Experiments_Registry/run_reports/e27_hybrid_key_anchors_20260916.md) · [spec](../experiments_specs/done_failed/E27_hybrid_key_anchors.md).
+- **2026-09-16 — E26 prefix autoencoder on exclusive 16-token slots (same exam).** The slot reconstructs keys at **66%** and RankMe is **14.6**, but lookup recovered **1 bit** vs uncompressed **47**. [report](../2_Experiments_Registry/run_reports/e26_prefix_ae_slots_20260916.md) · [spec](../experiments_specs/done_failed/E26_prefix_ae_exclusive_slots.md).
 - **2026-09-16 — E25 / E21 exclusive compressed read closed (`done_success`, mapped).** DNA USER_CORE walls vs dense and uncompressed E18 (models ≤10.8M). Copy survives 16-token means at seq=1024 and dies with E18 at 1536; lookup needs identity slots (`r=1`) past that; SELECT cliffs at 692 vs 696; extra hop is hops-only. Not a 1M-context result. Hunt markdown kept as the ledger (95 reports); wall plots grouped under `e25_plots/`. [research report](../2_Experiments_Registry/run_reports/e25_e21_dna_capability_report_20260916.md) · [plot index](../2_Experiments_Registry/run_reports/e25_plots/README.md) · [hunt catalogue](../2_Experiments_Registry/run_reports/e25_README.md) · [wall map](../2_Experiments_Registry/run_reports/e25_dna_s0_ladder_mapped_20260915.md).
 - **2026-09-15 — Exclusive-slot <10M CPU law.** A 5.11M exclusive-scope notebook
   copies a 32-letter span through seq=1024 (95.9% @ 96k) versus param-matched 4.97M
