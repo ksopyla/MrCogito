@@ -11,15 +11,29 @@ Prefer Hub:
     --checkpoint Cache/Training/<run>/checkpoint-<step> \
     --data ksopyla/cogito-probe-bits --seq_len 1024 --variant fixed --split test \
     --out Cache/Evaluation_reports/e28_bits_1024_fixed.json
+
+  uv run python evaluation/evaluate_cogito_probe.py \
+    --checkpoint Cache/Training/<run>/checkpoint-<step> \
+    --data ksopyla/cogito-probe-bind --seq_len 1024 --variant fixed --split test \
+    --task hop_friend_place \
+    --out Cache/Evaluation_reports/e29_bind_hops.json
+
+  uv run python evaluation/evaluate_cogito_probe.py \
+    --checkpoint Cache/Training/<run>/checkpoint-<step> \
+    --data ksopyla/cogito-probe-props --seq_len 1024 --variant fixed --split test \
+    --task prop_color --shuffle_filler \
+    --out Cache/Evaluation_reports/e29_props_filler_shuffle.json
 """
 from __future__ import annotations
 
 import argparse
 import json
 import math
+import random
 import sys
 from collections import defaultdict
 from pathlib import Path
+from typing import Optional
 
 import torch
 from datasets import load_dataset, load_from_disk
@@ -31,6 +45,47 @@ from data.dataset_preprocess import filter_cogito_probe, resolve_cogito_probe_id
 from evaluation.lm_eval_perceiver_ar import load_perceiver_ar_for_eval  # noqa: E402
 
 LN2 = math.log(2)
+# SmolLM3 / Llama-3 encode("Q") — CogitoProbe query marker when config has no boundary id.
+SMOLLM3_QUERY_TOKEN_ID = 48
+
+
+def shuffle_filler_row(row: dict, rng: random.Random, *, query_token_id: int) -> dict:
+    """Permute filler tokens between evidence_end and Q; keep evidence, query, and labels.
+
+    Props S3: shuffling filler n-grams must not change gold answers. Proposition-colour
+    shuffle is a generator counterfactual (gold must change) and is not this helper.
+    """
+    ids = list(row["input_ids"])
+    labels = list(row["labels"])
+    ev_end = int(row.get("evidence_end") or 0)
+    ans_start = int(row.get("answer_start") or len(ids))
+    ev_end = max(0, min(ev_end, len(ids)))
+    ans_start = max(ev_end, min(ans_start, len(ids)))
+    q_pos = ans_start
+    try:
+        q_pos = ids.index(int(query_token_id), ev_end, ans_start)
+    except ValueError:
+        q_pos = ans_start
+    filler = ids[ev_end:q_pos]
+    if len(set(filler)) > 1:
+        orig = list(filler)
+        for _ in range(16):
+            rng.shuffle(filler)
+            if filler != orig:
+                break
+    out = dict(row)
+    out["input_ids"] = ids[:ev_end] + filler + ids[q_pos:]
+    out["labels"] = labels
+    return out
+
+
+def resolve_query_token_id(model, explicit: Optional[int]) -> int:
+    if explicit is not None:
+        return int(explicit)
+    bid = int(getattr(getattr(model, "config", None), "message_boundary_token_id", -1) or -1)
+    if bid > 0:
+        return bid
+    return SMOLLM3_QUERY_TOKEN_ID
 
 
 def _collate(rows, pad_id: int):
@@ -119,7 +174,14 @@ def main() -> int:
     p.add_argument("--seq_len", type=int, default=None, help="Hub filter: packed length (1024 or 4096).")
     p.add_argument("--variant", default=None, help="Hub filter: fixed | scaled.")
     p.add_argument("--split", default="test", help="Hub split when --data is a Hub id.")
-    p.add_argument("--task", default=None, help="Optional Hub task filter (hop_friend_place, subexpr, …).")
+    p.add_argument("--task", default=None, help="Optional Hub task filter (hop_friend_place, attr_color, …).")
+    p.add_argument(
+        "--shuffle_filler",
+        action="store_true",
+        help="Props control: permute filler between evidence_end and Q; gold labels stay put.",
+    )
+    p.add_argument("--query_token_id", type=int, default=None, help="Override Q marker id for --shuffle_filler.")
+    p.add_argument("--shuffle_seed", type=int, default=20260916)
     p.add_argument("--out", required=True)
     p.add_argument("--batch_size", type=int, default=4)
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -150,9 +212,16 @@ def main() -> int:
         data = filter_cogito_probe(
             bundle[split], seq_len=seq, variant=args.variant or "fixed", task=args.task,
         )
+    qid = resolve_query_token_id(model, args.query_token_id)
+    if args.shuffle_filler:
+        rng = random.Random(args.shuffle_seed)
+        data = [shuffle_filler_row(data[i], rng, query_token_id=qid) for i in range(len(data))]
     report = {
         "checkpoint": args.checkpoint,
         "data": args.data,
+        "task": args.task,
+        "shuffle_filler": bool(args.shuffle_filler),
+        "query_token_id": qid,
         "n": len(data),
         "overrides": {},
     }

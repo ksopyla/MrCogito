@@ -20,14 +20,13 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-16 — E21 improvement queue Wave A launching (E27 ∥ E26).** Hybrid
-  `key_spans` anchors (E27) and prefix-block AE write loss (E26) are config
-  flags on exclusive E21, not forks. DNA MATCH @512 r=16, H=256 SSMax log,
-  then INDEX don't-regress only if S1. Wave B (E28 bits 1k→4k `fixed` vs
-  `scaled`, then E29 bind, E19 gated loops) waits on a load-bearing slot
-  result. CogitoProbe is `load_dataset("ksopyla/cogito-probe-{bits,bind,arith,props}")`
-  (seed 20260916, full 8448/896/896; PR 41). No Hub-less generate unless Hub
-  is down; no 32k `length_group` LM. Specs in PR 40.
+- **2026-09-16 — E21 improvement queue Wave B on both boxes.** Wave A MATCH
+  (hybrid key-span anchors, prefix-block AE write loss) missed the slot-copy
+  bar. Odra continues Hub bits (dense then exclusive 1k, 4k only if 1k carries
+  the answer). Polonez runs exclusive bind on `ksopyla/cogito-probe-bind` with
+  hop vs gist eval and a props filler-shuffle control; extra-hop loops stay
+  gated. CogitoProbe is `load_dataset("ksopyla/cogito-probe-{bits,bind,arith,props}")`
+  (seed 20260916, full 8448/896/896; PR 41). No 32k `length_group` LM. Specs in PR 40.
 - **2026-09-12 — E23 Exclusive concept channel (spec ready, not launched).** E22 closed the same
   day (below): the array was live and diverse but CE read it as a document embedding — the far slots
   were worth 0.05 nats and a segment-only decoder matched the bet at half the compute. E23 keeps the

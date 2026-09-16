@@ -15,6 +15,29 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-16] - E29 hops vs gist eval on Hub bind
+
+**Why:**
+- Exclusive bind on Polonez needs the same Hub `evaluate_cogito_probe.py`
+  path as E28 bits, with hop vs gist task breakouts and a props filler-shuffle
+  control. Overall `by_task` is not enough to score the bind claim.
+
+**Impact:**
+- E29 trains exclusive perceiver on `ksopyla/cogito-probe-bind` and scores
+  `hop_friend_place` vs `attr_color` / `who_place`, plus props `prop_color`
+  with optional filler permutation (gold labels stay put).
+
+**What changed:**
+- [changed] `evaluation/evaluate_cogito_probe.py` — `--shuffle_filler` permutes
+  tokens between `evidence_end` and Q.
+- [changed] `scripts/launch_e29.sh` — exclusive identity slots; hops/gist/props
+  eval commands after the E28-style train.
+- [changed] `tests/test_cogito_probe_loader.py` — task filter + filler-shuffle
+  invariants.
+
+**Related:** `docs/experiments_specs/ahead/E29_exclusive_cogitoprobe_bind.md`
+
+---
 ## [2026-09-16] - E27 key-span anchors and E26 prefix-AE write loss
 
 **Why:**
