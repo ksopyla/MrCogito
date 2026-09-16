@@ -37,7 +37,17 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 
 ## What we've explored so far
 - **2026-09-16 — E25 / E21 exclusive compressed read closed (`done_success`, mapped).** DNA USER_CORE walls vs dense and uncompressed E18 (models ≤10.8M). Copy survives 16-token means at seq=1024 and dies with E18 at 1536; lookup needs identity slots (`r=1`) past that; SELECT cliffs at 692 vs 696; extra hop is hops-only. Not a 1M-context result. Hunt markdown kept as the ledger (95 reports); wall plots grouped under `e25_plots/`. [research report](../2_Experiments_Registry/run_reports/e25_e21_dna_capability_report_20260916.md) · [plot index](../2_Experiments_Registry/run_reports/e25_plots/README.md) · [hunt catalogue](../2_Experiments_Registry/run_reports/e25_README.md) · [wall map](../2_Experiments_Registry/run_reports/e25_dna_s0_ladder_mapped_20260915.md).
-- **2026-09-13 — E24 GPU bridge (Polonez/Odra, right-align INDEX).** Seq=512 `far_copy`:
+- **2026-09-15 — Exclusive-slot <10M CPU law.** A 5.11M exclusive-scope notebook
+  copies a 32-letter span through seq=1024 (95.9% @ 96k) versus param-matched 4.97M
+  dense (97.1% @ 136k); the no-notebook control stays at chance. 16 tokens/page
+  works; 32 misses. Multi-hop lookup is chance for both. Details:
+  [run report](../2_Experiments_Registry/run_reports/exclusive_slot_under10m_law_20260915.md).
+- **2026-09-13 — HARDER exclusive-slot scaling (first merge-to-dev snapshot; later cells closed 2026-09-14/15; CPU, 95% bar, hidden frozen at 256 / 5.11M).**
+  Seq256 r=8 far_copy: A hits **95.0% at 96k examples**; C stays at chance; D hits 95% at
+  ~65–72k. Seq256 r=32: A **87.9% at 256k and still climbing** (not a kill). Chain hops=3: A
+  floor-killed at chance after 128k; D still in flight. Seq512 not started. LR 3e-3 (easy-end
+  winner) floor-kills this geometry; frozen LR is **1e-3**. Do not shrink the model.
+  [note](../4_Research_Notes/concept_slot_scaling_frontier_20260913.md).- **2026-09-13 — E24 GPU bridge (Polonez/Odra, right-align INDEX).** Seq=512 `far_copy`:
   E18 **100% / 63.9 bits** vs dense 99.7% (S1 pass). Seq=1024 `far_copy`: dense **99.9% /
   64 bits**, E18 **0 bits** (S1 fail). 512 `recall_single` at a *fixed* offset: dense 32 bits,
   E18 **0 bits** @2500 steps — the content wall is not “find the mark”. 4k spread is K1;
@@ -87,6 +97,14 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   projection, and the order-sensitive part of a write must be live at init.**
   [note](../4_Research_Notes/concept_channel_cold_start_20260913.md) ·
   [suite](../engineering_specs/symbolic_long_context_suite.md).
+- **2026-09-13 — improved Arm A hits ~100% on 32-letter far_copy; the 49% was a dead LR schedule.**
+  Same exam, warm init, exclusive scope. Binding knob is **examples under a live schedule**, not
+  width: 1.35M reaches **99.9% at 96k examples** (two seeds), 0.38M at 112k, **0.12M at 136k**.
+  E22's `r=16` still 99%s, at **184k examples** (~1.9×). A 3k OneCycle horizon on the same 96k
+  examples stalls at 49% — the updates were enough, the LR died. Copying 8 letters (8× less loss
+  per row) stays at chance: short answers starve the channel. Arm D needs ~64k examples / ~2 min;
+  Arm A needs ~1.5× examples and ~5× wall-clock. Taking the array away after 99.9% returns chance.
+  Not a language result. [note](../4_Research_Notes/symbolic_arm_a_100pct_limits_20260913.md).
 - **2026-09-13 — the family's compute win is a constant, not an asymptote** (analytic, zero GPU-days,
   `analysis/geometry_cost_model.py`). The E22 geometry cuts decode state 192× (18 KB/token of dense KV
   → 96 B/token of array; 180 GB → 0.96 GB at 10M) and that *is* structural. But the *read* is dense —

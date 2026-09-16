@@ -475,13 +475,14 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-09-15 | E25 bridge seq=256 `--recipe chain --n_distractors 2` `--key_len 13 --global_layers 2 --message_extra_slot_attends 1` | H=256, `logit_scale=log`, `msg_idslots=True`, r=1 identity inplace, remainder off, `global_layers=2`, `msg_keepswa=False`, extra hops 1, Odra GPU | E21 identity flow **0.869** / 22.60 bits vs E18 0 / 0 · dense 0.882 / 22.94 | S1 PASS 22.60 vs 0.75× dense 17.21 (E18 ~0; do not pass via 0.75×0); extra hop rescues packed n_dist=2 without restoring SWA; 8k not run | [spec](../experiments_specs/done_success/E25_e21_bapo_capability_ladder.md) · [report](run_reports/e25_bridge256_chain_shuf_k13_glob2_extrahop_20260915.md) |
 | 2026-09-15 | E25 bridge_1k seq=1280 `recall_single` r=8 rem-off H=256 log extra hop | H=256, `logit_scale=log`, `msg_idslots=True`, r=8 frozen mean inplace, remainder off, `global_layers=1`, `msg_keepswa=False`, extra hops 1, Odra GPU | E21 frozen mean flow **0.000** / 0.01 bits vs E18 1.000 / 63.99 · dense 0.921 / 58.94 | S1 FAIL vs 0.75× live E18 47.99; extra hop does not rescue r=8 MATCH pooling at 1280; chance floor; 8k not run | [spec](../experiments_specs/done_success/E25_e21_bapo_capability_ladder.md) · [report](run_reports/e25_bridge1k_1280_ip_r8_h256_recall_extrahop_20260915.md) |
 | 2026-09-15 | E25 bridge_1k seq=1536 `recall_single` r=1 identity H=256 log extra hop | H=256, `logit_scale=log`, `msg_idslots=True`, r=1 identity inplace, remainder off, `global_layers=1`, `msg_keepswa=False`, extra hops 1, Odra GPU | E21 identity flow **0.000** / 0.00 bits vs E18 0.999 / 63.94 · dense 0.999 / 63.92 | S1 FAIL vs 0.75× live E18 47.96; extra hop does not rescue identity MATCH at 1536; chance floor; 8k not run | [spec](../experiments_specs/done_success/E25_e21_bapo_capability_ladder.md) · [report](run_reports/e25_bridge1k_1536_ip_id_h256_recall_extrahop_20260915.md) |
-
+| 2026-09-15 | Exclusive-slot <10M CPU law (far_copy / compression / chain) | frozen H256 5.11M concept vs 4.97M dense-9L vs 2.27M no-notebook; 95% bar | seq1024 copy: concept **95.9% @ 96k** · dense-9L **97.1% @ 136k** · no-notebook **26%** floor; r=16 **95.7%**; r=32 **87.9% miss**; chain hops=2/3 chance | MIXED / promising-as-memory — length cheap through 1024; compression binds; composition exam-kill for dense too | [report](run_reports/exclusive_slot_under10m_law_20260915.md) · [note](../4_Research_Notes/concept_slot_scaling_frontier_20260913.md) |
 **ViaDecoder baselines (L6 canonical, 2026-02-22):** MRPC F1 82.73 · STS-B P 0.650 · QQP F1 73.35 · MNLI-m 59.75 · MNLI-mm 60.90 — full note in [report](run_reports/via_decoder_eval_20260222.md).
 
 ---
 
 ## Architecture notes (pointers only)
 
+- **2026-09-15 — Exclusive slots are a memory channel, not a reasoner, at <10M.** Frozen 5.11M exclusive-scope model copies a 32-letter span through seq=1024 (95.9% @ 96k) cheaper than param-matched 4.97M dense (97.1% @ 136k); no-notebook stays at chance. r=16 works, r=32 misses; multi-hop lookup is chance for concepts and dense. [report](run_reports/exclusive_slot_under10m_law_20260915.md).
 - **2026-09-12 — E22: a CE-trained concept array is a document embedding, not a memory.** Structurally closed decoder, positional slots, latent transformer — array live (Δ_none 0.25) and diverse (RankMe 265), yet the far-slot marginal is **0.05 nats flat 1k→32k** and arm C matches arm A at half the compute. Two laws added: *the objective must pay for the channel* (natural-text CE is worth ≈ 0.05 nats beyond 1k at this scale; gate on the far marginal, never Δ_none) and *exclusivity is two-sided* (`concept_xattn_scope=exclusive`). Note: [`e22_root_cause_20260912.md`](../4_Research_Notes/e22_root_cause_20260912.md).
 - **2026-08-25 — E17e starve lifts late-half, same gist shape:** K=256 on the E17d cell moved late-half Δperm 0.044 → **0.104** on best (last **0.097**); per-bank still ~0.025; gen `real`@256 **0.162/0.686**. Note: [report](run_reports/e17e_starved_local_window_20260825.md).
 - **2026-08-18 — E17d gist-not-memory with healthy geometry:** attn-residual + no token carry spreads the block-start gist (first-64 Δperm 0.75, four banks) but late-bin Δperm stays **0.044**. Note: [report](run_reports/e17d_global_concept_assimilation_20260818.md).
@@ -495,6 +496,8 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 
 Newest first:
 
+- [E25 / E21 DNA capability report — findings, walls, next work (Sep 16)](run_reports/e25_e21_dna_capability_report_20260916.md)
+- [Exclusive-slot <10M working law — copy works, compression binds, composition does not (Sep 15)](run_reports/exclusive_slot_under10m_law_20260915.md)
 - [E25 original-objective completion audit — plots / bits / flow / B/tok fill (Sep 15)](run_reports/e25_original_objective_completion_audit_20260915.md)
 - [E25 DNA S0-capable USER_CORE rungs mapped at stop resolution — STOP: ladder mapped (Sep 15)](run_reports/e25_dna_s0_ladder_mapped_20260915.md)
 - [E25 bridge_1k seq=1536 `recall_single` r=1 identity H=256 log `--message_extra_slot_attends 1` — E21 S1 FAIL vs 0.75× live E18 (Sep 15)](run_reports/e25_bridge1k_1536_ip_id_h256_recall_extrahop_20260915.md)
@@ -591,8 +594,7 @@ Newest first:
 - [E25 tiny far_copy remainder pooling — E21 vs E18 vs dense (Sep 13)](run_reports/e25_tiny_far_copy_remainder_20260913.md)
 - [E25 tiny far_copy — E21 vs E18 vs dense (Sep 13)](run_reports/e25_tiny_far_copy_20260913.md)
 - [E24 bridge 512/1024 BAPO ladder — E18 vs dense (Sep 13)](run_reports/e24_bridge512_bapo_ladder_20260913.md)
-- [E24 tiny BAPO ladder — E18 vs dense vs encoder-decoder (Sep 13)](run_reports/e24_tiny_bapo_ladder_20260913.md)
-- [E22 pilot verdict — a live, diverse concept array that the decoder reads for register, not for facts (Sep 12)](run_reports/e22_pilot_verdict_20260912.md)
+- [E24 tiny BAPO ladder — E18 vs dense vs encoder-decoder (Sep 13)](run_reports/e24_tiny_bapo_ladder_20260913.md)- [E22 pilot verdict — a live, diverse concept array that the decoder reads for register, not for facts (Sep 12)](run_reports/e22_pilot_verdict_20260912.md)
 - [E18 family verdict — one global read: free, positional-retrieval capable, not a content retriever (Sep 12)](run_reports/e18_family_verdict_20260912.md)
 - [E18 reach ablation + geometry arms (Sep 9)](run_reports/e18_reach_ablation_20260909.md)
 - [E18 pilot stage A 125M 8k (Sep 7)](run_reports/e18_pilot_stageA_20260907.md)

@@ -15,6 +15,178 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-15] - Close seq1024 exclusive-slot D9 and C on the <10M law
+
+**Why:**
+- Seq1024 true-reach needed param-matched D and leak-check C before the
+  <10M exclusive-slot law could speak vs dense and vs a no-concept control.
+
+**Impact:**
+- Plots drop the hatched in-flight legend once `in_flight` is empty.
+- Inventory records D9 97.1% @ 136k and C 26.0% at the floor.
+
+**What changed:**
+- [changed] `verification/plot_exclusive_slot_law.py` — in-flight hatch only
+  when `in_flight` is non-empty.
+- [changed] `tests/test_scale_hard_io.py` — closed seq1024 D9/C inventory
+  assertions.
+
+**Related:** `docs/4_Research_Notes/concept_slot_scaling_frontier_20260913.md`
+
+---
+
+## [2026-09-14] - Exclusive-slot plots label A=concepts vs D=dense vs C=leak
+
+**Why:**
+- Comparison plots used letter markers without saying which arm is the
+  concept-slot model and which is the dense baseline.
+
+**Impact:**
+- Figures state A = exclusive-scope concepts, D/D9 = dense full-causal
+  baseline, C = no-concept leak check (not a baseline). Per-task grouped
+  bars cover far_copy length, compression, and chain composition.
+
+**What changed:**
+- [changed] `verification/plot_exclusive_slot_law.py` — architecture legends;
+  D vs D9 markers; hatched in-flight D9; new
+  `exclusive_slot_task_comparisons.png`.
+- [changed] `docs/4_Research_Notes/exclusive_slot_law_inventory.json` — added
+  easy r=16, chain hops=3 C, and the live seq1024 D9 snapshot (not a closed cell).
+
+**Related:** `docs/4_Research_Notes/concept_slot_scaling_frontier_20260913.md`
+
+---
+
+## [2026-09-14] - Scale-hard JSON lands on workspace disk
+
+**Why:**
+- Seq=1024 exclusive-slot A hit 95.9% then `Path.write_text` raised
+  `FileNotFoundError` because `/opt/cursor/artifacts` (FUSE, size 0) vanished
+  mid-write. Matched D9/C at that length still need to run.
+
+**Impact:**
+- Finished cells survive an artifact-store wipe. The remaining seq1024 D9 and C
+  controls write to `/workspace/Cache/scale_hard` (and `/tmp/scale_hard`).
+
+**What changed:**
+- [changed] `verification/symbolic_channel_probe.py` — `write_result_json`
+  dual-writes `--out` plus durable fallbacks; raises only if every dest fails.
+- [changed] `verification/run_scale_job.sh` and the scale-hard runners default
+  `SCALE_OUT_DIR` to `/workspace/Cache/scale_hard`.
+- [added] `verification/run_scale_hard_reach_seq1024_dc.py` — D9 then C only;
+  does not rerun A.
+- [added] `verification/plot_exclusive_slot_law.py` and
+  `docs/4_Research_Notes/exclusive_slot_law_inventory.json` — comparison plots
+  that do not depend on the wiped JSON store.
+
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` HARDER exclusive-slot scaling
+
+---
+
+## [2026-09-14] - True-reach runner skips 800-step LR probes
+
+**Why:**
+- Packed hops=2 D9 stayed at chance through 128k (exam kill). An 800-step probe
+  would have false-killed it even earlier. The length axis must not repeat that.
+- seq512 copy already has a winner LR (3e-4); seq=1024 starts one step lower.
+
+**What changed:**
+- [changed] `verification/run_scale_hard_reach.py` trains A then param-matched
+  D9 at a geometry-specific LR (3e-4 / 1e-4) with 2500/4000-step patience.
+- [changed] `verification/run_scale_hard_continue.py` does not 1e-4-retune
+  hops=2 after a floor kill at 25%.
+
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` HARDER exclusive-slot scaling
+
+---
+
+## [2026-09-14] - Param-match composition; skip padded seq1024
+
+**Why:**
+- Width-matched 4-layer D missed seq512 copy. Using it as the hops=2 "is the exam
+  solvable?" gate would false-kill composition. Param-match D (9 layers) first.
+- seq=1024 min_gap=32 only adds padded slots; true reach is a separate runner.
+
+**What changed:**
+- [changed] `verification/run_scale_hard_continue.py` runs hops=2 against 4.97M D
+  for 8000 steps at 3e-4 with 4000-step floor patience (an 800-step LR probe is a
+  false kill — seq512 copy D9 was still at chance then). Growing-`min_gap` length
+  stays on `run_scale_hard_reach.py`.
+
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` HARDER exclusive-slot scaling
+
+---
+
+## [2026-09-14] - Scale-hard resume + live-log LR
+
+**Why:**
+- The <10M continuation / true-reach queue is hours of CPU. A crash should skip
+  finished JSON cells instead of rerunning D9.
+- Live D9 logs were plotted with a hardcoded `lr=0.001` even when the run used 3e-4.
+
+**What changed:**
+- [added] skip-if-json-exists in `verification/run_scale_hard_continue.py` and
+  `verification/run_scale_hard_reach.py`.
+- [fixed] `verification/plot_scale_hard.py` captures LR (and s/step) from live logs.
+- [added] `tests/test_plot_scale_hard.py` for the D9 param/LR parse.
+
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` HARDER exclusive-slot scaling
+
+---
+
+## [2026-09-13] - HARDER concept-slot scaling plots + frontier note
+
+**Why:**
+- The exclusive-scope <10M campaign needed a closed length×compression×composition
+  snapshot against the 95% bar (seq256, r=32, chain hops=3, seq512), not a new
+  training fork. The first merge-to-dev snapshot marked in-flight chain/seq512 cells.
+
+**Added:**
+- `verification/plot_scale_hard.py` writes dedicated snake_case panels
+  (`harder_accuracy_vs_examples.png`, `harder_accuracy_vs_steps.png`,
+  `harder_difficulty_vs_accuracy.png`, `harder_lr_probe.png`,
+  `harder_params_vs_max_seq.png`) plus `concept_slot_scaling_frontier.png`.
+  Skips the r=32 D reuse stub as a second curve; parses in-progress chain logs.
+- Dated note: `docs/4_Research_Notes/concept_slot_scaling_frontier_20260913.md`
+  (seq512 A 97% @ 72k / 3e-4; width-matched D misses seq512; r=32 A 87.9%;
+  chain is an exam kill for both A and D).
+
+---
+
+## [2026-09-13] - Symbolic probe: live LR, wall-clock JSON, CUDA if present
+
+**Why:**
+- Mapping the exclusive-scope length×difficulty frontier needs a schedule that cannot
+  fake-ceil (OneCycle horizon = expected finish stalled improved Arm A at 49%) and a
+  JSON log of examples/params/steps/acc/CE/LR/seq/r/task/hops/wall.
+
+**Added:**
+- `verification/symbolic_channel_probe.py`: `--sched warmup_constant` (warmup then
+  constant LR), `--floor_patience_steps` (kill a run still at chance), per-arm
+  `summary` with wall-clock and LR, `cuda` when `torch.cuda.is_available()`.
+- `verification/run_scale_job.sh`: `SCALE_OUT_DIR` (default `scale/`, campaign uses
+  `/opt/cursor/artifacts/scale_hard`).
+- `verification/run_scale_hard_campaign.py`: LR search then seq/r/chain/seq512
+  cells over the shared probe (no training fork).
+- `verification/plot_scale_hard.py`: accuracy-vs-examples + difficulty panels.
+
+---
+
+## [2026-09-13] - Symbolic probe: early-stop at target accuracy + example accounting
+
+**Why:**
+- Mapping “what does improved Arm A need for ~100% on `far_copy`?” required counting unique rows
+  seen and not wasting CPU after the gate. A 3k OneCycle horizon had produced a fake 49% ceiling
+  on the same model that later reached 99.9% with a longer horizon and `--target_acc 0.99`.
+
+**Added:**
+- `verification/symbolic_channel_probe.py`: `--target_acc`, `--token_embedding_dim`, `--run_name`;
+  logs `examples` / `examples_seen` / `supervised_tokens_seen`.
+- `verification/run_scale_job.sh`: thin wrapper so long CLI lines cannot wrap inside tmux.
+- Limits: `docs/4_Research_Notes/symbolic_arm_a_100pct_limits_20260913.md`.
+
+---
+
 ## [2026-09-14] - E21 `--message_pack_stride` (QUERY-aligned leftover drop, default off)
 
 **Why:**
@@ -753,6 +925,54 @@ agenda Current focus → E23; new spec `docs/experiments_specs/ahead/E23_exclusi
 
 **Calibration (Odra 3090, 32k, flex, bf16, grad-ckpt, 2026-09-12):** arm A 317.4M total /
 127.9M compute; B=2: 11.4 GiB peak, ~19.8k tok/s/GPU; arm C: 8.0 GiB, ~29k tok/s/GPU.
+
+## [2026-09-13] - `research-comms` skill: how findings are reported in chat
+
+**Why:**
+- An audit of three sessions (2026-09-11 → 2026-09-12) showed the author was routinely losing the
+  thread: 8,544 assistant words against 676 user words in one session; a 22-word question answered
+  with 2,579 words; "explain simply" answered with 2,221; gate codes (`S1`–`S6`, `K1`–`K4`) and arm
+  letters used as if shared, several never defined anywhere; unlabelled number pairs
+  (`0.162/0.686`). Consequences in the transcripts: the same status question asked twice, the same
+  conceptual question re-asked in simpler words, one request for a plain explanation sent twice
+  byte-identical, and "Do it iteratively without my permissions" — the author stopped reviewing.
+
+**Changed:**
+- `.cursor/skills/research-comms/SKILL.md` (new): five laws (outcome first, short first pass, no
+  private codenames, every number carries unit/direction/comparison/verdict, offer the menu), a
+  per-situation word budget table, the Brief template, naming and number laws, the depth-on-demand
+  order (analogy → diagram → proper terms → numbers → caveat), a standing analogy set, a ban list,
+  and a pre-send checklist.
+- `.cursor/skills/research-comms/examples.md` (new): six before/after rewrites of verbatim messages
+  from the audited sessions, plus a jargon → plain-language swap table.
+- `docs/glossary.md` (new): plain-language vocabulary — the "student, book and notebook" picture,
+  experiment words (arm, control, gate, ablation, probe, teacher-forced vs free-run), and a metric
+  table giving what each measures, which direction is good, and what a value roughly means
+  (loss/nats, perplexity, BPB, Δzero/Δshuffle/Δperm, reach ablation, RankMe, passkey, RULER, STS-B, σ).
+- `.cursor/rules/communication.mdc` (new, `alwaysApply: true`): the five laws in short, pointing at
+  the skill; imported into `CLAUDE.md` alongside the other canonical rules.
+- `.cursor/rules/project-overview.mdc`: `research-comms` added to the skill pipeline; `docs/glossary.md`
+  added to the docs map.
+- Reporting clauses added to `experiment-design`, `implementation-plan`, `research-implement`,
+  `experiment-run`, `experiment-evaluate`, `experiment-track`, `research-synthesis`, `research-explain`:
+  those skills own what goes in the docs, `research-comms` owns what goes in the chat.
+- `AGENTS.md`: "How to report to the author" section.
+
+**Validation:**
+- Two rounds of a fresh agent given *only* the skill and asked to write the chat message for three
+  real cases it had not seen (the E17e close, the E18 family verdict, a raw status dump). Round one
+  produced compliant messages at 120 / 120 / 60 words and exposed six contradictions in the skill
+  (the Number law demanding a unit the ban list forbade, no budget row for a family verdict, no
+  procedure for an unlabelled pair, a self-check that the Brief template could never pass, the menu
+  vs the 60-word status budget, banned operational details with nowhere to go). All were fixed;
+  round two passed its own checklist on every line and surfaced only scope questions, which are now
+  answered in the text (table cells count toward the budget; a mid-run number with no baseline is
+  reported qualitatively; naming duties are suspended at the 60-word status budget).
+- Round two also found a real glossary gap while resolving `0.162/0.686`: `distinct-1`, `REP-3` and
+  the position-bin vocabulary ("first-64", "late half") are now in `docs/glossary.md`.
+
+**Impact:**
+- No code, training, evaluation or checkpoint behaviour changes.
 
 ---
 

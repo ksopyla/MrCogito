@@ -26,6 +26,9 @@ conventions** the launchers use. It does **not**:
   historical run, locate the pair in the appropriate lifecycle folder instead.
 - Before launch, verify W&B identity (`group`, `job_type`, tags, config `experiment_id`) matches the
   active spec/agenda entry. Do not start a long run with a generic or stale label.
+- A status report back to the author is **~60 words**: is it healthy, how far along, when it lands, and
+  anything that needs a decision. No session names, GPU memory figures, gate codes or arm letters unless
+  he asks. See `research-comms`.
 
 ## Paths and environment variables (canonical — both servers)
 
