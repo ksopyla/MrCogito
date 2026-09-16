@@ -4,7 +4,7 @@ language:
 license: apache-2.0
 pretty_name: CogitoProbe-Bits — information-budget length ladder
 size_categories:
-  - n<1K
+  - 10K<n<100K
 task_categories:
   - question-answering
   - text-generation
@@ -19,17 +19,20 @@ tags:
 configs:
   - config_name: default
     data_files:
-      train: train.parquet
-      validation: validation.parquet
-      test: test.parquet
+      - split: train
+        path: train.parquet
+      - split: validation
+        path: validation.parquet
+      - split: test
+        path: test.parquet
 dataset_info:
   dataset_name: ksopyla/cogito-probe-bits
 ---
 
 # CogitoProbe-Bits — information-budget length ladder
 
-**Hub id (proposed, not published until approved):** `ksopyla/cogito-probe-bits`
-**Family:** `bits` · **Series:** CogitoProbe · **Default seed:** `20260916` · **Tokenizer:** `HuggingFaceTB/SmolLM3-3B`
+**Hub:** [`ksopyla/cogito-probe-bits`](https://huggingface.co/datasets/ksopyla/cogito-probe-bits)  
+**Author:** Krzysztof Sopyła · **Family:** `bits` · **Series:** CogitoProbe · **Default seed:** `20260916` · **Tokenizer:** `HuggingFaceTB/SmolLM3-3B`
 
 ## What it is
 
@@ -63,10 +66,10 @@ Exact command (deterministic):
 
 ```bash
 uv run python scripts/build_concept_probe_datasets.py \
-  --scale pilot --seed 20260916 \
+  --scale full --seed 20260916 \
   --tokenizer HuggingFaceTB/SmolLM3-3B \
   --families bits \
-  --out_dir Cache/concept_probes/pilot
+  --out_dir Cache/concept_probes/full
 ```
 
 Generator: `data/concept_probes/` · atom table: verified 1-token pieces of `HuggingFaceTB/SmolLM3-3B`
@@ -103,39 +106,39 @@ Variants: `scaled` (item count grows with length) and `fixed` (1k item count, lo
 
 | split | rows |
 |---|---|
-| `train` | 296 |
-| `validation` | 84 |
-| `test` | 84 |
+| `train` | 8448 |
+| `validation` | 896 |
+| `test` | 896 |
 
 | metric | value |
 |---|---|
-| total rows | 464 |
+| total rows | 10240 |
 | token length (all padded) | min 1024 / p50 4096.0 / max 32768 |
-| mean prize bits | 97.241 (min 40.000, max 640.000) |
-| mean gzip ratio (text) | 0.043 |
-| mean gzip ratio (int32 ids) | 0.061 |
-| mean unigram entropy (bits) | 6.209 |
-| mean bigram entropy (bits) | 6.312 |
-| answer entropy (bits) | 8.858 over 464 strings |
-| tasks | `{'recall_packed': 464}` |
-| variants | `{'scaled': 232, 'fixed': 232}` |
-| rungs | `{'seq1024': 192, 'seq4096': 96, 'seq8192': 80, 'seq16384': 56, 'seq32768': 40}` |
+| mean prize bits | 89.000 (min 40.000, max 640.000) |
+| mean gzip ratio (text) | 0.035 (n=160 stratified sample) |
+| mean gzip ratio (int32 ids) | 0.046 |
+| mean unigram entropy (bits) | 6.215 |
+| mean bigram entropy (bits) | 6.322 |
+| answer entropy (bits) | 13.322 over 10240 strings |
+| tasks | `{'recall_packed': 10240}` |
+| variants | `{'scaled': 5120, 'fixed': 5120}` |
+| rungs | `{'seq1024': 4608, 'seq4096': 2560, 'seq8192': 1280, 'seq16384': 1024, 'seq32768': 768}` |
 
 Per-rung means:
 
 | seq_len | n | mean prize bits | mean gap | mean gzip(text) |
 |---|---|---|---|---|
-| 1024 | 192 | 40.000 | 939.7 | 0.077 |
-| 4096 | 96 | 60.000 | 3967.5 | 0.026 |
-| 8192 | 80 | 100.000 | 7975.2 | 0.019 |
-| 16384 | 56 | 180.000 | 15990.3 | 0.014 |
-| 32768 | 40 | 340.000 | 32023.5 | 0.012 |
+| 1024 | 4608 | 40.000 | 939.5 | 0.080 |
+| 4096 | 2560 | 60.000 | 3967.6 | 0.030 |
+| 8192 | 1280 | 100.000 | 7975.6 | 0.025 |
+| 16384 | 1024 | 180.000 | 15991.5 | 0.020 |
+| 32768 | 768 | 340.000 | 32023.7 | 0.018 |
 
 Example rows (truncated):
 
-- `bits/seq1024/scaled/train/00000` task=`recall_packed` prize=40.00 bits gap=940 query=`Q supply socially marina endif lending comment dew creations` answer=`hof kids auschwitz audit creepy vind sur audit`
-- `bits/seq1024/scaled/train/00001` task=`recall_packed` prize=40.00 bits gap=935 query=`Q native toilets setaddress poop breastfeeding recognition aby turbulence` answer=`oftype airlines quebec quebec lead onpostexecute cover hit`
-- `bits/seq1024/scaled/train/00002` task=`recall_packed` prize=40.00 bits gap=935 query=`Q buffett autor censorship plethora lending trao flesh toilets` answer=`airlines ambitions presidency ob came ios igual pizza`
+- `bits/seq1024/scaled/train/00000` task=`recall_packed` prize=40.00 bits gap=940 query=`Q gonzalez operator tcb lover qq trois deprecated onset` answer=`ase contrario hart greene keyboardtype validators scratch greene`
+- `bits/seq1024/scaled/train/00001` task=`recall_packed` prize=40.00 bits gap=935 query=`Q initialization regimes zastav parte paw completes purchases evening` answer=`implicated ram volatility volatility seventh hanna conceal prick`
+- `bits/seq1024/scaled/train/00002` task=`recall_packed` prize=40.00 bits gap=935 query=`Q jeh alma privileges inputs qq issuccess pendingintent regimes` answer=`ram differentiation timestamps rendered localization tolerated mathematic acceleration`
 
 ### Leakage
 

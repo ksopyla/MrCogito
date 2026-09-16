@@ -4,7 +4,7 @@ language:
 license: apache-2.0
 pretty_name: CogitoProbe-Bind — compositional entity binding
 size_categories:
-  - n<1K
+  - 10K<n<100K
 task_categories:
   - question-answering
   - text-generation
@@ -19,17 +19,20 @@ tags:
 configs:
   - config_name: default
     data_files:
-      train: train.parquet
-      validation: validation.parquet
-      test: test.parquet
+      - split: train
+        path: train.parquet
+      - split: validation
+        path: validation.parquet
+      - split: test
+        path: test.parquet
 dataset_info:
   dataset_name: ksopyla/cogito-probe-bind
 ---
 
 # CogitoProbe-Bind — compositional entity binding
 
-**Hub id (proposed, not published until approved):** `ksopyla/cogito-probe-bind`
-**Family:** `bind` · **Series:** CogitoProbe · **Default seed:** `20260916` · **Tokenizer:** `HuggingFaceTB/SmolLM3-3B`
+**Hub:** [`ksopyla/cogito-probe-bind`](https://huggingface.co/datasets/ksopyla/cogito-probe-bind)  
+**Author:** Krzysztof Sopyła · **Family:** `bind` · **Series:** CogitoProbe · **Default seed:** `20260916` · **Tokenizer:** `HuggingFaceTB/SmolLM3-3B`
 
 ## What it is
 
@@ -63,10 +66,10 @@ Exact command (deterministic):
 
 ```bash
 uv run python scripts/build_concept_probe_datasets.py \
-  --scale pilot --seed 20260916 \
+  --scale full --seed 20260916 \
   --tokenizer HuggingFaceTB/SmolLM3-3B \
   --families bind \
-  --out_dir Cache/concept_probes/pilot
+  --out_dir Cache/concept_probes/full
 ```
 
 Generator: `data/concept_probes/` · atom table: verified 1-token pieces of `HuggingFaceTB/SmolLM3-3B`
@@ -103,39 +106,39 @@ Variants: `scaled` (item count grows with length) and `fixed` (1k item count, lo
 
 | split | rows |
 |---|---|
-| `train` | 296 |
-| `validation` | 84 |
-| `test` | 84 |
+| `train` | 8448 |
+| `validation` | 896 |
+| `test` | 896 |
 
 | metric | value |
 |---|---|
-| total rows | 464 |
+| total rows | 10240 |
 | token length (all padded) | min 1024 / p50 4096.0 / max 32768 |
-| mean prize bits | 62.448 (min 24.000, max 160.000) |
-| mean gzip ratio (text) | 0.049 |
-| mean gzip ratio (int32 ids) | 0.069 |
-| mean unigram entropy (bits) | 6.269 |
-| mean bigram entropy (bits) | 6.468 |
-| answer entropy (bits) | 8.858 over 464 strings |
-| tasks | `{'attr_color': 151, 'who_place': 159, 'hop_friend_place': 154}` |
-| variants | `{'scaled': 232, 'fixed': 232}` |
-| rungs | `{'seq1024': 192, 'seq4096': 96, 'seq8192': 80, 'seq16384': 56, 'seq32768': 40}` |
+| mean prize bits | 58.381 (min 24.000, max 160.000) |
+| mean gzip ratio (text) | 0.037 (n=160 stratified sample) |
+| mean gzip ratio (int32 ids) | 0.050 |
+| mean unigram entropy (bits) | 6.279 |
+| mean bigram entropy (bits) | 6.488 |
+| answer entropy (bits) | 13.322 over 10240 strings |
+| tasks | `{'attr_color': 3494, 'who_place': 3491, 'hop_friend_place': 3255}` |
+| variants | `{'scaled': 5120, 'fixed': 5120}` |
+| rungs | `{'seq1024': 4608, 'seq4096': 2560, 'seq8192': 1280, 'seq16384': 1024, 'seq32768': 768}` |
 
 Per-rung means:
 
 | seq_len | n | mean prize bits | mean gap | mean gzip(text) |
 |---|---|---|---|---|
-| 1024 | 192 | 34.500 | 887.0 | 0.088 |
-| 4096 | 96 | 54.500 | 3891.0 | 0.030 |
-| 8192 | 80 | 96.400 | 7851.0 | 0.023 |
-| 16384 | 56 | 98.286 | 16043.0 | 0.014 |
-| 32768 | 40 | 97.600 | 32427.0 | 0.009 |
+| 1024 | 4608 | 34.538 | 887.0 | 0.090 |
+| 4096 | 2560 | 54.600 | 3891.0 | 0.036 |
+| 8192 | 1280 | 97.312 | 7851.0 | 0.031 |
+| 16384 | 1024 | 97.188 | 16043.0 | 0.018 |
+| 32768 | 768 | 97.417 | 32427.0 | 0.011 |
 
 Example rows (truncated):
 
-- `bind/seq1024/scaled/train/00000` task=`attr_color` prize=40.00 bits gap=887 query=`Q color sanit listnode huckabee xss larg uif lobby attendee` answer=`green coral mouse dog oslo bird amber yellow`
-- `bind/seq1024/scaled/train/00001` task=`attr_color` prize=40.00 bits gap=887 query=`Q color highlander aujourd deltax comput prosperous uif bye xss` answer=`deer dog bird yellow pink white brown silver`
-- `bind/seq1024/scaled/train/00002` task=`who_place` prize=24.00 bits gap=887 query=`Q who in map miner box judge rope door actor rider` answer=`concentr where aujourd webhook elsif cargo apprent jord`
+- `bind/seq1024/scaled/train/00000` task=`attr_color` prize=40.00 bits gap=887 query=`Q color idx wish oxidation neben graf morr spacer travellers` answer=`green coral mouse dog oslo bird amber yellow`
+- `bind/seq1024/scaled/train/00001` task=`attr_color` prize=40.00 bits gap=887 query=`Q color auswahl youngsters avan urging processing morr navy neben` answer=`deer dog bird yellow pink white brown silver`
+- `bind/seq1024/scaled/train/00002` task=`who_place` prize=24.00 bits gap=887 query=`Q who in map miner box judge rope door actor rider` answer=`bn keep youngsters manifest include hx illustrations kerr`
 
 ### Leakage
 

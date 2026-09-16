@@ -1,114 +1,123 @@
 {
   "seed": 20260916,
-  "scale": "pilot",
+  "scale": "full",
   "tokenizer": "HuggingFaceTB/SmolLM3-3B",
-  "created": "2026-09-16T08:36:32+00:00",
+  "created": "2026-09-16T16:10:38+00:00",
   "generator": "scripts/build_concept_probe_datasets.py",
+  "expected_splits": {
+    "train": 8448,
+    "validation": 896,
+    "test": 896,
+    "n_rows": 10240
+  },
   "families": {
     "bits": {
-      "n_rows": 464,
+      "n_rows": 10240,
       "splits": {
-        "train": 296,
-        "validation": 84,
-        "test": 84
+        "train": 8448,
+        "validation": 896,
+        "test": 896
       },
       "rungs": {
-        "seq1024": 192,
-        "seq4096": 96,
-        "seq8192": 80,
-        "seq16384": 56,
-        "seq32768": 40
+        "seq1024": 4608,
+        "seq4096": 2560,
+        "seq8192": 1280,
+        "seq16384": 1024,
+        "seq32768": 768
       },
       "tasks": {
-        "recall_packed": 464
+        "recall_packed": 10240
       },
       "variants": {
-        "scaled": 232,
-        "fixed": 232
+        "scaled": 5120,
+        "fixed": 5120
       },
       "token_length": {
-        "n": 464,
+        "n": 10240,
         "min": 1024,
         "p50": 4096.0,
         "p90": 16384.0,
         "max": 32768,
-        "mean": 7485.793103448276
+        "mean": 6604.8
       },
       "supervised_tokens": {
-        "n": 464,
+        "n": 10240,
         "min": 8,
         "p50": 8.0,
-        "p90": 64.0,
+        "p90": 32.0,
         "max": 128,
-        "mean": 19.448275862068964
+        "mean": 17.8
       },
       "gap": {
-        "n": 464,
+        "n": 10240,
         "min": 935,
-        "p50": 3929.0,
-        "p90": 16298.5,
-        "max": 32689,
-        "mean": 7275.258620689655
+        "p50": 3919.0,
+        "p90": 16295.0,
+        "max": 32709,
+        "mean": 6412.546875
       },
       "prize_bits": {
         "min": 40.0,
-        "mean": 97.24137931034483,
+        "mean": 89.0,
         "max": 640.0
       },
-      "gzip_ratio_text_mean": 0.04347914524606324,
-      "gzip_ratio_ids_mean": 0.06089471948557887,
-      "unigram_entropy_mean": 6.209055208424771,
-      "bigram_entropy_mean": 6.311970205988458,
-      "answer_entropy": 8.857980995127683,
-      "n_distinct_answers": 464,
+      "gzip_ratio_text_mean": 0.03469768331925625,
+      "gzip_ratio_ids_mean": 0.04552640914916992,
+      "gzip_sampled": true,
+      "gzip_n": 160,
+      "gzip_per_rung": 32,
+      "unigram_entropy_mean": 6.215096672840895,
+      "bigram_entropy_mean": 6.321596071299367,
+      "answer_entropy": 13.321928094884678,
+      "n_distinct_answers": 10240,
       "top_token_ids": [
         {
-          "id": 19512,
-          "count": 52744
+          "id": 51929,
+          "count": 1026304
         },
         {
-          "id": 14285,
-          "count": 52744
+          "id": 11493,
+          "count": 1026304
         },
         {
-          "id": 23314,
-          "count": 52744
+          "id": 43080,
+          "count": 1026304
         },
         {
-          "id": 48191,
-          "count": 52744
+          "id": 38049,
+          "count": 1026304
         },
         {
-          "id": 47293,
-          "count": 52744
+          "id": 68640,
+          "count": 1026304
         },
         {
-          "id": 41285,
-          "count": 52744
+          "id": 79909,
+          "count": 1026304
         },
         {
-          "id": 89249,
-          "count": 52744
+          "id": 45347,
+          "count": 1026304
         },
         {
-          "id": 28577,
-          "count": 52744
+          "id": 64485,
+          "count": 1026304
         },
         {
-          "id": 43371,
-          "count": 52744
+          "id": 12128,
+          "count": 1026304
         },
         {
-          "id": 21031,
-          "count": 52744
+          "id": 9482,
+          "count": 1026304
         },
         {
-          "id": 16964,
-          "count": 52744
+          "id": 60551,
+          "count": 1026304
         },
         {
-          "id": 46551,
-          "count": 52744
+          "id": 84512,
+          "count": 1026304
         }
       ],
       "leakage": {
@@ -140,48 +149,53 @@
       },
       "per_rung": {
         "1024": {
-          "n": 192,
+          "n": 4608,
           "mean_prize_bits": 40.0,
-          "mean_gap": 939.7135416666666,
-          "mean_gzip_text": 0.07743811178230035,
+          "mean_gap": 939.4791666666666,
+          "mean_gzip_text": 0.08003213307084214,
+          "gzip_n": 32,
           "tasks": {
-            "recall_packed": 192
+            "recall_packed": 4608
           }
         },
         "4096": {
-          "n": 96,
+          "n": 2560,
           "mean_prize_bits": 60.0,
-          "mean_gap": 3967.4791666666665,
-          "mean_gzip_text": 0.02623021403668192,
+          "mean_gap": 3967.599609375,
+          "mean_gzip_text": 0.030390489122554265,
+          "gzip_n": 32,
           "tasks": {
-            "recall_packed": 96
+            "recall_packed": 2560
           }
         },
         "8192": {
-          "n": 80,
+          "n": 1280,
           "mean_prize_bits": 100.0,
-          "mean_gap": 7975.25,
-          "mean_gzip_text": 0.018786925412447687,
+          "mean_gap": 7975.6484375,
+          "mean_gzip_text": 0.02463183444379969,
+          "gzip_n": 32,
           "tasks": {
-            "recall_packed": 80
+            "recall_packed": 1280
           }
         },
         "16384": {
-          "n": 56,
+          "n": 1024,
           "mean_prize_bits": 180.0,
-          "mean_gap": 15990.30357142857,
-          "mean_gzip_text": 0.014385917991675027,
+          "mean_gap": 15991.501953125,
+          "mean_gzip_text": 0.020465223524475114,
+          "gzip_n": 32,
           "tasks": {
-            "recall_packed": 56
+            "recall_packed": 1024
           }
         },
         "32768": {
-          "n": 40,
+          "n": 768,
           "mean_prize_bits": 340.0,
-          "mean_gap": 32023.5,
-          "mean_gzip_text": 0.011988498598014905,
+          "mean_gap": 32023.66796875,
+          "mean_gzip_text": 0.017968736434610038,
+          "gzip_n": 32,
           "tasks": {
-            "recall_packed": 40
+            "recall_packed": 768
           }
         }
       },
@@ -193,9 +207,9 @@
           "seq_len": 1024,
           "prize_bits": 40.0,
           "gap": 940,
-          "query": "Q supply socially marina endif lending comment dew creations",
-          "answer": "hof kids auschwitz audit creepy vind sur audit",
-          "text_head": "key sg val ios . key detox val withheld . key improv val lead . key shoot val withheld . key comment val vind . key dew val sur . key lending val creepy . key validate val vind . key endif val audit . key benim val kids . key marina val auschwitz . key xa val ecstasy . key socially val kids . key creations val audit . key supply val hof . key toilets val dopo . distingu body agreement cougar wors "
+          "query": "Q gonzalez operator tcb lover qq trois deprecated onset",
+          "answer": "ase contrario hart greene keyboardtype validators scratch greene",
+          "text_head": "key verb val tolerated . key candid val hannity . key andre val seventh . key jong val hannity . key trois val validators . key deprecated val scratch . key qq val keyboardtype . key hepat val validators . key lover val greene . key fait val contrario . key tcb val hart . key lisa val brushed . key operator val contrario . key onset val greene . key gonzalez val ase . key regimes val indicated . g"
         },
         {
           "id": "bits/seq1024/scaled/train/00001",
@@ -204,9 +218,9 @@
           "seq_len": 1024,
           "prize_bits": 40.0,
           "gap": 935,
-          "query": "Q native toilets setaddress poop breastfeeding recognition aby turbulence",
-          "answer": "oftype airlines quebec quebec lead onpostexecute cover hit",
-          "text_head": "key salad val pizza . key lever val vind . key rubber val came . key toilets val airlines . key setaddress val quebec . key native val oftype . key ngh val hof . key survival val worry . key poop val quebec . key aby val cover . key breastfeeding val lead . key august val dopo . key lives val auschwitz . key testim val withheld . key turbulence val hit . key recognition val onpostexecute . disting"
+          "query": "Q initialization regimes zastav parte paw completes purchases evening",
+          "answer": "implicated ram volatility volatility seventh hanna conceal prick",
+          "text_head": "key statute val acceleration . key strategy val validators . key animal val localization . key regimes val ram . key zastav val volatility . key initialization val implicated . key machine val ase . key evo val fu . key parte val volatility . key purchases val conceal . key paw val seventh . key sunshine val indicated . key solemn val hart . key downturn val hannity . key evening val prick . key c"
         },
         {
           "id": "bits/seq1024/scaled/train/00002",
@@ -215,118 +229,156 @@
           "seq_len": 1024,
           "prize_bits": 40.0,
           "gap": 935,
-          "query": "Q buffett autor censorship plethora lending trao flesh toilets",
-          "answer": "airlines ambitions presidency ob came ios igual pizza",
-          "text_head": "key die val oftype . key flesh val igual . key european val guru . key buffett val airlines . key autor val ambitions . key trao val ios . key censorship val presidency . key cakes val pizza . key klu val withheld . key ow val vind . key lending val came . key unserer val onpostexecute . key plethora val ob . key detox val withheld . key spect val hof . key toilets val pizza . distingu body agreem"
+          "query": "Q jeh alma privileges inputs qq issuccess pendingintent regimes",
+          "answer": "ram differentiation timestamps rendered localization tolerated mathematic acceleration",
+          "text_head": "key bless val implicated . key pendingintent val mathematic . key pls val sele . key jeh val ram . key alma val differentiation . key issuccess val tolerated . key privileges val timestamps . key gut val acceleration . key everton val hannity . key lieutenant val validators . key qq val localization . key snap val hanna . key inputs val rendered . key candid val hannity . key ukaz val ase . key re"
         }
-      ]
+      ],
+      "parquet_verify": {
+        "splits": {
+          "train": 8448,
+          "validation": 896,
+          "test": 896
+        },
+        "leakage": {
+          "pairs": {
+            "train\u2229validation": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 0
+            },
+            "train\u2229test": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 0
+            },
+            "validation\u2229test": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 0
+            }
+          },
+          "within_split_duplicate_ids": {
+            "train": 0,
+            "validation": 0,
+            "test": 0
+          }
+        },
+        "seed": 20260916
+      }
     },
     "bind": {
-      "n_rows": 464,
+      "n_rows": 10240,
       "splits": {
-        "train": 296,
-        "validation": 84,
-        "test": 84
+        "train": 8448,
+        "validation": 896,
+        "test": 896
       },
       "rungs": {
-        "seq1024": 192,
-        "seq4096": 96,
-        "seq8192": 80,
-        "seq16384": 56,
-        "seq32768": 40
+        "seq1024": 4608,
+        "seq4096": 2560,
+        "seq8192": 1280,
+        "seq16384": 1024,
+        "seq32768": 768
       },
       "tasks": {
-        "attr_color": 151,
-        "who_place": 159,
-        "hop_friend_place": 154
+        "attr_color": 3494,
+        "who_place": 3491,
+        "hop_friend_place": 3255
       },
       "variants": {
-        "scaled": 232,
-        "fixed": 232
+        "scaled": 5120,
+        "fixed": 5120
       },
       "token_length": {
-        "n": 464,
+        "n": 10240,
         "min": 1024,
         "p50": 4096.0,
         "p90": 16384.0,
         "max": 32768,
-        "mean": 7485.793103448276
+        "mean": 6604.8
       },
       "supervised_tokens": {
-        "n": 464,
+        "n": 10240,
         "min": 8,
         "p50": 8.0,
         "p90": 32.0,
         "max": 32,
-        "mean": 13.379310344827585
+        "mean": 12.6
       },
       "gap": {
-        "n": 464,
+        "n": 10240,
         "min": 887,
         "p50": 3823.0,
         "p90": 16247.0,
         "max": 32631,
-        "mean": 7257.3448275862065
+        "mean": 6389.6
       },
       "prize_bits": {
         "min": 24.0,
-        "mean": 62.44827586206897,
+        "mean": 58.38125,
         "max": 160.0
       },
-      "gzip_ratio_text_mean": 0.04905684664722368,
-      "gzip_ratio_ids_mean": 0.06914012185458479,
-      "unigram_entropy_mean": 6.26878585472964,
-      "bigram_entropy_mean": 6.468063565901935,
-      "answer_entropy": 8.857980995127683,
-      "n_distinct_answers": 464,
+      "gzip_ratio_text_mean": 0.03706220489565008,
+      "gzip_ratio_ids_mean": 0.050170516967773436,
+      "gzip_sampled": true,
+      "gzip_n": 160,
+      "gzip_per_rung": 32,
+      "unigram_entropy_mean": 6.278708067519128,
+      "bigram_entropy_mean": 6.4878740940425335,
+      "answer_entropy": 13.321928094884678,
+      "n_distinct_answers": 10240,
       "top_token_ids": [
         {
-          "id": 19512,
-          "count": 52632
+          "id": 51929,
+          "count": 1022976
         },
         {
-          "id": 14285,
-          "count": 52632
+          "id": 11493,
+          "count": 1022976
         },
         {
-          "id": 23314,
-          "count": 52632
+          "id": 43080,
+          "count": 1022976
         },
         {
-          "id": 48191,
-          "count": 52632
+          "id": 38049,
+          "count": 1022976
         },
         {
-          "id": 47293,
-          "count": 52632
+          "id": 68640,
+          "count": 1022976
         },
         {
-          "id": 41285,
-          "count": 52632
+          "id": 79909,
+          "count": 1022976
         },
         {
-          "id": 89249,
-          "count": 52632
+          "id": 45347,
+          "count": 1022976
         },
         {
-          "id": 28577,
-          "count": 52632
+          "id": 64485,
+          "count": 1022976
         },
         {
-          "id": 43371,
-          "count": 52632
+          "id": 12128,
+          "count": 1022976
         },
         {
-          "id": 21031,
-          "count": 52632
+          "id": 9482,
+          "count": 1022976
         },
         {
-          "id": 16964,
-          "count": 52632
+          "id": 60551,
+          "count": 1022976
         },
         {
-          "id": 46551,
-          "count": 52632
+          "id": 84512,
+          "count": 1022976
         }
       ],
       "leakage": {
@@ -358,58 +410,63 @@
       },
       "per_rung": {
         "1024": {
-          "n": 192,
-          "mean_prize_bits": 34.5,
+          "n": 4608,
+          "mean_prize_bits": 34.53819444444444,
           "mean_gap": 887.0,
-          "mean_gzip_text": 0.08816785934563258,
+          "mean_gzip_text": 0.09015881907249457,
+          "gzip_n": 32,
           "tasks": {
-            "attr_color": 63,
-            "who_place": 66,
-            "hop_friend_place": 63
+            "attr_color": 1588,
+            "who_place": 1573,
+            "hop_friend_place": 1447
           }
         },
         "4096": {
-          "n": 96,
-          "mean_prize_bits": 54.5,
+          "n": 2560,
+          "mean_prize_bits": 54.6,
           "mean_gap": 3891.0,
-          "mean_gzip_text": 0.03026147339791459,
+          "mean_gzip_text": 0.03575096405204543,
+          "gzip_n": 32,
           "tasks": {
-            "attr_color": 33,
-            "who_place": 33,
-            "hop_friend_place": 30
+            "attr_color": 862,
+            "who_place": 864,
+            "hop_friend_place": 834
           }
         },
         "8192": {
-          "n": 80,
-          "mean_prize_bits": 96.4,
+          "n": 1280,
+          "mean_prize_bits": 97.3125,
           "mean_gap": 7851.0,
-          "mean_gzip_text": 0.022566126239309998,
+          "mean_gzip_text": 0.03057761188055451,
+          "gzip_n": 32,
           "tasks": {
-            "hop_friend_place": 23,
-            "attr_color": 31,
-            "who_place": 26
+            "hop_friend_place": 380,
+            "attr_color": 470,
+            "who_place": 430
           }
         },
         "16384": {
-          "n": 56,
-          "mean_prize_bits": 98.28571428571429,
+          "n": 1024,
+          "mean_prize_bits": 97.1875,
           "mean_gap": 16043.0,
-          "mean_gzip_text": 0.01361352392259861,
+          "mean_gzip_text": 0.017681222758408343,
+          "gzip_n": 32,
           "tasks": {
-            "hop_friend_place": 24,
-            "who_place": 19,
-            "attr_color": 13
+            "hop_friend_place": 336,
+            "who_place": 374,
+            "attr_color": 314
           }
         },
         "32768": {
-          "n": 40,
-          "mean_prize_bits": 97.6,
+          "n": 768,
+          "mean_prize_bits": 97.41666666666667,
           "mean_gap": 32427.0,
-          "mean_gzip_text": 0.00903497412350529,
+          "mean_gzip_text": 0.011142406714747588,
+          "gzip_n": 32,
           "tasks": {
-            "hop_friend_place": 14,
-            "who_place": 15,
-            "attr_color": 11
+            "hop_friend_place": 258,
+            "who_place": 250,
+            "attr_color": 260
           }
         }
       },
@@ -421,9 +478,9 @@
           "seq_len": 1024,
           "prize_bits": 40.0,
           "gap": 887,
-          "query": "Q color sanit listnode huckabee xss larg uif lobby attendee",
+          "query": "Q color idx wish oxidation neben graf morr spacer travellers",
           "answer": "green coral mouse dog oslo bird amber yellow",
-          "text_head": "attendee is moss . attendee in miner . attendee color yellow . attendee friend huckabee . huckabee is rain . huckabee in chef . huckabee color mouse . huckabee friend listnode . xss is nova . xss in map . xss color dog . xss friend uif . listnode is something . listnode in baker . listnode color coral . listnode friend xss . sanit is fire . sanit in actor . sanit color green . sanit friend lobby ."
+          "text_head": "travellers is moss . travellers in miner . travellers color yellow . travellers friend oxidation . oxidation is rain . oxidation in chef . oxidation color mouse . oxidation friend wish . neben is nova . neben in map . neben color dog . neben friend morr . wish is something . wish in baker . wish color coral . wish friend neben . idx is fire . idx in actor . idx color green . idx friend spacer . mo"
         },
         {
           "id": "bind/seq1024/scaled/train/00001",
@@ -432,9 +489,9 @@
           "seq_len": 1024,
           "prize_bits": 40.0,
           "gap": 887,
-          "query": "Q color highlander aujourd deltax comput prosperous uif bye xss",
+          "query": "Q color auswahl youngsters avan urging processing morr navy neben",
           "answer": "deer dog bird yellow pink white brown silver",
-          "text_head": "prosperous is nova . prosperous in bell . prosperous color pink . prosperous friend highlander . highlander is pearl . highlander in paris . highlander color deer . highlander friend deltax . xss is tojson . xss in box . xss color silver . xss friend comput . aujourd is someone . aujourd in clerk . aujourd color dog . aujourd friend prosperous . bye is nothing . bye in rider . bye color brown . by"
+          "text_head": "processing is nova . processing in bell . processing color pink . processing friend auswahl . auswahl is pearl . auswahl in paris . auswahl color deer . auswahl friend avan . neben is exploit . neben in box . neben color silver . neben friend urging . youngsters is someone . youngsters in clerk . youngsters color dog . youngsters friend processing . navy is nothing . navy in rider . navy color bro"
         },
         {
           "id": "bind/seq1024/scaled/train/00002",
@@ -444,117 +501,155 @@
           "prize_bits": 24.0,
           "gap": 887,
           "query": "Q who in map miner box judge rope door actor rider",
-          "answer": "concentr where aujourd webhook elsif cargo apprent jord",
-          "text_head": "where is passed . where in miner . where color ivory . where friend apprent . concentr is closed . concentr in map . concentr color horse . concentr friend jord . aujourd is stayed . aujourd in box . aujourd color brown . aujourd friend webhook . webhook is people . webhook in judge . webhook color mouse . webhook friend cargo . apprent is mist . apprent in actor . apprent color wolf . apprent fri"
+          "answer": "bn keep youngsters manifest include hx illustrations kerr",
+          "text_head": "keep is passed . keep in miner . keep color ivory . keep friend illustrations . bn is closed . bn in map . bn color horse . bn friend kerr . youngsters is stayed . youngsters in box . youngsters color brown . youngsters friend manifest . manifest is people . manifest in judge . manifest color mouse . manifest friend hx . illustrations is mist . illustrations in actor . illustrations color wolf . i"
         }
-      ]
+      ],
+      "parquet_verify": {
+        "splits": {
+          "train": 8448,
+          "validation": 896,
+          "test": 896
+        },
+        "leakage": {
+          "pairs": {
+            "train\u2229validation": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 0
+            },
+            "train\u2229test": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 0
+            },
+            "validation\u2229test": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 0
+            }
+          },
+          "within_split_duplicate_ids": {
+            "train": 0,
+            "validation": 0,
+            "test": 0
+          }
+        },
+        "seed": 20260916
+      }
     },
     "arith": {
-      "n_rows": 464,
+      "n_rows": 10240,
       "splits": {
-        "train": 296,
-        "validation": 84,
-        "test": 84
+        "train": 8448,
+        "validation": 896,
+        "test": 896
       },
       "rungs": {
-        "seq1024": 192,
-        "seq4096": 96,
-        "seq8192": 80,
-        "seq16384": 56,
-        "seq32768": 40
+        "seq1024": 4608,
+        "seq4096": 2560,
+        "seq8192": 1280,
+        "seq16384": 1024,
+        "seq32768": 768
       },
       "tasks": {
-        "eval": 102,
-        "subexpr": 244,
-        "match": 118
+        "eval": 2037,
+        "subexpr": 5175,
+        "match": 3028
       },
       "variants": {
-        "scaled": 232,
-        "fixed": 232
+        "scaled": 5120,
+        "fixed": 5120
       },
       "token_length": {
-        "n": 464,
+        "n": 10240,
         "min": 1024,
         "p50": 4096.0,
         "p90": 16384.0,
         "max": 32768,
-        "mean": 7485.793103448276
+        "mean": 6604.8
       },
       "supervised_tokens": {
-        "n": 464,
+        "n": 10240,
         "min": 1,
-        "p50": 3.0,
+        "p50": 2.0,
         "p90": 5.0,
         "max": 13,
-        "mean": 3.314655172413793
+        "mean": 3.2482421875
       },
       "gap": {
-        "n": 464,
-        "min": 988,
-        "p50": 4072.0,
-        "p90": 16376.0,
+        "n": 10240,
+        "min": 987,
+        "p50": 4067.0,
+        "p90": 16365.0,
         "max": 32761,
-        "mean": 7462.995689655172
+        "mean": 6582.4294921875
       },
       "prize_bits": {
         "min": 3.321928094887362,
-        "mean": 13.088490979981641,
+        "mean": 12.914253147059009,
         "max": 30.546498482174595
       },
-      "gzip_ratio_text_mean": 0.03654829870303115,
-      "gzip_ratio_ids_mean": 0.052303297766323746,
-      "unigram_entropy_mean": 6.1773080617577305,
-      "bigram_entropy_mean": 6.2766636938506,
-      "answer_entropy": 7.24225482882764,
-      "n_distinct_answers": 270,
+      "gzip_ratio_text_mean": 0.026083545865333947,
+      "gzip_ratio_ids_mean": 0.03679981231689453,
+      "gzip_sampled": true,
+      "gzip_n": 160,
+      "gzip_per_rung": 32,
+      "unigram_entropy_mean": 6.184009755953452,
+      "bigram_entropy_mean": 6.286179832420417,
+      "answer_entropy": 8.604486599939008,
+      "n_distinct_answers": 2612,
       "top_token_ids": [
         {
-          "id": 19512,
-          "count": 53071
+          "id": 51929,
+          "count": 1032550
         },
         {
-          "id": 14285,
-          "count": 53062
+          "id": 11493,
+          "count": 1032371
         },
         {
-          "id": 23314,
-          "count": 53058
+          "id": 43080,
+          "count": 1032253
         },
         {
-          "id": 48191,
-          "count": 53052
+          "id": 38049,
+          "count": 1032191
         },
         {
-          "id": 47293,
-          "count": 53047
+          "id": 68640,
+          "count": 1032126
         },
         {
-          "id": 41285,
-          "count": 53041
+          "id": 79909,
+          "count": 1032010
         },
         {
-          "id": 89249,
-          "count": 53037
+          "id": 45347,
+          "count": 1031931
         },
         {
-          "id": 28577,
-          "count": 53032
+          "id": 64485,
+          "count": 1031874
         },
         {
-          "id": 43371,
-          "count": 53028
+          "id": 12128,
+          "count": 1031825
         },
         {
-          "id": 21031,
-          "count": 53025
+          "id": 9482,
+          "count": 1031695
         },
         {
-          "id": 16964,
-          "count": 53022
+          "id": 60551,
+          "count": 1031629
         },
         {
-          "id": 46551,
-          "count": 53017
+          "id": 84512,
+          "count": 1031565
         }
       ],
       "leakage": {
@@ -563,19 +658,19 @@
             "fingerprint": 0,
             "input_ids": 0,
             "text": 0,
-            "answer_only": 24
+            "answer_only": 248
           },
           "train\u2229test": {
             "fingerprint": 0,
             "input_ids": 0,
             "text": 0,
-            "answer_only": 16
+            "answer_only": 245
           },
           "validation\u2229test": {
             "fingerprint": 0,
             "input_ids": 0,
             "text": 0,
-            "answer_only": 13
+            "answer_only": 95
           }
         },
         "within_split_duplicate_ids": {
@@ -586,58 +681,63 @@
       },
       "per_rung": {
         "1024": {
-          "n": 192,
-          "mean_prize_bits": 11.927754058586883,
-          "mean_gap": 1001.2291666666666,
-          "mean_gzip_text": 0.06698395414428335,
+          "n": 4608,
+          "mean_prize_bits": 11.57617572221786,
+          "mean_gap": 1001.8563368055555,
+          "mean_gzip_text": 0.06809982022871518,
+          "gzip_n": 32,
           "tasks": {
-            "eval": 37,
-            "subexpr": 112,
-            "match": 43
+            "eval": 901,
+            "subexpr": 2358,
+            "match": 1349
           }
         },
         "4096": {
-          "n": 96,
-          "mean_prize_bits": 12.173095739381083,
-          "mean_gap": 4073.75,
-          "mean_gzip_text": 0.02138999749313771,
+          "n": 2560,
+          "mean_prize_bits": 12.086216003516288,
+          "mean_gap": 4074.24765625,
+          "mean_gzip_text": 0.023126163200739354,
+          "gzip_n": 32,
           "tasks": {
-            "match": 24,
-            "subexpr": 48,
-            "eval": 24
+            "match": 787,
+            "subexpr": 1256,
+            "eval": 517
           }
         },
         "8192": {
-          "n": 80,
-          "mean_prize_bits": 15.613949241301512,
-          "mean_gap": 8168.125,
-          "mean_gzip_text": 0.014198719170742436,
+          "n": 1280,
+          "mean_prize_bits": 15.547526890936021,
+          "mean_gap": 8168.8671875,
+          "mean_gzip_text": 0.016281841481842488,
+          "gzip_n": 32,
           "tasks": {
-            "eval": 17,
-            "subexpr": 44,
-            "match": 19
+            "eval": 250,
+            "subexpr": 665,
+            "match": 365
           }
         },
         "16384": {
-          "n": 56,
-          "mean_prize_bits": 14.406263050043009,
-          "mean_gap": 16361.25,
-          "mean_gzip_text": 0.010311929839583628,
+          "n": 1024,
+          "mean_prize_bits": 15.302892110187805,
+          "mean_gap": 16360.685546875,
+          "mean_gzip_text": 0.012489002854704594,
+          "gzip_n": 32,
           "tasks": {
-            "subexpr": 26,
-            "match": 16,
-            "eval": 14
+            "subexpr": 501,
+            "match": 292,
+            "eval": 231
           }
         },
         "32768": {
-          "n": 40,
-          "mean_prize_bits": 13.96117935939219,
-          "mean_gap": 32745.85,
-          "mean_gzip_text": 0.008267150962168734,
+          "n": 768,
+          "mean_prize_bits": 16.1291999839482,
+          "mean_gap": 32744.736979166668,
+          "mean_gzip_text": 0.010420901560668135,
+          "gzip_n": 32,
           "tasks": {
-            "eval": 10,
-            "match": 16,
-            "subexpr": 14
+            "eval": 138,
+            "match": 235,
+            "subexpr": 395
           }
         }
       },
@@ -651,7 +751,7 @@
           "gap": 1004,
           "query": "Q eval",
           "answer": "3 9",
-          "text_head": "( [ { 5 + 6 } * ( 1 * 4 ) ] - 5 ) . ( 6 * { { 0 - 3 } + { 7 - 7 } } ) . [ 1 - ( 9 - { 1 - 5 } ) ] . [ ( { 2 - 6 } - ( 0 - 5 ) ) - { 7 + 1 } ] . distingu body agreement cougar wors fileinputstream sistemas right mv ges describes understanding doll notifies pf trick scalia jaxbelement starting outsiders contaminants bruises allen pobl stand affordable hitters obt steady flynn erotic discussed przed "
+          "text_head": "( [ { 5 + 6 } * ( 1 * 4 ) ] - 5 ) . ( 6 * { { 0 - 3 } + { 7 - 7 } } ) . [ 1 - ( 9 - { 1 - 5 } ) ] . [ ( { 2 - 6 } - ( 0 - 5 ) ) - { 7 + 1 } ] . glfw bigger signaling mex pieces cyt passer appconfig worker susp initview funciones mongolia expect intentional bea udp dracon trval rene tendr studies util meilleur clickable owe cardio dives benny capacitor callee lia resourcename emailaddress limits ty"
         },
         {
           "id": "arith/seq1024/scaled/train/00001",
@@ -662,7 +762,7 @@
           "gap": 1005,
           "query": "Q sub 2 . 1 .",
           "answer": "1 8 . 1 4",
-          "text_head": "( 4 + { 9 - ( 0 - 5 ) } ) . ( { 6 * 5 } + 8 ) . ( ( 5 - { 7 + 0 } ) - [ ( 1 - 8 ) + [ 9 * 8 ] ] ) . { 3 - ( 6 * ( 8 - 7 ) ) } . distingu body agreement cougar wors fileinputstream sistemas right mv ges describes understanding doll notifies pf trick scalia jaxbelement starting outsiders contaminants bruises allen pobl stand affordable hitters obt steady flynn erotic discussed przed harga utilize ta"
+          "text_head": "( 4 + { 9 - ( 0 - 5 ) } ) . ( { 6 * 5 } + 8 ) . ( ( 5 - { 7 + 0 } ) - [ ( 1 - 8 ) + [ 9 * 8 ] ] ) . { 3 - ( 6 * ( 8 - 7 ) ) } . glfw bigger signaling mex pieces cyt passer appconfig worker susp initview funciones mongolia expect intentional bea udp dracon trval rene tendr studies util meilleur clickable owe cardio dives benny capacitor callee lia resourcename emailaddress limits ty circ single wol"
         },
         {
           "id": "arith/seq1024/scaled/train/00002",
@@ -673,114 +773,152 @@
           "gap": 988,
           "query": "Q sub 5 . 2 .",
           "answer": "- 1 . - 1 2",
-          "text_head": "{ [ { 3 * 1 } * [ 3 - 7 ] ] - ( [ 4 - 1 ] - [ 5 - 1 ] ) } . [ [ ( 9 - 3 ) - ( 9 + 8 ) ] * [ { 2 - 8 } - 1 ] ] . { [ 9 + { 1 - 9 } ] + ( 2 + [ 9 - 0 ] ) } . ( ( ( 4 + 7 ) + { 0 - 4 } ) - [ [ 8 - 0 ] + [ 1 - 5 ] ] ) . distingu body agreement cougar wors fileinputstream sistemas right mv ges describes understanding doll notifies pf trick scalia jaxbelement starting outsiders contaminants bruises alle"
+          "text_head": "{ [ { 3 * 1 } * [ 3 - 7 ] ] - ( [ 4 - 1 ] - [ 5 - 1 ] ) } . [ [ ( 9 - 3 ) - ( 9 + 8 ) ] * [ { 2 - 8 } - 1 ] ] . { [ 9 + { 1 - 9 } ] + ( 2 + [ 9 - 0 ] ) } . ( ( ( 4 + 7 ) + { 0 - 4 } ) - [ [ 8 - 0 ] + [ 1 - 5 ] ] ) . glfw bigger signaling mex pieces cyt passer appconfig worker susp initview funciones mongolia expect intentional bea udp dracon trval rene tendr studies util meilleur clickable owe car"
         }
-      ]
+      ],
+      "parquet_verify": {
+        "splits": {
+          "train": 8448,
+          "validation": 896,
+          "test": 896
+        },
+        "leakage": {
+          "pairs": {
+            "train\u2229validation": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 248
+            },
+            "train\u2229test": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 245
+            },
+            "validation\u2229test": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 95
+            }
+          },
+          "within_split_duplicate_ids": {
+            "train": 0,
+            "validation": 0,
+            "test": 0
+          }
+        },
+        "seed": 20260916
+      }
     },
     "props": {
-      "n_rows": 464,
+      "n_rows": 10240,
       "splits": {
-        "train": 296,
-        "validation": 84,
-        "test": 84
+        "train": 8448,
+        "validation": 896,
+        "test": 896
       },
       "rungs": {
-        "seq1024": 192,
-        "seq4096": 96,
-        "seq8192": 80,
-        "seq16384": 56,
-        "seq32768": 40
+        "seq1024": 4608,
+        "seq4096": 2560,
+        "seq8192": 1280,
+        "seq16384": 1024,
+        "seq32768": 768
       },
       "tasks": {
-        "prop_color": 464
+        "prop_color": 10240
       },
       "variants": {
-        "scaled": 232,
-        "fixed": 232
+        "scaled": 5120,
+        "fixed": 5120
       },
       "token_length": {
-        "n": 464,
+        "n": 10240,
         "min": 1024,
         "p50": 4096.0,
         "p90": 16384.0,
         "max": 32768,
-        "mean": 7485.793103448276
+        "mean": 6604.8
       },
       "supervised_tokens": {
-        "n": 464,
+        "n": 10240,
         "min": 6,
         "p50": 6.0,
-        "p90": 32.0,
+        "p90": 24.0,
         "max": 32,
-        "mean": 10.862068965517242
+        "mean": 10.15
       },
       "gap": {
-        "n": 464,
+        "n": 10240,
         "min": 945,
-        "p50": 3948.0,
-        "p90": 16311.3,
-        "max": 32698,
-        "mean": 7355.8448275862065
+        "p50": 3939.0,
+        "p90": 16305.0,
+        "max": 32707,
+        "mean": 6482.68720703125
       },
       "prize_bits": {
         "min": 30.0,
-        "mean": 54.310344827586206,
+        "mean": 50.75,
         "max": 160.0
       },
-      "gzip_ratio_text_mean": 0.04174161782316224,
-      "gzip_ratio_ids_mean": 0.05950258518087453,
-      "unigram_entropy_mean": 6.198506053172521,
-      "bigram_entropy_mean": 6.26651547008287,
-      "answer_entropy": 8.857980995127683,
-      "n_distinct_answers": 464,
+      "gzip_ratio_text_mean": 0.030142807525089375,
+      "gzip_ratio_ids_mean": 0.04175925254821777,
+      "gzip_sampled": true,
+      "gzip_n": 160,
+      "gzip_per_rung": 32,
+      "unigram_entropy_mean": 6.206974111849061,
+      "bigram_entropy_mean": 6.278340461238585,
+      "answer_entropy": 13.321928094884678,
+      "n_distinct_answers": 10240,
       "top_token_ids": [
         {
-          "id": 19512,
-          "count": 53408
+          "id": 51929,
+          "count": 1039104
         },
         {
-          "id": 14285,
-          "count": 53408
+          "id": 11493,
+          "count": 1039104
         },
         {
-          "id": 23314,
-          "count": 53408
+          "id": 43080,
+          "count": 1039104
         },
         {
-          "id": 48191,
-          "count": 53408
+          "id": 38049,
+          "count": 1039104
         },
         {
-          "id": 47293,
-          "count": 53408
+          "id": 68640,
+          "count": 1039104
         },
         {
-          "id": 41285,
-          "count": 53408
+          "id": 79909,
+          "count": 1039104
         },
         {
-          "id": 89249,
-          "count": 53408
+          "id": 45347,
+          "count": 1039104
         },
         {
-          "id": 28577,
-          "count": 53408
+          "id": 64485,
+          "count": 1039104
         },
         {
-          "id": 43371,
-          "count": 53408
+          "id": 12128,
+          "count": 1039104
         },
         {
-          "id": 21031,
-          "count": 53408
+          "id": 9482,
+          "count": 1039104
         },
         {
-          "id": 16964,
-          "count": 53408
+          "id": 60551,
+          "count": 1039104
         },
         {
-          "id": 46551,
-          "count": 53408
+          "id": 84512,
+          "count": 1039104
         }
       ],
       "leakage": {
@@ -812,48 +950,53 @@
       },
       "per_rung": {
         "1024": {
-          "n": 192,
+          "n": 4608,
           "mean_prize_bits": 30.0,
-          "mean_gap": 947.53125,
-          "mean_gzip_text": 0.07553006875167013,
+          "mean_gap": 947.58984375,
+          "mean_gzip_text": 0.0761339299842767,
+          "gzip_n": 32,
           "tasks": {
-            "prop_color": 192
+            "prop_color": 4608
           }
         },
         "4096": {
-          "n": 96,
+          "n": 2560,
           "mean_prize_bits": 45.0,
-          "mean_gap": 3980.25,
-          "mean_gzip_text": 0.02557589894368333,
+          "mean_gap": 3980.830078125,
+          "mean_gzip_text": 0.02881659118097758,
+          "gzip_n": 32,
           "tasks": {
-            "prop_color": 96
+            "prop_color": 2560
           }
         },
         "8192": {
-          "n": 80,
+          "n": 1280,
           "mean_prize_bits": 75.0,
-          "mean_gap": 7998.925,
-          "mean_gzip_text": 0.018064380299282652,
+          "mean_gap": 7998.69296875,
+          "mean_gzip_text": 0.022473920461035937,
+          "gzip_n": 32,
           "tasks": {
-            "prop_color": 80
+            "prop_color": 1280
           }
         },
         "16384": {
-          "n": 56,
+          "n": 1024,
           "mean_prize_bits": 95.0,
-          "mean_gap": 16185.285714285714,
-          "mean_gzip_text": 0.011545490142557124,
+          "mean_gap": 16185.3359375,
+          "mean_gzip_text": 0.014023468239503779,
+          "gzip_n": 32,
           "tasks": {
-            "prop_color": 56
+            "prop_color": 1024
           }
         },
         "32768": {
-          "n": 40,
+          "n": 768,
           "mean_prize_bits": 95.0,
-          "mean_gap": 32569.8,
-          "mean_gzip_text": 0.007983832477680114,
+          "mean_gap": 32569.25390625,
+          "mean_gzip_text": 0.009266127759652895,
+          "gzip_n": 32,
           "tasks": {
-            "prop_color": 40
+            "prop_color": 768
           }
         }
       },
@@ -865,9 +1008,9 @@
           "seq_len": 1024,
           "prize_bits": 30.0,
           "gap": 945,
-          "query": "Q color buff hu bells loc tradable french",
+          "query": "Q color shredd ts kadar ocak follow apollo",
           "answer": "olive pink cat fish coral black",
-          "text_head": "the apprent dropped the hawk cherish in poet . the bye dropped the frog manner in poet . the sheet dropped the pink hu in flag . the vin dropped the coral tradable in miner . the gonna dropped the cat bells in judge . the withdraw dropped the fish loc in ring . the sonata dropped the black french in bell . the cargo dropped the olive buff in agent . distingu body agreement cougar wors fileinputstr"
+          "text_head": "the illustrations dropped the hawk clients in poet . the navy dropped the frog quelque in poet . the get dropped the pink ts in flag . the income dropped the coral follow in miner . the wife dropped the cat kadar in judge . the throm dropped the fish ocak in ring . the posto dropped the black apollo in bell . the hx dropped the olive shredd in agent . glfw bigger signaling mex pieces cyt passer ap"
         },
         {
           "id": "props/seq1024/scaled/train/00001",
@@ -876,9 +1019,9 @@
           "seq_len": 1024,
           "prize_bits": 30.0,
           "gap": 954,
-          "query": "Q color loc escaped rez aberr signific canyon",
+          "query": "Q color ocak jw grateful localize grip cortical",
           "answer": "bear deer moth frog seal wolf",
-          "text_head": "the xss dropped the frog aberr in lamp . the tones dropped the wolf canyon in pilot . the financier dropped the deer escaped in cairo . the vin dropped the gold recursion in book . the bacter dropped the seal signific in box . the mek dropped the moth rez in hat . the larg dropped the bear loc in coin . the financier dropped the coral openly in book . distingu body agreement cougar wors fileinputs"
+          "text_head": "the neben dropped the frog localize in lamp . the prot dropped the wolf cortical in pilot . the cavs dropped the deer jw in cairo . the income dropped the gold ovar in book . the art dropped the seal grip in box . the hdr dropped the moth grateful in hat . the graf dropped the bear ocak in coin . the cavs dropped the coral lar in book . glfw bigger signaling mex pieces cyt passer appconfig worker "
         },
         {
           "id": "props/seq1024/scaled/train/00002",
@@ -887,11 +1030,46 @@
           "seq_len": 1024,
           "prize_bits": 30.0,
           "gap": 945,
-          "query": "Q color trab without dish makeshift marque coast",
+          "query": "Q color exem diameter velik tease court politico",
           "answer": "ivory wolf lion mouse blue ivory",
-          "text_head": "the highlander dropped the ivory coast in paris . the bye dropped the ivory trab in lamp . the mek dropped the blue marque in ring . the listnode dropped the moth supply in paris . the sonata dropped the mouse pure in map . the highlander dropped the wolf without in poet . the accel dropped the mouse makeshift in guard . the evan dropped the lion dish in lamp . distingu body agreement cougar wors "
+          "text_head": "the auswahl dropped the ivory politico in paris . the navy dropped the ivory exem in lamp . the hdr dropped the blue court in ring . the wish dropped the moth sig in paris . the posto dropped the mouse yani in map . the auswahl dropped the wolf diameter in poet . the sly dropped the mouse tease in guard . the cose dropped the lion velik in lamp . glfw bigger signaling mex pieces cyt passer appconf"
         }
-      ]
+      ],
+      "parquet_verify": {
+        "splits": {
+          "train": 8448,
+          "validation": 896,
+          "test": 896
+        },
+        "leakage": {
+          "pairs": {
+            "train\u2229validation": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 0
+            },
+            "train\u2229test": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 0
+            },
+            "validation\u2229test": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 0
+            }
+          },
+          "within_split_duplicate_ids": {
+            "train": 0,
+            "validation": 0,
+            "test": 0
+          }
+        },
+        "seed": 20260916
+      }
     }
   },
   "atom_table": {
@@ -1024,27 +1202,23 @@
     "note": "composed ids are the instrument; glued BPE is the author's surface form and is not 1:1"
   },
   "publish": {
-    "status": "not_uploaded",
-    "reason": "awaiting explicit approval; do not hf upload without it",
-    "commands_private": [
-      "hf repo create ksopyla/cogito-probe-bits --repo-type dataset --private",
-      "hf upload ksopyla/cogito-probe-bits Cache/concept_probes/pilot/hub/bits --repo-type dataset --commit-message \"Add CogitoProbe bits pilot (seed 20260916)\"",
-      "hf repo create ksopyla/cogito-probe-bind --repo-type dataset --private",
-      "hf upload ksopyla/cogito-probe-bind Cache/concept_probes/pilot/hub/bind --repo-type dataset --commit-message \"Add CogitoProbe bind pilot (seed 20260916)\"",
-      "hf repo create ksopyla/cogito-probe-arith --repo-type dataset --private",
-      "hf upload ksopyla/cogito-probe-arith Cache/concept_probes/pilot/hub/arith --repo-type dataset --commit-message \"Add CogitoProbe arith pilot (seed 20260916)\"",
-      "hf repo create ksopyla/cogito-probe-props --repo-type dataset --private",
-      "hf upload ksopyla/cogito-probe-props Cache/concept_probes/pilot/hub/props --repo-type dataset --commit-message \"Add CogitoProbe props pilot (seed 20260916)\""
-    ],
-    "commands_public": [
-      "hf repo create ksopyla/cogito-probe-bits --repo-type dataset",
-      "hf upload ksopyla/cogito-probe-bits Cache/concept_probes/pilot/hub/bits --repo-type dataset --commit-message \"Add CogitoProbe bits pilot (seed 20260916)\"",
-      "hf repo create ksopyla/cogito-probe-bind --repo-type dataset",
-      "hf upload ksopyla/cogito-probe-bind Cache/concept_probes/pilot/hub/bind --repo-type dataset --commit-message \"Add CogitoProbe bind pilot (seed 20260916)\"",
-      "hf repo create ksopyla/cogito-probe-arith --repo-type dataset",
-      "hf upload ksopyla/cogito-probe-arith Cache/concept_probes/pilot/hub/arith --repo-type dataset --commit-message \"Add CogitoProbe arith pilot (seed 20260916)\"",
-      "hf repo create ksopyla/cogito-probe-props --repo-type dataset",
-      "hf upload ksopyla/cogito-probe-props Cache/concept_probes/pilot/hub/props --repo-type dataset --commit-message \"Add CogitoProbe props pilot (seed 20260916)\""
-    ]
+    "status": "uploaded_public",
+    "uploaded": "2026-09-16T16:21:21+00:00",
+    "scale": "full",
+    "seed": 20260916,
+    "private": false,
+    "author": "Krzysztof Sopy\u0142a",
+    "urls": {
+      "bits": "https://huggingface.co/datasets/ksopyla/cogito-probe-bits",
+      "bind": "https://huggingface.co/datasets/ksopyla/cogito-probe-bind",
+      "arith": "https://huggingface.co/datasets/ksopyla/cogito-probe-arith",
+      "props": "https://huggingface.co/datasets/ksopyla/cogito-probe-props"
+    },
+    "commits": {
+      "bits": "d34f4f5847a384e1b7180139cd3a1f2038bb345f",
+      "bind": "998d4082c54c0447060ef17f26d17babc2e40707",
+      "arith": "e4fb9c7d22428b29e6ac55accd73ea50edef1d1a",
+      "props": "e5d5f450f5d7ead4266fc8dc8fd8a5dd834c102a"
+    }
   }
 }

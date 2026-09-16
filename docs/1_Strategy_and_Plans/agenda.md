@@ -316,9 +316,13 @@ headline (see [team_brief](../sprind_frontier_ai/team_brief.md)).
 Canonical eval protocol, Tier-1 data-protocol upgrade, compute audit, and training-pipeline
 modularization are done — see `docs/engineering_specs/` and
 [evaluation_protocol.md](../3_Evaluations_and_Baselines/evaluation_protocol.md).
-**2026-09-16 — CogitoProbe dataset series (not published).** Four length-ladder
-probes (bits / bind / arith / props) for concept-compression claims; DNA stays the
-exact-floor bandwidth instrument. Spec:
+**2026-09-16 — CogitoProbe dataset series (public Hub v0).** Four length-ladder
+probes — [`cogito-probe-bits`](https://huggingface.co/datasets/ksopyla/cogito-probe-bits),
+[`cogito-probe-bind`](https://huggingface.co/datasets/ksopyla/cogito-probe-bind),
+[`cogito-probe-arith`](https://huggingface.co/datasets/ksopyla/cogito-probe-arith),
+[`cogito-probe-props`](https://huggingface.co/datasets/ksopyla/cogito-probe-props) —
+seed `20260916`, `--scale full` (8448/896/896). DNA stays the exact-floor
+bandwidth instrument. Spec:
 [concept_compression_probe_suite.md](../engineering_specs/concept_compression_probe_suite.md).
 **2026-09-12 — `perceiver_ar` eval layer on `dev`:** lm-evaluation-harness adapter + SmolLM2-card
 0-shot tiers, teacher-forced RULER-lite (`passkey`, `multikey`, `vt`, `fwe`, `buckets`, `reach`),

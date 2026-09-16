@@ -566,14 +566,18 @@ EVAL_MD = {
 
 
 def _configs_yaml(family: str) -> str:
-    # Hub staging layout is one parquet per split (rung is a column, not a repo config).
+    # Hub YAML linter requires data_files as a list of {split, path} objects, not a mapping.
+    del family
     return "\n".join(
         [
             "  - config_name: default",
             "    data_files:",
-            "      train: train.parquet",
-            "      validation: validation.parquet",
-            "      test: test.parquet",
+            "      - split: train",
+            "        path: train.parquet",
+            "      - split: validation",
+            "        path: validation.parquet",
+            "      - split: test",
+            "        path: test.parquet",
         ]
     )
 
