@@ -142,9 +142,9 @@ Arith answer-*string* overlap is expected (small integers) and is not a leak.
 | family | mean prize bits | 32k prize | 32k gap | gzip(text) | H1 / H2 (bits) | distinct answers |
 |---|---|---|---|---|---|---|
 | bits | 97.2 (40–640) | 340 | 32024 | 0.043 | 6.21 / 6.32 | 464 |
-| bind | 62.4 (24–128) | 97.6 | 32427 | 0.049 | 6.27 / 6.47 | 464 |
+| bind | 62.4 (24–160) | 97.6 | 32427 | 0.049 | 6.27 / 6.47 | 464 |
 | arith | 13.1 (3.3–30.5) | 14.0 | 32746 | 0.037 | 6.18 / 6.28 | 270 |
-| props | 54.3 (24–128) | 95.0 | 32570 | 0.042 | 6.20 / 6.27 | 464 |
+| props | 54.3 (30–160) | 95.0 | 32570 | 0.042 | 6.20 / 6.27 | 464 |
 
 Gzip ratios ≪ 1 because rows are padded with a repeating filler cycle — that is the
 haystack. Unique information is the prize-bits column, not the gzip of the padded row.
