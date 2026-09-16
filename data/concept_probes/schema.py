@@ -95,6 +95,27 @@ def split_counts(scale: str, seq_len: int) -> tuple[int, int, int]:
     return table[seq_len]
 
 
+def expected_split_totals(
+    scale: str,
+    n_variants: int = 2,
+    lengths: tuple[int, ...] | list[int] | None = None,
+) -> dict[str, int]:
+    """Row counts after the builder splits each rung budget across variants."""
+    n_var = max(n_variants, 1)
+    train = validation = test = 0
+    for seq_len in (lengths if lengths is not None else LENGTH_LADDER):
+        n_train, n_val, n_test = split_counts(scale, seq_len)
+        train += max(n_train // n_var, 1) * n_var
+        validation += max(n_val // n_var, 1) * n_var
+        test += max(n_test // n_var, 1) * n_var
+    return {
+        "train": train,
+        "validation": validation,
+        "test": test,
+        "n_rows": train + validation + test,
+    }
+
+
 def recipe_for(family: str, seq_len: int, variant: str) -> ProbeRecipe:
     if family not in FAMILIES:
         raise ValueError(f"unknown family {family!r}")

@@ -1,6 +1,7 @@
 """Row generators for the four CogitoProbe families."""
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Callable
 
 import numpy as np
@@ -605,6 +606,28 @@ def generate_row(
     )
 
 
+def iter_split(
+    family: str,
+    table: AtomTable,
+    *,
+    seq_len: int,
+    variant: str,
+    split: str,
+    seed: int,
+    n_rows: int,
+) -> Iterator[ProbeRow]:
+    for i in range(n_rows):
+        yield generate_row(
+            family,
+            table,
+            seq_len=seq_len,
+            variant=variant,
+            split=split,
+            seed=seed,
+            row_index=i,
+        )
+
+
 def generate_split(
     family: str,
     table: AtomTable,
@@ -615,15 +638,14 @@ def generate_split(
     seed: int,
     n_rows: int,
 ) -> list[ProbeRow]:
-    return [
-        generate_row(
+    return list(
+        iter_split(
             family,
             table,
             seq_len=seq_len,
             variant=variant,
             split=split,
             seed=seed,
-            row_index=i,
+            n_rows=n_rows,
         )
-        for i in range(n_rows)
-    ]
+    )

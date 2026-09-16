@@ -15,6 +15,27 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-16] - CogitoProbe full-scale Hub staging
+
+**Why:**
+- The public v0 recipe is `--scale full` (~10k rows/family, seed `20260916`), not the 464-row
+  pilot. Holding every 32k row in Python lists OOMs a 16GB builder.
+
+**Impact:**
+- `scripts/build_concept_probe_datasets.py --scale full --hub_only` streams Hub parquet,
+  verifies split counts / `seq_len` / split leakage from disk, and renders cards with Hub URLs
+  and the correct HF `size_categories` bucket.
+
+**What changed:**
+- [changed] `scripts/build_concept_probe_datasets.py` — streaming parquet writer, `--hub_only`
+- [changed] `data/concept_probes/stats.py` — online accumulator, parquet verify, published card header
+- [changed] `data/concept_probes/schema.py` — `expected_split_totals` (full = 8448/896/896)
+- [changed] `tests/test_concept_probes.py` — Hub URL / author / full-count guards
+
+**Related:** `docs/engineering_specs/concept_compression_probe_suite.md`
+
+---
+
 ## [2026-09-16] - CogitoProbe concept-compression dataset series
 
 **Why:**
