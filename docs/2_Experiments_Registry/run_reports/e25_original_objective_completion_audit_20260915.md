@@ -4,10 +4,10 @@
 **Machine:** none (docs + JSON reconstruction; no GPU hunt)
 **Run ID:** `e25_original_objective_audit` (docs-only; probe JSON already existed)
 **WandB:** n/a (no run; no `compute/*`)
-**Raw JSON/plots:** [`e25_plots/`](e25_plots/) · CSV [`e25_scored_rungs_bits_flow_btok.csv`](e25_scored_rungs_bits_flow_btok.csv) · hunt JSON under `/opt/cursor/artifacts/e25_*/`
+**Raw JSON/plots:** [plot index](e25_plots/README.md) · CSV [`e25_scored_rungs_bits_flow_btok.csv`](e25_scored_rungs_bits_flow_btok.csv) · hunt JSON under `/opt/cursor/artifacts/e25_*/`
 **Git commit:** (this report's commit)
 **Git tag:** —
-**Related:** wall map [`e25_dna_s0_ladder_mapped_20260915.md`](e25_dna_s0_ladder_mapped_20260915.md) · spec [`E25_e21_bapo_capability_ladder.md`](../../experiments_specs/done_success/E25_e21_bapo_capability_ladder.md)
+**Related:** [research report](e25_e21_dna_capability_report_20260916.md) · wall map [`e25_dna_s0_ladder_mapped_20260915.md`](e25_dna_s0_ladder_mapped_20260915.md) · spec [`E25_e21_bapo_capability_ladder.md`](../../experiments_specs/done_success/E25_e21_bapo_capability_ladder.md)
 
 ---
 
@@ -69,33 +69,36 @@ After reconstruction (no GPU):
 Full ledger:
 [`e25_scored_rungs_bits_flow_btok.csv`](e25_scored_rungs_bits_flow_btok.csv).
 Wall-level bits/flow/B/tok:
-[`e25_plots/wall_metrics.md`](e25_plots/wall_metrics.md).
+[`e25_plots/metrics.md`](e25_plots/metrics.md).
 
 ### Wall comparison plots (dense vs E18 vs E21 vs `e18_local`)
 
-![tiny packed far_copy first rung](e25_plots/wall_tiny_far_copy_first_rung.png)
+Grouped by task under [`e25_plots/`](e25_plots/README.md). Paths below are the
+canonical files (PNG; SVG sibling in the same folder).
 
-![INDEX r=16 frozen mean 1024 vs 1536](e25_plots/wall_index_r16_mean_1024_vs_1536.png)
+![tiny packed far_copy first rung](e25_plots/index/tiny_far_copy.png)
 
-![MATCH identity 1280 vs 1536](e25_plots/wall_match_identity_1280_vs_1536.png)
+![INDEX r=16 frozen mean 1024 vs 1536](e25_plots/index/r16_1024_vs_1536.png)
 
-![MATCH r=8 pool 1024 vs 1280](e25_plots/wall_match_r8_pool_1024_vs_1280.png)
+![MATCH identity 1280 vs 1536](e25_plots/match/identity_1280_vs_1536.png)
 
-![MATCH pooling ratio r=1 vs r=4 at 1280](e25_plots/wall_match_ratio_r1_vs_r4_at_1280.png)
+![MATCH r=8 pool 1024 vs 1280](e25_plots/match/r8_pool_1024_vs_1280.png)
 
-![MATCH2 n_dist=1 1024 vs 1280](e25_plots/wall_match2_nd1_1024_vs_1280.png)
+![MATCH pooling ratio r=1 vs r=4 at 1280](e25_plots/match/ratio_r1_vs_r4_at_1280.png)
 
-![SELECT identity 692 vs 696](e25_plots/wall_select_length_692_vs_696.png)
+![MATCH2 n_dist=1 1024 vs 1280](e25_plots/match/match2_nd1_1024_vs_1280.png)
 
-![SELECT pooling r=8 / r=12 / r=16 at 512](e25_plots/wall_select_pooling_r8_r12_r16.png)
+![SELECT identity 692 vs 696](e25_plots/select/length_692_vs_696.png)
 
-![ordered hops glob=2 264 / 272 / 288](e25_plots/wall_hops_glob2_264_272_288.png)
+![SELECT pooling r=8 / r=12 / r=16 at 512](e25_plots/select/pooling_r8_r12_r16.png)
 
-![shuffled hops nd0 / nd1 / extra hop](e25_plots/wall_shuffled_nd0_vs_nd1_vs_extrahop.png)
+![ordered hops glob=2 264 / 272 / 288](e25_plots/hops/ordered_264_272_288.png)
 
-![extra-hop transfer hops vs MATCH](e25_plots/wall_extrahop_transfer_hops_vs_match.png)
+![shuffled hops nd0 / nd1 / extra hop](e25_plots/hops/shuffled_nd0_nd1_extrahop.png)
 
-![all scored rungs E21 recovered bits](e25_plots/e25_all_scored_rungs_e21_bits.png)
+![extra-hop transfer hops vs MATCH](e25_plots/transfer/extrahop_hops_vs_match.png)
+
+![all scored rungs E21 recovered bits](e25_plots/overview/all_scored_rungs_e21_bits.png)
 
 ### Wall numbers (bits / flow / B/tok)
 
@@ -151,6 +154,8 @@ Parent later moved the spec/plan to `done_success/` after accepting this audit.
 ## Decision
 
 Spec/plan are in `done_success/`. Do **not** invent a hunt. Code defaults unchanged.
-S2 / B/tok gap is **closed** from existing JSON.
+S2 / B/tok gap is **closed** from existing JSON. Wall plots were later grouped
+under `e25_plots/{index,match,select,hops,transfer,overview}/`; narrative:
+[`e25_e21_dna_capability_report_20260916.md`](e25_e21_dna_capability_report_20260916.md).
 
 *Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

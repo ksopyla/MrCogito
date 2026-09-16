@@ -76,6 +76,8 @@ Parent later moved the spec/plan to `done_success/` after the original-objective
 audit. Do **not** invent a hunt. Code defaults unchanged
 (`--message_extra_slot_attends` stays 0; `--message_keep_local_swa` stays false;
 `--global_layers` stays 1 except hops hunts already closed). Next: **STOP:
-ladder mapped**.
+ladder mapped**. Canonical synthesis (2026-09-16):
+[`e25_e21_dna_capability_report_20260916.md`](e25_e21_dna_capability_report_20260916.md)
+· [plot index](e25_plots/README.md).
 
 *Related: `master_experiment_log.md`, `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`, `agenda.md`*

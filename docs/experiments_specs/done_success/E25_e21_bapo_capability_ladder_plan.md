@@ -1,6 +1,6 @@
 # E25 — Implementation Plan
 
-- **Spec:** [E25_e21_bapo_capability_ladder.md](E25_e21_bapo_capability_ladder.md) · **Status:** done_success (2026-09-15, mapped)
+- **Spec:** [E25_e21_bapo_capability_ladder.md](E25_e21_bapo_capability_ladder.md) · **Status:** done_success (2026-09-16, mapped) · [research report](../../2_Experiments_Registry/run_reports/e25_e21_dna_capability_report_20260916.md)
 - **Authored by:** `implementation-plan` · for → `research-implement`
 
 > The HOW for E21 on the E24 BAPO probe. First rung only: tiny packed `far_copy`. Port the

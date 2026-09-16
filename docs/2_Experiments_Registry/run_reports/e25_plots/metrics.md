@@ -1,3 +1,8 @@
+# E25 wall metrics (bits / information flow / bytes-per-token)
+
+Companion to the grouped figures in this folder. Canonical narrative:
+[`../e25_e21_dna_capability_report_20260916.md`](../e25_e21_dna_capability_report_20260916.md).
+
 cell | dense bits / flow / B/tok | e18 bits / flow / B/tok | e21 bits / flow / B/tok | e18_local bits / flow / B/tok | json
 ---|---|---|---|---|---
 **First rung: tiny packed far_copy (seq=128, r=16 complete-block)** | | | | |
