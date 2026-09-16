@@ -15,6 +15,46 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-16] - E27 key-span anchors and E26 prefix-AE write loss
+
+**Why:**
+- E21 improvement queue (E27 then E26) cannot run until exclusive E21 has
+  identity keys on DNA key spans and a weak prefix-block AE that is the
+  *write* objective. E25 type_marks-at-r=1 added zero extra keys; learned
+  pooling under answer CE wiped MATCH.
+
+**Impact:**
+- `--message_global_anchors key_spans` marks the `key_len` tokens after each
+  sender `keymark` (not the mark, not values). At r>1 those positions keep raw
+  K/V instead of the mean-pool slot. Defaults stay `none` (E18-loadable).
+- `--message_prefix_ae` adds a linear slot→r×vocab head. Compressor `u`/`delta`
+  see AE grads only (slots detached on the exclusive read). Off by default.
+- Probe logs MATCH ablations (`none` / `swapped` / `slots_only`), slot RankMe,
+  and optional W&B (run starts immediately so the id is in the shell log).
+  `PAR_MESSAGE_*` knobs flow through the generic launcher.
+- Wave B launchers `load_dataset` public Hub ids
+  `ksopyla/cogito-probe-{bits,bind,arith,props}` (seed 20260916, `--scale full`,
+  8448/896/896 mixed 1k–32k; filter seq_len/variant; 1k then 4k, no 32k).
+  Teacher-forced eval writes recovered bits vs `prize_bits`. Local generate
+  is fallback only.
+
+**What changed:**
+- [added] `nn/perceiver_ar_lm.py` — `key_spans` anchors, `PrefixAEHead`, stopgrad
+  read, `PAR_MESSAGE_*` config fields.
+- [changed] `evaluation/bapo_models.py`, `verification/bapo_capability_probe.py` —
+  CLI + factory + post-train MATCH ablation / RankMe / `--wandb`.
+- [changed] `scripts/train_concept_pretraining_multigpu.sh`,
+  `training/concept_pretraining_args.py`, `training/concept_pretraining_factories.py`
+  — reusable `PAR_MESSAGE_*` env knobs (defaults off).
+- [added] `scripts/launch_e27.sh`, `scripts/launch_e26.sh`, `scripts/e21_queue_eval.sh`,
+  `scripts/launch_e28.sh`, `scripts/launch_e29.sh`, `scripts/e21_queue_continue.sh`,
+  `evaluation/evaluate_cogito_probe.py`.
+
+**Related:** `docs/experiments_specs/ahead/E27_hybrid_key_anchors.md`,
+`docs/experiments_specs/ahead/E26_prefix_ae_exclusive_slots.md`,
+`docs/4_Research_Notes/e21_improvement_queue.md`
+
+---
 ## [2026-09-15] - Close seq1024 exclusive-slot D9 and C on the <10M law
 
 **Why:**

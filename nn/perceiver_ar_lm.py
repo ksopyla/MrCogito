@@ -56,9 +56,17 @@ Hooks for the family (config fields only — no parameters unless enabled):
     immediately before QUERY (already r=1 replace slots). `query_side`: QUERY
     itself plus a small window *after* the message boundary (receiver-side
     type request; not prefix replace slots). `type_marks`:
-    `keymark`/`decoy`/`spanmark`/`hop`/`mark`. Those positions join exclusive
-    slot K/V as raw keys; the rest of the prefix stays exclusive (not E18 raw
-    KV). `prefix_kv(as_message=True)` returns those slots.
+    `keymark`/`decoy`/`spanmark`/`hop`/`mark`. `key_spans` (E27): the DNA
+    *key* tokens after each sender `keymark` (not the mark, not `*val`).
+    Those positions join exclusive slot K/V as **raw** keys; at r>1 the
+    compressor does not overwrite them (identity `b` + pooled `a`). The rest
+    of the prefix stays exclusive (not E18 raw KV). `prefix_kv(as_message=True)`
+    returns those slots.
+    `message_prefix_ae` (E26, default off) adds a weak linear head that
+    reconstructs each complete sender block's token ids from that block's
+    slot. Compressor `u`/`delta` see AE gradients only when
+    `message_prefix_ae_stopgrad_answer` (default on) detaches slots on the
+    exclusive read. E18 checkpoints stay byte-identical with both flags off.
 """
 from __future__ import annotations
 
@@ -81,7 +89,10 @@ logger = logging.getLogger(__name__)
 # Sparse exclusive-plus-anchors (E21). Default `none` is prior exclusive slots.
 # `query_nbhd` = sender tokens immediately before QUERY (prefix; r=1 slots).
 # `query_side` = QUERY + window after the boundary (receiver; not prefix slots).
-MESSAGE_GLOBAL_ANCHORS = ("none", "query_nbhd", "query_side", "type_marks", "query_nbhd+type")
+# `key_spans` = DNA key-field tokens after each sender keymark (E27 hybrid b).
+MESSAGE_GLOBAL_ANCHORS = (
+    "none", "query_nbhd", "query_side", "type_marks", "query_nbhd+type", "key_spans",
+)
 MESSAGE_QUERY_NBHD_DEFAULT = 4  # sender-before or QUERY-plus-after window
 
 # --------------------------------------------------------------------------------------
@@ -142,8 +153,12 @@ class PerceiverARConfig(PretrainedConfig):
         message_extra_slot_attends: int = 0,  # E21 — extra exclusive attends over frozen slots
         message_update_slot_kv: bool = False,  # E21 — rewrite exclusive slot K/V between extra hops
         message_global_anchors: str = "none",  # E21 — sparse raw keys joining exclusive slot K/V
-        message_anchor_token_ids: tuple[int, ...] = (),  # type-mark ids when anchors include type_marks
+        message_anchor_token_ids: tuple[int, ...] = (),  # type-mark / keymark ids
         message_anchor_window: int = MESSAGE_QUERY_NBHD_DEFAULT,  # nbhd width (query_nbhd / query_side)
+        message_anchor_key_len: int = 0,  # E27 — key-span length (0 = treat as 2)
+        message_prefix_ae: bool = False,  # E26 — weak prefix-block reconstruction from slots
+        message_prefix_ae_weight: float = 0.0,
+        message_prefix_ae_stopgrad_answer: bool = True,  # compressor sees AE grads only
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -204,6 +219,10 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_global_anchors = str(message_global_anchors or "none")
         self.message_anchor_token_ids = tuple(int(x) for x in (message_anchor_token_ids or ()))
         self.message_anchor_window = int(message_anchor_window)
+        self.message_anchor_key_len = int(message_anchor_key_len)
+        self.message_prefix_ae = bool(message_prefix_ae)
+        self.message_prefix_ae_weight = float(message_prefix_ae_weight)
+        self.message_prefix_ae_stopgrad_answer = bool(message_prefix_ae_stopgrad_answer)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -254,6 +273,12 @@ class PerceiverARConfig(PretrainedConfig):
             )
         if self.message_anchor_window < 0:
             raise ValueError("message_anchor_window must be >= 0")
+        if self.message_anchor_key_len < 0:
+            raise ValueError("message_anchor_key_len must be >= 0")
+        if self.message_prefix_ae_weight < 0:
+            raise ValueError("message_prefix_ae_weight must be >= 0")
+        if self.message_prefix_ae and not self.message_enabled:
+            raise ValueError("message_prefix_ae needs message_boundary_token_id >= 0")
         if self.message_enabled:
             if self.message_boundary_token_id >= self.vocab_size:
                 raise ValueError("message_boundary_token_id must be a vocabulary id")
@@ -589,6 +614,7 @@ def build_message_anchors(
     mode: str,
     token_ids: tuple[int, ...] = (),
     window: int = MESSAGE_QUERY_NBHD_DEFAULT,
+    key_len: int = 0,
 ) -> torch.Tensor:
     """Sparse extra positions that join exclusive slot K/V as raw keys. [B,S] bool.
 
@@ -596,9 +622,11 @@ def build_message_anchors(
     spanmark/hop, Glyph mark). `query_nbhd`: the `window` sender tokens immediately
     before each QUERY (document-start of side ≥ 1) — prefix, already r=1 replace
     slots. `query_side`: QUERY itself plus the next `window-1` receiver tokens
-    (the SELECT type request lives here; not prefix replace slots). Default
-    `none` is all-False. Count is << seq: a handful of marks and/or `window`
-    tokens per QUERY, never the full prefix.
+    (the SELECT type request lives here; not prefix replace slots). `key_spans`:
+    the `key_len` sender tokens *after* each sender `keymark` (token_ids[0]); the
+    mark itself and the value field are not marked. Default `none` is all-False.
+    Count is << seq: a handful of marks and/or `window` tokens per QUERY, never
+    the full prefix.
     """
     B, S = input_ids.shape
     anchor = torch.zeros(B, S, dtype=torch.bool, device=input_ids.device)
@@ -630,6 +658,17 @@ def build_message_anchors(
             recv = side[:, d:] >= 1
             nbhd[:, d:] = nbhd[:, d:] | (at_q & same & recv)
         anchor = anchor | nbhd
+    if mode == "key_spans" and token_ids:
+        n = int(key_len) if int(key_len) > 0 else 2
+        keymark = torch.as_tensor(int(token_ids[0]), device=input_ids.device, dtype=input_ids.dtype)
+        is_mark = (input_ids == keymark) & sender
+        span = torch.zeros(B, S, dtype=torch.bool, device=input_ids.device)
+        for d in range(1, n + 1):
+            at_mark = is_mark[:, :-d]
+            same_doc = doc[:, d:] == doc[:, :-d]
+            same_side = side[:, d:] == side[:, :-d]
+            span[:, d:] = span[:, d:] | (at_mark & same_doc & same_side & sender[:, d:])
+        anchor = anchor | span
     return anchor
 
 
@@ -734,13 +773,18 @@ def mix_inplace_kv(k, v, k_bar, v_bar, ctx: MessageCtx):
     r = max(int(ctx.ratio), 1)
     valid_tok = (ctx.slot_doc >= 0).repeat_interleave(r, dim=1)[:, :S]
     replace = valid_tok & (ctx.side == 0) & (ctx.doc >= 0)
+    write = replace
+    # E27: at r>1 keep raw token K/V on key-span anchors (identity b); r=1 identity
+    # slots already are raw keys, so do not punch holes in the replace mask.
+    if ctx.anchor is not None and r > 1 and bool(ctx.anchor.any()):
+        write = replace & ~ctx.anchor
     if getattr(ctx, "inplace_raw_kv", False):
         return k, v, replace
     k_exp = k_bar.repeat_interleave(r, dim=1)[:, :S]
     v_exp = v_bar.repeat_interleave(r, dim=1)[:, :S]
-    k_mix = torch.where(replace[..., None, None], k_exp.to(k.dtype), k)
-    v_mix = torch.where(replace[..., None, None], v_exp.to(v.dtype), v)
-    return k_mix, v_mix, replace
+    k_mix = torch.where(write[..., None, None], k_exp.to(k.dtype), k)
+    v_mix = torch.where(write[..., None, None], v_exp.to(v.dtype), v)
+    return k_mix, v_mix, write
 
 
 def dense_inplace_mask(S: int, ctx: MessageCtx, key_valid: Optional[torch.Tensor],
@@ -865,6 +909,21 @@ class KVCompressor(nn.Module):
         h_mean = (hb * ok[..., None].to(hb.dtype)).sum(dim=2) / cnt
         dk, dv = self.delta(h_mean).view(B, nb, 2, g, dh).unbind(dim=2)
         return k_norm(k_bar) + dk, v_bar + dv
+
+
+class PrefixAEHead(nn.Module):
+    """Weak linear reconstruction of each r-token block from its slot K (E26)."""
+
+    def __init__(self, g: int, dh: int, r: int, vocab: int):
+        super().__init__()
+        self.r = int(r)
+        self.vocab = int(vocab)
+        self.proj = nn.Linear(g * dh, self.r * vocab, bias=False)
+
+    def forward(self, k_bar: torch.Tensor) -> torch.Tensor:
+        """k_bar [B,nb,g,dh] → logits [B,nb,r,V]."""
+        B, nb, g, dh = k_bar.shape
+        return self.proj(k_bar.reshape(B, nb, g * dh)).view(B, nb, self.r, self.vocab)
 
 
 def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend, block_masks=None):
@@ -1004,6 +1063,10 @@ class Attention(nn.Module):
             self.value_lambda = nn.Parameter(torch.tensor(0.5))
         # E21: the global read(s) own the message compressor (slots live in this layer's K/V space).
         self.compressor = KVCompressor(cfg) if (getattr(cfg, "message_enabled", False) and pattern == "full") else None
+        self.prefix_ae = bool(getattr(cfg, "message_prefix_ae", False))
+        self.prefix_ae_stopgrad = bool(getattr(cfg, "message_prefix_ae_stopgrad_answer", True))
+        self._last_k_bar = None
+        self._last_v_bar = None
 
     def kv_raw(self, x: torch.Tensor, ids: Optional[torch.Tensor] = None) -> tuple[torch.Tensor, torch.Tensor]:
         """(k before k_norm, v incl. the value-embedding term) — the pooling inputs of the compressor."""
@@ -1030,6 +1093,10 @@ class Attention(nn.Module):
             pv = ctx.pool_valid.bool()
             valid = pv if valid is None else (valid.bool() & pv)
         k_bar, v_bar = self.compressor(x, k_raw, v, self.k_norm, valid)
+        self._last_k_bar = k_bar
+        self._last_v_bar = v_bar
+        if self.prefix_ae and self.prefix_ae_stopgrad:
+            k_bar, v_bar = k_bar.detach(), v_bar.detach()
         if rope and self.use_rope:
             cos_s, sin_s = rope_cos_sin(ctx.slot_pos, self.dh, cfg_rope_theta, k_bar.dtype)
             k_bar = apply_rope(k_bar, cos_s, sin_s)
@@ -1330,6 +1397,14 @@ class PerceiverARLM(PreTrainedModel):
         self.gradient_checkpointing = False
         self._flce = None
         self._message_override = "real"
+        self._last_message_ctx = None
+        self._last_prefix_ae = None
+        if cfg.message_prefix_ae:
+            self.prefix_ae_head = PrefixAEHead(
+                cfg.num_kv_heads, cfg.head_dim, cfg.message_compress_ratio, cfg.vocab_size,
+            )
+        else:
+            self.prefix_ae_head = None
         self.post_init()
         # Zero-init the residual-writing projections (muP-like, modded-nanogpt).
         # At seq≥512 the 1/S attention mass is too small to open a dead `wo`; the probe can
@@ -1407,11 +1482,14 @@ class PerceiverARLM(PreTrainedModel):
 
     @contextmanager
     def message_override(self, mode: Optional[str]):
-        """E21 probe control for the message channel: `none` (receivers get no slots — the floor),
-        `swapped` (slots of the neighbouring batch row — a wrong message), `raw` (receivers read
-        the uncompressed prefix K/V across the boundary — the ceiling), `real` / None (no-op).
-        Local layers stay severed in every mode unless `message_keep_local_swa`, so the
-        paired differences isolate the channel."""
+        """E21 probe control for the message channel: `none` (receivers get no slots — the
+        floor; sparse anchors still join if `message_global_anchors` is on — E27
+        anchors-only), `swapped` (slots of the neighbouring batch row — a wrong
+        message), `raw` (receivers read the uncompressed prefix K/V across the
+        boundary — the ceiling), `real` / None (no-op). Local layers stay severed
+        in every mode unless `message_keep_local_swa`, so the paired differences
+        isolate the channel. Slots-only is `real` with `message_global_anchors=none`.
+        """
         if mode in (None, "real"):
             yield
             return
@@ -1444,6 +1522,7 @@ class PerceiverARLM(PreTrainedModel):
         B, S = input_ids.shape
         dev = input_ids.device
         r = cfg.message_compress_ratio
+        self._last_message_ctx = None
         doc = doc_ids.clone() if doc_ids is not None else torch.zeros(B, S, dtype=torch.long, device=dev)
         if key_valid is not None:
             doc = doc.masked_fill(~key_valid.bool(), -1)
@@ -1519,16 +1598,20 @@ class PerceiverARLM(PreTrainedModel):
         anchor_mode = str(getattr(cfg, "message_global_anchors", "none") or "none")
         token_ids = tuple(int(x) for x in (getattr(cfg, "message_anchor_token_ids", ()) or ()))
         window = int(getattr(cfg, "message_anchor_window", MESSAGE_QUERY_NBHD_DEFAULT) or 0)
+        key_len = int(getattr(cfg, "message_anchor_key_len", 0) or 0)
         anchor = build_message_anchors(
             input_ids, side, doc, mode=anchor_mode, token_ids=token_ids, window=window,
+            key_len=key_len,
         )
-        return MessageCtx(side=side, doc=doc, local_doc_ids=local, slot_doc=slot_doc, slot_side=slot_side,
+        ctx = MessageCtx(side=side, doc=doc, local_doc_ids=local, slot_doc=slot_doc, slot_side=slot_side,
                           slot_pos=slot_pos, n_sides=K, override=self._message_override,
                           pool_valid=pool_valid, ratio=r, inplace=cfg.message_slots_inplace,
                           inplace_raw_kv=cfg.message_inplace_raw_kv,
                           extra_slot_attends=int(getattr(cfg, "message_extra_slot_attends", 0) or 0),
                           update_slot_kv=bool(getattr(cfg, "message_update_slot_kv", False)),
                           anchor=anchor, anchor_mode=anchor_mode)
+        self._last_message_ctx = ctx
+        return ctx
 
     # -- helpers ----------------------------------------------------------------------
     @staticmethod
@@ -1696,7 +1779,60 @@ class PerceiverARLM(PreTrainedModel):
                 hid, self.lm_head.weight, tgt, cfg.chunked_ce_block_size, cfg.logit_softcap, cfg.z_loss
             )
             loss = (ce + z) / n.clamp(min=1)
+        loss = self._maybe_add_prefix_ae(loss, input_ids)
         return CausalLMOutput(loss=loss, logits=(logits if return_logits else None))
+
+    def _maybe_add_prefix_ae(self, loss: torch.Tensor, input_ids: torch.Tensor) -> torch.Tensor:
+        """Add λ L_AE. Answer-span CE is unchanged; compressor grads come from AE only."""
+        cfg = self.config
+        self._last_prefix_ae = None
+        if not cfg.message_prefix_ae or self.prefix_ae_head is None:
+            return loss
+        gi = cfg.global_layer_index
+        attn = self.layers[gi].attn
+        k_bar = getattr(attn, "_last_k_bar", None)
+        ctx = self._last_message_ctx
+        if k_bar is None or ctx is None:
+            return loss + 0.0 * self.prefix_ae_head.proj.weight.sum().to(loss.dtype)
+        B, nb, g, dh = k_bar.shape
+        r = max(int(ctx.ratio), 1)
+        S = input_ids.shape[1]
+        pad = nb * r - S
+        ids_pad = F.pad(input_ids, (0, pad), value=-100)
+        tgt = ids_pad.view(B, nb, r)
+        valid = (ctx.slot_doc >= 0) & (ctx.slot_side == 0)
+        tgt = tgt.masked_fill(~valid.unsqueeze(-1), -100)
+        logits = self.prefix_ae_head(k_bar)
+        V = logits.shape[-1]
+        n = (tgt != -100).sum().clamp(min=1)
+        ae = F.cross_entropy(logits.reshape(-1, V).float(), tgt.reshape(-1), ignore_index=-100, reduction="sum") / n
+        pred = logits.argmax(-1)
+        tok_ok = tgt != -100
+        tok_acc = (pred[tok_ok] == tgt[tok_ok]).float().mean() if bool(tok_ok.any()) else tgt.new_zeros(())
+        key_len = int(getattr(cfg, "message_anchor_key_len", 0) or 0)
+        token_ids = tuple(int(x) for x in (getattr(cfg, "message_anchor_token_ids", ()) or ()))
+        key_acc = tok_acc
+        if token_ids:
+            key_mask = build_message_anchors(
+                input_ids, ctx.side, ctx.doc, mode="key_spans", token_ids=token_ids,
+                key_len=key_len,
+            )
+            key_pad = F.pad(key_mask, (0, pad), value=False).view(B, nb, r)
+            key_ok = key_pad & tok_ok
+            if bool(key_ok.any()):
+                key_acc = (pred[key_ok] == tgt[key_ok]).float().mean()
+            else:
+                key_acc = tgt.new_zeros(())
+        self._last_prefix_ae = {
+            "loss": float(ae.detach()),
+            "tok_acc": float(tok_acc.detach()) if torch.is_tensor(tok_acc) else float(tok_acc),
+            "key_acc": float(key_acc.detach()) if torch.is_tensor(key_acc) else float(key_acc),
+            "n": int(n),
+        }
+        w = float(cfg.message_prefix_ae_weight)
+        if w == 0:
+            return loss
+        return loss + ae * k_bar.new_tensor(w)
 
     def _get_flce(self):
         if self._flce is None:

@@ -73,6 +73,11 @@ DATASET_MIX_RECIPE="${DATASET_MIX_RECIPE:-}"
 # E05: path to a manifest JSON from scripts/pretokenize_mix.py. When set, training
 # loads pre-tokenized sources via load_from_disk (instant) and ignores dataset_mix*.
 PRETOKENIZED_MANIFEST="${PRETOKENIZED_MANIFEST:-}"
+# E28/E29/E19: public CogitoProbe Hub ids (ksopyla/cogito-probe-{bits,bind,arith,props}).
+COGITO_PROBE_ID="${COGITO_PROBE_ID:-}"
+COGITO_PROBE_SEQ_LEN="${COGITO_PROBE_SEQ_LEN:-}"
+COGITO_PROBE_VARIANT="${COGITO_PROBE_VARIANT:-}"
+COGITO_PROBE_TASK="${COGITO_PROBE_TASK:-}"
 PRESERVE_PRECOMPUTED_LABELS="${PRESERVE_PRECOMPUTED_LABELS:-false}"
 LOSS_SPAN_MARKERS="${LOSS_SPAN_MARKERS:-}"      # E18b: "start_id,end_id" -> labels only inside marked spans on rows that carry them
 # Train batching: "none" (historical), "length_group" (sortish sampling; reorders rows only)
@@ -194,6 +199,17 @@ Z_LOSS="${Z_LOSS:-1e-4}"
 USE_LIGER="${USE_LIGER:-True}"
 BLOCK_ATTENTION_MODE="${BLOCK_ATTENTION_MODE:-causal}"
 WRITE_BACK_HOOK="${WRITE_BACK_HOOK:-False}"
+# E21 exclusive message (default off = E18-loadable). Wave A/B: PAR_MESSAGE_*.
+PAR_MESSAGE_BOUNDARY_TOKEN_ID="${PAR_MESSAGE_BOUNDARY_TOKEN_ID:--1}"
+PAR_MESSAGE_COMPRESS_RATIO="${PAR_MESSAGE_COMPRESS_RATIO:-16}"
+PAR_MESSAGE_POOL_REMAINDER="${PAR_MESSAGE_POOL_REMAINDER:-False}"
+PAR_MESSAGE_SLOTS_INPLACE="${PAR_MESSAGE_SLOTS_INPLACE:-False}"
+PAR_MESSAGE_IDENTITY_SLOTS="${PAR_MESSAGE_IDENTITY_SLOTS:-False}"
+PAR_MESSAGE_GLOBAL_ANCHORS="${PAR_MESSAGE_GLOBAL_ANCHORS:-none}"
+PAR_MESSAGE_ANCHOR_KEY_LEN="${PAR_MESSAGE_ANCHOR_KEY_LEN:-0}"
+PAR_MESSAGE_PREFIX_AE="${PAR_MESSAGE_PREFIX_AE:-False}"
+PAR_MESSAGE_PREFIX_AE_WEIGHT="${PAR_MESSAGE_PREFIX_AE_WEIGHT:-0.0}"
+PAR_MESSAGE_PREFIX_AE_STOPGRAD_ANSWER="${PAR_MESSAGE_PREFIX_AE_STOPGRAD_ANSWER:-True}"
 # Optional weight-only warm start (concept-encoder families: encoder weights; perceiver_ar: full
 # state dict from a saved `final/` dir). Empty = random init.
 MODEL_NAME_OR_PATH="${MODEL_NAME_OR_PATH:-}"
@@ -333,6 +349,14 @@ fi
 if [ -n "$PRETOKENIZED_MANIFEST" ]; then
     MIX_ARGS+=(--pretokenized_manifest "$PRETOKENIZED_MANIFEST")
 fi
+if [ -n "$COGITO_PROBE_ID" ]; then
+    MIX_ARGS+=(--cogito_probe_id "$COGITO_PROBE_ID")
+    MIX_ARGS+=(--cogito_probe_seq_len "${COGITO_PROBE_SEQ_LEN:-1024}")
+    MIX_ARGS+=(--cogito_probe_variant "${COGITO_PROBE_VARIANT:-fixed}")
+    if [ -n "$COGITO_PROBE_TASK" ]; then
+        MIX_ARGS+=(--cogito_probe_task "$COGITO_PROBE_TASK")
+    fi
+fi
 
 EVAL_DATA_ARGS=()
 if [ -n "$MAX_EVAL_SAMPLES" ]; then
@@ -411,6 +435,16 @@ if [ "$MODEL_FAMILY" = "perceiver_ar" ]; then
         --use_liger "$USE_LIGER"
         --block_attention_mode "$BLOCK_ATTENTION_MODE"
         --write_back_hook "$WRITE_BACK_HOOK"
+        --message_boundary_token_id "$PAR_MESSAGE_BOUNDARY_TOKEN_ID"
+        --message_compress_ratio "$PAR_MESSAGE_COMPRESS_RATIO"
+        --message_pool_remainder "$PAR_MESSAGE_POOL_REMAINDER"
+        --message_slots_inplace "$PAR_MESSAGE_SLOTS_INPLACE"
+        --message_identity_slots "$PAR_MESSAGE_IDENTITY_SLOTS"
+        --message_global_anchors "$PAR_MESSAGE_GLOBAL_ANCHORS"
+        --message_anchor_key_len "$PAR_MESSAGE_ANCHOR_KEY_LEN"
+        --message_prefix_ae "$PAR_MESSAGE_PREFIX_AE"
+        --message_prefix_ae_weight "$PAR_MESSAGE_PREFIX_AE_WEIGHT"
+        --message_prefix_ae_stopgrad_answer "$PAR_MESSAGE_PREFIX_AE_STOPGRAD_ANSWER"
         --prediction_loss_only True
     )
     if [ -n "$NUM_ATTENTION_HEADS" ]; then

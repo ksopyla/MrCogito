@@ -107,6 +107,16 @@ def _type_mark_token_ids(cfg) -> tuple[int, ...]:
     return tuple(ids)
 
 
+def _keymark_token_ids(cfg) -> tuple[int, ...]:
+    vocab = getattr(cfg, "vocab", None)
+    if vocab is None or not hasattr(vocab, "control"):
+        return ()
+    try:
+        return (int(vocab.control("keymark")),)
+    except (KeyError, TypeError):
+        return ()
+
+
 def make_batch(cfg, rng, batch: int, device):
     rows = [generate_row_for(cfg, rng) for _ in range(batch)]
     ids = torch.from_numpy(np.stack([r.input_ids for r in rows])).long().to(device)
@@ -136,6 +146,65 @@ def evaluate(model, batches, *, amp: str, device: torch.device, message_override
         hits += int((pred[m] == tgt[m]).sum())
     model.train()
     return {"ce_nats": ce_sum / max(n, 1), "acc": hits / max(n, 1), "tokens": n}
+
+
+def _slot_rankme(model, batches, *, amp: str, device: torch.device) -> dict:
+    """Within-batch RankMe of exclusive slot K (health diagnostic; not concept_ar)."""
+    if not hasattr(model, "layers"):
+        return {}
+    gi = int(getattr(model.config, "global_layer_index", 0) or 0)
+    attn = model.layers[gi].attn
+    if getattr(attn, "compressor", None) is None:
+        return {}
+    chunks = []
+    model.eval()
+    ctx = amp_ctx(device, amp)
+    with torch.no_grad():
+        for ids, labels in batches:
+            with ctx:
+                _ = model(ids, labels=labels)
+            k_bar = getattr(attn, "_last_k_bar", None)
+            if k_bar is None:
+                continue
+            chunks.append(k_bar.detach().float().cpu().reshape(-1, k_bar.shape[-2] * k_bar.shape[-1]))
+    model.train()
+    if not chunks:
+        return {}
+    x = torch.cat(chunks, dim=0)
+    x = x - x.mean(0, keepdim=True)
+    try:
+        s = torch.linalg.svdvals(x)
+    except RuntimeError:
+        return {"n": int(x.shape[0]), "dim": int(x.shape[1])}
+    p = (s * s) / (s * s).sum().clamp(min=1e-12)
+    rankme = float(torch.exp(-(p * (p + 1e-12).log()).sum()))
+    return {
+        "slot_rankme": rankme,
+        "n": int(x.shape[0]),
+        "dim": int(x.shape[1]),
+        "n_singular": int(s.numel()),
+    }
+
+
+def _channel_ablations(model, eval_batches, *, amp, device, spec) -> dict:
+    """MATCH analogue of concept ablation: real / none (anchors-only if key_spans) / swapped / slots-only."""
+    out = {}
+    for mode in ("none", "swapped"):
+        try:
+            out[mode] = evaluate(model, eval_batches, amp=amp, device=device, message_override=mode)
+        except Exception as exc:  # noqa: BLE001 — keep the probe going
+            out[mode] = {"error": str(exc)}
+    prev = model.config.message_global_anchors
+    if prev not in ("none",):
+        model.config.message_global_anchors = "none"
+        try:
+            out["slots_only"] = evaluate(
+                model, eval_batches, amp=amp, device=device, message_override="real"
+            )
+        except Exception as exc:  # noqa: BLE001
+            out["slots_only"] = {"error": str(exc)}
+        model.config.message_global_anchors = prev
+    return out
 
 
 def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, steps: int) -> dict:
@@ -173,7 +242,9 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             f"glob_layers={getattr(model.config, 'global_layers', '-')}  "
             f"msg_extrahops={getattr(model.config, 'message_extra_slot_attends', 0) if arch == 'e21' else '-'}  "
             f"msg_updatekv={getattr(model.config, 'message_update_slot_kv', False) if arch == 'e21' else '-'}  "
-            f"msg_anchors={getattr(model.config, 'message_global_anchors', 'none') if arch == 'e21' else '-'}",
+            f"msg_anchors={getattr(model.config, 'message_global_anchors', 'none') if arch == 'e21' else '-'}  "
+            f"msg_keylen={getattr(model.config, 'message_anchor_key_len', 0) if arch == 'e21' else '-'}  "
+            f"msg_prefix_ae={getattr(model.config, 'message_prefix_ae', False) if arch == 'e21' else '-'}",
             flush=True,
         )
     override = args.message_override if arch == "e21" else "real"
@@ -229,6 +300,26 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
         nominal_b_tokens=cache["nominal_b_tokens"],
         nominal_a_bytes=cache["nominal_a_bytes"],
     )
+    extra = {}
+    if arch == "e21":
+        extra["channel_ablations"] = _channel_ablations(
+            model, eval_batches, amp=args.amp, device=device, spec=spec
+        )
+        extra["slot_geometry"] = _slot_rankme(model, eval_batches, amp=args.amp, device=device)
+        ae = getattr(model, "_last_prefix_ae", None)
+        if ae:
+            extra["prefix_ae"] = ae
+            print(
+                f"  [{arch}] prefix_ae loss {ae.get('loss')}  tok_acc {ae.get('tok_acc')}  "
+                f"key_acc {ae.get('key_acc')}",
+                flush=True,
+            )
+        print(
+            f"  [{arch}] ablations "
+            + str({k: v.get("acc") if isinstance(v, dict) else v for k, v in extra["channel_ablations"].items()})
+            + f"  rankme {extra['slot_geometry'].get('slot_rankme')}",
+            flush=True,
+        )
     return {
         "arch": arch,
         "params": params,
@@ -238,6 +329,7 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
         "trace": trace,
         "info": report.as_dict(),
         "early_stopped": final["acc"] >= args.early_stop_acc,
+        **extra,
     }
 
 
@@ -295,8 +387,12 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         message_anchor_token_ids=(
             _type_mark_token_ids(cfg)
             if args.message_global_anchors in ("type_marks", "query_nbhd+type")
-            else ()
+            else (_keymark_token_ids(cfg) if args.message_global_anchors == "key_spans" or args.message_prefix_ae else ())
         ),
+        message_anchor_key_len=int(cfg.key_len) if args.message_global_anchors == "key_spans" or args.message_prefix_ae else 0,
+        message_prefix_ae=args.message_prefix_ae,
+        message_prefix_ae_weight=args.message_prefix_ae_weight,
+        message_prefix_ae_stopgrad_answer=args.message_prefix_ae_stopgrad_answer,
     )
     card = rung_card(scale, recipe.task, **over)
     card["local_window"] = window
@@ -395,6 +491,8 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             "message_extra_slot_attends": args.message_extra_slot_attends,
             "message_update_slot_kv": args.message_update_slot_kv,
             "message_global_anchors": args.message_global_anchors,
+            "message_prefix_ae": args.message_prefix_ae,
+            "message_prefix_ae_weight": args.message_prefix_ae_weight,
         },
         "pack": {
             "answer_len": cfg.answer_len,
@@ -535,7 +633,7 @@ def main() -> int:
     p.add_argument(
         "--message_global_anchors",
         default="none",
-        choices=("none", "query_nbhd", "query_side", "type_marks", "query_nbhd+type"),
+        choices=("none", "query_nbhd", "query_side", "type_marks", "query_nbhd+type", "key_spans"),
         help="E21: which extra positions join exclusive slot K/V as raw keys. "
         "none (default): prior exclusive slots only, E18-loadable. "
         "type_marks: keymark/decoy/spanmark/hop/mark control tokens. "
@@ -543,7 +641,39 @@ def main() -> int:
         "query_side: QUERY plus a small window after the message boundary "
         "(receiver type request; not prefix replace slots). "
         "query_nbhd+type: union of prefix-nbhd and type_marks. "
+        "key_spans: DNA key-field tokens after each sender keymark (E27 hybrid b). "
         "Sparse subset (count << seq), not the full raw prefix (that is E18).",
+    )
+    p.add_argument(
+        "--message_prefix_ae",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="E26: weak linear reconstruction of each complete sender block from its slot. "
+        "Default off (E18-loadable). Pair with identity_slots off so u/delta can move under AE.",
+    )
+    p.add_argument(
+        "--message_prefix_ae_weight",
+        type=float,
+        default=1.0,
+        help="λ on L_AE when --message_prefix_ae is on. Default 1.0.",
+    )
+    p.add_argument(
+        "--message_prefix_ae_stopgrad_answer",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="E26: detach slots on the exclusive read so compressor u/delta see AE grads only. "
+        "Default on.",
+    )
+    p.add_argument(
+        "--experiment_id",
+        default=None,
+        help="W&B / JSON identity (E27, E26, …). Used when --wandb is on.",
+    )
+    p.add_argument(
+        "--wandb",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Log the probe JSON summary to W&B (WANDB_PROJECT from env). Default off.",
     )
     p.add_argument("--seq_len", type=int, default=None, help="override scale seq_len (S0 hunts)")
     p.add_argument("--min_gap", type=int, default=None, help="override scale min_gap (S0 hunts)")
@@ -610,12 +740,55 @@ def main() -> int:
     p.add_argument("--out", default=None, help="directory for JSON bundles (one file per task)")
     args = p.parse_args()
 
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+    except ImportError:
+        pass
+
     torch.set_num_threads(args.threads)
     out_dir = Path(args.out) if args.out else None
     if out_dir:
         out_dir.mkdir(parents=True, exist_ok=True)
 
     names = list(args.recipe) if args.recipe else list(args.task)
+    wandb_run = None
+    if args.wandb:
+        try:
+            import wandb
+        except ImportError:
+            print("wandb not installed; skip --wandb", flush=True)
+        else:
+            run_name = args.experiment_id or (out_dir.name if out_dir else "bapo_probe")
+            try:
+                wandb_run = wandb.init(
+                    entity="ksopyla",
+                    name=run_name,
+                    group=args.experiment_id or run_name,
+                    job_type="bapo_probe",
+                    config={
+                        "experiment_id": args.experiment_id,
+                        "scale": args.scale,
+                        "recipes": names,
+                        "arch": args.arch,
+                        "hidden": args.hidden,
+                        "message_global_anchors": args.message_global_anchors,
+                        "message_prefix_ae": args.message_prefix_ae,
+                        "message_ratio": args.message_ratio,
+                        "message_identity_slots": args.message_identity_slots,
+                    },
+                )
+            except Exception as exc:  # noqa: BLE001 — probe must still train
+                print(f"wandb.init failed ({exc}); continue without W&B", flush=True)
+                wandb_run = None
+            else:
+                print(f"W&B run: {wandb_run.url} id={wandb_run.id}", flush=True)
+                if out_dir:
+                    (out_dir / "wandb_run.txt").write_text(
+                        f"id={wandb_run.id}\nurl={wandb_run.url}\n"
+                    )
+
     bundles = []
     for name in names:
         bundle = run_rung(name, args, recipe_name=name)
@@ -651,6 +824,25 @@ def main() -> int:
         }
         (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
         print(f"wrote {out_dir / 'summary.json'}")
+    if wandb_run is not None:
+        import wandb
+
+        payload = {}
+        for b in bundles:
+            for arch, r in b["results"].items():
+                prefix = f"{b['task']}/{arch}"
+                payload[f"{prefix}/acc"] = r["final"]["acc"]
+                payload[f"{prefix}/recovered_bits"] = r["info"]["recovered_bits"]
+                payload[f"{prefix}/information_flow"] = r["info"]["information_flow"]
+                if "slot_geometry" in r:
+                    payload[f"{prefix}/slot_rankme"] = r["slot_geometry"].get("slot_rankme")
+                if "prefix_ae" in r:
+                    payload[f"{prefix}/ae_key_acc"] = r["prefix_ae"].get("key_acc")
+                for mode, ev in (r.get("channel_ablations") or {}).items():
+                    if isinstance(ev, dict) and "acc" in ev:
+                        payload[f"{prefix}/ablation_{mode}_acc"] = ev["acc"]
+        wandb.log(payload)
+        wandb.finish()
     return 0 if all(b["calibrated"] for b in bundles) else 2
 
 

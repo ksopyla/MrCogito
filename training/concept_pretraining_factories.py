@@ -15,6 +15,7 @@ from data.data_collators import (
 from data.dataset_preprocess import (
     load_and_preprocess_dataset_mix,
     load_and_preprocess_text_dataset,
+    load_cogito_probe,
     load_pretokenized_mix,
 )
 from nn.backbone_concept_lm import BackboneConceptConfig, BackboneConceptLM
@@ -147,7 +148,19 @@ def load_pretraining_datasets(
 ):
     """Load the selected pretokenized, recipe, registry-mix, or direct-Hub route."""
     with training_args.main_process_first(desc="loading and tokenizing dataset"):
-        if data_args.pretokenized_manifest:
+        if getattr(data_args, "cogito_probe_id", None):
+            logger.info(
+                f"Loading CogitoProbe Hub {data_args.cogito_probe_id} "
+                f"seq={data_args.cogito_probe_seq_len} variant={data_args.cogito_probe_variant}"
+            )
+            train_ds, test_ds = load_cogito_probe(
+                data_args.cogito_probe_id,
+                seq_len=int(data_args.cogito_probe_seq_len),
+                variant=data_args.cogito_probe_variant,
+                task=getattr(data_args, "cogito_probe_task", None),
+                cache_dir=data_args.dataset_cache_dir,
+            )
+        elif data_args.pretokenized_manifest:
             if data_args.dataset_mix_weight_override:
                 # The sequence-length / packing caches are keyed by the manifest file, so a
                 # runtime re-weighting of a pretokenized mix would silently misalign them.
@@ -438,6 +451,16 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
         attn_pad_multiple=model_args.attn_pad_multiple,
         block_attention_mode=model_args.block_attention_mode,
         write_back_hook=model_args.write_back_hook,
+        message_boundary_token_id=int(getattr(model_args, "message_boundary_token_id", -1)),
+        message_compress_ratio=int(getattr(model_args, "message_compress_ratio", 16) or 16),
+        message_pool_remainder=bool(getattr(model_args, "message_pool_remainder", False)),
+        message_slots_inplace=bool(getattr(model_args, "message_slots_inplace", False)),
+        message_identity_slots=bool(getattr(model_args, "message_identity_slots", False)),
+        message_global_anchors=str(getattr(model_args, "message_global_anchors", "none") or "none"),
+        message_anchor_key_len=int(getattr(model_args, "message_anchor_key_len", 0) or 0),
+        message_prefix_ae=bool(getattr(model_args, "message_prefix_ae", False)),
+        message_prefix_ae_weight=float(getattr(model_args, "message_prefix_ae_weight", 0.0) or 0.0),
+        message_prefix_ae_stopgrad_answer=bool(getattr(model_args, "message_prefix_ae_stopgrad_answer", True)),
         pad_token_id=tokenizer.pad_token_id,
         bos_token_id=tokenizer.bos_token_id if tokenizer.bos_token_id is not None else tokenizer.eos_token_id,
         eos_token_id=tokenizer.eos_token_id,
@@ -459,7 +482,7 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
         # layer the checkpoint did not have one on (E18b R2 adds one to the global read, which the
         # P2 copy result says the retrieving layer needs). Their init is already ~0.3% of |v|, so
         # the warm start is effectively unchanged at step 0. Anything else is a real mismatch.
-        _ALLOWED_FRESH = ("write_back_proj", "value_embed", "value_proj", "value_lambda")
+        _ALLOWED_FRESH = ("write_back_proj", "value_embed", "value_proj", "value_lambda", "prefix_ae_head")
         unexplained = [k for k in missing if not any(tag in k for tag in _ALLOWED_FRESH)]
         if unexpected or unexplained:
             raise ValueError(
