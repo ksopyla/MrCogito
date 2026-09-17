@@ -1,6 +1,6 @@
 # E28 — Exclusive r=16 on CogitoProbe-bits: capacity vs haystack length
 
-- **Status:** draft 2026-09-16 (queue rank 3, Wave B; awaiting KS approval) · not launched
+- **Status:** draft 2026-09-16 (queue rank 3, Wave B) · **training 2026-09-16 on Odra** (`E21_QUEUE`, dense S0 then exclusive 1k) — **not closed**; do not record a Result yet
 - **Serves:** the honest length/capacity story E21’s 125M LM never instantiated. Queue:
   [e21_improvement_queue.md](../../4_Research_Notes/e21_improvement_queue.md).
 - **Implementation plan:** [E28_exclusive_cogitoprobe_bits_plan.md](E28_exclusive_cogitoprobe_bits_plan.md)

@@ -1,8 +1,8 @@
 # E21 improvement queue — exclusive slots that address, then a short length ladder
 
 Undated mutable note (research ideas + launch order). **Not** a living roadmap.
-Frozen specs: [E27](../experiments_specs/ahead/E27_hybrid_key_anchors.md) ·
-[E26](../experiments_specs/ahead/E26_prefix_ae_exclusive_slots.md) ·
+Frozen specs: [E27](../experiments_specs/done_failed/E27_hybrid_key_anchors.md) ·
+[E26](../experiments_specs/done_failed/E26_prefix_ae_exclusive_slots.md) ·
 [E28](../experiments_specs/ahead/E28_exclusive_cogitoprobe_bits.md) ·
 [E29](../experiments_specs/ahead/E29_exclusive_cogitoprobe_bind.md) ·
 [E19](../experiments_specs/ahead/E19_looped_slot_refinement.md).
@@ -11,6 +11,10 @@ Inputs (do not re-diagnose):
 [levers from literature](e21_levers_from_literature.md) ·
 CogitoProbe suite (PR 39, not on Hub):
 [engineering spec](../engineering_specs/concept_compression_probe_suite.md).
+
+> **Wave A (2026-09-16).** DNA MATCH @512 r=16: E27 and E26 both **S1 miss** (3.03 and 1.03 bits
+> vs ~36). Recorded in the ledger; INDEX skipped. Wave B is **not closed**: E28 still training
+> on Odra, E29 being started on Polonez.
 
 > **Reconciled headline.** The long-range object is not a content-addressable memory;
 > dense learns the same DNA/language tasks; E21 has no 32k-only story (DNA walls at

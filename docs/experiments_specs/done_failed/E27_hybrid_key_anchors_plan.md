@@ -1,6 +1,6 @@
 # E27 — Implementation Plan
 
-- **Spec:** [E27_hybrid_key_anchors.md](E27_hybrid_key_anchors.md) · **Status:** draft
+- **Spec:** [E27_hybrid_key_anchors.md](E27_hybrid_key_anchors.md) · **Status:** implemented and run 2026-09-16 · experiment killed (S1 miss; see spec Result)
 - **Authored by:** `implementation-plan` · for → `research-implement`
 
 > Hybrid `(a,b)` on exclusive E21: identity raw keys on DNA **key spans**, r=16 frozen

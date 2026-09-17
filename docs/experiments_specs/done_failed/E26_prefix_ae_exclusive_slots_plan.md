@@ -1,6 +1,6 @@
 # E26 — Implementation Plan
 
-- **Spec:** [E26_prefix_ae_exclusive_slots.md](E26_prefix_ae_exclusive_slots.md) · **Status:** draft
+- **Spec:** [E26_prefix_ae_exclusive_slots.md](E26_prefix_ae_exclusive_slots.md) · **Status:** implemented and run 2026-09-16 · experiment killed (S1 miss; see spec Result)
 - **Authored by:** `implementation-plan` · for → `research-implement`
 
 > Weak prefix-block AE is the **write** objective for exclusive r=16 slots.

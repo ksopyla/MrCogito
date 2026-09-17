@@ -1,6 +1,6 @@
 # E29 — Exclusive slots bind (entity, attribute, value), not a bag or gist
 
-- **Status:** draft 2026-09-16 (queue rank 4, Wave B; awaiting KS approval) · not launched
+- **Status:** draft 2026-09-16 (queue rank 4, Wave B) · **starting 2026-09-16 on Polonez** — **not closed**; do not record a Result yet
 - **Serves:** diagnosis “the long-range object is a document embedding” on
   language-shaped atoms. Queue:
   [e21_improvement_queue.md](../../4_Research_Notes/e21_improvement_queue.md).

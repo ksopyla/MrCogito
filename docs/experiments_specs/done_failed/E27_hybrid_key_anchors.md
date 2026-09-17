@@ -1,11 +1,11 @@
 # E27 — Hybrid (a, b): identity keys + pooled gist on exclusive E21 slots
 
-- **Status:** draft 2026-09-16 (queue rank 1; awaiting KS approval) · not launched
+- **Status:** ran 2026-09-16 (Odra GPU 0, DNA MATCH Wave A) · **killed 2026-09-16 — S1 miss** → `done_failed`
 - **Serves:** Vision “does the compressed channel carry *addressable* content?” — BAPO
   hybrid rather than uniform r=1 or uniform r=16. Queue:
   [e21_improvement_queue.md](../../4_Research_Notes/e21_improvement_queue.md).
 - **Implementation plan:** [E27_hybrid_key_anchors_plan.md](E27_hybrid_key_anchors_plan.md)
-- **Owner / dates:** Krzysztof Sopyla · opened 2026-09-16 · closed —
+- **Owner / dates:** Krzysztof Sopyla · opened 2026-09-16 · closed 2026-09-16
 
 > One coherent bet: MATCH dies under mean-pool because **keys are not independently
 > addressable**, not because values need full identity KV. E25 `type_marks` at r=1 added
@@ -85,7 +85,7 @@ handful of identity key tokens plus a 16-token mean of the value is enough.
   ship a training fork. Probe CLI already takes `--message_global_anchors`.
 
 ## Result
-- Run id: `<run_id>`
-- WandB: n/a (probe) unless identity is wired
-- Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
-- Verdict: — 
+- Run id: `73wq90jq` (hunt `e27_hybrid_key_anchors`)
+- WandB: [https://wandb.ai/ksopyla/MrCogito/runs/73wq90jq](https://wandb.ai/ksopyla/MrCogito/runs/73wq90jq) // pragma: allowlist secret
+- Run report: [e27_hybrid_key_anchors_20260916](../../2_Experiments_Registry/run_reports/e27_hybrid_key_anchors_20260916.md)
+- Verdict: **killed** — S1 miss: exclusive E21 recovered **3.03 bits** (acc 0.350) vs live E18 **47.87 bits** (gate 0.75× ≈ 35.9). RankMe **1.12**; `slots_only` 0.342 ≈ real 0.350. S0/K2 pass. INDEX skipped. Hybrid key spans did not repair r=16 MATCH smear.

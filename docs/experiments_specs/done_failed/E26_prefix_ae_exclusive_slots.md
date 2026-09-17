@@ -1,11 +1,11 @@
 # E26 — Weak prefix AE on exclusive r=16 slots (write objective, not extra hop)
 
-- **Status:** draft 2026-09-16 (queue rank 2; awaiting KS approval) · not launched
+- **Status:** ran 2026-09-16 (Polonez GPU 0, DNA MATCH Wave A) · **killed 2026-09-16 — S1 miss** → `done_failed`
 - **Serves:** Vision compressed memory that is *content-addressable* at r=16, the
   serving ratio. Queue:
   [e21_improvement_queue.md](../../4_Research_Notes/e21_improvement_queue.md).
 - **Implementation plan:** [E26_prefix_ae_exclusive_slots_plan.md](E26_prefix_ae_exclusive_slots_plan.md)
-- **Owner / dates:** Krzysztof Sopyla · opened 2026-09-16 · closed —
+- **Owner / dates:** Krzysztof Sopyla · opened 2026-09-16 · closed 2026-09-16
 
 > One coherent bet: the compressor is trained by a **weak reconstruction of each
 > 16-token prefix block**, not by answer CE. E25 learned `u`/`delta` under answer CE
@@ -87,7 +87,7 @@ the block*, including keys the answer span never names. Surprising if it works: 
   isolation on `PerceiverARLM` / probe loss. Defaults off; E18 checkpoints load.
 
 ## Result
-- Run id: `<run_id>`
-- WandB: —
-- Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
-- Verdict: —
+- Run id: `50t48aas` (hunt `e26_prefix_ae_slots`; ignore aborted `reyc0q2p`)
+- WandB: [https://wandb.ai/ksopyla/MrCogito/runs/50t48aas](https://wandb.ai/ksopyla/MrCogito/runs/50t48aas) // pragma: allowlist secret
+- Run report: [e26_prefix_ae_slots_20260916](../../2_Experiments_Registry/run_reports/e26_prefix_ae_slots_20260916.md)
+- Verdict: **killed** — S1 miss: exclusive E21 recovered **1.03 bits** (acc 0.311) vs live E18 **47.32 bits** (gate 0.75× ≈ 35.5). AE key_acc **0.66** (between K4 40% and K3 80%); MATCH flow **0.021**. RankMe **14.6**. S0/K2 pass. INDEX skipped. Prefix AE wrote some keys the exclusive read could not use.

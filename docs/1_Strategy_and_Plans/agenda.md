@@ -20,24 +20,31 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-16 — E21 improvement queue Wave B on both boxes.** Wave A MATCH
-  (hybrid key-span anchors, prefix-block AE write loss) missed the slot-copy
-  bar. Odra continues Hub bits (dense then exclusive 1k, 4k only if 1k carries
-  the answer). Polonez runs exclusive bind on `ksopyla/cogito-probe-bind` with
-  hop vs gist eval and a props filler-shuffle control; extra-hop loops stay
-  gated. Odra’s bits queue parks after bits and does not start a second bind.
-  CogitoProbe is `load_dataset("ksopyla/cogito-probe-{bits,bind,arith,props}")`
-  (seed 20260916, full 8448/896/896; PR 41). No 32k `length_group` LM. Specs in PR 40.
+- **2026-09-16 — E21 queue Wave A closed (MATCH miss); Wave B in flight.** Hybrid key spans
+  (E27) and prefix-AE slots (E26) both missed the 0.75× uncompressed-read bits bar on calibrated
+  DNA lookup at seq=512, 16-token pages. Do not retry those two write/anchor bets on that exam.
+  **E28 (CogitoProbe bits) is still training** on Odra (`E21_QUEUE`, dense solvability then exclusive
+  1k, 4k only if 1k carries the answer). **E29 (bind) is being started** on Polonez with hop vs gist
+  eval and a props filler-shuffle control; extra-hop loops stay gated. Odra’s bits queue parks after
+  bits and does not start a second bind. CogitoProbe is
+  `load_dataset("ksopyla/cogito-probe-{bits,bind,arith,props}")` (seed 20260916, full 8448/896/896).
+  No 32k `length_group` LM. Specs
+  [E27](../experiments_specs/done_failed/E27_hybrid_key_anchors.md) ·
+  [E26](../experiments_specs/done_failed/E26_prefix_ae_exclusive_slots.md) ·
+  [E28](../experiments_specs/ahead/E28_exclusive_cogitoprobe_bits.md) ·
+  [E29](../experiments_specs/ahead/E29_exclusive_cogitoprobe_bind.md).
 - **2026-09-12 — E23 Exclusive concept channel (spec ready, not launched).** Parallel
   `perceiver_concept` language bet (exclusive mask + paying CE). Not replaced by the E21
   compressor queue. Spec
-  [E23](../experiments_specs/ahead/E23_exclusive_concept_channel.md). Odra is free; Polonez is
-  free after the `goodwrite_ml` move. Dense control for S3 must be rerun from scratch (E22's was lost).
+  [E23](../experiments_specs/ahead/E23_exclusive_concept_channel.md). Dense control for S3 must be
+  rerun from scratch (E22's was lost).
 - **Instrument first (zero GPU-days, before launch):** the far-repeat token mask on the E22 mix —
   what share of tokens is far-copyable, and does that share justify the ×8 weight (target: far-repeat
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-16 — E27 hybrid key-span anchors (DNA MATCH @512, 16-token pages).** Exclusive notebook recovered **3 bits** vs uncompressed **48**; collapsing the extra key tokens left the score unchanged (RankMe 1.12). [report](../2_Experiments_Registry/run_reports/e27_hybrid_key_anchors_20260916.md) · [spec](../experiments_specs/done_failed/E27_hybrid_key_anchors.md).
+- **2026-09-16 — E26 prefix autoencoder on exclusive 16-token slots (same exam).** The slot reconstructs keys at **66%** and RankMe is **14.6**, but lookup recovered **1 bit** vs uncompressed **47**. [report](../2_Experiments_Registry/run_reports/e26_prefix_ae_slots_20260916.md) · [spec](../experiments_specs/done_failed/E26_prefix_ae_exclusive_slots.md).
 - **2026-09-16 — E21 improvement queue frozen (no run).** Ranked specs E27→E26→E28→E29→E19
   (Wave A DNA, Wave B CogitoProbe). Pointer:
   [e21_improvement_queue.md](../4_Research_Notes/e21_improvement_queue.md).
