@@ -15,6 +15,92 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-16] - Skip Odra Hub bind after bits
+
+**Why:**
+- Polonez already trains exclusive bind. Odra `E21_QUEUE` would have started
+  a second Hub bind after bits.
+
+**Impact:**
+- After bits (dense S0 → exclusive 1k → 4k if 1k is load-bearing) the Odra
+  queue parks. `SKIP_E29=1` or `Cache/logs/SKIP_E29` refuses bind/arith
+  launches. Bits arms still run.
+
+**What changed:**
+- [added] `scripts/skip_e29_guard.sh` — shared skip for bind/E19.
+- [changed] `scripts/e21_queue_continue.sh`, `scripts/launch_e29.sh`,
+  `scripts/launch_e28.sh` — park/refuse bind when skip is set.
+
+**Related:** `docs/experiments_specs/ahead/E29_exclusive_cogitoprobe_bind.md`
+
+---
+
+## [2026-09-16] - E29 hops vs gist eval on Hub bind
+
+**Why:**
+- Exclusive bind on Polonez needs the same Hub `evaluate_cogito_probe.py`
+  path as E28 bits, with hop vs gist task breakouts and a props filler-shuffle
+  control. Overall `by_task` is not enough to score the bind claim.
+
+**Impact:**
+- E29 trains exclusive perceiver on `ksopyla/cogito-probe-bind` and scores
+  `hop_friend_place` vs `attr_color` / `who_place`, plus props `prop_color`
+  with optional filler permutation (gold labels stay put).
+
+**What changed:**
+- [changed] `evaluation/evaluate_cogito_probe.py` — `--shuffle_filler` permutes
+  tokens between `evidence_end` and Q.
+- [changed] `scripts/launch_e29.sh` — exclusive identity slots; hops/gist/props
+  eval commands after the E28-style train.
+- [changed] `tests/test_cogito_probe_loader.py` — task filter + filler-shuffle
+  invariants.
+
+**Related:** `docs/experiments_specs/ahead/E29_exclusive_cogitoprobe_bind.md`
+
+---
+
+## [2026-09-16] - E27 key-span anchors and E26 prefix-AE write loss
+
+**Why:**
+- E21 improvement queue (E27 then E26) cannot run until exclusive E21 has
+  identity keys on DNA key spans and a weak prefix-block AE that is the
+  *write* objective. E25 type_marks-at-r=1 added zero extra keys; learned
+  pooling under answer CE wiped MATCH.
+
+**Impact:**
+- `--message_global_anchors key_spans` marks the `key_len` tokens after each
+  sender `keymark` (not the mark, not values). At r>1 those positions keep raw
+  K/V instead of the mean-pool slot. Defaults stay `none` (E18-loadable).
+- `--message_prefix_ae` adds a linear slot→r×vocab head. Compressor `u`/`delta`
+  see AE grads only (slots detached on the exclusive read). Off by default.
+- Probe logs MATCH ablations (`none` / `swapped` / `slots_only`), slot RankMe,
+  and optional W&B (run starts immediately so the id is in the shell log).
+  `PAR_MESSAGE_*` knobs flow through the generic launcher.
+- Wave B launchers `load_dataset` public Hub ids
+  `ksopyla/cogito-probe-{bits,bind,arith,props}` (seed 20260916, `--scale full`,
+  8448/896/896 mixed 1k–32k; filter seq_len/variant; 1k then 4k, no 32k).
+  Teacher-forced eval writes recovered bits vs `prize_bits`. Local generate
+  is fallback only.
+
+**What changed:**
+- [added] `nn/perceiver_ar_lm.py` — `key_spans` anchors, `PrefixAEHead`, stopgrad
+  read, `PAR_MESSAGE_*` config fields.
+- [changed] `evaluation/bapo_models.py`, `verification/bapo_capability_probe.py` —
+  CLI + factory + post-train MATCH ablation / RankMe / `--wandb`.
+- [changed] `scripts/train_concept_pretraining_multigpu.sh`,
+  `training/concept_pretraining_args.py`, `training/concept_pretraining_factories.py`
+  — reusable `PAR_MESSAGE_*` env knobs (defaults off).
+- [added] `scripts/launch_e27.sh`, `scripts/launch_e26.sh`, `scripts/e21_queue_eval.sh`,
+  `scripts/launch_e28.sh`, `scripts/launch_e29.sh`, `scripts/e21_queue_continue.sh`,
+  `evaluation/evaluate_cogito_probe.py`.
+- [changed] `scripts/launch_e28.sh` — dense S0 forces message knobs off (boundary needs perceiver).
+
+**Related:** `docs/experiments_specs/ahead/E27_hybrid_key_anchors.md`,
+`docs/experiments_specs/ahead/E26_prefix_ae_exclusive_slots.md`,
+`docs/4_Research_Notes/e21_improvement_queue.md`
+
+---
+
 ## [2026-09-16] - CogitoProbe public Hub v0
 
 **Why:**

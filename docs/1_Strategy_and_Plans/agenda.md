@@ -20,17 +20,14 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-16 — E21 exclusive-slot queue (specs frozen, not launched).** Ranked Odra/Polonez
-  ladder from the diagnosis + literature: launch **E27** hybrid key anchors on DNA MATCH @512,
-  then **E26** prefix AE; Wave B **E28** bits / **E29** bind / gated **E19** loops on CogitoProbe
-  from public Hub `ksopyla/cogito-probe-{bits,bind,arith,props}` (PR 41; seed 20260916 full scale); 1k then 4k, not 32k tomorrow).
-  Reject extra hop, width-first, and arith-as-semantics. Queue
-  [e21_improvement_queue.md](../4_Research_Notes/e21_improvement_queue.md).
-  Specs [E27](../experiments_specs/ahead/E27_hybrid_key_anchors.md) ·
-  [E26](../experiments_specs/ahead/E26_prefix_ae_exclusive_slots.md) ·
-  [E28](../experiments_specs/ahead/E28_exclusive_cogitoprobe_bits.md) ·
-  [E29](../experiments_specs/ahead/E29_exclusive_cogitoprobe_bind.md) ·
-  [E19](../experiments_specs/ahead/E19_looped_slot_refinement.md).
+- **2026-09-16 — E21 improvement queue Wave B on both boxes.** Wave A MATCH
+  (hybrid key-span anchors, prefix-block AE write loss) missed the slot-copy
+  bar. Odra continues Hub bits (dense then exclusive 1k, 4k only if 1k carries
+  the answer). Polonez runs exclusive bind on `ksopyla/cogito-probe-bind` with
+  hop vs gist eval and a props filler-shuffle control; extra-hop loops stay
+  gated. Odra’s bits queue parks after bits and does not start a second bind.
+  CogitoProbe is `load_dataset("ksopyla/cogito-probe-{bits,bind,arith,props}")`
+  (seed 20260916, full 8448/896/896; PR 41). No 32k `length_group` LM. Specs in PR 40.
 - **2026-09-12 — E23 Exclusive concept channel (spec ready, not launched).** Parallel
   `perceiver_concept` language bet (exclusive mask + paying CE). Not replaced by the E21
   compressor queue. Spec

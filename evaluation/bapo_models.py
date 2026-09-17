@@ -28,11 +28,16 @@ Architectures
                `--global_layers N` (default 1) is sequential full Attention+FFN global
                blocks (E21 exclusive slots each; E18 raw prefix each). Distinct from
                `--stack_layers` (SWA local) and from extra hops inside one Attention.
-               `--message_global_anchors {none,query_nbhd,query_side,type_marks,query_nbhd+type}`
+               `--message_global_anchors {none,query_nbhd,query_side,type_marks,query_nbhd+type,key_spans}`
                (default `none`) leaks a sparse extra subset into exclusive slot K/V:
                `query_nbhd` = 4 sender tokens before QUERY; `query_side` = QUERY plus
-               a small window after the boundary (receiver type request); and/or
-               type-mark controls. Still not the full raw prefix (that is E18).
+               a small window after the boundary (receiver type request); type-mark
+               controls; `key_spans` = DNA key-field tokens after each sender keymark
+               (E27 hybrid; not the mark, not values). Still not the full raw prefix.
+               `--message_prefix_ae` (default off) adds a weak linear reconstruction of
+               each complete sender block from its slot (E26 write objective). Compressor
+               `u`/`delta` see AE grads only (`--message_prefix_ae_stopgrad_answer`,
+               default on). `--message_identity_slots` off so the pooler can move under AE.
 - `encdec`     Symmetric encoder-decoder: bidirectional prefix encoder, suffix-only decoder with
                cross-attention. Prefix information cannot take a raw route into the suffix.
 """
@@ -83,6 +88,10 @@ class ArchSpec:
     message_global_anchors: str = "none"
     message_anchor_token_ids: tuple[int, ...] = ()
     message_anchor_window: int = 4
+    message_anchor_key_len: int = 0
+    message_prefix_ae: bool = False
+    message_prefix_ae_weight: float = 0.0
+    message_prefix_ae_stopgrad_answer: bool = True
 
 
 def _n_heads(hidden: int, head_dim: int) -> int:
@@ -176,6 +185,10 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
             tuple(int(x) for x in (getattr(spec, "message_anchor_token_ids", ()) or ())) if arch == "e21" else ()
         ),
         message_anchor_window=int(getattr(spec, "message_anchor_window", 4) or 0) if arch == "e21" else 4,
+        message_anchor_key_len=int(getattr(spec, "message_anchor_key_len", 0) or 0) if arch == "e21" else 0,
+        message_prefix_ae=bool(getattr(spec, "message_prefix_ae", False)) if arch == "e21" else False,
+        message_prefix_ae_weight=float(getattr(spec, "message_prefix_ae_weight", 0.0) or 0.0) if arch == "e21" else 0.0,
+        message_prefix_ae_stopgrad_answer=bool(getattr(spec, "message_prefix_ae_stopgrad_answer", True)) if arch == "e21" else True,
         pad_token_id=pad_id,
         bos_token_id=bos_id,
         eos_token_id=eos_id,

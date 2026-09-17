@@ -1319,3 +1319,163 @@ def test_message_flex_matches_sdpa_cuda():
     out.loss.backward()
     g = flex.layers[gi].attn.compressor.u.grad
     assert g is not None and torch.isfinite(g).all() and g.abs().sum() > 0
+
+
+KEYMARK = 92  # key-span mark; random inputs use 3..80, boundary M=90, type-mark MARK=91
+
+
+def test_key_spans_mark_key_tokens_not_values_or_keymark():
+    """E27: after each sender keymark, key_len symbol tokens are anchors; not the mark, not values."""
+    S, P, key_len = 24, 12, 2
+    ids = with_boundary(rand_ids(1, S, seed=7), P)
+    ids[0, 0] = KEYMARK
+    ids[0, 1] = 11
+    ids[0, 2] = 12
+    ids[0, 3] = 13  # value
+    ids[0, 6] = KEYMARK
+    ids[0, 7] = 21
+    ids[0, 8] = 22
+    ids[0, 9] = 23
+    side = torch.zeros(1, S, dtype=torch.long)
+    side[:, P:] = 1
+    doc = torch.zeros(1, S, dtype=torch.long)
+    anc = build_message_anchors(
+        ids, side, doc, mode="key_spans", token_ids=(KEYMARK,), key_len=key_len,
+    )
+    assert not bool(anc[0, 0]) and not bool(anc[0, 6])  # keymark itself
+    assert bool(anc[0, 1]) and bool(anc[0, 2]) and not bool(anc[0, 3])
+    assert bool(anc[0, 7]) and bool(anc[0, 8]) and not bool(anc[0, 9])
+    assert not bool(anc[0, P])  # receiver
+    assert int(anc.sum()) == 4
+    assert int(anc.sum()) < S
+    none = build_message_anchors(ids, side, doc, mode="none", token_ids=(KEYMARK,), key_len=key_len)
+    assert not bool(none.any())
+
+
+def test_key_spans_at_r16_are_extra_raw_keys_not_slot_values():
+    """r=16: key tokens sit inside the block; mix keeps raw KV there; extra count > 0."""
+    r, S, P = 16, 36, 20  # complete block 0..15, remainder 16..19
+    on = make_model(
+        seed=0, message_boundary_token_id=M, message_compress_ratio=r,
+        message_slots_inplace=True, message_identity_slots=True,
+        message_global_anchors="key_spans", message_anchor_token_ids=(KEYMARK,),
+        message_anchor_key_len=2,
+    )
+    off = make_model(
+        seed=0, message_boundary_token_id=M, message_compress_ratio=r,
+        message_slots_inplace=True, message_identity_slots=True,
+    )
+    x = with_boundary(rand_ids(1, S, seed=9), P)
+    x[0, 0] = KEYMARK
+    x[0, 1] = 11
+    x[0, 2] = 12
+    pos = on._positions(S, 1, None, x.device)
+    with torch.no_grad():
+        ctx = on._message_context(x, None, None, pos)
+        ctx_off = off._message_context(x, None, None, pos)
+    assert ctx.anchor_mode == "key_spans"
+    assert bool(ctx.anchor[0, 1]) and bool(ctx.anchor[0, 2])
+    assert not bool(ctx.anchor[0, 0]) and not bool(ctx.anchor[0, 3])
+    k = torch.zeros(1, S, 2, 8)
+    _, _, write = mix_inplace_kv(k, k, k, k, ctx)
+    vis = exclusive_visible(write, ctx)
+    extra = vis & ~write
+    assert bool(write[0, 4])  # non-key slot still overwritten
+    assert not bool(write[0, 1]) and not bool(write[0, 2])  # keys stay raw
+    assert bool(vis[0, 1]) and bool(vis[0, 2])
+    assert int(extra[0].sum()) == 2
+    assert int(extra[0].sum()) < S
+    assert not bool(vis[0, :P].all())
+    assert not bool(vis[0, 17])  # remainder without a key stays hidden
+    mask = dense_inplace_mask(S, ctx, None, vis, "cpu")
+    assert bool(mask[0, 0, P, 1]) and bool(mask[0, 0, P, 2])
+    concat = dense_message_mask(S, ctx, None, "cpu")[0, 0]
+    assert bool(concat[P, 1]) and not bool(concat[P, 3])
+    _, _, write_off = mix_inplace_kv(k, k, k, k, ctx_off)
+    extra_off = exclusive_visible(write_off, ctx_off) & ~write_off
+    assert int(extra_off[0].sum()) == 0
+
+
+def test_key_spans_r1_identity_extra_count_may_be_zero():
+    """r=1 identity: keys are already replace slots; skip hybrid scoring (extra may be 0)."""
+    r, S, P = 1, 20, 10
+    model = make_model(
+        seed=0, message_boundary_token_id=M, message_compress_ratio=r,
+        message_slots_inplace=True, message_identity_slots=True,
+        message_global_anchors="key_spans", message_anchor_token_ids=(KEYMARK,),
+        message_anchor_key_len=2,
+    )
+    x = with_boundary(rand_ids(1, S, seed=4), P)
+    x[0, 2] = KEYMARK
+    x[0, 3] = 11
+    x[0, 4] = 12
+    pos = model._positions(S, 1, None, x.device)
+    with torch.no_grad():
+        ctx = model._message_context(x, None, None, pos)
+    k = torch.zeros(1, S, 2, 8)
+    _, _, write = mix_inplace_kv(k, k, k, k, ctx)
+    extra = exclusive_visible(write, ctx) & ~write
+    assert bool(write[0, 3])  # r=1 still writes the slot at the key
+    assert int(extra[0, :P].sum()) == 0
+
+
+def test_prefix_ae_default_off_is_byte_identical_and_param_matched():
+    x = with_boundary(rand_ids(2, 16, seed=3), 8)
+    off = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=4,
+                     message_slots_inplace=True)
+    expl = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=4,
+                      message_slots_inplace=True, message_prefix_ae=False)
+    on = make_model(seed=0, message_boundary_token_id=M, message_compress_ratio=4,
+                     message_slots_inplace=True, message_prefix_ae=True, message_prefix_ae_weight=1.0)
+    assert off.config.message_prefix_ae is False
+    assert expl.config.message_prefix_ae is False
+    assert on.config.message_prefix_ae is True
+    assert on.prefix_ae_head is not None
+    assert off.prefix_ae_head is None
+    with torch.no_grad():
+        assert torch.allclose(off(x).logits, expl(x).logits, atol=1e-6)
+
+
+def test_prefix_ae_logits_shape_and_ignored_slots():
+    r, S, P = 4, 18, 10  # two complete blocks + remainder
+    model = make_model(
+        seed=0, message_boundary_token_id=M, message_compress_ratio=r,
+        message_slots_inplace=True, message_identity_slots=False,
+        message_prefix_ae=True, message_prefix_ae_weight=1.0,
+        message_anchor_token_ids=(KEYMARK,), message_anchor_key_len=2,
+    )
+    x = with_boundary(rand_ids(2, S, seed=5), P)
+    labels = torch.full_like(x, -100)
+    labels[:, P + 1 :] = x[:, P + 1 :]
+    out = model(x, labels=labels)
+    assert torch.isfinite(out.loss)
+    assert model._last_prefix_ae is not None
+    gi = model.config.global_layer_index
+    k_bar = model.layers[gi].attn._last_k_bar
+    logits = model.prefix_ae_head(k_bar)
+    assert logits.shape[-2] == r
+    assert logits.shape[-1] == V
+    out.loss.backward()
+    assert model.prefix_ae_head.proj.weight.grad is not None
+    # stopgrad: compressor u should still get AE grads (identity_slots off)
+    assert model.layers[gi].attn.compressor.u.grad is not None
+
+
+def test_prefix_ae_stopgrad_blocks_answer_ce_into_compressor():
+    """Answer-only labels on the receiver: compressor u gets no grad when AE is off the graph."""
+    r, S, P = 4, 16, 8
+    model = make_model(
+        seed=0, message_boundary_token_id=M, message_compress_ratio=r,
+        message_slots_inplace=True, message_identity_slots=False,
+        message_prefix_ae=True, message_prefix_ae_weight=0.0,
+        message_prefix_ae_stopgrad_answer=True,
+    )
+    x = with_boundary(rand_ids(2, S, seed=2), P)
+    labels = torch.full_like(x, -100)
+    labels[:, P + 1 :] = x[:, P + 1 :]
+    out = model(x, labels=labels)
+    out.loss.backward()
+    gi = model.config.global_layer_index
+    u_grad = model.layers[gi].attn.compressor.u.grad
+    # weight=0 so AE does not flow; stopgrad blocks answer CE
+    assert u_grad is None or float(u_grad.abs().sum()) == 0.0

@@ -17,6 +17,12 @@ its protocol without copying the shared launcher.
 | `launch_e17d.sh` | Experiment protocol wrapper | E17d attn-residual global concept layers, no token carry, 300M |
 | `launch_e17e.sh` | Experiment protocol wrapper | E17e starve: E17d cell + `CONCEPT_BLOCK=256`, 300M |
 | `launch_e18.sh` | Experiment protocol wrapper | E18 Perceiver AR v2 pilot: `perceiver_ar` family pins (125M, N=2048, SmolLM3 tokenizer, Muon triple), `E18_STAGE=8k\|32k`, `PAR_MODE=dense` control, `E18_TASK=copy` (P2) |
+| `launch_e27.sh` | Experiment protocol wrapper | E27 hybrid `key_spans` DNA MATCH @512 r=16; then INDEX eval if S1 |
+| `launch_e26.sh` | Experiment protocol wrapper | E26 prefix-AE exclusive slots DNA MATCH @512 r=16; then INDEX eval if S1 |
+| `launch_e28.sh` | Experiment protocol wrapper | E28 Hub `ksopyla/cogito-probe-bits` 1k/4k `fixed`/`scaled`; `BATCH_PACKING_MODE=none`; no 32k |
+| `launch_e29.sh` | Experiment protocol wrapper | E29 Hub bind train + props gist-control eval on the same ckpt |
+| `e21_queue_eval.sh` | Post-probe MATCH / RankMe / INDEX | Reads `Cache/bapo_s0/<name>`; S3 `far_copy` @1024 only if S1 |
+| `e21_queue_continue.sh` | Wave B after Wave A | Waits on a Byobu session; Hub CogitoProbe; E28→E29; E19 gated |
 | `build_copy_task_dataset.py` | Data utility | Mirrored-copy manifest for the E18 P2 gate (`labels` = -100 on the first half) |
 | `calibrate_e17d_batch.sh` | Throughput/VRAM sweep | E17d per-device batch on 4×3090; rank by real tok/s under `length_group`; VRAM is a constraint; restore eff. batch ~72 via accum |
 | `test_perceiver_denoise_local.ps1` | Local smoke | Small reconstruction smoke against the canonical Python entrypoint |
