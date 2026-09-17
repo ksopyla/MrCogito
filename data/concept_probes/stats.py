@@ -380,63 +380,206 @@ def verify_hub_parquets(
     return {"splits": split_n, "leakage": leakage, "seed": seed}
 
 
-CARD_TEMPLATE = """---
-language:
-  - en
-license: apache-2.0
-pretty_name: {pretty}
-size_categories:
-  - {size_cat}
-task_categories:
-  - question-answering
-  - text-generation
-tags:
-  - concept-compression
-  - concept-bottleneck
-  - synthetic
-  - long-context
-  - cogito-probe
-  - {family}
-  - research
-configs:
-{configs_yaml}
-dataset_info:
-  dataset_name: {hub_id}
----
+# Hub / dataset cards are written for an external reader. Internal research
+# nicknames (experiment ids, DNA/Glyph) stay out of the 60-second lead.
 
-# {pretty}
+FAMILY_PRETTY = {
+    "bits": "CogitoProbe-Bits: key–value recall in a long haystack",
+    "bind": "CogitoProbe-Bind: who-has-what entity binding",
+    "arith": "CogitoProbe-Arith: nested arithmetic with mixed brackets",
+    "props": "CogitoProbe-Props: remember the facts, ignore the filler",
+}
 
-{hub_header}
+FAMILY_LEAD = {
+    "bits": (
+        "Synthetic needle-in-a-haystack QA: random `key X val Y` facts sit at the "
+        "start of a 1,024–32,768 token sequence, filler pads the middle, and the "
+        "model must emit the values for a list of keys asked at the end. Use it to "
+        "test memory, retrieval, or any compressed latent — no project background required."
+    ),
+    "bind": (
+        "Synthetic people-and-attributes QA: each name gets a job, a city, a colour, "
+        "and a friend. The model must answer who has which colour, who lives where, "
+        "or where a person's *friend* lives. A bag-of-words embedding is not enough "
+        "when everyone shares the same attribute vocabulary."
+    ),
+    "arith": (
+        "Synthetic nested `+ - *` expressions with mixed brackets `()[]{}`. Three "
+        "question types: the final number (`eval`, an easy shortcut), internal-node "
+        "values (`subexpr`, the real test), and which closer matches an opener "
+        "(`match`). Use it to test whether a model stored the *tree*, not just a calculator."
+    ),
+    "props": (
+        "Synthetic fact-vs-filler QA: short sentences like `the baker dropped the red "
+        "cup in paris`, then a long run of unrelated filler words. The model must "
+        "return each object's colour. Shuffling filler must not change answers; "
+        "shuffling the fact colours must."
+    ),
+}
 
-## What it is
+FAMILY_SIXTY = {
+    "bits": """1. Prefix lists facts: `key alice val red . key bob val blue .`
+2. The rest of the sequence is filler (the haystack), padded to 1k, 4k, 8k, 16k, or 32k tokens.
+3. The query asks for several keys at once: `Q alice bob`
+4. The gold answer is the packed values, in the same order: `red blue`
 
-{claim}
+Score the **answer span only** (`labels != -100`). A model that only models fluent filler will fail.""",
+    "bind": """Each entity is a bundle of attributes, written as:
 
-This is one dataset in a *series* that separates capability from confound:
+```
+alice is baker . alice in paris . alice color red . alice friend bob .
+bob is miner . bob in oslo . bob color green . bob friend alice .
+```
 
-| Dataset | Claim it can falsify |
+Then filler, then one of three questions (packed over several names):
+
+| `task` | Query looks like | Answer |
+|---|---|---|
+| `attr_color` | `Q color alice bob` | `red green` |
+| `who_place` | `Q who in paris oslo` | `alice bob` |
+| `hop_friend_place` | `Q hop place alice` | `oslo` (Bob's city) |
+
+If colour lookup works but the friend-hop stays at chance, the model stored labels, not bindings.""",
+    "arith": """Several independent expressions are written up front, then filler, then a question about the **first** (farthest) expression.
+
+| `task` | What it asks | Treat as |
+|---|---|---|
+| `eval` | `Q eval` → the root number | **Control only.** One integer; a calculator shortcut. |
+| `subexpr` | `Q sub 0 . 2 .` → values of internal nodes | **Primary.** Needs the expression tree. |
+| `match` | `Q match <opener-index>` → matching closer index | **Primary.** Bracket matching, not arithmetic. |
+
+Mixed `()[]{}` do **not** change the numeric value. They colour the brackets so matching is a real question. Do not report `eval` accuracy as “the model understands arithmetic.”""",
+    "props": """Facts are atomic propositions:
+
+```
+the baker dropped the red cup in paris .
+the miner dropped the blue hat in oslo .
+```
+
+Then filler, then `Q color cup hat` → `red blue`.
+
+Two cheap sanity checks you can run without a special model:
+
+- Shuffle filler tokens between the last fact and `Q`. Gold answers must stay the same.
+- Shuffle colours inside `meta.propositions`. Gold answers must change.
+
+A model that only tracks n-grams of the padding will fail the first check.""",
+}
+
+FAMILY_SCORE = {
+    "bits": (
+        "Plot teacher-forced token accuracy (and recovered bits, see below) against "
+        "how much unique information the answer carries: roughly "
+        "`n_query × log2(32)` because there are 32 possible values. "
+        "`variant=fixed` keeps ~16 facts at every length — if accuracy falls from "
+        "1k to 32k, that is a **length** failure. `variant=scaled` grows the fact "
+        "table with length (up to 256 facts at 32k) — a drop there is a **capacity** "
+        "failure. A dense Transformer should exceed ~75% packed-answer accuracy at "
+        "`seq_len=1024` before you interpret any compressed-memory number."
+    ),
+    "bind": (
+        "Report `attr_color`, `who_place`, and `hop_friend_place` separately. "
+        "Colour-only success with hop at chance means the model stored a list of "
+        "colours, not who-has-what. A strong extra check: swap one entity's colour "
+        "in `meta` and require that entity's answer token to flip."
+    ),
+    "arith": (
+        "Score `subexpr` and `match` as the real tasks. Score `eval` only as a "
+        "shortcut control (~one integer). If only `eval` moves, the model is a "
+        "calculator, not a structure memory. Digit strings are space-separated "
+        "(`3 9` for 39, `- 7` for −7)."
+    ),
+    "props": (
+        "Packed object→colour over the queried objects. The filler-shuffle vs "
+        "proposition-shuffle pair above is the claim: the latent (or the hidden "
+        "state) must carry the proposition set, not the n-gram statistics of filler."
+    ),
+}
+
+SERIES_TABLE = """| Dataset | Job in one line | Typical use |
+|---|---|---|
+| [`ksopyla/cogito-probe-bits`](https://huggingface.co/datasets/ksopyla/cogito-probe-bits) | Recall values for keys buried in a haystack | Memory / retrieval / compression capacity |
+| [`ksopyla/cogito-probe-bind`](https://huggingface.co/datasets/ksopyla/cogito-probe-bind) | Who has which colour, who lives where, friend's city | Compositional binding vs bag-of-words |
+| [`ksopyla/cogito-probe-arith`](https://huggingface.co/datasets/ksopyla/cogito-probe-arith) | Nested arithmetic + bracket matching | Did it store the expression tree? |
+| [`ksopyla/cogito-probe-props`](https://huggingface.co/datasets/ksopyla/cogito-probe-props) | Object colours amid fluent filler | Facts vs padding statistics |"""
+
+WHY_EXISTS = """Web text is locally predictable: a language model can look strong by guessing
+nearby words without remembering a fact from thousands of tokens earlier.
+These four datasets hide a **known set of facts** in a long padded haystack so
+you can measure whether a model (or a small latent memory) actually stored them.
+
+Each row tells you how many bits the answer is worth (`prize_bits`) and how far
+the question sits from the last fact (`gap`). That is the whole point: the
+information content is labelled, the distractor text is not the prize, and the
+length is a ladder rather than a single context size.
+
+Real rows use random **single-token** English-ish pieces from the Llama-3 /
+SmolLM3 vocabulary (`gonzalez`, `oslo`, `validators`, …), not the toy names
+`alice` / `bob` in the examples above. The grammar of the task is the same."""
+
+
+def _quick_start(hub_id: str) -> str:
+    return f"""```python
+from datasets import load_dataset
+
+ds = load_dataset("{hub_id}")
+row = ds["validation"][0]
+
+print(row["seq_len"], row["task"], row["variant"])
+print("query: ", row["query"])
+print("answer:", row["answer"])
+print("prize bits:", row["prize_bits"], "gap:", row["gap"])
+
+# Loss only on the answer span (already marked).
+# input_ids / labels are lists of int, length == seq_len.
+loss_tokens = [t for t in row["labels"] if t != -100]
+
+# Start small on a laptop: 1,024-token rows, fixed fact count.
+small = ds.filter(lambda r: r["seq_len"] == 1024 and r["variant"] == "fixed")
+```
+
+You can ignore `input_ids` and train from `context` / `query` / `answer` as text.
+If you do use the provided ids, they are already tokenized for
+`HuggingFaceTB/SmolLM3-3B` (Llama-3 vocab) and must not be re-tokenized."""
+
+
+SCHEMA_TABLE = """| column | meaning |
 |---|---|
-| `ksopyla/cogito-probe-bits` | A C-slot bottleneck's unique-bit capacity vs haystack length |
-| `ksopyla/cogito-probe-bind` | Tuple binding vs bag-of-tokens / document embedding |
-| `ksopyla/cogito-probe-arith` | AST / Dyck-3 structure vs eval-only calculator shortcut |
-| `ksopyla/cogito-probe-props` | Proposition set vs fluent-filler n-grams |
+| `text` / `context` / `query` / `answer` | Readable surfaces. `text` is the full padded row. |
+| `input_ids`, `attention_mask`, `labels` | Ready for causal LM training. `labels` is `-100` everywhere except the answer. |
+| `seq_len`, `rung` | Padded length: 1024, 4096, 8192, 16384, or 32768. |
+| `variant` | `fixed` = same number of facts as at 1k, longer haystack. `scaled` = more facts as the row gets longer. |
+| `task` | Question type inside this family (see above). |
+| `prize_bits` | Known information content of the gold answer (combinatorial lower bound). |
+| `gap` | Tokens from the last evidence token to the start of the answer. |
+| `answer_start` / `answer_end` / `evidence_end` | Character-free token indices into `input_ids`. |
+| `meta` | JSON string: fact table, fingerprints, node values. |"""
 
-DNA A=4 (`data/symbolic_tasks.py`) remains the exact-floor *bandwidth* instrument. These
-datasets exist because DNA cannot produce semantically rich concepts: iid 4-symbol
-copy/recall has no entities, attributes, or propositions.
 
-## Why it exists
+LIMITATIONS = """- Not natural language. Atoms are verified 1-token pieces of the SmolLM3 / Llama-3
+  vocab, chosen so each symbol is one id. Do not treat this as a human corpus.
+- Answers are **packed** (several values in one span). Single-token labels are too
+  sparse for a small latent channel to learn from.
+- `prize_bits` is a counting lower bound on the answer, not a cross-entropy floor
+  of a local language-model window.
+- Arithmetic mixed brackets colour the tree; they do not change `+ - *` meaning.
+  `eval`-only accuracy is not evidence of rich structure.
+- Rows are padded with a repeating filler cycle, so gzip of the full `text` looks
+  tiny. Compare `prize_bits`, not compressibility of the padded row."""
 
-Current training mixes in this repo (FineWeb-Edu, DCLM, PG-19, FinePDFs, stack-edu) are
-locally predictable: E18's reach ablation paid ~0.05 nats for far text, so a concept
-channel can look "used" while storing a document gist. DNA/Glyph then proved the
-*channel* can copy bits, but those alphabets have no compositional semantics. This
-family is the missing probe: **controlled information** + **a length ladder to 32k**
-(the regime where E21 is supposed to show its potential).
 
-## How it was generated
+ORIGIN = """These files were built for a research project on compressing long
+context into a small set of latent vectors (“concepts”), so the author
+could ask *what those vectors actually store*. You do not need that project,
+its training code, or its internal experiment log to use the datasets.
 
-Exact command (deterministic):
+Project page: [ai.ksopyla.com](https://ai.ksopyla.com) ·
+author: [Krzysztof Sopyła](https://github.com/ksopyla).
+Generator: `data/concept_probes/` in the public research repo (MIT)."""
+
+
+def _generation_block(family: str, scale: str, seed: int, tokenizer: str) -> str:
+    return f"""Deterministic rebuild (does not upload):
 
 ```bash
 uv run python scripts/build_concept_probe_datasets.py \\
@@ -446,123 +589,13 @@ uv run python scripts/build_concept_probe_datasets.py \\
   --out_dir Cache/concept_probes/{scale}
 ```
 
-Generator: `data/concept_probes/` · atom table: verified 1-token pieces of `{tokenizer}`
-(SmolLM3 = Llama-3 vocab). Arithmetic rows **inject** bare digit/operator ids; they do
-**not** BPE-encode glued strings (that merge path is 0.76 tokens/atom and is not an
-instrument).
-
-Length ladder: **1024 → 4096 → 8192 → 16384 → 32768**.
-Variants: `scaled` (item count grows with length) and `fixed` (1k item count, longer haystack).
-
-## Schema
-
-| column | type | meaning |
-|---|---|---|
-| `id` | string | `family/seqL/variant/split/index` |
-| `family` | string | `{family}` |
-| `task` | string | query type inside the family |
-| `variant` | string | `scaled` or `fixed` |
-| `seq_len` | int | padded length |
-| `rung` | string | `seq1024` … `seq32768` |
-| `split` | string | train / validation / test |
-| `input_ids` | list[int] | composed atom ids, length `seq_len` |
-| `labels` | list[int] | `-100` except the answer span |
-| `attention_mask` | list[int] | 1 on content |
-| `text` | string | space-joined atom surfaces (readable) |
-| `context` | string | prefix before the query |
-| `query` | string | question atoms |
-| `answer` | string | gold packed answer |
-| `prize_bits` | float | known information content of the answer |
-| `gap` | int | tokens from last evidence to answer start |
-| `meta` | JSON string | fingerprints, node values, entity tables |
-
-## Splits and statistics (this build)
-
-{stats_md}
-
-### Leakage
-
-{leakage_md}
-
-Train / validation / test use disjoint `SeedSequence` streams. A fingerprint of the
-*content* (facts / entities / propositions) is checked for overlap. Answer-string
-overlap is expected when the answer vocab is small (e.g. 8 colours) and is **not** a
-leak.
-
-## Intended use
-
-- Train a concept-bottleneck / compressed-read model **only** on the answer span
-  (`labels` or `--loss_span_markers` equivalent: the `answer`/`end` marker ids).
-- Score **teacher-forced token accuracy** and **recovered bits**
-  `max(0, prize_bits + sum log2 p(gold_t))` on `validation`/`test`.
-- Necessity ablations: zero/shuffle concepts; segment-confined decoder with window
-  `< gap` must sit at chance.
-- Length-ladder plot: same prize (`variant=fixed`) vs same density (`variant=scaled`).
-
-### Family-specific eval
-
-{eval_md}
-
-## Known limitations and biases
-
-- Closed single-token English-ish vocab from Llama-3, not a human language sample.
-- Packed answers are required so the channel is not starved (E25: 8-letter copy stayed
-  at chance; 32-letter copy hit 99%).
-- `{family}` does **not** replace DNA for closed-form `ln(A)` floors. Prize bits are
-  combinatorial lower bounds, not CE floors of a local window (except where `gap` is
-  recorded).
-- Arithmetic mixed brackets `()[]{{}}` are Dyck-3 *colouring*; they do not change
-  arithmetic meaning. Do not treat eval-only accuracy as evidence of rich concepts.
-- Not a substitute for the deferred Deductive Stories corpus
-  (`docs/engineering_specs/deductive_stories_synthetic_dataset.md`).
-
-## Licensing
-
-- **Code:** MIT (this repository).
-- **This synthetic dataset:** Apache-2.0. No web scrapes, no personal data.
-
-## Citation
-
-```
-@misc{{cogitoprobe2026,
-  title  = {{CogitoProbe: controlled datasets for concept/latent compression}},
-  author = {{Sopyła, Krzysztof}},
-  year   = {{2026}},
-  url    = {{https://huggingface.co/datasets/{hub_id}}},
-  note   = {{Synthetic length-ladder probes for concept bottlenecks. Seed {seed}.}},
-}}
-```
-
-Project: [ai.ksopyla.com](https://ai.ksopyla.com) · code on GitHub under the author's namespace.
-"""
+Ids are composed from a verified 1-token atom table of `{tokenizer}`.
+Arithmetic rows **inject** bare digit and bracket ids; they do not BPE-encode a
+glued string such as `(1+2)*[3-4]` (that merge path is not a well-defined alphabet)."""
 
 
-EVAL_MD = {
-    "bits": (
-        "Report accuracy vs `n_query · log2(|V|)` (default |V|=32). A C-slot model that "
-        "matches dense at 16 facts and collapses at 256 facts (scaled 32k) is a *capacity* "
-        "result. Matching at `fixed` 16 facts from 1k through 32k is a *length* result. "
-        "Kill: dense < 75% on seq=1024 packed recall."
-    ),
-    "bind": (
-        "Break out `attr_color` / `who_place` / `hop_friend_place`. If attr is solved and "
-        "hop stays at chance, the latents are labels not bindings. Counterfactual: swap one "
-        "entity's colour in `meta.entities` and require the corresponding answer to flip."
-    ),
-    "arith": (
-        "**Primary:** `subexpr` packed internal-node values and `match` (Dyck-3). "
-        "**Control, not success:** `eval` (root scalar; ~log2|result| bits — a 1-slot "
-        "calculator). Kill the family as a *semantic* claim if only eval moves. Keep it as a "
-        "*structure* claim if subexpr+match require the AST and survive concept ablation poorly "
-        "when slots are shuffled."
-    ),
-    "props": (
-        "Packed object→colour over unique objects. Control: shuffle filler tokens in `context` "
-        "(answers must hold) vs shuffle proposition colours in `meta.propositions` (answers "
-        "must change). A model that tracks gzip/n-gram statistics of filler will fail the "
-        "first control."
-    ),
-}
+EVAL_MD = FAMILY_SCORE  # kept name: tests / callers may import FAMILY_SCORE instead
+
 
 
 def _configs_yaml(family: str) -> str:
@@ -655,31 +688,159 @@ def render_card(
     scale: str,
     hub_id: str,
 ) -> str:
-    pretty = {
-        "bits": "CogitoProbe-Bits — information-budget length ladder",
-        "bind": "CogitoProbe-Bind — compositional entity binding",
-        "arith": "CogitoProbe-Arith — nested arithmetic / mixed brackets",
-        "props": "CogitoProbe-Props — proposition gist vs filler",
-    }[family]
-    from data.concept_probes.schema import FAMILY_CLAIMS
+    pretty = FAMILY_PRETTY[family]
+    size_cat = size_category(int(stats.get("n_rows", 0)))
+    yaml = "\n".join(
+        [
+            "---",
+            "language:",
+            "  - en",
+            "license: apache-2.0",
+            f'pretty_name: "{pretty}"',
+            "size_categories:",
+            f"  - {size_cat}",
+            "task_categories:",
+            "  - question-answering",
+            "  - text-generation",
+            "tags:",
+            "  - synthetic",
+            "  - long-context",
+            "  - retrieval",
+            "  - needle-in-haystack",
+            "  - question-answering",
+            "  - cogito-probe",
+            f"  - {family}",
+            "  - research",
+            "configs:",
+            _configs_yaml(family),
+            "dataset_info:",
+            f"  dataset_name: {hub_id}",
+            "---",
+        ]
+    )
+    citation = "\n".join(
+        [
+            "```",
+            "@misc{cogitoprobe2026,",
+            "  title  = {CogitoProbe: synthetic long-haystack probes for memory and compression},",
+            "  author = {Sopyła, Krzysztof},",
+            "  year   = {2026},",
+            f"  url    = {{https://huggingface.co/datasets/{hub_id}}},",
+            f"  note   = {{Seed {seed}. Four families: bits, bind, arith, props.}},",
+            "}",
+            "```",
+        ]
+    )
+    body = f"""# {pretty}
 
-    hub_header = (
-        f"**Hub:** [`{hub_id}`](https://huggingface.co/datasets/{hub_id})  \n"
-        f"**Author:** Krzysztof Sopyła · **Family:** `{family}` · **Series:** CogitoProbe · "
-        f"**Default seed:** `{seed}` · **Tokenizer:** `{tokenizer}`"
-    )
-    return CARD_TEMPLATE.format(
-        pretty=pretty,
-        hub_id=hub_id,
-        family=family,
-        seed=seed,
-        tokenizer=tokenizer,
-        scale=scale,
-        claim=FAMILY_CLAIMS[family],
-        configs_yaml=_configs_yaml(family),
-        stats_md=_stats_md(stats),
-        leakage_md=_leakage_md(stats),
-        eval_md=EVAL_MD[family],
-        size_cat=size_category(int(stats.get("n_rows", 0))),
-        hub_header=hub_header,
-    )
+{FAMILY_LEAD[family]}
+
+**Author:** Krzysztof Sopyła · **License:** Apache-2.0 · **Seed:** `{seed}` · **Tokenizer:** `{tokenizer}`
+
+## In 60 seconds
+
+{FAMILY_SIXTY[family]}
+
+## Load it
+
+{_quick_start(hub_id)}
+
+## The four CogitoProbe datasets
+
+{SERIES_TABLE}
+
+Length ladder (every family): **1024 → 4096 → 8192 → 16384 → 32768**.
+Half the rows are `fixed` (same fact count as at 1k, longer haystack), half are
+`scaled` (more facts as the row grows).
+
+## Why these exist
+
+{WHY_EXISTS}
+
+## How to score
+
+Train or evaluate **only on the answer span**. Teacher-forced token accuracy on
+`labels != -100` is the main number. Recovered bits against the labelled prize:
+
+`max(0, prize_bits + Σ log2 p(gold_t))`
+
+A decoder that cannot see tokens more than `gap` away must sit at chance — the
+evidence is that far from the answer.
+
+{FAMILY_SCORE[family]}
+
+## Schema
+
+{SCHEMA_TABLE}
+
+## This build
+
+{_stats_md(stats)}
+
+### Split leakage
+
+{_leakage_md(stats)}
+
+Train / validation / test use disjoint random streams. A fingerprint of the
+*facts* is checked for overlap. Shared answer *strings* (for example the same
+8 colours) are expected and are **not** a leak.
+
+## Rebuild
+
+{_generation_block(family, scale, seed, tokenizer)}
+
+## Limitations
+
+{LIMITATIONS}
+
+## Origin
+
+{ORIGIN}
+
+## License
+
+Apache-2.0 for this synthetic dataset. No web scrapes, no personal data.
+Generator code is MIT.
+
+## Citation
+
+{citation}
+"""
+    return yaml + "\n\n" + body.rstrip() + "\n"
+
+
+def rewrite_cards_from_stats(
+    stats_path: Path,
+    cards_out: Path,
+    *,
+    families: list[str] | None = None,
+) -> list[Path]:
+    """Re-render Hub cards from an existing `cogito-probe-stats.json` (no parquet rebuild)."""
+    payload = json.loads(Path(stats_path).read_text())
+    seed = int(payload.get("seed", 20260916))
+    tokenizer = str(payload.get("tokenizer", "HuggingFaceTB/SmolLM3-3B"))
+    scale = str(payload.get("scale", "full"))
+    fams = payload.get("families", {})
+    wanted = list(families) if families else list(fams)
+    written: list[Path] = []
+    cards_out = Path(cards_out)
+    cards_out.mkdir(parents=True, exist_ok=True)
+    from data.concept_probes.schema import HUB_IDS
+
+    for family in wanted:
+        if family not in fams:
+            raise KeyError(f"{family} missing from {stats_path}")
+        card = render_card(
+            family,
+            fams[family],
+            seed=seed,
+            tokenizer=tokenizer,
+            scale=scale,
+            hub_id=HUB_IDS[family],
+        )
+        dest = cards_out / f"cogito-probe-{family}" / "README.md"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(card)
+        written.append(dest)
+    return written
+

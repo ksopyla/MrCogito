@@ -15,6 +15,32 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-17] - CogitoProbe Hub cards for external readers
+
+**Why:**
+- The four `ksopyla/cogito-probe-*` dataset cards assumed the reader already
+  knew this research repo and internal experiment ids (E18, E21, DNA). External users
+  could not tell what the task was in one minute.
+
+**Impact:**
+- Hub READMEs lead with a 60-second task sketch, a toy example, and a
+  `load_dataset` snippet (including a 1,024-token `fixed` laptop slice).
+  Experiment ids stay out of the public card.
+
+**What changed:**
+- [changed] `data/concept_probes/stats.py` — external-first card renderer;
+  `--from_stats` rewrite path.
+- [changed] `scripts/build_concept_probe_datasets.py` — `--from_stats` to
+  regenerate cards without rebuilding parquet.
+- [changed] `docs/3_Evaluations_and_Baselines/dataset_cards/` — four READMEs
+  + index.
+- [changed] `tests/test_concept_probes.py` — cards must load in one snippet
+  and must not mention E18/E21.
+
+**Related:** `docs/engineering_specs/concept_compression_probe_suite.md`
+
+---
+
 ## [2026-09-17] - E18 vs E21 architecture flow HTML
 
 **Why:**

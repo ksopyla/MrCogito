@@ -21,7 +21,13 @@ from data.concept_probes.schema import (
     expected_split_totals,
     recipe_for,
 )
-from data.concept_probes.stats import leakage_report, render_card, size_category, summarize_family
+from data.concept_probes.stats import (
+    FAMILY_PRETTY,
+    leakage_report,
+    render_card,
+    size_category,
+    summarize_family,
+)
 
 
 TINY_PLAN = (
@@ -234,8 +240,35 @@ def test_dataset_card_names_hub_and_author(table):
     assert "--scale full" in card
     assert "10K<n<100K" not in card  # tiny fixture is n<1K
     assert "n<1K" in card
+    assert 'pretty_name: "CogitoProbe-Bits:' in card
     assert "path: train.parquet" in card
     assert "- split: train" in card
+    assert "from datasets import load_dataset" in card
+    assert "## In 60 seconds" in card
+    assert "key–value recall in a long haystack" in card
+    # External readers should not need internal experiment ids.
+    assert "E18" not in card
+    assert "E21" not in card
+    assert "E25" not in card
+    assert "DNA A=4" not in card
+
+
+@pytest.mark.parametrize("family", ["bits", "bind", "arith", "props"])
+def test_dataset_card_is_self_contained_for_each_family(table, family):
+    rows = generate_split(family, table, seq_len=128, variant="fixed", split="train", seed=1, n_rows=3)
+    stats = summarize_family({"train": rows})
+    card = render_card(
+        family,
+        stats,
+        seed=20260916,
+        tokenizer="HuggingFaceTB/SmolLM3-3B",
+        scale="pilot",
+        hub_id=f"ksopyla/cogito-probe-{family}",
+    )
+    assert f'load_dataset("ksopyla/cogito-probe-{family}")' in card
+    assert 'ds.filter(lambda r: r["seq_len"] == 1024' in card
+    assert "E18" not in card and "E21" not in card
+    assert FAMILY_PRETTY[family].split(":")[0] in card
 
 
 def test_int_atoms_include_sign():

@@ -19,6 +19,12 @@ Full production recipe (v0 Hub publish scale):
       --out_dir Cache/concept_probes/full --hub_only \\
       --stats_out docs/3_Evaluations_and_Baselines/dataset_cards/cogito-probe-stats.json \\
       --cards_out docs/3_Evaluations_and_Baselines/dataset_cards
+
+Rewrite Hub/dataset cards from an existing stats JSON (no parquet rebuild):
+
+  uv run python scripts/build_concept_probe_datasets.py \\
+      --from_stats docs/3_Evaluations_and_Baselines/dataset_cards/cogito-probe-stats.json \\
+      --cards_out docs/3_Evaluations_and_Baselines/dataset_cards
 """
 from __future__ import annotations
 
@@ -50,6 +56,7 @@ from data.concept_probes.schema import (  # noqa: E402
 from data.concept_probes.stats import (  # noqa: E402
     FamilyStatsAccumulator,
     render_card,
+    rewrite_cards_from_stats,
     verify_hub_parquets,
 )
 
@@ -180,9 +187,18 @@ def main() -> None:
     p.add_argument("--families", nargs="+", choices=FAMILIES, default=list(FAMILIES))
     p.add_argument("--lengths", nargs="+", type=int, default=list(LENGTH_LADDER))
     p.add_argument("--variants", nargs="+", choices=VARIANTS, default=list(VARIANTS))
-    p.add_argument("--out_dir", required=True)
+    p.add_argument(
+        "--out_dir",
+        default=None,
+        help="Output root for parquet + cards. Required unless --from_stats is set.",
+    )
     p.add_argument("--stats_out", default=None)
     p.add_argument("--cards_out", default=None)
+    p.add_argument(
+        "--from_stats",
+        default=None,
+        help="Rewrite dataset cards from an existing cogito-probe-stats.json (no generation).",
+    )
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--skip_cards", action="store_true")
     p.add_argument("--hub_only", action="store_true", help="Write Hub parquet + README only (skip per-rung shards).")
@@ -190,6 +206,21 @@ def main() -> None:
     p.add_argument("--gzip_per_rung", type=int, default=None, help="Cap gzip samples per seq_len (full defaults to 32).")
     p.add_argument("--batch_size", type=int, default=16)
     args = p.parse_args()
+
+    if args.from_stats:
+        cards_out = Path(args.cards_out) if args.cards_out else Path(
+            "docs/3_Evaluations_and_Baselines/dataset_cards"
+        )
+        written = rewrite_cards_from_stats(
+            args.from_stats,
+            cards_out,
+            families=list(args.families),
+        )
+        print(json.dumps({"rewrote_cards": [str(p) for p in written]}, indent=2))
+        return
+
+    if not args.out_dir:
+        raise SystemExit("--out_dir is required unless --from_stats is set")
 
     out = Path(args.out_dir)
     if out.exists():
