@@ -1,11 +1,11 @@
 # E29 — Exclusive slots bind (entity, attribute, value), not a bag or gist
 
-- **Status:** draft 2026-09-16 (queue rank 4, Wave B) · **starting 2026-09-16 on Polonez** — **not closed**; do not record a Result yet
+- **Status:** ran 2026-09-16 (Polonez 4×3090, CogitoProbe-bind Wave B) · **killed 2026-09-16 — S1 miss** → `done_failed`
 - **Serves:** diagnosis “the long-range object is a document embedding” on
   language-shaped atoms. Queue:
   [e21_improvement_queue.md](../../4_Research_Notes/e21_improvement_queue.md).
 - **Implementation plan:** [E29_exclusive_cogitoprobe_bind_plan.md](E29_exclusive_cogitoprobe_bind_plan.md)
-- **Owner / dates:** Krzysztof Sopyla · opened 2026-09-16 · closed —
+- **Owner / dates:** Krzysztof Sopyla · opened 2026-09-16 · closed 2026-09-16
 
 > One claim, the bind family’s claim: concepts bind tuples. `attr_color` can be a
 > label list; `who_place` / `hop_friend_place` cannot if entities share the attribute
@@ -76,7 +76,7 @@ slots do it without identity-on-everything.
   (reusable CogitoProbe eval helper). Compressor flags from Wave A / E28.
 
 ## Result
-- Run id: `<run_id>`
-- WandB: —
-- Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
-- Verdict: —
+- Run id: `perceiver_ar_perceiver_H256L1g1s2N1024_20260916_170437`
+- WandB: [https://wandb.ai/ksopyla/MrCogito/runs/perceiver_ar_perceiver_H256L1g1s2N1024_20260916_170437](https://wandb.ai/ksopyla/MrCogito/runs/perceiver_ar_perceiver_H256L1g1s2N1024_20260916_170437) // pragma: allowlist secret
+- Run report: [e29_exclusive_cogitoprobe_bind_20260916](../../2_Experiments_Registry/run_reports/e29_exclusive_cogitoprobe_bind_20260916.md)
+- Verdict: **killed** — `hop_friend_place` **4.4% / 0.078 bits** on a 40-bit prize (n=37); `attr_color` **2.4% / 0.007**. Dense S0 not run. Props filler-shuffle Δacc **+0.13 pt**. No 4k. E19 stays gated.

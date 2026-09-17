@@ -31,7 +31,7 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 - [changed] `scripts/e21_queue_continue.sh`, `scripts/launch_e29.sh`,
   `scripts/launch_e28.sh` — park/refuse bind when skip is set.
 
-**Related:** `docs/experiments_specs/ahead/E29_exclusive_cogitoprobe_bind.md`
+**Related:** `docs/experiments_specs/done_failed/E29_exclusive_cogitoprobe_bind.md`
 
 ---
 
@@ -55,7 +55,7 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 - [changed] `tests/test_cogito_probe_loader.py` — task filter + filler-shuffle
   invariants.
 
-**Related:** `docs/experiments_specs/ahead/E29_exclusive_cogitoprobe_bind.md`
+**Related:** `docs/experiments_specs/done_failed/E29_exclusive_cogitoprobe_bind.md`
 
 ---
 
@@ -95,8 +95,8 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   `evaluation/evaluate_cogito_probe.py`.
 - [changed] `scripts/launch_e28.sh` — dense S0 forces message knobs off (boundary needs perceiver).
 
-**Related:** `docs/experiments_specs/ahead/E27_hybrid_key_anchors.md`,
-`docs/experiments_specs/ahead/E26_prefix_ae_exclusive_slots.md`,
+**Related:** `docs/experiments_specs/done_failed/E27_hybrid_key_anchors.md`,
+`docs/experiments_specs/done_failed/E26_prefix_ae_exclusive_slots.md`,
 `docs/4_Research_Notes/e21_improvement_queue.md`
 
 ---

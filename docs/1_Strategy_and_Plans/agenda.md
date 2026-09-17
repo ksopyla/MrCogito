@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-09-16 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-09-17 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,19 +20,17 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-16 — E21 queue Wave A closed (MATCH miss); Wave B in flight.** Hybrid key spans
-  (E27) and prefix-AE slots (E26) both missed the 0.75× uncompressed-read bits bar on calibrated
-  DNA lookup at seq=512, 16-token pages. Do not retry those two write/anchor bets on that exam.
-  **E28 (CogitoProbe bits) is still training** on Odra (`E21_QUEUE`, dense solvability then exclusive
-  1k, 4k only if 1k carries the answer). **E29 (bind) is being started** on Polonez with hop vs gist
-  eval and a props filler-shuffle control; extra-hop loops stay gated. Odra’s bits queue parks after
-  bits and does not start a second bind. CogitoProbe is
-  `load_dataset("ksopyla/cogito-probe-{bits,bind,arith,props}")` (seed 20260916, full 8448/896/896).
-  No 32k `length_group` LM. Specs
+- **2026-09-17 — E21 queue Wave B closed (CogitoProbe 1k; 4k skipped); GPUs idle.** Exclusive
+  r=16 on CogitoProbe-bits (E28) hit K1: dense packed-answer acc **6.5% / 0.21 bits** on a 40-bit
+  prize (need ≥75%); exclusive `fixed` recovered **0 bits**. Bind (E29) hop **4.4% / 0.078 bits**
+  with no dense S0; colour-list gist also chance. Do not launch 4k/8k/32k. Do not relaunch Wave B.
+  Extra-hop loops (E19) stay gated. Odra and Polonez GPUs idle. Specs
+  [E28](../experiments_specs/done_failed/E28_exclusive_cogitoprobe_bits.md) ·
+  [E29](../experiments_specs/done_failed/E29_exclusive_cogitoprobe_bind.md) ·
+  [E19](../experiments_specs/ahead/E19_looped_slot_refinement.md).
+  Wave A remains closed (MATCH miss):
   [E27](../experiments_specs/done_failed/E27_hybrid_key_anchors.md) ·
-  [E26](../experiments_specs/done_failed/E26_prefix_ae_exclusive_slots.md) ·
-  [E28](../experiments_specs/ahead/E28_exclusive_cogitoprobe_bits.md) ·
-  [E29](../experiments_specs/ahead/E29_exclusive_cogitoprobe_bind.md).
+  [E26](../experiments_specs/done_failed/E26_prefix_ae_exclusive_slots.md).
 - **2026-09-12 — E23 Exclusive concept channel (spec ready, not launched).** Parallel
   `perceiver_concept` language bet (exclusive mask + paying CE). Not replaced by the E21
   compressor queue. Spec
@@ -43,6 +41,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-16 — E28 exclusive CogitoProbe-bits @1024 (Wave B).** Dense packed-answer acc **6.5% / 0.21 bits** on a 40-bit prize; exclusive `fixed` recovered **0 bits** (`scaled` 0.003). Seq=4096 not launched. [report](../2_Experiments_Registry/run_reports/e28_exclusive_cogitoprobe_bits_20260916.md) · [spec](../experiments_specs/done_failed/E28_exclusive_cogitoprobe_bits.md).
+- **2026-09-16 — E29 exclusive CogitoProbe-bind @1024 (Wave B).** One-hop `hop_friend_place` **4.4% / 0.078 bits**; `attr_color` **2.4% / 0.007**; dense S0 not run; props filler-shuffle Δacc **+0.13 pt**. Seq=4096 not launched. [report](../2_Experiments_Registry/run_reports/e29_exclusive_cogitoprobe_bind_20260916.md) · [spec](../experiments_specs/done_failed/E29_exclusive_cogitoprobe_bind.md).
 - **2026-09-16 — E27 hybrid key-span anchors (DNA MATCH @512, 16-token pages).** Exclusive notebook recovered **3 bits** vs uncompressed **48**; collapsing the extra key tokens left the score unchanged (RankMe 1.12). [report](../2_Experiments_Registry/run_reports/e27_hybrid_key_anchors_20260916.md) · [spec](../experiments_specs/done_failed/E27_hybrid_key_anchors.md).
 - **2026-09-16 — E26 prefix autoencoder on exclusive 16-token slots (same exam).** The slot reconstructs keys at **66%** and RankMe is **14.6**, but lookup recovered **1 bit** vs uncompressed **47**. [report](../2_Experiments_Registry/run_reports/e26_prefix_ae_slots_20260916.md) · [spec](../experiments_specs/done_failed/E26_prefix_ae_exclusive_slots.md).
 - **2026-09-16 — E21 improvement queue frozen (no run).** Ranked specs E27→E26→E28→E29→E19

@@ -3,8 +3,8 @@
 Undated mutable note (research ideas + launch order). **Not** a living roadmap.
 Frozen specs: [E27](../experiments_specs/done_failed/E27_hybrid_key_anchors.md) ·
 [E26](../experiments_specs/done_failed/E26_prefix_ae_exclusive_slots.md) ·
-[E28](../experiments_specs/ahead/E28_exclusive_cogitoprobe_bits.md) ·
-[E29](../experiments_specs/ahead/E29_exclusive_cogitoprobe_bind.md) ·
+[E28](../experiments_specs/done_failed/E28_exclusive_cogitoprobe_bits.md) ·
+[E29](../experiments_specs/done_failed/E29_exclusive_cogitoprobe_bind.md) ·
 [E19](../experiments_specs/ahead/E19_looped_slot_refinement.md).
 Inputs (do not re-diagnose):
 [E18/E21 vs dense](e18_e21_dense_baseline_diagnosis_20260916.md) ·
@@ -13,8 +13,11 @@ CogitoProbe suite (PR 39, not on Hub):
 [engineering spec](../engineering_specs/concept_compression_probe_suite.md).
 
 > **Wave A (2026-09-16).** DNA MATCH @512 r=16: E27 and E26 both **S1 miss** (3.03 and 1.03 bits
-> vs ~36). Recorded in the ledger; INDEX skipped. Wave B is **not closed**: E28 still training
-> on Odra, E29 being started on Polonez.
+> vs ~36). Recorded in the ledger; INDEX skipped.
+
+> **Wave B (2026-09-16, recorded 2026-09-17).** CogitoProbe @1024: E28 **K1** (dense 6.5% /
+> 0.21 bits; exclusive `fixed` 0 bits). E29 hop **0.078 bits** / 4.4% (no dense S0). 4k
+> skipped. GPUs idle. Do not relaunch. E19 stays gated.
 
 > **Reconciled headline.** The long-range object is not a content-addressable memory;
 > dense learns the same DNA/language tasks; E21 has no 32k-only story (DNA walls at

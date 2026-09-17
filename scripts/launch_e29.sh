@@ -1,7 +1,7 @@
 #!/bin/bash
 # E29 — exclusive slots on Hub CogitoProbe-bind (hop vs gist). Props is a
 # gist-control eval on the same checkpoint, not a second train.
-# Spec: docs/experiments_specs/ahead/E29_exclusive_cogitoprobe_bind.md
+# Spec: docs/experiments_specs/done_failed/E29_exclusive_cogitoprobe_bind.md
 #   SEQ=1024 bash scripts/launch_e29.sh
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

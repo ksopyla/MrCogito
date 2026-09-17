@@ -1,6 +1,6 @@
 # E28 — Implementation Plan
 
-- **Spec:** [E28_exclusive_cogitoprobe_bits.md](E28_exclusive_cogitoprobe_bits.md) · **Status:** draft
+- **Spec:** [E28_exclusive_cogitoprobe_bits.md](E28_exclusive_cogitoprobe_bits.md) · **Status:** done_failed (K1)
 - **Authored by:** `implementation-plan` · for → `research-implement`
 
 > CogitoProbe-bits on exclusive E21 at 1k then 4k. Generate locally. Do not Hub upload.
