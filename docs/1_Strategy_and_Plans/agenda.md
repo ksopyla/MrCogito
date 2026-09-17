@@ -36,6 +36,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-16 — E18/E21 vs dense diagnosis (append-only note).** Architecture (1-layer keys, mean-pool smear, exclusive leftover, CE that does not pay), not eval/DNA solvability. H1 partial only for MATCH-under-mean; H2 extra-hop is hops-only; H3 split (language CE weak, DNA bits real); E21 32k LM untested (`mean_seq` ~3.2k, checkpoints gone). [diagnosis](../4_Research_Notes/e18_e21_dense_baseline_diagnosis_20260916.md).
 - **2026-09-16 — E21 literature synthesis (no new run).** Ranked Adapt levers
   and a 32k exclusive-channel eval protocol:
   [`e21_levers_from_literature.md`](../4_Research_Notes/e21_levers_from_literature.md).
