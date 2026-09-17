@@ -1,10 +1,15 @@
 # CogitoProbe — a series of datasets for concept / latent compression
 
 - **Type:** engineering foundation (synthetic data series + HF cards + pretok builder). **Not** an `E0NN` experiment.
-- **Status:** implemented 2026-09-16. Generators `data/concept_probes/`, builder
-  `scripts/build_concept_probe_datasets.py`, tests `tests/test_concept_probes.py`,
-  cards `docs/3_Evaluations_and_Baselines/dataset_cards/`. **Not published** to the
-  Hugging Face Hub (awaiting explicit approval).
+- **Status:** implemented 2026-09-16. **Published** 2026-09-16 to the Hugging Face Hub
+  (public v0, `--scale full`, seed `20260916`):
+  [`ksopyla/cogito-probe-bits`](https://huggingface.co/datasets/ksopyla/cogito-probe-bits),
+  [`ksopyla/cogito-probe-bind`](https://huggingface.co/datasets/ksopyla/cogito-probe-bind),
+  [`ksopyla/cogito-probe-arith`](https://huggingface.co/datasets/ksopyla/cogito-probe-arith),
+  [`ksopyla/cogito-probe-props`](https://huggingface.co/datasets/ksopyla/cogito-probe-props).
+  Generators `data/concept_probes/`, builder `scripts/build_concept_probe_datasets.py`,
+  tests `tests/test_concept_probes.py`, cards
+  `docs/3_Evaluations_and_Baselines/dataset_cards/`.
 - **Owner:** Krzysztof Sopyła
 - **Serves:** any concept-bottleneck / exclusive compressed-read experiment that needs to
   know *what* a fixed latent set actually carries, especially at 8k–32k (the length at
@@ -51,7 +56,7 @@ Natural text cannot *measure* them. We need a series that separates those confou
 
 ## The series (four Hub ids, one collection)
 
-Proposed (not created) collection: `ksopyla/cogito-probes`.
+Proposed collection (not created): `ksopyla/cogito-probes`. All four dataset repos are **public**.
 
 | Hub id | Claim it can falsify | What a C-slot bottleneck must encode | Kill if |
 |---|---|---|---|
@@ -113,18 +118,21 @@ Pilot mix on this build: 244 `subexpr` / 118 `match` / 102 `eval` of 464 rows.
 
 ## How to generate (deterministic)
 
+Public v0 (what is on the Hub):
+
 ```bash
 uv run python scripts/build_concept_probe_datasets.py \
-  --scale pilot --seed 20260916 \
+  --scale full --seed 20260916 \
   --tokenizer HuggingFaceTB/SmolLM3-3B \
-  --out_dir Cache/concept_probes/pilot \
+  --out_dir Cache/concept_probes/full \
+  --hub_only \
   --stats_out docs/3_Evaluations_and_Baselines/dataset_cards/cogito-probe-stats.json \
   --cards_out docs/3_Evaluations_and_Baselines/dataset_cards
 ```
 
-`--scale full` is the production recipe (thousands of rows per rung; see
-`FULL_COUNTS` in `data/concept_probes/schema.py`). Pilot is the small-but-real sample
-that this spec's tables were computed from.
+`--scale full` is the production recipe (10,240 rows/family; 8448/896/896;
+see `FULL_COUNTS` in `data/concept_probes/schema.py`). `--scale pilot` is the
+464-row sample used to calibrate the first spec tables (not the Hub v0 cut).
 
 Tokenizer probe (the arith verdict):
 
@@ -155,6 +163,11 @@ Bits at 32k: `fixed` ≈ 40 bits (8 values × log2(32)), `scaled` ≈ 640 bits (
 A C=128, 256-dim slot array that solves `fixed`@32k and fails `scaled`@32k is a
 capacity result, which DNA copy at 64 bits cannot state.
 
+**v0 Hub cut (this publish, `--scale full`, same seed):** 10,240 rows/family
+(8448/896/896). Mean prize bits: bits 89.0, bind 58.4, arith 12.9, props 50.8.
+Per-family leakage fingerprints/`input_ids`/`text` = 0. Full tables:
+[`cogito-probe-stats.json`](../3_Evaluations_and_Baselines/dataset_cards/cogito-probe-stats.json).
+
 ## How to evaluate
 
 Teacher-forced accuracy on `labels ≠ -100`, plus recovered bits against `prize_bits`.
@@ -165,35 +178,37 @@ before any compressed-read number is interpreted (same protocol as
 
 Do not score STS-B or FineWeb CE as a CogitoProbe result.
 
-## Hugging Face publication (prepared, **not executed**)
+## Hugging Face publication (public v0, 2026-09-16)
 
-Nothing has been pushed. A private draft is acceptable later if requested; this change
-does not create Hub repos.
+Uploaded under `ksopyla/` as **public** Apache-2.0 datasets. Load:
+
+```python
+from datasets import load_dataset
+ds = load_dataset("ksopyla/cogito-probe-bits")
+row = ds["test"][0]
+assert len(row["input_ids"]) == row["seq_len"]
+```
+
+v0 Hub counts (seed `20260916`, SmolLM3 tokenizer, `--scale full`): **10,240 rows
+per family** (train 8448 / validation 896 / test 896). Content fingerprints,
+`input_ids`, and `text` do not overlap across splits. Arith answer-*string*
+overlap is expected (small integers) and is not a leak. Gzip ratios on the cards
+are a 32-row-per-rung sample.
 
 Staging layout (gitignored `Cache/`):
 
 ```text
-Cache/concept_probes/pilot/hub/{bits,bind,arith,props}/
+Cache/concept_probes/full/hub/{bits,bind,arith,props}/
   README.md train.parquet validation.parquet test.parquet
 ```
 
-Exact commands when approved (private first):
+Re-upload after a rebuild:
 
 ```bash
-hf repo create ksopyla/cogito-probe-bits --repo-type dataset --private
-hf upload ksopyla/cogito-probe-bits Cache/concept_probes/pilot/hub/bits \
-  --repo-type dataset --commit-message "Add CogitoProbe bits pilot (seed 20260916)"
+hf repos create ksopyla/cogito-probe-bits --type dataset --public --exist-ok
+hf upload ksopyla/cogito-probe-bits Cache/concept_probes/full/hub/bits \
+  --repo-type dataset --commit-message "Add CogitoProbe bits full (seed 20260916)"
 # repeat for bind, arith, props
-```
-
-Public: drop `--private`. License on the cards is Apache-2.0 (original synthetic data,
-no scrapes). Load:
-
-```python
-from datasets import load_dataset
-ds = load_dataset("ksopyla/cogito-probe-bits")  # after an approved upload
-row = ds["test"][0]
-assert len(row["input_ids"]) == row["seq_len"]
 ```
 
 ## Relation to other in-repo synthetics

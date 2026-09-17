@@ -23,7 +23,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 - **2026-09-16 — E21 exclusive-slot queue (specs frozen, not launched).** Ranked Odra/Polonez
   ladder from the diagnosis + literature: launch **E27** hybrid key anchors on DNA MATCH @512,
   then **E26** prefix AE; Wave B **E28** bits / **E29** bind / gated **E19** loops on CogitoProbe
-  generated locally (PR 39; Hub ids as names; **do not upload**; 1k then 4k, not 32k tomorrow).
+  from public Hub `ksopyla/cogito-probe-{bits,bind,arith,props}` (PR 41; seed 20260916 full scale); 1k then 4k, not 32k tomorrow).
   Reject extra hop, width-first, and arith-as-semantics. Queue
   [e21_improvement_queue.md](../4_Research_Notes/e21_improvement_queue.md).
   Specs [E27](../experiments_specs/ahead/E27_hybrid_key_anchors.md) ·
@@ -332,9 +332,13 @@ headline (see [team_brief](../sprind_frontier_ai/team_brief.md)).
 Canonical eval protocol, Tier-1 data-protocol upgrade, compute audit, and training-pipeline
 modularization are done — see `docs/engineering_specs/` and
 [evaluation_protocol.md](../3_Evaluations_and_Baselines/evaluation_protocol.md).
-**2026-09-16 — CogitoProbe dataset series (not published).** Four length-ladder
-probes (bits / bind / arith / props) for concept-compression claims; DNA stays the
-exact-floor bandwidth instrument. Spec:
+**2026-09-16 — CogitoProbe dataset series (public Hub v0).** Four length-ladder
+probes — [`cogito-probe-bits`](https://huggingface.co/datasets/ksopyla/cogito-probe-bits),
+[`cogito-probe-bind`](https://huggingface.co/datasets/ksopyla/cogito-probe-bind),
+[`cogito-probe-arith`](https://huggingface.co/datasets/ksopyla/cogito-probe-arith),
+[`cogito-probe-props`](https://huggingface.co/datasets/ksopyla/cogito-probe-props) —
+seed `20260916`, `--scale full` (8448/896/896). DNA stays the exact-floor
+bandwidth instrument. Spec:
 [concept_compression_probe_suite.md](../engineering_specs/concept_compression_probe_suite.md).
 **2026-09-12 — `perceiver_ar` eval layer on `dev`:** lm-evaluation-harness adapter + SmolLM2-card
 0-shot tiers, teacher-forced RULER-lite (`passkey`, `multikey`, `vt`, `fwe`, `buckets`, `reach`),

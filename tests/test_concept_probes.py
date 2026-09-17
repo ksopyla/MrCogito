@@ -14,8 +14,14 @@ from data.concept_probes.atoms import (
     prize_bits_uniform,
 )
 from data.concept_probes.generate import generate_row, generate_split
-from data.concept_probes.schema import FAMILIES, IGNORE_INDEX, LENGTH_LADDER, recipe_for
-from data.concept_probes.stats import leakage_report, summarize_family
+from data.concept_probes.schema import (
+    FAMILIES,
+    IGNORE_INDEX,
+    LENGTH_LADDER,
+    expected_split_totals,
+    recipe_for,
+)
+from data.concept_probes.stats import leakage_report, render_card, size_category, summarize_family
 
 
 TINY_PLAN = (
@@ -204,6 +210,32 @@ def test_summarize_family_runs(table):
 def test_length_ladder_constants():
     assert LENGTH_LADDER == (1024, 4096, 8192, 16384, 32768)
     assert set(FAMILIES) == {"bits", "bind", "arith", "props"}
+    full = expected_split_totals("full")
+    assert full == {"train": 8448, "validation": 896, "test": 896, "n_rows": 10240}
+    pilot = expected_split_totals("pilot")
+    assert pilot["n_rows"] == 464
+    assert size_category(464) == "n<1K"
+    assert size_category(10240) == "10K<n<100K"
+
+
+def test_dataset_card_names_hub_and_author(table):
+    rows = generate_split("bits", table, seq_len=128, variant="fixed", split="train", seed=0, n_rows=4)
+    stats = summarize_family({"train": rows})
+    card = render_card(
+        "bits",
+        stats,
+        seed=20260916,
+        tokenizer="HuggingFaceTB/SmolLM3-3B",
+        scale="full",
+        hub_id="ksopyla/cogito-probe-bits",
+    )
+    assert "https://huggingface.co/datasets/ksopyla/cogito-probe-bits" in card
+    assert "Krzysztof Sopyła" in card
+    assert "--scale full" in card
+    assert "10K<n<100K" not in card  # tiny fixture is n<1K
+    assert "n<1K" in card
+    assert "path: train.parquet" in card
+    assert "- split: train" in card
 
 
 def test_int_atoms_include_sign():

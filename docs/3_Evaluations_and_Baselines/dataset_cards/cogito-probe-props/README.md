@@ -4,7 +4,7 @@ language:
 license: apache-2.0
 pretty_name: CogitoProbe-Props — proposition gist vs filler
 size_categories:
-  - n<1K
+  - 10K<n<100K
 task_categories:
   - question-answering
   - text-generation
@@ -19,17 +19,20 @@ tags:
 configs:
   - config_name: default
     data_files:
-      train: train.parquet
-      validation: validation.parquet
-      test: test.parquet
+      - split: train
+        path: train.parquet
+      - split: validation
+        path: validation.parquet
+      - split: test
+        path: test.parquet
 dataset_info:
   dataset_name: ksopyla/cogito-probe-props
 ---
 
 # CogitoProbe-Props — proposition gist vs filler
 
-**Hub id (proposed, not published until approved):** `ksopyla/cogito-probe-props`
-**Family:** `props` · **Series:** CogitoProbe · **Default seed:** `20260916` · **Tokenizer:** `HuggingFaceTB/SmolLM3-3B`
+**Hub:** [`ksopyla/cogito-probe-props`](https://huggingface.co/datasets/ksopyla/cogito-probe-props)  
+**Author:** Krzysztof Sopyła · **Family:** `props` · **Series:** CogitoProbe · **Default seed:** `20260916` · **Tokenizer:** `HuggingFaceTB/SmolLM3-3B`
 
 ## What it is
 
@@ -63,10 +66,10 @@ Exact command (deterministic):
 
 ```bash
 uv run python scripts/build_concept_probe_datasets.py \
-  --scale pilot --seed 20260916 \
+  --scale full --seed 20260916 \
   --tokenizer HuggingFaceTB/SmolLM3-3B \
   --families props \
-  --out_dir Cache/concept_probes/pilot
+  --out_dir Cache/concept_probes/full
 ```
 
 Generator: `data/concept_probes/` · atom table: verified 1-token pieces of `HuggingFaceTB/SmolLM3-3B`
@@ -103,39 +106,39 @@ Variants: `scaled` (item count grows with length) and `fixed` (1k item count, lo
 
 | split | rows |
 |---|---|
-| `train` | 296 |
-| `validation` | 84 |
-| `test` | 84 |
+| `train` | 8448 |
+| `validation` | 896 |
+| `test` | 896 |
 
 | metric | value |
 |---|---|
-| total rows | 464 |
+| total rows | 10240 |
 | token length (all padded) | min 1024 / p50 4096.0 / max 32768 |
-| mean prize bits | 54.310 (min 30.000, max 160.000) |
-| mean gzip ratio (text) | 0.042 |
-| mean gzip ratio (int32 ids) | 0.060 |
-| mean unigram entropy (bits) | 6.199 |
-| mean bigram entropy (bits) | 6.267 |
-| answer entropy (bits) | 8.858 over 464 strings |
-| tasks | `{'prop_color': 464}` |
-| variants | `{'scaled': 232, 'fixed': 232}` |
-| rungs | `{'seq1024': 192, 'seq4096': 96, 'seq8192': 80, 'seq16384': 56, 'seq32768': 40}` |
+| mean prize bits | 50.750 (min 30.000, max 160.000) |
+| mean gzip ratio (text) | 0.030 (n=160 stratified sample) |
+| mean gzip ratio (int32 ids) | 0.042 |
+| mean unigram entropy (bits) | 6.207 |
+| mean bigram entropy (bits) | 6.278 |
+| answer entropy (bits) | 13.322 over 10240 strings |
+| tasks | `{'prop_color': 10240}` |
+| variants | `{'scaled': 5120, 'fixed': 5120}` |
+| rungs | `{'seq1024': 4608, 'seq4096': 2560, 'seq8192': 1280, 'seq16384': 1024, 'seq32768': 768}` |
 
 Per-rung means:
 
 | seq_len | n | mean prize bits | mean gap | mean gzip(text) |
 |---|---|---|---|---|
-| 1024 | 192 | 30.000 | 947.5 | 0.076 |
-| 4096 | 96 | 45.000 | 3980.2 | 0.026 |
-| 8192 | 80 | 75.000 | 7998.9 | 0.018 |
-| 16384 | 56 | 95.000 | 16185.3 | 0.012 |
-| 32768 | 40 | 95.000 | 32569.8 | 0.008 |
+| 1024 | 4608 | 30.000 | 947.6 | 0.076 |
+| 4096 | 2560 | 45.000 | 3980.8 | 0.029 |
+| 8192 | 1280 | 75.000 | 7998.7 | 0.022 |
+| 16384 | 1024 | 95.000 | 16185.3 | 0.014 |
+| 32768 | 768 | 95.000 | 32569.3 | 0.009 |
 
 Example rows (truncated):
 
-- `props/seq1024/scaled/train/00000` task=`prop_color` prize=30.00 bits gap=945 query=`Q color buff hu bells loc tradable french` answer=`olive pink cat fish coral black`
-- `props/seq1024/scaled/train/00001` task=`prop_color` prize=30.00 bits gap=954 query=`Q color loc escaped rez aberr signific canyon` answer=`bear deer moth frog seal wolf`
-- `props/seq1024/scaled/train/00002` task=`prop_color` prize=30.00 bits gap=945 query=`Q color trab without dish makeshift marque coast` answer=`ivory wolf lion mouse blue ivory`
+- `props/seq1024/scaled/train/00000` task=`prop_color` prize=30.00 bits gap=945 query=`Q color shredd ts kadar ocak follow apollo` answer=`olive pink cat fish coral black`
+- `props/seq1024/scaled/train/00001` task=`prop_color` prize=30.00 bits gap=954 query=`Q color ocak jw grateful localize grip cortical` answer=`bear deer moth frog seal wolf`
+- `props/seq1024/scaled/train/00002` task=`prop_color` prize=30.00 bits gap=945 query=`Q color exem diameter velik tease court politico` answer=`ivory wolf lion mouse blue ivory`
 
 ### Leakage
 

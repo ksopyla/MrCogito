@@ -4,7 +4,7 @@ language:
 license: apache-2.0
 pretty_name: CogitoProbe-Arith — nested arithmetic / mixed brackets
 size_categories:
-  - n<1K
+  - 10K<n<100K
 task_categories:
   - question-answering
   - text-generation
@@ -19,17 +19,20 @@ tags:
 configs:
   - config_name: default
     data_files:
-      train: train.parquet
-      validation: validation.parquet
-      test: test.parquet
+      - split: train
+        path: train.parquet
+      - split: validation
+        path: validation.parquet
+      - split: test
+        path: test.parquet
 dataset_info:
   dataset_name: ksopyla/cogito-probe-arith
 ---
 
 # CogitoProbe-Arith — nested arithmetic / mixed brackets
 
-**Hub id (proposed, not published until approved):** `ksopyla/cogito-probe-arith`
-**Family:** `arith` · **Series:** CogitoProbe · **Default seed:** `20260916` · **Tokenizer:** `HuggingFaceTB/SmolLM3-3B`
+**Hub:** [`ksopyla/cogito-probe-arith`](https://huggingface.co/datasets/ksopyla/cogito-probe-arith)  
+**Author:** Krzysztof Sopyła · **Family:** `arith` · **Series:** CogitoProbe · **Default seed:** `20260916` · **Tokenizer:** `HuggingFaceTB/SmolLM3-3B`
 
 ## What it is
 
@@ -63,10 +66,10 @@ Exact command (deterministic):
 
 ```bash
 uv run python scripts/build_concept_probe_datasets.py \
-  --scale pilot --seed 20260916 \
+  --scale full --seed 20260916 \
   --tokenizer HuggingFaceTB/SmolLM3-3B \
   --families arith \
-  --out_dir Cache/concept_probes/pilot
+  --out_dir Cache/concept_probes/full
 ```
 
 Generator: `data/concept_probes/` · atom table: verified 1-token pieces of `HuggingFaceTB/SmolLM3-3B`
@@ -103,33 +106,33 @@ Variants: `scaled` (item count grows with length) and `fixed` (1k item count, lo
 
 | split | rows |
 |---|---|
-| `train` | 296 |
-| `validation` | 84 |
-| `test` | 84 |
+| `train` | 8448 |
+| `validation` | 896 |
+| `test` | 896 |
 
 | metric | value |
 |---|---|
-| total rows | 464 |
+| total rows | 10240 |
 | token length (all padded) | min 1024 / p50 4096.0 / max 32768 |
-| mean prize bits | 13.088 (min 3.322, max 30.546) |
-| mean gzip ratio (text) | 0.037 |
-| mean gzip ratio (int32 ids) | 0.052 |
-| mean unigram entropy (bits) | 6.177 |
-| mean bigram entropy (bits) | 6.277 |
-| answer entropy (bits) | 7.242 over 270 strings |
-| tasks | `{'eval': 102, 'subexpr': 244, 'match': 118}` |
-| variants | `{'scaled': 232, 'fixed': 232}` |
-| rungs | `{'seq1024': 192, 'seq4096': 96, 'seq8192': 80, 'seq16384': 56, 'seq32768': 40}` |
+| mean prize bits | 12.914 (min 3.322, max 30.546) |
+| mean gzip ratio (text) | 0.026 (n=160 stratified sample) |
+| mean gzip ratio (int32 ids) | 0.037 |
+| mean unigram entropy (bits) | 6.184 |
+| mean bigram entropy (bits) | 6.286 |
+| answer entropy (bits) | 8.604 over 2612 strings |
+| tasks | `{'eval': 2037, 'subexpr': 5175, 'match': 3028}` |
+| variants | `{'scaled': 5120, 'fixed': 5120}` |
+| rungs | `{'seq1024': 4608, 'seq4096': 2560, 'seq8192': 1280, 'seq16384': 1024, 'seq32768': 768}` |
 
 Per-rung means:
 
 | seq_len | n | mean prize bits | mean gap | mean gzip(text) |
 |---|---|---|---|---|
-| 1024 | 192 | 11.928 | 1001.2 | 0.067 |
-| 4096 | 96 | 12.173 | 4073.8 | 0.021 |
-| 8192 | 80 | 15.614 | 8168.1 | 0.014 |
-| 16384 | 56 | 14.406 | 16361.2 | 0.010 |
-| 32768 | 40 | 13.961 | 32745.8 | 0.008 |
+| 1024 | 4608 | 11.576 | 1001.9 | 0.068 |
+| 4096 | 2560 | 12.086 | 4074.2 | 0.023 |
+| 8192 | 1280 | 15.548 | 8168.9 | 0.016 |
+| 16384 | 1024 | 15.303 | 16360.7 | 0.012 |
+| 32768 | 768 | 16.129 | 32744.7 | 0.010 |
 
 Example rows (truncated):
 
@@ -141,9 +144,9 @@ Example rows (truncated):
 
 | pair | fingerprint overlap | input_ids overlap | text overlap | answer-string overlap |
 |---|---|---|---|---|
-| train∩validation | 0 | 0 | 0 | 24 |
-| train∩test | 0 | 0 | 0 | 16 |
-| validation∩test | 0 | 0 | 0 | 13 |
+| train∩validation | 0 | 0 | 0 | 248 |
+| train∩test | 0 | 0 | 0 | 245 |
+| validation∩test | 0 | 0 | 0 | 95 |
 
 Within-split duplicate `input_ids` counts: `{'train': 0, 'validation': 0, 'test': 0}`.
 
