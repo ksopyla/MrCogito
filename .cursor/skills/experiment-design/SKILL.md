@@ -90,7 +90,9 @@ Ask whether the design is a **new inductive bias**, not only whether knobs match
 - [ ] 5. Set numeric success + kill criteria (aggressive enough to stop a bad bet early);
       for each absolute threshold, cite the control that measured its ceiling — or schedule the
       cheap measurement as a pre-flight step in the Plan
-- [ ] 6. Assign the next free ID (E0NN_slug); write docs/experiments_specs/ahead/<ID>.md from TEMPLATE.md
+- [ ] 6. Assign the ID (default: next unused E21 flavour letter, not a new family);
+      write docs/experiments_specs/ahead/<ID>.md from TEMPLATE.md. If the user did
+      not ask to design or run an experiment, write nothing in `ahead/`
 - [ ] 7. Specify how it runs: exact command + env-var overrides on the shared bash launcher
       (list any new FOUNDATION component — reusable, not a fork)
 - [ ] 8. Update agenda.md (set it as the Current focus); the lifecycle folders are the index
@@ -98,6 +100,7 @@ Ask whether the design is a **new inductive bias**, not only whether knobs match
 ```
 
 ## Scope-check questions
+- "Did the user ask to design this?" and "E21 flavour vs new family they named?"
 - "Is this a novel architectural bet, or a safe retune of something we already ran?"
 - "What single number decides success, and at what threshold?"
 - "Which existing run is the baseline this must beat — and what is *materially* new?"
@@ -125,5 +128,27 @@ are ("the control with no memory"), never by letters, and do not list gate codes
 - Pruning/archiving old specs → `docs-hygiene`.
 
 ## ID scheme
-`E0NN_short_slug`, zero-padded, stable, never reused. The ID joins
-spec ↔ launch command/run ↔ run report ↔ checkpoint ↔ WandB run.
+The ID joins spec ↔ launch command/run ↔ run report ↔ checkpoint ↔ WandB run.
+Never reuse an ID found in any lifecycle folder.
+
+**When to design at all.** Do not create a spec in `ahead/` unless the user asked
+to design or run an experiment.
+
+**Flavours (default).** The live family is E21. A small architecture change —
+extra loss head, identity keys, a loop, a mask — is `E21b_short_slug`, then
+`E21c`, … Sequential lowercase letters inside that family. Never reuse a letter.
+Same order of compute / memory / parameters as the parent unless the user
+changes scale. Spec path: `docs/experiments_specs/ahead/E21b_….md`.
+
+**Not a flavour / not a new family.** A new dataset, probe, eval protocol,
+length ladder, dense/E18 control arm, or optimizer/LR knob is a *run* of E21
+(or the current flavour), logged under that ID — not a new spec ID.
+
+**New family `E0NN`.** Only if the user explicitly asked for a new experiment
+family, or approved a bet that is a different encode/reason/decode object (not
+a tweak of E21). Zero-padded, globally unique, never reused. Do not take the
+next free integer just because it is free. E26–E29 were E21 flavours/runs that
+were mis-numbered; do not repeat that.
+
+**When in doubt.** Still E21 with a small delta → next flavour letter. User did
+not ask → write nothing in `ahead/`.
