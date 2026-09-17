@@ -36,6 +36,14 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-16 — E18/E21 vs dense diagnosis (append-only note).** Architecture (1-layer keys, mean-pool smear, exclusive leftover, CE that does not pay), not eval/DNA solvability. H1 partial only for MATCH-under-mean; H2 extra-hop is hops-only; H3 split (language CE weak, DNA bits real); E21 32k LM untested (`mean_seq` ~3.2k, checkpoints gone). [diagnosis](../4_Research_Notes/e18_e21_dense_baseline_diagnosis_20260916.md).
+- **2026-09-16 — E21 literature synthesis (no new run).** Ranked Adapt levers
+  and a 32k exclusive-channel eval protocol:
+  [`e21_levers_from_literature.md`](../4_Research_Notes/e21_levers_from_literature.md).
+  New reviews: [`information_bottleneck_latent_capacity.md`](../literature_review/information_bottleneck_latent_capacity.md),
+  [`learned_kv_context_compression.md`](../literature_review/learned_kv_context_compression.md),
+  [`latent_set_refinement.md`](../literature_review/latent_set_refinement.md).
+  Does not freeze a spec.
 - **2026-09-16 — E25 / E21 exclusive compressed read closed (`done_success`, mapped).** DNA USER_CORE walls vs dense and uncompressed E18 (models ≤10.8M). Copy survives 16-token means at seq=1024 and dies with E18 at 1536; lookup needs identity slots (`r=1`) past that; SELECT cliffs at 692 vs 696; extra hop is hops-only. Not a 1M-context result. Hunt markdown kept as the ledger (95 reports); wall plots grouped under `e25_plots/`. [research report](../2_Experiments_Registry/run_reports/e25_e21_dna_capability_report_20260916.md) · [plot index](../2_Experiments_Registry/run_reports/e25_plots/README.md) · [hunt catalogue](../2_Experiments_Registry/run_reports/e25_README.md) · [wall map](../2_Experiments_Registry/run_reports/e25_dna_s0_ladder_mapped_20260915.md).
 - **2026-09-15 — Exclusive-slot <10M CPU law.** A 5.11M exclusive-scope notebook
   copies a 32-letter span through seq=1024 (95.9% @ 96k) versus param-matched 4.97M
