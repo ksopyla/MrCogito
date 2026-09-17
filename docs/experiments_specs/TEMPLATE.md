@@ -1,8 +1,8 @@
-# E0NN — <short title>
+# <ID> — <short title>
 
 - **Status:** draft | approved | active | done | killed | canceled
 - **Serves:** <the Vision / agenda focus this architectural bet serves>
-- **Implementation plan:** [E0NN_..._plan.md](E0NN_..._plan.md) *(authored by `implementation-plan`; the HOW)*
+- **Implementation plan:** [<ID>_plan.md](<ID>_plan.md) *(authored by `implementation-plan`; the HOW)*
 - **Owner / dates:** <name> · opened YYYY-MM-DD · closed YYYY-MM-DD
 
 > One experiment = one **coherent architectural hypothesis**. A bold composition
@@ -14,6 +14,18 @@
 > live in the registry and run report, not here. New specs live in `ahead/`. When
 > closed, move the spec and plan together to `done_success/`, `done_failed/`, or
 > `canceled/` according to the lifecycle rules in README.
+>
+> **ID scheme:** do not mint this file unless the user asked to design or run.
+> Default ID is the next unused flavour of live family E21 (`E21b_short_slug`,
+> then `E21c`, …) — sequential lowercase letters, never reuse a letter, same
+> compute / memory / parameters as the parent unless the user changes scale.
+> A new dataset, probe, eval protocol, length ladder, dense/E18 control arm, or
+> optimizer/LR knob is a *run* of E21 (or the current flavour), not a new ID.
+> New family `E0NN` only if the user asked for a new family or approved a
+> different encode/reason/decode object (not a tweak of E21). Zero-padded,
+> globally unique, never reused; do not take the next free integer just because
+> it is free (E26–E29 were mis-numbered E21 flavours/runs). When in doubt:
+> flavour letter. Full rules: [README.md](README.md#id-scheme).
 
 ## Hypothesis
 <One falsifiable sentence: "If we do X, then metric Y will move to Z, because ..." —

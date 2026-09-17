@@ -46,7 +46,29 @@ the root, and never reuse an ID found in any lifecycle folder.
    `done_failed/`. A deliberately abandoned design moves to `canceled/`.
 
 ## ID scheme
-`E0NN_short_slug` — zero-padded, stable, never reused. The ID joins
-spec ↔ plan ↔ launch/run ↔ run report ↔ checkpoint ↔ WandB run.
+The ID joins spec ↔ plan ↔ launch/run ↔ run report ↔ checkpoint ↔ WandB run.
+Never reuse an ID found in any lifecycle folder.
+
+**When to design at all.** Do not create a spec in `ahead/` unless the user asked
+to design or run an experiment.
+
+**Flavours (default).** The live family is E21. A small architecture change —
+extra loss head, identity keys, a loop, a mask — is `E21b_short_slug`, then
+`E21c`, … Sequential lowercase letters inside that family. Never reuse a letter.
+Same order of compute / memory / parameters as the parent unless the user
+changes scale. Spec path: `docs/experiments_specs/ahead/E21b_….md`.
+
+**Not a flavour / not a new family.** A new dataset, probe, eval protocol,
+length ladder, dense/E18 control arm, or optimizer/LR knob is a *run* of E21
+(or the current flavour), logged under that ID — not a new spec ID.
+
+**New family `E0NN`.** Only if the user explicitly asked for a new experiment
+family, or approved a bet that is a different encode/reason/decode object (not
+a tweak of E21). Zero-padded, globally unique, never reused. Do not take the
+next free integer just because it is free. E26–E29 were E21 flavours/runs that
+were mis-numbered; do not repeat that.
+
+**When in doubt.** Still E21 with a small delta → next flavour letter. User did
+not ask → write nothing in `ahead/`.
 
 The live driver is [`../1_Strategy_and_Plans/agenda.md`](../1_Strategy_and_Plans/agenda.md).

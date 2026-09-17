@@ -15,6 +15,27 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-17] - E21 flavour IDs in experiment-design
+
+**Why:**
+- E26–E29 were mis-numbered tests of E21. Small architecture tweaks must not
+  mint a new family integer.
+
+**Impact:**
+- `experiment-design` defaults to `E21b`, `E21c`, … for live-family flavours.
+  New `E0NN` only when the user asks for a new family or a different
+  encode/reason/decode object. No spec in `ahead/` unless asked to design or run.
+
+**What changed:**
+- [changed] `.cursor/skills/experiment-design/SKILL.md` — flavour vs family ID
+  scheme, workflow step 6, scope-check.
+- [changed] `docs/experiments_specs/README.md`, `docs/experiments_specs/TEMPLATE.md`
+  — matching ID scheme.
+
+**Related:** `.cursor/skills/experiment-design/SKILL.md`
+
+---
+
 ## [2026-09-16] - Skip Odra Hub bind after bits
 
 **Why:**
