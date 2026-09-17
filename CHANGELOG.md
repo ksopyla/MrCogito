@@ -15,6 +15,28 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-17] - E18 vs E21 architecture flow HTML
+
+**Why:**
+- Krzysztof asked to *see* the E18 / E21 split (uncompressed global KV vs exclusive
+  r=16 slots), not a new experiment.
+
+**Impact:**
+- Self-contained looping diagram of the `perceiver_ar` forward that actually ran.
+  Pause / step / replay; hover a block for shape + role. No training, no code-path change.
+
+**What changed:**
+- [added] `docs/3_Evaluations_and_Baselines/e18_e21_architecture.html` — interactive
+  side-by-side: hashed embed → SWA pre-encoder → one global read (E18: KV_LEN=S;
+  E21: KVCompressor r=16 exclusive slots, QUERY severs local) → SWA stack → LM head.
+
+**Related:** `docs/experiments_specs/done_failed/E18_perceiver_ar_v2_baseline.md`,
+E21 original on `cursor/strategy-sota-review-2026-09-e212`,
+`docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`,
+`nn/perceiver_ar_lm.py`
+
+---
+
 ## [2026-09-16] - Skip Odra Hub bind after bits
 
 **Why:**
