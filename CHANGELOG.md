@@ -15,6 +15,28 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-17] - Flavour letters apply to every family
+
+**Why:**
+- Flavour IDs were wrongly documented as E21-only. Letters `a, b, c, …`
+  apply to every experiment family.
+
+**Impact:**
+- A small detail inside the current family is `E{NN}a`, `E{NN}b`, …
+  Unlettered `E21` / `E18` is the parent; first small change is `a`.
+  New family numbers only when the user asks for a new family or a
+  different encode/reason/decode object.
+
+**What changed:**
+- [changed] `.cursor/skills/experiment-design/SKILL.md` — family-generic
+  flavour vs family ID scheme.
+- [changed] `docs/experiments_specs/README.md`, `docs/experiments_specs/TEMPLATE.md`
+  — matching ID scheme.
+
+**Related:** `.cursor/skills/experiment-design/SKILL.md`
+
+---
+
 ## [2026-09-17] - E21 flavour IDs in experiment-design
 
 **Why:**
