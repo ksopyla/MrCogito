@@ -15,6 +15,32 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-16] - CogitoProbe concept-compression dataset series
+
+**Why:**
+- Current mixes (FineWeb-Edu, DCLM, PG-19, FinePDFs) and the DNA A=4 exam cannot
+  tell whether a concept bottleneck stores semantically rich latents. E21's
+  length claim needs a 1k→32k ladder with known information content.
+
+**Impact:**
+- Four config-selectable families (bits / bind / arith / props) share a length
+  ladder and a deterministic build. Arithmetic/brackets is kept only as an
+  AST/Dyck-3 *structure* control after a tokenizer probe showed glued BPE is not
+  1:1 and eval-only is a ~7-bit calculator shortcut. Nothing is uploaded to the
+  Hub until approval.
+
+**What changed:**
+- [added] `data/concept_probes/` — atom table, generators, stats, card renderer
+- [added] `scripts/build_concept_probe_datasets.py` — seed `20260916` build
+- [added] `verification/probe_arith_tokenization.py` — SmolLM3 tokenisation probe
+- [added] `tests/test_concept_probes.py`
+- [added] `docs/engineering_specs/concept_compression_probe_suite.md`
+- [added] `docs/3_Evaluations_and_Baselines/dataset_cards/` — four HF cards + stats
+
+**Related:** `docs/engineering_specs/concept_compression_probe_suite.md`
+
+---
+
 ## [2026-09-15] - Close seq1024 exclusive-slot D9 and C on the <10M law
 
 **Why:**
