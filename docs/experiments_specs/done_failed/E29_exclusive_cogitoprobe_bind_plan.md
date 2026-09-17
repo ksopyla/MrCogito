@@ -1,6 +1,6 @@
 # E29 — Implementation Plan
 
-- **Spec:** [E29_exclusive_cogitoprobe_bind.md](E29_exclusive_cogitoprobe_bind.md) · **Status:** draft
+- **Spec:** [E29_exclusive_cogitoprobe_bind.md](E29_exclusive_cogitoprobe_bind.md) · **Status:** done_failed (S1 miss)
 - **Authored by:** `implementation-plan` · for → `research-implement`
 
 > Bind is the train exam. Props is a gist **control** on the same checkpoint.

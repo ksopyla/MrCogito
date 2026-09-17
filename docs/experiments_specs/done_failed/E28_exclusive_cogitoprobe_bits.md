@@ -1,10 +1,10 @@
 # E28 — Exclusive r=16 on CogitoProbe-bits: capacity vs haystack length
 
-- **Status:** draft 2026-09-16 (queue rank 3, Wave B) · **training 2026-09-16 on Odra** (`E21_QUEUE`, dense S0 then exclusive 1k) — **not closed**; do not record a Result yet
+- **Status:** ran 2026-09-16 (Odra 3×3090, CogitoProbe-bits Wave B) · **killed 2026-09-16 — K1** → `done_failed`
 - **Serves:** the honest length/capacity story E21’s 125M LM never instantiated. Queue:
   [e21_improvement_queue.md](../../4_Research_Notes/e21_improvement_queue.md).
 - **Implementation plan:** [E28_exclusive_cogitoprobe_bits_plan.md](E28_exclusive_cogitoprobe_bits_plan.md)
-- **Owner / dates:** Krzysztof Sopyla · opened 2026-09-16 · closed —
+- **Owner / dates:** Krzysztof Sopyla · opened 2026-09-16 · closed 2026-09-16
 
 > One claim, the bits family’s claim: a C-slot exclusive read recovers at most ~C·k
 > unique prefix facts; `fixed` isolates haystack distance, `scaled` isolates capacity.
@@ -86,7 +86,7 @@ Ceilings are **this replica’s dense** recovered bits (card: teacher-forced acc
   launcher (reusable; defaults off). Dataset loader for CogitoProbe disk shards.
 
 ## Result
-- Run id: `<run_id>`
-- WandB: —
-- Run report: `docs/2_Experiments_Registry/run_reports/<...>.md`
-- Verdict: —
+- Run id: `perceiver_ar_dense_H256L1g1s2N1024_20260916_185135` (dense) · `perceiver_ar_perceiver_H256L1g1s2N1024_20260916_190840` (excl `fixed`) · `perceiver_ar_perceiver_H256L1g1s2N1024_20260916_192646` (excl `scaled`)
+- WandB: [dense](https://wandb.ai/ksopyla/MrCogito/runs/perceiver_ar_dense_H256L1g1s2N1024_20260916_185135) · [excl fixed](https://wandb.ai/ksopyla/MrCogito/runs/perceiver_ar_perceiver_H256L1g1s2N1024_20260916_190840) · [excl scaled](https://wandb.ai/ksopyla/MrCogito/runs/perceiver_ar_perceiver_H256L1g1s2N1024_20260916_192646) // pragma: allowlist secret
+- Run report: [e28_exclusive_cogitoprobe_bits_20260916](../../2_Experiments_Registry/run_reports/e28_exclusive_cogitoprobe_bits_20260916.md)
+- Verdict: **killed** — K1: dense packed-answer acc **6.5% / 0.21 bits** on a 40-bit prize (need ≥75%). Exclusive `fixed` **0 bits** / acc 0.021; `scaled` **0.003 bits**. 4k skipped. `real−none` = 0.

@@ -1,6 +1,6 @@
 # E19 — Looped set refinement over load-bearing exclusive slots
 
-- **Status:** draft 2026-09-16 (queue rank 5, Wave B, **gated**) · not launched
+- **Status:** draft 2026-09-16 (queue rank 5, **gated** — Wave B closed without S1) · not launched
 - **Serves:** Vision latent reasoning — LOTUS-shaped loops over a *set*, only after
   the exclusive channel already carries content. Queue:
   [e21_improvement_queue.md](../../4_Research_Notes/e21_improvement_queue.md).

@@ -1,6 +1,6 @@
 #!/bin/bash
 # E27 — hybrid identity keys + r=16 frozen-mean gist on DNA MATCH (Wave A).
-# Spec: docs/experiments_specs/ahead/E27_hybrid_key_anchors.md
+# Spec: docs/experiments_specs/done_failed/E27_hybrid_key_anchors.md
 # Usage: GPU=0 bash scripts/launch_e27.sh
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

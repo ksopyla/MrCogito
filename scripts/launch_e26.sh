@@ -1,6 +1,6 @@
 #!/bin/bash
 # E26 — weak prefix AE write objective on exclusive r=16 slots (Wave A).
-# Spec: docs/experiments_specs/ahead/E26_prefix_ae_exclusive_slots.md
+# Spec: docs/experiments_specs/done_failed/E26_prefix_ae_exclusive_slots.md
 # Do NOT pass --message_identity_slots (u/delta move under AE only).
 # Usage: GPU=0 bash scripts/launch_e26.sh
 set -euo pipefail

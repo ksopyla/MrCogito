@@ -1,6 +1,6 @@
 #!/bin/bash
 # E28 — exclusive r=16 on Hub CogitoProbe-bits (1k then 4k; fixed vs scaled).
-# Spec: docs/experiments_specs/ahead/E28_exclusive_cogitoprobe_bits.md
+# Spec: docs/experiments_specs/done_failed/E28_exclusive_cogitoprobe_bits.md
 # Prefer load_dataset("ksopyla/cogito-probe-bits"). Local generate is fallback only.
 # Does NOT launch 32k and does NOT set BATCH_PACKING_MODE=length_group.
 #
