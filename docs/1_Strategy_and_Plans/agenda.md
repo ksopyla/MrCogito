@@ -20,15 +20,20 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-09-12 — E23 Exclusive concept channel (spec ready, not launched).** E22 closed the same
-  day (below): the array was live and diverse but CE read it as a document embedding — the far slots
-  were worth 0.05 nats and a segment-only decoder matched the bet at half the compute. E23 keeps the
-  `perceiver_concept` platform and changes the two things the diagnosis isolates: the cross-attention
-  mask (`concept_xattn_scope=exclusive` — a token reads only slots that end before its raw segment,
-  so the array is the *only* route for everything it carries) and the objective (natural-text CE with a
-  ×8 weight on far-repeat tokens + 30% dense-label long-range rows: keyed recall, far copy, multi-hop
-  variable tracking — tokens whose targets are *determined* by far content). Gates on recall/passkey
-  and on the far marginal, with segment 0 as a built-in zero. Spec
+- **2026-09-16 — E21 exclusive-slot queue (specs frozen, not launched).** Ranked Odra/Polonez
+  ladder from the diagnosis + literature: launch **E27** hybrid key anchors on DNA MATCH @512,
+  then **E26** prefix AE; Wave B **E28** bits / **E29** bind / gated **E19** loops on CogitoProbe
+  generated locally (PR 39; Hub ids as names; **do not upload**; 1k then 4k, not 32k tomorrow).
+  Reject extra hop, width-first, and arith-as-semantics. Queue
+  [e21_improvement_queue.md](../4_Research_Notes/e21_improvement_queue.md).
+  Specs [E27](../experiments_specs/ahead/E27_hybrid_key_anchors.md) ·
+  [E26](../experiments_specs/ahead/E26_prefix_ae_exclusive_slots.md) ·
+  [E28](../experiments_specs/ahead/E28_exclusive_cogitoprobe_bits.md) ·
+  [E29](../experiments_specs/ahead/E29_exclusive_cogitoprobe_bind.md) ·
+  [E19](../experiments_specs/ahead/E19_looped_slot_refinement.md).
+- **2026-09-12 — E23 Exclusive concept channel (spec ready, not launched).** Parallel
+  `perceiver_concept` language bet (exclusive mask + paying CE). Not replaced by the E21
+  compressor queue. Spec
   [E23](../experiments_specs/ahead/E23_exclusive_concept_channel.md). Odra is free; Polonez is
   free after the `goodwrite_ml` move. Dense control for S3 must be rerun from scratch (E22's was lost).
 - **Instrument first (zero GPU-days, before launch):** the far-repeat token mask on the E22 mix —
@@ -36,6 +41,9 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-16 — E21 improvement queue frozen (no run).** Ranked specs E27→E26→E28→E29→E19
+  (Wave A DNA, Wave B CogitoProbe). Pointer:
+  [e21_improvement_queue.md](../4_Research_Notes/e21_improvement_queue.md).
 - **2026-09-16 — E18/E21 vs dense diagnosis (append-only note).** Architecture (1-layer keys, mean-pool smear, exclusive leftover, CE that does not pay), not eval/DNA solvability. H1 partial only for MATCH-under-mean; H2 extra-hop is hops-only; H3 split (language CE weak, DNA bits real); E21 32k LM untested (`mean_seq` ~3.2k, checkpoints gone). [diagnosis](../4_Research_Notes/e18_e21_dense_baseline_diagnosis_20260916.md).
 - **2026-09-16 — E21 literature synthesis (no new run).** Ranked Adapt levers
   and a 32k exclusive-channel eval protocol:
