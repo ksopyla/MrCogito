@@ -1234,6 +1234,8 @@ def test_e21_global_layers_two_is_wired_on_factory():
     e18 = build_model("e18", spec=spec, **kw)
     assert e18.config.global_layers == 2
     assert e18.config.message_boundary_token_id == -1
+    assert e18.config.message_global_anchors == "none"
+    assert e18.config.message_prefix_ae is False
     assert [l.attn.pattern for l in e18.layers] == ["swa", "full", "full", "swa", "swa"]
     assert all(l.attn.compressor is None for l in e18.layers)
     local = build_model("e18_local", spec=spec, **kw)
@@ -1607,4 +1609,90 @@ def test_select_1decoy_query_side_anchors_are_not_r1_prefix_slots():
     )
     assert e18.config.message_boundary_token_id == -1
     assert e18.config.message_global_anchors == "none"
+
+
+def test_e21_key_spans_and_prefix_ae_flags_are_wired_on_factory():
+    cfg = config_for("tiny", "recall")
+    qid = cfg.vocab.control("query")
+    keymark = cfg.vocab.control("keymark")
+    kw = dict(
+        vocab_size=cfg.vocab.vocab_size,
+        seq_len=cfg.seq_len,
+        answer_start=cfg.answer_start,
+        pad_id=cfg.vocab.control("eos"),
+        bos_id=cfg.vocab.control("bos"),
+        eos_id=cfg.vocab.control("eos"),
+        seed=0,
+    )
+    hybrid = build_model(
+        "e21",
+        spec=ArchSpec(
+            name="e21",
+            hidden=32,
+            head_dim=16,
+            local_window=16,
+            message_boundary_token_id=qid,
+            message_compress_ratio=16,
+            message_slots_inplace=True,
+            message_identity_slots=True,
+            message_global_anchors="key_spans",
+            message_anchor_token_ids=(keymark,),
+            message_anchor_key_len=2,
+            zero_init_residuals=False,
+        ),
+        **kw,
+    )
+    assert hybrid.config.message_global_anchors == "key_spans"
+    assert hybrid.config.message_anchor_key_len == 2
+    assert hybrid.config.message_anchor_token_ids == (keymark,)
+    ae = build_model(
+        "e21",
+        spec=ArchSpec(
+            name="e21",
+            hidden=32,
+            head_dim=16,
+            local_window=16,
+            message_boundary_token_id=qid,
+            message_compress_ratio=16,
+            message_slots_inplace=True,
+            message_identity_slots=False,
+            message_prefix_ae=True,
+            message_prefix_ae_weight=1.0,
+            message_prefix_ae_stopgrad_answer=True,
+            message_anchor_token_ids=(keymark,),
+            message_anchor_key_len=2,
+            zero_init_residuals=False,
+        ),
+        **kw,
+    )
+    assert ae.config.message_prefix_ae is True
+    assert ae.prefix_ae_head is not None
+    e18 = build_model(
+        "e18",
+        spec=ArchSpec(
+            name="e18",
+            hidden=32,
+            head_dim=16,
+            local_window=16,
+            message_prefix_ae=True,
+            message_global_anchors="key_spans",
+            zero_init_residuals=False,
+        ),
+        **kw,
+    )
+    assert e18.config.message_prefix_ae is False
+    assert e18.config.message_global_anchors == "none"
+    torch.manual_seed(0)
+    ids = torch.randint(3, cfg.vocab.vocab_size, (2, cfg.seq_len))
+    p = cfg.seq_len // 2
+    ids[:, p] = qid
+    labels = torch.full_like(ids, -100)
+    labels[:, p + 1 :] = ids[:, p + 1 :]
+    loss = ae(ids, labels=labels).loss
+    assert torch.isfinite(loss)
+    for _ in range(3):
+        loss = ae(ids, labels=labels).loss
+        assert torch.isfinite(loss)
+        loss.backward()
+        ae.zero_grad(set_to_none=True)
 

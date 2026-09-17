@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import torch
@@ -871,6 +871,77 @@ def load_pretokenized_mix(manifest_path):
         f" (probs={[round(p, 3) for p in probabilities]}) | eval={len(test_ds):,}"
     )
     return train_ds, test_ds
+
+
+COGITO_PROBE_HUB = {
+    "bits": "ksopyla/cogito-probe-bits",
+    "bind": "ksopyla/cogito-probe-bind",
+    "arith": "ksopyla/cogito-probe-arith",
+    "props": "ksopyla/cogito-probe-props",
+}
+
+
+def resolve_cogito_probe_id(hub_or_family: str) -> str:
+    """Accept a family short name (`bits`) or a full Hub id."""
+    key = (hub_or_family or "").strip()
+    if key in COGITO_PROBE_HUB:
+        return COGITO_PROBE_HUB[key]
+    if key.startswith("ksopyla/cogito-probe-"):
+        return key
+    raise ValueError(
+        f"unknown CogitoProbe id {hub_or_family!r}; expected one of {list(COGITO_PROBE_HUB)} "
+        "or ksopyla/cogito-probe-*"
+    )
+
+
+def filter_cogito_probe(ds, *, seq_len: int, variant: Optional[str] = None, task: Optional[str] = None):
+    """Keep packed rows for one length/variant (Hub dumps mix 1k–32k)."""
+    seq_len = int(seq_len)
+    variant = (variant or "").strip() or None
+    task = (task or "").strip() or None
+
+    def keep(row):
+        if int(row["seq_len"]) != seq_len:
+            return False
+        if variant is not None and str(row["variant"]) != variant:
+            return False
+        if task is not None and str(row["task"]) != task:
+            return False
+        return True
+
+    out = ds.filter(keep)
+    if len(out) == 0:
+        raise ValueError(
+            f"CogitoProbe filter empty (seq_len={seq_len}, variant={variant!r}, task={task!r})"
+        )
+    return out
+
+
+def load_cogito_probe(
+    hub_or_family: str,
+    *,
+    seq_len: int,
+    variant: str = "fixed",
+    task: Optional[str] = None,
+    cache_dir: Optional[str] = None,
+    eval_split: str = "validation",
+):
+    """`load_dataset` a public CogitoProbe Hub id and filter to one packed exam.
+
+    Prefer this over local `build_concept_probe_datasets.py` generate. Does not
+    train 8k/16k/32k unless `seq_len` is those values.
+    """
+    hub_id = resolve_cogito_probe_id(hub_or_family)
+    logger.info(
+        f"[cogito-probe] load_dataset({hub_id}) seq_len={seq_len} variant={variant} "
+        f"task={task or '*'} eval_split={eval_split}"
+    )
+    bundle = load_dataset(hub_id, cache_dir=cache_dir)
+    train = filter_cogito_probe(bundle["train"], seq_len=seq_len, variant=variant, task=task)
+    ev_name = eval_split if eval_split in bundle else "validation"
+    test = filter_cogito_probe(bundle[ev_name], seq_len=seq_len, variant=variant, task=task)
+    logger.info(f"[cogito-probe] {hub_id}: {len(train):,} train / {len(test):,} {ev_name} rows")
+    return train, test
 
 
 if __name__ == "__main__":

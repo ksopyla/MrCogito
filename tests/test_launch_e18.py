@@ -121,3 +121,51 @@ def test_e18b_markers_and_manifest_override_flow(tmp_path):
     assert _value_after(args, "--pretokenized_manifest") == str(merged)
     model_args, loss_args, data_args, optim_args, training_args = _parse(args)
     assert data_args.loss_span_markers == "128103,128104"
+
+
+def test_e21_message_knobs_default_off_and_flow(tmp_path):
+    result, args, _ = _run_stage(tmp_path, {})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _value_after(args, "--message_boundary_token_id") == "-1"
+    assert _value_after(args, "--message_global_anchors") == "none"
+    assert _value_after(args, "--message_prefix_ae") == "False"
+    assert _value_after(args, "--message_identity_slots") == "False"
+    result, args, _ = _run_stage(
+        tmp_path,
+        {
+            "PAR_MESSAGE_BOUNDARY_TOKEN_ID": "10",
+            "PAR_MESSAGE_COMPRESS_RATIO": "16",
+            "PAR_MESSAGE_SLOTS_INPLACE": "True",
+            "PAR_MESSAGE_IDENTITY_SLOTS": "True",
+            "PAR_MESSAGE_GLOBAL_ANCHORS": "key_spans",
+            "PAR_MESSAGE_ANCHOR_KEY_LEN": "2",
+            "PAR_MESSAGE_PREFIX_AE": "True",
+            "PAR_MESSAGE_PREFIX_AE_WEIGHT": "1.0",
+        },
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _value_after(args, "--message_global_anchors") == "key_spans"
+    assert _value_after(args, "--message_prefix_ae") == "True"
+    # Don't instantiate TrainingArguments here (needs a GPU for bf16).
+    assert "--message_anchor_key_len" in args
+    assert _value_after(args, "--message_anchor_key_len") == "2"
+    assert _value_after(args, "--message_identity_slots") == "True"
+    assert _value_after(args, "--message_boundary_token_id") == "10"
+
+
+def test_cogito_probe_hub_knobs_flow(tmp_path):
+    result, args, _ = _run_stage(
+        tmp_path,
+        {
+            "COGITO_PROBE_ID": "ksopyla/cogito-probe-bits",
+            "COGITO_PROBE_SEQ_LEN": "1024",
+            "COGITO_PROBE_VARIANT": "fixed",
+            "PRESERVE_PRECOMPUTED_LABELS": "true",
+            "BATCH_PACKING_MODE": "none",
+        },
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _value_after(args, "--cogito_probe_id") == "ksopyla/cogito-probe-bits"
+    assert _value_after(args, "--cogito_probe_seq_len") == "1024"
+    assert _value_after(args, "--cogito_probe_variant") == "fixed"
+    assert _value_after(args, "--batch_packing_mode") == "none"

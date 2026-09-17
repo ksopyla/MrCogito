@@ -15,6 +15,141 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-16] - Skip Odra Hub bind after bits
+
+**Why:**
+- Polonez already trains exclusive bind. Odra `E21_QUEUE` would have started
+  a second Hub bind after bits.
+
+**Impact:**
+- After bits (dense S0 → exclusive 1k → 4k if 1k is load-bearing) the Odra
+  queue parks. `SKIP_E29=1` or `Cache/logs/SKIP_E29` refuses bind/arith
+  launches. Bits arms still run.
+
+**What changed:**
+- [added] `scripts/skip_e29_guard.sh` — shared skip for bind/E19.
+- [changed] `scripts/e21_queue_continue.sh`, `scripts/launch_e29.sh`,
+  `scripts/launch_e28.sh` — park/refuse bind when skip is set.
+
+**Related:** `docs/experiments_specs/ahead/E29_exclusive_cogitoprobe_bind.md`
+
+---
+
+## [2026-09-16] - E29 hops vs gist eval on Hub bind
+
+**Why:**
+- Exclusive bind on Polonez needs the same Hub `evaluate_cogito_probe.py`
+  path as E28 bits, with hop vs gist task breakouts and a props filler-shuffle
+  control. Overall `by_task` is not enough to score the bind claim.
+
+**Impact:**
+- E29 trains exclusive perceiver on `ksopyla/cogito-probe-bind` and scores
+  `hop_friend_place` vs `attr_color` / `who_place`, plus props `prop_color`
+  with optional filler permutation (gold labels stay put).
+
+**What changed:**
+- [changed] `evaluation/evaluate_cogito_probe.py` — `--shuffle_filler` permutes
+  tokens between `evidence_end` and Q.
+- [changed] `scripts/launch_e29.sh` — exclusive identity slots; hops/gist/props
+  eval commands after the E28-style train.
+- [changed] `tests/test_cogito_probe_loader.py` — task filter + filler-shuffle
+  invariants.
+
+**Related:** `docs/experiments_specs/ahead/E29_exclusive_cogitoprobe_bind.md`
+
+---
+
+## [2026-09-16] - E27 key-span anchors and E26 prefix-AE write loss
+
+**Why:**
+- E21 improvement queue (E27 then E26) cannot run until exclusive E21 has
+  identity keys on DNA key spans and a weak prefix-block AE that is the
+  *write* objective. E25 type_marks-at-r=1 added zero extra keys; learned
+  pooling under answer CE wiped MATCH.
+
+**Impact:**
+- `--message_global_anchors key_spans` marks the `key_len` tokens after each
+  sender `keymark` (not the mark, not values). At r>1 those positions keep raw
+  K/V instead of the mean-pool slot. Defaults stay `none` (E18-loadable).
+- `--message_prefix_ae` adds a linear slot→r×vocab head. Compressor `u`/`delta`
+  see AE grads only (slots detached on the exclusive read). Off by default.
+- Probe logs MATCH ablations (`none` / `swapped` / `slots_only`), slot RankMe,
+  and optional W&B (run starts immediately so the id is in the shell log).
+  `PAR_MESSAGE_*` knobs flow through the generic launcher.
+- Wave B launchers `load_dataset` public Hub ids
+  `ksopyla/cogito-probe-{bits,bind,arith,props}` (seed 20260916, `--scale full`,
+  8448/896/896 mixed 1k–32k; filter seq_len/variant; 1k then 4k, no 32k).
+  Teacher-forced eval writes recovered bits vs `prize_bits`. Local generate
+  is fallback only.
+
+**What changed:**
+- [added] `nn/perceiver_ar_lm.py` — `key_spans` anchors, `PrefixAEHead`, stopgrad
+  read, `PAR_MESSAGE_*` config fields.
+- [changed] `evaluation/bapo_models.py`, `verification/bapo_capability_probe.py` —
+  CLI + factory + post-train MATCH ablation / RankMe / `--wandb`.
+- [changed] `scripts/train_concept_pretraining_multigpu.sh`,
+  `training/concept_pretraining_args.py`, `training/concept_pretraining_factories.py`
+  — reusable `PAR_MESSAGE_*` env knobs (defaults off).
+- [added] `scripts/launch_e27.sh`, `scripts/launch_e26.sh`, `scripts/e21_queue_eval.sh`,
+  `scripts/launch_e28.sh`, `scripts/launch_e29.sh`, `scripts/e21_queue_continue.sh`,
+  `evaluation/evaluate_cogito_probe.py`.
+- [changed] `scripts/launch_e28.sh` — dense S0 forces message knobs off (boundary needs perceiver).
+
+**Related:** `docs/experiments_specs/ahead/E27_hybrid_key_anchors.md`,
+`docs/experiments_specs/ahead/E26_prefix_ae_exclusive_slots.md`,
+`docs/4_Research_Notes/e21_improvement_queue.md`
+
+---
+
+## [2026-09-16] - CogitoProbe public Hub v0
+
+**Why:**
+- The public v0 recipe is `--scale full` (10,240 rows/family, seed `20260916`), not the
+  464-row pilot. Holding every 32k row in Python lists OOMs a 16GB builder. Hub YAML
+  also requires `configs[].data_files` as a list of `{split, path}` objects.
+
+**Impact:**
+- Four public datasets under `ksopyla/cogito-probe-{bits,bind,arith,props}` (Apache-2.0).
+- Builder streams Hub parquet, verifies splits / `seq_len` / leakage from disk, and
+  renders cards with Hub URLs, author, and `10K<n<100K`.
+
+**What changed:**
+- [changed] `scripts/build_concept_probe_datasets.py` — streaming parquet writer, `--hub_only`
+- [changed] `data/concept_probes/stats.py` — online accumulator, parquet verify, published card header
+- [changed] `data/concept_probes/schema.py` — `expected_split_totals` (full = 8448/896/896)
+- [changed] `tests/test_concept_probes.py` — Hub URL / author / full-count guards
+- [changed] dataset cards + `concept_compression_probe_suite.md` — published Hub ids
+
+**Related:** `docs/engineering_specs/concept_compression_probe_suite.md`
+
+---
+
+## [2026-09-16] - CogitoProbe concept-compression dataset series
+
+**Why:**
+- Current mixes (FineWeb-Edu, DCLM, PG-19, FinePDFs) and the DNA A=4 exam cannot
+  tell whether a concept bottleneck stores semantically rich latents. E21's
+  length claim needs a 1k→32k ladder with known information content.
+
+**Impact:**
+- Four config-selectable families (bits / bind / arith / props) share a length
+  ladder and a deterministic build. Arithmetic/brackets is kept only as an
+  AST/Dyck-3 *structure* control after a tokenizer probe showed glued BPE is not
+  1:1 and eval-only is a ~7-bit calculator shortcut. Nothing is uploaded to the
+  Hub until approval.
+
+**What changed:**
+- [added] `data/concept_probes/` — atom table, generators, stats, card renderer
+- [added] `scripts/build_concept_probe_datasets.py` — seed `20260916` build
+- [added] `verification/probe_arith_tokenization.py` — SmolLM3 tokenisation probe
+- [added] `tests/test_concept_probes.py`
+- [added] `docs/engineering_specs/concept_compression_probe_suite.md`
+- [added] `docs/3_Evaluations_and_Baselines/dataset_cards/` — four HF cards + stats
+
+**Related:** `docs/engineering_specs/concept_compression_probe_suite.md`
+
+---
+
 ## [2026-09-15] - Close seq1024 exclusive-slot D9 and C on the <10M law
 
 **Why:**

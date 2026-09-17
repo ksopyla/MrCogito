@@ -24,9 +24,15 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   (E27) and prefix-AE slots (E26) both missed the 0.75× uncompressed-read bits bar on calibrated
   DNA lookup at seq=512, 16-token pages. Do not retry those two write/anchor bets on that exam.
   **E28 (CogitoProbe bits) is still training** on Odra (`E21_QUEUE`, dense solvability then exclusive
-  1k). **E29 (bind) is being started** on Polonez. Do not treat E28/E29 as done. Specs
+  1k, 4k only if 1k carries the answer). **E29 (bind) is being started** on Polonez with hop vs gist
+  eval and a props filler-shuffle control; extra-hop loops stay gated. Odra’s bits queue parks after
+  bits and does not start a second bind. CogitoProbe is
+  `load_dataset("ksopyla/cogito-probe-{bits,bind,arith,props}")` (seed 20260916, full 8448/896/896).
+  No 32k `length_group` LM. Specs
   [E27](../experiments_specs/done_failed/E27_hybrid_key_anchors.md) ·
-  [E26](../experiments_specs/done_failed/E26_prefix_ae_exclusive_slots.md).
+  [E26](../experiments_specs/done_failed/E26_prefix_ae_exclusive_slots.md) ·
+  [E28](../experiments_specs/ahead/E28_exclusive_cogitoprobe_bits.md) ·
+  [E29](../experiments_specs/ahead/E29_exclusive_cogitoprobe_bind.md).
 - **2026-09-12 — E23 Exclusive concept channel (spec ready, not launched).** Parallel
   `perceiver_concept` language bet (exclusive mask + paying CE). Not replaced by the E21
   compressor queue. Spec
@@ -39,6 +45,17 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 ## What we've explored so far
 - **2026-09-16 — E27 hybrid key-span anchors (DNA MATCH @512, 16-token pages).** Exclusive notebook recovered **3 bits** vs uncompressed **48**; collapsing the extra key tokens left the score unchanged (RankMe 1.12). [report](../2_Experiments_Registry/run_reports/e27_hybrid_key_anchors_20260916.md) · [spec](../experiments_specs/done_failed/E27_hybrid_key_anchors.md).
 - **2026-09-16 — E26 prefix autoencoder on exclusive 16-token slots (same exam).** The slot reconstructs keys at **66%** and RankMe is **14.6**, but lookup recovered **1 bit** vs uncompressed **47**. [report](../2_Experiments_Registry/run_reports/e26_prefix_ae_slots_20260916.md) · [spec](../experiments_specs/done_failed/E26_prefix_ae_exclusive_slots.md).
+- **2026-09-16 — E21 improvement queue frozen (no run).** Ranked specs E27→E26→E28→E29→E19
+  (Wave A DNA, Wave B CogitoProbe). Pointer:
+  [e21_improvement_queue.md](../4_Research_Notes/e21_improvement_queue.md).
+- **2026-09-16 — E18/E21 vs dense diagnosis (append-only note).** Architecture (1-layer keys, mean-pool smear, exclusive leftover, CE that does not pay), not eval/DNA solvability. H1 partial only for MATCH-under-mean; H2 extra-hop is hops-only; H3 split (language CE weak, DNA bits real); E21 32k LM untested (`mean_seq` ~3.2k, checkpoints gone). [diagnosis](../4_Research_Notes/e18_e21_dense_baseline_diagnosis_20260916.md).
+- **2026-09-16 — E21 literature synthesis (no new run).** Ranked Adapt levers
+  and a 32k exclusive-channel eval protocol:
+  [`e21_levers_from_literature.md`](../4_Research_Notes/e21_levers_from_literature.md).
+  New reviews: [`information_bottleneck_latent_capacity.md`](../literature_review/information_bottleneck_latent_capacity.md),
+  [`learned_kv_context_compression.md`](../literature_review/learned_kv_context_compression.md),
+  [`latent_set_refinement.md`](../literature_review/latent_set_refinement.md).
+  Does not freeze a spec.
 - **2026-09-16 — E25 / E21 exclusive compressed read closed (`done_success`, mapped).** DNA USER_CORE walls vs dense and uncompressed E18 (models ≤10.8M). Copy survives 16-token means at seq=1024 and dies with E18 at 1536; lookup needs identity slots (`r=1`) past that; SELECT cliffs at 692 vs 696; extra hop is hops-only. Not a 1M-context result. Hunt markdown kept as the ledger (95 reports); wall plots grouped under `e25_plots/`. [research report](../2_Experiments_Registry/run_reports/e25_e21_dna_capability_report_20260916.md) · [plot index](../2_Experiments_Registry/run_reports/e25_plots/README.md) · [hunt catalogue](../2_Experiments_Registry/run_reports/e25_README.md) · [wall map](../2_Experiments_Registry/run_reports/e25_dna_s0_ladder_mapped_20260915.md).
 - **2026-09-15 — Exclusive-slot <10M CPU law.** A 5.11M exclusive-scope notebook
   copies a 32-letter span through seq=1024 (95.9% @ 96k) versus param-matched 4.97M
@@ -319,6 +336,14 @@ headline (see [team_brief](../sprind_frontier_ai/team_brief.md)).
 Canonical eval protocol, Tier-1 data-protocol upgrade, compute audit, and training-pipeline
 modularization are done — see `docs/engineering_specs/` and
 [evaluation_protocol.md](../3_Evaluations_and_Baselines/evaluation_protocol.md).
+**2026-09-16 — CogitoProbe dataset series (public Hub v0).** Four length-ladder
+probes — [`cogito-probe-bits`](https://huggingface.co/datasets/ksopyla/cogito-probe-bits),
+[`cogito-probe-bind`](https://huggingface.co/datasets/ksopyla/cogito-probe-bind),
+[`cogito-probe-arith`](https://huggingface.co/datasets/ksopyla/cogito-probe-arith),
+[`cogito-probe-props`](https://huggingface.co/datasets/ksopyla/cogito-probe-props) —
+seed `20260916`, `--scale full` (8448/896/896). DNA stays the exact-floor
+bandwidth instrument. Spec:
+[concept_compression_probe_suite.md](../engineering_specs/concept_compression_probe_suite.md).
 **2026-09-12 — `perceiver_ar` eval layer on `dev`:** lm-evaluation-harness adapter + SmolLM2-card
 0-shot tiers, teacher-forced RULER-lite (`passkey`, `multikey`, `vt`, `fwe`, `buckets`, `reach`),
 health check, two-GPU runner `scripts/eval_perceiver_ar_suite.sh`. Spec:

@@ -36,6 +36,13 @@ Related reviews already in the repo (do not duplicate): the progenitor
 [`concept_modeling_encoding.md#memory-transformer`](concept_modeling_encoding.md);
 the broad comparative placement (RMT, HMT, Perceiver, CEPE, Transformer-XL) is in
 [`concept_transformer_ai_report.md`](concept_transformer_ai_report.md) §II.B / §III.
+Newer, E21-oriented companions (do not merge into this file):
+- count vs width / rate–distortion:
+  [`information_bottleneck_latent_capacity.md`](information_bottleneck_latent_capacity.md)
+- learned KV / gist / beacon compressors at 8k–32k:
+  [`learned_kv_context_compression.md`](learned_kv_context_compression.md)
+- whether a latent *set* needs an explicit refinement stage:
+  [`latent_set_refinement.md`](latent_set_refinement.md)
 
 ---
 

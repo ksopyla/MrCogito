@@ -308,6 +308,38 @@ class ModelArguments:
         default="causal", metadata={"help": "E18 hook: causal | bidirectional (E20)."}
     )
     write_back_hook: bool = field(default=False, metadata={"help": "E18 hook: add write_back_proj (E19)."})
+    message_boundary_token_id: int = field(
+        default=-1,
+        metadata={"help": "E21: reserved id that splits sender|receiver (-1 = off, E18-loadable)."},
+    )
+    message_compress_ratio: int = field(
+        default=16, metadata={"help": "E21: prefix tokens per exclusive slot."}
+    )
+    message_pool_remainder: bool = field(
+        default=False, metadata={"help": "E21: pool the incomplete last sender block."}
+    )
+    message_slots_inplace: bool = field(
+        default=False, metadata={"help": "E21: write slots into sender prefix positions (KV_LEN=S)."}
+    )
+    message_identity_slots: bool = field(
+        default=False, metadata={"help": "E21: freeze mean-pool; bypass compressor u/delta."}
+    )
+    message_global_anchors: str = field(
+        default="none",
+        metadata={"help": "E21/E27: none | query_nbhd | query_side | type_marks | query_nbhd+type | key_spans."},
+    )
+    message_anchor_key_len: int = field(
+        default=0, metadata={"help": "E27: key-span length for key_spans (0 = 2)."}
+    )
+    message_prefix_ae: bool = field(
+        default=False, metadata={"help": "E26: weak prefix-block AE from exclusive slots."}
+    )
+    message_prefix_ae_weight: float = field(
+        default=0.0, metadata={"help": "E26: λ on L_AE."}
+    )
+    message_prefix_ae_stopgrad_answer: bool = field(
+        default=True, metadata={"help": "E26: compressor sees AE grads only (detach slots on the read)."}
+    )
 
 
 @dataclass
@@ -381,6 +413,26 @@ class DataTrainingArguments:
             "If set, loads pre-tokenized sources via load_from_disk (instant, no download). "
             "Overrides dataset_mix/dataset_mix_recipe when present."
         },
+    )
+    cogito_probe_id: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "E28/E29/E19: Hub id or family (bits|bind|arith|props). "
+            "load_dataset('ksopyla/cogito-probe-*'), then filter seq_len/variant. "
+            "Overrides mix/manifest when set. Prefer Hub over local generate."
+        },
+    )
+    cogito_probe_seq_len: int = field(
+        default=1024,
+        metadata={"help": "CogitoProbe seq_len filter (1024 or 4096 for Wave B; not 32k)."},
+    )
+    cogito_probe_variant: str = field(
+        default="fixed",
+        metadata={"help": "CogitoProbe variant filter: fixed | scaled."},
+    )
+    cogito_probe_task: Optional[str] = field(
+        default=None,
+        metadata={"help": "Optional CogitoProbe task filter (e.g. hop_friend_place, subexpr)."},
     )
     preserve_precomputed_labels: bool = field(
         default=False,
