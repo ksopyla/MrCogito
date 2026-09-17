@@ -37,6 +37,49 @@ E21 original on `cursor/strategy-sota-review-2026-09-e212`,
 
 ---
 
+## [2026-09-17] - Flavour letters apply to every family
+
+**Why:**
+- Flavour IDs were wrongly documented as E21-only. Letters `a, b, c, …`
+  apply to every experiment family.
+
+**Impact:**
+- A small detail inside the current family is `E{NN}a`, `E{NN}b`, …
+  Unlettered `E21` / `E18` is the parent; first small change is `a`.
+  New family numbers only when the user asks for a new family or a
+  different encode/reason/decode object.
+
+**What changed:**
+- [changed] `.cursor/skills/experiment-design/SKILL.md` — family-generic
+  flavour vs family ID scheme.
+- [changed] `docs/experiments_specs/README.md`, `docs/experiments_specs/TEMPLATE.md`
+  — matching ID scheme.
+
+**Related:** `.cursor/skills/experiment-design/SKILL.md`
+
+---
+
+## [2026-09-17] - E21 flavour IDs in experiment-design
+
+**Why:**
+- E26–E29 were mis-numbered tests of E21. Small architecture tweaks must not
+  mint a new family integer.
+
+**Impact:**
+- `experiment-design` defaults to `E21b`, `E21c`, … for live-family flavours.
+  New `E0NN` only when the user asks for a new family or a different
+  encode/reason/decode object. No spec in `ahead/` unless asked to design or run.
+
+**What changed:**
+- [changed] `.cursor/skills/experiment-design/SKILL.md` — flavour vs family ID
+  scheme, workflow step 6, scope-check.
+- [changed] `docs/experiments_specs/README.md`, `docs/experiments_specs/TEMPLATE.md`
+  — matching ID scheme.
+
+**Related:** `.cursor/skills/experiment-design/SKILL.md`
+
+---
+
 ## [2026-09-16] - Skip Odra Hub bind after bits
 
 **Why:**
