@@ -20,6 +20,10 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-09-17 — E18 vs E21 architecture viz (no run).** Interactive HTML of the real
+  `perceiver_ar` split — uncompressed global KV (E18) vs exclusive r=16 slots after QUERY
+  (E21), not a reasoning tower:
+  [e18_e21_architecture.html](../3_Evaluations_and_Baselines/e18_e21_architecture.html).
 - **2026-09-17 — E21 queue Wave B closed (CogitoProbe 1k; 4k skipped); GPUs idle.** Exclusive
   r=16 on CogitoProbe-bits (E28) hit K1: dense packed-answer acc **6.5% / 0.21 bits** on a 40-bit
   prize (need ≥75%); exclusive `fixed` recovered **0 bits**. Bind (E29) hop **4.4% / 0.078 bits**
