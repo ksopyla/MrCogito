@@ -61,3 +61,5 @@ launchers. Their command-specific usage lives in each script and the relevant pr
 | Script | Role |
 |---|---|
 | `e24_bapo_hunt.sh` | E24 GPU S0/S1 wrapper: `NAME GPU [probe args…]`; uses this checkout (or `E24_WORKTREE`) |
+| `build_concept_probe_datasets.py` | Deterministic CogitoProbe series (bits/bind/arith/props, 1k→32k). `--scale full` is the Hub v0 recipe; does not upload. |
+| `build_symbolic_dataset.py` | DNA A=4 closed-floor shards + pretok manifest |

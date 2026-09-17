@@ -5,6 +5,10 @@ Controlled tasks researchers actually train or score models on when they want to
 induction-head copy & reverse, the Chomsky-hierarchy suite, MAD / MQAR, TinyStories,
 SCAN / CFQ, and Dyck / RASP. The BAPO *theory* review stays in
 [`reasoning_bandwidth_information_flow.md`](reasoning_bandwidth_information_flow.md).
+32k compressor-eval protocols (HELMET, LongBench v2, retrieval-head knockout,
+no-context controls) are appended at the end of this file. Learned KV
+compressors those exams score live in
+[`learned_kv_context_compression.md`](learned_kv_context_compression.md).
 
 Project mapping: DNA A=4 (`data/symbolic_tasks.py`) is the exact-floor bandwidth
 instrument. Glyph (`data/glyph_tasks.py`) is the typed-vocab / structured-noise family
@@ -287,3 +291,128 @@ thin slice: needs a dense S0 of its own and is easy to make K1 at 0.6M.
 - Ten micro-A/Bs of haystack type × k × modulus × width.
 - Duplicating the sibling `perceiver_concept` Arm-A 100% `far_copy` exam.
 - Scoring E18 on Glyph before a matched dense control hits 75%.
+- Vanilla NIAH / PPL-on-last-256 / LongBench-v1 ROUGE as the *first* 32k
+  gate for a compressed exclusive channel (see HELMET / LongBench v2 below).
+
+---
+
+## HELMET: How to Evaluate Long-Context Language Models Effectively and Thoroughly
+
+[arXiv:2410.02694](https://arxiv.org/abs/2410.02694) · Yen, Gao, Hou, Ding,
+Fleischer, Izsak, Wasserblat, Chen (Princeton / Intel). Code:
+[github.com/princeton-nlp/HELMET](https://github.com/princeton-nlp/HELMET).
+
+### TL;DR
+NIAH / PPL / ROUGE and short LongBench slices are noisy. A 7-category,
+length-controlled, few-shot, model-graded suite (8k–128k) ranks long-context
+LMs more consistently. At 128k, NIAH is ~100 for almost everyone; HELMET
+separates GPT-4o/Gemini from Llama-3.1. Spearman of synthetic vs real tasks
+**< 0.8–0.85**. Recall/RAG hold with length; re-rank and citation collapse.
+Numbered-label many-shot ICL kills verbal prior (a swap-control cousin).
+
+### The exam they actually ran
+Categories: RAG (NQ/TQA/PopQA/HotpotQA with *retrieved* distractors, gold at
+6 depths), citation (ALCE), re-rank (MS MARCO NDCG@10), long QA (NarrativeQA
+model-judge; ∞Bench QA/MC with entity replace), summ (model-based
+F1×fluency), many-shot ICL with **numbered labels**, synthetic recall
+(JSON-KV + RULER MK/MV). Lengths 8k/16k/32k/64k/128k, 100 ex/dataset,
+greedy, 2-shot so base models work. 51 models.
+
+### Verdict
+**Adopt** the length ladder + the "NIAH saturates, HELMET does not" rule.
+**Adapt** numbered-label ICL and RAG-with-retrieved-distractors onto a closed
+alphabet (Glyph) rather than English essays. **Reject** NIAH as the 32k
+success criterion for E21. Recommend RAG as a cheap proxy; still require
+synthetic recall + a swapped-message control.
+
+---
+
+## LongBench v2
+
+[arXiv:2412.15204](https://arxiv.org/abs/2412.15204) ·
+[github.com/THUDM/LongBench](https://github.com/THUDM/LongBench).
+
+### TL;DR
+Human-reviewed multiple-choice, contexts 8k–2M words. Humans 53.7%, best LLM
+50.1%. **No-context control ≈ chance (25%)** — the questions are not
+solvable from parametric memory. RAG with 512-token chunks often **stops
+helping past 32k** (not retrieval-solvable). Length bins are not comparable
+(task mix shifts).
+
+### Verdict
+**Adopt** the no-context / chance-floor control as a standard arm (our
+`message_override=none`). **Watch** the English MCQ set until a dense control
+clears it at 32k. **Reject** treating LongBench-v1 ROUGE as evidence of
+long-range slot use.
+
+---
+
+## 100-LongBench: Are de facto Long-Context Benchmarks Literally Evaluating Long-Context Ability?
+
+[arXiv:2505.19293](https://arxiv.org/abs/2505.19293).
+
+### TL;DR
+Controllable input lengths plus a **disentanglement metric** that separates
+"the model is good at the task" from "the model uses the extra context."
+Many de facto long-context scores are baseline-task skill, not length skill.
+
+### Verdict
+**Adapt** the disentanglement idea: report E21 at 4k *and* 32k on the *same*
+prize, and require that the 32k score is not explained by the 4k score plus
+a local window. DNA already does this (seq ladder). Do not skip the 4k
+anchor when claiming 32k.
+
+---
+
+## Is It Really Long Context if All You Need Is Retrieval?
+
+Position paper, 2024 · [arXiv:2407.00402](https://arxiv.org/abs/2407.00402) ·
+Levy, Bogin, Berant.
+
+### TL;DR
+Taxonomy of long-context tasks by **diffusion** (how spread out the necessary
+information is) and **scope**. Highly diffused, lengthy information is
+under-explored; most advertised "long context" is retrieval of a local span.
+
+### Verdict
+**Adopt** as a design constraint on the 32k suite: INDEX/NIAH are low
+diffusion (one span); MATCH3 / majority / multi-hop VT are high diffusion.
+E21 at r=16 can look strong on low-diffusion and dead on high-diffusion —
+that is Deng's RAG vs synthetic-recall split, and E25's INDEX vs MATCH.
+
+---
+
+## Retrieval Head Mechanistically Explains Long-Context Factuality
+
+[arXiv:2404.15574](https://arxiv.org/abs/2404.15574) · Wu et al.
+
+### TL;DR
+<5% of heads implement long-context lookup. Knock them out → NIAH/CoT fail;
+knock out random heads → little effect. Heads persist after 32–128k
+continued pretrain. The causal test that the compressed channel is *used as
+memory*, not that PPL moved.
+
+### Verdict
+**Adapt** as an E21 probe: ablate / zero the exclusive-slot read
+(`message_override=none` already) *and*, if a dense/E18 control exists,
+knock out retrieval-like heads vs random. DuoAttention operationalizes the
+split ([`learned_kv_context_compression.md`](learned_kv_context_compression.md)).
+
+---
+
+## NExtLong: Toward Effective Long-Context Training without Long Documents
+
+[arXiv:2501.12766](https://arxiv.org/abs/2501.12766).
+
+### TL;DR
+Interleave **hard-negative distractors** when packing synthetic long
+contexts, so next-token loss actually depends on far tokens. Addresses the
+fact that many "long" documents contain no long-range dependency.
+
+### Verdict
+**Adapt** into E21's 32k mix (q-fraction of rows with a message boundary is
+not enough if those rows have no prefix→suffix dependency). Not an exam;
+a training-data recipe. Related: token weighting of long-range-dependent
+tokens ([arXiv:2503.09202](https://arxiv.org/html/2503.09202)); ProLong
+warns that naively mixing long SFT can hurt
+([arXiv:2410.02660](https://arxiv.org/abs/2410.02660)).

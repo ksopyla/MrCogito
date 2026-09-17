@@ -18,7 +18,11 @@ Related reviews already in the repo (do not duplicate):
   [`concept_bottleneck_collapse_mitigation.md`](concept_bottleneck_collapse_mitigation.md);
 - synthetic capability *exams* (RULER, BABILong, Chomsky/Dyck, MAD/MQAR, TinyStories)
   live in [`synthetic_capability_exams.md`](synthetic_capability_exams.md) — that file
-  is the Adapt source for the Glyph family; this file stays the BAPO theory home.
+  is the Adapt source for the Glyph family; this file stays the BAPO theory home;
+- count vs width of a fixed latent set:
+  [`information_bottleneck_latent_capacity.md`](information_bottleneck_latent_capacity.md);
+- LOTUS / pause / looped-depth as the *form* of Thm 8 in continuous space:
+  [`latent_set_refinement.md`](latent_set_refinement.md).
 
 ---
 

@@ -34,6 +34,7 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 **Related:** `docs/experiments_specs/ahead/E29_exclusive_cogitoprobe_bind.md`
 
 ---
+
 ## [2026-09-16] - E29 hops vs gist eval on Hub bind
 
 **Why:**
@@ -57,6 +58,7 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 **Related:** `docs/experiments_specs/ahead/E29_exclusive_cogitoprobe_bind.md`
 
 ---
+
 ## [2026-09-16] - E27 key-span anchors and E26 prefix-AE write loss
 
 **Why:**
@@ -98,6 +100,56 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 `docs/4_Research_Notes/e21_improvement_queue.md`
 
 ---
+
+## [2026-09-16] - CogitoProbe public Hub v0
+
+**Why:**
+- The public v0 recipe is `--scale full` (10,240 rows/family, seed `20260916`), not the
+  464-row pilot. Holding every 32k row in Python lists OOMs a 16GB builder. Hub YAML
+  also requires `configs[].data_files` as a list of `{split, path}` objects.
+
+**Impact:**
+- Four public datasets under `ksopyla/cogito-probe-{bits,bind,arith,props}` (Apache-2.0).
+- Builder streams Hub parquet, verifies splits / `seq_len` / leakage from disk, and
+  renders cards with Hub URLs, author, and `10K<n<100K`.
+
+**What changed:**
+- [changed] `scripts/build_concept_probe_datasets.py` — streaming parquet writer, `--hub_only`
+- [changed] `data/concept_probes/stats.py` — online accumulator, parquet verify, published card header
+- [changed] `data/concept_probes/schema.py` — `expected_split_totals` (full = 8448/896/896)
+- [changed] `tests/test_concept_probes.py` — Hub URL / author / full-count guards
+- [changed] dataset cards + `concept_compression_probe_suite.md` — published Hub ids
+
+**Related:** `docs/engineering_specs/concept_compression_probe_suite.md`
+
+---
+
+## [2026-09-16] - CogitoProbe concept-compression dataset series
+
+**Why:**
+- Current mixes (FineWeb-Edu, DCLM, PG-19, FinePDFs) and the DNA A=4 exam cannot
+  tell whether a concept bottleneck stores semantically rich latents. E21's
+  length claim needs a 1k→32k ladder with known information content.
+
+**Impact:**
+- Four config-selectable families (bits / bind / arith / props) share a length
+  ladder and a deterministic build. Arithmetic/brackets is kept only as an
+  AST/Dyck-3 *structure* control after a tokenizer probe showed glued BPE is not
+  1:1 and eval-only is a ~7-bit calculator shortcut. Nothing is uploaded to the
+  Hub until approval.
+
+**What changed:**
+- [added] `data/concept_probes/` — atom table, generators, stats, card renderer
+- [added] `scripts/build_concept_probe_datasets.py` — seed `20260916` build
+- [added] `verification/probe_arith_tokenization.py` — SmolLM3 tokenisation probe
+- [added] `tests/test_concept_probes.py`
+- [added] `docs/engineering_specs/concept_compression_probe_suite.md`
+- [added] `docs/3_Evaluations_and_Baselines/dataset_cards/` — four HF cards + stats
+
+**Related:** `docs/engineering_specs/concept_compression_probe_suite.md`
+
+---
+
 ## [2026-09-15] - Close seq1024 exclusive-slot D9 and C on the <10M law
 
 **Why:**
