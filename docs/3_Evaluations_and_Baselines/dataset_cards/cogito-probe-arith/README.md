@@ -2,7 +2,7 @@
 language:
   - en
 license: apache-2.0
-pretty_name: CogitoProbe-Arith: nested arithmetic with mixed brackets
+pretty_name: "CogitoProbe-Arith: nested arithmetic with mixed brackets"
 size_categories:
   - 10K<n<100K
 task_categories:

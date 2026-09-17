@@ -2,7 +2,7 @@
 language:
   - en
 license: apache-2.0
-pretty_name: CogitoProbe-Bits: key–value recall in a long haystack
+pretty_name: "CogitoProbe-Bits: key–value recall in a long haystack"
 size_categories:
   - 10K<n<100K
 task_categories:

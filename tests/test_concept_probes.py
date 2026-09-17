@@ -240,6 +240,7 @@ def test_dataset_card_names_hub_and_author(table):
     assert "--scale full" in card
     assert "10K<n<100K" not in card  # tiny fixture is n<1K
     assert "n<1K" in card
+    assert 'pretty_name: "CogitoProbe-Bits:' in card
     assert "path: train.parquet" in card
     assert "- split: train" in card
     assert "from datasets import load_dataset" in card

@@ -696,7 +696,7 @@ def render_card(
             "language:",
             "  - en",
             "license: apache-2.0",
-            f"pretty_name: {pretty}",
+            f'pretty_name: "{pretty}"',
             "size_categories:",
             f"  - {size_cat}",
             "task_categories:",

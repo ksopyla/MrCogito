@@ -2,7 +2,7 @@
 language:
   - en
 license: apache-2.0
-pretty_name: CogitoProbe-Bind: who-has-what entity binding
+pretty_name: "CogitoProbe-Bind: who-has-what entity binding"
 size_categories:
   - 10K<n<100K
 task_categories:

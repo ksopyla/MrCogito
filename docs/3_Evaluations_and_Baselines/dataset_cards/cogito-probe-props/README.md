@@ -2,7 +2,7 @@
 language:
   - en
 license: apache-2.0
-pretty_name: CogitoProbe-Props: remember the facts, ignore the filler
+pretty_name: "CogitoProbe-Props: remember the facts, ignore the filler"
 size_categories:
   - 10K<n<100K
 task_categories:
