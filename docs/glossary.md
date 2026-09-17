@@ -88,6 +88,13 @@ meaningless without knowing which slice it came from.
 | **encoder–decoder** | one stack summarises, another stack writes. Most of our designs are this, even when they look like one model. |
 | **Perceiver / Perceiver AR** | architecture family where a long input is read into a small fixed set of latents by cross-attention. |
 | **BiXT** | a Perceiver variant where tokens and latents refine each other both ways. |
+| **exclusive compressed read (E21)** | at a `query` boundary the local window is cut; the only prefix the answer may read is compressor slots (typically one slot per 16 tokens). |
+| **INDEX / MATCH / SELECT / HOPS** | BAPO exam classes: copy a marked span; look up a key; pick fact vs decoy; follow a chain. |
+| **information_flow** | recovered bits / prize bits on a packed answer. 1 = full prize; 0 = chance. |
+| **prefix AE** | reconstruct each 16-token prefix block from its slot with a weak head — a write loss, not an extra reasoning hop. |
+| **hybrid key anchors** | identity raw keys on the *key* tokens plus pooled gist for the rest (BAPO `b` + `a`). |
+| **CogitoProbe** | four local synthetic families (`bits`, `bind`, `arith`, `props`) with Hub *names* `ksopyla/cogito-probe-*`. Not on the Hub until approved. Length ladder 1k→32k; `fixed` vs `scaled`. |
+| **subexpr / match / eval** | arith tasks: packed internal-node values (primary); Dyck-3 closer index (stack); root scalar (calculator shortcut — not a success metric). |
 
 ---
 
