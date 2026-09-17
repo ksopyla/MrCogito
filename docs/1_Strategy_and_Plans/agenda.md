@@ -20,6 +20,9 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-09-17 — CogitoProbe Hub cards rewritten for external readers.**
+  The four `ksopyla/cogito-probe-*` READMEs now lead with the task, a toy
+  example, and `load_dataset`; E18/E21 stay off the Hub page.
 - **2026-09-17 — E18 vs E21 architecture viz (no run).** Interactive HTML of the real
   `perceiver_ar` split — uncompressed global KV (E18) vs exclusive r=16 slots after QUERY
   (E21), not a reasoning tower:

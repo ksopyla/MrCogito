@@ -11,10 +11,11 @@
   tests `tests/test_concept_probes.py`, cards
   `docs/3_Evaluations_and_Baselines/dataset_cards/`.
 - **Owner:** Krzysztof Sopyła
-- **Serves:** any concept-bottleneck / exclusive compressed-read experiment that needs to
-  know *what* a fixed latent set actually carries, especially at 8k–32k (the length at
-  which E21 is supposed to show its potential). DNA A=4 stays the exact-floor
-  *bandwidth* instrument; this series is the missing *content* instrument.
+- **Serves:** any memory / retrieval / compressed-latent experiment that needs
+  labelled facts in a 1k–32k haystack. Hub cards are written for **external
+  readers** (what the task is, a 60-second example, `load_dataset` snippet).
+  DNA A=4 stays the exact-floor *bandwidth* instrument; this series is the
+  *content* instrument. Internal experiment ids do not belong on the Hub README.
 
 ## Problem
 
