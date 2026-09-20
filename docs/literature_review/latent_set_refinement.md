@@ -22,6 +22,9 @@ Related reviews (do not duplicate):
   [`reasoning_bandwidth_information_flow.md`](reasoning_bandwidth_information_flow.md)
 - Objectives that force a non-bypassable bottleneck (TSDAE, VICReg, JEPA):
   [`concept_bottleneck_collapse_mitigation.md`](concept_bottleneck_collapse_mitigation.md)
+- Why Perceiver IO's latent Transformer is not LLM reasoning (BAPO Thm 10,
+  LCLM adapter ablation, Flamingo→LLaVA):
+  [`perceiver_io_latent_reasoning_critique.md`](perceiver_io_latent_reasoning_critique.md)
 
 **Standing claim from this file:** extra compute over a latent set pays off
 when the task is iterative / multi-hop / set-binding **and** each slot is

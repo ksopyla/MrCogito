@@ -22,7 +22,9 @@ Related reviews already in the repo (do not duplicate):
 - count vs width of a fixed latent set:
   [`information_bottleneck_latent_capacity.md`](information_bottleneck_latent_capacity.md);
 - LOTUS / pause / looped-depth as the *form* of Thm 8 in continuous space:
-  [`latent_set_refinement.md`](latent_set_refinement.md).
+  [`latent_set_refinement.md`](latent_set_refinement.md);
+- Perceiver IO as the 2021 form of "depth at a fixed bottleneck" (Thm 10):
+  [`perceiver_io_latent_reasoning_critique.md`](perceiver_io_latent_reasoning_critique.md).
 
 ---
 

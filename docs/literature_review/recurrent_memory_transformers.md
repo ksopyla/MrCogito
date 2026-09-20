@@ -43,6 +43,8 @@ Newer, E21-oriented companions (do not merge into this file):
   [`learned_kv_context_compression.md`](learned_kv_context_compression.md)
 - whether a latent *set* needs an explicit refinement stage:
   [`latent_set_refinement.md`](latent_set_refinement.md)
+- why mixing that set is not the LLM reasoning primitive:
+  [`perceiver_io_latent_reasoning_critique.md`](perceiver_io_latent_reasoning_critique.md)
 
 ---
 
