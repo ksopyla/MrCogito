@@ -89,6 +89,10 @@ meaningless without knowing which slice it came from.
 | **Perceiver / Perceiver AR** | architecture family where a long input is read into a small fixed set of latents by cross-attention. |
 | **BiXT** | a Perceiver variant where tokens and latents refine each other both ways. |
 | **exclusive compressed read (E21)** | at a `query` boundary the local window is cut; the only prefix the answer may read is compressor slots (typically one slot per 16 tokens). |
+| **window set (Z_i)** | a small bundle of latents that only look at one slice of the book (e.g. 32 vectors over 256 tokens). The number of bundles grows with length. |
+| **pick (vs mean)** | a learned query chooses which tokens in a window to keep. A **mean** averages them all — good for gist, bad for lookup. |
+| **write probe** | after training, ask whether latent k still contains the item planted in its window. Separates "never written" from "written but not read". |
+| **set vs tape** | a set is a notebook of pages that can mix in parallel (memory). A tape appends new steps you can look up later (reasoning). Extra attention on the same pages is still a set. |
 | **INDEX / MATCH / SELECT / HOPS** | BAPO exam classes: copy a marked span; look up a key; pick fact vs decoy; follow a chain. |
 | **information_flow** | recovered bits / prize bits on a packed answer. 1 = full prize; 0 = chance. |
 | **prefix AE** | reconstruct each 16-token prefix block from its slot with a weak head — a write loss, not an extra reasoning hop. |
