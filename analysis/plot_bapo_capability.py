@@ -26,13 +26,15 @@ ARCH_COLOR = {
     "dense": "#2166ac",
     "e18": "#b2182b",
     "e21": "#762a83",
+    "e30": "#e08214",
     "encdec": "#4daf4a",
     "e18_local": "#999999",
 }
 ARCH_LABEL = {
     "dense": "dense decoder-only",
     "e18": "E18 (one global read)",
-    "e21": "E21 (slots across QUERY)",
+    "e21": "E21 (mean slots)",
+    "e30": "E30 (SW Perceiver banks)",
     "encdec": "encoder-decoder",
     "e18_local": "E18 local (no read)",
 }
@@ -57,7 +59,7 @@ def _arches(bundles: list[dict]) -> list[str]:
         for a in b["results"]:
             if a not in seen:
                 seen.append(a)
-    preferred = ["dense", "e18", "e21", "encdec", "e18_local"]
+    preferred = ["dense", "e18", "e21", "e30", "encdec", "e18_local"]
     return [a for a in preferred if a in seen] + [a for a in seen if a not in preferred]
 
 
@@ -233,6 +235,51 @@ def plot_bytes_per_token(bundles: list[dict], out: Path) -> None:
     plt.close(fig)
 
 
+def plot_write_geometry(bundles: list[dict], out: Path) -> None:
+    """Entropy / n_windows for learned writes (E30). Skip if JSON has none."""
+    rows = []
+    for b in bundles:
+        for arch, r in b["results"].items():
+            wg = r.get("write_geometry") or {}
+            if not wg:
+                continue
+            rows.append((b["task"], arch, wg))
+    if not rows:
+        return
+    tasks = []
+    for t, _, _ in rows:
+        if t not in tasks:
+            tasks.append(t)
+    arches = []
+    for _, a, _ in rows:
+        if a not in arches:
+            arches.append(a)
+    fig, axes = plt.subplots(1, 2, figsize=(10, 3.8))
+    x = np.arange(len(tasks))
+    width = 0.8 / max(len(arches), 1)
+    for i, arch in enumerate(arches):
+        nwin = []
+        ratio = []
+        for t in tasks:
+            wg = next((w for tt, aa, w in rows if tt == t and aa == arch), {})
+            nwin.append(wg.get("n_windows", 0))
+            ratio.append(wg.get("entropy_over_logW", float("nan")))
+        axes[0].bar(x + i * width, nwin, width, color=ARCH_COLOR.get(arch, "k"), label=ARCH_LABEL.get(arch, arch))
+        axes[1].bar(x + i * width, ratio, width, color=ARCH_COLOR.get(arch, "k"), label=ARCH_LABEL.get(arch, arch))
+    axes[0].axhline(2, color="0.4", ls="--", lw=1, label="sliding gate")
+    axes[1].axhline(0.85, color="0.4", ls="--", lw=1, label="smear 0.85")
+    axes[0].set_ylabel("n_windows")
+    axes[1].set_ylabel("attn entropy / log W")
+    axes[0].set_title("Sliding active if n_windows ≥ 2")
+    axes[1].set_title("Pick vs smear (S2)")
+    for ax in axes:
+        ax.set_xticks(x + width * (len(arches) - 1) / 2, tasks, rotation=20, ha="right")
+        ax.legend(fontsize=8)
+    fig.savefig(out / "write_geometry.png")
+    fig.savefig(out / "write_geometry.svg")
+    plt.close(fig)
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--in_dir", required=True)
@@ -247,6 +294,7 @@ def main() -> int:
     plot_information_flow(bundles, out)
     plot_recovered_bits(bundles, out)
     plot_bytes_per_token(bundles, out)
+    plot_write_geometry(bundles, out)
     write_csv(bundles, out)
     print(f"wrote plots to {out}")
     return 0

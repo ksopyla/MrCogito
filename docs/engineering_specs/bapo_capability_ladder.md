@@ -34,6 +34,7 @@ bandwidth `b` (raw prefix tokens). Our architectures realise the two channels ex
 | `dense` (`perceiver_ar`, `par_mode=dense`) | `seq_len` in every layer | residual stream, every layer |
 | `e18` (one global read + SWA stack) | `seq_len` in **one** layer; `local_window` elsewhere | one layer's KV = unbounded cache |
 | `e21` (E18 + QUERY boundary + r=16 slots) | `local_window` on the suffix; prefix only as slots | one layer's slot KV (`item / r` bytes per prefix token) |
+| `e30` (overlapping Perceiver banks) | same exclusive cut as E21 | `C = K · n_windows` slot KV, `C ∝ N` |
 | `e18_local` (`global_layers=0`) | `local_window` only | 0 — must sit at the retrieval floor |
 | `encdec` (symmetric encoder-decoder) | **0** on the suffix (self-attn cannot see the prefix) | encoder KV of the whole prefix |
 
@@ -86,8 +87,10 @@ and 32 on medium/large, shrinking decoys only when the packed answer would not f
 `min_gap`. Aggregation tasks (`count`, `majority`) stay 1-token by design.
 
 The probe trains **dense first**. Other arches are skipped on a rung whose dense control missed
-75% after `--steps * --k1_mult` (K1, default 4×). Compressed models then train for
-`max(--steps, dense_steps_used)` so they are not starved relative to the control.
+75% after `--steps * --k1_mult` (K1, default 4×), unless eval CE is still falling (≥ 0.2 nats
+in the last third) — then the probe extends once (`hunt.k1_extended`; see
+[small_model_capability_protocol.md](small_model_capability_protocol.md)). Compressed models
+then train for `max(--steps, dense_steps_used)` so they are not starved relative to the control.
 
 ### Named recipes
 

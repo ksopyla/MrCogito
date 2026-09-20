@@ -695,7 +695,7 @@ def test_warm_residuals_leave_wo_nonzero():
     assert any(float(layer.attn.wo.weight.detach().abs().sum()) > 0.0 for layer in warm.layers)
 
 
-@pytest.mark.parametrize("arch", ["dense", "e18", "e18_local", "e21", "encdec"])
+@pytest.mark.parametrize("arch", ["dense", "e18", "e18_local", "e21", "e30", "encdec"])
 def test_factory_builds_under_100m(arch):
     cfg = config_for("tiny", "recall")
     qid = cfg.vocab.control("query")
@@ -706,7 +706,7 @@ def test_factory_builds_under_100m(arch):
         local_window=16,
         enc_layers=1,
         dec_layers=1,
-        message_boundary_token_id=qid if arch == "e21" else -1,
+        message_boundary_token_id=qid if arch in ("e21", "e30") else -1,
     )
     model = build_model(
         arch,
@@ -722,7 +722,7 @@ def test_factory_builds_under_100m(arch):
     n = n_params(model)
     assert 1_000 < n < 100_000_000
     ids = torch.randint(0, cfg.vocab.vocab_size, (2, cfg.seq_len))
-    if arch == "e21":
+    if arch in ("e21", "e30"):
         ids[:, cfg.seq_len // 2] = qid
     labels = torch.full((2, cfg.seq_len), -100)
     labels[:, cfg.answer_start : cfg.answer_start + cfg.answer_len] = ids[:, cfg.answer_start : cfg.answer_start + cfg.answer_len]

@@ -15,6 +15,36 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-20] - E30 sliding-window Perceiver write
+
+**Why:**
+- E21 frozen-mean slots recover 0 MATCH bits at seq=512 while E18 is live. A uniform
+  mean is the wrong sufficient statistic for a lookup key (Tishby IB; Fine-KV 16×
+  collapse). The notes in `docs/experiment_ideas/sliding_window_perceiver.md` ask for
+  overlapping positional Perceiver banks instead of averaging `r` tokens.
+
+**Impact:**
+- Config-selectable exclusive write `message_write=sw_perceiver`: `K` learned queries
+  per overlapping window, `C ∝ N`, coverage 8×, stride 0.75 W. Default remains
+  `block_mean` (E18/E21 checkpoints still load). BAPO factory arch `e30`. Small-model
+  (<10M) protocol now has a falling-CE K1 extension so a late takeoff is not a false kill.
+
+**What changed:**
+- [added] `SlidingWindowPerceiverCompressor` / `swp_geometry` in `nn/perceiver_ar_lm.py`
+  — overlapping CA banks, concat exclusive path only; inplace / identity / prefix-AE illegal.
+- [added] BAPO arch `e30` in `evaluation/bapo_models.py`, probe diagnostics and
+  `analysis/plot_bapo_capability.py` write-geometry panel.
+- [added] `docs/experiments_specs/ahead/E30_sliding_window_perceiver.md` + `_plan.md`.
+- [added] `docs/engineering_specs/small_model_capability_protocol.md` — length-aware LR,
+  `n_windows≥2` gate, falling-CE K1 rule (wired in `verification/bapo_capability_probe.py`).
+- [added] `tests/test_sw_perceiver.py`.
+
+**Git tag:** `arch/e30-sw-perceiver`
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` → E30 current focus;
+`docs/experiments_specs/ahead/E30_sliding_window_perceiver.md`
+
+---
+
 ## [2026-09-17] - E18 vs E21 architecture flow HTML
 
 **Why:**

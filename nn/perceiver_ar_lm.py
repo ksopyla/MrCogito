@@ -67,6 +67,11 @@ Hooks for the family (config fields only — no parameters unless enabled):
     slot. Compressor `u`/`delta` see AE gradients only when
     `message_prefix_ae_stopgrad_answer` (default on) detaches slots on the
     exclusive read. E18 checkpoints stay byte-identical with both flags off.
+    `message_write` (E30, default `block_mean`): `block_mean` is E21's
+    `KVCompressor`; `sw_perceiver` writes overlapping Perceiver banks
+    (`SlidingWindowPerceiverCompressor`, K learned queries per window,
+    stride < W, no mean residual). Concat exclusive path only. Off by
+    default so E18/E21 checkpoints stay byte-identical.
 """
 from __future__ import annotations
 
@@ -94,6 +99,10 @@ MESSAGE_GLOBAL_ANCHORS = (
     "none", "query_nbhd", "query_side", "type_marks", "query_nbhd+type", "key_spans",
 )
 MESSAGE_QUERY_NBHD_DEFAULT = 4  # sender-before or QUERY-plus-after window
+MESSAGE_WRITES = ("block_mean", "sw_perceiver")
+SWP_BANK_DEFAULT = 32
+SWP_COVERAGE_DEFAULT = 8
+SWP_OVERLAP_DEFAULT = 0.25  # stride = (1 - overlap) * window → 192/256 in the notes
 
 # --------------------------------------------------------------------------------------
 # Config
@@ -159,6 +168,14 @@ class PerceiverARConfig(PretrainedConfig):
         message_prefix_ae: bool = False,  # E26 — weak prefix-block reconstruction from slots
         message_prefix_ae_weight: float = 0.0,
         message_prefix_ae_stopgrad_answer: bool = True,  # compressor sees AE grads only
+        message_write: str = "block_mean",  # E30 — "block_mean" (E21) | "sw_perceiver"
+        swp_bank_size: int = SWP_BANK_DEFAULT,
+        swp_coverage: int = SWP_COVERAGE_DEFAULT,
+        swp_window: int = 0,              # 0 → coverage * bank_size
+        swp_stride: int = 0,              # 0 → round((1 - overlap) * window)
+        swp_n_heads: int = 0,             # 0 → max(4, num_attention_heads)
+        swp_query_dim: int = 0,           # 0 → max(head_dim, 4 * token_embedding_dim)
+        swp_auto_fit: bool = True,        # shrink K so n_windows≥2 on short seq
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -223,6 +240,14 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_prefix_ae = bool(message_prefix_ae)
         self.message_prefix_ae_weight = float(message_prefix_ae_weight)
         self.message_prefix_ae_stopgrad_answer = bool(message_prefix_ae_stopgrad_answer)
+        self.message_write = str(message_write or "block_mean")
+        self.swp_bank_size = int(swp_bank_size)
+        self.swp_coverage = int(swp_coverage)
+        self.swp_window = int(swp_window)
+        self.swp_stride = int(swp_stride)
+        self.swp_n_heads = int(swp_n_heads)
+        self.swp_query_dim = int(swp_query_dim)
+        self.swp_auto_fit = bool(swp_auto_fit)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -279,6 +304,27 @@ class PerceiverARConfig(PretrainedConfig):
             raise ValueError("message_prefix_ae_weight must be >= 0")
         if self.message_prefix_ae and not self.message_enabled:
             raise ValueError("message_prefix_ae needs message_boundary_token_id >= 0")
+        if self.message_write not in MESSAGE_WRITES:
+            raise ValueError(
+                f"message_write must be one of {MESSAGE_WRITES}, got {self.message_write!r}"
+            )
+        if self.swp_bank_size < 1:
+            raise ValueError("swp_bank_size must be >= 1")
+        if self.swp_coverage < 1:
+            raise ValueError("swp_coverage must be >= 1")
+        if self.swp_window < 0 or self.swp_stride < 0:
+            raise ValueError("swp_window and swp_stride must be >= 0 (0 = derive)")
+        if self.swp_n_heads < 0 or self.swp_query_dim < 0:
+            raise ValueError("swp_n_heads and swp_query_dim must be >= 0 (0 = derive)")
+        if self.message_write == "sw_perceiver":
+            if not self.message_enabled:
+                raise ValueError("message_write='sw_perceiver' needs message_boundary_token_id >= 0")
+            if self.message_slots_inplace:
+                raise ValueError("sw_perceiver uses concat slots; message_slots_inplace is not 1:1")
+            if self.message_identity_slots:
+                raise ValueError("sw_perceiver has no mean-pool identity; leave message_identity_slots off")
+            if self.message_prefix_ae:
+                raise ValueError("message_prefix_ae is a block-mean write (E26); not defined for sw_perceiver")
         if self.message_enabled:
             if self.message_boundary_token_id >= self.vocab_size:
                 raise ValueError("message_boundary_token_id must be a vocabulary id")
@@ -558,10 +604,13 @@ class MessageCtx:
     receiver). Local layers and the n-gram hashes treat a side change as a document start
     (`local_doc_ids`, unless `message_keep_local_swa`). On the global read a query may use raw keys only from its own side and,
     when it is a receiver, the compressed *slots* of every earlier side of its document.
-    Slot `j` covers absolute positions [j·r, (j+1)·r). By default it is addressable only when
-    the block is homogeneous in (document, side) — `slot_doc[b, j]` is that document (−1
-    otherwise). With `message_pool_remainder`, a mixed block still emits a slot from the first
-    run of (doc, side) in that block (the incomplete last sender block next to QUERY).
+    Slot `j` covers absolute positions [j·r, (j+1)·r) for `message_write=block_mean`.
+    For `sw_perceiver`, slots are `K` queries per overlapping window (`C = n_windows·K`);
+    a mixed window keeps the earliest side. By default a block-mean slot is addressable
+    only when the block is homogeneous in (document, side) — `slot_doc[b, j]` is that
+    document (−1 otherwise). With `message_pool_remainder`, a mixed block still emits a
+    slot from the first run of (doc, side) in that block (the incomplete last sender
+    block next to QUERY).
     `anchor` [B,S] marks a sparse sender subset that joins exclusive slot K/V as raw keys
     (QUERY neighborhood and/or type marks). It is not the full prefix.
     `message_pack_stride>0` (remainder off) invalidates exclusive slots for the
@@ -873,6 +922,10 @@ class KVCompressor(nn.Module):
         self.delta = nn.Linear(cfg.hidden_size, 2 * self.g * self.dh, bias=False)
         nn.init.zeros_(self.delta.weight)
 
+    def participation(self) -> torch.Tensor:
+        """Keep compressor params in the graph when a batch has no QUERY (DDP)."""
+        return self.u.sum() + self.delta.weight.sum()
+
     def n_slots(self, S: int) -> int:
         return -(-S // self.ratio)
 
@@ -909,6 +962,205 @@ class KVCompressor(nn.Module):
         h_mean = (hb * ok[..., None].to(hb.dtype)).sum(dim=2) / cnt
         dk, dv = self.delta(h_mean).view(B, nb, 2, g, dh).unbind(dim=2)
         return k_norm(k_bar) + dk, v_bar + dv
+
+
+# --------------------------------------------------------------------------------------
+# E30: overlapping Perceiver banks (learned queries, no mean residual)
+# --------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SWPGeometry:
+    """Length-scaling window banks. `n_slots = n_windows * bank_size` (C ∝ N)."""
+
+    bank_size: int
+    window: int
+    stride: int
+    n_windows: int
+    starts: tuple[int, ...]
+    n_slots: int
+    n_heads: int
+    query_dim: int
+    coverage: float
+    compression: float
+    sliding: bool  # n_windows >= 2 — the sliding claim is live
+
+
+def swp_resolved_heads(cfg: PerceiverARConfig) -> tuple[int, int]:
+    """(n_heads, query_dim) for the write. Count first; width is scoring bandwidth."""
+    n_heads = int(getattr(cfg, "swp_n_heads", 0) or 0)
+    if n_heads <= 0:
+        n_heads = max(4, int(cfg.num_attention_heads))
+    qdim = int(getattr(cfg, "swp_query_dim", 0) or 0)
+    if qdim <= 0:
+        qdim = max(int(cfg.head_dim), 4 * int(cfg.token_embedding_dim))
+    if qdim % n_heads != 0:
+        n_heads = math.gcd(qdim, n_heads) or 1
+        if qdim % n_heads != 0:
+            n_heads = 1
+    return n_heads, qdim
+
+
+def _swp_window_starts(seq_len: int, window: int, stride: int) -> tuple[int, ...]:
+    S = int(seq_len)
+    W = min(max(int(window), 1), max(S, 1))
+    st = max(1, int(stride))
+    if S <= W:
+        return (0,)
+    starts = list(range(0, S - W + 1, st))
+    last = S - W
+    if starts[-1] != last:
+        starts.append(last)
+    # unique, still increasing (last is always ≥ the range's final start)
+    return tuple(dict.fromkeys(starts))
+
+
+def swp_geometry(cfg: PerceiverARConfig, seq_len: int) -> SWPGeometry:
+    """Derive (K, W, stride, windows) for this length.
+
+    Canonical: K=32, W=8K, stride=0.75 W (notes: 256 / 192). On short sequences
+    auto-fit halves K until at least two windows exist, keeping coverage ≈ 8.
+    Parameter tensors stay at `swp_bank_size`; unused queries are dummy-summed.
+    """
+    bank_max = max(1, int(getattr(cfg, "swp_bank_size", SWP_BANK_DEFAULT) or SWP_BANK_DEFAULT))
+    coverage = max(1, int(getattr(cfg, "swp_coverage", SWP_COVERAGE_DEFAULT) or SWP_COVERAGE_DEFAULT))
+    pinned_w = int(getattr(cfg, "swp_window", 0) or 0)
+    pinned_st = int(getattr(cfg, "swp_stride", 0) or 0)
+    auto = bool(getattr(cfg, "swp_auto_fit", True))
+    S = max(int(seq_len), 1)
+    K = bank_max
+    n_heads, qdim = swp_resolved_heads(cfg)
+
+    def _pack(k: int) -> tuple[int, int, tuple[int, ...]]:
+        w = pinned_w if pinned_w > 0 else coverage * k
+        w = min(max(w, 1), S)
+        st = pinned_st if pinned_st > 0 else max(1, int(round(w * (1.0 - SWP_OVERLAP_DEFAULT))))
+        st = max(1, min(st, w))
+        starts = _swp_window_starts(S, w, st)
+        return w, st, starts
+
+    W, stride, starts = _pack(K)
+    if auto and pinned_w <= 0:
+        while len(starts) < 2 and K > 1:
+            K = max(1, K // 2)
+            W, stride, starts = _pack(K)
+    n_w = len(starts)
+    n_slots = n_w * K
+    return SWPGeometry(
+        bank_size=K,
+        window=W,
+        stride=stride,
+        n_windows=n_w,
+        starts=starts,
+        n_slots=n_slots,
+        n_heads=n_heads,
+        query_dim=qdim,
+        coverage=W / max(K, 1),
+        compression=S / max(n_slots, 1),
+        sliding=n_w >= 2,
+    )
+
+
+class SlidingWindowPerceiverCompressor(nn.Module):
+    """K learned queries per overlapping window, pooling token K/V (E30).
+
+    Slot = attention-weighted sum of the window's `k_raw`/`v` — a filter, not a
+    mean. No residual mean, no slot–slot mixer. Queries that auto-fit does not
+    use still participate via `participation()` so DDP stays happy.
+    """
+
+    def __init__(self, cfg: PerceiverARConfig):
+        super().__init__()
+        self.bank_max = max(1, int(getattr(cfg, "swp_bank_size", SWP_BANK_DEFAULT) or SWP_BANK_DEFAULT))
+        self.g, self.dh = cfg.num_kv_heads, cfg.head_dim
+        self.cfg_ref = cfg
+        n_heads, qdim = swp_resolved_heads(cfg)
+        self.n_heads, self.query_dim = n_heads, qdim
+        self.dh_q = qdim // n_heads
+        self.norm = nn.RMSNorm(cfg.hidden_size)
+        self.q = nn.Parameter(torch.randn(self.bank_max, n_heads, self.dh_q) * cfg.init_std)
+        self.wk = nn.Linear(cfg.hidden_size, n_heads * self.dh_q, bias=False)
+        self.q_norm = nn.RMSNorm(self.dh_q)
+        self.k_norm_q = nn.RMSNorm(self.dh_q)
+        # Flat so Muon treats it as a bias, matching ConceptPooler.pos_bias.
+        max_w = max(self.bank_max * max(1, int(getattr(cfg, "swp_coverage", SWP_COVERAGE_DEFAULT) or SWP_COVERAGE_DEFAULT)),
+                    int(getattr(cfg, "swp_window", 0) or 0),
+                    1)
+        self.pos_bias = nn.Parameter(torch.zeros(max_w * n_heads))
+        self._last_entropy = None
+        self._last_geometry = None
+
+    def geometry(self, S: int) -> SWPGeometry:
+        return swp_geometry(self.cfg_ref, S)
+
+    def n_slots(self, S: int) -> int:
+        return self.geometry(S).n_slots
+
+    def participation(self) -> torch.Tensor:
+        return self.q.sum() + self.wk.weight.sum() + self.pos_bias.sum()
+
+    def slot_positions(self, pos: torch.Tensor) -> torch.Tensor:
+        """pos [B,S] → slot RoPE positions [B,C] (page centres inside each window)."""
+        B, S = pos.shape
+        geo = self.geometry(S)
+        device = pos.device
+        starts = torch.tensor(geo.starts, device=device, dtype=torch.long)
+        page = max(geo.window // max(geo.bank_size, 1), 1)
+        qix = torch.arange(geo.bank_size, device=device)
+        off = (qix + 1) * page - 1
+        idx = (starts[:, None] + off[None, :]).clamp(0, S - 1).reshape(-1)
+        return pos.index_select(1, idx)
+
+    def forward(self, h, k_raw, v, k_norm, valid: Optional[torch.Tensor] = None):
+        """h [B,S,d], k_raw/v [B,S,g,dh] → (k̄, v̄) [B,C,g,dh]."""
+        B, S, d = h.shape
+        geo = self.geometry(S)
+        self._last_geometry = geo
+        n_w, W, K = geo.n_windows, geo.window, geo.bank_size
+        H, dh_q = self.n_heads, self.dh_q
+        g, dh = self.g, self.dh
+        device = h.device
+        starts = torch.tensor(geo.starts, device=device, dtype=torch.long)
+        tok = starts[:, None] + torch.arange(W, device=device)
+        in_range = tok < S
+        tok = tok.clamp(max=max(S - 1, 0))
+        ok = in_range[None].expand(B, n_w, W)
+        if valid is not None:
+            ok = ok & valid.bool()[:, tok]
+        hn = self.norm(h)
+        hb = hn[:, tok]  # [B, n_w, W, d]
+        k_win = k_raw[:, tok]  # [B, n_w, W, g, dh]
+        v_win = v[:, tok]
+        k_s = self.k_norm_q(self.wk(hb).view(B, n_w, W, H, dh_q))
+        q = self.q_norm(self.q[:K])  # [K, H, dh_q]
+        logits = torch.einsum("khd,bnwhd->bnkhw", q, k_s) / math.sqrt(dh_q)
+        bias = self.pos_bias[: W * H].view(W, H).t()  # [H, W]
+        logits = logits + bias[None, None, None]
+        logits = logits.masked_fill(~ok[:, :, None, None, :], float("-inf"))
+        w_h = torch.softmax(logits.float(), dim=-1)
+        w_h = torch.nan_to_num(w_h, nan=0.0)
+        w = w_h.mean(dim=3).to(k_raw.dtype)  # [B, n_w, K, W]
+        live = ok.any(dim=-1)  # [B, n_w]
+        w = w * live[:, :, None, None].to(w.dtype)
+        k_bar = torch.einsum("bnkw,bnwgd->bnkgd", w, k_win)
+        v_bar = torch.einsum("bnkw,bnwgd->bnkgd", w, v_win)
+        k_bar = k_bar.reshape(B, n_w * K, g, dh)
+        v_bar = v_bar.reshape(B, n_w * K, g, dh)
+        # unused auto-fit tail (queries, pos_bias beyond W) stays in the graph for DDP
+        extra_q = self.q[K:].sum() if K < self.bank_max else self.q.sum() * 0.0
+        used_b = W * H
+        extra_b = self.pos_bias[used_b:].sum() if used_b < self.pos_bias.numel() else self.pos_bias.sum() * 0.0
+        z = (extra_q + extra_b).to(k_bar.dtype) * 0.0
+        # entropy of the token distribution (diagnostic: smear ≈ log W)
+        w_tok = w.clamp(min=0)
+        w_tok = w_tok / w_tok.sum(dim=-1, keepdim=True).clamp(min=1e-12)
+        ent = -(w_tok * (w_tok + 1e-12).log()).sum(dim=-1)
+        live_f = live[:, :, None].expand_as(ent)
+        if bool(live_f.any()):
+            self._last_entropy = float(ent[live_f].mean().detach())
+        else:
+            self._last_entropy = float("nan")
+        return k_norm(k_bar) + z, v_bar + z
 
 
 class PrefixAEHead(nn.Module):
@@ -1061,8 +1313,15 @@ class Attention(nn.Module):
             self.value_embed = nn.Embedding(cfg.vocab_size, cfg.value_embed_dim)
             self.value_proj = nn.Linear(cfg.value_embed_dim, g * dh, bias=False)
             self.value_lambda = nn.Parameter(torch.tensor(0.5))
-        # E21: the global read(s) own the message compressor (slots live in this layer's K/V space).
-        self.compressor = KVCompressor(cfg) if (getattr(cfg, "message_enabled", False) and pattern == "full") else None
+        # Exclusive write: E21 block-mean or E30 overlapping Perceiver banks.
+        write = str(getattr(cfg, "message_write", "block_mean") or "block_mean")
+        if getattr(cfg, "message_enabled", False) and pattern == "full":
+            if write == "sw_perceiver":
+                self.compressor = SlidingWindowPerceiverCompressor(cfg)
+            else:
+                self.compressor = KVCompressor(cfg)
+        else:
+            self.compressor = None
         self.prefix_ae = bool(getattr(cfg, "message_prefix_ae", False))
         self.prefix_ae_stopgrad = bool(getattr(cfg, "message_prefix_ae_stopgrad_answer", True))
         self._last_k_bar = None
@@ -1199,7 +1458,7 @@ class Attention(nn.Module):
                 rewrite_kv=_rewrite_inplace if update_kv else None,
             )
             if raw_kv:
-                out = out + 0.0 * (self.compressor.u.sum() + self.compressor.delta.weight.sum()).to(out.dtype)
+                out = out + 0.0 * self.compressor.participation().to(out.dtype)
             return out
         k = k_un
         if self.use_rope:
@@ -1238,7 +1497,7 @@ class Attention(nn.Module):
         )
         o = self.wo(o.reshape(B, S, self.h * self.dh))
         if self.compressor is not None:
-            o = o + 0.0 * (self.compressor.u.sum() + self.compressor.delta.weight.sum()).to(o.dtype)
+            o = o + 0.0 * self.compressor.participation().to(o.dtype)
         return o
 
 
@@ -1416,7 +1675,7 @@ class PerceiverARLM(PreTrainedModel):
             if cfg.write_back_hook:
                 nn.init.zeros_(self.write_back_proj.weight)
         for layer in self.layers:
-            if layer.attn.compressor is not None:
+            if layer.attn.compressor is not None and getattr(layer.attn.compressor, "delta", None) is not None:
                 nn.init.zeros_(layer.attn.compressor.delta.weight)   # post_init re-inits Linears
 
     # -- HF plumbing ----------------------------------------------------------------
@@ -1509,6 +1768,52 @@ class PerceiverARLM(PreTrainedModel):
         starts[:, 1:] = doc[:, 1:] != doc[:, :-1]
         return starts
 
+    def _swp_slot_tensors(
+        self,
+        side: torch.Tensor,
+        doc: torch.Tensor,
+        pos: torch.Tensor,
+        key_valid: Optional[torch.Tensor],
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+        """Window banks → slot_doc/side/pos. Mixed windows keep the earliest side (remainder)."""
+        B, S = side.shape
+        geo = swp_geometry(self.config, S)
+        device = side.device
+        starts = torch.tensor(geo.starts, device=device, dtype=torch.long)
+        n_w, W, K = geo.n_windows, geo.window, geo.bank_size
+        tok = starts[:, None] + torch.arange(W, device=device)
+        in_range = tok < S
+        tok_c = tok.clamp(max=max(S - 1, 0))
+        doc_w = doc[:, tok_c]
+        side_w = side[:, tok_c]
+        ok = in_range[None] & (doc_w >= 0)
+        if key_valid is not None:
+            ok = ok & key_valid.bool()[:, tok_c]
+        big = torch.full((), 10**6, device=device, dtype=side.dtype)
+        min_side = torch.where(ok, side_w, big).min(dim=-1).values
+        has = ok.any(dim=-1)
+        min_side = torch.where(has, min_side, torch.zeros_like(min_side))
+        pick = ok & (side_w == min_side[..., None])
+        idx = torch.arange(W, device=device)
+        last = (pick.to(torch.long) * (idx + 1)).amax(dim=-1).clamp(min=1) - 1
+        last_tok = (starts[None, :] + last).clamp(max=S - 1)
+        slot_doc_w = doc.gather(1, last_tok)
+        slot_doc_w = torch.where(has, slot_doc_w, torch.full_like(slot_doc_w, -1))
+        slot_side_w = torch.where(has, min_side, torch.zeros_like(min_side))
+        slot_doc = slot_doc_w.repeat_interleave(K, dim=1)
+        slot_side = slot_side_w.repeat_interleave(K, dim=1)
+        page = max(W // max(K, 1), 1)
+        qix = torch.arange(K, device=device)
+        off = (qix + 1) * page - 1
+        pos_idx = (starts[:, None] + off[None, :]).clamp(0, S - 1).reshape(-1)
+        slot_pos = pos.index_select(1, pos_idx)
+        pool_valid = torch.zeros(B, S, dtype=torch.bool, device=device)
+        if bool(pick.any()):
+            b_ix = torch.arange(B, device=device)[:, None, None].expand_as(pick)
+            tok_exp = tok_c[None].expand(B, n_w, W)
+            pool_valid[b_ix[pick], tok_exp[pick]] = True
+        return slot_doc, slot_side, slot_pos, pool_valid
+
     def _message_context(
         self,
         input_ids: torch.Tensor,
@@ -1555,46 +1860,51 @@ class PerceiverARLM(PreTrainedModel):
             local = doc
         else:
             local = torch.where(doc < 0, doc, doc * K + side)
-        nb = -(-S // r)
-        pad = nb * r - S
-        docp = F.pad(doc, (0, pad), value=-1).view(B, nb, r)
-        sidep = F.pad(side, (0, pad), value=-1).view(B, nb, r)
-        homog = (docp == docp[..., :1]).all(dim=2) & (sidep == sidep[..., :1]).all(dim=2) & (docp[..., 0] >= 0)
-        slot_doc = torch.where(homog, docp[..., 0], torch.full_like(docp[..., 0], -1))
-        slot_side = torch.where(homog, sidep[..., 0], torch.zeros_like(sidep[..., 0]))
-        end_idx = (torch.arange(nb, device=dev) * r + (r - 1)).clamp(max=S - 1)
-        slot_pos = pos[:, end_idx]
-        pool_valid = None
-        if cfg.message_pool_remainder:
-            first_doc, first_side = docp[..., 0], sidep[..., 0]
-            same = (
-                (docp == first_doc[..., None])
-                & (sidep == first_side[..., None])
-                & (first_doc[..., None] >= 0)
+        if str(getattr(cfg, "message_write", "block_mean") or "block_mean") == "sw_perceiver":
+            slot_doc, slot_side, slot_pos, pool_valid = self._swp_slot_tensors(
+                side, doc, pos, key_valid
             )
-            live = same.any(dim=2)
-            slot_doc = torch.where(live, first_doc, torch.full_like(first_doc, -1))
-            slot_side = torch.where(live, first_side.clamp(min=0), torch.zeros_like(first_side))
-            pool_ok = same & live[..., None]
-            pool_valid = pool_ok.reshape(B, nb * r)[:, :S]
-            idx = torch.arange(r, device=dev)
-            last = (same.to(torch.long) * (idx + 1)).amax(dim=2).clamp(min=1) - 1
-            end_abs = (torch.arange(nb, device=dev) * r + last).clamp(max=S - 1)
-            slot_pos = pos.gather(1, end_abs)
-        stride = int(getattr(cfg, "message_pack_stride", 0) or 0)
-        if stride > 0 and not bool(getattr(cfg, "message_pool_remainder", False)):
-            # QUERY-aligned leftover: sender tokens in [0, P % stride) do not fill a
-            # complete pack ending at QUERY. r=1 identity would keep them; drop them
-            # from exclusive slots unless remainder-on (keep as identity slots).
-            is_q = torch.zeros(B, S, dtype=torch.bool, device=dev)
-            is_q[:, 0] = side[:, 0] >= 1
-            is_q[:, 1:] = (side[:, 1:] >= 1) & (side[:, :-1] == 0)
-            qpos = is_q.to(torch.long).argmax(dim=1)
-            leftover = torch.where(is_q.any(dim=1), qpos % stride, torch.zeros_like(qpos))
-            tok = torch.arange(S, device=dev)[None, :]
-            drop_tok = (tok < leftover[:, None]) & (side == 0) & (doc >= 0)
-            drop_slot = F.pad(drop_tok, (0, pad), value=False).view(B, nb, r).all(dim=2)
-            slot_doc = torch.where(drop_slot, torch.full_like(slot_doc, -1), slot_doc)
+        else:
+            nb = -(-S // r)
+            pad = nb * r - S
+            docp = F.pad(doc, (0, pad), value=-1).view(B, nb, r)
+            sidep = F.pad(side, (0, pad), value=-1).view(B, nb, r)
+            homog = (docp == docp[..., :1]).all(dim=2) & (sidep == sidep[..., :1]).all(dim=2) & (docp[..., 0] >= 0)
+            slot_doc = torch.where(homog, docp[..., 0], torch.full_like(docp[..., 0], -1))
+            slot_side = torch.where(homog, sidep[..., 0], torch.zeros_like(sidep[..., 0]))
+            end_idx = (torch.arange(nb, device=dev) * r + (r - 1)).clamp(max=S - 1)
+            slot_pos = pos[:, end_idx]
+            pool_valid = None
+            if cfg.message_pool_remainder:
+                first_doc, first_side = docp[..., 0], sidep[..., 0]
+                same = (
+                    (docp == first_doc[..., None])
+                    & (sidep == first_side[..., None])
+                    & (first_doc[..., None] >= 0)
+                )
+                live = same.any(dim=2)
+                slot_doc = torch.where(live, first_doc, torch.full_like(first_doc, -1))
+                slot_side = torch.where(live, first_side.clamp(min=0), torch.zeros_like(first_side))
+                pool_ok = same & live[..., None]
+                pool_valid = pool_ok.reshape(B, nb * r)[:, :S]
+                idx = torch.arange(r, device=dev)
+                last = (same.to(torch.long) * (idx + 1)).amax(dim=2).clamp(min=1) - 1
+                end_abs = (torch.arange(nb, device=dev) * r + last).clamp(max=S - 1)
+                slot_pos = pos.gather(1, end_abs)
+            stride = int(getattr(cfg, "message_pack_stride", 0) or 0)
+            if stride > 0 and not bool(getattr(cfg, "message_pool_remainder", False)):
+                # QUERY-aligned leftover: sender tokens in [0, P % stride) do not fill a
+                # complete pack ending at QUERY. r=1 identity would keep them; drop them
+                # from exclusive slots unless remainder-on (keep as identity slots).
+                is_q = torch.zeros(B, S, dtype=torch.bool, device=dev)
+                is_q[:, 0] = side[:, 0] >= 1
+                is_q[:, 1:] = (side[:, 1:] >= 1) & (side[:, :-1] == 0)
+                qpos = is_q.to(torch.long).argmax(dim=1)
+                leftover = torch.where(is_q.any(dim=1), qpos % stride, torch.zeros_like(qpos))
+                tok = torch.arange(S, device=dev)[None, :]
+                drop_tok = (tok < leftover[:, None]) & (side == 0) & (doc >= 0)
+                drop_slot = F.pad(drop_tok, (0, pad), value=False).view(B, nb, r).all(dim=2)
+                slot_doc = torch.where(drop_slot, torch.full_like(slot_doc, -1), slot_doc)
         anchor_mode = str(getattr(cfg, "message_global_anchors", "none") or "none")
         token_ids = tuple(int(x) for x in (getattr(cfg, "message_anchor_token_ids", ()) or ()))
         window = int(getattr(cfg, "message_anchor_window", MESSAGE_QUERY_NBHD_DEFAULT) or 0)
@@ -1870,13 +2180,17 @@ class PerceiverARLM(PreTrainedModel):
         if as_message:
             if layer.attn.compressor is None:
                 raise RuntimeError("as_message needs message_boundary_token_id >= 0")
-            r = cfg.message_compress_ratio
-            n_keep = -(-S // r) if cfg.message_pool_remainder else S // r
             k_raw, v = layer.attn.kv_raw(h, input_ids)
             k_bar, v_bar = layer.attn.compressor(h, k_raw, v, layer.attn.k_norm)
-            k_bar, v_bar = k_bar[:, :n_keep], v_bar[:, :n_keep]
-            end_idx = (torch.arange(n_keep, device=input_ids.device) * r + (r - 1)).clamp(max=max(S - 1, 0))
-            slot_pos = pos[:, end_idx]
+            if str(getattr(cfg, "message_write", "block_mean") or "block_mean") == "sw_perceiver":
+                slot_pos = layer.attn.compressor.slot_positions(pos[:, :S])
+                k_bar, v_bar = k_bar[:, : slot_pos.shape[1]], v_bar[:, : slot_pos.shape[1]]
+            else:
+                r = cfg.message_compress_ratio
+                n_keep = -(-S // r) if cfg.message_pool_remainder else S // r
+                k_bar, v_bar = k_bar[:, :n_keep], v_bar[:, :n_keep]
+                end_idx = (torch.arange(n_keep, device=input_ids.device) * r + (r - 1)).clamp(max=max(S - 1, 0))
+                slot_pos = pos[:, end_idx]
             if layer.attn.use_rope:
                 cos_s, sin_s = rope_cos_sin(slot_pos, cfg.head_dim, cfg.rope_theta, k_bar.dtype)
                 k_bar = apply_rope(k_bar, cos_s, sin_s)
@@ -1923,6 +2237,23 @@ class ParamBreakdown:
         return self.dense + self.sparse_tables
 
 
+def _swp_param_count(cfg: PerceiverARConfig) -> int:
+    """Learned query bank + scoring projection (E30). Independent of seq_len."""
+    d = cfg.hidden_size
+    bank = max(1, int(getattr(cfg, "swp_bank_size", SWP_BANK_DEFAULT) or SWP_BANK_DEFAULT))
+    coverage = max(1, int(getattr(cfg, "swp_coverage", SWP_COVERAGE_DEFAULT) or SWP_COVERAGE_DEFAULT))
+    n_heads, qdim = swp_resolved_heads(cfg)
+    dh_q = qdim // n_heads
+    max_w = max(bank * coverage, int(getattr(cfg, "swp_window", 0) or 0), 1)
+    return (
+        d  # RMSNorm on h
+        + bank * n_heads * dh_q  # q
+        + d * n_heads * dh_q  # wk
+        + dh_q + dh_q  # q_norm, k_norm_q
+        + max_w * n_heads  # pos_bias
+    )
+
+
 def analytic_param_count(cfg: PerceiverARConfig) -> ParamBreakdown:
     d, ff, e, V = cfg.hidden_size, cfg.intermediate_size, cfg.token_embedding_dim, cfg.vocab_size
     h, g, dh = cfg.num_attention_heads, cfg.num_kv_heads, cfg.head_dim
@@ -1937,7 +2268,10 @@ def analytic_param_count(cfg: PerceiverARConfig) -> ParamBreakdown:
         dense += sum(1 for pat, _ in cfg.layer_patterns() if pat == "full")   # one scalar per full layer
     if getattr(cfg, "message_enabled", False):
         n_full = sum(1 for pat, _ in cfg.layer_patterns() if pat == "full")
-        dense += n_full * (g * d + d * 2 * g * dh)                             # KVCompressor: u + delta
+        if str(getattr(cfg, "message_write", "block_mean") or "block_mean") == "sw_perceiver":
+            dense += n_full * _swp_param_count(cfg)
+        else:
+            dense += n_full * (g * d + d * 2 * g * dh)                             # KVCompressor: u + delta
     sparse = len(cfg.ngram_orders) * cfg.ngram_buckets * e
     n_ve = sum(1 for i in range(L) if i in cfg.value_embed_layers)
     sparse += n_ve * (V * cfg.value_embed_dim)

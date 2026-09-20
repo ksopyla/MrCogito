@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-09-17 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-09-20 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,6 +20,14 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-09-20 — E30 sliding-window Perceiver banks.** Exclusive prefix write is
+  overlapping `K`-query CA banks (`C ∝ N`, coverage 8×, stride 0.75 W), not E21
+  mean-pool. Spec
+  [E30](../experiments_specs/ahead/E30_sliding_window_perceiver.md) · plan
+  [E30_plan](../experiments_specs/ahead/E30_sliding_window_perceiver_plan.md).
+  <10M DNA protocol:
+  [small_model_capability_protocol.md](../engineering_specs/small_model_capability_protocol.md).
+  TinyHashed / extra SWA / latent mixer are **not** this bet.
 - **2026-09-17 — E18 vs E21 architecture viz (no run).** Interactive HTML of the real
   `perceiver_ar` split — uncompressed global KV (E18) vs exclusive r=16 slots after QUERY
   (E21), not a reasoning tower:
