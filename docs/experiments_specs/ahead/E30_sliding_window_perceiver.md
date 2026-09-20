@@ -152,7 +152,9 @@ gist-only too — not "try wider `H`".
   `far_copy` replica-matches E25 for dense **63.31 bits @2400** and E18 **63.05 @1400**;
   `e18_local` chance (K2). E21 identity-inplace **12.3 bits @2400** (still climbing;
   E25 concat-mean was 17.7 at this budget). E30 **10.0 bits @2400**, `n_windows=3`,
-  entropy/log W **0.82**, `none` at chance (channel load-bearing). MATCH
+  entropy/log W **0.82**, `none` at chance (channel load-bearing). Extra INDEX budget
+  to 8k (E25's extra-steps hunt): E21 **45.9 bits / 84%**; E30 **15.7 bits / 44%**
+  still climbing (entropy/log W **0.79**, RankMe 3.9, `none` chance). MATCH
   `recall_single` replica-matches E25: dense **31.37**, E18 **0-bit wall**, E30
   chance / RankMe ~1 (not the MATCH claim — that needs the E21-mean wall at 512).
 - Run id: *(after experiment-track on the claim length)*
