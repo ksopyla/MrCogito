@@ -84,9 +84,61 @@ the `Host` block targets a hostname that is **(a)** on the environment's allowli
 - **sshd (or `sslh`) on 443** behind a public hostname, tunnelled through the proxy's
   `CONNECT`. Less infrastructure, but it exposes `sshd` to the internet.
 
-**Untested here:** whether the egress proxy passes raw SSH bytes through a `CONNECT`
-tunnel or breaks the handshake with TLS interception. Verify once with
-`ssh -v odra 'hostname'` after allowlisting the hostname, before relying on this path.
+A third requirement is easy to miss: **`ssh` does not read `HTTPS_PROXY`.** Left to
+itself it opens a direct TCP connection, which the sandbox drops. Every `Host` block
+therefore needs
+
+```
+ProxyCommand /path/to/repo/.claude/scripts/https-proxy-connect.py %h %p
+```
+
+That helper speaks `CONNECT` on ssh's behalf and shuttles bytes. It enforces nothing and
+bypasses nothing — the proxy still decides and still answers 403 for a host the policy
+excludes; the helper just reports *which* layer said no. With no `HTTPS_PROXY` in the
+environment it connects directly, so the same `SSH_CONFIG` also works on the laptop.
+
+**Test the cheap thing first.** There is no port setting anywhere in Claude Code —
+`Network access` is a hostname allowlist, nothing more. So before re-plumbing a router,
+allowlist the existing hostname and try the port you already forward:
+
+```bash
+.claude/scripts/https-proxy-connect.py <hostname> <existing-ssh-port> < /dev/null
+```
+
+- silence or a hang → the tunnel opened; the port is fine, keep the current forwards
+- `403` → the proxy refused. If the hostname is definitely allowlisted, the **port** is
+  what it objects to, and SSH needs to move to 443
+
+**Still unverified:** whether the proxy passes raw SSH bytes through an established
+tunnel, or breaks the handshake with TLS interception. Confirm with
+`ssh -v odra 'hostname'` before depending on this path.
+
+### Reaching two hosts behind one public IP
+
+Where two servers sit behind one router on different forwarded ports, do not expose a
+second 443. Give the first host the 443 entry and reach the second over the LAN through
+it, which also matches the existing "treat the other box as a jump host" convention:
+
+```
+Host <primary>
+  HostName <ddns-hostname>
+  Port 443
+  User <user>
+  IdentityFile ~/.ssh/id_ed25519
+  ProxyCommand /path/to/repo/.claude/scripts/https-proxy-connect.py %h %p
+
+Host <secondary>
+  HostName <secondary-lan-ip>
+  Port 22
+  User <user>
+  IdentityFile ~/.ssh/id_ed25519
+  ProxyJump <primary>
+```
+
+Only the primary is exposed publicly; the secondary is reachable only from inside the
+LAN. Dynamic DNS is no obstacle — the allowlist matches the *hostname*, so a changing
+public IP is irrelevant. `SSH_KNOWN_HOSTS` then needs an entry for both: generate the
+secondary's by running `ssh-keyscan` from the primary.
 
 If neither shape is set up, remote GPU work is simply unavailable in a cloud session —
 use Cursor Cloud, a local session, or Remote Control on an always-on machine instead.
