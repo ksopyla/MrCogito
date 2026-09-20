@@ -8,18 +8,21 @@ tools: Bash, Read, Grep, Glob
 # server-diagnostics (Claude Code mirror)
 
 This repository is developed with **both Cursor and Claude Code**. `.cursor/` is canonical.
-The **authoritative, full protocol** for this role lives in `.cursor/agents/server-diagnostics.md`
+The **authoritative, full protocol** for this role lives in `.cursor/agents/server-checker.md`
 (shared source of truth) — this file is only a Claude-native entry point with correct frontmatter.
 
-**First action (always):** `Read` `.cursor/agents/server-diagnostics.md`, then follow it exactly.
+**First action (always):** `Read` `.cursor/agents/server-checker.md`, then follow it exactly.
 It will send you to:
 - `.cursor/skills/remote-servers/SKILL.md` — server inventory, SSH aliases/ports, LAN IP map,
   project paths, disk tiers, power/Wake-on-LAN ownership.
 - `.cursor/skills/experiment-run/SKILL.md` — log paths, Byobu conventions, env vars, monitoring
   commands, and the OOM/NCCL/import/cache/shape error-classification scheme.
 
-All `.cursor/...` paths above are valid in this checkout (skills are also mirrored under
-`.claude/skills` via symlink).
+All `.cursor/...` paths above resolve in this checkout (skills are also mirrored under
+`.claude/skills` via symlink), **except `.cursor/skills/remote-servers/SKILL.md`**, which is
+gitignored and therefore absent in Claude Code cloud sessions. In a cloud session, take host
+aliases and paths from the injected `~/.ssh/config` instead, and if SSH is not configured
+there, report that blocker and stop — see the cloud section of `AGENTS.md`.
 
 ## Claude Code specifics
 - You are spawned as a subagent so the token-heavy, noisy remote output (SSH sessions, `df`,

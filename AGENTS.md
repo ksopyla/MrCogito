@@ -55,3 +55,92 @@ bash .cursor/scripts/cloud-agent-ssh-setup.sh --install --print-secret --print-c
 Paste `SSH_PRIVATE_KEY` and `SSH_CONFIG` into Dashboard Secrets, then clear the
 terminal scrollback. `CURSOR_API_KEY` in `.env` only authenticates the Cursor
 API/SDK; it does **not** configure Dashboard Secrets.
+
+## Claude Code cloud-session specific instructions
+
+Claude Code cloud sessions (claude.ai/code, the mobile/desktop apps, `claude --cloud`,
+routines) run in an isolated Anthropic-managed VM. Like Cursor Cloud Agents they do
+**not** inherit the author's laptop `~/.ssh`, VPN, or the gitignored `remote-servers`
+skill — but the network model is different, and the Cursor recipe does not port over
+unchanged.
+
+### The transport constraint (read this before configuring keys)
+
+All outbound traffic leaves through an HTTP/HTTPS proxy that enforces a **domain
+allowlist**. It is not a firewall with ports you can open:
+
+- **Port 22 is unreachable.** A plain TCP connection to `:22` never leaves the sandbox.
+- A `CONNECT` to a host outside the environment's allowlist is answered `403 Forbidden`.
+- `openssh-client` is **not** pre-installed on the VM.
+
+So SSH keys alone are not sufficient. `ssh odra` works from a cloud session only when
+the `Host` block targets a hostname that is **(a)** on the environment's allowlist and
+**(b)** reachable over port 443. Two workable shapes:
+
+- **Cloudflare Tunnel + Access** — run `cloudflared` on the GPU hosts; no inbound port is
+  opened. The `Host` block uses
+  `ProxyCommand cloudflared access ssh --hostname %h`, authenticated with a scoped
+  service token. Preferred: the servers stay off the public internet.
+- **sshd (or `sslh`) on 443** behind a public hostname, tunnelled through the proxy's
+  `CONNECT`. Less infrastructure, but it exposes `sshd` to the internet.
+
+**Untested here:** whether the egress proxy passes raw SSH bytes through a `CONNECT`
+tunnel or breaks the handshake with TLS interception. Verify once with
+`ssh -v odra 'hostname'` after allowlisting the hostname, before relying on this path.
+
+If neither shape is set up, remote GPU work is simply unavailable in a cloud session —
+use Cursor Cloud, a local session, or Remote Control on an always-on machine instead.
+Do not burn turns retrying `ssh`; report the blocker.
+
+### Configuration (one-time, per cloud environment)
+
+At [claude.ai/code](https://claude.ai/code) → environment settings:
+
+1. **Environment variables** (`.env` format):
+   - `SSH_PRIVATE_KEY` — dedicated cloud key
+   - `SSH_CONFIG` — `Host odra` / `Host polonez` blocks (HostName, User, Port, IdentityFile,
+     and the `ProxyCommand` if using Cloudflare)
+   - `SSH_KNOWN_HOSTS` — **required in the cloud.** `ssh-keyscan` dials port 22 and cannot
+     run here; generate the lines locally with `ssh-keyscan -p <port> <hostname>`.
+   - `WANDB_API_KEY` — the W&B MCP server (`.mcp.json`) fails to start without it, because
+     there is no `.env` in a fresh clone. Optionally `HF_TOKEN`.
+2. **Setup script** (provisions the VM, cached):
+   ```bash
+   apt-get update -qq && apt-get install -y -qq openssh-client || true
+   ```
+3. **Network access**: `Custom`, listing the hostname(s) from `SSH_CONFIG` (keep the
+   default package-registry list checked so `uv` still works).
+
+`.claude/scripts/cloud-session-ssh-install.sh` then materializes the key, config and
+known_hosts into `~/.ssh` on every session. It is wired as a `SessionStart` hook in
+`.claude/settings.json`, and is a silent no-op in local sessions, so it never touches a
+real `~/.ssh` on the laptop.
+
+> **Secrets warning — differs from Cursor.** Cursor Runtime Secrets are redacted; Claude
+> cloud-environment variables are **not** — anyone who can use the environment, and the
+> agent itself, can read them. Use a **dedicated** key, restricted server-side to its own
+> user and/or a `restrict`/`command="…"` entry in `authorized_keys`. Never the author's
+> personal key. The redacted "API credentials" store only injects HTTP headers and cannot
+> carry an SSH key.
+
+### Remote workflow once SSH is up
+
+Unchanged from the `experiment-run` skill: sync source by **Git only**, launch under
+Byobu, then poll. One-shot non-interactive commands, never an interactive session:
+
+```bash
+ssh odra 'cd ~/dev/MrCogito && git pull && byobu new-session -d -s e18 "bash training/<launcher>.sh"'
+ssh odra 'nvidia-smi; tail -n 40 ~/dev/MrCogito/Cache/logs/shell_*.log'
+```
+
+Delegate the noisy monitoring to the `server-diagnostics` subagent so SSH/log output stays
+out of the main context. `ssh odra:*` and `ssh polonez:*` are already pre-approved in
+`.claude/settings.json`.
+
+### Skills and agents in the cloud
+
+- Committed skills under `.cursor/skills/` resolve normally (`.claude/skills` is a
+  symlink, and git preserves it).
+- `.cursor/skills/remote-servers/` is gitignored and **absent** in the cloud. Host/port
+  details come from the injected `SSH_CONFIG`, never from public repo files.
+- Never print, commit, or log private keys, HostName, or Port values.
