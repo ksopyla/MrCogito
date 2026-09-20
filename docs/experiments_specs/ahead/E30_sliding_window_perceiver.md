@@ -148,7 +148,14 @@ gist-only too — not "try wider `H`".
   `docs/engineering_specs/small_model_capability_protocol.md`.
 
 ## Result
-- Run id: *(after experiment-track)*
+- Tiny CPU smoke (2026-09-20, Cloud, H=128, <0.62M, advertised 800 / K1×4): INDEX
+  `far_copy` replica-matches E25 for dense **63.31 bits @2400** and E18 **63.05 @1400**;
+  `e18_local` chance (K2). E21 identity-inplace **12.3 bits @2400** (still climbing;
+  E25 concat-mean was 17.7 at this budget). E30 **10.0 bits @2400**, `n_windows=3`,
+  entropy/log W **0.82**, `none` at chance (channel load-bearing). MATCH
+  `recall_single` replica-matches E25: dense **31.37**, E18 **0-bit wall**, E30
+  chance / RankMe ~1 (not the MATCH claim — that needs the E21-mean wall at 512).
+- Run id: *(after experiment-track on the claim length)*
 - WandB: —
 - Run report: —
 - Verdict: —

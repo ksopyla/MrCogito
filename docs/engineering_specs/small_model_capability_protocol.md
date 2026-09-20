@@ -77,10 +77,10 @@ The probe already logs CE, acc, bits, flow. For any *learned write* also log:
 AdamW, wd=0.01, warmup `min(50, steps/10)`, clip 1.0 (existing probe).
 `--warm_residuals` at seq≥512 (E18 `wo` stays shut at 1/S mass).
 
-`--steps 800 --k1_mult 4` is the advertised budget. The probe **does not skip_rest**
-on a dense arm that is still below 75% **if eval CE has dropped ≥ 0.2 nats in the
-last third of the run** — it extends once by another advertised `steps` and records
-`hunt.k1_extended`. Document any further extension in the JSON `hunt` block.
+`--steps 800 --k1_mult 4` is the advertised budget. The probe **does not skip_rest** on a dense arm that is still below 75% **if eval CE has
+dropped ≥ 0.2 nats in the last third of the run**, and it applies the same one-shot
+extension to **every** arch (E18 / E21 / E30 included). The JSON records
+`hunt.k1_extended`. Do not score a still-falling compressed write as a kill.
 
 ## Length ladder (when to score what)
 

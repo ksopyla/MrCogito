@@ -353,8 +353,7 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
                     print(f"  [{arch}] early stop at {step} (acc {ev['acc']:.3f})", flush=True)
                     break
                 if (
-                    arch == "dense"
-                    and not k1_extended
+                    not k1_extended
                     and step >= steps
                     and ev["acc"] < SOLVABLE_ACC
                     and _ce_still_falling(trace)
@@ -362,7 +361,7 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
                     k1_extended = True
                     max_steps = step + steps
                     print(
-                        f"  [dense] eval CE still falling (≥0.2 nats in last third); "
+                        f"  [{arch}] eval CE still falling (≥0.2 nats in last third); "
                         f"extending to {max_steps} (small-model protocol)",
                         flush=True,
                     )
@@ -589,7 +588,9 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             "swp_n_heads": args.swp_n_heads,
             "swp_query_dim": args.swp_query_dim,
             "swp_auto_fit": args.swp_auto_fit,
-            "k1_extended": bool(results.get("dense", {}).get("k1_extended", False)),
+            "k1_extended": {
+                a: bool(r.get("k1_extended", False)) for a, r in results.items()
+            },
         },
         "pack": {
             "answer_len": cfg.answer_len,
