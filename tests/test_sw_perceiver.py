@@ -43,7 +43,9 @@ def make_swp(**kw):
 
 
 def test_default_write_is_block_mean_and_byte_identical():
+    torch.manual_seed(0)
     a = PerceiverARLM(cfg())
+    torch.manual_seed(0)
     b = PerceiverARLM(cfg(message_write="block_mean"))
     x = torch.randint(3, 80, (2, 12))
     with torch.no_grad():
@@ -143,7 +145,7 @@ def test_compressor_shapes_and_not_a_mean():
     # Distinct queries → slots in one window are not all equal (not a uniform mean).
     k0 = k_bar[0, : geo.bank_size].reshape(geo.bank_size, -1)
     dist = torch.cdist(k0, k0)
-    assert float(dist.max()) > 1e-5
+    assert dist.max().detach().item() > 1e-5
     assert comp._last_entropy == comp._last_entropy
     assert comp._last_entropy < math.log(geo.window) + 1e-5
 
