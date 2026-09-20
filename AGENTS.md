@@ -56,6 +56,40 @@ Paste `SSH_PRIVATE_KEY` and `SSH_CONFIG` into Dashboard Secrets, then clear the
 terminal scrollback. `CURSOR_API_KEY` in `.env` only authenticates the Cursor
 API/SDK; it does **not** configure Dashboard Secrets.
 
+## Where to run the agent for GPU work
+
+Decide this *before* configuring anything. Most of the complexity below exists only to
+force an Anthropic-hosted cloud VM to reach the GPU boxes; running the agent somewhere
+that already has SSH avoids the problem rather than solving it.
+
+| Surface | Reaches Odra/Polonez | Setup cost |
+|---|---|---|
+| **Claude Code on Odra** (`claude remote-control` in Byobu) | Odra **locally** — no SSH at all; `ssh polonez` over the LAN | Install + `/login` once |
+| **Claude Code on the Mac** (local, or Desktop scheduled task) | Yes, via the existing `~/.ssh/config` | None — works today |
+| **Anthropic cloud session / routine** | No, unless a 443 transport is built (below) | Router + allowlist + ProxyCommand |
+
+**Preferred: run the agent on Odra.** It is always-on Ubuntu with the repo, `uv`, and the
+GPUs. The agent then launches training as a *local* command — no SSH, no port forward, no
+allowlist, no key copied anywhere — and reaches Polonez over the LAN with the existing key.
+Drive it from a browser or phone with Remote Control (`claude remote-control` from the
+project directory, inside Byobu so it survives disconnects). Remote Control is on all
+paid plans and makes **outbound HTTPS only — it never opens an inbound port**, so nothing
+about the router changes.
+
+**Scheduling training/evaluation** follows the same logic — keep it on a machine that can
+already reach the GPUs:
+- **On Odra**: a `systemd` timer or cron entry invoking `claude -p "<prompt>"`, or ask the
+  resident Remote Control agent to set up a `/loop`. Independent of the laptop entirely.
+- **On the Mac**: a Desktop scheduled task (Claude Desktop → Code → Routines → **Local**).
+  Runs with the local `~/.ssh/config`, so `ssh odra` works unchanged. Minimum interval one
+  minute; only fires while the app is open and the machine is awake.
+- **Cloud routines run as cloud sessions**, so they inherit the egress limits below and
+  cannot reach the GPU servers. Use them for repo work, not for launching runs.
+
+**Cloud sessions remain the right tool for code, docs, and PRs** — no server access needed.
+The rest of this section applies only if you deliberately want a cloud session to reach the
+GPU boxes; it is a fallback, not the default path.
+
 ## Claude Code cloud-session specific instructions
 
 Claude Code cloud sessions (claude.ai/code, the mobile/desktop apps, `claude --cloud`,
