@@ -148,16 +148,16 @@ gist-only too — not "try wider `H`".
   `docs/engineering_specs/small_model_capability_protocol.md`.
 
 ## Result
-- Tiny CPU smoke (2026-09-20, Cloud, H=128, <0.62M, advertised 800 / K1×4): INDEX
-  `far_copy` replica-matches E25 for dense **63.31 bits @2400** and E18 **63.05 @1400**;
-  `e18_local` chance (K2). E21 identity-inplace **12.3 bits @2400** (still climbing;
-  E25 concat-mean was 17.7 at this budget). E30 **10.0 bits @2400**, `n_windows=3`,
-  entropy/log W **0.82**, `none` at chance (channel load-bearing). Extra INDEX budget
-  to 8k (E25's extra-steps hunt): E21 **45.9 bits / 84%**; E30 **15.7 bits / 44%**
-  still climbing (entropy/log W **0.79**, RankMe 3.9, `none` chance). MATCH
-  `recall_single` replica-matches E25: dense **31.37**, E18 **0-bit wall**, E30
-  chance / RankMe ~1 (not the MATCH claim — that needs the E21-mean wall at 512).
-- Run id: *(after experiment-track on the claim length)*
+- Tiny CPU smoke (2026-09-20, Cloud, H=128, <0.62M): identity+inplace e21 mixed concat
+  e30 — unfair. INDEX E21 12.3→45.9 bits @8k; E30 10.0→15.7. MATCH E18 0-bit wall.
+- Fair concat (2026-09-21): e21 frozen-mean **16.55 INDEX / 3.03 MATCH**; e30 **12.19 /
+  0**. LR 3e-3 is right at H=128 (1e-3 chance @1600; 1e-2 faster gist).
+- tiny_wide seq=256 lr 1e-3: e30 INDEX **7.75 bits > e18 6.26 > e21 4.47**; MATCH dense K1.
+- 5.16M H=384 4L: 3e-3 RankMe-collapses e30 (0 bits). 1e-3 restores INDEX 12.0 / MATCH 3.8.
+  E18 MATCH **25.35 bits** — 0-bit wall was capacity. Param-matched: dense 5.108M, e30 5.163M.
+- 9.04M H=512 4L lr 1e-3: e30 INDEX **36.96 bits / 73%** beats e21 13.64; MATCH **12.30 vs
+  e21 4.84**, still < 0.75× 5M e18 19.0. S1 at seq=128 miss. Claim length remains seq=512.
+- Report: [e30_tiny_5m_9m_capability_20260921.md](../../2_Experiments_Registry/run_reports/e30_tiny_5m_9m_capability_20260921.md)
+- Run id: `e30_tiny_fair_concat` / `e30_5m_tiny` / `e30_9m_tiny_index`
 - WandB: —
-- Run report: —
-- Verdict: —
+- Verdict: **open** — do not kill; width+LR matter; MATCH claim still seq=512.

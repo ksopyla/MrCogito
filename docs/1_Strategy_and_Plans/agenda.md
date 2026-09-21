@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-09-20 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-09-21 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -22,12 +22,16 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 ## Current focus
 - **2026-09-20 — E30 sliding-window Perceiver banks.** Exclusive prefix write is
   overlapping `K`-query CA banks (`C ∝ N`, coverage 8×, stride 0.75 W), not E21
-  mean-pool. Spec
+  mean-pool. Fair control is concat frozen-mean. At ≥5M use LR **1e-3** (3e-3
+  RankMe-collapses the write). Spec
   [E30](../experiments_specs/ahead/E30_sliding_window_perceiver.md) · plan
   [E30_plan](../experiments_specs/ahead/E30_sliding_window_perceiver_plan.md).
   <10M DNA protocol:
   [small_model_capability_protocol.md](../engineering_specs/small_model_capability_protocol.md).
   TinyHashed / extra SWA / latent mixer are **not** this bet.
+  Width hunt 2026-09-21: 9.04M INDEX e30 **37 bits** beats e21 mean; MATCH 12 vs 19
+  (0.75× live E18) still short. Claim remains seq=512.
+  [report](../2_Experiments_Registry/run_reports/e30_tiny_5m_9m_capability_20260921.md).
 - **2026-09-17 — E18 vs E21 architecture viz (no run).** Interactive HTML of the real
   `perceiver_ar` split — uncompressed global KV (E18) vs exclusive r=16 slots after QUERY
   (E21), not a reasoning tower:
@@ -53,6 +57,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-21 — E30 width hunt (CPU BAPO, concat frozen-mean e21).** H=128 3e-3: e30 INDEX 12 bits < e21 17; MATCH chance. H=384 3e-3 RankMe-collapses e30; 1e-3 restores. H=512 1e-3: e30 INDEX **37 bits / 73%** beats e21 14; MATCH **12 bits** vs 0.75× 5M e18 19. E18 MATCH 0-bit wall breaks at 5.16M (25 bits). [report](../2_Experiments_Registry/run_reports/e30_tiny_5m_9m_capability_20260921.md).
 - **2026-09-16 — E28 exclusive CogitoProbe-bits @1024 (Wave B).** Dense packed-answer acc **6.5% / 0.21 bits** on a 40-bit prize; exclusive `fixed` recovered **0 bits** (`scaled` 0.003). Seq=4096 not launched. [report](../2_Experiments_Registry/run_reports/e28_exclusive_cogitoprobe_bits_20260916.md) · [spec](../experiments_specs/done_failed/E28_exclusive_cogitoprobe_bits.md).
 - **2026-09-16 — E29 exclusive CogitoProbe-bind @1024 (Wave B).** One-hop `hop_friend_place` **4.4% / 0.078 bits**; `attr_color` **2.4% / 0.007**; dense S0 not run; props filler-shuffle Δacc **+0.13 pt**. Seq=4096 not launched. [report](../2_Experiments_Registry/run_reports/e29_exclusive_cogitoprobe_bind_20260916.md) · [spec](../experiments_specs/done_failed/E29_exclusive_cogitoprobe_bind.md).
 - **2026-09-16 — E27 hybrid key-span anchors (DNA MATCH @512, 16-token pages).** Exclusive notebook recovered **3 bits** vs uncompressed **48**; collapsing the extra key tokens left the score unchanged (RankMe 1.12). [report](../2_Experiments_Registry/run_reports/e27_hybrid_key_anchors_20260916.md) · [spec](../experiments_specs/done_failed/E27_hybrid_key_anchors.md).
