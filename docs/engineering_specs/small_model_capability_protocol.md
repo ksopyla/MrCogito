@@ -104,12 +104,21 @@ is required. A write-diagnostic figure (entropy vs `log W`, RankMe,
 
 ## Launch skeleton
 
+Fair **write** comparison is concat on both arms: E21 frozen-mean
+(`--message_identity_slots`) vs E30 CA banks. Do **not** pass
+`--message_slots_inplace` as the E30 control — inplace is an E21-internal
+`KV_LEN=S` flavour E30 cannot match (K slots per window). Width-matched
+4-layer is the default scale path (raise `H`, keep `stack_layers=2`);
+param-match by adding SWA depth only if that dense misses S0. At H=384
+`head_dim=64` (6 Q heads) pin `--swp_n_heads 8 --swp_query_dim 128` so the
+write does not gcd-drop; H=128/256/512 divide 128 naturally.
+
 ```bash
 # smoke (training flow + exclusive cut). Not the MATCH claim.
 uv run python verification/bapo_capability_probe.py \
   --scale tiny --recipe far_copy recall_single \
   --arch dense e18 e18_local e21 e30 \
-  --message_identity_slots --message_slots_inplace \
+  --message_identity_slots \
   --hidden 128 --max_params 10000000 --lr 3e-3 --steps 800 \
   --out Cache/small_model_tiny
 

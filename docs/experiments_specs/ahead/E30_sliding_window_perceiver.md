@@ -133,7 +133,7 @@ gist-only too — not "try wider `H`".
   uv run python verification/bapo_capability_probe.py \
     --scale tiny --recipe far_copy recall_single \
     --arch dense e18 e18_local e21 e30 \
-    --message_identity_slots --message_slots_inplace \
+    --message_identity_slots \
     --hidden 128 --max_params 10000000 --lr 3e-3 \
     --out Cache/e30_tiny
   uv run python analysis/plot_bapo_capability.py \

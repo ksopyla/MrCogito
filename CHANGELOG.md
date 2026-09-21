@@ -37,6 +37,8 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 - [added] `docs/experiments_specs/ahead/E30_sliding_window_perceiver.md` + `_plan.md`.
 - [added] `docs/engineering_specs/small_model_capability_protocol.md` — length-aware LR,
   `n_windows≥2` gate, falling-CE K1 rule (wired in `verification/bapo_capability_probe.py`).
+  Fair E21 vs E30 write is concat frozen-mean (no inplace). SWP scoring keeps ≥4 heads
+  instead of gcd-dropping (H=384 / 6 Q heads / qdim=128 → 8 heads, not 2).
 - [added] `tests/test_sw_perceiver.py`.
 
 **Git tag:** `arch/e30-sw-perceiver`

@@ -301,7 +301,7 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
         print(
             f"  [e30] geometry K={geo.bank_size} W={geo.window} stride={geo.stride} "
             f"n_win={geo.n_windows} C={geo.n_slots} N/C={geo.compression:.2f} "
-            f"sliding={geo.sliding}",
+            f"heads={geo.n_heads} qdim={geo.query_dim} sliding={geo.sliding}",
             flush=True,
         )
         if not geo.sliding:
@@ -565,6 +565,8 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             "global_logit_scale": args.global_logit_scale,
             "attn_backend": args.attn_backend,
             "hidden": args.hidden,
+            "head_dim": args.head_dim,
+            "lr": args.lr,
             "global_layers": args.global_layers,
             "stack_layers": args.stack_layers,
             "warm_residuals": args.warm_residuals,
