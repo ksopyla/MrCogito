@@ -242,6 +242,14 @@ def test_swp_heads_do_not_gcd_drop_below_four():
     assert qdim >= 128
 
 
+def test_non_dense_budget_is_full_k1_not_dense_early_stop():
+    from verification.bapo_capability_probe import _non_dense_step_budget
+
+    assert _non_dense_step_budget(800, 4, 1600) == 3200
+    assert _non_dense_step_budget(800, 4, 3900) == 3900
+    assert _non_dense_step_budget(800, 4, 800) == 3200
+
+
 def test_ce_still_falling_gate():
     from verification.bapo_capability_probe import _ce_still_falling
 

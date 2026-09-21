@@ -15,6 +15,26 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-21] - E30 capability protocol: width-aware LR and K1 write budget
+
+**Why:**
+- Fair tiny concat showed 3e-3 is right at H=128, but the same LR RankMe-collapses
+  E30 at 5.16M. Dense 99% early-stop at 1600 starved the 5M write.
+
+**Impact:**
+- Non-dense BAPO arms train for `max(steps × k1_mult, dense_steps_used)`.
+- Small-model protocol records width-matched 4-layer sizes (0.6 / 5.16 / 9.04M)
+  and LR 1e-3 at H≥384.
+
+**What changed:**
+- [changed] `verification/bapo_capability_probe.py` non-dense step budget.
+- [changed] `docs/engineering_specs/small_model_capability_protocol.md`.
+
+**Related:** `docs/experiments_specs/ahead/E30_sliding_window_perceiver.md`;
+`docs/2_Experiments_Registry/run_reports/e30_tiny_5m_9m_capability_20260921.md`
+
+---
+
 ## [2026-09-20] - E30 sliding-window Perceiver write
 
 **Why:**

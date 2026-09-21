@@ -238,6 +238,11 @@ def _channel_ablations(model, eval_batches, *, amp, device, spec) -> dict:
     return out
 
 
+def _non_dense_step_budget(steps: int, k1_mult: int, dense_steps_used: int) -> int:
+    """Advertised K1 cap, or denser if dense actually ran longer."""
+    return max(int(steps) * int(k1_mult), int(dense_steps_used))
+
+
 def _ce_still_falling(trace: list, *, min_drop: float = 0.2) -> bool:
     """True when eval CE dropped ≥ `min_drop` nats in the last third of logged evals.
 
@@ -511,7 +516,8 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         if arch == "dense":
             arch_steps = args.steps * args.k1_mult
         else:
-            arch_steps = max(args.steps, dense_steps_used)
+            # Fast dense 99% early-stop must not cap a slower write below the advertised K1 budget.
+            arch_steps = _non_dense_step_budget(args.steps, args.k1_mult, dense_steps_used)
         print(f"--- {arch}  (≤ {arch_steps} steps) ---", flush=True)
         results[arch] = train_one(arch, cfg, args, eval_batches, spec, device, steps=arch_steps)
         print(

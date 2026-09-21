@@ -67,17 +67,29 @@ The probe already logs CE, acc, bits, flow. For any *learned write* also log:
 
 ## Optimiser / schedule
 
-| seq | default LR | notes |
-|---|---|---|
-| 128 (`tiny`) | 3e-3 | E24/E25 tiny winner |
-| 256 (`tiny_wide`) | 1e-3 | exclusive-slot law |
-| 512 (`bridge`) | 3e-4 | 3e-3 floor-kills |
-| ≥1024 | 1e-4 | same law |
+| seq | width | default LR | notes |
+|---|---|---|---|
+| 128 (`tiny`) | H=128 (~0.6M) | 3e-3 | E24/E25 tiny winner; E30 1e-3 stays chance at 1600 |
+| 128 (`tiny`) | H≥384 (~5M+) | 1e-3 | 3e-3 RankMe-collapses E30 (0 bits); 1e-3 recovers INDEX |
+| 256 (`tiny_wide`) | H=128 | 1e-3 | exclusive-slot law |
+| 512 (`bridge`) | any | 3e-4 | 3e-3 floor-kills |
+| ≥1024 | any | 1e-4 | same law |
 
 AdamW, wd=0.01, warmup `min(50, steps/10)`, clip 1.0 (existing probe).
 `--warm_residuals` at seq≥512 (E18 `wo` stays shut at 1/S mass).
 
-`--steps 800 --k1_mult 4` is the advertised budget. The probe **does not skip_rest** on a dense arm that is still below 75% **if eval CE has
+Param-matched 4-layer width (keep `stack_layers=2`; do not add SWA depth as the 5/10M knob):
+
+| target | hidden | head_dim | dense / e30 |
+|---|---|---|---|
+| tiny smoke | 128 | 32 | 0.595M / 0.617M |
+| ~5M | 384 | 64 | 5.108M / 5.163M (SWP 8 heads, qdim 128) |
+| ~9M (<10M cap) | 512 | 64 | 8.969M / 9.041M |
+H=384 `stack_layers=6` is 10.03M — over the 10M cap.
+
+`--steps 800 --k1_mult 4` is the advertised budget. Non-dense arms get
+`max(steps × k1_mult, dense_steps_used)` so a dense 99% early-stop cannot
+starve a slower write. The probe **does not skip_rest** on a dense arm that is still below 75% **if eval CE has
 dropped ≥ 0.2 nats in the last third of the run**, and it applies the same one-shot
 extension to **every** arch (E18 / E21 / E30 included). The JSON records
 `hunt.k1_extended`. Do not score a still-falling compressed write as a kill.
