@@ -11,6 +11,7 @@ from nn.perceiver_ar_lm import (
     SlidingWindowPerceiverCompressor,
     analytic_param_count,
     swp_geometry,
+    swp_resolved_heads,
 )
 
 V = 97
@@ -205,6 +206,40 @@ def test_bapo_factory_e30_under_10m_and_finite_loss():
     assert torch.isfinite(loss)
     geo = swp_geometry(model.config, 128)
     assert geo.sliding
+
+
+def test_swp_heads_do_not_gcd_drop_below_four():
+    """H=384 / 6 Q heads / qdim=128 used to gcd-drop to 2 write heads."""
+    six = cfg(
+        hidden_size=384,
+        intermediate_size=768,
+        token_embedding_dim=32,
+        num_attention_heads=6,
+        num_kv_heads=1,
+        head_dim=64,
+        message_boundary_token_id=M,
+        message_write="sw_perceiver",
+    )
+    n_heads, qdim = swp_resolved_heads(six)
+    assert qdim == 128
+    assert n_heads == 8
+    assert qdim % n_heads == 0
+    pinned = cfg(
+        hidden_size=384,
+        intermediate_size=768,
+        token_embedding_dim=32,
+        num_attention_heads=6,
+        num_kv_heads=1,
+        head_dim=64,
+        swp_n_heads=6,
+        swp_query_dim=128,
+        message_boundary_token_id=M,
+        message_write="sw_perceiver",
+    )
+    n_heads, qdim = swp_resolved_heads(pinned)
+    assert n_heads == 6
+    assert qdim % n_heads == 0
+    assert qdim >= 128
 
 
 def test_ce_still_falling_gate():

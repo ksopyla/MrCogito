@@ -987,17 +987,25 @@ class SWPGeometry:
 
 
 def swp_resolved_heads(cfg: PerceiverARConfig) -> tuple[int, int]:
-    """(n_heads, query_dim) for the write. Count first; width is scoring bandwidth."""
-    n_heads = int(getattr(cfg, "swp_n_heads", 0) or 0)
-    if n_heads <= 0:
-        n_heads = max(4, int(cfg.num_attention_heads))
+    """(n_heads, query_dim) for the write. Count first; width is scoring bandwidth.
+
+    Do not gcd-drop below 4 heads when `query_dim` is not divisible (H=384, 6 Q
+    heads, qdim=128 would otherwise silently become 2 heads). Derived head counts
+    snap to a ≥4 divisor of qdim; an explicit `--swp_n_heads` keeps the count and
+    rounds qdim up.
+    """
+    requested = int(getattr(cfg, "swp_n_heads", 0) or 0)
+    n_heads = requested if requested > 0 else max(4, int(cfg.num_attention_heads))
     qdim = int(getattr(cfg, "swp_query_dim", 0) or 0)
     if qdim <= 0:
         qdim = max(int(cfg.head_dim), 4 * int(cfg.token_embedding_dim))
-    if qdim % n_heads != 0:
-        n_heads = math.gcd(qdim, n_heads) or 1
-        if qdim % n_heads != 0:
-            n_heads = 1
+    if qdim % n_heads == 0:
+        return n_heads, qdim
+    if requested <= 0:
+        for h in (8, 4):
+            if qdim % h == 0:
+                return h, qdim
+    qdim = ((qdim + n_heads - 1) // n_heads) * n_heads
     return n_heads, qdim
 
 
