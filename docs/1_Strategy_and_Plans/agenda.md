@@ -30,7 +30,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [small_model_capability_protocol.md](../engineering_specs/small_model_capability_protocol.md).
   TinyHashed / extra SWA / latent mixer are **not** this bet.
   Width hunt 2026-09-21: 9.04M INDEX e30 **37 bits** beats e21 mean; MATCH 12 vs 19
-  (0.75× live E18) still short. Claim remains seq=512.
+  (0.75× live E18) still short. Next: **~31M** (H=960, 4-layer) on longer seq and
+  harder DNA rungs — outside the <10M cap. Claim remains seq=512.
   [report](../2_Experiments_Registry/run_reports/e30_tiny_5m_9m_capability_20260921.md).
 - **2026-09-17 — E18 vs E21 architecture viz (no run).** Interactive HTML of the real
   `perceiver_ar` split — uncompressed global KV (E18) vs exclusive r=16 slots after QUERY

@@ -72,6 +72,7 @@ The probe already logs CE, acc, bits, flow. For any *learned write* also log:
 | 128 (`tiny`) | H=128 (~0.6M) | 3e-3 | E24/E25 tiny winner; E30 1e-3 stays chance at 1600 |
 | 128 (`tiny`) | H≥384 (~5M+) | 1e-3 | 3e-3 RankMe-collapses E30 (0 bits); 1e-3 recovers INDEX |
 | 256 (`tiny_wide`) | H=128 | 1e-3 | exclusive-slot law |
+| 256 (`tiny_wide`) | H≥384 | 1e-3 | same length law; do not reuse 3e-3 |
 | 512 (`bridge`) | any | 3e-4 | 3e-3 floor-kills |
 | ≥1024 | any | 1e-4 | same law |
 
@@ -85,7 +86,12 @@ Param-matched 4-layer width (keep `stack_layers=2`; do not add SWA depth as the 
 | tiny smoke | 128 | 32 | 0.595M / 0.617M |
 | ~5M | 384 | 64 | 5.108M / 5.163M (SWP 8 heads, qdim 128) |
 | ~9M (<10M cap) | 512 | 64 | 8.969M / 9.041M |
-H=384 `stack_layers=6` is 10.03M — over the 10M cap.
+| ~31M (capacity hunt) | 960 | 64 | 31.00M / 31.13M |
+
+H=384 `stack_layers=6` is 10.03M — over the 10M cap. H=960 is **not** this
+protocol's 10M hard fail: it is a separate width-matched 4-layer capacity hunt
+(`--max_params 40000000`). Spec K3 still says do not widen `H` to rescue a
+seq=128 S1 miss; run 30M only when the question is longer seq / harder rungs.
 
 `--steps 800 --k1_mult 4` is the advertised budget. Non-dense arms get
 `max(steps × k1_mult, dense_steps_used)` so a dense 99% early-stop cannot
@@ -140,6 +146,29 @@ uv run python analysis/plot_bapo_capability.py \
 
 Claim runs copy the same flags with `--scale tiny_wide --lr 1e-3` then
 `--scale bridge --recipe recall_single --evidence_align right --lr 3e-4 --warm_residuals`.
+
+## Capacity hunt (~30M) — outside the 10M cap
+
+Width-matched 4-layer H=960 (~31.1M e30). Same students as the <10M protocol
+except skip `e18_local` unless K2 is in doubt. Fair write is still concat
+frozen-mean e21 vs concat CA e30. Pin `--swp_n_heads 8 --swp_query_dim 128`.
+A 30M hit is **not** the E30 S1 claim unless the rung has `n_windows≥2` at
+the E21-mean MATCH wall (seq=512). A 30M miss is **not** a <10M K3.
+
+```bash
+uv run python verification/bapo_capability_probe.py \
+  --scale tiny --recipe far_copy recall_single \
+  --arch dense e18 e21 e30 \
+  --message_identity_slots \
+  --hidden 960 --head_dim 64 --stack_layers 2 \
+  --swp_n_heads 8 --swp_query_dim 128 \
+  --max_params 40000000 --lr 1e-3 --steps 800 \
+  --out Cache/e30_30m_tiny
+```
+
+Then `--scale tiny_wide --lr 1e-3` (INDEX + MATCH; `select_1decoy` only if
+dense MATCH ≥ 75%). Bridge MATCH: `--scale bridge --recipe recall_single \
+--evidence_align right --lr 3e-4 --warm_residuals`.
 
 ## Non-goals
 

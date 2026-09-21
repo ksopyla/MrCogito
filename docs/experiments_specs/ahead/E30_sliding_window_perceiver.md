@@ -124,7 +124,9 @@ gist-only too — not "try wider `H`".
 ## Plan
 - **Data:** on-the-fly DNA (`far_copy`, `recall_single`); Glyph/hops later.
 - **Compute:** CPU Cloud for tiny + tiny_wide; Polonez/Odra if MATCH needs
-  seq=512 (bridge). Models < 10M (`--max_params 10000000`).
+  seq=512 (bridge). Claim protocol is models < 10M (`--max_params 10000000`).
+  A separate width-matched 4-layer hunt at H=960 (~31M, `--max_params 40000000`)
+  is allowed for longer seq / harder rungs; it does not replace K3.
 - **Steps:** probe `--steps 800 --k1_mult 4`; MATCH may need more examples
   than INDEX (do not early-kill a still-climbing curve at 800 if CE is
   falling).

@@ -15,6 +15,26 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-21] - E30 ~31M capacity hunt (outside <10M protocol)
+
+**Why:**
+- 9.04M E30 beats frozen-mean E21 on INDEX but still misses 0.75× live E18 MATCH
+  at seq=128. Next question is capacity on longer seq and harder rungs, not a
+  <10M retune.
+
+**Impact:**
+- Width-matched 4-layer H=960 (~31.00M dense / 31.13M e30) is a capacity hunt
+  with `--max_params 40000000`. Spec K3 is unchanged: 30M is not a rescue of
+  the seq=128 S1 miss.
+
+**What changed:**
+- [changed] `docs/engineering_specs/small_model_capability_protocol.md` — 30M
+  launch skeleton, H=960 row, tiny_wide LR at H≥384.
+
+**Related:** `docs/experiments_specs/ahead/E30_sliding_window_perceiver.md`
+
+---
+
 ## [2026-09-21] - E30 capability protocol: width-aware LR and K1 write budget
 
 **Why:**
