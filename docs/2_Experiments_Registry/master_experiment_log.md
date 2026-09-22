@@ -175,7 +175,7 @@ searching all lifecycle folders under `docs/experiments_specs/` — never assume
 | E18c | Concept-compressed read (pool prefix K/V into 1 slot per 16 tokens) | **blocked** — compresses a *functional* retrieval channel; E18b showed we do not have one | [E18c](../experiments_specs/ahead/E18c_concept_compressed_read.md) |
 | E19 | Looped slot refinement (gated on a load-bearing slot) | **ahead** — gated; Wave B closed without S1; not launched | [E19](../experiments_specs/ahead/E19_looped_slot_refinement.md) |
 | E23 | Exclusive concept channel: E22 platform with `concept_xattn_scope=exclusive` and an objective that pays for far content (far-repeat-weighted CE + 30% dense-label long-range rows) | **ahead** — spec written 2026-09-12, not launched | [E23](../experiments_specs/ahead/E23_exclusive_concept_channel.md) |
-| E30 | Sliding-window Perceiver exclusive write vs E21 frozen-mean concat | **ahead** — tiny/5M/9M CPU probes; MATCH claim still seq=512 | [E30](../experiments_specs/ahead/E30_sliding_window_perceiver.md) · [report](run_reports/e30_tiny_5m_9m_capability_20260921.md) |
+| E30 | Sliding-window Perceiver exclusive write vs E21 frozen-mean concat | **ahead** — 31M GPU: E30 ≈ E18 at 512 MATCH (47.6 vs 48); E21-mean wall gone at this width; SELECT still separates | [E30](../experiments_specs/ahead/E30_sliding_window_perceiver.md) · [CPU](run_reports/e30_tiny_5m_9m_capability_20260921.md) · [GPU](run_reports/e30_30m_gpu_odra_polonez_20260922.md) |
 | E24 | E18 capability limits on a BAPO DNA ladder vs dense decoder-only and encoder-decoder | **ahead** — tiny + 512/1024 GPU measured (S1 pass @512, S1 fail @1024, S2 recall wall); 4k S0 open | [E24](../experiments_specs/ahead/E24_e18_bapo_capability_ladder.md) · [tiny](run_reports/e24_tiny_bapo_ladder_20260913.md) · [bridge](run_reports/e24_bridge512_bapo_ladder_20260913.md) |
 
 ### Canceled (no run)
@@ -512,6 +512,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-09-16 | E28 CogitoProbe-bits @1024 Wave B | Odra 3×3090 · last ckpt `checkpoint-1032` | dense **6.5% / 0.21 bits**; excl `fixed` **0 bits**; `scaled` **0.003**; 4k skipped | **killed** — K1; paying exam not instantiated | [spec](../experiments_specs/done_failed/E28_exclusive_cogitoprobe_bits.md) · [report](run_reports/e28_exclusive_cogitoprobe_bits_20260916.md) |
 | 2026-09-16 | E29 CogitoProbe-bind @1024 Wave B | Polonez 4×3090 · last ckpt `checkpoint-768` | hop **4.4% / 0.078 bits**; `attr_color` **2.4%**; filler Δ **+0.13 pt**; no dense S0 | **killed** — S1 miss; hop at chance | [spec](../experiments_specs/done_failed/E29_exclusive_cogitoprobe_bind.md) · [report](run_reports/e29_exclusive_cogitoprobe_bind_20260916.md) |
 | 2026-09-21 | E30 fair tiny concat + width hunt | CPU BAPO, identity concat e21 vs e30, 4-layer H=128/384/512 | tiny 3e-3: e30 INDEX 12.2 vs e21 16.6, MATCH 0; 5.16M 3e-3 RankMe-kill; 9.04M 1e-3 INDEX **37 bits** vs e21 14, MATCH 12 vs 0.75× e18 19 | MIXED / promising-as-gist — do not kill; MATCH claim still seq=512; LR is width-dependent | [spec](../experiments_specs/ahead/E30_sliding_window_perceiver.md) · [report](run_reports/e30_tiny_5m_9m_capability_20260921.md) |
+| 2026-09-22 | E30 ~31M GPU capacity hunt | Odra 3×3090 + Polonez 4×3090 · H=960 4L · DNA INDEX/MATCH/SELECT · e21 identity concat vs e30 CA | seq=512 MATCH e30 **47.6b / 99.7%** ≈ e18 48.0 > e21 44.0; INDEX e30 63.1 ≈ e18 64; SELECT@128 e30 **27.8** vs e21 8.8 vs e18 31.3 | MIXED / capacity-positive — E30 tracks E18 at 31M; E21-mean wall is <10M-specific; harder exam next | [spec](../experiments_specs/ahead/E30_sliding_window_perceiver.md) · [report](run_reports/e30_30m_gpu_odra_polonez_20260922.md) |
 **ViaDecoder baselines (L6 canonical, 2026-02-22):** MRPC F1 82.73 · STS-B P 0.650 · QQP F1 73.35 · MNLI-m 59.75 · MNLI-mm 60.90 — full note in [report](run_reports/via_decoder_eval_20260222.md).
 
 ---
@@ -534,6 +535,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 
 Newest first:
 
+- [E30 ~31M GPU capacity hunt — Odra + Polonez (Sep 22)](run_reports/e30_30m_gpu_odra_polonez_20260922.md)
 - [E30 tiny / 5.16M / 9.04M capability — fair concat then width hunt (Sep 21)](run_reports/e30_tiny_5m_9m_capability_20260921.md)
 - [E29 exclusive CogitoProbe-bind — hop 0.078 bits, no dense S0 (Sep 16)](run_reports/e29_exclusive_cogitoprobe_bind_20260916.md)
 - [E28 exclusive CogitoProbe-bits — dense K1, exclusive ~0 bits (Sep 16)](run_reports/e28_exclusive_cogitoprobe_bits_20260916.md)

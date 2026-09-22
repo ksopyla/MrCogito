@@ -15,6 +15,24 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-22] - E30 31M GPU DNA probes (Odra + Polonez)
+
+**Why:**
+- CPU 31M was too slow; user asked for Odra/Polonez in parallel. 1e-3 at this
+  width collapsed E30 on CPU and K1'd e18/e21 INDEX at seq=256.
+
+**Impact:**
+- Scored 31M DNA ladder on GPU. Seq=512 MATCH: e30 47.6 bits ≈ e18 48 > e21 44.
+- Protocol: H=960 uses 3e-4 + `--warm_residuals` from seq=256.
+
+**What changed:**
+- [changed] `docs/engineering_specs/small_model_capability_protocol.md` tiny_wide LR at H=960.
+- [added] `docs/2_Experiments_Registry/run_reports/e30_30m_gpu_odra_polonez_20260922.md`.
+
+**Related:** `docs/experiments_specs/ahead/E30_sliding_window_perceiver.md`
+
+---
+
 ## [2026-09-21] - E30 ~31M capacity hunt (outside <10M protocol)
 
 **Why:**

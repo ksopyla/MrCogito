@@ -72,7 +72,7 @@ The probe already logs CE, acc, bits, flow. For any *learned write* also log:
 | 128 (`tiny`) | H=128 (~0.6M) | 3e-3 | E24/E25 tiny winner; E30 1e-3 stays chance at 1600 |
 | 128 (`tiny`) | H≥384 (~5M+) | 1e-3 | 3e-3 RankMe-collapses E30 (0 bits); 1e-3 recovers INDEX |
 | 256 (`tiny_wide`) | H=128 | 1e-3 | exclusive-slot law |
-| 256 (`tiny_wide`) | H≥384 | 1e-3 | same length law; do not reuse 3e-3 |
+| 256 (`tiny_wide`) | H≥384 | 1e-3 | H=128–512; at **H=960** use 3e-4 + `--warm_residuals` (1e-3 zero-init K1s e18/e21 INDEX) |
 | 512 (`bridge`) | any | 3e-4 | 3e-3 floor-kills |
 | ≥1024 | any | 1e-4 | same law |
 

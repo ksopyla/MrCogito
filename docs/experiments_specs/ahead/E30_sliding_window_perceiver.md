@@ -160,6 +160,7 @@ gist-only too — not "try wider `H`".
 - 9.04M H=512 4L lr 1e-3: e30 INDEX **36.96 bits / 73%** beats e21 13.64; MATCH **12.30 vs
   e21 4.84**, still < 0.75× 5M e18 19.0. S1 at seq=128 miss. Claim length remains seq=512.
 - Report: [e30_tiny_5m_9m_capability_20260921.md](../../2_Experiments_Registry/run_reports/e30_tiny_5m_9m_capability_20260921.md)
-- Run id: `e30_tiny_fair_concat` / `e30_5m_tiny` / `e30_9m_tiny_index`
+- Run id: `e30_tiny_fair_concat` / `e30_5m_tiny` / `e30_9m_tiny_index` / `e30_30m_gpu`
 - WandB: —
-- Verdict: **open** — do not kill; width+LR matter; MATCH claim still seq=512.
+- 31M GPU (2026-09-22, Odra+Polonez, H=960 4L): seq=512 MATCH e30 **47.6 bits** ≈ e18 48.0 > e21 44.0. E21-mean wall from E25 is **gone** at this width (warm + 3e-4). SELECT@128: e30 27.8 vs e21 8.8 vs e18 31.3. Report: [e30_30m_gpu_odra_polonez_20260922.md](../../2_Experiments_Registry/run_reports/e30_30m_gpu_odra_polonez_20260922.md).
+- Verdict: **open** — do not kill. At 31M E30 tracks E18; the "means-die" MATCH clause needs a harder exam, not more width.
