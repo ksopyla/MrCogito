@@ -163,4 +163,4 @@ gist-only too — not "try wider `H`".
 - Run id: `e30_tiny_fair_concat` / `e30_5m_tiny` / `e30_9m_tiny_index` / `e30_30m_gpu`
 - WandB: —
 - 31M GPU (2026-09-22, Odra+Polonez, H=960 4L): seq=512 MATCH e30 **47.6 bits** ≈ e18 48.0 > e21 44.0. E21-mean wall from E25 is **gone** at this width (warm + 3e-4). SELECT@128: e30 27.8 vs e21 8.8 vs e18 31.3. Report: [e30_30m_gpu_odra_polonez_20260922.md](../../2_Experiments_Registry/run_reports/e30_30m_gpu_odra_polonez_20260922.md).
-- Verdict: **open** — do not kill. At 31M E30 tracks E18; the "means-die" MATCH clause needs a harder exam, not more width.
+- Verdict: **open** — do not kill. At 31M E30 tracks E18 on seq=512 MATCH. Length/hardness (2026-09-22): in-order 4-hop chain @1024, e30 **40 bits / 77%** vs e21 4 bits; at 50M the full read on that chain collapses (3 bits) and e30 still passes (**44 bits / 80%**). Lookup dies between 512 and 1024 for the full read; e30 is the only one above chance (26 bits after a longer budget) and is at zero by 4096. 50M does not finish a missed exam. Report: [e30_length_hardness_limits_20260922.md](../../2_Experiments_Registry/run_reports/e30_length_hardness_limits_20260922.md).

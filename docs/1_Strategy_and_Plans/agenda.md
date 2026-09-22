@@ -31,9 +31,12 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   TinyHashed / extra SWA / latent mixer are **not** this bet.
   Width hunt 2026-09-21: 9.04M INDEX e30 **37 bits** beats e21 mean; MATCH 12 vs 19.
   **31M GPU 2026-09-22:** seq=512 MATCH e30 **47.6 bits** ≈ e18 48 > e21 44; SELECT@128
-  e30 27.8 vs e21 8.8. E21-mean wall is gone at this width. Harder exam next, not more H.
+  e30 27.8 vs e21 8.8. E21-mean wall is gone at this width.
+  **Limits 2026-09-22:** in-order chain @1024 e30 passes (40 bits) and e21 does not (4).
+  Lookup wall is 512→1024. 50M does not finish a missed exam.
   [CPU](../2_Experiments_Registry/run_reports/e30_tiny_5m_9m_capability_20260921.md) ·
-  [GPU](../2_Experiments_Registry/run_reports/e30_30m_gpu_odra_polonez_20260922.md).
+  [GPU](../2_Experiments_Registry/run_reports/e30_30m_gpu_odra_polonez_20260922.md) ·
+  [limits](../2_Experiments_Registry/run_reports/e30_length_hardness_limits_20260922.md).
 - **2026-09-17 — E18 vs E21 architecture viz (no run).** Interactive HTML of the real
   `perceiver_ar` split — uncompressed global KV (E18) vs exclusive r=16 slots after QUERY
   (E21), not a reasoning tower:
@@ -59,6 +62,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-22 — E30 length and hardness (31M and 50M, Odra + Polonez).** In-order 4-hop chain @1024: e30 **40 bits / 77%** vs averaged notebook 4 bits; at 50M the full read on that chain falls to 3 bits and e30 still passes (44 bits / 80%). Lookalike @1024: full read 63 bits, e30 26 after a longer budget, average 19. Lookup @1024: only e30 moves (26 bits); @4096 and @16k everyone is at zero. 50M matches 31M on the missed exams. A 3e-4 step at 1024 is a false kill. [report](../2_Experiments_Registry/run_reports/e30_length_hardness_limits_20260922.md).
 - **2026-09-22 — E30 ~31M GPU (Odra 3×3090 + Polonez 4×3090).** H=960 4-layer. Seq=512 MATCH e30 **47.6 bits / 99.7%** ≈ e18 48.0 > e21 44.0; INDEX e30 63.1 ≈ e18 64. SELECT@128 e30 **27.8** vs e21 8.8 vs e18 31.3. 1e-3 zero-init at seq=256 is a false kill; 3e-4 + `--warm_residuals` restores. E21-mean MATCH wall is a <10M fact, not a 31M fact. [report](../2_Experiments_Registry/run_reports/e30_30m_gpu_odra_polonez_20260922.md).
 - **2026-09-21 — E30 width hunt (CPU BAPO, concat frozen-mean e21).** H=128 3e-3: e30 INDEX 12 bits < e21 17; MATCH chance. H=384 3e-3 RankMe-collapses e30; 1e-3 restores. H=512 1e-3: e30 INDEX **37 bits / 73%** beats e21 14; MATCH **12 bits** vs 0.75× 5M e18 19. E18 MATCH 0-bit wall breaks at 5.16M (25 bits). [report](../2_Experiments_Registry/run_reports/e30_tiny_5m_9m_capability_20260921.md).
 - **2026-09-16 — E28 exclusive CogitoProbe-bits @1024 (Wave B).** Dense packed-answer acc **6.5% / 0.21 bits** on a 40-bit prize; exclusive `fixed` recovered **0 bits** (`scaled` 0.003). Seq=4096 not launched. [report](../2_Experiments_Registry/run_reports/e28_exclusive_cogitoprobe_bits_20260916.md) · [spec](../experiments_specs/done_failed/E28_exclusive_cogitoprobe_bits.md).
