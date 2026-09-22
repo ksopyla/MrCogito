@@ -37,7 +37,9 @@ Prize on these rungs is 64 bits. Passing token accuracy is 75%.
 
 ## Reading
 
-The sliding window learns the in-order chain. The average does not. At 50M the full read on that chain collapses and the sliding window still passes, a few bits higher than at 31M.
+> **Revised 2026-09-22.** The 50M full-read collapse below (3 bits / 34% at 4800 steps, step 1e-4) was undertraining. A slower step (5e-5) and a longer budget restores the full read to 99% and lets the averaged notebook pass as well. See [the coverage sweep](e30_coverage_and_breadth_20260922.md). The table stays as the record of that run.
+
+The sliding window learns the in-order chain. The average does not, at this budget. ~~At 50M the full read on that chain collapses and the sliding window still passes, a few bits higher than at 31M.~~
 
 Longer training helps and then flattens. On the 1024-token lookup the sliding window went from 9 bits to 26 bits when the budget grew from 3200 to 4800 steps, and the other two stayed at zero. On the lookalike it went from 22 to 26 bits. Neither crossed a pass.
 
