@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>E30 — how a note is written and read</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --paper: #fffcf6;
+      --ink: #1c1917;
+      --muted: #57534e;
+      --line: #d6d3cd;
+      --e30: #c2410c;
+      --e30-soft: #ffedd5;
+      --query: #c2410c;
+      --ok: #15803d;
+      --shadow: 0 10px 30px rgba(28, 25, 23, 0.08);
+      --sans: "IBM Plex Sans", "Source Sans 3", "Segoe UI", Helvetica, Arial, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); }
+    body { min-width: 1100px; }
+    a { color: #1d4ed8; }
+    .wrap { max-width: 1380px; margin: 0 auto; padding: 24px 20px 64px; }
+    header h1 { font-size: 28px; font-weight: 650; letter-spacing: -0.03em; margin: 0 0 6px; }
+    header .sub { color: var(--muted); font-size: 15px; line-height: 1.45; max-width: 88ch; }
+    .caption {
+      margin: 16px 0 14px; padding: 12px 14px; background: var(--e30-soft);
+      border: 1px solid #fdba74; border-left: 4px solid var(--e30); border-radius: 8px;
+      font-size: 14.5px; line-height: 1.45;
+    }
+    .controls {
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+      margin: 0 0 10px; padding: 10px 12px; background: var(--paper);
+      border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow);
+    }
+    .controls button, .controls select {
+      font: 600 13px var(--sans); border: 1px solid var(--line); background: #fff;
+      padding: 7px 12px; border-radius: 8px; cursor: pointer; color: var(--ink);
+    }
+    .controls button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+    .controls button:hover, .controls select:hover { border-color: var(--ink); }
+    .controls .sep { width: 1px; height: 22px; background: var(--line); }
+    .controls label { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+    .step-label { margin-left: auto; font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+    .progress { height: 4px; background: var(--line); border-radius: 4px; margin: 0 0 14px; overflow: hidden; }
+    .progress > span { display: block; height: 100%; width: 0; background: var(--ink); transition: width .25s; }
+    .grid { display: grid; grid-template-columns: 250px 1fr 300px; gap: 14px; align-items: start; }
+    .panel {
+      background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+      padding: 12px 14px; box-shadow: var(--shadow);
+    }
+    .panel h2 {
+      margin: 0 0 8px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--muted); font-weight: 700;
+    }
+    .layer {
+      border: 1.5px solid var(--line); border-radius: 8px; padding: 7px 8px; background: #fff;
+      font-size: 12.5px; margin-bottom: 6px; cursor: pointer;
+    }
+    .layer .name { font-weight: 650; }
+    .layer .meta { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+    .layer.hot { outline: 3px solid rgba(28,25,23,.12); background: #fffbeb; border-color: var(--ink); }
+    .layer.done { opacity: .55; }
+    .layer.write { border-color: #fdba74; }
+    .op {
+      min-height: 72px; font-size: 14.5px; line-height: 1.45; margin: 0 0 10px;
+    }
+    .rail-label {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+      color: var(--muted); margin: 8px 0 6px;
+    }
+    .book { position: relative; height: 46px; background: #e7e5e4; border-radius: 8px; overflow: hidden; }
+    .book .cell {
+      position: absolute; top: 0; bottom: 0; display: flex; align-items: flex-end; justify-content: center;
+      font-size: 9px; font-weight: 700; color: #fff; padding-bottom: 4px; cursor: pointer;
+    }
+    .win {
+      position: absolute; top: 4px; height: 14px; border-radius: 4px; opacity: .9; cursor: pointer;
+      border: 1.5px solid rgba(255,255,255,.7);
+    }
+    .win.on { outline: 2px solid var(--ink); z-index: 2; }
+    .win.dim { opacity: .25; }
+    .notes { display: flex; flex-direction: column; gap: 4px; }
+    .nrow { display: flex; gap: 3px; align-items: center; }
+    .nrow .tag { width: 54px; font-size: 10px; color: var(--muted); font-family: var(--mono); flex: none; }
+    .note {
+      flex: 1 1 0; min-width: 0; height: 22px; border-radius: 5px; cursor: pointer;
+      border: 1.5px solid transparent; opacity: .35; transition: opacity .2s, transform .2s;
+    }
+    .note.on { opacity: 1; }
+    .note.pick { outline: 2px solid var(--ink); transform: translateY(-2px); }
+    .note.dim { opacity: .15; }
+    .svgbox { width: 100%; height: 150px; margin-top: 8px; background: #fff; border: 1px solid var(--line); border-radius: 10px; }
+    .shapes { font-family: var(--mono); font-size: 11.5px; line-height: 1.55; color: var(--muted); }
+    .shapes b { color: var(--ink); font-weight: 650; }
+    .pickline { margin-top: 8px; font-size: 13px; line-height: 1.4; min-height: 3.2em; }
+    .legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 14px 0 8px; font-size: 12.5px; color: var(--muted); }
+    .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+    .limits {
+      margin-top: 8px; padding: 12px 14px; background: var(--paper); border: 1px solid var(--line);
+      border-radius: 10px; font-size: 13.5px; line-height: 1.5; color: var(--muted);
+    }
+    .limits h3 { margin: 0 0 6px; font-size: 14px; color: var(--ink); }
+    .limits ul { margin: 0; padding-left: 18px; }
+    kbd { font-family: var(--mono); font-size: 11px; background: #e7e5e4; padding: 1px 5px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>How information flows through the sliding-window notebook</h1>
+      <p class="sub">
+        Same backbone as the full read and the averaged notebook: a local layer, one global layer, then two more local layers.
+        The new part is the write inside that global layer. Each overlapping window is read by a few learned questions.
+        A note is a weighted pick of the tokens in its own window. Notes do not talk to each other.
+        The answer may look the notes up. It may not reread the raw book.
+      </p>
+    </header>
+    <p class="caption" id="scale-caption"></p>
+    <div class="controls">
+      <button type="button" id="btn-play" class="primary">Pause</button>
+      <button type="button" id="btn-step">Step</button>
+      <button type="button" id="btn-replay">Replay</button>
+      <div class="sep"></div>
+      <label>Example
+        <select id="scale">
+          <option value="tiny">Tiny book (every token)</option>
+          <option value="m50">50M test (1024 tokens, 160 notes)</option>
+        </select>
+      </label>
+      <label>Speed
+        <select id="speed">
+          <option value="0.7">slow</option>
+          <option value="1" selected>normal</option>
+          <option value="1.7">fast</option>
+        </select>
+      </label>
+      <span class="step-label" id="step-label">Space pause · → step · Home replay</span>
+    </div>
+    <div class="progress"><span id="bar"></span></div>
+
+    <div class="grid">
+      <section class="panel">
+        <h2>Layers, top to bottom</h2>
+        <div id="layers"></div>
+      </section>
+      <section class="panel">
+        <h2>Book, windows, notes</h2>
+        <p class="op" id="op"></p>
+        <div class="rail-label" id="book-label">Book</div>
+        <div class="book" id="book"></div>
+        <div class="rail-label">Windows — click one</div>
+        <div class="book" id="wins" style="height:28px;background:transparent"></div>
+        <div class="rail-label">Notes — click one question</div>
+        <div class="notes" id="notes"></div>
+        <svg class="svgbox" id="attn" viewBox="0 0 640 150" role="img" aria-label="What the answer can see"></svg>
+      </section>
+      <section class="panel">
+        <h2>Shapes at this step</h2>
+        <div class="shapes" id="shapes"></div>
+        <p class="pickline" id="pickline">Click a window or a note. A note only sees its own window.</p>
+      </section>
+    </div>
+
+    <div class="legend" id="legend"></div>
+    <div class="limits">
+      <h3>What this picture is, and is not</h3>
+      <ul>
+        <li>The tiny book is a teaching row. It was not trained. The 50M row is the in-order 4-hop chain that passed (79% of answer tokens) with a 256-token window and 160 notes.</li>
+        <li>Write reach is the window. At 50M that is 256 tokens. The notebook still covers the whole book because five windows tile it, overlapping by a quarter.</li>
+        <li>There is no mixer between notes. Four hops can combine only in the single global layer, when the answer looks the notes up.</li>
+        <li>The two layers under that are local (16 tokens) and they are cut at the question, so they cannot walk back into the book.</li>
+        <li>The averaged notebook on the same read would store one mean per 16 tokens (64 notes at length 1024, each seeing 16). This picture is the learned-question write instead.</li>
+        <li>Sibling page: <a href="e18_e21_architecture.html">full read versus the averaged notebook</a>.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    const COLORS = ["#1d4ed8", "#0f766e", "#c2410c", "#6d28d9", "#b45309"];
+    const STEPS = [
+      { id: "book", layer: -1, title: "The book and the question" },
+      { id: "embed", layer: -1, title: "Each token becomes a vector" },
+      { id: "local", layer: 0, title: "First layer: only the last 16 tokens" },
+      { id: "keys", layer: 1, title: "Global layer: a key and a value per token" },
+      { id: "write", layer: 1, title: "Write: learned questions read one window" },
+      { id: "concat", layer: 1, title: "Notes are placed after the raw keys" },
+      { id: "cut", layer: 1, title: "The question hides the raw book" },
+      { id: "stack", layer: 2, title: "Two local layers cannot reach the book" },
+      { id: "predict", layer: 3, title: "The answer token is predicted" }
+    ];
+
+    function windowsOf(S, W, stride) {
+      if (S <= W) return [0];
+      const starts = [];
+      for (let s = 0; s <= S - W; s += stride) starts.push(s);
+      const last = S - W;
+      if (starts[starts.length - 1] !== last) starts.push(last);
+      return starts;
+    }
+
+    const SCALES = {
+      tiny: {
+        label: "Tiny example — not a trained model",
+        blurb: "Forty tokens, so every token and every note fits on the page. Four learned questions per window, each window 16 tokens, stride 12. Three windows, 12 notes. Two hops are planted: A→B in the first window, B→C in the second. The third window overlaps the question.",
+        S: 40, query: 32, K: 4, W: 16, stride: 12,
+        hidden: 64, heads: 4, kv: 1, dh: 16, ffn: 128, emb: 16,
+        swpHeads: 4, qdim: 32, params: "teaching width",
+        local: 16,
+        facts: [
+          { a: 4, b: 7, text: "A→B" },
+          { a: 18, b: 21, text: "B→C" }
+        ]
+      },
+      m50: {
+        label: "50M chain test — this one was trained",
+        blurb: "The 50-million-parameter in-order chain. Book length 1024, question token at position 986, answer is 32 tokens. Thirty-two learned questions per window, each window 256 tokens, stride 192. Five windows, 160 notes. The run passed: 79% of the answer tokens, then the curve flattened. Each note still sees only its own 256 tokens.",
+        S: 1024, query: 986, K: 32, W: 256, stride: 192,
+        hidden: 1216, heads: 19, kv: 1, dh: 64, ffn: 2432, emb: 32,
+        swpHeads: 8, qdim: 128, params: "49.7M",
+        local: 16,
+        facts: []
+      }
+    };
+    Object.values(SCALES).forEach(sc => { sc.starts = windowsOf(sc.S, sc.W, sc.stride); });
+
+    const state = { step: 0, playing: true, scale: "tiny", speed: 1, timer: null, win: 0, note: 0, extra: "" };
+
+    const $ = id => document.getElementById(id);
+    function sc() { return SCALES[state.scale]; }
+
+    function layerCards() {
+      const s = sc();
+      const rows = [
+        { i: 0, name: "Local pre-encoder", meta: "sliding window " + s.local + " · cut at the question" },
+        { i: 1, name: "Global layer + the write", meta: "the only place that sees every note" },
+        { i: 2, name: "Local stack", meta: "sliding window " + s.local },
+        { i: 3, name: "Local stack", meta: "sliding window " + s.local + " · then the word head" }
+      ];
+      $("layers").innerHTML = rows.map(r => {
+        const hot = STEPS[state.step].layer === r.i;
+        const done = STEPS[state.step].layer > r.i;
+        return `<div class="layer${hot ? " hot" : ""}${done ? " done" : ""}${r.i === 1 ? " write" : ""}" data-go="${r.i}">
+          <div class="name">${r.i} · ${r.name}</div>
+          <div class="meta">${r.meta}</div>
+        </div>`;
+      }).join("");
+      $("layers").querySelectorAll("[data-go]").forEach(el => {
+        el.addEventListener("click", () => {
+          const i = +el.dataset.go;
+          const idx = STEPS.findIndex(st => st.layer === i);
+          if (idx >= 0) { state.step = idx; render(); }
+        });
+      });
+    }
+
+    function tokenKind(t, s) {
+      if (t === s.query) return "query";
+      if (t > s.query) return "answer";
+      for (const f of s.facts) if (t >= f.a && t < f.b) return "fact";
+      return "book";
+    }
+
+    function drawBook() {
+      const s = sc();
+      const book = $("book");
+      book.innerHTML = "";
+      if (s.S <= 48) {
+        for (let t = 0; t < s.S; t++) {
+          const el = document.createElement("div");
+          el.className = "cell";
+          el.style.left = (100 * t / s.S) + "%";
+          el.style.width = (100 / s.S) + "%";
+          const kind = tokenKind(t, s);
+          const inWin = state.step >= 4 && t >= s.starts[state.win] && t < s.starts[state.win] + s.W;
+          el.style.background = kind === "query" ? "#c2410c" : kind === "answer" ? "#15803d" : kind === "fact" ? "#6d28d9" : "#a8a29e";
+          el.style.boxShadow = inWin ? "inset 0 -4px 0 " + COLORS[state.win % COLORS.length] : "none";
+          el.textContent = kind === "query" ? "Q" : kind === "answer" ? "" : kind === "fact" ? "•" : "";
+          el.title = "token " + t;
+          el.addEventListener("click", () => pickToken(t));
+          book.appendChild(el);
+        }
+      } else {
+        const bar = document.createElement("div");
+        bar.style.cssText = "position:absolute;inset:0;background:linear-gradient(90deg,#a8a29e 0 "+ (100 * s.query / s.S) +"%,#c2410c "+ (100 * s.query / s.S) +"%,#15803d 100%)";
+        book.appendChild(bar);
+        const q = document.createElement("div");
+        q.style.cssText = "position:absolute;top:6px;font-size:11px;font-weight:700;color:#fff";
+        q.style.left = (100 * s.query / s.S) + "%";
+        q.textContent = " question";
+        book.appendChild(q);
+      }
+      const host = $("wins");
+      host.innerHTML = "";
+      s.starts.forEach((st, i) => {
+        const el = document.createElement("div");
+        el.className = "win" + (i === state.win ? " on" : "");
+        el.style.left = (100 * st / s.S) + "%";
+        el.style.width = (100 * s.W / s.S) + "%";
+        el.style.background = COLORS[i % COLORS.length];
+        el.title = "window " + i + " · tokens " + st + "–" + (st + s.W - 1);
+        el.addEventListener("click", () => { state.win = i; state.note = 0; state.extra = ""; if (state.step < 4) state.step = 4; render(); });
+        host.appendChild(el);
+      });
+    }
+
+    function drawNotes() {
+      const s = sc();
+      const host = $("notes");
+      host.innerHTML = "";
+      const showWrite = state.step >= 4;
+      s.starts.forEach((st, i) => {
+        const row = document.createElement("div");
+        row.className = "nrow";
+        const tag = document.createElement("div");
+        tag.className = "tag";
+        tag.textContent = "w" + i + " ·" + st;
+        row.appendChild(tag);
+        const maxShow = s.K > 8 ? 32 : s.K;
+        for (let k = 0; k < maxShow; k++) {
+          const n = document.createElement("div");
+          const picked = showWrite && i === state.win && k === state.note;
+          const on = showWrite && (i === state.win || state.step >= 6);
+          n.className = "note" + (on ? " on" : "") + (picked ? " pick" : "");
+          n.style.background = COLORS[i % COLORS.length];
+          n.title = "window " + i + " question " + k + " · sees " + st + "–" + (st + s.W - 1);
+          n.addEventListener("click", () => { state.win = i; state.note = k; state.extra = ""; if (state.step < 4) state.step = 4; render(); });
+          row.appendChild(n);
+        }
+        host.appendChild(row);
+      });
+    }
+
+    function beam(x1, y1, x2, y2, color, op) {
+      return `<path d="M${x1},${y1} C${x1},${(y1+y2)/2} ${x2},${(y1+y2)/2} ${x2},${y2}" fill="none" stroke="${color}" stroke-width="1.6" opacity="${op}" stroke-dasharray="5 4"><animate attributeName="stroke-dashoffset" from="36" to="0" dur="1.2s" repeatCount="indefinite"/></path>`;
+    }
+
+    function drawAttn() {
+      const s = sc();
+      const phase = STEPS[state.step].id;
+      const svg = $("attn");
+      const W = 640, qy = 28, ky = 118;
+      let html = `<text x="8" y="16" font-size="11" fill="#57534e" font-family="IBM Plex Sans, sans-serif">answer looking up</text>`;
+      html += `<text x="8" y="146" font-size="11" fill="#57534e" font-family="IBM Plex Sans, sans-serif">keys the global layer may use</text>`;
+      const nW = s.starts.length;
+      s.starts.forEach((st, i) => {
+        const x = 24 + i * ((W - 80) / Math.max(nW - 1, 1));
+        const on = phase === "write" || phase === "concat" || phase === "cut" || phase === "stack" || phase === "predict";
+        html += `<rect x="${x - 16}" y="${ky - 10}" width="32" height="18" rx="4" fill="${COLORS[i % COLORS.length]}" opacity="${on ? 1 : 0.25}"/>`;
+        html += `<text x="${x}" y="${ky + 22}" font-size="10" text-anchor="middle" fill="#57534e">${s.K}q</text>`;
+      });
+      html += `<circle cx="${W - 36}" cy="${qy}" r="9" fill="#15803d"/>`;
+      html += `<text x="${W - 36}" y="${qy + 4}" font-size="10" text-anchor="middle" fill="#fff" font-weight="700">A</text>`;
+      if (phase === "cut" || phase === "stack" || phase === "predict" || phase === "concat") {
+        s.starts.forEach((st, i) => {
+          const x = 24 + i * ((W - 80) / Math.max(nW - 1, 1));
+          const strong = i === state.win;
+          html += beam(W - 36, qy + 10, x, ky - 10, COLORS[i % COLORS.length], strong ? 0.9 : 0.28);
+        });
+        html += `<text x="120" y="16" font-size="11" fill="#c2410c" font-weight="700">${nW * s.K} notes, not the raw book</text>`;
+      } else if (phase === "write") {
+        const x = 24 + state.win * ((W - 80) / Math.max(nW - 1, 1));
+        html += beam(x, ky - 28, x, ky - 10, COLORS[state.win % COLORS.length], 0.9);
+        html += `<text x="120" y="16" font-size="11" fill="${COLORS[state.win % COLORS.length]}" font-weight="700">question ${state.note} reads only window ${state.win}</text>`;
+      } else if (phase === "local") {
+        html += `<text x="120" y="16" font-size="11" fill="#57534e">local layer sees ${s.local} tokens, and stops at the question</text>`;
+      }
+      svg.innerHTML = html;
+    }
+
+    function shapes() {
+      const s = sc();
+      const C = s.starts.length * s.K;
+      const phase = STEPS[state.step].id;
+      const lines = [
+        ["params", s.params + " · hidden " + s.hidden + " · " + s.heads + " query heads · " + s.kv + " KV head · head " + s.dh],
+        ["book", "[1, " + s.S + "] tokens · question at " + s.query],
+        ["embed", "token width " + s.emb + " → hidden [1, " + s.S + ", " + s.hidden + "]"],
+        ["local", "window " + s.local + " · layers 0, 2, 3"],
+        ["write", s.swpHeads + " write heads · question width " + s.qdim + " · " + s.K + " questions × window " + s.W],
+        ["notes", "[1, " + C + ", " + s.kv + ", " + s.dh + "]  ·  " + C + " notes"],
+        ["lookup", "raw keys " + s.S + " ‖ notes " + C + "  ·  the answer may use the notes"]
+      ];
+      const hot = { book: "book", embed: "embed", local: "local", keys: "write", write: "write", concat: "notes", cut: "lookup", stack: "local", predict: "lookup" }[phase];
+      $("shapes").innerHTML = lines.map(([k, v]) => `<div>${k === hot ? "<b>" : ""}${k}<br>${v}${k === hot ? "</b>" : ""}</div>`).join("");
+    }
+
+    function caption() {
+      const s = sc();
+      const C = s.starts.length * s.K;
+      const st = s.starts[state.win];
+      const texts = {
+        book: "The book is the gray stretch. The orange mark is the question. Green is the answer the model must produce. Nothing has been summarized yet.",
+        embed: "Each token is turned into a vector of width " + s.hidden + ". A small token table (width " + s.emb + ") is lifted up to that width. Neighbors are not mixed yet.",
+        local: "The first layer lets each token see only the previous " + s.local + " tokens. At the question that window is cut, so the answer cannot peek at the book through this layer.",
+        keys: "The global layer builds one key and one value for every token. These are the raw material. The notes have not been written yet.",
+        write: "Window " + state.win + " covers tokens " + st + "–" + (st + s.W - 1) + ". Question " + state.note + " scores every token in that window and keeps a weighted sum. That sum is one note. It does not see the other windows, and it does not see the other notes.",
+        concat: "The " + C + " notes are concatenated after the raw keys. They are not written back onto the book tokens. There is no average mixed in, and no layer that lets notes talk to each other.",
+        cut: "From the question onward, the global layer may read the " + C + " notes and the tokens on the answer's own side. The raw book tokens are hidden. A hop that lives in two windows has to be joined here, by looking up two notes.",
+        stack: "Two more layers, each seeing " + s.local + " tokens, and still cut at the question. They can polish the answer. They cannot go back and reread the book.",
+        predict: "A word head turns the answer position into the next token. On the 50M chain this is where 79% of the answer tokens came out right. The tiny row is only a picture of the same path."
+      };
+      $("op").textContent = texts[STEPS[state.step].id];
+    }
+
+    function pickToken(t) {
+      const s = sc();
+      const hits = s.starts.map((st, i) => ({ i, st })).filter(w => t >= w.st && t < w.st + s.W);
+      if (!hits.length) {
+        state.extra = "Token " + t + " sits in the answer and is outside the book windows that end before it.";
+        render();
+        return;
+      }
+      state.win = hits[0].i;
+      state.note = 0;
+      if (state.step < 4) state.step = 4;
+      const names = hits.map(w => "window " + w.i + " (tokens " + w.st + "–" + (w.st + s.W - 1) + ")").join(" and ");
+      state.extra = "Token " + t + " is inside " + names + ". A token near a boundary is written into two notes.";
+      render();
+    }
+
+    function pickline() {
+      if (state.extra) { $("pickline").textContent = state.extra; return; }
+      const s = sc();
+      const st = s.starts[state.win];
+      const end = st + s.W - 1;
+      if (state.step < 4) {
+        $("pickline").textContent = "Click a window or a note. A note only sees its own window.";
+        return;
+      }
+      $("pickline").textContent = "Note " + state.note + " of window " + state.win + " sees tokens " + st + "–" + end + " and nothing else. " + s.K + " questions share that window. They do not read each other.";
+    }
+
+    function legend() {
+      const s = sc();
+      const bits = s.starts.map((st, i) =>
+        `<span><i style="background:${COLORS[i % COLORS.length]}"></i>window ${i}: ${st}–${st + s.W - 1}</span>`
+      );
+      bits.push(`<span><i style="background:#c2410c"></i>question</span>`);
+      bits.push(`<span><i style="background:#15803d"></i>answer</span>`);
+      if (s.facts.length) bits.push(`<span><i style="background:#6d28d9"></i>planted hop</span>`);
+      $("legend").innerHTML = bits.join("");
+    }
+
+    function render() {
+      const s = sc();
+      $("scale-caption").innerHTML = "<strong>" + s.label + ".</strong> " + s.blurb;
+      $("book-label").textContent = s.S <= 48 ? "Every token" : "Book of " + s.S + " tokens (the bar is the whole book)";
+      $("step-label").textContent = "step " + (state.step + 1) + " / " + STEPS.length + " — " + STEPS[state.step].title + "   ·   Space pause · → step";
+      $("bar").style.width = ((state.step + 1) / STEPS.length * 100) + "%";
+      $("btn-play").textContent = state.playing ? "Pause" : "Play";
+      layerCards();
+      drawBook();
+      drawNotes();
+      drawAttn();
+      shapes();
+      caption();
+      pickline();
+      legend();
+    }
+
+    function play() {
+      clearInterval(state.timer);
+      if (!state.playing) return;
+      state.timer = setInterval(() => {
+        state.step = (state.step + 1) % STEPS.length;
+        if (state.step === 4) state.win = (state.win + 1) % sc().starts.length;
+        render();
+      }, 1600 / state.speed);
+    }
+
+    $("btn-play").addEventListener("click", () => { state.playing = !state.playing; play(); render(); });
+    $("btn-step").addEventListener("click", () => { state.playing = false; clearInterval(state.timer); state.step = (state.step + 1) % STEPS.length; render(); });
+    $("btn-replay").addEventListener("click", () => { state.step = 0; state.win = 0; state.note = 0; state.playing = true; play(); render(); });
+    $("scale").addEventListener("change", e => { state.scale = e.target.value; state.step = 0; state.win = 0; state.note = 0; render(); });
+    $("speed").addEventListener("change", e => { state.speed = +e.target.value; play(); });
+    document.addEventListener("keydown", e => {
+      if (e.target.matches("select, input")) return;
+      if (e.code === "Space") { e.preventDefault(); state.playing = !state.playing; play(); render(); }
+      if (e.code === "ArrowRight") { state.playing = false; clearInterval(state.timer); state.step = Math.min(STEPS.length - 1, state.step + 1); render(); }
+      if (e.code === "ArrowLeft") { state.playing = false; clearInterval(state.timer); state.step = Math.max(0, state.step - 1); render(); }
+      if (e.code === "Home") { state.step = 0; render(); }
+    });
+
+    const q = new URLSearchParams(location.search);
+    if (q.get("scale") && SCALES[q.get("scale")]) {
+      state.scale = q.get("scale");
+      $("scale").value = state.scale;
+    }
+    if (q.get("step") != null) {
+      state.step = Math.max(0, Math.min(STEPS.length - 1, +q.get("step") || 0));
+      state.playing = false;
+    }
+    render();
+    play();
+  })();
+  </script>
+</body>
+</html>

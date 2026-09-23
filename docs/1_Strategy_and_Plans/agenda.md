@@ -41,6 +41,9 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [GPU](../2_Experiments_Registry/run_reports/e30_30m_gpu_odra_polonez_20260922.md) ·
   [limits](../2_Experiments_Registry/run_reports/e30_length_hardness_limits_20260922.md) ·
   [coverage](../2_Experiments_Registry/run_reports/e30_coverage_and_breadth_20260922.md).
+- **2026-09-23 — E30 flow viz (no run).** Interactive HTML of the sliding-window write:
+  tiny book (every token) and the 50M chain test (1024 tokens, 160 notes, reach 256).
+  [e30_architecture.html](../3_Evaluations_and_Baselines/e30_architecture.html).
 - **2026-09-17 — E18 vs E21 architecture viz (no run).** Interactive HTML of the real
   `perceiver_ar` split — uncompressed global KV (E18) vs exclusive r=16 slots after QUERY
   (E21), not a reasoning tower:
