@@ -40,7 +40,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   [CPU](../2_Experiments_Registry/run_reports/e30_tiny_5m_9m_capability_20260921.md) ·
   [GPU](../2_Experiments_Registry/run_reports/e30_30m_gpu_odra_polonez_20260922.md) ·
   [limits](../2_Experiments_Registry/run_reports/e30_length_hardness_limits_20260922.md) ·
-  [coverage](../2_Experiments_Registry/run_reports/e30_coverage_and_breadth_20260922.md).
+  [coverage](../2_Experiments_Registry/run_reports/e30_coverage_and_breadth_20260922.md) ·
+  [inventory](../2_Experiments_Registry/run_reports/e30_training_inventory_20260923.md).
 - **2026-09-17 — E18 vs E21 architecture viz (no run).** Interactive HTML of the real
   `perceiver_ar` split — uncompressed global KV (E18) vs exclusive r=16 slots after QUERY
   (E21), not a reasoning tower:

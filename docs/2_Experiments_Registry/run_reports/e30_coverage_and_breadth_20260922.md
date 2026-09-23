@@ -6,7 +6,7 @@
 **WandB:** n/a (on-the-fly probes; no `compute/*` audit)
 **Best checkpoint:** none (models discarded)
 **Git tag:** —
-**Related:** [E30 spec](../../experiments_specs/ahead/E30_sliding_window_perceiver.md) · [length limits](e30_length_hardness_limits_20260922.md)
+**Related:** [E30 spec](../../experiments_specs/ahead/E30_sliding_window_perceiver.md) · [length limits](e30_length_hardness_limits_20260922.md) · [training inventory](e30_training_inventory_20260923.md)
 
 ---
 

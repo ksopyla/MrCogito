@@ -537,6 +537,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 
 Newest first:
 
+- [E30 training inventory — tasks, sizes, notes, reach, length (Sep 23)](run_reports/e30_training_inventory_20260923.md)
 - [E30 coverage and breadth — window size, longer books, tailored steps (Sep 22)](run_reports/e30_coverage_and_breadth_20260922.md)
 - [E30 length and hardness limits — 31M and 50M (Sep 22)](run_reports/e30_length_hardness_limits_20260922.md)
 - [E30 ~31M GPU capacity hunt — Odra + Polonez (Sep 22)](run_reports/e30_30m_gpu_odra_polonez_20260922.md)
