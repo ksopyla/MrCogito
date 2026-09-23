@@ -1,0 +1,42 @@
+{
+  "n_metric_rows": 435,
+  "n_json_files": 122,
+  "n_e21_rungs": 110,
+  "max_params": 10818128,
+  "max_params_m": 10.818,
+  "missing_btok_cells": [],
+  "regenerated_plot_dirs": [
+    "e25_bridge1k_688_ip_id_h256_select",
+    "e25_bridge1k_688_ip_id_h256_select_s8k",
+    "e25_bridge1k_696_spread_ip_id_h256_select/json",
+    "e25_bridge1k_704_ip_id_h256_select",
+    "e25_bridge1k_ip_r16_mean",
+    "e25_bridge256_chain_shuf0_k13_glob2",
+    "e25_bridge256_chain_shuf1_k13_glob2_keepswa",
+    "e25_bridge256_chain_shuf1_k13_glob2_keepswa_s8k",
+    "e25_bridge384_chain_k13_glob2",
+    "e25_bridge512_ip_id_chain",
+    "e25_bridge512_ip_id_recall",
+    "e25_bridge512_ip_id_select",
+    "e25_bridge512_ip_r16_learned",
+    "e25_bridge512_ip_r16_mean",
+    "e25_bridge512_ip_r16_mean_recall",
+    "e25_medium_4k_ip_r16_mean"
+  ],
+  "wall_ok": [
+    "tiny_far_copy_first_rung",
+    "index_r16_mean_1024_vs_1536",
+    "match_identity_1280_vs_1536",
+    "match_r8_pool_1024_vs_1280",
+    "match_ratio_r1_vs_r4_at_1280",
+    "match2_nd1_1024_vs_1280",
+    "select_length_692_vs_696",
+    "select_pooling_r8_r12_r16",
+    "hops_glob2_264_272_288",
+    "shuffled_nd0_vs_nd1_vs_extrahop",
+    "extrahop_transfer_hops_vs_match"
+  ],
+  "wall_fail": [],
+  "csv": "/workspace/docs/2_Experiments_Registry/run_reports/e25_scored_rungs_bits_flow_btok.csv",
+  "n_wall_plots": 11
+}

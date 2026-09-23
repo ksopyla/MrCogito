@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import torch
@@ -92,6 +92,8 @@ def _make_tokenize_fn(
     append_eos_token_id,
     max_chars=None,
     model_vocab_size: int | None = None,
+    chunk_long_docs: bool = False,
+    min_tokens: int = 0,
 ):
     """Build the batched tokenize function shared by the single-source and mix loaders.
 
@@ -107,7 +109,15 @@ def _make_tokenize_fn(
     model_vocab_size -> when set, pass ``split_special_tokens`` explicitly into each
         tokenizer call (survives ``datasets.map`` multiprocessing better than relying on a
         pickled attribute alone) and refuse batches that still contain out-of-range ids.
+    chunk_long_docs -> (AR path only) tokenize each document in full (up to ``max_chars``) and
+        emit ⌈L / (max_seq_length − 2)⌉ rows of ``[BOS] chunk [EOS]`` instead of one truncated
+        row, so a 100k-token book yields three 32k rows rather than its first 32k tokens (E22
+        long-document trees). The batched ``map`` may therefore return more rows than it got.
+    min_tokens -> (AR path only) drop rows shorter than this many tokens (after chunking).
     """
+    if chunk_long_docs and append_eos_token_id is None:
+        raise ValueError("chunk_long_docs requires the AR path (append_eos_token_id set)")
+    bos_id = getattr(tokenizer, "bos_token_id", None)
     # Explicit kwarg: attribute-only config can be lost when tokenizers are re-loaded in
     # map workers, which would re-admit tokenizer-only multimodal ids (e.g. Gemma image soft).
     split_special_tokens = bool(getattr(tokenizer, "split_special_tokens", False))
@@ -116,6 +126,12 @@ def _make_tokenize_fn(
 
     def tokenize_batch_function(examples):
         text_batch = examples["text"]
+        # Binary-cast text (pretokenize_mix) arrives as bytes: decode leniently. Plain str
+        # rows (legacy loaders / tests) pass through unchanged.
+        text_batch = [
+            t.decode("utf-8", errors="replace") if isinstance(t, (bytes, bytearray)) else t
+            for t in text_batch
+        ]
         if max_chars:
             text_batch = [t[:max_chars] if t and len(t) > max_chars else t for t in text_batch]
         tokenize_kwargs = {"return_special_tokens_mask": True}
@@ -129,6 +145,25 @@ def _make_tokenize_fn(
                 max_length=max_seq_length,
                 **tokenize_kwargs,
             )
+        elif chunk_long_docs:
+            body = max_seq_length - 2 if bos_id is not None else max_seq_length - 1
+            full = tokenizer(text_batch, padding=False, truncation=False, add_special_tokens=False,
+                             **tokenize_kwargs)
+            rows: list[list[int]] = []
+            for ids in full["input_ids"]:
+                for s in range(0, max(len(ids), 1), body):
+                    chunk = ids[s : s + body]
+                    if not chunk:
+                        continue
+                    row = ([bos_id] if bos_id is not None else []) + chunk + [append_eos_token_id]
+                    if len(row) >= max(int(min_tokens), 1):
+                        rows.append(row)
+            out = {"input_ids": rows, "attention_mask": [[1] * len(r) for r in rows]}
+            if "special_tokens_mask" in full:
+                out["special_tokens_mask"] = [
+                    ([1] if bos_id is not None else []) + [0] * (len(r) - (2 if bos_id is not None else 1)) + [1]
+                    for r in rows
+                ]
         else:
             out = tokenizer(
                 text_batch,
@@ -142,6 +177,9 @@ def _make_tokenize_fn(
                 out["attention_mask"] = [m + [1] for m in out["attention_mask"]]
             if "special_tokens_mask" in out:
                 out["special_tokens_mask"] = [s + [1] for s in out["special_tokens_mask"]]
+            if min_tokens and int(min_tokens) > 1:
+                keep = [i for i, ids in enumerate(out["input_ids"]) if len(ids) >= int(min_tokens)]
+                out = {k: [v[i] for i in keep] for k, v in out.items()}
         if model_vocab_size is not None:
             for ids in out["input_ids"]:
                 if not ids:
@@ -810,9 +848,17 @@ def load_pretokenized_mix(manifest_path):
         tr = load_from_disk(src["train_path"])
         ev = load_from_disk(src["eval_path"])
         train_parts.append(tr)
-        eval_parts.append(ev)
+        # "in_eval": false keeps a source out of the trainer's eval set (E18b: synthetic retrieval
+        # rows train the model but must not move the LM eval loss the arms are compared on).
+        if bool(src.get("in_eval", True)):
+            eval_parts.append(ev)
         weights.append(float(src.get("weight", 1.0)))
-        logger.info(f"[pretokenized]   '{name}': {len(tr):,} train / {len(ev):,} eval rows")
+        logger.info(
+            f"[pretokenized]   '{name}': {len(tr):,} train / {len(ev):,} eval rows"
+            + ("" if bool(src.get("in_eval", True)) else " (excluded from eval)")
+        )
+    if not eval_parts:
+        raise ValueError("Every source is marked in_eval=false; the trainer needs at least one eval source.")
 
     total_w = sum(weights)
     probabilities = [w / total_w for w in weights]
@@ -825,6 +871,77 @@ def load_pretokenized_mix(manifest_path):
         f" (probs={[round(p, 3) for p in probabilities]}) | eval={len(test_ds):,}"
     )
     return train_ds, test_ds
+
+
+COGITO_PROBE_HUB = {
+    "bits": "ksopyla/cogito-probe-bits",
+    "bind": "ksopyla/cogito-probe-bind",
+    "arith": "ksopyla/cogito-probe-arith",
+    "props": "ksopyla/cogito-probe-props",
+}
+
+
+def resolve_cogito_probe_id(hub_or_family: str) -> str:
+    """Accept a family short name (`bits`) or a full Hub id."""
+    key = (hub_or_family or "").strip()
+    if key in COGITO_PROBE_HUB:
+        return COGITO_PROBE_HUB[key]
+    if key.startswith("ksopyla/cogito-probe-"):
+        return key
+    raise ValueError(
+        f"unknown CogitoProbe id {hub_or_family!r}; expected one of {list(COGITO_PROBE_HUB)} "
+        "or ksopyla/cogito-probe-*"
+    )
+
+
+def filter_cogito_probe(ds, *, seq_len: int, variant: Optional[str] = None, task: Optional[str] = None):
+    """Keep packed rows for one length/variant (Hub dumps mix 1k–32k)."""
+    seq_len = int(seq_len)
+    variant = (variant or "").strip() or None
+    task = (task or "").strip() or None
+
+    def keep(row):
+        if int(row["seq_len"]) != seq_len:
+            return False
+        if variant is not None and str(row["variant"]) != variant:
+            return False
+        if task is not None and str(row["task"]) != task:
+            return False
+        return True
+
+    out = ds.filter(keep)
+    if len(out) == 0:
+        raise ValueError(
+            f"CogitoProbe filter empty (seq_len={seq_len}, variant={variant!r}, task={task!r})"
+        )
+    return out
+
+
+def load_cogito_probe(
+    hub_or_family: str,
+    *,
+    seq_len: int,
+    variant: str = "fixed",
+    task: Optional[str] = None,
+    cache_dir: Optional[str] = None,
+    eval_split: str = "validation",
+):
+    """`load_dataset` a public CogitoProbe Hub id and filter to one packed exam.
+
+    Prefer this over local `build_concept_probe_datasets.py` generate. Does not
+    train 8k/16k/32k unless `seq_len` is those values.
+    """
+    hub_id = resolve_cogito_probe_id(hub_or_family)
+    logger.info(
+        f"[cogito-probe] load_dataset({hub_id}) seq_len={seq_len} variant={variant} "
+        f"task={task or '*'} eval_split={eval_split}"
+    )
+    bundle = load_dataset(hub_id, cache_dir=cache_dir)
+    train = filter_cogito_probe(bundle["train"], seq_len=seq_len, variant=variant, task=task)
+    ev_name = eval_split if eval_split in bundle else "validation"
+    test = filter_cogito_probe(bundle[ev_name], seq_len=seq_len, variant=variant, task=task)
+    logger.info(f"[cogito-probe] {hub_id}: {len(train):,} train / {len(test):,} {ev_name} rows")
+    return train, test
 
 
 if __name__ == "__main__":

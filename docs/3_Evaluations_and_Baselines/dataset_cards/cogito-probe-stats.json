@@ -1,0 +1,1224 @@
+{
+  "seed": 20260916,
+  "scale": "full",
+  "tokenizer": "HuggingFaceTB/SmolLM3-3B",
+  "created": "2026-09-16T16:10:38+00:00",
+  "generator": "scripts/build_concept_probe_datasets.py",
+  "expected_splits": {
+    "train": 8448,
+    "validation": 896,
+    "test": 896,
+    "n_rows": 10240
+  },
+  "families": {
+    "bits": {
+      "n_rows": 10240,
+      "splits": {
+        "train": 8448,
+        "validation": 896,
+        "test": 896
+      },
+      "rungs": {
+        "seq1024": 4608,
+        "seq4096": 2560,
+        "seq8192": 1280,
+        "seq16384": 1024,
+        "seq32768": 768
+      },
+      "tasks": {
+        "recall_packed": 10240
+      },
+      "variants": {
+        "scaled": 5120,
+        "fixed": 5120
+      },
+      "token_length": {
+        "n": 10240,
+        "min": 1024,
+        "p50": 4096.0,
+        "p90": 16384.0,
+        "max": 32768,
+        "mean": 6604.8
+      },
+      "supervised_tokens": {
+        "n": 10240,
+        "min": 8,
+        "p50": 8.0,
+        "p90": 32.0,
+        "max": 128,
+        "mean": 17.8
+      },
+      "gap": {
+        "n": 10240,
+        "min": 935,
+        "p50": 3919.0,
+        "p90": 16295.0,
+        "max": 32709,
+        "mean": 6412.546875
+      },
+      "prize_bits": {
+        "min": 40.0,
+        "mean": 89.0,
+        "max": 640.0
+      },
+      "gzip_ratio_text_mean": 0.03469768331925625,
+      "gzip_ratio_ids_mean": 0.04552640914916992,
+      "gzip_sampled": true,
+      "gzip_n": 160,
+      "gzip_per_rung": 32,
+      "unigram_entropy_mean": 6.215096672840895,
+      "bigram_entropy_mean": 6.321596071299367,
+      "answer_entropy": 13.321928094884678,
+      "n_distinct_answers": 10240,
+      "top_token_ids": [
+        {
+          "id": 51929,
+          "count": 1026304
+        },
+        {
+          "id": 11493,
+          "count": 1026304
+        },
+        {
+          "id": 43080,
+          "count": 1026304
+        },
+        {
+          "id": 38049,
+          "count": 1026304
+        },
+        {
+          "id": 68640,
+          "count": 1026304
+        },
+        {
+          "id": 79909,
+          "count": 1026304
+        },
+        {
+          "id": 45347,
+          "count": 1026304
+        },
+        {
+          "id": 64485,
+          "count": 1026304
+        },
+        {
+          "id": 12128,
+          "count": 1026304
+        },
+        {
+          "id": 9482,
+          "count": 1026304
+        },
+        {
+          "id": 60551,
+          "count": 1026304
+        },
+        {
+          "id": 84512,
+          "count": 1026304
+        }
+      ],
+      "leakage": {
+        "pairs": {
+          "train\u2229validation": {
+            "fingerprint": 0,
+            "input_ids": 0,
+            "text": 0,
+            "answer_only": 0
+          },
+          "train\u2229test": {
+            "fingerprint": 0,
+            "input_ids": 0,
+            "text": 0,
+            "answer_only": 0
+          },
+          "validation\u2229test": {
+            "fingerprint": 0,
+            "input_ids": 0,
+            "text": 0,
+            "answer_only": 0
+          }
+        },
+        "within_split_duplicate_ids": {
+          "train": 0,
+          "validation": 0,
+          "test": 0
+        }
+      },
+      "per_rung": {
+        "1024": {
+          "n": 4608,
+          "mean_prize_bits": 40.0,
+          "mean_gap": 939.4791666666666,
+          "mean_gzip_text": 0.08003213307084214,
+          "gzip_n": 32,
+          "tasks": {
+            "recall_packed": 4608
+          }
+        },
+        "4096": {
+          "n": 2560,
+          "mean_prize_bits": 60.0,
+          "mean_gap": 3967.599609375,
+          "mean_gzip_text": 0.030390489122554265,
+          "gzip_n": 32,
+          "tasks": {
+            "recall_packed": 2560
+          }
+        },
+        "8192": {
+          "n": 1280,
+          "mean_prize_bits": 100.0,
+          "mean_gap": 7975.6484375,
+          "mean_gzip_text": 0.02463183444379969,
+          "gzip_n": 32,
+          "tasks": {
+            "recall_packed": 1280
+          }
+        },
+        "16384": {
+          "n": 1024,
+          "mean_prize_bits": 180.0,
+          "mean_gap": 15991.501953125,
+          "mean_gzip_text": 0.020465223524475114,
+          "gzip_n": 32,
+          "tasks": {
+            "recall_packed": 1024
+          }
+        },
+        "32768": {
+          "n": 768,
+          "mean_prize_bits": 340.0,
+          "mean_gap": 32023.66796875,
+          "mean_gzip_text": 0.017968736434610038,
+          "gzip_n": 32,
+          "tasks": {
+            "recall_packed": 768
+          }
+        }
+      },
+      "samples": [
+        {
+          "id": "bits/seq1024/scaled/train/00000",
+          "task": "recall_packed",
+          "variant": "scaled",
+          "seq_len": 1024,
+          "prize_bits": 40.0,
+          "gap": 940,
+          "query": "Q gonzalez operator tcb lover qq trois deprecated onset",
+          "answer": "ase contrario hart greene keyboardtype validators scratch greene",
+          "text_head": "key verb val tolerated . key candid val hannity . key andre val seventh . key jong val hannity . key trois val validators . key deprecated val scratch . key qq val keyboardtype . key hepat val validators . key lover val greene . key fait val contrario . key tcb val hart . key lisa val brushed . key operator val contrario . key onset val greene . key gonzalez val ase . key regimes val indicated . g"
+        },
+        {
+          "id": "bits/seq1024/scaled/train/00001",
+          "task": "recall_packed",
+          "variant": "scaled",
+          "seq_len": 1024,
+          "prize_bits": 40.0,
+          "gap": 935,
+          "query": "Q initialization regimes zastav parte paw completes purchases evening",
+          "answer": "implicated ram volatility volatility seventh hanna conceal prick",
+          "text_head": "key statute val acceleration . key strategy val validators . key animal val localization . key regimes val ram . key zastav val volatility . key initialization val implicated . key machine val ase . key evo val fu . key parte val volatility . key purchases val conceal . key paw val seventh . key sunshine val indicated . key solemn val hart . key downturn val hannity . key evening val prick . key c"
+        },
+        {
+          "id": "bits/seq1024/scaled/train/00002",
+          "task": "recall_packed",
+          "variant": "scaled",
+          "seq_len": 1024,
+          "prize_bits": 40.0,
+          "gap": 935,
+          "query": "Q jeh alma privileges inputs qq issuccess pendingintent regimes",
+          "answer": "ram differentiation timestamps rendered localization tolerated mathematic acceleration",
+          "text_head": "key bless val implicated . key pendingintent val mathematic . key pls val sele . key jeh val ram . key alma val differentiation . key issuccess val tolerated . key privileges val timestamps . key gut val acceleration . key everton val hannity . key lieutenant val validators . key qq val localization . key snap val hanna . key inputs val rendered . key candid val hannity . key ukaz val ase . key re"
+        }
+      ],
+      "parquet_verify": {
+        "splits": {
+          "train": 8448,
+          "validation": 896,
+          "test": 896
+        },
+        "leakage": {
+          "pairs": {
+            "train\u2229validation": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 0
+            },
+            "train\u2229test": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 0
+            },
+            "validation\u2229test": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 0
+            }
+          },
+          "within_split_duplicate_ids": {
+            "train": 0,
+            "validation": 0,
+            "test": 0
+          }
+        },
+        "seed": 20260916
+      }
+    },
+    "bind": {
+      "n_rows": 10240,
+      "splits": {
+        "train": 8448,
+        "validation": 896,
+        "test": 896
+      },
+      "rungs": {
+        "seq1024": 4608,
+        "seq4096": 2560,
+        "seq8192": 1280,
+        "seq16384": 1024,
+        "seq32768": 768
+      },
+      "tasks": {
+        "attr_color": 3494,
+        "who_place": 3491,
+        "hop_friend_place": 3255
+      },
+      "variants": {
+        "scaled": 5120,
+        "fixed": 5120
+      },
+      "token_length": {
+        "n": 10240,
+        "min": 1024,
+        "p50": 4096.0,
+        "p90": 16384.0,
+        "max": 32768,
+        "mean": 6604.8
+      },
+      "supervised_tokens": {
+        "n": 10240,
+        "min": 8,
+        "p50": 8.0,
+        "p90": 32.0,
+        "max": 32,
+        "mean": 12.6
+      },
+      "gap": {
+        "n": 10240,
+        "min": 887,
+        "p50": 3823.0,
+        "p90": 16247.0,
+        "max": 32631,
+        "mean": 6389.6
+      },
+      "prize_bits": {
+        "min": 24.0,
+        "mean": 58.38125,
+        "max": 160.0
+      },
+      "gzip_ratio_text_mean": 0.03706220489565008,
+      "gzip_ratio_ids_mean": 0.050170516967773436,
+      "gzip_sampled": true,
+      "gzip_n": 160,
+      "gzip_per_rung": 32,
+      "unigram_entropy_mean": 6.278708067519128,
+      "bigram_entropy_mean": 6.4878740940425335,
+      "answer_entropy": 13.321928094884678,
+      "n_distinct_answers": 10240,
+      "top_token_ids": [
+        {
+          "id": 51929,
+          "count": 1022976
+        },
+        {
+          "id": 11493,
+          "count": 1022976
+        },
+        {
+          "id": 43080,
+          "count": 1022976
+        },
+        {
+          "id": 38049,
+          "count": 1022976
+        },
+        {
+          "id": 68640,
+          "count": 1022976
+        },
+        {
+          "id": 79909,
+          "count": 1022976
+        },
+        {
+          "id": 45347,
+          "count": 1022976
+        },
+        {
+          "id": 64485,
+          "count": 1022976
+        },
+        {
+          "id": 12128,
+          "count": 1022976
+        },
+        {
+          "id": 9482,
+          "count": 1022976
+        },
+        {
+          "id": 60551,
+          "count": 1022976
+        },
+        {
+          "id": 84512,
+          "count": 1022976
+        }
+      ],
+      "leakage": {
+        "pairs": {
+          "train\u2229validation": {
+            "fingerprint": 0,
+            "input_ids": 0,
+            "text": 0,
+            "answer_only": 0
+          },
+          "train\u2229test": {
+            "fingerprint": 0,
+            "input_ids": 0,
+            "text": 0,
+            "answer_only": 0
+          },
+          "validation\u2229test": {
+            "fingerprint": 0,
+            "input_ids": 0,
+            "text": 0,
+            "answer_only": 0
+          }
+        },
+        "within_split_duplicate_ids": {
+          "train": 0,
+          "validation": 0,
+          "test": 0
+        }
+      },
+      "per_rung": {
+        "1024": {
+          "n": 4608,
+          "mean_prize_bits": 34.53819444444444,
+          "mean_gap": 887.0,
+          "mean_gzip_text": 0.09015881907249457,
+          "gzip_n": 32,
+          "tasks": {
+            "attr_color": 1588,
+            "who_place": 1573,
+            "hop_friend_place": 1447
+          }
+        },
+        "4096": {
+          "n": 2560,
+          "mean_prize_bits": 54.6,
+          "mean_gap": 3891.0,
+          "mean_gzip_text": 0.03575096405204543,
+          "gzip_n": 32,
+          "tasks": {
+            "attr_color": 862,
+            "who_place": 864,
+            "hop_friend_place": 834
+          }
+        },
+        "8192": {
+          "n": 1280,
+          "mean_prize_bits": 97.3125,
+          "mean_gap": 7851.0,
+          "mean_gzip_text": 0.03057761188055451,
+          "gzip_n": 32,
+          "tasks": {
+            "hop_friend_place": 380,
+            "attr_color": 470,
+            "who_place": 430
+          }
+        },
+        "16384": {
+          "n": 1024,
+          "mean_prize_bits": 97.1875,
+          "mean_gap": 16043.0,
+          "mean_gzip_text": 0.017681222758408343,
+          "gzip_n": 32,
+          "tasks": {
+            "hop_friend_place": 336,
+            "who_place": 374,
+            "attr_color": 314
+          }
+        },
+        "32768": {
+          "n": 768,
+          "mean_prize_bits": 97.41666666666667,
+          "mean_gap": 32427.0,
+          "mean_gzip_text": 0.011142406714747588,
+          "gzip_n": 32,
+          "tasks": {
+            "hop_friend_place": 258,
+            "who_place": 250,
+            "attr_color": 260
+          }
+        }
+      },
+      "samples": [
+        {
+          "id": "bind/seq1024/scaled/train/00000",
+          "task": "attr_color",
+          "variant": "scaled",
+          "seq_len": 1024,
+          "prize_bits": 40.0,
+          "gap": 887,
+          "query": "Q color idx wish oxidation neben graf morr spacer travellers",
+          "answer": "green coral mouse dog oslo bird amber yellow",
+          "text_head": "travellers is moss . travellers in miner . travellers color yellow . travellers friend oxidation . oxidation is rain . oxidation in chef . oxidation color mouse . oxidation friend wish . neben is nova . neben in map . neben color dog . neben friend morr . wish is something . wish in baker . wish color coral . wish friend neben . idx is fire . idx in actor . idx color green . idx friend spacer . mo"
+        },
+        {
+          "id": "bind/seq1024/scaled/train/00001",
+          "task": "attr_color",
+          "variant": "scaled",
+          "seq_len": 1024,
+          "prize_bits": 40.0,
+          "gap": 887,
+          "query": "Q color auswahl youngsters avan urging processing morr navy neben",
+          "answer": "deer dog bird yellow pink white brown silver",
+          "text_head": "processing is nova . processing in bell . processing color pink . processing friend auswahl . auswahl is pearl . auswahl in paris . auswahl color deer . auswahl friend avan . neben is exploit . neben in box . neben color silver . neben friend urging . youngsters is someone . youngsters in clerk . youngsters color dog . youngsters friend processing . navy is nothing . navy in rider . navy color bro"
+        },
+        {
+          "id": "bind/seq1024/scaled/train/00002",
+          "task": "who_place",
+          "variant": "scaled",
+          "seq_len": 1024,
+          "prize_bits": 24.0,
+          "gap": 887,
+          "query": "Q who in map miner box judge rope door actor rider",
+          "answer": "bn keep youngsters manifest include hx illustrations kerr",
+          "text_head": "keep is passed . keep in miner . keep color ivory . keep friend illustrations . bn is closed . bn in map . bn color horse . bn friend kerr . youngsters is stayed . youngsters in box . youngsters color brown . youngsters friend manifest . manifest is people . manifest in judge . manifest color mouse . manifest friend hx . illustrations is mist . illustrations in actor . illustrations color wolf . i"
+        }
+      ],
+      "parquet_verify": {
+        "splits": {
+          "train": 8448,
+          "validation": 896,
+          "test": 896
+        },
+        "leakage": {
+          "pairs": {
+            "train\u2229validation": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 0
+            },
+            "train\u2229test": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 0
+            },
+            "validation\u2229test": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 0
+            }
+          },
+          "within_split_duplicate_ids": {
+            "train": 0,
+            "validation": 0,
+            "test": 0
+          }
+        },
+        "seed": 20260916
+      }
+    },
+    "arith": {
+      "n_rows": 10240,
+      "splits": {
+        "train": 8448,
+        "validation": 896,
+        "test": 896
+      },
+      "rungs": {
+        "seq1024": 4608,
+        "seq4096": 2560,
+        "seq8192": 1280,
+        "seq16384": 1024,
+        "seq32768": 768
+      },
+      "tasks": {
+        "eval": 2037,
+        "subexpr": 5175,
+        "match": 3028
+      },
+      "variants": {
+        "scaled": 5120,
+        "fixed": 5120
+      },
+      "token_length": {
+        "n": 10240,
+        "min": 1024,
+        "p50": 4096.0,
+        "p90": 16384.0,
+        "max": 32768,
+        "mean": 6604.8
+      },
+      "supervised_tokens": {
+        "n": 10240,
+        "min": 1,
+        "p50": 2.0,
+        "p90": 5.0,
+        "max": 13,
+        "mean": 3.2482421875
+      },
+      "gap": {
+        "n": 10240,
+        "min": 987,
+        "p50": 4067.0,
+        "p90": 16365.0,
+        "max": 32761,
+        "mean": 6582.4294921875
+      },
+      "prize_bits": {
+        "min": 3.321928094887362,
+        "mean": 12.914253147059009,
+        "max": 30.546498482174595
+      },
+      "gzip_ratio_text_mean": 0.026083545865333947,
+      "gzip_ratio_ids_mean": 0.03679981231689453,
+      "gzip_sampled": true,
+      "gzip_n": 160,
+      "gzip_per_rung": 32,
+      "unigram_entropy_mean": 6.184009755953452,
+      "bigram_entropy_mean": 6.286179832420417,
+      "answer_entropy": 8.604486599939008,
+      "n_distinct_answers": 2612,
+      "top_token_ids": [
+        {
+          "id": 51929,
+          "count": 1032550
+        },
+        {
+          "id": 11493,
+          "count": 1032371
+        },
+        {
+          "id": 43080,
+          "count": 1032253
+        },
+        {
+          "id": 38049,
+          "count": 1032191
+        },
+        {
+          "id": 68640,
+          "count": 1032126
+        },
+        {
+          "id": 79909,
+          "count": 1032010
+        },
+        {
+          "id": 45347,
+          "count": 1031931
+        },
+        {
+          "id": 64485,
+          "count": 1031874
+        },
+        {
+          "id": 12128,
+          "count": 1031825
+        },
+        {
+          "id": 9482,
+          "count": 1031695
+        },
+        {
+          "id": 60551,
+          "count": 1031629
+        },
+        {
+          "id": 84512,
+          "count": 1031565
+        }
+      ],
+      "leakage": {
+        "pairs": {
+          "train\u2229validation": {
+            "fingerprint": 0,
+            "input_ids": 0,
+            "text": 0,
+            "answer_only": 248
+          },
+          "train\u2229test": {
+            "fingerprint": 0,
+            "input_ids": 0,
+            "text": 0,
+            "answer_only": 245
+          },
+          "validation\u2229test": {
+            "fingerprint": 0,
+            "input_ids": 0,
+            "text": 0,
+            "answer_only": 95
+          }
+        },
+        "within_split_duplicate_ids": {
+          "train": 0,
+          "validation": 0,
+          "test": 0
+        }
+      },
+      "per_rung": {
+        "1024": {
+          "n": 4608,
+          "mean_prize_bits": 11.57617572221786,
+          "mean_gap": 1001.8563368055555,
+          "mean_gzip_text": 0.06809982022871518,
+          "gzip_n": 32,
+          "tasks": {
+            "eval": 901,
+            "subexpr": 2358,
+            "match": 1349
+          }
+        },
+        "4096": {
+          "n": 2560,
+          "mean_prize_bits": 12.086216003516288,
+          "mean_gap": 4074.24765625,
+          "mean_gzip_text": 0.023126163200739354,
+          "gzip_n": 32,
+          "tasks": {
+            "match": 787,
+            "subexpr": 1256,
+            "eval": 517
+          }
+        },
+        "8192": {
+          "n": 1280,
+          "mean_prize_bits": 15.547526890936021,
+          "mean_gap": 8168.8671875,
+          "mean_gzip_text": 0.016281841481842488,
+          "gzip_n": 32,
+          "tasks": {
+            "eval": 250,
+            "subexpr": 665,
+            "match": 365
+          }
+        },
+        "16384": {
+          "n": 1024,
+          "mean_prize_bits": 15.302892110187805,
+          "mean_gap": 16360.685546875,
+          "mean_gzip_text": 0.012489002854704594,
+          "gzip_n": 32,
+          "tasks": {
+            "subexpr": 501,
+            "match": 292,
+            "eval": 231
+          }
+        },
+        "32768": {
+          "n": 768,
+          "mean_prize_bits": 16.1291999839482,
+          "mean_gap": 32744.736979166668,
+          "mean_gzip_text": 0.010420901560668135,
+          "gzip_n": 32,
+          "tasks": {
+            "eval": 138,
+            "match": 235,
+            "subexpr": 395
+          }
+        }
+      },
+      "samples": [
+        {
+          "id": "arith/seq1024/scaled/train/00000",
+          "task": "eval",
+          "variant": "scaled",
+          "seq_len": 1024,
+          "prize_bits": 6.643856189774724,
+          "gap": 1004,
+          "query": "Q eval",
+          "answer": "3 9",
+          "text_head": "( [ { 5 + 6 } * ( 1 * 4 ) ] - 5 ) . ( 6 * { { 0 - 3 } + { 7 - 7 } } ) . [ 1 - ( 9 - { 1 - 5 } ) ] . [ ( { 2 - 6 } - ( 0 - 5 ) ) - { 7 + 1 } ] . glfw bigger signaling mex pieces cyt passer appconfig worker susp initview funciones mongolia expect intentional bea udp dracon trval rene tendr studies util meilleur clickable owe cardio dives benny capacitor callee lia resourcename emailaddress limits ty"
+        },
+        {
+          "id": "arith/seq1024/scaled/train/00001",
+          "task": "subexpr",
+          "variant": "scaled",
+          "seq_len": 1024,
+          "prize_bits": 15.273249241087298,
+          "gap": 1005,
+          "query": "Q sub 2 . 1 .",
+          "answer": "1 8 . 1 4",
+          "text_head": "( 4 + { 9 - ( 0 - 5 ) } ) . ( { 6 * 5 } + 8 ) . ( ( 5 - { 7 + 0 } ) - [ ( 1 - 8 ) + [ 9 * 8 ] ] ) . { 3 - ( 6 * ( 8 - 7 ) ) } . glfw bigger signaling mex pieces cyt passer appconfig worker susp initview funciones mongolia expect intentional bea udp dracon trval rene tendr studies util meilleur clickable owe cardio dives benny capacitor callee lia resourcename emailaddress limits ty circ single wol"
+        },
+        {
+          "id": "arith/seq1024/scaled/train/00002",
+          "task": "subexpr",
+          "variant": "scaled",
+          "seq_len": 1024,
+          "prize_bits": 15.273249241087298,
+          "gap": 988,
+          "query": "Q sub 5 . 2 .",
+          "answer": "- 1 . - 1 2",
+          "text_head": "{ [ { 3 * 1 } * [ 3 - 7 ] ] - ( [ 4 - 1 ] - [ 5 - 1 ] ) } . [ [ ( 9 - 3 ) - ( 9 + 8 ) ] * [ { 2 - 8 } - 1 ] ] . { [ 9 + { 1 - 9 } ] + ( 2 + [ 9 - 0 ] ) } . ( ( ( 4 + 7 ) + { 0 - 4 } ) - [ [ 8 - 0 ] + [ 1 - 5 ] ] ) . glfw bigger signaling mex pieces cyt passer appconfig worker susp initview funciones mongolia expect intentional bea udp dracon trval rene tendr studies util meilleur clickable owe car"
+        }
+      ],
+      "parquet_verify": {
+        "splits": {
+          "train": 8448,
+          "validation": 896,
+          "test": 896
+        },
+        "leakage": {
+          "pairs": {
+            "train\u2229validation": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 248
+            },
+            "train\u2229test": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 245
+            },
+            "validation\u2229test": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 95
+            }
+          },
+          "within_split_duplicate_ids": {
+            "train": 0,
+            "validation": 0,
+            "test": 0
+          }
+        },
+        "seed": 20260916
+      }
+    },
+    "props": {
+      "n_rows": 10240,
+      "splits": {
+        "train": 8448,
+        "validation": 896,
+        "test": 896
+      },
+      "rungs": {
+        "seq1024": 4608,
+        "seq4096": 2560,
+        "seq8192": 1280,
+        "seq16384": 1024,
+        "seq32768": 768
+      },
+      "tasks": {
+        "prop_color": 10240
+      },
+      "variants": {
+        "scaled": 5120,
+        "fixed": 5120
+      },
+      "token_length": {
+        "n": 10240,
+        "min": 1024,
+        "p50": 4096.0,
+        "p90": 16384.0,
+        "max": 32768,
+        "mean": 6604.8
+      },
+      "supervised_tokens": {
+        "n": 10240,
+        "min": 6,
+        "p50": 6.0,
+        "p90": 24.0,
+        "max": 32,
+        "mean": 10.15
+      },
+      "gap": {
+        "n": 10240,
+        "min": 945,
+        "p50": 3939.0,
+        "p90": 16305.0,
+        "max": 32707,
+        "mean": 6482.68720703125
+      },
+      "prize_bits": {
+        "min": 30.0,
+        "mean": 50.75,
+        "max": 160.0
+      },
+      "gzip_ratio_text_mean": 0.030142807525089375,
+      "gzip_ratio_ids_mean": 0.04175925254821777,
+      "gzip_sampled": true,
+      "gzip_n": 160,
+      "gzip_per_rung": 32,
+      "unigram_entropy_mean": 6.206974111849061,
+      "bigram_entropy_mean": 6.278340461238585,
+      "answer_entropy": 13.321928094884678,
+      "n_distinct_answers": 10240,
+      "top_token_ids": [
+        {
+          "id": 51929,
+          "count": 1039104
+        },
+        {
+          "id": 11493,
+          "count": 1039104
+        },
+        {
+          "id": 43080,
+          "count": 1039104
+        },
+        {
+          "id": 38049,
+          "count": 1039104
+        },
+        {
+          "id": 68640,
+          "count": 1039104
+        },
+        {
+          "id": 79909,
+          "count": 1039104
+        },
+        {
+          "id": 45347,
+          "count": 1039104
+        },
+        {
+          "id": 64485,
+          "count": 1039104
+        },
+        {
+          "id": 12128,
+          "count": 1039104
+        },
+        {
+          "id": 9482,
+          "count": 1039104
+        },
+        {
+          "id": 60551,
+          "count": 1039104
+        },
+        {
+          "id": 84512,
+          "count": 1039104
+        }
+      ],
+      "leakage": {
+        "pairs": {
+          "train\u2229validation": {
+            "fingerprint": 0,
+            "input_ids": 0,
+            "text": 0,
+            "answer_only": 0
+          },
+          "train\u2229test": {
+            "fingerprint": 0,
+            "input_ids": 0,
+            "text": 0,
+            "answer_only": 0
+          },
+          "validation\u2229test": {
+            "fingerprint": 0,
+            "input_ids": 0,
+            "text": 0,
+            "answer_only": 0
+          }
+        },
+        "within_split_duplicate_ids": {
+          "train": 0,
+          "validation": 0,
+          "test": 0
+        }
+      },
+      "per_rung": {
+        "1024": {
+          "n": 4608,
+          "mean_prize_bits": 30.0,
+          "mean_gap": 947.58984375,
+          "mean_gzip_text": 0.0761339299842767,
+          "gzip_n": 32,
+          "tasks": {
+            "prop_color": 4608
+          }
+        },
+        "4096": {
+          "n": 2560,
+          "mean_prize_bits": 45.0,
+          "mean_gap": 3980.830078125,
+          "mean_gzip_text": 0.02881659118097758,
+          "gzip_n": 32,
+          "tasks": {
+            "prop_color": 2560
+          }
+        },
+        "8192": {
+          "n": 1280,
+          "mean_prize_bits": 75.0,
+          "mean_gap": 7998.69296875,
+          "mean_gzip_text": 0.022473920461035937,
+          "gzip_n": 32,
+          "tasks": {
+            "prop_color": 1280
+          }
+        },
+        "16384": {
+          "n": 1024,
+          "mean_prize_bits": 95.0,
+          "mean_gap": 16185.3359375,
+          "mean_gzip_text": 0.014023468239503779,
+          "gzip_n": 32,
+          "tasks": {
+            "prop_color": 1024
+          }
+        },
+        "32768": {
+          "n": 768,
+          "mean_prize_bits": 95.0,
+          "mean_gap": 32569.25390625,
+          "mean_gzip_text": 0.009266127759652895,
+          "gzip_n": 32,
+          "tasks": {
+            "prop_color": 768
+          }
+        }
+      },
+      "samples": [
+        {
+          "id": "props/seq1024/scaled/train/00000",
+          "task": "prop_color",
+          "variant": "scaled",
+          "seq_len": 1024,
+          "prize_bits": 30.0,
+          "gap": 945,
+          "query": "Q color shredd ts kadar ocak follow apollo",
+          "answer": "olive pink cat fish coral black",
+          "text_head": "the illustrations dropped the hawk clients in poet . the navy dropped the frog quelque in poet . the get dropped the pink ts in flag . the income dropped the coral follow in miner . the wife dropped the cat kadar in judge . the throm dropped the fish ocak in ring . the posto dropped the black apollo in bell . the hx dropped the olive shredd in agent . glfw bigger signaling mex pieces cyt passer ap"
+        },
+        {
+          "id": "props/seq1024/scaled/train/00001",
+          "task": "prop_color",
+          "variant": "scaled",
+          "seq_len": 1024,
+          "prize_bits": 30.0,
+          "gap": 954,
+          "query": "Q color ocak jw grateful localize grip cortical",
+          "answer": "bear deer moth frog seal wolf",
+          "text_head": "the neben dropped the frog localize in lamp . the prot dropped the wolf cortical in pilot . the cavs dropped the deer jw in cairo . the income dropped the gold ovar in book . the art dropped the seal grip in box . the hdr dropped the moth grateful in hat . the graf dropped the bear ocak in coin . the cavs dropped the coral lar in book . glfw bigger signaling mex pieces cyt passer appconfig worker "
+        },
+        {
+          "id": "props/seq1024/scaled/train/00002",
+          "task": "prop_color",
+          "variant": "scaled",
+          "seq_len": 1024,
+          "prize_bits": 30.0,
+          "gap": 945,
+          "query": "Q color exem diameter velik tease court politico",
+          "answer": "ivory wolf lion mouse blue ivory",
+          "text_head": "the auswahl dropped the ivory politico in paris . the navy dropped the ivory exem in lamp . the hdr dropped the blue court in ring . the wish dropped the moth sig in paris . the posto dropped the mouse yani in map . the auswahl dropped the wolf diameter in poet . the sly dropped the mouse tease in guard . the cose dropped the lion velik in lamp . glfw bigger signaling mex pieces cyt passer appconf"
+        }
+      ],
+      "parquet_verify": {
+        "splits": {
+          "train": 8448,
+          "validation": 896,
+          "test": 896
+        },
+        "leakage": {
+          "pairs": {
+            "train\u2229validation": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 0
+            },
+            "train\u2229test": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 0
+            },
+            "validation\u2229test": {
+              "fingerprint": 0,
+              "input_ids": 0,
+              "text": 0,
+              "answer_only": 0
+            }
+          },
+          "within_split_duplicate_ids": {
+            "train": 0,
+            "validation": 0,
+            "test": 0
+          }
+        },
+        "seed": 20260916
+      }
+    }
+  },
+  "atom_table": {
+    "pool_sizes": {
+      "colors": 32,
+      "places": 32,
+      "jobs": 32,
+      "agents": 64,
+      "objects": 48,
+      "values": 32,
+      "keys": 256,
+      "filler": 64
+    },
+    "markers": {
+      "key": {
+        "id": 798,
+        "surface": "key"
+      },
+      "val": {
+        "id": 838,
+        "surface": "val"
+      },
+      "query": {
+        "id": 48,
+        "surface": "Q"
+      },
+      "answer": {
+        "id": 32,
+        "surface": "A"
+      },
+      "end": {
+        "id": 4794,
+        "surface": "END"
+      },
+      "dot": {
+        "id": 13,
+        "surface": "."
+      },
+      "who": {
+        "id": 14965,
+        "surface": "who"
+      },
+      "hop": {
+        "id": 26172,
+        "surface": "hop"
+      },
+      "eval": {
+        "id": 14504,
+        "surface": "eval"
+      },
+      "sub": {
+        "id": 2008,
+        "surface": "sub"
+      },
+      "match": {
+        "id": 6481,
+        "surface": "match"
+      },
+      "fact": {
+        "id": 34210,
+        "surface": "fact"
+      },
+      "friend": {
+        "id": 10931,
+        "surface": "friend"
+      },
+      "color": {
+        "id": 3506,
+        "surface": "color"
+      },
+      "place": {
+        "id": 2050,
+        "surface": "place"
+      },
+      "job": {
+        "id": 8975,
+        "surface": "job"
+      },
+      "is": {
+        "id": 285,
+        "surface": "is"
+      },
+      "in": {
+        "id": 258,
+        "surface": "in"
+      },
+      "the": {
+        "id": 1820,
+        "surface": "the"
+      },
+      "a": {
+        "id": 64,
+        "surface": "a"
+      },
+      "dropped": {
+        "id": 12504,
+        "surface": "dropped"
+      },
+      "found": {
+        "id": 15456,
+        "surface": "found"
+      },
+      "gave": {
+        "id": 6688,
+        "surface": "gave"
+      },
+      "near": {
+        "id": 52759,
+        "surface": "near"
+      },
+      "to": {
+        "id": 998,
+        "surface": "to"
+      }
+    }
+  },
+  "hub": {
+    "bits": "ksopyla/cogito-probe-bits",
+    "bind": "ksopyla/cogito-probe-bind",
+    "arith": "ksopyla/cogito-probe-arith",
+    "props": "ksopyla/cogito-probe-props"
+  },
+  "arith_tokenization_check": {
+    "sample_glued": "(1+2)*[3-{4}]",
+    "n_atoms": 13,
+    "n_composed_ids": 13,
+    "n_glued_bpe": 10,
+    "n_spaced_bpe": 17,
+    "composed_equals_glued_bpe": false,
+    "note": "composed ids are the instrument; glued BPE is the author's surface form and is not 1:1"
+  },
+  "publish": {
+    "status": "uploaded_public",
+    "uploaded": "2026-09-16T16:21:21+00:00",
+    "scale": "full",
+    "seed": 20260916,
+    "private": false,
+    "author": "Krzysztof Sopy\u0142a",
+    "urls": {
+      "bits": "https://huggingface.co/datasets/ksopyla/cogito-probe-bits",
+      "bind": "https://huggingface.co/datasets/ksopyla/cogito-probe-bind",
+      "arith": "https://huggingface.co/datasets/ksopyla/cogito-probe-arith",
+      "props": "https://huggingface.co/datasets/ksopyla/cogito-probe-props"
+    },
+    "commits": {
+      "bits": "d34f4f5847a384e1b7180139cd3a1f2038bb345f",
+      "bind": "998d4082c54c0447060ef17f26d17babc2e40707",
+      "arith": "e4fb9c7d22428b29e6ac55accd73ea50edef1d1a",
+      "props": "e5d5f450f5d7ead4266fc8dc8fd8a5dd834c102a"
+    }
+  }
+}

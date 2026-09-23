@@ -1,6 +1,7 @@
 """Model, data, collator, and identity factories for concept pretraining."""
 
 import json
+import re
 from datetime import datetime
 
 import torch
@@ -14,6 +15,7 @@ from data.data_collators import (
 from data.dataset_preprocess import (
     load_and_preprocess_dataset_mix,
     load_and_preprocess_text_dataset,
+    load_cogito_probe,
     load_pretokenized_mix,
 )
 from nn.backbone_concept_lm import BackboneConceptConfig, BackboneConceptLM
@@ -146,7 +148,27 @@ def load_pretraining_datasets(
 ):
     """Load the selected pretokenized, recipe, registry-mix, or direct-Hub route."""
     with training_args.main_process_first(desc="loading and tokenizing dataset"):
-        if data_args.pretokenized_manifest:
+        if getattr(data_args, "cogito_probe_id", None):
+            logger.info(
+                f"Loading CogitoProbe Hub {data_args.cogito_probe_id} "
+                f"seq={data_args.cogito_probe_seq_len} variant={data_args.cogito_probe_variant}"
+            )
+            train_ds, test_ds = load_cogito_probe(
+                data_args.cogito_probe_id,
+                seq_len=int(data_args.cogito_probe_seq_len),
+                variant=data_args.cogito_probe_variant,
+                task=getattr(data_args, "cogito_probe_task", None),
+                cache_dir=data_args.dataset_cache_dir,
+            )
+        elif data_args.pretokenized_manifest:
+            if data_args.dataset_mix_weight_override:
+                # The sequence-length / packing caches are keyed by the manifest file, so a
+                # runtime re-weighting of a pretokenized mix would silently misalign them.
+                raise ValueError(
+                    "dataset_mix_weight_override is not applied to a pretokenized_manifest; write a "
+                    "new manifest JSON with the desired source weights instead (see "
+                    "scripts/write_manifest_variant.py)."
+                )
             logger.info(
                 f"Loading pre-tokenized mix from manifest: "
                 f"{data_args.pretokenized_manifest}"
@@ -224,6 +246,10 @@ def build_pretraining_model(
     is_backbone,
 ):
     """Construct the selected model family and preserve warm-start behavior."""
+    if getattr(model_args, "model_family", "auto") == "perceiver_ar":
+        return _build_perceiver_ar_model(tokenizer, model_args, data_args)
+    if getattr(model_args, "model_family", "auto") == "perceiver_concept":
+        return _build_perceiver_concept_model(tokenizer, model_args, data_args)
     if is_backbone:
         config = BackboneConceptConfig(
             backbone_model=model_args.backbone_model,
@@ -305,6 +331,183 @@ def build_pretraining_model(
     return model, config, model_type
 
 
+def _parse_int_tuple(spec: str) -> tuple[int, ...]:
+    spec = (spec or "").strip()
+    if not spec:
+        return ()
+    return tuple(int(x) for x in spec.split(",") if x.strip())
+
+
+def _build_perceiver_concept_model(tokenizer, model_args, data_args):
+    """E22 — from-scratch Perceiver Concept LM (nn/perceiver_concept_lm.py)."""
+    from nn.perceiver_concept_lm import (
+        PerceiverConceptConfig,
+        PerceiverConceptLM,
+        analytic_param_count as pcl_param_count,
+    )
+
+    config = PerceiverConceptConfig(
+        vocab_size=len(tokenizer),
+        hidden_size=model_args.hidden_size,
+        intermediate_size=model_args.intermediate_size,
+        token_embedding_dim=model_args.token_embedding_dim,
+        enc_layers=model_args.pcl_enc_layers,
+        enc_window=model_args.pcl_enc_window,
+        concept_ratio=model_args.pcl_concept_ratio,
+        concept_slots=model_args.pcl_concept_slots,
+        pool_pos_bias=bool(model_args.pcl_pool_pos_bias),
+        latent_layers=model_args.pcl_latent_layers,
+        latent_repeats=model_args.pcl_latent_repeats,
+        dec_layers=model_args.pcl_dec_layers,
+        dec_segment=model_args.pcl_dec_segment,
+        dec_local=model_args.pcl_dec_local,
+        concept_mode=model_args.pcl_concept_mode,
+        concept_xattn_scope=model_args.pcl_concept_xattn_scope,
+        xattn_wo_init_std=model_args.pcl_xattn_wo_init_std,
+        pooler_wo_init_std=model_args.pcl_pooler_wo_init_std,
+        xattn_kv_heads=model_args.pcl_xattn_kv_heads,
+        num_attention_heads=model_args.num_attention_heads,
+        num_kv_heads=model_args.num_kv_heads,
+        head_dim=model_args.head_dim,
+        rope_theta=model_args.rope_theta,
+        ngram_orders=_parse_int_tuple(model_args.par_ngram_orders),
+        ngram_buckets=model_args.par_ngram_buckets,
+        enc_value_embed_layers=_parse_int_tuple(model_args.pcl_enc_value_embed_layers),
+        dec_value_embed_layers=_parse_int_tuple(model_args.pcl_dec_value_embed_layers),
+        value_embed_dim=model_args.par_value_embed_dim,
+        logit_softcap=model_args.logit_softcap,
+        z_loss=model_args.z_loss,
+        chunked_ce_block_size=model_args.chunked_ce_block_size or 2048,
+        use_liger=model_args.use_liger,
+        attn_backend=model_args.attn_backend,
+        attn_pad_multiple=model_args.attn_pad_multiple,
+        pad_token_id=tokenizer.pad_token_id,
+        bos_token_id=tokenizer.bos_token_id if tokenizer.bos_token_id is not None else tokenizer.eos_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+        max_sequence_length=data_args.max_seq_length,
+        tokenizer_name=data_args.tokenizer_name,
+    )
+    model = PerceiverConceptLM(config)
+    if model_args.model_name_or_path:
+        import os
+        from safetensors.torch import load_file
+
+        weights = os.path.join(model_args.model_name_or_path, "model.safetensors")
+        state = load_file(weights)
+        missing, unexpected = model.load_state_dict(state, strict=False)
+        if unexpected or missing:
+            raise ValueError(
+                f"perceiver_concept warm start mismatch from {weights}: missing={missing[:5]} "
+                f"unexpected={unexpected[:5]}"
+            )
+        logger.info(f"Warm-started PerceiverConceptLM weights from {weights}")
+    pb = pcl_param_count(config)
+    logger.info(
+        f"Initializing PerceiverConceptLM: enc={config.enc_layers}×swa{config.enc_window} "
+        f"r={config.concept_ratio} c={config.concept_slots} latent={config.latent_layers}×{config.latent_repeats} "
+        f"dec={config.dec_layers}×{config.dec_local}{config.dec_segment} concepts={config.concept_mode} "
+        f"xattn_scope={config.concept_xattn_scope} d={config.hidden_size} heads={config.num_attention_heads}/{config.num_kv_heads} "
+        f"backend={config.attn_backend} | params compute={pb.compute/1e6:.1f}M dense={pb.dense/1e6:.1f}M "
+        f"sparse={pb.sparse_tables/1e6:.1f}M total={pb.total/1e6:.1f}M"
+    )
+    model_type = "perceiver_concept" + ("_noconcept" if config.concept_mode == "none" else "")
+    return model, config, model_type
+
+
+def _build_perceiver_ar_model(tokenizer, model_args, data_args):
+    """E18 — from-scratch Perceiver AR v2 (nn/perceiver_ar_lm.py)."""
+    from nn.perceiver_ar_lm import PerceiverARConfig, PerceiverARLM, analytic_param_count
+
+    config = PerceiverARConfig(
+        vocab_size=len(tokenizer),
+        hidden_size=model_args.hidden_size,
+        intermediate_size=model_args.intermediate_size,
+        token_embedding_dim=model_args.token_embedding_dim,
+        par_mode=model_args.par_mode,
+        pre_layers=model_args.par_pre_layers,
+        pre_window=model_args.par_pre_window,
+        global_layers=model_args.par_global_layers,
+        global_positions=_parse_int_tuple(getattr(model_args, "par_global_positions", "")) or None,
+        stack_layers=model_args.num_hidden_layers,
+        block=model_args.par_block,
+        num_attention_heads=model_args.num_attention_heads,
+        num_kv_heads=model_args.num_kv_heads,
+        head_dim=model_args.head_dim,
+        rope_theta=model_args.rope_theta,
+        nope_every=model_args.par_nope_every,
+        global_nope=bool(getattr(model_args, "par_global_nope", False)),
+        global_logit_scale=getattr(model_args, "par_global_logit_scale", "none"),
+        global_scale_ref=int(getattr(model_args, "par_global_scale_ref", 8192)),
+        swa_sink=bool(getattr(model_args, "par_swa_sink", False)),
+        ngram_orders=_parse_int_tuple(model_args.par_ngram_orders),
+        ngram_buckets=model_args.par_ngram_buckets,
+        value_embed_layers=_parse_int_tuple(model_args.par_value_embed_layers),
+        value_embed_dim=model_args.par_value_embed_dim,
+        logit_softcap=model_args.logit_softcap,
+        z_loss=model_args.z_loss,
+        chunked_ce_block_size=model_args.chunked_ce_block_size or 2048,
+        use_liger=model_args.use_liger,
+        attn_backend=model_args.attn_backend,
+        attn_pad_multiple=model_args.attn_pad_multiple,
+        block_attention_mode=model_args.block_attention_mode,
+        write_back_hook=model_args.write_back_hook,
+        message_boundary_token_id=int(getattr(model_args, "message_boundary_token_id", -1)),
+        message_compress_ratio=int(getattr(model_args, "message_compress_ratio", 16) or 16),
+        message_pool_remainder=bool(getattr(model_args, "message_pool_remainder", False)),
+        message_slots_inplace=bool(getattr(model_args, "message_slots_inplace", False)),
+        message_identity_slots=bool(getattr(model_args, "message_identity_slots", False)),
+        message_global_anchors=str(getattr(model_args, "message_global_anchors", "none") or "none"),
+        message_anchor_key_len=int(getattr(model_args, "message_anchor_key_len", 0) or 0),
+        message_prefix_ae=bool(getattr(model_args, "message_prefix_ae", False)),
+        message_prefix_ae_weight=float(getattr(model_args, "message_prefix_ae_weight", 0.0) or 0.0),
+        message_prefix_ae_stopgrad_answer=bool(getattr(model_args, "message_prefix_ae_stopgrad_answer", True)),
+        pad_token_id=tokenizer.pad_token_id,
+        bos_token_id=tokenizer.bos_token_id if tokenizer.bos_token_id is not None else tokenizer.eos_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+        max_sequence_length=data_args.max_seq_length,
+        tokenizer_name=data_args.tokenizer_name,
+    )
+    model = PerceiverARLM(config)
+    if model_args.model_name_or_path:
+        # Weight-only warm start (E18 stage B from stage A's `final/`): fresh optimizer and
+        # schedule, same architecture. HF --resume_from_checkpoint would instead carry the
+        # previous run's global_step into the new token budget.
+        import os
+        from safetensors.torch import load_file
+
+        weights = os.path.join(model_args.model_name_or_path, "model.safetensors")
+        state = load_file(weights)
+        missing, unexpected = model.load_state_dict(state, strict=False)
+        # Tolerated fresh parameters: the E19 write-back hook, and value embeddings added to a
+        # layer the checkpoint did not have one on (E18b R2 adds one to the global read, which the
+        # P2 copy result says the retrieving layer needs). Their init is already ~0.3% of |v|, so
+        # the warm start is effectively unchanged at step 0. Anything else is a real mismatch.
+        _ALLOWED_FRESH = ("write_back_proj", "value_embed", "value_proj", "value_lambda", "prefix_ae_head")
+        unexplained = [k for k in missing if not any(tag in k for tag in _ALLOWED_FRESH)]
+        if unexpected or unexplained:
+            raise ValueError(
+                f"perceiver_ar warm start mismatch from {weights}: missing={unexplained[:5]} "
+                f"unexpected={unexpected[:5]}"
+            )
+        fresh_ve = sorted({int(m.group(1)) for k in missing if (m := re.match(r"layers\.(\d+)\.attn\.value_", k))})
+        if fresh_ve:
+            logger.info(
+                f"Warm start adds fresh value embeddings on layer(s) {fresh_ve} "
+                f"(global read = layer {config.global_layer_index})"
+            )
+        logger.info(f"Warm-started PerceiverARLM weights from {weights} (missing={missing})")
+    pb = analytic_param_count(config)
+    logger.info(
+        f"Initializing PerceiverARLM ({config.par_mode}): patterns={config.layer_patterns()[:3]}…"
+        f"{config.layer_patterns()[-1]} layers={config.total_layers} d={config.hidden_size} "
+        f"heads={config.num_attention_heads}/{config.num_kv_heads} block={config.block} "
+        f"backend={config.attn_backend} | params dense={pb.dense/1e6:.1f}M "
+        f"sparse={pb.sparse_tables/1e6:.1f}M total={pb.total/1e6:.1f}M"
+    )
+    model_type = "perceiver_ar" + ("_dense" if config.par_mode == "dense" else "")
+    return model, config, model_type
+
+
 def build_training_wandb_identity(
     model_args,
     config,
@@ -313,6 +516,65 @@ def build_training_wandb_identity(
     experiment_id=None,
 ):
     """Build the existing W&B identity for backbone and concept-encoder families."""
+    if getattr(model_args, "model_family", "auto") == "perceiver_concept":
+        resolved_experiment = experiment_id or "E22"
+        arm = "noconcept-control" if model_args.pcl_concept_mode == "none" else "concept-arm"
+        rep = f"x{model_args.pcl_latent_repeats}" if model_args.pcl_latent_repeats > 1 else ""
+        # "x" marks the exclusive cross-attention scope (E23); E22's causal scope keeps the bare id.
+        scope = "x" if getattr(model_args, "pcl_concept_xattn_scope", "causal") == "exclusive" else ""
+        architecture_id = (
+            f"perceiver_concept_H{model_args.hidden_size}"
+            f"e{model_args.pcl_enc_layers}r{model_args.pcl_concept_ratio}c{model_args.pcl_concept_slots}"
+            f"l{model_args.pcl_latent_layers}{rep}d{model_args.pcl_dec_layers}"
+            f"{'s' if model_args.pcl_dec_local == 'block' else 'w'}{model_args.pcl_dec_segment}{scope}"
+        )
+        return WandbRunIdentity(
+            experiment_id=resolved_experiment,
+            model_family="perceiver_concept",
+            objective_family="causal_lm",
+            architecture_id=architecture_id,
+            group=f"{resolved_experiment}_{architecture_id}",
+            job_type="train_perceiver_concept_causal_lm",
+            tags=[
+                "train",
+                "perceiver_concept",
+                "concept-encoder",
+                "decoder:autoregressive",
+                "task:generation",
+                "causal_lm",
+                arm,
+                f"backend-{model_args.attn_backend}",
+                resolved_experiment,
+            ],
+        )
+    if getattr(model_args, "model_family", "auto") == "perceiver_ar":
+        resolved_experiment = experiment_id or "E18"
+        arm = "dense-control" if model_args.par_mode == "dense" else "perceiver-arm"
+        gpos = getattr(model_args, "par_global_positions", "") or ""
+        gpos_tag = f"@{gpos.replace(',', '-')}" if gpos.strip() else ""
+        architecture_id = (
+            f"perceiver_ar_{model_args.par_mode}_H{model_args.hidden_size}"
+            f"L{model_args.par_pre_layers}g{model_args.par_global_layers}{gpos_tag}s{model_args.num_hidden_layers}"
+            f"N{model_args.par_block}"
+        )
+        return WandbRunIdentity(
+            experiment_id=resolved_experiment,
+            model_family="perceiver_ar",
+            objective_family="causal_lm",
+            architecture_id=architecture_id,
+            group=f"{resolved_experiment}_{architecture_id}",
+            job_type="train_perceiver_ar_causal_lm",
+            tags=[
+                "train",
+                "perceiver_ar",
+                "decoder:autoregressive",
+                "task:generation",
+                "causal_lm",
+                arm,
+                f"backend-{model_args.attn_backend}",
+                resolved_experiment,
+            ],
+        )
     if is_backbone:
         backbone_short = model_args.backbone_model.split("/")[-1].replace("-", "_")
         architecture_id = (
@@ -382,10 +644,13 @@ def build_pretraining_collators(
 ):
     """Return stochastic train and deterministic evaluation collators."""
     if model_args.objective_variant == OBJECTIVE_CAUSAL_LM:
+        vocab_owner = model.backbone if hasattr(model, "backbone") else model
+        markers_spec = (getattr(data_args, "loss_span_markers", "") or "").strip()
         causal_collator_kwargs = {
             "max_length": data_args.max_seq_length,
-            "model_vocab_size": model.backbone.config.vocab_size,
+            "model_vocab_size": vocab_owner.config.vocab_size,
             "preserve_precomputed_labels": data_args.preserve_precomputed_labels,
+            "loss_span_markers": tuple(int(x) for x in markers_spec.split(",")) if markers_spec else None,
         }
         data_collator = DataCollatorForCausalLM(tokenizer, **causal_collator_kwargs)
         eval_data_collator = DataCollatorForCausalLM(

@@ -15,6 +15,1386 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-22] - E30 31M GPU DNA probes (Odra + Polonez)
+
+**Why:**
+- CPU 31M was too slow; user asked for Odra/Polonez in parallel. 1e-3 at this
+  width collapsed E30 on CPU and K1'd e18/e21 INDEX at seq=256.
+
+**Impact:**
+- Scored 31M DNA ladder on GPU. Seq=512 MATCH: e30 47.6 bits ≈ e18 48 > e21 44.
+- Protocol: H=960 uses 3e-4 + `--warm_residuals` from seq=256.
+
+**What changed:**
+- [changed] `docs/engineering_specs/small_model_capability_protocol.md` tiny_wide LR at H=960.
+- [added] `docs/2_Experiments_Registry/run_reports/e30_30m_gpu_odra_polonez_20260922.md`.
+
+**Related:** `docs/experiments_specs/ahead/E30_sliding_window_perceiver.md`
+
+---
+
+## [2026-09-21] - E30 ~31M capacity hunt (outside <10M protocol)
+
+**Why:**
+- 9.04M E30 beats frozen-mean E21 on INDEX but still misses 0.75× live E18 MATCH
+  at seq=128. Next question is capacity on longer seq and harder rungs, not a
+  <10M retune.
+
+**Impact:**
+- Width-matched 4-layer H=960 (~31.00M dense / 31.13M e30) is a capacity hunt
+  with `--max_params 40000000`. Spec K3 is unchanged: 30M is not a rescue of
+  the seq=128 S1 miss.
+
+**What changed:**
+- [changed] `docs/engineering_specs/small_model_capability_protocol.md` — 30M
+  launch skeleton, H=960 row, tiny_wide LR at H≥384.
+
+**Related:** `docs/experiments_specs/ahead/E30_sliding_window_perceiver.md`
+
+---
+
+## [2026-09-21] - E30 capability protocol: width-aware LR and K1 write budget
+
+**Why:**
+- Fair tiny concat showed 3e-3 is right at H=128, but the same LR RankMe-collapses
+  E30 at 5.16M. Dense 99% early-stop at 1600 starved the 5M write.
+
+**Impact:**
+- Non-dense BAPO arms train for `max(steps × k1_mult, dense_steps_used)`.
+- Small-model protocol records width-matched 4-layer sizes (0.6 / 5.16 / 9.04M)
+  and LR 1e-3 at H≥384.
+
+**What changed:**
+- [changed] `verification/bapo_capability_probe.py` non-dense step budget.
+- [changed] `docs/engineering_specs/small_model_capability_protocol.md`.
+
+**Related:** `docs/experiments_specs/ahead/E30_sliding_window_perceiver.md`;
+`docs/2_Experiments_Registry/run_reports/e30_tiny_5m_9m_capability_20260921.md`
+
+---
+
+## [2026-09-20] - E30 sliding-window Perceiver write
+
+**Why:**
+- E21 frozen-mean slots recover 0 MATCH bits at seq=512 while E18 is live. A uniform
+  mean is the wrong sufficient statistic for a lookup key (Tishby IB; Fine-KV 16×
+  collapse). The notes in `docs/experiment_ideas/sliding_window_perceiver.md` ask for
+  overlapping positional Perceiver banks instead of averaging `r` tokens.
+
+**Impact:**
+- Config-selectable exclusive write `message_write=sw_perceiver`: `K` learned queries
+  per overlapping window, `C ∝ N`, coverage 8×, stride 0.75 W. Default remains
+  `block_mean` (E18/E21 checkpoints still load). BAPO factory arch `e30`. Small-model
+  (<10M) protocol now has a falling-CE K1 extension so a late takeoff is not a false kill.
+
+**What changed:**
+- [added] `SlidingWindowPerceiverCompressor` / `swp_geometry` in `nn/perceiver_ar_lm.py`
+  — overlapping CA banks, concat exclusive path only; inplace / identity / prefix-AE illegal.
+- [added] BAPO arch `e30` in `evaluation/bapo_models.py`, probe diagnostics and
+  `analysis/plot_bapo_capability.py` write-geometry panel.
+- [added] `docs/experiments_specs/ahead/E30_sliding_window_perceiver.md` + `_plan.md`.
+- [added] `docs/engineering_specs/small_model_capability_protocol.md` — length-aware LR,
+  `n_windows≥2` gate, falling-CE K1 rule (wired in `verification/bapo_capability_probe.py`).
+  Fair E21 vs E30 write is concat frozen-mean (no inplace). SWP scoring keeps ≥4 heads
+  instead of gcd-dropping (H=384 / 6 Q heads / qdim=128 → 8 heads, not 2).
+- [added] `tests/test_sw_perceiver.py`.
+
+**Git tag:** `arch/e30-sw-perceiver`
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` → E30 current focus;
+`docs/experiments_specs/ahead/E30_sliding_window_perceiver.md`
+
+---
+
+## [2026-09-17] - E18 vs E21 architecture flow HTML
+
+**Why:**
+- Krzysztof asked to *see* the E18 / E21 split (uncompressed global KV vs exclusive
+  r=16 slots), not a new experiment.
+
+**Impact:**
+- Self-contained looping diagram of the `perceiver_ar` forward that actually ran.
+  Pause / step / replay; hover a block for shape + role. No training, no code-path change.
+
+**What changed:**
+- [added] `docs/3_Evaluations_and_Baselines/e18_e21_architecture.html` — interactive
+  side-by-side: hashed embed → SWA pre-encoder → one global read (E18: KV_LEN=S;
+  E21: KVCompressor r=16 exclusive slots, QUERY severs local) → SWA stack → LM head.
+
+**Related:** `docs/experiments_specs/done_failed/E18_perceiver_ar_v2_baseline.md`,
+E21 original on `cursor/strategy-sota-review-2026-09-e212`,
+`docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`,
+`nn/perceiver_ar_lm.py`
+
+---
+
+## [2026-09-17] - Flavour letters apply to every family
+
+**Why:**
+- Flavour IDs were wrongly documented as E21-only. Letters `a, b, c, …`
+  apply to every experiment family.
+
+**Impact:**
+- A small detail inside the current family is `E{NN}a`, `E{NN}b`, …
+  Unlettered `E21` / `E18` is the parent; first small change is `a`.
+  New family numbers only when the user asks for a new family or a
+  different encode/reason/decode object.
+
+**What changed:**
+- [changed] `.cursor/skills/experiment-design/SKILL.md` — family-generic
+  flavour vs family ID scheme.
+- [changed] `docs/experiments_specs/README.md`, `docs/experiments_specs/TEMPLATE.md`
+  — matching ID scheme.
+
+**Related:** `.cursor/skills/experiment-design/SKILL.md`
+
+---
+
+## [2026-09-17] - E21 flavour IDs in experiment-design
+
+**Why:**
+- E26–E29 were mis-numbered tests of E21. Small architecture tweaks must not
+  mint a new family integer.
+
+**Impact:**
+- `experiment-design` defaults to `E21b`, `E21c`, … for live-family flavours.
+  New `E0NN` only when the user asks for a new family or a different
+  encode/reason/decode object. No spec in `ahead/` unless asked to design or run.
+
+**What changed:**
+- [changed] `.cursor/skills/experiment-design/SKILL.md` — flavour vs family ID
+  scheme, workflow step 6, scope-check.
+- [changed] `docs/experiments_specs/README.md`, `docs/experiments_specs/TEMPLATE.md`
+  — matching ID scheme.
+
+**Related:** `.cursor/skills/experiment-design/SKILL.md`
+
+---
+
+## [2026-09-16] - Skip Odra Hub bind after bits
+
+**Why:**
+- Polonez already trains exclusive bind. Odra `E21_QUEUE` would have started
+  a second Hub bind after bits.
+
+**Impact:**
+- After bits (dense S0 → exclusive 1k → 4k if 1k is load-bearing) the Odra
+  queue parks. `SKIP_E29=1` or `Cache/logs/SKIP_E29` refuses bind/arith
+  launches. Bits arms still run.
+
+**What changed:**
+- [added] `scripts/skip_e29_guard.sh` — shared skip for bind/E19.
+- [changed] `scripts/e21_queue_continue.sh`, `scripts/launch_e29.sh`,
+  `scripts/launch_e28.sh` — park/refuse bind when skip is set.
+
+**Related:** `docs/experiments_specs/done_failed/E29_exclusive_cogitoprobe_bind.md`
+
+---
+
+## [2026-09-16] - E29 hops vs gist eval on Hub bind
+
+**Why:**
+- Exclusive bind on Polonez needs the same Hub `evaluate_cogito_probe.py`
+  path as E28 bits, with hop vs gist task breakouts and a props filler-shuffle
+  control. Overall `by_task` is not enough to score the bind claim.
+
+**Impact:**
+- E29 trains exclusive perceiver on `ksopyla/cogito-probe-bind` and scores
+  `hop_friend_place` vs `attr_color` / `who_place`, plus props `prop_color`
+  with optional filler permutation (gold labels stay put).
+
+**What changed:**
+- [changed] `evaluation/evaluate_cogito_probe.py` — `--shuffle_filler` permutes
+  tokens between `evidence_end` and Q.
+- [changed] `scripts/launch_e29.sh` — exclusive identity slots; hops/gist/props
+  eval commands after the E28-style train.
+- [changed] `tests/test_cogito_probe_loader.py` — task filter + filler-shuffle
+  invariants.
+
+**Related:** `docs/experiments_specs/done_failed/E29_exclusive_cogitoprobe_bind.md`
+
+---
+
+## [2026-09-16] - E27 key-span anchors and E26 prefix-AE write loss
+
+**Why:**
+- E21 improvement queue (E27 then E26) cannot run until exclusive E21 has
+  identity keys on DNA key spans and a weak prefix-block AE that is the
+  *write* objective. E25 type_marks-at-r=1 added zero extra keys; learned
+  pooling under answer CE wiped MATCH.
+
+**Impact:**
+- `--message_global_anchors key_spans` marks the `key_len` tokens after each
+  sender `keymark` (not the mark, not values). At r>1 those positions keep raw
+  K/V instead of the mean-pool slot. Defaults stay `none` (E18-loadable).
+- `--message_prefix_ae` adds a linear slot→r×vocab head. Compressor `u`/`delta`
+  see AE grads only (slots detached on the exclusive read). Off by default.
+- Probe logs MATCH ablations (`none` / `swapped` / `slots_only`), slot RankMe,
+  and optional W&B (run starts immediately so the id is in the shell log).
+  `PAR_MESSAGE_*` knobs flow through the generic launcher.
+- Wave B launchers `load_dataset` public Hub ids
+  `ksopyla/cogito-probe-{bits,bind,arith,props}` (seed 20260916, `--scale full`,
+  8448/896/896 mixed 1k–32k; filter seq_len/variant; 1k then 4k, no 32k).
+  Teacher-forced eval writes recovered bits vs `prize_bits`. Local generate
+  is fallback only.
+
+**What changed:**
+- [added] `nn/perceiver_ar_lm.py` — `key_spans` anchors, `PrefixAEHead`, stopgrad
+  read, `PAR_MESSAGE_*` config fields.
+- [changed] `evaluation/bapo_models.py`, `verification/bapo_capability_probe.py` —
+  CLI + factory + post-train MATCH ablation / RankMe / `--wandb`.
+- [changed] `scripts/train_concept_pretraining_multigpu.sh`,
+  `training/concept_pretraining_args.py`, `training/concept_pretraining_factories.py`
+  — reusable `PAR_MESSAGE_*` env knobs (defaults off).
+- [added] `scripts/launch_e27.sh`, `scripts/launch_e26.sh`, `scripts/e21_queue_eval.sh`,
+  `scripts/launch_e28.sh`, `scripts/launch_e29.sh`, `scripts/e21_queue_continue.sh`,
+  `evaluation/evaluate_cogito_probe.py`.
+- [changed] `scripts/launch_e28.sh` — dense S0 forces message knobs off (boundary needs perceiver).
+
+**Related:** `docs/experiments_specs/done_failed/E27_hybrid_key_anchors.md`,
+`docs/experiments_specs/done_failed/E26_prefix_ae_exclusive_slots.md`,
+`docs/4_Research_Notes/e21_improvement_queue.md`
+
+---
+
+## [2026-09-16] - CogitoProbe public Hub v0
+
+**Why:**
+- The public v0 recipe is `--scale full` (10,240 rows/family, seed `20260916`), not the
+  464-row pilot. Holding every 32k row in Python lists OOMs a 16GB builder. Hub YAML
+  also requires `configs[].data_files` as a list of `{split, path}` objects.
+
+**Impact:**
+- Four public datasets under `ksopyla/cogito-probe-{bits,bind,arith,props}` (Apache-2.0).
+- Builder streams Hub parquet, verifies splits / `seq_len` / leakage from disk, and
+  renders cards with Hub URLs, author, and `10K<n<100K`.
+
+**What changed:**
+- [changed] `scripts/build_concept_probe_datasets.py` — streaming parquet writer, `--hub_only`
+- [changed] `data/concept_probes/stats.py` — online accumulator, parquet verify, published card header
+- [changed] `data/concept_probes/schema.py` — `expected_split_totals` (full = 8448/896/896)
+- [changed] `tests/test_concept_probes.py` — Hub URL / author / full-count guards
+- [changed] dataset cards + `concept_compression_probe_suite.md` — published Hub ids
+
+**Related:** `docs/engineering_specs/concept_compression_probe_suite.md`
+
+---
+
+## [2026-09-16] - CogitoProbe concept-compression dataset series
+
+**Why:**
+- Current mixes (FineWeb-Edu, DCLM, PG-19, FinePDFs) and the DNA A=4 exam cannot
+  tell whether a concept bottleneck stores semantically rich latents. E21's
+  length claim needs a 1k→32k ladder with known information content.
+
+**Impact:**
+- Four config-selectable families (bits / bind / arith / props) share a length
+  ladder and a deterministic build. Arithmetic/brackets is kept only as an
+  AST/Dyck-3 *structure* control after a tokenizer probe showed glued BPE is not
+  1:1 and eval-only is a ~7-bit calculator shortcut. Nothing is uploaded to the
+  Hub until approval.
+
+**What changed:**
+- [added] `data/concept_probes/` — atom table, generators, stats, card renderer
+- [added] `scripts/build_concept_probe_datasets.py` — seed `20260916` build
+- [added] `verification/probe_arith_tokenization.py` — SmolLM3 tokenisation probe
+- [added] `tests/test_concept_probes.py`
+- [added] `docs/engineering_specs/concept_compression_probe_suite.md`
+- [added] `docs/3_Evaluations_and_Baselines/dataset_cards/` — four HF cards + stats
+
+**Related:** `docs/engineering_specs/concept_compression_probe_suite.md`
+
+---
+
+## [2026-09-15] - Close seq1024 exclusive-slot D9 and C on the <10M law
+
+**Why:**
+- Seq1024 true-reach needed param-matched D and leak-check C before the
+  <10M exclusive-slot law could speak vs dense and vs a no-concept control.
+
+**Impact:**
+- Plots drop the hatched in-flight legend once `in_flight` is empty.
+- Inventory records D9 97.1% @ 136k and C 26.0% at the floor.
+
+**What changed:**
+- [changed] `verification/plot_exclusive_slot_law.py` — in-flight hatch only
+  when `in_flight` is non-empty.
+- [changed] `tests/test_scale_hard_io.py` — closed seq1024 D9/C inventory
+  assertions.
+
+**Related:** `docs/4_Research_Notes/concept_slot_scaling_frontier_20260913.md`
+
+---
+
+## [2026-09-14] - Exclusive-slot plots label A=concepts vs D=dense vs C=leak
+
+**Why:**
+- Comparison plots used letter markers without saying which arm is the
+  concept-slot model and which is the dense baseline.
+
+**Impact:**
+- Figures state A = exclusive-scope concepts, D/D9 = dense full-causal
+  baseline, C = no-concept leak check (not a baseline). Per-task grouped
+  bars cover far_copy length, compression, and chain composition.
+
+**What changed:**
+- [changed] `verification/plot_exclusive_slot_law.py` — architecture legends;
+  D vs D9 markers; hatched in-flight D9; new
+  `exclusive_slot_task_comparisons.png`.
+- [changed] `docs/4_Research_Notes/exclusive_slot_law_inventory.json` — added
+  easy r=16, chain hops=3 C, and the live seq1024 D9 snapshot (not a closed cell).
+
+**Related:** `docs/4_Research_Notes/concept_slot_scaling_frontier_20260913.md`
+
+---
+
+## [2026-09-14] - Scale-hard JSON lands on workspace disk
+
+**Why:**
+- Seq=1024 exclusive-slot A hit 95.9% then `Path.write_text` raised
+  `FileNotFoundError` because `/opt/cursor/artifacts` (FUSE, size 0) vanished
+  mid-write. Matched D9/C at that length still need to run.
+
+**Impact:**
+- Finished cells survive an artifact-store wipe. The remaining seq1024 D9 and C
+  controls write to `/workspace/Cache/scale_hard` (and `/tmp/scale_hard`).
+
+**What changed:**
+- [changed] `verification/symbolic_channel_probe.py` — `write_result_json`
+  dual-writes `--out` plus durable fallbacks; raises only if every dest fails.
+- [changed] `verification/run_scale_job.sh` and the scale-hard runners default
+  `SCALE_OUT_DIR` to `/workspace/Cache/scale_hard`.
+- [added] `verification/run_scale_hard_reach_seq1024_dc.py` — D9 then C only;
+  does not rerun A.
+- [added] `verification/plot_exclusive_slot_law.py` and
+  `docs/4_Research_Notes/exclusive_slot_law_inventory.json` — comparison plots
+  that do not depend on the wiped JSON store.
+
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` HARDER exclusive-slot scaling
+
+---
+
+## [2026-09-14] - True-reach runner skips 800-step LR probes
+
+**Why:**
+- Packed hops=2 D9 stayed at chance through 128k (exam kill). An 800-step probe
+  would have false-killed it even earlier. The length axis must not repeat that.
+- seq512 copy already has a winner LR (3e-4); seq=1024 starts one step lower.
+
+**What changed:**
+- [changed] `verification/run_scale_hard_reach.py` trains A then param-matched
+  D9 at a geometry-specific LR (3e-4 / 1e-4) with 2500/4000-step patience.
+- [changed] `verification/run_scale_hard_continue.py` does not 1e-4-retune
+  hops=2 after a floor kill at 25%.
+
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` HARDER exclusive-slot scaling
+
+---
+
+## [2026-09-14] - Param-match composition; skip padded seq1024
+
+**Why:**
+- Width-matched 4-layer D missed seq512 copy. Using it as the hops=2 "is the exam
+  solvable?" gate would false-kill composition. Param-match D (9 layers) first.
+- seq=1024 min_gap=32 only adds padded slots; true reach is a separate runner.
+
+**What changed:**
+- [changed] `verification/run_scale_hard_continue.py` runs hops=2 against 4.97M D
+  for 8000 steps at 3e-4 with 4000-step floor patience (an 800-step LR probe is a
+  false kill — seq512 copy D9 was still at chance then). Growing-`min_gap` length
+  stays on `run_scale_hard_reach.py`.
+
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` HARDER exclusive-slot scaling
+
+---
+
+## [2026-09-14] - Scale-hard resume + live-log LR
+
+**Why:**
+- The <10M continuation / true-reach queue is hours of CPU. A crash should skip
+  finished JSON cells instead of rerunning D9.
+- Live D9 logs were plotted with a hardcoded `lr=0.001` even when the run used 3e-4.
+
+**What changed:**
+- [added] skip-if-json-exists in `verification/run_scale_hard_continue.py` and
+  `verification/run_scale_hard_reach.py`.
+- [fixed] `verification/plot_scale_hard.py` captures LR (and s/step) from live logs.
+- [added] `tests/test_plot_scale_hard.py` for the D9 param/LR parse.
+
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` HARDER exclusive-slot scaling
+
+---
+
+## [2026-09-13] - HARDER concept-slot scaling plots + frontier note
+
+**Why:**
+- The exclusive-scope <10M campaign needed a closed length×compression×composition
+  snapshot against the 95% bar (seq256, r=32, chain hops=3, seq512), not a new
+  training fork. The first merge-to-dev snapshot marked in-flight chain/seq512 cells.
+
+**Added:**
+- `verification/plot_scale_hard.py` writes dedicated snake_case panels
+  (`harder_accuracy_vs_examples.png`, `harder_accuracy_vs_steps.png`,
+  `harder_difficulty_vs_accuracy.png`, `harder_lr_probe.png`,
+  `harder_params_vs_max_seq.png`) plus `concept_slot_scaling_frontier.png`.
+  Skips the r=32 D reuse stub as a second curve; parses in-progress chain logs.
+- Dated note: `docs/4_Research_Notes/concept_slot_scaling_frontier_20260913.md`
+  (seq512 A 97% @ 72k / 3e-4; width-matched D misses seq512; r=32 A 87.9%;
+  chain is an exam kill for both A and D).
+
+---
+
+## [2026-09-13] - Symbolic probe: live LR, wall-clock JSON, CUDA if present
+
+**Why:**
+- Mapping the exclusive-scope length×difficulty frontier needs a schedule that cannot
+  fake-ceil (OneCycle horizon = expected finish stalled improved Arm A at 49%) and a
+  JSON log of examples/params/steps/acc/CE/LR/seq/r/task/hops/wall.
+
+**Added:**
+- `verification/symbolic_channel_probe.py`: `--sched warmup_constant` (warmup then
+  constant LR), `--floor_patience_steps` (kill a run still at chance), per-arm
+  `summary` with wall-clock and LR, `cuda` when `torch.cuda.is_available()`.
+- `verification/run_scale_job.sh`: `SCALE_OUT_DIR` (default `scale/`, campaign uses
+  `/opt/cursor/artifacts/scale_hard`).
+- `verification/run_scale_hard_campaign.py`: LR search then seq/r/chain/seq512
+  cells over the shared probe (no training fork).
+- `verification/plot_scale_hard.py`: accuracy-vs-examples + difficulty panels.
+
+---
+
+## [2026-09-13] - Symbolic probe: early-stop at target accuracy + example accounting
+
+**Why:**
+- Mapping “what does improved Arm A need for ~100% on `far_copy`?” required counting unique rows
+  seen and not wasting CPU after the gate. A 3k OneCycle horizon had produced a fake 49% ceiling
+  on the same model that later reached 99.9% with a longer horizon and `--target_acc 0.99`.
+
+**Added:**
+- `verification/symbolic_channel_probe.py`: `--target_acc`, `--token_embedding_dim`, `--run_name`;
+  logs `examples` / `examples_seen` / `supervised_tokens_seen`.
+- `verification/run_scale_job.sh`: thin wrapper so long CLI lines cannot wrap inside tmux.
+- Limits: `docs/4_Research_Notes/symbolic_arm_a_100pct_limits_20260913.md`.
+
+---
+
+## [2026-09-14] - E21 `--message_pack_stride` (QUERY-aligned leftover drop, default off)
+
+**Why:**
+- Exclusive identity SELECT passes at seq=692 and is chance at seq=696. Inspection:
+  `--message_pool_remainder` is a no-op at r=1 (every sender token is already an
+  identity slot). 693-696 add 4 left-filler tokens after BOS under right-align,
+  not an incomplete DNA evidence block. QUERY shifts +4. The 4-token leftover
+  vs the 32-token packed-answer stride is 14 (692) vs 18 (696).
+- Need one packing/geometry knob that can actually drop vs keep those leftover
+  tokens as exclusive identity slots, without a new attend stack or raw KV.
+
+**Impact:**
+- `--message_pack_stride N` (default 0) drops exclusive leftover sender tokens
+  vs N-token packs tiled to end at QUERY. Remainder-on keeps them as identity
+  slots. r=1 identity without this flag is unchanged. E18 checkpoints stay
+  loadable (no new parameters; default 0).
+
+**What changed:**
+- [added] `PerceiverARConfig.message_pack_stride` in `nn/perceiver_ar_lm.py`
+- [added] probe `--message_pack_stride`; `ArchSpec` field
+- [added] tests for r=1 remainder no-op vs pack_stride leftover drop on 688/692/696 SELECT
+
+**Related:** `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`
+
+
+## [2026-09-14] - BAPO probe `--seq_len 692` on `bridge_1k` for SELECT length bracket
+
+**Why:**
+- E25 SELECT length-wall hunt needs seq=692 (between 688 PASS and 696 chance)
+  without inventing a scale enum. Probe already overrides `seq_len`; lock packed
+  `select_1decoy` geometry (`min_gap=64` > `local_window=16`, 32-token / 64-bit
+  prize matching 1024, not the 24-token `bridge` pack). Prize packing follows
+  the scale's `target_answer_len`, not the seq override.
+
+**Impact:**
+- No new `SCALES` entry. Hunt uses `--scale bridge_1k --seq_len 692`.
+
+**What changed:**
+- [added] `test_bridge_1k_seq_len_692_select_keeps_window_below_gap` in `tests/test_bapo_ladder.py`
+
+**Does not:** change packing, window, compressor defaults, or add architecture flags.
+
+## [2026-09-14] - BAPO probe `--seq_len 696` on `bridge_1k` for SELECT length bracket
+
+**Why:**
+- E25 SELECT length-wall hunt needs seq=696 (between 688 PASS and 704 chance)
+  without inventing a scale enum. Probe already overrides `seq_len`; lock packed
+  `select_1decoy` geometry (`min_gap=64` > `local_window=16`, 32-token / 64-bit
+  prize matching 1024, not the 24-token `bridge` pack).
+
+**Impact:**
+- No new `SCALES` entry. Hunt uses `--scale bridge_1k --seq_len 696`.
+
+**What changed:**
+- [added] `test_bridge_1k_seq_len_696_select_keeps_window_below_gap` in `tests/test_bapo_ladder.py`
+
+**Does not:** change packing, window, compressor defaults, or add architecture flags.
+
+## [2026-09-14] - BAPO probe `--seq_len 688` on `bridge_1k` for SELECT length bracket
+
+**Why:**
+- E25 SELECT length-wall hunt needs seq=688 (between 672 PASS and 704 chance)
+  without inventing a scale enum. Probe already overrides `seq_len`; lock packed
+  `select_1decoy` geometry (`min_gap=64` > `local_window=16`, 32-token / 64-bit
+  prize matching 1024, not the 24-token `bridge` pack).
+
+**Impact:**
+- No new `SCALES` entry. Hunt uses `--scale bridge_1k --seq_len 688`.
+
+**What changed:**
+- [added] `test_bridge_1k_seq_len_688_select_keeps_window_below_gap` in `tests/test_bapo_ladder.py`
+
+**Does not:** change packing, window, compressor defaults, or add architecture flags.
+
+## [2026-09-14] - E21 QUERY-side neighborhood anchors (`query_side`, default off)
+
+**Why:**
+- Seq=1024 packed `select_1decoy` stays at chance after attend-stack knobs (extra hops,
+  unfrozen slot K/V, second global layer, keep_local_swa) while uncompressed E18 copies
+  ~64 bits. `type_marks` leaked keymark+decoy which are already r=1 replace slots
+  (extra non-slot count 0). Existing `query_nbhd` is 4 sender tokens *before* QUERY —
+  also r=1 slots. SELECT's type request sits at/after QUERY (query key tokens).
+
+**Impact:**
+- Default stays `none` (E18 checkpoints loadable; no new params).
+  `--message_global_anchors query_side` leaks QUERY plus a small window after the
+  message boundary into exclusive slot K/V as raw keys. Count << seq. Still not
+  the full raw prefix.
+
+**What changed:**
+- [added] `query_side` on `PerceiverARConfig.message_global_anchors` in `nn/perceiver_ar_lm.py`
+- [added] probe `--message_global_anchors query_side`
+- [added] tests in `tests/test_perceiver_ar_message.py` and `tests/test_bapo_ladder.py`
+
+**Does not:** restore raw global KV, enable remainder, unsever SWA, extra hops,
+unfreeze `u`/`delta`, or change the default (`none`).
+
+## [2026-09-14] - E21 second exclusive global layer uses existing `global_layers` (default 1)
+
+**Why:**
+- Seq=1024 packed `select_1decoy` stays at chance with extra exclusive hops over frozen
+  or rewritten slot K/V (0 bits @800) while uncompressed E18 copies ~64 bits. Extra hops
+  are two sequential attends *inside one* Attention. Next knob: a second full exclusive
+  global Attention+FFN Block over slots (`global_layers=2`), not extra hops and not
+  extra SWA (`stack_layers` already 2 on prior hunts).
+
+**Impact:**
+- No new config field. Probe `--global_layers` already existed (default 1, E18-loadable).
+  `global_layers=2` is two sequential exclusive (E21) or raw (E18) global Blocks.
+  Distinct from `--stack_layers` and `--message_extra_slot_attends`. Still not raw prefix.
+
+**What changed:**
+- [docs] `nn/perceiver_ar_lm.py`, `evaluation/bapo_models.py` — distinguish the three knobs
+- [added] hunt JSON `global_layers`; probe `--global_layers` / `--stack_layers` help
+- [added] tests in `tests/test_perceiver_ar_message.py` and `tests/test_bapo_ladder.py`
+
+**Does not:** restore raw global KV, enable remainder, extra hops, unsever SWA, or
+unfreeze `u`/`delta`. Default `global_layers` stays 1.
+
+## [2026-09-14] - E21 rewrite exclusive slot K/V between extra hops (`message_update_slot_kv`, default off)
+
+**Why:**
+- Seq=1024 packed `select_1decoy` stays at chance with extra exclusive hops over *frozen*
+  slot K/V (0 bits @800) while uncompressed E18 copies ~64 bits. Inspection: extra hop
+  is two sequential attends with updated Q (QUERY Q can contain type after hop 1);
+  K/V stay the first-hop snapshot. Not a no-op bug. Next knob: rewrite exclusive
+  slot K/V from the post-attend residual before the next exclusive attend.
+
+**Impact:**
+- Default stays frozen extra hops (E18 checkpoints loadable; no new params).
+  `--message_update_slot_kv` rewrites exclusive slot K/V between hops. Extra=0
+  is byte-identical to prior exclusive E21 either way. Still not raw prefix KV.
+
+**What changed:**
+- [added] `PerceiverARConfig.message_update_slot_kv` in `nn/perceiver_ar_lm.py`
+- [added] probe `--message_update_slot_kv`; ArchSpec field
+- [added] tests in `tests/test_perceiver_ar_message.py` and `tests/test_bapo_ladder.py`
+
+**Does not:** restore raw global KV, enable remainder, unsever SWA, unfreeze
+`u`/`delta`, or change the default extra-hop count (stays 0).
+
+## [2026-09-14] - E21 sparse exclusive-plus-anchors (`message_global_anchors`, default `none`)
+
+**Why:**
+- Seq=1024 packed `select_1decoy` stays at chance with r=1 identity, identity+keep_local_swa,
+  and identity+extra exclusive hop (0 bits), while uncompressed E18 copies ~64 bits. Slots
+  already carry post-pre-SWA K/V; type-cue tokens already land in r=1 identity slots. Next
+  knob: leak a *sparse* non-slot subset into the exclusive global read (QUERY neighborhood
+  and/or type markers), still not the full raw prefix (that is E18).
+
+**Impact:**
+- Default stays exclusive slots only (E18 checkpoints loadable; no new params).
+  `--message_global_anchors {none,query_nbhd,type_marks,query_nbhd+type}` adds those
+  sender positions to exclusive slot K/V as raw keys. `query_nbhd` is 4 tokens before
+  QUERY. `type_marks` are keymark/decoy/spanmark/hop/mark. Count << seq.
+
+**What changed:**
+- [added] `PerceiverARConfig.message_global_anchors` in `nn/perceiver_ar_lm.py`
+- [added] probe `--message_global_anchors`; ArchSpec fields
+- [added] tests in `tests/test_perceiver_ar_message.py` and `tests/test_bapo_ladder.py`
+
+**Does not:** restore raw global KV, enable remainder, unsever SWA, extra hops, or
+unfreeze `u`/`delta`. Default stays `none`.
+
+## [2026-09-14] - E21 extra exclusive slot attends (`message_extra_slot_attends`, default 0)
+
+**Why:**
+- Seq=1024 packed `select_1decoy` stays at chance with r=1 identity (0 bits) and with
+  identity + `--message_keep_local_swa` (0.01 bits), while MATCH at the same scale
+  recovers 60.35 bits with one exclusive read. Inspection: slot K/V are already
+  post-pre-SWA mixed states (not frozen embeddings); type-cue tokens (`keymark` /
+  `decoy`) already land in r=1 identity slots. SELECT may need a second read in
+  slot space (type then value). Not E18 raw prefix KV.
+
+**Impact:**
+- Default stays one exclusive global attend (E18 checkpoints loadable; no new params).
+  `--message_extra_slot_attends N` re-reads the same frozen exclusive slot K/V with
+  queries updated from the previous hop. Not DNA `--hops`. Not `keep_local_swa`.
+
+**What changed:**
+- [added] `PerceiverARConfig.message_extra_slot_attends` in `nn/perceiver_ar_lm.py`
+- [added] probe `--message_extra_slot_attends`; ArchSpec field
+- [added] tests in `tests/test_perceiver_ar_message.py` and `tests/test_bapo_ladder.py`
+
+**Does not:** restore raw global KV, unsever SWA, enable remainder, unfreeze `u`/`delta`,
+or change the default hop count.
+
+## [2026-09-14] - E21 keep local SWA across QUERY (`message_keep_local_swa`, default off)
+
+**Why:**
+- Seq=1024 packed `select_1decoy` r=1 identity scored 0 bits while E18 copies ~64.
+  r=1 inplace identity already exposes every sender token KV to the exclusive global
+  read (not a type-cue coverage hole). The remaining E21-only cut is QUERY as a
+  SWA/n-gram document start.
+
+**Impact:**
+- Default local path stays severed. `--message_keep_local_swa` keeps exclusive
+  compressed/identity slots on the global read and lets the sliding window (and
+  n-gram hashes) see raw prefix tokens that fall inside the window. E18 checkpoints
+  stay loadable.
+
+**What changed:**
+- [added] `PerceiverARConfig.message_keep_local_swa` in `nn/perceiver_ar_lm.py`
+- [added] probe `--message_keep_local_swa`; ArchSpec field
+- [added] tests in `tests/test_perceiver_ar_message.py` and `tests/test_bapo_ladder.py`
+
+**Does not:** restore full raw global KV, turn the flag on by default, enable remainder,
+or change identity/inplace scatter.
+
+## [2026-09-14] - BAPO probe `--seq_len 672` on `bridge_1k` for SELECT length bracket
+
+**Why:**
+- E25 SELECT length-wall hunt needs seq=672 (between 640 PASS and 704 chance)
+  without inventing a scale enum. Probe already overrides `seq_len`; lock packed
+  `select_1decoy` geometry (`min_gap=64` > `local_window=16`, 32-token / 64-bit
+  prize matching 1024, not the 24-token `bridge` pack).
+
+**Impact:**
+- No new `SCALES` entry. Hunt uses `--scale bridge_1k --seq_len 672`.
+
+**What changed:**
+- [added] `test_bridge_1k_seq_len_672_select_keeps_window_below_gap` in `tests/test_bapo_ladder.py`
+
+**Does not:** change packing, window, compressor defaults, or add architecture flags.
+
+## [2026-09-14] - BAPO probe `--seq_len 704` on `bridge_1k` for SELECT length bracket
+
+**Why:**
+- E25 SELECT length-wall hunt needs seq=704 (between 640 PASS and 768 chance)
+  without inventing a scale enum. Probe already overrides `seq_len`; lock packed
+  `select_1decoy` geometry (`min_gap=64` > `local_window=16`, 32-token / 64-bit
+  prize matching 1024, not the 24-token `bridge` pack).
+
+**Impact:**
+- No new `SCALES` entry. Hunt uses `--scale bridge_1k --seq_len 704`.
+
+**What changed:**
+- [added] `test_bridge_1k_seq_len_704_select_keeps_window_below_gap` in `tests/test_bapo_ladder.py`
+
+**Does not:** change packing, window, compressor defaults, or add architecture flags.
+
+## [2026-09-14] - BAPO probe `--seq_len 640` on `bridge_1k` for SELECT length bracket
+
+**Why:**
+- E25 SELECT length-wall hunt needs seq=640 (between 512 PASS and 768 chance)
+  without inventing a scale enum. Probe already overrides `seq_len`; lock packed
+  `select_1decoy` geometry (`min_gap=64` > `local_window=16`, 32-token / 64-bit
+  prize matching 1024, not the 24-token `bridge` pack).
+
+**Impact:**
+- No new `SCALES` entry. Hunt uses `--scale bridge_1k --seq_len 640`.
+
+**What changed:**
+- [added] `test_bridge_1k_seq_len_640_select_keeps_window_below_gap` in `tests/test_bapo_ladder.py`
+
+**Does not:** change packing, window, compressor defaults, or add architecture flags.
+
+## [2026-09-14] - BAPO probe `--seq_len 768` on `bridge_1k` for SELECT length bracket
+
+**Why:**
+- E25 SELECT length-wall hunt needs seq=768 (between 512 PASS and 1024 chance)
+  without inventing a scale enum. Probe already overrides `seq_len`; lock packed
+  `select_1decoy` geometry (`min_gap=64` > `local_window=16`, 32-token / 64-bit
+  prize matching 1024, not the 24-token `bridge` pack).
+
+**Impact:**
+- No new `SCALES` entry. Hunt uses `--scale bridge_1k --seq_len 768`.
+
+**What changed:**
+- [added] `test_bridge_1k_seq_len_768_select_keeps_window_below_gap` in `tests/test_bapo_ladder.py`
+
+**Does not:** change packing, window, compressor defaults, or add architecture flags.
+
+## [2026-09-14] - BAPO probe `--seq_len 2048` on `bridge_1k`
+
+**Why:**
+- E25 INDEX length-wall hunt needs seq=2048 without inventing a scale enum.
+  Probe already overrides `seq_len`; lock packed `far_copy` geometry
+  (`min_gap=64` > `local_window=16`, span 32 / 64-bit prize, right-align).
+
+**Impact:**
+- No new `SCALES` entry. Hunt uses `--scale bridge_1k --seq_len 2048`.
+
+**What changed:**
+- [added] `test_bridge_1k_seq_len_2048_keeps_window_below_gap` in `tests/test_bapo_ladder.py`
+
+**Does not:** change packing, window, or compressor defaults.
+
+## [2026-09-14] - E21 identity slots: freeze mean-pool at any ratio
+
+**Why:**
+- Rung 5h asks whether 16-token means carry INDEX on the trusted inplace mask. Identity
+  already mean-pooled every block of `r`; tests now lock that r=16 is frozen mean-pool,
+  not last-token copy and not a no-op.
+
+**Impact:**
+- `--message_identity_slots` at any `message_compress_ratio` is `k_norm(mean)` / `mean(v)`
+  over valid tokens in each block. Learned `u`/`delta` stay unused. Default off.
+
+**What changed:**
+- [added] r=16 identity mean-pool tests in `tests/test_perceiver_ar_message.py`
+- [docs] comments in `nn/perceiver_ar_lm.py` and `evaluation/bapo_models.py`
+
+**Does not:** change the identity forward, turn the flag on by default, or enable remainder.
+
+## [2026-09-14] - E21 hard-identity slots (`message_identity_slots`, default off)
+
+**Why:**
+- In-place compressor r=1 scored 0 bits; in-place raw token KV copied 63 bits. Isolates
+  learned `u`/`delta` from the compressor/scatter path.
+
+**Impact:**
+- Default learned pool is unchanged. `--message_identity_slots` bypasses `u`/`delta`
+  (frozen mean of each block of `r`; r=1: hard copy of `k_norm(k_raw)`, `v`). Still
+  scatters through inplace when that flag is on; does not skip the compressor the way
+  `--message_inplace_raw_kv` does.
+
+**What changed:**
+- [added] `PerceiverARConfig.message_identity_slots` in `nn/perceiver_ar_lm.py`
+- [added] probe `--message_identity_slots`; ArchSpec field
+- [added] tests in `tests/test_perceiver_ar_message.py` and `tests/test_bapo_ladder.py`
+
+**Does not:** turn the flag on by default, skip inplace scatter, or break E18 checkpoints.
+
+## [2026-09-14] - E21 in-place raw token KV (`message_inplace_raw_kv`, default off)
+
+**Why:**
+- Seq=512 in-place identity slots scored 0 bits. Raw override copies 64 bits on the same
+  sdpa backend. Isolates compressor values vs the exclusive `~replace` leak mask.
+
+**Impact:**
+- Default concat and compressor-inplace paths are unchanged. With inplace on,
+  `--message_inplace_raw_kv` writes token K/V into `replace` positions; receivers still
+  cannot see uncompressed remainder.
+
+**What changed:**
+- [added] `PerceiverARConfig.message_inplace_raw_kv` in `nn/perceiver_ar_lm.py`
+- [added] probe `--message_inplace_raw_kv`; ArchSpec field
+- [added] tests in `tests/test_perceiver_ar_message.py` and `tests/test_bapo_ladder.py`
+
+**Does not:** turn the flag on by default, change remainder pooling, or break E18 checkpoints.
+
+## [2026-09-13] - E21 in-place sender-prefix slots (`message_slots_inplace`, default off)
+
+**Why:**
+- Seq=512 exclusive concat slots scored 0 bits at r=16/64/1. `--message_override raw`
+  (in-stream prefix K/V, QUERY local-doc still on) copied 64 bits. Concat extra KV is the
+  512 killer. Next isolation: write slots into sender positions so KV_LEN stays S.
+
+**Impact:**
+- Default concat path is unchanged. `--message_slots_inplace` replaces sender complete-block
+  K/V with slots; receivers cannot see uncompressed remainder tokens. Token-position RoPE
+  after scatter.
+
+**What changed:**
+- [added] `PerceiverARConfig.message_slots_inplace` in `nn/perceiver_ar_lm.py`
+- [added] probe `--message_slots_inplace`; ArchSpec field
+- [added] in-place tests in `tests/test_perceiver_ar_message.py`
+
+**Does not:** turn in-place on by default, change remainder pooling, or break E18 checkpoints.
+
+## [2026-09-13] - E21 probe `--message_override` (raw / none / swapped)
+
+**Why:**
+- Seq=512 INDEX scored 0 bits at r=16, r=64, and identity r=1. Compression is not the
+  wall. The next isolation is the exclusive cut: keep QUERY as a local document start
+  but let the global read see uncompressed prefix K/V (`message_override='raw'`).
+
+**Impact:**
+- Default `real` is unchanged (exclusive slots). `--message_override raw` wraps only the
+  e21 train/eval forwards in the existing `model.message_override` context manager.
+
+**What changed:**
+- [added] probe `--message_override {real,none,swapped,raw}` in `verification/bapo_capability_probe.py`
+- [added] factory wiring test `test_e21_raw_override_is_wired` in `tests/test_bapo_ladder.py`
+
+**Does not:** change the E21 mask default, remainder pooling, or E18 checkpoints.
+
+## [2026-09-13] - E21 remainder-block pooling (config flag, default off)
+
+**Why:**
+- Tiny far_copy E21 recovered 17.7 bits (S1 fail) with complete-block-only slots. A 32-token
+  span often sits in the incomplete last sender block next to QUERY. Experiment 1 must stay
+  reproducible, so remainder pooling is a flag, not a silent default change.
+
+**Impact:**
+- `message_pool_remainder=False` (default) is byte-identical to the first E25 rung.
+- Probe `--message_pool_remainder` scores the one architecture change on the same recipe.
+
+**What changed:**
+- [added] `PerceiverARConfig.message_pool_remainder` in `nn/perceiver_ar_lm.py`
+- [added] probe `--message_pool_remainder`; ArchSpec field
+- [added] remainder-slot tests in `tests/test_perceiver_ar_message.py`
+
+**Does not:** turn remainder on by default, score recall/512, or change E18 checkpoints.
+
+## [2026-09-13] - E21 message boundary + KVCompressor on the BAPO probe (E25)
+
+**Why:**
+- The capability-ladder goal was E21, not E18. E24's instrument and dense/E18 numbers stay
+  as controls. E21 is an exclusive compressed read (QUERY severs SWA; prefix is r=16 slots).
+
+**Impact:**
+- `perceiver_ar` gains config-selectable E21 (`message_boundary_token_id=-1` default, E18
+  checkpoints unchanged). Probe `--arch e21` scores it on DNA rungs. First experiment is
+  tiny packed `far_copy` only.
+
+**What changed:**
+- [added] `KVCompressor`, `MessageCtx`, `attend_message` in `nn/perceiver_ar_lm.py`
+- [added] probe arch `e21`; `--message_ratio`; DNA `query` as the boundary
+- [added] `tests/test_perceiver_ar_message.py`
+- [added] spec/plan `docs/experiments_specs/done_success/E25_e21_bapo_capability_ladder.md`
+
+**Does not:** score recall/512/4k, change DNA generators, or relabel E24's E18 tables.
+
+## [2026-09-13] - Glyph family: typed vocab, structured-noise capability exams
+
+**Why:**
+- DNA A=4 + iid filler is the right exact-floor instrument for channel *bandwidth*, but it
+  cannot test “ignore language-like distractors” or reverse/filter/Dyck algorithms. The
+  literature (RULER essay haystacks, BABILong facts-in-books, Delétang reverse/Dyck, MAD
+  selective copy, Olsson reverse) uses structured noise and typed alphabets, not 4 iid
+  symbols.
+
+**Impact:**
+- A second, config-selectable family sits beside DNA. Probe default is unchanged (Odra
+  DNA medium stays valid). Glyph rungs stay uncalibrated until a dense S0. No new
+  `train_*.py`. E23 is not derailed.
+
+**What changed:**
+- [added] `data/glyph_tasks.py` — vocab 16/32, Markov/Dyck/arith/mixed noise, verifiers
+- [added] `data/bapo_ladder.py` Glyph recipes; probe `--width` / `--noise` / `--recipe reverse …`
+- [added] `tests/test_glyph_tasks.py`
+- [added] `docs/4_Research_Notes/glyph_capability_ladder.md`,
+  `docs/literature_review/synthetic_capability_exams.md`
+
+**Does not:** close E24, launch Glyph on GPU, or touch DNA generators.
+
+---
+
+## [2026-09-13] - BAPO Glyph family + named 512/1k bridge scales
+
+**Why:**
+- DNA A=4 / iid filler is the exact-floor bandwidth instrument, not a language-like
+  distractor test. A second family (typed vocab 16/32, Markov/Dyck/arith filler) is
+  needed before claiming "ignore structured noise".
+- Advertised `--scale medium` (4k, spread placement) is K1: dense never leaves ln(4).
+  The first honest GPU INDEX rung is seq=512 with `evidence_align=right` and
+  `local_window < min_gap`. Name that scale instead of overloading `--scale tiny --seq_len 512`.
+
+**What changed:**
+- [added] `data/glyph_tasks.py` — typed-vocab tasks (`copy_span`, `reverse`, `every_k`,
+  `filter_mod`, `dyck_close`, `fact_markov`, `story_fact`, chain-in-noise). Uncalibrated
+  until a dense S0 hits 75%. DNA defaults unchanged.
+- [added] `bridge` (512) and `bridge_1k` (1024) scales; window 16, min_gap 64
+- [added] `scripts/e24_bapo_hunt.sh` — GPU hunt wrapper that does not hardcode `far_copy`
+- [added] probe `--width` / `--noise` / `--every_k` / `--modulus` and `generate_row_for`
+
+**Does not:** score E18 on Glyph or on 4k until dense ≥ 75%. Tiny DNA numbers unchanged.
+
+---
+
+## [2026-09-13] - Warm residual init for BAPO 512+ S0 hunts
+
+**Why:**
+- GPU isolation: dense far_copy learns at seq=128 (bf16 82%) and slowly at seq=256
+  (70% @5k, still climbing) but is **dead at seq=512** even at 16M / 4000 steps. Same
+  zero-init `attn.wo` that hid the concept-channel read. At 512+ the 1/S attention mass
+  cannot open a dead residual write, so CE sits at ln(4) forever.
+
+**What changed:**
+- [added] `PerceiverARConfig.zero_init_residuals` (default True = E18 checkpoints)
+- [added] probe `--warm_residuals` for S0 hunts at 512 / 4k
+
+**Does not:** change E18 training defaults.
+
+---
+
+## [2026-09-13] - BAPO probe S0 hunt knobs (4k dense was stuck at chance)
+
+**Why:**
+- The advertised medium protocol (seq=4096, H=256, 1 KV head, no SSMax) left dense
+  pinned at ln(4) / ~25% for 3800+ steps on every calibrated recipe. Scoring E18 there
+  would have been a false kill. The generator is valid (gap ≥ 1025, 32 packed labels);
+  the 2.2M 4-layer 1-KV control cannot find a marked span ~1–3k tokens away.
+
+**What changed:**
+- [added] probe `--kv_heads` / `--global_logit_scale` / `--attn_backend` / `--seq_len` /
+  `--min_gap` / `--local_window` / `--z_loss` so S0 can hunt a dense-solvable 4k recipe
+  without a new training script
+- [fixed] factory: a non-dividing `--kv_heads` now becomes full MHA instead of silently
+  dropping to 1 KV head
+
+**Does not:** close E24. Tiny numbers unchanged (defaults match the measured ladder).
+
+---
+
+## [2026-09-13] - BAPO calibrated recipes, CUDA AMP, plot task order
+
+**Why:**
+- Tiny S0 hunts showed which DNA rungs are actually solvable at 0.6M. Scoring E18 on the
+  default MATCH2 / shuffled-chain generators would have been a false kill. Medium GPU runs
+  need bf16 and a named recipe so `--n_distractors 0` is not applied to every task in one job.
+
+**What changed:**
+- [added] `data/bapo_ladder.py` `CALIBRATED_RECIPES` / `UNCALIBRATED_AT_TINY` / `resolve_recipe`
+- [added] probe `--recipe` and `--amp auto` (CUDA bf16)
+- [fixed] `analysis/plot_bapo_capability.py` display order (`far_copy` → recall → select → chain)
+
+**Does not:** close E24 or launch 16k/128k.
+
+---
+
+## [2026-09-13] - BAPO ladder: packed answers, dense-first K1, VE on the global read
+
+**Why:**
+- The first tiny probe proved the instrument on packed `far_copy` (dense 85%) but left
+  `recall` / `select` / `chain` at chance because those rungs had 2–4 supervised tokens (the
+  same packed-loss trap as Arm-A span=8). Scoring E18 there would have been a false kill.
+  The probe also omitted a value embedding on E18's global read (layer 1); E18's own 32k
+  copy result used VE on the retrieving layer.
+
+**What changed:**
+- [added] `data/bapo_ladder.py` `pack_overrides` — grow answer spans toward 16/24/32 tokens
+  at tiny/tiny_wide/medium+; tiny seq_len 128 so chain keys can pack.
+- [added] probe `--dense_first` / `--k1_mult` — dense trains up to 4× steps; other arches
+  skipped if it misses 75%.
+- [added] E18/dense value embeddings on layers 0 and 1 (the global read).
+- [added] plot CE curves, uncalibrated markers, `capability_table.csv`.
+- [fixed] `nn/encdec_lm.py` sinusoidal positions — the first tiny run's encoder-decoder
+  sat at ~31% on copy because the encoder was a bag of tokens.
+- [added] probe `--n_distractors` / `--key_len` / … overrides for MATCH2 solvability hunts.
+
+**Does not:** launch medium/large GPU runs. Packed tiny calibrated `far_copy` and
+`chain_ordered`; MATCH2 rungs still need a smaller contrast set / more width.
+
+---
+
+## [2026-09-13] - BAPO DNA capability ladder (E18 vs dense vs encoder-decoder)
+
+**Why:**
+- The DNA-alphabet suite made long-range information *measurable*, and a sibling agent is
+  mapping `perceiver_concept` Arm A to 100% far_copy at seq=128. We still had no calibrated
+  way to ask the same questions of **E18** at tiny → 4k–16k → 32k–128k, no BAPO-hard tasks
+  (shuffled vs ordered chains, unique, match3, majority, signal-vs-noise), no encoder-decoder
+  control, and no bits/token plots. E18b already showed positional copy works and content
+  addressing does not, on text-shaped rows whose prize was unknown. Spec:
+  `docs/engineering_specs/bapo_capability_ladder.md` · experiment
+  `docs/experiments_specs/ahead/E24_e18_bapo_capability_ladder.md`.
+
+**Added:**
+- `data/symbolic_tasks.py`: `select`, `chain_ordered`, `unique`, `match3`, `majority`; `decoy`
+  control; `BAPO_CLASS` / retrieval vs aggregation split; `prize_bits`.
+- `data/bapo_ladder.py`: named scales `tiny` … `large_128k` and the 75% solvability gate.
+- `evaluation/bapo_metrics.py`: recovered bits, information flow, bits/token, bytes/token,
+  nominal BAPO `(a, b)` from the KV cache.
+- `nn/encdec_lm.py`: suffix-only decoder with cross-attention to a bidirectional prefix encoder
+  (probe baseline, not a training family).
+- `verification/bapo_capability_probe.py` + `analysis/plot_bapo_capability.py`.
+- Tests: new-task oracles, floors, every (scale, task) constructs, all four arches train a step.
+
+**Does not:** touch the `perceiver_concept` 100% far_copy exam or launch medium/large GPU runs.
+
+---
+
+## [2026-09-13] - Symbolic long-context task suite with closed-form information floors
+
+**Why:**
+- E22 measured a concept channel with data whose long-range information content was unknown: the
+  whole natural-text prize for far context is ~0.05 nats at pilot scale, the pre-registered gate
+  asked for 0.30, and the run could not separate "the objective does not pay", "the read cannot
+  address the array" and "the write blurred the content". These generators remove that ambiguity —
+  the supervised tokens are determined by evidence at a controlled distance and independent of
+  everything local, so the prize is `ln(n_symbols)` (28× the text prize) and the floor for a model
+  that cannot reach the evidence is **exact**, which is what `experiment-design`'s "cite a measured
+  ceiling" rule needs. Spec: `docs/engineering_specs/symbolic_long_context_suite.md`.
+
+**Added:**
+- `data/symbolic_tasks.py`: `SymbolicVocab` / `SymbolicTaskConfig` / `generate_row` / `iter_rows`
+  plus `floor_nats` and `chance_accuracy`. Four tasks, one mechanism each — `recall` (content
+  addressing), `far_copy` (channel bandwidth, sweep `span_len`), `chain` (composition over slots,
+  edges shuffled out of reading order), `count` (aggregation; the first task in this family designed
+  so a compressive bottleneck could *beat* exact attention rather than merely lose less). Rows
+  guarantee `gap >= min_gap + 1`, so a raw window of `min_gap` provably cannot see the evidence for
+  either `dec_local` mode; nothing is memorisable across rows.
+- `scripts/build_symbolic_dataset.py`: one manifest source per `--task`; default schema
+  `input_ids`/`labels`/`gap` for diagnostics, `--lm_columns_only` for the exact columns
+  `pretokenize_mix.py` writes so rows mix into a text corpus (`--sym_lo` reserves an id slice,
+  supervision via the recorded `answer`/`end` markers). The manifest records the floor per source.
+- `verification/symbolic_channel_probe.py`: CPU falsification probe — tiny arm A
+  (`concept_xattn_scope=exclusive`, the array as the only route) vs arm C (`concept_mode=none`)
+  against the floor, with same-weights `concept_override("none"|"far")` attribution. Arm C sitting
+  at the floor is the instrument's self-check for a leaky task.
+- `tests/test_symbolic_tasks.py`: 36 tests. Beyond shapes and determinism, the three load-bearing
+  properties are tested rather than asserted — solvable from the evidence (each task solved by
+  following its construction), not solvable locally (uniform answer marginal, independence from the
+  query key, and a memorising local-window oracle at chance on held-out rows), and floor correctness
+  (`_binomial_mod_entropy` vs a 400k-draw Monte Carlo). Both label routes are cross-checked.
+
+**Wired:** supplies E23's two outstanding dense-label builders (far span copy, multi-hop chain) and
+adds a zero-GPU pre-flight mechanism gate to its plan.
+
+---
+
+## [2026-09-13] - `perceiver_concept`: config-selectable warm init for the concept path
+
+**Why:**
+- The first run of the symbolic probe found that the concept path has **two zero-init
+  residual-writing projections in series** between the evidence and the loss — `pooler.wo` (the
+  learned-query branch, and the only order-sensitive part of the write; the rest is a mean over the
+  block, an order-free bag) and `xattn.wo` (the read's output). The gradient into the read's
+  query/key projections *and* into `pooler.wo` is proportional to `xattn.wo`, so at zero the read
+  cannot become selective and the write cannot become order-sensitive: the channel's only early
+  escape is the content-free **mean** of its visible slots, which is exactly a document embedding.
+  That plausibly reframes E22's headline (0.17 nats of document content, 0.05 nats of far marginal)
+  as an init artefact rather than an architecture limit. On the symbolic `far_copy` probe, seeding
+  both gates at 0.02 recovered **17× more information at matched steps (3/3 seeds)** and removed a
+  ~2000-step plateau sitting exactly on the analytic floor. Evidence and caveats (the magnitude is
+  seed-variable at 1.3M params): `docs/4_Research_Notes/concept_channel_cold_start_20260913.md`.
+
+**Added:**
+- `PerceiverConceptConfig.xattn_wo_init_std` and `.pooler_wo_init_std`, applied through a shared
+  `_init_residual_write` helper. Both default to **0.0**, i.e. the E22 behaviour exactly, so all
+  existing checkpoints load and reproduce bit-for-bit; self-attention and MLP writes stay zero-init
+  regardless. Plumbed as `--pcl_xattn_wo_init_std` / `--pcl_pooler_wo_init_std` with validation, and
+  as `PCL_XATTN_WO_INIT_STD` / `PCL_POOLER_WO_INIT_STD` through
+  `scripts/train_concept_pretraining_multigpu.sh` and `scripts/launch_e22.sh`.
+- Tests: defaults are zero, both knobs are selectable and survive a config round-trip, the
+  self-attention/MLP writes are unaffected, and arm C (no pooler, no cross-attention) ignores the
+  knobs without crashing.
+
+---
+
+## [2026-09-13] - `analysis/geometry_cost_model.py`: analytic FLOP + decode-state model for concept geometries
+
+**Why:**
+- Every spec in this family claims a compute/state win over a matched dense baseline, and until now the
+  claim was asserted from the pooling ratio rather than computed. Asked why the concept geometry is
+  cheaper, the arithmetic showed the answer is narrower than assumed: the decode-state win is structural
+  (192×) but the compute win is a **constant 36×**, because the read is dense over slots and therefore
+  still O(S²/r). That materially constrains the 1M/10M goal, so the model belongs in the repo where
+  future specs and the K4 throughput gate can re-run it. Analysis:
+  `docs/4_Research_Notes/e22_root_cause_20260912.md` §7.5.
+
+**Added:**
+- `analysis/geometry_cost_model.py`: prices `perceiver_ar --par_mode dense` against `perceiver_concept`
+  at any context length. Splits forward FLOPs into the terms quadratic in S (per component: encoder,
+  decoder self, cross, latent) and the per-token terms, and splits decode cache into bounded (fixed
+  windows) and unbounded (grows with S) bytes per token. Flags mirror the real config knobs
+  (`--ratio`, `--dec_segment`, `--enc_window`, `--exclusive`) plus two counterfactual knobs used to
+  locate the next bottleneck: `--cross_topk` (selective slot read) and `--latent_window`.
+
+**Verified:** closed-form asymptotes reproduced by the script — 34.8× for the built geometry (predicted
+`r·L_dense/L_dec` = 36×) and 1053× with a top-64 read (predicted `r²·L_dense/L_latent` = 1152×).
+
+---
+
+## [2026-09-12] - `perceiver_concept`: `concept_xattn_scope` (exclusive channel) + `near`/`far` concept ablations
+
+**Why:**
+- The E22 concept probe showed Δ_none ≈ 0.22 nats already inside the first 1024-token segment, where
+  the decoder has the whole raw context and no far slot exists, and CE(shuffled) < CE(none) at 16k–32k.
+  The `cpos ≤ pos` cross-attention mask let a token read up to 63 slots from its own raw segment, so
+  the array was never the *only* route for anything. This change makes the diagnosis measurable
+  (which slots carry the loss) and the fix selectable for E23. Diagnosis:
+  `docs/4_Research_Notes/e22_root_cause_20260912.md`.
+
+**Changed:**
+- `nn/perceiver_concept_lm.py`: `PerceiverConceptConfig.concept_xattn_scope = causal | exclusive`
+  (default `causal` = E22 as run; old checkpoints load unchanged). `raw_span()` gives, per row index,
+  how many earlier tokens the decoder's raw self-attention covers (`t mod segment` for `block`,
+  `segment − 1` for `swa`); `_cross_mask_pred` / `attend_cross` take `span` + `scope` and admit, under
+  `exclusive`, only slots with `pos(slot) < pos(t) − span(t)` (plus the null slot). Flex and SDPA share
+  the rule; the flex block-mask memo is keyed by scope. `concept_override` gains `near` (only slots
+  inside the raw window remain) and `far` (only slots before it remain); `far` on a causal checkpoint
+  equals the exclusive-scope forward with the same weights.
+- `evaluation/long_context_probes.py`: `--probe concept` scores `real,none,shuffled,near,far` by
+  default; `--concept_modes` overrides (must start with `real`).
+- `training/concept_pretraining_args.py` (`--pcl_concept_xattn_scope`, validated),
+  `training/concept_pretraining_factories.py` (config plumbing, init log, W&B architecture id gets a
+  trailing `x` for the exclusive scope), `scripts/train_concept_pretraining_multigpu.sh` and
+  `scripts/launch_e22.sh` (`PCL_CONCEPT_XATTN_SCOPE`).
+- `tests/test_perceiver_concept_lm.py`: mask partition tests for `block` and `swa` decoders
+  (exclusive ∪ local_only = causal, intersection = null slot), `far` == exclusive-model equivalence,
+  config round trip, flex/SDPA equivalence parametrised over scope × override (CUDA; passed on Odra).
+
+**Docs (experiment-track):** E22 spec + plan moved to `docs/experiments_specs/done_failed/`
+(Status / Result filled); run report `run_reports/e22_pilot_verdict_20260912.md`; ledger rows;
+agenda Current focus → E23; new spec `docs/experiments_specs/ahead/E23_exclusive_concept_channel.md`.
+
+---
+
+## [2026-09-12] - E22 `perceiver_concept` family: encoder → positional concept array → latent transformer → segment-confined decoder
+
+**Why:**
+- The Perceiver-style encoder→concepts→decoder idea had never been trained with the three
+  conditions the ledger and the 2026 frontier agree on (no raw long-range bypass at any layer,
+  positional slot allocation, contextualise before pooling), nor with a transformer *over* the
+  concept array. E18/E21 have one K/V read and no latent stack. Spec:
+  `docs/experiments_specs/done_failed/E22_perceiver_concept_lm.md` (moved from `ahead/` when the experiment closed); rationale:
+  `docs/4_Research_Notes/perceiver_revisit_synthesis_20260912.md`.
+
+**Changed:**
+- `nn/perceiver_concept_lm.py` (new): `PerceiverConceptConfig`, `ConceptPooler` (mean-pool +
+  zero-init learned-query attention per block of `concept_ratio` tokens, flat positional bias),
+  `ConceptCrossAttention` / `attend_cross` (token queries → concept K/V, RoPE both sides, flex
+  block mask or sdpa reference, learned null slot so no query row is empty), `DecoderBlock`
+  (segment-confined self-attention via segment-augmented doc ids → cross-attention → SwiGLU),
+  `PerceiverConceptLM` (`forward` with Liger/chunked CE, `hidden_states`, `concepts()`,
+  `concept_override(real|none|shuffled)`, gradient checkpointing per block),
+  `analytic_param_count` with a compute / dense-table / sparse-table breakdown. Reuses the
+  E18 primitives by import; `nn/perceiver_ar_lm.py` is untouched.
+- `nn/perceiver_families.py` (new): `checkpoint_family`, `load_perceiver_lm` — one loader for
+  `perceiver_ar` and `perceiver_concept` checkpoints.
+- `training/concept_pretraining_args.py`: `model_family=perceiver_concept`, `pcl_*` knobs;
+  `training/concept_pretraining_factories.py`: `_build_perceiver_concept_model`, W&B identity
+  (`perceiver_concept_H..e..r..c..l..d..s..`), refuses `dataset_mix_weight_override` on a
+  pretokenized manifest (length / packing caches are keyed by the manifest file);
+  `training/train_concept_pretraining.py`: skips the concept-attention probe for both from-scratch families.
+- `scripts/train_concept_pretraining_multigpu.sh`: `PCL_*` env knobs behind
+  `MODEL_FAMILY=perceiver_concept`; `DATASET_MIX_WEIGHT_OVERRIDE` plumbing (recipe path).
+- `scripts/launch_e22.sh` (new): arms `A` (the bet), `C` (`concept_mode=none`), `dense`
+  (`perceiver_ar` `PAR_MODE=dense`, 18 layers); packed 32k rows, keyed-recall span labels,
+  effective batch 24 rows, `E22_SMOKE=1` calibration path.
+- `scripts/write_manifest_variant.py` (new): re-weighted copy of a pretokenized manifest from
+  token-share targets (mean row tokens measured per source).
+- `evaluation/long_context_probes.py`: family-aware `load_model`; `--probe concept` (paired
+  `real` / `none` / `shuffled` CE per position bucket with tail stats).
+  `evaluation/lm_eval_perceiver_ar.py`, `analysis/check_model_health.py`,
+  `scripts/eval_perceiver_ar_suite.sh`: accept the new family (suite runs the concept probe
+  where E18 ran the reach probe).
+- Tests: `tests/test_perceiver_concept_lm.py` (causality through the concept path, structural
+  closure, concepts as the only long-range path, straddling-document pooling, packed isolation,
+  padding invariance, per-token loss contract, save/load, flex ≡ sdpa on CUDA),
+  `tests/test_launch_e22.py`.
+
+**Calibration (Odra 3090, 32k, flex, bf16, grad-ckpt, 2026-09-12):** arm A 317.4M total /
+127.9M compute; B=2: 11.4 GiB peak, ~19.8k tok/s/GPU; arm C: 8.0 GiB, ~29k tok/s/GPU.
+
+## [2026-09-13] - `research-comms` skill: how findings are reported in chat
+
+**Why:**
+- An audit of three sessions (2026-09-11 → 2026-09-12) showed the author was routinely losing the
+  thread: 8,544 assistant words against 676 user words in one session; a 22-word question answered
+  with 2,579 words; "explain simply" answered with 2,221; gate codes (`S1`–`S6`, `K1`–`K4`) and arm
+  letters used as if shared, several never defined anywhere; unlabelled number pairs
+  (`0.162/0.686`). Consequences in the transcripts: the same status question asked twice, the same
+  conceptual question re-asked in simpler words, one request for a plain explanation sent twice
+  byte-identical, and "Do it iteratively without my permissions" — the author stopped reviewing.
+
+**Changed:**
+- `.cursor/skills/research-comms/SKILL.md` (new): five laws (outcome first, short first pass, no
+  private codenames, every number carries unit/direction/comparison/verdict, offer the menu), a
+  per-situation word budget table, the Brief template, naming and number laws, the depth-on-demand
+  order (analogy → diagram → proper terms → numbers → caveat), a standing analogy set, a ban list,
+  and a pre-send checklist.
+- `.cursor/skills/research-comms/examples.md` (new): six before/after rewrites of verbatim messages
+  from the audited sessions, plus a jargon → plain-language swap table.
+- `docs/glossary.md` (new): plain-language vocabulary — the "student, book and notebook" picture,
+  experiment words (arm, control, gate, ablation, probe, teacher-forced vs free-run), and a metric
+  table giving what each measures, which direction is good, and what a value roughly means
+  (loss/nats, perplexity, BPB, Δzero/Δshuffle/Δperm, reach ablation, RankMe, passkey, RULER, STS-B, σ).
+- `.cursor/rules/communication.mdc` (new, `alwaysApply: true`): the five laws in short, pointing at
+  the skill; imported into `CLAUDE.md` alongside the other canonical rules.
+- `.cursor/rules/project-overview.mdc`: `research-comms` added to the skill pipeline; `docs/glossary.md`
+  added to the docs map.
+- Reporting clauses added to `experiment-design`, `implementation-plan`, `research-implement`,
+  `experiment-run`, `experiment-evaluate`, `experiment-track`, `research-synthesis`, `research-explain`:
+  those skills own what goes in the docs, `research-comms` owns what goes in the chat.
+- `AGENTS.md`: "How to report to the author" section.
+
+**Validation:**
+- Two rounds of a fresh agent given *only* the skill and asked to write the chat message for three
+  real cases it had not seen (the E17e close, the E18 family verdict, a raw status dump). Round one
+  produced compliant messages at 120 / 120 / 60 words and exposed six contradictions in the skill
+  (the Number law demanding a unit the ban list forbade, no budget row for a family verdict, no
+  procedure for an unlabelled pair, a self-check that the Brief template could never pass, the menu
+  vs the 60-word status budget, banned operational details with nowhere to go). All were fixed;
+  round two passed its own checklist on every line and surfaced only scope questions, which are now
+  answered in the text (table cells count toward the budget; a mid-run number with no baseline is
+  reported qualitatively; naming duties are suspended at the 60-word status budget).
+- Round two also found a real glossary gap while resolving `0.162/0.686`: `distinct-1`, `REP-3` and
+  the position-bin vocabulary ("first-64", "late half") are now in `docs/glossary.md`.
+
+**Impact:**
+- No code, training, evaluation or checkpoint behaviour changes.
+
+---
+
+## [2026-09-11] - Evaluation layer for `perceiver_ar`: lm-eval-harness reasoning + RULER-lite long context
+
+**Why:**
+- E18/E21 decisions rested on training CE and a single hand-launched passkey probe. The family
+  had no reasoning evaluation and no long-context test beyond needle retrieval, and nothing
+  was comparable across checkpoints or to public models. Decision record:
+  `docs/engineering_specs/long_context_reasoning_eval_layer.md`.
+
+**Changed:**
+- `evaluation/lm_eval_perceiver_ar.py` (new): registers `perceiver_ar` as an lm-evaluation-harness
+  `HFLM` subclass (sdpa, `attn_pad_multiple=1`, softcapped logits scored as trained; `generate`
+  deliberately unsupported).
+- `evaluation/run_lm_eval_suite.py` (new): `core` / `full` tiers over the SmolLM2-card task set,
+  `--hf_model` reference rows, per-tag JSON + `summary.csv` upsert.
+- `evaluation/long_context_probes.py`: teacher-forced RULER-lite probes `multikey`, `vt`
+  (variable tracking), `fwe` (frequent-words extraction) with exact / token / first-token
+  accuracy per length; `--probe suite` runs several probes from one model load with per-probe
+  error capture; tokenizer resolved from the checkpoint dir before the SmolLM3 default.
+- `evaluation/summarize_eval_suite.py` (new): one markdown table across tags from the lm-eval CSV
+  and the long-context / reach JSONs.
+- `scripts/eval_perceiver_ar_suite.sh` (new): health → lm-eval ∥ long-context suite + reach on two
+  GPUs, failure tolerant, outputs under `Cache/eval/<tag>/` and `Cache/Evaluation_reports/lm_eval/`.
+- `analysis/check_model_health.py`: `--model_type perceiver_ar`; forward/loss checks drop
+  tokenizer keys the model does not accept.
+- Tests: `tests/test_lm_eval_perceiver_ar.py`, `tests/test_summarize_eval_suite.py`, new probe
+  builder / suite tests in `tests/test_long_context_probes.py`.
+- `.cursor/skills/experiment-evaluate/SKILL.md`: `perceiver_ar` inventory rows and pipeline section.
+
+**Fixed (2026-09-12, first Polonez run):**
+- `social_iqa` aborted the whole harness run: `allenai/social_i_qa` is still a script dataset and
+  datasets 4.x refuses loading scripts. `evaluation/lm_eval_tasks/social_iqa.yaml` overrides the
+  built-in task (same prompt and metric) with `revision: refs/convert/parquet`; the runner passes
+  a `TaskManager(include_path=evaluation/lm_eval_tasks)` so the override shadows the built-in.
+- `scripts/eval_perceiver_ar_suite.sh` hung after both halves finished: under `exec > >(tee …)`
+  a bare `wait` (bash ≥ 5.1) also waits for the `tee` process substitution. Waits on the two half
+  PIDs instead.
+- Job scripts launched from Byobu on Polonez must `export PATH="$HOME/.local/bin:$PATH"` (`uv`
+  is not on the non-interactive shell's PATH).
+- `wikitext` `loglikelihood_rolling` OOMed on a 3090 (one `[B, S, 128k]` fp32 logits tensor,
+  15.7 GiB). `evaluation/lm_eval_perceiver_ar.py` `_model_call` now returns log-probs computed
+  in row chunks of ≤ 2 GiB (harness `log_softmax` is idempotent on log-probs), and
+  `--batch_size` defaults to `auto` (the harness probes a batch per request type: 64 for
+  multiple-choice, 7 for rolling at 32k). Row chunking is unit-tested for exactness.
+
+## [2026-09-07] - Document packing (`batch_packing_mode=pack`), E18 main-run recipe, multi-node launch
+
+**Why:**
+- Long-context training beyond 32k cannot be fed one document per row: short web rows would
+  leave most of the window unused. Packing whole documents into full-length sequences with
+  per-token `doc_ids` keeps every sequence full while the model masks cross-document attention.
+
+**Changed:**
+- `data/packed_dataset.py` (new): seeded best-fit packing of rows into `max_seq_length` bins
+  (99.8% fill at 8k / 99.9% at 32k on a 2.7M-row distribution, ~5 s), cached next to the
+  manifest as `<manifest>.packed_c{S}_s{seed}.npz`; `PackedDataset` yields concatenated
+  `input_ids` + `doc_ids`.
+- `DataCollatorForCausalLM`: pads `doc_ids` with −1 and sets labels to −100 at document
+  starts; unchanged when features carry no `doc_ids`.
+- `nn/perceiver_ar_lm.py`: per-forward block-mask memo (`block_masks`) so batch-dependent
+  flex masks are built once per pattern instead of once per layer and checkpoint recompute.
+- `train_concept_pretraining.py` / args / trainer: `pack` mode reuses the length cache and
+  requires a forward that accepts `doc_ids` (perceiver_ar); padding metrics use float32 on MPS.
+- `scripts/train_concept_pretraining_multigpu.sh`: `NUM_MACHINES`, `MACHINE_RANK`,
+  `MAIN_PROCESS_IP`, `MAIN_PROCESS_PORT` pass through to `accelerate launch`; effective batch
+  and token budgeting include `NUM_MACHINES`. Single-node behaviour unchanged.
+- `data/mix_recipes/e18_main_stage1_v1.json` (new, Nemotron-first per user decision): Nemotron-CC-v2.1
+  (HQ, MHQ, capped HQ-Synthetic, translated, DQA), Nemotron-Pretraining-Code-v1 Synthetic-Code,
+  Nemotron-CC-Math-v1 4plus, Specialized-v1 (math textbooks, RQA, STEM-SFT, wiki rewrite),
+  Specialized-v1.2 fact-seeking, SFT-v1 general; FinePDFs + PG-19 remain as the only non-Nemotron
+  long-document tier. Row weights solved from token-share targets. Access to Nemotron-CC-Code-v1
+  and Nemotron-Pretraining-Code-v2 requested on the Hub for Meridian21Lab (pending NVIDIA approval).
+- Tests: `tests/test_packed_dataset.py` (coverage, capacity, determinism, cache, collator
+  contract, packed == unpacked per-token losses, flex memo == sdpa);
+  `verification/e18_cpu_smoke.py` gains `SMOKE_PACKING=pack`.
+
+- `nn/perceiver_ar_lm.py`: `swa_sink` config knob (`--par_swa_sink` / `PAR_SWA_SINK`): windowed
+  layers may also attend to the document's first token (per-document anchor under packing);
+  flex/sdpa only; tests vs naive masks and packed == unpacked. Off by default.
+- `hidden_states()` on `PerceiverARLM`; `evaluation/long_context_probes.py` passkey/copy probes
+  project the head in chunks (full S×V logits OOM'd at 16k+); flex `create_block_mask` compiled
+  on CUDA for every mask (eager path materialised ~8 GB of index grids at 32k).
+- `verification/e18_copy_tiny.py` (new): CPU study of the P2 copy task; `scripts/build_copy_task_dataset.py
+  --task copy|mirror`. Finding: mirrored copy is not learned by this family *or* the dense control
+  at small budgets; plain copy is, provided the retrieving layer has a value embedding → P2 amended
+  to plain copy and `PAR_VALUE_EMBED_LAYERS` should include the global layer.
+
+- 2026-09-08: `DataCollatorForCausalLM` ignores out-of-vocab *precomputed* labels (−100 + warning)
+  instead of raising (one corrupt int32 in 983M copy-task labels killed the P2 run); `launch_e18.sh`
+  sets `DDP_TIMEOUT=10800` (rank-0 length-cache build for the 32k manifest took 37 min > NCCL's 30);
+  `NUM_GPUS` is overridable in the generic launcher.
+
+**Ops (Polonez, E18 pilot):** stage A stopped at checkpoint-9030 (1.0B tokens, eval loss
+3.79); the log-grep waiters never fired (exit marker went to the terminal, not the log) and
+were replaced by one chained job `Cache/jobs/e18_dense_then_stageB.sh` (dense control 1B →
+stage B 32k warm-started from checkpoint-9030) with `.exit` marker files.
+
+---
+
+## [2026-09-06] - E18 Perceiver AR v2 family (`perceiver_ar`) on the shared training spine
+
+**Why:**
+- New VC-facing long-context platform: a from-scratch LM with tiny hashed n-gram input
+  embeddings, a sliding-window pre-encoder, ONE full-causal global read (the only unbounded
+  KV cache) and a deep window-N stack, trained on every token. Spec
+  `docs/experiments_specs/ahead/E18_perceiver_ar_v2_baseline.md`; feasibility note
+  `docs/4_Research_Notes/perceiver_ar_modern_reproduction_feasibility.md`.
+
+**Impact:**
+- `model_family=perceiver_ar` + `objective_variant=causal_lm` selects the family; every other
+  family's argument flow is byte-identical (`MODEL_FAMILY=auto` default; `PAR_*` knobs are passed
+  only for this family). Hooks for E19 (`write_back_hook`) and E20 (`block_attention_mode`) are
+  config-only.
+
+**What changed:**
+- [added] `nn/perceiver_ar_lm.py` — `PerceiverARConfig`, `PerceiverARLM`, per-layer attention
+  patterns (`swa`/`full`), sdpa/flex/flash backends with one mask predicate, hashed n-gram
+  embeddings, value embeddings, U-net skips, chunked soft-capped CE + z-loss (Liger fast path),
+  `prefix_kv()`, no-cache `generate()`, `analytic_param_count()`.
+- [changed] `training/concept_pretraining_args.py` (E18 fields + validation),
+  `training/concept_pretraining_factories.py` (factory, W&B identity, collator vocab lookup),
+  `training/train_concept_pretraining.py` (skip the concept-family flash probe),
+  `scripts/train_concept_pretraining_multigpu.sh` (`MODEL_FAMILY` / `PAR_*` env knobs,
+  `--prediction_loss_only` for this family).
+- [added] `scripts/launch_e18.sh`, `data/mix_recipes/e18_pilot_longdoc_v1.json`,
+  `evaluation/long_context_probes.py` (position buckets, passkey, copy),
+  `scripts/build_copy_task_dataset.py`, `verification/e18_cpu_smoke.py`.
+- [added] tests: `tests/test_perceiver_ar_lm.py`, `tests/test_launch_e18.py`,
+  `tests/test_long_context_probes.py`.
+
 ## [2026-08-22] - E17e starve local window (K=256)
 
 **Why:**

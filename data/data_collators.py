@@ -160,6 +160,29 @@ class DataCollatorForTSDAE:
         }
 
 
+def labels_from_span_markers(ids, start: int, end: int) -> list[int]:
+    """Next-token labels for a row that frames its supervised spans with two reserved ids.
+
+    Rule (E18b retrieval rows, no `labels` column needed so the row keeps the LM shard schema):
+    -100 everywhere except the tokens strictly after a START up to and including the next END;
+    START itself is never a target; an unmatched START labels through the row end (a span cut by
+    truncation is still valid supervision). Rows without START are the caller's business (plain LM).
+    """
+    if isinstance(ids, torch.Tensor):
+        ids = ids.tolist()
+    out = [-100] * len(ids)
+    inside = False
+    for i, t in enumerate(ids):
+        if t == start:
+            inside = True          # (re)open; the marker is not a target
+            continue
+        if inside:
+            out[i] = int(t)
+            if t == end:
+                inside = False
+    return out
+
+
 class DataCollatorForCausalLM:
     """Plain next-token-LM collator (E10 backbone-concept family).
 
@@ -167,11 +190,21 @@ class DataCollatorForCausalLM:
     mirrors input_ids into labels with -100 at padding. Shifting happens inside the model.
     When ``preserve_precomputed_labels=True``, sparse row-level label masks are padded and
     truncated in lockstep instead (used by forced-memory diagnostics).
+    When ``loss_span_markers=(start_id, end_id)`` is set, a row that contains ``start_id`` gets
+    labels only inside its START..END spans (``labels_from_span_markers``); every other row is
+    plain LM. This lets dense-label retrieval rows share a manifest with LM shards that carry no
+    ``labels`` column (E18b). Mutually exclusive with ``preserve_precomputed_labels``.
+
+    Packed rows (``data.packed_dataset.PackedDataset``) carry a per-token ``doc_ids`` list.
+    When present it is padded with -1 and returned, and the label at every document start
+    is set to -100 so no token is trained to predict the first token of the next document
+    (the model shifts labels by one internally).
 
     Output contract:
         input_ids      : [B, S]
         attention_mask : [B, S]  1 = real, 0 = pad
-        labels         : [B, S]  input_ids with -100 at pad
+        labels         : [B, S]  input_ids with -100 at pad (and at doc starts when packed)
+        doc_ids        : [B, S]  only when the features carry doc_ids; -1 at pad
     """
 
     def __init__(
@@ -180,10 +213,19 @@ class DataCollatorForCausalLM:
         max_length: int = 2048,
         model_vocab_size: int | None = None,
         preserve_precomputed_labels: bool = False,
+        loss_span_markers: tuple[int, int] | None = None,
     ):
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.preserve_precomputed_labels = preserve_precomputed_labels
+        if loss_span_markers is not None:
+            if preserve_precomputed_labels:
+                raise ValueError("loss_span_markers and preserve_precomputed_labels are mutually exclusive.")
+            start, end = (int(x) for x in loss_span_markers)
+            if start == end or start < 0 or end < 0:
+                raise ValueError("loss_span_markers must be two distinct non-negative ids.")
+            loss_span_markers = (start, end)
+        self.loss_span_markers = loss_span_markers
         if tokenizer.pad_token_id is None:
             raise ValueError("DataCollatorForCausalLM requires a tokenizer with a pad token.")
         self.pad_token_id = tokenizer.pad_token_id
@@ -210,12 +252,23 @@ class DataCollatorForCausalLM:
             raise ValueError(
                 "preserve_precomputed_labels=True requires labels on every feature."
             )
+        packed = any("doc_ids" in feature for feature in features)
+        if packed and not all("doc_ids" in feature for feature in features):
+            raise ValueError("Either every feature carries doc_ids (packed) or none does.")
+        doc_ids = torch.full((batch_size, max_len), -1, dtype=torch.long) if packed else None
         for i, ids in enumerate(input_ids_list):
             if isinstance(ids, torch.Tensor):
                 ids = ids.tolist()
             length = min(len(ids), max_len)
             input_ids[i, :length] = torch.tensor(ids[:length], dtype=torch.long)
             attention_mask[i, :length] = 1
+            if packed:
+                row_docs = features[i]["doc_ids"]
+                if isinstance(row_docs, torch.Tensor):
+                    row_docs = row_docs.tolist()
+                if len(row_docs) != len(ids):
+                    raise ValueError("doc_ids must have the same length as input_ids.")
+                doc_ids[i, :length] = torch.tensor(row_docs[:length], dtype=torch.long)
             if self.preserve_precomputed_labels:
                 row_labels = features[i]["labels"]
                 if isinstance(row_labels, torch.Tensor):
@@ -228,6 +281,20 @@ class DataCollatorForCausalLM:
         if not self.preserve_precomputed_labels:
             labels = input_ids.clone()
             labels[attention_mask == 0] = -100
+            if self.loss_span_markers is not None:
+                start, end = self.loss_span_markers
+                for i, ids in enumerate(input_ids_list):
+                    if isinstance(ids, torch.Tensor):
+                        ids = ids.tolist()
+                    length = min(len(ids), max_len)
+                    row = ids[:length]
+                    if start in row:
+                        labels[i, :length] = torch.tensor(labels_from_span_markers(row, start, end), dtype=torch.long)
+        if packed:
+            # first token of every document (t > 0) must not be a next-token target
+            starts = torch.zeros_like(attention_mask, dtype=torch.bool)
+            starts[:, 1:] = (doc_ids[:, 1:] != doc_ids[:, :-1]) & (doc_ids[:, 1:] >= 0)
+            labels = labels.masked_fill(starts, -100)
 
         if self._vocab_size is not None:
             # Rare pretok / arrow corruption can leave a few ids far above the model
@@ -250,6 +317,20 @@ class DataCollatorForCausalLM:
                 labels = labels.clone()
                 input_ids[oov_mask] = self._oov_replacement_id
                 labels[oov_mask] = -100
+            if self.preserve_precomputed_labels:
+                # Precomputed label columns can carry the same rare storage corruption as
+                # input_ids (2026-09-08: one value of 2^31-100 in 983M copy-task labels).
+                # Ignore those positions instead of aborting a multi-hour run.
+                bad_labels = (labels != -100) & ((labels < 0) | (labels >= self._vocab_size))
+                if bad_labels.any():
+                    if not self._oov_clamp_warned:
+                        print(
+                            "WARNING: DataCollatorForCausalLM ignored out-of-vocab precomputed "
+                            f"labels (n={int(bad_labels.sum().item())}, "
+                            f"vocab_size={self._vocab_size}); set to -100."
+                        )
+                        self._oov_clamp_warned = True
+                    labels = labels.masked_fill(bad_labels, -100)
             valid_labels = labels[labels != -100]
             if valid_labels.numel() > 0:
                 label_min = int(valid_labels.min().item())
@@ -261,11 +342,14 @@ class DataCollatorForCausalLM:
                         f"vocab_size={self._vocab_size}"
                     )
 
-        return {
+        batch = {
             "input_ids": input_ids,
             "attention_mask": attention_mask,
             "labels": labels,
         }
+        if packed:
+            batch["doc_ids"] = doc_ids
+        return batch
 
 
 class DataCollatorForPrefixGeneration:

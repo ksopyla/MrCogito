@@ -8,13 +8,16 @@ export PATH="${HOME}/.local/bin:${PATH}"
 echo "=== Concept Pretraining Multi-GPU Training ==="
 echo "Default profile: Odra A1 reconstruction baseline"
 
-NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
+# NUM_GPUS may be preset (e.g. NUM_GPUS=1 for a single-process cache-building or smoke run).
+NUM_GPUS="${NUM_GPUS:-$(nvidia-smi --list-gpus | wc -l)}"
 if [ "$NUM_GPUS" -le 0 ]; then
     echo "ERROR: No GPUs detected."
     exit 1
 fi
 
 GPU_IDS=$(seq -s, 0 $((NUM_GPUS - 1)))
+# Nodes in a multi-node job (see the accelerate launch block); 1 = single node.
+NUM_MACHINES="${NUM_MACHINES:-1}"
 export CUDA_VISIBLE_DEVICES="$GPU_IDS"
 export NCCL_DEBUG=WARN
 # Allow callers to override the allocator config (e.g. expandable_segments:True to
@@ -70,9 +73,16 @@ DATASET_MIX_RECIPE="${DATASET_MIX_RECIPE:-}"
 # E05: path to a manifest JSON from scripts/pretokenize_mix.py. When set, training
 # loads pre-tokenized sources via load_from_disk (instant) and ignores dataset_mix*.
 PRETOKENIZED_MANIFEST="${PRETOKENIZED_MANIFEST:-}"
+# E28/E29/E19: public CogitoProbe Hub ids (ksopyla/cogito-probe-{bits,bind,arith,props}).
+COGITO_PROBE_ID="${COGITO_PROBE_ID:-}"
+COGITO_PROBE_SEQ_LEN="${COGITO_PROBE_SEQ_LEN:-}"
+COGITO_PROBE_VARIANT="${COGITO_PROBE_VARIANT:-}"
+COGITO_PROBE_TASK="${COGITO_PROBE_TASK:-}"
 PRESERVE_PRECOMPUTED_LABELS="${PRESERVE_PRECOMPUTED_LABELS:-false}"
-# Low-padding sortish sampling. This changes only train-row order; it does not
-# concatenate documents or alter tokenization. "none" preserves historical runs.
+LOSS_SPAN_MARKERS="${LOSS_SPAN_MARKERS:-}"      # E18b: "start_id,end_id" -> labels only inside marked spans on rows that carry them
+# Train batching: "none" (historical), "length_group" (sortish sampling; reorders rows only)
+# or "pack" (whole documents concatenated to MAX_SEQ_LENGTH with per-token doc_ids; the
+# model masks cross-document attention — perceiver_ar only; see data/packed_dataset.py).
 BATCH_PACKING_MODE="${BATCH_PACKING_MODE:-none}"
 LENGTH_GROUP_MEGA_BATCH_MULT="${LENGTH_GROUP_MEGA_BATCH_MULT:-20}"
 # Optional datasets.map workers for the length sidecar (default in Python: min(32, cpu-2)).
@@ -137,6 +147,72 @@ LORA_DROPOUT="${LORA_DROPOUT:-0.05}"
 LORA_TARGETS="${LORA_TARGETS:-q_proj,k_proj,v_proj,o_proj}"
 # HF gradient checkpointing (needed by the 1B-backbone family at seq 2048 on 24 GB cards).
 GRADIENT_CHECKPOINTING="${GRADIENT_CHECKPOINTING:-False}"
+# E18 — Perceiver AR v2 family (nn/perceiver_ar_lm.py). MODEL_FAMILY=auto keeps every existing
+# family byte-identical; MODEL_FAMILY=perceiver_ar selects the from-scratch one-global-read LM and
+# passes the PAR_* knobs below (see docs/experiments_specs/ahead/E18_perceiver_ar_v2_baseline_plan.md).
+MODEL_FAMILY="${MODEL_FAMILY:-auto}"
+PAR_MODE="${PAR_MODE:-perceiver}"                   # | dense (matched control)
+PAR_PRE_LAYERS="${PAR_PRE_LAYERS:-2}"
+PAR_PRE_WINDOW="${PAR_PRE_WINDOW:-1024}"
+PAR_GLOBAL_LAYERS="${PAR_GLOBAL_LAYERS:-1}"
+PAR_GLOBAL_POSITIONS="${PAR_GLOBAL_POSITIONS:-}"   # e.g. "7" = one global read at mid-depth; empty = after the pre-encoder
+PAR_BLOCK="${PAR_BLOCK:-4096}"
+NUM_ATTENTION_HEADS="${NUM_ATTENTION_HEADS:-}"      # empty = hidden_size / HEAD_DIM
+NUM_KV_HEADS="${NUM_KV_HEADS:-2}"
+HEAD_DIM="${HEAD_DIM:-128}"
+PAR_NGRAM_ORDERS="${PAR_NGRAM_ORDERS:-2,3}"
+PAR_NGRAM_BUCKETS="${PAR_NGRAM_BUCKETS:-131072}"
+PAR_VALUE_EMBED_LAYERS="${PAR_VALUE_EMBED_LAYERS:-0,7,14}"
+PAR_VALUE_EMBED_DIM="${PAR_VALUE_EMBED_DIM:-64}"
+PAR_NOPE_EVERY="${PAR_NOPE_EVERY:-4}"
+PAR_SWA_SINK="${PAR_SWA_SINK:-False}"           # windowed layers also see the doc's first token
+PAR_GLOBAL_NOPE="${PAR_GLOBAL_NOPE:-False}"     # global read(s) without RoPE (content-only retrieval)
+PAR_GLOBAL_LOGIT_SCALE="${PAR_GLOBAL_LOGIT_SCALE:-none}"   # 'log' = SSMax-style q *= s*log(n) on the global read(s)
+PAR_GLOBAL_SCALE_REF="${PAR_GLOBAL_SCALE_REF:-8192}"
+# E22 — Perceiver Concept LM family (nn/perceiver_concept_lm.py), MODEL_FAMILY=perceiver_concept.
+# Shares HIDDEN_SIZE / INTERMEDIATE_SIZE / TOKEN_EMBEDDING_DIM / NUM_KV_HEADS / HEAD_DIM /
+# PAR_NGRAM_* / PAR_VALUE_EMBED_DIM / ROPE_THETA / ATTN_* / LOGIT_SOFTCAP / Z_LOSS / USE_LIGER with E18.
+PCL_ENC_LAYERS="${PCL_ENC_LAYERS:-6}"
+PCL_ENC_WINDOW="${PCL_ENC_WINDOW:-512}"
+PCL_CONCEPT_RATIO="${PCL_CONCEPT_RATIO:-16}"
+PCL_CONCEPT_SLOTS="${PCL_CONCEPT_SLOTS:-1}"
+PCL_POOL_POS_BIAS="${PCL_POOL_POS_BIAS:-True}"
+PCL_LATENT_LAYERS="${PCL_LATENT_LAYERS:-4}"
+PCL_LATENT_REPEATS="${PCL_LATENT_REPEATS:-1}"
+PCL_DEC_LAYERS="${PCL_DEC_LAYERS:-8}"
+PCL_DEC_SEGMENT="${PCL_DEC_SEGMENT:-1024}"
+PCL_DEC_LOCAL="${PCL_DEC_LOCAL:-block}"             # block (segment reset) | swa
+PCL_CONCEPT_MODE="${PCL_CONCEPT_MODE:-full}"        # full | none (arm C control)
+PCL_CONCEPT_XATTN_SCOPE="${PCL_CONCEPT_XATTN_SCOPE:-causal}"   # causal (E22) | exclusive (E23: slots before the raw window only)
+PCL_XATTN_WO_INIT_STD="${PCL_XATTN_WO_INIT_STD:-0.0}"          # 0.0 = zero-init (E22); >0 breaks the concept path cold start
+PCL_POOLER_WO_INIT_STD="${PCL_POOLER_WO_INIT_STD:-0.0}"        # 0.0 = zero-init (E22); >0 makes the write order-sensitive at init
+PCL_XATTN_KV_HEADS="${PCL_XATTN_KV_HEADS:-2}"
+PCL_ENC_VALUE_EMBED_LAYERS="${PCL_ENC_VALUE_EMBED_LAYERS:-0,3}"
+PCL_DEC_VALUE_EMBED_LAYERS="${PCL_DEC_VALUE_EMBED_LAYERS:-0}"
+# Runtime source re-weighting of a manifest / recipe mix (JSON object source -> weight).
+DATASET_MIX_WEIGHT_OVERRIDE="${DATASET_MIX_WEIGHT_OVERRIDE:-}"
+ROPE_THETA="${ROPE_THETA:-500000.0}"
+ATTN_BACKEND="${ATTN_BACKEND:-flex}"                # sdpa | flex | flash
+ATTN_PAD_MULTIPLE="${ATTN_PAD_MULTIPLE:-2048}"
+LOGIT_SOFTCAP="${LOGIT_SOFTCAP:-30.0}"
+Z_LOSS="${Z_LOSS:-1e-4}"
+USE_LIGER="${USE_LIGER:-True}"
+BLOCK_ATTENTION_MODE="${BLOCK_ATTENTION_MODE:-causal}"
+WRITE_BACK_HOOK="${WRITE_BACK_HOOK:-False}"
+# E21 exclusive message (default off = E18-loadable). Wave A/B: PAR_MESSAGE_*.
+PAR_MESSAGE_BOUNDARY_TOKEN_ID="${PAR_MESSAGE_BOUNDARY_TOKEN_ID:--1}"
+PAR_MESSAGE_COMPRESS_RATIO="${PAR_MESSAGE_COMPRESS_RATIO:-16}"
+PAR_MESSAGE_POOL_REMAINDER="${PAR_MESSAGE_POOL_REMAINDER:-False}"
+PAR_MESSAGE_SLOTS_INPLACE="${PAR_MESSAGE_SLOTS_INPLACE:-False}"
+PAR_MESSAGE_IDENTITY_SLOTS="${PAR_MESSAGE_IDENTITY_SLOTS:-False}"
+PAR_MESSAGE_GLOBAL_ANCHORS="${PAR_MESSAGE_GLOBAL_ANCHORS:-none}"
+PAR_MESSAGE_ANCHOR_KEY_LEN="${PAR_MESSAGE_ANCHOR_KEY_LEN:-0}"
+PAR_MESSAGE_PREFIX_AE="${PAR_MESSAGE_PREFIX_AE:-False}"
+PAR_MESSAGE_PREFIX_AE_WEIGHT="${PAR_MESSAGE_PREFIX_AE_WEIGHT:-0.0}"
+PAR_MESSAGE_PREFIX_AE_STOPGRAD_ANSWER="${PAR_MESSAGE_PREFIX_AE_STOPGRAD_ANSWER:-True}"
+# Optional weight-only warm start (concept-encoder families: encoder weights; perceiver_ar: full
+# state dict from a saved `final/` dir). Empty = random init.
+MODEL_NAME_OR_PATH="${MODEL_NAME_OR_PATH:-}"
 # Decoupled weight decay (HF --weight_decay). For Muon it reaches nn.muon.Muon via
 # PerceiverDenoiseTrainer.create_optimizer. 2026-07-01: Muon diverged on E05 at wd=0.0 (the default) —
 # Moonlight (arXiv:2502.16982) shows wd is Muon's long-horizon stabilizer (their wd=0.1); set 0.1 for Muon.
@@ -218,7 +294,7 @@ if [ -n "$TARGET_TOKENS" ]; then
         echo "ERROR: TARGET_TOKENS requires PRETOKENIZED_MANIFEST for exact counting."
         exit 1
     fi
-    EFFECTIVE_BATCH=$((PER_DEVICE_BATCH_SIZE * NUM_GPUS * GRADIENT_ACCUMULATION_STEPS))
+    EFFECTIVE_BATCH=$((PER_DEVICE_BATCH_SIZE * NUM_GPUS * NUM_MACHINES * GRADIENT_ACCUMULATION_STEPS))
     NUM_EPOCHS=$(uv run python scripts/manifest_token_stats.py \
         --manifest "$PRETOKENIZED_MANIFEST" \
         --target_tokens "$TARGET_TOKENS" \
@@ -273,6 +349,14 @@ fi
 if [ -n "$PRETOKENIZED_MANIFEST" ]; then
     MIX_ARGS+=(--pretokenized_manifest "$PRETOKENIZED_MANIFEST")
 fi
+if [ -n "$COGITO_PROBE_ID" ]; then
+    MIX_ARGS+=(--cogito_probe_id "$COGITO_PROBE_ID")
+    MIX_ARGS+=(--cogito_probe_seq_len "${COGITO_PROBE_SEQ_LEN:-1024}")
+    MIX_ARGS+=(--cogito_probe_variant "${COGITO_PROBE_VARIANT:-fixed}")
+    if [ -n "$COGITO_PROBE_TASK" ]; then
+        MIX_ARGS+=(--cogito_probe_task "$COGITO_PROBE_TASK")
+    fi
+fi
 
 EVAL_DATA_ARGS=()
 if [ -n "$MAX_EVAL_SAMPLES" ]; then
@@ -320,6 +404,99 @@ if [ -n "$BACKBONE_MODEL" ]; then
     fi
 fi
 
+# E18: Perceiver AR v2 family args, only passed when MODEL_FAMILY=perceiver_ar so every existing
+# family's invocation stays byte-identical. Eval keeps loss only (no [B,S,V] logits gathering).
+PAR_ARGS=()
+if [ "$MODEL_FAMILY" = "perceiver_ar" ]; then
+    PAR_ARGS+=(
+        --model_family "$MODEL_FAMILY"
+        --par_mode "$PAR_MODE"
+        --par_pre_layers "$PAR_PRE_LAYERS"
+        --par_pre_window "$PAR_PRE_WINDOW"
+        --par_global_layers "$PAR_GLOBAL_LAYERS"
+        --par_global_positions "$PAR_GLOBAL_POSITIONS"
+        --par_block "$PAR_BLOCK"
+        --num_kv_heads "$NUM_KV_HEADS"
+        --head_dim "$HEAD_DIM"
+        --par_ngram_orders "$PAR_NGRAM_ORDERS"
+        --par_ngram_buckets "$PAR_NGRAM_BUCKETS"
+        --par_value_embed_layers "$PAR_VALUE_EMBED_LAYERS"
+        --par_value_embed_dim "$PAR_VALUE_EMBED_DIM"
+        --par_nope_every "$PAR_NOPE_EVERY" \
+        --par_swa_sink "$PAR_SWA_SINK"
+        --par_global_nope "$PAR_GLOBAL_NOPE"
+        --par_global_logit_scale "$PAR_GLOBAL_LOGIT_SCALE"
+        --par_global_scale_ref "$PAR_GLOBAL_SCALE_REF"
+        --rope_theta "$ROPE_THETA"
+        --attn_backend "$ATTN_BACKEND"
+        --attn_pad_multiple "$ATTN_PAD_MULTIPLE"
+        --logit_softcap "$LOGIT_SOFTCAP"
+        --z_loss "$Z_LOSS"
+        --use_liger "$USE_LIGER"
+        --block_attention_mode "$BLOCK_ATTENTION_MODE"
+        --write_back_hook "$WRITE_BACK_HOOK"
+        --message_boundary_token_id "$PAR_MESSAGE_BOUNDARY_TOKEN_ID"
+        --message_compress_ratio "$PAR_MESSAGE_COMPRESS_RATIO"
+        --message_pool_remainder "$PAR_MESSAGE_POOL_REMAINDER"
+        --message_slots_inplace "$PAR_MESSAGE_SLOTS_INPLACE"
+        --message_identity_slots "$PAR_MESSAGE_IDENTITY_SLOTS"
+        --message_global_anchors "$PAR_MESSAGE_GLOBAL_ANCHORS"
+        --message_anchor_key_len "$PAR_MESSAGE_ANCHOR_KEY_LEN"
+        --message_prefix_ae "$PAR_MESSAGE_PREFIX_AE"
+        --message_prefix_ae_weight "$PAR_MESSAGE_PREFIX_AE_WEIGHT"
+        --message_prefix_ae_stopgrad_answer "$PAR_MESSAGE_PREFIX_AE_STOPGRAD_ANSWER"
+        --prediction_loss_only True
+    )
+    if [ -n "$NUM_ATTENTION_HEADS" ]; then
+        PAR_ARGS+=(--num_attention_heads "$NUM_ATTENTION_HEADS")
+    fi
+fi
+# E22: Perceiver Concept LM family args, only when MODEL_FAMILY=perceiver_concept.
+if [ "$MODEL_FAMILY" = "perceiver_concept" ]; then
+    PAR_ARGS+=(
+        --model_family "$MODEL_FAMILY"
+        --pcl_enc_layers "$PCL_ENC_LAYERS"
+        --pcl_enc_window "$PCL_ENC_WINDOW"
+        --pcl_concept_ratio "$PCL_CONCEPT_RATIO"
+        --pcl_concept_slots "$PCL_CONCEPT_SLOTS"
+        --pcl_pool_pos_bias "$PCL_POOL_POS_BIAS"
+        --pcl_latent_layers "$PCL_LATENT_LAYERS"
+        --pcl_latent_repeats "$PCL_LATENT_REPEATS"
+        --pcl_dec_layers "$PCL_DEC_LAYERS"
+        --pcl_dec_segment "$PCL_DEC_SEGMENT"
+        --pcl_dec_local "$PCL_DEC_LOCAL"
+        --pcl_concept_mode "$PCL_CONCEPT_MODE"
+        --pcl_concept_xattn_scope "$PCL_CONCEPT_XATTN_SCOPE"
+        --pcl_xattn_wo_init_std "$PCL_XATTN_WO_INIT_STD"
+        --pcl_pooler_wo_init_std "$PCL_POOLER_WO_INIT_STD"
+        --pcl_xattn_kv_heads "$PCL_XATTN_KV_HEADS"
+        --pcl_enc_value_embed_layers "$PCL_ENC_VALUE_EMBED_LAYERS"
+        --pcl_dec_value_embed_layers "$PCL_DEC_VALUE_EMBED_LAYERS"
+        --num_kv_heads "$NUM_KV_HEADS"
+        --head_dim "$HEAD_DIM"
+        --par_ngram_orders "$PAR_NGRAM_ORDERS"
+        --par_ngram_buckets "$PAR_NGRAM_BUCKETS"
+        --par_value_embed_dim "$PAR_VALUE_EMBED_DIM"
+        --rope_theta "$ROPE_THETA"
+        --attn_backend "$ATTN_BACKEND"
+        --attn_pad_multiple "$ATTN_PAD_MULTIPLE"
+        --logit_softcap "$LOGIT_SOFTCAP"
+        --z_loss "$Z_LOSS"
+        --use_liger "$USE_LIGER"
+        --prediction_loss_only True
+    )
+    if [ -n "$NUM_ATTENTION_HEADS" ]; then
+        PAR_ARGS+=(--num_attention_heads "$NUM_ATTENTION_HEADS")
+    fi
+fi
+if [ -n "$DATASET_MIX_WEIGHT_OVERRIDE" ]; then
+    MIX_ARGS+=(--dataset_mix_weight_override "$DATASET_MIX_WEIGHT_OVERRIDE")
+fi
+WARM_ARGS=()
+if [ -n "$MODEL_NAME_OR_PATH" ]; then
+    WARM_ARGS+=(--model_name_or_path "$MODEL_NAME_OR_PATH")
+fi
+
 # Optimizer selection (--optimizer is our flag; HF --optim stays adamw_torch_fused for both arms).
 OPTIM_ARGS=(--optimizer "$OPTIMIZER")
 if [ "$OPTIMIZER" = "muon" ]; then
@@ -327,11 +504,31 @@ if [ "$OPTIMIZER" = "muon" ]; then
 fi
 echo "Optimizer: $OPTIMIZER"
 
+# Multi-node (AWS p5 / Slurm): every node runs this script with NUM_MACHINES, MACHINE_RANK,
+# MAIN_PROCESS_IP, MAIN_PROCESS_PORT set (torchrun-style rendezvous). NUM_GPUS is the local
+# GPU count; total processes = NUM_GPUS × NUM_MACHINES. Single-node defaults are unchanged.
+MULTI_NODE_ARGS=()
+if [ "$NUM_MACHINES" -gt 1 ]; then
+    : "${MACHINE_RANK:?MACHINE_RANK required when NUM_MACHINES > 1}"
+    : "${MAIN_PROCESS_IP:?MAIN_PROCESS_IP required when NUM_MACHINES > 1}"
+    MULTI_NODE_ARGS+=(--machine_rank "$MACHINE_RANK" --main_process_ip "$MAIN_PROCESS_IP"
+                      --main_process_port "${MAIN_PROCESS_PORT:-29500}" --same_network)
+    echo "Multi-node: machines=$NUM_MACHINES rank=$MACHINE_RANK main=$MAIN_PROCESS_IP:${MAIN_PROCESS_PORT:-29500}"
+fi
+
+# accelerate rejects --multi_gpu with a single process ("You need to use at least 2 processes"),
+# which is exactly the NUM_GPUS=1 calibration / smoke path. Pass it only when it applies.
+MULTI_GPU_ARGS=()
+if [ "$((NUM_GPUS * NUM_MACHINES))" -gt 1 ]; then
+    MULTI_GPU_ARGS+=(--multi_gpu)
+fi
+
 uv run accelerate launch \
-    --num_processes="$NUM_GPUS" \
-    --num_machines=1 \
+    --num_processes="$((NUM_GPUS * NUM_MACHINES))" \
+    --num_machines="$NUM_MACHINES" \
+    ${MULTI_NODE_ARGS[@]+"${MULTI_NODE_ARGS[@]}"} \
+    ${MULTI_GPU_ARGS[@]+"${MULTI_GPU_ARGS[@]}"} \
     --mixed_precision=bf16 \
-    --multi_gpu \
     training/train_concept_pretraining.py \
     --hidden_size "$HIDDEN_SIZE" \
     --token_embedding_dim "$TOKEN_EMBEDDING_DIM" \
@@ -357,6 +554,7 @@ uv run accelerate launch \
     --tokenizer_name "$TOKENIZER_NAME" \
     --max_seq_length "$MAX_SEQ_LENGTH" \
     --preserve_precomputed_labels "$PRESERVE_PRECOMPUTED_LABELS" \
+    --loss_span_markers "$LOSS_SPAN_MARKERS" \
     --batch_packing_mode "$BATCH_PACKING_MODE" \
     --length_group_mega_batch_mult "$LENGTH_GROUP_MEGA_BATCH_MULT" \
     --dataset_cache_dir "$HF_DATASETS_CACHE" \
@@ -404,6 +602,8 @@ uv run accelerate launch \
     ${EVAL_DATA_ARGS[@]+"${EVAL_DATA_ARGS[@]}"} \
     ${ANCHOR_ARGS[@]+"${ANCHOR_ARGS[@]}"} \
     ${BACKBONE_ARGS[@]+"${BACKBONE_ARGS[@]}"} \
+    ${PAR_ARGS[@]+"${PAR_ARGS[@]}"} \
+    ${WARM_ARGS[@]+"${WARM_ARGS[@]}"} \
     ${OPTIM_ARGS[@]+"${OPTIM_ARGS[@]}"} \
     ${RESUME_ARGS[@]+"${RESUME_ARGS[@]}"} \
     2>&1 | uv run python scripts/clean_tee.py "$SHELL_LOG"

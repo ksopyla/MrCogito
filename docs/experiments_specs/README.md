@@ -46,7 +46,33 @@ the root, and never reuse an ID found in any lifecycle folder.
    `done_failed/`. A deliberately abandoned design moves to `canceled/`.
 
 ## ID scheme
-`E0NN_short_slug` — zero-padded, stable, never reused. The ID joins
-spec ↔ plan ↔ launch/run ↔ run report ↔ checkpoint ↔ WandB run.
+The ID joins spec ↔ plan ↔ launch/run ↔ run report ↔ checkpoint ↔ WandB run.
+Never reuse an ID found in any lifecycle folder.
+
+**When to design at all.** Do not create a spec in `ahead/` unless the user asked
+to design or run an experiment.
+
+**Family `E0NN`.** The family is the integer ID (E18, E21, …). Assign a new
+family number only if the user asked for a new experiment family, or approved a
+bet that is a different encode/reason/decode object. Zero-padded, globally
+unique, never reused. Do not take the next free integer just because it is
+free. E26–E29 were flavours/runs of E21 that were mis-numbered; do not repeat
+that.
+
+**Flavours (default for a small detail).** A small architecture change inside
+the current family — extra loss head, identity keys, a loop, a mask — is a
+flavour of **that** family: `E{NN}a`, `E{NN}b`, `E{NN}c`, … Sequential
+lowercase letters on the current family's number. Never reuse a letter inside
+a family. The unlettered ID is the parent; the first small change is `a`
+(E21 → `E21a`, not a new E26; E18 → `E18a`). Same order of compute / memory /
+parameters as the parent unless the user changes scale. Spec path:
+`docs/experiments_specs/ahead/E{NN}a_….md`.
+
+**Not a flavour / not a new family.** A new dataset, probe, eval protocol,
+length ladder, dense control, or optimizer/LR knob is a *run* of the current
+family or flavour ID, logged under that ID — not a new spec ID.
+
+**When in doubt.** Small delta on the current family → next unused flavour
+letter of that family. User did not ask → write nothing in `ahead/`.
 
 The live driver is [`../1_Strategy_and_Plans/agenda.md`](../1_Strategy_and_Plans/agenda.md).

@@ -47,7 +47,8 @@ We are trying to **find** a new architecture. That requires bold hypotheses, ana
 - `scripts/` — canonical generic training runner, thin experiment wrappers, orchestration
   pipelines, eval launchers, sync/upload utilities; role map in `scripts/README.md`
 - `docs/` — documentation, research logs, goals and hypotheses
-    - `1_Strategy_and_Plans/` — `agenda.md` (slim living agenda, current truth), `vision_and_goals.md`, `training_eval_matrix.md`
+  - `glossary.md` — plain-language vocabulary: every recurring metric, term and standing analogy, with what it measures and which direction is good. Keep it current when coining names
+  - `1_Strategy_and_Plans/` — `agenda.md` (slim living agenda, current truth), `vision_and_goals.md`, `training_eval_matrix.md`
     - `experiments_specs/` — one frozen spec per experiment (`E0NN_*.md`) + its `_plan.md`; implementation is a config over the shared foundation
     - `engineering_specs/` — one frozen spec per engineering change 
     - `2_Experiments_Registry/` — master experiment log, run reports (append-only result ledger)
@@ -87,6 +88,8 @@ Input (prior result / idea / vision / paper / cross-domain analogy) →
 `research-implement` (build the bet on the shared foundation — do not substitute a safe retread) →
 `experiment-run` (launch/monitor on Odra/Polonez) → `experiment-evaluate` (tiered eval pipeline) →
 `experiment-track` (results → `master_experiment_log.md`). `docs-hygiene` keeps docs lean.
+`research-comms` governs how **any** of this is reported back in chat (short, plain, no private
+codenames, numbers explained) — see `communication.mdc`; shared vocabulary in `docs/glossary.md`.
 Canonical homes: intent → specs/plans; results → `master_experiment_log.md`; live memory → `agenda.md`.
 A/B and ablations belong after a positive signal, not as the default pipeline output.
 - **`2_Experiments_Registry/` is append-only.** Never delete or rewrite recorded results; later results may add a dated note that supersedes an earlier *interpretation*.

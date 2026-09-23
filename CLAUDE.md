@@ -27,9 +27,10 @@ see the change — there is one source of truth, never two.
   specific instructions** in `AGENTS.md` before configuring or debugging remote access.
 
 ## Project context — imported verbatim from the canonical Cursor rules
-The two blocks below are the exact content Cursor auto-applies (`alwaysApply: true`), imported
+The blocks below are the exact content Cursor auto-applies (`alwaysApply: true`), imported
 here so Claude and Cursor can never disagree on the ground truth. (Ignore the `---` frontmatter
 lines — they are Cursor metadata.)
 
 @.cursor/rules/project-overview.mdc
 @.cursor/rules/local-environment.mdc
+@.cursor/rules/communication.mdc

@@ -7,6 +7,15 @@
 Canonical rules/skills live under `.cursor/` (`.claude/skills` is a symlink).
 Project overview and local env conventions are in `.cursor/rules/`.
 
+## How to report to the author
+
+The chat is not the archive. Before any message that reports a result, pitches an
+experiment, explains an architecture, summarises work, or asks for a decision,
+follow the `research-comms` skill (`.cursor/skills/research-comms/SKILL.md`) and
+the always-applied `.cursor/rules/communication.mdc`. Short first pass, plain
+words, no private codenames (`arm A`, `S1`), every number with its meaning, depth
+only when asked. Shared vocabulary: `docs/glossary.md`.
+
 ## Cursor Cloud specific instructions
 
 Cloud Agents run in an isolated Cursor VM. They do **not** inherit the author's

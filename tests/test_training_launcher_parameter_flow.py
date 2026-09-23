@@ -578,3 +578,17 @@ def test_e10_accepts_max_seq_length_override(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert _value_after(args, "--max_seq_length") == "4096"
+
+
+def test_multi_gpu_flag_only_when_more_than_one_process(tmp_path):
+    """accelerate rejects --multi_gpu with a single process; the NUM_GPUS=1 smoke/calibration path
+    must therefore omit it, while the normal multi-GPU launch keeps it."""
+    result, args, _ = _run_launcher(tmp_path, {"NUM_GPUS": "1"})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "--multi_gpu" not in args
+    assert "--num_processes=1" in args          # passed as a single --flag=value token
+
+    result, args, _ = _run_launcher(tmp_path, {"NUM_GPUS": "4"})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "--multi_gpu" in args
+    assert "--num_processes=4" in args

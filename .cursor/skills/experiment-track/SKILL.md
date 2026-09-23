@@ -317,4 +317,9 @@ When using this skill, produce:
 - a project-aware verdict
 - precise doc updates, not vague notes
 
+**The chat message is not the report.** The docs written here are dense on purpose — they are the
+archive. What goes back to the author is a ~120-word Brief in plain words: what happened, what it
+means, what I recommend, plus a link. No gate codes, no arm letters, no bare metric names, every
+number with its direction and verdict. Follow `research-comms` and `docs/glossary.md`.
+
 If the user asks for a deep external research follow-up, hand off to `research-synthesis` (which spawns `research-scout` for source material).

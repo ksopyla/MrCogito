@@ -558,3 +558,66 @@ class TestDataCollatorForPrefixGeneration:
         last_content_token = modern_bert_tokenizer.convert_ids_to_tokens([last_content_token_id])[0]
 
         assert last_content_token.replace("##", "").endswith((".", "!", "?"))
+"""DataCollatorForCausalLM: loss-span markers (E18b) — labels by rule, no labels column."""
+import pytest
+import torch
+
+from data.data_collators import DataCollatorForCausalLM, labels_from_span_markers
+
+V = 100
+S, E = 90, 91
+
+
+class _Tok:
+    pad_token_id = 0
+    unk_token_id = None
+
+    def __len__(self):
+        return V
+
+
+def test_labels_from_span_markers_rule():
+    ids = [5, 6, S, 7, 8, E, 9, S, 10, E, 11]
+    assert labels_from_span_markers(ids, S, E) == [-100, -100, -100, 7, 8, E, -100, -100, 10, E, -100]
+    # unmatched START labels through the row end; START itself is never a target
+    assert labels_from_span_markers([1, S, 2, 3], S, E) == [-100, -100, 2, 3]
+    # END without START is ignored; a START inside a span re-opens (its own position stays -100)
+    assert labels_from_span_markers([1, E, 2], S, E) == [-100, -100, -100]
+    assert labels_from_span_markers([S, 1, S, 2, E], S, E) == [-100, 1, -100, 2, E]
+    assert labels_from_span_markers(torch.tensor([S, 4, E]), S, E) == [-100, 4, E]
+
+
+def test_collator_mixed_batch_rows_with_and_without_markers():
+    col = DataCollatorForCausalLM(_Tok(), max_length=16, model_vocab_size=V, loss_span_markers=(S, E))
+    marked = [3, 4, S, 5, 6, E, 7]
+    plain = [11, 12, 13]
+    batch = col([{"input_ids": marked}, {"input_ids": plain}])
+    assert batch["labels"][0].tolist() == [-100, -100, -100, 5, 6, E, -100]
+    assert batch["labels"][1].tolist() == [11, 12, 13, -100, -100, -100, -100]  # plain LM + pad
+    assert batch["attention_mask"].tolist() == [[1] * 7, [1] * 3 + [0] * 4]
+    # truncation at max_length cuts a span: the unmatched START still labels to the cut
+    col2 = DataCollatorForCausalLM(_Tok(), max_length=5, model_vocab_size=V, loss_span_markers=(S, E))
+    b2 = col2([{"input_ids": marked}])
+    assert b2["labels"][0].tolist() == [-100, -100, -100, 5, 6]
+
+
+def test_collator_markers_validation_and_exclusivity():
+    with pytest.raises(ValueError):
+        DataCollatorForCausalLM(_Tok(), model_vocab_size=V, preserve_precomputed_labels=True, loss_span_markers=(S, E))
+    with pytest.raises(ValueError):
+        DataCollatorForCausalLM(_Tok(), model_vocab_size=V, loss_span_markers=(S, S))
+    # default is unchanged: no markers -> plain LM labels
+    col = DataCollatorForCausalLM(_Tok(), max_length=8, model_vocab_size=V)
+    assert col.loss_span_markers is None
+    assert col([{"input_ids": [3, S, 4, E]}])["labels"][0].tolist() == [3, S, 4, E]
+
+
+def test_collator_markers_with_packed_doc_ids():
+    col = DataCollatorForCausalLM(_Tok(), max_length=16, model_vocab_size=V, loss_span_markers=(S, E))
+    ids = [1, 2, S, 3, E, 8, 9, 10]
+    doc = [0, 0, 0, 0, 0, 1, 1, 1]
+    batch = col([{"input_ids": ids, "doc_ids": doc}])
+    lab = batch["labels"][0].tolist()
+    assert lab[:5] == [-100, -100, -100, 3, E]
+    assert lab[5] == -100          # document start is never a target (packed rule still applies)
+    assert lab[6:] == [-100, -100]  # the marked row keeps -100 outside its spans

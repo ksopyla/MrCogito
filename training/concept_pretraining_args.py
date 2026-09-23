@@ -237,6 +237,109 @@ class ModelArguments:
         default="q_proj,k_proj,v_proj,o_proj",
         metadata={"help": "E10: comma-separated LoRA target module names."},
     )
+    # ---- E18 Perceiver AR v2 family (nn/perceiver_ar_lm.py). Defaults keep every other
+    # family byte-identical; only model_family='perceiver_ar' reads the par_* knobs.
+    model_family: str = field(
+        default="auto",
+        metadata={
+            "help": "auto (legacy selection via decoder_type/backbone_model) | perceiver_ar "
+            "(E18 from-scratch one-global-read LM) | perceiver_concept (E22 encoder → concept array → "
+            "latent transformer → segment-confined decoder). Both require objective_variant='causal_lm'."
+        },
+    )
+    # ---- E22 Perceiver Concept LM family (nn/perceiver_concept_lm.py). Only read when
+    # model_family='perceiver_concept'. Shared knobs: hidden_size, intermediate_size,
+    # token_embedding_dim, num_kv_heads, head_dim, rope_theta, par_ngram_*, par_value_embed_dim,
+    # logit_softcap, z_loss, use_liger, attn_backend, attn_pad_multiple, chunked_ce_block_size.
+    pcl_enc_layers: int = field(default=6, metadata={"help": "E22: causal sliding-window encoder layers over tokens."})
+    pcl_enc_window: int = field(default=512, metadata={"help": "E22: encoder attention window."})
+    pcl_concept_ratio: int = field(default=16, metadata={"help": "E22: tokens per concept block (r)."})
+    pcl_concept_slots: int = field(default=1, metadata={"help": "E22: learned-query slots per block (c)."})
+    pcl_pool_pos_bias: bool = field(default=True, metadata={"help": "E22: learnable within-block positional bias on the pooling logits."})
+    pcl_latent_layers: int = field(default=4, metadata={"help": "E22: causal transformer layers over the concept array."})
+    pcl_latent_repeats: int = field(default=1, metadata={"help": "E22: weight-tied repeats of the latent stack (K; reasoning-depth knob)."})
+    pcl_dec_layers: int = field(default=8, metadata={"help": "E22: decoder layers (segment-confined self-attn + concept cross-attn + SwiGLU)."})
+    pcl_dec_segment: int = field(default=1024, metadata={"help": "E22: decoder segment (block mode) or sliding window (swa mode), in tokens."})
+    pcl_dec_local: str = field(default="block", metadata={"help": "E22: 'block' = self-attn reset at segment boundaries (structural closure); 'swa' = sliding window."})
+    pcl_concept_mode: str = field(default="full", metadata={"help": "E22: 'full' = decoder reads the concept array; 'none' = arm C control (no cross-attention)."})
+    pcl_concept_xattn_scope: str = field(default="causal", metadata={"help": "E22/E23: 'causal' = a token reads every slot ending at or before it (incl. its own raw segment); 'exclusive' = only slots ending before its raw window (pure long-range channel)."})
+    pcl_xattn_wo_init_std: float = field(default=0.0, metadata={"help": "Init std for the decoder cross-attention output projection. 0.0 = zero-init (E22 as run). >0 breaks the concept path's series cold start; measured 2.5x more information recovered on the symbolic far_copy probe."})
+    pcl_pooler_wo_init_std: float = field(default=0.0, metadata={"help": "Init std for the pooler's learned-query output projection. 0.0 = zero-init (E22 as run), which leaves the write an order-free mean at init."})
+    pcl_xattn_kv_heads: int = field(default=2, metadata={"help": "E22: kv-heads of the concept cross-attention."})
+    pcl_enc_value_embed_layers: str = field(default="0,3", metadata={"help": "E22: encoder layers with a value embedding."})
+    pcl_dec_value_embed_layers: str = field(default="0", metadata={"help": "E22: decoder layers with a value embedding."})
+    par_mode: str = field(
+        default="perceiver",
+        metadata={"help": "E18: 'perceiver' (swa pre → 1 global → swa(N) stack) or 'dense' control."},
+    )
+    par_pre_layers: int = field(default=2, metadata={"help": "E18: sliding-window pre-encoder layers."})
+    par_pre_window: int = field(default=1024, metadata={"help": "E18: pre-encoder window."})
+    par_global_layers: int = field(default=1, metadata={"help": "E18: full-causal global read layers."})
+    par_global_positions: str = field(
+        default="",
+        metadata={"help": "E18: comma list of absolute layer indices for the global read(s); empty = right after the pre-encoder. Must list par_global_layers entries."},
+    )
+    par_block: int = field(default=4096, metadata={"help": "E18: N — window of the stack layers."})
+    num_attention_heads: Optional[int] = field(
+        default=None, metadata={"help": "E18: query heads (default hidden_size // head_dim)."}
+    )
+    num_kv_heads: int = field(default=2, metadata={"help": "E18: GQA key/value heads."})
+    head_dim: int = field(default=128, metadata={"help": "E18: per-head dim."})
+    par_ngram_orders: str = field(default="2,3", metadata={"help": "E18: hashed n-gram orders."})
+    par_ngram_buckets: int = field(default=131072, metadata={"help": "E18: buckets per n-gram table."})
+    par_value_embed_layers: str = field(
+        default="0,7,14", metadata={"help": "E18: layer indices receiving value embeddings."}
+    )
+    par_value_embed_dim: int = field(default=64, metadata={"help": "E18: value-embedding table dim."})
+    par_nope_every: int = field(default=4, metadata={"help": "E18: every k-th stack layer has no RoPE (0=off)."})
+    par_global_nope: bool = field(default=False, metadata={"help": "E18: global read(s) without RoPE (content-only retrieval, iRoPE-style)."})
+    par_global_logit_scale: str = field(default="none", metadata={"help": "E18: 'log' = SSMax-style q *= s*log(n_visible) on the global read(s) (anti-dilution at long context)."})
+    par_global_scale_ref: int = field(default=8192, metadata={"help": "E18: n_visible at which the log scale is 1 at init."})
+    par_swa_sink: bool = field(default=False, metadata={"help": "E18: windowed layers may also attend to the document's first token (absolute-position signal for position-based retrieval)."})
+    rope_theta: float = field(default=500000.0, metadata={"help": "E18: RoPE base."})
+    attn_backend: str = field(default="flex", metadata={"help": "E18: sdpa | flex | flash."})
+    attn_pad_multiple: int = field(
+        default=2048, metadata={"help": "E18: pad S to a multiple (bounds flex recompiles)."}
+    )
+    logit_softcap: float = field(default=30.0, metadata={"help": "E18: tanh logit soft-cap (0=off)."})
+    z_loss: float = field(default=1e-4, metadata={"help": "E18: z-loss coefficient."})
+    use_liger: bool = field(default=True, metadata={"help": "E18: Liger fused linear CE when available."})
+    block_attention_mode: str = field(
+        default="causal", metadata={"help": "E18 hook: causal | bidirectional (E20)."}
+    )
+    write_back_hook: bool = field(default=False, metadata={"help": "E18 hook: add write_back_proj (E19)."})
+    message_boundary_token_id: int = field(
+        default=-1,
+        metadata={"help": "E21: reserved id that splits sender|receiver (-1 = off, E18-loadable)."},
+    )
+    message_compress_ratio: int = field(
+        default=16, metadata={"help": "E21: prefix tokens per exclusive slot."}
+    )
+    message_pool_remainder: bool = field(
+        default=False, metadata={"help": "E21: pool the incomplete last sender block."}
+    )
+    message_slots_inplace: bool = field(
+        default=False, metadata={"help": "E21: write slots into sender prefix positions (KV_LEN=S)."}
+    )
+    message_identity_slots: bool = field(
+        default=False, metadata={"help": "E21: freeze mean-pool; bypass compressor u/delta."}
+    )
+    message_global_anchors: str = field(
+        default="none",
+        metadata={"help": "E21/E27: none | query_nbhd | query_side | type_marks | query_nbhd+type | key_spans."},
+    )
+    message_anchor_key_len: int = field(
+        default=0, metadata={"help": "E27: key-span length for key_spans (0 = 2)."}
+    )
+    message_prefix_ae: bool = field(
+        default=False, metadata={"help": "E26: weak prefix-block AE from exclusive slots."}
+    )
+    message_prefix_ae_weight: float = field(
+        default=0.0, metadata={"help": "E26: λ on L_AE."}
+    )
+    message_prefix_ae_stopgrad_answer: bool = field(
+        default=True, metadata={"help": "E26: compressor sees AE grads only (detach slots on the read)."}
+    )
 
 
 @dataclass
@@ -311,6 +414,26 @@ class DataTrainingArguments:
             "Overrides dataset_mix/dataset_mix_recipe when present."
         },
     )
+    cogito_probe_id: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "E28/E29/E19: Hub id or family (bits|bind|arith|props). "
+            "load_dataset('ksopyla/cogito-probe-*'), then filter seq_len/variant. "
+            "Overrides mix/manifest when set. Prefer Hub over local generate."
+        },
+    )
+    cogito_probe_seq_len: int = field(
+        default=1024,
+        metadata={"help": "CogitoProbe seq_len filter (1024 or 4096 for Wave B; not 32k)."},
+    )
+    cogito_probe_variant: str = field(
+        default="fixed",
+        metadata={"help": "CogitoProbe variant filter: fixed | scaled."},
+    )
+    cogito_probe_task: Optional[str] = field(
+        default=None,
+        metadata={"help": "Optional CogitoProbe task filter (e.g. hop_friend_place, subexpr)."},
+    )
     preserve_precomputed_labels: bool = field(
         default=False,
         metadata={
@@ -318,12 +441,22 @@ class DataTrainingArguments:
             "instead of mirroring input_ids. Default false reproduces E10."
         },
     )
+    loss_span_markers: str = field(
+        default="",
+        metadata={
+            "help": "E18b: 'start_id,end_id' — rows containing start_id get labels only inside "
+            "START..END spans (dense-label retrieval rows sharing a manifest with LM shards); "
+            "other rows stay plain LM. Exclusive with preserve_precomputed_labels."
+        },
+    )
     batch_packing_mode: str = field(
         default="none",
         metadata={
-            "help": "Training pad-reduction mode: 'none' or 'length_group'. "
+            "help": "Training pad-reduction mode: 'none', 'length_group' or 'pack'. "
             "Length grouping preserves rows and only reorders examples inside bounded "
-            "shuffled windows."
+            "shuffled windows. 'pack' concatenates whole documents into max_seq_length "
+            "sequences with per-token doc_ids (model masks cross-document attention); "
+            "requires a model family whose forward accepts doc_ids (perceiver_ar)."
         },
     )
     length_group_mega_batch_mult: int = field(
@@ -354,7 +487,7 @@ class DataTrainingArguments:
     split_strategy: str = field(default="sentence_boundary")
 
     def __post_init__(self) -> None:
-        valid_modes = {"none", "length_group"}
+        valid_modes = {"none", "length_group", "pack"}
         if self.batch_packing_mode not in valid_modes:
             raise ValueError(
                 f"batch_packing_mode must be one of {sorted(valid_modes)}, "
@@ -362,9 +495,17 @@ class DataTrainingArguments:
             )
         if self.length_group_mega_batch_mult < 1:
             raise ValueError("length_group_mega_batch_mult must be positive.")
-        if self.batch_packing_mode == "length_group" and not self.pretokenized_manifest:
+        if self.loss_span_markers.strip():
+            parts = [x.strip() for x in self.loss_span_markers.split(",") if x.strip()]
+            if len(parts) != 2 or not all(x.lstrip("-").isdigit() for x in parts):
+                raise ValueError("loss_span_markers must be 'start_id,end_id' (two integers).")
+            if int(parts[0]) == int(parts[1]) or min(int(parts[0]), int(parts[1])) < 0:
+                raise ValueError("loss_span_markers must be two distinct non-negative ids.")
+            if self.preserve_precomputed_labels:
+                raise ValueError("loss_span_markers and preserve_precomputed_labels are mutually exclusive.")
+        if self.batch_packing_mode in ("length_group", "pack") and not self.pretokenized_manifest:
             raise ValueError(
-                "batch_packing_mode='length_group' requires --pretokenized_manifest "
+                f"batch_packing_mode={self.batch_packing_mode!r} requires --pretokenized_manifest "
                 "so cached lengths stay aligned with the interleaved dataset."
             )
 
@@ -418,6 +559,32 @@ def validate_training_configuration(
 
     is_causal_ar = model_args.decoder_type == DECODER_CAUSAL_AR
     is_backbone = model_args.backbone_model is not None
+    model_family = getattr(model_args, "model_family", "auto")
+    if model_family not in {"auto", "perceiver_ar", "perceiver_concept"}:
+        raise ValueError(
+            f"Unknown model_family: {model_family!r} (expected 'auto', 'perceiver_ar' or 'perceiver_concept')."
+        )
+    if model_family in {"perceiver_ar", "perceiver_concept"}:
+        if model_args.objective_variant != OBJECTIVE_CAUSAL_LM:
+            raise ValueError(f"model_family={model_family!r} requires objective_variant='causal_lm'.")
+        if is_backbone:
+            raise ValueError(f"model_family={model_family!r} is a from-scratch family; do not set backbone_model.")
+        if model_args.anchor_loss:
+            raise ValueError(f"anchor_loss is not supported by the {model_family} family.")
+        if loss_args.concept_losses and loss_args.concept_losses.lower() != "none":
+            raise ValueError(f"concept_losses are not wired into the {model_family} family.")
+        if model_family == "perceiver_concept":
+            if model_args.pcl_dec_local not in {"block", "swa"}:
+                raise ValueError("pcl_dec_local must be 'block' or 'swa'.")
+            if model_args.pcl_concept_mode not in {"full", "none"}:
+                raise ValueError("pcl_concept_mode must be 'full' or 'none'.")
+            if model_args.pcl_concept_xattn_scope not in {"causal", "exclusive"}:
+                raise ValueError("pcl_concept_xattn_scope must be 'causal' or 'exclusive'.")
+            for name in ("pcl_xattn_wo_init_std", "pcl_pooler_wo_init_std"):
+                if getattr(model_args, name) < 0.0:
+                    raise ValueError(f"{name} must be >= 0.0 (0.0 = zero-init).")
+        # The E18 / E22 families are neither the concept-AR nor the backbone family.
+        return False, False
     if is_backbone and model_args.objective_variant != OBJECTIVE_CAUSAL_LM:
         raise ValueError(
             "backbone_model (E10) requires objective_variant='causal_lm'; "

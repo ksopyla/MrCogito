@@ -1,8 +1,8 @@
-# E0NN — <short title>
+# <ID> — <short title>
 
 - **Status:** draft | approved | active | done | killed | canceled
 - **Serves:** <the Vision / agenda focus this architectural bet serves>
-- **Implementation plan:** [E0NN_..._plan.md](E0NN_..._plan.md) *(authored by `implementation-plan`; the HOW)*
+- **Implementation plan:** [<ID>_plan.md](<ID>_plan.md) *(authored by `implementation-plan`; the HOW)*
 - **Owner / dates:** <name> · opened YYYY-MM-DD · closed YYYY-MM-DD
 
 > One experiment = one **coherent architectural hypothesis**. A bold composition
@@ -14,6 +14,18 @@
 > live in the registry and run report, not here. New specs live in `ahead/`. When
 > closed, move the spec and plan together to `done_success/`, `done_failed/`, or
 > `canceled/` according to the lifecycle rules in README.
+>
+> **ID scheme:** do not mint this file unless the user asked to design or run.
+> The family is `E0NN` (E18, E21, …); a new family number only if the user asked
+> for a new family or a different encode/reason/decode object. A small detail
+> inside the current family is a flavour: `E{NN}a`, `E{NN}b`, `E{NN}c`, …
+> Sequential lowercase letters on **that** family's number; never reuse a letter
+> inside a family. The unlettered ID is the parent; the first small change is
+> `a` (E21 → `E21a`, not a new E26; E18 → `E18a`). Same compute / memory /
+> parameters as the parent unless the user changes scale. A new dataset, probe,
+> eval protocol, length ladder, dense control, or optimizer/LR knob is a *run*
+> of the current family or flavour ID, not a new ID. When in doubt: flavour
+> letter of the current family. Full rules: [README.md](README.md#id-scheme).
 
 ## Hypothesis
 <One falsifiable sentence: "If we do X, then metric Y will move to Z, because ..." —

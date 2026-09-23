@@ -163,6 +163,11 @@ Match output to the request:
 - "Explain the loss / a single component." → focused answer covering only the relevant steps (often Steps 3, 6, 7).
 - "Show me the forward pass with shapes." → Steps 3 and 5 only.
 
+An explain request is a *pull* for depth — this is where being specific and technical is wanted. Still
+lead with one analogy and one diagram before the formal terms, and introduce each term like a teacher
+rather than assuming it (`research-comms`, "Depth on demand"). Reuse the standing analogies in
+`docs/glossary.md` instead of inventing a new metaphor each time.
+
 ## Common Pitfalls
 
 - **Paraphrasing past the paper.** Rewriting the abstract in different words is not an explanation. Add diagrams, shapes, and gradient flow.

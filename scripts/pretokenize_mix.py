@@ -159,6 +159,20 @@ def list_file_urls(spec: dict) -> list[tuple[str, int | None]]:
 list_parquet_urls = list_file_urls
 
 
+def _validate_parquet(path: Path) -> None:
+    """Read every row group of a freshly downloaded parquet shard so a corrupt body
+    (e.g. 'Corrupt snappy compressed data' from a bad CDN copy, finepdfs 2026-09-07) is
+    caught here and retried, instead of killing a multi-hour tokenize run later."""
+    if path.suffix != ".parquet" and not str(path).endswith(".parquet.part"):
+        return
+    import pyarrow.parquet as pq
+
+    pf = pq.ParquetFile(str(path))
+    first_col = [pf.schema_arrow.names[0]] if pf.schema_arrow.names else None
+    for i in range(pf.num_row_groups):
+        pf.read_row_group(i, columns=first_col)
+
+
 def _download_one(url: str, dest: Path, expected_size: int | None = None, retries: int = 5) -> Path:
     """Download `url` to `dest` with Content-Length validation and retry.
 
@@ -169,7 +183,12 @@ def _download_one(url: str, dest: Path, expected_size: int | None = None, retrie
     if dest.exists() and dest.stat().st_size > 0:
         size = dest.stat().st_size
         if expected_size is None or size == expected_size:
-            return dest
+            try:
+                _validate_parquet(dest)
+                return dest
+            except Exception as e:  # corrupt leftover from an earlier download
+                logger.warning(f"  existing {dest.name} failed validation ({e}) — re-downloading")
+                dest.unlink()
         logger.warning(f"  existing {dest.name} is short ({size} < {expected_size}) — re-downloading")
         dest.unlink()
 
@@ -195,6 +214,7 @@ def _download_one(url: str, dest: Path, expected_size: int | None = None, retrie
                     raise IOError(f"short read: got {got} of {target} bytes")
                 if target is None and got == 0:
                     raise IOError("empty response")
+            _validate_parquet(tmp)
             tmp.rename(dest)
             return dest
         except Exception as e:
@@ -267,6 +287,15 @@ def _archive_source_raw(spec: dict, name: str, raw_archive_dir: Path, download_w
     logger.info(f"[{name}] raw archive complete ({len(paths)} files)")
 
 
+_SPEC_KEYS_IGNORED_BY_FINGERPRINT = ("weight", "notes")
+
+
+def _spec_fingerprint(spec: dict) -> str:
+    """sha256 of the source spec without mix-level knobs that do not change tokenization."""
+    core = {k: v for k, v in spec.items() if k not in _SPEC_KEYS_IGNORED_BY_FINGERPRINT}
+    return hashlib.sha256(json.dumps(core, sort_keys=True).encode()).hexdigest()
+
+
 def tokenize_source(
     spec: dict,
     tokenizer,
@@ -282,6 +311,7 @@ def tokenize_source(
     raw_archive_dir: Path | None = None,
     eval_only: bool = False,
     model_vocab_size: int | None = None,
+    keep_raw: bool = False,
 ) -> dict:
     name = spec.get("name", spec["hf_id"])
     tok_dir = cache_dir / f"{name}"
@@ -298,10 +328,12 @@ def tokenize_source(
         "test_size_percent": test_size_percent,
         "seed": seed,
         "eval_only": eval_only,
-        "source_spec_sha256": hashlib.sha256(
-            json.dumps(spec, sort_keys=True).encode()
-        ).hexdigest(),
+        # Fingerprint only the parts of the spec that change the tokenized rows. `weight`
+        # and `notes` are mix-level knobs (rebalanced without re-tokenizing, 2026-09-07).
+        "source_spec_sha256": _spec_fingerprint(spec),
     }
+    # Caches written before the fingerprint excluded weight/notes hashed the full spec.
+    legacy_fingerprint = hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()
     manifest_entry: dict[str, Any] = {"name": name, "weight": spec.get("weight", 1.0), "path": str(tok_dir)}
 
     train_ready = train_dir.exists() and (train_dir / "dataset_info.json").exists()
@@ -309,6 +341,8 @@ def tokenize_source(
     if eval_ready and (eval_only or train_ready):
         if metadata_path.exists():
             actual_metadata = json.loads(metadata_path.read_text())
+            if actual_metadata.get("source_spec_sha256") == legacy_fingerprint:
+                actual_metadata = {**actual_metadata, "source_spec_sha256": expected_metadata["source_spec_sha256"]}
             if actual_metadata != expected_metadata:
                 raise ValueError(
                     f"[{name}] tokenized cache fingerprint mismatch at {tok_dir}. "
@@ -347,6 +381,17 @@ def tokenize_source(
         ds = ds.select(range(max_samples))
         logger.info(f"[{name}] capped to max_samples={max_samples}")
 
+    # Invalid UTF-8 inside a parquet *string* column raises UnicodeDecodeError in pyarrow's
+    # to_pylist() during map() batch materialization — before tokenize_fn runs (hit on
+    # finepdfs 2026-08-01 and stack-edu 2026-09-07). Cast the column to binary so rows arrive
+    # as bytes; tokenize_fn decodes with errors="replace". Done AFTER the max_samples cap:
+    # cast_column materialises a new arrow table, and casting all 25M stack-edu rows cost
+    # ~60 GB of cache for 400k kept rows.
+    from datasets import Value as _Value
+
+    ds = ds.cast_column("text", _Value("binary"))
+    logger.info(f"[{name}] text column cast to binary (utf-8 errors will be replaced)")
+
     n = len(ds)
     eval_cap = int(spec.get("eval_sample_cap", 5000))
     eval_size = max(1, min(int(n * test_size_percent), n - 1, eval_cap))
@@ -356,13 +401,18 @@ def tokenize_source(
     # Pre-truncate gigantic web/PDF docs so the Fast tokenizer never scans a huge string
     # (it would OOM/crash a num_proc worker even though truncation=max_seq_length discards
     # all but ~8k chars). Env-overridable; default 100k chars >> 2048 tokens.
-    max_chars = int(os.environ.get("PRETOKENIZE_MAX_CHARS", "100000"))
+    # A source may raise the cap (`max_chars` in its spec) — needed when `chunk_long_docs` is
+    # on, since the default 100k chars (~22k tokens) would otherwise silently cut a book at
+    # ~2/3 of one 32k row (the E18 32k trees: PG-19 rows average 22k tokens for this reason).
+    max_chars = int(spec.get("max_chars") or os.environ.get("PRETOKENIZE_MAX_CHARS", "100000"))
     tokenize_fn = _make_tokenize_fn(
         tokenizer,
         max_seq_length,
         append_eos_token_id,
         max_chars=max_chars,
         model_vocab_size=model_vocab_size,
+        chunk_long_docs=bool(spec.get("chunk_long_docs", False)),
+        min_tokens=int(spec.get("min_tokens", 0) or 0),
     )
 
     def _map_resilient(ds, num_proc, **kw):
@@ -379,12 +429,15 @@ def tokenize_source(
         host that pretokenized successfully (Odra, July). PROPER FIX (TODO): load the text
         column as binary (``Value('binary')`` / pyarrow schema override) and decode with
         ``errors='replace'`` in ``tokenize_fn``, or pre-sanitize the parquet at read time."""
+        # Whole-document chunking tokenizes multi-megabyte books: keep map batches small so
+        # a worker never holds ~1000 full books at once (spec `map_batch_size`, default 1000).
+        bs = int(spec.get("map_batch_size") or (16 if spec.get("chunk_long_docs") else 1000))
         try:
-            return ds.map(tokenize_fn, batched=True, num_proc=num_proc, **kw)
+            return ds.map(tokenize_fn, batched=True, batch_size=bs, num_proc=num_proc, **kw)
         except RuntimeError as e:
             if num_proc and num_proc > 1 and "abruptly died" in str(e):
                 logger.warning(f"[{name}] multiprocessing map died ({e}); retrying num_proc=1 to surface the real error")
-                return ds.map(tokenize_fn, batched=True, num_proc=1, **kw)
+                return ds.map(tokenize_fn, batched=True, batch_size=bs, num_proc=1, **kw)
             raise
 
     def _drop_oov(ds, split_name: str, num_proc: int):
@@ -428,7 +481,10 @@ def tokenize_source(
     # Archive raw parquet/zst to NAS (tokenizer-agnostic) so a future tokenizer
     # switch can re-tokenize without re-downloading; then free NVMe. If no archive
     # dir is configured, delete the raw files to keep NVMe bounded.
-    if raw_archive_dir is not None:
+    if keep_raw:
+        # Raw files are read in place (e.g. a symlinked NAS archive) — never move or delete them.
+        logger.info(f"[{name}] --keep_raw: raw files left untouched")
+    elif raw_archive_dir is not None:
         archive_src = raw_archive_dir / name
         archive_dst = raw_archive_dir / name
         archive_dst.mkdir(parents=True, exist_ok=True)
@@ -470,6 +526,9 @@ def main():
     p.add_argument("--max_seq_length", type=int, default=2048)
     p.add_argument("--cache_dir", default=None, help="Tokenized cache root (default: $DATASETS_TOK_DIR from remote_paths.sh, or $HF_HOME/datasets_tok — the canonical pre-tokenized corpora tree, per remote-servers SKILL.md)")
     p.add_argument("--raw_dir", default=None, help="Raw parquet root (default: $DATASETS_RAW_DIR, or $HF_HOME/datasets_raw)")
+    p.add_argument("--keep_raw", action="store_true",
+                   help="Leave raw files in place after tokenizing (no archive move, no delete) — use when "
+                        "--raw_dir/<source> is a symlink into the NAS archive so tokenization reads it directly.")
     p.add_argument("--raw_archive_dir", default=None, help="If set, move raw parquet/zst here (per-source subdir) after tokenizing instead of deleting — a tokenizer-agnostic archive for future re-tokenization. E.g. /nas/ml_data/mrcogito/hf_datasets/raw")
     p.add_argument("--archive_raw_only", action="store_true", help="Only download + archive raw files to --raw_archive_dir for ALL sources (no tokenize). Use to populate the NAS archive for sources already tokenized under another tokenizer.")
     p.add_argument("--eval_only", action="store_true", help="Tokenize and save only the deterministic eval split (for frozen long-context evaluation manifests).")
@@ -584,6 +643,7 @@ def main():
                     raw_archive_dir=raw_archive_root,
                     eval_only=args.eval_only,
                     model_vocab_size=model_vocab_size,
+                    keep_raw=args.keep_raw,
                 )
                 entries.append(entry)
                 logger.info(f"[{entry['name']}] elapsed {time.time()-t0:.0f}s")
@@ -639,6 +699,7 @@ def _proc_worker(spec, args, cache_root, raw_root, append_eos, raw_archive_root=
         raw_archive_dir=raw_archive_root,
         eval_only=args.eval_only,
         model_vocab_size=model_vocab_size,
+        keep_raw=getattr(args, "keep_raw", False),
     )
 
 

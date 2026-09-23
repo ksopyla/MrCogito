@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-08-27 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-09-22 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,6 +20,174 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-09-20 — E30 sliding-window Perceiver banks.** Exclusive prefix write is
+  overlapping `K`-query CA banks (`C ∝ N`, coverage 8×, stride 0.75 W), not E21
+  mean-pool. Fair control is concat frozen-mean. At ≥5M use LR **1e-3** (3e-3
+  RankMe-collapses the write). Spec
+  [E30](../experiments_specs/ahead/E30_sliding_window_perceiver.md) · plan
+  [E30_plan](../experiments_specs/ahead/E30_sliding_window_perceiver_plan.md).
+  <10M DNA protocol:
+  [small_model_capability_protocol.md](../engineering_specs/small_model_capability_protocol.md).
+  TinyHashed / extra SWA / latent mixer are **not** this bet.
+  Width hunt 2026-09-21: 9.04M INDEX e30 **37 bits** beats e21 mean; MATCH 12 vs 19.
+  **31M GPU 2026-09-22:** seq=512 MATCH e30 **47.6 bits** ≈ e18 48 > e21 44; SELECT@128
+  e30 27.8 vs e21 8.8. E21-mean wall is gone at this width.
+  **Limits 2026-09-22:** in-order chain @1024 e30 passes (40 bits) and e21 does not (4).
+  Lookup wall is 512→1024.
+  **Coverage 2026-09-22:** a 128-token window passes that chain; a 512-token window
+  writes nothing. The chain is gone at 2048 tokens. The 50M full-read miss was
+  undertraining (5e-5 restores it).
+  [CPU](../2_Experiments_Registry/run_reports/e30_tiny_5m_9m_capability_20260921.md) ·
+  [GPU](../2_Experiments_Registry/run_reports/e30_30m_gpu_odra_polonez_20260922.md) ·
+  [limits](../2_Experiments_Registry/run_reports/e30_length_hardness_limits_20260922.md) ·
+  [coverage](../2_Experiments_Registry/run_reports/e30_coverage_and_breadth_20260922.md).
+- **2026-09-17 — E18 vs E21 architecture viz (no run).** Interactive HTML of the real
+  `perceiver_ar` split — uncompressed global KV (E18) vs exclusive r=16 slots after QUERY
+  (E21), not a reasoning tower:
+  [e18_e21_architecture.html](../3_Evaluations_and_Baselines/e18_e21_architecture.html).
+- **2026-09-17 — E21 queue Wave B closed (CogitoProbe 1k; 4k skipped); GPUs idle.** Exclusive
+  r=16 on CogitoProbe-bits (E28) hit K1: dense packed-answer acc **6.5% / 0.21 bits** on a 40-bit
+  prize (need ≥75%); exclusive `fixed` recovered **0 bits**. Bind (E29) hop **4.4% / 0.078 bits**
+  with no dense S0; colour-list gist also chance. Do not launch 4k/8k/32k. Do not relaunch Wave B.
+  Extra-hop loops (E19) stay gated. Odra and Polonez GPUs idle. Specs
+  [E28](../experiments_specs/done_failed/E28_exclusive_cogitoprobe_bits.md) ·
+  [E29](../experiments_specs/done_failed/E29_exclusive_cogitoprobe_bind.md) ·
+  [E19](../experiments_specs/ahead/E19_looped_slot_refinement.md).
+  Wave A remains closed (MATCH miss):
+  [E27](../experiments_specs/done_failed/E27_hybrid_key_anchors.md) ·
+  [E26](../experiments_specs/done_failed/E26_prefix_ae_exclusive_slots.md).
+- **2026-09-12 — E23 Exclusive concept channel (spec ready, not launched).** Parallel
+  `perceiver_concept` language bet (exclusive mask + paying CE). Not replaced by the E21
+  compressor queue. Spec
+  [E23](../experiments_specs/ahead/E23_exclusive_concept_channel.md). Dense control for S3 must be
+  rerun from scratch (E22's was lost).
+- **Instrument first (zero GPU-days, before launch):** the far-repeat token mask on the E22 mix —
+  what share of tokens is far-copyable, and does that share justify the ×8 weight (target: far-repeat
+  tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
+
+## What we've explored so far
+- **2026-09-22 — E30 coverage and breadth (31M and 50M).** A 128-token window (coverage 4) passes the 1024 in-order chain (76% of answer tokens); a 512-token window scores 0 bits even with 64 questions per window. The same chain is 0 bits at 2048 tokens for both notebooks; the full read still passes. Far copy at 1024 is unsolved by the full read. The earlier 50M full-read collapse was too few steps at 1e-4: at 5e-5 it scores 99%, and the averaged notebook passes after a doubled budget. [report](../2_Experiments_Registry/run_reports/e30_coverage_and_breadth_20260922.md).
+- **2026-09-22 — E30 length and hardness (31M and 50M, Odra + Polonez).** In-order 4-hop chain @1024: e30 **40 bits / 77%** vs averaged notebook 4 bits; at 50M / 1e-4 / 4800 steps the full read on that chain falls to 3 bits and e30 still passes (44 bits / 80%). That 50M full-read miss is superseded by the coverage report (slower step, longer budget). Lookalike @1024: full read 63 bits, e30 26 after a longer budget, average 19. Lookup @1024: only e30 moves (26 bits); @4096 and @16k everyone is at zero. A 3e-4 step at 1024 is a false kill. [report](../2_Experiments_Registry/run_reports/e30_length_hardness_limits_20260922.md).
+- **2026-09-22 — E30 ~31M GPU (Odra 3×3090 + Polonez 4×3090).** H=960 4-layer. Seq=512 MATCH e30 **47.6 bits / 99.7%** ≈ e18 48.0 > e21 44.0; INDEX e30 63.1 ≈ e18 64. SELECT@128 e30 **27.8** vs e21 8.8 vs e18 31.3. 1e-3 zero-init at seq=256 is a false kill; 3e-4 + `--warm_residuals` restores. E21-mean MATCH wall is a <10M fact, not a 31M fact. [report](../2_Experiments_Registry/run_reports/e30_30m_gpu_odra_polonez_20260922.md).
+- **2026-09-21 — E30 width hunt (CPU BAPO, concat frozen-mean e21).** H=128 3e-3: e30 INDEX 12 bits < e21 17; MATCH chance. H=384 3e-3 RankMe-collapses e30; 1e-3 restores. H=512 1e-3: e30 INDEX **37 bits / 73%** beats e21 14; MATCH **12 bits** vs 0.75× 5M e18 19. E18 MATCH 0-bit wall breaks at 5.16M (25 bits). [report](../2_Experiments_Registry/run_reports/e30_tiny_5m_9m_capability_20260921.md).
+- **2026-09-16 — E28 exclusive CogitoProbe-bits @1024 (Wave B).** Dense packed-answer acc **6.5% / 0.21 bits** on a 40-bit prize; exclusive `fixed` recovered **0 bits** (`scaled` 0.003). Seq=4096 not launched. [report](../2_Experiments_Registry/run_reports/e28_exclusive_cogitoprobe_bits_20260916.md) · [spec](../experiments_specs/done_failed/E28_exclusive_cogitoprobe_bits.md).
+- **2026-09-16 — E29 exclusive CogitoProbe-bind @1024 (Wave B).** One-hop `hop_friend_place` **4.4% / 0.078 bits**; `attr_color` **2.4% / 0.007**; dense S0 not run; props filler-shuffle Δacc **+0.13 pt**. Seq=4096 not launched. [report](../2_Experiments_Registry/run_reports/e29_exclusive_cogitoprobe_bind_20260916.md) · [spec](../experiments_specs/done_failed/E29_exclusive_cogitoprobe_bind.md).
+- **2026-09-16 — E27 hybrid key-span anchors (DNA MATCH @512, 16-token pages).** Exclusive notebook recovered **3 bits** vs uncompressed **48**; collapsing the extra key tokens left the score unchanged (RankMe 1.12). [report](../2_Experiments_Registry/run_reports/e27_hybrid_key_anchors_20260916.md) · [spec](../experiments_specs/done_failed/E27_hybrid_key_anchors.md).
+- **2026-09-16 — E26 prefix autoencoder on exclusive 16-token slots (same exam).** The slot reconstructs keys at **66%** and RankMe is **14.6**, but lookup recovered **1 bit** vs uncompressed **47**. [report](../2_Experiments_Registry/run_reports/e26_prefix_ae_slots_20260916.md) · [spec](../experiments_specs/done_failed/E26_prefix_ae_exclusive_slots.md).
+- **2026-09-16 — E21 improvement queue frozen (no run).** Ranked specs E27→E26→E28→E29→E19
+  (Wave A DNA, Wave B CogitoProbe). Pointer:
+  [e21_improvement_queue.md](../4_Research_Notes/e21_improvement_queue.md).
+- **2026-09-16 — E18/E21 vs dense diagnosis (append-only note).** Architecture (1-layer keys, mean-pool smear, exclusive leftover, CE that does not pay), not eval/DNA solvability. H1 partial only for MATCH-under-mean; H2 extra-hop is hops-only; H3 split (language CE weak, DNA bits real); E21 32k LM untested (`mean_seq` ~3.2k, checkpoints gone). [diagnosis](../4_Research_Notes/e18_e21_dense_baseline_diagnosis_20260916.md).
+- **2026-09-16 — E21 literature synthesis (no new run).** Ranked Adapt levers
+  and a 32k exclusive-channel eval protocol:
+  [`e21_levers_from_literature.md`](../4_Research_Notes/e21_levers_from_literature.md).
+  New reviews: [`information_bottleneck_latent_capacity.md`](../literature_review/information_bottleneck_latent_capacity.md),
+  [`learned_kv_context_compression.md`](../literature_review/learned_kv_context_compression.md),
+  [`latent_set_refinement.md`](../literature_review/latent_set_refinement.md).
+  Does not freeze a spec.
+- **2026-09-16 — E25 / E21 exclusive compressed read closed (`done_success`, mapped).** DNA USER_CORE walls vs dense and uncompressed E18 (models ≤10.8M). Copy survives 16-token means at seq=1024 and dies with E18 at 1536; lookup needs identity slots (`r=1`) past that; SELECT cliffs at 692 vs 696; extra hop is hops-only. Not a 1M-context result. Hunt markdown kept as the ledger (95 reports); wall plots grouped under `e25_plots/`. [research report](../2_Experiments_Registry/run_reports/e25_e21_dna_capability_report_20260916.md) · [plot index](../2_Experiments_Registry/run_reports/e25_plots/README.md) · [hunt catalogue](../2_Experiments_Registry/run_reports/e25_README.md) · [wall map](../2_Experiments_Registry/run_reports/e25_dna_s0_ladder_mapped_20260915.md).
+- **2026-09-15 — Exclusive-slot <10M CPU law.** A 5.11M exclusive-scope notebook
+  copies a 32-letter span through seq=1024 (95.9% @ 96k) versus param-matched 4.97M
+  dense (97.1% @ 136k); the no-notebook control stays at chance. 16 tokens/page
+  works; 32 misses. Multi-hop lookup is chance for both. Details:
+  [run report](../2_Experiments_Registry/run_reports/exclusive_slot_under10m_law_20260915.md).
+- **2026-09-13 — HARDER exclusive-slot scaling (first merge-to-dev snapshot; later cells closed 2026-09-14/15; CPU, 95% bar, hidden frozen at 256 / 5.11M).**
+  Seq256 r=8 far_copy: A hits **95.0% at 96k examples**; C stays at chance; D hits 95% at
+  ~65–72k. Seq256 r=32: A **87.9% at 256k and still climbing** (not a kill). Chain hops=3: A
+  floor-killed at chance after 128k; D still in flight. Seq512 not started. LR 3e-3 (easy-end
+  winner) floor-kills this geometry; frozen LR is **1e-3**. Do not shrink the model.
+  [note](../4_Research_Notes/concept_slot_scaling_frontier_20260913.md).- **2026-09-13 — E24 GPU bridge (Polonez/Odra, right-align INDEX).** Seq=512 `far_copy`:
+  E18 **100% / 63.9 bits** vs dense 99.7% (S1 pass). Seq=1024 `far_copy`: dense **99.9% /
+  64 bits**, E18 **0 bits** (S1 fail). 512 `recall_single` at a *fixed* offset: dense 32 bits,
+  E18 **0 bits** @2500 steps — the content wall is not “find the mark”. 4k spread is K1;
+  4k right-align 16M once hit 74% (missed the gate by 1 pt). 
+  [report](../2_Experiments_Registry/run_reports/e24_bridge512_bapo_ladder_20260913.md).
+- **2026-09-13 — E24 tiny BAPO ladder (CPU, 0.59M).** Packed DNA rungs with a 75% dense control:
+  E18 copies 63/64 bits (`far_copy` 99.2% ≈ dense 99.4%) and follows in-order hops (`chain_ordered`
+  97.5%), but recovers **0 bits** on single-fact keyed recall (dense 99.2% / 31 bits). `select_1decoy`
+  is a marker-type cue (E18 87%), not MATCH2. Shuffled chain and 2–3-item MATCH2 are uncalibrated
+  (dense ~30–34%). Encoder-decoder at 0.8M is not a copy baseline.
+  [report](../2_Experiments_Registry/run_reports/e24_tiny_bapo_ladder_20260913.md).
+- **2026-09-12 — E22 Perceiver Concept LM (from scratch, 32k; killed same day).** First ledger design
+  with positional slots (1 / 16 tokens), a transformer *over* the slots and a decoder with no raw route
+  past its 1024-token segment, trained under plain CE (+5% keyed recall) to 0.44B tokens (88% of budget) on Odra. The
+  array is **live** (Δ_none 0.25 nats, > 10σ) and **diverse** (RankMe 265/768, learned-query pooler
+  alive), yet **arm A = arm C** on far tokens (4.167 vs 4.172; C is an 8-layer segment-only decoder at half
+  the compute), passkey 0.0, keyed recall 4.8% vs a 3.5% floor. A `near`/`far` ablation added after the
+  run decomposes the 0.25: **0.17 is document-level content present redundantly in every slot** (a
+  document embedding — a wrong book's array beats no array at 16k–32k), **0.05 is the far slots'
+  marginal — the memory the bet was about, flat from 1k to 32k**, 0.03 is a local bypass through the
+  `cpos ≤ pos` mask (same-segment slots). Root causes: CE on natural text pays ≈ 0.05 nats for far
+  context at this scale — the array captured exactly that and the S1 gate (0.30) was unreachable by
+  construction; and the mask never made the array the only route for anything. Two laws added to the
+  revisit synthesis' three: *the objective must pay for the channel* (gate on the far marginal, never
+  Δ_none) and *exclusivity is two-sided*. Banked: the `perceiver_concept` family, the `near`/`far`
+  instrument, `concept_xattn_scope`. Lost: the dense control (disk-full crash + cleanup-sweep bug).
+  Spec [E22](../experiments_specs/done_failed/E22_perceiver_concept_lm.md) ·
+  [report](../2_Experiments_Registry/run_reports/e22_pilot_verdict_20260912.md) ·
+  [root cause](../4_Research_Notes/e22_root_cause_20260912.md).
+- **2026-09-13 — the array *can* be addressed, and a zero-init artefact was hiding it** (CPU-hours,
+  zero GPU-days, `data/symbolic_tasks.py` + `verification/symbolic_channel_probe.py`). On symbolic
+  rows whose information floor is *exact* (`far_copy`, alphabet 4, floor 1.3863 nats), three arms:
+  full raw access **0.0000** nats / 100% acc, segment-confined **1.3863** / 25% (pinned at the floor
+  for 3000 steps — the task provably does not leak), and the array as the *only* route **1.1726** /
+  42%. So the channel carries addressable far content — **the first positive evidence in this
+  family** — but recovers only 15% of what raw access does. The write and mask are not at fault: the
+  evidence moves the slots (`max|Δz|=1.68`) and the mask exposes exactly those slots, yet the answer
+  logits are bit-identical at init. Cause: **two zero-init residual gates in series** on the concept
+  path (`pooler.wo`, the only order-sensitive part of the write, and `xattn.wo`, the read's output),
+  each one's gradient proportional to the other — so the channel's only early escape is the
+  content-free *mean* of its slots, i.e. a document embedding. Seeding both recovers **17× more
+  information at matched steps (3/3 seeds)** and removes a ~2000-step plateau. This plausibly
+  reframes E22's headline result (0.17 nats of document content, 0.05 far marginal) as an **init
+  artefact rather than an architecture limit**; magnitude is seed-variable at 1.3M params and must be
+  re-measured at scale. Now config-selectable (`pcl_xattn_wo_init_std`, `pcl_pooler_wo_init_std`,
+  default `0.0` = E22). **Consequence: every new read of a new memory must have a warm output
+  projection, and the order-sensitive part of a write must be live at init.**
+  [note](../4_Research_Notes/concept_channel_cold_start_20260913.md) ·
+  [suite](../engineering_specs/symbolic_long_context_suite.md).
+- **2026-09-13 — improved Arm A hits ~100% on 32-letter far_copy; the 49% was a dead LR schedule.**
+  Same exam, warm init, exclusive scope. Binding knob is **examples under a live schedule**, not
+  width: 1.35M reaches **99.9% at 96k examples** (two seeds), 0.38M at 112k, **0.12M at 136k**.
+  E22's `r=16` still 99%s, at **184k examples** (~1.9×). A 3k OneCycle horizon on the same 96k
+  examples stalls at 49% — the updates were enough, the LR died. Copying 8 letters (8× less loss
+  per row) stays at chance: short answers starve the channel. Arm D needs ~64k examples / ~2 min;
+  Arm A needs ~1.5× examples and ~5× wall-clock. Taking the array away after 99.9% returns chance.
+  Not a language result. [note](../4_Research_Notes/symbolic_arm_a_100pct_limits_20260913.md).
+- **2026-09-13 — the family's compute win is a constant, not an asymptote** (analytic, zero GPU-days,
+  `analysis/geometry_cost_model.py`). The E22 geometry cuts decode state 192× (18 KB/token of dense KV
+  → 96 B/token of array; 180 GB → 0.96 GB at 10M) and that *is* structural. But the *read* is dense —
+  every token scores every visible slot — so cross-attention stays O(S²/r) and is 94% of arm A's FLOPs
+  at 10M; the whole-model saving converges to `r·L_dense/L_dec` = **36×** at any context length. A
+  selective top-k read raises the ceiling to `r²·L_dense/L_latent` = 1152× but then the full-causal
+  latent stack becomes the wall; only with a windowed/hierarchical latent stack does the model become
+  per-token-work bound (1288× at 10M and growing with S). **Consequence for the 1M/10M goal: a
+  selective read and a non-global latent stack are not optimisations, they are requirements** — and
+  since E22 showed the dense read fails to *use* far slots anyway, forcing it to name what it wants is
+  plausibly the same fix twice. Design constraint for E23's successor; E23 stays one bet.
+- **2026-09-12 — E18 / E18b (one global read):** a from-scratch 125M LM whose only unbounded layer is
+  a single full-causal read. It is **free** (eval 3.790 vs matched dense 3.786, 1.02× throughput) and
+  does exact **positional** retrieval (plain copy @32k offset 16k: **99.9998%**; cutting its reach two
+  tokens short → 0.4%). But a model with **no read at all** reaches the same loss (arm C **4.091** vs
+  arm A **4.090**), and placement does not change that (arm B, read at layer 7, also 4.090 and depended
+  on 5.7× less): next-token prediction never supervises long-range addressing, so the read is *used but
+  not useful*. E18b then tried to supply that gradient with dense-label keyed-recall rows: first-token
+  accuracy moved 2.4% → 4.2% (5% mix) → 4.4% (+ value embedding on the read) → **4.49%** (100% task
+  data, ~20× supervision), passkey 0.0 throughout. The **dense control on the identical task reached
+  99.33% and transferred to passkey 0.725 @32k** — so the task is learnable at this scale and the
+  architecture is the cause. Read structurally, the pilot is an encoder-decoder with a **1-layer
+  encoder**, 1 cross-attention and a 12-layer decoder; we asked one local layer to produce keys
+  discriminative enough to be content-addressed. Banked regardless: the context-extension protocol fix
+  (weights-only restart at peak lr cost ~2%; resuming at ≤20% lr with decay gains ~12% at 32k), a
+  reusable paired **reach-ablation** instrument, and a 1 KB/token cache that is 23× under dense.
+  Specs [E18](../experiments_specs/done_failed/E18_perceiver_ar_v2_baseline.md) ·
+  [E18b](../experiments_specs/done_failed/E18b_retrieval_trained_read.md) ·
+  [verdict report](../2_Experiments_Registry/run_reports/e18_family_verdict_20260912.md).
+  **One cheap open question:** move the read to mid-depth (`PAR_GLOBAL_POSITIONS=7` makes everything
+  below it a 7-layer encoder, deepening queries *and* keys, with no change to the cache and no LM cost).
+  Staged as `Cache/jobs/e18b_mid_taskonly.sh`, ~1.4 GPU-h, not launched.
+  [E18c](../experiments_specs/ahead/E18c_concept_compressed_read.md) (compress the read's K/V) is
+  **blocked**: it needs a functional retrieval channel, which we do not have.
 - **E17e 300M closed (train 2026-08-22, eval 2026-08-25).** Late-half Δperm
   **0.104** CI [0.095, 0.114] on best `checkpoint-2660` (last **0.097** miss);
   RankMe **31.5–57.4** and eval_loss **2.464** passed; gen `real`@256
@@ -197,3 +365,15 @@ headline (see [team_brief](../sprind_frontier_ai/team_brief.md)).
 Canonical eval protocol, Tier-1 data-protocol upgrade, compute audit, and training-pipeline
 modularization are done — see `docs/engineering_specs/` and
 [evaluation_protocol.md](../3_Evaluations_and_Baselines/evaluation_protocol.md).
+**2026-09-16 — CogitoProbe dataset series (public Hub v0).** Four length-ladder
+probes — [`cogito-probe-bits`](https://huggingface.co/datasets/ksopyla/cogito-probe-bits),
+[`cogito-probe-bind`](https://huggingface.co/datasets/ksopyla/cogito-probe-bind),
+[`cogito-probe-arith`](https://huggingface.co/datasets/ksopyla/cogito-probe-arith),
+[`cogito-probe-props`](https://huggingface.co/datasets/ksopyla/cogito-probe-props) —
+seed `20260916`, `--scale full` (8448/896/896). DNA stays the exact-floor
+bandwidth instrument. Spec:
+[concept_compression_probe_suite.md](../engineering_specs/concept_compression_probe_suite.md).
+**2026-09-12 — `perceiver_ar` eval layer on `dev`:** lm-evaluation-harness adapter + SmolLM2-card
+0-shot tiers, teacher-forced RULER-lite (`passkey`, `multikey`, `vt`, `fwe`, `buckets`, `reach`),
+health check, two-GPU runner `scripts/eval_perceiver_ar_suite.sh`. Spec:
+[long_context_reasoning_eval_layer.md](../engineering_specs/long_context_reasoning_eval_layer.md).

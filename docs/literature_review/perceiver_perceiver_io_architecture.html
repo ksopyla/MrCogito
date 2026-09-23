@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Perceiver / Perceiver IO — one latent array</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --paper: #fffcf6;
+      --ink: #1c1917;
+      --muted: #57534e;
+      --line: #d6d3cd;
+      --bytes: #1d4ed8;
+      --bytes-soft: #dbeafe;
+      --lat: #0f766e;
+      --lat-soft: #ccfbf1;
+      --query: #c2410c;
+      --query-soft: #ffedd5;
+      --grad: #be123c;
+      --grad-soft: #ffe4e6;
+      --share: #6d28d9;
+      --share-soft: #ede9fe;
+      --ok: #15803d;
+      --warn: #b45309;
+      --shadow: 0 10px 30px rgba(28, 25, 23, 0.08);
+      --sans: "IBM Plex Sans", "Source Sans 3", "Segoe UI", Helvetica, Arial, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); }
+    body { min-width: 1080px; }
+    a { color: var(--bytes); }
+    .wrap { max-width: 1380px; margin: 0 auto; padding: 24px 20px 64px; }
+    header h1 { font-size: 28px; font-weight: 650; letter-spacing: -0.03em; margin: 0 0 6px; }
+    header .sub { color: var(--muted); font-size: 15px; line-height: 1.45; max-width: 86ch; }
+    .answer {
+      margin: 16px 0 14px;
+      padding: 14px 16px;
+      background: var(--lat-soft);
+      border: 1px solid #99f6e4;
+      border-left: 4px solid var(--lat);
+      border-radius: 8px;
+      font-size: 15px;
+      line-height: 1.45;
+    }
+    .answer strong { color: var(--lat); }
+    .answer .wrong { color: var(--muted); text-decoration: line-through; }
+    .controls {
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+      margin: 12px 0 14px; padding: 10px 12px; background: var(--paper);
+      border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow);
+    }
+    .controls button, .controls select {
+      font: 600 13px var(--sans); border: 1px solid var(--line); background: #fff;
+      padding: 7px 12px; border-radius: 8px; cursor: pointer; color: var(--ink);
+    }
+    .controls button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+    .controls button:hover, .controls select:hover { border-color: var(--ink); }
+    .controls .sep { width: 1px; height: 22px; background: var(--line); }
+    .controls label { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+    .step-label { margin-left: auto; font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+    .progress { height: 4px; background: var(--line); border-radius: 4px; margin: 0 0 16px; overflow: hidden; }
+    .progress > span { display: block; height: 100%; width: 0; background: var(--ink); transition: width .25s; }
+    .grid {
+      display: grid;
+      grid-template-columns: 280px 1fr 300px;
+      gap: 14px;
+      align-items: start;
+    }
+    .panel {
+      background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+      padding: 12px 14px; box-shadow: var(--shadow);
+    }
+    .panel h2 { margin: 0 0 8px; font-size: 14px; letter-spacing: 0.02em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+    .stack { display: flex; flex-direction: column; gap: 4px; max-height: 640px; overflow: auto; }
+    .layer {
+      border: 1.5px solid var(--line); border-radius: 8px; padding: 6px 8px;
+      background: #fff; font-size: 12.5px; cursor: pointer; display: grid;
+      grid-template-columns: 18px 1fr auto; gap: 6px; align-items: center;
+    }
+    .layer .idx { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+    .layer .name { font-weight: 650; }
+    .layer .meta { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+    .layer.cross { border-color: #93c5fd; }
+    .layer.self { border-color: #99f6e4; }
+    .layer.decode, .layer.pool { border-color: #fdba74; }
+    .layer.init { border-color: #d6d3cd; }
+    .layer.hot { outline: 3px solid rgba(28,25,23,0.12); background: #fffbeb; }
+    .layer.done { opacity: 0.55; }
+    .layer .badge {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;
+      padding: 1px 6px; border-radius: 999px;
+    }
+    .badge-unique { background: #ffedd5; color: var(--query); }
+    .badge-shared { background: var(--share-soft); color: var(--share); }
+    .canvas { min-height: 620px; }
+    .rail-label {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+      color: var(--muted); margin: 2px 0 6px;
+    }
+    .bytes, .latents, .queries, .outrow {
+      display: flex; gap: 4px; flex-wrap: nowrap; align-items: stretch; min-height: 52px;
+    }
+    .cell {
+      flex: 1 1 0; min-width: 0; border-radius: 8px; color: #fff; font-size: 11px; font-weight: 700;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      transition: transform .28s, box-shadow .28s, filter .28s, opacity .28s;
+      height: 52px; position: relative;
+    }
+    .cell small { font-weight: 500; opacity: .85; font-size: 9px; }
+    .cell.pulse { transform: translateY(-4px); box-shadow: 0 6px 14px rgba(0,0,0,.18); }
+    .cell.dim { opacity: 0.28; }
+    .cell.grad::after {
+      content: ""; position: absolute; inset: 0; border-radius: inherit;
+      box-shadow: inset 0 0 0 3px var(--grad); pointer-events: none;
+    }
+    .attn-svg { width: 100%; height: 168px; margin: 8px 0; background: #fff; border: 1px solid var(--line); border-radius: 10px; }
+    .op-caption {
+      font-size: 13.5px; line-height: 1.45; color: var(--ink); min-height: 64px;
+      padding: 8px 10px; background: #fff; border: 1px dashed var(--line); border-radius: 8px;
+    }
+    .op-caption .k { font-family: var(--mono); color: var(--query); }
+    .shapes {
+      margin-top: 10px; font-family: var(--mono); font-size: 12px; color: var(--muted);
+      display: grid; gap: 4px;
+    }
+    .inventory { display: grid; gap: 8px; }
+    .inv {
+      border: 1.5px solid var(--line); border-radius: 10px; padding: 8px 10px; background: #fff;
+    }
+    .inv.on { border-color: var(--lat); background: var(--lat-soft); }
+    .inv.query { border-color: var(--query); }
+    .inv.query.on { background: var(--query-soft); }
+    .inv .t { font-weight: 700; font-size: 13px; }
+    .inv .d { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+    .count { font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--lat); }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 16px 0 8px; font-size: 12.5px; color: var(--muted); }
+    .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+    .notes {
+      margin-top: 12px; padding: 12px 14px; background: var(--paper); border: 1px solid var(--line);
+      border-radius: 10px; font-size: 13.5px; line-height: 1.5; color: var(--muted);
+    }
+    .notes h3 { margin: 0 0 6px; font-size: 14px; color: var(--ink); }
+    .notes ul { margin: 0; padding-left: 18px; }
+    .notes code { font-family: var(--mono); font-size: 12px; background: #e7e5e4; padding: 0 4px; border-radius: 4px; }
+    pre.code {
+      margin: 12px 0 0; padding: 12px 14px; background: #1c1917; color: #fafaf9;
+      border-radius: 10px; font: 12px/1.45 var(--mono); overflow: auto;
+    }
+    .code .c { color: #a8a29e; }
+    .code .k { color: #fdba74; }
+    .code .f { color: #5eead4; }
+    kbd { font-family: var(--mono); font-size: 11px; background: #e7e5e4; padding: 1px 5px; border-radius: 4px; }
+    .tip {
+      position: fixed; z-index: 20; max-width: 340px; padding: 9px 11px; background: #1c1917; color: #fafaf9;
+      font-size: 12.5px; line-height: 1.4; border-radius: 8px; pointer-events: none; display: none;
+      box-shadow: 0 8px 24px rgba(0,0,0,.25);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .cell, .progress > span { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Original Perceiver and Perceiver IO</h1>
+      <p class="sub">
+        Jaegle et al., DeepMind, 2021. This page follows the papers and the released
+        JAX in <span style="font-family:var(--mono)">deepmind-research/perceiver</span>
+        — not later forks. Toy diagram uses 12 bytes and 8 latents so you can see the
+        same slots being rewritten. ImageNet sizes are in the scale menu.
+      </p>
+    </header>
+
+    <div class="answer" id="answer">
+      <strong>One latent array.</strong>
+      A learned notebook of N vectors (ImageNet: 512 × 1024) is created once, then
+      residually overwritten by every layer. Layers have weights. They do not own
+      a private latent array.
+      <span class="wrong">Not N new arrays per layer.</span>
+    </div>
+
+    <div class="controls">
+      <button type="button" id="btn-play" class="primary">Pause</button>
+      <button type="button" id="btn-step">Step</button>
+      <button type="button" id="btn-replay">Replay</button>
+      <div class="sep"></div>
+      <label>Model
+        <select id="model">
+          <option value="perceiver">Perceiver (classify)</option>
+          <option value="io">Perceiver IO (decode)</option>
+        </select>
+      </label>
+      <label>Encode
+        <select id="encode">
+          <option value="interleaved">interleaved re-reads (paper ImageNet)</option>
+          <option value="once">encode once (released JAX / IO)</option>
+        </select>
+      </label>
+      <label>Weights
+        <select id="share">
+          <option value="on">shared in depth (ImageNet)</option>
+          <option value="off">unique every block</option>
+        </select>
+      </label>
+      <label>Flow
+        <select id="flow">
+          <option value="fwd">information →</option>
+          <option value="bwd">gradients ←</option>
+        </select>
+      </label>
+      <label>Scale
+        <select id="scale">
+          <option value="toy">toy (this drawing)</option>
+          <option value="imagenet">ImageNet paper sizes</option>
+        </select>
+      </label>
+      <label>Speed
+        <select id="speed">
+          <option value="0.7">slow</option>
+          <option value="1" selected>normal</option>
+          <option value="1.6">fast</option>
+        </select>
+      </label>
+      <span class="step-label" id="step-label">step 1 · Space pause · → step</span>
+    </div>
+    <div class="progress"><span id="bar"></span></div>
+
+    <div class="grid">
+      <section class="panel">
+        <h2>Layer stack — same Z, new write</h2>
+        <div class="stack" id="stack"></div>
+      </section>
+
+      <section class="panel canvas">
+        <div class="rail-label" id="bytes-label">Byte array X — keys and values (frozen input)</div>
+        <div class="bytes" id="bytes"></div>
+        <svg class="attn-svg" id="attn" viewBox="0 0 720 168" role="img" aria-label="Attention routing"></svg>
+        <div class="rail-label" id="lat-label">Latent array Z — one notebook, residually updated</div>
+        <div class="latents" id="latents"></div>
+        <div class="rail-label" id="out-label" style="margin-top:12px">Output</div>
+        <div id="outbox"></div>
+        <p class="op-caption" id="caption"></p>
+        <div class="shapes" id="shapes"></div>
+      </section>
+
+      <section class="panel">
+        <h2>How many arrays?</h2>
+        <div class="inventory" id="inventory"></div>
+        <h2 style="margin-top:16px">This step</h2>
+        <div class="inv" id="inspector"></div>
+      </section>
+    </div>
+
+    <div class="legend">
+      <span><i style="background:#1d4ed8"></i>input byte</span>
+      <span><i style="background:#0f766e"></i>the one latent array</span>
+      <span><i style="background:#c2410c"></i>output query (IO only)</span>
+      <span><i style="background:#6d28d9"></i>shared weights</span>
+      <span><i style="background:#be123c"></i>gradient on this tensor</span>
+    </div>
+
+    <pre class="code" id="code"></pre>
+
+    <div class="notes">
+      <h3>From the papers and the released encoder</h3>
+      <ul>
+        <li><strong>One array, many writes.</strong> Z is initialized from a learned N×D parameter
+          (“trainable position encoding”, truncated normal 0.02). Every cross-attend and self-attend
+          returns that same index dimension. Residual: <code>Z ← Z + Attn(LN(Z), …)</code> then an MLP.
+          Appendix C of Perceiver; <code>PerceiverEncoder.__call__</code> in the JAX file.</li>
+        <li><strong>Original Perceiver</strong> (ICML 2021) alternates cross-attend and a latent Transformer.
+          Best ImageNet: 8 reads of all 50,176 pixels, 6 self-attends after each read = 48 latent blocks,
+          N=512, D=1024. First cross-attend (and first latent tower) unshared; later blocks share
+          corresponding weights. Functionally an RNN unrolled in depth on the <em>same</em> input, not in time.
+          Interleaved re-reads beat “all cross-attends at the start” (78.0 vs 73.7 top-1, Table 6).</li>
+        <li><strong>Released JAX is Perceiver IO.</strong> Encode once
+          (<code>z = self.cross_attend(z, inputs)</code>), then
+          <code>for _ in range(num_blocks): for layer in self.self_attends: z = layer(z)</code>
+          with the six self-attend modules reused. Decode is a second cross-attend:
+          output queries Q (size O) attend to Z. Classification in the first paper is not this:
+          mean-pool Z, then a linear layer.</li>
+        <li><strong>Gradients.</strong> No stop-gradient. Loss hits the decoder or the pooled vector,
+          then residual skips carry gradient to every earlier write of Z, including the learned init.
+          Shared modules sum gradients across unrolls (BPTT through depth). Cross-attend also
+          sends gradient into the byte array’s embeddings; Fourier features themselves are not learned.
+          Decoder queries are a separate parameter (or a function of the input) and get their own gradient.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="tip" id="tip"></div>
+
+  <script>
+  (function () {
+    const M_TOY = 12, N_TOY = 8;
+    const HUES = [210, 198, 186, 172, 160, 148, 32, 18, 8, 350, 320, 280];
+    const SCALES = {
+      toy: { M: M_TOY, N: N_TOY, D: 64, C: 16, blocks: 3, sa: 2, label: "toy drawing" },
+      imagenet: { M: 50176, N: 512, D: 1024, C: 261, blocks: 8, sa: 6, label: "ImageNet paper" }
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const modelEl = $("model"), encodeEl = $("encode"), shareEl = $("share");
+    const flowEl = $("flow"), scaleEl = $("scale"), speedEl = $("speed");
+    const playBtn = $("btn-play"), stepBtn = $("btn-step"), replayBtn = $("btn-replay");
+    const stackEl = $("stack"), bytesEl = $("bytes"), latEl = $("latents");
+    const outEl = $("outbox"), capEl = $("caption"), shapesEl = $("shapes");
+    const invEl = $("inventory"), inspEl = $("inspector"), barEl = $("bar");
+    const stepLab = $("step-label"), attnEl = $("attn"), codeEl = $("code");
+    const tip = $("tip");
+
+    let steps = [];
+    let idx = 0;
+    let playing = true;
+    let timer = null;
+    let zState = [];
+    let zGen = 0;
+
+    function cfg() {
+      const s = SCALES[scaleEl.value];
+      return {
+        model: modelEl.value,
+        encode: encodeEl.value,
+        share: shareEl.value === "on",
+        flow: flowEl.value,
+        scale: scaleEl.value,
+        M: s.M, N: s.N, D: s.D, C: s.C,
+        blocks: s.blocks, sa: s.sa, label: s.label
+      };
+    }
+
+    function weightId(kind, block, sa, c) {
+      if (!c.share) return kind === "cross" ? "θ_CA" + (block + 1) : "θ_SA" + (block + 1) + "." + (sa + 1);
+      if (kind === "cross") return block === 0 ? "θ_CA1 unique" : "θ_CA shared";
+      if (c.encode === "once") return "θ_SA" + (sa + 1) + " shared";
+      return block === 0 ? "θ_TF1." + (sa + 1) + " unique" : "θ_TF." + (sa + 1) + " shared";
+    }
+
+    function buildSteps(c) {
+      const out = [];
+      out.push({ kind: "init", title: "Init Z₀", blurb: "Copy the learned N×D parameter into the batch. This is the only latent array that will ever exist this forward pass." });
+      const pushSA = (b) => {
+        for (let s = 0; s < c.sa; s++) {
+          out.push({
+            kind: "self", block: b, sa: s,
+            title: "Self-attend B" + (b + 1) + " L" + (s + 1),
+            w: weightId("self", b, s, c)
+          });
+        }
+      };
+      if (c.encode === "interleaved") {
+        for (let b = 0; b < c.blocks; b++) {
+          out.push({
+            kind: "cross", block: b,
+            title: "Cross-attend " + (b + 1) + " · Q=Z, K/V=X",
+            w: weightId("cross", b, 0, c)
+          });
+          pushSA(b);
+        }
+      } else {
+        out.push({
+          kind: "cross", block: 0,
+          title: "Encode once · Q=Z, K/V=X",
+          w: weightId("cross", 0, 0, c)
+        });
+        for (let b = 0; b < c.blocks; b++) pushSA(b);
+      }
+      if (c.model === "io") {
+        out.push({ kind: "decode", title: "Decode · Q=output queries, K/V=Z" });
+      } else {
+        out.push({ kind: "pool", title: "Mean-pool Z → linear → class" });
+      }
+      return out;
+    }
+
+    function nDraw() { return N_TOY; }
+    function mDraw() { return M_TOY; }
+
+    function hueMix(weights) {
+      let x = 0, y = 0, wsum = 0;
+      weights.forEach((w, i) => {
+        const a = w * Math.PI / 180 * HUES[i % HUES.length];
+        x += w * Math.cos(a); y += w * Math.sin(a); wsum += w;
+      });
+      if (wsum < 1e-6) return 160;
+      let ang = Math.atan2(y, x) * 180 / Math.PI;
+      if (ang < 0) ang += 360;
+      return ang;
+    }
+
+    function initZ() {
+      zGen = 0;
+      zState = Array.from({ length: nDraw() }, (_, n) => ({
+        hue: 168 + n * 4,
+        sat: 18,
+        mix: Array(mDraw()).fill(0)
+      }));
+    }
+
+    function applyCross(iter) {
+      zGen += 1;
+      zState = zState.map((slot, n) => {
+        const mix = slot.mix.slice();
+        for (let m = 0; m < mDraw(); m++) {
+          const phase = (n * 1.7 + m * 0.35 + iter * 0.9);
+          const w = Math.pow(0.55 + 0.45 * Math.cos(phase), 2);
+          mix[m] = mix[m] * 0.35 + w;
+        }
+        const s = mix.reduce((a, b) => a + b, 0) || 1;
+        const norm = mix.map((v) => v / s);
+        return { hue: hueMix(norm), sat: 62, mix: norm };
+      });
+    }
+
+    function applySelf() {
+      zGen += 1;
+      const prev = zState.map((s) => s.hue);
+      zState = zState.map((slot, n) => {
+        let acc = slot.hue * 0.55;
+        let w = 0.55;
+        prev.forEach((h, j) => {
+          const a = 0.12 + 0.08 * Math.cos((n - j) + zGen);
+          acc += h * a; w += a;
+        });
+        return { hue: acc / w, sat: Math.min(70, slot.sat + 4), mix: slot.mix };
+      });
+    }
+
+    function byteColor(m) {
+      return "hsl(" + HUES[m % HUES.length] + " 62% 42%)";
+    }
+    function latColor(slot, dim) {
+      if (dim) return "#d6d3cd";
+      return "hsl(" + slot.hue + " " + slot.sat + "% 32%)";
+    }
+
+    function renderCells() {
+      const c = cfg();
+      const st = steps[idx];
+      const bwd = c.flow === "bwd";
+      bytesEl.innerHTML = "";
+      for (let m = 0; m < mDraw(); m++) {
+        const d = document.createElement("div");
+        d.className = "cell";
+        d.style.background = byteColor(m);
+        d.innerHTML = "<span>x" + m + "</span><small>byte</small>";
+        const activeCA = st && st.kind === "cross";
+        if (bwd) {
+          d.classList.toggle("grad", activeCA);
+          d.classList.toggle("dim", !activeCA);
+        } else {
+          d.classList.toggle("pulse", activeCA);
+          d.classList.toggle("dim", st && st.kind === "self");
+        }
+        d.dataset.tip = "Input index " + m + " of " + c.M + ". Lives in the byte array. Never becomes a new latent.";
+        bytesEl.appendChild(d);
+      }
+      latEl.innerHTML = "";
+      zState.forEach((slot, n) => {
+        const d = document.createElement("div");
+        d.className = "cell";
+        d.style.background = latColor(slot, st && st.kind === "init");
+        d.innerHTML = "<span>z" + n + "</span><small>gen " + zGen + "</small>";
+        d.classList.add("pulse");
+        if (bwd) d.classList.add("grad");
+        d.dataset.tip = "Latent slot " + n + " of " + c.N + ". Same object as at init, generation " + zGen + ". Not a per-layer copy.";
+        latEl.appendChild(d);
+      });
+    }
+
+    function renderOut(c, st) {
+      $("out-label").textContent = c.model === "io" ? "Output queries Q, then Y (Perceiver IO)" : "Class logits (original Perceiver)";
+      if (c.model === "io") {
+        const nq = 6;
+        let html = '<div class="queries">';
+        for (let i = 0; i < nq; i++) {
+          const on = st && st.kind === "decode";
+          html += '<div class="cell' + (on ? " pulse" : "") + (c.flow === "bwd" && on ? " grad" : "") + '" style="background:#c2410c"><span>q' + i + '</span><small>query</small></div>';
+        }
+        html += "</div>";
+        outEl.innerHTML = html;
+      } else {
+        const on = st && st.kind === "pool";
+        outEl.innerHTML = '<div class="outrow"><div class="cell' + (on ? " pulse" : "") + (c.flow === "bwd" && on ? " grad" : "") + '" style="background:#c2410c;max-width:120px"><span>y</span><small>class</small></div></div>';
+      }
+    }
+
+    function drawAttn(c, st) {
+      const w = 720, h = 168;
+      const bwd = c.flow === "bwd";
+      const src = bwd ? "gradient ←" : "information →";
+      let q = "Z", kv = "X", note = "idle";
+      let qCol = "#0f766e", kvCol = "#1d4ed8";
+      if (st.kind === "cross") {
+        q = "Z (latents)"; kv = "X (bytes)"; note = "asymmetric CA · cost O(M N)";
+      } else if (st.kind === "self") {
+        q = "Z"; kv = "Z"; note = "latent SA · cost O(N²)"; kvCol = "#0f766e";
+      } else if (st.kind === "decode") {
+        q = "Q (output queries)"; kv = "Z (latents)"; note = "decode CA · cost O(O N)";
+        qCol = "#c2410c"; kvCol = "#0f766e";
+      } else if (st.kind === "pool") {
+        q = "mean(Z)"; kv = "—"; note = "no attention, just pool";
+      } else {
+        note = "Z₀ is a parameter, not yet mixed with X";
+      }
+      attnEl.innerHTML = [
+        '<rect x="0" y="0" width="' + w + '" height="' + h + '" fill="#fff"/>',
+        '<text x="16" y="22" font-size="12" fill="#57534e">' + src + " · " + note + "</text>",
+        '<rect x="40" y="40" width="200" height="44" rx="8" fill="' + kvCol + '"/>',
+        '<text x="140" y="67" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">K, V ← ' + kv + "</text>",
+        '<rect x="480" y="40" width="200" height="44" rx="8" fill="' + qCol + '"/>',
+        '<text x="580" y="67" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">Q ← ' + q + "</text>",
+        '<rect x="250" y="108" width="220" height="44" rx="8" fill="#1c1917"/>',
+        '<text x="360" y="135" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">softmax(QKᵀ) V  →  same index as Q</text>',
+        '<path d="M 140 84 L 300 108" stroke="' + kvCol + '" stroke-width="2" fill="none"/>',
+        '<path d="M 580 84 L 420 108" stroke="' + qCol + '" stroke-width="2" fill="none"/>',
+      ].join("");
+    }
+
+    function renderStack(c) {
+      stackEl.innerHTML = "";
+      steps.forEach((st, i) => {
+        const el = document.createElement("div");
+        el.className = "layer " + st.kind + (i === idx ? " hot" : "") + (i < idx ? " done" : "");
+        const badge = st.w
+          ? '<span class="badge ' + (String(st.w).indexOf("shared") >= 0 ? "badge-shared" : "badge-unique") + '">' + (String(st.w).indexOf("shared") >= 0 ? "shared" : "unique") + "</span>"
+          : '<span class="meta">param</span>';
+        el.innerHTML = '<span class="idx">' + (i + 1) + '</span><span class="name">' + st.title + "</span>" + badge;
+        el.addEventListener("click", () => { idx = i; syncFromIdx(true); });
+        stackEl.appendChild(el);
+      });
+      const hot = stackEl.querySelector(".hot");
+      if (hot) hot.scrollIntoView({ block: "nearest" });
+    }
+
+    function renderInventory(c) {
+      const io = c.model === "io";
+      invEl.innerHTML = [
+        '<div class="inv on"><div class="t">Latent arrays</div><div class="count">1</div><div class="d">Z ∈ R<sup>N×D</sup>, N=' + c.N + ", D=" + c.D + ". Created once, refined in place through every layer.</div></div>",
+        '<div class="inv"><div class="t">Byte array</div><div class="d">X ∈ R<sup>M×C</sup>, M=' + c.M + ". Data + position tags. Not a second latent. Read as K/V, never self-attended.</div></div>",
+        io
+          ? '<div class="inv query on"><div class="t">Output query array</div><div class="d">Q ∈ R<sup>O×·</sup>. A decode address book, not processed by the latent Transformer. One learned vector is enough for ImageNet class; language uses one query per masked site.</div></div>'
+          : '<div class="inv"><div class="t">No query array</div><div class="d">Original Perceiver pools the N latents, then a linear map to classes. IO added queries so O can be huge.</div></div>'
+      ].join("");
+    }
+
+    function captionFor(c, st) {
+      if (st.kind === "init") {
+        return c.flow === "bwd"
+          ? "<strong>Gradient into Z₀.</strong> Residuals mean the learned N×D init still receives gradient after dozens of layers. It is a trainable initial state, like an RNN hidden state at t=0."
+          : "<strong>One notebook, blank but addressed.</strong> Z₀ is N learned vectors (ImageNet: 512×1024). Same slots will be written by every later layer. Nothing here is copied into a per-layer buffer.";
+      }
+      if (st.kind === "cross") {
+        return c.flow === "bwd"
+          ? "<strong>Gradient splits.</strong> dL/dZ goes through the residual to the previous Z, and through Q. dL/dX goes through K and V into byte embeddings. Shared CA weights (after the first) <em>sum</em> this from every re-read."
+          : "<strong>Read the book into the notebook.</strong> Queries come from the current Z, keys/values from the whole byte array. Output shape is still N — the bottleneck. " + (c.encode === "interleaved" ? "Later iterations re-read the <em>same</em> X with a smarter Z." : "Released IO does this only once, then never looks at X again.") +
+            (st.w ? ' Weights: <span class="k">' + st.w + "</span>." : "");
+      }
+      if (st.kind === "self") {
+        return c.flow === "bwd"
+          ? "<strong>Gradient stays in the notebook.</strong> Self-attend does not touch X. Shared SA modules accumulate dL/dθ from every block that reused them. Residual identity path keeps gradient alive through depth."
+          : "<strong>Think in the notebook.</strong> The " + c.N + " latents talk only to each other. Cost O(N²), independent of M. Same Z in, same Z out. " +
+            (st.w ? 'Weights: <span class="k">' + st.w + "</span>." : "");
+      }
+      if (st.kind === "decode") {
+        return c.flow === "bwd"
+          ? "<strong>Gradient from each output query into Z.</strong> Queries and latents both get gradient. Training can subsample queries when O is huge (Kinetics). Z is not replaced; it is read."
+          : "<strong>Ask the notebook questions.</strong> A new array of output queries attends to Z. That query array is not a second latent Transformer state — it is not refined by the process stack.";
+      }
+      return c.flow === "bwd"
+        ? "<strong>Loss sits on the class vector.</strong> Mean-pool is a uniform split of gradient onto all N slots, then residual paths carry it back through the stack to Z₀ and every CA."
+        : "<strong>Collapse the notebook to a label.</strong> Average the N slots, linear map to classes. This is the original Perceiver head, not IO.";
+    }
+
+    function inspectorFor(c, st) {
+      const bits = [];
+      bits.push("<div class='t'>" + st.title + "</div>");
+      if (st.kind === "cross") {
+        bits.push("<div class='d'>Q from Z (" + c.N + " × " + c.D + "), K/V from X (" + c.M + " × " + c.C + "). Writes Z, generation " + zGen + ".</div>");
+      } else if (st.kind === "self") {
+        bits.push("<div class='d'>Q,K,V all from Z. Still " + c.N + " slots. Generation " + zGen + ". No new array allocated.</div>");
+      } else if (st.kind === "decode") {
+        bits.push("<div class='d'>A different array (queries) reads Z. Latent count remains 1.</div>");
+      } else if (st.kind === "pool") {
+        bits.push("<div class='d'>Reduce N → 1, then classes. The latent array is not duplicated first.</div>");
+      } else {
+        bits.push("<div class='d'>Learned parameter broadcast to the batch. Truncated normal, std 0.02.</div>");
+      }
+      if (c.share && (st.kind === "self" || st.kind === "cross")) {
+        bits.push("<div class='d' style='margin-top:6px'>Sharing reuses <em>weights</em>. State is still one Z. ~10× fewer params on ImageNet (44.9M vs 326.2M), same FLOPs.</div>");
+      }
+      return bits.join("");
+    }
+
+    function shapesFor(c) {
+      const lines = [
+        "X  : (B, " + c.M + ", " + c.C + ")   # bytes + Fourier / learned pos",
+        "Z₀ : (B, " + c.N + ", " + c.D + ")   # learned param, one array",
+        "CA : (B, N, D) ← attn(Q=Z, K/V=X)     # O(M N)",
+        "SA : (B, N, D) ← attn(Q=K=V=Z)        # O(N²) per layer"
+      ];
+      if (c.model === "io") lines.push("Y  : (B, O, E) ← attn(Q=queries, K/V=Z) # O(O N)");
+      else lines.push("y  : (B, classes) ← Linear(mean_N(Z))");
+      lines.push("scale: " + c.label);
+      shapesEl.innerHTML = lines.map((l) => "<div>" + l + "</div>").join("");
+    }
+
+    function renderCode(c) {
+      if (c.model === "io" || c.encode === "once") {
+        codeEl.innerHTML =
+          '<span class="c"># google-deepmind/deepmind-research/perceiver/perceiver.py — PerceiverEncoder</span>\n' +
+          '<span class="k">z</span> = self.z_pos_enc(batch_size)          <span class="c"># ONE learned N×D array</span>\n' +
+          '<span class="k">z</span> = self.<span class="f">cross_attend</span>(z, inputs)     <span class="c"># encode once in this file</span>\n' +
+          '<span class="k">for</span> _ <span class="k">in</span> range(self._num_blocks):    <span class="c"># default 8, shared weights</span>\n' +
+          '    <span class="k">for</span> self_attend <span class="k">in</span> self.self_attends:  <span class="c"># default 6 modules</span>\n' +
+          '        <span class="k">z</span> = self_attend(z)               <span class="c"># same z, overwritten</span>\n' +
+          '<span class="k">return</span> z';
+      } else {
+        codeEl.innerHTML =
+          '<span class="c"># Perceiver paper (ICML 2021, §3.1 + ImageNet): interleaved re-reads of the same X</span>\n' +
+          '<span class="k">z</span> = learned_latents()                 <span class="c"># 512 × 1024 parameter</span>\n' +
+          '<span class="k">for</span> t <span class="k">in</span> range(8):                     <span class="c"># 8 cross-attends</span>\n' +
+          '    <span class="k">z</span> = cross_attend_t(z, x)            <span class="c"># t=0 unique; t&gt;0 shared</span>\n' +
+          '    <span class="k">z</span> = latent_transformer_t(z)        <span class="c"># 6 self-attends; t=0 unique</span>\n' +
+          'y = linear(mean(z, axis="N"))             <span class="c"># original head, not IO queries</span>';
+      }
+    }
+
+    function applyStepSideEffects(fromScratch) {
+      const c = cfg();
+      if (fromScratch) {
+        initZ();
+        for (let i = 0; i <= idx; i++) {
+          const st = steps[i];
+          if (st.kind === "cross") applyCross(st.block || 0);
+          if (st.kind === "self") applySelf();
+        }
+      }
+    }
+
+    function paint() {
+      const c = cfg();
+      const st = steps[idx];
+      renderStack(c);
+      renderCells();
+      renderOut(c, st);
+      drawAttn(c, st);
+      renderInventory(c);
+      capEl.innerHTML = captionFor(c, st);
+      inspEl.innerHTML = inspectorFor(c, st);
+      shapesFor(c);
+      renderCode(c);
+      $("bytes-label").textContent = "Byte array X  ·  M = " + c.M + "  ·  keys/values for encode";
+      $("lat-label").textContent = "The one latent array Z  ·  N = " + c.N + "  ·  generation " + zGen + "  ·  same slots as init";
+      $("answer").innerHTML = c.model === "io"
+        ? "<strong>One latent array, plus a separate query array at decode.</strong> Process layers still overwrite that same Z. Output queries are an address book, not a second notebook being refined."
+        : "<strong>One latent array.</strong> A learned notebook of N vectors is created once, then residually overwritten by every layer. Layers have weights. They do not own a private latent array. <span class='wrong'>Not N new arrays per layer.</span>";
+      barEl.style.width = ((idx + 1) / steps.length * 100) + "%";
+      stepLab.textContent = "step " + (idx + 1) + " / " + steps.length + " · Space pause · → step";
+      playBtn.textContent = playing ? "Pause" : "Play";
+    }
+
+    function rebuild() {
+      const c = cfg();
+      if (c.model === "io" && encodeEl.value !== "once") {
+        /* IO paper is encode-once; keep user's choice if they force interleaved. */
+      }
+      steps = buildSteps(c);
+      idx = 0;
+      initZ();
+      paint();
+    }
+
+    function syncFromIdx(rebuildZ) {
+      applyStepSideEffects(true);
+      paint();
+    }
+
+    function tick() {
+      if (!playing) return;
+      idx = (idx + 1) % steps.length;
+      if (idx === 0) initZ();
+      const st = steps[idx];
+      if (st.kind === "cross") applyCross(st.block || 0);
+      else if (st.kind === "self") applySelf();
+      else if (st.kind === "init") initZ();
+      paint();
+    }
+
+    function schedule() {
+      clearInterval(timer);
+      const ms = 1400 / Number(speedEl.value);
+      timer = setInterval(tick, ms);
+    }
+
+    modelEl.addEventListener("change", () => {
+      encodeEl.value = modelEl.value === "io" ? "once" : "interleaved";
+      rebuild();
+    });
+    ["encode", "share", "flow", "scale"].forEach((id) => {
+      $(id).addEventListener("change", () => { rebuild(); });
+    });
+    speedEl.addEventListener("change", schedule);
+    playBtn.addEventListener("click", () => {
+      playing = !playing;
+      playBtn.textContent = playing ? "Pause" : "Play";
+    });
+    stepBtn.addEventListener("click", () => {
+      playing = false;
+      idx = (idx + 1) % steps.length;
+      if (idx === 0) initZ();
+      const st = steps[idx];
+      if (st.kind === "cross") applyCross(st.block || 0);
+      else if (st.kind === "self") applySelf();
+      else if (st.kind === "init") initZ();
+      paint();
+    });
+    replayBtn.addEventListener("click", () => { idx = 0; initZ(); playing = true; paint(); });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.target && (e.target.tagName === "SELECT" || e.target.tagName === "BUTTON")) return;
+      if (e.code === "Space") { e.preventDefault(); playBtn.click(); }
+      if (e.code === "ArrowRight") { e.preventDefault(); stepBtn.click(); }
+      if (e.code === "Home") { e.preventDefault(); replayBtn.click(); }
+    });
+
+    document.body.addEventListener("mousemove", (e) => {
+      const cell = e.target.closest && e.target.closest("[data-tip]");
+      if (!cell) { tip.style.display = "none"; return; }
+      tip.textContent = cell.dataset.tip;
+      tip.style.display = "block";
+      tip.style.left = Math.min(e.clientX + 12, window.innerWidth - 360) + "px";
+      tip.style.top = (e.clientY + 14) + "px";
+    });
+
+    rebuild();
+    schedule();
+  })();
+  </script>
+</body>
+</html>

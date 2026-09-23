@@ -1,0 +1,420 @@
+#!/usr/bin/env python
+"""Does the concept array carry information *at all*? A CPU-sized falsification probe.
+
+Trains two tiny `perceiver_concept` models on one symbolic task from `data/symbolic_tasks.py`:
+
+  arm A  concept_mode=full, concept_xattn_scope=exclusive  — the array is the ONLY route to the
+         evidence, because the decoder's raw window cannot reach it and same-segment slots are
+         masked out (E23's scope).
+  arm C  concept_mode=none                                 — segment-confined decoder, no array.
+         It is the *proof* that the task is unreachable locally: it must sit at the analytic
+         floor, and if it does not, the task leaks and the generator is wrong.
+  arm D  concept_mode=none, dec_segment=seq_len             — full raw access, the calibration
+         control. It must drive the loss well below the floor; if it cannot, the setup is simply
+         undertrained and NOTHING can be concluded about arm A. Always run it.
+
+Reported against `floor_nats`, which is exact here, so "the channel carried information" is a
+measurement rather than a comparison against a possibly-weak control. Arm A is also scored with
+`concept_override("none")` — same weights, array removed — so any gain is attributable.
+
+Read the three arms together:
+
+  D below floor, C at floor, A below floor  -> the channel carries information.
+  D below floor, C at floor, A at floor     -> the task is learnable and locally unreachable, so
+                                               the *channel* is what failed. A real result.
+  D at floor                                -> inconclusive: too small, too few steps, or a bug.
+
+  uv run python verification/symbolic_channel_probe.py --task recall --steps 1500
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import os
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+import torch
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+
+from data.symbolic_tasks import (  # noqa: E402
+    SymbolicTaskConfig,
+    chance_accuracy,
+    floor_nats,
+    generate_row,
+)
+from nn.perceiver_concept_lm import PerceiverConceptConfig, PerceiverConceptLM  # noqa: E402
+
+ARMS = ("A", "C", "D")
+
+# Cursor's /opt/cursor/artifacts FUSE store can go size-0 mid-run. Always also
+# land JSON on the workspace disk so a finished cell is not lost.
+DURABLE_RESULT_DIRS = (
+    Path("/workspace/Cache/scale_hard"),
+    Path("/tmp/scale_hard"),
+)
+
+
+def write_result_json(requested: str | Path, payload: dict) -> list[str]:
+    """Write the result bundle to `--out` and to durable fallbacks.
+
+    Returns the paths that actually landed. Raises only if every dest failed.
+    """
+    text = json.dumps(payload, indent=2)
+    requested_path = Path(requested)
+    dests = [requested_path, *(d / requested_path.name for d in DURABLE_RESULT_DIRS)]
+    written: list[str] = []
+    errors: list[str] = []
+    seen: set[str] = set()
+    for dest in dests:
+        key = os.path.normpath(str(dest))
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(text)
+            written.append(str(dest))
+        except OSError as exc:
+            errors.append(f"{dest}: {exc}")
+    if not written:
+        raise OSError("failed to write result JSON anywhere: " + "; ".join(errors))
+    return written
+
+
+def make_batch(cfg: SymbolicTaskConfig, rng: np.random.Generator, batch: int, device: torch.device):
+    rows = [generate_row(cfg, rng) for _ in range(batch)]
+    ids = torch.from_numpy(np.stack([r.input_ids for r in rows])).long().to(device)
+    labels = torch.from_numpy(np.stack([r.labels for r in rows])).long().to(device)
+    return ids, labels
+
+
+def build_model(arm: str, cfg: SymbolicTaskConfig, args) -> PerceiverConceptLM:
+    # Arm D is the same decoder with its raw window opened to the whole row: a plain causal
+    # transformer that can see the evidence directly. It calibrates the instrument.
+    dec_segment = cfg.seq_len if arm == "D" else args.dec_segment
+    conf = PerceiverConceptConfig(
+        vocab_size=cfg.vocab.vocab_size,
+        hidden_size=args.hidden,
+        intermediate_size=2 * args.hidden,
+        token_embedding_dim=args.token_embedding_dim,
+        enc_layers=args.enc_layers,
+        enc_window=args.enc_window,
+        concept_ratio=args.ratio,
+        concept_slots=1,
+        latent_layers=args.latent_layers,
+        dec_layers=args.dec_layers,
+        dec_segment=dec_segment,
+        dec_local="block",
+        concept_mode="full" if arm == "A" else "none",
+        concept_xattn_scope=args.scope,
+        num_attention_heads=args.hidden // 32,
+        num_kv_heads=1,
+        xattn_kv_heads=1,
+        head_dim=32,
+        ngram_orders=(2,),
+        ngram_buckets=512,
+        enc_value_embed_layers=(0,),
+        dec_value_embed_layers=(0,),
+        value_embed_dim=16,
+        z_loss=1e-4,
+        chunked_ce_block_size=256,
+        use_liger=False,
+        attn_backend="sdpa",
+        attn_pad_multiple=min(args.dec_segment, dec_segment),
+        xattn_wo_init_std=args.xattn_wo_init,
+        pooler_wo_init_std=args.pooler_wo_init,
+        pad_token_id=cfg.vocab.control("eos"),
+        bos_token_id=cfg.vocab.control("bos"),
+        eos_token_id=cfg.vocab.control("eos"),
+    )
+    torch.manual_seed(args.seed)
+    return PerceiverConceptLM(conf)
+
+
+@torch.no_grad()
+def evaluate(model, batches, override: str | None = None) -> dict:
+    model.eval()
+    ce_sum, n, hits = 0.0, 0, 0
+    ctx = model.concept_override(override) if override else None
+    if ctx is not None:
+        ctx.__enter__()
+    try:
+        for ids, labels in batches:
+            out, per, valid = model(ids, labels=labels, return_per_token_loss=True)
+            ce_sum += float(per[valid].sum())
+            n += int(valid.sum())
+            logits = model(ids, return_logits=True).logits
+            pred = logits[:, :-1].argmax(-1)
+            tgt = labels[:, 1:]
+            m = tgt != -100
+            hits += int((pred[m] == tgt[m]).sum())
+    finally:
+        if ctx is not None:
+            ctx.__exit__(None, None, None)
+    model.train()
+    return {"ce_nats": ce_sum / max(n, 1), "acc": hits / max(n, 1), "tokens": n}
+
+
+def make_scheduler(opt, args):
+    """OneCycle needs a horizon ≥ 2× time-to-95%; warmup+constant does not."""
+    if args.sched == "onecycle":
+        return torch.optim.lr_scheduler.OneCycleLR(
+            opt, max_lr=args.lr, total_steps=args.steps, pct_start=0.1, anneal_strategy="cos"
+        )
+    warmup = max(1, args.warmup_steps)
+
+    def lr_lambda(epoch: int) -> float:
+        if epoch < warmup:
+            return float(epoch + 1) / warmup
+        return 1.0
+
+    return torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
+
+
+def train_arm(arm: str, cfg: SymbolicTaskConfig, args, eval_batches, device: torch.device) -> dict:
+    model = build_model(arm, cfg, args).to(device)
+    n_params = sum(p.numel() for p in model.parameters())
+    opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01, betas=(0.9, 0.95))
+    sched = make_scheduler(opt, args)
+    rng = np.random.default_rng(args.seed + 1000)
+    t0, trace = time.time(), []
+    chance = chance_accuracy(cfg)
+    stop_reason = "budget"
+    for step in range(1, args.steps + 1):
+        ids, labels = make_batch(cfg, rng, args.batch, device)
+        out = model(ids, labels=labels)
+        out.loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        opt.step()
+        sched.step()
+        opt.zero_grad(set_to_none=True)
+        if step % args.eval_every == 0 or step == args.steps:
+            ev = evaluate(model, eval_batches)
+            lr_now = float(opt.param_groups[0]["lr"])
+            wall_s = time.time() - t0
+            trace.append(
+                {
+                    "step": step,
+                    "examples": step * args.batch,
+                    "lr": lr_now,
+                    "wall_s": wall_s,
+                    **ev,
+                }
+            )
+            examples = step * args.batch
+            print(
+                f"  [{arm}] step {step:5d}  examples {examples:7d}  train {float(out.loss.detach()):.4f}  "
+                f"eval CE {ev['ce_nats']:.4f}  acc {ev['acc']:.3f}  lr {lr_now:.2e}  "
+                f"({wall_s / step:.2f} s/step)",
+                flush=True,
+            )
+            if args.target_acc > 0 and ev["acc"] >= args.target_acc:
+                stop_reason = "target_acc"
+                print(f"  [{arm}] early stop: acc {ev['acc']:.3f} >= {args.target_acc}", flush=True)
+                break
+            if (
+                args.floor_patience_steps > 0
+                and step >= args.floor_patience_steps
+                and ev["acc"] < chance + 0.05
+            ):
+                stop_reason = "floor_patience"
+                print(
+                    f"  [{arm}] floor kill: acc {ev['acc']:.3f} still at chance after {step} steps",
+                    flush=True,
+                )
+                break
+    wall_s = time.time() - t0
+    last = trace[-1]
+    result = {
+        "arm": arm,
+        "params": n_params,
+        "examples_seen": last["step"] * args.batch,
+        "supervised_tokens_seen": last["step"] * args.batch * cfg.answer_len,
+        "steps": last["step"],
+        "acc": last["acc"],
+        "ce": last["ce_nats"],
+        "lr": args.lr,
+        "seq": cfg.seq_len,
+        "r": args.ratio,
+        "task": cfg.task,
+        "hops": args.hops,
+        "wall_s": wall_s,
+        "stop_reason": stop_reason,
+        "final": last,
+        "trace": trace,
+    }
+    if arm == "A":
+        result["ablate_none"] = evaluate(model, eval_batches, override="none")
+        result["ablate_far"] = evaluate(model, eval_batches, override="far")
+    return result
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--task", default="recall")
+    p.add_argument("--seq_len", type=int, default=256)
+    p.add_argument("--n_symbols", type=int, default=8)
+    p.add_argument("--min_gap", type=int, default=64)
+    p.add_argument("--key_len", type=int, default=2)
+    p.add_argument("--value_len", type=int, default=2)
+    p.add_argument("--span_len", type=int, default=8)
+    p.add_argument("--n_distractors", type=int, default=3)
+    p.add_argument("--hops", type=int, default=2)
+    p.add_argument("--count_mod", type=int, default=4)
+    p.add_argument("--hidden", type=int, default=128)
+    p.add_argument("--token_embedding_dim", type=int, default=32)
+    p.add_argument("--enc_layers", type=int, default=2)
+    p.add_argument("--enc_window", type=int, default=32)
+    p.add_argument("--latent_layers", type=int, default=2)
+    p.add_argument("--dec_layers", type=int, default=2)
+    p.add_argument("--dec_segment", type=int, default=64)
+    p.add_argument("--ratio", type=int, default=16)
+    p.add_argument("--scope", default="exclusive", choices=["causal", "exclusive"])
+    # The concept path has two zero-init residual gates in series between the evidence and the
+    # loss — `pooler.wo` (the only order-sensitive part of the write; the rest is a mean over the
+    # block) and `xattn.wo` (the read's output). The gradient into the read's query/key
+    # projections and into `pooler.wo` is proportional to `xattn.wo`, so at zero the channel can
+    # only learn to consume the order-free mean of the visible slots. These map straight onto the
+    # model's config fields.
+    p.add_argument("--xattn_wo_init", type=float, default=0.0,
+                   help="config xattn_wo_init_std (0 = the family's zero-init)")
+    p.add_argument("--pooler_wo_init", type=float, default=0.0,
+                   help="config pooler_wo_init_std (0 = the family's zero-init)")
+    p.add_argument("--steps", type=int, default=1500)
+    p.add_argument("--batch", type=int, default=32)
+    p.add_argument("--lr", type=float, default=3e-3)
+    p.add_argument("--sched", default="onecycle", choices=["onecycle", "warmup_constant"],
+                   help="onecycle needs horizon at least 2x time-to-95pct; warmup_constant stays live")
+    p.add_argument("--warmup_steps", type=int, default=200)
+    p.add_argument("--eval_every", type=int, default=100)
+    p.add_argument("--eval_rows", type=int, default=128)
+    p.add_argument("--target_acc", type=float, default=0.0,
+                   help="stop this arm when eval accuracy reaches this (0 = run all steps)")
+    p.add_argument("--floor_patience_steps", type=int, default=0,
+                   help="stop if still at chance after this many steps (0 = never)")
+    p.add_argument("--arms", nargs="+", default=list(ARMS), choices=list(ARMS))
+    p.add_argument("--threads", type=int, default=4)
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--out", default=None, help="write the result bundle as JSON")
+    p.add_argument("--run_name", default="", help="stored in the result bundle")
+    args = p.parse_args()
+
+    torch.set_num_threads(args.threads)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"device={device}", flush=True)
+    cfg = SymbolicTaskConfig(
+        task=args.task,
+        seq_len=args.seq_len,
+        n_symbols=args.n_symbols,
+        min_gap=args.min_gap,
+        key_len=args.key_len,
+        value_len=args.value_len,
+        span_len=args.span_len,
+        n_distractors=args.n_distractors,
+        hops=args.hops,
+        count_mod=args.count_mod,
+    )
+    if args.min_gap < args.dec_segment:
+        raise SystemExit(
+            f"min_gap ({args.min_gap}) < dec_segment ({args.dec_segment}): the evidence could fall "
+            "inside the decoder's raw window and the floor would not hold"
+        )
+    floor = floor_nats(cfg, args.dec_segment)
+    chance = chance_accuracy(cfg)
+
+    eval_rng = np.random.default_rng(args.seed + 99)
+    eval_batches = [
+        make_batch(cfg, eval_rng, args.batch, device)
+        for _ in range(max(1, args.eval_rows // args.batch))
+    ]
+
+    print(
+        f"task={args.task} seq={args.seq_len} alphabet={args.n_symbols} min_gap={args.min_gap} "
+        f"dec_segment={args.dec_segment} slots={args.seq_len // args.ratio}\n"
+        f"floor = {floor:.4f} nats/supervised token (= ln {args.n_symbols if args.task != 'count' else args.count_mod}), "
+        f"chance acc = {chance:.3f}",
+        flush=True,
+    )
+
+    results = {}
+    for arm in args.arms:
+        print(f"--- arm {arm} ---", flush=True)
+        results[arm] = train_arm(arm, cfg, args, eval_batches, device)
+
+    print("\n=== verdict ===")
+    print(f"floor (no route to the evidence): {floor:.4f} nats, acc {chance:.3f}")
+    for arm, r in results.items():
+        f = r["final"]
+        print(
+            f"arm {arm} ({r['params'] / 1e6:.2f}M params): CE {f['ce_nats']:.4f} "
+            f"({f['ce_nats'] - floor:+.4f} vs floor)  acc {f['acc']:.3f}"
+        )
+        if "ablate_none" in r:
+            print(
+                f"  same weights, array removed: CE {r['ablate_none']['ce_nats']:.4f} "
+                f"acc {r['ablate_none']['acc']:.3f}   | far slots only: "
+                f"CE {r['ablate_far']['ce_nats']:.4f} acc {r['ablate_far']['acc']:.3f}"
+            )
+    summary = {
+        arm: {
+            "arm": arm,
+            "params": r["params"],
+            "examples_seen": r["examples_seen"],
+            "steps": r["steps"],
+            "acc": r["acc"],
+            "ce": r["ce"],
+            "lr": r["lr"],
+            "seq": r["seq"],
+            "r": r["r"],
+            "task": r["task"],
+            "hops": r["hops"],
+            "wall_s": r["wall_s"],
+            "stop_reason": r["stop_reason"],
+        }
+        for arm, r in results.items()
+    }
+    bundle = {
+        "run_name": args.run_name,
+        "task": args.task,
+        "floor_nats": floor,
+        "chance_acc": chance,
+        "device": str(device),
+        "config": vars(args),
+        "summary": summary,
+        "results": results,
+    }
+    if args.out:
+        written = write_result_json(args.out, bundle)
+        print("\nwrote " + ", ".join(written))
+
+    # The instrument is only interpretable if both controls behave: C must not beat the floor
+    # (the task does not leak) and D must beat it clearly (the task is learnable at this scale).
+    checks = []
+    if "C" in results:
+        gap = results["C"]["final"]["ce_nats"] - floor
+        checks.append(("task does not leak (arm C at the floor)", gap > -0.05, f"{gap:+.4f} nats"))
+    if "D" in results:
+        gap = results["D"]["final"]["ce_nats"] - floor
+        checks.append(("task is learnable here (arm D below the floor)", gap < -0.10, f"{gap:+.4f} nats"))
+    print()
+    for name, ok, detail in checks:
+        print(f"[{'ok' if ok else 'FAIL'}] {name}: {detail}")
+    calibrated = all(ok for _, ok, _ in checks) and len(checks) == 2
+    if "A" in results and calibrated:
+        gap = results["A"]["final"]["ce_nats"] - floor
+        print(
+            f"\n-> the channel {'CARRIES information' if gap < -0.10 else 'FAILED'}: "
+            f"arm A is {gap:+.4f} nats vs the floor"
+        )
+    elif "A" in results:
+        print("\n-> INCONCLUSIVE about arm A: run arms C and D and get both checks green first")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
