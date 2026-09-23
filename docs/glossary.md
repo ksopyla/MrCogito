@@ -88,7 +88,10 @@ meaningless without knowing which slice it came from.
 | **encoder–decoder** | one stack summarises, another stack writes. Most of our designs are this, even when they look like one model. |
 | **Perceiver / Perceiver AR** | architecture family where a long input is read into a small fixed set of latents by cross-attention. |
 | **BiXT** | a Perceiver variant where tokens and latents refine each other both ways. |
-| **exclusive compressed read (E21)** | at a `query` boundary the local window is cut; the only prefix the answer may read is compressor slots (typically one slot per 16 tokens). |
+| **full-book read (E18)** | the notebook is the uncompressed prefix. One lookup can see every earlier token. |
+| **exclusive compressed read (E21)** | at a `query` boundary the local window is cut; the only prefix the answer may read is compressor slots (typically one slot per 16 tokens). The fair E30 control averages each chunk. |
+| **sliding-window Perceiver write (E30)** | overlapping windows; a few learned questions per window fill the notebook, and the notebook grows with the text. Scored against E21's average on the same exclusive read. |
+| **concept coverage** | how many tokens of the book each learned question is asked to summarize (`W/K`). Short coverage means a smaller window and more notes. The default is about 8. |
 | **INDEX / MATCH / SELECT / HOPS** | BAPO exam classes: copy a marked span; look up a key; pick fact vs decoy; follow a chain. |
 | **information_flow** | recovered bits / prize bits on a packed answer. 1 = full prize; 0 = chance. |
 | **prefix AE** | reconstruct each 16-token prefix block from its slot with a weak head — a write loss, not an extra reasoning hop. |

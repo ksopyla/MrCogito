@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-09-17 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-09-22 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,6 +20,27 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-09-20 — E30 sliding-window Perceiver banks.** Exclusive prefix write is
+  overlapping `K`-query CA banks (`C ∝ N`, coverage 8×, stride 0.75 W), not E21
+  mean-pool. Fair control is concat frozen-mean. At ≥5M use LR **1e-3** (3e-3
+  RankMe-collapses the write). Spec
+  [E30](../experiments_specs/ahead/E30_sliding_window_perceiver.md) · plan
+  [E30_plan](../experiments_specs/ahead/E30_sliding_window_perceiver_plan.md).
+  <10M DNA protocol:
+  [small_model_capability_protocol.md](../engineering_specs/small_model_capability_protocol.md).
+  TinyHashed / extra SWA / latent mixer are **not** this bet.
+  Width hunt 2026-09-21: 9.04M INDEX e30 **37 bits** beats e21 mean; MATCH 12 vs 19.
+  **31M GPU 2026-09-22:** seq=512 MATCH e30 **47.6 bits** ≈ e18 48 > e21 44; SELECT@128
+  e30 27.8 vs e21 8.8. E21-mean wall is gone at this width.
+  **Limits 2026-09-22:** in-order chain @1024 e30 passes (40 bits) and e21 does not (4).
+  Lookup wall is 512→1024.
+  **Coverage 2026-09-22:** a 128-token window passes that chain; a 512-token window
+  writes nothing. The chain is gone at 2048 tokens. The 50M full-read miss was
+  undertraining (5e-5 restores it).
+  [CPU](../2_Experiments_Registry/run_reports/e30_tiny_5m_9m_capability_20260921.md) ·
+  [GPU](../2_Experiments_Registry/run_reports/e30_30m_gpu_odra_polonez_20260922.md) ·
+  [limits](../2_Experiments_Registry/run_reports/e30_length_hardness_limits_20260922.md) ·
+  [coverage](../2_Experiments_Registry/run_reports/e30_coverage_and_breadth_20260922.md).
 - **2026-09-17 — E18 vs E21 architecture viz (no run).** Interactive HTML of the real
   `perceiver_ar` split — uncompressed global KV (E18) vs exclusive r=16 slots after QUERY
   (E21), not a reasoning tower:
@@ -45,6 +66,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-09-22 — E30 coverage and breadth (31M and 50M).** A 128-token window (coverage 4) passes the 1024 in-order chain (76% of answer tokens); a 512-token window scores 0 bits even with 64 questions per window. The same chain is 0 bits at 2048 tokens for both notebooks; the full read still passes. Far copy at 1024 is unsolved by the full read. The earlier 50M full-read collapse was too few steps at 1e-4: at 5e-5 it scores 99%, and the averaged notebook passes after a doubled budget. [report](../2_Experiments_Registry/run_reports/e30_coverage_and_breadth_20260922.md).
+- **2026-09-22 — E30 length and hardness (31M and 50M, Odra + Polonez).** In-order 4-hop chain @1024: e30 **40 bits / 77%** vs averaged notebook 4 bits; at 50M / 1e-4 / 4800 steps the full read on that chain falls to 3 bits and e30 still passes (44 bits / 80%). That 50M full-read miss is superseded by the coverage report (slower step, longer budget). Lookalike @1024: full read 63 bits, e30 26 after a longer budget, average 19. Lookup @1024: only e30 moves (26 bits); @4096 and @16k everyone is at zero. A 3e-4 step at 1024 is a false kill. [report](../2_Experiments_Registry/run_reports/e30_length_hardness_limits_20260922.md).
+- **2026-09-22 — E30 ~31M GPU (Odra 3×3090 + Polonez 4×3090).** H=960 4-layer. Seq=512 MATCH e30 **47.6 bits / 99.7%** ≈ e18 48.0 > e21 44.0; INDEX e30 63.1 ≈ e18 64. SELECT@128 e30 **27.8** vs e21 8.8 vs e18 31.3. 1e-3 zero-init at seq=256 is a false kill; 3e-4 + `--warm_residuals` restores. E21-mean MATCH wall is a <10M fact, not a 31M fact. [report](../2_Experiments_Registry/run_reports/e30_30m_gpu_odra_polonez_20260922.md).
+- **2026-09-21 — E30 width hunt (CPU BAPO, concat frozen-mean e21).** H=128 3e-3: e30 INDEX 12 bits < e21 17; MATCH chance. H=384 3e-3 RankMe-collapses e30; 1e-3 restores. H=512 1e-3: e30 INDEX **37 bits / 73%** beats e21 14; MATCH **12 bits** vs 0.75× 5M e18 19. E18 MATCH 0-bit wall breaks at 5.16M (25 bits). [report](../2_Experiments_Registry/run_reports/e30_tiny_5m_9m_capability_20260921.md).
 - **2026-09-16 — E28 exclusive CogitoProbe-bits @1024 (Wave B).** Dense packed-answer acc **6.5% / 0.21 bits** on a 40-bit prize; exclusive `fixed` recovered **0 bits** (`scaled` 0.003). Seq=4096 not launched. [report](../2_Experiments_Registry/run_reports/e28_exclusive_cogitoprobe_bits_20260916.md) · [spec](../experiments_specs/done_failed/E28_exclusive_cogitoprobe_bits.md).
 - **2026-09-16 — E29 exclusive CogitoProbe-bind @1024 (Wave B).** One-hop `hop_friend_place` **4.4% / 0.078 bits**; `attr_color` **2.4% / 0.007**; dense S0 not run; props filler-shuffle Δacc **+0.13 pt**. Seq=4096 not launched. [report](../2_Experiments_Registry/run_reports/e29_exclusive_cogitoprobe_bind_20260916.md) · [spec](../experiments_specs/done_failed/E29_exclusive_cogitoprobe_bind.md).
 - **2026-09-16 — E27 hybrid key-span anchors (DNA MATCH @512, 16-token pages).** Exclusive notebook recovered **3 bits** vs uncompressed **48**; collapsing the extra key tokens left the score unchanged (RankMe 1.12). [report](../2_Experiments_Registry/run_reports/e27_hybrid_key_anchors_20260916.md) · [spec](../experiments_specs/done_failed/E27_hybrid_key_anchors.md).

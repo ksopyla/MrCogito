@@ -38,6 +38,10 @@ Architectures
                each complete sender block from its slot (E26 write objective). Compressor
                `u`/`delta` see AE grads only (`--message_prefix_ae_stopgrad_answer`,
                default on). `--message_identity_slots` off so the pooler can move under AE.
+- `e30`        E18 + QUERY boundary + overlapping Perceiver banks (`message_write=sw_perceiver`).
+               Exclusive concat read of length-scaling window queries (E30). Inplace / identity
+               / prefix-AE flags are illegal on this write. Geometry auto-fits `K` so
+               `n_windows≥2` on short DNA rows.
 - `encdec`     Symmetric encoder-decoder: bidirectional prefix encoder, suffix-only decoder with
                cross-attention. Prefix information cannot take a raw route into the suffix.
 """
@@ -45,15 +49,16 @@ Architectures
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 import torch.nn as nn
 
 from evaluation.bapo_metrics import cache_profile
 from nn.encdec_lm import EncDecConfig, EncoderDecoderLM
-from nn.perceiver_ar_lm import PerceiverARConfig, PerceiverARLM
+from nn.perceiver_ar_lm import PerceiverARConfig, PerceiverARLM, swp_geometry
 
 
-ARCHES = ("dense", "e18", "e18_local", "e21", "encdec")
+ARCHES = ("dense", "e18", "e18_local", "e21", "e30", "encdec")
 
 
 @dataclass
@@ -92,6 +97,14 @@ class ArchSpec:
     message_prefix_ae: bool = False
     message_prefix_ae_weight: float = 0.0
     message_prefix_ae_stopgrad_answer: bool = True
+    message_write: str = "block_mean"
+    swp_bank_size: int = 32
+    swp_coverage: int = 8
+    swp_window: int = 0
+    swp_stride: int = 0
+    swp_n_heads: int = 0
+    swp_query_dim: int = 0
+    swp_auto_fit: bool = True
 
 
 def _n_heads(hidden: int, head_dim: int) -> int:
@@ -127,6 +140,10 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         if spec.message_boundary_token_id < 0:
             raise ValueError("e21 needs a message_boundary_token_id (DNA/Glyph query control)")
         par_mode, pre, glob, stack = "perceiver", spec.pre_layers, spec.global_layers, spec.stack_layers
+    elif arch == "e30":
+        if spec.message_boundary_token_id < 0:
+            raise ValueError("e30 needs a message_boundary_token_id (DNA/Glyph query control)")
+        par_mode, pre, glob, stack = "perceiver", spec.pre_layers, spec.global_layers, spec.stack_layers
     elif arch == "e18_local":
         par_mode, pre, glob, stack = "perceiver", spec.pre_layers, 0, spec.pre_layers + spec.global_layers + spec.stack_layers - spec.pre_layers
         # Keep total depth matched: pre + stack' = e18's pre+global+stack, no full layer.
@@ -140,6 +157,8 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
     n_kv = spec.n_kv_heads
     if n_kv <= 0 or n_heads % n_kv != 0:
         n_kv = n_heads  # full MHA; do not silently drop to 1 KV head
+    exclusive = arch in ("e21", "e30")
+    write = "sw_perceiver" if arch == "e30" else "block_mean"
     cfg = PerceiverARConfig(
         vocab_size=vocab_size,
         hidden_size=spec.hidden,
@@ -167,7 +186,7 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         z_loss=spec.z_loss,
         zero_init_residuals=spec.zero_init_residuals,
         message_boundary_token_id=(
-            spec.message_boundary_token_id if arch == "e21" else -1
+            spec.message_boundary_token_id if exclusive else -1
         ),
         message_compress_ratio=spec.message_compress_ratio if arch == "e21" else 16,
         message_pool_remainder=bool(spec.message_pool_remainder) if arch == "e21" else False,
@@ -175,20 +194,28 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         message_inplace_raw_kv=bool(spec.message_inplace_raw_kv) if arch == "e21" else False,
         message_identity_slots=bool(spec.message_identity_slots) if arch == "e21" else False,
         message_pack_stride=int(getattr(spec, "message_pack_stride", 0) or 0) if arch == "e21" else 0,
-        message_keep_local_swa=bool(spec.message_keep_local_swa) if arch == "e21" else False,
-        message_extra_slot_attends=int(getattr(spec, "message_extra_slot_attends", 0) or 0) if arch == "e21" else 0,
-        message_update_slot_kv=bool(getattr(spec, "message_update_slot_kv", False)) if arch == "e21" else False,
+        message_keep_local_swa=bool(spec.message_keep_local_swa) if exclusive else False,
+        message_extra_slot_attends=int(getattr(spec, "message_extra_slot_attends", 0) or 0) if exclusive else 0,
+        message_update_slot_kv=bool(getattr(spec, "message_update_slot_kv", False)) if exclusive else False,
         message_global_anchors=(
-            str(getattr(spec, "message_global_anchors", "none") or "none") if arch == "e21" else "none"
+            str(getattr(spec, "message_global_anchors", "none") or "none") if exclusive else "none"
         ),
         message_anchor_token_ids=(
-            tuple(int(x) for x in (getattr(spec, "message_anchor_token_ids", ()) or ())) if arch == "e21" else ()
+            tuple(int(x) for x in (getattr(spec, "message_anchor_token_ids", ()) or ())) if exclusive else ()
         ),
-        message_anchor_window=int(getattr(spec, "message_anchor_window", 4) or 0) if arch == "e21" else 4,
-        message_anchor_key_len=int(getattr(spec, "message_anchor_key_len", 0) or 0) if arch == "e21" else 0,
+        message_anchor_window=int(getattr(spec, "message_anchor_window", 4) or 0) if exclusive else 4,
+        message_anchor_key_len=int(getattr(spec, "message_anchor_key_len", 0) or 0) if exclusive else 0,
         message_prefix_ae=bool(getattr(spec, "message_prefix_ae", False)) if arch == "e21" else False,
         message_prefix_ae_weight=float(getattr(spec, "message_prefix_ae_weight", 0.0) or 0.0) if arch == "e21" else 0.0,
         message_prefix_ae_stopgrad_answer=bool(getattr(spec, "message_prefix_ae_stopgrad_answer", True)) if arch == "e21" else True,
+        message_write=write,
+        swp_bank_size=int(getattr(spec, "swp_bank_size", 32) or 32),
+        swp_coverage=int(getattr(spec, "swp_coverage", 8) or 8),
+        swp_window=int(getattr(spec, "swp_window", 0) or 0),
+        swp_stride=int(getattr(spec, "swp_stride", 0) or 0),
+        swp_n_heads=int(getattr(spec, "swp_n_heads", 0) or 0),
+        swp_query_dim=int(getattr(spec, "swp_query_dim", 0) or 0),
+        swp_auto_fit=bool(getattr(spec, "swp_auto_fit", True)),
         pad_token_id=pad_id,
         bos_token_id=bos_id,
         eos_token_id=eos_id,
@@ -202,6 +229,24 @@ def arch_cache(arch: str, spec: ArchSpec, seq_len: int) -> dict:
     if arch == "e18_local":
         n_layers = spec.pre_layers + spec.global_layers + spec.stack_layers
         glob = 0
+    compress_ratio = spec.message_compress_ratio if arch == "e21" else 1
+    if arch == "e30":
+        geo = swp_geometry(
+            SimpleNamespace(
+                swp_bank_size=int(getattr(spec, "swp_bank_size", 32) or 32),
+                swp_coverage=int(getattr(spec, "swp_coverage", 8) or 8),
+                swp_window=int(getattr(spec, "swp_window", 0) or 0),
+                swp_stride=int(getattr(spec, "swp_stride", 0) or 0),
+                swp_auto_fit=bool(getattr(spec, "swp_auto_fit", True)),
+                swp_n_heads=int(getattr(spec, "swp_n_heads", 0) or 0),
+                swp_query_dim=int(getattr(spec, "swp_query_dim", 0) or 0),
+                num_attention_heads=max(1, spec.hidden // max(spec.head_dim, 1)),
+                head_dim=spec.head_dim,
+                token_embedding_dim=min(32, spec.hidden),
+            ),
+            seq_len,
+        )
+        compress_ratio = max(float(geo.compression), 1e-6)
     return cache_profile(
         arch,
         n_layers=n_layers,
@@ -212,7 +257,7 @@ def arch_cache(arch: str, spec: ArchSpec, seq_len: int) -> dict:
         seq_len=seq_len,
         enc_layers=spec.enc_layers,
         dec_layers=spec.dec_layers,
-        compress_ratio=spec.message_compress_ratio if arch == "e21" else 1,
+        compress_ratio=compress_ratio,
     )
 
 

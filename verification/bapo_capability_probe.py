@@ -11,8 +11,9 @@ Protocol
 1. Train `dense` first, up to `--steps * --k1_mult` (K1). If held-out accuracy < 75%, the rung
    is uncalibrated — do not interpret E18/E21 numbers.
 2. Train `e18_local` on retrieval rungs. It must sit near chance / the analytic floor.
-3. Train `e18` (uncompressed one-read control) and `e21` (exclusive compressed read) under
-   `max(--steps, dense_steps_used)`.
+3. Train `e18` (uncompressed one-read control), `e21` (mean slots), and `e30`
+   (sliding-window Perceiver banks) under `max(--steps, dense_steps_used)`.
+   Small-model protocol: `docs/engineering_specs/small_model_capability_protocol.md`.
 4. Write a JSON bundle (learning traces + InfoReport) and optional plots.
 
   uv run python verification/bapo_capability_probe.py --scale tiny --recipe far_copy --arch dense e18 e21 e18_local
@@ -20,6 +21,7 @@ Protocol
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import contextlib
 import json
@@ -187,6 +189,34 @@ def _slot_rankme(model, batches, *, amp: str, device: torch.device) -> dict:
     }
 
 
+def _write_geometry(model, seq_len: int) -> dict:
+    """E30 window-bank diagnostics (and a no-op for other writes)."""
+    cfg = getattr(model, "config", None)
+    if cfg is None or str(getattr(cfg, "message_write", "block_mean") or "block_mean") != "sw_perceiver":
+        return {}
+    from nn.perceiver_ar_lm import swp_geometry
+
+    geo = swp_geometry(cfg, seq_len)
+    out = {
+        "bank_size": geo.bank_size,
+        "window": geo.window,
+        "stride": geo.stride,
+        "n_windows": geo.n_windows,
+        "n_slots": geo.n_slots,
+        "coverage": geo.coverage,
+        "compression": geo.compression,
+        "sliding": geo.sliding,
+        "log_window": float(math.log(max(geo.window, 1))),
+    }
+    gi = int(getattr(cfg, "global_layer_index", 0) or 0)
+    attn = model.layers[gi].attn if hasattr(model, "layers") else None
+    ent = getattr(getattr(attn, "compressor", None), "_last_entropy", None)
+    if ent is not None and ent == ent:
+        out["attn_entropy"] = float(ent)
+        out["entropy_over_logW"] = float(ent) / max(out["log_window"], 1e-6)
+    return out
+
+
 def _channel_ablations(model, eval_batches, *, amp, device, spec) -> dict:
     """MATCH analogue of concept ablation: real / none (anchors-only if key_spans) / swapped / slots-only."""
     out = {}
@@ -206,6 +236,26 @@ def _channel_ablations(model, eval_batches, *, amp, device, spec) -> dict:
             out["slots_only"] = {"error": str(exc)}
         model.config.message_global_anchors = prev
     return out
+
+
+def _non_dense_step_budget(steps: int, k1_mult: int, dense_steps_used: int) -> int:
+    """Advertised K1 cap, or denser if dense actually ran longer."""
+    return max(int(steps) * int(k1_mult), int(dense_steps_used))
+
+
+def _ce_still_falling(trace: list, *, min_drop: float = 0.2) -> bool:
+    """True when eval CE dropped ≥ `min_drop` nats in the last third of logged evals.
+
+    Exclusive-slot <10M law: dense can sit at chance then jump. A still-falling CE at
+    the K1 cap is not a kill — extend, don't skip_rest (small_model_capability_protocol).
+    """
+    if len(trace) < 2:
+        return False
+    n = len(trace)
+    cut = max(0, n - max(1, n // 3) - 1)
+    early = float(trace[cut].get("ce_nats", 0.0))
+    late = float(trace[-1].get("ce_nats", 0.0))
+    return (early - late) >= min_drop
 
 
 def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, steps: int) -> dict:
@@ -234,21 +284,34 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             f"msg_boundary={getattr(model.config, 'message_boundary_token_id', -1)}  "
             f"msg_r={getattr(model.config, 'message_compress_ratio', '-')}  "
             f"msg_remainder={getattr(model.config, 'message_pool_remainder', False)}  "
-            f"msg_override={args.message_override if arch == 'e21' else '-'}  "
+            f"msg_override={args.message_override if arch in ('e21', 'e30') else '-'}  "
             f"msg_inplace={getattr(model.config, 'message_slots_inplace', False) if arch == 'e21' else '-'}  "
             f"msg_rawkv={getattr(model.config, 'message_inplace_raw_kv', False) if arch == 'e21' else '-'}  "
             f"msg_idslots={getattr(model.config, 'message_identity_slots', False) if arch == 'e21' else '-'}  "
             f"msg_packstride={getattr(model.config, 'message_pack_stride', 0) if arch == 'e21' else '-'}  "
-            f"msg_keepswa={getattr(model.config, 'message_keep_local_swa', False) if arch == 'e21' else '-'}  "
+            f"msg_keepswa={getattr(model.config, 'message_keep_local_swa', False) if arch in ('e21', 'e30') else '-'}  "
             f"glob_layers={getattr(model.config, 'global_layers', '-')}  "
-            f"msg_extrahops={getattr(model.config, 'message_extra_slot_attends', 0) if arch == 'e21' else '-'}  "
-            f"msg_updatekv={getattr(model.config, 'message_update_slot_kv', False) if arch == 'e21' else '-'}  "
-            f"msg_anchors={getattr(model.config, 'message_global_anchors', 'none') if arch == 'e21' else '-'}  "
+            f"msg_extrahops={getattr(model.config, 'message_extra_slot_attends', 0) if arch in ('e21', 'e30') else '-'}  "
+            f"msg_updatekv={getattr(model.config, 'message_update_slot_kv', False) if arch in ('e21', 'e30') else '-'}  "
+            f"msg_anchors={getattr(model.config, 'message_global_anchors', 'none') if arch in ('e21', 'e30') else '-'}  "
             f"msg_keylen={getattr(model.config, 'message_anchor_key_len', 0) if arch == 'e21' else '-'}  "
-            f"msg_prefix_ae={getattr(model.config, 'message_prefix_ae', False) if arch == 'e21' else '-'}",
+            f"msg_prefix_ae={getattr(model.config, 'message_prefix_ae', False) if arch == 'e21' else '-'}  "
+            f"msg_write={getattr(model.config, 'message_write', '-')}",
             flush=True,
         )
-    override = args.message_override if arch == "e21" else "real"
+    if arch == "e30":
+        from nn.perceiver_ar_lm import swp_geometry
+
+        geo = swp_geometry(model.config, cfg.seq_len)
+        print(
+            f"  [e30] geometry K={geo.bank_size} W={geo.window} stride={geo.stride} "
+            f"n_win={geo.n_windows} C={geo.n_slots} N/C={geo.compression:.2f} "
+            f"heads={geo.n_heads} qdim={geo.query_dim} sliding={geo.sliding}",
+            flush=True,
+        )
+        if not geo.sliding:
+            print("  [e30] WARNING: n_windows<2 — this length is not the sliding claim", flush=True)
+    override = args.message_override if arch in ("e21", "e30") else "real"
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01, betas=(0.9, 0.95))
     warmup = max(1, min(50, steps // 10))
 
@@ -259,13 +322,17 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
     rng = np.random.default_rng(args.seed + 1000 + sum(ord(c) for c in arch))
     t0, trace = time.time(), []
     best_acc = -1.0
+    k1_extended = False
     sdp_cm = contextlib.nullcontext()
     if args.sdpa_math:
         from torch.nn.attention import SDPBackend, sdpa_kernel
 
         sdp_cm = sdpa_kernel(SDPBackend.MATH)
+    step = 0
+    max_steps = steps
     with sdp_cm:
-        for step in range(1, steps + 1):
+        while step < max_steps:
+            step += 1
             ids, labels = make_batch(cfg, rng, args.batch, device)
             with _message_cm(model, override), amp_ctx(device, args.amp):
                 out = model(ids, labels=labels)
@@ -275,7 +342,7 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             opt.step()
             sched.step()
             opt.zero_grad(set_to_none=True)
-            if step % args.eval_every == 0 or step == steps:
+            if step % args.eval_every == 0 or step == max_steps:
                 ev = evaluate(
                     model, eval_batches, amp=args.amp, device=device, message_override=override
                 )
@@ -290,6 +357,19 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
                 if ev["acc"] >= args.early_stop_acc:
                     print(f"  [{arch}] early stop at {step} (acc {ev['acc']:.3f})", flush=True)
                     break
+                if (
+                    not k1_extended
+                    and step >= steps
+                    and ev["acc"] < SOLVABLE_ACC
+                    and _ce_still_falling(trace)
+                ):
+                    k1_extended = True
+                    max_steps = step + steps
+                    print(
+                        f"  [{arch}] eval CE still falling (≥0.2 nats in last third); "
+                        f"extending to {max_steps} (small-model protocol)",
+                        flush=True,
+                    )
     cache = arch_cache(arch, spec, cfg.seq_len)
     final = trace[-1]
     report = info_report(
@@ -302,11 +382,12 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
         nominal_a_bytes=cache["nominal_a_bytes"],
     )
     extra = {}
-    if arch == "e21":
+    if arch in ("e21", "e30"):
         extra["channel_ablations"] = _channel_ablations(
             model, eval_batches, amp=args.amp, device=device, spec=spec
         )
         extra["slot_geometry"] = _slot_rankme(model, eval_batches, amp=args.amp, device=device)
+        extra["write_geometry"] = _write_geometry(model, cfg.seq_len)
         ae = getattr(model, "_last_prefix_ae", None)
         if ae:
             extra["prefix_ae"] = ae
@@ -315,10 +396,12 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
                 f"key_acc {ae.get('key_acc')}",
                 flush=True,
             )
+        wg = extra["write_geometry"]
         print(
             f"  [{arch}] ablations "
             + str({k: v.get("acc") if isinstance(v, dict) else v for k, v in extra["channel_ablations"].items()})
-            + f"  rankme {extra['slot_geometry'].get('slot_rankme')}",
+            + f"  rankme {extra['slot_geometry'].get('slot_rankme')}"
+            + (f"  n_win {wg.get('n_windows')} C {wg.get('n_slots')} H/logW {wg.get('entropy_over_logW')}" if wg else ""),
             flush=True,
         )
     return {
@@ -330,6 +413,7 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
         "trace": trace,
         "info": report.as_dict(),
         "early_stopped": final["acc"] >= args.early_stop_acc,
+        "k1_extended": k1_extended,
         **extra,
     }
 
@@ -394,6 +478,14 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         message_prefix_ae=args.message_prefix_ae,
         message_prefix_ae_weight=args.message_prefix_ae_weight,
         message_prefix_ae_stopgrad_answer=args.message_prefix_ae_stopgrad_answer,
+        message_write="sw_perceiver" if "e30" in args.arch else "block_mean",
+        swp_bank_size=args.swp_bank_size,
+        swp_coverage=args.swp_coverage,
+        swp_window=args.swp_window,
+        swp_stride=args.swp_stride,
+        swp_n_heads=args.swp_n_heads,
+        swp_query_dim=args.swp_query_dim,
+        swp_auto_fit=args.swp_auto_fit,
     )
     card = rung_card(scale, recipe.task, **over)
     card["local_window"] = window
@@ -424,7 +516,8 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         if arch == "dense":
             arch_steps = args.steps * args.k1_mult
         else:
-            arch_steps = max(args.steps, dense_steps_used)
+            # Fast dense 99% early-stop must not cap a slower write below the advertised K1 budget.
+            arch_steps = _non_dense_step_budget(args.steps, args.k1_mult, dense_steps_used)
         print(f"--- {arch}  (≤ {arch_steps} steps) ---", flush=True)
         results[arch] = train_one(arch, cfg, args, eval_batches, spec, device, steps=arch_steps)
         print(
@@ -478,6 +571,8 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             "global_logit_scale": args.global_logit_scale,
             "attn_backend": args.attn_backend,
             "hidden": args.hidden,
+            "head_dim": args.head_dim,
+            "lr": args.lr,
             "global_layers": args.global_layers,
             "stack_layers": args.stack_layers,
             "warm_residuals": args.warm_residuals,
@@ -494,6 +589,16 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             "message_global_anchors": args.message_global_anchors,
             "message_prefix_ae": args.message_prefix_ae,
             "message_prefix_ae_weight": args.message_prefix_ae_weight,
+            "swp_bank_size": args.swp_bank_size,
+            "swp_coverage": args.swp_coverage,
+            "swp_window": args.swp_window,
+            "swp_stride": args.swp_stride,
+            "swp_n_heads": args.swp_n_heads,
+            "swp_query_dim": args.swp_query_dim,
+            "swp_auto_fit": args.swp_auto_fit,
+            "k1_extended": {
+                a: bool(r.get("k1_extended", False)) for a, r in results.items()
+            },
         },
         "pack": {
             "answer_len": cfg.answer_len,
@@ -666,6 +771,23 @@ def main() -> int:
         "Default on.",
     )
     p.add_argument(
+        "--swp_bank_size",
+        type=int,
+        default=32,
+        help="E30: learned queries per window (K). Auto-fit may shrink this on short seq.",
+    )
+    p.add_argument("--swp_coverage", type=int, default=8, help="E30: W/K when --swp_window is 0.")
+    p.add_argument("--swp_window", type=int, default=0, help="E30: window W in tokens (0 = coverage*K).")
+    p.add_argument("--swp_stride", type=int, default=0, help="E30: stride (0 = 0.75*W).")
+    p.add_argument("--swp_n_heads", type=int, default=0, help="E30: write heads (0 = max(4, Q heads)).")
+    p.add_argument("--swp_query_dim", type=int, default=0, help="E30: scoring dim (0 = max(head_dim, 4*token_emb)).")
+    p.add_argument(
+        "--swp_auto_fit",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="E30: shrink K so n_windows≥2 on short sequences (default on).",
+    )
+    p.add_argument(
         "--experiment_id",
         default=None,
         help="W&B / JSON identity (E27, E26, …). Used when --wandb is on.",
@@ -712,7 +834,7 @@ def main() -> int:
         "--skip_uncalibrated",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="do not score E18/encdec on a rung whose dense control missed 75%%",
+        help="do not score E18/e21/e30/encdec on a rung whose dense control missed 75%%",
     )
     p.add_argument("--n_distractors", type=int, default=None)
     p.add_argument("--n_decoys", type=int, default=None)

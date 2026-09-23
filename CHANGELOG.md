@@ -15,6 +15,96 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-22] - E30 31M GPU DNA probes (Odra + Polonez)
+
+**Why:**
+- CPU 31M was too slow; user asked for Odra/Polonez in parallel. 1e-3 at this
+  width collapsed E30 on CPU and K1'd e18/e21 INDEX at seq=256.
+
+**Impact:**
+- Scored 31M DNA ladder on GPU. Seq=512 MATCH: e30 47.6 bits ≈ e18 48 > e21 44.
+- Protocol: H=960 uses 3e-4 + `--warm_residuals` from seq=256.
+
+**What changed:**
+- [changed] `docs/engineering_specs/small_model_capability_protocol.md` tiny_wide LR at H=960.
+- [added] `docs/2_Experiments_Registry/run_reports/e30_30m_gpu_odra_polonez_20260922.md`.
+
+**Related:** `docs/experiments_specs/ahead/E30_sliding_window_perceiver.md`
+
+---
+
+## [2026-09-21] - E30 ~31M capacity hunt (outside <10M protocol)
+
+**Why:**
+- 9.04M E30 beats frozen-mean E21 on INDEX but still misses 0.75× live E18 MATCH
+  at seq=128. Next question is capacity on longer seq and harder rungs, not a
+  <10M retune.
+
+**Impact:**
+- Width-matched 4-layer H=960 (~31.00M dense / 31.13M e30) is a capacity hunt
+  with `--max_params 40000000`. Spec K3 is unchanged: 30M is not a rescue of
+  the seq=128 S1 miss.
+
+**What changed:**
+- [changed] `docs/engineering_specs/small_model_capability_protocol.md` — 30M
+  launch skeleton, H=960 row, tiny_wide LR at H≥384.
+
+**Related:** `docs/experiments_specs/ahead/E30_sliding_window_perceiver.md`
+
+---
+
+## [2026-09-21] - E30 capability protocol: width-aware LR and K1 write budget
+
+**Why:**
+- Fair tiny concat showed 3e-3 is right at H=128, but the same LR RankMe-collapses
+  E30 at 5.16M. Dense 99% early-stop at 1600 starved the 5M write.
+
+**Impact:**
+- Non-dense BAPO arms train for `max(steps × k1_mult, dense_steps_used)`.
+- Small-model protocol records width-matched 4-layer sizes (0.6 / 5.16 / 9.04M)
+  and LR 1e-3 at H≥384.
+
+**What changed:**
+- [changed] `verification/bapo_capability_probe.py` non-dense step budget.
+- [changed] `docs/engineering_specs/small_model_capability_protocol.md`.
+
+**Related:** `docs/experiments_specs/ahead/E30_sliding_window_perceiver.md`;
+`docs/2_Experiments_Registry/run_reports/e30_tiny_5m_9m_capability_20260921.md`
+
+---
+
+## [2026-09-20] - E30 sliding-window Perceiver write
+
+**Why:**
+- E21 frozen-mean slots recover 0 MATCH bits at seq=512 while E18 is live. A uniform
+  mean is the wrong sufficient statistic for a lookup key (Tishby IB; Fine-KV 16×
+  collapse). The notes in `docs/experiment_ideas/sliding_window_perceiver.md` ask for
+  overlapping positional Perceiver banks instead of averaging `r` tokens.
+
+**Impact:**
+- Config-selectable exclusive write `message_write=sw_perceiver`: `K` learned queries
+  per overlapping window, `C ∝ N`, coverage 8×, stride 0.75 W. Default remains
+  `block_mean` (E18/E21 checkpoints still load). BAPO factory arch `e30`. Small-model
+  (<10M) protocol now has a falling-CE K1 extension so a late takeoff is not a false kill.
+
+**What changed:**
+- [added] `SlidingWindowPerceiverCompressor` / `swp_geometry` in `nn/perceiver_ar_lm.py`
+  — overlapping CA banks, concat exclusive path only; inplace / identity / prefix-AE illegal.
+- [added] BAPO arch `e30` in `evaluation/bapo_models.py`, probe diagnostics and
+  `analysis/plot_bapo_capability.py` write-geometry panel.
+- [added] `docs/experiments_specs/ahead/E30_sliding_window_perceiver.md` + `_plan.md`.
+- [added] `docs/engineering_specs/small_model_capability_protocol.md` — length-aware LR,
+  `n_windows≥2` gate, falling-CE K1 rule (wired in `verification/bapo_capability_probe.py`).
+  Fair E21 vs E30 write is concat frozen-mean (no inplace). SWP scoring keeps ≥4 heads
+  instead of gcd-dropping (H=384 / 6 Q heads / qdim=128 → 8 heads, not 2).
+- [added] `tests/test_sw_perceiver.py`.
+
+**Git tag:** `arch/e30-sw-perceiver`
+**Related:** `docs/1_Strategy_and_Plans/agenda.md` → E30 current focus;
+`docs/experiments_specs/ahead/E30_sliding_window_perceiver.md`
+
+---
+
 ## [2026-09-17] - E18 vs E21 architecture flow HTML
 
 **Why:**
