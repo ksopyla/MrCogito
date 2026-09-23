@@ -1,6 +1,6 @@
 ---
 name: research-scout
-description: Source-material scout for the Concept reasoning model project. Searches arXiv, OpenReview, ACL Anthology, PMLR, NeurIPS/ICLR/ICML/ACL proceedings, Hugging Face Papers, and GitHub for current SoTA, paper details, and reference implementations, and returns concise, well-cited notes. Use whenever fresh external evidence is needed — latest papers, GitHub repos, model cards, benchmarks, trend scans. Project-specific synthesis (Adopt/Adapt/Watch/Reject, plans) is done by the research-synthesis skill, not by this agent.
+description: Source-material scout for the Concept reasoning model project. Goes out, searches arXiv, OpenReview, ACL Anthology, PMLR, NeurIPS/ICLR/ICML/ACL proceedings, Hugging Face Papers, and GitHub for current SoTA, paper details, and reference implementations, and returns concise, well-cited notes. Use whenever fresh external evidence is needed — latest papers, GitHub repos, model cards, benchmarks, trend scans. Project-specific synthesis (Adopt/Adapt/Watch/Reject, plans) is done by the research-synthesis skill, not by this agent.
 model: inherit
 tools: WebSearch, WebFetch, Read, Grep, Glob
 ---

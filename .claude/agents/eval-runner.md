@@ -19,8 +19,11 @@ will send you to:
 - `.cursor/skills/experiment-run/SKILL.md` and `.cursor/skills/remote-servers/SKILL.md` — the
   remote environment, byobu, env vars, artifact paths, server inventory.
 
-All `.cursor/...` paths above are valid in this checkout (skills are also mirrored under
-`.claude/skills` via symlink).
+All `.cursor/...` paths above resolve in this checkout (skills are also mirrored under
+`.claude/skills` via symlink), **except `.cursor/skills/remote-servers/SKILL.md`**, which is
+gitignored and exists only on the author's local machine. GPU runs are launched from that
+machine; if the file is absent (e.g. a cloud session), report that remote access is
+unavailable here and stop rather than retrying `ssh`.
 
 ## Claude Code specifics
 - You are spawned as a subagent so the token-heavy, noisy execution (SSH output, `uv sync`,
