@@ -20,11 +20,6 @@ see the change — there is one source of truth, never two.
   `.cursor/scripts/wandb-mcp.sh`. Claude Code asks before enabling it on first use.
 - **Settings:** `.claude/settings.json` holds a shared permissions allowlist;
   `.claude/settings.local.json` is auto-managed (your per-session allow/deny decisions).
-- **Cloud sessions:** `.claude/settings.json` also registers a `SessionStart` hook running
-  `.claude/scripts/cloud-session-ssh-install.sh`, which materializes SSH credentials from
-  cloud-environment variables so the agent can reach Odra/Polonez. It is a silent no-op in
-  local sessions. Cloud sessions cannot use port 22 — read the **Claude Code cloud-session
-  specific instructions** in `AGENTS.md` before configuring or debugging remote access.
 
 ## Project context — imported verbatim from the canonical Cursor rules
 The blocks below are the exact content Cursor auto-applies (`alwaysApply: true`), imported

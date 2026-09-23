@@ -21,9 +21,9 @@ will send you to:
 
 All `.cursor/...` paths above resolve in this checkout (skills are also mirrored under
 `.claude/skills` via symlink), **except `.cursor/skills/remote-servers/SKILL.md`**, which is
-gitignored and therefore absent in Claude Code cloud sessions. In a cloud session, take host
-aliases and paths from the injected `~/.ssh/config` instead, and if SSH is not configured
-there, report that blocker and stop — see the cloud section of `AGENTS.md`.
+gitignored and exists only on the author's local machine. GPU runs are launched from that
+machine; if the file is absent (e.g. a cloud session), report that remote access is
+unavailable here and stop rather than retrying `ssh`.
 
 ## Claude Code specifics
 - You are spawned as a subagent so the token-heavy, noisy execution (SSH output, `uv sync`,

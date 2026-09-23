@@ -31,18 +31,5 @@
       "Bash(grep:*)",
       "Bash(nvidia-smi:*)"
     ]
-  },
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "startup|resume",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/scripts/cloud-session-ssh-install.sh"
-          }
-        ]
-      }
-    ]
   }
 }
