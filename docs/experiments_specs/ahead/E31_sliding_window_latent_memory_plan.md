@@ -157,3 +157,22 @@ class LatentMemoryWriter(nn.Module):
         """tok_emb [B,S,e] → dict(k [B,C_r,g,dh] (normed+RoPE), v [B,C_r,g,dh],
         slot_doc [B,C_r], slot_side [B,C_r], slot_pos [B,C_r], diag)."""
 ```
+
+## 10. As built vs spec (2026-09-24, commit `33164e2`)
+| spec item | built | note |
+|---|---|---|
+| tiny embeddings 128, n-grams off | ✓ `--token_embedding_dim 128 --ngram_orders none` (all arms in the job) | E30 keeps its write via `--swp_n_heads 8 --swp_query_dim 128` (e=128 would otherwise widen its scoring to 512) |
+| windows 256 / stride 192, never shrunk | ✓ `lm_geometry` | rows shorter than W → one window |
+| 32 latents, width 512, residual + FFN | ✓ | |
+| 8 heads per latent, no averaging | ✓ per-head weights `[Bn, 8, K, W]` | head diversity logged |
+| address: ID + window start + prior + RoPE at read position | ✓ `q`, sinusoid(start) → `addr`, `prior[K,8,W]`, RoPE at Σ w·t (detached) | |
+| arm A: 2-layer two-way page encoder (256) + 2 rounds | ✓ `e31_page` | writer 4.15 M params at 31M scale |
+| arm B: 3 BiXT rounds + competition | ✓ `e31_bixt` | writer 3.62 M |
+| competition (both arms), null latent optional | ✓ `lm_competition` on, `lm_null_latent` off | |
+| reader width ≥ 320 / latent | ✓ as m = 5 reader entries of 64 (g = 1) | deviation from "5 KV heads" (platform/references stay at g = 1); C = 800 at 1024 |
+| per-window pooling rule, leak fixed, causality test | ✓ `window_pick` (also used by E30) | E30 outputs unchanged on single-document probe rows |
+| context-only control | ✓ `e30_ctx` (causal pre-encoder reach 64) | |
+| per-letter answer accuracy | ✓ `per_position_acc` in eval | same key as the capability-suite branch |
+| 3 seeds, 512 eval rows | wave 1: 1 seed, 256 rows | wave 2 adds seeds |
+| Glyph rung, coarse rung, text rung | not yet | flags exist for the coarse rung (`--lm_window/--lm_stride/--lm_latents`) |
+| param gap | E31 35.3 M / 34.8 M vs E30 31.3 M | spec: matched-depth control if the win < 8 bits |
