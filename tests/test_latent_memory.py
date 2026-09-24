@@ -222,3 +222,31 @@ def test_factory_builds_and_trains(arch):
     else:
         assert m.config.message_write == "latent_memory"
         assert m.config.lm_context == ("bixt" if arch == "e31_bixt" else "page_bidir")
+
+
+def _token_identity_ratio(model, ids):
+    """Within-window spread of token states after the writer's context step, relative to
+    their mean: ≈ 0 means every token collapsed to the window average (identity lost)."""
+    w = model.memory_writer
+    captured = {}
+    orig = w._latent_read
+
+    def spy(z, x, mask, W):
+        captured.setdefault("x", x.detach())
+        return orig(z, x, mask, W)
+
+    w._latent_read = spy
+    with torch.no_grad():
+        model(ids)
+    w._latent_read = orig
+    x = captured["x"]
+    spread = (x - x.mean(1, keepdim=True)).norm(dim=-1).mean()
+    return float(spread / x.mean(1).norm(dim=-1).mean().clamp(min=1e-6))
+
+
+@pytest.mark.parametrize("context", ["page_bidir", "bixt"])
+def test_token_identity_survives_the_context_step(context):
+    """Regression: at init the tiny in_proj output was wiped by the first residual update."""
+    torch.manual_seed(0)
+    m = PerceiverARLM(lm_cfg(lm_context=context, lm_enc_layers=2)).eval()  # post_init scales
+    assert _token_identity_ratio(m, row()) > 0.5

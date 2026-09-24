@@ -202,13 +202,18 @@ class LatentMemoryWriter(nn.Module):
         std = float(cfg.init_std)
 
         self.in_proj = nn.Linear(e, dw, bias=False)
+        # unit-scale token states: without it tok (0.02) × in_proj (0.02) ≈ 0.002, and the first
+        # residual update (≈ window average, ~0.3) wipes each token's identity before any pick
+        self.in_norm = nn.RMSNorm(dw)
         n_enc = int(cfg.lm_enc_layers) if self.context == "page_bidir" else 0
         self.enc = nn.ModuleList([PageEncoderLayer(dw) for _ in range(n_enc)])
         self.enc_dh = self.enc[0].dh if n_enc else 64
 
-        # latents: identity (q) + address (window start) — warm, never zero
-        self.q = nn.Parameter(torch.randn(Kp, D) * std)
+        # latents: identity (q) + address (window start) — warm, never zero; z0 is RMS-normed so
+        # each latent starts at unit scale (its identity is not swamped by the first read)
+        self.q = nn.Parameter(torch.randn(Kp, D))
         self.addr = nn.Linear(_ADDR_FEATS, D, bias=False)
+        self.z0_norm = nn.RMSNorm(D)
         self.z_norm = nn.RMSNorm(D)
         self.x_norm = nn.RMSNorm(dw)
         self.wq = nn.Linear(D, D, bias=False)
@@ -294,7 +299,7 @@ class LatentMemoryWriter(nn.Module):
         W, n_w, K, m = geo.window, geo.n_windows, self.K, self.m
         tok_c, pick, slot_doc_w, slot_side_w, has = window_pick(side, doc, key_valid, geo.starts, W)
         Bn = B * n_w
-        x = self.in_proj(tok_emb)[:, tok_c].reshape(Bn, W, self.dw)
+        x = self.in_norm(self.in_proj(tok_emb))[:, tok_c].reshape(Bn, W, self.dw)
         mask = pick.reshape(Bn, W)
         if len(self.enc):
             rel = torch.arange(W, device=x.device)[None]
@@ -304,7 +309,7 @@ class LatentMemoryWriter(nn.Module):
         starts = torch.tensor(geo.starts, device=x.device, dtype=torch.long)
         start_pos = pos[:, starts]  # [B, n_w] position of each window start (per document)
         z = self.q[None].to(x.dtype) + self.addr(_sinusoid(start_pos).to(x.dtype)).reshape(Bn, 1, self.D)
-        z = z.expand(Bn, -1, -1).contiguous() if z.shape[0] == Bn else z
+        z = self.z0_norm(z)
         w = None
         for _ in range(max(self.rounds, 1)):
             w, dz = self._latent_read(z, x, mask, W)
