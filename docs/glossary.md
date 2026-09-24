@@ -91,6 +91,8 @@ meaningless without knowing which slice it came from.
 | **full-book read (E18)** | the notebook is the uncompressed prefix. One lookup can see every earlier token. |
 | **exclusive compressed read (E21)** | at a `query` boundary the local window is cut; the only prefix the answer may read is compressor slots (typically one slot per 16 tokens). The fair E30 control averages each chunk. |
 | **sliding-window Perceiver write (E30)** | overlapping windows; a few learned questions per window fill the notebook, and the notebook grows with the text. Scored against E21's average on the same exclusive read. |
+| **latent memory write (E31)** | each overlapping window is written by a set of addressed latent vectors that read the window *in context* (two arms: a two-way page encoder first, or latents and tokens refining each other with no encoder). Unlike E30's notes, a latent has its own state and width, not a weighted average of token keys/values. |
+| **salience wall** | the ceiling on what a blind writer can keep: only tokens it can recognise as important from what it sees locally. In E30 the writer's tokens see 16 tokens back, so only 13 of 32 value letters are recognisable (≈ 26 bits). Higher is better; broken by giving the writer more context. |
 | **concept coverage** | how many tokens of the book each learned question is asked to summarize (`W/K`). Short coverage means a smaller window and more notes. The default is about 8. |
 | **INDEX / MATCH / SELECT / HOPS** | BAPO exam classes: copy a marked span; look up a key; pick fact vs decoy; follow a chain. |
 | **information_flow** | recovered bits / prize bits on a packed answer. 1 = full prize; 0 = chance. |

@@ -1,0 +1,523 @@
+<!-- E30 architecture review — 2026-09-23. Self-contained; open in a browser. -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E30 review — sliding-window notebook: what works, what's broken, where next</title>
+<style>
+.viz-root{color-scheme:light;
+  --surface-0:#f4f3ef;--surface-1:#fcfcfb;--surface-2:#efeee9;--line:#dcdad3;
+  --text-primary:#0b0b0b;--text-secondary:#52514e;--text-muted:#7c7b76;
+  --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s7:#4a3aa7;
+  --good:#1a7f37;--warn:#b26b00;--bad:#c62828;
+  --good-bg:#e6f4ea;--warn-bg:#fff4e0;--bad-bg:#fdecea;--info-bg:#eaf2fc;}
+@media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])) .viz-root{color-scheme:dark;
+  --surface-0:#121211;--surface-1:#1a1a19;--surface-2:#242422;--line:#3a3935;
+  --text-primary:#fff;--text-secondary:#c3c2b7;--text-muted:#8f8e86;
+  --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s7:#9085e9;
+  --good:#5cc47a;--warn:#e0a040;--bad:#ef6b6b;
+  --good-bg:#16301f;--warn-bg:#35280f;--bad-bg:#3a1a1a;--info-bg:#15263b;}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--surface-0)}
+.viz-root{font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;color:var(--text-primary);background:var(--surface-0);padding:28px 16px 80px}
+main{max-width:1060px;margin:0 auto}
+h1{font-size:30px;line-height:1.2;margin:0 0 6px}
+h2{font-size:22px;margin:48px 0 6px;padding-top:12px;border-top:1px solid var(--line)}
+h3{font-size:16px;margin:22px 0 6px}
+.sub{color:var(--text-secondary);margin:0 0 18px}
+.kicker{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);font-weight:600}
+p{margin:8px 0}
+.card{background:var(--surface-1);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:14px 0}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+.g4{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.tile{background:var(--surface-1);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.tile .big{font-size:26px;font-weight:700;line-height:1.1;margin:4px 0}
+.tile .lab{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:600}
+.pill{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid currentColor}
+.good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.bg-good{background:var(--good-bg)}.bg-warn{background:var(--warn-bg)}.bg-bad{background:var(--bad-bg)}.bg-info{background:var(--info-bg)}
+.callout{border-radius:10px;padding:12px 16px;margin:14px 0;border-left:4px solid var(--s1);background:var(--info-bg)}
+.callout.warn{border-color:var(--warn);background:var(--warn-bg);color:var(--text-primary)}
+.callout.bad{border-color:var(--bad);background:var(--bad-bg);color:var(--text-primary)}
+.callout.good{border-color:var(--good);background:var(--good-bg);color:var(--text-primary)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600}
+td.num{font-variant-numeric:tabular-nums;text-align:right}
+code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--surface-2);padding:1px 5px;border-radius:4px}
+svg text{fill:var(--text-primary);font-family:inherit}
+svg .muted{fill:var(--text-muted)} svg .sec{fill:var(--text-secondary)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--text-secondary);margin:6px 0}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+#tip{position:fixed;pointer-events:none;background:var(--surface-1);color:var(--text-primary);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.15);opacity:0;transition:opacity .08s;z-index:10;max-width:280px}
+nav.toc{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;margin:10px 0 0}
+nav.toc a{color:var(--s1);text-decoration:none}
+details{margin:8px 0} summary{cursor:pointer;color:var(--text-secondary);font-size:14px}
+.step{display:flex;gap:12px;align-items:flex-start;margin:10px 0}
+.step .n{flex:0 0 28px;height:28px;border-radius:50%;background:var(--s1);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:14px}
+.hit rect,.hit circle{cursor:default}
+</style>
+<body class="viz-root">
+<div id="tip"></div>
+<main>
+
+<div class="kicker">MrCogito · architecture review · 23 Sep 2026</div>
+<h1>The sliding-window notebook (E30): what works, what's broken, and where to go next</h1>
+<p class="sub">A review of the design, the code, the recent runs, how we measure learning, related work, and whether this path leads to a small reasoning model with a 1M–10M-token context.</p>
+<nav class="toc"><a href="#tldr">1 · Short answer</a><a href="#arch">2 · How E30 works</a><a href="#results">3 · Results</a><a href="#testing">4 · How we test</a><a href="#code">5 · Code review</a><a href="#theory">6 · Information flow</a><a href="#landscape">7 · Related work</a><a href="#frontier">8 · Frontier or improvement?</a><a href="#vision">9 · 1M–10M path</a><a href="#jev">10 · The Jev question</a><a href="#recs">11 · Recommendations</a></nav>
+
+<!-- ============================================================ -->
+<h2 id="tldr">1 · The short answer</h2>
+<div class="grid g4">
+  <div class="tile"><div class="lab">Is E30 better than averaging?</div><div class="big good">Yes</div>Better on every hard exam: <b>40 vs 4 bits</b> on the 1024-token chain, <b>28 vs 9</b> on the lookalike exam at 128 tokens.</div>
+  <div class="tile"><div class="lab">Is the code correct?</div><div class="big warn">Mostly</div>No bug touched the published numbers. There's <b>1 leak</b> of future answer tokens (it didn't fire on our rows) and <b>2 design gaps</b> that likely cap performance.</div>
+  <div class="tile"><div class="lab">Is it a new frontier?</div><div class="big warn">No: a strong step</div>The write is nearly <b>DeepSeek-V4's compressor</b>, reached on our own. What's new is several learned questions per window and the exam harness.</div>
+  <div class="tile"><div class="lab">Does it reach 1M–10M?</div><div class="big bad">Not alone</div>It needs a <b>question-aware fetch</b> and a <b>hierarchy</b>. Every frontier system that works at 1M+ has both.</div>
+</div>
+<div class="callout"><b>One sentence:</b> E30 fixed the <i>write</i> (a filter beats an average). The remaining wall is the <i>read</i>. The notebook is written before anyone knows the question, and the reader gets only one glance at it. The next bet should let the question pick pages and then read the original text of those pages. That's "compress to find, fetch to read."</div>
+
+<!-- ============================================================ -->
+<h2 id="arch">2 · How E30 works, as a picture</h2>
+<p><b>Analogy (from the glossary):</b> the text before the question is a <i>book</i>. The reader can't see the book after the QUERY marker. They only see a <i>notebook</i> of notes someone wrote beforehand. E21 wrote one note per 16 tokens by <i>averaging</i> them. E30 lays <b>overlapping pages</b> over the book. Each page has <b>K learned "questions"</b>, and each question writes one note by looking up the tokens it cares about.</p>
+<div class="card">
+<svg viewBox="0 0 1000 430" width="100%" role="img" aria-label="E30 architecture diagram">
+  <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="var(--text-muted)"/></marker></defs>
+  <!-- token strip -->
+  <text x="20" y="28" class="sec" font-size="13" font-weight="600">1 · Input row (sender "book" | QUERY | receiver question + answer)</text>
+  <g>
+    <rect x="20" y="40" width="760" height="30" rx="4" fill="var(--s1)" opacity=".18" stroke="var(--s1)"/>
+    <text x="400" y="60" text-anchor="middle" font-size="13">book tokens (facts, distractors) — N tokens</text>
+    <rect x="782" y="40" width="26" height="30" rx="4" fill="var(--s2)"/><text x="795" y="60" text-anchor="middle" font-size="11" fill="#fff" style="fill:#fff">Q</text>
+    <rect x="810" y="40" width="170" height="30" rx="4" fill="var(--s3)" opacity=".25" stroke="var(--s3)"/>
+    <text x="895" y="60" text-anchor="middle" font-size="13">question → answer</text>
+  </g>
+  <!-- pre encoder -->
+  <text x="20" y="100" class="sec" font-size="13" font-weight="600">2 · One local layer (sliding window of 16) gives every token a little context</text>
+  <path d="M60,108 q20,-14 40,0 M100,108 q20,-14 40,0 M140,108 q20,-14 40,0 M180,108 q20,-14 40,0 M220,108 q20,-14 40,0" fill="none" stroke="var(--text-muted)"/>
+  <!-- windows -->
+  <text x="20" y="140" class="sec" font-size="13" font-weight="600">3 · Overlapping pages (window W, stride 0.75·W) over the book only</text>
+  <g opacity=".95">
+    <rect x="20" y="150" width="250" height="26" rx="4" fill="none" stroke="var(--s7)" stroke-width="2"/>
+    <rect x="207" y="182" width="250" height="26" rx="4" fill="none" stroke="var(--s7)" stroke-width="2"/>
+    <rect x="394" y="150" width="250" height="26" rx="4" fill="none" stroke="var(--s7)" stroke-width="2"/>
+    <rect x="530" y="182" width="250" height="26" rx="4" fill="none" stroke="var(--s7)" stroke-width="2" stroke-dasharray="5 3"/>
+    <text x="145" y="168" text-anchor="middle" font-size="12">page 1</text><text x="332" y="200" text-anchor="middle" font-size="12">page 2</text>
+    <text x="519" y="168" text-anchor="middle" font-size="12">page 3</text><text x="655" y="200" text-anchor="middle" font-size="12">last page, flush-right</text>
+  </g>
+  <!-- bank -->
+  <text x="20" y="240" class="sec" font-size="13" font-weight="600">4 · Each page: K learned questions cross-attend its W tokens → K notes (slots)</text>
+  <g>
+    <rect x="20" y="252" width="250" height="60" rx="6" fill="var(--surface-2)" stroke="var(--line)"/>
+    <g fill="var(--s7)">
+      <circle cx="45" cy="270" r="7"/><circle cx="70" cy="270" r="7"/><circle cx="95" cy="270" r="7"/><circle cx="120" cy="270" r="7"/>
+    </g>
+    <text x="140" y="274" font-size="12">q₁…q_K (same for every page)</text>
+    <text x="30" y="300" font-size="12" class="sec">note = Σ softmax(q·k_t + pos) · (k_t, v_t)</text>
+    <path d="M270,282 L330,282" stroke="var(--text-muted)" marker-end="url(#ar)"/>
+    <g>
+      <rect x="335" y="262" width="18" height="40" rx="3" fill="var(--s4)"/><rect x="357" y="262" width="18" height="40" rx="3" fill="var(--s4)"/><rect x="379" y="262" width="18" height="40" rx="3" fill="var(--s4)"/><rect x="401" y="262" width="18" height="40" rx="3" fill="var(--s4)"/>
+      <text x="335" y="322" font-size="11" class="sec">C = K × pages notes · grows with N (≈ N/5–N/8)</text>
+    </g>
+  </g>
+  <!-- read -->
+  <text x="560" y="240" class="sec" font-size="13" font-weight="600">5 · ONE global read after QUERY</text>
+  <rect x="560" y="252" width="420" height="60" rx="6" fill="var(--surface-2)" stroke="var(--line)"/>
+  <text x="575" y="274" font-size="12">receiver tokens attend: notes (not the book) + own side</text>
+  <text x="575" y="296" font-size="12" class="sec">local layers can't cross QUERY → the notebook is the only channel</text>
+  <path d="M425,282 L555,282" stroke="var(--s4)" stroke-width="2" marker-end="url(#ar)"/>
+  <!-- stack -->
+  <text x="20" y="345" class="sec" font-size="13" font-weight="600">6 · Local layers (block window) → next-token loss on the answer only</text>
+  <rect x="560" y="330" width="420" height="34" rx="6" fill="var(--s3)" opacity=".2" stroke="var(--s3)"/>
+  <text x="770" y="352" text-anchor="middle" font-size="13">answer tokens → cross-entropy → "recovered bits"</text>
+  <path d="M770,312 L770,328" stroke="var(--text-muted)" marker-end="url(#ar)"/>
+  <!-- flaws -->
+  <g font-size="12">
+    <rect x="20" y="380" width="960" height="40" rx="8" fill="var(--bad-bg)"/>
+    <text x="34" y="398" font-weight="700" style="fill:var(--bad)">Where information is lost:</text>
+    <text x="34" y="413">(a) the questions are fixed: they don't know the real question. (b) one note is one weighted average: several facts blur. (c) one glance: no second look after reading.</text>
+  </g>
+</svg>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="results">3 · What the recent runs say</h2>
+<p>Metric: <b>share of the answer's information recovered</b>. This is "recovered bits ÷ prize bits", so 100% means the model fully knows the answer and 0% is chance. Higher is better. Model size ~31M (width 960, 4 layers). Exam: <b>single lookup</b> (find the value stored under a key in the book).</p>
+<div class="card">
+  <div class="legend"><span><i style="background:var(--s1)"></i>Full read (uncompressed book)</span><span><i style="background:var(--s2)"></i>Averaged notebook (E21, 1 note per 16)</span><span><i style="background:var(--s3)"></i>Sliding-window notebook (E30)</span></div>
+  <svg id="c-len" viewBox="0 0 960 330" width="100%" role="img" aria-label="Recovered information versus book length"></svg>
+  <p class="sec" style="font-size:13px;color:var(--text-secondary)">Book lengths 128 to 4096 tokens, one run each. At 1024 and 2048 the <b>full read itself fails</b>, so those points measure <i>what a model learns within the budget</i>, not what fits in the notebook. The 2048 point is 25 bits (39%) with 128-token pages.</p>
+</div>
+<div class="grid g2">
+<div class="card">
+  <h3 style="margin-top:0">Page size matters more than note count</h3>
+  <p style="font-size:14px">1024-token book, 31M model. Recovered bits out of 64.</p>
+  <div class="legend"><span><i style="background:var(--s1)"></i>128-token page (~3 tok/note)</span><span><i style="background:var(--s4)"></i>256-token page (~6)</span><span><i style="background:var(--s2)"></i>512-token page (~11)</span></div>
+  <svg id="c-cov" viewBox="0 0 470 280" width="100%" role="img" aria-label="Coverage sweep"></svg>
+  <p style="font-size:13px">A 512-token page writes nothing on any exam, even with 64 questions per page. <b>My reading:</b> this is what you get when the learned questions have no idea <i>where</i> in the page to look (see code finding 2).</p>
+</div>
+<div class="card">
+  <h3 style="margin-top:0">E30 vs averaging on the hard exams</h3>
+  <p style="font-size:14px">Share of the answer recovered; the full read is the ceiling.</p>
+  <div class="legend"><span><i style="background:var(--s1)"></i>Full read</span><span><i style="background:var(--s2)"></i>Averaged</span><span><i style="background:var(--s3)"></i>E30</span></div>
+  <svg id="c-hard" viewBox="0 0 470 280" width="100%" role="img" aria-label="Hard exams comparison"></svg>
+  <p style="font-size:13px">E30 wins wherever averaging struggles. It still stops at about <b>55–60%</b> on the lookalike exam and the 1024 lookup. The plateau suggests each note holds <i>part</i> of a fact.</p>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="testing">4 · How we test learning, and how much to trust it</h2>
+<div class="grid g2">
+<div class="card">
+<h3 style="margin-top:0">What the harness does well</h3>
+<div class="step"><div class="n">1</div><div><b>Synthetic "DNA" rows</b> with a closed-form floor. You can say exactly how many bits the answer holds (the "prize") and how many a local-only model can get.</div></div>
+<div class="step"><div class="n">2</div><div><b>Recovered bits</b> = (floor − loss) × answer length. This is an honest information measure, and far better than accuracy alone.</div></div>
+<div class="step"><div class="n">3</div><div><b>Channel checks</b>: cut the notebook ("none" → chance) and swap notebooks between rows. Together they prove the notebook carries the answer.</div></div>
+<div class="step"><div class="n">4</div><div><b>Controls</b>: full read (ceiling), local-only (leak check), frozen average (the old write).</div></div>
+</div>
+<div class="card bg-warn" style="border-color:var(--warn)">
+<h3 style="margin-top:0">Where it's fragile</h3>
+<div class="step"><div class="n" style="background:var(--warn)">1</div><div><b>One seed per cell.</b> The "20-bit average" at 16× coverage didn't repeat. Any single-run gap under ~10 bits could be noise.</div></div>
+<div class="step"><div class="n" style="background:var(--warn)">2</div><div><b>64 eval rows</b> (default <code>--eval_rows 64</code>). That's a few hundred answer tokens, so ±3–5 pp swings are expected.</div></div>
+<div class="step"><div class="n" style="background:var(--warn)">3</div><div><b>Step-size cliffs</b> decide the outcome (chart below). The same model on the same exam goes from 99% to chance between 1e-4 and 2e-4.</div></div>
+<div class="step"><div class="n" style="background:var(--warn)">4</div><div><b>The ceiling fails at 1024+.</b> When the full read scores 0, the exam measures <i>trainability</i>, not <i>capacity</i>. The spec's own rule (score only when the full read passes) was waived there.</div></div>
+</div>
+</div>
+<div class="card">
+  <h3 style="margin-top:0">Step-size cliffs: same architecture, same exam, different step size</h3>
+  <svg id="c-lr" viewBox="0 0 960 200" width="100%" role="img" aria-label="Learning rate cliffs"></svg>
+  <p style="font-size:13px">With cliffs this sharp, a single step size per cell can rank architectures by <i>which one likes that step size</i>. <b>Fix:</b> 3 seeds × 2 step sizes per cell, report the median, and add "examples to reach 75%" as the main number. You already started logging that metric in the uncommitted change.</p>
+</div>
+<div class="callout good"><b>A hidden positive:</b> on the 1024 lookup, E30 recovers 26 bits while the <i>uncompressed</i> read gets 0. The notes aren't holding more information than the book does. They're <i>easier to search</i>: 160 notes spread attention less than 1024 tokens do (Hahn 2020, softmax dilution). HiLS (2026) reports the same effect: compressed keys retrieve better because token-level noise averages out. <b>So compression is valuable as an <u>index</u>, even where it fails as a <u>store</u>.</div>
+
+<!-- ============================================================ -->
+<h2 id="code">5 · Code review of the write (<code>SlidingWindowPerceiverCompressor</code>)</h2>
+<p>I read <code>nn/perceiver_ar_lm.py</code> (compressor, slot geometry, masks) and the probe, then ran a perturbation test that changes one later token and checks whether earlier outputs move.</p>
+<table>
+<tr><th style="width:36px">#</th><th>Finding</th><th style="width:110px">Severity</th><th>Did it affect results?</th></tr>
+<tr><td>1</td><td><b>Future-token leak.</b> <code>pool_valid</code> is one mask shared by all pages. If a later page lies fully on the receiver side, its tokens get marked "poolable" <i>for every page</i>. A page that straddles QUERY then writes receiver tokens, answers included, into a sender note that earlier receiver positions can read. <b>Confirmed:</b> in the test-suite geometry (32 tokens, QUERY at 10), changing token 15 changes the outputs at 10–14.</td><td><span class="pill bad">High · latent</span></td><td><b>No.</b> I checked 50 rows for each exam and length used (128–1024). Receivers are 22–68 tokens, so no page is fully receiver-side. It <b>will</b> fire with long answers, multi-turn rows, or language-model pretraining. <b>Fix:</b> intersect the pooling mask with <i>each page's own</i> earliest-side pick, and add a causality test.</td></tr>
+<tr><td>2</td><td><b>No positional role per question.</b> <code>pos_bias</code> has shape [W, heads] and is <i>shared by all K questions</i>. The questions are content-only filters over <code>wk(h)</code>, which carries no position (RoPE is only inside attention). Nothing makes question 3 cover "page quarter 3". The spec's "positional allocation" isn't implemented; the page-centre RoPE is only a label. This matches two observations: at step size 3e-3 the notes <b>collapse to rank ≈1</b>, and 512-token pages write nothing.</td><td><span class="pill bad">High · design</span></td><td><b>Likely yes.</b> It probably explains the coverage wall and the step-size sensitivity. <b>Fix:</b> per-question bias <code>[K, heads, W]</code>, started as a soft Gaussian around each question's own sub-page. The questions then start as "local notes" and learn to specialise.</td></tr>
+<tr><td>3</td><td><b>Heads are averaged before pooling.</b> <code>w = w_h.mean(dim=3)</code>: the 8 scoring heads each pick tokens, then their choices are averaged into <i>one</i> distribution that every K/V head shares. A note can't store "key from token 12 in head 1, value from token 14 in head 2". It becomes a blur of up to 8 picks.</td><td><span class="pill warn">Medium · design</span></td><td><b>Likely a cap.</b> It fits the ~55% plateau (partial facts). <b>Fix:</b> map scoring heads to KV groups (a separate distribution per KV head). Each note then holds g independent picks at zero extra memory.</td></tr>
+<tr><td>4</td><td><b>Note position ≠ content position.</b> Notes are RoPE-stamped at fixed page-centre positions, but their content can come from anywhere in a window of up to 256 tokens. Order-sensitive exams (in-order chain, far copy) read positions that are off by up to W/2.</td><td><span class="pill warn">Medium</span></td><td>Possibly (far copy at 1024 is ~0). <b>Fix:</b> apply RoPE to token keys <i>before</i> pooling, so a sharp pick keeps its exact position. Or stamp each note with its expected position Σ w·t.</td></tr>
+<tr><td>5</td><td><b>Last page is pinned to the right edge.</b> At 512 tokens the page starts are (0, 192, 256), so pages 2 and 3 overlap by <b>75%</b>. The "sliding" claim at 512 rests on about 2.25 distinct pages.</td><td><span class="pill warn">Low–Med</span></td><td>This makes 512 an easy exam (C=96, 5.3×). Use lengths where there are ≥5 pages.</td></tr>
+<tr><td>6</td><td><b>Pooling ignores document boundaries.</b> A page spanning two packed documents pools both. Not causal, but it contaminates across documents.</td><td><span class="pill">Low · latent</span></td><td>No (one document per probe row). Fix it before language-model training.</td></tr>
+<tr><td>7</td><td>The new <code>_examples_to_criterion</code> is correct; <code>examples</code> = step × batch. Reported bits are the <i>final</i> eval, not best-of-run, which is good (no selection bias).</td><td><span class="pill good">OK</span></td><td>—</td></tr>
+</table>
+<details><summary>Reproduce finding 1 (leak test, 20 lines)</summary>
+<pre style="font-size:12px;overflow:auto;background:var(--surface-2);padding:10px;border-radius:8px">m = make_swp(swp_bank_size=4, swp_coverage=4, swp_auto_fit=False)   # from tests/test_sw_perceiver.py
+S, qpos = 32, 10; ids = torch.randint(3, 80, (1, S)); ids[0, qpos] = M
+a = m(ids).logits
+for t in range(qpos+1, S):
+    ids2 = ids.clone(); ids2[0, t] = (ids2[0, t] + 7) % 80 + 3
+    d = (a - m(ids2).logits)[0, :t].abs().amax(-1)
+    print(t, (d > 1e-5).nonzero().flatten().tolist())
+# → perturbing 11..15 changes positions 10..14  (page 0 = [0,16) pools receiver tokens 12–15)</pre></details>
+
+<!-- ============================================================ -->
+<h2 id="theory">6 · Information flow: the bottleneck isn't where we thought</h2>
+<div class="grid g2">
+<div class="card">
+<h3 style="margin-top:0">Capacity isn't the problem</h3>
+<svg id="c-cap" viewBox="0 0 470 230" width="100%" role="img" aria-label="Capacity versus content"></svg>
+<p style="font-size:13px">1024-token DNA book: the content is ≈ 2 kbit (4 letters ≈ 2 bits/token). The notebook has 160 notes × (K+V, 64-dim heads, bf16). Even at a pessimistic <b>1 useful bit per dimension</b> that's ~100× the content. <b>The answer fits many times over, yet we recover ~0.03 kbit.</b> What fails is <b>code design and decodability</b>, not size.</p>
+</div>
+<div class="card">
+<h3 style="margin-top:0">The real dilemma (information bottleneck)</h3>
+<p style="font-size:14px">Tishby's rule: keep what predicts the target <b>Y</b> and throw away the rest. But the notebook is written <b>before Y (the question) is known</b>. That leaves two ways out:</p>
+<div class="step"><div class="n">A</div><div><b>Universal code</b>: store everything in a form any question can decode. With convex averages and one softmax read, that is <i>hard</i>. Superposed facts interfere. Associative memories (Hopfield / delta rule) are the right tool here.</div></div>
+<div class="step"><div class="n">B</div><div><b>Question-aware read</b>: keep compressed notes only as an <b>index</b>. Once the question is known, fetch the original tokens of the top pages. This is DeepSeek-V4 CSA, NSA, HiLS, MSA, Landmark attention and Quest.</div></div>
+<p style="font-size:14px">The frontier uses <b>B</b>, plus a heavily compressed "gist" branch for global context (DeepSeek's HCA ≈ our E21 average!).</p>
+</div>
+</div>
+<div class="card">
+<svg viewBox="0 0 960 250" width="100%" role="img" aria-label="Compress to route, fetch to read">
+  <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--text-muted)"/></marker></defs>
+  <text x="20" y="24" font-size="14" font-weight="700">Today (E30): write blind, read once</text>
+  <rect x="20" y="36" width="200" height="34" rx="6" fill="var(--s1)" opacity=".2" stroke="var(--s1)"/><text x="120" y="58" text-anchor="middle" font-size="13">book (N tokens)</text>
+  <path d="M222,53 L270,53" stroke="var(--text-muted)" marker-end="url(#ar2)"/>
+  <rect x="275" y="36" width="170" height="34" rx="6" fill="var(--s4)" opacity=".3" stroke="var(--s4)"/><text x="360" y="58" text-anchor="middle" font-size="13">notes (fixed questions)</text>
+  <path d="M447,53 L495,53" stroke="var(--text-muted)" marker-end="url(#ar2)"/>
+  <rect x="500" y="36" width="160" height="34" rx="6" fill="var(--s3)" opacity=".25" stroke="var(--s3)"/><text x="580" y="58" text-anchor="middle" font-size="13">1 glance → answer</text>
+  <text x="680" y="58" font-size="13" style="fill:var(--bad)">fact must survive a blind summary</text>
+
+  <text x="20" y="120" font-size="14" font-weight="700">Proposed: compress to route, fetch to read (and look twice)</text>
+  <rect x="20" y="134" width="200" height="34" rx="6" fill="var(--s1)" opacity=".2" stroke="var(--s1)"/><text x="120" y="156" text-anchor="middle" font-size="13">book (N tokens, kept)</text>
+  <path d="M222,151 L270,151" stroke="var(--text-muted)" marker-end="url(#ar2)"/>
+  <rect x="275" y="134" width="170" height="34" rx="6" fill="var(--s4)" opacity=".3" stroke="var(--s4)"/><text x="360" y="156" text-anchor="middle" font-size="13">E30 notes = page index</text>
+  <path d="M447,151 L495,151" stroke="var(--text-muted)" marker-end="url(#ar2)"/>
+  <rect x="500" y="134" width="170" height="34" rx="6" fill="var(--s7)" opacity=".25" stroke="var(--s7)"/><text x="585" y="156" text-anchor="middle" font-size="13">question scores pages</text>
+  <path d="M672,151 L720,151" stroke="var(--text-muted)" marker-end="url(#ar2)"/>
+  <rect x="725" y="134" width="215" height="34" rx="6" fill="var(--s3)" opacity=".25" stroke="var(--s3)"/><text x="832" y="156" text-anchor="middle" font-size="13">read raw tokens of top-k pages</text>
+  <path d="M832,170 C832,215 585,215 585,172" fill="none" stroke="var(--s7)" stroke-dasharray="5 4" marker-end="url(#ar2)"/>
+  <text x="708" y="232" text-anchor="middle" font-size="12" class="sec">second hop: updated question re-scores pages (multi-hop / chains)</text>
+  <text x="20" y="200" font-size="12" class="sec">Cost per question ≈ C + k·W instead of N.</text>
+  <text x="20" y="216" font-size="12" class="sec">Stays "concept-first": notes decide what to read.</text>
+</svg>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="landscape">7 · Similar architectures (2025–2026)</h2>
+<div class="card">
+<svg id="c-map" viewBox="0 0 960 440" width="100%" role="img" aria-label="Landscape map"></svg>
+<p style="font-size:13px">Horizontal: how much the <b>question</b> shapes what is read (blind summary → question-aware fetch). Vertical: <b>length demonstrated</b>. Hover a dot for details. Top-right is where every million-token system sits.</p>
+</div>
+<table>
+<tr><th>System</th><th>What it does</th><th>Link to E30</th><th>Take</th></tr>
+<tr><td><b>DeepSeek-V4 CSA + HCA</b> (Jun 2026)</td><td>CSA: softmax-gated pooling of overlapping KV windows with a learned positional bias (4×), then a "lightning indexer" picks the top-512/1024 blocks per query. HCA: 128× pooled gist, read densely. Interleaved layers; 1M context.</td><td><b>CSA's compressor is almost exactly the E30 write</b> (overlap, softmax pool, positional bias). HCA ≈ E21's average.</td><td class="good"><b>Adopt the indexer + top-k idea</b></td></tr>
+<tr><td><b>HiLS attention</b> (Jul 2026)</td><td>Chunk selection learned end-to-end: each query attends inside each retrieved chunk, and outputs are fused by retrieval score, so the LM loss trains the retrieval. 345M models, 90% retrieval at 64× the training length (RULER to 4M).</td><td>Shows a small model can extrapolate far if retrieval is differentiable.</td><td class="good"><b>Adopt the fusion trick</b></td></tr>
+<tr><td><b>NSA</b> (DeepSeek 2025)</td><td>Three branches: compressed blocks, selected raw blocks, sliding window.</td><td>Same pattern; E30 is only the first branch.</td><td>Reference</td></tr>
+<tr><td><b>MSA</b> (EverMind 2026)</td><td>Trainable latent memory with sparse retrieval interleaved with generation; memory banks to 10M–100M tokens (4B backbone).</td><td>Retrieval inside the forward pass, at our target lengths.</td><td>Watch</td></tr>
+<tr><td><b>Titans / Gated DeltaNet / Kimi Linear</b></td><td>Memory = a matrix updated by a delta rule, a true associative store.</td><td>Route A: a better <i>store</i> than convex notes.</td><td class="warn">Bold alternative</td></tr>
+<tr><td><b>RMT / ARMT</b> (BABILong)</td><td>Segment-recurrent memory tokens; small models read 10M+ tokens on BABILong.</td><td>Recurrence as another way to reach 10M.</td><td>Reference</td></tr>
+<tr><td><b>Recursive Language Models</b> (MIT, 2025–26)</td><td>A language model keeps the prompt in a REPL, pulls slices, and calls itself on them. Works at 10M+ tokens with no training.</td><td>Proves "fetch, then read" beats "summarise, then answer" at 10M.</td><td>Reference</td></tr>
+<tr><td><b>TRM</b> (Samsung, 2025)</td><td>7M params, 2 layers, looped latent refinement; 45% on ARC-AGI-1.</td><td>Evidence that small + recursive works for reasoning (priority 1).</td><td>Pair with E19 loops</td></tr>
+<tr><td><b>VL-JEPA</b> (Meta, Dec 2025)</td><td>Predicts answer <i>embeddings</i>, decodes text only when needed (2.85× fewer decodes).</td><td>Matches "decoder = crystallisation".</td><td>Watch</td></tr>
+<tr><td><b>Jev</b> (TypeSafe, Sep 2026)</td><td>Closed "decision-only" model: typed choice/score/yes-no outputs with calibrated probabilities. No paper.</td><td>See section 10.</td><td>Borrow the readout, don't pivot</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="frontier">8 · Honest assessment: frontier or improvement?</h2>
+<div class="card">
+<svg id="c-scale" viewBox="0 0 960 150" width="100%" role="img" aria-label="Novelty scale"></svg>
+</div>
+<div class="grid g2">
+<div class="card"><h3 style="margin-top:0" class="good">What's real and yours</h3>
+<ul style="margin:0;padding-left:20px">
+<li>A clean result that <b>a learned filter beats an average</b> as the write, where the notebook is the only channel. Most papers never isolate this, because they keep a raw sliding window beside the compressor.</li>
+<li><b>The exam harness</b> (recovered bits, channel cuts, the exclusive mask) is more rigorous than most compression papers. It's arguably the most publishable asset.</li>
+<li>Evidence that compression <b>helps learning to find things</b> (E30 beats the full read at 1024).</li>
+</ul></div>
+<div class="card"><h3 style="margin-top:0" class="warn">What's not new</h3>
+<ul style="margin:0;padding-left:20px">
+<li>Overlapping windows + softmax pooling + positional bias is DeepSeek-V4's CSA compressor. Several learned queries per window is Q-Former / Perceiver-resampler applied per chunk.</li>
+<li>Question-blind compression capping retrieval is a known result (ICAE, gist tokens, Fine-KV, DeepSeek-OCR: ~97% at 10×, ~60% at 20×).</li>
+<li>Our ledger shows the same curve: fine at ≤5×, partial at 6–8×, dead at 11×+ per note.</li>
+</ul></div>
+</div>
+<div class="callout warn"><b>Verdict:</b> E30 is a <b>big improvement inside our programme</b> (it unblocked the averaging wall), not a frontier architecture. On its own, a question-blind notebook can't reach 1M+ with exact retrieval. That's a structural limit, not a tuning issue. The frontier move is to make <b>the concept layer the index and the controller</b>: notes decide what to read, then the model reasons over what it read, in loops. A small model that learns this end-to-end at 4–32K and extrapolates to 1M+ doesn't exist in the open literature below ~300M parameters. <b>That would be novel.</b></div>
+
+<!-- ============================================================ -->
+<h2 id="vision">9 · Can this reach a small 1M–10M-context reasoning model?</h2>
+<div class="grid g2">
+<div class="card">
+<h3 style="margin-top:0">Cost per question, per global layer</h3>
+<svg id="c-cost" viewBox="0 0 470 280" width="100%" role="img" aria-label="Cost scaling"></svg>
+<p style="font-size:13px">Log scale. One flat notebook (C = N/8) still grows linearly: 1.25M notes at 10M tokens. A <b>3-level hierarchy with top-k fetch</b> stays at ~10⁴ operations per question at any length.</p>
+</div>
+<div class="card">
+<h3 style="margin-top:0">What it would take</h3>
+<div class="step"><div class="n">1</div><div><b>Hierarchy</b>: pages → chapters → volumes (8× each level). The question descends top-k at each level: log-depth, like a B-tree.</div></div>
+<div class="step"><div class="n">2</div><div><b>Train short, run long</b>: train at 4–32K and extrapolate 64–256× (HiLS shows 64× at 345M). Nobody can train a small model at 10M directly.</div></div>
+<div class="step"><div class="n">3</div><div><b>Loops</b>: the answer to a chain needs k hops, and each hop is a new fetch (E19 looped refinement plus TRM-style deep supervision).</div></div>
+<div class="step"><div class="n">4</div><div><b>Scope</b>: a small model reasons over <i>given</i> text. It can't hold world knowledge. That's fine, and it's the RLM / BABILong niche.</div></div>
+<p style="font-size:14px"><b>Feasibility:</b> 1M is realistic with this design. 10M is realistic for retrieval-style reasoning and speculative for dense global reasoning ("summarise everything"), which has no known efficient solution.</p>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="jev">10 · The Jev question: is "output only a decision" the right pivot?</h2>
+<div class="grid g3">
+<div class="tile"><div class="lab">What Jev is</div><p style="font-size:14px">A closed product (Sep 2026): typed answers (choice ≤255 / score / yes-no) with calibrated probabilities, in one parallel pass. No paper or weights. Claims come from the company. An open clone already <b>reads option logits from a 4B LM</b>. The founder says the moat is <i>data</i>, not architecture.</p></div>
+<div class="tile"><div class="lab">As a pivot</div><div class="big bad">No</div><p style="font-size:14px">It isn't an architectural idea you can research. It's a product interface on top of any encoder. Pivoting would abandon priorities 1–3 (reasoning core, long context, bandwidth).</p></div>
+<div class="tile"><div class="lab">As something to borrow</div><div class="big good">Yes</div><p style="font-size:14px">A <b>decision head is the natural first product for a concept encoder</b>. You don't have to generate text, only read a long input and answer with a calibrated choice. That's much easier than fluent generation and still tests the compression.</p></div>
+</div>
+<div class="callout"><b>Concrete use:</b> (1) Add a typed/calibrated readout (choice logits + Brier score / ECE) to the DNA and CogitoProbe exams: cleaner than token CE for multi-token answers. (2) Later milestone: <b>"read 1M tokens, return a calibrated decision"</b> (contract review, log triage, routing). Nobody serves this cheaply, and a small concept model is the right shape for it. VL-JEPA (predict the answer <i>embedding</i>, decode only if asked) is the research-grade version of the same idea and fits the "decoder = crystallisation" vision.</div>
+
+<!-- ============================================================ -->
+<h2 id="recs">11 · Recommendations, in order</h2>
+<div class="card">
+<svg id="c-recs" viewBox="0 0 960 360" width="100%" role="img" aria-label="Recommendation roadmap"></svg>
+</div>
+<table>
+<tr><th>When</th><th>Do</th><th>Why / kill test</th></tr>
+<tr><td><b>Now</b><br><span class="sec" style="color:var(--text-secondary)">≤1 day, CPU</span></td><td><b>Fix the write</b>: (a) per-page pooling mask + a causality test (perturb a later token, earlier logits must not move); (b) per-question positional prior <code>[K,H,W]</code>; (c) per-KV-head pooling; (d) RoPE before pooling. Behind flags, with the old path the default.</td><td>Re-run the 1024 chain and lookup at 8× and 16× coverage. <b>Expect:</b> 16× stops being zero, and the ~55% plateau rises. If nothing moves, the plateau is the read, not the write.</td></tr>
+<tr><td><b>Now</b></td><td><b>Harden the exam</b>: 3 seeds × 2 step sizes per cell, <code>--eval_rows 512</code>, report median and examples-to-75%. Score only rungs where the full read passes, or label them "trainability".</td><td>Keeps us from ranking architectures by which one likes a given step size.</td></tr>
+<tr><td><b>Next bet</b><br><span class="sec" style="color:var(--text-secondary)">one spec</span></td><td><b>Compress to route, fetch to read</b>: E30 notes score pages, the question pulls raw tokens from the top-k pages (k=2–4), and the fused output is weighted by page score (HiLS) so the choice is trained by the answer loss. Keep the exclusive mask everywhere else.</td><td><b>Claim:</b> passes the lookup and chain at 1024–4096, where both notebooks and the full read fail, at ≤ C + k·W reads per question. <b>Kill:</b> doesn't beat E30 at 1024 on 3 seeds.</td></tr>
+<tr><td><b>Then</b></td><td><b>Train short, test long</b>: train at 1–2K and evaluate at 8K, 32K, 128K without retraining.</td><td>This is the number that decides the 1M–10M vision: retrieval accuracy vs extrapolation factor.</td></tr>
+<tr><td><b>Then</b></td><td><b>Two glances</b>: loop the fetch (E19) for the in-order chain at 2048, where everything dies today.</td><td>Multi-hop needs multiple reads: one glance can't follow a 4-hop chain in a long book.</td></tr>
+<tr><td><b>Parallel, bold</b></td><td><b>Associative notes</b>: each page writes a small delta-rule memory matrix instead of K averages ("a concept is a matrix, not a vector").</td><td>The principled answer to a question-blind store. If it beats E30 on lookup at the same bytes, it's the new write.</td></tr>
+<tr><td><b>Don't</b></td><td>Widen the model, raise the note count, add a note-to-note mixer, or pivot to decision-only.</td><td>Your ledger already shows that width doesn't finish a missed exam, and the gap is structural.</td></tr>
+</table>
+
+<h3>Sources</h3>
+<ul style="font-size:13px">
+<li><a href="https://arxiv.org/abs/2606.19348">DeepSeek-V4 (CSA/HCA)</a> · <a href="https://sebastianraschka.com/llm-architecture-gallery/csa-hca/">Raschka CSA/HCA explainer</a> · <a href="https://huggingface.co/blog/deepseekv4">HF blog</a></li>
+<li><a href="https://arxiv.org/abs/2607.02980">HiLS: Hierarchical Sparse Attention Done Right</a> · <a href="https://github.com/EverMind-AI/MSA">MSA: Memory Sparse Attention</a> · <a href="https://arxiv.org/pdf/2606.09659">End-to-End Context Compression at Scale</a></li>
+<li><a href="https://arxiv.org/abs/2512.24601">Recursive Language Models</a> · <a href="https://github.com/SamsungSAILMontreal/TinyRecursiveModels">Tiny Recursive Models</a></li>
+<li><a href="https://arxiv.org/abs/2512.10942">VL-JEPA</a> · <a href="https://arxiv.org/abs/2509.14252">LLM-JEPA</a></li>
+<li><a href="https://en.wikipedia.org/wiki/Jev_(AI_model)">Jev (Wikipedia)</a> · <a href="https://www.tomshardware.com/tech-industry/artificial-intelligence/typesafe-ais-jev-offers-an-alternative-to-llms-that-claims-to-be-193x-faster-and-445x-cheaper-system-one-type-model-is-bespoke-for-probabilistic-decision-making">Tom's Hardware on Jev</a> · <a href="https://www.heise.de/en/news/AI-model-Jev-to-make-machines-decide-faster-11457071.html">heise</a></li>
+<li>Internal: E30 spec and 4 run reports (21–22 Sep), <code>nn/perceiver_ar_lm.py</code>, <code>verification/bapo_capability_probe.py</code>.</li>
+</ul>
+</main>
+
+<script>
+const css = n => getComputedStyle(document.body).getPropertyValue(n).trim();
+const tip = document.getElementById('tip');
+function showTip(e, html){tip.innerHTML=html;tip.style.opacity=1;tip.style.left=Math.min(e.clientX+14, innerWidth-300)+'px';tip.style.top=(e.clientY+14)+'px';}
+function hideTip(){tip.style.opacity=0;}
+const NS='http://www.w3.org/2000/svg';
+function el(tag, attrs, parent, text){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(text!=null)e.textContent=text;if(parent)parent.appendChild(e);return e;}
+function hover(node, html){node.addEventListener('mousemove',e=>showTip(e,html));node.addEventListener('mouseleave',hideTip);}
+
+/* ---------- 1. length chart (share of prize) ---------- */
+(function(){
+  const svg=document.getElementById('c-len'); const W=960,H=330,m={l:60,r:30,t:20,b:50};
+  const L=[128,256,512,1024,2048,4096];
+  const S=[
+    {n:'Full read',c:'--s1',v:[11.4/32,47.2/48,48/48,0,0,0],raw:['11.4/32','47.2/48','48.0/48','0/64','0/64','0/64']},
+    {n:'Averaged notebook',c:'--s2',v:[14.7/32,40.9/48,44/48,0,0,0],raw:['14.7/32','40.9/48','44.0/48','0/64','0/64','0/64']},
+    {n:'Sliding-window notebook (E30)',c:'--s3',v:[28/32,46.9/48,47.6/48,25.7/64,8.3/64,0],raw:['28.0/32','46.9/48','47.6/48','25.7/64','8.3/64','0/64']},
+  ];
+  const x=i=>m.l+i*(W-m.l-m.r)/(L.length-1), y=v=>H-m.b-v*(H-m.t-m.b);
+  [0,.25,.5,.75,1].forEach(g=>{el('line',{x1:m.l,x2:W-m.r,y1:y(g),y2:y(g),stroke:css('--line')},svg);el('text',{x:m.l-8,y:y(g)+4,'text-anchor':'end','font-size':12,class:'muted'},svg,Math.round(g*100)+'%');});
+  L.forEach((l,i)=>el('text',{x:x(i),y:H-m.b+20,'text-anchor':'middle','font-size':12,class:'muted'},svg,l));
+  el('text',{x:(W)/2,y:H-8,'text-anchor':'middle','font-size':12,class:'sec'},svg,'book length (tokens, doubling)');
+  // shaded region: full read fails
+  el('rect',{x:x(2.5),y:m.t,width:x(5)-x(2.5),height:H-m.t-m.b,fill:css('--bad-bg'),opacity:.7},svg);
+  el('text',{x:x(3.75),y:m.t+16,'text-anchor':'middle','font-size':12,style:'fill:var(--bad)'},svg,'full read also fails → trainability zone');
+  S.forEach((s,si)=>{
+    const d=s.v.map((v,i)=>(i?'L':'M')+x(i)+','+y(v)).join('');
+    el('path',{d,fill:'none',stroke:`var(${s.c})`,'stroke-width':2.5},svg);
+    s.v.forEach((v,i)=>{const off=(si-1)*3;const c=el('circle',{cx:x(i)+off,cy:y(v),r:5,fill:`var(${s.c})`,stroke:css('--surface-1'),'stroke-width':2},svg);
+      const h=el('circle',{cx:x(i)+off,cy:y(v),r:14,fill:'transparent'},svg);hover(h,`<b>${s.n}</b><br>${L[i]} tokens: ${s.raw[i]} bits (${Math.round(v*100)}%)`);});
+  });
+  el('text',{x:x(3)+8,y:y(25.7/64)-10,'font-size':12,class:'sec'},svg,'E30 alone above chance');
+})();
+
+/* ---------- grouped bars helper ---------- */
+function bars(id, cats, series, max, unit, fmt){
+  const svg=document.getElementById(id); const W=470,H=280,m={l:44,r:10,t:14,b:44};
+  const y=v=>H-m.b-v/max*(H-m.t-m.b);
+  for(let g=0;g<=4;g++){const v=max*g/4;el('line',{x1:m.l,x2:W-m.r,y1:y(v),y2:y(v),stroke:css('--line')},svg);el('text',{x:m.l-6,y:y(v)+4,'text-anchor':'end','font-size':11,class:'muted'},svg,fmt(v));}
+  const gw=(W-m.l-m.r)/cats.length, bw=Math.min(28,(gw-24)/series.length-2);
+  cats.forEach((c,ci)=>{
+    const x0=m.l+ci*gw+(gw-(bw+2)*series.length)/2;
+    series.forEach((s,si)=>{const v=s.v[ci];const bx=x0+si*(bw+2);const hgt=Math.max(1.5,H-m.b-y(v));
+      const r=el('rect',{x:bx,y:H-m.b-hgt,width:bw,height:hgt,rx:4,fill:`var(${s.c})`},svg);
+      hover(r,`<b>${s.n}</b><br>${c.replace('\n',' ')}: ${s.raw?s.raw[ci]:fmt(v)}${unit}`);
+      if(v===0) el('text',{x:bx+bw/2,y:H-m.b-5,'text-anchor':'middle','font-size':10,class:'muted'},svg,'0');
+    });
+    c.split('\n').forEach((t,li)=>el('text',{x:m.l+ci*gw+gw/2,y:H-m.b+16+li*13,'text-anchor':'middle','font-size':11,class:'sec'},svg,t));
+  });
+}
+bars('c-cov',['in-order\n4-hop chain','lookalike','single\nlookup'],[
+  {n:'128-token page',c:'--s1',v:[36,25,26]},{n:'256-token page',c:'--s4',v:[40,26,26]},{n:'512-token page',c:'--s2',v:[0,0,0]}],64,' bits of 64',v=>Math.round(v));
+bars('c-hard',['lookalike\n128 tok','in-order chain\n1024 tok','lookalike\n1024 tok'],[
+  {n:'Full read',c:'--s1',v:[31.3/32,63.3/64,62.6/64],raw:['31.3/32 bits','63.3/64 bits','62.6/64 bits']},
+  {n:'Averaged',c:'--s2',v:[8.8/32,4/64,18.7/64],raw:['8.8/32 bits','4.0/64 bits','18.7/64 bits']},
+  {n:'E30',c:'--s3',v:[27.8/32,40.1/64,25.9/64],raw:['27.8/32 bits','40.1/64 bits','25.9/64 bits']}],1,'',v=>Math.round(v*100)+'%');
+
+/* ---------- LR cliffs ---------- */
+(function(){
+  const svg=document.getElementById('c-lr'); const rows=[
+    ['Full read · chain 2048 tokens',[[1e-4,63/64,'63/64 bits'],[2e-4,0,'0 bits']]],
+    ['All arms · lookup 1024 tokens',[[1e-4,1,'E30 26 bits (others 0)'],[3e-4,0,'0 bits for every arm']]],
+    ['E30 · 31M, 128 tokens',[[3e-4,28/32,'28/32 bits (GPU)'],[1e-3,0,'rank-collapsed notes (CPU)']]],
+    ['E30 · 5M, 128 tokens',[[1e-3,1,'12 bits, live (INDEX)'],[3e-3,0,'0 bits, rank ≈1']]],
+  ];
+  const x=v=>260+(Math.log10(v)+4.5)/(2)*640; // 3e-5..3e-3
+  [1e-4,3e-4,1e-3,3e-3].forEach(t=>{el('line',{x1:x(t),x2:x(t),y1:10,y2:170,stroke:css('--line')},svg);el('text',{x:x(t),y:190,'text-anchor':'middle','font-size':11,class:'muted'},svg,t.toExponential(0).replace('e-','e-'));});
+  rows.forEach((r,i)=>{const yy=28+i*40;el('text',{x:250,y:yy+4,'text-anchor':'end','font-size':12,class:'sec'},svg,r[0]);
+    el('line',{x1:x(r[1][0][0]),x2:x(r[1][1][0]),y1:yy,y2:yy,stroke:css('--text-muted'),'stroke-dasharray':'3 3'},svg);
+    r[1].forEach(p=>{const good=p[1]>0.3;const c=el('circle',{cx:x(p[0]),cy:yy,r:8,fill:good?css('--good'):css('--bad'),stroke:css('--surface-1'),'stroke-width':2},svg);
+      el('text',{x:x(p[0])+14,y:yy+4,'font-size':11},svg,good?'learns':'chance');
+      const h=el('circle',{cx:x(p[0]),cy:yy,r:16,fill:'transparent'},svg);hover(h,`<b>${r[0]}</b><br>step ${p[0]}: ${p[2]}`);});
+  });
+})();
+
+/* ---------- capacity bar (log) ---------- */
+(function(){
+  const svg=document.getElementById('c-cap'); const items=[
+    ['Book content (1024 DNA tokens)',2048,'--s1'],['Notebook, 1 bit/dim (pessimistic)',160*2*5*64,'--s4'],['Notebook, bf16 nominal',160*2*5*64*16,'--s7'],['What we recover (lookup, E30)',26,'--s3']];
+  const x=v=>8+Math.log10(v)/7*450;
+  [1,2,3,4,5,6,7].forEach(p=>{el('line',{x1:x(10**p),x2:x(10**p),y1:10,y2:190,stroke:css('--line')},svg);el('text',{x:x(10**p),y:206,'text-anchor':'middle','font-size':10,class:'muted'},svg,'10'+['⁰','¹','²','³','⁴','⁵','⁶','⁷'][p]);});
+  el('text',{x:235,y:224,'text-anchor':'middle','font-size':11,class:'sec'},svg,'bits (log scale)');
+  items.forEach((it,i)=>{const yy=14+i*44;el('text',{x:8,y:yy+10,'font-size':11,class:'sec'},svg,it[0]);
+    const r=el('rect',{x:x(1),y:yy+16,width:x(it[1])-x(1),height:16,rx:4,fill:`var(${it[2]})`},svg);
+    hover(r,`<b>${it[0]}</b><br>≈ ${it[1].toLocaleString()} bits<br><span style="color:var(--text-muted)">assumes 5 KV heads × 64 dims, K+V (illustrative)</span>`);});
+})();
+
+/* ---------- landscape map ---------- */
+(function(){
+  const svg=document.getElementById('c-map'); const W=960,H=440,m={l:70,r:30,t:20,b:50};
+  const x=v=>m.l+v*(W-m.l-m.r), y=v=>H-m.b-(Math.log10(v)-2)/(8-2)*(H-m.t-m.b);
+  [2,3,4,5,6,7,8].forEach(p=>{el('line',{x1:m.l,x2:W-m.r,y1:y(10**p),y2:y(10**p),stroke:css('--line')},svg);el('text',{x:m.l-8,y:y(10**p)+4,'text-anchor':'end','font-size':11,class:'muted'},svg,['100','1K','10K','100K','1M','10M','100M'][p-2]);});
+  el('text',{x:m.l,y:H-14,'font-size':12,class:'sec'},svg,'← blind summary (question-agnostic write)');
+  el('text',{x:W-m.r,y:H-14,'text-anchor':'end','font-size':12,class:'sec'},svg,'question-aware fetch / recursion →');
+  el('rect',{x:x(.55),y:y(1e8),width:x(1)-x(.55),height:y(3e5)-y(1e8),rx:10,fill:css('--good-bg'),opacity:.8},svg);
+  el('text',{x:x(.77),y:y(1e8)+18,'text-anchor':'middle','font-size':12,style:'fill:var(--good)'},svg,'where 1M+ systems live');
+  const P=[
+    ['E30 (ours)',.22,2048,'--s3','Sliding-window notebook. Partial lookup at 1–2K; chance at 4K. Blind write, one read.',1],
+    ['E21 average (ours)',.08,1024,'--s2','One mean per 16 tokens. Dies on lookup at 1K.',0],
+    ['ICAE / gist tokens',.15,4000,'--s4','Blind soft compression into a frozen LM; 4× fine, 16× collapses.',0],
+    ['DeepSeek-OCR',.12,1e4,'--s4','Optical compression: ~97% at 10×, ~60% at 20×.',0],
+    ['HCA (DeepSeek-V4)',.18,1e6,'--s7','128× pooled gist branch; always paired with CSA.',0],
+    ['CSA (DeepSeek-V4)',.72,1e6,'--s1','Our write + lightning indexer top-k. 1M context in production.',0],
+    ['NSA',.68,6.4e4,'--s1','Compressed + selected raw + sliding branches.',0],
+    ['HiLS',.8,4e6,'--s1','End-to-end chunk retrieval; 345M; RULER to 4M; 64× extrapolation.',0],
+    ['MSA',.84,2.2e7,'--s1','Trainable latent memory + sparse retrieval, 10M–100M memory banks.',0],
+    ['RMT / ARMT',.4,1e7,'--s7','Recurrent memory tokens; BABILong 10M+ with small models.',0],
+    ['Titans / DeltaNet',.45,2e6,'--s7','Associative matrix memory updated by a delta rule.',0],
+    ['Recursive LMs',.95,1e7,'--s1','LM navigates the prompt as data; 10M+ tokens, no training.',0],
+  ];
+  P.forEach(p=>{const cx=x(p[1]),cy=y(p[2]);const c=el('circle',{cx,cy,r:p[5]?10:7,fill:`var(${p[3]})`,stroke:p[5]?css('--text-primary'):css('--surface-1'),'stroke-width':2},svg);
+    const left=p[1]>0.9;el('text',{x:left?cx-12:cx+12,y:cy+4,'text-anchor':left?'end':'start','font-size':12,'font-weight':p[5]?700:400},svg,p[0]);
+    const h=el('circle',{cx,cy,r:18,fill:'transparent'},svg);hover(h,`<b>${p[0]}</b><br>${p[4]}`);});
+  const a=el('path',{d:`M${x(.25)},${y(2048)-12} C ${x(.4)},${y(5e4)} ${x(.55)},${y(3e5)} ${x(.66)},${y(8e5)}`,fill:'none',stroke:css('--s3'),'stroke-width':2,'stroke-dasharray':'6 4'},svg);
+  el('text',{x:x(.47),y:y(2e4),'font-size':12,'font-weight':600,style:'fill:var(--s3)'},svg,'proposed move: E30 as index + fetch');
+})();
+
+/* ---------- novelty scale ---------- */
+(function(){
+  const svg=document.getElementById('c-scale'); const x0=40,x1=920;
+  const grad=el('linearGradient',{id:'gr'},el('defs',{},svg));
+  el('stop',{offset:'0%','stop-color':css('--surface-2')},grad);el('stop',{offset:'100%','stop-color':css('--s7')},grad);
+  el('rect',{x:x0,y:50,width:x1-x0,height:16,rx:8,fill:'url(#gr)'},svg);
+  [['retuning',0],['solid step in-program',.35],['convergent with SOTA',.5],['novel composition',.72],['new frontier',1]].forEach(t=>{el('text',{x:x0+t[1]*(x1-x0),y:40,'text-anchor':t[1]==0?'start':t[1]==1?'end':'middle','font-size':12,class:'sec'},svg,t[0]);});
+  const mk=(v,lab,c,yy)=>{el('path',{d:`M${x0+v*(x1-x0)},70 l-7,14 h14z`,fill:c},svg);el('text',{x:x0+v*(x1-x0),y:yy,'text-anchor':'middle','font-size':13,'font-weight':700},svg,lab);};
+  mk(.42,'E30 today',css('--s3'),102);
+  mk(.8,'E30 as index + fetch + loops, small & extrapolating',css('--s7'),128);
+})();
+
+/* ---------- cost chart ---------- */
+(function(){
+  const svg=document.getElementById('c-cost'); const W=470,H=280,m={l:50,r:14,t:14,b:44};
+  const Ns=[1e3,1e4,1e5,1e6,1e7]; const x=v=>m.l+(Math.log10(v)-3)/4*(W-m.l-m.r), y=v=>H-m.b-(Math.log10(v)-2)/(7.4-2)*(H-m.t-m.b);
+  [2,3,4,5,6,7].forEach(p=>{el('line',{x1:m.l,x2:W-m.r,y1:y(10**p),y2:y(10**p),stroke:css('--line')},svg);el('text',{x:m.l-6,y:y(10**p)+4,'text-anchor':'end','font-size':10,class:'muted'},svg,'10'+['²','³','⁴','⁵','⁶','⁷'][p-2]);});
+  Ns.forEach(n=>el('text',{x:x(n),y:H-m.b+16,'text-anchor':'middle','font-size':11,class:'muted'},svg,{1e3:'1K',1e4:'10K',1e5:'100K',1e6:'1M',1e7:'10M'}[n]));
+  el('text',{x:W/2,y:H-8,'text-anchor':'middle','font-size':11,class:'sec'},svg,'context length (tokens)');
+  const S=[['Full read (N keys)','--s1',n=>n],['Flat notebook, C=N/8','--s2',n=>n/8],['3-level hierarchy + top-4 fetch','--s3',n=>Math.max(n/512,64)+3*4*8+4*256]];
+  S.forEach(s=>{const pts=[];for(let e=3;e<=7;e+=.1)pts.push([10**e,s[2](10**e)]);
+    el('path',{d:pts.map((p,i)=>(i?'L':'M')+x(p[0])+','+y(Math.min(p[1],1e7))).join(''),fill:'none',stroke:`var(${s[1]})`,'stroke-width':2.5},svg);
+    Ns.forEach(n=>{const h=el('circle',{cx:x(n),cy:y(Math.min(s[2](n),1e7)),r:10,fill:'transparent'},svg);hover(h,`<b>${s[0]}</b><br>${n.toLocaleString()} tokens → ~${Math.round(s[2](n)).toLocaleString()} keys read per question`);
+      el('circle',{cx:x(n),cy:y(Math.min(s[2](n),1e7)),r:4,fill:`var(${s[1]})`},svg);});
+    const last=s[2](1e7);el('text',{x:x(1e7)-6,y:y(Math.min(last,1e7))-8,'text-anchor':'end','font-size':11,class:'sec'},svg,s[0]);
+  });
+})();
+
+/* ---------- roadmap ---------- */
+(function(){
+  const svg=document.getElementById('c-recs');
+  const cols=[['NOW · fix & harden',20,'--s2'],['NEXT · one bet',335,'--s1'],['THEN · scale the claim',650,'--s7']];
+  const items=[
+    [0,'Per-page pooling mask + causality test','closes the answer leak'],
+    [0,'Per-question positional prior [K,H,W]','notes stop collapsing; 16× page lives?'],
+    [0,'Per-KV-head pooling; RoPE before pool','lifts the ~55% plateau?'],
+    [0,'3 seeds × 2 step sizes, 512 eval rows','rank architectures, not step sizes'],
+    [1,'Compress to route, fetch to read','notes = page index; top-k raw pages'],
+    [1,'Score-weighted fusion (HiLS)','answer loss trains the page choice'],
+    [1,'Kill: no gain over E30 @1024 on 3 seeds','clean go/no-go'],
+    [2,'Train at 1–2K, test at 8K–128K','extrapolation factor = the vision metric'],
+    [2,'Two glances (E19 loops) on the 2048 chain','multi-hop'],
+    [2,'Hierarchy: pages → chapters → volumes','log-depth route to 1M–10M'],
+    [2,'Parallel: delta-rule "matrix notes"','bold store alternative'],
+  ];
+  cols.forEach(c=>{el('rect',{x:c[1],y:10,width:290,height:34,rx:8,fill:`var(${c[2]})`},svg);el('text',{x:c[1]+145,y:32,'text-anchor':'middle','font-size':13,'font-weight':700,style:'fill:#fff'},svg,c[0]);});
+  const cnt=[0,0,0];
+  items.forEach(it=>{const c=cols[it[0]];const yy=56+cnt[it[0]]++*74;
+    el('rect',{x:c[1],y:yy,width:290,height:62,rx:8,fill:css('--surface-2'),stroke:css('--line')},svg);
+    el('text',{x:c[1]+12,y:yy+24,'font-size':13,'font-weight':600},svg,it[1]);
+    el('text',{x:c[1]+12,y:yy+45,'font-size':12,class:'sec'},svg,it[2]);});
+  [[312,333],[627,648]].forEach(a=>el('path',{d:`M${a[0]},27 L${a[1]},27`,stroke:css('--text-muted'),'stroke-width':2},svg));
+})();
+</script>
+</body>
