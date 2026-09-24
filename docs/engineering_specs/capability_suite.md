@@ -1,6 +1,6 @@
 # Capability suite — the standard exams for new architectures
 
-- **Status:** active · suite version `2026-09-24.v1`
+- **Status:** active · suite version `2026-09-25.v2` (v2: long-cell batch 8/4 → 32/16, see Budget)
 - **Code:** `evaluation/capability_suite.py` (definition) ·
   `scripts/run_capability_suite.py` (plan / launch) ·
   `analysis/capability_scorecard.py` (score + verdict) · probe `verification/bapo_capability_probe.py`
@@ -80,8 +80,10 @@ All four sizes fit one RTX 3090 per job (Odra: 3 GPUs, Polonez: 4).
 on the first run at that size. Step-size cliffs are real (1e-4 passes, 2e-4 zeros the
 2048 full read).
 
-Budget: 800 × 4 steps at ≤ 256 tokens (batch 32), 1200 × 4 at 512 (batch 32) and 1024
-(batch 8), 1200 × 4 at 2048 (batch 4); the probe extends once while eval loss is still
+Budget: 800 × 4 steps at ≤ 256 tokens (batch 32), 1200 × 4 at 512 and 1024 (batch 32),
+1200 × 4 at 2048 (batch 16). v1 used batch 8 / 4 at 1024 / 2048: ~38K / ~19K examples, below
+the ~20–32K examples every arch needs before it starts learning at 1024, so even the dense model
+sat at chance on some seeds (E31 run, 2026-09-25); the probe extends once while eval loss is still
 falling. Eval set: **256 rows** (the ledger used 16–32). The dense model trains next to the
 candidate in every job — it is the ceiling on the same data, seed and budget.
 

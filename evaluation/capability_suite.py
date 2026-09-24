@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-SUITE_VERSION = "2026-09-24.v1"
+SUITE_VERSION = "2026-09-25.v2"
 PASS_ACC = 0.75            # answer-token accuracy that counts as a pass (SOLVABLE_ACC)
 CEILING_FRACTION = 0.75    # "matches the ceiling" = ≥ 0.75 × the dense model's bits on the same run
 
@@ -189,9 +189,13 @@ def budget_for(cell: Cell) -> Budget:
         return Budget(800, 4, 32, 100)
     if L <= 512:
         return Budget(1200, 4, 32, 100)
+    # v2: batch 32 at 1024 and 16 at 2048. At v1's batch 8 / 4 the 4800-step budget was
+    # ~38K / ~19K examples; every arch (dense included) takes off only after ~20–32K
+    # examples at 1024, so v1 cells sat at chance on some seeds (dense 0 / 64 bits on the
+    # 1024 lookalike, seed 1) — a starved budget, not an architecture result.
     if L <= 1024:
-        return Budget(1200, 4, 8, 100)
-    return Budget(1200, 4, 4, 100)
+        return Budget(1200, 4, 32, 100)
+    return Budget(1200, 4, 16, 100)
 
 
 EVAL_ROWS = 256  # the E30 ledger used 16–32 rows; 256 keeps the accuracy SE near ±1–2 points
