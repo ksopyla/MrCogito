@@ -102,6 +102,35 @@ UNCALIBRATED_AT_TINY: dict[str, Recipe] = {
     ),
 }
 
+# E30 limit exams (2026-09-22, `e30_limits` / `e30_broad` on Odra+Polonez, 31M).
+# These were ad-hoc flag combos; registering them freezes the configs so the next
+# run reproduces the same exam instead of a near-miss. All are hunts until a dense
+# S0 ≥ 75% exists at the same (scale, recipe) — see the small-model protocol.
+E30_LIMIT_RECIPES: dict[str, Recipe] = {
+    "lookup_1key": Recipe(
+        "lookup_1key",
+        "recall",
+        {"n_distractors": 0, "key_len": 8, "value_len": 8},
+        "E30 single lookup: 1 planted key, long key+value (64-bit prize "
+        "at bridge_1k pack 32). Dense 0 bits @1024 — exam kill until S0.",
+    ),
+    "lookalike": Recipe(
+        "lookalike",
+        "select",
+        {"n_distractors": 0, "n_decoys": 3, "key_len": 8, "value_len": 8},
+        "E30 lookalike: keymark fact + 3 lookalike decoys (64-bit prize at "
+        "bridge_1k pack 32). Full read ~99%; notebooks partial.",
+    ),
+    "chain_4hop": Recipe(
+        "chain_4hop",
+        "chain_ordered",
+        {"hops": 4, "n_distractors": 0, "key_len": 8},
+        "E30 in-order 4-hop chain (64-bit prize at bridge_1k pack 32). "
+        "Passes for e30 @1024 (40 bits/77%); shuffled variant is unsolved "
+        "by dense — do not score shuffled here.",
+    ),
+}
+
 # Plot / CSV display order. Recipe names first, then generator names, then BAPO-hard extras,
 # then the Glyph family (typed vocab, structured noise).
 TASK_DISPLAY_ORDER: tuple[str, ...] = (
@@ -111,6 +140,9 @@ TASK_DISPLAY_ORDER: tuple[str, ...] = (
     "select_1decoy",
     "select",
     "chain_ordered",
+    "chain_4hop",
+    "lookup_1key",
+    "lookalike",
     "chain_shuffled",
     "chain",
     "unique",
@@ -190,6 +222,8 @@ def resolve_recipe(name: str) -> Recipe:
         return CALIBRATED_RECIPES[name]
     if name in UNCALIBRATED_AT_TINY:
         return UNCALIBRATED_AT_TINY[name]
+    if name in E30_LIMIT_RECIPES:
+        return E30_LIMIT_RECIPES[name]
     if name in GLYPH_RECIPES:
         return GLYPH_RECIPES[name]
     if name in TASKS:
@@ -197,7 +231,8 @@ def resolve_recipe(name: str) -> Recipe:
     if name in GLYPH_TASKS:
         return Recipe(name, name, {}, family="glyph")
     known = sorted(
-        set(CALIBRATED_RECIPES) | set(UNCALIBRATED_AT_TINY) | set(TASKS) | set(GLYPH_RECIPES) | set(GLYPH_TASKS)
+        set(CALIBRATED_RECIPES) | set(UNCALIBRATED_AT_TINY) | set(E30_LIMIT_RECIPES)
+        | set(TASKS) | set(GLYPH_RECIPES) | set(GLYPH_TASKS)
     )
     raise ValueError(f"unknown recipe {name!r}; expected one of {known}")
 
@@ -488,6 +523,7 @@ def ladder_cards(scale: str, tasks: tuple[str, ...] | None = None) -> list[dict]
 __all__ = [
     "AGGREGATION_TASKS",
     "CALIBRATED_RECIPES",
+    "E30_LIMIT_RECIPES",
     "GLYPH_CORE_RECIPES",
     "GLYPH_RECIPES",
     "GLYPH_TASKS",

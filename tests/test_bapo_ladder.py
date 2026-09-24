@@ -146,6 +146,21 @@ def test_calibrated_recipes_construct_at_every_scale():
         assert cfg.task == rec.task
 
 
+def test_e30_limit_recipes_construct_at_bridge_scales():
+    """E30 limit exams (lookup/lookalike/4-hop chain) reproduce at the lengths
+    where the 2026-09-22 limits were measured (bridge_1k = 1024)."""
+    from data.bapo_ladder import E30_LIMIT_RECIPES, resolve_recipe
+
+    assert resolve_recipe("lookup_1key").overrides["n_distractors"] == 0
+    assert resolve_recipe("lookalike").overrides["n_decoys"] == 3
+    assert resolve_recipe("chain_4hop").overrides["hops"] == 4
+    for scale in ("tiny", "bridge", "bridge_1k"):
+        for rec in E30_LIMIT_RECIPES.values():
+            cfg = config_for(scale, rec.task, **rec.overrides)
+            assert cfg.seq_len == SCALES[scale].seq_len
+            assert cfg.answer_len >= 1
+
+
 def test_bridge_scales_keep_e18_local_blind():
     """K2: the leak control is only valid when the stack window cannot see the evidence."""
     from data.symbolic_tasks import generate_row

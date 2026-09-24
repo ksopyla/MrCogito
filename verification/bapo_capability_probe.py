@@ -258,6 +258,25 @@ def _ce_still_falling(trace: list, *, min_drop: float = 0.2) -> bool:
     return (early - late) >= min_drop
 
 
+def _examples_to_criterion(trace: list, *, batch: int, seq_len: int, acc: float = SOLVABLE_ACC) -> dict:
+    """First eval step where acc ≥ `acc`, as steps AND training examples seen.
+
+    Sample-efficiency axis (Tier A): steps × batch × seq_len is the "how much data"
+    number that lets a 9M and a 31M run be compared at equal criterion instead of
+    equal step budget. None when the arm never reaches criterion.
+    """
+    for ev in trace:
+        if ev.get("acc", 0.0) >= acc:
+            step = int(ev.get("step", 0))
+            return {
+                "step": step,
+                "examples": step * int(batch),
+                "tokens": step * int(batch) * int(seq_len),
+                "criterion": acc,
+            }
+    return {"step": None, "examples": None, "tokens": None, "criterion": acc}
+
+
 def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, steps: int) -> dict:
     model = build_model(
         arch,
@@ -404,6 +423,17 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             + (f"  n_win {wg.get('n_windows')} C {wg.get('n_slots')} H/logW {wg.get('entropy_over_logW')}" if wg else ""),
             flush=True,
         )
+    throughput = {
+        "sec_per_step": (time.time() - t0) / max(step, 1),
+        "tokens_per_sec": (step * args.batch * cfg.seq_len) / max(time.time() - t0, 1e-6),
+        "device": str(device),
+        "amp": args.amp,
+    }
+    if device.type == "cuda":
+        try:
+            throughput["peak_gb"] = torch.cuda.max_memory_allocated() / 1e9
+        except Exception:  # noqa: BLE001 — CPU-only torch or no CUDA context
+            pass
     return {
         "arch": arch,
         "params": params,
@@ -411,6 +441,10 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
         "final": final,
         "best_acc": best_acc,
         "trace": trace,
+        "throughput": throughput,
+        "examples_to_criterion": _examples_to_criterion(
+            trace, batch=args.batch, seq_len=cfg.seq_len
+        ),
         "info": report.as_dict(),
         "early_stopped": final["acc"] >= args.early_stop_acc,
         "k1_extended": k1_extended,
@@ -509,6 +543,36 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
     results = {}
     dense_steps_used = args.steps
     skip_rest = False
+    preprobe = None
+    if (
+        args.dense_preprobe_steps > 0
+        and "dense" in arches
+        and [a for a in arches if a != "dense"]
+    ):
+        print(
+            f"--- dense pre-probe ({args.dense_preprobe_steps} steps; "
+            f"need acc ≥ {args.dense_preprobe_min_acc:.2f} to launch other arches) ---",
+            flush=True,
+        )
+        probe_res = train_one(
+            "dense", cfg, args, eval_batches, spec, device,
+            steps=args.dense_preprobe_steps,
+        )
+        preprobe = {
+            "steps": args.dense_preprobe_steps,
+            "acc": probe_res["final"]["acc"],
+            "ce_nats": probe_res["final"]["ce_nats"],
+            "passed": probe_res["final"]["acc"] >= args.dense_preprobe_min_acc,
+        }
+        print(
+            f"  dense pre-probe: acc {preprobe['acc']:.3f} "
+            f"({'PASS — launching other arches' if preprobe['passed'] else 'MISS — skipping other arches'})",
+            flush=True,
+        )
+        if not preprobe["passed"]:
+            results["dense"] = probe_res
+            dense_steps_used = probe_res["final"]["step"]
+            skip_rest = True
     for arch in arches:
         if skip_rest:
             print(f"--- {arch} skipped (dense < {SOLVABLE_ACC:.0%} at K1; rung uncalibrated) ---", flush=True)
@@ -560,6 +624,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         "steps": args.steps,
         "k1_mult": args.k1_mult,
         "dense_steps_used": dense_steps_used,
+        "dense_preprobe": preprobe,
         "batch": args.batch,
         "seed": args.seed,
         "amp": args.amp,
@@ -819,6 +884,20 @@ def main() -> int:
     )
     p.add_argument("--steps", type=int, default=800, help="advertised step budget per arch")
     p.add_argument(
+        "--dense_preprobe_steps",
+        type=int,
+        default=0,
+        help="Tier A: short dense-only run before other arches (0=off). If dense acc "
+        "stays below --dense_preprobe_min_acc, skip compressed arms — the rung is "
+        "likely unlearnable here and GPU would be burned on a broken exam.",
+    )
+    p.add_argument(
+        "--dense_preprobe_min_acc",
+        type=float,
+        default=0.50,
+        help="Tier A: dense acc needed at the pre-probe to launch other arches.",
+    )
+    p.add_argument(
         "--k1_mult",
         type=int,
         default=4,
@@ -838,9 +917,9 @@ def main() -> int:
     )
     p.add_argument("--n_distractors", type=int, default=None)
     p.add_argument("--n_decoys", type=int, default=None)
-    p.add_argument("--key_len", type=int, default=None)
-    p.add_argument("--value_len", type=int, default=None)
-    p.add_argument("--hops", type=int, default=None)
+    p.add_argument("--key_len", type=int, default=None, help="DNA key length override (E30 lookup_1key pins 8)")
+    p.add_argument("--value_len", type=int, default=None, help="DNA value length override (E30 lookup_1key pins 8)")
+    p.add_argument("--hops", type=int, default=None, help="DNA chain hops override (E30 chain_4hop pins 4)")
     p.add_argument("--span_len", type=int, default=None)
     p.add_argument("--width", type=int, default=None, help="Glyph vocab width 16 or 32 (ignored for DNA)")
     p.add_argument("--noise", default=None, help="Glyph noise: markov|dyck|arith|mixed|iid")
@@ -942,6 +1021,17 @@ def main() -> int:
                     "recovered_bits": {a: r["info"]["recovered_bits"] for a, r in b["results"].items()},
                     "bytes_per_input_token": {a: r["info"]["bytes_per_input_token"] for a, r in b["results"].items()},
                     "params": {a: r["params"] for a, r in b["results"].items()},
+                    "examples_to_criterion": {
+                        a: r.get("examples_to_criterion") for a, r in b["results"].items()
+                    },
+                    "tokens_per_sec": {
+                        a: (r.get("throughput") or {}).get("tokens_per_sec")
+                        for a, r in b["results"].items()
+                    },
+                    "peak_gb": {
+                        a: (r.get("throughput") or {}).get("peak_gb")
+                        for a, r in b["results"].items()
+                    },
                 }
                 for b in bundles
             ],
