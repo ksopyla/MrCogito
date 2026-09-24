@@ -15,6 +15,64 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-09-24] - Capability suite: standard graded exams for new architectures
+
+**Why:**
+- Each architecture was scored on its own flag set, so results were hard to compare and
+  easy to misread. The author asked for one organised set of exams of increasing
+  difficulty, run at 5M / 10M / 30M / 50M, compared with past experiments, with a clear
+  rule for when to scale compute.
+
+**Impact:**
+- `scripts/run_capability_suite.py --arch <arch> --tier screen|standard|full` plans probe
+  jobs and per-GPU Byobu scripts (resumable); `analysis/capability_scorecard.py` writes a
+  scorecard (md / html / json / csv) with level passes, the frontier, comparisons with
+  recorded references and a scale-up verdict. No change to how the probe trains.
+
+**What changed:**
+- [added] `evaluation/capability_suite.py` (levels, 19 cells, sizes, policy, tiers, 60
+  references from the E30 ledger, scale rule; `SUITE_VERSION` 2026-09-24.v1).
+- [added] `scripts/run_capability_suite.py`, `analysis/capability_scorecard.py`,
+  `tests/test_capability_suite.py`.
+- [added] `docs/engineering_specs/capability_suite.md`; glossary entries; links from the
+  small-model protocol and the experiment-evaluate / experiment-design skills.
+- [added] `capability-suite` skill (end-to-end process: register → plan → smoke → sync →
+  launch → monitor → score → record → change the suite); pointers from experiment-evaluate,
+  experiment-run and the project-overview rule.
+- [changed] generated GPU scripts set `PATH` for `uv`, tee progress to
+  `launch/<host>_gpu<N>.log`, use a portable timestamp; the starter creates the byobu
+  session `capability` and uses absolute paths; the scorecard merges several `--in_dir`.
+
+---
+
+## [2026-09-24] - BAPO probe Tier A metrics: fixes and per-position accuracy
+
+**Why:**
+- Review of `53f2f9c`: the frozen E30 limit exams resolved to 16-bit prizes (the recorded
+  ones are 64-bit), the dense pre-probe would have skipped the rungs where E30 showed
+  signal, throughput charged eval and write diagnostics to training, and the 75 %
+  criterion fired on single noisy evals. E31's pre-flight needs per-letter accuracy.
+
+**Impact:**
+- `lookup_1key` / `lookalike` / `chain_4hop` now reproduce the recorded exams exactly
+  (values checked against the saved `pack` blocks on Odra). JSON gains `acc_se`,
+  `per_position_acc`, patient `examples_to_criterion`, train-only `throughput`.
+- Old JSON stays readable: `first_crossing_step`, `wall_sec`, `dense_preprobe.passed`.
+
+**What changed:**
+- [fixed] `data/bapo_ladder.py` `E30_LIMIT_RECIPES` no longer pin key/value length or 3 decoys;
+  [added] `EXPECTED_PRIZE_BITS`.
+- [changed] `verification/bapo_capability_probe.py`: `_examples_to_criterion` (patience,
+  confirmed), `_throughput` (training time only), `_preprobe_decision` (pass / learning /
+  flat; `--dense_preprobe_action warn|skip`, default warn; `--dense_preprobe_min_gain`),
+  `evaluate` (row standard error, per-position accuracy), launch-time prize check,
+  `--criterion_patience`.
+- [added] `tests/test_bapo_probe_tiers.py`; [changed] `tests/test_bapo_ladder.py` (1 decoy,
+  bridge scales).
+- [changed] `docs/engineering_specs/small_model_capability_protocol.md` Tier A table.
+
+---
+
 ## [2026-09-22] - E30 31M GPU DNA probes (Odra + Polonez)
 
 **Why:**

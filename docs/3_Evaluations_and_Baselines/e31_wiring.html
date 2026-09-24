@@ -1,0 +1,173 @@
+<!-- E31 wiring — token-by-layer view of the two paths and where they merge. 2026-09-24. Self-contained. -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E31 wiring — every layer, every token, on a 17-token example</title>
+<style>
+.viz-root{color-scheme:light;--surface-0:#f4f3ef;--surface-1:#fcfcfb;--surface-2:#efeee9;--line:#dcdad3;
+ --text-primary:#0b0b0b;--text-secondary:#52514e;--text-muted:#7c7b76;
+ --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s7:#4a3aa7;--bad:#c62828;--good:#1a7f37;--info-bg:#eaf2fc;--warn-bg:#fff4e0;}
+@media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])) .viz-root{color-scheme:dark;
+ --surface-0:#121211;--surface-1:#1a1a19;--surface-2:#242422;--line:#3a3935;--text-primary:#fff;--text-secondary:#c3c2b7;--text-muted:#8f8e86;
+ --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s7:#9085e9;--bad:#ef6b6b;--good:#5cc47a;--info-bg:#15263b;--warn-bg:#35280f;}}
+*{box-sizing:border-box}body{margin:0;background:var(--surface-0)}
+.viz-root{font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;color:var(--text-primary);background:var(--surface-0);padding:22px 16px 60px}
+main{max-width:1140px;margin:0 auto}h1{font-size:26px;line-height:1.2;margin:0 0 6px}h2{font-size:19px;margin:26px 0 6px}
+.sub{color:var(--text-secondary);margin:0 0 12px}.kicker{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);font-weight:600}
+.card{background:var(--surface-1);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:12px 0}
+.controls{position:sticky;top:0;z-index:5;background:var(--surface-0);padding:8px 0;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}.seg button{border:0;background:var(--surface-1);color:var(--text-secondary);padding:6px 10px;font:inherit;font-size:13px;cursor:pointer}.seg button.on{background:var(--s1);color:#fff}
+.lab{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;margin-right:4px}
+label.tg{font-size:13px;color:var(--text-secondary);display:inline-flex;gap:6px;align-items:center;cursor:pointer}
+.btn{border:1px solid var(--line);background:var(--surface-1);color:var(--text-primary);border-radius:8px;padding:6px 11px;font:inherit;font-size:13px;cursor:pointer}.btn.primary{background:var(--s1);color:#fff;border-color:var(--s1)}
+svg text{fill:var(--text-primary);font-family:inherit}svg .muted{fill:var(--text-muted)}svg .sec{fill:var(--text-secondary)}
+.cell{cursor:pointer}
+.panel{display:grid;grid-template-columns:1.2fr 1fr;gap:12px}@media(max-width:860px){.panel{grid-template-columns:1fr}}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--text-secondary);margin:4px 0}.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+#tip{position:fixed;pointer-events:none;background:var(--surface-1);color:var(--text-primary);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.15);opacity:0;z-index:20;max-width:320px}
+.note{font-size:13px;color:var(--text-secondary)}.big{font-size:15px}
+.chip{display:inline-block;padding:1px 7px;border-radius:999px;font-size:12px;font-weight:600;margin:1px 2px;background:var(--surface-2)}
+ol li{margin:4px 0}
+</style>
+<body class="viz-root"><div id="tip"></div><main>
+<div class="kicker">MrCogito · E31 draft · wiring page · 24 Sep 2026</div>
+<h1>E31 wiring: every layer, every token, on a 17-token example</h1>
+<p class="sub">Yes, there are <b>two paths running in parallel</b> from the same token embeddings. The <b>memory path</b> (purple, below the embeddings) writes latents from each window of the book. The <b>main path</b> (blue, above) is an ordinary causal language model over the whole row. They meet at <b>one place</b>: the global-read layer, where the memory slots are appended to that layer's keys and values. There is no separate "decoding stage". The answer is produced by the main path's top layers, like any next-token prediction. Companion page: <a href="e31_architecture.html">E31 architecture &amp; checklist</a>.</p>
+
+<div class="controls">
+ <span><span class="lab">Writer</span><span class="seg" id="arm"><button data-v="A" class="on">A · page encoder</button><button data-v="B">B · latent↔token rounds</button><button data-v="e30">E30 as built</button></span></span>
+ <span><span class="lab">Setting</span><span class="seg" id="set"><button data-v="probe" class="on">probe (QUERY cut)</button><button data-v="text">text (no QUERY)</button></span></span>
+ <label class="tg"><input type="checkbox" id="km" checked> mark states that "know" the keymark</label>
+ <span><button class="btn" id="prev">◀</button> <button class="btn primary" id="play">step through the forward pass ▶</button></span>
+</div>
+
+<div class="card">
+ <div class="legend"><span><i style="background:var(--s1)"></i>main path state</span><span><i style="background:var(--s7)"></i>memory path state</span><span><i style="background:var(--s3)"></i>answer prediction</span><span><i style="border:2px solid var(--s2);background:none"></i>selected state</span><span><i style="background:var(--s4)"></i>everything the selected state depends on</span><span>● = knows the keymark</span><span><i style="background:var(--surface-2);border:1px dashed var(--text-muted)"></i>dead end (never reaches the answer)</span></div>
+ <svg id="g" viewBox="0 0 1120 690" width="100%" role="img" aria-label="Token by layer wiring"></svg>
+</div>
+<div class="panel">
+ <div class="card big" id="explain"></div>
+ <div class="card"><h2 style="margin-top:0">How to use this page</h2><ol class="note">
+  <li><b>Click any state</b> (a cell). Orange shows everything it depends on, all the way down to token embeddings, and lines show its direct inputs.</li>
+  <li>Start with the <b>answer prediction</b> at position 13 (green, top row). Its dependencies run through the global read into the memory slots, then down to the fact's tokens. That's the whole route the fact takes.</li>
+  <li>Switch <b>Writer → E30 as built</b> and click the slot row: the writer reads the main path's first local layer, where value letter v3 can't see the keymark (no ●).</li>
+  <li>Switch <b>Setting → text</b>: no QUERY, every position predicts the next token and reads the slots of windows that have already closed, so nothing is a dead end.</li>
+  <li><b>Step through the forward pass</b> to see the order in which layers compute.</li></ol></div>
+</div>
+</main>
+<script>
+const css=n=>getComputedStyle(document.body).getPropertyValue(n).trim();const NS='http://www.w3.org/2000/svg';const tip=document.getElementById('tip');
+function el(t,a,p,x){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(x!=null)e.textContent=x;if(p)p.appendChild(e);return e;}
+function hover(n,h){n.addEventListener('mousemove',e=>{tip.innerHTML=h;tip.style.opacity=1;tip.style.left=Math.min(e.clientX+14,innerWidth-340)+'px';tip.style.top=(e.clientY+14)+'px'});n.addEventListener('mouseleave',()=>tip.style.opacity=0);}
+
+/* ---------- the toy row ---------- */
+const N=17,BOOK=12,QPOS=12;const LBL=['f','f','f','f','M','k','v1','v2','v3','f','f','f','QUERY','k','v1','v2','v3'];
+const NAME={f:'filler',M:'keymark',k:'key letter',v1:'value letter 1',v2:'value letter 2',v3:'value letter 3',QUERY:'QUERY'};
+const WINS=[[0,5],[4,9],[6,11]];const KL=2;const REACH=3,REACH2=5;
+const PRED={13:'v1',14:'v2',15:'v3'}; // output at t predicts the next token
+const S={arm:'A',set:'probe',km:true,sel:'A:13',step:-1};
+const side=t=>S.set==='text'?0:(t>=QPOS?1:0);
+
+/* ---------- dependency graph ---------- */
+function deps(id){const [L,a,b]=id.split(':');const t=+a;const out=[];const probe=S.set==='probe';
+ if(L==='E')return out;
+ if(L==='D'){for(let u=t-REACH+1;u<=t;u++)if(u>=0&&side(u)===side(t))out.push('E:'+u);return out;}
+ if(L==='C'){
+  if(probe){if(side(t)===0){for(let u=0;u<=t;u++)if(side(u)===0)out.push('D:'+u);}
+   else{for(let u=QPOS;u<=t;u++)out.push('D:'+u);WINS.forEach((w,wi)=>{for(let k=0;k<KL;k++)out.push(`G:${wi}:${k}`);});}}
+  else{for(let u=t-REACH+1;u<=t;u++)if(u>=0)out.push('D:'+u);WINS.forEach((w,wi)=>{if(w[1]<t)for(let k=0;k<KL;k++)out.push(`G:${wi}:${k}`);});}
+  return out;}
+ if(L==='B'){for(let u=t-REACH2+1;u<=t;u++)if(u>=0&&side(u)===side(t))out.push('C:'+u);return out;}
+ if(L==='A')return['B:'+t];
+ if(L==='F'){const w=WINS[t];for(let u=w[0];u<=w[1];u++)out.push('E:'+u);return out;} // F:win:tok — t here is window index
+ if(L==='G'){const w=WINS[t];for(let u=w[0];u<=w[1];u++)out.push(S.arm==='A'?`F:${t}:${u}`:S.arm==='B'?'E:'+u:'D:'+u);return out;}
+ return out;}
+function fixF(id){return id;}
+function depsOf(id){if(id.startsWith('F:')){const [,w,u]=id.split(':');const win=WINS[+w];const out=[];for(let v=win[0];v<=win[1];v++)out.push('E:'+v);return out;}return deps(id);}
+function ancestors(id){const seen=new Set();const st=[id];while(st.length){const x=st.pop();for(const d of depsOf(x))if(!seen.has(d)){seen.add(d);st.push(d);}}return seen;}
+function allNodes(){const n=[];for(let t=0;t<N;t++)['E','D','C','B','A'].forEach(L=>n.push(`${L}:${t}`));
+ if(S.arm==='A')WINS.forEach((w,wi)=>{for(let u=w[0];u<=w[1];u++)n.push(`F:${wi}:${u}`);});
+ WINS.forEach((w,wi)=>{for(let k=0;k<KL;k++)n.push(`G:${wi}:${k}`);});return n;}
+function liveSet(){const outs=S.set==='probe'?[13,14,15]:[...Array(N).keys()];const live=new Set();outs.forEach(t=>{live.add('A:'+t);ancestors('A:'+t).forEach(x=>live.add(x));});return live;}
+
+/* ---------- layout ---------- */
+const X0=200,CW=(1030-X0)/N,cx=t=>X0+t*CW+CW/2;
+const ROWS={A:40,B:110,C:185,D:260,E:340,F:[410,450,490],G:585};
+const ROWLBL={A:['output head','predicts the next token'],B:['local layers ×2','causal, reach 5 (16 at scale)'],C:['GLOBAL READ','where the two paths merge'],D:['local layer','causal, reach 3 (16 at scale)'],E:['token embedding','shared by both paths'],F:['page encoder ×2','two-way, inside one window'],G:['latents → slots','2 per window here (32 at scale)']};
+function pos(id){const [L,a,b]=id.split(':');
+ if(L==='F')return {x:cx(+b),y:ROWS.F[+a]};
+ if(L==='G'){const j=(+a)*KL+(+b);return {x:X0+(j*2+1)*CW,y:ROWS.G,w:CW*1.7};}
+ return {x:cx(+a),y:ROWS[L]};}
+
+function draw(){const s=document.getElementById('g');while(s.firstChild)s.removeChild(s.firstChild);
+ const anc=S.sel?ancestors(S.sel):new Set();const direct=new Set(S.sel?depsOf(S.sel):[]);const live=liveSet();const nodes=allNodes();
+ const knows=id=>id==='E:4'||ancestors(id).has('E:4');
+ // bands
+ el('rect',{x:4,y:10,width:1050,height:290,rx:12,fill:css('--s1'),'fill-opacity':.05},s);
+ el('rect',{x:4,y:372,width:1050,height:250,rx:12,fill:css('--s7'),'fill-opacity':.06},s);
+ el('text',{x:14,y:27,'font-size':12,'font-weight':700,style:'fill:var(--s1)'},s,'MAIN PATH (causal LM over the whole row)');
+ el('text',{x:14,y:389,'font-size':12,'font-weight':700,style:'fill:var(--s7)'},s,'MEMORY PATH (writer, book windows only)');
+ // step highlight
+ const STEPROW=[['E'],['F','G'],['D'],['C'],['B'],['A']][S.step]||[];
+ // row labels
+ Object.entries(ROWLBL).forEach(([L,[a,b]])=>{if(L==='F'&&S.arm!=='A')return;const y=L==='F'?ROWS.F[1]:ROWS[L];const on=STEPROW.includes(L);
+  if(on)el('rect',{x:8,y:(L==='F'?ROWS.F[0]:y)-24,width:1100,height:(L==='F'?ROWS.F[2]-ROWS.F[0]:0)+48,rx:10,fill:css('--s4'),'fill-opacity':.14},s);
+  el('text',{x:14,y:y-2,'font-size':12.5,'font-weight':700},s,L==='G'&&S.arm==='B'?'latents (3 rounds with tokens)':a);el('text',{x:14,y:y+14,'font-size':10.5,class:'sec'},s,L==='G'&&S.arm==='e30'?'static queries over the local-layer states':b);});
+ if(S.arm!=='A'){el('text',{x:X0+10,y:ROWS.F[1]+4,'font-size':12,class:'muted'},s,S.arm==='B'?'no encoder: latents and window tokens refine each other for 3 rounds (drawn as one step)':'no encoder: E30 writes from the MAIN path\'s local-layer states (row "local layer" above)');}
+ // column headers: token labels + side
+ for(let t=0;t<N;t++){const lb=LBL[t];el('text',{x:cx(t),y:ROWS.E+30,'text-anchor':'middle','font-size':10,class:'muted'},s,t);}
+ if(S.set==='probe'){const xq=X0+QPOS*CW;el('line',{x1:xq,x2:xq,y1:12,y2:360,stroke:css('--s2'),'stroke-width':2,'stroke-dasharray':'5 4'},s);
+  el('text',{x:xq+4,y:ROWS.E-22,'font-size':11,style:'fill:var(--s2)'},s,'QUERY cut: raw book invisible from here');
+  el('text',{x:X0+6*CW,y:ROWS.E-22,'text-anchor':'middle','font-size':11,class:'sec'},s,'book (sender side)');}
+ // windows brackets
+ WINS.forEach((w,wi)=>{const y=ROWS.G-40+wi*9;el('path',{d:`M${X0+w[0]*CW+3},${y} h${(w[1]-w[0]+1)*CW-6}`,stroke:css('--s7'),'stroke-width':2,'stroke-opacity':.5},s);});
+ // merge bus
+ el('path',{d:`M${X0+12*CW-4},${ROWS.G} L1075,${ROWS.G} L1075,${ROWS.C} L1036,${ROWS.C}`,fill:'none',stroke:css('--s7'),'stroke-width':3,'stroke-opacity':.6,'stroke-dasharray':'8 5'},s);
+ el('path',{d:`M1044,${ROWS.C-6} l-9,6 l9,6`,fill:'none',stroke:css('--s7'),'stroke-width':3,'stroke-opacity':.8},s);
+ el('text',{x:1092,y:(ROWS.C+ROWS.G)/2,'font-size':11.5,'font-weight':600,style:'fill:var(--s7)','text-anchor':'middle',transform:`rotate(-90 1092 ${(ROWS.C+ROWS.G)/2})`},s,'slots → appended to the global read\'s keys/values');
+ // direct-input lines
+ if(S.sel){const p=pos(S.sel);direct.forEach(d=>{const q=pos(d);el('path',{d:`M${q.x},${q.y} L${p.x},${p.y}`,stroke:css('--s4'),'stroke-width':1.3,'stroke-opacity':.7},s);});}
+ // cells
+ nodes.forEach(id=>{const L=id[0];if(L==='F'&&S.arm!=='A')return;const p=pos(id);const w=p.w||CW-8,h=L==='G'?30:26;
+  const isAns=L==='A'&&S.set==='probe'&&PRED[+id.split(':')[1]];const dead=!live.has(id);
+  let col=L==='F'||L==='G'?'--s7':'--s1';if(isAns)col='--s3';
+  const g=el('g',{class:'cell'},s);
+  const r=el('rect',{x:p.x-w/2,y:p.y-h/2,width:w,height:h,rx:5,fill:dead?css('--surface-2'):`var(${col})`,'fill-opacity':dead?1:(anc.has(id)?.9:.28),stroke:id===S.sel?css('--s2'):(anc.has(id)?css('--s4'):(dead?css('--text-muted'):`var(${col})`)),'stroke-width':id===S.sel?3.5:(anc.has(id)?2.5:1),'stroke-dasharray':dead?'3 2':''},g);
+  if(anc.has(id))r.setAttribute('fill',css('--s4'));
+  let txt='';if(L==='E')txt=LBL[id.split(':')[1]];if(L==='G'){const [,wi,k]=id.split(':');txt=`w${+wi+1}·z${+k+1}`;}if(isAns)txt='→'+PRED[+id.split(':')[1]];
+  if(txt)el('text',{x:p.x,y:p.y+4,'text-anchor':'middle','font-size':10.5,'font-weight':600,style:(anc.has(id)||!dead)&&(L!=='E')?'fill:#fff':''},g,txt);
+  if(S.km&&knows(id)&&L!=='E'&&!dead)el('circle',{cx:p.x+w/2-5,cy:p.y-h/2+5,r:3.5,fill:css('--s2')},g);
+  g.addEventListener('click',()=>{S.sel=id;draw();explain();});hover(g,describe(id,dead));});
+}
+function tokName(t){return `${t} (${NAME[LBL[t]]||LBL[t]})`;}
+function describe(id,dead){const [L,a,b]=id.split(':');const t=+a;
+ const m={E:`embedding of token ${tokName(t)}`,D:`local-layer state at ${tokName(t)}`,C:`global-read output at ${tokName(t)}`,B:`local-stack state at ${tokName(t)}`,A:`prediction at position ${t}`+(PRED[t]&&S.set==='probe'?` (answer letter ${PRED[t]})`:''),
+  F:`page-encoder state of token ${tokName(+b)} inside window ${t+1}`,G:`latent ${+b+1} of window ${t+1} → one memory slot`}[L];
+ return `<b>${m}</b>${dead?'<br><i>dead end: never reaches an answer prediction in this setting</i>':''}`;}
+function explain(){const e=document.getElementById('explain');if(!S.sel){e.innerHTML='';return;}const id=S.sel;const anc=ancestors(id);
+ const toks=[...anc].filter(x=>x.startsWith('E:')).map(x=>+x.split(':')[1]).sort((a,b)=>a-b);
+ const slots=[...anc].filter(x=>x.startsWith('G:')).length;const km=anc.has('E:4')||id==='E:4';
+ const direct=depsOf(id);const kinds={E:'embeddings',D:'local-layer states',C:'global-read outputs',B:'local-stack states',F:'page-encoder states',G:'memory slots'};
+ const cnt={};direct.forEach(d=>{cnt[d[0]]=(cnt[d[0]]||0)+1;});
+ e.innerHTML=`<h2 style="margin-top:0">${describe(id,false).replace(/<[^>]+>/g,'')}</h2>
+ <p><b>Direct inputs:</b> ${Object.entries(cnt).map(([k,v])=>`${v} ${kinds[k]}`).join(' + ')||'none (it is a token)'}.</p>
+ <p><b>Can ultimately see tokens:</b> ${toks.map(t=>`<span class="chip">${t}:${LBL[t]}</span>`).join('')||'—'}</p>
+ <p>${slots?`<b>Through the memory:</b> ${slots} slot${slots>1?'s':''} on its path. `:''}${km?'<b style="color:var(--s2)">Knows the keymark.</b>':'<b>Does not know the keymark.</b>'}</p>
+ <p class="note">${hint(id)}</p>`;}
+function hint(id){const L=id[0];const t=+id.split(':')[1];
+ if(L==='A'&&S.set==='probe'&&PRED[t])return 'This is where the answer letter is predicted. Its only route to the book is: global read → memory slots → writer → the fact\'s tokens. The raw book is cut off at QUERY.';
+ if(L==='C'&&S.set==='probe'&&t>=QPOS)return 'The merge point. This question-side state attends over its own side\'s local-layer states plus every memory slot in one softmax.';
+ if(L==='C'&&S.set==='probe')return 'A book-side global read: it reads earlier book states, but nothing downstream of it reaches the answer (dead end in the probe; in text it predicts the next book token).';
+ if(L==='D'&&S.arm==='e30'&&t<BOOK)return 'In E30 the writer reads these states. Each sees only 3 tokens back here (16 at scale), so value letters far from the keymark look like filler to the writer.';
+ if(L==='F')return 'Two-way inside the window: this token sees every token of its window, both directions, so value letters know they belong to the fact.';
+ if(L==='G')return S.arm==='A'?'A latent reads the page-encoder states of its whole window, then becomes one memory slot (projected into the global read\'s keys and values).':S.arm==='B'?'A latent reads the window\'s token embeddings, the tokens read the latents back, for 3 rounds, then it becomes one slot.':'E30: a static query averages the local-layer states of its window; the slot is that weighted average. Look at the local-layer row: v2 and v3 have no ● (their 3-token view misses the keymark), so a static query cannot tell them from filler, even though the slot as a whole contains the keymark.';
+ if(L==='E')return 'A token embedding feeds both paths: up into the main path and down into the memory path.';
+ return S.set==='text'?'Text setting: every position predicts the next token and reads slots of windows that closed before it.':'';}
+
+/* ---------- forward-pass stepping ---------- */
+const STEPS=[['E','1 · Embed every token (shared by both paths).','E:6'],['G','2 · Memory path: '+'encode each window, write latents → slots. Runs in parallel with step 3.','G:1:0'],['D','3 · Main path: first local layer over the whole row (causal, cut at QUERY in the probe).','D:13'],['C','4 · Global read: question-side states attend to their own side + all slots. The two paths merge here.','C:13'],['B','5 · Local layers ×2 turn what was fetched into letter predictions.','B:13'],['A','6 · Output head predicts the next token; in the probe only answer positions have a loss.','A:13']];
+document.getElementById('play').onclick=()=>{S.step=(S.step+1)%STEPS.length;S.sel=STEPS[S.step][2];draw();explain();document.getElementById('play').textContent=STEPS[S.step][1].slice(0,60)+(STEPS[S.step][1].length>60?'…':'')+' ▶';};
+document.getElementById('prev').onclick=()=>{S.step=(S.step-1+STEPS.length)%STEPS.length;S.sel=STEPS[S.step][2];draw();explain();document.getElementById('play').textContent=STEPS[S.step][1].slice(0,60)+'… ▶';};
+function segs(id,key){document.querySelectorAll(`#${id} button`).forEach(b=>b.onclick=()=>{S[key]=b.dataset.v;document.querySelectorAll(`#${id} button`).forEach(x=>x.classList.toggle('on',x===b));if(S.sel&&S.sel.startsWith('F:')&&S.arm!=='A')S.sel='A:13';draw();explain();});}
+segs('arm','arm');segs('set','set');document.getElementById('km').onchange=e=>{S.km=e.target.checked;draw();};
+draw();explain();
+</script></body>

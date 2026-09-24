@@ -355,6 +355,22 @@ MODEL_PATH_OVERRIDE="$BEST" MODEL_TYPE_OVERRIDE=concept_ar TOKENIZER_NAME_OVERRI
 
 Repeat the whole pipeline for `$LAST`, changing the output JSON / report labels.
 
+## Capability suite (architecture exams, from-scratch probes)
+The standard, graded exams for any new architecture (not for pretrained checkpoints).
+**The full process lives in the `capability-suite` skill**; spec
+`docs/engineering_specs/capability_suite.md`. Levels L0 learns at all → L1 carries a
+fact → L2 picks signal over a lookalike → L3 long reach → L4 multi-step reasoning → L5
+language-like noise → L6 BAPO-hard stretch; sizes 5m/10m/30m/50m; tiers screen /
+standard / full.
+```bash
+uv run python scripts/run_capability_suite.py --arch <arch> --sizes 30m --tier standard \
+  --mode scripts --gpus 0 1 2 --host odra --out Cache/capability/<arch>_standard_30m   # on the server
+uv run python analysis/capability_scorecard.py --in_dir Cache/capability/<arch>_standard_30m
+```
+Report the verdict (`scale up` / `promising — fix before scaling` / `not ready`), the
+frontier level per size, and the cells that beat or miss the recorded references. Do not
+hand-pick flags for these exams: a different flag set is a different exam.
+
 ## Perceiver AR pipeline (`perceiver_ar`: E18 / E21)
 Two axes, both **teacher-forced / loglikelihood** (a ~125M base model cannot follow instructions
 and the family has no HF-compatible KV-cache `generate`, so generation-based RULER / LongBench

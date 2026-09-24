@@ -1,6 +1,6 @@
 # E30 — Sliding-window Perceiver banks (exclusive compressed write)
 
-- **Status:** active (foundation + tiny capability probe)
+- **Status:** active (foundation + tiny capability probe) · **reviewed 2026-09-24:** the build tested a narrower write than the idea note — see [Built vs intended](#built-vs-intended-review-2026-09-24); the intended design moves to [E31](E31_sliding_window_latent_memory.md)
 - **Serves:** Vision priorities 1–2 — a compressed prefix that carries *addressable* facts, with `C` scaling with `N`, after E21 mean-pool MATCH died and E26/E27 repairs missed. Live agenda pointer after this spec.
 - **Implementation plan:** [E30_sliding_window_perceiver_plan.md](E30_sliding_window_perceiver_plan.md)
 - **Owner / dates:** Krzysztof Sopyla · opened 2026-09-20 · closed —
@@ -165,3 +165,61 @@ gist-only too — not "try wider `H`".
 - 31M GPU (2026-09-22, Odra+Polonez, H=960 4L): seq=512 MATCH e30 **47.6 bits** ≈ e18 48.0 > e21 44.0. E21-mean wall from E25 is **gone** at this width (warm + 3e-4). SELECT@128: e30 27.8 vs e21 8.8 vs e18 31.3. Report: [e30_30m_gpu_odra_polonez_20260922.md](../../2_Experiments_Registry/run_reports/e30_30m_gpu_odra_polonez_20260922.md).
 - Verdict: **open** — do not kill. At 31M E30 tracks E18 on seq=512 MATCH. Length/hardness (2026-09-22): in-order 4-hop chain @1024, e30 **40 bits / 77%** vs e21 4 bits. Lookup dies between 512 and 1024 for the full read; e30 is the only one stably above chance (26 bits) and is at zero by 4096. Report: [e30_length_hardness_limits_20260922.md](../../2_Experiments_Registry/run_reports/e30_length_hardness_limits_20260922.md).
 - Coverage and breadth (2026-09-22): a 128-token window (coverage 4, 352 notes) passes the 1024 chain in 4800 steps (**76%** tokens); a 512-token window scores **0 bits** even with 64 questions. That chain is **0 bits** at 2048 tokens for both notebooks while the full read still passes. Far copy at 1024 is unsolved by the full read. ~~50M full-read chain collapse~~ was too few steps: at 5e-5 the full read passes and the average passes after a doubled budget. Report: [e30_coverage_and_breadth_20260922.md](../../2_Experiments_Registry/run_reports/e30_coverage_and_breadth_20260922.md).
+
+## Built vs intended (review 2026-09-24)
+> Appended after the runs. Results above are unchanged; this corrects what they
+> were evidence *for*. Full review: [e30_architecture_review_20260923.html](../../4_Research_Notes/e30_architecture_review_20260923.html) ·
+> design space: [e31_design_space_20260924.html](../../4_Research_Notes/e31_design_space_20260924.html).
+
+The idea note ([sliding_window_perceiver.md](../../experiment_ideas/sliding_window_perceiver.md))
+asked for latent arrays that pick facts from their window, with addresses. The code
+wrote something narrower:
+
+| Idea note | Built | Match |
+|---|---|---|
+| Tiny token embeddings 128–256; TinyHashed neutral / off by default | `token_embedding_dim=min(32,H)`; 2-gram hashed tables **on** (kept "so the write is the only change") | no |
+| Windows 256, stride 192 | yes at seq ≥ 512; **auto-fit shrank** to W=64/K=8 (seq 128) and W=128/K=16 (seq 256); seq 512 has 3 starts `(0,192,256)`, the flush-right pair overlaps 75 % | partial |
+| 32 latents per window, 8× coverage | yes (K=32 at W=256) | yes |
+| Each latent picks the right facts | one CA step of **static** queries over token states with a **16-token causal** receptive field; 8 scoring heads **averaged** into one distribution (`w_h.mean`); no competition between queries | weak |
+| Window / latent has a position (address) | RoPE stamp at a fixed page point per latent, but `pos_bias` is `[W, heads]` **shared by all K queries**; content can come from anywhere in the window | label only |
+| Latent width ≥ 4× token embedding | only the scoring dim (128). Stored slot = reader K/V space, `kv_heads × head_dim` = 1 × 64 in every run | no |
+| Latents are a *latent array* (memory vectors) | slot = **convex combination of token K/V**; the query only sets the weights, adds nothing to the content; no residual, no FFN | no |
+| Local SWA mixing: neutral, not by default | inherited E18 `pre_layers=1`, `pre_window=16`, causal | inherited |
+
+**Implementation findings** (`nn/perceiver_ar_lm.py`, verified 2026-09-23):
+1. **Future-token leak (latent).** `pool_valid` is one global mask; a window fully on
+   the receiver side marks its tokens poolable for every window, so a window straddling
+   QUERY writes receiver tokens (answers included) into a sender slot. Reproduced in the
+   test geometry (S=32, QUERY at 10: perturbing token 15 moves logits at 10–14). **Did
+   not fire** on any ledger row (receivers 22–68 tokens, no receiver-only window). Fires
+   with long answers, several QUERYs per row, or LM pretraining. Fix before any
+   multi-question or streaming run: per-window earliest-side pick, plus a causality test.
+2. Shared `pos_bias` across queries → no per-query page role (fits the rank ≈ 1 collapse
+   at 3e-3 and the dead 512-token page).
+3. Head-averaged pooling → a slot is one distribution shared by every KV head.
+4. Slot RoPE at the page point, not at the pooled content's position.
+5. Pooling ignores document boundaries (packed rows); harmless on one-row probes.
+
+**What limits the 1024 exams (hypothesis, not yet measured).** The calibrated
+`recall_single` / `select_1decoy` rows at `bridge_1k` hold one fact
+`keymark · 2-letter key · 32-letter value` (64-bit prize, A = 4) in iid filler. The write
+scores the global layer's *input*, after one causal SWA layer with `q − kv < 16`. Only
+value letters 1–13 have the keymark in view; letters 14–32 look like filler to any static
+query. Prediction: 13 × 2 bits = **26 bits**. Measured plateau: lookup 25.7 / 26 / 24.3
+(1024, three widths/pages), 25 (2048), lookalike 25.9. At 512 the protocol's claim skeleton uses
+`--evidence_align right` (fixed offset; INDEX row confirmed in the 31M report, MATCH row
+not recorded), which would let position alone find the fact. The in-order
+chain (40 bits) is **not** explained by this and stays open. Pre-flight test in E31:
+per-position answer accuracy (1–13 right, 14–32 chance) and a wider causal reach.
+
+**Reading the E30 ledger after this review.** E30 shows that a *learned static filter*
+beats an *average* on the exclusive read (chain 40 vs 4 bits; lookalike@128 28 vs 9). It
+does **not** test real latents, addressed memory, or two-way context — those are E31.
+Protocol notes for later runs: one seed per cell; `--eval_rows 32` (16 at 4096); step-size cliffs
+(1e-4 passes, 2e-4 zeros the 2048 full read); scores at 1024+ where the full read is 0
+measure trainability, not capacity. The `E30_LIMIT_RECIPES` frozen in `53f2f9c`
+resolved to 16-bit prizes (8-letter overrides replaced the 32-letter packing); fixed
+2026-09-24 to the recorded exams (2-letter key, 32-letter value; 1 decoy; 4 hops with
+32-letter keys), confirmed from the saved probe JSON on Odra. The salience prediction
+(26 bits) therefore applies to the recorded lookup and lookalike.
+

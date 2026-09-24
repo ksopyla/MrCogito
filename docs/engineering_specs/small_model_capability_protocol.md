@@ -1,5 +1,8 @@
 # Small-model (<10M) capability protocol
 
+> **Standard exams:** the graded, frozen set of cells, sizes and scoring rules built on this
+> protocol is the [capability suite](capability_suite.md). Use it for any new architecture.
+
 - **Type:** engineering foundation (how to train and score DNA/BAPO probes
   when the model is <10M). Not an `E0NN` by itself.
 - **Status:** written 2026-09-20. Implements the E25 / exclusive-slot-law
@@ -64,6 +67,23 @@ The probe already logs CE, acc, bits, flow. For any *learned write* also log:
 | `message_override=swapped` | should drop vs `real` (content-specific) |
 | train CE vs eval CE | still-falling CE at step cap → extend, don't kill |
 | `params` | hard fail if > 10M on this protocol |
+
+**Tier A learning-capability metrics** (every arch, in the rung JSON and `summary.json`;
+2026-09-24 revision):
+
+| signal | how to read it |
+|---|---|
+| `examples_to_criterion` | training examples (steps × batch) to 75 % answer accuracy, confirmed by `--criterion_patience` (default 2) consecutive evals; `confirmed=false` = crossed only at the last eval; `first_crossing_step` = the old single-eval reading |
+| `throughput` | `sec_per_step` / `tokens_per_sec` from **training time only**; `eval_sec` and `diagnostics_sec` (e21/e30 channel ablations + RankMe) are separate; `wall_sec` is the total |
+| `acc_se` | standard error of answer accuracy over eval rows. The E30 ledger used 16–32 rows: treat gaps < 2 × `acc_se` as ties |
+| `per_position_acc` | accuracy by answer offset (k-th answer letter). A partial copy shows *which* letters survive (e.g. the E30 salience check: letters 1–13 vs 14–32) |
+| `dense_preprobe` | short dense run before the other arches: `pass` (acc ≥ min), `learning` (eval CE ≥ 0.05 nats below the floor), `flat`. Default action **warn** (runs every arch). `--dense_preprobe_action skip` only on rungs where dense is known to take off early; never on the 1024 lookup, where the full read is 0 and E30 learns |
+| `card.prize_matches_ledger` | frozen exams (`EXPECTED_PRIZE_BITS`) must keep their recorded prize; a CLI override that changes the exam prints a WARNING |
+
+Frozen E30 limit exams (`--recipe lookup_1key lookalike chain_4hop`) are the recorded
+`recall_single`, `select_1decoy` and `chain_ordered --hops 4` at `bridge_1k` (64-bit
+prizes). Recommended `--eval_rows 256` or more for new claim runs (the old 32 rows give
+`acc_se` of several points).
 
 ## Optimiser / schedule
 

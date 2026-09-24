@@ -147,14 +147,16 @@ def test_calibrated_recipes_construct_at_every_scale():
 
 
 def test_e30_limit_recipes_construct_at_bridge_scales():
-    """E30 limit exams (lookup/lookalike/4-hop chain) reproduce at the lengths
-    where the 2026-09-22 limits were measured (bridge_1k = 1024)."""
+    """E30 limit exams (lookup/lookalike/4-hop chain) build at the lengths where the
+    2026-09-22 limits were measured (bridge_1k = 1024) and at bridge."""
     from data.bapo_ladder import E30_LIMIT_RECIPES, resolve_recipe
 
     assert resolve_recipe("lookup_1key").overrides["n_distractors"] == 0
-    assert resolve_recipe("lookalike").overrides["n_decoys"] == 3
+    assert resolve_recipe("lookalike").overrides["n_decoys"] == 1  # recorded exam: select_1decoy
     assert resolve_recipe("chain_4hop").overrides["hops"] == 4
-    for scale in ("tiny", "bridge", "bridge_1k"):
+    # Recorded at bridge_1k (and 2048 via --seq_len). A 4-hop chain with packed 32-letter
+    # keys does not fit in 128 tokens; the old 8-letter pin that made it fit changed the exam.
+    for scale in ("bridge", "bridge_1k"):
         for rec in E30_LIMIT_RECIPES.values():
             cfg = config_for(scale, rec.task, **rec.overrides)
             assert cfg.seq_len == SCALES[scale].seq_len

@@ -88,6 +88,9 @@ Ask whether the design is a **new inductive bias**, not only whether knobs match
       is NOT in scope (follow-up ablations after a positive signal)
 - [ ] 4. Fill Builds-on: foundation modules + init/checkpoint + baseline id & score + delta
 - [ ] 5. Set numeric success + kill criteria (aggressive enough to stop a bad bet early);
+      for a new architecture, state them on the **capability suite** where possible (target
+      frontier level, cells that must beat a recorded reference; see
+      `docs/engineering_specs/capability_suite.md`) so the result is comparable;
       for each absolute threshold, cite the control that measured its ceiling — or schedule the
       cheap measurement as a pre-flight step in the Plan
 - [ ] 6. Assign the ID (default: next unused flavour letter of the current family,
@@ -97,7 +100,10 @@ Ask whether the design is a **new inductive bias**, not only whether knobs match
 - [ ] 7. Specify how it runs: exact command + env-var overrides on the shared bash launcher
       (list any new FOUNDATION component — reusable, not a fork)
 - [ ] 8. Update agenda.md (set it as the Current focus); the lifecycle folders are the index
-- [ ] 9. Get user go-ahead, THEN implement
+- [ ] 9. **Alignment page (last step before go-ahead):** build an interactive HTML
+      information-flow page for the bet (see "Alignment page" below), open it for the author,
+      and wait for their confirmation or changes. Fold the changes back into the spec
+- [ ] 10. Get user go-ahead, THEN implement
 ```
 
 ## Scope-check questions
@@ -111,6 +117,35 @@ Ask whether the design is a **new inductive bias**, not only whether knobs match
   future experiments, or a one-off fork? (Reusable only.)
 - "If it fails, at what step/metric do we stop?"
 - "What analogy or theory motivates this — or are we only copying a paper's default block?"
+
+## Alignment page (the last step of every design)
+Specs are read once and misread easily; E30's build drifted from its idea note (static
+averages instead of addressed latents, a 16-token causal writer) and nobody noticed until
+after the runs. Before asking for the go-ahead, make the architecture *visible*, so the
+author can check that the spec says what they mean.
+
+- **File:** `docs/3_Evaluations_and_Baselines/<id>_architecture.html` (lowercase ID), one
+  self-contained page (inline SVG + vanilla JS, no CDN), light/dark via CSS variables.
+  Precedents: `e18_e21_architecture.html`, `e30_architecture.html`, `e31_architecture.html`.
+- **Must show:**
+  1. **The pipeline, stepwise**: every stage from token ids to the loss as a clickable node
+     with prev/next stepping; per stage: what happens in plain words, tensor shapes at the
+     claim scale, and *what information survives* this stage.
+  2. **Toggles** for each arm of the bet **and** for the baseline being replaced ("as
+     built"), so every difference is one click away. Mark each stage *new / unchanged /
+     proposed / baseline*.
+  3. **A worked toy example** (small sequence) showing where information goes: which
+     tokens each component reads or picks. Label hand-built weights as illustrative.
+  4. **An information budget** along the path (bits available at each stage vs what the
+     answer needs), to show where the bottleneck is expected.
+  5. **The masks**: who may attend to what (causality, exclusive cuts, leaks prevented).
+  6. **An alignment checklist**: every design decision in the spec as a row with
+     agree / change / question + a note field, and a button that collects the answers
+     into text the author pastes back into the chat.
+- **Check it renders** (open it in the browser pane, screenshot each section, no console
+  errors) before showing it.
+- **Do not implement** until the author has returned the checklist or said "aligned".
+  Changes they request go into the spec (and the page, if it is kept as the reference).
 
 ## Pitching the experiment to the author
 The spec is the archive; the chat message is a ~150-word pitch: the idea, the bet, how we will know it
