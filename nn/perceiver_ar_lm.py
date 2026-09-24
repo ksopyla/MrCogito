@@ -72,6 +72,10 @@ Hooks for the family (config fields only — no parameters unless enabled):
     (`SlidingWindowPerceiverCompressor`, K learned queries per window,
     stride < W, no mean residual). Concat exclusive path only. Off by
     default so E18/E21 checkpoints stay byte-identical.
+    `message_write="latent_memory"` (E31): a separate writer branch (`nn/latent_memory.py`)
+    reads the token embeddings, writes `lm_latents` addressed latents per overlapping
+    window from two-way context (`lm_context`: page encoder | BiXT rounds) and hands them to
+    the global read as precomputed slots (`MessageCtx.slots`). The main path is unchanged.
 """
 from __future__ import annotations
 
@@ -89,6 +93,8 @@ from torch.utils.checkpoint import checkpoint as torch_checkpoint
 from transformers import PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import CausalLMOutput
 
+from nn.latent_memory import LM_CONTEXTS, LatentMemoryWriter, lm_geometry, window_pick
+
 logger = logging.getLogger(__name__)
 
 # Sparse exclusive-plus-anchors (E21). Default `none` is prior exclusive slots.
@@ -99,7 +105,7 @@ MESSAGE_GLOBAL_ANCHORS = (
     "none", "query_nbhd", "query_side", "type_marks", "query_nbhd+type", "key_spans",
 )
 MESSAGE_QUERY_NBHD_DEFAULT = 4  # sender-before or QUERY-plus-after window
-MESSAGE_WRITES = ("block_mean", "sw_perceiver")
+MESSAGE_WRITES = ("block_mean", "sw_perceiver", "latent_memory")
 SWP_BANK_DEFAULT = 32
 SWP_COVERAGE_DEFAULT = 8
 SWP_OVERLAP_DEFAULT = 0.25  # stride = (1 - overlap) * window → 192/256 in the notes
@@ -176,6 +182,19 @@ class PerceiverARConfig(PretrainedConfig):
         swp_n_heads: int = 0,             # 0 → max(4, num_attention_heads)
         swp_query_dim: int = 0,           # 0 → max(head_dim, 4 * token_embedding_dim)
         swp_auto_fit: bool = True,        # shrink K so n_windows≥2 on short seq
+        lm_context: str = "page_bidir",   # E31 — "page_bidir" | "bixt"
+        lm_window: int = 256,             # E31 — fixed geometry (no auto-shrink)
+        lm_stride: int = 192,
+        lm_latents: int = 32,
+        lm_latent_dim: int = 512,
+        lm_heads: int = 8,                # per-latent heads, never averaged
+        lm_writer_dim: int = 256,
+        lm_enc_layers: int = 2,           # page_bidir only
+        lm_rounds: int = 2,               # latent read rounds (bixt: latent⇄token rounds)
+        lm_competition: bool = True,      # softmax over latents per token, then renormalise
+        lm_null_latent: bool = False,     # one latent the reader never sees
+        lm_reader_tokens: int = 5,        # reader K/V entries per latent (m)
+        lm_pos_prior: bool = True,        # per-latent sub-page prior at init
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -248,6 +267,19 @@ class PerceiverARConfig(PretrainedConfig):
         self.swp_n_heads = int(swp_n_heads)
         self.swp_query_dim = int(swp_query_dim)
         self.swp_auto_fit = bool(swp_auto_fit)
+        self.lm_context = str(lm_context)
+        self.lm_window = int(lm_window)
+        self.lm_stride = int(lm_stride)
+        self.lm_latents = int(lm_latents)
+        self.lm_latent_dim = int(lm_latent_dim)
+        self.lm_heads = int(lm_heads)
+        self.lm_writer_dim = int(lm_writer_dim)
+        self.lm_enc_layers = int(lm_enc_layers)
+        self.lm_rounds = int(lm_rounds)
+        self.lm_competition = bool(lm_competition)
+        self.lm_null_latent = bool(lm_null_latent)
+        self.lm_reader_tokens = int(lm_reader_tokens)
+        self.lm_pos_prior = bool(lm_pos_prior)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -325,6 +357,22 @@ class PerceiverARConfig(PretrainedConfig):
                 raise ValueError("sw_perceiver has no mean-pool identity; leave message_identity_slots off")
             if self.message_prefix_ae:
                 raise ValueError("message_prefix_ae is a block-mean write (E26); not defined for sw_perceiver")
+        if self.message_write == "latent_memory":
+            if not self.message_enabled:
+                raise ValueError("message_write='latent_memory' needs message_boundary_token_id >= 0")
+            if self.message_slots_inplace or self.message_identity_slots or self.message_prefix_ae:
+                raise ValueError("latent_memory uses concat slots; inplace / identity / prefix_ae do not apply")
+            if self.lm_context not in LM_CONTEXTS:
+                raise ValueError(f"lm_context must be one of {LM_CONTEXTS}, got {self.lm_context!r}")
+            if min(self.lm_window, self.lm_stride, self.lm_latents, self.lm_heads,
+                   self.lm_writer_dim, self.lm_reader_tokens) < 1:
+                raise ValueError("lm_window/stride/latents/heads/writer_dim/reader_tokens must be >= 1")
+            if self.lm_latent_dim % self.lm_heads != 0:
+                raise ValueError("lm_latent_dim must be divisible by lm_heads")
+            if self.lm_stride > self.lm_window:
+                raise ValueError("lm_stride must be <= lm_window (windows must tile the book)")
+            if self.message_extra_slot_attends or self.message_update_slot_kv:
+                raise ValueError("latent_memory: extra slot attends are not defined (read once; E31a reads per layer)")
         if self.message_enabled:
             if self.message_boundary_token_id >= self.vocab_size:
                 raise ValueError("message_boundary_token_id must be a vocabulary id")
@@ -635,6 +683,8 @@ class MessageCtx:
     update_slot_kv: bool = False  # rewrite exclusive slot K/V from post-attend residual
     anchor: Optional[torch.Tensor] = None  # [B,S] bool — sparse raw keys joining exclusive slots
     anchor_mode: str = "none"
+    slots: Optional[tuple[torch.Tensor, torch.Tensor]] = None  # E31: precomputed (k̄, v̄), normed + RoPE'd
+    window_valid: Optional[torch.Tensor] = None  # [B,n_w,W] per-window pool mask (E30 / E31)
 
     @property
     def n_slots(self) -> int:
@@ -1119,8 +1169,13 @@ class SlidingWindowPerceiverCompressor(nn.Module):
         idx = (starts[:, None] + off[None, :]).clamp(0, S - 1).reshape(-1)
         return pos.index_select(1, idx)
 
-    def forward(self, h, k_raw, v, k_norm, valid: Optional[torch.Tensor] = None):
-        """h [B,S,d], k_raw/v [B,S,g,dh] → (k̄, v̄) [B,C,g,dh]."""
+    def forward(self, h, k_raw, v, k_norm, valid: Optional[torch.Tensor] = None,
+                window_valid: Optional[torch.Tensor] = None):
+        """h [B,S,d], k_raw/v [B,S,g,dh] → (k̄, v̄) [B,C,g,dh].
+
+        `window_valid` [B,n_w,W] is the per-window pooling rule (own earliest side, one
+        document). When given it replaces the global `valid` mask, which let a window pool
+        tokens that were only poolable in *another* window (a future-token leak)."""
         B, S, d = h.shape
         geo = self.geometry(S)
         self._last_geometry = geo
@@ -1133,7 +1188,9 @@ class SlidingWindowPerceiverCompressor(nn.Module):
         in_range = tok < S
         tok = tok.clamp(max=max(S - 1, 0))
         ok = in_range[None].expand(B, n_w, W)
-        if valid is not None:
+        if window_valid is not None:
+            ok = ok & window_valid.bool()
+        elif valid is not None:
             ok = ok & valid.bool()[:, tok]
         hn = self.norm(h)
         hb = hn[:, tok]  # [B, n_w, W, d]
@@ -1326,6 +1383,8 @@ class Attention(nn.Module):
         if getattr(cfg, "message_enabled", False) and pattern == "full":
             if write == "sw_perceiver":
                 self.compressor = SlidingWindowPerceiverCompressor(cfg)
+            elif write == "latent_memory":
+                self.compressor = None  # E31: slots come from the model-level writer (ctx.slots)
             else:
                 self.compressor = KVCompressor(cfg)
         else:
@@ -1355,11 +1414,16 @@ class Attention(nn.Module):
         (in-place path applies token-position RoPE after scatter)."""
         if ctx.external is not None:
             return ctx.external
+        if ctx.slots is not None:
+            return ctx.slots
         valid = key_valid
         if ctx.pool_valid is not None:
             pv = ctx.pool_valid.bool()
             valid = pv if valid is None else (valid.bool() & pv)
-        k_bar, v_bar = self.compressor(x, k_raw, v, self.k_norm, valid)
+        if isinstance(self.compressor, SlidingWindowPerceiverCompressor) and ctx.window_valid is not None:
+            k_bar, v_bar = self.compressor(x, k_raw, v, self.k_norm, valid, window_valid=ctx.window_valid)
+        else:
+            k_bar, v_bar = self.compressor(x, k_raw, v, self.k_norm, valid)
         self._last_k_bar = k_bar
         self._last_v_bar = v_bar
         if self.prefix_ae and self.prefix_ae_stopgrad:
@@ -1472,7 +1536,7 @@ class Attention(nn.Module):
         if self.use_rope:
             q, k = apply_rope(q, cos, sin), apply_rope(k, cos, sin)
         q = self._scale_q(q, pos)
-        if message is not None and self.compressor is not None:
+        if message is not None and (self.compressor is not None or message.slots is not None):
             k_bar, v_bar = self.message_slots(x, k_raw, v, message, key_valid, rope_theta)
             if message.override == "swapped":
                 k_bar, v_bar = k_bar.roll(1, dims=0), v_bar.roll(1, dims=0)
@@ -1658,6 +1722,11 @@ class PerceiverARLM(PreTrainedModel):
                 self.layers[i].attn.use_rope = False
         self.final_norm = nn.RMSNorm(cfg.hidden_size)
         self.lm_head = nn.Linear(cfg.hidden_size, cfg.vocab_size, bias=False)
+        self.memory_writer = (
+            LatentMemoryWriter(cfg)
+            if str(getattr(cfg, "message_write", "block_mean") or "block_mean") == "latent_memory"
+            else None
+        )
         if cfg.write_back_hook:
             g, dh = cfg.num_kv_heads, cfg.head_dim
             self.write_back_proj = nn.Linear(cfg.hidden_size, 2 * g * dh, bias=False)
@@ -1782,34 +1851,22 @@ class PerceiverARLM(PreTrainedModel):
         doc: torch.Tensor,
         pos: torch.Tensor,
         key_valid: Optional[torch.Tensor],
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
-        """Window banks → slot_doc/side/pos. Mixed windows keep the earliest side (remainder)."""
+    ):
+        """Window banks → slot_doc/side/pos, pool_valid [B,S] and window_valid [B,n_w,W].
+
+        Each window pools only its own earliest side of one document (`window_pick`), computed
+        per window. `pool_valid` (the union) is kept for diagnostics; the compressor uses
+        `window_valid`, which closes the E30 leak where a straddling window pooled receiver
+        tokens that were poolable only in a later, receiver-only window.
+        """
         B, S = side.shape
         geo = swp_geometry(self.config, S)
         device = side.device
-        starts = torch.tensor(geo.starts, device=device, dtype=torch.long)
         n_w, W, K = geo.n_windows, geo.window, geo.bank_size
-        tok = starts[:, None] + torch.arange(W, device=device)
-        in_range = tok < S
-        tok_c = tok.clamp(max=max(S - 1, 0))
-        doc_w = doc[:, tok_c]
-        side_w = side[:, tok_c]
-        ok = in_range[None] & (doc_w >= 0)
-        if key_valid is not None:
-            ok = ok & key_valid.bool()[:, tok_c]
-        big = torch.full((), 10**6, device=device, dtype=side.dtype)
-        min_side = torch.where(ok, side_w, big).min(dim=-1).values
-        has = ok.any(dim=-1)
-        min_side = torch.where(has, min_side, torch.zeros_like(min_side))
-        pick = ok & (side_w == min_side[..., None])
-        idx = torch.arange(W, device=device)
-        last = (pick.to(torch.long) * (idx + 1)).amax(dim=-1).clamp(min=1) - 1
-        last_tok = (starts[None, :] + last).clamp(max=S - 1)
-        slot_doc_w = doc.gather(1, last_tok)
-        slot_doc_w = torch.where(has, slot_doc_w, torch.full_like(slot_doc_w, -1))
-        slot_side_w = torch.where(has, min_side, torch.zeros_like(min_side))
+        tok_c, pick, slot_doc_w, slot_side_w, _has = window_pick(side, doc, key_valid, geo.starts, W)
         slot_doc = slot_doc_w.repeat_interleave(K, dim=1)
         slot_side = slot_side_w.repeat_interleave(K, dim=1)
+        starts = torch.tensor(geo.starts, device=device, dtype=torch.long)
         page = max(W // max(K, 1), 1)
         qix = torch.arange(K, device=device)
         off = (qix + 1) * page - 1
@@ -1820,7 +1877,19 @@ class PerceiverARLM(PreTrainedModel):
             b_ix = torch.arange(B, device=device)[:, None, None].expand_as(pick)
             tok_exp = tok_c[None].expand(B, n_w, W)
             pool_valid[b_ix[pick], tok_exp[pick]] = True
-        return slot_doc, slot_side, slot_pos, pool_valid
+        return slot_doc, slot_side, slot_pos, pool_valid, pick
+
+    def _lm_slot_tensors(self, side, doc, pos, key_valid):
+        """E31 geometry → slot_doc/side (per reader entry) and a placeholder slot_pos
+        (overwritten by the writer's expected positions)."""
+        B, S = side.shape
+        geo = lm_geometry(self.config, S)
+        _tok, pick, slot_doc_w, slot_side_w, _has = window_pick(side, doc, key_valid, geo.starts, geo.window)
+        rep = geo.latents * geo.reader_tokens
+        slot_doc = slot_doc_w.repeat_interleave(rep, dim=1)
+        slot_side = slot_side_w.repeat_interleave(rep, dim=1)
+        slot_pos = torch.zeros_like(slot_doc)
+        return slot_doc, slot_side, slot_pos, pick
 
     def _message_context(
         self,
@@ -1868,10 +1937,15 @@ class PerceiverARLM(PreTrainedModel):
             local = doc
         else:
             local = torch.where(doc < 0, doc, doc * K + side)
-        if str(getattr(cfg, "message_write", "block_mean") or "block_mean") == "sw_perceiver":
-            slot_doc, slot_side, slot_pos, pool_valid = self._swp_slot_tensors(
+        window_valid = None
+        write = str(getattr(cfg, "message_write", "block_mean") or "block_mean")
+        if write == "sw_perceiver":
+            slot_doc, slot_side, slot_pos, pool_valid, window_valid = self._swp_slot_tensors(
                 side, doc, pos, key_valid
             )
+        elif write == "latent_memory":
+            slot_doc, slot_side, slot_pos, window_valid = self._lm_slot_tensors(side, doc, pos, key_valid)
+            pool_valid = None
         else:
             nb = -(-S // r)
             pad = nb * r - S
@@ -1927,7 +2001,7 @@ class PerceiverARLM(PreTrainedModel):
                           inplace_raw_kv=cfg.message_inplace_raw_kv,
                           extra_slot_attends=int(getattr(cfg, "message_extra_slot_attends", 0) or 0),
                           update_slot_kv=bool(getattr(cfg, "message_update_slot_kv", False)),
-                          anchor=anchor, anchor_mode=anchor_mode)
+                          anchor=anchor, anchor_mode=anchor_mode, window_valid=window_valid)
         self._last_message_ctx = ctx
         return ctx
 
@@ -1993,6 +2067,15 @@ class PerceiverARLM(PreTrainedModel):
             if msg is not None:
                 local_doc = msg.local_doc_ids
         x0 = self.embed(input_ids, local_doc)
+        if self.memory_writer is not None:
+            if msg is not None and msg.external is None:
+                out = self.memory_writer(
+                    self.embed.tok(input_ids), msg.side, msg.doc, key_valid, pos, cfg.rope_theta
+                )
+                msg.slots = (out["k"], out["v"])
+                msg.slot_pos = out["slot_pos"]
+            else:
+                x0 = x0 + self.memory_writer.participation().to(x0.dtype)  # DDP: no QUERY in batch
         cos, sin = rope_cos_sin(pos, cfg.head_dim, cfg.rope_theta, x0.dtype)
         x = x0
         n = len(self.layers)
@@ -2007,7 +2090,9 @@ class PerceiverARLM(PreTrainedModel):
             skip = skips.pop() if (i >= n - n_skip and skips) else None
             if capture_input_of is not None and i == capture_input_of:
                 return layer.mix(x, x0, skip)
-            is_global = layer.attn.pattern == "full" and layer.attn.compressor is not None
+            is_global = layer.attn.pattern == "full" and (
+                layer.attn.compressor is not None or self.memory_writer is not None
+            )
             kwargs = dict(ids=input_ids, cos=cos, sin=sin, key_valid=key_valid,
                           doc_ids=(doc_ids if is_global else local_doc),
                           cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos, pos=pos,
@@ -2186,6 +2271,8 @@ class PerceiverARLM(PreTrainedModel):
         h = layer.attn_norm(x_in)
         pos = self._positions(input_ids.shape[1], input_ids.shape[0], doc_ids, input_ids.device)
         if as_message:
+            if self.memory_writer is not None:
+                raise NotImplementedError("prefix_kv(as_message=True) is not wired for latent_memory (E31)")
             if layer.attn.compressor is None:
                 raise RuntimeError("as_message needs message_boundary_token_id >= 0")
             k_raw, v = layer.attn.kv_raw(h, input_ids)
@@ -2276,8 +2363,12 @@ def analytic_param_count(cfg: PerceiverARConfig) -> ParamBreakdown:
         dense += sum(1 for pat, _ in cfg.layer_patterns() if pat == "full")   # one scalar per full layer
     if getattr(cfg, "message_enabled", False):
         n_full = sum(1 for pat, _ in cfg.layer_patterns() if pat == "full")
-        if str(getattr(cfg, "message_write", "block_mean") or "block_mean") == "sw_perceiver":
+        write = str(getattr(cfg, "message_write", "block_mean") or "block_mean")
+        if write == "sw_perceiver":
             dense += n_full * _swp_param_count(cfg)
+        elif write == "latent_memory":
+            with torch.device("meta"):
+                dense += sum(p.numel() for p in LatentMemoryWriter(cfg).parameters())
         else:
             dense += n_full * (g * d + d * 2 * g * dh)                             # KVCompressor: u + delta
     sparse = len(cfg.ngram_orders) * cfg.ngram_buckets * e
