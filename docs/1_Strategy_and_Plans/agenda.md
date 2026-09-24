@@ -20,6 +20,12 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-09-24 — Capability suite (the standard exams).** Every new architecture now runs
+  the same graded exams (L0 learns at all … L4 multi-step reasoning, L5 language-like
+  noise, L6 stretch) at 5M / 10M / 30M / 50M on Odra / Polonez, is scored against the
+  recorded past results, and gets a scale-up verdict. On the recorded references E30's
+  frontier is L1 (misses the 1024 lookalike). Spec
+  [capability_suite.md](../engineering_specs/capability_suite.md).
 - **2026-09-24 — E31 sliding-window latent memory (draft, awaiting go-ahead).** Review
   found E30 built a narrower write than its idea note: slots are weighted averages of
   token K/V scored from 16-token causal states, not addressed latents. The 1024 lookup /
@@ -27,7 +33,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   the writer) — hypothesis, pre-flight test in the spec. E31 builds the note's design
   (32 addressed latents per 256-token window, two-way context: page encoder vs BiXT).
   Pooling leak in the E30 write is latent (did not fire on ledger rows) — fix first.
-  Spec
+  Probe Tier A metrics fixed 2026-09-24 (frozen E30 exams = recorded 64-bit exams;
+  per-letter accuracy, eval SE, train-only throughput, warn-only pre-probe). Spec
   [E31](../experiments_specs/ahead/E31_sliding_window_latent_memory.md) · review
   [E30 built vs intended](../experiments_specs/ahead/E30_sliding_window_perceiver.md#built-vs-intended-review-2026-09-24).
 - **2026-09-20 — E30 sliding-window Perceiver banks.** Exclusive prefix write is

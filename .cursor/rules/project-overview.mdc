@@ -88,6 +88,8 @@ Input (prior result / idea / vision / paper / cross-domain analogy) →
 `research-implement` (build the bet on the shared foundation — do not substitute a safe retread) →
 `experiment-run` (launch/monitor on Odra/Polonez) → `experiment-evaluate` (tiered eval pipeline) →
 `experiment-track` (results → `master_experiment_log.md`). `docs-hygiene` keeps docs lean.
+Every new architecture also runs the standard graded exams via `capability-suite`
+(L0–L6 at 5M/10M/30M/50M, scored against past architectures, with a scale-up verdict).
 `research-comms` governs how **any** of this is reported back in chat (short, plain, no private
 codenames, numbers explained) — see `communication.mdc`; shared vocabulary in `docs/glossary.md`.
 Canonical homes: intent → specs/plans; results → `master_experiment_log.md`; live memory → `agenda.md`.
