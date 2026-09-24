@@ -250,3 +250,18 @@ def test_token_identity_survives_the_context_step(context):
     torch.manual_seed(0)
     m = PerceiverARLM(lm_cfg(lm_context=context, lm_enc_layers=2)).eval()  # post_init scales
     assert _token_identity_ratio(m, row()) > 0.5
+
+
+@pytest.mark.parametrize("context", ["page_bidir", "bixt"])
+def test_slot_values_carry_row_content_at_init(context):
+    """Regression: values were the latent's identity (≈ constant across rows), so the reader
+    had nothing row-specific to learn from. Values now start as the heads' read-out."""
+    torch.manual_seed(0)
+    m = PerceiverARLM(lm_cfg(lm_context=context)).eval()
+    ids = torch.randint(3, 80, (8, 32))
+    ids[:, 10] = M
+    with torch.no_grad():
+        m(ids)
+    v = m._last_message_ctx.slots[1].float().reshape(8, -1, m.config.num_kv_heads * m.config.head_dim)
+    ratio = v.std(0).mean() / v.std(1).mean()
+    assert float(ratio) > 0.1

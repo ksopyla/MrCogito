@@ -1754,6 +1754,8 @@ class PerceiverARLM(PreTrainedModel):
         for layer in self.layers:
             if layer.attn.compressor is not None and getattr(layer.attn.compressor, "delta", None) is not None:
                 nn.init.zeros_(layer.attn.compressor.delta.weight)   # post_init re-inits Linears
+        if self.memory_writer is not None:
+            nn.init.zeros_(self.memory_writer.to_v_state.weight)   # E31: values start as content
 
     # -- HF plumbing ----------------------------------------------------------------
     def _init_weights(self, module):

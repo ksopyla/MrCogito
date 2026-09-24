@@ -245,9 +245,16 @@ class LatentMemoryWriter(nn.Module):
             self.x_ffn_norm = nn.RMSNorm(dw)
             self.x_ffn = _SwiGLU(dw, 2 * dw)
 
+        # Reader entries. Values carry *what the latent read* (the heads' read-out of the last
+        # round); keys combine that content with the latent's state (identity + address).
+        # `to_v_state` (latent state → value) starts at zero: at init the value is content, not
+        # the latent's identity, which otherwise makes every row's slots nearly identical.
         self.out_norm = nn.RMSNorm(D)
+        self.read_norm = nn.RMSNorm(D)
         self.to_k = nn.Linear(D, self.m * self.g * self.dh, bias=False)
+        self.to_k_read = nn.Linear(D, self.m * self.g * self.dh, bias=False)
         self.to_v = nn.Linear(D, self.m * self.g * self.dh, bias=False)
+        self.to_v_state = nn.Linear(D, self.m * self.g * self.dh, bias=False)
         self.k_out_norm = nn.RMSNorm(self.dh)
         self.last_diag: dict = {}
         self._last_k_bar = None
@@ -277,8 +284,9 @@ class LatentMemoryWriter(nn.Module):
             w = torch.softmax(logits.float().masked_fill(~m, float("-inf")), dim=-1)
             w = torch.nan_to_num(w, nan=0.0)
         w = w.to(v.dtype)
-        out = torch.einsum("bhkw,bwhd->bkhd", w, v).reshape(Bn, Kp, self.D)
-        return w, self.wo(out)
+        read = torch.einsum("bhkw,bwhd->bkhd", w, v).reshape(Bn, Kp, self.D)
+        self._last_read = read  # per-head read-out (content), used for the reader's values/keys
+        return w, self.wo(read)
 
     def _token_read(self, x, z):
         """BiXT back-step: tokens read the latents. x [Bn,W,dw], z [Bn,Kp,D] → Δx."""
@@ -319,6 +327,7 @@ class LatentMemoryWriter(nn.Module):
                 x = x + self._token_read(x, z)
                 x = x + self.x_ffn(self.x_ffn_norm(x))
         z = z[:, :K]
+        read = self.read_norm(self._last_read[:, :K])
         w_real = w[:, :, :K].float()  # [Bn, hl, K, W]
 
         # address: expected position of what each latent read (mean over heads), detached
@@ -329,8 +338,8 @@ class LatentMemoryWriter(nn.Module):
         p_abs = start_pos.reshape(Bn, 1) + p_rel  # [Bn, K]
 
         zo = self.out_norm(z)
-        kk = self.k_out_norm(self.to_k(zo).view(Bn, K, m, self.g, self.dh))
-        vv = self.to_v(zo).view(Bn, K, m, self.g, self.dh)
+        kk = self.k_out_norm((self.to_k(zo) + self.to_k_read(read)).view(Bn, K, m, self.g, self.dh))
+        vv = (self.to_v(read) + self.to_v_state(zo)).view(Bn, K, m, self.g, self.dh)
         C = n_w * K * m
         kk = kk.reshape(B, C, self.g, self.dh)
         vv = vv.reshape(B, C, self.g, self.dh)
