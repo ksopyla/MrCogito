@@ -103,33 +103,52 @@ UNCALIBRATED_AT_TINY: dict[str, Recipe] = {
 }
 
 # E30 limit exams (2026-09-22, `e30_limits` / `e30_broad` on Odra+Polonez, 31M).
-# These were ad-hoc flag combos; registering them freezes the configs so the next
-# run reproduces the same exam instead of a near-miss. All are hunts until a dense
-# S0 ≥ 75% exists at the same (scale, recipe) — see the small-model protocol.
+# Frozen from the launch scripts and the `pack` block of the saved probe JSON
+# (`Cache/bapo_e30_limits/*/bridge_1k_*.json`), so the next run is the *same* exam,
+# not a near-miss. At bridge_1k all three pack a 32-token answer = 64-bit prize:
+#   lookup_1key  = recall_single            key 2 · value 32 · no distractor
+#   lookalike    = select_1decoy            key 2 · value 32 · 1 decoy
+#   chain_4hop   = chain_ordered --hops 4   key 32 · 2 distractor hops
+# Do NOT pin key_len / value_len here: recipe overrides are applied *after*
+# `pack_overrides`, so pinning the answer field replaces the packed 32-token answer
+# (an 8-token value is a 16-bit exam, not the ledger's 64-bit one).
+# `EXPECTED_PRIZE_BITS` is checked by the tests and by the probe at launch.
 E30_LIMIT_RECIPES: dict[str, Recipe] = {
     "lookup_1key": Recipe(
         "lookup_1key",
         "recall",
-        {"n_distractors": 0, "key_len": 8, "value_len": 8},
-        "E30 single lookup: 1 planted key, long key+value (64-bit prize "
-        "at bridge_1k pack 32). Dense 0 bits @1024 — exam kill until S0.",
+        {"n_distractors": 0},
+        "E30 single lookup (= recall_single): one planted key → 32-letter value at "
+        "bridge_1k (64-bit prize). Full read 0 bits @1024; E30 ~26 bits.",
     ),
     "lookalike": Recipe(
         "lookalike",
         "select",
-        {"n_distractors": 0, "n_decoys": 3, "key_len": 8, "value_len": 8},
-        "E30 lookalike: keymark fact + 3 lookalike decoys (64-bit prize at "
-        "bridge_1k pack 32). Full read ~99%; notebooks partial.",
+        {"n_distractors": 0, "n_decoys": 1},
+        "E30 lookalike (= select_1decoy): keymark fact vs one decoy block, 32-letter "
+        "value at bridge_1k (64-bit prize). Full read ~99%; notebooks ~55%.",
     ),
     "chain_4hop": Recipe(
         "chain_4hop",
         "chain_ordered",
-        {"hops": 4, "n_distractors": 0, "key_len": 8},
-        "E30 in-order 4-hop chain (64-bit prize at bridge_1k pack 32). "
-        "Passes for e30 @1024 (40 bits/77%); shuffled variant is unsolved "
-        "by dense — do not score shuffled here.",
+        {"hops": 4},
+        "E30 in-order 4-hop chain (= chain_ordered --hops 4), 32-letter keys at "
+        "bridge_1k (64-bit prize). E30 passes @1024 (~77%); shuffled variant is "
+        "unsolved by the full read — do not score shuffled here.",
     ),
 }
+
+# Prize (bits) each frozen exam must have at the scale it was recorded on. A recipe
+# whose overrides silently shrink the packed answer fails this check.
+EXPECTED_PRIZE_BITS: dict[tuple[str, str], float] = {
+    ("bridge_1k", "lookup_1key"): 64.0,
+    ("bridge_1k", "lookalike"): 64.0,
+    ("bridge_1k", "chain_4hop"): 64.0,
+    ("bridge_1k", "recall_single"): 64.0,
+    ("bridge_1k", "select_1decoy"): 64.0,
+    ("bridge_1k", "chain_ordered"): 64.0,
+}
+
 
 # Plot / CSV display order. Recipe names first, then generator names, then BAPO-hard extras,
 # then the Glyph family (typed vocab, structured noise).
@@ -524,6 +543,7 @@ __all__ = [
     "AGGREGATION_TASKS",
     "CALIBRATED_RECIPES",
     "E30_LIMIT_RECIPES",
+    "EXPECTED_PRIZE_BITS",
     "GLYPH_CORE_RECIPES",
     "GLYPH_RECIPES",
     "GLYPH_TASKS",

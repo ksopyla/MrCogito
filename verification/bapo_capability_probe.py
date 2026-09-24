@@ -36,6 +36,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from data.bapo_ladder import (  # noqa: E402
     CALIBRATED_RECIPES,
+    EXPECTED_PRIZE_BITS,
     GLYPH_CORE_RECIPES,
     SCALES,
     SOLVABLE_ACC,
@@ -131,6 +132,9 @@ def make_batch(cfg, rng, batch: int, device):
 def evaluate(model, batches, *, amp: str, device: torch.device, message_override: str = "real") -> dict:
     model.eval()
     ce_sum, n, hits = 0.0, 0, 0
+    row_acc: list[float] = []
+    pos_hits: list[int] = []
+    pos_n: list[int] = []
     ctx = amp_ctx(device, amp)
     for ids, labels in batches:
         with _message_cm(model, message_override), ctx:
@@ -146,9 +150,42 @@ def evaluate(model, batches, *, amp: str, device: torch.device, message_override
         pred = logits[:, :-1].argmax(-1)
         tgt = labels[:, 1:]
         m = tgt != -100
-        hits += int((pred[m] == tgt[m]).sum())
+        correct = (pred == tgt) & m
+        hits += int(correct.sum())
+        # Per row: accuracy (for the eval standard error) and accuracy by answer offset
+        # (k-th supervised token of the row), so a partial copy shows *which* letters survive.
+        for r in range(m.shape[0]):
+            mr = m[r]
+            k = int(mr.sum())
+            if k == 0:
+                continue
+            cr = correct[r][mr]
+            row_acc.append(float(cr.float().mean()))
+            if len(pos_n) < k:
+                pos_hits.extend([0] * (k - len(pos_n)))
+                pos_n.extend([0] * (k - len(pos_n)))
+            for j, c in enumerate(cr.tolist()):
+                pos_hits[j] += int(c)
+                pos_n[j] += 1
     model.train()
-    return {"ce_nats": ce_sum / max(n, 1), "acc": hits / max(n, 1), "tokens": n}
+    return {
+        "ce_nats": ce_sum / max(n, 1),
+        "acc": hits / max(n, 1),
+        "tokens": n,
+        "rows": len(row_acc),
+        "acc_se": _row_se(row_acc),
+        "per_position_acc": [h / c for h, c in zip(pos_hits, pos_n)],
+    }
+
+
+def _row_se(values: list[float]) -> float:
+    """Standard error of the mean over eval rows (rows, not tokens, are independent)."""
+    k = len(values)
+    if k < 2:
+        return float("nan")
+    mu = sum(values) / k
+    var = sum((v - mu) ** 2 for v in values) / (k - 1)
+    return math.sqrt(var / k)
 
 
 def _slot_rankme(model, batches, *, amp: str, device: torch.device) -> dict:
@@ -258,23 +295,95 @@ def _ce_still_falling(trace: list, *, min_drop: float = 0.2) -> bool:
     return (early - late) >= min_drop
 
 
-def _examples_to_criterion(trace: list, *, batch: int, seq_len: int, acc: float = SOLVABLE_ACC) -> dict:
-    """First eval step where acc ≥ `acc`, as steps AND training examples seen.
+def _examples_to_criterion(
+    trace: list,
+    *,
+    batch: int,
+    seq_len: int,
+    acc: float = SOLVABLE_ACC,
+    patience: int = 2,
+    stop_acc: float | None = None,
+) -> dict:
+    """Training examples needed to reach `acc`, confirmed by `patience` consecutive evals.
 
-    Sample-efficiency axis (Tier A): steps × batch × seq_len is the "how much data"
-    number that lets a 9M and a 31M run be compared at equal criterion instead of
-    equal step budget. None when the arm never reaches criterion.
+    Sample-efficiency axis (Tier A): steps × batch (× seq_len tokens) lets a 9M and a
+    31M run be compared at equal criterion instead of equal step budget.
+
+    Eval sets are small (the E30 ledger used 16–32 rows), so one lucky eval can cross
+    75 % by noise. The criterion step is the first eval that starts a run of `patience`
+    evals all ≥ `acc`. A crossing in the last evals that cannot be confirmed (training
+    ended) is reported with `confirmed=False` — unless it is the early-stop eval
+    (≥ `stop_acc`), which counts as confirmed. `first_crossing_step` keeps the old
+    (single-eval) reading so earlier JSON stays comparable.
     """
-    for ev in trace:
-        if ev.get("acc", 0.0) >= acc:
-            step = int(ev.get("step", 0))
-            return {
-                "step": step,
-                "examples": step * int(batch),
-                "tokens": step * int(batch) * int(seq_len),
-                "criterion": acc,
-            }
-    return {"step": None, "examples": None, "tokens": None, "criterion": acc}
+    patience = max(1, int(patience))
+    first = next((int(ev.get("step", 0)) for ev in trace if ev.get("acc", 0.0) >= acc), None)
+    hit, confirmed = None, False
+    for i, ev in enumerate(trace):
+        if ev.get("acc", 0.0) < acc:
+            continue
+        window = trace[i : i + patience]
+        if len(window) == patience and all(w.get("acc", 0.0) >= acc for w in window):
+            hit, confirmed = ev, True
+            break
+        tail_ok = all(w.get("acc", 0.0) >= acc for w in window)
+        if i + patience > len(trace) and tail_ok:
+            hit = ev
+            confirmed = stop_acc is not None and trace[-1].get("acc", 0.0) >= stop_acc
+            break
+    out = {"criterion": acc, "patience": patience, "first_crossing_step": first}
+    if hit is None:
+        out.update({"step": None, "examples": None, "tokens": None, "confirmed": False})
+        return out
+    step = int(hit.get("step", 0))
+    out.update({
+        "step": step,
+        "examples": step * int(batch),
+        "tokens": step * int(batch) * int(seq_len),
+        "confirmed": bool(confirmed),
+    })
+    return out
+
+
+def _throughput(*, steps: int, batch: int, seq_len: int, train_sec: float, eval_sec: float,
+                diag_sec: float, device, amp: str) -> dict:
+    """Training speed from **training time only** (evals and write diagnostics excluded).
+
+    The first version divided wall time — including periodic evals and the e21/e30-only
+    channel ablations + RankMe — by steps, which made the notebook arms look slower than
+    dense. `wall_sec` keeps the old total for reference.
+    """
+    steps = max(int(steps), 1)
+    train_sec = max(float(train_sec), 1e-9)
+    return {
+        "sec_per_step": train_sec / steps,
+        "tokens_per_sec": steps * int(batch) * int(seq_len) / train_sec,
+        "train_sec": train_sec,
+        "eval_sec": float(eval_sec),
+        "diagnostics_sec": float(diag_sec),
+        "wall_sec": train_sec + float(eval_sec) + float(diag_sec),
+        "device": str(device),
+        "amp": amp,
+    }
+
+
+def _preprobe_decision(trace: list, *, floor_nats: float, min_acc: float, min_gain: float = 0.05) -> dict:
+    """Classify a short dense run: `pass` (acc ≥ min_acc), `learning` (eval CE already
+    ≥ `min_gain` nats below the local-window floor, i.e. recovering far information),
+    or `flat` (neither).
+
+    Only `flat` may skip other arms, and only with `--dense_preprobe_action skip`: the
+    E30 ledger has late takeoffs (dense near chance for thousands of steps, then 99 %)
+    and a rung where the full read stays at 0 while the notebook learns (lookup @1024).
+    """
+    if not trace:
+        return {"status": "flat", "acc": 0.0, "ce_nats": float("nan"), "gain_nats": 0.0}
+    final = trace[-1]
+    a = float(final.get("acc", 0.0))
+    ce = float(final.get("ce_nats", float("inf")))
+    gain = float(floor_nats) - ce
+    status = "pass" if a >= min_acc else ("learning" if gain >= min_gain else "flat")
+    return {"status": status, "acc": a, "ce_nats": ce, "gain_nats": gain}
 
 
 def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, steps: int) -> dict:
@@ -340,6 +449,8 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_factor)
     rng = np.random.default_rng(args.seed + 1000 + sum(ord(c) for c in arch))
     t0, trace = time.time(), []
+    train_sec = eval_sec = 0.0
+    t_mark = time.time()
     best_acc = -1.0
     k1_extended = False
     sdp_cm = contextlib.nullcontext()
@@ -362,9 +473,15 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             sched.step()
             opt.zero_grad(set_to_none=True)
             if step % args.eval_every == 0 or step == max_steps:
+                if device.type == "cuda":
+                    torch.cuda.synchronize()
+                t_eval = time.time()
+                train_sec += t_eval - t_mark
                 ev = evaluate(
                     model, eval_batches, amp=args.amp, device=device, message_override=override
                 )
+                eval_sec += time.time() - t_eval
+                t_mark = time.time()
                 trace.append({"step": step, **ev, "sec": time.time() - t0})
                 print(
                     f"  [{arch}] step {step:5d}  train {float(loss.detach()):.4f}  "
@@ -389,6 +506,10 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
                         f"extending to {max_steps} (small-model protocol)",
                         flush=True,
                     )
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    train_sec += time.time() - t_mark  # steps after the last eval (early break lands on an eval)
+    t_diag = time.time()
     cache = arch_cache(arch, spec, cfg.seq_len)
     final = trace[-1]
     report = info_report(
@@ -423,12 +544,10 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             + (f"  n_win {wg.get('n_windows')} C {wg.get('n_slots')} H/logW {wg.get('entropy_over_logW')}" if wg else ""),
             flush=True,
         )
-    throughput = {
-        "sec_per_step": (time.time() - t0) / max(step, 1),
-        "tokens_per_sec": (step * args.batch * cfg.seq_len) / max(time.time() - t0, 1e-6),
-        "device": str(device),
-        "amp": args.amp,
-    }
+    throughput = _throughput(
+        steps=step, batch=args.batch, seq_len=cfg.seq_len, train_sec=train_sec,
+        eval_sec=eval_sec, diag_sec=time.time() - t_diag, device=device, amp=args.amp,
+    )
     if device.type == "cuda":
         try:
             throughput["peak_gb"] = torch.cuda.max_memory_allocated() / 1e9
@@ -443,7 +562,8 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
         "trace": trace,
         "throughput": throughput,
         "examples_to_criterion": _examples_to_criterion(
-            trace, batch=args.batch, seq_len=cfg.seq_len
+            trace, batch=args.batch, seq_len=cfg.seq_len,
+            patience=args.criterion_patience, stop_acc=args.early_stop_acc,
         ),
         "info": report.as_dict(),
         "early_stopped": final["acc"] >= args.early_stop_acc,
@@ -524,6 +644,17 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
     card = rung_card(scale, recipe.task, **over)
     card["local_window"] = window
     card["floor_nats"] = _floor(cfg, window)
+    expected = EXPECTED_PRIZE_BITS.get((scale.name, display))
+    if expected is not None:
+        card["expected_prize_bits"] = expected
+        card["prize_matches_ledger"] = abs(float(card["prize_bits"]) - expected) < 1e-6
+        if not card["prize_matches_ledger"]:
+            print(
+                f"  WARNING: {display} @ {scale.name} has a {card['prize_bits']:.0f}-bit prize; the "
+                f"recorded exam was {expected:.0f} bits (a CLI override changed the exam). "
+                "Scores are not comparable with the ledger.",
+                flush=True,
+            )
     eval_rng = np.random.default_rng(args.seed + 99)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     eval_batches = [make_batch(cfg, eval_rng, args.batch, device) for _ in range(max(1, args.eval_rows // args.batch))]
@@ -550,32 +681,47 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         and [a for a in arches if a != "dense"]
     ):
         print(
-            f"--- dense pre-probe ({args.dense_preprobe_steps} steps; "
-            f"need acc ≥ {args.dense_preprobe_min_acc:.2f} to launch other arches) ---",
+            f"--- dense pre-probe ({args.dense_preprobe_steps} steps; pass at acc ≥ "
+            f"{args.dense_preprobe_min_acc:.2f} or CE ≥ {args.dense_preprobe_min_gain:.2f} nats "
+            f"below the floor; action on a flat run: {args.dense_preprobe_action}) ---",
             flush=True,
         )
         probe_res = train_one(
             "dense", cfg, args, eval_batches, spec, device,
             steps=args.dense_preprobe_steps,
         )
+        decision = _preprobe_decision(
+            probe_res["trace"], floor_nats=card["floor_nats"],
+            min_acc=args.dense_preprobe_min_acc, min_gain=args.dense_preprobe_min_gain,
+        )
+        skip = decision["status"] == "flat" and args.dense_preprobe_action == "skip"
         preprobe = {
             "steps": args.dense_preprobe_steps,
-            "acc": probe_res["final"]["acc"],
-            "ce_nats": probe_res["final"]["ce_nats"],
-            "passed": probe_res["final"]["acc"] >= args.dense_preprobe_min_acc,
+            **decision,
+            "action": args.dense_preprobe_action,
+            "skipped_other_arches": skip,
+            # kept for older readers of the JSON
+            "passed": decision["status"] != "flat",
         }
+        verdict = {
+            "pass": "PASS — launching other arches",
+            "learning": "LEARNING (CE below floor) — launching other arches",
+            "flat": "FLAT — " + ("skipping other arches" if skip else
+                                 "launching anyway (late takeoff is common; warn only)"),
+        }[decision["status"]]
         print(
-            f"  dense pre-probe: acc {preprobe['acc']:.3f} "
-            f"({'PASS — launching other arches' if preprobe['passed'] else 'MISS — skipping other arches'})",
+            f"  dense pre-probe: acc {decision['acc']:.3f}  CE gain {decision['gain_nats']:+.3f} nats  {verdict}",
             flush=True,
         )
-        if not preprobe["passed"]:
+        if skip:
             results["dense"] = probe_res
             dense_steps_used = probe_res["final"]["step"]
             skip_rest = True
     for arch in arches:
         if skip_rest:
-            print(f"--- {arch} skipped (dense < {SOLVABLE_ACC:.0%} at K1; rung uncalibrated) ---", flush=True)
+            why = ("dense pre-probe flat" if preprobe and preprobe.get("skipped_other_arches")
+                   else f"dense < {SOLVABLE_ACC:.0%} at K1; rung uncalibrated")
+            print(f"--- {arch} skipped ({why}) ---", flush=True)
             continue
         if arch == "dense":
             arch_steps = args.steps * args.k1_mult
@@ -895,7 +1041,28 @@ def main() -> int:
         "--dense_preprobe_min_acc",
         type=float,
         default=0.50,
-        help="Tier A: dense acc needed at the pre-probe to launch other arches.",
+        help="Tier A: dense acc that counts as a pre-probe pass.",
+    )
+    p.add_argument(
+        "--dense_preprobe_min_gain",
+        type=float,
+        default=0.05,
+        help="Tier A: dense eval CE this many nats below the local-window floor also counts "
+        "as learning (far information is already flowing).",
+    )
+    p.add_argument(
+        "--dense_preprobe_action",
+        choices=("warn", "skip"),
+        default="warn",
+        help="Tier A: on a flat pre-probe, 'warn' records it and runs every arch (default; "
+        "late takeoffs and rungs where only the notebook learns are in the E30 ledger); "
+        "'skip' saves GPU by skipping the other arches.",
+    )
+    p.add_argument(
+        "--criterion_patience",
+        type=int,
+        default=2,
+        help="Tier A: consecutive evals ≥ 75%% needed to confirm examples_to_criterion.",
     )
     p.add_argument(
         "--k1_mult",
@@ -1027,6 +1194,10 @@ def main() -> int:
                     "tokens_per_sec": {
                         a: (r.get("throughput") or {}).get("tokens_per_sec")
                         for a, r in b["results"].items()
+                    },
+                    "acc_se": {a: r["final"].get("acc_se") for a, r in b["results"].items()},
+                    "per_position_acc": {
+                        a: r["final"].get("per_position_acc") for a, r in b["results"].items()
                     },
                     "peak_gb": {
                         a: (r.get("throughput") or {}).get("peak_gb")
