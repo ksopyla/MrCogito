@@ -332,3 +332,25 @@ def test_checkpoint_and_ladder_roundtrip(tmp_path):
     cell = rep["results"]["e31_page"]["512"]
     assert cell["rows"] == 4 and cell["trained_seq_len"] == 128
     assert cell["memory_slots"] > rep["results"]["e31_page"]["128"]["memory_slots"]
+
+
+def test_chunked_block_mask_matches_the_one_shot_mask():
+    """Long global reads build the flex mask in query chunks; the result must be identical."""
+    from torch.nn.attention.flex_attention import create_block_mask
+
+    from nn.perceiver_ar_lm import _chunked_block_mask
+
+    S, nb = 300, 100
+    torch.manual_seed(0)
+    side = torch.zeros(2, S, dtype=torch.long)
+    side[:, 250:] = 1
+    tag = side.to(torch.int32)
+
+    def pred(b, h, q, kv):
+        raw = (kv < S) & (kv <= q) & (q - kv < 64) & (tag[b, q] == tag[b, torch.clamp(kv, max=S - 1)])
+        slot = (kv >= S) & (tag[b, q] >= 1)
+        return raw | slot
+
+    one = create_block_mask(pred, B=2, H=None, Q_LEN=S, KV_LEN=S + nb, device="cpu")
+    chunked = _chunked_block_mask(pred, B=2, Q_LEN=S, KV_LEN=S + nb, device="cpu", max_pairs=128 * (S + nb))
+    assert torch.equal(one.to_dense(), chunked.to_dense())

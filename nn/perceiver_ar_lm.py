@@ -572,6 +572,36 @@ def _flex_block_mask(S, pattern, window, key_valid, doc_ids, device, causal, bat
     return bm
 
 
+# Above this many (query, key) pairs the global-read mask is built in query chunks: the
+# message predicate gathers per-token tags, and create_block_mask then materialises the full
+# bool (Q_LEN, KV_LEN) grid (29 GiB at 128k tokens + 109k slots) even when compiled.
+_CHUNKED_MASK_PAIRS = 1 << 30
+
+
+def _chunked_block_mask(pred, *, B: int, Q_LEN: int, KV_LEN: int, device, block: int = 128,
+                        max_pairs: int = 1 << 29):
+    """`create_block_mask` over query chunks of ≤ `max_pairs` (query, key) pairs, stitched with
+    `BlockMask.from_kv_blocks`. Same mask; peak transient memory ≈ `max_pairs` bytes."""
+    from torch.nn.attention.flex_attention import BlockMask, create_block_mask
+
+    qc = max(block, (max_pairs // max(KV_LEN, 1)) // block * block)
+    q0 = torch.zeros((), dtype=torch.int32, device=device)  # captured tensor: no recompile per chunk
+
+    def pred_c(b, h, q, kv):
+        return pred(b, h, q + q0, kv)
+
+    parts = []
+    for start in range(0, Q_LEN, qc):
+        q0.fill_(start)
+        n = min(qc, Q_LEN - start)
+        bm = create_block_mask(pred_c, B=B, H=None, Q_LEN=n, KV_LEN=KV_LEN, device=device,
+                               BLOCK_SIZE=block, _compile=torch.cuda.is_available())
+        parts.append((bm.kv_num_blocks, bm.kv_indices, bm.full_kv_num_blocks, bm.full_kv_indices))
+    cat = [None if parts[0][i] is None else torch.cat([p[i] for p in parts], dim=2) for i in range(4)]
+    return BlockMask.from_kv_blocks(cat[0], cat[1], cat[2], cat[3], BLOCK_SIZE=block, mask_mod=pred,
+                                    seq_lengths=(Q_LEN, KV_LEN))
+
+
 def attend(
     q: torch.Tensor,   # [B,S,h,dh]
     k: torch.Tensor,   # [B,S,g,dh]
@@ -1274,8 +1304,11 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
             bm = block_masks[memo_key]
         else:
             pred = make_message_mask_pred(S, ctx, key_valid)
-            bm = create_block_mask(pred, B=B, H=None, Q_LEN=S, KV_LEN=S + ctx.n_slots, device=q.device,
-                                   _compile=torch.cuda.is_available())
+            if S * (S + ctx.n_slots) > _CHUNKED_MASK_PAIRS:
+                bm = _chunked_block_mask(pred, B=B, Q_LEN=S, KV_LEN=S + ctx.n_slots, device=q.device)
+            else:
+                bm = create_block_mask(pred, B=B, H=None, Q_LEN=S, KV_LEN=S + ctx.n_slots, device=q.device,
+                                       _compile=torch.cuda.is_available())
             if block_masks is not None:
                 block_masks[memo_key] = bm
         qt, kt, vt = qt.contiguous(), kt.contiguous(), vt.contiguous()
