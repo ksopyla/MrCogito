@@ -40,6 +40,9 @@ Hooks for the family (config fields only — no parameters unless enabled):
     `message_keep_local_swa` (default off) keeps exclusive slots on
     the global read but does not treat QUERY as a SWA/n-gram document start — the local
     window still sees raw prefix tokens that fall inside the sliding window.
+    `message_raw_window` (default 0 = full causal) limits the global read's raw keys to a
+    causal window of that many tokens, so the slots are the only long-range path and the
+    whole model is linear in length (the long-context length ladder).
     `message_extra_slot_attends` (default 0) re-reads the *same* exclusive slot K/V
     with queries updated by the previous hop — extra attends *inside one* Attention,
     not a second global Block and not DNA `--hops`. Off by
@@ -165,6 +168,7 @@ class PerceiverARConfig(PretrainedConfig):
         message_identity_slots: bool = False,  # E21 — freeze mean-pool at any r; bypass u/delta
         message_pack_stride: int = 0,  # E21 — exclusive leftover vs N-token packs ending at QUERY (0=off)
         message_keep_local_swa: bool = False,  # E21 — local SWA/n-grams still see across QUERY
+        message_raw_window: int = 0,  # >0: the global read's raw keys are a causal window (memory is the only long path)
         message_extra_slot_attends: int = 0,  # E21 — extra exclusive attends over frozen slots
         message_update_slot_kv: bool = False,  # E21 — rewrite exclusive slot K/V between extra hops
         message_global_anchors: str = "none",  # E21 — sparse raw keys joining exclusive slot K/V
@@ -250,6 +254,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_identity_slots = bool(message_identity_slots)
         self.message_pack_stride = int(message_pack_stride)
         self.message_keep_local_swa = bool(message_keep_local_swa)
+        self.message_raw_window = int(message_raw_window)
         self.message_extra_slot_attends = int(message_extra_slot_attends)
         self.message_update_slot_kv = bool(message_update_slot_kv)
         self.message_global_anchors = str(message_global_anchors or "none")
@@ -373,6 +378,10 @@ class PerceiverARConfig(PretrainedConfig):
                 raise ValueError("lm_stride must be <= lm_window (windows must tile the book)")
             if self.message_extra_slot_attends or self.message_update_slot_kv:
                 raise ValueError("latent_memory: extra slot attends are not defined (read once; E31a reads per layer)")
+        if self.message_raw_window < 0:
+            raise ValueError("message_raw_window must be >= 0 (0 = full causal raw keys)")
+        if self.message_raw_window and self.message_slots_inplace:
+            raise ValueError("message_raw_window applies to the concat read, not inplace slots")
         if self.message_enabled:
             if self.message_boundary_token_id >= self.vocab_size:
                 raise ValueError("message_boundary_token_id must be a vocabulary id")
@@ -684,6 +693,7 @@ class MessageCtx:
     anchor: Optional[torch.Tensor] = None  # [B,S] bool — sparse raw keys joining exclusive slots
     anchor_mode: str = "none"
     slots: Optional[tuple[torch.Tensor, torch.Tensor]] = None  # E31: precomputed (k̄, v̄), normed + RoPE'd
+    raw_window: int = 0         # >0: raw keys only within `q - j < raw_window` (linear-cost global layer)
     window_valid: Optional[torch.Tensor] = None  # [B,n_w,W] per-window pool mask (E30 / E31)
 
     @property
@@ -796,6 +806,7 @@ def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Te
     tag, slot_tag = ctx.tags()
     raw_cross = ctx.override == "raw"
     slots_on = ctx.override not in ("none", "raw")
+    raw_window = int(ctx.raw_window or 0)
     anchor = ctx.anchor
     if anchor is None:
         anchor = torch.zeros(tag.shape, dtype=torch.bool, device=tag.device)
@@ -812,6 +823,8 @@ def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Te
         else:
             same = tj == tq
         raw_ok = (j <= q) & same
+        if raw_window > 0:
+            raw_ok = raw_ok & (q - j < raw_window)
         if not raw_cross:
             dq = torch.div(tq, m, rounding_mode="floor")
             sq = tq - dq * m
@@ -835,7 +848,8 @@ def dense_message_mask(S: int, ctx: MessageCtx, key_valid: Optional[torch.Tensor
     B = side.shape[0]
     q = torch.arange(S, device=device)[:, None]
     j = torch.arange(S, device=device)[None, :]
-    causal_doc = (j <= q)[None, None] & (doc[:, None, :, None] == doc[:, None, None, :])
+    causal = (j <= q) & (q - j < ctx.raw_window) if ctx.raw_window else (j <= q)
+    causal_doc = causal[None, None] & (doc[:, None, :, None] == doc[:, None, None, :])
     if ctx.override == "raw":
         raw = causal_doc
     else:
@@ -1255,7 +1269,7 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
     if backend == "flex":
         from torch.nn.attention.flex_attention import create_block_mask
 
-        memo_key = ("message", ctx.override, ctx.n_slots, getattr(ctx, "anchor_mode", "none"))
+        memo_key = ("message", ctx.override, ctx.n_slots, getattr(ctx, "anchor_mode", "none"), ctx.raw_window)
         if block_masks is not None and memo_key in block_masks:
             bm = block_masks[memo_key]
         else:
@@ -1926,6 +1940,7 @@ class PerceiverARLM(PreTrainedModel):
                 update_slot_kv=bool(getattr(cfg, "message_update_slot_kv", False)),
                 anchor=torch.zeros(B, S, dtype=torch.bool, device=dev),
                 anchor_mode="none",
+                raw_window=int(getattr(cfg, "message_raw_window", 0) or 0),
             )
         is_b = input_ids == cfg.message_boundary_token_id
         if not bool(is_b.any()):
@@ -2003,7 +2018,8 @@ class PerceiverARLM(PreTrainedModel):
                           inplace_raw_kv=cfg.message_inplace_raw_kv,
                           extra_slot_attends=int(getattr(cfg, "message_extra_slot_attends", 0) or 0),
                           update_slot_kv=bool(getattr(cfg, "message_update_slot_kv", False)),
-                          anchor=anchor, anchor_mode=anchor_mode, window_valid=window_valid)
+                          anchor=anchor, anchor_mode=anchor_mode, window_valid=window_valid,
+                          raw_window=int(getattr(cfg, "message_raw_window", 0) or 0))
         self._last_message_ctx = ctx
         return ctx
 

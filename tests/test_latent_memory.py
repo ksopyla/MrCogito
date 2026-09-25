@@ -265,3 +265,70 @@ def test_slot_values_carry_row_content_at_init(context):
     v = m._last_message_ctx.slots[1].float().reshape(8, -1, m.config.num_kv_heads * m.config.head_dim)
     ratio = v.std(0).mean() / v.std(1).mean()
     assert float(ratio) > 0.1
+
+
+# -- long-context length ladder ---------------------------------------------------------
+
+def _sender_moved(m, ids, pos_from, pos_to):
+    """Did perturbing token 1 move logits in [pos_from, pos_to)?"""
+    with torch.no_grad():
+        base = m(ids).logits
+        ids2 = ids.clone()
+        ids2[0, 1] = (ids2[0, 1] + 7) % 80 + 3
+        d = (base - m(ids2).logits)[0].abs().amax(-1)
+    return bool((d[pos_from:pos_to] > 1e-5).any()), bool((d[pos_to + 1:] > 1e-5).any())
+
+
+def test_raw_window_leaves_memory_as_the_only_long_path():
+    """With message_raw_window the global read's raw keys are local: a far sender token no
+    longer reaches later senders, but the receiver still reads it through the memory."""
+    ids = row(S=64, qpos=50)
+    full = make(seed=0)
+    win = make(seed=0, message_raw_window=8)
+    # reach of the local stack: pre window 4 + global window 8 + stack block 6 < 30
+    far_full, recv_full = _sender_moved(full, ids, 30, 50)
+    far_win, recv_win = _sender_moved(win, ids, 30, 50)
+    assert far_full and not far_win
+    assert recv_full and recv_win
+
+
+def test_raw_window_zero_is_unchanged():
+    ids = row(S=40, qpos=20)
+    a, b = make(seed=3), make(seed=3, message_raw_window=0)
+    with torch.no_grad():
+        assert torch.equal(a(ids).logits, b(ids).logits)
+
+
+def test_checkpoint_and_ladder_roundtrip(tmp_path):
+    """probe --save_ckpt → length_ladder at a longer length (tiny, CPU, seconds)."""
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    ck = tmp_path / "ck"
+    probe = [
+        sys.executable, str(root / "verification/bapo_capability_probe.py"), "--scale", "tiny",
+        "--recipe", "recall_single", "--arch", "e31_page", "--hidden", "64", "--head_dim", "16",
+        "--steps", "2", "--k1_mult", "1", "--batch", "2", "--eval_every", "2", "--eval_rows", "2",
+        "--lm_window", "32", "--lm_stride", "24", "--lm_latents", "4", "--lm_latent_dim", "32",
+        "--lm_heads", "4", "--lm_writer_dim", "32", "--lm_enc_layers", "1", "--lm_reader_tokens", "2",
+        "--token_embedding_dim", "16", "--ngram_orders", "none", "--message_raw_window", "16",
+        "--no-skip_uncalibrated", "--amp", "off", "--save_ckpt", str(ck), "--out", str(tmp_path / "run"),
+    ]
+    r = subprocess.run(probe, cwd=root, capture_output=True, text=True, timeout=300)
+    assert r.returncode in (0, 2), r.stdout[-2000:] + r.stderr[-2000:]
+    assert (ck / "e31_page.pt").exists()
+    state = torch.load(ck / "e31_page.pt", weights_only=False)
+    assert state["spec"]["message_raw_window"] == 16 and state["data"]["seq_len"] == 128
+    lad = [
+        sys.executable, str(root / "verification/length_ladder.py"), "--ckpt", str(ck),
+        "--lengths", "128", "512", "--rows", "4", "--amp", "off", "--backend", "sdpa",
+    ]
+    r = subprocess.run(lad, cwd=root, capture_output=True, text=True, timeout=300)
+    assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
+    rep = json.loads((ck / "ladder.json").read_text())
+    cell = rep["results"]["e31_page"]["512"]
+    assert cell["rows"] == 4 and cell["trained_seq_len"] == 128
+    assert cell["memory_slots"] > rep["results"]["e31_page"]["128"]["memory_slots"]

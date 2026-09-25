@@ -92,6 +92,7 @@ class ArchSpec:
     message_identity_slots: bool = False
     message_pack_stride: int = 0
     message_keep_local_swa: bool = False
+    message_raw_window: int = 0  # >0: global read's raw keys are a causal window (length-ladder runs)
     message_extra_slot_attends: int = 0
     message_update_slot_kv: bool = False
     message_global_anchors: str = "none"
@@ -218,6 +219,7 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         message_identity_slots=bool(spec.message_identity_slots) if arch == "e21" else False,
         message_pack_stride=int(getattr(spec, "message_pack_stride", 0) or 0) if arch == "e21" else 0,
         message_keep_local_swa=bool(spec.message_keep_local_swa) if exclusive else False,
+        message_raw_window=int(getattr(spec, "message_raw_window", 0) or 0) if exclusive else 0,
         message_extra_slot_attends=int(getattr(spec, "message_extra_slot_attends", 0) or 0) if exclusive else 0,
         message_update_slot_kv=bool(getattr(spec, "message_update_slot_kv", False)) if exclusive else False,
         message_global_anchors=(

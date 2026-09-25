@@ -402,7 +402,8 @@ def _preprobe_decision(trace: list, *, floor_nats: float, min_acc: float, min_ga
     return {"status": status, "acc": a, "ce_nats": ce, "gain_nats": gain}
 
 
-def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, steps: int) -> dict:
+def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, steps: int,
+              ckpt_meta: dict | None = None) -> dict:
     model = build_model(
         arch,
         vocab_size=cfg.vocab.vocab_size,
@@ -417,6 +418,11 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
     params = n_params(model)
     if params > args.max_params:
         raise SystemExit(f"{arch} has {params} params > --max_params {args.max_params}")
+    init_path = Path(args.init_ckpt) / f"{arch}.pt" if getattr(args, "init_ckpt", None) else None
+    if init_path is not None and init_path.exists():
+        state = torch.load(init_path, map_location=device, weights_only=False)
+        model.load_state_dict(state["state_dict"])
+        print(f"  [{arch}] init from {init_path} (trained at seq {state.get('data', {}).get('seq_len')})", flush=True)
     if hasattr(model, "layers"):
         patterns = [(layer.attn.pattern, layer.attn.window) for layer in model.layers]
         print(
@@ -588,6 +594,24 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             throughput["peak_gb"] = torch.cuda.max_memory_allocated() / 1e9
         except Exception:  # noqa: BLE001 — CPU-only torch or no CUDA context
             pass
+    if getattr(args, "save_ckpt", None):
+        from dataclasses import asdict
+
+        out_dir = Path(args.save_ckpt)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        torch.save(
+            {
+                "arch": arch,
+                "state_dict": {k: v.detach().cpu() for k, v in model.state_dict().items()},
+                "spec": asdict(spec),
+                "data": dict(ckpt_meta or {}),
+                "final": final,
+                "lr": args.lr,
+                "seed": args.seed,
+            },
+            out_dir / f"{arch}.pt",
+        )
+        print(f"  [{arch}] saved {out_dir / f'{arch}.pt'}", flush=True)
     return {
         "arch": arch,
         "params": params,
@@ -655,6 +679,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         message_identity_slots=args.message_identity_slots,
         message_pack_stride=args.message_pack_stride,
         message_keep_local_swa=args.message_keep_local_swa,
+        message_raw_window=args.message_raw_window,
         message_extra_slot_attends=args.message_extra_slot_attends,
         message_update_slot_kv=args.message_update_slot_kv,
         message_global_anchors=args.message_global_anchors,
@@ -778,7 +803,16 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             # Fast dense 99% early-stop must not cap a slower write below the advertised K1 budget.
             arch_steps = _non_dense_step_budget(args.steps, args.k1_mult, dense_steps_used)
         print(f"--- {arch}  (≤ {arch_steps} steps) ---", flush=True)
-        results[arch] = train_one(arch, cfg, args, eval_batches, spec, device, steps=arch_steps)
+        results[arch] = train_one(
+            arch, cfg, args, eval_batches, spec, device, steps=arch_steps,
+            ckpt_meta={
+                "scale": scale.name, "recipe": recipe.name, "task": recipe.task, "display": display,
+                "over": over, "seq_len": cfg.seq_len, "local_window": window,
+                "vocab_size": cfg.vocab.vocab_size, "answer_start": cfg.answer_start,
+                "pad_id": cfg.vocab.control("eos"), "bos_id": cfg.vocab.control("bos"),
+                "eos_id": cfg.vocab.control("eos"),
+            },
+        )
         print(
             f"  {arch}: {results[arch]['params']/1e6:.3f}M  acc {results[arch]['final']['acc']:.3f}  "
             f"flow {results[arch]['info']['information_flow']:.3f}  "
@@ -844,6 +878,8 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             "message_identity_slots": args.message_identity_slots,
             "message_pack_stride": args.message_pack_stride,
             "message_keep_local_swa": args.message_keep_local_swa,
+            "message_raw_window": args.message_raw_window,
+            "init_ckpt": args.init_ckpt,
             "message_extra_slot_attends": args.message_extra_slot_attends,
             "message_update_slot_kv": args.message_update_slot_kv,
             "message_global_anchors": args.message_global_anchors,
@@ -1075,6 +1111,14 @@ def main() -> int:
     p.add_argument("--lm_competition", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--lm_null_latent", action=argparse.BooleanOptionalAction, default=False)
     p.add_argument("--lm_reader_tokens", type=int, default=5, help="reader K/V entries per latent (m).")
+    # Long-context length ladder (verification/length_ladder.py evaluates the saved weights)
+    p.add_argument(
+        "--message_raw_window", type=int, default=0,
+        help="exclusive arches: the global read's raw keys are a causal window of this many tokens "
+        "(0 = full causal). With it the memory is the only long path and cost is linear in length.",
+    )
+    p.add_argument("--save_ckpt", default=None, help="dir: save each arch's final weights + spec as <arch>.pt")
+    p.add_argument("--init_ckpt", default=None, help="dir: start each arch from <arch>.pt if present (curriculum)")
     p.add_argument(
         "--experiment_id",
         default=None,
