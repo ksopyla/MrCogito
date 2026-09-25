@@ -386,7 +386,49 @@ confirms them on the alignment page
   pooling-rule fix), append-only multi-level archive.
 
 ## Result
-<Filled in AFTER, by experiment-track.>
-- Run id: —
-- Run report: —
-- Verdict: —
+**Capability suite, full tier, 30M, 3 seeds (suite 2026-09-25.v3), 2026-09-25.**
+- Run id: `Cache/capability/e31_full_30m_{odra,polonez,polonez_2k}` (merged scorecard); targeted reruns in
+  `Cache/capability/e31_reruns`. Branch `e31-latent-memory`.
+- Verdicts:
+  - **e31_page: scale up.** Frontier L5 at 30M: every gating level L0–L5 passes, plus both L6 stretch cells.
+  - e30: promising, fix before scaling. Frontier L1: it fails the 1k lookalike, the long lookups and chain-2k.
+  - e31_bixt: not ready. Frontier L0: slow learner; it passes L1 cells only with 8× budget.
+
+| cell (bits / 64) | e31_page | e30 | e31_bixt | dense | pre-set criterion |
+|---|---|---|---|---|---|
+| lookalike-1k | **57.5** (94 %) | 25.7 | 24.0 | 63.3 | S1 ≥ 47 ✓ |
+| lookup-1k | **57.6** (94 %) | 25.7 | 17.7 | 62.9 | S1 ≥ 40 ✓ |
+| chain-1k | **60.6** (97 %) | 44.2 | 21.8 | 63.6 | S2 ≥ 47 ✓ |
+| lookup-2k (step 5e-5) | **52.2** (89 %) | 25.7 | 0 | 62.9 | S3 ≥ 32 ✓ |
+| chain-2k | **61.8** (98 %) | 15.0 | 30.3 | 63.1 | — |
+| fact-1k (Glyph, /96) | **94.6** (99 %) | 81.6 | 80.0 | 95.2 | S6 (rung 2) ✓ |
+| shuffled-1k (stretch) | **61.2** (98 %) | 1.3 | 0.1 | 63.0 | — |
+
+- **S5 (write health) ✓.** Per-letter accuracy is flat across the 32 answer letters; E30's
+  13-letter salience wall is gone. With the memory off, accuracy drops to chance.
+- **S4 (latents vs context) is open.** In wave 1, the context-only control (`e30_ctx`: the
+  E30 writer with a 64-token pre-encoder reach) reached 56.6 bits on lookup-1k, against 57.6
+  for e31_page. On lookup, most of the gain over E30 is *context reach*, not the latent
+  design. The S4 cell (lookalike-1k) plus lookup-2k, chain-2k and shuffled-1k are queued for
+  `e30_ctx` (`Cache/capability/e30ctx_control_30m*`).
+- **Caveats:**
+  1. E31 has 35.7M parameters vs 31.2M for dense and e30 (+14 %; the suite rule is ±5 %).
+  2. The platform changed for every arm (token embedding 128, no n-grams); e30 lost bits on
+     some short cells compared with its ledger numbers.
+  3. At 2,048 tokens, takeoff is stochastic:
+     - every arm needed step size 5e-5 (at 1e-4 all but e30 stayed at chance);
+     - dense seed 0 and e31_page seed 2 were slow or failed even at 5e-5;
+     - reruns on another server flipped outcomes.
+  4. The extension rule misses slow, still-rising curves (bixt, e31_page seed 2).
+     Suggested fix: also extend when accuracy rose ≥ 5 points in the last third.
+  5. The three lookup-2k 5e-5 `job.json` files were reconstructed from their 1e-4 siblings;
+     the metadata was lost when the folders were renamed.
+- **Coarse rung, lookup-2k, 1 seed:** W 512, K 8 reached 39 % with m = 1 and chance with
+  m = 5 (fine geometry: 93 %). Under 0.5× the fine bits, so by the decision rule the 1M design
+  needs the two-level memory.
+- **Length ladder:** see *Length ladder*. Stage A, trained at 2k:
+  - lookup falls 92 → 81 → 56 % at 2k/4k/8k, then chance from 16k;
+  - chain falls to chance at 4k for **both e31_page and dense**.
+
+  Stage B (continue training at 8k): lookup is 95 % at 8k. Stage B at 16k, the
+  length-invariant memory variants and the full ladder conclusion are pending.
