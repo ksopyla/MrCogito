@@ -560,6 +560,21 @@ def _flex_block_mask(S, pattern, window, key_valid, doc_ids, device, causal, bat
         if key in _FLEX_CACHE:
             return _FLEX_CACHE[key]
     pred = make_mask_pred(pattern, window, key_valid, doc_ids, causal=causal, sink=sink, sink_pos=sink_pos)
+    if pattern == "swa" and S * S > _CHUNKED_MASK_PAIRS:
+        # Long rows: the band's block lists directly (O(S) work, not O(S²) predicate calls).
+        extra = None
+        if sink:
+            nqb = -(-S // 128)
+            first_q = torch.arange(nqb, device=device) * 128
+            if sink_pos is not None:
+                extra = (sink_pos[:, first_q] // 128)[..., None]
+            else:
+                extra = torch.zeros(batch, nqb, 1, dtype=torch.long, device=device)
+        bm = _band_block_mask(pred, B=batch if batch_dependent or extra is not None else 1, Q_LEN=S, KV_LEN=S,
+                              window=window, causal=causal, device=device, extra_blocks=extra)
+        if key is not None:
+            _FLEX_CACHE[key] = bm
+        return bm
     # Always compile the mask build on CUDA: the eager path materialises int64 (Q_LEN, KV_LEN)
     # index grids (~8 GB transient at 32k, impossible at 256k); the compiled path works
     # block by block. CPU keeps the eager path (no inductor cost in unit tests).
@@ -600,6 +615,64 @@ def _chunked_block_mask(pred, *, B: int, Q_LEN: int, KV_LEN: int, device, block:
     cat = [None if parts[0][i] is None else torch.cat([p[i] for p in parts], dim=2) for i in range(4)]
     return BlockMask.from_kv_blocks(cat[0], cat[1], cat[2], cat[3], BLOCK_SIZE=block, mask_mod=pred,
                                     seq_lengths=(Q_LEN, KV_LEN))
+
+
+def _band_block_mask(mask_mod, *, B: int, Q_LEN: int, KV_LEN: int, window: int, causal: bool, device,
+                     extra_blocks: Optional[torch.Tensor] = None, block: int = 128):
+    """Block mask for a mask that is zero outside a band `|q − kv| < window` (plus optional extra
+    KV blocks per query block, e.g. attention sinks or memory slots), built from the band
+    geometry in O(blocks) instead of evaluating every (q, kv) pair. Every listed block is
+    *partial*, so `mask_mod` still decides each entry: the mask is exact as long as the lists are
+    a superset of the true non-zero blocks. `window <= 0` means unbounded (full causal).
+    `extra_blocks` [B, n_q_blocks, E] int, −1 = unused."""
+    from torch.nn.attention.flex_attention import BlockMask
+
+    nqb = -(-Q_LEN // block)
+    nkb = -(-KV_LEN // block)
+    qb = torch.arange(nqb, device=device)
+    q_lo, q_hi = qb * block, torch.clamp(qb * block + block - 1, max=Q_LEN - 1)
+    if window <= 0:
+        lo = torch.zeros_like(qb)
+        span = nqb
+    else:
+        lo = torch.clamp(q_lo - (window - 1), min=0) // block
+        wb = -(-(window - 1) // block)
+        span = wb + 2 if causal else 2 * wb + 3
+    hi_kv = q_hi if causal or window <= 0 else q_hi + (window - 1)
+    hi = torch.clamp(hi_kv // block, max=nkb - 1)
+    band = lo[:, None] + torch.arange(span, device=device)[None, :]
+    band = torch.where(band <= hi[:, None], band, torch.full_like(band, -1))
+    cand = band[None].expand(B, nqb, span)
+    if extra_blocks is not None:
+        cand = torch.cat([cand, extra_blocks.to(cand.dtype)], dim=-1)
+    big = torch.full_like(cand, nkb)
+    cand = torch.where((cand >= 0) & (cand < nkb), cand, big)
+    cand, _ = cand.sort(dim=-1)
+    dup = torch.zeros_like(cand, dtype=torch.bool)
+    dup[..., 1:] = cand[..., 1:] == cand[..., :-1]
+    cand = torch.where(dup, big, cand)
+    cand, _ = cand.sort(dim=-1)
+    num = (cand < nkb).sum(-1).to(torch.int32)
+    idx = torch.where(cand < nkb, cand, torch.zeros_like(cand)).to(torch.int32)
+    # flex expects one column per KV block; valid entries are sorted first and number ≤ nkb
+    idx = F.pad(idx, (0, nkb - idx.shape[-1])) if idx.shape[-1] < nkb else idx[..., :nkb]
+    return BlockMask.from_kv_blocks(num[:, None], idx[:, None].contiguous(), None, None, BLOCK_SIZE=block,
+                                    mask_mod=mask_mod, seq_lengths=(Q_LEN, KV_LEN))
+
+
+def _message_extra_blocks(ctx: "MessageCtx", S: int, block: int = 128) -> Optional[torch.Tensor]:
+    """Slot KV blocks for every query block that holds a receiver token (superset)."""
+    if ctx.override in ("none", "raw") or ctx.n_slots == 0:
+        return None
+    B = ctx.side.shape[0]
+    nqb = -(-S // block)
+    pad = nqb * block - S
+    side = F.pad(ctx.side, (0, pad), value=0) if pad else ctx.side
+    has_recv = (side.view(B, nqb, block) >= 1).any(-1)  # [B, nqb]
+    first, last = S // block, (S + ctx.n_slots - 1) // block
+    slot_blocks = torch.arange(first, last + 1, device=ctx.side.device)
+    ex = slot_blocks[None, None, :].expand(B, nqb, slot_blocks.numel())
+    return torch.where(has_recv[..., None], ex, torch.full_like(ex, -1))
 
 
 def attend(
@@ -1304,7 +1377,10 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
             bm = block_masks[memo_key]
         else:
             pred = make_message_mask_pred(S, ctx, key_valid)
-            if S * (S + ctx.n_slots) > _CHUNKED_MASK_PAIRS:
+            if S * (S + ctx.n_slots) > _CHUNKED_MASK_PAIRS and getattr(ctx, "anchor_mode", "none") == "none":
+                bm = _band_block_mask(pred, B=B, Q_LEN=S, KV_LEN=S + ctx.n_slots, window=int(ctx.raw_window or 0),
+                                      causal=True, device=q.device, extra_blocks=_message_extra_blocks(ctx, S))
+            elif S * (S + ctx.n_slots) > _CHUNKED_MASK_PAIRS:
                 bm = _chunked_block_mask(pred, B=B, Q_LEN=S, KV_LEN=S + ctx.n_slots, device=q.device)
             else:
                 bm = create_block_mask(pred, B=B, H=None, Q_LEN=S, KV_LEN=S + ctx.n_slots, device=q.device,

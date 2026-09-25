@@ -354,3 +354,47 @@ def test_chunked_block_mask_matches_the_one_shot_mask():
     one = create_block_mask(pred, B=2, H=None, Q_LEN=S, KV_LEN=S + nb, device="cpu")
     chunked = _chunked_block_mask(pred, B=2, Q_LEN=S, KV_LEN=S + nb, device="cpu", max_pairs=128 * (S + nb))
     assert torch.equal(one.to_dense(), chunked.to_dense())
+
+
+def _covers(bm, pred, B, Q, KV):
+    """Every (q, kv) the predicate allows lies in a listed block."""
+    blk = bm.to_dense()[:, 0].bool()  # [B', nqb, nkb]
+    blk = blk.repeat_interleave(128, 1).repeat_interleave(128, 2)[:, :Q, :KV].expand(B, Q, KV)
+    q = torch.arange(Q)[:, None].expand(Q, KV)
+    kv = torch.arange(KV)[None, :].expand(Q, KV)
+    grid = torch.stack([pred(torch.full_like(q, b), None, q, kv) for b in range(B)])
+    return bool((grid & ~blk).sum() == 0), int(bm.kv_num_blocks.sum())
+
+
+@pytest.mark.parametrize("window", [40, 300])
+def test_band_block_mask_covers_local_swa_with_sinks(window):
+    from nn.perceiver_ar_lm import _band_block_mask, make_mask_pred
+
+    S, B = 700, 2
+    doc = torch.zeros(B, S, dtype=torch.long)
+    doc[0, 450:] = 1
+    starts = torch.zeros(B, S, dtype=torch.long)
+    starts[0, 450:] = 450
+    pred = make_mask_pred("swa", window, None, doc, causal=True, sink=True, sink_pos=starts)
+    nqb = -(-S // 128)
+    extra = (starts[:, torch.arange(nqb) * 128] // 128)[..., None]
+    bm = _band_block_mask(pred, B=B, Q_LEN=S, KV_LEN=S, window=window, causal=True, device="cpu",
+                          extra_blocks=extra)
+    ok, n = _covers(bm, pred, B, S, S)
+    assert ok and n <= B * nqb * (-(-window // 128) + 3)
+
+
+@pytest.mark.parametrize("raw_window", [0, 64])
+def test_band_block_mask_covers_the_memory_read(raw_window):
+    from nn.perceiver_ar_lm import _band_block_mask, _message_extra_blocks, make_message_mask_pred
+
+    m = make(message_raw_window=raw_window)
+    ids = row(S=60, qpos=40)
+    with torch.no_grad():
+        m(ids)
+    ctx = m._last_message_ctx
+    S = ids.shape[1]
+    pred = make_message_mask_pred(S, ctx, None)
+    bm = _band_block_mask(pred, B=1, Q_LEN=S, KV_LEN=S + ctx.n_slots, window=raw_window, causal=True,
+                          device="cpu", extra_blocks=_message_extra_blocks(ctx, S))
+    assert _covers(bm, pred, 1, S, S + ctx.n_slots)[0]
