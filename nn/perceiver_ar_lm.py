@@ -199,6 +199,8 @@ class PerceiverARConfig(PretrainedConfig):
         lm_null_latent: bool = False,     # one latent the reader never sees
         lm_reader_tokens: int = 5,        # reader K/V entries per latent (m)
         lm_pos_prior: bool = True,        # per-latent sub-page prior at init
+        lm_addr: str = "window_start",    # latent address: "window_start" sinusoid | "none" (length-invariant)
+        lm_slot_pos: str = "read",        # slot RoPE position: "read" (what it read) | "boundary" (the QUERY)
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -285,6 +287,8 @@ class PerceiverARConfig(PretrainedConfig):
         self.lm_null_latent = bool(lm_null_latent)
         self.lm_reader_tokens = int(lm_reader_tokens)
         self.lm_pos_prior = bool(lm_pos_prior)
+        self.lm_addr = str(lm_addr)
+        self.lm_slot_pos = str(lm_slot_pos)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -376,6 +380,10 @@ class PerceiverARConfig(PretrainedConfig):
                 raise ValueError("lm_latent_dim must be divisible by lm_heads")
             if self.lm_stride > self.lm_window:
                 raise ValueError("lm_stride must be <= lm_window (windows must tile the book)")
+            if self.lm_addr not in ("window_start", "none"):
+                raise ValueError(f"lm_addr must be 'window_start' or 'none', got {self.lm_addr!r}")
+            if self.lm_slot_pos not in ("read", "boundary"):
+                raise ValueError(f"lm_slot_pos must be 'read' or 'boundary', got {self.lm_slot_pos!r}")
             if self.message_extra_slot_attends or self.message_update_slot_kv:
                 raise ValueError("latent_memory: extra slot attends are not defined (read once; E31a reads per layer)")
         if self.message_raw_window < 0:

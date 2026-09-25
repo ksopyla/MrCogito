@@ -129,6 +129,23 @@ def window_pick(
     return tok_c, pick, slot_doc_w, slot_side_w, has
 
 
+def _boundary_pos(side, doc, pos, slot_doc, *, fallback):
+    """RoPE position of each slot's reading boundary: the first receiver token (side ≥ 1) of the
+    slot's document. Every receiver reads from at or after it, so the receiver–slot distance is
+    the receiver's offset from QUERY at every book length. `fallback` where the document has no
+    receiver (those slots are never read)."""
+    B, S = side.shape
+    n_doc = int(max(int(doc.max().item()), 0)) + 1
+    idx = torch.arange(S, device=side.device).expand(B, S)
+    recv = torch.where((side >= 1) & (doc >= 0), idx, torch.full_like(idx, S))
+    first = torch.full((B, n_doc), S, dtype=torch.long, device=side.device)
+    first.scatter_reduce_(1, doc.clamp(min=0), recv, reduce="amin")
+    b_idx = first.gather(1, slot_doc.clamp(min=0))  # [B, C]
+    ok = (b_idx < S) & (slot_doc >= 0)
+    b_pos = pos.gather(1, b_idx.clamp(max=S - 1))
+    return torch.where(ok, b_pos, fallback)
+
+
 def _sinusoid(pos: torch.Tensor, dim: int = _ADDR_FEATS) -> torch.Tensor:
     """pos [...] → [..., dim] fixed sinusoid features (window-start address)."""
     half = dim // 2
@@ -199,6 +216,10 @@ class LatentMemoryWriter(nn.Module):
         self.g, self.dh = int(cfg.num_kv_heads), int(cfg.head_dim)
         self.rounds = int(cfg.lm_rounds)
         self.competition = bool(cfg.lm_competition)
+        # length-invariant options (the long-context ladder): no absolute window-start address,
+        # and slot keys rotated at the reading boundary instead of the position they read
+        self.addr_mode = str(getattr(cfg, "lm_addr", "window_start"))
+        self.slot_pos_mode = str(getattr(cfg, "lm_slot_pos", "read"))
         std = float(cfg.init_std)
 
         self.in_proj = nn.Linear(e, dw, bias=False)
@@ -316,7 +337,11 @@ class LatentMemoryWriter(nn.Module):
                 x = layer(x, mask, cos, sin)
         starts = torch.tensor(geo.starts, device=x.device, dtype=torch.long)
         start_pos = pos[:, starts]  # [B, n_w] position of each window start (per document)
-        z = self.q[None].to(x.dtype) + self.addr(_sinusoid(start_pos).to(x.dtype)).reshape(Bn, 1, self.D)
+        z = self.q[None].to(x.dtype).expand(Bn, -1, -1)
+        if self.addr_mode == "window_start":
+            z = z + self.addr(_sinusoid(start_pos).to(x.dtype)).reshape(Bn, 1, self.D)
+        else:  # keep `addr` in the graph (zero contribution) so every parameter gets a gradient
+            z = z + 0.0 * self.addr.weight.sum()
         z = self.z0_norm(z)
         w = None
         for _ in range(max(self.rounds, 1)):
@@ -344,9 +369,11 @@ class LatentMemoryWriter(nn.Module):
         kk = kk.reshape(B, C, self.g, self.dh)
         vv = vv.reshape(B, C, self.g, self.dh)
         slot_pos = p_abs.reshape(B, n_w, K, 1).expand(B, n_w, K, m).reshape(B, C)
+        slot_doc = slot_doc_w.repeat_interleave(K * m, dim=1)
+        if self.slot_pos_mode == "boundary":
+            slot_pos = _boundary_pos(side, doc, pos, slot_doc, fallback=slot_pos)
         cos_s, sin_s = rope_cos_sin(slot_pos, self.dh, rope_theta, kk.dtype)
         kk = apply_rope(kk, cos_s, sin_s)
-        slot_doc = slot_doc_w.repeat_interleave(K * m, dim=1)
         slot_side = slot_side_w.repeat_interleave(K * m, dim=1)
         self._last_k_bar = kk
         self.last_diag = self._diagnostics(w, mask, geo)

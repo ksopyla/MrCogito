@@ -714,6 +714,8 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         lm_competition=args.lm_competition,
         lm_null_latent=args.lm_null_latent,
         lm_reader_tokens=args.lm_reader_tokens,
+        lm_addr=args.lm_addr,
+        lm_slot_pos=args.lm_slot_pos,
     )
     card = rung_card(scale, recipe.task, **over)
     card["local_window"] = window
@@ -901,7 +903,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
                 k: getattr(args, k) for k in (
                     "lm_window", "lm_stride", "lm_latents", "lm_latent_dim", "lm_heads",
                     "lm_writer_dim", "lm_enc_layers", "lm_rounds", "lm_competition",
-                    "lm_null_latent", "lm_reader_tokens",
+                    "lm_null_latent", "lm_reader_tokens", "lm_addr", "lm_slot_pos",
                 )
             },
             "k1_extended": {
@@ -1111,6 +1113,10 @@ def main() -> int:
     p.add_argument("--lm_competition", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--lm_null_latent", action=argparse.BooleanOptionalAction, default=False)
     p.add_argument("--lm_reader_tokens", type=int, default=5, help="reader K/V entries per latent (m).")
+    p.add_argument("--lm_addr", default="window_start", choices=("window_start", "none"),
+                   help="latent address: window-start sinusoid, or none (length-invariant memory).")
+    p.add_argument("--lm_slot_pos", default="read", choices=("read", "boundary"),
+                   help="slot RoPE position: what the latent read, or the QUERY boundary (length-invariant).")
     # Long-context length ladder (verification/length_ladder.py evaluates the saved weights)
     p.add_argument(
         "--message_raw_window", type=int, default=0,

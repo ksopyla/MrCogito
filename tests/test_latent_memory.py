@@ -398,3 +398,28 @@ def test_band_block_mask_covers_the_memory_read(raw_window):
     bm = _band_block_mask(pred, B=1, Q_LEN=S, KV_LEN=S + ctx.n_slots, window=raw_window, causal=True,
                           device="cpu", extra_blocks=_message_extra_blocks(ctx, S))
     assert _covers(bm, pred, 1, S, S + ctx.n_slots)[0]
+
+
+def test_length_invariant_memory_options():
+    """lm_addr='none' + lm_slot_pos='boundary': slot keys sit at the QUERY position, no leak."""
+    m = make(lm_addr="none", lm_slot_pos="boundary")
+    ids = row(S=32, qpos=10)
+    with torch.no_grad():
+        m(ids)
+    pos = m._last_message_ctx.slot_pos[0]
+    valid = m._last_message_ctx.slot_doc[0] >= 0
+    assert bool((pos[valid] == 10).all())
+    assert future_leaks(m, row(), 11) == []
+    assert future_leaks(m, row(extra_q=20), 11) == []
+    m.train()
+    labels = torch.full_like(ids, -100)
+    labels[0, 11:] = ids[0, 11:]
+    m(ids, labels=labels).loss.backward()
+    assert m.memory_writer.addr.weight.grad is not None  # kept in the graph (zero contribution)
+
+
+def test_default_address_unchanged():
+    a, b = make(seed=5), make(seed=5, lm_addr="window_start", lm_slot_pos="read")
+    ids = row()
+    with torch.no_grad():
+        assert torch.equal(a(ids).logits, b(ids).logits)

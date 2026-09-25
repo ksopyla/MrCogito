@@ -127,6 +127,8 @@ class ArchSpec:
     lm_competition: bool = True
     lm_null_latent: bool = False
     lm_reader_tokens: int = 5
+    lm_addr: str = "window_start"
+    lm_slot_pos: str = "read"
 
 
 def _n_heads(hidden: int, head_dim: int) -> int:
@@ -253,6 +255,8 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         lm_competition=bool(spec.lm_competition),
         lm_null_latent=bool(spec.lm_null_latent),
         lm_reader_tokens=int(spec.lm_reader_tokens),
+        lm_addr=str(getattr(spec, "lm_addr", "window_start")),
+        lm_slot_pos=str(getattr(spec, "lm_slot_pos", "read")),
         pad_token_id=pad_id,
         bos_token_id=bos_id,
         eos_token_id=eos_id,
