@@ -46,6 +46,7 @@ from evaluation.capability_suite import (  # noqa: E402
     Cell,
     budget_for,
     cells_for,
+    grad_accum_for,
     lr_for,
 )
 
@@ -116,7 +117,8 @@ def plan(
                            *size.probe_args(),
                            "--lr", f"{lr:g}", *(["--warm_residuals"] if warm else []),
                            "--steps", str(steps), "--k1_mult", str(b.k1_mult),
-                           "--batch", str(b.batch), "--eval_every", str(eval_every),
+                           "--batch", str(b.batch), "--grad_accum", str(grad_accum_for(cell)),
+                           "--eval_every", str(eval_every),
                            "--eval_rows", str(eval_rows), "--seed", str(seed),
                            "--amp", "auto", "--out", out_dir]
                     for a in job_arches:

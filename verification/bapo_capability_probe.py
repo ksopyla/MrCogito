@@ -492,10 +492,14 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
         while step < max_steps:
             step += 1
             ids, labels = make_batch(cfg, rng, args.batch, device)
-            with _message_cm(model, override), amp_ctx(device, args.amp):
-                out = model(ids, labels=labels)
-                loss = out.loss if hasattr(out, "loss") else out[0].loss
-            loss.backward()
+            # --grad_accum k: same effective batch (args.batch rows) in k micro-batches
+            micro = max(1, int(getattr(args, "grad_accum", 1) or 1))
+            for mi, (ids_m, labels_m) in enumerate(zip(ids.chunk(micro), labels.chunk(micro))):
+                with _message_cm(model, override), amp_ctx(device, args.amp):
+                    out = model(ids_m, labels=labels_m)
+                    loss_m = out.loss if hasattr(out, "loss") else out[0].loss
+                (loss_m / micro).backward()
+                loss = loss_m if mi == 0 else loss
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
             sched.step()
@@ -1168,6 +1172,8 @@ def main() -> int:
     p.add_argument("--batch", type=int, default=32)
     p.add_argument("--lr", type=float, default=3e-3)
     p.add_argument("--eval_every", type=int, default=50)
+    p.add_argument("--grad_accum", type=int, default=1,
+                   help="split each --batch into k micro-batches (same effective batch; for memory at 2048+)")
     p.add_argument("--eval_rows", type=int, default=64)
     p.add_argument("--early_stop_acc", type=float, default=0.99)
     p.add_argument("--max_params", type=int, default=100_000_000)

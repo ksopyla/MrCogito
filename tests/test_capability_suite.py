@@ -180,8 +180,8 @@ def test_scorecard_replays_the_e30_ledger_as_not_ready(tmp_path):
 
 
 def test_long_cells_see_enough_examples():
-    """v2: a long cell's advertised budget covers ≥ 100K examples (v1's batch 8 starved it)."""
+    """v2/v3: long cells see ≥150K (1024) / ≥200K (2048) examples (v1/v2 starved them)."""
     for c in CELLS:
         if c.seq_len >= 1024:
             b = budget_for(c)
-            assert b.steps * b.k1_mult * b.batch >= 75_000
+            assert b.steps * b.k1_mult * b.batch >= (200_000 if c.seq_len > 1024 else 150_000)

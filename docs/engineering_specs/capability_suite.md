@@ -1,6 +1,6 @@
 # Capability suite — the standard exams for new architectures
 
-- **Status:** active · suite version `2026-09-25.v2` (v2: long-cell batch 8/4 → 32/16, see Budget)
+- **Status:** active · suite version `2026-09-25.v3` (v2: 1024 batch 8 → 32; v3: 2048 batch 32 via 2 micro-batches, 6× steps — see Budget)
 - **Code:** `evaluation/capability_suite.py` (definition) ·
   `scripts/run_capability_suite.py` (plan / launch) ·
   `analysis/capability_scorecard.py` (score + verdict) · probe `verification/bapo_capability_probe.py`
@@ -81,7 +81,8 @@ on the first run at that size. Step-size cliffs are real (1e-4 passes, 2e-4 zero
 2048 full read).
 
 Budget: 800 × 4 steps at ≤ 256 tokens (batch 32), 1200 × 4 at 512 and 1024 (batch 32),
-1200 × 4 at 2048 (batch 16). v1 used batch 8 / 4 at 1024 / 2048: ~38K / ~19K examples, below
+1200 × 6 at 2048 (batch 32 as 2 micro-batches of 16, `--grad_accum 2`; v2's batch 16 × 4800
+steps ≈ 77K examples left every arch, dense included, at chance on the 2048 lookup). v1 used batch 8 / 4 at 1024 / 2048: ~38K / ~19K examples, below
 the ~20–32K examples every arch needs before it starts learning at 1024, so even the dense model
 sat at chance on some seeds (E31 run, 2026-09-25); the probe extends once while eval loss is still
 falling. Eval set: **256 rows** (the ledger used 16–32). The dense model trains next to the
