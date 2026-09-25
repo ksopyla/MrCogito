@@ -173,6 +173,88 @@ geometry keeps ≥ 0.75 × the fine geometry's bits, a single coarse level may c
 facts at 1M. If it keeps < 0.5 × (typically: finds the fact but loses value letters), the
 1M design needs the **two-level memory** in *Follow-ups*.
 
+## Length ladder (long-context confirmation: 2k → 128k)
+The final check that the architecture suits long inputs. The exam stays the same (task,
+answer packing, 64-bit prize); only the haystack grows. Added 2026-09-25, after the
+full-tier suite.
+
+**Linear cost first.** Three things made the platform quadratic at long lengths. All
+three are fixed on `e31-latent-memory`:
+1. In the global layer, tokens before QUERY attended to every earlier token. New
+   `message_raw_window` (default 0 = unchanged) makes those raw keys a causal window, so
+   the memory is the only long path. The answer path never used them: receivers read only
+   the slots.
+2. `create_block_mask` materialised the full query × key grid for the memory read (29 GiB
+   at 128k).
+3. The sliding-window layers rebuilt their masks by checking every (query, key) pair.
+
+Both mask problems are replaced by block lists computed from the band geometry
+(`_band_block_mask`), used only above 2³⁰ pairs, so 2k training is unchanged. The new
+path matches the old one at 36k to within bf16 noise.
+
+Measured forward cost, 30M e31_page, one row, RTX 3090:
+
+| length | fine memory (W 256, K 32, m 5) | coarse memory (W 512, K 8, m 1) | peak GPU memory |
+|---|---|---|---|
+| 16k | 0.30 s | 0.22 s | 0.9 GB |
+| 32k | 0.44 s | 0.38 s | 1.0 GB |
+| 64k | 0.86 s | 0.63 s | 1.8 GB |
+| 128k | 1.35 s | 1.25 s | 3.4 GB |
+
+Memory size: the fine setting has ≈ 0.83 reader entries per token (32 latents × 5 entries
+per 192-token stride), so it is ≈ 109k slots at 128k. It hides raw tokens from the
+receiver, but it does not shrink the memory. The coarse setting (N/48 ≈ 2.7k slots at
+128k) is the real compression claim.
+
+**Stage A: does it generalise to longer inputs?** Train at 2,048 tokens with
+`--message_raw_window 256 --save_ckpt DIR`. Then evaluate the saved weights, with no
+more training, at 2k / 4k / 8k / 16k / 32k / 64k / 128k (`verification/length_ladder.py`,
+64 rows per length). Each length reports:
+- accuracy ± row SE;
+- accuracy by **fact depth** (5 bins, fact position / length);
+- memory slots, peak GPU memory and seconds per row.
+
+Arms:
+- e31_page, fine: lookup-2k at 2 seeds, chain-2k at 1 seed;
+- e31_page, coarse: lookup-2k at 2 seeds;
+- dense, the full-attention reference;
+- e18_local, the no-memory floor (it must sit at chance).
+
+**Stage B: can it learn at long lengths?** A curriculum from the Stage A weights
+(`--init_ckpt`): a short run at 8k, then 16k, then the ladder again. This separates
+"cannot extrapolate" from "cannot hold a fact over a long input". Training at 128k does
+not fit a 3090: the writer's activations are ≈ 50 GB per row. 64k–128k stay
+evaluation-only.
+
+**How to read a failure.** Each diagnosis comes with a prepared variant:
+- Accuracy falls with the **distance** between fact and question → a position problem.
+  RoPE on the memory read sees distances never seen in training; with θ = 500k and head
+  dim 64, about 12 of 32 frequency pairs are out of range beyond 2k. Variant: a
+  content-only (no-RoPE) memory read.
+- Accuracy falls with **length at every depth** → attention spread over 100k+ slots
+  instead of the 1.7k seen in training. Variant: `--global_logit_scale log` (SSMax).
+- Coarse falls far below fine → the two-level memory in *Follow-ups*.
+
+**Pass line (set before running):**
+- e31_page, median of seeds, ≥ 75 % at 16k and 32k after Stage B;
+- time and memory grow linearly with length (the table above);
+- e18_local at chance;
+- 64k and 128k reported as stretch results, not gating;
+- dense is reported, not gating: it is the quadratic reference.
+
+Commands:
+```bash
+# Stage A (per seed; the suite's lookup-2k budget at step size 5e-5)
+uv run python verification/bapo_capability_probe.py --scale bridge_1k --recipe recall_single \
+  --seq_len 2048 --arch dense e31_page e18_local --no-skip_uncalibrated --hidden 960 --head_dim 64 \
+  --kv_heads 1 --pre_layers 1 --global_layers 1 --stack_layers 2 --max_params 40000000 --lr 5e-5 \
+  --warm_residuals --steps 1200 --k1_mult 6 --batch 32 --grad_accum 2 --eval_every 100 --eval_rows 256 \
+  --seed 1 --amp auto --swp_n_heads 8 --swp_query_dim 128 --token_embedding_dim 128 --ngram_orders none \
+  --message_raw_window 256 --save_ckpt Cache/length_ladder/lookup2k_s1 --out Cache/length_ladder/lookup2k_s1
+uv run python verification/length_ladder.py --ckpt Cache/length_ladder/lookup2k_s1 \
+  --lengths 2048 4096 8192 16384 32768 65536 131072 --rows 64
+```
+
 ## Arms (one probe per GPU)
 | arm | what it is | role |
 |---|---|---|
