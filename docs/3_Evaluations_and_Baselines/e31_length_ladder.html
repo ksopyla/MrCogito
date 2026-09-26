@@ -30,7 +30,7 @@ th:first-child, td:first-child { text-align:left; } .note { color:var(--muted); 
 
 <div class="kpis">
   <div class="card kpi"><b>97 %</b><span>at 32k: length-invariant memory + one 8k training stage</span></div>
-  <div class="card kpi"><b>80 %</b><span>at 128k after training only up to 16k (95 % at 64k)</span></div>
+  <div class="card kpi"><b>80–81 %</b><span>at 128k after training only up to 16k; 2 seeds (94–95 % at 64k)</span></div>
   <div class="card kpi"><b>1.35 s · 3.4 GB</b><span>per 128k-token row, one RTX 3090 (linear cost)</span></div>
   <div class="card kpi"><b>25 %</b><span>no-memory control at every length (memory is load-bearing)</span></div>
 </div>
@@ -57,7 +57,7 @@ th:first-child, td:first-child { text-align:left; } .note { color:var(--muted); 
 <div class="card">
   <h2 style="margin-top:0">Honest caveats</h2>
   <ul class="note">
-    <li>One seed for the headline curve; seed 2 of the length-invariant memory reached only 65 % at 2k, but keeps the same fraction of its bits at 16k/32k.</li>
+    <li>The 2k → 8k → 16k curriculum result replicates on two seeds (0 and 1). Seed 2 reached only 65 % at 2k; after 2k training alone seeds differ (median 76 % at 16k).</li>
     <li>S4 fails at 1–2k: the context-only control (E30 writer with 64-token reach) matches or beats e31_page on the suite cells. At length it collapses like E31's baseline memory (29 % at 16k), so the length-invariant address is what E31 adds.</li>
     <li>Takeoff at 2k is stochastic (dense failed on 2 of 3 lookup seeds here); step size 5e-5 is required.</li>
     <li>Training beyond 64k does not fit a 3090 without activation checkpointing; 128k is evaluation-only.</li>
@@ -72,7 +72,8 @@ const lookup = [
   {name:"baseline, curriculum 8k→64k", c:"--c4", d:[84.8,84.6,86.0,84.4,83.6,83.9,52.8]},
   {name:"length-invariant, trained 2k", c:"--c3", d:[98.5,97.2,94.2,87.0,69.4,51.5,35.6]},
   {name:"length-invariant + 8k stage", c:"--c1", d:[98.6,98.9,98.5,98.4,97.2,90.7,75.6], w:3},
-  {name:"length-invariant + 8k + 16k stages", c:"--c2", d:[98.3,98.9,98.8,98.3,98.1,95.3,80.0], w:4},
+  {name:"length-invariant + 8k + 16k stages (seed 1)", c:"--c2", d:[98.3,98.9,98.8,98.3,98.1,95.3,80.0], w:4},
+  {name:"length-invariant + 8k + 16k stages (seed 0)", c:"--c2", d:[95.4,96.4,96.9,96.9,97.4,93.5,81.4], w:3, dash:"5 3"},
   {name:"length-invariant, seed 2 (2k)", c:"--c2", d:[65.0,65.2,64.6,58.2,48.9,40.4,31.8], dash:"4 3"},
   {name:"e30_ctx (context-only control), trained 2k", c:"--c6", d:[87.7,83.4,56.5,28.9,25.0,24.7,25.4], dash:"6 3"},
   {name:"no-memory control", c:"--c5", d:[24.4,24.0,24.5,25.4,24.7,25.9,25.6], dash:"2 3"},
