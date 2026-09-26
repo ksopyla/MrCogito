@@ -438,6 +438,7 @@ confirms them on the alignment page
   | length-invariant (`lm_addr none`, `lm_slot_pos boundary`), trained at 2k | 98.5 | 97 | 94 | 87 | 69 | 52 | 36 |
   | **length-invariant + one 8k stage** | **98.6** | **98.9** | **98.5** | **98.4** | **97.2** | **90.7** | **75.6** |
   | **length-invariant + 8k + 16k stages** | **98.3** | **98.9** | **98.8** | **98.3** | **98.1** | **95.3** | **80.0** |
+  | length-invariant + 8k stage, **seed 0** | 94.3 | 96.0 | 97.3 | 96.4 | 83.1 | 57.3 | 40.3 |
   | length-invariant, seed 0, trained at 2k | 97.3 | 96 | 91 | 76 | 56 | 40 | 32 |
   | length-invariant, seed 2, trained at 2k | 65 | 65 | 65 | 58 | 49 | 40 | 32 |
   | length-invariant, 2k only, **median of 3 seeds** | 97.3 | 96 | 91 | **76** | 56 | 40 | 32 |
@@ -445,8 +446,10 @@ confirms them on the alignment page
 
   - **Pass line met on seed 1:** ≥ 75 % at 16k and 32k, and at 128k as well, after a single
     8k stage. Seed 1 is the best of the three seeds. On 2k training alone the median passes at
-    16k (76 %) but not at 32k (56 %). The seed-0 8k stage is running, to replicate the
-    curriculum result.
+    16k (76 %) but not at 32k (56 %). **Seed 0 after its 8k stage** replicates the pass line
+    (96 % at 16k, 83 % at 32k) but reaches only about 4× its training length: 57 % at 64k and
+    40 % at 128k, against 91 / 76 % for seed 1. The 128k headline is seed 1's. The seed-0 16k
+    stage is queued.
   - **Baseline memory:** it learns an *absolute-position* read. Trained at length L, it
     reaches about 2L, and far facts fail first (depth effect at 8k: 42 % vs 70 %).
   - **Length-invariant memory:** accuracy is flat across fact depth at every length; the
