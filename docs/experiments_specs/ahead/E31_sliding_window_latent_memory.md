@@ -464,7 +464,9 @@ confirms them on the alignment page
   - The baseline memory trained at 8k or 16k works *only at the training length*: 92 % at
     8k, 29 % at 16k; then 93 % at 16k, 37 % at 8k. The 4-hop solution is a
     length-specific position shortcut.
-  - The length-invariant memory trained from scratch did not take off on chain (chance).
+  - The length-invariant memory trained from scratch did not take off on chain in two tries
+    (step 1e-4, 6× budget; step 5e-5, 12× budget: both at chance). With this memory,
+    **lookup → chain is part of the recipe**: content addressing has to be learned first.
   - **Chain transfers once the memory starts from the length-invariant lookup weights**
     (content addressing already learned). Trained at 2k only:
     96 / 96 / 95 / 92 / **80** / 61 / 44 % at 2k–128k.
