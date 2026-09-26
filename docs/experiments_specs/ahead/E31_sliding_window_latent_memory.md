@@ -478,4 +478,8 @@ confirms them on the alignment page
 
   E30's deficit was its 16-token context (the salience wall), not the window writer. What
   E31 adds is the length-invariant, content-addressed memory, which transfers lookup and
-  4-hop chain 16× past the training length. The e30_ctx ladder (seed 2) is running.
+  4-hop chain 16× past the training length.
+  - **e30_ctx ladder** (seed 2, same windowed read, trained at 2k):
+    88 / 83 / 57 / 29 / 25 / 25 / 25 % at 2k–128k.
+  - That is the same collapse as E31's baseline memory. Both read by absolute position.
+  - At length, the context-only design does not carry over; the length-invariant memory does.
