@@ -460,7 +460,13 @@ confirms them on the alignment page
     8k, 29 % at 16k; then 93 % at 16k, 37 % at 8k. The 4-hop solution is a
     length-specific position shortcut.
   - The length-invariant memory trained from scratch did not take off on chain (chance).
-  - Pending: chain from the length-invariant lookup weights, and a longer from-scratch run.
+  - **Chain transfers once the memory starts from the length-invariant lookup weights**
+    (content addressing already learned). Trained at 2k only:
+    96 / 96 / 95 / 92 / **80** / 61 / 44 % at 2k–128k.
+    - That passes ≥ 75 % at 16k and 32k, where dense and the baseline memory are at chance
+      from 4k.
+    - This is the E31-specific result the context-only control does not have.
+    - An 8k stage is queued.
 - **S4 fails (latents vs context).** e30_ctx, the E30 writer with a 64-token pre-encoder,
   matches or beats e31_page:
   - lookalike-1k: 63.0 vs 57.5 bits (3 seeds);
@@ -468,6 +474,8 @@ confirms them on the alignment page
   - chain-2k: 97.5 %;
   - shuffled-1k: 96.5 %.
 
+  - lookup-2k is complete: 99.0 % median over 3 seeds, vs 89.2 % for e31_page.
+
   E30's deficit was its 16-token context (the salience wall), not the window writer. What
-  E31 adds that is still untested against e30_ctx is the length-invariant address; the
-  e30_ctx ladder is queued.
+  E31 adds is the length-invariant, content-addressed memory, which transfers lookup and
+  4-hop chain 16× past the training length. The e30_ctx ladder (seed 2) is running.

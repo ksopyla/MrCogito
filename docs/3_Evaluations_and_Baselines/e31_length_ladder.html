@@ -43,10 +43,10 @@ th:first-child, td:first-child { text-align:left; } .note { color:var(--muted); 
 </div>
 
 <div class="card">
-  <h2 style="margin-top:0">Chain (4 hops): the open problem</h2>
+  <h2 style="margin-top:0">Chain (4 hops): full attention fails at 2×, the length-invariant memory transfers 16×</h2>
   <svg id="chain" viewBox="0 0 900 300" role="img" aria-label="chain accuracy versus length"></svg>
   <div class="legend" id="legend2"></div>
-  <p class="note">Chain works only at the length it was trained on, for dense and for the baseline memory: the 4-hop solution is a position shortcut tied to book length. The length-invariant memory trained from scratch did not take off; runs starting from its lookup weights are pending.</p>
+  <p class="note">Dense and the baseline memory learn a position shortcut tied to book length: chain works only at the training length. The length-invariant memory (started from its lookup weights, so content addressing is already learned) keeps 92 % at 16k and 80 % at 32k after training only at 2k. From scratch it did not take off.</p>
 </div>
 
 <div class="card tbl">
@@ -79,7 +79,8 @@ const chain = [
   {name:"dense, trained 2k", c:"--c5", d:[99.4,25.6,26.1,25.0,25.3,26.0,24.3]},
   {name:"baseline, trained 2k", c:"--c3", d:[97.9,28.2,27.5,26.0,25.6,24.5,24.3]},
   {name:"baseline, + 8k stage", c:"--c4", d:[51.5,27.3,91.8,29.3,26.2,26.2,25.4]},
-  {name:"baseline, + 16k stage", c:"--c1", d:[46.3,34.2,37.0,93.3,28.1,26.0,25.7]},
+  {name:"baseline, + 16k stage", c:"--c4", d:[46.3,34.2,37.0,93.3,28.1,26.0,25.7], dash:"4 3"},
+  {name:"length-invariant (from lookup weights), trained 2k", c:"--c1", d:[95.9,95.6,94.5,91.7,79.8,61.3,43.6], w:4},
 ];
 function chart(id, legendId, series, H) {
   const svg = document.getElementById(id), W = 900, m = {l:52, r:20, t:14, b:40};
