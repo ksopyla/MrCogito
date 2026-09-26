@@ -488,6 +488,16 @@ confirms them on the alignment page
   - shuffled-1k: 96.5 %.
 
   - lookup-2k is complete: 99.0 % median over 3 seeds, vs 89.2 % for e31_page.
+  - Final, all 3 seeds (median, e30_ctx vs e31_page):
+
+    | cell | e30_ctx | e31_page |
+    |---|---|---|
+    | lookalike-1k | 99.3 % | 94 % |
+    | lookup-2k | 99.0 % | 89.2 % |
+    | chain-2k | 97.4 % | 98.2 % |
+    | shuffled-1k | 96.5 % | 98 % |
+
+    That is a tie or better for the context-only control.
 
   E30's deficit was its 16-token context (the salience wall), not the window writer. What
   E31 adds is the length-invariant, content-addressed memory, which transfers lookup and
