@@ -437,6 +437,7 @@ confirms them on the alignment page
   | baseline, curriculum 8k → 16k → 32k → 64k | 85 | 85 | 86 | 84 | 84 | 84 | 53 |
   | length-invariant (`lm_addr none`, `lm_slot_pos boundary`), trained at 2k | 98.5 | 97 | 94 | 87 | 69 | 52 | 36 |
   | **length-invariant + one 8k stage** | **98.6** | **98.9** | **98.5** | **98.4** | **97.2** | **90.7** | **75.6** |
+  | **length-invariant + 8k + 16k stages** | **98.3** | **98.9** | **98.8** | **98.3** | **98.1** | **95.3** | **80.0** |
   | length-invariant, seed 2, trained at 2k | 65 | 65 | 65 | 58 | 49 | 40 | 32 |
   | no-memory control (e18_local) | 24 | 24 | 25 | 25 | 25 | 26 | 26 |
 
