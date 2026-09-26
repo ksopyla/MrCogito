@@ -426,9 +426,48 @@ confirms them on the alignment page
 - **Coarse rung, lookup-2k, 1 seed:** W 512, K 8 reached 39 % with m = 1 and chance with
   m = 5 (fine geometry: 93 %). Under 0.5× the fine bits, so by the decision rule the 1M design
   needs the two-level memory.
-- **Length ladder:** see *Length ladder*. Stage A, trained at 2k:
-  - lookup falls 92 → 81 → 56 % at 2k/4k/8k, then chance from 16k;
-  - chain falls to chance at 4k for **both e31_page and dense**.
+- **Length ladder (2026-09-26): passes on lookup.**
+  - Setup: e31_page, fine memory, `--message_raw_window 256`, seed 1.
+  - Evaluation: 64 rows per length. The fact position is uniform in the book; SE ≈ ±0.3–2 points.
+  - Directories: `Cache/length_ladder/*` on both servers.
 
-  Stage B (continue training at 8k): lookup is 95 % at 8k. Stage B at 16k, the
-  length-invariant memory variants and the full ladder conclusion are pending.
+  | lookup accuracy | 2k | 4k | 8k | 16k | 32k | 64k | 128k |
+  |---|---|---|---|---|---|---|---|
+  | baseline memory, trained at 2k | 92 | 81 | 56 | 30 | 29 | 25 | 27 |
+  | baseline, curriculum 8k → 16k → 32k → 64k | 85 | 85 | 86 | 84 | 84 | 84 | 53 |
+  | length-invariant (`lm_addr none`, `lm_slot_pos boundary`), trained at 2k | 98.5 | 97 | 94 | 87 | 69 | 52 | 36 |
+  | **length-invariant + one 8k stage** | **98.6** | **98.9** | **98.5** | **98.4** | **97.2** | **90.7** | **75.6** |
+  | length-invariant, seed 2, trained at 2k | 65 | 65 | 65 | 58 | 49 | 40 | 32 |
+  | no-memory control (e18_local) | 24 | 24 | 25 | 25 | 25 | 26 | 26 |
+
+  - **Pass line met:** ≥ 75 % at 16k and 32k, and at 128k as well, after a single 8k
+    stage.
+  - **Baseline memory:** it learns an *absolute-position* read. Trained at length L, it
+    reaches about 2L, and far facts fail first (depth effect at 8k: 42 % vs 70 %).
+  - **Length-invariant memory:** accuracy is flat across fact depth at every length; the
+    residual loss is uniform, which points to dilution. On seed 2 it keeps the same fraction
+    of its 2k bits as seed 1 at 16k and 32k.
+  - **SSMax:**
+    - with the absolute address, it never took off (chance);
+    - with the length-invariant memory, it held 40 % flat from 2k to 128k but was undertrained
+      (took off late).
+  - **Cost** is linear in length (see *Length ladder*: 1.35 s / 3.4 GB per 128k row).
+    Training fits a 3090 up to 64k with flex: 22 GB, 5.3 s per 2 rows. sdpa runs out of
+    memory at 32k.
+- **Chain does not transfer yet.**
+  - Dense and e31_page trained at 2k both drop to chance at 4k.
+  - The baseline memory trained at 8k or 16k works *only at the training length*: 92 % at
+    8k, 29 % at 16k; then 93 % at 16k, 37 % at 8k. The 4-hop solution is a
+    length-specific position shortcut.
+  - The length-invariant memory trained from scratch did not take off on chain (chance).
+  - Pending: chain from the length-invariant lookup weights, and a longer from-scratch run.
+- **S4 fails (latents vs context).** e30_ctx, the E30 writer with a 64-token pre-encoder,
+  matches or beats e31_page:
+  - lookalike-1k: 63.0 vs 57.5 bits (3 seeds);
+  - lookup-2k: 84 / 99 % on seeds 0 and 1;
+  - chain-2k: 97.5 %;
+  - shuffled-1k: 96.5 %.
+
+  E30's deficit was its 16-token context (the salience wall), not the window writer. What
+  E31 adds that is still untested against e30_ctx is the length-invariant address; the
+  e30_ctx ladder is queued.
