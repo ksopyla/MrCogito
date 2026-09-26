@@ -467,7 +467,8 @@ confirms them on the alignment page
     - That passes ≥ 75 % at 16k and 32k, where dense and the baseline memory are at chance
       from 4k.
     - This is the E31-specific result the context-only control does not have.
-    - An 8k stage is queued.
+    - **After one 8k stage:** 95.6 / 95.7 / 95.3 / 94.7 / 95.6 / **93.1** / **82.3** % at
+      2k–128k. The 4-hop chain holds to 128k.
 - **S4 fails (latents vs context).** e30_ctx, the E30 writer with a 64-token pre-encoder,
   matches or beats e31_page:
   - lookalike-1k: 63.0 vs 57.5 bits (3 seeds);
