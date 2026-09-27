@@ -161,6 +161,15 @@ def jobs(phase: str) -> list[dict]:
         return dense_jobs()
     if phase == "pchain_s0":  # parallel-chain exams, seed 0 (Polonez, after its first queue)
         return hard_jobs(seeds=(0,), exams=("pchain2", "pchain3")) + dense_jobs(exams=("pchain2", "pchain3"))
+    if phase == "wave2_s0":  # fair dense ceiling (from its own lookup-1k weights) + chain retry
+        dl = "dense_lookup1k_s0"
+        out = [_job(dl, "dense", 0, L1K, "lookup", ladder=[1024, 2048], cost=0.5)]
+        out += [_job(f"dense_ft_{e}_s0", "dense", 0, L1K_FT, e, init=dl, ladder=[1024, 2048], cost=0.5)
+                for e in ("recall8", "recall16", "decoy8", "pchain2", "pchain3", "chain8", "unique")]
+        k12 = [a if a != "6" or L2K[i - 1] != "--k1_mult" else "12" for i, a in enumerate(L2K)]
+        out.append({"name": "len_chain_e31_li_s0_k12", "args": [*k12, *EXAMS["chain"], "--arch", "e31_li",
+                    "--seed", "0"], "init": "len_lookup_e31_li_s0", "ladder": LADDER_FULL, "cost": 7.0})
+        return out
     if phase == "odra":  # seed 1: E31_li lookup/chain weights already live here
         return ratio_jobs() + length_jobs(seeds=(1,)) + hard_jobs(seeds=(1,))
     if phase == "polonez":  # seed 0 (E31_li seed-0 lookup weights live here) + dense ceiling
