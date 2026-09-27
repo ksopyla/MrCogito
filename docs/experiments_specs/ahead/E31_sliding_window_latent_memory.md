@@ -201,6 +201,8 @@ Measured forward cost, 30M e31_page, one row, RTX 3090:
 | 64k | 0.86 s | 0.63 s | 1.8 GB |
 | 128k | 1.35 s | 1.25 s | 3.4 GB |
 
+*Correction (27 Sep):* this smoke ran on a GPU shared with a training job. On a dedicated GPU (ladder logs) a 128k row takes **0.45 s** for E31 fine, 0.39 s for coarse, 0.33 s for E30_ctx, 0.29 s for local-only and **2.29 s for dense** (quadratic). Peak memory is 3.3–3.4 GB for every architecture, dominated by main-path activations.
+
 Memory size: the fine setting has ≈ 0.83 reader entries per token (32 latents × 5 entries
 per 192-token stride), so it is ≈ 109k slots at 128k. It hides raw tokens from the
 receiver, but it does not shrink the memory. The coarse setting (N/48 ≈ 2.7k slots at
@@ -386,6 +388,8 @@ confirms them on the alignment page
   pooling-rule fix), append-only multi-level archive.
 
 ## Result
+*Assessment against the vision, with 1M / 10M maths: `docs/4_Research_Notes/e30_vs_e31_assessment_20260927.html`.*
+
 **Capability suite, full tier, 30M, 3 seeds (suite 2026-09-25.v3), 2026-09-25.**
 - Run id: `Cache/capability/e31_full_30m_{odra,polonez,polonez_2k}` (merged scorecard); targeted reruns in
   `Cache/capability/e31_reruns`. Branch `e31-latent-memory`.
@@ -461,7 +465,7 @@ confirms them on the alignment page
     - with the absolute address, it never took off (chance);
     - with the length-invariant memory, it held 40 % flat from 2k to 128k but was undertrained
       (took off late).
-  - **Cost** is linear in length (see *Length ladder*: 1.35 s / 3.4 GB per 128k row).
+  - **Cost** is linear in length (0.45 s / 3.4 GB per 128k row on a dedicated 3090, against 2.29 s for dense).
     Training fits a 3090 up to 64k with flex: 22 GB, 5.3 s per 2 rows. sdpa runs out of
     memory at 32k.
 - **Chain does not transfer yet.**

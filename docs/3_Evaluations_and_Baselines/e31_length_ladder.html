@@ -31,7 +31,7 @@ th:first-child, td:first-child { text-align:left; } .note { color:var(--muted); 
 <div class="kpis">
   <div class="card kpi"><b>97 %</b><span>at 32k: length-invariant memory + one 8k training stage</span></div>
   <div class="card kpi"><b>80–81 %</b><span>at 128k after training only up to 16k; 2 seeds (94–95 % at 64k)</span></div>
-  <div class="card kpi"><b>1.35 s · 3.4 GB</b><span>per 128k-token row, one RTX 3090 (linear cost)</span></div>
+  <div class="card kpi"><b>0.45 s · 3.4 GB</b><span>per 128k-token row, one RTX 3090 (linear; full attention: 2.29 s)</span></div>
   <div class="card kpi"><b>25 %</b><span>no-memory control at every length (memory is load-bearing)</span></div>
 </div>
 

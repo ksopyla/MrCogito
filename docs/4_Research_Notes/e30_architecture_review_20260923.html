@@ -66,6 +66,20 @@ details{margin:8px 0} summary{cursor:pointer;color:var(--text-secondary);font-si
 <p class="sub">A review of the design, the code, the recent runs, how we measure learning, related work, and whether this path leads to a small reasoning model with a 1M–10M-token context.</p>
 <nav class="toc"><a href="#tldr">1 · Short answer</a><a href="#arch">2 · How E30 works</a><a href="#results">3 · Results</a><a href="#testing">4 · How we test</a><a href="#code">5 · Code review</a><a href="#theory">6 · Information flow</a><a href="#landscape">7 · Related work</a><a href="#frontier">8 · Frontier or improvement?</a><a href="#vision">9 · 1M–10M path</a><a href="#jev">10 · The Jev question</a><a href="#recs">11 · Recommendations</a></nav>
 
+<div class="callout" style="margin-top:18px"><b>Update, 27 Sep 2026: what the E31 study changed in this review.</b> This page is the 23 Sep review, kept as written. Since then:
+<ul>
+ <li><b>The salience-wall diagnosis held.</b> Per-letter accuracy showed exactly 13 of 32 value letters recovered. Given enough context the wall disappears, either with E31's two-way page encoder or simply with E30 reading 64 tokens back (<b>E30_ctx: 99 %</b> on lookalike-1k and lookup-2k).</li>
+ <li><b>The leak (section 5) is fixed.</b> The pooling rule is computed per window.</li>
+ <li><b>Sections 8–9 still stand.</b> A flat, question-blind notebook grows linearly and needs a hierarchy with a question-driven fetch. The compressed setting (48 tokens per latent) failed to learn, so the two-level design is required.</li>
+ <li><b>New since:</b>
+  <ul>
+   <li>A <b>length-invariant address</b>: no absolute window position, slot keys rotated at the question. With it, trained on books of at most 16k, the model holds 80–81 % at 128k (2 seeds), and a 4-hop chain holds 82 %.</li>
+   <li>A windowed global read makes cost linear: 0.45 s per 128k row against 2.29 s for full attention.</li>
+  </ul></li>
+ <li><b>Training protocol.</b> 2,048-token cells need step 5e-5, batch 32 and ≥ 3 seeds. Going long needs a 2k → 8k → 16k curriculum.</li>
+</ul>
+Current comparison and 1M / 10M maths: <a href="e30_vs_e31_assessment_20260927.html">E30 vs E31 assessment (27 Sep)</a> · results: <a href="../3_Evaluations_and_Baselines/e31_length_ladder.html">length ladder</a>.</div>
+
 <!-- ============================================================ -->
 <h2 id="tldr">1 · The short answer</h2>
 <div class="grid g4">

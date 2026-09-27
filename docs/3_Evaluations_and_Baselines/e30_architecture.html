@@ -119,6 +119,20 @@
         The answer may look the notes up. It may not reread the raw book.
       </p>
     </header>
+    <div class="caption" style="background:#eff6ff;border-color:#93c5fd;border-left-color:#1d4ed8">
+      <strong>Status, 27 Sep 2026.</strong> This page shows E30 as built. Since then:
+      <ul style="margin:6px 0 0;padding-left:18px">
+        <li><b>Leak fixed.</b> The pooling rule is now computed per window, so a window that straddles the question can't absorb answer tokens.</li>
+        <li><b>The real flaw was the 16-token reach.</b> Three examples on this page show it:
+          <ul style="margin:4px 0 0;padding-left:18px">
+            <li>E30 as built reaches 55 % on lookup and lookalike at 1–2k;</li>
+            <li>the <b>E30_ctx</b> example (layer 0 looks 64 tokens back, same write) reaches 99 %;</li>
+            <li>E31 reaches 89–94 % on the same cells.</li>
+          </ul></li>
+        <li><b>It does not go long.</b> The note's address is absolute, so trained at 2k it falls to 29 % at 16k. E31's length-invariant address fixes that for E31 and is untested on E30.</li>
+      </ul>
+      Full comparison: <a href="../4_Research_Notes/e30_vs_e31_assessment_20260927.html">E30 vs E31 assessment</a>.
+    </div>
     <p class="caption" id="scale-caption"></p>
     <div class="controls">
       <button type="button" id="btn-play" class="primary">Pause</button>
@@ -129,6 +143,7 @@
         <select id="scale">
           <option value="tiny">Tiny book (every token)</option>
           <option value="m50">50M test (1024 tokens, 160 notes)</option>
+          <option value="ctx30">E30_ctx 30M (2048 tokens, 64-token first layer)</option>
         </select>
       </label>
       <label>Speed
@@ -174,7 +189,8 @@
         <li>There is no mixer between notes. Four hops can combine only in the single global layer, when the answer looks the notes up.</li>
         <li>The two layers under that are local (16 tokens) and they are cut at the question, so they cannot walk back into the book.</li>
         <li>The averaged notebook on the same read would store one mean per 16 tokens (64 notes at length 1024, each seeing 16). This picture is the learned-question write instead.</li>
-        <li>Sibling page: <a href="e18_e21_architecture.html">full read versus the averaged notebook</a>.</li>
+        <li>The E30_ctx example uses the capability-suite platform: 30M, 128-dim tokens, no n-grams. Its global read can also be windowed (256 raw tokens) for the long-context runs, so the notes are the only long path.</li>
+        <li>Sibling pages: <a href="e18_e21_architecture.html">full read versus the averaged notebook</a> · <a href="e31_architecture.html">E31 latent memory</a> · <a href="../4_Research_Notes/e30_vs_e31_assessment_20260927.html">E30 vs E31 assessment</a>.</li>
       </ul>
     </div>
   </div>
@@ -185,7 +201,7 @@
     const STEPS = [
       { id: "book", layer: -1, title: "The book and the question" },
       { id: "embed", layer: -1, title: "Each token becomes a vector" },
-      { id: "local", layer: 0, title: "First layer: only the last 16 tokens" },
+      { id: "local", layer: 0, title: "First layer: only the last few tokens (16, or 64 in E30_ctx)" },
       { id: "keys", layer: 1, title: "Global layer: a key and a value per token" },
       { id: "write", layer: 1, title: "Write: learned questions read one window" },
       { id: "concat", layer: 1, title: "Notes are placed after the raw keys" },
@@ -224,6 +240,15 @@
         swpHeads: 8, qdim: 128, params: "49.7M",
         local: 16,
         facts: []
+      },
+      ctx30: {
+        label: "E30_ctx 30M: the context-only control from the E31 study (trained, 3 seeds)",
+        blurb: "The same write as E30, but the first layer looks 64 tokens back instead of 16, so every value letter can see its keymark. Book length 2048, question at position 2008, a 32-letter answer. Platform as in the capability suite: 128-dim tokens, no hashed n-grams. Results, median of 3 seeds: lookalike-1k 99.3 %, lookup-2k 99.0 %, chain-2k 97.4 %, shuffled chain 96.5 %, equal to or better than E31. Trained at 2k with the windowed global read, it falls to 88 / 83 / 57 / 29 % at 2k / 4k / 8k / 16k, because the notes carry absolute positions.",
+        S: 2048, query: 2008, K: 32, W: 256, stride: 192,
+        hidden: 960, heads: 15, kv: 1, dh: 64, ffn: 1920, emb: 128,
+        swpHeads: 8, qdim: 128, params: "31.1M",
+        local: 16, pre: 64,
+        facts: []
       }
     };
     Object.values(SCALES).forEach(sc => { sc.starts = windowsOf(sc.S, sc.W, sc.stride); });
@@ -236,7 +261,7 @@
     function layerCards() {
       const s = sc();
       const rows = [
-        { i: 0, name: "Local pre-encoder", meta: "sliding window " + s.local + " · cut at the question" },
+        { i: 0, name: "Local pre-encoder", meta: "sliding window " + (s.pre || s.local) + " · cut at the question" },
         { i: 1, name: "Global layer + the write", meta: "the only place that sees every note" },
         { i: 2, name: "Local stack", meta: "sliding window " + s.local },
         { i: 3, name: "Local stack", meta: "sliding window " + s.local + " · then the word head" }
@@ -367,7 +392,7 @@
         html += beam(x, ky - 28, x, ky - 10, COLORS[state.win % COLORS.length], 0.9);
         html += `<text x="120" y="16" font-size="11" fill="${COLORS[state.win % COLORS.length]}" font-weight="700">question ${state.note} reads only window ${state.win}</text>`;
       } else if (phase === "local") {
-        html += `<text x="120" y="16" font-size="11" fill="#57534e">local layer sees ${s.local} tokens, and stops at the question</text>`;
+        html += `<text x="120" y="16" font-size="11" fill="#57534e">local layer sees ${s.pre || s.local} tokens, and stops at the question</text>`;
       }
       svg.innerHTML = html;
     }
@@ -380,7 +405,7 @@
         ["params", s.params + " · hidden " + s.hidden + " · " + s.heads + " query heads · " + s.kv + " KV head · head " + s.dh],
         ["book", "[1, " + s.S + "] tokens · question at " + s.query],
         ["embed", "token width " + s.emb + " → hidden [1, " + s.S + ", " + s.hidden + "]"],
-        ["local", "window " + s.local + " · layers 0, 2, 3"],
+        ["local", (s.pre ? "window " + s.pre + " · layer 0; window " + s.local + " · layers 2, 3" : "window " + s.local + " · layers 0, 2, 3")],
         ["write", s.swpHeads + " write heads · question width " + s.qdim + " · " + s.K + " questions × window " + s.W],
         ["notes", "[1, " + C + ", " + s.kv + ", " + s.dh + "]  ·  " + C + " notes"],
         ["lookup", "raw keys " + s.S + " ‖ notes " + C + "  ·  the answer may use the notes"]
@@ -396,7 +421,7 @@
       const texts = {
         book: "The book is the gray stretch. The orange mark is the question. Green is the answer the model must produce. Nothing has been summarized yet.",
         embed: "Each token is turned into a vector of width " + s.hidden + ". A small token table (width " + s.emb + ") is lifted up to that width. Neighbors are not mixed yet.",
-        local: "The first layer lets each token see only the previous " + s.local + " tokens. At the question that window is cut, so the answer cannot peek at the book through this layer.",
+        local: "The first layer lets each token see only the previous " + (s.pre || s.local) + " tokens. At the question that window is cut, so the answer cannot peek at the book through this layer." + (s.pre ? " This is the only change in E30_ctx: 64 instead of 16, enough for every letter of a 32-letter value to see its keymark." : " The notes are written from these states, so a value letter more than " + s.local + " tokens after its keymark looks like filler to the write (the salience wall: 13 of 32 letters)."),
         keys: "The global layer builds one key and one value for every token. These are the raw material. The notes have not been written yet.",
         write: "Window " + state.win + " covers tokens " + st + "–" + (st + s.W - 1) + ". Question " + state.note + " scores every token in that window and keeps a weighted sum. That sum is one note. It does not see the other windows, and it does not see the other notes.",
         concat: "The " + C + " notes are concatenated after the raw keys. They are not written back onto the book tokens. There is no average mixed in, and no layer that lets notes talk to each other.",
