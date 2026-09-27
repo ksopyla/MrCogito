@@ -125,11 +125,22 @@ Each exam runs at 1k, starting from the arch's lookup-2k weights, with a ladder 
 |---|---|---|---|
 | recall8 / recall16 | `recall`, 8 / 16 facts, 4-letter keys | MATCH2 | capacity: many facts kept without knowing the question |
 | decoy8 | `select`, 8 decoys | MATCH2 + noise | picking the fact among 8 look-alikes |
-| shuf2 / shuf3 | `chain`, 2 / 3 shuffled hops | REACHABILITY (hard) | dependent lookups in one read (no reasoning loop yet) |
+| shuf2 / shuf3 | `chain`, 2 / 3 shuffled hops, no distractors | REACHABILITY *in name* | **has a shortcut** (below); kept as a control |
+| pchain2 / pchain3 | `chain_parallel`: 2 / 3 shuffled hops among 3 decoy chains | REACHABILITY | dependent lookups in one read; the start node picks the chain (added 27 Sep, seed 0) |
 | chain8 | `chain_ordered`, 8 hops | DFA | long in-order composition |
 | unique | `unique` | Σ-hard | the fact that appears once (no key) |
 | match3 | `match3` | MATCH3-hard | the fact planted three times |
 | count / majority | `count`, `majority` | aggregation | whole-book statistics (1 answer token, 2-bit prize) |
+
+**Shortcut found in the shuffled chain (27 Sep).** With no distractor edges, the answer is
+the only node that is a target but never a source, so it can be found without following a
+hop. E31-LI reached 96 % on shuf3 at 1k and 80 % at 16k; that measures sink detection, not
+3-hop reasoning. Distractor edges do not remove it (a distractor's source is never a
+target). `chain_parallel` plants 3 decoy chains of the same length: 4 sinks, and only the
+start node in the question tells which one is the answer (test:
+`test_chain_parallel_removes_pure_target_shortcut`). **The suite's L6.shuffled-1k cell has
+the same shortcut**, so the 96–98 % scores there (E31, E30_ctx, dense) are not evidence of
+multi-hop reasoning.
 
 The expected limits, to be confirmed or refuted:
 - one exclusive read after QUERY cannot do shuffled hops ≥ 3 at length, or aggregation;
