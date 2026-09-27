@@ -250,6 +250,11 @@ ARCH_FLAGS: dict[str, tuple[str, ...]] = {
     # every arch in an E31 job (dense, e30 …) trains on the same platform — fair on the replica.
     "e31_page": ("--token_embedding_dim", "128", "--ngram_orders", "none"),
     "e31_bixt": ("--token_embedding_dim", "128", "--ngram_orders", "none"),
+    # Length-invariant variants (E30 vs E31 limits study): all on the E31 platform.
+    "e30_li": ("--swp_n_heads", "8", "--swp_query_dim", "128", "--token_embedding_dim", "128",
+               "--ngram_orders", "none"),
+    "e31_li": ("--token_embedding_dim", "128", "--ngram_orders", "none"),
+    "e31_li_m1": ("--token_embedding_dim", "128", "--ngram_orders", "none"),
 }
 DEFAULT_CONTROLS = ("dense",)
 

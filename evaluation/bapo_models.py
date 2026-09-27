@@ -58,11 +58,32 @@ from nn.encdec_lm import EncDecConfig, EncoderDecoderLM
 from nn.perceiver_ar_lm import PerceiverARConfig, PerceiverARLM, swp_geometry
 
 
-ARCHES = ("dense", "e18", "e18_local", "e21", "e30", "encdec", "e30_ctx", "e31_page", "e31_bixt")
+ARCHES = ("dense", "e18", "e18_local", "e21", "e30", "encdec", "e30_ctx", "e31_page", "e31_bixt",
+          "e30_li", "e31_li", "e31_li_m1")
 # Arches whose global read is exclusive after QUERY (compressed / latent memory only).
-EXCLUSIVE_ARCHES = ("e21", "e30", "e30_ctx", "e31_page", "e31_bixt")
-SWP_ARCHES = ("e30", "e30_ctx")
-E31_ARCHES = ("e31_page", "e31_bixt")
+EXCLUSIVE_ARCHES = ("e21", "e30", "e30_ctx", "e31_page", "e31_bixt", "e30_li", "e31_li", "e31_li_m1")
+SWP_ARCHES = ("e30", "e30_ctx", "e30_li")
+E31_ARCHES = ("e31_page", "e31_bixt", "e31_li", "e31_li_m1")
+# Length-invariant variants (E30 vs E31 limits study, 2026-09-27): named so scorecards keep
+# them apart. Each is a base arch plus fixed spec fields; other spec fields pass through.
+#   e30_li    = e30_ctx (64-token pre-encoder reach) + slot keys RoPE'd at QUERY
+#   e31_li    = e31_page + no window-start address + slot keys at QUERY
+#   e31_li_m1 = e31_li with one reader entry per latent (memory N/6, same size as E30's)
+ARCH_VARIANTS: dict[str, tuple[str, dict]] = {
+    "e30_li": ("e30_ctx", {"swp_slot_pos": "boundary"}),
+    "e31_li": ("e31_page", {"lm_addr": "none", "lm_slot_pos": "boundary"}),
+    "e31_li_m1": ("e31_page", {"lm_addr": "none", "lm_slot_pos": "boundary", "lm_reader_tokens": 1}),
+}
+
+
+def resolve_arch(arch: str, spec: "ArchSpec | None") -> tuple[str, "ArchSpec | None"]:
+    """Named variant → (base arch, spec with the variant's fixed fields)."""
+    if arch not in ARCH_VARIANTS:
+        return arch, spec
+    from dataclasses import replace
+
+    base, fixed = ARCH_VARIANTS[arch]
+    return base, replace(spec or ArchSpec(name=arch), **fixed)
 
 
 @dataclass
@@ -110,6 +131,7 @@ class ArchSpec:
     swp_n_heads: int = 0
     swp_query_dim: int = 0
     swp_auto_fit: bool = True
+    swp_slot_pos: str = "page"            # "boundary" = length-invariant E30 (slot keys at QUERY)
     # Platform knobs (E31 runs set them for every arch in the job, so the comparison stays fair)
     token_embedding_dim: int = 0          # 0 → min(32, hidden) (ledger default)
     ngram_orders: tuple[int, ...] = (2,)  # () → hashed n-grams off
@@ -138,6 +160,7 @@ def _n_heads(hidden: int, head_dim: int) -> int:
 
 def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, pad_id: int,
                 bos_id: int, eos_id: int, spec: ArchSpec | None = None, seed: int = 0) -> nn.Module:
+    arch, spec = resolve_arch(arch, spec)
     spec = spec or ArchSpec(name=arch)
     import torch
 
@@ -243,6 +266,7 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         swp_n_heads=int(getattr(spec, "swp_n_heads", 0) or 0),
         swp_query_dim=int(getattr(spec, "swp_query_dim", 0) or 0),
         swp_auto_fit=bool(getattr(spec, "swp_auto_fit", True)),
+        swp_slot_pos=str(getattr(spec, "swp_slot_pos", "page")),
         lm_context="bixt" if arch == "e31_bixt" else "page_bidir",
         lm_window=int(spec.lm_window),
         lm_stride=int(spec.lm_stride),
@@ -265,6 +289,7 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
 
 
 def arch_cache(arch: str, spec: ArchSpec, seq_len: int) -> dict:
+    arch, spec = resolve_arch(arch, spec)
     n_layers = spec.pre_layers + spec.global_layers + spec.stack_layers
     glob = 0 if arch == "e18_local" else spec.global_layers
     if arch == "e18_local":

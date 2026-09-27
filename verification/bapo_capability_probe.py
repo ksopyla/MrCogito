@@ -419,7 +419,9 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
     if params > args.max_params:
         raise SystemExit(f"{arch} has {params} params > --max_params {args.max_params}")
     init_path = Path(args.init_ckpt) / f"{arch}.pt" if getattr(args, "init_ckpt", None) else None
-    if init_path is not None and init_path.exists():
+    if init_path is not None and not init_path.exists():
+        raise SystemExit(f"--init_ckpt: {init_path} not found (a curriculum stage must not silently start cold)")
+    if init_path is not None:
         state = torch.load(init_path, map_location=device, weights_only=False)
         model.load_state_dict(state["state_dict"])
         print(f"  [{arch}] init from {init_path} (trained at seq {state.get('data', {}).get('seq_len')})", flush=True)
@@ -597,7 +599,7 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
     if getattr(args, "save_ckpt", None):
         from dataclasses import asdict
 
-        out_dir = Path(args.save_ckpt)
+        out_dir = Path(args.out if args.save_ckpt == "@out" and args.out else args.save_ckpt)
         out_dir.mkdir(parents=True, exist_ok=True)
         torch.save(
             {
@@ -700,6 +702,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         swp_n_heads=args.swp_n_heads,
         swp_query_dim=args.swp_query_dim,
         swp_auto_fit=args.swp_auto_fit,
+        swp_slot_pos=args.swp_slot_pos,
         token_embedding_dim=args.token_embedding_dim,
         ngram_orders=_ngram_orders(args.ngram_orders),
         ctx_pre_window=args.ctx_pre_window,
@@ -894,6 +897,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             "swp_n_heads": args.swp_n_heads,
             "swp_query_dim": args.swp_query_dim,
             "swp_auto_fit": args.swp_auto_fit,
+            "swp_slot_pos": args.swp_slot_pos,
             "platform": {
                 "token_embedding_dim": args.token_embedding_dim,
                 "ngram_orders": list(_ngram_orders(args.ngram_orders)),
@@ -1097,6 +1101,8 @@ def main() -> int:
         default=True,
         help="E30: shrink K so n_windows≥2 on short sequences (default on).",
     )
+    p.add_argument("--swp_slot_pos", default="page", choices=("page", "boundary"),
+                   help="E30 slot RoPE position: page end, or the QUERY boundary (length-invariant).")
     # Platform knobs (E31 sets them for every arch in the job)
     p.add_argument("--token_embedding_dim", type=int, default=0, help="0 = min(32, hidden) (ledger default); E31 uses 128.")
     p.add_argument("--ngram_orders", default="2", help="hashed n-gram orders, e.g. '2' or '2,3'; 'none' = off (E31).")
@@ -1123,7 +1129,7 @@ def main() -> int:
         help="exclusive arches: the global read's raw keys are a causal window of this many tokens "
         "(0 = full causal). With it the memory is the only long path and cost is linear in length.",
     )
-    p.add_argument("--save_ckpt", default=None, help="dir: save each arch's final weights + spec as <arch>.pt")
+    p.add_argument("--save_ckpt", default=None, help="dir: save each arch's final weights + spec as <arch>.pt ('@out' = the --out dir)")
     p.add_argument("--init_ckpt", default=None, help="dir: start each arch from <arch>.pt if present (curriculum)")
     p.add_argument(
         "--experiment_id",

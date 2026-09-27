@@ -186,6 +186,7 @@ class PerceiverARConfig(PretrainedConfig):
         swp_n_heads: int = 0,             # 0 → max(4, num_attention_heads)
         swp_query_dim: int = 0,           # 0 → max(head_dim, 4 * token_embedding_dim)
         swp_auto_fit: bool = True,        # shrink K so n_windows≥2 on short seq
+        swp_slot_pos: str = "page",       # E30 slot RoPE position: "page" end | "boundary" (the QUERY; length-invariant)
         lm_context: str = "page_bidir",   # E31 — "page_bidir" | "bixt"
         lm_window: int = 256,             # E31 — fixed geometry (no auto-shrink)
         lm_stride: int = 192,
@@ -289,6 +290,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.lm_pos_prior = bool(lm_pos_prior)
         self.lm_addr = str(lm_addr)
         self.lm_slot_pos = str(lm_slot_pos)
+        self.swp_slot_pos = str(swp_slot_pos)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -366,6 +368,8 @@ class PerceiverARConfig(PretrainedConfig):
                 raise ValueError("sw_perceiver has no mean-pool identity; leave message_identity_slots off")
             if self.message_prefix_ae:
                 raise ValueError("message_prefix_ae is a block-mean write (E26); not defined for sw_perceiver")
+            if self.swp_slot_pos not in ("page", "boundary"):
+                raise ValueError(f"swp_slot_pos must be 'page' or 'boundary', got {self.swp_slot_pos!r}")
         if self.message_write == "latent_memory":
             if not self.message_enabled:
                 raise ValueError("message_write='latent_memory' needs message_boundary_token_id >= 0")
@@ -2077,6 +2081,10 @@ class PerceiverARLM(PreTrainedModel):
             slot_doc, slot_side, slot_pos, pool_valid, window_valid = self._swp_slot_tensors(
                 side, doc, pos, key_valid
             )
+            if str(getattr(cfg, "swp_slot_pos", "page")) == "boundary":
+                from nn.latent_memory import _boundary_pos
+
+                slot_pos = _boundary_pos(side, doc, pos, slot_doc, fallback=slot_pos)
         elif write == "latent_memory":
             slot_doc, slot_side, slot_pos, window_valid = self._lm_slot_tensors(side, doc, pos, key_valid)
             pool_valid = None

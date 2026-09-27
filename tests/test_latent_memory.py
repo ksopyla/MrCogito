@@ -423,3 +423,33 @@ def test_default_address_unchanged():
     ids = row()
     with torch.no_grad():
         assert torch.equal(a(ids).logits, b(ids).logits)
+
+
+def test_e30_boundary_slot_pos():
+    """E30 writer with swp_slot_pos='boundary': slot keys at the QUERY position, still causal,
+    and the default ('page') is unchanged."""
+    def e30(seed=0, **kw):
+        torch.manual_seed(seed)
+        base = dict(message_boundary_token_id=M, message_write="sw_perceiver", swp_bank_size=4,
+                    swp_window=8, swp_stride=6, swp_auto_fit=False)
+        base.update(kw)
+        m = PerceiverARLM(cfg(**base)).eval()
+        for layer in m.layers:
+            layer.attn.wo.weight.data.normal_(0, 0.2)
+            layer.mlp.down.weight.data.normal_(0, 0.2)
+        return m
+
+    m = e30(swp_slot_pos="boundary")
+    ids = row(S=32, qpos=10)
+    with torch.no_grad():
+        m(ids)
+    ctx = m._last_message_ctx
+    valid = ctx.slot_doc[0] >= 0
+    assert bool(valid.any()) and bool((ctx.slot_pos[0][valid] == 10).all())
+    assert future_leaks(m, row(), 11) == []
+    assert future_leaks(m, row(extra_q=20), 11) == []
+    a, b = e30(seed=3), e30(seed=3, swp_slot_pos="page")
+    with torch.no_grad():
+        assert torch.equal(a(ids).logits, b(ids).logits)
+    with pytest.raises(ValueError):
+        e30(swp_slot_pos="query")
