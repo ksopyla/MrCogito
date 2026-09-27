@@ -188,4 +188,58 @@ Block A with m = 1 shows whether the configuration part costs accuracy.
 - **Wave 3:** whatever wave 2 leaves open, then the E32 prototype.
 
 ## Result
-*(to be filled per block as runs finish)*
+*(interim, updated as runs finish; seed in the job name; accuracy in %)*
+
+**28 Sep, early morning. E30's length failure was also the address.** Lookup, trained at 2k
+only, then run on the length ladder:
+
+| arm (2k only) | 2k | 4k | 8k | 16k | 32k | 64k | 128k |
+|---|---|---|---|---|---|---|---|
+| e30_li s0 | 97 | 95 | 91 | 77 | 63 | 45 | 34 |
+| e30_li s1 | 98 | 94 | 71 | 54 | 35 | 31 | 26 |
+| e31_li s0 | 97 | 96 | 91 | 76 | 56 | 40 | 32 |
+| e31_li s1 | 98 | 97 | 94 | 87 | 69 | 51 | 36 |
+| e30_ctx (old absolute address), s2 | 88 | 83 | 57 | 29 | 25 | 25 | 25 |
+
+With slot keys at QUERY, the E30 writer transfers with length about as well as E31: one seed
+each way. The 8k / 16k curriculum stages are running.
+
+**Ratio sweep, lookup-1k (seed 0, first arms):**
+
+| arm | tok/latent | tok/entry | 1k | 2k | 4k | 8k | 16k |
+|---|---|---|---|---|---|---|---|
+| e31 K32 m1 | 6 | 6 | 99 | 99 | 98 | 95 | 88 |
+| e31 K8 m1 | 24 | 24 | 77 | 79 | 79 | 76 | 67 |
+| e31 W512 K8 m1 | 48 | 48 | 42 | 42 | 42 | 38 | 32 |
+| e31 W512 K8 m8 | 48 | **6** | 45 | 44 | 42 | 38 | 33 |
+
+- **m = 1 costs nothing.** K32 m1 matches the E31 default (m = 5) at 1k, with 5× fewer memory entries.
+- **Read bandwidth does not rescue the 512-token window.** Eight reader entries per latent
+  (m8: 6 tokens per entry) score the same as m1. So H1 is rejected for the long window: the
+  loss is in the write, whether that is window length (H3) or latent count (H2). W256 K4 (48
+  tokens per latent, 256 window) separates H2 from H3; it is queued.
+
+**Harder exams, e31_li seed 1, trained at 1k from lookup-2k weights:**
+
+| exam | 1k | 2k | 4k | 8k | 16k | 32k | 64k | 128k | note |
+|---|---|---|---|---|---|---|---|---|---|
+| recall8 (8 facts) | 98 | 98 | 96 | 86 | 68 | 48 | 34 | 31 | |
+| recall16 (16 facts) | 97 | 98 | 93 | 79 | 56 | 40 | 31 | 30 | |
+| shuf2 | 98 | 97 | 97 | 95 | 81 | 52 | 41 | 31 | shortcut |
+| shuf3 | 96 | 96 | 95 | 91 | 80 | 62 | 44 | 36 | shortcut |
+| match3 | 99 | 98 | 96 | 92 | 87 | 72 | 55 | 37 | averaging-easy |
+
+- Multi-fact recall learns quickly from lookup weights (13–26k examples). With 1k training
+  alone it transfers about 8×, the same length profile as lookup trained only at 2k. The
+  curriculum stages are what carried lookup to 128k.
+
+**Dense at 1k, from scratch (the training-length ceiling):**
+- recall8 and recall16: **chance**.
+- decoy8: 99 %, but 24 % at 2k.
+- shuf2 / shuf3: 99 % at 1k (the shortcut), 76 % / 29 % at 2k.
+
+Dense from scratch is therefore not a fair ceiling for exams where the memory arms start from
+lookup weights. Wave 2 starts dense from its own lookup checkpoint.
+
+**Chain from lookup, e31_li seed 0:** chance after 7,200 steps (no extension; CE flat). Seed 1
+took off at step ≈ 4,000. Takeoff is stochastic; wave 2 retries with a doubled budget.
