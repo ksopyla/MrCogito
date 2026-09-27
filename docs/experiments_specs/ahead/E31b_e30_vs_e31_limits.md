@@ -142,6 +142,14 @@ start node in the question tells which one is the answer (test:
 the same shortcut**, so the 96–98 % scores there (E31, E30_ctx, dense) are not evidence of
 multi-hop reasoning.
 
+**Two more exams are easier than their BAPO class suggests at this size** (read from the generator):
+- `match3` at bridge_1k has the triple plus only 2 single facts. An attention read that
+  *averages* all facts gets the majority letter at each position, with no matching needed.
+- `majority` fills about 2/3 of the book with the winner, so any sample of the book answers it.
+
+Both stay in the study as controls. They are not reported as MATCH3 or MAJORITY capability.
+Genuinely hard versions need ≥ 30 single facts (a 2k+ book) and a balanced body.
+
 The expected limits, to be confirmed or refuted:
 - one exclusive read after QUERY cannot do shuffled hops ≥ 3 at length, or aggregation;
 - recall16 at length tests the precision of content addressing over many similar slots.
