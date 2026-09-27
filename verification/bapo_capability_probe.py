@@ -643,6 +643,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         "key_len": args.key_len,
         "value_len": args.value_len,
         "hops": args.hops,
+        "n_chains": args.n_chains,
         "span_len": args.span_len,
         "min_gap": args.min_gap,
         "seq_len": args.seq_len,
@@ -1220,6 +1221,7 @@ def main() -> int:
     p.add_argument("--key_len", type=int, default=None, help="DNA key length override (E30 lookup_1key pins 8)")
     p.add_argument("--value_len", type=int, default=None, help="DNA value length override (E30 lookup_1key pins 8)")
     p.add_argument("--hops", type=int, default=None, help="DNA chain hops override (E30 chain_4hop pins 4)")
+    p.add_argument("--n_chains", type=int, default=None, help="shuffled chain: parallel chains (decoys) incl. the real one")
     p.add_argument("--span_len", type=int, default=None)
     p.add_argument("--width", type=int, default=None, help="Glyph vocab width 16 or 32 (ignored for DNA)")
     p.add_argument("--noise", default=None, help="Glyph noise: markov|dyck|arith|mixed|iid")

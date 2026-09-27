@@ -49,6 +49,9 @@ EXAMS = {
     "shuf2": ["--recipe", "chain", "--hops", "2", "--n_distractors", "0"],
     "shuf3": ["--recipe", "chain", "--hops", "3", "--n_distractors", "0"],
     "chain8": ["--recipe", "chain_ordered", "--hops", "8"],
+    # shuffled chain among 3 decoy chains: no pure-target shortcut (shuf2/shuf3 have one)
+    "pchain2": ["--recipe", "chain_parallel", "--hops", "2"],
+    "pchain3": ["--recipe", "chain_parallel", "--hops", "3"],
     "unique": ["--recipe", "unique"],
     "match3": ["--recipe", "match3"],
     "count": ["--recipe", "count"],
@@ -156,6 +159,8 @@ def jobs(phase: str) -> list[dict]:
         return hard_jobs()
     if phase == "dense":
         return dense_jobs()
+    if phase == "pchain_s0":  # parallel-chain exams, seed 0 (Polonez, after its first queue)
+        return hard_jobs(seeds=(0,), exams=("pchain2", "pchain3")) + dense_jobs(exams=("pchain2", "pchain3"))
     if phase == "odra":  # seed 1: E31_li lookup/chain weights already live here
         return ratio_jobs() + length_jobs(seeds=(1,)) + hard_jobs(seeds=(1,))
     if phase == "polonez":  # seed 0 (E31_li seed-0 lookup weights live here) + dense ceiling
