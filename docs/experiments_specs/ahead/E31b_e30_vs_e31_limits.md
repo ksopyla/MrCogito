@@ -204,6 +204,31 @@ only, then run on the length ladder:
 With slot keys at QUERY, the E30 writer transfers with length about as well as E31: one seed
 each way. The 8k / 16k curriculum stages are running.
 
+**28 Sep, 03:30. First writer difference: chain transfer.**
+
+| 4-hop chain from lookup-2k weights, trained at 2k | 2k | 4k | 8k | 16k | 32k | 64k | 128k |
+|---|---|---|---|---|---|---|---|
+| e30_li s0 | 95 | **32** | 29 | 36 | 37 | 33 | 32 |
+| e31_li s1 | 96 | 96 | 95 | 92 | 80 | 61 | 44 |
+| e31_li_m1 s0 (parent lookup only 52 %) | 60 | 58 | 57 | 51 | 46 | 39 | 33 |
+| e31_li s0 | chance (did not take off; retry queued) | | | | | | |
+
+- E30-LI learns the chain at 2k but falls to chance at 4k: a length-specific shortcut, like
+  the old absolute address on chain.
+- E31-LI's chain transfers.
+- The E30-LI chain at seed 1 on Odra confirms or refutes this.
+
+**One reader entry per latent transfers *better* with length (seed 1):**
+
+| lookup, 2k only | 2k | 4k | 8k | 16k | 32k | 64k | 128k |
+|---|---|---|---|---|---|---|---|
+| e31_li_m1 s1 (N/6 entries) | 96 | 94 | 92 | 91 | 86 | **80** | **65** |
+| e31_li s1 (0.83 N) | 98 | 97 | 94 | 87 | 69 | 51 | 36 |
+| e30_li s1 (N/6) | 98 | 94 | 71 | 54 | 35 | 31 | 26 |
+
+- With 5× fewer entries, m1 dilutes less at length.
+- Caveat: seed 0 of m1 plateaued at 52 %; its takeoff was weak.
+
 **Ratio sweep, lookup-1k (seed 0, first arms):**
 
 | arm | tok/latent | tok/entry | 1k | 2k | 4k | 8k | 16k |
@@ -212,6 +237,12 @@ each way. The 8k / 16k curriculum stages are running.
 | e31 K8 m1 | 24 | 24 | 77 | 79 | 79 | 76 | 67 |
 | e31 W512 K8 m1 | 48 | 48 | 42 | 42 | 42 | 38 | 32 |
 | e31 W512 K8 m8 | 48 | **6** | 45 | 44 | 42 | 38 | 33 |
+| e31 K4 m8 | 48 | 6 | 52 | 52 | 49 | 48 | 45 |
+| e31 K4 m1, stride 256 | 64 | 64 | 32 | 32 | 31 | 30 | 28 |
+| e30 K32 | 6 | 6 | 91 | 90 | 85 | 77 | 66 |
+| e30 K16 | 12 | 12 | 99 | 95 | 73 | 48 | 37 |
+| e30 K4 / K4 s256 | 48 / 64 | same | chance | | | | |
+| *recall8* e31 K16 m1 | 12 | 12 | 92 | 96 | 97 | 97 | 97 |
 
 - **m = 1 costs nothing.** K32 m1 matches the E31 default (m = 5) at 1k, with 5× fewer memory entries.
 - **Read bandwidth does not rescue the 512-token window.** Eight reader entries per latent
@@ -233,7 +264,15 @@ each way. The 8k / 16k curriculum stages are running.
   alone it transfers about 8×, the same length profile as lookup trained only at 2k. The
   curriculum stages are what carried lookup to 128k.
 
+| decoy8 | 99 | 99 | 98 | 90 | 73 | 51 | 35 | 30 | |
+| unique | 99 | 95 | 91 | 89 | 82 | 70 | 54 | 39 | |
+| chain8 (8 in-order hops) | 73 | 30 | 27 | 25 | 27 | 24 | 25 | 26 | limit: no transfer |
+| count | chance | | | | | | | | limit (dense too) |
+| majority | 100 at every length | | | | | | | | trivial |
+
 **Dense at 1k, from scratch (the training-length ceiling):**
+- chain8, decoy8, match3 and unique: 99 % at 1k; at 2k: 27 / 24 / 56 / 44 %.
+- count: chance.
 - recall8 and recall16: **chance**.
 - decoy8: 99 %, but 24 % at 2k.
 - shuf2 / shuf3: 99 % at 1k (the shortcut), 76 % / 29 % at 2k.
