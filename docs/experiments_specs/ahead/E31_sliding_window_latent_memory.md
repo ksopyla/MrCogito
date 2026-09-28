@@ -468,6 +468,11 @@ confirms them on the alignment page
   - **Cost** is linear in length (0.45 s / 3.4 GB per 128k row on a dedicated 3090, against 2.29 s for dense).
     Training fits a 3090 up to 64k with flex: 22 GB, 5.3 s per 2 rows. sdpa runs out of
     memory at 32k.
+- **Correction (28 Sep): the chain results below are inflated by teacher forcing.** On the
+  4-hop chain the first answer letter is right only about 50 % of the time for e31_page / E31-LI
+  (mean accuracy 96 %): the model narrows to about 2 candidate nodes, and the given letters pick
+  the rest. See the measurement correction in [E31b](E31b_e30_vs_e31_limits.md#result).
+  Lookup numbers are unaffected: there is one value in the book.
 - **Chain does not transfer yet.**
   - Dense and e31_page trained at 2k both drop to chance at 4k.
   - The baseline memory trained at 8k or 16k works *only at the training length*: 92 % at

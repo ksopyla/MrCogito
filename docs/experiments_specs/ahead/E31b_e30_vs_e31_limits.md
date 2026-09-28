@@ -190,6 +190,36 @@ Block A with m = 1 shows whether the configuration part costs accuracy.
 ## Result
 *(interim, updated as runs finish; seed in the job name; accuracy in %)*
 
+> **Measurement correction (28 Sep, 11:00): read this first.** "Accuracy" below is the
+> teacher-forced mean over the 32 answer letters. When the book holds several candidate
+> answers, the first 1–2 correct letters (given as context) identify the candidate, and the
+> remaining letters are copied without solving the task. Candidate sets exist on recall8/16
+> (8/16 values), decoy8 (9), chain (every node), pchain (4 end-nodes), shuf, unique and match3.
+> On single lookup there is only one value, so the mean is honest there. **The honest score is
+> first-letter accuracy (p0).** At training length:
+>
+> | exam | arch | mean | **p0** |
+> |---|---|---|---|
+> | 4-hop chain (2k) | e31_li s1 / e31_li_m1 s1 / e31_li s1 + 8k | 96 / 97 / 96 | **53 / 51 / 50** |
+> | 4-hop chain (2k) | e30_li s0 / s1 | 96 / 97 | **99 / 100** |
+> | pchain2 / pchain3 (1k) | e30_li s0 | 81 / 89 | **29 / 33** (chance 25) |
+> | shuf3 (1k) | e31_li / e31_li_m1 | 96 / 96 | 57 / 56 |
+> | recall16 (1k) | e30_li / e31_li / e31_li_m1 | 85 / 97 / 95 | **61 / 93 / 86** |
+> | recall8 (1k) | e30_li / e31_li | 96 / 98 | 86 / 96 |
+> | decoy8, unique, match3 (1k) | all | 99 | 96–100 (genuine) |
+> | chain8 (1k) | e30_li / e31_li_m1 / e31_li / dense | 98 / 98 / 78 / 99 | 100 / 91 / 52 / 100 |
+>
+> - **E31 does not solve the 4-hop chain.** It narrows the answer to about 2 candidates.
+>   The "chain transfers to 128k" claims below (and in the E31 spec) are teacher-forcing inflation.
+> - E30 solves the chain at training length, by position.
+> - Neither arch solves the parallel chain.
+> - On recall, E31 picks the right fact far more often than E30.
+> - Every multi-candidate ladder is being re-measured with first-letter accuracy
+>   (`length_ladder.py` now records `first_acc` and `per_position_acc`). Mean-accuracy ladders
+>   below are kept for the record but are **not** evidence on those exams.
+> - The capability suite scores the same teacher-forced mean. Its lookalike, chain, shuffled,
+>   unique and Glyph-story cells need a p0 re-read before any verdict.
+
 **28 Sep, early morning. E30's length failure was also the address.** Lookup, trained at 2k
 only, then run on the length ladder:
 
