@@ -6,6 +6,15 @@
   - First probe queued: Odra GPU 0, study phase `e33`. It runs R ∈ {1, 4} × {e30_li, e31_li_m1},
     seed 1, lookup-2k → pchain2 → pchain3 at 1k, with ladders to 16k.
   - The L-loop is not implemented.
+  - **First result (28 Sep, pchain2, 32-letter nodes, seed 1, first letter at 1k):**
+    - e30_li: R1 37 %, R4 37 %;
+    - e31_li_m1: R1 43 %, R4 41 %.
+    - No gain from the loop.
+  - Likely confound: each node is a 32-letter key spread over about 5 latents, so re-querying
+    needs a 64-bit key rebuilt from a mixed read.
+  - Queued `e33b`: the same test with **8-letter nodes** (16-bit prize), where a node fits in 1–2
+    latents. If e33b also shows no gain, the kill criterion applies to the Q-loop, and the L-loop
+    (reasoning among fetched latents) becomes the next test.
 - **Serves:** vision priority 3, "reason in concept space". E31b showed that **one exclusive
   read does not do multi-hop** on the first-letter metric:
   - the 4-hop chain beyond training length: E30-LI solves it by position, E31-LI at ≈ 50 %;
