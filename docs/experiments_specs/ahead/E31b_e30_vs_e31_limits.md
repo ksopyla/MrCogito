@@ -304,7 +304,7 @@ Dense is also below 50 % on the parallel chain.
 |---|---|---|
 | recall8 | 70 / 72 / 81 / 67 / 70 / 69 (64k 67, 128k 42) | **97 / 92 / 92** / 77 / 48 / 45 (64k 31, 128k 31) |
 | recall16 | 50 / 53 / 47 / 39 / 39 / 36 | **84 / 92 / 84** / 52 / 38 / 22 |
-| decoy8 | 98 / 92 / 59 / 52 / 31 / 28 | (running) |
+| decoy8 | 98 / 92 / 59 / 52 / 31 / 28 | **100 / 100 / 94 / 97 / 89** / 45 |
 | unique | 95 / 81 / 53 / 48 / 28 / 36 | 92 / 73 / 52 / 52 / 38 / 31 |
 
 - **recall8:** E30-LI holds 67–81 % out to 64k on both seeds; E31-LI is better at ≤ 4k and fades
@@ -331,8 +331,22 @@ E31 at 24 tokens per entry, seed 1: first letter 53 % (seed 0: 77 % mean).
 92 / 83 / 53 / 47 / 25 % at 2k–32k. The boundary address (e31_li_m1 s1) gave 96 / 94 / 92 / 91 / 86.
 **Keeping order costs length transfer on lookup.** The chain result will decide whether it buys the chain.
 
-**E33 first cell (pchain2, e30_li, seed 1):** first letter 37 % with R = 1 and 37 % with R = 4.
-The tied loop did not help E30 slots on the 2-hop parallel chain.
+**E33, pchain2 at 1k (seed 1), first letter:**
+- e30_li: 37 % with R = 1, 37 % with R = 4;
+- e31_li_m1: 43 % with R = 1, 41 % with R = 4.
+
+The tied read loop does not help either memory at 2 hops. pchain3 is running.
+
+**Hyperparameters at 48 tokens per latent (e31 K4 m1, lookup-1k, seed 0, first letter at 1k / 2k / 4k / 8k / 16k):**
+- **latent width 1024: 86 / 91 / 92 / 62 / 50** (final eval 84 %; 41.8 M params);
+- 3 encoder layers: 70 / 64 / 70 / 50 / 73;
+- baseline D 512: about 40.
+
+**At 48 tokens the limit is latent width (capacity)**, not the read (m8 did not help) and not
+the window. This is the lever for E32's coarse level. The confound is +6.7 M parameters.
+
+**Ratio seeds at 24 tokens per entry:** e30 K8 seed 1 did not take off; e31 K8 m1 seeds 1 and 2
+reached 44 % and 23 % first letter. At 24 tokens with D 512, takeoff is unreliable for both.
 
 **Chain with the 8k stage, e31_li_m1 s1:** first letter 36 % at 8k, 41–47 % on the ladder. No chain.
 
