@@ -361,7 +361,16 @@ first letter at 2k–128k: 84 / 89 / 80 / 88 / 72 / 52 / 47. The boundary addres
 - e31_li_m1: 43 % with R = 1, 41 % with R = 4.
 
 pchain3: e30_li R1 40 %, R4 39 %; e31_li_m1 R1 37 %, R4 36 %. The tied read loop does not help at
-2 or 3 hops with 32-letter nodes. `e33b` (8-letter nodes) is running: e30_li R1 is at 38 %.
+2 or 3 hops with 32-letter nodes.
+
+`e33b` (8-letter nodes), pchain2, first letter:
+- e30_li: R1 38 %, R4 44 % (SE ±3);
+- e31_li_m1: R1 45 % (R4 running).
+
+At most a small gain so far.
+
+**e31_ord_m1 seed 1, lookup + 8k + 16k stages, first letter at 2k–128k:** 89 / 91 / 88 / 89 / 86 / 70 / 47.
+The stages lift it to 86 % at 32k, but it stays behind the boundary address at 64k–128k (98 / 94).
 
 **Hyperparameters at 48 tokens per latent (e31 K4 m1, lookup-1k, seed 0, first letter at 1k / 2k / 4k / 8k / 16k):**
 - **latent width 1024: 86 / 91 / 92 / 62 / 50** (final eval 84 %; 41.8 M params);
@@ -391,6 +400,12 @@ reached 44 % and 23 % first letter. At 24 tokens with D 512, takeoff is unreliab
 | fact-1k Glyph (1) | 97.7 | 99.6 | 99.6 | 100 |
 | shuffled-1k (1, shortcut) | 94.9 | 93.0 | 31.2 | 59.0 |
 
+- **Short cells (seed 0, 24 / 38 done):** L0–L2 at 128–256 tokens are 97–100 % for every arch.
+  - lookup-512: e30_li did not take off (23 %); the others are ≥ 98 %.
+  - **Glyph chain-512** (in-order hops in word-like filler): **e31_li 100, e31_li_m1 99.6**, dense 99.6,
+    **e30_li 10.5**. The chain fits in 2–3 windows, and E31's two-way page encoder links the hops
+    inside a window. E30 cannot.
+  - fact-512, story-512 and unique-256: 98–100 % for all.
 - From scratch (the suite protocol), **e31_li is the only memory that takes off on every seed so far**.
 - e30_li and m1 each miss about half their seeds on the long lookups.
 - The in-order chain is not solved from scratch by any length-invariant memory. The
