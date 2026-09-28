@@ -365,7 +365,7 @@ pchain3: e30_li R1 40 %, R4 39 %; e31_li_m1 R1 37 %, R4 36 %. The tied read loop
 
 `e33b` (8-letter nodes), pchain2, first letter:
 - e30_li: R1 38 %, R4 44 % (SE ±3);
-- e31_li_m1: R1 45 % (R4 running).
+- e31_li_m1: R1 45 %, R4 44 %.
 
 At most a small gain so far.
 
