@@ -233,6 +233,7 @@ each way. The 8k / 16k curriculum stages are running.
 | 6 | **99** | **96** | 91 | **chance** |
 | 12 | 86 | 93 | **99** | · |
 | 24 | 77 | · | · | · |
+| 24, m4 (6 tokens per entry) | **94** | chance (seed 0) | — | — |
 | 48 (W256) | 40 | chance | chance | chance |
 | 48, m8 (6 tokens per entry) | 52 | chance | — | — |
 | 48, W512 | 42 | · | · | · |
@@ -241,6 +242,9 @@ each way. The 8k / 16k curriculum stages are running.
 - **Multi-fact recall from scratch works only with the E31 writer.** E30 at 6 tokens per slot
   and dense are at chance on recall8. E31 m1 reaches 96 % at 6 tokens and 93 % at 12, and
   holds 97 % out to 16k.
+- **At 24 tokens per latent, read bandwidth matters:** K8 m4 reaches 94 % on lookup vs 77 % for
+  K8 m1, and it transfers to 8k (73 %). At 48 tokens, m8 barely helps (52 % vs 40 %). K8 m4
+  sat at chance on recall8 (seed 0), where K16 m1 took off (93 %); seeds are queued.
 - **48 tokens per latent fails for E31 on both exams** at every read bandwidth tried (m1, m8)
   and every window (256, 512). The E32 coarse level cannot be a 48-token latent of this design
   without changes.
