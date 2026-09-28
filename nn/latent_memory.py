@@ -385,7 +385,15 @@ class LatentMemoryWriter(nn.Module):
         elif self.slot_pos_mode == "scaled":
             bnd = _boundary_pos(side, doc, pos, slot_doc, fallback=slot_pos)
             slot_pos = scaled_slot_pos(slot_pos, bnd, self.slot_pos_ref)
-        cos_s, sin_s = rope_cos_sin(slot_pos, self.dh, rope_theta, kk.dtype)
+        if self.slot_pos_mode == "mixed":  # content pairs at QUERY, order pairs at the scaled distance
+            from nn.perceiver_ar_lm import rope_cos_sin_mixed
+
+            bnd = _boundary_pos(side, doc, pos, slot_doc, fallback=slot_pos)
+            lo = scaled_slot_pos(slot_pos, bnd, self.slot_pos_ref)
+            cos_s, sin_s = rope_cos_sin_mixed(bnd, lo, self.dh, rope_theta, kk.dtype)
+            slot_pos = bnd
+        else:
+            cos_s, sin_s = rope_cos_sin(slot_pos, self.dh, rope_theta, kk.dtype)
         kk = apply_rope(kk, cos_s, sin_s)
         slot_side = slot_side_w.repeat_interleave(K * m, dim=1)
         self._last_k_bar = kk

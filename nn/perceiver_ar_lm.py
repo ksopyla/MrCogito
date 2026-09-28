@@ -374,8 +374,8 @@ class PerceiverARConfig(PretrainedConfig):
                 raise ValueError("sw_perceiver has no mean-pool identity; leave message_identity_slots off")
             if self.message_prefix_ae:
                 raise ValueError("message_prefix_ae is a block-mean write (E26); not defined for sw_perceiver")
-            if self.swp_slot_pos not in ("page", "boundary", "scaled"):
-                raise ValueError(f"swp_slot_pos must be 'page', 'boundary' or 'scaled', got {self.swp_slot_pos!r}")
+            if self.swp_slot_pos not in ("page", "boundary", "scaled", "mixed"):
+                raise ValueError(f"swp_slot_pos must be page / boundary / scaled / mixed, got {self.swp_slot_pos!r}")
         if self.message_write == "latent_memory":
             if not self.message_enabled:
                 raise ValueError("message_write='latent_memory' needs message_boundary_token_id >= 0")
@@ -392,8 +392,8 @@ class PerceiverARConfig(PretrainedConfig):
                 raise ValueError("lm_stride must be <= lm_window (windows must tile the book)")
             if self.lm_addr not in ("window_start", "none"):
                 raise ValueError(f"lm_addr must be 'window_start' or 'none', got {self.lm_addr!r}")
-            if self.lm_slot_pos not in ("read", "boundary", "scaled"):
-                raise ValueError(f"lm_slot_pos must be 'read', 'boundary' or 'scaled', got {self.lm_slot_pos!r}")
+            if self.lm_slot_pos not in ("read", "boundary", "scaled", "mixed"):
+                raise ValueError(f"lm_slot_pos must be read / boundary / scaled / mixed, got {self.lm_slot_pos!r}")
             if self.message_extra_slot_attends or self.message_update_slot_kv:
                 raise ValueError("latent_memory: extra slot attends are not defined (read once; E31a reads per layer)")
         if self.message_raw_window < 0:
@@ -814,6 +814,7 @@ class MessageCtx:
     anchor: Optional[torch.Tensor] = None  # [B,S] bool — sparse raw keys joining exclusive slots
     anchor_mode: str = "none"
     slots: Optional[tuple[torch.Tensor, torch.Tensor]] = None  # E31: precomputed (k̄, v̄), normed + RoPE'd
+    slot_pos_lo: Optional[torch.Tensor] = None  # "mixed" slot positions: the low-frequency pairs' position
     raw_window: int = 0         # >0: raw keys only within `q - j < raw_window` (linear-cost global layer)
     window_valid: Optional[torch.Tensor] = None  # [B,n_w,W] per-window pool mask (E30 / E31)
 
@@ -1485,6 +1486,20 @@ def rope_cos_sin(positions: torch.Tensor, dim: int, theta: float, dtype) -> tupl
     return emb.cos().to(dtype)[:, :, None, :], emb.sin().to(dtype)[:, :, None, :]
 
 
+def rope_cos_sin_mixed(pos_hi: torch.Tensor, pos_lo: torch.Tensor, dim: int, theta: float, dtype):
+    """Slot-key RoPE with two positions: the high-frequency half of the rotation pairs at
+    `pos_hi`, the low-frequency half at `pos_lo` (the "mixed" slot position: content at the
+    QUERY boundary, order at a scaled distance). Same layout as `rope_cos_sin`."""
+    half = dim // 2
+    inv = 1.0 / (theta ** (torch.arange(0, dim, 2, device=pos_hi.device, dtype=torch.float32) / dim))
+    split = half // 2
+    f_hi = pos_hi.to(torch.float32)[..., None] * inv[:split]
+    f_lo = pos_lo.to(torch.float32)[..., None] * inv[split:]
+    freqs = torch.cat([f_hi, f_lo], dim=-1)
+    emb = torch.cat([freqs, freqs], dim=-1)
+    return emb.cos().to(dtype)[:, :, None, :], emb.sin().to(dtype)[:, :, None, :]
+
+
 def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
     half = x.shape[-1] // 2
     x1, x2 = x[..., :half], x[..., half:]
@@ -1570,7 +1585,10 @@ class Attention(nn.Module):
         if self.prefix_ae and self.prefix_ae_stopgrad:
             k_bar, v_bar = k_bar.detach(), v_bar.detach()
         if rope and self.use_rope:
-            cos_s, sin_s = rope_cos_sin(ctx.slot_pos, self.dh, cfg_rope_theta, k_bar.dtype)
+            if ctx.slot_pos_lo is not None:
+                cos_s, sin_s = rope_cos_sin_mixed(ctx.slot_pos, ctx.slot_pos_lo, self.dh, cfg_rope_theta, k_bar.dtype)
+            else:
+                cos_s, sin_s = rope_cos_sin(ctx.slot_pos, self.dh, cfg_rope_theta, k_bar.dtype)
             k_bar = apply_rope(k_bar, cos_s, sin_s)
         if rope:
             self._last_slots = (k_bar, v_bar)  # E33 read rounds reuse these (frozen memory)
@@ -2103,12 +2121,16 @@ class PerceiverARLM(PreTrainedModel):
             slot_doc, slot_side, slot_pos, pool_valid, window_valid = self._swp_slot_tensors(
                 side, doc, pos, key_valid
             )
-            if str(getattr(cfg, "swp_slot_pos", "page")) in ("boundary", "scaled"):
+            slot_pos_lo = None
+            if str(getattr(cfg, "swp_slot_pos", "page")) in ("boundary", "scaled", "mixed"):
                 from nn.latent_memory import _boundary_pos, scaled_slot_pos
 
                 bnd = _boundary_pos(side, doc, pos, slot_doc, fallback=slot_pos)
-                slot_pos = (bnd if cfg.swp_slot_pos == "boundary"
-                            else scaled_slot_pos(slot_pos, bnd, int(getattr(cfg, "slot_pos_ref", 2048))))
+                ref = int(getattr(cfg, "slot_pos_ref", 2048))
+                if cfg.swp_slot_pos == "mixed":
+                    slot_pos, slot_pos_lo = bnd, scaled_slot_pos(slot_pos, bnd, ref)
+                else:
+                    slot_pos = bnd if cfg.swp_slot_pos == "boundary" else scaled_slot_pos(slot_pos, bnd, ref)
         elif write == "latent_memory":
             slot_doc, slot_side, slot_pos, window_valid = self._lm_slot_tensors(side, doc, pos, key_valid)
             pool_valid = None
@@ -2163,6 +2185,7 @@ class PerceiverARLM(PreTrainedModel):
         )
         ctx = MessageCtx(side=side, doc=doc, local_doc_ids=local, slot_doc=slot_doc, slot_side=slot_side,
                           slot_pos=slot_pos, n_sides=K, override=self._message_override,
+                          slot_pos_lo=slot_pos_lo if write == "sw_perceiver" else None,
                           pool_valid=pool_valid, ratio=r, inplace=cfg.message_slots_inplace,
                           inplace_raw_kv=cfg.message_inplace_raw_kv,
                           extra_slot_attends=int(getattr(cfg, "message_extra_slot_attends", 0) or 0),

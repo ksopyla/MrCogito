@@ -520,3 +520,28 @@ def test_read_rounds_e33():
     e30(ids, labels=labels).loss.backward()
     g = [l.round_emb.grad for l in e30.layers if l.round_emb is not None][0]
     assert g is not None and float(g[1:].abs().sum()) > 0
+
+
+def test_mixed_slot_pos():
+    """'mixed': high-frequency RoPE pairs at QUERY, low-frequency pairs at the scaled distance;
+    equals plain RoPE when both positions agree; causal for both writers."""
+    from nn.perceiver_ar_lm import rope_cos_sin, rope_cos_sin_mixed
+
+    p = torch.tensor([[5.0, 900.0]])
+    a = rope_cos_sin(p, 16, 10000.0, torch.float32)
+    b = rope_cos_sin_mixed(p, p, 16, 10000.0, torch.float32)
+    assert torch.allclose(a[0], b[0]) and torch.allclose(a[1], b[1])
+    m = make(lm_addr="none", lm_slot_pos="mixed", slot_pos_ref=8)
+    assert future_leaks(m, row(qpos=20), 21) == []
+    torch.manual_seed(0)
+    e30 = PerceiverARLM(cfg(message_boundary_token_id=M, message_write="sw_perceiver", swp_bank_size=4,
+                            swp_window=8, swp_stride=6, swp_auto_fit=False, swp_slot_pos="mixed",
+                            slot_pos_ref=8)).eval()
+    for layer in e30.layers:
+        layer.attn.wo.weight.data.normal_(0, 0.2)
+    with torch.no_grad():
+        e30(row(qpos=20))
+    ctx = e30._last_message_ctx
+    v = ctx.slot_doc[0] >= 0
+    assert bool((ctx.slot_pos[0][v] == 20).all()) and ctx.slot_pos_lo is not None
+    assert future_leaks(e30, row(qpos=20), 21) == []

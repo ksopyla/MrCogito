@@ -1109,7 +1109,7 @@ def main() -> int:
         default=True,
         help="E30: shrink K so n_windows≥2 on short sequences (default on).",
     )
-    p.add_argument("--swp_slot_pos", default="page", choices=("page", "boundary", "scaled"),
+    p.add_argument("--swp_slot_pos", default="page", choices=("page", "boundary", "scaled", "mixed"),
                    help="E30 slot RoPE position: page end, or the QUERY boundary (length-invariant).")
     # Platform knobs (E31 sets them for every arch in the job)
     p.add_argument("--token_embedding_dim", type=int, default=0, help="0 = min(32, hidden) (ledger default); E31 uses 128.")
@@ -1132,7 +1132,7 @@ def main() -> int:
     p.add_argument("--message_read_rounds", type=int, default=1,
                    help="E33: tied read → update rounds of the exclusive global read (slots frozen after round 1)")
     p.add_argument("--slot_pos_ref", type=int, default=2048, help="'scaled' slot positions: max query–slot distance")
-    p.add_argument("--lm_slot_pos", default="read", choices=("read", "boundary", "scaled"),
+    p.add_argument("--lm_slot_pos", default="read", choices=("read", "boundary", "scaled", "mixed"),
                    help="slot RoPE position: what the latent read, or the QUERY boundary (length-invariant).")
     # Long-context length ladder (verification/length_ladder.py evaluates the saved weights)
     p.add_argument(

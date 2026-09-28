@@ -239,6 +239,8 @@ def jobs(phase: str) -> list[dict]:
         return out
     if phase == "ord_s0":  # replicate the order-preserving arms (e31_ord_m1 chain worked on seed 1)
         return length_jobs(arches=("e30_ord", "e31_ord_m1"), seeds=(0, 2), chain_arches=("e30_ord", "e31_ord_m1"))
+    if phase == "mix":  # split slot-key RoPE: content at QUERY + order at a scaled distance
+        return length_jobs(arches=("e30_mix", "e31_mix_m1"), seeds=(1,), chain_arches=("e30_mix", "e31_mix_m1"))
     if phase == "odra":  # seed 1: E31_li lookup/chain weights already live here
         return ratio_jobs() + length_jobs(seeds=(1,)) + hard_jobs(seeds=(1,))
     if phase == "polonez":  # seed 0 (E31_li seed-0 lookup weights live here) + dense ceiling
