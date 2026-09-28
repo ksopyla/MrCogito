@@ -341,6 +341,13 @@ E31 at 24 tokens per entry, seed 1: first letter 53 % (seed 0: 77 % mean).
 - Replicates (seeds 0 and 2) are queued as `ord_s0`.
 - e30_ord seed 1 never took off on lookup (chance), so its E30 comparison is still open.
 
+**Order costs lookup length transfer even after the 8k stage.** e31_ord_m1 seed 1 lookup + 8k stage,
+first letter at 2k–128k: 84 / 89 / 80 / 88 / 72 / 52 / 47. The boundary address (e31_li_m1 seed 1
++ 8k stage) gave 97 / 100 / 98 / 92 / 95 / 98 / 95.
+- Order and length-invariant content addressing pull against each other in one key.
+- An E32 candidate: split the slot key heads, with half RoPE'd at the boundary (content) and half
+  at the scaled distance (order).
+
 **Order-preserving address (`scaled`), e31_ord_m1 seed 1, lookup at 2k only:** first letter
 92 / 83 / 53 / 47 / 25 % at 2k–32k. The boundary address (e31_li_m1 s1) gave 96 / 94 / 92 / 91 / 86.
 **Keeping order costs length transfer on lookup.** The chain result will decide whether it buys the chain.
@@ -365,6 +372,25 @@ the window. This is the lever for E32's coarse level. The confound is +6.7 M par
 reached 44 % and 23 % first letter. At 24 tokens with D 512, takeoff is unreliable for both.
 
 **Chain with the 8k stage, e31_li_m1 s1:** first letter 36 % at 8k, 41–47 % on the ladder. No chain.
+
+**Head-to-head suite, first letter (median over seeds so far, 28 Sep, 20:40; 14 / 38 cells):**
+
+| cell | dense | e30_li | e31_li | e31_li_m1 |
+|---|---|---|---|---|
+| copy-512 (1 seed) | 100 | 70.7 | 99.6 | 100 |
+| lookalike-1k (2) | 96.3 | 80.1 | **99.6** | 72.1 (45 / 99) |
+| copy-1k (2) | 99.6 | 98.8 | 99.2 | 99.4 |
+| lookup-1k (2) | 98.0 | 60.2 (21 / 100) | **96.3** | 70.5 (41 / 100) |
+| lookup-2k (2) | 59.8 | 62.7 | **99.0** | 64.1 |
+| chain-1k (1) | 100 | 27.0 | 71.1 | 69.9 |
+| chain-2k (2) | 99.6 | 26.6 | 23.0 | 33.6 |
+| fact-1k Glyph (1) | 97.7 | 99.6 | 99.6 | 100 |
+| shuffled-1k (1, shortcut) | 94.9 | 93.0 | 31.2 | 59.0 |
+
+- From scratch (the suite protocol), **e31_li is the only memory that takes off on every seed so far**.
+- e30_li and m1 each miss about half their seeds on the long lookups.
+- The in-order chain is not solved from scratch by any length-invariant memory. The
+  lookup → chain curriculum plus the order code is what worked.
 
 **Suite lookup-1k (1 seed, from scratch):** e31_li 97.3, dense 97.7, **e30_li 20.7 and e31_li_m1 41.4**
 (no takeoff). **Suite chain-2k (2 seeds):** memories at chance (m1 seed 1: 38), dense 99.6.
