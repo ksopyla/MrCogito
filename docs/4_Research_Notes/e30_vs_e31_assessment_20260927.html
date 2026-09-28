@@ -49,6 +49,20 @@ ul.tight li{margin:3px 0}
 <p class="sub">Everything here comes from runs that finished this week: the full-tier capability suite at 30M (3 seeds), the e30_ctx control, and the 2k → 128k length ladder. I mark each claim as <span class="pill p-m">measured</span>, <span class="pill p-d">design</span> (argued from the architecture, not run) or <span class="pill p-u">untested</span>.</p>
 <nav class="toc"><a href="#short">1 · Short answer</a><a href="#configs">2 · The five configurations</a><a href="#criteria">3 · Criteria</a><a href="#score">4 · Scorecard</a><a href="#math">5 · 1M / 10M maths</a><a href="#cost">6 · Measured cost</a><a href="#where">7 · Where each wins</a><a href="#sw">8 · Strengths &amp; weaknesses</a><a href="#train">9 · Training-protocol fixes</a><a href="#pages">10 · Are the design pages still right?</a><a href="#verdict">11 · Verdict &amp; next steps</a></nav>
 
+<div class="card" style="border:2px solid #dc2626;padding:12px 16px;margin:14px 0">
+<b>Correction, 28 Sep: read before the scores.</b>
+<p>Answer accuracy in this page is the teacher-forced mean over 32 answer letters. When the book holds several candidate answers, the first one or two given letters identify the candidate and the rest are copied. That inflates every chain, lookalike, shuffled and multi-fact score. The honest score is <b>first-letter accuracy</b>. Re-measured:</p>
+<ul>
+<li><b>4-hop chain.</b> E31 (and E31-LI) is at 50–59 % first-letter at 2k (mean 96–98 %): it narrows to about 2 candidates but does not follow the hops. "Chain 82 % at 128k" is withdrawn. E30-LI solves the chain only at its training length, by position.</li>
+<li><b>Real multi-hop</b> (chain hidden among decoy chains) is at chance for both. The suite's shuffled-1k cell also had a shortcut: the answer is the only pure target node.</li>
+<li><b>Retrieval</b> survives:
+  <ul>
+  <li>lookup: one value per book, so the mean is honest;</li>
+  <li>recall of 8 facts: E30-LI 84 % first-letter at 128k;</li>
+  <li>8 decoys: E31-LI with one reader entry per latent, 89 % at 128k.</li>
+  </ul></li>
+</ul>
+<p>Scores below for V3 (multi-hop) are corrected. Everything else is left as first written; see <code>docs/experiments_specs/ahead/E31b_e30_vs_e31_limits.md</code> for the full study.</p></div>
 <h2 id="short">1 · The short answer</h2>
 <div class="grid g4">
  <div class="tile"><div class="lab">Better at ≤ 2k tokens?</div><div class="big warn">E30_ctx</div>E30's writer with a 64-token context: <b>99 %</b> on lookalike-1k and lookup-2k, against 94 % and 89 % for E31. Its writer has about 35× fewer parameters (0.13 M vs 4.5 M). <span class="pill p-m">measured</span></div>
@@ -195,7 +209,7 @@ Peak GPU memory is 3.3–3.4 GB for <b>every</b> architecture at 128k, dominated
    <li>quadratic prefill at 10M (about 3.7 h for dense);</li>
    <li>memory at real widths (a 1B-class dense model needs about 96 GB of KV cache at 1M).</li>
   </ul></li>
- <li><b>The vision:</b> "compress into concepts, reason in concept space" is not shown by either. What is shown is a trainable, exclusive, linear-cost memory channel. It retrieves exact facts and follows 4-hop chains, and with the length-invariant address it works 8–16× beyond its training length. That is the retrieval half of the vision. The compression half (≥ 48 tokens per unit) failed.</li>
+ <li><b>The vision:</b> "compress into concepts, reason in concept space" is not shown by either. What is shown is a trainable, exclusive, linear-cost memory channel. It retrieves exact facts (it does <b>not</b> follow multi-hop chains; see the correction), and with the length-invariant address it works 8–16× beyond its training length. That is the retrieval half of the vision. The compression half (≥ 48 tokens per unit) failed.</li>
  <li><b>Potential:</b> E31's pieces (decoupled stateful writer, length-invariant address) are the better base for a hierarchy. E30_ctx is the better fine store. Keep both, in two levels.</li>
 </ul>
 <h3>Next steps, in order</h3>
@@ -247,8 +261,8 @@ const SC={
  V1:[[1,'lookup-1k 55 %, lookup-2k 55 % (salience wall: 13 of 32 letters)','m'],[3,'lookup-1k 93 % (1 seed), lookup-2k 99.0 % (3 seeds: 84 / 99 / 99)','m'],[2,'lookup-1k 94 %, lookup-2k 89.2 % (98 / 89 / 47)','m'],[2.5,'lookup-2k 98.5 / 98.0 / 66 % (3 seeds)','m'],[0,'39 % (m = 1), chance (m = 5)','m']],
  V2:[[1,'lookalike-1k 55 %','m'],[3,'lookalike-1k 99.3 % (3 seeds)','m'],[2.5,'lookalike-1k 94 %','m'],[null,'not run','u'],[null,'not run','u']],
  V4:[[2,'Glyph fact-1k 86 %','m'],[null,'not run','u'],[3,'Glyph fact-1k 99 %, story-512 99 %, chain-512 99 %','m'],[null,'not run','u'],[null,'not run','u']],
- V3:[[1,'chain-2k 50 %, shuffled-1k 31 % (chain-1k 79 %)','m'],[3,'chain-2k 97.4 %, shuffled-1k 96.5 %','m'],[3,'chain-2k 98.2 %, shuffled-1k 98 %','m'],[2.5,'chain 96 % at 2k, but only when started from lookup weights; from scratch: chance twice','m'],[null,'not run','u']],
- V5:[[0.5,'not run; same absolute address as E30_ctx → expected ≈ 2× reach','d'],[0.5,'ladder: 88 → 83 → 57 → 29 % at 2k/4k/8k/16k','m'],[1,'2× reach per training stage; 4-stage curriculum to 64k: 84 % at 64k, 53 % at 128k','m'],[3,'80–81 % at 128k (2 seeds, trained ≤ 16k); chain 82 % at 128k after an 8k stage','m'],[0,'did not learn at 2k','m']],
+ V3:[[1,'chain-2k 50 %, shuffled-1k 31 % (teacher-forced mean)','m'],[1,'chain solved at training length only, by position (E30-LI: first letter 100 % at 2k, chance at 4k); parallel chains at chance','m'],[1,'teacher-forced 98 % on chain-2k, but first letter about 50–59 %; shuffled-1k had a shortcut','m'],[1,'first letter 50–59 % on chain at 2k; parallel chains at chance','m'],[null,'not run','u']],
+ V5:[[0.5,'not run; same absolute address as E30_ctx → expected ≈ 2× reach','d'],[0.5,'ladder: 88 → 83 → 57 → 29 % at 2k/4k/8k/16k','m'],[1,'2× reach per training stage; 4-stage curriculum to 64k: 84 % at 64k, 53 % at 128k','m'],[3,'lookup 80–81 % at 128k (2 seeds, trained ≤ 16k); the chain claim is withdrawn (first letter ≈ 50 %)','m'],[0,'did not learn at 2k','m']],
  V6:[[2,'N/6: 167k entries at 1M, 43 MB','m'],[2,'N/6: 167k entries at 1M, 43 MB','m'],[0.5,'0.83 N: 833k entries at 1M (≈ dense keys), 213 MB','m'],[0.5,'0.83 N, same as E31 fine','m'],[3,'N/48: 21k entries at 1M, 5 MB','m']],
  V7:[[2.5,'not measured; its writer is lighter than E30_ctx','d'],[3,'0.33 s per 128k row (+12 % over local-only)','m'],[2,'0.45 s per 128k row (+55 % over local-only)','m'],[2,'0.45 s per 128k row','m'],[2.5,'0.39 s per 128k row','m']],
  V8:[[1.5,'writes from the main path\'s first layer: window-local but tied to the LM','d'],[1.5,'same as E30','d'],[3,'own branch on embeddings; window-local; can be precomputed and cached','d'],[3,'same, and the address does not depend on book length','d'],[3,'same','d']],

@@ -43,10 +43,13 @@ th:first-child, td:first-child { text-align:left; } .note { color:var(--muted); 
 </div>
 
 <div class="card">
-  <h2 style="margin-top:0">Chain (4 hops): full attention fails at 2×, the length-invariant memory transfers 16×</h2>
-  <svg id="chain" viewBox="0 0 900 300" role="img" aria-label="chain accuracy versus length"></svg>
+  <h2 style="margin-top:0">Chain (4 hops), first-letter accuracy: no architecture solves it at length</h2>
+  <svg id="chain" viewBox="0 0 900 300" role="img" aria-label="chain first-letter accuracy versus length"></svg>
   <div class="legend" id="legend2"></div>
-  <p class="note">Dense and the baseline memory learn a position shortcut tied to book length: chain works only at the training length. The length-invariant memory (started from its lookup weights, so content addressing is already learned) keeps 92 % at 16k and 80 % at 32k after training only at 2k, and 93 % at 64k / 82 % at 128k after one 8k stage. From scratch it did not take off.</p>
+  <p class="note"><b>Correction (28 Sep).</b> An earlier version of this chart showed teacher-forced mean accuracy over the 32 answer letters (E31: 96 % at 2k and 82 % at 128k). When the book contains several candidate nodes, the first one or two given letters identify the node and the rest are copied, so that mean is inflated. The honest score is the <i>first</i> answer letter (128 rows, ±4 points, chance 25 %). By that measure:</p>
+<ul class="note"><li>E31 never solves the chain: about 50–59 % at 2k, meaning it narrows the answer to about 2 candidates.</li>
+<li>E30-LI solves it only at its training length, by position.</li>
+<li>Details: <code>E31b_e30_vs_e31_limits.md</code>.</li></ul>
 </div>
 
 <div class="card tbl">
@@ -78,13 +81,12 @@ const lookup = [
   {name:"e30_ctx (context-only control), trained 2k", c:"--c6", d:[87.7,83.4,56.5,28.9,25.0,24.7,25.4], dash:"6 3"},
   {name:"no-memory control", c:"--c5", d:[24.4,24.0,24.5,25.4,24.7,25.9,25.6], dash:"2 3"},
 ];
-const chain = [
-  {name:"dense, trained 2k", c:"--c5", d:[99.4,25.6,26.1,25.0,25.3,26.0,24.3]},
-  {name:"baseline, trained 2k", c:"--c3", d:[97.9,28.2,27.5,26.0,25.6,24.5,24.3]},
-  {name:"baseline, + 8k stage", c:"--c4", d:[51.5,27.3,91.8,29.3,26.2,26.2,25.4]},
-  {name:"baseline, + 16k stage", c:"--c4", d:[46.3,34.2,37.0,93.3,28.1,26.0,25.7], dash:"4 3"},
-  {name:"length-invariant (from lookup weights), trained 2k", c:"--c1", d:[95.9,95.6,94.5,91.7,79.8,61.3,43.6], w:3},
-  {name:"length-invariant, + 8k stage", c:"--c2", d:[95.6,95.7,95.3,94.7,95.6,93.1,82.3], w:4},
+const chain = [  // first-letter accuracy; null = not measured
+  {name:"E30-LI, trained 2k (seed 1)", c:"--c6", d:[100,null,25,null,29,null,45], w:3},
+  {name:"E30-LI + 8k stage (seed 0)", c:"--c4", d:[26,null,92,null,30,null,34], dash:"4 3"},
+  {name:"E31-LI, trained 2k (seed 1)", c:"--c1", d:[59,null,null,null,44,null,32], w:3},
+  {name:"E31-LI + 8k stage (seed 1)", c:"--c2", d:[51,null,null,null,48,null,37]},
+  {name:"E31-LI m1, trained 2k (seed 1)", c:"--c3", d:[52,null,null,null,34,null,45], dash:"5 3"},
 ];
 function chart(id, legendId, series, H) {
   const svg = document.getElementById(id), W = 900, m = {l:52, r:20, t:14, b:40};
@@ -96,17 +98,17 @@ function chart(id, legendId, series, H) {
   s += `<line x1="${m.l}" x2="${W-m.r}" y1="${y(75)}" y2="${y(75)}" stroke="${css('--fg')}" stroke-dasharray="6 4" opacity=".5"/>`;
   s += `<line x1="${m.l}" x2="${W-m.r}" y1="${y(25)}" y2="${y(25)}" stroke="${css('--muted')}" stroke-dasharray="2 4" opacity=".6"/>`;
   for (const se of series) {
-    const col = css(se.c), pts = se.d.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+    const col = css(se.c), pts = se.d.map((v, i) => v == null ? null : `${x(i)},${y(v)}`).filter(Boolean).join(" ");
     s += `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="${se.w||2.2}" ${se.dash?`stroke-dasharray="${se.dash}"`:""}/>`;
-    se.d.forEach((v, i) => s += `<circle cx="${x(i)}" cy="${y(v)}" r="${se.w?4:3}" fill="${col}"><title>${se.name} @ ${L[i]}: ${v}%</title></circle>`);
+    se.d.forEach((v, i) => { if (v != null) s += `<circle cx="${x(i)}" cy="${y(v)}" r="${se.w?4:3}" fill="${col}"><title>${se.name} @ ${L[i]}: ${v}%</title></circle>`; });
   }
   svg.innerHTML = s;
   document.getElementById(legendId).innerHTML = series.map(se => `<span><i style="background:${css(se.c)}"></i>${se.name}</span>`).join("");
 }
 chart("acc", "legend", lookup, 420);
 chart("chain", "legend2", chain, 300);
-const rows = [["<b>lookup</b>"], ...lookup.map(s => [s.name, ...s.d]), ["<b>chain</b>"], ...chain.map(s => [s.name, ...s.d])];
+const rows = [["<b>lookup</b> (mean accuracy = honest: one value per book)"], ...lookup.map(s => [s.name, ...s.d]), ["<b>chain</b> (first-letter accuracy)"], ...chain.map(s => [s.name, ...s.d])];
 document.getElementById("tbl").innerHTML = `<tr><th>arm</th>${L.map(l=>`<th>${l/1024}k</th>`).join("")}</tr>` +
-  rows.map(r => r.length === 1 ? `<tr><td colspan="8">${r[0]}</td></tr>` : `<tr><td>${r[0]}</td>${r.slice(1).map(v=>`<td>${v.toFixed(1)}</td>`).join("")}</tr>`).join("");
+  rows.map(r => r.length === 1 ? `<tr><td colspan="8">${r[0]}</td></tr>` : `<tr><td>${r[0]}</td>${r.slice(1).map(v=>`<td>${v == null ? "·" : v.toFixed(1)}</td>`).join("")}</tr>`).join("");
 </script>
 </body></html>
