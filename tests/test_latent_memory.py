@@ -545,3 +545,35 @@ def test_mixed_slot_pos():
     v = ctx.slot_doc[0] >= 0
     assert bool((ctx.slot_pos[0][v] == 20).all()) and ctx.slot_pos_lo is not None
     assert future_leaks(e30, row(qpos=20), 21) == []
+
+
+def test_round_targets_e33():
+    """Per-round chain-node targets: built from the generator's `nodes`, and the aux loss is added
+    only when targets are set (one forward), with gradients to the looped block."""
+    import numpy as np
+
+    from data.bapo_ladder import config_for, generate_row_for, resolve_recipe
+    from verification.bapo_capability_probe import round_target_labels
+
+    r = resolve_recipe("chain_parallel")
+    c = config_for("bridge_1k", r.task, hops=3, key_len=8, **r.overrides)
+    rows = [generate_row_for(c, np.random.default_rng(i)) for i in range(2)]
+    labels = torch.from_numpy(np.stack([x.labels for x in rows])).long()
+    t = round_target_labels(rows, labels, 3)
+    for b, rw in enumerate(rows):
+        pos = (labels[b] != -100).nonzero().flatten()
+        nodes = rw.meta["nodes"]
+        assert t[0, b, pos].tolist() == nodes[1] and t[1, b, pos].tolist() == nodes[2]
+        assert t[2, b, pos].tolist() == nodes[3] == labels[b, pos].tolist()  # last hop = the answer
+    m = make(lm_addr="none", lm_slot_pos="boundary", message_read_rounds=3, message_round_aux=1.0).train()
+    ids = row()
+    lab = torch.full_like(ids, -100)
+    lab[0, 11:] = ids[0, 11:]
+    base = m(ids, labels=lab).loss
+    tg = torch.stack([lab, lab])
+    m.set_round_targets(tg)
+    with_aux = m(ids, labels=lab).loss
+    assert float(with_aux) > float(base)
+    with_aux.backward()
+    again = m(ids, labels=lab).loss  # targets are cleared after one forward
+    assert torch.allclose(again, base)

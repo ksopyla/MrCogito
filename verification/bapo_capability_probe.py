@@ -131,11 +131,29 @@ def _keymark_token_ids(cfg) -> tuple[int, ...]:
         return ()
 
 
-def make_batch(cfg, rng, batch: int, device):
+def make_batch(cfg, rng, batch: int, device, *, round_targets: int = 0):
     rows = [generate_row_for(cfg, rng) for _ in range(batch)]
     ids = torch.from_numpy(np.stack([r.input_ids for r in rows])).long().to(device)
     labels = torch.from_numpy(np.stack([r.labels for r in rows])).long().to(device)
-    return ids, labels
+    if round_targets <= 0:
+        return ids, labels
+    return ids, labels, round_target_labels(rows, labels, round_targets)
+
+
+def round_target_labels(rows, labels: torch.Tensor, n_rounds: int) -> torch.Tensor:
+    """E33 per-round targets [n_rounds, B, S]: at the answer positions, round r's target is chain
+    node r+1 (the terminal from the last hop on); -100 elsewhere and on rows without `nodes`."""
+    out = labels.new_full((n_rounds, *labels.shape), -100)
+    for b, row in enumerate(rows):
+        nodes = (row.meta or {}).get("nodes")
+        if not nodes:
+            continue
+        pos = (labels[b] != -100).nonzero().flatten()
+        for r in range(n_rounds):
+            node = nodes[min(r + 1, len(nodes) - 1)]
+            n = min(len(node), len(pos))
+            out[r, b, pos[:n]] = torch.tensor(node[:n], device=labels.device, dtype=labels.dtype)
+    return out
 
 
 @torch.no_grad()
@@ -504,10 +522,15 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
     with sdp_cm:
         while step < max_steps:
             step += 1
-            ids, labels = make_batch(cfg, rng, args.batch, device)
+            n_aux = (int(getattr(args, "message_read_rounds", 1)) - 1) if getattr(args, "round_aux", 0) > 0 else 0
+            batch_out = make_batch(cfg, rng, args.batch, device, round_targets=n_aux)
+            ids, labels = batch_out[0], batch_out[1]
+            aux = batch_out[2] if n_aux > 0 else None
             # --grad_accum k: same effective batch (args.batch rows) in k micro-batches
             micro = max(1, int(getattr(args, "grad_accum", 1) or 1))
             for mi, (ids_m, labels_m) in enumerate(zip(ids.chunk(micro), labels.chunk(micro))):
+                if aux is not None and hasattr(model, "set_round_targets"):
+                    model.set_round_targets(aux.chunk(micro, dim=1)[mi])
                 with _message_cm(model, override), amp_ctx(device, args.amp):
                     out = model(ids_m, labels=labels_m)
                     loss_m = out.loss if hasattr(out, "loss") else out[0].loss
@@ -727,6 +750,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         lm_slot_pos=args.lm_slot_pos,
         slot_pos_ref=args.slot_pos_ref,
         message_read_rounds=args.message_read_rounds,
+        message_round_aux=args.round_aux,
     )
     card = rung_card(scale, recipe.task, **over)
     card["local_window"] = window
@@ -1131,6 +1155,8 @@ def main() -> int:
                    help="latent address: window-start sinusoid, or none (length-invariant memory).")
     p.add_argument("--message_read_rounds", type=int, default=1,
                    help="E33: tied read → update rounds of the exclusive global read (slots frozen after round 1)")
+    p.add_argument("--round_aux", type=float, default=0.0,
+                   help="E33: weight of per-round chain-node targets (read round r predicts node r+1; chain exams)")
     p.add_argument("--slot_pos_ref", type=int, default=2048, help="'scaled' slot positions: max query–slot distance")
     p.add_argument("--lm_slot_pos", default="read", choices=("read", "boundary", "scaled", "mixed"),
                    help="slot RoPE position: what the latent read, or the QUERY boundary (length-invariant).")

@@ -171,6 +171,7 @@ class PerceiverARConfig(PretrainedConfig):
         message_raw_window: int = 0,  # >0: the global read's raw keys are a causal window (memory is the only long path)
         message_extra_slot_attends: int = 0,  # E21 — extra exclusive attends over frozen slots
         message_read_rounds: int = 1,     # E33 — tied read→update rounds of the global block (slots frozen after round 1)
+        message_round_aux: float = 0.0,   # E33 — weight of per-round targets (round r predicts chain node r+1)
         message_update_slot_kv: bool = False,  # E21 — rewrite exclusive slot K/V between extra hops
         message_global_anchors: str = "none",  # E21 — sparse raw keys joining exclusive slot K/V
         message_anchor_token_ids: tuple[int, ...] = (),  # type-mark / keymark ids
@@ -262,6 +263,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_raw_window = int(message_raw_window)
         self.message_extra_slot_attends = int(message_extra_slot_attends)
         self.message_read_rounds = int(message_read_rounds)
+        self.message_round_aux = float(message_round_aux)
         self.message_update_slot_kv = bool(message_update_slot_kv)
         self.message_global_anchors = str(message_global_anchors or "none")
         self.message_anchor_token_ids = tuple(int(x) for x in (message_anchor_token_ids or ()))
@@ -1763,6 +1765,8 @@ class Block(nn.Module):
         rounds = int(getattr(cfg, "message_read_rounds", 1) or 1)
         self.read_rounds = rounds if (pattern == "full" and getattr(cfg, "message_enabled", False)) else 1
         self.round_emb = nn.Parameter(torch.zeros(self.read_rounds, cfg.hidden_size)) if self.read_rounds > 1 else None
+        self._collect_rounds = False
+        self._round_outs: list = []
 
     def mix(self, x, x0, skip):
         """The residual-stream input this block's attention actually sees: x0 re-injection plus
@@ -1778,6 +1782,7 @@ class Block(nn.Module):
     def forward(self, x, x0, skip, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None, sink_pos=None, pos=None,
                 message=None, rope_theta=500000.0):
         x = self.mix(x, x0, skip)
+        self._round_outs = []
         rounds = self.read_rounds if message is not None else 1
         frozen = message is not None and rounds > 1 and getattr(message, "slots", None) is None
         for r in range(rounds):
@@ -1787,6 +1792,8 @@ class Block(nn.Module):
                               doc_ids=doc_ids, cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos,
                               pos=pos, message=message, rope_theta=rope_theta)
             x = x + self.mlp(self.mlp_norm(x))
+            if self._collect_rounds and r < rounds - 1:
+                self._round_outs.append(x)
             if frozen and r == 0:  # later rounds re-read the memory written in round 1
                 message.slots = getattr(self.attn, "_last_slots", None)
         if frozen:
@@ -2336,6 +2343,11 @@ class PerceiverARLM(PreTrainedModel):
         # `input_ids` are the tokens from the boundary on, and the prefix is present only as the
         # given slots (what `prefix_kv(..., as_message=True)` returns).
         cfg = self.config
+        round_tgt = getattr(self, "_round_targets", None)
+        self._round_targets = None
+        looped = [b for b in self.layers if getattr(b, "read_rounds", 1) > 1]
+        for b in looped:
+            b._collect_rounds = round_tgt is not None
         if message_kv is not None and not cfg.message_enabled:
             raise RuntimeError("message_kv needs message_boundary_token_id >= 0")
         input_ids, attention_mask, labels, doc_ids, S_orig = self._pad_inputs(
@@ -2372,8 +2384,25 @@ class PerceiverARLM(PreTrainedModel):
                 hid, self.lm_head.weight, tgt, cfg.chunked_ce_block_size, cfg.logit_softcap, cfg.z_loss
             )
             loss = (ce + z) / n.clamp(min=1)
+        if round_tgt is not None and looped and cfg.message_round_aux > 0:
+            outs = looped[0]._round_outs
+            aux, k = loss.new_zeros(()), 0
+            for r, xr in enumerate(outs[: round_tgt.shape[0]]):
+                tr = round_tgt[r]
+                if tr.shape[1] < xr.shape[1]:
+                    tr = F.pad(tr, (0, xr.shape[1] - tr.shape[1]), value=-100)
+                ce_r, _, n_r = chunked_softcap_ce(self.final_norm(xr)[:, :-1], self.lm_head.weight, tr[:, 1:],
+                                                  cfg.chunked_ce_block_size, cfg.logit_softcap, 0.0)
+                aux, k = aux + ce_r / n_r.clamp(min=1), k + 1
+            if k:
+                loss = loss + cfg.message_round_aux * aux / k
+            looped[0]._round_outs = []
         loss = self._maybe_add_prefix_ae(loss, input_ids)
         return CausalLMOutput(loss=loss, logits=(logits if return_logits else None))
+
+    def set_round_targets(self, targets: Optional[torch.Tensor]) -> None:
+        """E33: labels per non-final read round [R-1, B, S] for the next forward (then cleared)."""
+        self._round_targets = targets
 
     def _maybe_add_prefix_ae(self, loss: torch.Tensor, input_ids: torch.Tensor) -> torch.Tensor:
         """Add λ L_AE. Answer-span CE is unchanged; compressor grads come from AE only."""

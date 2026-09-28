@@ -392,7 +392,9 @@ def _emit_chain(
         chain_positions = [off + len(b) - 1 for off, b in zip(chain_off, chain_blocks)]
     for off, block in zip(offsets, blocks):
         ids[off : off + len(block)] = block
-    return sym(chain[0]), sym(chain[-1]), max(chain_positions), {"hops": cfg.hops, "shuffled": shuffle}
+    # `nodes`: the queried chain start … terminal (E33 per-round targets: round r → nodes[r + 1])
+    return sym(chain[0]), sym(chain[-1]), max(chain_positions), {
+        "hops": cfg.hops, "shuffled": shuffle, "nodes": [sym(n) for n in chain]}
 
 
 def generate_row(cfg: SymbolicTaskConfig, rng: np.random.Generator) -> SymbolicRow:
