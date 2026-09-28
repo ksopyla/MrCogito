@@ -338,6 +338,8 @@ E31 at 24 tokens per entry, seed 1: first letter 53 % (seed 0: 77 % mean).
 - E30-LI solves the chain only at its training length.
 - With slot keys placed before QUERY at a *scaled* distance, E31 follows the chain and it
   transfers: 72 % at 64k after 2k training only.
+- **After one 8k stage (seed 1): 100 / 94 / 95 / 88 / 83 / 88 / 84 % at 2k–128k (first letter).**
+  An honest 4-hop chain at 128k.
 - Replicates (seeds 0 and 2) are queued as `ord_s0`.
 - e30_ord seed 1 never took off on lookup (chance), so its E30 comparison is still open.
 
@@ -367,7 +369,9 @@ pchain3: e30_li R1 40 %, R4 39 %; e31_li_m1 R1 37 %, R4 36 %. The tied read loop
 - e30_li: R1 38 %, R4 44 % (SE ±3);
 - e31_li_m1: R1 45 %, R4 44 %.
 
-At most a small gain so far.
+pchain3 (8-letter nodes): e30_li R1 39 %, R4 38 %.
+**Q-loop provisional verdict: no gain.** In all five completed R1 / R4 pairs the difference is within
+±6 points (SE ±3). The e31_li_m1 pchain3 pair is still running. See E33 for the next step (the L-loop).
 
 **e31_ord_m1 seed 1, lookup + 8k + 16k stages, first letter at 2k–128k:** 89 / 91 / 88 / 89 / 86 / 70 / 47.
 The stages lift it to 86 % at 32k, but it stays behind the boundary address at 64k–128k (98 / 94).

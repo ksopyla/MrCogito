@@ -30,6 +30,34 @@
   - E25 / E21 extra exclusive hops: one extra attend over frozen slots, mixed at 272 / 288 tokens,
     fail at 1024 select.
 
+## Q-loop result (29 Sep, provisional; seed 1, 1k, first letter; chance 25 %)
+| exam | e30_li R1 / R4 | e31_li_m1 R1 / R4 |
+|---|---|---|
+| pchain2, 32-letter nodes | 37 / 37 | 43 / 41 |
+| pchain3, 32-letter nodes | 40 / 39 | 37 / 36 |
+| pchain2, 8-letter nodes | 38 / 44 | 45 / 44 |
+| pchain3, 8-letter nodes | 39 / 38 | (running) |
+
+**The tied query-side loop does not unlock multi-hop.** Five of five completed pairs are within noise.
+
+Likely reasons, in order of how testable they are:
+1. **No per-hop supervision.** The answer is only the final node, so the loop gets no signal until all
+   hops are right. That credit assignment is too sparse. A per-round auxiliary target (round r predicts
+   node r of the chain) would test this directly.
+2. **Frozen memory keys.** The slot key for "B as a source" is written without knowing that B will
+   be looked up. Re-querying needs a key/query match that the writer was never trained for.
+3. **Tied weights with R = 4 from lookup weights.** The loop starts as 4 copies of a lookup read,
+   which may be a poor basin.
+
+**Next (the L-loop, and a supervised Q-loop):**
+- **L-loop:** the question scores pages and takes the top-k (k = 8). Then R rounds of self-attention
+  run *among the fetched latents* (tied, question-conditioned) before the read. Relations are
+  composed inside the memory, where E31's page encoder already links facts within a window (Glyph
+  chain-512: 100 %; the ord chain transfers).
+- **Supervised Q-loop:** the same loop, plus per-round node targets on pchain (an auxiliary CE on a
+  small head). This separates "cannot" from "not trained to".
+- The kill rule is unchanged, applied after both.
+
 ## Hypothesis
 Give the reading tokens **R ≥ 3 weight-tied read rounds** over the same memory. Each round
 attends to the slots with a query formed from the state the previous round returned, then

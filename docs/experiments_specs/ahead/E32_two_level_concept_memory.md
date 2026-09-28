@@ -107,6 +107,8 @@ At 10M the E32 read touches ≈ 220k entries (coarse N/48) + 1k fine. A third le
   restores it. The E31 chain then transfers (seed 1: 92 % at 2k, 72 % at 64k, first letter), at
   some cost to lookup transfer before the curriculum stages. E32's levels should carry this
   order code.
+- **29 Sep:** with the scaled order code and one 8k stage, the E31 chain holds 84 % at 128k (first
+  letter, seed 1). Order + a length-invariant scale works for relational retrieval.
 - **Coarse level:** latent width 1024 lifts 48 tokens per latent from ≈ 40 % to 84 % (lookup-1k).
 - **Metric:** gate on first-letter accuracy (or free-running exact match), never the
   teacher-forced mean, on any exam with several candidate answers.
