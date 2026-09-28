@@ -218,6 +218,38 @@ each way. The 8k / 16k curriculum stages are running.
 - E31-LI's chain transfers.
 - The E30-LI chain at seed 1 on Odra confirms or refutes this.
 
+**28 Sep, 04:30. E30-LI with the 8k stage matches E31-LI on lookup** (seed 0):
+
+| lookup + 8k stage | 2k | 4k | 8k | 16k | 32k | 64k | 128k |
+|---|---|---|---|---|---|---|---|
+| e30_li s0 | 95 | 96 | 97 | 94 | 87 | 73 | 56 |
+| e31_li s0 | 94 | 96 | 97 | 96 | 83 | 57 | 40 |
+
+**Ratio sweep, seed 0, 1k: summary by tokens per reader entry.**
+
+| tokens / entry | e31 m1 lookup | e31 m1 recall8 | e30 lookup | e30 recall8 |
+|---|---|---|---|---|
+| 1.2 (E31 default, m5) | (suite) | · | — | — |
+| 6 | **99** | **96** | 91 | **chance** |
+| 12 | 86 | 93 | **99** | · |
+| 24 | 77 | · | · | · |
+| 48 (W256) | 40 | chance | chance | chance |
+| 48, m8 (6 tokens per entry) | 52 | chance | — | — |
+| 48, W512 | 42 | · | · | · |
+| 64 | 34 | chance | chance | · |
+
+- **Multi-fact recall from scratch works only with the E31 writer.** E30 at 6 tokens per slot
+  and dense are at chance on recall8. E31 m1 reaches 96 % at 6 tokens and 93 % at 12, and
+  holds 97 % out to 16k.
+- **48 tokens per latent fails for E31 on both exams** at every read bandwidth tried (m1, m8)
+  and every window (256, 512). The E32 coarse level cannot be a 48-token latent of this design
+  without changes.
+- Wave 2 (`ratio2`, queued on Odra GPUs 1–2):
+  - seeds 1–2 at 12 and 24 tokens for e31 m1 and e30;
+  - hyperparameters at 48 tokens: latent width 1024 (41.8 M params), 3 rounds, 3 encoder layers,
+    no competition, 16 heads, a 128-token window;
+  - hyperparameters at 24 tokens: width 1024, no competition, 3 rounds.
+
 **One reader entry per latent transfers *better* with length (seed 1):**
 
 | lookup, 2k only | 2k | 4k | 8k | 16k | 32k | 64k | 128k |
