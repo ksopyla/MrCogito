@@ -345,8 +345,12 @@ E31 at 24 tokens per entry, seed 1: first letter 53 % (seed 0: 77 % mean).
 first letter at 2k–128k: 84 / 89 / 80 / 88 / 72 / 52 / 47. The boundary address (e31_li_m1 seed 1
 + 8k stage) gave 97 / 100 / 98 / 92 / 95 / 98 / 95.
 - Order and length-invariant content addressing pull against each other in one key.
-- An E32 candidate: split the slot key heads, with half RoPE'd at the boundary (content) and half
-  at the scaled distance (order).
+- **Queued (`mix` phase, Odra):** `e30_mix` and `e31_mix_m1` split the slot key's RoPE pairs.
+  The high-frequency half is at the QUERY boundary (content), and the low-frequency half is at the
+  scaled distance (order). One KV head of 64 dims, so the split is by frequency, not by head.
+  The question is whether this gets boundary-level lookup transfer *and* the ord chain.
+- e30_ord seed 1: its lookup never took off, so its chain stayed at chance too. That arm is untested
+  until the `ord_s0` replicates run.
 
 **Order-preserving address (`scaled`), e31_ord_m1 seed 1, lookup at 2k only:** first letter
 92 / 83 / 53 / 47 / 25 % at 2k–32k. The boundary address (e31_li_m1 s1) gave 96 / 94 / 92 / 91 / 86.
@@ -356,8 +360,8 @@ first letter at 2k–128k: 84 / 89 / 80 / 88 / 72 / 52 / 47. The boundary addres
 - e30_li: 37 % with R = 1, 37 % with R = 4;
 - e31_li_m1: 43 % with R = 1, 41 % with R = 4.
 
-pchain3, e30_li: R1 40 %, R4 39 %. The tied read loop does not help at 2 or 3 hops with
-32-letter nodes; `e33b` (8-letter nodes) is queued.
+pchain3: e30_li R1 40 %, R4 39 %; e31_li_m1 R1 37 %, R4 36 %. The tied read loop does not help at
+2 or 3 hops with 32-letter nodes. `e33b` (8-letter nodes) is running: e30_li R1 is at 38 %.
 
 **Hyperparameters at 48 tokens per latent (e31 K4 m1, lookup-1k, seed 0, first letter at 1k / 2k / 4k / 8k / 16k):**
 - **latent width 1024: 86 / 91 / 92 / 62 / 50** (final eval 84 %; 41.8 M params);
