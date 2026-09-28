@@ -233,10 +233,10 @@ each way. The 8k / 16k curriculum stages are running.
 | 6 | **99** | **96** | 91 | **chance** |
 | 12 | 86 | 93 | **99** | · |
 | 24 | 77 | · | · | · |
-| 24, m4 (6 tokens per entry) | **94** | chance (seed 0) | — | — |
+| 24, m4 (6 tokens per entry) | **94** | chance (seed 0) | **97** (4k 81, 8k 62) | chance |
 | 48 (W256) | 40 | chance | chance | chance |
 | 48, m8 (6 tokens per entry) | 52 | chance | — | — |
-| 48, W512 | 42 | · | · | · |
+| 48, W512 | 42 | · | chance | chance |
 | 64 | 34 | chance | chance | · |
 
 - **Multi-fact recall from scratch works only with the E31 writer.** E30 at 6 tokens per slot
@@ -253,6 +253,27 @@ each way. The 8k / 16k curriculum stages are running.
   - hyperparameters at 48 tokens: latent width 1024 (41.8 M params), 3 rounds, 3 encoder layers,
     no competition, 16 heads, a 128-token window;
   - hyperparameters at 24 tokens: width 1024, no competition, 3 rounds.
+
+- **E30 at 24 tokens per slot still does lookup (97 %)**, better than E31 m1 at 24 (77 %). The
+  static queries select a fact well at coarse ratios, but E30 never learns multi-fact recall at
+  any ratio. The 512-token window kills E30 (chance), as it did on 22 Sep. For E31 the window
+  matters less: W512 and W256 at 48 tokens score the same (42 / 40 %).
+
+**Lookup + 8k stage, seed 1:** e30_li holds 98 / 97 / **77** / 57 / 39 at 8k / 16k / 32k / 64k /
+128k, against 98 / 98 / 97 / 91 / 76 for e31_li. Seed 0 went the other way: e30_li 87 / 73 / 56
+at 32k / 64k / 128k, against e31_li 83 / 57 / 40. **On lookup the two writers are tied within
+seed noise.**
+
+**Suite lookup-2k (step 5e-5), 2 seeds:**
+
+| arch | seed 0 | seed 1 |
+|---|---|---|
+| dense | 96.1 | 24.9 |
+| e30_li | 99.1 | 31.8 |
+| e31_li | 99.0 | 98.3 |
+| e31_li_m1 | 65.7 | 99.1 |
+
+- Only e31_li took off on both seeds; a third seed is needed for the others.
 
 **One reader entry per latent transfers *better* with length (seed 1):**
 
