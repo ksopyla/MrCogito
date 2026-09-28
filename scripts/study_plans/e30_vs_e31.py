@@ -86,6 +86,40 @@ RATIO_ARMS = [
     ("e30_W512K8", "e30_li", ["--swp_bank_size", "8", "--swp_window", "512", "--swp_stride", "384", "--no-swp_auto_fit"]),
 ]
 
+# Wave 2: seeds at the ratio boundary + hyperparameters at 24 and 48 tokens per latent
+RATIO2_SEEDED = [a for a in RATIO_ARMS if a[0] in ("e31_K16m1", "e31_K8m1", "e30_K16", "e30_K8")]
+_K4 = ["--lm_latents", "4", "--lm_reader_tokens", "1"]
+_K8 = ["--lm_latents", "8", "--lm_reader_tokens", "1"]
+RATIO2_HP = [
+    # 48 tokens per latent (the E32 coarse regime)
+    ("e31_K4m1_D1024", "e31_li", [*_K4, "--lm_latent_dim", "1024", "--max_params", "45000000"]),
+    ("e31_K4m1_r3", "e31_li", [*_K4, "--lm_rounds", "3"]),
+    ("e31_K4m1_enc3", "e31_li", [*_K4, "--lm_enc_layers", "3"]),
+    ("e31_K4m1_nocomp", "e31_li", [*_K4, "--no-lm_competition"]),
+    ("e31_K4m1_h16", "e31_li", [*_K4, "--lm_heads", "16"]),
+    ("e31_W128K2m1", "e31_li", ["--lm_window", "128", "--lm_stride", "96", "--lm_latents", "2",
+                                "--lm_reader_tokens", "1"]),                     # 48, short window
+    ("e31_K4m8_D1024", "e31_li", ["--lm_latents", "4", "--lm_reader_tokens", "8", "--lm_latent_dim", "1024", "--max_params", "45000000"]),
+    # 24 tokens per latent
+    ("e31_K8m1_D1024", "e31_li", [*_K8, "--lm_latent_dim", "1024", "--max_params", "45000000"]),
+    ("e31_K8m1_nocomp", "e31_li", [*_K8, "--no-lm_competition"]),
+    ("e31_K8m1_r3", "e31_li", [*_K8, "--lm_rounds", "3"]),
+]
+
+
+def ratio2_jobs():
+    out = []
+    for exam in ("lookup", "recall8"):
+        for seed in (1, 2):
+            for name, arch, flags in RATIO2_SEEDED:
+                out.append(_job(f"ratio_{exam}_{name}_s{seed}", arch, seed, L1K, exam, flags,
+                                ladder=LADDER_1K, cost=COST["1k"] + 0.1))
+        for name, arch, flags in RATIO2_HP:
+            out.append(_job(f"ratio_{exam}_{name}_s0", arch, 0, L1K, exam, flags,
+                            ladder=LADDER_1K, cost=COST["1k"] + 0.1))
+    return out
+
+
 # Estimated GPU-hours (0.3–1 s/step, one extension allowed)
 COST = {"1k": 0.7, "2k": 3.5, "8k": 1.8, "16k": 2.2, "ladder": 0.3}
 
@@ -172,6 +206,8 @@ def jobs(phase: str) -> list[dict]:
         return out
     if phase == "pchain_s1":  # parallel-chain exams, seed 1 (Odra, after its first queue)
         return hard_jobs(seeds=(1,), exams=("pchain2", "pchain3"))
+    if phase == "ratio2":
+        return ratio2_jobs()
     if phase == "odra":  # seed 1: E31_li lookup/chain weights already live here
         return ratio_jobs() + length_jobs(seeds=(1,)) + hard_jobs(seeds=(1,))
     if phase == "polonez":  # seed 0 (E31_li seed-0 lookup weights live here) + dense ceiling
