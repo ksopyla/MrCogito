@@ -260,6 +260,29 @@ long-context lookup so far. e31_li (m5) seed 1 with the same stage reached 76 % 
 30M 4-layer model at this budget, not only beyond the memories. It is a target for E33 (the
 loop), not a discriminator between writers.
 
+**First-letter re-read of the earlier E31 suite** (`analysis/suite_first_letter.py`; medians over seeds):
+
+| cell | dense | e30 (16-token reach) | e30_ctx | e31_page (window-start address) | e31_bixt |
+|---|---|---|---|---|---|
+| lookalike-1k | 98.8 | 63.3 | **100** | 85.7 | 34.4 |
+| chain-1k | 99.6 | 30.9 | · | **98.8** | 39.1 |
+| chain-2k | 98.8 | 34.0 | **99.6** | **98.4** | 43.8 |
+| chain-512 (Glyph) | 100 | 14.8 | · | **100** | 37.5 |
+| shuffled-1k (shortcut) | 93.0 | 27.0 | 95.7 | 92.2 | 30.5 |
+| unique-256 | 98.8 | 100 | · | 99.2 | 63.7 |
+
+**This explains the chain.** With the window-start address (absolute order), e31_page genuinely
+solves the in-order chain at training length (98 % first letter). The length-invariant address
+removed all order information from the slots. The in-order chain then needs content-only
+multi-hop, which one read cannot do (≈ 50 %). E30-LI keeps some order (its slots come from
+main-path states) and solves it at training length only.
+- The memory needs an order code that is also length-invariant.
+- **New arms** `e30_ord` and `e31_ord_m1` (`--swp_slot_pos` / `--lm_slot_pos scaled`) put each
+  slot key before QUERY at its true distance, compressed so no distance exceeds 2048. Order is
+  kept, and the scale never leaves the training range.
+- The `ord` phase runs lookup and chain on both (seed 1) on Polonez GPUs 2–3, after `hard_s0`.
+- The e30 vs e31 row is also why e31 "beat" e30 on the suite: e30 as built had the salience wall.
+
 **What survives the correction:**
 1. **Content retrieval works for both writers and goes long; the winner depends on the exam.**
    - recall8: e30_li holds 84–91 % from 1k to 128k.
