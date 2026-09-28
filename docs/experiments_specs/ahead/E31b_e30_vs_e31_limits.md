@@ -250,6 +250,15 @@ ladder below for these exams.
 | **pchain2** (1k, s0) | e30_li / e31_li | 38 / 39 | · | 30 / 30 | · | 32 / 27 | · | 16 / 30 |
 | **pchain3** (1k, s0) | e30_li / e31_li | 33 / 38 | 28 (e31) | 27 / 31 | 34 (e31) | 40 / 34 | 27 (e31) | 26 / 23 |
 
+**Lookup + one 8k stage, e31_li_m1 seed 1** (lookup has one value per book, so mean ≈ first
+letter). First letter: **97 / 100 / 98 / 92 / 95 / 98 / 95 %** at 2k–128k. That is the best
+long-context lookup so far. e31_li (m5) seed 1 with the same stage reached 76 % at 128k. m1 seed
+0 never took off at 2k (≈ 53 %), so its stages stayed there.
+
+**Dense at 1k is at chance on pchain2 and pchain3 as well.** The parallel chain is beyond a
+30M 4-layer model at this budget, not only beyond the memories. It is a target for E33 (the
+loop), not a discriminator between writers.
+
 **What survives the correction:**
 1. **Content retrieval works for both writers and goes long; the winner depends on the exam.**
    - recall8: e30_li holds 84–91 % from 1k to 128k.
