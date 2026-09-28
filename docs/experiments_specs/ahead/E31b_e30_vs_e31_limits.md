@@ -294,8 +294,14 @@ main-path states) and solves it at training length only.
 At training length the memories match dense on retrieval, and past it they beat dense.
 Dense is also below 50 % on the parallel chain.
 
-**More lookup, first letter:** e30_li seed 1 after the 16k stage: 83 / 94 / 98 / 98 / 98 / 75 / 59 %
-at 2k–128k.
+**More lookup, first letter, at 2k–128k:**
+- e30_li seed 1 after the 16k stage: 83 / 94 / 98 / 98 / 98 / 75 / 59 %.
+- **e31_li_m1 seed 1 after the 16k stage: 98 / 95 / 98 / 100 / 97 / 98 / 94 %**, the strongest so far.
+
+**Seed 0 replicates (first letter, 1k → 128k):**
+- e30_li recall16: 50 / 53 / 47 / 39 / 39 / 36 / 33 / 25, against seed 1's 55 / · / 66 / · / 66 / · / · / 47.
+  E30's "recall holds at length" rests on seed 1 and is fragile.
+- e30_li unique: 95 / 81 / 53 / 48 / 28 at 1k–16k.
 
 **Head-to-head suite (li_full_30m), first letter, so far:**
 - lookalike-1k (1 seed): e31_li 99.2, e30_li 84.0, e31_li_m1 44.9, dense 97.7.
