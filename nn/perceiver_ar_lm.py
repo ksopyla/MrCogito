@@ -170,6 +170,7 @@ class PerceiverARConfig(PretrainedConfig):
         message_keep_local_swa: bool = False,  # E21 — local SWA/n-grams still see across QUERY
         message_raw_window: int = 0,  # >0: the global read's raw keys are a causal window (memory is the only long path)
         message_extra_slot_attends: int = 0,  # E21 — extra exclusive attends over frozen slots
+        message_read_rounds: int = 1,     # E33 — tied read→update rounds of the global block (slots frozen after round 1)
         message_update_slot_kv: bool = False,  # E21 — rewrite exclusive slot K/V between extra hops
         message_global_anchors: str = "none",  # E21 — sparse raw keys joining exclusive slot K/V
         message_anchor_token_ids: tuple[int, ...] = (),  # type-mark / keymark ids
@@ -260,6 +261,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_keep_local_swa = bool(message_keep_local_swa)
         self.message_raw_window = int(message_raw_window)
         self.message_extra_slot_attends = int(message_extra_slot_attends)
+        self.message_read_rounds = int(message_read_rounds)
         self.message_update_slot_kv = bool(message_update_slot_kv)
         self.message_global_anchors = str(message_global_anchors or "none")
         self.message_anchor_token_ids = tuple(int(x) for x in (message_anchor_token_ids or ()))
@@ -336,6 +338,8 @@ class PerceiverARConfig(PretrainedConfig):
             raise ValueError("message_pack_stride must be >= 0")
         if self.message_extra_slot_attends < 0:
             raise ValueError("message_extra_slot_attends must be >= 0")
+        if self.message_read_rounds < 1:
+            raise ValueError("message_read_rounds must be >= 1")
         if self.message_global_anchors not in MESSAGE_GLOBAL_ANCHORS:
             raise ValueError(
                 f"message_global_anchors must be one of {MESSAGE_GLOBAL_ANCHORS}, "
@@ -1568,6 +1572,8 @@ class Attention(nn.Module):
         if rope and self.use_rope:
             cos_s, sin_s = rope_cos_sin(ctx.slot_pos, self.dh, cfg_rope_theta, k_bar.dtype)
             k_bar = apply_rope(k_bar, cos_s, sin_s)
+        if rope:
+            self._last_slots = (k_bar, v_bar)  # E33 read rounds reuse these (frozen memory)
         return k_bar, v_bar
 
     def _scale_q(self, q, pos):
@@ -1734,6 +1740,11 @@ class Block(nn.Module):
         self.alpha = nn.Parameter(torch.tensor(1.0))
         self.beta = nn.Parameter(torch.tensor(0.0))
         self.sigma = nn.Parameter(torch.tensor(0.0)) if has_skip else None
+        # E33: tied read → update rounds on the exclusive global read. A zero-initialised
+        # per-round embedding tells rounds apart; R = 1 is exactly today's block.
+        rounds = int(getattr(cfg, "message_read_rounds", 1) or 1)
+        self.read_rounds = rounds if (pattern == "full" and getattr(cfg, "message_enabled", False)) else 1
+        self.round_emb = nn.Parameter(torch.zeros(self.read_rounds, cfg.hidden_size)) if self.read_rounds > 1 else None
 
     def mix(self, x, x0, skip):
         """The residual-stream input this block's attention actually sees: x0 re-injection plus
@@ -1749,10 +1760,19 @@ class Block(nn.Module):
     def forward(self, x, x0, skip, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None, sink_pos=None, pos=None,
                 message=None, rope_theta=500000.0):
         x = self.mix(x, x0, skip)
-        x = x + self.attn(self.attn_norm(x), ids=ids, cos=cos, sin=sin, key_valid=key_valid,
-                          doc_ids=doc_ids, cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos, pos=pos,
-                          message=message, rope_theta=rope_theta)
-        x = x + self.mlp(self.mlp_norm(x))
+        rounds = self.read_rounds if message is not None else 1
+        frozen = message is not None and rounds > 1 and getattr(message, "slots", None) is None
+        for r in range(rounds):
+            if self.round_emb is not None:
+                x = x + self.round_emb[r]
+            x = x + self.attn(self.attn_norm(x), ids=ids, cos=cos, sin=sin, key_valid=key_valid,
+                              doc_ids=doc_ids, cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos,
+                              pos=pos, message=message, rope_theta=rope_theta)
+            x = x + self.mlp(self.mlp_norm(x))
+            if frozen and r == 0:  # later rounds re-read the memory written in round 1
+                message.slots = getattr(self.attn, "_last_slots", None)
+        if frozen:
+            message.slots = None
         return x
 
 

@@ -119,6 +119,7 @@ class ArchSpec:
     message_keep_local_swa: bool = False
     message_raw_window: int = 0  # >0: global read's raw keys are a causal window (length-ladder runs)
     message_extra_slot_attends: int = 0
+    message_read_rounds: int = 1          # E33: tied read → update rounds on the exclusive global read
     message_update_slot_kv: bool = False
     message_global_anchors: str = "none"
     message_anchor_token_ids: tuple[int, ...] = ()
@@ -252,6 +253,7 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         message_raw_window=int(getattr(spec, "message_raw_window", 0) or 0) if exclusive else 0,
         message_extra_slot_attends=int(getattr(spec, "message_extra_slot_attends", 0) or 0) if exclusive else 0,
         message_update_slot_kv=bool(getattr(spec, "message_update_slot_kv", False)) if exclusive else False,
+        message_read_rounds=int(getattr(spec, "message_read_rounds", 1) or 1) if exclusive else 1,
         message_global_anchors=(
             str(getattr(spec, "message_global_anchors", "none") or "none") if exclusive else "none"
         ),

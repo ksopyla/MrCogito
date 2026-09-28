@@ -484,3 +484,39 @@ def test_scaled_slot_pos_order_and_range():
     sp = ctx.slot_pos[0][v]
     assert bool(((20 - sp) <= 8 + 1e-3).all()) and bool((sp[1:] >= sp[:-1]).all())
     assert future_leaks(e30, row(qpos=20), 21) == []
+
+
+def test_read_rounds_e33():
+    """E33 read rounds: R=1 unchanged; R=3 stays causal for E31 and E30 writers, trains the
+    round embedding, and E30 slots are frozen after round 1 (restored to None afterwards)."""
+    a, b = make(seed=7, lm_addr="none", lm_slot_pos="boundary"), make(seed=7, lm_addr="none",
+                                                                       lm_slot_pos="boundary", message_read_rounds=1)
+    ids = row()
+    with torch.no_grad():
+        assert torch.equal(a(ids).logits, b(ids).logits)
+    m = make(lm_addr="none", lm_slot_pos="boundary", message_read_rounds=3)
+    for layer in m.layers:
+        if layer.round_emb is not None:
+            layer.round_emb.data.normal_(0, 0.1)
+    assert future_leaks(m, row(), 11) == []
+    assert future_leaks(m, row(extra_q=20), 11) == []
+    torch.manual_seed(0)
+    e30 = PerceiverARLM(cfg(message_boundary_token_id=M, message_write="sw_perceiver", swp_bank_size=4,
+                            swp_window=8, swp_stride=6, swp_auto_fit=False, swp_slot_pos="boundary",
+                            message_read_rounds=3)).eval()
+    for layer in e30.layers:
+        layer.attn.wo.weight.data.normal_(0, 0.2)
+        if layer.round_emb is not None:
+            layer.round_emb.data.normal_(0, 0.1)
+    assert sum(l.round_emb is not None for l in e30.layers) == 1
+    assert future_leaks(e30, row(), 11) == []
+    with torch.no_grad():
+        e30(row())
+    assert e30._last_message_ctx.slots is None
+    e30.train()
+    ids = row()
+    labels = torch.full_like(ids, -100)
+    labels[0, 11:] = ids[0, 11:]
+    e30(ids, labels=labels).loss.backward()
+    g = [l.round_emb.grad for l in e30.layers if l.round_emb is not None][0]
+    assert g is not None and float(g[1:].abs().sum()) > 0

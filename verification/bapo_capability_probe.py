@@ -423,7 +423,12 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
         raise SystemExit(f"--init_ckpt: {init_path} not found (a curriculum stage must not silently start cold)")
     if init_path is not None:
         state = torch.load(init_path, map_location=device, weights_only=False)
-        model.load_state_dict(state["state_dict"])
+        missing, unexpected = model.load_state_dict(state["state_dict"], strict=False)
+        bad = [k for k in missing if not k.endswith("round_emb")] + list(unexpected)
+        if bad:
+            raise SystemExit(f"--init_ckpt {init_path}: incompatible keys {bad[:6]}")
+        if missing:  # E33: a looped model starting from single-read weights (round embeddings start at 0)
+            print(f"  [{arch}] init: new parameters kept at their init: {missing}", flush=True)
         print(f"  [{arch}] init from {init_path} (trained at seq {state.get('data', {}).get('seq_len')})", flush=True)
     if hasattr(model, "layers"):
         patterns = [(layer.attn.pattern, layer.attn.window) for layer in model.layers]
@@ -721,6 +726,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         lm_addr=args.lm_addr,
         lm_slot_pos=args.lm_slot_pos,
         slot_pos_ref=args.slot_pos_ref,
+        message_read_rounds=args.message_read_rounds,
     )
     card = rung_card(scale, recipe.task, **over)
     card["local_window"] = window
@@ -1123,6 +1129,8 @@ def main() -> int:
     p.add_argument("--lm_reader_tokens", type=int, default=5, help="reader K/V entries per latent (m).")
     p.add_argument("--lm_addr", default="window_start", choices=("window_start", "none"),
                    help="latent address: window-start sinusoid, or none (length-invariant memory).")
+    p.add_argument("--message_read_rounds", type=int, default=1,
+                   help="E33: tied read → update rounds of the exclusive global read (slots frozen after round 1)")
     p.add_argument("--slot_pos_ref", type=int, default=2048, help="'scaled' slot positions: max query–slot distance")
     p.add_argument("--lm_slot_pos", default="read", choices=("read", "boundary", "scaled"),
                    help="slot RoPE position: what the latent read, or the QUERY boundary (length-invariant).")
