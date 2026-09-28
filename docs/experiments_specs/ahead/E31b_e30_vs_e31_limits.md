@@ -154,7 +154,31 @@ The expected limits, to be confirmed or refuted:
 - one exclusive read after QUERY cannot do shuffled hops ≥ 3 at length, or aggregation;
 - recall16 at length tests the precision of content addressing over many similar slots.
 
-## Block E — cost (Q4)
+## Block E — cost (Q4): measured 29 Sep
+`verification/memory_cost_bench.py` on Odra GPU 0 (RTX 3090, batch 1, bf16, flex above 8k):
+
+| arch | s / row 128k | 512k | writer share | entries @128k | params (writer) |
+|---|---|---|---|---|---|
+| local only (e18_local) | 0.276 | 1.10 | — | — | 31.2 M |
+| **e30_li** | **0.326** | 1.30 | **4 %** | 21.9k (N/6) | 31.3 M (0.13 M) |
+| e31_li_m1 | 0.394 | 1.57 | 21 % | 21.9k (N/6) | 35.1 M (3.95 M) |
+| e31_li (m5) | 0.410 | 1.64 | 20 % | 109k (0.83 N) | 35.7 M (4.48 M) |
+| e31_li m1, 1 encoder layer | 0.374 | — | 17 % | 21.9k | 34.5 M (3.3 M) |
+| dense | 2.29 | — | — | N × 4 layers | 31.2 M |
+
+**Answer to Q4:**
+- **Memory size is configuration.** m5 → m1 gives E31 the same N/6 entries as E30. It is a little
+  faster, and it is not worse on any exam measured at length.
+- **Writer compute is structural.** E31's own page encoder and latent rounds take about 20 % of the
+  forward at every length; E30's scoring projection over main-path K/V takes 4 %. At equal memory
+  size E31-m1 is 21 % slower per row than E30 (0.394 vs 0.326 s at 128k). One encoder layer
+  instead of two trims that to 15 %.
+- Both are linear: ×2 per doubling, against dense ×3.4 per doubling (quadratic).
+- **Peak memory is the main path, not the memory.** Every arch runs out of memory at 1M on 24 GB
+  (13.7 GB at 512k). 1M needs a streaming or chunked forward that keeps only slots across windows.
+  That applies to either design.
+
+### Block E — the plan (as written 27 Sep)
 `verification/memory_cost_bench.py` measures, at 8k → 1M with batch 1 on an RTX 3090:
 - seconds per row;
 - peak memory;
