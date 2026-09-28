@@ -302,10 +302,14 @@ Dense is also below 50 % on the parallel chain.
 
 | exam | e30_li s0 | e31_li s0 |
 |---|---|---|
+| recall8 | 70 / 72 / 81 / 67 / 70 / 69 (64k 67, 128k 42) | **97 / 92 / 92** / 77 / 48 / 45 (64k 31, 128k 31) |
 | recall16 | 50 / 53 / 47 / 39 / 39 / 36 | **84 / 92 / 84** / 52 / 38 / 22 |
+| decoy8 | 98 / 92 / 59 / 52 / 31 / 28 | (running) |
 | unique | 95 / 81 / 53 / 48 / 28 / 36 | 92 / 73 / 52 / 52 / 38 / 31 |
 
-- **E30's "multi-fact recall holds at length" did not replicate.** Seed 1 was the lucky one.
+- **recall8:** E30-LI holds 67–81 % out to 64k on both seeds; E31-LI is better at ≤ 4k and fades
+  after 8k.
+- **recall16:** E30's hold at length did not replicate (seed 1 was the lucky one).
 - E31 picks the right fact among 16 far better up to 4k.
 - Both collapse by 16k when trained at 1k only (the lookup curriculum stages have not been tried on recall).
 
@@ -319,7 +323,16 @@ This replicates seed 0: a position solution tied to the training length.
 - e30 K16: 100 / 84 / 50;
 - e31 K16 m1: 56 / 58 / 52 (seed 2 is at 97 % mid-run).
 
-E30's static queries take off more reliably at coarse ratios. E31's takeoff there is seed-dependent.
+Seed 2 at 12 tokens per entry: e31 K16 m1 100 → 100 % at 16k; e30 K16 100 → 94 %. Both designs
+*can* work at 12 tokens per entry; takeoff is seed luck (e31 K16 m1: 1 of 3 seeds failed; e30: 0 of 3).
+E31 at 24 tokens per entry, seed 1: first letter 53 % (seed 0: 77 % mean).
+
+**Order-preserving address (`scaled`), e31_ord_m1 seed 1, lookup at 2k only:** first letter
+92 / 83 / 53 / 47 / 25 % at 2k–32k. The boundary address (e31_li_m1 s1) gave 96 / 94 / 92 / 91 / 86.
+**Keeping order costs length transfer on lookup.** The chain result will decide whether it buys the chain.
+
+**E33 first cell (pchain2, e30_li, seed 1):** first letter 37 % with R = 1 and 37 % with R = 4.
+The tied loop did not help E30 slots on the 2-hop parallel chain.
 
 **Chain with the 8k stage, e31_li_m1 s1:** first letter 36 % at 8k, 41–47 % on the ladder. No chain.
 
