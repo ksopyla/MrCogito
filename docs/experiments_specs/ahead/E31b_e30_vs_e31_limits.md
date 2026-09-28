@@ -220,6 +220,51 @@ Block A with m = 1 shows whether the configuration part costs accuracy.
 > - The capability suite scores the same teacher-forced mean. Its lookalike, chain, shuffled,
 >   unique and Glyph-story cells need a p0 re-read before any verdict.
 
+**Re-measured on first-letter accuracy (28 Sep, 11:30).** Ladders were re-run on the saved
+checkpoints with 128 rows (SE ≈ ±4 points; chance 25 %). This table replaces every mean-accuracy
+ladder below for these exams.
+
+| exam (train len, seed) | arch | 1k | 2k | 4k | 8k | 16k | 32k | 128k |
+|---|---|---|---|---|---|---|---|---|
+| **recall8** (1k, s1) | **e30_li** | 88 | · | 84 | · | **91** | · | **84** |
+| | e31_li | 98 | · | 93 | · | 70 | · | 33 |
+| **recall16** (1k, s1) | e30_li | 55 | · | 66 | · | 66 | · | 47 |
+| | **e31_li_m1** | 71 | · | **90** | · | **89** | · | 44 |
+| | e31_li | 95 | · | 85 | · | 58 | · | 36 |
+| **decoy8** (1k, s1) | e30_li | 96 | · | 75 | · | 26 | · | 31 |
+| | **e31_li_m1** | 100 | · | **99** | · | **98** | · | **89** |
+| | e31_li | 100 | · | 100 | · | 94 | · | 33 |
+| unique (1k, s1) | e30_li | 100 | · | 43 | · | 41 | · | 41 |
+| | e31_li | 92 | · | 49 | · | 44 | · | 30 |
+| match3 (1k, s1) | e31_li_m1 | 100 | 97 | 86 | 53 | 30 | 36 | 19 |
+| | e31_li | 98 | · | 93 | · | 80 | · | 31 |
+| **4-hop chain** (2k, s1) | e30_li | · | **100** | · | 25 | · | 29 | 45 |
+| | e31_li_m1 | · | 52 | · | · | · | 34 | 45 |
+| | e31_li | · | 59 | · | · | · | 44 | 32 |
+| | e31_li + 8k stage | · | 51 | · | · | · | 48 | 37 |
+| 4-hop chain (2k, s0) | e30_li | · | 98 | · | 31 | · | 31 | 41 |
+| | e30_li + 8k stage | · | 26 | · | **92** | · | 30 | 34 |
+| chain8 (1k, s1) | e30_li / e31_li_m1 / e31_li | 99 / 92 / 53 | · | 45 / 45 / 25 | · | 42 / 34 / 22 | · | 32 / 30 / 23 |
+| shuf2 (1k, s1; shortcut) | e30_li / e31_li | 91 / 86 | · | 87 / 86 | · | 74 / 80 | · | 45 / 48 |
+| shuf3 (1k, s1; shortcut) | e31_li / e31_li_m1 | 55 / 52 | · | 51 / 52 | · | 50 / 41 | · | 48 / 27 |
+| **pchain2** (1k, s0) | e30_li / e31_li | 38 / 39 | · | 30 / 30 | · | 32 / 27 | · | 16 / 30 |
+| **pchain3** (1k, s0) | e30_li / e31_li | 33 / 38 | 28 (e31) | 27 / 31 | 34 (e31) | 40 / 34 | 27 (e31) | 26 / 23 |
+
+**What survives the correction:**
+1. **Content retrieval works for both writers and goes long; the winner depends on the exam.**
+   - recall8: e30_li holds 84–91 % from 1k to 128k.
+   - decoy8 and recall16 at 4k–16k: **e31_li_m1** wins (decoy8 89 % at 128k, against 31 % for e30_li).
+   - e31_li (m5) is best at training length but dilutes with length. **m1 ≥ m5 wherever it was measured at length.**
+2. **Nothing solves multi-hop at length.**
+   - E30 solves the in-order 4-hop and 8-hop chains *at the training length only*. It uses
+     position: after the 8k stage it works at 8k and nowhere else.
+   - E31 never solves the 4-hop chain (≈ 50–59 % first letter: it narrows to about 2 candidates).
+   - Parallel chains, the real REACHABILITY test, are at chance for both, even at training length.
+   - This is the one-read limit. A read → update → read loop (E33) is required, not optional.
+3. **Unique and match3** (relations between facts, no key) are learned at training length by both
+   and collapse by 4k–16k.
+4. Lookup results are unchanged: one value per book.
+
 **28 Sep, early morning. E30's length failure was also the address.** Lookup, trained at 2k
 only, then run on the length ladder:
 
