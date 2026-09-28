@@ -146,6 +146,15 @@ def _boundary_pos(side, doc, pos, slot_doc, *, fallback):
     return torch.where(ok, b_pos, fallback)
 
 
+def scaled_slot_pos(read_pos: torch.Tensor, boundary: torch.Tensor, ref: int) -> torch.Tensor:
+    """Order-preserving, length-invariant slot position: the slot sits before the reading
+    boundary at its true distance, compressed so no distance exceeds `ref` (the training scale).
+    Slots keep their order, and the query–slot RoPE distance stays in [0, ref] at any length."""
+    b = boundary.to(torch.float32)
+    d = (b - read_pos.to(torch.float32)).clamp(min=0.0)
+    return b - d * (float(ref) / b.clamp(min=float(ref)))
+
+
 def _sinusoid(pos: torch.Tensor, dim: int = _ADDR_FEATS) -> torch.Tensor:
     """pos [...] → [..., dim] fixed sinusoid features (window-start address)."""
     half = dim // 2
@@ -220,6 +229,7 @@ class LatentMemoryWriter(nn.Module):
         # and slot keys rotated at the reading boundary instead of the position they read
         self.addr_mode = str(getattr(cfg, "lm_addr", "window_start"))
         self.slot_pos_mode = str(getattr(cfg, "lm_slot_pos", "read"))
+        self.slot_pos_ref = int(getattr(cfg, "slot_pos_ref", 2048) or 2048)
         std = float(cfg.init_std)
 
         self.in_proj = nn.Linear(e, dw, bias=False)
@@ -372,6 +382,9 @@ class LatentMemoryWriter(nn.Module):
         slot_doc = slot_doc_w.repeat_interleave(K * m, dim=1)
         if self.slot_pos_mode == "boundary":
             slot_pos = _boundary_pos(side, doc, pos, slot_doc, fallback=slot_pos)
+        elif self.slot_pos_mode == "scaled":
+            bnd = _boundary_pos(side, doc, pos, slot_doc, fallback=slot_pos)
+            slot_pos = scaled_slot_pos(slot_pos, bnd, self.slot_pos_ref)
         cos_s, sin_s = rope_cos_sin(slot_pos, self.dh, rope_theta, kk.dtype)
         kk = apply_rope(kk, cos_s, sin_s)
         slot_side = slot_side_w.repeat_interleave(K * m, dim=1)

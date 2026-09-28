@@ -59,11 +59,12 @@ from nn.perceiver_ar_lm import PerceiverARConfig, PerceiverARLM, swp_geometry
 
 
 ARCHES = ("dense", "e18", "e18_local", "e21", "e30", "encdec", "e30_ctx", "e31_page", "e31_bixt",
-          "e30_li", "e31_li", "e31_li_m1")
+          "e30_li", "e31_li", "e31_li_m1", "e30_ord", "e31_ord_m1")
 # Arches whose global read is exclusive after QUERY (compressed / latent memory only).
-EXCLUSIVE_ARCHES = ("e21", "e30", "e30_ctx", "e31_page", "e31_bixt", "e30_li", "e31_li", "e31_li_m1")
-SWP_ARCHES = ("e30", "e30_ctx", "e30_li")
-E31_ARCHES = ("e31_page", "e31_bixt", "e31_li", "e31_li_m1")
+EXCLUSIVE_ARCHES = ("e21", "e30", "e30_ctx", "e31_page", "e31_bixt", "e30_li", "e31_li", "e31_li_m1",
+                    "e30_ord", "e31_ord_m1")
+SWP_ARCHES = ("e30", "e30_ctx", "e30_li", "e30_ord")
+E31_ARCHES = ("e31_page", "e31_bixt", "e31_li", "e31_li_m1", "e31_ord_m1")
 # Length-invariant variants (E30 vs E31 limits study, 2026-09-27): named so scorecards keep
 # them apart. Each is a base arch plus fixed spec fields; other spec fields pass through.
 #   e30_li    = e30_ctx (64-token pre-encoder reach) + slot keys RoPE'd at QUERY
@@ -73,6 +74,9 @@ ARCH_VARIANTS: dict[str, tuple[str, dict]] = {
     "e30_li": ("e30_ctx", {"swp_slot_pos": "boundary"}),
     "e31_li": ("e31_page", {"lm_addr": "none", "lm_slot_pos": "boundary"}),
     "e31_li_m1": ("e31_page", {"lm_addr": "none", "lm_slot_pos": "boundary", "lm_reader_tokens": 1}),
+    # order-preserving, length-invariant: slot keys at a scaled distance before QUERY (≤ slot_pos_ref)
+    "e30_ord": ("e30_ctx", {"swp_slot_pos": "scaled"}),
+    "e31_ord_m1": ("e31_page", {"lm_addr": "none", "lm_slot_pos": "scaled", "lm_reader_tokens": 1}),
 }
 
 
@@ -151,6 +155,7 @@ class ArchSpec:
     lm_reader_tokens: int = 5
     lm_addr: str = "window_start"
     lm_slot_pos: str = "read"
+    slot_pos_ref: int = 2048
 
 
 def _n_heads(hidden: int, head_dim: int) -> int:
@@ -281,6 +286,7 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         lm_reader_tokens=int(spec.lm_reader_tokens),
         lm_addr=str(getattr(spec, "lm_addr", "window_start")),
         lm_slot_pos=str(getattr(spec, "lm_slot_pos", "read")),
+        slot_pos_ref=int(getattr(spec, "slot_pos_ref", 2048)),
         pad_token_id=pad_id,
         bos_token_id=bos_id,
         eos_token_id=eos_id,

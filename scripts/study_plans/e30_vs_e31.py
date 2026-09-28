@@ -215,6 +215,8 @@ def jobs(phase: str) -> list[dict]:
     if phase == "hard_s0":  # replicate the writer split on seed 0 (Polonez)
         return hard_jobs(arches=("e30_li", "e31_li"), seeds=(0,),
                          exams=("recall8", "recall16", "decoy8", "unique"))
+    if phase == "ord":  # order-preserving, length-invariant slot positions (in-order chain needs order)
+        return length_jobs(arches=("e30_ord", "e31_ord_m1"), seeds=(1,), chain_arches=("e30_ord", "e31_ord_m1"))
     if phase == "odra":  # seed 1: E31_li lookup/chain weights already live here
         return ratio_jobs() + length_jobs(seeds=(1,)) + hard_jobs(seeds=(1,))
     if phase == "polonez":  # seed 0 (E31_li seed-0 lookup weights live here) + dense ceiling

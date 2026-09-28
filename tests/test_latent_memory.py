@@ -453,3 +453,34 @@ def test_e30_boundary_slot_pos():
         assert torch.equal(a(ids).logits, b(ids).logits)
     with pytest.raises(ValueError):
         e30(swp_slot_pos="query")
+
+
+def test_scaled_slot_pos_order_and_range():
+    """'scaled' slot positions keep slot order, sit within `ref` before QUERY, and do not leak."""
+    from nn.latent_memory import scaled_slot_pos
+
+    rp = torch.tensor([[0.0, 100.0, 5000.0, 9990.0]])
+    b = torch.full_like(rp, 10000.0)
+    sp = scaled_slot_pos(rp, b, 2048)
+    assert bool((sp[:, 1:] > sp[:, :-1]).all()) and bool(((b - sp) <= 2048 + 1e-3).all())
+    short = scaled_slot_pos(torch.tensor([[10.0, 500.0]]), torch.tensor([[1000.0, 1000.0]]), 2048)
+    assert torch.allclose(short, torch.tensor([[10.0, 500.0]]))  # below ref: true positions
+    for m in (make(lm_addr="none", lm_slot_pos="scaled", slot_pos_ref=8),):
+        ids = row(S=32, qpos=20)
+        with torch.no_grad():
+            m(ids)
+        ctx = m._last_message_ctx
+        valid = ctx.slot_doc[0] >= 0
+        assert bool(((20 - ctx.slot_pos[0][valid]) <= 8 + 1e-3).all())
+        assert future_leaks(m, row(qpos=20), 21) == []
+    torch.manual_seed(0)
+    e30 = PerceiverARLM(cfg(message_boundary_token_id=M, message_write="sw_perceiver", swp_bank_size=4,
+                            swp_window=8, swp_stride=6, swp_auto_fit=False, swp_slot_pos="scaled",
+                            slot_pos_ref=8)).eval()
+    with torch.no_grad():
+        e30(row(S=32, qpos=20))
+    ctx = e30._last_message_ctx
+    v = ctx.slot_doc[0] >= 0
+    sp = ctx.slot_pos[0][v]
+    assert bool(((20 - sp) <= 8 + 1e-3).all()) and bool((sp[1:] >= sp[:-1]).all())
+    assert future_leaks(e30, row(qpos=20), 21) == []

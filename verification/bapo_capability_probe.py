@@ -720,6 +720,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         lm_reader_tokens=args.lm_reader_tokens,
         lm_addr=args.lm_addr,
         lm_slot_pos=args.lm_slot_pos,
+        slot_pos_ref=args.slot_pos_ref,
     )
     card = rung_card(scale, recipe.task, **over)
     card["local_window"] = window
@@ -1102,7 +1103,7 @@ def main() -> int:
         default=True,
         help="E30: shrink K so n_windows≥2 on short sequences (default on).",
     )
-    p.add_argument("--swp_slot_pos", default="page", choices=("page", "boundary"),
+    p.add_argument("--swp_slot_pos", default="page", choices=("page", "boundary", "scaled"),
                    help="E30 slot RoPE position: page end, or the QUERY boundary (length-invariant).")
     # Platform knobs (E31 sets them for every arch in the job)
     p.add_argument("--token_embedding_dim", type=int, default=0, help="0 = min(32, hidden) (ledger default); E31 uses 128.")
@@ -1122,7 +1123,8 @@ def main() -> int:
     p.add_argument("--lm_reader_tokens", type=int, default=5, help="reader K/V entries per latent (m).")
     p.add_argument("--lm_addr", default="window_start", choices=("window_start", "none"),
                    help="latent address: window-start sinusoid, or none (length-invariant memory).")
-    p.add_argument("--lm_slot_pos", default="read", choices=("read", "boundary"),
+    p.add_argument("--slot_pos_ref", type=int, default=2048, help="'scaled' slot positions: max query–slot distance")
+    p.add_argument("--lm_slot_pos", default="read", choices=("read", "boundary", "scaled"),
                    help="slot RoPE position: what the latent read, or the QUERY boundary (length-invariant).")
     # Long-context length ladder (verification/length_ladder.py evaluates the saved weights)
     p.add_argument(
