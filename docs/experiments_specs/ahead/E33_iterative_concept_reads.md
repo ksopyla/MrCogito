@@ -1,6 +1,11 @@
 # E33 — Iterative concept reads (read → update → read) for multi-hop over the latent memory
 
-- **Status:** draft 2026-09-28. Not implemented. Start after E31b wave 1 and the `ord` arms report.
+- **Status:** draft 2026-09-28.
+  - Q-loop implemented: `--message_read_rounds R` (tied global block, slots frozen after round 1,
+    zero-init round embedding; tests in `tests/test_latent_memory.py`).
+  - First probe queued: Odra GPU 0, study phase `e33`. It runs R ∈ {1, 4} × {e30_li, e31_li_m1},
+    seed 1, lookup-2k → pchain2 → pchain3 at 1k, with ladders to 16k.
+  - The L-loop is not implemented.
 - **Serves:** vision priority 3, "reason in concept space". E31b showed that **one exclusive
   read does not do multi-hop** on the first-letter metric:
   - the 4-hop chain beyond training length: E30-LI solves it by position, E31-LI at ≈ 50 %;
