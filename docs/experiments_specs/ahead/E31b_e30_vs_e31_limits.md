@@ -250,8 +250,9 @@ ladder below for these exams.
 | **pchain2** (1k, s0) | e30_li / e31_li | 38 / 39 | · | 30 / 30 | · | 32 / 27 | · | 16 / 30 |
 | **pchain3** (1k, s0) | e30_li / e31_li | 33 / 38 | 28 (e31) | 27 / 31 | 34 (e31) | 40 / 34 | 27 (e31) | 26 / 23 |
 
-**Lookup + one 8k stage, e31_li_m1 seed 1** (lookup has one value per book, so mean ≈ first
-letter). First letter: **97 / 100 / 98 / 92 / 95 / 98 / 95 %** at 2k–128k. That is the best
+**Lookup + one 8k stage, e31_li_m1 seed 1** (64 rows per length):
+- mean **95 / 96 / 96 / 96 / 95 / 92 / 84 %** at 2k–128k;
+- first letter 97 / 100 / 98 / 92 / 95 / 98 / 95 %. That is the best
 long-context lookup so far. e31_li (m5) seed 1 with the same stage reached 76 % at 128k. m1 seed
 0 never took off at 2k (≈ 53 %), so its stages stayed there.
 
