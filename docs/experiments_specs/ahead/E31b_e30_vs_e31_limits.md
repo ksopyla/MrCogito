@@ -264,6 +264,24 @@ each way. The 8k / 16k curriculum stages are running.
 at 32k / 64k / 128k, against e31_li 83 / 57 / 40. **On lookup the two writers are tied within
 seed noise.**
 
+**28 Sep, 07:30. E30-LI is the stronger long-context memory on multi-fact recall and on lookup
+after the full curriculum.**
+
+| exam (seed) | arch | 1k | 2k | 4k | 8k | 16k | 32k | 64k | 128k |
+|---|---|---|---|---|---|---|---|---|---|
+| recall16, 1k from lookup weights (s1) | **e30_li** | 85 | 92 | 93 | 94 | 94 | 91 | 87 | **76** |
+| | e31_li | 97 | 98 | 93 | 79 | 56 | 40 | 31 | 30 |
+| lookup, 2k → 8k → 16k (s0) | **e30_li** | · | 83 | 89 | 95 | 96 | 96 | 93 | **83** |
+| | e31_li | · | 95 | 96 | 97 | 97 | 97 | 93 | 81 |
+
+- **E30-LI's recall16 accuracy rises with length.** Longer books spread the 16 facts, so fewer
+  share a window: E30's static queries are crowding-limited, not length-limited.
+- E31-LI is better at training length (97 vs 85 %), but its recall does not transfer. It drops
+  like E31's lookup trained only at 2k.
+- From scratch, E30 never learns recall8 at 1k (chance at every ratio, like dense). **From lookup
+  weights it does.** The lookup → harder-task curriculum is what makes E30 work on multi-fact
+  exams.
+
 **Suite lookup-2k (step 5e-5), 2 seeds:**
 
 | arch | seed 0 | seed 1 |
