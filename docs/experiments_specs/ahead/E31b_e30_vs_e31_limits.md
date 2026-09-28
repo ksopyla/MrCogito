@@ -282,6 +282,37 @@ after the full curriculum.**
   weights it does.** The lookup → harder-task curriculum is what makes E30 work on multi-fact
   exams.
 
+**28 Sep, 08:30. The writers split by task type.**
+
+| exam (trained length, seed) | arch | train len | 2k | 8k | 16k | 32k | 64k | 128k |
+|---|---|---|---|---|---|---|---|---|
+| 4-hop chain from lookup (2k, s1) | **e31_li_m1** | 97 | 97 | 95 | 95 | 93 | 90 | **86** |
+| | e31_li | 96 | 96 | 95 | 92 | 80 | 61 | 44 |
+| 4-hop chain (2k, s0) | e30_li | 95 | 95 | 29 | 36 | 37 | 33 | 32 |
+| … + 8k stage (s0) | e30_li | 92 | 29 | **93** | 28 | 35 | 39 | 35 |
+| recall8 (1k, s1) | **e30_li** | 94 | 97 | 98 | 98 | 98 | 94 | **89** |
+| | e31_li | 98 | 98 | 86 | 68 | 48 | 34 | 31 |
+| decoy8 (1k, s1) | e30_li | 99 | 99 | 91 | 78 | 53 | 38 | 31 |
+| | **e31_li_m1** | 99 | 98 | 95 | 92 | 85 | 75 | **61** |
+| unique (1k, s1) | e30_li | 99 | **54** | 36 | 35 | 33 | 33 | 37 |
+| | **e31_li** | 99 | 95 | 89 | 82 | 70 | 54 | 39 |
+| chain8 (1k, s1) | e31_li_m1 | 98 | 47 | 36 | 41 | 36 | 33 | 33 |
+
+- **E30-LI:** best at multi-fact recall at length, and tied on lookup.
+  - Its 4-hop chain is a *position* solution: trained at 2k it works only at 2k; after the 8k
+    stage it works only at 8k (93 %) and is at chance at 2k and 16k.
+  - Unique (no key: find the fact that appears once) does not transfer at all.
+- **E31 (two-way page context):**
+  - carries the chain across length (m1: 86 % at 128k with 2k training only);
+  - better on decoys and on unique.
+- **Reading:** E30's slots hold *what* a window contains well, so content lookup works at any
+  length. Anything that compares facts to each other (hop links, uniqueness, decoy vs fact)
+  needs the relation inside the write, which only E31's two-way encoder provides. With E30
+  those tasks fall back on position.
+- **m1 is not worse than m5 on any exam so far,** and it is better on chain and lookup length
+  transfer.
+- **8 in-order hops** do not transfer for any arch (m1: 98 % at 1k, 47 % at 2k).
+
 **Suite lookup-2k (step 5e-5), 2 seeds:**
 
 | arch | seed 0 | seed 1 |
