@@ -237,6 +237,8 @@ def jobs(phase: str) -> list[dict]:
                              ladder=LADDER_1K, cost=1.2),
                         _job(p3, arch, 1, L1K_FT, "pchain3", rr, init=p2, ladder=LADDER_1K, cost=1.2)]
         return out
+    if phase == "ord_s0":  # replicate the order-preserving arms (e31_ord_m1 chain worked on seed 1)
+        return length_jobs(arches=("e30_ord", "e31_ord_m1"), seeds=(0, 2), chain_arches=("e30_ord", "e31_ord_m1"))
     if phase == "odra":  # seed 1: E31_li lookup/chain weights already live here
         return ratio_jobs() + length_jobs(seeds=(1,)) + hard_jobs(seeds=(1,))
     if phase == "polonez":  # seed 0 (E31_li seed-0 lookup weights live here) + dense ceiling
