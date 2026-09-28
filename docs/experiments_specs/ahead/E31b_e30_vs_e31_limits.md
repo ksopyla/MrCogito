@@ -283,6 +283,28 @@ main-path states) and solves it at training length only.
 - The `ord` phase runs lookup and chain on both (seed 1) on Polonez GPUs 2–3, after `hard_s0`.
 - The e30 vs e31 row is also why e31 "beat" e30 on the suite: e30 as built had the salience wall.
 
+**Fair dense ceiling** (dense from its own lookup-1k weights, 1k, seed 0; first letter at 1k / 2k):
+- recall8 100 / 34;
+- recall16 95 / 23;
+- decoy8 98 / 86;
+- unique 100 / 92;
+- chain8 100 / 30;
+- pchain2 48 / 41 and pchain3 44 / 44.
+
+At training length the memories match dense on retrieval, and past it they beat dense.
+Dense is also below 50 % on the parallel chain.
+
+**More lookup, first letter:** e30_li seed 1 after the 16k stage: 83 / 94 / 98 / 98 / 98 / 75 / 59 %
+at 2k–128k.
+
+**Head-to-head suite (li_full_30m), first letter, so far:**
+- lookalike-1k (1 seed): e31_li 99.2, e30_li 84.0, e31_li_m1 44.9, dense 97.7.
+- lookup-2k (2 seeds): e31_li 98 / 100; e30_li 27 / 98; m1 98 / 30; dense 29 / 91.
+- chain-2k from scratch (1 seed): every memory at chance, dense 99.6.
+  The suite trains cells from scratch; the study's chains start from lookup weights.
+
+The multi-hop follow-up is drafted as [E33](E33_iterative_concept_reads.md) (read → update → read loop).
+
 **What survives the correction:**
 1. **Content retrieval works for both writers and goes long; the winner depends on the exam.**
    - recall8: e30_li holds 84–91 % from 1k to 128k.
