@@ -312,6 +312,15 @@ Dense is also below 50 % on the parallel chain.
 **Parallel chain, seed 1 (first letter at 1k):** e30_li 35 (pchain2) / 27 (pchain3); e31_li_m1 44 (pchain2).
 Chance, as on seed 0.
 
+**E30-LI chain with the 8k stage, seed 1:** first letter 97 % at 8k, and 16–28 % at 2k, 4k and 16k–128k.
+This replicates seed 0: a position solution tied to the training length.
+
+**Ratio at 12 tokens per entry, seed 1 (lookup-1k, first letter at 1k / 4k / 8k):**
+- e30 K16: 100 / 84 / 50;
+- e31 K16 m1: 56 / 58 / 52 (seed 2 is at 97 % mid-run).
+
+E30's static queries take off more reliably at coarse ratios. E31's takeoff there is seed-dependent.
+
 **Chain with the 8k stage, e31_li_m1 s1:** first letter 36 % at 8k, 41–47 % on the ladder. No chain.
 
 **Suite lookup-1k (1 seed, from scratch):** e31_li 97.3, dense 97.7, **e30_li 20.7 and e31_li_m1 41.4**
