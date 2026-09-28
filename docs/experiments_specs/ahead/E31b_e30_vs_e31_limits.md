@@ -298,10 +298,24 @@ Dense is also below 50 % on the parallel chain.
 - e30_li seed 1 after the 16k stage: 83 / 94 / 98 / 98 / 98 / 75 / 59 %.
 - **e31_li_m1 seed 1 after the 16k stage: 98 / 95 / 98 / 100 / 97 / 98 / 94 %**, the strongest so far.
 
-**Seed 0 replicates (first letter, 1k → 128k):**
-- e30_li recall16: 50 / 53 / 47 / 39 / 39 / 36 / 33 / 25, against seed 1's 55 / · / 66 / · / 66 / · / · / 47.
-  E30's "recall holds at length" rests on seed 1 and is fragile.
-- e30_li unique: 95 / 81 / 53 / 48 / 28 at 1k–16k.
+**Seed 0 replicates** (first letter at 1k / 2k / 4k / 8k / 16k / 32k):
+
+| exam | e30_li s0 | e31_li s0 |
+|---|---|---|
+| recall16 | 50 / 53 / 47 / 39 / 39 / 36 | **84 / 92 / 84** / 52 / 38 / 22 |
+| unique | 95 / 81 / 53 / 48 / 28 / 36 | 92 / 73 / 52 / 52 / 38 / 31 |
+
+- **E30's "multi-fact recall holds at length" did not replicate.** Seed 1 was the lucky one.
+- E31 picks the right fact among 16 far better up to 4k.
+- Both collapse by 16k when trained at 1k only (the lookup curriculum stages have not been tried on recall).
+
+**Parallel chain, seed 1 (first letter at 1k):** e30_li 35 (pchain2) / 27 (pchain3); e31_li_m1 44 (pchain2).
+Chance, as on seed 0.
+
+**Chain with the 8k stage, e31_li_m1 s1:** first letter 36 % at 8k, 41–47 % on the ladder. No chain.
+
+**Suite lookup-1k (1 seed, from scratch):** e31_li 97.3, dense 97.7, **e30_li 20.7 and e31_li_m1 41.4**
+(no takeoff). **Suite chain-2k (2 seeds):** memories at chance (m1 seed 1: 38), dense 99.6.
 
 **Head-to-head suite (li_full_30m), first letter, so far:**
 - lookalike-1k (1 seed): e31_li 99.2, e30_li 84.0, e31_li_m1 44.9, dense 97.7.
