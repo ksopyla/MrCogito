@@ -208,6 +208,10 @@ def jobs(phase: str) -> list[dict]:
         return hard_jobs(seeds=(1,), exams=("pchain2", "pchain3"))
     if phase == "ratio2":
         return ratio2_jobs()
+    if phase == "ratio3":  # read bandwidth at 24 tokens per latent: K8 m4 seeds
+        arms = [a for a in RATIO_ARMS if a[0] in ("e31_K8m4",)]
+        return [_job(f"ratio_{e}_{n}_s{sd}", a, sd, L1K, e, f, ladder=LADDER_1K, cost=0.8)
+                for e in ("lookup", "recall8") for sd in (1, 2) for n, a, f in arms]
     if phase == "odra":  # seed 1: E31_li lookup/chain weights already live here
         return ratio_jobs() + length_jobs(seeds=(1,)) + hard_jobs(seeds=(1,))
     if phase == "polonez":  # seed 0 (E31_li seed-0 lookup weights live here) + dense ceiling
