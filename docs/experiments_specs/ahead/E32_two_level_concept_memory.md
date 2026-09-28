@@ -88,6 +88,23 @@ At 10M the E32 read touches ≈ 220k entries (coarse N/48) + 1k fine. A third le
 4. **Multi-fact capacity:** does recall8 / recall16 hold at length? This sets whether top-k
    pages are needed to keep precision or only to save cost.
 
+### What E31b has answered so far (28 Sep, first-letter accuracy)
+- **(1) Ratio:** the current writers work at 6–12 tokens per entry, and 24 tokens with 4
+  entries per latent. **48 fails** for E31 at every read bandwidth and window tried, and for E30.
+  The coarse level cannot be a 48-token latent of today's design. It needs a new writer (e.g.
+  latents over fine slots, as proposed here) or a coarser 24-token level plus a third level.
+- **(2) Fine writer:** it depends on the exam.
+  - E30-LI keeps multi-fact recall at length (recall8: 84 % at 128k).
+  - E31-LI-m1 is better with decoys (89 % at 128k) and on recall16 at 4k–16k.
+  - m1 ≥ m5 everywhere it was measured.
+  - Keep both candidates until the seed-0 replicates land.
+- **(3) E30-LI goes long on lookup** (83 % at 128k after the 16k stage): yes.
+- **New constraint: one read does not do multi-hop.** Neither writer follows 4 hops beyond the
+  training length, and parallel chains are at chance. The E33 read → update → read loop must
+  come with E32, not after it.
+- **Metric:** gate on first-letter accuracy (or free-running exact match), never the
+  teacher-forced mean, on any exam with several candidate answers.
+
 ## Success / kill (draft; freeze after E31b)
 - **S1 (routing):** at 32k and 128k, the correct page is in the top-16 for ≥ 95 % of
   questions on lookup / recall16 (measured directly from page scores).
