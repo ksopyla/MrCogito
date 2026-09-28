@@ -36,6 +36,7 @@ def job_row(d: Path) -> dict | None:
                 "best": res.get("best_acc"), "ext": res.get("k1_extended"),
                 "step": fin.get("step"), "s_step": (res.get("throughput") or {}).get("sec_per_step"),
                 "ex75": etc.get("examples") if etc.get("confirmed") else None,
+                "p0": ppa[0] if ppa else None,
                 "first8": sum(ppa[:8]) / 8 if len(ppa) >= 16 else None,
                 "last8": sum(ppa[-8:]) / 8 if len(ppa) >= 16 else None,
                 "params_m": (res.get("params") or 0) / 1e6,
@@ -52,6 +53,8 @@ def job_row(d: Path) -> dict | None:
         res = json.loads(lad.read_text()).get("results") or {}
         for arch, by_len in res.items():
             row["ladder"] = {int(L): v.get("acc") for L, v in by_len.items() if isinstance(v, dict) and "acc" in v}
+            row["ladder_first"] = {int(L): v.get("first_acc") for L, v in by_len.items()
+                                   if isinstance(v, dict) and "first_acc" in v}
             break
     return row
 
@@ -67,6 +70,8 @@ def main() -> int:
     p.add_argument("--root", default="Cache/study/e30_vs_e31")
     p.add_argument("--prefix", nargs="*", default=None)
     p.add_argument("--json", default=None)
+    p.add_argument("--first", action="store_true",
+                   help="ladder cells show first-letter accuracy (honest on multi-candidate exams; '·' if not measured)")
     args = p.parse_args()
     root = Path(args.root)
     rows = []
@@ -77,12 +82,12 @@ def main() -> int:
         if r:
             rows.append(r)
     lens = sorted({L for r in rows for L in (r.get("ladder") or {})})
-    head = ["job", "st", "acc", "±se", "bits", "ext", "ex75(k)", "1st8", "last8", "s/step"] + [_k(L) for L in lens]
+    head = ["job", "st", "acc", "±se", "p0", "bits", "ext", "ex75(k)", "1st8", "last8", "s/step"] + [_k(L) for L in lens]
     print("| " + " | ".join(head) + " |")
     print("|" + "---|" * len(head))
     for r in rows:
-        lad = r.get("ladder") or {}
-        cells = [r["job"], r["status"][:4], fmt(r.get("acc")), fmt(r.get("se")),
+        lad = (r.get("ladder_first") or {}) if args.first else (r.get("ladder") or {})
+        cells = [r["job"], r["status"][:4], fmt(r.get("acc")), fmt(r.get("se")), fmt(r.get("p0")),
                  fmt(r.get("bits"), False), "y" if r.get("ext") else "",
                  f"{r['ex75'] / 1000:.0f}" if r.get("ex75") else "·",
                  fmt(r.get("first8")), fmt(r.get("last8")), fmt(r.get("s_step"), False)]

@@ -88,6 +88,8 @@ def data_config(state: dict, seq_len: int):
 def eval_length(model, cfg, *, rows: int, batch: int, seed: int, device, amp: str, depth_bins: int) -> dict:
     rng = np.random.default_rng(seed)
     row_acc: list[float] = []
+    row_first: list[float] = []   # first answer letter: the honest score on multi-candidate exams
+    pos_hits: list[list[float]] = []  # per answer position (teacher-forced)
     depths: list[float] = []
     ce_sum, ce_n = 0.0, 0
     t_rows = 0.0
@@ -117,6 +119,12 @@ def eval_length(model, cfg, *, rows: int, batch: int, seed: int, device, amp: st
         for i, r in enumerate(rr):
             k = int(m[i].sum())
             row_acc.append(float(correct[i].sum()) / max(k, 1))
+            hits = correct[i][m[i]].float().tolist()
+            row_first.append(hits[0] if hits else float("nan"))
+            for j, h in enumerate(hits):
+                if j >= len(pos_hits):
+                    pos_hits.append([])
+                pos_hits[j].append(h)
             evidence_end = r.answer_start - r.gap
             depths.append(evidence_end / float(len(r.input_ids)))
         done += b
@@ -126,10 +134,15 @@ def eval_length(model, cfg, *, rows: int, batch: int, seed: int, device, amp: st
     by_depth = []
     for lo, hi in zip(edges[:-1], edges[1:]):
         sel = [a for a, dd in zip(row_acc, depths) if lo <= dd < hi or (hi == 1.0 and dd == 1.0)]
+        self_first = [f for f, dd in zip(row_first, depths) if lo <= dd < hi or (hi == 1.0 and dd == 1.0)]
         by_depth.append({"lo": float(lo), "hi": float(hi), "n": len(sel),
-                         "acc": float(np.mean(sel)) if sel else None})
+                         "acc": float(np.mean(sel)) if sel else None,
+                         "first_acc": float(np.mean(self_first)) if self_first else None})
     return {
         "acc": acc, "acc_se": se, "ce_nats": ce_sum / max(ce_n, 1), "rows": len(row_acc),
+        "first_acc": float(np.mean(row_first)),
+        "first_acc_se": float(np.std(row_first, ddof=1) / math.sqrt(len(row_first))) if len(row_first) > 1 else float("nan"),
+        "per_position_acc": [float(np.mean(h)) for h in pos_hits],
         "sec_per_row": t_rows / max(len(row_acc), 1), "by_depth": by_depth,
     }
 
@@ -146,6 +159,8 @@ def main() -> int:
     p.add_argument("--amp", default="auto")
     p.add_argument("--depth_bins", type=int, default=5)
     p.add_argument("--seed", type=int, default=12345)
+    p.add_argument("--need_first", action="store_true",
+                   help="re-evaluate cells saved before first-letter accuracy was recorded")
     p.add_argument("--out", default=None, help="JSON path (default <ckpt>/ladder.json)")
     args = p.parse_args()
 
@@ -168,7 +183,7 @@ def main() -> int:
         arch = path.stem
         res = report["results"].setdefault(arch, {})
         for L in args.lengths:
-            if str(L) in res and "acc" in res[str(L)]:
+            if str(L) in res and "acc" in res[str(L)] and ("first_acc" in res[str(L)] or not args.need_first):
                 continue
             if arch in caps and L > caps[arch]:
                 res[str(L)] = {"skipped": f"cap {caps[arch]}"}
@@ -204,7 +219,7 @@ def main() -> int:
                 for b in ev["by_depth"]
             )
             print(
-                f"  [{arch}] {L:>7}  acc {ev['acc']:.3f} ±{ev['acc_se']:.3f}  CE {ev['ce_nats']:.3f}  "
+                f"  [{arch}] {L:>7}  acc {ev['acc']:.3f} ±{ev['acc_se']:.3f}  first {ev['first_acc']:.3f}  CE {ev['ce_nats']:.3f}  "
                 f"C={ev['memory_slots']}  {ev['sec_per_row']:.3f} s/row  "
                 f"peak {ev.get('peak_gb', 0):.1f} GB  [{backend}, batch {batch}]  depth {depth}",
                 flush=True,
