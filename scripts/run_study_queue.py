@@ -117,7 +117,8 @@ def main() -> int:
     p.add_argument("--mode", default="print", choices=("print", "scripts"))
     p.add_argument("--repo_dir", default=str(ROOT))
     p.add_argument("--wait_for", nargs="*", default=[],
-                   help="queue logs that must contain QUEUE-END before this queue starts (no GPU sharing)")
+                   help="queue logs that must contain QUEUE-END before this queue starts (no GPU sharing); "
+                   "'{g}' is replaced by the GPU id")
     args = p.parse_args()
 
     plan = load_plan(args.plan)
@@ -166,7 +167,8 @@ def main() -> int:
             "export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True",
             f"export CUDA_VISIBLE_DEVICES={g}",
             f"exec > >(tee -a {shlex.quote(str(log))}) 2>&1",
-            *[f"until grep -q QUEUE-END {shlex.quote(w)} 2>/dev/null; do sleep 120; done" for w in args.wait_for],
+            *[f"until grep -q QUEUE-END {shlex.quote(w.replace('{g}', str(g)))} 2>/dev/null; do sleep 120; done"
+              for w in args.wait_for],
             # never share a GPU: wait until it is idle
             f"while nvidia-smi -i {g} --query-compute-apps=pid --format=csv,noheader | grep -q .; do sleep 60; done",
         ]

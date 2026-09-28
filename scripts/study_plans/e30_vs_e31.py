@@ -170,6 +170,8 @@ def jobs(phase: str) -> list[dict]:
         out.append({"name": "len_chain_e31_li_s0_k12", "args": [*k12, *EXAMS["chain"], "--arch", "e31_li",
                     "--seed", "0"], "init": "len_lookup_e31_li_s0", "ladder": LADDER_FULL, "cost": 7.0})
         return out
+    if phase == "pchain_s1":  # parallel-chain exams, seed 1 (Odra, after its first queue)
+        return hard_jobs(seeds=(1,), exams=("pchain2", "pchain3"))
     if phase == "odra":  # seed 1: E31_li lookup/chain weights already live here
         return ratio_jobs() + length_jobs(seeds=(1,)) + hard_jobs(seeds=(1,))
     if phase == "polonez":  # seed 0 (E31_li seed-0 lookup weights live here) + dense ceiling
