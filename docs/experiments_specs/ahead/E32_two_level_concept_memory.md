@@ -102,6 +102,12 @@ At 10M the E32 read touches ≈ 220k entries (coarse N/48) + 1k fine. A third le
 - **New constraint: one read does not do multi-hop.** Neither writer follows 4 hops beyond the
   training length, and parallel chains are at chance. The E33 read → update → read loop must
   come with E32, not after it.
+- **Order matters (28 Sep):** the length-invariant boundary address drops slot order, and the
+  in-order chain fails. A *scaled* order code (slot keys at a scaled distance before QUERY)
+  restores it. The E31 chain then transfers (seed 1: 92 % at 2k, 72 % at 64k, first letter), at
+  some cost to lookup transfer before the curriculum stages. E32's levels should carry this
+  order code.
+- **Coarse level:** latent width 1024 lifts 48 tokens per latent from ≈ 40 % to 84 % (lookup-1k).
 - **Metric:** gate on first-letter accuracy (or free-running exact match), never the
   teacher-forced mean, on any exam with several candidate answers.
 

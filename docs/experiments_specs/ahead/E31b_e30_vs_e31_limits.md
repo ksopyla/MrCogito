@@ -327,6 +327,20 @@ Seed 2 at 12 tokens per entry: e31 K16 m1 100 → 100 % at 16k; e30 K16 100 → 
 *can* work at 12 tokens per entry; takeoff is seed luck (e31 K16 m1: 1 of 3 seeds failed; e30: 0 of 3).
 E31 at 24 tokens per entry, seed 1: first letter 53 % (seed 0: 77 % mean).
 
+**28 Sep, 19:40. The order-preserving address gives the first honest chain transfer.**
+4-hop in-order chain, e31_ord_m1 seed 1, from its lookup-2k weights, trained at 2k only. First letter:
+
+| 2k | 4k | 8k | 16k | 32k | 64k | 128k |
+|---|---|---|---|---|---|---|
+| **92** | **88** | 78 | **83** | 77 | 72 | 59 |
+
+- The boundary address (no order) left E31 at ≈ 50 % even at 2k.
+- E30-LI solves the chain only at its training length.
+- With slot keys placed before QUERY at a *scaled* distance, E31 follows the chain and it
+  transfers: 72 % at 64k after 2k training only.
+- Replicates (seeds 0 and 2) are queued as `ord_s0`.
+- e30_ord seed 1 never took off on lookup (chance), so its E30 comparison is still open.
+
 **Order-preserving address (`scaled`), e31_ord_m1 seed 1, lookup at 2k only:** first letter
 92 / 83 / 53 / 47 / 25 % at 2k–32k. The boundary address (e31_li_m1 s1) gave 96 / 94 / 92 / 91 / 86.
 **Keeping order costs length transfer on lookup.** The chain result will decide whether it buys the chain.
@@ -335,13 +349,15 @@ E31 at 24 tokens per entry, seed 1: first letter 53 % (seed 0: 77 % mean).
 - e30_li: 37 % with R = 1, 37 % with R = 4;
 - e31_li_m1: 43 % with R = 1, 41 % with R = 4.
 
-The tied read loop does not help either memory at 2 hops. pchain3 is running.
+pchain3, e30_li: R1 40 %, R4 39 %. The tied read loop does not help at 2 or 3 hops with
+32-letter nodes; `e33b` (8-letter nodes) is queued.
 
 **Hyperparameters at 48 tokens per latent (e31 K4 m1, lookup-1k, seed 0, first letter at 1k / 2k / 4k / 8k / 16k):**
 - **latent width 1024: 86 / 91 / 92 / 62 / 50** (final eval 84 %; 41.8 M params);
 - 3 encoder layers: 70 / 64 / 70 / 50 / 73;
 - baseline D 512: about 40.
 
+Also at 48 tokens: 16 heads, 3 rounds and m8 + D1024 did not take off (first letter 29 / 27 / 31 %).
 **At 48 tokens the limit is latent width (capacity)**, not the read (m8 did not help) and not
 the window. This is the lever for E32's coarse level. The confound is +6.7 M parameters.
 
