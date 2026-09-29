@@ -577,7 +577,11 @@ model matches the given letters.
   - seed 0: 100 / 100 / 100 / 94 / 69 / 47 / 48;
   - seed 2: 97–98 at every length;
   - seed 1: 92 → 25.
-- e31_mix_m1 seed 1: 88 / 83 / 88 / 80 / 72 / 34 / 48. e30_mix seed 1: 35 at 2k (weak).
+- e31_mix_m1 seed 1: 88 / 83 / 88 / 80 / 72 / 34 / 48, and after the 8k stage 72 → 44.
+- e30_mix seed 1: 35 at 2k (2k only); after the 8k stage 64–77; after the 8k + 16k stages 72–80, flat to 128k.
+- e30_ord seed 2 after the 8k stage: 55–64, flat.
+- **Order codes (scaled or mixed) cost lookup on both writers.** The boundary code stays best for
+  pure lookup, and an order code is needed for the chain. The mixed split did not get both.
 - **E30 chain with an order code is still position-bound** (first letter at 2k / 4k):
   - e30_ord seed 2: 97 / 31;
   - e30_mix seed 1: 100 / 33.
