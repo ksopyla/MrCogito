@@ -249,6 +249,13 @@ def jobs(phase: str) -> list[dict]:
             out += [_job(p2, arch, 1, L1K_FT, "pchain2", rr, init=f"len_lookup_{arch}_s1", ladder=LADDER_1K, cost=1.2),
                     _job(p3, arch, 1, L1K_FT, "pchain3", rr, init=p2, ladder=LADDER_1K, cost=1.2)]
         return out
+    if phase == "recall_len":  # does the 8k stage carry multi-fact recall to length (as it did lookup)?
+        out = []
+        for arch in ("e30_li", "e31_li_m1", "e31_li"):
+            for exam in ("recall8", "recall16"):
+                src = f"hard_{exam}_{arch}_s1"
+                out.append(_job(f"{src}_b8k", arch, 1, L8K, exam, init=src, ladder=LADDER_FULL, cost=2.2))
+        return out
     if phase == "odra":  # seed 1: E31_li lookup/chain weights already live here
         return ratio_jobs() + length_jobs(seeds=(1,)) + hard_jobs(seeds=(1,))
     if phase == "polonez":  # seed 0 (E31_li seed-0 lookup weights live here) + dense ceiling
