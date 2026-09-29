@@ -211,7 +211,7 @@ Block A with m = 1 shows whether the configuration part costs accuracy.
   - the cost bench once a GPU is free.
 - **Wave 3:** whatever wave 2 leaves open, then the E32 prototype.
 
-## Conclusion (draft, 29 Sep 10:00; first-letter accuracy; pending: E31 recall 8k stages on Odra)
+## Conclusion (29 Sep 13:00; first-letter accuracy; pending: e31_li recall8 8k stage and the third suite seed of the 2k cells, re-run on Odra)
 
 > **Polonez went offline on 29 Sep at about 09:00–10:00,** most likely a thermal shutdown after about
 > 40 h of both servers at full load (see the remote-servers notes).
@@ -250,15 +250,17 @@ Block A with m = 1 shows whether the configuration part costs accuracy.
     training only.
   - **With the 8k stage, both writers carry multi-fact recall to 128k** (seed 1; first letter at 2k–128k):
     - recall8: e30_li 95 / 91 / 95 / 94 / 98 / 95 / 94; **e31_li_m1 89 / 97 / 92 / 94 / 98 / 98 / 95** (tie);
-    - recall16: e30_li 89 / 80 / 86 / 89 / 88 / 81 / 88; e31 runs still going.
+    - recall16: e30_li 89 / 80 / 86 / 89 / 88 / 81 / 88; **e31_li 94 / 94 / 100 / 98 / 97 / 95 / 92**;
+      **e31_li_m1 88 / 97 / 97 / 95 / 95 / 97 / 91**.
   - The earlier "E31 fades after 8k" was the missing curriculum stage, as it was for lookup.
+  - **With the curriculum, E31 matches (recall8) or beats (recall16) E30 at every length.**
 - *Decoys* (decoy8): E31 holds 89–98 % to 16k; E30 falls to 26–31 %.
 - *Relations:*
   - The in-order chain transfers across length **only with the E31 writer plus an order code**.
     First letter at 2k / 32k / 128k, trained at 2k only:
     - e31_ord_m1 seed 1: 92 / 77 / 59; after one 8k stage 100 / 83 / 84;
     - **seed 2: 100 / 88 / 75** and **seed 0: 98 / 70 / 58**: 3 of 3 seeds transfer;
-    - e31_mix_m1 seed 1: 92 / 78 / 69.
+    - e31_mix_m1 seed 1: 92 / 78 / 69; after the 8k stage 83 / 77 / 70.
   - E30 solves it only at the training length, with every address tried (li seeds 0 and 1; ord
     seeds 0 and 2; mix seed 1): 97–100 at 2k, 27–33 at 4k.
   - Glyph chain-512: E31 99.8 vs E30 14.
@@ -293,7 +295,9 @@ every multi-candidate cell.
 **Overall.**
 - **E31 (m1, order code) is the better base** for the vision's retrieval and relational memory, and
   for the latent state that reasoning or agent messages need.
-- **E30 is the cheaper, content-only fine store,** strong on recall8 at length once curriculum-trained.
+- **E30 is the cheaper, content-only fine store.** Once curriculum-trained it is close to E31 on
+  multi-fact recall at length (recall16 88 vs 91–92 at 128k), but it never follows relations across
+  length and often does not take off from scratch.
 - **Neither reasons over multiple hops with one read.** That is E33's problem, and the tied query
   loop is not the answer: next is the L-loop, or answer-side scratchpad tokens.
 
