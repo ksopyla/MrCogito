@@ -36,9 +36,12 @@
 | pchain2, 32-letter nodes | 37 / 37 | 43 / 41 |
 | pchain3, 32-letter nodes | 40 / 39 | 37 / 36 |
 | pchain2, 8-letter nodes | 38 / 44 | 45 / 44 |
-| pchain3, 8-letter nodes | 39 / 38 | (running) |
+| pchain3, 8-letter nodes | 39 / 38 | 46 / 45 |
+| **supervised R4** (round r → node r+1), pchain2 / pchain3, 8-letter | 43 / 45 | 44 / 45 |
 
-**The tied query-side loop does not unlock multi-hop.** Five of five completed pairs are within noise.
+**The tied query-side loop does not unlock multi-hop, with or without per-round supervision.**
+Ten cells, gains from −2 to +6 points. The Q-loop meets the kill rule. The L-loop and answer-side
+scratchpad tokens are the remaining candidates.
 
 Likely reasons, in order of how testable they are:
 1. **No per-hop supervision.** The answer is only the final node, so the loop gets no signal until all

@@ -211,6 +211,77 @@ Block A with m = 1 shows whether the configuration part costs accuracy.
   - the cost bench once a GPU is free.
 - **Wave 3:** whatever wave 2 leaves open, then the E32 prototype.
 
+## Conclusion (draft, 29 Sep 06:00; first-letter accuracy; pending: ord chain seeds 0 / 2, mix chain, third suite seed)
+
+**Q1 — why 48 tokens per latent failed, and the spectrum 6 → 64.**
+- It is **latent capacity**, not read bandwidth and not the window.
+  - Evidence at 48 tokens (lookup-1k, first letter): m8 52 vs m1 40; W512 42 vs W256 40; width 1024 → **84**.
+  - 16 heads, 3 rounds and no competition all fail.
+- With D 512, E31 is reliable at 6 tokens per entry and borderline at 12: 2 of 3 seeds reach
+  86–100, 1 fails. At 24 it is unreliable (77 / 44 / 23), and at 48–64 it fails.
+- The original coarse run also sat at 2k with the absolute address and one seed. It was a
+  capacity-plus-takeoff failure, not proof that coarse latents cannot work.
+
+**Q2 — the right ratio.**
+- E31: **6 tokens per latent with 1 reader entry (N/6)** is the reliable point.
+- 12 works when takeoff succeeds.
+- 48 needs a wider latent (D 1024, +6.7 M params). That is the lever for E32's coarse level.
+- E30's 6 came from a 22 Sep sweep (3 / 6 / 11 tokens per slot; 11 = a 512 window, and it died).
+  Here E30 does lookup at 12 (3 / 3 seeds) and 24 (1 / 2), but never multi-fact recall from scratch
+  at any ratio.
+- **m1 ≥ m5 everywhere**, at 5× fewer entries.
+
+**Q3 — head-to-head on the same checks.**
+- *Suite from scratch:* e31_li reaches L3 (scale up); e31_li_m1 reaches L1 on first letter (one
+  failed takeoff); e30_li is not ready (L0). E30 often does not take off without a curriculum.
+- *Lookup at length* (full curriculum, 128k first letter):
+  - E31 80–94 (m1 94);
+  - E30 59–74.
+- *Multi-fact recall* (1k, first letter):
+  - E31 is better at ≤ 4k (recall16 84–95 vs 50–55).
+  - On recall8, E30 holds 67–84 % out to 64k on both seeds, while E31 fades after 8k with 1k
+    training only (the recall curriculum stages were not tried).
+- *Decoys* (decoy8): E31 holds 89–98 % to 16k; E30 falls to 26–31 %.
+- *Relations:*
+  - The in-order chain transfers across length **only with the E31 writer plus the order code**
+    (e31_ord_m1: 84 % at 128k after one 8k stage).
+  - E30 solves it only at the training length, with any address (li, ord, mix: 2k 97–100, 4k ≈ 31).
+  - Glyph chain-512: E31 99.8 vs E30 14.
+  - Unique and match3 collapse by 4k–16k for both.
+
+**Q4 — why E30 is cheaper, and is it only configuration?**
+- **Part configuration:** memory size, m5 → m1, the same N/6. It is free in accuracy.
+- **Part structural:** the writer takes 20 % of the forward for E31 against 4 % for E30.
+  - At equal memory E31-m1 is 21 % slower (0.394 vs 0.326 s per 128k row); one encoder layer trims
+    that to 15 %.
+  - E31's writer adds 3.9 M params against 0.13 M for E30.
+- 1M does not fit for either (main-path activations): a streaming forward is needed.
+
+**Q5 — harder tasks and limits.**
+- Both arches: lookup, recall, decoys, and Glyph facts / stories. E31 at length.
+- E31 + order: the in-order 4-hop chain at length.
+- **Nobody** (both memories, and dense at 30M) solves:
+  - parallel / shuffled multi-hop (REACHABILITY);
+  - 8 in-order hops beyond the training length;
+  - count or unique at length.
+- **One exclusive read does not compose hops.** The tied read loop (E33) does not help, with or
+  without per-round supervision: 10 cells, gains −2 to +6 points.
+- Several exams were flawed and are marked:
+  - shuffled chain (no-hop shortcut);
+  - match3 and majority (averaging-easy);
+  - teacher-forced mean accuracy on every multi-candidate exam.
+
+**Q6 — method.** Same platform and protocol for every arm: capability suite, curriculum, and
+ladders to 128k. **Gate on first-letter accuracy**; the suite's mean metric and scorecard overstate
+every multi-candidate cell.
+
+**Overall.**
+- **E31 (m1, order code) is the better base** for the vision's retrieval and relational memory, and
+  for the latent state that reasoning or agent messages need.
+- **E30 is the cheaper, content-only fine store,** strong on recall8 at length once curriculum-trained.
+- **Neither reasons over multiple hops with one read.** That is E33's problem, and the tied query
+  loop is not the answer: next is the L-loop, or answer-side scratchpad tokens.
+
 ## Result
 *(interim, updated as runs finish; seed in the job name; accuracy in %)*
 
@@ -496,6 +567,14 @@ model matches the given letters.
 - **On first letter, E31 wins lookup at length:** 80–94 % at 128k against 59–74 % for E30 after the
   full curriculum. The earlier "e30_li 83 % at 128k" was a mean.
 - **e31_li_m1** is the best when it takes off (1 of 2 seeds).
+- e31_ord_m1 lookup, 2k only (first letter at 2k–128k):
+  - seed 0: 100 / 100 / 100 / 94 / 69 / 47 / 48;
+  - seed 2: 97–98 at every length;
+  - seed 1: 92 → 25.
+- e31_mix_m1 seed 1: 88 / 83 / 88 / 80 / 72 / 34 / 48. e30_mix seed 1: 35 at 2k (weak).
+- **E30 chain with an order code is still position-bound** (first letter at 2k / 4k):
+  - e30_ord seed 2: 97 / 31;
+  - e30_mix seed 1: 100 / 33.
 
 **What survives the correction:**
 1. **Content retrieval works for both writers and goes long; the winner depends on the exam.**
