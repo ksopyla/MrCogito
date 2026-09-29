@@ -211,14 +211,14 @@ Block A with m = 1 shows whether the configuration part costs accuracy.
   - the cost bench once a GPU is free.
 - **Wave 3:** whatever wave 2 leaves open, then the E32 prototype.
 
-## Conclusion (29 Sep 14:00; first-letter accuracy; study runs complete except the third suite seed of the 2k cells, re-running on Odra)
+## Conclusion (29 Sep 19:00; first-letter accuracy; all study runs complete)
 
 > **Polonez went offline on 29 Sep at about 09:00–10:00,** most likely a thermal shutdown after about
 > 40 h of both servers at full load (see the remote-servers notes).
 > - Lost mid-run: the third suite seed of the 2k cells, the e30_ord seed 0 and e31_ord_m1 seed 2
 >   8k stages, and the rest of `ord_s0`.
 > - Finished results are on its disk, and the queues skip DONE jobs on restart.
-> - The suite verdict stays on 2 seeds until then.
+> - The third suite seed of the 2k cells was re-run on Odra (`Cache/capability/li_full_30m_s3_odra`).
 
 **Q1 — why 48 tokens per latent failed, and the spectrum 6 → 64.**
 - It is **latent capacity**, not read bandwidth and not the window.
@@ -524,6 +524,19 @@ reached 44 % and 23 % first letter. At 24 tokens with D 512, takeoff is unreliab
 | e31_li_m1 | scale up | L3 | lookalike-1k median 72 (seeds 45 / 99), so **L1** on first letter: one seed failed takeoff |
 | e30_li | **not ready** | L0 | misses lookup-512 (30 %), lookup-1k, lookup-2k, chain-1k/2k and Glyph chain-512 (14 %) from scratch |
 
+- **Third seed of the 2k cells** (seed 2, re-run on Odra after the Polonez outage; first letter):
+  - lookup-2k: dense 97.7, e30_li 99.2, e31_li 99.2, e31_li_m1 98.8;
+  - chain-2k: dense 99.6, and every memory at chance (23.8 / 23.8 / 25.4).
+
+  | lookup-2k, first letter, seeds 0 / 1 / 2 | median | took off |
+  |---|---|---|
+  | dense 29 / 91 / 98 | 91 | 2 / 3 |
+  | e30_li 27 / 98 / 99 | 98 | 2 / 3 |
+  | **e31_li 98 / 100 / 99** | **99** | **3 / 3** |
+  | e31_li_m1 98 / 30 / 99 | 98 | 2 / 3 |
+
+  chain-2k over 3 seeds: every length-invariant memory stays at chance (21–38), dense stays at 99.6–100.
+  The scorecard verdicts are unchanged: e30_li was already failing L1 on lookup-512.
 - Under the suite protocol (every cell from scratch, fixed budget), **e31_li is the most reliable
   memory.**
 - E30-LI's capabilities in this study appear only with the lookup curriculum. From scratch it often
