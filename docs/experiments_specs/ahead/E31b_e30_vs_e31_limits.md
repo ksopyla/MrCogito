@@ -375,6 +375,11 @@ first letter at 2k–128k: 84 / 89 / 80 / 88 / 72 / 52 / 47. The boundary addres
   The high-frequency half is at the QUERY boundary (content), and the low-frequency half is at the
   scaled distance (order). One KV head of 64 dims, so the split is by frequency, not by head.
   The question is whether this gets boundary-level lookup transfer *and* the ord chain.
+- **e30_ord seed 2 lookup (2k only): mean 94 % but first letter 52 %**; the ladder's first letter is
+  59 / 69 / 52 / 64 / 47 / 61 / 50 at 2k–128k.
+  - Even on single lookup, a model can get the later letters by matching the given first letters
+    against memory. So the first letter is the honest score for lookup too.
+  - For e31 lookups the mean and first letter agree (98 / 98), so earlier lookup claims stand.
 - e30_ord seed 1: its lookup never took off, so its chain stayed at chance too. That arm is untested
   until the `ord_s0` replicates run.
 
@@ -394,6 +399,8 @@ pchain3: e30_li R1 40 %, R4 39 %; e31_li_m1 R1 37 %, R4 36 %. The tied read loop
 - e31_li_m1: R1 45 %, R4 44 %.
 
 pchain3 (8-letter nodes): e30_li R1 39 %, R4 38 %.
+**Supervised Q-loop** (`e33c`: R4, round r predicts chain node r+1, weight 0.5), pchain2 with
+8-letter nodes, e30_li: **43 %**, against 44 % for unsupervised R4 and 38 % for R1. No gain so far.
 **Q-loop provisional verdict: no gain.** In all five completed R1 / R4 pairs the difference is within
 ±6 points (SE ±3). The e31_li_m1 pchain3 pair is still running. See E33 for the next step (the L-loop).
 
