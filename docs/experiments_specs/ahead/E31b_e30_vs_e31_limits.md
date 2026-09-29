@@ -211,7 +211,14 @@ Block A with m = 1 shows whether the configuration part costs accuracy.
   - the cost bench once a GPU is free.
 - **Wave 3:** whatever wave 2 leaves open, then the E32 prototype.
 
-## Conclusion (draft, 29 Sep 08:00; first-letter accuracy; pending: E31 recall 8k stages, third suite seed)
+## Conclusion (draft, 29 Sep 10:00; first-letter accuracy; pending: E31 recall 8k stages on Odra)
+
+> **Polonez went offline on 29 Sep at about 09:00–10:00,** most likely a thermal shutdown after about
+> 40 h of both servers at full load (see the remote-servers notes).
+> - Lost mid-run: the third suite seed of the 2k cells, the e30_ord seed 0 and e31_ord_m1 seed 2
+>   8k stages, and the rest of `ord_s0`.
+> - Finished results are on its disk, and the queues skip DONE jobs on restart.
+> - The suite verdict stays on 2 seeds until then.
 
 **Q1 — why 48 tokens per latent failed, and the spectrum 6 → 64.**
 - It is **latent capacity**, not read bandwidth and not the window.
@@ -241,8 +248,8 @@ Block A with m = 1 shows whether the configuration part costs accuracy.
   - E31 is better at ≤ 4k (recall16 84–95 vs 50–55).
   - On recall8, E30 holds 67–84 % out to 64k on both seeds, while E31 fades after 8k with 1k
     training only.
-  - **With the 8k stage, E30-LI recall8 holds 91–98 % from 2k to 128k** (seed 1). The E31 8k
-    stages are queued next (`recall_len`).
+  - **With the 8k stage, E30-LI holds recall8 at 91–98 % and recall16 at 80–89 % from 2k to
+    128k** (seed 1). The E31 8k stages are running (`recall_len`, Odra).
 - *Decoys* (decoy8): E31 holds 89–98 % to 16k; E30 falls to 26–31 %.
 - *Relations:*
   - The in-order chain transfers across length **only with the E31 writer plus an order code**.
