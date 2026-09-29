@@ -211,7 +211,7 @@ Block A with m = 1 shows whether the configuration part costs accuracy.
   - the cost bench once a GPU is free.
 - **Wave 3:** whatever wave 2 leaves open, then the E32 prototype.
 
-## Conclusion (29 Sep 13:00; first-letter accuracy; pending: e31_li recall8 8k stage and the third suite seed of the 2k cells, re-run on Odra)
+## Conclusion (29 Sep 14:00; first-letter accuracy; study runs complete except the third suite seed of the 2k cells, re-running on Odra)
 
 > **Polonez went offline on 29 Sep at about 09:00–10:00,** most likely a thermal shutdown after about
 > 40 h of both servers at full load (see the remote-servers notes).
@@ -250,10 +250,12 @@ Block A with m = 1 shows whether the configuration part costs accuracy.
     training only.
   - **With the 8k stage, both writers carry multi-fact recall to 128k** (seed 1; first letter at 2k–128k):
     - recall8: e30_li 95 / 91 / 95 / 94 / 98 / 95 / 94; **e31_li_m1 89 / 97 / 92 / 94 / 98 / 98 / 95** (tie);
+      e31_li (m5) 95 / 97 / 95 / 95 / 97 / 88 / 72 (m5 dilutes at 64k–128k);
     - recall16: e30_li 89 / 80 / 86 / 89 / 88 / 81 / 88; **e31_li 94 / 94 / 100 / 98 / 97 / 95 / 92**;
       **e31_li_m1 88 / 97 / 97 / 95 / 95 / 97 / 91**.
   - The earlier "E31 fades after 8k" was the missing curriculum stage, as it was for lookup.
-  - **With the curriculum, E31 matches (recall8) or beats (recall16) E30 at every length.**
+  - **With the curriculum, E31-m1 matches (recall8) or beats (recall16) E30 at every length.**
+    E31 with m5 loses 20 points at 128k on recall8. One more reason for m1.
 - *Decoys* (decoy8): E31 holds 89–98 % to 16k; E30 falls to 26–31 %.
 - *Relations:*
   - The in-order chain transfers across length **only with the E31 writer plus an order code**.
