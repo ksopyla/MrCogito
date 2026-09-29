@@ -211,7 +211,7 @@ Block A with m = 1 shows whether the configuration part costs accuracy.
   - the cost bench once a GPU is free.
 - **Wave 3:** whatever wave 2 leaves open, then the E32 prototype.
 
-## Conclusion (draft, 29 Sep 07:00; first-letter accuracy; pending: ord chain seed 0, recall 8k stages, third suite seed)
+## Conclusion (draft, 29 Sep 08:00; first-letter accuracy; pending: E31 recall 8k stages, third suite seed)
 
 **Q1 — why 48 tokens per latent failed, and the spectrum 6 → 64.**
 - It is **latent capacity**, not read bandwidth and not the window.
@@ -240,13 +240,15 @@ Block A with m = 1 shows whether the configuration part costs accuracy.
 - *Multi-fact recall* (1k, first letter):
   - E31 is better at ≤ 4k (recall16 84–95 vs 50–55).
   - On recall8, E30 holds 67–84 % out to 64k on both seeds, while E31 fades after 8k with 1k
-    training only (the recall curriculum stages were not tried).
+    training only.
+  - **With the 8k stage, E30-LI recall8 holds 91–98 % from 2k to 128k** (seed 1). The E31 8k
+    stages are queued next (`recall_len`).
 - *Decoys* (decoy8): E31 holds 89–98 % to 16k; E30 falls to 26–31 %.
 - *Relations:*
   - The in-order chain transfers across length **only with the E31 writer plus an order code**.
     First letter at 2k / 32k / 128k, trained at 2k only:
     - e31_ord_m1 seed 1: 92 / 77 / 59; after one 8k stage 100 / 83 / 84;
-    - **seed 2: 100 / 88 / 75** (replicates);
+    - **seed 2: 100 / 88 / 75** and **seed 0: 98 / 70 / 58**: 3 of 3 seeds transfer;
     - e31_mix_m1 seed 1: 92 / 78 / 69.
   - E30 solves it only at the training length, with every address tried (li seeds 0 and 1; ord
     seeds 0 and 2; mix seed 1): 97–100 at 2k, 27–33 at 4k.
