@@ -248,8 +248,10 @@ Block A with m = 1 shows whether the configuration part costs accuracy.
   - E31 is better at ≤ 4k (recall16 84–95 vs 50–55).
   - On recall8, E30 holds 67–84 % out to 64k on both seeds, while E31 fades after 8k with 1k
     training only.
-  - **With the 8k stage, E30-LI holds recall8 at 91–98 % and recall16 at 80–89 % from 2k to
-    128k** (seed 1). The E31 8k stages are running (`recall_len`, Odra).
+  - **With the 8k stage, both writers carry multi-fact recall to 128k** (seed 1; first letter at 2k–128k):
+    - recall8: e30_li 95 / 91 / 95 / 94 / 98 / 95 / 94; **e31_li_m1 89 / 97 / 92 / 94 / 98 / 98 / 95** (tie);
+    - recall16: e30_li 89 / 80 / 86 / 89 / 88 / 81 / 88; e31 runs still going.
+  - The earlier "E31 fades after 8k" was the missing curriculum stage, as it was for lookup.
 - *Decoys* (decoy8): E31 holds 89–98 % to 16k; E30 falls to 26–31 %.
 - *Relations:*
   - The in-order chain transfers across length **only with the E31 writer plus an order code**.
@@ -587,6 +589,9 @@ model matches the given letters.
 - e31_mix_m1 seed 1: 88 / 83 / 88 / 80 / 72 / 34 / 48, and after the 8k stage 72 → 44.
 - e30_mix seed 1: 35 at 2k (2k only); after the 8k stage 64–77; after the 8k + 16k stages 72–80, flat to 128k.
 - e30_ord seed 2 after the 8k stage: 55–64, flat.
+- e31_mix_m1 after the 8k + 16k stages: 92 / 86 / 86 / 86 / 91 / 89 / 83. The 16k stage recovers most of the
+  cost (boundary m1: 94 at 128k).
+- e30_mix chain with the 8k stage: 98 only at 8k (14–34 elsewhere). That is the sixth E30 variant that is position-bound.
 - **Order codes (scaled or mixed) cost lookup on both writers.** The boundary code stays best for
   pure lookup, and an order code is needed for the chain. The mixed split did not get both.
 - **E30 chain with an order code is still position-bound** (first letter at 2k / 4k):
