@@ -401,6 +401,7 @@ pchain3: e30_li R1 40 %, R4 39 %; e31_li_m1 R1 37 %, R4 36 %. The tied read loop
 pchain3 (8-letter nodes): e30_li R1 39 %, R4 38 %.
 **Supervised Q-loop** (`e33c`: R4, round r predicts chain node r+1, weight 0.5), pchain2 with
 8-letter nodes, e30_li: **43 %**, against 44 % for unsupervised R4 and 38 % for R1. No gain so far.
+e31_li_m1: 44 %. **Two of two supervised cells show no gain.**
 **Q-loop provisional verdict: no gain.** In all five completed R1 / R4 pairs the difference is within
 ±6 points (SE ±3). The e31_li_m1 pchain3 pair is still running. See E33 for the next step (the L-loop).
 
@@ -456,6 +457,27 @@ reached 44 % and 23 % first letter. At 24 tokens with D 512, takeoff is unreliab
   The suite trains cells from scratch; the study's chains start from lookup weights.
 
 The multi-hop follow-up is drafted as [E33](E33_iterative_concept_reads.md) (read → update → read loop).
+
+**Lookup length, re-measured on first letter (29 Sep; 128 rows; 2k / 8k / 32k / 128k).**
+This replaces the mean-accuracy lookup tables above: even single lookup can be inflated when the
+model matches the given letters.
+
+| arch, seed | 2k only | + 8k stage | + 8k + 16k stages |
+|---|---|---|---|
+| e30_li s0 | 95 / 86 / 62 / 48 | 96 / 97 / 86 / 50 | 72 / 85 / 88 / **74** |
+| e30_li s1 | 98 / 73 / 38 / 25 | 95 / 98 / 92 / 49 | 83 / 98 / 98 / **59** |
+| e31_li s0 | 96 / 92 / 85 / 57 | 88 / 94 / 88 / 39 | 93 / 98 / 95 / **83** |
+| e31_li s1 | 100 / 100 / 88 / 36 | 100 / 100 / 98 / 72 | 100 / 100 / 99 / **80** |
+| **e31_li_m1 s1** | 99 / 96 / 94 / **86** | 97 / 98 / 95 / **95** | 98 / 98 / 97 / **94** |
+| e31_li_m1 s0 | no takeoff (35–47) | 41 / 39 / 36 / 37 | 43 / 47 / 41 / 35 |
+| e31_ord_m1 s1 (first letter at 2k/8k/32k/128k) | 92 / 53 / 25 / 38 | 84 / 80 / 72 / 47 | 89 / 88 / 86 / 47 |
+| e31_ord_m1 s2 | 97 / 98 / 98 / … (running) | | |
+| e30_ord s0 | 97 / 61 / 23 / 36 | | |
+| e30_ord s2 | mean 94, first letter 59 / 52 / 47 / 50 | | |
+
+- **On first letter, E31 wins lookup at length:** 80–94 % at 128k against 59–74 % for E30 after the
+  full curriculum. The earlier "e30_li 83 % at 128k" was a mean.
+- **e31_li_m1** is the best when it takes off (1 of 2 seeds).
 
 **What survives the correction:**
 1. **Content retrieval works for both writers and goes long; the winner depends on the exam.**
