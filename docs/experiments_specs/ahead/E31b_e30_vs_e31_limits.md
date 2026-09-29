@@ -402,6 +402,7 @@ pchain3 (8-letter nodes): e30_li R1 39 %, R4 38 %.
 **Supervised Q-loop** (`e33c`: R4, round r predicts chain node r+1, weight 0.5), pchain2 with
 8-letter nodes, e30_li: **43 %**, against 44 % for unsupervised R4 and 38 % for R1. No gain so far.
 e31_li_m1: 44 %. **Two of two supervised cells show no gain.**
+pchain3 with 8-letter nodes, e30_li supervised R4: 45 % (R1 39 %; +6, about 2 SE).
 **Q-loop provisional verdict: no gain.** In all five completed R1 / R4 pairs the difference is within
 ±6 points (SE ±3). The e31_li_m1 pchain3 pair is still running. See E33 for the next step (the L-loop).
 
@@ -421,6 +422,23 @@ the window. This is the lever for E32's coarse level. The confound is +6.7 M par
 reached 44 % and 23 % first letter. At 24 tokens with D 512, takeoff is unreliable for both.
 
 **Chain with the 8k stage, e31_li_m1 s1:** first letter 36 % at 8k, 41–47 % on the ladder. No chain.
+
+**Head-to-head suite complete (29 Sep, 38 / 38 cells, 2 seeds; a third seed is running on the two
+2k cells).** `Cache/capability/li_full_30m/scorecard.md` gives the verdicts, re-checked on first letter:
+
+| arch | scorecard verdict (mean accuracy) | frontier | on first letter |
+|---|---|---|---|
+| **e31_li** | **scale up** | L3 (L4: chain-2k at chance) | L3 holds: lookalike-1k 99.6, lookup-1k 96, lookup-2k 99. chain-1k is 70 (mean 94), so L4 fails |
+| e31_li_m1 | scale up | L3 | lookalike-1k median 72 (seeds 45 / 99), so **L1** on first letter: one seed failed takeoff |
+| e30_li | **not ready** | L0 | misses lookup-512 (30 %), lookup-1k, lookup-2k, chain-1k/2k and Glyph chain-512 (14 %) from scratch |
+
+- Under the suite protocol (every cell from scratch, fixed budget), **e31_li is the most reliable
+  memory.**
+- E30-LI's capabilities in this study appear only with the lookup curriculum. From scratch it often
+  does not take off.
+- **No length-invariant memory solves chain-2k from scratch.** Dense does (99.6). The chain needs
+  the lookup → chain curriculum plus the order code (e31_ord_m1).
+- Shuffled-1k is the shortcut cell and says nothing about multi-hop.
 
 **Head-to-head suite, first letter (median over seeds so far, 28 Sep, 20:40; 14 / 38 cells):**
 
@@ -471,7 +489,7 @@ model matches the given letters.
 | **e31_li_m1 s1** | 99 / 96 / 94 / **86** | 97 / 98 / 95 / **95** | 98 / 98 / 97 / **94** |
 | e31_li_m1 s0 | no takeoff (35–47) | 41 / 39 / 36 / 37 | 43 / 47 / 41 / 35 |
 | e31_ord_m1 s1 (first letter at 2k/8k/32k/128k) | 92 / 53 / 25 / 38 | 84 / 80 / 72 / 47 | 89 / 88 / 86 / 47 |
-| e31_ord_m1 s2 | 97 / 98 / 98 / … (running) | | |
+| **e31_ord_m1 s2** | **97 / 98 / 98 / 98** (2k only; 97 at 64k) | | |
 | e30_ord s0 | 97 / 61 / 23 / 36 | | |
 | e30_ord s2 | mean 94, first letter 59 / 52 / 47 / 50 | | |
 
