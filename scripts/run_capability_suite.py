@@ -91,6 +91,7 @@ def plan(
     eval_rows: int = EVAL_ROWS,
     extra: tuple[str, ...] = (),
     lr_scale: float = 1.0,
+    only_seeds: tuple[int, ...] | None = None,
 ) -> list[Job]:
     """Expand (arches × sizes × tier cells × seeds [× lr pair]) into probe jobs."""
     unknown = [a for a in list(arches) + list(controls) if a not in ARCHES]
@@ -111,6 +112,8 @@ def plan(
             steps = max(20, int(round(b.steps * budget_scale)))
             eval_every = max(5, min(b.eval_every, steps // 4))
             for seed in range(n_seeds):
+                if only_seeds is not None and seed not in only_seeds:
+                    continue
                 for lr in lrs:
                     tag = f"seed{seed}" + (f"_lr{_fmt_lr(lr)}" if (lr_pair or lr_scale != 1.0) else "")
                     out_dir = str(Path(out) / size_name / cell.id / tag)
@@ -213,6 +216,8 @@ def main() -> int:
     p.add_argument("--controls", nargs="*", default=list(DEFAULT_CONTROLS),
                    help="arches trained next to the candidate in every job (default: dense = ceiling)")
     p.add_argument("--lr_pair", action="store_true", help="also run lr/2 (step-size cliffs are common)")
+    p.add_argument("--only_seeds", type=int, nargs="*", default=None,
+                   help="run only these seed indices (e.g. a lost seed re-run on another host)")
     p.add_argument("--lr_scale", type=float, default=1.0,
                    help="multiply the policy step size (e.g. 0.5 for the 2048-token cells at 30m); "
                    "recorded in job.json and the seed tag")
@@ -232,7 +237,7 @@ def main() -> int:
         cell_ids=tuple(args.cells) if args.cells else None,
         seeds=args.seeds, controls=tuple(args.controls), lr_pair=args.lr_pair,
         budget_scale=args.budget_scale, eval_rows=args.eval_rows, extra=tuple(shlex.split(args.extra)),
-        lr_scale=args.lr_scale,
+        lr_scale=args.lr_scale, only_seeds=tuple(args.only_seeds) if args.only_seeds else None,
     )
     untested = sorted({(j.size, j.cell) for j in jobs if not j.lr_measured})
     print(f"capability suite {SUITE_VERSION}: {len(jobs)} jobs · tier {args.tier} · "
