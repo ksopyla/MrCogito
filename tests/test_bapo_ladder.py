@@ -163,6 +163,15 @@ def test_e30_limit_recipes_construct_at_bridge_scales():
             assert cfg.answer_len >= 1
 
 
+def test_e31b_recipes_construct_at_1k():
+    from data.bapo_ladder import E31B_RECIPES, resolve_recipe
+
+    assert resolve_recipe("chain_parallel").overrides["n_chains"] == 4
+    for rec in E31B_RECIPES.values():
+        cfg = config_for("bridge_1k", rec.task, hops=3, **rec.overrides)
+        assert cfg.seq_len == SCALES["bridge_1k"].seq_len
+
+
 def test_bridge_scales_keep_e18_local_blind():
     """K2: the leak control is only valid when the stack window cannot see the evidence."""
     from data.symbolic_tasks import generate_row
