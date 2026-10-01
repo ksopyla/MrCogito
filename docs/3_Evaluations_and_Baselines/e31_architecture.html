@@ -50,15 +50,6 @@ textarea{width:100%;min-height:120px;font:13px ui-monospace,Menlo,monospace;back
 <h1>How information flows through the sliding-window latent memory (E31)</h1>
 <p class="sub"><b>1 Oct:</b> E31 is the memory we continue with (E30 parked). The controls start on the <b>best version</b>, described in the box below. Step through the network, toggle the two context arms and the proposed edits, compare with E30 as it was built, and then use the checklist at the bottom to confirm or change each design decision. Weights in the "book view" are <b>illustrative</b> (hand-built to show the mechanism), not trained values. For a token-by-layer view of how the two paths are wired, see <a href="e31_wiring.html">the wiring page</a>.</p>
 
-<div class="controls">
-  <span><span class="lab">Model</span><span class="seg" id="mode"><button data-v="e30">E30 as built (parked)</button><button data-v="A" class="on">E31 · page encoder (best)</button><button data-v="B">E31 · latent↔token rounds</button></span></span>
-  <label class="tg"><input type="checkbox" id="prop" checked> latents compete for tokens</label>
-  <span><span class="lab">Reader entries / latent</span><span class="seg" id="mm"><button data-v="1" class="on">1 (best)</button><button data-v="5">5</button></span></span>
-  <label class="tg"><input type="checkbox" id="lc" checked> long-context config (length-invariant address + windowed global read)</label>
-  <label class="tg"><input type="checkbox" id="ord" checked> order code (needed for chains)</label>
-  <span><button class="btn" id="prev">◀ prev</button> <button class="btn primary" id="next">next step ▶</button> <span class="note" id="stepno"></span></span>
-</div>
-
 <!-- ============ best ============ -->
 <h2 style="border-top:0;margin-top:18px">★ The best version (1 Oct 2026)</h2>
 <div class="card" style="background:var(--info-bg)">
@@ -84,34 +75,14 @@ textarea{width:100%;min-height:120px;font:13px ui-monospace,Menlo,monospace;back
 <p class="note" style="margin-bottom:0"><b>What it cannot do yet:</b> combine facts stored in different places. A single read does not compose hops: parallel chains stay at chance, and so does the dense model at this size. A repeated weight-tied read gave no gain. The <a href="e31_wiring.html#reasoning">wiring page</a> shows where latent reasoning could be added. Results: <a href="e31_length_ladder.html">length ladder</a> · <a href="e31b_memory_study_report.html">study report</a>.</p>
 </div>
 
-<!-- ============ 0. status ============ -->
-<h2>0 · Status after the runs (27 Sep, extended 1 Oct 2026)</h2>
-<p class="note">The page below is the 24 Sep alignment draft. This table records what was built and how it did: the full-tier suite at 30M (3 seeds), the context-only control and the 2k → 128k length ladder. Full comparison with E30: <a href="../4_Research_Notes/e30_vs_e31_assessment_20260927.html">E30 vs E31 assessment</a>. Length results: <a href="e31_length_ladder.html">length ladder</a>.</p>
-<div class="card" style="overflow-x:auto"><table>
-<tr><th>decision in the draft</th><th>built?</th><th>outcome</th></tr>
-<tr><td>Separate writer branch on the 128-d embeddings</td><td><span class="tag t-new">yes</span></td><td>Works; the memory is decoupled from the language model.</td></tr>
-<tr><td>Main path = E18 platform</td><td><span class="tag t-new">yes</span></td><td>Unchanged. New option: its global read's raw keys can be a 256-token window, so the memory is the only long path.</td></tr>
-<tr><td>128-d tokens, no n-grams, for every arm</td><td><span class="tag t-new">yes</span></td><td>Fair comparison. E30 lost some bits on short cells compared with its ledger numbers.</td></tr>
-<tr><td>Windows 256 / stride 192, fixed; pooling rule per window</td><td><span class="tag t-new">yes</span></td><td>Leak fixed for E30 as well; causality tests pass.</td></tr>
-<tr><td>Arm A: two-way page encoder (2 layers)</td><td><span class="tag t-new">yes</span></td><td><b>Winner</b>: suite verdict "scale up", every level L0–L5 passes. All 32 answer letters recovered equally (salience wall gone).</td></tr>
-<tr><td>Arm B: latent↔token rounds (BiXT)</td><td><span class="tag t-new">yes</span></td><td><b>Not ready</b>: frontier L0; it learns only with about 8× the budget.</td></tr>
-<tr><td>32 latents × 512, 8 heads (not averaged), competition on, null latent off</td><td><span class="tag t-new">yes</span></td><td>As drafted. Null latent not tested.</td></tr>
-<tr><td>Reader width 5 × 64 per latent</td><td><span class="tag t-prop">changed</span></td><td>Built as <b>5 reader entries per latent</b> (1 KV head each), not 5 KV heads. Memory = 0.83 entries per token: 5× E30's, close to full attention's key count.</td></tr>
-<tr><td><i>not in the draft</i>: init fixes</td><td><span class="tag t-prop">added</span></td><td>Input RMSNorm + unit-scale latents (inputs were wiped at init); values from the read-out (values were only latent identity). Without them: chance.</td></tr>
-<tr><td>Address: ID + window start + position prior + stamp at the read position</td><td><span class="tag t-new">yes</span></td><td>Works up to ≈ 2× the training length only. Trained at 2k: 92 → 56 % at 8k, chance at 16k.</td></tr>
-<tr><td><i>new</i>: <b>length-invariant address</b> (<code>lm_addr none</code>, <code>lm_slot_pos boundary</code>)</td><td><span class="tag t-prop">added</span></td><td><b>80–81 % at 128k</b> (2 seeds, trained ≤ 16k); chain 82 % at 128k. Toggle "long-context config" above to see it.</td></tr>
-<tr><td><i>new</i>: windowed global read + flex band masks</td><td><span class="tag t-prop">added</span></td><td>Linear cost: 0.45 s and 3.4 GB per 128k row; training fits up to 64k on one 3090.</td></tr>
-<tr><td>Context-only control (E30 with 64-token reach)</td><td><span class="tag t-new">run</span></td><td><b>It matches or beats E31 at 1–2k</b> (lookalike 99 vs 94 %, lookup-2k 99 vs 89 %). Criterion S4 fails; E30's flaw was its reach. At length it collapses like E31's original address.</td></tr>
-<tr><td>Coarse rung (W 512 · 8 latents)</td><td><span class="tag t-new">run</span></td><td><b>Failed</b>: 39 % (1 entry per latent), chance (5 entries). 1M needs the two-level memory.</td></tr>
-<tr><td>Exam ladder DNA → Glyph → text</td><td><span class="tag t-prop">partial</span></td><td>DNA and Glyph pass (Glyph fact-1k 99 %). Text rung not run.</td></tr>
-<tr><td><i>new (E31b)</i>: one reader entry per latent (m1)</td><td><span class="tag t-prop">adopted</span></td><td>Memory N/6, the same size as E30's. As good as m5 at short length and better at 64k–128k. Best lookup: 94 % at 128k (first letter).</td></tr>
-<tr><td><i>new (E31b)</i>: order code (<code>lm_slot_pos scaled</code> / <code>mixed</code>)</td><td><span class="tag t-prop">adopted for relations</span></td><td>The boundary address drops slot order, and the in-order chain then stays near 50 %. Scaled positions bring order back: 84 % at 128k, and 3 of 3 seeds transfer. Cost: lookup reach at 64k–128k.</td></tr>
-<tr><td><i>new (E31b)</i>: lookup → 8k → 16k curriculum</td><td><span class="tag t-prop">adopted</span></td><td>Recall of 8 or 16 facts holds 91–95 % at 128k after one 8k stage. Without it, recall fades after 8k.</td></tr>
-<tr><td><i>correction (28 Sep)</i>: first-letter accuracy</td><td><span class="tag t-e30">metric fix</span></td><td>The teacher-forced mean inflated every exam with several candidate answers. The earlier "chain 82 % at 128k" was inflation. All gates now use the first answer letter.</td></tr>
-<tr><td>Multi-hop: repeated weight-tied read (E33 query loop)</td><td><span class="tag t-e30">no gain</span></td><td>4 rounds vs 1, with and without per-round targets: −2 to +6 points over 10 cells. The parallel chain stays at chance.</td></tr>
-<tr><td>E30 vs E31</td><td><span class="tag t-new">decided</span></td><td>E31 chosen, E30 parked. E30's writer is cheaper, but it is position-bound on chains and collapses under decoys at length.</td></tr>
-<tr><td>E31a (memory in every upper layer), two-level 1M memory, latent reasoning</td><td><span class="tag t-same">not started</span></td><td>Next: latent reasoning over the memory, then more tokens per latent toward 1M (E32).</td></tr>
-</table></div>
+<div class="controls">
+  <span><span class="lab">Model</span><span class="seg" id="mode"><button data-v="e30">E30 as built (parked)</button><button data-v="A" class="on">E31 · page encoder (best)</button><button data-v="B">E31 · latent↔token rounds</button></span></span>
+  <label class="tg"><input type="checkbox" id="prop" checked> latents compete for tokens</label>
+  <span><span class="lab">Reader entries / latent</span><span class="seg" id="mm"><button data-v="1" class="on">1 (best)</button><button data-v="5">5</button></span></span>
+  <label class="tg"><input type="checkbox" id="lc" checked> long-context config (length-invariant address + windowed global read)</label>
+  <label class="tg"><input type="checkbox" id="ord" checked> order code (needed for chains)</label>
+  <span><button class="btn" id="prev">◀ prev</button> <button class="btn primary" id="next">next step ▶</button> <span class="note" id="stepno"></span></span>
+</div>
 
 <!-- ============ 1. pipeline ============ -->
 <h2>1 · The whole network, one step at a time</h2>
@@ -152,8 +123,37 @@ textarea{width:100%;min-height:120px;font:13px ui-monospace,Menlo,monospace;back
 <p class="note">Hover a cell for its rule.</p></div>
 </div>
 
+<!-- ============ 0. status ============ -->
+<h2>5 · Status after the runs (27 Sep, extended 1 Oct 2026)</h2>
+<p class="note">Sections 1–4 grew out of the 24 Sep alignment draft. This table records what was built and how it did: the full-tier suite at 30M (3 seeds), the context-only control and the 2k → 128k length ladder. Full comparison with E30: <a href="../4_Research_Notes/e30_vs_e31_assessment_20260927.html">E30 vs E31 assessment</a>. Length results: <a href="e31_length_ladder.html">length ladder</a>.</p>
+<div class="card" style="overflow-x:auto"><table>
+<tr><th>decision in the draft</th><th>built?</th><th>outcome</th></tr>
+<tr><td>Separate writer branch on the 128-d embeddings</td><td><span class="tag t-new">yes</span></td><td>Works; the memory is decoupled from the language model.</td></tr>
+<tr><td>Main path = E18 platform</td><td><span class="tag t-new">yes</span></td><td>Unchanged. New option: its global read's raw keys can be a 256-token window, so the memory is the only long path.</td></tr>
+<tr><td>128-d tokens, no n-grams, for every arm</td><td><span class="tag t-new">yes</span></td><td>Fair comparison. E30 lost some bits on short cells compared with its ledger numbers.</td></tr>
+<tr><td>Windows 256 / stride 192, fixed; pooling rule per window</td><td><span class="tag t-new">yes</span></td><td>Leak fixed for E30 as well; causality tests pass.</td></tr>
+<tr><td>Arm A: two-way page encoder (2 layers)</td><td><span class="tag t-new">yes</span></td><td><b>Winner</b>: suite verdict "scale up", every level L0–L5 passes. All 32 answer letters recovered equally (salience wall gone).</td></tr>
+<tr><td>Arm B: latent↔token rounds (BiXT)</td><td><span class="tag t-new">yes</span></td><td><b>Not ready</b>: frontier L0; it learns only with about 8× the budget.</td></tr>
+<tr><td>32 latents × 512, 8 heads (not averaged), competition on, null latent off</td><td><span class="tag t-new">yes</span></td><td>As drafted. Null latent not tested.</td></tr>
+<tr><td>Reader width 5 × 64 per latent</td><td><span class="tag t-prop">changed</span></td><td>Built as <b>5 reader entries per latent</b> (1 KV head each), not 5 KV heads. Memory = 0.83 entries per token: 5× E30's, close to full attention's key count.</td></tr>
+<tr><td><i>not in the draft</i>: init fixes</td><td><span class="tag t-prop">added</span></td><td>Input RMSNorm + unit-scale latents (inputs were wiped at init); values from the read-out (values were only latent identity). Without them: chance.</td></tr>
+<tr><td>Address: ID + window start + position prior + stamp at the read position</td><td><span class="tag t-new">yes</span></td><td>Works up to ≈ 2× the training length only. Trained at 2k: 92 → 56 % at 8k, chance at 16k.</td></tr>
+<tr><td><i>new</i>: <b>length-invariant address</b> (<code>lm_addr none</code>, <code>lm_slot_pos boundary</code>)</td><td><span class="tag t-prop">added</span></td><td><b>80–81 % at 128k</b> (2 seeds, trained ≤ 16k); chain 82 % at 128k. Toggle "long-context config" above to see it.</td></tr>
+<tr><td><i>new</i>: windowed global read + flex band masks</td><td><span class="tag t-prop">added</span></td><td>Linear cost: 0.45 s and 3.4 GB per 128k row; training fits up to 64k on one 3090.</td></tr>
+<tr><td>Context-only control (E30 with 64-token reach)</td><td><span class="tag t-new">run</span></td><td><b>It matches or beats E31 at 1–2k</b> (lookalike 99 vs 94 %, lookup-2k 99 vs 89 %). Criterion S4 fails; E30's flaw was its reach. At length it collapses like E31's original address.</td></tr>
+<tr><td>Coarse rung (W 512 · 8 latents)</td><td><span class="tag t-new">run</span></td><td><b>Failed</b>: 39 % (1 entry per latent), chance (5 entries). 1M needs the two-level memory.</td></tr>
+<tr><td>Exam ladder DNA → Glyph → text</td><td><span class="tag t-prop">partial</span></td><td>DNA and Glyph pass (Glyph fact-1k 99 %). Text rung not run.</td></tr>
+<tr><td><i>new (E31b)</i>: one reader entry per latent (m1)</td><td><span class="tag t-prop">adopted</span></td><td>Memory N/6, the same size as E30's. As good as m5 at short length and better at 64k–128k. Best lookup: 94 % at 128k (first letter).</td></tr>
+<tr><td><i>new (E31b)</i>: order code (<code>lm_slot_pos scaled</code> / <code>mixed</code>)</td><td><span class="tag t-prop">adopted for relations</span></td><td>The boundary address drops slot order, and the in-order chain then stays near 50 %. Scaled positions bring order back: 84 % at 128k, and 3 of 3 seeds transfer. Cost: lookup reach at 64k–128k.</td></tr>
+<tr><td><i>new (E31b)</i>: lookup → 8k → 16k curriculum</td><td><span class="tag t-prop">adopted</span></td><td>Recall of 8 or 16 facts holds 91–95 % at 128k after one 8k stage. Without it, recall fades after 8k.</td></tr>
+<tr><td><i>correction (28 Sep)</i>: first-letter accuracy</td><td><span class="tag t-e30">metric fix</span></td><td>The teacher-forced mean inflated every exam with several candidate answers. The earlier "chain 82 % at 128k" was inflation. All gates now use the first answer letter.</td></tr>
+<tr><td>Multi-hop: repeated weight-tied read (E33 query loop)</td><td><span class="tag t-e30">no gain</span></td><td>4 rounds vs 1, with and without per-round targets: −2 to +6 points over 10 cells. The parallel chain stays at chance.</td></tr>
+<tr><td>E30 vs E31</td><td><span class="tag t-new">decided</span></td><td>E31 chosen, E30 parked. E30's writer is cheaper, but it is position-bound on chains and collapses under decoys at length.</td></tr>
+<tr><td>E31a (memory in every upper layer), two-level 1M memory, latent reasoning</td><td><span class="tag t-same">not started</span></td><td>Next: latent reasoning over the memory, then more tokens per latent toward 1M (E32).</td></tr>
+</table></div>
+
 <!-- ============ 5. checklist ============ -->
-<h2>5 · Alignment checklist (24 Sep, historical)</h2>
+<h2>6 · Alignment checklist (24 Sep, historical)</h2>
 <p class="note">This is the 24 Sep alignment checklist, kept as it was; section 0 records what each decision turned into. Pick "agree", "change" or "question" and add a note. The box at the bottom collects your answers into a message you can paste back into the chat.</p>
 <div class="card"><table class="chk" id="chk"><tr><th>#</th><th>Decision in the E31 draft</th><th style="width:120px">Your call</th><th style="width:34%">Note</th></tr></table>
 <p><button class="btn primary" id="collect">Collect my answers</button> <button class="btn" id="copy">Copy</button> <span class="note" id="copied"></span></p>
