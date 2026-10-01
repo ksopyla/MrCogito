@@ -1,0 +1,298 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Latent Thoughts over E31</title>
+<style>
+:root{--bg:#f4f3ef;--card:#fcfcfb;--card2:#efeee9;--line:#dcdad3;--fg:#0b0b0b;--fg2:#52514e;--muted:#7c7b76;
+ --blue:#2a78d6;--orange:#eb6834;--green:#1a7f37;--amber:#b26b00;--red:#c62828;--violet:#4a3aa7;--teal:#0e8f8f;
+ --good-bg:#e6f4ea;--warn-bg:#fff4e0;--bad-bg:#fdecea;--info-bg:#eaf2fc;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121211;--card:#1a1a19;--card2:#242422;--line:#3a3935;--fg:#f4f4f2;--fg2:#c3c2b7;--muted:#8f8e86;
+ --blue:#5b9cea;--orange:#e5763f;--green:#5cc47a;--amber:#e0a040;--red:#ef6b6b;--violet:#9085e9;--teal:#3cc4c4;--good-bg:#16301f;--warn-bg:#35280f;--bad-bg:#3a1a1a;--info-bg:#15263b;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#121211;--card:#1a1a19;--card2:#242422;--line:#3a3935;--fg:#f4f4f2;--fg2:#c3c2b7;--muted:#8f8e86;
+ --blue:#5b9cea;--orange:#e5763f;--green:#5cc47a;--amber:#e0a040;--red:#ef6b6b;--violet:#9085e9;--teal:#3cc4c4;--good-bg:#16301f;--warn-bg:#35280f;--bad-bg:#3a1a1a;--info-bg:#15263b;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15.5px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+main{max-width:1080px;margin:0 auto;padding-inline:18px;padding-block:26px 70px}
+h1{font-size:30px;line-height:1.15;margin:4px 0 8px;text-wrap:balance}
+h2{font-size:21px;margin:44px 0 8px;padding-top:14px;border-top:1px solid var(--line);text-wrap:balance}
+h3{font-size:16px;margin:16px 0 6px}
+p{max-width:74ch}
+.kicker{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650}
+.sub{color:var(--fg2);margin:0 0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:12px 0}
+.callout{border-radius:10px;padding:12px 16px;margin:14px 0;border-left:4px solid var(--blue);background:var(--info-bg)}
+.callout.good{border-color:var(--green);background:var(--good-bg)}.callout.warn{border-color:var(--amber);background:var(--warn-bg)}
+.grid{display:grid;gap:12px}.g3{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}.g2{grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}
+.grid>*{min-width:0}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.tile .q{font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:650}
+.tile .a{font-size:22px;font-weight:750;margin:2px 0 4px;font-variant-numeric:tabular-nums}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.8px}
+th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:650}
+.controls{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding:10px 0;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--card);color:var(--fg2);padding:6px 11px;font:inherit;font-size:13.5px;cursor:pointer}
+.seg button.on{background:var(--blue);color:#fff}
+.btn{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:8px;padding:6px 12px;font:inherit;font-size:13.5px;cursor:pointer}
+.btn.primary{background:var(--blue);color:#fff;border-color:var(--blue)}
+.lab{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:650;margin-right:4px}
+svg{display:block;width:100%;height:auto}
+svg text{fill:var(--fg);font-family:inherit}svg .m{fill:var(--muted)}svg .s{fill:var(--fg2)}
+.svgwrap{overflow-x:auto}.svgwrap svg{min-width:760px}
+.step{font-size:15px;min-height:52px}
+.ex{font:13px/1.55 ui-monospace,Menlo,monospace;background:var(--card2);border-radius:8px;padding:8px 10px;white-space:pre-wrap;word-break:break-word;margin:6px 0}
+.ex b{color:var(--orange)}.ex i{color:var(--violet);font-style:normal;font-weight:700}.ex u{color:var(--green);text-decoration:none;font-weight:700}
+.pill{display:inline-block;font-size:11.5px;font-weight:700;padding:1px 8px;border-radius:999px;white-space:nowrap;background:var(--card2);color:var(--fg2)}
+.p-core{background:var(--info-bg);color:var(--blue)}.p-ctl{background:var(--good-bg);color:var(--green)}.p-stretch{background:var(--warn-bg);color:var(--amber)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--fg2);margin:6px 0}.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+a{color:var(--blue)}
+code{font:13px ui-monospace,Menlo,monospace;background:var(--card2);padding:1px 5px;border-radius:4px}
+#tip{position:fixed;pointer-events:none;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.18);opacity:0;z-index:20;max-width:320px}
+</style>
+<div id="tip"></div>
+<main>
+<div class="kicker">MrCogito · design proposal (E34, draft) · 1 Oct 2026</div>
+<h1>Latent thoughts over the E31 memory</h1>
+<p class="sub">The simplest way to add multi-hop reasoning to E31 without new parameters. After the question, the model takes a few extra "thinking" steps. Each step feeds its own output back as the next input and looks at the memory again. The memory, the writer and the reader stay exactly as they are.</p>
+
+<div class="callout good"><b>The idea in one sentence.</b> Today the question side gets one look at the memory. With latent thoughts it gets one look <i>per hop</i>, and each look asks with what the previous look found. That is the dependence a chain A → B → C → D needs, and the ingredient our repeated read (E33) was missing.</div>
+
+<div class="grid g3">
+<div class="tile"><div class="q">New parameters</div><div class="a">0</div>The thought input is the model's own last hidden state (960-d), fed straight into the main path. No new layer, head or embedding.</div>
+<div class="tile"><div class="q">Past performance</div><div class="a">kept by design</div>Questions that need no reasoning use zero thoughts and run exactly as today. Retrieval exams stay in the training mix, and one arm freezes the writer.</div>
+<div class="tile"><div class="q">Extra compute</div><div class="a">k short steps</div>One extra question-side position per hop, each with one memory read. The book and the memory are written once.</div>
+</div>
+
+<!-- ======================================================= -->
+<h2 id="how">1 · How it works, step by step</h2>
+<p>Four chains are stored as separate facts, shuffled across the book: A→B→C→D plus three look-alike chains. The question is "start at A, where do you end?" The candidate end nodes are D, H, L and P, so guessing gives 25 %. Pick a mode and step through it. Purple cards are memory latents, one per fact, written by the E31 page encoder.</p>
+<div class="controls">
+ <span><span class="lab">Mode</span><span class="seg" id="mode"><button data-v="one">today: one read</button><button data-v="pad">explicit scratchpad</button><button data-v="lat" class="on">latent thoughts</button><button data-v="sup">branching (superposition)</button></span></span>
+ <span><button class="btn" id="prev">◀</button> <button class="btn primary" id="next">next step ▶</button> <span class="lab" id="stepno"></span></span>
+</div>
+<div class="card"><div class="svgwrap"><svg id="flow" viewBox="0 0 1040 470" role="img" aria-label="Latent thoughts reading the memory"></svg></div>
+<div class="legend"><span><i style="background:var(--violet)"></i>memory latent (one fact)</span><span><i style="background:var(--orange)"></i>being read now</span><span><i style="background:var(--blue)"></i>question-side position</span><span><i style="background:var(--teal)"></i>latent thought (fed-back state)</span><span><i style="background:var(--green)"></i>answer</span></div>
+<div class="step" id="say"></div></div>
+
+<div class="grid g2">
+<div class="card"><h3 style="margin-top:0">What one thought step computes</h3>
+<svg id="cell" viewBox="0 0 470 300" role="img" aria-label="One thought step"></svg>
+<p style="font-size:13.5px;margin:6px 0 0">A thought position runs the unchanged E31 main path: local layer → global read (own side + memory) → two local layers. Only its <b>input</b> is new: the final hidden state of the previous position instead of a token embedding. The read's query is built from that input, so the second look asks about B, and the third about C.</p></div>
+<div class="card"><h3 style="margin-top:0">Why this fixes what E33 lacked</h3>
+<div class="tw"><table>
+<tr><th>missing in E33</th><th>latent thoughts</th></tr>
+<tr><td>Output fed back as a new input</td><td><b>Yes.</b> Each thought's input is the previous output, kept as its own position that later steps can attend to.</td></tr>
+<tr><td>Bridge usable as a question</td><td>The curriculum starts from <b>written-out nodes</b> (B as tokens, the same form as the question's A). Thoughts then learn to stand in for those tokens.</td></tr>
+<tr><td>A target at every step</td><td>Each thought is checked against the node it should hold, using the <b>existing output head</b> (no new parameters).</td></tr>
+<tr><td>Curriculum on hops</td><td>2 → 3 → 4 hops, then a random number of extra thoughts.</td></tr>
+</table></div></div>
+</div>
+
+<!-- ======================================================= -->
+<h2 id="train">2 · How it is trained: from written steps to latent steps</h2>
+<p>Coconut needed this curriculum: without it, latent thoughts were no better than no reasoning at all. Our data generator knows every intermediate node, so the written steps cost nothing to produce.</p>
+<div class="card"><div class="svgwrap"><svg id="cur" viewBox="0 0 1040 300" role="img" aria-label="Curriculum stages"></svg></div>
+<p style="font-size:13.5px;margin:4px 0 0">Stage 0 is an <b>explicit scratchpad</b>: the model writes the intermediate nodes as 8-letter tokens, with a loss on them, before the answer. Each later stage replaces one more written node with one latent thought. In the last stage the whole chain runs in latent space: one thought per hop instead of 8 letters per hop.</p></div>
+<div class="grid g3">
+<div class="tile"><div class="q">Start from</div>The best E31 checkpoint after its lookup and 8k stages. The memory already retrieves to 128k.</div>
+<div class="tile"><div class="q">Training mix</div>About half reasoning exams (with thoughts) and half replay of lookup, recall and decoys (no thoughts), so retrieval cannot drift.</div>
+<div class="tile"><div class="q">Two arms for the memory</div><b>Writer frozen</b>: the memory is identical, so retrieval stays exactly the same. <b>Writer trainable</b>: the memory may learn to store facts in a more "followable" form.</div>
+</div>
+
+<!-- ======================================================= -->
+<h2 id="exams">3 · The exams: how we measure reasoning</h2>
+<p>Every exam is generated with its intermediate steps known, scored on the <b>first answer letter</b> (no copy inflation), and run on a length ladder. Controls must not move.</p>
+<div class="grid g2" id="examcards"></div>
+
+<!-- ======================================================= -->
+<h2 id="arms">4 · Arms, pass marks and what each result would mean</h2>
+<div class="tw"><table>
+<tr><th>arm</th><th>what changes</th><th>what it isolates</th></tr>
+<tr><td><b>Today</b></td><td>one read, no thoughts</td><td>baseline: pchain3 ≈ 40 %, dense 44 %</td></tr>
+<tr><td><b>Pause tokens</b></td><td>k blank extra positions, no feedback</td><td>Is it just more compute? If this arm matches latent thoughts, feedback is not the reason.</td></tr>
+<tr><td><b>Explicit scratchpad</b></td><td>intermediate nodes written as tokens</td><td>The ceiling. Can the memory support k dependent lookups at all? If not, the memory's keys are the problem, not reasoning.</td></tr>
+<tr><td><b>Latent thoughts</b> ★</td><td>curriculum from the scratchpad, one thought per hop</td><td>The bet: reasoning in latent space at about 1/8 the steps of the scratchpad.</td></tr>
+<tr><td>Latent thoughts, no curriculum</td><td>thoughts from scratch</td><td>Replicates (or refutes) Coconut's finding that the curriculum is essential.</td></tr>
+<tr><td>× writer frozen / trainable</td><td>memory fixed or learning</td><td>Retrieval guarantee vs a memory that adapts to reasoning.</td></tr>
+</table></div>
+<div class="grid g2" style="margin-top:12px">
+<div class="card"><h3 style="margin-top:0">Pass marks (written before the runs)</h3>
+<ul style="margin:0;padding-left:18px">
+<li><b>Reasoning:</b> parallel chain, 3 hops, at 1k: <b>≥ 75 %</b> first letter on 2 seeds (today 40 %, dense 44 %, chance 25 %).</li>
+<li><b>Length:</b> at 32k with the facts in far-apart windows, ≥ 0.8× the 1k score.</li>
+<li><b>Hop generalisation:</b> trained on ≤ 4 hops, 6 hops with 6 thoughts ≥ 60 %.</li>
+<li><b>No harm:</b> lookup, recall16, decoys and the in-order chain within 2 points of today at 1k–128k. Parameter count unchanged.</li>
+<li><b>Trace:</b> thought t decodes node t+1 (through the output head) on ≥ 80 % of the solved questions.</li></ul></div>
+<div class="card"><h3 style="margin-top:0">Decision rules</h3>
+<ul style="margin:0;padding-left:18px">
+<li><b>Scratchpad fails</b> (&lt; 60 %) → the memory cannot be followed. Fix the writer first (store each edge as a source key and a target value).</li>
+<li><b>Scratchpad passes, latent thoughts fail</b> → the reasoning is in the tokens only. Keep the scratchpad as a fallback and try a discrete node embedding as the fed-back input.</li>
+<li><b>Pause tokens ≈ latent thoughts</b> → it is compute, not feedback. Move to the recurrent-core option.</li>
+<li><b>Latent thoughts pass</b> → next: branching reachability, typed relations, then text (BABILong-style), then reasoning inside the memory.</li></ul></div>
+</div>
+
+<!-- ======================================================= -->
+<h2 id="cost">5 · Parameters, compute and risks</h2>
+<div class="grid g2">
+<div class="card"><h3 style="margin-top:0">Cost per question (k thoughts)</h3><svg id="costsvg" viewBox="0 0 470 230" role="img" aria-label="Compute per question"></svg>
+<p style="font-size:13px;margin:4px 0 0">The bars show what each part touches, not measured time. The book pass and the memory writer run once. Each thought adds one short position through four layers, plus one read over the N/6 memory entries. A first, simple implementation reruns the short question side k times; that is cheap at 1k and can be cached later.</p></div>
+<div class="card"><h3 style="margin-top:0">Risks</h3>
+<ul style="margin:0;padding-left:18px;font-size:14px">
+<li><b>Training is sequential</b> over thoughts (each needs the previous output). It only applies to the few question-side positions.</li>
+<li><b>Scale drift.</b> The fed-back state is unnormalised. Use the existing final RMSNorm output (no new parameters), as Coconut does.</li>
+<li><b>The local layers see 16 positions back.</b> Fine for up to about 8 thoughts; the global read sees the whole question side anyway.</li>
+<li><b>Overthinking.</b> Extra thoughts past the needed hops may hurt. Train with a random 0–2 extra thoughts.</li>
+<li><b>The exam may be too hard at 30M.</b> The scratchpad arm tells us early, within the first day of runs.</li></ul></div>
+</div>
+
+<h3>How it compares with the other options</h3>
+<div class="tw"><table>
+<tr><th>option</th><th>new params</th><th>retrieval kept?</th><th>evidence for multi-hop</th><th>effort</th></tr>
+<tr><td><b>Latent thoughts (this page)</b></td><td>0</td><td>yes (zero thoughts = today)</td><td>proof for reachability in 2 layers; Coconut 97 % on graph QA</td><td>small</td></tr>
+<tr><td>Memory consolidation loop</td><td>+1 latent block</td><td>at risk (memory changes)</td><td>synthetic only</td><td>medium</td></tr>
+<tr><td>Recursive reasoning core (TRM/Huginn)</td><td>0 if tied</td><td>mostly</td><td>puzzles and math; text test negative</td><td>medium</td></tr>
+<tr><td>Repeated read (E33)</td><td>0</td><td>yes</td><td><b>tested here: no gain</b></td><td>done</td></tr>
+</table></div>
+
+<h3>Plan</h3>
+<div class="tw"><table>
+<tr><th>phase</th><th>what</th><th>output</th></tr>
+<tr><td>0 · diagnostic</td><td>on existing checkpoints: is the bridge node decodable after read 1? explicit-scratchpad arm on the parallel chain</td><td>ceiling, and which failure cause is real</td></tr>
+<tr><td>1 · build</td><td>thought positions after QUERY; fed-back input; per-thought node loss through the output head; curriculum stages; pause-token control</td><td>tests: no thoughts = identical outputs to today, causality, parameter count unchanged</td></tr>
+<tr><td>2 · 1k runs (Odra)</td><td>arms × 2 seeds on pchain 2/3/4, plus controls</td><td>pass mark on reasoning and no-harm</td></tr>
+<tr><td>3 · length and hops</td><td>far-edge ladder to 128k, 6/8-hop generalisation, branching reachability</td><td>length and hop curves</td></tr>
+</table></div>
+
+<p class="src" style="font-size:13px;color:var(--fg2)">Builds on: E31 (best version: page encoder, one entry per latent, order code), E31b limits study, E33 (repeated read, no gain), and the latent reasoning review. Key external sources: <a href="https://arxiv.org/abs/2412.06769">Coconut</a> · <a href="https://arxiv.org/abs/2505.12514">Reasoning by Superposition</a> · <a href="https://arxiv.org/abs/2607.00341">DiscoLoop</a> · <a href="https://arcprize.org/blog/hrm-analysis">ARC Prize HRM analysis</a> · <a href="https://arxiv.org/abs/2310.02226">pause tokens</a> · <a href="https://arxiv.org/abs/2412.04703">learning to search</a> · <a href="https://arxiv.org/abs/2406.10149">BABILong</a>.</p>
+</main>
+<script>
+const C=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();const NS='http://www.w3.org/2000/svg';const tip=document.getElementById('tip');
+function el(t,a,p,x){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(x!=null)e.textContent=x;if(p)p.appendChild(e);return e;}
+function hov(n,h){n.style.cursor='help';n.addEventListener('mousemove',e=>{tip.innerHTML=h;tip.style.opacity=1;tip.style.left=Math.min(e.clientX+14,innerWidth-340)+'px';tip.style.top=(e.clientY+14)+'px'});n.addEventListener('mouseleave',()=>tip.style.opacity=0);}
+function marker(s,id,col){const d=el('defs',{},s);const m=el('marker',{id,viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:7,markerHeight:7,orient:'auto'},d);el('path',{d:'M0,0L10,5L0,10z',fill:col},m);}
+function rbox(s,x,y,w,h,col,op,t,fs,bold,txtcol){el('rect',{x,y,width:w,height:h,rx:7,fill:col,'fill-opacity':op,stroke:col},s);if(t!=null)el('text',{x:x+w/2,y:y+h/2+(fs||13)*0.36,'text-anchor':'middle','font-size':fs||13,'font-weight':bold?750:500,style:txtcol?`fill:${txtcol}`:''},s,t);}
+
+/* ================= 1 · flow ================= */
+const MEM={
+ chain:[['C→D','I→J'],['E→F','A→B'],['K→L','N→O'],['B→C','G→H'],['M→N','J→K'],['F→G','O→P']],
+ branch:[['C→D','I→J'],['A→E','A→B'],['K→L','E→F'],['B→C','G→H'],['M→N','J→K'],['F→Q','O→P']]};
+const SC={
+ one:{mem:'chain',pos:[['QUERY','q'],['A','q'],['answer','a']],steps:[
+  {say:'The book has been written into the memory: one latent per fact, shuffled over six windows. The question is "start at A, where do you end?".'},
+  {read:{p:1,hit:['A→B']},say:'Today there is <b>one</b> look. The question-side state for A reads the memory and finds the latent "A → B". It now knows B.'},
+  {ans:{p:2,dist:{D:.31,H:.23,L:.23,P:.23}},say:'But the answer is two hops further (D). Nothing can ask the memory about B, so the answer is close to a guess among D, H, L and P. Measured: about 40 %, with chance at 25 %.'}]},
+ pad:{mem:'chain',pos:[['QUERY','q'],['A','q'],['B','w'],['C','w'],['answer','a']],steps:[
+  {say:'Explicit scratchpad: the model <b>writes</b> each intermediate node as tokens before the answer. That is plain chain of thought, and it is the ceiling arm.'},
+  {read:{p:1,hit:['A→B']},say:'At A the read finds "A → B". The model writes the 8 letters of <b>B</b> as the next tokens (a loss checks them).'},
+  {read:{p:2,hit:['B→C']},say:'The written B is a normal input token, so its read asks about B and finds "B → C". It writes <b>C</b>.'},
+  {read:{p:3,hit:['C→D']},say:'C reads "C → D".'},
+  {ans:{p:4,dist:{D:.94,H:.02,L:.02,P:.02}},say:'The answer D follows. It works, but it costs 8 written tokens per hop, and the reasoning is in letters, not in latent space.'}]},
+ lat:{mem:'chain',pos:[['QUERY','q'],['A','q'],['θ₁','t'],['θ₂','t'],['answer','a']],steps:[
+  {say:'Latent thoughts: after the question the model gets k extra positions. The <b>input</b> of each is the final hidden state of the previous position: no token, no new parameters.'},
+  {read:{p:1,hit:['A→B']},probe:{p:1,t:'≈ B'},say:'Look 1: the state for A reads "A → B". Its output state now encodes B (a probe through the output head would decode B).'},
+  {fb:{from:1,to:2},read:{p:2,hit:['B→C']},probe:{p:2,t:'≈ C'},say:'That output becomes the <b>input of θ₁</b>. θ₁\'s read is built from it, so it asks about B and finds "B → C". This is the dependent second look E33 never had.'},
+  {fb:{from:2,to:3},read:{p:3,hit:['C→D']},probe:{p:3,t:'≈ D'},say:'θ₂ is fed θ₁\'s output (≈ C) and reads "C → D".'},
+  {fb:{from:3,to:4},ans:{p:4,dist:{D:.9,H:.03,L:.04,P:.03}},say:'The answer position predicts D. Three hops took three looks and one latent step per hop. The bars are illustrative: this is the bet, not a measurement.'}]},
+ sup:{mem:'branch',pos:[['QUERY','q'],['A','q'],['θ₁','t'],['θ₂','t'],['answer','a']],steps:[
+  {say:'Branching graph: A has two exits (B and E). Question: "which of D, H, L, P can be reached from A?" A single chain of written tokens would have to pick one branch and might backtrack.'},
+  {read:{p:1,hit:['A→B','A→E']},probe:{p:1,t:'≈ {B, E}'},say:'One latent read can match <b>both</b> facts that start with A. The thought holds a superposition {B, E}: the whole frontier, not one guess.'},
+  {fb:{from:1,to:2},read:{p:2,hit:['B→C','E→F']},probe:{p:2,t:'≈ {C, F}'},say:'θ₁ expands the whole frontier at once: {C, F}. This is the mechanism proven for graph reachability (two layers + one thought per level of the graph).'},
+  {fb:{from:2,to:3},read:{p:3,hit:['C→D','F→Q']},probe:{p:3,t:'≈ {D, Q}'},say:'θ₂ reaches {D, Q}. Of the candidates, only D is in the frontier.'},
+  {fb:{from:3,to:4},ans:{p:4,dist:{D:.88,H:.04,L:.04,P:.04}},say:'Answer D. This is the stretch exam: it tests whether thoughts can hold several nodes at once, which a written scratchpad cannot do in one step.'}]}};
+const S={mode:'lat',i:0};
+function drawFlow(){const s=document.getElementById('flow');s.innerHTML='';marker(s,'af',C('--muted'));marker(s,'ao',C('--orange'));marker(s,'at',C('--teal'));
+ const sc=SC[S.mode],st=sc.steps.slice(0,S.i+1),cur=sc.steps[S.i];
+ const hitNow=new Set((cur.read&&cur.read.hit)||[]);const hitAll=new Set();st.forEach(x=>x.read&&x.read.hit.forEach(h=>hitAll.add(h)));
+ // memory panel
+ el('rect',{x:10,y:10,width:470,height:450,rx:12,fill:C('--violet'),'fill-opacity':.05,stroke:C('--line')},s);
+ el('text',{x:24,y:34,'font-size':13,'font-weight':750,style:`fill:${C('--violet')}`},s,'E31 MEMORY (the book, written once)');
+ el('text',{x:24,y:54,'font-size':11.5,class:'s'},s,'six 256-token windows · two-way page encoder · one latent per fact here');
+ const memPos={};
+ MEM[sc.mem].forEach((w,wi)=>{const x=24+wi*75;el('text',{x:x+33,y:86,'text-anchor':'middle','font-size':11,class:'m'},s,'window '+(wi+1));
+  el('rect',{x:x,y:92,width:66,height:300,rx:8,fill:C('--card2'),'fill-opacity':.7,stroke:C('--line')},s);
+  for(let f=0;f<6;f++){el('rect',{x:x+8,y:104+f*46,width:50,height:6,rx:3,fill:C('--line')},s);}
+  w.forEach((e,k)=>{const y=150+k*130;const on=hitNow.has(e),was=hitAll.has(e);const col=on?C('--orange'):C('--violet');
+   const g=el('g',{},s);rbox(g,x+4,y,58,40,col,on?.85:(was?.4:.18),e,13,true,on?'#fff':null);memPos[e]=[x+33,y+20];
+   hov(g,`<b>latent "${e}"</b><br>one fact (an edge) stored by the page encoder: source and target bound in one vector.`);});});
+ el('text',{x:24,y:420,'font-size':11.5,class:'s'},s,sc.mem==='chain'?'target chain A→B→C→D is spread over windows 2, 4 and 1;':'A branches to B and E; only one branch leads to a candidate;');
+ el('text',{x:24,y:438,'font-size':11.5,class:'s'},s,sc.mem==='chain'?'three look-alike chains end in H, L and P.':'look-alike chains end in H, L and P.');
+ // question side
+ el('rect',{x:500,y:10,width:530,height:450,rx:12,fill:C('--blue'),'fill-opacity':.04,stroke:C('--line')},s);
+ el('text',{x:514,y:34,'font-size':13,'font-weight':750,style:`fill:${C('--blue')}`},s,'QUESTION SIDE (after QUERY: memory only)');
+ const n=sc.pos.length,colW=Math.min(100,500/n),x0=514+(500-colW*n)/2;
+ const LAY=[['in',410],['local',350],['READ',290],['local ×2',230],['out',170]];
+ const px=i=>x0+i*colW+colW/2;
+ LAY.forEach(([l,y])=>el('text',{x:x0-4,y:y+4,'text-anchor':'end','font-size':10,class:'m'},s,''));
+ sc.pos.forEach(([lab,kind],i)=>{const cx=px(i);const reached=i<=Math.max(1,(cur.read?cur.read.p:0),(cur.ans?cur.ans.p:0),(cur.fb?cur.fb.to:0),S.i?S.i:0);
+  const active=(cur.read&&cur.read.p===i)||(cur.ans&&cur.ans.p===i);
+  const inCol=kind==='t'?C('--teal'):kind==='a'?C('--green'):kind==='w'?C('--amber'):C('--blue');
+  // stack
+  [['local',350],['GLOBAL READ',290],['local ×2',230]].forEach(([l,y])=>{const isR=l==='GLOBAL READ';rbox(s,cx-colW/2+6,y-16,colW-12,32,isR?C('--blue'):C('--card2'),isR?(active?.35:.14):1,l,10.5,isR,null);});
+  for(const [y1,y2] of [[392,368],[332,308],[272,248],[212,190]])el('path',{d:`M${cx},${y1} L${cx},${y2}`,stroke:C('--line'),'stroke-width':1.5,'marker-end':'url(#af)'},s);
+  rbox(s,cx-colW/2+6,394,colW-12,34,inCol,kind==='q'?.16:.3,lab,14,true,null);
+  el('text',{x:cx,y:446,'text-anchor':'middle','font-size':10,class:'m'},s,kind==='t'?'input = prev. output':kind==='w'?'written node':kind==='a'?'predicts':'token');
+  rbox(s,cx-colW/2+6,156,colW-12,32,C('--card'),1,'',10,false,null);
+ });
+ // QUERY note: book raw invisible
+ // probes and feedbacks so far
+ st.forEach(x=>{if(x.probe){const cx=px(x.probe.p);el('text',{x:cx,y:177,'text-anchor':'middle','font-size':13,'font-weight':750,style:`fill:${C('--teal')}`},s,x.probe.t);}
+  if(x.fb){const a=px(x.fb.from),b=px(x.fb.to);el('path',{d:`M${a+18},170 C${a+colW*.7},120 ${b-colW*.3},470 ${b-colW/2+10},420`,fill:'none',stroke:C('--teal'),'stroke-width':2.2,'stroke-dasharray':'6 4','marker-end':'url(#at)'},s);}});
+ // explicit scratchpad: written-node outputs
+ if(S.mode==='pad')st.forEach(x=>{if(x.read&&x.read.p<sc.pos.length-1){const cx=px(x.read.p);el('text',{x:cx,y:177,'text-anchor':'middle','font-size':12.5,'font-weight':750,style:`fill:${C('--amber')}`},s,'writes '+({1:'B',2:'C',3:'D…'})[x.read.p]);}});
+ // current read arrows
+ if(cur.read){const cx=px(cur.read.p);cur.read.hit.forEach(h=>{const [mx,my]=memPos[h];el('path',{d:`M${cx},274 L${cx},261 L500,261 C460,261 ${mx+70},${my} ${mx+31},${my}`,fill:'none',stroke:C('--orange'),'stroke-width':2.5,'stroke-linejoin':'round','marker-end':'url(#ao)'},s);});}
+ // answer distribution
+ const ans=st.find(x=>x.ans);if(ans){const cx=px(ans.ans.p);const d=ans.ans.dist;const ks=Object.keys(d);ks.forEach((k,j)=>{const h=d[k]*90;const bx=cx-36+j*18;
+  el('rect',{x:bx,y:150-h,width:14,height:h,rx:3,fill:k==='D'?C('--green'):C('--muted')},s);el('text',{x:bx+7,y:146-h,'text-anchor':'middle','font-size':10,class:'s'},s,k);});
+  el('text',{x:cx,y:56,'text-anchor':'middle','font-size':11,class:'s'},s,'answer distribution');}
+ document.getElementById('say').innerHTML=cur.say;document.getElementById('stepno').textContent=`step ${S.i+1} / ${sc.steps.length}`;}
+document.querySelectorAll('#mode button').forEach(b=>b.onclick=()=>{S.mode=b.dataset.v;S.i=0;document.querySelectorAll('#mode button').forEach(x=>x.classList.toggle('on',x===b));drawFlow();});
+document.getElementById('next').onclick=()=>{S.i=(S.i+1)%SC[S.mode].steps.length;drawFlow();};
+document.getElementById('prev').onclick=()=>{S.i=(S.i-1+SC[S.mode].steps.length)%SC[S.mode].steps.length;drawFlow();};
+
+/* ================= one cell ================= */
+function drawCell(){const s=document.getElementById('cell');s.innerHTML='';marker(s,'ac',C('--muted'));marker(s,'ac2',C('--teal'));
+ rbox(s,20,240,150,40,C('--teal'),.25,'θ input = h(prev)',12.5,true);
+ rbox(s,20,180,150,36,C('--card2'),1,'local layer',12,false);
+ rbox(s,20,118,150,40,C('--blue'),.2,'GLOBAL READ',12.5,true);
+ rbox(s,20,62,150,36,C('--card2'),1,'local layers ×2',12,false);
+ rbox(s,20,10,150,36,C('--card'),1,'h(θ) → next input',12,true);
+ [[240,216],[180,158],[118,98],[62,46]].forEach(([a,b])=>el('path',{d:`M95,${a} L95,${b+2}`,stroke:C('--muted'),'stroke-width':1.6,'marker-end':'url(#ac)'},s));
+ rbox(s,280,100,170,76,C('--violet'),.15,'',12,false);el('text',{x:365,y:128,'text-anchor':'middle','font-size':12.5,'font-weight':750},s,'memory: N/6 latents');el('text',{x:365,y:148,'text-anchor':'middle','font-size':11,class:'s'},s,'+ the question side so far');el('text',{x:365,y:164,'text-anchor':'middle','font-size':11,class:'s'},s,'(question, earlier thoughts)');
+ el('path',{d:'M170,138 L276,138',stroke:C('--orange'),'stroke-width':2.2,'marker-end':'url(#ac)'},s);el('text',{x:223,y:130,'text-anchor':'middle','font-size':11,style:`fill:${C('--orange')}`},s,'query from θ');
+ el('path',{d:'M170,28 C250,28 250,260 172,260',fill:'none',stroke:C('--teal'),'stroke-width':2,'stroke-dasharray':'5 4','marker-end':'url(#ac2)'},s);el('text',{x:258,y:200,'font-size':11,style:`fill:${C('--teal')}`},s,'to the next thought');
+ rbox(s,280,10,170,40,C('--green'),.15,'',12,false);el('text',{x:365,y:27,'text-anchor':'middle','font-size':11.5,'font-weight':700},s,'node check (training)');el('text',{x:365,y:42,'text-anchor':'middle','font-size':10.5,class:'s'},s,'existing output head → node t+1');
+ el('path',{d:'M170,24 L276,28',stroke:C('--green'),'stroke-width':1.6,'stroke-dasharray':'3 3','marker-end':'url(#ac)'},s);
+ el('text',{x:20,y:298,'font-size':11,class:'s'},s,'Same weights as today. Only the input at a thought position is new.');}
+
+/* ================= curriculum ================= */
+function drawCur(){const s=document.getElementById('cur');s.innerHTML='';
+ const rows=[['stage 0 · scratchpad',['Q','A','b b b b b b b b','c c c c c c c c','D']],['stage 1',['Q','A','θ','c c c c c c c c','D']],['stage 2',['Q','A','θ','θ','D']],['stage 3 · + extra thoughts',['Q','A','θ','θ','θ','D']]];
+ rows.forEach(([lab,toks],r)=>{const y=26+r*66;el('text',{x:16,y:y+24,'font-size':13,'font-weight':700},s,lab);let x=230;
+  toks.forEach(t=>{const w=t.length>2?170:t==='θ'?46:46;const col=t==='θ'?C('--teal'):t==='D'?C('--green'):t.length>2?C('--amber'):C('--blue');
+   rbox(s,x,y,w,36,col,t==='Q'||t==='A'?.14:.28,t==='Q'?'QUERY':t,t.length>2?12:14,true);
+   if(t.length>2)el('text',{x:x+w/2,y:y+50,'text-anchor':'middle','font-size':10,class:'m'},s,'written node, loss on letters');
+   if(t==='θ')el('text',{x:x+w/2,y:y+50,'text-anchor':'middle','font-size':10,class:'m'},s,'1 latent');
+   x+=w+8;});
+  el('text',{x:1030,y:y+24,'text-anchor':'end','font-size':12,class:'s'},s,['3 hops: 19 positions','12 positions','5 positions','6 positions (one spare)'][r]);});}
+
+/* ================= exams ================= */
+const EX=[
+ ['core','Parallel chains (2, 3, 4 hops)','<b>Q</b> start at <i>GATT</i> →\nbook: …<i>CCAG</i>→<i>TTAC</i> … <i>GATT</i>→<i>CCAG</i> … <i>AAGT</i>→<i>CGTA</i> … <i>TTAC</i>→<u>GCGA</u> …\n<b>A</b> <u>GCGA</u> (one of 4 end nodes)','The real multi-hop test: four shuffled chains, and the start node picks one. Today 40 %, dense 44 %, chance 25 %.','≥ 75 % at 1k (3 hops)'],
+ ['core','Far-apart facts (length ladder)','same exam, but each edge in a different window, 1k → 32k → 128k apart','Cross-window reasoning over the compressed memory, the case the page encoder alone cannot solve.','≥ 0.8× the 1k score at 32k'],
+ ['core','More hops than trained','train 2–4 hops, test 6 and 8 hops with 6 / 8 thoughts','Is it an algorithm (repeat the step) or a memorised depth? Recurrent-depth papers report 5 → 10-hop extrapolation.','≥ 60 % at 6 hops'],
+ ['stretch','Branching reachability','<i>A</i>→<i>B</i>, <i>A</i>→<i>E</i>, <i>B</i>→<i>C</i>, <i>E</i>→<i>F</i>, <i>C</i>→<u>D</u>, … \n<b>Q</b> which of <u>D</u> / H / L / P is reachable from <i>A</i>?','Search: thoughts must hold a set of nodes (superposition). The ProsQA / reachability family where Coconut reached 97 %.','report; no gate'],
+ ['stretch','Typed two-relation composition (Glyph text)','"the key is in box <i>vel</i>" … "box <i>vel</i> is in room <u>tor</u>" …\n<b>Q</b> which room is the key in?','Different relations, word-like filler: the bridge between our symbolic exams and text (BABILong qa2/qa3 style).','report; then a text rung'],
+ ['control','Retrieval controls (no thoughts)','lookup 1k–128k · recall16 · decoy8 · in-order 4-hop chain','No harm: these run with zero thoughts and must stay within 2 points of today.','within 2 points']];
+function drawEx(){document.getElementById('examcards').innerHTML=EX.map(([k,t,ex,why,bar])=>`<div class="card"><span class="pill ${k==='core'?'p-core':k==='control'?'p-ctl':'p-stretch'}">${k}</span><h3 style="margin:6px 0 2px">${t}</h3><div class="ex">${ex}</div><div style="font-size:14px">${why}</div><div style="font-size:13px;color:var(--fg2);margin-top:4px"><b>Pass mark:</b> ${bar}</div></div>`).join('');}
+
+/* ================= cost ================= */
+function drawCost(){const s=document.getElementById('costsvg');s.innerHTML='';const items=[['writer: book → memory','once',C('--violet'),.30],['main path over the book','once',C('--blue'),.62],['question side (today)','~20 positions',C('--blue'),.05],['+ k thoughts','k positions, k reads',C('--teal'),.04]];
+ items.forEach(([l,sub,col,v],i)=>{const y=14+i*52;el('text',{x:10,y:y+14,'font-size':12.5,'font-weight':650},s,l);el('text',{x:10,y:y+30,'font-size':11,class:'s'},s,sub);el('rect',{x:200,y:y+4,width:Math.max(6,v*250),height:24,rx:5,fill:col,'fill-opacity':.7},s);});
+ el('text',{x:10,y:224,'font-size':11,class:'m'},s,'relative work per question at 1k (sketch, not measured)');}
+
+function drawAll(){drawFlow();drawCell();drawCur();drawEx();drawCost();}
+drawAll();matchMedia('(prefers-color-scheme: dark)').addEventListener('change',drawAll);
+document.addEventListener('keydown',e=>{if(e.key==='ArrowRight')document.getElementById('next').click();if(e.key==='ArrowLeft')document.getElementById('prev').click();});
+</script>
