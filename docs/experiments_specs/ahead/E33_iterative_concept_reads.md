@@ -15,6 +15,7 @@
   - Queued `e33b`: the same test with **8-letter nodes** (16-bit prize), where a node fits in 1–2
     latents. If e33b also shows no gain, the kill criterion applies to the Q-loop, and the L-loop
     (reasoning among fetched latents) becomes the next test.
+- **Update 2026-10-01:** E30 is parked; further E33 arms use E31 memories only (`e31_li_m1`, `e31_ord_m1`).
 - **Serves:** vision priority 3, "reason in concept space". E31b showed that **one exclusive
   read does not do multi-hop** on the first-letter metric:
   - the 4-hop chain beyond training length: E30-LI solves it by position, E31-LI at ≈ 50 %;

@@ -1,10 +1,14 @@
 # E31b — E30 vs E31 limits study (same platform, same protocol, 1k → 128k)
 
-- **Status:** running. Wave 1 launched 2026-09-27 on Odra (3 GPUs) and Polonez (4 GPUs).
+- **Status:** closed 2026-10-01. **Decision: E31 is the memory we continue with; E30 is parked** (see
+  [E30 status](E30_sliding_window_perceiver.md)). Next work explores E31 further: reasoning over its
+  latents, and packing more tokens into each latent (the *Cramming 1568 tokens* direction, toward 1M).
+  Interactive report: `docs/3_Evaluations_and_Baselines/e31b_memory_study_report.html`.
+  Ran 2026-09-27 → 2026-09-30 on Odra (3 GPUs) and Polonez (4 GPUs).
 - **Serves:** choosing the memory for [E32](E32_two_level_concept_memory.md) (two-level concept
   memory) on evidence, not on the E31 suite alone. That suite compared E31 against an
   E30 that had a 16-token reach and an absolute address.
-- **Owner / dates:** Krzysztof Sopyla · opened 2026-09-27 · closed —
+- **Owner / dates:** Krzysztof Sopyla · opened 2026-09-27 · closed 2026-10-01
 - **Code:** branch `e31-latent-memory`.
   - Plan: `scripts/study_plans/e30_vs_e31.py`.
   - Runner: `scripts/run_study_queue.py`.

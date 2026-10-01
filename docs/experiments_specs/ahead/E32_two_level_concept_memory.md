@@ -3,6 +3,15 @@
 - **Status:** idea / parked. Written on 2026-09-27 so the design is not lost. Do not start
   before the E30 vs E31 limits study ([E31b](E31b_e30_vs_e31_limits.md)) reports. That study
   fixes the numbers this spec leaves open: tokens per entry, fine writer, m, and the curriculum.
+- **Update 2026-10-01 (after E31b):** E30 is parked, so **both levels are E31-style latents**. The
+  fine level is E31-LI-m1 with the scaled order code (N/6), not E30 slots. The coarse level needs
+  more tokens per latent than today's writer holds: a 48-token latent fails at width 512 and
+  recovers at width 1024. The next lever to test is the *Cramming 1568 tokens into a single vector*
+  result ([arXiv 2502.13063](https://arxiv.org/abs/2502.13063)). When the vector is optimized per
+  sample, one input vector of a frozen LLM reconstructs up to 1568 tokens. That is orders of
+  magnitude more than trained encoders reach, so today's compressors are far below what one
+  vector can hold. That is the route to 1M context, and it gets its own spec when
+  started.
 - **Serves:** Vision priorities 1–2. A small reasoning model reads a 1M–10M-token context
   through a compact concept memory. The memory has to be cheap at 1M, content-addressed,
   length-invariant, and able to hold many facts, not one.
