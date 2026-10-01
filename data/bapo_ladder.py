@@ -100,6 +100,13 @@ UNCALIBRATED_AT_TINY: dict[str, Recipe] = {
         {"n_distractors": 0},
         "no distractors; dense still ~34% @4000 — composition wall, not an E18 kill",
     ),
+    "chain_parallel": Recipe(
+        "chain_parallel",
+        "chain",
+        {"n_distractors": 0, "n_chains": 4},
+        "shuffled chain among 3 decoy chains of the same length: the start node picks the chain, "
+        "so the hops must be followed (chain_shuffled has a no-hop shortcut: the answer is the only pure target)",
+    ),
 }
 
 # E30 limit exams (2026-09-22, `e30_limits` / `e30_broad` on Odra+Polonez, 31M).

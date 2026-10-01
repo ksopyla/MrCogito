@@ -46,6 +46,7 @@ from evaluation.capability_suite import (  # noqa: E402
     Cell,
     budget_for,
     cells_for,
+    grad_accum_for,
     lr_for,
 )
 
@@ -89,6 +90,8 @@ def plan(
     budget_scale: float = 1.0,
     eval_rows: int = EVAL_ROWS,
     extra: tuple[str, ...] = (),
+    lr_scale: float = 1.0,
+    only_seeds: tuple[int, ...] | None = None,
 ) -> list[Job]:
     """Expand (arches × sizes × tier cells × seeds [× lr pair]) into probe jobs."""
     unknown = [a for a in list(arches) + list(controls) if a not in ARCHES]
@@ -103,20 +106,24 @@ def plan(
         size = SIZES[size_name]
         for cell in cells_for(tier, levels, cell_ids):
             base_lr, warm, measured = lr_for(size_name, cell)
+            base_lr = base_lr * lr_scale
             lrs = [base_lr, base_lr / 2] if lr_pair else [base_lr]
             b = budget_for(cell)
             steps = max(20, int(round(b.steps * budget_scale)))
             eval_every = max(5, min(b.eval_every, steps // 4))
             for seed in range(n_seeds):
+                if only_seeds is not None and seed not in only_seeds:
+                    continue
                 for lr in lrs:
-                    tag = f"seed{seed}" + (f"_lr{_fmt_lr(lr)}" if lr_pair else "")
+                    tag = f"seed{seed}" + (f"_lr{_fmt_lr(lr)}" if (lr_pair or lr_scale != 1.0) else "")
                     out_dir = str(Path(out) / size_name / cell.id / tag)
                     cmd = ["uv", "run", "python", PROBE, *cell.probe_args(),
                            "--arch", *job_arches, "--no-skip_uncalibrated",
                            *size.probe_args(),
                            "--lr", f"{lr:g}", *(["--warm_residuals"] if warm else []),
                            "--steps", str(steps), "--k1_mult", str(b.k1_mult),
-                           "--batch", str(b.batch), "--eval_every", str(eval_every),
+                           "--batch", str(b.batch), "--grad_accum", str(grad_accum_for(cell)),
+                           "--eval_every", str(eval_every),
                            "--eval_rows", str(eval_rows), "--seed", str(seed),
                            "--amp", "auto", "--out", out_dir]
                     for a in job_arches:
@@ -209,6 +216,11 @@ def main() -> int:
     p.add_argument("--controls", nargs="*", default=list(DEFAULT_CONTROLS),
                    help="arches trained next to the candidate in every job (default: dense = ceiling)")
     p.add_argument("--lr_pair", action="store_true", help="also run lr/2 (step-size cliffs are common)")
+    p.add_argument("--only_seeds", type=int, nargs="*", default=None,
+                   help="run only these seed indices (e.g. a lost seed re-run on another host)")
+    p.add_argument("--lr_scale", type=float, default=1.0,
+                   help="multiply the policy step size (e.g. 0.5 for the 2048-token cells at 30m); "
+                   "recorded in job.json and the seed tag")
     p.add_argument("--budget_scale", type=float, default=1.0, help="shrink/grow every step budget (smoke: 0.02)")
     p.add_argument("--eval_rows", type=int, default=EVAL_ROWS)
     p.add_argument("--extra", default="", help="extra probe flags appended to every job (quoted string)")
@@ -225,6 +237,7 @@ def main() -> int:
         cell_ids=tuple(args.cells) if args.cells else None,
         seeds=args.seeds, controls=tuple(args.controls), lr_pair=args.lr_pair,
         budget_scale=args.budget_scale, eval_rows=args.eval_rows, extra=tuple(shlex.split(args.extra)),
+        lr_scale=args.lr_scale, only_seeds=tuple(args.only_seeds) if args.only_seeds else None,
     )
     untested = sorted({(j.size, j.cell) for j in jobs if not j.lr_measured})
     print(f"capability suite {SUITE_VERSION}: {len(jobs)} jobs · tier {args.tier} · "

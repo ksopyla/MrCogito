@@ -177,3 +177,11 @@ def test_scorecard_replays_the_e30_ledger_as_not_ready(tmp_path):
     v = scale_verdict(best, "e30x", ["30m"])
     assert v["verdict"] != "scale up"
     assert v["frontier_by_size"]["30m"] < 2
+
+
+def test_long_cells_see_enough_examples():
+    """v2/v3: long cells see ≥150K (1024) / ≥200K (2048) examples (v1/v2 starved them)."""
+    for c in CELLS:
+        if c.seq_len >= 1024:
+            b = budget_for(c)
+            assert b.steps * b.k1_mult * b.batch >= (200_000 if c.seq_len > 1024 else 150_000)

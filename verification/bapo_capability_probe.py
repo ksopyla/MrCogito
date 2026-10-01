@@ -49,7 +49,17 @@ from data.bapo_ladder import (  # noqa: E402
 from data.glyph_tasks import GlyphTaskConfig, floor_nats as glyph_floor_nats  # noqa: E402
 from data.symbolic_tasks import floor_nats  # noqa: E402
 from evaluation.bapo_metrics import info_report  # noqa: E402
-from evaluation.bapo_models import ARCHES, ArchSpec, arch_cache, build_model, n_params  # noqa: E402
+from evaluation.bapo_models import (  # noqa: E402
+    ARCHES, E31_ARCHES, EXCLUSIVE_ARCHES, SWP_ARCHES, ArchSpec, arch_cache, build_model, n_params,
+)
+
+
+def _ngram_orders(text: str) -> tuple[int, ...]:
+    """'2' / '2,3' → (2,) / (2, 3); 'none' / '' → () (hashed n-grams off)."""
+    t = str(text or "").strip().lower()
+    if t in ("", "none", "off", "0"):
+        return ()
+    return tuple(int(x) for x in t.split(",") if x.strip())
 
 
 def _message_cm(model, override: str):
@@ -121,11 +131,29 @@ def _keymark_token_ids(cfg) -> tuple[int, ...]:
         return ()
 
 
-def make_batch(cfg, rng, batch: int, device):
+def make_batch(cfg, rng, batch: int, device, *, round_targets: int = 0):
     rows = [generate_row_for(cfg, rng) for _ in range(batch)]
     ids = torch.from_numpy(np.stack([r.input_ids for r in rows])).long().to(device)
     labels = torch.from_numpy(np.stack([r.labels for r in rows])).long().to(device)
-    return ids, labels
+    if round_targets <= 0:
+        return ids, labels
+    return ids, labels, round_target_labels(rows, labels, round_targets)
+
+
+def round_target_labels(rows, labels: torch.Tensor, n_rounds: int) -> torch.Tensor:
+    """E33 per-round targets [n_rounds, B, S]: at the answer positions, round r's target is chain
+    node r+1 (the terminal from the last hop on); -100 elsewhere and on rows without `nodes`."""
+    out = labels.new_full((n_rounds, *labels.shape), -100)
+    for b, row in enumerate(rows):
+        nodes = (row.meta or {}).get("nodes")
+        if not nodes:
+            continue
+        pos = (labels[b] != -100).nonzero().flatten()
+        for r in range(n_rounds):
+            node = nodes[min(r + 1, len(nodes) - 1)]
+            n = min(len(node), len(pos))
+            out[r, b, pos[:n]] = torch.tensor(node[:n], device=labels.device, dtype=labels.dtype)
+    return out
 
 
 @torch.no_grad()
@@ -194,7 +222,10 @@ def _slot_rankme(model, batches, *, amp: str, device: torch.device) -> dict:
         return {}
     gi = int(getattr(model.config, "global_layer_index", 0) or 0)
     attn = model.layers[gi].attn
-    if getattr(attn, "compressor", None) is None:
+    writer = getattr(model, "memory_writer", None)
+    if writer is not None:
+        attn = writer  # E31: slots come from the writer (`_last_k_bar`)
+    elif getattr(attn, "compressor", None) is None:
         return {}
     chunks = []
     model.eval()
@@ -229,6 +260,9 @@ def _slot_rankme(model, batches, *, amp: str, device: torch.device) -> dict:
 def _write_geometry(model, seq_len: int) -> dict:
     """E30 window-bank diagnostics (and a no-op for other writes)."""
     cfg = getattr(model, "config", None)
+    writer = getattr(model, "memory_writer", None)
+    if writer is not None:
+        return dict(writer.last_diag)
     if cfg is None or str(getattr(cfg, "message_write", "block_mean") or "block_mean") != "sw_perceiver":
         return {}
     from nn.perceiver_ar_lm import swp_geometry
@@ -386,7 +420,8 @@ def _preprobe_decision(trace: list, *, floor_nats: float, min_acc: float, min_ga
     return {"status": status, "acc": a, "ce_nats": ce, "gain_nats": gain}
 
 
-def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, steps: int) -> dict:
+def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, steps: int,
+              ckpt_meta: dict | None = None) -> dict:
     model = build_model(
         arch,
         vocab_size=cfg.vocab.vocab_size,
@@ -401,6 +436,18 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
     params = n_params(model)
     if params > args.max_params:
         raise SystemExit(f"{arch} has {params} params > --max_params {args.max_params}")
+    init_path = Path(args.init_ckpt) / f"{arch}.pt" if getattr(args, "init_ckpt", None) else None
+    if init_path is not None and not init_path.exists():
+        raise SystemExit(f"--init_ckpt: {init_path} not found (a curriculum stage must not silently start cold)")
+    if init_path is not None:
+        state = torch.load(init_path, map_location=device, weights_only=False)
+        missing, unexpected = model.load_state_dict(state["state_dict"], strict=False)
+        bad = [k for k in missing if not k.endswith("round_emb")] + list(unexpected)
+        if bad:
+            raise SystemExit(f"--init_ckpt {init_path}: incompatible keys {bad[:6]}")
+        if missing:  # E33: a looped model starting from single-read weights (round embeddings start at 0)
+            print(f"  [{arch}] init: new parameters kept at their init: {missing}", flush=True)
+        print(f"  [{arch}] init from {init_path} (trained at seq {state.get('data', {}).get('seq_len')})", flush=True)
     if hasattr(model, "layers"):
         patterns = [(layer.attn.pattern, layer.attn.window) for layer in model.layers]
         print(
@@ -412,22 +459,34 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             f"msg_boundary={getattr(model.config, 'message_boundary_token_id', -1)}  "
             f"msg_r={getattr(model.config, 'message_compress_ratio', '-')}  "
             f"msg_remainder={getattr(model.config, 'message_pool_remainder', False)}  "
-            f"msg_override={args.message_override if arch in ('e21', 'e30') else '-'}  "
+            f"msg_override={args.message_override if arch in EXCLUSIVE_ARCHES else '-'}  "
             f"msg_inplace={getattr(model.config, 'message_slots_inplace', False) if arch == 'e21' else '-'}  "
             f"msg_rawkv={getattr(model.config, 'message_inplace_raw_kv', False) if arch == 'e21' else '-'}  "
             f"msg_idslots={getattr(model.config, 'message_identity_slots', False) if arch == 'e21' else '-'}  "
             f"msg_packstride={getattr(model.config, 'message_pack_stride', 0) if arch == 'e21' else '-'}  "
-            f"msg_keepswa={getattr(model.config, 'message_keep_local_swa', False) if arch in ('e21', 'e30') else '-'}  "
+            f"msg_keepswa={getattr(model.config, 'message_keep_local_swa', False) if arch in EXCLUSIVE_ARCHES else '-'}  "
             f"glob_layers={getattr(model.config, 'global_layers', '-')}  "
-            f"msg_extrahops={getattr(model.config, 'message_extra_slot_attends', 0) if arch in ('e21', 'e30') else '-'}  "
-            f"msg_updatekv={getattr(model.config, 'message_update_slot_kv', False) if arch in ('e21', 'e30') else '-'}  "
-            f"msg_anchors={getattr(model.config, 'message_global_anchors', 'none') if arch in ('e21', 'e30') else '-'}  "
+            f"msg_extrahops={getattr(model.config, 'message_extra_slot_attends', 0) if arch in EXCLUSIVE_ARCHES else '-'}  "
+            f"msg_updatekv={getattr(model.config, 'message_update_slot_kv', False) if arch in EXCLUSIVE_ARCHES else '-'}  "
+            f"msg_anchors={getattr(model.config, 'message_global_anchors', 'none') if arch in EXCLUSIVE_ARCHES else '-'}  "
             f"msg_keylen={getattr(model.config, 'message_anchor_key_len', 0) if arch == 'e21' else '-'}  "
             f"msg_prefix_ae={getattr(model.config, 'message_prefix_ae', False) if arch == 'e21' else '-'}  "
             f"msg_write={getattr(model.config, 'message_write', '-')}",
             flush=True,
         )
-    if arch == "e30":
+    if arch in E31_ARCHES:
+        from nn.latent_memory import lm_geometry
+
+        lg = lm_geometry(model.config, cfg.seq_len)
+        print(
+            f"  [{arch}] latent memory W={lg.window} stride={lg.stride} n_win={lg.n_windows} "
+            f"K={lg.latents} m={lg.reader_tokens} C={lg.n_slots} tok/latent={lg.tokens_per_latent:.1f} "
+            f"context={model.config.lm_context} rounds={model.config.lm_rounds} "
+            f"competition={model.config.lm_competition} null={model.config.lm_null_latent} "
+            f"writer_params={sum(p.numel() for p in model.memory_writer.parameters())/1e6:.2f}M",
+            flush=True,
+        )
+    if arch in SWP_ARCHES:
         from nn.perceiver_ar_lm import swp_geometry
 
         geo = swp_geometry(model.config, cfg.seq_len)
@@ -439,7 +498,7 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
         )
         if not geo.sliding:
             print("  [e30] WARNING: n_windows<2 — this length is not the sliding claim", flush=True)
-    override = args.message_override if arch in ("e21", "e30") else "real"
+    override = args.message_override if arch in EXCLUSIVE_ARCHES else "real"
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01, betas=(0.9, 0.95))
     warmup = max(1, min(50, steps // 10))
 
@@ -463,11 +522,20 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
     with sdp_cm:
         while step < max_steps:
             step += 1
-            ids, labels = make_batch(cfg, rng, args.batch, device)
-            with _message_cm(model, override), amp_ctx(device, args.amp):
-                out = model(ids, labels=labels)
-                loss = out.loss if hasattr(out, "loss") else out[0].loss
-            loss.backward()
+            n_aux = (int(getattr(args, "message_read_rounds", 1)) - 1) if getattr(args, "round_aux", 0) > 0 else 0
+            batch_out = make_batch(cfg, rng, args.batch, device, round_targets=n_aux)
+            ids, labels = batch_out[0], batch_out[1]
+            aux = batch_out[2] if n_aux > 0 else None
+            # --grad_accum k: same effective batch (args.batch rows) in k micro-batches
+            micro = max(1, int(getattr(args, "grad_accum", 1) or 1))
+            for mi, (ids_m, labels_m) in enumerate(zip(ids.chunk(micro), labels.chunk(micro))):
+                if aux is not None and hasattr(model, "set_round_targets"):
+                    model.set_round_targets(aux.chunk(micro, dim=1)[mi])
+                with _message_cm(model, override), amp_ctx(device, args.amp):
+                    out = model(ids_m, labels=labels_m)
+                    loss_m = out.loss if hasattr(out, "loss") else out[0].loss
+                (loss_m / micro).backward()
+                loss = loss_m if mi == 0 else loss
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
             sched.step()
@@ -512,6 +580,9 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
     t_diag = time.time()
     cache = arch_cache(arch, spec, cfg.seq_len)
     final = trace[-1]
+    ppa = final.get("per_position_acc") or []
+    if ppa:
+        print(f"  [{arch}] per-letter acc: " + " ".join(f"{a:.2f}" for a in ppa), flush=True)
     report = info_report(
         ce_nats=final["ce_nats"],
         acc=final["acc"],
@@ -522,7 +593,7 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
         nominal_a_bytes=cache["nominal_a_bytes"],
     )
     extra = {}
-    if arch in ("e21", "e30"):
+    if arch in EXCLUSIVE_ARCHES:
         extra["channel_ablations"] = _channel_ablations(
             model, eval_batches, amp=args.amp, device=device, spec=spec
         )
@@ -553,6 +624,24 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
             throughput["peak_gb"] = torch.cuda.max_memory_allocated() / 1e9
         except Exception:  # noqa: BLE001 — CPU-only torch or no CUDA context
             pass
+    if getattr(args, "save_ckpt", None):
+        from dataclasses import asdict
+
+        out_dir = Path(args.out if args.save_ckpt == "@out" and args.out else args.save_ckpt)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        torch.save(
+            {
+                "arch": arch,
+                "state_dict": {k: v.detach().cpu() for k, v in model.state_dict().items()},
+                "spec": asdict(spec),
+                "data": dict(ckpt_meta or {}),
+                "final": final,
+                "lr": args.lr,
+                "seed": args.seed,
+            },
+            out_dir / f"{arch}.pt",
+        )
+        print(f"  [{arch}] saved {out_dir / f'{arch}.pt'}", flush=True)
     return {
         "arch": arch,
         "params": params,
@@ -582,6 +671,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         "key_len": args.key_len,
         "value_len": args.value_len,
         "hops": args.hops,
+        "n_chains": args.n_chains,
         "span_len": args.span_len,
         "min_gap": args.min_gap,
         "seq_len": args.seq_len,
@@ -620,6 +710,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         message_identity_slots=args.message_identity_slots,
         message_pack_stride=args.message_pack_stride,
         message_keep_local_swa=args.message_keep_local_swa,
+        message_raw_window=args.message_raw_window,
         message_extra_slot_attends=args.message_extra_slot_attends,
         message_update_slot_kv=args.message_update_slot_kv,
         message_global_anchors=args.message_global_anchors,
@@ -640,6 +731,26 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         swp_n_heads=args.swp_n_heads,
         swp_query_dim=args.swp_query_dim,
         swp_auto_fit=args.swp_auto_fit,
+        swp_slot_pos=args.swp_slot_pos,
+        token_embedding_dim=args.token_embedding_dim,
+        ngram_orders=_ngram_orders(args.ngram_orders),
+        ctx_pre_window=args.ctx_pre_window,
+        lm_window=args.lm_window,
+        lm_stride=args.lm_stride,
+        lm_latents=args.lm_latents,
+        lm_latent_dim=args.lm_latent_dim,
+        lm_heads=args.lm_heads,
+        lm_writer_dim=args.lm_writer_dim,
+        lm_enc_layers=args.lm_enc_layers,
+        lm_rounds=args.lm_rounds,
+        lm_competition=args.lm_competition,
+        lm_null_latent=args.lm_null_latent,
+        lm_reader_tokens=args.lm_reader_tokens,
+        lm_addr=args.lm_addr,
+        lm_slot_pos=args.lm_slot_pos,
+        slot_pos_ref=args.slot_pos_ref,
+        message_read_rounds=args.message_read_rounds,
+        message_round_aux=args.round_aux,
     )
     card = rung_card(scale, recipe.task, **over)
     card["local_window"] = window
@@ -729,7 +840,16 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             # Fast dense 99% early-stop must not cap a slower write below the advertised K1 budget.
             arch_steps = _non_dense_step_budget(args.steps, args.k1_mult, dense_steps_used)
         print(f"--- {arch}  (≤ {arch_steps} steps) ---", flush=True)
-        results[arch] = train_one(arch, cfg, args, eval_batches, spec, device, steps=arch_steps)
+        results[arch] = train_one(
+            arch, cfg, args, eval_batches, spec, device, steps=arch_steps,
+            ckpt_meta={
+                "scale": scale.name, "recipe": recipe.name, "task": recipe.task, "display": display,
+                "over": over, "seq_len": cfg.seq_len, "local_window": window,
+                "vocab_size": cfg.vocab.vocab_size, "answer_start": cfg.answer_start,
+                "pad_id": cfg.vocab.control("eos"), "bos_id": cfg.vocab.control("bos"),
+                "eos_id": cfg.vocab.control("eos"),
+            },
+        )
         print(
             f"  {arch}: {results[arch]['params']/1e6:.3f}M  acc {results[arch]['final']['acc']:.3f}  "
             f"flow {results[arch]['info']['information_flow']:.3f}  "
@@ -795,6 +915,8 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             "message_identity_slots": args.message_identity_slots,
             "message_pack_stride": args.message_pack_stride,
             "message_keep_local_swa": args.message_keep_local_swa,
+            "message_raw_window": args.message_raw_window,
+            "init_ckpt": args.init_ckpt,
             "message_extra_slot_attends": args.message_extra_slot_attends,
             "message_update_slot_kv": args.message_update_slot_kv,
             "message_global_anchors": args.message_global_anchors,
@@ -807,6 +929,19 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             "swp_n_heads": args.swp_n_heads,
             "swp_query_dim": args.swp_query_dim,
             "swp_auto_fit": args.swp_auto_fit,
+            "swp_slot_pos": args.swp_slot_pos,
+            "platform": {
+                "token_embedding_dim": args.token_embedding_dim,
+                "ngram_orders": list(_ngram_orders(args.ngram_orders)),
+                "ctx_pre_window": args.ctx_pre_window,
+            },
+            "latent_memory": {
+                k: getattr(args, k) for k in (
+                    "lm_window", "lm_stride", "lm_latents", "lm_latent_dim", "lm_heads",
+                    "lm_writer_dim", "lm_enc_layers", "lm_rounds", "lm_competition",
+                    "lm_null_latent", "lm_reader_tokens", "lm_addr", "lm_slot_pos",
+                )
+            },
             "k1_extended": {
                 a: bool(r.get("k1_extended", False)) for a, r in results.items()
             },
@@ -998,6 +1133,41 @@ def main() -> int:
         default=True,
         help="E30: shrink K so n_windows≥2 on short sequences (default on).",
     )
+    p.add_argument("--swp_slot_pos", default="page", choices=("page", "boundary", "scaled", "mixed"),
+                   help="E30 slot RoPE position: page end, or the QUERY boundary (length-invariant).")
+    # Platform knobs (E31 sets them for every arch in the job)
+    p.add_argument("--token_embedding_dim", type=int, default=0, help="0 = min(32, hidden) (ledger default); E31 uses 128.")
+    p.add_argument("--ngram_orders", default="2", help="hashed n-gram orders, e.g. '2' or '2,3'; 'none' = off (E31).")
+    p.add_argument("--ctx_pre_window", type=int, default=64, help="e30_ctx: causal pre-encoder reach (the context-only control).")
+    # E31 latent memory (arches e31_page / e31_bixt)
+    p.add_argument("--lm_window", type=int, default=256)
+    p.add_argument("--lm_stride", type=int, default=192)
+    p.add_argument("--lm_latents", type=int, default=32)
+    p.add_argument("--lm_latent_dim", type=int, default=512)
+    p.add_argument("--lm_heads", type=int, default=8)
+    p.add_argument("--lm_writer_dim", type=int, default=256)
+    p.add_argument("--lm_enc_layers", type=int, default=2, help="e31_page: bidirectional page-encoder layers.")
+    p.add_argument("--lm_rounds", type=int, default=0, help="0 = 2 (e31_page) / 3 (e31_bixt).")
+    p.add_argument("--lm_competition", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument("--lm_null_latent", action=argparse.BooleanOptionalAction, default=False)
+    p.add_argument("--lm_reader_tokens", type=int, default=5, help="reader K/V entries per latent (m).")
+    p.add_argument("--lm_addr", default="window_start", choices=("window_start", "none"),
+                   help="latent address: window-start sinusoid, or none (length-invariant memory).")
+    p.add_argument("--message_read_rounds", type=int, default=1,
+                   help="E33: tied read → update rounds of the exclusive global read (slots frozen after round 1)")
+    p.add_argument("--round_aux", type=float, default=0.0,
+                   help="E33: weight of per-round chain-node targets (read round r predicts node r+1; chain exams)")
+    p.add_argument("--slot_pos_ref", type=int, default=2048, help="'scaled' slot positions: max query–slot distance")
+    p.add_argument("--lm_slot_pos", default="read", choices=("read", "boundary", "scaled", "mixed"),
+                   help="slot RoPE position: what the latent read, or the QUERY boundary (length-invariant).")
+    # Long-context length ladder (verification/length_ladder.py evaluates the saved weights)
+    p.add_argument(
+        "--message_raw_window", type=int, default=0,
+        help="exclusive arches: the global read's raw keys are a causal window of this many tokens "
+        "(0 = full causal). With it the memory is the only long path and cost is linear in length.",
+    )
+    p.add_argument("--save_ckpt", default=None, help="dir: save each arch's final weights + spec as <arch>.pt ('@out' = the --out dir)")
+    p.add_argument("--init_ckpt", default=None, help="dir: start each arch from <arch>.pt if present (curriculum)")
     p.add_argument(
         "--experiment_id",
         default=None,
@@ -1087,6 +1257,7 @@ def main() -> int:
     p.add_argument("--key_len", type=int, default=None, help="DNA key length override (E30 lookup_1key pins 8)")
     p.add_argument("--value_len", type=int, default=None, help="DNA value length override (E30 lookup_1key pins 8)")
     p.add_argument("--hops", type=int, default=None, help="DNA chain hops override (E30 chain_4hop pins 4)")
+    p.add_argument("--n_chains", type=int, default=None, help="shuffled chain: parallel chains (decoys) incl. the real one")
     p.add_argument("--span_len", type=int, default=None)
     p.add_argument("--width", type=int, default=None, help="Glyph vocab width 16 or 32 (ignored for DNA)")
     p.add_argument("--noise", default=None, help="Glyph noise: markov|dyck|arith|mixed|iid")
@@ -1095,6 +1266,8 @@ def main() -> int:
     p.add_argument("--batch", type=int, default=32)
     p.add_argument("--lr", type=float, default=3e-3)
     p.add_argument("--eval_every", type=int, default=50)
+    p.add_argument("--grad_accum", type=int, default=1,
+                   help="split each --batch into k micro-batches (same effective batch; for memory at 2048+)")
     p.add_argument("--eval_rows", type=int, default=64)
     p.add_argument("--early_stop_acc", type=float, default=0.99)
     p.add_argument("--max_params", type=int, default=100_000_000)

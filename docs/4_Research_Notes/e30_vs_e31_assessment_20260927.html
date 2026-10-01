@@ -1,0 +1,354 @@
+<!-- E30 vs E31 after the fixes: criteria, scorecard, 1M/10M maths. 2026-09-27. Self-contained. -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E30 vs E31 Assessment</title>
+<style>
+.viz-root{color-scheme:light;--surface-0:#f4f3ef;--surface-1:#fcfcfb;--surface-2:#efeee9;--line:#dcdad3;
+ --text-primary:#0b0b0b;--text-secondary:#52514e;--text-muted:#7c7b76;
+ --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s7:#4a3aa7;
+ --good:#1a7f37;--warn:#b26b00;--bad:#c62828;--good-bg:#e6f4ea;--warn-bg:#fff4e0;--bad-bg:#fdecea;--info-bg:#eaf2fc;}
+@media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])) .viz-root{color-scheme:dark;
+ --surface-0:#121211;--surface-1:#1a1a19;--surface-2:#242422;--line:#3a3935;--text-primary:#fff;--text-secondary:#c3c2b7;--text-muted:#8f8e86;
+ --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s7:#9085e9;--good:#5cc47a;--warn:#e0a040;--bad:#ef6b6b;
+ --good-bg:#16301f;--warn-bg:#35280f;--bad-bg:#3a1a1a;--info-bg:#15263b;}}
+*{box-sizing:border-box}body{margin:0;background:var(--surface-0)}
+.viz-root{font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;color:var(--text-primary);background:var(--surface-0);padding:24px 16px 80px}
+main{max-width:1120px;margin:0 auto}
+h1{font-size:28px;line-height:1.2;margin:0 0 6px}h2{font-size:21px;margin:40px 0 8px;padding-top:12px;border-top:1px solid var(--line)}h3{font-size:16px;margin:14px 0 6px}
+.sub{color:var(--text-secondary);margin:0 0 14px}.kicker{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);font-weight:600}
+.card{background:var(--surface-1);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:12px 0}
+.grid{display:grid;gap:12px}.g4{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}.g2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.tile{background:var(--surface-1);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:14px}
+.tile .lab{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600}
+.tile .big{font-size:22px;font-weight:700;margin:4px 0}
+.good{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.callout{background:var(--info-bg);border-left:4px solid var(--s1);border-radius:8px;padding:12px 14px;margin:14px 0}
+.callout.warnc{background:var(--warn-bg);border-left-color:var(--warn)}
+table{border-collapse:collapse;width:100%;font-size:13.5px}th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.tbl{overflow-x:auto}
+.toc{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;margin:10px 0 0}.toc a{color:var(--s1);text-decoration:none}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--surface-1);color:var(--text-secondary);padding:6px 11px;font:inherit;font-size:13px;cursor:pointer}
+.seg button.on{background:var(--s1);color:#fff}
+.ctrl{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center;margin:4px 0 10px;font-size:13px;color:var(--text-secondary)}
+.ctrl input[type=range]{width:220px;vertical-align:middle}
+.lab2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;margin-right:6px}
+svg text{fill:var(--text-primary);font-family:inherit}svg .muted{fill:var(--text-muted)}svg .sec{fill:var(--text-secondary)}
+#tip{position:fixed;pointer-events:none;background:var(--surface-1);color:var(--text-primary);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.15);opacity:0;z-index:20;max-width:340px}
+.note{font-size:12.5px;color:var(--text-secondary)}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;margin-right:4px}
+.p-m{background:var(--good-bg);color:var(--good)}.p-d{background:var(--warn-bg);color:var(--warn)}.p-u{background:var(--surface-2);color:var(--text-muted)}
+ul.tight li{margin:3px 0}
+.cmp td:first-child{font-weight:600;width:24%}
+</style>
+<body class="viz-root"><div id="tip"></div><main>
+<div class="kicker">MrCogito · architecture assessment · 27 Sep 2026 · branch e31-latent-memory</div>
+<h1>E30 vs E31 after the fixes: what each is good for, and which can reach 1M</h1>
+<p class="sub">Everything here comes from runs that finished this week: the full-tier capability suite at 30M (3 seeds), the e30_ctx control, and the 2k → 128k length ladder. I mark each claim as <span class="pill p-m">measured</span>, <span class="pill p-d">design</span> (argued from the architecture, not run) or <span class="pill p-u">untested</span>.</p>
+<nav class="toc"><a href="#short">1 · Short answer</a><a href="#configs">2 · The five configurations</a><a href="#criteria">3 · Criteria</a><a href="#score">4 · Scorecard</a><a href="#math">5 · 1M / 10M maths</a><a href="#cost">6 · Measured cost</a><a href="#where">7 · Where each wins</a><a href="#sw">8 · Strengths &amp; weaknesses</a><a href="#train">9 · Training-protocol fixes</a><a href="#pages">10 · Are the design pages still right?</a><a href="#verdict">11 · Verdict &amp; next steps</a></nav>
+
+<div class="card" style="border:2px solid #dc2626;padding:12px 16px;margin:14px 0">
+<b>Correction, 28 Sep: read before the scores.</b>
+<p>Answer accuracy in this page is the teacher-forced mean over 32 answer letters. When the book holds several candidate answers, the first one or two given letters identify the candidate and the rest are copied. That inflates every chain, lookalike, shuffled and multi-fact score. The honest score is <b>first-letter accuracy</b>. Re-measured:</p>
+<ul>
+<li><b>4-hop chain.</b> E31 (and E31-LI) is at 50–59 % first-letter at 2k (mean 96–98 %): it narrows to about 2 candidates but does not follow the hops. "Chain 82 % at 128k" is withdrawn. E30-LI solves the chain only at its training length, by position.</li>
+<li><b>Real multi-hop</b> (chain hidden among decoy chains) is at chance for both. The suite's shuffled-1k cell also had a shortcut: the answer is the only pure target node.</li>
+<li><b>Retrieval</b> survives:
+  <ul>
+  <li>lookup: one value per book, so the mean is honest;</li>
+  <li>recall of 8 facts: E30-LI 84 % first-letter at 128k;</li>
+  <li>8 decoys: E31-LI with one reader entry per latent, 89 % at 128k.</li>
+  </ul></li>
+</ul>
+<p>Scores below for V3 (multi-hop) are corrected. Everything else is left as first written; see <code>docs/experiments_specs/ahead/E31b_e30_vs_e31_limits.md</code> for the full study.</p></div>
+<h2 id="short">1 · The short answer</h2>
+<div class="grid g4">
+ <div class="tile"><div class="lab">Better at ≤ 2k tokens?</div><div class="big warn">E30_ctx</div>E30's writer with a 64-token context: <b>99 %</b> on lookalike-1k and lookup-2k, against 94 % and 89 % for E31. Its writer has about 35× fewer parameters (0.13 M vs 4.5 M). <span class="pill p-m">measured</span></div>
+ <div class="tile"><div class="lab">Better at long inputs?</div><div class="big good">E31 + length-invariant address</div><b>80–81 % at 128k</b> (2 seeds, trained on books of at most 16k). E30_ctx and E31's original address fall to chance by 16k. <span class="pill p-m">measured</span></div>
+ <div class="tile"><div class="lab">More efficient at 1M?</div><div class="big warn">E30 (N/6)</div>E31's fine memory keeps <b>0.83 entries per token</b>, almost as many as full attention. E30 keeps 1 per 6 tokens: 5× smaller, and 0.33 vs 0.45 s per 128k row. <span class="pill p-m">measured</span></div>
+ <div class="tile"><div class="lab">Fulfils the vision?</div><div class="big bad">Neither, yet</div>Nothing we trained compresses beyond about 6 tokens per memory entry. The compression setting (48 tokens per latent) did not learn. What works is a <b>linear-cost, exclusive, length-invariant index</b>, not yet a concept space.</div>
+</div>
+<div class="callout"><b>One sentence:</b> E30's real flaw was its 16-token context, not its writer. Given 64 tokens it matches or beats E31 up to 2k at a fraction of the cost. E31's lasting contributions are two:
+<ul class="tight">
+ <li>the <b>length-invariant address</b>, a read-side change that could be moved onto E30;</li>
+ <li>a <b>decoupled, stateful writer</b>, the right base for a hierarchy.</li>
+</ul>
+The 1M design should combine the two: <b>fine E30_ctx-style slots</b> and <b>coarse E31-style latents</b> over them, with length-invariant addressing and a top-k fetch driven by the question.</div>
+
+<h2 id="configs">2 · The five configurations</h2>
+<div class="card tbl"><table>
+<tr><th>config</th><th>writer reads</th><th>context each token has when written</th><th>memory entries / token</th><th>address</th><th class="num">params</th><th>status</th></tr>
+<tr><td><b>E30 as built</b></td><td>main path, layer-0 states</td><td>16 tokens back (causal)</td><td>32 per 192 → <b>N/6</b></td><td>absolute (window position)</td><td class="num">31.3 M</td><td>leak fixed; salience wall</td></tr>
+<tr><td><b>E30_ctx</b></td><td>main path, layer-0 states</td><td><b>64 tokens back</b> (causal)</td><td><b>N/6</b></td><td>absolute</td><td class="num">31.1 M</td><td>control run, 3 seeds on 4 cells</td></tr>
+<tr><td><b>E31 fine</b> (e31_page)</td><td><b>own branch on 128-d embeddings</b></td><td>whole 256-token window, two-way (2-layer page encoder)</td><td>32 latents × 5 entries per 192 → <b>0.83 N</b></td><td>absolute (window start + read position)</td><td class="num">35.7 M</td><td>suite "scale up"</td></tr>
+<tr><td><b>E31-LI</b></td><td>same as E31 fine</td><td>same</td><td><b>0.83 N</b></td><td><b>length-invariant</b>: no window-start sinusoid; slot keys rotated at the question</td><td class="num">35.7 M</td><td>new option (<code>lm_addr none</code>, <code>lm_slot_pos boundary</code>)</td></tr>
+<tr><td><b>E31 coarse</b></td><td>same writer</td><td>512-token window, two-way</td><td>8 latents × 1 per 384 → <b>N/48</b></td><td>absolute</td><td class="num">35.1 M</td><td>did not learn (39 % / chance)</td></tr>
+<tr><td class="note">dense (reference)</td><td class="note">—</td><td class="note">everything, 4 full layers</td><td class="note">N keys × 4 layers</td><td class="note">RoPE</td><td class="num note">31.2 M</td><td class="note">ceiling on short exams</td></tr>
+</table>
+<p class="note">All long-context runs also used <code>message_raw_window 256</code>: the global layer's raw keys are a 256-token window, so the memory is the only long-range path and cost is linear. One more thing is unchanged: in the probe only the question and answer tokens read the memory, once.</p></div>
+
+<h2 id="criteria">3 · Criteria that follow from the vision</h2>
+<p class="note">Vision: a small, efficient reasoning model with a 1M–10M-token context. It compresses long input into latent concepts, reasons over them, and answers. Each criterion below is something that vision needs; the weights say how much.</p>
+<div class="card tbl"><table id="crit"></table></div>
+
+<h2 id="score">4 · Scorecard</h2>
+<p class="note">Scores 0–3. Hover a cell for the evidence. Grey "?" = not tested; it counts as missing, not as zero. The pillar and total columns average only the scores that exist and report coverage.</p>
+<div class="card"><svg id="heat" viewBox="0 0 1080 520" width="100%" role="img" aria-label="Scorecard heatmap"></svg></div>
+<div class="callout warnc">The totals only summarise. The scores have gaps, and the weights are a judgement call. Two holes matter most:
+<ul class="tight">
+ <li><b>E30_ctx with the length-invariant address</b> was never run. If it goes long like E31-LI, E30_ctx wins on nearly every row.</li>
+ <li><b>Real text</b> is untested for every configuration.</li>
+</ul></div>
+
+<h2 id="math">5 · The 1M / 10M maths</h2>
+<div class="card">
+ <div class="ctrl">
+  <span><span class="lab2">Context N</span><input type="range" id="nlog" min="17" max="23.26" step="0.01" value="19.9316"> <b id="nval"></b></span>
+  <span><span class="lab2">Model</span><span class="seg" id="model"><button data-v="p30" class="on">our 30M platform</button><button data-v="p1b">a 1B-class model</button></span></span>
+  <span><span class="lab2">Use</span><span class="seg" id="use"><button data-v="decide" class="on">read once, decide (R = 1k, 1 layer)</button><button data-v="reason">reason (R = 10k tokens, 3 reading layers)</button></span></span>
+ </div>
+ <div class="tbl"><table id="mtab"></table></div>
+ <svg id="mbars" viewBox="0 0 1080 300" width="100%" role="img" aria-label="Cost bars" style="margin-top:8px"></svg>
+ <p class="note" id="massum"></p>
+</div>
+<div class="card info"><h3 style="margin-top:0">Assumptions (so you can check the maths)</h3>
+<ul class="tight note">
+ <li><b>Memory entries.</b> Our platform has 1 key/value head of 64 dims, so one entry is K + V = 2 × 64 × 2 bytes = <b>256 B</b> per reading layer. The 1B-class preset uses 8 KV heads × 128 = <b>4 KB</b>, with 24 full layers for dense.</li>
+ <li><b>Reading cost</b> = R reading tokens × reading layers × entries × 4 × d_model FLOPs (QKᵀ and AV). Dense reads N keys in every layer.</li>
+ <li><b>Prefill (ingest).</b>
+  <ul class="tight">
+   <li>Dense: 2·P·N + L · 4 · d · N²/2.</li>
+   <li>Memory models: 2·P·N + the writer: ≈ 10 MFLOP per token for E31 (≈ 15 % of the 62 MFLOP main path), ≈ 1 MFLOP for E30.</li>
+   <li>For the 30M platform, times are <b>measured at 128k and extrapolated</b>: dense 2.29 s × (N/128k)², E31 0.45 s, E30_ctx 0.33 s, local-only 0.29 s × N/128k.</li>
+  </ul></li>
+ <li><b>Two-level</b> (proposed): a coarse index of N/48 entries is read densely. The question then fetches the top 16 pages and reads their fine entries: 16 pages × 64 entries per 384-token page at N/6. <b>Three-level</b> adds an N/384 level above the coarse one.</li>
+ <li>The fine store of the two-level design (N/6) can live in CPU memory; only the coarse index sits on the GPU.</li>
+</ul></div>
+
+<h2 id="cost">6 · Measured cost per row vs length (one RTX 3090, evaluation)</h2>
+<div class="card"><svg id="costc" viewBox="0 0 1080 360" width="100%" role="img" aria-label="Measured cost"></svg>
+<p class="note">From the ladder logs. At 2k–8k rows are batched with sdpa, so the per-row time is amortised. From 16k on it is flex with batch 1–4. At 128k:
+<ul class="tight note">
+ <li>dense 2.29 s per row (quadratic: ×3.4 per doubling);</li>
+ <li>E31 0.45 s, E30_ctx 0.33 s, local-only 0.29 s (linear).</li>
+</ul>
+Peak GPU memory is 3.3–3.4 GB for <b>every</b> architecture at 128k, dominated by the main path's activations, not the memory. The current implementation therefore needs about 27 GB at 1M and would <b>not fit a 3090 in one pass</b>. A streaming writer, window by window and keeping only the slots, fixes that: slots are 43 MB for E30 and 213 MB for E31 at 1M.<br>
+<b>Correction:</b> I earlier quoted 1.35 s per 128k row. That smoke test ran on a GPU shared with a training job; the ladder figure above is the reliable one.</p></div>
+
+<h2 id="where">7 · Where E30 is better, and where E31 is better</h2>
+<div class="grid g2">
+<div class="card"><h3 style="margin-top:0">E30_ctx is better at …</h3><ul class="tight">
+ <li><b>Exact recall up to 2k</b>: lookalike-1k 99.3 % vs 94 %; lookup-2k 99.0 % vs 89.2 % (3-seed medians). <span class="pill p-m">measured</span></li>
+ <li><b>Memory size</b>: N/6 entries vs 0.83 N, <b>5× smaller</b>. At 1M on our width that is 43 MB vs 213 MB. <span class="pill p-m">measured geometry</span></li>
+ <li><b>Speed</b>: 0.33 vs 0.45 s per 128k row. Its writer adds 12 % over local-only; E31's adds 55 %. <span class="pill p-m">measured</span></li>
+ <li><b>Robustness at 2k</b>: lookup-2k seeds 84 / 99 / 99 %, against 98 / 89 / 47 % for E31. <span class="pill p-m">measured</span></li>
+ <li><b>Simplicity</b>: +0.1 M params instead of +4.5 M (E31 is 14 % bigger than the controls, beyond the suite's ±5 %). <span class="pill p-m">measured</span></li>
+ <li><b>Verbatim fidelity</b>: a slot is a weighted mix of real token keys and values, so copying exact content is natural. <span class="pill p-d">design</span></li>
+</ul></div>
+<div class="card"><h3 style="margin-top:0">E31 is better at …</h3><ul class="tight">
+ <li><b>Length</b>: with the length-invariant address it reaches 80–81 % at 128k and chain 82 % at 128k. E30_ctx reaches 29 % at 16k. <span class="pill p-m">measured</span>, but the address was never tried on E30 <span class="pill p-u">untested</span>.</li>
+ <li><b>Multi-hop</b>: chain-2k 98.2 % vs 97.4 %, shuffled-1k 98 % vs 96.5 %. A small margin, about 1 SE. <span class="pill p-m">measured</span></li>
+ <li><b>Language-like noise</b>: Glyph fact-1k 99 % vs 86 % for E30 as built. E30_ctx was not run on Glyph. <span class="pill p-m">measured</span> / <span class="pill p-u">untested</span></li>
+ <li><b>Decoupled writer</b>: it reads token embeddings with its own weights, independent of the language model. Memory can be precomputed, cached and shared, and the question-side model can change without rewriting it. <span class="pill p-d">design</span></li>
+ <li><b>Stateful latents</b>: 512-d state with a feed-forward block, 8 heads each making its own pick, and competition. These can be pooled into higher levels, the route to a concept hierarchy. <span class="pill p-d">design</span></li>
+</ul></div>
+</div>
+
+<h2 id="sw">8 · Strengths and weaknesses after the fixes</h2>
+<div class="card tbl"><table class="cmp">
+<tr><th></th><th>E30 (and E30_ctx)</th><th>E31 (fine, with or without the length-invariant address)</th></tr>
+<tr><td>What was fixed</td><td>future-token leak (per-window pick); the 16-token salience wall is removed simply by giving the writer 64 tokens</td><td>writer inputs too small at init (input norm, unit-scale latents); values were only latent identity (values from the read-out); absolute address (length-invariant option)</td></tr>
+<tr><td>Strengths</td><td>cheap; small memory (N/6); verbatim slots; reliable at 2k; almost no extra parameters</td><td>whole-window two-way context; every answer letter recovered equally (no salience wall); multi-hop and Glyph at 98–99 %; length-invariant variant generalises 8–16×; decoupled, stateful writer</td></tr>
+<tr><td>Weaknesses</td><td>writer is tied to the main path's first layer; absolute address, so it reaches only about 2× its training length (e30_ctx 88 → 29 % at 16k); no latent state, so it is a pointer table, not concepts; Glyph with ctx untested</td><td>memory barely compressed (0.83 entries per token); +4.5 M params (+14 %); fragile takeoff at 2k (one seed in three slow); needs step 5e-5 at 2k; chain with the length-invariant address learns only from lookup weights; coarse setting fails; arm B (latent↔token rounds) is not ready</td></tr>
+<tr><td>Cost at 1M (30M platform)</td><td>≈ 2.5 s prefill (extrapolated), 43 MB of slots</td><td>≈ 3.4 s prefill (extrapolated), 213 MB of slots</td></tr>
+</table></div>
+
+<h2 id="train">9 · Training-protocol fixes (what changed, and why it mattered)</h2>
+<div class="card tbl"><table>
+<tr><th>problem</th><th>symptom</th><th>fix</th><th>evidence it worked</th></tr>
+<tr><td>Too few examples on long cells</td><td>batch 8 at 1k: even dense scored 0 on some seeds</td><td>batch 32 at 1k; batch 32 at 2k as 2 micro-batches (<code>--grad_accum</code>); 6× steps at 2k (suite v2 → v3)</td><td>every arm learns the 1k cells; a test enforces ≥ 150K / 200K examples</td></tr>
+<tr><td>Step-size cliff at 2,048 tokens</td><td>everyone except e30 at chance at 1e-4 (2e-4 too)</td><td><b>step 5e-5</b> at 2k via <code>--lr_pair</code> (scorecard keeps the better one)</td><td>dense 99 %, e31_page 98 % / 89 %, e30_ctx 99 % at 5e-5</td></tr>
+<tr><td>SSMax as a takeoff fix</td><td>12× budget at 1e-4 still at chance (dense), 34 % (e31)</td><td>dropped; the step size is the lever</td><td>—</td></tr>
+<tr><td>RankMe collapse</td><td>e30 chain-512 seed 2 scored 0 at 3e-4</td><td>step 1.5e-4</td><td>91.5 %</td></tr>
+<tr><td>Stochastic takeoff</td><td>the same seed flips between servers; dense failed 2 of 3 ladder seeds</td><td>≥ 3 seeds, medians only, never trust a single zero</td><td>—</td></tr>
+<tr><td>Extension rule misses slow learners</td><td>bixt and e31 seed 2 stopped while still rising</td><td><b>proposed</b>: also extend when accuracy rose ≥ 5 points in the last third (not implemented)</td><td>—</td></tr>
+<tr><td>E31 writer init</td><td>stuck at chance: inputs around 0.002 scale were wiped by the first residual</td><td>input RMSNorm, unit-scale latent queries, z0 norm</td><td>regression test on token identity</td></tr>
+<tr><td>E31 values = latent identity</td><td>stuck at chance (across-row spread 0.01)</td><td>values from the read-out; state term zero-initialised</td><td>93–94 % on lookup-1k right after</td></tr>
+<tr><td>E30 future-token leak</td><td>a window straddling QUERY could pool answer tokens</td><td>pooling rule per window (<code>window_pick</code>)</td><td>causality tests</td></tr>
+<tr><td>Quadratic long evaluation</td><td>29 GiB mask at 128k</td><td>windowed global read, band block masks in flex</td><td>0.45 s and 3.4 GB at 128k</td></tr>
+<tr><td>Long training out of memory</td><td>sdpa out of memory at 32k</td><td>flex for training</td><td>64k training in 22 GB</td></tr>
+<tr><td>Length extrapolation</td><td>reach ≈ 2× the training length</td><td>length-invariant address + 2k → 8k → 16k curriculum</td><td>80–81 % at 128k, 2 seeds</td></tr>
+<tr><td>Chain with the length-invariant address</td><td>chance from scratch (twice)</td><td>start from the lookup weights (lookup → chain)</td><td>96 % at 2k, 82 % at 128k</td></tr>
+<tr><td>Measurement</td><td>a partial score hid which letters fail</td><td>per-letter accuracy, per-row SE, fact-depth bins, reconstructed <code>job.json</code></td><td>found the salience wall (13 letters)</td></tr>
+</table></div>
+
+<h2 id="pages">10 · Are the design pages still the same as the initial ideas?</h2>
+<div class="card tbl"><table>
+<tr><th>page</th><th>what it shows</th><th>still accurate?</th><th>updated today</th></tr>
+<tr><td><a href="../3_Evaluations_and_Baselines/e30_architecture.html">e30_architecture</a></td><td>E30 as built: 16-token pre-encoder, averaged heads, the 50M chain</td><td><b>Yes, for E30 as built.</b> Missing: the leak fix, E30_ctx, the suite platform (128-d embeddings, no n-grams)</td><td>added the E30_ctx 30M example and a status box</td></tr>
+<tr><td><a href="e30_architecture_review_20260923.html">E30 review (23 Sep)</a></td><td>diagnosis and roadmap</td><td><b>The diagnosis held</b> (salience wall, a question-blind notebook needs a hierarchy and a fetch). Its results are superseded.</td><td>added an update section at the top</td></tr>
+<tr><td><a href="../3_Evaluations_and_Baselines/e31_architecture.html">e31_architecture</a></td><td>E31 draft and alignment checklist</td><td><b>Mostly built as drafted.</b> Deviations: reader width as 5 entries per latent (not 5 KV heads); value and input fixes. Arm B is not ready and the coarse rung failed. New: length-invariant address, windowed global read.</td><td>added a status section and a toggle for the length-invariant address</td></tr>
+<tr><td><a href="../3_Evaluations_and_Baselines/e31_wiring.html">e31_wiring</a></td><td>two paths, merging at the global read</td><td><b>Yes.</b> New options change who sees what in the global read.</td><td>added toggles for the windowed read and the length-invariant address</td></tr>
+</table></div>
+
+<h2 id="verdict">11 · Verdict and next steps</h2>
+<div class="card">
+<h3 style="margin-top:0">Blunt verdict</h3>
+<ul class="tight">
+ <li><b>Is E30 better than E31?</b> E30 <i>as built</i> is not; it is worse everywhere except cost. <b>E30_ctx</b> is better at 1–2k, 5× smaller and cheaper. It is worse at length, but only because it still has the absolute address.</li>
+ <li><b>More efficient at 1M:</b> E30 (N/6). E31's fine memory (0.83 N) is about the size of full attention's keys.
+  <ul class="tight">
+   <li>For the "read once, decide" use, both are linear: about 40–50× faster prefill than dense at 1M and about 400× at 10M on our platform.</li>
+   <li>For a reasoning model that reads memory at every generated token, a flat memory still grows linearly per read, and E31's is 5× more expensive.</li>
+  </ul></li>
+ <li><b>At 30M, compute is not the wall at 1M.</b> Dense prefill is about 2 minutes. The walls are:
+  <ul class="tight">
+   <li>generalising beyond the training length (dense and absolute addresses fail at 2×);</li>
+   <li>quadratic prefill at 10M (about 3.7 h for dense);</li>
+   <li>memory at real widths (a 1B-class dense model needs about 96 GB of KV cache at 1M).</li>
+  </ul></li>
+ <li><b>The vision:</b> "compress into concepts, reason in concept space" is not shown by either. What is shown is a trainable, exclusive, linear-cost memory channel. It retrieves exact facts (it does <b>not</b> follow multi-hop chains; see the correction), and with the length-invariant address it works 8–16× beyond its training length. That is the retrieval half of the vision. The compression half (≥ 48 tokens per unit) failed.</li>
+ <li><b>Potential:</b> E31's pieces (decoupled stateful writer, length-invariant address) are the better base for a hierarchy. E30_ctx is the better fine store. Keep both, in two levels.</li>
+</ul>
+<h3>Next steps, in order</h3>
+<table>
+<tr><th>#</th><th>experiment</th><th>decides</th><th>cost</th></tr>
+<tr><td>1</td><td><b>E30_ctx + length-invariant address</b> (port <code>lm_slot_pos boundary</code> to E30 slots; ladder 2k → 128k)</td><td>whether E31's writer is needed at all for going long</td><td>½ day code, 1 night</td></tr>
+<tr><td>2</td><td><b>E31 fine with m = 1</b> (memory parity with E30: N/6) on lookup / lookalike / chain at 1–2k + ladder</td><td>whether E31's 5× memory buys anything</td><td>1 night</td></tr>
+<tr><td>3</td><td><b>E32 two-level memory</b>: fine slots (N/6) + coarse latents over them (N/48), question-driven top-16 page fetch, length-invariant address; 8k–32k</td><td>whether compression can route to exact facts (a 45× cheaper read at 1M)</td><td>1 week</td></tr>
+<tr><td>4</td><td><b>Real-text rung</b> (planted facts in prose + next-token smoke)</td><td>whether any of this carries past synthetic exams</td><td>2–3 days</td></tr>
+<tr><td>5</td><td><b>Streaming writer + training with gradients stopped for far windows</b></td><td>running 1M on a 3090 (O(C) memory); training at 128k+ for 1M reach (reach ≈ 8× the training length)</td><td>2–3 days</td></tr>
+</table>
+<p class="note"><b>Kill criteria:</b>
+<ul class="tight note">
+ <li>If step 1 shows E30_ctx with the length-invariant address matching E31-LI on the ladder, freeze E31's writer and build E32 on E30_ctx slots.</li>
+ <li>If step 3's coarse index cannot find the right page at least 90 % of the time at 8k, the compressed level is a router only, and fine storage stays N/6.</li>
+</ul></p>
+</div>
+</main>
+
+<script>
+const css=n=>getComputedStyle(document.body).getPropertyValue(n).trim();const NS='http://www.w3.org/2000/svg';const tip=document.getElementById('tip');
+function el(t,a,p,x){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(x!=null)e.textContent=x;if(p)p.appendChild(e);return e;}
+function hover(n,h){n.addEventListener('mousemove',e=>{tip.innerHTML=h;tip.style.opacity=1;tip.style.left=Math.min(e.clientX+14,innerWidth-360)+'px';tip.style.top=(e.clientY+14)+'px'});n.addEventListener('mouseleave',()=>tip.style.opacity=0);}
+function clear(s){while(s.firstChild)s.removeChild(s.firstChild);}
+
+/* ---------------- criteria ---------------- */
+const PILLARS=[['picks','Picks facts from noise',0.20],['reasons','Reasons over memory',0.15],['long','Goes long',0.20],['cheap','Cheap at 1M',0.20],['vision','Fits the concept vision',0.15],['practical','Practical to train',0.10]];
+const CRIT=[
+ ['V1','picks','Exact recall ≤ 2k','lookup-1k / lookup-2k, 3 seeds','A memory that cannot return the exact fact is useless for reasoning.'],
+ ['V2','picks','Selectivity','lookalike-1k (fact vs same-shaped decoy)','Real text is full of near-duplicates.'],
+ ['V4','picks','Language-like noise','Glyph fact-1k','DNA is a controlled test; text filler is plausible language.'],
+ ['V3','reasons','Multi-hop','chain-2k, shuffled-1k','Reasoning = combining several remembered facts.'],
+ ['V5','long','Length generalisation','ladder 2k → 128k (train short, run long)','Nobody can train a small model at 10M; it must work 8–64× beyond training.'],
+ ['V6','cheap','Memory size','entries per token (N/6, 0.83 N, N/48)','Sets GPU memory and read cost at 1M–10M.'],
+ ['V7','cheap','Ingest cost','measured s/row at 128k, linear or not','A 1M document must be read in seconds.'],
+ ['V8','vision','Streaming, decoupled write','writer independent of the question and of the LM','Write once, query many times; cache per document.'],
+ ['V9','vision','Concept units','stateful, composable, poolable into levels','The vision reasons in a concept space, not over token pointers.'],
+ ['V12','vision','Real text','planted facts in prose, next-token smoke','The only exam that decides the product.'],
+ ['V10','practical','Trainability','seed spread, step-size sensitivity, init fixes needed','A design that trains 1 seed in 3 is expensive to scale.'],
+ ['V11','practical','Simplicity','extra parameters, moving parts','Fewer parts, fewer failure modes; fair comparisons.'],
+];
+(function(){const t=document.getElementById('crit');t.innerHTML='<tr><th>#</th><th>pillar (weight)</th><th>criterion</th><th>how it is measured</th><th>why the vision needs it</th></tr>'+
+ CRIT.map(c=>{const p=PILLARS.find(x=>x[0]===c[1]);return `<tr><td>${c[0]}</td><td>${p[1]} (${Math.round(p[2]*100)} %)</td><td><b>${c[2]}</b></td><td>${c[3]}</td><td class="note">${c[4]}</td></tr>`;}).join('');})();
+
+/* ---------------- scorecard ---------------- */
+const CFG=['E30 as built','E30_ctx','E31 fine','E31-LI','E31 coarse'];
+// [score or null, evidence, kind m/d/u]
+const SC={
+ V1:[[1,'lookup-1k 55 %, lookup-2k 55 % (salience wall: 13 of 32 letters)','m'],[3,'lookup-1k 93 % (1 seed), lookup-2k 99.0 % (3 seeds: 84 / 99 / 99)','m'],[2,'lookup-1k 94 %, lookup-2k 89.2 % (98 / 89 / 47)','m'],[2.5,'lookup-2k 98.5 / 98.0 / 66 % (3 seeds)','m'],[0,'39 % (m = 1), chance (m = 5)','m']],
+ V2:[[1,'lookalike-1k 55 %','m'],[3,'lookalike-1k 99.3 % (3 seeds)','m'],[2.5,'lookalike-1k 94 %','m'],[null,'not run','u'],[null,'not run','u']],
+ V4:[[2,'Glyph fact-1k 86 %','m'],[null,'not run','u'],[3,'Glyph fact-1k 99 %, story-512 99 %, chain-512 99 %','m'],[null,'not run','u'],[null,'not run','u']],
+ V3:[[1,'chain-2k 50 %, shuffled-1k 31 % (teacher-forced mean)','m'],[1,'chain solved at training length only, by position (E30-LI: first letter 100 % at 2k, chance at 4k); parallel chains at chance','m'],[1,'teacher-forced 98 % on chain-2k, but first letter about 50–59 %; shuffled-1k had a shortcut','m'],[1,'first letter 50–59 % on chain at 2k; parallel chains at chance','m'],[null,'not run','u']],
+ V5:[[0.5,'not run; same absolute address as E30_ctx → expected ≈ 2× reach','d'],[0.5,'ladder: 88 → 83 → 57 → 29 % at 2k/4k/8k/16k','m'],[1,'2× reach per training stage; 4-stage curriculum to 64k: 84 % at 64k, 53 % at 128k','m'],[3,'lookup 80–81 % at 128k (2 seeds, trained ≤ 16k); the chain claim is withdrawn (first letter ≈ 50 %)','m'],[0,'did not learn at 2k','m']],
+ V6:[[2,'N/6: 167k entries at 1M, 43 MB','m'],[2,'N/6: 167k entries at 1M, 43 MB','m'],[0.5,'0.83 N: 833k entries at 1M (≈ dense keys), 213 MB','m'],[0.5,'0.83 N, same as E31 fine','m'],[3,'N/48: 21k entries at 1M, 5 MB','m']],
+ V7:[[2.5,'not measured; its writer is lighter than E30_ctx','d'],[3,'0.33 s per 128k row (+12 % over local-only)','m'],[2,'0.45 s per 128k row (+55 % over local-only)','m'],[2,'0.45 s per 128k row','m'],[2.5,'0.39 s per 128k row','m']],
+ V8:[[1.5,'writes from the main path\'s first layer: window-local but tied to the LM','d'],[1.5,'same as E30','d'],[3,'own branch on embeddings; window-local; can be precomputed and cached','d'],[3,'same, and the address does not depend on book length','d'],[3,'same','d']],
+ V9:[[1,'a slot is a weighted mix of token K/V: a pointer, no state','d'],[1,'same as E30','d'],[2,'512-d latent with state, 8 heads, competition; but ≈ 6 tokens per latent is not compression','d'],[2,'same','d'],[2,'real compression (48 tokens per latent), but fidelity is 0','m']],
+ V12:[[0,'not tested','u'],[0,'not tested','u'],[0,'not tested','u'],[0,'not tested','u'],[0,'not tested','u']],
+ V10:[[2,'trains easily, plateaus at the wall; one RankMe collapse at 3e-4','m'],[2.5,'lookup-2k 84 / 99 / 99 %; one failed takeoff with the windowed read','m'],[1.5,'98 / 89 / 47 % at 2k; needed 2 init fixes and step 5e-5','m'],[1.5,'late takeoff (≈ step 5,000); 98 / 98 / 66 %; chain needs lookup init','m'],[0,'did not learn','m']],
+ V11:[[3,'+0.1 M params','m'],[3,'about the same as dense (31.1 M vs 31.2 M)','m'],[1.5,'+4.5 M params (+14 %); page encoder + latents','m'],[1.5,'same','m'],[2,'+3.9 M params','m']],
+};
+function drawHeat(){const s=document.getElementById('heat');clear(s);
+ const x0=250,cw=150,y0=40,rh=30;
+ CFG.forEach((c,j)=>el('text',{x:x0+j*cw+cw/2,y:24,'text-anchor':'middle','font-size':13,'font-weight':700},s,c));
+ const col=v=>v==null?css('--surface-2'):v>=2.5?css('--good'):v>=1.5?css('--s4'):v>=0.75?css('--s2'):css('--bad');
+ let y=y0;const pillarAvg={};
+ PILLARS.forEach(([pk,pname,w])=>{
+  el('text',{x:10,y:y+14,'font-size':11.5,'font-weight':700,style:'fill:var(--s1)'},s,pname.toUpperCase());y+=20;
+  CRIT.filter(c=>c[1]===pk).forEach(c=>{el('text',{x:18,y:y+19,'font-size':12.5},s,`${c[0]} · ${c[2]}`);
+   SC[c[0]].forEach((cell,j)=>{const [v,ev,k]=cell;const r=el('rect',{x:x0+j*cw+3,y:y+2,width:cw-6,height:rh-4,rx:6,fill:col(v),'fill-opacity':v==null?1:.8},s);
+    el('text',{x:x0+j*cw+cw/2,y:y+20,'text-anchor':'middle','font-size':13,'font-weight':700,style:v==null?'fill:var(--text-muted)':'fill:#fff'},s,v==null?'?':(k==='d'?v+' ᵈ':v));
+    hover(r,`<b>${CFG[j]} · ${c[2]}</b><br>${ev}<br><i>${k==='m'?'measured':k==='d'?'design argument (not run)':'untested'}</i>`);
+    (pillarAvg[pk+j]=pillarAvg[pk+j]||[]).push(v);});
+   y+=rh;});});
+ // totals
+ y+=8;el('line',{x1:10,x2:x0+CFG.length*cw,y1:y,y2:y,stroke:css('--line')},s);y+=6;
+ const totals=CFG.map((_,j)=>{let sw=0,sv=0,cov=0;PILLARS.forEach(([pk,,w])=>{const vs=(pillarAvg[pk+j]||[]).filter(v=>v!=null);const all=(pillarAvg[pk+j]||[]).length;cov+=vs.length;if(vs.length){sv+=w*vs.reduce((a,b)=>a+b)/vs.length;sw+=w;}});return {t:sw?sv/sw:0,cov};});
+ const ncrit=CRIT.length;
+ el('text',{x:18,y:y+19,'font-size':12.5,'font-weight':700},s,'Weighted total (0–3)');
+ totals.forEach((t,j)=>{const r=el('rect',{x:x0+j*cw+3,y:y+2,width:cw-6,height:rh-4,rx:6,fill:col(t.t),'fill-opacity':.9},s);
+  el('text',{x:x0+j*cw+cw/2,y:y+20,'text-anchor':'middle','font-size':13,'font-weight':800,style:'fill:#fff'},s,t.t.toFixed(2));
+  hover(r,`weighted over pillars with data; coverage ${t.cov} of ${ncrit} criteria`);
+  el('text',{x:x0+j*cw+cw/2,y:y+rh+14,'text-anchor':'middle','font-size':11,class:'muted'},s,`coverage ${t.cov}/${ncrit}`);});
+ s.setAttribute('viewBox',`0 0 1080 ${y+rh+26}`);
+ el('text',{x:10,y:y+rh+14,'font-size':11,class:'muted'},s,'ᵈ = design argument, not run');
+}
+drawHeat();
+
+/* ---------------- maths ---------------- */
+const M={model:'p30',use:'decide',N:1e6};
+const PRE={p30:{d:960,P:31e6,kvB:256,Ld:4,label:'30M platform'},p1b:{d:2048,P:1e9,kvB:4096,Ld:24,label:'1B-class'}};
+const MEAS={dense:2.286,e30:0.326,e31:0.452,coarse:0.39,two:0.45};// s per 128k row, measured (two-level: estimate)
+function configs(N){return [
+ {k:'dense',n:'dense (full attention)',C:N,col:'--text-muted',dense:true},
+ {k:'e30',n:'E30 / E30_ctx (N/6)',C:N/6,col:'--s2'},
+ {k:'e31',n:'E31 fine / LI (0.83 N)',C:N*160/192,col:'--s7'},
+ {k:'e31m1',n:'E31 fine, m = 1 (N/6, untested)',C:N/6,col:'--s5',meas:'e31'},
+ {k:'coarse',n:'E31 coarse (N/48, fails)',C:N/48,col:'--s4'},
+ {k:'two',n:'two-level (N/48 + 16 pages, proposed)',C:N/48+16*64,col:'--s3'},
+ {k:'three',n:'three-level (N/384 + 128 + 1024, proposed)',C:N/384+16*8+16*64,col:'--s1',meas:'two'},
+];}
+function fmt(v,u){if(v>=1e15)return (v/1e15).toFixed(1)+' P'+u;if(v>=1e12)return (v/1e12).toFixed(1)+' T'+u;if(v>=1e9)return (v/1e9).toFixed(1)+' G'+u;if(v>=1e6)return (v/1e6).toFixed(1)+' M'+u;if(v>=1e3)return (v/1e3).toFixed(1)+' k'+u;return v.toFixed(0)+' '+u;}
+function fbytes(b){return b>=1e9?(b/1e9).toFixed(1)+' GB':b>=1e6?(b/1e6).toFixed(0)+' MB':(b/1e3).toFixed(0)+' kB';}
+function ftime(s){return s>=3600?(s/3600).toFixed(1)+' h':s>=60?(s/60).toFixed(1)+' min':s.toFixed(1)+' s';}
+function drawMath(){const N=M.N,p=PRE[M.model];const R=M.use==='decide'?1e3:1e4,Lr=M.use==='decide'?1:3;
+ document.getElementById('nval').textContent=N>=1e6?(N/1e6).toFixed(N>=1e7?0:1)+'M tokens':(N/1e3).toFixed(0)+'k tokens';
+ const rows=configs(N).map(c=>{const mem=c.dense?N*p.Ld*p.kvB:c.C*Lr*p.kvB;const read=c.dense?R*p.Ld*N*4*p.d:R*Lr*c.C*4*p.d;
+  const pre=c.dense?2*p.P*N+p.Ld*4*p.d*N*N/2:2*p.P*N+(c.k.startsWith('e31')||c.k==='coarse'?10e6*N*(p.P/31e6):1e6*N);
+  let t=null;if(M.model==='p30'){const m=c.meas||c.k;t=c.dense?MEAS.dense*(N/131072)**2:(MEAS[m]||MEAS.two)*N/131072;}
+  return {...c,mem,read,pre,t};});
+ const dn=rows[0];
+ document.getElementById('mtab').innerHTML=`<tr><th>design</th><th class="num">entries read per token</th><th class="num">memory (${Lr} reading layer${Lr>1?'s':''}${M.model==='p30'?'':' · dense '+p.Ld+' layers'})</th><th class="num">reading FLOPs (R = ${R.toLocaleString()})</th><th class="num">prefill FLOPs</th>${M.model==='p30'?'<th class="num">prefill time, one 3090 (measured × extrapolated)</th>':''}<th class="num">read cost vs dense</th></tr>`+
+  rows.map(r=>`<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(${r.col});margin-right:6px"></span>${r.n}</td><td class="num">${fmt(r.dense?N*p.Ld:r.C*Lr,'')}</td><td class="num">${fbytes(r.mem)}</td><td class="num">${fmt(r.read,'FLOP')}</td><td class="num">${fmt(r.pre,'FLOP')}</td>${M.model==='p30'?`<td class="num">${ftime(r.t)}</td>`:''}<td class="num">${r.dense?'1×':'1/'+Math.round(dn.read/r.read).toLocaleString()}</td></tr>`).join('');
+ // bars
+ const s=document.getElementById('mbars');clear(s);const mets=[['memory','mem',fbytes],['reading FLOPs','read',v=>fmt(v,'FLOP')],['prefill FLOPs','pre',v=>fmt(v,'FLOP')]];
+ const pw=350;mets.forEach(([nm,key,f],mi)=>{const x0=10+mi*pw;const vals=rows.map(r=>r[key]);const lo=Math.log10(Math.min(...vals))-0.5,hi=Math.log10(Math.max(...vals))+0.2;
+  el('text',{x:x0,y:16,'font-size':12.5,'font-weight':700},s,nm+' (log)');
+  rows.forEach((r,i)=>{const y=28+i*37;const w=(Math.log10(r[key])-lo)/(hi-lo)*(pw-120);
+   const b=el('rect',{x:x0,y,width:Math.max(2,w),height:26,rx:4,fill:`var(${r.col})`,'fill-opacity':.85},s);hover(b,`<b>${r.n}</b><br>${nm}: ${f(r[key])}`);
+   el('text',{x:x0+Math.max(2,w)+5,y:y+17,'font-size':11,class:'sec'},s,f(r[key]));});});
+ const e30=rows[1],e31=rows[2],two=rows[5];
+ document.getElementById('massum').innerHTML=`At <b>${document.getElementById('nval').textContent}</b> on the ${p.label}: E30 reads <b>${Math.round(e31.read/e30.read)}× less</b> than E31 fine. The two-level design reads <b>${Math.round(dn.read/two.read)}× less</b> than dense and <b>${Math.round(e31.read/two.read)}× less</b> than E31 fine.`+
+  (M.model==='p30'?` Prefill: dense ${ftime(dn.t)} vs E31 ${ftime(e31.t)} vs E30_ctx ${ftime(e30.t)}.`:` The dense KV cache is <b>${fbytes(dn.mem)}</b>, which does not fit consumer GPUs; E30-style memory is ${fbytes(e30.mem)}, and the two-level index ${fbytes(two.mem)} (the fine store can live in CPU RAM).`);
+}
+document.getElementById('nlog').oninput=e=>{M.N=Math.round(2**(+e.target.value));drawMath();};
+function seg(id,key){document.querySelectorAll(`#${id} button`).forEach(b=>b.onclick=()=>{M[key]=b.dataset.v;document.querySelectorAll(`#${id} button`).forEach(x=>x.classList.toggle('on',x===b));drawMath();});}
+seg('model','model');seg('use','use');M.N=1e6;drawMath();
+
+/* ---------------- measured cost ---------------- */
+(function(){const s=document.getElementById('costc');const L=[2048,4096,8192,16384,32768,65536,131072];
+ const S=[['dense','--text-muted',[.008,.010,.024,.121,.246,.677,2.286]],['E31 fine / LI','--s7',[.015,.021,.064,.192,.190,.251,.452]],['E31 coarse','--s4',[.013,.019,.057,.192,.167,.200,.390]],['E30_ctx','--s2',[.012,.017,.052,.130,.129,.171,.326]],['local only (no memory)','--s3',[.010,.015,.044,.094,.134,.154,.291]]];
+ const x0=70,x1=820,y0=20,y1=320;const lx=v=>x0+(Math.log2(v)-11)/(17-11)*(x1-x0);const ly=v=>y1-(Math.log10(v)+2.3)/(0.7+2.3)*(y1-y0);
+ [0.01,0.03,0.1,0.3,1,3].forEach(v=>{el('line',{x1:x0,x2:x1,y1:ly(v),y2:ly(v),stroke:css('--line')},s);el('text',{x:x0-8,y:ly(v)+4,'text-anchor':'end','font-size':11,class:'muted'},s,v+' s');});
+ L.forEach(l=>el('text',{x:lx(l),y:y1+18,'text-anchor':'middle','font-size':11,class:'muted'},s,(l/1024)+'k'));
+ el('line',{x1:lx(12288),x2:lx(12288),y1:y0,y2:y1,stroke:css('--line'),'stroke-dasharray':'4 4'},s);el('text',{x:lx(12288)+4,y:y0+12,'font-size':10.5,class:'muted'},s,'sdpa batched | flex, batch 1–4');
+ S.forEach(([n,c,d],i)=>{el('polyline',{points:d.map((v,j)=>`${lx(L[j])},${ly(v)}`).join(' '),fill:'none',stroke:`var(${c})`,'stroke-width':n==='dense'?3:2.4},s);
+  d.forEach((v,j)=>{const cc=el('circle',{cx:lx(L[j]),cy:ly(v),r:3.5,fill:`var(${c})`},s);hover(cc,`<b>${n}</b> @ ${L[j]/1024}k: ${v} s/row`);});
+  el('rect',{x:840,y:40+i*26,width:12,height:12,rx:2,fill:`var(${c})`},s);el('text',{x:858,y:51+i*26,'font-size':12},s,n);});
+ el('text',{x:840,y:40+S.length*26+18,'font-size':11,class:'sec'},s,'at 128k:');
+ el('text',{x:840,y:40+S.length*26+34,'font-size':11,class:'sec'},s,'dense 5.1× E31, 7× E30_ctx');
+})();
+</script></body>

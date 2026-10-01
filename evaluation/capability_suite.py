@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-SUITE_VERSION = "2026-09-24.v1"
+SUITE_VERSION = "2026-09-25.v3"
 PASS_ACC = 0.75            # answer-token accuracy that counts as a pass (SOLVABLE_ACC)
 CEILING_FRACTION = 0.75    # "matches the ceiling" = ≥ 0.75 × the dense model's bits on the same run
 
@@ -189,9 +189,21 @@ def budget_for(cell: Cell) -> Budget:
         return Budget(800, 4, 32, 100)
     if L <= 512:
         return Budget(1200, 4, 32, 100)
+    # v2: batch 32 at 1024 and 16 at 2048. At v1's batch 8 / 4 the 4800-step budget was
+    # ~38K / ~19K examples; every arch (dense included) takes off only after ~20–32K
+    # examples at 1024, so v1 cells sat at chance on some seeds (dense 0 / 64 bits on the
+    # 1024 lookalike, seed 1) — a starved budget, not an architecture result.
+    # v3: 2048 at batch 32 (via 2 micro-batches, see `grad_accum_for`) and 6× steps: at v2's
+    # batch 16 × 4800 steps (~77K examples) every arch, dense included, stayed at chance on
+    # the 2048 lookup; the E30 ledger needed ~100–150K+ examples there to leave chance.
     if L <= 1024:
-        return Budget(1200, 4, 8, 100)
-    return Budget(1200, 4, 4, 100)
+        return Budget(1200, 4, 32, 100)
+    return Budget(1200, 6, 32, 100)
+
+
+def grad_accum_for(cell: "Cell") -> int:
+    """Micro-batches per step (memory only; the effective batch is `budget_for(cell).batch`)."""
+    return 2 if cell.seq_len > 1024 else 1
 
 
 EVAL_ROWS = 256  # the E30 ledger used 16–32 rows; 256 keeps the accuracy SE near ±1–2 points
@@ -233,6 +245,22 @@ def cells_for(tier: str, levels: Optional[tuple[int, ...]] = None, cell_ids: Opt
 ARCH_FLAGS: dict[str, tuple[str, ...]] = {
     "e21": ("--message_identity_slots",),          # the fair frozen-mean concat control
     "e30": ("--swp_n_heads", "8", "--swp_query_dim", "128"),
+    "e30_ctx": ("--swp_n_heads", "8", "--swp_query_dim", "128"),
+    # E31 platform: 128-dim token embeddings, hashed n-grams off. These are probe-global, so
+    # every arch in an E31 job (dense, e30 …) trains on the same platform — fair on the replica.
+    "e31_page": ("--token_embedding_dim", "128", "--ngram_orders", "none"),
+    "e31_bixt": ("--token_embedding_dim", "128", "--ngram_orders", "none"),
+    # Length-invariant variants (E30 vs E31 limits study): all on the E31 platform.
+    "e30_li": ("--swp_n_heads", "8", "--swp_query_dim", "128", "--token_embedding_dim", "128",
+               "--ngram_orders", "none"),
+    "e31_li": ("--token_embedding_dim", "128", "--ngram_orders", "none"),
+    "e31_li_m1": ("--token_embedding_dim", "128", "--ngram_orders", "none"),
+    "e30_ord": ("--swp_n_heads", "8", "--swp_query_dim", "128", "--token_embedding_dim", "128",
+                "--ngram_orders", "none"),
+    "e31_ord_m1": ("--token_embedding_dim", "128", "--ngram_orders", "none"),
+    "e30_mix": ("--swp_n_heads", "8", "--swp_query_dim", "128", "--token_embedding_dim", "128",
+                "--ngram_orders", "none"),
+    "e31_mix_m1": ("--token_embedding_dim", "128", "--ngram_orders", "none"),
 }
 DEFAULT_CONTROLS = ("dense",)
 
@@ -314,6 +342,6 @@ SCALE_RULE = ScaleRule()
 __all__ = [
     "ARCH_FLAGS", "Budget", "CELLS", "CELL_BY_ID", "CEILING_FRACTION", "Cell", "DEFAULT_CONTROLS",
     "EVAL_ROWS", "LEVELS", "Level", "PASS_ACC", "REFERENCES", "Reference", "SCALE_RULE", "SIZES",
-    "SIZE_ORDER", "SUITE_VERSION", "Size", "TIERS", "Tier", "budget_for", "cells_for", "lr_for",
+    "SIZE_ORDER", "SUITE_VERSION", "grad_accum_for", "Size", "TIERS", "Tier", "budget_for", "cells_for", "lr_for",
     "references_for",
 ]

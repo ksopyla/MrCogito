@@ -169,6 +169,10 @@ class SymbolicTaskConfig:
     count_mod: int = 4
     n_decoys: int = 8
     n_duplicates: int = 4
+    # chain: parallel decoy chains of the same length (shuffled chain only). With 1 chain and no
+    # distractors the answer is the only pure target (a no-hop shortcut); with >1 chains the
+    # question's start node decides which chain, so the hops must be followed.
+    n_chains: int = 1
     # "spread" = uniform over [lo, hi) (default). "right" = pack evidence against hi
     # (just before the min_gap), for S0 near-copy diagnostics at long seq_len.
     evidence_align: str = "spread"
@@ -188,6 +192,8 @@ class SymbolicTaskConfig:
                 )
         if self.task in {"chain", "chain_ordered"} and self.hops < 2:
             raise ValueError("chain needs hops >= 2 to require composition")
+        if self.n_chains < 1 or (self.n_chains > 1 and self.task != "chain"):
+            raise ValueError("n_chains > 1 is defined for the shuffled chain only")
         if self.task == "select" and self.n_decoys < 1:
             raise ValueError("select needs n_decoys >= 1")
         if self.task == "unique" and self.n_duplicates < 1:
@@ -252,7 +258,7 @@ class SymbolicTaskConfig:
         if self.task == "select":
             return (self.n_distractors + 1 + self.n_decoys) * kv
         if self.task in {"chain", "chain_ordered"}:
-            return (self.hops + self.n_distractors) * hop
+            return (self.hops * self.n_chains + self.n_distractors) * hop
         if self.task == "unique":
             return (2 * self.n_duplicates + 1) * kv
         if self.task == "match3":
@@ -345,13 +351,21 @@ def _emit_chain(
     def sym(t: Sequence[int]) -> list[int]:
         return [v.sym_lo + int(x) for x in t]
 
-    sources = _sample_distinct_tuples(rng, cfg.hops + cfg.n_distractors, cfg.key_len, A)
+    n_ch = max(1, int(cfg.n_chains))
+    sources = _sample_distinct_tuples(rng, cfg.hops * n_ch + cfg.n_distractors, cfg.key_len, A)
     terminal = tuple(int(x) for x in rng.integers(0, A, size=cfg.key_len))
     chain = [*sources[: cfg.hops], terminal]
     chain_edges = [(chain[i], chain[i + 1]) for i in range(cfg.hops)]
-    dist_edges = [
+    # decoy chains (same length, own start and terminal) come first among the "distractors",
+    # so they are shuffled with the real chain and never counted as evidence
+    decoy_edges = []
+    for c in range(1, n_ch):
+        nodes = [*sources[c * cfg.hops:(c + 1) * cfg.hops],
+                 tuple(int(x) for x in rng.integers(0, A, size=cfg.key_len))]
+        decoy_edges += [(nodes[i], nodes[i + 1]) for i in range(cfg.hops)]
+    dist_edges = decoy_edges + [
         (src, tuple(int(x) for x in rng.integers(0, A, size=cfg.key_len)))
-        for src in sources[cfg.hops :]
+        for src in sources[cfg.hops * n_ch:]
     ]
     if shuffle:
         edges = chain_edges + dist_edges
@@ -378,7 +392,9 @@ def _emit_chain(
         chain_positions = [off + len(b) - 1 for off, b in zip(chain_off, chain_blocks)]
     for off, block in zip(offsets, blocks):
         ids[off : off + len(block)] = block
-    return sym(chain[0]), sym(chain[-1]), max(chain_positions), {"hops": cfg.hops, "shuffled": shuffle}
+    # `nodes`: the queried chain start … terminal (E33 per-round targets: round r → nodes[r + 1])
+    return sym(chain[0]), sym(chain[-1]), max(chain_positions), {
+        "hops": cfg.hops, "shuffled": shuffle, "nodes": [sym(n) for n in chain]}
 
 
 def generate_row(cfg: SymbolicTaskConfig, rng: np.random.Generator) -> SymbolicRow:

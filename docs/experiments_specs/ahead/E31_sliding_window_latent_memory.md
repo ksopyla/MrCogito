@@ -173,6 +173,90 @@ geometry keeps ≥ 0.75 × the fine geometry's bits, a single coarse level may c
 facts at 1M. If it keeps < 0.5 × (typically: finds the fact but loses value letters), the
 1M design needs the **two-level memory** in *Follow-ups*.
 
+## Length ladder (long-context confirmation: 2k → 128k)
+The final check that the architecture suits long inputs. The exam stays the same (task,
+answer packing, 64-bit prize); only the haystack grows. Added 2026-09-25, after the
+full-tier suite.
+
+**Linear cost first.** Three things made the platform quadratic at long lengths. All
+three are fixed on `e31-latent-memory`:
+1. In the global layer, tokens before QUERY attended to every earlier token. New
+   `message_raw_window` (default 0 = unchanged) makes those raw keys a causal window, so
+   the memory is the only long path. The answer path never used them: receivers read only
+   the slots.
+2. `create_block_mask` materialised the full query × key grid for the memory read (29 GiB
+   at 128k).
+3. The sliding-window layers rebuilt their masks by checking every (query, key) pair.
+
+Both mask problems are replaced by block lists computed from the band geometry
+(`_band_block_mask`), used only above 2³⁰ pairs, so 2k training is unchanged. The new
+path matches the old one at 36k to within bf16 noise.
+
+Measured forward cost, 30M e31_page, one row, RTX 3090:
+
+| length | fine memory (W 256, K 32, m 5) | coarse memory (W 512, K 8, m 1) | peak GPU memory |
+|---|---|---|---|
+| 16k | 0.30 s | 0.22 s | 0.9 GB |
+| 32k | 0.44 s | 0.38 s | 1.0 GB |
+| 64k | 0.86 s | 0.63 s | 1.8 GB |
+| 128k | 1.35 s | 1.25 s | 3.4 GB |
+
+*Correction (27 Sep):* this smoke ran on a GPU shared with a training job. On a dedicated GPU (ladder logs) a 128k row takes **0.45 s** for E31 fine, 0.39 s for coarse, 0.33 s for E30_ctx, 0.29 s for local-only and **2.29 s for dense** (quadratic). Peak memory is 3.3–3.4 GB for every architecture, dominated by main-path activations.
+
+Memory size: the fine setting has ≈ 0.83 reader entries per token (32 latents × 5 entries
+per 192-token stride), so it is ≈ 109k slots at 128k. It hides raw tokens from the
+receiver, but it does not shrink the memory. The coarse setting (N/48 ≈ 2.7k slots at
+128k) is the real compression claim.
+
+**Stage A: does it generalise to longer inputs?** Train at 2,048 tokens with
+`--message_raw_window 256 --save_ckpt DIR`. Then evaluate the saved weights, with no
+more training, at 2k / 4k / 8k / 16k / 32k / 64k / 128k (`verification/length_ladder.py`,
+64 rows per length). Each length reports:
+- accuracy ± row SE;
+- accuracy by **fact depth** (5 bins, fact position / length);
+- memory slots, peak GPU memory and seconds per row.
+
+Arms:
+- e31_page, fine: lookup-2k at 2 seeds, chain-2k at 1 seed;
+- e31_page, coarse: lookup-2k at 2 seeds;
+- dense, the full-attention reference;
+- e18_local, the no-memory floor (it must sit at chance).
+
+**Stage B: can it learn at long lengths?** A curriculum from the Stage A weights
+(`--init_ckpt`): a short run at 8k, then 16k, then the ladder again. This separates
+"cannot extrapolate" from "cannot hold a fact over a long input". Training at 128k does
+not fit a 3090: the writer's activations are ≈ 50 GB per row. 64k–128k stay
+evaluation-only.
+
+**How to read a failure.** Each diagnosis comes with a prepared variant:
+- Accuracy falls with the **distance** between fact and question → a position problem.
+  RoPE on the memory read sees distances never seen in training; with θ = 500k and head
+  dim 64, about 12 of 32 frequency pairs are out of range beyond 2k. Variant: a
+  content-only (no-RoPE) memory read.
+- Accuracy falls with **length at every depth** → attention spread over 100k+ slots
+  instead of the 1.7k seen in training. Variant: `--global_logit_scale log` (SSMax).
+- Coarse falls far below fine → the two-level memory in *Follow-ups*.
+
+**Pass line (set before running):**
+- e31_page, median of seeds, ≥ 75 % at 16k and 32k after Stage B;
+- time and memory grow linearly with length (the table above);
+- e18_local at chance;
+- 64k and 128k reported as stretch results, not gating;
+- dense is reported, not gating: it is the quadratic reference.
+
+Commands:
+```bash
+# Stage A (per seed; the suite's lookup-2k budget at step size 5e-5)
+uv run python verification/bapo_capability_probe.py --scale bridge_1k --recipe recall_single \
+  --seq_len 2048 --arch dense e31_page e18_local --no-skip_uncalibrated --hidden 960 --head_dim 64 \
+  --kv_heads 1 --pre_layers 1 --global_layers 1 --stack_layers 2 --max_params 40000000 --lr 5e-5 \
+  --warm_residuals --steps 1200 --k1_mult 6 --batch 32 --grad_accum 2 --eval_every 100 --eval_rows 256 \
+  --seed 1 --amp auto --swp_n_heads 8 --swp_query_dim 128 --token_embedding_dim 128 --ngram_orders none \
+  --message_raw_window 256 --save_ckpt Cache/length_ladder/lookup2k_s1 --out Cache/length_ladder/lookup2k_s1
+uv run python verification/length_ladder.py --ckpt Cache/length_ladder/lookup2k_s1 \
+  --lengths 2048 4096 8192 16384 32768 65536 131072 --rows 64
+```
+
 ## Arms (one probe per GPU)
 | arm | what it is | role |
 |---|---|---|
@@ -304,7 +388,130 @@ confirms them on the alignment page
   pooling-rule fix), append-only multi-level archive.
 
 ## Result
-<Filled in AFTER, by experiment-track.>
-- Run id: —
-- Run report: —
-- Verdict: —
+*Assessment against the vision, with 1M / 10M maths: `docs/4_Research_Notes/e30_vs_e31_assessment_20260927.html`.*
+
+**Capability suite, full tier, 30M, 3 seeds (suite 2026-09-25.v3), 2026-09-25.**
+- Run id: `Cache/capability/e31_full_30m_{odra,polonez,polonez_2k}` (merged scorecard); targeted reruns in
+  `Cache/capability/e31_reruns`. Branch `e31-latent-memory`.
+- Verdicts:
+  - **e31_page: scale up.** Frontier L5 at 30M: every gating level L0–L5 passes, plus both L6 stretch cells.
+  - e30: promising, fix before scaling. Frontier L1: it fails the 1k lookalike, the long lookups and chain-2k.
+  - e31_bixt: not ready. Frontier L0: slow learner; it passes L1 cells only with 8× budget.
+
+| cell (bits / 64) | e31_page | e30 | e31_bixt | dense | pre-set criterion |
+|---|---|---|---|---|---|
+| lookalike-1k | **57.5** (94 %) | 25.7 | 24.0 | 63.3 | S1 ≥ 47 ✓ |
+| lookup-1k | **57.6** (94 %) | 25.7 | 17.7 | 62.9 | S1 ≥ 40 ✓ |
+| chain-1k | **60.6** (97 %) | 44.2 | 21.8 | 63.6 | S2 ≥ 47 ✓ |
+| lookup-2k (step 5e-5) | **52.2** (89 %) | 25.7 | 0 | 62.9 | S3 ≥ 32 ✓ |
+| chain-2k | **61.8** (98 %) | 15.0 | 30.3 | 63.1 | — |
+| fact-1k (Glyph, /96) | **94.6** (99 %) | 81.6 | 80.0 | 95.2 | S6 (rung 2) ✓ |
+| shuffled-1k (stretch) | **61.2** (98 %) | 1.3 | 0.1 | 63.0 | — |
+
+- **S5 (write health) ✓.** Per-letter accuracy is flat across the 32 answer letters; E30's
+  13-letter salience wall is gone. With the memory off, accuracy drops to chance.
+- **S4 (latents vs context) is open.** In wave 1, the context-only control (`e30_ctx`: the
+  E30 writer with a 64-token pre-encoder reach) reached 56.6 bits on lookup-1k, against 57.6
+  for e31_page. On lookup, most of the gain over E30 is *context reach*, not the latent
+  design. The S4 cell (lookalike-1k) plus lookup-2k, chain-2k and shuffled-1k are queued for
+  `e30_ctx` (`Cache/capability/e30ctx_control_30m*`).
+- **Caveats:**
+  1. E31 has 35.7M parameters vs 31.2M for dense and e30 (+14 %; the suite rule is ±5 %).
+  2. The platform changed for every arm (token embedding 128, no n-grams); e30 lost bits on
+     some short cells compared with its ledger numbers.
+  3. At 2,048 tokens, takeoff is stochastic:
+     - every arm needed step size 5e-5 (at 1e-4 all but e30 stayed at chance);
+     - dense seed 0 and e31_page seed 2 were slow or failed even at 5e-5;
+     - reruns on another server flipped outcomes.
+  4. The extension rule misses slow, still-rising curves (bixt, e31_page seed 2).
+     Suggested fix: also extend when accuracy rose ≥ 5 points in the last third.
+  5. The three lookup-2k 5e-5 `job.json` files were reconstructed from their 1e-4 siblings;
+     the metadata was lost when the folders were renamed.
+- **Coarse rung, lookup-2k, 1 seed:** W 512, K 8 reached 39 % with m = 1 and chance with
+  m = 5 (fine geometry: 93 %). Under 0.5× the fine bits, so by the decision rule the 1M design
+  needs the two-level memory.
+- **Length ladder (2026-09-26): passes on lookup.**
+  - Setup: e31_page, fine memory, `--message_raw_window 256`, seed 1.
+  - Evaluation: 64 rows per length. The fact position is uniform in the book; SE ≈ ±0.3–2 points.
+  - Directories: `Cache/length_ladder/*` on both servers.
+
+  | lookup accuracy | 2k | 4k | 8k | 16k | 32k | 64k | 128k |
+  |---|---|---|---|---|---|---|---|
+  | baseline memory, trained at 2k | 92 | 81 | 56 | 30 | 29 | 25 | 27 |
+  | baseline, curriculum 8k → 16k → 32k → 64k | 85 | 85 | 86 | 84 | 84 | 84 | 53 |
+  | length-invariant (`lm_addr none`, `lm_slot_pos boundary`), trained at 2k | 98.5 | 97 | 94 | 87 | 69 | 52 | 36 |
+  | **length-invariant + one 8k stage** | **98.6** | **98.9** | **98.5** | **98.4** | **97.2** | **90.7** | **75.6** |
+  | **length-invariant + 8k + 16k stages** | **98.3** | **98.9** | **98.8** | **98.3** | **98.1** | **95.3** | **80.0** |
+  | length-invariant + 8k stage, **seed 0** | 94.3 | 96.0 | 97.3 | 96.4 | 83.1 | 57.3 | 40.3 |
+  | length-invariant + 8k + 16k stages, **seed 0** | 95.4 | 96.4 | 96.9 | 96.9 | 97.4 | 93.5 | 81.4 |
+  | length-invariant, seed 0, trained at 2k | 97.3 | 96 | 91 | 76 | 56 | 40 | 32 |
+  | length-invariant, seed 2, trained at 2k | 65 | 65 | 65 | 58 | 49 | 40 | 32 |
+  | length-invariant, 2k only, **median of 3 seeds** | 97.3 | 96 | 91 | **76** | 56 | 40 | 32 |
+  | no-memory control (e18_local) | 24 | 24 | 25 | 25 | 25 | 26 | 26 |
+
+  - **Pass line met on seed 1:** ≥ 75 % at 16k and 32k, and at 128k as well, after a single
+    8k stage. Seed 1 is the best of the three seeds. On 2k training alone the median passes at
+    16k (76 %) but not at 32k (56 %). **Seed 0 after its 8k stage** replicates the pass line
+    (96 % at 16k, 83 % at 32k) but reaches only about 4× its training length: 57 % at 64k and
+    40 % at 128k, against 91 / 76 % for seed 1. **After the 16k stage seed 0 matches seed 1:**
+    97 % at 32k, 93.5 % at 64k, 81 % at 128k. The 2k → 8k → 16k curriculum result
+    replicates on two seeds.
+  - **Baseline memory:** it learns an *absolute-position* read. Trained at length L, it
+    reaches about 2L, and far facts fail first (depth effect at 8k: 42 % vs 70 %).
+  - **Length-invariant memory:** accuracy is flat across fact depth at every length; the
+    residual loss is uniform, which points to dilution. On seed 2 it keeps the same fraction
+    of its 2k bits as seed 1 at 16k and 32k.
+  - **SSMax:**
+    - with the absolute address, it never took off (chance);
+    - with the length-invariant memory, it held 40 % flat from 2k to 128k but was undertrained
+      (took off late).
+  - **Cost** is linear in length (0.45 s / 3.4 GB per 128k row on a dedicated 3090, against 2.29 s for dense).
+    Training fits a 3090 up to 64k with flex: 22 GB, 5.3 s per 2 rows. sdpa runs out of
+    memory at 32k.
+- **Correction (28 Sep): the chain results below are inflated by teacher forcing.** On the
+  4-hop chain the first answer letter is right only about 50 % of the time for e31_page / E31-LI
+  (mean accuracy 96 %): the model narrows to about 2 candidate nodes, and the given letters pick
+  the rest. See the measurement correction in [E31b](E31b_e30_vs_e31_limits.md#result).
+  Lookup numbers are unaffected: there is one value in the book.
+- **Chain does not transfer yet.**
+  - Dense and e31_page trained at 2k both drop to chance at 4k.
+  - The baseline memory trained at 8k or 16k works *only at the training length*: 92 % at
+    8k, 29 % at 16k; then 93 % at 16k, 37 % at 8k. The 4-hop solution is a
+    length-specific position shortcut.
+  - The length-invariant memory trained from scratch did not take off on chain in two tries
+    (step 1e-4, 6× budget; step 5e-5, 12× budget: both at chance). With this memory,
+    **lookup → chain is part of the recipe**: content addressing has to be learned first.
+  - **Chain transfers once the memory starts from the length-invariant lookup weights**
+    (content addressing already learned). Trained at 2k only:
+    96 / 96 / 95 / 92 / **80** / 61 / 44 % at 2k–128k.
+    - That passes ≥ 75 % at 16k and 32k, where dense and the baseline memory are at chance
+      from 4k.
+    - This is the E31-specific result the context-only control does not have.
+    - **After one 8k stage:** 95.6 / 95.7 / 95.3 / 94.7 / 95.6 / **93.1** / **82.3** % at
+      2k–128k. The 4-hop chain holds to 128k.
+- **S4 fails (latents vs context).** e30_ctx, the E30 writer with a 64-token pre-encoder,
+  matches or beats e31_page:
+  - lookalike-1k: 63.0 vs 57.5 bits (3 seeds);
+  - lookup-2k: 84 / 99 % on seeds 0 and 1;
+  - chain-2k: 97.5 %;
+  - shuffled-1k: 96.5 %.
+
+  - lookup-2k is complete: 99.0 % median over 3 seeds, vs 89.2 % for e31_page.
+  - Final, all 3 seeds (median, e30_ctx vs e31_page):
+
+    | cell | e30_ctx | e31_page |
+    |---|---|---|
+    | lookalike-1k | 99.3 % | 94 % |
+    | lookup-2k | 99.0 % | 89.2 % |
+    | chain-2k | 97.4 % | 98.2 % |
+    | shuffled-1k | 96.5 % | 98 % |
+
+    That is a tie or better for the context-only control.
+
+  E30's deficit was its 16-token context (the salience wall), not the window writer. What
+  E31 adds is the length-invariant, content-addressed memory, which transfers lookup and
+  4-hop chain 16× past the training length.
+  - **e30_ctx ladder** (seed 2, same windowed read, trained at 2k):
+    88 / 83 / 57 / 29 / 25 / 25 / 25 % at 2k–128k.
+  - That is the same collapse as E31's baseline memory. Both read by absolute position.
+  - At length, the context-only design does not carry over; the length-invariant memory does.

@@ -148,3 +148,33 @@ def test_evaluate_reports_which_answer_letters_survive():
 def test_row_se():
     assert math.isnan(_row_se([0.5]))
     assert _row_se([0.0, 1.0]) == pytest.approx(0.5)
+
+
+def test_chain_parallel_removes_pure_target_shortcut():
+    """chain_shuffled with no distractors: the answer is the only target that is never a source.
+    chain_parallel (4 chains): 4 such sinks, and the start node picks the right one."""
+    import numpy as np
+
+    from data.bapo_ladder import config_for, generate_row_for, resolve_recipe
+    from data.symbolic_tasks import prize_bits
+
+    def sinks(cfg, row):
+        v, ids = cfg.vocab, list(row.input_ids)
+        hop, L = v.control("hop"), cfg.key_len
+        edges = [(tuple(ids[i + 1:i + 1 + L]), tuple(ids[i + 1 + L:i + 1 + 2 * L]))
+                 for i, t in enumerate(ids[:row.answer_start]) if t == hop]
+        src = {s for s, _ in edges}
+        return [d for _, d in edges if d not in src], edges
+
+    rng = np.random.default_rng(0)
+    for name, n_sinks in (("chain_shuffled", 1), ("chain_parallel", 4)):
+        r = resolve_recipe(name)
+        cfg = config_for("bridge_1k", r.task, hops=3, **r.overrides)
+        assert prize_bits(cfg) == 64.0
+        for _ in range(5):
+            row = generate_row_for(cfg, rng)
+            s, edges = sinks(cfg, row)
+            assert len(edges) == 3 * cfg.n_chains
+            assert len(s) == n_sinks
+            ans = tuple(int(x) for x, lab in zip(row.input_ids, row.labels) if lab != -100)
+            assert ans in s

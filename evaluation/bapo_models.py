@@ -58,7 +58,39 @@ from nn.encdec_lm import EncDecConfig, EncoderDecoderLM
 from nn.perceiver_ar_lm import PerceiverARConfig, PerceiverARLM, swp_geometry
 
 
-ARCHES = ("dense", "e18", "e18_local", "e21", "e30", "encdec")
+ARCHES = ("dense", "e18", "e18_local", "e21", "e30", "encdec", "e30_ctx", "e31_page", "e31_bixt",
+          "e30_li", "e31_li", "e31_li_m1", "e30_ord", "e31_ord_m1", "e30_mix", "e31_mix_m1")
+# Arches whose global read is exclusive after QUERY (compressed / latent memory only).
+EXCLUSIVE_ARCHES = ("e21", "e30", "e30_ctx", "e31_page", "e31_bixt", "e30_li", "e31_li", "e31_li_m1",
+                    "e30_ord", "e31_ord_m1", "e30_mix", "e31_mix_m1")
+SWP_ARCHES = ("e30", "e30_ctx", "e30_li", "e30_ord", "e30_mix")
+E31_ARCHES = ("e31_page", "e31_bixt", "e31_li", "e31_li_m1", "e31_ord_m1", "e31_mix_m1")
+# Length-invariant variants (E30 vs E31 limits study, 2026-09-27): named so scorecards keep
+# them apart. Each is a base arch plus fixed spec fields; other spec fields pass through.
+#   e30_li    = e30_ctx (64-token pre-encoder reach) + slot keys RoPE'd at QUERY
+#   e31_li    = e31_page + no window-start address + slot keys at QUERY
+#   e31_li_m1 = e31_li with one reader entry per latent (memory N/6, same size as E30's)
+ARCH_VARIANTS: dict[str, tuple[str, dict]] = {
+    "e30_li": ("e30_ctx", {"swp_slot_pos": "boundary"}),
+    "e31_li": ("e31_page", {"lm_addr": "none", "lm_slot_pos": "boundary"}),
+    "e31_li_m1": ("e31_page", {"lm_addr": "none", "lm_slot_pos": "boundary", "lm_reader_tokens": 1}),
+    # order-preserving, length-invariant: slot keys at a scaled distance before QUERY (≤ slot_pos_ref)
+    "e30_ord": ("e30_ctx", {"swp_slot_pos": "scaled"}),
+    "e31_ord_m1": ("e31_page", {"lm_addr": "none", "lm_slot_pos": "scaled", "lm_reader_tokens": 1}),
+    # mixed: high-frequency RoPE pairs at QUERY (content), low-frequency at the scaled distance (order)
+    "e30_mix": ("e30_ctx", {"swp_slot_pos": "mixed"}),
+    "e31_mix_m1": ("e31_page", {"lm_addr": "none", "lm_slot_pos": "mixed", "lm_reader_tokens": 1}),
+}
+
+
+def resolve_arch(arch: str, spec: "ArchSpec | None") -> tuple[str, "ArchSpec | None"]:
+    """Named variant → (base arch, spec with the variant's fixed fields)."""
+    if arch not in ARCH_VARIANTS:
+        return arch, spec
+    from dataclasses import replace
+
+    base, fixed = ARCH_VARIANTS[arch]
+    return base, replace(spec or ArchSpec(name=arch), **fixed)
 
 
 @dataclass
@@ -88,7 +120,10 @@ class ArchSpec:
     message_identity_slots: bool = False
     message_pack_stride: int = 0
     message_keep_local_swa: bool = False
+    message_raw_window: int = 0  # >0: global read's raw keys are a causal window (length-ladder runs)
     message_extra_slot_attends: int = 0
+    message_read_rounds: int = 1          # E33: tied read → update rounds on the exclusive global read
+    message_round_aux: float = 0.0        # E33: per-round chain-node targets (weight)
     message_update_slot_kv: bool = False
     message_global_anchors: str = "none"
     message_anchor_token_ids: tuple[int, ...] = ()
@@ -105,6 +140,27 @@ class ArchSpec:
     swp_n_heads: int = 0
     swp_query_dim: int = 0
     swp_auto_fit: bool = True
+    swp_slot_pos: str = "page"            # "boundary" = length-invariant E30 (slot keys at QUERY)
+    # Platform knobs (E31 runs set them for every arch in the job, so the comparison stays fair)
+    token_embedding_dim: int = 0          # 0 → min(32, hidden) (ledger default)
+    ngram_orders: tuple[int, ...] = (2,)  # () → hashed n-grams off
+    # E30 context-only control: causal pre-encoder reach (e30_ctx only)
+    ctx_pre_window: int = 64
+    # E31 latent memory (nn/latent_memory.py)
+    lm_window: int = 256
+    lm_stride: int = 192
+    lm_latents: int = 32
+    lm_latent_dim: int = 512
+    lm_heads: int = 8
+    lm_writer_dim: int = 256
+    lm_enc_layers: int = 2
+    lm_rounds: int = 0                    # 0 → 2 for e31_page, 3 for e31_bixt
+    lm_competition: bool = True
+    lm_null_latent: bool = False
+    lm_reader_tokens: int = 5
+    lm_addr: str = "window_start"
+    lm_slot_pos: str = "read"
+    slot_pos_ref: int = 2048
 
 
 def _n_heads(hidden: int, head_dim: int) -> int:
@@ -114,6 +170,7 @@ def _n_heads(hidden: int, head_dim: int) -> int:
 
 def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, pad_id: int,
                 bos_id: int, eos_id: int, spec: ArchSpec | None = None, seed: int = 0) -> nn.Module:
+    arch, spec = resolve_arch(arch, spec)
     spec = spec or ArchSpec(name=arch)
     import torch
 
@@ -140,9 +197,9 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         if spec.message_boundary_token_id < 0:
             raise ValueError("e21 needs a message_boundary_token_id (DNA/Glyph query control)")
         par_mode, pre, glob, stack = "perceiver", spec.pre_layers, spec.global_layers, spec.stack_layers
-    elif arch == "e30":
+    elif arch in SWP_ARCHES or arch in E31_ARCHES:
         if spec.message_boundary_token_id < 0:
-            raise ValueError("e30 needs a message_boundary_token_id (DNA/Glyph query control)")
+            raise ValueError(f"{arch} needs a message_boundary_token_id (DNA/Glyph query control)")
         par_mode, pre, glob, stack = "perceiver", spec.pre_layers, spec.global_layers, spec.stack_layers
     elif arch == "e18_local":
         par_mode, pre, glob, stack = "perceiver", spec.pre_layers, 0, spec.pre_layers + spec.global_layers + spec.stack_layers - spec.pre_layers
@@ -157,23 +214,25 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
     n_kv = spec.n_kv_heads
     if n_kv <= 0 or n_heads % n_kv != 0:
         n_kv = n_heads  # full MHA; do not silently drop to 1 KV head
-    exclusive = arch in ("e21", "e30")
-    write = "sw_perceiver" if arch == "e30" else "block_mean"
+    exclusive = arch in EXCLUSIVE_ARCHES
+    write = "sw_perceiver" if arch in SWP_ARCHES else ("latent_memory" if arch in E31_ARCHES else "block_mean")
+    pre_window = int(spec.ctx_pre_window) if arch == "e30_ctx" else spec.local_window
+    lm_rounds = int(spec.lm_rounds) or (3 if arch == "e31_bixt" else 2)
     cfg = PerceiverARConfig(
         vocab_size=vocab_size,
         hidden_size=spec.hidden,
         intermediate_size=2 * spec.hidden,
-        token_embedding_dim=min(32, spec.hidden),
+        token_embedding_dim=int(spec.token_embedding_dim) or min(32, spec.hidden),
         par_mode=par_mode,
         pre_layers=pre,
-        pre_window=spec.local_window,
+        pre_window=pre_window,
         global_layers=glob,
         stack_layers=stack,
         block=spec.local_window,
         num_attention_heads=n_heads,
         num_kv_heads=n_kv,
         head_dim=spec.head_dim,
-        ngram_orders=(2,),
+        ngram_orders=tuple(spec.ngram_orders),
         ngram_buckets=256,
         value_embed_layers=spec.value_embed_layers,
         value_embed_dim=16,
@@ -195,8 +254,11 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         message_identity_slots=bool(spec.message_identity_slots) if arch == "e21" else False,
         message_pack_stride=int(getattr(spec, "message_pack_stride", 0) or 0) if arch == "e21" else 0,
         message_keep_local_swa=bool(spec.message_keep_local_swa) if exclusive else False,
+        message_raw_window=int(getattr(spec, "message_raw_window", 0) or 0) if exclusive else 0,
         message_extra_slot_attends=int(getattr(spec, "message_extra_slot_attends", 0) or 0) if exclusive else 0,
         message_update_slot_kv=bool(getattr(spec, "message_update_slot_kv", False)) if exclusive else False,
+        message_read_rounds=int(getattr(spec, "message_read_rounds", 1) or 1) if exclusive else 1,
+        message_round_aux=float(getattr(spec, "message_round_aux", 0.0) or 0.0) if exclusive else 0.0,
         message_global_anchors=(
             str(getattr(spec, "message_global_anchors", "none") or "none") if exclusive else "none"
         ),
@@ -216,6 +278,22 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         swp_n_heads=int(getattr(spec, "swp_n_heads", 0) or 0),
         swp_query_dim=int(getattr(spec, "swp_query_dim", 0) or 0),
         swp_auto_fit=bool(getattr(spec, "swp_auto_fit", True)),
+        swp_slot_pos=str(getattr(spec, "swp_slot_pos", "page")),
+        lm_context="bixt" if arch == "e31_bixt" else "page_bidir",
+        lm_window=int(spec.lm_window),
+        lm_stride=int(spec.lm_stride),
+        lm_latents=int(spec.lm_latents),
+        lm_latent_dim=int(spec.lm_latent_dim),
+        lm_heads=int(spec.lm_heads),
+        lm_writer_dim=int(spec.lm_writer_dim),
+        lm_enc_layers=int(spec.lm_enc_layers),
+        lm_rounds=lm_rounds,
+        lm_competition=bool(spec.lm_competition),
+        lm_null_latent=bool(spec.lm_null_latent),
+        lm_reader_tokens=int(spec.lm_reader_tokens),
+        lm_addr=str(getattr(spec, "lm_addr", "window_start")),
+        lm_slot_pos=str(getattr(spec, "lm_slot_pos", "read")),
+        slot_pos_ref=int(getattr(spec, "slot_pos_ref", 2048)),
         pad_token_id=pad_id,
         bos_token_id=bos_id,
         eos_token_id=eos_id,
@@ -224,13 +302,19 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
 
 
 def arch_cache(arch: str, spec: ArchSpec, seq_len: int) -> dict:
+    arch, spec = resolve_arch(arch, spec)
     n_layers = spec.pre_layers + spec.global_layers + spec.stack_layers
     glob = 0 if arch == "e18_local" else spec.global_layers
     if arch == "e18_local":
         n_layers = spec.pre_layers + spec.global_layers + spec.stack_layers
         glob = 0
     compress_ratio = spec.message_compress_ratio if arch == "e21" else 1
-    if arch == "e30":
+    if arch in E31_ARCHES:
+        from nn.latent_memory import lm_geometry
+
+        geo = lm_geometry(spec, seq_len)
+        compress_ratio = max(float(seq_len) / max(geo.n_slots, 1), 1e-6)
+    if arch in SWP_ARCHES:
         geo = swp_geometry(
             SimpleNamespace(
                 swp_bank_size=int(getattr(spec, "swp_bank_size", 32) or 32),
@@ -242,7 +326,7 @@ def arch_cache(arch: str, spec: ArchSpec, seq_len: int) -> dict:
                 swp_query_dim=int(getattr(spec, "swp_query_dim", 0) or 0),
                 num_attention_heads=max(1, spec.hidden // max(spec.head_dim, 1)),
                 head_dim=spec.head_dim,
-                token_embedding_dim=min(32, spec.hidden),
+                token_embedding_dim=int(spec.token_embedding_dim) or min(32, spec.hidden),
             ),
             seq_len,
         )

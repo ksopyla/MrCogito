@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-09-24 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-10-01 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,6 +20,16 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-10-01 — E31 chosen; E30 parked.** The E30 vs E31 limits study ([E31b](../experiments_specs/ahead/E31b_e30_vs_e31_limits.md),
+  [interactive report](../3_Evaluations_and_Baselines/e31b_memory_study_report.html)) closed in favour of
+  E31. Its stateful latents keep lookup and decoy retrieval to 128k, and the 4-hop chain only transfers in
+  length with E31 plus the order code. E30 is parked: no further E30 runs for now, but the code stays in
+  case we return to it as a cheap writer. **Focus: explore E31 further.**
+  - Reasoning over the latents: one read does not do multi-hop. The query-side loop ([E33](../experiments_specs/ahead/E33_iterative_concept_reads.md))
+    gave no gain; the latent-side loop and answer-side scratchpad are next.
+  - More tokens per latent, toward 1M context: the *Cramming 1568 tokens into a single vector* direction
+    ([arXiv 2502.13063](https://arxiv.org/abs/2502.13063)). Planned as a next experiment; it feeds the coarse
+    level of [E32](../experiments_specs/ahead/E32_two_level_concept_memory.md).
 - **2026-09-24 — Capability suite (the standard exams).** Every new architecture now runs
   the same graded exams (L0 learns at all … L4 multi-step reasoning, L5 language-like
   noise, L6 stretch) at 5M / 10M / 30M / 50M on Odra / Polonez, is scored against the

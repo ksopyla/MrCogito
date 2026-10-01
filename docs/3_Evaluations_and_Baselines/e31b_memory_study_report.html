@@ -1,0 +1,674 @@
+<meta charset="utf-8">
+<title>Two Memories, Long Books</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: a lab notebook — one reading column (~68ch) with wide figures that break out to ~1040px. */
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --ink: #111827;
+  --ink-2: #4b5563;
+  --ink-3: #6b7280;
+  --rule: #e2e5ea;
+  --grid: #eceef2;
+  --accent: #1f5fae;
+  --tint: #eaf1fb;
+  --s-e31: #2a78d6;   /* E31 fixed        (slot 1 blue)   */
+  --s-e30: #eb6834;   /* E30 fixed        (slot 2 orange) */
+  --s-m1:  #1baf7a;   /* E31 one entry    (slot 3 aqua)   */
+  --s-ord: #c2477a;   /* E31 + order code (slot 5 magenta, darkened for contrast) */
+  --s-dense: #8a8d94; /* dense reference  (neutral) */
+  --good: #1e7d4f; --warn: #a86400; --bad: #b3261e;
+  --good-bg: #e6f4ec; --warn-bg: #fdf1dc; --bad-bg: #fbe7e5; --na-bg: #f0f1f3;
+  --tok-fact: #d7e7fb; --tok-decoy: #fde2d4; --tok-q: #fff0b8; --tok-a: #d4f2e4; --tok-hop: #e9ddf7;
+  --f-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121418; --panel: #1a1d22; --ink: #eef0f3; --ink-2: #b7bcc5; --ink-3: #8c929c; --rule: #2c3038; --grid: #262a31;
+  --accent: #6aa7ef; --tint: #1b2a3d;
+  --s-e31: #3987e5; --s-e30: #e0703f; --s-m1: #25b583; --s-ord: #de6c9a; --s-dense: #8d9098;
+  --good: #5cc98f; --warn: #e3a948; --bad: #f08a80; --good-bg: #16301f; --warn-bg: #33270f; --bad-bg: #3a1a18; --na-bg: #22252b;
+  --tok-fact: #1d3553; --tok-decoy: #4a2819; --tok-q: #4a3f10; --tok-a: #173d2d; --tok-hop: #33264a;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #121418; --panel: #1a1d22; --ink: #eef0f3; --ink-2: #b7bcc5; --ink-3: #8c929c; --rule: #2c3038; --grid: #262a31;
+  --accent: #6aa7ef; --tint: #1b2a3d;
+  --s-e31: #3987e5; --s-e30: #e0703f; --s-m1: #25b583; --s-ord: #de6c9a; --s-dense: #8d9098;
+  --good: #5cc98f; --warn: #e3a948; --bad: #f08a80; --good-bg: #16301f; --warn-bg: #33270f; --bad-bg: #3a1a18; --na-bg: #22252b;
+  --tok-fact: #1d3553; --tok-decoy: #4a2819; --tok-q: #4a3f10; --tok-a: #173d2d; --tok-hop: #33264a;
+  color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.6 var(--f-body); padding-inline: 16px; padding-block: 0 72px; }
+.wrap { max-width: 1040px; margin: 0 auto; }
+.col { max-width: 68ch; }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; letter-spacing: -0.005em; margin: 0; }
+h1 { font-size: clamp(2rem, 5vw, 3.1rem); line-height: 1.05; font-weight: 700; }
+h2 { font-size: 1.7rem; line-height: 1.15; font-weight: 600; margin-top: 64px; }
+h3 { font-size: 1.15rem; font-weight: 600; }
+p { margin: 12px 0; }
+.eyebrow { font: 600 0.75rem/1 var(--f-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.lede { font-size: 1.15rem; color: var(--ink-2); margin-top: 16px; }
+.muted { color: var(--ink-3); }
+small, .small { font-size: 0.85rem; }
+header.top { padding-block: 48px 8px; }
+nav.toc { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 22px; font-size: 0.9rem; }
+nav.toc a { color: var(--ink-2); text-decoration: none; border-bottom: 1px solid var(--rule); }
+nav.toc a:hover, nav.toc a:focus-visible { color: var(--accent); border-color: var(--accent); }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* verdict strip */
+.verdicts { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-top: 28px; }
+.v { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 16px 18px; min-width: 0; }
+.v .big { font: 700 2.1rem/1 var(--f-display); font-variant-numeric: tabular-nums; }
+.v .lbl { font-size: 0.92rem; color: var(--ink-2); margin-top: 8px; }
+.v .who { font: 600 0.72rem/1 var(--f-mono); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 10px; display: flex; gap: 6px; align-items: center; }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+
+.figure { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; padding: 20px; margin-top: 20px; min-width: 0; }
+.figure .cap { font-size: 0.9rem; color: var(--ink-2); margin-top: 12px; }
+.fig-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 10px; }
+.chart { width: 100%; overflow-x: auto; }
+.chart svg { display: block; width: 100%; height: auto; min-width: 520px; }
+.two .chart svg { min-width: 340px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.85rem; color: var(--ink-2); margin-top: 10px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 18px; height: 3px; border-radius: 2px; display: inline-block; }
+
+/* segmented controls */
+.seg { display: inline-flex; flex-wrap: wrap; gap: 4px; background: var(--bg); border: 1px solid var(--rule); border-radius: 8px; padding: 3px; }
+.seg button { font: 500 0.85rem var(--f-body); color: var(--ink-2); background: transparent; border: 0; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--rule); }
+.seg button:hover { color: var(--ink); }
+
+/* two-column blocks */
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.two > * { min-width: 0; }
+
+/* architecture diagram */
+.diagram svg { width: 100%; height: auto; min-width: 640px; display: block; }
+.diagram { overflow-x: auto; }
+.dg-box { fill: var(--panel); stroke: var(--rule); stroke-width: 1.5; }
+.dg-e30 { fill: color-mix(in srgb, var(--s-e30) 12%, var(--panel)); stroke: var(--s-e30); stroke-width: 1.5; }
+.dg-e31 { fill: color-mix(in srgb, var(--s-e31) 12%, var(--panel)); stroke: var(--s-e31); stroke-width: 1.5; }
+.dg-mem { fill: var(--tint); stroke: var(--accent); stroke-width: 1.5; }
+.dg-t { fill: var(--ink); font: 600 13px var(--f-body); }
+.dg-s { fill: var(--ink-2); font: 12px var(--f-body); }
+.dg-l { stroke: var(--ink-3); stroke-width: 1.5; fill: none; }
+.dg-arrow { fill: var(--ink-3); }
+
+/* exam viewer */
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; }
+.tabs button { font: 500 0.88rem var(--f-body); border: 1px solid var(--rule); background: var(--panel); color: var(--ink-2); border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+.tabs button[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.book { font: 13px/1.9 var(--f-mono); word-break: break-all; background: var(--bg); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; margin-top: 14px; color: var(--ink-3); }
+.book .f { background: var(--tok-fact); color: var(--ink); border-radius: 3px; padding: 1px 2px; }
+.book .d { background: var(--tok-decoy); color: var(--ink); border-radius: 3px; padding: 1px 2px; }
+.book .h { background: var(--tok-hop); color: var(--ink); border-radius: 3px; padding: 1px 2px; }
+.book .q { background: var(--tok-q); color: var(--ink); border-radius: 3px; padding: 1px 2px; font-weight: 600; }
+.book .a { background: var(--tok-a); color: var(--ink); border-radius: 3px; padding: 1px 2px; font-weight: 600; }
+.book .gap { color: var(--ink-3); font-style: italic; }
+.keyrow { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.8rem; color: var(--ink-2); margin-top: 8px; }
+.keyrow b { font: 600 0.75rem var(--f-mono); padding: 1px 6px; border-radius: 3px; color: var(--ink); }
+.exam-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 14px; }
+.exam-meta > div { min-width: 0; }
+.exam-meta h4 { margin: 0 0 4px; font: 600 0.75rem var(--f-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.exam-meta p { margin: 0; font-size: 0.95rem; }
+
+/* capability grid */
+.tbl { overflow-x: auto; margin-top: 16px; }
+table.cap { border-collapse: separate; border-spacing: 4px; width: 100%; min-width: 760px; font-size: 0.88rem; }
+table.cap th { font: 600 0.8rem var(--f-body); text-align: left; color: var(--ink-2); padding: 6px 8px; vertical-align: bottom; }
+table.cap th .dot { margin-right: 6px; }
+table.cap td { border-radius: 6px; padding: 8px 10px; vertical-align: top; }
+table.cap td.task { background: transparent; padding-left: 0; }
+table.cap td.task b { display: block; font-weight: 600; }
+table.cap td.task span { color: var(--ink-3); font-size: 0.82rem; }
+td.g { background: var(--good-bg); } td.w { background: var(--warn-bg); } td.b { background: var(--bad-bg); } td.n { background: var(--na-bg); color: var(--ink-3); }
+td .st { font: 600 0.72rem var(--f-mono); letter-spacing: .04em; text-transform: uppercase; display: block; margin-bottom: 2px; }
+td.g .st { color: var(--good); } td.w .st { color: var(--warn); } td.b .st { color: var(--bad); } td.n .st { color: var(--ink-3); }
+td .num { font-variant-numeric: tabular-nums; }
+
+/* tooltip */
+#tip { position: fixed; pointer-events: none; z-index: 20; background: var(--ink); color: var(--bg); font: 12.5px/1.45 var(--f-body); padding: 8px 10px; border-radius: 6px; max-width: 280px; opacity: 0; transition: opacity .08s; font-variant-numeric: tabular-nums; }
+#tip b { font-weight: 600; }
+.axis text, .lab { fill: var(--ink-3); font: 12px var(--f-body); font-variant-numeric: tabular-nums; }
+.axis line, .axis path { stroke: var(--grid); }
+.chance { stroke: var(--ink-3); stroke-dasharray: 3 4; stroke-width: 1; }
+.chance-t { fill: var(--ink-3); font: 11px var(--f-body); }
+.xhair { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 2 3; }
+
+.callout { border-left: 3px solid var(--accent); background: var(--tint); padding: 12px 16px; border-radius: 0 8px 8px 0; margin-top: 16px; }
+.callout p { margin: 4px 0; }
+ol.next { padding-left: 20px; } ol.next li { margin: 8px 0; }
+.footnote { font-size: 0.82rem; color: var(--ink-3); margin-top: 56px; border-top: 1px solid var(--rule); padding-top: 16px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div id="tip" role="tooltip"></div>
+<div class="wrap">
+
+<header class="top">
+  <div class="eyebrow">MrCogito · memory study · 27–30 September 2026</div>
+  <h1>Two memories, long books: what each one can really do</h1>
+  <p class="lede col">We trained two designs of long-range memory the same way, gave them the same exams, and tested them on books from 1,000 up to 128,000 tokens. This page shows what the exams look like, what each memory can and cannot do, and what it costs.</p>
+  <nav class="toc" aria-label="Sections">
+    <a href="#answer">The short answer</a><a href="#designs">The two designs</a><a href="#exams">The exams</a>
+    <a href="#grid">Capability map</a><a href="#length">How far they reach</a><a href="#compress">How much they compress</a>
+    <a href="#cost">What it costs</a><a href="#reason">Reasoning</a><a href="#metric">A measuring trap</a><a href="#next">What next</a>
+  </nav>
+</header>
+
+<section id="answer">
+  <h2>The short answer</h2>
+  <p class="col">Think of a student reading a very long book for an exam. The student cannot reread the book, only a <b>notebook</b> of short summaries written while reading. Both designs are ways of writing that notebook. A good notebook lets the student answer questions about page 3 while sitting on page 100,000.</p>
+  <div class="verdicts">
+    <div class="v"><div class="who"><span class="dot" style="background:var(--s-m1)"></span>E31, one note per summary</div><div class="big">94%</div><div class="lbl">finds one fact hidden in a 128k-token book (trained on books up to 16k; the best seed). E30 finds it 59–74% of the time.</div></div>
+    <div class="v"><div class="who"><span class="dot" style="background:var(--s-ord)"></span>E31 with an order code</div><div class="big">58–75%</div><div class="lbl">follows a 4-step chain of facts in a 128k book after training only on 2k books (3 of 3 seeds). E30 only manages it at its training length.</div></div>
+    <div class="v"><div class="who"><span class="dot" style="background:var(--s-e30)"></span>E30</div><div class="big">4% vs 20%</div><div class="lbl">share of compute spent writing the notebook: E30 against E31. E30 is the cheaper writer.</div></div>
+    <div class="v"><div class="who"><span class="dot" style="background:var(--ink-3)"></span>Everyone, dense included</div><div class="big">≈ chance</div><div class="lbl">on real multi-step reasoning (a chain hidden among decoy chains). One look at the notebook is not enough to reason.</div></div>
+  </div>
+  <div class="callout col">
+    <p><b>Recommendation.</b> Build the next memory (E32) on E31 with one note per summary plus the order code. Use E30-style notes only as a cheap store of detail. Reasoning over several steps needs a separate mechanism; our first attempt at it did not work.</p>
+  </div>
+</section>
+
+<section id="designs">
+  <h2>The two designs</h2>
+  <p class="col">Both split the book into overlapping pages of 256 tokens and write a small set of notes per page. The question at the end can only see the notes, never the book, so the notebook is the only way to answer. The difference is <i>how</i> the notes are written.</p>
+  <div class="figure diagram" role="img" aria-label="Diagram comparing how E30 and E31 write their notes">
+    <svg viewBox="0 0 960 360" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="dg-arrow"/></marker></defs>
+      <!-- book -->
+      <rect x="20" y="140" width="150" height="80" rx="8" class="dg-box"/>
+      <text x="95" y="172" text-anchor="middle" class="dg-t">The book</text>
+      <text x="95" y="192" text-anchor="middle" class="dg-s">1k … 128k tokens,</text>
+      <text x="95" y="208" text-anchor="middle" class="dg-s">cut into 256-token pages</text>
+      <!-- E30 path -->
+      <path d="M170 165 C 210 165, 210 80, 250 80" class="dg-l" marker-end="url(#ar)"/>
+      <rect x="250" y="40" width="300" height="84" rx="8" class="dg-e30"/>
+      <text x="264" y="64" class="dg-t">E30 · filter the reader's own states</text>
+      <text x="264" y="84" class="dg-s">32 fixed "questions" per page pick words the</text>
+      <text x="264" y="100" class="dg-s">main model already saw (64 tokens of context).</text>
+      <text x="264" y="116" class="dg-s">Cheap: reuses what is computed anyway.</text>
+      <!-- E31 path -->
+      <path d="M170 195 C 210 195, 210 280, 250 280" class="dg-l" marker-end="url(#ar)"/>
+      <rect x="250" y="236" width="300" height="100" rx="8" class="dg-e31"/>
+      <text x="264" y="260" class="dg-t">E31 · read the whole page, then summarise</text>
+      <text x="264" y="280" class="dg-s">A small separate encoder reads each page both ways,</text>
+      <text x="264" y="296" class="dg-s">then 32 note-vectors with their own state write</text>
+      <text x="264" y="312" class="dg-s">what matters. Can link facts inside a page.</text>
+      <text x="264" y="328" class="dg-s">About 5× more compute for the writer.</text>
+      <!-- notebook -->
+      <path d="M550 82 C 600 82, 600 165, 640 165" class="dg-l" marker-end="url(#ar)"/>
+      <path d="M550 286 C 600 286, 600 195, 640 195" class="dg-l" marker-end="url(#ar)"/>
+      <rect x="640" y="130" width="140" height="100" rx="8" class="dg-mem"/>
+      <text x="710" y="160" text-anchor="middle" class="dg-t">The notebook</text>
+      <text x="710" y="180" text-anchor="middle" class="dg-s">1 note per 6 tokens</text>
+      <text x="710" y="196" text-anchor="middle" class="dg-s">(E31 default: 5 per</text>
+      <text x="710" y="212" text-anchor="middle" class="dg-s">summary → 5× bigger)</text>
+      <!-- reader -->
+      <path d="M780 180 L 820 180" class="dg-l" marker-end="url(#ar)"/>
+      <rect x="820" y="140" width="120" height="80" rx="8" class="dg-box"/>
+      <text x="880" y="172" text-anchor="middle" class="dg-t">The question</text>
+      <text x="880" y="192" text-anchor="middle" class="dg-s">looks up the notes</text>
+      <text x="880" y="208" text-anchor="middle" class="dg-s">once, then answers</text>
+    </svg>
+  </div>
+  <div class="two" style="margin-top:16px">
+    <div class="col"><h3>What we fixed first</h3><p>Both designs originally stamped each note with its absolute page number. Trained on 2k books, they looked for facts at "page positions" that do not exist in a 128k book, and fell to chance by 16k. We re-anchored every note to the question instead ("this note is before you"), which made both designs work on longer books. For E30 this change alone lifted it on 32k books from guessing to 62%.</p></div>
+    <div class="col"><h3>Variants on this page</h3><p><span class="dot" style="background:var(--s-e30)"></span> <b>E30</b> — the fixed E30 (question-anchored).<br><span class="dot" style="background:var(--s-e31)"></span> <b>E31</b> — the fixed E31, 5 notes per summary.<br><span class="dot" style="background:var(--s-m1)"></span> <b>E31 · one note</b> — 1 note per summary, same notebook size as E30.<br><span class="dot" style="background:var(--s-ord)"></span> <b>E31 · order code</b> — one note, plus a code that keeps the order of notes.<br><span class="dot" style="background:var(--s-dense)"></span> <b>Dense</b> — rereads every page every time; the expensive reference.</p></div>
+  </div>
+</section>
+
+<section id="exams">
+  <h2>The exams</h2>
+  <p class="col">Each exam is a synthetic book made of four letters (A C G T), with facts planted at random places. Nothing can be memorised: every book is new. Below is a shortened example of each; the real books are 1k–128k tokens and the answers are 8–32 letters long.</p>
+  <div class="figure">
+    <div class="tabs" role="tablist" aria-label="Exam type" id="examTabs"></div>
+    <div class="book" id="book" aria-live="polite"></div>
+    <div class="keyrow">
+      <span><b style="background:var(--tok-fact)">fact</b> planted fact</span>
+      <span><b style="background:var(--tok-decoy)">decoy</b> same shape, wrong</span>
+      <span><b style="background:var(--tok-hop)">link</b> chain step X → Y</span>
+      <span><b style="background:var(--tok-q)">question</b></span>
+      <span><b style="background:var(--tok-a)">answer</b> what the model must write</span>
+      <span class="gap">… = long filler</span>
+    </div>
+    <div class="exam-meta" id="examMeta"></div>
+  </div>
+</section>
+
+<section id="grid">
+  <h2>Capability map</h2>
+  <p class="col">The best version of each design on each exam, scored on the first answer letter (see <a href="#metric">the measuring trap</a>). Guessing scores 25%. Green means it passes (75% or more), amber partly, red fails.</p>
+  <div class="figure tbl">
+    <table class="cap" id="capTable">
+      <thead><tr><th></th>
+        <th><span class="dot" style="background:var(--s-e30)"></span>E30</th>
+        <th><span class="dot" style="background:var(--s-e31)"></span>E31</th>
+        <th><span class="dot" style="background:var(--s-m1)"></span>E31 · one note</th>
+        <th><span class="dot" style="background:var(--s-ord)"></span>E31 · order code</th>
+        <th><span class="dot" style="background:var(--s-dense)"></span>Dense</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="cap small muted">"Beyond training" means tested on books far longer than the ones it learned on. Numbers are single-seed unless a range is shown.</p>
+  </div>
+</section>
+
+<section id="length">
+  <h2>How far each memory reaches</h2>
+  <p class="col">Accuracy (first answer letter) as the book grows. The dotted line is guessing. Hover a point for its value.</p>
+  <div class="figure">
+    <div class="fig-head">
+      <div class="seg" role="group" aria-label="Exam" id="lenExam"></div>
+      <div class="seg" role="group" aria-label="Training" id="lenTrain"></div>
+    </div>
+    <div class="chart" id="lenChart"></div>
+    <div class="legend" id="lenLegend"></div>
+    <p class="cap" id="lenCap"></p>
+  </div>
+</section>
+
+<section id="compress">
+  <h2>How much can one note hold?</h2>
+  <p class="col">The key question for a million-token memory: how many tokens can one note summarise before facts get lost? Each dot is one training run (seed), on a 1k book. More tokens per note means a smaller, cheaper notebook.</p>
+  <div class="figure">
+    <div class="fig-head"><div class="seg" role="group" aria-label="Exam" id="cmpExam"></div></div>
+    <div class="chart" id="cmpChart"></div>
+    <div class="legend" id="cmpLegend"></div>
+    <p class="cap" id="cmpCap"></p>
+  </div>
+  <div class="two" style="margin-top:4px">
+    <div class="col"><h3>Why 48 tokens per note failed</h3><p>We tested four explanations. Giving each note 8 read-out slots instead of 1 did not help (30%), and neither did a longer 512-token page (29%). Making each note twice as wide (1024 numbers instead of 512) lifted it from 25% to 84%. The note simply could not hold enough.</p></div>
+    <div class="col"><h3>How E30's ratio was chosen</h3><p>An earlier sweep (22 September) tried 3, 6 and 11 tokens per note; 11 failed, so 6 became the default. That sweep also changed the page length at the same time, so we measured it again here. E30 handles single facts at 12–24 tokens, but never learns to hold 8 facts from scratch at any ratio.</p></div>
+  </div>
+</section>
+
+<section id="cost">
+  <h2>What it costs</h2>
+  <p class="col">Time to read one book on one RTX 3090, as the book grows. Both axes double at each step. Every memory grows linearly (twice the book, twice the time); dense grows about 3.4× per doubling.</p>
+  <div class="two">
+    <div class="figure"><h3>Seconds per book</h3><div class="chart" id="costChart"></div><div class="legend" id="costLegend"></div></div>
+    <div class="figure"><h3>Where the time goes at 128k</h3><div class="chart" id="shareChart"></div>
+      <p class="cap">Extra time on top of a model with no memory, split into the note writer and everything else. E31's own encoder is the structural cost; the notebook size was a setting (5 notes per summary) that costs nothing to fix.</p></div>
+  </div>
+  <p class="col small muted">A million tokens does not fit on one 24 GB card for any design yet: the main model's working memory (not the notebook) needs about 14 GB at 512k. Reading the book in chunks and keeping only the notes will fix that for both.</p>
+</section>
+
+<section id="reason">
+  <h2>Reasoning: one look is not enough</h2>
+  <p class="col">To follow a chain hidden among decoy chains, the model must look up step 1, then use the answer to look up step 2, and so on. We tried letting the question look at the notebook 4 times instead of once, and in a second version we also trained each look to find the right step. Neither helped.</p>
+  <div class="figure">
+    <div class="chart" id="loopChart"></div>
+    <div class="legend" id="loopLegend"></div>
+    <p class="cap">First-letter accuracy at 1k, chance 25%. "Short names" = chain nodes of 8 letters instead of 32, so each node fits in one note. Across ten comparisons the gain from 4 looks was between −2 and +6 points: noise.</p>
+  </div>
+</section>
+
+<section id="metric">
+  <h2>A measuring trap we fell into</h2>
+  <p class="col">We first scored every letter of the answer while showing the model the correct letters before it. When the book contains several candidate answers (several facts, decoys, chain nodes), two correct letters already say <i>which</i> candidate is meant, and the model can copy the rest. That inflates the score. The honest measure is the <b>first letter</b>, which the model must produce with no hints.</p>
+  <div class="figure">
+    <div class="chart" id="trapChart"></div>
+    <div class="legend"><span><i style="background:var(--ink-3)"></i>average over all letters (inflated)</span><span><i style="background:var(--accent)"></i>first letter (honest)</span></div>
+    <p class="cap">This overturned one early claim: E31 does not follow the 4-step chain with question-anchored notes (53%, not 96%). With the order code it does, on the honest measure. All numbers on this page are first-letter scores.</p>
+  </div>
+</section>
+
+<section id="next">
+  <h2>What this means, and what comes next</h2>
+  <ol class="next col">
+    <li><b>Build E32, the two-level memory.</b> Detailed notes (one per 6 tokens) plus a coarse index on top (one wide note per ~48 tokens). The question checks the index first, then reads only the relevant pages. Use E31-style notes with one note per summary and an order code.</li>
+    <li><b>Solve content and order together.</b> The order code costs single-fact lookup (47–98% at 128k depending on seed, against 94%), and our attempt to keep both in one note (half content, half order) did not beat either. Separate channels are the next thing to try.</li>
+    <li><b>New reasoning mechanism (E33, second try).</b> Instead of looking at the notebook more times, let the fetched notes exchange information with each other before answering, or let the model write intermediate steps as tokens.</li>
+    <li><b>Read in chunks</b> so a million-token book fits on one GPU.</li>
+  </ol>
+  <p class="footnote">Setup: 30M-parameter models (hidden size 960, 4 layers), identical training for every design, 256-token local window so the notebook is the only long-range path. Length curriculum: 2k, then 8k, then 16k tokens. 64–256 test books per point. Full tables and every run: the E31b study spec in the repository. A server went offline mid-study; its finished results were kept and the lost runs were repeated on the other server.</p>
+</section>
+
+</div>
+
+<script>
+(function () {
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const tip = document.getElementById("tip");
+  function showTip(html, ev) { tip.innerHTML = html; tip.style.opacity = 1; moveTip(ev); }
+  function moveTip(ev) { const x = Math.min(ev.clientX + 14, window.innerWidth - 290); tip.style.left = x + "px"; tip.style.top = (ev.clientY + 14) + "px"; }
+  function hideTip() { tip.style.opacity = 0; }
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (t, a = {}, parent) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); if (parent) parent.appendChild(e); return e; };
+  const COL = { e30: "--s-e30", e31: "--s-e31", m1: "--s-m1", ord: "--s-ord", dense: "--s-dense" };
+  const NAME = { e30: "E30", e31: "E31", m1: "E31 · one note", ord: "E31 · order code", dense: "Dense" };
+  const fmtL = L => L >= 1024 ? (L / 1024) + "k" : String(L);
+
+  /* ---------------- exam viewer ---------------- */
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const letters = n => Array.from({ length: n }, () => "ACGT"[Math.floor(rnd() * 4)]).join("");
+  const fill = n => `<span>${letters(n)}</span>`;
+  const gap = `<span class="gap"> … </span>`;
+  const f = t => `<span class="f">${t}</span>`, d = t => `<span class="d">${t}</span>`, h = t => `<span class="h">${t}</span>`;
+  const q = t => `<span class="q">${t}</span>`, a = t => `<span class="a">${t}</span>`;
+  function exams() {
+    seed = 11;
+    const k1 = "GAT", v1 = "CCATGTAAGC";
+    const E = [];
+    E.push({ id: "lookup", name: "Find one fact", book: fill(22) + gap + fill(8) + f(`◆${k1} ${v1}`) + fill(10) + gap + fill(24) + q(` ?${k1} `) + a(v1),
+      tests: "Can the notebook keep one fact and hand it back when asked, from anywhere in the book?",
+      hard: "The fact is 36 tokens among up to 128,000 random ones. The answer is 32 letters.",
+      found: "Both designs learn it. On a 128k book E31 with one note scores 94%, E30 59–74%." });
+    const keys = ["CAGT", "TTGA", "GCAA", "ACTG"], vals = ["GGATCCAT", "TCAAGTCG", "ATGGCATC", "CTTAGGCA"];
+    E.push({ id: "recall", name: "Remember many facts", book: fill(10) + f(`◆${keys[0]} ${vals[0]}`) + fill(6) + gap + f(`◆${keys[1]} ${vals[1]}`) + fill(8) + gap + f(`◆${keys[2]} ${vals[2]}`) + fill(5) + f(`◆${keys[3]} ${vals[3]}`) + gap + fill(12) + q(` ?${keys[2]} `) + a(vals[2]),
+      tests: "8 or 16 facts are planted. The notebook does not know which one will be asked, so it must keep all of them.",
+      hard: "Capacity: 8 facts × 64 bits must survive compression, and the right one must be picked.",
+      found: "Once trained on 8k books too, both hold 8 facts at 128k (E30 94%, E31 one note 95%). With 16 facts E31 leads (91–92% vs 88%)." });
+    E.push({ id: "decoy", name: "Fact among lookalikes", book: fill(8) + d(`✕TGC ACGGTTCA`) + fill(6) + gap + d(`✕CAT GTTACGGA`) + fill(5) + f(`◆GAT ${v1}`) + gap + d(`✕AAC TTGCAGCT`) + fill(9) + gap + q(" ?◆ ") + a(v1),
+      tests: "One real fact hides among 8 decoys of exactly the same shape. Only a small marker tells them apart.",
+      hard: "Picking signal over noise: the note must keep the marker, not just the content.",
+      found: "E31 with one note keeps 89% at 128k; E30 falls to 31% by 16k." });
+    E.push({ id: "chain", name: "Follow a chain (in order)", book: fill(8) + h("→AGC TTG") + fill(4) + gap + h("→TTG CAA") + fill(6) + gap + h("→CAA GGT") + fill(3) + h("→GGT ATC") + gap + fill(10) + q(" ?AGC ") + a("ATC"),
+      tests: "Four links A→B, B→C, C→D, D→E appear in reading order. Given A, name E.",
+      hard: "Four dependent lookups. Because the links are in order, keeping track of order also works.",
+      found: "Only E31 with the order code keeps it on long books (58–75% at 128k from 2k training). E30 works only at the book length it trained on." });
+    E.push({ id: "pchain", name: "Hidden chain (real reasoning)", book: fill(6) + h("→CGA TAC") + fill(4) + h("→AGC TTG") + gap + h("→TAC GGA") + fill(5) + h("→TTG CAA") + gap + h("→GGA CCT") + fill(4) + h("→CAA GGT") + gap + fill(8) + q(" ?AGC ") + a("GGT"),
+      tests: "The real chain is shuffled among 3 decoy chains of the same length. Only the start node in the question says which chain to follow.",
+      hard: "Needs step-by-step reasoning: find A→B, then use B to find B→C, and so on.",
+      found: "Nobody solves it: both memories and dense are near guessing (25–44%), even on 1k books. Looking at the notebook 4 times did not help." });
+    E.push({ id: "unique", name: "The fact that appears once", book: fill(6) + f("◆TCA GGATTC") + fill(4) + f("◆ACG CTTAGA") + gap + f("◆TCA GGATTC") + fill(5) + f("◆GTT AACGTC") + gap + f("◆ACG CTTAGA") + fill(6) + q(" ?once ") + a("AACGTC"),
+      tests: "Every fact appears twice except one. There is no key: the model must compare facts with each other.",
+      hard: "Relations between facts, not lookup by content.",
+      found: "Both learn it on 1k books (95–100%) and lose it by 4k (43–54%)." });
+    E.push({ id: "count", name: "Count", book: fill(40) + gap + fill(40) + q(" ?count G mod 4 ") + a("2"),
+      tests: "How many G letters are in the whole book (modulo 4)?",
+      hard: "An aggregate over the whole book, not a single fact.",
+      found: "Nobody can: guessing level for every design, dense included." });
+    return E;
+  }
+  const EX = exams();
+  const tabs = document.getElementById("examTabs");
+  function renderExam(i) {
+    const e = EX[i];
+    [...tabs.children].forEach((b, j) => b.setAttribute("aria-selected", j === i ? "true" : "false"));
+    document.getElementById("book").innerHTML = e.book;
+    document.getElementById("examMeta").innerHTML =
+      `<div><h4>What it tests</h4><p>${e.tests}</p></div><div><h4>Why it is hard</h4><p>${e.hard}</p></div><div><h4>What we found</h4><p>${e.found}</p></div>`;
+  }
+  EX.forEach((e, i) => { const b = document.createElement("button"); b.setAttribute("role", "tab"); b.textContent = e.name; b.onclick = () => renderExam(i); tabs.appendChild(b); });
+  renderExam(0);
+
+  /* ---------------- capability grid ---------------- */
+  const G = (s, t) => ({ c: "g", s, t }), W = (s, t) => ({ c: "w", s, t }), B = (s, t) => ({ c: "b", s, t }), N = (s, t) => ({ c: "n", s, t });
+  const ROWS = [
+    ["Find one fact", "128k book", [W("partly", "59–74%"), G("yes", "80–83%"), G("yes", "94% (1 of 2 seeds learned)"), W("seed-dependent", "47–98%"), B("only short books", "98% at 1k → 70% at 2k")]],
+    ["Remember 8 facts", "128k book", [G("yes", "94%"), W("fades", "72%"), G("yes", "95%"), N("not tested", "—"), B("only short books", "100% at 1k → 34% at 2k")]],
+    ["Remember 16 facts", "128k book", [G("yes", "88%"), G("yes", "92%"), G("yes", "91%"), N("not tested", "—"), B("only short books", "95% at 1k → 23% at 2k")]],
+    ["Fact among 8 lookalikes", "beyond training", [B("no", "31% at 128k"), W("to 16k", "94% → 33%"), G("yes", "89% at 128k"), N("not tested", "—"), W("to 2k", "98% at 1k → 86% at 2k")]],
+    ["4-step chain, in order", "beyond training", [B("training length only", "100% → 27–33%"), B("no", "≈ 50–59%"), B("no", "≈ 50%"), G("yes", "58–84% at 128k"), B("training length only", "99% → chance")]],
+    ["The fact that appears once", "beyond training", [B("to 1k only", "100% → 43%"), B("to 1k only", "92% → 49%"), N("not tested", "—"), N("not tested", "—"), W("to 2k", "100% at 1k → 92% at 2k")]],
+    ["Hidden chain (reasoning)", "even at training length", [B("no", "27–35%"), B("no", "25–44%"), B("no", "36–44%"), N("not tested", "—"), B("no", "39–44%")]],
+    ["Counting", "even at training length", [B("no", "chance"), B("no", "chance"), B("no", "chance"), N("not tested", "—"), B("no", "chance")]],
+    ["Learns from scratch", "standard exam suite", [B("unreliable", "not ready"), G("reliable", "all seeds"), W("mostly", "misses some seeds"), N("not tested", "—"), W("mostly", "missed 1 of 3 at 2k")]],
+    ["Writer cost", "share of compute", [G("cheap", "4%"), W("costly", "20%"), W("costly", "21%"), W("costly", "≈ 21%"), B("quadratic", "7× E30 at 128k")]],
+  ];
+  const tb = document.querySelector("#capTable tbody");
+  ROWS.forEach(([task, sub, cells]) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="task"><b>${task}</b><span>${sub}</span></td>` +
+      cells.map(c => `<td class="${c.c}"><span class="st">${c.s}</span><span class="num">${c.t}</span></td>`).join("");
+    tb.appendChild(tr);
+  });
+
+  /* ---------------- line chart helper ---------------- */
+  function lineChart(host, { xs, series, yMin = 0, yMax = 100, chance = 25, xFmt = fmtL, logY = false, yFmt = v => v + "%", yTicks, height = 330, yLabel = "" }) {
+    host.innerHTML = "";
+    const W0 = 760, H0 = height, m = { l: 52, r: 18, t: 16, b: 38 };
+    const svg = el("svg", { viewBox: `0 0 ${W0} ${H0}`, role: "img", "aria-label": yLabel || "chart" }, host);
+    const X = i => m.l + i * (W0 - m.l - m.r) / (xs.length - 1);
+    const Y = v => logY ? m.t + (Math.log(yMax) - Math.log(v)) / (Math.log(yMax) - Math.log(yMin)) * (H0 - m.t - m.b)
+                        : m.t + (yMax - v) / (yMax - yMin) * (H0 - m.t - m.b);
+    const ax = el("g", { class: "axis" }, svg);
+    (yTicks || [0, 25, 50, 75, 100]).forEach(v => {
+      el("line", { x1: m.l, x2: W0 - m.r, y1: Y(v), y2: Y(v) }, ax);
+      const t = el("text", { x: m.l - 8, y: Y(v) + 4, "text-anchor": "end" }, ax); t.textContent = yFmt(v);
+    });
+    xs.forEach((L, i) => { const t = el("text", { x: X(i), y: H0 - 14, "text-anchor": "middle" }, ax); t.textContent = xFmt(L); });
+    if (chance != null) {
+      el("line", { x1: m.l, x2: W0 - m.r, y1: Y(chance), y2: Y(chance), class: "chance" }, svg);
+      const t = el("text", { x: W0 - m.r, y: Y(chance) - 6, "text-anchor": "end", class: "chance-t" }, svg); t.textContent = "guessing";
+    }
+    series.forEach(s => {
+      const c = css(COL[s.key] || s.color);
+      if (s.band) {
+        const pts = []; s.band[1].forEach((v, i) => v != null && pts.push(`${X(i)},${Y(v)}`));
+        for (let i = s.band[0].length - 1; i >= 0; i--) if (s.band[0][i] != null) pts.push(`${X(i)},${Y(s.band[0][i])}`);
+        el("polygon", { points: pts.join(" "), fill: c, "fill-opacity": 0.14, stroke: "none" }, svg);
+      }
+      const P = s.data.map((v, i) => v == null ? null : [X(i), Y(v)]).filter(Boolean);
+      if (P.length > 1) el("polyline", { points: P.map(p => p.join(",")).join(" "), fill: "none", stroke: c, "stroke-width": s.w || 2, "stroke-dasharray": s.dash || "", "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+      s.data.forEach((v, i) => { if (v != null) el("circle", { cx: X(i), cy: Y(v), r: 4, fill: c, stroke: css("--panel"), "stroke-width": 2 }, svg); });
+    });
+    // hover layer
+    const xh = el("line", { y1: m.t, y2: H0 - m.b, class: "xhair", opacity: 0 }, svg);
+    const hit = el("rect", { x: m.l, y: m.t, width: W0 - m.l - m.r, height: H0 - m.t - m.b, fill: "transparent" }, svg);
+    hit.addEventListener("mousemove", ev => {
+      const r = svg.getBoundingClientRect(), sx = (ev.clientX - r.left) * W0 / r.width;
+      const i = Math.max(0, Math.min(xs.length - 1, Math.round((sx - m.l) / ((W0 - m.l - m.r) / (xs.length - 1)))));
+      xh.setAttribute("x1", X(i)); xh.setAttribute("x2", X(i)); xh.setAttribute("opacity", 1);
+      const rows = series.filter(s => s.data[i] != null).map(s => `<span style="color:${css(COL[s.key] || s.color)}">●</span> ${s.name}: <b>${yFmt(s.data[i])}</b>${s.band && s.band[0][i] != null ? ` <span style="opacity:.75">(seeds ${s.band[0][i]}–${s.band[1][i]})</span>` : ""}`);
+      showTip(`<b>${xFmt(xs[i])} tokens</b><br>${rows.length ? rows.join("<br>") : "no measurement here"}`, ev);
+    });
+    hit.addEventListener("mouseleave", () => { xh.setAttribute("opacity", 0); hideTip(); });
+    return svg;
+  }
+  function legend(host, items) {
+    host.innerHTML = items.map(s => `<span><i style="background:${css(COL[s.key] || s.color)}${s.dash ? ";background:repeating-linear-gradient(90deg," + css(COL[s.key] || s.color) + " 0 4px,transparent 4px 7px)" : ""}"></i>${s.name}</span>`).join("");
+  }
+  function segmented(host, opts, onPick, init = 0) {
+    host.innerHTML = "";
+    opts.forEach((o, i) => { const b = document.createElement("button"); b.textContent = o; b.setAttribute("aria-pressed", i === init ? "true" : "false");
+      b.onclick = () => { [...host.children].forEach(x => x.setAttribute("aria-pressed", "false")); b.setAttribute("aria-pressed", "true"); onPick(i); }; host.appendChild(b); });
+  }
+
+  /* ---------------- length chart ---------------- */
+  const L7 = [2048, 4096, 8192, 16384, 32768, 65536, 131072], L8 = [1024, ...L7];
+  const LEN = {
+    "Find one fact": {
+      xs: L7, train: ["after 8k + 16k training", "trained on 2k only"],
+      sets: [
+        [{ key: "e30", name: NAME.e30, data: [83, 94, 98, 98, 98, 75, 59] }, { key: "e31", name: NAME.e31, data: [100, null, 100, null, 99, null, 80] }, { key: "m1", name: NAME.m1, data: [98, 95, 98, 100, 97, 98, 94] }],
+        [{ key: "e30", name: NAME.e30, data: [98, null, 73, null, 38, null, 25] }, { key: "e31", name: NAME.e31, data: [100, null, 100, null, 88, null, 36] }, { key: "m1", name: NAME.m1, data: [99, null, 96, null, 94, null, 86] }]],
+      cap: ["After training on 2k, then 8k, then 16k books. E31 with one note stays above 94% out to 128k. Seed 1 shown; the other E30 seed reached 74% at 128k, the other E31 seed 83%.",
+            "Trained on 2k books only. Without the longer training stages every design fades, E30 fastest. E31 with one note still holds 86% at 128k."] },
+    "Remember 8 facts": {
+      xs: L7, train: ["after 1k + 8k training"],
+      sets: [[{ key: "e30", name: NAME.e30, data: [95, 91, 95, 94, 98, 95, 94] }, { key: "e31", name: NAME.e31, data: [95, 97, 95, 95, 97, 88, 72] }, { key: "m1", name: NAME.m1, data: [89, 97, 92, 94, 98, 98, 95] }]],
+      cap: ["With one 8k training stage E30 and E31 with one note tie at 128k. E31 with 5 notes per summary dilutes on the longest books (72%). Seed 1."] },
+    "Remember 16 facts": {
+      xs: L7, train: ["after 1k + 8k training"],
+      sets: [[{ key: "e30", name: NAME.e30, data: [89, 80, 86, 89, 88, 81, 88] }, { key: "e31", name: NAME.e31, data: [94, 94, 100, 98, 97, 95, 92] }, { key: "m1", name: NAME.m1, data: [88, 97, 97, 95, 95, 97, 91] }]],
+      cap: ["With 16 facts to keep, both E31 variants stay ahead of E30 at almost every length. Seed 1."] },
+    "Fact among lookalikes": {
+      xs: L8, train: ["trained on 1k only"],
+      sets: [[{ key: "e30", name: NAME.e30, data: [96, null, 75, null, 26, null, null, 31] }, { key: "e31", name: NAME.e31, data: [100, null, 100, null, 94, null, null, 33] }, { key: "m1", name: NAME.m1, data: [100, null, 99, null, 98, null, null, 89] }]],
+      cap: ["One real fact among 8 decoys, trained on 1k books only. E31 with one note keeps telling them apart on a 128k book (89%). E30 loses it by 16k."] },
+    "4-step chain": {
+      xs: L7, train: ["trained on 2k only", "with an 8k stage"],
+      sets: [
+        [{ key: "e30", name: NAME.e30, data: [100, null, 25, null, 29, null, 45] }, { key: "e31", name: NAME.e31, data: [59, null, null, null, 44, null, 32] },
+         { key: "ord", name: NAME.ord + " (median of 3 seeds)", data: [98, 89, 91, 83, 77, 78, 59], band: [[92, 88, 78, 83, 70, 72, 58], [100, 95, 92, 86, 88, 83, 75]], w: 3 }],
+        [{ key: "e30", name: NAME.e30, data: [26, null, 92, null, 30, null, 34] }, { key: "e31", name: NAME.e31, data: [51, null, null, null, 48, null, 37] }, { key: "ord", name: NAME.ord, data: [100, 94, 95, 88, 83, 88, 84], w: 3 }]],
+      cap: ["Trained on 2k books only. E30 solves the chain at 2k and nowhere else. E31 without an order code never solves it (≈ 50%: it narrows to 2 candidates). With the order code it holds 58–75% at 128k; the band shows the 3 seeds.",
+            "With one extra 8k stage, E30 moves its solution to 8k and loses it at 2k: it learns positions, not the chain. E31 with the order code reaches 84% at 128k."] },
+  };
+  let lenKey = "Find one fact", lenT = 0;
+  function drawLen() {
+    const d = LEN[lenKey], s = d.sets[Math.min(lenT, d.sets.length - 1)];
+    lineChart(document.getElementById("lenChart"), { xs: d.xs, series: s, yLabel: "first-letter accuracy vs book length" });
+    legend(document.getElementById("lenLegend"), s);
+    document.getElementById("lenCap").textContent = d.cap[Math.min(lenT, d.cap.length - 1)];
+  }
+  const lenKeys = Object.keys(LEN);
+  segmented(document.getElementById("lenExam"), lenKeys, i => { lenKey = lenKeys[i]; lenT = 0; segmented(document.getElementById("lenTrain"), LEN[lenKey].train, j => { lenT = j; drawLen(); }); drawLen(); });
+  segmented(document.getElementById("lenTrain"), LEN[lenKey].train, j => { lenT = j; drawLen(); });
+  drawLen();
+
+  /* ---------------- compression dot plot ---------------- */
+  const RATIO_X = [6, 12, 24, 48, 64];
+  const CMP = {
+    "Find one fact": {
+      e31: { 6: [99], 12: [58, 53, 100], 24: [54, 44, 23], 48: [25], 64: [25] },
+      e30: { 6: [82], 12: [99, 100, 99], 24: [86, 29, 95], 48: [21], 64: [21] },
+      extra: [{ x: 48, v: 84, label: "E31, twice-wide notes" }, { x: 24, v: 91, label: "E31, 4 read-outs per note (seed 0)" }],
+      cap: "Single fact, 1k book, from scratch. At 6 tokens per note E31 is reliable; at 12–24 some runs learn and some never start. E30 handles 12 tokens well. At 48 both fail unless the note is made twice as wide (84%)." },
+    "Remember 8 facts": {
+      e31: { 6: [94], 12: [86, 21, 88], 24: [27, 27, 22], 48: [23], 64: [18] },
+      e30: { 6: [22], 12: [28, 26, 23], 24: [22, 21, 31], 48: [22], 64: [22] },
+      extra: [],
+      cap: "8 facts, 1k book, from scratch. Only E31 learns this without a lookup warm-up (94% at 6 tokens per note). E30 stays at guessing at every ratio; it needs to learn single-fact lookup first." },
+  };
+  let cmpKey = "Find one fact";
+  function drawCmp() {
+    const host = document.getElementById("cmpChart"); host.innerHTML = "";
+    const W0 = 760, H0 = 320, m = { l: 52, r: 18, t: 16, b: 44 };
+    const svg = el("svg", { viewBox: `0 0 ${W0} ${H0}`, role: "img", "aria-label": "first-letter accuracy vs tokens per note" }, host);
+    const X = i => m.l + (i + 0.5) * (W0 - m.l - m.r) / RATIO_X.length, Y = v => m.t + (100 - v) / 100 * (H0 - m.t - m.b);
+    const ax = el("g", { class: "axis" }, svg);
+    [0, 25, 50, 75, 100].forEach(v => { el("line", { x1: m.l, x2: W0 - m.r, y1: Y(v), y2: Y(v) }, ax); const t = el("text", { x: m.l - 8, y: Y(v) + 4, "text-anchor": "end" }, ax); t.textContent = v + "%"; });
+    RATIO_X.forEach((r, i) => { const t = el("text", { x: X(i), y: H0 - 20, "text-anchor": "middle" }, ax); t.textContent = r + " tokens"; });
+    const t2 = el("text", { x: (W0 + m.l) / 2, y: H0 - 4, "text-anchor": "middle", class: "lab" }, svg); t2.textContent = "tokens summarised by one note (more = smaller notebook)";
+    el("line", { x1: m.l, x2: W0 - m.r, y1: Y(25), y2: Y(25), class: "chance" }, svg);
+    const d = CMP[cmpKey];
+    [["e31", -12], ["e30", 12]].forEach(([k, off]) => {
+      const c = css(COL[k === "e31" ? "m1" : "e30"]);
+      RATIO_X.forEach((r, i) => {
+        const vs = d[k][r] || []; if (!vs.length) return;
+        const med = vs.slice().sort((a, b) => a - b)[Math.floor(vs.length / 2)];
+        el("line", { x1: X(i) + off - 9, x2: X(i) + off + 9, y1: Y(med), y2: Y(med), stroke: c, "stroke-width": 3, "stroke-linecap": "round" }, svg);
+        vs.forEach((v, j) => {
+          const cc = el("circle", { cx: X(i) + off + (j - (vs.length - 1) / 2) * 5, cy: Y(v), r: 5, fill: c, "fill-opacity": 0.85, stroke: css("--panel"), "stroke-width": 2 }, svg);
+          cc.addEventListener("mousemove", ev => showTip(`<b>${k === "e31" ? "E31 · one note" : "E30"}</b>, ${r} tokens per note<br>seed ${j}: <b>${v}%</b>`, ev));
+          cc.addEventListener("mouseleave", hideTip);
+        });
+      });
+    });
+    d.extra.forEach(p => {
+      const i = RATIO_X.indexOf(p.x), c = css("--s-e31");
+      const dm = el("path", { d: `M${X(i) - 12} ${Y(p.v) - 7} l7 7 l-7 7 l-7 -7 z`, fill: "none", stroke: c, "stroke-width": 2 }, svg);
+      dm.addEventListener("mousemove", ev => showTip(`<b>${p.label}</b>, ${p.x} tokens per note: <b>${p.v}%</b>`, ev)); dm.addEventListener("mouseleave", hideTip);
+    });
+    document.getElementById("cmpLegend").innerHTML =
+      `<span><span class="dot" style="background:${css("--s-m1")}"></span>E31 · one note (dots = seeds, bar = median)</span><span><span class="dot" style="background:${css("--s-e30")}"></span>E30</span>` +
+      (d.extra.length ? `<span><svg width="14" height="14" aria-hidden="true"><path d="M7 1 l6 6 l-6 6 l-6 -6 z" fill="none" stroke="${css("--s-e31")}" stroke-width="2"/></svg>E31 fixes tried</span>` : "");
+    document.getElementById("cmpCap").textContent = d.cap;
+  }
+  const cmpKeys = Object.keys(CMP);
+  segmented(document.getElementById("cmpExam"), cmpKeys, i => { cmpKey = cmpKeys[i]; drawCmp(); });
+  drawCmp();
+
+  /* ---------------- cost ---------------- */
+  const CL = [8192, 32768, 131072, 262144, 524288];
+  const COST = [
+    { key: "dense", name: "Dense", data: [0.026, 0.19, 2.29, null, null] },
+    { key: "e31", name: "E31", data: [0.076, 0.114, 0.41, 0.819, 1.64] },
+    { key: "m1", name: "E31 · one note", data: [0.070, 0.106, 0.394, 0.784, 1.57] },
+    { key: "e30", name: "E30", data: [0.063, 0.096, 0.326, 0.649, 1.30] },
+    { color: "--ink-3", key: "local", name: "no memory", data: [0.055, 0.071, 0.276, 0.553, 1.10], dash: "4 4" },
+  ];
+  COL.local = "--ink-3";
+  lineChart(document.getElementById("costChart"), { xs: CL, series: COST, chance: null, logY: true, yMin: 0.02, yMax: 3, yTicks: [0.03, 0.1, 0.3, 1, 3], yFmt: v => v < 0.1 ? v.toFixed(3) + " s" : v < 1 ? v.toFixed(2) + " s" : v.toFixed(1) + " s", height: 300, yLabel: "seconds per book" });
+  legend(document.getElementById("costLegend"), COST);
+  (function share() {
+    const host = document.getElementById("shareChart"); host.innerHTML = "";
+    const rows = [
+      { name: "E30", writer: 0.326 * 0.040, other: 0.326 - 0.276 - 0.326 * 0.040, key: "e30" },
+      { name: "E31 · one note", writer: 0.394 * 0.208, other: 0.394 - 0.276 - 0.394 * 0.208, key: "m1" },
+      { name: "E31", writer: 0.410 * 0.202, other: 0.410 - 0.276 - 0.410 * 0.202, key: "e31" },
+    ];
+    const W0 = 520, H0 = 190, m = { l: 118, r: 70, t: 12, b: 34 }, max = 0.15;
+    const svg = el("svg", { viewBox: `0 0 ${W0} ${H0}`, role: "img", "aria-label": "extra seconds per 128k book" }, host);
+    const X = v => m.l + v / max * (W0 - m.l - m.r), bh = 26, gapY = 20;
+    const ax = el("g", { class: "axis" }, svg);
+    [0, 0.05, 0.1, 0.15].forEach(v => { el("line", { x1: X(v), x2: X(v), y1: m.t, y2: H0 - m.b }, ax); const t = el("text", { x: X(v), y: H0 - 14, "text-anchor": "middle" }, ax); t.textContent = "+" + v.toFixed(2) + " s"; });
+    rows.forEach((r, i) => {
+      const y = m.t + 8 + i * (bh + gapY), c = css(COL[r.key]);
+      const t = el("text", { x: m.l - 10, y: y + bh / 2 + 4, "text-anchor": "end", class: "lab" }, svg); t.textContent = r.name;
+      const a = el("rect", { x: X(0), y, width: X(r.writer) - X(0), height: bh, fill: c, rx: 3 }, svg);
+      const b = el("rect", { x: X(r.writer) + 2, y, width: Math.max(0, X(r.writer + Math.max(r.other, 0)) - X(r.writer) - 2), height: bh, fill: c, "fill-opacity": 0.3, rx: 3 }, svg);
+      const tt = el("text", { x: X(r.writer + Math.max(r.other, 0)) + 6, y: y + bh / 2 + 4, class: "lab" }, svg); tt.textContent = "+" + (r.writer + r.other).toFixed(3) + " s";
+      [a, b].forEach(el2 => { el2.addEventListener("mousemove", ev => showTip(`<b>${r.name}</b> at 128k<br>note writer: <b>${r.writer.toFixed(3)} s</b><br>reading the notes and the rest: <b>${Math.max(r.other, 0).toFixed(3)} s</b>`, ev)); el2.addEventListener("mouseleave", hideTip); });
+    });
+    const lg = document.createElement("div"); lg.className = "legend";
+    lg.innerHTML = `<span><i style="background:var(--ink-2)"></i>writing the notes</span><span><i style="background:var(--ink-2);opacity:.3"></i>reading and the rest</span>`;
+    host.appendChild(lg);
+  })();
+
+  /* ---------------- loop (E33) ---------------- */
+  (function loop() {
+    const host = document.getElementById("loopChart"); host.innerHTML = "";
+    const groups = [
+      { g: "2-step, long names", d: { e30: [37, 37, null], m1: [43, 41, null] } },
+      { g: "3-step, long names", d: { e30: [40, 39, null], m1: [37, 36, null] } },
+      { g: "2-step, short names", d: { e30: [38, 44, 43], m1: [45, 44, 44] } },
+      { g: "3-step, short names", d: { e30: [39, 38, 45], m1: [46, 45, 45] } },
+    ];
+    const kinds = ["1 look", "4 looks", "4 looks, trained per step"];
+    const W0 = 760, H0 = 300, m = { l: 52, r: 18, t: 16, b: 52 };
+    const svg = el("svg", { viewBox: `0 0 ${W0} ${H0}`, role: "img", "aria-label": "hidden chain accuracy with 1 or 4 looks" }, host);
+    const Y = v => m.t + (100 - v) / 100 * (H0 - m.t - m.b);
+    const ax = el("g", { class: "axis" }, svg);
+    [0, 25, 50, 75, 100].forEach(v => { el("line", { x1: m.l, x2: W0 - m.r, y1: Y(v), y2: Y(v) }, ax); const t = el("text", { x: m.l - 8, y: Y(v) + 4, "text-anchor": "end" }, ax); t.textContent = v + "%"; });
+    el("line", { x1: m.l, x2: W0 - m.r, y1: Y(25), y2: Y(25), class: "chance" }, svg);
+    const gw = (W0 - m.l - m.r) / groups.length, bw = 16;
+    groups.forEach((G2, gi) => {
+      const cx = m.l + gw * (gi + 0.5);
+      const t = el("text", { x: cx, y: H0 - 30, "text-anchor": "middle", class: "lab" }, svg); t.textContent = G2.g;
+      ["e30", "m1"].forEach((k, ki) => {
+        const c = css(COL[k]);
+        kinds.forEach((kind, j) => {
+          const v = G2.d[k][j]; if (v == null) return;
+          const x = cx + (ki === 0 ? -1 : 1) * (8 + 0) + (ki === 0 ? -(3 - j) * (bw + 2) : j * (bw + 2));
+          const r = el("rect", { x, y: Y(v), width: bw, height: Y(0) - Y(v), fill: c, "fill-opacity": [1, 0.6, 0.3][j], rx: 3 }, svg);
+          r.addEventListener("mousemove", ev => showTip(`<b>${k === "e30" ? "E30" : "E31 · one note"}</b>, ${G2.g}<br>${kind}: <b>${v}%</b>`, ev));
+          r.addEventListener("mouseleave", hideTip);
+        });
+      });
+    });
+    const lab = el("text", { x: (W0 + m.l) / 2, y: H0 - 8, "text-anchor": "middle", class: "lab" }, svg); lab.textContent = "hidden-chain exam variant (1k books)";
+    document.getElementById("loopLegend").innerHTML =
+      `<span><span class="dot" style="background:${css("--s-e30")}"></span>E30</span><span><span class="dot" style="background:${css("--s-m1")}"></span>E31 · one note</span>` +
+      `<span>bar shade: dark = 1 look · medium = 4 looks · light = 4 looks trained per step</span>`;
+  })();
+
+  /* ---------------- measuring trap (dumbbell) ---------------- */
+  (function trap() {
+    const host = document.getElementById("trapChart"); host.innerHTML = "";
+    const R = [
+      ["E31, 4-step chain (2k)", 96, 53], ["E31 · one note, 4-step chain (2k)", 97, 51], ["E30, 4-step chain (2k)", 97, 100],
+      ["E30, hidden chain (1k)", 89, 33], ["E31, hidden chain (1k)", 92, 44], ["E30, 16 facts (1k)", 85, 61],
+      ["E31, 16 facts (1k)", 97, 93], ["E30 · order code, one fact (2k)", 94, 52], ["E31, fact among lookalikes (1k)", 99, 100],
+    ];
+    const W0 = 760, rowH = 30, m = { l: 250, r: 30, t: 10, b: 34 }, H0 = m.t + m.b + R.length * rowH;
+    const svg = el("svg", { viewBox: `0 0 ${W0} ${H0}`, role: "img", "aria-label": "inflated versus honest accuracy" }, host);
+    const X = v => m.l + v / 100 * (W0 - m.l - m.r);
+    const ax = el("g", { class: "axis" }, svg);
+    [0, 25, 50, 75, 100].forEach(v => { el("line", { x1: X(v), x2: X(v), y1: m.t, y2: H0 - m.b }, ax); const t = el("text", { x: X(v), y: H0 - 12, "text-anchor": "middle" }, ax); t.textContent = v + "%"; });
+    R.forEach(([name, avg, first], i) => {
+      const y = m.t + rowH * (i + 0.5);
+      const t = el("text", { x: m.l - 10, y: y + 4, "text-anchor": "end", class: "lab" }, svg); t.textContent = name;
+      el("line", { x1: X(Math.min(avg, first)), x2: X(Math.max(avg, first)), y1: y, y2: y, stroke: css("--rule"), "stroke-width": 4, "stroke-linecap": "round" }, svg);
+      const a = el("circle", { cx: X(avg), cy: y, r: 6, fill: css("--ink-3"), stroke: css("--panel"), "stroke-width": 2 }, svg);
+      const b = el("circle", { cx: X(first), cy: y, r: 6, fill: css("--accent"), stroke: css("--panel"), "stroke-width": 2 }, svg);
+      [a, b].forEach(c => { c.addEventListener("mousemove", ev => showTip(`<b>${name}</b><br>average over all letters: <b>${avg}%</b><br>first letter: <b>${first}%</b>`, ev)); c.addEventListener("mouseleave", hideTip); });
+    });
+  })();
+
+  window.addEventListener("scroll", hideTip, { passive: true });
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  mq.addEventListener && mq.addEventListener("change", () => location.reload());
+})();
+</script>
