@@ -40,15 +40,12 @@ svg text{fill:var(--text-primary);font-family:inherit}svg .muted{fill:var(--text
 #tip{position:fixed;pointer-events:none;background:var(--surface-1);color:var(--text-primary);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.15);opacity:0;z-index:20;max-width:300px}
 table{border-collapse:collapse;width:100%;font-size:13.5px}th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}
 th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600}
-.chk td:first-child{width:34px}.chk select{font:inherit;font-size:13px;background:var(--surface-1);color:var(--text-primary);border:1px solid var(--line);border-radius:6px;padding:2px 4px}
-.chk input[type=text]{width:100%;font:inherit;font-size:13px;background:var(--surface-1);color:var(--text-primary);border:1px solid var(--line);border-radius:6px;padding:4px 6px}
-textarea{width:100%;min-height:120px;font:13px ui-monospace,Menlo,monospace;background:var(--surface-2);color:var(--text-primary);border:1px solid var(--line);border-radius:8px;padding:8px}
 .note{font-size:12.5px;color:var(--text-secondary)}
 </style>
 <body class="viz-root"><div id="tip"></div><main>
 <div class="kicker">MrCogito · E31 · architecture page · drafted 24 Sep, updated 1 Oct 2026</div>
 <h1>How information flows through the sliding-window latent memory (E31)</h1>
-<p class="sub"><b>1 Oct:</b> E31 is the memory we continue with (E30 parked). The controls start on the <b>best version</b>, described in the box below. Step through the network, toggle the two context arms and the proposed edits, compare with E30 as it was built, and then use the checklist at the bottom to confirm or change each design decision. Weights in the "book view" are <b>illustrative</b> (hand-built to show the mechanism), not trained values. For a token-by-layer view of how the two paths are wired, see <a href="e31_wiring.html">the wiring page</a>.</p>
+<p class="sub"><b>1 Oct:</b> E31 is the memory we continue with (E30 parked). The controls start on the <b>best version</b>, described in the box below. Step through the network, toggle the design options, and compare with E30 as it was built. Weights in the "book view" are <b>illustrative</b> (hand-built to show the mechanism), not trained values. For a token-by-layer view of how the two paths are wired, see <a href="e31_wiring.html">the wiring page</a>.</p>
 
 <!-- ============ best ============ -->
 <h2 style="border-top:0;margin-top:18px">★ The best version (1 Oct 2026)</h2>
@@ -152,12 +149,6 @@ textarea{width:100%;min-height:120px;font:13px ui-monospace,Menlo,monospace;back
 <tr><td>E31a (memory in every upper layer), two-level 1M memory, latent reasoning</td><td><span class="tag t-same">not started</span></td><td>Next: latent reasoning over the memory, then more tokens per latent toward 1M (E32).</td></tr>
 </table></div>
 
-<!-- ============ 5. checklist ============ -->
-<h2>6 · Alignment checklist (24 Sep, historical)</h2>
-<p class="note">This is the 24 Sep alignment checklist, kept as it was; section 0 records what each decision turned into. Pick "agree", "change" or "question" and add a note. The box at the bottom collects your answers into a message you can paste back into the chat.</p>
-<div class="card"><table class="chk" id="chk"><tr><th>#</th><th>Decision in the E31 draft</th><th style="width:120px">Your call</th><th style="width:34%">Note</th></tr></table>
-<p><button class="btn primary" id="collect">Collect my answers</button> <button class="btn" id="copy">Copy</button> <span class="note" id="copied"></span></p>
-<textarea id="out" placeholder="Your answers appear here"></textarea></div>
 </main>
 
 <script>
@@ -357,41 +348,6 @@ function drawMask(){const s=document.getElementById('mask');clear(s);
    hover(r,`<b>${q[0]} → ${k[0]}</b><br>${ok?'allowed':'blocked'}: ${why}`);});});
  el('text',{x:10,y:422,'font-size':11.5,class:'sec'},s,'Purple = memory slots · green = allowed raw read · ✕ = blocked by the exclusive cut');}
 
-/* ---------------- checklist ---------------- */
-const CHECK=[
- 'The writer is a <b>separate branch</b> reading the 128-dim token embeddings, not the main path\'s states.',
- 'The <b>main causal path stays the E18 platform</b> (up-projection, one 16-back local layer, one global read, two local layers). It predicts the answer.',
- 'Token embedding <b>128, hashed n-grams off</b>, and the same for <b>every</b> arm (controls included), so the comparison stays fair.',
- 'Windows <b>256 tokens, stride 192, fixed</b> (never shrunk); tests at 1024 / 2048 / 4096 tokens.',
- 'Windows cover <b>book tokens only</b>; the pooling rule is computed per window (fixes the E30 leak).',
- '<b>Two-way attention inside a window is allowed</b>, because a window is only read after it closes.',
- 'Arm A: <b>2-layer two-way page encoder</b> (width 256), then latents cross-attend (2 rounds).',
- 'Arm B: <b>no encoder</b>, 3 latent↔token rounds (BiXT) with Slot-Attention competition.',
- '<b>32 latents per window</b>, each 512-dim (4× embedding), residual + feed-forward.',
- '<b>8 heads per latent, no averaging</b>: each head writes its own 64-dim slice (up to 8 picks per latent).',
- 'Address = latent ID + window start + learned position prior + position stamp at <b>where it actually read</b>.',
- '<span class="tag t-prop">proposed</span> <b>Competition in both arms</b> (softmax over latents per token, then renormalise), so two latents do not store the same thing.',
- '<span class="tag t-prop">proposed</span> <b>Null latent: optional, default off</b>, tested as an ablation. In text, "noise" depends on the later question.',
- '<span class="tag t-prop">proposed</span> Reader key/value width <b>5 heads × 64 = 320 dims</b> per latent, the same in every arm.',
- '<b>The claim is about text</b>: pick facts out of natural language and separate them from noise. DNA and Glyph are controlled gates, not the target.',
- 'Exam ladder: <b>DNA</b> (exact bits) → <b>Glyph</b> (facts in language-like Markov filler) → <b>text</b> (planted facts in prose + a next-token smoke at 512 tokens).',
- 'In text the memory is read from <b>any position</b>: token t sees the latents of every window that closed before t, not only after one QUERY.',
- 'The main path over the book is <b>kept</b> (it is the text model); in the probes it never reaches the answer, so probe results say nothing about it.',
- 'One global read = <b>single hop</b>. Multi-hop reads, the question-driven fetch and streaming are follow-ups.',
- 'Controls: full model, full read, E30 as built, and a <b>context-only</b> E30 with a 64-token pre-encoder reach.',
- '<b>Coarse-geometry rung</b>: the leading latent arm also at W 512 · 8 latents (≈ 48 tokens per latent, the 1M setting) and two in-between geometries; output = bits vs tokens per latent.',
- 'Planned flavour <b>E31a</b>: read the memory in every upper layer (after E31, with the full read given the same number of reads). 1M target: <b>two-level memory</b> (coarse N/48 read densely + fine pages fetched top-k).',
- 'Claim bar at 1024 tokens, 3 seeds: <b>lookup ≥ 40 of 64 bits</b>, lookalike and chain ≥ 75% of the full read.',
-];
-function buildChecklist(){const t=document.getElementById('chk');CHECK.forEach((c,i)=>{const r=t.insertRow();r.insertCell().textContent=i+1;r.insertCell().innerHTML=c;
- const s=document.createElement('select');['—','agree','change','question'].forEach(o=>{const op=document.createElement('option');op.textContent=o;s.appendChild(op);});r.insertCell().appendChild(s);
- const n=document.createElement('input');n.type='text';n.placeholder='optional note';r.insertCell().appendChild(n);});}
-document.getElementById('collect').onclick=()=>{const rows=[...document.querySelectorAll('#chk tr')].slice(1);const tmp=document.createElement('div');
- const lines=rows.map((r,i)=>{tmp.innerHTML=CHECK[i];const txt=tmp.textContent.replace(/^proposed\s*/,'[proposed] ');const call=r.cells[2].firstChild.value;const note=r.cells[3].firstChild.value.trim();
-  return (call==='—'&&!note)?null:`${i+1}. ${call.toUpperCase()}: ${txt}${note?'\n   note: '+note:''}`;}).filter(Boolean);
- document.getElementById('out').value='E31 alignment answers:\n'+(lines.length?lines.join('\n'):'(nothing selected)');};
-document.getElementById('copy').onclick=()=>{const o=document.getElementById('out');o.select();navigator.clipboard?.writeText(o.value);document.getElementById('copied').textContent='copied';setTimeout(()=>document.getElementById('copied').textContent='',1500);};
-
 /* ---------------- wiring ---------------- */
 document.querySelectorAll('#mode button').forEach(b=>b.onclick=()=>{S.mode=b.dataset.v;document.querySelectorAll('#mode button').forEach(x=>x.classList.toggle('on',x===b));S.lat=ownerOf(S.win);render();});
 document.getElementById('prop').onchange=e=>{S.prop=e.target.checked;S.lat=Math.min(S.lat,K-1);render();};
@@ -402,5 +358,5 @@ document.getElementById('next').onclick=()=>{S.step=(S.step+1)%STAGES.length;ren
 document.getElementById('prev').onclick=()=>{S.step=(S.step-1+STAGES.length)%STAGES.length;render();};
 document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;if(e.key==='ArrowRight')document.getElementById('next').click();if(e.key==='ArrowLeft')document.getElementById('prev').click();});
 function render(){drawPipe();drawDetail();drawBook();drawHeat();drawOwn();drawBudget();drawMask();}
-buildChecklist();render();
+render();
 </script></body>
