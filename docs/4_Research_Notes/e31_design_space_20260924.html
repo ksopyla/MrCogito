@@ -11,6 +11,10 @@
  --surface-0:#121211;--surface-1:#1a1a19;--surface-2:#242422;--line:#3a3935;--text-primary:#fff;--text-secondary:#c3c2b7;--text-muted:#8f8e86;
  --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s7:#9085e9;--good:#5cc47a;--warn:#e0a040;--bad:#ef6b6b;
  --good-bg:#16301f;--warn-bg:#35280f;--bad-bg:#3a1a1a;--info-bg:#15263b;}}
+:root[data-theme="dark"] .viz-root{color-scheme:dark;
+ --surface-0:#121211;--surface-1:#1a1a19;--surface-2:#242422;--line:#3a3935;--text-primary:#fff;--text-secondary:#c3c2b7;--text-muted:#8f8e86;
+ --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s7:#9085e9;--good:#5cc47a;--warn:#e0a040;--bad:#ef6b6b;
+ --good-bg:#16301f;--warn-bg:#35280f;--bad-bg:#3a1a1a;--info-bg:#15263b;}
 *{box-sizing:border-box}body{margin:0;background:var(--surface-0)}
 .viz-root{font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;color:var(--text-primary);background:var(--surface-0);padding:28px 16px 80px}
 main{max-width:1060px;margin:0 auto}
@@ -35,9 +39,23 @@ nav.toc{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;margin:10px 0 0}
 .eq{font:14px ui-monospace,Menlo,monospace;background:var(--surface-2);padding:10px 12px;border-radius:8px;margin:8px 0;overflow:auto}
 </style>
 <body class="viz-root"><div id="tip"></div><main>
-<div class="kicker">MrCogito · design notes before E31 · 24 Sep 2026</div>
+<div class="kicker">MrCogito · design notes before E31 · 24 Sep 2026 · status added 1 Oct 2026</div>
 <h1>Before E31: sharper picks, bandwidth walls, notes as memory, and streaming</h1>
 <p class="sub">Four questions, answered from our own code and runs plus four literature sweeps (≈120 papers, 2016–2026). Each section: the diagnosis, a picture, and what to do.</p>
+<div class="callout good" id="status"><b>Status, 1 Oct 2026: what happened to each recommendation.</b> This note was written before E31 was built. E31 and the E30 vs E31 limits study (E31b) have now run. E31 is the memory we continue with, and E30 is parked.
+<div style="overflow-x:auto"><table style="margin-top:8px">
+<tr><th>Recommendation here</th><th>Outcome</th></tr>
+<tr><td>Diagnose the 26-bit plateau (per-letter accuracy, reach 16 → 48)</td><td><b>Confirmed.</b> It was the salience wall. E30 with a 64-token reach matched E31 at 1–2k.</td></tr>
+<tr><td>Write after context; competition; per-head picks</td><td><b>Built and working.</b> Two-way page encoder, competing latents, heads not averaged. Every answer letter survives.</td></tr>
+<tr><td>Bandwidth: storage is not the wall</td><td><b>Refined.</b> At 6 tokens per latent the memory works to 128k. At 48 tokens per latent the limit <i>is</i> latent capacity: width 512 fails, width 1024 reaches 84 %. The Cramming-1568 result is the next lever.</td></tr>
+<tr><td>Read resolution "later, at C ≈ 10⁵"</td><td><b>Seen at 128k with 5 entries per latent</b> (recall8 falls to 72 %). Fixed by 1 entry per latent (N/6): 95 %.</td></tr>
+<tr><td><i>not in this note</i>: length</td><td><b>New finding.</b> Absolute addresses reach only about 2× the training length. A length-invariant key plus a scaled order code goes to 128k: lookup 94 %, 4-hop in-order chain 84 %.</td></tr>
+<tr><td>Read-side fetch (indexer, top-k pages, teacher KL)</td><td><b>Not built.</b> Moved to E32 (two-level memory).</td></tr>
+<tr><td>Reasoning at read time: 2–4 question-driven hops</td><td><b>Tested as a weight-tied re-read (E33): no gain</b>, with or without per-hop targets. Parallel chains stay at chance, for the dense model too. The follow-up review is <a href="latent_reasoning_review_20261001.html">latent reasoning review (1 Oct)</a>.</td></tr>
+<tr><td>Streaming, carried state, multi-level archive</td><td><b>Not started.</b> 1M runs out of memory for every model; a streaming forward is required.</td></tr>
+<tr><td>Delta-rule page matrix</td><td>Not tested.</td></tr>
+</table></div>
+Current pages: <a href="../3_Evaluations_and_Baselines/e31_architecture.html">E31 architecture (best version)</a> · <a href="../3_Evaluations_and_Baselines/e31_wiring.html">wiring and reasoning sites</a> · <a href="../3_Evaluations_and_Baselines/e31_length_ladder.html">length ladder</a> · <a href="../3_Evaluations_and_Baselines/e31b_memory_study_report.html">study report</a>.</div>
 <nav class="toc"><a href="#ans">0 · Answers on one screen</a><a href="#q2">1 · Bandwidth: where the wall is</a><a href="#q1">2 · Picking and gradients</a><a href="#q3">3 · Notes as memory</a><a href="#q4">4 · Streaming</a><a href="#e31">5 · What E31 should be</a><a href="#src">Sources</a></nav>
 
 <h2 id="ans">0 · The answers on one screen</h2>
@@ -156,7 +174,7 @@ nav.toc{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;margin:10px 0 0}
 <tr><td><b>E32 · streaming</b></td><td>The same model over a stream: page state carried across pages, append-only archive, questions at random points, train at 2K and test at 32K–128K.</td><td>This is the extrapolation factor the 1M–10M vision needs.</td></tr>
 <tr><td><b>Parallel · bold</b></td><td>Page = delta-rule matrix memory (ARMT / Lattice write) instead of K notes, at equal bytes.</td><td>Head-to-head with E31's write on the lookup and the shuffled chain.</td></tr>
 </table>
-<div class="callout"><b>A decision for you before I write the spec:</b> should E31 include the <b>read-side fetch</b> (my recommendation: the strongest literature support and the only route to 1M+), or stay <b>write-only</b> (bind + competition + per-channel), a cleaner test of "can the notebook alone be picky"? A write-only E31 is faster to build but likely caps on multi-hop.</div>
+<div class="callout"><b>(Outcome: E31 was built write-side; the fetch moved to E32.)</b> <b>A decision for you before I write the spec:</b> should E31 include the <b>read-side fetch</b> (my recommendation: the strongest literature support and the only route to 1M+), or stay <b>write-only</b> (bind + competition + per-channel), a cleaner test of "can the notebook alone be picky"? A write-only E31 is faster to build but likely caps on multi-hop.</div>
 
 <h3 id="src">Key sources</h3>
 <ul style="font-size:13px">

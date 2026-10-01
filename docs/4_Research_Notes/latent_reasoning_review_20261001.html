@@ -1,0 +1,265 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Latent Reasoning Review</title>
+<style>
+:root{--bg:#f4f3ef;--card:#fcfcfb;--card2:#efeee9;--line:#dcdad3;--fg:#0b0b0b;--fg2:#52514e;--muted:#7c7b76;
+ --blue:#2a78d6;--orange:#eb6834;--green:#1a7f37;--amber:#b26b00;--red:#c62828;--violet:#4a3aa7;
+ --good-bg:#e6f4ea;--warn-bg:#fff4e0;--bad-bg:#fdecea;--info-bg:#eaf2fc;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121211;--card:#1a1a19;--card2:#242422;--line:#3a3935;--fg:#f4f4f2;--fg2:#c3c2b7;--muted:#8f8e86;
+ --blue:#5b9cea;--orange:#e5763f;--green:#5cc47a;--amber:#e0a040;--red:#ef6b6b;--violet:#9085e9;--good-bg:#16301f;--warn-bg:#35280f;--bad-bg:#3a1a1a;--info-bg:#15263b;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#121211;--card:#1a1a19;--card2:#242422;--line:#3a3935;--fg:#f4f4f2;--fg2:#c3c2b7;--muted:#8f8e86;
+ --blue:#5b9cea;--orange:#e5763f;--green:#5cc47a;--amber:#e0a040;--red:#ef6b6b;--violet:#9085e9;--good-bg:#16301f;--warn-bg:#35280f;--bad-bg:#3a1a1a;--info-bg:#15263b;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15.5px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+main{max-width:1040px;margin:0 auto;padding-inline:18px;padding-block:26px 70px}
+h1{font-size:30px;line-height:1.15;margin:4px 0 8px;text-wrap:balance}
+h2{font-size:21px;margin:44px 0 8px;padding-top:14px;border-top:1px solid var(--line);text-wrap:balance}
+h3{font-size:16px;margin:18px 0 6px}
+p{max-width:72ch}
+.kicker{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650}
+.sub{color:var(--fg2);margin:0 0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:12px 0}
+.callout{border-radius:10px;padding:12px 16px;margin:14px 0;border-left:4px solid var(--blue);background:var(--info-bg)}
+.callout.good{border-color:var(--green);background:var(--good-bg)}.callout.warn{border-color:var(--amber);background:var(--warn-bg)}
+.grid{display:grid;gap:12px}.g3{grid-template-columns:repeat(auto-fit,minmax(270px,1fr))}.g2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.grid>*{min-width:0}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.tile .q{font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:650}
+.tile .a{font-size:17px;font-weight:700;margin:4px 0 6px;line-height:1.3}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.8px}
+th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:650}
+td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:0}
+.d3{background:var(--green)}.d2{background:var(--amber)}.d1{background:var(--muted)}.d0{background:var(--red)}
+.pill{display:inline-block;font-size:11.5px;font-weight:700;padding:1px 8px;border-radius:999px;white-space:nowrap}
+.p-have{background:var(--good-bg);color:var(--green)}.p-miss{background:var(--bad-bg);color:var(--red)}.p-part{background:var(--warn-bg);color:var(--amber)}
+.opt{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--card)}
+.opt.rec{border:2px solid var(--blue)}
+.opt h3{margin:0 0 4px}.opt .tag{font-size:12px;color:var(--muted)}
+.opt ul{margin:6px 0;padding-left:18px}.opt li{margin:3px 0}
+svg{display:block;width:100%;height:auto}
+svg text{fill:var(--fg);font-family:inherit}svg .m{fill:var(--muted)}svg .s{fill:var(--fg2)}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.tabs button{font:inherit;font-size:13.5px;border:1px solid var(--line);background:var(--card);color:var(--fg2);padding:6px 12px;border-radius:999px;cursor:pointer}
+.tabs button.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.src{font-size:13px;color:var(--fg2)}.src a{color:var(--blue)}
+a{color:var(--blue)}
+code{font:13px ui-monospace,Menlo,monospace;background:var(--card2);padding:1px 5px;border-radius:4px}
+#tip{position:fixed;pointer-events:none;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.18);opacity:0;z-index:20;max-width:320px}
+</style>
+<div id="tip"></div>
+<main>
+<div class="kicker">MrCogito · research note · 1 Oct 2026</div>
+<h1>Latent reasoning: what other labs proved, and what it means for E31</h1>
+<p class="sub">Looped transformers, tiny recursive networks, continuous chain of thought, and multi-hop reasoning over memory. About 60 papers from 2024–2026, read for one question: <b>how do we add multi-hop reasoning to a small model that reads a long document through the E31 latent memory?</b></p>
+
+<div class="callout good"><b>The short answer.</b> The labs agree on one thing: reasoning in latent space works when a later step <b>can use what an earlier step found as a new input</b>, and when <b>every step is supervised</b>, often with a curriculum. Looping a block over frozen inputs, without these, gives little. Our repeated read (E33) had neither, and it failed. Looping also does not add knowledge capacity: it helps <i>use</i> facts, not store them. That fits E31's split well. The memory stores, and a small loop on top composes. <b>Recommendation:</b> run a one-day diagnostic, then test "thought tokens over the memory" (option A below). It is the cheapest idea with a proof for exactly our failing task, graph reachability.</div>
+
+<div class="grid g3">
+<div class="tile"><div class="q">Looped transformers</div><div class="a">Proven up to 3.5B, for math and multi-hop</div>A k-layer block looped L times nearly matches a kL-layer model on reasoning. It does not help memorised facts (about 2 bits per parameter either way).</div>
+<div class="tile"><div class="q">Tiny recursive networks</div><div class="a">Big wins on puzzles, nothing yet on language</div>7–27M models beat LLMs on Sudoku, mazes and ARC. The driver is <b>deep supervision plus an outer refinement loop</b>, not the hierarchy.</div>
+<div class="tile"><div class="q">Continuous chain of thought</div><div class="a">Proven for graph reachability in 2 layers</div>Feeding the last hidden state back as the next input lets one "thought" hold a whole frontier of nodes. It needs a curriculum from explicit steps.</div>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="problem">1 · The problem we are solving</h2>
+<div class="grid g2">
+<div>
+<p>E31 writes a long book into latents: one 512-d latent per about 6 tokens, built per 256-token window by a two-way page encoder. After the question the model sees only those latents, through <b>one</b> global-read layer.</p>
+<p>That single read retrieves facts to 128k: lookup 94 %, recall of 16 facts 91 %, decoys 89 %, all first-letter accuracy. With an order code it also follows a chain stored <i>in order</i> (84 % at 128k).</p>
+<p>It fails when facts must be <b>combined</b>. Example: four shuffled chains, "start at A, where do you end?" Every memory and even the dense 30M model stay at 25–45 %, where 25 % is chance. Four weight-tied repeats of the read, with or without a target for each hop, moved the score by −2 to +6 points.</p>
+</div>
+<div class="card"><svg id="hop" viewBox="0 0 470 300" role="img" aria-label="Why one read is not enough"></svg></div>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="families">2 · What other labs proved</h2>
+<p>Pick a family. <span class="dot d3"></span>proven at scale or replicated · <span class="dot d2"></span>small or synthetic only · <span class="dot d1"></span>abstract-level or single study · <span class="dot d0"></span>negative result.</p>
+<div class="tabs" id="ftabs"><button data-k="loop" class="on">Looped / recurrent depth</button><button data-k="tiny">Tiny recursive networks</button><button data-k="cot">Continuous chain of thought</button><button data-k="mem">Multi-hop over memory</button></div>
+<div class="card tw" id="ftab"></div>
+<p class="src" id="fnote"></p>
+
+<!-- ================================================================ -->
+<h2 id="mechanism">3 · How the reasoning works there: one anatomy</h2>
+<p>Strip the names off and these systems share one shape. A <b>state</b> is updated by a small tied block, the <b>input is re-injected</b> at every step, the step's <b>output can become the next step's input</b>, every step gets a <b>target</b>, and something decides <b>when to stop</b>. Hover the parts.</p>
+<div class="card"><svg id="anat" viewBox="0 0 980 300" role="img" aria-label="Anatomy of a latent reasoning loop"></svg></div>
+<p>What each family calls the parts:</p>
+<div class="tw"><table>
+<tr><th>part</th><th>looped LMs (Huginn, Ouro)</th><th>tiny recursive (TRM)</th><th>continuous CoT (Coconut)</th><th>our E33 read loop</th></tr>
+<tr><td>state</td><td>residual stream of the core</td><td>scratch z + answer y (kept separate)</td><td>a new token per thought</td><td>question-side hidden state</td></tr>
+<tr><td>re-injected input</td><td>token embedding every loop</td><td>x (the puzzle) into every z update</td><td>whole sequence, via attention</td><td>memory slots (yes), question embedding (no)</td></tr>
+<tr><td>output fed back as input</td><td>no (stays latent)</td><td>y feeds the next cycle</td><td><b>yes</b>: last hidden → next input</td><td><b>no</b></td></tr>
+<tr><td>supervision</td><td>final, or expected loss over exits</td><td><b>every outer step</b> (16 steps)</td><td>staged curriculum from explicit CoT</td><td>final, or per round (tried)</td></tr>
+<tr><td>depth in training</td><td><b>random</b>, truncated backprop</td><td>fixed n=6, T=3; gradient through last cycle</td><td>grows with the curriculum stage</td><td>fixed R = 4</td></tr>
+<tr><td>halting</td><td>exit gate / KL convergence</td><td>"am I right?" head</td><td>fixed number of thoughts</td><td>none</td></tr>
+</table></div>
+
+<!-- ================================================================ -->
+<h2 id="ingredients">4 · The main ingredients, and where E31 stands</h2>
+<div class="tw"><table id="ing"></table></div>
+<div class="callout warn"><b>What loops do not do.</b> Ouro (7.7T tokens) measures knowledge capacity at about 2 bits per parameter, with or without looping. Saunshi and the iso-depth scaling study find no gain on closed-book QA. Looping buys <i>manipulation</i> of facts, not <i>storage</i>. For a small long-context model that is the right split: E31's memory holds the facts, and a small reasoning loop uses them. It also explains why our memory scores did not need any loop.</div>
+
+<h3>Why our repeated read most likely failed</h3>
+<p>The literature points to three causes. None has been tested here yet.</p>
+<div class="grid g3">
+<div class="tile"><div class="q">1 · The bridge is not a question</div>Read 1 returns B as the <i>content</i> of the slot "A → B". Hop 2 needs B as a <i>key</i> that matches the slot "B → C", and nothing trains those to line up. DiscoLoop: the bridge entity is "nearly perfectly decodable" after loop 1 but misaligned with its input embedding. Feeding back a discrete embedding of it fixes this.</div>
+<div class="tile"><div class="q">2 · The memory never computes</div>Every multi-hop success over a memory either loops over the memory itself (Sleep, ImReasoner, loop + memory) or appends thoughts as new inputs (Coconut, superposition). Our slots are frozen per window, and the question side re-reads the same slots with a nearly unchanged query.</div>
+<div class="tile"><div class="q">3 · Not enough signal</div>Coconut without its curriculum scores the same as no chain of thought. Composition is learned late, at about 50× the steps needed to fit (grokking). Search becomes learnable only with balanced hop counts. We trained 4800 steps at fixed depth.</div>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="options">5 · Options for the next experiment: your call</h2>
+<p>Each option keeps the E31 memory as it is (the best version) and adds reasoning on top. They are ordered by how directly the literature supports them for our failing task.</p>
+<div class="card"><svg id="map" viewBox="0 0 700 330" role="img" aria-label="Options by evidence and fit"></svg>
+<p class="src">Placement is a judgement from the review, not a measurement. Right = stronger evidence that the mechanism solves multi-hop composition. Up = closer to the vision (reasoning inside the concept memory, small and long-context).</p></div>
+<div class="grid g2">
+<div class="opt"><h3>0 · Diagnostic (1 day, no new architecture)</h3><div class="tag">probe the existing checkpoints</div><ul>
+<li>After read 1 on a chain, is the bridge node B decodable from the question state? Does that state, used as a query, hit B's slot?</li>
+<li>Run the dense model and E31 with <b>explicit node tokens</b>: the model writes B, C, D as letters before the answer. This is a ceiling. If E31 cannot solve the chain even with an explicit scratchpad, the memory's keys are the problem, not reasoning.</li></ul>
+<b>Answers:</b> which of causes 1–3 is real.</div>
+<div class="opt rec"><h3>A · Thought tokens over the memory ★ recommended</h3><div class="tag">Coconut / reasoning by superposition, on top of E31</div><ul>
+<li>After QUERY the model emits k latent thoughts. Each thought is its last hidden state fed back as the next input, and each passes through the global read again. That gives k dependent reads, where the output is the next input.</li>
+<li>Curriculum: explicit node tokens first, then replace them one stage at a time with thoughts. Our generator knows every chain node, so the steps are free.</li>
+<li>Proof: 2 layers plus D thoughts solve reachability, with a frontier held in superposition. Coconut ProsQA: 97 % vs 77 % for chain of thought.</li></ul>
+<b>Cost:</b> small code change (thought positions after QUERY). k extra reads per question.</div>
+<div class="opt"><h3>B · Memory consolidation loop</h3><div class="tag">Sleep / loop + memory / the latent loop</div><ul>
+<li>Latents of different windows attend to each other for R rounds and update their state, so composed facts (A → C) are written into the memory itself. A question-conditioned variant loops only over the top-k pages the question picks.</li>
+<li>This is reasoning in the concept space, the closest match to the vision, and the result is reusable by many questions and by agents.</li>
+<li>Evidence is thinner: synthetic k-hop, where loops must be at least the number of hops. Cost grows with memory size, so it needs windows or top-k.</li></ul>
+<b>Cost:</b> medium (a new latent-to-latent block).</div>
+<div class="opt"><h3>C · Recursive reasoning core</h3><div class="tag">TRM / Huginn recipe on the question side</div><ul>
+<li>A tiny tied block holds a scratch state z and an answer state y. It re-reads the memory and re-injects the question every step. Deep supervision on every step, random depth, gradient through the last cycle, sandwich norms.</li>
+<li>It fixes everything E33 lacked except feeding the output back as a token.</li>
+<li>Strong on puzzles and math. The only direct language test (autoregressive TRM) found no reliable gain.</li></ul>
+<b>Cost:</b> medium. Can be combined with A later.</div>
+</div>
+<div class="callout"><b>My suggested order:</b> 0 (diagnostic) → A, explicit nodes then latent thoughts, on the parallel chain at 1k, with lookup and recall as "do no harm" controls → B if A works and we want the reasoning inside the memory. The decision is yours. The main fork is <b>A (reason in the token stream, best proven)</b> versus <b>B (reason inside the memory, closest to the vision)</b>.</div>
+
+<!-- ================================================================ -->
+<h2 id="sources">Sources</h2>
+<p class="src">Read in full (HTML) unless marked as abstract-only (abs). Numbers come from the scouts' reads; check them against the PDFs before quoting them in a spec.</p>
+<ul class="src">
+<li><b>Looped / recurrent depth:</b> <a href="https://arxiv.org/abs/2502.17416">Saunshi 2025 (looped transformers)</a> · <a href="https://arxiv.org/abs/2502.05171">Huginn-3.5B (recurrent depth)</a> · <a href="https://arxiv.org/abs/2510.25741">Ouro / LoopLM</a> · <a href="https://arxiv.org/abs/2507.10524">Mixture-of-Recursions</a> · <a href="https://arxiv.org/abs/2604.12946">Parcae (stable looping)</a> · <a href="https://arxiv.org/abs/2604.21106">iso-depth scaling laws</a> · <a href="https://arxiv.org/abs/2511.07384">retrofitting recurrence</a> · <a href="https://arxiv.org/abs/2409.15647">Fan 2024 (length generalisation)</a> · <a href="https://arxiv.org/abs/2402.09268">Sanford, Hsu, Telgarsky (log depth for k-hop)</a> · <a href="https://arxiv.org/abs/2604.07822">Kohli 2026 (recurrent depth composition, abs)</a> · <a href="https://arxiv.org/abs/2410.20672">Relaxed Recursive Transformers (abs)</a> · <a href="https://arxiv.org/abs/2607.16051">Loopie MoE (abs)</a></li>
+<li><b>Tiny recursive:</b> <a href="https://arxiv.org/abs/2506.21734">HRM</a> · <a href="https://arcprize.org/blog/hrm-analysis">ARC Prize HRM analysis</a> · <a href="https://arxiv.org/abs/2510.04871">TRM</a> · <a href="https://arxiv.org/abs/2512.11847">TRM on ARC-1 critique (abs)</a> · <a href="https://arxiv.org/abs/2601.10679">HRM reasoning or guessing (snippet)</a> · <a href="https://arxiv.org/abs/2605.19943">PTRM (abs)</a> · <a href="https://arxiv.org/abs/2603.08082">autoregressive TRM (abs, negative)</a> · <a href="https://arxiv.org/abs/2608.29376">TRM-AR for code (abs)</a></li>
+<li><b>Continuous chain of thought:</b> <a href="https://arxiv.org/abs/2412.06769">Coconut</a> · <a href="https://arxiv.org/abs/2505.12514">Reasoning by Superposition</a> · <a href="https://arxiv.org/abs/2509.23365">emergence of superposition (abs)</a> · <a href="https://arxiv.org/abs/2502.21074">CODI (abs)</a> · <a href="https://arxiv.org/abs/2404.15758">dot by dot (abs)</a> · <a href="https://arxiv.org/abs/2507.06203">survey on latent reasoning</a></li>
+<li><b>Multi-hop over memory:</b> <a href="https://arxiv.org/abs/2503.07903">MemReasoner (abs)</a> · <a href="https://aclanthology.org/2026.acl-long.26/">ImReasoner (abs)</a> · <a href="https://arxiv.org/abs/2605.26099">Sleep / offline recurrence</a> · <a href="https://arxiv.org/abs/2606.20737">repeated shared access (loop + memory)</a> · <a href="https://arxiv.org/abs/2405.15071">Grokked transformers</a> · <a href="https://arxiv.org/abs/2607.00341">DiscoLoop (abs)</a> · <a href="https://arxiv.org/abs/2509.24653">identity bridge (abs)</a> · <a href="https://arxiv.org/abs/2412.04703">Saparov 2025 (learning to search)</a> · <a href="https://arxiv.org/abs/2510.19753">Ye 2025 (diameter vs depth, abs)</a> · <a href="https://arxiv.org/abs/2406.10149">BABILong</a> · <a href="https://arxiv.org/abs/2407.04841">ARMT</a></li>
+<li><b>Ours:</b> E31b limits study, E33 iterative reads (query loop: no gain), E31 length ladder.</li>
+</ul>
+</main>
+<script>
+const C=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();const NS='http://www.w3.org/2000/svg';const tip=document.getElementById('tip');
+function el(t,a,p,x){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(x!=null)e.textContent=x;if(p)p.appendChild(e);return e;}
+function hov(n,h){n.style.cursor='help';n.addEventListener('mousemove',e=>{tip.innerHTML=h;tip.style.opacity=1;tip.style.left=Math.min(e.clientX+14,innerWidth-340)+'px';tip.style.top=(e.clientY+14)+'px'});n.addEventListener('mouseleave',()=>tip.style.opacity=0);}
+function marker(s,id,col){const d=el('defs',{},s);const m=el('marker',{id,viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:7,markerHeight:7,orient:'auto'},d);el('path',{d:'M0,0L10,5L0,10z',fill:col},m);}
+function box(s,x,y,w,h,col,t,sub,op){el('rect',{x,y,width:w,height:h,rx:9,fill:col,'fill-opacity':op??.16,stroke:col},s);el('text',{x:x+w/2,y:y+(sub?h/2-3:h/2+5),'text-anchor':'middle','font-size':13,'font-weight':700},s,t);if(sub)el('text',{x:x+w/2,y:y+h/2+14,'text-anchor':'middle','font-size':11,class:'s'},s,sub);}
+
+/* ---------- 1 · hop diagram ---------- */
+function drawHop(){const s=document.getElementById('hop');s.innerHTML='';marker(s,'ah1',C('--muted'));
+ el('text',{x:10,y:18,'font-size':12,'font-weight':700,class:'s'},s,'Memory: one latent per fact, written per window');
+ const facts=[['A → B',30],['X → Y',120],['B → C',210],['P → Q',300],['C → D',390]];
+ facts.forEach(([t,x],i)=>{const hit=[0,2,4].includes(i);el('rect',{x,y:30,width:70,height:34,rx:7,fill:hit?C('--violet'):C('--card2'),'fill-opacity':hit?.25:1,stroke:hit?C('--violet'):C('--line')},s);el('text',{x:x+35,y:52,'text-anchor':'middle','font-size':13,'font-weight':600},s,t);});
+ el('text',{x:10,y:96,'font-size':12,'font-weight':700,class:'s'},s,'Question: "start at A — where do you end?"');
+ // one read
+ box(s,10,110,120,40,C('--blue'),'one read','query = A',.18);
+ el('path',{d:'M70,110 L65,66',stroke:C('--blue'),'stroke-width':2,'marker-end':'url(#ah1)'},s);
+ el('text',{x:140,y:126,'font-size':12},s,'returns B ✓ (that is a lookup)');
+ el('text',{x:140,y:143,'font-size':12,class:'s'},s,'the answer D needs two more reads, each');
+ el('text',{x:140,y:158,'font-size':12,class:'s'},s,'asking with what the previous one returned');
+ // needed chain
+ const xs=[10,165,320];['read 1: A','read 2: B','read 3: C'].forEach((t,i)=>{box(s,xs[i],190,140,40,i?C('--orange'):C('--blue'),t,null,.16);if(i<2)el('path',{d:`M${xs[i]+140},210 L${xs[i]+163},210`,stroke:C('--muted'),'stroke-width':2,'marker-end':'url(#ah1)'},s);});
+ el('text',{x:10,y:256,'font-size':12},s,'E31 today: only the first box exists after QUERY.');
+ el('text',{x:10,y:274,'font-size':12,class:'s'},s,'E33 repeated it with the same query state: no gain.');
+ el('text',{x:10,y:292,'font-size':12,class:'s'},s,'The orange boxes are what latent reasoning must add.');}
+
+/* ---------- 2 · families ---------- */
+const FAM={
+ loop:{rows:[
+  ['d3','Huginn-3.5B (recurrent depth)','2 prelude · 4-layer core looped · 2 coda; embedding concatenated in every loop','800B tokens; r=32 loops ≈ 50B-parameter compute; GSM8K 38 %, saturates on easy QA at 8–12 loops','random loop count (mean 32), backprop truncated to 8; diverged twice before sandwich norm'],
+  ['d3','Ouro / LoopLM 1.4–2.6B','whole stack looped ×4, entropy-regularised exit gate','7.7T tokens; 2.6B ≈ 8B dense on MATH500 / BBH; <b>knowledge capacity unchanged (≈ 2 bits/param)</b>','degrades beyond 4 loops; early exit breaks RL rollouts'],
+  ['d3','Saunshi et al. (ICLR 2025)','k layers looped L times','p-hop and addition: 1-layer ×6–12 ≈ 99.9 %; 1B LM: half the parameters, +5 on math word problems','closed-book QA gains little'],
+  ['d3','Mixture-of-Recursions','middle layers shared, router picks depth per token','135M–1.7B; 167M beats 315M at equal FLOPs','loses at 135M; no reasoning evaluation'],
+  ['d2','Parcae · iso-depth scaling laws','stable recurrent block (negative-diagonal state matrix)','770M ≈ 1.3B transformer; one loop ≈ 0.46 of a unique layer','loops and data must scale together'],
+  ['d2','Fan et al. (length generalisation)','one block looped, input re-injected, no positions','trained to length 20 → parity 40+, addition 30 at ≈ 100 %','needs the step count per sample as supervision'],
+  ['d2','Sanford, Hsu, Telgarsky','theory: k-hop induction','depth log₂k + 2 suffices, Ω(log k) needed; learnable k doubles per added layer','—'],
+  ['d1','Kohli 2026 (recurrent-depth composition)','looped block over parametric facts','trained on 5-hop, extrapolates to 10-hop (three-stage grokking)','too many loops: "overthinking"']],
+  note:'Lesson: looping adds effective depth (about half a layer per loop) for <b>composition and math</b>, not for storing facts. Stable training needs input re-injection, random depth, truncated backprop and careful normalisation.'},
+ tiny:{rows:[
+  ['d3','TRM, 7M (Samsung SAIL 2025)','one 2-layer net: z ← net(x, y, z) six times, then y ← net(y, z); 3 cycles; 16 supervised steps','Sudoku-Extreme 87 %, Maze-Hard 85 %, ARC-1 45 %, ARC-2 8 %','1-step gradient instead of full last cycle: 87 → 57 %; one merged state: 72 %; 4 layers worse than 2'],
+  ['d3','HRM, 27M (Sapient 2025)','slow H-module + fast L-module, 1-step gradient, deep supervision, learned halting','ARC-1 40 % (verified 32 %), Sudoku-Extreme 55 %','—'],
+  ['d3','ARC Prize analysis of HRM','ablations','<b>the hierarchy barely matters</b>; the outer refinement loop with deep supervision drives the gain (0 → 1 loop: +13 points)','most of the score is memorising the eval tasks; puzzle-ID embedding essential'],
+  ['d1','PTRM 2026','TRM + noise per recursion, pick among parallel trajectories','Sudoku-Extreme 87 → 99 %','abstract only'],
+  ['d0','Autoregressive TRM 2026','TRM recursion for token-by-token text','"no reliable performance gains" on character-level algorithms','the only direct language test, and it is negative'],
+  ['d1','TRM on ARC-1 critique','—','most accuracy already at the first recursion; random puzzle ID gives 0 %','effective recursion is shallow']],
+  note:'Lesson: on fixed-size puzzles with heavy augmentation, a tiny tied network with <b>separate scratch and answer states</b>, <b>the input re-injected</b>, <b>supervision at every refinement step</b> and <b>gradients through the full last cycle</b> beats huge models. There is no evidence yet for language, retrieval or long context.'},
+ cot:{rows:[
+  ['d3','Coconut (COLM 2025)','last hidden state fed back as the next input embedding ("continuous thought")','GPT-2 ProsQA graph reasoning: 97 % vs 77.5 % with chain of thought; thoughts hold a BFS frontier','<b>without the staged curriculum: 76 % (= no chain of thought)</b>'],
+  ['d3','Reasoning by Superposition (NeurIPS 2025)','proof + experiment','<b>2-layer transformer with D thoughts solves graph reachability</b> (D = diameter); layer 1 binds each edge source+target, layer 2 matches frontier vs sources','trained with a stage-by-stage curriculum'],
+  ['d2','Emergence of superposition','training dynamics','superposition appears without being asked for','abstract only'],
+  ['d2','CODI','self-distil hidden states from a chain-of-thought teacher','matches chain of thought on GSM8k at GPT-2 size, 3.1× shorter','abstract only'],
+  ['d2','Pause / filler tokens','extra blank tokens to "think"','help when used in pretraining; models "struggle to learn" them without dense supervision','weak without supervision'],
+  ['d2','Survey on latent reasoning (2025)','taxonomy','vertical recurrence (loops), feedback of hidden states (Coconut), horizontal state (Titans, linear models)','—']],
+  note:'Lesson: the thing that makes reachability solvable in two layers is that <b>each thought is a new input the next step can attend to</b>. A chain of dependent reads, in other words. It is learnable only with a curriculum from explicit steps.'},
+ mem:{rows:[
+  ['d2','Sleep / offline recurrence 2026','looped passes consolidate context into fast weights before the cache is cleared','k-hop over chains split across windows: 1 loop barely moves 4-hop; 4 loops start on 16-hop','loops ≥ hops; synthetic, 4-layer'],
+  ['d2','Repeated shared access (loop + memory) 2026','loop and/or memory around a small model','out-of-distribution composition: dense never (0/5 seeds); loop 230k steps; memory 60–85k; <b>loop + memory 45–65k</b>','single author, synthetic'],
+  ['d1','MemReasoner / ImReasoner','memory with order + iterative re-reads; then memory updates at inference','two-hop to 128k with distractors, <b>needs supporting-fact labels on 1 % of examples</b>; hard distractors need memory updates','abstract only'],
+  ['d3','Grokked transformers (NeurIPS 2024)','8-layer, implicit two-hop composition','learned only by grokking (≈ 50× the steps to fit); out-of-distribution 0 % after 2.2M steps; sharing lower and upper layers helps','composition is the hard part'],
+  ['d1','DiscoLoop · identity bridge 2025–26','feed back a discrete embedding of the bridge entity','bridge "nearly perfectly decodable" after loop 1 but misaligned; feeding it back fixes generalisation','abstract only'],
+  ['d3','Saparov et al. (ICLR 2025)','learning graph search','learnable with a <b>balanced</b> lookahead distribution; naive data fails; more parameters do not help','larger graphs stay hard']],
+  note:'Lesson: multi-hop over a memory works when the memory itself computes (loops over it) or when the bridge entity is fed back explicitly. Supervising the intermediate fact, even rarely, makes it learnable.'}};
+function drawFam(k){const f=FAM[k];document.getElementById('ftab').innerHTML='<table><tr><th style="width:24%">work</th><th>what loops / what is fed back</th><th>proven result</th><th>caveat</th></tr>'+f.rows.map(r=>`<tr><td><span class="dot ${r[0]}"></span><b>${r[1]}</b></td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td></tr>`).join('')+'</table>';document.getElementById('fnote').innerHTML=f.note;}
+document.querySelectorAll('#ftabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#ftabs button').forEach(x=>x.classList.toggle('on',x===b));drawFam(b.dataset.k);});
+
+/* ---------- 3 · anatomy ---------- */
+function drawAnat(){const s=document.getElementById('anat');s.innerHTML='';marker(s,'ah2',C('--muted'));marker(s,'ah3',C('--orange'));
+ const P=[
+  [20,110,150,70,C('--blue'),'input','question + memory','<b>Input.</b> In our case: the question tokens and the E31 memory (N/6 latents of the book).'],
+  [230,110,170,70,C('--violet'),'prelude','untied first layers','<b>Prelude.</b> Unique (untied) first layers that embed the input. Huginn: 2 layers; MoR: unique first and last layers work best.'],
+  [460,90,220,110,C('--orange'),'tied core × R','state ← core(state, input)','<b>Tied core, looped R times.</b> The state is updated by the same weights each loop. TRM keeps two states: a scratch z and an answer y. Train with a random R (Huginn: mean 32) and backprop through the last 8 loops or the last cycle.'],
+  [740,110,200,70,C('--green'),'coda / answer','untied last layers','<b>Coda.</b> Untied layers that decode the final state into the answer.']];
+ P.forEach(p=>{const g=el('g',{},s);box(g,p[0],p[1],p[2],p[3],p[4],p[5],p[6],.16);hov(g,p[7]);});
+ el('path',{d:'M170,145 L228,145',stroke:C('--muted'),'stroke-width':2,'marker-end':'url(#ah2)'},s);
+ el('path',{d:'M400,145 L458,145',stroke:C('--muted'),'stroke-width':2,'marker-end':'url(#ah2)'},s);
+ el('path',{d:'M680,145 L738,145',stroke:C('--muted'),'stroke-width':2,'marker-end':'url(#ah2)'},s);
+ // loop arrow
+ const lg=el('g',{},s);el('path',{d:'M640,90 C640,30 500,30 500,88',fill:'none',stroke:C('--orange'),'stroke-width':2.5,'marker-end':'url(#ah3)'},lg);el('text',{x:570,y:28,'text-anchor':'middle','font-size':12,'font-weight':700,style:`fill:${C('--orange')}`},lg,'loop R times');hov(lg,'<b>The loop.</b> Effective depth grows with R at no parameter cost. One loop is worth about 0.46 of a unique layer (iso-depth study). Theory: k-hop needs about log k depth.');
+ // injection
+ const ig=el('g',{},s);el('path',{d:'M95,180 C95,260 560,270 560,202',fill:'none',stroke:C('--blue'),'stroke-width':2,'stroke-dasharray':'6 4','marker-end':'url(#ah2)'},ig);el('text',{x:300,y:262,'font-size':12,'font-weight':700,style:`fill:${C('--blue')}`},ig,'① input re-injected every loop');hov(ig,'<b>Input re-injection.</b> Huginn concatenates the embedding into every loop; TRM feeds x into every z update; Fan uses it for length generalisation. Theory (Labovich 2026): needed for stable, input-dependent fixed points. <b>E33 re-read the memory but did not re-inject the question.</b>');
+ // feedback
+ const fg=el('g',{},s);el('path',{d:'M840,110 C840,40 120,30 95,108',fill:'none',stroke:C('--green'),'stroke-width':2,'stroke-dasharray':'3 4','marker-end':'url(#ah2)'},fg);el('text',{x:830,y:40,'text-anchor':'end','font-size':12,'font-weight':700,style:`fill:${C('--green')}`},fg,'② output fed back as a new input');hov(fg,'<b>Output → input.</b> Coconut appends each thought as a new input token, so later steps can attend to it. The theory says this is what makes reachability solvable in 2 layers. DiscoLoop feeds back a discrete embedding of the bridge entity. <b>E33 had no such path.</b>');
+ // supervision
+ const sg=el('g',{},s);el('rect',{x:470,y:212,width:200,height:30,rx:6,fill:C('--amber'),'fill-opacity':.16,stroke:C('--amber')},sg);el('text',{x:570,y:232,'text-anchor':'middle','font-size':12,'font-weight':700},sg,'③ target at every loop');hov(sg,'<b>Deep supervision.</b> The ARC Prize ablation found this, plus the outer refinement loop, drives HRM, not the hierarchy. TRM supervises 16 steps. Coconut needs a staged curriculum. MemReasoner: labels on 1 % of supporting facts suffice.');
+ const hg=el('g',{},s);el('rect',{x:760,y:212,width:160,height:30,rx:6,fill:C('--card2'),stroke:C('--line')},hg);el('text',{x:840,y:232,'text-anchor':'middle','font-size':12,'font-weight':700},hg,'④ halt?');hov(hg,'<b>Halting.</b> Ouro: entropy-regularised exit gate; TRM: an "am I right?" head; Huginn: stop when the state converges (KL). Optional for us at first: use a fixed number of hops.');}
+
+/* ---------- 4 · ingredients ---------- */
+const ING=[
+ ['Re-inject the input every step','d3','Huginn, TRM, Fan, Parcae','part','memory re-read each round (E33), but the question embedding is not re-injected'],
+ ['Feed the step output back as a new input (thought token / bridge embedding)','d3','Coconut, superposition proof, DiscoLoop','miss','no path: the query state only flows forward'],
+ ['Supervise every step + curriculum on hop count','d3','ARC/HRM ablation, TRM, Coconut, MemReasoner','part','per-round node targets tried once (E33c), fixed 4 rounds, no curriculum'],
+ ['Separate scratch state from answer state','d2','TRM (one merged state: 87 → 72 %)','miss','one residual stream'],
+ ['Random depth + truncated backprop + sandwich norm','d3','Huginn, Parcae, retrofitting','miss','fixed R = 4, full backprop'],
+ ['Computation on the memory itself (consolidate / loop over latents)','d2','Sleep, loop + memory, ImReasoner','part','within a window only (page encoder); nothing across windows'],
+ ['Bind source and target of a fact into one entry','d3','superposition proof (layer 1), every compressor','have','page encoder binds facts inside a window; one latent per ~6 tokens'],
+ ['Order-aware, length-invariant positions','d2','our E31b result (scaled order code)','have','the in-order chain transfers to 128k'],
+ ['Balanced hop data, long training (grokking)','d2','Saparov, grokked transformers','miss','4800 steps per stage; fixed hop count']];
+function drawIng(){document.getElementById('ing').innerHTML='<tr><th>ingredient</th><th>evidence</th><th>E31 best variant today</th></tr>'+ING.map(r=>`<tr><td><b>${r[0]}</b></td><td><span class="dot ${r[1]}"></span>${r[2]}</td><td><span class="pill ${r[3]==='have'?'p-have':r[3]==='miss'?'p-miss':'p-part'}">${r[3]==='have'?'have':r[3]==='miss'?'missing':'partly'}</span> ${r[4]}</td></tr>`).join('');}
+
+/* ---------- 5 · option map ---------- */
+function drawMap(){const s=document.getElementById('map');s.innerHTML='';const W=700,H=330,m={l:60,r:20,t:20,b:50};
+ const x=v=>m.l+v*(W-m.l-m.r),y=v=>H-m.b-v*(H-m.t-m.b);
+ el('rect',{x:m.l,y:m.t,width:W-m.l-m.r,height:H-m.t-m.b,fill:'none',stroke:C('--line')},s);
+ el('line',{x1:x(.5),x2:x(.5),y1:m.t,y2:H-m.b,stroke:C('--line'),'stroke-dasharray':'4 4'},s);el('line',{x1:m.l,x2:W-m.r,y1:y(.5),y2:y(.5),stroke:C('--line'),'stroke-dasharray':'4 4'},s);
+ el('text',{x:(m.l+W-m.r)/2,y:H-14,'text-anchor':'middle','font-size':12,class:'s'},s,'evidence that it solves multi-hop composition →');
+ el('text',{x:16,y:(m.t+H-m.b)/2,'text-anchor':'middle','font-size':12,class:'s',transform:`rotate(-90 16 ${(m.t+H-m.b)/2})`},s,'fit to the vision (reason in the memory) →');
+ const O=[[.78,.55,'A','thought tokens over memory',C('--blue'),'Strong proof for reachability (2 layers + D thoughts). Reasoning happens in the token stream on top of the memory; the thoughts are latent vectors, not words.'],
+  [.42,.86,'B','memory consolidation loop',C('--violet'),'Reasoning inside the concept memory: closest to the vision, reusable by many questions. Evidence is synthetic (Sleep, loop + memory).'],
+  [.58,.42,'C','recursive reasoning core',C('--green'),'TRM/Huginn recipe: proven on puzzles and math; the one direct language test was negative.'],
+  [.12,.38,'E33','repeated read (tested)',C('--red'),'Our query loop: no gain over 10 cells.'],
+  [.9,.2,'0','diagnostic + explicit nodes',C('--amber'),'Not a reasoning method: it tells us which failure cause is real, and gives a ceiling with an explicit scratchpad.']];
+ O.forEach(o=>{const g=el('g',{},s);el('circle',{cx:x(o[0]),cy:y(o[1]),r:17,fill:o[4],stroke:C('--card'),'stroke-width':2},g);el('text',{x:x(o[0]),y:y(o[1])+5,'text-anchor':'middle','font-size':o[2].length>1?11:14,'font-weight':800,style:'fill:#fff'},g,o[2]);
+  el('text',{x:x(o[0])+(o[0]>.8?-24:24),y:y(o[1])+5,'text-anchor':o[0]>.8?'end':'start','font-size':12.5},g,o[3]);hov(g,`<b>${o[2]} · ${o[3]}</b><br>${o[5]}`);});}
+function drawAll(){drawHop();drawFam(document.querySelector('#ftabs .on').dataset.k);drawAnat();drawIng();drawMap();}
+drawAll();matchMedia('(prefers-color-scheme: dark)').addEventListener('change',drawAll);
+</script>

@@ -5,65 +5,85 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>E31 Length Ladder</title>
 <style>
-:root { --bg:#fbfaf7; --fg:#1f2328; --muted:#6b7280; --grid:#e5e7eb; --card:#ffffff;
-  --c1:#2563eb; --c2:#16a34a; --c3:#9333ea; --c4:#ea580c; --c5:#9ca3af; --c6:#dc2626; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#15171a; --fg:#e6e6e6; --muted:#9aa0a6; --grid:#2c3036; --card:#1c1f23;
-  --c1:#60a5fa; --c2:#4ade80; --c3:#c084fc; --c4:#fb923c; --c5:#6b7280; --c6:#f87171; } }
+:root { --bg:#fbfaf7; --fg:#1f2328; --muted:#6b7280; --grid:#e5e7eb; --card:#ffffff; --hl:#eef4ff;
+  --c1:#2563eb; --c2:#16a34a; --c3:#9333ea; --c4:#ea580c; --c5:#9ca3af; --c6:#dc2626; --c7:#0891b2; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#15171a; --fg:#e6e6e6; --muted:#9aa0a6; --grid:#2c3036; --card:#1c1f23; --hl:#18263a;
+  --c1:#60a5fa; --c2:#4ade80; --c3:#c084fc; --c4:#fb923c; --c5:#6b7280; --c6:#f87171; --c7:#22d3ee; color-scheme:dark; } }
+:root[data-theme="dark"] { --bg:#15171a; --fg:#e6e6e6; --muted:#9aa0a6; --grid:#2c3036; --card:#1c1f23; --hl:#18263a;
+  --c1:#60a5fa; --c2:#4ade80; --c3:#c084fc; --c4:#fb923c; --c5:#6b7280; --c6:#f87171; --c7:#22d3ee; color-scheme:dark; }
 body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 -apple-system, system-ui, sans-serif; }
 main { max-width:980px; margin:0 auto; padding:24px 16px 48px; }
 h1 { font-size:24px; margin:0 0 4px; } h2 { font-size:18px; margin:28px 0 8px; }
 .sub { color:var(--muted); margin:0 0 20px; }
 .card { background:var(--card); border:1px solid var(--grid); border-radius:10px; padding:16px; margin:14px 0; }
+.card.hl { background:var(--hl); }
 .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; }
 .kpi b { display:block; font-size:26px; } .kpi span { color:var(--muted); font-size:13px; }
-svg { width:100%; height:auto; display:block; }
-.legend { display:flex; flex-wrap:wrap; gap:10px 18px; font-size:13px; margin-top:6px; }
+.chartwrap { overflow-x:auto; } svg { width:100%; min-width:560px; height:auto; display:block; }
+.legend { display:flex; flex-wrap:wrap; gap:8px 18px; font-size:13px; margin-top:6px; }
 .legend i { display:inline-block; width:18px; height:3px; vertical-align:middle; margin-right:6px; border-radius:2px; }
 table { border-collapse:collapse; width:100%; font-size:13px; } th, td { padding:5px 6px; border-bottom:1px solid var(--grid); text-align:right; }
 th:first-child, td:first-child { text-align:left; } .note { color:var(--muted); font-size:13px; }
-.tbl { overflow-x:auto; }
+.tbl { overflow-x:auto; } code { font-size:12.5px; }
+#tip { position:fixed; pointer-events:none; background:var(--card); color:var(--fg); border:1px solid var(--grid); border-radius:8px; padding:5px 9px; font-size:13px; opacity:0; z-index:9; }
 </style>
 </head>
-<body><main>
+<body><main><div id="tip"></div>
 <h1>E31 length ladder: 2k → 128k</h1>
-<p class="sub">Same exam at every length: one 32-letter fact (64 bits) hidden in a DNA-style book, question at the end. 30M e31_page, windowed global read (the memory is the only long path). 64 eval rows per length; chance = 25 %. Seed 1 unless noted. 2026-09-26.</p>
+<p class="sub">Same exam at every length: facts hidden in a DNA-style book, question at the end, and after the question the model sees only the memory. 30M model, windowed global read, so the memory is the only long path. <b>Every score here is first-letter accuracy</b>: is the first letter of the answer right? Chance is 25 %. Rows: 64–128 per length, so about ±4 points. Updated 1 Oct 2026, after the E30 vs E31 limits study (E31b).</p>
 
 <div class="kpis">
-  <div class="card kpi"><b>97 %</b><span>at 32k: length-invariant memory + one 8k training stage</span></div>
-  <div class="card kpi"><b>80–81 %</b><span>at 128k after training only up to 16k; 2 seeds (94–95 % at 64k)</span></div>
-  <div class="card kpi"><b>0.45 s · 3.4 GB</b><span>per 128k-token row, one RTX 3090 (linear; full attention: 2.29 s)</span></div>
-  <div class="card kpi"><b>25 %</b><span>no-memory control at every length (memory is load-bearing)</span></div>
+  <div class="card kpi"><b>94 %</b><span>lookup at 128k: best E31 (one reader entry per latent), trained on books of at most 16k</span></div>
+  <div class="card kpi"><b>84 %</b><span>4-hop in-order chain at 128k: E31 with the order code, one 8k stage</span></div>
+  <div class="card kpi"><b>91–95 %</b><span>recall of 8 or 16 facts at 128k after one 8k stage</span></div>
+  <div class="card kpi"><b>0.39 s</b><span>per 128k-token row on one RTX 3090 (full attention: 2.29 s)</span></div>
+</div>
+
+<div class="card hl">
+  <b>Which E31 is "best".</b> All variants share the same writer: a two-way page encoder inside each 256-token window, then 32 latents per window, one latent per 6 new tokens. They differ in how a latent's key carries position:
+  <ul class="note" style="margin:6px 0 0">
+    <li><b>Content-only address</b> (<code>e31_li_m1</code>): best pure lookup and recall at length, but slots carry no order, so the in-order chain stays at about 50 %.</li>
+    <li><b>Order code</b> (<code>e31_ord_m1</code>): slot keys sit before the question at a scaled distance. This is the only variant whose chain transfers in length (3 of 3 seeds), but lookup at 128k drops on 2 of 3 seeds.</li>
+    <li><b>Mixed</b> (<code>e31_mix_m1</code>): half the key's rotation pairs carry content, half carry order. It sits between the two: lookup 83 % and chain 70 % at 128k.</li>
+  </ul>
+  E30 is parked (1 Oct). Its lines stay dashed for reference.
 </div>
 
 <div class="card">
-  <h2 style="margin-top:0">Lookup accuracy vs book length</h2>
-  <svg id="acc" viewBox="0 0 900 420" role="img" aria-label="accuracy versus length"></svg>
+  <h2 style="margin-top:0">Lookup: one fact, after the full curriculum (2k → 8k → 16k stages)</h2>
+  <div class="chartwrap"><svg id="acc" viewBox="0 0 900 400" role="img" aria-label="lookup accuracy versus length"></svg></div>
   <div class="legend" id="legend"></div>
-  <p class="note">Dashed line = pass line (75 %). The baseline memory learns an absolute-position read: trained at length L it reaches ≈ 2L. The length-invariant memory (no window-start address, slot keys rotated at the question) transfers across length and needs only one short 8k stage.</p>
+  <p class="note">Dashed black line = pass mark (75 %); dotted = chance. The first E31 memory, with an absolute window-start address, reaches only about twice its training length: the grey line falls to chance by 16k. The length-invariant address fixes that. Order codes cost some lookup reach at 64k–128k; the 16k stage recovers most of it for the mixed code.</p>
 </div>
 
 <div class="card">
-  <h2 style="margin-top:0">Chain (4 hops), first-letter accuracy: no architecture solves it at length</h2>
-  <svg id="chain" viewBox="0 0 900 300" role="img" aria-label="chain first-letter accuracy versus length"></svg>
+  <h2 style="margin-top:0">Chain (4 in-order hops): only E31 with an order code transfers</h2>
+  <div class="chartwrap"><svg id="chain" viewBox="0 0 900 340" role="img" aria-label="chain first-letter accuracy versus length"></svg></div>
   <div class="legend" id="legend2"></div>
-  <p class="note"><b>Correction (28 Sep).</b> An earlier version of this chart showed teacher-forced mean accuracy over the 32 answer letters (E31: 96 % at 2k and 82 % at 128k). When the book contains several candidate nodes, the first one or two given letters identify the node and the rest are copied, so that mean is inflated. The honest score is the <i>first</i> answer letter (128 rows, ±4 points, chance 25 %). By that measure:</p>
-<ul class="note"><li>E31 never solves the chain: about 50–59 % at 2k, meaning it narrows the answer to about 2 candidates.</li>
-<li>E30-LI solves it only at its training length, by position.</li>
-<li>Details: <code>E31b_e30_vs_e31_limits.md</code>.</li></ul>
+  <p class="note">Every chain starts from the model's lookup weights and is trained at 2k (plus one 8k stage where marked). Without an order code, E31 narrows the answer to about two candidates (≈ 50 %). E30 solves the chain only at its training length, by position, in every one of six address variants tried.</p>
+  <p class="note"><b>The one-read limit.</b> The in-order chain can be solved by "follow the order". The <i>parallel</i> chain (four shuffled chains, start node picks one) needs real hop-by-hop lookup. It stays at chance for every memory and for the dense model at 30M. A weight-tied repeated read (E33 query loop) gave no gain. This is the open problem for latent reasoning.</p>
+</div>
+
+<div class="card">
+  <h2 style="margin-top:0">Many facts: recall 8 or 16 values, with one 8k stage</h2>
+  <div class="chartwrap"><svg id="recall" viewBox="0 0 900 340" role="img" aria-label="recall first-letter accuracy versus length"></svg></div>
+  <div class="legend" id="legend3"></div>
+  <p class="note">With the 8k stage both writers carry multi-fact recall to 128k. One reader entry per latent (m1) keeps it. Five entries per latent (m5) dilutes the read at 64k–128k (recall8 falls to 72 %). Decoys (one true fact among 8 look-alikes, 1k training only): E31-m1 89 % at 128k, E30 31 %.</p>
 </div>
 
 <div class="card tbl">
-  <h2 style="margin-top:0">Numbers</h2>
+  <h2 style="margin-top:0">Numbers (first letter, %)</h2>
   <table id="tbl"></table>
+  <p class="note">· = not measured. Lookup values for the absolute-address rows and the no-memory control are the mean over answer letters; for single-fact lookup on E31 the mean and the first letter agree (98 / 98).</p>
 </div>
 
 <div class="card">
   <h2 style="margin-top:0">Honest caveats</h2>
   <ul class="note">
-    <li>The 2k → 8k → 16k curriculum result replicates on two seeds (0 and 1). Seed 2 reached only 65 % at 2k; after 2k training alone seeds differ (median 76 % at 16k).</li>
-    <li>S4 fails at 1–2k: the context-only control (E30 writer with 64-token reach) matches or beats e31_page on the suite cells. At length it collapses like E31's baseline memory (29 % at 16k), so the length-invariant address is what E31 adds.</li>
-    <li>Takeoff at 2k is stochastic (dense failed on 2 of 3 lookup seeds here); step size 5e-5 is required.</li>
-    <li>Training beyond 64k does not fit a 3090 without activation checkpointing; 128k is evaluation-only.</li>
+    <li><b>Takeoff is seed luck at 2k.</b> Content-only m1: 2 of 3 seeds take off on the 2k lookup (one seed never did, so its stages stayed at chance). Order m1: the 128k lookup is 98 % on seed 2 but 47–48 % on seeds 0 and 1. Step size 5e-5 is required.</li>
+    <li>The single best lookup line (94 % at 128k) is one seed. The order-code chain transfer replicates on 3 of 3 seeds (58–75 % at 128k after 2k training).</li>
+    <li>Earlier versions of this page used teacher-forced mean accuracy. On exams with several candidate answers that mean is inflated: the first letters identify the candidate and the rest are copied. The chain claim "82 % at 128k" from 26 Sep was such an inflation and is withdrawn.</li>
+    <li>Training beyond 64k does not fit a 3090 without activation checkpointing, so 128k is evaluation only. 1M runs out of memory for every model; a streaming forward is needed.</li>
   </ul>
 </div>
 </main>
@@ -71,44 +91,55 @@ th:first-child, td:first-child { text-align:left; } .note { color:var(--muted); 
 const L = [2048,4096,8192,16384,32768,65536,131072];
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const lookup = [
-  {name:"baseline, trained 2k", c:"--c5", d:[92.4,80.9,55.9,30.0,28.6,24.9,27.0]},
-  {name:"baseline, curriculum 8k→64k", c:"--c4", d:[84.8,84.6,86.0,84.4,83.6,83.9,52.8]},
-  {name:"length-invariant, trained 2k", c:"--c3", d:[98.5,97.2,94.2,87.0,69.4,51.5,35.6]},
-  {name:"length-invariant + 8k stage", c:"--c1", d:[98.6,98.9,98.5,98.4,97.2,90.7,75.6], w:3},
-  {name:"length-invariant + 8k + 16k stages (seed 1)", c:"--c2", d:[98.3,98.9,98.8,98.3,98.1,95.3,80.0], w:4},
-  {name:"length-invariant + 8k + 16k stages (seed 0)", c:"--c2", d:[95.4,96.4,96.9,96.9,97.4,93.5,81.4], w:3, dash:"5 3"},
-  {name:"length-invariant, seed 2 (2k)", c:"--c2", d:[65.0,65.2,64.6,58.2,48.9,40.4,31.8], dash:"4 3"},
-  {name:"e30_ctx (context-only control), trained 2k", c:"--c6", d:[87.7,83.4,56.5,28.9,25.0,24.7,25.4], dash:"6 3"},
-  {name:"no-memory control", c:"--c5", d:[24.4,24.0,24.5,25.4,24.7,25.9,25.6], dash:"2 3"},
+  {name:"first E31, absolute address, trained 2k (mean)", c:"--c5", d:[92.4,80.9,55.9,30.0,28.6,24.9,27.0]},
+  {name:"E31 content-only, 5 entries/latent (seed 1)", c:"--c7", d:[100,null,100,null,99,null,80]},
+  {name:"E31 content-only, 1 entry/latent (seed 1) · best", c:"--c1", d:[98,95,98,100,97,98,94], w:4},
+  {name:"E31 order code, 1 entry/latent (seed 1)", c:"--c3", d:[89,91,88,89,86,70,47], w:3},
+  {name:"E31 mixed code, 1 entry/latent (seed 1)", c:"--c2", d:[92,86,86,86,91,89,83], w:3},
+  {name:"E30 content-only (parked; seed 1)", c:"--c6", d:[83,94,98,98,98,75,59], dash:"6 3"},
+  {name:"no-memory control (mean)", c:"--c5", d:[24.4,24.0,24.5,25.4,24.7,25.9,25.6], dash:"2 3"},
 ];
-const chain = [  // first-letter accuracy; null = not measured
-  {name:"E30-LI, trained 2k (seed 1)", c:"--c6", d:[100,null,25,null,29,null,45], w:3},
-  {name:"E30-LI + 8k stage (seed 0)", c:"--c4", d:[26,null,92,null,30,null,34], dash:"4 3"},
-  {name:"E31-LI, trained 2k (seed 1)", c:"--c1", d:[59,null,null,null,44,null,32], w:3},
-  {name:"E31-LI + 8k stage (seed 1)", c:"--c2", d:[51,null,null,null,48,null,37]},
-  {name:"E31-LI m1, trained 2k (seed 1)", c:"--c3", d:[52,null,null,null,34,null,45], dash:"5 3"},
+const chain = [
+  {name:"E31 order code, trained 2k (seed 1)", c:"--c3", d:[92,88,78,83,77,72,59], w:3},
+  {name:"E31 order code + 8k stage (seed 1)", c:"--c1", d:[100,94,95,88,83,88,84], w:4},
+  {name:"E31 order code, trained 2k (seed 2)", c:"--c3", d:[100,null,null,null,88,null,75], dash:"5 3"},
+  {name:"E31 order code, trained 2k (seed 0)", c:"--c3", d:[98,null,null,null,70,null,58], dash:"2 3"},
+  {name:"E31 mixed code + 8k stage (seed 1)", c:"--c2", d:[83,null,null,null,77,null,70]},
+  {name:"E31 content-only, 1 entry/latent (seed 1)", c:"--c7", d:[52,null,null,null,34,null,45]},
+  {name:"E30 content-only (parked; seed 1)", c:"--c6", d:[100,null,25,null,29,null,45], dash:"6 3"},
 ];
-function chart(id, legendId, series, H) {
+const recall = [
+  {name:"recall8 · E31 1 entry/latent", c:"--c1", d:[89,97,92,94,98,98,95], w:4},
+  {name:"recall8 · E31 5 entries/latent", c:"--c7", d:[95,97,95,95,97,88,72]},
+  {name:"recall8 · E30 (parked)", c:"--c6", d:[95,91,95,94,98,95,94], dash:"6 3"},
+  {name:"recall16 · E31 1 entry/latent", c:"--c3", d:[88,97,97,95,95,97,91], w:3},
+  {name:"recall16 · E31 5 entries/latent", c:"--c2", d:[94,94,100,98,97,95,92]},
+  {name:"recall16 · E30 (parked)", c:"--c4", d:[89,80,86,89,88,81,88], dash:"6 3"},
+];
+const tip = document.getElementById('tip');
+function chart(id, legendId, series, H, lo) {
   const svg = document.getElementById(id), W = 900, m = {l:52, r:20, t:14, b:40};
   const x = i => m.l + i * (W - m.l - m.r) / (L.length - 1);
-  const y = v => m.t + (100 - v) * (H - m.t - m.b) / 80;  // 20..100 %
+  const y = v => m.t + (100 - v) * (H - m.t - m.b) / (100 - lo);
   let s = "";
-  for (let v = 20; v <= 100; v += 10) s += `<line x1="${m.l}" x2="${W-m.r}" y1="${y(v)}" y2="${y(v)}" stroke="${css('--grid')}"/><text x="${m.l-8}" y="${y(v)+4}" text-anchor="end" font-size="12" fill="${css('--muted')}">${v}%</text>`;
-  L.forEach((l, i) => s += `<text x="${x(i)}" y="${H-14}" text-anchor="middle" font-size="12" fill="${css('--muted')}">${l>=1024? (l/1024)+'k': l}</text>`);
+  for (let v = lo; v <= 100; v += 10) s += `<line x1="${m.l}" x2="${W-m.r}" y1="${y(v)}" y2="${y(v)}" stroke="${css('--grid')}"/><text x="${m.l-8}" y="${y(v)+4}" text-anchor="end" font-size="12" fill="${css('--muted')}">${v}%</text>`;
+  L.forEach((l, i) => s += `<text x="${x(i)}" y="${H-14}" text-anchor="middle" font-size="12" fill="${css('--muted')}">${l/1024}k</text>`);
   s += `<line x1="${m.l}" x2="${W-m.r}" y1="${y(75)}" y2="${y(75)}" stroke="${css('--fg')}" stroke-dasharray="6 4" opacity=".5"/>`;
-  s += `<line x1="${m.l}" x2="${W-m.r}" y1="${y(25)}" y2="${y(25)}" stroke="${css('--muted')}" stroke-dasharray="2 4" opacity=".6"/>`;
+  if (lo <= 25) s += `<line x1="${m.l}" x2="${W-m.r}" y1="${y(25)}" y2="${y(25)}" stroke="${css('--muted')}" stroke-dasharray="2 4" opacity=".6"/>`;
   for (const se of series) {
     const col = css(se.c), pts = se.d.map((v, i) => v == null ? null : `${x(i)},${y(v)}`).filter(Boolean).join(" ");
     s += `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="${se.w||2.2}" ${se.dash?`stroke-dasharray="${se.dash}"`:""}/>`;
-    se.d.forEach((v, i) => { if (v != null) s += `<circle cx="${x(i)}" cy="${y(v)}" r="${se.w?4:3}" fill="${col}"><title>${se.name} @ ${L[i]}: ${v}%</title></circle>`; });
+    se.d.forEach((v, i) => { if (v != null) s += `<circle cx="${x(i)}" cy="${y(v)}" r="${se.w?4.5:3.5}" fill="${col}" stroke="${css('--card')}" stroke-width="1.5" data-t="${se.name} · ${L[i]/1024}k: <b>${v}%</b>"/>`; });
+    s += se.d.map((v,i)=>v==null?'':`<circle cx="${x(i)}" cy="${y(v)}" r="11" fill="transparent" data-t="${se.name} · ${L[i]/1024}k: <b>${v}%</b>"/>`).join('');
   }
   svg.innerHTML = s;
+  svg.querySelectorAll('[data-t]').forEach(c => { c.addEventListener('mousemove', e => { tip.innerHTML = c.dataset.t; tip.style.opacity = 1; tip.style.left = Math.min(e.clientX + 12, innerWidth - 300) + 'px'; tip.style.top = (e.clientY + 12) + 'px'; }); c.addEventListener('mouseleave', () => tip.style.opacity = 0); });
   document.getElementById(legendId).innerHTML = series.map(se => `<span><i style="background:${css(se.c)}"></i>${se.name}</span>`).join("");
 }
-chart("acc", "legend", lookup, 420);
-chart("chain", "legend2", chain, 300);
-const rows = [["<b>lookup</b> (mean accuracy = honest: one value per book)"], ...lookup.map(s => [s.name, ...s.d]), ["<b>chain</b> (first-letter accuracy)"], ...chain.map(s => [s.name, ...s.d])];
-document.getElementById("tbl").innerHTML = `<tr><th>arm</th>${L.map(l=>`<th>${l/1024}k</th>`).join("")}</tr>` +
-  rows.map(r => r.length === 1 ? `<tr><td colspan="8">${r[0]}</td></tr>` : `<tr><td>${r[0]}</td>${r.slice(1).map(v=>`<td>${v == null ? "·" : v.toFixed(1)}</td>`).join("")}</tr>`).join("");
+function drawAll(){ chart("acc", "legend", lookup, 400, 20); chart("chain", "legend2", chain, 340, 20); chart("recall", "legend3", recall, 340, 60); }
+drawAll(); matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawAll);
+const rows = [["<b>lookup</b>, full curriculum"], ...lookup.map(s => [s.name, ...s.d]), ["<b>4-hop chain</b>"], ...chain.map(s => [s.name, ...s.d]), ["<b>recall</b>, one 8k stage"], ...recall.map(s => [s.name, ...s.d])];
+document.getElementById("tbl").innerHTML = `<tr><th>variant</th>${L.map(l=>`<th>${l/1024}k</th>`).join("")}</tr>` +
+  rows.map(r => r.length === 1 ? `<tr><td colspan="8">${r[0]}</td></tr>` : `<tr><td>${r[0]}</td>${r.slice(1).map(v=>`<td>${v == null ? "·" : v}</td>`).join("")}</tr>`).join("");
 </script>
 </body></html>

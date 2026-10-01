@@ -11,6 +11,10 @@
  --surface-0:#121211;--surface-1:#1a1a19;--surface-2:#242422;--line:#3a3935;--text-primary:#fff;--text-secondary:#c3c2b7;--text-muted:#8f8e86;
  --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s7:#9085e9;--good:#5cc47a;--warn:#e0a040;--bad:#ef6b6b;
  --good-bg:#16301f;--warn-bg:#35280f;--bad-bg:#3a1a1a;--info-bg:#15263b;}}
+:root[data-theme="dark"] .viz-root{color-scheme:dark;
+ --surface-0:#121211;--surface-1:#1a1a19;--surface-2:#242422;--line:#3a3935;--text-primary:#fff;--text-secondary:#c3c2b7;--text-muted:#8f8e86;
+ --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s7:#9085e9;--good:#5cc47a;--warn:#e0a040;--bad:#ef6b6b;
+ --good-bg:#16301f;--warn-bg:#35280f;--bad-bg:#3a1a1a;--info-bg:#15263b;}
 *{box-sizing:border-box}body{margin:0;background:var(--surface-0)}
 .viz-root{font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;color:var(--text-primary);background:var(--surface-0);padding:24px 16px 80px}
 main{max-width:1100px;margin:0 auto}
@@ -42,19 +46,46 @@ textarea{width:100%;min-height:120px;font:13px ui-monospace,Menlo,monospace;back
 .note{font-size:12.5px;color:var(--text-secondary)}
 </style>
 <body class="viz-root"><div id="tip"></div><main>
-<div class="kicker">MrCogito · E31 draft · alignment page · 24 Sep 2026</div>
+<div class="kicker">MrCogito · E31 · architecture page · drafted 24 Sep, updated 1 Oct 2026</div>
 <h1>How information flows through the sliding-window latent memory (E31)</h1>
-<p class="sub">Step through the network, toggle the two context arms and the proposed edits, compare with E30 as it was built, and then use the checklist at the bottom to confirm or change each design decision. Weights in the "book view" are <b>illustrative</b> (hand-built to show the mechanism), not trained values. For a token-by-layer view of how the two paths are wired, see <a href="e31_wiring.html">the wiring page</a>.</p>
+<p class="sub"><b>1 Oct:</b> E31 is the memory we continue with (E30 parked). The controls start on the <b>best version</b>, described in the box below. Step through the network, toggle the two context arms and the proposed edits, compare with E30 as it was built, and then use the checklist at the bottom to confirm or change each design decision. Weights in the "book view" are <b>illustrative</b> (hand-built to show the mechanism), not trained values. For a token-by-layer view of how the two paths are wired, see <a href="e31_wiring.html">the wiring page</a>.</p>
 
 <div class="controls">
-  <span><span class="lab">Model</span><span class="seg" id="mode"><button data-v="e30">E30 as built</button><button data-v="A" class="on">E31 · page encoder</button><button data-v="B">E31 · latent↔token rounds</button></span></span>
-  <label class="tg"><input type="checkbox" id="prop" checked> proposed edits (competition + optional null latent + wider reader K/V)</label>
-  <label class="tg"><input type="checkbox" id="lc"> long-context config (length-invariant address + windowed global read)</label>
+  <span><span class="lab">Model</span><span class="seg" id="mode"><button data-v="e30">E30 as built (parked)</button><button data-v="A" class="on">E31 · page encoder (best)</button><button data-v="B">E31 · latent↔token rounds</button></span></span>
+  <label class="tg"><input type="checkbox" id="prop" checked> latents compete for tokens</label>
+  <span><span class="lab">Reader entries / latent</span><span class="seg" id="mm"><button data-v="1" class="on">1 (best)</button><button data-v="5">5</button></span></span>
+  <label class="tg"><input type="checkbox" id="lc" checked> long-context config (length-invariant address + windowed global read)</label>
+  <label class="tg"><input type="checkbox" id="ord" checked> order code (needed for chains)</label>
   <span><button class="btn" id="prev">◀ prev</button> <button class="btn primary" id="next">next step ▶</button> <span class="note" id="stepno"></span></span>
 </div>
 
+<!-- ============ best ============ -->
+<h2 style="border-top:0;margin-top:18px">★ The best version (1 Oct 2026)</h2>
+<div class="card" style="background:var(--info-bg)">
+<p style="margin-top:0">One sentence: <b>a separate writer turns each 256-token window of the book into 32 latents using two-way context. Each latent becomes one key/value entry with a length-invariant, order-preserving position. The language model reads those entries in one global layer, and after the question that read is its only view of the book.</b></p>
+<div class="shape" style="overflow-x:auto;white-space:pre">tokens ── 128-d embedding ──┬──────────────► main path (30M, H 960, 4 layers):
+                            │                 up-proj → local (16 back) → GLOBAL READ → local ×2 → next token
+                            │                                              ▲   book side: last 256 raw tokens only
+                            ▼                                              │   question side: memory entries only
+          writer (+3.9M params), per window W 256 / stride 192:          │
+          proj 256 → page encoder ×2 (two-way) → 32 latents × 512        │
+          (8 heads, compete, 2 read rounds, FFN) → 1 key + 1 value per latent (64-d)
+          → RoPE at a scaled distance before QUERY ──────────────────────┘
+          memory = N/6 entries (one per 6 new tokens)</div>
+<table style="margin-top:10px">
+<tr><th>setting</th><th>value</th><th>why (evidence)</th></tr>
+<tr><td>Writer context</td><td>2-layer two-way page encoder, width 256</td><td>Every letter of a fact is recognisable, and facts inside one window get linked (Glyph chain 100 % vs E30 14 %). The BiXT arm did not train.</td></tr>
+<tr><td>Ratio</td><td>32 latents per 192 new tokens ≈ 6 tokens per latent</td><td>Reliable on every seed tried. 12 works when training takes off. 48 fails at width 512 and recovers to 84 % at width 1024.</td></tr>
+<tr><td>Reader entries</td><td><b>1 per latent</b> (N/6)</td><td>As good as 5 wherever it was measured, with 5× fewer entries. Five entries dilute the read at 64k–128k.</td></tr>
+<tr><td>Address</td><td>no window-start term; key rotated <b>before the question at a scaled distance</b> (≤ 2048)</td><td>The content-only key (rotated at the question) is best for pure lookup: 94 % at 128k. The order code is the only one where the 4-hop chain transfers: 84 % at 128k. The mixed code is a compromise: 83 % lookup, 70 % chain.</td></tr>
+<tr><td>Global read</td><td>book side sees its last 256 raw tokens; question side sees the memory only</td><td>The memory is the only long path, and cost is linear: 0.39 s per 128k row vs 2.29 s for full attention.</td></tr>
+<tr><td>Training</td><td>lookup at 2k → 8k stage → 16k stage, step 5e-5; harder tasks start from lookup weights</td><td>Harder tasks from scratch do not take off with this memory.</td></tr>
+</table>
+<p class="note" style="margin-bottom:0"><b>What it cannot do yet:</b> combine facts stored in different places. A single read does not compose hops: parallel chains stay at chance, and so does the dense model at this size. A repeated weight-tied read gave no gain. The <a href="e31_wiring.html#reasoning">wiring page</a> shows where latent reasoning could be added. Results: <a href="e31_length_ladder.html">length ladder</a> · <a href="e31b_memory_study_report.html">study report</a>.</p>
+</div>
+
 <!-- ============ 0. status ============ -->
-<h2 style="border-top:0;margin-top:18px">0 · Status after the runs (27 Sep 2026)</h2>
+<h2>0 · Status after the runs (27 Sep, extended 1 Oct 2026)</h2>
 <p class="note">The page below is the 24 Sep alignment draft. This table records what was built and how it did: the full-tier suite at 30M (3 seeds), the context-only control and the 2k → 128k length ladder. Full comparison with E30: <a href="../4_Research_Notes/e30_vs_e31_assessment_20260927.html">E30 vs E31 assessment</a>. Length results: <a href="e31_length_ladder.html">length ladder</a>.</p>
 <div class="card" style="overflow-x:auto"><table>
 <tr><th>decision in the draft</th><th>built?</th><th>outcome</th></tr>
@@ -73,7 +104,13 @@ textarea{width:100%;min-height:120px;font:13px ui-monospace,Menlo,monospace;back
 <tr><td>Context-only control (E30 with 64-token reach)</td><td><span class="tag t-new">run</span></td><td><b>It matches or beats E31 at 1–2k</b> (lookalike 99 vs 94 %, lookup-2k 99 vs 89 %). Criterion S4 fails; E30's flaw was its reach. At length it collapses like E31's original address.</td></tr>
 <tr><td>Coarse rung (W 512 · 8 latents)</td><td><span class="tag t-new">run</span></td><td><b>Failed</b>: 39 % (1 entry per latent), chance (5 entries). 1M needs the two-level memory.</td></tr>
 <tr><td>Exam ladder DNA → Glyph → text</td><td><span class="tag t-prop">partial</span></td><td>DNA and Glyph pass (Glyph fact-1k 99 %). Text rung not run.</td></tr>
-<tr><td>E31a (memory in every upper layer), two-level 1M memory</td><td><span class="tag t-same">not started</span></td><td>Next: see the assessment's next steps.</td></tr>
+<tr><td><i>new (E31b)</i>: one reader entry per latent (m1)</td><td><span class="tag t-prop">adopted</span></td><td>Memory N/6, the same size as E30's. As good as m5 at short length and better at 64k–128k. Best lookup: 94 % at 128k (first letter).</td></tr>
+<tr><td><i>new (E31b)</i>: order code (<code>lm_slot_pos scaled</code> / <code>mixed</code>)</td><td><span class="tag t-prop">adopted for relations</span></td><td>The boundary address drops slot order, and the in-order chain then stays near 50 %. Scaled positions bring order back: 84 % at 128k, and 3 of 3 seeds transfer. Cost: lookup reach at 64k–128k.</td></tr>
+<tr><td><i>new (E31b)</i>: lookup → 8k → 16k curriculum</td><td><span class="tag t-prop">adopted</span></td><td>Recall of 8 or 16 facts holds 91–95 % at 128k after one 8k stage. Without it, recall fades after 8k.</td></tr>
+<tr><td><i>correction (28 Sep)</i>: first-letter accuracy</td><td><span class="tag t-e30">metric fix</span></td><td>The teacher-forced mean inflated every exam with several candidate answers. The earlier "chain 82 % at 128k" was inflation. All gates now use the first answer letter.</td></tr>
+<tr><td>Multi-hop: repeated weight-tied read (E33 query loop)</td><td><span class="tag t-e30">no gain</span></td><td>4 rounds vs 1, with and without per-round targets: −2 to +6 points over 10 cells. The parallel chain stays at chance.</td></tr>
+<tr><td>E30 vs E31</td><td><span class="tag t-new">decided</span></td><td>E31 chosen, E30 parked. E30's writer is cheaper, but it is position-bound on chains and collapses under decoys at length.</td></tr>
+<tr><td>E31a (memory in every upper layer), two-level 1M memory, latent reasoning</td><td><span class="tag t-same">not started</span></td><td>Next: latent reasoning over the memory, then more tokens per latent toward 1M (E32).</td></tr>
 </table></div>
 
 <!-- ============ 1. pipeline ============ -->
@@ -116,7 +153,7 @@ textarea{width:100%;min-height:120px;font:13px ui-monospace,Menlo,monospace;back
 </div>
 
 <!-- ============ 5. checklist ============ -->
-<h2>5 · Alignment checklist: confirm or change each decision</h2>
+<h2>5 · Alignment checklist (24 Sep, historical)</h2>
 <p class="note">This is the 24 Sep alignment checklist, kept as it was; section 0 records what each decision turned into. Pick "agree", "change" or "question" and add a note. The box at the bottom collects your answers into a message you can paste back into the chat.</p>
 <div class="card"><table class="chk" id="chk"><tr><th>#</th><th>Decision in the E31 draft</th><th style="width:120px">Your call</th><th style="width:34%">Note</th></tr></table>
 <p><button class="btn primary" id="collect">Collect my answers</button> <button class="btn" id="copy">Copy</button> <span class="note" id="copied"></span></p>
@@ -128,7 +165,7 @@ const css=n=>getComputedStyle(document.body).getPropertyValue(n).trim();const NS
 function el(t,a,p,x){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(x!=null)e.textContent=x;if(p)p.appendChild(e);return e;}
 function hover(n,h){n.addEventListener('mousemove',e=>{tip.innerHTML=typeof h==='function'?h():h;tip.style.opacity=1;tip.style.left=Math.min(e.clientX+14,innerWidth-320)+'px';tip.style.top=(e.clientY+14)+'px'});n.addEventListener('mouseleave',()=>tip.style.opacity=0);}
 function clear(s){while(s.firstChild)s.removeChild(s.firstChild);}
-const S={mode:'A',prop:true,lc:false,step:0,win:1,lat:1};
+const S={mode:'A',prop:true,nul:false,lc:true,ord:true,mm:1,step:0,win:1,lat:1};
 function ownerOf(wi){const st=[0,12,24,32][wi];const fc=19-st;let o=0;for(let k=1;k<4;k++)if(Math.abs((k+.5)*4-fc)<Math.abs((o+.5)*4-fc))o=k;return o;}
 
 /* ---------------- stage content ---------------- */
@@ -139,14 +176,14 @@ const STAGES=[
  {id:'win',lane:'w',x:150,y:70,w:150,t:'Windows over the book',sub:m=>m==='e30'?'W 256 · stride 192 (auto-shrinks)':'W 256 · stride 192 · fixed'},
  {id:'ctx',lane:'w',x:320,y:70,w:165,t:'Context',sub:m=>m==='e30'?'none: 16-back state':m==='A'?'A · 2-layer two-way encoder':'B · 3 latent↔token rounds'},
  {id:'lat',lane:'w',x:505,y:70,w:170,t:'Latents pick',sub:m=>m==='e30'?'32 fixed queries · heads averaged':S.prop?'32 latents · 8 heads · compete':'32 latents · 8 heads'},
- {id:'ffn',lane:'w',x:695,y:70,w:165,t:'Latent state + address',sub:m=>m==='e30'?'none: weighted avg of K/V':(S.lc?'residual + FFN · ID only, no position':'residual + FFN · ID + position')},
- {id:'proj',lane:'w',x:880,y:70,w:170,t:'To reader keys/values',sub:m=>m==='e30'?'already K/V · 1 × 64':(S.prop?'W_K z, W_V z · 5 × 64':'W_K z, W_V z · 1 × 64')},
+ {id:'ffn',lane:'w',x:695,y:70,w:165,t:'Latent state + address',sub:m=>m==='e30'?'none: weighted avg of K/V':(S.lc?(S.ord?'residual + FFN · ID · scaled order':'residual + FFN · ID · content only'):'residual + FFN · ID + position')},
+ {id:'proj',lane:'w',x:880,y:70,w:170,t:'To reader keys/values',sub:m=>m==='e30'?'already K/V · 1 × 64':`W_K z, W_V z · ${S.mm} × 64`},
  {id:'read',lane:'main',x:390,y:250,w:190,t:'Global read (exclusive)',sub:()=>S.lc?'slots only · book reads 256 back':'after QUERY: slots only'},
  {id:'stack',lane:'main',x:610,y:250,w:150,t:'Local stack × 2',sub:()=>'causal, stops at QUERY'},
  {id:'ans',lane:'main',x:790,y:250,w:150,t:'Answer',sub:()=>'CE on 32 letters → bits'},
 ];
 function D(){const m=S.mode, p=S.prop, e30=m==='e30';
- const g=e30?1:(p?5:1);
+ const g=e30?1:S.mm;
  return {
  emb:{what:e30?'Each token id becomes a 32-dim embedding plus hashed 2-letter lookups, then goes up to the model width.':
    'Each token id becomes a <b>128-dim</b> embedding (your "tiny embeddings"). No hashed n-grams. This one embedding feeds <b>two</b> places: the writer branch (top lane) and the main causal path (bottom lane).',
@@ -166,28 +203,28 @@ function D(){const m=S.mode, p=S.prop, e30=m==='e30';
    surv:e30?'The salience wall: letters 14–32 of the value look like filler.':'All 32 value letters are recognisable (two-way context covers the whole fact).'},
  lat:{what:e30?'32 <b>fixed</b> learned queries score every token in the window. The 8 scoring heads are <b>averaged into one choice</b>, and nothing stops two queries picking the same tokens (this is how the rank collapsed).':
    `32 latents per window. Each has <b>8 heads</b>, and each head keeps its <b>own</b> attention pattern and writes its own 64-dim slice of the latent. One latent can hold 8 different picks (e.g. key in head 1, value parts in heads 2–8). Each latent has a <b>position prior</b> over its part of the window.`+
-   (p?' <b>Proposed:</b> latents <b>compete</b>: each token\'s weight is split across the latents (softmax over latents), then each latent renormalises. An <b>optional null latent</b> (never read) soaks up what no real latent claims. It helps with random filler, but in text it may discard what a later question needs, so it is an ablation, not a default.':' <span class="tag t-prop">gap</span> Without the proposed edit, arm A has no competition, so latents may duplicate picks.'),
+   (p?' <b>Proposed:</b> latents <b>compete</b>: each token\'s weight is split across the latents (softmax over latents), then each latent renormalises. An <b>optional null latent</b> (never read; built but off in every run) soaks up what no real latent claims. It helps with random filler, but in text it may discard what a later question needs, so it is an ablation, not a default.':' <span class="tag t-prop">gap</span> Without the proposed edit, arm A has no competition, so latents may duplicate picks.'),
    tags:e30?['e30']:(p?['new','prop']:['new']),
    shape:e30?'queries       [32, 8, 16]  (scoring)\nweights       [B, 5, 32, 8, 256] → mean over heads → [B, 5, 32, 256]':
-   `latents z     [B·5, 32${p?' + 1 null':''}, 512]   (8 heads × 64)\nattention     [B·5, 8, 32${p?'+1':''}, 256]   ${p?'softmax over latents, then renormalise over tokens':'softmax over tokens'}`,
+   `latents z     [B·5, 32${S.nul?' + 1 null':''}, 512]   (8 heads × 64)\nattention     [B·5, 8, 32${S.nul?'+1':''}, 256]   ${p?'softmax over latents, then renormalise over tokens':'softmax over tokens'}`,
    surv:e30?'≈ 1 pick per slot.':'Up to 8 picks per latent; up to 256 picks per window.'},
  ffn:{what:e30?'No latent state: the slot <b>is</b> the weighted average of token keys/values. Its "address" is a position label at a fixed page point, unrelated to what it read.':
-   (S.lc?'Each latent keeps its own state: residual + feed-forward (512 → 1024 → 512). <b>Length-invariant address (new, 27 Sep):</b> no window-start sinusoid is added, only the latent ID and its sub-page prior. The slot key is rotated at the <b>QUERY position</b>, not at the position it read. Every slot therefore sits at the same distance from the reader at any book length, and retrieval is by content alone. Result: trained on books of at most 16k, 80–81 % at 128k (2 seeds). With the absolute address, reach stops at ≈ 2× the training length.':
+   (S.lc&&S.ord?'Each latent keeps its own state: residual + feed-forward (512 → 1024 → 512). <b>Length-invariant address with an order code (best, 28 Sep–1 Oct):</b> no window-start sinusoid. The slot key is rotated at a position <b>before the question, at its true distance compressed so no distance exceeds 2048</b> (the training scale). Slots keep their order, and the reader never sees a distance outside the training range. This is the only address under which the 4-hop in-order chain transfers to 128k: 84 % after one 8k stage, first letter. The content-only version (toggle "order code" off) is better for pure lookup: 94 % at 128k, against 47–98 % depending on the seed.':S.lc?'Each latent keeps its own state: residual + feed-forward (512 → 1024 → 512). <b>Length-invariant address (new, 27 Sep):</b> no window-start sinusoid is added, only the latent ID and its sub-page prior. The slot key is rotated at the <b>QUERY position</b>, not at the position it read. Every slot therefore sits at the same distance from the reader at any book length, and retrieval is by content alone. Result: trained on books of at most 16k, 80–81 % at 128k (2 seeds). With the absolute address, reach stops at ≈ 2× the training length.':
    'Each latent keeps its own state: residual + feed-forward (512 → 1024 → 512). <b>Address:</b> a latent-ID embedding and the window start are added to the latent, and its position stamp is set to the <b>average position it actually read</b> (Σ weight × position). The address therefore matches the content. <span class="tag t-prop">result</span> works only up to ≈ 2× the training length: see the long-context config.'),
-   tags:e30?['e30']:(S.lc?['new','prop']:['new']),shape:e30?'slot K, V     [B, 160, 1, 64]  (convex mix of token K/V)':(S.lc?'z ← z + FFN(z)       [B, 160, 512]\nno window-start term; pos(z_k) = position of QUERY':'z ← z + FFN(z)       [B, 160, 512]\npos(z_k) = start + Σ_t w_k(t)·t'),
-   surv:e30?'Content = a blend of tokens; address = a label.':(S.lc?'Content = a bound fact in context; address = none (content-addressed).':'Content = a bound fact in context; address = where it came from.')},
+   tags:e30?['e30']:(S.lc?['new','prop']:['new']),shape:e30?'slot K, V     [B, 160, 1, 64]  (convex mix of token K/V)':(S.lc&&S.ord?'z ← z + FFN(z)       [B, 160, 512]\nno window-start term\npos(z_k) = Q − d·min(1, 2048/Q),  d = Q − read position':S.lc?'z ← z + FFN(z)       [B, 160, 512]\nno window-start term; pos(z_k) = position of QUERY':'z ← z + FFN(z)       [B, 160, 512]\npos(z_k) = start + Σ_t w_k(t)·t'),
+   surv:e30?'Content = a blend of tokens; address = a label.':(S.lc&&S.ord?'Content = a bound fact in context; address = relative order only (length-invariant).':S.lc?'Content = a bound fact in context; address = none (content-addressed).':'Content = a bound fact in context; address = where it came from.')},
  proj:{what:(e30?'Slots are already in the reader\'s key/value space: <b>1 head × 64 dims</b>. ':'Each 512-dim latent is projected into the reader\'s key/value space. ')+
-   (!e30&&!p?'<span class="tag t-prop">gap</span> With 1 key/value head the latent is squeezed from 512 to 64 dims here, which puts back the bottleneck E31 was built to remove.':'')+(!e30&&p?'<b>Proposed:</b> 5 key/value heads × 64 = 320 dims per latent (the head count must divide the 15 query heads), same setting in every arm.':''),
-   tags:e30?['e30']:(p?['prop']:['new']),shape:`slot keys     [B, 160, ${g}, 64]\nslot values   [B, 160, ${g}, 64]\n${S.lc&&!e30?'RoPE at the QUERY position (same for every slot)':'RoPE at pos(z_k)'}`,
-   surv:`Per latent: ${2*g*64} numbers reach the reader (${g} × 64 for keys + ${g} × 64 for values).`},
+   (!e30&&S.mm===1?'<b>1 reader entry per latent (best):</b> the 512-dim latent is squeezed to one 64-dim key and one 64-dim value. The draft feared this squeeze, but the study found 1 entry ≥ 5 entries wherever it was measured, and 5 entries dilute the read at 64k–128k. Memory = N/6 entries.':'')+(!e30&&S.mm===5?'<b>5 reader entries per latent</b> (as first built): 5 keys and 5 values of 64 dims each. That is 0.83 entries per token, close to full attention\'s key count, and the read dilutes at 64k–128k (recall8: 72 % at 128k vs 95 % with 1 entry).':''),
+   tags:e30?['e30']:['new'],shape:`slot keys     [B, ${160*g}, 1, 64]\nslot values   [B, ${160*g}, 1, 64]\n${S.lc&&!e30?(S.ord?'RoPE at the scaled distance before QUERY':'RoPE at the QUERY position (same for every slot)'):'RoPE at pos(z_k)'}`,
+   surv:`Per latent: ${2*g*64} numbers reach the reader (${g} × 64 for keys + ${g} × 64 for values). Memory: ${g===1?'N/6':'0.83 N'} entries.`},
  read:{what:(S.lc?'The one global layer, <b>long-context config</b>: book tokens read only the last <b>256</b> book tokens (windowed raw keys), so the memory is the only long-range path and cost is linear in length. ':'The one global layer. Book tokens read earlier book tokens as usual. ')+'From QUERY on, question-side tokens read <b>their own side + the 160 memory slots</b>, never the raw book. Each of the 15 query heads makes its own weighted choice over the slots. This is a <b>single hop</b>: one look at the memory.',
    tags:['same'],shape:`keys/values   [B, 1024 + 160, ${g}, 64]\nmask          exclusive after QUERY (see section 4)\noutput        [B, 1024, 960]`,
-   surv:'Whatever the slots hold, up to one hop. Multi-hop (shuffled chains) needs more reads: out of scope for E31.'},
+   surv:'Whatever the slots hold, in <b>one hop</b>. Measured: lookup, recall and decoys to 128k, and the in-order chain with the order code. Parallel (shuffled) chains stay at chance, and four weight-tied repeats of this read (E33) gave no gain. This read is where latent reasoning has to be added: see the wiring page.'},
  stack:{what:'Two causal local layers (16 back) that also treat QUERY as a hard start, so they add no path to the raw book. They turn what the global read fetched into letter predictions.',
    tags:['same'],shape:'[B, 1024, 960] → [B, 1024, 960]',surv:'No new information about the book; only processing.'},
- ans:{what:'Cross-entropy on the 32 answer letters. Reported as <b>recovered bits</b> (0 = chance, 64 = the whole value) and, new in E31, <b>accuracy per answer letter</b>, which shows directly whether letters 14–32 survive.',
+ ans:{what:'Cross-entropy on the 32 answer letters. Reported as <b>recovered bits</b> (0 = chance, 64 = the whole value) and <b>accuracy per answer letter</b>. Since 28 Sep the gate is the <b>first answer letter</b>: when the book holds several candidate answers, the later letters can be copied once the first ones identify the candidate.',
    tags:['same','new'],shape:'logits [B, 32, vocab] on the answer span\nper-position accuracy [32]',
-   surv:e30?'Measured: ≈ 26 of 64 bits.':'E31 target: ≥ 40 bits on lookup, ≥ 47 on lookalike and chain.'},
+   surv:e30?'Measured: ≈ 26 of 64 bits.':'Measured (first letter, 128k): lookup 94 %, recall16 91 %, decoys 89 %, 4-hop chain 84 % with the order code. Parallel chain: chance.'},
  };}
 const TAGTXT={new:['t-new','new in E31'],e30:['t-e30','E30 as built'],prop:['t-prop','proposed edit'],same:['t-same','unchanged platform']};
 
@@ -235,7 +272,7 @@ function drawBook(){const s=document.getElementById('book');clear(s);const x0=20
   el('text',{x:x0+st*cw+6,y:y+14,'font-size':11,'font-weight':on?700:400},g,`window ${i+1} · ${st}–${st+W-1}`);g.addEventListener('click',()=>{S.win=i;S.lat=ownerOf(i);render();});});
  // latents of selected window
  const st=starts[S.win];el('text',{x:x0,y:140,'font-size':12,class:'sec'},s,`Latents of window ${S.win+1} (click one):`);
- const nl=K+(S.mode!=='e30'&&S.prop?1:0);
+ const nl=K+(S.mode!=='e30'&&S.nul?1:0);
  for(let k=0;k<nl;k++){const isNull=k===K;const g=el('g',{class:'node'},s);const x=x0+210+k*92;const on=k===S.lat;
   el('rect',{x,y:126,width:84,height:26,rx:6,fill:isNull?css('--text-muted'):css('--s7'),'fill-opacity':on?.9:.25,stroke:isNull?css('--text-muted'):css('--s7')},g);
   el('text',{x:x+42,y:143,'text-anchor':'middle','font-size':11.5,'font-weight':600,style:on?'fill:#fff':''},g,isNull?'null latent':(S.mode==='e30'?`query ${k+1}`:`latent ${k+1}`));
@@ -248,7 +285,7 @@ function drawBook(){const s=document.getElementById('book');clear(s);const x0=20
 /* illustrative attention */
 function attention(){const st=starts[S.win];const toks=[...Array(W)].map((_,i)=>st+i);const m=S.mode,p=S.prop;
  const sal=t=>{const r=role(t);if(r==='M')return 2;if(r==='k')return 2.2;if(r==='v')return recognisable(t)?2.4:0;return 0;};
- const nl=K+(m!=='e30'&&p?1:0);
+ const nl=K+(m!=='e30'&&S.nul?1:0);
  const fc=FK+5-st;let owner=0;for(let k=1;k<K;k++)if(Math.abs((k+.5)*W/K-fc)<Math.abs((owner+.5)*W/K-fc))owner=k;
  // raw per-latent-per-head logits
  const logit=[];for(let k=0;k<nl;k++){logit.push([]);for(let h=0;h<HEADS;h++){logit[k].push(toks.map((t,i)=>{
@@ -359,6 +396,8 @@ document.getElementById('copy').onclick=()=>{const o=document.getElementById('ou
 document.querySelectorAll('#mode button').forEach(b=>b.onclick=()=>{S.mode=b.dataset.v;document.querySelectorAll('#mode button').forEach(x=>x.classList.toggle('on',x===b));S.lat=ownerOf(S.win);render();});
 document.getElementById('prop').onchange=e=>{S.prop=e.target.checked;S.lat=Math.min(S.lat,K-1);render();};
 document.getElementById('lc').onchange=e=>{S.lc=e.target.checked;render();};
+document.getElementById('ord').onchange=e=>{S.ord=e.target.checked;render();};
+document.querySelectorAll('#mm button').forEach(b=>b.onclick=()=>{S.mm=+b.dataset.v;document.querySelectorAll('#mm button').forEach(x=>x.classList.toggle('on',x===b));render();});
 document.getElementById('next').onclick=()=>{S.step=(S.step+1)%STAGES.length;render();};
 document.getElementById('prev').onclick=()=>{S.step=(S.step-1+STAGES.length)%STAGES.length;render();};
 document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;if(e.key==='ArrowRight')document.getElementById('next').click();if(e.key==='ArrowLeft')document.getElementById('prev').click();});

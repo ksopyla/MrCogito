@@ -9,6 +9,9 @@
 @media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])) .viz-root{color-scheme:dark;
  --surface-0:#121211;--surface-1:#1a1a19;--surface-2:#242422;--line:#3a3935;--text-primary:#fff;--text-secondary:#c3c2b7;--text-muted:#8f8e86;
  --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s7:#9085e9;--bad:#ef6b6b;--good:#5cc47a;--info-bg:#15263b;--warn-bg:#35280f;}}
+:root[data-theme="dark"] .viz-root{color-scheme:dark;
+ --surface-0:#121211;--surface-1:#1a1a19;--surface-2:#242422;--line:#3a3935;--text-primary:#fff;--text-secondary:#c3c2b7;--text-muted:#8f8e86;
+ --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s7:#9085e9;--bad:#ef6b6b;--good:#5cc47a;--info-bg:#15263b;--warn-bg:#35280f;}
 *{box-sizing:border-box}body{margin:0;background:var(--surface-0)}
 .viz-root{font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;color:var(--text-primary);background:var(--surface-0);padding:22px 16px 60px}
 main{max-width:1140px;margin:0 auto}h1{font-size:26px;line-height:1.2;margin:0 0 6px}h2{font-size:19px;margin:26px 0 6px}
@@ -29,10 +32,11 @@ svg text{fill:var(--text-primary);font-family:inherit}svg .muted{fill:var(--text
 ol li{margin:4px 0}
 </style>
 <body class="viz-root"><div id="tip"></div><main>
-<div class="kicker">MrCogito · E31 draft · wiring page · 24 Sep 2026</div>
+<div class="kicker">MrCogito · E31 · wiring page · drafted 24 Sep, updated 1 Oct 2026</div>
 <h1>E31 wiring: every layer, every token, on a 17-token example</h1>
 <p class="sub">Yes, there are <b>two paths running in parallel</b> from the same token embeddings. The <b>memory path</b> (purple, below the embeddings) writes latents from each window of the book. The <b>main path</b> (blue, above) is an ordinary causal language model over the whole row. They meet at <b>one place</b>: the global-read layer, where the memory slots are appended to that layer's keys and values. There is no separate "decoding stage". The answer is produced by the main path's top layers, like any next-token prediction. Companion page: <a href="e31_architecture.html">E31 architecture &amp; checklist</a>.</p>
 
+<div class="card note" style="background:var(--info-bg)"><b>Update, 1 Oct 2026: the best version.</b> The page now starts on the configuration that won the E30 vs E31 study. It uses the page-encoder writer, one reader entry per latent (32 per window, about one per 6 tokens), the length-invariant address <b>with the order code</b>, and the windowed global read. E30 is parked. The new section <a href="#reasoning">"Where latent reasoning could live"</a> below maps the candidate places for multi-hop reasoning onto this wiring.</div>
 <div class="card note" style="background:var(--info-bg)"><b>Update, 27 Sep 2026.</b> The wiring below is what was built and trained. Two options were added for long inputs; both are toggles here:
 <ul style="margin:6px 0 0;padding-left:20px">
  <li><b>Windowed global read.</b> In the global layer, book-side tokens read only the last 4 book states here (256 at scale), not the whole book. The memory becomes the only long path and cost is linear. Click a book-side global-read state to see its narrower dependencies.</li>
@@ -41,11 +45,12 @@ ol li{margin:4px 0}
 Results and costs: <a href="e31_length_ladder.html">length ladder</a> · <a href="../4_Research_Notes/e30_vs_e31_assessment_20260927.html">E30 vs E31 assessment</a>.</div>
 
 <div class="controls">
- <span><span class="lab">Writer</span><span class="seg" id="arm"><button data-v="A" class="on">A · page encoder</button><button data-v="B">B · latent↔token rounds</button><button data-v="e30">E30 as built</button></span></span>
+ <span><span class="lab">Writer</span><span class="seg" id="arm"><button data-v="A" class="on">A · page encoder (best)</button><button data-v="B">B · latent↔token rounds</button><button data-v="e30">E30 as built (parked)</button></span></span>
  <span><span class="lab">Setting</span><span class="seg" id="set"><button data-v="probe" class="on">probe (QUERY cut)</button><button data-v="text">text (no QUERY)</button></span></span>
  <label class="tg"><input type="checkbox" id="km" checked> mark states that "know" the keymark</label>
- <label class="tg"><input type="checkbox" id="rw"> windowed global read (long context)</label>
- <label class="tg"><input type="checkbox" id="li"> length-invariant address</label>
+ <label class="tg"><input type="checkbox" id="rw" checked> windowed global read (long context)</label>
+ <label class="tg"><input type="checkbox" id="li" checked> length-invariant address</label>
+ <label class="tg"><input type="checkbox" id="ord" checked> order code</label>
  <span><button class="btn" id="prev">◀</button> <button class="btn primary" id="play">step through the forward pass ▶</button></span>
 </div>
 
@@ -62,6 +67,20 @@ Results and costs: <a href="e31_length_ladder.html">length ladder</a> · <a href
   <li>Switch <b>Setting → text</b>: no QUERY, every position predicts the next token and reads the slots of windows that have already closed, so nothing is a dead end.</li>
   <li><b>Step through the forward pass</b> to see the order in which layers compute.</li></ol></div>
 </div>
+
+<h2 id="reasoning" style="margin-top:34px">Where latent reasoning could live in this network</h2>
+<p class="sub">Today the question side gets <b>one</b> look at the memory: one global-read layer, then two local layers that only turn what was fetched into letters. Following a chain A → B → C → D stored in different windows needs a second look whose question depends on what the first look returned. The diagram marks every place such a dependence could be added. Hover a number for details. The literature review behind the "evidence" column: <a href="../4_Research_Notes/latent_reasoning_review_20261001.html">latent reasoning review (1 Oct)</a>.</p>
+<div class="card" style="overflow-x:auto">
+<svg id="rs" viewBox="0 0 1100 430" width="100%" style="min-width:760px" role="img" aria-label="Candidate places for latent reasoning"></svg>
+<div class="legend"><span><i style="background:var(--good)"></i>works today</span><span><i style="background:var(--bad)"></i>tested, no gain</span><span><i style="background:var(--s4)"></i>untested candidate</span></div>
+</div>
+<div class="card" style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:13.5px" id="rstab"></table></div>
+<div class="card note"><b>Why the read loop (③) most likely failed.</b> These hypotheses come from the literature and have not been tested here.
+<ol>
+<li><b>The returned value is not a usable question.</b> The first read returns B as a <i>value</i>, the content of the slot "A → B". The second hop needs B as a <i>key</i>, to match the slot "B → C". Nothing trains those two forms to line up. DiscoLoop and the identity-bridge papers find the bridge entity decodable but not aligned with its input embedding. Feeding back a discrete embedding of the bridge fixes it.</li>
+<li><b>The memory never computes.</b> Every multi-hop success over a memory in the review either loops over the memory itself (Sleep, ImReasoner, loop+memory) or appends thoughts as new inputs (Coconut, superposition). Our slots are frozen per window.</li>
+<li><b>Signal and budget.</b> Coconut without its curriculum is no better than no chain of thought. Composition is learned late (grokking, about 50× the steps needed to fit). Graph search becomes learnable only with balanced hop counts.</li>
+</ol></div>
 </main>
 <script>
 const css=n=>getComputedStyle(document.body).getPropertyValue(n).trim();const NS='http://www.w3.org/2000/svg';const tip=document.getElementById('tip');
@@ -73,7 +92,7 @@ const N=17,BOOK=12,QPOS=12;const LBL=['f','f','f','f','M','k','v1','v2','v3','f'
 const NAME={f:'filler',M:'keymark',k:'key letter',v1:'value letter 1',v2:'value letter 2',v3:'value letter 3',QUERY:'QUERY'};
 const WINS=[[0,5],[4,9],[6,11]];const KL=2;const REACH=3,REACH2=5;
 const PRED={13:'v1',14:'v2',15:'v3'}; // output at t predicts the next token
-const S={arm:'A',set:'probe',km:true,rw:false,li:false,sel:'A:13',step:-1};const RWIN=4;
+const S={arm:'A',set:'probe',km:true,rw:true,li:true,ord:true,sel:'A:13',step:-1};const RWIN=4;
 const side=t=>S.set==='text'?0:(t>=QPOS?1:0);
 
 /* ---------- dependency graph ---------- */
@@ -120,7 +139,7 @@ function draw(){const s=document.getElementById('g');while(s.firstChild)s.remove
  // row labels
  Object.entries(ROWLBL).forEach(([L,[a,b]])=>{if(L==='F'&&S.arm!=='A')return;const y=L==='F'?ROWS.F[1]:ROWS[L];const on=STEPROW.includes(L);
   if(on)el('rect',{x:8,y:(L==='F'?ROWS.F[0]:y)-24,width:1100,height:(L==='F'?ROWS.F[2]-ROWS.F[0]:0)+48,rx:10,fill:css('--s4'),'fill-opacity':.14},s);
-  el('text',{x:14,y:y-2,'font-size':12.5,'font-weight':700},s,L==='G'&&S.arm==='B'?'latents (3 rounds with tokens)':a);el('text',{x:14,y:y+14,'font-size':10.5,class:'sec'},s,L==='G'&&S.arm==='e30'?'static queries over the local-layer states':L==='C'&&S.rw?'book side: last '+RWIN+' only (256 at scale)':L==='G'&&S.li&&S.arm!=='e30'?'keys rotated at QUERY (length-invariant)':b);});
+  el('text',{x:14,y:y-2,'font-size':12.5,'font-weight':700},s,L==='G'&&S.arm==='B'?'latents (3 rounds with tokens)':a);el('text',{x:14,y:y+14,'font-size':10.5,class:'sec'},s,L==='G'&&S.arm==='e30'?'static queries over the local-layer states':L==='C'&&S.rw?'book side: last '+RWIN+' only (256 at scale)':L==='G'&&S.li&&S.arm!=='e30'?(S.ord?'keys at a scaled distance before QUERY (keeps order)':'keys rotated at QUERY (content only)'):b);});
  if(S.arm!=='A'){el('text',{x:X0+10,y:ROWS.F[1]+4,'font-size':12,class:'muted'},s,S.arm==='B'?'no encoder: latents and window tokens refine each other for 3 rounds (drawn as one step)':'no encoder: E30 writes from the MAIN path\'s local-layer states (row "local layer" above)');}
  // column headers: token labels + side
  for(let t=0;t<N;t++){const lb=LBL[t];el('text',{x:cx(t),y:ROWS.E+30,'text-anchor':'middle','font-size':10,class:'muted'},s,t);}
@@ -168,7 +187,7 @@ function hint(id){const L=id[0];const t=+id.split(':')[1];
  if(L==='C'&&S.set==='probe')return (S.rw?'A book-side global read with the <b>windowed</b> raw keys: it reads only the last '+RWIN+' book states (256 at scale), so its cost does not grow with the book. ':'A book-side global read: it reads every earlier book state (cost grows with the square of the book length). ')+'Nothing downstream of it reaches the answer (dead end in the probe; in text it predicts the next book token).';
  if(L==='D'&&S.arm==='e30'&&t<BOOK)return 'In E30 the writer reads these states. Each sees only 3 tokens back here (16 at scale), so value letters far from the keymark look like filler to the writer.';
  if(L==='F')return 'Two-way inside the window: this token sees every token of its window, both directions, so value letters know they belong to the fact.';
- if(L==='G')return S.arm==='A'?'A latent reads the page-encoder states of its whole window, then becomes one memory slot (projected into the global read\'s keys and values).'+(S.li?' <b>Length-invariant address:</b> its key is rotated at the QUERY position and carries no window-start position, so the question finds it by content alone at any book length.':' Its key is rotated at the average position it read, an absolute address that works only up to ≈ 2× the training length.'):S.arm==='B'?'A latent reads the window\'s token embeddings, the tokens read the latents back, for 3 rounds, then it becomes one slot.':'E30: a static query averages the local-layer states of its window; the slot is that weighted average. Look at the local-layer row: v2 and v3 have no ● (their 3-token view misses the keymark), so a static query cannot tell them from filler, even though the slot as a whole contains the keymark.';
+ if(L==='G')return S.arm==='A'?'A latent reads the page-encoder states of its whole window, then becomes one memory slot (projected into the global read\'s keys and values).'+(S.li&&S.ord?' <b>Length-invariant address with the order code (best):</b> no window-start position. Its key is rotated at a position before QUERY: its true distance, compressed so that no distance exceeds 2048. The question finds it by content, slots keep their order, and the distances stay inside the training range at any book length. In the best version each latent gives <b>one</b> key/value entry (32 per window).':S.li?' <b>Length-invariant address:</b> its key is rotated at the QUERY position and carries no window-start position, so the question finds it by content alone at any book length.':' Its key is rotated at the average position it read, an absolute address that works only up to ≈ 2× the training length.'):S.arm==='B'?'A latent reads the window\'s token embeddings, the tokens read the latents back, for 3 rounds, then it becomes one slot.':'E30: a static query averages the local-layer states of its window; the slot is that weighted average. Look at the local-layer row: v2 and v3 have no ● (their 3-token view misses the keymark), so a static query cannot tell them from filler, even though the slot as a whole contains the keymark.';
  if(L==='E')return 'A token embedding feeds both paths: up into the main path and down into the memory path.';
  return S.set==='text'?'Text setting: every position predicts the next token and reads slots of windows that closed before it.':'';}
 
@@ -178,6 +197,43 @@ document.getElementById('play').onclick=()=>{S.step=(S.step+1)%STEPS.length;S.se
 document.getElementById('prev').onclick=()=>{S.step=(S.step-1+STEPS.length)%STEPS.length;S.sel=STEPS[S.step][2];draw();explain();document.getElementById('play').textContent=STEPS[S.step][1].slice(0,60)+'… ▶';};
 function segs(id,key){document.querySelectorAll(`#${id} button`).forEach(b=>b.onclick=()=>{S[key]=b.dataset.v;document.querySelectorAll(`#${id} button`).forEach(x=>x.classList.toggle('on',x===b));if(S.sel&&S.sel.startsWith('F:')&&S.arm!=='A')S.sel='A:13';draw();explain();});}
 segs('arm','arm');segs('set','set');document.getElementById('km').onchange=e=>{S.km=e.target.checked;draw();};
-document.getElementById('rw').onchange=e=>{S.rw=e.target.checked;draw();explain();};document.getElementById('li').onchange=e=>{S.li=e.target.checked;draw();explain();};
+document.getElementById('rw').onchange=e=>{S.rw=e.target.checked;draw();explain();};document.getElementById('li').onchange=e=>{S.li=e.target.checked;draw();explain();};document.getElementById('ord').onchange=e=>{S.ord=e.target.checked;draw();explain();};
 draw();explain();
+</script>
+<script>
+(()=>{const s=document.getElementById('rs');const C=n=>getComputedStyle(document.body).getPropertyValue(n).trim();
+ const box=(x,y,w,h,col,t,sub,op)=>{el('rect',{x,y,width:w,height:h,rx:9,fill:C(col),'fill-opacity':op||.15,stroke:C(col)},s);el('text',{x:x+w/2,y:y+(sub?h/2-3:h/2+5),'text-anchor':'middle','font-size':13,'font-weight':700},s,t);if(sub)el('text',{x:x+w/2,y:y+h/2+14,'text-anchor':'middle','font-size':11,class:'sec'},s,sub);};
+ const ar=(d,col,dash)=>el('path',{d,fill:'none',stroke:C(col||'--text-muted'),'stroke-width':2,'stroke-dasharray':dash||'','marker-end':'url(#rah)'},s);
+ const df=el('defs',{},s);const mk=el('marker',{id:'rah',viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:7,markerHeight:7,orient:'auto'},df);el('path',{d:'M0,0L10,5L0,10z',fill:C('--text-muted')},mk);
+ // memory path
+ el('text',{x:20,y:24,'font-size':12,'font-weight':700,style:'fill:var(--s7)'},s,'MEMORY PATH (book)');
+ [0,1,2,3].forEach(i=>{box(20+i*150,40,130,46,'--s7','window '+(i+1),'256 tokens');ar(`M${85+i*150},86 L${85+i*150},112`,'--s7');box(20+i*150,114,130,46,'--s7','page encoder','two-way');ar(`M${85+i*150},160 L${85+i*150},186`,'--s7');box(20+i*150,188,130,40,'--s7','32 latents','1 entry each',.28);});
+ el('text',{x:20,y:330,'font-size':11.5,class:'sec'},s,'… one window every 192 tokens, N/6 entries in total');
+ // main path
+ el('text',{x:660,y:24,'font-size':12,'font-weight':700,style:'fill:var(--s1)'},s,'MAIN PATH (question side, after QUERY)');
+ box(660,40,200,40,'--s1','question tokens','QUERY · start node');ar('M760,80 L760,104');
+ box(660,106,200,40,'--s1','local layer','16 back');ar('M760,146 L760,172');
+ box(660,174,200,46,'--s1','GLOBAL READ','own side + memory entries',.3);ar('M760,220 L760,246');
+ box(660,248,200,40,'--s1','local layers ×2','fetched → letters');ar('M760,288 L760,314');
+ box(660,316,200,40,'--s3','answer letter','first letter = honest score',.3);
+ // memory bus
+ ar('M610,208 L656,197','--s7','6 4');el('text',{x:612,y:232,'font-size':11,style:'fill:var(--s7)'},s,'one read');
+ // sites
+ const SITES=[
+  {n:1,x:160,y:137,st:'--good',t:'Inside a window (write time)',d:'The two-way page encoder links facts that sit in the same 256-token window. Glyph chain in 512 tokens: 100 % (E30: 14 %). It cannot link facts in different windows.'},
+  {n:2,x:310,y:271,st:'--s4',t:'Across windows, before the question (memory consolidation)',d:'Latents of different windows attend to each other for R rounds and update their state, so links like A→B + B→C → A→C are written into the memory. Literature: Sleep / offline recurrence (only enough loops start on 16 hops), loop+memory composition, ImReasoner (memory updates at inference). It is question-blind, and full all-to-all cost is quadratic in N/6, so it needs windows or top-k.'},
+  {n:3,x:890,y:197,st:'--bad',t:'Repeat the global read (E33 query loop)',d:'Global read + FFN repeated 4 times with tied weights over frozen slots, with and without per-round node targets. Ten cells, −2 to +6 points: no gain. This is the closest analogue to a looped transformer, but it is missing input re-injection, random depth and memory-side computation.'},
+  {n:4,x:610,y:150,st:'--s4',t:'Question-conditioned loop over fetched latents (latent loop)',d:'The question scores pages and takes the top k. R rounds of self-attention then run among those latents, conditioned on the question, before the read. It reasons in concept space, which is the vision. Closest literature: TRM/HRM recursion with input re-injection, memory loops. Untested here.'},
+  {n:5,x:890,y:336,st:'--s4',t:'Thought tokens after the question (latent chain of thought)',d:'After QUERY the model emits k "thoughts": the last hidden state is fed back as the next input, and each thought passes through the global read again. That gives k dependent reads, and the frontier can be a superposition of nodes. Proven: a 2-layer transformer with D continuous thoughts solves graph reachability (Zhu 2025; Coconut ProsQA 97 %). It needs a curriculum from explicit node tokens, which our generator provides for free.'},
+  {n:6,x:632,y:300,st:'--s4',t:'Loop the whole question-side core (recurrent depth)',d:'Prelude → recurrent core (local + global read + local), with the question embedding and memory re-injected each loop. Train with a random loop count and truncated backprop (Huginn, Ouro, Parcae). Proven at 1–3.5B for math and multi-hop QA; looping helps manipulation, not storage. It is close to ③ but adds the missing ingredients.'}];
+ SITES.forEach(p=>{const g=el('g',{class:'cell'},s);el('circle',{cx:p.x,cy:p.y,r:15,fill:C(p.st)},g);el('text',{x:p.x,y:p.y+5,'text-anchor':'middle','font-size':14,'font-weight':800,style:'fill:#fff'},g,p.n);hover(g,`<b>${p.n} · ${p.t}</b><br>${p.d}`);});
+ el('path',{d:'M905,336 C990,336 990,60 864,58',fill:'none',stroke:C('--s4'),'stroke-width':2,'stroke-dasharray':'5 4','marker-end':'url(#rah)'},s);el('text',{x:995,y:200,'font-size':11,style:'fill:var(--s4)'},s,'feed back');
+ el('path',{d:'M880,197 C960,197 960,120 864,120',fill:'none',stroke:C('--bad'),'stroke-width':2,'stroke-dasharray':'3 3','marker-end':'url(#rah)'},s);
+ el('text',{x:20,y:304,'font-size':11.5,class:'sec'},s,'② would add latent ↔ latent links between windows (dashed)');
+ el('path',{d:'M85,230 C85,285 535,285 535,230',fill:'none',stroke:C('--s4'),'stroke-width':2,'stroke-dasharray':'5 4'},s);
+ el('text',{x:20,y:410,'font-size':11.5,class:'sec'},s,'⑥ loops the whole question-side stack (local → global read → local), with the input and memory re-injected each time.');
+ const tb=document.getElementById('rstab');
+ tb.innerHTML='<tr><th style="text-align:left;padding:6px">#</th><th style="text-align:left;padding:6px">place</th><th style="text-align:left;padding:6px">status here</th><th style="text-align:left;padding:6px">evidence elsewhere</th><th style="text-align:left;padding:6px">cost per question</th></tr>'+
+ [[1,'inside a window','works (Glyph chain 100 %)','every compressor binds locally','free (already built)'],[2,'across windows, before the question','untested','Sleep, loop+memory, ImReasoner (synthetic)','R × latent attention over the memory (needs top-k or windows)'],[3,'repeat the global read','<b style="color:var(--bad)">no gain</b> (10 cells)','—','R × one read'],[4,'loop over the top-k fetched latents','untested','TRM / HRM recursion (puzzles); MemReasoner re-reads','top-k scoring + R × (k·32)² (small)'],[5,'thought tokens after the question','untested','Coconut, reasoning by superposition (proven for reachability, 2 layers)','k extra tokens, each with one read'],[6,'loop the question-side core','untested','Huginn, Ouro, Parcae (1–3.5B, math and multi-hop QA)','R × (local + read + local)']]
+ .map(r=>`<tr>${r.map(c=>`<td style="padding:6px;border-top:1px solid var(--line);vertical-align:top">${c}</td>`).join('')}</tr>`).join('');})();
 </script></body>
