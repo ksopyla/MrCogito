@@ -1,0 +1,334 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Read–Think–Reread Loop</title>
+<style>
+:root{--bg:#f4f3ef;--card:#fcfcfb;--card2:#efeee9;--line:#dcdad3;--fg:#0b0b0b;--fg2:#52514e;--muted:#7c7b76;
+ --blue:#2a78d6;--orange:#eb6834;--green:#1a7f37;--amber:#b26b00;--red:#c62828;--violet:#4a3aa7;--teal:#0e8f8f;--pink:#c2417a;
+ --good-bg:#e6f4ea;--warn-bg:#fff4e0;--bad-bg:#fdecea;--info-bg:#eaf2fc;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121211;--card:#1a1a19;--card2:#242422;--line:#3a3935;--fg:#f4f4f2;--fg2:#c3c2b7;--muted:#8f8e86;
+ --blue:#5b9cea;--orange:#e5763f;--green:#5cc47a;--amber:#e0a040;--red:#ef6b6b;--violet:#9085e9;--teal:#3cc4c4;--pink:#e27aa6;--good-bg:#16301f;--warn-bg:#35280f;--bad-bg:#3a1a1a;--info-bg:#15263b;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#121211;--card:#1a1a19;--card2:#242422;--line:#3a3935;--fg:#f4f4f2;--fg2:#c3c2b7;--muted:#8f8e86;
+ --blue:#5b9cea;--orange:#e5763f;--green:#5cc47a;--amber:#e0a040;--red:#ef6b6b;--violet:#9085e9;--teal:#3cc4c4;--pink:#e27aa6;--good-bg:#16301f;--warn-bg:#35280f;--bad-bg:#3a1a1a;--info-bg:#15263b;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15.5px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+main{max-width:1100px;margin:0 auto;padding-inline:18px;padding-block:26px 70px}
+h1{font-size:30px;line-height:1.15;margin:4px 0 8px;text-wrap:balance}
+h2{font-size:21px;margin:44px 0 8px;padding-top:14px;border-top:1px solid var(--line);text-wrap:balance}
+h3{font-size:16px;margin:16px 0 6px}
+p{max-width:76ch}
+.kicker{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650}
+.sub{color:var(--fg2);margin:0 0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:12px 0}
+.callout{border-radius:10px;padding:12px 16px;margin:14px 0;border-left:4px solid var(--blue);background:var(--info-bg)}
+.callout.good{border-color:var(--green);background:var(--good-bg)}.callout.warn{border-color:var(--amber);background:var(--warn-bg)}.callout.bad{border-color:var(--red);background:var(--bad-bg)}
+.grid{display:grid;gap:12px}.g3{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}.g2{grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}.g5{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+.grid>*{min-width:0}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.tile .n{display:inline-flex;width:24px;height:24px;border-radius:50%;background:var(--blue);color:#fff;font-weight:800;font-size:13px;align-items:center;justify-content:center;margin-right:6px}
+.tile .q{font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:650}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.8px}
+th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:650}
+.controls{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding:10px 0;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--card);color:var(--fg2);padding:6px 11px;font:inherit;font-size:13.5px;cursor:pointer}
+.seg button.on{background:var(--blue);color:#fff}
+.lab{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:650;margin-right:4px}
+label.tg{font-size:13.5px;color:var(--fg2);display:inline-flex;gap:6px;align-items:center;cursor:pointer}
+svg{display:block;width:100%;height:auto}
+svg text{fill:var(--fg);font-family:inherit}svg .m{fill:var(--muted)}svg .s{fill:var(--fg2)}
+.svgwrap{overflow-x:auto}.svgwrap svg{min-width:680px}
+.say{font-size:15px;min-height:48px;margin-top:6px}
+.chg{color:var(--orange);font-weight:700}.fix{color:var(--violet);font-weight:700}.tied{color:var(--teal);font-weight:700}
+.pill{display:inline-block;font-size:11.5px;font-weight:700;padding:1px 8px;border-radius:999px;white-space:nowrap}
+.p-yes{background:var(--good-bg);color:var(--green)}.p-no{background:var(--bad-bg);color:var(--red)}.p-part{background:var(--warn-bg);color:var(--amber)}
+a{color:var(--blue)}
+code{font:13px ui-monospace,Menlo,monospace;background:var(--card2);padding:1px 5px;border-radius:4px}
+.eq{font:14px/1.7 ui-monospace,Menlo,monospace;background:var(--card2);border-radius:8px;padding:10px 12px;overflow-x:auto;white-space:pre}
+#tip{position:fixed;pointer-events:none;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.18);opacity:0;z-index:20;max-width:340px}
+</style>
+<div id="tip"></div>
+<main>
+<div class="kicker">MrCogito · design analysis (E34 candidate) · 2 Oct 2026</div>
+<h1>Read, think, reread: looping the layers above the global read</h1>
+<p class="sub">An analysis of the proposal: keep the memory as a read-only notebook, and loop the <b>upper</b> layers. The model reads the memory, tries to form the answer, notices what is missing, and rereads with its current state, 4 times, before a last layer formulates the answer. The page covers how information flows, which vectors change in each loop, how gradients flow, what the queries and keys are, and how the idea compares with the literature and with our failed E33 loop.</p>
+
+<div class="callout good"><b>Verdict: yes, it makes sense, and it fixes the two concrete flaws of E33.</b>
+<ul style="margin:6px 0 0;padding-left:18px">
+<li><b>The answer-forming layers are inside the loop.</b> E33 looped only the global read plus one feed-forward. The layers that turn fetched content into an answer sat outside it, so nothing between two reads could reshape "what I found" into "what I must ask next".</li>
+<li><b>"Try to answer" happens through the real head.</b> E33's per-round targets were read through the output head while skipping the two upper layers, so the head was decoding states it was never trained on.</li>
+</ul>
+Your design maps onto the best-supported pattern in the literature: an untied first layer, a tied core looped R times, and an untied last layer (Huginn, Mixture-of-Recursions). It is also the classic memory-network hop: the controller state is updated, then the memory is read again (End-to-end Memory Networks, 2015). It uses the same parameters, and with one loop it is exactly today's model.</div>
+
+<div class="grid g5">
+<div class="tile"><span class="n">1</span><b>read the memory</b><div style="font-size:13.5px;color:var(--fg2)">global read: question state → memory latents</div></div>
+<div class="tile"><span class="n">2</span><b>try to answer</b><div style="font-size:13.5px;color:var(--fg2)">local layer + shared answer layer + head → a guess, checked by a loss</div></div>
+<div class="tile"><span class="n">3</span><b>reread with the current state</b><div style="font-size:13.5px;color:var(--fg2)">the new query is built from the updated state</div></div>
+<div class="tile"><span class="n">4</span><b>static R = 4</b><div style="font-size:13.5px;color:var(--fg2)">same weights each loop; dynamic stopping later</div></div>
+<div class="tile"><span class="n">5</span><b>formulate the answer</b><div style="font-size:13.5px;color:var(--fg2)">untied last layer + head, after loop 4</div></div>
+</div>
+
+<!-- ======================================================= -->
+<h2 id="flow">1 · The information flow, loop by loop</h2>
+<p>The same toy exam as before. Four chains are stored as separate facts, shuffled across the book. The question is "start at A, where do you end?" The answer D is three hops away, and the candidates are D, H, L and P (chance 25 %). Step through the loops. The attention weights and guesses are <b>illustrative</b>: they show what the design should learn, not measurements.</p>
+<div class="controls">
+ <span><span class="lab">Direction</span><span class="seg" id="dir"><button data-v="fwd" class="on">forward (information)</button><button data-v="bwd">backward (gradients)</button></span></span>
+ <span><span class="lab">Loop</span><span class="seg" id="loop"><button data-v="0">prelude</button><button data-v="1" class="on">1</button><button data-v="2">2</button><button data-v="3">3</button><button data-v="4">4</button><button data-v="5">answer</button></span></span>
+ <label class="tg"><input type="checkbox" id="frz"> writer frozen</label>
+ <label class="tg"><input type="checkbox" id="det"> detach between loops (TRM style)</label>
+</div>
+<div class="card"><div class="svgwrap"><svg id="main" viewBox="0 0 1060 560" role="img" aria-label="Read–think–reread loop"></svg></div>
+<div class="say" id="say"></div></div>
+
+<h3>Which vectors change in each loop</h3>
+<div class="tw"><table id="vec"></table></div>
+<p style="font-size:13.5px;color:var(--fg2)"><span class="chg">changes every loop</span> · <span class="fix">fixed during the loop (the notebook is read-only)</span> · <span class="tied">same weights every loop (tied)</span>. Shapes are for the 30M model (H 960, 15 query heads × 64, 1 key/value head × 64, N/6 memory entries).</p>
+
+<!-- ======================================================= -->
+<h2 id="arch">2 · The layer plan: same four layers, regrouped</h2>
+<div class="grid g2">
+<div class="card"><svg id="plan" viewBox="0 0 480 400" role="img" aria-label="Layer plan"></svg></div>
+<div>
+<p>Today the main path has four layers: a local layer (16 tokens back), the global read, and two local layers. The loop regroups them without adding any:</p>
+<ul>
+<li><b>Prelude, once:</b> the first local layer. It turns the question tokens into a state (it "reads the question").</li>
+<li><b>Core, looped 4 times with tied weights:</b> the global read plus the first upper local layer. Each pass is one "read → think" step.</li>
+<li><b>Answer layer, untied:</b> the last local layer plus the output head. It formulates the answer after loop 4. During training it also decodes the state after <i>every</i> loop, which is how "try to answer" gets its own loss.</li>
+</ul>
+<p><b>With one loop this is exactly today's network.</b> We can start from the best E31 checkpoint, and lookups can still be answered from loop 1.</p>
+<p>The only new numbers are a per-loop marker: 4 vectors of 960, zero at start, about 0.01 % of the model. The E33 code already has it. An optional input re-injection (add the prelude state back each loop) needs no new weights.</p>
+<p style="font-size:13.5px;color:var(--fg2)">One alternative to test as a second arm: loop all three upper layers (read + both local layers) and use only the head as the answer layer. More thinking per loop, but no untied answer layer. The literature (Mixture-of-Recursions, Huginn) favours keeping the first and last layers untied.</p>
+</div></div>
+
+<!-- ======================================================= -->
+<h2 id="qk">3 · Queries and keys while looping</h2>
+<div class="eq" id="eqs">loop r (question-side position p, head j):
+  q_r      = RoPE( W_q · norm(h_r[p]) )                       ← changes every loop
+  K_mem, V_mem  = writer(book)   (N/6 entries, 1 head × 64)     ← fixed, computed once
+  K_own,r  = RoPE( W_k · norm(h_r[question side]) )           ← changes (question states evolve)
+  α_r      = softmax( q_r · [K_mem ; K_own,r] / √64 )          ← one softmax over memory + own side
+  h_r'     = h_r + W_o · α_r [V_mem ; V_own,r]                 ← read
+  h_{r+1}  = local( h_r' ) (+ prelude state, optional)        ← think
+  guess_r  = head( answer_layer( h_{r+1} ) )                   ← try to answer (training loss)</div>
+<div class="grid g2" style="margin-top:12px">
+<div class="card"><h3 style="margin-top:0">The hard part: turning "found B" into "ask about B"</h3>
+<p style="font-size:14.5px">Read 1 returns the <b>value</b> of the latent "A → B". It carries B as a <i>target</i>. Read 2 must match the <b>key</b> of "B → C", which carries B as a <i>source</i>. Nothing forces these two forms of B to line up.</p>
+<p style="font-size:14.5px">End-to-end Memory Networks met the same problem and solved it by tying weights: the output embedding of hop k is the input embedding of hop k+1, so what a read returns is already in the form the next query needs. In your design, <b>the local layer inside the loop is where that conversion is learned</b>: attention over the question side plus a feed-forward turn "target B" into "query for source B". E33 had only one feed-forward between reads for this job.</p></div>
+<div class="card"><h3 style="margin-top:0">Two traps to watch in the attention logs</h3>
+<p style="font-size:14.5px"><b>Backward-edge echo.</b> A query for "B" can match both "B → C" (B as source, correct) and "A → B" (B as target, already used). Each latent holds both ends of its fact. The page encoder sees the order inside a fact block (marker, source, target), so the key can keep source and target in separate directions, but training has to find this. Log, per loop, which latent gets the most attention. A model stuck on the echo will re-read "A → B".</p>
+<p style="font-size:14.5px"><b>One shared key head.</b> The memory has one 64-d key per latent, shared by 15 query heads. Different heads can read different directions of that key (one head for "source = B", one for "already visited"), but 64 dimensions is tight. If the logs show echo, the fix is 2 key/value heads (a parameter change, so a later step).</p></div>
+</div>
+
+<!-- ======================================================= -->
+<h2 id="grad">4 · How the gradients flow</h2>
+<div class="card"><div class="svgwrap"><svg id="gsvg" viewBox="0 0 1060 360" role="img" aria-label="Gradient flow"></svg></div>
+<p style="font-size:14px;margin:6px 0 0">Switch the diagram in section 1 to "backward" to see the same paths on the network. The loss is a weighted sum over the loop exits. Every exit's gradient enters the network at its own loop, so loop 1 is never more than one core-step from a loss signal. That is the "deep supervision" that the HRM/TRM analysis found to be the real driver.</p></div>
+<div class="grid g3">
+<div class="tile"><div class="q">Tied core</div>The core's weights receive the <b>sum</b> of the gradients from all 4 loops, as in backpropagation through time. Four loops is short, so full backprop is fine. Huginn truncates only beyond 8 loops.</div>
+<div class="tile"><div class="q">Into the memory</div>Each loop's read sends gradient into the memory keys and values, which flow back into the writer: <b>4 contributions per fact</b>. With "writer frozen" this path stops, so the notebook stays exactly as today and retrieval cannot degrade.</div>
+<div class="tile"><div class="q">Detach between loops</div>A TRM-style option: stop gradients between loops, so each loop learns "one good step from any state". Cheaper and more stable, but no credit flows from loop 3's error back to loop 1's query. Test it as an arm, not as the default.</div>
+</div>
+<h3>What each exit should predict</h3>
+<div class="tw"><table>
+<tr><th>target scheme</th><th>exit 1</th><th>exit 2</th><th>exit 3</th><th>exit 4 (answer)</th><th>comment</th></tr>
+<tr><td><b>Progress targets</b> (recommended first)</td><td>B</td><td>C</td><td>D</td><td>D</td><td>Each loop has a precise job: "where am I in the chain". This is the strongest signal; our generator knows every node. Weights 0.3 / 0.3 / 0.3 / 1.</td></tr>
+<tr><td>Final answer at every exit (Ouro)</td><td>D</td><td>D</td><td>D</td><td>D</td><td>No knowledge of intermediate nodes needed, so it works for any exam. Early exits are wrong at first, which is fine. Weights rising: 0.1 / 0.2 / 0.3 / 1.</td></tr>
+<tr><td>Mixed curriculum</td><td colspan="4">progress targets first, then fade them out and keep only the final answer</td><td>Like Coconut's curriculum: scaffold first, then let the latent steps organise themselves.</td></tr>
+</table></div>
+<p style="font-size:13.5px;color:var(--fg2)">E33 also tried progress targets and found no gain. Its targets were decoded through the head <i>without</i> the two upper layers, from a state at layer 2 of 4. Here every exit goes through the trained answer layer, the same path the final answer uses.</p>
+
+<!-- ======================================================= -->
+<h2 id="lit">5 · Confronting the idea with the literature</h2>
+<div class="tw"><table>
+<tr><th>work</th><th>what loops</th><th>re-reads a memory?</th><th>input re-injected</th><th>supervision</th><th>result</th></tr>
+<tr><td>End-to-end Memory Networks (2015)</td><td>controller state u ← u + read(u), 3 hops</td><td><span class="pill p-yes">yes</span> same memory each hop</td><td>u carries the question</td><td>final answer</td><td>multi-fact bAbI tasks improve sharply with more hops; <b>adjacent weight tying</b> puts the read output in the next query's space</td></tr>
+<tr><td>Key-Value Memory Networks (2016)</td><td>query q ← R_j(q + read), per-hop matrices R_j</td><td><span class="pill p-yes">yes</span></td><td>—</td><td>final</td><td>multi-hop QA over facts; the query is rewritten by a learned map after each hop</td></tr>
+<tr><td>Huginn-3.5B (2025)</td><td>prelude · <b>core ×r</b> · coda</td><td><span class="pill p-no">no</span> (attention over its own context)</td><td><span class="pill p-yes">yes</span> every loop</td><td>final; random r</td><td>math and reasoning improve with r; easy QA saturates at 8–12 loops</td></tr>
+<tr><td>Ouro / LoopLM (2025)</td><td>whole stack ×4</td><td><span class="pill p-no">no</span></td><td>no</td><td><b>loss at every exit</b>, shared head</td><td>2.6B ≈ 8B on reasoning; <b>no gain in stored knowledge</b> (manipulation, not storage)</td></tr>
+<tr><td>Mixture-of-Recursions (2025)</td><td>middle layers (first and last untied)</td><td><span class="pill p-no">no</span></td><td>—</td><td>final</td><td>"Middle-Cycle" sharing beats full sharing</td></tr>
+<tr><td>TRM / HRM (2025)</td><td>tiny 2-layer net, many cycles</td><td><span class="pill p-part">puzzle input</span></td><td><span class="pill p-yes">yes</span></td><td><b>every outer step</b></td><td>puzzles: deep supervision is the driver; hierarchy is not</td></tr>
+<tr><td>Sleep / loop + memory (2026)</td><td>loops over a memory</td><td><span class="pill p-yes">yes</span></td><td>—</td><td>—</td><td>more hops need more loops (4 loops start to solve 16 hops); loop + memory learns composition fastest</td></tr>
+<tr><td><b>E33 (ours, failed)</b></td><td>global read + 1 feed-forward, ×4, at layer 2 of 4</td><td><span class="pill p-yes">yes</span></td><td>no</td><td>final; progress targets decoded <b>skipping</b> the upper layers</td><td>no gain (10 cells)</td></tr>
+<tr><td><b>This proposal</b></td><td>global read + local, ×4, then untied answer layer</td><td><span class="pill p-yes">yes</span> N/6 latents</td><td>optional, no new weights</td><td><b>every exit through the answer layer</b></td><td>to test</td></tr>
+</table></div>
+<div class="grid g2" style="margin-top:12px">
+<div class="card"><h3 style="margin-top:0">Analogies, checked</h3>
+<ul style="margin:0;padding-left:18px;font-size:14.5px">
+<li><b>Student and notebook.</b> The notebook (memory) is written while reading the book and does not change during the exam. The student's working thoughts (the residual state) do. Rereading the notebook with a sharper question is exactly the loop. The analogy holds.</li>
+<li><b>Working memory vs long-term memory.</b> Psychology calls it cue-dependent recall: what you retrieve depends on the cue, and each retrieval gives a better cue. The residual stream is working memory (small, changing). The latents are episodic memory (large, fixed).</li>
+<li><b>Where the analogy breaks.</b> A student "notices" what is missing. A static 4-loop model does not decide anything: it always takes 4 looks. Noticing needs a stopping head (Ouro's exit gate), which is the dynamic version for later.</li></ul></div>
+<div class="card"><h3 style="margin-top:0">Depth loop vs latent thoughts (the earlier proposal)</h3>
+<ul style="margin:0;padding-left:18px;font-size:14.5px">
+<li>Both give one dependent memory read per hop. The theory says T loops can simulate T chain-of-thought steps (Saunshi 2025).</li>
+<li><b>The loop is simpler:</b> no new positions, no sequential generation in training (the 4 loops unroll in one pass), and the existing E33 code nearly does it.</li>
+<li><b>Thoughts are more flexible:</b> each thought is a new position that later steps can attend to, and the hop count is not capped by R.</li>
+<li><b>Recommendation:</b> build the loop first (your version). Keep latent thoughts as the next arm if the loop stalls on more hops than loops.</li></ul></div>
+</div>
+
+<!-- ======================================================= -->
+<h2 id="test">6 · How we would test it</h2>
+<div class="tw"><table>
+<tr><th>arm</th><th>what it isolates</th></tr>
+<tr><td>R = 1 (today)</td><td>baseline: parallel chain, 3 hops ≈ 40 %, dense 44 %</td></tr>
+<tr><td><b>R = 4, core = read + local, answer layer untied</b> ★</td><td>the proposal, with progress targets at every exit</td></tr>
+<tr><td>R = 4, final answer at every exit</td><td>does it work without knowing the intermediate nodes?</td></tr>
+<tr><td>R = 4, core = read + both local layers, head only</td><td>more thinking per loop vs an untied answer layer</td></tr>
+<tr><td>R = 4, writer frozen</td><td>retrieval guaranteed unchanged; is a fixed notebook enough?</td></tr>
+<tr><td>E33 replica (read + 1 feed-forward)</td><td>confirms the difference comes from where the loop sits</td></tr>
+</table></div>
+<div class="grid g2" style="margin-top:12px">
+<div class="card"><h3 style="margin-top:0">Pass marks</h3><ul style="margin:0;padding-left:18px;font-size:14.5px">
+<li>Parallel chain, 3 hops, 1k: <b>≥ 75 %</b> first letter, 2 seeds (chance 25 %).</li>
+<li>4 hops with R = 4: ≥ 60 %. 6 hops with R = 6 at test time (trained R = 4): reported.</li>
+<li>32k with far-apart facts: ≥ 0.8× the 1k score.</li>
+<li>Lookup, recall16, decoys, in-order chain: within 2 points of today at exit 4, <b>and</b> at exit 1.</li>
+<li>Attention log: loop r attends most to the latent of edge r on ≥ 70 % of solved questions.</li></ul></div>
+<div class="card"><h3 style="margin-top:0">Risks</h3><ul style="margin:0;padding-left:18px;font-size:14.5px">
+<li><b>Same wall as E33</b> if the problem is the memory keys, not the loop. The attention log shows echo or wrong latents within the first run.</li>
+<li><b>Capped at R hops.</b> Static R = 4 caps reasoning at 4 hops until we train with a random R.</li>
+<li><b>Training a loop on a model trained without one.</b> Start from today's weights (R = 1 is exact), then grow R 1 → 2 → 4 over the curriculum.</li>
+<li><b>Cost</b> is small: only the ~40 question-side positions loop, each loop reading N/6 entries. The book is processed once.</li></ul></div>
+</div>
+<p style="font-size:13px;color:var(--fg2)">Sources: <a href="https://arxiv.org/abs/1503.08895">End-to-end Memory Networks</a> · <a href="https://arxiv.org/abs/1606.03126">Key-Value Memory Networks</a> · <a href="https://arxiv.org/abs/2502.05171">Huginn</a> · <a href="https://arxiv.org/abs/2510.25741">Ouro</a> · <a href="https://arxiv.org/abs/2507.10524">Mixture-of-Recursions</a> · <a href="https://arxiv.org/abs/2510.04871">TRM</a> · <a href="https://arcprize.org/blog/hrm-analysis">ARC Prize HRM analysis</a> · <a href="https://arxiv.org/abs/2502.17416">Saunshi 2025</a> · <a href="https://arxiv.org/abs/2605.26099">Sleep</a> · <a href="https://arxiv.org/abs/2412.06769">Coconut</a>. Ours: E31b limits study, E33 (repeated read, no gain), the latent reasoning review and the latent-thoughts proposal.</p>
+</main>
+<script>
+const C=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();const NS='http://www.w3.org/2000/svg';const tip=document.getElementById('tip');
+function el(t,a,p,x){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(x!=null)e.textContent=x;if(p)p.appendChild(e);return e;}
+function hov(n,h){n.style.cursor='help';n.addEventListener('mousemove',e=>{tip.innerHTML=h;tip.style.opacity=1;tip.style.left=Math.min(e.clientX+14,innerWidth-360)+'px';tip.style.top=(e.clientY+14)+'px'});n.addEventListener('mouseleave',()=>tip.style.opacity=0);}
+function mk(s,id,col){let d=s.querySelector('defs')||el('defs',{},s);const m=el('marker',{id,viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:7,markerHeight:7,orient:'auto'},d);el('path',{d:'M0,0L10,5L0,10z',fill:col},m);}
+function box(s,x,y,w,h,col,op,t,sub,fs,bold=true,dash){el('rect',{x,y,width:w,height:h,rx:8,fill:col,'fill-opacity':op,stroke:col,'stroke-dasharray':dash||''},s);
+ el('text',{x:x+w/2,y:y+(sub?h/2-3:h/2+5),'text-anchor':'middle','font-size':fs||13,'font-weight':bold?750:500},s,t);if(sub)el('text',{x:x+w/2,y:y+h/2+13,'text-anchor':'middle','font-size':10.5,class:'s'},s,sub);}
+
+const S={dir:'fwd',loop:1,frz:false,det:false};
+const EDGES=[['C→D','I→J'],['E→F','A→B'],['K→L','N→O'],['B→C','G→H'],['M→N','J→K'],['F→G','O→P']];
+const ATT={1:{'A→B':.72,'E→F':.04,'I→J':.04},2:{'B→C':.58,'A→B':.22,'G→H':.05},3:{'C→D':.7,'B→C':.12,'K→L':.04},4:{'C→D':.62,'B→C':.08}};
+const GUESS={1:{B:.7,x:.3},2:{C:.65,x:.35},3:{D:.8,H:.07,L:.07,P:.06},4:{D:.9,H:.03,L:.04,P:.03},5:{D:.92,H:.03,L:.03,P:.02}};
+const SAY={fwd:{0:'<b>Prelude (once).</b> The first local layer reads the question tokens ("start at A"). The book was already written into the memory (purple): one latent per fact, computed once and read-only from here on.',
+ 1:'<b>Loop 1 · read.</b> The question state forms a query. It matches the latent "A → B" (orange, the thickest line) and pulls in its value. <b>Think:</b> the local layer folds that into the state. <b>Try to answer:</b> the answer layer + head decode exit 1: "B" (the progress target).',
+ 2:'<b>Loop 2 · reread with the current state.</b> The state now contains "B as a target". The local layer inside the loop has learned to turn it into a <b>query for B as a source</b>, which matches "B → C". Some attention still echoes back to "A → B": watch for this trap. Exit 2 decodes "C".',
+ 3:'<b>Loop 3.</b> Same tied weights, new query: "C" → matches "C → D". Exit 3 decodes D among the candidates D, H, L, P.',
+ 4:'<b>Loop 4 (spare).</b> The chain is done, so the read confirms "C → D" and the state settles. A static 4 loops means short chains get spare loops; deep supervision teaches the model to keep its answer stable.',
+ 5:'<b>Formulate the answer.</b> The untied answer layer and the head turn the final state into the answer letters. With R = 1 this whole picture collapses to today\'s E31: one read, then the answer.'},
+ bwd:{0:'<b>Backward into the prelude.</b> All exits\' gradients arrive at the prelude through the first loop\'s input, and into the question-token embeddings.',
+ 1:'<b>Exit 1 loss</b> enters at loop 1. Its gradient trains the first query (find A → B) directly, without passing through 3 later loops. That is the point of deep supervision. Gradient also flows into the memory key/value of "A → B" and from there into the writer'+'.',
+ 2:'<b>Exit 2 loss</b> enters at loop 2, and it also flows back through loop 1. The tied core receives the sum of all loops\' gradients. The read in loop 2 sends gradient to "B → C"\'s key: "be findable from a B-source query".',
+ 3:'<b>Exit 3 loss.</b> Same pattern. Into the memory: each fact can receive up to 4 gradient contributions per question, one per loop that read it.',
+ 4:'<b>Exit 4 loss.</b> In the detach-between-loops option, each loop\'s gradient stops at its own input (dashed red): no credit flows backward across loops.',
+ 5:'<b>Final answer loss</b> (weight 1). It trains the untied answer layer and the head, plus everything below through all 4 loops. With "writer frozen", nothing reaches the memory: the notebook stays exactly as today.'}};
+
+function drawMain(){const s=document.getElementById('main');s.innerHTML='';mk(s,'aG',C('--muted'));mk(s,'aO',C('--orange'));mk(s,'aR',C('--red'));mk(s,'aT',C('--teal'));
+ const L=S.loop,bwd=S.dir==='bwd';const gcol=C('--red');
+ // memory panel (left)
+ el('rect',{x:10,y:10,width:420,height:540,rx:12,fill:C('--violet'),'fill-opacity':.05,stroke:C('--line')},s);
+ el('text',{x:24,y:34,'font-size':13,'font-weight':750,style:`fill:${C('--violet')}`},s,'MEMORY · read-only notebook (N/6 latents)');
+ el('text',{x:24,y:52,'font-size':11,class:'s'},s,'K_mem, V_mem computed once by the writer · 1 key/value head × 64');
+ const memPos={};const att=ATT[Math.min(Math.max(L,1),4)]||{};
+ EDGES.forEach((w,wi)=>{const x=24+wi*67;el('text',{x:x+29,y:78,'text-anchor':'middle','font-size':10.5,class:'m'},s,'win '+(wi+1));
+  el('rect',{x,y:84,width:58,height:330,rx:7,fill:C('--card2'),'fill-opacity':.7,stroke:C('--line')},s);
+  w.forEach((e,k)=>{const y=150+k*150;const a=(L>=1&&L<=4)?(att[e]||0):0;const col=a>.3?C('--orange'):C('--violet');
+   const g=el('g',{},s);el('rect',{x:x+3,y,width:52,height:40,rx:7,fill:col,'fill-opacity':a>.3?.85:(a>0?.45:.18),stroke:col},g);
+   el('text',{x:x+29,y:y+25,'text-anchor':'middle','font-size':12.5,'font-weight':750,style:a>.3?'fill:#fff':''},g,e);
+   if(a>0)el('text',{x:x+29,y:y+56,'text-anchor':'middle','font-size':11,'font-weight':700,style:`fill:${C('--orange')}`},g,`α ${a.toFixed(2)}`);
+   memPos[e]=[x+55,y+20];hov(g,`<b>latent "${e}"</b><br>key and value are fixed during the loop. ${bwd&&!S.frz&&a>0?'Receives gradient in this loop (key: "be findable"; value: "carry the right content").':''}`);
+   if(bwd&&!S.frz&&a>0)el('rect',{x:x+1,y:y-2,width:56,height:44,rx:8,fill:'none',stroke:gcol,'stroke-width':2,'stroke-dasharray':'4 3'},s);});});
+ // writer
+ box(s,24,440,394,40,C('--violet'),.12,'writer (page encoder + latents) · runs once per book',null,12);
+ if(bwd){el('text',{x:221,y:503,'text-anchor':'middle','font-size':12,'font-weight':700,style:`fill:${S.frz?C('--muted'):gcol}`},s,S.frz?'writer frozen: no gradient enters the notebook':'gradient from every read flows into the writer');}
+ el('text',{x:24,y:530,'font-size':11,class:'s'},s,'Facts of the target chain sit in windows 2, 4 and 1 (far apart, out of order).');
+ // network column
+ const NX=560,NW=260;
+ el('rect',{x:450,y:10,width:600,height:540,rx:12,fill:C('--blue'),'fill-opacity':.04,stroke:C('--line')},s);
+ el('text',{x:464,y:34,'font-size':13,'font-weight':750,style:`fill:${C('--blue')}`},s,'QUESTION SIDE · main path (~40 positions)');
+ const Y={emb:500,pre:440,read:330,loc:260,ans:110,head:50};
+ box(s,NX,Y.emb,NW,34,C('--blue'),.12,'question tokens: QUERY · start node A',null,12,false);
+ box(s,NX,Y.pre,NW,40,C('--blue'),L===0?.35:.16,'prelude: local layer (16 back)','untied · runs once',12);
+ // loop frame
+ el('rect',{x:NX-30,y:Y.loc-28,width:NW+60,height:Y.read-Y.loc+86,rx:14,fill:C('--teal'),'fill-opacity':.06,stroke:C('--teal'),'stroke-width':2,'stroke-dasharray':'7 5'},s);
+ el('text',{x:NX-22,y:Y.loc-12,'font-size':12,'font-weight':750,style:`fill:${C('--teal')}`},s,'CORE · tied weights · ×4');
+ const inLoop=L>=1&&L<=4;
+ box(s,NX,Y.read,NW,44,C('--blue'),inLoop?.38:.16,'GLOBAL READ',inLoop?`loop ${L}: q_${L} from the current state`:'own side + memory',12.5);
+ box(s,NX,Y.loc,NW,40,C('--card2'),1,'local layer (think)',inLoop?`turns "found ${['','B','C','D','D'][L]}" into the next query`:'mixes question side + FFN',12);
+ // loop counter badges
+ for(let r=1;r<=4;r++){const cx=NX+NW+55,cy=Y.loc-6+r*24;const on=r===L;el('circle',{cx,cy,r:10,fill:on?C('--teal'):C('--card'),stroke:C('--teal')},s);el('text',{x:cx,y:cy+4,'text-anchor':'middle','font-size':11,'font-weight':800,style:on?'fill:#fff':`fill:${C('--teal')}`},s,r);}
+ el('path',{d:`M${NX+NW+30},${Y.loc+20} C${NX+NW+90},${Y.loc-30} ${NX+NW+90},${Y.read+90} ${NX+NW+30},${Y.read+30}`,fill:'none',stroke:C('--teal'),'stroke-width':2,'marker-end':'url(#aT)'},s);
+ // answer layer + head
+ box(s,NX,Y.ans,NW,40,C('--green'),L===5?.35:.16,'answer layer: local (untied)','"formulate the answer" · shared by every exit',12);
+ box(s,NX,Y.head,NW,34,C('--green'),.12,'output head → letters',null,12);
+ // arrows (forward)
+ const A=(x1,y1,x2,y2,c,mkid,dash)=>el('path',{d:`M${x1},${y1} L${x2},${y2}`,stroke:c,'stroke-width':2,'stroke-dasharray':dash||'','marker-end':`url(#${mkid})`},s);
+ A(NX+NW/2,Y.emb,NX+NW/2,Y.pre+42,C('--muted'),'aG');A(NX+NW/2,Y.pre,NX+NW/2,Y.read+46,C('--muted'),'aG');A(NX+NW/2,Y.read,NX+NW/2,Y.loc+42,C('--muted'),'aG');
+ A(NX+NW/2,Y.loc-28,NX+NW/2,Y.ans+42,C('--muted'),'aG');A(NX+NW/2,Y.ans,NX+NW/2,Y.head+36,C('--muted'),'aG');
+ // exit tap (try to answer)
+ el('path',{d:`M${NX},${Y.loc+20} C${NX-60},${Y.loc+10} ${NX-60},${Y.ans+30} ${NX-2},${Y.ans+24}`,fill:'none',stroke:C('--green'),'stroke-width':2,'stroke-dasharray':'4 3','marker-end':'url(#aG)'},s);
+ el('text',{x:NX-66,y:Y.ans+80,'text-anchor':'end','font-size':11,style:`fill:${C('--green')}`},s,'exit r: try to answer');
+ // read arrows to memory
+ if(inLoop&&!bwd){Object.entries(att).forEach(([e,a])=>{if(!memPos[e])return;const [mx,my]=memPos[e];el('path',{d:`M${NX},${Y.read+22} C${NX-70},${Y.read+22} ${mx+70},${my} ${mx+2},${my}`,fill:'none',stroke:C('--orange'),'stroke-width':Math.max(1,a*6),'stroke-opacity':.85,'marker-end':'url(#aO)'},s);});}
+ // gradients
+ if(bwd){const gy=Y.loc+20;
+  if(L>=1&&L<=5){el('path',{d:`M${NX+NW/2+40},${Y.head-4} L${NX+NW/2+40},${Y.read+44}`,stroke:gcol,'stroke-width':2.5,'stroke-dasharray':'6 4','marker-end':'url(#aR)'},s);
+   el('text',{x:NX+NW/2+48,y:Y.head-8,'font-size':12,'font-weight':750,style:`fill:${gcol}`},s,L===5?'∂L_answer':`∂L_exit${L}`);}
+  if(inLoop&&!S.frz){Object.entries(att).forEach(([e,a])=>{if(!memPos[e])return;const [mx,my]=memPos[e];el('path',{d:`M${NX},${Y.read+30} C${NX-70},${Y.read+30} ${mx+70},${my+8} ${mx+2},${my+8}`,fill:'none',stroke:gcol,'stroke-width':Math.max(1,a*5),'stroke-dasharray':'5 3','marker-end':'url(#aR)'},s);});}
+  if(S.det&&inLoop&&L>1){el('line',{x1:NX-24,x2:NX+NW+24,y1:Y.read+40,y2:Y.read+40,stroke:gcol,'stroke-width':3,'stroke-dasharray':'2 3'},s);el('text',{x:NX+NW+28,y:Y.read+60,'font-size':11,style:`fill:${gcol}`},s,'detached');}
+  if(L===0)A(NX+NW/2+40,Y.read+44,NX+NW/2+40,Y.emb,gcol,'aR','6 4');}
+ // guess bars (right)
+ const g=GUESS[L];if(g&&!bwd){const bx=NX+NW+110,by=Y.ans+40;el('text',{x:bx,y:Y.head+10,'font-size':11.5,'font-weight':700,class:'s'},s,L===5?'answer':`exit ${L} guess`);
+  Object.entries(g).forEach(([k,v],j)=>{const h=v*100;el('rect',{x:bx+j*22,y:by-h,width:16,height:h,rx:3,fill:k==='x'?C('--muted'):(['B','C','D'].includes(k)?C('--green'):C('--muted'))},s);el('text',{x:bx+8+j*22,y:by+14,'text-anchor':'middle','font-size':11,class:'s'},s,k==='x'?'other':k);});}
+ document.getElementById('say').innerHTML=SAY[S.dir][L];drawVec();}
+
+function drawVec(){const L=S.loop,inL=L>=1&&L<=4;const r=inL?L:(L===5?4:0);
+ const rows=[
+  ['h_r · residual state (question side)','~40 × 960','chg',inL?`after loop ${L}: holds "found ${['','B','C','D','D'][L]}"`:(L===0?'prelude output: "start at A"':'final state → answer layer')],
+  ['q_r · read queries','~40 × 15 heads × 64','chg',inL?`built from h_${L}: asks about ${['','A','B','C','C'][L]}`:'—'],
+  ['K_mem, V_mem · memory keys and values','N/6 × 1 × 64','fix','written once per book; the notebook does not change during thinking'],
+  ['K_own, V_own · question-side keys and values','~40 × 1 × 64','chg','recomputed each loop from the evolving question states'],
+  ['α_r · attention over memory + own side','~40 × 15 × (N/6 + 40)','chg',inL?`peak on ${Object.entries(ATT[L]).sort((a,b)=>b[1]-a[1])[0][0]}`:'—'],
+  ['core weights (read + local)','≈ 15M params','tied','the same matrices every loop; gradients summed over loops'],
+  ['loop marker e_r','4 × 960 (zero at start)','tied','a learned vector per loop (differs by loop, fixed by input); ≈ 0.01 % of the model'],
+  ['exit guess_r (training only)','~40 × vocab','chg',inL?`exit ${L} decodes ${['','B','C','D','D'][L]} (progress target)`:'—'],
+  ['book-side states','N × 960','fix','not looped: after QUERY the question side never sees them (only the memory)']];
+ document.getElementById('vec').innerHTML='<tr><th>vector</th><th>shape</th><th>during the loop</th><th>'+(L===0?'prelude':L===5?'answer step':'loop '+L)+'</th></tr>'+rows.map(x=>`<tr><td><b>${x[0]}</b></td><td style="white-space:nowrap">${x[1]}</td><td class="${x[2]}">${x[2]==='chg'?'changes':x[2]==='fix'?'fixed':(x[0].startsWith('loop marker')?'per loop':'tied')}</td><td>${x[3]}</td></tr>`).join('');}
+
+/* plan svg */
+function drawPlan(){const s=document.getElementById('plan');s.innerHTML='';mk(s,'pA',C('--muted'));
+ el('text',{x:20,y:22,'font-size':12.5,'font-weight':750,class:'s'},s,'TODAY (4 layers)');el('text',{x:260,y:22,'font-size':12.5,'font-weight':750,class:'s'},s,'PROPOSAL (same 4 layers)');
+ const T=[['local (16 back)',C('--blue')],['GLOBAL READ',C('--blue')],['local',C('--card2')],['local',C('--card2')]];
+ T.forEach(([t,c],i)=>box(s,20,330-i*70,200,44,c,c===C('--card2')?1:.18,t,null,12.5));
+ for(let i=0;i<3;i++)el('path',{d:`M120,${330-i*70} L120,${330-(i+1)*70+46}`,stroke:C('--muted'),'stroke-width':1.6,'marker-end':'url(#pA)'},s);
+ box(s,20,48,200,34,C('--green'),.14,'head',null,12);el('path',{d:'M120,120 L120,84',stroke:C('--muted'),'stroke-width':1.6,'marker-end':'url(#pA)'},s);
+ // proposal
+ box(s,260,330,200,44,C('--blue'),.18,'prelude: local',"layer 1 · once",12.5);
+ el('rect',{x:248,y:180,width:224,height:132,rx:12,fill:C('--teal'),'fill-opacity':.07,stroke:C('--teal'),'stroke-dasharray':'6 4','stroke-width':2},s);
+ el('text',{x:256,y:196,'font-size':11.5,'font-weight':750,style:`fill:${C('--teal')}`},s,'core ×4 (tied)');
+ box(s,260,256,200,44,C('--blue'),.25,'GLOBAL READ','layer 2',12.5);box(s,260,202,200,44,C('--card2'),1,'local (think)','layer 3',12.5);
+ box(s,260,120,200,44,C('--green'),.16,'answer layer: local','layer 4 · untied',12.5);box(s,260,48,200,34,C('--green'),.12,'head',null,12);
+ el('path',{d:'M360,330 L360,302',stroke:C('--muted'),'stroke-width':1.6,'marker-end':'url(#pA)'},s);el('path',{d:'M360,256 L360,248',stroke:C('--muted'),'stroke-width':1.6,'marker-end':'url(#pA)'},s);
+ el('path',{d:'M360,180 L360,166',stroke:C('--muted'),'stroke-width':1.6,'marker-end':'url(#pA)'},s);el('path',{d:'M360,120 L360,84',stroke:C('--muted'),'stroke-width':1.6,'marker-end':'url(#pA)'},s);
+ el('path',{d:'M462,224 C500,224 500,278 462,278',fill:'none',stroke:C('--teal'),'stroke-width':2,'marker-end':'url(#pA)'},s);
+ el('text',{x:20,y:392,'font-size':11.5,class:'s'},s,'With 1 loop the proposal is identical to today.');}
+
+/* gradient svg */
+function drawG(){const s=document.getElementById('gsvg');s.innerHTML='';mk(s,'gR',C('--red'));mk(s,'gM',C('--muted'));
+ const xs=[150,330,510,690];
+ box(s,10,250,110,44,C('--blue'),.16,'prelude',null,12.5);
+ xs.forEach((x,i)=>{box(s,x,250,140,44,C('--teal'),.16,`core · loop ${i+1}`,'read + think',12.5);
+  el('path',{d:`M${x-30+(i?0:0)},272 L${x-2},272`,stroke:C('--muted'),'stroke-width':1.6,'marker-end':'url(#gM)'},s);
+  box(s,x,140,140,40,C('--green'),.14,'answer layer + head','shared',11.5);el('path',{d:`M${x+70},250 L${x+70},182`,stroke:C('--green'),'stroke-width':1.6,'stroke-dasharray':'4 3','marker-end':'url(#gM)'},s);
+  const w=[.3,.3,.3,1][i];box(s,x+20,40,100,40,C('--red'),.12,`L_exit${i+1}`,`weight ${w}`,12);
+  el('path',{d:`M${x+70},82 L${x+70},138`,stroke:C('--red'),'stroke-width':1+w*2,'marker-end':'url(#gR)'},s);
+  el('path',{d:`M${x+90},182 L${x+90},248`,stroke:C('--red'),'stroke-width':1+w*2,'marker-end':'url(#gR)'},s);
+  if(i)el('path',{d:`M${x+4},300 C${x-20},330 ${x-60},330 ${x-36},300`,fill:'none',stroke:C('--red'),'stroke-width':1.6,'stroke-dasharray':'5 3','marker-end':'url(#gR)'},s);});
+ el('path',{d:'M154,300 C130,330 90,330 100,298',fill:'none',stroke:C('--red'),'stroke-width':1.6,'stroke-dasharray':'5 3','marker-end':'url(#gR)'},s);
+ box(s,860,250,180,44,C('--violet'),.14,'memory K, V → writer',null,12);
+ xs.forEach((x,i)=>el('path',{d:`M${x+140},${262+i*0} C${x+200},${330} 820,${330} 900,296`,fill:'none',stroke:C('--violet'),'stroke-width':1.2,'stroke-opacity':.7,'stroke-dasharray':'3 3'},s));
+ el('text',{x:870,y:322,'font-size':11,class:'s'},s,'4 reads → 4 gradient paths');
+ el('text',{x:150,y:352,'font-size':11.5,class:'s'},s,'red dashed curls = gradient carried back to earlier loops (removed by "detach between loops")');
+ el('text',{x:10,y:24,'font-size':12.5,'font-weight':750,class:'s'},s,'L = 0.3·L₁ + 0.3·L₂ + 0.3·L₃ + 1·L₄   (progress targets: B, C, D, D)');}
+
+function drawAll(){drawMain();drawPlan();drawG();}
+document.querySelectorAll('#dir button').forEach(b=>b.onclick=()=>{S.dir=b.dataset.v;document.querySelectorAll('#dir button').forEach(x=>x.classList.toggle('on',x===b));drawMain();});
+document.querySelectorAll('#loop button').forEach(b=>b.onclick=()=>{S.loop=+b.dataset.v;document.querySelectorAll('#loop button').forEach(x=>x.classList.toggle('on',x===b));drawMain();});
+document.getElementById('frz').onchange=e=>{S.frz=e.target.checked;drawMain();};document.getElementById('det').onchange=e=>{S.det=e.target.checked;drawMain();};
+document.addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){S.loop=Math.max(0,Math.min(5,S.loop+(e.key==='ArrowRight'?1:-1)));document.querySelectorAll('#loop button').forEach(x=>x.classList.toggle('on',+x.dataset.v===S.loop));drawMain();}});
+drawAll();matchMedia('(prefers-color-scheme: dark)').addEventListener('change',drawAll);
+</script>
