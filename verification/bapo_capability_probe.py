@@ -605,8 +605,9 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
         while step < max_steps:
             step += 1
             n_aux = (int(getattr(args, "message_read_rounds", 1)) - 1) if getattr(args, "round_aux", 0) > 0 else 0
-            if getattr(args, "loop_exit_aux", 0) > 0 and getattr(args, "loop_exit_targets", "progress") == "progress":
-                n_aux = max(n_aux, int(getattr(args, "loop_rounds", 1)) - 1)
+            mc = getattr(model, "config", None)  # E33a: from the model (named variants pin the loop in the spec)
+            if (getattr(mc, "message_loop_exit_aux", 0) or 0) > 0 and getattr(mc, "message_loop_exit_targets", "") == "progress":
+                n_aux = max(n_aux, int(getattr(mc, "message_loop_rounds", 1) or 1) - 1)
             batch_out = make_batch(cfg, rng, args.batch, device, round_targets=n_aux,
                                    replay=(getattr(args, "_replay_cfg", None), getattr(args, "replay_frac", 0.0)))
             ids, labels = batch_out[0], batch_out[1]

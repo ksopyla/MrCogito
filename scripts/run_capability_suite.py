@@ -92,6 +92,7 @@ def plan(
     extra: tuple[str, ...] = (),
     lr_scale: float = 1.0,
     only_seeds: tuple[int, ...] | None = None,
+    accum_mult: int = 1,
 ) -> list[Job]:
     """Expand (arches × sizes × tier cells × seeds [× lr pair]) into probe jobs."""
     unknown = [a for a in list(arches) + list(controls) if a not in ARCHES]
@@ -122,7 +123,7 @@ def plan(
                            *size.probe_args(),
                            "--lr", f"{lr:g}", *(["--warm_residuals"] if warm else []),
                            "--steps", str(steps), "--k1_mult", str(b.k1_mult),
-                           "--batch", str(b.batch), "--grad_accum", str(grad_accum_for(cell)),
+                           "--batch", str(b.batch), "--grad_accum", str(grad_accum_for(cell) * max(1, int(accum_mult))),
                            "--eval_every", str(eval_every),
                            "--eval_rows", str(eval_rows), "--seed", str(seed),
                            "--amp", "auto", "--out", out_dir]
@@ -222,6 +223,9 @@ def main() -> int:
                    help="multiply the policy step size (e.g. 0.5 for the 2048-token cells at 30m); "
                    "recorded in job.json and the seed tag")
     p.add_argument("--budget_scale", type=float, default=1.0, help="shrink/grow every step budget (smoke: 0.02)")
+    p.add_argument("--accum_mult", type=int, default=1,
+                   help="multiply every cell's micro-batch count (memory only: the effective batch and the exam are "
+                   "unchanged; e.g. 2 for a looped model on a 3090)")
     p.add_argument("--eval_rows", type=int, default=EVAL_ROWS)
     p.add_argument("--extra", default="", help="extra probe flags appended to every job (quoted string)")
     p.add_argument("--out", default="Cache/capability/run")
@@ -238,6 +242,7 @@ def main() -> int:
         seeds=args.seeds, controls=tuple(args.controls), lr_pair=args.lr_pair,
         budget_scale=args.budget_scale, eval_rows=args.eval_rows, extra=tuple(shlex.split(args.extra)),
         lr_scale=args.lr_scale, only_seeds=tuple(args.only_seeds) if args.only_seeds else None,
+        accum_mult=args.accum_mult,
     )
     untested = sorted({(j.size, j.cell) for j in jobs if not j.lr_measured})
     print(f"capability suite {SUITE_VERSION}: {len(jobs)} jobs · tier {args.tier} · "

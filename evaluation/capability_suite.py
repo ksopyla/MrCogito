@@ -255,6 +255,7 @@ ARCH_FLAGS: dict[str, tuple[str, ...]] = {
                "--ngram_orders", "none"),
     "e31_li": ("--token_embedding_dim", "128", "--ngram_orders", "none"),
     "e31_li_m1": ("--token_embedding_dim", "128", "--ngram_orders", "none"),
+    "e33a_loop": ("--token_embedding_dim", "128", "--ngram_orders", "none"),
     "e30_ord": ("--swp_n_heads", "8", "--swp_query_dim", "128", "--token_embedding_dim", "128",
                 "--ngram_orders", "none"),
     "e31_ord_m1": ("--token_embedding_dim", "128", "--ngram_orders", "none"),

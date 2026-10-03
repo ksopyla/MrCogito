@@ -157,6 +157,39 @@ def e33a_jobs():
     return out
 
 
+def _accum(settings, mult):
+    i = settings.index("--grad_accum") + 1
+    return [*settings[:i], str(int(settings[i]) * mult), *settings[i + 1:]]
+
+
+def e33a_e31b_jobs(seeds=(1, 2)):
+    """The E31b limits-study protocol on E33a (loop from step 0), from each seed's loop-trained lookup-2k
+    weights: lookup 8k/16k stages and the in-order chain (ladder to 128k), the hard exams at 1k (ladder
+    to 128k) and the recall 8k stage. Same exams, steps and ladders as e31_li_m1 in E31b; micro-batches
+    halved (memory only, same effective batch)."""
+    arch, out = "e31_li_m1", []
+    for seed in seeds:
+        lk = f"e33a_lookup_loop_s{seed}"
+        out += [
+            {**_job(f"{lk}_b8k", arch, seed, _accum(L8K, 2), "lookup", E33A_LOOP, init=lk,
+                    ladder=LADDER_FULL, cost=3.8), "rows": 128},
+            {**_job(f"{lk}_b16k", arch, seed, _accum(L16K, 2), "lookup", E33A_LOOP, init=f"{lk}_b8k",
+                    ladder=LADDER_FULL, cost=4.5), "rows": 128},
+            {**_job(f"e33a_chain_loop_s{seed}", arch, seed, E33A_L2K, "chain", E33A_LOOP, init=lk,
+                    ladder=LADDER_FULL, cost=6.5), "rows": 128},
+            {**_job(f"e33a_chain_loop_s{seed}_b8k", arch, seed, _accum(L8K, 2), "chain", E33A_LOOP,
+                    init=f"e33a_chain_loop_s{seed}", ladder=LADDER_FULL, cost=3.8), "rows": 128},
+        ]
+        for exam in ("recall8", "recall16", "decoy8", "unique", "match3", "chain8"):
+            name = f"e33a_hard_{exam}_loop_s{seed}"
+            out.append({**_job(name, arch, seed, E33A_L1K, exam, E33A_LOOP, init=lk,
+                               ladder=LADDER_1K_FULL, cost=2.2), "rows": 128})
+            if exam in ("recall8", "recall16"):
+                out.append({**_job(f"{name}_b8k", arch, seed, _accum(L8K, 2), exam, E33A_LOOP, init=name,
+                                   ladder=LADDER_FULL, cost=3.8), "rows": 128})
+    return out
+
+
 def ratio2_jobs():
     out = []
     for exam in ("lookup", "recall8"):
@@ -301,6 +334,8 @@ def jobs(phase: str) -> list[dict]:
         return out
     if phase == "e33a":  # read–think–reread loop (spec E33a_reread_loop.md)
         return e33a_jobs()
+    if phase == "e33a_e31b":  # the E31b protocol on the looped model (no capability lost; length to 128k)
+        return e33a_e31b_jobs()
     if phase == "recall_len":  # does the 8k stage carry multi-fact recall to length (as it did lookup)?
         out = []
         for arch in ("e30_li", "e31_li_m1", "e31_li"):

@@ -124,3 +124,16 @@ def test_probe_replay_and_round_target_fallback():
         assert torch.equal(tg[0, b], labels[b]) and torch.equal(tg[2, b], labels[b])
     # chain rows: round 0 targets differ from the answer (node 1 vs terminal)
     assert any(not torch.equal(tg[0, b], labels[b]) for b in range(6))
+
+
+def test_named_variant_e33a_loop_builds_the_loop():
+    from evaluation.bapo_models import ArchSpec, build_model
+
+    spec = ArchSpec(name="shared", hidden=64, head_dim=16, n_kv_heads=1, pre_layers=1, global_layers=1,
+                    stack_layers=2, local_window=16, message_boundary_token_id=10, token_embedding_dim=32,
+                    ngram_orders=(), lm_latent_dim=64, lm_writer_dim=32, zero_init_residuals=False)
+    m = build_model("e33a_loop", vocab_size=17, seq_len=512, answer_start=480, pad_id=12, bos_id=11,
+                    eos_id=12, spec=spec, seed=0)
+    assert m.loop_emb is not None and m.loop_emb.shape[0] == 4
+    assert m.config.message_loop_exit_aux == 0.3 and m.config.lm_reader_tokens == 1
+    assert m.config.lm_slot_pos == "boundary" and m.config.lm_addr == "none"
