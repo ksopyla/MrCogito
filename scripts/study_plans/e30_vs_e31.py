@@ -112,6 +112,10 @@ RATIO2_HP = [
 E33A_LOOP = ["--loop_rounds", "4", "--loop_exit_aux", "0.3", "--loop_exit_targets", "progress"]
 E33A_CHAIN = ["--key_len", "8", "--replay_recipe", "recall_single", "--replay_frac", "0.25"]
 E33A_PCHAIN_LADDER = [1024, 4096, 16384]
+# Same effective batch as the study (32 rows); 4 loops + 3 exits need smaller micro-batches on a 3090
+# (Odra smoke 3 Oct: 1k at micro 16 = 15.0 GB, 1.1 s/step; 2k at micro 8 = 15.4 GB, 3.0 s/step).
+E33A_L1K = [*L1K_FT[:L1K_FT.index("--grad_accum") + 1], "2", *L1K_FT[L1K_FT.index("--grad_accum") + 2:]]
+E33A_L2K = [*L2K[:L2K.index("--grad_accum") + 1], "4", *L2K[L2K.index("--grad_accum") + 2:]]
 E33A_LOOKUP_NO_HARM = [{"lengths": [1024, 2048, 8192, 32768], "args": ["--recipe", "recall_single"],
                         "out": "ladder_lookup.json", "rows": 128}]
 
@@ -121,7 +125,7 @@ def _e33a_chain(tag, init, flags, seed, *, arch="e31_li_m1"):
     out, prev = [], init
     for hops in (2, 3, 4):
         name = f"e33a_pchain{hops}_{tag}_s{seed}"
-        out.append({**_job(name, arch, seed, L1K_FT, f"pchain{hops}", [*E33A_CHAIN, *flags],
+        out.append({**_job(name, arch, seed, E33A_L1K, f"pchain{hops}", [*E33A_CHAIN, *flags],
                            init=prev, ladder=E33A_PCHAIN_LADDER, cost=2.2),
                     "rows": 128, "ladders": E33A_LOOKUP_NO_HARM if hops == 4 else None})
         prev = name
@@ -134,7 +138,7 @@ def e33a_jobs():
     # ★ the loop from step 0: lookup at 2k with the loop on, then the chain curriculum (seeds 1, 2)
     for seed in (1, 2):
         lk = f"e33a_lookup_loop_s{seed}"
-        out.append(_job(lk, arch, seed, L2K, "lookup", E33A_LOOP, ladder=[2048, 8192, 32768], cost=5.5))
+        out.append(_job(lk, arch, seed, E33A_L2K, "lookup", E33A_LOOP, ladder=[2048, 8192, 32768], cost=6.0))
         out += _e33a_chain("loop", lk, E33A_LOOP, seed)
     lk1 = "e33a_lookup_loop_s1"
     # the same loop fine-tuned from the past single-read checkpoint (does learning the loop from the start matter?)
@@ -148,7 +152,7 @@ def e33a_jobs():
     out += _e33a_chain("loopinj", lk1, [*E33A_LOOP, "--loop_inject", "prelude"], 1)
     # wide core (read + both local layers, head only after) needs its own loop-trained lookup stage
     wide = [*E33A_LOOP, "--loop_span", "2"]
-    out.append(_job("e33a_lookup_wide_s1", arch, 1, L2K, "lookup", wide, ladder=[2048, 8192, 32768], cost=5.5))
+    out.append(_job("e33a_lookup_wide_s1", arch, 1, E33A_L2K, "lookup", wide, ladder=[2048, 8192, 32768], cost=6.0))
     out += _e33a_chain("wide", "e33a_lookup_wide_s1", wide, 1)
     return out
 
