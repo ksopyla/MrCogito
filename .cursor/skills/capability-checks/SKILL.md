@@ -83,8 +83,8 @@ length, champion first), and the suite grid (honest score per cell, pass outline
 prints the no-harm counts.
 
 **When the author asks for a visual summary**, regenerate the board from a fresh pull and publish
-it with the Artifact tool (same file path → same URL on later updates in a session; pass the
-existing URL across sessions). A one-off narrative page is fine on top, but its numbers come from
+it with the Artifact tool to the existing board, https://claude.ai/artifact/FNTv1zKLc6fh9QRTrJmVrR
+(pass it as `url` from a new session so the link stays the same). A one-off narrative page is fine on top, but its numbers come from
 the ledger, never retyped from memory or from old HTML.
 
 ### 8 · Record
