@@ -128,5 +128,27 @@ and lookup at 98 %. Three perfectly composed reads therefore reach about 94–97
   `--replay_recipe`, `--replay_frac`, `--freeze_writer` and per-exit eval; `--loop_rounds` in the length ladder.
   All are reusable for any exclusive-read model.
 
+## Capability checks: no past capability lost (added 3 Oct, at the author's request)
+E33a gets the same battery as E31, so the final comparison is like for like. All of it runs on Odra after the
+`e33a` phase. The queues are chained, about 3 days in total.
+1. **E31b protocol on the loop** (study phase `e33a_e31b`, seeds 1 and 2, starting from each seed's loop-trained
+   lookup-2k weights). The same exams, steps and ladders as `e31_li_m1` in E31b:
+   - lookup with the 8k and 16k stages, ladder 2k → 128k;
+   - the in-order 4-hop chain at 2k, plus an 8k stage, ladder to 128k;
+   - the hard exams at 1k (recall8, recall16, decoy8, unique, match3, chain8), ladder 1k → 128k;
+   - the recall 8k stage.
+
+   First-letter accuracy throughout, 128 rows per length.
+2. **Capability suite, full tier, 30M, 3 seeds** (`Cache/capability/e33a_full_30m`, arch `e33a_loop`, the same
+   `--message_raw_window 256` as the E31 suite `li_full_30m`). Every cell is trained from scratch with the loop on.
+   - Dense controls are not rerun: the suite data is deterministic per seed, so the scorecard merges this folder
+     with `li_full_30m`, which holds dense, `e31_li` and `e31_li_m1` on the same seeds and suite version.
+   - `--accum_mult 2` halves the micro-batches only; the effective batch is unchanged.
+3. **Comparison report** at the end: E33a vs E31 (`e31_li_m1`, `e31_li`) on every cell and ladder above, plus the
+   reasoning gain on the parallel chains. Each E31 number comes from E31b (first letter) and `li_full_30m`.
+
+**No-harm rule:** a capability counts as lost if E33a falls more than 5 points below `e31_li_m1` (first letter) on
+any cell or ladder length where `e31_li_m1` passes (≥ 75 %), on the median of its seeds.
+
 ## Result
 *(filled by experiment-track)*
