@@ -9,7 +9,7 @@ JSON next to it. Writes `scorecard.md`, `scorecard.html`, `scorecard.json` and
   uv run python analysis/capability_scorecard.py --in_dir Cache/capability/e30_standard
   # from the committed ledger (no server needed):
   uv run python analysis/capability_scorecard.py --out_dir Cache/capability/e31_scored \
-      --in_dir docs/2_Experiments_Registry/capability_ledger/suite/li_full_30m.polonez.json
+      --in_dir docs/2_Experiments_Registry/results/capability/suite/li_full_30m.polonez.json
 
 Rules (spec: docs/engineering_specs/capability_suite.md):
   * a cell **passes** when the median answer-token accuracy over seeds is ≥ 75 %;
@@ -318,7 +318,7 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--in_dir", nargs="+", required=True,
                    help="suite output folders (e.g. the Odra and Polonez halves of one run) and/or committed "
-                        "ledger files (docs/2_Experiments_Registry/capability_ledger/suite/*.json)")
+                        "ledger files (docs/2_Experiments_Registry/results/capability/suite/*.json)")
     p.add_argument("--out_dir", default=None)
     p.add_argument("--arch", nargs="*", default=None, help="architectures to score (default: every non-dense arch found)")
     args = p.parse_args()

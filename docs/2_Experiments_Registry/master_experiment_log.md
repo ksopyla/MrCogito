@@ -10,7 +10,7 @@ experiment specs; deep metrics and interpretation live in run reports. Live focu
 | What happened on a specific run? | [Training Runs](#training-runs) row → run report |
 | What are we doing now? | [`agenda.md`](../1_Strategy_and_Plans/agenda.md) |
 | Full metric dump / fair baselines | `run_reports/` |
-| Capability results (suite, length battery to 128k) — every number, every variant | [`capability_ledger/`](capability_ledger/README.md) · [board](../3_Evaluations_and_Baselines/capability_board.html) |
+| Capability results (suite, length battery to 128k) — every number, every variant | [`results/capability/`](results/README.md) · [board](../3_Evaluations_and_Baselines/capability_board.html) |
 
 > **Focus note (2026-09-17) — Wave B CogitoProbe closed (1k only; 4k skipped); GPUs idle.**
 > E28 dense packed-answer **6.5% / 0.21 bits** on a 40-bit prize (**K1**; exclusive `fixed`

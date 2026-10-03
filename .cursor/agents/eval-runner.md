@@ -85,7 +85,8 @@ assumption you made in the return bundle rather than stalling.
 
 ## Output contract (CRITICAL for tokenomics)
 Return **only** the compact evidence bundle below. Leave full logs and JSON/CSV on disk
-(`Cache/logs/...`, `Cache/Evaluation_reports/...`) for on-demand reading by the main agent —
+(`Cache/logs/...`, `Cache/Evaluation_reports/...`) for on-demand reading by the main agent, and
+list the result paths so it can save them into the registry with `scripts/save_eval_results.sh` —
 **do not paste full logs, full JSON, or long step-by-step transcripts** into your return
 message. Quote at most a few lines (e.g. one generation-sample snippet, the first line of a
 traceback).

@@ -5,7 +5,7 @@
 - **Skill:** `capability-checks` (`.cursor/skills/capability-checks/SKILL.md`) runs it end to end.
 - **Parts:** [capability suite](capability_suite.md) (graded exams) · length battery
   (`battery_jobs` in `scripts/study_plans/e30_vs_e31.py`, the E31b protocol) · results ledger
-  (`docs/2_Experiments_Registry/capability_ledger/`) · capability board
+  (`docs/2_Experiments_Registry/results/capability/`) · capability board
   (`docs/3_Evaluations_and_Baselines/capability_board.html`).
 
 ## Why
@@ -63,12 +63,15 @@ E31b. When a variant takes over, change `--champion` in `analysis/capability_boa
   about two standard errors are ties.
 
 ## Where results live (the storage contract)
+The same rule covers every result in the project
+([`results/README.md`](../2_Experiments_Registry/results/README.md)): `Cache/` is scratch, cited
+results are committed under `docs/2_Experiments_Registry/results/`, raw folders go to the NAS.
 
 | layer | what | where | who writes it |
 |---|---|---|---|
 | raw | every log, rung JSON, ladder JSON, checkpoint | server `Cache/capability/<run>` or `Cache/study/<study>` | the runners |
 | archive | the full raw folder | NAS `/nas/ml_data/mrcogito/results/{capability,study}/<name>/` | `scripts/pull_capability_results.sh` |
-| **ledger** (source of truth for comparisons) | compact JSON per (folder, host): per job and arch accuracy ± SE, first letter, per-letter accuracy, bits, speed, every ladder length | `docs/2_Experiments_Registry/capability_ledger/{suite,study}/<name>.<host>.json`, committed | `scripts/pull_capability_results.sh` (collector `analysis/capability_ledger.py`) |
+| **ledger** (source of truth for comparisons) | compact JSON per (folder, host): per job and arch accuracy ± SE, first letter, per-letter accuracy, bits, speed, every ladder length | `docs/2_Experiments_Registry/results/capability/{suite,study}/<name>.<host>.json`, committed | `scripts/pull_capability_results.sh` (collector `analysis/capability_ledger.py`) |
 | scorecard | suite verdict and frontier for one run | `analysis/capability_scorecard.py --in_dir <ledger files or folders>` | on demand |
 | **board** (the visual summary) | all variants: no-harm, length battery, suite grid | `docs/3_Evaluations_and_Baselines/capability_board.html`, published as an Artifact | `analysis/capability_board.py` |
 | registry | what it means | master log row, spec Result, run report, agenda line | `experiment-track` |

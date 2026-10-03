@@ -57,7 +57,7 @@ Suite: `DONE` count and `EXIT` lines (`suite.md` step 6). Battery: `analysis/stu
 bash scripts/pull_capability_results.sh odra ~/dev/MrCogito/Cache/capability/<run>
 bash scripts/pull_capability_results.sh odra ~/dev/MrCogito/Cache/study/e30_vs_e31
 ```
-- Writes `docs/2_Experiments_Registry/capability_ledger/{suite,study}/<name>.<host>.json` (compact:
+- Writes `docs/2_Experiments_Registry/results/capability/{suite,study}/<name>.<host>.json` (compact:
   per job and arch accuracy ± SE, first letter, per-letter accuracy, bits, speed, every ladder
   length). **Commit it** — the ledger is the source of truth for every comparison.
 - Copies the whole raw folder (logs, ladders, checkpoints) to

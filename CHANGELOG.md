@@ -27,7 +27,7 @@ Process spec `docs/engineering_specs/capability_checks.md`.
 - `analysis/capability_ledger.py` (stdlib only): collects a suite or study folder into a compact
   JSON (per job and arch: accuracy ± SE, first letter, per-letter accuracy, bits, speed, every ladder
   length). `scripts/pull_capability_results.sh` streams it over ssh into
-  `docs/2_Experiments_Registry/capability_ledger/` and archives the raw folder to
+  `docs/2_Experiments_Registry/results/capability/` and archives the raw folder to
   `/nas/ml_data/mrcogito/results/`. Backfilled from Odra: `e30_vs_e31` (164 jobs) and five suite folders.
 - `analysis/capability_board.py` + `capability_board_template.html`: one generated page with the
   no-harm verdict vs the champion (`e31_li_m1`), the length battery as small multiples and the suite
@@ -37,6 +37,11 @@ Process spec `docs/engineering_specs/capability_checks.md`.
   (job list verified identical).
 - `analysis/capability_scorecard.py --in_dir` accepts ledger files (scores with the servers off).
 - `tests/test_capability_ledger.py`.
+- `docs/2_Experiments_Registry/results/` as the one home of every cited result: `capability/` (the
+  ledger, moved from `capability_ledger/`) and `evaluations/<name>/`, filled by
+  `scripts/save_eval_results.sh <host> <name> <files…>` (no checkpoints, ≤ 5 MB per file). Docs no
+  longer cite `Cache/` paths (139 such links in current docs, 13 resolvable on the Mac); old links
+  are left as written.
 
 **Changed (skills and docs):** skill `capability-suite` → `capability-checks` (hub: suite + length
 battery + no-harm + ledger + board; suite details in `suite.md`, battery in `battery.md`);

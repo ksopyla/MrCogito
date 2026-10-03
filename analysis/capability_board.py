@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Capability board: the one visual summary of every architecture's capability checks.
 
-Reads the committed capability ledger (`docs/2_Experiments_Registry/capability_ledger/`, written by
+Reads the committed capability ledger (`docs/2_Experiments_Registry/results/capability/`, written by
 `scripts/pull_capability_results.sh`) and writes one self-contained HTML page:
   * the no-harm check of each variant against the champion (default `e31_li_m1`): a capability is
     lost when the variant is more than 5 points below the champion where the champion passes (≥ 75 %);

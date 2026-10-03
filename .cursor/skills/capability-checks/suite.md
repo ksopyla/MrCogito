@@ -132,7 +132,7 @@ uv run python analysis/capability_scorecard.py --in_dir Cache/capability/<run>
 uv run python analysis/capability_scorecard.py --in_dir <odra_run> <polonez_run> --out_dir Cache/capability/<arch>_merged
 ```
 Or score straight from the committed ledger, with no server:
-`uv run python analysis/capability_scorecard.py --in_dir docs/2_Experiments_Registry/capability_ledger/suite/<run>.<host>.json --out_dir Cache/capability/<run>_scored`.
+`uv run python analysis/capability_scorecard.py --in_dir docs/2_Experiments_Registry/results/capability/suite/<run>.<host>.json --out_dir Cache/capability/<run>_scored`.
 
 Outputs: `scorecard.md` (paste-ready), `scorecard.html` (level grid + bars with the best
 past architecture and the dense ceiling as ticks), `scorecard.json`, `cells.csv`.

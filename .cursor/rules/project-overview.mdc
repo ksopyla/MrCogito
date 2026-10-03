@@ -51,14 +51,14 @@ We are trying to **find** a new architecture. That requires bold hypotheses, ana
   - `1_Strategy_and_Plans/` — `agenda.md` (slim living agenda, current truth), `vision_and_goals.md`, `training_eval_matrix.md`
     - `experiments_specs/` — one frozen spec per experiment (`E0NN_*.md`) + its `_plan.md`; implementation is a config over the shared foundation
     - `engineering_specs/` — one frozen spec per engineering change 
-    - `2_Experiments_Registry/` — master experiment log, run reports (append-only result ledger)
+    - `2_Experiments_Registry/` — master experiment log, run reports, and `results/` (append-only result ledger). `results/` holds every result file a doc cites (`capability/`, `evaluations/<name>/`); docs never cite `Cache/` paths (since 2026-10-03)
     - `3_Evaluations_and_Baselines/` — canonical baselines, comparative studies
     - `4_Research_Notes/` — internal research notes. Two sub-classes: dated root-cause diagnoses / failure analyses (append-only ledger — never rewrite results) and undated mutable notes (concept analysis framework, embedding-space theory, evaluation strategy, research ideas — correct in place, mark obsolete sections)
     - `literature_review/` — external paper / publication reviews. Topical filenames (no dates), one or more papers per file with `### TL;DR` each. Canonical source for past reviews referenced by the `research-scout` / `research-explain` / `research-synthesis` skills
     - `5_Archive/` — superseded roadmaps/plans (HISTORICAL — see Docs hygiene below)
 - `Cache/` — files synced from remote servers (gitignored content)
     - `Training/` — model checkpoints and optimizer states
-    - `Evaluation_reports/` — CSV eval results from remote servers
+    - `Evaluation_reports/`, `eval/`, `capability/`, `study/` — scratch outputs of evaluations and exams; results worth citing are copied to `docs/2_Experiments_Registry/results/`, raw folders to the NAS
     - `Logs/` — training logs; `wandb/` — W&B runs
 - `tests/` — unit tests, the safety net for the implementation
 - `verification/` — scripts for initial local verification of new implementations
@@ -90,7 +90,7 @@ Input (prior result / idea / vision / paper / cross-domain analogy) →
 `experiment-track` (results → `master_experiment_log.md`). `docs-hygiene` keeps docs lean.
 Every new architecture or variant also gets the full capability check via `capability-checks`
 (the graded suite L0–L6, the length battery to 128k, and a no-harm comparison with the champion);
-results are pulled into the committed ledger `docs/2_Experiments_Registry/capability_ledger/` and
+results are pulled into the committed ledger `docs/2_Experiments_Registry/results/capability/` and
 the NAS, and drawn on the capability board — never left only on a server.
 `research-comms` governs how **any** of this is reported back in chat (short, plain, no private
 codenames, numbers explained) — see `communication.mdc`; shared vocabulary in `docs/glossary.md`.

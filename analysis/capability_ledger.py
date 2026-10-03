@@ -3,7 +3,7 @@
 
 Raw results live on the server that ran them (`Cache/capability/<run>`, `Cache/study/<study>`) and
 are archived to the NAS; this module turns one such folder into a small JSON file that is
-committed under `docs/2_Experiments_Registry/capability_ledger/`, so every past result can be
+committed under `docs/2_Experiments_Registry/results/capability/`, so every past result can be
 compared, scored and plotted from the repository even when the server is off.
 Process: docs/engineering_specs/capability_checks.md (skill `capability-checks`).
 
@@ -11,7 +11,7 @@ Standard library only (Python ≥ 3.8): it runs on any server checkout without s
 fed through ssh stdin by `scripts/pull_capability_results.sh`:
 
     ssh odra 'python3 - collect ~/dev/MrCogito-e31/Cache/study/e30_vs_e31 --host odra' \
-        < analysis/capability_ledger.py > docs/2_Experiments_Registry/capability_ledger/study/e30_vs_e31.odra.json
+        < analysis/capability_ledger.py > docs/2_Experiments_Registry/results/capability/study/e30_vs_e31.odra.json
 
 Library use (scorecard, board): `load_ledgers()`, `suite_rows()`, `study_jobs()`.
 
@@ -36,7 +36,7 @@ from pathlib import Path
 
 SCHEMA = 1
 NAS_RESULTS = "/nas/ml_data/mrcogito/results"
-LEDGER_DIR = Path(__file__).resolve().parents[1] / "docs" / "2_Experiments_Registry" / "capability_ledger"
+LEDGER_DIR = Path(__file__).resolve().parents[1] / "docs" / "2_Experiments_Registry" / "results" / "capability"
 _NOT_RUNG = ("job.json", "summary.json", "cost_bench.json")
 _LADDER_KEYS = ("acc", "acc_se", "first_acc", "first_acc_se", "rows", "ce_nats", "sec_per_row", "peak_gb",
                 "memory_slots")

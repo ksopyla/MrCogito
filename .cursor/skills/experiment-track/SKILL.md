@@ -23,7 +23,7 @@ When you need to (re)run any metric on a checkpoint, switch to `experiment-evalu
 
 **Capability results** (the suite, the length battery, the no-harm check) are produced by
 `capability-checks`. Their numbers live in the committed ledger
-`docs/2_Experiments_Registry/capability_ledger/` and are drawn on
+`docs/2_Experiments_Registry/results/capability/` and are drawn on
 `docs/3_Evaluations_and_Baselines/capability_board.html`; read them there, never from memory,
 old HTML or a server `Cache/` (see "Recording capability checks" below).
 
@@ -58,7 +58,8 @@ Skip `docs/5_Archive/` and any `> **OBSOLETE — ...**` section — that content
    - `Cache/Evaluation_reports/*.json`
    - `Cache/Evaluation_reports/*.csv`
    - checkpoint `config.json`
-   - capability checks: the ledger `docs/2_Experiments_Registry/capability_ledger/` and the board
+   - saved evaluation outputs: `docs/2_Experiments_Registry/results/evaluations/<name>/`
+   - capability checks: the ledger `docs/2_Experiments_Registry/results/capability/` and the board
 
 ## Core Workflow
 1. Reconstruct the run facts:
@@ -172,6 +173,11 @@ Useful interpretation rules:
 - Partial spot-checks should produce partial conclusions, not broad track verdicts.
 
 ## Documentation Rules
+- **Cite results only from the registry or the NAS.** Every result file a spec, report, log row or
+  agenda line links to must be under `docs/2_Experiments_Registry/results/` (evaluations via
+  `scripts/save_eval_results.sh`, capability checks via `scripts/pull_capability_results.sh`) or a
+  `/nas/ml_data/mrcogito/...` path. Never cite a `Cache/` path in new writing: it exists on one
+  machine only. If the evidence is still only in `Cache/`, save it first. Older `Cache/` links stay as written.
 - `master_experiment_log.md` is an **index**, not a lab notebook. Specs hold intent/criteria; run reports hold deep metrics. Never paste multi-paragraph analysis into log cells.
 - Always keep **Experiment Index** and **Training Runs** in sync for the same ID (index = one row per ID; training = one row per run).
 - Every E-numbered row must link to its lifecycle spec path (`../experiments_specs/<lifecycle>/<ID>_….md`). Search all lifecycle folders — never assume `ahead/`.

@@ -369,7 +369,7 @@ Repeat the whole pipeline for `$LAST`, changing the output JSON / report labels.
 The capability suite, the length battery (ladders to 128k), the no-harm comparison against the
 champion, the results ledger and the capability board all live in the **`capability-checks`**
 skill. Do not run them from this skill, and do not look for their results in
-`Cache/Evaluation_reports/` or W&B: they are in `docs/2_Experiments_Registry/capability_ledger/`.
+`Cache/Evaluation_reports/` or W&B: they are in `docs/2_Experiments_Registry/results/capability/`.
 
 ## Perceiver AR pipeline (`perceiver_ar`: E18 / E21)
 Two axes, both **teacher-forced / loglikelihood** (a ~125M base model cannot follow instructions
@@ -497,8 +497,18 @@ run_cmd() {
 ```
 At the end, print `${FAILED[*]}` and inspect the first traceback for each failed task.
 
+## Save the results into the registry (before the handoff)
+`Cache/` is scratch and lives on one machine. Copy the final outputs the write-up will use into the
+committed registry, then cite only those paths (rules: `docs/2_Experiments_Registry/results/README.md`):
+```bash
+bash scripts/save_eval_results.sh polonez E22_pilot Cache/eval/e22_a Cache/Evaluation_reports/lm_eval/e22_a.json
+git add docs/2_Experiments_Registry/results/evaluations/E22_pilot
+```
+One folder per evaluated run (`<experiment id>_<run tag>`); checkpoints never, files over 5 MB go to
+the NAS instead. W&B benchmark runs are a second copy, not a replacement.
+
 ## Handoff
-When the suite is done, hand the collected evidence to **`experiment-track`** to record the
+When the suite is done and its outputs are saved, hand the collected evidence to **`experiment-track`** to record the
 verdict in `master_experiment_log.md`, flip the experiment spec `Status`/`Result`, and update
 the `agenda.md` learnings. This skill owns *how to run*; `experiment-track` owns *what it means*.
 

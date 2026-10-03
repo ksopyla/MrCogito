@@ -7,7 +7,7 @@
 #   bash scripts/pull_capability_results.sh odra  ~/dev/MrCogito/Cache/capability/e33a_full_30m
 #   bash scripts/pull_capability_results.sh polonez ~/dev/MrCogito/Cache/capability/li_full_30m --no-archive
 #
-# Writes docs/2_Experiments_Registry/capability_ledger/<suite|study>/<folder>.<host>.json (commit it).
+# Writes docs/2_Experiments_Registry/results/capability/<suite|study>/<folder>.<host>.json (commit it).
 # The collector is streamed over ssh stdin (stdlib only), so the server checkout needs no update.
 # Archiving copies results server → NAS on the server itself (rsync -rlt: no owner/group on the NFS share; additive, never deletes).
 set -euo pipefail
@@ -18,7 +18,7 @@ ARCHIVE=1
 [[ "${3:-}" == "--no-archive" ]] && ARCHIVE=0
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-LEDGER="$REPO/docs/2_Experiments_Registry/capability_ledger"
+LEDGER="$REPO/docs/2_Experiments_Registry/results/capability"
 NAS=/nas/ml_data/mrcogito/results
 TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
