@@ -109,7 +109,10 @@ RATIO2_HP = [
 
 
 # E33a: tied loop over [global read + local] × 4, exits through the untied answer layer.
-E33A_LOOP = ["--loop_rounds", "4", "--loop_exit_aux", "0.3", "--loop_exit_targets", "progress"]
+E33A_LOOP = ["--loop_rounds", "4", "--loop_exit_aux", "0.3", "--loop_exit_targets", "progress"]  # phase e33a (as launched)
+# General exits: every loop predicts the answer (= the next token in text). No synthetic-only labels, so the
+# E31-protocol checks and the suite stay fair to E31 and the recipe carries over to text training.
+E33A_LOOP_ANS = ["--loop_rounds", "4", "--loop_exit_aux", "0.3", "--loop_exit_targets", "answer"]
 E33A_CHAIN = ["--key_len", "8", "--replay_recipe", "recall_single", "--replay_frac", "0.25"]
 E33A_PCHAIN_LADDER = [1024, 4096, 16384]
 # Same effective batch as the study (32 rows); 4 loops + 3 exits need smaller micro-batches on a 3090
@@ -168,6 +171,9 @@ def e33a_e31b_jobs(seeds=(1, 2)):
     to 128k) and the recall 8k stage. Same exams, steps and ladders as e31_li_m1 in E31b; micro-batches
     halved (memory only, same effective batch)."""
     arch, out = "e31_li_m1", []
+    E33A_LOOP = E33A_LOOP_ANS  # noqa: N806 — general exits for every capability check
+    # second seed of the general (answer-exit) reasoning arm
+    out += _e33a_chain("loopans", "e33a_lookup_loop_s2", E33A_LOOP_ANS, 2)
     for seed in seeds:
         lk = f"e33a_lookup_loop_s{seed}"
         out += [
