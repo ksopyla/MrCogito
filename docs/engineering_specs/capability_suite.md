@@ -5,7 +5,9 @@
   `scripts/run_capability_suite.py` (plan / launch) ·
   `analysis/capability_scorecard.py` (score + verdict) · probe `verification/bapo_capability_probe.py`
 - **Tests:** `tests/test_capability_suite.py`, `tests/test_bapo_probe_tiers.py`
-- **How to run it end to end:** the `capability-suite` skill (`.cursor/skills/capability-suite/SKILL.md`)
+- **How to run it end to end:** the `capability-checks` skill (`.cursor/skills/capability-checks/`);
+  the suite is part 1 of the [capability checks](capability_checks.md), next to the length battery,
+  the results ledger and the capability board
 - **Related:** [small-model protocol](small_model_capability_protocol.md) (training rules the suite
   inherits) · [E30 review](../experiments_specs/ahead/E30_sliding_window_perceiver.md#built-vs-intended-review-2026-09-24)
 

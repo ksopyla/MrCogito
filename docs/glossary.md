@@ -102,6 +102,11 @@ meaningless without knowing which slice it came from.
 | **frontier level** | the highest capability-suite level at which every level up to it passes (median answer accuracy ≥ 75 % on every gating cell). Higher is better. |
 | **uncalibrated (level)** | the candidate missed only cells where the full model also missed on the same run: the exam was not learnable at that budget, so it counts neither for nor against the architecture. |
 | **scale-up verdict** | the scorecard's call on more compute: `scale up` (≥ 30M, frontier ≥ L2, a long-reach or reasoning win, no regression with size, speed ≥ 0.5× dense), `promising — fix before scaling`, or `not ready`. |
+| **capability checks** | the full exam set every new architecture or variant takes: the capability suite, the length battery, and the no-harm comparison with the champion. Process `docs/engineering_specs/capability_checks.md`. |
+| **length battery** | the E31b protocol as a standard exam: train lookup, a 4-hop chain and harder exams (recall among 8/16, a fact among 8 decoys, unique item, triple match, 8-hop chain) at 1k–2k, add 8k/16k stages, then read inputs up to 128k with no more training. Scored on first letter; higher is better, 75 % passes, 25 % is chance. |
+| **champion** | the architecture every variant is compared with; since 2026-10-01 E31 latent memory with one reader entry per latent (`e31_li_m1`). |
+| **no-harm rule** | a variant has lost a capability when it scores more than 5 points below the champion on an exam and length where the champion passes (≥ 75 %, first letter, median over seeds). Zero lost is the goal. |
+| **capability ledger / board** | the ledger is the committed compact copy of every suite and battery result (`docs/2_Experiments_Registry/capability_ledger/`); the board is the one generated page that draws them all side by side (`capability_board.html`). |
 | **concept coverage** | how many tokens of the book each learned question is asked to summarize (`W/K`). Short coverage means a smaller window and more notes. The default is about 8. |
 | **INDEX / MATCH / SELECT / HOPS** | BAPO exam classes: copy a marked span; look up a key; pick fact vs decoy; follow a chain. |
 | **information_flow** | recovered bits / prize bits on a packed answer. 1 = full prize; 0 = chance. |

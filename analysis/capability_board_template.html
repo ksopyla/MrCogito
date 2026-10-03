@@ -1,0 +1,314 @@
+<title>Capability Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column — verdict first (no-harm vs the champion), then the length battery as
+   small multiples, then the suite grid, then where every number came from. */
+:root {
+  --bg: #f6f7f8; --surface: #ffffff; --ink: #14171a; --ink-2: #4b535b; --ink-3: #7b838b;
+  --rule: #dfe3e7; --grid: #edf0f2; --accent: #1c5cab;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
+  --good: #0ca30c; --critical: #d03b3b; --warning: #b77800;
+  --seq-0: #f0efec; --seq-1: #cde2fb; --seq-2: #9ec5f4; --seq-3: #6da7ec; --seq-4: #3987e5; --seq-5: #256abf; --seq-6: #184f95;
+  --seq-ink-dark: #ffffff;
+  --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121416; --surface: #1a1d20; --ink: #f2f4f6; --ink-2: #b9c0c7; --ink-3: #868e96;
+    --rule: #2c3136; --grid: #24292d; --accent: #6da7ec;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+    --good: #2fbf2f; --critical: #e66767; --warning: #fab219;
+    --seq-0: #2a2e32; --seq-1: #104281; --seq-2: #184f95; --seq-3: #1c5cab; --seq-4: #256abf; --seq-5: #3987e5; --seq-6: #6da7ec;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121416; --surface: #1a1d20; --ink: #f2f4f6; --ink-2: #b9c0c7; --ink-3: #868e96;
+  --rule: #2c3136; --grid: #24292d; --accent: #6da7ec;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+  --good: #2fbf2f; --critical: #e66767; --warning: #fab219;
+  --seq-0: #2a2e32; --seq-1: #104281; --seq-2: #184f95; --seq-3: #1c5cab; --seq-4: #256abf; --seq-5: #3987e5; --seq-6: #6da7ec;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); margin: 0; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 64px; display: grid; gap: 36px; }
+h1 { font-size: 30px; line-height: 1.15; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font-size: 19px; margin: 0 0 4px; text-wrap: balance; }
+p { margin: 0; max-width: 72ch; }
+.muted { color: var(--ink-2); }
+.small { font-size: 13px; color: var(--ink-3); }
+.mono, td.num, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+header { display: grid; gap: 10px; }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+section { display: grid; gap: 14px; min-width: 0; }
+.verdicts { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.verdict { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; display: grid; gap: 8px; min-width: 0; align-content: start; }
+.verdict .name { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font: 500 13px/1 var(--sans); padding: 5px 9px; border-radius: 999px; border: 1px solid var(--rule); }
+.pill.good { color: var(--good); border-color: currentColor; }
+.pill.bad { color: var(--critical); border-color: currentColor; }
+.pill.warn { color: var(--warning); border-color: currentColor; }
+.counts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.lost { font-size: 13px; color: var(--ink-2); display: grid; gap: 2px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.controls label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 14px; }
+.controls input { accent-color: var(--accent); }
+.multiples { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 12px 6px; min-width: 0; position: relative; }
+.panel h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.panel .stage { font-size: 12px; color: var(--ink-3); }
+.panel svg { display: block; width: 100%; height: auto; overflow: visible; }
+.panel.extra { border-style: dashed; }
+.axis text { fill: var(--ink-3); font: 10px var(--mono); }
+.axis line, .gridline { stroke: var(--grid); stroke-width: 1; }
+.passline { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 3 3; }
+.series path { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.series circle { stroke: var(--surface); stroke-width: 2; }
+.series circle.hollow { fill: var(--surface) !important; stroke-width: 1.5; }
+.crosshair { stroke: var(--ink-3); stroke-width: 1; }
+#tip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface); color: var(--ink); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.12); min-width: 160px; }
+#tip .row { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+#tip .row span:first-child { display: inline-flex; align-items: center; gap: 6px; }
+.tablebox { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th { font-weight: 600; color: var(--ink-2); background: var(--surface); position: sticky; top: 0; }
+th.lv { text-align: center; font: 500 11px var(--mono); letter-spacing: .05em; color: var(--ink-3); }
+td.cell { text-align: center; font-family: var(--mono); font-variant-numeric: tabular-nums; min-width: 52px; }
+td.cell.pass { box-shadow: inset 0 0 0 2px var(--ink); }
+td.cell.empty { color: var(--ink-3); }
+.legendbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 12px; color: var(--ink-3); }
+.ramp { display: inline-flex; border-radius: 3px; overflow: hidden; }
+.ramp i { width: 22px; height: 12px; display: block; }
+details summary { cursor: pointer; font-weight: 600; }
+details[open] summary { margin-bottom: 10px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 520px) { h1 { font-size: 24px; } .wrap { padding-inline: 16px; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">MrCogito · capability checks</div>
+    <h1>Capability Board</h1>
+    <p class="muted" id="lede"></p>
+  </header>
+
+  <section id="harm">
+    <div>
+      <h2>Did anything get worse?</h2>
+      <p class="muted" id="harm-rule"></p>
+    </div>
+    <div class="verdicts" id="verdicts"></div>
+  </section>
+
+  <section id="battery">
+    <div>
+      <h2>Length battery: does it hold up as the input grows?</h2>
+      <p class="muted">Each chart is one exam and training stage. The model trains at the length in the subtitle, then reads longer
+        inputs with no more training. The y axis is first-letter accuracy, the honest score when the book holds several candidate
+        answers. Higher is better; the dashed line is the 75&nbsp;% pass mark and chance is 25&nbsp;%. Hollow points are the mean over
+        answer letters, shown unconnected where the first letter was not measured (it overstates multi-candidate exams). Lines join the first-letter medians over seeds.</p>
+    </div>
+    <div class="controls" id="toggles" role="group" aria-label="Variants shown"></div>
+    <div class="multiples" id="multiples"></div>
+  </section>
+
+  <section id="suite">
+    <div>
+      <h2>Capability suite: the graded exams</h2>
+      <p class="muted" id="suite-lede"></p>
+    </div>
+    <div class="legendbar" id="suite-legend"></div>
+    <div class="tablebox"><table id="suite-table"></table></div>
+  </section>
+
+  <section id="sources-sec">
+    <details>
+      <summary>Where these numbers come from</summary>
+      <div class="tablebox"><table id="sources"></table></div>
+      <p class="small" style="margin-top:8px">Raw folders (logs, checkpoints, every ladder) are archived on the NAS at the path shown.
+        Refresh with <span class="mono">scripts/pull_capability_results.sh</span>, then <span class="mono">analysis/capability_board.py</span>.</p>
+    </details>
+    <details>
+      <summary>All battery numbers as a table</summary>
+      <div class="tablebox"><table id="battery-table"></table></div>
+    </details>
+  </section>
+</div>
+<div id="tip" hidden></div>
+
+<script>
+const D = /*__DATA__*/null;
+const SERIES = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
+const NAMES = {
+  e31_li_m1: "E31 latent memory (1 entry per latent)", e31_li: "E31 latent memory", e30_li: "E30 sliding-window notebook",
+  e33a_loop: "E33a re-read loop", e33a_wide: "E33a wide loop", dense: "Dense model (ceiling)",
+  e31_mix_m1: "E31 + split slot RoPE", e30_mix: "E30 + split slot RoPE", e31_ord_m1: "E31 + order code",
+};
+const label = v => NAMES[v] ? `${NAMES[v]}` : v;
+const color = v => { const i = D.variants.indexOf(v); return i >= 0 && i < SERIES.length ? `var(${SERIES[i]})` : "var(--ink-3)"; };
+const pct = x => x == null ? "–" : `${Math.round(100 * x)}`;
+const kLen = L => L >= 1024 ? `${Math.round(L / 1024)}k` : `${L}`;
+const shown = new Set(D.variants);
+try { const s = JSON.parse(localStorage.getItem("capboard-hidden") || "[]"); s.forEach(v => shown.delete(v)); } catch (e) {}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+document.getElementById("lede").textContent =
+  `Every architecture variant takes the same exams: the length battery (train short, read up to 128k tokens) and the graded suite. ` +
+  `Each variant is compared with the current champion, ${label(D.champion)}. Built ${D.generated} from the committed results ledger.`;
+document.getElementById("harm-rule").textContent =
+  `A capability counts as lost when a variant scores more than ${Math.round(100 * D.harm_points)} points below the champion ` +
+  `on an exam and length where the champion passes (at least ${Math.round(100 * D.pass)} %). "Not run" means the champion passes there but the variant has no result yet.`;
+
+// ---- no-harm verdicts
+const vbox = document.getElementById("verdicts");
+const harmEntries = Object.entries(D.no_harm);
+if (!harmEntries.length) vbox.innerHTML = `<p class="muted">Only the champion is shown; add variants to compare.</p>`;
+for (const [v, r] of harmEntries) {
+  const lost = r.lost.length;
+  const state = lost ? ["bad", "✕", `${lost} lost`] : (r.kept ? ["good", "✓", "nothing lost"] : ["warn", "!", "no overlap yet"]);
+  const lostList = r.lost.slice(0, 6).map(x => `<div>${esc(x.where)}: ${pct(x.variant)} vs ${pct(x.champion)}</div>`).join("") +
+    (lost > 6 ? `<div>and ${lost - 6} more</div>` : "");
+  vbox.insertAdjacentHTML("beforeend", `<div class="verdict">
+    <div class="name"><span class="swatch" style="background:${color(v)}"></span>${esc(label(v))}</div>
+    <div class="counts"><span class="pill ${state[0]}">${state[1]} ${state[2]}</span>
+      <span class="pill">${r.kept} kept</span><span class="pill">${r.missing} not run</span></div>
+    ${lost ? `<div class="lost">${lostList}</div>` : ""}</div>`);
+}
+
+// ---- toggles
+const tog = document.getElementById("toggles");
+D.variants.forEach((v, i) => {
+  tog.insertAdjacentHTML("beforeend", `<label for="t-${i}"><input type="checkbox" id="t-${i}" data-v="${esc(v)}" ${shown.has(v) ? "checked" : ""}>
+    <span class="swatch" style="background:${color(v)}"></span>${esc(label(v))}${v === D.champion ? " · champion" : ""}</label>`);
+});
+tog.addEventListener("change", e => {
+  const v = e.target.dataset.v; if (!v) return;
+  e.target.checked ? shown.add(v) : shown.delete(v);
+  try { localStorage.setItem("capboard-hidden", JSON.stringify(D.variants.filter(x => !shown.has(x)))); } catch (err) {}
+  drawBattery();
+});
+
+// ---- small multiples
+const tip = document.getElementById("tip");
+function showTip(html, ev) {
+  tip.innerHTML = html; tip.hidden = false;
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = ev.clientX + 14, y = ev.clientY + 14;
+  if (x + w > innerWidth - 8) x = ev.clientX - w - 14;
+  if (y + h > innerHeight - 8) y = ev.clientY - h - 14;
+  tip.style.left = `${Math.max(8, x)}px`; tip.style.top = `${Math.max(8, y)}px`;
+}
+const hideTip = () => { tip.hidden = true; };
+
+function drawBattery() {
+  const box = document.getElementById("multiples"); box.innerHTML = "";
+  const W = 280, H = 170, m = {l: 30, r: 10, t: 10, b: 22};
+  const allL = [];
+  for (const s of D.slots) for (const v in D.battery[s.id]) for (const L in D.battery[s.id][v]) allL.push(+L);
+  const lo = Math.log2(Math.min(...allL, 1024)), hi = Math.log2(Math.max(...allL, 131072));
+  const X = L => m.l + (Math.log2(L) - lo) / (hi - lo) * (W - m.l - m.r);
+  const Y = a => m.t + (1 - a) * (H - m.t - m.b);
+  const ticks = []; for (let e = Math.ceil(lo); e <= hi; e++) ticks.push(2 ** e);
+  for (const s of D.slots) {
+    const data = D.battery[s.id] || {};
+    const vs = D.variants.filter(v => shown.has(v) && data[v]);
+    if (!vs.length) continue;
+    let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(s.exam)} ${esc(s.stage)}"><g class="axis">`;
+    for (const a of [0, .25, .5, .75, 1]) svg += `<line class="gridline" x1="${m.l}" x2="${W - m.r}" y1="${Y(a)}" y2="${Y(a)}"/><text x="${m.l - 5}" y="${Y(a) + 3}" text-anchor="end">${a * 100}</text>`;
+    ticks.forEach((L, i) => { if (i % 2 === 0 || ticks.length < 7) svg += `<text x="${X(L)}" y="${H - 6}" text-anchor="middle">${kLen(L)}</text>`; });
+    svg += `</g><line class="passline" x1="${m.l}" x2="${W - m.r}" y1="${Y(D.pass)}" y2="${Y(D.pass)}"/>`;
+    for (const v of vs) {
+      const pts = Object.entries(data[v]).map(([L, c]) => ({L: +L, y: c.first ?? c.mean, hollow: c.first == null})).filter(p => p.y != null).sort((a, b) => a.L - b.L);
+      const d = pts.filter(p => !p.hollow).map((p, i) => `${i ? "L" : "M"}${X(p.L).toFixed(1)},${Y(p.y).toFixed(1)}`).join("");
+      svg += `<g class="series" style="color:${color(v)}"><path d="${d}" stroke="currentColor"/>`;
+      for (const p of pts) svg += `<circle class="${p.hollow ? "hollow" : ""}" cx="${X(p.L).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="${p.hollow ? 3 : 3.5}" fill="currentColor" ${p.hollow ? 'stroke="currentColor"' : ""}/>`;
+      svg += `</g>`;
+    }
+    svg += `<line class="crosshair" x1="0" x2="0" y1="${m.t}" y2="${H - m.b}" visibility="hidden"/><rect x="${m.l}" y="0" width="${W - m.l - m.r}" height="${H}" fill="transparent"/></svg>`;
+    const el = document.createElement("div");
+    el.className = "panel" + (s.standard ? "" : " extra");
+    el.innerHTML = `<h3>${esc(s.exam)}</h3><div class="stage">${esc(s.stage)}${s.standard ? "" : " · outside the standard battery"}</div>${svg}`;
+    box.appendChild(el);
+    const svgEl = el.querySelector("svg"), cross = el.querySelector(".crosshair");
+    const lens = [...new Set(vs.flatMap(v => Object.keys(data[v]).map(Number)))].sort((a, b) => a - b);
+    svgEl.addEventListener("pointermove", ev => {
+      const r = svgEl.getBoundingClientRect(); const px = (ev.clientX - r.left) / r.width * W;
+      let best = lens[0]; for (const L of lens) if (Math.abs(X(L) - px) < Math.abs(X(best) - px)) best = L;
+      cross.setAttribute("x1", X(best)); cross.setAttribute("x2", X(best)); cross.setAttribute("visibility", "visible");
+      const rows = vs.map(v => { const c = data[v][best]; if (!c) return "";
+        const val = c.first != null ? `${pct(c.first)} %` : (c.mean != null ? `${pct(c.mean)} % mean` : "–");
+        return `<div class="row"><span><span class="swatch" style="background:${color(v)}"></span>${esc(label(v))}</span><span class="num">${val}</span></div>`; }).join("");
+      showTip(`<div class="small">${esc(s.exam)} · ${esc(s.stage)} · read at ${kLen(best)} tokens</div>${rows}`, ev);
+    });
+    svgEl.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); hideTip(); });
+  }
+  if (!box.children.length) box.innerHTML = `<p class="muted">No battery results for the selected variants.</p>`;
+}
+drawBattery();
+
+// ---- suite grid
+const seq = ["--seq-0","--seq-1","--seq-2","--seq-3","--seq-4","--seq-5","--seq-6"];
+function seqColor(a) { if (a == null) return ""; const t = Math.max(0, Math.min(1, (a - 0.25) / 0.75)); return `var(${seq[Math.min(6, Math.floor(t * 7))]})`; }
+function seqInk(a) { return a != null && (a - 0.25) / 0.75 >= 0.57 ? "var(--seq-ink-dark)" : "var(--ink)"; }
+(function drawSuite() {
+  const lede = document.getElementById("suite-lede");
+  const tbl = document.getElementById("suite-table");
+  if (!D.suite.length) { lede.textContent = "No suite results for these variants in the ledger yet."; tbl.parentElement.hidden = true; return; }
+  lede.textContent = `Suite version ${D.suite_version}. Each cell trains from scratch on one exam; levels run from L0 (learns at all) to L6 (stretch exams that never gate). ` +
+    `The number is the honest score in percent: first letter on exams with several candidate answers, the mean over answer letters otherwise. ` +
+    `A dark outline marks a pass under the suite rule (mean ≥ 75 %). Median over seeds.` + (D.suite_old_versions.length ? ` Older suite versions (${D.suite_old_versions.join(", ")}) are left out: their exams differ.` : "");
+  document.getElementById("suite-legend").innerHTML = `<span>25 % (chance)</span><span class="ramp">${seq.map(s => `<i style="background:var(${s})"></i>`).join("")}</span><span>100 %</span>`;
+  const cells = [...new Set(D.suite.map(c => `${c.level}|${c.cell}`))].sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
+  const rowsKey = [...new Set(D.suite.map(c => `${c.size}|${c.arch}`))].sort((a, b) => {
+    const [sa, aa] = a.split("|"), [sb, ab] = b.split("|");
+    return parseInt(sa) - parseInt(sb) || (D.variants.indexOf(aa) + 99 * (aa === "dense")) - (D.variants.indexOf(ab) + 99 * (ab === "dense"));
+  });
+  const by = new Map(D.suite.map(c => [`${c.size}|${c.arch}|${c.cell}`, c]));
+  const levels = [...new Set(cells.map(c => c.split("|")[0]))];
+  let h = `<thead><tr><th rowspan="2">size</th><th rowspan="2">architecture</th>` +
+    levels.map(l => `<th class="lv" colspan="${cells.filter(c => c.startsWith(l + "|")).length}">L${l}</th>`).join("") + `</tr><tr>` +
+    cells.map(c => `<th class="mono" style="font-weight:500">${esc(c.split("|")[1].replace(/^L\d\./, ""))}</th>`).join("") + `</tr></thead><tbody>`;
+  for (const rk of rowsKey) {
+    const [size, arch] = rk.split("|");
+    h += `<tr><td class="num">${esc(size)}</td><td><span class="swatch" style="display:inline-block;vertical-align:-1px;margin-right:6px;background:${color(arch)}"></span>${esc(label(arch))}</td>`;
+    for (const ck of cells) {
+      const c = by.get(`${size}|${arch}|${ck.split("|")[1]}`);
+      if (!c) { h += `<td class="cell empty">·</td>`; continue; }
+      h += `<td class="cell ${c.pass ? "pass" : ""}" tabindex="0" data-k="${esc(`${size}|${arch}|${c.cell}`)}" style="background:${seqColor(c.honest)};color:${seqInk(c.honest)}">${pct(c.honest)}</td>`;
+    }
+    h += `</tr>`;
+  }
+  tbl.innerHTML = h + `</tbody>`;
+  tbl.addEventListener("pointerover", ev => {
+    const td = ev.target.closest("td[data-k]"); if (!td) return hideTip();
+    const c = by.get(td.dataset.k);
+    showTip(`<div class="small">${esc(c.cell)} · ${esc(c.size)} · ${c.seeds} seed${c.seeds > 1 ? "s" : ""}</div>
+      <div class="row"><span>${esc(label(c.arch))}</span></div>
+      <div class="row"><span>first letter</span><span class="num">${pct(c.p0)} %</span></div>
+      <div class="row"><span>mean over letters</span><span class="num">${pct(c.acc)} %</span></div>
+      <div class="row"><span>suite rule</span><span>${c.pass ? "✓ pass" : "✕ below 75 %"}</span></div>
+      <div class="small">${esc(c.sources.join(", "))}</div>`, ev);
+  });
+  tbl.addEventListener("pointerleave", hideTip);
+})();
+
+// ---- sources + full table
+document.getElementById("sources").innerHTML = `<thead><tr><th>results</th><th>kind</th><th>server</th><th>finished</th><th>collected</th><th>NAS archive</th><th>ledger file</th></tr></thead><tbody>` +
+  D.sources.map(s => `<tr><td class="mono">${esc(s.name)}</td><td>${s.kind}${s.suite_version ? ` · ${esc(s.suite_version)}` : ""}</td><td>${esc(s.host)}</td>
+    <td class="num">${s.done} / ${s.jobs}</td><td class="num">${esc(s.collected)}</td><td class="mono">${esc(s.archive)}</td><td class="mono">${esc(s.file)}</td></tr>`).join("") + `</tbody>`;
+(function () {
+  const lens = [...new Set(D.slots.flatMap(s => Object.values(D.battery[s.id]).flatMap(o => Object.keys(o).map(Number))))].sort((a, b) => a - b);
+  let h = `<thead><tr><th>exam</th><th>stage</th><th>variant</th>${lens.map(L => `<th class="num">${kLen(L)}</th>`).join("")}</tr></thead><tbody>`;
+  for (const s of D.slots) for (const v of D.variants) {
+    const o = D.battery[s.id][v]; if (!o) continue;
+    h += `<tr><td>${esc(s.exam)}</td><td>${esc(s.stage)}</td><td>${esc(label(v))}</td>` +
+      lens.map(L => { const c = o[L]; return `<td class="num">${c ? (c.first != null ? pct(c.first) : `(${pct(c.mean)})`) : ""}</td>`; }).join("") + `</tr>`;
+  }
+  document.getElementById("battery-table").innerHTML = h + `</tbody><caption class="small" style="caption-side:bottom;text-align:left;padding:8px">First-letter accuracy in percent; numbers in brackets are the mean over answer letters where the first letter was not measured.</caption>`;
+})();
+</script>

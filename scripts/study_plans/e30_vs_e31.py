@@ -6,6 +6,8 @@ Phases (see the spec for the questions each answers):
   hard   — harder / multi-hop exams at 1k from each arch's lookup-2k weights, ladder 1k → 128k
   dense  — dense ceiling on the hard exams at 1k (training length only)
   odra / polonez — the host split used for the first wave (seed 1 on Odra, seed 0 on Polonez)
+  battery_<tag> — the standard length & hard battery (the E31b protocol as one function,
+           `battery_jobs`) for a variant registered in BATTERY_VARIANTS; every new variant runs it
 
 All arms share the E31 platform (30M, H 960, 4 layers, 128-d token embedding, no n-grams)
 and the windowed global read (`--message_raw_window 256`: the memory is the only long path).
@@ -162,32 +164,62 @@ def _accum(settings, mult):
     return [*settings[:i], str(int(settings[i]) * mult), *settings[i + 1:]]
 
 
-def e33a_e31b_jobs(seeds=(1, 2)):
-    """The E31b limits-study protocol on E33a (loop from step 0), from each seed's loop-trained lookup-2k
-    weights: lookup 8k/16k stages and the in-order chain (ladder to 128k), the hard exams at 1k (ladder
-    to 128k) and the recall 8k stage. Same exams, steps and ladders as e31_li_m1 in E31b; micro-batches
-    halved (memory only, same effective batch)."""
-    arch, out = "e31_li_m1", []
+# The length & hard battery: the E31b protocol as one reusable function. Every new variant runs it
+# (process: docs/engineering_specs/capability_checks.md, skill `capability-checks`), so its ladders
+# compare like for like with `e31_li_m1`. Scored on first letter, 128 rows per ladder length.
+BATTERY_VERSION = "2026-09-27.v1"  # bump on any change to an exam, stage, ladder or row count
+BATTERY_HARD = ("recall8", "recall16", "decoy8", "unique", "match3", "chain8")
+BATTERY_RECALL_8K = ("recall8", "recall16")
+
+
+def battery_jobs(tag, arm, arch, seeds=(1, 2), flags=(), *, l1k=L1K_FT, l2k=L2K, accum=1, train_root=True,
+                 rows=128):
+    """The E31b protocol for one variant, per seed, all from the variant's own lookup-2k weights:
+      root     `{tag}_lookup_{arm}_s{seed}` — lookup at 2k from scratch (skip with train_root=False when
+               an earlier phase already trained it under that name);
+      length   lookup 8k → 16k stages and the in-order 4-hop chain at 2k → 8k, each laddered 2k → 128k;
+      hard     recall8, recall16, decoy8, unique, match3, chain8 at 1k, laddered 1k → 128k;
+      recall   the 8k stage for recall8 / recall16, laddered 2k → 128k.
+    `accum` multiplies only the 8k/16k micro-batch split (memory, same effective batch). Job names
+    follow `{tag}_{exam}_{arm}_s{seed}` so the ledger can group them by variant."""
+    out = []
     for seed in seeds:
-        lk = f"e33a_lookup_loop_s{seed}"
+        lk = f"{tag}_lookup_{arm}_s{seed}"
+        if train_root:
+            out.append({**_job(lk, arch, seed, l2k, "lookup", flags, ladder=LADDER_FULL, cost=6.0), "rows": rows})
+        ch = f"{tag}_chain_{arm}_s{seed}"
         out += [
-            {**_job(f"{lk}_b8k", arch, seed, _accum(L8K, 2), "lookup", E33A_LOOP, init=lk,
-                    ladder=LADDER_FULL, cost=3.8), "rows": 128},
-            {**_job(f"{lk}_b16k", arch, seed, _accum(L16K, 2), "lookup", E33A_LOOP, init=f"{lk}_b8k",
-                    ladder=LADDER_FULL, cost=4.5), "rows": 128},
-            {**_job(f"e33a_chain_loop_s{seed}", arch, seed, E33A_L2K, "chain", E33A_LOOP, init=lk,
-                    ladder=LADDER_FULL, cost=6.5), "rows": 128},
-            {**_job(f"e33a_chain_loop_s{seed}_b8k", arch, seed, _accum(L8K, 2), "chain", E33A_LOOP,
-                    init=f"e33a_chain_loop_s{seed}", ladder=LADDER_FULL, cost=3.8), "rows": 128},
+            {**_job(f"{lk}_b8k", arch, seed, _accum(L8K, accum), "lookup", flags, init=lk,
+                    ladder=LADDER_FULL, cost=3.8), "rows": rows},
+            {**_job(f"{lk}_b16k", arch, seed, _accum(L16K, accum), "lookup", flags, init=f"{lk}_b8k",
+                    ladder=LADDER_FULL, cost=4.5), "rows": rows},
+            {**_job(ch, arch, seed, l2k, "chain", flags, init=lk, ladder=LADDER_FULL, cost=6.5), "rows": rows},
+            {**_job(f"{ch}_b8k", arch, seed, _accum(L8K, accum), "chain", flags, init=ch,
+                    ladder=LADDER_FULL, cost=3.8), "rows": rows},
         ]
-        for exam in ("recall8", "recall16", "decoy8", "unique", "match3", "chain8"):
-            name = f"e33a_hard_{exam}_loop_s{seed}"
-            out.append({**_job(name, arch, seed, E33A_L1K, exam, E33A_LOOP, init=lk,
-                               ladder=LADDER_1K_FULL, cost=2.2), "rows": 128})
-            if exam in ("recall8", "recall16"):
-                out.append({**_job(f"{name}_b8k", arch, seed, _accum(L8K, 2), exam, E33A_LOOP, init=name,
-                                   ladder=LADDER_FULL, cost=3.8), "rows": 128})
+        for exam in BATTERY_HARD:
+            name = f"{tag}_hard_{exam}_{arm}_s{seed}"
+            out.append({**_job(name, arch, seed, l1k, exam, flags, init=lk, ladder=LADDER_1K_FULL, cost=2.2),
+                        "rows": rows})
+            if exam in BATTERY_RECALL_8K:
+                out.append({**_job(f"{name}_b8k", arch, seed, _accum(L8K, accum), exam, flags, init=name,
+                                   ladder=LADDER_FULL, cost=3.8), "rows": rows})
     return out
+
+
+# One entry per variant that runs the battery: `--phase battery_<tag>` (kwargs of battery_jobs).
+# Add a variant here — never copy the job list into a new function.
+BATTERY_VARIANTS = {
+    # E33a (loop from step 0): roots trained in phase `e33a`; micro-batches halved for 4 loops + exits
+    "e33a": dict(tag="e33a", arm="loop", arch="e31_li_m1", flags=E33A_LOOP, l1k=E33A_L1K, l2k=E33A_L2K,
+                 accum=2, train_root=False),
+}
+
+
+def e33a_e31b_jobs(seeds=(1, 2)):
+    """The battery on E33a, from each seed's loop-trained lookup-2k weights. Same exams, steps and ladders
+    as e31_li_m1 in E31b; micro-batches halved (memory only, same effective batch)."""
+    return battery_jobs(seeds=seeds, **BATTERY_VARIANTS["e33a"])
 
 
 def ratio2_jobs():
@@ -336,6 +368,11 @@ def jobs(phase: str) -> list[dict]:
         return e33a_jobs()
     if phase == "e33a_e31b":  # the E31b protocol on the looped model (no capability lost; length to 128k)
         return e33a_e31b_jobs()
+    if phase.startswith("battery_"):  # the standard length & hard battery for a registered variant
+        tag = phase.removeprefix("battery_")
+        if tag not in BATTERY_VARIANTS:
+            raise SystemExit(f"no battery variant {tag!r}; add it to BATTERY_VARIANTS")
+        return battery_jobs(**BATTERY_VARIANTS[tag])
     if phase == "recall_len":  # does the 8k stage carry multi-fact recall to length (as it did lookup)?
         out = []
         for arch in ("e30_li", "e31_li_m1", "e31_li"):

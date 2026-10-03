@@ -1,25 +1,16 @@
----
-name: capability-suite
-description: Run the MrCogito capability suite — the standard, graded exams (L0 learns at all → L1 carries a fact → L2 picks signal over a lookalike → L3 long reach → L4 multi-step reasoning → L5 language-like noise → L6 BAPO-hard stretch) that every new architecture trains on from scratch at 5M / 10M / 30M / 50M on Odra / Polonez, scored against recorded past architectures with a scale-up verdict. Use when the user wants to test, benchmark, screen, compare or "exam" a new or changed architecture, asks whether an architecture can learn to pick information or reason, asks whether it is worth scaling / more compute, wants 5M–50M probes, or asks to run, monitor, score or record the capability suite. Owns the end-to-end process (register → plan → smoke → sync → launch → monitor → score → record → change the suite). Not for evaluating pretrained checkpoints on STS-B/GLUE (experiment-evaluate), generic training runs (experiment-run), or designing the architecture (experiment-design).
----
+# Capability suite — running the graded exams
 
-# Capability suite
-
-One standard ladder of exams for every architecture, so results are comparable across
-experiments and "should we scale this?" gets a rule-based answer instead of a feeling.
+Reference for step 1 of the `capability-checks` process (`SKILL.md` next to this file). One
+standard ladder of exams for every architecture, so results are comparable across experiments and
+"should we scale this?" gets a rule-based answer.
 
 - **Spec (rules, tables, rationale):** `docs/engineering_specs/capability_suite.md`
 - **Definition:** `evaluation/capability_suite.py` (levels, 19 cells, sizes, step-size and
   budget policy, tiers, recorded references, scale rule, `SUITE_VERSION`)
 - **Runner:** `scripts/run_capability_suite.py` · **Scorecard:** `analysis/capability_scorecard.py`
+  · **First-letter re-read:** `analysis/suite_first_letter.py`
 - **Trainer (unchanged, shared):** `verification/bapo_capability_probe.py` + `evaluation/bapo_models.py`
 - **Tests:** `tests/test_capability_suite.py`, `tests/test_bapo_probe_tiers.py`
-
-**Boundary.** This skill runs the suite and interprets its scorecard. Server hardware and
-network facts → `remote-servers`; generic launches, env vars and Byobu habits →
-`experiment-run`; pretrained-checkpoint benchmarks → `experiment-evaluate`; writing results
-into the ledger → `experiment-track` (step 8 below says what to hand it); how to tell the
-author → `research-comms`.
 
 ## The suite in one screen
 
@@ -140,8 +131,8 @@ uv run python analysis/capability_scorecard.py --in_dir Cache/capability/<run>
 # merge halves run on two hosts, once both folders are on one machine:
 uv run python analysis/capability_scorecard.py --in_dir <odra_run> <polonez_run> --out_dir Cache/capability/<arch>_merged
 ```
-Bring results back read-only from the server (results, not code — the git-only rule is
-about code): `ssh odra 'tar -C ~/dev/MrCogito -czf - Cache/capability/<run>' | tar -xzf -`.
+Or score straight from the committed ledger, with no server:
+`uv run python analysis/capability_scorecard.py --in_dir docs/2_Experiments_Registry/capability_ledger/suite/<run>.<host>.json --out_dir Cache/capability/<run>_scored`.
 
 Outputs: `scorecard.md` (paste-ready), `scorecard.html` (level grid + bars with the best
 past architecture and the dense ceiling as ticks), `scorecard.json`, `cells.csv`.
@@ -159,24 +150,18 @@ past architecture and the dense ceiling as ticks), `scorecard.json`, `cells.csv`
   later ones at chance).
 - Compare like with like: same `SUITE_VERSION` (printed at the top) and same size.
 
-### 8 · Record and report
-Hand to `experiment-track`:
-- master log row: arch, suite version, tier, sizes, verdict, frontier per size, link to the
-  scorecard (keep the scorecard files under `Cache/`; paste `scorecard.md` into a run report);
-- the experiment spec's **Result**: which target cells passed/missed vs its criteria;
+### 8 · Archive, record and report
+Follow `SKILL.md` steps 5–8: pull the folder into the ledger and the NAS
+(`scripts/pull_capability_results.sh`), regenerate the board, then hand to `experiment-track`.
+Suite-specific extras:
 - **new references**: append the candidate's median bits per (cell, size) to `REFERENCES`
   in `evaluation/capability_suite.py` with the run report as `source`, so the next
   architecture is compared against it. Adding references does not change the exams, so it
   does not bump `SUITE_VERSION`.
-
-Tell the author (per `research-comms`): the verdict in one sentence, the frontier level at
-each size in plain words ("learns and carries facts up to 512 tokens, misses the 1024-token
-lookalike"), the one or two cells that beat or miss the best past architecture, and the
-next step the verdict implies:
-- `scale up` → a bigger model or a text smoke (the L7 text rung, when it exists);
-- `promising — fix before scaling` → fix the listed failing rule (usually one level or a
-  regressing cell) with targeted `--cells` reruns, not a new full sweep;
-- `not ready` → back to design; do not spend more compute on this version.
+- the verdict implies the next step:
+  `scale up` → a bigger model or a text smoke (the L7 text rung, when it exists);
+  `promising — fix before scaling` → fix the listed failing rule with targeted `--cells` reruns,
+  not a new full sweep; `not ready` → back to design; no more compute on this version.
 
 ## Changing the suite
 The suite is a standard: change it deliberately.

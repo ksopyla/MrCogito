@@ -12,7 +12,8 @@ run training + evaluation and understand the remote run environment end to end.
 conventions** the launchers use. It does **not**:
 - own server hardware/disk/network facts → `remote-servers`;
 - pick experiments → `experiment-design`;
-- run the standard architecture exams (5M–50M capability suite) → `capability-suite`;
+- run the standard architecture exams (capability suite, length battery) or pull/archive their
+  results → `capability-checks`;
 - interpret/record results → `experiment-track`;
 - define the evaluation pipeline or run benchmark sweeps on checkpoints →
   `experiment-evaluate` (the single source of truth for *how to evaluate*).

@@ -1,0 +1,314 @@
+<title>Capability Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column — verdict first (no-harm vs the champion), then the length battery as
+   small multiples, then the suite grid, then where every number came from. */
+:root {
+  --bg: #f6f7f8; --surface: #ffffff; --ink: #14171a; --ink-2: #4b535b; --ink-3: #7b838b;
+  --rule: #dfe3e7; --grid: #edf0f2; --accent: #1c5cab;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
+  --good: #0ca30c; --critical: #d03b3b; --warning: #b77800;
+  --seq-0: #f0efec; --seq-1: #cde2fb; --seq-2: #9ec5f4; --seq-3: #6da7ec; --seq-4: #3987e5; --seq-5: #256abf; --seq-6: #184f95;
+  --seq-ink-dark: #ffffff;
+  --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121416; --surface: #1a1d20; --ink: #f2f4f6; --ink-2: #b9c0c7; --ink-3: #868e96;
+    --rule: #2c3136; --grid: #24292d; --accent: #6da7ec;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+    --good: #2fbf2f; --critical: #e66767; --warning: #fab219;
+    --seq-0: #2a2e32; --seq-1: #104281; --seq-2: #184f95; --seq-3: #1c5cab; --seq-4: #256abf; --seq-5: #3987e5; --seq-6: #6da7ec;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121416; --surface: #1a1d20; --ink: #f2f4f6; --ink-2: #b9c0c7; --ink-3: #868e96;
+  --rule: #2c3136; --grid: #24292d; --accent: #6da7ec;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+  --good: #2fbf2f; --critical: #e66767; --warning: #fab219;
+  --seq-0: #2a2e32; --seq-1: #104281; --seq-2: #184f95; --seq-3: #1c5cab; --seq-4: #256abf; --seq-5: #3987e5; --seq-6: #6da7ec;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); margin: 0; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 64px; display: grid; gap: 36px; }
+h1 { font-size: 30px; line-height: 1.15; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font-size: 19px; margin: 0 0 4px; text-wrap: balance; }
+p { margin: 0; max-width: 72ch; }
+.muted { color: var(--ink-2); }
+.small { font-size: 13px; color: var(--ink-3); }
+.mono, td.num, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+header { display: grid; gap: 10px; }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+section { display: grid; gap: 14px; min-width: 0; }
+.verdicts { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.verdict { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; display: grid; gap: 8px; min-width: 0; align-content: start; }
+.verdict .name { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font: 500 13px/1 var(--sans); padding: 5px 9px; border-radius: 999px; border: 1px solid var(--rule); }
+.pill.good { color: var(--good); border-color: currentColor; }
+.pill.bad { color: var(--critical); border-color: currentColor; }
+.pill.warn { color: var(--warning); border-color: currentColor; }
+.counts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.lost { font-size: 13px; color: var(--ink-2); display: grid; gap: 2px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.controls label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 14px; }
+.controls input { accent-color: var(--accent); }
+.multiples { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 12px 6px; min-width: 0; position: relative; }
+.panel h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.panel .stage { font-size: 12px; color: var(--ink-3); }
+.panel svg { display: block; width: 100%; height: auto; overflow: visible; }
+.panel.extra { border-style: dashed; }
+.axis text { fill: var(--ink-3); font: 10px var(--mono); }
+.axis line, .gridline { stroke: var(--grid); stroke-width: 1; }
+.passline { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 3 3; }
+.series path { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.series circle { stroke: var(--surface); stroke-width: 2; }
+.series circle.hollow { fill: var(--surface) !important; stroke-width: 1.5; }
+.crosshair { stroke: var(--ink-3); stroke-width: 1; }
+#tip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface); color: var(--ink); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.12); min-width: 160px; }
+#tip .row { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+#tip .row span:first-child { display: inline-flex; align-items: center; gap: 6px; }
+.tablebox { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th { font-weight: 600; color: var(--ink-2); background: var(--surface); position: sticky; top: 0; }
+th.lv { text-align: center; font: 500 11px var(--mono); letter-spacing: .05em; color: var(--ink-3); }
+td.cell { text-align: center; font-family: var(--mono); font-variant-numeric: tabular-nums; min-width: 52px; }
+td.cell.pass { box-shadow: inset 0 0 0 2px var(--ink); }
+td.cell.empty { color: var(--ink-3); }
+.legendbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 12px; color: var(--ink-3); }
+.ramp { display: inline-flex; border-radius: 3px; overflow: hidden; }
+.ramp i { width: 22px; height: 12px; display: block; }
+details summary { cursor: pointer; font-weight: 600; }
+details[open] summary { margin-bottom: 10px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 520px) { h1 { font-size: 24px; } .wrap { padding-inline: 16px; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">MrCogito · capability checks</div>
+    <h1>Capability Board</h1>
+    <p class="muted" id="lede"></p>
+  </header>
+
+  <section id="harm">
+    <div>
+      <h2>Did anything get worse?</h2>
+      <p class="muted" id="harm-rule"></p>
+    </div>
+    <div class="verdicts" id="verdicts"></div>
+  </section>
+
+  <section id="battery">
+    <div>
+      <h2>Length battery: does it hold up as the input grows?</h2>
+      <p class="muted">Each chart is one exam and training stage. The model trains at the length in the subtitle, then reads longer
+        inputs with no more training. The y axis is first-letter accuracy, the honest score when the book holds several candidate
+        answers. Higher is better; the dashed line is the 75&nbsp;% pass mark and chance is 25&nbsp;%. Hollow points are the mean over
+        answer letters, shown unconnected where the first letter was not measured (it overstates multi-candidate exams). Lines join the first-letter medians over seeds.</p>
+    </div>
+    <div class="controls" id="toggles" role="group" aria-label="Variants shown"></div>
+    <div class="multiples" id="multiples"></div>
+  </section>
+
+  <section id="suite">
+    <div>
+      <h2>Capability suite: the graded exams</h2>
+      <p class="muted" id="suite-lede"></p>
+    </div>
+    <div class="legendbar" id="suite-legend"></div>
+    <div class="tablebox"><table id="suite-table"></table></div>
+  </section>
+
+  <section id="sources-sec">
+    <details>
+      <summary>Where these numbers come from</summary>
+      <div class="tablebox"><table id="sources"></table></div>
+      <p class="small" style="margin-top:8px">Raw folders (logs, checkpoints, every ladder) are archived on the NAS at the path shown.
+        Refresh with <span class="mono">scripts/pull_capability_results.sh</span>, then <span class="mono">analysis/capability_board.py</span>.</p>
+    </details>
+    <details>
+      <summary>All battery numbers as a table</summary>
+      <div class="tablebox"><table id="battery-table"></table></div>
+    </details>
+  </section>
+</div>
+<div id="tip" hidden></div>
+
+<script>
+const D = {"generated":"2026-10-03","champion":"e31_li_m1","variants":["e31_li_m1","e30_li","e31_li","e33a_loop"],"pass":0.75,"harm_points":0.05,"slots":[{"id":"lookup_2k","exam":"Lookup","stage":"trained at 2k","standard":true},{"id":"lookup_8k","exam":"Lookup","stage":"+ 8k stage","standard":true},{"id":"lookup_16k","exam":"Lookup","stage":"+ 16k stage","standard":true},{"id":"chain_2k","exam":"In-order 4-hop chain","stage":"trained at 2k","standard":true},{"id":"chain_8k","exam":"In-order 4-hop chain","stage":"+ 8k stage","standard":true},{"id":"recall8_1k","exam":"Recall among 8","stage":"trained at 1k","standard":true},{"id":"recall8_8k","exam":"Recall among 8","stage":"+ 8k stage","standard":true},{"id":"recall16_1k","exam":"Recall among 16","stage":"trained at 1k","standard":true},{"id":"recall16_8k","exam":"Recall among 16","stage":"+ 8k stage","standard":true},{"id":"decoy8_1k","exam":"Fact among 8 decoys","stage":"trained at 1k","standard":true},{"id":"unique_1k","exam":"Unique item","stage":"trained at 1k","standard":true},{"id":"match3_1k","exam":"Triple match","stage":"trained at 1k","standard":true},{"id":"chain8_1k","exam":"In-order 8-hop chain","stage":"trained at 1k","standard":true},{"id":"count_1k","exam":"Count","stage":"trained at 1k","standard":false},{"id":"majority_1k","exam":"Majority","stage":"trained at 1k","standard":false},{"id":"pchain2_1k","exam":"Parallel 2-hop chain","stage":"trained at 1k","standard":false},{"id":"pchain3_1k","exam":"Parallel 3-hop chain","stage":"trained at 1k","standard":false},{"id":"shuf2_1k","exam":"Shuffled 2-hop","stage":"trained at 1k","standard":false},{"id":"shuf3_1k","exam":"Shuffled 3-hop","stage":"trained at 1k","standard":false}],"battery":{"lookup_2k":{"e33a_loop":{"2048":{"first":0.98438,"mean":0.99219,"seeds":1,"first_seeds":1},"8192":{"first":1.0,"mean":0.96533,"seeds":1,"first_seeds":1},"32768":{"first":0.95312,"mean":0.82861,"seeds":1,"first_seeds":1}},"e30_li":{"2048":{"first":0.97656,"mean":0.97632,"seeds":1,"first_seeds":1},"4096":{"first":null,"mean":0.9375,"seeds":1,"first_seeds":0},"8192":{"first":0.73438,"mean":0.71484,"seeds":1,"first_seeds":1},"16384":{"first":null,"mean":0.54395,"seeds":1,"first_seeds":0},"32768":{"first":0.38281,"mean":0.38379,"seeds":1,"first_seeds":1},"65536":{"first":null,"mean":0.30957,"seeds":1,"first_seeds":0},"131072":{"first":0.25,"mean":0.26416,"seeds":1,"first_seeds":1}},"e31_li_m1":{"2048":{"first":0.99219,"mean":0.95972,"seeds":1,"first_seeds":1},"4096":{"first":null,"mean":0.94238,"seeds":1,"first_seeds":0},"8192":{"first":0.96094,"mean":0.93286,"seeds":1,"first_seeds":1},"16384":{"first":null,"mean":0.90527,"seeds":1,"first_seeds":0},"32768":{"first":0.9375,"mean":0.87036,"seeds":1,"first_seeds":1},"65536":{"first":null,"mean":0.80127,"seeds":1,"first_seeds":0},"131072":{"first":0.85938,"mean":0.65601,"seeds":1,"first_seeds":1}}},"lookup_8k":{"e30_li":{"2048":{"first":0.94531,"mean":0.95288,"seeds":1,"first_seeds":1},"4096":{"first":null,"mean":0.96973,"seeds":1,"first_seeds":0},"8192":{"first":0.98438,"mean":0.97778,"seeds":1,"first_seeds":1},"16384":{"first":null,"mean":0.97412,"seeds":1,"first_seeds":0},"32768":{"first":0.92188,"mean":0.8064,"seeds":1,"first_seeds":1},"65536":{"first":null,"mean":0.56641,"seeds":1,"first_seeds":0},"131072":{"first":0.49219,"mean":0.39673,"seeds":1,"first_seeds":1}},"e31_li_m1":{"2048":{"first":0.96875,"mean":0.95361,"seeds":1,"first_seeds":1},"4096":{"first":1.0,"mean":0.95508,"seeds":1,"first_seeds":1},"8192":{"first":0.98438,"mean":0.9624,"seeds":1,"first_seeds":1},"16384":{"first":0.92188,"mean":0.95557,"seeds":1,"first_seeds":1},"32768":{"first":0.95312,"mean":0.94775,"seeds":1,"first_seeds":1},"65536":{"first":0.98438,"mean":0.92383,"seeds":1,"first_seeds":1},"131072":{"first":0.95312,"mean":0.83643,"seeds":1,"first_seeds":1}}},"lookup_16k":{"e30_li":{"2048":{"first":0.82812,"mean":0.9502,"seeds":1,"first_seeds":1},"4096":{"first":0.9375,"mean":0.96436,"seeds":1,"first_seeds":1},"8192":{"first":0.98438,"mean":0.96533,"seeds":1,"first_seeds":1},"16384":{"first":0.98438,"mean":0.97412,"seeds":1,"first_seeds":1},"32768":{"first":0.98438,"mean":0.94678,"seeds":1,"first_seeds":1},"65536":{"first":0.75,"mean":0.73584,"seeds":1,"first_seeds":1},"131072":{"first":0.59375,"mean":0.53223,"seeds":1,"first_seeds":1}},"e31_li_m1":{"2048":{"first":0.98438,"mean":0.94189,"seeds":1,"first_seeds":1},"4096":{"first":0.95312,"mean":0.93896,"seeds":1,"first_seeds":1},"8192":{"first":0.98438,"mean":0.9502,"seeds":1,"first_seeds":1},"16384":{"first":1.0,"mean":0.94482,"seeds":1,"first_seeds":1},"32768":{"first":0.96875,"mean":0.94141,"seeds":1,"first_seeds":1},"65536":{"first":0.98438,"mean":0.94043,"seeds":1,"first_seeds":1},"131072":{"first":0.9375,"mean":0.90967,"seeds":1,"first_seeds":1}}},"chain_2k":{"e30_li":{"2048":{"first":1.0,"mean":0.97607,"seeds":1,"first_seeds":1},"4096":{"first":null,"mean":0.32031,"seeds":1,"first_seeds":0},"8192":{"first":0.25,"mean":0.32837,"seeds":1,"first_seeds":1},"16384":{"first":null,"mean":0.40039,"seeds":1,"first_seeds":0},"32768":{"first":0.28906,"mean":0.37231,"seeds":1,"first_seeds":1},"65536":{"first":null,"mean":0.34717,"seeds":1,"first_seeds":0},"131072":{"first":0.44531,"mean":0.39111,"seeds":1,"first_seeds":1}},"e31_li_m1":{"2048":{"first":0.51562,"mean":0.96704,"seeds":1,"first_seeds":1},"4096":{"first":null,"mean":0.96191,"seeds":1,"first_seeds":0},"8192":{"first":null,"mean":null,"seeds":0,"first_seeds":0},"16384":{"first":null,"mean":0.94678,"seeds":1,"first_seeds":0},"32768":{"first":0.34375,"mean":0.93042,"seeds":1,"first_seeds":1},"65536":{"first":null,"mean":0.90381,"seeds":1,"first_seeds":0},"131072":{"first":0.44531,"mean":0.85693,"seeds":1,"first_seeds":1}}},"chain_8k":{"e30_li":{"2048":{"first":0.15625,"mean":0.29736,"seeds":1,"first_seeds":1},"4096":{"first":0.25,"mean":0.271,"seeds":1,"first_seeds":1},"8192":{"first":0.96875,"mean":0.95996,"seeds":1,"first_seeds":1},"16384":{"first":0.25,"mean":0.26807,"seeds":1,"first_seeds":1},"32768":{"first":0.25,"mean":0.29883,"seeds":1,"first_seeds":1},"65536":{"first":0.25,"mean":0.29199,"seeds":1,"first_seeds":1},"131072":{"first":0.28125,"mean":0.2832,"seeds":1,"first_seeds":1}},"e31_li_m1":{"2048":{"first":0.40625,"mean":0.96387,"seeds":1,"first_seeds":1},"4096":{"first":0.45312,"mean":0.95996,"seeds":1,"first_seeds":1},"8192":{"first":0.4375,"mean":0.95752,"seeds":1,"first_seeds":1},"16384":{"first":0.46875,"mean":0.96191,"seeds":1,"first_seeds":1},"32768":{"first":0.29688,"mean":0.95996,"seeds":1,"first_seeds":1},"65536":{"first":0.45312,"mean":0.96289,"seeds":1,"first_seeds":1},"131072":{"first":0.40625,"mean":0.94189,"seeds":1,"first_seeds":1}}},"recall8_1k":{"e30_li":{"1024":{"first":0.88281,"mean":0.9458,"seeds":1,"first_seeds":1},"2048":{"first":null,"mean":0.97461,"seeds":1,"first_seeds":0},"4096":{"first":0.84375,"mean":0.97144,"seeds":1,"first_seeds":1},"8192":{"first":null,"mean":0.98096,"seeds":1,"first_seeds":0},"16384":{"first":0.90625,"mean":0.97827,"seeds":1,"first_seeds":1},"32768":{"first":null,"mean":0.97705,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.94336,"seeds":1,"first_seeds":0},"131072":{"first":0.83594,"mean":0.89209,"seeds":1,"first_seeds":1}},"e31_li_m1":{"1024":{"first":0.98438,"mean":0.97461,"seeds":1,"first_seeds":1},"2048":{"first":0.95312,"mean":0.97803,"seeds":1,"first_seeds":1},"4096":{"first":0.98438,"mean":0.97803,"seeds":1,"first_seeds":1},"8192":{"first":0.89062,"mean":0.979,"seeds":1,"first_seeds":1},"16384":{"first":0.98438,"mean":0.97754,"seeds":1,"first_seeds":1},"32768":{"first":0.90625,"mean":0.95117,"seeds":1,"first_seeds":1},"65536":{"first":0.89062,"mean":0.91016,"seeds":1,"first_seeds":1},"131072":{"first":0.70312,"mean":0.87988,"seeds":1,"first_seeds":1}},"e31_li":{"1024":{"first":0.97656,"mean":0.98267,"seeds":1,"first_seeds":1},"2048":{"first":null,"mean":0.9751,"seeds":1,"first_seeds":0},"4096":{"first":0.92969,"mean":0.95532,"seeds":1,"first_seeds":1},"8192":{"first":null,"mean":0.85742,"seeds":1,"first_seeds":0},"16384":{"first":0.70312,"mean":0.66992,"seeds":1,"first_seeds":1},"32768":{"first":null,"mean":0.48242,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.34473,"seeds":1,"first_seeds":0},"131072":{"first":0.32812,"mean":0.30298,"seeds":1,"first_seeds":1}}},"recall8_8k":{"e30_li":{"2048":{"first":0.95312,"mean":0.96436,"seeds":1,"first_seeds":1},"4096":{"first":0.90625,"mean":0.97705,"seeds":1,"first_seeds":1},"8192":{"first":0.95312,"mean":0.98438,"seeds":1,"first_seeds":1},"16384":{"first":0.9375,"mean":0.98389,"seeds":1,"first_seeds":1},"32768":{"first":0.98438,"mean":0.98096,"seeds":1,"first_seeds":1},"65536":{"first":0.95312,"mean":0.97852,"seeds":1,"first_seeds":1},"131072":{"first":0.9375,"mean":0.97949,"seeds":1,"first_seeds":1}},"e31_li_m1":{"2048":{"first":0.89062,"mean":0.97021,"seeds":1,"first_seeds":1},"4096":{"first":0.96875,"mean":0.98389,"seeds":1,"first_seeds":1},"8192":{"first":0.92188,"mean":0.98486,"seeds":1,"first_seeds":1},"16384":{"first":0.9375,"mean":0.98633,"seeds":1,"first_seeds":1},"32768":{"first":0.98438,"mean":0.9751,"seeds":1,"first_seeds":1},"65536":{"first":0.98438,"mean":0.97998,"seeds":1,"first_seeds":1},"131072":{"first":0.95312,"mean":0.96387,"seeds":1,"first_seeds":1}},"e31_li":{"2048":{"first":0.95312,"mean":0.98047,"seeds":1,"first_seeds":1},"4096":{"first":0.96875,"mean":0.98779,"seeds":1,"first_seeds":1},"8192":{"first":0.95312,"mean":0.98486,"seeds":1,"first_seeds":1},"16384":{"first":0.95312,"mean":0.9834,"seeds":1,"first_seeds":1},"32768":{"first":0.96875,"mean":0.97656,"seeds":1,"first_seeds":1},"65536":{"first":0.875,"mean":0.92334,"seeds":1,"first_seeds":1},"131072":{"first":0.71875,"mean":0.75684,"seeds":1,"first_seeds":1}}},"recall16_1k":{"e30_li":{"1024":{"first":0.54688,"mean":0.85913,"seeds":1,"first_seeds":1},"2048":{"first":null,"mean":0.92334,"seeds":1,"first_seeds":0},"4096":{"first":0.66406,"mean":0.9436,"seeds":1,"first_seeds":1},"8192":{"first":null,"mean":0.94141,"seeds":1,"first_seeds":0},"16384":{"first":0.66406,"mean":0.93213,"seeds":1,"first_seeds":1},"32768":{"first":null,"mean":0.91309,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.87012,"seeds":1,"first_seeds":0},"131072":{"first":0.46875,"mean":0.76172,"seeds":1,"first_seeds":1}},"e31_li_m1":{"1024":{"first":0.71094,"mean":0.94385,"seeds":1,"first_seeds":1},"2048":{"first":null,"mean":0.95068,"seeds":1,"first_seeds":0},"4096":{"first":0.89844,"mean":0.95361,"seeds":1,"first_seeds":1},"8192":{"first":null,"mean":0.9458,"seeds":1,"first_seeds":0},"16384":{"first":0.89062,"mean":0.93164,"seeds":1,"first_seeds":1},"32768":{"first":null,"mean":0.89111,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.88379,"seeds":1,"first_seeds":0},"131072":{"first":0.4375,"mean":0.80469,"seeds":1,"first_seeds":1}},"e31_li":{"1024":{"first":0.94531,"mean":0.9707,"seeds":1,"first_seeds":1},"2048":{"first":null,"mean":0.97754,"seeds":1,"first_seeds":0},"4096":{"first":0.85156,"mean":0.92578,"seeds":1,"first_seeds":1},"8192":{"first":null,"mean":0.78564,"seeds":1,"first_seeds":0},"16384":{"first":0.57812,"mean":0.56543,"seeds":1,"first_seeds":1},"32768":{"first":null,"mean":0.39795,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.30713,"seeds":1,"first_seeds":0},"131072":{"first":0.35938,"mean":0.29077,"seeds":1,"first_seeds":1}}},"recall16_8k":{"e30_li":{"2048":{"first":0.89062,"mean":0.91699,"seeds":1,"first_seeds":1},"4096":{"first":0.79688,"mean":0.94775,"seeds":1,"first_seeds":1},"8192":{"first":0.85938,"mean":0.96875,"seeds":1,"first_seeds":1},"16384":{"first":0.89062,"mean":0.98096,"seeds":1,"first_seeds":1},"32768":{"first":0.875,"mean":0.97754,"seeds":1,"first_seeds":1},"65536":{"first":0.8125,"mean":0.97314,"seeds":1,"first_seeds":1},"131072":{"first":0.875,"mean":0.9624,"seeds":1,"first_seeds":1}},"e31_li_m1":{"2048":{"first":0.875,"mean":0.9458,"seeds":1,"first_seeds":1},"4096":{"first":0.96875,"mean":0.97363,"seeds":1,"first_seeds":1},"8192":{"first":0.96875,"mean":0.96973,"seeds":1,"first_seeds":1},"16384":{"first":0.95312,"mean":0.97705,"seeds":1,"first_seeds":1},"32768":{"first":0.95312,"mean":0.97266,"seeds":1,"first_seeds":1},"65536":{"first":0.96875,"mean":0.96631,"seeds":1,"first_seeds":1},"131072":{"first":0.90625,"mean":0.9502,"seeds":1,"first_seeds":1}},"e31_li":{"2048":{"first":0.9375,"mean":0.9707,"seeds":1,"first_seeds":1},"4096":{"first":0.9375,"mean":0.98145,"seeds":1,"first_seeds":1},"8192":{"first":1.0,"mean":0.97412,"seeds":1,"first_seeds":1},"16384":{"first":0.98438,"mean":0.9873,"seeds":1,"first_seeds":1},"32768":{"first":0.96875,"mean":0.979,"seeds":1,"first_seeds":1},"65536":{"first":0.95312,"mean":0.92578,"seeds":1,"first_seeds":1},"131072":{"first":0.92188,"mean":0.74414,"seeds":1,"first_seeds":1}}},"decoy8_1k":{"e30_li":{"1024":{"first":0.96094,"mean":0.99219,"seeds":1,"first_seeds":1},"2048":{"first":null,"mean":0.98877,"seeds":1,"first_seeds":0},"4096":{"first":0.75,"mean":0.96582,"seeds":1,"first_seeds":1},"8192":{"first":null,"mean":0.90674,"seeds":1,"first_seeds":0},"16384":{"first":0.25781,"mean":0.76587,"seeds":1,"first_seeds":1},"32768":{"first":null,"mean":0.53467,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.37842,"seeds":1,"first_seeds":0},"131072":{"first":0.3125,"mean":0.31006,"seeds":1,"first_seeds":1}},"e31_li_m1":{"1024":{"first":1.0,"mean":0.99048,"seeds":1,"first_seeds":1},"2048":{"first":null,"mean":0.98047,"seeds":1,"first_seeds":0},"4096":{"first":0.99219,"mean":0.97583,"seeds":1,"first_seeds":1},"8192":{"first":null,"mean":0.95117,"seeds":1,"first_seeds":0},"16384":{"first":0.97656,"mean":0.92188,"seeds":1,"first_seeds":1},"32768":{"first":null,"mean":0.85156,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.75488,"seeds":1,"first_seeds":0},"131072":{"first":0.89062,"mean":0.62427,"seeds":1,"first_seeds":1}},"e31_li":{"1024":{"first":1.0,"mean":0.98901,"seeds":1,"first_seeds":1},"2048":{"first":null,"mean":0.99219,"seeds":1,"first_seeds":0},"4096":{"first":1.0,"mean":0.97607,"seeds":1,"first_seeds":1},"8192":{"first":null,"mean":0.90479,"seeds":1,"first_seeds":0},"16384":{"first":0.9375,"mean":0.72656,"seeds":1,"first_seeds":1},"32768":{"first":null,"mean":0.50684,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.34961,"seeds":1,"first_seeds":0},"131072":{"first":0.32812,"mean":0.29077,"seeds":1,"first_seeds":1}}},"unique_1k":{"e30_li":{"1024":{"first":1.0,"mean":0.98511,"seeds":1,"first_seeds":1},"2048":{"first":null,"mean":0.54102,"seeds":1,"first_seeds":0},"4096":{"first":0.42969,"mean":0.37671,"seeds":1,"first_seeds":1},"8192":{"first":null,"mean":0.35791,"seeds":1,"first_seeds":0},"16384":{"first":0.41406,"mean":0.35889,"seeds":1,"first_seeds":1},"32768":{"first":null,"mean":0.33105,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.33105,"seeds":1,"first_seeds":0},"131072":{"first":0.41406,"mean":0.36523,"seeds":1,"first_seeds":1}},"e31_li_m1":{"1024":{"first":0.9375,"mean":0.98389,"seeds":1,"first_seeds":1},"2048":{"first":0.76562,"mean":0.93604,"seeds":1,"first_seeds":1},"4096":{"first":0.59375,"mean":0.90039,"seeds":1,"first_seeds":1},"8192":{"first":0.53125,"mean":0.85938,"seeds":1,"first_seeds":1},"16384":{"first":0.34375,"mean":0.79004,"seeds":1,"first_seeds":1},"32768":{"first":0.3125,"mean":0.74951,"seeds":1,"first_seeds":1},"65536":{"first":0.3125,"mean":0.67725,"seeds":1,"first_seeds":1},"131072":{"first":0.34375,"mean":0.58496,"seeds":1,"first_seeds":1}},"e31_li":{"1024":{"first":0.92188,"mean":0.98755,"seeds":1,"first_seeds":1},"2048":{"first":null,"mean":0.9502,"seeds":1,"first_seeds":0},"4096":{"first":0.49219,"mean":0.90186,"seeds":1,"first_seeds":1},"8192":{"first":null,"mean":0.88525,"seeds":1,"first_seeds":0},"16384":{"first":0.4375,"mean":0.81226,"seeds":1,"first_seeds":1},"32768":{"first":null,"mean":0.70166,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.53809,"seeds":1,"first_seeds":0},"131072":{"first":0.29688,"mean":0.3938,"seeds":1,"first_seeds":1}}},"match3_1k":{"e30_li":{"1024":{"first":1.0,"mean":0.99023,"seeds":1,"first_seeds":1},"2048":{"first":0.875,"mean":0.82764,"seeds":1,"first_seeds":1},"4096":{"first":0.59375,"mean":0.49414,"seeds":1,"first_seeds":1},"8192":{"first":0.6875,"mean":0.57422,"seeds":1,"first_seeds":1},"16384":{"first":0.70312,"mean":0.62012,"seeds":1,"first_seeds":1},"32768":{"first":0.5625,"mean":0.6084,"seeds":1,"first_seeds":1},"65536":{"first":0.625,"mean":0.58887,"seeds":1,"first_seeds":1},"131072":{"first":0.67188,"mean":0.5459,"seeds":1,"first_seeds":1}},"e31_li_m1":{"1024":{"first":1.0,"mean":0.98975,"seeds":1,"first_seeds":1},"2048":{"first":0.96875,"mean":0.96533,"seeds":1,"first_seeds":1},"4096":{"first":0.85938,"mean":0.93018,"seeds":1,"first_seeds":1},"8192":{"first":0.53125,"mean":0.89697,"seeds":1,"first_seeds":1},"16384":{"first":0.29688,"mean":0.80566,"seeds":1,"first_seeds":1},"32768":{"first":0.35938,"mean":0.73193,"seeds":1,"first_seeds":1},"65536":{"first":0.21875,"mean":0.64502,"seeds":1,"first_seeds":1},"131072":{"first":0.1875,"mean":0.56836,"seeds":1,"first_seeds":1}},"e31_li":{"1024":{"first":0.97656,"mean":0.98438,"seeds":1,"first_seeds":1},"2048":{"first":null,"mean":0.97559,"seeds":1,"first_seeds":0},"4096":{"first":0.92969,"mean":0.95728,"seeds":1,"first_seeds":1},"8192":{"first":null,"mean":0.91895,"seeds":1,"first_seeds":0},"16384":{"first":0.79688,"mean":0.86499,"seeds":1,"first_seeds":1},"32768":{"first":null,"mean":0.72217,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.54736,"seeds":1,"first_seeds":0},"131072":{"first":0.3125,"mean":0.37842,"seeds":1,"first_seeds":1}}},"chain8_1k":{"e30_li":{"1024":{"first":0.99219,"mean":0.96826,"seeds":1,"first_seeds":1},"2048":{"first":null,"mean":0.24023,"seeds":1,"first_seeds":0},"4096":{"first":0.44531,"mean":0.38086,"seeds":1,"first_seeds":1},"8192":{"first":null,"mean":0.3374,"seeds":1,"first_seeds":0},"16384":{"first":0.42188,"mean":0.31738,"seeds":1,"first_seeds":1},"32768":{"first":null,"mean":0.30029,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.29688,"seeds":1,"first_seeds":0},"131072":{"first":0.32031,"mean":0.28638,"seeds":1,"first_seeds":1}},"e31_li_m1":{"1024":{"first":0.92188,"mean":0.9707,"seeds":1,"first_seeds":1},"2048":{"first":null,"mean":0.47119,"seeds":1,"first_seeds":0},"4096":{"first":0.45312,"mean":0.44946,"seeds":1,"first_seeds":1},"8192":{"first":null,"mean":0.3623,"seeds":1,"first_seeds":0},"16384":{"first":0.34375,"mean":0.37207,"seeds":1,"first_seeds":1},"32768":{"first":null,"mean":0.36182,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.32666,"seeds":1,"first_seeds":0},"131072":{"first":0.30469,"mean":0.35083,"seeds":1,"first_seeds":1}},"e31_li":{"1024":{"first":0.53125,"mean":0.75806,"seeds":1,"first_seeds":1},"2048":{"first":null,"mean":0.30078,"seeds":1,"first_seeds":0},"4096":{"first":0.25,"mean":0.2793,"seeds":1,"first_seeds":1},"8192":{"first":null,"mean":0.25342,"seeds":1,"first_seeds":0},"16384":{"first":0.21875,"mean":0.2666,"seeds":1,"first_seeds":1},"32768":{"first":null,"mean":0.24023,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.25244,"seeds":1,"first_seeds":0},"131072":{"first":0.23438,"mean":0.25684,"seeds":1,"first_seeds":1}}},"count_1k":{"e30_li":{"1024":{"first":null,"mean":0.14062,"seeds":1,"first_seeds":0},"2048":{"first":null,"mean":0.15625,"seeds":1,"first_seeds":0},"4096":{"first":null,"mean":0.29688,"seeds":1,"first_seeds":0},"8192":{"first":null,"mean":0.25,"seeds":1,"first_seeds":0},"16384":{"first":null,"mean":0.1875,"seeds":1,"first_seeds":0},"32768":{"first":null,"mean":0.32812,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.3125,"seeds":1,"first_seeds":0},"131072":{"first":null,"mean":0.23438,"seeds":1,"first_seeds":0}},"e31_li_m1":{"1024":{"first":null,"mean":0.23438,"seeds":1,"first_seeds":0},"2048":{"first":null,"mean":0.375,"seeds":1,"first_seeds":0},"4096":{"first":null,"mean":0.1875,"seeds":1,"first_seeds":0},"8192":{"first":null,"mean":0.20312,"seeds":1,"first_seeds":0},"16384":{"first":null,"mean":0.23438,"seeds":1,"first_seeds":0},"32768":{"first":null,"mean":0.20312,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.23438,"seeds":1,"first_seeds":0},"131072":{"first":null,"mean":0.23438,"seeds":1,"first_seeds":0}},"e31_li":{"1024":{"first":null,"mean":0.23438,"seeds":1,"first_seeds":0},"2048":{"first":null,"mean":0.17188,"seeds":1,"first_seeds":0},"4096":{"first":null,"mean":0.29688,"seeds":1,"first_seeds":0},"8192":{"first":null,"mean":0.21875,"seeds":1,"first_seeds":0},"16384":{"first":null,"mean":0.32812,"seeds":1,"first_seeds":0},"32768":{"first":null,"mean":0.20312,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.23438,"seeds":1,"first_seeds":0},"131072":{"first":null,"mean":0.26562,"seeds":1,"first_seeds":0}}},"majority_1k":{"e30_li":{"1024":{"first":null,"mean":1.0,"seeds":1,"first_seeds":0},"2048":{"first":null,"mean":1.0,"seeds":1,"first_seeds":0},"4096":{"first":null,"mean":1.0,"seeds":1,"first_seeds":0},"8192":{"first":null,"mean":1.0,"seeds":1,"first_seeds":0},"16384":{"first":null,"mean":1.0,"seeds":1,"first_seeds":0},"32768":{"first":null,"mean":1.0,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":1.0,"seeds":1,"first_seeds":0},"131072":{"first":null,"mean":1.0,"seeds":1,"first_seeds":0}},"e31_li_m1":{"1024":{"first":1.0,"mean":1.0,"seeds":1,"first_seeds":1},"2048":{"first":1.0,"mean":1.0,"seeds":1,"first_seeds":1},"4096":{"first":1.0,"mean":1.0,"seeds":1,"first_seeds":1},"8192":{"first":1.0,"mean":1.0,"seeds":1,"first_seeds":1},"16384":{"first":1.0,"mean":1.0,"seeds":1,"first_seeds":1},"32768":{"first":1.0,"mean":1.0,"seeds":1,"first_seeds":1},"65536":{"first":1.0,"mean":1.0,"seeds":1,"first_seeds":1},"131072":{"first":1.0,"mean":1.0,"seeds":1,"first_seeds":1}},"e31_li":{"1024":{"first":null,"mean":1.0,"seeds":1,"first_seeds":0},"2048":{"first":null,"mean":1.0,"seeds":1,"first_seeds":0},"4096":{"first":null,"mean":1.0,"seeds":1,"first_seeds":0},"8192":{"first":null,"mean":1.0,"seeds":1,"first_seeds":0},"16384":{"first":null,"mean":1.0,"seeds":1,"first_seeds":0},"32768":{"first":null,"mean":1.0,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":1.0,"seeds":1,"first_seeds":0},"131072":{"first":null,"mean":1.0,"seeds":1,"first_seeds":0}}},"pchain2_1k":{"e30_li":{"1024":{"first":0.35938,"mean":0.8833,"seeds":1,"first_seeds":1},"2048":{"first":0.40625,"mean":0.88818,"seeds":1,"first_seeds":1},"4096":{"first":0.26562,"mean":0.87305,"seeds":1,"first_seeds":1},"8192":{"first":0.375,"mean":0.83984,"seeds":1,"first_seeds":1},"16384":{"first":0.28125,"mean":0.77539,"seeds":1,"first_seeds":1},"32768":{"first":0.21875,"mean":0.5542,"seeds":1,"first_seeds":1},"65536":{"first":0.29688,"mean":0.4165,"seeds":1,"first_seeds":1},"131072":{"first":0.26562,"mean":0.33301,"seeds":1,"first_seeds":1}},"e31_li_m1":{"1024":{"first":0.42188,"mean":0.92627,"seeds":1,"first_seeds":1},"2048":{"first":0.35938,"mean":0.93018,"seeds":1,"first_seeds":1},"4096":{"first":0.40625,"mean":0.92725,"seeds":1,"first_seeds":1},"8192":{"first":0.4375,"mean":0.90332,"seeds":1,"first_seeds":1},"16384":{"first":0.32812,"mean":0.89551,"seeds":1,"first_seeds":1},"32768":{"first":0.25,"mean":0.84277,"seeds":1,"first_seeds":1},"65536":{"first":0.23438,"mean":0.77051,"seeds":1,"first_seeds":1},"131072":{"first":0.3125,"mean":0.67285,"seeds":1,"first_seeds":1}},"e31_li":{"1024":{"first":0.42188,"mean":0.94092,"seeds":1,"first_seeds":1},"2048":{"first":0.39062,"mean":0.94141,"seeds":1,"first_seeds":1},"4096":{"first":0.42188,"mean":0.9043,"seeds":1,"first_seeds":1},"8192":{"first":0.40625,"mean":0.82324,"seeds":1,"first_seeds":1},"16384":{"first":0.3125,"mean":0.57275,"seeds":1,"first_seeds":1},"32768":{"first":0.40625,"mean":0.38525,"seeds":1,"first_seeds":1},"65536":{"first":0.34375,"mean":0.2998,"seeds":1,"first_seeds":1},"131072":{"first":0.1875,"mean":0.26416,"seeds":1,"first_seeds":1}}},"pchain3_1k":{"e30_li":{"1024":{"first":0.17188,"mean":0.84521,"seeds":1,"first_seeds":1},"2048":{"first":0.15625,"mean":0.85889,"seeds":1,"first_seeds":1},"4096":{"first":0.17188,"mean":0.85303,"seeds":1,"first_seeds":1},"8192":{"first":0.25,"mean":0.84131,"seeds":1,"first_seeds":1},"16384":{"first":0.26562,"mean":0.77539,"seeds":1,"first_seeds":1},"32768":{"first":0.28125,"mean":0.61084,"seeds":1,"first_seeds":1},"65536":{"first":0.29688,"mean":0.44434,"seeds":1,"first_seeds":1},"131072":{"first":0.32812,"mean":0.354,"seeds":1,"first_seeds":1}},"e31_li_m1":{"1024":{"first":0.32812,"mean":0.92041,"seeds":1,"first_seeds":1},"2048":{"first":0.29688,"mean":0.91699,"seeds":1,"first_seeds":1},"4096":{"first":0.25,"mean":0.90186,"seeds":1,"first_seeds":1},"8192":{"first":0.28125,"mean":0.896,"seeds":1,"first_seeds":1},"16384":{"first":0.35938,"mean":0.86621,"seeds":1,"first_seeds":1},"32768":{"first":0.25,"mean":0.81738,"seeds":1,"first_seeds":1},"65536":{"first":0.25,"mean":0.75586,"seeds":1,"first_seeds":1},"131072":{"first":0.20312,"mean":0.68799,"seeds":1,"first_seeds":1}},"e31_li":{"1024":{"first":0.45312,"mean":0.91895,"seeds":1,"first_seeds":1},"2048":{"first":0.26562,"mean":0.89844,"seeds":1,"first_seeds":1},"4096":{"first":0.40625,"mean":0.86035,"seeds":1,"first_seeds":1},"8192":{"first":0.32812,"mean":0.79004,"seeds":1,"first_seeds":1},"16384":{"first":0.375,"mean":0.66113,"seeds":1,"first_seeds":1},"32768":{"first":0.28125,"mean":0.45166,"seeds":1,"first_seeds":1},"65536":{"first":0.29688,"mean":0.32178,"seeds":1,"first_seeds":1},"131072":{"first":0.3125,"mean":0.28174,"seeds":1,"first_seeds":1}}},"shuf2_1k":{"e30_li":{"1024":{"first":0.91406,"mean":0.93408,"seeds":1,"first_seeds":1},"2048":{"first":null,"mean":0.94873,"seeds":1,"first_seeds":0},"4096":{"first":0.86719,"mean":0.94922,"seeds":1,"first_seeds":1},"8192":{"first":null,"mean":0.91846,"seeds":1,"first_seeds":0},"16384":{"first":0.74219,"mean":0.76978,"seeds":1,"first_seeds":1},"32768":{"first":null,"mean":0.56201,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.41748,"seeds":1,"first_seeds":0},"131072":{"first":0.44531,"mean":0.32373,"seeds":1,"first_seeds":1}},"e31_li_m1":{"1024":{"first":0.65625,"mean":0.96875,"seeds":1,"first_seeds":1},"2048":{"first":0.65625,"mean":0.96973,"seeds":1,"first_seeds":1},"4096":{"first":0.70312,"mean":0.97314,"seeds":1,"first_seeds":1},"8192":{"first":0.625,"mean":0.96436,"seeds":1,"first_seeds":1},"16384":{"first":0.60938,"mean":0.94043,"seeds":1,"first_seeds":1},"32768":{"first":0.64062,"mean":0.8916,"seeds":1,"first_seeds":1},"65536":{"first":0.60938,"mean":0.79297,"seeds":1,"first_seeds":1},"131072":{"first":0.59375,"mean":0.70264,"seeds":1,"first_seeds":1}},"e31_li":{"1024":{"first":0.85938,"mean":0.97827,"seeds":1,"first_seeds":1},"2048":{"first":null,"mean":0.97461,"seeds":1,"first_seeds":0},"4096":{"first":0.85938,"mean":0.97241,"seeds":1,"first_seeds":1},"8192":{"first":null,"mean":0.9458,"seeds":1,"first_seeds":0},"16384":{"first":0.79688,"mean":0.79736,"seeds":1,"first_seeds":1},"32768":{"first":null,"mean":0.52148,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.4126,"seeds":1,"first_seeds":0},"131072":{"first":0.48438,"mean":0.30615,"seeds":1,"first_seeds":1}}},"shuf3_1k":{"e30_li":{"1024":{"first":0.48438,"mean":0.93604,"seeds":1,"first_seeds":1},"2048":{"first":0.42188,"mean":0.92725,"seeds":1,"first_seeds":1},"4096":{"first":0.45312,"mean":0.9248,"seeds":1,"first_seeds":1},"8192":{"first":0.53125,"mean":0.91943,"seeds":1,"first_seeds":1},"16384":{"first":0.53125,"mean":0.92822,"seeds":1,"first_seeds":1},"32768":{"first":0.54688,"mean":0.86279,"seeds":1,"first_seeds":1},"65536":{"first":0.39062,"mean":0.76465,"seeds":1,"first_seeds":1},"131072":{"first":0.45312,"mean":0.6333,"seeds":1,"first_seeds":1}},"e31_li_m1":{"1024":{"first":0.52344,"mean":0.95996,"seeds":1,"first_seeds":1},"2048":{"first":null,"mean":0.96436,"seeds":1,"first_seeds":0},"4096":{"first":0.51562,"mean":0.9624,"seeds":1,"first_seeds":1},"8192":{"first":null,"mean":0.94189,"seeds":1,"first_seeds":0},"16384":{"first":0.40625,"mean":0.92651,"seeds":1,"first_seeds":1},"32768":{"first":null,"mean":0.87207,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.79883,"seeds":1,"first_seeds":0},"131072":{"first":0.27344,"mean":0.67822,"seeds":1,"first_seeds":1}},"e31_li":{"1024":{"first":0.54688,"mean":0.96362,"seeds":1,"first_seeds":1},"2048":{"first":null,"mean":0.96143,"seeds":1,"first_seeds":0},"4096":{"first":0.50781,"mean":0.948,"seeds":1,"first_seeds":1},"8192":{"first":null,"mean":0.90527,"seeds":1,"first_seeds":0},"16384":{"first":0.5,"mean":0.80151,"seeds":1,"first_seeds":1},"32768":{"first":null,"mean":0.62061,"seeds":1,"first_seeds":0},"65536":{"first":null,"mean":0.4375,"seeds":1,"first_seeds":0},"131072":{"first":0.48438,"mean":0.35791,"seeds":1,"first_seeds":1}}}},"suite_version":"2026-09-25.v3","suite_old_versions":["2026-09-24.v1","2026-09-25.v2"],"suite":[{"size":"30m","cell":"L2.lookalike-1k","level":2,"arch":"dense","acc":0.99487,"p0":0.99219,"honest":0.99219,"multi":true,"seeds":3,"pass":true,"sources":["e31_full_30m_odra@odra"]},{"size":"30m","cell":"L3.lookup-1k","level":3,"arch":"dense","acc":0.99231,"p0":0.95703,"honest":0.99231,"multi":false,"seeds":3,"pass":true,"sources":["e31_full_30m_odra@odra"]},{"size":"30m","cell":"L3.lookup-2k","level":3,"arch":"dense","acc":0.24927,"p0":0.28516,"honest":0.24927,"multi":false,"seeds":7,"pass":false,"sources":["e31_full_30m_odra@odra","li_full_30m_s3_odra@odra"]},{"size":"30m","cell":"L3.lookup-2k","level":3,"arch":"e30_li","acc":0.99255,"p0":0.99219,"honest":0.99255,"multi":false,"seeds":1,"pass":true,"sources":["li_full_30m_s3_odra@odra"]},{"size":"30m","cell":"L3.lookup-2k","level":3,"arch":"e31_li","acc":0.99011,"p0":0.99219,"honest":0.99011,"multi":false,"seeds":1,"pass":true,"sources":["li_full_30m_s3_odra@odra"]},{"size":"30m","cell":"L3.lookup-2k","level":3,"arch":"e31_li_m1","acc":0.99377,"p0":0.98828,"honest":0.99377,"multi":false,"seeds":1,"pass":true,"sources":["li_full_30m_s3_odra@odra"]},{"size":"30m","cell":"L4.chain-1k","level":4,"arch":"dense","acc":0.99683,"p0":0.99609,"honest":0.99609,"multi":true,"seeds":3,"pass":true,"sources":["e31_full_30m_odra@odra"]},{"size":"30m","cell":"L4.chain-2k","level":4,"arch":"dense","acc":0.99292,"p0":0.99609,"honest":0.99609,"multi":true,"seeds":1,"pass":true,"sources":["li_full_30m_s3_odra@odra"]},{"size":"30m","cell":"L4.chain-2k","level":4,"arch":"e30_li","acc":0.24792,"p0":0.23828,"honest":0.23828,"multi":true,"seeds":1,"pass":false,"sources":["li_full_30m_s3_odra@odra"]},{"size":"30m","cell":"L4.chain-2k","level":4,"arch":"e31_li","acc":0.24829,"p0":0.23828,"honest":0.23828,"multi":true,"seeds":1,"pass":false,"sources":["li_full_30m_s3_odra@odra"]},{"size":"30m","cell":"L4.chain-2k","level":4,"arch":"e31_li_m1","acc":0.29272,"p0":0.25391,"honest":0.25391,"multi":true,"seeds":1,"pass":false,"sources":["li_full_30m_s3_odra@odra"]}],"suite_all_arches":["dense","e30","e30_ctx","e30_li","e31_bixt","e31_li","e31_li_m1","e31_page"],"no_harm":{"e30_li":{"kept":21,"lost":[{"where":"lookup_2k @ 8k","champion":0.96094,"variant":0.73438},{"where":"lookup_2k @ 32k","champion":0.9375,"variant":0.38281},{"where":"lookup_2k @ 128k","champion":0.85938,"variant":0.25},{"where":"decoy8_1k @ 4k","champion":0.99219,"variant":0.75},{"where":"decoy8_1k @ 16k","champion":0.97656,"variant":0.25781},{"where":"decoy8_1k @ 128k","champion":0.89062,"variant":0.3125},{"where":"match3_1k @ 2k","champion":0.96875,"variant":0.875},{"where":"match3_1k @ 4k","champion":0.85938,"variant":0.59375},{"where":"recall16_1k @ 4k","champion":0.89844,"variant":0.66406},{"where":"recall16_1k @ 16k","champion":0.89062,"variant":0.66406},{"where":"recall16_8k @ 4k","champion":0.96875,"variant":0.79688},{"where":"recall16_8k @ 8k","champion":0.96875,"variant":0.85938},{"where":"recall16_8k @ 16k","champion":0.95312,"variant":0.89062},{"where":"recall16_8k @ 32k","champion":0.95312,"variant":0.875},{"where":"recall16_8k @ 64k","champion":0.96875,"variant":0.8125},{"where":"recall8_1k @ 1k","champion":0.98438,"variant":0.88281},{"where":"recall8_1k @ 4k","champion":0.98438,"variant":0.84375},{"where":"recall8_1k @ 16k","champion":0.98438,"variant":0.90625},{"where":"recall8_8k @ 4k","champion":0.96875,"variant":0.90625},{"where":"lookup_16k @ 2k","champion":0.98438,"variant":0.82812},{"where":"lookup_16k @ 64k","champion":0.98438,"variant":0.75},{"where":"lookup_16k @ 128k","champion":0.9375,"variant":0.59375},{"where":"lookup_8k @ 128k","champion":0.95312,"variant":0.49219}],"missing":16},"e31_li":{"kept":21,"lost":[{"where":"chain8_1k @ 1k","champion":0.92188,"variant":0.53125},{"where":"decoy8_1k @ 128k","champion":0.89062,"variant":0.32812},{"where":"recall16_1k @ 16k","champion":0.89062,"variant":0.57812},{"where":"recall8_1k @ 4k","champion":0.98438,"variant":0.92969},{"where":"recall8_1k @ 16k","champion":0.98438,"variant":0.70312},{"where":"recall8_8k @ 64k","champion":0.98438,"variant":0.875},{"where":"recall8_8k @ 128k","champion":0.95312,"variant":0.71875}],"missing":32},"e33a_loop":{"kept":3,"lost":[],"missing":57}},"sources":[{"file":"docs/2_Experiments_Registry/capability_ledger/study/e30_vs_e31.odra.json","kind":"study","name":"e30_vs_e31","host":"odra","collected":"2026-10-03","archive":"/nas/ml_data/mrcogito/results/study/e30_vs_e31","done":162,"jobs":164,"suite_version":null},{"file":"docs/2_Experiments_Registry/capability_ledger/suite/e30ctx_control_30m.odra.json","kind":"suite","name":"e30ctx_control_30m","host":"odra","collected":"2026-10-03","archive":"/nas/ml_data/mrcogito/results/capability/e30ctx_control_30m","done":8,"jobs":9,"suite_version":"2026-09-25.v3"},{"file":"docs/2_Experiments_Registry/capability_ledger/suite/e31_full_30m_odra.odra.json","kind":"suite","name":"e31_full_30m_odra","host":"odra","collected":"2026-10-03","archive":"/nas/ml_data/mrcogito/results/capability/e31_full_30m_odra","done":15,"jobs":15,"suite_version":"2026-09-25.v3"},{"file":"docs/2_Experiments_Registry/capability_ledger/suite/e31_full_30m_odra_v1_batch8.odra.json","kind":"suite","name":"e31_full_30m_odra_v1_batch8","host":"odra","collected":"2026-10-03","archive":"/nas/ml_data/mrcogito/results/capability/e31_full_30m_odra_v1_batch8","done":3,"jobs":15,"suite_version":"2026-09-24.v1"},{"file":"docs/2_Experiments_Registry/capability_ledger/suite/e31_full_30m_odra_v2_2k.odra.json","kind":"suite","name":"e31_full_30m_odra_v2_2k","host":"odra","collected":"2026-10-03","archive":"/nas/ml_data/mrcogito/results/capability/e31_full_30m_odra_v2_2k","done":1,"jobs":3,"suite_version":"2026-09-25.v2"},{"file":"docs/2_Experiments_Registry/capability_ledger/suite/e33a_full_30m.odra.json","kind":"suite","name":"e33a_full_30m","host":"odra","collected":"2026-10-03","archive":"/nas/ml_data/mrcogito/results/capability/e33a_full_30m","done":0,"jobs":57,"suite_version":"2026-09-25.v3"},{"file":"docs/2_Experiments_Registry/capability_ledger/suite/li_full_30m_s3_odra.odra.json","kind":"suite","name":"li_full_30m_s3_odra","host":"odra","collected":"2026-10-03","archive":"/nas/ml_data/mrcogito/results/capability/li_full_30m_s3_odra","done":2,"jobs":2,"suite_version":"2026-09-25.v3"}]};
+const SERIES = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
+const NAMES = {
+  e31_li_m1: "E31 latent memory (1 entry per latent)", e31_li: "E31 latent memory", e30_li: "E30 sliding-window notebook",
+  e33a_loop: "E33a re-read loop", e33a_wide: "E33a wide loop", dense: "Dense model (ceiling)",
+  e31_mix_m1: "E31 + split slot RoPE", e30_mix: "E30 + split slot RoPE", e31_ord_m1: "E31 + order code",
+};
+const label = v => NAMES[v] ? `${NAMES[v]}` : v;
+const color = v => { const i = D.variants.indexOf(v); return i >= 0 && i < SERIES.length ? `var(${SERIES[i]})` : "var(--ink-3)"; };
+const pct = x => x == null ? "–" : `${Math.round(100 * x)}`;
+const kLen = L => L >= 1024 ? `${Math.round(L / 1024)}k` : `${L}`;
+const shown = new Set(D.variants);
+try { const s = JSON.parse(localStorage.getItem("capboard-hidden") || "[]"); s.forEach(v => shown.delete(v)); } catch (e) {}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+document.getElementById("lede").textContent =
+  `Every architecture variant takes the same exams: the length battery (train short, read up to 128k tokens) and the graded suite. ` +
+  `Each variant is compared with the current champion, ${label(D.champion)}. Built ${D.generated} from the committed results ledger.`;
+document.getElementById("harm-rule").textContent =
+  `A capability counts as lost when a variant scores more than ${Math.round(100 * D.harm_points)} points below the champion ` +
+  `on an exam and length where the champion passes (at least ${Math.round(100 * D.pass)} %). "Not run" means the champion passes there but the variant has no result yet.`;
+
+// ---- no-harm verdicts
+const vbox = document.getElementById("verdicts");
+const harmEntries = Object.entries(D.no_harm);
+if (!harmEntries.length) vbox.innerHTML = `<p class="muted">Only the champion is shown; add variants to compare.</p>`;
+for (const [v, r] of harmEntries) {
+  const lost = r.lost.length;
+  const state = lost ? ["bad", "✕", `${lost} lost`] : (r.kept ? ["good", "✓", "nothing lost"] : ["warn", "!", "no overlap yet"]);
+  const lostList = r.lost.slice(0, 6).map(x => `<div>${esc(x.where)}: ${pct(x.variant)} vs ${pct(x.champion)}</div>`).join("") +
+    (lost > 6 ? `<div>and ${lost - 6} more</div>` : "");
+  vbox.insertAdjacentHTML("beforeend", `<div class="verdict">
+    <div class="name"><span class="swatch" style="background:${color(v)}"></span>${esc(label(v))}</div>
+    <div class="counts"><span class="pill ${state[0]}">${state[1]} ${state[2]}</span>
+      <span class="pill">${r.kept} kept</span><span class="pill">${r.missing} not run</span></div>
+    ${lost ? `<div class="lost">${lostList}</div>` : ""}</div>`);
+}
+
+// ---- toggles
+const tog = document.getElementById("toggles");
+D.variants.forEach((v, i) => {
+  tog.insertAdjacentHTML("beforeend", `<label for="t-${i}"><input type="checkbox" id="t-${i}" data-v="${esc(v)}" ${shown.has(v) ? "checked" : ""}>
+    <span class="swatch" style="background:${color(v)}"></span>${esc(label(v))}${v === D.champion ? " · champion" : ""}</label>`);
+});
+tog.addEventListener("change", e => {
+  const v = e.target.dataset.v; if (!v) return;
+  e.target.checked ? shown.add(v) : shown.delete(v);
+  try { localStorage.setItem("capboard-hidden", JSON.stringify(D.variants.filter(x => !shown.has(x)))); } catch (err) {}
+  drawBattery();
+});
+
+// ---- small multiples
+const tip = document.getElementById("tip");
+function showTip(html, ev) {
+  tip.innerHTML = html; tip.hidden = false;
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = ev.clientX + 14, y = ev.clientY + 14;
+  if (x + w > innerWidth - 8) x = ev.clientX - w - 14;
+  if (y + h > innerHeight - 8) y = ev.clientY - h - 14;
+  tip.style.left = `${Math.max(8, x)}px`; tip.style.top = `${Math.max(8, y)}px`;
+}
+const hideTip = () => { tip.hidden = true; };
+
+function drawBattery() {
+  const box = document.getElementById("multiples"); box.innerHTML = "";
+  const W = 280, H = 170, m = {l: 30, r: 10, t: 10, b: 22};
+  const allL = [];
+  for (const s of D.slots) for (const v in D.battery[s.id]) for (const L in D.battery[s.id][v]) allL.push(+L);
+  const lo = Math.log2(Math.min(...allL, 1024)), hi = Math.log2(Math.max(...allL, 131072));
+  const X = L => m.l + (Math.log2(L) - lo) / (hi - lo) * (W - m.l - m.r);
+  const Y = a => m.t + (1 - a) * (H - m.t - m.b);
+  const ticks = []; for (let e = Math.ceil(lo); e <= hi; e++) ticks.push(2 ** e);
+  for (const s of D.slots) {
+    const data = D.battery[s.id] || {};
+    const vs = D.variants.filter(v => shown.has(v) && data[v]);
+    if (!vs.length) continue;
+    let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(s.exam)} ${esc(s.stage)}"><g class="axis">`;
+    for (const a of [0, .25, .5, .75, 1]) svg += `<line class="gridline" x1="${m.l}" x2="${W - m.r}" y1="${Y(a)}" y2="${Y(a)}"/><text x="${m.l - 5}" y="${Y(a) + 3}" text-anchor="end">${a * 100}</text>`;
+    ticks.forEach((L, i) => { if (i % 2 === 0 || ticks.length < 7) svg += `<text x="${X(L)}" y="${H - 6}" text-anchor="middle">${kLen(L)}</text>`; });
+    svg += `</g><line class="passline" x1="${m.l}" x2="${W - m.r}" y1="${Y(D.pass)}" y2="${Y(D.pass)}"/>`;
+    for (const v of vs) {
+      const pts = Object.entries(data[v]).map(([L, c]) => ({L: +L, y: c.first ?? c.mean, hollow: c.first == null})).filter(p => p.y != null).sort((a, b) => a.L - b.L);
+      const d = pts.filter(p => !p.hollow).map((p, i) => `${i ? "L" : "M"}${X(p.L).toFixed(1)},${Y(p.y).toFixed(1)}`).join("");
+      svg += `<g class="series" style="color:${color(v)}"><path d="${d}" stroke="currentColor"/>`;
+      for (const p of pts) svg += `<circle class="${p.hollow ? "hollow" : ""}" cx="${X(p.L).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="${p.hollow ? 3 : 3.5}" fill="currentColor" ${p.hollow ? 'stroke="currentColor"' : ""}/>`;
+      svg += `</g>`;
+    }
+    svg += `<line class="crosshair" x1="0" x2="0" y1="${m.t}" y2="${H - m.b}" visibility="hidden"/><rect x="${m.l}" y="0" width="${W - m.l - m.r}" height="${H}" fill="transparent"/></svg>`;
+    const el = document.createElement("div");
+    el.className = "panel" + (s.standard ? "" : " extra");
+    el.innerHTML = `<h3>${esc(s.exam)}</h3><div class="stage">${esc(s.stage)}${s.standard ? "" : " · outside the standard battery"}</div>${svg}`;
+    box.appendChild(el);
+    const svgEl = el.querySelector("svg"), cross = el.querySelector(".crosshair");
+    const lens = [...new Set(vs.flatMap(v => Object.keys(data[v]).map(Number)))].sort((a, b) => a - b);
+    svgEl.addEventListener("pointermove", ev => {
+      const r = svgEl.getBoundingClientRect(); const px = (ev.clientX - r.left) / r.width * W;
+      let best = lens[0]; for (const L of lens) if (Math.abs(X(L) - px) < Math.abs(X(best) - px)) best = L;
+      cross.setAttribute("x1", X(best)); cross.setAttribute("x2", X(best)); cross.setAttribute("visibility", "visible");
+      const rows = vs.map(v => { const c = data[v][best]; if (!c) return "";
+        const val = c.first != null ? `${pct(c.first)} %` : (c.mean != null ? `${pct(c.mean)} % mean` : "–");
+        return `<div class="row"><span><span class="swatch" style="background:${color(v)}"></span>${esc(label(v))}</span><span class="num">${val}</span></div>`; }).join("");
+      showTip(`<div class="small">${esc(s.exam)} · ${esc(s.stage)} · read at ${kLen(best)} tokens</div>${rows}`, ev);
+    });
+    svgEl.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); hideTip(); });
+  }
+  if (!box.children.length) box.innerHTML = `<p class="muted">No battery results for the selected variants.</p>`;
+}
+drawBattery();
+
+// ---- suite grid
+const seq = ["--seq-0","--seq-1","--seq-2","--seq-3","--seq-4","--seq-5","--seq-6"];
+function seqColor(a) { if (a == null) return ""; const t = Math.max(0, Math.min(1, (a - 0.25) / 0.75)); return `var(${seq[Math.min(6, Math.floor(t * 7))]})`; }
+function seqInk(a) { return a != null && (a - 0.25) / 0.75 >= 0.57 ? "var(--seq-ink-dark)" : "var(--ink)"; }
+(function drawSuite() {
+  const lede = document.getElementById("suite-lede");
+  const tbl = document.getElementById("suite-table");
+  if (!D.suite.length) { lede.textContent = "No suite results for these variants in the ledger yet."; tbl.parentElement.hidden = true; return; }
+  lede.textContent = `Suite version ${D.suite_version}. Each cell trains from scratch on one exam; levels run from L0 (learns at all) to L6 (stretch exams that never gate). ` +
+    `The number is the honest score in percent: first letter on exams with several candidate answers, the mean over answer letters otherwise. ` +
+    `A dark outline marks a pass under the suite rule (mean ≥ 75 %). Median over seeds.` + (D.suite_old_versions.length ? ` Older suite versions (${D.suite_old_versions.join(", ")}) are left out: their exams differ.` : "");
+  document.getElementById("suite-legend").innerHTML = `<span>25 % (chance)</span><span class="ramp">${seq.map(s => `<i style="background:var(${s})"></i>`).join("")}</span><span>100 %</span>`;
+  const cells = [...new Set(D.suite.map(c => `${c.level}|${c.cell}`))].sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
+  const rowsKey = [...new Set(D.suite.map(c => `${c.size}|${c.arch}`))].sort((a, b) => {
+    const [sa, aa] = a.split("|"), [sb, ab] = b.split("|");
+    return parseInt(sa) - parseInt(sb) || (D.variants.indexOf(aa) + 99 * (aa === "dense")) - (D.variants.indexOf(ab) + 99 * (ab === "dense"));
+  });
+  const by = new Map(D.suite.map(c => [`${c.size}|${c.arch}|${c.cell}`, c]));
+  const levels = [...new Set(cells.map(c => c.split("|")[0]))];
+  let h = `<thead><tr><th rowspan="2">size</th><th rowspan="2">architecture</th>` +
+    levels.map(l => `<th class="lv" colspan="${cells.filter(c => c.startsWith(l + "|")).length}">L${l}</th>`).join("") + `</tr><tr>` +
+    cells.map(c => `<th class="mono" style="font-weight:500">${esc(c.split("|")[1].replace(/^L\d\./, ""))}</th>`).join("") + `</tr></thead><tbody>`;
+  for (const rk of rowsKey) {
+    const [size, arch] = rk.split("|");
+    h += `<tr><td class="num">${esc(size)}</td><td><span class="swatch" style="display:inline-block;vertical-align:-1px;margin-right:6px;background:${color(arch)}"></span>${esc(label(arch))}</td>`;
+    for (const ck of cells) {
+      const c = by.get(`${size}|${arch}|${ck.split("|")[1]}`);
+      if (!c) { h += `<td class="cell empty">·</td>`; continue; }
+      h += `<td class="cell ${c.pass ? "pass" : ""}" tabindex="0" data-k="${esc(`${size}|${arch}|${c.cell}`)}" style="background:${seqColor(c.honest)};color:${seqInk(c.honest)}">${pct(c.honest)}</td>`;
+    }
+    h += `</tr>`;
+  }
+  tbl.innerHTML = h + `</tbody>`;
+  tbl.addEventListener("pointerover", ev => {
+    const td = ev.target.closest("td[data-k]"); if (!td) return hideTip();
+    const c = by.get(td.dataset.k);
+    showTip(`<div class="small">${esc(c.cell)} · ${esc(c.size)} · ${c.seeds} seed${c.seeds > 1 ? "s" : ""}</div>
+      <div class="row"><span>${esc(label(c.arch))}</span></div>
+      <div class="row"><span>first letter</span><span class="num">${pct(c.p0)} %</span></div>
+      <div class="row"><span>mean over letters</span><span class="num">${pct(c.acc)} %</span></div>
+      <div class="row"><span>suite rule</span><span>${c.pass ? "✓ pass" : "✕ below 75 %"}</span></div>
+      <div class="small">${esc(c.sources.join(", "))}</div>`, ev);
+  });
+  tbl.addEventListener("pointerleave", hideTip);
+})();
+
+// ---- sources + full table
+document.getElementById("sources").innerHTML = `<thead><tr><th>results</th><th>kind</th><th>server</th><th>finished</th><th>collected</th><th>NAS archive</th><th>ledger file</th></tr></thead><tbody>` +
+  D.sources.map(s => `<tr><td class="mono">${esc(s.name)}</td><td>${s.kind}${s.suite_version ? ` · ${esc(s.suite_version)}` : ""}</td><td>${esc(s.host)}</td>
+    <td class="num">${s.done} / ${s.jobs}</td><td class="num">${esc(s.collected)}</td><td class="mono">${esc(s.archive)}</td><td class="mono">${esc(s.file)}</td></tr>`).join("") + `</tbody>`;
+(function () {
+  const lens = [...new Set(D.slots.flatMap(s => Object.values(D.battery[s.id]).flatMap(o => Object.keys(o).map(Number))))].sort((a, b) => a - b);
+  let h = `<thead><tr><th>exam</th><th>stage</th><th>variant</th>${lens.map(L => `<th class="num">${kLen(L)}</th>`).join("")}</tr></thead><tbody>`;
+  for (const s of D.slots) for (const v of D.variants) {
+    const o = D.battery[s.id][v]; if (!o) continue;
+    h += `<tr><td>${esc(s.exam)}</td><td>${esc(s.stage)}</td><td>${esc(label(v))}</td>` +
+      lens.map(L => { const c = o[L]; return `<td class="num">${c ? (c.first != null ? pct(c.first) : `(${pct(c.mean)})`) : ""}</td>`; }).join("") + `</tr>`;
+  }
+  document.getElementById("battery-table").innerHTML = h + `</tbody><caption class="small" style="caption-side:bottom;text-align:left;padding:8px">First-letter accuracy in percent; numbers in brackets are the mean over answer letters where the first letter was not measured.</caption>`;
+})();
+</script>

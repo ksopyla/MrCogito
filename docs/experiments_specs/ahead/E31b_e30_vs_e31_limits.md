@@ -23,7 +23,7 @@
 3. Head-to-head: E30 vs E31 trained on the same checks.
 4. Why is E30 more efficient? Is it only configuration?
 5. Harder reasoning and multi-hop tasks: find each architecture's limits.
-6. Use the capability-suite framework. The same training protocol for both; test up to 128k.
+6. Use the capability-suite framework (now the `capability-checks` process; this study's protocol is its length battery). The same training protocol for both; test up to 128k.
 
 ## Arms (all length-invariant, all on the E31 platform)
 | arch | writer | memory entries | address | params |

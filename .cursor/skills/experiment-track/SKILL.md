@@ -1,6 +1,6 @@
 ---
 name: experiment-track
-description: Record and interpret completed Concept Encoder training and evaluation results. Use after a run or benchmark finishes to update `docs/2_Experiments_Registry/master_experiment_log.md`, the experiment's spec in `docs/experiments_specs/ahead/<ID>.md` (Status + Result), the "what we've explored" learnings in `docs/1_Strategy_and_Plans/agenda.md`, and short reports in `docs/2_Experiments_Registry/run_reports/`. Judge results against the experiment's own success/kill criteria and the current focus, using fair baseline comparisons that consider model size, objective difficulty, data regime, checkpoint maturity, and compute. Not for remote execution, literature review, or choosing the next experiment family.
+description: Record and interpret completed Concept Encoder results — text training runs and checkpoint evaluations, and architecture capability checks (suite, length battery, no-harm verdict vs the champion). Use after a run, benchmark or capability phase finishes to update `docs/2_Experiments_Registry/master_experiment_log.md`, the experiment's spec in `docs/experiments_specs/<lifecycle>/<ID>.md` (Status + Result), the "what we've explored" learnings in `docs/1_Strategy_and_Plans/agenda.md`, and short reports in `docs/2_Experiments_Registry/run_reports/`. Judge results against the experiment's own success/kill criteria and the current focus, using fair baseline comparisons that consider model size, objective difficulty, data regime, checkpoint maturity, and compute. Not for remote execution, running evaluations or capability checks, literature review, or choosing the next experiment family.
 ---
 
 # Experiment Track
@@ -20,6 +20,12 @@ concept-ablation ΔCE + samples → generation vibe-check metrics → zero-shot 
 supervised SICK/PAWS/GLUE), which scripts cover which aspect, and the exact `uv` commands.
 This skill consumes the evidence `experiment-evaluate` produces and records *what it means*.
 When you need to (re)run any metric on a checkpoint, switch to `experiment-evaluate`.
+
+**Capability results** (the suite, the length battery, the no-harm check) are produced by
+`capability-checks`. Their numbers live in the committed ledger
+`docs/2_Experiments_Registry/capability_ledger/` and are drawn on
+`docs/3_Evaluations_and_Baselines/capability_board.html`; read them there, never from memory,
+old HTML or a server `Cache/` (see "Recording capability checks" below).
 
 Do not use this skill for generic refactors, architecture cleanup, or standalone `CHANGELOG.md` updates. Use `engineering-change-tracking` for code-change traceability.
 Do not use this skill to decide which hypothesis to test next. Use `research-synthesis` to choose experiments based on external evidence and project invariants.
@@ -52,6 +58,7 @@ Skip `docs/5_Archive/` and any `> **OBSOLETE — ...**` section — that content
    - `Cache/Evaluation_reports/*.json`
    - `Cache/Evaluation_reports/*.csv`
    - checkpoint `config.json`
+   - capability checks: the ledger `docs/2_Experiments_Registry/capability_ledger/` and the board
 
 ## Core Workflow
 1. Reconstruct the run facts:
@@ -63,7 +70,7 @@ Skip `docs/5_Archive/` and any `> **OBSOLETE — ...**` section — that content
    - objective and important training protocol details
    - epochs or global steps
    - evaluation route and benchmark coverage
-   - compute: `compute/gpu_hours`, `compute/energy_kwh`, `compute/max_tokens`, `compute/loss_tokens_est` + `compute/audit_state`/`compute/flag` (from the run's W&B summary, written by the compute audit — see `experiment-evaluate` run-level preamble). **Hard precondition:** if the summary lacks `compute/audit_state`, the audit was never run — and the absence is silent (no `compute/*` keys at all, not even `failed`). Stop and run `uv run python analysis/run_compute_audit.py --run-id <run_id>` (macOS-runnable, seconds) before recording; do not hand-estimate compute and proceed.
+   - compute (text training runs logged to W&B; capability probes have no W&B run — record their GPU-hours from the plan cost and `sec_per_step` in the ledger instead): `compute/gpu_hours`, `compute/energy_kwh`, `compute/max_tokens`, `compute/loss_tokens_est` + `compute/audit_state`/`compute/flag` (from the run's W&B summary, written by the compute audit — see `experiment-evaluate` run-level preamble). **Hard precondition:** if the summary lacks `compute/audit_state`, the audit was never run — and the absence is silent (no `compute/*` keys at all, not even `failed`). Stop and run `uv run python analysis/run_compute_audit.py --run-id <run_id>` (macOS-runnable, seconds) before recording; do not hand-estimate compute and proceed.
 
 2. Extract the evidence:
    - concept geometry metrics
@@ -113,7 +120,24 @@ Skip `docs/5_Archive/` and any `> **OBSOLETE — ...**` section — that content
    - fix outbound `../` depth inside the moved files
    - verify all non-placeholder Markdown links resolve
 
-## How To Judge Results Like A Project-Aware Researcher
+## Recording capability checks
+Precondition: the folders are pulled into the ledger and the ledger files are committed
+(`capability-checks` step 5); if the newest results are only on a server, pull first — never
+record numbers that exist only in `Cache/` on one machine.
+1. Regenerate the board (`uv run python analysis/capability_board.py`) and read the no-harm
+   verdict per variant: kept / lost / not run, and the lost list.
+2. Judge in this order: (a) no-harm against the champion — any lost capability is the headline;
+   (b) the experiment's own target (e.g. the reasoning exam it was built for); (c) the length
+   battery shape (where it beats or trails the champion, by length); (d) the suite verdict and
+   frontier per size. First-letter accuracy throughout; gaps under ~2 SE are ties; one seed is a screen.
+3. Write: master-log Training Runs row (`Setup` = variant id · 30M · suite tier / battery seeds;
+   `Key metrics` = no-harm counts + 2 headline numbers; `Links` = spec · board · ledger file);
+   spec `Result` with the ledger file names; a short run report when it matters; one agenda line.
+   Suite runs also append median bits to `REFERENCES` (`capability-checks` → `suite.md` step 8).
+4. If a variant takes over as champion, say so in the agenda and hand the `--champion` change back
+   to `capability-checks`.
+
+## How To Judge Text Checkpoints Like A Project-Aware Researcher
 Judge in this order:
 1. concept geometry and collapse signals
 2. zero-shot semantic signal
@@ -309,6 +333,10 @@ Use this structure for non-trivial runs and keep it close to the current reports
 
 *Related: `master_experiment_log.md`, `docs/experiments_specs/<lifecycle>/<ID>.md`, `agenda.md`*
 ```
+
+**Visual summaries.** When the author asks for a visual summary or comparison of capability
+results, the standard answer is the capability board, regenerated from a fresh pull and published
+as an Artifact (`capability-checks` step 7) — not a new hand-drawn page.
 
 ## Output Expectations
 When using this skill, produce:

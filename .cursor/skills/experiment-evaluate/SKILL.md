@@ -1,6 +1,6 @@
 ---
 name: experiment-evaluate
-description: The single source of truth for evaluating MrCogito Concept Encoder checkpoints. Knows every evaluation script and runs a tiered pipeline (health → concept geometry + AR concept-ablation ΔCE + generation samples → generation vibe-check metrics → zero-shot STS-B → supervised SICK/PAWS/GLUE) via uv. Use after training finishes, when comparing best vs last checkpoints, checking concept health, running the generation vibe check, running any benchmark, or preparing evaluation evidence before experiment-track. Supports concept_ar (E01/E02), backbone_concept (E10/E16), and the older perceiver_denoise / weighted_mlm families.
+description: The single source of truth for evaluating trained MrCogito text checkpoints (a model trained on language, with a checkpoint to load). Knows every checkpoint-evaluation script and runs a tiered pipeline (compute audit → health → concept geometry + AR concept-ablation ΔCE + generation samples → generation vibe-check metrics → zero-shot STS-B → supervised SICK/PAWS/GLUE; lm-eval-harness + RULER-lite long context for perceiver_ar) via uv. Use after a text training run finishes, when comparing best vs last checkpoints, checking concept health, running the generation vibe check or any language benchmark, or preparing checkpoint evidence before experiment-track. Supports concept_ar (E01/E02), backbone_concept (E10/E16), perceiver_ar (E18/E21/E22) and the older perceiver_denoise / weighted_mlm families. Not for architecture exams trained from scratch on synthetic tasks — the capability suite, the length battery to 128k, no-harm comparisons or capability results (capability-checks).
 ---
 
 # Experiment Evaluate
@@ -12,7 +12,17 @@ see "Perceiver AR pipeline" below), and the older `perceiver_denoise` / `weighte
 (`experiment-run`) and does not write conclusions into the registry (`experiment-track`,
 which links back here for the "how").
 
-## Default Behavior (read this first)
+## Which evaluation do you need? (read this first)
+| you have | you want to know | use |
+|---|---|---|
+| a new or changed **architecture** (no text checkpoint yet; E30/E31/E33-style probes) | can it learn to pick, carry, chain facts; does it hold to 128k; did it lose anything vs the champion | **`capability-checks`** (suite + length battery + board) |
+| a **trained text checkpoint** (`Cache/Training/<run_id>/checkpoint-*`) | concept health, generation quality, semantic / reasoning / long-context benchmarks | this skill |
+| results from either | what they mean, the registry | `experiment-track` |
+
+The process spec for both routes is `docs/engineering_specs/capability_checks.md` ("Which
+instrument answers which question").
+
+## Default Behavior
 By **default, run all tiers in cost/signal order** (Tier 0 → Tier 3) and stop early only
 when a kill gate trips. **Honor explicit narrow requests literally**: if the user asks for
 "only concept analysis" run just Tier 1; if they ask for "generation quality", "vibe check",
@@ -355,21 +365,11 @@ MODEL_PATH_OVERRIDE="$BEST" MODEL_TYPE_OVERRIDE=concept_ar TOKENIZER_NAME_OVERRI
 
 Repeat the whole pipeline for `$LAST`, changing the output JSON / report labels.
 
-## Capability suite (architecture exams, from-scratch probes)
-The standard, graded exams for any new architecture (not for pretrained checkpoints).
-**The full process lives in the `capability-suite` skill**; spec
-`docs/engineering_specs/capability_suite.md`. Levels L0 learns at all → L1 carries a
-fact → L2 picks signal over a lookalike → L3 long reach → L4 multi-step reasoning → L5
-language-like noise → L6 BAPO-hard stretch; sizes 5m/10m/30m/50m; tiers screen /
-standard / full.
-```bash
-uv run python scripts/run_capability_suite.py --arch <arch> --sizes 30m --tier standard \
-  --mode scripts --gpus 0 1 2 --host odra --out Cache/capability/<arch>_standard_30m   # on the server
-uv run python analysis/capability_scorecard.py --in_dir Cache/capability/<arch>_standard_30m
-```
-Report the verdict (`scale up` / `promising — fix before scaling` / `not ready`), the
-frontier level per size, and the cells that beat or miss the recorded references. Do not
-hand-pick flags for these exams: a different flag set is a different exam.
+## Architecture exams are not here
+The capability suite, the length battery (ladders to 128k), the no-harm comparison against the
+champion, the results ledger and the capability board all live in the **`capability-checks`**
+skill. Do not run them from this skill, and do not look for their results in
+`Cache/Evaluation_reports/` or W&B: they are in `docs/2_Experiments_Registry/capability_ledger/`.
 
 ## Perceiver AR pipeline (`perceiver_ar`: E18 / E21)
 Two axes, both **teacher-forced / loglikelihood** (a ~125M base model cannot follow instructions

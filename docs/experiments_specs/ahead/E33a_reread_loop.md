@@ -129,6 +129,8 @@ and lookup at 98 %. Three perfectly composed reads therefore reach about 94–97
   All are reusable for any exclusive-read model.
 
 ## Capability checks: no past capability lost (added 3 Oct, at the author's request)
+*Process: [capability checks](../../engineering_specs/capability_checks.md) — the battery below is
+`BATTERY_VARIANTS["e33a"]` (phase `battery_e33a`, alias `e33a_e31b`); results go to the ledger and the board.*
 E33a gets the same battery as E31, so the final comparison is like for like. All of it runs on Odra after the
 `e33a` phase. The queues are chained, about 3 days in total.
 1. **E31b protocol on the loop** (study phase `e33a_e31b`, seeds 1 and 2, starting from each seed's loop-trained

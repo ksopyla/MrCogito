@@ -15,6 +15,36 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-10-03] - Capability checks: one process, a committed results ledger, NAS archive, capability board
+
+**Why:** the E30/E31/E31b capability results lived only in server `Cache/` folders — never on W&B
+(the runners do not pass `--wandb`) or the NAS — so the E31 suite and half the E31b study became
+unreachable when Polonez shut down for heat. Every new variant hand-copied the E31b job list, the
+E31 reference numbers existed only in hand-written HTML, and no skill described the length protocol.
+Process spec `docs/engineering_specs/capability_checks.md`.
+
+**Added:**
+- `analysis/capability_ledger.py` (stdlib only): collects a suite or study folder into a compact
+  JSON (per job and arch: accuracy ± SE, first letter, per-letter accuracy, bits, speed, every ladder
+  length). `scripts/pull_capability_results.sh` streams it over ssh into
+  `docs/2_Experiments_Registry/capability_ledger/` and archives the raw folder to
+  `/nas/ml_data/mrcogito/results/`. Backfilled from Odra: `e30_vs_e31` (164 jobs) and five suite folders.
+- `analysis/capability_board.py` + `capability_board_template.html`: one generated page with the
+  no-harm verdict vs the champion (`e31_li_m1`), the length battery as small multiples and the suite
+  grid → `docs/3_Evaluations_and_Baselines/capability_board.html`.
+- `battery_jobs()`, `BATTERY_VARIANTS`, `BATTERY_VERSION` and phase `battery_<tag>` in
+  `scripts/study_plans/e30_vs_e31.py`: the E31b protocol as one function. `e33a_e31b` now calls it
+  (job list verified identical).
+- `analysis/capability_scorecard.py --in_dir` accepts ledger files (scores with the servers off).
+- `tests/test_capability_ledger.py`.
+
+**Changed (skills and docs):** skill `capability-suite` → `capability-checks` (hub: suite + length
+battery + no-harm + ledger + board; suite details in `suite.md`, battery in `battery.md`);
+`experiment-evaluate` is scoped to trained text checkpoints with a "which evaluation?" router;
+`experiment-track` gains "Recording capability checks" and the board as the standard visual summary;
+cross-references in `project-overview.mdc`, `experiment-run`, `experiment-design`, glossary,
+master log routing table, `capability_suite.md`, E31b and E33a specs.
+
 ## [2026-10-03] - E33a read–think–reread loop (tied loop over the layers above the global read)
 
 **Why:** E33's read-only loop gave no multi-hop gain. E33a loops the global read *and* the next local layer, and

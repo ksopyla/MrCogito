@@ -7,6 +7,9 @@ JSON next to it. Writes `scorecard.md`, `scorecard.html`, `scorecard.json` and
 `cells.csv` into `--out_dir` (default: the input folder).
 
   uv run python analysis/capability_scorecard.py --in_dir Cache/capability/e30_standard
+  # from the committed ledger (no server needed):
+  uv run python analysis/capability_scorecard.py --out_dir Cache/capability/e31_scored \
+      --in_dir docs/2_Experiments_Registry/capability_ledger/suite/li_full_30m.polonez.json
 
 Rules (spec: docs/engineering_specs/capability_suite.md):
   * a cell **passes** when the median answer-token accuracy over seeds is ≥ 75 %;
@@ -29,6 +32,7 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
+from analysis.capability_ledger import suite_rows  # noqa: E402
 from evaluation.capability_suite import (  # noqa: E402
     CELL_BY_ID,
     CEILING_FRACTION,
@@ -70,6 +74,14 @@ def load_runs(in_dir: Path) -> list[dict]:
                 "steps": final.get("step"),
             })
     return rows
+
+
+def ledger_rows(path: Path) -> list[dict]:
+    """The same rows as `load_runs`, from a committed capability-ledger file."""
+    led = json.loads(path.read_text())
+    if led.get("kind") != "suite":
+        raise SystemExit(f"{path} is a {led.get('kind')} ledger, not a suite run")
+    return suite_rows(led)
 
 
 def aggregate(rows: list[dict]) -> dict:
@@ -305,14 +317,17 @@ architecture at the same size (from the ledger); grey tick = dense model in this
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--in_dir", nargs="+", required=True,
-                   help="one or more suite output folders (e.g. the Odra and Polonez halves of one run)")
+                   help="suite output folders (e.g. the Odra and Polonez halves of one run) and/or committed "
+                        "ledger files (docs/2_Experiments_Registry/capability_ledger/suite/*.json)")
     p.add_argument("--out_dir", default=None)
     p.add_argument("--arch", nargs="*", default=None, help="architectures to score (default: every non-dense arch found)")
     args = p.parse_args()
     in_dirs = [Path(d) for d in args.in_dir]
+    if args.out_dir is None and any(d.suffix == ".json" for d in in_dirs):
+        raise SystemExit("--out_dir is required when scoring ledger files")
     out_dir = Path(args.out_dir or in_dirs[0])
     out_dir.mkdir(parents=True, exist_ok=True)
-    rows = [r for d in in_dirs for r in load_runs(d)]
+    rows = [r for d in in_dirs for r in (ledger_rows(d) if d.suffix == ".json" else load_runs(d))]
     if not rows:
         raise SystemExit(f"no job.json + rung JSON under {', '.join(map(str, in_dirs))}")
     best = aggregate(rows)
