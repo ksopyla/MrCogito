@@ -7,6 +7,8 @@
   text at about 256k context, with no two-level notebook. After that comes the compression ladder
   6 → 12 → 16 → 32 … tokens per latent, one rung per experiment.
 - **Implementation plan:** [E31c_text_memory_read_plan.md](E31c_text_memory_read_plan.md)
+- **Alignment page:** [e31c_architecture.html](../../3_Evaluations_and_Baselines/e31c_architecture.html)
+  (the pipeline, who reads what, the masks, the information budget, and a checklist to return)
 - **Owner / dates:** ksopyla · opened 2026-10-03
 
 ## Hypothesis

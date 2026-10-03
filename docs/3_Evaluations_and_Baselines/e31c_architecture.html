@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E31c Text Notebook</title>
+<style>
+:root{
+  --bg:#f7f6f2; --panel:#ffffff; --ink:#1d1f24; --ink2:#4a4f5a; --muted:#7a808c; --line:#dcd9d0;
+  --accent:#2f5d8a; --accent-soft:#e3ecf5; --new:#b4541f; --new-soft:#f8e7dc; --same:#4d7a4a; --same-soft:#e4efe2;
+  --raw:#6a8fb8; --note:#c9772f; --none:#eceae4; --self:#1d1f24; --warn:#9a6a00;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#15171b; --panel:#1d2026; --ink:#e7e5df; --ink2:#b9bcc4; --muted:#8a8f99; --line:#33373f;
+  --accent:#7fb0e0; --accent-soft:#22303f; --new:#f0a072; --new-soft:#3a2a20; --same:#8fc28a; --same-soft:#223024;
+  --raw:#7fa6d1; --note:#e39a55; --none:#262a31; --self:#e7e5df; --warn:#e2b54a; color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --bg:#15171b; --panel:#1d2026; --ink:#e7e5df; --ink2:#b9bcc4; --muted:#8a8f99; --line:#33373f;
+  --accent:#7fb0e0; --accent-soft:#22303f; --new:#f0a072; --new-soft:#3a2a20; --same:#8fc28a; --same-soft:#223024;
+  --raw:#7fa6d1; --note:#e39a55; --none:#262a31; --self:#e7e5df; --warn:#e2b54a; color-scheme:dark;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 var(--sans)}
+.wrap{max-width:1040px;margin:0 auto;padding-inline:16px;padding-block:28px 60px}
+h1{font-size:26px;margin:0 0 4px;text-wrap:balance}
+h2{font-size:18px;margin:34px 0 10px;text-wrap:balance}
+.sub{color:var(--ink2);max-width:70ch}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.tog{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.tog button{border:0;background:transparent;color:var(--ink2);padding:6px 12px;font:inherit;font-size:13px;cursor:pointer}
+.tog button.on{background:var(--accent);color:#fff}
+.lbl{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;letter-spacing:.03em}
+.tag.new{background:var(--new-soft);color:var(--new)} .tag.same{background:var(--same-soft);color:var(--same)}
+.tag.prop{background:var(--accent-soft);color:var(--accent)}
+.pipe{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin:12px 0}
+.node{border:1px solid var(--line);border-radius:8px;padding:8px 6px;font-size:12.5px;text-align:center;cursor:pointer;background:var(--panel);min-width:0}
+.node.on{outline:2px solid var(--accent)}
+.node .t{font-weight:600;display:block}
+@media (max-width:720px){.pipe{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.detail{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:720px){.detail{grid-template-columns:1fr}}
+.detail p{margin:6px 0}
+.mono{font-family:var(--mono);font-size:12.5px}
+.k{color:var(--muted);font-size:12px}
+.grid-wrap{overflow-x:auto}
+svg text{font-family:var(--sans)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;font-variant-numeric:tabular-nums}
+th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.tbl{overflow-x:auto}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--ink2)}
+.sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:5px}
+.chk select,.chk input{font:inherit;font-size:13px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:4px 6px;width:100%}
+.btn{border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:8px;padding:7px 14px;font:inherit;cursor:pointer}
+textarea{width:100%;min-height:140px;font-family:var(--mono);font-size:12.5px;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px}
+.note{color:var(--ink2);font-size:13.5px}
+.warn{color:var(--warn)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="lbl">MrCogito · alignment page · 2026-10-03</div>
+  <h1>E31c: the E31 notebook on plain text</h1>
+  <p class="sub">Same student and same notebook as E31. Only two things change: <b>who may look things up</b>
+  (every word, once a page is finished) and <b>how a note is found</b> (by content, with no page number).
+  With these switched off the model is bit-identical to E31 and E33a.</p>
+
+  <div class="card row" style="margin-top:14px">
+    <span class="lbl">Read rule</span>
+    <span class="tog" id="tRule"><button data-v="excl">E31 exam rule (as tested)</button><button data-v="closed" class="on">E31c closed windows</button></span>
+    <span class="lbl" style="margin-left:8px">Slot keys</span>
+    <span class="tog" id="tPos"><button data-v="boundary">at QUERY (E31)</button><button data-v="reader" class="on">at the reader (E31c)</button></span>
+    <span class="lbl" style="margin-left:8px">Row</span>
+    <span class="tog" id="tRow"><button data-v="exam">exam row</button><button data-v="text" class="on">plain text</button></span>
+  </div>
+
+  <h2>1 · The pipeline, step by step</h2>
+  <div class="pipe" id="pipe"></div>
+  <div class="card detail" id="detail"></div>
+  <div class="row" style="margin-top:8px"><button class="btn" id="prev">← prev</button><button class="btn" id="next">next →</button></div>
+
+  <h2>2 · Who reads what (a toy row: 40 tokens, pages of 16 at stride 12, verbatim window 8)</h2>
+  <p class="note">Click a token to see its view. Columns are the last raw tokens it sees verbatim and the
+  notebook pages. A page's notes become readable once its last token has been read. Real scale: pages of 256
+  at stride 192 and a verbatim window of 256, so the notes and the window always overlap.</p>
+  <div class="legend"><span><span class="sw" style="background:var(--raw)"></span>raw token, verbatim</span>
+  <span><span class="sw" style="background:var(--note)"></span>readable page of notes</span>
+  <span><span class="sw" style="background:var(--none)"></span>not visible</span>
+  <span><span class="sw" style="background:var(--self)"></span>the reading token</span></div>
+  <div class="card grid-wrap" style="margin-top:8px"><svg id="toy" width="980" height="250" role="img" aria-label="toy mask"></svg></div>
+  <p class="note" id="toyNote"></p>
+
+  <h2>3 · The masks, in one table</h2>
+  <div class="card tbl"><table>
+    <tr><th>key</th><th>E31 exam rule</th><th>E31c closed rule</th><th>why it is safe</th></tr>
+    <tr><td>raw tokens</td><td>causal, same document and side, last 256</td><td><span class="tag same">unchanged</span></td><td>it already was causal</td></tr>
+    <tr><td>notes of page p</td><td>only tokens after QUERY, pages of an earlier side</td><td>any token t whose document wrote page p and t ≥ the page's last token</td><td>the writer is two-way only inside the page; all of it is ≤ t</td></tr>
+    <tr><td>notes of another document</td><td>never</td><td>never</td><td>a page writes from one document (its last token's)</td></tr>
+    <tr><td>no QUERY in the batch</td><td class="warn">notebook skipped; the global read silently becomes full attention</td><td>notebook on, side = 0 everywhere</td><td>this is why E31 could not train on text</td></tr>
+  </table></div>
+
+  <h2>4 · Information budget along the path (30M shape, 16k tokens)</h2>
+  <div class="card tbl"><table>
+    <tr><th>stage</th><th>what is available to one token</th><th>size</th></tr>
+    <tr><td>local layers</td><td>last 16 tokens</td><td>16 tokens</td></tr>
+    <tr><td>global read, raw</td><td>last 256 tokens verbatim</td><td>256 keys</td></tr>
+    <tr><td>global read, notes</td><td>closed pages: 32 notes per page, about 6 tokens per note</td><td>≤ 2,720 notes (85 pages); on average about half</td></tr>
+    <tr><td>at 256k (eval only)</td><td>same rule; trained at 16k, read by content so no new distances</td><td>≤ 43,000 notes, about 21,000 on average</td></tr>
+    <tr><td>what an answer needs</td><td>a fact of 16–64 letters planted anywhere earlier</td><td>one to a few notes, if the writer kept it</td></tr>
+  </table>
+  <p class="note">The bottleneck stays where E31 put it: one note per 6 tokens. The text step tests whether
+  next-word training on long books plus keyed-recall rows fills the notes with facts, not just "what kind of
+  book this is" (the E22 failure).</p></div>
+
+  <h2>5 · Alignment checklist</h2>
+  <p class="note">Mark each decision and add a note if you want a change. The button collects your answers into text to paste back into the chat.</p>
+  <div class="card tbl chk"><table id="chk"><tr><th>#</th><th>decision</th><th style="width:130px">verdict</th><th style="width:34%">note</th></tr></table>
+  <div class="row" style="margin-top:10px"><button class="btn" id="collect">Collect answers</button><span class="note" id="copied"></span></div>
+  <textarea id="out" readonly placeholder="your answers appear here"></textarea></div>
+</div>
+
+<script>
+const S={rule:"closed",pos:"reader",row:"text",step:0,tok:31};
+const STEPS=[
+ {t:"Tokens",tag:"same",plain:"The row of word pieces. Text has no QUERY token; an exam row has one before the question.",shape:"ids [B, 16384]",keeps:"everything"},
+ {t:"Embed",tag:"same",plain:"Small token table (128 wide) projected up to 960, plus value embeddings on layers 0 and 1.",shape:"[B, 16384, 960]",keeps:"each token's identity"},
+ {t:"Local layer",tag:"same",plain:"Each token attends to the last 16 tokens, with sinks.",shape:"[B, 16384, 960]",keeps:"short phrases"},
+ {t:"Writer",tag:"same",plain:"Every 256-token page (stride 192) is read two-way by a small page encoder; 32 latents summarise it. A page is 'closed' at its last token. Unchanged: E31c only records where each page closes.",shape:"pages [B·85, 256, 256] → notes [B, 2720, 1, 64]",keeps:"about 6 tokens per note"},
+ {t:"Global read",tag:"new",plain:"One attention over the last 256 raw tokens and the closed notes. New: every token reads (not only after QUERY), causal by page close. Slot keys at the reader: raw keys keep their rotary positions; notes are matched by content in the same softmax.",shape:"q [B,16384,15,64]; keys 256 raw + closed notes",keeps:"recent text verbatim + far facts as notes"},
+ {t:"Local × 2",tag:"same",plain:"Two more local layers, U-net skips, x0 re-injection. (Later arm: the E33a loop repeats read + local 4 times.)",shape:"[B, 16384, 960]",keeps:"what the read fetched"},
+ {t:"Loss",tag:"same",plain:"Next-word cross-entropy on every token. Keyed-recall rows (25%) make the loss pay for far facts.",shape:"[B, 16384] → scalar",keeps:"—"}
+];
+function tg(t){return `<span class="tag ${t}">${t==="new"?"new":t==="same"?"unchanged":"proposed"}</span>`}
+function drawPipe(){
+  const p=document.getElementById("pipe");p.innerHTML="";
+  STEPS.forEach((s,i)=>{const d=document.createElement("div");d.className="node"+(i===S.step?" on":"");
+    d.innerHTML=`<span class="t">${s.t}</span>${tg(s.tag)}`;d.onclick=()=>{S.step=i;drawPipe()};p.appendChild(d)});
+  const s=STEPS[S.step];
+  let extra="";
+  if(S.step===4){
+    extra = S.rule==="excl" ? "<p class='warn'>Exam rule selected: only tokens after QUERY read notes; a text row reads none.</p>" : "<p>Closed rule selected: every token reads its document's closed pages.</p>";
+    extra += S.pos==="boundary" ? "<p>Slot keys at QUERY: in text there is no QUERY, so this falls back to the true distance (risky beyond 16k).</p>" : "<p>Slot keys at the reader: query [R(p)q, q] · keys [R(j)k, 0] ‖ [0, k_note], scale 1/√64. Exact, one softmax.</p>";
+  }
+  document.getElementById("detail").innerHTML=`<div><div class="lbl">${S.step+1} / ${STEPS.length} · ${s.t} ${tg(s.tag)}</div><p>${s.plain}</p>${extra}</div>
+   <div><p><span class="k">shapes (30M, 16k)</span><br><span class="mono">${s.shape}</span></p><p><span class="k">what survives this stage</span><br>${s.keeps}</p></div>`;
+}
+document.getElementById("prev").onclick=()=>{S.step=(S.step+STEPS.length-1)%STEPS.length;drawPipe()};
+document.getElementById("next").onclick=()=>{S.step=(S.step+1)%STEPS.length;drawPipe()};
+function bindTog(id,key){document.querySelectorAll(`#${id} button`).forEach(b=>b.onclick=()=>{
+  S[key]=b.dataset.v;document.querySelectorAll(`#${id} button`).forEach(x=>x.classList.toggle("on",x===b));drawPipe();drawToy();})}
+bindTog("tRule","rule");bindTog("tPos","pos");bindTog("tRow","row");
+
+// toy: N=40, pages W=16 stride 12 → starts 0,12,24 (last = 24) ; raw window 8 ; QUERY at 30 on exam rows
+const N=40,W=16,ST=12,RW=8,Q=30,STARTS=[0,12,24];
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()}
+function pages(){ // per page: closing token (last token it wrote from) and side
+  return STARTS.map((s,i)=>{let end=Math.min(s+W,N)-1;
+    if(S.row==="exam"){const hasBook=s<Q; if(hasBook){end=Math.min(end,Q-1);return{i,s,close:end,side:0}} return{i,s,close:end,side:1}}
+    return{i,s,close:end,side:0}})}
+function sideOf(t){return S.row==="exam"&&t>=Q?1:0}
+function canReadPage(t,p){
+  if(S.rule==="closed") return p.close<=t;
+  return sideOf(t)>=1 && p.side<sideOf(t);
+}
+function drawToy(){
+  const svg=document.getElementById("toy");const cw=20,x0=60,y0=30;svg.innerHTML="";
+  const ns="http://www.w3.org/2000/svg";
+  const add=(tag,attrs,txt)=>{const e=document.createElementNS(ns,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(txt!==undefined)e.textContent=txt;svg.appendChild(e);return e};
+  add("text",{x:4,y:y0+15,fill:css("--muted"),"font-size":11},"tokens");
+  for(let t=0;t<N;t++){
+    let fill=css("--none");
+    const sameSide=sideOf(t)===sideOf(S.tok)||S.row==="text";
+    if(t===S.tok) fill=css("--self");
+    else if(t<S.tok && S.tok-t<RW && sameSide) fill=css("--raw");
+    const r=add("rect",{x:x0+t*cw,y:y0,width:cw-3,height:22,rx:4,fill,style:"cursor:pointer"});
+    r.onclick=()=>{S.tok=t;drawToy()};
+    if(S.row==="exam"&&t===Q) add("text",{x:x0+t*cw+1,y:y0-6,fill:css("--new"),"font-size":10},"QUERY");
+    if(t%5===0) add("text",{x:x0+t*cw+2,y:y0+38,fill:css("--muted"),"font-size":10},String(t));
+  }
+  const ps=pages();
+  ps.forEach((p,k)=>{const y=y0+60+k*42;
+    add("text",{x:4,y:y+15,fill:css("--muted"),"font-size":11},"page "+(k+1));
+    const ok=canReadPage(S.tok,p);
+    add("rect",{x:x0+p.s*cw,y,width:(Math.min(p.s+W,N)-p.s)*cw-3,height:22,rx:4,fill:ok?css("--note"):css("--none"),opacity:ok?0.9:1});
+    add("line",{x1:x0+(p.close+1)*cw-2,x2:x0+(p.close+1)*cw-2,y1:y-4,y2:y+26,stroke:css("--ink"),"stroke-width":2});
+    add("text",{x:x0+(p.close+1)*cw+4,y:y+15,fill:css("--ink2"),"font-size":11},`closes at ${p.close}${S.row==="exam"?(p.side? " (answer side)":" (book side)"):""}`);
+  });
+  const read=ps.filter(p=>canReadPage(S.tok,p)).map(p=>p.i+1);
+  const lo=Math.max(0,S.tok-RW+1);
+  document.getElementById("toyNote").textContent=`Token ${S.tok}: verbatim tokens ${lo}–${S.tok}` +
+    (S.row==="exam"&&sideOf(S.tok)!==sideOf(lo)?" (only its own side)":"") +
+    `; notes of page(s) ${read.length?read.join(", "):"none"}.` +
+    (S.rule==="excl"&&S.row==="text"?" Under the exam rule a plain-text row reads no notes at all.":"") +
+    (S.row==="exam"&&sideOf(S.tok)===1?" On an answer token both rules give the same notes (pages closed before QUERY).":"");
+}
+// checklist
+const DEC=[
+ "Closed read: every token reads its document's pages once the page's last token is read (lm_read=closed)",
+ "Slot keys at the reader: notes matched by content, raw keys keep rotary positions (lm_slot_pos=reader)",
+ "Keep E31's verbatim window of 256 tokens and pages 256 / stride 192 / 32 latents / one entry per latent",
+ "Writer, main path and E33a loop code unchanged; defaults bit-identical (verified)",
+ "Gate S0 first: no-harm ladder of e31c_m1 vs e31_li_m1 (suite full tier 30M ×3 + length battery), queued after E33a",
+ "First text run at the suite's 30M shape, trained at 16k, tested to 256k by length transfer",
+ "Data: long books + long PDFs ~70%, keyed recall in real text ~25%, fluency ~5%",
+ "Three arms: E31c, no-notebook control (raw 256 only), dense ceiling",
+ "Success: recall gap closed ≥ 50% at 16k; far-loss gap closed ≥ 50%; ≥ 75% of 16k recall kept at 256k",
+ "Kill: notebook ignored at half budget (recall ≤ control + 5 points and < 0.01 nats far value) → fix data, not mask",
+ "E33a loop on text only after E33a's ladder verdict (variant e31c_loop ready)",
+ "Deferred: two-level notebook, compression ladder, order-aware notes, generation-time page writer"
+];
+const tbl=document.getElementById("chk");
+DEC.forEach((d,i)=>{const tr=document.createElement("tr");
+  tr.innerHTML=`<td>${i+1}</td><td>${d}</td><td><select id="v${i}"><option>agree</option><option>change</option><option>question</option></select></td><td><input id="n${i}" placeholder="optional"></td>`;tbl.appendChild(tr)});
+document.getElementById("collect").onclick=async()=>{
+  const lines=DEC.map((d,i)=>{const v=document.getElementById("v"+i).value,n=document.getElementById("n"+i).value.trim();
+    return `${i+1}. [${v}] ${d}${n?" — "+n:""}`});
+  const txt="E31c alignment:\n"+lines.join("\n");const o=document.getElementById("out");o.value=txt;
+  try{await navigator.clipboard.writeText(txt);document.getElementById("copied").textContent="copied"}catch(e){o.select();document.getElementById("copied").textContent="select and copy"}
+};
+drawPipe();drawToy();
+</script>
+</body>
+</html>
