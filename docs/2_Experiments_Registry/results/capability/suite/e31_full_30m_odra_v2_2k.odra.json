@@ -4,7 +4,7 @@
  "name": "e31_full_30m_odra_v2_2k",
  "host": "odra",
  "source_path": "/home/ksopyla/dev/MrCogito-e31/Cache/capability/e31_full_30m_odra_v2_2k",
- "archive_path": "/nas/ml_data/mrcogito/results/capability/e31_full_30m_odra_v2_2k",
+ "archive_path": "/nas/ml_data/mrcogito/results/capability/e31_full_30m_odra_v2_2k.odra",
  "collected": "2026-10-03",
  "suite_version": "2026-09-25.v2",
  "tier": "full",

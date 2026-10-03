@@ -19,7 +19,7 @@ ssh "$HOST" bash -s -- "$NAS" <<'REMOTE'
 set -euo pipefail
 NAS="$1"
 mountpoint -q /nas/ml_data || { echo "NAS not mounted at /nas/ml_data" >&2; exit 1; }
-SKIP='^(Training|Models|Tokenizers|HF.*|hf_home|Datasets|datasets.*|wandb|capability|study|jobs)$'
+SKIP='^(Training|Models|Tokenizers|Morfessor|HF.*|hf_home|Datasets|datasets.*|wandb|capability|study|jobs)$'
 for repo in ~/dev/*/; do
   [ -d "$repo/Cache" ] || continue
   co=$(basename "$repo")

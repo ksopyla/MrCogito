@@ -130,7 +130,7 @@ def collect(root: Path, host: str) -> dict:
     body = collect_suite(root) if is_suite else collect_study(root)
     kind = body["kind"]
     return {"schema": SCHEMA, "kind": kind, "name": root.name, "host": host, "source_path": str(root),
-            "archive_path": f"{NAS_RESULTS}/{'capability' if kind == 'suite' else 'study'}/{root.name}",
+            "archive_path": f"{NAS_RESULTS}/{'capability' if kind == 'suite' else 'study'}/{root.name}.{host}",
             "collected": datetime.date.today().isoformat(), **body}
 
 

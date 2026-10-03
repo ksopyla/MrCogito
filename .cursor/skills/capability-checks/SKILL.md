@@ -59,9 +59,10 @@ bash scripts/pull_capability_results.sh odra ~/dev/MrCogito/Cache/study/e30_vs_e
 ```
 - Writes `docs/2_Experiments_Registry/results/capability/{suite,study}/<name>.<host>.json` (compact:
   per job and arch accuracy ± SE, first letter, per-letter accuracy, bits, speed, every ladder
-  length). **Commit it** — the ledger is the source of truth for every comparison.
+  length; a few hundred KB, refused above 1 MB). **Commit it** — the ledger is the source of truth
+  for every comparison. Nothing else from the server enters the repo: no checkpoints, logs or raw JSON.
 - Copies the whole raw folder (logs, ladders, checkpoints) to
-  `/nas/ml_data/mrcogito/results/{capability,study}/<name>/` on the server (additive).
+  `/nas/ml_data/mrcogito/results/{capability,study}/<name>.<host>/` on the server (additive).
 - The collector is streamed over ssh, so it works on any checkout (e.g. `~/dev/MrCogito-e31`).
 - Results are not logged to W&B (final-only, offline, small); do not look for them there.
 - List what the ledger holds: `uv run python analysis/capability_ledger.py summary`.

@@ -70,7 +70,7 @@ results are committed under `docs/2_Experiments_Registry/results/`, raw folders 
 | layer | what | where | who writes it |
 |---|---|---|---|
 | raw | every log, rung JSON, ladder JSON, checkpoint | server `Cache/capability/<run>` or `Cache/study/<study>` | the runners |
-| archive | the full raw folder | NAS `/nas/ml_data/mrcogito/results/{capability,study}/<name>/` | `scripts/pull_capability_results.sh` |
+| archive | the full raw folder | NAS `/nas/ml_data/mrcogito/results/{capability,study}/<name>.<host>/` | `scripts/pull_capability_results.sh` |
 | **ledger** (source of truth for comparisons) | compact JSON per (folder, host): per job and arch accuracy ± SE, first letter, per-letter accuracy, bits, speed, every ladder length | `docs/2_Experiments_Registry/results/capability/{suite,study}/<name>.<host>.json`, committed | `scripts/pull_capability_results.sh` (collector `analysis/capability_ledger.py`) |
 | scorecard | suite verdict and frontier for one run | `analysis/capability_scorecard.py --in_dir <ledger files or folders>` | on demand |
 | **board** (the visual summary) | all variants: no-harm, length battery, suite grid | `docs/3_Evaluations_and_Baselines/capability_board.html`, published as an Artifact | `analysis/capability_board.py` |

@@ -504,8 +504,8 @@ committed registry, then cite only those paths (rules: `docs/2_Experiments_Regis
 bash scripts/save_eval_results.sh polonez E22_pilot Cache/eval/e22_a Cache/Evaluation_reports/lm_eval/e22_a.json
 git add docs/2_Experiments_Registry/results/evaluations/E22_pilot
 ```
-One folder per evaluated run (`<experiment id>_<run tag>`); checkpoints never, files over 5 MB go to
-the NAS instead. W&B benchmark runs are a second copy, not a replacement.
+One folder per evaluated run (`<experiment id>_<run tag>`). Text only (`.json` `.csv` `.md` `.txt`,
+each under 1 MB, enforced by the script); checkpoints, plots and logs stay on the NAS. W&B benchmark runs are a second copy, not a replacement.
 
 ## Handoff
 When the suite is done and its outputs are saved, hand the collected evidence to **`experiment-track`** to record the

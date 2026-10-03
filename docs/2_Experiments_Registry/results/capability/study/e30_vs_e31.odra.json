@@ -4,7 +4,7 @@
  "name": "e30_vs_e31",
  "host": "odra",
  "source_path": "/home/ksopyla/dev/MrCogito-e31/Cache/study/e30_vs_e31",
- "archive_path": "/nas/ml_data/mrcogito/results/study/e30_vs_e31",
+ "archive_path": "/nas/ml_data/mrcogito/results/study/e30_vs_e31.odra",
  "collected": "2026-10-03",
  "git": ["c56585e6931fc883169bf0b817bbcd15e1f350b0", "a838aef0e14c898a6a2b193dfc34cf4a1f737cb5", "ff87ebb38b5667840cc7574b59b28584538eb176", "2088f60ad9ec9a1b11607fdfc22d447b4326cc94", "0652696e7f590b8c6e23365e17a59288bdd91b90", "5449d460a3fd4fdf7b23a3ffb52ddd4ce2418102", "9253d7aabbf7671642e84b63d1c4841f05cc6311", "f6efc5b2152dc34d314e661b9bca6831a018078b", "5904cc353291c8fef12e90f8794fba5165cac95a", "ab311c98dae4b20a63372647f774cc437d46556a", "bd8c20369392d51ce19de7d2a5cab248cf59ec78"],
  "jobs": [

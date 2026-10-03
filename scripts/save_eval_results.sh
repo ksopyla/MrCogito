@@ -9,8 +9,9 @@
 # <host>  odra | polonez | local
 # <name>  folder under results/evaluations/ — the experiment id plus a short run tag (e.g. E22_pilot)
 # <path>  files or folders, relative to the repo checkout on that host (~/dev/MrCogito) or absolute / ~/...
-# Checkpoints (*.pt, *.bin, *.safetensors) are never copied; files over 5 MB are dropped with a warning
-# (put them on the NAS and cite the NAS path instead). Commit the folder afterwards.
+# Only text results are kept: .json .csv .md .txt, each under 1 MB. Everything else (checkpoints, plots,
+# logs, binaries, big dumps) is dropped with a warning: archive it on the NAS
+# (scripts/archive_reports_to_nas.sh) and cite the NAS path. Commit the folder afterwards.
 set -euo pipefail
 
 HOST="${1:?host (odra|polonez|local)}"
@@ -32,9 +33,10 @@ for P in "$@"; do
   echo "saved: $P"
 done
 
-while IFS= read -r big; do
-  echo "dropped (> 5 MB, archive it on the NAS instead): ${big#$REPO/}" >&2
-  rm -f "$big"
-done < <(find "$DEST" -type f -size +5M)
+while IFS= read -r f; do
+  echo "dropped (not a small text result; keep it on the NAS): ${f#$REPO/}" >&2
+  rm -f "$f"
+done < <(find "$DEST" -type f \( -size +1M -o ! \( -name '*.json' -o -name '*.csv' -o -name '*.md' -o -name '*.txt' \) \))
+find "$DEST" -type d -empty -delete
 
 echo "results: ${DEST#$REPO/} ($(du -sh "$DEST" | cut -f1)) — commit it and cite these paths in the report"
