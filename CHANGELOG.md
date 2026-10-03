@@ -42,6 +42,10 @@ Process spec `docs/engineering_specs/capability_checks.md`.
   `scripts/save_eval_results.sh <host> <name> <files…>` (no checkpoints, ≤ 5 MB per file). Docs no
   longer cite `Cache/` paths (139 such links in current docs, 13 resolvable on the Mac); old links
   are left as written.
+- `scripts/archive_reports_to_nas.sh <host>`: archives every report-like Cache folder of every server
+  checkout (evaluation reports, eval suites, old probe outputs, logs; no checkpoints) to
+  `/nas/ml_data/mrcogito/results/reports/<host>/`. Odra done (50 MB). The collector now counts a job
+  without a DONE marker as done when its rung JSON has results (pre-marker runs) and skips `logs/`.
 
 **Changed (skills and docs):** skill `capability-suite` → `capability-checks` (hub: suite + length
 battery + no-harm + ledger + board; suite details in `suite.md`, battery in `battery.md`);

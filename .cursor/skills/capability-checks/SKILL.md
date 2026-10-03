@@ -65,6 +65,9 @@ bash scripts/pull_capability_results.sh odra ~/dev/MrCogito/Cache/study/e30_vs_e
 - The collector is streamed over ssh, so it works on any checkout (e.g. `~/dev/MrCogito-e31`).
 - Results are not logged to W&B (final-only, offline, small); do not look for them there.
 - List what the ledger holds: `uv run python analysis/capability_ledger.py summary`.
+- Everything else report-like on a server (evaluation reports, eval suites, old probe folders, logs;
+  no checkpoints) goes to the NAS with `bash scripts/archive_reports_to_nas.sh <host>`
+  → `/nas/ml_data/mrcogito/results/reports/<host>/<checkout>/` (additive, safe to re-run).
 
 ### 6 · Score
 - Suite verdict + frontier for one run, straight from the ledger:

@@ -17,4 +17,6 @@ point into `Cache/`; they are not rewritten.
   evaluated run; several checkpoints of one run share it.
 - Copy only what the write-up uses; at most 5 MB per file (checkpoints never). Bigger artefacts go to
   the NAS and are cited by their NAS path.
+- Raw report folders from every server checkout (no checkpoints) are archived with
+  `bash scripts/archive_reports_to_nas.sh <host>` to `/nas/ml_data/mrcogito/results/reports/<host>/`.
 - Append-only, like the rest of `2_Experiments_Registry/`: add new files, never edit numbers by hand.

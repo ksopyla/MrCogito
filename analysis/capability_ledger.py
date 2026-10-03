@@ -46,12 +46,14 @@ def _r(x, nd=5):
     return round(x, nd) if isinstance(x, float) else x
 
 
-def _status(d: Path) -> str:
+def _status(d: Path, results: dict) -> str:
+    """DONE / FAILED markers; a job without a marker counts as done once its rung JSON has results
+    (the probe writes it at the end; runs from before the markers have no marker at all)."""
     if (d / "DONE").exists():
         return "done"
     if (d / "FAILED").exists():
         return "failed"
-    return "running"
+    return "done" if results else "running"
 
 
 def _metrics(r: dict) -> dict:
@@ -91,10 +93,11 @@ def collect_suite(root: Path) -> dict:
         job = json.loads(jp.read_text())
         versions.add(job.get("suite_version"))
         tiers.add(job.get("tier"))
+        results = _rung(jp.parent)
         jobs.append({
             "job_id": job.get("job_id"), "size": job["size"], "cell": job["cell"], "level": job["level"],
-            "seed": job["seed"], "lr": job["lr"], "status": _status(jp.parent), "cmd": job.get("cmd"),
-            "results": _rung(jp.parent),
+            "seed": job["seed"], "lr": job["lr"], "status": _status(jp.parent, results), "cmd": job.get("cmd"),
+            "results": results,
         })
     plan = root / "plan.json"
     git = []
@@ -113,11 +116,11 @@ def collect_study(root: Path) -> dict:
         for j in plan.get("jobs") or []:
             planned[j["name"]] = {"args": j.get("args"), "init": j.get("init"), "phase": plan.get("phase")}
     jobs = []
-    for d in sorted(x for x in root.iterdir() if x.is_dir() and x.name != "launch"):
+    for d in sorted(x for x in root.iterdir() if x.is_dir() and x.name not in ("launch", "logs")):
         ladders = {p.stem: _ladder(p) for p in sorted(d.glob("ladder*.json"))}
-        meta = planned.get(d.name, {})
-        jobs.append({"name": d.name, "status": _status(d), "phase": meta.get("phase"), "args": meta.get("args"),
-                     "init": meta.get("init"), "results": _rung(d), "ladders": ladders})
+        meta, results = planned.get(d.name, {}), _rung(d)
+        jobs.append({"name": d.name, "status": _status(d, results or ladders), "phase": meta.get("phase"),
+                     "args": meta.get("args"), "init": meta.get("init"), "results": results, "ladders": ladders})
     return {"kind": "study", "git": git, "jobs": jobs}
 
 
