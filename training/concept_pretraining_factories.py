@@ -414,6 +414,19 @@ def _build_perceiver_concept_model(tokenizer, model_args, data_args):
     return model, config, model_type
 
 
+def _latent_memory_kwargs(model_args) -> dict:
+    """E31 latent memory + E31c text read + E33a loop config fields. Only passed when
+    `message_write='latent_memory'`, so every older Perceiver AR config is built exactly as before."""
+    if str(getattr(model_args, "message_write", "block_mean") or "block_mean") != "latent_memory":
+        return {}
+    keys = ("lm_read", "lm_context", "lm_window", "lm_stride", "lm_latents", "lm_latent_dim", "lm_heads",
+            "lm_writer_dim", "lm_enc_layers", "lm_rounds", "lm_reader_tokens", "lm_addr", "lm_slot_pos",
+            "message_loop_rounds", "message_loop_exit_aux", "message_loop_exit_targets")
+    out = {k: getattr(model_args, k) for k in keys}
+    out["message_write"] = "latent_memory"
+    return out
+
+
 def _build_perceiver_ar_model(tokenizer, model_args, data_args):
     """E18 — from-scratch Perceiver AR v2 (nn/perceiver_ar_lm.py)."""
     from nn.perceiver_ar_lm import PerceiverARConfig, PerceiverARLM, analytic_param_count
@@ -461,6 +474,9 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
         message_prefix_ae=bool(getattr(model_args, "message_prefix_ae", False)),
         message_prefix_ae_weight=float(getattr(model_args, "message_prefix_ae_weight", 0.0) or 0.0),
         message_prefix_ae_stopgrad_answer=bool(getattr(model_args, "message_prefix_ae_stopgrad_answer", True)),
+        message_raw_window=int(getattr(model_args, "message_raw_window", 0) or 0),
+        message_override=str(getattr(model_args, "message_override", "real") or "real"),
+        **_latent_memory_kwargs(model_args),
         pad_token_id=tokenizer.pad_token_id,
         bos_token_id=tokenizer.bos_token_id if tokenizer.bos_token_id is not None else tokenizer.eos_token_id,
         eos_token_id=tokenizer.eos_token_id,

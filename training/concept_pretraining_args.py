@@ -340,6 +340,40 @@ class ModelArguments:
     message_prefix_ae_stopgrad_answer: bool = field(
         default=True, metadata={"help": "E26: compressor sees AE grads only (detach slots on the read)."}
     )
+    # E31 latent memory on text (E31c). Defaults = off / the E31 suite values, so E18–E30 runs are unchanged.
+    message_write: str = field(
+        default="block_mean", metadata={"help": "E21 block_mean | E30 sw_perceiver | E31 latent_memory."}
+    )
+    message_raw_window: int = field(
+        default=0, metadata={"help": "Global read's raw keys are a causal window of this many tokens (0 = full)."}
+    )
+    message_override: str = field(
+        default="real",
+        metadata={"help": "Train/eval with the notebook: real | none (E31c no-notebook control: raw window only)."},
+    )
+    lm_read: str = field(
+        default="exclusive",
+        metadata={"help": "E31c: exclusive (after QUERY only) | closed (every token reads the windows closed before it)."},
+    )
+    lm_context: str = field(default="page_bidir", metadata={"help": "E31: page_bidir | bixt."})
+    lm_window: int = field(default=256, metadata={"help": "E31: window the notes are written from."})
+    lm_stride: int = field(default=192, metadata={"help": "E31: window stride."})
+    lm_latents: int = field(default=32, metadata={"help": "E31: latents per window."})
+    lm_latent_dim: int = field(default=512, metadata={"help": "E31: latent width."})
+    lm_heads: int = field(default=8, metadata={"help": "E31: latent read heads."})
+    lm_writer_dim: int = field(default=256, metadata={"help": "E31: page-encoder width."})
+    lm_enc_layers: int = field(default=2, metadata={"help": "E31: page-encoder layers (page_bidir)."})
+    lm_rounds: int = field(default=2, metadata={"help": "E31: latent read rounds."})
+    lm_reader_tokens: int = field(default=1, metadata={"help": "E31: reader entries per latent (champion: 1)."})
+    lm_addr: str = field(default="none", metadata={"help": "E31: window_start | none (length-invariant)."})
+    lm_slot_pos: str = field(
+        default="reader", metadata={"help": "E31: read | boundary | scaled | mixed | reader (E31c text: NoPE slots)."}
+    )
+    message_loop_rounds: int = field(default=1, metadata={"help": "E33a: tied [global read + local] loops (1 = off)."})
+    message_loop_exit_aux: float = field(default=0.0, metadata={"help": "E33a: weight of each earlier loop exit."})
+    message_loop_exit_targets: str = field(
+        default="answer", metadata={"help": "E33a: answer (= next token in text) | progress (exam scaffold)."}
+    )
 
 
 @dataclass

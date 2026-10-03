@@ -114,7 +114,8 @@ def cache_profile(arch: str, *, n_layers: int, global_layers: int, n_kv_heads: i
             "bounded_kv_bytes": (n_layers - global_layers) * item * local_window,
             "unbounded_layers": global_layers,
         }
-    if arch in {"e21", "e30", "e30_ctx", "e31_page", "e31_bixt", "e30_li", "e31_li", "e31_li_m1", "e30_ord", "e31_ord_m1", "e30_mix", "e31_mix_m1", "e33a_loop"}:
+    if arch in {"e21", "e30", "e30_ctx", "e31_page", "e31_bixt", "e30_li", "e31_li", "e31_li_m1", "e30_ord", "e31_ord_m1", "e30_mix", "e31_mix_m1", "e33a_loop",
+                "e31c_m1", "e31c_loop"}:
         r = max(float(compress_ratio), 1e-6)
         return {
             "nominal_b_tokens": local_window,  # suffix self-attn is local; prefix is slots only

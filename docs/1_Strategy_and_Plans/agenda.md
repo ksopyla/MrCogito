@@ -20,6 +20,20 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-10-03 — E31c, the E31 notebook on plain text (designed and built; runs wait for go-ahead).**
+  - **The change:** every token reads the notes of the windows that have already closed, plus the
+    last 256 tokens verbatim. Slot keys are matched by content, relative to the reader. With
+    default flags E31 and E33a are bit-identical; on the exams the answers read exactly the same
+    notes.
+  - **Plan:**
+    1. a no-harm ladder check against E31;
+    2. text at 16k (keyed recall in real text + long books), with a no-notebook control and a dense
+       ceiling;
+    3. length transfer to 256k.
+  - No two-level notebook. The compression ladder (12, 16, 32 … tokens per note) comes after,
+    one rung at a time.
+  - Spec [E31c](../experiments_specs/ahead/E31c_text_memory_read.md) ·
+    plan [E31c plan](../experiments_specs/ahead/E31c_text_memory_read_plan.md).
 - **2026-10-03 — E33a read–think–reread loop (approved, running on Odra).** The four E31 main-path layers are
   regrouped: the first local layer runs once, then "global read + local layer" repeats 4 times with tied weights,
   then the last local layer formulates the answer. Every loop's guess is supervised. Bet: the parallel 3-hop chain

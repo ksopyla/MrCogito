@@ -209,6 +209,10 @@ class PerceiverARConfig(PretrainedConfig):
         lm_pos_prior: bool = True,        # per-latent sub-page prior at init
         lm_addr: str = "window_start",    # latent address: "window_start" sinusoid | "none" (length-invariant)
         lm_slot_pos: str = "read",        # slot RoPE position: "read" (what it read) | "boundary" (the QUERY) | "scaled"
+                                          #   | "mixed" | "reader" (E31c: no slot rotation, met by the un-rotated query)
+        message_override: str = "real",  # E31c control: "none" = the model is built and trained without slots
+        lm_read: str = "exclusive",       # E31c — "exclusive" (only tokens after QUERY read earlier sides) |
+                                          #   "closed" (every token reads the windows closed at or before it: text)
         slot_pos_ref: int = 2048,         # "scaled" slot positions: max query–slot distance (order kept, length-invariant)
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
@@ -305,6 +309,8 @@ class PerceiverARConfig(PretrainedConfig):
         self.lm_pos_prior = bool(lm_pos_prior)
         self.lm_addr = str(lm_addr)
         self.lm_slot_pos = str(lm_slot_pos)
+        self.lm_read = str(lm_read)
+        self.message_override = str(message_override)
         self.swp_slot_pos = str(swp_slot_pos)
         self.slot_pos_ref = int(slot_pos_ref)
         self.init_std = init_std
@@ -403,9 +409,16 @@ class PerceiverARConfig(PretrainedConfig):
                 raise ValueError("message_prefix_ae is a block-mean write (E26); not defined for sw_perceiver")
             if self.swp_slot_pos not in ("page", "boundary", "scaled", "mixed"):
                 raise ValueError(f"swp_slot_pos must be page / boundary / scaled / mixed, got {self.swp_slot_pos!r}")
+        if self.message_override not in ("real", "none", "swapped", "raw"):
+            raise ValueError(f"message_override must be real / none / swapped / raw, got {self.message_override!r}")
+        if self.lm_read not in ("exclusive", "closed"):
+            raise ValueError(f"lm_read must be 'exclusive' or 'closed', got {self.lm_read!r}")
+        if self.lm_read == "closed" and self.message_write != "latent_memory":
+            raise ValueError("lm_read='closed' is the E31 text read; it needs message_write='latent_memory'")
         if self.message_write == "latent_memory":
             if not self.message_enabled:
-                raise ValueError("message_write='latent_memory' needs message_boundary_token_id >= 0")
+                raise ValueError("message_write='latent_memory' needs message_boundary_token_id >= 0 "
+                                 "(or lm_read='closed', which needs no question boundary)")
             if self.message_slots_inplace or self.message_identity_slots or self.message_prefix_ae:
                 raise ValueError("latent_memory uses concat slots; inplace / identity / prefix_ae do not apply")
             if self.lm_context not in LM_CONTEXTS:
@@ -419,8 +432,10 @@ class PerceiverARConfig(PretrainedConfig):
                 raise ValueError("lm_stride must be <= lm_window (windows must tile the book)")
             if self.lm_addr not in ("window_start", "none"):
                 raise ValueError(f"lm_addr must be 'window_start' or 'none', got {self.lm_addr!r}")
-            if self.lm_slot_pos not in ("read", "boundary", "scaled", "mixed"):
-                raise ValueError(f"lm_slot_pos must be read / boundary / scaled / mixed, got {self.lm_slot_pos!r}")
+            if self.lm_slot_pos not in ("read", "boundary", "scaled", "mixed", "reader"):
+                raise ValueError(
+                    f"lm_slot_pos must be read / boundary / scaled / mixed / reader, got {self.lm_slot_pos!r}"
+                )
             if self.message_extra_slot_attends or self.message_update_slot_kv:
                 raise ValueError("latent_memory: extra slot attends are not defined (read once; E31a reads per layer)")
         if self.message_raw_window < 0:
@@ -441,8 +456,12 @@ class PerceiverARConfig(PretrainedConfig):
     @property
     def message_enabled(self) -> bool:
         """E21: rows may carry a sender|receiver boundary token; receivers read the prefix only
-        through compressed slots of the global read."""
-        return self.message_boundary_token_id >= 0
+        through compressed slots of the global read. E31c: the closed-window latent memory is always
+        on (every token reads the closed windows), with or without a boundary token."""
+        return self.message_boundary_token_id >= 0 or (
+            getattr(self, "message_write", "block_mean") == "latent_memory"
+            and getattr(self, "lm_read", "exclusive") == "closed"
+        )
 
     @property
     def total_layers(self) -> int:
@@ -706,11 +725,28 @@ def _band_block_mask(mask_mod, *, B: int, Q_LEN: int, KV_LEN: int, window: int, 
 
 
 def _message_extra_blocks(ctx: "MessageCtx", S: int, block: int = 128) -> Optional[torch.Tensor]:
-    """Slot KV blocks for every query block that holds a receiver token (superset)."""
+    """Slot KV blocks for every query block that holds a receiver token (superset). Closed read
+    (E31c): for each query block, the slot blocks holding a slot whose window closed at or before
+    the block's last query."""
     if ctx.override in ("none", "raw") or ctx.n_slots == 0:
         return None
     B = ctx.side.shape[0]
     nqb = -(-S // block)
+    if ctx.read_rule == "closed":
+        nb = ctx.n_slots
+        big = torch.iinfo(torch.long).max
+        close = torch.where((ctx.slot_doc >= 0) & (ctx.slot_close >= 0), ctx.slot_close,
+                            torch.full_like(ctx.slot_close, big))
+        # slot j is KV index S + j: align slots to KV blocks, then the earliest close per KV block
+        first, last = S // block, (S + nb - 1) // block
+        lead = S - first * block
+        n_kb = last - first + 1
+        close = F.pad(close, (lead, n_kb * block - lead - nb), value=big).view(B, n_kb, block).amin(-1)
+        q_hi = torch.clamp(torch.arange(nqb, device=close.device) * block + block - 1, max=S - 1)
+        need = close[:, None, :] <= q_hi[None, :, None]  # [B, nqb, n_kb]
+        ids = torch.arange(first, last + 1, device=close.device)
+        ex = ids[None, None, :].expand(B, nqb, n_kb)
+        return torch.where(need, ex, torch.full_like(ex, -1))
     pad = nqb * block - S
     side = F.pad(ctx.side, (0, pad), value=0) if pad else ctx.side
     has_recv = (side.view(B, nqb, block) >= 1).any(-1)  # [B, nqb]
@@ -844,6 +880,9 @@ class MessageCtx:
     slot_pos_lo: Optional[torch.Tensor] = None  # "mixed" slot positions: the low-frequency pairs' position
     raw_window: int = 0         # >0: raw keys only within `q - j < raw_window` (linear-cost global layer)
     window_valid: Optional[torch.Tensor] = None  # [B,n_w,W] per-window pool mask (E30 / E31)
+    read_rule: str = "exclusive"  # E31c "closed": any token reads slots of its document whose window closed ≤ it
+    slot_close: Optional[torch.Tensor] = None  # [B,nb] int64 — last token a slot's window wrote from (closed rule)
+    slot_nope: bool = False       # E31c "reader": slot keys are un-rotated and met by the un-rotated query
 
     @property
     def n_slots(self) -> int:
@@ -959,6 +998,16 @@ def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Te
     anchor = ctx.anchor
     if anchor is None:
         anchor = torch.zeros(tag.shape, dtype=torch.bool, device=tag.device)
+    closed = ctx.read_rule == "closed"
+    if closed:
+        # E31c: one int32 per slot, doc · S + close (no extra captured tensor; see the docstring)
+        if ctx.slot_close is None:
+            raise RuntimeError("the closed read needs ctx.slot_close")
+        n_doc = int(ctx.slot_doc.max().item()) + 1 if ctx.slot_doc.numel() else 1
+        if max(n_doc, 1) * S >= 2**31:
+            raise ValueError(f"closed read: {n_doc} documents × {S} tokens overflow the int32 slot code")
+        slot_tag = torch.where((ctx.slot_doc < 0) | (ctx.slot_close < 0), torch.full_like(ctx.slot_doc, -1),
+                               ctx.slot_doc * S + ctx.slot_close).to(torch.int32)
 
     def pred(b, h, q, kv):
         is_raw = kv < S
@@ -984,8 +1033,13 @@ def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Te
         if not slots_on:
             return raw_ok & is_raw
         s = slot_tag[b, js]
-        d = tq - s
-        slot_ok = (j < nb) & (s >= 0) & (d > 0) & (d < n_sides)
+        if closed:
+            dq = torch.div(tq, m, rounding_mode="floor")
+            s_doc = torch.div(s, S, rounding_mode="floor")
+            slot_ok = (j < nb) & (s >= 0) & (tq >= 0) & (s_doc == dq) & (s - s_doc * S <= q)
+        else:
+            d = tq - s
+            slot_ok = (j < nb) & (s >= 0) & (d > 0) & (d < n_sides)
         return torch.where(is_raw, raw_ok, slot_ok)
 
     return pred
@@ -1012,12 +1066,21 @@ def dense_message_mask(S: int, ctx: MessageCtx, key_valid: Optional[torch.Tensor
             raw = raw | (causal_doc & anc)
     if key_valid is not None:
         raw = raw & (key_valid.bool()[:, None, None, :] | torch.eye(S, dtype=torch.bool, device=device)[None, None])
-    slot = (
-        (side[:, None, :, None] >= 1)
-        & (ctx.slot_doc[:, None, None, :] >= 0)
-        & (ctx.slot_doc[:, None, None, :] == doc[:, None, :, None])
-        & (ctx.slot_side[:, None, None, :] < side[:, None, :, None])
-    )
+    if ctx.read_rule == "closed":  # E31c: every token reads its document's windows closed at or before it
+        slot = (
+            (doc[:, None, :, None] >= 0)
+            & (ctx.slot_doc[:, None, None, :] >= 0)
+            & (ctx.slot_doc[:, None, None, :] == doc[:, None, :, None])
+            & (ctx.slot_close[:, None, None, :] >= 0)
+            & (ctx.slot_close[:, None, None, :] <= q[None, None])
+        )
+    else:
+        slot = (
+            (side[:, None, :, None] >= 1)
+            & (ctx.slot_doc[:, None, None, :] >= 0)
+            & (ctx.slot_doc[:, None, None, :] == doc[:, None, :, None])
+            & (ctx.slot_side[:, None, None, :] < side[:, None, :, None])
+        )
     if ctx.override in ("none", "raw"):
         slot = torch.zeros_like(slot)
     return torch.cat([raw.expand(B, 1, S, S), slot], dim=-1)
@@ -1406,12 +1469,24 @@ class PrefixAEHead(nn.Module):
         return self.proj(k_bar.reshape(B, nb, g * dh)).view(B, nb, self.r, self.vocab)
 
 
-def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend, block_masks=None):
-    """Global read over raw keys ‖ message slots with the E21 mask. Returns [B,S,h,dh]."""
+def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend, block_masks=None,
+                   q_slot=None):
+    """Global read over raw keys ‖ message slots with the E21 mask. Returns [B,S,h,dh].
+
+    `q_slot` (E31c "reader" slot keys): the query used against the slots instead of `q` (the
+    un-rotated query, while `q` is RoPE'd for the raw keys). One softmax over both, done exactly by
+    concatenating head dims: Q = [q, q_slot], raw K = [k, 0], slot K = [0, k̄], scale 1/√dh — so
+    the raw logits are q·k and the slot logits q_slot·k̄. Values keep width dh."""
     B, S, h, dh = q.shape
     g = k.shape[2]
     if backend == "flash":
         raise NotImplementedError("message boundary needs flex or sdpa")
+    scale = None
+    if q_slot is not None:
+        q = torch.cat([q, q_slot.to(q.dtype)], dim=-1)
+        k = torch.cat([k, torch.zeros_like(k)], dim=-1)
+        k_bar = torch.cat([torch.zeros_like(k_bar), k_bar], dim=-1)
+        scale = dh ** -0.5
     K = torch.cat([k, k_bar.to(k.dtype)], dim=1)
     V = torch.cat([v, v_bar.to(v.dtype)], dim=1)
     qt, kt, vt = (t.transpose(1, 2) for t in (q, K, V))
@@ -1434,14 +1509,14 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
             if block_masks is not None:
                 block_masks[memo_key] = bm
         qt, kt, vt = qt.contiguous(), kt.contiguous(), vt.contiguous()
-        out = _get_flex()(qt, kt, vt, block_mask=bm, enable_gqa=(g != h))
+        out = _get_flex()(qt, kt, vt, block_mask=bm, enable_gqa=(g != h), scale=scale)
         return out.transpose(1, 2)
     if g != h:
         rep = h // g
         kt = kt.repeat_interleave(rep, dim=1)
         vt = vt.repeat_interleave(rep, dim=1)
     mask = dense_message_mask(S, ctx, key_valid, q.device)
-    out = F.scaled_dot_product_attention(qt, kt, vt, attn_mask=mask)
+    out = F.scaled_dot_product_attention(qt, kt, vt, attn_mask=mask, scale=scale)
     return out.transpose(1, 2)
 
 
@@ -1721,6 +1796,7 @@ class Attention(nn.Module):
                 out = out + 0.0 * self.compressor.participation().to(out.dtype)
             return out
         k = k_un
+        q_un = q
         if self.use_rope:
             q, k = apply_rope(q, cos, sin), apply_rope(k, cos, sin)
         q = self._scale_q(q, pos)
@@ -1728,8 +1804,10 @@ class Attention(nn.Module):
             k_bar, v_bar = self.message_slots(x, k_raw, v, message, key_valid, rope_theta)
             if message.override == "swapped":
                 k_bar, v_bar = k_bar.roll(1, dims=0), v_bar.roll(1, dims=0)
+            # E31c "reader" slot keys: met by the un-rotated query (exact; see attend_message)
+            q_slot = self._scale_q(q_un, pos) if (getattr(message, "slot_nope", False) and self.use_rope) else None
             o = attend_message(q, k, v, k_bar, v_bar, ctx=message, key_valid=key_valid,
-                               backend=self.backend, block_masks=block_masks)
+                               backend=self.backend, block_masks=block_masks, q_slot=q_slot)
             out = self.wo(o.reshape(B, S, self.h * self.dh))
 
             def _rewrite_concat(h):
@@ -1949,7 +2027,9 @@ class PerceiverARLM(PreTrainedModel):
         self._collect_loop_states = False
         self.gradient_checkpointing = False
         self._flce = None
-        self._message_override = "real"
+        # default "real"; a no-notebook control (E31c) keeps "none" in its saved config, so evals of
+        # its checkpoint never switch on an untrained writer
+        self._message_override = str(getattr(config, "message_override", "real") or "real")
         self._last_message_ctx = None
         self._last_prefix_ae = None
         if cfg.message_prefix_ae:
@@ -2099,16 +2179,19 @@ class PerceiverARLM(PreTrainedModel):
         return slot_doc, slot_side, slot_pos, pool_valid, pick
 
     def _lm_slot_tensors(self, side, doc, pos, key_valid):
-        """E31 geometry → slot_doc/side (per reader entry) and a placeholder slot_pos
-        (overwritten by the writer's expected positions)."""
+        """E31 geometry → slot_doc/side (per reader entry), a placeholder slot_pos (overwritten by
+        the writer's expected positions) and slot_close [B, nb]: the row index of the last token
+        each window wrote from (E31c closed read: readable by tokens at or after it)."""
         B, S = side.shape
         geo = lm_geometry(self.config, S)
-        _tok, pick, slot_doc_w, slot_side_w, _has = window_pick(side, doc, key_valid, geo.starts, geo.window)
+        tok, pick, slot_doc_w, slot_side_w, _has = window_pick(side, doc, key_valid, geo.starts, geo.window)
         rep = geo.latents * geo.reader_tokens
         slot_doc = slot_doc_w.repeat_interleave(rep, dim=1)
         slot_side = slot_side_w.repeat_interleave(rep, dim=1)
         slot_pos = torch.zeros_like(slot_doc)
-        return slot_doc, slot_side, slot_pos, pick
+        last = torch.where(pick, tok[None].expand_as(pick), torch.full_like(pick, -1, dtype=torch.long)).amax(-1)
+        slot_close = last.repeat_interleave(rep, dim=1)  # −1 only where the window wrote nothing (slot_doc −1)
+        return slot_doc, slot_side, slot_pos, pick, slot_close
 
     def _message_context(
         self,
@@ -2145,8 +2228,12 @@ class PerceiverARLM(PreTrainedModel):
                 anchor_mode="none",
                 raw_window=int(getattr(cfg, "message_raw_window", 0) or 0),
             )
-        is_b = input_ids == cfg.message_boundary_token_id
-        if not bool(is_b.any()):
+        closed = str(getattr(cfg, "lm_read", "exclusive")) == "closed"
+        if cfg.message_boundary_token_id >= 0:
+            is_b = input_ids == cfg.message_boundary_token_id
+        else:
+            is_b = torch.zeros_like(input_ids, dtype=torch.bool)
+        if not closed and not bool(is_b.any()):
             return None
         starts = self._doc_starts(doc)
         cum = is_b.long().cumsum(dim=1)
@@ -2158,6 +2245,7 @@ class PerceiverARLM(PreTrainedModel):
         else:
             local = torch.where(doc < 0, doc, doc * K + side)
         window_valid = None
+        slot_close = None
         write = str(getattr(cfg, "message_write", "block_mean") or "block_mean")
         if write == "sw_perceiver":
             slot_doc, slot_side, slot_pos, pool_valid, window_valid = self._swp_slot_tensors(
@@ -2174,7 +2262,7 @@ class PerceiverARLM(PreTrainedModel):
                 else:
                     slot_pos = bnd if cfg.swp_slot_pos == "boundary" else scaled_slot_pos(slot_pos, bnd, ref)
         elif write == "latent_memory":
-            slot_doc, slot_side, slot_pos, window_valid = self._lm_slot_tensors(side, doc, pos, key_valid)
+            slot_doc, slot_side, slot_pos, window_valid, slot_close = self._lm_slot_tensors(side, doc, pos, key_valid)
             pool_valid = None
         else:
             nb = -(-S // r)
@@ -2233,7 +2321,9 @@ class PerceiverARLM(PreTrainedModel):
                           extra_slot_attends=int(getattr(cfg, "message_extra_slot_attends", 0) or 0),
                           update_slot_kv=bool(getattr(cfg, "message_update_slot_kv", False)),
                           anchor=anchor, anchor_mode=anchor_mode, window_valid=window_valid,
-                          raw_window=int(getattr(cfg, "message_raw_window", 0) or 0))
+                          raw_window=int(getattr(cfg, "message_raw_window", 0) or 0),
+                          read_rule="closed" if closed else "exclusive", slot_close=slot_close,
+                          slot_nope=write == "latent_memory" and str(getattr(cfg, "lm_slot_pos", "read")) == "reader")
         self._last_message_ctx = ctx
         return ctx
 
