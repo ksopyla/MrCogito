@@ -131,8 +131,14 @@ def _keymark_token_ids(cfg) -> tuple[int, ...]:
         return ()
 
 
-def make_batch(cfg, rng, batch: int, device, *, round_targets: int = 0):
-    rows = [generate_row_for(cfg, rng) for _ in range(batch)]
+def make_batch(cfg, rng, batch: int, device, *, round_targets: int = 0, replay=None):
+    """`replay=(cfg_rep, frac)`: that fraction of the rows comes from a second exam (same length and
+    vocabulary), the rest from `cfg` (E33a no-harm replay)."""
+    n_rep = 0
+    if replay is not None and replay[0] is not None:
+        n_rep = int(round(batch * float(replay[1])))
+    rows = [generate_row_for(cfg, rng) for _ in range(batch - n_rep)]
+    rows += [generate_row_for(replay[0], rng) for _ in range(n_rep)]
     ids = torch.from_numpy(np.stack([r.input_ids for r in rows])).long().to(device)
     labels = torch.from_numpy(np.stack([r.labels for r in rows])).long().to(device)
     if round_targets <= 0:
@@ -142,11 +148,13 @@ def make_batch(cfg, rng, batch: int, device, *, round_targets: int = 0):
 
 def round_target_labels(rows, labels: torch.Tensor, n_rounds: int) -> torch.Tensor:
     """E33 per-round targets [n_rounds, B, S]: at the answer positions, round r's target is chain
-    node r+1 (the terminal from the last hop on); -100 elsewhere and on rows without `nodes`."""
+    node r+1 (the terminal from the last hop on); -100 elsewhere. Rows without `nodes` (e.g. E33a
+    lookup replay) keep their own answer labels."""
     out = labels.new_full((n_rounds, *labels.shape), -100)
     for b, row in enumerate(rows):
         nodes = (row.meta or {}).get("nodes")
         if not nodes:
+            out[:, b] = labels[b]
             continue
         pos = (labels[b] != -100).nonzero().flatten()
         for r in range(n_rounds):
@@ -204,6 +212,75 @@ def evaluate(model, batches, *, amp: str, device: torch.device, message_override
         "acc_se": _row_se(row_acc),
         "per_position_acc": [h / c for h, c in zip(pos_hits, pos_n)],
     }
+
+
+def _first_letter_hits(logits: torch.Tensor, labels: torch.Tensor) -> tuple[int, int]:
+    """(hits, rows) for the first supervised position of each row (the honest multi-candidate score)."""
+    pred = logits[:, :-1].argmax(-1)
+    tgt = labels[:, 1:]
+    m = tgt != -100
+    has = m.any(-1)
+    first = m.float().argmax(-1)
+    idx = torch.arange(tgt.shape[0], device=tgt.device)
+    ok = (pred[idx, first] == tgt[idx, first]) & has
+    return int(ok.sum()), int(has.sum())
+
+
+@torch.no_grad()
+def _loop_and_replay_eval(model, cfg, args, device, override: str) -> dict:
+    """E33a: first-letter accuracy at every loop exit (exit r == the R = r forward), against the answer
+    and against the progress target (chain node r); and the replay exam at the last exit and at exit 1."""
+    out: dict = {}
+    rows_n = max(int(args.batch), int(args.eval_rows))
+    R = int(getattr(model, "loop_rounds", 1) or 1)
+    ctx = amp_ctx(device, args.amp)
+    model.eval()
+    try:
+        if R > 1:
+            rng = np.random.default_rng(args.seed + 4242)
+            acc = {r: [0, 0, 0, 0] for r in range(1, R + 1)}
+            done = 0
+            while done < rows_n:
+                b = min(int(args.batch), rows_n - done)
+                rows = [generate_row_for(cfg, rng) for _ in range(b)]
+                ids = torch.from_numpy(np.stack([r.input_ids for r in rows])).long().to(device)
+                labels = torch.from_numpy(np.stack([r.labels for r in rows])).long().to(device)
+                tg = round_target_labels(rows, labels, R)
+                for r in range(1, R + 1):
+                    model._loop_rounds_override = r
+                    with _message_cm(model, override), ctx:
+                        logits = model(ids, return_logits=True).logits
+                    h, n = _first_letter_hits(logits, labels)
+                    hp, n_p = _first_letter_hits(logits, tg[r - 1])
+                    acc[r][0] += h; acc[r][1] += n; acc[r][2] += hp; acc[r][3] += n_p
+                done += b
+            model._loop_rounds_override = None
+            out["loop_exits"] = {
+                f"exit{r}": {"first_answer": a[0] / max(a[1], 1), "first_progress": a[2] / max(a[3], 1), "rows": a[1]}
+                for r, a in acc.items()
+            }
+            print("  loop exits (first letter: answer / progress node): " + "  ".join(
+                f"r{r} {a[0] / max(a[1], 1):.3f}/{a[2] / max(a[3], 1):.3f}" for r, a in acc.items()), flush=True)
+        rep_cfg = getattr(args, "_replay_cfg", None)
+        if rep_cfg is not None:
+            rng = np.random.default_rng(args.seed + 4343)
+            batches = [make_batch(rep_cfg, rng, int(args.batch), device) for _ in range(max(1, rows_n // int(args.batch)))]
+            res = {}
+            for tag, r in (("last", None), ("exit1", 1 if R > 1 else None)):
+                if tag == "exit1" and r is None:
+                    continue
+                model._loop_rounds_override = r
+                ev = evaluate(model, batches, amp=args.amp, device=device, message_override=override)
+                res[tag] = {"first": (ev["per_position_acc"] or [float("nan")])[0], "acc": ev["acc"],
+                            "ce_nats": ev["ce_nats"], "rows": ev["rows"]}
+            model._loop_rounds_override = None
+            out["replay_eval"] = {"recipe": args.replay_recipe, **res}
+            print("  replay " + str(args.replay_recipe) + ": " + "  ".join(
+                f"{k} first {v['first']:.3f}" for k, v in res.items()), flush=True)
+    finally:
+        model._loop_rounds_override = None
+        model.train()
+    return out
 
 
 def _row_se(values: list[float]) -> float:
@@ -442,7 +519,7 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
     if init_path is not None:
         state = torch.load(init_path, map_location=device, weights_only=False)
         missing, unexpected = model.load_state_dict(state["state_dict"], strict=False)
-        bad = [k for k in missing if not k.endswith("round_emb")] + list(unexpected)
+        bad = [k for k in missing if not k.endswith(("round_emb", "loop_emb", "loop_gate"))] + list(unexpected)
         if bad:
             raise SystemExit(f"--init_ckpt {init_path}: incompatible keys {bad[:6]}")
         if missing:  # E33: a looped model starting from single-read weights (round embeddings start at 0)
@@ -499,7 +576,12 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
         if not geo.sliding:
             print("  [e30] WARNING: n_windows<2 — this length is not the sliding claim", flush=True)
     override = args.message_override if arch in EXCLUSIVE_ARCHES else "real"
-    opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01, betas=(0.9, 0.95))
+    if getattr(args, "freeze_writer", False) and getattr(model, "memory_writer", None) is not None:
+        model.memory_writer.requires_grad_(False)
+        print(f"  [{arch}] writer frozen ({sum(p.numel() for p in model.memory_writer.parameters())/1e6:.2f}M params)",
+              flush=True)
+    trainable = [p for p in model.parameters() if p.requires_grad]
+    opt = torch.optim.AdamW(trainable, lr=args.lr, weight_decay=0.01, betas=(0.9, 0.95))
     warmup = max(1, min(50, steps // 10))
 
     def lr_factor(step: int) -> float:
@@ -523,7 +605,10 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
         while step < max_steps:
             step += 1
             n_aux = (int(getattr(args, "message_read_rounds", 1)) - 1) if getattr(args, "round_aux", 0) > 0 else 0
-            batch_out = make_batch(cfg, rng, args.batch, device, round_targets=n_aux)
+            if getattr(args, "loop_exit_aux", 0) > 0 and getattr(args, "loop_exit_targets", "progress") == "progress":
+                n_aux = max(n_aux, int(getattr(args, "loop_rounds", 1)) - 1)
+            batch_out = make_batch(cfg, rng, args.batch, device, round_targets=n_aux,
+                                   replay=(getattr(args, "_replay_cfg", None), getattr(args, "replay_frac", 0.0)))
             ids, labels = batch_out[0], batch_out[1]
             aux = batch_out[2] if n_aux > 0 else None
             # --grad_accum k: same effective batch (args.batch rows) in k micro-batches
@@ -536,7 +621,7 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
                     loss_m = out.loss if hasattr(out, "loss") else out[0].loss
                 (loss_m / micro).backward()
                 loss = loss_m if mi == 0 else loss
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            torch.nn.utils.clip_grad_norm_(trainable, 1.0)
             opt.step()
             sched.step()
             opt.zero_grad(set_to_none=True)
@@ -599,6 +684,8 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
         )
         extra["slot_geometry"] = _slot_rankme(model, eval_batches, amp=args.amp, device=device)
         extra["write_geometry"] = _write_geometry(model, cfg.seq_len)
+        if getattr(model, "loop_emb", None) is not None or getattr(args, "_replay_cfg", None) is not None:
+            extra.update(_loop_and_replay_eval(model, cfg, args, device, override))
         ae = getattr(model, "_last_prefix_ae", None)
         if ae:
             extra["prefix_ae"] = ae
@@ -685,6 +772,12 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         cli.update({"n_decoys": args.n_decoys, "evidence_align": args.evidence_align})
     over.update({k: v for k, v in cli.items() if v is not None})
     cfg = config_for(scale, recipe.task, **over)
+    args._replay_cfg = None
+    if getattr(args, "replay_recipe", None):
+        rep = resolve_recipe(args.replay_recipe)
+        args._replay_cfg = config_for(scale, rep.task, **{**rep.overrides, "seq_len": cfg.seq_len})
+        if args._replay_cfg.vocab.vocab_size != cfg.vocab.vocab_size:
+            raise SystemExit("--replay_recipe must share the vocabulary of the main exam")
     window = args.local_window if args.local_window is not None else scale.local_window
     spec = ArchSpec(
         name="shared",
@@ -751,6 +844,11 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         slot_pos_ref=args.slot_pos_ref,
         message_read_rounds=args.message_read_rounds,
         message_round_aux=args.round_aux,
+        message_loop_rounds=args.loop_rounds,
+        message_loop_span=args.loop_span,
+        message_loop_inject=args.loop_inject,
+        message_loop_exit_aux=args.loop_exit_aux,
+        message_loop_exit_targets=args.loop_exit_targets,
     )
     card = rung_card(scale, recipe.task, **over)
     card["local_window"] = window
@@ -1157,6 +1255,20 @@ def main() -> int:
                    help="E33: tied read → update rounds of the exclusive global read (slots frozen after round 1)")
     p.add_argument("--round_aux", type=float, default=0.0,
                    help="E33: weight of per-round chain-node targets (read round r predicts node r+1; chain exams)")
+    p.add_argument("--loop_rounds", type=int, default=1,
+                   help="E33a: tied loop of [global read + --loop_span layers] (1 = today's stack)")
+    p.add_argument("--loop_span", type=int, default=1, help="E33a: layers after the global read inside the loop")
+    p.add_argument("--loop_inject", default="none", choices=("none", "prelude"),
+                   help="E33a: add the prelude output back each loop (zero-init scalar gate)")
+    p.add_argument("--loop_exit_aux", type=float, default=0.0,
+                   help="E33a: weight of each non-final loop exit (decoded through the answer layer)")
+    p.add_argument("--loop_exit_targets", default="progress", choices=("progress", "answer"),
+                   help="E33a: exit r predicts chain node r (progress) or the final answer")
+    p.add_argument("--replay_recipe", default=None,
+                   help="E33a: mix rows of this recipe into every training batch (no-harm replay), e.g. recall_single")
+    p.add_argument("--replay_frac", type=float, default=0.25, help="E33a: fraction of each batch from --replay_recipe")
+    p.add_argument("--freeze_writer", action="store_true",
+                   help="E33a: freeze the E31 memory writer (the notebook stays exactly as initialised)")
     p.add_argument("--slot_pos_ref", type=int, default=2048, help="'scaled' slot positions: max query–slot distance")
     p.add_argument("--lm_slot_pos", default="read", choices=("read", "boundary", "scaled", "mixed"),
                    help="slot RoPE position: what the latent read, or the QUERY boundary (length-invariant).")

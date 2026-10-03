@@ -20,6 +20,13 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-10-03 — E33a read–think–reread loop (approved, running on Odra).** The four E31 main-path layers are
+  regrouped: the first local layer runs once, then "global read + local layer" repeats 4 times with tied weights,
+  then the last local layer formulates the answer. Every loop's guess is supervised. Bet: the parallel 3-hop chain
+  goes from 46 % to ≥ 75 % with no new weight matrices and lookup unchanged. Spec
+  [E33a](../experiments_specs/ahead/E33a_reread_loop.md) · page
+  [e33a_architecture.html](../3_Evaluations_and_Baselines/e33a_architecture.html) · literature
+  [latent reasoning review](../4_Research_Notes/latent_reasoning_review_20261001.html).
 - **2026-10-01 — E31 chosen; E30 parked.** The E30 vs E31 limits study ([E31b](../experiments_specs/ahead/E31b_e30_vs_e31_limits.md),
   [interactive report](../3_Evaluations_and_Baselines/e31b_memory_study_report.html)) closed in favour of
   E31. Its stateful latents keep lookup and decoy retrieval to 128k, and the 4-hop chain only transfers in

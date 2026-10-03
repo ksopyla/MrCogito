@@ -15,6 +15,24 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-10-03] - E33a read–think–reread loop (tied loop over the layers above the global read)
+
+**Why:** E33's read-only loop gave no multi-hop gain. E33a loops the global read *and* the next local layer, and
+decodes every loop through the untied answer layer (deep supervision). Spec
+`docs/experiments_specs/ahead/E33a_reread_loop.md`.
+
+**Added (all default-off; old checkpoints and configs are unchanged):**
+- `PerceiverARConfig.message_loop_rounds / _span / _inject / _exit_aux / _exit_targets`. `PerceiverARLM` runs
+  prelude → [global read + span layers] × R (tied, zero-init `loop_emb`) → answer layer. Exits are computed in
+  `_run_layers` and their loss in `_loop_exit_loss`. `_loop_rounds_override` makes exit r equal to the R = r
+  forward.
+- Probe: `--loop_*` flags, `--replay_recipe/--replay_frac` (mixed batches), `--freeze_writer`, and a final
+  per-exit + replay evaluation (`loop_exits`, `replay_eval` in the rung JSON). `round_target_labels` falls back to
+  the answer on rows without chain nodes.
+- Length ladder: `--loop_rounds`, `--recipe` (ladder another exam than the trained one).
+- Study runner: a `ladders` job field for extra ladders. Study phase `e33a` (27 jobs).
+- Tests: `tests/test_reread_loop.py`.
+
 ## [2026-09-24] - Capability suite: standard graded exams for new architectures
 
 **Why:**

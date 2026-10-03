@@ -77,8 +77,15 @@ def load(ckpt_path: Path, *, seq_len: int, backend: str, device: torch.device):
     return model.to(device).eval(), state
 
 
-def data_config(state: dict, seq_len: int):
+def data_config(state: dict, seq_len: int, recipe: str | None = None):
+    """The checkpoint's training exam at `seq_len`, or another recipe (E33a: lookup no-harm ladder of a
+    chain-trained checkpoint)."""
     d = state["data"]
+    if recipe:
+        from data.bapo_ladder import resolve_recipe
+
+        rec = resolve_recipe(recipe)
+        return config_for(SCALES[d["scale"]], rec.task, **{**rec.overrides, "seq_len": int(seq_len)})
     over = dict(d["over"])
     over["seq_len"] = int(seq_len)
     return config_for(SCALES[d["scale"]], d["task"], **over)
@@ -162,6 +169,9 @@ def main() -> int:
     p.add_argument("--need_first", action="store_true",
                    help="re-evaluate cells saved before first-letter accuracy was recorded")
     p.add_argument("--out", default=None, help="JSON path (default <ckpt>/ladder.json)")
+    p.add_argument("--recipe", default=None, help="ladder this recipe instead of the checkpoint's own exam")
+    p.add_argument("--loop_rounds", type=int, default=None,
+                   help="E33a: evaluate looped checkpoints with this many loops (default: as trained)")
     args = p.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -192,7 +202,9 @@ def main() -> int:
             if backend == "auto":
                 backend = "flex" if (device.type == "cuda" and L > 8192) else "sdpa"
             model, state = load(path, seq_len=L, backend=backend, device=device)
-            cfg = data_config(state, L)
+            if args.loop_rounds is not None and getattr(model, "loop_emb", None) is not None:
+                model._loop_rounds_override = int(args.loop_rounds)
+            cfg = data_config(state, L, args.recipe)
             if device.type == "cuda":
                 torch.cuda.empty_cache()
                 torch.cuda.reset_peak_memory_stats()

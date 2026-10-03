@@ -10,6 +10,8 @@ A *plan* is a Python module under `scripts/study_plans/` exposing
     init      name of the job whose checkpoint this one starts from (curriculum), or None
     ladder    lengths for verification/length_ladder.py after training, or None
     rows      ladder rows per length (default 64)
+    ladders   extra ladders after training: list of {"lengths", "args", "out"} (e.g. a lookup no-harm
+              ladder of a chain-trained checkpoint: args ["--recipe", "recall_single"], out "ladder_lookup.json")
     save      keep the checkpoint (default: True when a ladder runs or a child needs it)
 
 Jobs linked by `init` form a chain: a child waits for its parent (queued on the same host) to
@@ -68,7 +70,7 @@ def assign(jobs: list[dict], gpus: list[str]) -> dict[str, list[dict]]:
 def job_lines(j: dict, *, out: Path, base: list[str], parents: set[str], local: set[str]) -> list[str]:
     d = out / j["name"]
     q = shlex.quote
-    save = j.get("save", bool(j.get("ladder")) or j["name"] in parents)
+    save = j.get("save", bool(j.get("ladder") or j.get("ladders")) or j["name"] in parents)
     cmd = ["uv", "run", "python", PROBE, *base, *j["args"], "--out", str(d)]
     if save:
         cmd += ["--save_ckpt", "@out"]
@@ -98,6 +100,14 @@ def job_lines(j: dict, *, out: Path, base: list[str], parents: set[str], local: 
         ]
     else:
         lines += ["  lrc=0"]
+    for k, extra in enumerate(j.get("ladders") or []):
+        lad = ["uv", "run", "python", LADDER, "--ckpt", str(d), "--lengths", *map(str, extra["lengths"]),
+               "--rows", str(extra.get("rows", j.get("rows", 64))), *extra.get("args", []),
+               "--out", str(d / extra["out"])]
+        lines += [
+            f"  if {{ [ $rc -eq 0 ] || [ $rc -eq 2 ]; }} && [ $lrc -eq 0 ]; then {shlex.join(lad)} > "
+            f"{q(str(d / ('ladder_extra%d.log' % k)))} 2>&1; lrc=$?; echo \"EXIT-LADDER{k + 1} {j['name']} $lrc\"; fi",
+        ]
     lines += [
         f'  if {{ [ $rc -eq 0 ] || [ $rc -eq 2 ]; }} && [ $lrc -eq 0 ]; then touch {q(str(d / "DONE"))}; '
         f'else touch {q(str(d / "FAILED"))}; fi',

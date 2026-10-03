@@ -172,6 +172,11 @@ class PerceiverARConfig(PretrainedConfig):
         message_extra_slot_attends: int = 0,  # E21 — extra exclusive attends over frozen slots
         message_read_rounds: int = 1,     # E33 — tied read→update rounds of the global block (slots frozen after round 1)
         message_round_aux: float = 0.0,   # E33 — weight of per-round targets (round r predicts chain node r+1)
+        message_loop_rounds: int = 1,     # E33a — tied loop of [global read + span layers]; 1 = today's stack
+        message_loop_span: int = 1,       # E33a — layers after the global read inside the loop
+        message_loop_inject: str = "none",  # E33a — "prelude": add the prelude output back each loop (gated)
+        message_loop_exit_aux: float = 0.0,  # E33a — weight of each non-final loop exit's CE
+        message_loop_exit_targets: str = "progress",  # E33a — "progress" (round targets) | "answer" (labels)
         message_update_slot_kv: bool = False,  # E21 — rewrite exclusive slot K/V between extra hops
         message_global_anchors: str = "none",  # E21 — sparse raw keys joining exclusive slot K/V
         message_anchor_token_ids: tuple[int, ...] = (),  # type-mark / keymark ids
@@ -264,6 +269,11 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_extra_slot_attends = int(message_extra_slot_attends)
         self.message_read_rounds = int(message_read_rounds)
         self.message_round_aux = float(message_round_aux)
+        self.message_loop_rounds = int(message_loop_rounds)
+        self.message_loop_span = int(message_loop_span)
+        self.message_loop_inject = str(message_loop_inject or "none")
+        self.message_loop_exit_aux = float(message_loop_exit_aux)
+        self.message_loop_exit_targets = str(message_loop_exit_targets or "progress")
         self.message_update_slot_kv = bool(message_update_slot_kv)
         self.message_global_anchors = str(message_global_anchors or "none")
         self.message_anchor_token_ids = tuple(int(x) for x in (message_anchor_token_ids or ()))
@@ -342,6 +352,21 @@ class PerceiverARConfig(PretrainedConfig):
             raise ValueError("message_extra_slot_attends must be >= 0")
         if self.message_read_rounds < 1:
             raise ValueError("message_read_rounds must be >= 1")
+        if self.message_loop_rounds < 1:
+            raise ValueError("message_loop_rounds must be >= 1")
+        if self.message_loop_inject not in ("none", "prelude"):
+            raise ValueError("message_loop_inject must be 'none' or 'prelude'")
+        if self.message_loop_exit_targets not in ("progress", "answer"):
+            raise ValueError("message_loop_exit_targets must be 'progress' or 'answer'")
+        if self.message_loop_rounds > 1:
+            if self.message_read_rounds > 1:
+                raise ValueError("message_loop_rounds and message_read_rounds (E33) are exclusive")
+            if self.par_mode != "perceiver" or self.global_layers != 1:
+                raise ValueError("message_loop_rounds needs par_mode='perceiver' with exactly one global layer")
+            n_layers = self.pre_layers + self.global_layers + self.stack_layers
+            gi = self.global_layer_index
+            if self.message_loop_span < 0 or gi + 1 + self.message_loop_span > n_layers:
+                raise ValueError(f"message_loop_span must keep the loop inside the stack (<= {n_layers - gi - 1})")
         if self.message_global_anchors not in MESSAGE_GLOBAL_ANCHORS:
             raise ValueError(
                 f"message_global_anchors must be one of {MESSAGE_GLOBAL_ANCHORS}, "
@@ -1912,6 +1937,16 @@ class PerceiverARLM(PreTrainedModel):
         if cfg.write_back_hook:
             g, dh = cfg.num_kv_heads, cfg.head_dim
             self.write_back_proj = nn.Linear(cfg.hidden_size, 2 * g * dh, bias=False)
+        # E33a: tied loop over [global read + span layers]. Zero-init loop marker → R = 1 is today's stack.
+        self.loop_rounds = int(getattr(cfg, "message_loop_rounds", 1) or 1)
+        self.loop_emb = nn.Parameter(torch.zeros(self.loop_rounds, cfg.hidden_size)) if self.loop_rounds > 1 else None
+        self.loop_gate = (
+            nn.Parameter(torch.zeros(()))
+            if self.loop_rounds > 1 and getattr(cfg, "message_loop_inject", "none") == "prelude" else None
+        )
+        self._loop_rounds_override: Optional[int] = None  # eval: run r loops (exit r == the R = r forward)
+        self._loop_states: Optional[list] = None
+        self._collect_loop_states = False
         self.gradient_checkpointing = False
         self._flce = None
         self._message_override = "real"
@@ -2283,10 +2318,9 @@ class PerceiverARLM(PreTrainedModel):
         if cfg.swa_sink and local_doc is not None:
             local_pos = pos0 if local_doc is doc_ids else self._positions(S, B, local_doc, input_ids.device)
             sink_pos = (torch.arange(S, device=input_ids.device)[None].expand(B, S) - local_pos)
-        for i, layer in enumerate(self.layers):
+        def run_layer(i, x, skips):
+            layer = self.layers[i]
             skip = skips.pop() if (i >= n - n_skip and skips) else None
-            if capture_input_of is not None and i == capture_input_of:
-                return layer.mix(x, x0, skip)
             is_global = layer.attn.pattern == "full" and (
                 layer.attn.compressor is not None or self.memory_writer is not None
             )
@@ -2301,6 +2335,43 @@ class PerceiverARLM(PreTrainedModel):
                 x = layer(x, x0, skip, **kwargs)
             if i < n_skip:
                 skips.append(x)
+            return x
+
+        self._loop_states = None
+        R = int(self._loop_rounds_override or self.loop_rounds)
+        if self.loop_emb is not None and capture_input_of is None:
+            # E33a: prelude (once) → core = [global read + span layers] × R (tied) → coda (once).
+            gi = cfg.global_layer_index
+            core = range(gi, gi + 1 + cfg.message_loop_span)
+            for i in range(gi):
+                x = run_layer(i, x, skips)
+            prelude, skips0 = x, list(skips)
+            states = []
+            for r in range(R):
+                x = x + self.loop_emb[min(r, self.loop_emb.shape[0] - 1)].to(x.dtype)
+                if r and self.loop_gate is not None:
+                    x = x + self.loop_gate.to(x.dtype) * prelude
+                s = list(skips0)
+                for i in core:
+                    x = run_layer(i, x, s)
+                states.append((x, s))
+            if self._collect_loop_states:  # exits: each earlier loop's state through the answer layer
+                exits = []
+                for xr, sr in states[:-1]:
+                    sr = list(sr)
+                    for i in range(core.stop, n):
+                        xr = run_layer(i, xr, sr)
+                    exits.append(xr)
+                self._loop_states = exits
+            skips = states[-1][1]
+            for i in range(core.stop, n):
+                x = run_layer(i, x, skips)
+            return x
+        for i, layer in enumerate(self.layers):
+            if capture_input_of is not None and i == capture_input_of:
+                skip = skips.pop() if (i >= n - n_skip and skips) else None
+                return layer.mix(x, x0, skip)
+            x = run_layer(i, x, skips)
         return x
 
     # -- forward ----------------------------------------------------------------------
@@ -2345,6 +2416,10 @@ class PerceiverARLM(PreTrainedModel):
         cfg = self.config
         round_tgt = getattr(self, "_round_targets", None)
         self._round_targets = None
+        self._collect_loop_states = bool(
+            labels is not None and self.loop_emb is not None and cfg.message_loop_exit_aux > 0
+            and not return_per_token_loss and int(self._loop_rounds_override or self.loop_rounds) > 1
+        )
         looped = [b for b in self.layers if getattr(b, "read_rounds", 1) > 1]
         for b in looped:
             b._collect_rounds = round_tgt is not None
@@ -2397,8 +2472,29 @@ class PerceiverARLM(PreTrainedModel):
             if k:
                 loss = loss + cfg.message_round_aux * aux / k
             looped[0]._round_outs = []
+        if self._collect_loop_states and self._loop_states:
+            loss = loss + cfg.message_loop_exit_aux * self._loop_exit_loss(self._loop_states, labels, round_tgt)
+        self._loop_states = None
+        self._collect_loop_states = False
         loss = self._maybe_add_prefix_ae(loss, input_ids)
         return CausalLMOutput(loss=loss, logits=(logits if return_logits else None))
+
+    def _loop_exit_loss(self, exits: list, labels: torch.Tensor, round_tgt: Optional[torch.Tensor]) -> torch.Tensor:
+        """E33a: Σ over non-final loop exits of the token-mean CE. Exit r's targets are the round targets
+        (`set_round_targets`, chain node r+1) or, with `message_loop_exit_targets="answer"` or none given,
+        the labels."""
+        cfg = self.config
+        total = labels.new_zeros((), dtype=torch.float32)
+        for r, xr in enumerate(exits):
+            tr = labels
+            if cfg.message_loop_exit_targets == "progress" and round_tgt is not None and r < round_tgt.shape[0]:
+                tr = round_tgt[r]
+                if tr.shape[1] < labels.shape[1]:
+                    tr = F.pad(tr, (0, labels.shape[1] - tr.shape[1]), value=-100)
+            ce_r, _, n_r = chunked_softcap_ce(self.final_norm(xr)[:, :-1], self.lm_head.weight, tr[:, 1:],
+                                              cfg.chunked_ce_block_size, cfg.logit_softcap, 0.0)
+            total = total + ce_r / n_r.clamp(min=1)
+        return total
 
     def set_round_targets(self, targets: Optional[torch.Tensor]) -> None:
         """E33: labels per non-final read round [R-1, B, S] for the next forward (then cleared)."""

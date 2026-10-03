@@ -52,6 +52,7 @@ EXAMS = {
     # shuffled chain among 3 decoy chains: no pure-target shortcut (shuf2/shuf3 have one)
     "pchain2": ["--recipe", "chain_parallel", "--hops", "2"],
     "pchain3": ["--recipe", "chain_parallel", "--hops", "3"],
+    "pchain4": ["--recipe", "chain_parallel", "--hops", "4"],
     "unique": ["--recipe", "unique"],
     "match3": ["--recipe", "match3"],
     "count": ["--recipe", "count"],
@@ -105,6 +106,51 @@ RATIO2_HP = [
     ("e31_K8m1_nocomp", "e31_li", [*_K8, "--no-lm_competition"]),
     ("e31_K8m1_r3", "e31_li", [*_K8, "--lm_rounds", "3"]),
 ]
+
+
+# E33a: tied loop over [global read + local] × 4, exits through the untied answer layer.
+E33A_LOOP = ["--loop_rounds", "4", "--loop_exit_aux", "0.3", "--loop_exit_targets", "progress"]
+E33A_CHAIN = ["--key_len", "8", "--replay_recipe", "recall_single", "--replay_frac", "0.25"]
+E33A_PCHAIN_LADDER = [1024, 4096, 16384]
+E33A_LOOKUP_NO_HARM = [{"lengths": [1024, 2048, 8192, 32768], "args": ["--recipe", "recall_single"],
+                        "out": "ladder_lookup.json", "rows": 128}]
+
+
+def _e33a_chain(tag, init, flags, seed, *, arch="e31_li_m1"):
+    """pchain2 → pchain3 → pchain4 at 1k from `init`; lookup no-harm ladder on the last stage."""
+    out, prev = [], init
+    for hops in (2, 3, 4):
+        name = f"e33a_pchain{hops}_{tag}_s{seed}"
+        out.append({**_job(name, arch, seed, L1K_FT, f"pchain{hops}", [*E33A_CHAIN, *flags],
+                           init=prev, ladder=E33A_PCHAIN_LADDER, cost=2.2),
+                    "rows": 128, "ladders": E33A_LOOKUP_NO_HARM if hops == 4 else None})
+        prev = name
+    return out
+
+
+def e33a_jobs():
+    arch = "e31_li_m1"
+    out = []
+    # ★ the loop from step 0: lookup at 2k with the loop on, then the chain curriculum (seeds 1, 2)
+    for seed in (1, 2):
+        lk = f"e33a_lookup_loop_s{seed}"
+        out.append(_job(lk, arch, seed, L2K, "lookup", E33A_LOOP, ladder=[2048, 8192, 32768], cost=5.5))
+        out += _e33a_chain("loop", lk, E33A_LOOP, seed)
+    lk1 = "e33a_lookup_loop_s1"
+    # the same loop fine-tuned from the past single-read checkpoint (does learning the loop from the start matter?)
+    out += _e33a_chain("loopft", f"len_lookup_{arch}_s1", E33A_LOOP, 1)
+    # single-read control from the past checkpoint, same replay
+    out += _e33a_chain("r1", f"len_lookup_{arch}_s1", ["--loop_rounds", "1"], 1)
+    # mechanism arms, branching from the loop-trained lookup weights (seed 1)
+    loop_ans = [*E33A_LOOP[:-1], "answer"]
+    out += _e33a_chain("loopans", lk1, loop_ans, 1)
+    out += _e33a_chain("loopfrz", lk1, [*E33A_LOOP, "--freeze_writer"], 1)
+    out += _e33a_chain("loopinj", lk1, [*E33A_LOOP, "--loop_inject", "prelude"], 1)
+    # wide core (read + both local layers, head only after) needs its own loop-trained lookup stage
+    wide = [*E33A_LOOP, "--loop_span", "2"]
+    out.append(_job("e33a_lookup_wide_s1", arch, 1, L2K, "lookup", wide, ladder=[2048, 8192, 32768], cost=5.5))
+    out += _e33a_chain("wide", "e33a_lookup_wide_s1", wide, 1)
+    return out
 
 
 def ratio2_jobs():
@@ -249,6 +295,8 @@ def jobs(phase: str) -> list[dict]:
             out += [_job(p2, arch, 1, L1K_FT, "pchain2", rr, init=f"len_lookup_{arch}_s1", ladder=LADDER_1K, cost=1.2),
                     _job(p3, arch, 1, L1K_FT, "pchain3", rr, init=p2, ladder=LADDER_1K, cost=1.2)]
         return out
+    if phase == "e33a":  # read–think–reread loop (spec E33a_reread_loop.md)
+        return e33a_jobs()
     if phase == "recall_len":  # does the 8k stage carry multi-fact recall to length (as it did lookup)?
         out = []
         for arch in ("e30_li", "e31_li_m1", "e31_li"):
