@@ -4,11 +4,14 @@
 <style>
 :root{--bg:#f4f3ef;--card:#fcfcfb;--card2:#efeee9;--line:#dcdad3;--fg:#0b0b0b;--fg2:#52514e;--muted:#7c7b76;
  --blue:#2a78d6;--orange:#eb6834;--green:#1a7f37;--amber:#b26b00;--red:#c62828;--violet:#4a3aa7;--teal:#0e8f8f;--pink:#c2417a;
- --good-bg:#e6f4ea;--warn-bg:#fff4e0;--bad-bg:#fdecea;--info-bg:#eaf2fc;color-scheme:light}
+ --good-bg:#e6f4ea;--warn-bg:#fff4e0;--bad-bg:#fdecea;--info-bg:#eaf2fc;color-scheme:light;
+ --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--sother:#a8a7a1}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121211;--card:#1a1a19;--card2:#242422;--line:#3a3935;--fg:#f4f4f2;--fg2:#c3c2b7;--muted:#8f8e86;
- --blue:#5b9cea;--orange:#e5763f;--green:#5cc47a;--amber:#e0a040;--red:#ef6b6b;--violet:#9085e9;--teal:#3cc4c4;--pink:#e27aa6;--good-bg:#16301f;--warn-bg:#35280f;--bad-bg:#3a1a1a;--info-bg:#15263b;color-scheme:dark}}
+ --blue:#5b9cea;--orange:#e5763f;--green:#5cc47a;--amber:#e0a040;--red:#ef6b6b;--violet:#9085e9;--teal:#3cc4c4;--pink:#e27aa6;--good-bg:#16301f;--warn-bg:#35280f;--bad-bg:#3a1a1a;--info-bg:#15263b;color-scheme:dark;
+ --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--sother:#5e5d58}}
 :root[data-theme="dark"]{--bg:#121211;--card:#1a1a19;--card2:#242422;--line:#3a3935;--fg:#f4f4f2;--fg2:#c3c2b7;--muted:#8f8e86;
- --blue:#5b9cea;--orange:#e5763f;--green:#5cc47a;--amber:#e0a040;--red:#ef6b6b;--violet:#9085e9;--teal:#3cc4c4;--pink:#e27aa6;--good-bg:#16301f;--warn-bg:#35280f;--bad-bg:#3a1a1a;--info-bg:#15263b;color-scheme:dark}
+ --blue:#5b9cea;--orange:#e5763f;--green:#5cc47a;--amber:#e0a040;--red:#ef6b6b;--violet:#9085e9;--teal:#3cc4c4;--pink:#e27aa6;--good-bg:#16301f;--warn-bg:#35280f;--bad-bg:#3a1a1a;--info-bg:#15263b;color-scheme:dark;
+ --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--sother:#5e5d58}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:15.5px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
 main{max-width:1100px;margin:0 auto;padding-inline:18px;padding-block:26px 70px}
@@ -47,14 +50,102 @@ a{color:var(--blue)}
 code{font:13px ui-monospace,Menlo,monospace;background:var(--card2);padding:1px 5px;border-radius:4px}
 .eq{font:14px/1.7 ui-monospace,Menlo,monospace;background:var(--card2);border-radius:8px;padding:10px 12px;overflow-x:auto;white-space:pre}
 #tip{position:fixed;pointer-events:none;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.18);opacity:0;z-index:20;max-width:340px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--fg2);margin:4px 0 2px}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.legend i.ln{height:0;border-top:2px dashed var(--fg2);border-radius:0;width:16px;vertical-align:3px}
+.chart-t{font-weight:700;margin:2px 0 0}.chart-s{font-size:13.5px;color:var(--fg2);margin:0 0 6px}
+details.nums{margin:8px 0 0;font-size:13.5px}details.nums summary{cursor:pointer;color:var(--fg2)}
+.cause{display:grid;grid-template-columns:30px 1fr;gap:4px 10px;align-items:start}
+.cause .n{display:inline-flex;width:24px;height:24px;border-radius:50%;background:var(--red);color:#fff;font-weight:800;font-size:13px;align-items:center;justify-content:center}
+.stage{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch;margin:8px 0}
+.stage .st{flex:1 1 150px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13.5px}
+.stage .st b{display:block;font-size:14px}.stage .arr{align-self:center;color:var(--muted);font-weight:700}
+.newtag{display:inline-block;font-size:11px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:var(--red);border:1px solid var(--red);border-radius:6px;padding:0 6px;margin-left:6px;vertical-align:2px}
 </style>
 <div id="tip"></div>
 <main>
-<div class="kicker">MrCogito · E33a · alignment page · 2 Oct 2026 (spec: E33a_reread_loop.md)</div>
+<div class="kicker">MrCogito · E33a · design 2 Oct · trained, measured and diagnosed 4 Oct 2026 (spec: E33a_reread_loop.md)</div>
 <h1>Read, think, reread: looping the layers above the global read</h1>
-<p class="sub">An analysis of the proposal: keep the memory as a read-only notebook, and loop the <b>upper</b> layers. The model reads the memory, tries to form the answer, notices what is missing, and rereads with its current state, 4 times, before a last layer formulates the answer. The page covers how information flows, which vectors change in each loop, how gradients flow, what the queries and keys are, and how the idea compares with the literature and with our failed E33 loop.</p>
+<p class="sub">An analysis of the proposal: keep the memory as a read-only notebook, and loop the <b>upper</b> layers. The model reads the memory, tries to form the answer, notices what is missing, and rereads with its current state, 4 times, before a last layer formulates the answer. The page covers how information flows, which vectors change in each loop, how gradients flow, what the queries and keys are, and how the idea compares with the literature and with our failed E33 loop. <b>Section 0 (new, 4 Oct) shows what happened when we trained it</b>, and the diagram in section 1 can now switch between the design and the trained model.</p>
 
-<div class="callout good"><b>Verdict: yes, it makes sense, and it fixes the two concrete flaws of E33.</b>
+<div class="callout bad"><b>4 Oct: the loop was never tested: no model learned the first hop.</b>
+<ul style="margin:6px 0 0;padding-left:18px">
+<li><b>Every arm, dense included, stopped at a guessing floor.</b> Reading all links at once and answering with the commonest first letter among the links' targets scores 44 / 41 / 39 % on 2 / 3 / 4 hops, and that is where every arm landed.</li>
+<li><b>Pass 1 never found the first link.</b> The read spreads evenly over all 12 links. The right link gets 5 %, the same as any other, and all four passes read the same thing. The decoded answers are spread over every link target and hit the right end only 5–6 % of the time.</li>
+<li><b>Why:</b> nothing in training needed the question's key. The lookup every chain run started from holds a single fact, and two exam levels share the same gap. The 75 % pass mark was derived from those key-free exams. And we trained on about 150 k examples per stage, where similar studies see the jump after about 400 k.</li>
+<li><b>No bug in the loop's wiring</b> (checked locally). Verdict: <b>untested, not refuted.</b> Next: a curriculum that teaches lookup by key first, on an exam without the shortcut.</li>
+</ul></div>
+
+<!-- ======================================================= -->
+<h2 id="results">0 · What happened when we trained it <span class="newtag">new · 4 Oct</span></h2>
+<p>Ten arms trained on the parallel chain (4 chains of 8-letter nodes over a 4-letter alphabet, shuffled through a 1k-token book, about 150 k examples per stage, 2 → 3 → 4 hops). Score: <b>first-letter accuracy</b>, the first answer letter predicted before any answer letter is in context. Chance is 25 %.</p>
+
+<div class="card">
+<p class="chart-t">Every arm stopped at the guessing floor, dense included</p>
+<p class="chart-s">First-letter accuracy at the end of each stage (256 test rows, about ±3 points). The dashed line in each panel is what "read all links, answer with the commonest first letter among their targets" scores without following a single hop.</p>
+<div class="legend" id="legA"></div>
+<div class="svgwrap"><svg id="chA" viewBox="0 0 1060 360" role="img" aria-label="First-letter accuracy of every arm on 2, 3 and 4 hops"></svg></div>
+</div>
+
+<div class="grid g2">
+<div class="card">
+<p class="chart-t">What the models answer (3 hops)</p>
+<p class="chart-s">The full 8-letter answers of 128 fresh questions, decoded letter by letter and sorted by what node they are. The last row is a model that picks a link target evenly at random. No model ever answers with a start node: it knows the answer is a link target, and nothing more.</p>
+<div class="legend" id="legB"></div>
+<div class="svgwrap"><svg id="chB" viewBox="0 0 520 250" role="img" aria-label="Decoded answers by node type"></svg></div>
+</div>
+<div class="card">
+<p class="chart-t">What the read looks at, at the answer position</p>
+<p class="chart-s">Share of the memory read that lands on the link the question needs (bar), against an even split over all links (tick). The last row is a model that does look things up by key, as a check that the measurement works.</p>
+<div class="svgwrap"><svg id="chD" viewBox="0 0 520 250" role="img" aria-label="Share of the read on the needed link"></svg></div>
+</div>
+</div>
+
+<div class="card">
+<p class="chart-t">Pass 1 never found the first link, so the later passes had nothing to build on (3 hops)</p>
+<p class="chart-s">Each pass is trained to name the node it has reached: pass 1 → node B, pass 2 → node C, passes 3–4 → the end D. The lines are how often each pass gets that node's first letter right. The design expected pass 1 to work like a lookup (≈ 95 %+).</p>
+<div class="legend" id="legC"></div>
+<div class="svgwrap"><svg id="chC" viewBox="0 0 1060 300" role="img" aria-label="Accuracy of each pass on its own node"></svg></div>
+<details class="nums"><summary>Show the numbers behind the four charts</summary><div class="tw" id="numtab"></div></details>
+</div>
+
+<h3>Why it stalled: five causes, none of them in the loop</h3>
+<div class="grid g2">
+<div class="card cause"><span class="n">1</span><div><b>The exam has a guessing floor at about 40 %.</b> The answer is always the target of some link, so "any link target" already scores 44 / 41 / 39 %. A better guess (pick one of the 4 chain ends, 43.75 %) is also open, though no model found it. We read 40 % as "partial reasoning". It is guessing.</div></div>
+<div class="card cause"><span class="n">2</span><div><b>Nothing in training needed the key.</b> Every chain run started from the single-fact lookup and replayed it during training. With one fact in the book, the question's key is never read. Looking up by key is learned only from that stepping stone: "1 of 8 facts" stays at chance from scratch (dense 27 %) but reaches 95–98 % started from the lookup.</div></div>
+<div class="card cause"><span class="n">3</span><div><b>The exams share the gap.</b> "Find a fact by its key" plants one fact, and "pick over look-alikes" marks the decoys with a different symbol, so neither needs the key. The in-order chain can be solved by counting blocks: dense can, the memory cannot (its notes carry no order across windows). The first exam that needs the key is "1 of 8 / 16 facts", which is still being calibrated.</div></div>
+<div class="card cause"><span class="n">4</span><div><b>The pass mark had no measured ceiling.</b> The 75 % gate assumed "three perfect lookups ≈ 94–97 %", taken from the key-free exams. On this exact task, dense reached 44 / 39 %.</div></div>
+<div class="card cause"><span class="n">5</span><div><b>Too few examples.</b> On chains among distractor chains, transformers first spread their answer over all chain ends, then jump. One study saw the jump after about 400 k examples with single-letter nodes and short contexts (Guo et al. 2025); we gave about 150 k per stage, with 8-letter nodes in 1k–16k books. Without a curriculum each extra hop costs about 10× more data (Yao et al. 2025).</div></div>
+<div class="card cause" style="border-color:var(--green)"><span class="n" style="background:var(--green)">✓</span><div><b>Not a bug.</b> Checked on a tiny model: an exit after pass r equals running r passes; each pass is trained on the right node; every pass and the memory writer get gradient; one pass reproduces the original model exactly. Trained weights: each pass keeps 0.94 of the state, and the per-pass markers are small (0.1–0.25 against a state of ≈ 30). Worth watching, not blocking.</div></div>
+</div>
+
+<div class="tw"><table>
+<tr><th>exam level</th><th>exam</th><th>needs the question's key?</th><th>what it really shows</th></tr>
+<tr><td>C1 Address</td><td>single-fact lookup</td><td><span class="pill p-no">no</span> one fact, found by its marker</td><td>the memory can carry and locate a fact</td></tr>
+<tr><td>C2 Discriminate</td><td>fact vs look-alikes</td><td><span class="pill p-no">no</span> decoys open with another symbol</td><td>the read can tell block types apart</td></tr>
+<tr><td>C3 Hold many</td><td>1 of 8 / 16 facts</td><td><span class="pill p-yes">yes</span></td><td>the first real lookup by key (calibrating)</td></tr>
+<tr><td>C4 Compose</td><td>in-order chain</td><td><span class="pill p-part">partly</span> countable</td><td>dense can count to the 4th block; the memory cannot, so "dense 100 %, memory at chance" at 2k is not a hop comparison</td></tr>
+<tr><td>C5 Reason</td><td>parallel chain</td><td><span class="pill p-yes">yes</span>, above ≈ 40 %</td><td>everything below the guessing floor is guessing</td></tr>
+</table></div>
+
+<h3>What looping improved, and what it should improve</h3>
+<div class="grid g3">
+<div class="tile"><div class="q">Improved</div>Nothing measurable. The suite's first seed ties E31 on 15 of 19 exams. Copy-256 is lower (86 vs 100, one seed). The shuffled-chain win (69 vs 59) is inside E31's own spread between seeds (59–87).</div>
+<div class="tile"><div class="q">Should improve: not tested yet</div>Anything that needs two dependent reads: chains, or "the value of the fact whose key is the value of X". Untested, because no arm learned the first read.</div>
+<div class="tile"><div class="q">Should not improve</div>Storing and retrieving single facts. Ouro found loops add manipulation, not storage, and our lookups tie E31 as expected.</div>
+</div>
+
+<h3>Small changes, and the test that would settle it</h3>
+<p>No new architecture. The data now has two options: a <b>one-hop chain</b> (a lookup by key in chain format) and an <b>overhang</b> (chains continue past the asked node, so the chain-end guess scores nothing). The proposed run trains the looped model, the single-read model and dense through the same stages, and moves on only when each pass names its node:</p>
+<div class="stage">
+<div class="st"><b>1 · single fact</b>open the memory path (today's lookup)</div><div class="arr">→</div>
+<div class="st"><b>2 · one hop</b>4 chains, look up the start node by key; pass 1 must reach ≥ 90 %</div><div class="arr">→</div>
+<div class="st"><b>3 · two hops, no shortcut</b>overhang on; pass 2 must reach node C</div><div class="arr">→</div>
+<div class="st"><b>4 · three hops</b>then four; keep replaying a keyed exam</div>
+</div>
+<p style="font-size:14px;color:var(--fg2)">If the looped model clears the guessing floor at two hops and the single-read model cannot, the loop does what it was designed to do. Only a model that makes several reads can do two dependent lookups at one position. Laptop-sized models did not take off within minutes, so this needs the 30M model on a GPU: about 5 hours on Polonez.</p>
+
+<div class="callout"><b>Design verdict (2 Oct), kept as written: yes, it makes sense, and it fixes the two concrete flaws of E33.</b>
 <ul style="margin:6px 0 0;padding-left:18px">
 <li><b>The answer-forming layers are inside the loop.</b> E33 looped only the global read plus one feed-forward. The layers that turn fetched content into an answer sat outside it, so nothing between two reads could reshape "what I found" into "what I must ask next".</li>
 <li><b>"Try to answer" happens through the real head.</b> E33's per-round targets were read through the output head while skipping the two upper layers, so the head was decoding states it was never trained on.</li>
@@ -71,8 +162,9 @@ Your design maps onto the best-supported pattern in the literature: an untied fi
 
 <!-- ======================================================= -->
 <h2 id="flow">1 · The information flow, loop by loop</h2>
-<p>The same toy exam as before. Four chains are stored as separate facts, shuffled across the book. The question is "start at A, where do you end?" The answer D is three hops away, and the candidates are D, H, L and P (chance 25 %). Step through the loops. The attention weights and guesses are <b>illustrative</b>: they show what the design should learn, not measurements.</p>
+<p>The same toy exam as before. Four chains are stored as separate facts, shuffled across the book. The question is "start at A, where do you end?" The answer D is three hops away, and the candidates are D, H, L and P (chance 25 %). Step through the loops. In <b>design</b> view the attention weights and guesses are <b>illustrative</b>: they show what the design should learn. Switch to <b>trained model</b> to see what the trained loop actually does on the 3-hop exam, from the 4 Oct measurements (read shares and decoded answers from section 0).</p>
 <div class="controls">
+ <span><span class="lab">View</span><span class="seg" id="view"><button data-v="design" class="on">design (illustrative)</button><button data-v="measured">trained model (measured)</button></span></span>
  <span><span class="lab">Direction</span><span class="seg" id="dir"><button data-v="fwd" class="on">forward (information)</button><button data-v="bwd">backward (gradients)</button></span></span>
  <span><span class="lab">Loop</span><span class="seg" id="loop"><button data-v="0">prelude</button><button data-v="1" class="on">1</button><button data-v="2">2</button><button data-v="3">3</button><button data-v="4">4</button><button data-v="5">answer</button></span></span>
  <label class="tg"><input type="checkbox" id="frz"> writer frozen</label>
@@ -117,7 +209,8 @@ Your design maps onto the best-supported pattern in the literature: an untied fi
 <p style="font-size:14.5px">End-to-end Memory Networks met the same problem and solved it by tying weights: the output embedding of hop k is the input embedding of hop k+1, so what a read returns is already in the form the next query needs. In your design, <b>the local layer inside the loop is where that conversion is learned</b>: attention over the question side plus a feed-forward turn "target B" into "query for source B". E33 had only one feed-forward between reads for this job.</p></div>
 <div class="card"><h3 style="margin-top:0">Two traps to watch in the attention logs</h3>
 <p style="font-size:14.5px"><b>Backward-edge echo.</b> A query for "B" can match both "B → C" (B as source, correct) and "A → B" (B as target, already used). Each latent holds both ends of its fact. The page encoder sees the order inside a fact block (marker, source, target), so the key can keep source and target in separate directions, but training has to find this. Log, per loop, which latent gets the most attention. A model stuck on the echo will re-read "A → B".</p>
-<p style="font-size:14.5px"><b>One shared key head.</b> The memory has one 64-d key per latent, shared by 15 query heads. Different heads can read different directions of that key (one head for "source = B", one for "already visited"), but 64 dimensions is tight. If the logs show echo, the fix is 2 key/value heads (a parameter change, so a later step).</p></div>
+<p style="font-size:14.5px"><b>One shared key head.</b> The memory has one 64-d key per latent, shared by 15 query heads. Different heads can read different directions of that key (one head for "source = B", one for "already visited"), but 64 dimensions is tight. If the logs show echo, the fix is 2 key/value heads (a parameter change, so a later step).</p>
+<p style="font-size:14.5px;border-top:1px solid var(--line);padding-top:8px;margin-bottom:0"><b>Measured (4 Oct):</b> neither trap was reached. The read never addressed even the first link, so there was no "found B" to turn into a query, and no echo to fall into. Both traps become the things to watch once the one-hop stage works.</p></div>
 </div>
 
 <!-- ======================================================= -->
@@ -150,7 +243,10 @@ Your design maps onto the best-supported pattern in the literature: an untied fi
 <tr><td>TRM / HRM (2025)</td><td>tiny 2-layer net, many cycles</td><td><span class="pill p-part">puzzle input</span></td><td><span class="pill p-yes">yes</span></td><td><b>every outer step</b></td><td>puzzles: deep supervision is the driver; hierarchy is not</td></tr>
 <tr><td>Sleep / loop + memory (2026)</td><td>loops over a memory</td><td><span class="pill p-yes">yes</span></td><td>—</td><td>—</td><td>more hops need more loops (4 loops start to solve 16 hops); loop + memory learns composition fastest</td></tr>
 <tr><td><b>E33 (ours, failed)</b></td><td>global read + 1 feed-forward, ×4, at layer 2 of 4</td><td><span class="pill p-yes">yes</span></td><td>no</td><td>final; progress targets decoded <b>skipping</b> the upper layers</td><td>no gain (10 cells)</td></tr>
-<tr><td><b>This proposal</b></td><td>global read + local, ×4, then untied answer layer</td><td><span class="pill p-yes">yes</span> N/6 latents</td><td>optional, no new weights</td><td><b>every exit through the answer layer</b></td><td>to test</td></tr>
+<tr><td><b>This proposal</b></td><td>global read + local, ×4, then untied answer layer</td><td><span class="pill p-yes">yes</span> N/6 latents</td><td>optional, no new weights</td><td><b>every exit through the answer layer</b></td><td>4 Oct: untested. No arm learned the first hop (section 0)</td></tr>
+<tr><td>Guo et al. 2025 <span class="newtag">4 Oct</span></td><td>3-layer attention, 5 chains in context</td><td>—</td><td>—</td><td>final</td><td>first a plateau with <b>nearly uniform probability on all chain ends</b>, then a sharp jump at ~800 steps × batch 512 (≈ 400 k examples, single-token nodes). Our arms sat on a plateau like this at ≈ 150 k per stage</td></tr>
+<tr><td>Yao et al. 2025 <span class="newtag">4 Oct</span></td><td>k-hop composition</td><td>—</td><td>—</td><td>final; hop curriculum</td><td>3 / 4 hops need 10× / 100× the 2-hop data; a hop curriculum cuts that to 2× / 5×</td></tr>
+<tr><td>Kohli et al. 2026 <span class="newtag">4 Oct</span></td><td>looped block, R = 1…4</td><td>—</td><td>—</td><td>final; advance a hop at 95 %</td><td>R = 1 fails; R = 4 learns multi-hop after grokking stages (> 1.3 M steps to 4 hops); random R beats fixed R</td></tr>
 </table></div>
 <div class="grid g2" style="margin-top:12px">
 <div class="card"><h3 style="margin-top:0">Analogies, checked</h3>
@@ -167,30 +263,30 @@ Your design maps onto the best-supported pattern in the literature: an untied fi
 </div>
 
 <!-- ======================================================= -->
-<h2 id="test">6 · How we would test it</h2>
+<h2 id="test">6 · How we would test it, and what happened</h2>
 <div class="tw"><table>
-<tr><th>arm</th><th>what it isolates</th></tr>
-<tr><td>R = 1 (today)</td><td>baseline: parallel chain, 3 hops ≈ 40 %, dense 44 %</td></tr>
-<tr><td><b>R = 4, core = read + local, answer layer untied</b> ★</td><td>the proposal, with progress targets at every exit</td></tr>
-<tr><td>R = 4, final answer at every exit</td><td>does it work without knowing the intermediate nodes?</td></tr>
-<tr><td>R = 4, core = read + both local layers, head only</td><td>more thinking per loop vs an untied answer layer</td></tr>
-<tr><td>R = 4, writer frozen</td><td>retrieval guaranteed unchanged; is a fixed notebook enough?</td></tr>
-<tr><td>E33 replica (read + 1 feed-forward)</td><td>confirms the difference comes from where the loop sits</td></tr>
+<tr><th>arm</th><th>what it isolates</th><th>result, 3 hops, first letter <span class="newtag">4 Oct</span></th></tr>
+<tr><td>R = 1 (today)</td><td>baseline: parallel chain, 3 hops ≈ 40 %, dense 44 %</td><td>40 %: at the guessing floor (41 %)</td></tr>
+<tr><td><b>R = 4, core = read + local, answer layer untied</b> ★</td><td>the proposal, with progress targets at every exit</td><td>44 % / 38 % (seeds 1 / 2), 41 % from E31 weights: all at the floor; pass 1 never names node B</td></tr>
+<tr><td>R = 4, final answer at every exit</td><td>does it work without knowing the intermediate nodes?</td><td>44 %: at the floor</td></tr>
+<tr><td>R = 4, core = read + both local layers, head only</td><td>more thinking per loop vs an untied answer layer</td><td>22 %: did not even learn the guess (chance)</td></tr>
+<tr><td>R = 4, writer frozen</td><td>retrieval guaranteed unchanged; is a fixed notebook enough?</td><td>34 %: below the floor</td></tr>
+<tr><td>E33 replica (read + 1 feed-forward)</td><td>confirms the difference comes from where the loop sits</td><td>not rerun; the earlier E33 runs scored 36–45 %, also at the floor</td></tr>
 </table></div>
 <div class="grid g2" style="margin-top:12px">
 <div class="card"><h3 style="margin-top:0">Pass marks</h3><ul style="margin:0;padding-left:18px;font-size:14.5px">
-<li>Parallel chain, 3 hops, 1k: <b>≥ 75 %</b> first letter, 2 seeds (chance 25 %).</li>
-<li>4 hops with R = 4: ≥ 60 %. 6 hops with R = 6 at test time (trained R = 4): reported.</li>
-<li>32k with far-apart facts: ≥ 0.8× the 1k score.</li>
-<li>Lookup, recall16, decoys, in-order chain: within 2 points of today at exit 4, <b>and</b> at exit 1.</li>
-<li>Attention log: loop r attends most to the latent of edge r on ≥ 70 % of solved questions.</li></ul></div>
+<li>Parallel chain, 3 hops, 1k: <b>≥ 75 %</b> first letter, 2 seeds (chance 25 %). <span class="pill p-no">missed</span> <i>No arm, dense included, cleared the 41 % guessing floor; the 75 % mark was derived from key-free exams.</i></li>
+<li>4 hops with R = 4: ≥ 60 %. 6 hops with R = 6 at test time (trained R = 4): reported. <span class="pill p-no">missed</span> <i>35–42 %, floor 39 %.</i></li>
+<li>32k with far-apart facts: ≥ 0.8× the 1k score. <i>Moot: the 1k score is the floor.</i></li>
+<li>Lookup, recall16, decoys, in-order chain: within 2 points of today at exit 4, <b>and</b> at exit 1. <span class="pill p-part">mostly kept</span> <i>Lookup kept to 32k on the better seed; suite seed 0 ties on 15 of 19 exams (copy-256 86 vs 100).</i></li>
+<li>Attention log: loop r attends most to the latent of edge r on ≥ 70 % of solved questions. <span class="pill p-no">0 of 32</span> <i>The read's top entry was never the first link.</i></li></ul></div>
 <div class="card"><h3 style="margin-top:0">Risks</h3><ul style="margin:0;padding-left:18px;font-size:14.5px">
-<li><b>Same wall as E33</b> if the problem is the memory keys, not the loop. The attention log shows echo or wrong latents within the first run.</li>
+<li><b>Same wall as E33</b> if the problem is the memory keys, not the loop. The attention log shows echo or wrong latents within the first run. <span class="pill p-part">happened one step earlier</span> <i>The keys are fine (a check model finds 1 of 16 facts by key). The chain runs never learned to use them, because nothing in their training needed the key.</i></li>
 <li><b>Capped at R hops.</b> Static R = 4 caps reasoning at 4 hops until we train with a random R.</li>
 <li><b>Training a loop on a model trained without one.</b> Start from today's weights (R = 1 is exact), then grow R 1 → 2 → 4 over the curriculum.</li>
 <li><b>Cost</b> is small: only the ~40 question-side positions loop, each loop reading N/6 entries. The book is processed once.</li></ul></div>
 </div>
-<p style="font-size:13px;color:var(--fg2)">Sources: <a href="https://arxiv.org/abs/1503.08895">End-to-end Memory Networks</a> · <a href="https://arxiv.org/abs/1606.03126">Key-Value Memory Networks</a> · <a href="https://arxiv.org/abs/2502.05171">Huginn</a> · <a href="https://arxiv.org/abs/2510.25741">Ouro</a> · <a href="https://arxiv.org/abs/2507.10524">Mixture-of-Recursions</a> · <a href="https://arxiv.org/abs/2510.04871">TRM</a> · <a href="https://arcprize.org/blog/hrm-analysis">ARC Prize HRM analysis</a> · <a href="https://arxiv.org/abs/2502.17416">Saunshi 2025</a> · <a href="https://arxiv.org/abs/2605.26099">Sleep</a> · <a href="https://arxiv.org/abs/2412.06769">Coconut</a>. Ours: E31b limits study, E33 (repeated read, no gain), the latent reasoning review and the latent-thoughts proposal.</p>
+<p style="font-size:13px;color:var(--fg2)">Sources: <a href="https://arxiv.org/abs/1503.08895">End-to-end Memory Networks</a> · <a href="https://arxiv.org/abs/1606.03126">Key-Value Memory Networks</a> · <a href="https://arxiv.org/abs/2502.05171">Huginn</a> · <a href="https://arxiv.org/abs/2510.25741">Ouro</a> · <a href="https://arxiv.org/abs/2507.10524">Mixture-of-Recursions</a> · <a href="https://arxiv.org/abs/2510.04871">TRM</a> · <a href="https://arcprize.org/blog/hrm-analysis">ARC Prize HRM analysis</a> · <a href="https://arxiv.org/abs/2502.17416">Saunshi 2025</a> · <a href="https://arxiv.org/abs/2605.26099">Sleep</a> · <a href="https://arxiv.org/abs/2412.06769">Coconut</a> · <a href="https://arxiv.org/abs/2502.13913">Guo 2025</a> · <a href="https://arxiv.org/abs/2505.17923">Yao 2025</a> · <a href="https://arxiv.org/abs/2604.07822">Kohli 2026</a> · <a href="https://arxiv.org/abs/2402.09268">Sanford 2024</a>. Ours: E31b limits study, E33 (repeated read, no gain), the latent reasoning review, the latent-thoughts proposal, and the E33a diagnosis note of 4 Oct (docs/4_Research_Notes/e33a_loop_diagnosis_20261004.md).</p>
 </main>
 <script>
 const C=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();const NS='http://www.w3.org/2000/svg';const tip=document.getElementById('tip');
@@ -200,7 +296,18 @@ function mk(s,id,col){let d=s.querySelector('defs')||el('defs',{},s);const m=el(
 function box(s,x,y,w,h,col,op,t,sub,fs,bold=true,dash){el('rect',{x,y,width:w,height:h,rx:8,fill:col,'fill-opacity':op,stroke:col,'stroke-dasharray':dash||''},s);
  el('text',{x:x+w/2,y:y+(sub?h/2-3:h/2+5),'text-anchor':'middle','font-size':fs||13,'font-weight':bold?750:500},s,t);if(sub)el('text',{x:x+w/2,y:y+h/2+13,'text-anchor':'middle','font-size':10.5,class:'s'},s,sub);}
 
-const S={dir:'fwd',loop:1,frz:false,det:false};
+const S={dir:'fwd',loop:1,frz:false,det:false,view:'design'};
+/* measured on the trained 3-hop loop (seed 2), 4 Oct: read share per link at the answer position (mean of 32 rows; ≈30 % more goes to filler latents) */
+const ATT_M={'A→B':.047,'B→C':.048,'C→D':.049,'E→F':.059,'F→G':.059,'G→H':.059,'I→J':.059,'J→K':.059,'K→L':.059,'M→N':.059,'N→O':.059,'O→P':.059};
+/* decoded full answers (128 rows): right end · another chain's end · asked chain's middle · another chain's middle · not a node */
+const GUESS_M={1:[0,0,0,0,1],2:[0,0,0,0,1],3:[.047,.234,.164,.523,.031],4:[.062,.234,.156,.516,.031],5:[.062,.234,.156,.516,.031]};
+const GCLS=[['D ✓','--s1','the right end (D)'],['H L P','--s2',"another chain's end"],['B C','--s3',"a middle node of the asked chain"],['mid','--s4',"another chain's middle node"],['none','--sother','not a node in the book']];
+const SAY_M={0:'<b>Prelude, as trained.</b> Same as the design: the first local layer reads the question ("start at A"). The memory was written once by the writer.',
+ 1:'<b>Loop 1, as trained.</b> The read should peak on "A → B". Instead it spreads almost evenly over all 12 links: about 0.05 each, the asked link 0.047. About 30 % more goes to filler latents (not drawn). The query never names the start node. Exit 1\'s free answer is not a node at all.',
+ 2:'<b>Loop 2, as trained.</b> The same even spread: the state after loop 1 carries no first link, so the reread asks the same vague question. Exit 2\'s answer is still not a node.',
+ 3:'<b>Loop 3, as trained.</b> Same spread. Now the answer layer turns the mix into <i>some</i> link target: the asked end D only 5 % of the time, middle nodes 69 %. It never answers with a start node, so it knows the answer is a link target, and nothing more.',
+ 4:'<b>Loop 4, as trained.</b> Identical to loop 3. The extra passes add nothing because pass 1 never retrieved the first link: there is no hop for later passes to continue.',
+ 5:'<b>Answer, as trained.</b> The first letter is the commonest first letter among all 12 link targets. That guess scores 41 % on 3 hops, which is where every arm landed, dense included. The model never chose a chain.'};
 const EDGES=[['C→D','I→J'],['E→F','A→B'],['K→L','N→O'],['B→C','G→H'],['M→N','J→K'],['F→G','O→P']];
 const ATT={1:{'A→B':.72,'E→F':.04,'I→J':.04},2:{'B→C':.58,'A→B':.22,'G→H':.05},3:{'C→D':.7,'B→C':.12,'K→L':.04},4:{'C→D':.62,'B→C':.08}};
 const GUESS={1:{B:.7,x:.3},2:{C:.65,x:.35},3:{D:.8,H:.07,L:.07,P:.06},4:{D:.9,H:.03,L:.04,P:.03},5:{D:.92,H:.03,L:.03,P:.02}};
@@ -223,7 +330,9 @@ function drawMain(){const s=document.getElementById('main');s.innerHTML='';mk(s,
  el('rect',{x:10,y:10,width:420,height:540,rx:12,fill:C('--violet'),'fill-opacity':.05,stroke:C('--line')},s);
  el('text',{x:24,y:34,'font-size':13,'font-weight':750,style:`fill:${C('--violet')}`},s,'MEMORY · read-only notebook (N/6 latents)');
  el('text',{x:24,y:52,'font-size':11,class:'s'},s,'K_mem, V_mem computed once by the writer · 1 key/value head × 64');
- const memPos={};const att=ATT[Math.min(Math.max(L,1),4)]||{};
+ const meas=S.view==='measured';
+ const memPos={};const att=meas?ATT_M:(ATT[Math.min(Math.max(L,1),4)]||{});
+ if(meas&&!bwd&&L>=1&&L<=4)el('text',{x:24,y:66,'font-size':11,'font-weight':700,style:`fill:${C('--red')}`},s,'measured: an even spread over every link (+ ≈30 % on filler latents)');
  EDGES.forEach((w,wi)=>{const x=24+wi*67;el('text',{x:x+29,y:78,'text-anchor':'middle','font-size':10.5,class:'m'},s,'win '+(wi+1));
   el('rect',{x,y:84,width:58,height:330,rx:7,fill:C('--card2'),'fill-opacity':.7,stroke:C('--line')},s);
   w.forEach((e,k)=>{const y=150+k*150;const a=(L>=1&&L<=4)?(att[e]||0):0;const col=a>.3?C('--orange'):C('--violet');
@@ -272,11 +381,25 @@ function drawMain(){const s=document.getElementById('main');s.innerHTML='';mk(s,
   if(S.det&&inLoop&&L>1){el('line',{x1:NX-24,x2:NX+NW+24,y1:Y.read+40,y2:Y.read+40,stroke:gcol,'stroke-width':3,'stroke-dasharray':'2 3'},s);el('text',{x:NX+NW+28,y:Y.read+60,'font-size':11,style:`fill:${gcol}`},s,'detached');}
   if(L===0)A(NX+NW/2+40,Y.read+44,NX+NW/2+40,Y.emb,gcol,'aR','6 4');}
  // guess bars (right)
- const g=GUESS[L];if(g&&!bwd){const bx=NX+NW+110,by=Y.ans+40;el('text',{x:bx,y:Y.head+10,'font-size':11.5,'font-weight':700,class:'s'},s,L===5?'answer':`exit ${L} guess`);
+ if(meas&&!bwd&&GUESS_M[L]){const bx=NX+NW+100,by=Y.ans+40;el('text',{x:bx,y:Y.head+10,'font-size':11.5,'font-weight':700,class:'s'},s,(L===5?'answer':`exit ${L}`)+' · measured');
+  GUESS_M[L].forEach((v,j)=>{const h=Math.max(v*100,v>0?2:0);const gg=el('g',{},s);el('rect',{x:bx+j*24,y:by-h,width:18,height:h,rx:3,fill:C(GCLS[j][1])},gg);
+   el('rect',{x:bx+j*24-3,y:by-104,width:24,height:120,fill:'transparent'},gg);
+   el('text',{x:bx+9+j*24,y:by+14,'text-anchor':'middle','font-size':10,class:'s'},gg,GCLS[j][0]);
+   hov(gg,`<b>${GCLS[j][2]}</b>: ${(v*100).toFixed(0)} % of decoded answers`);});}
+ const g=GUESS[L];if(g&&!bwd&&!meas){const bx=NX+NW+110,by=Y.ans+40;el('text',{x:bx,y:Y.head+10,'font-size':11.5,'font-weight':700,class:'s'},s,L===5?'answer':`exit ${L} guess`);
   Object.entries(g).forEach(([k,v],j)=>{const h=v*100;el('rect',{x:bx+j*22,y:by-h,width:16,height:h,rx:3,fill:k==='x'?C('--muted'):(['B','C','D'].includes(k)?C('--green'):C('--muted'))},s);el('text',{x:bx+8+j*22,y:by+14,'text-anchor':'middle','font-size':11,class:'s'},s,k==='x'?'other':k);});}
- document.getElementById('say').innerHTML=SAY[S.dir][L];drawVec();}
+ document.getElementById('say').innerHTML=meas?(bwd?'<b>Verified on a tiny model (4 Oct):</b> the gradient paths are wired as drawn: every pass and the memory writer receive gradient from the final loss and from every exit. '+SAY.bwd[L]:SAY_M[L]):SAY[S.dir][L];drawVec();}
 
 function drawVec(){const L=S.loop,inL=L>=1&&L<=4;const r=inL?L:(L===5?4:0);
+ if(S.view==='measured'){const rowsM=[
+  ['h_r · residual state (question side)','~40 × 960','chg',inL?`after loop ${L}: a blend of all links, no first link`:(L===0?'prelude output: "start at A"':'final state → answer layer')],
+  ['q_r · read queries','~40 × 15 heads × 64','chg',inL?'measured: does not name the start node; the same spread every loop':'—'],
+  ['K_mem, V_mem · memory keys and values','N/6 × 1 × 64','fix','written once per book (a check model shows these keys can be addressed by key: 46 % on the asked fact)'],
+  ['α_r · attention over memory + own side','~40 × 15 × (N/6 + 40)','chg',inL?'measured: even over all 12 links (≈ 0.05 each) + ≈ 30 % filler':'—'],
+  ['core weights (read + local)','≈ 15M params','tied','the same matrices every loop; each pass keeps 0.94 of the state'],
+  ['loop marker e_r','4 × 960 (zero at start)','tied','trained norm 0.11–0.25 against a state of ≈ 30: rounds are barely labelled'],
+  ['exit guess_r (training only)','~40 × vocab','chg',inL?(L<=2?`exit ${L}: free answers are not nodes`:`exit ${L}: some link target, right end ≈ 5 %`):'—']];
+  document.getElementById('vec').innerHTML='<tr><th>vector</th><th>shape</th><th>during the loop</th><th>'+(L===0?'prelude':L===5?'answer step':'loop '+L)+' · measured</th></tr>'+rowsM.map(x=>`<tr><td><b>${x[0]}</b></td><td style="white-space:nowrap">${x[1]}</td><td class="${x[2]}">${x[2]==='chg'?'changes':x[2]==='fix'?'fixed':(x[0].startsWith('loop marker')?'per loop':'tied')}</td><td>${x[3]}</td></tr>`).join('');return;}
  const rows=[
   ['h_r · residual state (question side)','~40 × 960','chg',inL?`after loop ${L}: holds "found ${['','B','C','D','D'][L]}"`:(L===0?'prelude output: "start at A"':'final state → answer layer')],
   ['q_r · read queries','~40 × 15 heads × 64','chg',inL?`built from h_${L}: asks about ${['','A','B','C','C'][L]}`:'—'],
@@ -325,8 +448,101 @@ function drawG(){const s=document.getElementById('gsvg');s.innerHTML='';mk(s,'gR
  el('text',{x:150,y:352,'font-size':11.5,class:'s'},s,'red dashed curls = gradient carried back to earlier loops (removed by "detach between loops")');
  el('text',{x:10,y:24,'font-size':12.5,'font-weight':750,class:'s'},s,'L = 0.3·L₁ + 0.3·L₂ + 0.3·L₃ + 1·L₄   (progress targets: B, C, D, D)');}
 
-function drawAll(){drawMain();drawPlan();drawG();}
+/* ===== section 0 · measured results (4 Oct) ===== */
+const ARMS=[ // first-letter accuracy at the end of each stage, 256 test rows: [2, 3, 4 hops]
+ ['single read (control)','single',[.445,.398,.391]],
+ ['loop, seed 1','loop',[.406,.4375,.395]],
+ ['loop, seed 2','loop',[.457,.379,.387]],
+ ['loop from E31 weights','loop',[.449,.406,.422]],
+ ['loop, answer exits','loop',[.395,.441,.387]],
+ ['loop + prelude re-injection','loop',[.402,.410,.352]],
+ ['loop, writer frozen','broken',[.344,.344,.320]],
+ ['loop, wide core','broken',[.227,.223,.246]],
+ ['dense from its lookup weights','dense',[.441,.387,null]],
+ ['dense from scratch','dense',[.254,.262,null]]];
+const FLOOR=[.441,.407,.387],PASS=[null,.75,.60];
+const FAM={loop:['--s1','loop arms',1],broken:['--s1','loop, broken variants',0],single:['--s2','single read',1],dense:['--s3','dense',1]};
+const ANS=[['single read',[.055,.320,.141,.438,.047]],['loop · 4 passes',[.062,.234,.156,.516,.031]],['loop · 3 passes',[.047,.234,.164,.523,.031]],
+ ['loop · 1–2 passes',[0,0,0,0,1]],['random link target',[.083,.25,.167,.5,0]]];
+const EXITS=[['loop, seed 1',[.348,.387,.379,.363]],['loop, seed 2',[.406,.438,.410,.395]],['loop from E31 weights',[.398,.445,.379,.379]],['loop + prelude re-injection',[.355,.375,.383,.371]]];
+const READ=[['loop · pass 1',.047,.056],['loop · pass 4',.048,.056],['single read',.030,.029],['loop from E31 weights · pass 1',.020,.020],['check: 1 of 16 facts by key',.463,.053]];
+const pct=v=>(v*100).toFixed(v<.1&&v>0?1:0)+' %';
+function legends(){
+ document.getElementById('legA').innerHTML=Object.values(FAM).map(([c,n,f])=>`<span><i style="background:${f?`var(${c})`:'transparent'};border:2px solid var(${c})"></i>${n}</span>`).join('')+
+  '<span><i class="ln"></i>guessing floor</span><span><i class="ln" style="border-top:2px dotted var(--muted)"></i>chance 25 %</span><span><i class="ln" style="border-top-color:var(--red)"></i>pass mark set before the run</span>';
+ document.getElementById('legB').innerHTML=GCLS.map(([k,c,n])=>`<span><i style="background:var(${c})"></i>${n}</span>`).join('');
+ document.getElementById('legC').innerHTML=EXITS.map(([n],i)=>`<span><i style="background:var(--s${i+1})"></i>${n}</span>`).join('')+
+  '<span><i class="ln" style="border-top-color:var(--green)"></i>design expectation</span><span><i class="ln"></i>guessing floor (41 %)</span>';
+ const tA='<table><tr><th>arm</th><th>2 hops</th><th>3 hops</th><th>4 hops</th></tr>'+ARMS.map(([n,,v])=>`<tr><td>${n}</td>${v.map(x=>`<td>${x==null?'—':pct(x)}</td>`).join('')}</tr>`).join('')+
+  `<tr><td><i>guessing floor (link-target guess)</i></td>${FLOOR.map(x=>`<td><i>${pct(x)}</i></td>`).join('')}</tr></table>`;
+ const tB='<table><tr><th>decoded answers, 3 hops</th>'+GCLS.map(g=>`<th>${g[2]}</th>`).join('')+'</tr>'+ANS.map(([n,v])=>`<tr><td>${n}</td>${v.map(x=>`<td>${pct(x)}</td>`).join('')}</tr>`).join('')+'</table>';
+ const tC='<table><tr><th>pass names its own node (3 hops)</th><th>pass 1 → B</th><th>pass 2 → C</th><th>pass 3 → D</th><th>pass 4 → D</th></tr>'+EXITS.map(([n,v])=>`<tr><td>${n}</td>${v.map(x=>`<td>${pct(x)}</td>`).join('')}</tr>`).join('')+'</table>';
+ const tD='<table><tr><th>read at the answer position</th><th>share on the needed link</th><th>even split</th></tr>'+READ.map(([n,v,e])=>`<tr><td>${n}</td><td>${pct(v)}</td><td>${pct(e)}</td></tr>`).join('')+'</table>';
+ document.getElementById('numtab').innerHTML=tA+tB+tC+tD;}
+
+function drawA(){const s=document.getElementById('chA');s.innerHTML='';
+ const LX=226,PW=252,GAP=22,TOP=62,RH=27,lo=.15,hi=.85;const X=(p,v)=>LX+p*(PW+GAP)+(v-lo)/(hi-lo)*PW;
+ ARMS.forEach(([n],i)=>el('text',{x:LX-10,y:TOP+i*RH+4,'text-anchor':'end','font-size':12.5,class:'s'},s,n));
+ ['2 hops','3 hops','4 hops'].forEach((t,p)=>{const x0=LX+p*(PW+GAP);
+  el('text',{x:x0,y:16,'text-anchor':'start','font-size':13,'font-weight':750},s,t);
+  ARMS.forEach((_,i)=>el('line',{x1:x0,x2:x0+PW,y1:TOP+i*RH,y2:TOP+i*RH,stroke:C('--line'),'stroke-width':1},s));
+  [.2,.4,.6,.8].forEach(v=>{el('text',{x:X(p,v),y:TOP+ARMS.length*RH+8,'text-anchor':'middle','font-size':11,class:'m'},s,(v*100)+' %');});
+  const yb=TOP+ARMS.length*RH-12;
+  el('line',{x1:X(p,.25),x2:X(p,.25),y1:TOP-14,y2:yb,stroke:C('--muted'),'stroke-width':1.5,'stroke-dasharray':'2 3'},s);
+  el('line',{x1:X(p,FLOOR[p]),x2:X(p,FLOOR[p]),y1:TOP-22,y2:yb,stroke:C('--fg2'),'stroke-width':2,'stroke-dasharray':'6 4'},s);
+  el('text',{x:X(p,FLOOR[p]),y:TOP-26,'text-anchor':'middle','font-size':11,'font-weight':700,class:'s'},s,'floor '+pct(FLOOR[p]));
+  if(PASS[p]){el('line',{x1:X(p,PASS[p]),x2:X(p,PASS[p]),y1:TOP-22,y2:yb,stroke:C('--red'),'stroke-width':2,'stroke-dasharray':'6 4'},s);
+   el('text',{x:X(p,PASS[p]),y:TOP-26,'text-anchor':'middle','font-size':11,'font-weight':700,class:'s'},s,'pass '+pct(PASS[p]));}
+  ARMS.forEach(([n,f,v],i)=>{if(v[p]==null){el('text',{x:x0+PW-4,y:TOP+i*RH+4,'text-anchor':'end','font-size':11,class:'m'},s,'not run');return;}
+   const [c,,fill]=FAM[f];const g=el('g',{},s);
+   el('circle',{cx:X(p,v[p]),cy:TOP+i*RH,r:5.5,fill:fill?C(c):C('--card'),stroke:fill?C('--card'):C(c),'stroke-width':2},g);
+   el('rect',{x:X(p,v[p])-9,y:TOP+i*RH-11,width:18,height:22,fill:'transparent'},g);
+   const d=v[p]-FLOOR[p];hov(g,`<b>${n}</b> · ${t}<br>first letter ${pct(v[p])} (±3)<br>${Math.abs(d)<.035?'at the guessing floor':(d<0?'below the guessing floor':'above the floor')} (${d>=0?'+':''}${(d*100).toFixed(0)} points)`);});});}
+
+function drawB(){const s=document.getElementById('chB');s.innerHTML='';const LX=178,W=330,RH=40,TOP=14;
+ ANS.forEach(([n,v],i)=>{const y=TOP+i*RH;const ref=i===ANS.length-1;
+  el('text',{x:LX-8,y:y+18,'text-anchor':'end','font-size':12,class:ref?'m':'s','font-style':ref?'italic':'normal'},s,n);
+  let x=LX;v.forEach((f,j)=>{if(f<=0)return;const w=f*W;const g=el('g',{},s);
+   el('rect',{x:x+1,y,width:Math.max(w-2,1),height:26,rx:j===0||x===LX?4:2,fill:C(GCLS[j][1]),'fill-opacity':ref?.45:1,stroke:C('--card'),'stroke-width':1},g);
+   if(f>=.09)el('text',{x:x+w/2,y:y+17,'text-anchor':'middle','font-size':11,'font-weight':700,style:'fill:#fff'},g,pct(f));
+   hov(g,`<b>${n}</b><br>${GCLS[j][2]}: ${pct(f)}`);x+=w;});});
+}
+
+function drawD(){const s=document.getElementById('chD');s.innerHTML='';const LX=230,W=270,RH=40,TOP=14,mx=.5;const X=v=>LX+v/mx*W;
+ [0,.1,.2,.3,.4,.5].forEach(v=>{el('line',{x1:X(v),x2:X(v),y1:TOP-4,y2:TOP+READ.length*RH-10,stroke:C('--line'),'stroke-width':1},s);
+  el('text',{x:X(v),y:TOP+READ.length*RH+4,'text-anchor':'middle','font-size':11,class:'m'},s,(v*100)+' %');});
+ READ.forEach(([n,v,e],i)=>{const y=TOP+i*RH;const chk=i===READ.length-1;
+  el('text',{x:LX-8,y:y+16,'text-anchor':'end','font-size':chk?11.5:12,class:'s'},s,n);
+  const g=el('g',{},s);el('rect',{x:LX,y:y+4,width:Math.max(X(v)-LX,2),height:18,rx:4,fill:C(chk?'--s3':'--s1')},g);
+  el('line',{x1:X(e),x2:X(e),y1:y,y2:y+26,stroke:C('--fg'),'stroke-width':2},g);
+  el('text',{x:Math.max(X(v),X(e))+6,y:y+17,'font-size':11.5,'font-weight':700,class:'s'},g,pct(v));
+  el('rect',{x:LX,y,width:W,height:26,fill:'transparent'},g);
+  hov(g,`<b>${n}</b><br>share on the needed link: ${pct(v)}<br>even split over all links: ${pct(e)}`);});}
+
+function drawC(){const s=document.getElementById('chC');s.innerHTML='';const X0=80,X1=860,Y0=250,Y1=20;const X=i=>X0+i*(X1-X0)/3,Y=v=>Y0-(v)*(Y0-Y1);
+ [0,.25,.5,.75,1].forEach(v=>{el('line',{x1:X0,x2:X1,y1:Y(v),y2:Y(v),stroke:C('--line'),'stroke-width':1},s);el('text',{x:X0-8,y:Y(v)+4,'text-anchor':'end','font-size':11,class:'m'},s,(v*100)+' %');});
+ ['pass 1 → B','pass 2 → C','pass 3 → D','pass 4 → D'].forEach((t,i)=>el('text',{x:X(i),y:Y0+20,'text-anchor':'middle','font-size':12,class:'s'},s,t));
+ el('line',{x1:X0,x2:X1,y1:Y(.95),y2:Y(.95),stroke:C('--green'),'stroke-width':2,'stroke-dasharray':'6 4'},s);
+ el('text',{x:X1+8,y:Y(.95)+4,'font-size':11.5,'font-weight':700,class:'s'},s,'design expectation');
+ el('line',{x1:X0,x2:X1,y1:Y(.407),y2:Y(.407),stroke:C('--fg2'),'stroke-width':2,'stroke-dasharray':'6 4'},s);
+ el('line',{x1:X0,x2:X1,y1:Y(.25),y2:Y(.25),stroke:C('--muted'),'stroke-width':1.5,'stroke-dasharray':'2 3'},s);
+ el('text',{x:X1+8,y:Y(.25)+4,'font-size':11,class:'m'},s,'chance 25 %');
+ EXITS.forEach(([n,v],k)=>{const c=C(`--s${k+1}`);el('path',{d:v.map((y,i)=>`${i?'L':'M'}${X(i)},${Y(y)}`).join(''),fill:'none',stroke:c,'stroke-width':2},s);
+  v.forEach((y,i)=>el('circle',{cx:X(i),cy:Y(y),r:4.5,fill:c,stroke:C('--card'),'stroke-width':2},s));});
+ el('text',{x:X1+8,y:Y(.407)-6,'font-size':11.5,'font-weight':700,class:'s'},s,'all four arms: at the');
+ el('text',{x:X1+8,y:Y(.407)+9,'font-size':11.5,'font-weight':700,class:'s'},s,'guessing floor (41 %)');
+ const cross=el('line',{x1:0,x2:0,y1:Y1,y2:Y0,stroke:C('--fg2'),'stroke-width':1,opacity:0},s);
+ const hit=el('rect',{x:X0-40,y:Y1,width:X1-X0+80,height:Y0-Y1,fill:'transparent'},s);
+ hit.addEventListener('mousemove',e=>{const r=s.getBoundingClientRect();const vx=(e.clientX-r.left)*1060/r.width;const i=Math.max(0,Math.min(3,Math.round((vx-X0)/((X1-X0)/3))));
+  cross.setAttribute('x1',X(i));cross.setAttribute('x2',X(i));cross.setAttribute('opacity',.5);
+  tip.innerHTML=`<b>pass ${i+1}</b> (target node ${'BCDD'[i]})<br>`+EXITS.map(([n,v])=>`${n}: ${pct(v[i])}`).join('<br>')+'<br><span style="color:var(--fg2)">design ≈ 95 % · guessing floor 41 %</span>';
+  tip.style.opacity=1;tip.style.left=Math.min(e.clientX+14,innerWidth-360)+'px';tip.style.top=(e.clientY+14)+'px';});
+ hit.addEventListener('mouseleave',()=>{tip.style.opacity=0;cross.setAttribute('opacity',0);});}
+
+function drawAll(){drawMain();drawPlan();drawG();drawA();drawB();drawC();drawD();}
+legends();
 document.querySelectorAll('#dir button').forEach(b=>b.onclick=()=>{S.dir=b.dataset.v;document.querySelectorAll('#dir button').forEach(x=>x.classList.toggle('on',x===b));drawMain();});
+document.querySelectorAll('#view button').forEach(b=>b.onclick=()=>{S.view=b.dataset.v;document.querySelectorAll('#view button').forEach(x=>x.classList.toggle('on',x===b));drawMain();});
 document.querySelectorAll('#loop button').forEach(b=>b.onclick=()=>{S.loop=+b.dataset.v;document.querySelectorAll('#loop button').forEach(x=>x.classList.toggle('on',x===b));drawMain();});
 document.getElementById('frz').onchange=e=>{S.frz=e.target.checked;drawMain();};document.getElementById('det').onchange=e=>{S.det=e.target.checked;drawMain();};
 document.addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){S.loop=Math.max(0,Math.min(5,S.loop+(e.key==='ArrowRight'?1:-1)));document.querySelectorAll('#loop button').forEach(x=>x.classList.toggle('on',+x.dataset.v===S.loop));drawMain();}});

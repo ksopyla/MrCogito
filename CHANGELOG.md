@@ -17,9 +17,10 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ## [2026-10-04] - E33a diagnosis tools: chain overhang, 1-hop parallel chains, read trace, local Apple GPU
 
-**Why:** every E33a arm (and the dense model) plateaued on the parallel chain at the chain-end shortcut
-(43.75 % first letter), and the read never addressed the start node, so the loop was never tested on a
-first hop it could build on. Diagnosis: `docs/4_Research_Notes/e33a_loop_diagnosis_20261004.md`.
+**Why:** every E33a arm (and the dense model) plateaued on the parallel chain at a guessing floor (the
+commonest first letter among all link targets: 44 / 41 / 39 % for 2 / 3 / 4 hops), and the read never
+addressed the start node, so the loop was never tested on a first hop it could build on. A better
+shortcut (pick a chain end, 43.75 %) is also open. Diagnosis: `docs/4_Research_Notes/e33a_loop_diagnosis_20261004.md`.
 
 **Added:**
 - `data/symbolic_tasks.py`: `chain_overhang` (default 0) — every chain continues past the asked node, so

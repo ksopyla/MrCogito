@@ -1,14 +1,17 @@
 # E33a read–think–reread loop: why the extra reads never helped (diagnosis, 2026-10-04)
 
 **Verdict.** The loop was never given a first hop to build on. Every model trained on the parallel chains, the
-loop arms, the single-read control and the dense model alike, settled on a shortcut: *answer with one of the four
-chain ends*. That shortcut scores 43.75 % on the first letter, which is the plateau every arm reached (35–48 %).
-The memory read at the answer position spreads evenly over all edges and never looks up the start node. So
-rounds 2–4 had nothing to refine. Kill criterion K1 is formally met, but the exam could not have told a working
-loop from a broken one. **E33a is untested, not refuted.** No wiring bug was found.
+loop arms, the single-read control and the dense model alike, settled on a **link-target guess**: read all links
+at once and answer with the commonest first letter among the links' targets. That guess scores 44 / 41 / 39 % for
+2 / 3 / 4 hops; the arms scored 41–46 / 38–44 / 35–42 %. Decoding the full answers confirms it: the answers are
+spread over all link targets, almost evenly, and land on the asked chain's end only 5–6 % of the time. The memory
+read at the answer position spreads evenly over all edges and never looks up the start node, so rounds 2–4 had
+nothing to refine. Kill criterion K1 is formally met, but the exam could not have told a working loop from a broken
+one. **E33a is untested, not refuted.** No wiring bug was found.
 
 The causes are upstream of the loop and are all small to fix:
-1. the exam has a shortcut whose floor (43.75 %) sits where we read "partial reasoning";
+1. the exam's guessing floor (44 / 41 / 39 %, and 43.75 % for a chain-end guess that no model found) sits where we
+   read "partial reasoning";
 2. the curriculum never taught *content addressing by key*: the lookup that every chain run starts from, and that
    is replayed during chain training, holds a single marked fact, so the key is never needed;
 3. the capability checks have the same gap: C1 (Address) and C2 (Discriminate) are solvable from block markers
@@ -18,25 +21,41 @@ The causes are upstream of the loop and are all small to fix:
 5. budget: about 150 k training rows per stage, below where comparable chain tasks show their phase transition
    even with single-token nodes.
 
-## 1. The plateau is the chain-end shortcut
+## 1. The plateau is a link-target guess
 
-In `chain_parallel` (`data/symbolic_tasks.py::_emit_chain`) each of the 4 chains ends in a node that is never the
-start of an edge (a *pure target*). A model that learns "the answer is a pure target" and picks one of the four
-scores, on the first letter over a 4-letter alphabet, `1/4 + 3/4 · 1/4 = 43.75 %`. Teacher forcing then makes the
-later letters easy (the candidate set collapses), which is why token accuracy sits at 0.81–0.85 everywhere.
+**What the models answer.** Greedy-decoding the full 8-letter answer of 128 fresh pchain3 rows (local, Apple GPU,
+`decode_answers.py` in the session scratchpad) and classifying it:
 
-| model (pchain3, 1k) | first-letter | letters 1–4 |
-|---|---|---|
-| ideal "pick one of the 4 chain ends" (simulated, 200 k rows) | 43.8 % | 0.44 0.76 0.93 0.98 |
-| loop from scratch, seed 2 | 37.9 % | 0.38 0.54 0.76 0.91 |
-| single-read control | 39.8 % | 0.40 0.51 0.84 0.92 |
-| dense, fine-tuned from its lookup weights (pchain3) | 38.7 % | 0.39 0.55 0.81 0.94 |
-| dense from scratch (pchain2 / pchain3) | 25 % / 26 % | chance on every letter |
+| model (pchain3, 1k) | asked chain's end | another chain's end | asked chain's middle node | another chain's middle node | a start node | not a node |
+|---|---|---|---|---|---|---|
+| single read | 5.5 % | 32.0 % | 14.1 % | 43.8 % | 0 % | 4.7 % |
+| loop seed 2, 4 rounds | 6.2 % | 23.4 % | 15.6 % | 51.6 % | 0 % | 3.1 % |
+| loop seed 2, 3 rounds | 4.7 % | 23.4 % | 16.4 % | 52.3 % | 0 % | 3.1 % |
+| loop seed 2, 1 or 2 rounds (exits) | 0 % | 0 % | 0 % | 0 % | 0 % | 100 % |
+| uniform over the 12 link targets | 8.3 % | 25.0 % | 16.7 % | 50.0 % | 0 % | 0 % |
 
-Every arm sits at or slightly below the ideal shortcut; none is above it. The literature reports the same first
-stage: on in-context chains among distractor chains, transformers first put "nearly uniform probabilities on all
-possible end tokens", then jump much later (Guo et al. 2025, arXiv 2502.13913: ~800 steps × batch 512 ≈ 400 k
-examples, single-token nodes, short context).
+The answers are almost exactly a uniform draw over the targets of all 12 links. A start node (never a target) is
+never produced, so the model knows the answer is a link target, and nothing more. The early exits' free-running
+answers are not nodes at all.
+
+**Why that scores ~40 % on the first letter.** The first letter is an argmax over the mix of the candidates' first
+letters, so the commonest first letter among the link targets wins. Simulated over 200 k rows:
+
+| hops | link targets | link-target guess (argmax of the mix) | observed arms (first letter, 1k) | chain-end guess |
+|---|---|---|---|---|
+| 2 | 8 | **44.1 %** | 41–46 % (dense from lookup weights 44.1 %) | 43.75 % |
+| 3 | 12 | **40.7 %** | 38–44 % (dense 38.7 %) | 43.75 % |
+| 4 | 16 | **38.7 %** | 35–42 % | 43.75 % |
+
+The link-target guess predicts the level *and* the slow fall with more hops; the chain-end guess (pick one of the 4
+pure targets, `1/4 + 3/4 · 1/4`) predicts a flat 43.75 % and is not what the models do, though it is open to them.
+Teacher forcing makes the later letters easy once the first narrows the candidates, which is why token accuracy
+sits at 0.81–0.85 everywhere. Dense from scratch stayed at 25 % (pchain2 / pchain3): it did not even find the
+link-target guess.
+
+The literature reports the same first stage: on in-context chains among distractor chains, transformers first put
+"nearly uniform probabilities on all possible end tokens", then jump much later (Guo et al. 2025, arXiv 2502.13913:
+~800 steps × batch 512 ≈ 400 k examples, single-token nodes, short context).
 
 ## 2. Hop 1 is never learned (the per-round exits)
 
@@ -102,7 +121,7 @@ labelled. Neither blocks a hop; both are worth watching once hops are learned.
 | C2 Discriminate | `select` (fact + decoys) | yes: the fact block opens with `keymark`, decoys with `decoy` |
 | C3 Hold many | `recall` (8 / 16 facts) | **no**: the first exam that needs the key |
 | C4 Compose | `chain_ordered` | partly: the chain's edges are the first *k* hop blocks in reading order, so a reader that counts hop markers needs no key. The memory's slots carry no order across windows (`lm_slot_pos=boundary`), so it cannot use that route. Dense 100 % vs memory chance at 2k is therefore not a hop-following comparison |
-| C5 Reason | `chain_parallel` | the chain-end shortcut gives 43.75 % first letter |
+| C5 Reason | `chain_parallel` | not solvable, but guessable: the link-target guess gives 44 / 41 / 39 % first letter for 2 / 3 / 4 hops, and an unused chain-end guess 43.75 % |
 
 The ladder asks for composition (C4–C5) before it has shown key addressing (C3 is still calibrating), and the C5
 curriculum candidate replays the key-free lookup.
@@ -122,7 +141,9 @@ curriculum candidate replays the key-free lookup.
    Replay a *keyed* exam (recall8 or 1-hop chains), not the single fact. A hop curriculum cut the data needed for
    3 / 4 hops from 10× / 100× to 2× / 5× of the 2-hop budget (Yao et al. 2025, arXiv 2505.17923).
 2. **Data:** `chain_overhang` (new, default 0): every chain continues past the asked node, so the answer is not a
-   pure target and the shortcut scores nothing. Default rows are byte-identical to today's.
+   pure target and the chain-end guess scores nothing. The link-target guess remains (the answer is still a link
+   target), with a floor that falls as links are added (16 targets: 38.7 %). Default rows are byte-identical to
+   today's. Every C5 report should print the guessing floor of its exact exam next to the score.
 3. **Supervision:** keep progress exits as the diagnostic scaffold (MemN2N with strong supervision of the
    supporting facts reached 0 % error). At the 2-hop stage, round 1's target and the final target no longer
    compete, because round 1 already does the lookup. Randomised loop counts (Huginn) can come later.
