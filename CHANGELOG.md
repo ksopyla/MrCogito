@@ -15,6 +15,28 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-10-04] - Capability checks v4 structure: one leveled series, from scratch only, flawed tasks flagged
+
+**Why:** the checks had grown in four layers (ad-hoc probes, suite v3, length battery v1, E33 exams) on
+one engine, with conflicting training protocols, two scoring rules, different seeds and shortcut tasks
+still counted, so the same task gave different numbers in different tables. Author's decisions
+(2026-10-04): from scratch only; an in-run curriculum only when written in the task definition; flawed
+tasks removed from evidence and marked; past reports get dated re-scoring notes. Spec
+`docs/engineering_specs/capability_checks.md` (rewritten).
+
+**Added:**
+- `evaluation/capability_tasks.py`: levels C0 Carry → C7 Language-like, every task (recipe, length,
+  prize, written curriculum, chance, what it measures, status active / calibrating / flawed), packages
+  (screen, core, frontier, language), and `legacy_suite` / `legacy_battery` mapping past results to v4
+  tasks with a match label. `tests/test_capability_tasks.py`.
+- `Cell.flaw` in `evaluation/capability_suite.py`; `run_capability_suite.py` prints FLAWED cells;
+  the scorecard labels them. No exam changed, so `SUITE_VERSION` stays `2026-09-25.v3`.
+
+**Changed:** skills `capability-checks` (rewritten around levels, rules and packages; `suite.md` and
+`battery.md` marked as legacy runners), `experiment-track` (task names, match labels, dated re-scoring
+notes), `experiment-evaluate` (router), `experiment-design` (core package, written curricula only);
+`project-overview.mdc`; glossary (capability checks, in-run curriculum, flawed task, match label).
+
 ## [2026-10-03] - Capability checks: one process, a committed results ledger, NAS archive, capability board
 
 **Why:** the E30/E31/E31b capability results lived only in server `Cache/` folders — never on W&B

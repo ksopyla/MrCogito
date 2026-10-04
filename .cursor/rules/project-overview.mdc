@@ -88,10 +88,14 @@ Input (prior result / idea / vision / paper / cross-domain analogy) →
 `research-implement` (build the bet on the shared foundation — do not substitute a safe retread) →
 `experiment-run` (launch/monitor on Odra/Polonez) → `experiment-evaluate` (tiered eval pipeline) →
 `experiment-track` (results → `master_experiment_log.md`). `docs-hygiene` keeps docs lean.
-Every new architecture or variant also gets the full capability check via `capability-checks`
-(the graded suite L0–L6, the length battery to 128k, and a no-harm comparison with the champion);
-results are pulled into the committed ledger `docs/2_Experiments_Registry/results/capability/` and
-the NAS, and drawn on the capability board — never left only on a server.
+Every new architecture or variant also gets the full capability check via `capability-checks`: one
+leveled series of synthetic tasks (C0 Carry → C1 Address → C2 Discriminate → C3 Hold many → C4 Compose →
+C5 Reason → C6 Aggregate → C7 Language-like; definitions in `evaluation/capability_tasks.py`), **always
+trained from scratch** (an in-run curriculum only when written in the task definition), scored on the
+first answer letter over seeds 0–2, read up to 128k, and compared with the champion under the no-harm
+rule. Flawed tasks are flagged, never used as evidence. Results go to the committed ledger
+`docs/2_Experiments_Registry/results/capability/` and the NAS and are drawn on the capability dashboard —
+never left only on a server.
 `research-comms` governs how **any** of this is reported back in chat (short, plain, no private
 codenames, numbers explained) — see `communication.mdc`; shared vocabulary in `docs/glossary.md`.
 Canonical homes: intent → specs/plans; results → `master_experiment_log.md`; live memory → `agenda.md`.

@@ -1,6 +1,11 @@
 # Length battery — the E31b protocol for any variant
 
-Reference for step 2 of the `capability-checks` process (`SKILL.md` next to this file).
+Reference for the **legacy battery v1** of the `capability-checks` process (`SKILL.md` next to this
+file), used until the v4 runner lands. How it maps onto v4 (`legacy_battery` in
+`evaluation/capability_tasks.py`): the lookup 2k → 8k → 16k stages are the written curriculum of
+`C1.lookup-16k` (`same`); every chain and hard exam starts from the run's own lookup-2k weights, a
+schedule v4 has not adopted, so those map as `curriculum-differs` (shown, marked, not used for no-harm);
+`match3` is **flawed**.
 The question it answers: does the variant keep finding, recalling and chaining facts as the input
 grows from 1k to 128k tokens, and does it keep everything the champion can do?
 

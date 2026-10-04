@@ -250,7 +250,7 @@ def render_md(best: dict, verdicts: dict, arches: list[str], sizes: list[str]) -
                     continue
                 past = f"{a['past_best_arch']} {_f(a['past_best_bits'])}" if a["past_best_arch"] else "—"
                 lines.append(
-                    f"| {s} | {c}{' (stretch)' if CELL_BY_ID[c].stretch else ''} | {_f(a['bits'])} / {_f(a['prize_bits'], 0)} | "
+                    f"| {s} | {c}{' (stretch)' if CELL_BY_ID[c].stretch else ''}{' (FLAWED — not evidence)' if CELL_BY_ID[c].flaw else ''} | {_f(a['bits'])} / {_f(a['prize_bits'], 0)} | "
                     f"{_f(100 * a['acc'] if a['acc'] is not None else None, 0)}% (±{_f(100 * a['acc_se'] if a['acc_se'] else None, 1)}) | "
                     f"{'yes' if a['pass'] else 'no'} | {_f(a['dense_bits'])}{'' if a['dense_pass'] is not False else ' (dense < 75%)'} | {past} | "
                     f"{a['examples_to_75'] if a['examples_to_75'] is not None else '—'} | {a['lr']:g} | {a['seeds']} |")
@@ -300,7 +300,7 @@ architecture at the same size (from the ledger); grey tick = dense model in this
                 if a["dense_bits"] is not None:
                     ticks += f'<span class="tick" style="background:#999;left:{180 * min(1, a["dense_bits"] / prize):.0f}px"></span>'
                 parts.append(
-                    f"<tr><td>{e(s)}</td><td>{e(c)}{' <span class=note>(stretch)</span>' if cell.stretch else ''}"
+                    f"<tr><td>{e(s)}</td><td>{e(c)}{' <span class=note>(stretch)</span>' if cell.stretch else ''}{f' <span class=note title="{e(cell.flaw)}">(FLAWED — not evidence)</span>' if cell.flaw else ''}"
                     f"<div class=note>{e(cell.what)}</div></td>"
                     f'<td><div class="bar"><i style="width:{180 * share:.0f}px;background:{fill}"></i>{ticks}</div></td>'
                     f"<td>{_f(a['bits'])} / {_f(prize, 0)}</td><td>{_f(100 * (a['acc'] or 0), 0)}%</td>"

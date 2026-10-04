@@ -88,10 +88,11 @@ Ask whether the design is a **new inductive bias**, not only whether knobs match
       is NOT in scope (follow-up ablations after a positive signal)
 - [ ] 4. Fill Builds-on: foundation modules + init/checkpoint + baseline id & score + delta
 - [ ] 5. Set numeric success + kill criteria (aggressive enough to stop a bad bet early);
-      for a new architecture or variant, plan the **full capability check** (suite + length
-      battery + no-harm rule vs the champion; `docs/engineering_specs/capability_checks.md`) and
-      state targets on it (target frontier level, exams/lengths that must beat the champion) so
-      the result is comparable;
+      for a new architecture or variant, plan the **capability checks core package** (levels C0–C5
+      trained from scratch, seeds 0–2, ladders to 128k, no-harm rule vs the champion;
+      `docs/engineering_specs/capability_checks.md`, tasks in `evaluation/capability_tasks.py`) and
+      state targets on named tasks (e.g. `C5.pchain3-1k` ≥ 75 % first letter) so the result is
+      comparable; any curriculum must be one already written in the task definitions;
       for each absolute threshold, cite the control that measured its ceiling — or schedule the
       cheap measurement as a pre-flight step in the Plan
 - [ ] 6. Assign the ID (default: next unused flavour letter of the current family,

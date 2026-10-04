@@ -1,6 +1,6 @@
 ---
 name: experiment-evaluate
-description: The single source of truth for evaluating trained MrCogito text checkpoints (a model trained on language, with a checkpoint to load). Knows every checkpoint-evaluation script and runs a tiered pipeline (compute audit → health → concept geometry + AR concept-ablation ΔCE + generation samples → generation vibe-check metrics → zero-shot STS-B → supervised SICK/PAWS/GLUE; lm-eval-harness + RULER-lite long context for perceiver_ar) via uv. Use after a text training run finishes, when comparing best vs last checkpoints, checking concept health, running the generation vibe check or any language benchmark, or preparing checkpoint evidence before experiment-track. Supports concept_ar (E01/E02), backbone_concept (E10/E16), perceiver_ar (E18/E21/E22) and the older perceiver_denoise / weighted_mlm families. Not for architecture exams trained from scratch on synthetic tasks — the capability suite, the length battery to 128k, no-harm comparisons or capability results (capability-checks).
+description: The single source of truth for evaluating trained MrCogito text checkpoints (a model trained on language, with a checkpoint to load). Knows every checkpoint-evaluation script and runs a tiered pipeline (compute audit → health → concept geometry + AR concept-ablation ΔCE + generation samples → generation vibe-check metrics → zero-shot STS-B → supervised SICK/PAWS/GLUE; lm-eval-harness + RULER-lite long context for perceiver_ar) via uv. Use after a text training run finishes, when comparing best vs last checkpoints, checking concept health, running the generation vibe check or any language benchmark, or preparing checkpoint evidence before experiment-track. Supports concept_ar (E01/E02), backbone_concept (E10/E16), perceiver_ar (E18/E21/E22) and the older perceiver_denoise / weighted_mlm families. Not for learning-capability tests of our own architectures trained from scratch on synthetic tasks — the leveled capability checks C0–C7, length ladders to 128k, no-harm comparisons or capability results (capability-checks).
 ---
 
 # Experiment Evaluate
@@ -15,7 +15,7 @@ which links back here for the "how").
 ## Which evaluation do you need? (read this first)
 | you have | you want to know | use |
 |---|---|---|
-| a new or changed **architecture** (no text checkpoint yet; E30/E31/E33-style probes) | can it learn to pick, carry, chain facts; does it hold to 128k; did it lose anything vs the champion | **`capability-checks`** (suite + length battery + board) |
+| a new or changed **architecture** (trained from scratch on synthetic tasks; E30/E31/E33-style) | can it learn to carry, address, discriminate, hold, compose, reason (levels C0–C7); does it hold to 128k; did it lose anything vs the champion | **`capability-checks`** (task definitions `evaluation/capability_tasks.py`, ledger, dashboard) |
 | a **trained text checkpoint** (`Cache/Training/<run_id>/checkpoint-*`) | concept health, generation quality, semantic / reasoning / long-context benchmarks | this skill |
 | results from either | what they mean, the registry | `experiment-track` |
 
@@ -366,8 +366,8 @@ MODEL_PATH_OVERRIDE="$BEST" MODEL_TYPE_OVERRIDE=concept_ar TOKENIZER_NAME_OVERRI
 Repeat the whole pipeline for `$LAST`, changing the output JSON / report labels.
 
 ## Architecture exams are not here
-The capability suite, the length battery (ladders to 128k), the no-harm comparison against the
-champion, the results ledger and the capability board all live in the **`capability-checks`**
+The leveled capability tasks (C0–C7, including the old suite and length battery), the no-harm
+comparison against the champion, the results ledger and the capability dashboard all live in the **`capability-checks`**
 skill. Do not run them from this skill, and do not look for their results in
 `Cache/Evaluation_reports/` or W&B: they are in `docs/2_Experiments_Registry/results/capability/`.
 
