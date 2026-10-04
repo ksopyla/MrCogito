@@ -100,6 +100,13 @@ class Cell:
     family: str = "dna"            # dna | glyph
 
     @property
+    def flaw(self) -> str | None:
+        """Why this cell is not evidence of the capability it is named after (v4 task definitions), or None."""
+        from evaluation.capability_tasks import FLAWED, SUITE_V3
+
+        return FLAWED.get(SUITE_V3.get(self.id, ""))
+
+    @property
     def seq_len(self) -> int:
         from data.bapo_ladder import SCALES
 

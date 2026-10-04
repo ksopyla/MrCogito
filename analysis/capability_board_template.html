@@ -2,13 +2,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: one reading column — verdict first (no-harm vs the champion), then the length battery as
-   small multiples, then the suite grid, then where every number came from. */
+/* Layout: one reading column — what changed vs the champion, the task table by level, the length charts
+   by level, the task guide, the re-run list, then where every number came from. One model filter drives all. */
 :root {
   --bg: #f6f7f8; --surface: #ffffff; --ink: #14171a; --ink-2: #4b535b; --ink-3: #7b838b;
   --rule: #dfe3e7; --grid: #edf0f2; --accent: #1c5cab;
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
-  --good: #0ca30c; --critical: #d03b3b; --warning: #b77800;
+  --good: #0a7d0a; --critical: #c62f2f; --warning: #9a6400; --muted-chip: #5d656d;
   --seq-0: #f0efec; --seq-1: #cde2fb; --seq-2: #9ec5f4; --seq-3: #6da7ec; --seq-4: #3987e5; --seq-5: #256abf; --seq-6: #184f95;
   --seq-ink-dark: #ffffff;
   --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -19,7 +19,7 @@
     --bg: #121416; --surface: #1a1d20; --ink: #f2f4f6; --ink-2: #b9c0c7; --ink-3: #868e96;
     --rule: #2c3136; --grid: #24292d; --accent: #6da7ec;
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
-    --good: #2fbf2f; --critical: #e66767; --warning: #fab219;
+    --good: #2fbf2f; --critical: #e66767; --warning: #fab219; --muted-chip: #9aa2aa;
     --seq-0: #2a2e32; --seq-1: #104281; --seq-2: #184f95; --seq-3: #1c5cab; --seq-4: #256abf; --seq-5: #3987e5; --seq-6: #6da7ec;
     color-scheme: dark;
   }
@@ -28,72 +28,90 @@
   --bg: #121416; --surface: #1a1d20; --ink: #f2f4f6; --ink-2: #b9c0c7; --ink-3: #868e96;
   --rule: #2c3136; --grid: #24292d; --accent: #6da7ec;
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
-  --good: #2fbf2f; --critical: #e66767; --warning: #fab219;
+  --good: #2fbf2f; --critical: #e66767; --warning: #fab219; --muted-chip: #9aa2aa;
   --seq-0: #2a2e32; --seq-1: #104281; --seq-2: #184f95; --seq-3: #1c5cab; --seq-4: #256abf; --seq-5: #3987e5; --seq-6: #6da7ec;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
 body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); margin: 0; }
-.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 64px; display: grid; gap: 36px; }
+a { color: var(--accent); }
+.wrap { max-width: 1280px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 64px; display: grid; gap: 34px; }
 h1 { font-size: 30px; line-height: 1.15; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
-h2 { font-size: 19px; margin: 0 0 4px; text-wrap: balance; }
-p { margin: 0; max-width: 72ch; }
+h2 { font-size: 20px; margin: 0 0 4px; text-wrap: balance; }
+h3 { font-size: 15px; margin: 0; }
+p { margin: 0; max-width: 76ch; }
 .muted { color: var(--ink-2); }
 .small { font-size: 13px; color: var(--ink-3); }
-.mono, td.num, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.mono, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 header { display: grid; gap: 10px; }
 .eyebrow { font: 500 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
-section { display: grid; gap: 14px; min-width: 0; }
+nav.toc { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; }
+section { display: grid; gap: 14px; min-width: 0; scroll-margin-top: 90px; }
+.filterbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); border-bottom: 1px solid var(--rule);
+  padding-block: 10px; display: grid; gap: 6px; }
+.controls { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.controls label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; }
+.controls input { accent-color: var(--accent); }
+.controls button { font: 500 12px var(--sans); background: none; border: 1px solid var(--rule); color: var(--ink-2); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+.swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; display: inline-block; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 12px; color: var(--ink-2); }
+.chip { display: inline-flex; align-items: center; gap: 5px; font: 500 12px/1 var(--sans); padding: 4px 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+.chip.active { color: var(--good); } .chip.partial { color: var(--warning); } .chip.missing { color: var(--critical); }
+.chip.calibrating { color: var(--warning); } .chip.flawed { color: var(--muted-chip); text-decoration: line-through; }
+.badge { display: inline-block; font: 600 10px/1 var(--mono); padding: 2px 3px; border-radius: 3px; border: 1px solid currentColor; vertical-align: 2px; margin-left: 3px; }
 .verdicts { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-.verdict { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; display: grid; gap: 8px; min-width: 0; align-content: start; }
+.verdict { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; display: grid; gap: 8px; align-content: start; min-width: 0; }
 .verdict .name { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-.swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
-.pill { display: inline-flex; align-items: center; gap: 6px; font: 500 13px/1 var(--sans); padding: 5px 9px; border-radius: 999px; border: 1px solid var(--rule); }
-.pill.good { color: var(--good); border-color: currentColor; }
-.pill.bad { color: var(--critical); border-color: currentColor; }
-.pill.warn { color: var(--warning); border-color: currentColor; }
 .counts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .lost { font-size: 13px; color: var(--ink-2); display: grid; gap: 2px; }
-.controls { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
-.controls label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 14px; }
-.controls input { accent-color: var(--accent); }
+.tablebox { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; max-width: 100%; }
+table { border-collapse: collapse; font-size: 13px; }
+th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--grid); }
+th { font-weight: 600; color: var(--ink-2); background: var(--surface); vertical-align: bottom; }
+#ttable th.mcol { text-align: center; min-width: 88px; max-width: 128px; white-space: normal; font-size: 12px; line-height: 1.3; }
+#ttable th.mcol .swatch { display: block; margin: 0 auto 4px; }
+#ttable td.task { position: sticky; left: 0; background: var(--surface); min-width: 220px; max-width: 300px; }
+#ttable td.task .tid { font: 11px var(--mono); color: var(--ink-3); }
+#ttable td.task a { color: var(--ink); text-decoration: none; border-bottom: 1px dotted var(--ink-3); }
+#ttable td.st { white-space: nowrap; }
+#ttable td.st .small { display: block; margin-top: 3px; white-space: normal; max-width: 180px; }
+tr.lvrow td { background: var(--bg); padding-top: 14px; }
+tr.lvrow .lvname { font: 600 13px var(--sans); color: var(--ink); }
+tr.lvrow .lvq { font-size: 12px; color: var(--ink-3); margin-left: 8px; }
+tr.flawedrow td.task, tr.flawedrow td.task a { text-decoration: line-through; color: var(--ink-3); }
+td.cell { text-align: center; font-family: var(--mono); font-variant-numeric: tabular-nums; min-width: 70px; line-height: 1.25; }
+td.cell .sub { display: block; font-size: 10px; opacity: .85; }
+td.cell.pass { box-shadow: inset 0 0 0 2px var(--ink); }
+td.cell.legacy { box-shadow: inset 0 0 0 1px var(--ink-3); background-image: repeating-linear-gradient(135deg, transparent 0 6px, rgba(127,127,127,.18) 6px 7px); }
+td.cell.empty { color: var(--ink-3); }
+td.cell.flawed { color: var(--ink-3); text-decoration: line-through; background: none !important; }
 .multiples { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; }
-.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 12px 6px; min-width: 0; position: relative; }
-.panel h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.lvhead { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; padding-top: 8px; }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 12px 6px; min-width: 0; }
+.panel.legacy { border-style: dashed; }
+.panel.flawed { opacity: .55; }
+.panel h3 { font-size: 14px; }
 .panel .stage { font-size: 12px; color: var(--ink-3); }
 .panel svg { display: block; width: 100%; height: auto; overflow: visible; }
-.panel.extra { border-style: dashed; }
 .axis text { fill: var(--ink-3); font: 10px var(--mono); }
-.axis line, .gridline { stroke: var(--grid); stroke-width: 1; }
+.gridline { stroke: var(--grid); stroke-width: 1; }
 .passline { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 3 3; }
 .series path { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .series circle { stroke: var(--surface); stroke-width: 2; }
-.series circle.hollow { fill: var(--surface) !important; stroke-width: 1.5; }
 .crosshair { stroke: var(--ink-3); stroke-width: 1; }
-#tip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface); color: var(--ink); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.12); min-width: 160px; }
-#tip .row { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+.guide { display: grid; gap: 16px; }
+.glevel { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; display: grid; gap: 10px; }
+.glevel .q { color: var(--ink-2); }
+.gtask { display: grid; gap: 2px; padding-top: 8px; border-top: 1px solid var(--grid); scroll-margin-top: 100px; }
+.gtask .meta { font: 12px var(--mono); color: var(--ink-3); }
+.gtask:target { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+#tip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface); color: var(--ink); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.14); max-width: 340px; }
+#tip .row { display: flex; gap: 10px; justify-content: space-between; }
 #tip .row span:first-child { display: inline-flex; align-items: center; gap: 6px; }
-.tablebox { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; }
-table { border-collapse: collapse; width: 100%; font-size: 13px; }
-th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--grid); white-space: nowrap; }
-th { font-weight: 600; color: var(--ink-2); background: var(--surface); position: sticky; top: 0; }
-th.lv { text-align: center; font: 500 11px var(--mono); letter-spacing: .05em; color: var(--ink-3); }
-td.cell { text-align: center; font-family: var(--mono); font-variant-numeric: tabular-nums; min-width: 52px; }
-td.cell.pass { box-shadow: inset 0 0 0 2px var(--ink); }
-td.cell.empty { color: var(--ink-3); }
-tr.lvrow td { font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); background: var(--bg); padding-top: 10px; }
-td.exam { font-family: var(--mono); position: sticky; left: 0; background: var(--surface); }
-#suite-table { width: auto; }
-#suite .tablebox { width: fit-content; max-width: 100%; }
-th.archcol { white-space: normal; min-width: 92px; max-width: 140px; vertical-align: bottom; text-align: center; font-size: 12px; line-height: 1.3; }
-th.archcol .swatch { display: block; margin: 0 auto 4px; }
-.legendbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 12px; color: var(--ink-3); }
-.ramp { display: inline-flex; border-radius: 3px; overflow: hidden; }
-.ramp i { width: 22px; height: 12px; display: block; }
 details summary { cursor: pointer; font-weight: 600; }
 details[open] summary { margin-bottom: 10px; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-@media (max-width: 520px) { h1 { font-size: 24px; } .wrap { padding-inline: 16px; } }
+@media (max-width: 560px) { h1 { font-size: 24px; } .wrap { padding-inline: 16px; } #ttable td.task { min-width: 160px; } }
 </style>
 
 <div class="wrap">
@@ -101,7 +119,16 @@ details[open] summary { margin-bottom: 10px; }
     <div class="eyebrow">MrCogito · capability checks</div>
     <h1>Capability Board</h1>
     <p class="muted" id="lede"></p>
+    <nav class="toc" aria-label="Sections">
+      <a href="#harm">Kept or lost vs the champion</a><a href="#tasks">Task table</a><a href="#length">Length charts</a>
+      <a href="#guide">Task guide</a><a href="#reruns">Re-run list</a><a href="#sources">Sources</a>
+    </nav>
   </header>
+
+  <div class="filterbar">
+    <div class="controls" id="filter" role="group" aria-label="Models shown in the table and charts"></div>
+    <div class="legend" id="legend"></div>
+  </div>
 
   <section id="harm">
     <div>
@@ -111,38 +138,50 @@ details[open] summary { margin-bottom: 10px; }
     <div class="verdicts" id="verdicts"></div>
   </section>
 
-  <section id="battery">
+  <section id="tasks">
     <div>
-      <h2>Length battery: does it hold up as the input grows?</h2>
-      <p class="muted">Each chart is one exam and training stage. The model trains at the length in the subtitle, then reads longer
-        inputs with no more training. The y axis is first-letter accuracy, the honest score when the book holds several candidate
-        answers. Higher is better; the dashed line is the 75&nbsp;% pass mark and chance is 25&nbsp;%. Hollow points are the mean over
-        answer letters, shown unconnected where the first letter was not measured (it overstates multi-candidate exams). Lines join the first-letter medians over seeds.</p>
+      <h2>Task table</h2>
+      <p class="muted">One row per task, grouped by level (each level builds on the one before). The number is the first-letter score in
+        percent at the training length, median over seeds; the small line is the score when the same model reads a 128k book.
+        A solid outline is a pass (≥ 75 %) on a result that matches the task definition. Hatched cells come from an older protocol
+        (letter badge, see the legend) and do not count yet. Hover any name or number for what it means.</p>
     </div>
-    <div class="controls" id="toggles" role="group" aria-label="Variants shown"></div>
+    <div class="tablebox"><table id="ttable"></table></div>
+  </section>
+
+  <section id="length">
+    <div>
+      <h2>Length charts: does it hold up as the book grows?</h2>
+      <p class="muted">Each chart is one task (or one stage of its curriculum). The model trains at the length in the subtitle, then reads
+        longer books with no more training. First-letter accuracy, median over seeds, only where every seed was scored that way. The
+        dashed line is the 75 % pass mark; chance is 25 %. Dashed cards come from an older protocol.</p>
+    </div>
     <div class="multiples" id="multiples"></div>
   </section>
 
-  <section id="suite">
+  <section id="guide">
     <div>
-      <h2>Capability suite: the graded exams</h2>
-      <p class="muted" id="suite-lede"></p>
+      <h2>Task guide</h2>
+      <p class="muted">What every level and task measures. Every task trains from scratch (random init); a curriculum is allowed only when
+        written here, and it is the same for every architecture. Definitions live in <span class="mono">evaluation/capability_tasks.py</span>.</p>
     </div>
-    <div class="controls" id="suite-toggles" role="group" aria-label="Architectures shown in the suite table"></div>
-    <div class="legendbar" id="suite-legend"></div>
-    <div class="tablebox"><table id="suite-table"></table></div>
+    <div class="guide" id="guidebox"></div>
   </section>
 
-  <section id="sources-sec">
+  <section id="reruns">
+    <div>
+      <h2>Re-run list</h2>
+      <p class="muted" id="rerun-lede"></p>
+    </div>
+    <div class="tablebox"><table id="rerun-table"></table></div>
+  </section>
+
+  <section id="sources">
     <details>
       <summary>Where these numbers come from</summary>
-      <div class="tablebox"><table id="sources"></table></div>
+      <div class="tablebox"><table id="sources-table"></table></div>
       <p class="small" style="margin-top:8px">Raw folders (logs, checkpoints, every ladder) are archived on the NAS at the path shown.
         Refresh with <span class="mono">scripts/pull_capability_results.sh</span>, then <span class="mono">analysis/capability_board.py</span>.</p>
-    </details>
-    <details>
-      <summary>All battery numbers as a table</summary>
-      <div class="tablebox"><table id="battery-table"></table></div>
     </details>
   </section>
 </div>
@@ -153,62 +192,40 @@ const D = /*__DATA__*/null;
 const SERIES = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
 const NAMES = {
   e31_li_m1: "E31 latent memory (1 entry per latent)", e31_li: "E31 latent memory", e30_li: "E30 sliding-window notebook",
-  e33a_loop: "E33a re-read loop", e33a_wide: "E33a wide loop (read + both local layers)", dense: "Dense model (ceiling)",
+  e33a_loop: "E33a re-read loop", e33a_wide: "E33a wide loop", dense: "Dense model (ceiling)",
   e33a_r1: "E33a single-read control", e33a_loopft: "E33a loop, fine-tuned from E31", e33a_loopans: "E33a loop, answer exits",
   e33a_loopfrz: "E33a loop, writer frozen", e33a_loopinj: "E33a loop, prelude re-injected",
   e30: "E30 (first build)", e30_ctx: "E30 with wider first layer", e31_page: "E31 page memory (first build)",
-  e31_bixt: "E31 two-way memory (first build)",
-  e31_mix_m1: "E31 + split slot RoPE", e30_mix: "E30 + split slot RoPE", e31_ord_m1: "E31 + order code",
+  e31_bixt: "E31 two-way memory (first build)", e31_mix_m1: "E31 + split slot RoPE", e30_mix: "E30 + split slot RoPE",
+  e31_ord_m1: "E31 + order code", e30_ord: "E30 + order code",
 };
-const label = v => NAMES[v] ? `${NAMES[v]}` : v;
-const color = v => { const i = D.variants.indexOf(v); return i >= 0 && i < SERIES.length ? `var(${SERIES[i]})` : "var(--ink-3)"; };
+const LABEL = {
+  "same": {b: "", t: "matches the task definition (from scratch, same settings)"},
+  "settings-differ": {b: "≈", t: "same task from scratch, other step size / budget / rows — shown, does not count yet"},
+  "curriculum-differs": {b: "c", t: "from scratch, but through a schedule that is not the written one (e.g. started from the run's own lookup weights) — shown, does not count yet"},
+  "not-from-scratch": {b: "×", t: "started from another run's weights — not a learning-capability result"},
+  "flawed": {b: "f", t: "the task has a known shortcut — never evidence"},
+  "curriculum stage": {b: "s", t: "an intermediate stage of a curriculum, drawn next to its task"},
+};
+const STATUS = {
+  active: "matches the definition, all seeds", partial: "matches, but seeds or length ladder missing",
+  missing: "no result under the definition yet", calibrating: "recipe not fixed yet", flawed: "flawed — never evidence",
+};
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const label = m => NAMES[m] || m;
+const color = m => { const i = D.models.indexOf(m); return i >= 0 && i < SERIES.length ? `var(${SERIES[i]})` : "var(--ink-3)"; };
 const pct = x => x == null ? "–" : `${Math.round(100 * x)}`;
 const kLen = L => L >= 1024 ? `${Math.round(L / 1024)}k` : `${L}`;
-const shown = new Set(D.visible && D.visible.length ? D.visible : D.variants);
-try { const s = JSON.parse(localStorage.getItem("capboard-shown") || "null"); if (Array.isArray(s)) { shown.clear(); s.filter(v => D.variants.includes(v)).forEach(v => shown.add(v)); } } catch (e) {}
-const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const taskBy = Object.fromEntries(D.tasks.map(t => [t.id, t]));
+const seq = ["--seq-0","--seq-1","--seq-2","--seq-3","--seq-4","--seq-5","--seq-6"];
+const seqColor = a => a == null ? "" : `var(${seq[Math.min(6, Math.floor(Math.max(0, Math.min(1, (a - 0.25) / 0.75)) * 7))]})`;
+const seqInk = a => a != null && (a - 0.25) / 0.75 >= 0.57 ? "var(--seq-ink-dark)" : "var(--ink)";
 
-document.getElementById("lede").textContent =
-  `Every architecture variant takes the same exams: the length battery (train short, read up to 128k tokens) and the graded suite. ` +
-  `Each variant is compared with the current champion, ${label(D.champion)}. Built ${D.generated} from the committed results ledger.`;
-document.getElementById("harm-rule").textContent =
-  `A capability counts as lost when a variant scores more than ${Math.round(100 * D.harm_points)} points below the champion ` +
-  `on an exam and length where the champion passes (at least ${Math.round(100 * D.pass)} %). "Not run" means the champion passes there but the variant has no result yet.`;
+const shown = new Set(D.visible);
+try { const s = JSON.parse(localStorage.getItem("capboard-v4-models") || "null"); if (Array.isArray(s)) { shown.clear(); s.filter(m => D.models.includes(m)).forEach(m => shown.add(m)); } } catch (e) {}
+const save = () => { try { localStorage.setItem("capboard-v4-models", JSON.stringify([...shown])); } catch (e) {} };
 
-// ---- no-harm verdicts
-const vbox = document.getElementById("verdicts");
-const allHarm = Object.entries(D.no_harm);
-const harmEntries = allHarm.filter(([v, r]) => r.kept + r.lost.length > 0);
-const noOverlap = allHarm.filter(([v, r]) => r.kept + r.lost.length === 0).map(([v]) => label(v));
-if (!harmEntries.length) vbox.innerHTML = `<p class="muted">No variant has results yet on exams the champion passes.</p>`;
-for (const [v, r] of harmEntries) {
-  const lost = r.lost.length;
-  const state = lost ? ["bad", "✕", `${lost} lost`] : (r.kept ? ["good", "✓", "nothing lost"] : ["warn", "!", "no overlap yet"]);
-  const lostList = r.lost.slice(0, 6).map(x => `<div>${esc(x.where)}: ${pct(x.variant)} vs ${pct(x.champion)}</div>`).join("") +
-    (lost > 6 ? `<div>and ${lost - 6} more</div>` : "");
-  vbox.insertAdjacentHTML("beforeend", `<div class="verdict">
-    <div class="name"><span class="swatch" style="background:${color(v)}"></span>${esc(label(v))}</div>
-    <div class="counts"><span class="pill ${state[0]}">${state[1]} ${state[2]}</span>
-      <span class="pill">${r.kept} kept</span><span class="pill">${r.missing} not run</span></div>
-    ${lost ? `<div class="lost">${lostList}</div>` : ""}</div>`);
-}
-
-if (noOverlap.length) vbox.insertAdjacentHTML("afterend", `<p class="small">No overlap with the champion yet (they only took exams the champion does not pass, such as the parallel chains): ${noOverlap.map(esc).join(", ")}.</p>`);
-
-// ---- toggles
-const tog = document.getElementById("toggles");
-D.variants.forEach((v, i) => {
-  tog.insertAdjacentHTML("beforeend", `<label for="t-${i}"><input type="checkbox" id="t-${i}" data-v="${esc(v)}" ${shown.has(v) ? "checked" : ""}>
-    <span class="swatch" style="background:${color(v)}"></span>${esc(label(v))}${v === D.champion ? " · champion" : ""}</label>`);
-});
-tog.addEventListener("change", e => {
-  const v = e.target.dataset.v; if (!v) return;
-  e.target.checked ? shown.add(v) : shown.delete(v);
-  try { localStorage.setItem("capboard-shown", JSON.stringify([...shown])); } catch (err) {}
-  drawBattery();
-});
-
-// ---- small multiples
+// ---- tooltip
 const tip = document.getElementById("tip");
 function showTip(html, ev) {
   tip.innerHTML = html; tip.hidden = false;
@@ -219,129 +236,192 @@ function showTip(html, ev) {
   tip.style.left = `${Math.max(8, x)}px`; tip.style.top = `${Math.max(8, y)}px`;
 }
 const hideTip = () => { tip.hidden = true; };
+function taskTip(t) {
+  return `<div><b>${esc(t.name)}</b> <span class="small mono">${esc(t.id)}</span></div>
+    <div class="small">${esc(t.measures)}</div>
+    <div class="small">trains at ${kLen(t.train_len)} tokens${t.ladder ? ", then reads up to 128k" : ""} · chance ${Math.round(100 * t.chance)} %${t.prize ? ` · ${t.prize} bits per answer` : ""}</div>
+    ${t.curriculum ? `<div class="small">curriculum: ${esc(t.curriculum)}</div>` : ""}
+    <div class="small">status: ${esc(STATUS[t.status])}${t.note ? ` — ${esc(t.note)}` : ""}</div>`;
+}
 
-function drawBattery() {
+// ---- header, filter, legend
+document.getElementById("lede").textContent =
+  `Can our own architectures learn to carry, find, hold, chain and reason over information? Every model trains from scratch on the same ` +
+  `leveled tasks; this page shows every recorded result mapped onto those tasks (${D.version}), compared with the champion, ${label(D.champion)}. ` +
+  `Built ${D.generated} from the committed results ledger. Nothing here has been re-run or re-scored: older results are shown with their protocol label.`;
+let moreOpen = false;
+function drawFilter() {
+  const f = document.getElementById("filter");
+  const box = (m) => { const i = D.models.indexOf(m); return `<label for="m-${i}"><input type="checkbox" id="m-${i}" data-m="${esc(m)}" ${shown.has(m) ? "checked" : ""}>
+    <span class="swatch" style="background:${color(m)}"></span>${esc(label(m))}${m === D.champion ? " · champion" : ""}</label>`; };
+  const main = D.models.filter(m => D.visible.includes(m)), rest = D.models.filter(m => !D.visible.includes(m));
+  const on = rest.filter(m => shown.has(m)).length;
+  f.innerHTML = main.map(box).join("") +
+    `<button type="button" id="m-more" aria-expanded="${moreOpen}">${moreOpen ? "Fewer models" : `More models (${rest.length}${on ? `, ${on} on` : ""})`}</button>` +
+    `<button type="button" id="m-default">Default set</button>` +
+    (moreOpen ? `<div class="controls" style="flex-basis:100%">${rest.map(box).join("")}</div>` : "");
+}
+drawFilter();
+document.getElementById("filter").addEventListener("change", e => {
+  const m = e.target.dataset.m; if (!m) return;
+  e.target.checked ? shown.add(m) : shown.delete(m); save(); drawTable(); drawCharts();
+});
+document.getElementById("filter").addEventListener("click", e => {
+  if (e.target.id === "m-more") { moreOpen = !moreOpen; drawFilter(); return; }
+  if (e.target.id !== "m-default") return;
+  shown.clear(); D.visible.forEach(m => shown.add(m)); save(); drawFilter(); drawTable(); drawCharts();
+});
+document.getElementById("legend").innerHTML =
+  ["active", "partial", "missing", "calibrating", "flawed"].map(s => `<span class="chip ${s}" title="${esc(STATUS[s])}">${s}</span>`).join("") +
+  ["settings-differ", "curriculum-differs", "not-from-scratch"].map(l => `<span title="${esc(LABEL[l].t)}"><span class="badge">${LABEL[l].b}</span> ${l.replace(/-/g, " ")}</span>`).join("") +
+  `<span>first letter, %; 25 % is chance, 75 % passes</span>`;
+
+// ---- no-harm
+document.getElementById("harm-rule").textContent =
+  `A capability counts as lost when a model scores more than ${Math.round(100 * D.harm_points)} points below the champion on a task (or a length) ` +
+  `where the champion passes, comparing only results that match the task definition. "Not comparable yet" means the champion passes there ` +
+  `but the model has no matching result.`;
+(function drawVerdicts() {
+  const vbox = document.getElementById("verdicts");
+  const entries = Object.entries(D.no_harm).filter(([m, r]) => r.kept + r.lost.length > 0);
+  const none = Object.entries(D.no_harm).filter(([m, r]) => r.kept + r.lost.length === 0).map(([m]) => label(m));
+  vbox.innerHTML = entries.map(([m, r]) => {
+    const lost = r.lost.length;
+    const st = lost ? ["missing", "✕", `${lost} lost`] : ["active", "✓", "nothing lost"];
+    const list = r.lost.slice(0, 6).map(x => `<div>${esc(x.where)}: ${pct(x.variant)} vs ${pct(x.champion)}</div>`).join("") + (lost > 6 ? `<div>and ${lost - 6} more</div>` : "");
+    return `<div class="verdict"><div class="name"><span class="swatch" style="background:${color(m)}"></span>${esc(label(m))}</div>
+      <div class="counts"><span class="chip ${st[0]}">${st[1]} ${st[2]}</span><span class="chip" style="color:var(--ink-2)">${r.kept} kept</span>
+      <span class="chip" style="color:var(--ink-2)">${r.missing} not comparable yet</span></div>${lost ? `<div class="lost">${list}</div>` : ""}</div>`;
+  }).join("") || `<p class="muted">No model has results that match the task definitions where the champion passes.</p>`;
+  if (none.length) vbox.insertAdjacentHTML("afterend", `<p class="small">No comparable results yet (only older-protocol results, see the re-run list): ${none.map(esc).join(", ")}.</p>`);
+})();
+
+// ---- task table
+function drawTable() {
+  const tbl = document.getElementById("ttable");
+  const cols = D.models.filter(m => shown.has(m));
+  let h = `<thead><tr><th>task</th><th>status</th>` + cols.map(m =>
+    `<th class="mcol"><span class="swatch" style="background:${color(m)}"></span>${esc(label(m))}</th>`).join("") + `</tr></thead><tbody>`;
+  const groups = [...D.levels.map(l => ({...l})), {id: "X", name: "Flawed", question: "kept so nobody reuses them as evidence"}];
+  for (const lv of groups) {
+    const rows = D.tasks.filter(t => t.level === lv.id);
+    if (!rows.length) continue;
+    h += `<tr class="lvrow"><td colspan="${cols.length + 2}"><span class="lvname">${esc(lv.id === "X" ? "Flawed tasks" : `${lv.id} ${lv.name}`)}</span><span class="lvq">${esc(lv.question)}</span></td></tr>`;
+    for (const t of rows) {
+      const fl = t.status === "flawed";
+      h += `<tr class="${fl ? "flawedrow" : ""}"><td class="task" data-t="${esc(t.id)}"><a href="#task-${esc(t.id)}">${esc(t.name)}</a><div class="tid">${esc(t.id)}</div></td>
+        <td class="st"><span class="chip ${t.status}">${t.status}</span>${t.note ? `<span class="small">${esc(t.note)}</span>` : ""}</td>`;
+      for (const m of cols) {
+        const e = (D.table[t.id] || {})[m];
+        if (!e) { h += `<td class="cell empty">·</td>`; continue; }
+        const L128 = e.ladder["131072"];
+        const legacy = e.label !== "same" && !fl;
+        const pass = !fl && e.label === "same" && e.score != null && e.score >= D.pass;
+        const bg = fl ? "" : `background-color:${seqColor(e.score)};color:${seqInk(e.score)}`;
+        h += `<td class="cell ${fl ? "flawed" : ""} ${legacy ? "legacy" : ""} ${pass ? "pass" : ""}" tabindex="0" data-t="${esc(t.id)}" data-m="${esc(m)}" style="${bg}">` +
+          `${pct(e.score)}${legacy ? `<span class="badge">${LABEL[e.label].b}</span>` : ""}` +
+          `${L128 != null ? `<span class="sub">128k: ${pct(L128)}</span>` : ""}</td>`;
+      }
+      h += `</tr>`;
+    }
+  }
+  tbl.innerHTML = h + `</tbody>`;
+}
+drawTable();
+document.getElementById("ttable").addEventListener("pointerover", ev => {
+  const cell = ev.target.closest("td[data-m]"), name = ev.target.closest("td.task");
+  if (cell) {
+    const t = taskBy[cell.dataset.t], e = D.table[t.id][cell.dataset.m];
+    const lad = Object.entries(e.ladder).map(([L, v]) => `${kLen(+L)} ${pct(v)}`).join(" · ");
+    showTip(`<div><b>${esc(label(cell.dataset.m))}</b> · ${esc(t.name)}</div>
+      <div class="row"><span>first letter at ${kLen(t.train_len)}</span><span class="num">${pct(e.score)} %</span></div>
+      <div class="row"><span>mean over answer letters</span><span class="num">${pct(e.mean)} %</span></div>
+      <div class="row"><span>seeds</span><span class="num">${e.seeds.join(", ") || "–"}</span></div>
+      ${lad ? `<div class="small">length ladder: ${esc(lad)}</div>` : ""}
+      <div class="small">${esc(e.label)}: ${esc(LABEL[e.label].t)}</div>
+      <div class="small">from ${esc(e.via.join(", "))} · ${esc(e.sources.join(", "))}</div>`, ev);
+  } else if (name) showTip(taskTip(taskBy[name.dataset.t]), ev);
+  else hideTip();
+});
+document.getElementById("ttable").addEventListener("pointerleave", hideTip);
+
+// ---- length charts
+function drawCharts() {
   const box = document.getElementById("multiples"); box.innerHTML = "";
   const W = 280, H = 170, m = {l: 30, r: 10, t: 10, b: 22};
-  const allL = [];
-  for (const s of D.slots) for (const v in D.battery[s.id]) for (const L in D.battery[s.id][v]) allL.push(+L);
-  const lo = Math.log2(Math.min(...allL, 1024)), hi = Math.log2(Math.max(...allL, 131072));
+  const lo = Math.log2(1024), hi = Math.log2(131072);
   const X = L => m.l + (Math.log2(L) - lo) / (hi - lo) * (W - m.l - m.r);
   const Y = a => m.t + (1 - a) * (H - m.t - m.b);
-  const ticks = []; for (let e = Math.ceil(lo); e <= hi; e++) ticks.push(2 ** e);
+  const ticks = [1024, 4096, 16384, 65536];
+  let lastLevel = null;
   for (const s of D.slots) {
     const data = D.battery[s.id] || {};
-    const vs = D.variants.filter(v => shown.has(v) && data[v]);
+    const vs = D.models.filter(v => shown.has(v) && data[v]);
     if (!vs.length) continue;
+    if (s.level !== lastLevel) {
+      const lv = D.levels.find(l => l.id === s.level);
+      box.insertAdjacentHTML("beforeend", `<div class="lvhead"><h3>${esc(lv ? `${lv.id} ${lv.name}` : "Flawed tasks")}</h3><span class="small">${esc(lv ? lv.question : "never evidence")}</span></div>`);
+      lastLevel = s.level;
+    }
+    const t = s.task ? taskBy[s.task] : null;
+    const kind = s.label === "flawed" ? "flawed" : (s.label && s.label !== "same" ? "legacy" : "");
     let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(s.exam)} ${esc(s.stage)}"><g class="axis">`;
     for (const a of [0, .25, .5, .75, 1]) svg += `<line class="gridline" x1="${m.l}" x2="${W - m.r}" y1="${Y(a)}" y2="${Y(a)}"/><text x="${m.l - 5}" y="${Y(a) + 3}" text-anchor="end">${a * 100}</text>`;
-    ticks.forEach((L, i) => { if (i % 2 === 0 || ticks.length < 7) svg += `<text x="${X(L)}" y="${H - 6}" text-anchor="middle">${kLen(L)}</text>`; });
+    ticks.forEach(L => { svg += `<text x="${X(L)}" y="${H - 6}" text-anchor="middle">${kLen(L)}</text>`; });
     svg += `</g><line class="passline" x1="${m.l}" x2="${W - m.r}" y1="${Y(D.pass)}" y2="${Y(D.pass)}"/>`;
     for (const v of vs) {
-      const pts = Object.entries(data[v]).map(([L, c]) => ({L: +L, y: c.first ?? c.mean, hollow: c.first == null})).filter(p => p.y != null).sort((a, b) => a.L - b.L);
-      const d = pts.filter(p => !p.hollow).map((p, i) => `${i ? "L" : "M"}${X(p.L).toFixed(1)},${Y(p.y).toFixed(1)}`).join("");
-      svg += `<g class="series" style="color:${color(v)}"><path d="${d}" stroke="currentColor"/>`;
-      for (const p of pts) svg += `<circle class="${p.hollow ? "hollow" : ""}" cx="${X(p.L).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="${p.hollow ? 3 : 3.5}" fill="currentColor" ${p.hollow ? 'stroke="currentColor"' : ""}/>`;
+      const pts = Object.entries(data[v]).map(([L, c]) => ({L: +L, y: c.first})).filter(p => p.y != null).sort((a, b) => a.L - b.L);
+      svg += `<g class="series" style="color:${color(v)}"><path d="${pts.map((p, i) => `${i ? "L" : "M"}${X(p.L).toFixed(1)},${Y(p.y).toFixed(1)}`).join("")}" stroke="currentColor"/>`;
+      for (const p of pts) svg += `<circle cx="${X(p.L).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="3.5" fill="currentColor"/>`;
       svg += `</g>`;
     }
     svg += `<line class="crosshair" x1="0" x2="0" y1="${m.t}" y2="${H - m.b}" visibility="hidden"/><rect x="${m.l}" y="0" width="${W - m.l - m.r}" height="${H}" fill="transparent"/></svg>`;
     const el = document.createElement("div");
-    el.className = "panel" + (s.standard ? "" : " extra");
-    el.innerHTML = `<h3>${esc(s.exam)}</h3><div class="stage">${esc(s.stage)}${s.standard ? "" : " · outside the standard battery"}</div>${svg}`;
+    el.className = `panel ${kind}`;
+    const badge = s.label && s.label !== "same" && LABEL[s.label] ? ` · <span title="${esc(LABEL[s.label].t)}"><span class="badge">${LABEL[s.label].b}</span> ${esc(s.label)}</span>` : "";
+    el.innerHTML = `<h3>${esc(s.exam)}</h3><div class="stage">${esc(s.stage)}${t ? ` · <a href="#task-${esc(t.id)}">${esc(t.id)}</a>` : ""}${badge}</div>${svg}`;
     box.appendChild(el);
     const svgEl = el.querySelector("svg"), cross = el.querySelector(".crosshair");
     const lens = [...new Set(vs.flatMap(v => Object.keys(data[v]).map(Number)))].sort((a, b) => a - b);
     svgEl.addEventListener("pointermove", ev => {
-      const r = svgEl.getBoundingClientRect(); const px = (ev.clientX - r.left) / r.width * W;
+      const r = svgEl.getBoundingClientRect(), px = (ev.clientX - r.left) / r.width * W;
       let best = lens[0]; for (const L of lens) if (Math.abs(X(L) - px) < Math.abs(X(best) - px)) best = L;
       cross.setAttribute("x1", X(best)); cross.setAttribute("x2", X(best)); cross.setAttribute("visibility", "visible");
       const rows = vs.map(v => { const c = data[v][best]; if (!c) return "";
-        const val = c.first != null ? `${pct(c.first)} %` : (c.mean != null ? `${pct(c.mean)} % mean` : "–");
-        return `<div class="row"><span><span class="swatch" style="background:${color(v)}"></span>${esc(label(v))}</span><span class="num">${val}</span></div>`; }).join("");
+        return `<div class="row"><span><span class="swatch" style="background:${color(v)}"></span>${esc(label(v))}</span><span class="num">${c.first != null ? pct(c.first) + " %" : "not scored on first letter"}</span></div>`; }).join("");
       showTip(`<div class="small">${esc(s.exam)} · ${esc(s.stage)} · read at ${kLen(best)} tokens</div>${rows}`, ev);
     });
     svgEl.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); hideTip(); });
   }
-  if (!box.children.length) box.innerHTML = `<p class="muted">No battery results for the selected variants.</p>`;
+  if (!box.children.length) box.innerHTML = `<p class="muted">No length results for the selected models.</p>`;
 }
-drawBattery();
+drawCharts();
 
-// ---- suite grid
-const seq = ["--seq-0","--seq-1","--seq-2","--seq-3","--seq-4","--seq-5","--seq-6"];
-function seqColor(a) { if (a == null) return ""; const t = Math.max(0, Math.min(1, (a - 0.25) / 0.75)); return `var(${seq[Math.min(6, Math.floor(t * 7))]})`; }
-function seqInk(a) { return a != null && (a - 0.25) / 0.75 >= 0.57 ? "var(--seq-ink-dark)" : "var(--ink)"; }
-const levelNames = {0: "L0 · learns at all", 1: "L1 · carries a fact", 2: "L2 · picks signal over a lookalike",
-  3: "L3 · long reach", 4: "L4 · multi-step reasoning", 5: "L5 · language-like noise", 6: "L6 · hard stretch (never gates)"};
-const suiteShown = new Set(D.suite_default || []);
-try { const s = JSON.parse(localStorage.getItem("capboard-suite") || "null"); if (Array.isArray(s)) { suiteShown.clear(); s.forEach(v => suiteShown.add(v)); } } catch (e) {}
-const suiteArches = [...new Set(D.suite.map(c => c.arch))].sort((a, b) => {
-  const r = x => x === D.champion ? -1 : x === "dense" ? 999 : (D.variants.indexOf(x) >= 0 ? D.variants.indexOf(x) : 500);
-  return r(a) - r(b) || a.localeCompare(b);
-});
-function drawSuite() {
-  const lede = document.getElementById("suite-lede");
-  const tbl = document.getElementById("suite-table");
-  if (!D.suite.length) { lede.textContent = "No suite results in the ledger yet."; tbl.parentElement.hidden = true; return; }
-  lede.textContent = `Suite version ${D.suite_version}. Each cell trains from scratch on one exam; levels run from L0 (learns at all) to L6 (stretch exams that never gate). ` +
-    `The number is the honest score in percent: first letter on exams with several candidate answers, the mean over answer letters otherwise. ` +
-    `A dark outline marks a pass under the suite rule (mean ≥ 75 %). Median over seeds.` + (D.suite_old_versions.length ? ` Older suite versions (${D.suite_old_versions.join(", ")}) are left out: their exams differ.` : "");
-  document.getElementById("suite-legend").innerHTML = `<span>25 % (chance)</span><span class="ramp">${seq.map(s => `<i style="background:var(${s})"></i>`).join("")}</span><span>100 %</span>`;
-  const sizes = [...new Set(D.suite.map(c => c.size))].sort((a, b) => parseInt(a) - parseInt(b));
-  const cols = sizes.flatMap(z => suiteArches.filter(a => suiteShown.has(a) && D.suite.some(c => c.size === z && c.arch === a)).map(a => [z, a]));
-  if (!cols.length) { tbl.innerHTML = `<tbody><tr><td class="muted">Pick at least one architecture above.</td></tr></tbody>`; return; }
-  const by = new Map(D.suite.map(c => [`${c.size}|${c.arch}|${c.cell}`, c]));
-  const cells = [...new Set(D.suite.map(c => `${c.level}|${c.cell}`))].sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
-  const multiSize = sizes.length > 1;
-  let h = `<thead><tr><th>exam</th>` + cols.map(([z, a]) =>
-    `<th class="archcol"><span class="swatch" style="background:${color(a)}"></span>${esc(label(a))}${multiSize ? `<br><span class="small">${esc(z)}</span>` : ""}</th>`).join("") + `</tr></thead><tbody>`;
-  let lastLevel = null;
-  for (const ck of cells) {
-    const [level, cell] = ck.split("|");
-    if (level !== lastLevel) { h += `<tr class="lvrow"><td colspan="${cols.length + 1}">${esc(levelNames[level] || "L" + level)}</td></tr>`; lastLevel = level; }
-    h += `<tr><td class="exam">${esc(cell.replace(/^L\d\./, ""))}</td>`;
-    for (const [z, a] of cols) {
-      const c = by.get(`${z}|${a}|${cell}`);
-      if (!c) { h += `<td class="cell empty">·</td>`; continue; }
-      h += `<td class="cell ${c.pass ? "pass" : ""}" tabindex="0" data-k="${esc(`${z}|${a}|${cell}`)}" style="background:${seqColor(c.honest)};color:${seqInk(c.honest)}">${pct(c.honest)}</td>`;
-    }
-    h += `</tr>`;
-  }
-  tbl.innerHTML = h + `</tbody>`;
-  tbl.onpointerover = ev => {
-    const td = ev.target.closest("td[data-k]"); if (!td) return hideTip();
-    const c = by.get(td.dataset.k);
-    showTip(`<div class="small">${esc(c.cell)} · ${esc(c.size)} · ${c.seeds} seed${c.seeds > 1 ? "s" : ""}</div>
-      <div class="row"><span>${esc(label(c.arch))}</span></div>
-      <div class="row"><span>first letter</span><span class="num">${pct(c.p0)} %</span></div>
-      <div class="row"><span>mean over letters</span><span class="num">${pct(c.acc)} %</span></div>
-      <div class="row"><span>suite rule</span><span>${c.pass ? "✓ pass" : "✕ below 75 %"}</span></div>
-      <div class="small">${esc(c.sources.join(", "))}</div>`, ev);
-  };
-  tbl.onpointerleave = hideTip;
-}
-const stog = document.getElementById("suite-toggles");
-suiteArches.forEach((a, i) => stog.insertAdjacentHTML("beforeend", `<label for="st-${i}"><input type="checkbox" id="st-${i}" data-a="${esc(a)}" ${suiteShown.has(a) ? "checked" : ""}>
-  <span class="swatch" style="background:${color(a)}"></span>${esc(label(a))}${a === D.champion ? " · champion" : ""}</label>`));
-stog.addEventListener("change", e => {
-  const a = e.target.dataset.a; if (!a) return;
-  e.target.checked ? suiteShown.add(a) : suiteShown.delete(a);
-  try { localStorage.setItem("capboard-suite", JSON.stringify([...suiteShown])); } catch (err) {}
-  drawSuite();
-});
-drawSuite();
+// ---- task guide
+document.getElementById("guidebox").innerHTML = [...D.levels, {id: "X", name: "Flawed tasks", question: "Kept so they are recognised; never evidence.", measures: "Each has a known shortcut, so a high score does not show the capability it is named after."}].map(lv => {
+  const ts = D.tasks.filter(t => t.level === lv.id);
+  return `<div class="glevel"><h3>${esc(lv.id === "X" ? lv.name : `${lv.id} ${lv.name}`)}</h3><div class="q"><b>${esc(lv.question)}</b> ${esc(lv.measures)}</div>` +
+    ts.map(t => `<div class="gtask" id="task-${esc(t.id)}"><div><span class="chip ${t.status}">${t.status}</span> <b>${esc(t.name)}</b> <span class="meta">${esc(t.id)}</span></div>
+      <div>${esc(t.measures)}${t.flaw ? ` — <b>flaw:</b> ${esc(t.flaw)}` : ""}</div>
+      <div class="meta">recipe ${esc(t.recipe)} ${esc(t.args)} · trains at ${kLen(t.train_len)}${t.ladder ? " · ladder to 128k" : ""} · chance ${Math.round(100 * t.chance)} %${t.prize ? ` · ${t.prize} bits` : ""}</div>
+      ${t.curriculum ? `<div class="meta">curriculum: ${esc(t.curriculum)}</div>` : ""}</div>`).join("") + `</div>`;
+}).join("");
 
-// ---- sources + full table
-document.getElementById("sources").innerHTML = `<thead><tr><th>results</th><th>kind</th><th>server</th><th>finished</th><th>collected</th><th>NAS archive</th><th>ledger file</th></tr></thead><tbody>` +
+// ---- re-run list
+(function () {
+  const kinds = {calibrate: "Calibrate the recipe", train: "Train from scratch", ladder: "Length ladder missing"};
+  const counts = Object.fromEntries(Object.keys(kinds).map(k => [k, D.reruns.filter(i => i.kind === k).length]));
+  document.getElementById("rerun-lede").textContent =
+    `What must run before the table is complete, for ${D.rerun_models.map(label).join(", ")}: ${counts.calibrate} tasks need a from-scratch recipe first, ` +
+    `then ${counts.train} training jobs fill missing seeds and ${counts.ladder} add the length ladders. Flawed tasks are never re-run. ` +
+    `The same list is committed as docs/3_Evaluations_and_Baselines/capability_reruns.md.`;
+  document.getElementById("rerun-table").innerHTML = `<thead><tr><th>step</th><th>task</th><th>model(s)</th><th>what to run</th><th>what exists now</th></tr></thead><tbody>` +
+    D.reruns.map(i => `<tr><td>${esc(kinds[i.kind])}</td><td>${(i.tasks || [i.task]).map(x => `<a href="#task-${esc(x)}" class="mono" style="font-size:12px">${esc(x)}</a>`).join(", ")}</td>
+      <td>${i.models.map(m => esc(label(m))).join(", ")}</td><td>${esc(i.what)}</td><td class="small">${esc(i.legacy)}</td></tr>`).join("") + `</tbody>`;
+})();
+
+// ---- sources
+document.getElementById("sources-table").innerHTML = `<thead><tr><th>results</th><th>kind</th><th>server</th><th>finished</th><th>collected</th><th>NAS archive</th><th>ledger file</th></tr></thead><tbody>` +
   D.sources.map(s => `<tr><td class="mono">${esc(s.name)}</td><td>${s.kind}${s.suite_version ? ` · ${esc(s.suite_version)}` : ""}</td><td>${esc(s.host)}</td>
     <td class="num">${s.done} / ${s.jobs}</td><td class="num">${esc(s.collected)}</td><td class="mono">${esc(s.archive)}</td><td class="mono">${esc(s.file)}</td></tr>`).join("") + `</tbody>`;
-(function () {
-  const lens = [...new Set(D.slots.flatMap(s => Object.values(D.battery[s.id]).flatMap(o => Object.keys(o).map(Number))))].sort((a, b) => a - b);
-  let h = `<thead><tr><th>exam</th><th>stage</th><th>variant</th>${lens.map(L => `<th class="num">${kLen(L)}</th>`).join("")}</tr></thead><tbody>`;
-  for (const s of D.slots) for (const v of D.variants) {
-    const o = D.battery[s.id][v]; if (!o) continue;
-    h += `<tr><td>${esc(s.exam)}</td><td>${esc(s.stage)}</td><td>${esc(label(v))}</td>` +
-      lens.map(L => { const c = o[L]; return `<td class="num">${c ? (c.first != null ? pct(c.first) : `(${pct(c.mean)})`) : ""}</td>`; }).join("") + `</tr>`;
-  }
-  document.getElementById("battery-table").innerHTML = h + `</tbody><caption class="small" style="caption-side:bottom;text-align:left;padding:8px">First-letter accuracy in percent; numbers in brackets are the mean over answer letters where the first letter was not measured.</caption>`;
-})();
 </script>

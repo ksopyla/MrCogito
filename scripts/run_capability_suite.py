@@ -38,6 +38,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from evaluation.bapo_models import ARCHES  # noqa: E402
 from evaluation.capability_suite import (  # noqa: E402
     ARCH_FLAGS,
+    CELL_BY_ID,
     DEFAULT_CONTROLS,
     EVAL_ROWS,
     SIZES,
@@ -250,6 +251,9 @@ def main() -> int:
     if untested:
         print(f"  note: {len(untested)} (size, cell) pairs use a step size not yet measured in the ledger "
               "— consider --lr_pair on the first run")
+    flawed = sorted({j.cell for j in jobs if CELL_BY_ID[j.cell].flaw})
+    for c in flawed:  # kept for comparability with past runs; never evidence (evaluation/capability_tasks.py)
+        print(f"  FLAWED cell {c}: {CELL_BY_ID[c].flaw}")
     Path(args.out).mkdir(parents=True, exist_ok=True)
     (Path(args.out) / "plan.json").write_text(json.dumps(
         {"suite_version": SUITE_VERSION, "tier": args.tier, "jobs": [asdict(j) for j in jobs]}, indent=2))

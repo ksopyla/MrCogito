@@ -1,6 +1,6 @@
 ---
 name: experiment-track
-description: Record and interpret completed Concept Encoder results — text training runs and checkpoint evaluations, and architecture capability checks (suite, length battery, no-harm verdict vs the champion). Use after a run, benchmark or capability phase finishes to update `docs/2_Experiments_Registry/master_experiment_log.md`, the experiment's spec in `docs/experiments_specs/<lifecycle>/<ID>.md` (Status + Result), the "what we've explored" learnings in `docs/1_Strategy_and_Plans/agenda.md`, and short reports in `docs/2_Experiments_Registry/run_reports/`. Judge results against the experiment's own success/kill criteria and the current focus, using fair baseline comparisons that consider model size, objective difficulty, data regime, checkpoint maturity, and compute. Not for remote execution, running evaluations or capability checks, literature review, or choosing the next experiment family.
+description: Record and interpret completed Concept Encoder results — text training runs and checkpoint evaluations, and architecture capability checks (leveled tasks C0–C7 trained from scratch, match labels, no-harm verdict vs the champion, dated re-scoring notes). Use after a run, benchmark or capability phase finishes to update `docs/2_Experiments_Registry/master_experiment_log.md`, the experiment's spec in `docs/experiments_specs/<lifecycle>/<ID>.md` (Status + Result), the "what we've explored" learnings in `docs/1_Strategy_and_Plans/agenda.md`, and short reports in `docs/2_Experiments_Registry/run_reports/`. Judge results against the experiment's own success/kill criteria and the current focus, using fair baseline comparisons that consider model size, objective difficulty, data regime, checkpoint maturity, and compute. Not for remote execution, running evaluations or capability checks, literature review, or choosing the next experiment family.
 ---
 
 # Experiment Track
@@ -125,6 +125,12 @@ Skip `docs/5_Archive/` and any `> **OBSOLETE — ...**` section — that content
 Precondition: the folders are pulled into the ledger and the ledger files are committed
 (`capability-checks` step 5); if the newest results are only on a server, pull first — never
 record numbers that exist only in `Cache/` on one machine.
+
+Name results by their v4 task and level (`C4.chain4-1k`, "C4 Compose"; `evaluation/capability_tasks.py`)
+and carry the **match label** of any past result (`same`, `settings-differ`, `curriculum-differs`,
+`not-from-scratch`, `flawed`). Only `same` is v4 evidence. Never cite a **flawed** task as a capability,
+never call a `not-from-scratch` result (started from another run's checkpoint) a learning-capability
+result, and do not gate on a `calibrating` task.
 1. Regenerate the board (`uv run python analysis/capability_board.py`) and read the no-harm
    verdict per variant: kept / lost / not run, and the lost list.
 2. Judge in this order: (a) no-harm against the champion — any lost capability is the headline;
@@ -137,6 +143,10 @@ record numbers that exist only in `Cache/` on one machine.
    Suite runs also append median bits to `REFERENCES` (`capability-checks` → `suite.md` step 8).
 4. If a variant takes over as champion, say so in the agenda and hand the `--champion` change back
    to `capability-checks`.
+5. **Re-scoring past results** (e.g. after a capability-checks version change): add a dated note at the
+   top of each affected report or summary — "Re-scored under capability checks v4 (YYYY-MM-DD): <the new
+   numbers with match labels>, see the dashboard" — and leave the original numbers below it unchanged.
+   The registry stays append-only.
 
 ## How To Judge Text Checkpoints Like A Project-Aware Researcher
 Judge in this order:

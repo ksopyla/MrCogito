@@ -1,8 +1,11 @@
 # Capability suite — running the graded exams
 
-Reference for step 1 of the `capability-checks` process (`SKILL.md` next to this file). One
-standard ladder of exams for every architecture, so results are comparable across experiments and
-"should we scale this?" gets a rule-based answer.
+Reference for the **legacy v3 runner** of the `capability-checks` process (`SKILL.md` next to this
+file), used until the v4 runner lands. Every v3 cell is trained from scratch and maps one-to-one onto a
+v4 task (`SUITE_V3` in `evaluation/capability_tasks.py`): L0/L1 copy → C0, lookups → C1, lookalikes → C2,
+L4 chains → C4, L5 → C7, L6.unique → C6. **L6.shuffled-1k is flawed** (no-hop shortcut) and is never
+evidence. The v3 pass rule (mean over letters) is kept only for the scale-up verdict; v4 judges on the
+first letter.
 
 - **Spec (rules, tables, rationale):** `docs/engineering_specs/capability_suite.md`
 - **Definition:** `evaluation/capability_suite.py` (levels, 19 cells, sizes, step-size and

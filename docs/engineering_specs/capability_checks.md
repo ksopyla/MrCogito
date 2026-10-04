@@ -1,66 +1,178 @@
-# Capability checks — one process for testing, storing and comparing what an architecture can do
+# Capability checks — one leveled series of learning-capability tests
 
-- **Status:** active (2026-10-03). Replaces the scattered rules in the `capability-suite` skill, the
-  E31b spec and the E33a "Capability checks" section.
+- **Status:** v4 structure agreed 2026-10-04 (author's decisions below); task definitions in code
+  (`evaluation/capability_tasks.py`, version `v4-draft-2026-10-04`). Runs still use the v3 runners
+  (suite + length battery) until the v4 runner lands — see "Migration".
 - **Skill:** `capability-checks` (`.cursor/skills/capability-checks/SKILL.md`) runs it end to end.
-- **Parts:** [capability suite](capability_suite.md) (graded exams) · length battery
-  (`battery_jobs` in `scripts/study_plans/e30_vs_e31.py`, the E31b protocol) · results ledger
-  (`docs/2_Experiments_Registry/results/capability/`) · capability board
-  (`docs/3_Evaluations_and_Baselines/capability_board.html`).
+- **Results:** ledger `docs/2_Experiments_Registry/results/capability/` · dashboard
+  `docs/3_Evaluations_and_Baselines/capability_board.html` · raw folders on the NAS.
 
-## Why
+## What this is for
 
-By 2026-10-03 the capability results of E30, E31 and E31b lived only in `Cache/` folders on the
-servers. Nothing was logged to W&B (the suite and study runners never pass `--wandb`), nothing was
-on the NAS, and the E31 reference numbers existed only as constants typed into hand-written HTML
-reports. When Polonez shut down for heat, half the E31 results (the `li_full_30m` suite, seed 0 of
-the study, the dense ceilings on the hard exams) became unreachable. Each new variant also copied
-the E31b job list by hand (`e33a_e31b_jobs`), and each visual summary was drawn from scratch.
+We are building our own architecture, so the question is **can this architecture *learn*** to pick,
+hold, compose and reason over information — trained from scratch on synthetic exams whose answers carry
+an exact amount of information. (Trained text checkpoints are a different question, answered by
+`experiment-evaluate`.)
 
-## Which instrument answers which question
+## How it grew, and why it is reorganized
 
-| question | instrument | skill |
+There is **one exam engine**: `data/bapo_ladder.py` generates the tasks (random-letter "books" with
+planted facts, chains, decoys) and `verification/bapo_capability_probe.py` trains and scores a model on
+one task. Everything else was a configuration of that engine, added experiment by experiment:
+
+| layer | added | how it configured the engine |
 |---|---|---|
-| Can this architecture learn to pick, carry and reason over information? (from scratch, synthetic) | capability suite + length battery | `capability-checks` |
-| Does a change keep everything the champion can do? | the no-harm check on the capability board | `capability-checks` |
-| How good is a trained text checkpoint? (concept geometry, generation, STS-B, lm-eval, long-context probes) | the tiered checkpoint pipeline | `experiment-evaluate` |
-| What does a finished result mean, and where is it recorded? | master log, spec Result, run report, agenda | `experiment-track` |
+| ad-hoc probes | E24–E29 | per-experiment tasks and settings, 16–32 eval rows, one seed |
+| graded suite v3 | 2026-09-25 | 19 frozen cells L0–L6, from scratch at the test length, 5M–50M, 3 seeds, pass on the mean over answer letters |
+| length battery v1 | E31b, 2026-09-27 | lookup / chains / hard exams started from the run's own lookup-2k weights, laddered to 128k, first letter |
+| experiment exams | E33/E33a | parallel chains with a 2 → 3 → 4-hop curriculum and replay |
 
-## The full capability check for a new variant
+The layers disagreed: the same task appeared in two places with different training (lookup at 2k: 98 %
+in the suite, 67 % in the battery), two scoring rules, different seeds, levels that mixed task type with
+length (L3 "long reach" vs L4 "reasoning"), shortcut tasks still counted, and the hardest capabilities
+(holding many facts, real multi-hop reasoning, length transfer) missing from the suite.
 
-Every new architecture or variant built on the current line gets all three parts, planned in its
-spec from the start (the author's rule since 2026-10-03: no past capability may be lost).
+## The structure (v4)
 
-1. **Capability suite, full tier, 30M, 3 seeds**, with the champion's platform flags (for E31:
-   `--message_raw_window 256`, as in `li_full_30m`). A screen at 5M/10M first is optional.
-   Dense controls need not be rerun when the champion's suite folder holds them on the same seeds
-   and suite version: the data is deterministic per seed.
-2. **Length battery** (the E31b protocol), seeds 1 and 2: lookup trained at 2k with 8k and 16k
-   stages, the in-order 4-hop chain at 2k with an 8k stage, the hard exams at 1k (recall among 8
-   and 16, a fact among 8 decoys, unique item, triple match, 8-hop chain) and the 8k stage for the
-   two recall exams. Every trained model is laddered to 128k, 128 rows per length, scored on the
-   first answer letter. Register the variant in `BATTERY_VARIANTS` and run `--phase battery_<tag>`.
-3. **Comparison against the champion** on the capability board, with the no-harm rule below.
+**Levels say what the model must do**, each building on the previous. **Length and size are separate
+dials**, measured the same way on every level.
 
-**Variant naming.** The variant id is the same everywhere: the suite arch name equals the battery's
-`{tag}_{arm}` (E33a: suite arch `e33a_loop`, battery tag `e33a`, arm `loop`). The board joins the
-two parts on this id.
+```
+ LEVEL                                         × LENGTH                                   × SIZE
+ C0 Carry         copy a span                    train at its length (128 → 2k);            screen at 10M,
+ C1 Address       look up one fact               tasks trained at ≥ 1k are then read at      compare at 30M,
+ C2 Discriminate  the fact among 1 → 8 decoys    every length up to 128k with no more        trend at 50M
+ C3 Hold many     recall 1 of 8 → 16 facts       training (the length ladder)
+ C4 Compose       in-order chain, 4 → 8 hops
+ C5 Reason        parallel chains, 2 → 4 hops    ← research frontier
+ C6 Aggregate     the fact that appears once, count
+ C7 Language-like the same skills in Markov "text" filler   (C8 real text, when it exists)
+ Flawed (listed, never evidence): shuffled chains without decoy chains, triple-match, majority
+```
 
-**Champion.** `e31_li_m1` (E31 latent memory, one reader entry per latent), chosen 2026-10-01 in
-E31b. When a variant takes over, change `--champion` in `analysis/capability_board.py` and this line.
+## Rules (author's decisions, 2026-10-04)
 
-## Scoring and comparison rules
+1. **From scratch only.** Every capability result starts from random init on our own architecture. No
+   checkpoint from another run, experiment or pretrained model. (E33a's arm fine-tuned from E31's weights is
+   labeled `not-from-scratch` and excluded from capability claims.)
+2. **An in-run curriculum is allowed only when written in the task definition** (`curriculum` in
+   `capability_tasks.py`): it starts from random init and is identical for every architecture, including
+   the dense ceiling. Chaining stages as separate jobs is an implementation detail of the same schedule.
+3. **Reading at longer lengths is evaluation, not training**, and applies to every task trained at ≥ 1k.
+4. **Score = first-letter accuracy** (the first answer letter is predicted with no answer letters in
+   context). Pass = median over **seeds 0, 1, 2** ≥ 75 %. Chance is 25 % on DNA letters, 12.5 % on Glyph.
+5. **The dense model trains next to the candidate** on the same data, seed and budget: the ceiling. A
+   miss where dense also misses is "uncalibrated", not a failure.
+6. **Flawed tasks** stay defined with their reason so they are recognised; they never gate, never enter a
+   level or package, are labeled by the runner and the scorecard, and are crossed out on the dashboard.
 
-- **First letter is the honest score.** On exams whose book holds several candidate answers
-  (lookalike, chain, shuffled, unique, story, decoys) the later answer letters are copied once the
-  first identifies the candidate, so the mean over letters overstates the capability. Ladders and
-  the no-harm rule use first-letter accuracy; the suite's own pass rule (mean ≥ 75 %) is kept for
-  its scale-up verdict.
-- **No-harm rule.** A capability is lost when the variant scores more than 5 points below the
-  champion on any battery exam and length, or suite cell, where the champion passes (≥ 75 %),
-  comparing medians over seeds. "Not run" (champion passes, variant has no result) is not a pass.
-- **Like with like.** Same suite version, same size, same seeds where possible. Gaps smaller than
-  about two standard errors are ties.
+## Levels and tasks
+
+Source of truth: `evaluation/capability_tasks.py` (generated table; `calibrating` = the from-scratch recipe
+is not fixed yet, see Migration step 3).
+
+| task | what | train length | status | curriculum / length |
+|---|---|---|---|---|
+| **C0 Carry** | | | | |
+| `C0.copy-128` | copy 32 letters, 128-token book | 128 | active | — |
+| `C0.copy-256` | copy 24 letters, 256-token book | 256 | active | — |
+| `C0.copy-512` | copy 32 letters, 512-token book (fixed offset) | 512 | active | — |
+| `C0.copy-1k` | copy 32 letters, 1024-token book | 1024 | active | ladder → 128k |
+| **C1 Address** | | | | |
+| `C1.lookup-128` | one fact, 128-token book | 128 | active | — |
+| `C1.lookup-256` | one fact, 256-token book | 256 | active | — |
+| `C1.lookup-512` | one fact, 512-token book (fixed offset) | 512 | active | — |
+| `C1.lookup-1k` | one fact, 1024-token book | 1024 | active | ladder → 128k |
+| `C1.lookup-2k` | one fact, 2048-token book | 2048 | active | ladder → 128k |
+| `C1.lookup-16k` | one fact, trained up to a 16k book | 16384 | active | curriculum: one run from random init: 2k (C1.lookup-2k recipe) → 8k (1500 steps, batch 16, step 5e-5) → 16k (1000 steps, batch 8, step 5e-5); ladder → 128k |
+| **C2 Discriminate** | | | | |
+| `C2.lookalike-128` | fact vs 1 look-alike, 128 tokens | 128 | active | — |
+| `C2.lookalike-1k` | fact vs 1 look-alike, 1024 tokens | 1024 | active | ladder → 128k |
+| `C2.decoy8-1k` | fact among 8 look-alikes, 1024 tokens | 1024 | **calibrating** | ladder → 128k |
+| **C3 Hold many** | | | | |
+| `C3.recall8-1k` | recall 1 of 8 facts, 1024 tokens | 1024 | **calibrating** | ladder → 128k |
+| `C3.recall16-1k` | recall 1 of 16 facts, 1024 tokens | 1024 | **calibrating** | ladder → 128k |
+| **C4 Compose** | | | | |
+| `C4.chain4-1k` | in-order 4-hop chain, 1024 tokens | 1024 | active | ladder → 128k |
+| `C4.chain4-2k` | in-order 4-hop chain, 2048 tokens | 2048 | **calibrating** | ladder → 128k |
+| `C4.chain8-1k` | in-order 8-hop chain, 1024 tokens | 1024 | **calibrating** | ladder → 128k |
+| **C5 Reason** | | | | |
+| `C5.pchain2-1k` | parallel 2-hop chain among 3 decoy chains, 1024 tokens | 1024 | **calibrating** | ladder → 128k |
+| `C5.pchain3-1k` | parallel 3-hop chain among 3 decoy chains, 1024 tokens | 1024 | **calibrating** | curriculum: candidate (to be fixed by calibration): one run from random init, 2 → 3 hops, each stage replaying 25 % lookup rows; ladder → 128k |
+| `C5.pchain4-1k` | parallel 4-hop chain among 3 decoy chains, 1024 tokens | 1024 | **calibrating** | curriculum: candidate (to be fixed by calibration): one run from random init, 2 → 4 hops, each stage replaying 25 % lookup rows; ladder → 128k |
+| **C6 Aggregate** | | | | |
+| `C6.unique-256` | the fact that appears once, 256 tokens | 256 | active | — |
+| `C6.unique-1k` | the fact that appears once, 1024 tokens | 1024 | **calibrating** | ladder → 128k |
+| `C6.count-1k` | count, 1024 tokens | 1024 | **calibrating** | ladder → 128k |
+| **C7 Language-like** | | | | |
+| `C7.fact-512` | one fact in Markov 'text', 512 tokens | 512 | active | — |
+| `C7.story-512` | a fact keyed by a word, 512 tokens | 512 | active | — |
+| `C7.chain-512` | in-order hops in structured filler, 512 tokens | 512 | active | — |
+| `C7.fact-1k` | one fact in Markov 'text', 1024 tokens | 1024 | active | — |
+| **Flawed (never evidence)** | | | | |
+| ~~`X.shuffled2-1k`~~ | shuffled 2-hop chain, no decoy chains | 1024 | flawed | shortcut: the answer is the only node that is never the start of a hop, so it is found without following any hop (use C5 parallel chains) |
+| ~~`X.shuffled3-1k`~~ | shuffled 3-hop chain, no decoy chains | 1024 | flawed | same no-hop shortcut as the shuffled 2-hop chain (use C5 parallel chains) |
+| ~~`X.match3-1k`~~ | the fact planted three times | 1024 | flawed | at 1k the book holds the triple plus only 2 single facts: averaging all facts gives the majority letter at each position, no matching needed |
+| ~~`X.majority-1k`~~ | majority letter of the book | 1024 | flawed | about 2/3 of the book is the winner, so any sample answers it |
+
+## Packages (what a check runs)
+
+| package | levels | size · seeds | length ladder | use |
+|---|---|---|---|---|
+| **screen** | C0–C2 | 10M · seed 0 | no | does it learn at all — a few GPU-hours |
+| **core** | C0–C5 | 30M · seeds 0, 1, 2 | yes, to 128k | the full check every variant gets; the no-harm comparison uses it |
+| **frontier** | C5–C6 | 30M · seeds 0, 1, 2 | yes | deeper tasks for the current research question; they join core once stable |
+| **language** | C7 | 30M · seeds 0, 1, 2 | no | the same skills in plausible filler; real text (C8) when its generator exists |
+
+A size trend (5M → 50M) reuses the same package at more sizes.
+
+## Comparing variants: champion and no-harm
+
+**Champion:** `e31_li_m1` (E31 latent memory, one reader entry per latent), chosen 2026-10-01 in E31b.
+**No-harm rule:** a capability is lost when the variant scores more than 5 points below the champion on
+any task and length where the champion passes (≥ 75 %), comparing medians over the same seeds. "Not run"
+is not a pass. When a variant takes over, change `--champion` in `analysis/capability_board.py` and here.
+
+## Past results: re-scoring without losing anything
+
+Nothing is deleted or re-run. The ledger keeps per-job details (accuracy per answer letter, bits,
+settings, every ladder length), so every past job is re-labeled onto a v4 task and re-scored on first
+letter, with an honest match label (`legacy_suite` / `legacy_battery` in `capability_tasks.py`):
+
+| match | meaning | counts as v4 evidence? |
+|---|---|---|
+| `same` | same exam, from scratch, frozen settings (all suite v3 cells; the lookup 2k → 8k → 16k stages) | yes |
+| `settings-differ` | same exam from scratch, other step size / budget / rows (battery lookup at 2k, dense hard exams) | shown, marked |
+| `curriculum-differs` | from scratch through a schedule that is not the v4 one (battery chains and hard exams started from the run's own lookup-2k weights; E33a curricula) | shown, marked; not used for no-harm until the v4 recipe matches |
+| `not-from-scratch` | started from another run's checkpoint (E33a fine-tuned arm) | no |
+| `flawed` | a flawed task | no, crossed out |
+
+**Reports and summaries are append-only:** each past report that cites capability numbers gets a dated
+note — "Re-scored under capability checks v4 (YYYY-MM-DD): …, see the dashboard" — above the original
+numbers, which stay as recorded. Coverage: E30, E31, E31b, E33a (in the ledger); E24–E29 (raw on the NAS,
+collect first). E01–E22 and the Gemma backbone runs are text / pretrained models, out of scope.
+
+## Migration
+
+1. **Definitions** — `capability_tasks.py`, flawed flags in the suite runner and scorecard, this spec,
+   skills and rules. *(done 2026-10-04)*
+2. **Dashboard + re-run list** *(done 2026-10-04)* — the board is organized by level (C0–C7): one task table
+   with every task, training-length and 128k scores, match labels, row status (active, partial, missing,
+   calibrating, flawed), task definitions on hover and as a guide, one model filter; nothing re-run or
+   re-scored. The generated re-run list: [`capability_reruns.md`](../3_Evaluations_and_Baselines/capability_reruns.md).
+   Dated re-scoring notes in past reports follow once the re-runs land.
+3. **Calibration study** (Odra, ~1 night) — for every `calibrating` task, dense and `e31_li_m1` from scratch:
+   a step-size pair, the v3 budget vs 2×, and for chains/parallel chains the candidate in-run curriculum vs
+   none. The cheapest recipe on which dense passes becomes frozen (`active`); if none does, the task
+   stays `calibrating` and is reported, never gated.
+4. **v4 runner** — one runner for a package: from-scratch jobs, written curricula, length ladders, seeds
+   0–2, dense ceiling, ledger output. It replaces `run_capability_suite.py` + `battery_jobs` for new runs;
+   the old runners stay for reproducing v3 / battery v1 results.
+5. **Version freeze** — `VERSION = "v4"` once steps 3–4 land; the suite's `SUITE_VERSION` and
+   `BATTERY_VERSION` stay frozen as history.
+
+Until step 4, run new variants with the v3 runners (`suite.md`, `battery.md` in the skill) and label the
+results as legacy protocol.
 
 ## Where results live (the storage contract)
 The same rule covers every result in the project
@@ -88,15 +200,12 @@ without network access. W&B stays the home of text-training runs and their check
 **Hand-written HTML reports** (architecture explainers, study narratives) may still be written,
 but their numbers must come from the ledger, and the standard visual comparison is the board.
 
-## Maintaining the checks
 
-- **Suite changes** follow [capability_suite.md](capability_suite.md): bump `SUITE_VERSION`.
-- **Battery changes** (an exam, a stage, a ladder length, the row count) change `battery_jobs`;
-  bump `BATTERY_VERSION` in the plan module and note it in the CHANGELOG. Results across battery
-  versions are not compared.
-- **A new exam family** first runs on the champion (and dense, for a ceiling), then joins the
-  standard battery or the suite.
-- **After each result:** pull → commit the ledger → regenerate the board → `experiment-track`.
-- **Gaps to close** (2026-10-03): the Polonez folders (`li_full_30m`, seed 0 of `e30_vs_e31`, the
-  dense hard-exam ceilings, any E30 standard suite) are not in the ledger yet — pull them when
-  Polonez is back. `REFERENCES` has no E31 suite cells yet.
+## Maintaining the checks
+- **A task changes** (recipe, length, budget, curriculum, rows) → it is a new task id or a new `VERSION`;
+  results across versions are compared only through the match labels.
+- **A new task** runs first on dense (and the champion) to calibrate, then becomes `active` in a level.
+- **A task turns out to have a shortcut** → set `status="flawed"` with the reason; never delete it.
+- **After each result:** pull → commit the ledger → regenerate the dashboard → `experiment-track`.
+- Suite v3 (`docs/engineering_specs/capability_suite.md`) and battery v1 (`battery_jobs`) are kept as the
+  history of how past results were produced.

@@ -1,117 +1,137 @@
 ---
 name: capability-checks
-description: The one process for testing what an architecture can do and keeping the results — the graded capability suite (L0 learns at all → L6 BAPO-hard, 5M–50M, from scratch), the length battery (the E31b protocol — lookup, chain, recall and decoy exams laddered to 128k, first-letter scoring), the no-harm comparison against the champion (E31 latent memory), the committed results ledger + NAS archive, and the capability board (the standard visual summary). Use when the user wants to test, exam, screen, benchmark or compare a new or changed architecture or variant, asks for "full capability checks", whether it keeps past capabilities or is worth scaling, asks where past capability / suite / ladder / E30 / E31 / E31b results are, wants them synced, or asks for a visual summary / comparison of capability results. Not for evaluating trained text checkpoints on STS-B/GLUE/lm-eval (experiment-evaluate), generic training runs (experiment-run), or designing the architecture (experiment-design).
+description: The one process for testing whether our own architectures can LEARN to carry, address, discriminate, hold, compose and reason over information — one leveled series of synthetic tasks (C0 Carry → C1 Address → C2 Discriminate → C3 Hold many → C4 Compose → C5 Reason → C6 Aggregate → C7 Language-like), always trained from scratch, with length (read to 128k) and model size (5M–50M) as separate dials, first-letter scoring, seeds 0–2, the dense ceiling, flawed tasks flagged, the no-harm comparison against the champion (E31 latent memory), the committed results ledger + NAS archive, and the capability dashboard (the standard visual summary). Use when the user wants to test, exam, screen, benchmark or compare a new or changed architecture or variant, asks for "full capability checks", whether it keeps past capabilities or is worth scaling, asks how the checks are organized or what a task measures, asks where past capability / suite / ladder / E30 / E31 / E31b / E33 results are, wants them synced or re-scored, or asks for a visual summary / comparison of capability results. Not for evaluating trained text checkpoints on STS-B/GLUE/lm-eval (experiment-evaluate), generic training runs (experiment-run), or designing the architecture (experiment-design).
 ---
 
 # Capability checks
 
-Every architecture variant takes the same exams, its results land in the same committed ledger,
-and every comparison is drawn on the same board. Process spec (why, storage contract, rules):
-`docs/engineering_specs/capability_checks.md`.
+Can **our own architecture learn** to pick, hold, compose and reason over information? Every variant
+takes the same leveled tasks, trained from scratch; the results land in the same committed ledger and
+are compared on the same dashboard.
 
-| part | answers | reference |
-|---|---|---|
-| **Capability suite** | can it learn to copy, look up, ignore a lookalike, reach far, chain facts? (19 cells, L0–L6, 5M–50M) | `suite.md` |
-| **Length battery** | does it hold up from 1k to 128k tokens, on lookup, chain, recall and decoy exams? | `battery.md` |
-| **No-harm check** | does it keep everything the champion (`e31_li_m1`) can do? | board, below |
-| **Ledger + NAS** | where every number lives, readable with the servers off | below |
-| **Board** | the one visual summary | below |
+- **Process spec (structure, rules, migration, storage):** `docs/engineering_specs/capability_checks.md`
+- **Task definitions (source of truth):** `evaluation/capability_tasks.py` — levels, every task with its
+  recipe, length, written curriculum, chance, what it measures, status, and the map from old results
+- **Engine:** `data/bapo_ladder.py` (task generators) + `verification/bapo_capability_probe.py` (train +
+  score one task) + `verification/length_ladder.py` (read a trained model at longer lengths)
 
-**Boundary.** Server hardware → `remote-servers`; generic launches, env vars, Byobu →
-`experiment-run`; trained text checkpoints → `experiment-evaluate`; what a result means and the
-registry → `experiment-track`; how to tell the author → `research-comms`.
+**Boundary.** Server hardware → `remote-servers`; generic launches, env vars, Byobu → `experiment-run`;
+trained text checkpoints → `experiment-evaluate`; what a result means and the registry →
+`experiment-track`; how to tell the author → `research-comms`.
+
+## The structure in one screen
+
+```
+ LEVEL                                         × LENGTH (train, then read to 128k)  × SIZE (10M screen, 30M compare, 50M trend)
+ C0 Carry         copy a span
+ C1 Address       look up one fact
+ C2 Discriminate  the fact among 1 → 8 decoys
+ C3 Hold many     recall 1 of 8 → 16 facts
+ C4 Compose       in-order chain, 4 → 8 hops
+ C5 Reason        parallel chains, 2 → 4 hops   ← research frontier
+ C6 Aggregate     the fact that appears once, count
+ C7 Language-like the same skills in Markov "text" filler (C8 real text later)
+ Flawed, never evidence: shuffled chains without decoy chains · triple-match · majority
+```
+
+| package | levels | size · seeds | ladder | use |
+|---|---|---|---|---|
+| screen | C0–C2 | 10M · 0 | no | does it learn at all |
+| **core** | C0–C5 | 30M · 0, 1, 2 | to 128k | the full check every variant gets; no-harm uses it |
+| frontier | C5–C6 | 30M · 0, 1, 2 | yes | the current research question |
+| language | C7 | 30M · 0, 1, 2 | no | plausible filler |
+
+## Rules (author's decisions, 2026-10-04) — never bend them
+
+1. **From scratch only.** Random init, our own architecture. Never start a task from another run's
+   checkpoint, an earlier experiment's weights or a pretrained model.
+2. **In-run curriculum only when written** in the task's `curriculum` field, from random init, identical
+   for every architecture and for the dense ceiling. No ad-hoc warm starts.
+3. **Score on the first answer letter**; pass = median over seeds 0, 1, 2 ≥ 75 %; chance 25 % (DNA),
+   12.5 % (Glyph). The dense model trains alongside as the ceiling; a miss dense shares is "uncalibrated".
+4. **Flawed tasks** (`status="flawed"`) are never run as evidence, never gate, never cited as a
+   capability; the runner and scorecard label them, the dashboard crosses them out.
+5. **`calibrating` tasks** have no frozen from-scratch recipe yet: report them, never gate on them.
 
 ## The process
 
-### 1 · Plan the checks in the spec (before code)
-A new variant gets the **full capability check** (author's rule, 2026-10-03: no past capability
-may be lost):
-1. suite, full tier, 30M, 3 seeds, with the champion's platform flags (E31: `--message_raw_window 256`);
-2. the length battery, seeds 1 and 2;
-3. the comparison with the champion and the no-harm rule: lost = more than 5 points below the
-   champion on any exam, length or cell where the champion passes (≥ 75 %, first letter, median over seeds).
+### 1 · Plan the checks in the experiment spec (before code)
+A new variant gets the **core package** (no past capability may be lost) and the no-harm comparison
+against the champion `e31_li_m1`: lost = more than 5 points below the champion on any task and length
+where the champion passes. Write the tasks, seeds and expected cost into the spec. Use **one variant id
+everywhere** (suite arch name = battery `{tag}_{arm}`, e.g. `e33a_loop`).
 
-Write all three into the spec with their expected cost (≈ 1–2 nights for the suite on both
-servers, 2–3 GPU-days per battery seed). Pick one **variant id** and use it everywhere: suite arch
-name = battery `{tag}_{arm}` (E33a: `e33a_loop`).
+**Until the v4 runner lands** (spec "Migration", step 4), run with the v3 runners and label the results
+as legacy protocol: the suite (`suite.md`: C0–C2, C4.chain4-1k, C6.unique-256, C7 — from scratch) and the
+length battery (`battery.md`: C1.lookup-16k curriculum + ladders; its chains and hard exams start from the
+run's own lookup weights, so they map as `curriculum-differs`).
 
 ### 2 · Register
-- Suite: arch in `evaluation/bapo_models.py` (`ARCHES` + `build_model`), arch-only flags in
-  `ARCH_FLAGS` (`evaluation/capability_suite.py`). Details and preconditions: `suite.md` step 0.
-- Battery: one entry in `BATTERY_VARIANTS` (`scripts/study_plans/e30_vs_e31.py`). Never copy the job
-  list into a new function. Details: `battery.md`.
-- `uv run pytest -q tests/test_capability_suite.py tests/test_bapo_probe_tiers.py` passes.
+- Arch in `evaluation/bapo_models.py` (`ARCHES` + `build_model`), config-selectable on the shared
+  foundation; arch-only flags in `ARCH_FLAGS` (`evaluation/capability_suite.py`).
+- Battery: one entry in `BATTERY_VARIANTS` (`scripts/study_plans/e30_vs_e31.py`); never copy a job list.
+- `uv run pytest -q tests/test_capability_tasks.py tests/test_capability_suite.py tests/test_bapo_probe_tiers.py` passes.
 
 ### 3 · Smoke, sync, launch
-Local smoke only if it finishes in under a minute; anything longer runs on a server. Sync code by
-git only (commit → push → `git pull --ff-only` on the server). Check the GPUs are free and respect
-the Polonez heat rule (long queues on Odra; Polonez only for < 10 h bursts). Commands: `suite.md`
-steps 2–5, `battery.md` "Running it".
+Local smoke only if it finishes in under a minute; anything longer runs on a server. Code goes by git
+only. Check the GPUs are free and respect the Polonez heat rule (long queues on Odra; Polonez < 10 h
+bursts). Commands: `suite.md` steps 2–5, `battery.md` "Running it".
 
 ### 4 · Monitor
-Suite: `DONE` count and `EXIT` lines (`suite.md` step 6). Battery: `analysis/study_table.py
---prefix <tag>_ --first` on the server. Hand long watches to the `server-checker` agent.
+Suite: `DONE` count and `EXIT` lines (`suite.md` step 6). Battery: `analysis/study_table.py --prefix
+<tag>_ --first` on the server. Hand long watches to the `server-checker` agent.
 
-### 5 · Pull into the ledger and archive to the NAS — after every phase, and daily on long studies
+### 5 · Pull into the ledger and archive to the NAS — after every phase, daily on long studies
 ```bash
 bash scripts/pull_capability_results.sh odra ~/dev/MrCogito/Cache/capability/<run>
 bash scripts/pull_capability_results.sh odra ~/dev/MrCogito/Cache/study/e30_vs_e31
 ```
-- Writes `docs/2_Experiments_Registry/results/capability/{suite,study}/<name>.<host>.json` (compact:
-  per job and arch accuracy ± SE, first letter, per-letter accuracy, bits, speed, every ladder
-  length; a few hundred KB, refused above 1 MB). **Commit it** — the ledger is the source of truth
-  for every comparison. Nothing else from the server enters the repo: no checkpoints, logs or raw JSON.
-- Copies the whole raw folder (logs, ladders, checkpoints) to
-  `/nas/ml_data/mrcogito/results/{capability,study}/<name>.<host>/` on the server (additive).
-- The collector is streamed over ssh, so it works on any checkout (e.g. `~/dev/MrCogito-e31`).
-- Results are not logged to W&B (final-only, offline, small); do not look for them there.
-- List what the ledger holds: `uv run python analysis/capability_ledger.py summary`.
-- Everything else report-like on a server (evaluation reports, eval suites, old probe folders, logs;
-  no checkpoints) goes to the NAS with `bash scripts/archive_reports_to_nas.sh <host>`
-  → `/nas/ml_data/mrcogito/results/reports/<host>/<checkout>/` (additive, safe to re-run).
+- Writes `docs/2_Experiments_Registry/results/capability/{suite,study}/<name>.<host>.json` — compact text
+  only, refused above 1 MB. **Commit it**: the ledger is the source of truth. No checkpoints, logs or raw
+  JSON ever enter the repo.
+- Archives the raw folder to `/nas/ml_data/mrcogito/results/{capability,study}/<name>.<host>/` (additive).
+- Other report folders on a server: `bash scripts/archive_reports_to_nas.sh <host>`.
+- Not on W&B. List the ledger: `uv run python analysis/capability_ledger.py summary`.
 
-### 6 · Score
-- Suite verdict + frontier for one run, straight from the ledger:
-  `uv run python analysis/capability_scorecard.py --in_dir <ledger files…> --out_dir Cache/capability/<run>_scored`
-  (merge halves from two hosts by passing both files). Reading the verdict: `suite.md` step 7.
-- First-letter re-read of multi-candidate suite cells: `analysis/suite_first_letter.py`.
+### 6 · Score and compare
+- Suite verdict for one run from the ledger: `uv run python analysis/capability_scorecard.py --in_dir
+  <ledger files…> --out_dir Cache/capability/<run>_scored` (reading it: `suite.md` step 7).
+- Map any past result onto v4: `legacy_suite(cell)` / `legacy_battery(variant, slot)` in
+  `capability_tasks.py` give the task and the match label (`same`, `settings-differ`,
+  `curriculum-differs`, `not-from-scratch`, `flawed`). Only `same` counts as v4 evidence; the rest is
+  shown and marked.
 
-### 7 · Compare and draw — the capability board
+### 7 · The dashboard — the standard visual summary
 ```bash
-uv run python analysis/capability_board.py                                   # default variants
-uv run python analysis/capability_board.py --variants e31_li_m1 e33a_loop e31_li --champion e31_li_m1
+uv run python analysis/capability_board.py      # → docs/3_Evaluations_and_Baselines/capability_board.html
 ```
-Writes `docs/3_Evaluations_and_Baselines/capability_board.html`: no-harm verdict per variant
-(kept / lost / not run, with the lost list), one chart per battery exam and stage (first letter vs
-length, champion first), and the suite grid (honest score per cell, pass outline). The console
-prints the no-harm counts.
-
-**When the author asks for a visual summary**, regenerate the board from a fresh pull and publish
-it with the Artifact tool to the existing board, https://claude.ai/artifact/FNTv1zKLc6fh9QRTrJmVrR
-(pass it as `url` from a new session so the link stays the same). A one-off narrative page is fine on top, but its numbers come from
-the ledger, never retyped from memory or from old HTML.
+It also rewrites the re-run list `docs/3_Evaluations_and_Baselines/capability_reruns.md` (what must run, from
+scratch, before the table is complete; flawed tasks never). The page: the no-harm verdict per model (`same`
+evidence only), the task table by level with a status per row (active, partial, missing, calibrating,
+flawed) and a protocol badge per legacy cell, the length charts by level, the task guide and the re-run list. **When the author asks for a visual
+summary**, regenerate from a fresh pull and publish to the existing artifact
+https://claude.ai/artifact/FNTv1zKLc6fh9QRTrJmVrR (pass it as `url` from a new session). Narrative pages
+may sit on top, but their numbers come from the ledger.
 
 ### 8 · Record
-Hand to `experiment-track`: the no-harm verdict and lost list, the suite verdict and frontier per
-size, the battery headline (lengths where the variant beats or falls below the champion), and the
-ledger file names. Suite runs also append their median bits to `REFERENCES`
-(`suite.md` step 8). Report to the author per `research-comms`: outcome first, plain words,
-board link.
+Hand to `experiment-track`: the no-harm verdict and lost list, per-level results with match labels,
+the length headline, and the ledger file names. Past reports that cite capability numbers get a **dated
+re-scoring note** above the original numbers (never overwrite them). Report to the author per
+`research-comms`: outcome first, plain words, dashboard link.
 
 ## Maintaining the checks
-- Changing a suite cell, size, budget or scoring rule → bump `SUITE_VERSION` (`suite.md`).
-- Changing a battery exam, stage, ladder or row count → bump `BATTERY_VERSION` and note it in the
-  CHANGELOG; versions are not compared.
-- A new exam runs first on the champion (and dense) to calibrate, then joins a part.
-- A new champion → change `--champion` in `analysis/capability_board.py` and the spec line.
-- Gaps open on 2026-10-03: Polonez folders (`li_full_30m`, seed 0 of `e30_vs_e31`, dense hard
-  ceilings) are not in the ledger yet — pull them when Polonez is back; `REFERENCES` lacks E31.
+- A task changes (recipe, length, budget, curriculum, rows) → a new task id or a new `VERSION`.
+- A new task runs first on dense (and the champion) to calibrate, then becomes `active` in a level.
+- A shortcut is found → `status="flawed"` with the reason; never delete the task.
+- Legacy runners: suite v3 (`SUITE_VERSION`) and battery v1 (`BATTERY_VERSION`) stay frozen as history.
+- A new champion → `--champion` in `analysis/capability_board.py` and the spec line.
 
 ## Pitfalls
+- **A warm start from another run** is not a capability result — label it `not-from-scratch`.
+- **Mean over letters** overstates multi-candidate tasks; judge on first letter.
+- **Same name, different protocol** — always read the match label before comparing two numbers.
 - **Results only on a server** — pull after every phase; Polonez can shut down for heat mid-study.
-- **Mean over letters** overstates multi-candidate exams; judge on first letter.
 - **A copied job list** drifts from the protocol; register the variant instead.
-- **Mismatched variant ids** — the board cannot join suite and battery; keep `tag_arm` = suite arch.
-- **Hand-edited commands** produce a different exam; use `ARCH_FLAGS`, `BATTERY_VARIANTS` or a
-  recorded `--extra`.
+- **Hand-edited commands** produce a different exam; use `ARCH_FLAGS`, `BATTERY_VARIANTS` or a written
+  curriculum.
 - **Uncalibrated ≠ failed**, **one seed is a screen**, **step-size cliffs** — see `suite.md`.
