@@ -142,7 +142,7 @@ letter, with an honest match label (`legacy_suite` / `legacy_battery` in `capabi
 | match | meaning | counts as v4 evidence? |
 |---|---|---|
 | `same` | same exam, from scratch, frozen settings (all suite v3 cells; the lookup 2k → 8k → 16k stages) | yes |
-| `settings-differ` | same exam from scratch, other step size / budget / rows (battery lookup at 2k, dense hard exams) | shown, marked |
+| `settings-differ` | same exam from scratch, other step size / budget / rows (battery lookup at 2k, dense hard exams, suite cells run at a step size other than the suite default — e.g. the E31 lookup-2k runs at 5e-5) | shown, marked |
 | `curriculum-differs` | from scratch through a schedule that is not the v4 one (battery chains and hard exams started from the run's own lookup-2k weights; E33a curricula) | shown, marked; not used for no-harm until the v4 recipe matches |
 | `not-from-scratch` | started from another run's checkpoint (E33a fine-tuned arm) | no |
 | `flawed` | a flawed task | no, crossed out |

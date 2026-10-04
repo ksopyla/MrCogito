@@ -32,6 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from analysis.capability_ledger import LEDGER_DIR, load_ledgers, study_jobs, suite_rows  # noqa: E402
+from evaluation.capability_suite import CELL_BY_ID, lr_for  # noqa: E402
 from evaluation.capability_tasks import (LEVELS, SEEDS, TASK_BY_ID, TASKS, VERSION,  # noqa: E402
                                          legacy_battery, legacy_suite)
 
@@ -135,9 +136,14 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
                 task, label = legacy_suite(r["cell"])
                 if task is None or r["size"] != "30m":
                     continue
+                via = f"suite {r['cell']}"
+                default_lr = lr_for(r["size"], CELL_BY_ID[r["cell"]])[0]
+                if label == "same" and r.get("lr") is not None and abs(r["lr"] - default_lr) > 1e-12:
+                    label, via = "settings-differ", f"{via} at step {r['lr']:g} (suite default {default_lr:g})"
                 out.append({"task": task, "model": r["arch"], "label": label, "seed": r["seed"],
-                            "score": r["p0"], "mean": r["acc"], "ladder": {}, "source": r["source"],
-                            "via": f"suite {r['cell']}"})
+                            "score": r["p0"], "mean": r["acc"],
+                            "ladder": {int(L): v for L, v in (r.get("ladder") or {}).items()},
+                            "source": r["source"], "collected": r.get("collected") or "", "via": via})
         else:
             for j in study_jobs(led):
                 if j["status"] != "done":
@@ -151,8 +157,21 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
                     continue
                 lad = {int(L): v.get("first_acc") for L, v in (j["ladders"].get("ladder") or {}).items()}
                 out.append({"task": task, "model": variant, "label": label, "seed": _seed(j), "score": j.get("p0"),
-                            "mean": j.get("acc"), "ladder": lad, "source": j["source"], "via": f"battery {slot}"})
+                            "mean": j.get("acc"), "ladder": lad, "source": j["source"], "collected": "",
+                            "via": f"battery {slot}"})
     return out, current
+
+
+def _one_per_seed(rs: list[dict]) -> list[dict]:
+    """A seed re-run (e.g. again with saved weights for the ladder) replaces the older run of that seed:
+    prefer the run with a ladder, then the latest collected. Runs without a seed all count."""
+    keep, by_seed = [r for r in rs if r["seed"] is None], defaultdict(list)
+    for r in rs:
+        if r["seed"] is not None:
+            by_seed[r["seed"]].append(r)
+    for runs in by_seed.values():
+        keep.append(max(runs, key=lambda r: (bool(r["ladder"]), r.get("collected") or "", r["source"])))
+    return keep
 
 
 def table(ev: list[dict]) -> dict:
@@ -165,7 +184,7 @@ def table(ev: list[dict]) -> dict:
         out[task] = {}
         for model, labels in models.items():
             label = next(l for l in LABELS if l in labels)
-            rs = labels[label]
+            rs = _one_per_seed(labels[label])
             lens = sorted({L for r in rs for L in r["ladder"]})
             ladder = {}
             for L in lens:

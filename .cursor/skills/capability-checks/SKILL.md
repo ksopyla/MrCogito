@@ -79,6 +79,12 @@ bursts, and a 10–20 min cooldown after every 5–6 h of training). Commands: `
 `battery.md` "Running it". Several bursts on Polonez: generate each run's launch folder (`--mode scripts`),
 then chain them with `scripts/run_bursts.sh --host polonez --cooldown_min 20 <launch dir>...` in byobu.
 
+**Length ladder on suite runs.** Add `--extra "--save_ckpt @out"` (the final weights of a from-scratch
+run, saved only to be read longer; never a starting point). Then write read-only GPU scripts with
+`bash scripts/ladder_suite_run.sh --host polonez --gpus "0 1 2 3" --launch Cache/capability/<ladders> <run dir>...`
+(dense capped at 32k) and run them like a burst. The ledger picks up each job's `ladder.json`; a seed
+re-run with weights replaces the older run of that seed on the board.
+
 ### 4 · Monitor
 Suite: `DONE` count and `EXIT` lines (`suite.md` step 6). Battery: `analysis/study_table.py --prefix
 <tag>_ --first` on the server. Hand long watches to the `server-checker` agent.
@@ -131,7 +137,9 @@ re-scoring note** above the original numbers (never overwrite them). Report to t
 ## Pitfalls
 - **A warm start from another run** is not a capability result — label it `not-from-scratch`.
 - **Mean over letters** overstates multi-candidate tasks; judge on first letter.
-- **Same name, different protocol** — always read the match label before comparing two numbers.
+- **Same name, different protocol** — always read the match label before comparing two numbers. A suite
+  cell re-run at another step size (`--lr_scale`, `--lr_pair`) is `settings-differ`, and two models are
+  compared only at the same step size (2026-10-04: e33a lookup-2k at 1e-4 vs E31 at 5e-5 looked like a loss).
 - **Results only on a server** — pull after every phase; Polonez can shut down for heat mid-study.
 - **A copied job list** drifts from the protocol; register the variant instead.
 - **Hand-edited commands** produce a different exam; use `ARCH_FLAGS`, `BATTERY_VARIANTS` or a written

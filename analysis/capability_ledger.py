@@ -18,7 +18,8 @@ Library use (scorecard, board): `load_ledgers()`, `suite_rows()`, `study_jobs()`
 Schema 1 — one file per (folder, host):
   {schema, kind: "suite"|"study", name, host, source_path, archive_path, collected, git: [...],
    suite_version, tier, jobs: [...]}
-  suite job: {job_id, size, cell, level, seed, lr, status, cmd, results: {arch: METRICS}}
+  suite job: {job_id, size, cell, level, seed, lr, status, cmd, results: {arch: METRICS},
+              ladders (only when the run saved weights and was read longer): as in a study job}
   study job: {name, status, args, init, results: {arch: METRICS},
               ladders: {"ladder": {arch: {length: LADDER}}, "ladder_lookup": {...}, ...}}
   METRICS: acc, acc_se, p0 (first answer letter), ppa (accuracy per answer letter), bits,
@@ -94,10 +95,11 @@ def collect_suite(root: Path) -> dict:
         versions.add(job.get("suite_version"))
         tiers.add(job.get("tier"))
         results = _rung(jp.parent)
+        ladders = {p.stem: _ladder(p) for p in sorted(jp.parent.glob("ladder*.json"))}
         jobs.append({
             "job_id": job.get("job_id"), "size": job["size"], "cell": job["cell"], "level": job["level"],
             "seed": job["seed"], "lr": job["lr"], "status": _status(jp.parent, results), "cmd": job.get("cmd"),
-            "results": results,
+            "results": results, **({"ladders": ladders} if ladders else {}),
         })
     plan = root / "plan.json"
     git = []
@@ -159,7 +161,9 @@ def suite_rows(ledger: dict) -> list[dict]:
                 "acc": m.get("acc"), "acc_se": m.get("acc_se"), "params": m.get("params"),
                 "examples_to_75": m.get("examples_to_75"), "tokens_per_sec": m.get("tokens_per_sec"),
                 "per_position_acc": m.get("ppa"), "steps": m.get("step"), "p0": m.get("p0"),
-                "source": f"{ledger['name']}@{ledger['host']}",
+                "ladder": {L: v.get("first_acc") for L, v in ((j.get("ladders") or {}).get("ladder") or {})
+                           .get(arch, {}).items()},
+                "source": f"{ledger['name']}@{ledger['host']}", "collected": ledger.get("collected"),
             })
     return rows
 
