@@ -111,7 +111,10 @@ RATIO2_HP = [
 
 
 # E33a: tied loop over [global read + local] × 4, exits through the untied answer layer.
-E33A_LOOP = ["--loop_rounds", "4", "--loop_exit_aux", "0.3", "--loop_exit_targets", "progress"]
+E33A_LOOP = ["--loop_rounds", "4", "--loop_exit_aux", "0.3", "--loop_exit_targets", "progress"]  # phase e33a (as launched)
+# General exits: every loop predicts the answer (= the next token in text). No synthetic-only labels, so the
+# E31-protocol checks and the suite stay fair to E31 and the recipe carries over to text training.
+E33A_LOOP_ANS = ["--loop_rounds", "4", "--loop_exit_aux", "0.3", "--loop_exit_targets", "answer"]
 E33A_CHAIN = ["--key_len", "8", "--replay_recipe", "recall_single", "--replay_frac", "0.25"]
 E33A_PCHAIN_LADDER = [1024, 4096, 16384]
 # Same effective batch as the study (32 rows); 4 loops + 3 exits need smaller micro-batches on a 3090
@@ -211,15 +214,19 @@ def battery_jobs(tag, arm, arch, seeds=(1, 2), flags=(), *, l1k=L1K_FT, l2k=L2K,
 # Add a variant here — never copy the job list into a new function.
 BATTERY_VARIANTS = {
     # E33a (loop from step 0): roots trained in phase `e33a`; micro-batches halved for 4 loops + exits
-    "e33a": dict(tag="e33a", arm="loop", arch="e31_li_m1", flags=E33A_LOOP, l1k=E33A_L1K, l2k=E33A_L2K,
+    # flags: general answer exits (every loop predicts the answer, = the next token in text), so the checks
+    # stay fair to E31 and carry over to text; phase `e33a` itself was launched with progress exits
+    "e33a": dict(tag="e33a", arm="loop", arch="e31_li_m1", flags=E33A_LOOP_ANS, l1k=E33A_L1K, l2k=E33A_L2K,
                  accum=2, train_root=False),
 }
 
 
 def e33a_e31b_jobs(seeds=(1, 2)):
     """The battery on E33a, from each seed's loop-trained lookup-2k weights. Same exams, steps and ladders
-    as e31_li_m1 in E31b; micro-batches halved (memory only, same effective batch)."""
-    return battery_jobs(seeds=seeds, **BATTERY_VARIANTS["e33a"])
+    as e31_li_m1 in E31b; micro-batches halved (memory only, same effective batch). Also queues the second
+    seed of the general (answer-exit) reasoning arm."""
+    return (_e33a_chain("loopans", "e33a_lookup_loop_s2", E33A_LOOP_ANS, 2)
+            + battery_jobs(seeds=seeds, **BATTERY_VARIANTS["e33a"]))
 
 
 def ratio2_jobs():

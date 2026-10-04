@@ -22,7 +22,8 @@ def test_battery_matches_the_e31b_protocol():
 def test_registered_variants_run_as_phases():
     for tag, kw in plan.BATTERY_VARIANTS.items():
         assert plan.jobs(f"battery_{tag}") == plan.battery_jobs(**kw)
-    assert plan.jobs("e33a_e31b") == plan.jobs("battery_e33a")
+    e33a = plan.jobs("e33a_e31b")  # the battery plus the second seed of the answer-exit reasoning arm
+    assert all(j in e33a for j in plan.jobs("battery_e33a"))
 
 
 def test_parse_job_joins_e31b_and_battery_names():

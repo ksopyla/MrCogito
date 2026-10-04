@@ -136,4 +136,5 @@ def test_named_variant_e33a_loop_builds_the_loop():
                     eos_id=12, spec=spec, seed=0)
     assert m.loop_emb is not None and m.loop_emb.shape[0] == 4
     assert m.config.message_loop_exit_aux == 0.3 and m.config.lm_reader_tokens == 1
+    assert m.config.message_loop_exit_targets == "answer"
     assert m.config.lm_slot_pos == "boundary" and m.config.lm_addr == "none"

@@ -74,11 +74,12 @@ ARCH_VARIANTS: dict[str, tuple[str, dict]] = {
     "e30_li": ("e30_ctx", {"swp_slot_pos": "boundary"}),
     "e31_li": ("e31_page", {"lm_addr": "none", "lm_slot_pos": "boundary"}),
     "e31_li_m1": ("e31_page", {"lm_addr": "none", "lm_slot_pos": "boundary", "lm_reader_tokens": 1}),
-    # E33a: e31_li_m1 + the read–think–reread loop (prelude → [global read + local] × 4 → answer layer,
-    # progress exits weighted 0.3). Trained with the loop from step 0 in every suite cell.
+    # E33a: e31_li_m1 + the read–think–reread loop (prelude → [global read + local] × 4 → answer layer).
+    # Exits predict the answer (= the next token in text): general and fair, with no intermediate-node
+    # labels that E31 never had. Trained with the loop from step 0 in every suite cell.
     "e33a_loop": ("e31_page", {"lm_addr": "none", "lm_slot_pos": "boundary", "lm_reader_tokens": 1,
                                "message_loop_rounds": 4, "message_loop_exit_aux": 0.3,
-                               "message_loop_exit_targets": "progress"}),
+                               "message_loop_exit_targets": "answer"}),
     # order-preserving, length-invariant: slot keys at a scaled distance before QUERY (≤ slot_pos_ref)
     "e30_ord": ("e30_ctx", {"swp_slot_pos": "scaled"}),
     "e31_ord_m1": ("e31_page", {"lm_addr": "none", "lm_slot_pos": "scaled", "lm_reader_tokens": 1}),

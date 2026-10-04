@@ -128,6 +128,25 @@ and lookup at 98 %. Three perfectly composed reads therefore reach about 94–97
   `--replay_recipe`, `--replay_frac`, `--freeze_writer` and per-exit eval; `--loop_rounds` in the length ladder.
   All are reusable for any exclusive-read model.
 
+## Generality: what carries over to text (added 3 Oct, at the author's request)
+The loop is a general mechanism. Only two training aids here are specific to synthetic exams:
+| part | general? | in text |
+|---|---|---|
+| prelude → [global read + local] × R → answer layer | **yes**: runs at every position, no QUERY needed | unchanged; compute ≈ 10 layer passes per token instead of 4 |
+| exits with **answer** targets | **yes**: the answer is the next token | unchanged (Ouro-style loss at every loop) |
+| exits with **progress** targets | **no**: needs the generator's intermediate nodes | not available; kept only as a scaffold arm (an upper bound with step labels) |
+| lookup replay | data trick | the text mix plays this role |
+| writer frozen | yes | optional |
+
+- **The general claim is judged on the answer-exit arm** (2 seeds: `loopans_s1` and `loopans_s2`). The
+  progress-exit arm (`loop_s1/s2`) shows how much step labels add.
+- The capability checks and the suite use answer exits only, so E33a gets no supervision E31 never had.
+- **Gap outside E33a:** E31's memory is read only by question-side tokens, after QUERY (the slot mask in
+  `build_message_mask`, `slot_side < side`). The "text mode" in the E31 spec is not implemented: every token
+  reading the windows that closed before it. The text trainer (`training/concept_pretraining_factories.py`) also
+  does not expose the latent memory or the loop. Training on text needs that read mode first. It is E31's
+  planned text rung and is independent of the loop.
+
 ## Capability checks: no past capability lost (added 3 Oct, at the author's request)
 *Process: [capability checks](../../engineering_specs/capability_checks.md) — the battery below is
 `BATTERY_VARIANTS["e33a"]` (phase `battery_e33a`, alias `e33a_e31b`); results go to the ledger and the board.*
