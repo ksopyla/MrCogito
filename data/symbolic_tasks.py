@@ -173,6 +173,10 @@ class SymbolicTaskConfig:
     # distractors the answer is the only pure target (a no-hop shortcut); with >1 chains the
     # question's start node decides which chain, so the hops must be followed.
     n_chains: int = 1
+    # chain: every chain (real and decoy) continues this many edges past the asked node, so the
+    # answer is not a pure target. 0 keeps the chain-end shortcut: guessing among the chains' ends
+    # scores 1/n + (1 − 1/n)/A on the first letter (43.75 % with 4 chains over DNA).
+    chain_overhang: int = 0
     # "spread" = uniform over [lo, hi) (default). "right" = pack evidence against hi
     # (just before the min_gap), for S0 near-copy diagnostics at long seq_len.
     evidence_align: str = "spread"
@@ -190,10 +194,15 @@ class SymbolicTaskConfig:
                     f"count_mod ({self.count_mod}) must be <= n_symbols ({self.n_symbols}) so the "
                     "answer fits in one symbol"
                 )
-        if self.task in {"chain", "chain_ordered"} and self.hops < 2:
-            raise ValueError("chain needs hops >= 2 to require composition")
+        # one hop is a real keyed lookup only among parallel chains (the start picks the edge);
+        # it is the first stage of a hop curriculum, not a composition exam
+        min_hops = 1 if (self.task == "chain" and self.n_chains > 1) else 2
+        if self.task in {"chain", "chain_ordered"} and self.hops < min_hops:
+            raise ValueError("chain needs hops >= 2 to require composition (hops = 1 only with n_chains > 1)")
         if self.n_chains < 1 or (self.n_chains > 1 and self.task != "chain"):
             raise ValueError("n_chains > 1 is defined for the shuffled chain only")
+        if self.chain_overhang < 0 or (self.chain_overhang > 0 and self.task != "chain"):
+            raise ValueError("chain_overhang >= 1 is defined for the shuffled chain only")
         if self.task == "select" and self.n_decoys < 1:
             raise ValueError("select needs n_decoys >= 1")
         if self.task == "unique" and self.n_duplicates < 1:
@@ -258,7 +267,7 @@ class SymbolicTaskConfig:
         if self.task == "select":
             return (self.n_distractors + 1 + self.n_decoys) * kv
         if self.task in {"chain", "chain_ordered"}:
-            return (self.hops * self.n_chains + self.n_distractors) * hop
+            return ((self.hops + self.chain_overhang) * self.n_chains + self.n_distractors) * hop
         if self.task == "unique":
             return (2 * self.n_duplicates + 1) * kv
         if self.task == "match3":
@@ -345,27 +354,30 @@ def _emit_chain(
 
     Only *sources* must be distinct, so every edge has one unambiguous target. The terminal
     node is a pure target and is drawn iid uniform, which keeps the floor exactly `ln(A)` per
-    token — a distinct-pool draw would leak a little information.
+    token — a distinct-pool draw would leak a little information. With `chain_overhang` > 0 every
+    chain runs that many edges past the asked node, so the answer is a (distinct) source, not
+    a pure target, and guessing among the chains' ends no longer scores.
     """
 
     def sym(t: Sequence[int]) -> list[int]:
         return [v.sym_lo + int(x) for x in t]
 
     n_ch = max(1, int(cfg.n_chains))
-    sources = _sample_distinct_tuples(rng, cfg.hops * n_ch + cfg.n_distractors, cfg.key_len, A)
+    E = cfg.hops + int(cfg.chain_overhang)  # edges per chain
+    sources = _sample_distinct_tuples(rng, E * n_ch + cfg.n_distractors, cfg.key_len, A)
     terminal = tuple(int(x) for x in rng.integers(0, A, size=cfg.key_len))
-    chain = [*sources[: cfg.hops], terminal]
-    chain_edges = [(chain[i], chain[i + 1]) for i in range(cfg.hops)]
+    chain = [*sources[:E], terminal]
+    chain_edges = [(chain[i], chain[i + 1]) for i in range(E)]  # the asked path is the first `hops`
     # decoy chains (same length, own start and terminal) come first among the "distractors",
     # so they are shuffled with the real chain and never counted as evidence
     decoy_edges = []
     for c in range(1, n_ch):
-        nodes = [*sources[c * cfg.hops:(c + 1) * cfg.hops],
+        nodes = [*sources[c * E:(c + 1) * E],
                  tuple(int(x) for x in rng.integers(0, A, size=cfg.key_len))]
-        decoy_edges += [(nodes[i], nodes[i + 1]) for i in range(cfg.hops)]
+        decoy_edges += [(nodes[i], nodes[i + 1]) for i in range(E)]
     dist_edges = decoy_edges + [
         (src, tuple(int(x) for x in rng.integers(0, A, size=cfg.key_len)))
-        for src in sources[cfg.hops * n_ch:]
+        for src in sources[E * n_ch:]
     ]
     if shuffle:
         edges = chain_edges + dist_edges
@@ -392,9 +404,11 @@ def _emit_chain(
         chain_positions = [off + len(b) - 1 for off, b in zip(chain_off, chain_blocks)]
     for off, block in zip(offsets, blocks):
         ids[off : off + len(block)] = block
-    # `nodes`: the queried chain start … terminal (E33 per-round targets: round r → nodes[r + 1])
-    return sym(chain[0]), sym(chain[-1]), max(chain_positions), {
-        "hops": cfg.hops, "shuffled": shuffle, "nodes": [sym(n) for n in chain]}
+    # `nodes`: the queried chain start … asked node (E33 per-round targets: round r → nodes[r + 1])
+    path = chain[: cfg.hops + 1]
+    return sym(path[0]), sym(path[-1]), max(chain_positions), {
+        "hops": cfg.hops, "shuffled": shuffle, "overhang": int(cfg.chain_overhang),
+        "nodes": [sym(n) for n in path]}
 
 
 def generate_row(cfg: SymbolicTaskConfig, rng: np.random.Generator) -> SymbolicRow:

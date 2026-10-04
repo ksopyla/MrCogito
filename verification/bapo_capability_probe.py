@@ -760,6 +760,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         "value_len": args.value_len,
         "hops": args.hops,
         "n_chains": args.n_chains,
+        "chain_overhang": args.chain_overhang,
         "span_len": args.span_len,
         "min_gap": args.min_gap,
         "seq_len": args.seq_len,
@@ -867,7 +868,10 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
                 flush=True,
             )
     eval_rng = np.random.default_rng(args.seed + 99)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if getattr(args, "device", "auto") != "auto":
+        device = torch.device(args.device)
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     eval_batches = [make_batch(cfg, eval_rng, args.batch, device) for _ in range(max(1, args.eval_rows // args.batch))]
     gap_probe = [generate_row_for(cfg, np.random.default_rng(args.seed + 7 + i)).gap for i in range(16)]
     print(
@@ -1375,6 +1379,9 @@ def main() -> int:
     p.add_argument("--value_len", type=int, default=None, help="DNA value length override (E30 lookup_1key pins 8)")
     p.add_argument("--hops", type=int, default=None, help="DNA chain hops override (E30 chain_4hop pins 4)")
     p.add_argument("--n_chains", type=int, default=None, help="shuffled chain: parallel chains (decoys) incl. the real one")
+    p.add_argument("--chain_overhang", type=int, default=None,
+                   help="shuffled chain: every chain continues this many edges past the asked node "
+                        "(removes the guess-a-chain-end shortcut; 0 = today's exam)")
     p.add_argument("--span_len", type=int, default=None)
     p.add_argument("--width", type=int, default=None, help="Glyph vocab width 16 or 32 (ignored for DNA)")
     p.add_argument("--noise", default=None, help="Glyph noise: markov|dyck|arith|mixed|iid")
@@ -1397,6 +1404,8 @@ def main() -> int:
         help="CUDA autocast. auto=bf16 when supported, off on CPU. Use off to match the CPU tiny numbers bit-for-bit.",
     )
     p.add_argument("--out", default=None, help="directory for JSON bundles (one file per task)")
+    p.add_argument("--device", default="auto", choices=("auto", "cuda", "mps", "cpu"),
+                   help="auto = cuda if available else cpu; mps = Apple GPU for local small-model diagnostics")
     args = p.parse_args()
 
     try:

@@ -15,6 +15,25 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-10-04] - E33a diagnosis tools: chain overhang, 1-hop parallel chains, read trace, local Apple GPU
+
+**Why:** every E33a arm (and the dense model) plateaued on the parallel chain at the chain-end shortcut
+(43.75 % first letter), and the read never addressed the start node, so the loop was never tested on a
+first hop it could build on. Diagnosis: `docs/4_Research_Notes/e33a_loop_diagnosis_20261004.md`.
+
+**Added:**
+- `data/symbolic_tasks.py`: `chain_overhang` (default 0) — every chain continues past the asked node, so
+  the answer is not a pure target; `hops = 1` is legal for the shuffled chain with `n_chains > 1` (a keyed
+  lookup in chain format, the first stage of a hop curriculum). Default rows are byte-identical.
+- `verification/bapo_capability_probe.py`: `--chain_overhang`; `--device {auto,cuda,mps,cpu}` (default
+  unchanged: cuda if available else cpu).
+- `analysis/loop_read_trace.py`: per loop round, the share of the memory read on each chain edge / fact at
+  the first-answer position (checked on the recall-16 model: 52 % on the asked fact).
+
+**Changed:**
+- `nn/latent_memory.py::_boundary_pos`: int32 scatter-amin on MPS only (MPS has no int64 version);
+  CUDA / CPU paths unchanged.
+
 ## [2026-10-04] - Capability checks v4 structure: one leveled series, from scratch only, flawed tasks flagged
 
 **Why:** the checks had grown in four layers (ad-hoc probes, suite v3, length battery v1, E33 exams) on
