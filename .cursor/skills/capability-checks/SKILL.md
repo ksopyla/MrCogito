@@ -75,7 +75,9 @@ run's own lookup weights, so they map as `curriculum-differs`).
 ### 3 · Smoke, sync, launch
 Local smoke only if it finishes in under a minute; anything longer runs on a server. Code goes by git
 only. Check the GPUs are free and respect the Polonez heat rule (long queues on Odra; Polonez < 10 h
-bursts). Commands: `suite.md` steps 2–5, `battery.md` "Running it".
+bursts, and a 10–20 min cooldown after every 5–6 h of training). Commands: `suite.md` steps 2–5,
+`battery.md` "Running it". Several bursts on Polonez: generate each run's launch folder (`--mode scripts`),
+then chain them with `scripts/run_bursts.sh --host polonez --cooldown_min 20 <launch dir>...` in byobu.
 
 ### 4 · Monitor
 Suite: `DONE` count and `EXIT` lines (`suite.md` step 6). Battery: `analysis/study_table.py --prefix
