@@ -48,7 +48,8 @@ STANDARD = [
     ("chain8_1k", "In-order 8-hop chain", "trained at 1k"),
 ]
 EXTRA_NAMES = {"shuf2": "Shuffled 2-hop", "shuf3": "Shuffled 3-hop", "pchain2": "Parallel 2-hop chain",
-               "pchain3": "Parallel 3-hop chain", "count": "Count", "majority": "Majority"}
+               "pchain3": "Parallel 3-hop chain", "pchain4": "Parallel 4-hop chain", "count": "Count",
+               "majority": "Majority"}
 STAGE = {"": None, "b8k": "8k", "b16k": "16k"}
 
 _PATTERNS = [  # (regex, how to build (variant, exam, stage))
@@ -59,6 +60,8 @@ _PATTERNS = [  # (regex, how to build (variant, exam, stage))
      lambda m: (f"{m[1]}_{m[3]}", m[2], m[4] or "")),
     (re.compile(r"^([a-z0-9]+)_hard_([a-z0-9]+)_([a-z0-9]+)_s\d+(?:_(b8k))?$"),
      lambda m: (f"{m[1]}_{m[3]}", m[2], m[4] or "")),
+    # a variant's own reasoning exams, e.g. E33a's parallel-chain curriculum `e33a_pchain3_loop_s1`
+    (re.compile(r"^([a-z0-9]+)_(pchain\d)_([a-z0-9]+)_s\d+$"), lambda m: (f"{m[1]}_{m[3]}", m[2], "")),
 ]
 
 
@@ -96,8 +99,9 @@ def battery(ledgers: list[dict]) -> dict:
     for slot, by_v in raw.items():
         out[slot] = {}
         for variant, by_len in by_v.items():
+            # first letter only where every seed has it, so a line never mixes seed sets
             out[slot][variant] = {
-                str(L): {"first": _med(c["first"]), "mean": _med(c["mean"]),
+                str(L): {"first": _med(c["first"]) if None not in c["first"] else None, "mean": _med(c["mean"]),
                          "seeds": sum(x is not None for x in c["mean"]),
                          "first_seeds": sum(x is not None for x in c["first"])}
                 for L, c in sorted(by_len.items())}
@@ -172,6 +176,9 @@ def main() -> int:
     p.add_argument("--champion", default="e31_li_m1")
     p.add_argument("--variants", nargs="*", default=None,
                    help="variants to show (default: every variant with ≥ 8 standard battery slots or registered in BATTERY_VARIANTS, plus dense)")
+    p.add_argument("--show", nargs="*", default=None,
+                   help="variants switched on when the page opens (default: the champion, registered variants "
+                        "and their single-read control `<tag>_r1`); the rest start switched off")
     p.add_argument("--out", default=str(OUT))
     args = p.parse_args()
     ledgers = load_ledgers(Path(args.ledger_dir))
@@ -190,17 +197,22 @@ def main() -> int:
         registered = {f"{k['tag']}_{k['arm']}" for k in BATTERY_VARIANTS.values()}
     except ImportError:
         pass
-    variants = args.variants or sorted(v for v, n in coverage.items() if n >= 8 or v in registered)
+    tags = {r.split("_")[0] for r in registered}
+    every = {v for slot in bat.values() for v in slot}
+    variants = args.variants or sorted(v for v in every if coverage.get(v, 0) >= 8 or v in registered
+                                       or v.split("_")[0] in tags)
     variants = [args.champion] + [v for v in variants if v != args.champion]
     if "dense" in bat.get("recall8_1k", {}) and "dense" not in variants:
         variants.append("dense")
     slots = [{"id": s, "exam": e, "stage": st, "standard": True} for s, e, st in STANDARD if s in bat]
-    for s in sorted(set(bat) - set(std_ids)):
+    for s in sorted(set(bat) - set(std_ids), key=lambda x: (not x.startswith("pchain"), x)):  # reasoning first
         exam, length = s.rsplit("_", 1)
         slots.append({"id": s, "exam": EXTRA_NAMES.get(exam, exam), "stage": f"trained at {length}",
                       "standard": False})
     data = {
         "generated": datetime.date.today().isoformat(), "champion": args.champion, "variants": variants,
+        "visible": args.show or [v for v in variants if v == args.champion or v in registered
+                                 or v.endswith("_r1") and v.split("_")[0] in tags],
         "pass": PASS, "harm_points": HARM_POINTS, "slots": slots,
         "battery": {s["id"]: {v: bat[s["id"]][v] for v in bat[s["id"]] if v in variants} for s in slots},
         "suite_version": current, "suite_old_versions": old_versions,

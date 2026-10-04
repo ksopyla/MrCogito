@@ -5,7 +5,7 @@
  "host": "odra",
  "source_path": "/home/ksopyla/dev/MrCogito-e31/Cache/capability/e33a_full_30m",
  "archive_path": "/nas/ml_data/mrcogito/results/capability/e33a_full_30m.odra",
- "collected": "2026-10-03",
+ "collected": "2026-10-04",
  "suite_version": "2026-09-25.v3",
  "tier": "full",
  "git": [],

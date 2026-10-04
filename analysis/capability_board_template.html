@@ -146,15 +146,17 @@ const D = /*__DATA__*/null;
 const SERIES = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
 const NAMES = {
   e31_li_m1: "E31 latent memory (1 entry per latent)", e31_li: "E31 latent memory", e30_li: "E30 sliding-window notebook",
-  e33a_loop: "E33a re-read loop", e33a_wide: "E33a wide loop", dense: "Dense model (ceiling)",
+  e33a_loop: "E33a re-read loop", e33a_wide: "E33a wide loop (read + both local layers)", dense: "Dense model (ceiling)",
+  e33a_r1: "E33a single-read control", e33a_loopft: "E33a loop, fine-tuned from E31", e33a_loopans: "E33a loop, answer exits",
+  e33a_loopfrz: "E33a loop, writer frozen", e33a_loopinj: "E33a loop, prelude re-injected",
   e31_mix_m1: "E31 + split slot RoPE", e30_mix: "E30 + split slot RoPE", e31_ord_m1: "E31 + order code",
 };
 const label = v => NAMES[v] ? `${NAMES[v]}` : v;
 const color = v => { const i = D.variants.indexOf(v); return i >= 0 && i < SERIES.length ? `var(${SERIES[i]})` : "var(--ink-3)"; };
 const pct = x => x == null ? "–" : `${Math.round(100 * x)}`;
 const kLen = L => L >= 1024 ? `${Math.round(L / 1024)}k` : `${L}`;
-const shown = new Set(D.variants);
-try { const s = JSON.parse(localStorage.getItem("capboard-hidden") || "[]"); s.forEach(v => shown.delete(v)); } catch (e) {}
+const shown = new Set(D.visible && D.visible.length ? D.visible : D.variants);
+try { const s = JSON.parse(localStorage.getItem("capboard-shown") || "null"); if (Array.isArray(s)) { shown.clear(); s.filter(v => D.variants.includes(v)).forEach(v => shown.add(v)); } } catch (e) {}
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 document.getElementById("lede").textContent =
@@ -166,8 +168,10 @@ document.getElementById("harm-rule").textContent =
 
 // ---- no-harm verdicts
 const vbox = document.getElementById("verdicts");
-const harmEntries = Object.entries(D.no_harm);
-if (!harmEntries.length) vbox.innerHTML = `<p class="muted">Only the champion is shown; add variants to compare.</p>`;
+const allHarm = Object.entries(D.no_harm);
+const harmEntries = allHarm.filter(([v, r]) => r.kept + r.lost.length > 0);
+const noOverlap = allHarm.filter(([v, r]) => r.kept + r.lost.length === 0).map(([v]) => label(v));
+if (!harmEntries.length) vbox.innerHTML = `<p class="muted">No variant has results yet on exams the champion passes.</p>`;
 for (const [v, r] of harmEntries) {
   const lost = r.lost.length;
   const state = lost ? ["bad", "✕", `${lost} lost`] : (r.kept ? ["good", "✓", "nothing lost"] : ["warn", "!", "no overlap yet"]);
@@ -180,6 +184,8 @@ for (const [v, r] of harmEntries) {
     ${lost ? `<div class="lost">${lostList}</div>` : ""}</div>`);
 }
 
+if (noOverlap.length) vbox.insertAdjacentHTML("afterend", `<p class="small">No overlap with the champion yet (they only took exams the champion does not pass, such as the parallel chains): ${noOverlap.map(esc).join(", ")}.</p>`);
+
 // ---- toggles
 const tog = document.getElementById("toggles");
 D.variants.forEach((v, i) => {
@@ -189,7 +195,7 @@ D.variants.forEach((v, i) => {
 tog.addEventListener("change", e => {
   const v = e.target.dataset.v; if (!v) return;
   e.target.checked ? shown.add(v) : shown.delete(v);
-  try { localStorage.setItem("capboard-hidden", JSON.stringify(D.variants.filter(x => !shown.has(x)))); } catch (err) {}
+  try { localStorage.setItem("capboard-shown", JSON.stringify([...shown])); } catch (err) {}
   drawBattery();
 });
 
