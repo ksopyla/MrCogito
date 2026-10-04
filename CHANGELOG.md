@@ -32,6 +32,12 @@ tasks removed from evidence and marked; past reports get dated re-scoring notes.
 - `Cell.flaw` in `evaluation/capability_suite.py`; `run_capability_suite.py` prints FLAWED cells;
   the scorecard labels them. No exam changed, so `SUITE_VERSION` stays `2026-09-25.v3`.
 
+- Capability board rebuilt on the v4 structure: every recorded result mapped to its task with a match
+  label (nothing re-run or re-scored), task table by level with row status, protocol badges on legacy cells,
+  flawed rows crossed out, no-harm on `same` evidence only, length charts by level, task guide, one model
+  filter; it also writes the re-run list `docs/3_Evaluations_and_Baselines/capability_reruns.md`
+  (10 tasks to calibrate, 5 training jobs, 2 length-ladder jobs).
+
 **Changed:** skills `capability-checks` (rewritten around levels, rules and packages; `suite.md` and
 `battery.md` marked as legacy runners), `experiment-track` (task names, match labels, dated re-scoring
 notes), `experiment-evaluate` (router), `experiment-design` (core package, written curricula only);

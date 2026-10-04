@@ -156,9 +156,11 @@ collect first). E01–E22 and the Gemma backbone runs are text / pretrained mode
 
 1. **Definitions** — `capability_tasks.py`, flawed flags in the suite runner and scorecard, this spec,
    skills and rules. *(done 2026-10-04)*
-2. **Re-score + dashboard** — the board reorganized by level (C0–C7), one task table with every task,
-   train-length and 128k scores, match labels, task definitions on hover and as a guide, one model filter;
-   dated notes in past reports.
+2. **Dashboard + re-run list** *(done 2026-10-04)* — the board is organized by level (C0–C7): one task table
+   with every task, training-length and 128k scores, match labels, row status (active, partial, missing,
+   calibrating, flawed), task definitions on hover and as a guide, one model filter; nothing re-run or
+   re-scored. The generated re-run list: [`capability_reruns.md`](../3_Evaluations_and_Baselines/capability_reruns.md).
+   Dated re-scoring notes in past reports follow once the re-runs land.
 3. **Calibration study** (Odra, ~1 night) — for every `calibrating` task, dense and `e31_li_m1` from scratch:
    a step-size pair, the v3 budget vs 2×, and for chains/parallel chains the candidate in-run curriculum vs
    none. The cheapest recipe on which dense passes becomes frozen (`active`); if none does, the task

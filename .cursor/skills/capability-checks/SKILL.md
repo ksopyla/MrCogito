@@ -105,7 +105,10 @@ bash scripts/pull_capability_results.sh odra ~/dev/MrCogito/Cache/study/e30_vs_e
 ```bash
 uv run python analysis/capability_board.py      # → docs/3_Evaluations_and_Baselines/capability_board.html
 ```
-No-harm verdict per variant, the length charts and the task table. **When the author asks for a visual
+It also rewrites the re-run list `docs/3_Evaluations_and_Baselines/capability_reruns.md` (what must run, from
+scratch, before the table is complete; flawed tasks never). The page: the no-harm verdict per model (`same`
+evidence only), the task table by level with a status per row (active, partial, missing, calibrating,
+flawed) and a protocol badge per legacy cell, the length charts by level, the task guide and the re-run list. **When the author asks for a visual
 summary**, regenerate from a fresh pull and publish to the existing artifact
 https://claude.ai/artifact/FNTv1zKLc6fh9QRTrJmVrR (pass it as `url` from a new session). Narrative pages
 may sit on top, but their numbers come from the ledger.

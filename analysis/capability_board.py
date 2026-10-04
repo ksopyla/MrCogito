@@ -1,21 +1,21 @@
 #!/usr/bin/env python
-"""Capability board: the one visual summary of every architecture's capability checks.
+"""Capability board: the one dashboard of the capability checks (v4 structure).
 
-Reads the committed capability ledger (`docs/2_Experiments_Registry/results/capability/`, written by
-`scripts/pull_capability_results.sh`) and writes one self-contained HTML page:
-  * the no-harm check of each variant against the champion (default `e31_li_m1`): a capability is
-    lost when the variant is more than 5 points below the champion where the champion passes (≥ 75 %);
-  * the length battery (the E31b protocol): first-letter accuracy against input length, one small
-    chart per exam and training stage, one line per variant;
-  * the capability suite: the honest score per cell (first letter on multi-candidate cells, the
-    mean over answer letters otherwise) per architecture and size, current suite version only.
+Reads the committed ledger (`docs/2_Experiments_Registry/results/capability/`, written by
+`scripts/pull_capability_results.sh`) and the task definitions (`evaluation/capability_tasks.py`), and
+writes one self-contained page plus the re-run list:
+  * every past result is mapped onto its v4 task with a match label (same, settings-differ,
+    curriculum-differs, not-from-scratch, flawed) — nothing is re-scored or re-run here;
+  * the task table: levels C0–C7, one row per task, first-letter score at the training length and at
+    128k per model, with the row status (active, partial, missing, calibrating, flawed);
+  * the no-harm check against the champion, on `same` evidence only;
+  * the length charts (first letter vs input length), grouped by level;
+  * the task guide (what every level and task measures) and the re-run list
+    (`docs/3_Evaluations_and_Baselines/capability_reruns.md`).
 Process: docs/engineering_specs/capability_checks.md (skill `capability-checks`).
 
-    uv run python analysis/capability_board.py                       # all variants with a battery
-    uv run python analysis/capability_board.py --variants e31_li_m1 e33a_loop e31_li --champion e31_li_m1
-
-Variant ids join the two batteries: a battery variant is `{tag}_{arm}` (or the arch for the E31b
-`len_*` / `hard_*` jobs), and should equal the variant's suite arch name.
+    uv run python analysis/capability_board.py
+    uv run python analysis/capability_board.py --champion e31_li_m1 --rerun_models e31_li_m1 dense e33a_loop
 """
 from __future__ import annotations
 
@@ -32,8 +32,15 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from analysis.capability_ledger import LEDGER_DIR, load_ledgers, study_jobs, suite_rows  # noqa: E402
+from evaluation.capability_tasks import (LEVELS, SEEDS, TASK_BY_ID, TASKS, VERSION,  # noqa: E402
+                                         legacy_battery, legacy_suite)
 
 OUT = ROOT / "docs" / "3_Evaluations_and_Baselines" / "capability_board.html"
+RERUNS = ROOT / "docs" / "3_Evaluations_and_Baselines" / "capability_reruns.md"
+LABELS = ("same", "settings-differ", "curriculum-differs", "not-from-scratch", "flawed")  # best first
+# curriculum stages of a battery exam are drawn next to the task they belong to (not tasks themselves)
+STAGE_OF = {"lookup_8k": "C1.lookup-16k", "chain_8k": "C4.chain4-2k", "recall8_8k": "C3.recall8-1k",
+            "recall16_8k": "C3.recall16-1k"}
 PASS, HARM_POINTS = 0.75, 0.05
 MULTI_CANDIDATE = ("lookalike", "chain", "shuffled", "unique", "story")
 
@@ -108,130 +115,244 @@ def battery(ledgers: list[dict]) -> dict:
     return out
 
 
-def suite(ledgers: list[dict]):
+def _seed(job: dict) -> int | None:
+    if job.get("seed") is not None:
+        return int(job["seed"])
+    m = re.search(r"_s(\d+)(?:_|$)", job.get("job", ""))
+    return int(m[1]) if m else None
+
+
+def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
+    """One record per (finished job, arch) that maps onto a v4 task, with its match label."""
     versions = sorted({led["suite_version"] for led in ledgers if led.get("suite_version")})
     current = versions[-1] if versions else None
-    by = defaultdict(lambda: {"acc": [], "p0": [], "sources": set()})
+    out = []
     for led in ledgers:
-        if led.get("suite_version") != current:
-            continue
-        for r in suite_rows(led):
-            k = (r["size"], r["cell"], r["level"], r["arch"])
-            by[k]["acc"].append(r["acc"])
-            by[k]["p0"].append(r["p0"])
-            by[k]["sources"].add(r["source"])
-    cells = []
-    for (size, cell, level, arch), v in sorted(by.items()):
-        multi = any(t in cell for t in MULTI_CANDIDATE)
-        acc, p0 = _med(v["acc"]), _med(v["p0"])
-        cells.append({"size": size, "cell": cell, "level": level, "arch": arch, "acc": acc, "p0": p0,
-                      "honest": p0 if multi else acc, "multi": multi, "seeds": len(v["acc"]),
-                      "pass": acc is not None and acc >= PASS, "sources": sorted(v["sources"])})
-    return current, [v for v in versions if v != current], cells
+        if led["kind"] == "suite":
+            if led.get("suite_version") != current:
+                continue
+            for r in suite_rows(led):
+                task, label = legacy_suite(r["cell"])
+                if task is None or r["size"] != "30m":
+                    continue
+                out.append({"task": task, "model": r["arch"], "label": label, "seed": r["seed"],
+                            "score": r["p0"], "mean": r["acc"], "ladder": {}, "source": r["source"],
+                            "via": f"suite {r['cell']}"})
+        else:
+            for j in study_jobs(led):
+                if j["status"] != "done":
+                    continue
+                parsed = parse_job(j["job"])
+                if not parsed:
+                    continue
+                variant, slot = parsed
+                task, label = legacy_battery(variant, slot)
+                if task is None:
+                    continue
+                lad = {int(L): v.get("first_acc") for L, v in (j["ladders"].get("ladder") or {}).items()}
+                out.append({"task": task, "model": variant, "label": label, "seed": _seed(j), "score": j.get("p0"),
+                            "mean": j.get("acc"), "ladder": lad, "source": j["source"], "via": f"battery {slot}"})
+    return out, current
 
 
-def no_harm(bat: dict, suite_cells: list[dict], champion: str, variants: list[str]) -> dict:
+def table(ev: list[dict]) -> dict:
+    """task → model → the best-labelled evidence: medians over seeds at the training length and per length."""
+    by = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    for e in ev:
+        by[e["task"]][e["model"]][e["label"]].append(e)
     out = {}
-    suite_by = defaultdict(dict)
-    for c in suite_cells:
-        suite_by[(c["size"], c["cell"])][c["arch"]] = c
-    for v in variants:
-        if v in (champion, "dense"):
+    for task, models in by.items():
+        out[task] = {}
+        for model, labels in models.items():
+            label = next(l for l in LABELS if l in labels)
+            rs = labels[label]
+            lens = sorted({L for r in rs for L in r["ladder"]})
+            ladder = {}
+            for L in lens:
+                vals = [r["ladder"].get(L) for r in rs]
+                if vals and None not in vals:          # first letter only when every seed has it
+                    ladder[str(L)] = _med(vals)
+            out[task][model] = {
+                "label": label, "score": _med([r["score"] for r in rs]), "mean": _med([r["mean"] for r in rs]),
+                "seeds": sorted({r["seed"] for r in rs if r["seed"] is not None}), "ladder": ladder,
+                "via": sorted({r["via"] for r in rs}), "sources": sorted({r["source"] for r in rs}),
+                "other": sorted(l for l in labels if l != label),
+            }
+    return out
+
+
+def no_harm(tbl: dict, champion: str, models: list[str]) -> dict:
+    """Lost = more than HARM_POINTS below the champion where it passes; `same` evidence only."""
+    out = {}
+    for m in models:
+        if m in (champion, "dense"):
             continue
         kept, lost, missing = [], [], []
-        for slot, by_v in bat.items():
-            champ = by_v.get(champion)
-            if not champ:
+        for task, by_m in tbl.items():
+            c, v = by_m.get(champion), by_m.get(m)
+            if not c or c["label"] != "same":
                 continue
-            mine = by_v.get(v)
-            for L, cv in champ.items():
-                if cv["first"] is None or cv["first"] < PASS:
+            points = [("train", c["score"], v["score"] if v and v["label"] == "same" else None)]
+            points += [(L, cv, v["ladder"].get(L) if v and v["label"] == "same" else None)
+                       for L, cv in c["ladder"].items()]
+            for where, cv, vv in points:
+                if cv is None or cv < PASS:
                     continue
-                item = {"where": f"{slot} @ {int(L) // 1024}k", "champion": cv["first"]}
-                mv = (mine or {}).get(L)
-                if not mv or mv["first"] is None:
+                item = {"where": f"{task}" + ("" if where == "train" else f" @ {int(where) // 1024}k"), "champion": cv}
+                if vv is None:
                     missing.append(item)
-                elif mv["first"] < cv["first"] - HARM_POINTS:
-                    lost.append({**item, "variant": mv["first"]})
+                elif vv < cv - HARM_POINTS:
+                    lost.append({**item, "variant": vv})
                 else:
-                    kept.append({**item, "variant": mv["first"]})
-        for (size, cell), by_a in suite_by.items():
-            cc, mc = by_a.get(champion), by_a.get(v)
-            if not cc or cc["honest"] is None or cc["honest"] < PASS:
-                continue
-            item = {"where": f"suite {cell} ({size})", "champion": cc["honest"]}
-            if not mc or mc["honest"] is None:
-                missing.append(item)
-            elif mc["honest"] < cc["honest"] - HARM_POINTS:
-                lost.append({**item, "variant": mc["honest"]})
-            else:
-                kept.append({**item, "variant": mc["honest"]})
-        out[v] = {"kept": len(kept), "lost": lost, "missing": len(missing)}
+                    kept.append({**item, "variant": vv})
+        out[m] = {"kept": len(kept), "lost": lost, "missing": len(missing)}
     return out
+
+
+def row_status(task, tbl: dict, champion: str) -> dict:
+    if task.status == "flawed":
+        return {"status": "flawed", "note": task.flaw}
+    if task.status == "calibrating":
+        return {"status": "calibrating", "note": "no frozen from-scratch recipe yet; results shown are legacy protocol"}
+    c = tbl.get(task.id, {}).get(champion)
+    if not c or c["label"] != "same":
+        return {"status": "missing", "note": "no from-scratch result under the v4 definition for the champion"}
+    notes = []
+    if len(c["seeds"]) < len(SEEDS):
+        notes.append(f"{len(c['seeds'])} of {len(SEEDS)} seeds")
+    if task.ladder and not c["ladder"]:
+        notes.append("no length ladder")
+    return {"status": "partial" if notes else "active", "note": "; ".join(notes)}
+
+
+def reruns(tbl: dict, models: list[str]) -> list[dict]:
+    """What must run (from scratch, seeds 0–2) before the v4 table is complete. Flawed tasks: nothing."""
+    items = []
+    for t in TASKS:
+        if t.status == "calibrating":
+            have = sorted({f"{m} ({tbl[t.id][m]['label']})" for m in tbl.get(t.id, {}) if m in models})
+            items.append({"task": t.id, "tasks": [t.id], "kind": "calibrate", "models": ["dense", models[0]],
+                          "what": "find the from-scratch recipe: step-size pair, v3 budget vs 2×"
+                                  + (", the written curriculum vs none" if t.curriculum else "")
+                                  + "; then run every model on seeds 0, 1, 2" + (" and ladder to 128k" if t.ladder else ""),
+                          "legacy": ", ".join(have) or "none"})
+    # active tasks: group into concrete jobs — one row per (model, missing seeds), listing the tasks
+    train, ladder = defaultdict(list), defaultdict(list)
+    for t in TASKS:
+        if t.status != "active":
+            continue
+        for m in models:
+            e = tbl.get(t.id, {}).get(m)
+            have = set(e["seeds"]) if e and e["label"] == "same" else set()
+            need = tuple(s for s in SEEDS if s not in have)
+            if need:
+                train[(m, need)].append(t.id)
+            if t.ladder and m != "dense" and not (e and e["label"] == "same" and e["ladder"]):
+                ladder[m].append(t.id)
+    for (m, need), tasks in train.items():
+        items.append({"kind": "train", "models": [m], "tasks": tasks, "task": tasks[0],
+                      "what": f"train from scratch, seed{'s' if len(need) > 1 else ''} {', '.join(map(str, need))} "
+                              f"— {len(tasks)} task{'s' if len(tasks) > 1 else ''}",
+                      "legacy": "no matching result" if len(need) == len(SEEDS) else
+                                f"seeds {', '.join(str(s) for s in SEEDS if s not in need)} exist"})
+    for m, tasks in ladder.items():
+        items.append({"kind": "ladder", "models": [m], "tasks": tasks, "task": tasks[0],
+                      "what": f"save the weights of the seeds 0–2 runs and read them up to 128k — {len(tasks)} tasks "
+                              "(the suite runs kept no weights, so this rides on the retrain)",
+                      "legacy": "training-length score only"})
+    return items
+
+
+def reruns_md(items: list[dict], models: list[str]) -> str:
+    kinds = {"calibrate": "Calibrate first (no frozen from-scratch recipe)",
+             "train": "Train from scratch (missing seeds)", "ladder": "Length ladder missing"}
+    lines = [f"# Capability checks — re-run list ({datetime.date.today().isoformat()})", "",
+             f"Generated by `analysis/capability_board.py` from the committed ledger and `evaluation/capability_tasks.py` "
+             f"({VERSION}). Models: {', '.join(models)}. Every run is from scratch, seeds 0–2, first-letter "
+             "scoring; flawed tasks are never re-run. Process: `docs/engineering_specs/capability_checks.md`.", ""]
+    for k, title in kinds.items():
+        sel = [i for i in items if i["kind"] == k]
+        if not sel:
+            continue
+        lines += [f"## {title} — {len(sel)}", "", "| task | model(s) | what to run | what exists now |", "|---|---|---|---|"]
+        lines += [f"| {', '.join(f'`{x}`' for x in i.get('tasks', [i['task']]))} | {', '.join(i['models'])} | {i['what']} | {i['legacy']} |"
+                  for i in sel]
+        lines.append("")
+    flawed = [t for t in TASKS if t.status == "flawed"]
+    lines += ["## Not re-run: flawed tasks", ""] + [f"- `{t.id}` — {t.flaw}" for t in flawed] + [""]
+    return "\n".join(lines)
 
 
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--ledger_dir", default=str(LEDGER_DIR))
     p.add_argument("--champion", default="e31_li_m1")
-    p.add_argument("--variants", nargs="*", default=None,
-                   help="variants to show (default: every variant with ≥ 8 standard battery slots or registered in BATTERY_VARIANTS, plus dense)")
-    p.add_argument("--show", nargs="*", default=None,
-                   help="variants switched on when the page opens (default: the champion, registered variants "
-                        "and their single-read control `<tag>_r1`); the rest start switched off")
+    p.add_argument("--rerun_models", nargs="*", default=None,
+                   help="models the re-run list covers (default: champion, dense, registered battery variants)")
+    p.add_argument("--show", nargs="*", default=None, help="models switched on when the page opens")
     p.add_argument("--out", default=str(OUT))
+    p.add_argument("--reruns_out", default=str(RERUNS))
     args = p.parse_args()
     ledgers = load_ledgers(Path(args.ledger_dir))
     if not ledgers:
         raise SystemExit(f"no ledger files under {args.ledger_dir}")
+    ev, suite_version = evidence(ledgers)
+    tbl = table(ev)
     bat = battery([l for l in ledgers if l["kind"] == "study"])
-    current, old_versions, suite_cells = suite([l for l in ledgers if l["kind"] == "suite"])
-    std_ids = [s[0] for s in STANDARD]
-    coverage = defaultdict(int)
-    for slot in std_ids:
-        for v in bat.get(slot, {}):
-            coverage[v] += 1
-    registered = set()
-    try:  # variants registered for the battery are shown as soon as they have any result
+    registered = []
+    try:
         from scripts.study_plans.e30_vs_e31 import BATTERY_VARIANTS
-        registered = {f"{k['tag']}_{k['arm']}" for k in BATTERY_VARIANTS.values()}
+        registered = [f"{k['tag']}_{k['arm']}" for k in BATTERY_VARIANTS.values()]
     except ImportError:
         pass
-    tags = {r.split("_")[0] for r in registered}
-    every = {v for slot in bat.values() for v in slot}
-    variants = args.variants or sorted(v for v in every if coverage.get(v, 0) >= 8 or v in registered
-                                       or v.split("_")[0] in tags)
-    variants = [args.champion] + [v for v in variants if v != args.champion]
-    if "dense" in bat.get("recall8_1k", {}) and "dense" not in variants:
-        variants.append("dense")
-    slots = [{"id": s, "exam": e, "stage": st, "standard": True} for s, e, st in STANDARD if s in bat]
-    for s in sorted(set(bat) - set(std_ids), key=lambda x: (not x.startswith("pchain"), x)):  # reasoning first
+    models = sorted({e["model"] for e in ev} | {v for slot in bat.values() for v in slot})
+    order = [args.champion, *registered, "e31_li", "e30_li", "dense"]
+    models = [m for m in order if m in models] + [m for m in models if m not in order]
+    visible = args.show or [m for m in [args.champion, *registered, "e31_li", "e30_li", "dense"] if m in models]
+    rerun_models = args.rerun_models or [args.champion, "dense", *registered]
+    items = reruns(tbl, rerun_models)
+    Path(args.reruns_out).write_text(reruns_md(items, rerun_models))
+
+    slots = []
+    for s in sorted(bat, key=lambda x: (STANDARD.index(next(t for t in STANDARD if t[0] == x)) if x in [t[0] for t in STANDARD] else 99, x)):
+        task, label = legacy_battery("_", s)
+        task = task or STAGE_OF.get(s)
+        if task is None:  # a study job that is no v4 task (e.g. an ad-hoc probe): not on the board
+            continue
         exam, length = s.rsplit("_", 1)
-        slots.append({"id": s, "exam": EXTRA_NAMES.get(exam, exam), "stage": f"trained at {length}",
-                      "standard": False})
+        std = next((t for t in STANDARD if t[0] == s), None)
+        slots.append({"id": s, "task": task, "level": TASK_BY_ID[task].level if task and TASK_BY_ID[task].level else "X",
+                      "exam": std[1] if std else EXTRA_NAMES.get(exam, exam),
+                      "stage": std[2] if std else f"trained at {length}",
+                      "label": "curriculum stage" if s in STAGE_OF else label})
+    lv_order = [lv.id for lv in LEVELS] + ["X"]
+    std_ix = {t[0]: i for i, t in enumerate(STANDARD)}
+    slots.sort(key=lambda sl: (lv_order.index(sl["level"]), std_ix.get(sl["id"], 99), sl["task"] or "", sl["id"]))
+    tasks = [{"id": t.id, "level": t.level or "X", "name": t.name, "measures": t.measures, "recipe": t.recipe,
+              "args": " ".join(t.args), "train_len": t.train_len, "prize": t.prize_bits, "chance": t.chance,
+              "curriculum": t.curriculum, "ladder": t.ladder, "task_status": t.status, "flaw": t.flaw,
+              **row_status(t, tbl, args.champion)} for t in TASKS]
     data = {
-        "generated": datetime.date.today().isoformat(), "champion": args.champion, "variants": variants,
-        "visible": args.show or [v for v in variants if v == args.champion or v in registered
-                                 or v.endswith("_r1") and v.split("_")[0] in tags],
-        "pass": PASS, "harm_points": HARM_POINTS, "slots": slots,
-        "battery": {s["id"]: {v: bat[s["id"]][v] for v in bat[s["id"]] if v in variants} for s in slots},
-        "suite_version": current, "suite_old_versions": old_versions,
-        "suite": suite_cells,
-        "suite_default": [a for a in [*variants, "dense"] if any(c["arch"] == a for c in suite_cells)],
-        "suite_all_arches": sorted({c["arch"] for c in suite_cells}),
-        "no_harm": no_harm(bat, suite_cells, args.champion, variants),
+        "generated": datetime.date.today().isoformat(), "version": VERSION, "champion": args.champion,
+        "models": models, "visible": visible, "pass": PASS, "harm_points": HARM_POINTS, "seeds": list(SEEDS),
+        "levels": [{"id": lv.id, "name": lv.name, "question": lv.question, "measures": lv.measures} for lv in LEVELS],
+        "tasks": tasks, "table": tbl, "no_harm": no_harm(tbl, args.champion, models),
+        "slots": slots, "battery": {s["id"]: bat[s["id"]] for s in slots},
+        "reruns": items, "rerun_models": rerun_models, "suite_version": suite_version,
         "sources": [{"file": str(Path(l["_file"]).relative_to(ROOT)), "kind": l["kind"], "name": l["name"],
                      "host": l["host"], "collected": l["collected"], "archive": l["archive_path"],
                      "done": sum(j["status"] == "done" for j in l["jobs"]), "jobs": len(l["jobs"]),
                      "suite_version": l.get("suite_version")} for l in ledgers],
     }
     template = (Path(__file__).parent / "capability_board_template.html").read_text()
-    html = template.replace("/*__DATA__*/null", json.dumps(data, separators=(",", ":")))
-    Path(args.out).write_text(html)
-    print(f"wrote {args.out}: {len(variants)} variants, {len(slots)} battery slots, "
-          f"{len(data['suite'])} suite cells (suite {current})")
+    Path(args.out).write_text(template.replace("/*__DATA__*/null", json.dumps(data, separators=(",", ":"))))
+    from collections import Counter
+    print(f"wrote {args.out}: {len(models)} models, {len(tasks)} tasks, {len(slots)} length charts")
+    print("  rows:", dict(Counter(t["status"] for t in tasks)))
+    print(f"  re-run list: {len(items)} items -> {args.reruns_out}", dict(Counter(i["kind"] for i in items)))
     for v, r in data["no_harm"].items():
-        print(f"  {v}: kept {r['kept']}, lost {len(r['lost'])}, not run {r['missing']} (vs {args.champion})")
+        if r["kept"] or r["lost"]:
+            print(f"  {v}: kept {r['kept']}, lost {len(r['lost'])}, not run {r['missing']} (vs {args.champion}, same evidence)")
     return 0
 
 

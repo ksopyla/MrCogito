@@ -68,3 +68,14 @@ def test_collect_study_and_suite(tmp_path):
     rows = suite_rows(led)
     assert led["kind"] == "suite" and led["suite_version"] == "v3"
     assert rows[0]["cell"] == "L3.lookup-1k" and rows[0]["bits"] == 60.0 and rows[0]["p0"] == 0.8
+
+
+def test_board_on_the_committed_ledger_never_reruns_flawed_tasks():
+    from analysis.capability_board import evidence, reruns, table
+    from analysis.capability_ledger import load_ledgers
+    from evaluation.capability_tasks import FLAWED
+
+    ev, _ = evidence(load_ledgers())
+    items = reruns(table(ev), ["e31_li_m1", "dense"])
+    assert items and not any(t in FLAWED for i in items for t in i.get("tasks", [i["task"]]))
+    assert {i["kind"] for i in items} <= {"calibrate", "train", "ladder"}
