@@ -210,6 +210,28 @@ PAR_MESSAGE_ANCHOR_KEY_LEN="${PAR_MESSAGE_ANCHOR_KEY_LEN:-0}"
 PAR_MESSAGE_PREFIX_AE="${PAR_MESSAGE_PREFIX_AE:-False}"
 PAR_MESSAGE_PREFIX_AE_WEIGHT="${PAR_MESSAGE_PREFIX_AE_WEIGHT:-0.0}"
 PAR_MESSAGE_PREFIX_AE_STOPGRAD_ANSWER="${PAR_MESSAGE_PREFIX_AE_STOPGRAD_ANSWER:-True}"
+# E31 latent memory on text (E31c). Passed only when PAR_MESSAGE_WRITE=latent_memory, so every other
+# invocation stays byte-identical. Defaults = the E31 champion (one entry per latent, no window
+# address) + the E31c text read (closed windows, reader-relative slot keys).
+PAR_MESSAGE_WRITE="${PAR_MESSAGE_WRITE:-block_mean}"
+PAR_MESSAGE_RAW_WINDOW="${PAR_MESSAGE_RAW_WINDOW:-0}"      # E31: 256 (the last 256 tokens verbatim)
+PAR_MESSAGE_OVERRIDE="${PAR_MESSAGE_OVERRIDE:-real}"       # none = E31c no-notebook control
+PAR_LM_READ="${PAR_LM_READ:-closed}"                       # closed (text) | exclusive (exams)
+PAR_LM_CONTEXT="${PAR_LM_CONTEXT:-page_bidir}"
+PAR_LM_WINDOW="${PAR_LM_WINDOW:-256}"
+PAR_LM_STRIDE="${PAR_LM_STRIDE:-192}"
+PAR_LM_LATENTS="${PAR_LM_LATENTS:-32}"
+PAR_LM_LATENT_DIM="${PAR_LM_LATENT_DIM:-512}"
+PAR_LM_HEADS="${PAR_LM_HEADS:-8}"
+PAR_LM_WRITER_DIM="${PAR_LM_WRITER_DIM:-256}"
+PAR_LM_ENC_LAYERS="${PAR_LM_ENC_LAYERS:-2}"
+PAR_LM_ROUNDS="${PAR_LM_ROUNDS:-2}"
+PAR_LM_READER_TOKENS="${PAR_LM_READER_TOKENS:-1}"
+PAR_LM_ADDR="${PAR_LM_ADDR:-none}"
+PAR_LM_SLOT_POS="${PAR_LM_SLOT_POS:-reader}"
+PAR_LOOP_ROUNDS="${PAR_LOOP_ROUNDS:-1}"                    # E33a loop on text: 4
+PAR_LOOP_EXIT_AUX="${PAR_LOOP_EXIT_AUX:-0.0}"              # E33a: 0.3
+PAR_LOOP_EXIT_TARGETS="${PAR_LOOP_EXIT_TARGETS:-answer}"
 # Optional weight-only warm start (concept-encoder families: encoder weights; perceiver_ar: full
 # state dict from a saved `final/` dir). Empty = random init.
 MODEL_NAME_OR_PATH="${MODEL_NAME_OR_PATH:-}"
@@ -449,6 +471,31 @@ if [ "$MODEL_FAMILY" = "perceiver_ar" ]; then
     )
     if [ -n "$NUM_ATTENTION_HEADS" ]; then
         PAR_ARGS+=(--num_attention_heads "$NUM_ATTENTION_HEADS")
+    fi
+    if [ "$PAR_MESSAGE_WRITE" = "latent_memory" ]; then
+        PAR_ARGS+=(
+            --message_write "$PAR_MESSAGE_WRITE"
+            --message_raw_window "$PAR_MESSAGE_RAW_WINDOW"
+            --message_override "$PAR_MESSAGE_OVERRIDE"
+            --lm_read "$PAR_LM_READ"
+            --lm_context "$PAR_LM_CONTEXT"
+            --lm_window "$PAR_LM_WINDOW"
+            --lm_stride "$PAR_LM_STRIDE"
+            --lm_latents "$PAR_LM_LATENTS"
+            --lm_latent_dim "$PAR_LM_LATENT_DIM"
+            --lm_heads "$PAR_LM_HEADS"
+            --lm_writer_dim "$PAR_LM_WRITER_DIM"
+            --lm_enc_layers "$PAR_LM_ENC_LAYERS"
+            --lm_rounds "$PAR_LM_ROUNDS"
+            --lm_reader_tokens "$PAR_LM_READER_TOKENS"
+            --lm_addr "$PAR_LM_ADDR"
+            --lm_slot_pos "$PAR_LM_SLOT_POS"
+            --message_loop_rounds "$PAR_LOOP_ROUNDS"
+            --message_loop_exit_aux "$PAR_LOOP_EXIT_AUX"
+            --message_loop_exit_targets "$PAR_LOOP_EXIT_TARGETS"
+        )
+    elif [ "$PAR_MESSAGE_RAW_WINDOW" != "0" ]; then
+        PAR_ARGS+=(--message_raw_window "$PAR_MESSAGE_RAW_WINDOW")
     fi
 fi
 # E22: Perceiver Concept LM family args, only when MODEL_FAMILY=perceiver_concept.

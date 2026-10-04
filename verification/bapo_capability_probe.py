@@ -842,6 +842,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         lm_reader_tokens=args.lm_reader_tokens,
         lm_addr=args.lm_addr,
         lm_slot_pos=args.lm_slot_pos,
+        lm_read=args.lm_read,
         slot_pos_ref=args.slot_pos_ref,
         message_read_rounds=args.message_read_rounds,
         message_round_aux=args.round_aux,
@@ -1038,7 +1039,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
                 k: getattr(args, k) for k in (
                     "lm_window", "lm_stride", "lm_latents", "lm_latent_dim", "lm_heads",
                     "lm_writer_dim", "lm_enc_layers", "lm_rounds", "lm_competition",
-                    "lm_null_latent", "lm_reader_tokens", "lm_addr", "lm_slot_pos",
+                    "lm_null_latent", "lm_reader_tokens", "lm_addr", "lm_slot_pos", "lm_read",
                 )
             },
             "k1_extended": {
@@ -1271,8 +1272,11 @@ def main() -> int:
     p.add_argument("--freeze_writer", action="store_true",
                    help="E33a: freeze the E31 memory writer (the notebook stays exactly as initialised)")
     p.add_argument("--slot_pos_ref", type=int, default=2048, help="'scaled' slot positions: max query–slot distance")
-    p.add_argument("--lm_slot_pos", default="read", choices=("read", "boundary", "scaled", "mixed"),
-                   help="slot RoPE position: what the latent read, or the QUERY boundary (length-invariant).")
+    p.add_argument("--lm_slot_pos", default="read", choices=("read", "boundary", "scaled", "mixed", "reader"),
+                   help="slot RoPE position: what the latent read, or the QUERY boundary (length-invariant); "
+                   "'reader' (E31c) = no slot rotation, met by the un-rotated query.")
+    p.add_argument("--lm_read", default="exclusive", choices=("exclusive", "closed"),
+                   help="E31c: 'closed' = every token reads the windows closed at or before it (the text read).")
     # Long-context length ladder (verification/length_ladder.py evaluates the saved weights)
     p.add_argument(
         "--message_raw_window", type=int, default=0,

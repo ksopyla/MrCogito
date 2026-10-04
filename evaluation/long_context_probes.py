@@ -38,6 +38,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
 import json
 import os
 import random
@@ -657,17 +658,23 @@ def main():
     p.add_argument("--copy_dataset", default=None)
     p.add_argument("--attn_backend", default=None)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--message_override", default="real", choices=("real", "none"),
+                   help="E31c: 'none' = the same weights with the notebook removed (memory ablation). "
+                   "'real' keeps the checkpoint's own setting (a no-notebook control stays without).")
     p.add_argument("--out", default=None, help="JSON output path")
     args = p.parse_args()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = load_model(args.checkpoint, device, args.attn_backend)
     fn = probe_suite if args.probe == "suite" else PROBES[args.probe]
-    with model.reach_override(args.reach_window) as touched:
+    msg_ctx = model.message_override(args.message_override) if hasattr(model, "message_override") else nullcontext()
+    with model.reach_override(args.reach_window) as touched, msg_ctx:
         res = fn(model, args, device)
     res["checkpoint"] = args.checkpoint
     res["probe"] = args.probe
     res["context_lengths"] = args.context_lengths
     res["seed"] = args.seed
+    if args.message_override != "real":
+        res["message_override"] = args.message_override
     if args.reach_window is not None:
         res["reach_window"] = args.reach_window
         res["touched_layers"] = touched

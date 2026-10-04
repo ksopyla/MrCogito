@@ -59,12 +59,14 @@ from nn.perceiver_ar_lm import PerceiverARConfig, PerceiverARLM, swp_geometry
 
 
 ARCHES = ("dense", "e18", "e18_local", "e21", "e30", "encdec", "e30_ctx", "e31_page", "e31_bixt",
-          "e30_li", "e31_li", "e31_li_m1", "e30_ord", "e31_ord_m1", "e30_mix", "e31_mix_m1", "e33a_loop")
+          "e30_li", "e31_li", "e31_li_m1", "e30_ord", "e31_ord_m1", "e30_mix", "e31_mix_m1", "e33a_loop",
+          "e31c_m1", "e31c_loop")
 # Arches whose global read is exclusive after QUERY (compressed / latent memory only).
 EXCLUSIVE_ARCHES = ("e21", "e30", "e30_ctx", "e31_page", "e31_bixt", "e30_li", "e31_li", "e31_li_m1",
-                    "e30_ord", "e31_ord_m1", "e30_mix", "e31_mix_m1", "e33a_loop")
+                    "e30_ord", "e31_ord_m1", "e30_mix", "e31_mix_m1", "e33a_loop", "e31c_m1", "e31c_loop")
 SWP_ARCHES = ("e30", "e30_ctx", "e30_li", "e30_ord", "e30_mix")
-E31_ARCHES = ("e31_page", "e31_bixt", "e31_li", "e31_li_m1", "e31_ord_m1", "e31_mix_m1", "e33a_loop")
+E31_ARCHES = ("e31_page", "e31_bixt", "e31_li", "e31_li_m1", "e31_ord_m1", "e31_mix_m1", "e33a_loop",
+              "e31c_m1", "e31c_loop")
 # Length-invariant variants (E30 vs E31 limits study, 2026-09-27): named so scorecards keep
 # them apart. Each is a base arch plus fixed spec fields; other spec fields pass through.
 #   e30_li    = e30_ctx (64-token pre-encoder reach) + slot keys RoPE'd at QUERY
@@ -86,6 +88,15 @@ ARCH_VARIANTS: dict[str, tuple[str, dict]] = {
     # mixed: high-frequency RoPE pairs at QUERY (content), low-frequency at the scaled distance (order)
     "e30_mix": ("e30_ctx", {"swp_slot_pos": "mixed"}),
     "e31_mix_m1": ("e31_page", {"lm_addr": "none", "lm_slot_pos": "mixed", "lm_reader_tokens": 1}),
+    # E31c (text read): e31_li_m1 with the closed-window read (every token reads the windows closed at or
+    # before it) and reader-relative slot keys (no slot rotation; the text translation of "boundary").
+    # On exam rows the answers read exactly E31's notes; only the slot-key rotation differs.
+    "e31c_m1": ("e31_page", {"lm_addr": "none", "lm_slot_pos": "reader", "lm_reader_tokens": 1,
+                             "lm_read": "closed"}),
+    # E31c + the E33a loop (answer exits): the text-ready reasoning arm, run after E33a's ladder verdict.
+    "e31c_loop": ("e31_page", {"lm_addr": "none", "lm_slot_pos": "reader", "lm_reader_tokens": 1,
+                               "lm_read": "closed", "message_loop_rounds": 4, "message_loop_exit_aux": 0.3,
+                               "message_loop_exit_targets": "answer"}),
 }
 
 
@@ -171,6 +182,7 @@ class ArchSpec:
     lm_reader_tokens: int = 5
     lm_addr: str = "window_start"
     lm_slot_pos: str = "read"
+    lm_read: str = "exclusive"            # E31c: "closed" = every token reads the windows closed before it
     slot_pos_ref: int = 2048
 
 
@@ -311,6 +323,7 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         lm_reader_tokens=int(spec.lm_reader_tokens),
         lm_addr=str(getattr(spec, "lm_addr", "window_start")),
         lm_slot_pos=str(getattr(spec, "lm_slot_pos", "read")),
+        lm_read=str(getattr(spec, "lm_read", "exclusive")) if arch in E31_ARCHES else "exclusive",
         slot_pos_ref=int(getattr(spec, "slot_pos_ref", 2048)),
         pad_token_id=pad_id,
         bos_token_id=bos_id,

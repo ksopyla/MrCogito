@@ -9,6 +9,10 @@ not a weighted average of token K/V.
 Spec: docs/experiments_specs/ahead/E31_sliding_window_latent_memory.md
 Plan: docs/experiments_specs/ahead/E31_sliding_window_latent_memory_plan.md
 
+`lm_slot_pos="reader"` (E31c, text): slot keys are returned un-rotated and the global read meets
+them with the un-rotated query (NoPE for slots, RoPE kept for raw keys) — every note is "at the
+reader", the text translation of E31's QUERY-anchored "boundary" keys.
+
 Shapes (claim scale): tok_emb [B,S,e] → windows [B·n_w, W, d_w] → latents [B·n_w, K(+1), D]
 → reader slots k̄, v̄ [B, n_w·K·m, g, dh] (normed + RoPE'd at the latent's expected
 position), slot_doc / slot_side / slot_pos [B, n_w·K·m].
@@ -392,9 +396,10 @@ class LatentMemoryWriter(nn.Module):
             lo = scaled_slot_pos(slot_pos, bnd, self.slot_pos_ref)
             cos_s, sin_s = rope_cos_sin_mixed(bnd, lo, self.dh, rope_theta, kk.dtype)
             slot_pos = bnd
-        else:
+        elif self.slot_pos_mode != "reader":
             cos_s, sin_s = rope_cos_sin(slot_pos, self.dh, rope_theta, kk.dtype)
-        kk = apply_rope(kk, cos_s, sin_s)
+        if self.slot_pos_mode != "reader":  # "reader" (E31c): un-rotated, met by the un-rotated query
+            kk = apply_rope(kk, cos_s, sin_s)
         slot_side = slot_side_w.repeat_interleave(K * m, dim=1)
         self._last_k_bar = kk
         self.last_diag = self._diagnostics(w, mask, geo)
