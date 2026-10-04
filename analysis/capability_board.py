@@ -162,6 +162,14 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
     return out, current
 
 
+def _shown_path(p: Path, ledger_dir: Path) -> str:
+    """Repo-relative path; a ledger read from elsewhere (a preview with uncommitted pulls) is marked so."""
+    try:
+        return str(p.resolve().relative_to(ROOT))
+    except ValueError:
+        return f"{LEDGER_DIR.relative_to(ROOT)}/{p.resolve().relative_to(ledger_dir.resolve())} (not committed)"
+
+
 def _one_per_seed(rs: list[dict]) -> list[dict]:
     """A seed re-run (e.g. again with saved weights for the ladder) replaces the older run of that seed:
     prefer the run with a ladder, then the latest collected. Runs without a seed all count."""
@@ -358,7 +366,7 @@ def main() -> int:
         "tasks": tasks, "table": tbl, "no_harm": no_harm(tbl, args.champion, models),
         "slots": slots, "battery": {s["id"]: bat[s["id"]] for s in slots},
         "reruns": items, "rerun_models": rerun_models, "suite_version": suite_version,
-        "sources": [{"file": str(Path(l["_file"]).relative_to(ROOT)), "kind": l["kind"], "name": l["name"],
+        "sources": [{"file": _shown_path(Path(l["_file"]), Path(args.ledger_dir)), "kind": l["kind"], "name": l["name"],
                      "host": l["host"], "collected": l["collected"], "archive": l["archive_path"],
                      "done": sum(j["status"] == "done" for j in l["jobs"]), "jobs": len(l["jobs"]),
                      "suite_version": l.get("suite_version")} for l in ledgers],
