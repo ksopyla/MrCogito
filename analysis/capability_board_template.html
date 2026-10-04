@@ -81,6 +81,12 @@ th.lv { text-align: center; font: 500 11px var(--mono); letter-spacing: .05em; c
 td.cell { text-align: center; font-family: var(--mono); font-variant-numeric: tabular-nums; min-width: 52px; }
 td.cell.pass { box-shadow: inset 0 0 0 2px var(--ink); }
 td.cell.empty { color: var(--ink-3); }
+tr.lvrow td { font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); background: var(--bg); padding-top: 10px; }
+td.exam { font-family: var(--mono); position: sticky; left: 0; background: var(--surface); }
+#suite-table { width: auto; }
+#suite .tablebox { width: fit-content; max-width: 100%; }
+th.archcol { white-space: normal; min-width: 92px; max-width: 140px; vertical-align: bottom; text-align: center; font-size: 12px; line-height: 1.3; }
+th.archcol .swatch { display: block; margin: 0 auto 4px; }
 .legendbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 12px; color: var(--ink-3); }
 .ramp { display: inline-flex; border-radius: 3px; overflow: hidden; }
 .ramp i { width: 22px; height: 12px; display: block; }
@@ -122,6 +128,7 @@ details[open] summary { margin-bottom: 10px; }
       <h2>Capability suite: the graded exams</h2>
       <p class="muted" id="suite-lede"></p>
     </div>
+    <div class="controls" id="suite-toggles" role="group" aria-label="Architectures shown in the suite table"></div>
     <div class="legendbar" id="suite-legend"></div>
     <div class="tablebox"><table id="suite-table"></table></div>
   </section>
@@ -149,6 +156,8 @@ const NAMES = {
   e33a_loop: "E33a re-read loop", e33a_wide: "E33a wide loop (read + both local layers)", dense: "Dense model (ceiling)",
   e33a_r1: "E33a single-read control", e33a_loopft: "E33a loop, fine-tuned from E31", e33a_loopans: "E33a loop, answer exits",
   e33a_loopfrz: "E33a loop, writer frozen", e33a_loopinj: "E33a loop, prelude re-injected",
+  e30: "E30 (first build)", e30_ctx: "E30 with wider first layer", e31_page: "E31 page memory (first build)",
+  e31_bixt: "E31 two-way memory (first build)",
   e31_mix_m1: "E31 + split slot RoPE", e30_mix: "E30 + split slot RoPE", e31_ord_m1: "E31 + order code",
 };
 const label = v => NAMES[v] ? `${NAMES[v]}` : v;
@@ -261,36 +270,44 @@ drawBattery();
 const seq = ["--seq-0","--seq-1","--seq-2","--seq-3","--seq-4","--seq-5","--seq-6"];
 function seqColor(a) { if (a == null) return ""; const t = Math.max(0, Math.min(1, (a - 0.25) / 0.75)); return `var(${seq[Math.min(6, Math.floor(t * 7))]})`; }
 function seqInk(a) { return a != null && (a - 0.25) / 0.75 >= 0.57 ? "var(--seq-ink-dark)" : "var(--ink)"; }
-(function drawSuite() {
+const levelNames = {0: "L0 · learns at all", 1: "L1 · carries a fact", 2: "L2 · picks signal over a lookalike",
+  3: "L3 · long reach", 4: "L4 · multi-step reasoning", 5: "L5 · language-like noise", 6: "L6 · hard stretch (never gates)"};
+const suiteShown = new Set(D.suite_default || []);
+try { const s = JSON.parse(localStorage.getItem("capboard-suite") || "null"); if (Array.isArray(s)) { suiteShown.clear(); s.forEach(v => suiteShown.add(v)); } } catch (e) {}
+const suiteArches = [...new Set(D.suite.map(c => c.arch))].sort((a, b) => {
+  const r = x => x === D.champion ? -1 : x === "dense" ? 999 : (D.variants.indexOf(x) >= 0 ? D.variants.indexOf(x) : 500);
+  return r(a) - r(b) || a.localeCompare(b);
+});
+function drawSuite() {
   const lede = document.getElementById("suite-lede");
   const tbl = document.getElementById("suite-table");
-  if (!D.suite.length) { lede.textContent = "No suite results for these variants in the ledger yet."; tbl.parentElement.hidden = true; return; }
+  if (!D.suite.length) { lede.textContent = "No suite results in the ledger yet."; tbl.parentElement.hidden = true; return; }
   lede.textContent = `Suite version ${D.suite_version}. Each cell trains from scratch on one exam; levels run from L0 (learns at all) to L6 (stretch exams that never gate). ` +
     `The number is the honest score in percent: first letter on exams with several candidate answers, the mean over answer letters otherwise. ` +
     `A dark outline marks a pass under the suite rule (mean ≥ 75 %). Median over seeds.` + (D.suite_old_versions.length ? ` Older suite versions (${D.suite_old_versions.join(", ")}) are left out: their exams differ.` : "");
   document.getElementById("suite-legend").innerHTML = `<span>25 % (chance)</span><span class="ramp">${seq.map(s => `<i style="background:var(${s})"></i>`).join("")}</span><span>100 %</span>`;
-  const cells = [...new Set(D.suite.map(c => `${c.level}|${c.cell}`))].sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
-  const rowsKey = [...new Set(D.suite.map(c => `${c.size}|${c.arch}`))].sort((a, b) => {
-    const [sa, aa] = a.split("|"), [sb, ab] = b.split("|");
-    return parseInt(sa) - parseInt(sb) || (D.variants.indexOf(aa) + 99 * (aa === "dense")) - (D.variants.indexOf(ab) + 99 * (ab === "dense"));
-  });
+  const sizes = [...new Set(D.suite.map(c => c.size))].sort((a, b) => parseInt(a) - parseInt(b));
+  const cols = sizes.flatMap(z => suiteArches.filter(a => suiteShown.has(a) && D.suite.some(c => c.size === z && c.arch === a)).map(a => [z, a]));
+  if (!cols.length) { tbl.innerHTML = `<tbody><tr><td class="muted">Pick at least one architecture above.</td></tr></tbody>`; return; }
   const by = new Map(D.suite.map(c => [`${c.size}|${c.arch}|${c.cell}`, c]));
-  const levels = [...new Set(cells.map(c => c.split("|")[0]))];
-  let h = `<thead><tr><th rowspan="2">size</th><th rowspan="2">architecture</th>` +
-    levels.map(l => `<th class="lv" colspan="${cells.filter(c => c.startsWith(l + "|")).length}">L${l}</th>`).join("") + `</tr><tr>` +
-    cells.map(c => `<th class="mono" style="font-weight:500">${esc(c.split("|")[1].replace(/^L\d\./, ""))}</th>`).join("") + `</tr></thead><tbody>`;
-  for (const rk of rowsKey) {
-    const [size, arch] = rk.split("|");
-    h += `<tr><td class="num">${esc(size)}</td><td><span class="swatch" style="display:inline-block;vertical-align:-1px;margin-right:6px;background:${color(arch)}"></span>${esc(label(arch))}</td>`;
-    for (const ck of cells) {
-      const c = by.get(`${size}|${arch}|${ck.split("|")[1]}`);
+  const cells = [...new Set(D.suite.map(c => `${c.level}|${c.cell}`))].sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
+  const multiSize = sizes.length > 1;
+  let h = `<thead><tr><th>exam</th>` + cols.map(([z, a]) =>
+    `<th class="archcol"><span class="swatch" style="background:${color(a)}"></span>${esc(label(a))}${multiSize ? `<br><span class="small">${esc(z)}</span>` : ""}</th>`).join("") + `</tr></thead><tbody>`;
+  let lastLevel = null;
+  for (const ck of cells) {
+    const [level, cell] = ck.split("|");
+    if (level !== lastLevel) { h += `<tr class="lvrow"><td colspan="${cols.length + 1}">${esc(levelNames[level] || "L" + level)}</td></tr>`; lastLevel = level; }
+    h += `<tr><td class="exam">${esc(cell.replace(/^L\d\./, ""))}</td>`;
+    for (const [z, a] of cols) {
+      const c = by.get(`${z}|${a}|${cell}`);
       if (!c) { h += `<td class="cell empty">·</td>`; continue; }
-      h += `<td class="cell ${c.pass ? "pass" : ""}" tabindex="0" data-k="${esc(`${size}|${arch}|${c.cell}`)}" style="background:${seqColor(c.honest)};color:${seqInk(c.honest)}">${pct(c.honest)}</td>`;
+      h += `<td class="cell ${c.pass ? "pass" : ""}" tabindex="0" data-k="${esc(`${z}|${a}|${cell}`)}" style="background:${seqColor(c.honest)};color:${seqInk(c.honest)}">${pct(c.honest)}</td>`;
     }
     h += `</tr>`;
   }
   tbl.innerHTML = h + `</tbody>`;
-  tbl.addEventListener("pointerover", ev => {
+  tbl.onpointerover = ev => {
     const td = ev.target.closest("td[data-k]"); if (!td) return hideTip();
     const c = by.get(td.dataset.k);
     showTip(`<div class="small">${esc(c.cell)} · ${esc(c.size)} · ${c.seeds} seed${c.seeds > 1 ? "s" : ""}</div>
@@ -299,9 +316,19 @@ function seqInk(a) { return a != null && (a - 0.25) / 0.75 >= 0.57 ? "var(--seq-
       <div class="row"><span>mean over letters</span><span class="num">${pct(c.acc)} %</span></div>
       <div class="row"><span>suite rule</span><span>${c.pass ? "✓ pass" : "✕ below 75 %"}</span></div>
       <div class="small">${esc(c.sources.join(", "))}</div>`, ev);
-  });
-  tbl.addEventListener("pointerleave", hideTip);
-})();
+  };
+  tbl.onpointerleave = hideTip;
+}
+const stog = document.getElementById("suite-toggles");
+suiteArches.forEach((a, i) => stog.insertAdjacentHTML("beforeend", `<label for="st-${i}"><input type="checkbox" id="st-${i}" data-a="${esc(a)}" ${suiteShown.has(a) ? "checked" : ""}>
+  <span class="swatch" style="background:${color(a)}"></span>${esc(label(a))}${a === D.champion ? " · champion" : ""}</label>`));
+stog.addEventListener("change", e => {
+  const a = e.target.dataset.a; if (!a) return;
+  e.target.checked ? suiteShown.add(a) : suiteShown.delete(a);
+  try { localStorage.setItem("capboard-suite", JSON.stringify([...suiteShown])); } catch (err) {}
+  drawSuite();
+});
+drawSuite();
 
 // ---- sources + full table
 document.getElementById("sources").innerHTML = `<thead><tr><th>results</th><th>kind</th><th>server</th><th>finished</th><th>collected</th><th>NAS archive</th><th>ledger file</th></tr></thead><tbody>` +
