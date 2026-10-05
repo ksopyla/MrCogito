@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from scripts.study_plans.e30_vs_e31 import BASE, E33A_L1K, E33A_LOOP, E33A_LOOP_ANS  # noqa: F401
 
-ROOT_CKPT = "lookup_start"  # symlink → the E31 single-read lookup-2k run (len_lookup_e31_li_m1_s0)
+ROOT_CKPT = "lookup_start"  # symlink → an E31 single-read lookup-2k run that learned lookup (len_lookup_e31_li_m1_s2, 99 %; s0 never did)
 CHAIN = ["--chain_overhang", "1", "--key_len", "16"]
 STAGES = (("edge", 1), ("pchain2", 2), ("pchain3", 3))
 ARMS = (
