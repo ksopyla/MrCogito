@@ -169,6 +169,42 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
     return out, current
 
 
+# calibration jobs (`cal_*` / `cal2_*`, dense from scratch): name fragment → v4 task, and what the variant changes
+CAL_TASKS = (("edge", "C1.edge-1k"), ("keyed4", "C1.keyed4-1k"), ("recall8", "C3.recall8-1k"),
+             ("pchain2", "C5.pchain2-1k"), ("pchain3", "C5.pchain3-1k"), ("count", "C6.count-1k"))
+CAL_KNOBS = (("_to_", "curriculum from the previous stage"), ("noover", "no overhang (4 facts)"),
+             ("k16v16", "16-letter keys and values"), ("k16", "16-letter nodes"), ("k8", "8-letter nodes"),
+             ("lr3e-4", "step 3e-4"), ("x4", "4x budget"), ("x1", "suite budget"), ("_512_", "512-token book"),
+             ("_256_", "256-token book"))
+
+
+def calibration(ledgers: list[dict]) -> list[dict]:
+    """Dense-from-scratch calibration runs: one row per job, scored on the task's own score."""
+    rows = []
+    for led in ledgers:
+        if led["kind"] != "study":
+            continue
+        for j in study_jobs(led):
+            name = j["job"]
+            if not re.match(r"^cal2?_", name) or j["status"] not in ("done", "failed"):
+                continue
+            stem = name.split("_dense")[0]
+            task = next((t for frag, t in CAL_TASKS if frag in stem.split("_to_")[-1]), None)
+            if task is None:
+                continue
+            t = TASK_BY_ID[task]
+            knobs = [txt for frag, txt in CAL_KNOBS if frag in name + "_"]
+            if "_to_" in name:
+                knobs = [k for k in knobs if k != "4x budget"] + ["4x budget"]
+            rows.append({"job": name, "task": task, "round": 2 if name.startswith("cal2_") else 1,
+                         "model": j["arch"], "variant": ", ".join(dict.fromkeys(knobs)) or "task recipe",
+                         "score": _score(task, j.get("p0"), j.get("cand")), "first": j.get("p0"),
+                         "first_greedy": j.get("first_greedy"), "teacher": j.get("acc"),
+                         "floor": t.floor, "chance": t.chance, "score_kind": t.score, "source": j["source"]})
+    rows.sort(key=lambda r: (r["round"], r["task"], r["job"]))
+    return rows
+
+
 def _shown_path(p: Path, ledger_dir: Path) -> str:
     """Repo-relative path; a ledger read from elsewhere (a preview with uncommitted pulls) is marked so."""
     try:
@@ -374,6 +410,7 @@ def main() -> int:
         "tasks": tasks, "table": tbl, "no_harm": no_harm(tbl, args.champion, models),
         "slots": slots, "battery": {s["id"]: bat[s["id"]] for s in slots},
         "reruns": items, "rerun_models": rerun_models, "suite_version": suite_version,
+        "calibration": calibration(ledgers),
         "sources": [{"file": _shown_path(Path(l["_file"]), Path(args.ledger_dir)), "kind": l["kind"], "name": l["name"],
                      "host": l["host"], "collected": l["collected"], "archive": l["archive_path"],
                      "done": sum(j["status"] == "done" for j in l["jobs"]), "jobs": len(l["jobs"]),

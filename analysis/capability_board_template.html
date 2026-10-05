@@ -121,7 +121,7 @@ details[open] summary { margin-bottom: 10px; }
     <p class="muted" id="lede"></p>
     <nav class="toc" aria-label="Sections">
       <a href="#harm">Kept or lost vs the champion</a><a href="#tasks">Task table</a><a href="#length">Length charts</a>
-      <a href="#guide">Task guide</a><a href="#reruns">Re-run list</a><a href="#sources">Sources</a>
+      <a href="#guide">Task guide</a><a href="#calibration">Calibration</a><a href="#reruns">Re-run list</a><a href="#sources">Sources</a>
     </nav>
   </header>
 
@@ -166,6 +166,14 @@ details[open] summary { margin-bottom: 10px; }
         written here, and it is the same for every architecture. Definitions live in <span class="mono">evaluation/capability_tasks.py</span>.</p>
     </div>
     <div class="guide" id="guidebox"></div>
+  </section>
+
+  <section id="calibration">
+    <div>
+      <h2>Calibration — can dense learn the task?</h2>
+      <p class="muted" id="cal-lede"></p>
+    </div>
+    <div class="tablebox"><table id="cal-table"></table></div>
   </section>
 
   <section id="reruns">
@@ -406,6 +414,29 @@ document.getElementById("guidebox").innerHTML = [...D.levels, {id: "X", name: "F
       <div class="meta">recipe ${esc(t.recipe)} ${esc(t.args)} · trains at ${kLen(t.train_len)}${t.ladder ? " · ladder to 128k" : ""} · chance ${Math.round(100 * t.chance)} %${t.floor ? ` · guessing floor ${Math.round(100 * t.floor)} %` : ""} · scored on ${t.score_kind === "candidate" ? "the picked candidate" : "the first letter"}${t.prize ? ` · ${t.prize} bits` : ""}</div>
       ${t.curriculum ? `<div class="meta">curriculum: ${esc(t.curriculum)}</div>` : ""}</div>`).join("") + `</div>`;
 }).join("");
+
+// ---- calibration (dense from scratch: a task becomes active once dense passes it)
+(function () {
+  const rows = D.calibration || [];
+  const pct = x => x == null ? "–" : `${Math.round(100 * x)} %`;
+  const passed = new Set(rows.filter(r => r.score != null && r.score >= D.pass).map(r => r.task));
+  document.getElementById("cal-lede").textContent = rows.length
+    ? `${rows.length} dense runs, all from scratch, scored on each task's own score (picked candidate or first letter) and read against its guessing floor. ` +
+      `Dense passes: ${passed.size ? [...passed].join(", ") : "none yet"}. Teacher-forced accuracy (every letter given the right ones before it) is shown to expose ` +
+      `runs that only learned to copy a node once its first letter is given.`
+    : "No calibration runs in the ledger yet.";
+  document.getElementById("cal-table").innerHTML = `<thead><tr><th>round</th><th>task</th><th>what changes</th><th>score</th><th>floor / chance</th>` +
+    `<th>teacher-forced</th><th>verdict</th></tr></thead><tbody>` +
+    rows.map(r => {
+      const ok = r.score != null && r.score >= D.pass;
+      const atFloor = r.score != null && r.score <= Math.max(r.floor || 0, r.chance) + 0.03;
+      return `<tr><td class="num">${r.round}</td><td><a href="#task-${esc(r.task)}" class="mono" style="font-size:12px">${esc(r.task)}</a></td>
+        <td>${esc(r.variant)}<div class="small mono">${esc(r.job)}</div></td>
+        <td class="num"><b>${pct(r.score)}</b><div class="small">${r.score_kind === "candidate" ? "picked candidate" : "first letter"}</div></td>
+        <td class="num">${r.floor ? pct(r.floor) + " / " : ""}${pct(r.chance)}</td><td class="num">${pct(r.teacher)}</td>
+        <td>${ok ? "passes" : atFloor ? "at the floor" : "fails"}</td></tr>`;
+    }).join("") + `</tbody>`;
+})();
 
 // ---- re-run list
 (function () {
