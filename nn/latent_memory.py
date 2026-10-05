@@ -143,7 +143,10 @@ def _boundary_pos(side, doc, pos, slot_doc, *, fallback):
     idx = torch.arange(S, device=side.device).expand(B, S)
     recv = torch.where((side >= 1) & (doc >= 0), idx, torch.full_like(idx, S))
     first = torch.full((B, n_doc), S, dtype=torch.long, device=side.device)
-    first.scatter_reduce_(1, doc.clamp(min=0), recv, reduce="amin")
+    if side.device.type == "mps":  # MPS has no int64 scatter-amin; int32 is exact for S < 2^31
+        first = first.int().scatter_reduce_(1, doc.clamp(min=0), recv.int(), reduce="amin").long()
+    else:
+        first.scatter_reduce_(1, doc.clamp(min=0), recv, reduce="amin")
     b_idx = first.gather(1, slot_doc.clamp(min=0))  # [B, C]
     ok = (b_idx < S) & (slot_doc >= 0)
     b_pos = pos.gather(1, b_idx.clamp(max=S - 1))

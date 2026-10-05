@@ -15,6 +15,43 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-10-05] - Capability checks: keyed lookups, guess-proof reasoning exams, picked-candidate score
+
+- **Probe** (`verification/bapo_capability_probe.py`): at the final eval of chain and recall exams the answer is
+  decoded greedily and scored as `answer_exact` = {`candidate` (the planted candidate nearest to the decoded answer
+  is the asked one), `exact` (every letter), `first_greedy`}; the parallel chain also prints its guessing floors
+  (`guess_floor`: any link target on the first letter / picked candidate, a chain end), measured on its own eval rows.
+  `--answer_exact {auto,on,off}` (auto = chain and recall exams). Training and the existing scores are unchanged.
+  Checked on trained checkpoints: the recall16 E31 model keeps 88 % (first letter 88 %, every letter only 24 %); the
+  E33a pchain3 single-read model drops from 45 % first letter to 12 % picked candidate (floor 8 %).
+- **Capability tasks** (`evaluation/capability_tasks.py`, `v4-draft-2026-10-05`): new fields `score`
+  (`first` | `candidate`) and `floor`; keyed C1 tasks `C1.keyed4-1k` (1 of 4 facts by key) and `C1.edge-1k` (1 of 4
+  edges by start node, stage 1 of the C5 curriculum); C5 parallel chains now have 16-letter nodes, one edge of
+  overhang and the picked-candidate score (floors 8.3 / 6.2 / 5 %), curriculum candidate 1 → 2 → … hops; the old
+  pchain exams become flawed `X.pchain{2,3,4}-1k-v1` (first-letter floor 44 / 41 / 39 %), and the battery's
+  pchain slots map there. C2 / C4 level texts name their key-free routes (decoy marker; hop counting); C3 lists
+  its first-letter floor. Calibration (dense ceiling) of the new C1 / C5 tasks is the tracking session's phase.
+
+## [2026-10-04] - E33a diagnosis tools: chain overhang, 1-hop parallel chains, read trace, local Apple GPU
+
+**Why:** every E33a arm (and the dense model) plateaued on the parallel chain at a guessing floor (the
+commonest first letter among all link targets: 44 / 41 / 39 % for 2 / 3 / 4 hops), and the read never
+addressed the start node, so the loop was never tested on a first hop it could build on. A better
+shortcut (pick a chain end, 43.75 %) is also open. Diagnosis: `docs/4_Research_Notes/e33a_loop_diagnosis_20261004.md`.
+
+**Added:**
+- `data/symbolic_tasks.py`: `chain_overhang` (default 0) — every chain continues past the asked node, so
+  the answer is not a pure target; `hops = 1` is legal for the shuffled chain with `n_chains > 1` (a keyed
+  lookup in chain format, the first stage of a hop curriculum). Default rows are byte-identical.
+- `verification/bapo_capability_probe.py`: `--chain_overhang`; `--device {auto,cuda,mps,cpu}` (default
+  unchanged: cuda if available else cpu).
+- `analysis/loop_read_trace.py`: per loop round, the share of the memory read on each chain edge / fact at
+  the first-answer position (checked on the recall-16 model: 52 % on the asked fact).
+
+**Changed:**
+- `nn/latent_memory.py::_boundary_pos`: int32 scatter-amin on MPS only (MPS has no int64 version);
+  CUDA / CPU paths unchanged.
+
 ## [2026-10-04] - Capability checks v4 structure: one leveled series, from scratch only, flawed tasks flagged
 
 **Why:** the checks had grown in four layers (ad-hoc probes, suite v3, length battery v1, E33 exams) on

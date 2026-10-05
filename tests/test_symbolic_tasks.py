@@ -318,6 +318,48 @@ def test_chain_hops_are_not_in_reading_order():
     assert in_order < 0.5 * len(rows), f"{in_order}/{len(rows)} rows had the chain in reading order"
 
 
+def _edges(cfg, row):
+    v, k = cfg.vocab, cfg.key_len
+    ids = row.input_ids
+    return [
+        (tuple(_symbols(cfg, ids[i + 1 : i + 1 + k])), tuple(_symbols(cfg, ids[i + 1 + k : i + 1 + 2 * k])))
+        for i in np.flatnonzero(ids[: row.answer_start - 1] == v.control("hop"))
+    ]
+
+
+def test_one_hop_is_a_keyed_lookup_only_among_parallel_chains():
+    """hops = 1 is the first curriculum stage: legal with decoy chains (the start picks the edge),
+    still rejected for a single chain (the answer would be the only target)."""
+    with pytest.raises(ValueError):
+        cfg_for("chain", hops=1, n_distractors=0)
+    cfg = cfg_for("chain", hops=1, n_distractors=0, n_chains=4)
+    for row in iter_rows(cfg, 20, seed=3):
+        edges = dict(_edges(cfg, row))
+        start = tuple(_symbols(cfg, row.input_ids[row.answer_start - 1 - cfg.key_len : row.answer_start - 1]))
+        answer = tuple(_symbols(cfg, row.input_ids[row.answer_start : row.answer_start + cfg.key_len]))
+        assert len(edges) == 4 and edges[start] == answer
+
+
+@pytest.mark.parametrize("overhang", [1, 2])
+def test_chain_overhang_removes_the_chain_end_shortcut(overhang):
+    """With an overhang the asked node is k hops from the start but never a pure target, so guessing
+    among the chains' ends cannot score; the path still follows the edges."""
+    cfg = cfg_for("chain", hops=2, n_distractors=0, n_chains=4, chain_overhang=overhang)
+    for row in iter_rows(cfg, 30, seed=5):
+        edges = _edges(cfg, row)
+        assert len(edges) == (cfg.hops + overhang) * cfg.n_chains
+        lookup = dict(edges)
+        node = tuple(_symbols(cfg, row.input_ids[row.answer_start - 1 - cfg.key_len : row.answer_start - 1]))
+        for _ in range(cfg.hops):
+            node = lookup[node]
+        answer = tuple(_symbols(cfg, row.input_ids[row.answer_start : row.answer_start + cfg.key_len]))
+        assert node == answer
+        pure = {d for _, d in edges} - {s for s, _ in edges}
+        assert answer not in pure and 1 <= len(pure) <= cfg.n_chains  # iid chain ends may coincide
+    with pytest.raises(ValueError):
+        cfg_for("chain_ordered", hops=2, chain_overhang=1)
+
+
 # --------------------------------------------------------------------------------------
 # Property 2: not solvable locally
 # --------------------------------------------------------------------------------------

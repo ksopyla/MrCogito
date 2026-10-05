@@ -226,6 +226,113 @@ def _first_letter_hits(logits: torch.Tensor, labels: torch.Tensor) -> tuple[int,
     return int(ok.sum()), int(has.sum())
 
 
+def _candidates(cfg, row: np.ndarray, n: int) -> list[tuple[int, ...]]:
+    """The same-shaped answers planted in a book (first `n` letters of each): every node of the chain exams,
+    every fact / decoy value of recall and select. Empty for exams with one candidate."""
+    task, L = getattr(cfg, "task", None), int(cfg.key_len)
+    v = cfg.vocab
+    out: list[tuple[int, ...]] = []
+    if task in ("chain", "chain_ordered"):
+        for q in np.nonzero(row == v.control("hop"))[0]:
+            out += [tuple(int(x) for x in row[q + 1:q + 1 + n]), tuple(int(x) for x in row[q + 1 + L:q + 1 + L + n])]
+    elif task in ("recall", "select"):
+        marks = [v.control("keymark")] + ([v.control("decoy")] if task == "select" else [])
+        for q in np.nonzero(np.isin(row, marks))[0]:
+            out.append(tuple(int(x) for x in row[q + 1 + L:q + 1 + L + n]))
+    return sorted(set(out))
+
+
+@torch.no_grad()
+def _answer_exact(model, batches, *, amp: str, device: torch.device, message_override: str = "real",
+                  cfg=None) -> dict:
+    """The answer decoded greedily (every letter from the model's own earlier letters, no teacher forcing).
+
+    exact: every letter right. candidate: the planted candidate nearest to the decoded answer (Hamming; ties
+    split) is the asked one: the addressing decision, without punishing a lossy copy of the right fact.
+    A model that answers with a random candidate scores 1 / #candidates on both; on the first letter it
+    scores the commonest first letter among the candidates (~40 % on the parallel chains)."""
+    model.eval()
+    hits = rows = first_hits = 0
+    cand_score = cand_rows = 0.0
+    for ids, labels in batches:
+        cur = ids.clone()
+        m = labels != -100
+        k = m.sum(-1)
+        order = [torch.nonzero(m[r]).flatten() for r in range(m.shape[0])]
+        for j in range(int(k.max())):
+            with _message_cm(model, message_override), amp_ctx(device, amp):
+                packed = model(cur, return_logits=True)
+            logits = packed.logits if hasattr(packed, "logits") else packed
+            for r, pos in enumerate(order):
+                if j < len(pos):
+                    p = int(pos[j])
+                    cur[r, p] = logits[r, p - 1].argmax(-1)
+        ok = ((cur == labels) | ~m).all(-1) & (k > 0)
+        hits += int(ok.sum())
+        rows += int((k > 0).sum())
+        first_hits += sum(int(cur[r, pos[0]] == labels[r, pos[0]]) for r, pos in enumerate(order) if len(pos))
+        if cfg is not None:
+            ids_np, cur_np, lab_np = ids.cpu().numpy(), cur.cpu().numpy(), labels.cpu().numpy()
+            for r, pos in enumerate(order):
+                pos = pos.cpu().numpy()
+                cands = _candidates(cfg, ids_np[r], len(pos)) if len(pos) else []
+                ans = tuple(int(x) for x in lab_np[r, pos])
+                if ans not in cands:
+                    continue
+                pred = cur_np[r, pos]
+                dist = [int((np.array(c) != pred).sum()) for c in cands]
+                best = [c for c, d in zip(cands, dist) if d == min(dist)]
+                cand_score += (ans in best) / len(best)
+                cand_rows += 1
+    model.train()
+    out = {"exact": hits / max(rows, 1), "first_greedy": first_hits / max(rows, 1), "rows": rows}
+    if cand_rows:
+        out["candidate"] = cand_score / cand_rows
+        out["candidate_rows"] = int(cand_rows)
+    return out
+
+
+def _guess_floors(cfg, batches) -> dict | None:
+    """Guessing floors of the shuffled (parallel) chain exam, measured on its own eval rows.
+
+    link_target_*: answer with a uniformly drawn link target (what every E33a arm learned): the first letter
+    scores the argmax of the targets' first-letter mix (ties split), the whole answer 1 / #targets.
+    chain_end_*: pick one of the targets that start no edge (0 with `chain_overhang` >= 1)."""
+    if getattr(cfg, "task", None) != "chain" or int(getattr(cfg, "n_chains", 1) or 1) < 2:
+        return None
+    hop, L = cfg.vocab.control("hop"), int(cfg.key_len)
+    lt_first = lt_exact = end_exact = 0.0
+    n = 0
+    for ids, labels in batches:
+        ids_np, lab_np = ids.cpu().numpy(), labels.cpu().numpy()
+        for t, lab in zip(ids_np, lab_np):
+            pos = np.nonzero(lab != -100)[0]
+            if len(pos) == 0:
+                continue
+            ans = tuple(int(x) for x in lab[pos[:L]])
+            srcs, dsts = set(), set()
+            for q in np.nonzero(t == hop)[0]:
+                srcs.add(tuple(int(x) for x in t[q + 1:q + 1 + L]))
+                dsts.add(tuple(int(x) for x in t[q + 1 + L:q + 1 + 2 * L]))
+            n += 1
+            if ans not in dsts:
+                continue
+            lt_exact += 1.0 / len(dsts)
+            votes: dict[int, int] = {}
+            for d in dsts:
+                votes[d[0]] = votes.get(d[0], 0) + 1
+            top = max(votes.values())
+            winners = [a for a, v in votes.items() if v == top]
+            lt_first += (ans[0] in winners) / len(winners)
+            ends = dsts - srcs
+            if ans in ends:
+                end_exact += 1.0 / len(ends)
+    if n == 0:
+        return None
+    return {"link_target_first": lt_first / n, "link_target_exact": lt_exact / n,
+            "chain_end_exact": end_exact / n, "rows": n}
+
+
 @torch.no_grad()
 def _loop_and_replay_eval(model, cfg, args, device, override: str) -> dict:
     """E33a: first-letter accuracy at every loop exit (exit r == the R = r forward), against the answer
@@ -679,6 +786,19 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
         nominal_a_bytes=cache["nominal_a_bytes"],
     )
     extra = {}
+    mode = getattr(args, "answer_exact", "auto")
+    if mode == "on" or (mode == "auto" and getattr(cfg, "task", None) in ("chain", "chain_ordered", "recall")):
+        extra["answer_exact"] = _answer_exact(model, eval_batches, amp=args.amp, device=device,
+                                              message_override=override, cfg=cfg)
+        floors = _guess_floors(cfg, eval_batches)
+        if floors:
+            extra["guess_floor"] = floors
+        print(f"  [{arch}] answer (greedy): right candidate {extra['answer_exact'].get('candidate', float('nan')):.3f}  "
+              f"every letter {extra['answer_exact']['exact']:.3f}  "
+              f"first letter (greedy) {extra['answer_exact']['first_greedy']:.3f}"
+              + (f"  | guessing floor: first letter {floors['link_target_first']:.3f}, whole answer "
+                 f"{floors['link_target_exact']:.3f}, chain end {floors['chain_end_exact']:.3f}" if floors else ""),
+              flush=True)
     if arch in EXCLUSIVE_ARCHES:
         extra["channel_ablations"] = _channel_ablations(
             model, eval_batches, amp=args.amp, device=device, spec=spec
@@ -760,6 +880,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         "value_len": args.value_len,
         "hops": args.hops,
         "n_chains": args.n_chains,
+        "chain_overhang": args.chain_overhang,
         "span_len": args.span_len,
         "min_gap": args.min_gap,
         "seq_len": args.seq_len,
@@ -867,7 +988,10 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
                 flush=True,
             )
     eval_rng = np.random.default_rng(args.seed + 99)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if getattr(args, "device", "auto") != "auto":
+        device = torch.device(args.device)
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     eval_batches = [make_batch(cfg, eval_rng, args.batch, device) for _ in range(max(1, args.eval_rows // args.batch))]
     gap_probe = [generate_row_for(cfg, np.random.default_rng(args.seed + 7 + i)).gap for i in range(16)]
     print(
@@ -1375,6 +1499,12 @@ def main() -> int:
     p.add_argument("--value_len", type=int, default=None, help="DNA value length override (E30 lookup_1key pins 8)")
     p.add_argument("--hops", type=int, default=None, help="DNA chain hops override (E30 chain_4hop pins 4)")
     p.add_argument("--n_chains", type=int, default=None, help="shuffled chain: parallel chains (decoys) incl. the real one")
+    p.add_argument("--chain_overhang", type=int, default=None,
+                   help="shuffled chain: every chain continues this many edges past the asked node "
+                        "(removes the guess-a-chain-end shortcut; 0 = today's exam)")
+    p.add_argument("--answer_exact", choices=("auto", "on", "off"), default="auto",
+                   help="final eval: decode the answer greedily and score the candidate it picks and every letter "
+                        "(+ the parallel chain's guessing floors); auto = chain and recall exams")
     p.add_argument("--span_len", type=int, default=None)
     p.add_argument("--width", type=int, default=None, help="Glyph vocab width 16 or 32 (ignored for DNA)")
     p.add_argument("--noise", default=None, help="Glyph noise: markov|dyck|arith|mixed|iid")
@@ -1397,6 +1527,8 @@ def main() -> int:
         help="CUDA autocast. auto=bf16 when supported, off on CPU. Use off to match the CPU tiny numbers bit-for-bit.",
     )
     p.add_argument("--out", default=None, help="directory for JSON bundles (one file per task)")
+    p.add_argument("--device", default="auto", choices=("auto", "cuda", "mps", "cpu"),
+                   help="auto = cuda if available else cpu; mps = Apple GPU for local small-model diagnostics")
     args = p.parse_args()
 
     try:
