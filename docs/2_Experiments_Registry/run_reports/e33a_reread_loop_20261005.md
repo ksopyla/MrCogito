@@ -64,22 +64,26 @@ comparable.
 
 **C1.lookup-16k curriculum (2k → 8k → 16k), ladder to 128k:** E33a seed 2 **98 / 99 / 100 / 100 / 99 / 99 / 93** at
 2k–128k (E31 `e31_li_m1` seed 1: 98 / 95 / 98 / 100 / 97 / 98 / 94); E33a seed 1 47–70 % at every length (its 2k start
-was 70 %). E31's other battery seed (seed 0) also failed (31–40 %). One good seed each: a tie, not a verdict.
+was 70 %). E31's battery seed 0 also failed (31–40 %), but its seed 2 (tracking, `study/lookup16k.polonez.json`)
+reaches 100 % at 16k and 128k. On medians that is E33a ≈ 80 % (2 seeds) vs `e31_li_m1` 98 % (3 seeds): the board counts
+**5 lost cells**, all on C1.lookup-16k (training length and the longer lengths). With one bad seed in two the median is
+seed-sensitive; the third E33a seed (seed 0, phase `e33a_lookup16k_s0`, Odra, started 2026-10-05) decides it.
 
 Ledger: `results/capability/suite/e33a_full_30m.{polonez,odra}.json`, `suite/e33a_lookup2k_lr5e-5.odra.json`,
 `study/e30_vs_e31.odra.json` (`e33a_*`); E31 references `suite/li_full_30m.polonez.json`,
 `suite/li_full_30m_s3_odra.odra.json`, `li_seed2_30m.polonez.json` (tracking branch).
 
 ## Interpretation
-The loop costs nothing measurable: on every non-flawed suite task it is within 3 points of `e31_li_m1` (median of three
-seeds), and its good lookup seed carries to 128k like E31's. The reasoning question is unanswered: the parallel-chain
+On every non-flawed suite task the loop is within 3 points of `e31_li_m1` (median of three seeds), and its good lookup
+seed carries to 128k like E31's. The one open loss is the long-lookup curriculum, where the loop learned lookup on one
+seed of two and E31 on two of three; the third seed settles whether that is the loop or seed luck. The reasoning question is unanswered: the parallel-chain
 exam could not distinguish a working loop from a broken one (every model including dense sat at its guessing floor), so
 K1 is formally met but carries no information. The read never learned to address the start node, so the loop had no
 first hop to refine.
 
 ## Decision
-Close E33a as **inconclusive** (no harm; reasoning untested). The reasoning question moves to the E33 reasoning-fixes
-track: the fixed parallel chain (C5 with overhang, 16-letter keys, candidate scoring) taught 1 → 2 → 3 hops, comparing
-the loop, a single read and dense. Optional: a third lookup-curriculum seed to settle C1.lookup-16k (≈ 1.5 GPU-days).
+Close E33a as **inconclusive** (suite: no harm; C1.lookup-16k: lost on 2 seeds, third seed running; reasoning
+untested). The reasoning question moves to the E33 reasoning-fixes track: the fixed parallel chain (C5 with overhang,
+16-letter keys, candidate scoring) taught 1 → 2 → 3 hops, comparing the loop, a single read and dense.
 
 *Related: `master_experiment_log.md`, `docs/experiments_specs/done_failed/E33a_reread_loop.md`, `agenda.md`*
