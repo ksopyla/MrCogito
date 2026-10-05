@@ -14,6 +14,12 @@ Rules every task obeys (the author's decisions, 2026-10-04):
   * **first-letter accuracy** is the score (the first answer letter is predicted with no answer letters in
     context; later letters can be copied once the first identifies the candidate); pass = median over
     seeds 0, 1, 2 ≥ 75 %; the dense model trains next to the candidate as the ceiling;
+  * **exams with several same-shaped candidates** (the parallel chains, the keyed lookups) are scored on the
+    **picked candidate** (`score="candidate"`): the answer is decoded greedily and the planted candidate
+    nearest to it must be the asked one (probe `answer_exact.candidate`). There the first letter has a
+    guessing floor of ~40 % (answer with any candidate: the commonest first letter among them wins), the
+    picked candidate 1 / #candidates, and a lossy copy of the right fact still counts. Every task states its guessing floor (`floor`, of its own score) next to chance
+    (E33a diagnosis, 2026-10-05: docs/4_Research_Notes/e33a_loop_diagnosis_20261004.md);
   * **flawed tasks** stay listed with their reason so nobody reuses them as evidence; they never gate,
     never enter a level and are crossed out on the dashboard.
 
@@ -24,7 +30,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-VERSION = "v4-draft-2026-10-04"
+VERSION = "v4-draft-2026-10-05"
 PASS_ACC = 0.75
 SEEDS = (0, 1, 2)
 LADDER = (1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072)
@@ -43,19 +49,23 @@ LEVELS: tuple[Level, ...] = (
           "Copy a marked span. The simplest proof that information flows through the architecture at all."),
     Level("C1", "Address", "Can it find one fact by its key?",
           "One key → value fact sits somewhere in a book of random letters; the question names the key. "
-          "Content addressing: find the spot, read the value back."),
+          "With one fact the block marker alone finds it (locate); the keyed tasks plant 4 same-shaped facts "
+          "or edges, so only the key in the question picks the right one (content addressing)."),
     Level("C2", "Discriminate", "Does it pick the right fact over look-alikes?",
           "Lookup, but the book also holds same-shaped facts with other keys (1 → 8 decoys). The read must "
-          "be precise, not 'the most fact-like thing'."),
+          "be precise, not 'the most fact-like thing'. Decoys open with their own marker, so the marker, not "
+          "the key, can separate them; key addressing is checked by the keyed C1 tasks and C3."),
     Level("C3", "Hold many", "Can it keep many facts when it does not know the question yet?",
           "8 or 16 facts are planted and the question asks about one. The memory is written before the "
           "question is seen, so it must keep all of them (capacity)."),
     Level("C4", "Compose", "Can it follow a chain of facts in order?",
           "Facts link A → B → C …; the question gives the start, the answer is the end. Hops are listed in "
-          "order, 4 → 8 of them."),
+          "order, 4 → 8 of them. The chain is the first k hop blocks in reading order, so a reader that "
+          "counts hop markers can answer without using the keys (a memory without slot order cannot)."),
     Level("C5", "Reason", "Can it follow a chain whose hops are shuffled among decoy chains?",
           "Four chains of the same length, hops shuffled; only the start node in the question says which "
-          "chain is the answer, so every hop must really be followed. The research frontier."),
+          "chain is the answer, so every hop must really be followed. Every chain runs one edge past the "
+          "asked node (no chain-end guess), and the picked candidate is scored. The research frontier."),
     Level("C6", "Aggregate", "Can it answer a question about the whole book?",
           "The answer depends on all facts at once (the one fact that appears once; a count), not on one "
           "lookup."),
@@ -82,6 +92,8 @@ class Task:
     chance: float = 0.25       # DNA letters (A/C/G/T); Glyph rows use a typed vocabulary
     flaw: str | None = None
     family: str = "dna"
+    score: str = "first"       # first: first-letter accuracy · candidate: the picked candidate (probe `answer_exact`)
+    floor: float | None = None  # guessing floor of `score` when it is above chance (measured on the exam's rows)
 
 
 _L = True
@@ -111,6 +123,14 @@ TASKS: tuple[Task, ...] = (
          "one fact anywhere in up to 16k tokens; tests whether longer training books carry to 128k",
          curriculum="one run from random init: 2k (C1.lookup-2k recipe) → 8k (1500 steps, batch 16, "
                     "step 5e-5) → 16k (1000 steps, batch 8, step 5e-5)", ladder=_L),
+    Task("C1.keyed4-1k", "C1", "1 of 4 facts by its key, 1024 tokens", "recall",
+         ("--scale", "bridge_1k", "--n_distractors", "3", "--key_len", "4"), 1024, 64,
+         "4 same-shaped facts; only the key in the question picks one (first exam that needs the key)",
+         status="calibrating", score="candidate", floor=0.25, ladder=_L),
+    Task("C1.edge-1k", "C1", "1 of 4 edges by its start node, 1024 tokens", "chain_parallel",
+         ("--scale", "bridge_1k", "--hops", "1", "--chain_overhang", "1", "--key_len", "16"), 1024, 32,
+         "the parallel chains with one hop: the start node picks the edge (keyed lookup in chain format; "
+         "stage 1 of the C5 curriculum)", status="calibrating", score="candidate", floor=0.125, ladder=_L),
     # C2 — discriminate
     Task("C2.lookalike-128", "C2", "fact vs 1 look-alike, 128 tokens", "select_1decoy", ("--scale", "tiny"), 128, 32,
          "the fact vs one same-shaped decoy"),
@@ -122,10 +142,12 @@ TASKS: tuple[Task, ...] = (
     # C3 — hold many
     Task("C3.recall8-1k", "C3", "recall 1 of 8 facts, 1024 tokens", "recall",
          ("--scale", "bridge_1k", "--n_distractors", "7", "--key_len", "4"), 1024, 64,
-         "keep 8 facts (4-letter keys) without knowing which one will be asked", status="calibrating", ladder=_L),
+         "keep 8 facts (4-letter keys) without knowing which one will be asked", status="calibrating", ladder=_L,
+         floor=0.44),
     Task("C3.recall16-1k", "C3", "recall 1 of 16 facts, 1024 tokens", "recall",
          ("--scale", "bridge_1k", "--n_distractors", "15", "--key_len", "4"), 1024, 64,
-         "keep 16 facts; precision of addressing among many similar slots", status="calibrating", ladder=_L),
+         "keep 16 facts; precision of addressing among many similar slots", status="calibrating", ladder=_L,
+         floor=0.39),
     # C4 — compose (in-order)
     Task("C4.chain4-1k", "C4", "in-order 4-hop chain, 1024 tokens", "chain_ordered",
          ("--scale", "bridge_1k", "--hops", "4"), 1024, 64, "follow 4 hops listed in order", ladder=_L),
@@ -136,14 +158,16 @@ TASKS: tuple[Task, ...] = (
     Task("C4.chain8-1k", "C4", "in-order 8-hop chain, 1024 tokens", "chain_ordered",
          ("--scale", "bridge_1k", "--hops", "8"), 1024, 64, "follow 8 in-order hops", status="calibrating",
          ladder=_L),
-    # C5 — reason (parallel chains)
+    # C5 — reason (parallel chains; 16-letter nodes so the overhang fits in 1024 tokens)
     *(Task(f"C5.pchain{h}-1k", "C5", f"parallel {h}-hop chain among 3 decoy chains, 1024 tokens", "chain_parallel",
-           ("--scale", "bridge_1k", "--hops", str(h)), 1024, None,
-           f"follow {h} shuffled hops; 4 chains of the same length, only the start node names the right one",
-           status="calibrating", ladder=_L,
-           curriculum=None if h == 2 else f"candidate (to be fixed by calibration): one run from random init, "
-                                          f"2 → {h} hops, each stage replaying 25 % lookup rows")
-      for h in (2, 3, 4)),
+           ("--scale", "bridge_1k", "--hops", str(h), "--chain_overhang", "1", "--key_len", "16"), 1024, 32,
+           f"follow {h} shuffled hops; 4 chains of the same length, only the start node names the right one; "
+           f"every chain runs one edge past the asked node",
+           status="calibrating", ladder=_L, score="candidate", floor=fl,
+           curriculum=f"candidate (to be fixed by calibration): one run from random init, 1 hop (C1.edge-1k) → "
+                      + " → ".join(str(k) for k in range(2, h + 1))
+                      + " hops; a stage ends when its picked-candidate score reaches 90 % or its budget runs out")
+      for h, fl in ((2, 0.083), (3, 0.0625), (4, 0.05))),
     # C6 — aggregate
     Task("C6.unique-256", "C6", "the fact that appears once, 256 tokens", "unique", ("--scale", "tiny_wide"), 256, 48,
          "report the one fact that appears once (no key to look up)"),
@@ -169,6 +193,13 @@ TASKS: tuple[Task, ...] = (
     Task("X.shuffled3-1k", None, "shuffled 3-hop chain, no decoy chains", "chain",
          ("--scale", "bridge_1k", "--hops", "3", "--n_distractors", "0"), 1024, 64, "3 hops given out of order",
          status="flawed", flaw="same no-hop shortcut as the shuffled 2-hop chain (use C5 parallel chains)"),
+    *(Task(f"X.pchain{h}-1k-v1", None, f"parallel {h}-hop chain, 32-letter nodes, first letter", "chain_parallel",
+           ("--scale", "bridge_1k", "--hops", str(h)), 1024, None, f"the E31b / E33a parallel {h}-hop exam",
+           status="flawed", floor=fl,
+           flaw=f"guessable: answering with any link target scores {fl:.0%} on the first letter (no hop followed), "
+                "and picking a chain end 25 % of whole answers; every arm, dense included, sat on that floor "
+                "(use C5: overhang, picked candidate)")
+      for h, fl in ((2, 0.44), (3, 0.41), (4, 0.39))),
     Task("X.match3-1k", None, "the fact planted three times", "match3", ("--scale", "bridge_1k"), 1024, None,
          "report the fact that appears three times", status="flawed",
          flaw="at 1k the book holds the triple plus only 2 single facts: averaging all facts gives the majority "
@@ -211,7 +242,7 @@ BATTERY_V1 = {  # length-battery slot (analysis/capability_board.parse_job) → 
     "lookup_2k": "C1.lookup-2k", "lookup_16k": "C1.lookup-16k", "chain_2k": "C4.chain4-2k",
     "recall8_1k": "C3.recall8-1k", "recall16_1k": "C3.recall16-1k", "decoy8_1k": "C2.decoy8-1k",
     "unique_1k": "C6.unique-1k", "match3_1k": "X.match3-1k", "chain8_1k": "C4.chain8-1k",
-    "pchain2_1k": "C5.pchain2-1k", "pchain3_1k": "C5.pchain3-1k", "pchain4_1k": "C5.pchain4-1k",
+    "pchain2_1k": "X.pchain2-1k-v1", "pchain3_1k": "X.pchain3-1k-v1", "pchain4_1k": "X.pchain4-1k-v1",
     "shuf2_1k": "X.shuffled2-1k", "shuf3_1k": "X.shuffled3-1k", "count_1k": "C6.count-1k",
     "majority_1k": "X.majority-1k",
 }

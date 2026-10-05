@@ -61,6 +61,12 @@ dials**, measured the same way on every level.
 3. **Reading at longer lengths is evaluation, not training**, and applies to every task trained at ≥ 1k.
 4. **Score = first-letter accuracy** (the first answer letter is predicted with no answer letters in
    context). Pass = median over **seeds 0, 1, 2** ≥ 75 %. Chance is 25 % on DNA letters, 12.5 % on Glyph.
+   **Exams with several same-shaped candidates** (the parallel chains, the keyed lookups) score the
+   **picked candidate** instead: the answer is decoded greedily and the planted candidate nearest to it
+   must be the asked one. Their first letter has a guessing floor of ~40 % (answer with any candidate: the
+   commonest first letter among the candidates wins); the picked candidate has 1 / #candidates, and a lossy
+   copy of the right fact still counts. Every task lists its guessing floor (`floor`) next to chance, and
+   every report prints it beside the score (E33a diagnosis, 2026-10-05).
 5. **The dense model trains next to the candidate** on the same data, seed and budget: the ceiling. A
    miss where dense also misses is "uncalibrated", not a failure.
 6. **Flawed tasks** stay defined with their reason so they are recognised; they never gate, never enter a
@@ -85,6 +91,8 @@ is not fixed yet, see Migration step 3).
 | `C1.lookup-1k` | one fact, 1024-token book | 1024 | active | ladder → 128k |
 | `C1.lookup-2k` | one fact, 2048-token book | 2048 | active | ladder → 128k |
 | `C1.lookup-16k` | one fact, trained up to a 16k book | 16384 | active | curriculum: one run from random init: 2k (C1.lookup-2k recipe) → 8k (1500 steps, batch 16, step 5e-5) → 16k (1000 steps, batch 8, step 5e-5); ladder → 128k |
+| `C1.keyed4-1k` | 1 of 4 facts by its key, 1024 tokens (picked candidate, floor 25 %) | 1024 | **calibrating** | ladder → 128k |
+| `C1.edge-1k` | 1 of 4 edges by its start node, 1024 tokens (picked candidate, floor 12.5 %) | 1024 | **calibrating** | ladder → 128k |
 | **C2 Discriminate** | | | | |
 | `C2.lookalike-128` | fact vs 1 look-alike, 128 tokens | 128 | active | — |
 | `C2.lookalike-1k` | fact vs 1 look-alike, 1024 tokens | 1024 | active | ladder → 128k |
@@ -97,9 +105,9 @@ is not fixed yet, see Migration step 3).
 | `C4.chain4-2k` | in-order 4-hop chain, 2048 tokens | 2048 | **calibrating** | ladder → 128k |
 | `C4.chain8-1k` | in-order 8-hop chain, 1024 tokens | 1024 | **calibrating** | ladder → 128k |
 | **C5 Reason** | | | | |
-| `C5.pchain2-1k` | parallel 2-hop chain among 3 decoy chains, 1024 tokens | 1024 | **calibrating** | ladder → 128k |
-| `C5.pchain3-1k` | parallel 3-hop chain among 3 decoy chains, 1024 tokens | 1024 | **calibrating** | curriculum: candidate (to be fixed by calibration): one run from random init, 2 → 3 hops, each stage replaying 25 % lookup rows; ladder → 128k |
-| `C5.pchain4-1k` | parallel 4-hop chain among 3 decoy chains, 1024 tokens | 1024 | **calibrating** | curriculum: candidate (to be fixed by calibration): one run from random init, 2 → 4 hops, each stage replaying 25 % lookup rows; ladder → 128k |
+| `C5.pchain2-1k` | parallel 2-hop chain among 3 decoy chains, 16-letter nodes, one edge past the asked node (picked candidate, floor 8.3 %) | 1024 | **calibrating** | curriculum: candidate (to be fixed by calibration): one run from random init, 1 hop (C1.edge-1k) → 2 hops; a stage ends when its picked-candidate score reaches 90 % or its budget runs out; ladder → 128k |
+| `C5.pchain3-1k` | parallel 3-hop chain among 3 decoy chains, 16-letter nodes, one edge past the asked node (picked candidate, floor 6.2 %) | 1024 | **calibrating** | curriculum: candidate (to be fixed by calibration): one run from random init, 1 hop (C1.edge-1k) → 2 → 3 hops; a stage ends when its picked-candidate score reaches 90 % or its budget runs out; ladder → 128k |
+| `C5.pchain4-1k` | parallel 4-hop chain among 3 decoy chains, 16-letter nodes, one edge past the asked node (picked candidate, floor 5 %) | 1024 | **calibrating** | curriculum: candidate (to be fixed by calibration): one run from random init, 1 hop (C1.edge-1k) → 2 → 3 → 4 hops; a stage ends when its picked-candidate score reaches 90 % or its budget runs out; ladder → 128k |
 | **C6 Aggregate** | | | | |
 | `C6.unique-256` | the fact that appears once, 256 tokens | 256 | active | — |
 | `C6.unique-1k` | the fact that appears once, 1024 tokens | 1024 | **calibrating** | ladder → 128k |
@@ -110,6 +118,9 @@ is not fixed yet, see Migration step 3).
 | `C7.chain-512` | in-order hops in structured filler, 512 tokens | 512 | active | — |
 | `C7.fact-1k` | one fact in Markov 'text', 1024 tokens | 1024 | active | — |
 | **Flawed (never evidence)** | | | | |
+| ~~`X.pchain2-1k-v1`~~ | parallel 2-hop chain, 32-letter nodes, first letter (E31b / E33a) | 1024 | flawed | guessable: any link target scores 44 % on the first letter, a chain end 25 % of whole answers; every arm sat on that floor (use C5) |
+| ~~`X.pchain3-1k-v1`~~ | parallel 3-hop chain, 32-letter nodes, first letter (E31b / E33a) | 1024 | flawed | guessable: any link target scores 41 % on the first letter, a chain end 25 % of whole answers; every arm sat on that floor (use C5) |
+| ~~`X.pchain4-1k-v1`~~ | parallel 4-hop chain, 32-letter nodes, first letter (E31b / E33a) | 1024 | flawed | guessable: any link target scores 39 % on the first letter, a chain end 25 % of whole answers; every arm sat on that floor (use C5) |
 | ~~`X.shuffled2-1k`~~ | shuffled 2-hop chain, no decoy chains | 1024 | flawed | shortcut: the answer is the only node that is never the start of a hop, so it is found without following any hop (use C5 parallel chains) |
 | ~~`X.shuffled3-1k`~~ | shuffled 3-hop chain, no decoy chains | 1024 | flawed | same no-hop shortcut as the shuffled 2-hop chain (use C5 parallel chains) |
 | ~~`X.match3-1k`~~ | the fact planted three times | 1024 | flawed | at 1k the book holds the triple plus only 2 single facts: averaging all facts gives the majority letter at each position, no matching needed |

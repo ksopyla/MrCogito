@@ -39,7 +39,7 @@ def test_legacy_battery_labels_are_honest():
     assert legacy_battery("e31_li_m1", "lookup_16k") == ("C1.lookup-16k", "same")
     assert legacy_battery("e31_li_m1", "lookup_2k") == ("C1.lookup-2k", "settings-differ")
     assert legacy_battery("e31_li_m1", "chain_2k") == ("C4.chain4-2k", "curriculum-differs")
-    assert legacy_battery("e33a_loopft", "pchain3_1k") == ("C5.pchain3-1k", "not-from-scratch")
+    assert legacy_battery("e33a_loopft", "pchain3_1k") == ("X.pchain3-1k-v1", "flawed")
     assert legacy_battery("e31_li", "match3_1k") == ("X.match3-1k", "flawed")
     assert legacy_battery("e31_li_m1", "lookup_8k") == (None, "unmapped")  # a curriculum stage, not a task
 
@@ -47,3 +47,15 @@ def test_legacy_battery_labels_are_honest():
 def test_flawed_tasks_never_sit_in_a_package_level():
     levels = {lv for p in PACKAGES.values() for lv in p["levels"]}
     assert all(TASK_BY_ID[t].level not in levels for t in FLAWED)
+
+
+def test_multi_candidate_exams_score_the_picked_candidate_and_state_their_floor():
+    for t in TASKS:
+        assert t.score in ("first", "candidate"), t.id
+        if t.floor is not None:  # a first-letter floor sits above chance; a picked-candidate floor is 1 / #candidates
+            assert (t.chance <= t.floor if t.score == "first" else 0 < t.floor) and t.floor < 1, t.id
+    for h in (2, 3, 4):
+        t = TASK_BY_ID[f"C5.pchain{h}-1k"]
+        assert t.score == "candidate" and t.floor is not None and t.floor < 0.15
+        assert "--chain_overhang" in t.args and "random init" in t.curriculum
+    assert TASK_BY_ID["C1.keyed4-1k"].score == "candidate"
