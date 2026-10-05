@@ -34,13 +34,6 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
     one rung at a time.
   - Spec [E31c](../experiments_specs/ahead/E31c_text_memory_read.md) ·
     plan [E31c plan](../experiments_specs/ahead/E31c_text_memory_read_plan.md).
-- **2026-10-03 — E33a read–think–reread loop (approved, running on Odra).** The four E31 main-path layers are
-  regrouped: the first local layer runs once, then "global read + local layer" repeats 4 times with tied weights,
-  then the last local layer formulates the answer. Every loop's guess is supervised. Bet: the parallel 3-hop chain
-  goes from 46 % to ≥ 75 % with no new weight matrices and lookup unchanged. Spec
-  [E33a](../experiments_specs/ahead/E33a_reread_loop.md) · page
-  [e33a_architecture.html](../3_Evaluations_and_Baselines/e33a_architecture.html) · literature
-  [latent reasoning review](../4_Research_Notes/latent_reasoning_review_20261001.html).
 - **2026-10-01 — E31 chosen; E30 parked.** The E30 vs E31 limits study ([E31b](../experiments_specs/ahead/E31b_e30_vs_e31_limits.md),
   [interactive report](../3_Evaluations_and_Baselines/e31b_memory_study_report.html)) closed in favour of
   E31. Its stateful latents keep lookup and decoy retrieval to 128k, and the 4-hop chain only transfers in
@@ -117,6 +110,7 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-10-05 — E33a read–think–reread loop (closed, inconclusive).** Looping "global read + one local layer" ×4 (tied) before the answer layer keeps every E31 capability: 17 suite tasks within 3 points of `e31_li_m1` (median of 3 seeds), lookup-2k 99 vs 98, lookup to 128k like E31 on its good seed. Reasoning is untested: on the parallel chains every model, dense included, sat at the guessing floor (44 / 41 / 39 %), because the read never learned to address the start node. [report](../2_Experiments_Registry/run_reports/e33a_reread_loop_20261005.md) · [diagnosis](../4_Research_Notes/e33a_loop_diagnosis_20261004.md) · [spec](../experiments_specs/done_failed/E33a_reread_loop.md).
 - **2026-09-22 — E30 coverage and breadth (31M and 50M).** A 128-token window (coverage 4) passes the 1024 in-order chain (76% of answer tokens); a 512-token window scores 0 bits even with 64 questions per window. The same chain is 0 bits at 2048 tokens for both notebooks; the full read still passes. Far copy at 1024 is unsolved by the full read. The earlier 50M full-read collapse was too few steps at 1e-4: at 5e-5 it scores 99%, and the averaged notebook passes after a doubled budget. [report](../2_Experiments_Registry/run_reports/e30_coverage_and_breadth_20260922.md).
 - **2026-09-22 — E30 length and hardness (31M and 50M, Odra + Polonez).** In-order 4-hop chain @1024: e30 **40 bits / 77%** vs averaged notebook 4 bits; at 50M / 1e-4 / 4800 steps the full read on that chain falls to 3 bits and e30 still passes (44 bits / 80%). That 50M full-read miss is superseded by the coverage report (slower step, longer budget). Lookalike @1024: full read 63 bits, e30 26 after a longer budget, average 19. Lookup @1024: only e30 moves (26 bits); @4096 and @16k everyone is at zero. A 3e-4 step at 1024 is a false kill. [report](../2_Experiments_Registry/run_reports/e30_length_hardness_limits_20260922.md).
 - **2026-09-22 — E30 ~31M GPU (Odra 3×3090 + Polonez 4×3090).** H=960 4-layer. Seq=512 MATCH e30 **47.6 bits / 99.7%** ≈ e18 48.0 > e21 44.0; INDEX e30 63.1 ≈ e18 64. SELECT@128 e30 **27.8** vs e21 8.8 vs e18 31.3. 1e-3 zero-init at seq=256 is a false kill; 3e-4 + `--warm_residuals` restores. E21-mean MATCH wall is a <10M fact, not a 31M fact. [report](../2_Experiments_Registry/run_reports/e30_30m_gpu_odra_polonez_20260922.md).

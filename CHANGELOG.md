@@ -123,7 +123,7 @@ master log routing table, `capability_suite.md`, E31b and E33a specs.
 
 **Why:** E33's read-only loop gave no multi-hop gain. E33a loops the global read *and* the next local layer, and
 decodes every loop through the untied answer layer (deep supervision). Spec
-`docs/experiments_specs/ahead/E33a_reread_loop.md`.
+`docs/experiments_specs/done_failed/E33a_reread_loop.md`.
 
 **Added (all default-off; old checkpoints and configs are unchanged):**
 - `PerceiverARConfig.message_loop_rounds / _span / _inject / _exit_aux / _exit_targets`. `PerceiverARLM` runs

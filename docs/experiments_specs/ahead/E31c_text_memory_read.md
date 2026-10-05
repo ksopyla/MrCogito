@@ -150,9 +150,21 @@ earlier note by what it says, not by its page number.
     3 seeds, `--message_raw_window 256`, plus the E31b length battery;
   - it passes the no-harm rule vs `e31_li_m1` (from `docs/engineering_specs/capability_checks.md`):
     no exam or length where E31 passes drops by more than 5 points, comparing medians over seeds.
+  - **Content addressing (added 2026-10-05):** the keyed lookups `C1.keyed4-1k` (1 of 4 facts by its
+    key) and `C1.edge-1k` must also pass no-harm vs `e31_li_m1` once they are calibrated, scored
+    by the picked candidate (`answer_exact.candidate`).
+    - They are the only exams that need the key itself. The one-fact lookup can be found by its
+      block marker alone, and E31c's reader slot keys are a bet on content addressing.
+    - The parallel-chain scores (34–46 %) sat on a guessing floor and are not evidence either way
+      (`docs/4_Research_Notes/e33a_loop_diagnosis_20261004.md`).
 - **S1, the notebook is load-bearing on text (16k, the training length):** held-out keyed-recall
-  accuracy (E18b format, first-letter accuracy)
-  ≥ no-notebook control + 0.5 × (dense ceiling − no-notebook control).
+  accuracy (E18b format) ≥ no-notebook control + 0.5 × (dense ceiling − no-notebook control).
+  - **Scoring (amended 2026-10-05, before any run):** the gate uses exact-match of the whole value.
+    First-letter accuracy is only a secondary report. A text row holds several keyed items, so the
+    first letter has a guessing floor.
+  - The E31 recall16 checkpoint picks the right fact 88 % of the time but copies the full 32-letter
+    value exactly only 24 % of the time. Lossy verbatim copy is therefore a known risk; report
+    "right item" and "exact value" separately.
   - The ceiling is measured by the dense arm in this experiment, not assumed. E18b's dense control
     reached 99.3 % on the same row format.
 - **S2, far-context value in ordinary text:** on PG-19 / long-PDF held-out rows, the loss on
