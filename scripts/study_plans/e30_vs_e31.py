@@ -388,27 +388,37 @@ def jobs(phase: str) -> list[dict]:
                 out.append(_job(f"{src}_b8k", arch, 1, L8K, exam, init=src, ladder=LADDER_FULL, cost=2.2))
         return out
     if phase == "calibrate_reasoning":
-        # Migration step 3 for C5 (parallel chains) and C6.count: the dense ceiling is at chance on both
-        # (pchain2/3 25–26 %, count 24 %), so no model's score on them means anything yet. Dense only,
-        # seed 0, from random init: which cheapest recipe does dense pass (≥ 75 %)? Then the champion.
-        x4 = [*L1K[:L1K.index("--steps") + 1], "4800", *L1K[L1K.index("--steps") + 2:]]  # 4× budget (k1 4 → ≤ 19.2k)
+        # Migration step 3 for the reasoning exams (v4-draft-2026-10-05): the guess-proof C5 parallel chains
+        # (chain overhang, 16-letter nodes, scored on the picked candidate), their 1-hop stage C1.edge-1k, the
+        # keyed lookup C1.keyed4-1k, and C6.count. Dense only, seed 0, from random init: the cheapest recipe
+        # dense passes (>= 75 % on the task's own score) is frozen; then the champion runs it.
+        x4 = [*L1K[:L1K.index("--steps") + 1], "4800", *L1K[L1K.index("--steps") + 2:]]  # 4x budget (k1 4 -> <= 19.2k)
+        guessproof = ["--chain_overhang", "1", "--key_len", "16"]
 
         def lr(length, value):
             return [*length[:length.index("--lr") + 1], value]
 
-        out = [
-            _job("cal_pchain2_dense_lr1e-4_x4_s0", "dense", 0, x4, "pchain2", cost=1.3),
-            _job("cal_pchain2_dense_lr3e-4_x4_s0", "dense", 0, lr(x4, "3e-4"), "pchain2", cost=1.3),
-            _job("cal_pchain2_dense_lr3e-5_x4_s0", "dense", 0, lr(x4, "3e-5"), "pchain2", cost=1.3),
-            _job("cal_pchain2_k8_dense_x4_s0", "dense", 0, x4, "pchain2", ["--key_len", "8"], cost=1.3),
-            _job("cal_pchain2_nc2_dense_x4_s0", "dense", 0, x4, "pchain2", ["--n_chains", "2"], cost=1.3),
-            # written in-run curriculum candidate: 1 hop (pick the chain by its start) → 2 hops, from random init
-            _job("cal_pchain1_dense_s0", "dense", 0, L1K, "pchain2", ["--hops", "1"], cost=0.5),
-            _job("cal_pchain1to2_dense_s0", "dense", 0, x4, "pchain2", init="cal_pchain1_dense_s0", cost=1.3),
+        def pchain(h):
+            return [*guessproof, "--hops", str(h)]
+
+        return [
+            # C1 keyed stages (the first exams where the key is needed)
+            _job("cal_edge_dense_s0", "dense", 0, L1K, "pchain2", pchain(1), cost=0.5),
+            _job("cal_keyed4_dense_s0", "dense", 0, L1K, "recall8", ["--n_distractors", "3"], cost=0.5),
+            # C5.pchain2: v3 budget, 4x budget at two step sizes, and the written 1 hop -> 2 hops curriculum
+            _job("cal_pchain2_dense_x1_s0", "dense", 0, L1K, "pchain2", pchain(2), cost=0.5),
+            _job("cal_pchain2_dense_x4_s0", "dense", 0, x4, "pchain2", pchain(2), cost=1.3),
+            _job("cal_pchain2_dense_lr3e-4_x4_s0", "dense", 0, lr(x4, "3e-4"), "pchain2", pchain(2), cost=1.3),
+            _job("cal_edge_to_pchain2_dense_s0", "dense", 0, x4, "pchain2", pchain(2), init="cal_edge_dense_s0",
+                 cost=1.3),
+            # C5.pchain3: from scratch at 4x, and the curriculum continued (1 -> 2 -> 3 hops)
+            _job("cal_pchain3_dense_x4_s0", "dense", 0, x4, "pchain3", pchain(3), cost=1.3),
+            _job("cal_edge_to_pchain3_dense_s0", "dense", 0, x4, "pchain3", pchain(3),
+                 init="cal_edge_to_pchain2_dense_s0", cost=1.3),
+            # C6.count (dense at chance under v1 settings)
             _job("cal_count_dense_lr1e-4_x4_s0", "dense", 0, x4, "count", cost=1.3),
             _job("cal_count_dense_lr3e-4_x4_s0", "dense", 0, lr(x4, "3e-4"), "count", cost=1.3),
         ]
-        return out
     if phase in ("lookup16k_root", "lookup16k_stages"):
         # C1.lookup-16k (written curriculum 2k → 8k → 16k from random init) where seeds are missing:
         # e31_li_m1 seed 2 and the dense ceiling seeds 0–2. Split in two bursts (Polonez cooldown between).

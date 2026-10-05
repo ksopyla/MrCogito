@@ -23,6 +23,8 @@ Schema 1 — one file per (folder, host):
   study job: {name, status, args, init, results: {arch: METRICS},
               ladders: {"ladder": {arch: {length: LADDER}}, "ladder_lookup": {...}, ...}}
   METRICS: acc, acc_se, p0 (first answer letter), ppa (accuracy per answer letter), bits,
+           cand / exact / first_greedy (greedy answer: picked candidate, every letter, first letter),
+           guess_floor (parallel chain: guessing floors measured on its eval rows),
            prize_bits, flow, best_acc, extended, step, examples_to_75, sec_per_step, tokens_per_sec,
            params
   LADDER:  acc, acc_se, first_acc, first_acc_se, rows, ce_nats, sec_per_row, peak_gb, memory_slots
@@ -70,6 +72,11 @@ def _metrics(r: dict) -> dict:
         "examples_to_75": etc.get("examples") if confirmed else None,
         "sec_per_step": _r(thr.get("sec_per_step"), 4), "tokens_per_sec": _r(thr.get("tokens_per_sec"), 1),
         "params": r.get("params"),
+        # greedy answer (chain / recall exams, probe --answer_exact): picked candidate, every letter, first letter
+        **({"cand": _r(ax.get("candidate")), "exact": _r(ax.get("exact")), "first_greedy": _r(ax.get("first_greedy"))}
+           if (ax := r.get("answer_exact") or {}) else {}),
+        **({"guess_floor": {k: (_r(v) if isinstance(v, float) else v) for k, v in r["guess_floor"].items()}}
+           if r.get("guess_floor") else {}),
     }
 
 
