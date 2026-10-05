@@ -444,6 +444,14 @@ def jobs(phase: str) -> list[dict]:
                  cost=0.8),
             _job("cal2_edge_k8_256_dense_s0", "dense", 0, at(x4, 256), "pchain2", [*edge, "--key_len", "8"],
                  cost=0.5),
+            # written in-run curriculum from random init (E33 reasoning fixes, 2026-10-05: every E31 arm passes
+            # edge-1k at ~99 % once it has learned lookup): lookup-1k → edge-1k → pchain2, one dense run
+            _job("cal2_lookup1k_dense_s0", "dense", 0, L1K, "lookup", cost=0.3),
+            _job("cal2_lookup_to_edge_dense_s0", "dense", 0, x4, "pchain2", [*edge, "--key_len", "16"],
+                 init="cal2_lookup1k_dense_s0", cost=1.3),
+            _job("cal2_lookup_to_edge_to_pchain2_dense_s0", "dense", 0, x4, "pchain2",
+                 ["--chain_overhang", "1", "--key_len", "16", "--hops", "2"],
+                 init="cal2_lookup_to_edge_dense_s0", cost=1.3),
         ]
     if phase in ("lookup16k_root", "lookup16k_stages"):
         # C1.lookup-16k (written curriculum 2k → 8k → 16k from random init) where seeds are missing:
