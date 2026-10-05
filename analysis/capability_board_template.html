@@ -239,7 +239,7 @@ const hideTip = () => { tip.hidden = true; };
 function taskTip(t) {
   return `<div><b>${esc(t.name)}</b> <span class="small mono">${esc(t.id)}</span></div>
     <div class="small">${esc(t.measures)}</div>
-    <div class="small">trains at ${kLen(t.train_len)} tokens${t.ladder ? ", then reads up to 128k" : ""} · chance ${Math.round(100 * t.chance)} %${t.prize ? ` · ${t.prize} bits per answer` : ""}</div>
+    <div class="small">trains at ${kLen(t.train_len)} tokens${t.ladder ? ", then reads up to 128k" : ""} · chance ${Math.round(100 * t.chance)} %${t.floor ? ` · guessing floor ${Math.round(100 * t.floor)} %` : ""} · scored on ${t.score_kind === "candidate" ? "the picked candidate" : "the first letter"}${t.prize ? ` · ${t.prize} bits per answer` : ""}</div>
     ${t.curriculum ? `<div class="small">curriculum: ${esc(t.curriculum)}</div>` : ""}
     <div class="small">status: ${esc(STATUS[t.status])}${t.note ? ` — ${esc(t.note)}` : ""}</div>`;
 }
@@ -403,7 +403,7 @@ document.getElementById("guidebox").innerHTML = [...D.levels, {id: "X", name: "F
   return `<div class="glevel"><h3>${esc(lv.id === "X" ? lv.name : `${lv.id} ${lv.name}`)}</h3><div class="q"><b>${esc(lv.question)}</b> ${esc(lv.measures)}</div>` +
     ts.map(t => `<div class="gtask" id="task-${esc(t.id)}"><div><span class="chip ${t.status}">${t.status}</span> <b>${esc(t.name)}</b> <span class="meta">${esc(t.id)}</span></div>
       <div>${esc(t.measures)}${t.flaw ? ` — <b>flaw:</b> ${esc(t.flaw)}` : ""}</div>
-      <div class="meta">recipe ${esc(t.recipe)} ${esc(t.args)} · trains at ${kLen(t.train_len)}${t.ladder ? " · ladder to 128k" : ""} · chance ${Math.round(100 * t.chance)} %${t.prize ? ` · ${t.prize} bits` : ""}</div>
+      <div class="meta">recipe ${esc(t.recipe)} ${esc(t.args)} · trains at ${kLen(t.train_len)}${t.ladder ? " · ladder to 128k" : ""} · chance ${Math.round(100 * t.chance)} %${t.floor ? ` · guessing floor ${Math.round(100 * t.floor)} %` : ""} · scored on ${t.score_kind === "candidate" ? "the picked candidate" : "the first letter"}${t.prize ? ` · ${t.prize} bits` : ""}</div>
       ${t.curriculum ? `<div class="meta">curriculum: ${esc(t.curriculum)}</div>` : ""}</div>`).join("") + `</div>`;
 }).join("");
 

@@ -123,6 +123,12 @@ def _seed(job: dict) -> int | None:
     return int(m[1]) if m else None
 
 
+def _score(task: str, first, cand):
+    """The task's own score: first answer letter, or the greedy picked candidate (score="candidate"); a run
+    without the greedy answer (before probe --answer_exact) has no score on a candidate-scored task."""
+    return cand if TASK_BY_ID[task].score == "candidate" else first
+
+
 def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
     """One record per (finished job, arch) that maps onto a v4 task, with its match label."""
     versions = sorted({led["suite_version"] for led in ledgers if led.get("suite_version")})
@@ -141,7 +147,7 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
                 if label == "same" and r.get("lr") is not None and abs(r["lr"] - default_lr) > 1e-12:
                     label, via = "settings-differ", f"{via} at step {r['lr']:g} (suite default {default_lr:g})"
                 out.append({"task": task, "model": r["arch"], "label": label, "seed": r["seed"],
-                            "score": r["p0"], "mean": r["acc"],
+                            "score": _score(task, r.get("p0"), r.get("cand")), "mean": r["acc"],
                             "ladder": {int(L): v for L, v in (r.get("ladder") or {}).items()},
                             "source": r["source"], "collected": r.get("collected") or "", "via": via})
         else:
@@ -156,7 +162,8 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
                 if task is None:
                     continue
                 lad = {int(L): v.get("first_acc") for L, v in (j["ladders"].get("ladder") or {}).items()}
-                out.append({"task": task, "model": variant, "label": label, "seed": _seed(j), "score": j.get("p0"),
+                out.append({"task": task, "model": variant, "label": label, "seed": _seed(j),
+                            "score": _score(task, j.get("p0"), j.get("cand")),
                             "mean": j.get("acc"), "ladder": lad, "source": j["source"], "collected": "",
                             "via": f"battery {slot}"})
     return out, current
@@ -357,6 +364,7 @@ def main() -> int:
     slots.sort(key=lambda sl: (lv_order.index(sl["level"]), std_ix.get(sl["id"], 99), sl["task"] or "", sl["id"]))
     tasks = [{"id": t.id, "level": t.level or "X", "name": t.name, "measures": t.measures, "recipe": t.recipe,
               "args": " ".join(t.args), "train_len": t.train_len, "prize": t.prize_bits, "chance": t.chance,
+              "score_kind": t.score, "floor": t.floor,
               "curriculum": t.curriculum, "ladder": t.ladder, "task_status": t.status, "flaw": t.flaw,
               **row_status(t, tbl, args.champion)} for t in TASKS]
     data = {

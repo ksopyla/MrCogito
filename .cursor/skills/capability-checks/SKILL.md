@@ -47,7 +47,9 @@ trained text checkpoints → `experiment-evaluate`; what a result means and the 
    checkpoint, an earlier experiment's weights or a pretrained model.
 2. **In-run curriculum only when written** in the task's `curriculum` field, from random init, identical
    for every architecture and for the dense ceiling. No ad-hoc warm starts.
-3. **Score on the first answer letter**; pass = median over seeds 0, 1, 2 ≥ 75 %; chance 25 % (DNA),
+3. **Score on the task's own score** — the first answer letter, or for `score="candidate"` tasks (C1.keyed4,
+   C1.edge, C5) the greedy picked candidate (probe `answer_exact`), always read against the task's guessing
+   `floor`, not only chance; pass = median over seeds 0, 1, 2 ≥ 75 %; chance 25 % (DNA),
    12.5 % (Glyph). The dense model trains alongside as the ceiling; a miss dense shares is "uncalibrated".
 4. **Flawed tasks** (`status="flawed"`) are never run as evidence, never gate, never cited as a
    capability; the runner and scorecard label them, the dashboard crosses them out.
@@ -136,7 +138,8 @@ re-scoring note** above the original numbers (never overwrite them). Report to t
 
 ## Pitfalls
 - **A warm start from another run** is not a capability result — label it `not-from-scratch`.
-- **Mean over letters** overstates multi-candidate tasks; judge on first letter.
+- **Mean over letters** overstates multi-candidate tasks; judge on the task's own score. A first letter
+  can sit on a guessing floor (any link target: ~40 %) — the old parallel chains did (2026-10-05).
 - **Same name, different protocol** — always read the match label before comparing two numbers. A suite
   cell re-run at another step size (`--lr_scale`, `--lr_pair`) is `settings-differ`, and two models are
   compared only at the same step size (2026-10-04: e33a lookup-2k at 1e-4 vs E31 at 5e-5 looked like a loss).

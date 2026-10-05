@@ -167,7 +167,7 @@ def suite_rows(ledger: dict) -> list[dict]:
                 "arch": arch, "bits": m.get("bits"), "prize_bits": m.get("prize_bits"), "flow": m.get("flow"),
                 "acc": m.get("acc"), "acc_se": m.get("acc_se"), "params": m.get("params"),
                 "examples_to_75": m.get("examples_to_75"), "tokens_per_sec": m.get("tokens_per_sec"),
-                "per_position_acc": m.get("ppa"), "steps": m.get("step"), "p0": m.get("p0"),
+                "per_position_acc": m.get("ppa"), "steps": m.get("step"), "p0": m.get("p0"), "cand": m.get("cand"),
                 "ladder": {L: v.get("first_acc") for L, v in ((j.get("ladders") or {}).get("ladder") or {})
                            .get(arch, {}).items()},
                 "source": f"{ledger['name']}@{ledger['host']}", "collected": ledger.get("collected"),
