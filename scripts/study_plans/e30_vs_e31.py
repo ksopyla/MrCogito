@@ -375,6 +375,10 @@ def jobs(phase: str) -> list[dict]:
         return e33a_jobs()
     if phase == "e33a_e31b":  # the E31b protocol on the looped model (no capability lost; length to 128k)
         return e33a_e31b_jobs()
+    if phase == "e33a_lookup16k_s0":  # third seed of C1.lookup-16k (capability checks v4 core: seeds 0–2)
+        lk = "e33a_lookup_loop_s0"
+        return [_job(lk, "e31_li_m1", 0, E33A_L2K, "lookup", E33A_LOOP_ANS, ladder=[2048, 8192, 32768], cost=6.0),
+                *[j for j in e33a_e31b_jobs(seeds=(0,)) if j["name"].startswith(lk + "_b")]]
     if phase.startswith("battery_"):  # the standard length & hard battery for a registered variant
         tag = phase.removeprefix("battery_")
         if tag not in BATTERY_VARIANTS:
