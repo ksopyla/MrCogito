@@ -387,6 +387,16 @@ def jobs(phase: str) -> list[dict]:
                 src = f"hard_{exam}_{arch}_s1"
                 out.append(_job(f"{src}_b8k", arch, 1, L8K, exam, init=src, ladder=LADDER_FULL, cost=2.2))
         return out
+    if phase in ("lookup16k_root", "lookup16k_stages"):
+        # C1.lookup-16k (written curriculum 2k → 8k → 16k from random init) where seeds are missing:
+        # e31_li_m1 seed 2 and the dense ceiling seeds 0–2. Split in two bursts (Polonez cooldown between).
+        out = (length_jobs(arches=("e31_li_m1",), seeds=(2,), chain_arches=())
+               + length_jobs(arches=("dense",), seeds=(0, 1, 2), chain_arches=()))
+        for j in out:
+            if j["args"][j["args"].index("--arch") + 1] == "dense":
+                j["ladder"] = [L for L in j["ladder"] if L <= 32768]  # dense reads cost grows quadratically
+        stage = phase == "lookup16k_stages"
+        return [j for j in out if bool(j.get("init")) == stage]
     if phase == "odra":  # seed 1: E31_li lookup/chain weights already live here
         return ratio_jobs() + length_jobs(seeds=(1,)) + hard_jobs(seeds=(1,))
     if phase == "polonez":  # seed 0 (E31_li seed-0 lookup weights live here) + dense ceiling

@@ -18,6 +18,11 @@ def test_non_default_step_size_is_settings_differ():
     assert any("step 5e-05" in e["via"] for e in ev)
 
 
+def test_diagnostic_seeds_stay_out_of_the_medians():
+    extra = evidence([_suite_ledger(1e-4, seed=3)])[0][0]
+    assert _one_per_seed([extra]) == []
+
+
 def test_seed_rerun_with_ladder_replaces_the_older_run():
     old = evidence([_suite_ledger(1e-4, collected="2026-10-03")])[0][0]
     new = evidence([_suite_ledger(1e-4, ladder={2048: 0.8}, collected="2026-10-04")])[0][0]

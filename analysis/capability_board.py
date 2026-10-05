@@ -175,7 +175,7 @@ def _one_per_seed(rs: list[dict]) -> list[dict]:
     prefer the run with a ladder, then the latest collected. Runs without a seed all count."""
     keep, by_seed = [r for r in rs if r["seed"] is None], defaultdict(list)
     for r in rs:
-        if r["seed"] is not None:
+        if r["seed"] is not None and r["seed"] in SEEDS:  # extra diagnostic seeds never enter the medians
             by_seed[r["seed"]].append(r)
     for runs in by_seed.values():
         keep.append(max(runs, key=lambda r: (bool(r["ladder"]), r.get("collected") or "", r["source"])))

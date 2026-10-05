@@ -33,7 +33,8 @@ for d in "${DIRS[@]}"; do
   fi
   echo "BURST $n $d $(date '+%Y-%m-%dT%H:%M:%S') · GPU °C: $(temps)"
   pids=()
-  for s in "$d"/"${HOST}"_gpu*.sh; do
+  # one burst may join several launch folders with '+' (e.g. a study queue on GPUs 0–1 and a suite run on 2–3)
+  for s in $(for part in ${d//+/ }; do ls "$part"/"${HOST}"_*gpu*.sh; done); do
     bash "$s" > /dev/null 2>&1 &   # each script tees its own log into the launch folder
     pids+=($!)
   done
