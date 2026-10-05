@@ -1,14 +1,15 @@
 # E33a — Read, think, reread: a tied loop over the layers above the global read
 
-- **Status:** approved 2026-10-03. The author asked to design, plan, implement and run in one request. Alignment page
-  reviewed in chat on 2 Oct; the author removed the checklist step.
+- **Status:** done — **inconclusive** (closed 2026-10-05): no capability lost; reasoning untested (the parallel-chain
+  exam was a guessing floor for every model). Approved 2026-10-03 (the author asked to design, plan, implement and run
+  in one request; alignment page reviewed in chat on 2 Oct; the author removed the checklist step).
 - **Serves:** Vision priority 3, "reason in concept space", on top of the E31 latent memory (vision priorities 1–2).
   It is the first multi-hop bet after E31 was chosen and E30 parked (1 Oct).
 - **Implementation plan:** [E33a_reread_loop_plan.md](E33a_reread_loop_plan.md)
 - **Alignment page:** [e33a_architecture.html](../../3_Evaluations_and_Baselines/e33a_architecture.html)
   (information flow, the vectors that change per loop, gradients, queries/keys, literature).
-- **Owner / dates:** Krzysztof Sopyla · opened 2026-10-03 · closed —
-- **ID:** a flavour of [E33](E33_iterative_concept_reads.md) (iterative concept reads). The loop moves *up*: it now
+- **Owner / dates:** Krzysztof Sopyla · opened 2026-10-03 · closed 2026-10-05
+- **ID:** a flavour of [E33](../ahead/E33_iterative_concept_reads.md) (iterative concept reads). The loop moves *up*: it now
   contains the answer-forming layer. The design pages of 1–2 Oct called it an "E34 candidate"; under the ID rules it
   is E33a.
 
@@ -172,4 +173,14 @@ E33a gets the same battery as E31, so the final comparison is like for like. All
 any cell or ladder length where `e31_li_m1` passes (≥ 75 %), on the median of its seeds.
 
 ## Result
-*(filled by experiment-track)*
+- **Runs:** study `e30_vs_e31` jobs `e33a_*` (Odra, 2026-10-03 → 05); suites `e33a_full_30m` (Polonez seed 0, Odra seeds
+  1–2) and `e33a_lookup2k_lr5e-5` (Odra). No W&B (capability probes).
+- **Report:** [e33a_reread_loop_20261005.md](../../2_Experiments_Registry/run_reports/e33a_reread_loop_20261005.md) ·
+  diagnosis [e33a_loop_diagnosis_20261004.md](../../4_Research_Notes/e33a_loop_diagnosis_20261004.md).
+- **Ledger:** `results/capability/suite/e33a_full_30m.{polonez,odra}.json`, `suite/e33a_lookup2k_lr5e-5.odra.json`,
+  `study/e30_vs_e31.odra.json` (`e33a_*`).
+- **Verdict: inconclusive.** S1/S2/S4/S5 not reached: every arm, the R = 1 control and dense sat at the exam's guessing
+  floor (44 / 41 / 39 % for 2 / 3 / 4 hops), so K1 is formally met but uninformative; the v1 parallel-chain exams are
+  now `flawed`. No harm (S3 in the v4 sense): all 17 non-flawed suite tasks within 3 points of `e31_li_m1` (median of
+  seeds 0–2); lookup-2k at 5e-5 99 vs 98; the lookup 2k → 16k curriculum reaches 93–100 % to 128k on one seed of two,
+  as E31 does (one good seed each).

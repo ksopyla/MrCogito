@@ -128,10 +128,11 @@ experiment specs; deep metrics and interpretation live in run reports. Live focu
 Primary navigation for humans and agents. One row per experiment ID. Resolve a missing path by
 searching all lifecycle folders under `docs/experiments_specs/` — never assume `ahead/`.
 
-### Recent closed (2026-06 → 2026-09)
+### Recent closed (2026-06 → 2026-10)
 
 | ID | What | Lifecycle | Key result | Spec · report |
 |---|---|---|---|---|
+| E33a | Read–think–reread loop over the layers above the E31 global read (tied ×4) | done_failed (inconclusive) | no harm: 17 suite tasks within 3 pt of `e31_li_m1`; lookup-2k **99** vs 98; reasoning **untested** (pchain at guessing floor 44/41/39 % for every model) | [E33a](../experiments_specs/done_failed/E33a_reread_loop.md) · [report](run_reports/e33a_reread_loop_20261005.md) · [diagnosis](../4_Research_Notes/e33a_loop_diagnosis_20261004.md) |
 | E29 | Exclusive CogitoProbe-bind (entity-attribute-value) | done_failed | S1 **miss**: hop **4.4% / 0.078 bits** (prize 40); `attr_color` **2.4% / 0.007**; no dense S0; 4k skipped | [E29](../experiments_specs/done_failed/E29_exclusive_cogitoprobe_bind.md) · [report](run_reports/e29_exclusive_cogitoprobe_bind_20260916.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/perceiver_ar_perceiver_H256L1g1s2N1024_20260916_170437) | // pragma: allowlist secret
 | E28 | Exclusive CogitoProbe-bits (capacity + length) | done_failed | **K1**: dense **6.5% / 0.21 bits** (prize 40); excl `fixed` **0 bits**; `scaled` **0.003**; 4k skipped | [E28](../experiments_specs/done_failed/E28_exclusive_cogitoprobe_bits.md) · [report](run_reports/e28_exclusive_cogitoprobe_bits_20260916.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/perceiver_ar_dense_H256L1g1s2N1024_20260916_185135) | // pragma: allowlist secret
 | E27 | Hybrid identity keys + r=16 gist on exclusive E21 MATCH | done_failed | S1 **miss**: e21 **3.03 bits** / acc 0.35 vs e18 **47.87**; RankMe **1.12**; `slots_only`≈real; INDEX skipped | [E27](../experiments_specs/done_failed/E27_hybrid_key_anchors.md) · [report](run_reports/e27_hybrid_key_anchors_20260916.md) · [W&B](https://wandb.ai/ksopyla/MrCogito/runs/73wq90jq) // pragma: allowlist secret |
@@ -387,6 +388,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 | 2026-09-16 | E28 | `perceiver_ar_perceiver_H256L1g1s2N1024_20260916_190840` | CogitoProbe-bits @1024 `fixed` · exclusive r=16 identity inplace · Odra 3×3090 · git `5ff01e5` | excl **0 bits** / acc 0.021; `real−none` = 0; 4k skipped | **killed** — S1 miss after K1; exclusive recovered no unique prefix facts. | [spec](../experiments_specs/done_failed/E28_exclusive_cogitoprobe_bits.md) · [report](run_reports/e28_exclusive_cogitoprobe_bits_20260916.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/perceiver_ar_perceiver_H256L1g1s2N1024_20260916_190840) | // pragma: allowlist secret
 | 2026-09-16 | E28 | `perceiver_ar_perceiver_H256L1g1s2N1024_20260916_192646` | CogitoProbe-bits @1024 `scaled` · exclusive r=16 · Odra 3×3090 · git `501896f` | **0.003 bits** / acc 0.025; same 40-bit prize as `fixed` | **killed** — not a capacity result; 4k skipped. | [spec](../experiments_specs/done_failed/E28_exclusive_cogitoprobe_bits.md) · [report](run_reports/e28_exclusive_cogitoprobe_bits_20260916.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/perceiver_ar_perceiver_H256L1g1s2N1024_20260916_192646) | // pragma: allowlist secret
 | 2026-09-16 | E29 | `perceiver_ar_perceiver_H256L1g1s2N1024_20260916_170437` | CogitoProbe-bind @1024 `fixed` · exclusive r=16 · Polonez 4×3090 · git `481bf32` | hop **4.4% / 0.078 bits**; `attr_color` **2.4% / 0.007**; filler Δ **+0.13 pt**; no dense S0 | **killed** — S1 miss; hop at chance; do not 4k. | [spec](../experiments_specs/done_failed/E29_exclusive_cogitoprobe_bind.md) · [report](run_reports/e29_exclusive_cogitoprobe_bind_20260916.md) · [W&B](https://wandb.ai/ksopyla/[REDACTED]/runs/perceiver_ar_perceiver_H256L1g1s2N1024_20260916_170437) | // pragma: allowlist secret
+| 2026-10-03 | E33a | `e30_vs_e31/e33a_*` · `e33a_full_30m` · `e33a_lookup2k_lr5e-5` | `e33a_loop` · 30M · tied loop ×4 + exit loss · suite v3 full (17 non-flawed, seeds 0–2) · lookup 2k→16k (seeds 1–2) · Odra + Polonez | no-harm **0 lost** / 17 (max gap 3 pt) · lookup-2k@5e-5 **99** vs 98 · pchain3 41–47 % = guessing floor 41 % | **inconclusive** — keeps E31's capabilities; reasoning untested (exam floor). | [spec](../experiments_specs/done_failed/E33a_reread_loop.md) · [report](run_reports/e33a_reread_loop_20261005.md) |
 
 ---
 
@@ -540,6 +542,7 @@ Append-only chronological ledger (oldest → newest). **One row per training run
 
 Newest first:
 
+- [E33a read–think–reread loop — no harm, reasoning untested (Oct 5)](run_reports/e33a_reread_loop_20261005.md)
 - [E31b E30 vs E31 limits study — interactive report (Sep 27–30)](../3_Evaluations_and_Baselines/e31b_memory_study_report.html)
 - [E30 coverage and breadth — window size, longer books, tailored steps (Sep 22)](run_reports/e30_coverage_and_breadth_20260922.md)
 - [E30 length and hardness limits — 31M and 50M (Sep 22)](run_reports/e30_length_hardness_limits_20260922.md)
