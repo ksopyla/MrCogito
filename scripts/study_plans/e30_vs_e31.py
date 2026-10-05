@@ -419,6 +419,28 @@ def jobs(phase: str) -> list[dict]:
             _job("cal_count_dense_lr1e-4_x4_s0", "dense", 0, x4, "count", cost=1.3),
             _job("cal_count_dense_lr3e-4_x4_s0", "dense", 0, lr(x4, "3e-4"), "count", cost=1.3),
         ]
+    if phase == "calibrate_reasoning_r2":
+        # Round 2 (2026-10-05). Round 1: dense passes keyed4 (1 of 4, 4-letter keys) but not edge-1k (with the
+        # overhang = recall 1 of 8 by 16-letter keys) nor recall8 (27 %). Which knob breaks dense: the number
+        # of facts, the key length or the book length? Dense, seed 0, from random init, 4x budget.
+        x4 = [*L1K[:L1K.index("--steps") + 1], "4800", *L1K[L1K.index("--steps") + 2:]]
+
+        def at(length, seq):
+            return [*length[:length.index("--seq_len") + 1], str(seq), *length[length.index("--seq_len") + 2:]]
+
+        edge = ["--hops", "1", "--chain_overhang", "1"]
+        return [
+            _job("cal2_edge_noover_k16_dense_s0", "dense", 0, x4, "pchain2",
+                 ["--hops", "1", "--chain_overhang", "0", "--key_len", "16"], cost=1.3),       # 1 of 4, 16-letter
+            _job("cal2_recall8_k16v16_dense_s0", "dense", 0, x4, "recall8",
+                 ["--key_len", "16", "--value_len", "16"], cost=1.3),                         # edge-1k as recall
+            _job("cal2_recall8_dense_x4_s0", "dense", 0, x4, "recall8", cost=1.3),          # C3.recall8, 4x
+            _job("cal2_edge_k8_dense_s0", "dense", 0, x4, "pchain2", [*edge, "--key_len", "8"], cost=1.3),
+            _job("cal2_edge_k16_512_dense_s0", "dense", 0, at(x4, 512), "pchain2", [*edge, "--key_len", "16"],
+                 cost=0.8),
+            _job("cal2_edge_k8_256_dense_s0", "dense", 0, at(x4, 256), "pchain2", [*edge, "--key_len", "8"],
+                 cost=0.5),
+        ]
     if phase in ("lookup16k_root", "lookup16k_stages"):
         # C1.lookup-16k (written curriculum 2k → 8k → 16k from random init) where seeds are missing:
         # e31_li_m1 seed 2 and the dense ceiling seeds 0–2. Split in two bursts (Polonez cooldown between).
