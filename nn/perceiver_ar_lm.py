@@ -977,6 +977,9 @@ def exclusive_visible(replace: torch.Tensor, ctx: MessageCtx) -> torch.Tensor:
     return vis
 
 
+_CLOSE_STRIDE = 1 << 22  # E31c closed read: slot code = doc · 2²² + close (int32: ≤ 4M tokens, ≤ 511 docs)
+
+
 def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Tensor]):
     """mask_mod over KV = raw keys [0, S) ‖ slot keys [S, S + nb) for the global read.
 
@@ -1003,11 +1006,14 @@ def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Te
         # E31c: one int32 per slot, doc · S + close (no extra captured tensor; see the docstring)
         if ctx.slot_close is None:
             raise RuntimeError("the closed read needs ctx.slot_close")
+        # The packing stride is a fixed power of two, not S: under dynamic-shape compilation S is a SymInt
+        # and `div(tensor, SymInt)` does not trace (it broke flex at varying eval lengths on CUDA).
         n_doc = int(ctx.slot_doc.max().item()) + 1 if ctx.slot_doc.numel() else 1
-        if max(n_doc, 1) * S >= 2**31:
-            raise ValueError(f"closed read: {n_doc} documents × {S} tokens overflow the int32 slot code")
+        if S > _CLOSE_STRIDE or max(n_doc, 1) * _CLOSE_STRIDE >= 2**31:
+            raise ValueError(f"closed read: {n_doc} documents × {S} tokens overflow the int32 slot code "
+                             f"(≤ {_CLOSE_STRIDE} tokens, ≤ {2**31 // _CLOSE_STRIDE - 1} documents per row)")
         slot_tag = torch.where((ctx.slot_doc < 0) | (ctx.slot_close < 0), torch.full_like(ctx.slot_doc, -1),
-                               ctx.slot_doc * S + ctx.slot_close).to(torch.int32)
+                               ctx.slot_doc * _CLOSE_STRIDE + ctx.slot_close).to(torch.int32)
 
     def pred(b, h, q, kv):
         is_raw = kv < S
@@ -1035,8 +1041,8 @@ def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Te
         s = slot_tag[b, js]
         if closed:
             dq = torch.div(tq, m, rounding_mode="floor")
-            s_doc = torch.div(s, S, rounding_mode="floor")
-            slot_ok = (j < nb) & (s >= 0) & (tq >= 0) & (s_doc == dq) & (s - s_doc * S <= q)
+            s_doc = torch.div(s, _CLOSE_STRIDE, rounding_mode="floor")
+            slot_ok = (j < nb) & (s >= 0) & (tq >= 0) & (s_doc == dq) & (s - s_doc * _CLOSE_STRIDE <= q)
         else:
             d = tq - s
             slot_ok = (j < nb) & (s >= 0) & (d > 0) & (d < n_sides)
