@@ -15,7 +15,7 @@ if [ "$NUM_GPUS" -le 0 ]; then
     exit 1
 fi
 
-GPU_IDS=$(seq -s, 0 $((NUM_GPUS - 1)))
+GPU_IDS="${GPU_IDS:-$(seq -s, 0 $((NUM_GPUS - 1)))}"   # optional explicit list, e.g. GPU_IDS=2 for a 1-GPU job
 # Nodes in a multi-node job (see the accelerate launch block); 1 = single node.
 NUM_MACHINES="${NUM_MACHINES:-1}"
 export CUDA_VISIBLE_DEVICES="$GPU_IDS"

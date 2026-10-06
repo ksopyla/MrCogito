@@ -256,7 +256,7 @@ def _job(name, arch, seed, length, exam, extra=(), *, init=None, ladder=None, co
     }
 
 
-def task_job(task_id, arch, seed, *, prefix="v4", cost=1.3):
+def task_job(task_id, arch, seed, *, prefix="v4", cost=1.3, ladder=False):
     """One from-scratch job built from the v4 task definition itself (exam args + training budget), so a run
     can never drift from the protocol in `evaluation/capability_tasks.py`."""
     from evaluation.capability_tasks import TASK_BY_ID
@@ -265,7 +265,9 @@ def task_job(task_id, arch, seed, *, prefix="v4", cost=1.3):
         raise SystemExit(f"{task_id} has no written training budget (`train`); use the suite runner")
     name = f"{prefix}_{task_id.replace('.', '_')}_{arch}_s{seed}"
     return {"name": name, "args": [*t.train, "--eval_rows", "256", "--recipe", t.recipe, *t.args, "--arch", arch,
-                                   "--seed", str(seed)], "init": None, "ladder": None, "cost": cost}
+                                   "--seed", str(seed)], "init": None,
+            "ladder": ([L for L in LADDER_1K_FULL if L <= 32768] if arch == "dense" else LADDER_1K_FULL)
+            if (t.ladder and ladder) else None, "cost": cost}
 
 
 def ratio_jobs(seeds=(0,)):
@@ -465,6 +467,73 @@ def jobs(phase: str) -> list[dict]:
                  ["--chain_overhang", "1", "--key_len", "16", "--hops", "2"],
                  init="cal2_lookup_to_edge_dense_s0", cost=1.3),
         ]
+    if phase == "calibrate_c5_r3":
+        # Round 3 (2026-10-06): C5 with the hop count in the question (v4-draft-2026-10-06.2), dense from random
+        # init, built from the task definitions; only the stage's hop count and the replay mix vary.
+        def stage(task_id, name, hops=None, init=None, mix_hops=None):
+            j = task_job(task_id, "dense", 0, prefix="cal3")
+            j["name"], j["init"] = name, init
+            if hops is not None:
+                j["args"] += ["--hops", str(hops)]
+            if mix_hops is not None:
+                j["args"] += ["--replay_recipe", "chain_parallel", "--replay_hops", str(mix_hops),
+                              "--replay_frac", "0.5"]
+            return j
+
+        e = "cal3_edgehc_dense_s0"
+        e2, e2m = "cal3_edgehc_to_pchain2hc_dense_s0", "cal3_edgehc_to_pchain2mix_dense_s0"
+        return [
+            stage("C5.pchain2-1k", "cal3_pchain2hc_direct_dense_s0"),
+            stage("C5.pchain3-1k", "cal3_pchain3hc_direct_dense_s0"),
+            stage("C5.pchain2-1k", e, hops=1),
+            stage("C5.pchain2-1k", e2, init=e),
+            stage("C5.pchain3-1k", "cal3_edgehc_to_pchain2hc_to_pchain3hc_dense_s0", init=e2),
+            stage("C5.pchain2-1k", e2m, init=e, mix_hops=1),
+            stage("C5.pchain3-1k", "cal3_edgehc_to_pchain2mix_to_pchain3mix_dense_s0", init=e2m, mix_hops=2),
+        ]
+    if phase == "calibrate_c5_r4":
+        # Round 4 (2026-10-06): dense never picks the second hop at 4x with 16-letter nodes (round 3). Only the
+        # first answer letter carries the node choice (1/16 of the answer loss), so try short nodes (4 / 8
+        # letters), 2 vs 4 chains, and a 16x budget (19.2k steps, no extension; such tasks learn in a sudden
+        # jump, cf. Guo et al. 2025, arXiv 2502.13913, ~400k examples), plus a 256-token 2-hop stage before 1k.
+        # Dense, seed 0, from random init, built from the C5 task definitions; only the listed knobs vary.
+        x16 = ["--steps", "19200", "--k1_mult", "1"]
+
+        def run(task_id, name, extra, init=None):
+            j = task_job(task_id, "dense", 0, prefix="cal4")
+            j["name"], j["init"], j["args"], j["cost"] = name, init, j["args"] + extra, 1.6
+            return j
+
+        short = "cal4_pchain2hc_k8_256_x4_dense_s0"
+        return [
+            run("C5.pchain2-1k", "cal4_pchain2hc_k4_x16_dense_s0", [*x16, "--key_len", "4"]),
+            run("C5.pchain2-1k", "cal4_pchain2hc_k8_x16_dense_s0", [*x16, "--key_len", "8"]),
+            run("C5.pchain2-1k", "cal4_pchain2hc_k4_nc2_x16_dense_s0", [*x16, "--key_len", "4", "--n_chains", "2"]),
+            run("C5.pchain2-1k", "cal4_pchain2hc_k8_nc2_x16_dense_s0", [*x16, "--key_len", "8", "--n_chains", "2"]),
+            run("C5.pchain3-1k", "cal4_pchain3hc_k4_x16_dense_s0", [*x16, "--key_len", "4"]),
+            run("C5.pchain2-1k", short, ["--key_len", "8", "--seq_len", "256"]),
+            run("C5.pchain2-1k", "cal4_pchain2hc_k8_256_to_1k_x4_dense_s0", ["--key_len", "8"], init=short),
+        ]
+    if phase == "calibrate_c5_deep":
+        # Author's decision 2026-10-06: if the 4-layer dense control cannot learn C5, an 8-layer dense model
+        # (learnability check only) decides whether the task is learnable. Same exam and budgets as round 3/4.
+        deep = ["--stack_layers", "6", "--max_params", "80000000"]
+
+        def run(task_id, name, extra):
+            j = task_job(task_id, "dense", 0, prefix="cal4")
+            j["name"], j["args"], j["cost"] = name, j["args"] + deep + extra, 2.5
+            return j
+
+        return [
+            run("C5.pchain2-1k", "cal4_pchain2hc_dense8_x4_dense_s0", []),
+            run("C5.pchain2-1k", "cal4_pchain2hc_k4_dense8_x16_dense_s0", ["--steps", "19200", "--k1_mult", "1",
+                                                                         "--key_len", "4"]),
+        ]
+    if phase == "v4_e31_keyed":
+        # The champion on the tasks made active 2026-10-06 (dense confirmed them), seeds 0–2, from scratch,
+        # exactly the written recipes, read to 128k afterwards.
+        return [task_job(t, "e31_li_m1", s, ladder=True, cost=2.5)
+                for t in ("C1.keyed4-1k", "C1.edge-1k", "C3.recall8-1k") for s in (0, 1, 2)]
     if phase == "confirm_calibration":
         # Calibration rounds 1–2 (2026-10-05) found recipes dense passes on seed 0. Confirm them on dense seeds
         # 0–2 exactly as written in capability_tasks.py before they become active (spec: calibration log).

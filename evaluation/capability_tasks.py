@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-VERSION = "v4-draft-2026-10-06"
+VERSION = "v4-draft-2026-10-06.3"
 PASS_ACC = 0.75
 SEEDS = (0, 1, 2)
 LADDER = (1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072)
@@ -137,11 +137,11 @@ TASKS: tuple[Task, ...] = (
     Task("C1.keyed4-1k", "C1", "1 of 4 facts by its key, 1024 tokens", "recall",
          ("--scale", "bridge_1k", "--n_distractors", "3", "--key_len", "4"), 1024, 64,
          "4 same-shaped facts; only the key in the question picks one (first exam that needs the key)",
-         status="calibrating", score="candidate", floor=0.25, ladder=_L, train=TRAIN_1K),
+         score="candidate", floor=0.25, ladder=_L, train=TRAIN_1K),
     Task("C1.edge-1k", "C1", "1 of 4 edges by its start node, 1024 tokens", "chain_parallel",
          ("--scale", "bridge_1k", "--hops", "1", "--chain_overhang", "1", "--key_len", "16"), 1024, 32,
          "the parallel chains with one hop: the start node picks the edge (keyed lookup in chain format; "
-         "stage 1 of the C5 curriculum)", status="calibrating", score="candidate", floor=0.125, ladder=_L,
+         "stage 1 of the C5 curriculum)", score="candidate", floor=0.125, ladder=_L,
          train=TRAIN_1K_X4),
     # C2 — discriminate
     Task("C2.lookalike-128", "C2", "fact vs 1 look-alike, 128 tokens", "select_1decoy", ("--scale", "tiny"), 128, 32,
@@ -154,7 +154,7 @@ TASKS: tuple[Task, ...] = (
     # C3 — hold many
     Task("C3.recall8-1k", "C3", "recall 1 of 8 facts, 1024 tokens", "recall",
          ("--scale", "bridge_1k", "--n_distractors", "7", "--key_len", "4"), 1024, 64,
-         "keep 8 facts (4-letter keys) without knowing which one will be asked", status="calibrating", ladder=_L,
+         "keep 8 facts (4-letter keys) without knowing which one will be asked", ladder=_L,
          floor=0.44, train=TRAIN_1K_X4),
     Task("C3.recall16-1k", "C3", "recall 1 of 16 facts, 1024 tokens", "recall",
          ("--scale", "bridge_1k", "--n_distractors", "15", "--key_len", "4"), 1024, 64,
@@ -172,13 +172,15 @@ TASKS: tuple[Task, ...] = (
          ladder=_L),
     # C5 — reason (parallel chains; 16-letter nodes so the overhang fits in 1024 tokens)
     *(Task(f"C5.pchain{h}-1k", "C5", f"parallel {h}-hop chain among 3 decoy chains, 1024 tokens", "chain_parallel",
-           ("--scale", "bridge_1k", "--hops", str(h), "--chain_overhang", "1", "--key_len", "16"), 1024, 32,
+           ("--scale", "bridge_1k", "--hops", str(h), "--chain_overhang", "1", "--key_len", "16",
+            "--hop_count_in_question"), 1024, 32,
            f"follow {h} shuffled hops; 4 chains of the same length, only the start node names the right one; "
-           f"every chain runs one edge past the asked node",
-           status="calibrating", ladder=_L, score="candidate", floor=fl,
-           curriculum=f"candidate (to be fixed by calibration): one run from random init, 1 hop (C1.edge-1k) → "
+           f"every chain runs one edge past the asked node; the question states the hop count ({h} hop markers)",
+           status="calibrating", ladder=_L, score="candidate", floor=fl, train=TRAIN_1K_X4,
+           curriculum=f"candidate (to be fixed by calibration): one run from random init, the same exam at 1 hop → "
                       + " → ".join(str(k) for k in range(2, h + 1))
-                      + " hops; a stage ends when its picked-candidate score reaches 90 % or its budget runs out")
+                      + " hops (hop count in every question), each stage at the task's budget, optionally with "
+                      "half its rows at the previous hop count (`--replay_hops`)")
       for h, fl in ((2, 0.083), (3, 0.0625), (4, 0.05))),
     # C6 — aggregate
     Task("C6.unique-256", "C6", "the fact that appears once, 256 tokens", "unique", ("--scale", "tiny_wide"), 256, 48,

@@ -309,3 +309,33 @@ def test_suite_variants_build_with_e31_params():
     from evaluation.capability_suite import ARCH_FLAGS
 
     assert ARCH_FLAGS["e31c_m1"] == ARCH_FLAGS["e31_li_m1"]
+
+
+# ------------------------------------------------------------------ text checks smoke fixes (2026-10-06)
+def test_reader_read_on_mps_matches_cpu():
+    """MPS SDPA returns the QK width when QK ≠ V width; attend_message pads V so it stays exact."""
+    if not torch.backends.mps.is_available():
+        pytest.skip("no MPS")
+    m = make(seed=3, **TEXT, message_raw_window=8)
+    ids = text_row(S=48)
+    with torch.no_grad():
+        cpu = m(ids).logits
+        mps = m.to("mps")(ids.to("mps")).logits.cpu()
+    # MPS float32 matmuls round more coarsely: the notebook-free model shows the same ~7e-3 gap
+    assert cpu.shape == mps.shape
+    assert torch.allclose(cpu, mps, atol=2e-2), float((cpu - mps).abs().max())
+
+
+def test_text_loop_eval_loss_is_plain_next_token_loss():
+    """E33a loop on text: the exit aux trains, but the eval loss is the plain CE every arm shares."""
+    m = make(**TEXT, message_raw_window=8, message_loop_rounds=4, message_loop_exit_aux=0.3,
+             message_loop_exit_targets="answer")
+    ids = text_row(S=48)
+    with torch.no_grad():
+        ev = m(ids, labels=ids.clone()).loss
+        m.config.message_loop_exit_aux = 0.0
+        plain = m(ids, labels=ids.clone()).loss
+        m.config.message_loop_exit_aux = 0.3
+        tr = m.train()(ids, labels=ids.clone()).loss
+    assert torch.allclose(ev, plain)
+    assert float(tr) > float(plain) + 1e-3
