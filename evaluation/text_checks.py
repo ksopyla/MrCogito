@@ -207,9 +207,16 @@ def steps_for(tokens: float, global_rows: int, mean_row_tokens: float) -> int:
     return max(1, int(math.ceil(tokens / (global_rows * mean_row_tokens))))
 
 
-def grad_accum(tier: str, n_gpus: int) -> int:
+def per_device_batch(recipe: dict, tier: str) -> int:
+    """Rows per GPU micro-batch: the tier default unless the model's recipe card lowers it to fit memory
+    (the global batch, hence the data and the optimizer steps, stay the same through accumulation)."""
+    return int((recipe.get("per_device_batch") or {}).get(tier, TIERS[tier].per_device_batch))
+
+
+def grad_accum(tier: str, n_gpus: int, pdb: int | None = None) -> int:
     t = TIERS[tier]
-    per_step = t.per_device_batch * n_gpus
+    pdb = pdb or t.per_device_batch
+    per_step = pdb * n_gpus
     if t.global_rows % per_step:
-        raise ValueError(f"global batch {t.global_rows} rows is not a multiple of {t.per_device_batch} × {n_gpus} GPUs")
+        raise ValueError(f"global batch {t.global_rows} rows is not a multiple of {pdb} × {n_gpus} GPUs")
     return t.global_rows // per_step
