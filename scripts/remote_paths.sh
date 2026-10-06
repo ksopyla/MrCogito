@@ -56,7 +56,8 @@ if [ -z "${DATASETS_RAW_DIR:-}" ]; then
     export DATASETS_RAW_DIR="${HF_HOME}/datasets_raw"
 fi
 
-OUTPUT_DIR="${PROJECT_ROOT}/Cache/Training"
+# TRAIN_OUTPUT_DIR: optional per-job root (text checks put each run under its own folder)
+OUTPUT_DIR="${TRAIN_OUTPUT_DIR:-${PROJECT_ROOT}/Cache/Training}"
 LOGGING_DIR="${PROJECT_ROOT}/Cache/logs"
 
 unset TRANSFORMERS_CACHE
