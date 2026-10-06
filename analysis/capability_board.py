@@ -194,7 +194,7 @@ def calibration(ledgers: list[dict]) -> list[dict]:
                 continue
             t = TASK_BY_ID[task]
             knobs = [txt for frag, txt in CAL_KNOBS if frag in name + "_"]
-            if "_to_" in name:
+            if "_to_" in name or (name.startswith("cal2_") and "lookup1k" not in name):  # round 2 runs all at 4x
                 knobs = [k for k in knobs if k != "4x budget"] + ["4x budget"]
             rows.append({"job": name, "task": task, "round": 2 if name.startswith("cal2_") else 1,
                          "model": j["arch"], "variant": ", ".join(dict.fromkeys(knobs)) or "task recipe",
