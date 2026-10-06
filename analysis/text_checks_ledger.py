@@ -50,9 +50,9 @@ def job_state(d: Path, exits: dict) -> str:
     status = (d / "status").read_text().strip() if (d / "status").exists() else ""
     if (d / "DONE").exists():
         return "over_budget" if status == "over_budget" else "done"
-    if exits.get(d.name, 0) not in (0, 3) :
+    if exits.get(d.name, 0) not in (0, 3):
         return "failed"
-    if (d / "status.run").exists():
+    if (d / "status.run").exists() or (d.name == "data" and (d / "build.log").exists()):
         return "running"
     return "pending"
 
