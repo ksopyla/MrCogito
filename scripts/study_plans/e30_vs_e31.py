@@ -465,6 +465,30 @@ def jobs(phase: str) -> list[dict]:
                  ["--chain_overhang", "1", "--key_len", "16", "--hops", "2"],
                  init="cal2_lookup_to_edge_dense_s0", cost=1.3),
         ]
+    if phase == "calibrate_c5_r3":
+        # Round 3 (2026-10-06): C5 with the hop count in the question (v4-draft-2026-10-06.2), dense from random
+        # init, built from the task definitions; only the stage's hop count and the replay mix vary.
+        def stage(task_id, name, hops=None, init=None, mix_hops=None):
+            j = task_job(task_id, "dense", 0, prefix="cal3")
+            j["name"], j["init"] = name, init
+            if hops is not None:
+                j["args"] += ["--hops", str(hops)]
+            if mix_hops is not None:
+                j["args"] += ["--replay_recipe", "chain_parallel", "--replay_hops", str(mix_hops),
+                              "--replay_frac", "0.5"]
+            return j
+
+        e = "cal3_edgehc_dense_s0"
+        e2, e2m = "cal3_edgehc_to_pchain2hc_dense_s0", "cal3_edgehc_to_pchain2mix_dense_s0"
+        return [
+            stage("C5.pchain2-1k", "cal3_pchain2hc_direct_dense_s0"),
+            stage("C5.pchain3-1k", "cal3_pchain3hc_direct_dense_s0"),
+            stage("C5.pchain2-1k", e, hops=1),
+            stage("C5.pchain2-1k", e2, init=e),
+            stage("C5.pchain3-1k", "cal3_edgehc_to_pchain2hc_to_pchain3hc_dense_s0", init=e2),
+            stage("C5.pchain2-1k", e2m, init=e, mix_hops=1),
+            stage("C5.pchain3-1k", "cal3_edgehc_to_pchain2mix_to_pchain3mix_dense_s0", init=e2m, mix_hops=2),
+        ]
     if phase == "confirm_calibration":
         # Calibration rounds 1–2 (2026-10-05) found recipes dense passes on seed 0. Confirm them on dense seeds
         # 0–2 exactly as written in capability_tasks.py before they become active (spec: calibration log).
