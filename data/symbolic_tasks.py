@@ -177,6 +177,10 @@ class SymbolicTaskConfig:
     # answer is not a pure target. 0 keeps the chain-end shortcut: guessing among the chains' ends
     # scores 1/n + (1 − 1/n)/A on the first letter (43.75 % with 4 chains over DNA).
     chain_overhang: int = 0
+    # chain: the question states how many hops to follow — `hops` hop markers after the start node,
+    # [query, start, hop × k, answer] — so exams with different hop counts never contradict each other
+    # (with an overhang the book alone cannot say where to stop). False keeps today's exams bit-identical.
+    hop_count_in_question: bool = False
     # "spread" = uniform over [lo, hi) (default). "right" = pack evidence against hi
     # (just before the min_gap), for S0 near-copy diagnostics at long seq_len.
     evidence_align: str = "spread"
@@ -203,6 +207,8 @@ class SymbolicTaskConfig:
             raise ValueError("n_chains > 1 is defined for the shuffled chain only")
         if self.chain_overhang < 0 or (self.chain_overhang > 0 and self.task != "chain"):
             raise ValueError("chain_overhang >= 1 is defined for the shuffled chain only")
+        if self.hop_count_in_question and self.task not in {"chain", "chain_ordered"}:
+            raise ValueError("hop_count_in_question is defined for the chain tasks only")
         if self.task == "select" and self.n_decoys < 1:
             raise ValueError("select needs n_decoys >= 1")
         if self.task == "unique" and self.n_duplicates < 1:
@@ -242,8 +248,8 @@ class SymbolicTaskConfig:
             "recall": self.key_len,
             "far_copy": 0,
             "select": self.key_len,
-            "chain": self.key_len,
-            "chain_ordered": self.key_len,
+            "chain": self.key_len + (self.hops if self.hop_count_in_question else 0),
+            "chain_ordered": self.key_len + (self.hops if self.hop_count_in_question else 0),
             "unique": 0,
             "match3": 0,
             "count": 1,
@@ -406,7 +412,8 @@ def _emit_chain(
         ids[off : off + len(block)] = block
     # `nodes`: the queried chain start … asked node (E33 per-round targets: round r → nodes[r + 1])
     path = chain[: cfg.hops + 1]
-    return sym(path[0]), sym(path[-1]), max(chain_positions), {
+    query = sym(path[0]) + ([v.control("hop")] * cfg.hops if cfg.hop_count_in_question else [])
+    return query, sym(path[-1]), max(chain_positions), {
         "hops": cfg.hops, "shuffled": shuffle, "overhang": int(cfg.chain_overhang),
         "nodes": [sym(n) for n in path]}
 

@@ -233,7 +233,8 @@ def _candidates(cfg, row: np.ndarray, n: int) -> list[tuple[int, ...]]:
     v = cfg.vocab
     out: list[tuple[int, ...]] = []
     if task in ("chain", "chain_ordered"):
-        for q in np.nonzero(row == v.control("hop"))[0]:
+        body_end = int(cfg.answer_start) - int(cfg.query_len) - 1  # the question may carry hop markers too
+        for q in np.nonzero(row[:body_end] == v.control("hop"))[0]:
             out += [tuple(int(x) for x in row[q + 1:q + 1 + n]), tuple(int(x) for x in row[q + 1 + L:q + 1 + L + n])]
     elif task in ("recall", "select"):
         marks = [v.control("keymark")] + ([v.control("decoy")] if task == "select" else [])
@@ -301,6 +302,7 @@ def _guess_floors(cfg, batches) -> dict | None:
     if getattr(cfg, "task", None) != "chain" or int(getattr(cfg, "n_chains", 1) or 1) < 2:
         return None
     hop, L = cfg.vocab.control("hop"), int(cfg.key_len)
+    body_end = int(cfg.answer_start) - int(cfg.query_len) - 1  # edges only: the question may carry hop markers
     lt_first = lt_exact = end_exact = 0.0
     n = 0
     for ids, labels in batches:
@@ -311,7 +313,7 @@ def _guess_floors(cfg, batches) -> dict | None:
                 continue
             ans = tuple(int(x) for x in lab[pos[:L]])
             srcs, dsts = set(), set()
-            for q in np.nonzero(t == hop)[0]:
+            for q in np.nonzero(t[:body_end] == hop)[0]:
                 srcs.add(tuple(int(x) for x in t[q + 1:q + 1 + L]))
                 dsts.add(tuple(int(x) for x in t[q + 1 + L:q + 1 + 2 * L]))
             n += 1
@@ -881,6 +883,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         "hops": args.hops,
         "n_chains": args.n_chains,
         "chain_overhang": args.chain_overhang,
+        "hop_count_in_question": args.hop_count_in_question,
         "span_len": args.span_len,
         "min_gap": args.min_gap,
         "seq_len": args.seq_len,
@@ -897,7 +900,14 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
     args._replay_cfg = None
     if getattr(args, "replay_recipe", None):
         rep = resolve_recipe(args.replay_recipe)
-        args._replay_cfg = config_for(scale, rep.task, **{**rep.overrides, "seq_len": cfg.seq_len})
+        rep_over = {**rep.overrides, "seq_len": cfg.seq_len}
+        if getattr(args, "replay_hops", None):  # the main chain exam at another hop count (mixed-hop stages)
+            if rep.task != cfg.task or cfg.task not in ("chain", "chain_ordered"):
+                raise SystemExit("--replay_hops needs --replay_recipe of the main exam's chain task")
+            rep_over.update(hops=args.replay_hops, key_len=cfg.key_len, n_chains=cfg.n_chains,
+                            n_distractors=cfg.n_distractors, chain_overhang=cfg.chain_overhang,
+                            hop_count_in_question=cfg.hop_count_in_question)
+        args._replay_cfg = config_for(scale, rep.task, **rep_over)
         if args._replay_cfg.vocab.vocab_size != cfg.vocab.vocab_size:
             raise SystemExit("--replay_recipe must share the vocabulary of the main exam")
     window = args.local_window if args.local_window is not None else scale.local_window
@@ -1392,6 +1402,9 @@ def main() -> int:
                    help="E33a: exit r predicts chain node r (progress) or the final answer")
     p.add_argument("--replay_recipe", default=None,
                    help="E33a: mix rows of this recipe into every training batch (no-harm replay), e.g. recall_single")
+    p.add_argument("--replay_hops", type=int, default=None,
+                   help="with --replay_recipe of the same chain task: replay rows are the main exam at this hop "
+                        "count (e.g. 1-hop rows inside a 2-hop stage; use with --hop_count_in_question)")
     p.add_argument("--replay_frac", type=float, default=0.25, help="E33a: fraction of each batch from --replay_recipe")
     p.add_argument("--freeze_writer", action="store_true",
                    help="E33a: freeze the E31 memory writer (the notebook stays exactly as initialised)")
@@ -1502,6 +1515,9 @@ def main() -> int:
     p.add_argument("--chain_overhang", type=int, default=None,
                    help="shuffled chain: every chain continues this many edges past the asked node "
                         "(removes the guess-a-chain-end shortcut; 0 = today's exam)")
+    p.add_argument("--hop_count_in_question", action="store_const", const=True, default=None,
+                   help="chain exams: the question carries one hop marker per hop to follow "
+                        "([query, start, hop x k, answer]); off = today's exams")
     p.add_argument("--answer_exact", choices=("auto", "on", "off"), default="auto",
                    help="final eval: decode the answer greedily and score the candidate it picks and every letter "
                         "(+ the parallel chain's guessing floors); auto = chain and recall exams")

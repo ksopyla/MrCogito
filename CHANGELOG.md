@@ -15,6 +15,19 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-10-06] - Chain exams: hop count in the question (opt-in), mixed-hop replay
+
+- `data/symbolic_tasks.py`: `hop_count_in_question` (default False). On the chain tasks the question becomes
+  [query, start node, hop × k, answer], so the asked node k hops away is stated, not implied by the book. With an
+  overhang the book alone cannot say where to stop, and the E33a curriculum showed the cost: a 2-hop stage
+  punished the 1-hop answer and every arm lost hop 1 (edge 99 % → 12 % on the same 1-hop question). Default rows
+  are bit-identical (new test pins sha256 fingerprints of five recorded exams). Guessing floors unchanged.
+- `verification/bapo_capability_probe.py`: `--hop_count_in_question`; `--replay_hops K` replays the main chain exam
+  at K hops inside a stage (e.g. 1-hop rows in the 2-hop stage). The picked-candidate scorer, the guessing floors
+  and `analysis/loop_read_trace.py` read edges from the book only (the question may now hold hop markers).
+- Task definitions using the option are the capability-checks owner's (protocol: one recipe for every model,
+  dense calibration first).
+
 ## [2026-10-06] - Capability checks: training budget is part of the recipe; calibration log
 
 - `evaluation/capability_tasks.py` (v4-draft-2026-10-06): `Task.train` — the training budget every
