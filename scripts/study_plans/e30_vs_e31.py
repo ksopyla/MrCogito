@@ -491,6 +491,29 @@ def jobs(phase: str) -> list[dict]:
             stage("C5.pchain2-1k", e2m, init=e, mix_hops=1),
             stage("C5.pchain3-1k", "cal3_edgehc_to_pchain2mix_to_pchain3mix_dense_s0", init=e2m, mix_hops=2),
         ]
+    if phase == "calibrate_c5_r4":
+        # Round 4 (2026-10-06): dense never picks the second hop at 4x with 16-letter nodes (round 3). Only the
+        # first answer letter carries the node choice (1/16 of the answer loss), so try short nodes (4 / 8
+        # letters), 2 vs 4 chains, and a 16x budget (19.2k steps, no extension; such tasks learn in a sudden
+        # jump, cf. Guo et al. 2025, arXiv 2502.13913, ~400k examples), plus a 256-token 2-hop stage before 1k.
+        # Dense, seed 0, from random init, built from the C5 task definitions; only the listed knobs vary.
+        x16 = ["--steps", "19200", "--k1_mult", "1"]
+
+        def run(task_id, name, extra, init=None):
+            j = task_job(task_id, "dense", 0, prefix="cal4")
+            j["name"], j["init"], j["args"], j["cost"] = name, init, j["args"] + extra, 1.6
+            return j
+
+        short = "cal4_pchain2hc_k8_256_x4_dense_s0"
+        return [
+            run("C5.pchain2-1k", "cal4_pchain2hc_k4_x16_dense_s0", [*x16, "--key_len", "4"]),
+            run("C5.pchain2-1k", "cal4_pchain2hc_k8_x16_dense_s0", [*x16, "--key_len", "8"]),
+            run("C5.pchain2-1k", "cal4_pchain2hc_k4_nc2_x16_dense_s0", [*x16, "--key_len", "4", "--n_chains", "2"]),
+            run("C5.pchain2-1k", "cal4_pchain2hc_k8_nc2_x16_dense_s0", [*x16, "--key_len", "8", "--n_chains", "2"]),
+            run("C5.pchain3-1k", "cal4_pchain3hc_k4_x16_dense_s0", [*x16, "--key_len", "4"]),
+            run("C5.pchain2-1k", short, ["--key_len", "8", "--seq_len", "256"]),
+            run("C5.pchain2-1k", "cal4_pchain2hc_k8_256_to_1k_x4_dense_s0", ["--key_len", "8"], init=short),
+        ]
     if phase == "v4_e31_keyed":
         # The champion on the tasks made active 2026-10-06 (dense confirmed them), seeds 0–2, from scratch,
         # exactly the written recipes, read to 128k afterwards.
