@@ -347,7 +347,7 @@ def write_starter(out: Path, phase: str, queues: dict[str, list[str]], host: str
                  'do echo "GPU above 75 C, waiting $(date +%T)"; sleep 120; done; }']
         if wait_cmd:
             for g in ([qname[3:]] if qname.startswith("gpu") else list(gpus)):
-                lines.append(f'until {wait_cmd.format(gpu=g)}; do echo "waiting for GPU {g} to be released $(date +%T)" '
+                lines.append(f'until {wait_cmd.replace("{gpu}", str(g))}; do echo "waiting for GPU {g} to be released $(date +%T)" '
                              f'| tee -a {log}; sleep 120; done')
         for i, j in enumerate(jobs):
             sh = _q(out / "jobs" / j / "job.sh")
