@@ -1045,6 +1045,8 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         message_loop_inject=args.loop_inject,
         message_loop_exit_aux=args.loop_exit_aux,
         message_loop_exit_targets=args.loop_exit_targets,
+        message_loop_name_aux=args.loop_name_aux,
+        message_loop_name_len=(int(cfg.key_len) if args.loop_name_aux > 0 else 0),
     )
     card = rung_card(scale, recipe.task, **over)
     card["local_window"] = window
@@ -1461,6 +1463,9 @@ def main() -> int:
                    help="E33a: add the prelude output back each loop (zero-init scalar gate)")
     p.add_argument("--loop_exit_aux", type=float, default=0.0,
                    help="E33a: weight of each non-final loop exit (decoded through the answer layer)")
+    p.add_argument("--loop_name_aux", type=float, default=0.0,
+                   help="E33: weight of the whole-name loss (every loop state names all key_len letters of its "
+                        "node at the decision position, so the next round can query by it). 0 = off")
     p.add_argument("--loop_exit_targets", default="progress", choices=("progress", "answer"),
                    help="E33a: exit r predicts chain node r (progress) or the final answer")
     p.add_argument("--replay_recipe", default=None,
