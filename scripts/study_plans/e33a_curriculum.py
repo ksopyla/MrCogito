@@ -81,9 +81,29 @@ def hop2_diag_jobs() -> list[dict]:
     ]
 
 
+# ---- hop2_name (2026-10-06): the whole-name loss --------------------------------------------------------------
+# hop2_diag: with the bridge written (n1 then n2) the single read finds n2 at 95 %; asked for n2 only, the loop's
+# round 1 still finds n1 (first letter 100 %) but round 2 stays at the floor. The whole-name loss asks every loop
+# state to name its node completely at the decision position, so round 2 has the tail to query by. Starts (linked
+# into the out folder): `diag33_path_r1_s0` (hop2_diag, written path) and `e33cur_edge_loop_s1` (loop, 1 hop).
+NAME = ["--loop_name_aux", "0.5"]
+
+
+def hop2_name_jobs() -> list[dict]:
+    loop = [*E33A_LOOP, *LOOP_MICRO, *NAME, "--steps", "1200"]
+    return [
+        _diag("diag33_path_to_loop_name_s0", "e31_li_m1", loop, init="diag33_path_r1_s0", cost=1.8),
+        _diag("diag33_edge_to_pchain2_name_mix_s0", "e31_li_m1",
+              [*loop, "--replay_recipe", "chain_parallel", "--replay_hops", "1", "--replay_frac", "0.5"],
+              init="e33cur_edge_loop_s1", cost=1.8),
+    ]
+
+
 def jobs(phase: str) -> list[dict]:
     if phase == "hops":
         return [j for tag, seed, flags in ARMS for j in _arm(tag, seed, flags)]
     if phase == "hop2_diag":
         return hop2_diag_jobs()
-    raise SystemExit(f"unknown phase {phase!r} (hops, hop2_diag)")
+    if phase == "hop2_name":
+        return hop2_name_jobs()
+    raise SystemExit(f"unknown phase {phase!r} (hops, hop2_diag, hop2_name)")
