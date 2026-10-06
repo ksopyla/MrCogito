@@ -65,9 +65,19 @@ comparable.
 **C1.lookup-16k curriculum (2k → 8k → 16k), ladder to 128k:** E33a seed 2 **98 / 99 / 100 / 100 / 99 / 99 / 93** at
 2k–128k (E31 `e31_li_m1` seed 1: 98 / 95 / 98 / 100 / 97 / 98 / 94); E33a seed 1 47–70 % at every length (its 2k start
 was 70 %). E31's battery seed 0 also failed (31–40 %), but its seed 2 (tracking, `study/lookup16k.polonez.json`)
-reaches 100 % at 16k and 128k. On medians that is E33a ≈ 80 % (2 seeds) vs `e31_li_m1` 98 % (3 seeds): the board counts
-**5 lost cells**, all on C1.lookup-16k (training length and the longer lengths). With one bad seed in two the median is
-seed-sensitive; the third E33a seed (seed 0, phase `e33a_lookup16k_s0`, Odra, started 2026-10-05) decides it.
+reaches 100 % at 16k and 128k. With two seeds the board counted 5 lost cells (E33a ≈ 80 % vs 98 %), so a third E33a
+seed ran (seed 0, phase `e33a_lookup16k_s0`, Odra, 2026-10-05 → 06): **88 / 94 / 96 / 94 / 96 / 96 / 95**.
+
+**Final (2026-10-06), 3 seeds each — both models learn the lookup on 2 of 3 seeds:**
+
+| length | 2k | 4k | 8k | 16k | 32k | 64k | 128k |
+|---|---|---|---|---|---|---|---|
+| E33a loop, median (s0 / s1 / s2) | **88** (88 / 70 / 98) | 94 | 96 | **94** (94 / 50 / 100) | 96 | 96 | 93 |
+| `e31_li_m1`, median (s0 / s1 / s2) | 98 (43 / 98 / 100) | 95 | 98 | 100 (55 / 100 / 100) | 97 | 98 | 94 |
+
+By the no-harm rule (> 5 points below where the champion passes) E33a **loses 2 of 7 lengths**: 2k (−10) and 16k (−6);
+every other length is within 2 points. Both medians come from E33a's seed 0, which reads slightly worse at 2k than at
+longer lengths.
 
 Ledger: `results/capability/suite/e33a_full_30m.{polonez,odra}.json`, `suite/e33a_lookup2k_lr5e-5.odra.json`,
 `study/e30_vs_e31.odra.json` (`e33a_*`); E31 references `suite/li_full_30m.polonez.json`,
@@ -75,15 +85,16 @@ Ledger: `results/capability/suite/e33a_full_30m.{polonez,odra}.json`, `suite/e33
 
 ## Interpretation
 On every non-flawed suite task the loop is within 3 points of `e31_li_m1` (median of three seeds), and its good lookup
-seed carries to 128k like E31's. The one open loss is the long-lookup curriculum, where the loop learned lookup on one
-seed of two and E31 on two of three; the third seed settles whether that is the loop or seed luck. The reasoning question is unanswered: the parallel-chain
+seeds carry to 128k like E31's. On the long-lookup curriculum both learn the lookup on 2 of 3 seeds; the loop's medians
+are within 2 points at 5 of 7 lengths and lower at 2k (88 vs 98) and 16k (94 vs 100) — two narrow losses by the rule,
+small next to the seed-to-seed spread. The reasoning question is unanswered: the parallel-chain
 exam could not distinguish a working loop from a broken one (every model including dense sat at its guessing floor), so
 K1 is formally met but carries no information. The read never learned to address the start node, so the loop had no
 first hop to refine.
 
 ## Decision
-Close E33a as **inconclusive** (suite: no harm; C1.lookup-16k: lost on 2 seeds, third seed running; reasoning
-untested). The reasoning question moves to the E33 reasoning-fixes track: the fixed parallel chain (C5 with overhang,
+Close E33a as **inconclusive** (suite: no harm; C1.lookup-16k: 2 of 7 lengths lost narrowly on 3 seeds, the rest
+within 2 points; reasoning untested). The reasoning question moves to the E33 reasoning-fixes track: the fixed parallel chain (C5 with overhang,
 16-letter keys, candidate scoring) taught 1 → 2 → 3 hops, comparing the loop, a single read and dense.
 
 *Related: `master_experiment_log.md`, `docs/experiments_specs/done_failed/E33a_reread_loop.md`, `agenda.md`*

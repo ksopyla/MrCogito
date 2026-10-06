@@ -182,6 +182,5 @@ any cell or ladder length where `e31_li_m1` passes (≥ 75 %), on the median of 
 - **Verdict: inconclusive.** S1/S2/S4/S5 not reached: every arm, the R = 1 control and dense sat at the exam's guessing
   floor (44 / 41 / 39 % for 2 / 3 / 4 hops), so K1 is formally met but uninformative; the v1 parallel-chain exams are
   now `flawed`. No harm (S3 in the v4 sense): all 17 non-flawed suite tasks within 3 points of `e31_li_m1` (median of
-  seeds 0–2); lookup-2k at 5e-5 99 vs 98. One open loss: the lookup 2k → 16k curriculum reaches 93–100 % to 128k on
-  one seed of two, against two of three for `e31_li_m1` (medians 80 vs 98 %, 5 lost cells on C1.lookup-16k); a third
-  E33a seed (phase `e33a_lookup16k_s0`, started 2026-10-05) decides it.
+  seeds 0–2); lookup-2k at 5e-5 99 vs 98. C1.lookup-16k (2k → 16k curriculum, 3 seeds each, both learn it on 2 of 3):
+  medians within 2 points at 5 of 7 lengths; **2 lost** narrowly, 2k (88 vs 98) and 16k (94 vs 100) (2026-10-06).
