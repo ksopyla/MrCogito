@@ -285,8 +285,10 @@ def main():
 
     from huggingface_hub import HfApi
 
-    api = HfApi(token=load_token(a.env_file))
-    who = api.whoami()["name"]
+    api, who = None, "ksopyla"
+    if not a.dry_run or a.whoami:
+        api = HfApi(token=load_token(a.env_file))
+        who = api.whoami()["name"]
     if a.whoami:
         print(f"token account: {who}")
         return

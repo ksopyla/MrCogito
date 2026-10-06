@@ -329,8 +329,10 @@ def plan_data_job(data: Path, out: Path, tokens: float, num_proc: int, profile: 
 
 # ------------------------------------------------------------------------------------- starters
 def write_starter(out: Path, phase: str, queues: dict[str, list[str]], host: str, then: dict | None = None,
-                  mode: str = "scripts", cooldown_s: int = 0):
-    """queues: window name → job names run one after another. `then`: queues started after these finish."""
+                  mode: str = "scripts", cooldown_s: int = 0, wait_cmd: str = "", gpus: tuple = ()):
+    """queues: window name → job names run one after another. `then`: queues started after these finish.
+    `wait_cmd` (with `{gpu}`): a queue starts only when it succeeds for each of its GPUs — e.g. another
+    session's queue log saying it released that GPU."""
     launch = out / "launch"
 
     def queue_script(qname, jobs):
@@ -340,6 +342,10 @@ def write_starter(out: Path, phase: str, queues: dict[str, list[str]], host: str
                  'cool() { command -v nvidia-smi >/dev/null || return 0; '
                  'while [ "$(nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader | sort -n | tail -1)" -ge 70 ]; '
                  'do echo "GPU above 70 C, waiting $(date +%T)"; sleep 120; done; }']
+        if wait_cmd:
+            for g in ([qname[3:]] if qname.startswith("gpu") else list(gpus)):
+                lines.append(f'until {wait_cmd.format(gpu=g)}; do echo "waiting for GPU {g} to be released $(date +%T)" '
+                             f'| tee -a {log}; sleep 120; done')
         for i, j in enumerate(jobs):
             sh = _q(out / "jobs" / j / "job.sh")
             lines.append(f'echo "JOB {j}" | tee -a {log}; cool')
@@ -403,7 +409,7 @@ def cmd_plan(a):
                 queues[f"gpu{gpus[k % len(gpus)]}"].append(name)
                 k += 1
         start = write_starter(out, "tune", {q: j for q, j in queues.items() if j}, a.host, mode=a.mode,
-                              cooldown_s=cooldown_s)
+                              cooldown_s=cooldown_s, wait_cmd=a.wait_cmd, gpus=tuple(gpus))
     elif a.phase in ("train", "eval"):
         trains, evals = [], {f"gpu{g}": [] for g in gpus}
         for i, arch in enumerate(a.arches):
@@ -421,9 +427,9 @@ def cmd_plan(a):
         evals = {q: j for q, j in evals.items() if j}
         if a.phase == "train":
             start = write_starter(out, "train", {"train": trains}, a.host, then=evals, mode=a.mode,
-                                  cooldown_s=cooldown_s)
+                                  cooldown_s=cooldown_s, wait_cmd=a.wait_cmd, gpus=tuple(gpus))
         else:
-            start = write_starter(out, "eval", evals, a.host, mode=a.mode)
+            start = write_starter(out, "eval", evals, a.host, mode=a.mode, wait_cmd=a.wait_cmd, gpus=tuple(gpus))
     else:
         raise SystemExit(a.phase)
     plan = {"version": TEXT_CHECKS_VERSION, "phase": a.phase, "tier": a.tier, "arches": a.arches, "host": a.host,
@@ -499,6 +505,9 @@ def main():
     pl.add_argument("--burst_hours", type=float, default=6.0,
                     help="pause a training job at its first checkpoint after this many hours (0 = never)")
     pl.add_argument("--cooldown_min", type=float, default=20.0, help="cooldown after a burst or a long job")
+    pl.add_argument("--wait_cmd", default="",
+                    help="shell test with {gpu}; each queue waits until it succeeds for its GPUs, e.g. "
+                         "'grep -q QUEUE-END /path/other_gpu{gpu}.log' (GPUs held by another session)")
     se = sub.add_parser("select")
     se.add_argument("--out", required=True)
     se.add_argument("--tier", choices=tuple(TIERS), default="screen")
