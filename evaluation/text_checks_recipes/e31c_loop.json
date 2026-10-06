@@ -1,0 +1,17 @@
+{
+  "arch": "e31c_loop",
+  "status": "prior (untuned) \u2014 replace after the tuning phase (spec \u00a77)",
+  "init": "trainer default for perceiver_ar: normal(0.02) projections, residual outputs zero-initialized",
+  "optimizer": "adam",
+  "lr": {
+    "screen": 0.001,
+    "main": 0.0006,
+    "smoke": 0.001
+  },
+  "warmup_frac": 0.02,
+  "scheduler": "cosine",
+  "weight_decay": 0.1,
+  "max_grad_norm": 1.0,
+  "length_method": "none",
+  "tuning": {}
+}

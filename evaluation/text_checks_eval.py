@@ -60,6 +60,21 @@ def score_prompt(model, tok, prompt: str, answer: str, candidates: list[str], de
     return {"exact": bool(exact), "pick": pick, "pick_ambiguous": bool(ambiguous), "n_tokens": ids.shape[1]}
 
 
+@torch.no_grad()
+def story_ce(model, path: str, n_rows: int, device) -> float:
+    """Mean next-token cross-entropy per token on held-out story rows (language quality, T0)."""
+    from datasets import load_from_disk
+
+    ds = load_from_disk(path)
+    tot, cnt = 0.0, 0
+    for i in range(min(n_rows, len(ds))):
+        x = torch.tensor([ds[i]["input_ids"]], device=device, dtype=torch.long)
+        _, per, valid = model(input_ids=x, labels=x.clone(), return_per_token_loss=True)
+        tot += float(per.float().sum())
+        cnt += int(valid.sum())
+    return tot / max(1, cnt)
+
+
 def summarize(rows: list[dict]) -> list[dict]:
     cells = defaultdict(list)
     for r in rows:
@@ -91,12 +106,14 @@ def main():
     p.add_argument("--out", required=True)
     p.add_argument("--tokenizer", default=None, help="default: the checkpoint's own tokenizer")
     p.add_argument("--device", default=None)
-    p.add_argument("--attn_backend", default="sdpa")
+    p.add_argument("--attn_backend", default=None, help="default: flex on CUDA (long documents), sdpa elsewhere")
     p.add_argument("--message_override", default="real", choices=("real", "none"))
     p.add_argument("--max_items_per_cell", type=int, default=0)
     p.add_argument("--lengths", type=int, nargs="*", default=None)
     p.add_argument("--tasks", nargs="*", default=None)
     p.add_argument("--no_removed", action="store_true", help="skip the evidence-removed twins")
+    p.add_argument("--story_eval", default=None, help="held-out story rows (<data>/stories/eval): language loss")
+    p.add_argument("--story_rows", type=int, default=64)
     args = p.parse_args()
 
     from transformers import AutoTokenizer
@@ -104,7 +121,8 @@ def main():
     from nn.perceiver_families import load_perceiver_lm
 
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
-    model = load_perceiver_lm(args.checkpoint, device, args.attn_backend)
+    backend = args.attn_backend or ("flex" if str(device).startswith("cuda") else "sdpa")
+    model = load_perceiver_lm(args.checkpoint, device, backend)
     model.eval()
     tok = AutoTokenizer.from_pretrained(args.tokenizer or args.checkpoint)
     msg = model.message_override(args.message_override) if hasattr(model, "message_override") else nullcontext()
@@ -137,9 +155,11 @@ def main():
             if not args.no_removed:
                 row["removed_exact"] = score_prompt(model, tok, r["prompt_removed"], r["answer"], r["candidates"], device)["exact"]
             rows.append(row)
+        story_loss = story_ce(model, args.story_eval, args.story_rows, device) if args.story_eval else None
     summary = summarize(rows)
     res = {"checkpoint": args.checkpoint, "message_override": args.message_override, "items": args.items,
-           "n_items": len(rows), "seconds": round(time.time() - t0, 1), "cells": summary, "rows": rows}
+           "n_items": len(rows), "seconds": round(time.time() - t0, 1), "story_loss": story_loss,
+           "cells": summary, "rows": rows}
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w") as fh:
         json.dump(res, fh, indent=1)
@@ -148,6 +168,8 @@ def main():
         f = lambda v: "  -  " if v is None else f"{v:6.2f}"  # noqa: E731
         print(f"{c['split']:<10} {c['task']:<8} {c['length']:>6} {c['n']:>4} {f(c['exact'])} {f(c['pick'])} "
               f"{f(c['removed_exact']):>7} {f(c['floor'])}")
+    if story_loss is not None:
+        print(f"held-out story loss: {story_loss:.4f} (next-token cross-entropy per token, lower is better)")
     print(f"scored {len(rows)} items in {res['seconds']}s → {args.out}")
 
 

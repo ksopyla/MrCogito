@@ -2,8 +2,9 @@
 
 - **Type:** engineering foundation (training + evaluation protocol). Not an `E0NN` experiment.
 - **Status:** **first draft 2026-10-05**, to be calibrated after the first server runs (token budget,
-  compute caps, mix shares and task dials are expected to move). Data generator, builder, scorer and a
-  local smoke are implemented (2026-10-06, §16); runner, scorecard and skill are not. Version string
+  compute caps, mix shares and task dials are expected to move). Data generator, builder, scorer
+  (2026-10-06), the runner, scorecard, recipe cards and the `text-checks` skill (2026-10-06, §16) are
+  implemented and smoke-tested locally end to end; first server runs are calibration. Version string
   once frozen: `text-v1`; the current draft data is `text-world-v0`.
 - **Owner:** Krzysztof Sopyla
 - **Relation to the DNA checks:** the [capability checks](capability_checks.md) (C0–C7, random-letter
@@ -11,7 +12,7 @@
   the **next step**: one from-scratch language model per architecture, trained on a fixed simple-language
   corpus with a fact layer, then examined on a fixed ladder of questions at lengths 1k → 128k. They fill
   the "C8 real text" slot of the DNA checks with their own protocol, package and ledger.
-- **Skill (to write once implemented):** `text-checks`.
+- **Skill:** `text-checks` (`.cursor/skills/text-checks/SKILL.md`): the step-by-step for agents.
 
 ## 1. What question this answers
 
@@ -371,8 +372,20 @@ the floor. Items per cell: 400 up to 16k, 200 at 32k–128k (standard error ≈ 
   otherwise makes public datasets look missing), trains the 4,096-token BPE, writes the two-source
   pretokenized manifest the trainer already reads, and freezes `eval/<split>.jsonl` with hashes.
 - `evaluation/text_checks_eval.py`: the one-pass scorer (exact, pick, evidence-removed, notebook off).
-- `scripts/smoke_text_checks_local.sh`: tiny dense / E31c / E31c + reread loop, trained and scored
-  locally.
+- `evaluation/text_checks.py`: tiers, the round-1 models as trainer arguments (FFN width fitted into
+  the parameter band per model), budgets, pass rules; recipe cards in `evaluation/text_checks_recipes/`.
+- `scripts/run_text_checks.py`: plans the data / tune / train / eval phases as resumable job scripts
+  with byobu starters (servers) or runs them here (`--mode local`, smoke tier); counts active training
+  time across resumes and stops at the GPU-hour cap (scored at the newest checkpoint, `over_budget`);
+  `select` writes each model's step size, chosen by development loss, into its recipe card.
+- `analysis/text_checks_scorecard.py`: calibration by dense, frontier, reach, retention, tokens to pass,
+  language gap vs dense, notebook contribution, shortcut flags; `--ledger` writes the committed copy.
+
+Draft choices to calibrate:
+- Tier shapes: 30M = width 576, 2 local + 1 notebook read + 5 local layers; 100M = width 896,
+  3 + 1 + 8.
+- E31's DNA-tested input layer and 16-token local windows, for every model.
+- A global batch of 96 rows, so Odra's 3 GPUs and Polonez's 4 run the same optimizer steps.
 
 **Local smoke result (2M-parameter models, 60 steps at 1k, scored at 512–2k):** all three train and
 score, including at twice the training length and with the notebook off. Two bugs were found and

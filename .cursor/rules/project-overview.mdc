@@ -96,6 +96,10 @@ first answer letter over seeds 0–2, read up to 128k, and compared with the cha
 rule. Flawed tasks are flagged, never used as evidence. Results go to the committed ledger
 `docs/2_Experiments_Registry/results/capability/` and the NAS and are drawn on the capability dashboard —
 never left only on a server.
+After the DNA screen, the next step is the text checks via `text-checks` (draft protocol
+`docs/engineering_specs/text_capability_checks.md`): one from-scratch 30M / 100M language model per
+architecture on the same simple-story + fact-world data, equal budgets, each model's own tuned recipe,
+exact-answer exams T1–T7 read 1k → 128k after 4k training. They add to the DNA checks, never replace them.
 `research-comms` governs how **any** of this is reported back in chat (short, plain, no private
 codenames, numbers explained) — see `communication.mdc`; shared vocabulary in `docs/glossary.md`.
 Canonical homes: intent → specs/plans; results → `master_experiment_log.md`; live memory → `agenda.md`.

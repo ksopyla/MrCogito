@@ -29,6 +29,7 @@ import json
 import math
 import os
 import random
+import shutil
 import sys
 import time
 import zlib
@@ -148,10 +149,69 @@ def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: 
     return rows
 
 
-def _save(rows: list[dict], path: Path):
+FEATURES = None
+
+
+def _features():
+    from datasets import Features, Sequence, Value
+
+    return Features({"input_ids": Sequence(Value("int32")), "attention_mask": Sequence(Value("int8")),
+                     "special_tokens_mask": Sequence(Value("int8"))})
+
+
+def _save(rows, path: Path):
+    """Stream rows (a list or a generator) to disk with compact integer types."""
     from datasets import Dataset
 
-    Dataset.from_list(rows).save_to_disk(str(path))
+    rows = list(rows) if not callable(rows) else rows
+    gen = rows if callable(rows) else (lambda: (r for r in rows))
+    Dataset.from_generator(gen, features=_features(), cache_dir=str(path) + ".cache").save_to_disk(str(path))
+    shutil.rmtree(str(path) + ".cache", ignore_errors=True)
+
+
+_WORKER: dict = {}
+
+
+def _world_worker(job):
+    """One shard of world rows (forked workers share the tokenizer and the story pool)."""
+    shard, n, seq_len, seed, out = job
+    tok, stories = _WORKER["tok"], _WORKER["stories"]
+    encode = lambda s: tok.encode(s, add_special_tokens=False)  # noqa: E731
+    path = Path(out) / f"shard_{shard:04d}"
+    _save(lambda: iter(world_rows(stories, n, seq_len, encode, tok.bos_token_id, tok.eos_token_id,
+                                  seed=seed * 100_003 + shard)), path)
+    return str(path)
+
+
+def build_world_split(tok, stories, n_rows, seq_len, seed, out: Path, num_proc: int):
+    from datasets import concatenate_datasets, load_from_disk
+
+    _WORKER.update(tok=tok, stories=stories)
+    per = max(1, math.ceil(n_rows / max(1, num_proc * 4)))
+    jobs, left, k = [], n_rows, 0
+    while left > 0:
+        jobs.append((k, min(per, left), seq_len, seed, str(out) + ".shards"))
+        left -= per
+        k += 1
+    if num_proc > 1:
+        import multiprocessing as mp
+
+        with mp.get_context("fork").Pool(num_proc) as pool:
+            paths = pool.map(_world_worker, jobs)
+    else:
+        paths = [_world_worker(j) for j in jobs]
+    ds = concatenate_datasets([load_from_disk(p) for p in paths])
+    ds.save_to_disk(str(out))
+    shutil.rmtree(str(out) + ".shards", ignore_errors=True)
+    return ds
+
+
+def _mean_len(ds) -> float:
+    """Mean row length without materialising the rows (arrow list lengths)."""
+    import pyarrow.compute as pc
+
+    col = ds.data.column("input_ids")
+    return float(pc.sum(pc.list_value_length(col)).as_py()) / max(1, len(ds))
 
 
 def _sha(path: Path) -> str:
@@ -170,9 +230,15 @@ def main():
     p.add_argument("--n_world_rows", type=int, default=2000)
     p.add_argument("--n_eval_lang_rows", type=int, default=64)
     p.add_argument("--n_eval_world_rows", type=int, default=128)
+    p.add_argument("--target_tokens", type=float, default=0,
+                   help="size the training mix to this many tokens (overrides --n_lang_rows/--n_world_rows)")
+    p.add_argument("--num_proc", type=int, default=1, help="processes generating world rows")
     p.add_argument("--lang_token_share", type=float, default=0.45)
-    p.add_argument("--eval_lengths", type=int, nargs="+", default=[1024, 2048, 4096, 8192, 16384])
-    p.add_argument("--eval_items", type=int, default=400, help="items per (split, task, length)")
+    p.add_argument("--eval_lengths", type=int, nargs="+", default=[1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072])
+    p.add_argument("--extra_lengths", type=int, nargs="+", default=[4096, 16384],
+                   help="lengths of the non-id splits (harder, paraphrase)")
+    p.add_argument("--eval_items", type=int, default=400, help="items per (split, task, length) up to 16k")
+    p.add_argument("--eval_items_long", type=int, default=200, help="items per cell above 16k")
     p.add_argument("--eval_splits", nargs="+", default=["id", "harder", "paraphrase"])
     p.add_argument("--eval_tasks", nargs="+", default=list(TASKS))
     p.add_argument("--seed", type=int, default=0)
@@ -207,15 +273,25 @@ def main():
     print(f"tokenizer: {len(tok)} tokens ({time.time() - t0:.0f}s)")
 
     # training mix
-    lang_tr = language_rows(train_st, args.n_lang_rows, args.seq_len, encode, bos, eos)
-    lang_ev = language_rows(held_st, args.n_eval_lang_rows, args.seq_len, encode, bos, eos)
-    world_tr = world_rows(train_st, args.n_world_rows, args.seq_len, encode, bos, eos, seed=args.seed * 7 + 1)
-    world_ev = world_rows(train_st, args.n_eval_world_rows, args.seq_len, encode, bos, eos, seed=args.seed * 7 + 2)
-    for name, tr, ev in (("stories", lang_tr, lang_ev), ("world", world_tr, world_ev)):
-        _save(tr, out / name / "train")
-        _save(ev, out / name / "eval")
-    m_lang = sum(len(r["input_ids"]) for r in lang_tr) / max(1, len(lang_tr))
-    m_world = sum(len(r["input_ids"]) for r in world_tr) / max(1, len(world_tr))
+    n_lang, n_world = args.n_lang_rows, args.n_world_rows
+    if args.target_tokens:
+        probe = world_rows(train_st, 200, args.seq_len, encode, bos, eos, seed=99)
+        m_probe = sum(len(r["input_ids"]) for r in probe) / len(probe)
+        n_lang = math.ceil(args.lang_token_share * args.target_tokens / args.seq_len)
+        n_world = math.ceil((1 - args.lang_token_share) * args.target_tokens / m_probe)
+        print(f"target {args.target_tokens:.3g} tokens → {n_lang:,} story rows + {n_world:,} world rows "
+              f"(world rows ≈ {m_probe:.0f} tokens)")
+    _save(lambda: iter(language_rows(train_st, n_lang, args.seq_len, encode, bos, eos)), out / "stories" / "train")
+    _save(language_rows(held_st, args.n_eval_lang_rows, args.seq_len, encode, bos, eos), out / "stories" / "eval")
+    world_tr = build_world_split(tok, train_st, n_world, args.seq_len, args.seed * 7 + 1, out / "world" / "train",
+                                 args.num_proc)
+    _save(world_rows(train_st, args.n_eval_world_rows, args.seq_len, encode, bos, eos, seed=args.seed * 7 + 2),
+          out / "world" / "eval")
+    from datasets import load_from_disk
+
+    lang_tr = load_from_disk(str(out / "stories" / "train"))
+    m_lang = _mean_len(lang_tr)
+    m_world = _mean_len(world_tr)
     # row weights so the language part is `lang_token_share` of the TOKENS
     f = args.lang_token_share
     w_lang = f / m_lang
@@ -246,10 +322,12 @@ def main():
         path = out / "eval" / f"{split}.jsonl"
         n = 0
         with path.open("w") as fh:
+            lengths = args.eval_lengths if split == "id" else args.extra_lengths
             for task in args.eval_tasks:
-                for length in args.eval_lengths:
+                for length in lengths:
                     base = zlib.crc32(f"{split}/{task}/{length}".encode()) * 10_000
-                    for i in range(args.eval_items):
+                    n_items = args.eval_items if length <= 16384 else args.eval_items_long
+                    for i in range(n_items):
                         depth = ("early", "middle", "late")[i % 3] if task in SINGLE_EVIDENCE_TASKS else None
                         rec = make_eval_record(task, base + i, split, length, depth, held_st, ntok)
                         rec["n_tokens"] = 1 + len(encode(rec["prompt"])) + len(encode(rec["answer"]))
@@ -268,6 +346,7 @@ def main():
         "stories": {"train": len(train_st), "heldout": len(held_st)},
         "mix": {"story_rows": len(lang_tr), "world_rows": len(world_tr), "mean_story_row_tokens": m_lang,
                 "mean_world_row_tokens": m_world, "row_weights": [w_lang, w_world],
+                "mean_row_tokens": w_lang * m_lang + w_world * m_world,
                 "lang_token_share": f},
         "built_s": round(time.time() - t0, 1),
     }
