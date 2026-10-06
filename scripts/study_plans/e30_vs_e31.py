@@ -256,7 +256,7 @@ def _job(name, arch, seed, length, exam, extra=(), *, init=None, ladder=None, co
     }
 
 
-def task_job(task_id, arch, seed, *, prefix="v4", cost=1.3):
+def task_job(task_id, arch, seed, *, prefix="v4", cost=1.3, ladder=False):
     """One from-scratch job built from the v4 task definition itself (exam args + training budget), so a run
     can never drift from the protocol in `evaluation/capability_tasks.py`."""
     from evaluation.capability_tasks import TASK_BY_ID
@@ -265,7 +265,9 @@ def task_job(task_id, arch, seed, *, prefix="v4", cost=1.3):
         raise SystemExit(f"{task_id} has no written training budget (`train`); use the suite runner")
     name = f"{prefix}_{task_id.replace('.', '_')}_{arch}_s{seed}"
     return {"name": name, "args": [*t.train, "--eval_rows", "256", "--recipe", t.recipe, *t.args, "--arch", arch,
-                                   "--seed", str(seed)], "init": None, "ladder": None, "cost": cost}
+                                   "--seed", str(seed)], "init": None,
+            "ladder": ([L for L in LADDER_1K_FULL if L <= 32768] if arch == "dense" else LADDER_1K_FULL)
+            if (t.ladder and ladder) else None, "cost": cost}
 
 
 def ratio_jobs(seeds=(0,)):
@@ -489,6 +491,11 @@ def jobs(phase: str) -> list[dict]:
             stage("C5.pchain2-1k", e2m, init=e, mix_hops=1),
             stage("C5.pchain3-1k", "cal3_edgehc_to_pchain2mix_to_pchain3mix_dense_s0", init=e2m, mix_hops=2),
         ]
+    if phase == "v4_e31_keyed":
+        # The champion on the tasks made active 2026-10-06 (dense confirmed them), seeds 0–2, from scratch,
+        # exactly the written recipes, read to 128k afterwards.
+        return [task_job(t, "e31_li_m1", s, ladder=True, cost=2.5)
+                for t in ("C1.keyed4-1k", "C1.edge-1k", "C3.recall8-1k") for s in (0, 1, 2)]
     if phase == "confirm_calibration":
         # Calibration rounds 1–2 (2026-10-05) found recipes dense passes on seed 0. Confirm them on dense seeds
         # 0–2 exactly as written in capability_tasks.py before they become active (spec: calibration log).

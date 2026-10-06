@@ -154,6 +154,15 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
             for j in study_jobs(led):
                 if j["status"] != "done":
                     continue
+                # v4 runs built from the task definition itself (`task_job`): `{conf|v4}_{C1_edge-1k}_{arch}_s{seed}`
+                m = re.match(r"^(?:conf|v4)_(C\d)_(.+)_" + re.escape(j["arch"]) + r"_s(\d+)$", j["job"])
+                if m and f"{m[1]}.{m[2]}" in TASK_BY_ID:
+                    task = f"{m[1]}.{m[2]}"
+                    lad = {int(L): v.get("first_acc") for L, v in (j["ladders"].get("ladder") or {}).items()}
+                    out.append({"task": task, "model": j["arch"], "label": "same", "seed": int(m[3]),
+                                "score": _score(task, j.get("p0"), j.get("cand")), "mean": j.get("acc"),
+                                "ladder": lad, "source": j["source"], "collected": "", "via": "v4 task recipe"})
+                    continue
                 parsed = parse_job(j["job"])
                 if not parsed:
                     continue

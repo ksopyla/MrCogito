@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-VERSION = "v4-draft-2026-10-06.2"
+VERSION = "v4-draft-2026-10-06.3"
 PASS_ACC = 0.75
 SEEDS = (0, 1, 2)
 LADDER = (1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072)
@@ -137,11 +137,11 @@ TASKS: tuple[Task, ...] = (
     Task("C1.keyed4-1k", "C1", "1 of 4 facts by its key, 1024 tokens", "recall",
          ("--scale", "bridge_1k", "--n_distractors", "3", "--key_len", "4"), 1024, 64,
          "4 same-shaped facts; only the key in the question picks one (first exam that needs the key)",
-         status="calibrating", score="candidate", floor=0.25, ladder=_L, train=TRAIN_1K),
+         score="candidate", floor=0.25, ladder=_L, train=TRAIN_1K),
     Task("C1.edge-1k", "C1", "1 of 4 edges by its start node, 1024 tokens", "chain_parallel",
          ("--scale", "bridge_1k", "--hops", "1", "--chain_overhang", "1", "--key_len", "16"), 1024, 32,
          "the parallel chains with one hop: the start node picks the edge (keyed lookup in chain format; "
-         "stage 1 of the C5 curriculum)", status="calibrating", score="candidate", floor=0.125, ladder=_L,
+         "stage 1 of the C5 curriculum)", score="candidate", floor=0.125, ladder=_L,
          train=TRAIN_1K_X4),
     # C2 — discriminate
     Task("C2.lookalike-128", "C2", "fact vs 1 look-alike, 128 tokens", "select_1decoy", ("--scale", "tiny"), 128, 32,
@@ -154,7 +154,7 @@ TASKS: tuple[Task, ...] = (
     # C3 — hold many
     Task("C3.recall8-1k", "C3", "recall 1 of 8 facts, 1024 tokens", "recall",
          ("--scale", "bridge_1k", "--n_distractors", "7", "--key_len", "4"), 1024, 64,
-         "keep 8 facts (4-letter keys) without knowing which one will be asked", status="calibrating", ladder=_L,
+         "keep 8 facts (4-letter keys) without knowing which one will be asked", ladder=_L,
          floor=0.44, train=TRAIN_1K_X4),
     Task("C3.recall16-1k", "C3", "recall 1 of 16 facts, 1024 tokens", "recall",
          ("--scale", "bridge_1k", "--n_distractors", "15", "--key_len", "4"), 1024, 64,
