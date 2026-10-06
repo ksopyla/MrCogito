@@ -19,7 +19,7 @@ fast, and does it still work on texts far longer than it was trained on?
 - **Round plan:** `scripts/study_plans/text_r1.py` (experiments X0–X7, their runs, gates, cost)
 - **Board (the standard visual summary):** `docs/3_Evaluations_and_Baselines/text_capability_board.html`, drawn by
   `analysis/text_board.py` from the committed ledgers `docs/2_Experiments_Registry/results/capability/text/`;
-  publish it as an Artifact (same URL each time) after a refresh
+  publish it as an Artifact after a refresh, always to https://claude.ai/artifact/AUUgBTgGQwBDjvKiLzgXo9 (pass it as `url`)
 - **Server checkout:** Polonez `~/dev/MrCogito-text` (its own worktree; other sessions own the others)
 
 **Boundary.** An architecture enters these checks only after passing the DNA **screen** package
