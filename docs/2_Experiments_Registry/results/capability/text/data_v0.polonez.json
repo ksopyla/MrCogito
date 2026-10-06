@@ -1,0 +1,1 @@
+{"kind":"text_checks","version":"text-v0-draft","run":"data_v0","host":"polonez","collected":"2026-10-06T19:43:00+00:00","data":null,"jobs":[{"job":"data","kind":"data","tokens":2100000000.0,"git_commit":"d6672b5","state":"running"}],"models":{}}
