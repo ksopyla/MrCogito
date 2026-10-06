@@ -1,8 +1,10 @@
 # Text capability checks — trainability and reasoning on simple language (protocol)
 
 - **Type:** engineering foundation (training + evaluation protocol). Not an `E0NN` experiment.
-- **Status:** **proposed 2026-10-05**, awaiting the author's decisions (§17). Nothing is implemented
-  yet; §16 lists what has to be built. Version string once frozen: `text-v1`.
+- **Status:** **first draft 2026-10-05**, to be calibrated after the first server runs (token budget,
+  compute caps, mix shares and task dials are expected to move). Data generator, builder, scorer and a
+  local smoke are implemented (2026-10-06, §16); runner, scorecard and skill are not. Version string
+  once frozen: `text-v1`; the current draft data is `text-world-v0`.
 - **Owner:** Krzysztof Sopyla
 - **Relation to the DNA checks:** the [capability checks](capability_checks.md) (C0–C7, random-letter
   books, one small model per exam) stay the **first** gate and are not replaced. These text checks are
@@ -361,6 +363,30 @@ the floor. Items per cell: 400 up to 16k, 200 at 32k–128k (standard error ≈ 
 | scorecard + board section | `analysis/text_checks_scorecard.py`, `capability_board.py` | existing board |
 | local and dense baselines at the tier sizes | config entries | existing perceiver_ar dense / window modes |
 | skill | `.cursor/skills/text-checks/SKILL.md` | `capability-checks` skill |
+
+**Built 2026-10-06 (draft `text-world-v0`):**
+- `data/text_world.py`: the generator (seven tasks, held-out names, renamed filler with reserved-relation
+  sentences dropped, evidence-removed twins, floors); tests `tests/test_text_world.py`.
+- `scripts/build_text_checks_data.py`: downloads the stories (anonymously: an expired saved Hub login
+  otherwise makes public datasets look missing), trains the 4,096-token BPE, writes the two-source
+  pretokenized manifest the trainer already reads, and freezes `eval/<split>.jsonl` with hashes.
+- `evaluation/text_checks_eval.py`: the one-pass scorer (exact, pick, evidence-removed, notebook off).
+- `scripts/smoke_text_checks_local.sh`: tiny dense / E31c / E31c + reread loop, trained and scored
+  locally.
+
+**Local smoke result (2M-parameter models, 60 steps at 1k, scored at 512–2k):** all three train and
+score, including at twice the training length and with the notebook off. Two bugs were found and
+fixed, both only in the text read mode, so DNA exams are unchanged:
+- On Apple GPUs, attention with a wider query–key than value returned the wrong width; the plain-attention
+  path now pads the values and slices (exact).
+- The reread loop added its training-only loop loss to its evaluation loss (about twice the others);
+  in the text read mode the evaluation loss is now the plain next-token loss every arm is compared on.
+
+Notes for the first server runs:
+- World rows average about half the training length, so use length-grouped batching (padding was
+  20–30 % with none).
+- A 2M dense model after 6M tokens learns the language (loss 8.3 → 3.6) but no task leaves its floor:
+  expected at that size, and exactly what the calibration pilot measures.
 
 **Calibration pilot** (before freezing `text-v1`, about 2 days on one server):
 

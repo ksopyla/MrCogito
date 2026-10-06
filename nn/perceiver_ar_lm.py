@@ -1516,7 +1516,12 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
         kt = kt.repeat_interleave(rep, dim=1)
         vt = vt.repeat_interleave(rep, dim=1)
     mask = dense_message_mask(S, ctx, key_valid, q.device)
-    out = F.scaled_dot_product_attention(qt, kt, vt, attn_mask=mask, scale=scale)
+    dv = vt.shape[-1]
+    if qt.shape[-1] != dv:
+        # Reader mode (QK width 2·dh, V width dh). Some SDPA backends assume equal widths (MPS
+        # returns the QK width; CUDA flash needs them equal), so pad V with zeros and slice: exact.
+        vt = F.pad(vt, (0, qt.shape[-1] - dv))
+    out = F.scaled_dot_product_attention(qt, kt, vt, attn_mask=mask, scale=scale)[..., :dv]
     return out.transpose(1, 2)
 
 
@@ -2506,9 +2511,12 @@ class PerceiverARLM(PreTrainedModel):
         cfg = self.config
         round_tgt = getattr(self, "_round_targets", None)
         self._round_targets = None
+        # Text (closed read): the exit aux is a training signal only, so eval loss stays the plain
+        # next-token CE that every text-checks arm is compared on. Exam mode (exclusive) unchanged.
         self._collect_loop_states = bool(
             labels is not None and self.loop_emb is not None and cfg.message_loop_exit_aux > 0
             and not return_per_token_loss and int(self._loop_rounds_override or self.loop_rounds) > 1
+            and (self.training or getattr(cfg, "lm_read", "exclusive") != "closed")
         )
         looped = [b for b in self.layers if getattr(b, "read_rounds", 1) > 1]
         for b in looped:
