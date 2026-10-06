@@ -181,6 +181,10 @@ class SymbolicTaskConfig:
     # [query, start, hop × k, answer] — so exams with different hop counts never contradict each other
     # (with an overhang the book alone cannot say where to stop). False keeps today's exams bit-identical.
     hop_count_in_question: bool = False
+    # chain: the answer writes the whole path n1 … nk (a written chain of thought) instead of only nk, so k hops
+    # become k one-hop lookups, each queried by the node just written. Stage 0 of a stepwise-internalization
+    # curriculum (drop the written steps one by one; Deng et al. 2024, Coconut). False keeps today's exams.
+    chain_answer_path: bool = False
     # "spread" = uniform over [lo, hi) (default). "right" = pack evidence against hi
     # (just before the min_gap), for S0 near-copy diagnostics at long seq_len.
     evidence_align: str = "spread"
@@ -209,6 +213,8 @@ class SymbolicTaskConfig:
             raise ValueError("chain_overhang >= 1 is defined for the shuffled chain only")
         if self.hop_count_in_question and self.task not in {"chain", "chain_ordered"}:
             raise ValueError("hop_count_in_question is defined for the chain tasks only")
+        if self.chain_answer_path and self.task not in {"chain", "chain_ordered"}:
+            raise ValueError("chain_answer_path is defined for the chain tasks only")
         if self.task == "select" and self.n_decoys < 1:
             raise ValueError("select needs n_decoys >= 1")
         if self.task == "unique" and self.n_duplicates < 1:
@@ -233,8 +239,8 @@ class SymbolicTaskConfig:
             "recall": self.value_len,
             "far_copy": self.span_len,
             "select": self.value_len,
-            "chain": self.key_len,
-            "chain_ordered": self.key_len,
+            "chain": self.key_len * (self.hops if self.chain_answer_path else 1),
+            "chain_ordered": self.key_len * (self.hops if self.chain_answer_path else 1),
             "unique": self.value_len,
             "match3": self.value_len,
             "count": 1,
@@ -413,7 +419,8 @@ def _emit_chain(
     # `nodes`: the queried chain start … asked node (E33 per-round targets: round r → nodes[r + 1])
     path = chain[: cfg.hops + 1]
     query = sym(path[0]) + ([v.control("hop")] * cfg.hops if cfg.hop_count_in_question else [])
-    return query, sym(path[-1]), max(chain_positions), {
+    answer = [t for n in path[1:] for t in sym(n)] if cfg.chain_answer_path else sym(path[-1])
+    return query, answer, max(chain_positions), {
         "hops": cfg.hops, "shuffled": shuffle, "overhang": int(cfg.chain_overhang),
         "nodes": [sym(n) for n in path]}
 

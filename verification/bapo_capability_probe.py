@@ -276,6 +276,8 @@ def _answer_exact(model, batches, *, amp: str, device: torch.device, message_ove
             ids_np, cur_np, lab_np = ids.cpu().numpy(), cur.cpu().numpy(), labels.cpu().numpy()
             for r, pos in enumerate(order):
                 pos = pos.cpu().numpy()
+                if getattr(cfg, "chain_answer_path", False):
+                    pos = pos[-int(cfg.key_len):]  # a written path: score the final node
                 cands = _candidates(cfg, ids_np[r], len(pos)) if len(pos) else []
                 ans = tuple(int(x) for x in lab_np[r, pos])
                 if ans not in cands:
@@ -333,6 +335,45 @@ def _guess_floors(cfg, batches) -> dict | None:
         return None
     return {"link_target_first": lt_first / n, "link_target_exact": lt_exact / n,
             "chain_end_exact": end_exact / n, "rows": n}
+
+
+def _grad_norms(model) -> dict:
+    """L2 norm of the current gradients per module group (first two name parts: `layers.1`, `memory_writer.x`,
+    `loop_emb`, …), for the flow log."""
+    acc: dict[str, float] = {}
+    for name, p in model.named_parameters():
+        if p.grad is None:
+            continue
+        parts = name.split(".")
+        key = ".".join(parts[:2]) if parts[0] in ("layers", "memory_writer") else parts[0]
+        acc[key] = acc.get(key, 0.0) + float(p.grad.detach().float().pow(2).sum())
+    return {k: v ** 0.5 for k, v in sorted(acc.items())}
+
+
+@torch.no_grad()
+def _flow_eval(model, cfg, flow_rows, *, amp: str, device, override: str) -> dict:
+    """Flow log, per eval step: the decision (greedy picked candidate) and, for the loop, the first letter at
+    every exit against the answer and against chain node r (does round r reach hop r?)."""
+    ids, labels, tg = flow_rows
+    out = {"answer": _answer_exact(model, [(ids, labels)], amp=amp, device=device, message_override=override,
+                                   cfg=cfg)}
+    R = int(getattr(model, "loop_rounds", 1) or 1)
+    if R > 1 and tg is not None:
+        model.eval()
+        ex = {}
+        try:
+            for r in range(1, R + 1):
+                model._loop_rounds_override = r
+                with _message_cm(model, override), amp_ctx(device, amp):
+                    logits = model(ids, return_logits=True).logits
+                h, n = _first_letter_hits(logits, labels)
+                hp, n_p = _first_letter_hits(logits, tg[r - 1])
+                ex[f"exit{r}"] = {"first_answer": h / max(n, 1), "first_progress": hp / max(n_p, 1)}
+        finally:
+            model._loop_rounds_override = None
+            model.train()
+        out["loop_exits"] = ex
+    return out
 
 
 @torch.no_grad()
@@ -702,6 +743,18 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
     train_sec = eval_sec = 0.0
     t_mark = time.time()
     best_acc = -1.0
+    flow_path = getattr(args, "flow_log", None)
+    flow_rows, flow_grads = None, None
+    if flow_path:
+        if flow_path == "@out" and args.out:
+            flow_path = str(Path(args.out) / f"flow_{arch}.jsonl")
+        Path(flow_path).parent.mkdir(parents=True, exist_ok=True)
+        frng = np.random.default_rng(args.seed + 777)
+        frows = [generate_row_for(cfg, frng) for _ in range(min(64, max(int(args.batch), 32)))]
+        fids = torch.from_numpy(np.stack([r.input_ids for r in frows])).long().to(device)
+        flab = torch.from_numpy(np.stack([r.labels for r in frows])).long().to(device)
+        R_ = int(getattr(model, "loop_rounds", 1) or 1)
+        flow_rows = (fids, flab, round_target_labels(frows, flab, R_) if R_ > 1 and "nodes" in frows[0].meta else None)
     k1_extended = False
     sdp_cm = contextlib.nullcontext()
     if args.sdpa_math:
@@ -731,6 +784,8 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
                     loss_m = out.loss if hasattr(out, "loss") else out[0].loss
                 (loss_m / micro).backward()
                 loss = loss_m if mi == 0 else loss
+            if flow_rows is not None and (step % args.eval_every == 0 or step == max_steps):
+                flow_grads = _grad_norms(model)
             torch.nn.utils.clip_grad_norm_(trainable, 1.0)
             opt.step()
             sched.step()
@@ -746,6 +801,12 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
                 eval_sec += time.time() - t_eval
                 t_mark = time.time()
                 trace.append({"step": step, **ev, "sec": time.time() - t0})
+                if flow_rows is not None:
+                    rec = {"step": step, "train_loss": float(loss.detach()), "eval_ce": ev["ce_nats"],
+                           "teacher_forced_acc": ev["acc"], "grad_norm": flow_grads,
+                           **_flow_eval(model, cfg, flow_rows, amp=args.amp, device=device, override=override)}
+                    with open(flow_path, "a") as fh:
+                        fh.write(json.dumps(rec) + "\n")
                 print(
                     f"  [{arch}] step {step:5d}  train {float(loss.detach()):.4f}  "
                     f"eval CE {ev['ce_nats']:.4f}  acc {ev['acc']:.3f}  "
@@ -884,6 +945,8 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         "n_chains": args.n_chains,
         "chain_overhang": args.chain_overhang,
         "hop_count_in_question": args.hop_count_in_question,
+        "n_symbols": args.n_symbols,
+        "chain_answer_path": args.chain_answer_path,
         "span_len": args.span_len,
         "min_gap": args.min_gap,
         "seq_len": args.seq_len,
@@ -1515,6 +1578,15 @@ def main() -> int:
     p.add_argument("--chain_overhang", type=int, default=None,
                    help="shuffled chain: every chain continues this many edges past the asked node "
                         "(removes the guess-a-chain-end shortcut; 0 = today's exam)")
+    p.add_argument("--flow_log", default=None,
+                   help="write a JSON line per eval step: greedy picked candidate, loop exits vs node r, gradient "
+                        "norm per module group ('@out' = <out>/flow_<arch>.jsonl)")
+    p.add_argument("--chain_answer_path", action="store_const", const=True, default=None,
+                   help="chain exams: the answer writes the whole path n1 … nk (written chain of thought); the "
+                        "picked-candidate score reads the final node")
+    p.add_argument("--n_symbols", type=int, default=None,
+                   help="DNA alphabet size (default 4). With --key_len 1, e.g. 64 symbols: one-token names, as in "
+                        "most multi-hop studies (the model vocabulary grows with it)")
     p.add_argument("--hop_count_in_question", action="store_const", const=True, default=None,
                    help="chain exams: the question carries one hop marker per hop to follow "
                         "([query, start, hop x k, answer]); off = today's exams")
