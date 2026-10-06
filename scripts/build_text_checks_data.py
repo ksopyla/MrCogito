@@ -69,7 +69,22 @@ def _read_parquet_texts(repo: str, filename: str) -> list[str]:
     path = hf_hub_download(repo, filename, repo_type="dataset", token=False)
     table = pq.read_table(path)
     col = "text" if "text" in table.column_names else ("story" if "story" in table.column_names else table.column_names[0])
-    return [clean_story(t) for t in table.column(col).to_pylist() if t]
+    # decode story by story: a damaged cached shard once held invalid UTF-8, which made the whole column fail
+    import pyarrow as pa
+
+    raw = table.column(col).cast(pa.binary()).to_pylist()
+    out, bad = [], 0
+    for b in raw:
+        if not b:
+            continue
+        t = b.decode("utf-8", errors="replace")
+        if "�" in t:
+            bad += 1
+            continue
+        out.append(clean_story(t))
+    if bad:
+        print(f"  {repo}/{filename}: dropped {bad} stories with invalid UTF-8")
+    return out
 
 
 def load_stories(mode: str, max_train_files: int, seed: int) -> tuple[list[str], list[str]]:
