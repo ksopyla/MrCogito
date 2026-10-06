@@ -161,14 +161,33 @@ def _features():
                      "special_tokens_mask": Sequence(Value("int8"))})
 
 
-def _save(rows, path: Path):
-    """Stream rows (a list or a generator) to disk with compact integer types."""
-    from datasets import Dataset
+def _save(rows, path: Path, chunk: int = 5000):
+    """Write rows (an iterable, or a callable returning one) to disk with compact integer types, in
+    chunks of `chunk` rows joined at the end. Not `Dataset.from_generator`: it fingerprints the generator's
+    closure, and with the full story pool (3.9M stories) inside that closure the build segfaulted."""
+    from datasets import Dataset, concatenate_datasets, load_from_disk
 
-    rows = list(rows) if not callable(rows) else rows
-    gen = rows if callable(rows) else (lambda: (r for r in rows))
-    Dataset.from_generator(gen, features=_features(), cache_dir=str(path) + ".cache").save_to_disk(str(path))
-    shutil.rmtree(str(path) + ".cache", ignore_errors=True)
+    it = rows() if callable(rows) else iter(rows)
+    tmp = Path(str(path) + ".parts")
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True)
+    parts, buf = [], []
+
+    def flush():
+        cols = {k: [r[k] for r in buf] for k in ("input_ids", "attention_mask", "special_tokens_mask")}
+        p = tmp / f"part_{len(parts):05d}"
+        Dataset.from_dict(cols, features=_features()).save_to_disk(str(p))
+        parts.append(str(p))
+        buf.clear()
+
+    for r in it:
+        buf.append(r)
+        if len(buf) >= chunk:
+            flush()
+    if buf or not parts:
+        flush()
+    concatenate_datasets([load_from_disk(p) for p in parts]).save_to_disk(str(path))
+    shutil.rmtree(tmp, ignore_errors=True)
 
 
 _WORKER: dict = {}
