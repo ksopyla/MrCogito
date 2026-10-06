@@ -186,17 +186,22 @@ def calibration(ledgers: list[dict]) -> list[dict]:
             continue
         for j in study_jobs(led):
             name = j["job"]
-            if not re.match(r"^cal2?_", name) or j["status"] not in ("done", "failed"):
+            if not re.match(r"^(cal2?|conf)_", name) or j["status"] not in ("done", "failed"):
                 continue
             stem = name.split("_dense")[0]
-            task = next((t for frag, t in CAL_TASKS if frag in stem.split("_to_")[-1]), None)
+            m = re.match(r"^conf_(C\d)_(.+)$", stem)  # confirmation runs built from the task definition itself
+            task = (f"{m[1]}.{m[2]}" if m else
+                    next((t for frag, t in CAL_TASKS if frag in stem.split("_to_")[-1]), None))
             if task is None:
                 continue
             t = TASK_BY_ID[task]
             knobs = [txt for frag, txt in CAL_KNOBS if frag in name + "_"]
             if "_to_" in name or (name.startswith("cal2_") and "lookup1k" not in name):  # round 2 runs all at 4x
                 knobs = [k for k in knobs if k != "4x budget"] + ["4x budget"]
-            rows.append({"job": name, "task": task, "round": 2 if name.startswith("cal2_") else 1,
+            if m:
+                knobs = ["written recipe (confirmation)"]
+            rows.append({"job": name, "task": task,
+                         "round": 3 if m else 2 if name.startswith("cal2_") else 1,
                          "model": j["arch"], "variant": ", ".join(dict.fromkeys(knobs)) or "task recipe",
                          "score": _score(task, j.get("p0"), j.get("cand")), "first": j.get("p0"),
                          "first_greedy": j.get("first_greedy"), "teacher": j.get("acc"),

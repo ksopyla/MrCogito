@@ -256,6 +256,18 @@ def _job(name, arch, seed, length, exam, extra=(), *, init=None, ladder=None, co
     }
 
 
+def task_job(task_id, arch, seed, *, prefix="v4", cost=1.3):
+    """One from-scratch job built from the v4 task definition itself (exam args + training budget), so a run
+    can never drift from the protocol in `evaluation/capability_tasks.py`."""
+    from evaluation.capability_tasks import TASK_BY_ID
+    t = TASK_BY_ID[task_id]
+    if not t.train:
+        raise SystemExit(f"{task_id} has no written training budget (`train`); use the suite runner")
+    name = f"{prefix}_{task_id.replace('.', '_')}_{arch}_s{seed}"
+    return {"name": name, "args": [*t.train, "--eval_rows", "256", "--recipe", t.recipe, *t.args, "--arch", arch,
+                                   "--seed", str(seed)], "init": None, "ladder": None, "cost": cost}
+
+
 def ratio_jobs(seeds=(0,)):
     out = []
     for seed in seeds:
@@ -453,6 +465,11 @@ def jobs(phase: str) -> list[dict]:
                  ["--chain_overhang", "1", "--key_len", "16", "--hops", "2"],
                  init="cal2_lookup_to_edge_dense_s0", cost=1.3),
         ]
+    if phase == "confirm_calibration":
+        # Calibration rounds 1–2 (2026-10-05) found recipes dense passes on seed 0. Confirm them on dense seeds
+        # 0–2 exactly as written in capability_tasks.py before they become active (spec: calibration log).
+        return [task_job(t, "dense", s, prefix="conf") for t in ("C1.keyed4-1k", "C1.edge-1k", "C3.recall8-1k")
+                for s in (0, 1, 2)]
     if phase in ("lookup16k_root", "lookup16k_stages"):
         # C1.lookup-16k (written curriculum 2k → 8k → 16k from random init) where seeds are missing:
         # e31_li_m1 seed 2 and the dense ceiling seeds 0–2. Split in two bursts (Polonez cooldown between).

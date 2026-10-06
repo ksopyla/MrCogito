@@ -15,6 +15,22 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-10-06] - Capability checks: training budget is part of the recipe; calibration log
+
+- `evaluation/capability_tasks.py` (v4-draft-2026-10-06): `Task.train` — the training budget every
+  architecture uses (`TRAIN_1K`, `TRAIN_1K_X4`); C1.edge-1k and C3.recall8-1k at 4×, C1.keyed4-1k at 1×
+  (dense passes them from scratch in calibration rounds 1–2).
+- `docs/engineering_specs/capability_checks.md`: rule 7 (one protocol for every model; a recipe change bumps
+  `VERSION` and is logged) and the calibration log (rounds 0–2, 2026-10-05).
+- `scripts/study_plans/e30_vs_e31.py`: `task_job` builds a run from the task definition; phases
+  `calibrate_reasoning`, `calibrate_reasoning_r2`, `confirm_calibration`, `lookup16k_root/_stages`.
+- `analysis/capability_board.py`: calibration section (dense from scratch per task, own score vs floor,
+  teacher-forced accuracy); candidate-scored tasks use the picked candidate; non-default suite step sizes
+  are `settings-differ`; one run per seed (diagnostic seeds > 2 stay out of medians).
+- `analysis/capability_ledger.py`: suite runs carry ladders; the greedy picked candidate and guessing floors.
+- `scripts/run_bursts.sh`, `scripts/ladder_suite_run.sh`: Polonez bursts with a cooldown; read-only ladders
+  over saved suite models.
+
 ## [2026-10-05] - Capability checks: keyed lookups, guess-proof reasoning exams, picked-candidate score
 
 - **Probe** (`verification/bapo_capability_probe.py`): at the final eval of chain and recall exams the answer is
