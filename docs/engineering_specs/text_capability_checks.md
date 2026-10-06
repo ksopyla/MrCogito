@@ -401,6 +401,13 @@ Notes for the first server runs:
 - A 2M dense model after 6M tokens learns the language (loss 8.3 → 3.6) but no task leaves its floor:
   expected at that size, and exactly what the calibration pilot measures.
 
+**Data `text-world-v0` (2026-10-06):** built on Polonez:
+- 2.1B training tokens: 230,713 story rows of 4,096 tokens and 836,072 world rows averaging 1,383 tokens;
+- 18,200 in-distribution exam items (1k–128k) and 5,600 each in the harder and paraphrase splits.
+
+Published as https://huggingface.co/datasets/ksopyla/cogito-text-world (CDLA-Sharing-1.0, with card, tokenizer and
+generator code).
+
 **Round 1 (2026-10-06):** the experiment set X0–X7 is `scripts/study_plans/text_r1.py`:
 - X0: data;
 - X1: server smoke;

@@ -20,6 +20,8 @@ fast, and does it still work on texts far longer than it was trained on?
 - **Board (the standard visual summary):** `docs/3_Evaluations_and_Baselines/text_capability_board.html`, drawn by
   `analysis/text_board.py` from the committed ledgers `docs/2_Experiments_Registry/results/capability/text/`;
   publish it as an Artifact after a refresh, always to https://claude.ai/artifact/AUUgBTgGQwBDjvKiLzgXo9 (pass it as `url`)
+- **Published data:** https://huggingface.co/datasets/ksopyla/cogito-text-world (`text-world-v0`, built on Polonez at
+  `datasets_tok/text_checks_v0`; republish with `scripts/publish_text_checks_dataset.py`, card only: `--card_only`)
 - **Server checkout:** Polonez `~/dev/MrCogito-text` (its own worktree; other sessions own the others)
 
 **Boundary.** An architecture enters these checks only after passing the DNA **screen** package
