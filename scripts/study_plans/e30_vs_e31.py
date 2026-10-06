@@ -256,6 +256,18 @@ def _job(name, arch, seed, length, exam, extra=(), *, init=None, ladder=None, co
     }
 
 
+def task_job(task_id, arch, seed, *, prefix="v4", cost=1.3):
+    """One from-scratch job built from the v4 task definition itself (exam args + training budget), so a run
+    can never drift from the protocol in `evaluation/capability_tasks.py`."""
+    from evaluation.capability_tasks import TASK_BY_ID
+    t = TASK_BY_ID[task_id]
+    if not t.train:
+        raise SystemExit(f"{task_id} has no written training budget (`train`); use the suite runner")
+    name = f"{prefix}_{task_id.replace('.', '_')}_{arch}_s{seed}"
+    return {"name": name, "args": [*t.train, "--eval_rows", "256", "--recipe", t.recipe, *t.args, "--arch", arch,
+                                   "--seed", str(seed)], "init": None, "ladder": None, "cost": cost}
+
+
 def ratio_jobs(seeds=(0,)):
     out = []
     for seed in seeds:
@@ -375,6 +387,10 @@ def jobs(phase: str) -> list[dict]:
         return e33a_jobs()
     if phase == "e33a_e31b":  # the E31b protocol on the looped model (no capability lost; length to 128k)
         return e33a_e31b_jobs()
+    if phase == "e33a_lookup16k_s0":  # third seed of C1.lookup-16k (capability checks v4 core: seeds 0–2)
+        lk = "e33a_lookup_loop_s0"
+        return [_job(lk, "e31_li_m1", 0, E33A_L2K, "lookup", E33A_LOOP_ANS, ladder=[2048, 8192, 32768], cost=6.0),
+                *[j for j in e33a_e31b_jobs(seeds=(0,)) if j["name"].startswith(lk + "_b")]]
     if phase.startswith("battery_"):  # the standard length & hard battery for a registered variant
         tag = phase.removeprefix("battery_")
         if tag not in BATTERY_VARIANTS:
@@ -387,6 +403,83 @@ def jobs(phase: str) -> list[dict]:
                 src = f"hard_{exam}_{arch}_s1"
                 out.append(_job(f"{src}_b8k", arch, 1, L8K, exam, init=src, ladder=LADDER_FULL, cost=2.2))
         return out
+    if phase == "calibrate_reasoning":
+        # Migration step 3 for the reasoning exams (v4-draft-2026-10-05): the guess-proof C5 parallel chains
+        # (chain overhang, 16-letter nodes, scored on the picked candidate), their 1-hop stage C1.edge-1k, the
+        # keyed lookup C1.keyed4-1k, and C6.count. Dense only, seed 0, from random init: the cheapest recipe
+        # dense passes (>= 75 % on the task's own score) is frozen; then the champion runs it.
+        x4 = [*L1K[:L1K.index("--steps") + 1], "4800", *L1K[L1K.index("--steps") + 2:]]  # 4x budget (k1 4 -> <= 19.2k)
+        guessproof = ["--chain_overhang", "1", "--key_len", "16"]
+
+        def lr(length, value):
+            return [*length[:length.index("--lr") + 1], value]
+
+        def pchain(h):
+            return [*guessproof, "--hops", str(h)]
+
+        return [
+            # C1 keyed stages (the first exams where the key is needed)
+            _job("cal_edge_dense_s0", "dense", 0, L1K, "pchain2", pchain(1), cost=0.5),
+            _job("cal_keyed4_dense_s0", "dense", 0, L1K, "recall8", ["--n_distractors", "3"], cost=0.5),
+            # C5.pchain2: v3 budget, 4x budget at two step sizes, and the written 1 hop -> 2 hops curriculum
+            _job("cal_pchain2_dense_x1_s0", "dense", 0, L1K, "pchain2", pchain(2), cost=0.5),
+            _job("cal_pchain2_dense_x4_s0", "dense", 0, x4, "pchain2", pchain(2), cost=1.3),
+            _job("cal_pchain2_dense_lr3e-4_x4_s0", "dense", 0, lr(x4, "3e-4"), "pchain2", pchain(2), cost=1.3),
+            _job("cal_edge_to_pchain2_dense_s0", "dense", 0, x4, "pchain2", pchain(2), init="cal_edge_dense_s0",
+                 cost=1.3),
+            # C5.pchain3: from scratch at 4x, and the curriculum continued (1 -> 2 -> 3 hops)
+            _job("cal_pchain3_dense_x4_s0", "dense", 0, x4, "pchain3", pchain(3), cost=1.3),
+            _job("cal_edge_to_pchain3_dense_s0", "dense", 0, x4, "pchain3", pchain(3),
+                 init="cal_edge_to_pchain2_dense_s0", cost=1.3),
+            # C6.count (dense at chance under v1 settings)
+            _job("cal_count_dense_lr1e-4_x4_s0", "dense", 0, x4, "count", cost=1.3),
+            _job("cal_count_dense_lr3e-4_x4_s0", "dense", 0, lr(x4, "3e-4"), "count", cost=1.3),
+        ]
+    if phase == "calibrate_reasoning_r2":
+        # Round 2 (2026-10-05). Round 1: dense passes keyed4 (1 of 4, 4-letter keys) but not edge-1k (with the
+        # overhang = recall 1 of 8 by 16-letter keys) nor recall8 (27 %). Which knob breaks dense: the number
+        # of facts, the key length or the book length? Dense, seed 0, from random init, 4x budget.
+        x4 = [*L1K[:L1K.index("--steps") + 1], "4800", *L1K[L1K.index("--steps") + 2:]]
+
+        def at(length, seq):
+            return [*length[:length.index("--seq_len") + 1], str(seq), *length[length.index("--seq_len") + 2:]]
+
+        edge = ["--hops", "1", "--chain_overhang", "1"]
+        return [
+            _job("cal2_edge_noover_k16_dense_s0", "dense", 0, x4, "pchain2",
+                 ["--hops", "1", "--chain_overhang", "0", "--key_len", "16"], cost=1.3),       # 1 of 4, 16-letter
+            _job("cal2_recall8_k16v16_dense_s0", "dense", 0, x4, "recall8",
+                 ["--key_len", "16", "--value_len", "16"], cost=1.3),                         # edge-1k as recall
+            _job("cal2_recall8_dense_x4_s0", "dense", 0, x4, "recall8", cost=1.3),          # C3.recall8, 4x
+            _job("cal2_edge_k8_dense_s0", "dense", 0, x4, "pchain2", [*edge, "--key_len", "8"], cost=1.3),
+            _job("cal2_edge_k16_512_dense_s0", "dense", 0, at(x4, 512), "pchain2", [*edge, "--key_len", "16"],
+                 cost=0.8),
+            _job("cal2_edge_k8_256_dense_s0", "dense", 0, at(x4, 256), "pchain2", [*edge, "--key_len", "8"],
+                 cost=0.5),
+            # written in-run curriculum from random init (E33 reasoning fixes, 2026-10-05: every E31 arm passes
+            # edge-1k at ~99 % once it has learned lookup): lookup-1k → edge-1k → pchain2, one dense run
+            _job("cal2_lookup1k_dense_s0", "dense", 0, L1K, "lookup", cost=0.3),
+            _job("cal2_lookup_to_edge_dense_s0", "dense", 0, x4, "pchain2", [*edge, "--key_len", "16"],
+                 init="cal2_lookup1k_dense_s0", cost=1.3),
+            _job("cal2_lookup_to_edge_to_pchain2_dense_s0", "dense", 0, x4, "pchain2",
+                 ["--chain_overhang", "1", "--key_len", "16", "--hops", "2"],
+                 init="cal2_lookup_to_edge_dense_s0", cost=1.3),
+        ]
+    if phase == "confirm_calibration":
+        # Calibration rounds 1–2 (2026-10-05) found recipes dense passes on seed 0. Confirm them on dense seeds
+        # 0–2 exactly as written in capability_tasks.py before they become active (spec: calibration log).
+        return [task_job(t, "dense", s, prefix="conf") for t in ("C1.keyed4-1k", "C1.edge-1k", "C3.recall8-1k")
+                for s in (0, 1, 2)]
+    if phase in ("lookup16k_root", "lookup16k_stages"):
+        # C1.lookup-16k (written curriculum 2k → 8k → 16k from random init) where seeds are missing:
+        # e31_li_m1 seed 2 and the dense ceiling seeds 0–2. Split in two bursts (Polonez cooldown between).
+        out = (length_jobs(arches=("e31_li_m1",), seeds=(2,), chain_arches=())
+               + length_jobs(arches=("dense",), seeds=(0, 1, 2), chain_arches=()))
+        for j in out:
+            if j["args"][j["args"].index("--arch") + 1] == "dense":
+                j["ladder"] = [L for L in j["ladder"] if L <= 32768]  # dense reads cost grows quadratically
+        stage = phase == "lookup16k_stages"
+        return [j for j in out if bool(j.get("init")) == stage]
     if phase == "odra":  # seed 1: E31_li lookup/chain weights already live here
         return ratio_jobs() + length_jobs(seeds=(1,)) + hard_jobs(seeds=(1,))
     if phase == "polonez":  # seed 0 (E31_li seed-0 lookup weights live here) + dense ceiling

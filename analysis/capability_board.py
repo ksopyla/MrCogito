@@ -32,6 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from analysis.capability_ledger import LEDGER_DIR, load_ledgers, study_jobs, suite_rows  # noqa: E402
+from evaluation.capability_suite import CELL_BY_ID, lr_for  # noqa: E402
 from evaluation.capability_tasks import (LEVELS, SEEDS, TASK_BY_ID, TASKS, VERSION,  # noqa: E402
                                          legacy_battery, legacy_suite)
 
@@ -122,6 +123,12 @@ def _seed(job: dict) -> int | None:
     return int(m[1]) if m else None
 
 
+def _score(task: str, first, cand):
+    """The task's own score: first answer letter, or the greedy picked candidate (score="candidate"); a run
+    without the greedy answer (before probe --answer_exact) has no score on a candidate-scored task."""
+    return cand if TASK_BY_ID[task].score == "candidate" else first
+
+
 def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
     """One record per (finished job, arch) that maps onto a v4 task, with its match label."""
     versions = sorted({led["suite_version"] for led in ledgers if led.get("suite_version")})
@@ -135,9 +142,14 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
                 task, label = legacy_suite(r["cell"])
                 if task is None or r["size"] != "30m":
                     continue
+                via = f"suite {r['cell']}"
+                default_lr = lr_for(r["size"], CELL_BY_ID[r["cell"]])[0]
+                if label == "same" and r.get("lr") is not None and abs(r["lr"] - default_lr) > 1e-12:
+                    label, via = "settings-differ", f"{via} at step {r['lr']:g} (suite default {default_lr:g})"
                 out.append({"task": task, "model": r["arch"], "label": label, "seed": r["seed"],
-                            "score": r["p0"], "mean": r["acc"], "ladder": {}, "source": r["source"],
-                            "via": f"suite {r['cell']}"})
+                            "score": _score(task, r.get("p0"), r.get("cand")), "mean": r["acc"],
+                            "ladder": {int(L): v for L, v in (r.get("ladder") or {}).items()},
+                            "source": r["source"], "collected": r.get("collected") or "", "via": via})
         else:
             for j in study_jobs(led):
                 if j["status"] != "done":
@@ -150,9 +162,72 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
                 if task is None:
                     continue
                 lad = {int(L): v.get("first_acc") for L, v in (j["ladders"].get("ladder") or {}).items()}
-                out.append({"task": task, "model": variant, "label": label, "seed": _seed(j), "score": j.get("p0"),
-                            "mean": j.get("acc"), "ladder": lad, "source": j["source"], "via": f"battery {slot}"})
+                out.append({"task": task, "model": variant, "label": label, "seed": _seed(j),
+                            "score": _score(task, j.get("p0"), j.get("cand")),
+                            "mean": j.get("acc"), "ladder": lad, "source": j["source"], "collected": "",
+                            "via": f"battery {slot}"})
     return out, current
+
+
+# calibration jobs (`cal_*` / `cal2_*`, dense from scratch): name fragment → v4 task, and what the variant changes
+CAL_TASKS = (("lookup1k", "C1.lookup-1k"), ("edge", "C1.edge-1k"), ("keyed4", "C1.keyed4-1k"), ("recall8", "C3.recall8-1k"),
+             ("pchain2", "C5.pchain2-1k"), ("pchain3", "C5.pchain3-1k"), ("count", "C6.count-1k"))
+CAL_KNOBS = (("_to_", "curriculum from the previous stage"), ("noover", "no overhang (4 facts)"),
+             ("k16v16", "16-letter keys and values"), ("k16", "16-letter nodes"), ("k8", "8-letter nodes"),
+             ("lr3e-4", "step 3e-4"), ("x4", "4x budget"), ("x1", "suite budget"), ("_512_", "512-token book"),
+             ("_256_", "256-token book"))
+
+
+def calibration(ledgers: list[dict]) -> list[dict]:
+    """Dense-from-scratch calibration runs: one row per job, scored on the task's own score."""
+    rows = []
+    for led in ledgers:
+        if led["kind"] != "study":
+            continue
+        for j in study_jobs(led):
+            name = j["job"]
+            if not re.match(r"^(cal2?|conf)_", name) or j["status"] not in ("done", "failed"):
+                continue
+            stem = name.split("_dense")[0]
+            m = re.match(r"^conf_(C\d)_(.+)$", stem)  # confirmation runs built from the task definition itself
+            task = (f"{m[1]}.{m[2]}" if m else
+                    next((t for frag, t in CAL_TASKS if frag in stem.split("_to_")[-1]), None))
+            if task is None:
+                continue
+            t = TASK_BY_ID[task]
+            knobs = [txt for frag, txt in CAL_KNOBS if frag in name + "_"]
+            if "_to_" in name or (name.startswith("cal2_") and "lookup1k" not in name):  # round 2 runs all at 4x
+                knobs = [k for k in knobs if k != "4x budget"] + ["4x budget"]
+            if m:
+                knobs = ["written recipe (confirmation)"]
+            rows.append({"job": name, "task": task,
+                         "round": 3 if m else 2 if name.startswith("cal2_") else 1,
+                         "model": j["arch"], "variant": ", ".join(dict.fromkeys(knobs)) or "task recipe",
+                         "score": _score(task, j.get("p0"), j.get("cand")), "first": j.get("p0"),
+                         "first_greedy": j.get("first_greedy"), "teacher": j.get("acc"),
+                         "floor": t.floor, "chance": t.chance, "score_kind": t.score, "source": j["source"]})
+    rows.sort(key=lambda r: (r["round"], r["task"], r["job"]))
+    return rows
+
+
+def _shown_path(p: Path, ledger_dir: Path) -> str:
+    """Repo-relative path; a ledger read from elsewhere (a preview with uncommitted pulls) is marked so."""
+    try:
+        return str(p.resolve().relative_to(ROOT))
+    except ValueError:
+        return f"{LEDGER_DIR.relative_to(ROOT)}/{p.resolve().relative_to(ledger_dir.resolve())} (not committed)"
+
+
+def _one_per_seed(rs: list[dict]) -> list[dict]:
+    """A seed re-run (e.g. again with saved weights for the ladder) replaces the older run of that seed:
+    prefer the run with a ladder, then the latest collected. Runs without a seed all count."""
+    keep, by_seed = [r for r in rs if r["seed"] is None], defaultdict(list)
+    for r in rs:
+        if r["seed"] is not None and r["seed"] in SEEDS:  # extra diagnostic seeds never enter the medians
+            by_seed[r["seed"]].append(r)
+    for runs in by_seed.values():
+        keep.append(max(runs, key=lambda r: (bool(r["ladder"]), r.get("collected") or "", r["source"])))
+    return keep
 
 
 def table(ev: list[dict]) -> dict:
@@ -165,7 +240,7 @@ def table(ev: list[dict]) -> dict:
         out[task] = {}
         for model, labels in models.items():
             label = next(l for l in LABELS if l in labels)
-            rs = labels[label]
+            rs = _one_per_seed(labels[label])
             lens = sorted({L for r in rs for L in r["ladder"]})
             ladder = {}
             for L in lens:
@@ -330,6 +405,7 @@ def main() -> int:
     slots.sort(key=lambda sl: (lv_order.index(sl["level"]), std_ix.get(sl["id"], 99), sl["task"] or "", sl["id"]))
     tasks = [{"id": t.id, "level": t.level or "X", "name": t.name, "measures": t.measures, "recipe": t.recipe,
               "args": " ".join(t.args), "train_len": t.train_len, "prize": t.prize_bits, "chance": t.chance,
+              "score_kind": t.score, "floor": t.floor,
               "curriculum": t.curriculum, "ladder": t.ladder, "task_status": t.status, "flaw": t.flaw,
               **row_status(t, tbl, args.champion)} for t in TASKS]
     data = {
@@ -339,7 +415,8 @@ def main() -> int:
         "tasks": tasks, "table": tbl, "no_harm": no_harm(tbl, args.champion, models),
         "slots": slots, "battery": {s["id"]: bat[s["id"]] for s in slots},
         "reruns": items, "rerun_models": rerun_models, "suite_version": suite_version,
-        "sources": [{"file": str(Path(l["_file"]).relative_to(ROOT)), "kind": l["kind"], "name": l["name"],
+        "calibration": calibration(ledgers),
+        "sources": [{"file": _shown_path(Path(l["_file"]), Path(args.ledger_dir)), "kind": l["kind"], "name": l["name"],
                      "host": l["host"], "collected": l["collected"], "archive": l["archive_path"],
                      "done": sum(j["status"] == "done" for j in l["jobs"]), "jobs": len(l["jobs"]),
                      "suite_version": l.get("suite_version")} for l in ledgers],

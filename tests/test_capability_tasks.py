@@ -59,3 +59,22 @@ def test_multi_candidate_exams_score_the_picked_candidate_and_state_their_floor(
         assert t.score == "candidate" and t.floor is not None and t.floor < 0.15
         assert "--chain_overhang" in t.args and "random init" in t.curriculum
     assert TASK_BY_ID["C1.keyed4-1k"].score == "candidate"
+
+
+def test_training_budgets_are_protocol_not_memory():
+    """A written training budget is part of the recipe for every model; micro-batch splitting is not."""
+    from evaluation.capability_tasks import TASKS
+    for t in TASKS:
+        assert "--grad_accum" not in t.train, t.id
+        if t.train:
+            assert "--steps" in t.train and "--lr" in t.train, t.id
+
+
+def test_confirmation_jobs_are_built_from_the_task_definition():
+    from evaluation.capability_tasks import TASK_BY_ID
+    from scripts.study_plans.e30_vs_e31 import jobs
+    for j in jobs("confirm_calibration"):
+        task = TASK_BY_ID["C" + j["name"].split("_C")[1].split("_dense")[0].replace("_", ".", 1)]
+        a = j["args"]
+        assert all(x in a for x in task.train) and all(x in a for x in task.args)
+        assert j["init"] is None                                  # from scratch

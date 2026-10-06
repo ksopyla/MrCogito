@@ -71,6 +71,12 @@ dials**, measured the same way on every level.
    miss where dense also misses is "uncalibrated", not a failure.
 6. **Flawed tasks** stay defined with their reason so they are recognised; they never gate, never enter a
    level or package, are labeled by the runner and the scorecard, and are crossed out on the dashboard.
+7. **One protocol for every model** (author, 2026-10-06). A task's recipe is its exam (`recipe` + `args`),
+   its training budget (`train`; empty = the suite v3 budget) and its written curriculum, all in
+   `capability_tasks.py` and identical for every architecture and the dense ceiling. Any change to them is
+   a protocol change: it applies to all models, bumps `VERSION`, and gets a dated line in the calibration
+   log below. Runs are built from the task definition (`task_job` in the study plan), never from hand-typed
+   flags.
 
 ## Levels and tasks
 
@@ -153,7 +159,7 @@ letter, with an honest match label (`legacy_suite` / `legacy_battery` in `capabi
 | match | meaning | counts as v4 evidence? |
 |---|---|---|
 | `same` | same exam, from scratch, frozen settings (all suite v3 cells; the lookup 2k → 8k → 16k stages) | yes |
-| `settings-differ` | same exam from scratch, other step size / budget / rows (battery lookup at 2k, dense hard exams) | shown, marked |
+| `settings-differ` | same exam from scratch, other step size / budget / rows (battery lookup at 2k, dense hard exams, suite cells run at a step size other than the suite default — e.g. the E31 lookup-2k runs at 5e-5) | shown, marked |
 | `curriculum-differs` | from scratch through a schedule that is not the v4 one (battery chains and hard exams started from the run's own lookup-2k weights; E33a curricula) | shown, marked; not used for no-harm until the v4 recipe matches |
 | `not-from-scratch` | started from another run's checkpoint (E33a fine-tuned arm) | no |
 | `flawed` | a flawed task | no, crossed out |
@@ -181,6 +187,18 @@ collect first). E01–E22 and the Gemma backbone runs are text / pretrained mode
    the old runners stay for reproducing v3 / battery v1 results.
 5. **Version freeze** — `VERSION = "v4"` once steps 3–4 land; the suite's `SUITE_VERSION` and
    `BATTERY_VERSION` stay frozen as history.
+
+### Calibration log
+
+Every recipe decision, dated. Dense, from random init, seed 0 unless noted; "picked" = the picked-candidate
+score, read against the task's guessing floor. Ledgers: `results/capability/study/calibrate_reasoning*.json`.
+
+| date | round | finding | decision |
+|---|---|---|---|
+| 2026-10-05 | 0 (E33a diagnosis) | old parallel chains: every arm, dense included, sat on the link-target guessing floor (first letter ~40 %) | `X.pchain*-1k-v1` flawed; C5 rebuilt with a chain overhang, 16-letter nodes and the picked-candidate score; keyed C1 tasks added (v4-draft-2026-10-05) |
+| 2026-10-05 | 1 (Odra) | at the v3 budget dense passes C1.keyed4 (picked 79.5 %) but not C1.edge (10 %, floor 12.5 %); C5 pchain2/3 at the floor at 1× and 4×, at both step sizes and through the 1 → 2 → 3 hop schedule; C6.count at chance at 4× | count and C5 stay `calibrating` |
+| 2026-10-05 | 2 (Polonez) | at **4× budget** dense passes C1.edge in every variant (8- / 16-letter nodes, 256- / 512 / 1k books, with or without overhang, after lookup: 92–98 %) and C3.recall8 (98 %); recall8 with 16-letter values fails (28 %); lookup → edge → pchain2 falls to the floor on pchain2 (12.5 %) | `train`: C1.edge-1k and C3.recall8-1k at 4× (`TRAIN_1K_X4`), C1.keyed4-1k at 1× (`TRAIN_1K`), for every model (v4-draft-2026-10-06); confirm on dense seeds 0–2 (`confirm_calibration`) before `active` |
+| 2026-10-05 | 2 (E33 reasoning) | E31 arms pass edge (~99 %) from lookup weights, then lose hop 1 on pchain2: the question does not say how many hops, so stage 2 punishes stage 1 | C5 needs the hop count in the question (author approved 2026-10-06); C5 stays `calibrating` until dense passes the new exam |
 
 Until step 4, run new variants with the v3 runners (`suite.md`, `battery.md` in the skill) and label the
 results as legacy protocol.

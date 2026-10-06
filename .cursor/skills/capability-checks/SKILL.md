@@ -47,11 +47,17 @@ trained text checkpoints → `experiment-evaluate`; what a result means and the 
    checkpoint, an earlier experiment's weights or a pretrained model.
 2. **In-run curriculum only when written** in the task's `curriculum` field, from random init, identical
    for every architecture and for the dense ceiling. No ad-hoc warm starts.
-3. **Score on the first answer letter**; pass = median over seeds 0, 1, 2 ≥ 75 %; chance 25 % (DNA),
+3. **Score on the task's own score** — the first answer letter, or for `score="candidate"` tasks (C1.keyed4,
+   C1.edge, C5) the greedy picked candidate (probe `answer_exact`), always read against the task's guessing
+   `floor`, not only chance; pass = median over seeds 0, 1, 2 ≥ 75 %; chance 25 % (DNA),
    12.5 % (Glyph). The dense model trains alongside as the ceiling; a miss dense shares is "uncalibrated".
 4. **Flawed tasks** (`status="flawed"`) are never run as evidence, never gate, never cited as a
    capability; the runner and scorecard label them, the dashboard crosses them out.
 5. **`calibrating` tasks** have no frozen from-scratch recipe yet: report them, never gate on them.
+6. **One protocol for every model** (2026-10-06): a recipe = exam args + training budget (`train`) + written
+   curriculum, all in `capability_tasks.py`, identical for every architecture and dense. Changing one is a
+   protocol change for all models: bump `VERSION` and add a dated line to the spec's calibration log. Build
+   runs from the definition (`task_job` in `scripts/study_plans/e30_vs_e31.py`), never from hand-typed flags.
 
 ## The process
 
@@ -75,7 +81,15 @@ run's own lookup weights, so they map as `curriculum-differs`).
 ### 3 · Smoke, sync, launch
 Local smoke only if it finishes in under a minute; anything longer runs on a server. Code goes by git
 only. Check the GPUs are free and respect the Polonez heat rule (long queues on Odra; Polonez < 10 h
-bursts). Commands: `suite.md` steps 2–5, `battery.md` "Running it".
+bursts, and a 10–20 min cooldown after every 5–6 h of training). Commands: `suite.md` steps 2–5,
+`battery.md` "Running it". Several bursts on Polonez: generate each run's launch folder (`--mode scripts`),
+then chain them with `scripts/run_bursts.sh --host polonez --cooldown_min 20 <launch dir>...` in byobu.
+
+**Length ladder on suite runs.** Add `--extra "--save_ckpt @out"` (the final weights of a from-scratch
+run, saved only to be read longer; never a starting point). Then write read-only GPU scripts with
+`bash scripts/ladder_suite_run.sh --host polonez --gpus "0 1 2 3" --launch Cache/capability/<ladders> <run dir>...`
+(dense capped at 32k) and run them like a burst. The ledger picks up each job's `ladder.json`; a seed
+re-run with weights replaces the older run of that seed on the board.
 
 ### 4 · Monitor
 Suite: `DONE` count and `EXIT` lines (`suite.md` step 6). Battery: `analysis/study_table.py --prefix
@@ -128,8 +142,11 @@ re-scoring note** above the original numbers (never overwrite them). Report to t
 
 ## Pitfalls
 - **A warm start from another run** is not a capability result — label it `not-from-scratch`.
-- **Mean over letters** overstates multi-candidate tasks; judge on first letter.
-- **Same name, different protocol** — always read the match label before comparing two numbers.
+- **Mean over letters** overstates multi-candidate tasks; judge on the task's own score. A first letter
+  can sit on a guessing floor (any link target: ~40 %) — the old parallel chains did (2026-10-05).
+- **Same name, different protocol** — always read the match label before comparing two numbers. A suite
+  cell re-run at another step size (`--lr_scale`, `--lr_pair`) is `settings-differ`, and two models are
+  compared only at the same step size (2026-10-04: e33a lookup-2k at 1e-4 vs E31 at 5e-5 looked like a loss).
 - **Results only on a server** — pull after every phase; Polonez can shut down for heat mid-study.
 - **A copied job list** drifts from the protocol; register the variant instead.
 - **Hand-edited commands** produce a different exam; use `ARCH_FLAGS`, `BATTERY_VARIANTS` or a written

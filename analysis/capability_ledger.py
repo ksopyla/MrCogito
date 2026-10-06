@@ -18,10 +18,13 @@ Library use (scorecard, board): `load_ledgers()`, `suite_rows()`, `study_jobs()`
 Schema 1 — one file per (folder, host):
   {schema, kind: "suite"|"study", name, host, source_path, archive_path, collected, git: [...],
    suite_version, tier, jobs: [...]}
-  suite job: {job_id, size, cell, level, seed, lr, status, cmd, results: {arch: METRICS}}
+  suite job: {job_id, size, cell, level, seed, lr, status, cmd, results: {arch: METRICS},
+              ladders (only when the run saved weights and was read longer): as in a study job}
   study job: {name, status, args, init, results: {arch: METRICS},
               ladders: {"ladder": {arch: {length: LADDER}}, "ladder_lookup": {...}, ...}}
   METRICS: acc, acc_se, p0 (first answer letter), ppa (accuracy per answer letter), bits,
+           cand / exact / first_greedy (greedy answer: picked candidate, every letter, first letter),
+           guess_floor (parallel chain: guessing floors measured on its eval rows),
            prize_bits, flow, best_acc, extended, step, examples_to_75, sec_per_step, tokens_per_sec,
            params
   LADDER:  acc, acc_se, first_acc, first_acc_se, rows, ce_nats, sec_per_row, peak_gb, memory_slots
@@ -69,6 +72,11 @@ def _metrics(r: dict) -> dict:
         "examples_to_75": etc.get("examples") if confirmed else None,
         "sec_per_step": _r(thr.get("sec_per_step"), 4), "tokens_per_sec": _r(thr.get("tokens_per_sec"), 1),
         "params": r.get("params"),
+        # greedy answer (chain / recall exams, probe --answer_exact): picked candidate, every letter, first letter
+        **({"cand": _r(ax.get("candidate")), "exact": _r(ax.get("exact")), "first_greedy": _r(ax.get("first_greedy"))}
+           if (ax := r.get("answer_exact") or {}) else {}),
+        **({"guess_floor": {k: (_r(v) if isinstance(v, float) else v) for k, v in r["guess_floor"].items()}}
+           if r.get("guess_floor") else {}),
     }
 
 
@@ -94,10 +102,11 @@ def collect_suite(root: Path) -> dict:
         versions.add(job.get("suite_version"))
         tiers.add(job.get("tier"))
         results = _rung(jp.parent)
+        ladders = {p.stem: _ladder(p) for p in sorted(jp.parent.glob("ladder*.json"))}
         jobs.append({
             "job_id": job.get("job_id"), "size": job["size"], "cell": job["cell"], "level": job["level"],
             "seed": job["seed"], "lr": job["lr"], "status": _status(jp.parent, results), "cmd": job.get("cmd"),
-            "results": results,
+            "results": results, **({"ladders": ladders} if ladders else {}),
         })
     plan = root / "plan.json"
     git = []
@@ -158,8 +167,10 @@ def suite_rows(ledger: dict) -> list[dict]:
                 "arch": arch, "bits": m.get("bits"), "prize_bits": m.get("prize_bits"), "flow": m.get("flow"),
                 "acc": m.get("acc"), "acc_se": m.get("acc_se"), "params": m.get("params"),
                 "examples_to_75": m.get("examples_to_75"), "tokens_per_sec": m.get("tokens_per_sec"),
-                "per_position_acc": m.get("ppa"), "steps": m.get("step"), "p0": m.get("p0"),
-                "source": f"{ledger['name']}@{ledger['host']}",
+                "per_position_acc": m.get("ppa"), "steps": m.get("step"), "p0": m.get("p0"), "cand": m.get("cand"),
+                "ladder": {L: v.get("first_acc") for L, v in ((j.get("ladders") or {}).get("ladder") or {})
+                           .get(arch, {}).items()},
+                "source": f"{ledger['name']}@{ledger['host']}", "collected": ledger.get("collected"),
             })
     return rows
 
