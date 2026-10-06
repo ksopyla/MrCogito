@@ -170,9 +170,10 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
 
 
 # calibration jobs (`cal_*` / `cal2_*`, dense from scratch): name fragment → v4 task, and what the variant changes
-CAL_TASKS = (("edge", "C1.edge-1k"), ("keyed4", "C1.keyed4-1k"), ("recall8", "C3.recall8-1k"),
+CAL_TASKS = (("lookup1k", "C1.lookup-1k"), ("edge", "C1.edge-1k"), ("keyed4", "C1.keyed4-1k"), ("recall8", "C3.recall8-1k"),
              ("pchain2", "C5.pchain2-1k"), ("pchain3", "C5.pchain3-1k"), ("count", "C6.count-1k"))
-CAL_KNOBS = (("_to_", "curriculum from the previous stage"), ("noover", "no overhang (4 facts)"),
+CAL_KNOBS = (("hc", "hop count in question"), ("mix", "half the rows at the previous hop count"),
+             ("direct", "task recipe, no curriculum"), ("_to_", "curriculum from the previous stage"), ("noover", "no overhang (4 facts)"),
              ("k16v16", "16-letter keys and values"), ("k16", "16-letter nodes"), ("k8", "8-letter nodes"),
              ("lr3e-4", "step 3e-4"), ("x4", "4x budget"), ("x1", "suite budget"), ("_512_", "512-token book"),
              ("_256_", "256-token book"))
@@ -186,22 +187,27 @@ def calibration(ledgers: list[dict]) -> list[dict]:
             continue
         for j in study_jobs(led):
             name = j["job"]
-            if not re.match(r"^cal2?_", name) or j["status"] not in ("done", "failed"):
+            if not re.match(r"^(cal\d?|conf)_", name) or j["status"] not in ("done", "failed"):
                 continue
             stem = name.split("_dense")[0]
-            task = next((t for frag, t in CAL_TASKS if frag in stem.split("_to_")[-1]), None)
+            m = re.match(r"^conf_(C\d)_(.+)$", stem)  # confirmation runs built from the task definition itself
+            task = (f"{m[1]}.{m[2]}" if m else
+                    next((t for frag, t in CAL_TASKS if frag in stem.split("_to_")[-1]), None))
             if task is None:
                 continue
             t = TASK_BY_ID[task]
             knobs = [txt for frag, txt in CAL_KNOBS if frag in name + "_"]
-            if "_to_" in name:
+            if "_to_" in name or (re.match(r"^cal[23]_", name) and "lookup1k" not in name):  # rounds 2–3 at 4x
                 knobs = [k for k in knobs if k != "4x budget"] + ["4x budget"]
-            rows.append({"job": name, "task": task, "round": 2 if name.startswith("cal2_") else 1,
+            if m:
+                knobs = ["written recipe (confirmation)"]
+            rows.append({"job": name, "task": task,
+                         "round": ("confirm" if m else int(name[3]) if name[3].isdigit() else 1),
                          "model": j["arch"], "variant": ", ".join(dict.fromkeys(knobs)) or "task recipe",
                          "score": _score(task, j.get("p0"), j.get("cand")), "first": j.get("p0"),
                          "first_greedy": j.get("first_greedy"), "teacher": j.get("acc"),
                          "floor": t.floor, "chance": t.chance, "score_kind": t.score, "source": j["source"]})
-    rows.sort(key=lambda r: (r["round"], r["task"], r["job"]))
+    rows.sort(key=lambda r: (str(r["round"]), r["task"], r["job"]))
     return rows
 
 

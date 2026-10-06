@@ -57,7 +57,7 @@ def blocks(cfg, toks: np.ndarray, nodes: list[tuple]) -> tuple[list[tuple[int, s
             out.append((int(p), "hop1" if tuple(toks[p + 1:p + 1 + L]) == qkey else "other_chain"))
         return out, 1 + L + cfg.value_len
     path = {(nodes[i], nodes[i + 1]): f"hop{i + 1}" for i in range(len(nodes) - 1)}
-    for p in np.nonzero(toks == v.control("hop"))[0]:
+    for p in np.nonzero(toks[:cfg.answer_start - cfg.query_len - 1] == v.control("hop"))[0]:
         edge = (tuple(toks[p + 1:p + 1 + L]), tuple(toks[p + 1 + L:p + 1 + 2 * L]))
         out.append((int(p), path.get(edge, "other_chain")))
     return out, 1 + 2 * L

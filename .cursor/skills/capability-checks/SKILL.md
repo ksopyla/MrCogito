@@ -54,6 +54,10 @@ trained text checkpoints → `experiment-evaluate`; what a result means and the 
 4. **Flawed tasks** (`status="flawed"`) are never run as evidence, never gate, never cited as a
    capability; the runner and scorecard label them, the dashboard crosses them out.
 5. **`calibrating` tasks** have no frozen from-scratch recipe yet: report them, never gate on them.
+6. **One protocol for every model** (2026-10-06): a recipe = exam args + training budget (`train`) + written
+   curriculum, all in `capability_tasks.py`, identical for every architecture and dense. Changing one is a
+   protocol change for all models: bump `VERSION` and add a dated line to the spec's calibration log. Build
+   runs from the definition (`task_job` in `scripts/study_plans/e30_vs_e31.py`), never from hand-typed flags.
 
 ## The process
 

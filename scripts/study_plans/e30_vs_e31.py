@@ -256,6 +256,18 @@ def _job(name, arch, seed, length, exam, extra=(), *, init=None, ladder=None, co
     }
 
 
+def task_job(task_id, arch, seed, *, prefix="v4", cost=1.3):
+    """One from-scratch job built from the v4 task definition itself (exam args + training budget), so a run
+    can never drift from the protocol in `evaluation/capability_tasks.py`."""
+    from evaluation.capability_tasks import TASK_BY_ID
+    t = TASK_BY_ID[task_id]
+    if not t.train:
+        raise SystemExit(f"{task_id} has no written training budget (`train`); use the suite runner")
+    name = f"{prefix}_{task_id.replace('.', '_')}_{arch}_s{seed}"
+    return {"name": name, "args": [*t.train, "--eval_rows", "256", "--recipe", t.recipe, *t.args, "--arch", arch,
+                                   "--seed", str(seed)], "init": None, "ladder": None, "cost": cost}
+
+
 def ratio_jobs(seeds=(0,)):
     out = []
     for seed in seeds:
@@ -444,7 +456,44 @@ def jobs(phase: str) -> list[dict]:
                  cost=0.8),
             _job("cal2_edge_k8_256_dense_s0", "dense", 0, at(x4, 256), "pchain2", [*edge, "--key_len", "8"],
                  cost=0.5),
+            # written in-run curriculum from random init (E33 reasoning fixes, 2026-10-05: every E31 arm passes
+            # edge-1k at ~99 % once it has learned lookup): lookup-1k → edge-1k → pchain2, one dense run
+            _job("cal2_lookup1k_dense_s0", "dense", 0, L1K, "lookup", cost=0.3),
+            _job("cal2_lookup_to_edge_dense_s0", "dense", 0, x4, "pchain2", [*edge, "--key_len", "16"],
+                 init="cal2_lookup1k_dense_s0", cost=1.3),
+            _job("cal2_lookup_to_edge_to_pchain2_dense_s0", "dense", 0, x4, "pchain2",
+                 ["--chain_overhang", "1", "--key_len", "16", "--hops", "2"],
+                 init="cal2_lookup_to_edge_dense_s0", cost=1.3),
         ]
+    if phase == "calibrate_c5_r3":
+        # Round 3 (2026-10-06): C5 with the hop count in the question (v4-draft-2026-10-06.2), dense from random
+        # init, built from the task definitions; only the stage's hop count and the replay mix vary.
+        def stage(task_id, name, hops=None, init=None, mix_hops=None):
+            j = task_job(task_id, "dense", 0, prefix="cal3")
+            j["name"], j["init"] = name, init
+            if hops is not None:
+                j["args"] += ["--hops", str(hops)]
+            if mix_hops is not None:
+                j["args"] += ["--replay_recipe", "chain_parallel", "--replay_hops", str(mix_hops),
+                              "--replay_frac", "0.5"]
+            return j
+
+        e = "cal3_edgehc_dense_s0"
+        e2, e2m = "cal3_edgehc_to_pchain2hc_dense_s0", "cal3_edgehc_to_pchain2mix_dense_s0"
+        return [
+            stage("C5.pchain2-1k", "cal3_pchain2hc_direct_dense_s0"),
+            stage("C5.pchain3-1k", "cal3_pchain3hc_direct_dense_s0"),
+            stage("C5.pchain2-1k", e, hops=1),
+            stage("C5.pchain2-1k", e2, init=e),
+            stage("C5.pchain3-1k", "cal3_edgehc_to_pchain2hc_to_pchain3hc_dense_s0", init=e2),
+            stage("C5.pchain2-1k", e2m, init=e, mix_hops=1),
+            stage("C5.pchain3-1k", "cal3_edgehc_to_pchain2mix_to_pchain3mix_dense_s0", init=e2m, mix_hops=2),
+        ]
+    if phase == "confirm_calibration":
+        # Calibration rounds 1–2 (2026-10-05) found recipes dense passes on seed 0. Confirm them on dense seeds
+        # 0–2 exactly as written in capability_tasks.py before they become active (spec: calibration log).
+        return [task_job(t, "dense", s, prefix="conf") for t in ("C1.keyed4-1k", "C1.edge-1k", "C3.recall8-1k")
+                for s in (0, 1, 2)]
     if phase in ("lookup16k_root", "lookup16k_stages"):
         # C1.lookup-16k (written curriculum 2k → 8k → 16k from random init) where seeds are missing:
         # e31_li_m1 seed 2 and the dense ceiling seeds 0–2. Split in two bursts (Polonez cooldown between).

@@ -360,6 +360,56 @@ def test_chain_overhang_removes_the_chain_end_shortcut(overhang):
         cfg_for("chain_ordered", hops=2, chain_overhang=1)
 
 
+@pytest.mark.parametrize("hops", [1, 2, 3])
+def test_hop_count_in_question_states_how_far_to_walk(hops):
+    """With `hop_count_in_question` the question is [query, start, hop x k, answer]; the answer is the
+    node k hops from the start, so 1-, 2- and 3-hop rows can share a training batch without contradiction."""
+    cfg = cfg_for("chain", hops=hops, n_distractors=0, n_chains=4, chain_overhang=1, hop_count_in_question=True)
+    v = cfg.vocab
+    assert cfg.query_len == cfg.key_len + hops
+    for row in iter_rows(cfg, 30, seed=11):
+        a0 = row.answer_start
+        assert row.input_ids[a0 - 1] == v.control("answer")
+        assert list(row.input_ids[a0 - 1 - hops:a0 - 1]) == [v.control("hop")] * hops
+        q0 = a0 - 1 - hops - cfg.key_len
+        assert row.input_ids[q0 - 1] == v.control("query")
+        node = tuple(_symbols(cfg, row.input_ids[q0:q0 + cfg.key_len]))
+        lookup = dict(_edges(cfg, row))
+        for _ in range(hops):
+            node = lookup[node]
+        assert node == tuple(_symbols(cfg, row.input_ids[a0:a0 + cfg.key_len]))
+        assert (row.labels != -100).sum() == cfg.answer_len == cfg.key_len
+    with pytest.raises(ValueError):
+        cfg_for("recall", hop_count_in_question=True)
+
+
+def test_default_exams_are_bit_identical_to_the_recorded_rows():
+    """Options added after an exam was recorded (overhang, hop count in the question, …) must leave the
+    default rows untouched: sha256 of 32 rows per exam at bridge_1k, seed 0 (recorded 2026-10-06)."""
+    import hashlib
+
+    from data.bapo_ladder import SCALES, config_for, generate_row_for, resolve_recipe
+
+    recorded = {
+        "chain_parallel_h2": ("chain_parallel", {"hops": 2}, "f2c05068cea23db3"),
+        "chain_parallel_h2_ov1_k16": ("chain_parallel", {"hops": 2, "chain_overhang": 1, "key_len": 16},
+                                      "4184fdc0b5556cad"),
+        "chain_ordered_h4": ("chain_ordered", {"hops": 4}, "413706a863841a97"),
+        "recall_single": ("recall_single", {}, "a6432b95eddaed16"),
+        "recall8": ("recall", {"n_distractors": 7, "key_len": 4}, "5eaa515f47dad0a3"),
+    }
+    for name, (recipe, over, digest) in recorded.items():
+        rep = resolve_recipe(recipe)
+        cfg = config_for(SCALES["bridge_1k"], rep.task, **{**rep.overrides, **over})
+        rng = np.random.default_rng(0)
+        h = hashlib.sha256()
+        for _ in range(32):
+            r = generate_row_for(cfg, rng)
+            h.update(r.input_ids.astype(np.int64).tobytes())
+            h.update(r.labels.astype(np.int64).tobytes())
+        assert h.hexdigest()[:16] == digest, name
+
+
 # --------------------------------------------------------------------------------------
 # Property 2: not solvable locally
 # --------------------------------------------------------------------------------------
