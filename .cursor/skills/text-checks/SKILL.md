@@ -16,6 +16,11 @@ fast, and does it still work on texts far longer than it was trained on?
 - **Runner:** `scripts/run_text_checks.py` · **scorer:** `evaluation/text_checks_eval.py` ·
   **scorecard:** `analysis/text_checks_scorecard.py`
 - **Tests:** `tests/test_text_world.py`, `tests/test_text_checks_runner.py`, `tests/test_text_memory.py`
+- **Round plan:** `scripts/study_plans/text_r1.py` (experiments X0–X7, their runs, gates, cost)
+- **Board (the standard visual summary):** `docs/3_Evaluations_and_Baselines/text_capability_board.html`, drawn by
+  `analysis/text_board.py` from the committed ledgers `docs/2_Experiments_Registry/results/capability/text/`;
+  publish it as an Artifact (same URL each time) after a refresh
+- **Server checkout:** Polonez `~/dev/MrCogito-text` (its own worktree; other sessions own the others)
 
 **Boundary.** An architecture enters these checks only after passing the DNA **screen** package
 (`capability-checks`). Server facts → `remote-servers`; recording → `experiment-track`; how to tell the
@@ -120,14 +125,15 @@ uv run python scripts/run_text_checks.py status --out Cache/text_checks/r1_scree
   learning-curve checkpoints (10/25/50/75 %), then deletes optimizer states.
 - Gate to the main tier: T2 passes at 4k and story loss is within 5 % of `dense`.
 
-### 6 · Score, record, report
+### 6 · Pull, draw, record, report
 ```bash
-uv run python analysis/text_checks_scorecard.py --in_dir Cache/text_checks/r1_screen \
-    --ledger docs/2_Experiments_Registry/results/capability/text/r1_screen.polonez.json
+bash scripts/pull_text_checks_results.sh polonez r1_smoke r1_screen   # ledgers + NAS archive + board redraw
 ```
-- Commit the ledger file.
-- Archive the raw folder to the NAS: `/nas/ml_data/mrcogito/results/text_checks/<run>.<host>/`
-  (tar over ssh, results only, never code).
+- Pull after every phase, at least daily during a long run (Polonez can shut down for heat), and before
+  any summary. Pulling is idempotent; a live run shows its state, loss and throughput on the board.
+- Commit the ledgers and the board, then publish the board as an Artifact (same URL).
+- The NAS archive skips intermediate checkpoints (`/nas/ml_data/mrcogito/results/text_checks/<run>.<host>/`).
+- A single run's scorecard without the board: `uv run python analysis/text_checks_scorecard.py --in_dir <run>`.
 - Hand the result to `experiment-track`.
 - Tell the author (`research-comms`):
   - which levels each model passes at 4k and how far each reaches;

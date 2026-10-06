@@ -118,17 +118,19 @@ def _row(ids: list[int], bos: int, eos: int) -> dict:
             "special_tokens_mask": [1] + [0] * len(ids) + [1]}
 
 
-def language_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: int) -> list[dict]:
-    rows, cur, i = [], [], 0
+def language_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: int):
+    """Yield up to n story rows of exactly seq_len tokens (whole stories, the overflow dropped).
+    A generator: the full-size mix is ~1B tokens and must not sit in memory as Python lists."""
+    made, cur, i = 0, [], 0
     sep = encode("\n\n")
-    while len(rows) < n and i < len(stories) * 4:
+    while made < n and i < len(stories) * 4:
         ids = encode(stories[i % len(stories)])
         i += 1
         cur = cur + (sep if cur else []) + ids
         if len(cur) >= seq_len - 2:
-            rows.append(_row(cur[: seq_len - 2], bos, eos))
+            yield _row(cur[: seq_len - 2], bos, eos)
+            made += 1
             cur = []
-    return rows
 
 
 def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: int, seed: int,

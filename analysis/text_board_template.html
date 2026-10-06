@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Text Capability Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -287,8 +288,11 @@ function cards() {
     if (m.status === "over_budget") flags.push("stopped at the compute cap");
     if (m.language_ok === false) flags.push("language worse than dense by more than 2 %");
     if ((m.shortcuts || []).length) flags.push("shortcut on " + m.shortcuts.join(", "));
-    const nb = Object.entries(m.notebook_gain || {});
-    if (nb.length) card.append(el("div", { class: "small" }, "Notebook adds: " + nb.map(([k, v]) => `${k} ${v >= 0 ? "+" : ""}${Math.round(100 * v)}`).join(", ")));
+    const nbAll = Object.entries(m.notebook_gain || {});
+    const nb = nbAll.filter(([, v]) => Math.abs(v) >= 0.01).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 6);
+    if (nbAll.length) card.append(el("div", { class: "small" }, "Notebook switched off: " + (nb.length
+      ? nb.map(([k, v]) => `${k.replace("@", " at ")} ${v >= 0 ? "−" : "+"}${Math.abs(Math.round(100 * v))} pts`).join(", ")
+      : "no change on any question")));
     for (const f of flags) card.append(el("div", { class: "flag" }, "⚠ " + f));
     box.append(card);
   }

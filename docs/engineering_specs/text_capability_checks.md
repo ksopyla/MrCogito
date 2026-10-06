@@ -401,6 +401,17 @@ Notes for the first server runs:
 - A 2M dense model after 6M tokens learns the language (loss 8.3 → 3.6) but no task leaves its floor:
   expected at that size, and exactly what the calibration pilot measures.
 
+**Round 1 (2026-10-06):** the experiment set X0–X7 is `scripts/study_plans/text_r1.py`:
+- X0: data;
+- X1: server smoke;
+- X2–X3: dense recipe and the dense calibration run;
+- X4–X5: recipes and the screen comparison;
+- X6: reference seeds;
+- X7: the main tier, after the author's go-ahead.
+
+Progress and results are on the text capability board (`analysis/text_board.py` →
+`docs/3_Evaluations_and_Baselines/text_capability_board.html`), fed by `scripts/pull_text_checks_results.sh`.
+
 **Calibration pilot** (before freezing `text-v1`, about 2 days on one server):
 
 1. Dense at screen size, 3 seeds: measures throughput, the seed spread, and which tasks dense passes at

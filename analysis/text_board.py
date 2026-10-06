@@ -63,7 +63,7 @@ def load_ledgers(d: Path) -> list[dict]:
         except json.JSONDecodeError:
             continue
         if led.get("kind") == "text_checks":
-            led["_file"] = str(p.relative_to(ROOT))
+            led["_file"] = str(p.relative_to(ROOT)) if p.is_relative_to(ROOT) else str(p)
             out.append(led)
     return out
 
