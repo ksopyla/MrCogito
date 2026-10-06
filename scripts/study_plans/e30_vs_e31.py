@@ -514,6 +514,21 @@ def jobs(phase: str) -> list[dict]:
             run("C5.pchain2-1k", short, ["--key_len", "8", "--seq_len", "256"]),
             run("C5.pchain2-1k", "cal4_pchain2hc_k8_256_to_1k_x4_dense_s0", ["--key_len", "8"], init=short),
         ]
+    if phase == "calibrate_c5_deep":
+        # Author's decision 2026-10-06: if the 4-layer dense control cannot learn C5, an 8-layer dense model
+        # (learnability check only) decides whether the task is learnable. Same exam and budgets as round 3/4.
+        deep = ["--stack_layers", "6", "--max_params", "80000000"]
+
+        def run(task_id, name, extra):
+            j = task_job(task_id, "dense", 0, prefix="cal4")
+            j["name"], j["args"], j["cost"] = name, j["args"] + deep + extra, 2.5
+            return j
+
+        return [
+            run("C5.pchain2-1k", "cal4_pchain2hc_dense8_x4_dense_s0", []),
+            run("C5.pchain2-1k", "cal4_pchain2hc_k4_dense8_x16_dense_s0", ["--steps", "19200", "--k1_mult", "1",
+                                                                         "--key_len", "4"]),
+        ]
     if phase == "v4_e31_keyed":
         # The champion on the tasks made active 2026-10-06 (dense confirmed them), seeds 0–2, from scratch,
         # exactly the written recipes, read to 128k afterwards.

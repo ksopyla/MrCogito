@@ -181,7 +181,7 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
 # calibration jobs (`cal_*` / `cal2_*`, dense from scratch): name fragment → v4 task, and what the variant changes
 CAL_TASKS = (("lookup1k", "C1.lookup-1k"), ("edge", "C1.edge-1k"), ("keyed4", "C1.keyed4-1k"), ("recall8", "C3.recall8-1k"),
              ("pchain2", "C5.pchain2-1k"), ("pchain3", "C5.pchain3-1k"), ("count", "C6.count-1k"))
-CAL_KNOBS = (("hc", "hop count in question"), ("mix", "half the rows at the previous hop count"),
+CAL_KNOBS = (("dense8", "8-layer dense (learnability check)"), ("hc", "hop count in question"), ("mix", "half the rows at the previous hop count"),
              ("direct", "task recipe, no curriculum"), ("_to_", "curriculum from the previous stage"), ("noover", "no overhang (4 facts)"),
              ("k16v16", "16-letter keys and values"), ("k16", "16-letter nodes"), ("k8", "8-letter nodes"),
              ("lr3e-4", "step 3e-4"), ("x16", "16x budget"), ("x4", "4x budget"), ("k4", "4-letter nodes"),

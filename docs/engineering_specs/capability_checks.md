@@ -69,6 +69,10 @@ dials**, measured the same way on every level.
    every report prints it beside the score (E33a diagnosis, 2026-10-05).
 5. **The dense model trains next to the candidate** on the same data, seed and budget: the ceiling. A
    miss where dense also misses is "uncalibrated", not a failure.
+   *Learnability reference for C5 (author, 2026-10-06):* if the standard 4-layer dense control cannot learn
+   a C5 exam, an **8-layer dense model** (same width, learnability check only) decides whether the task is
+   learnable; if it passes, C5 is frozen with it as the reference and E31/E33 results on C5 count as
+   evidence. The 4-layer dense stays the comparison everywhere else.
 6. **Flawed tasks** stay defined with their reason so they are recognised; they never gate, never enter a
    level or package, are labeled by the runner and the scorecard, and are crossed out on the dashboard.
 7. **One protocol for every model** (author, 2026-10-06). A task's recipe is its exam (`recipe` + `args`),
@@ -202,6 +206,7 @@ score, read against the task's guessing floor. Ledgers: `results/capability/stud
 | 2026-10-06 | exam change | the generator can state the hop count in the question (`--hop_count_in_question`: k hop markers after the start node; off by default, recorded exams bit-identical; floors unchanged: picked 12.5 / 8.3 / 6.2 / 5 % for 1–4 hops) and mix hop counts in one stage (`--replay_hops`) | C5.pchain2/3/4-1k state the hop count, train at 4× (`TRAIN_1K_X4`) for every model (v4-draft-2026-10-06.2); round 3 calibrates dense from scratch: direct, 1 → 2 → 3 hop curriculum, and the curriculum with half the rows at the previous hop count |
 | 2026-10-06 | confirm (Polonez) | dense seeds 0–2 on the written recipes: C1.keyed4-1k picked 95 / 94 / 86 %, C1.edge-1k picked 96 / 95 / 97 %, C3.recall8-1k first letter 97 / 98 / 94 % | C1.keyed4-1k, C1.edge-1k and C3.recall8-1k **active** (v4-draft-2026-10-06.3): every model runs them with these recipes |
 | 2026-10-06 | 3 (Polonez) | C5 with the hop count in the question, 4× budget: 1 hop picked 96 %; 2 hops direct 6.9 % (floor 8.3), after 1 hop 12.1 %, after 1 hop with half the rows kept at 1 hop 13.9 %; 3 hops direct 7.4 % (floor 6.2), 1 → 2 → 3 6.6 %, mixed 11.3 %. Teacher-forced accuracy stays ~92 %: dense completes a node once its first letter is given but never picks it | C5 stays `calibrating`, never gated; the second hop is not learned by dense at 4× in any schedule — next: a larger budget or a smaller exam (fewer / shorter chains), decided with the E33 reasoning session |
+| 2026-10-06 | protocol | a 4-layer dense control may lack the depth for 2 dependent multi-token lookups in one pass (E33 reasoning) | author: an 8-layer dense model is the C5 learnability reference when the 4-layer one fails (rule 5); round 4 adds it (`calibrate_c5_deep`) next to short nodes, 2 vs 4 chains and a 16× budget (`calibrate_c5_r4`) |
 
 Until step 4, run new variants with the v3 runners (`suite.md`, `battery.md` in the skill) and label the
 results as legacy protocol.
