@@ -112,8 +112,9 @@ def card(repo_id: str, meta: dict, eval_counts: dict, row_counts: dict) -> str:
     a = meta.get("args", {})
     tot_world = row_counts.get("train/world", 0) * mix.get("mean_world_row_tokens", 0)
     tot_story = row_counts.get("train/stories", 0) * mix.get("mean_story_row_tokens", 0)
-    n_total = sum(eval_counts.values())
-    size = "10K<n<100K" if n_total < 100_000 else "100K<n<1M"
+    n_total = sum(eval_counts.values()) + sum(row_counts.values())
+    size = next(c for lim, c in ((1e4, "1K<n<10K"), (1e5, "10K<n<100K"), (1e6, "100K<n<1M"), (1e7, "1M<n<10M"),
+                                 (float("inf"), "10M<n<100M")) if n_total < lim)
     lengths = ", ".join(f"{L // 1024}k" for L in a.get("eval_lengths", []))
     extra = ", ".join(f"{L // 1024}k" for L in a.get("extra_lengths", []))
     configs = [("eval_id", "eval/id/*.parquet"), ("eval_harder", "eval/harder/*.parquet"),
@@ -281,6 +282,7 @@ def main():
     p.add_argument("--private", action="store_true")
     p.add_argument("--whoami", action="store_true", help="only print the token's account")
     p.add_argument("--dry_run", action="store_true", help="export and write the card, do not upload")
+    p.add_argument("--card_only", action="store_true", help="rewrite and upload README.md only (export dir exists)")
     a = p.parse_args()
 
     from huggingface_hub import HfApi
@@ -296,6 +298,15 @@ def main():
     meta = json.loads((data / "text_checks_meta.json").read_text())
     repo_id = a.repo_id or f"{who}/cogito-text-world"
     out = Path(a.export_dir or data / "hub_export")
+    if a.card_only:
+        ev = {s_: sum(__import__("pyarrow.parquet", fromlist=["x"]).ParquetFile(f).metadata.num_rows
+                      for f in (out / "eval" / s_).glob("*.parquet")) for s_ in EVAL_SPLITS}
+        rows = {d: sum(__import__("pyarrow.parquet", fromlist=["x"]).ParquetFile(f).metadata.num_rows
+                       for f in (out / d).glob("*.parquet")) for d in ("train/world", "train/stories", "dev/world", "dev/stories")}
+        (out / "README.md").write_text(card(repo_id, meta, ev, rows))
+        api.upload_file(path_or_fileobj=str(out / "README.md"), path_in_repo="README.md", repo_id=repo_id, repo_type="dataset")
+        print(f"card updated: https://huggingface.co/datasets/{repo_id} ({ev}, {rows})")
+        return
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True)
     eval_counts = export_eval(data, out)
