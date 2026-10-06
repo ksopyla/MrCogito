@@ -337,11 +337,14 @@ def write_starter(out: Path, phase: str, queues: dict[str, list[str]], host: str
 
     def queue_script(qname, jobs):
         log = _q(launch / (qname + ".log"))
+        own = [qname[3:]] if qname.startswith("gpu") else list(gpus)
+        sel = f"-i {','.join(own)} " if own else ""
         lines = ["#!/usr/bin/env bash", f"cd {_q(ROOT)}", f"COOLDOWN_S={cooldown_s}",
-                 # Polonez heat rule: start or resume only when every GPU is below 70 C
+                 # Polonez heat rule: start or resume only when this queue's own GPUs are below 75 C
+                 # (other sessions' busy GPUs run at ~70-72 C and must not block a released one)
                  'cool() { command -v nvidia-smi >/dev/null || return 0; '
-                 'while [ "$(nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader | sort -n | tail -1)" -ge 70 ]; '
-                 'do echo "GPU above 70 C, waiting $(date +%T)"; sleep 120; done; }']
+                 f'while [ "$(nvidia-smi {sel}--query-gpu=temperature.gpu --format=csv,noheader | sort -n | tail -1)" -ge 75 ]; '
+                 'do echo "GPU above 75 C, waiting $(date +%T)"; sleep 120; done; }']
         if wait_cmd:
             for g in ([qname[3:]] if qname.startswith("gpu") else list(gpus)):
                 lines.append(f'until {wait_cmd.format(gpu=g)}; do echo "waiting for GPU {g} to be released $(date +%T)" '
