@@ -149,16 +149,28 @@ if [ ! -f "$JOB/status" ]; then
     echo running > "$JOB/status.run"
     {setsid}{cmd} > "$JOB/train.log" 2>&1 &
     PID=$!
+    BURST_S={burst_s}   # 0 = no burst limit; else pause at the first checkpoint after this many seconds
+    RUN_S=0; NCK_AT=""; PAUSED=0
+    nck() {{ ls -d "$JOB"/train/*/checkpoint-*/trainer_state.json 2>/dev/null | wc -l; }}
     while kill -0 "$PID" 2>/dev/null; do
         sleep 30
-        ACTIVE=$((ACTIVE + 30)); echo "$ACTIVE" > "$JOB/active_seconds"
+        ACTIVE=$((ACTIVE + 30)); RUN_S=$((RUN_S + 30)); echo "$ACTIVE" > "$JOB/active_seconds"
         if [ "$ACTIVE" -ge "$CAP_S" ]; then
             echo "compute cap reached ($CAP_S s active): stopping"; kill -TERM -- -"$PID" 2>/dev/null
             sleep 60; kill -KILL -- -"$PID" 2>/dev/null; echo over_budget > "$JOB/status"; break
         fi
+        if [ "$BURST_S" -gt 0 ] && [ "$RUN_S" -ge "$BURST_S" ]; then
+            [ -z "$NCK_AT" ] && NCK_AT=$(nck) && echo "burst time reached: pausing at the next checkpoint"
+            if [ "$(nck)" -gt "$NCK_AT" ]; then
+                sleep 45   # let the checkpoint finish writing
+                echo "paused after a checkpoint ($RUN_S s this burst)"; kill -TERM -- -"$PID" 2>/dev/null
+                sleep 30; kill -KILL -- -"$PID" 2>/dev/null; PAUSED=1; break
+            fi
+        fi
     done
     wait "$PID"; RC=$?
     rm -f "$JOB/status.run"
+    if [ "$PAUSED" = 1 ] && [ ! -f "$JOB/status" ]; then echo "EXIT {job} 75 (paused for cooldown)"; exit 75; fi
 fi
 FINAL=$(ls -td "$JOB"/train/*/final 2>/dev/null | head -1 || true)
 if [ -n "$FINAL" ]; then
@@ -214,7 +226,8 @@ def _write(path: Path, text: str):
 
 
 def plan_train_job(name: str, arch: str, tier: str, *, lr: float, tokens: float, n_gpus: int, gpu_ids: str,
-                   data: Path, out: Path, seed: int, mode: str, extra: dict, cap_gpu_hours: float) -> dict:
+                   data: Path, out: Path, seed: int, mode: str, extra: dict, cap_gpu_hours: float,
+                   burst_s: int = 0) -> dict:
     t = TIERS[tier]
     meta = _meta(data)
     mean_row = float(meta["mix"]["mean_row_tokens"])
@@ -236,13 +249,13 @@ def plan_train_job(name: str, arch: str, tier: str, *, lr: float, tokens: float,
     cap_s = int(cap_gpu_hours * 3600 / n_gpus)
     _write(jobdir / "job.sh", TRAIN_SH.format(version=TEXT_CHECKS_VERSION, job=name, when=datetime.now().isoformat(timespec="seconds"),
                                               root=_q(ROOT), jobdir=_q(jobdir), cap_s=cap_s, env=_env_block(env), cmd=cmd,
-                                              setsid="" if mode == "local" else "setsid "))
+                                              setsid="" if mode == "local" else "setsid ", burst_s=burst_s))
     card = {
         "job": name, "kind": "train", "arch": arch, "role": ARCHES[arch].role, "tier": tier, "version": TEXT_CHECKS_VERSION,
         "params": n_params, "params_in_band": in_band(n_params, tier), "model_args": args_model, "recipe": recipe,
         "lr": lr, "tokens": tokens, "steps": steps, "global_rows": t.global_rows, "mean_row_tokens": mean_row,
         "save_steps": save_steps, "n_gpus": n_gpus, "gpu_ids": gpu_ids, "cap_gpu_hours": cap_gpu_hours, "cap_seconds": cap_s,
-        "seed": seed, "data": str(data), "data_version": meta.get("version"), "tokenizer_sha256": meta.get("tokenizer_sha256"),
+        "seed": seed, "burst_seconds": burst_s, "data": str(data), "data_version": meta.get("version"), "tokenizer_sha256": meta.get("tokenizer_sha256"),
         "eval_sha256": meta.get("eval_sha256"), "git_commit": _git_commit(), "mode": mode, "extra_env": extra,
         "planned": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
@@ -314,14 +327,27 @@ def plan_data_job(data: Path, out: Path, tokens: float, num_proc: int, profile: 
 
 # ------------------------------------------------------------------------------------- starters
 def write_starter(out: Path, phase: str, queues: dict[str, list[str]], host: str, then: dict | None = None,
-                  mode: str = "scripts"):
+                  mode: str = "scripts", cooldown_s: int = 0):
     """queues: window name → job names run one after another. `then`: queues started after these finish."""
     launch = out / "launch"
 
     def queue_script(qname, jobs):
-        lines = ["#!/usr/bin/env bash", f"cd {_q(ROOT)}"]
-        for j in jobs:
-            lines.append(f'echo "JOB {j}"; bash {_q(out / "jobs" / j / "job.sh")} 2>&1 | tee -a {_q(launch / (qname + ".log"))}')
+        log = _q(launch / (qname + ".log"))
+        lines = ["#!/usr/bin/env bash", f"cd {_q(ROOT)}", f"COOLDOWN_S={cooldown_s}",
+                 # Polonez heat rule: start or resume only when every GPU is below 70 C
+                 'cool() { command -v nvidia-smi >/dev/null || return 0; '
+                 'while [ "$(nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader | sort -n | tail -1)" -ge 70 ]; '
+                 'do echo "GPU above 70 C, waiting $(date +%T)"; sleep 120; done; }']
+        for i, j in enumerate(jobs):
+            sh = _q(out / "jobs" / j / "job.sh")
+            lines.append(f'echo "JOB {j}" | tee -a {log}; cool')
+            lines.append(f'while true; do bash {sh} 2>&1 | tee -a {log}; rc=${{PIPESTATUS[0]}}; '
+                         f'[ "$rc" = 75 ] || break; echo "COOLDOWN $COOLDOWN_S s $(date +%T)" | tee -a {log}; '
+                         f'sleep "$COOLDOWN_S"; cool; done')
+            if cooldown_s and i < len(jobs) - 1 and (j.startswith("train_") or j.startswith("tune_")):
+                act = _q(out / "jobs" / j / "active_seconds")
+                lines.append(f'[ "$(cat {act} 2>/dev/null || echo 0)" -ge 7200 ] '
+                             f'&& {{ echo "COOLDOWN $COOLDOWN_S s after {j} $(date +%T)" | tee -a {log}; sleep "$COOLDOWN_S"; }}')
         path = launch / f"{phase}_{qname}.sh"
         _write(path, "\n".join(lines) + "\n")
         return path
@@ -353,6 +379,9 @@ def cmd_plan(a):
     gpus = [str(g) for g in a.gpus]
     extra = dict(kv.split("=", 1) for kv in a.extra_env)
     t = TIERS[a.tier]
+    # Polonez heat rule: training pauses at the first checkpoint after --burst_hours, cools down, resumes
+    burst_s = int(a.burst_hours * 3600) if a.mode == "scripts" else 0
+    cooldown_s = int(a.cooldown_min * 60) if a.mode == "scripts" else 0
     jobs = []
     if a.phase == "data":
         profile = "smoke" if a.tier == "smoke" else "full"
@@ -368,17 +397,19 @@ def cmd_plan(a):
                 name = f"tune_{arch}_lr{prior * mult:.2e}"
                 jobs.append(plan_train_job(name, arch, a.tier, lr=prior * mult, tokens=t.tune_tokens, n_gpus=1,
                                            gpu_ids=gpus[k % len(gpus)], data=data, out=out, seed=a.seed, mode=a.mode,
-                                           extra=extra, cap_gpu_hours=t.cap_gpu_hours))
+                                           extra=extra, cap_gpu_hours=t.cap_gpu_hours, burst_s=burst_s))
                 queues[f"gpu{gpus[k % len(gpus)]}"].append(name)
                 k += 1
-        start = write_starter(out, "tune", {q: j for q, j in queues.items() if j}, a.host, mode=a.mode)
+        start = write_starter(out, "tune", {q: j for q, j in queues.items() if j}, a.host, mode=a.mode,
+                              cooldown_s=cooldown_s)
     elif a.phase in ("train", "eval"):
         trains, evals = [], {f"gpu{g}": [] for g in gpus}
         for i, arch in enumerate(a.arches):
             lr = load_recipe(arch)["lr"][a.tier]
             name = f"train_{arch}"
             card = plan_train_job(name, arch, a.tier, lr=lr, tokens=t.tokens, n_gpus=len(gpus), gpu_ids=",".join(gpus),
-                                  data=data, out=out, seed=a.seed, mode=a.mode, extra=extra, cap_gpu_hours=t.cap_gpu_hours)
+                                  data=data, out=out, seed=a.seed, mode=a.mode, extra=extra, cap_gpu_hours=t.cap_gpu_hours,
+                                  burst_s=burst_s)
             jobs.append(card)
             trains.append(name)
             g = gpus[i % len(gpus)]
@@ -387,7 +418,8 @@ def cmd_plan(a):
             evals[f"gpu{g}"].append(f"eval_{arch}")
         evals = {q: j for q, j in evals.items() if j}
         if a.phase == "train":
-            start = write_starter(out, "train", {"train": trains}, a.host, then=evals, mode=a.mode)
+            start = write_starter(out, "train", {"train": trains}, a.host, then=evals, mode=a.mode,
+                                  cooldown_s=cooldown_s)
         else:
             start = write_starter(out, "eval", evals, a.host, mode=a.mode)
     else:
@@ -462,6 +494,9 @@ def main():
     pl.add_argument("--extra_env", nargs="*", default=[], help="KEY=VALUE launcher overrides (recorded in job.json)")
     pl.add_argument("--data_tokens", type=float, default=0, help="data phase: training-mix size in tokens")
     pl.add_argument("--num_proc", type=int, default=16, help="data phase: generator processes")
+    pl.add_argument("--burst_hours", type=float, default=6.0,
+                    help="pause a training job at its first checkpoint after this many hours (0 = never)")
+    pl.add_argument("--cooldown_min", type=float, default=20.0, help="cooldown after a burst or a long job")
     se = sub.add_parser("select")
     se.add_argument("--out", required=True)
     se.add_argument("--tier", choices=tuple(TIERS), default="screen")
