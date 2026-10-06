@@ -170,7 +170,9 @@ if [ ! -f "$JOB/status" ]; then
     done
     wait "$PID"; RC=$?
     rm -f "$JOB/status.run"
-    if [ "$PAUSED" = 1 ] && [ ! -f "$JOB/status" ]; then echo "EXIT {job} 75 (paused for cooldown)"; exit 75; fi
+    if [ "$PAUSED" = 1 ] && [ ! -f "$JOB/status" ] && [ -z "$(ls -d "$JOB"/train/*/final 2>/dev/null)" ]; then
+        echo "EXIT {job} 75 (paused for cooldown)"; exit 75
+    fi
 fi
 FINAL=$(ls -td "$JOB"/train/*/final 2>/dev/null | head -1 || true)
 if [ -n "$FINAL" ]; then
