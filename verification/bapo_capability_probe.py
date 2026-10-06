@@ -669,7 +669,8 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
     if init_path is not None:
         state = torch.load(init_path, map_location=device, weights_only=False)
         missing, unexpected = model.load_state_dict(state["state_dict"], strict=False)
-        bad = [k for k in missing if not k.endswith(("round_emb", "loop_emb", "loop_gate"))] + list(unexpected)
+        bad = [k for k in missing if not k.endswith(("round_emb", "loop_emb", "loop_gate"))
+               and not k.startswith("loop_name_head.")] + list(unexpected)  # new heads start fresh
         if bad:
             raise SystemExit(f"--init_ckpt {init_path}: incompatible keys {bad[:6]}")
         if missing:  # E33: a looped model starting from single-read weights (round embeddings start at 0)
