@@ -183,4 +183,5 @@ any cell or ladder length where `e31_li_m1` passes (≥ 75 %), on the median of 
   floor (44 / 41 / 39 % for 2 / 3 / 4 hops), so K1 is formally met but uninformative; the v1 parallel-chain exams are
   now `flawed`. No harm (S3 in the v4 sense): all 17 non-flawed suite tasks within 3 points of `e31_li_m1` (median of
   seeds 0–2); lookup-2k at 5e-5 99 vs 98. C1.lookup-16k (2k → 16k curriculum, 3 seeds each, both learn it on 2 of 3):
-  medians within 2 points at 5 of 7 lengths; **2 lost** narrowly, 2k (88 vs 98) and 16k (94 vs 100) (2026-10-06).
+  board no-harm **1 lost: 2k (88 vs 98)**; at the 16k training length 98 vs 98; the 16k ladder point (94 vs 100) is
+  unscored on the board (champion seed 0 lacks a first-letter score there) but would be a second narrow loss (2026-10-06).
