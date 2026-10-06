@@ -43,7 +43,47 @@ def _arm(tag: str, seed: int, flags: list[str]) -> list[dict]:
     return out
 
 
+# ---- hop2_diag (2026-10-06): why the second hop is not learned ------------------------------------------------
+# A linear probe on the 1-hop loop checkpoint: after round 1 the state names node 1 by its *first* letters (99 / 91 /
+# 69 %, chance from letter ~8), while the question's start node is held by its *last* letters (the local window),
+# so the memory is addressed by the tail of a source name and round 1 returns the head of the target name: the
+# second lookup has nothing to match. Diagnostics (not capability evidence), all from random init on the C5 pchain2
+# exam as written (hop count in the question, overhang, 4x budget), one knob changed each:
+#   one-token names (64 symbols, key_len 1)  — no head/tail mismatch, the decision is the whole answer
+#   4-letter names                           — next to tracking's dense k4 16x run
+#   written path (n1 then n2), single read   — two 1-hop lookups, the second queried by the node just written
+#   → then the loop takes over the written step: final-only answers from the path weights (Coconut-style stage)
+# Loop arms halve the micro-batch (same effective batch). Every job writes a flow log.
+ONE_TOKEN = ["--n_symbols", "64", "--key_len", "1"]
+LOOP_MICRO = ["--grad_accum", "2"]
+
+
+def _diag(name, arch, extra, *, init=None, cost=2.0):
+    from scripts.study_plans.e30_vs_e31 import task_job
+
+    j = task_job("C5.pchain2-1k", arch, 0, prefix="diag33")
+    j.update(name=name, init=init, cost=cost, save=True)
+    j["args"] = j["args"] + extra + ["--flow_log", "@out"]
+    return j
+
+
+def hop2_diag_jobs() -> list[dict]:
+    loop = [*E33A_LOOP, *LOOP_MICRO]
+    path = "diag33_path_r1_s0"
+    return [
+        _diag("diag33_tok1_loop_s0", "e31_li_m1", [*ONE_TOKEN, *loop], cost=6.4),
+        _diag("diag33_tok1_r1_s0", "e31_li_m1", [*ONE_TOKEN, "--loop_rounds", "1"], cost=2.2),
+        _diag("diag33_tok1_dense_s0", "dense", ONE_TOKEN, cost=1.0),
+        _diag(path, "e31_li_m1", ["--chain_answer_path", "--loop_rounds", "1"], cost=2.4),
+        # the loop replaces the written step: same exam, final node only, from the path-trained weights, 1x budget
+        _diag("diag33_path_to_loop_s0", "e31_li_m1", [*loop, "--steps", "1200"], init=path, cost=1.8),
+        _diag("diag33_k4_loop_s0", "e31_li_m1", ["--key_len", "4", *loop], cost=6.4),
+    ]
+
+
 def jobs(phase: str) -> list[dict]:
     if phase == "hops":
         return [j for tag, seed, flags in ARMS for j in _arm(tag, seed, flags)]
-    raise SystemExit(f"unknown phase {phase!r} (hops)")
+    if phase == "hop2_diag":
+        return hop2_diag_jobs()
+    raise SystemExit(f"unknown phase {phase!r} (hops, hop2_diag)")
