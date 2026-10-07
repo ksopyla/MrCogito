@@ -121,6 +121,33 @@ def hop2_short_jobs() -> list[dict]:
     return out
 
 
+# ---- hop2_ablate (2026-10-07): what made the second hop work -------------------------------------------------
+# hop2_short: the loop learned 2 hops with 4- and 8-letter names (picked 97.8 / 97.7 %, floor 8.3; round 1 → n1
+# 99–100 %, round 2 → n2 98–99 %; a sudden jump at ~0.7k / ~1.2k steps). Same recipe (1-hop stage → 2 hops with
+# half the rows at 1 hop, 8-letter names, seed 1, from the E31 lookup weights), one ingredient removed each:
+#   single read (no loop) · loop without the whole-name loss; then the reach: 3 hops from the 2-hop loop, and
+#   16-letter names through the same recipe (the earlier 16-letter runs had a different 1-hop stage).
+def hop2_ablate_jobs() -> list[dict]:
+    loop = [*E33A_LOOP, *LOOP_MICRO]
+    mix1 = ["--replay_recipe", "chain_parallel", "--replay_hops", "1", "--replay_frac", "0.5"]
+    k8 = ["--key_len", "8"]
+    edge_r1 = "diag33_edge_k8_r1_s1"
+    edge16 = "diag33_edge_k16_loop_s1"
+    return [
+        _diag(edge_r1, "e31_li_m1", [*k8, "--hops", "1", "--loop_rounds", "1", "--steps", "1200"], init=ROOT_CKPT,
+              cost=0.6, seed=1),
+        _diag("diag33_pchain2_k8_r1_mix_s1", "e31_li_m1", [*k8, "--loop_rounds", "1", *mix1], init=edge_r1,
+              cost=2.2, seed=1),
+        _diag("diag33_pchain2_k8_noname_mix_s1", "e31_li_m1", [*k8, *loop, *mix1], init="diag33_edge_k8_loop_s1",
+              cost=2.0, seed=1),
+        _diag("diag33_pchain3_k8_name_mix_s1", "e31_li_m1",
+              [*k8, "--hops", "3", *loop, *NAME, "--replay_recipe", "chain_parallel", "--replay_hops", "2",
+               "--replay_frac", "0.5"], init="diag33_pchain2_k8_name_mix_s1", cost=3.0, seed=1),
+        _diag(edge16, "e31_li_m1", ["--hops", "1", *loop, "--steps", "1200"], init=ROOT_CKPT, cost=1.6, seed=1),
+        _diag("diag33_pchain2_k16_name_mix_s1", "e31_li_m1", [*loop, *NAME, *mix1], init=edge16, cost=4.0, seed=1),
+    ]
+
+
 def jobs(phase: str) -> list[dict]:
     if phase == "hops":
         return [j for tag, seed, flags in ARMS for j in _arm(tag, seed, flags)]
@@ -130,4 +157,6 @@ def jobs(phase: str) -> list[dict]:
         return hop2_name_jobs()
     if phase == "hop2_short":
         return hop2_short_jobs()
-    raise SystemExit(f"unknown phase {phase!r} (hops, hop2_diag, hop2_name, hop2_short)")
+    if phase == "hop2_ablate":
+        return hop2_ablate_jobs()
+    raise SystemExit(f"unknown phase {phase!r} (hops, hop2_diag, hop2_name, hop2_short, hop2_ablate)")
