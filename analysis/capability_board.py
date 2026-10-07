@@ -155,13 +155,14 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
                 if j["status"] != "done":
                     continue
                 # v4 runs built from the task definition itself (`task_job`): `{conf|v4}_{C1_edge-1k}_{arch}_s{seed}`
-                m = re.match(r"^(?:confp?|v4)_(C\d)_(.+?)(?:_h(\d))?_" + re.escape(j["arch"]) + r"_s(\d+)$", j["job"])
+                # the variant comes from the name: a variant may be an arch plus flags (e33a_loop = e31_li_m1 + loop)
+                m = re.match(r"^(?:confp?|v4)_(C\d)_(.+?-\d+k)(?:_h(\d))?_(.+)_s(\d+)$", j["job"])
                 hops = re.search(r"(?:pchain|path)(\d)-", m[2]) if m else None
                 final = m and (m[3] is None or (hops and int(m[3]) == int(hops[1])))  # curriculum: last stage only
                 if m and final and f"{m[1]}.{m[2]}" in TASK_BY_ID:
                     task = f"{m[1]}.{m[2]}"
                     lad = {int(L): v.get("first_acc") for L, v in (j["ladders"].get("ladder") or {}).items()}
-                    out.append({"task": task, "model": j["arch"], "label": "same", "seed": int(m[4]),
+                    out.append({"task": task, "model": m[4], "label": "same", "seed": int(m[5]),
                                 "score": _score(task, j.get("p0"), j.get("cand")), "mean": j.get("acc"),
                                 "ladder": lad, "source": j["source"], "collected": "", "via": "v4 task recipe"})
                     continue
