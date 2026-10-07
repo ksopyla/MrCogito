@@ -138,3 +138,22 @@ def test_named_variant_e33a_loop_builds_the_loop():
     assert m.config.message_loop_exit_aux == 0.3 and m.config.lm_reader_tokens == 1
     assert m.config.message_loop_exit_targets == "answer"
     assert m.config.lm_slot_pos == "boundary" and m.config.lm_addr == "none"
+
+
+def test_whole_name_loss_trains_the_name_head_and_is_off_by_default():
+    """E33: with message_loop_name_aux > 0 every loop state names its whole node at the decision position; the
+    default model has no name head (old checkpoints load unchanged)."""
+    assert make(message_loop_rounds=4).loop_name_head is None
+    m = make(message_loop_rounds=4, message_loop_name_aux=0.5, message_loop_name_len=4)
+    m.loop_emb.data.normal_(0, 0.1)
+    m.train()
+    ids = row()
+    lab = labels_for(ids)
+    base = m(ids, labels=lab).loss
+    m.config.message_loop_name_aux = 0.0
+    without = m(ids, labels=lab).loss
+    m.config.message_loop_name_aux = 0.5
+    assert torch.isfinite(base) and float(base) > float(without)
+    base.backward()
+    assert float(m.loop_name_head.weight.grad.abs().sum()) > 0
+    assert float(m.layers[1].attn.wq.weight.grad.abs().sum()) > 0
