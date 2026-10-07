@@ -1,0 +1,14 @@
+{
+ "schema": 1,
+ "kind": "study",
+ "name": "calibrate_c5_deep",
+ "host": "odra",
+ "source_path": "/home/ksopyla/dev/MrCogito-tracking/Cache/study/calibrate_c5_deep",
+ "archive_path": "/nas/ml_data/mrcogito/results/study/calibrate_c5_deep.odra",
+ "collected": "2026-10-06",
+ "git": ["35d54043c0653bcb80a15002ec1f5e7b845958c4"],
+ "jobs": [
+  {"name":"cal4_pchain2hc_dense8_x4_dense_s0","status":"done","phase":"calibrate_c5_deep","args":["--seq_len","1024","--steps","4800","--k1_mult","4","--batch","32","--lr","1e-4","--eval_rows","256","--recipe","chain_parallel","--scale","bridge_1k","--hops","2","--chain_overhang","1","--key_len","16","--hop_count_in_question","--arch","dense","--seed","0","--stack_layers","6","--max_params","80000000"],"init":null,"results":{"dense":{"acc":0.27319,"acc_se":0.00742,"p0":0.24219,"ppa":[0.2422,0.2305,0.2578,0.2266,0.3047,0.3008,0.2773,0.2578,0.3242,0.2852,0.2891,0.293,0.2773,0.2773,0.2578,0.2695],"bits":0.076,"prize_bits":32.0,"flow":0.0024,"best_acc":0.29443,"extended":false,"step":19200,"examples_to_75":null,"sec_per_step":0.4528,"tokens_per_sec":72363.2,"params":61167734,"cand":0.07044,"exact":0.0,"first_greedy":0.24219,"guess_floor":{"link_target_first":0.38574,"link_target_exact":0.08333,"chain_end_exact":0.0,"rows":256}}},"ladders":{}},
+  {"name":"cal4_pchain2hc_k4_dense8_x16_dense_s0","status":"done","phase":"calibrate_c5_deep","args":["--seq_len","1024","--steps","4800","--k1_mult","4","--batch","32","--lr","1e-4","--eval_rows","256","--recipe","chain_parallel","--scale","bridge_1k","--hops","2","--chain_overhang","1","--key_len","16","--hop_count_in_question","--arch","dense","--seed","0","--stack_layers","6","--max_params","80000000","--steps","19200","--k1_mult","1","--key_len","4"],"init":null,"results":{"dense":{"acc":0.26074,"acc_se":0.01263,"p0":0.24219,"ppa":[0.2422,0.2266,0.293,0.2812],"bits":0.0,"prize_bits":8.0,"flow":0.0,"best_acc":0.27832,"extended":false,"step":19200,"examples_to_75":null,"sec_per_step":0.4498,"tokens_per_sec":72848.3,"params":61167734,"cand":0.03933,"exact":0.00391,"first_greedy":0.24219,"guess_floor":{"link_target_first":0.35807,"link_target_exact":0.08428,"chain_end_exact":0.0,"rows":256}}},"ladders":{}}
+ ]
+}
