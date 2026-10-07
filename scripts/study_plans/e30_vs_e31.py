@@ -535,6 +535,20 @@ def jobs(phase: str) -> list[dict]:
                         [*x16, "--key_len", str(k), "--replay_recipe", "chain_parallel", "--replay_hops", "1",
                          "--replay_frac", "0.5"], init=edge)]
         return out
+    if phase == "calibrate_c5_r5b":
+        # Recipe B (intermediate nodes supervised) for dense: the answer is the written path n1 … nk
+        # (`--chain_answer_path`; the picked candidate reads the final node). 8-letter names, from random init:
+        # 1 hop (4x) → 2 hops (16x) with half the rows at 1 hop (replay rows inherit the path answer).
+        x16 = ["--steps", "19200", "--k1_mult", "1"]
+        path = ["--key_len", "8", "--chain_answer_path"]
+        edge = "cal5b_edgehc_k8_path_dense_s0"
+        j1 = task_job("C5.pchain2-1k", "dense", 0, prefix="cal5b")
+        j1["name"], j1["args"] = edge, j1["args"] + [*path, "--hops", "1"]
+        j2 = task_job("C5.pchain2-1k", "dense", 0, prefix="cal5b")
+        j2["name"], j2["init"] = "cal5b_edgehc_k8_path_to_pchain2path_mix_k8_x16_dense_s0", edge
+        j2["args"] = j2["args"] + [*x16, *path, "--replay_recipe", "chain_parallel", "--replay_hops", "1",
+                                   "--replay_frac", "0.5"]
+        return [j1, j2]
     if phase == "calibrate_c5_deep":
         # Author's decision 2026-10-06: if the 4-layer dense control cannot learn C5, an 8-layer dense model
         # (learnability check only) decides whether the task is learnable. Same exam and budgets as round 3/4.
