@@ -183,14 +183,17 @@ TASKS: tuple[Task, ...] = (
                       + " hops (hop count in every question), each stage at the task's budget, optionally with "
                       "half its rows at the previous hop count (`--replay_hops`)")
       for h, fl in ((2, 0.083), (3, 0.0625), (4, 0.05))),
-    # C5, recipe B — the answer is the written path n1 … nk (intermediate nodes supervised for every model; a
-    # loop may add its own per-round node targets only here). 8-letter names; scored on the final node.
+    # C5, recipe B — chained lookup with a scratchpad: every model writes the path n1 … nk, so each written node is
+    # the query of the next hop (k lookups in sequence; no internal composition needed). 8-letter names; scored
+    # on the final node. Composition without a scratchpad is recipe A (C5.pchain*). "Final answer only with
+    # node targets on internal states" (E33 loop progress exits / name loss) is a third setting with no dense
+    # counterpart yet: a mechanism result, not a capability cell.
     *(Task(f"C5.path{h}-1k", "C5", f"parallel {h}-hop chain, answer = the written path, 1024 tokens",
            "chain_parallel",
            ("--scale", "bridge_1k", "--hops", str(h), "--chain_overhang", "1", "--key_len", "8",
             "--hop_count_in_question", "--chain_answer_path"), 1024, 16 * h,
-           f"follow {h} shuffled hops and write every node on the way (n1 … n{h}); 4 chains, overhang, hop count "
-           f"in the question; the picked candidate reads the final node",
+           f"chained lookup with a scratchpad: follow {h} shuffled hops writing every node on the way (n1 … n{h}); "
+           f"4 chains, overhang, hop count in the question; the picked candidate reads the final node",
            status="calibrating", ladder=_L, score="candidate", floor=fl, train=TRAIN_1K_X16,
            curriculum="one run from random init: the same exam at 1 hop (budget TRAIN_1K_X4) → "
                       + " → ".join(f"{k} hops (task budget, half the rows at {k - 1} hop{'s' if k > 2 else ''}: "
