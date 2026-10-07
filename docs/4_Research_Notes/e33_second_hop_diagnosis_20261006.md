@@ -115,3 +115,10 @@ capability cell, see the calibration log).
   earlier 16-letter failures came from the 1-hop stage (trained without the hop count in the question).
 - Open: the loop with exits trained on the answer only (no per-round node targets, recipe A) — running; E31 and E33
   from random init on the frozen C5.path2-1k (written path) — queued.
+
+**Recipe A (final answer only, no intermediate targets), 2026-10-07:** loop with exits trained on the answer, 8-letter
+names, same schedule (1-hop stage → 2 hops with half the rows at 1 hop), seed 1, from the E31 lookup weights:
+**94.5 % picked** (floor 8.3 %), every letter 93 %; a sudden jump at ~7k steps of the 2-hop stage (flow log: 3–9 %
+until 6.1k, 66 % at 7.1k, 81 % at 8.4k), early stop at 9.8k. Round 1 does not expose node 1 (first letter vs n1 21 %),
+rounds 2–4 give the answer (96 %): the loop composes internally without being told the bridge. The 4-layer dense
+model on the same recipe from random init: 12.1 % (tracking, round 5); the 8-layer dense learnability check is queued.
