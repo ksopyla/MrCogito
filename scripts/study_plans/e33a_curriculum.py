@@ -148,6 +148,15 @@ def hop2_ablate_jobs() -> list[dict]:
     ]
 
 
+# Recipe A (final answer only, tracking 2026-10-07): progress exits and the name loss both use the path, which dense
+# and the single read do not get. The fair loop arm: exits trained on the answer, no name loss, same schedule.
+def hop2_recipe_a_jobs() -> list[dict]:
+    loop_a = ["--loop_rounds", "4", "--loop_exit_aux", "0.3", "--loop_exit_targets", "answer", *LOOP_MICRO]
+    mix1 = ["--replay_recipe", "chain_parallel", "--replay_hops", "1", "--replay_frac", "0.5"]
+    return [_diag("diag33_pchain2_k8_ansexit_mix_s1", "e31_li_m1", ["--key_len", "8", *loop_a, *mix1],
+                  init="diag33_edge_k8_loop_s1", cost=2.0, seed=1)]
+
+
 def jobs(phase: str) -> list[dict]:
     if phase == "hops":
         return [j for tag, seed, flags in ARMS for j in _arm(tag, seed, flags)]
@@ -159,4 +168,6 @@ def jobs(phase: str) -> list[dict]:
         return hop2_short_jobs()
     if phase == "hop2_ablate":
         return hop2_ablate_jobs()
+    if phase == "hop2_recipe_a":
+        return hop2_recipe_a_jobs()
     raise SystemExit(f"unknown phase {phase!r} (hops, hop2_diag, hop2_name, hop2_short, hop2_ablate)")
