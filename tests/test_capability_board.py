@@ -49,3 +49,12 @@ def test_reference_is_dense_when_it_passes_else_the_best_model_that_learns_it():
     assert reference("T", {"T": {"dense": cell(0.9), "e33a_loop": cell(0.95)}}) == "dense"
     assert reference("T", {"T": {"dense": cell(0.15), "e33a_loop": cell(0.94), "e31_li_m1": cell(0.05)}}) == "e33a_loop"
     assert reference("T", {"T": {"dense": cell(0.15), "e33a_loop": cell(0.94, seeds=(1,))}}) is None
+
+
+def test_recipe_a_runs_named_reca_map_like_v4_runs():
+    def led(name):
+        return {"kind": "study", "name": "t", "host": "h", "collected": "2026-10-07",
+                "jobs": [{"name": name, "status": "done", "results": {"e31_li_m1": {"p0": 0.5, "cand": 0.9}},
+                          "ladders": {}}]}
+    ev = evidence([led("recA_C5_pchain2-1k_h2_e33a_loop_s0")])[0]
+    assert [(e["task"], e["model"], e["seed"]) for e in ev] == [("C5.pchain2-1k", "e33a_loop", 0)]
