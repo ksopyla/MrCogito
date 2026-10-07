@@ -78,3 +78,18 @@ at initialisation; whether that persists in the 30M runs is the first thing to r
 - **One-token names, all arms at the floor:** not a name problem; budget (16×) and the deeper dense reference next.
 - **Written path passes, path → loop keeps it:** the internalization route works; extend to 3 hops.
 - **Written path passes, path → loop collapses:** the loop cannot hold the bridge internally yet; add whole-name exits.
+
+## 5. Results of the diagnostics (2026-10-06/07, Polonez, seed 0 unless noted; picked candidate, 256 rows)
+
+| run | 2 hops (floor 8.3 %) | what it shows |
+|---|---|---|
+| written path n1 → n2, single read, 16-letter names | **95.3 %** (final node) | with the bridge written into the context, E31 chains two lookups |
+| path weights → loop, final node only | 10.9 % (round 1 → n1 98 %, round 2 37 %) | the loop finds the bridge internally but cannot query with it |
+| same + whole-name loss (`--loop_name_aux 0.5`) | **17.6 %** (exits 2–4 rising to ~50 % first letter at the end) | partial fix; probe: n1 letters 2–4 now carried (97 / 96 / 79 %), letters 5–16 still at chance |
+| 1-hop loop weights → 2 hops + whole-name loss, 50 % 1-hop rows | 10.5 % | no gain from the 1-hop start (vs the path start) |
+| straight to 2 hops from scratch: one-token names (loop / single read / dense), 4-letter names (loop) | 9–10 % / 10 % / 7.5 % / 9.6 % | none learns even hop 1 without the 1-hop stage: these runs do not test composition |
+| 1-hop stage with the loop, 4- / 8-letter names (Odra, seed 1, from E31 lookup weights) | 1 hop: **98.4 % / 97.6 %** | hop 1 with short names is easy; 2 hops with the whole-name loss and 1-hop mix running |
+
+Reading so far: one read at the decision position returns about 4 letters of a name (the single 64-dim KV head is
+read a few letters per answer position in normal answering). If 4-letter names learn the second hop, the next
+capacity check is a wider read (more KV heads or a larger head) for long names.
