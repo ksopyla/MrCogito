@@ -514,6 +514,27 @@ def jobs(phase: str) -> list[dict]:
             run("C5.pchain2-1k", short, ["--key_len", "8", "--seq_len", "256"]),
             run("C5.pchain2-1k", "cal4_pchain2hc_k8_256_to_1k_x4_dense_s0", ["--key_len", "8"], init=short),
         ]
+    if phase == "calibrate_c5_r5":
+        # Round 5 (2026-10-07): the combination round 4 left out. E33 reasoning diagnostics: every model needs the
+        # 1-hop stage first, and short names. Dense, seed 0, from random init, one written run per arm:
+        # 1 hop (4x) → 2 hops (16x), 4- / 8-letter names, with or without half the rows kept at 1 hop.
+        x16 = ["--steps", "19200", "--k1_mult", "1"]
+
+        def run(task_id, name, extra, init=None):
+            j = task_job(task_id, "dense", 0, prefix="cal5")
+            j["name"], j["init"], j["args"], j["cost"] = name, init, j["args"] + extra, 1.6
+            return j
+
+        out = []
+        for k in (4, 8):
+            edge = f"cal5_edgehc_k{k}_dense_s0"
+            out += [run("C5.pchain2-1k", edge, ["--key_len", str(k), "--hops", "1"]),
+                    run("C5.pchain2-1k", f"cal5_edgehc_k{k}_to_pchain2hc_k{k}_x16_dense_s0",
+                        [*x16, "--key_len", str(k)], init=edge),
+                    run("C5.pchain2-1k", f"cal5_edgehc_k{k}_to_pchain2mix_k{k}_x16_dense_s0",
+                        [*x16, "--key_len", str(k), "--replay_recipe", "chain_parallel", "--replay_hops", "1",
+                         "--replay_frac", "0.5"], init=edge)]
+        return out
     if phase == "calibrate_c5_deep":
         # Author's decision 2026-10-06: if the 4-layer dense control cannot learn C5, an 8-layer dense model
         # (learnability check only) decides whether the task is learnable. Same exam and budgets as round 3/4.
