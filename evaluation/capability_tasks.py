@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-VERSION = "v4-draft-2026-10-06.3"
+VERSION = "v4-draft-2026-10-07"
 PASS_ACC = 0.75
 SEEDS = (0, 1, 2)
 LADDER = (1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072)
@@ -44,6 +44,7 @@ LADDER = (1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072)
 # k1_mult: the run may extend to k1_mult x steps while it has not reached the pass mark.
 TRAIN_1K = ("--seq_len", "1024", "--steps", "1200", "--k1_mult", "4", "--batch", "32", "--lr", "1e-4")
 TRAIN_1K_X4 = ("--seq_len", "1024", "--steps", "4800", "--k1_mult", "4", "--batch", "32", "--lr", "1e-4")
+TRAIN_1K_X16 = ("--seq_len", "1024", "--steps", "19200", "--k1_mult", "1", "--batch", "32", "--lr", "1e-4")
 
 
 @dataclass(frozen=True)
@@ -182,6 +183,20 @@ TASKS: tuple[Task, ...] = (
                       + " hops (hop count in every question), each stage at the task's budget, optionally with "
                       "half its rows at the previous hop count (`--replay_hops`)")
       for h, fl in ((2, 0.083), (3, 0.0625), (4, 0.05))),
+    # C5, recipe B — the answer is the written path n1 … nk (intermediate nodes supervised for every model; a
+    # loop may add its own per-round node targets only here). 8-letter names; scored on the final node.
+    *(Task(f"C5.path{h}-1k", "C5", f"parallel {h}-hop chain, answer = the written path, 1024 tokens",
+           "chain_parallel",
+           ("--scale", "bridge_1k", "--hops", str(h), "--chain_overhang", "1", "--key_len", "8",
+            "--hop_count_in_question", "--chain_answer_path"), 1024, 16 * h,
+           f"follow {h} shuffled hops and write every node on the way (n1 … n{h}); 4 chains, overhang, hop count "
+           f"in the question; the picked candidate reads the final node",
+           status="calibrating", ladder=_L, score="candidate", floor=fl, train=TRAIN_1K_X16,
+           curriculum="one run from random init: the same exam at 1 hop (budget TRAIN_1K_X4) → "
+                      + " → ".join(f"{k} hops (task budget, half the rows at {k - 1} hop{'s' if k > 2 else ''}: "
+                                   f"`--replay_recipe chain_parallel --replay_hops {k - 1} --replay_frac 0.5`)"
+                                   for k in range(2, h + 1)))
+      for h, fl in ((2, 0.083), (3, 0.0625))),
     # C6 — aggregate
     Task("C6.unique-256", "C6", "the fact that appears once, 256 tokens", "unique", ("--scale", "tiny_wide"), 256, 48,
          "report the one fact that appears once (no key to look up)"),
@@ -286,5 +301,5 @@ def legacy_battery(variant: str, slot: str) -> tuple[str | None, str]:
     return task, "curriculum-differs"                # E31b / E33a: started from the run's own lookup-2k weights
 
 
-__all__ = ["TRAIN_1K", "TRAIN_1K_X4", "BATTERY_V1", "FLAWED", "LADDER", "LEVELS", "LEVEL_BY_ID", "PACKAGES", "PASS_ACC", "SEEDS",
+__all__ = ["TRAIN_1K", "TRAIN_1K_X4", "TRAIN_1K_X16", "BATTERY_V1", "FLAWED", "LADDER", "LEVELS", "LEVEL_BY_ID", "PACKAGES", "PASS_ACC", "SEEDS",
            "SUITE_V3", "TASKS", "TASK_BY_ID", "VERSION", "Level", "Task", "legacy_battery", "legacy_suite"]

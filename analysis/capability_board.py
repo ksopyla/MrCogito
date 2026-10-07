@@ -155,13 +155,17 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
                 if j["status"] != "done":
                     continue
                 # v4 runs built from the task definition itself (`task_job`): `{conf|v4}_{C1_edge-1k}_{arch}_s{seed}`
-                m = re.match(r"^(?:conf|v4)_(C\d)_(.+)_" + re.escape(j["arch"]) + r"_s(\d+)$", j["job"])
-                if m and f"{m[1]}.{m[2]}" in TASK_BY_ID:
+                m = re.match(r"^(?:confp?|v4)_(C\d)_(.+?)(?:_h(\d))?_" + re.escape(j["arch"]) + r"_s(\d+)$", j["job"])
+                hops = re.search(r"(?:pchain|path)(\d)-", m[2]) if m else None
+                final = m and (m[3] is None or (hops and int(m[3]) == int(hops[1])))  # curriculum: last stage only
+                if m and final and f"{m[1]}.{m[2]}" in TASK_BY_ID:
                     task = f"{m[1]}.{m[2]}"
                     lad = {int(L): v.get("first_acc") for L, v in (j["ladders"].get("ladder") or {}).items()}
-                    out.append({"task": task, "model": j["arch"], "label": "same", "seed": int(m[3]),
+                    out.append({"task": task, "model": j["arch"], "label": "same", "seed": int(m[4]),
                                 "score": _score(task, j.get("p0"), j.get("cand")), "mean": j.get("acc"),
                                 "ladder": lad, "source": j["source"], "collected": "", "via": "v4 task recipe"})
+                    continue
+                if m:  # an earlier curriculum stage of a v4 run: not a result of the task itself
                     continue
                 parsed = parse_job(j["job"])
                 if not parsed:
@@ -197,10 +201,14 @@ def calibration(ledgers: list[dict]) -> list[dict]:
             continue
         for j in study_jobs(led):
             name = j["job"]
-            if not re.match(r"^(cal\d?|conf)_", name) or j["status"] not in ("done", "failed"):
+            if not re.match(r"^(cal\d?|confp?)_", name) or j["status"] not in ("done", "failed"):
                 continue
             stem = name.split("_dense")[0]
-            m = re.match(r"^conf_(C\d)_(.+)$", stem)  # confirmation runs built from the task definition itself
+            m = re.match(r"^confp?_(C\d)_(.+?)(?:_h(\d))?$", stem)  # confirmation runs built from the task definition
+            if not m:
+                m2 = re.match(r"^cal\d_(C\d)_(.+?)_h(\d)$", stem)  # calibration runs built from a task definition
+                if m2:
+                    m = m2
             task = (f"{m[1]}.{m[2]}" if m else
                     next((t for frag, t in CAL_TASKS if frag in stem.split("_to_")[-1]), None))
             if task is None:
@@ -210,9 +218,10 @@ def calibration(ledgers: list[dict]) -> list[dict]:
             if "_to_" in name and "x16" not in name or (re.match(r"^cal[23]_", name) and "lookup1k" not in name):
                 knobs = [k for k in knobs if k != "4x budget"] + ["4x budget"]
             if m:
-                knobs = ["written recipe (confirmation)"]
+                knobs = (["written recipe (confirmation)"] if name.startswith("conf") else ["written recipe"]) \
+                    + ([f"curriculum stage {m[3]} hop{'s' if int(m[3]) > 1 else ''}"] if m[3] else [])
             rows.append({"job": name, "task": task,
-                         "round": ("confirm" if m else int(name[3]) if name[3].isdigit() else 1),
+                         "round": ("confirm" if name.startswith("conf") else int(name[3]) if name[3].isdigit() else 1),
                          "model": j["arch"], "variant": ", ".join(dict.fromkeys(knobs)) or "task recipe",
                          "score": _score(task, j.get("p0"), j.get("cand")), "first": j.get("p0"),
                          "first_greedy": j.get("first_greedy"), "teacher": j.get("acc"),
