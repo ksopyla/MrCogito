@@ -32,10 +32,15 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch  # noqa: E402
 
 
-def _answer_ids(tok, prompt: str, answer: str, p_ids: list[int]) -> list[int]:
-    full = tok.encode(prompt + answer, add_special_tokens=False)
-    if full[: len(p_ids)] == p_ids:
-        return full[len(p_ids):]
+def _answer_ids(tok, prompt: str, answer: str, p_ids: list[int], tail_chars: int = 400) -> list[int]:
+    """Token ids of `answer` as they appear after `prompt`. Only the prompt's tail is re-encoded: BPE
+    merges are local, and re-encoding a 128k-token document per candidate made the scorer CPU-bound
+    (hours per model on 2026-10-07)."""
+    tail = prompt[-tail_chars:]
+    t_ids = tok.encode(tail, add_special_tokens=False)
+    full = tok.encode(tail + answer, add_special_tokens=False)
+    if full[: len(t_ids)] == t_ids:
+        return full[len(t_ids):]
     return tok.encode(answer, add_special_tokens=False)  # BPE merged across the boundary
 
 
@@ -145,16 +150,38 @@ def main():
                 kept.append(r)
         items = kept
 
+    # shortest documents first; every scored item is appended to <out>.rows.jsonl, so an interrupted
+    # run resumes where it stopped and progress is visible
+    items.sort(key=lambda r: (r["length"], r["split"], r["task"], r["id"]))
+    part = args.out + ".rows.jsonl"
+    rows, done_ids = [], set()
+    if os.path.exists(part):
+        with open(part) as fh:
+            for line in fh:
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                rows.append(row)
+                done_ids.add(row["id"])
+    todo = [r for r in items if r["id"] not in done_ids]
+    print(f"{len(items)} items, {len(done_ids)} already scored, {len(todo)} to go", flush=True)
     t0 = time.time()
-    rows = []
-    with msg:
-        for r in items:
+    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+    with msg, open(part, "a") as pf:
+        for i, r in enumerate(todo):
             s = score_prompt(model, tok, r["prompt"], r["answer"], r["candidates"], device)
             row = {k: r[k] for k in ("id", "split", "task", "level", "length", "depth", "floor")}
             row.update(s)
             if not args.no_removed:
                 row["removed_exact"] = score_prompt(model, tok, r["prompt_removed"], r["answer"], r["candidates"], device)["exact"]
             rows.append(row)
+            pf.write(json.dumps(row) + "\n")
+            if (i + 1) % 200 == 0 or i + 1 == len(todo):
+                pf.flush()
+                el = time.time() - t0
+                print(f"progress {i + 1}/{len(todo)} · length {r['length']} · {el:.0f}s · "
+                      f"{time.strftime('%Y-%m-%d %H:%M:%S %Z')}", flush=True)
         story_loss = story_ce(model, args.story_eval, args.story_rows, device) if args.story_eval else None
     summary = summarize(rows)
     res = {"checkpoint": args.checkpoint, "message_override": args.message_override, "items": args.items,
