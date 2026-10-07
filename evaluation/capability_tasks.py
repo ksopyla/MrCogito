@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-VERSION = "v4-draft-2026-10-07"
+VERSION = "v4-draft-2026-10-07.2"
 PASS_ACC = 0.75
 SEEDS = (0, 1, 2)
 LADDER = (1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072)
@@ -194,7 +194,8 @@ TASKS: tuple[Task, ...] = (
             "--hop_count_in_question", "--chain_answer_path"), 1024, 16 * h,
            f"chained lookup with a scratchpad: follow {h} shuffled hops writing every node on the way (n1 … n{h}); "
            f"4 chains, overhang, hop count in the question; the picked candidate reads the final node",
-           status="calibrating", ladder=_L, score="candidate", floor=fl, train=TRAIN_1K_X16,
+           status="active" if h == 2 else "calibrating", ladder=_L, score="candidate", floor=fl,
+           train=TRAIN_1K_X16,
            curriculum="one run from random init: the same exam at 1 hop (budget TRAIN_1K_X4) → "
                       + " → ".join(f"{k} hops (task budget, half the rows at {k - 1} hop{'s' if k > 2 else ''}: "
                                    f"`--replay_recipe chain_parallel --replay_hops {k - 1} --replay_frac 0.5`)"

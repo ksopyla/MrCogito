@@ -535,7 +535,7 @@ def jobs(phase: str) -> list[dict]:
                         [*x16, "--key_len", str(k), "--replay_recipe", "chain_parallel", "--replay_hops", "1",
                          "--replay_frac", "0.5"], init=edge)]
         return out
-    if phase in ("confirm_c5_path", "calibrate_c5_path3"):
+    if phase in ("confirm_c5_path", "confirm_c5_path3", "calibrate_c5_path3"):
         # C5 recipe B, built from the task definitions + their written curriculum, dense from random init.
         from evaluation.capability_tasks import TRAIN_1K_X4
 
@@ -557,6 +557,8 @@ def jobs(phase: str) -> list[dict]:
 
         if phase == "confirm_c5_path":
             return [j for s in (0, 1, 2) for j in curriculum("C5.path2-1k", s, "confp")]
+        if phase == "confirm_c5_path3":
+            return [j for s in (0, 1, 2) for j in curriculum("C5.path3-1k", s, "confp")]
         return curriculum("C5.path3-1k", 0, "cal6")
     if phase == "calibrate_c5_r5b":
         # Recipe B (intermediate nodes supervised) for dense: the answer is the written path n1 … nk
