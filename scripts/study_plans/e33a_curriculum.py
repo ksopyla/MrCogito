@@ -58,10 +58,10 @@ ONE_TOKEN = ["--n_symbols", "64", "--key_len", "1"]
 LOOP_MICRO = ["--grad_accum", "2"]
 
 
-def _diag(name, arch, extra, *, init=None, cost=2.0):
+def _diag(name, arch, extra, *, init=None, cost=2.0, seed=0):
     from scripts.study_plans.e30_vs_e31 import task_job
 
-    j = task_job("C5.pchain2-1k", arch, 0, prefix="diag33")
+    j = task_job("C5.pchain2-1k", arch, seed, prefix="diag33")
     j.update(name=name, init=init, cost=cost, save=True)
     j["args"] = j["args"] + extra + ["--flow_log", "@out"]
     return j
@@ -99,6 +99,28 @@ def hop2_name_jobs() -> list[dict]:
     ]
 
 
+# ---- hop2_short (2026-10-07): names short enough for one read --------------------------------------------------
+# hop2_name: the whole-name loss lifted node 1's letters 2–4 in the round-1 state (54 / 90 / 48 → 97 / 96 / 79 %) but
+# letters 5–16 stay at chance: one read at the decision position returns ~4 letters (the memory is otherwise read a
+# few letters per answer position). 2 hops rose from 10.9 to 17.6 % (floor 8.3). So: names of 4 and 8 letters,
+# with the 1-hop stage first (direct 2-hop from scratch never learned hop 1), then 2 hops with the whole-name loss
+# and half the rows at 1 hop, 4x budget. Start: the E31 single-read lookup-2k weights that learned lookup (Odra
+# `len_lookup_e31_li_m1_s1`, 98 %), linked into the out folder as `lookup_start`.
+def hop2_short_jobs() -> list[dict]:
+    loop = [*E33A_LOOP, *LOOP_MICRO]
+    mix = ["--replay_recipe", "chain_parallel", "--replay_hops", "1", "--replay_frac", "0.5"]
+    out = []
+    for k in (4, 8):
+        edge = f"diag33_edge_k{k}_loop_s1"
+        out += [
+            _diag(edge, "e31_li_m1", ["--key_len", str(k), "--hops", "1", *loop, "--steps", "1200"],
+                  init=ROOT_CKPT, cost=1.6, seed=1),
+            _diag(f"diag33_pchain2_k{k}_name_mix_s1", "e31_li_m1", ["--key_len", str(k), *loop, *NAME, *mix],
+                  init=edge, cost=6.0, seed=1),
+        ]
+    return out
+
+
 def jobs(phase: str) -> list[dict]:
     if phase == "hops":
         return [j for tag, seed, flags in ARMS for j in _arm(tag, seed, flags)]
@@ -106,4 +128,6 @@ def jobs(phase: str) -> list[dict]:
         return hop2_diag_jobs()
     if phase == "hop2_name":
         return hop2_name_jobs()
-    raise SystemExit(f"unknown phase {phase!r} (hops, hop2_diag, hop2_name)")
+    if phase == "hop2_short":
+        return hop2_short_jobs()
+    raise SystemExit(f"unknown phase {phase!r} (hops, hop2_diag, hop2_name, hop2_short)")
