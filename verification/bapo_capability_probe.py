@@ -970,7 +970,8 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
                 raise SystemExit("--replay_hops needs --replay_recipe of the main exam's chain task")
             rep_over.update(hops=args.replay_hops, key_len=cfg.key_len, n_chains=cfg.n_chains,
                             n_distractors=cfg.n_distractors, chain_overhang=cfg.chain_overhang,
-                            hop_count_in_question=cfg.hop_count_in_question)
+                            hop_count_in_question=cfg.hop_count_in_question,
+                            chain_answer_path=cfg.chain_answer_path)
         args._replay_cfg = config_for(scale, rep.task, **rep_over)
         if args._replay_cfg.vocab.vocab_size != cfg.vocab.vocab_size:
             raise SystemExit("--replay_recipe must share the vocabulary of the main exam")
