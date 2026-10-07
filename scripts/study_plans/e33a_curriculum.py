@@ -191,26 +191,73 @@ def v4_path2_jobs(seeds=(0, 1, 2)) -> list[dict]:
 # (15.2 %, floor 8.3) fail it from random init; the loop learned it from E31 lookup weights (94.5 %). Same schedule as
 # the 8-layer dense run (calibrate_c5_deep_a): 8-letter names, 1 hop at TRAIN_1K_X4 → 2 hops at 19.2k steps with half
 # the rows at 1 hop. Loop exits trained on the answer. The E31 single read on the same schedule is the no-loop control.
-def recipe_a_scratch_jobs() -> list[dict]:
+def recipe_a_jobs(arms) -> list[dict]:
+    """Recipe A from random init, two stages per (variant, arch, seed, flags) arm."""
     from evaluation.capability_tasks import TRAIN_1K_X4
     from scripts.study_plans.e30_vs_e31 import task_job
 
-    arms = [("e33a_loop", s, ["--loop_rounds", "4", "--loop_exit_aux", "0.3", "--loop_exit_targets", "answer",
-                              *LOOP_MICRO]) for s in (0, 1, 2)]
-    arms.append(("e31_li_m1", 0, []))
     out = []
-    for variant, seed, flags in arms:
+    for variant, arch, seed, flags in arms:
         h1 = f"recA_C5_pchain2-1k_h1_{variant}_s{seed}"
-        j1 = task_job("C5.pchain2-1k", "e31_li_m1", seed, prefix="recA")
+        j1 = task_job("C5.pchain2-1k", arch, seed, prefix="recA")
         j1.update(name=h1, save=True, cost=2.5 if variant == "e33a_loop" else 1.0,
                   args=j1["args"] + ["--key_len", "8", "--hops", "1", *TRAIN_1K_X4, *flags, "--flow_log", "@out"])
-        j2 = task_job("C5.pchain2-1k", "e31_li_m1", seed, prefix="recA")
+        j2 = task_job("C5.pchain2-1k", arch, seed, prefix="recA")
         j2.update(name=f"recA_C5_pchain2-1k_h2_{variant}_s{seed}", init=h1, save=True,
                   cost=3.5 if variant == "e33a_loop" else 1.5,
                   args=j2["args"] + ["--key_len", "8", "--steps", "19200", "--k1_mult", "1", "--replay_recipe",
                                      "chain_parallel", "--replay_hops", "1", "--replay_frac", "0.5", *flags,
                                      "--flow_log", "@out"])
         out += [j1, j2]
+    return out
+
+
+def recipe_a_scratch_jobs() -> list[dict]:
+    loop = ["--loop_rounds", "4", "--loop_exit_aux", "0.3", "--loop_exit_targets", "answer", *LOOP_MICRO]
+    return recipe_a_jobs([*(("e33a_loop", "e31_li_m1", s, loop) for s in (0, 1, 2)),
+                          ("e31_li_m1", "e31_li_m1", 0, [])])
+
+
+# ---- fair_recipe_a / fair_tasks (2026-10-07, author: an honest E33 vs E31 vs dense comparison on the reasoning levels) -------
+# Every run from random init on the written recipe, seeds 0–2, built from the task definition (`task_job`), E33 =
+# e31_li_m1 + the registered answer-exit loop flags; names follow the board patterns.
+#   recipe A (C5.pchain2, the recipe_a_scratch schedule): E31 seeds 1–2 and the 4-layer dense seeds 0–2, so every
+#     model has seeds 0–2 on one schedule;
+#   E33 on the tasks with no from-scratch result yet: C1.keyed4, C1.edge, C3.recall8;
+#   C5.path3 (scratchpad, 3 hops) for E33 and E31, the written 3-stage curriculum (dense done by tracking).
+# Weights are kept; length ladders follow as read-only jobs. Two phases so recipe A (the open question) runs first:
+# `fair_recipe_a`, then `fair_tasks` queued behind it.
+def fair_recipe_a_jobs() -> list[dict]:
+    from evaluation.capability_tasks import SEEDS
+
+    return recipe_a_jobs([*(("e31_li_m1", "e31_li_m1", s, []) for s in (1, 2)),
+                          *(("dense", "dense", s, []) for s in SEEDS)])
+
+
+def fair_tasks_jobs() -> list[dict]:
+    from evaluation.capability_tasks import SEEDS, TRAIN_1K_X4
+    from scripts.study_plans.e30_vs_e31 import task_job
+
+    loop = [*E33A_LOOP_ANS, *LOOP_MICRO]
+    out = []
+    for task, cost in (("C1.keyed4-1k", 1.0), ("C1.edge-1k", 2.5), ("C3.recall8-1k", 2.5)):
+        for seed in SEEDS:
+            j = task_job(task, "e31_li_m1", seed)
+            j.update(name=j["name"].replace("_e31_li_m1_", "_e33a_loop_"), save=True, cost=cost,
+                     args=j["args"] + loop)
+            out.append(j)
+    for variant, flags, cost in (("e33a_loop", loop, 4.0), ("e31_li_m1", [], 1.5)):
+        for seed in SEEDS:
+            prev = None
+            for k in (1, 2, 3):
+                j = task_job("C5.path3-1k", "e31_li_m1", seed)
+                j["name"] = f"v4_C5_path3-1k_h{k}_{variant}_s{seed}"
+                j["args"] = j["args"] + ["--hops", str(k)] + (
+                    list(TRAIN_1K_X4) if k == 1 else
+                    ["--replay_recipe", "chain_parallel", "--replay_hops", str(k - 1), "--replay_frac", "0.5"]) + flags
+                j.update(init=prev, save=True, cost=cost)
+                prev = j["name"]
+                out.append(j)
     return out
 
 
@@ -231,4 +278,8 @@ def jobs(phase: str) -> list[dict]:
         return v4_path2_jobs()
     if phase == "recipe_a_scratch":
         return recipe_a_scratch_jobs()
+    if phase == "fair_recipe_a":
+        return fair_recipe_a_jobs()
+    if phase == "fair_tasks":
+        return fair_tasks_jobs()
     raise SystemExit(f"unknown phase {phase!r} (hops, hop2_diag, hop2_name, hop2_short, hop2_ablate)")
