@@ -33,7 +33,7 @@ sys.path.insert(0, str(ROOT))
 
 from analysis.capability_ledger import LEDGER_DIR, load_ledgers, study_jobs, suite_rows  # noqa: E402
 from evaluation.capability_suite import CELL_BY_ID, lr_for  # noqa: E402
-from evaluation.capability_tasks import (HEADLINE, LEVELS, SEEDS, TASK_BY_ID, TASKS, VERSION,  # noqa: E402
+from evaluation.capability_tasks import (LEVELS, SEEDS, TASK_BY_ID, TASKS, VERSION,  # noqa: E402
                                          legacy_battery, legacy_suite)
 
 OUT = ROOT / "docs" / "3_Evaluations_and_Baselines" / "capability_board.html"
@@ -457,10 +457,6 @@ def main() -> int:
               "score_kind": t.score, "floor": t.floor, "reference": reference(t.id, tbl),
               "curriculum": t.curriculum, "ladder": t.ladder, "task_status": t.status, "flaw": t.flaw,
               **row_status(t, tbl, args.champion)} for t in TASKS]
-    why = dict(HEADLINE)
-    for t in tasks:
-        t["headline"] = [h for h, _ in HEADLINE].index(t["id"]) if t["id"] in why else None
-        t["why"] = why.get(t["id"])
     data = {
         "generated": datetime.date.today().isoformat(), "version": VERSION, "champion": args.champion,
         "models": models, "visible": visible, "pass": PASS, "harm_points": HARM_POINTS, "seeds": list(SEEDS),
