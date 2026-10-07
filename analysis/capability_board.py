@@ -305,6 +305,17 @@ def no_harm(tbl: dict, champion: str, models: list[str]) -> dict:
     return out
 
 
+def reference(task_id: str, tbl: dict) -> str | None:
+    """The task's reference (rule 5, 2026-10-07): dense when it passes on the full seed set; otherwise the best
+    model that passes from random init (`same` evidence, seeds 0–2, median ≥ PASS); None if no model does."""
+    ok = {m: c["score"] for m, c in tbl.get(task_id, {}).items()
+          if c["label"] == "same" and c["score"] is not None and c["score"] >= PASS
+          and set(SEEDS) <= set(c["seeds"])}
+    if "dense" in ok:
+        return "dense"
+    return max(ok, key=ok.get) if ok else None
+
+
 def row_status(task, tbl: dict, champion: str) -> dict:
     if task.status == "flawed":
         return {"status": "flawed", "note": task.flaw}
@@ -426,7 +437,7 @@ def main() -> int:
     slots.sort(key=lambda sl: (lv_order.index(sl["level"]), std_ix.get(sl["id"], 99), sl["task"] or "", sl["id"]))
     tasks = [{"id": t.id, "level": t.level or "X", "name": t.name, "measures": t.measures, "recipe": t.recipe,
               "args": " ".join(t.args), "train_len": t.train_len, "prize": t.prize_bits, "chance": t.chance,
-              "score_kind": t.score, "floor": t.floor,
+              "score_kind": t.score, "floor": t.floor, "reference": reference(t.id, tbl),
               "curriculum": t.curriculum, "ladder": t.ladder, "task_status": t.status, "flaw": t.flaw,
               **row_status(t, tbl, args.champion)} for t in TASKS]
     data = {

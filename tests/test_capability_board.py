@@ -39,3 +39,13 @@ def test_v4_curriculum_runs_count_only_their_final_stage_under_the_named_variant
     stage1 = evidence([led("v4_C5_path2-1k_h1_e33a_loop_s1")])[0]
     assert [(e["task"], e["model"], e["seed"], e["score"]) for e in final] == [("C5.path2-1k", "e33a_loop", 1, 0.95)]
     assert stage1 == []
+
+
+def test_reference_is_dense_when_it_passes_else_the_best_model_that_learns_it():
+    from analysis.capability_board import reference
+
+    def cell(score, seeds=(0, 1, 2)):
+        return {"label": "same", "score": score, "seeds": list(seeds)}
+    assert reference("T", {"T": {"dense": cell(0.9), "e33a_loop": cell(0.95)}}) == "dense"
+    assert reference("T", {"T": {"dense": cell(0.15), "e33a_loop": cell(0.94), "e31_li_m1": cell(0.05)}}) == "e33a_loop"
+    assert reference("T", {"T": {"dense": cell(0.15), "e33a_loop": cell(0.94, seeds=(1,))}}) is None

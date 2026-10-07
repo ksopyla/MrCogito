@@ -20,6 +20,9 @@ Rules every task obeys (the author's decisions, 2026-10-04):
     guessing floor of ~40 % (answer with any candidate: the commonest first letter among them wins), the
     picked candidate 1 / #candidates, and a lossy copy of the right fact still counts. Every task states its guessing floor (`floor`, of its own score) next to chance
     (E33a diagnosis, 2026-10-05: docs/4_Research_Notes/e33a_loop_diagnosis_20261004.md);
+  * **a task is learnable once some model learns it** from random init on the written recipe (seeds 0–2,
+    median ≥ 75 %; author, 2026-10-07): dense is the ceiling when it passes; when it fails, the best model that
+    passes is the task's reference (the dashboard names it); if none passes, the task stays `calibrating`;
   * **flawed tasks** stay listed with their reason so nobody reuses them as evidence; they never gate,
     never enter a level and are crossed out on the dashboard.
 
@@ -35,7 +38,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-VERSION = "v4-draft-2026-10-07.3"
+VERSION = "v4-draft-2026-10-07.4"
 PASS_ACC = 0.75
 SEEDS = (0, 1, 2)
 LADDER = (1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072)
