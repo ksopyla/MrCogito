@@ -245,6 +245,24 @@ TASKS: tuple[Task, ...] = (
          flaw="about 2/3 of the book is the winner, so any sample answers it"),
 )
 TASK_BY_ID = {t.id: t for t in TASKS}
+
+# ---- the dashboard's headline: the tasks that separate the models now, most important first ------------
+# The board shows these at the top; every other task folds into "basics" (passed by every model: they guard
+# against regressions), "not ready" (calibrating) or "flawed", at the bottom. Presentation only: no recipe,
+# gate or no-harm count depends on it. Revisit when a result lands (spec: "The dashboard").
+HEADLINE: tuple[tuple[str, str], ...] = (
+    ("C5.pchain2-1k", "the frontier: composing 2 hops with only the final answer; dense (4 and 8 layers) and the E31 "
+                      "single read fail; the E33 loop's from-scratch seeds decide whether it becomes active"),
+    ("C5.path2-1k", "2 hops when the model may write the path: every model learns it, so it checks chained lookup, "
+                    "not internal composition"),
+    ("C5.path3-1k", "the same with 3 hops: dense passes on 2 of 3 seeds; the memory models are not run yet"),
+    ("C4.chain4-1k", "in-order 4-hop chain: dense 100 %, the memory models stall around two thirds"),
+    ("C1.lookup-16k", "long memory: one fact read up to 128k; dense cannot be trained at 16k, the memory models can"),
+    ("C3.recall8-1k", "capacity: keep 8 facts before the question is known, read up to 128k"),
+    ("C1.keyed4-1k", "content addressing: 4 same-shaped facts, only the key picks one; fades at long lengths"),
+    ("C1.edge-1k", "addressing a graph edge by its start node: the first hop of every chain task"),
+    ("C1.lookup-1k", "a basic lookup where the champion fails one seed (seed 1) reproducibly"),
+)
 FLAWED = {t.id: t.flaw for t in TASKS if t.status == "flawed"}
 
 # ---- packages: which tasks a check runs --------------------------------------------------------------
@@ -308,5 +326,5 @@ def legacy_battery(variant: str, slot: str) -> tuple[str | None, str]:
     return task, "curriculum-differs"                # E31b / E33a: started from the run's own lookup-2k weights
 
 
-__all__ = ["TRAIN_1K", "TRAIN_1K_X4", "TRAIN_1K_X16", "BATTERY_V1", "FLAWED", "LADDER", "LEVELS", "LEVEL_BY_ID", "PACKAGES", "PASS_ACC", "SEEDS",
+__all__ = ["HEADLINE", "TRAIN_1K", "TRAIN_1K_X4", "TRAIN_1K_X16", "BATTERY_V1", "FLAWED", "LADDER", "LEVELS", "LEVEL_BY_ID", "PACKAGES", "PASS_ACC", "SEEDS",
            "SUITE_V3", "TASKS", "TASK_BY_ID", "VERSION", "Level", "Task", "legacy_battery", "legacy_suite"]

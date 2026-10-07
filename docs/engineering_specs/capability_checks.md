@@ -153,6 +153,25 @@ is not fixed yet, see Migration step 3).
 
 A size trend (5M → 50M) reuses the same package at more sizes.
 
+## The dashboard
+
+One page to assess the models ([`capability_board.html`](../3_Evaluations_and_Baselines/capability_board.html),
+built by `analysis/capability_board.py`, published as an Artifact). Order, top to bottom (author, 2026-10-07):
+
+1. **Latest changes** — the newest rows of the calibration log below, so every protocol or result change is dated.
+2. **Headline tasks** — the tasks that separate the models now, most important first, each with one line saying why
+   it is there and its **reference** model (rule 5). The list and its order are `HEADLINE` in
+   `evaluation/capability_tasks.py`; revisit it when a result lands. Presentation only: no recipe, gate or no-harm
+   count depends on it.
+3. **No-harm** against the champion (default models; parked builds folded).
+4. **Length charts** of the headline tasks, from the same evidence as the table.
+5. **Folded below:** basics (active tasks the champion and dense both pass: regression guards that still count in
+   no-harm), not ready (calibrating or no matching result), flawed, the older length battery, the task guide,
+   calibration runs, the re-run list and the sources.
+
+Default models: the champion, the registered candidate (E33a loop) and dense; older builds are one click away.
+Every section links to its rule in this spec and every number to its ledger file.
+
 ## Comparing variants: champion and no-harm
 
 **Champion:** `e31_li_m1` (E31 latent memory, one reader entry per latent), chosen 2026-10-01 in E31b.
@@ -220,6 +239,7 @@ score, read against the task's guessing floor. Ledgers: `results/capability/stud
 | 2026-10-07 14:30 | confirm (Odra) | dense seeds 0–2 on `C5.path3-1k` as written: 3 hops picked 85.5 / 84.8 / 43.9 % (floor 6.2 %), median 84.8 %; seed 2's 1-hop stage failed at 4× (17.2 %; the same exam passed seed 2 at 94 % in the C5.path2 confirmation), so 1 of 6 written 1-hop stages failed | **`C5.path3-1k` active** (v4-draft-2026-10-07.3). Open question for the author: the 1-hop stage at 4× is not reliable for every seed — a larger first-stage budget or "advance when the stage passes" would be a protocol change for every model |
 | 2026-10-07 18:15 | rule-5 check (Odra) | **8-layer dense** on recipe A (`C5.pchain2-1k`, final answer only), from random init, the E33 loop's schedule (8-letter names, 1 hop 4× → 2 hops 16×, half the rows at 1 hop): 1 hop picked 96.9 %, 2 hops 15.2 % (floor 8.3 %). Diagnostic, E33 reasoning: the loop learns the same schedule from E31 lookup weights (94.5 %, seed 1); the single read does not (4.7 %) | no dense model learns recipe A: `C5.pchain2-1k` stays `calibrating`, never a gate. The loop's from-scratch run on this schedule (E33 reasoning, `e33_recipe_a`) is a **frontier** result until the author decides how such results are recorded |
 | 2026-10-07 | protocol (author) | "There is a model which can learn it and that's sufficient": dense was the reference only while no other architecture was proven | rule 5: a task is learnable once any model passes it from random init on the written recipe (seeds 0–2, median ≥ 75 %); that model is its reference when dense fails. `C5.pchain2-1k` becomes `active` only if E33 passes it from scratch on seeds 0–2 (E33 reasoning, `e33_recipe_a`, running); v4-draft-2026-10-07.4 |
+| 2026-10-07 21:45 | dashboard (author) | the board had grown to 39 tasks and 19 models in one table, hard to read as one assessment page | headline tasks on top (`HEADLINE`, 9 tasks, ordered, each with why and its reference); basics, not-ready and flawed tasks, the older length battery, guide, calibration, re-runs and sources folded below; default models = champion, E33a loop, dense. No task deleted, no recipe changed (section "The dashboard") |
 
 Until step 4, run new variants with the v3 runners (`suite.md`, `battery.md` in the skill) and label the
 results as legacy protocol.

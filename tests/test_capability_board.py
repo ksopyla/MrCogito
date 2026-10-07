@@ -58,3 +58,17 @@ def test_recipe_a_runs_named_reca_map_like_v4_runs():
                           "ladders": {}}]}
     ev = evidence([led("recA_C5_pchain2-1k_h2_e33a_loop_s0")])[0]
     assert [(e["task"], e["model"], e["seed"]) for e in ev] == [("C5.pchain2-1k", "e33a_loop", 0)]
+
+
+def test_headline_names_real_tasks_once_with_a_reason():
+    from evaluation.capability_tasks import HEADLINE, TASK_BY_ID
+    ids = [h for h, _ in HEADLINE]
+    assert len(ids) == len(set(ids)) and all(h in TASK_BY_ID and why for h, why in HEADLINE)
+    assert not any(TASK_BY_ID[h].status == "flawed" for h in ids)
+
+
+def test_latest_log_reads_the_newest_calibration_rows():
+    from analysis.capability_board import latest_log
+    rows = latest_log(3)
+    assert len(rows) == 3 and all(r["date"].startswith("20") and r["decision"] for r in rows)
+    assert "`" not in rows[0]["decision"] and "**" not in rows[0]["finding"]

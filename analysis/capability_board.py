@@ -33,7 +33,7 @@ sys.path.insert(0, str(ROOT))
 
 from analysis.capability_ledger import LEDGER_DIR, load_ledgers, study_jobs, suite_rows  # noqa: E402
 from evaluation.capability_suite import CELL_BY_ID, lr_for  # noqa: E402
-from evaluation.capability_tasks import (LEVELS, SEEDS, TASK_BY_ID, TASKS, VERSION,  # noqa: E402
+from evaluation.capability_tasks import (HEADLINE, LEVELS, SEEDS, TASK_BY_ID, TASKS, VERSION,  # noqa: E402
                                          legacy_battery, legacy_suite)
 
 OUT = ROOT / "docs" / "3_Evaluations_and_Baselines" / "capability_board.html"
@@ -43,6 +43,8 @@ LABELS = ("same", "settings-differ", "curriculum-differs", "not-from-scratch", "
 STAGE_OF = {"lookup_8k": "C1.lookup-16k", "chain_8k": "C4.chain4-2k", "recall8_8k": "C3.recall8-1k",
             "recall16_8k": "C3.recall16-1k"}
 PASS, HARM_POINTS = 0.75, 0.05
+SPEC = ROOT / "docs" / "engineering_specs" / "capability_checks.md"
+GITHUB = "https://github.com/ksopyla/MrCogito/blob/dev/"  # where the page's references point (the page is published off-repo)
 MULTI_CANDIDATE = ("lookalike", "chain", "shuffled", "unique", "story")
 
 # Standard battery slots, in reading order: (slot id, exam, training stage label)
@@ -231,6 +233,21 @@ def calibration(ledgers: list[dict]) -> list[dict]:
     return rows
 
 
+def latest_log(n: int = 6) -> list[dict]:
+    """The newest rows of the spec's calibration log (date, round, finding, decision), newest first, as plain text."""
+    rows, inside = [], False
+    for line in SPEC.read_text().splitlines():
+        if line.startswith("### Calibration log"):
+            inside = True
+        elif inside and line.startswith("#"):
+            break
+        elif inside and line.startswith("| 20"):
+            cells = [re.sub(r"\*\*|`", "", c).strip() for c in line.strip().strip("|").split(" | ")]
+            if len(cells) >= 4:
+                rows.append(dict(zip(("date", "round", "finding", "decision"), cells[:4])))
+    return rows[::-1][:n]
+
+
 def _shown_path(p: Path, ledger_dir: Path) -> str:
     """Repo-relative path; a ledger read from elsewhere (a preview with uncommitted pulls) is marked so."""
     try:
@@ -320,10 +337,10 @@ def row_status(task, tbl: dict, champion: str) -> dict:
     if task.status == "flawed":
         return {"status": "flawed", "note": task.flaw}
     if task.status == "calibrating":
-        return {"status": "calibrating", "note": "no frozen from-scratch recipe yet; results shown are legacy protocol"}
+        return {"status": "calibrating", "note": "recipe not fixed yet"}
     c = tbl.get(task.id, {}).get(champion)
     if not c or c["label"] != "same":
-        return {"status": "missing", "note": "no from-scratch result under the v4 definition for the champion"}
+        return {"status": "missing", "note": "champion not run on the written recipe"}
     notes = []
     if len(c["seeds"]) < len(SEEDS):
         notes.append(f"{len(c['seeds'])} of {len(SEEDS)} seeds")
@@ -415,7 +432,7 @@ def main() -> int:
     models = sorted({e["model"] for e in ev} | {v for slot in bat.values() for v in slot})
     order = [args.champion, *registered, "e31_li", "e30_li", "dense"]
     models = [m for m in order if m in models] + [m for m in models if m not in order]
-    visible = args.show or [m for m in [args.champion, *registered, "e31_li", "e30_li", "dense"] if m in models]
+    visible = args.show or [m for m in [args.champion, *registered, "dense"] if m in models]  # older builds: one click away
     rerun_models = args.rerun_models or [args.champion, "dense", *registered]
     items = reruns(tbl, rerun_models)
     Path(args.reruns_out).write_text(reruns_md(items, rerun_models))
@@ -440,6 +457,10 @@ def main() -> int:
               "score_kind": t.score, "floor": t.floor, "reference": reference(t.id, tbl),
               "curriculum": t.curriculum, "ladder": t.ladder, "task_status": t.status, "flaw": t.flaw,
               **row_status(t, tbl, args.champion)} for t in TASKS]
+    why = dict(HEADLINE)
+    for t in tasks:
+        t["headline"] = [h for h, _ in HEADLINE].index(t["id"]) if t["id"] in why else None
+        t["why"] = why.get(t["id"])
     data = {
         "generated": datetime.date.today().isoformat(), "version": VERSION, "champion": args.champion,
         "models": models, "visible": visible, "pass": PASS, "harm_points": HARM_POINTS, "seeds": list(SEEDS),
@@ -447,7 +468,7 @@ def main() -> int:
         "tasks": tasks, "table": tbl, "no_harm": no_harm(tbl, args.champion, models),
         "slots": slots, "battery": {s["id"]: bat[s["id"]] for s in slots},
         "reruns": items, "rerun_models": rerun_models, "suite_version": suite_version,
-        "calibration": calibration(ledgers),
+        "calibration": calibration(ledgers), "latest": latest_log(), "github": GITHUB,
         "sources": [{"file": _shown_path(Path(l["_file"]), Path(args.ledger_dir)), "kind": l["kind"], "name": l["name"],
                      "host": l["host"], "collected": l["collected"], "archive": l["archive_path"],
                      "done": sum(j["status"] == "done" for j in l["jobs"]), "jobs": len(l["jobs"]),
