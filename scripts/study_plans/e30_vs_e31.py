@@ -574,6 +574,22 @@ def jobs(phase: str) -> list[dict]:
         j2["args"] = j2["args"] + [*x16, *path, "--replay_recipe", "chain_parallel", "--replay_hops", "1",
                                    "--replay_frac", "0.5"]
         return [j1, j2]
+    if phase == "calibrate_c5_deep_a":
+        # Rule 5 learnability check for recipe A (C5.pchain2, final answer only): 8-layer dense, from random init,
+        # the same schedule the E33 loop learned it with (2026-10-07): 8-letter names, 1 hop (4x) → 2 hops (16x)
+        # with half the rows at 1 hop. The default early stop (teacher-forced 99 %) cannot fire on a wrong pick:
+        # with one 8-letter answer a wrong node caps it near 7/8.
+        from evaluation.capability_tasks import TRAIN_1K_X4
+        deep = ["--stack_layers", "6", "--max_params", "80000000", "--key_len", "8"]
+        edge = "cal7_C5_pchain2-1k_h1_dense8_s0"
+        j1 = task_job("C5.pchain2-1k", "dense", 0, prefix="cal7")
+        j1["name"], j1["args"] = edge, j1["args"] + deep + ["--hops", "1", *TRAIN_1K_X4]
+        j2 = task_job("C5.pchain2-1k", "dense", 0, prefix="cal7")
+        j2["name"], j2["init"] = "cal7_C5_pchain2-1k_h2_dense8_s0", edge
+        j2["args"] = j2["args"] + deep + ["--steps", "19200", "--k1_mult", "1", "--replay_recipe", "chain_parallel",
+                                          "--replay_hops", "1", "--replay_frac", "0.5"]
+        j1["cost"] = j2["cost"] = 2.5
+        return [j1, j2]
     if phase == "calibrate_c5_deep":
         # Author's decision 2026-10-06: if the 4-layer dense control cannot learn C5, an 8-layer dense model
         # (learnability check only) decides whether the task is learnable. Same exam and budgets as round 3/4.
