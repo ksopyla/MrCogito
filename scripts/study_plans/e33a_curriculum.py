@@ -157,6 +157,35 @@ def hop2_recipe_a_jobs() -> list[dict]:
                   init="diag33_edge_k8_loop_s1", cost=2.0, seed=1)]
 
 
+# ---- v4_path2 (2026-10-07): the frozen C5.path2-1k exam, E31 and E33 from random init -----------------------------
+# C5.path2-1k is active (dense seeds 0–2 pass). Exactly the written recipe for every model: 1 hop at TRAIN_1K_X4, then
+# 2 hops at the task's TRAIN_1K_X16 with half the rows at 1 hop. E33's loop exits are trained on the answer (here the
+# written path), no per-round node targets (recipe B as written). Board names: v4_C5_path2-1k_h{k}_<variant>_s<seed>.
+PATH2_ARMS = (("e31_li_m1", []),
+              ("e33a_loop", ["--loop_rounds", "4", "--loop_exit_aux", "0.3", "--loop_exit_targets", "answer",
+                             *LOOP_MICRO]))
+
+
+def v4_path2_jobs(seeds=(0, 1, 2)) -> list[dict]:
+    from evaluation.capability_tasks import TRAIN_1K_X4
+    from scripts.study_plans.e30_vs_e31 import task_job
+
+    out = []
+    for variant, flags in PATH2_ARMS:
+        for seed in seeds:
+            prev = None
+            for k in (1, 2):
+                j = task_job("C5.path2-1k", "e31_li_m1", seed, prefix="v4")
+                j["name"] = f"v4_C5_path2-1k_h{k}_{variant}_s{seed}"
+                j["args"] = j["args"] + ["--hops", str(k)] + (list(TRAIN_1K_X4) if k == 1 else
+                                                             ["--replay_recipe", "chain_parallel", "--replay_hops",
+                                                              "1", "--replay_frac", "0.5"]) + flags
+                j.update(init=prev, save=True, cost=(1.5 if variant == "e31_li_m1" else 4.0))
+                prev = j["name"]
+                out.append(j)
+    return out
+
+
 def jobs(phase: str) -> list[dict]:
     if phase == "hops":
         return [j for tag, seed, flags in ARMS for j in _arm(tag, seed, flags)]
@@ -170,4 +199,6 @@ def jobs(phase: str) -> list[dict]:
         return hop2_ablate_jobs()
     if phase == "hop2_recipe_a":
         return hop2_recipe_a_jobs()
+    if phase == "v4_path2":
+        return v4_path2_jobs()
     raise SystemExit(f"unknown phase {phase!r} (hops, hop2_diag, hop2_name, hop2_short, hop2_ablate)")
