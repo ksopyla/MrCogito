@@ -122,3 +122,14 @@ names, same schedule (1-hop stage → 2 hops with half the rows at 1 hop), seed 
 until 6.1k, 66 % at 7.1k, 81 % at 8.4k), early stop at 9.8k. Round 1 does not expose node 1 (first letter vs n1 21 %),
 rounds 2–4 give the answer (96 %): the loop composes internally without being told the bridge. The 4-layer dense
 model on the same recipe from random init: 12.1 % (tracking, round 5); the 8-layer dense learnability check is queued.
+
+## 7. Capability exams (2026-10-07)
+
+**C5.path2-1k (active; written path = scratchpad), from random init, exactly as written, picked on the final node:**
+E31 single read 95.2 / 94.4 / 93.3 % (median 94.4), E33 loop 95.8 / 93.8 / 93.6 % (median 93.8), dense 93 / 88 / 90 %
+(median 90; floor 8.3). Both pass and tie: with the bridge written, two hops are two 1-hop lookups.
+
+**Recipe A (C5.pchain2, final answer only) — learnability (rule 5):** 4-layer dense 12.1 %, 8-layer dense 15.2 %
+(floor 8.3), both from random init on the loop's schedule. No dense model learns it at this budget; the loop learned
+it from E31 lookup weights (94.5 %). Running: E33 from random init on the same schedule (seeds 0–2) and the E31
+single read (seed 0) as the no-loop control.
