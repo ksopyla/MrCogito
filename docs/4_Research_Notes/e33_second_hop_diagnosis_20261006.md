@@ -93,3 +93,25 @@ at initialisation; whether that persists in the 30M runs is the first thing to r
 Reading so far: one read at the decision position returns about 4 letters of a name (the single 64-dim KV head is
 read a few letters per answer position in normal answering). If 4-letter names learn the second hop, the next
 capacity check is a wider read (more KV heads or a larger head) for long names.
+
+## 6. The second hop works (2026-10-07, Odra; diagnostics, seed 1, from the E31 lookup weights)
+
+Schedule: 1-hop stage with the loop (hop count in the question, overhang), then 2 hops with half the rows at 1 hop,
+final node only, loop exits trained on node r (round-r node targets on internal states: a mechanism setting, not a
+capability cell, see the calibration log).
+
+| run | 2 hops, picked (floor 8.3 %) | per round (first letter of node r) |
+|---|---|---|
+| loop, 4-letter names, + whole-name loss | **97.8 %** | r1 → n1 98.8 %, r2 → n2 98.0 % |
+| loop, 8-letter names, + whole-name loss | **97.7 %** | r1 100 %, r2 98.8 % |
+| loop, 8-letter names, no whole-name loss | **96.2 %** | r1 100 %, r2 98.0 % |
+| loop, 16-letter names, + whole-name loss | **94.5 %** | r1 100 %, r2 97.3 % |
+| **single read**, 8-letter names, same schedule | 4.7 % | — |
+| loop, 8-letter, 3 hops (from the 2-hop loop, rows at 2 hops mixed) | **98.4 %** (floor 6.2) | r1 99.6, r2 99.2, r3 98.4 % |
+
+- The loop is what composes: same schedule and data, the single read stays at the floor.
+- One hop per round, cleanly, for 2 and 3 hops; learning comes as a sudden jump (~0.7–1.3k steps).
+- The whole-name loss is not needed at 8 letters; with 16-letter names the full recipe also works (94.5 %), so the
+  earlier 16-letter failures came from the 1-hop stage (trained without the hop count in the question).
+- Open: the loop with exits trained on the answer only (no per-round node targets, recipe A) — running; E31 and E33
+  from random init on the frozen C5.path2-1k (written path) — queued.
