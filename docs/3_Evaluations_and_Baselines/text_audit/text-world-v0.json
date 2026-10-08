@@ -1,0 +1,820 @@
+{
+ "cells": [
+  {
+   "split": "harder",
+   "task": "compose",
+   "n": 800,
+   "floor": 0.125,
+   "rule_reader": 0.9975,
+   "rule_reader_by_length": {
+    "4096": 1.0,
+    "16384": 0.995
+   },
+   "twin_rule_reader": 0.0,
+   "twin_has_answer": 0.0,
+   "shortcuts": {
+    "own home (0 hops)": {
+     "acc": 0.1302,
+     "coverage": 0.9988
+    },
+    "one hop short": {
+     "acc": 0.0,
+     "coverage": 1.0
+    },
+    "symmetric sister's home (1st hop reversed)": {
+     "acc": 0.2466,
+     "coverage": 0.9988
+    }
+   },
+   "contaminated_items": 0.0,
+   "contaminated_by_length": {
+    "4096": 0.0,
+    "16384": 0.0
+   },
+   "first_token_shared": 0.25875,
+   "rule_misses": [
+    {
+     "id": "compose-harder-16384-spread-39012223790031",
+     "got": null
+    },
+    {
+     "id": "compose-harder-16384-spread-39012223790157",
+     "got": null
+    }
+   ]
+  },
+  {
+   "split": "harder",
+   "task": "count",
+   "n": 800,
+   "floor": 0.14285714285714285,
+   "rule_reader": 1.0,
+   "rule_reader_by_length": {
+    "4096": 1.0,
+    "16384": 1.0
+   },
+   "twin_rule_reader": 0.125,
+   "twin_has_answer": null,
+   "shortcuts": {
+    "all visits to the place (ignores the name)": {
+     "acc": 0.2723,
+     "coverage": 0.73
+    },
+    "all visits by the person (ignores the place)": {
+     "acc": 0.0,
+     "coverage": 0.6837
+    }
+   },
+   "contaminated_items": 0.16125,
+   "contaminated_by_length": {
+    "4096": 0.0725,
+    "16384": 0.25
+   },
+   "first_token_shared": 0.0,
+   "rule_misses": []
+  },
+  {
+   "split": "harder",
+   "task": "deduce",
+   "n": 800,
+   "floor": 0.5,
+   "rule_reader": 1.0,
+   "rule_reader_by_length": {
+    "4096": 1.0,
+    "16384": 1.0
+   },
+   "twin_rule_reader": 0.0,
+   "twin_has_answer": null,
+   "shortcuts": {
+    "first property rule": {
+     "acc": 0.5088,
+     "coverage": 1.0
+    },
+    "last property rule": {
+     "acc": 0.4913,
+     "coverage": 1.0
+    },
+    "filler says it directly": {
+     "acc": 0.4872,
+     "coverage": 0.1462
+    }
+   },
+   "contaminated_items": 0.1075,
+   "contaminated_by_length": {
+    "4096": 0.045,
+    "16384": 0.17
+   },
+   "first_token_shared": 0.0,
+   "rule_misses": []
+  },
+  {
+   "split": "harder",
+   "task": "keyed",
+   "n": 800,
+   "floor": 0.015625,
+   "rule_reader": 1.0,
+   "rule_reader_by_length": {
+    "4096": 1.0,
+    "16384": 1.0
+   },
+   "twin_rule_reader": 0.0,
+   "twin_has_answer": 0.0,
+   "shortcuts": {
+    "first place": {
+     "acc": 0.0138,
+     "coverage": 1.0
+    },
+    "last place": {
+     "acc": 0.0112,
+     "coverage": 1.0
+    },
+    "look-alike's home": {
+     "acc": 0.0,
+     "coverage": 0.9163
+    }
+   },
+   "contaminated_items": 0.01625,
+   "contaminated_by_length": {
+    "4096": 0.0025,
+    "16384": 0.03
+   },
+   "first_token_shared": 0.8875,
+   "rule_misses": []
+  },
+  {
+   "split": "harder",
+   "task": "latest",
+   "n": 800,
+   "floor": 0.1111111111111111,
+   "rule_reader": 1.0,
+   "rule_reader_by_length": {
+    "4096": 1.0,
+    "16384": 1.0
+   },
+   "twin_rule_reader": 0.0,
+   "twin_has_answer": 0.0,
+   "shortcuts": {
+    "last place in the document": {
+     "acc": 0.0,
+     "coverage": 1.0
+    },
+    "busiest mover's last place (ignores the name)": {
+     "acc": 1.0,
+     "coverage": 1.0
+    },
+    "first home (no update)": {
+     "acc": 0.0,
+     "coverage": 1.0
+    }
+   },
+   "contaminated_items": 0.1025,
+   "contaminated_by_length": {
+    "4096": 0.0425,
+    "16384": 0.1625
+   },
+   "first_token_shared": 0.2625,
+   "rule_misses": []
+  },
+  {
+   "split": "harder",
+   "task": "lookup",
+   "n": 800,
+   "floor": 0.0,
+   "rule_reader": 1.0,
+   "rule_reader_by_length": {
+    "4096": 1.0,
+    "16384": 1.0
+   },
+   "twin_rule_reader": 0.0,
+   "twin_has_answer": 0.0,
+   "shortcuts": {
+    "the only place word": {
+     "acc": 1.0,
+     "coverage": 0.9775
+    },
+    "first place": {
+     "acc": 0.9838,
+     "coverage": 1.0
+    },
+    "last place": {
+     "acc": 0.9938,
+     "coverage": 1.0
+    }
+   },
+   "contaminated_items": 0.2,
+   "contaminated_by_length": {
+    "4096": 0.0825,
+    "16384": 0.3175
+   },
+   "first_token_shared": null,
+   "rule_misses": []
+  },
+  {
+   "split": "harder",
+   "task": "quote",
+   "n": 800,
+   "floor": 0.0625,
+   "rule_reader": 1.0,
+   "rule_reader_by_length": {
+    "4096": 1.0,
+    "16384": 1.0
+   },
+   "twin_rule_reader": 0.0,
+   "twin_has_answer": 0.0,
+   "shortcuts": {
+    "first sign": {
+     "acc": 0.1675,
+     "coverage": 1.0
+    },
+    "last sign": {
+     "acc": 0.14,
+     "coverage": 1.0
+    }
+   },
+   "contaminated_items": 0.05875,
+   "contaminated_by_length": {
+    "4096": 0.025,
+    "16384": 0.0925
+   },
+   "first_token_shared": 0.4,
+   "rule_misses": []
+  },
+  {
+   "split": "id",
+   "task": "compose",
+   "n": 2600,
+   "floor": 0.125,
+   "rule_reader": 0.9992307692307693,
+   "rule_reader_by_length": {
+    "1024": 1.0,
+    "2048": 1.0,
+    "4096": 0.9975,
+    "8192": 1.0,
+    "16384": 1.0,
+    "32768": 1.0,
+    "65536": 1.0,
+    "131072": 0.995
+   },
+   "twin_rule_reader": 0.0,
+   "twin_has_answer": 0.0,
+   "shortcuts": {
+    "own home (0 hops)": {
+     "acc": 0.1365,
+     "coverage": 1.0
+    },
+    "one hop short": {
+     "acc": 0.0,
+     "coverage": 1.0
+    },
+    "symmetric sister's home (1st hop reversed)": {
+     "acc": 0.1263,
+     "coverage": 0.9988
+    }
+   },
+   "contaminated_items": 0.001153846153846154,
+   "contaminated_by_length": {
+    "1024": 0.0,
+    "2048": 0.0,
+    "4096": 0.0025,
+    "8192": 0.0,
+    "16384": 0.0025,
+    "32768": 0.0,
+    "65536": 0.005,
+    "131072": 0.0
+   },
+   "first_token_shared": 0.2523076923076923,
+   "rule_misses": [
+    {
+     "id": "compose-id-4096-spread-42827497780119",
+     "got": null
+    },
+    {
+     "id": "compose-id-131072-spread-7858007280077",
+     "got": null
+    }
+   ]
+  },
+  {
+   "split": "id",
+   "task": "count",
+   "n": 2600,
+   "floor": 0.14285714285714285,
+   "rule_reader": 0.9992307692307693,
+   "rule_reader_by_length": {
+    "1024": 0.9975,
+    "2048": 1.0,
+    "4096": 1.0,
+    "8192": 1.0,
+    "16384": 1.0,
+    "32768": 1.0,
+    "65536": 0.995,
+    "131072": 1.0
+   },
+   "twin_rule_reader": 0.13615384615384615,
+   "twin_has_answer": null,
+   "shortcuts": {
+    "all visits to the place (ignores the name)": {
+     "acc": 0.5129,
+     "coverage": 0.8915
+    },
+    "all visits by the person (ignores the place)": {
+     "acc": 0.0005,
+     "coverage": 0.7077
+    }
+   },
+   "contaminated_items": 0.32884615384615384,
+   "contaminated_by_length": {
+    "1024": 0.0375,
+    "2048": 0.045,
+    "4096": 0.1225,
+    "8192": 0.2225,
+    "16384": 0.45,
+    "32768": 0.7,
+    "65536": 0.835,
+    "131072": 0.985
+   },
+   "first_token_shared": 0.0,
+   "rule_misses": [
+    {
+     "id": "count-id-1024-spread-12926194020076",
+     "got": "four"
+    },
+    {
+     "id": "count-id-65536-spread-37481818920076",
+     "got": "four"
+    }
+   ]
+  },
+  {
+   "split": "id",
+   "task": "deduce",
+   "n": 2600,
+   "floor": 0.5,
+   "rule_reader": 1.0,
+   "rule_reader_by_length": {
+    "1024": 1.0,
+    "2048": 1.0,
+    "4096": 1.0,
+    "8192": 1.0,
+    "16384": 1.0,
+    "32768": 1.0,
+    "65536": 1.0,
+    "131072": 1.0
+   },
+   "twin_rule_reader": 0.0,
+   "twin_has_answer": null,
+   "shortcuts": {
+    "first property rule": {
+     "acc": 0.5,
+     "coverage": 1.0
+    },
+    "last property rule": {
+     "acc": 0.5,
+     "coverage": 1.0
+    },
+    "filler says it directly": {
+     "acc": 0.4932,
+     "coverage": 0.2246
+    }
+   },
+   "contaminated_items": 0.19,
+   "contaminated_by_length": {
+    "1024": 0.015,
+    "2048": 0.02,
+    "4096": 0.0725,
+    "8192": 0.1075,
+    "16384": 0.22,
+    "32768": 0.26,
+    "65536": 0.575,
+    "131072": 0.765
+   },
+   "first_token_shared": 0.0,
+   "rule_misses": []
+  },
+  {
+   "split": "id",
+   "task": "keyed",
+   "n": 2600,
+   "floor": 0.0625,
+   "rule_reader": 1.0,
+   "rule_reader_by_length": {
+    "1024": 1.0,
+    "2048": 1.0,
+    "4096": 1.0,
+    "8192": 1.0,
+    "16384": 1.0,
+    "32768": 1.0,
+    "65536": 1.0,
+    "131072": 1.0
+   },
+   "twin_rule_reader": 0.0,
+   "twin_has_answer": 0.0,
+   "shortcuts": {
+    "first place": {
+     "acc": 0.1619,
+     "coverage": 1.0
+    },
+    "last place": {
+     "acc": 0.1508,
+     "coverage": 1.0
+    },
+    "look-alike's home": {
+     "acc": 0.0,
+     "coverage": 0.7646
+    }
+   },
+   "contaminated_items": 0.10346153846153847,
+   "contaminated_by_length": {
+    "1024": 0.0075,
+    "2048": 0.015,
+    "4096": 0.02,
+    "8192": 0.0375,
+    "16384": 0.0725,
+    "32768": 0.16,
+    "65536": 0.3,
+    "131072": 0.58
+   },
+   "first_token_shared": 0.4753846153846154,
+   "rule_misses": []
+  },
+  {
+   "split": "id",
+   "task": "latest",
+   "n": 2600,
+   "floor": 0.2,
+   "rule_reader": 1.0,
+   "rule_reader_by_length": {
+    "1024": 1.0,
+    "2048": 1.0,
+    "4096": 1.0,
+    "8192": 1.0,
+    "16384": 1.0,
+    "32768": 1.0,
+    "65536": 1.0,
+    "131072": 1.0
+   },
+   "twin_rule_reader": 0.0,
+   "twin_has_answer": 0.0,
+   "shortcuts": {
+    "last place in the document": {
+     "acc": 0.0,
+     "coverage": 1.0
+    },
+    "busiest mover's last place (ignores the name)": {
+     "acc": 1.0,
+     "coverage": 1.0
+    },
+    "first home (no update)": {
+     "acc": 0.0,
+     "coverage": 1.0
+    }
+   },
+   "contaminated_items": 0.2403846153846154,
+   "contaminated_by_length": {
+    "1024": 0.025,
+    "2048": 0.0325,
+    "4096": 0.0825,
+    "8192": 0.1275,
+    "16384": 0.245,
+    "32768": 0.465,
+    "65536": 0.725,
+    "131072": 0.91
+   },
+   "first_token_shared": 0.18076923076923077,
+   "rule_misses": []
+  },
+  {
+   "split": "id",
+   "task": "lookup",
+   "n": 2600,
+   "floor": 0.0,
+   "rule_reader": 1.0,
+   "rule_reader_by_length": {
+    "1024": 1.0,
+    "2048": 1.0,
+    "4096": 1.0,
+    "8192": 1.0,
+    "16384": 1.0,
+    "32768": 1.0,
+    "65536": 1.0,
+    "131072": 1.0
+   },
+   "twin_rule_reader": 0.0,
+   "twin_has_answer": 0.0,
+   "shortcuts": {
+    "the only place word": {
+     "acc": 1.0,
+     "coverage": 0.9546
+    },
+    "first place": {
+     "acc": 0.9769,
+     "coverage": 1.0
+    },
+    "last place": {
+     "acc": 0.9769,
+     "coverage": 1.0
+    }
+   },
+   "contaminated_items": 0.27807692307692305,
+   "contaminated_by_length": {
+    "1024": 0.0125,
+    "2048": 0.0625,
+    "4096": 0.08,
+    "8192": 0.18,
+    "16384": 0.34,
+    "32768": 0.505,
+    "65536": 0.81,
+    "131072": 0.95
+   },
+   "first_token_shared": null,
+   "rule_misses": []
+  },
+  {
+   "split": "id",
+   "task": "quote",
+   "n": 2600,
+   "floor": 0.25,
+   "rule_reader": 1.0,
+   "rule_reader_by_length": {
+    "1024": 1.0,
+    "2048": 1.0,
+    "4096": 1.0,
+    "8192": 1.0,
+    "16384": 1.0,
+    "32768": 1.0,
+    "65536": 1.0,
+    "131072": 1.0
+   },
+   "twin_rule_reader": 0.0,
+   "twin_has_answer": 0.0,
+   "shortcuts": {
+    "first sign": {
+     "acc": 0.3262,
+     "coverage": 1.0
+    },
+    "last sign": {
+     "acc": 0.3323,
+     "coverage": 1.0
+    }
+   },
+   "contaminated_items": 0.27615384615384614,
+   "contaminated_by_length": {
+    "1024": 0.0175,
+    "2048": 0.0375,
+    "4096": 0.0775,
+    "8192": 0.2075,
+    "16384": 0.29,
+    "32768": 0.565,
+    "65536": 0.82,
+    "131072": 0.945
+   },
+   "first_token_shared": 0.09153846153846154,
+   "rule_misses": []
+  },
+  {
+   "split": "paraphrase",
+   "task": "compose",
+   "n": 800,
+   "floor": 0.125,
+   "rule_reader": 0.99875,
+   "rule_reader_by_length": {
+    "4096": 0.9975,
+    "16384": 1.0
+   },
+   "twin_rule_reader": 0.0,
+   "twin_has_answer": 0.0,
+   "shortcuts": {
+    "own home (0 hops)": {
+     "acc": 0.1263,
+     "coverage": 1.0
+    },
+    "one hop short": {
+     "acc": 0.0013,
+     "coverage": 0.9988
+    },
+    "symmetric sister's home (1st hop reversed)": {
+     "acc": 0.1439,
+     "coverage": 0.9988
+    }
+   },
+   "contaminated_items": 0.00125,
+   "contaminated_by_length": {
+    "4096": 0.0025,
+    "16384": 0.0
+   },
+   "first_token_shared": 0.30625,
+   "rule_misses": [
+    {
+     "id": "compose-paraphrase-4096-spread-26581250130327",
+     "got": null
+    }
+   ]
+  },
+  {
+   "split": "paraphrase",
+   "task": "count",
+   "n": 800,
+   "floor": 0.14285714285714285,
+   "rule_reader": 0.99875,
+   "rule_reader_by_length": {
+    "4096": 0.9975,
+    "16384": 1.0
+   },
+   "twin_rule_reader": 0.15375,
+   "twin_has_answer": null,
+   "shortcuts": {
+    "all visits to the place (ignores the name)": {
+     "acc": 0.4884,
+     "coverage": 0.9163
+    },
+    "all visits by the person (ignores the place)": {
+     "acc": 0.0,
+     "coverage": 0.75
+    }
+   },
+   "contaminated_items": 0.295,
+   "contaminated_by_length": {
+    "4096": 0.1375,
+    "16384": 0.4525
+   },
+   "first_token_shared": 0.0,
+   "rule_misses": [
+    {
+     "id": "count-paraphrase-4096-spread-36742904200397",
+     "got": "five"
+    }
+   ]
+  },
+  {
+   "split": "paraphrase",
+   "task": "deduce",
+   "n": 800,
+   "floor": 0.5,
+   "rule_reader": 1.0,
+   "rule_reader_by_length": {
+    "4096": 1.0,
+    "16384": 1.0
+   },
+   "twin_rule_reader": 0.0,
+   "twin_has_answer": null,
+   "shortcuts": {
+    "first property rule": {
+     "acc": 0.5012,
+     "coverage": 1.0
+    },
+    "last property rule": {
+     "acc": 0.4988,
+     "coverage": 1.0
+    },
+    "filler says it directly": {
+     "acc": 0.4545,
+     "coverage": 0.1787
+    }
+   },
+   "contaminated_items": 0.1325,
+   "contaminated_by_length": {
+    "4096": 0.0525,
+    "16384": 0.2125
+   },
+   "first_token_shared": 0.0,
+   "rule_misses": []
+  },
+  {
+   "split": "paraphrase",
+   "task": "keyed",
+   "n": 800,
+   "floor": 0.0625,
+   "rule_reader": 1.0,
+   "rule_reader_by_length": {
+    "4096": 1.0,
+    "16384": 1.0
+   },
+   "twin_rule_reader": 0.0,
+   "twin_has_answer": 0.0,
+   "shortcuts": {
+    "first place": {
+     "acc": 0.1775,
+     "coverage": 1.0
+    },
+    "last place": {
+     "acc": 0.1562,
+     "coverage": 1.0
+    },
+    "look-alike's home": {
+     "acc": 0.0,
+     "coverage": 0.7825
+    }
+   },
+   "contaminated_items": 0.0475,
+   "contaminated_by_length": {
+    "4096": 0.0125,
+    "16384": 0.0825
+   },
+   "first_token_shared": 0.4775,
+   "rule_misses": []
+  },
+  {
+   "split": "paraphrase",
+   "task": "latest",
+   "n": 800,
+   "floor": 0.2,
+   "rule_reader": 1.0,
+   "rule_reader_by_length": {
+    "4096": 1.0,
+    "16384": 1.0
+   },
+   "twin_rule_reader": 0.0,
+   "twin_has_answer": 0.0,
+   "shortcuts": {
+    "last place in the document": {
+     "acc": 0.0,
+     "coverage": 1.0
+    },
+    "busiest mover's last place (ignores the name)": {
+     "acc": 1.0,
+     "coverage": 1.0
+    },
+    "first home (no update)": {
+     "acc": 0.0,
+     "coverage": 1.0
+    }
+   },
+   "contaminated_items": 0.1625,
+   "contaminated_by_length": {
+    "4096": 0.0625,
+    "16384": 0.2625
+   },
+   "first_token_shared": 0.15625,
+   "rule_misses": []
+  },
+  {
+   "split": "paraphrase",
+   "task": "lookup",
+   "n": 800,
+   "floor": 0.0,
+   "rule_reader": 0.99875,
+   "rule_reader_by_length": {
+    "4096": 1.0,
+    "16384": 0.9975
+   },
+   "twin_rule_reader": 0.0,
+   "twin_has_answer": 0.0,
+   "shortcuts": {
+    "the only place word": {
+     "acc": 1.0,
+     "coverage": 0.985
+    },
+    "first place": {
+     "acc": 0.995,
+     "coverage": 1.0
+    },
+    "last place": {
+     "acc": 0.99,
+     "coverage": 1.0
+    }
+   },
+   "contaminated_items": 0.2225,
+   "contaminated_by_length": {
+    "4096": 0.105,
+    "16384": 0.34
+   },
+   "first_token_shared": null,
+   "rule_misses": [
+    {
+     "id": "lookup-paraphrase-16384-early-8766930210276",
+     "got": null
+    }
+   ]
+  },
+  {
+   "split": "paraphrase",
+   "task": "quote",
+   "n": 800,
+   "floor": 0.25,
+   "rule_reader": 1.0,
+   "rule_reader_by_length": {
+    "4096": 1.0,
+    "16384": 1.0
+   },
+   "twin_rule_reader": 0.0,
+   "twin_has_answer": 0.0,
+   "shortcuts": {
+    "first sign": {
+     "acc": 0.3262,
+     "coverage": 1.0
+    },
+    "last sign": {
+     "acc": 0.3225,
+     "coverage": 1.0
+    }
+   },
+   "contaminated_items": 0.2075,
+   "contaminated_by_length": {
+    "4096": 0.1,
+    "16384": 0.315
+   },
+   "first_token_shared": 0.11125,
+   "rule_misses": []
+  }
+ ]
+}
