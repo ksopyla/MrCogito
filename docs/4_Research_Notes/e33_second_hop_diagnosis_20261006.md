@@ -131,5 +131,21 @@ E31 single read 95.2 / 94.4 / 93.3 % (median 94.4), E33 loop 95.8 / 93.8 / 93.6 
 
 **Recipe A (C5.pchain2, final answer only) — learnability (rule 5):** 4-layer dense 12.1 %, 8-layer dense 15.2 %
 (floor 8.3), both from random init on the loop's schedule. No dense model learns it at this budget; the loop learned
-it from E31 lookup weights (94.5 %). Running: E33 from random init on the same schedule (seeds 0–2) and the E31
-single read (seed 0) as the no-loop control.
+it from E31 lookup weights (94.5 %).
+
+**Recipe A from random init, seeds 0–2, one builder for every model (2026-10-08, Odra; `recipe_a_jobs`: 8-letter names,
+1 hop at TRAIN_1K_X4 → 2 hops at 19.2k steps with half the rows at 1 hop; picked candidate, 256 rows, floor 8.3 %):**
+
+| model | seed 0 | seed 1 | seed 2 | median |
+|---|---|---|---|---|
+| E33 loop (answer exits) | **94.1** | **93.9** | 3.9 | **93.9 — passes** |
+| E31 single read | 7.4 | 8.6 | 8.8 | 8.6 (floor) |
+| dense, 4 layers | 14.5 | running | queued | — |
+
+- Every run passed the 1-hop stage (picked 96.5–100 %), so the 2-hop stage starts from a working lookup for all.
+- E33 learns as a sudden jump (picked ≥ 50 % from step 6.0k on seed 0, 10.0k on seed 1); seed 2 never jumps within
+  19.2k steps (teacher-forced 82 %, the same plateau as E31 and dense: answering with some candidate). The jump time
+  varies by seed and the budget cuts off the late one: reliability 2/3 at this budget.
+- Where it works, the answer appears at round 2: first letter by loop exit r1 47–49 % (the first-letter floor is
+  ~42 %), r2–r4 91–93 %. One read cannot give it; the second read does.
+- By rule 5 (author, 2026-10-07) recipe A is learnable and E33 is its reference unless dense seeds 1–2 pass.
