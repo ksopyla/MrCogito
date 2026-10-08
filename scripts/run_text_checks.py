@@ -129,6 +129,10 @@ def local_train_cmd(args_model: dict, recipe: dict, tier: str, *, lr: float, ste
         "--overwrite_output_dir", "True", "--disable_tqdm", "True", "--dataloader_num_workers", "0",
         "--prediction_loss_only", "True",
     ]
+    import torch
+
+    if torch.backends.mps.is_available():
+        cmd += ["--bf16", "True"]  # Apple GPU: bf16 autocast, as the servers
     return cmd
 
 
@@ -274,7 +278,7 @@ def plan_eval_job(name: str, arch: str, tier: str, train_job: str, *, data: Path
     jobdir = out / "jobs" / name
     model_file = out / "jobs" / train_job / "model_path"
     dev = "" if mode == "local" else f"CUDA_VISIBLE_DEVICES={gpu} "
-    device = "--device cpu" if mode == "local" else ""
+    device = ""  # the scorer picks cuda, then Apple mps, then cpu
     lens = " ".join(str(x) for x in t.eval_lengths)
     extra_lens = " ".join(str(x) for x in t.extra_lengths)
     cap = "--max_items_per_cell 3" if tier == "smoke" else ""

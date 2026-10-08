@@ -35,7 +35,8 @@ NAME = r"[A-Z][a-z]+"
 _SENT = re.compile(r"(?<=[.!?])\s+|(?<=[.!?][\"'])\s+")  # facts may follow a closing quote: '…!" Lumo lived in X.'
 _PLACE = re.compile(r"\b[A-Z][a-z]*(?:ford|hill|dale|wick|moor|bury|ton|mere)\b")
 _VALUE = {"home": NAME, "move": NAME, "sign": r"[a-z ]+", "job": r"[a-z]+", "visit": r"the [a-z]+",
-          "pet": NAME, "sibling": NAME}
+          "pet": NAME, "sibling": NAME, "teacher": NAME}
+_LINK = ("sibling", "teacher")  # compose relation: v0 sister, v1 teacher
 
 
 def _compile(rel: str, tmpl: str) -> re.Pattern:
@@ -62,7 +63,7 @@ _Q = {
     "quote": re.compile(rf"What did the sign of ({NAME}) say\?"),
     "lookup": re.compile(rf"Where does ({NAME}) live\?"),
     "latest": re.compile(rf"Where does ({NAME}) live now\?"),
-    "compose": re.compile(rf"Where does ((?:the sister of )+)({NAME}) live\?"),
+    "compose": re.compile(rf"Where does ((?:the (?:sister|teacher) of )+)({NAME}) live\?"),
     "count": re.compile(rf"How many times did ({NAME}) visit (the [a-z]+)\?"),
     "deduce": re.compile(rf"Is ({NAME}) ({'|'.join(PROPERTIES)})\?"),
 }
@@ -103,10 +104,10 @@ def rule_reader(task: str, sents: list[str], q: str) -> str | None:
     if task == "compose":
         sis = defaultdict(set)
         for _, r, f in facts:
-            if r == "sibling":
+            if r in _LINK:
                 sis[f["p"]].add(f["q"])
         who = m[2]
-        for _ in range(m[1].count("the sister of")):
+        for _ in range(m[1].count(" of")):
             if len(sis[who]) != 1:
                 return None
             who = next(iter(sis[who]))
@@ -159,17 +160,18 @@ def shortcuts(task: str, sents: list[str], q: str) -> dict[str, str | None]:
             seq = per.get(m[1], [])
             out["first home (no update)"] = seq[0] if seq else None
     elif task == "compose" and m:
-        sis = {f["p"]: f["q"] for _, r, f in facts if r == "sibling"}
+        sis = {f["p"]: f["q"] for _, r, f in facts if r in _LINK}
         homes = {f["p"]: f["v"] for _, r, f in facts if r == "home"}
-        hops = m[1].count("the sister of")
+        hops = m[1].count(" of")
         out["own home (0 hops)"] = homes.get(m[2])
         who = m[2]
         for _ in range(max(1, hops - 1)):
             who = sis.get(who, who)
         out["one hop short" if hops > 1 else "one hop (= the skill)"] = homes.get(who)
-        # symmetric reading of 'sister': whoever has the asked person as her sister is also a sister
+        # two-way reading of the relation (natural for 'sister'): whoever has the asked person as
+        # her sister is also a sister; for 'teacher' this reading is wrong English, so it is a trap
         back = [p for p, s in sis.items() if s == m[2]]
-        out["symmetric sister's home (1st hop reversed)"] = homes.get(back[0]) if back else None
+        out["reversed first link's home"] = homes.get(back[0]) if back else None
     elif task == "count" and m:
         allv = sum(1 for _, r, f in facts if r == "visit" and f["v"] == m[2])
         named = sum(1 for _, r, f in facts if r == "visit" and f["p"] == m[1])
@@ -201,7 +203,7 @@ def contamination(task: str, sents: list[str], q: str) -> int:
     elif task == "count":
         cue = re.compile(rf"\b({m[2].split()[1]}|went to|go to)\b", re.I)
     elif task == "compose":
-        cue = re.compile(r"\b(sister|brother|sibling)\b", re.I)
+        cue = re.compile(r"\b(sister|brother|sibling|teach\w*|taught|lessons?)\b", re.I)
     else:
         cue = re.compile(r"\b(live|lived|home|house|town|moved|sign|door)\b", re.I)
     return sum(1 for i, s in enumerate(sents) if i not in facts and name in s and cue.search(s))

@@ -125,7 +125,7 @@ def main():
 
     from nn.perceiver_families import load_perceiver_lm
 
-    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    device = args.device or ("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     backend = args.attn_backend or ("flex" if str(device).startswith("cuda") else "sdpa")
     model = load_perceiver_lm(args.checkpoint, device, backend)
     model.eval()

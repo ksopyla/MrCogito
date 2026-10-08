@@ -148,6 +148,9 @@ def language_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eo
             cur = []
 
 
+_VERSION = {"world": TEXT_WORLD_VERSION}  # set by --world_version before workers fork
+
+
 def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: int, seed: int,
                min_len: int = 256) -> list[dict]:
     rows = []
@@ -157,7 +160,8 @@ def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: 
     while len(rows) < n:
         target = int(math.exp(rng.uniform(math.log(min_len), math.log(seq_len - 2))))
         for shrink in (1.0, 0.9, 0.8, 0.6):
-            text = make_train_document(seed * 1_000_003 + k, stories, int(target * shrink), ntok)
+            text = make_train_document(seed * 1_000_003 + k, stories, int(target * shrink), ntok,
+                                       version=_VERSION["world"])
             ids = encode(text)
             if len(ids) <= seq_len - 2:
                 rows.append(_row(ids, bos, eos))
@@ -278,7 +282,12 @@ def main():
     p.add_argument("--eval_splits", nargs="+", default=["id", "harder", "paraphrase"])
     p.add_argument("--eval_tasks", nargs="+", default=list(TASKS))
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--world_version", default=TEXT_WORLD_VERSION, help="generator version: v0 (published draft) or v1")
+    p.add_argument("--tokenizer", default=None,
+                   help="reuse this tokenizer folder instead of training one (e.g. the published one, so data versions compare)")
     args = p.parse_args()
+    _VERSION["world"] = args.world_version
+    wv = f"text-world-v{args.world_version.replace('text-world-', '').lstrip('v')}"
 
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -288,11 +297,18 @@ def main():
 
     # tokenizer: stories + world documents (approximate lengths; names and places must be in its data)
     approx = lambda s: max(1, len(s) // 4)  # noqa: E731
-    tok_texts = train_st[: args.tokenizer_sample] + [
-        make_train_document(10_000_000 + i, train_st, int(math.exp(random.Random(i).uniform(math.log(256), math.log(4096)))), approx)
-        for i in range(max(500, args.tokenizer_sample // 50))
-    ]
-    tok = train_tokenizer(tok_texts, args.vocab, out / "tokenizer")
+    if args.tokenizer:
+        from transformers import AutoTokenizer
+
+        tok = AutoTokenizer.from_pretrained(args.tokenizer)
+        tok.save_pretrained(str(out / "tokenizer"))
+    else:
+        tok_texts = train_st[: args.tokenizer_sample] + [
+            make_train_document(10_000_000 + i, train_st, int(math.exp(random.Random(i).uniform(math.log(256), math.log(4096)))),
+                                approx, version=args.world_version)
+            for i in range(max(500, args.tokenizer_sample // 50))
+        ]
+        tok = train_tokenizer(tok_texts, args.vocab, out / "tokenizer")
     bos, eos = tok.bos_token_id, tok.eos_token_id
     cache: dict[str, list[int]] = {}
 
@@ -334,7 +350,7 @@ def main():
     w_world = (1 - f) / m_world
     w_lang, w_world = w_lang / (w_lang + w_world), w_world / (w_lang + w_world)
     manifest = {
-        "mix_id": f"text_checks_{TEXT_WORLD_VERSION}",
+        "mix_id": f"text_checks_{wv}",
         "max_seq_length": args.seq_len,
         "objective": "causal_lm",
         "seed": args.seed,
@@ -365,7 +381,8 @@ def main():
                     n_items = args.eval_items if length <= 16384 else args.eval_items_long
                     for i in range(n_items):
                         depth = ("early", "middle", "late")[i % 3] if task in SINGLE_EVIDENCE_TASKS else None
-                        rec = make_eval_record(task, base + i, split, length, depth, held_st, ntok)
+                        rec = make_eval_record(task, base + i, split, length, depth, held_st, ntok,
+                                               version=args.world_version)
                         rec["n_tokens"] = 1 + len(encode(rec["prompt"])) + len(encode(rec["answer"]))
                         fh.write(json.dumps(rec) + "\n")
                         n += 1
@@ -374,7 +391,7 @@ def main():
         print(f"eval {split}: {n} items ({time.time() - t0:.0f}s)")
 
     meta = {
-        "version": TEXT_WORLD_VERSION,
+        "version": wv,
         "args": vars(args),
         "tokenizer_sha256": _sha(out / "tokenizer" / "tokenizer.json"),
         "eval_sha256": eval_hashes,

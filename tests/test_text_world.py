@@ -1,4 +1,4 @@
-"""Text capability checks — the world-document generator (data/text_world.py, draft text-world-v0)."""
+"""Text capability checks — the world-document generator (data/text_world.py, text-world-v1; v0 kept)."""
 import random
 import re
 
@@ -23,8 +23,8 @@ STORIES = [
 ntok = lambda s: len(s.split())  # noqa: E731  (word count stands in for the tokenizer)
 
 
-def rec(task, seed=0, length=300, depth=None, split="id"):
-    return make_eval_record(task, seed, split, length, depth, STORIES, ntok)
+def rec(task, seed=0, length=300, depth=None, split="id", version="v1"):
+    return make_eval_record(task, seed, split, length, depth, STORIES, ntok, version=version)
 
 
 @pytest.mark.parametrize("task", TASKS)
@@ -82,9 +82,9 @@ def test_latest_answer_is_not_the_last_place_mentioned():
         assert last != r["answer"].strip(" .")
 
 
-def test_compose_follows_the_sister_chain():
+def test_compose_follows_the_sister_chain_v0():
     rng = random.Random(7)
-    item = build_item("compose", rng, "id")
+    item = build_item("compose", rng, "id", version="v0")
     text = " ".join(f.text for f in item.facts)
     q = re.search(r"of ([A-Z]\w+) live", item.question).group(1)
     hops = item.meta["hops"]
@@ -120,3 +120,76 @@ def test_filler_never_states_a_relation_about_the_cast():
     sents = renamed_filler(STORIES[1], ["Lumo"], random.Random(0))
     assert all("Lumo" not in s or not re.search(r"lived|market|friend", s) for s in sents)
     assert any("Lumo" in s for s in renamed_filler(STORIES[2], ["Lumo"], random.Random(0)))
+
+
+# ---------------------------------------------------------------- v1: fixes from the v0 audit
+def _audit(r):
+    from analysis.text_checks_audit import rule_reader, shortcuts, split_doc
+
+    sents, q = split_doc(r["prompt"])
+    return rule_reader(r["task"], sents, q), shortcuts(r["task"], sents, q)
+
+
+@pytest.mark.parametrize("task", TASKS)
+@pytest.mark.parametrize("split", ["id", "harder", "paraphrase"])
+def test_v1_rule_reader_recovers_every_answer(task, split):
+    for s in range(15):
+        r = rec(task, s, length=500, split=split, depth="early" if task in ("quote", "lookup", "keyed") else None)
+        got, _ = _audit(r)
+        assert got == r["answer"].strip(" ."), (task, split, s, got)
+
+
+def test_v1_lookup_states_every_home():
+    r = rec("lookup", 2)
+    assert len(r["candidates"]) == 4 and r["floor"] == 0.25
+    assert all(c.strip(" .") in r["prompt"] for c in r["candidates"])
+
+
+def test_v1_latest_needs_the_name():
+    hits = [(_audit(rec("latest", s, length=500))[1]["busiest mover's last place (ignores the name)"]
+             == rec("latest", s, length=500)["answer"].strip(" .")) for s in range(40)]
+    assert sum(hits) < 20  # v0: all 40
+
+
+def test_v1_compose_chain_never_returns_to_the_asked_person():
+    for s in range(30):
+        item = build_item("compose", random.Random(s), "harder")
+        assert "teacher" in item.question
+        q = re.search(r"of ([A-Z]\w+) live", item.question).group(1)
+        own = next(f.text for f in item.facts if q in f.text and any(c in f.text for c in item.candidates))
+        assert item.answer not in own
+
+
+def test_v1_count_decoys_visit_the_same_place():
+    from analysis.text_checks_audit import shortcuts, split_doc
+
+    right = 0
+    for s in range(60):
+        r = rec("count", s, length=500)
+        sents, q = split_doc(r["prompt"])
+        right += shortcuts("count", sents, q)["all visits to the place (ignores the name)"] == r["answer"].strip(" .")
+    assert right < 20  # v0: about half
+
+
+def test_v1_filler_never_names_a_property_of_the_cast():
+    story = "Lily was very brave. Lily had a red ball. The sun was warm."
+    sents = renamed_filler(story, ["Lumo"], random.Random(0), version="v1")
+    assert not any("brave" in x for x in sents) and any("ball" in x for x in sents)
+    assert any("brave" in x for x in renamed_filler(story, ["Lumo"], random.Random(0), version="v0"))
+
+
+def test_v1_single_fact_is_not_the_first_or_last_of_its_kind():
+    from analysis.text_checks_audit import shortcuts, split_doc
+
+    for depth, key in (("early", "first place"), ("late", "last place")):
+        for s in range(10):
+            r = rec("keyed", s, length=600, depth=depth)
+            sents, q = split_doc(r["prompt"])
+            assert shortcuts("keyed", sents, q)[key] != r["answer"].strip(" ."), (depth, s)
+
+
+def test_versions_are_recorded_and_checked():
+    assert rec("quote", 1)["version"] == "text-world-v1"
+    assert rec("quote", 1, version="v0")["version"] == "text-world-v0"
+    with pytest.raises(ValueError):
+        rec("quote", 1, version="v9")

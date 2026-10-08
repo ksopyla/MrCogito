@@ -1,4 +1,4 @@
-"""Text capability checks — the "world document" generator (draft, `text-world-v0`).
+"""Text capability checks — the "world document" generator (`text-world-v1`; `v0` reproducible).
 
 Spec: docs/engineering_specs/text_capability_checks.md (§8–§10).
 
@@ -20,6 +20,26 @@ item carries its answer, the candidate answers planted in the document, its gues
 and an evidence-removed twin (the same document with the sentences that answer the question
 replaced by filler): a model that does the task must drop to the floor on the twin.
 
+Versions (every public function takes `version`; the default is the current one):
+  v0  the first draft, published 2026-10-06 (huggingface ksopyla/cogito-text-world). Kept
+      byte-identical so that dataset can be regenerated.
+  v1  fixes from the model-free audit of v0 (analysis/text_checks_audit.py, 2026-10-08):
+      - lookup: every cast member's home is stated (v0 stated one place: "copy the only place
+        word" scored 98 % without reading the name);
+      - latest: every cast member moves as often as the asked one, interleaved (v0: "the busiest
+        mover's last place" scored 100 % without reading the name);
+      - count: every cast member visits the asked place, counts from the same 0-6 range (v0:
+        counting all visits to the place scored 51 % vs a 14 % floor);
+      - compose: a one-way relation, "teacher", along one cycle through the whole cast, so the
+        chain never returns to the asked person (v0 "sister" is two-way in plain English, so many
+        items had two right answers, and 2-cycles made "own home" right in 14 %);
+      - deduce: filler sentences that name a cast member together with a property word are
+        dropped (v0: the filler stated the asked property directly in 19 % of items);
+      - single-fact items at a fixed depth get one decoy placed beyond them (before an early
+        fact, after a late one), so "first/last such sentence" is not a position cue;
+      - places and signs in one document start with different syllables / words where the pool
+        allows, so the picked-candidate score is decided by the first token.
+
 Text-level only: no tokenizer here. Lengths are measured with a caller-supplied `ntok`
 (token counter) so the builder can target exact token lengths with the frozen tokenizer.
 """
@@ -31,7 +51,15 @@ import zlib
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
-TEXT_WORLD_VERSION = "text-world-v0"
+TEXT_WORLD_VERSION = "text-world-v1"
+VERSIONS = ("v0", "v1")
+
+
+def _v(version: str) -> int:
+    v = version.replace("text-world-", "")
+    if v not in VERSIONS:
+        raise ValueError(f"unknown text-world version {version!r}; expected one of {VERSIONS}")
+    return int(v[1:])
 
 # --------------------------------------------------------------------------------------------
 # Vocabulary of the invented world
@@ -70,6 +98,11 @@ _RESERVED = re.compile(
     r"how many|question|answer)\b",
     re.IGNORECASE,
 )
+# v1: also teacher/lesson words (compose) and the deduce property words
+_RESERVED_V1 = re.compile(
+    _RESERVED.pattern[:-3] + r"|teach(?:er|ers|es)?|taught|lessons?|" + "|".join(PROPERTIES) + r")\b",
+    re.IGNORECASE,
+)
 
 TASKS = ("quote", "lookup", "keyed", "latest", "compose", "count", "deduce")
 LEVEL_OF = {"quote": "T1", "lookup": "T2", "keyed": "T3", "latest": "T4", "compose": "T5",
@@ -105,6 +138,9 @@ TEMPLATES = {
     "sign": ["The sign on {p2} door said: {v}.", "On the door of {p} there was a sign that said: {v}.",
              "{p} put up a sign that said: {v}.", "A sign by {p2} gate said: {v}.",
              "{p} painted a sign that said: {v}."],
+    # v1 compose relation: one-way and functional (one teacher each), unlike "sister"
+    "teacher": ["{q} was the teacher of {p}.", "{p} was taught by {q}.", "{p2} teacher was {q}.",
+                "{p} learned to read from {q}, {p2} teacher.", "{p} went to lessons with a teacher named {q}."],
     "visit": ["{p} visited {v}.", "That day {p} visited {v}.", "{p} went for a visit to {v}.",
               "In the morning {p} visited {v}.", "{p} paid a visit to {v}."],
 }
@@ -117,6 +153,9 @@ QUESTIONS = {
     "compose1": "Where does the sister of {p} live?",
     "compose2": "Where does the sister of the sister of {p} live?",
     "compose3": "Where does the sister of the sister of the sister of {p} live?",
+    "teach1": "Where does the teacher of {p} live?",
+    "teach2": "Where does the teacher of the teacher of {p} live?",
+    "teach3": "Where does the teacher of the teacher of the teacher of {p} live?",
     "count": "How many times did {p} visit {v}?",
     "deduce": "Is {p} {v}?",
 }
@@ -164,13 +203,19 @@ def sample_names(rng: random.Random, n: int, split: str, lookalike_frac: float =
     return out
 
 
-def sample_places(rng: random.Random, n: int, taken: Optional[set] = None) -> list[str]:
+def sample_places(rng: random.Random, n: int, taken: Optional[set] = None, distinct_first: bool = False) -> list[str]:
+    """n distinct invented places. `distinct_first` (v1): different first syllables while the
+    syllable pool lasts, so candidates differ at their first token."""
     taken = set() if taken is None else taken
     out: list[str] = []
+    firsts: set = set()
     while len(out) < n:
         place = (_make_name(rng, 2) + rng.choice(_PLACE_SUFFIXES)).capitalize()
+        if distinct_first and len(firsts) < len(_SYLLABLES) and place[:2].lower() in firsts:
+            continue
         if place not in taken:
             taken.add(place)
+            firsts.add(place[:2].lower())
             out.append(place)
     return out
 
@@ -186,7 +231,7 @@ def clean_story(text: str) -> str:
     return re.sub(r"\s+", " ", str(text)).strip()
 
 
-def renamed_filler(story: str, cast: list[str], rng: random.Random) -> list[str]:
+def renamed_filler(story: str, cast: list[str], rng: random.Random, version: str = TEXT_WORLD_VERSION) -> list[str]:
     """Rename the story's common character names to cast members and return its sentences,
     minus any sentence that mentions a cast member with a reserved relation word."""
     names = sorted({w for w in _WORD.findall(story) if w in COMMON_STORY_NAMES})
@@ -200,7 +245,7 @@ def renamed_filler(story: str, cast: list[str], rng: random.Random) -> list[str]
         s = s.strip()
         if not s:
             continue
-        if _RESERVED.search(s) and (cast_set & set(_WORD.findall(s)) or "?" in s):
+        if (_RESERVED_V1 if _v(version) >= 1 else _RESERVED).search(s) and (cast_set & set(_WORD.findall(s)) or "?" in s):
             continue
         out.append(s)
     return out
@@ -247,8 +292,63 @@ def _dial(task: str, split: str, rng: random.Random, key: str) -> int:
     return EVAL_DIALS[task][key]
 
 
-def build_item(task: str, rng: random.Random, split: str = "train") -> WorldItem:
+def _latest_v1(rng, tsplit, k, n, cast) -> WorldItem:
+    """Everyone starts somewhere (first 15 %) and moves k times, all moves interleaved in the first
+    95 %; at least one other person moves after the asked person's last move."""
+    places = sample_places(rng, n * (k + 1), distinct_first=True)
+    facts, target = [], places[: k + 1]
+    last = {}
+    for i, c in enumerate(cast):
+        mine = places[i * (k + 1): (i + 1) * (k + 1)]
+        pos = sorted(rng.uniform(0.15, 0.95) for _ in range(k))
+        facts.append(Fact(_tmpl(rng, "home", tsplit, p=c, v=mine[0]), evidence=(i == 0), order=rng.uniform(0.0, 0.15)))
+        facts += [Fact(_tmpl(rng, "move", tsplit, p=c, v=v), evidence=(i == 0), order=o) for v, o in zip(mine[1:], pos)]
+        last[i] = (len(facts) - 1, pos[-1])
+    if n > 1 and k > 0 and all(last[i][1] < last[0][1] for i in range(1, n)):
+        j = rng.randrange(1, n)
+        facts[last[j][0]].order = rng.uniform(last[0][1], 0.97)
+    return WorldItem("latest", QUESTIONS["latest"].format(p=cast[0]), target[-1], list(reversed(target)),
+                     1.0 / (k + 1), facts, cast, meta={"moves": k})
+
+
+def _compose_v1(rng, tsplit, hops, n, cast) -> WorldItem:
+    """Teachers along one random cycle through the whole cast: hops < n never returns to the asked
+    person, and every person heads a same-shaped decoy chain."""
+    places = sample_places(rng, n, distinct_first=True)
+    order = list(range(n))
+    rng.shuffle(order)
+    teacher = {order[i]: order[(i + 1) % n] for i in range(n)}
+    cur, chain = 0, [0]
+    for _ in range(hops):
+        cur = teacher[cur]
+        chain.append(cur)
+    links = {(chain[i], chain[i + 1]) for i in range(hops)}
+    facts = []
+    for i in range(n):
+        facts.append(Fact(_tmpl(rng, "teacher", tsplit, p=cast[i], q=cast[teacher[i]]), evidence=(i, teacher[i]) in links))
+        facts.append(Fact(_tmpl(rng, "home", tsplit, p=cast[i], v=places[i]), evidence=(i == chain[-1])))
+    ans = places[chain[-1]]
+    cands = [ans] + [p for j, p in enumerate(places) if j != chain[-1]]
+    return WorldItem("compose", QUESTIONS[f"teach{hops}"].format(p=cast[0]), ans, cands, 1.0 / n, facts, cast,
+                     meta={"hops": hops})
+
+
+def _count_v1(rng, tsplit, cast, where, k) -> WorldItem:
+    """Everyone visits the asked place 0-6 times and other places 0-2 times, so neither "all
+    visits to the place" nor "all visits by the person" gives the count."""
+    others = [p for p in VISIT_PLACES if p != where]
+    facts = [Fact(_tmpl(rng, "visit", tsplit, p=cast[0], v=where), evidence=True) for _ in range(k)]
+    facts += [Fact(_tmpl(rng, "visit", tsplit, p=cast[0], v=rng.choice(others))) for _ in range(rng.randint(1, 2))]
+    for c in cast[1:]:
+        facts += [Fact(_tmpl(rng, "visit", tsplit, p=c, v=where)) for _ in range(rng.randrange(len(NUMBER_WORDS)))]
+        facts += [Fact(_tmpl(rng, "visit", tsplit, p=c, v=rng.choice(others))) for _ in range(rng.randint(0, 2))]
+    return WorldItem("count", QUESTIONS["count"].format(p=cast[0], v=where), NUMBER_WORDS[k], list(NUMBER_WORDS),
+                     1.0 / len(NUMBER_WORDS), facts, cast, meta={"count": k})
+
+
+def build_item(task: str, rng: random.Random, split: str = "train", version: str = TEXT_WORLD_VERSION) -> WorldItem:
     """One question about a fresh world. `split` ∈ train | id | harder | paraphrase."""
+    v1 = _v(version) >= 1
     tsplit = "paraphrase" if split == "paraphrase" else ("train" if split == "train" else "id")
     names_split = "train" if split == "train" else "eval"
     if task == "quote":
@@ -258,6 +358,8 @@ def build_item(task: str, rng: random.Random, split: str = "train") -> WorldItem
         for _ in range(n):
             while True:
                 s = " ".join(rng.sample(SIGN_WORDS, rng.randint(4, 6)))
+                if v1 and len(signs) < len(SIGN_WORDS) and s.split()[0] in {x.split()[0] for x in signs}:
+                    continue
                 if s not in signs:
                     signs.append(s)
                     break
@@ -267,19 +369,22 @@ def build_item(task: str, rng: random.Random, split: str = "train") -> WorldItem
     if task in ("lookup", "keyed"):
         n = _dial(task, split, rng, "cast")
         cast = sample_names(rng, n, names_split, lookalike_frac=0.25 if task == "keyed" else 0.0)
-        places = sample_places(rng, n)
-        if task == "lookup":
+        places = sample_places(rng, n, distinct_first=v1)
+        if task == "lookup" and not v1:
             # only the asked person's home is stated; the others get unrelated facts (jobs)
             facts = [Fact(_tmpl(rng, "home", tsplit, p=cast[0], v=places[0]), evidence=True)]
             facts += [Fact(_tmpl(rng, "job", tsplit, p=c, v=rng.choice(JOBS))) for c in cast[1:]]
             return WorldItem(task, QUESTIONS["lookup"].format(p=cast[0]), places[0], places[:1], 0.0, facts, cast)
+        # keyed, and lookup from v1: every person's home is stated (lookup: few people, no look-alikes)
         facts = [Fact(_tmpl(rng, "home", tsplit, p=c, v=v), evidence=(i == 0)) for i, (c, v) in enumerate(zip(cast, places))]
-        return WorldItem(task, QUESTIONS["keyed"].format(p=cast[0]), places[0], places, 1.0 / n, facts, cast)
+        return WorldItem(task, QUESTIONS[task].format(p=cast[0]), places[0], places, 1.0 / n, facts, cast)
 
     if task == "latest":
         k = _dial(task, split, rng, "moves")
         n = _dial(task, split, rng, "cast")
         cast = sample_names(rng, n, names_split)
+        if v1:
+            return _latest_v1(rng, tsplit, k, n, cast)
         places = sample_places(rng, k + 1 + 2 * (n - 1))
         target = places[: k + 1]
         facts = [Fact(_tmpl(rng, "home", tsplit, p=cast[0], v=target[0]), evidence=True, order=0.02)]
@@ -299,6 +404,8 @@ def build_item(task: str, rng: random.Random, split: str = "train") -> WorldItem
         hops = _dial(task, split, rng, "hops")
         n = max(_dial(task, split, rng, "cast"), hops + 2)
         cast = sample_names(rng, n, names_split)
+        if v1:
+            return _compose_v1(rng, tsplit, hops, n, cast)
         places = sample_places(rng, n)
         # every person has a sister (a random permutation without fixed points) and a home:
         # the asked chain is one of n same-shaped chains.
@@ -324,6 +431,8 @@ def build_item(task: str, rng: random.Random, split: str = "train") -> WorldItem
         cast = sample_names(rng, n, names_split, lookalike_frac=0.3)
         where = rng.choice(VISIT_PLACES)
         k = rng.randrange(len(NUMBER_WORDS))  # balanced answers 0..6
+        if v1:
+            return _count_v1(rng, tsplit, cast, where, k)
         facts = [Fact(_tmpl(rng, "visit", tsplit, p=cast[0], v=where), evidence=True) for _ in range(k)]
         others = [p for p in VISIT_PLACES if p != where]
         facts += [Fact(_tmpl(rng, "visit", tsplit, p=cast[0], v=rng.choice(others))) for _ in range(rng.randint(1, 3))]
@@ -363,7 +472,7 @@ def qa_suffix(question: str) -> str:
 
 def assemble(item: WorldItem, stories: list[str], target_tokens: int, ntok: Callable[[str], int],
              rng: random.Random, depth: Optional[float] = None, remove_evidence: bool = False,
-             filler_seed: Optional[int] = None) -> tuple[str, dict]:
+             filler_seed: Optional[int] = None, version: str = TEXT_WORLD_VERSION) -> tuple[str, dict]:
     """Return (prompt text ending in 'Answer:', info). The prompt plus ' <answer>.' is about
     `target_tokens` tokens. `depth` ∈ [0,1] places the single evidence fact (tasks whose
     evidence is one sentence); `remove_evidence` swaps evidence sentences for filler sentences.
@@ -382,7 +491,7 @@ def assemble(item: WorldItem, stories: list[str], target_tokens: int, ntok: Call
     guard = 0
     while used < budget and guard < 100000:
         guard += 1
-        sents = renamed_filler(frng.choice(stories), item.cast, frng)
+        sents = renamed_filler(frng.choice(stories), item.cast, frng, version)
         for s in sents:
             t = ntok(" " + s)
             if used + t > budget:
@@ -397,8 +506,17 @@ def assemble(item: WorldItem, stories: list[str], target_tokens: int, ntok: Call
     evid = [f for f in facts if f.evidence]
     single = len(evid) == 1 and depth is not None
     placed: list[tuple[float, int, str]] = []
+    # v1: one decoy sits beyond a single fact placed at a fixed depth (before an early one, after a
+    # late one), so "the first / last such sentence" does not find it
+    beyond = None
+    if single and _v(version) >= 1:
+        others = [i for i, f in enumerate(facts) if not f.evidence and f.order is None]
+        if others:
+            beyond = (others[0], rng.uniform(0.0, depth) if depth < 0.5 else rng.uniform(depth, 1.0))
     for i, f in enumerate(facts):
-        if f.evidence and single:
+        if beyond is not None and i == beyond[0]:
+            pos = beyond[1]
+        elif f.evidence and single:
             pos = depth
         elif f.order is not None:
             pos = f.order
@@ -433,19 +551,20 @@ def answer_text(item: WorldItem) -> str:
 
 
 def make_eval_record(task: str, seed: int, split: str, length: int, depth_bin: Optional[str],
-                     stories: list[str], ntok: Callable[[str], int]) -> dict:
+                     stories: list[str], ntok: Callable[[str], int], version: str = TEXT_WORLD_VERSION) -> dict:
     """A frozen evaluation record: prompt, answer, candidates, floor and the evidence-removed twin."""
     rng = random.Random(seed)
-    item = build_item(task, rng, split)
+    item = build_item(task, rng, split, version)
     depth = {"early": 0.05, "middle": 0.5, "late": 0.95}.get(depth_bin) if depth_bin else None
     fseed = rng.randrange(2**31)
     place_seed = rng.randrange(2**31)
-    prompt, info = assemble(item, stories, length, ntok, random.Random(place_seed), depth=depth, filler_seed=fseed)
+    prompt, info = assemble(item, stories, length, ntok, random.Random(place_seed), depth=depth, filler_seed=fseed,
+                            version=version)
     twin, _ = assemble(item, stories, length, ntok, random.Random(place_seed), depth=depth, remove_evidence=True,
-                       filler_seed=fseed)
+                       filler_seed=fseed, version=version)
     return {
         "id": f"{task}-{split}-{length}-{depth_bin or 'spread'}-{seed}",
-        "version": TEXT_WORLD_VERSION,
+        "version": f"text-world-v{_v(version)}",
         "task": task, "level": LEVEL_OF[task], "split": split, "length": length,
         "depth": depth_bin or "spread", "seed": seed,
         "prompt": prompt, "prompt_removed": twin, "answer": answer_text(item),
@@ -455,10 +574,10 @@ def make_eval_record(task: str, seed: int, split: str, length: int, depth_bin: O
 
 
 def make_train_document(seed: int, stories: list[str], length: int, ntok: Callable[[str], int],
-                        tasks: tuple = TASKS) -> str:
+                        tasks: tuple = TASKS, version: str = TEXT_WORLD_VERSION) -> str:
     """One training world document: a random task at ID dials, question and answer included."""
     rng = random.Random(seed)
     task = rng.choice(tasks)
-    item = build_item(task, rng, "train")
-    prompt, _ = assemble(item, stories, length, ntok, rng)
+    item = build_item(task, rng, "train", version)
+    prompt, _ = assemble(item, stories, length, ntok, rng, version=version)
     return prompt + answer_text(item)

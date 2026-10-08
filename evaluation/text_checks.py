@@ -54,6 +54,11 @@ TIERS = {
                    stack_layers=5),
     "main": Tier("main", 100e6, 2.0e9, 4096, 96, 4, 120.0, hidden=896, pre_layers=3, global_layers=1,
                  stack_layers=8, tune_runs=3, tune_tokens=100e6),
+    # local data-calibration tier (Apple M5 Max, ~1.2 h per model): which tasks are learnable, how fast,
+    # and which a model without long memory passes. A small-scale preview, never a verdict.
+    "lab": Tier("lab", 16e6, 100e6, 1024, 32, 16, 3.0, hidden=256, pre_layers=2, global_layers=1,
+                stack_layers=4, eval_lengths=(1024, 2048, 4096), extra_lengths=(1024,), tune_runs=2,
+                tune_tokens=12e6, band=0.10),
     # local plumbing check only (minutes on a laptop); never a result
     "smoke": Tier("smoke", 2e6, 0.25e6, 1024, 8, 4, 0.5, hidden=128, pre_layers=1, global_layers=1,
                   stack_layers=2, eval_lengths=(512, 1024, 2048), extra_lengths=(1024,), tune_runs=2,
@@ -182,7 +187,7 @@ DEFAULT_RECIPE = {
     "status": "prior (untuned)",
     "init": "trainer default: normal(0.02) projections, zero-init residual outputs (perceiver_ar)",
     "optimizer": "adam", "weight_decay": 0.1, "max_grad_norm": 1.0,
-    "lr": {"screen": 1e-3, "main": 6e-4, "smoke": 1e-3},
+    "lr": {"screen": 1e-3, "main": 6e-4, "smoke": 1e-3, "lab": 1e-3},
     "warmup_frac": 0.02, "scheduler": "cosine",
     "length_method": "none",
     "tuning": {},
