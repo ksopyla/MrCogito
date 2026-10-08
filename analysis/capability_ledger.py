@@ -27,7 +27,8 @@ Schema 1 — one file per (folder, host):
            guess_floor (parallel chain: guessing floors measured on its eval rows),
            prize_bits, flow, best_acc, extended, step, examples_to_75, sec_per_step, tokens_per_sec,
            params
-  LADDER:  acc, acc_se, first_acc, first_acc_se, rows, ce_nats, sec_per_row, peak_gb, memory_slots
+  LADDER:  acc, acc_se, first_acc, first_acc_se, rows, ce_nats, sec_per_row, peak_gb, memory_slots,
+           candidate, candidate_rows, exact, first_greedy (picked-candidate exams)
 """
 from __future__ import annotations
 
@@ -42,7 +43,7 @@ NAS_RESULTS = "/nas/ml_data/mrcogito/results"
 LEDGER_DIR = Path(__file__).resolve().parents[1] / "docs" / "2_Experiments_Registry" / "results" / "capability"
 _NOT_RUNG = ("job.json", "summary.json", "cost_bench.json")
 _LADDER_KEYS = ("acc", "acc_se", "first_acc", "first_acc_se", "rows", "ce_nats", "sec_per_row", "peak_gb",
-                "memory_slots")
+                "memory_slots", "candidate", "candidate_rows", "exact", "first_greedy")
 
 
 def _r(x, nd=5):
