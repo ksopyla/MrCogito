@@ -288,6 +288,7 @@ def table(ev: list[dict]) -> dict:
             out[task][model] = {
                 "label": label, "score": _med([r["score"] for r in rs]), "mean": _med([r["mean"] for r in rs]),
                 "seeds": sorted({r["seed"] for r in rs if r["seed"] is not None}), "ladder": ladder,
+                "per_seed": {str(r["seed"]): r["score"] for r in rs if r["seed"] is not None},
                 "via": sorted({r["via"] for r in rs}), "sources": sorted({r["source"] for r in rs}),
                 "other": sorted(l for l in labels if l != label),
             }
