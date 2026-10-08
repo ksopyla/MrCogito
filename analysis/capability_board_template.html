@@ -449,10 +449,12 @@ function taskRow(t, cols, ref) {
     const bg = fl ? "" : `background-color:${seqColor(e.score)};color:${seqInk(e.score)}`;
     h += `<td class="cell ${fl ? "flawed" : ""} ${legacy ? "legacy" : ""} ${pass ? "pass" : ""}" tabindex="0" data-t="${esc(t.id)}" data-m="${esc(m)}" style="${bg}">` +
       `${pct(e.score)}${legacy ? `<span class="badge">${LABEL[e.label].b}</span>` : ""}` +
-      `${L128 != null ? `<span class="sub">128k: ${pct(L128)}</span>` : ""}</td>`;
+      `${L128 != null ? `<span class="sub">128k: ${pct(L128)}</span>` : ""}` +
+      `${pass && failedSeeds(e) ? `<span class="sub">${failedSeeds(e)} seed${failedSeeds(e) > 1 ? "s" : ""} failed</span>` : ""}</td>`;
   }
   return h + `</tr>`;
 }
+const failedSeeds = e => Object.values(e.per_seed || {}).filter(v => v != null && v < D.pass).length;
 function head(cols, ref) {
   return `<thead><tr><th>task</th><th>status</th>${ref ? "<th>reference</th>" : ""}` + cols.map(m =>
     `<th class="mcol"><span class="swatch" style="background:${color(m)}"></span>${esc(label(m))}</th>`).join("") + `</tr></thead><tbody>`;
@@ -479,7 +481,7 @@ document.querySelectorAll("table.ttable").forEach(tbl => {
       showTip(`<div><b>${esc(label(cell.dataset.m))}</b> · ${esc(t.name)}</div>
         <div class="row"><span>${scoreName(t)} at ${kLen(t.train_len)}</span><span class="num">${pct(e.score)} %</span></div>
         <div class="row"><span>mean over answer letters</span><span class="num">${pct(e.mean)} %</span></div>
-        <div class="row"><span>seeds</span><span class="num">${e.seeds.join(", ") || "–"}</span></div>
+        <div class="row"><span>per seed</span><span class="num">${Object.entries(e.per_seed || {}).map(([k, v]) => `${k}: ${pct(v)}`).join(" · ") || e.seeds.join(", ") || "–"}</span></div>
         ${lad ? `<div class="small">length ladder (first letter): ${esc(lad)}</div>` : ""}
         <div class="small">${esc(e.label)}: ${esc(LABEL[e.label].t)}</div>
         <div class="small">from ${esc(e.via.join(", "))} · ${esc(e.sources.join(", "))}</div>`, ev);

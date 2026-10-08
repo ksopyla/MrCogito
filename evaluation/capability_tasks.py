@@ -38,7 +38,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-VERSION = "v4-draft-2026-10-07.4"
+VERSION = "v4-draft-2026-10-08.1"
 PASS_ACC = 0.75
 SEEDS = (0, 1, 2)
 LADDER = (1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072)
@@ -174,7 +174,20 @@ TASKS: tuple[Task, ...] = (
     Task("C4.chain8-1k", "C4", "in-order 8-hop chain, 1024 tokens", "chain_ordered",
          ("--scale", "bridge_1k", "--hops", "8"), 1024, 64, "follow 8 in-order hops", status="calibrating",
          ladder=_L),
-    # C5 — reason (parallel chains; 16-letter nodes so the overhang fits in 1024 tokens)
+    # C5, recipe A — composition: final answer only, no written path, no intermediate targets. Frozen 2026-10-08 on
+    # the schedule the E33 loop learns from random init (seeds 0-2 picked 94.1 / 93.9 / 3.9 %); dense (4 and 8 layers)
+    # and the E31 single read fail it, so the E33 loop is its reference (rule 5).
+    Task("C5.pchain2-1k", "C5", "parallel 2-hop chain among 3 decoy chains, final answer only, 1024 tokens",
+         "chain_parallel",
+         ("--scale", "bridge_1k", "--hops", "2", "--chain_overhang", "1", "--key_len", "8", "--hop_count_in_question"),
+         1024, 16,
+         "compose 2 shuffled hops inside the model: 4 chains of the same length, only the start node names the right one, "
+         "every chain runs one edge past the asked node, the question states the hop count; the answer is the final node "
+         "only (no scratchpad)",
+         status="active", ladder=_L, score="candidate", floor=0.083, train=TRAIN_1K_X16,
+         curriculum="one run from random init: the same exam at 1 hop (budget TRAIN_1K_X4) → 2 hops (task budget, half "
+                    "the rows at 1 hop: `--replay_recipe chain_parallel --replay_hops 1 --replay_frac 0.5`)"),
+    # C5 — recipe A at 3-4 hops (16-letter nodes so the overhang fits in 1024 tokens): not calibrated
     *(Task(f"C5.pchain{h}-1k", "C5", f"parallel {h}-hop chain among 3 decoy chains, 1024 tokens", "chain_parallel",
            ("--scale", "bridge_1k", "--hops", str(h), "--chain_overhang", "1", "--key_len", "16",
             "--hop_count_in_question"), 1024, 32,
@@ -185,7 +198,7 @@ TASKS: tuple[Task, ...] = (
                       + " → ".join(str(k) for k in range(2, h + 1))
                       + " hops (hop count in every question), each stage at the task's budget, optionally with "
                       "half its rows at the previous hop count (`--replay_hops`)")
-      for h, fl in ((2, 0.083), (3, 0.0625), (4, 0.05))),
+      for h, fl in ((3, 0.0625), (4, 0.05))),
     # C5, recipe B — chained lookup with a scratchpad: every model writes the path n1 … nk, so each written node is
     # the query of the next hop (k lookups in sequence; no internal composition needed). 8-letter names; scored
     # on the final node. Composition without a scratchpad is recipe A (C5.pchain*). "Final answer only with
