@@ -100,6 +100,10 @@ class Arch:
 
 ARCHES = {
     "dense": Arch("dense", "ceiling at the training length; language reference", {"par_mode": "dense"}),
+    # diagnostic control (lab tier, 2026-10-09): the dense model without the E31 input layer (no hashed
+    # n-gram features, no value embeddings) — does that layer delay learning to copy from context?
+    "dense_plain": Arch("dense_plain", "diagnostic: dense without the n-gram / value-embedding input layer",
+                        {"par_mode": "dense", "par_ngram_orders": "", "par_value_embed_layers": ""}),
     "local": Arch("local", "no-long-memory control: E31c trained with its notebook removed (recent 256 tokens only)",
                   {**_E31C, "message_override": "none"}),
     "e31c": Arch("e31c", "E31 latent notebook, closed-window text read", dict(_E31C), has_notebook=True),
