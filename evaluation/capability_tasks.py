@@ -20,6 +20,9 @@ Rules every task obeys (the author's decisions, 2026-10-04):
     guessing floor of ~40 % (answer with any candidate: the commonest first letter among them wins), the
     picked candidate 1 / #candidates, and a lossy copy of the right fact still counts. Every task states its guessing floor (`floor`, of its own score) next to chance
     (E33a diagnosis, 2026-10-05: docs/4_Research_Notes/e33a_loop_diagnosis_20261004.md);
+  * **a task is learnable once some model learns it** from random init on the written recipe (seeds 0–2,
+    median ≥ 75 %; author, 2026-10-07): dense is the ceiling when it passes; when it fails, the best model that
+    passes is the task's reference (the dashboard names it); if none passes, the task stays `calibrating`;
   * **flawed tasks** stay listed with their reason so nobody reuses them as evidence; they never gate,
     never enter a level and are crossed out on the dashboard.
 
@@ -35,7 +38,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-VERSION = "v4-draft-2026-10-07.2"
+VERSION = "v4-draft-2026-10-07.4"
 PASS_ACC = 0.75
 SEEDS = (0, 1, 2)
 LADDER = (1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072)
@@ -194,7 +197,7 @@ TASKS: tuple[Task, ...] = (
             "--hop_count_in_question", "--chain_answer_path"), 1024, 16 * h,
            f"chained lookup with a scratchpad: follow {h} shuffled hops writing every node on the way (n1 … n{h}); "
            f"4 chains, overhang, hop count in the question; the picked candidate reads the final node",
-           status="active" if h == 2 else "calibrating", ladder=_L, score="candidate", floor=fl,
+           status="active", ladder=_L, score="candidate", floor=fl,
            train=TRAIN_1K_X16,
            curriculum="one run from random init: the same exam at 1 hop (budget TRAIN_1K_X4) → "
                       + " → ".join(f"{k} hops (task budget, half the rows at {k - 1} hop{'s' if k > 2 else ''}: "

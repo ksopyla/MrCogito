@@ -43,6 +43,8 @@ LABELS = ("same", "settings-differ", "curriculum-differs", "not-from-scratch", "
 STAGE_OF = {"lookup_8k": "C1.lookup-16k", "chain_8k": "C4.chain4-2k", "recall8_8k": "C3.recall8-1k",
             "recall16_8k": "C3.recall16-1k"}
 PASS, HARM_POINTS = 0.75, 0.05
+SPEC = ROOT / "docs" / "engineering_specs" / "capability_checks.md"
+GITHUB = "https://github.com/ksopyla/MrCogito/blob/dev/"  # where the page's references point (the page is published off-repo)
 MULTI_CANDIDATE = ("lookalike", "chain", "shuffled", "unique", "story")
 
 # Standard battery slots, in reading order: (slot id, exam, training stage label)
@@ -155,13 +157,14 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
                 if j["status"] != "done":
                     continue
                 # v4 runs built from the task definition itself (`task_job`): `{conf|v4}_{C1_edge-1k}_{arch}_s{seed}`
-                m = re.match(r"^(?:confp?|v4)_(C\d)_(.+?)(?:_h(\d))?_" + re.escape(j["arch"]) + r"_s(\d+)$", j["job"])
+                # the variant comes from the name: a variant may be an arch plus flags (e33a_loop = e31_li_m1 + loop)
+                m = re.match(r"^(?:confp?|v4|recA)_(C\d)_(.+?-\d+k)(?:_h(\d))?_(.+)_s(\d+)$", j["job"])
                 hops = re.search(r"(?:pchain|path)(\d)-", m[2]) if m else None
                 final = m and (m[3] is None or (hops and int(m[3]) == int(hops[1])))  # curriculum: last stage only
                 if m and final and f"{m[1]}.{m[2]}" in TASK_BY_ID:
                     task = f"{m[1]}.{m[2]}"
                     lad = {int(L): v.get("first_acc") for L, v in (j["ladders"].get("ladder") or {}).items()}
-                    out.append({"task": task, "model": j["arch"], "label": "same", "seed": int(m[4]),
+                    out.append({"task": task, "model": m[4], "label": "same", "seed": int(m[5]),
                                 "score": _score(task, j.get("p0"), j.get("cand")), "mean": j.get("acc"),
                                 "ladder": lad, "source": j["source"], "collected": "", "via": "v4 task recipe"})
                     continue
@@ -228,6 +231,21 @@ def calibration(ledgers: list[dict]) -> list[dict]:
                          "floor": t.floor, "chance": t.chance, "score_kind": t.score, "source": j["source"]})
     rows.sort(key=lambda r: (str(r["round"]), r["task"], r["job"]))
     return rows
+
+
+def latest_log(n: int = 6) -> list[dict]:
+    """The newest rows of the spec's calibration log (date, round, finding, decision), newest first, as plain text."""
+    rows, inside = [], False
+    for line in SPEC.read_text().splitlines():
+        if line.startswith("### Calibration log"):
+            inside = True
+        elif inside and line.startswith("#"):
+            break
+        elif inside and line.startswith("| 20"):
+            cells = [re.sub(r"\*\*|`", "", c).strip() for c in line.strip().strip("|").split(" | ")]
+            if len(cells) >= 4:
+                rows.append(dict(zip(("date", "round", "finding", "decision"), cells[:4])))
+    return rows[::-1][:n]
 
 
 def _shown_path(p: Path, ledger_dir: Path) -> str:
@@ -304,14 +322,25 @@ def no_harm(tbl: dict, champion: str, models: list[str]) -> dict:
     return out
 
 
+def reference(task_id: str, tbl: dict) -> str | None:
+    """The task's reference (rule 5, 2026-10-07): dense when it passes on the full seed set; otherwise the best
+    model that passes from random init (`same` evidence, seeds 0–2, median ≥ PASS); None if no model does."""
+    ok = {m: c["score"] for m, c in tbl.get(task_id, {}).items()
+          if c["label"] == "same" and c["score"] is not None and c["score"] >= PASS
+          and set(SEEDS) <= set(c["seeds"])}
+    if "dense" in ok:
+        return "dense"
+    return max(ok, key=ok.get) if ok else None
+
+
 def row_status(task, tbl: dict, champion: str) -> dict:
     if task.status == "flawed":
         return {"status": "flawed", "note": task.flaw}
     if task.status == "calibrating":
-        return {"status": "calibrating", "note": "no frozen from-scratch recipe yet; results shown are legacy protocol"}
+        return {"status": "calibrating", "note": "recipe not fixed yet"}
     c = tbl.get(task.id, {}).get(champion)
     if not c or c["label"] != "same":
-        return {"status": "missing", "note": "no from-scratch result under the v4 definition for the champion"}
+        return {"status": "missing", "note": "champion not run on the written recipe"}
     notes = []
     if len(c["seeds"]) < len(SEEDS):
         notes.append(f"{len(c['seeds'])} of {len(SEEDS)} seeds")
@@ -403,7 +432,7 @@ def main() -> int:
     models = sorted({e["model"] for e in ev} | {v for slot in bat.values() for v in slot})
     order = [args.champion, *registered, "e31_li", "e30_li", "dense"]
     models = [m for m in order if m in models] + [m for m in models if m not in order]
-    visible = args.show or [m for m in [args.champion, *registered, "e31_li", "e30_li", "dense"] if m in models]
+    visible = args.show or [m for m in [args.champion, *registered, "dense"] if m in models]  # older builds: one click away
     rerun_models = args.rerun_models or [args.champion, "dense", *registered]
     items = reruns(tbl, rerun_models)
     Path(args.reruns_out).write_text(reruns_md(items, rerun_models))
@@ -425,7 +454,7 @@ def main() -> int:
     slots.sort(key=lambda sl: (lv_order.index(sl["level"]), std_ix.get(sl["id"], 99), sl["task"] or "", sl["id"]))
     tasks = [{"id": t.id, "level": t.level or "X", "name": t.name, "measures": t.measures, "recipe": t.recipe,
               "args": " ".join(t.args), "train_len": t.train_len, "prize": t.prize_bits, "chance": t.chance,
-              "score_kind": t.score, "floor": t.floor,
+              "score_kind": t.score, "floor": t.floor, "reference": reference(t.id, tbl),
               "curriculum": t.curriculum, "ladder": t.ladder, "task_status": t.status, "flaw": t.flaw,
               **row_status(t, tbl, args.champion)} for t in TASKS]
     data = {
@@ -435,7 +464,7 @@ def main() -> int:
         "tasks": tasks, "table": tbl, "no_harm": no_harm(tbl, args.champion, models),
         "slots": slots, "battery": {s["id"]: bat[s["id"]] for s in slots},
         "reruns": items, "rerun_models": rerun_models, "suite_version": suite_version,
-        "calibration": calibration(ledgers),
+        "calibration": calibration(ledgers), "latest": latest_log(), "github": GITHUB,
         "sources": [{"file": _shown_path(Path(l["_file"]), Path(args.ledger_dir)), "kind": l["kind"], "name": l["name"],
                      "host": l["host"], "collected": l["collected"], "archive": l["archive_path"],
                      "done": sum(j["status"] == "done" for j in l["jobs"]), "jobs": len(l["jobs"]),

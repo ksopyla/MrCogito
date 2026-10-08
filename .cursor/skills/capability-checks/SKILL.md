@@ -50,7 +50,9 @@ trained text checkpoints → `experiment-evaluate`; what a result means and the 
 3. **Score on the task's own score** — the first answer letter, or for `score="candidate"` tasks (C1.keyed4,
    C1.edge, C5) the greedy picked candidate (probe `answer_exact`), always read against the task's guessing
    `floor`, not only chance; pass = median over seeds 0, 1, 2 ≥ 75 %; chance 25 % (DNA),
-   12.5 % (Glyph). The dense model trains alongside as the ceiling; a miss dense shares is "uncalibrated".
+   12.5 % (Glyph). The dense model trains alongside as the ceiling; a miss dense shares is "uncalibrated". If dense cannot learn a task but another model
+   does (from random init, written recipe, seeds 0–2), the task is learnable and that model is its named
+   reference (author, 2026-10-07).
 4. **Flawed tasks** (`status="flawed"`) are never run as evidence, never gate, never cited as a
    capability; the runner and scorecard label them, the dashboard crosses them out.
 5. **`calibrating` tasks** have no frozen from-scratch recipe yet: report them, never gate on them.

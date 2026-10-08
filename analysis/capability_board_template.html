@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Capability Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -112,6 +113,50 @@ details summary { cursor: pointer; font-weight: 600; }
 details[open] summary { margin-bottom: 10px; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 560px) { h1 { font-size: 24px; } .wrap { padding-inline: 16px; } #ttable td.task { min-width: 160px; } }
+.latest { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 16px; display: grid; gap: 8px; }
+.latest ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.latest li { display: grid; grid-template-columns: 128px 1fr; gap: 2px 12px; font-size: 13px; }
+.latest .when { font: 12px var(--mono); color: var(--ink-3); }
+.latest .what { color: var(--ink); }
+.latest .finding { grid-column: 2; color: var(--ink-3); font-size: 12px; }
+.refs { font-size: 12px; color: var(--ink-3); }
+.refs a { color: var(--ink-2); }
+#ttable td.task .why, .ttable td.task .why { display: block; font-size: 12px; color: var(--ink-2); margin-top: 3px; line-height: 1.35; }
+.ttable th.mcol { text-align: center; min-width: 88px; max-width: 128px; white-space: normal; font-size: 12px; line-height: 1.3; }
+.ttable th.mcol .swatch { display: block; margin: 0 auto 4px; }
+.ttable td.task { position: sticky; left: 0; background: var(--surface); min-width: 240px; max-width: 340px; }
+.ttable td.task .tid { font: 11px var(--mono); color: var(--ink-3); }
+.ttable td.task a { color: var(--ink); text-decoration: none; border-bottom: 1px dotted var(--ink-3); }
+.ttable td.st { white-space: nowrap; }
+.ttable td.st .small { display: block; margin-top: 3px; white-space: normal; max-width: 180px; }
+.ttable td.ref { font-size: 12px; min-width: 120px; max-width: 160px; color: var(--ink-2); }
+.ttable td.ref b { font-family: var(--mono); color: var(--ink); }
+.rung td { border-bottom: 1px solid var(--rule); }
+#t-ladder td.lv { position: sticky; left: 0; background: var(--surface); min-width: 260px; max-width: 360px; }
+#t-ladder td.lv a { text-decoration: none; }
+#t-ladder .lvid { font: 600 20px/1 var(--mono); color: var(--accent); margin-right: 8px; }
+#t-ladder .lvn { font-weight: 600; }
+#t-ladder .lvq { display: block; font-size: 12px; color: var(--ink-2); margin-top: 3px; }
+#t-ladder th.mcol { text-align: center; min-width: 88px; max-width: 128px; white-space: normal; font-size: 12px; line-height: 1.3; }
+#t-ladder th.mcol .swatch { display: block; margin: 0 auto 4px; }
+td.sum { text-align: center; min-width: 88px; }
+td.sum .frac { font: 600 15px var(--mono); }
+td.sum .of { display: block; font-size: 11px; color: var(--ink-3); }
+td.sum.all { background: color-mix(in srgb, var(--good) 16%, transparent); }
+td.sum.some { background: color-mix(in srgb, var(--warning) 16%, transparent); }
+td.sum.none { background: color-mix(in srgb, var(--critical) 14%, transparent); }
+.ttable tr.lvrow td { background: var(--bg); border-top: 2px solid var(--rule); padding-top: 12px; }
+.ttable tr.lvrow .lvname { font: 600 14px var(--sans); color: var(--ink); }
+.ttable tr.lvrow .lvname b { font-family: var(--mono); color: var(--accent); margin-right: 6px; }
+.ttable tr.lvrow .lvq { font-size: 12px; color: var(--ink-3); margin-left: 8px; }
+.ttable tr.notready td.task a, .ttable tr.notready td.task { color: var(--ink-3); }
+.ttable tr.notready td.cell { opacity: .55; }
+.fold { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 16px; display: grid; gap: 10px; }
+.fold > summary { font-weight: 600; }
+.fold > summary .small { font-weight: 400; margin-left: 6px; }
+.fold[open] > summary { margin-bottom: 4px; }
+.fold .tablebox { border: none; }
+@media (max-width: 560px) { .latest li { grid-template-columns: 1fr; } .latest .finding { grid-column: 1; } }
 </style>
 
 <div class="wrap">
@@ -119,76 +164,98 @@ details[open] summary { margin-bottom: 10px; }
     <div class="eyebrow">MrCogito · capability checks</div>
     <h1>Capability Board</h1>
     <p class="muted" id="lede"></p>
+    <div class="latest">
+      <h3>Latest protocol and result changes</h3>
+      <ol id="latest"></ol>
+      <p class="refs">From the calibration log, newest first; hover a line for the finding behind it · <a data-ref="docs/engineering_specs/capability_checks.md#calibration-log">full log</a></p>
+    </div>
     <nav class="toc" aria-label="Sections">
-      <a href="#harm">Kept or lost vs the champion</a><a href="#tasks">Task table</a><a href="#length">Length charts</a>
-      <a href="#guide">Task guide</a><a href="#calibration">Calibration</a><a href="#reruns">Re-run list</a><a href="#sources">Sources</a>
+      <a href="#ladder">The ladder</a><a href="#tasks">Tasks by level</a><a href="#harm">Kept or lost vs the champion</a><a href="#length">Length charts</a>
+      <a href="#more">Flawed and older</a><a href="#guide">Task guide</a><a href="#calibration">Calibration</a><a href="#reruns">Re-run list</a><a href="#sources">Sources</a>
     </nav>
   </header>
 
   <div class="filterbar">
-    <div class="controls" id="filter" role="group" aria-label="Models shown in the table and charts"></div>
+    <div class="controls" id="filter" role="group" aria-label="Models shown in the tables and charts"></div>
     <div class="legend" id="legend"></div>
   </div>
+
+  <section id="ladder">
+    <div>
+      <h2>The ladder: how far up does each model get?</h2>
+      <p class="muted">Levels from the hardest (top) to the simplest (bottom); each level builds on the one below. A cell counts the level's ready
+        tasks (frozen recipe) the model passes: at least 75 %, median over seeds 0–2, from scratch, on the written recipe. Green = all, amber = some,
+        red = none; a dot = no matching result yet. Tasks still being calibrated are listed in their level but never counted.</p>
+      <p class="refs">Rules: <a data-ref="docs/engineering_specs/capability_checks.md#rules-authors-decisions-2026-10-04">capability checks spec</a> ·
+        levels and tasks: <a data-ref="evaluation/capability_tasks.py">capability_tasks.py</a></p>
+    </div>
+    <div class="tablebox"><table id="t-ladder"></table></div>
+  </section>
+
+  <section id="tasks">
+    <div>
+      <h2>Tasks by level</h2>
+      <p class="muted">Every task of the ladder, hardest level first. The number is the task's own score in percent at the training length, median
+        over seeds 0–2; the small line is the same model reading a 128k book. A solid outline is a pass on a result that matches the task
+        definition; hatched cells come from an older protocol and do not count; greyed rows are still calibrating. <b>Reference</b> is the model that
+        proves the task learnable: dense when it passes (the ceiling), otherwise the best model that learns it from scratch. Hover any name or number.</p>
+    </div>
+    <div class="tablebox"><table class="ttable" id="t-tasks"></table></div>
+  </section>
 
   <section id="harm">
     <div>
       <h2>Did anything get worse?</h2>
       <p class="muted" id="harm-rule"></p>
+      <p class="refs">Rule: <a data-ref="docs/engineering_specs/capability_checks.md#comparing-variants-champion-and-no-harm">champion and no-harm</a></p>
     </div>
     <div class="verdicts" id="verdicts"></div>
-  </section>
-
-  <section id="tasks">
-    <div>
-      <h2>Task table</h2>
-      <p class="muted">One row per task, grouped by level (each level builds on the one before). The number is the first-letter score in
-        percent at the training length, median over seeds; the small line is the score when the same model reads a 128k book.
-        A solid outline is a pass (≥ 75 %) on a result that matches the task definition. Hatched cells come from an older protocol
-        (letter badge, see the legend) and do not count yet. Hover any name or number for what it means.</p>
-    </div>
-    <div class="tablebox"><table id="ttable"></table></div>
   </section>
 
   <section id="length">
     <div>
       <h2>Length charts: does it hold up as the book grows?</h2>
-      <p class="muted">Each chart is one task (or one stage of its curriculum). The model trains at the length in the subtitle, then reads
-        longer books with no more training. First-letter accuracy, median over seeds, only where every seed was scored that way. The
-        dashed line is the 75 % pass mark; chance is 25 %. Dashed cards come from an older protocol.</p>
+      <p class="muted">Every ready task with a length ladder, hardest level first. Each model trains at the task's length, then reads longer books with no more training.
+        Ladders record the first answer letter (also on tasks scored on the picked candidate), median over seeds, only where every seed was read.
+        The dashed line is the 75 % pass mark. Dashed cards come from an older protocol.</p>
     </div>
     <div class="multiples" id="multiples"></div>
   </section>
 
+  <section id="more">
+    <details class="fold" id="f-flawed"><summary>Flawed tasks <span class="small" id="n-flawed"></span></summary>
+      <p class="small">Each has a known shortcut, so a high score does not show the capability it is named after. Kept so nobody reuses them;
+        past reports that cite them carry a re-scoring note.</p>
+      <div class="tablebox"><table class="ttable" id="t-flawed"></table></div></details>
+    <details class="fold" id="f-oldcharts"><summary>Older length charts <span class="small">length battery v1, curriculum stages</span></summary>
+      <p class="small">The length battery that ran before v4, with its curriculum stages (e.g. lookup trained at 2k, then an 8k stage). Mostly
+        older-protocol results.</p>
+      <div class="multiples" id="oldcharts"></div></details>
+  </section>
+
   <section id="guide">
-    <div>
-      <h2>Task guide</h2>
-      <p class="muted">What every level and task measures. Every task trains from scratch (random init); a curriculum is allowed only when
-        written here, and it is the same for every architecture. Definitions live in <span class="mono">evaluation/capability_tasks.py</span>.</p>
-    </div>
-    <div class="guide" id="guidebox"></div>
+    <details class="fold"><summary>Task guide <span class="small">what every level and task measures, its recipe, floor and reference</span></summary>
+      <p class="small">Every task trains from scratch (random init); a curriculum is allowed only when written in the definition, and it is the same
+        for every architecture. <a data-ref="docs/engineering_specs/capability_checks.md#levels-and-tasks">Levels and tasks</a> in the spec.</p>
+      <div class="guide" id="guidebox"></div></details>
   </section>
 
   <section id="calibration">
-    <div>
-      <h2>Calibration — can dense learn the task?</h2>
-      <p class="muted" id="cal-lede"></p>
-    </div>
-    <div class="tablebox"><table id="cal-table"></table></div>
+    <details class="fold"><summary>Calibration runs <span class="small" id="cal-sum"></span></summary>
+      <p class="small" id="cal-lede"></p>
+      <div class="tablebox"><table id="cal-table"></table></div></details>
   </section>
 
   <section id="reruns">
-    <div>
-      <h2>Re-run list</h2>
-      <p class="muted" id="rerun-lede"></p>
-    </div>
-    <div class="tablebox"><table id="rerun-table"></table></div>
+    <details class="fold"><summary>Re-run list <span class="small" id="rerun-sum"></span></summary>
+      <p class="small" id="rerun-lede"></p>
+      <div class="tablebox"><table id="rerun-table"></table></div></details>
   </section>
 
   <section id="sources">
-    <details>
-      <summary>Where these numbers come from</summary>
+    <details class="fold"><summary>Where these numbers come from <span class="small" id="src-sum"></span></summary>
       <div class="tablebox"><table id="sources-table"></table></div>
-      <p class="small" style="margin-top:8px">Raw folders (logs, checkpoints, every ladder) are archived on the NAS at the path shown.
+      <p class="small">Raw folders (logs, checkpoints, every ladder) are archived on the NAS at the path shown.
         Refresh with <span class="mono">scripts/pull_capability_results.sh</span>, then <span class="mono">analysis/capability_board.py</span>.</p>
     </details>
   </section>
@@ -228,10 +295,22 @@ const taskBy = Object.fromEntries(D.tasks.map(t => [t.id, t]));
 const seq = ["--seq-0","--seq-1","--seq-2","--seq-3","--seq-4","--seq-5","--seq-6"];
 const seqColor = a => a == null ? "" : `var(${seq[Math.min(6, Math.floor(Math.max(0, Math.min(1, (a - 0.25) / 0.75)) * 7))]})`;
 const seqInk = a => a != null && (a - 0.25) / 0.75 >= 0.57 ? "var(--seq-ink-dark)" : "var(--ink)";
+const scoreName = t => t.score_kind === "candidate" ? "picked candidate" : "first letter";
+document.querySelectorAll("a[data-ref]").forEach(a => { a.href = D.github + a.dataset.ref; a.target = "_blank"; a.rel = "noopener"; });
+
+// the ladder: hardest level on top; inside a level, ready tasks first (harder ones, defined later, on top), calibrating last
+const LV_DOWN = [...D.levels].reverse();
+const READY = t => t.status !== "calibrating" && t.status !== "flawed";
+const levelTasks = lv => {
+  const ts = D.tasks.filter(t => t.level === lv.id).reverse();
+  return [...ts.filter(READY), ...ts.filter(t => t.status === "calibrating")];
+};
+const FLAWED_T = D.tasks.filter(t => t.status === "flawed");
+const nReady = D.tasks.filter(READY).length;
 
 const shown = new Set(D.visible);
-try { const s = JSON.parse(localStorage.getItem("capboard-v4-models") || "null"); if (Array.isArray(s)) { shown.clear(); s.filter(m => D.models.includes(m)).forEach(m => shown.add(m)); } } catch (e) {}
-const save = () => { try { localStorage.setItem("capboard-v4-models", JSON.stringify([...shown])); } catch (e) {} };
+try { const s = JSON.parse(localStorage.getItem("capboard-v5-models") || "null"); if (Array.isArray(s)) { shown.clear(); s.filter(m => D.models.includes(m)).forEach(m => shown.add(m)); } } catch (e) {}
+const save = () => { try { localStorage.setItem("capboard-v5-models", JSON.stringify([...shown])); } catch (e) {} };
 
 // ---- tooltip
 const tip = document.getElementById("tip");
@@ -244,186 +323,266 @@ function showTip(html, ev) {
   tip.style.left = `${Math.max(8, x)}px`; tip.style.top = `${Math.max(8, y)}px`;
 }
 const hideTip = () => { tip.hidden = true; };
+function refText(t) {
+  if (!t.reference) return "none yet: no model has passed the written recipe on seeds 0–2";
+  const e = (D.table[t.id] || {})[t.reference];
+  return `${label(t.reference)}${e ? ` (${pct(e.score)} %)` : ""}${t.reference === "dense" ? " — the ceiling" : " — dense does not learn it"}`;
+}
 function taskTip(t) {
   return `<div><b>${esc(t.name)}</b> <span class="small mono">${esc(t.id)}</span></div>
     <div class="small">${esc(t.measures)}</div>
-    <div class="small">trains at ${kLen(t.train_len)} tokens${t.ladder ? ", then reads up to 128k" : ""} · chance ${Math.round(100 * t.chance)} %${t.floor ? ` · guessing floor ${Math.round(100 * t.floor)} %` : ""} · scored on ${t.score_kind === "candidate" ? "the picked candidate" : "the first letter"}${t.prize ? ` · ${t.prize} bits per answer` : ""}</div>
+    <div class="small">trains at ${kLen(t.train_len)} tokens${t.ladder ? ", then reads up to 128k" : ""} · chance ${Math.round(100 * t.chance)} %${t.floor ? ` · guessing floor ${Math.round(100 * t.floor)} %` : ""} · scored on the ${scoreName(t)}${t.prize ? ` · ${t.prize} bits per answer` : ""}</div>
     ${t.curriculum ? `<div class="small">curriculum: ${esc(t.curriculum)}</div>` : ""}
+    <div class="small">reference: ${esc(refText(t))}</div>
     <div class="small">status: ${esc(STATUS[t.status])}${t.note ? ` — ${esc(t.note)}` : ""}</div>`;
 }
+// open the folds around an anchor target (task guide links, nav links)
+function reveal(id) {
+  const el = document.getElementById(id); if (!el) return;
+  for (let p = el.parentElement; p; p = p.parentElement) if (p.tagName === "DETAILS") p.open = true;
+  el.scrollIntoView({block: "start"});
+}
+document.addEventListener("click", e => {
+  const a = e.target.closest('a[href^="#"]'); if (!a) return;
+  const id = a.getAttribute("href").slice(1);
+  if (document.getElementById(id)?.closest("details")) { e.preventDefault(); history.replaceState(null, "", "#" + id); reveal(id); }
+});
+if (location.hash) setTimeout(() => reveal(decodeURIComponent(location.hash.slice(1))), 0);
 
-// ---- header, filter, legend
+// ---- header, latest, filter, legend
 document.getElementById("lede").textContent =
   `Can our own architectures learn to carry, find, hold, chain and reason over information? Every model trains from scratch on the same ` +
-  `leveled tasks; this page shows every recorded result mapped onto those tasks (${D.version}), compared with the champion, ${label(D.champion)}. ` +
-  `Built ${D.generated} from the committed results ledger. Nothing here has been re-run or re-scored: older results are shown with their protocol label.`;
+  `leveled synthetic tasks, C0 (copy) up to C7 (language-like filler), and is compared with the champion, ${label(D.champion)}. ` +
+  `${nReady} tasks are ready, ${D.tasks.filter(t => t.status === "calibrating").length} are still being calibrated, ${FLAWED_T.length} flawed ones are folded at the bottom. ` +
+  `Built ${D.generated} from the committed results ledger (${D.version}).`;
+const cut = (s, n) => s.length > n ? s.slice(0, s.lastIndexOf(" ", n - 1)) + " …" : s;
+document.getElementById("latest").innerHTML = (D.latest || []).slice(0, 4).map(r =>
+  `<li title="${esc(r.finding)}"><span class="when">${esc(r.date)}<br>${esc(r.round)}</span><span class="what">${esc(cut(r.decision, 190))}</span></li>`).join("") ||
+  `<li class="small">No calibration log rows found.</li>`;
 let moreOpen = false;
 function drawFilter() {
   const f = document.getElementById("filter");
   const box = (m) => { const i = D.models.indexOf(m); return `<label for="m-${i}"><input type="checkbox" id="m-${i}" data-m="${esc(m)}" ${shown.has(m) ? "checked" : ""}>
     <span class="swatch" style="background:${color(m)}"></span>${esc(label(m))}${m === D.champion ? " · champion" : ""}</label>`; };
-  const main = D.models.filter(m => D.visible.includes(m)), rest = D.models.filter(m => !D.visible.includes(m));
-  const on = rest.filter(m => shown.has(m)).length;
+  const main = D.models.filter(m => D.visible.includes(m)), others = D.models.filter(m => !D.visible.includes(m));
+  const on = others.filter(m => shown.has(m)).length;
   f.innerHTML = main.map(box).join("") +
-    `<button type="button" id="m-more" aria-expanded="${moreOpen}">${moreOpen ? "Fewer models" : `More models (${rest.length}${on ? `, ${on} on` : ""})`}</button>` +
+    `<button type="button" id="m-more" aria-expanded="${moreOpen}">${moreOpen ? "Fewer models" : `Older variants (${others.length}${on ? `, ${on} on` : ""})`}</button>` +
     `<button type="button" id="m-default">Default set</button>` +
-    (moreOpen ? `<div class="controls" style="flex-basis:100%">${rest.map(box).join("")}</div>` : "");
+    (moreOpen ? `<div class="controls" style="flex-basis:100%">${others.map(box).join("")}</div>` : "");
 }
 drawFilter();
+const redraw = () => { drawLadder(); drawTables(); drawCharts(); drawOldCharts(); };
 document.getElementById("filter").addEventListener("change", e => {
   const m = e.target.dataset.m; if (!m) return;
-  e.target.checked ? shown.add(m) : shown.delete(m); save(); drawTable(); drawCharts();
+  e.target.checked ? shown.add(m) : shown.delete(m); save(); redraw();
 });
 document.getElementById("filter").addEventListener("click", e => {
   if (e.target.id === "m-more") { moreOpen = !moreOpen; drawFilter(); return; }
   if (e.target.id !== "m-default") return;
-  shown.clear(); D.visible.forEach(m => shown.add(m)); save(); drawFilter(); drawTable(); drawCharts();
+  shown.clear(); D.visible.forEach(m => shown.add(m)); save(); drawFilter(); redraw();
 });
 document.getElementById("legend").innerHTML =
   ["active", "partial", "missing", "calibrating", "flawed"].map(s => `<span class="chip ${s}" title="${esc(STATUS[s])}">${s}</span>`).join("") +
   ["settings-differ", "curriculum-differs", "not-from-scratch"].map(l => `<span title="${esc(LABEL[l].t)}"><span class="badge">${LABEL[l].b}</span> ${l.replace(/-/g, " ")}</span>`).join("") +
-  `<span>first letter, %; 25 % is chance, 75 % passes</span>`;
+  `<span>score in %; 75 % passes</span>`;
 
-// ---- no-harm
+// ---- no-harm: the default models first, older variants folded
 document.getElementById("harm-rule").textContent =
   `A capability counts as lost when a model scores more than ${Math.round(100 * D.harm_points)} points below the champion on a task (or a length) ` +
-  `where the champion passes, comparing only results that match the task definition. "Not comparable yet" means the champion passes there ` +
-  `but the model has no matching result.`;
+  `where the champion passes, comparing only results that match the task definition, basics included. "Not comparable yet" means the champion ` +
+  `passes there but the model has no matching result.`;
 (function drawVerdicts() {
   const vbox = document.getElementById("verdicts");
-  const entries = Object.entries(D.no_harm).filter(([m, r]) => r.kept + r.lost.length > 0);
-  const none = Object.entries(D.no_harm).filter(([m, r]) => r.kept + r.lost.length === 0).map(([m]) => label(m));
-  vbox.innerHTML = entries.map(([m, r]) => {
+  const card = ([m, r]) => {
     const lost = r.lost.length;
     const st = lost ? ["missing", "✕", `${lost} lost`] : ["active", "✓", "nothing lost"];
     const list = r.lost.slice(0, 6).map(x => `<div>${esc(x.where)}: ${pct(x.variant)} vs ${pct(x.champion)}</div>`).join("") + (lost > 6 ? `<div>and ${lost - 6} more</div>` : "");
     return `<div class="verdict"><div class="name"><span class="swatch" style="background:${color(m)}"></span>${esc(label(m))}</div>
       <div class="counts"><span class="chip ${st[0]}">${st[1]} ${st[2]}</span><span class="chip" style="color:var(--ink-2)">${r.kept} kept</span>
       <span class="chip" style="color:var(--ink-2)">${r.missing} not comparable yet</span></div>${lost ? `<div class="lost">${list}</div>` : ""}</div>`;
-  }).join("") || `<p class="muted">No model has results that match the task definitions where the champion passes.</p>`;
-  if (none.length) vbox.insertAdjacentHTML("afterend", `<p class="small">No comparable results yet (only older-protocol results, see the re-run list): ${none.map(esc).join(", ")}.</p>`);
+  };
+  const withData = Object.entries(D.no_harm).filter(([m, r]) => r.kept + r.lost.length > 0);
+  const main = withData.filter(([m]) => D.visible.includes(m)), older = withData.filter(([m]) => !D.visible.includes(m));
+  vbox.innerHTML = main.map(card).join("") || `<p class="muted">No default model has results that match the task definitions where the champion passes.</p>`;
+  if (older.length) vbox.insertAdjacentHTML("afterend", `<details class="fold"><summary>Older variants <span class="small">${older.length} parked builds, mostly suite results from before E31b</span></summary>
+    <div class="verdicts">${older.map(card).join("")}</div></details>`);
 })();
 
-// ---- task table
-function drawTable() {
-  const tbl = document.getElementById("ttable");
+// ---- the ladder overview: one row per level, a pass count per model
+const passes = (t, m) => { const e = (D.table[t.id] || {})[m]; return !!(e && e.label === "same" && e.score != null && e.score >= D.pass); };
+const matched = (t, m) => { const e = (D.table[t.id] || {})[m]; return !!(e && e.label === "same"); };
+function drawLadder() {
   const cols = D.models.filter(m => shown.has(m));
-  let h = `<thead><tr><th>task</th><th>status</th>` + cols.map(m =>
-    `<th class="mcol"><span class="swatch" style="background:${color(m)}"></span>${esc(label(m))}</th>`).join("") + `</tr></thead><tbody>`;
-  const groups = [...D.levels.map(l => ({...l})), {id: "X", name: "Flawed", question: "kept so nobody reuses them as evidence"}];
-  for (const lv of groups) {
-    const rows = D.tasks.filter(t => t.level === lv.id);
-    if (!rows.length) continue;
-    h += `<tr class="lvrow"><td colspan="${cols.length + 2}"><span class="lvname">${esc(lv.id === "X" ? "Flawed tasks" : `${lv.id} ${lv.name}`)}</span><span class="lvq">${esc(lv.question)}</span></td></tr>`;
-    for (const t of rows) {
-      const fl = t.status === "flawed";
-      h += `<tr class="${fl ? "flawedrow" : ""}"><td class="task" data-t="${esc(t.id)}"><a href="#task-${esc(t.id)}">${esc(t.name)}</a><div class="tid">${esc(t.id)}</div></td>
-        <td class="st"><span class="chip ${t.status}">${t.status}</span>${t.note ? `<span class="small">${esc(t.note)}</span>` : ""}</td>`;
-      for (const m of cols) {
-        const e = (D.table[t.id] || {})[m];
-        if (!e) { h += `<td class="cell empty">·</td>`; continue; }
-        const L128 = e.ladder["131072"];
-        const legacy = e.label !== "same" && !fl;
-        const pass = !fl && e.label === "same" && e.score != null && e.score >= D.pass;
-        const bg = fl ? "" : `background-color:${seqColor(e.score)};color:${seqInk(e.score)}`;
-        h += `<td class="cell ${fl ? "flawed" : ""} ${legacy ? "legacy" : ""} ${pass ? "pass" : ""}" tabindex="0" data-t="${esc(t.id)}" data-m="${esc(m)}" style="${bg}">` +
-          `${pct(e.score)}${legacy ? `<span class="badge">${LABEL[e.label].b}</span>` : ""}` +
-          `${L128 != null ? `<span class="sub">128k: ${pct(L128)}</span>` : ""}</td>`;
-      }
-      h += `</tr>`;
+  let h = `<thead><tr><th>level</th>` + cols.map(m => `<th class="mcol"><span class="swatch" style="background:${color(m)}"></span>${esc(label(m))}</th>`).join("") + `</tr></thead><tbody>`;
+  for (const lv of LV_DOWN) {
+    const all = levelTasks(lv), ready = all.filter(READY), cal = all.length - ready.length;
+    h += `<tr class="rung"><td class="lv"><a href="#lv-${lv.id}"><span class="lvid">${esc(lv.id)}</span><span class="lvn">${esc(lv.name)}</span></a>` +
+      `<span class="lvq">${esc(lv.question)} · ${ready.length} ready${cal ? `, ${cal} calibrating` : ""}</span></td>`;
+    for (const m of cols) {
+      if (!ready.length) { h += `<td class="sum"><span class="small">no ready task</span></td>`; continue; }
+      const have = ready.filter(t => matched(t, m)).length, n = ready.filter(t => passes(t, m)).length;
+      if (!have) { h += `<td class="sum"><span class="small">·</span></td>`; continue; }
+      const cls = n === ready.length ? "all" : n ? "some" : "none";
+      h += `<td class="sum ${cls}" title="${esc(`${label(m)} passes ${n} of ${ready.length} ready ${lv.id} tasks; ${have} have a matching result`)}">` +
+        `<span class="frac">${n}/${ready.length}</span>${have < ready.length ? `<span class="of">${ready.length - have} not run</span>` : ""}</td>`;
     }
+    h += `</tr>`;
   }
-  tbl.innerHTML = h + `</tbody>`;
+  document.getElementById("t-ladder").innerHTML = h + `</tbody>`;
 }
-drawTable();
-document.getElementById("ttable").addEventListener("pointerover", ev => {
-  const cell = ev.target.closest("td[data-m]"), name = ev.target.closest("td.task");
-  if (cell) {
-    const t = taskBy[cell.dataset.t], e = D.table[t.id][cell.dataset.m];
-    const lad = Object.entries(e.ladder).map(([L, v]) => `${kLen(+L)} ${pct(v)}`).join(" · ");
-    showTip(`<div><b>${esc(label(cell.dataset.m))}</b> · ${esc(t.name)}</div>
-      <div class="row"><span>first letter at ${kLen(t.train_len)}</span><span class="num">${pct(e.score)} %</span></div>
-      <div class="row"><span>mean over answer letters</span><span class="num">${pct(e.mean)} %</span></div>
-      <div class="row"><span>seeds</span><span class="num">${e.seeds.join(", ") || "–"}</span></div>
-      ${lad ? `<div class="small">length ladder: ${esc(lad)}</div>` : ""}
-      <div class="small">${esc(e.label)}: ${esc(LABEL[e.label].t)}</div>
-      <div class="small">from ${esc(e.via.join(", "))} · ${esc(e.sources.join(", "))}</div>`, ev);
-  } else if (name) showTip(taskTip(taskBy[name.dataset.t]), ev);
-  else hideTip();
+
+// ---- task tables
+function taskRow(t, cols, ref) {
+  const fl = t.status === "flawed";
+  const re = t.reference && (D.table[t.id] || {})[t.reference];
+  let h = `<tr class="${fl ? "flawedrow" : ""} ${t.status === "calibrating" ? "notready" : ""}"><td class="task" data-t="${esc(t.id)}"><a href="#task-${esc(t.id)}">${esc(t.name)}</a>
+      <div class="tid">${esc(t.id)}</div>${fl && t.flaw ? `<span class="why">flaw: ${esc(t.flaw)}</span>` : ""}</td>
+    <td class="st"><span class="chip ${t.status}">${t.status}</span>${t.note ? `<span class="small">${esc(t.note)}</span>` : ""}</td>` +
+    (ref ? `<td class="ref">${t.reference ? `${esc(label(t.reference).replace(" (ceiling)", ""))} <b>${pct(re && re.score)}</b><div class="small">${t.reference === "dense" ? "ceiling" : "dense does not learn it"}</div>` : `<span class="small">none yet</span>`}</td>` : "");
+  for (const m of cols) {
+    const e = (D.table[t.id] || {})[m];
+    if (!e) { h += `<td class="cell empty">·</td>`; continue; }
+    const L128 = e.ladder["131072"];
+    const legacy = e.label !== "same" && !fl;
+    const pass = !fl && e.label === "same" && e.score != null && e.score >= D.pass;
+    const bg = fl ? "" : `background-color:${seqColor(e.score)};color:${seqInk(e.score)}`;
+    h += `<td class="cell ${fl ? "flawed" : ""} ${legacy ? "legacy" : ""} ${pass ? "pass" : ""}" tabindex="0" data-t="${esc(t.id)}" data-m="${esc(m)}" style="${bg}">` +
+      `${pct(e.score)}${legacy ? `<span class="badge">${LABEL[e.label].b}</span>` : ""}` +
+      `${L128 != null ? `<span class="sub">128k: ${pct(L128)}</span>` : ""}</td>`;
+  }
+  return h + `</tr>`;
+}
+function head(cols, ref) {
+  return `<thead><tr><th>task</th><th>status</th>${ref ? "<th>reference</th>" : ""}` + cols.map(m =>
+    `<th class="mcol"><span class="swatch" style="background:${color(m)}"></span>${esc(label(m))}</th>`).join("") + `</tr></thead><tbody>`;
+}
+function drawTables() {
+  const cols = D.models.filter(m => shown.has(m));
+  let h = head(cols, true);
+  for (const lv of LV_DOWN) {
+    const ts = levelTasks(lv); if (!ts.length) continue;
+    h += `<tr class="lvrow" id="lv-${lv.id}"><td colspan="${cols.length + 3}"><span class="lvname"><b>${esc(lv.id)}</b>${esc(lv.name)}</span><span class="lvq">${esc(lv.question)}</span></td></tr>`;
+    h += ts.map(t => taskRow(t, cols, true)).join("");
+  }
+  document.getElementById("t-tasks").innerHTML = h + `</tbody>`;
+  document.getElementById("t-flawed").innerHTML = head(cols, false) + FLAWED_T.map(t => taskRow(t, cols, false)).join("") + `</tbody>`;
+}
+drawLadder(); drawTables();
+document.getElementById("n-flawed").textContent = `${FLAWED_T.length} tasks, never evidence`;
+document.querySelectorAll("table.ttable").forEach(tbl => {
+  tbl.addEventListener("pointerover", ev => {
+    const cell = ev.target.closest("td[data-m]"), name = ev.target.closest("td.task");
+    if (cell) {
+      const t = taskBy[cell.dataset.t], e = D.table[t.id][cell.dataset.m];
+      const lad = Object.entries(e.ladder).map(([L, v]) => `${kLen(+L)} ${pct(v)}`).join(" · ");
+      showTip(`<div><b>${esc(label(cell.dataset.m))}</b> · ${esc(t.name)}</div>
+        <div class="row"><span>${scoreName(t)} at ${kLen(t.train_len)}</span><span class="num">${pct(e.score)} %</span></div>
+        <div class="row"><span>mean over answer letters</span><span class="num">${pct(e.mean)} %</span></div>
+        <div class="row"><span>seeds</span><span class="num">${e.seeds.join(", ") || "–"}</span></div>
+        ${lad ? `<div class="small">length ladder (first letter): ${esc(lad)}</div>` : ""}
+        <div class="small">${esc(e.label)}: ${esc(LABEL[e.label].t)}</div>
+        <div class="small">from ${esc(e.via.join(", "))} · ${esc(e.sources.join(", "))}</div>`, ev);
+    } else if (name) showTip(taskTip(taskBy[name.dataset.t]), ev);
+    else hideTip();
+  });
+  tbl.addEventListener("pointerleave", hideTip);
 });
-document.getElementById("ttable").addEventListener("pointerleave", hideTip);
 
 // ---- length charts
-function drawCharts() {
+const W = 280, H = 170, MG = {l: 30, r: 10, t: 10, b: 22};
+const LO = Math.log2(1024), HI = Math.log2(131072);
+const X = L => MG.l + (Math.log2(L) - LO) / (HI - LO) * (W - MG.l - MG.r);
+const Y = a => MG.t + (1 - a) * (H - MG.t - MG.b);
+// one panel: series = {model: {length: value}}
+function panel(box, {title, stage, link, kind, badge, series, label: lab}) {
+  const vs = D.models.filter(v => series[v] && Object.values(series[v]).some(y => y != null));
+  if (!vs.length) return false;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)} ${esc(stage)}"><g class="axis">`;
+  for (const a of [0, .25, .5, .75, 1]) svg += `<line class="gridline" x1="${MG.l}" x2="${W - MG.r}" y1="${Y(a)}" y2="${Y(a)}"/><text x="${MG.l - 5}" y="${Y(a) + 3}" text-anchor="end">${a * 100}</text>`;
+  [1024, 4096, 16384, 65536].forEach(L => { svg += `<text x="${X(L)}" y="${H - 6}" text-anchor="middle">${kLen(L)}</text>`; });
+  svg += `</g><line class="passline" x1="${MG.l}" x2="${W - MG.r}" y1="${Y(D.pass)}" y2="${Y(D.pass)}"/>`;
+  for (const v of vs) {
+    const pts = Object.entries(series[v]).map(([L, y]) => ({L: +L, y})).filter(p => p.y != null && p.L >= 1024).sort((a, b) => a.L - b.L);
+    svg += `<g class="series" style="color:${color(v)}"><path d="${pts.map((p, i) => `${i ? "L" : "M"}${X(p.L).toFixed(1)},${Y(p.y).toFixed(1)}`).join("")}" stroke="currentColor"/>`;
+    for (const p of pts) svg += `<circle cx="${X(p.L).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="3.5" fill="currentColor"/>`;
+    svg += `</g>`;
+  }
+  svg += `<line class="crosshair" x1="0" x2="0" y1="${MG.t}" y2="${H - MG.b}" visibility="hidden"/><rect x="${MG.l}" y="0" width="${W - MG.l - MG.r}" height="${H}" fill="transparent"/></svg>`;
+  const el = document.createElement("div");
+  el.className = `panel ${kind || ""}`;
+  el.innerHTML = `<h3>${esc(title)}</h3><div class="stage">${esc(stage)}${link ? ` · <a href="#task-${esc(link)}">${esc(link)}</a>` : ""}${badge || ""}</div>${svg}`;
+  box.appendChild(el);
+  const svgEl = el.querySelector("svg"), cross = el.querySelector(".crosshair");
+  const lens = [...new Set(vs.flatMap(v => Object.keys(series[v]).map(Number)))].filter(L => L >= 1024).sort((a, b) => a - b);
+  svgEl.addEventListener("pointermove", ev => {
+    const r = svgEl.getBoundingClientRect(), px = (ev.clientX - r.left) / r.width * W;
+    let best = lens[0]; for (const L of lens) if (Math.abs(X(L) - px) < Math.abs(X(best) - px)) best = L;
+    cross.setAttribute("x1", X(best)); cross.setAttribute("x2", X(best)); cross.setAttribute("visibility", "visible");
+    const rows = vs.map(v => { const y = series[v][best]; if (y === undefined) return "";
+      return `<div class="row"><span><span class="swatch" style="background:${color(v)}"></span>${esc(label(v))}${lab ? ` <span class="small">${esc(lab(v))}</span>` : ""}</span><span class="num">${y != null ? pct(y) + " %" : "not scored on first letter"}</span></div>`; }).join("");
+    showTip(`<div class="small">${esc(title)} · read at ${kLen(best)} tokens</div>${rows}`, ev);
+  });
+  svgEl.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); hideTip(); });
+  return true;
+}
+function drawCharts() {  // every ready ladder task, hardest level first, from the same evidence as the table
   const box = document.getElementById("multiples"); box.innerHTML = "";
-  const W = 280, H = 170, m = {l: 30, r: 10, t: 10, b: 22};
-  const lo = Math.log2(1024), hi = Math.log2(131072);
-  const X = L => m.l + (Math.log2(L) - lo) / (hi - lo) * (W - m.l - m.r);
-  const Y = a => m.t + (1 - a) * (H - m.t - m.b);
-  const ticks = [1024, 4096, 16384, 65536];
+  for (const lv of LV_DOWN) {
+    let header = false;
+    for (const t of levelTasks(lv).filter(t => READY(t) && t.ladder)) {
+      const by = D.table[t.id] || {}, series = {};
+      for (const m of D.models) if (shown.has(m) && by[m] && Object.keys(by[m].ladder).length) series[m] = by[m].ladder;
+      if (!Object.keys(series).length) continue;
+      if (!header) { box.insertAdjacentHTML("beforeend", `<div class="lvhead"><h3>${esc(lv.id)} ${esc(lv.name)}</h3><span class="small">${esc(lv.question)}</span></div>`); header = true; }
+      const legacy = Object.keys(series).some(m => by[m].label !== "same");
+      panel(box, {title: t.name, stage: `trained at ${kLen(t.train_len)}, first letter`, link: t.id, series,
+                  badge: legacy ? ` · <span title="${esc("some lines come from an older protocol (see the table badges)")}"><span class="badge">≈</span> mixed protocols</span>` : "",
+                  label: m => by[m].label === "same" ? "" : `(${by[m].label})`});
+    }
+  }
+  if (!box.children.length) box.innerHTML = `<p class="muted">No length results for the selected models.</p>`;
+}
+function drawOldCharts() {  // length battery v1 slots, with curriculum stages
+  const box = document.getElementById("oldcharts"); box.innerHTML = "";
   let lastLevel = null;
   for (const s of D.slots) {
-    const data = D.battery[s.id] || {};
-    const vs = D.models.filter(v => shown.has(v) && data[v]);
-    if (!vs.length) continue;
+    const data = D.battery[s.id] || {}, series = {};
+    for (const v of D.models) if (shown.has(v) && data[v]) series[v] = Object.fromEntries(Object.entries(data[v]).map(([L, c]) => [L, c.first]));
+    if (!Object.keys(series).length) continue;
     if (s.level !== lastLevel) {
       const lv = D.levels.find(l => l.id === s.level);
       box.insertAdjacentHTML("beforeend", `<div class="lvhead"><h3>${esc(lv ? `${lv.id} ${lv.name}` : "Flawed tasks")}</h3><span class="small">${esc(lv ? lv.question : "never evidence")}</span></div>`);
       lastLevel = s.level;
     }
-    const t = s.task ? taskBy[s.task] : null;
     const kind = s.label === "flawed" ? "flawed" : (s.label && s.label !== "same" ? "legacy" : "");
-    let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(s.exam)} ${esc(s.stage)}"><g class="axis">`;
-    for (const a of [0, .25, .5, .75, 1]) svg += `<line class="gridline" x1="${m.l}" x2="${W - m.r}" y1="${Y(a)}" y2="${Y(a)}"/><text x="${m.l - 5}" y="${Y(a) + 3}" text-anchor="end">${a * 100}</text>`;
-    ticks.forEach(L => { svg += `<text x="${X(L)}" y="${H - 6}" text-anchor="middle">${kLen(L)}</text>`; });
-    svg += `</g><line class="passline" x1="${m.l}" x2="${W - m.r}" y1="${Y(D.pass)}" y2="${Y(D.pass)}"/>`;
-    for (const v of vs) {
-      const pts = Object.entries(data[v]).map(([L, c]) => ({L: +L, y: c.first})).filter(p => p.y != null).sort((a, b) => a.L - b.L);
-      svg += `<g class="series" style="color:${color(v)}"><path d="${pts.map((p, i) => `${i ? "L" : "M"}${X(p.L).toFixed(1)},${Y(p.y).toFixed(1)}`).join("")}" stroke="currentColor"/>`;
-      for (const p of pts) svg += `<circle cx="${X(p.L).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="3.5" fill="currentColor"/>`;
-      svg += `</g>`;
-    }
-    svg += `<line class="crosshair" x1="0" x2="0" y1="${m.t}" y2="${H - m.b}" visibility="hidden"/><rect x="${m.l}" y="0" width="${W - m.l - m.r}" height="${H}" fill="transparent"/></svg>`;
-    const el = document.createElement("div");
-    el.className = `panel ${kind}`;
     const badge = s.label && s.label !== "same" && LABEL[s.label] ? ` · <span title="${esc(LABEL[s.label].t)}"><span class="badge">${LABEL[s.label].b}</span> ${esc(s.label)}</span>` : "";
-    el.innerHTML = `<h3>${esc(s.exam)}</h3><div class="stage">${esc(s.stage)}${t ? ` · <a href="#task-${esc(t.id)}">${esc(t.id)}</a>` : ""}${badge}</div>${svg}`;
-    box.appendChild(el);
-    const svgEl = el.querySelector("svg"), cross = el.querySelector(".crosshair");
-    const lens = [...new Set(vs.flatMap(v => Object.keys(data[v]).map(Number)))].sort((a, b) => a - b);
-    svgEl.addEventListener("pointermove", ev => {
-      const r = svgEl.getBoundingClientRect(), px = (ev.clientX - r.left) / r.width * W;
-      let best = lens[0]; for (const L of lens) if (Math.abs(X(L) - px) < Math.abs(X(best) - px)) best = L;
-      cross.setAttribute("x1", X(best)); cross.setAttribute("x2", X(best)); cross.setAttribute("visibility", "visible");
-      const rows = vs.map(v => { const c = data[v][best]; if (!c) return "";
-        return `<div class="row"><span><span class="swatch" style="background:${color(v)}"></span>${esc(label(v))}</span><span class="num">${c.first != null ? pct(c.first) + " %" : "not scored on first letter"}</span></div>`; }).join("");
-      showTip(`<div class="small">${esc(s.exam)} · ${esc(s.stage)} · read at ${kLen(best)} tokens</div>${rows}`, ev);
-    });
-    svgEl.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); hideTip(); });
+    panel(box, {title: s.exam, stage: s.stage, link: s.task, kind, badge, series});
   }
-  if (!box.children.length) box.innerHTML = `<p class="muted">No length results for the selected models.</p>`;
+  if (!box.children.length) box.innerHTML = `<p class="muted">No older length results for the selected models.</p>`;
 }
-drawCharts();
+drawCharts(); drawOldCharts();
 
 // ---- task guide
-document.getElementById("guidebox").innerHTML = [...D.levels, {id: "X", name: "Flawed tasks", question: "Kept so they are recognised; never evidence.", measures: "Each has a known shortcut, so a high score does not show the capability it is named after."}].map(lv => {
+document.getElementById("guidebox").innerHTML = [...LV_DOWN, {id: "X", name: "Flawed tasks", question: "Kept so they are recognised; never evidence.", measures: "Each has a known shortcut, so a high score does not show the capability it is named after."}].map(lv => {
   const ts = D.tasks.filter(t => t.level === lv.id);
   return `<div class="glevel"><h3>${esc(lv.id === "X" ? lv.name : `${lv.id} ${lv.name}`)}</h3><div class="q"><b>${esc(lv.question)}</b> ${esc(lv.measures)}</div>` +
     ts.map(t => `<div class="gtask" id="task-${esc(t.id)}"><div><span class="chip ${t.status}">${t.status}</span> <b>${esc(t.name)}</b> <span class="meta">${esc(t.id)}</span></div>
       <div>${esc(t.measures)}${t.flaw ? ` — <b>flaw:</b> ${esc(t.flaw)}` : ""}</div>
-      <div class="meta">recipe ${esc(t.recipe)} ${esc(t.args)} · trains at ${kLen(t.train_len)}${t.ladder ? " · ladder to 128k" : ""} · chance ${Math.round(100 * t.chance)} %${t.floor ? ` · guessing floor ${Math.round(100 * t.floor)} %` : ""} · scored on ${t.score_kind === "candidate" ? "the picked candidate" : "the first letter"}${t.prize ? ` · ${t.prize} bits` : ""}</div>
+      <div class="meta">recipe ${esc(t.recipe)} ${esc(t.args)} · trains at ${kLen(t.train_len)}${t.ladder ? " · ladder to 128k" : ""} · chance ${Math.round(100 * t.chance)} %${t.floor ? ` · guessing floor ${Math.round(100 * t.floor)} %` : ""} · scored on the ${scoreName(t)}${t.prize ? ` · ${t.prize} bits` : ""}</div>
+      <div class="meta">reference: ${esc(refText(t))}</div>
       ${t.curriculum ? `<div class="meta">curriculum: ${esc(t.curriculum)}</div>` : ""}</div>`).join("") + `</div>`;
 }).join("");
 
-// ---- calibration (dense from scratch: a task becomes active once dense passes it)
+// ---- calibration (from-scratch recipe search; a task becomes active once a model passes the written recipe)
 (function () {
   const rows = D.calibration || [];
-  const pct = x => x == null ? "–" : `${Math.round(100 * x)} %`;
+  const pctS = x => x == null ? "–" : `${Math.round(100 * x)} %`;
   const passed = new Set(rows.filter(r => r.score != null && r.score >= D.pass).map(r => r.task));
+  document.getElementById("cal-sum").textContent = `${rows.length} runs on ${new Set(rows.map(r => r.task)).size} tasks · passed: ${passed.size ? [...passed].join(", ") : "none yet"}`;
   document.getElementById("cal-lede").textContent = rows.length
-    ? `${rows.length} dense runs, all from scratch, scored on each task's own score (picked candidate or first letter) and read against its guessing floor. ` +
-      `Dense passes: ${passed.size ? [...passed].join(", ") : "none yet"}. Teacher-forced accuracy (every letter given the right ones before it) is shown to expose ` +
-      `runs that only learned to copy a node once its first letter is given.`
+    ? `Every run from scratch, scored on the task's own score and read against its guessing floor. Teacher-forced accuracy (every letter given the ` +
+      `right ones before it) exposes runs that only learned to copy a node once its first letter is given. Each decision is dated in the calibration log.`
     : "No calibration runs in the ledger yet.";
   document.getElementById("cal-table").innerHTML = `<thead><tr><th>round</th><th>task</th><th>what changes</th><th>score</th><th>floor / chance</th>` +
     `<th>teacher-forced</th><th>verdict</th></tr></thead><tbody>` +
@@ -431,9 +590,9 @@ document.getElementById("guidebox").innerHTML = [...D.levels, {id: "X", name: "F
       const ok = r.score != null && r.score >= D.pass;
       const atFloor = r.score != null && r.score <= Math.max(r.floor || 0, r.chance) + 0.03;
       return `<tr><td class="num">${r.round}</td><td><a href="#task-${esc(r.task)}" class="mono" style="font-size:12px">${esc(r.task)}</a></td>
-        <td>${esc(r.variant)}<div class="small mono">${esc(r.job)}</div></td>
-        <td class="num"><b>${pct(r.score)}</b><div class="small">${r.score_kind === "candidate" ? "picked candidate" : "first letter"}</div></td>
-        <td class="num">${r.floor ? pct(r.floor) + " / " : ""}${pct(r.chance)}</td><td class="num">${pct(r.teacher)}</td>
+        <td>${esc(r.variant)}<div class="small mono">${esc(r.job)} · ${esc(label(r.model))}</div></td>
+        <td class="num"><b>${pctS(r.score)}</b><div class="small">${r.score_kind === "candidate" ? "picked candidate" : "first letter"}</div></td>
+        <td class="num">${r.floor ? pctS(r.floor) + " / " : ""}${pctS(r.chance)}</td><td class="num">${pctS(r.teacher)}</td>
         <td>${ok ? "passes" : atFloor ? "at the floor" : "fails"}</td></tr>`;
     }).join("") + `</tbody>`;
 })();
@@ -442,9 +601,9 @@ document.getElementById("guidebox").innerHTML = [...D.levels, {id: "X", name: "F
 (function () {
   const kinds = {calibrate: "Calibrate the recipe", train: "Train from scratch", ladder: "Length ladder missing"};
   const counts = Object.fromEntries(Object.keys(kinds).map(k => [k, D.reruns.filter(i => i.kind === k).length]));
+  document.getElementById("rerun-sum").textContent = `${counts.train} training jobs, ${counts.ladder} ladders, ${counts.calibrate} tasks to calibrate`;
   document.getElementById("rerun-lede").textContent =
-    `What must run before the table is complete, for ${D.rerun_models.map(label).join(", ")}: ${counts.calibrate} tasks need a from-scratch recipe first, ` +
-    `then ${counts.train} training jobs fill missing seeds and ${counts.ladder} add the length ladders. Flawed tasks are never re-run. ` +
+    `What must run before the table is complete, for ${D.rerun_models.map(label).join(", ")}. Flawed tasks are never re-run. ` +
     `The same list is committed as docs/3_Evaluations_and_Baselines/capability_reruns.md.`;
   document.getElementById("rerun-table").innerHTML = `<thead><tr><th>step</th><th>task</th><th>model(s)</th><th>what to run</th><th>what exists now</th></tr></thead><tbody>` +
     D.reruns.map(i => `<tr><td>${esc(kinds[i.kind])}</td><td>${(i.tasks || [i.task]).map(x => `<a href="#task-${esc(x)}" class="mono" style="font-size:12px">${esc(x)}</a>`).join(", ")}</td>
@@ -452,7 +611,9 @@ document.getElementById("guidebox").innerHTML = [...D.levels, {id: "X", name: "F
 })();
 
 // ---- sources
+document.getElementById("src-sum").textContent = `${D.sources.length} result sets`;
 document.getElementById("sources-table").innerHTML = `<thead><tr><th>results</th><th>kind</th><th>server</th><th>finished</th><th>collected</th><th>NAS archive</th><th>ledger file</th></tr></thead><tbody>` +
   D.sources.map(s => `<tr><td class="mono">${esc(s.name)}</td><td>${s.kind}${s.suite_version ? ` · ${esc(s.suite_version)}` : ""}</td><td>${esc(s.host)}</td>
-    <td class="num">${s.done} / ${s.jobs}</td><td class="num">${esc(s.collected)}</td><td class="mono">${esc(s.archive)}</td><td class="mono">${esc(s.file)}</td></tr>`).join("") + `</tbody>`;
+    <td class="num">${s.done} / ${s.jobs}</td><td class="num">${esc(s.collected)}</td><td class="mono">${esc(s.archive)}</td>
+    <td class="mono">${/not committed/.test(s.file) ? esc(s.file) : `<a href="${esc(D.github + s.file)}" target="_blank" rel="noopener">${esc(s.file)}</a>`}</td></tr>`).join("") + `</tbody>`;
 </script>

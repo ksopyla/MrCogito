@@ -73,6 +73,12 @@ dials**, measured the same way on every level.
    a C5 exam, an **8-layer dense model** (same width, learnability check only) decides whether the task is
    learnable; if it passes, C5 is frozen with it as the reference and E31/E33 results on C5 count as
    evidence. The 4-layer dense stays the comparison everywhere else.
+   *Any model can prove a task learnable (author, 2026-10-07):* dense was the reference only because no
+   other architecture was proven. A task is learnable once **some model** learns it from random init on the
+   written recipe (seeds 0–2, median ≥ 75 %). If dense passes, dense is the ceiling, as before. If dense
+   fails but another model passes, the task is learnable and that model is its **reference** (named on the
+   dashboard); a miss shared by the reference is still "uncalibrated". If no model passes, the task stays
+   `calibrating`.
 6. **Flawed tasks** stay defined with their reason so they are recognised; they never gate, never enter a
    level or package, are labeled by the runner and the scorecard, and are crossed out on the dashboard.
 7. **One protocol for every model** (author, 2026-10-06). A task's recipe is its exam (`recipe` + `args`),
@@ -147,6 +153,24 @@ is not fixed yet, see Migration step 3).
 
 A size trend (5M → 50M) reuses the same package at more sizes.
 
+## The dashboard
+
+One page to assess the models ([`capability_board.html`](../3_Evaluations_and_Baselines/capability_board.html),
+built by `analysis/capability_board.py`, published as an Artifact), organized as the ladder (author, 2026-10-07):
+
+1. **Latest changes** — the newest rows of the calibration log below, so every protocol or result change is dated.
+2. **The ladder** — one row per level, hardest on top (C7 → C0); per model, how many of the level's *ready* tasks
+   (frozen recipe: `active` / `partial` / `missing`) it passes (median ≥ 75 % over seeds 0–2, `same` evidence).
+   Calibrating tasks are listed but never counted.
+3. **Tasks by level** — the same order; inside a level ready tasks first, calibrating ones greyed at the end; each row
+   with its status and **reference** model (rule 5).
+4. **No-harm** against the champion (default models; parked builds folded).
+5. **Length charts** of every ready ladder task, by level, from the same evidence as the table.
+6. **Folded below:** flawed tasks, the older length battery, the task guide, calibration runs, the re-run list, sources.
+
+Default models: the champion, the registered candidate (E33a loop) and dense; older builds are one click away.
+Every section links to its rule in this spec and every number to its ledger file.
+
 ## Comparing variants: champion and no-harm
 
 **Champion:** `e31_li_m1` (E31 latent memory, one reader entry per latent), chosen 2026-10-01 in E31b.
@@ -211,6 +235,11 @@ score, read against the task's guessing floor. Ledgers: `results/capability/stud
 | 2026-10-07 | 5 (Odra + Polonez) | recipe A (final answer only), dense, one written run from random init, 1 hop (4×) → 2 hops (16×): 8-letter names — 1 hop picked 95.9 %, 2 hops 9.8 %, 2 hops with half the rows at 1 hop 12.1 % (floor 8.3 %); 4-letter names — 1 hop fails at 4× (15.8 %, floor 12.5 %), later stages stopped. E33 reasoning diagnostics (from E31 lookup weights, seed 1): the loop with progress exits + whole-name loss + half the rows at 1 hop passes 2 hops at ~98 % (one hop per round) | two recipes from now on, each calibrated on dense first — **A** (`C5.pchain*`): composition, final answer only, no intermediate targets (a loop uses answer exits, no name loss); **B** (`C5.path*`): chained lookup with a scratchpad, every model writes the path (`--chain_answer_path`). The E33 loop result (final answer only, node targets on internal states via progress exits / name loss) is a third setting with no dense counterpart yet: a mechanism result, not a capability cell |
 | 2026-10-07 | 5b (Odra) | **recipe B passes for dense**: 8-letter names, answer = written path, one run from random init, 1 hop (4×, picked 98.0 %) → 2 hops (16× cap, half the rows at 1 hop): picked 90.0 % on the final node (floor 8.3 %), every letter 87 %, done in ~25 min | new tasks `C5.path2-1k` / `C5.path3-1k` (recipe B: `--chain_answer_path`, 8-letter names, `TRAIN_1K_X16`, written curriculum 1 hop → … with half the rows at the previous hop count), `calibrating` until dense seeds 0–2 pass (`confirm_c5_path`); 3 hops calibrated on dense (`calibrate_c5_path3`); v4-draft-2026-10-07. Recipe A (`C5.pchain*`) stays `calibrating` |
 | 2026-10-07 08:44 | confirm (Odra) | dense seeds 0–2 on `C5.path2-1k` as written: 1 hop 97 / 97 / 94 %, 2 hops picked 93 / 88 / 90 % (floor 8.3 %); `C5.path3-1k` seed 0: 1 → 2 → 3 hops picked 96 / 91 / 89 % (floor 6.2 %) | **`C5.path2-1k` active** (v4-draft-2026-10-07.2): every model runs it with this exam, budget and curriculum; `C5.path3-1k` confirmed next on seeds 0–2 (`confirm_c5_path3`) |
+| 2026-10-07 14:30 | confirm (Odra) | dense seeds 0–2 on `C5.path3-1k` as written: 3 hops picked 85.5 / 84.8 / 43.9 % (floor 6.2 %), median 84.8 %; seed 2's 1-hop stage failed at 4× (17.2 %; the same exam passed seed 2 at 94 % in the C5.path2 confirmation), so 1 of 6 written 1-hop stages failed | **`C5.path3-1k` active** (v4-draft-2026-10-07.3). Open question for the author: the 1-hop stage at 4× is not reliable for every seed — a larger first-stage budget or "advance when the stage passes" would be a protocol change for every model |
+| 2026-10-07 18:15 | rule-5 check (Odra) | **8-layer dense** on recipe A (`C5.pchain2-1k`, final answer only), from random init, the E33 loop's schedule (8-letter names, 1 hop 4× → 2 hops 16×, half the rows at 1 hop): 1 hop picked 96.9 %, 2 hops 15.2 % (floor 8.3 %). Diagnostic, E33 reasoning: the loop learns the same schedule from E31 lookup weights (94.5 %, seed 1); the single read does not (4.7 %) | no dense model learns recipe A: `C5.pchain2-1k` stays `calibrating`, never a gate. The loop's from-scratch run on this schedule (E33 reasoning, `e33_recipe_a`) is a **frontier** result until the author decides how such results are recorded |
+| 2026-10-07 | protocol (author) | "There is a model which can learn it and that's sufficient": dense was the reference only while no other architecture was proven | rule 5: a task is learnable once any model passes it from random init on the written recipe (seeds 0–2, median ≥ 75 %); that model is its reference when dense fails. `C5.pchain2-1k` becomes `active` only if E33 passes it from scratch on seeds 0–2 (E33 reasoning, `e33_recipe_a`, running); v4-draft-2026-10-07.4 |
+| 2026-10-07 21:45 | dashboard (author) | the board had grown to 39 tasks and 19 models in one table, hard to read as one assessment page | headline tasks on top (`HEADLINE`, 9 tasks, ordered, each with why and its reference); basics, not-ready and flawed tasks, the older length battery, guide, calibration, re-runs and sources folded below; default models = champion, E33a loop, dense. No task deleted, no recipe changed (section "The dashboard") |
+| 2026-10-07 22:40 | dashboard (author) | the headline view was not wanted: the board should read as the ladder | board rebuilt as the ladder, hardest level on top (C7 → C0): a level overview (ready tasks passed per model), then every task by level, calibrating tasks greyed inside their level; the headline list is removed. No task deleted, no recipe changed (section "The dashboard") |
 
 Until step 4, run new variants with the v3 runners (`suite.md`, `battery.md` in the skill) and label the
 results as legacy protocol.
