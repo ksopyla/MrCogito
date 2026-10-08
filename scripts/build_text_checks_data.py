@@ -148,7 +148,7 @@ def language_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eo
             cur = []
 
 
-_VERSION = {"world": TEXT_WORLD_VERSION}  # set by --world_version before workers fork
+_VERSION = {"world": TEXT_WORLD_VERSION, "questions": 1}  # set from the arguments before workers fork
 
 
 def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: int, seed: int,
@@ -161,7 +161,7 @@ def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: 
         target = int(math.exp(rng.uniform(math.log(min_len), math.log(seq_len - 2))))
         for shrink in (1.0, 0.9, 0.8, 0.6):
             text = make_train_document(seed * 1_000_003 + k, stories, int(target * shrink), ntok,
-                                       version=_VERSION["world"])
+                                       version=_VERSION["world"], questions=_VERSION["questions"])
             ids = encode(text)
             if len(ids) <= seq_len - 2:
                 rows.append(_row(ids, bos, eos))
@@ -283,10 +283,13 @@ def main():
     p.add_argument("--eval_tasks", nargs="+", default=list(TASKS))
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--world_version", default=TEXT_WORLD_VERSION, help="generator version: v0 (published draft) or v1")
+    p.add_argument("--train_questions", type=int, default=1,
+                   help="questions per training world document (v1; about different cast members); exams keep one")
     p.add_argument("--tokenizer", default=None,
                    help="reuse this tokenizer folder instead of training one (e.g. the published one, so data versions compare)")
     args = p.parse_args()
     _VERSION["world"] = args.world_version
+    _VERSION["questions"] = args.train_questions
     wv = f"text-world-v{args.world_version.replace('text-world-', '').lstrip('v')}"
 
     out = Path(args.out_dir)
@@ -400,7 +403,7 @@ def main():
         "mix": {"story_rows": len(lang_tr), "world_rows": len(world_tr), "mean_story_row_tokens": m_lang,
                 "mean_world_row_tokens": m_world, "row_weights": [w_lang, w_world],
                 "mean_row_tokens": w_lang * m_lang + w_world * m_world,
-                "lang_token_share": f},
+                "lang_token_share": f, "train_questions": args.train_questions},
         "built_s": round(time.time() - t0, 1),
     }
     (out / "text_checks_meta.json").write_text(json.dumps(meta, indent=2))

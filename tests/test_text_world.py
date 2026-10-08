@@ -193,3 +193,14 @@ def test_versions_are_recorded_and_checked():
     assert rec("quote", 1, version="v0")["version"] == "text-world-v0"
     with pytest.raises(ValueError):
         rec("quote", 1, version="v9")
+
+
+def test_v1_training_documents_can_ask_several_cast_members():
+    one = make_train_document(11, STORIES, 300, ntok)
+    many = make_train_document(11, STORIES, 300, ntok, questions=8)
+    assert one.count("Question:") == 1 and many.count("Question:") > 1
+    qs = re.findall(r"Question: (.*?)\nAnswer: (.*?)\.", many)
+    assert len({q for q, _ in qs}) == len(qs)  # different people, no repeats
+    first_q = re.search(r"Question: (.*?)\n", one).group(1)
+    assert qs[0][0] == first_q  # the asked person comes first
+    assert make_train_document(11, STORIES, 300, ntok, questions=8, version="v0").count("Question:") == 1

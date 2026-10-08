@@ -54,6 +54,10 @@ def score_prompt(model, tok, prompt: str, answer: str, candidates: list[str], de
     start = len(p_ids)  # logits[start] predicts the first answer token (BOS shifts by one)
     pred = logits[0, start: start + len(a_ids)].argmax(-1).tolist()
     exact = pred == a_ids
+    # graded signal: mean surprise (nats per token) on the gold answer, closing period excluded
+    lp = torch.log_softmax(logits[0, start: start + len(a_ids)].float(), -1)
+    n_ans = max(1, len(a_ids) - 1)
+    answer_nll = float(-lp[torch.arange(n_ans), torch.tensor(a_ids[:n_ans], device=lp.device)].mean())
     firsts = [(_answer_ids(tok, prompt, c, p_ids) or [-1])[0] for c in candidates]
     gold_first = a_ids[0]
     probs = logits[0, start].float()
@@ -62,7 +66,8 @@ def score_prompt(model, tok, prompt: str, answer: str, candidates: list[str], de
     ambiguous = firsts.count(gold_first) > 1
     # one candidate (the single-fact lookup) has no pick to make: reported as None, not 100 %
     pick = None if len(candidates) < 2 else bool(best == gold_first and not ambiguous)
-    return {"exact": bool(exact), "pick": pick, "pick_ambiguous": bool(ambiguous), "n_tokens": ids.shape[1]}
+    return {"exact": bool(exact), "pick": pick, "pick_ambiguous": bool(ambiguous), "n_tokens": ids.shape[1],
+            "answer_nll": answer_nll}
 
 
 @torch.no_grad()
@@ -96,7 +101,8 @@ def summarize(rows: list[dict]) -> list[dict]:
         out.append({
             "split": split, "task": task, "level": rs[0]["level"], "length": length, "n": n,
             "exact": acc, "exact_se": math.sqrt(acc * (1 - acc) / n) if acc is not None and n else None,
-            "pick": mean("pick"), "pick_ambiguous": mean("pick_ambiguous"),
+            "pick": mean("pick"), "pick_ambiguous": mean("pick_ambiguous"), "answer_nll": mean("answer_nll"),
+            "removed_answer_nll": mean("removed_answer_nll"),
             "removed_exact": mean("removed_exact"), "floor": mean("floor"),
             "by_depth": {d: sum(r["exact"] for r in rs if r["depth"] == d) / max(1, sum(1 for r in rs if r["depth"] == d))
                          for d in sorted({r["depth"] for r in rs})},
@@ -174,7 +180,8 @@ def main():
             row = {k: r[k] for k in ("id", "split", "task", "level", "length", "depth", "floor")}
             row.update(s)
             if not args.no_removed:
-                row["removed_exact"] = score_prompt(model, tok, r["prompt_removed"], r["answer"], r["candidates"], device)["exact"]
+                rm = score_prompt(model, tok, r["prompt_removed"], r["answer"], r["candidates"], device)
+                row["removed_exact"], row["removed_answer_nll"] = rm["exact"], rm["answer_nll"]
             rows.append(row)
             pf.write(json.dumps(row) + "\n")
             if (i + 1) % 200 == 0 or i + 1 == len(todo):
@@ -190,11 +197,12 @@ def main():
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w") as fh:
         json.dump(res, fh, indent=1)
-    print(f"{'split':<10} {'task':<8} {'len':>6} {'n':>4} {'exact':>6} {'pick':>6} {'removed':>7} {'floor':>6}")
+    print(f"{'split':<10} {'task':<8} {'len':>6} {'n':>4} {'exact':>6} {'pick':>6} {'removed':>7} {'floor':>6} "
+          f"{'ans_nll':>7} {'rm_nll':>7}")
     for c in summary:
         f = lambda v: "  -  " if v is None else f"{v:6.2f}"  # noqa: E731
         print(f"{c['split']:<10} {c['task']:<8} {c['length']:>6} {c['n']:>4} {f(c['exact'])} {f(c['pick'])} "
-              f"{f(c['removed_exact']):>7} {f(c['floor'])}")
+              f"{f(c['removed_exact']):>7} {f(c['floor'])} {f(c['answer_nll']):>7} {f(c['removed_answer_nll']):>7}")
     if story_loss is not None:
         print(f"held-out story loss: {story_loss:.4f} (next-token cross-entropy per token, lower is better)")
     print(f"scored {len(rows)} items in {res['seconds']}s → {args.out}")

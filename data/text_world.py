@@ -271,6 +271,9 @@ class WorldItem:
     facts: list[Fact]
     cast: list[str]
     meta: dict = field(default_factory=dict)
+    # v1: (question, answer) about every cast member of the same world, the asked one first. Training
+    # documents may end with several of them (more answer signal per document); never serialized.
+    qa: list = field(default_factory=list)
 
 
 def _tmpl(rng: random.Random, rel: str, split: str, **kw) -> str:
@@ -297,9 +300,10 @@ def _latest_v1(rng, tsplit, k, n, cast) -> WorldItem:
     95 %; at least one other person moves after the asked person's last move."""
     places = sample_places(rng, n * (k + 1), distinct_first=True)
     facts, target = [], places[: k + 1]
-    last = {}
+    last, qa = {}, []
     for i, c in enumerate(cast):
         mine = places[i * (k + 1): (i + 1) * (k + 1)]
+        qa.append((QUESTIONS["latest"].format(p=c), mine[-1]))
         pos = sorted(rng.uniform(0.15, 0.95) for _ in range(k))
         facts.append(Fact(_tmpl(rng, "home", tsplit, p=c, v=mine[0]), evidence=(i == 0), order=rng.uniform(0.0, 0.15)))
         facts += [Fact(_tmpl(rng, "move", tsplit, p=c, v=v), evidence=(i == 0), order=o) for v, o in zip(mine[1:], pos)]
@@ -308,7 +312,7 @@ def _latest_v1(rng, tsplit, k, n, cast) -> WorldItem:
         j = rng.randrange(1, n)
         facts[last[j][0]].order = rng.uniform(last[0][1], 0.97)
     return WorldItem("latest", QUESTIONS["latest"].format(p=cast[0]), target[-1], list(reversed(target)),
-                     1.0 / (k + 1), facts, cast, meta={"moves": k})
+                     1.0 / (k + 1), facts, cast, meta={"moves": k}, qa=qa)
 
 
 def _compose_v1(rng, tsplit, hops, n, cast) -> WorldItem:
@@ -329,8 +333,14 @@ def _compose_v1(rng, tsplit, hops, n, cast) -> WorldItem:
         facts.append(Fact(_tmpl(rng, "home", tsplit, p=cast[i], v=places[i]), evidence=(i == chain[-1])))
     ans = places[chain[-1]]
     cands = [ans] + [p for j, p in enumerate(places) if j != chain[-1]]
+    qa = []
+    for i in range(n):
+        j = i
+        for _ in range(hops):
+            j = teacher[j]
+        qa.append((QUESTIONS[f"teach{hops}"].format(p=cast[i]), places[j]))
     return WorldItem("compose", QUESTIONS[f"teach{hops}"].format(p=cast[0]), ans, cands, 1.0 / n, facts, cast,
-                     meta={"hops": hops})
+                     meta={"hops": hops}, qa=qa)
 
 
 def _count_v1(rng, tsplit, cast, where, k) -> WorldItem:
@@ -339,11 +349,14 @@ def _count_v1(rng, tsplit, cast, where, k) -> WorldItem:
     others = [p for p in VISIT_PLACES if p != where]
     facts = [Fact(_tmpl(rng, "visit", tsplit, p=cast[0], v=where), evidence=True) for _ in range(k)]
     facts += [Fact(_tmpl(rng, "visit", tsplit, p=cast[0], v=rng.choice(others))) for _ in range(rng.randint(1, 2))]
+    qa = [(QUESTIONS["count"].format(p=cast[0], v=where), NUMBER_WORDS[k])]
     for c in cast[1:]:
-        facts += [Fact(_tmpl(rng, "visit", tsplit, p=c, v=where)) for _ in range(rng.randrange(len(NUMBER_WORDS)))]
+        kc = rng.randrange(len(NUMBER_WORDS))
+        facts += [Fact(_tmpl(rng, "visit", tsplit, p=c, v=where)) for _ in range(kc)]
         facts += [Fact(_tmpl(rng, "visit", tsplit, p=c, v=rng.choice(others))) for _ in range(rng.randint(0, 2))]
+        qa.append((QUESTIONS["count"].format(p=c, v=where), NUMBER_WORDS[kc]))
     return WorldItem("count", QUESTIONS["count"].format(p=cast[0], v=where), NUMBER_WORDS[k], list(NUMBER_WORDS),
-                     1.0 / len(NUMBER_WORDS), facts, cast, meta={"count": k})
+                     1.0 / len(NUMBER_WORDS), facts, cast, meta={"count": k}, qa=qa)
 
 
 def build_item(task: str, rng: random.Random, split: str = "train", version: str = TEXT_WORLD_VERSION) -> WorldItem:
@@ -364,7 +377,8 @@ def build_item(task: str, rng: random.Random, split: str = "train", version: str
                     signs.append(s)
                     break
         facts = [Fact(_tmpl(rng, "sign", tsplit, p=c, v=s), evidence=(i == 0)) for i, (c, s) in enumerate(zip(cast, signs))]
-        return WorldItem(task, QUESTIONS["quote"].format(p=cast[0]), signs[0], signs, 1.0 / n, facts, cast)
+        qa = [(QUESTIONS["quote"].format(p=c), x) for c, x in zip(cast, signs)] if v1 else []
+        return WorldItem(task, QUESTIONS["quote"].format(p=cast[0]), signs[0], signs, 1.0 / n, facts, cast, qa=qa)
 
     if task in ("lookup", "keyed"):
         n = _dial(task, split, rng, "cast")
@@ -377,7 +391,8 @@ def build_item(task: str, rng: random.Random, split: str = "train", version: str
             return WorldItem(task, QUESTIONS["lookup"].format(p=cast[0]), places[0], places[:1], 0.0, facts, cast)
         # keyed, and lookup from v1: every person's home is stated (lookup: few people, no look-alikes)
         facts = [Fact(_tmpl(rng, "home", tsplit, p=c, v=v), evidence=(i == 0)) for i, (c, v) in enumerate(zip(cast, places))]
-        return WorldItem(task, QUESTIONS[task].format(p=cast[0]), places[0], places, 1.0 / n, facts, cast)
+        qa = [(QUESTIONS[task].format(p=c), v) for c, v in zip(cast, places)] if v1 else []
+        return WorldItem(task, QUESTIONS[task].format(p=cast[0]), places[0], places, 1.0 / n, facts, cast, qa=qa)
 
     if task == "latest":
         k = _dial(task, split, rng, "moves")
@@ -457,8 +472,10 @@ def build_item(task: str, rng: random.Random, split: str = "train", version: str
         facts.append(Fact(f"{cast[1]} is a {other[0]}."))
         facts += [Fact(f"Every {a} is a {b}.") for a, b in zip(other, other[1:])]
         facts.append(Fact(f"Every {other[-1]} is {'not ' if yes else ''}{prop}."))
+        qa = [(QUESTIONS["deduce"].format(p=cast[0], v=prop), "yes" if yes else "no"),
+              (QUESTIONS["deduce"].format(p=cast[1], v=prop), "no" if yes else "yes")] if v1 else []
         return WorldItem(task, QUESTIONS["deduce"].format(p=cast[0], v=prop), "yes" if yes else "no",
-                         ["yes", "no"] if yes else ["no", "yes"], 0.5, facts, cast, meta={"depth": depth})
+                         ["yes", "no"] if yes else ["no", "yes"], 0.5, facts, cast, meta={"depth": depth}, qa=qa)
 
     raise ValueError(f"unknown task {task!r}; expected one of {TASKS}")
 
@@ -574,10 +591,21 @@ def make_eval_record(task: str, seed: int, split: str, length: int, depth_bin: O
 
 
 def make_train_document(seed: int, stories: list[str], length: int, ntok: Callable[[str], int],
-                        tasks: tuple = TASKS, version: str = TEXT_WORLD_VERSION) -> str:
-    """One training world document: a random task at ID dials, question and answer included."""
+                        tasks: tuple = TASKS, version: str = TEXT_WORLD_VERSION, questions: int = 1) -> str:
+    """One training world document: a random task at ID dials, question and answer included.
+
+    `questions` > 1 (v1): the document ends with up to that many questions about different cast
+    members of the same world (the asked one first, then a random sample), each with its answer.
+    One answer of ~3 tokens per ~550-token document was too little task signal for a 16M model
+    (lab tier, 2026-10-08); exam documents keep one question."""
     rng = random.Random(seed)
     task = rng.choice(tasks)
     item = build_item(task, rng, "train", version)
-    prompt, _ = assemble(item, stories, length, ntok, rng, version=version)
-    return prompt + answer_text(item)
+    extra = ""
+    if questions > 1 and item.qa:
+        more = item.qa[1:]
+        qrng = random.Random(seed ^ 0x5EED)  # separate stream: the document itself is unchanged
+        qrng.shuffle(more)
+        extra = "".join(f"{qa_suffix(q)} {a}." for q, a in more[: questions - 1])
+    prompt, _ = assemble(item, stories, max(64, length - (ntok(extra) if extra else 0)), ntok, rng, version=version)
+    return prompt + answer_text(item) + extra
