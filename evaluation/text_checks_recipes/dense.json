@@ -1,12 +1,13 @@
 {
   "arch": "dense",
-  "status": "tuned at screen",
+  "status": "tuned at lab",
   "init": "trainer default for perceiver_ar: normal(0.02) projections, residual outputs zero-initialized",
   "optimizer": "adam",
   "lr": {
     "screen": 0.001,
     "main": 0.0006,
-    "smoke": 0.001
+    "smoke": 0.001,
+    "lab": 0.002
   },
   "warmup_frac": 0.02,
   "scheduler": "cosine",
@@ -20,6 +21,13 @@
       "job": "tune_dense_lr1.00e-03",
       "run": "Cache/text_checks/r1_screen",
       "selected": "2026-10-07T04:40:23+00:00"
+    },
+    "lab": {
+      "chosen_lr": 0.002,
+      "dev_loss": 2.614564895629883,
+      "job": "tune_dense_lr2.00e-03",
+      "run": "Cache/text_checks/lab_r1/tune2",
+      "selected": "2026-10-08T21:57:39+00:00"
     }
   }
 }

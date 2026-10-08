@@ -57,7 +57,7 @@ TIERS = {
     # local data-calibration tier (Apple M5 Max, ~1.2 h per model): which tasks are learnable, how fast,
     # and which a model without long memory passes. A small-scale preview, never a verdict.
     "lab": Tier("lab", 16e6, 100e6, 1024, 32, 16, 3.0, hidden=256, pre_layers=2, global_layers=1,
-                stack_layers=4, eval_lengths=(1024, 2048, 4096), extra_lengths=(1024,), tune_runs=2,
+                stack_layers=4, eval_lengths=(1024, 2048, 4096), extra_lengths=(1024,), tune_runs=3,
                 tune_tokens=12e6, band=0.10),
     # local plumbing check only (minutes on a laptop); never a result
     "smoke": Tier("smoke", 2e6, 0.25e6, 1024, 8, 4, 0.5, hidden=128, pre_layers=1, global_layers=1,

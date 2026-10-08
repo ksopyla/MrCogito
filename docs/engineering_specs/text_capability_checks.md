@@ -233,11 +233,11 @@ averaged.
 |---|---|---|---|---|---|
 | **T0 Language** | loss on held-out stories; loss on world documents excluding answers | — | — | — | — |
 | **T1 Quote** | "What did the sign on Lumo's door say?", 4 signs in the document | 4–6 words | 1/4 | signs 2–8 → 16 | C0 Carry |
-| **T2 Lookup** | "Where does Lumo live?", cast 4, only Lumo's home is stated | 1 place | — (one place in the document: exact answer only) | — | C1 Address |
+| **T2 Lookup** | "Where does Lumo live?", cast 4, every home stated, no look-alikes (v0: only Lumo's home, a passkey) | 1 place | 1/4 | cast 2–6 | C1 Address |
 | **T3 Keyed** | the same question, cast 16, every person's home stated, a quarter of names are look-alikes | 1 place | 1/16 | cast 4–16 → 64 | C2 + C3 |
-| **T4 Latest** | "Where does Lumo live now?" after 4 moves; other people move after Lumo's last move | 1 place | 1/5 (any of Lumo's places); the most-recently-mentioned place is wrong by construction | moves 1–4 → 8 | new |
-| **T5 Compose** | "Where does Lumo's sister live?", cast 8, every person has a sibling and a home (same-shaped decoy chains) | 1 place | 1/8 | hops 1–2 → 3 | C4 + C5 |
-| **T6 Count** | "How many times did Lumo visit the market?", answers 0–6 balanced, look-alike names also visit | 1 number word | 1/7 | events 4–12 → 24 | C6 |
+| **T4 Latest** | "Where does Lumo live now?" after 4 moves; everyone moves as often, interleaved, and someone moves after Lumo's last move | 1 place | 1/5 (any of Lumo's places); the most-recently-mentioned place is wrong by construction | moves 1–4 → 8 | new |
+| **T5 Compose** | "Where does the teacher of Lumo live?" (v0: sister), cast 8, teachers along one cycle through the cast, every person has a home (same-shaped decoy chains) | 1 place | 1/8 | hops 1–2 → 3 | C4 + C5 |
+| **T6 Count** | "How many times did Lumo visit the market?", answers 0–6 balanced; everyone, look-alike names included, visits the same place 0–6 times | 1 number word | 1/7 | cast 3–6 → 8 | C6 |
 | **T7 Deduce** | made-up category rules, "Is Pim shiny?", balanced yes/no, distractor rules | yes / no | 1/2 | depth 1–2 → 3 | C5 (rules) |
 
 **Packages:**
@@ -418,6 +418,31 @@ generator code).
 
 Progress and results are on the text capability board (`analysis/text_board.py` →
 `docs/3_Evaluations_and_Baselines/text_capability_board.html`), fed by `scripts/pull_text_checks_results.sh`.
+
+**Model-free audit of `text-world-v0` (2026-10-08, `analysis/text_checks_audit.py`, report in
+`docs/3_Evaluations_and_Baselines/text_audit/`).** Three readers went over all 29,400 frozen items:
+- a rule reader that knows the templates answered 99.8–100 %: the items are well-posed, and the
+  evidence-removed twins never contain the answer;
+- shortcut readers found four flawed tasks and one noisy one:
+  - lookup: "the only place word" 98 % (a passkey, no addressing);
+  - latest: "the busiest mover's last place" 100 % (the asked name is never needed);
+  - count: "all visits to the place" 51 % (floor 14 %);
+  - compose: 2-cycles made "own home" right in 14 %, and "sister" is two-way in plain English, so many
+    items have two right answers;
+  - deduce: the filler states the asked property directly in 19 % of items;
+- smaller: a position cue (an early single fact is usually the first of its kind) and candidates
+  sharing a first token (48 % of keyed items), which blurs the picked-candidate score.
+
+**`text-world-v1` (2026-10-08)** fixes all of them (the generator's docstring lists each change);
+`v0` stays reproducible through `version="v0"`. Every task must show its shortcuts at the floor in
+the audit before a version is frozen.
+
+**Local calibration (lab tier, 2026-10-08).** On the Apple M5 Max, 16M-parameter models train at
+1k tokens at about 20k tokens/s, so 100M tokens take about 1.4 h. Round 1
+(`scripts/study_plans/text_lab_r1.sh`) trains the dense model and the no-memory control on v0
+and v1, and then the notebook model on v1. It measures which tasks are learnable at this size, how
+many tokens each takes, and which tasks the control passes without long memory. It is a small-scale
+preview only; the verdicts still come from the server tiers.
 
 **Calibration pilot** (before freezing `text-v1`, about 2 days on one server):
 
