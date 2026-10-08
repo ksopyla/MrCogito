@@ -65,3 +65,10 @@ def test_latest_log_reads_the_newest_calibration_rows():
     rows = latest_log(3)
     assert len(rows) == 3 and all(r["date"].startswith("20") and r["decision"] for r in rows)
     assert "`" not in rows[0]["decision"] and "**" not in rows[0]["finding"]
+
+
+def test_candidate_scored_ladders_read_the_picked_candidate_and_fall_back_to_the_first_letter():
+    from analysis.capability_board import _ladder
+    j = {"ladders": {"ladder": {"1024": {"first_acc": 0.4, "candidate": 0.9}, "2048": {"first_acc": 0.35}}}}
+    assert _ladder("C5.pchain2-1k", j) == ({1024: 0.9, 2048: 0.35}, "mixed")
+    assert _ladder("C3.recall8-1k", j) == ({1024: 0.4, 2048: 0.35}, "first")

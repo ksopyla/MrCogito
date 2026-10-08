@@ -216,7 +216,8 @@ td.sum.none { background: color-mix(in srgb, var(--critical) 14%, transparent); 
     <div>
       <h2>Length charts: does it hold up as the book grows?</h2>
       <p class="muted">Every ready task with a length ladder, hardest level first. Each model trains at the task's length, then reads longer books with no more training.
-        Ladders record the first answer letter (also on tasks scored on the picked candidate), median over seeds, only where every seed was read.
+        Ladders read the task's own score (the picked candidate on candidate-scored tasks where the ladder decoded it; older
+        ladders hold only the first letter, which has a ~40 % guessing floor on those exams), median over seeds, only where every seed was read.
         The dashed line is the 75 % pass mark. Dashed cards come from an older protocol.</p>
     </div>
     <div class="multiples" id="multiples"></div>
@@ -482,7 +483,7 @@ document.querySelectorAll("table.ttable").forEach(tbl => {
         <div class="row"><span>${scoreName(t)} at ${kLen(t.train_len)}</span><span class="num">${pct(e.score)} %</span></div>
         <div class="row"><span>mean over answer letters</span><span class="num">${pct(e.mean)} %</span></div>
         <div class="row"><span>per seed</span><span class="num">${Object.entries(e.per_seed || {}).map(([k, v]) => `${k}: ${pct(v)}`).join(" · ") || e.seeds.join(", ") || "–"}</span></div>
-        ${lad ? `<div class="small">length ladder (first letter): ${esc(lad)}</div>` : ""}
+        ${lad ? `<div class="small">length ladder (${e.ladder_kind === "candidate" ? "picked candidate" : e.ladder_kind === "mixed" ? "picked candidate where read, else first letter" : "first letter"}): ${esc(lad)}</div>` : ""}
         <div class="small">${esc(e.label)}: ${esc(LABEL[e.label].t)}</div>
         <div class="small">from ${esc(e.via.join(", "))} · ${esc(e.sources.join(", "))}</div>`, ev);
     } else if (name) showTip(taskTip(taskBy[name.dataset.t]), ev);
@@ -538,7 +539,9 @@ function drawCharts() {  // every ready ladder task, hardest level first, from t
       if (!Object.keys(series).length) continue;
       if (!header) { box.insertAdjacentHTML("beforeend", `<div class="lvhead"><h3>${esc(lv.id)} ${esc(lv.name)}</h3><span class="small">${esc(lv.question)}</span></div>`); header = true; }
       const legacy = Object.keys(series).some(m => by[m].label !== "same");
-      panel(box, {title: t.name, stage: `trained at ${kLen(t.train_len)}, first letter`, link: t.id, series,
+      const kinds = new Set(Object.keys(series).map(m => by[m].ladder_kind || "first"));
+      const kindTxt = kinds.size > 1 || kinds.has("mixed") ? "picked candidate where read, else first letter" : kinds.has("candidate") ? "picked candidate" : "first letter";
+      panel(box, {title: t.name, stage: `trained at ${kLen(t.train_len)}, ${kindTxt}`, link: t.id, series,
                   badge: legacy ? ` · <span title="${esc("some lines come from an older protocol (see the table badges)")}"><span class="badge">≈</span> mixed protocols</span>` : "",
                   label: m => by[m].label === "same" ? "" : `(${by[m].label})`});
     }

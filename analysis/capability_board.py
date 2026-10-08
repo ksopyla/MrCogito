@@ -131,6 +131,19 @@ def _score(task: str, first, cand):
     return cand if TASK_BY_ID[task].score == "candidate" else first
 
 
+def _ladder(task: str, j: dict) -> tuple[dict, str | None]:
+    """A study job's length ladder on the task's own score: the picked candidate (`candidate`, length_ladder.py
+    --candidate auto) on candidate-scored tasks, the first letter otherwise or where the cell has no candidate.
+    Returns ({length: score}, "candidate" | "first" | "mixed" | None)."""
+    want = TASK_BY_ID[task].score == "candidate"
+    out, kinds = {}, set()
+    for L, v in (j["ladders"].get("ladder") or {}).items():
+        c = v.get("candidate") if want else None
+        out[int(L)] = c if c is not None else v.get("first_acc")
+        kinds.add("candidate" if c is not None else "first")
+    return out, (kinds.pop() if len(kinds) == 1 else "mixed" if kinds else None)
+
+
 def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
     """One record per (finished job, arch) that maps onto a v4 task, with its match label."""
     versions = sorted({led["suite_version"] for led in ledgers if led.get("suite_version")})
@@ -163,10 +176,10 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
                 final = m and (m[3] is None or (hops and int(m[3]) == int(hops[1])))  # curriculum: last stage only
                 if m and final and f"{m[1]}.{m[2]}" in TASK_BY_ID:
                     task = f"{m[1]}.{m[2]}"
-                    lad = {int(L): v.get("first_acc") for L, v in (j["ladders"].get("ladder") or {}).items()}
+                    lad, kind = _ladder(task, j)
                     out.append({"task": task, "model": m[4], "label": "same", "seed": int(m[5]),
                                 "score": _score(task, j.get("p0"), j.get("cand")), "mean": j.get("acc"),
-                                "ladder": lad, "source": j["source"], "collected": "", "via": "v4 task recipe"})
+                                "ladder": lad, "ladder_kind": kind, "source": j["source"], "collected": "", "via": "v4 task recipe"})
                     continue
                 if m:  # an earlier curriculum stage of a v4 run: not a result of the task itself
                     continue
@@ -177,10 +190,10 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
                 task, label = legacy_battery(variant, slot)
                 if task is None:
                     continue
-                lad = {int(L): v.get("first_acc") for L, v in (j["ladders"].get("ladder") or {}).items()}
+                lad, kind = _ladder(task, j)
                 out.append({"task": task, "model": variant, "label": label, "seed": _seed(j),
                             "score": _score(task, j.get("p0"), j.get("cand")),
-                            "mean": j.get("acc"), "ladder": lad, "source": j["source"], "collected": "",
+                            "mean": j.get("acc"), "ladder": lad, "ladder_kind": kind, "source": j["source"], "collected": "",
                             "via": f"battery {slot}"})
     return out, current
 
@@ -289,6 +302,8 @@ def table(ev: list[dict]) -> dict:
                 "label": label, "score": _med([r["score"] for r in rs]), "mean": _med([r["mean"] for r in rs]),
                 "seeds": sorted({r["seed"] for r in rs if r["seed"] is not None}), "ladder": ladder,
                 "per_seed": {str(r["seed"]): r["score"] for r in rs if r["seed"] is not None},
+                "ladder_kind": (lambda ks: ks.pop() if len(ks) == 1 else "mixed" if ks else None)(
+                    {r.get("ladder_kind") or "first" for r in rs if r["ladder"]}),
                 "via": sorted({r["via"] for r in rs}), "sources": sorted({r["source"] for r in rs}),
                 "other": sorted(l for l in labels if l != label),
             }
