@@ -140,7 +140,7 @@ it from E31 lookup weights (94.5 %).
 |---|---|---|---|---|
 | E33 loop (answer exits) | **94.1** | **93.9** | 3.9 | **93.9 — passes** |
 | E31 single read | 7.4 | 8.6 | 8.8 | 8.6 (floor) |
-| dense, 4 layers | 14.5 | running | queued | — |
+| dense, 4 layers | 14.5 | 23.0 | 9.4 | 14.5 (fails) |
 
 - Every run passed the 1-hop stage (picked 96.5–100 %), so the 2-hop stage starts from a working lookup for all.
 - E33 learns as a sudden jump (picked ≥ 50 % from step 6.0k on seed 0, 10.0k on seed 1); seed 2 never jumps within
@@ -148,4 +148,5 @@ it from E31 lookup weights (94.5 %).
   varies by seed and the budget cuts off the late one: reliability 2/3 at this budget.
 - Where it works, the answer appears at round 2: first letter by loop exit r1 47–49 % (the first-letter floor is
   ~42 %), r2–r4 91–93 %. One read cannot give it; the second read does.
-- By rule 5 (author, 2026-10-07) recipe A is learnable and E33 is its reference unless dense seeds 1–2 pass.
+- By rule 5 (author, 2026-10-07) recipe A is learnable and E33 is its reference: dense (seeds 0–2, last one done
+  2026-10-08 11:50 CEST) and E31 both fail it on the same schedule.
