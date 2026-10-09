@@ -438,7 +438,8 @@ Progress and results are on the text capability board (`analysis/text_board.py` 
 the audit before a version is frozen.
 
 **Local pipeline checks (lab tier, Apple M5 Max laptop, 2026-10-08/09).** The laptop only confirms that
-the pipeline works and catches obvious errors: models ≤ 30M parameters, ≤ 100M tokens. Nothing about
+the pipeline works and catches obvious errors: each run under 2 hours (about ≤ 300M tokens at 16M
+parameters, ≤ 30M parameters). Nothing about
 task learnability, token budgets or architectures is concluded from it; those runs go to Polonez/Odra.
 What the local runs confirmed:
 - data build (v0/v1, published tokenizer), training on the Apple GPU (bf16, about 47k tokens/s at 16M),
