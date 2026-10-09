@@ -9,6 +9,7 @@ given width and training length, so a local tier can be sized from measured toke
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 import time
@@ -32,6 +33,7 @@ def build(arch: str, hidden: int, pre: int, stack: int, device: str, small_noteb
         args.update(_E31C_SMOKE)
     args["num_attention_heads"] = hidden // args["head_dim"]
     args["intermediate_size"] = _round64(hidden * 8 / 3)
+    args.update(json.loads(os.environ.get("BENCH_OVERRIDES", "{}")))  # diagnostics: e.g. {"logit_softcap": 0}
     fields = set(ModelArguments.__dataclass_fields__)
     ma = ModelArguments(**{k: v for k, v in args.items() if k in fields})
     ma.attn_backend, ma.use_liger = "sdpa", False

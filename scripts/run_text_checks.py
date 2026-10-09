@@ -425,7 +425,7 @@ def cmd_plan(a):
         for i, arch in enumerate(a.arches):
             lr = load_recipe(arch)["lr"][a.tier]
             name = f"train_{arch}"
-            card = plan_train_job(name, arch, a.tier, lr=lr, tokens=t.tokens, n_gpus=len(gpus), gpu_ids=",".join(gpus),
+            card = plan_train_job(name, arch, a.tier, lr=lr, tokens=a.tokens or t.tokens, n_gpus=len(gpus), gpu_ids=",".join(gpus),
                                   data=data, out=out, seed=a.seed, mode=a.mode, extra=extra, cap_gpu_hours=t.cap_gpu_hours,
                                   burst_s=burst_s)
             jobs.append(card)
@@ -511,6 +511,7 @@ def main():
     pl.add_argument("--mode", choices=("scripts", "local"), default="scripts")
     pl.add_argument("--extra_env", nargs="*", default=[], help="KEY=VALUE launcher overrides (recorded in job.json)")
     pl.add_argument("--data_tokens", type=float, default=0, help="data phase: training-mix size in tokens")
+    pl.add_argument("--tokens", type=float, default=0, help="train phase: token budget instead of the tier's (record why)")
     pl.add_argument("--num_proc", type=int, default=16, help="data phase: generator processes")
     pl.add_argument("--burst_hours", type=float, default=6.0,
                     help="pause a training job at its first checkpoint after this many hours (0 = never)")
