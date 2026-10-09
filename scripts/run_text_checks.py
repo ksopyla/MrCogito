@@ -295,6 +295,10 @@ def plan_eval_job(name: str, arch: str, tier: str, train_job: str, *, data: Path
                        f'{dev}{ev} --checkpoint "$MODEL" --items {_q(data / "eval" / "id.jsonl")} --lengths {t.seq_len} '
                        f'{max(t.eval_lengths)} --message_override none --no_removed --out "$JOB/final_id_notebook_off.json"'))
     cmds = [f'[ -f "$JOB/{f}" ] || {c} || {{ echo "EXIT {name} 1 ({f})"; exit 1; }}' for f, c in finals]
+    # copy probe: can the model repeat text it has just read? (every task builds on it; diagnostic only)
+    pdev = "mps" if mode == "local" else "cuda"
+    cmds.append(f'[ -f "$JOB/copy_probe.txt" ] || {dev}uv run python scripts/probe_copy.py --checkpoint "$MODEL" '
+                f'--device {pdev} --gaps 0 100 1000 --text {_q(data)} > "$JOB/copy_probe.txt" 2>&1 || true')
     # learning curve: the checkpoints nearest to 10/25/50/75 % of the steps, scored at the training length
     curve = " ".join(str(max(1, round(f * steps))) for f in CURVE_FRACTIONS[:-1])
     model_sel = (f'TRAIN_ROOT=$(dirname "$(dirname "$MODEL")")\n'
