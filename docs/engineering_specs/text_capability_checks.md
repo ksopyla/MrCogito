@@ -437,12 +437,26 @@ Progress and results are on the text capability board (`analysis/text_board.py` 
 `v0` stays reproducible through `version="v0"`. Every task must show its shortcuts at the floor in
 the audit before a version is frozen.
 
-**Local calibration (lab tier, 2026-10-08).** On the Apple M5 Max, 16M-parameter models train at
-1k tokens at about 20k tokens/s, so 100M tokens take about 1.4 h. Round 1
-(`scripts/study_plans/text_lab_r1.sh`) trains the dense model and the no-memory control on v0
-and v1, and then the notebook model on v1. It measures which tasks are learnable at this size, how
-many tokens each takes, and which tasks the control passes without long memory. It is a small-scale
-preview only; the verdicts still come from the server tiers.
+**Local pipeline checks (lab tier, Apple M5 Max laptop, 2026-10-08/09).** The laptop only confirms that
+the pipeline works and catches obvious errors: models ≤ 30M parameters, ≤ 100M tokens. Nothing about
+task learnability, token budgets or architectures is concluded from it; those runs go to Polonez/Odra.
+What the local runs confirmed:
+- data build (v0/v1, published tokenizer), training on the Apple GPU (bf16, about 47k tokens/s at 16M),
+  step-size tuning by dev loss, scoring, resume and the run queue all work;
+- a 16M model after 100M tokens scores at the guessing rate on every task. The new probes show why:
+  - the graded answer score shows it has learned the answer format;
+  - the copy probe shows it has not yet learned to copy text it has just seen.
+
+  This is expected that early, so it is not a finding.
+- the copy-sanity data (`scripts/build_copy_sanity_data.py`) shows the training path can learn to copy.
+  The point at which it does varies with the seed (about 700 steps for one seed, not within 1,200 for
+  another).
+
+New measuring tools from this stretch, for the server runs:
+- the graded answer surprise in the scorer;
+- short-document exam items (`scripts/make_text_checks_short_items.py`);
+- the copy probe (`scripts/probe_copy.py`);
+- multi-question training documents (`--train_questions`, not yet adopted).
 
 **Calibration pilot** (before freezing `text-v1`, about 2 days on one server):
 

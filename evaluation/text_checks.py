@@ -54,8 +54,8 @@ TIERS = {
                    stack_layers=5),
     "main": Tier("main", 100e6, 2.0e9, 4096, 96, 4, 120.0, hidden=896, pre_layers=3, global_layers=1,
                  stack_layers=8, tune_runs=3, tune_tokens=100e6),
-    # local data-calibration tier (Apple M5 Max, ~1.2 h per model): which tasks are learnable, how fast,
-    # and which a model without long memory passes. A small-scale preview, never a verdict.
+    # local pipeline-check tier (Apple M5 Max laptop, ~1 h per model): confirms the pipeline works and
+    # catches obvious errors only; no conclusions on learnability or budgets (those runs go to the servers).
     "lab": Tier("lab", 16e6, 100e6, 1024, 32, 16, 3.0, hidden=256, pre_layers=2, global_layers=1,
                 stack_layers=4, eval_lengths=(1024, 2048, 4096), extra_lengths=(1024,), tune_runs=3,
                 tune_tokens=12e6, band=0.10),
