@@ -1,14 +1,16 @@
 #!/usr/bin/env python
-"""Text capability board: the one dashboard of the text capability checks (draft `text-v0`).
+"""Text capability board: the one dashboard of the text capability checks.
 
 Reads the committed ledgers (`docs/2_Experiments_Registry/results/capability/text/*.json`, written by
-`scripts/pull_text_checks_results.sh`) and the round plan (`scripts/study_plans/text_r1.py`), and writes one
-self-contained page, the text counterpart of the DNA capability board:
-  * the round plan: every experiment with its state (planned / running / done / failed), gate and cost;
-  * per model: frontier level, language loss vs dense, tokens to pass, reach, flags;
-  * the task table (T1–T7 × models, exact answer at the training length and the longest length read);
-  * length charts, learning curves (score vs training tokens), development-loss curves, tuning curves;
-  * runs and cost (state, active GPU time, throughput), the task guide, and the sources.
+`scripts/pull_text_checks_results.sh`) and the hand-written notes (`analysis/text_board_notes.py`: status,
+round verdicts, plain model names), and writes one self-contained page:
+  * status brief: where we are and what is next;
+  * results, one block per round: the shared budget (parameters, data, epochs, compute), each model's cost and
+    language score, the task table against the guessing rate, and the round's observations;
+  * length charts and learning curves for a chosen round;
+  * calibration and pipeline checks (kept apart from results): tiny pipeline runs, step-size tuning, data
+    builds, superseded rounds, the original round plan;
+  * the task guide and the sources.
 Process: docs/engineering_specs/text_capability_checks.md (skill `text-checks`).
 
     uv run python analysis/text_board.py
@@ -24,34 +26,37 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from analysis.text_board_notes import NAMES, ROUNDS, STATUS, SUPERSEDED  # noqa: E402
 from analysis.text_checks_scorecard import LEVEL, analyse  # noqa: E402
 from evaluation.text_checks import FRONTIER_TASKS, GATING_TASKS, PASS, TEXT_CHECKS_VERSION, TIERS  # noqa: E402
 
 LEDGER_DIR = ROOT / "docs" / "2_Experiments_Registry" / "results" / "capability" / "text"
 OUT = ROOT / "docs" / "3_Evaluations_and_Baselines" / "text_capability_board.html"
 TASKS = list(GATING_TASKS) + list(FRONTIER_TASKS)
+ORDER = ["dense", "local", "e31c", "e31c_loop", "dense_plain"]
+# Task guide, as of data v1 (the v0 differences are in the spec)
 GUIDE = {
-    "language": ("T0 Language", "Can it write the language?", "Next-token loss on held-out stories it never saw. "
-                 "Not pass/fail: a memory model must not buy recall with worse language (within 2 % of dense)."),
-    "quote": ("T1 Quote", "Can it copy a sentence it read earlier?",
-              "Four cast members have a sign with 4–6 random common words; the question asks for one sign word for word. "
-              "Tests carrying an exact span across the document."),
-    "lookup": ("T2 Lookup", "Can it find one fact?",
-               "Only the asked person's home is stated (an invented place name); everyone else gets an unrelated job fact. "
-               "The simplest long-range retrieval — findable without matching the name."),
+    "language": ("T0 Language", "Can it write the language?", "Next-token loss on held-out stories it never saw "
+                 "(nats per token, lower is better). Not pass/fail: a memory model must not buy recall with worse "
+                 "language (within 2 % of dense)."),
+    "quote": ("T1 Quote", "Can it repeat a sentence it read earlier?",
+              "Four people each have a sign with 4–6 common words; the question asks for one person's sign, word for "
+              "word. Guessing one of the four signs: 25 %."),
+    "lookup": ("T2 Lookup", "Can it find one person's fact?",
+               "Four people's homes (invented place names) are stated; the question asks one. Guessing: 25 %."),
     "keyed": ("T3 Keyed", "Can it pick the right fact among many similar ones?",
-              "Sixteen people's homes are stated in the same sentence shapes, a quarter of the names are look-alikes "
-              "(one syllable apart). The model must match the name in the question."),
+              "Sixteen people's homes in the same sentence shapes, a quarter of the names one syllable apart. "
+              "Guessing: 6 %."),
     "latest": ("T4 Latest", "Can it track a changing fact?",
-               "The asked person moves four times; other people move after the last move, so the most recently "
-               "mentioned place is wrong. Needs order, not just retrieval."),
+               "Everyone moves four times, interleaved, and someone else moves last: only the asked person's own "
+               "last move is right. Guessing among their five places: 20 %."),
     "compose": ("T5 Compose", "Can it combine two facts?",
-                "Everyone has a sister and a home; the question asks where the sister (of the sister) lives. "
-                "Every chain has the same shape, so only following the links works."),
-    "count": ("T6 Count", "Can it aggregate?", "How many times did a person visit a place, with look-alike names also "
-              "visiting. Answers zero to six, balanced. Frontier: reported, not gating."),
-    "deduce": ("T7 Deduce", "Can it chain rules?", "Made-up category rules (Every wump is a tove. Every tove is shiny.) "
-               "with an opposite distractor chain; yes/no balanced. Frontier: reported, not gating."),
+                "Everyone has a teacher and a home; the question asks where the teacher (of the teacher) lives. "
+                "Every chain has the same shape. Guessing: 12 %."),
+    "count": ("T6 Count", "Can it count events?", "How many times did a person visit a place, when everyone, "
+              "look-alike names included, visits it too. Answers zero to six. Frontier: reported, not gating."),
+    "deduce": ("T7 Deduce", "Can it chain rules?", "Made-up category rules (Every wump is a tove. Every tove is "
+               "shiny.) with an opposite decoy chain; yes or no. Guessing: 50 %. Frontier: reported, not gating."),
 }
 
 
@@ -64,66 +69,69 @@ def load_ledgers(d: Path) -> list[dict]:
             continue
         if led.get("kind") == "text_checks":
             led["_file"] = str(p.relative_to(ROOT)) if p.is_relative_to(ROOT) else str(p)
+            led["_id"] = f"{led['run']}.{led['host']}"
             out.append(led)
     return out
 
 
-def _models(ledgers: list[dict]) -> dict:
-    """Merge every ledger's models and re-run the scorecard rules on the union (seeds and runs together)."""
+def _mix_tokens(data: dict | None) -> float | None:
+    mix = (data or {}).get("mix") or {}
+    try:
+        return mix["story_rows"] * mix["mean_story_row_tokens"] + mix["world_rows"] * mix["mean_world_row_tokens"]
+    except (KeyError, TypeError):
+        return None
+
+
+def _round(led: dict) -> dict:
+    """One ledger → one round: budget, per-model cost and scores (scorecard rules applied within the round)."""
     ms = {}
-    for led in ledgers:
-        for key, m in led.get("models", {}).items():
-            m = dict(m)
-            for k in ("cells", "off"):
-                m[k] = {tuple(int(x) if i == 2 else x for i, x in enumerate(s.split("|"))): c for s, c in m[k].items()}
-            m["curve"] = {int(k): v for k, v in m["curve"].items()}
-            m["run"] = f"{led['run']}.{led['host']}"
-            ms[key] = m
+    for key, m in led.get("models", {}).items():
+        m = dict(m)
+        for k in ("cells", "off"):
+            m[k] = {tuple(int(x) if i == 2 else x for i, x in enumerate(s.split("|"))): c for s, c in m[k].items()}
+        m["curve"] = {int(k): v for k, v in m["curve"].items()}
+        ms[key] = m
     res = analyse(ms) if ms else {}
-    out, cal = {}, {}
+    trains = {j["arch"]: j for j in led.get("jobs", []) if j.get("job", "").startswith("train_")}
+    evals = {j["arch"]: j for j in led.get("jobs", []) if j.get("kind") == "eval"}
+    mix = _mix_tokens(led.get("data"))
+    models, calibrated, tier = [], {}, None
     for tier, block in res.items():
-        cal[tier] = block["calibrated"]
+        calibrated = block["calibrated"]
         for key, m in block["models"].items():
-            out[key] = {
-                "key": key, "arch": m["arch"], "tier": tier, "run": m["run"], "params": m.get("params"),
-                "status": m.get("status"), "story_loss": m.get("story_loss"), "language_gap": m.get("language_gap"),
-                "language_ok": m.get("language_ok"), "frontier": m.get("frontier"), "reach": m.get("reach"),
-                "tokens_to_pass": m.get("tokens_to_pass"), "notebook_gain": m.get("notebook_gain"),
-                "shortcuts": m.get("shortcuts"), "seq_len": m["seq_len"], "tokens_per_step": m["tokens_per_step"],
+            j = trains.get(m["arch"], {})
+            name, what = NAMES.get(m["arch"], (m["arch"], ""))
+            wall_h = (j.get("active_seconds") or 0) / 3600
+            models.append({
+                "key": f"{m['arch']}@{led['_id']}", "arch": m["arch"], "name": name, "what": what, "tier": tier,
+                "params": m.get("params") or j.get("params"), "lr": j.get("lr"), "status": m.get("status"),
+                "wall_h": wall_h or None, "gpu_h": (wall_h * (j.get("n_gpus") or 1)) or None, "n_gpus": j.get("n_gpus"),
+                "tokens_per_second": j.get("tokens_per_second"), "trained": j.get("finished"),
+                "examined": evals.get(m["arch"], {}).get("finished"),
+                "story_loss": m.get("story_loss"), "language_gap": m.get("language_gap"), "frontier": m.get("frontier"),
+                "seq_len": m["seq_len"], "tokens_per_step": m["tokens_per_step"],
                 "cells": {f"{s}|{t}|{L}": {k: c.get(k) for k in ("exact", "exact_se", "pick", "removed_exact", "floor", "n",
-                                                                  "by_depth")}
+                                                                  "answer_nll", "by_depth")}
                           for (s, t, L), c in m["cells"].items()},
                 "off": {f"{s}|{t}|{L}": c.get("exact") for (s, t, L), c in m["off"].items()},
                 "curve": {str(step): {t: c.get("exact") for t, c in cells.items()} for step, cells in m["curve"].items()},
-            }
-    return out, cal
-
-
-def _experiments(ledgers: list[dict]) -> list[dict]:
-    from scripts.study_plans.text_r1 import EXPERIMENTS
-
-    jobs = {(led["run"], j["job"]): {**j, "host": led["host"]} for led in ledgers for j in led.get("jobs", [])}
-    out = []
-    for x in EXPERIMENTS:
-        states = []
-        for run, names in x["runs"].items():
-            for n in names:
-                states.append(jobs.get((run, n), {}).get("state", "planned"))
-        if states and all(s in ("done", "over_budget") for s in states):
-            state = "done"
-        elif any(s == "failed" for s in states):
-            state = "failed"
-        elif any(s == "running" for s in states):
-            state = "running"
-        elif any(s in ("done", "over_budget") for s in states):
-            state = "partial"
-        elif any(s == "pending" for s in states):
-            state = "queued"
-        else:
-            state = "planned"
-        out.append({**x, "state": state, "n_jobs": len(states),
-                    "n_done": sum(s in ("done", "over_budget") for s in states)})
-    return out
+                "eval_loss": j.get("eval_loss") or [],
+            })
+    models.sort(key=lambda m: ORDER.index(m["arch"]) if m["arch"] in ORDER else 9)
+    any_train = next(iter(trains.values()), {})
+    tokens = any_train.get("tokens")
+    t = TIERS.get(tier or any_train.get("tier") or "", None)
+    budget = {
+        "tier": tier or any_train.get("tier"), "target_params": t.target_params if t else None,
+        "data_version": (led.get("data") or {}).get("version"), "tokens": tokens, "mix_tokens": mix,
+        "epochs": (tokens / mix) if tokens and mix else None, "seq_len": t.seq_len if t else None,
+        "rows_per_step": any_train.get("global_rows"), "tokens_per_step":
+            (any_train.get("global_rows") or 0) * (any_train.get("mean_row_tokens") or 0) or None,
+        "steps": any_train.get("steps"), "cap_gpu_h": any_train.get("cap_gpu_hours"), "n_gpus": any_train.get("n_gpus"),
+        "lengths": list(t.eval_lengths) if t else [],
+    }
+    return {"id": led["_id"], "notes": ROUNDS.get(led["_id"], {}), "budget": budget, "models": models,
+            "calibrated": calibrated, "collected": led.get("collected")}
 
 
 def main() -> int:
@@ -132,36 +140,36 @@ def main() -> int:
     p.add_argument("--out", default=str(OUT))
     a = p.parse_args()
     ledgers = load_ledgers(Path(a.ledger_dir))
-    models, cal = _models(ledgers)
-    jobs = [{**j, "run": led["run"], "host": led["host"]} for led in ledgers for j in led.get("jobs", [])]
-    tuning = [{"arch": j["arch"], "tier": j["tier"], "lr": j["lr"], "loss": (j.get("eval_loss") or [[None, None]])[-1][1],
-               "state": j["state"], "run": j["run"]} for j in jobs if j.get("job", "").startswith("tune_")]
-    dev_curves = [{"key": f"{j['arch']}@{j['tier']}" + (f"#{j['seed']}" if j.get("seed") else ""), "run": j["run"],
-                   "tokens_per_step": j["global_rows"] * j["mean_row_tokens"], "eval_loss": j.get("eval_loss") or []}
-                  for j in jobs if j.get("job", "").startswith("train_") and j.get("eval_loss")]
-    order = ["dense", "local", "e31c", "e31c_loop"]
-    keys = sorted(models, key=lambda k: (["smoke", "screen", "main"].index(models[k]["tier"])
-                                         if models[k]["tier"] in ("smoke", "screen", "main") else 9,
-                                         order.index(models[k]["arch"]) if models[k]["arch"] in order else 9, k))
+    rounds = [_round(led) for led in ledgers if led["_id"] in ROUNDS]
+    rounds.sort(key=lambda r: r.get("collected") or "", reverse=True)
+    jobs = [{**j, "run": led["_id"]} for led in ledgers for j in led.get("jobs", [])]
+    # calibration side: tiny pipeline runs, step-size tuning, data builds, superseded rounds
+    pipeline = [{"run": led["_id"], "arch": j["arch"], "name": NAMES.get(j["arch"], (j["arch"],))[0], "params": j.get("params"),
+                 "tokens": j.get("tokens"), "seconds": j.get("active_seconds"), "state": j["state"], "finished": j.get("finished"),
+                 "story_loss": (led.get("models", {}).get(f"{j['arch']}@{j.get('tier')}") or {}).get("story_loss")}
+                for led in ledgers for j in led.get("jobs", []) if j.get("tier") == "smoke" and j.get("kind") == "train"]
+    tuning = [{"arch": j["arch"], "name": NAMES.get(j["arch"], (j["arch"],))[0], "tier": j["tier"], "lr": j["lr"],
+               "loss": (j.get("eval_loss") or [[None, None]])[-1][1], "tokens": j.get("tokens"), "run": j["run"],
+               "data": next((led.get("data") or {}).get("version") for led in ledgers if led["_id"] == j["run"])}
+              for j in jobs if j.get("job", "").startswith("tune_")]
+    data_builds = [{"run": led["_id"], "version": (led.get("data") or {}).get("version"), "mix_tokens": _mix_tokens(led.get("data")),
+                    "eval_items": (led.get("data") or {}).get("eval_items"), "collected": led.get("collected")}
+                   for led in ledgers if led.get("data")]
+    superseded = [{"run": k, "note": v} for k, v in SUPERSEDED.items()]
     data = {
-        "generated": datetime.datetime.now().isoformat(timespec="minutes"), "version": TEXT_CHECKS_VERSION, "pass": PASS,
+        "generated": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "version": TEXT_CHECKS_VERSION, "pass": PASS, "status": STATUS,
         "tasks": TASKS, "gating": list(GATING_TASKS), "levels": LEVEL, "guide": GUIDE,
-        "tiers": {k: {"params": t.target_params, "tokens": t.tokens, "seq_len": t.seq_len, "cap": t.cap_gpu_hours,
-                      "lengths": list(t.eval_lengths)} for k, t in TIERS.items()},
-        "experiments": _experiments(ledgers), "models": [models[k] for k in keys], "calibrated": cal,
-        "tuning": tuning, "dev_curves": dev_curves,
-        "jobs": [{k: j.get(k) for k in ("run", "host", "job", "kind", "arch", "tier", "state", "params", "lr", "steps",
-                                         "tokens", "active_seconds", "tokens_per_second", "n_gpus", "cap_gpu_hours",
-                                         "live_loss", "seed")} for j in jobs],
-        "sources": [{"file": led["_file"], "run": led["run"], "host": led["host"], "collected": led["collected"],
+        "rounds": rounds, "pipeline": pipeline, "tuning": tuning, "data_builds": data_builds, "superseded": superseded,
+        "sources": [{"file": led["_file"], "run": led["_id"], "collected": led["collected"],
                      "data": (led.get("data") or {}).get("version"), "jobs": len(led.get("jobs", [])),
                      "done": sum(j["state"] in ("done", "over_budget") for j in led.get("jobs", []))} for led in ledgers],
     }
     template = (Path(__file__).parent / "text_board_template.html").read_text()
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     Path(a.out).write_text(template.replace("/*__DATA__*/null", json.dumps(data, separators=(",", ":"), default=str)))
-    print(f"wrote {a.out}: {len(ledgers)} ledgers, {len(models)} models, "
-          f"{sum(x['state'] == 'done' for x in data['experiments'])}/{len(data['experiments'])} experiments done")
+    print(f"wrote {a.out}: {len(ledgers)} ledgers, {len(rounds)} result rounds "
+          f"({sum(len(r['models']) for r in rounds)} models), {len(pipeline)} pipeline runs, {len(tuning)} tuning runs")
     return 0
 
 

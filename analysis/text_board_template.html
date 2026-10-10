@@ -3,12 +3,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* Same visual system as the DNA capability board (analysis/capability_board_template.html):
-   one reading column — round plan, model verdicts, task table, length charts, learning curves,
-   tuning, runs and cost, task guide, sources. One model filter drives every table and chart. */
+/* Same visual system as the DNA capability board. One reading column: status brief, results by round
+   (budget, models, tasks, observations), length and learning charts, task guide, then calibration and
+   pipeline checks kept apart from results, and the sources. */
 :root {
   --bg: #f6f7f8; --surface: #ffffff; --ink: #14171a; --ink-2: #4b535b; --ink-3: #7b838b;
-  --rule: #dfe3e7; --grid: #edf0f2; --accent: #1c5cab;
+  --rule: #dfe3e7; --grid: #edf0f2; --accent: #1c5cab; --tint: #e8f0fa;
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
   --good: #0a7d0a; --critical: #c62f2f; --warning: #9a6400; --muted-chip: #5d656d; --info: #1c5cab;
   --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -17,7 +17,7 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #121416; --surface: #1a1d20; --ink: #f2f4f6; --ink-2: #b9c0c7; --ink-3: #868e96;
-    --rule: #2c3136; --grid: #24292d; --accent: #6da7ec;
+    --rule: #2c3136; --grid: #24292d; --accent: #6da7ec; --tint: #1d2a3a;
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
     --good: #2fbf2f; --critical: #e66767; --warning: #fab219; --muted-chip: #9aa2aa; --info: #6da7ec;
     color-scheme: dark;
@@ -25,7 +25,7 @@
 }
 :root[data-theme="dark"] {
   --bg: #121416; --surface: #1a1d20; --ink: #f2f4f6; --ink-2: #b9c0c7; --ink-3: #868e96;
-  --rule: #2c3136; --grid: #24292d; --accent: #6da7ec;
+  --rule: #2c3136; --grid: #24292d; --accent: #6da7ec; --tint: #1d2a3a;
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
   --good: #2fbf2f; --critical: #e66767; --warning: #fab219; --muted-chip: #9aa2aa; --info: #6da7ec;
   color-scheme: dark;
@@ -33,57 +33,59 @@
 * { box-sizing: border-box; }
 body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); margin: 0; }
 a { color: var(--accent); }
-.wrap { max-width: 1280px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 64px; display: grid; gap: 34px; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 64px; display: grid; gap: 36px; }
 h1 { font-size: 30px; line-height: 1.15; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
-h2 { font-size: 20px; margin: 0 0 4px; text-wrap: balance; }
+h2 { font-size: 21px; margin: 0; text-wrap: balance; }
 h3 { font-size: 15px; margin: 0; }
-p { margin: 0; max-width: 76ch; }
+p { margin: 0; max-width: 78ch; }
+ul { margin: 0; padding-left: 20px; display: grid; gap: 4px; max-width: 82ch; }
 .muted { color: var(--ink-2); }
 .small { font-size: 13px; color: var(--ink-3); }
 .mono, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-header { display: grid; gap: 10px; }
+header { display: grid; gap: 12px; }
 .eyebrow { font: 500 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
 nav.toc { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; }
-section { display: grid; gap: 14px; min-width: 0; scroll-margin-top: 90px; }
-.filterbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); border-bottom: 1px solid var(--rule);
-  padding-block: 10px; display: grid; gap: 6px; }
-.controls { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
-.controls label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; }
-.controls input { accent-color: var(--accent); }
-.swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; display: inline-block; }
-.chip { display: inline-flex; align-items: center; gap: 5px; font: 500 12px/1 var(--sans); padding: 4px 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
-.chip.done { color: var(--good); } .chip.running { color: var(--info); } .chip.partial, .chip.queued { color: var(--warning); }
-.chip.failed { color: var(--critical); } .chip.planned { color: var(--muted-chip); } .chip.over_budget { color: var(--warning); }
-.chip.pending { color: var(--muted-chip); }
-.plan { display: grid; gap: 10px; }
-.xp { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 16px; display: grid;
-  grid-template-columns: 52px minmax(0, 1fr) auto; gap: 4px 14px; align-items: start; }
-.xp .xid { font: 600 14px var(--mono); color: var(--accent); padding-top: 2px; }
-.xp .xt { font-weight: 600; }
-.xp .xq { color: var(--ink-2); font-size: 14px; }
-.xp .xg { font-size: 13px; color: var(--ink-3); }
-.xp .xs { display: grid; gap: 6px; justify-items: end; text-align: right; font-size: 12px; color: var(--ink-3); }
-.verdicts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
-.verdict { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; display: grid; gap: 6px; align-content: start; min-width: 0; }
-.verdict .name { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 13px; }
-.kv dt { color: var(--ink-3); } .kv dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.flag { color: var(--critical); font-size: 12px; }
-.tablebox { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; max-width: 100%; }
-table { border-collapse: collapse; font-size: 13px; }
-th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--grid); }
+section { display: grid; gap: 14px; min-width: 0; }
+.brief { background: var(--surface); border: 1px solid var(--rule); border-left: 4px solid var(--accent); border-radius: 8px;
+  padding: 16px 20px; display: grid; gap: 12px; }
+.brief .headline { font-size: 17px; font-weight: 600; max-width: 80ch; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.cols h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin-bottom: 6px; }
+.round { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 18px 20px; display: grid; gap: 16px; min-width: 0; }
+.round .meta { font-size: 13px; color: var(--ink-3); }
+.verdict-line { font-weight: 600; max-width: 82ch; }
+.budget { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.bud { border: 1px solid var(--grid); border-radius: 8px; padding: 8px 12px; display: grid; gap: 2px; }
+.bud .k { font-size: 12px; color: var(--ink-3); }
+.bud .v { font: 500 15px var(--mono); font-variant-numeric: tabular-nums; }
+.bud .n { font-size: 12px; color: var(--ink-2); }
+.tablebox { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; max-width: 100%; background: var(--surface); }
+table { border-collapse: collapse; font-size: 13px; width: 100%; }
+th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--grid); vertical-align: top; }
 th { font-weight: 600; color: var(--ink-2); background: var(--surface); vertical-align: bottom; }
-th.mcol { text-align: center; min-width: 92px; white-space: normal; font-size: 12px; line-height: 1.3; }
+td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.model .nm { display: flex; align-items: center; gap: 8px; font-weight: 600; white-space: nowrap; }
+td.model .wh { font-size: 12px; color: var(--ink-3); }
+.swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; display: inline-block; }
+th.mcol { text-align: center; min-width: 96px; font-size: 12px; line-height: 1.3; }
 th.mcol .swatch { display: block; margin: 0 auto 4px; }
-td.task { position: sticky; left: 0; background: var(--surface); min-width: 200px; max-width: 280px; }
-td.task .tid { font: 11px var(--mono); color: var(--ink-3); }
-td.cell { text-align: center; font-family: var(--mono); font-variant-numeric: tabular-nums; min-width: 76px; line-height: 1.25; }
+td.task { min-width: 190px; }
+td.task .tid { font-size: 12px; color: var(--ink-3); }
+td.cell { text-align: center; font-family: var(--mono); font-variant-numeric: tabular-nums; line-height: 1.25; }
 td.cell .sub { display: block; font-size: 10px; color: var(--ink-3); }
-td.cell.pass { box-shadow: inset 0 0 0 2px var(--ink); }
-td.cell.empty { color: var(--ink-3); }
+td.cell.at { color: var(--ink-3); }
+td.cell.above { background: var(--tint); color: var(--ink); font-weight: 600; }
+td.cell.pass { box-shadow: inset 0 0 0 2px var(--good); color: var(--good); font-weight: 600; }
 td.cell.short { text-decoration: line-through; color: var(--critical); }
-tr.tierrow td { background: var(--bg); font-weight: 600; padding-top: 12px; }
-.multiples { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+td.floor { text-align: center; font-family: var(--mono); color: var(--ink-3); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; color: var(--ink-3); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 14px; height: 14px; border-radius: 3px; display: inline-block; border: 1px solid var(--rule); }
+.chip { display: inline-flex; align-items: center; gap: 5px; font: 500 12px/1 var(--sans); padding: 4px 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+.chip.done { color: var(--good); } .chip.running { color: var(--info); } .chip.pending { color: var(--muted-chip); } .chip.failed { color: var(--critical); }
+.controls { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; }
+select { font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); }
+.multiples { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; }
 .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 12px 6px; min-width: 0; }
 .panel h3 { font-size: 14px; }
 .panel .stage { font-size: 12px; color: var(--ink-3); }
@@ -95,114 +97,102 @@ tr.tierrow td { background: var(--bg); font-weight: 600; padding-top: 12px; }
 .series path { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .series circle { stroke: var(--surface); stroke-width: 2; }
 .empty-note { font-size: 13px; color: var(--ink-3); padding: 18px 4px; }
-.guide { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
-.gcard { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 16px; display: grid; gap: 4px; }
+.guide { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
+.gcard { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 16px; display: grid; gap: 4px; align-content: start; }
 .gcard .q { color: var(--ink-2); font-size: 14px; }
 .gcard .d { font-size: 13px; color: var(--ink-3); }
+.calib { background: var(--surface); border: 1px dashed var(--rule); border-radius: 10px; padding: 16px 20px; display: grid; gap: 16px; }
+details summary { cursor: pointer; font-weight: 600; font-size: 17px; }
+details[open] > summary { margin-bottom: 12px; }
 #tip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface); color: var(--ink); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.14); max-width: 340px; }
 #tip .row { display: flex; gap: 10px; justify-content: space-between; }
-#tip .row span:first-child { display: inline-flex; align-items: center; gap: 6px; }
-details summary { cursor: pointer; font-weight: 600; }
-details[open] summary { margin-bottom: 10px; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-@media (max-width: 560px) { h1 { font-size: 24px; } .wrap { padding-inline: 16px; } td.task { min-width: 150px; }
-  .xp { grid-template-columns: 40px minmax(0, 1fr); } .xp .xs { grid-column: 2; justify-items: start; text-align: left; } }
+@media (max-width: 560px) { h1 { font-size: 24px; } .wrap { padding-inline: 16px; } .round, .brief, .calib { padding: 14px; } }
 </style>
 
 <div class="wrap">
   <header>
     <div class="eyebrow">MrCogito · text capability checks</div>
     <h1>Text Capability Board</h1>
-    <p class="muted" id="lede"></p>
+    <p class="small" id="asof"></p>
     <nav class="toc" aria-label="Sections">
-      <a href="#plan">Round plan</a><a href="#verdicts">Models</a><a href="#tasks">Task table</a><a href="#length">Length</a>
-      <a href="#learning">Learning curves</a><a href="#tuning">Tuning</a><a href="#runs">Runs and cost</a><a href="#guide">Task guide</a><a href="#sources">Sources</a>
+      <a href="#results">Results</a><a href="#length">Length</a><a href="#learning">Learning curves</a>
+      <a href="#guide">Task guide</a><a href="#calibration">Calibration &amp; pipeline checks</a><a href="#sources">Sources</a>
     </nav>
+    <div class="brief" id="brief"></div>
   </header>
 
-  <div class="filterbar">
-    <div class="controls" id="filter" role="group" aria-label="Models shown in the tables and charts"></div>
-  </div>
-
-  <section id="plan">
+  <section id="results">
     <div>
-      <h2>Round plan</h2>
-      <p class="muted">Round 1 calibrates the draft protocol on Polonez, then compares. Each step waits for the gate of the one before;
-        a failed gate changes the protocol, not the model. The state comes from the last pulled results.</p>
+      <h2>Results</h2>
+      <p class="muted">One block per round. Every model in a round trains from scratch on the same data, with the same number of
+        tokens and the same compute cap; each gets its own tuned step size. Scores are exact answers, word for word including the
+        final period, at the training length; a pass is 75 % or more.</p>
     </div>
-    <div class="plan" id="planbox"></div>
-  </section>
-
-  <section id="verdicts">
-    <div>
-      <h2>Models</h2>
-      <p class="muted">Frontier = the highest of T1–T5 that passes at the training length (only levels the dense model can learn count).
-        Language = loss on held-out stories, compared with dense (within 2 % is no harm). Tokens to pass = training tokens until the
-        lookup task first passes. Reach = the longest document where lookup still passes.</p>
-    </div>
-    <div class="verdicts" id="cards"></div>
-  </section>
-
-  <section id="tasks">
-    <div>
-      <h2>Task table</h2>
-      <p class="muted">Exact-answer accuracy in percent at the training length; the small line is the score on the longest document read.
-        A solid outline is a pass (≥ 75 % with the evidence-removed control at its floor). A struck-through red number answered without
-        the evidence: a shortcut, not evidence. Hover a cell for the floor, the control and the depth split.</p>
-    </div>
-    <div class="tablebox"><table id="ttable"></table></div>
+    <div id="rounds" style="display:grid; gap:20px"></div>
   </section>
 
   <section id="length">
     <div>
       <h2>Length: does it still work on longer texts?</h2>
-      <p class="muted">Every model trains at the length marked by the vertical line, then reads longer documents with no more training (more
-        story filler, the same facts). Dashed grey: the 75 % pass mark; dotted red: the guessing floor.</p>
+      <p class="muted">Each model trains at the length marked by the vertical line, then reads longer documents with no more training
+        (more story filler, the same facts). Dashed grey: the 75 % pass mark. Dotted red: the guessing rate.</p>
     </div>
+    <div class="controls"><label>Round <select id="roundSel"></select></label></div>
     <div class="multiples" id="lengthbox"></div>
   </section>
 
   <section id="learning">
     <div>
-      <h2>Learning curves: how fast does each skill appear?</h2>
-      <p class="muted">Score at the training length on checkpoints at 10, 25, 50, 75 and 100 % of the training tokens, and the held-out
-        loss of the training mix (lower is better) — the trainability side of the comparison.</p>
+      <h2>Learning curves: when does each skill appear?</h2>
+      <p class="muted">Score at the training length on checkpoints at 10, 25, 50, 75 and 100 % of the training tokens, and the
+        held-out loss of the training mix (lower is better).</p>
     </div>
     <div class="multiples" id="learnbox"></div>
-  </section>
-
-  <section id="tuning">
-    <div>
-      <h2>Tuning: each model's own step size</h2>
-      <p class="muted">Short runs on a step-size grid, the same number for every model; the lowest held-out loss is chosen (never an exam
-        score) and frozen in the model's recipe card before its scored run.</p>
-    </div>
-    <div class="multiples" id="tunebox"></div>
-  </section>
-
-  <section id="runs">
-    <div>
-      <h2>Runs and cost</h2>
-      <p class="muted" id="runs-lede"></p>
-    </div>
-    <div class="tablebox"><table id="runtable"></table></div>
   </section>
 
   <section id="guide">
     <div>
       <h2>Task guide</h2>
-      <p class="muted">Every question sits at the end of a document of simple stories about an invented cast, with fact sentences woven in.
-        Names in exams are never seen in training; filler stories in exams are held out too.</p>
+      <p class="muted">Each question comes at the end of a document of simple stories about an invented cast, with fact sentences
+        woven in. Names and stories in the exams never appear in training.</p>
     </div>
     <div class="guide" id="guidebox"></div>
+  </section>
+
+  <section id="calibration">
+    <details class="calib">
+      <summary>Calibration and pipeline checks: not results</summary>
+      <p class="muted">Work that sets up or checks the protocol, kept apart from the results. Pipeline checks are tiny models
+        (2M parameters, a quarter of a million tokens, minutes) that show training, scoring and resuming work end to end; their scores mean
+        nothing. Step-size tuning runs pick each model's step size by held-out loss, never by exam scores.</p>
+      <div>
+        <h3>Superseded rounds</h3>
+        <ul id="superseded" class="small" style="margin-top:6px"></ul>
+      </div>
+      <div>
+        <h3>Pipeline checks (2M-parameter models)</h3>
+        <div class="tablebox" style="margin-top:6px"><table id="pipetable"></table></div>
+      </div>
+      <div>
+        <h3>Step-size tuning</h3>
+        <p class="small">Held-out loss after a short run (lower is better) for each step size; the lowest is frozen in the model's recipe card.</p>
+        <div class="multiples" id="tunebox" style="margin-top:6px"></div>
+      </div>
+      <div>
+        <h3>Data builds</h3>
+        <div class="tablebox" style="margin-top:6px"><table id="datatable"></table></div>
+      </div>
+    </details>
   </section>
 
   <section id="sources">
     <details>
       <summary>Where these numbers come from</summary>
       <div class="tablebox"><table id="srctable"></table></div>
-      <p class="small" style="margin-top:8px">Refresh with <span class="mono">bash scripts/pull_text_checks_results.sh polonez &lt;run…&gt;</span>
-        (writes the ledgers and redraws this page). Protocol: <span class="mono">docs/engineering_specs/text_capability_checks.md</span>.</p>
+      <p class="small" style="margin-top:8px">Refresh with <span class="mono">bash scripts/pull_text_checks_results.sh &lt;host&gt; &lt;run…&gt;</span>.
+        Verdicts and observations: <span class="mono">analysis/text_board_notes.py</span>. Protocol:
+        <span class="mono">docs/engineering_specs/text_capability_checks.md</span>.</p>
     </details>
   </section>
 </div>
@@ -211,127 +201,130 @@ details[open] summary { margin-bottom: 10px; }
 <script>
 const D = /*__DATA__*/null;
 const SERIES = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
+const ARCH_COLOR = { dense: "--s1", local: "--s4", e31c: "--s3", e31c_loop: "--s7", dense_plain: "--s2" };
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const el = (tag, attrs = {}, ...kids) => { const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) { if (k === "class") e.className = v; else if (k === "html") e.innerHTML = v; else e.setAttribute(k, v); }
-  for (const k of kids) e.append(k); return e; };
+  for (const k of kids) if (k != null) e.append(k); return e; };
 const pct = v => v == null ? "–" : Math.round(100 * v);
-const fmtTok = v => v == null ? "–" : v >= 1e9 ? (v / 1e9).toFixed(2) + "B" : v >= 1e6 ? (v / 1e6).toFixed(0) + "M" : (v / 1e3).toFixed(0) + "k";
+const fmtTok = v => v == null ? "–" : v >= 1e9 ? (v / 1e9).toFixed(2) + "B" : v >= 1e6 ? Math.round(v / 1e6) + "M" : Math.round(v / 1e3) + "k";
 const fmtLen = L => L >= 1024 ? (L / 1024) + "k" : String(L);
-const LV = D.levels;
-const models = D.models;
-const colorOf = {}; models.forEach((m, i) => colorOf[m.key] = SERIES[i % SERIES.length]);
-const devKeys = [...new Set(D.dev_curves.map(c => c.key))];
-devKeys.forEach(k => { if (!(k in colorOf)) colorOf[k] = SERIES[Object.keys(colorOf).length % SERIES.length]; });
-let visible = new Set(models.map(m => m.key));
-try { const s = JSON.parse(localStorage.getItem("textboard.visible") || "null"); if (s) visible = new Set(s.filter(k => k in colorOf)); } catch (e) {}
-if (!visible.size) visible = new Set(models.map(m => m.key));
-const nice = k => k.replace("@", " · ").replace("#", " · seed ");
+const fmtTime = s => s ? s.replace("T", " ").replace(/\+00:00$/, "").slice(0, 16) + " UTC" : "–";
+const colorOf = m => ARCH_COLOR[m.arch] || "--s8";
+const sw = m => { const s = el("span", { class: "swatch" }); s.style.background = css(colorOf(m)); return s; };
 const tip = document.getElementById("tip");
 function showTip(ev, html) { tip.innerHTML = html; tip.hidden = false;
   const x = Math.min(ev.clientX + 14, innerWidth - tip.offsetWidth - 8), y = Math.min(ev.clientY + 14, innerHeight - tip.offsetHeight - 8);
   tip.style.left = x + "px"; tip.style.top = y + "px"; }
 function hideTip() { tip.hidden = true; }
+const ul = items => el("ul", {}, ...items.map(t => el("li", {}, t)));
 
-function lede() {
-  const done = D.experiments.filter(x => x.state === "done").length;
-  document.getElementById("lede").textContent =
-    `Protocol ${D.version} (first draft, being calibrated). ${done} of ${D.experiments.length} round-1 steps done; ` +
-    `${models.length} trained model${models.length === 1 ? "" : "s"} scored. Generated ${D.generated}.`;
+function header() {
+  document.getElementById("asof").textContent = `Status as of ${D.status.as_of} · page generated ${D.generated} · protocol ${D.version} (first draft, being calibrated)`;
+  const b = document.getElementById("brief");
+  b.append(el("p", { class: "headline" }, D.status.headline),
+    el("div", { class: "cols" }, el("div", {}, el("h3", {}, "Where we are"), ul(D.status.where)),
+                                 el("div", {}, el("h3", {}, "What is next"), ul(D.status.next))));
 }
 
-function filter() {
-  const box = document.getElementById("filter"); box.innerHTML = "";
-  const keys = [...new Set([...models.map(m => m.key), ...devKeys])];
-  if (!keys.length) { box.append(el("span", { class: "small" }, "No trained models yet — the round plan below shows what is coming.")); return; }
-  for (const k of keys) {
-    const cb = el("input", { type: "checkbox" }); cb.checked = visible.has(k);
-    cb.addEventListener("change", () => { cb.checked ? visible.add(k) : visible.delete(k);
-      try { localStorage.setItem("textboard.visible", JSON.stringify([...visible])); } catch (e) {}
-      render(); });
-    const sw = el("span", { class: "swatch" }); sw.style.background = css(colorOf[k]);
-    box.append(el("label", {}, cb, sw, nice(k)));
+// a score cell: pass / clearly above guessing / at guessing
+function cellClass(c) {
+  if (!c || c.exact == null) return "at";
+  const margin = Math.max(0.05, 2 * (c.exact_se || 0));
+  const above = c.exact - c.floor > margin;
+  // a shortcut: it scores above guessing AND still does with the evidence removed
+  const short = above && c.removed_exact != null && c.removed_exact > c.floor + Math.max(0.10, 2 * (c.exact_se || 0));
+  if (short) return "short";
+  if (c.exact >= D.pass) return "pass";
+  return above ? "above" : "at";
+}
+
+function roundBlock(r) {
+  const n = r.notes, B = r.budget, ms = r.models;
+  const box = el("article", { class: "round", id: "round-" + r.id });
+  box.append(el("div", {}, el("h2", {}, n.title || r.id),
+    el("div", { class: "meta" }, [n.where, n.dates, B.data_version ? "data " + B.data_version : null].filter(Boolean).join(" · "))));
+  if (n.verdict) box.append(el("p", { class: "verdict-line" }, n.verdict));
+  if ((n.observations || []).length) box.append(el("div", {}, el("h3", { class: "small", style: "margin-bottom:4px" }, "WHAT WE SAW"), ul(n.observations)));
+
+  // the budget every model shares
+  const bud = el("div", { class: "budget" });
+  const add = (k, v, note) => bud.append(el("div", { class: "bud" }, el("div", { class: "k" }, k), el("div", { class: "v" }, v), note ? el("div", { class: "n" }, note) : null));
+  add("Model size", B.target_params ? `${Math.round(B.target_params / 1e6)}M parameters` : "–", "each model within ±5 %, all included");
+  add("Training data", fmtTok(B.tokens) + " tokens", B.mix_tokens ? `from a ${fmtTok(B.mix_tokens)}-token mix (stories + world documents)` : null);
+  add("Epochs", B.epochs == null ? "–" : B.epochs.toFixed(2), B.epochs != null && B.epochs < 1 ? "every document seen at most once" : "passes over the mix");
+  add("Training length", B.seq_len ? fmtLen(B.seq_len) + " tokens" : "–", B.lengths.length ? `exams read ${fmtLen(B.lengths[0])} → ${fmtLen(B.lengths[B.lengths.length - 1])}` : null);
+  add("Optimizer steps", B.steps ? B.steps.toLocaleString() : "–", B.rows_per_step ? `${B.rows_per_step} documents ≈ ${fmtTok(B.tokens_per_step)} tokens per step` : null);
+  add("Compute cap", B.cap_gpu_h ? `${B.cap_gpu_h} GPU-hours` : "–", B.n_gpus ? `trained on ${B.n_gpus} GPUs at once` : null);
+  box.append(el("div", {}, el("h3", { class: "small", style: "margin-bottom:6px" }, "THE SAME FOR EVERY MODEL"), bud));
+
+  // models: cost and language
+  const dense = ms.find(m => m.arch === "dense");
+  const mt = el("table");
+  mt.append(el("thead", {}, el("tr", {}, ...["Model", "Parameters", "Step size", "Training time", "Speed", "Trained", "Exams done", "Story loss"]
+    .map((h, i) => el("th", { class: i ? "num" : "" }, h)))));
+  const mb = el("tbody");
+  for (const m of ms) {
+    const gap = dense && m !== dense && m.story_loss && dense.story_loss ? ` (${m.story_loss >= dense.story_loss ? "+" : ""}${(100 * (m.story_loss - dense.story_loss) / dense.story_loss).toFixed(1)} %)` : "";
+    mb.append(el("tr", {},
+      el("td", { class: "model" }, el("div", { class: "nm" }, sw(m), m.name), el("div", { class: "wh" }, m.what)),
+      el("td", { class: "num" }, m.params ? (m.params / 1e6).toFixed(1) + "M" : "–"),
+      el("td", { class: "num" }, m.lr ? m.lr.toExponential(0) : "–"),
+      el("td", { class: "num", title: "wall-clock hours × GPUs = GPU-hours" }, m.wall_h ? `${m.wall_h.toFixed(1)} h · ${m.gpu_h.toFixed(1)} GPU-h` : "–"),
+      el("td", { class: "num" }, m.tokens_per_second ? Math.round(m.tokens_per_second / 1000) + "k tok/s" : "–"),
+      el("td", { class: "num" }, fmtTime(m.trained)), el("td", { class: "num" }, fmtTime(m.examined)),
+      el("td", { class: "num" }, m.story_loss ? m.story_loss.toFixed(3) + gap : "–")));
   }
-}
+  mt.append(mb);
+  box.append(el("div", {}, el("h3", { class: "small", style: "margin-bottom:6px" }, "MODELS · story loss is next-token surprise on held-out stories, nats per token, lower is better; % vs dense"),
+    el("div", { class: "tablebox" }, mt)));
 
-function plan() {
-  const box = document.getElementById("planbox"); box.innerHTML = "";
-  for (const x of D.experiments) {
-    const stateLabel = { done: "done", running: "running", partial: `${x.n_done}/${x.n_jobs} jobs`, queued: "queued",
-                         failed: "failed", planned: "planned" }[x.state] || x.state;
-    box.append(el("div", { class: "xp" },
-      el("div", { class: "xid" }, x.id),
-      el("div", {}, el("div", { class: "xt" }, x.title), el("div", { class: "xq" }, x.question),
-         el("div", { class: "xg" }, "Gate: " + x.gate)),
-      el("div", { class: "xs" }, el("span", { class: "chip " + x.state }, stateLabel), el("span", {}, x.estimate),
-         el("span", {}, x.gpu_hours ? `≈ ${x.gpu_hours} GPU-h` : "CPU"))));
-  }
-}
-
-function cards() {
-  const box = document.getElementById("cards"); box.innerHTML = "";
-  const shown = models.filter(m => visible.has(m.key));
-  if (!shown.length) { box.append(el("div", { class: "empty-note" }, "No scored models yet.")); return; }
-  for (const m of shown) {
-    const sw = el("span", { class: "swatch" }); sw.style.background = css(colorOf[m.key]);
-    const gap = m.language_gap == null ? "" : ` (${m.language_gap >= 0 ? "+" : ""}${(100 * m.language_gap).toFixed(1)} % vs dense)`;
-    const dl = el("dl", { class: "kv" });
-    const add = (k, v) => dl.append(el("dt", {}, k), el("dd", {}, v));
-    add("tier", `${m.tier} · ${m.params ? (m.params / 1e6).toFixed(1) + "M" : "–"}`);
-    add("status", m.status || "–");
-    add("frontier", m.frontier || "none");
-    add("language", m.story_loss == null ? "–" : m.story_loss.toFixed(3) + gap);
-    add("lookup passes after", fmtTok((m.tokens_to_pass || {}).lookup));
-    add("lookup reach", (m.reach || {}).lookup ? fmtLen(m.reach.lookup) : "–");
-    const card = el("div", { class: "verdict" }, el("div", { class: "name" }, sw, nice(m.key)), dl);
-    const flags = [];
-    if (m.status === "over_budget") flags.push("stopped at the compute cap");
-    if (m.language_ok === false) flags.push("language worse than dense by more than 2 %");
-    if ((m.shortcuts || []).length) flags.push("shortcut on " + m.shortcuts.join(", "));
-    const nbAll = Object.entries(m.notebook_gain || {});
-    const nb = nbAll.filter(([, v]) => Math.abs(v) >= 0.01).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 6);
-    if (nbAll.length) card.append(el("div", { class: "small" }, "Notebook switched off: " + (nb.length
-      ? nb.map(([k, v]) => `${k.replace("@", " at ")} ${v >= 0 ? "−" : "+"}${Math.abs(Math.round(100 * v))} pts`).join(", ")
-      : "no change on any question")));
-    for (const f of flags) card.append(el("div", { class: "flag" }, "⚠ " + f));
-    box.append(card);
-  }
-}
-
-function taskTable() {
-  const t = document.getElementById("ttable"); t.innerHTML = "";
-  const shown = models.filter(m => visible.has(m.key));
-  if (!shown.length) { t.append(el("tr", {}, el("td", { class: "empty-note" }, "No scored models yet."))); return; }
-  const head = el("tr", {}, el("th", {}, "Level · task"));
-  for (const m of shown) { const sw = el("span", { class: "swatch" }); sw.style.background = css(colorOf[m.key]);
-    head.append(el("th", { class: "mcol" }, sw, nice(m.key))); }
-  t.append(el("thead", {}, head));
-  const body = el("tbody");
-  const rowFor = (task, name, sub, cellFn) => { const tr = el("tr", {}, el("td", { class: "task" }, el("div", {}, name), el("div", { class: "tid" }, sub)));
-    for (const m of shown) tr.append(cellFn(m)); body.append(tr); };
-  rowFor("language", D.guide.language[0], "held-out story loss, lower is better", m => el("td", { class: "cell" }, m.story_loss == null ? "–" : m.story_loss.toFixed(3)));
+  // tasks vs the guessing rate
+  const L0 = B.seq_len, Lmax = B.lengths.length ? B.lengths[B.lengths.length - 1] : null;
+  const tt = el("table");
+  const head = el("tr", {}, el("th", {}, "Task"), el("th", { class: "mcol" }, "Guessing"));
+  for (const m of ms) head.append(el("th", { class: "mcol" }, sw(m), m.name));
+  tt.append(el("thead", {}, head));
+  const tb = el("tbody");
   for (const task of D.tasks) {
     const g = D.guide[task];
-    const anyCal = Object.values(D.calibrated).some(c => c[task]);
-    const sub = (D.gating.includes(task) ? "" : "frontier · ") + (anyCal ? "dense passes" : "uncalibrated: gates nothing");
-    rowFor(task, g[0], sub, m => {
-      const L0 = m.seq_len, c = m.cells[`id|${task}|${L0}`];
-      if (!c || c.exact == null) return el("td", { class: "cell empty" }, "–");
-      const lens = Object.keys(m.cells).filter(k => k.startsWith(`id|${task}|`)).map(k => +k.split("|")[2]);
-      const Lmax = Math.max(...lens), cm = m.cells[`id|${task}|${Lmax}`];
-      const short = c.removed_exact != null && c.removed_exact > c.floor + Math.max(0.10, 2 * (c.exact_se || 0));
-      const pass = c.exact >= D.pass && !short;
-      const td = el("td", { class: "cell" + (pass ? " pass" : "") + (short ? " short" : "") }, String(pct(c.exact)));
-      if (Lmax > L0 && cm) td.append(el("span", { class: "sub" }, `${pct(cm.exact)} at ${fmtLen(Lmax)}`));
-      td.addEventListener("mousemove", ev => showTip(ev, `<b>${g[0]}</b> · ${nice(m.key)}<div class="row"><span>exact at ${fmtLen(L0)}</span><span>${pct(c.exact)} % ± ${pct(c.exact_se)}</span></div>` +
-        `<div class="row"><span>picked candidate</span><span>${c.pick == null ? "–" : pct(c.pick) + " %"}</span></div>` +
-        `<div class="row"><span>evidence removed</span><span>${pct(c.removed_exact)} %</span></div><div class="row"><span>guessing floor</span><span>${pct(c.floor)} %</span></div>` +
-        (c.by_depth ? Object.entries(c.by_depth).map(([d, v]) => `<div class="row"><span>evidence ${d}</span><span>${pct(v)} %</span></div>`).join("") : "") +
-        `<div class="row"><span>questions</span><span>${c.n}</span></div>`));
-      td.addEventListener("mouseleave", hideTip);
-      return td; });
+    const anyc = ms.map(m => m.cells[`id|${task}|${L0}`]).find(c => c);
+    const tr = el("tr", {}, el("td", { class: "task" }, el("div", {}, g[0]), el("div", { class: "tid" }, g[1] + (D.gating.includes(task) ? "" : " · frontier"))),
+      el("td", { class: "floor" }, anyc ? pct(anyc.floor) + " %" : "–"));
+    for (const m of ms) {
+      const c = m.cells[`id|${task}|${L0}`], cm = Lmax ? m.cells[`id|${task}|${Lmax}`] : null;
+      const td = el("td", { class: "cell " + cellClass(c) }, c ? pct(c.exact) + " %" : "–");
+      if (cm && Lmax > L0) td.append(el("span", { class: "sub" }, `${pct(cm.exact)} % at ${fmtLen(Lmax)}`));
+      if (c) {
+        td.addEventListener("mousemove", ev => showTip(ev, `<b>${g[0]}</b> · ${m.name}` +
+          `<div class="row"><span>exact answer at ${fmtLen(L0)}</span><span>${pct(c.exact)} % ± ${pct(c.exact_se)}</span></div>` +
+          `<div class="row"><span>picked the right candidate</span><span>${c.pick == null ? "–" : pct(c.pick) + " %"}</span></div>` +
+          `<div class="row"><span>guessing rate</span><span>${pct(c.floor)} %</span></div>` +
+          `<div class="row"><span>evidence removed</span><span>${pct(c.removed_exact)} %</span></div>` +
+          (c.answer_nll != null ? `<div class="row"><span>surprise at the answer</span><span>${c.answer_nll.toFixed(2)} nats/token</span></div>` : "") +
+          `<div class="row"><span>questions</span><span>${c.n}</span></div>`));
+        td.addEventListener("mouseleave", hideTip);
+      }
+      tr.append(td);
+    }
+    tb.append(tr);
   }
-  t.append(body);
+  tt.append(tb);
+  box.append(el("div", {}, el("h3", { class: "small", style: "margin-bottom:6px" }, `TASKS · exact answers at the ${fmtLen(L0)} training length; small line: at ${Lmax ? fmtLen(Lmax) : "–"}`),
+    el("div", { class: "tablebox" }, tt),
+    el("div", { class: "legend", style: "margin-top:8px" },
+      el("span", {}, el("i", { style: "box-shadow: inset 0 0 0 2px var(--good)" }), "pass (75 % or more)"),
+      el("span", {}, el("i", { style: "background: var(--tint)" }), "clearly above guessing, not a pass"),
+      el("span", {}, el("i", {}), "at the guessing rate"),
+      el("span", { style: "text-decoration: line-through; color: var(--critical)" }, "answered without the evidence (shortcut)"),
+      el("span", {}, "hover a cell for the details"))));
+  return box;
+}
+
+function results() {
+  const box = document.getElementById("rounds");
+  if (!D.rounds.length) { box.append(el("div", { class: "empty-note" }, "No result rounds yet.")); return; }
+  for (const r of D.rounds) box.append(roundBlock(r));
 }
 
 function chart(box, { title, sub, series, xs, xlabel, logx = true, ymax = 1, yfmt = v => pct(v), floor = null, pass = D.pass, vline = null, xfmt = fmtLen }) {
@@ -347,8 +340,7 @@ function chart(box, { title, sub, series, xs, xlabel, logx = true, ymax = 1, yfm
   const X = v => L + (x1 === x0 ? (W - L - R) / 2 : (fx(v) - x0) / (x1 - x0) * (W - L - R));
   const Y = v => T + (1 - (v - ymin) / ((ytop - ymin) || 1)) * (H - T - B);
   const ns = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(ns, "svg"); svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("role", "img");
-  svg.setAttribute("aria-label", title);
+  const svg = document.createElementNS(ns, "svg"); svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("role", "img"); svg.setAttribute("aria-label", title);
   const mk = (tag, a) => { const e = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(a)) e.setAttribute(k, v); return e; };
   const ax = mk("g", { class: "axis" });
   const yt = ymax === 1 ? [0, 0.25, 0.5, 0.75, 1] : [ymin, (ymin + ytop) / 2, ytop];
@@ -361,93 +353,90 @@ function chart(box, { title, sub, series, xs, xlabel, logx = true, ymax = 1, yfm
   if (floor != null && floor > 0) svg.append(mk("line", { class: "floorline", x1: L, x2: W - R, y1: Y(floor), y2: Y(floor) }));
   if (vline != null) svg.append(mk("line", { class: "gridline", x1: X(vline), x2: X(vline), y1: T, y2: H - B, "stroke-dasharray": "2 2" }));
   for (const s of live) {
-    const g = mk("g", { class: "series" }); const c = css(colorOf[s.key] || "--s1");
+    const g = mk("g", { class: "series" }); const c = css(s.color);
     const pts = [...s.points].sort((a, b) => a[0] - b[0]);
     g.append(mk("path", { d: pts.map((p, i) => (i ? "L" : "M") + X(p[0]).toFixed(1) + " " + Y(p[1]).toFixed(1)).join(" "), stroke: c }));
     for (const p of pts) { const ci = mk("circle", { cx: X(p[0]), cy: Y(p[1]), r: 4, fill: c });
-      ci.addEventListener("mousemove", ev => showTip(ev, `<b>${nice(s.key)}</b><div class="row"><span>${xlabel}</span><span>${xfmt(p[0])}</span></div><div class="row"><span>value</span><span>${yfmt(p[1])}${ymax === 1 ? " %" : ""}</span></div>`));
+      ci.addEventListener("mousemove", ev => showTip(ev, `<b>${s.name}</b><div class="row"><span>${xlabel}</span><span>${xfmt(p[0])}</span></div><div class="row"><span>value</span><span>${yfmt(p[1])}${ymax === 1 ? " %" : ""}</span></div>`));
       ci.addEventListener("mouseleave", hideTip); g.append(ci); }
     svg.append(g);
   }
   panel.append(svg); box.append(panel);
 }
 
-function lengthCharts() {
-  const box = document.getElementById("lengthbox"); box.innerHTML = "";
-  const shown = models.filter(m => visible.has(m.key));
+function charts() {
+  const r = D.rounds.find(x => x.id === document.getElementById("roundSel").value) || D.rounds[0];
+  const lb = document.getElementById("lengthbox"), cb = document.getElementById("learnbox"); lb.innerHTML = ""; cb.innerHTML = "";
+  if (!r) return;
+  const ms = r.models;
   for (const task of D.tasks) {
-    let floor = null, L0 = null;
-    const series = shown.map(m => { L0 = m.seq_len;
-      const pts = Object.entries(m.cells).filter(([k]) => k.startsWith(`id|${task}|`)).map(([k, c]) => { floor = c.floor; return [+k.split("|")[2], c.exact]; });
-      return { key: m.key, points: pts.filter(p => p[1] != null) }; });
-    chart(box, { title: D.guide[task][0], sub: D.guide[task][1], series, xlabel: "document length", floor, vline: L0 });
+    let floor = null;
+    const series = ms.map(m => ({ name: m.name, color: colorOf(m), points: Object.entries(m.cells).filter(([k]) => k.startsWith(`id|${task}|`))
+      .map(([k, c]) => { floor = c.floor; return [+k.split("|")[2], c.exact]; }).filter(p => p[1] != null) }));
+    chart(lb, { title: D.guide[task][0], sub: D.guide[task][1], series, xlabel: "document length", floor, vline: r.budget.seq_len });
   }
-}
-
-function learnCharts() {
-  const box = document.getElementById("learnbox"); box.innerHTML = "";
-  const devs = D.dev_curves.filter(c => visible.has(c.key));
-  chart(box, { title: "Held-out loss of the training mix", sub: "lower is better", xlabel: "training tokens", logx: false, ymax: null,
+  chart(cb, { title: "Held-out loss of the training mix", sub: "lower is better", xlabel: "training tokens", logx: false, ymax: null,
     yfmt: v => v.toFixed(2), xfmt: fmtTok,
-    series: devs.map(c => ({ key: c.key, points: c.eval_loss.map(([s, l]) => [s * c.tokens_per_step, l]) })) });
-  const shown = models.filter(m => visible.has(m.key));
+    series: ms.map(m => ({ name: m.name, color: colorOf(m), points: m.eval_loss.map(([s, l]) => [s * m.tokens_per_step, l]) })) });
   for (const task of D.tasks) {
-    chart(box, { title: D.guide[task][0], sub: "score at the training length vs training tokens", xlabel: "training tokens", logx: false,
-      xfmt: fmtTok, series: shown.map(m => ({ key: m.key, points: Object.entries(m.curve).map(([s, v]) => [+s * m.tokens_per_step, v[task]]).filter(p => p[1] != null) })) });
+    const floor = (ms[0] && Object.values(ms[0].cells).find(c => c)) ? (ms[0].cells[`id|${task}|${r.budget.seq_len}`] || {}).floor : null;
+    chart(cb, { title: D.guide[task][0], sub: "score at the training length vs training tokens", xlabel: "training tokens", logx: false, xfmt: fmtTok, floor,
+      series: ms.map(m => ({ name: m.name, color: colorOf(m), points: Object.entries(m.curve).map(([s, v]) => [+s * m.tokens_per_step, v[task]]).filter(p => p[1] != null) })) });
   }
 }
 
-function tuneCharts() {
-  const box = document.getElementById("tunebox"); box.innerHTML = "";
-  const groups = {};
-  for (const t of D.tuning) (groups[t.tier] = groups[t.tier] || []).push(t);
-  if (!Object.keys(groups).length) { box.append(el("div", { class: "empty-note" }, "No tuning runs yet.")); return; }
-  for (const [tier, rows] of Object.entries(groups)) {
-    const archs = [...new Set(rows.map(r => r.arch))];
-    const series = archs.map(a => ({ key: `${a}@${tier}`, points: rows.filter(r => r.arch === a && r.loss != null).map(r => [r.lr, r.loss]) }));
-    chart(box, { title: `Tier ${tier}`, sub: "held-out loss after the short run vs step size", xlabel: "step size", ymax: null,
-      yfmt: v => v.toFixed(2), xfmt: v => v.toExponential(0), series });
-  }
-}
-
-function runTable() {
-  const t = document.getElementById("runtable"); t.innerHTML = "";
-  const jobs = D.jobs.filter(j => j.kind !== "eval");
-  const act = jobs.reduce((a, j) => a + (j.active_seconds || 0) * (j.n_gpus || 1), 0) / 3600;
-  document.getElementById("runs-lede").textContent = jobs.length
-    ? `Every training job with its state, active GPU time (counted across restarts) and throughput. ${act.toFixed(1)} GPU-hours used so far.`
-    : "No runs pulled yet.";
-  if (!jobs.length) return;
-  t.append(el("thead", {}, el("tr", {}, ...["run", "job", "state", "params", "step size", "steps", "tokens", "active GPU-h", "tokens/s", "loss now"].map(h => el("th", {}, h)))));
-  const body = el("tbody");
-  for (const j of jobs) {
-    body.append(el("tr", {}, el("td", { class: "mono" }, `${j.run}.${j.host}`), el("td", { class: "mono" }, j.job || ""),
-      el("td", {}, el("span", { class: "chip " + (j.state || "pending") }, (j.state || "").replace("_", " "))),
-      el("td", { class: "num" }, j.params ? (j.params / 1e6).toFixed(1) + "M" : "–"), el("td", { class: "num" }, j.lr ? j.lr.toExponential(1) : "–"),
-      el("td", { class: "num" }, j.steps ?? "–"), el("td", { class: "num" }, fmtTok(j.tokens)),
-      el("td", { class: "num" }, j.active_seconds ? ((j.active_seconds * (j.n_gpus || 1)) / 3600).toFixed(2) + (j.cap_gpu_hours ? ` / ${j.cap_gpu_hours}` : "") : "–"),
-      el("td", { class: "num" }, j.tokens_per_second ? Math.round(j.tokens_per_second).toLocaleString() : "–"),
-      el("td", { class: "num" }, j.live_loss != null ? j.live_loss.toFixed(3) : "–")));
-  }
-  t.append(body);
+function roundSelect() {
+  const s = document.getElementById("roundSel");
+  for (const r of D.rounds) s.append(el("option", { value: r.id }, r.notes.title || r.id));
+  s.addEventListener("change", charts);
 }
 
 function guide() {
-  const box = document.getElementById("guidebox"); box.innerHTML = "";
+  const box = document.getElementById("guidebox");
   for (const [k, [name, q, d]] of Object.entries(D.guide))
     box.append(el("div", { class: "gcard" }, el("h3", {}, name), el("div", { class: "q" }, q), el("div", { class: "d" }, d)));
 }
 
+function calibration() {
+  const sup = document.getElementById("superseded");
+  for (const s of D.superseded) sup.append(el("li", {}, s.note));
+  if (!D.superseded.length) sup.append(el("li", {}, "None."));
+  const pt = document.getElementById("pipetable");
+  pt.append(el("thead", {}, el("tr", {}, ...["Run", "Model", "Parameters", "Tokens", "Time", "Finished", "State"].map((h, i) => el("th", { class: i > 1 ? "num" : "" }, h)))));
+  const pb = el("tbody");
+  for (const p of D.pipeline) pb.append(el("tr", {}, el("td", { class: "mono" }, p.run), el("td", {}, p.name),
+    el("td", { class: "num" }, p.params ? (p.params / 1e6).toFixed(1) + "M" : "–"), el("td", { class: "num" }, fmtTok(p.tokens)),
+    el("td", { class: "num" }, p.seconds ? p.seconds + " s" : "–"), el("td", { class: "num" }, fmtTime(p.finished)),
+    el("td", { class: "num" }, el("span", { class: "chip " + (p.state === "done" ? "done" : "pending") }, p.state))));
+  if (!D.pipeline.length) pb.append(el("tr", {}, el("td", { colspan: 7, class: "small" }, "None.")));
+  pt.append(pb);
+  const tb = document.getElementById("tunebox"); const groups = {};
+  for (const t of D.tuning) (groups[`${t.run} · ${t.tier} · data ${t.data || "?"}`] = groups[`${t.run} · ${t.tier} · data ${t.data || "?"}`] || []).push(t);
+  for (const [g, rows] of Object.entries(groups)) {
+    const archs = [...new Set(rows.map(r => r.arch))];
+    chart(tb, { title: g, sub: `held-out loss after ${fmtTok(rows[0].tokens)} tokens vs step size`, xlabel: "step size", ymax: null,
+      yfmt: v => v.toFixed(2), xfmt: v => v.toExponential(0),
+      series: archs.map(a => ({ name: rows.find(r => r.arch === a).name, color: ARCH_COLOR[a] || "--s8", points: rows.filter(r => r.arch === a && r.loss != null).map(r => [r.lr, r.loss]) })) });
+  }
+  if (!D.tuning.length) tb.append(el("div", { class: "empty-note" }, "No tuning runs pulled."));
+  const dt = document.getElementById("datatable");
+  dt.append(el("thead", {}, el("tr", {}, ...["Ledger", "Data version", "Training mix", "Exam questions", "Collected"].map((h, i) => el("th", { class: i > 1 ? "num" : "" }, h)))));
+  const db = el("tbody");
+  for (const d of D.data_builds) db.append(el("tr", {}, el("td", { class: "mono" }, d.run), el("td", { class: "mono" }, d.version || "–"),
+    el("td", { class: "num" }, fmtTok(d.mix_tokens) + " tokens"),
+    el("td", { class: "num" }, d.eval_items ? Object.values(d.eval_items).reduce((a, b) => a + b, 0).toLocaleString() : "–"),
+    el("td", { class: "num" }, fmtTime(d.collected))));
+  dt.append(db);
+}
+
 function sources() {
-  const t = document.getElementById("srctable"); t.innerHTML = "";
-  t.append(el("thead", {}, el("tr", {}, ...["ledger", "run", "collected", "data", "jobs done"].map(h => el("th", {}, h)))));
+  const t = document.getElementById("srctable");
+  t.append(el("thead", {}, el("tr", {}, ...["Ledger", "Run", "Collected", "Data", "Jobs done"].map(h => el("th", {}, h)))));
   const body = el("tbody");
-  for (const s of D.sources) body.append(el("tr", {}, el("td", { class: "mono" }, s.file), el("td", { class: "mono" }, `${s.run}.${s.host}`),
-    el("td", { class: "mono" }, s.collected), el("td", { class: "mono" }, s.data || "–"), el("td", { class: "num" }, `${s.done} / ${s.jobs}`)));
-  if (!D.sources.length) body.append(el("tr", {}, el("td", { colspan: 5, class: "small" }, "No ledgers pulled yet.")));
+  for (const s of D.sources) body.append(el("tr", {}, el("td", { class: "mono" }, s.file), el("td", { class: "mono" }, s.run),
+    el("td", { class: "mono" }, fmtTime(s.collected)), el("td", { class: "mono" }, s.data || "–"), el("td", { class: "num" }, `${s.done} / ${s.jobs}`)));
   t.append(body);
 }
 
-function render() { cards(); taskTable(); lengthCharts(); learnCharts(); tuneCharts(); }
-lede(); filter(); plan(); render(); runTable(); guide(); sources();
+header(); results(); roundSelect(); charts(); guide(); calibration(); sources();
 </script>
