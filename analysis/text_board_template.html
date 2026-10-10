@@ -300,6 +300,7 @@ function roundBlock(r) {
           `<div class="row"><span>exact answer at ${fmtLen(L0)}</span><span>${pct(c.exact)} % ± ${pct(c.exact_se)}</span></div>` +
           `<div class="row"><span>picked the right candidate</span><span>${c.pick == null ? "–" : pct(c.pick) + " %"}</span></div>` +
           `<div class="row"><span>guessing rate</span><span>${pct(c.floor)} %</span></div>` +
+          (c.pick_prob != null ? `<div class="row"><span>graded pick (probability on the right candidate)</span><span>${pct(c.pick_prob)} %</span></div>` : "") +
           `<div class="row"><span>evidence removed</span><span>${pct(c.removed_exact)} %</span></div>` +
           (c.answer_nll != null ? `<div class="row"><span>surprise at the answer</span><span>${c.answer_nll.toFixed(2)} nats/token</span></div>` : "") +
           `<div class="row"><span>questions</span><span>${c.n}</span></div>`));

@@ -150,8 +150,13 @@ bash scripts/pull_text_checks_results.sh polonez r1_smoke r1_screen   # ledgers 
 - **Every change goes into the spec**, the definitions and a new data version, recorded in the spec's
   calibration notes.
 - **Results before and after a change are compared only with that change stated.**
+- **The calibration ladder** (spec §16.1, 2026-10-10): dense only, 30M at 1.5B tokens → 50M at the same
+  tokens → 100M with more, until dense passes T1–T4 at 4k. Calibration runs use
+  `--tokens`, `--eval_lengths 1024 2048 4096` and `--curve_fractions 0.1 0.2 … 1.0`; read the graded
+  pick (`pick_prob`) on the learning curve, not only exact; one failing seed is not a verdict.
+- **Answered:** dense does not pass anything at 30M / 0.6B tokens (Odra, 9–10 Oct, text-world-v1).
 - **Open calibration questions:**
-  - whether dense passes T1–T4 at 30M / 0.6B tokens;
+  - the token budget at which dense passes (the ladder);
   - whether E31's 16-token local window (as tested on DNA) is right for language;
   - real throughput vs the caps;
   - eval time at 128k.

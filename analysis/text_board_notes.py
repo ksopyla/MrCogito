@@ -6,20 +6,25 @@ Plain words, every number with its meaning (research-comms). Update it whenever 
 """
 
 STATUS = {
-    "as_of": "2026-10-10 05:50 UTC",
-    "headline": "No model has learned any task yet, the dense reference included. The training budget is too small "
-                "for these exams, so no architecture comparison is possible so far.",
+    "as_of": "2026-10-10 06:10 UTC",
+    "headline": "No model has learned any task yet, the dense reference included. The exams were rebuilt so every "
+                "guessing rate is below 10 %, and a calibration ladder now looks for the size and token budget at "
+                "which dense passes.",
     "where": [
-        "Exams fixed (data v1): four of seven tasks could be passed by shortcuts in the first draft; an audit of all "
-        "29,400 questions now finds every shortcut at the guessing rate.",
-        "30M round on v1 finished on Odra (9–10 Oct): four models, 600M tokens each, all at the guessing rate at 4k.",
-        "None of the four can yet copy back a passage it has just read — the skill every task builds on.",
+        "Exams v2 (10 Oct): more candidates per question — 12 signs, 12 homes, 11 places per person, 12 people in "
+        "the teacher chain, counts 0-10, and deduce now asks for a property among 12 — so guessing is 4-9 % "
+        "(v1: up to 50 %). The model-free audit finds no shortcut above the guessing rate.",
+        "30M round on v1 (9-10 Oct, Odra): four models, 600M tokens each, all at the guessing rate at 4k.",
+        "Dense is half-way: it uses the document (far less surprised by the right answer with the fact present) "
+        "but cannot yet tell whose fact it is, and none of the models copies a passage it has just read.",
     ],
     "next": [
-        "Running since 10 Oct 05:50 UTC on Odra: the dense model alone at 30M for 1.5B tokens (7,931 steps, about "
-        "2.2 h + exams), scored along the way — step 1 of the calibration ladder.",
-        "Then dense at 50M on the same tokens (capacity or steps?), then 100M with more tokens; the four-model "
-        "round at the first budget where dense passes.",
+        "Running on Odra since 10 Oct 05:50 UTC: dense 30M for 1.5B tokens on the v1 exams (training about 2.3 h, "
+        "then exams at 1k-4k and a five-point learning curve).",
+        "Building on Odra since 06:07 UTC: the v2 data (1.0B-token mix). Ladder step 1 — dense 30M for 1.5B "
+        "tokens on v2, learning curve every 10 % — starts by itself when both are done.",
+        "Then step 2: dense 50M on the same tokens (capacity or steps?), then 100M with more tokens; the "
+        "four-model round at the first budget where dense passes.",
     ],
 }
 

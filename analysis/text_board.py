@@ -34,29 +34,34 @@ LEDGER_DIR = ROOT / "docs" / "2_Experiments_Registry" / "results" / "capability"
 OUT = ROOT / "docs" / "3_Evaluations_and_Baselines" / "text_capability_board.html"
 TASKS = list(GATING_TASKS) + list(FRONTIER_TASKS)
 ORDER = ["dense", "local", "e31c", "e31c_loop", "dense_plain"]
-# Task guide, as of data v1 (the v0 differences are in the spec)
+# Task guide, as of data v2 (2026-10-10: every guessing rate below 10 %; the v1 values, used by the 30M round of
+# 9-10 Oct, are in brackets; the v0 differences are in the spec)
 GUIDE = {
     "language": ("T0 Language", "Can it write the language?", "Next-token loss on held-out stories it never saw "
                  "(nats per token, lower is better). Not pass/fail: a memory model must not buy recall with worse "
                  "language (within 2 % of dense)."),
     "quote": ("T1 Quote", "Can it repeat a sentence it read earlier?",
-              "Four people each have a sign with 4–6 common words; the question asks for one person's sign, word for "
-              "word. Guessing one of the four signs: 25 %."),
+              "Twelve people [v1: four] each have a sign with 4-6 common words; the question asks for one "
+              "person's sign, word for word. Guessing one of the signs: 8 % [25 %]."),
     "lookup": ("T2 Lookup", "Can it find one person's fact?",
-               "Four people's homes (invented place names) are stated; the question asks one. Guessing: 25 %."),
+               "Twelve people's homes [four] (invented place names) are stated; the question asks one. "
+               "Guessing: 8 % [25 %]."),
     "keyed": ("T3 Keyed", "Can it pick the right fact among many similar ones?",
               "Sixteen people's homes in the same sentence shapes, a quarter of the names one syllable apart. "
-              "Guessing: 6 %."),
+              "Guessing: 6 % (unchanged)."),
     "latest": ("T4 Latest", "Can it track a changing fact?",
-               "Everyone moves four times, interleaved, and someone else moves last: only the asked person's own "
-               "last move is right. Guessing among their five places: 20 %."),
+               "Five people each move ten times [four], interleaved, and someone else moves last: only the asked "
+               "person's own last move is right. Guessing among their eleven places: 9 % [20 %]."),
     "compose": ("T5 Compose", "Can it combine two facts?",
-                "Everyone has a teacher and a home; the question asks where the teacher (of the teacher) lives. "
-                "Every chain has the same shape. Guessing: 12 %."),
+                "Twelve people [eight] each have a teacher and a home; the question asks where the teacher of the "
+                "teacher lives. Every chain has the same shape. Guessing: 8 % [12 %]."),
     "count": ("T6 Count", "Can it count events?", "How many times did a person visit a place, when everyone, "
-              "look-alike names included, visits it too. Answers zero to six. Frontier: reported, not gating."),
-    "deduce": ("T7 Deduce", "Can it chain rules?", "Made-up category rules (Every wump is a tove. Every tove is "
-               "shiny.) with an opposite decoy chain; yes or no. Guessing: 50 %. Frontier: reported, not gating."),
+              "look-alike names included, visits it too. Answers zero to ten [six]: guessing 9 % [14 %]. "
+              "Frontier: reported, not gating."),
+    "deduce": ("T7 Deduce", "Can it chain rules?", "Made-up category rules, one chain per person (Pim is a wump. "
+               "Every wump is a tove. Every tove is shiny.), twelve chains ending in twelve properties; the "
+               "question asks what Pim is like. Guessing: 8 % [v1 asked yes/no: 50 %]. Frontier: reported, "
+               "not gating."),
 }
 
 
@@ -110,7 +115,7 @@ def _round(led: dict) -> dict:
                 "examined": evals.get(m["arch"], {}).get("finished"),
                 "story_loss": m.get("story_loss"), "language_gap": m.get("language_gap"), "frontier": m.get("frontier"),
                 "seq_len": m["seq_len"], "tokens_per_step": m["tokens_per_step"],
-                "cells": {f"{s}|{t}|{L}": {k: c.get(k) for k in ("exact", "exact_se", "pick", "removed_exact", "floor", "n",
+                "cells": {f"{s}|{t}|{L}": {k: c.get(k) for k in ("exact", "exact_se", "pick", "pick_prob", "removed_exact", "floor", "n",
                                                                   "answer_nll", "by_depth")}
                           for (s, t, L), c in m["cells"].items()},
                 "off": {f"{s}|{t}|{L}": c.get("exact") for (s, t, L), c in m["off"].items()},

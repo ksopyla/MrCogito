@@ -57,6 +57,10 @@ never bother to use the notebook.**
 | **Δzero** | Δ when the concepts are replaced with zeros | higher | |
 | **Δshuffle / Δperm** | Δ when the concepts are shuffled between examples or positions — harder than zeroing, because it removes *this* document's information while keeping the general statistics | higher | the honest version of the test. |
 | **reach ablation** | Δ when we shorten only how far back a layer is allowed to look, on an already-trained model | higher = long range matters | our headline instrument for "is long context actually used?" |
+| **guessing rate (text checks)** | the score of a reader that knows the answer is one of the candidates planted in the document (the twelve homes, the eleven places a person lived) but not which one: 1 / candidates | — | text-world-v2 keeps it below 10 % for every task (v1: up to 50 %). |
+| **graded pick (`pick_prob`)** | the share of the model's probability that goes to the right candidate's first token, among all candidates' first tokens | higher | equals the guessing rate for a blind reader, 1 for a sure one. Moves before exact-answer accuracy does, so calibration runs read it. |
+| **answer surprise (`answer_nll`)** | nats per token on the right answer, with the fact in the document and with it removed | lower with the fact | a large gap shows the model uses the document, but it also rewards "the answer is a word from this document" without knowing whose; the graded pick separates the two. |
+| **copy probe** | surprise on a passage the second time it is shown, against the first time | a large drop = it copies | the skill every text task builds on. |
 | **RankMe** | how many genuinely different directions the notebook uses (`exp` of the entropy of the singular values) | higher | out of the slot count or width. Near 1 = **collapse**: every page says the same thing. 200 of 2048 = healthy. |
 | **passkey accuracy** | hide a password early in a long text, ask for it at the end | higher | 0.0 means the model cannot retrieve at all. |
 | **RULER / RULER-lite** | a small suite of long-context retrieval tasks: passkey, multi-key lookup, variable tracking, frequent-word counting | higher | |
