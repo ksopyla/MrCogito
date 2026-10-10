@@ -69,7 +69,10 @@ NAMES = {
     "local": ("No-memory control", "sees only the last 256 tokens (E31c with its notebook removed)"),
     "e31c": ("E31c notebook", "local attention plus a notebook of summaries of past text"),
     "e31c_loop": ("E33 loop", "E31c plus a read–think–reread loop (4 rounds)"),
-    "dense_plain": ("Dense, plain input", "diagnostic: dense without the n-gram input layer"),
+    "dense_plain": ("Dense, plain input", "full attention, tiny token embedding only (no word-pair/triple tables)"),
+    "local_plain": ("No-memory control, plain input", "last 256 tokens only; tiny token embedding only"),
+    "e31c_plain": ("E31c notebook, plain input", "local attention plus the notebook; tiny token embedding only"),
+    "e31c_loop_plain": ("E33 loop, plain input", "E31c plus the read-think-reread loop; tiny token embedding only"),
 }
 
 # Result rounds, keyed by "<run>.<host>" (the ledger file name). Rounds not listed here but present in the

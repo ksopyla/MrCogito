@@ -1,0 +1,17 @@
+{
+  "arch": "e31c_plain",
+  "status": "borrowed from e31c (step size and micro-batch; not tuned with plain input), 2026-10-10",
+  "init": "trainer default for perceiver_ar: normal(0.02) projections, residual outputs zero-initialized",
+  "optimizer": "adam",
+  "lr": {
+    "screen": 0.001,
+    "main": 0.0006,
+    "smoke": 0.001,
+    "lab": 0.004
+  },
+  "warmup_frac": 0.02,
+  "scheduler": "cosine",
+  "weight_decay": 0.1,
+  "max_grad_norm": 1.0,
+  "length_method": "none"
+}

@@ -89,7 +89,9 @@ def analyse(models: dict) -> dict:
         by_tier[m["tier"]][k] = m
     out = {}
     for tier, ms in by_tier.items():
-        dense = next((m for m in ms.values() if m["arch"] == "dense"), None)
+        # the dense reference: plain-input rounds (2026-10-10) use the dense model with plain input
+        dense = (next((m for m in ms.values() if m["arch"] == "dense"), None)
+                 or next((m for m in ms.values() if m["arch"] == "dense_plain"), None))
         tasks = list(GATING_TASKS) + list(FRONTIER_TASKS)
         calibrated = {t: passes(dense["cells"].get(("id", t, dense["seq_len"]))) if dense else False for t in tasks}
         for k, m in ms.items():

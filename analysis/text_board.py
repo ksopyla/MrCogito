@@ -33,7 +33,7 @@ from evaluation.text_checks import FRONTIER_TASKS, GATING_TASKS, PASS, TEXT_CHEC
 LEDGER_DIR = ROOT / "docs" / "2_Experiments_Registry" / "results" / "capability" / "text"
 OUT = ROOT / "docs" / "3_Evaluations_and_Baselines" / "text_capability_board.html"
 TASKS = list(GATING_TASKS) + list(FRONTIER_TASKS)
-ORDER = ["dense", "local", "e31c", "e31c_loop", "dense_plain"]
+ORDER = ["dense", "local", "e31c", "e31c_loop", "dense_plain", "local_plain", "e31c_plain", "e31c_loop_plain"]
 # Task guide, as of data v2 (2026-10-10: every guessing rate below 10 %; the v1 values, used by the 30M round of
 # 9-10 Oct, are in brackets; the v0 differences are in the spec)
 GUIDE = {

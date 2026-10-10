@@ -115,6 +115,15 @@ ARCHES = {
                       {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.3,
                        "message_loop_exit_targets": "answer"}, has_notebook=True),
 }
+# Plain-input variants (2026-10-10): the same models without the word-pair/triple hash tables and value
+# embeddings. Dense with plain input learned quote, lookup, keyed and latest at 30M / 1.5B tokens on v2, where
+# dense with the tables learned at most one (spec §16.1), so the architecture round runs on plain input. FFN width
+# is refitted, so each stays in the parameter band.
+_PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
+for _k in ("local", "e31c", "e31c_loop"):
+    _a = ARCHES[_k]
+    ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
+                                 {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)
 
 # trainer argument → launcher env var (scripts/train_concept_pretraining_multigpu.sh)
 ENV_OF = {
