@@ -6,7 +6,7 @@ Plain words, every number with its meaning (research-comms). Update it whenever 
 """
 
 STATUS = {
-    "as_of": "2026-10-10 11:30 UTC",
+    "as_of": "2026-10-10 11:50 UTC",
     "headline": "First pass: on the new exams (every guessing rate below 10 %) the 30M dense model passes quote — "
                 "95 % at 4k against 8 % guessing — after 1.5B tokens. Finding a person's home (lookup, keyed) is "
                 "still at guessing, so the ladder goes on to 50M.",
@@ -21,12 +21,34 @@ STATUS = {
     ],
     "next": [
         "Running on Odra since 11:24 UTC: ladder step 2 — dense 50M (12 layers at width 576; step size 1e-3, the "
-        "best of three short tuning runs by held-out loss) for 1.5B tokens on v2; training ends about 15:00, "
-        "scores about 15:30 UTC.",
+        "best of three short tuning runs by held-out loss) for 1.5B tokens on v2; 12 % done at 11:48, training "
+        "ends about 15:00, scores about 15:30 UTC.",
         "Queued after it: dense 30M with a second seed on v2 (the protocol's rule: one seed is not a verdict), "
         "scores about 18:10 UTC.",
     ],
 }
+
+# The calibration ladder at a glance (spec §16.1): one row per run, newest last. Times UTC.
+LADDER = [
+    {"run": "30M round, four models", "model": "dense, no-memory control, E31c notebook, E33 loop · 30M",
+     "tokens": "0.6B (3,173 steps, 0.9 passes)", "exams": "v1 (guessing 6-50 %)",
+     "result": "Nothing: every model at guessing on every task at 4k.",
+     "when": "9 Oct 15:48 → 10 Oct 03:07", "state": "done"},
+    {"run": "Budget run", "model": "dense · 30M", "tokens": "1.5B (7,931 steps, 2.3 passes)",
+     "exams": "v1 (guessing 6-50 %)",
+     "result": "Lookup 47 % (25 %), latest 37 % (20 %), keyed 13 % (6 %), switched on at 0.6-0.9B tokens. No pass.",
+     "when": "10 Oct 05:50 → 08:16", "state": "done"},
+    {"run": "Step 1", "model": "dense · 30M", "tokens": "1.5B (7,888 steps, 1.5 passes)",
+     "exams": "v2 (guessing 4-9 %)",
+     "result": "Quote passes: 95 % (8 %), switched on at 0.75-1.1B tokens. Lookup and keyed at guessing; "
+               "latest 26 % at 1k only (9 %).",
+     "when": "10 Oct 08:17 → 10:52", "state": "done"},
+    {"run": "Step 2", "model": "dense · 50M (12 layers, width 576)", "tokens": "1.5B (7,888 steps, 1.5 passes)",
+     "exams": "v2 (guessing 4-9 %)", "result": "Capacity at equal tokens: does 50M learn lookup, keyed, latest?",
+     "when": "10 Oct 11:24 → ~15:30", "state": "running (12 % at 11:48)"},
+    {"run": "Step 1, second seed", "model": "dense · 30M, seed 1", "tokens": "1.5B", "exams": "v2 (guessing 4-9 %)",
+     "result": "Is quote-before-lookup a seed effect?", "when": "after step 2, ~18:10", "state": "queued"},
+]
 
 # Plain names for the architectures (first mention = name + what it is).
 NAMES = {

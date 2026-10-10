@@ -116,11 +116,21 @@ details[open] > summary { margin-bottom: 12px; }
     <h1>Text Capability Board</h1>
     <p class="small" id="asof"></p>
     <nav class="toc" aria-label="Sections">
-      <a href="#results">Results</a><a href="#length">Length</a><a href="#learning">Learning curves</a>
+      <a href="#ladder">Ladder</a><a href="#results">Results</a><a href="#length">Length</a><a href="#learning">Learning curves</a>
       <a href="#guide">Task guide</a><a href="#calibration">Calibration &amp; pipeline checks</a><a href="#sources">Sources</a>
     </nav>
     <div class="brief" id="brief"></div>
   </header>
+
+  <section id="ladder">
+    <div>
+      <h2>Calibration ladder at a glance</h2>
+      <p class="muted">The dense reference alone, growing the token budget and then the model, until it passes the gating tasks at
+        the 4k training length — only then can a round compare architectures. Times are UTC. Details of each finished run are
+        under Results.</p>
+    </div>
+    <div style="overflow-x:auto"><table id="ladderTable"></table></div>
+  </section>
 
   <section id="results">
     <div>
@@ -226,6 +236,16 @@ function header() {
   b.append(el("p", { class: "headline" }, D.status.headline),
     el("div", { class: "cols" }, el("div", {}, el("h3", {}, "Where we are"), ul(D.status.where)),
                                  el("div", {}, el("h3", {}, "What is next"), ul(D.status.next))));
+  const t = document.getElementById("ladderTable");
+  t.append(el("thead", {}, el("tr", {}, ...["Run", "Model", "Training tokens", "Exams", "What it learned (guessing rate)", "When", "State"]
+    .map(h => el("th", {}, h)))));
+  const tb = el("tbody");
+  for (const r of D.ladder || []) {
+    tb.append(el("tr", {}, el("td", { class: "model" }, el("div", { class: "nm" }, r.run)), el("td", {}, r.model),
+      el("td", {}, r.tokens), el("td", {}, r.exams), el("td", {}, r.result), el("td", { class: "num" }, r.when),
+      el("td", {}, r.state)));
+  }
+  t.append(tb);
 }
 
 // a score cell: pass / clearly above guessing / at guessing

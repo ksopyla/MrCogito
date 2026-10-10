@@ -26,7 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from analysis.text_board_notes import NAMES, ROUNDS, STATUS, SUPERSEDED  # noqa: E402
+from analysis.text_board_notes import LADDER, NAMES, ROUNDS, STATUS, SUPERSEDED  # noqa: E402
 from analysis.text_checks_scorecard import LEVEL, analyse  # noqa: E402
 from evaluation.text_checks import FRONTIER_TASKS, GATING_TASKS, PASS, TEXT_CHECKS_VERSION, TIERS  # noqa: E402
 
@@ -163,7 +163,7 @@ def main() -> int:
     superseded = [{"run": k, "note": v} for k, v in SUPERSEDED.items()]
     data = {
         "generated": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-        "version": TEXT_CHECKS_VERSION, "pass": PASS, "status": STATUS,
+        "version": TEXT_CHECKS_VERSION, "pass": PASS, "status": STATUS, "ladder": LADDER,
         "tasks": TASKS, "gating": list(GATING_TASKS), "levels": LEVEL, "guide": GUIDE,
         "rounds": rounds, "pipeline": pipeline, "tuning": tuning, "data_builds": data_builds, "superseded": superseded,
         "sources": [{"file": led["_file"], "run": led["_id"], "collected": led["collected"],
