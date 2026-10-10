@@ -26,7 +26,8 @@ from evaluation.text_checks import TEXT_CHECKS_VERSION  # noqa: E402
 
 _EXIT = re.compile(r"^EXIT (\S+) (\d+)")
 CARD_KEYS = ("job", "kind", "arch", "role", "tier", "params", "params_in_band", "lr", "tokens", "steps", "global_rows",
-             "mean_row_tokens", "n_gpus", "cap_gpu_hours", "seed", "data_version", "git_commit", "planned", "extra_env")
+             "mean_row_tokens", "n_gpus", "cap_gpu_hours", "seed", "data_version", "git_commit", "planned", "extra_env",
+             "lengths", "curve_fractions")
 
 
 def _thin(points: list, n: int = 60) -> list:

@@ -6,25 +6,22 @@ Plain words, every number with its meaning (research-comms). Update it whenever 
 """
 
 STATUS = {
-    "as_of": "2026-10-10 06:10 UTC",
-    "headline": "No model has learned any task yet, the dense reference included. The exams were rebuilt so every "
-                "guessing rate is below 10 %, and a calibration ladder now looks for the size and token budget at "
-                "which dense passes.",
+    "as_of": "2026-10-10 08:30 UTC",
+    "headline": "First learning: with 1.5B training tokens the dense reference finds whose fact is asked far above "
+                "guessing (lookup 47 % at 4k vs 25 %), but nothing reaches the 75 % pass mark yet. The exams were "
+                "rebuilt so every guessing rate is below 10 %, and the calibration ladder continues on them.",
     "where": [
-        "Exams v2 (10 Oct): more candidates per question — 12 signs, 12 homes, 11 places per person, 12 people in "
-        "the teacher chain, counts 0-10, and deduce now asks for a property among 12 — so guessing is 4-9 % "
-        "(v1: up to 50 %). The model-free audit finds no shortcut above the guessing rate.",
-        "30M round on v1 (9-10 Oct, Odra): four models, 600M tokens each, all at the guessing rate at 4k.",
-        "Dense is half-way: it uses the document (far less surprised by the right answer with the fact present) "
-        "but cannot yet tell whose fact it is, and none of the models copies a passage it has just read.",
+        "Dense 30M, 1.5B tokens, old exams (Odra, 10 Oct 05:50-08:16 UTC): lookup, latest and keyed climb well "
+        "above guessing from 0.6-0.9B tokens on; quote, compose, count and deduce stay at guessing.",
+        "Exams v2 (10 Oct): more candidates per question, so guessing is 4-9 % (v1: up to 50 %); the audit of all "
+        "29,400 questions finds no shortcut above the guessing rate (one known partial floor on latest).",
+        "30M round on v1 at 600M tokens (9-10 Oct): four models, all at the guessing rate at 4k.",
     ],
     "next": [
-        "Running on Odra since 10 Oct 05:50 UTC: dense 30M for 1.5B tokens on the v1 exams (training about 2.3 h, "
-        "then exams at 1k-4k and a five-point learning curve).",
-        "Building on Odra since 06:07 UTC: the v2 data (1.0B-token mix). Ladder step 1 — dense 30M for 1.5B "
-        "tokens on v2, learning curve every 10 % — starts by itself when both are done.",
-        "Then step 2: dense 50M on the same tokens (capacity or steps?), then 100M with more tokens; the "
-        "four-model round at the first budget where dense passes.",
+        "Running on Odra since 10 Oct 08:17 UTC: ladder step 1 on the v2 exams — dense 30M for 1.5B tokens "
+        "(training about 2.2 h, then exams at 1k-4k and a learning curve every 10 %; results about 11:00 UTC).",
+        "Then, by the ladder's rules: more tokens at 30M (the old-exam curve flattened as the step size decayed) "
+        "or dense 50M on the same tokens; the four-model round at the first budget where dense passes.",
     ],
 }
 
@@ -61,6 +58,25 @@ ROUNDS = {
             "short document the last move is often in its 256-token window. At 4k it falls to 5 %.",
             "The control's 19 % on picking one of sixteen homes at 4k (guessing 6 %) has the same cause: a third of the "
             "questions put the fact in the last tenth of the document, inside its window. Expected, not a skill.",
+        ],
+    },
+    "r2_budget_dense_odra.odra": {
+        "title": "Calibration ladder: dense 30M for 1.5B tokens (old exams, data v1)",
+        "where": "Odra · 3 × RTX 3090",
+        "dates": "10 Oct 2026 05:50 UTC → 08:16 UTC (training 2.2 h, exams 17 min)",
+        "verdict": "On the way, not passing: between 0.6B and 0.9B tokens dense learned to find whose fact is asked "
+                   "— lookup 47 % at 4k (guessing 25 %), latest 37 % (20 %), keyed 13 % (6 %). Nothing reaches the "
+                   "75 % pass mark; quote, compose, count and deduce stay at guessing.",
+        "observations": [
+            "The skill appears between steps 3,168 and 4,752 (0.6 → 0.9B tokens): lookup 25 → 46 % at 4k, then "
+            "flattens (48 %, 47 %) over the last 40 % of training, while the step size decays to zero.",
+            "Shorter documents are easier: lookup 64 % at 1k vs 47 % at 4k; latest 54 % vs 37 %; keyed 29 % vs 13 %.",
+            "With the fact removed it never answers (0 % on every retrieval task): the gains are reading, not guessing.",
+            "Graded pick (probability on the right candidate) tracks the same rise: lookup 0.24 → 0.52, latest "
+            "0.29 → 0.50 (guessing 0.25 and 0.20).",
+            "Quoting a 4-6 word sign is still at guessing at 4k (25 %; 34 % at 1k), and the copy probe still finds no "
+            "copying of a repeated passage (1.80 → 1.64 nats per token): it finds facts before it copies text.",
+            "Language keeps improving with tokens: held-out story loss 1.54 nats per token, down from 1.69 at 600M.",
         ],
     },
 }

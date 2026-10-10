@@ -133,7 +133,7 @@ def _round(led: dict) -> dict:
         "rows_per_step": any_train.get("global_rows"), "tokens_per_step":
             (any_train.get("global_rows") or 0) * (any_train.get("mean_row_tokens") or 0) or None,
         "steps": any_train.get("steps"), "cap_gpu_h": any_train.get("cap_gpu_hours"), "n_gpus": any_train.get("n_gpus"),
-        "lengths": list(t.eval_lengths) if t else [],
+        "lengths": (next(iter(evals.values()), {}).get("lengths") or (list(t.eval_lengths) if t else [])),
     }
     return {"id": led["_id"], "notes": ROUNDS.get(led["_id"], {}), "budget": budget, "models": models,
             "calibrated": calibrated, "collected": led.get("collected")}
