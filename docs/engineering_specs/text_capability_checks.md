@@ -545,8 +545,11 @@ guessing rate.
   guessing; latest above guessing at 1k only (26.5 % vs 9 %). Which retrieval task switches on first
   differs between v1 and v2 data (one seed each).
 - **Step 2, 50M dense on v2, 1.5B tokens** (mid tier: width 576, 12 layers; step size 1e-3 chosen by held-out
-  loss over 5e-4 / 1e-3 / 2e-3; Odra from 2026-10-10 11:24 UTC, about 117k tokens/s → 3.6 h).
-- **Step 1, second seed** (30M, seed 1), queued after step 2.
+  loss over 5e-4 / 1e-3 / 2e-3; Odra 2026-10-10 11:24–15:17 UTC, 117k tokens/s, training 3.4 h): lookup 19.5 %
+  and keyed 15 % at 4k (guessing 8 % and 6 %), rising slowly over the whole run; quote 0 % (the 30M model passed
+  it on the same data); nothing passes; story loss 1.49 (30M: 1.56). No run so far copies a repeated passage:
+  each seems to build its own task-specific retrieval, and which one switches on differs run to run.
+- **Step 1, second seed** (30M, seed 1; Odra from 2026-10-10 15:18 UTC).
 
 ## 17. Open decisions for the author
 1. **Main tier:** 100M parameters and 2B tokens, about one Polonez day (recommended), or 150M and 3B,
