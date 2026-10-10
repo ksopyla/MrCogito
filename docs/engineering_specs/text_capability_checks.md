@@ -483,6 +483,11 @@ Audit on a local build with the frozen tokenizer (4,200 items at 1k/4k, ID, hard
 - every shortcut sits at the guessing rate, except latest's known partial floor (a reader that tracks
   moves but ignores whose they are: 17–23 % vs 1/5);
 - no candidates share a first token, except the 64-person harder keyed split (79 %).
+The full audit of the Odra build (2026-10-10 07:54 UTC, all 29,400 frozen items at 1k–128k; report
+`docs/3_Evaluations_and_Baselines/text_audit/text-world-v2.md`) confirms it: rule reader 100 % in every cell,
+the same shortcut picture, first tokens shared only in harder keyed (82 %). Filler sentences that name
+the asked person near a cue word ("went to", "house") grow with length, as expected for renamed stories:
+count 4 % of items at 1k, 12 % at 4k, near all at 128k; they never change the template answer.
 Two fixes found by the audit: cut-off story sentences (no closing punctuation) are dropped, since one ran
 into the fact sentence after it; latest keeps 5 people, because 55 move sentences already make the 1k
 exam mostly facts. v0 and v1 stay byte-identical (3,420 records and documents compared).
