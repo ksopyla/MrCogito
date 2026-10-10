@@ -6,23 +6,23 @@ Plain words, every number with its meaning (research-comms). Update it whenever 
 """
 
 STATUS = {
-    "as_of": "2026-10-10 19:55 UTC",
-    "headline": "Retrieval switches on unreliably: of three dense runs on the new exams, one learned quote (30M, "
-                "seed 0), one learned lookup and keyed partly (50M), and one learned nothing (30M, seed 1). No run "
-                "copies text. Two diagnostics now test why: the input tables, and how little answer signal the "
-                "training documents carry.",
+    "as_of": "2026-10-10 21:10 UTC",
+    "headline": "The input layer was holding the models back: without the word-pair/triple tables, the 30M dense model "
+                "learned four tasks in 1.5B tokens — quote passes (86 % at 4k), lookup 39 %, keyed 35 %, latest 32 % "
+                "(guessing 6-9 %) — where the same model with the tables learned at most one. The architecture round "
+                "now runs on plain input, E33 first.",
     "where": [
-        "30M, seed 1, v2 (Odra, 10 Oct 15:18-17:54 UTC): every task at guessing after 1.5B tokens (latest 19 % at "
-        "1k only). Same model, data and tokens as seed 0, which passed quote at 95 %.",
-        "50M, v2 (11:24-15:17 UTC): lookup 19.5 % and keyed 15 % at 4k (guessing 8 % and 6 %), quote 0 %.",
+        "Dense 30M, plain input, v2 (Odra, 10 Oct 18:08-20:55 UTC): quote 86 %, lookup 39 %, keyed 35 %, latest 32 %, "
+        "count 19 % at 4k; compose and deduce at guessing; better language too (story loss 1.53 vs 1.56). One seed.",
+        "Dense 30M with the tables, same data and tokens: seed 0 passed quote only, seed 1 learned nothing. 50M with "
+        "the tables: lookup 19.5 %, keyed 15 %.",
         "Exams v2: guessing 4-9 % on every task; the audit finds no shortcut above it.",
     ],
     "next": [
-        "Running on Odra since 18:08 UTC: dense 30M with plain input (no word-pair/triple tables), 1.5B tokens on "
-        "v2; scores about 21:00 UTC.",
-        "Then, by the author's priority (10 Oct 19:45 UTC), the architecture round at 30M, 1.5B tokens on v2, exams "
-        "1k-16k: E33 loop first (about 6.6 h of training; scores about 05:00 UTC 11 Oct), then the several-questions "
-        "dense diagnostic (about 08:00), the E31c notebook (about 11:30) and the no-memory control (about 15:00).",
+        "Running on Odra since 21:00 UTC: E33 loop with plain input, 30M, 1.5B tokens (58k tokens/s, about 7.2 h); "
+        "scores about 05:45 UTC 11 Oct. The run with the tables was stopped after 2 minutes.",
+        "Then: dense plain input with a second seed (~08:30), E31c notebook plain (~12:00), no-memory control plain "
+        "(~15:30), dense plain on documents with 8 questions each (~18:15 UTC 11 Oct).",
     ],
 }
 
@@ -52,15 +52,22 @@ LADDER = [
     {"run": "Plain input", "model": "dense · 30M, no word-pair/triple tables", "tokens": "1.5B (7,888 steps)",
      "exams": "v2 (guessing 4-9 %)", "result": "Do the input tables delay retrieval?",
      "when": "10 Oct 18:08 → ~21:05", "state": "running"},
-    {"run": "Round: E33 loop", "model": "E31c notebook + reread loop · 30M", "tokens": "1.5B (7,888 steps)",
-     "exams": "v2, 1k-16k", "result": "Author's priority: does the loop retrieve what dense does not?",
-     "when": "after plain input, ~05:00 11 Oct", "state": "queued"},
-    {"run": "Several questions", "model": "dense · 30M", "tokens": "1.5B, documents with up to 8 questions",
-     "exams": "v2 (guessing 4-9 %)", "result": "Is one answer per document too little signal?",
-     "when": "after E33, ~08:00 11 Oct", "state": "queued (data building)"},
-    {"run": "Round: E31c, no-memory control", "model": "E31c notebook; local 256-token control · 30M",
+    {"run": "Plain input", "model": "dense · 30M, no word-pair/triple tables", "tokens": "1.5B (7,888 steps)",
+     "exams": "v2 (guessing 4-9 %)",
+     "result": "Quote passes 86 % (8 %); lookup 39 % (8 %), keyed 35 % (6 %), latest 32 % (9 %), count 19 % (9 %).",
+     "when": "10 Oct 18:08 → 20:55", "state": "done"},
+    {"run": "Round: E33 loop, plain", "model": "E31c notebook + reread loop · 30M, plain input",
+     "tokens": "1.5B (7,888 steps)", "exams": "v2, 1k-16k", "result": "Author's priority: does the loop add to dense?",
+     "when": "10 Oct 21:00 → ~05:45", "state": "running"},
+    {"run": "Plain input, second seed", "model": "dense · 30M, plain, seed 1", "tokens": "1.5B",
+     "exams": "v2 (guessing 4-9 %)", "result": "Confirms the input-layer finding?", "when": "~08:30 11 Oct",
+     "state": "queued"},
+    {"run": "Round: E31c, control (plain)", "model": "E31c notebook; local 256-token control · 30M, plain",
      "tokens": "1.5B each", "exams": "v2, 1k-16k", "result": "The rest of the architecture round.",
-     "when": "~11:30 and ~15:00 11 Oct", "state": "queued"},
+     "when": "~12:00 and ~15:30 11 Oct", "state": "queued"},
+    {"run": "Several questions (plain)", "model": "dense · 30M, plain", "tokens": "1.5B, documents with up to 8 questions",
+     "exams": "v2 (guessing 4-9 %)", "result": "Does more answer signal speed learning further?",
+     "when": "~18:15 11 Oct", "state": "queued (data built)"},
 ]
 
 # Plain names for the architectures (first mention = name + what it is).
@@ -174,6 +181,24 @@ ROUNDS = {
             "Language is the same as seed 0: held-out story loss 1.554 vs 1.556 nats per token, so the seeds differ "
             "in what they retrieve, not in how well they write.",
             "The copy probe finds no copying (1.79 → 1.58 nats per token).",
+        ],
+    },
+    "cal3a_plain30m_v2_odra.odra": {
+        "title": "Diagnostic: dense 30M without the word-pair/triple tables, 1.5B tokens (data v2)",
+        "where": "Odra · 3 × RTX 3090",
+        "dates": "10 Oct 2026 18:08 UTC → 20:55 UTC (training 2.3 h, exams 27 min)",
+        "verdict": "The tables were holding the model back: with plain input it learned four tasks — quote passes (86 % "
+                   "at 4k, guessing 8 %), lookup 39 % (8 %), keyed 35 % (6 %), latest 32 % (9 %) — where the same model "
+                   "with the tables learned at most one. One seed; a second is queued.",
+        "observations": [
+            "Quote switches on first (10 % → 74 % between 0.75B and 0.9B tokens), then lookup, keyed and latest climb "
+            "together from 1.05B tokens and are still rising at the end (lookup 27 → 38 → 39 %).",
+            "Shorter documents are easier: lookup 49.5 %, keyed 45 %, latest 49.5 % and quote 97.5 % at 1k.",
+            "With the fact removed it never answers (0 % on every retrieval task): it reads, it does not guess.",
+            "Count rises too (19 % at 4k vs 9 % guessing); composing two facts and chaining rules stay at guessing.",
+            "Language is better without the tables: held-out story loss 1.53 vs 1.56 nats per token, with the tables' "
+            "4.2M parameters moved into the feed-forward layers (width 1,472 vs 1,088).",
+            "The copy probe still finds no copying of a whole passage (1.72 → 1.49 nats per token), the largest drop so far.",
         ],
     },
 }

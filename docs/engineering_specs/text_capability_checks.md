@@ -552,9 +552,16 @@ guessing rate.
 - **Step 1, second seed** (30M, seed 1; Odra 2026-10-10 15:18–17:54 UTC): every task at guessing at 4k
   (latest 19 % at 1k only); seed 0 passed quote at 95 % on the same data and tokens. At 30M and 1.5B tokens,
   whether a retrieval skill switches on is a matter of the seed.
-- **Diagnostics** (Odra, from 2026-10-10 18:08 UTC), both dense 30M, 1.5B tokens, v2 exams, seed 0:
-  plain input (no word-pair/triple tables, no value embeddings; step size borrowed from dense), then training
-  documents with up to 8 questions each (`--train_questions 8`, data `text_checks_v2q8`, exams unchanged).
+- **Plain input** (dense 30M without the word-pair/triple hash tables and value embeddings, FFN refitted to
+  1,472; step size borrowed from dense; Odra 2026-10-10 18:08–20:55 UTC, seed 0): **quote passes** (86 % at 4k),
+  lookup 39 %, keyed 35 %, latest 32 %, count 19 % (guessing 6–9 %); compose and deduce at guessing; story
+  loss 1.53 (with the tables: 1.56). The same model with the tables learned at most one task (two seeds).
+  **Decision (2026-10-10):** the architecture round runs on plain input (`*_plain` arches); a second plain seed
+  confirms the finding. The tables came with E18/E31 from the DNA checks and were never chosen for text.
+- **Round on plain input** (Odra, from 2026-10-10 21:00 UTC, author's priority E33 first; all 30M, 1.5B tokens,
+  v2, exams 1k–16k): E33 loop, then dense plain seed 1, E31c, the no-memory control, then dense plain on
+  training documents with up to 8 questions each (`--train_questions 8`, data `text_checks_v2q8`, exams
+  unchanged, sha256 identical). An E33 run with the tables was stopped after 2 minutes.
 
 ## 17. Open decisions for the author
 1. **Main tier:** 100M parameters and 2B tokens, about one Polonez day (recommended), or 150M and 3B,
