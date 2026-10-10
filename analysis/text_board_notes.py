@@ -6,7 +6,7 @@ Plain words, every number with its meaning (research-comms). Update it whenever 
 """
 
 STATUS = {
-    "as_of": "2026-10-10 18:15 UTC",
+    "as_of": "2026-10-10 19:55 UTC",
     "headline": "Retrieval switches on unreliably: of three dense runs on the new exams, one learned quote (30M, "
                 "seed 0), one learned lookup and keyed partly (50M), and one learned nothing (30M, seed 1). No run "
                 "copies text. Two diagnostics now test why: the input tables, and how little answer signal the "
@@ -18,10 +18,11 @@ STATUS = {
         "Exams v2: guessing 4-9 % on every task; the audit finds no shortcut above it.",
     ],
     "next": [
-        "Running on Odra since 18:08 UTC: dense 30M with plain input (no word-pair/triple tables, no value "
-        "embeddings), 1.5B tokens on v2; scores about 21:05 UTC.",
-        "Building alongside: v2 training data with up to 8 questions per document (exams unchanged). Then dense "
-        "30M on it, 1.5B tokens; scores about 23:45 UTC.",
+        "Running on Odra since 18:08 UTC: dense 30M with plain input (no word-pair/triple tables), 1.5B tokens on "
+        "v2; scores about 21:00 UTC.",
+        "Then, by the author's priority (10 Oct 19:45 UTC), the architecture round at 30M, 1.5B tokens on v2, exams "
+        "1k-16k: E33 loop first (about 6.6 h of training; scores about 05:00 UTC 11 Oct), then the several-questions "
+        "dense diagnostic (about 08:00), the E31c notebook (about 11:30) and the no-memory control (about 15:00).",
     ],
 }
 
@@ -51,9 +52,15 @@ LADDER = [
     {"run": "Plain input", "model": "dense · 30M, no word-pair/triple tables", "tokens": "1.5B (7,888 steps)",
      "exams": "v2 (guessing 4-9 %)", "result": "Do the input tables delay retrieval?",
      "when": "10 Oct 18:08 → ~21:05", "state": "running"},
+    {"run": "Round: E33 loop", "model": "E31c notebook + reread loop · 30M", "tokens": "1.5B (7,888 steps)",
+     "exams": "v2, 1k-16k", "result": "Author's priority: does the loop retrieve what dense does not?",
+     "when": "after plain input, ~05:00 11 Oct", "state": "queued"},
     {"run": "Several questions", "model": "dense · 30M", "tokens": "1.5B, documents with up to 8 questions",
      "exams": "v2 (guessing 4-9 %)", "result": "Is one answer per document too little signal?",
-     "when": "after plain input, ~23:45", "state": "queued (data building)"},
+     "when": "after E33, ~08:00 11 Oct", "state": "queued (data building)"},
+    {"run": "Round: E31c, no-memory control", "model": "E31c notebook; local 256-token control · 30M",
+     "tokens": "1.5B each", "exams": "v2, 1k-16k", "result": "The rest of the architecture round.",
+     "when": "~11:30 and ~15:00 11 Oct", "state": "queued"},
 ]
 
 # Plain names for the architectures (first mention = name + what it is).
