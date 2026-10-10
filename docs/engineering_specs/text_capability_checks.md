@@ -549,7 +549,12 @@ guessing rate.
   and keyed 15 % at 4k (guessing 8 % and 6 %), rising slowly over the whole run; quote 0 % (the 30M model passed
   it on the same data); nothing passes; story loss 1.49 (30M: 1.56). No run so far copies a repeated passage:
   each seems to build its own task-specific retrieval, and which one switches on differs run to run.
-- **Step 1, second seed** (30M, seed 1; Odra from 2026-10-10 15:18 UTC).
+- **Step 1, second seed** (30M, seed 1; Odra 2026-10-10 15:18–17:54 UTC): every task at guessing at 4k
+  (latest 19 % at 1k only); seed 0 passed quote at 95 % on the same data and tokens. At 30M and 1.5B tokens,
+  whether a retrieval skill switches on is a matter of the seed.
+- **Diagnostics** (Odra, from 2026-10-10 18:08 UTC), both dense 30M, 1.5B tokens, v2 exams, seed 0:
+  plain input (no word-pair/triple tables, no value embeddings; step size borrowed from dense), then training
+  documents with up to 8 questions each (`--train_questions 8`, data `text_checks_v2q8`, exams unchanged).
 
 ## 17. Open decisions for the author
 1. **Main tier:** 100M parameters and 2B tokens, about one Polonez day (recommended), or 150M and 3B,

@@ -6,23 +6,22 @@ Plain words, every number with its meaning (research-comms). Update it whenever 
 """
 
 STATUS = {
-    "as_of": "2026-10-10 15:35 UTC",
-    "headline": "Each run switches on a different retrieval task, and none switches on general copying: the 30M model "
-                "learned quote (95 %), the 50M model learned lookup and keyed partly (20 % and 15 % at 4k vs 8 % and "
-                "6 %) but not quote. Bigger did not mean further. A second 30M seed is running.",
+    "as_of": "2026-10-10 18:15 UTC",
+    "headline": "Retrieval switches on unreliably: of three dense runs on the new exams, one learned quote (30M, "
+                "seed 0), one learned lookup and keyed partly (50M), and one learned nothing (30M, seed 1). No run "
+                "copies text. Two diagnostics now test why: the input tables, and how little answer signal the "
+                "training documents carry.",
     "where": [
-        "Ladder step 2, dense 50M, 1.5B tokens, exams v2 (Odra, 10 Oct 11:24-15:17 UTC): lookup 19.5 % and keyed "
-        "15 % at 4k, rising slowly over the whole run; quote 0 %; better language (story loss 1.49 vs 1.56 at 30M).",
-        "Ladder step 1, dense 30M, same data and tokens (08:17-10:52 UTC): quote passes (95 % vs 8 %); lookup and "
-        "keyed at guessing.",
-        "On the old exams the 30M model learned lookup (47 % vs 25 %) and not quote. No run copies a repeated "
-        "passage (copy probe), so each run seems to build its own task-specific retrieval rather than one copy skill.",
+        "30M, seed 1, v2 (Odra, 10 Oct 15:18-17:54 UTC): every task at guessing after 1.5B tokens (latest 19 % at "
+        "1k only). Same model, data and tokens as seed 0, which passed quote at 95 %.",
+        "50M, v2 (11:24-15:17 UTC): lookup 19.5 % and keyed 15 % at 4k (guessing 8 % and 6 %), quote 0 %.",
+        "Exams v2: guessing 4-9 % on every task; the audit finds no shortcut above it.",
     ],
     "next": [
-        "Running on Odra since 15:18 UTC: dense 30M with a second seed on v2 (same data and tokens), scores about "
-        "17:55 UTC — does quote switch on again, or something else?",
-        "Proposed next (author's call): the dense model without the word-pair/triple input tables, and training "
-        "documents with several questions each instead of one (answers are about 0.1 % of training tokens).",
+        "Running on Odra since 18:08 UTC: dense 30M with plain input (no word-pair/triple tables, no value "
+        "embeddings), 1.5B tokens on v2; scores about 21:05 UTC.",
+        "Building alongside: v2 training data with up to 8 questions per document (exams unchanged). Then dense "
+        "30M on it, 1.5B tokens; scores about 23:45 UTC.",
     ],
 }
 
@@ -46,8 +45,15 @@ LADDER = [
      "result": "Lookup 19.5 % (8 %), keyed 15 % (6 %), rising slowly; latest 25.5 % at 1k only; quote 0 %. No pass.",
      "when": "10 Oct 11:24 → 15:17", "state": "done"},
     {"run": "Step 1, second seed", "model": "dense · 30M, seed 1", "tokens": "1.5B (7,888 steps)",
-     "exams": "v2 (guessing 4-9 %)", "result": "Does the same model and data switch on the same task?",
-     "when": "10 Oct 15:18 → ~17:55", "state": "running"},
+     "exams": "v2 (guessing 4-9 %)",
+     "result": "Nothing: every task at guessing at 4k (seed 0 passed quote). Latest 19 % at 1k only.",
+     "when": "10 Oct 15:18 → 17:54", "state": "done"},
+    {"run": "Plain input", "model": "dense · 30M, no word-pair/triple tables", "tokens": "1.5B (7,888 steps)",
+     "exams": "v2 (guessing 4-9 %)", "result": "Do the input tables delay retrieval?",
+     "when": "10 Oct 18:08 → ~21:05", "state": "running"},
+    {"run": "Several questions", "model": "dense · 30M", "tokens": "1.5B, documents with up to 8 questions",
+     "exams": "v2 (guessing 4-9 %)", "result": "Is one answer per document too little signal?",
+     "when": "after plain input, ~23:45", "state": "queued (data building)"},
 ]
 
 # Plain names for the architectures (first mention = name + what it is).
@@ -141,6 +147,23 @@ ROUNDS = {
             "Language is better than at 30M: held-out story loss 1.49 vs 1.56 nats per token.",
             "The copy probe still finds no copying (1.82 → 1.64 nats per token).",
             "Step size 1e-3, chosen by held-out loss over 5e-4 (3.186) and 2e-3 (4.380): 3.014.",
+        ],
+    },
+    "cal1s1_dense30m_v2_odra.odra": {
+        "title": "Calibration ladder step 1, second seed: dense 30M for 1.5B tokens (data v2, seed 1)",
+        "where": "Odra · 3 × RTX 3090",
+        "dates": "10 Oct 2026 15:18 UTC → 17:54 UTC (training 2.2 h, exams 26 min)",
+        "verdict": "Nothing switched on: every task at the guessing rate at 4k. The same model, data and tokens with "
+                   "seed 0 passed quote at 95 %, so at 30M and 1.5B tokens learning a retrieval skill is a matter "
+                   "of luck.",
+        "observations": [
+            "Quote 0 % at every length; the right sign is no less surprising with the sign present (3.27 vs 3.28 "
+            "nats per token): no reading of signs at all.",
+            "Latest is the only signal: 19 % at 1k, 9 % at 2k, 7.5 % at 4k (guessing 9 %) — moves that sit close "
+            "to the question.",
+            "Language is the same as seed 0: held-out story loss 1.554 vs 1.556 nats per token, so the seeds differ "
+            "in what they retrieve, not in how well they write.",
+            "The copy probe finds no copying (1.79 → 1.58 nats per token).",
         ],
     },
 }
