@@ -52,6 +52,10 @@ class Tier:
 TIERS = {
     "screen": Tier("screen", 30e6, 0.6e9, 4096, 96, 8, 24.0, hidden=576, pre_layers=2, global_layers=1,
                    stack_layers=5),
+    # calibration ladder step 2 (spec §16.1, 2026-10-10): 50M, deeper rather than wider than the screen shape
+    # (12 layers at width 576 vs 8), the step-1 budget
+    "mid": Tier("mid", 50e6, 1.5e9, 4096, 96, 8, 40.0, hidden=576, pre_layers=2, global_layers=1,
+                stack_layers=9, tune_runs=3, tune_tokens=60e6),
     "main": Tier("main", 100e6, 2.0e9, 4096, 96, 4, 120.0, hidden=896, pre_layers=3, global_layers=1,
                  stack_layers=8, tune_runs=3, tune_tokens=100e6),
     # local pipeline-check tier (Apple M5 Max laptop, ~1 h per model): confirms the pipeline works and
@@ -191,7 +195,7 @@ DEFAULT_RECIPE = {
     "status": "prior (untuned)",
     "init": "trainer default: normal(0.02) projections, zero-init residual outputs (perceiver_ar)",
     "optimizer": "adam", "weight_decay": 0.1, "max_grad_norm": 1.0,
-    "lr": {"screen": 1e-3, "main": 6e-4, "smoke": 1e-3, "lab": 1e-3},
+    "lr": {"screen": 1e-3, "mid": 1e-3, "main": 6e-4, "smoke": 1e-3, "lab": 1e-3},
     "warmup_frac": 0.02, "scheduler": "cosine",
     "length_method": "none",
     "tuning": {},
