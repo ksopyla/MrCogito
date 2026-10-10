@@ -68,6 +68,8 @@ def build(run: Path, host: str) -> dict:
         row["state"] = job_state(d, exits)
         if (d / "active_seconds").exists():
             row["active_seconds"] = int((d / "active_seconds").read_text().strip() or 0)
+        if (d / "DONE").exists():
+            row["finished"] = datetime.fromtimestamp((d / "DONE").stat().st_mtime, timezone.utc).isoformat(timespec="minutes")
         res = d / "result.json"
         if res.exists():
             r = json.loads(res.read_text())
