@@ -19,7 +19,7 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
-TEXT_CHECKS_VERSION = "text-v0-draft"
+TEXT_CHECKS_VERSION = "text-v1-draft"   # v1: exams on text-world-v2 (every guessing rate < 10 %), 2026-10-10
 RECIPE_DIR = Path(__file__).resolve().parent / "text_checks_recipes"
 PASS = 0.75
 SHORTCUT_MARGIN = 0.10            # evidence-removed score must stay within floor + 10 points (or 2 SE)

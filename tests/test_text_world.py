@@ -204,3 +204,65 @@ def test_v1_training_documents_can_ask_several_cast_members():
     first_q = re.search(r"Question: (.*?)\n", one).group(1)
     assert qs[0][0] == first_q  # the asked person comes first
     assert make_train_document(11, STORIES, 300, ntok, questions=8, version="v0").count("Question:") == 1
+
+
+# ---------------------------------------------------------------- v2: every guessing rate below 10 %
+def rec2(task, seed=0, length=1500, depth=None, split="id"):
+    return make_eval_record(task, seed, split, length, depth, STORIES, ntok, version="v2")
+
+
+@pytest.mark.parametrize("split", ["id", "harder", "paraphrase"])
+def test_v2_every_guessing_rate_is_below_10_percent(split):
+    for task in TASKS:
+        r = rec2(task, 1, split=split)
+        assert r["floor"] < 0.10 and abs(r["floor"] - 1 / len(r["candidates"])) < 1e-9, (task, split, r["floor"])
+        assert r["answer"] in r["candidates"] and len(set(r["candidates"])) == len(r["candidates"])
+
+
+@pytest.mark.parametrize("task", TASKS)
+@pytest.mark.parametrize("split", ["id", "harder", "paraphrase"])
+def test_v2_rule_reader_recovers_every_answer(task, split):
+    for s in range(10):
+        r = rec2(task, s, split=split, depth="middle" if task in ("quote", "lookup", "keyed") else None)
+        got, _ = _audit(r)
+        assert got == r["answer"].strip(" ."), (task, split, s, got)
+
+
+@pytest.mark.parametrize("task", ["lookup", "keyed", "latest", "compose"])
+def test_v2_candidate_places_start_with_different_letters(task):
+    """The tokenizer's first token of an invented name is its capital letter: different letters make
+    the picked-candidate score decidable at the first token."""
+    for s in range(20):
+        firsts = [c.strip()[0] for c in rec2(task, s)["candidates"]]
+        assert len(set(firsts)) == len(firsts), (task, s, firsts)
+
+
+def test_v2_deduce_asks_for_the_property_of_one_chain_among_twelve():
+    from data.text_world import PROPERTIES_V2
+
+    r = rec2("deduce", 3)
+    assert r["prompt"].rstrip().endswith("like?\nAnswer:")
+    props = [c.strip(" .") for c in r["candidates"]]
+    assert len(props) == 12 and set(props) <= set(PROPERTIES_V2)
+    assert all(re.search(rf"Every \w+ is {p}\.", r["prompt"]) for p in props)  # every chain ends in its own property
+    assert not re.search(rf"Every \w+ is {props[0]}\.", r["prompt_removed"])
+
+
+@pytest.mark.parametrize("task", TASKS)
+def test_v2_shortcuts_stay_near_the_guessing_rate(task):
+    hits = {}
+    for s in range(60):
+        depth = ("early", "middle", "late")[s % 3] if task in ("quote", "lookup", "keyed") else None
+        r = rec2(task, s, length=1200, depth=depth)
+        for k, v in _audit(r)[1].items():
+            if v is not None:
+                hits.setdefault(k, []).append(v == r["answer"].strip(" ."))
+    floor = rec2(task, 0)["floor"]
+    for k, v in hits.items():
+        # latest's known partial floor: tracking moves but ignoring whose they are gives 1 in 5 people
+        allowed = 1 / 5 if (task, k) == ("latest", "busiest mover's last place (ignores the name)") else floor
+        assert sum(v) / len(v) <= allowed + 0.15, (task, k, sum(v) / len(v))
+
+
+def test_v2_count_answers_cover_zero_to_ten():
+    assert len({rec2("count", s, length=900)["answer"] for s in range(220)}) == 11

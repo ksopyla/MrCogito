@@ -39,6 +39,20 @@ Versions (every public function takes `version`; the default is the current one)
         fact, after a late one), so "first/last such sentence" is not a position cue;
       - places and signs in one document start with different syllables / words where the pool
         allows, so the picked-candidate score is decided by the first token.
+  v2  every exam's guessing rate below 10 % (author request 2026-10-10; v1 had 25 % on quote and
+      lookup, 20 % on latest, 12.5 % compose, 14 % count, 50 % deduce):
+      - more candidates: 12 signs (quote), 12 homes (lookup), 10 moves per person (latest: 11
+        places), 12 people in the teacher cycle (compose), counts 0-10 (count); keyed keeps 16;
+      - deduce asks for the property ("What is Lumo like?"), one rule chain per cast member, 12
+        chains ending in 12 different properties, instead of a yes/no question;
+      - candidate places start with different capital letters: the tokenizer splits an invented
+        name into its capital letter first (" L" "um" "o" "ford"), so v1's different first
+        syllables still shared the first token in 83 % of 12-place documents;
+      - filler sentences that do not end like a sentence are dropped (a cut-off story sentence ran
+        into the fact placed after it);
+      - known partial floor: latest keeps 5 people (55 move sentences fit the 1k exam), so a reader
+        that tracks moves but ignores whose they are scores 1 in 5; whose-fact reading is what
+        lookup and keyed test (12 and 16 candidates).
 
 Text-level only: no tokenizer here. Lengths are measured with a caller-supplied `ntok`
 (token counter) so the builder can target exact token lengths with the frozen tokenizer.
@@ -51,8 +65,8 @@ import zlib
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
-TEXT_WORLD_VERSION = "text-world-v1"
-VERSIONS = ("v0", "v1")
+TEXT_WORLD_VERSION = "text-world-v2"
+VERSIONS = ("v0", "v1", "v2")
 
 
 def _v(version: str) -> int:
@@ -80,6 +94,10 @@ SIGN_WORDS = ["blue", "frogs", "sing", "at", "noon", "big", "red", "boats", "sle
 VISIT_PLACES = ["the market", "the river", "the library", "the bakery", "the pond", "the mill"]
 NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six"]
 PROPERTIES = ["shiny", "soft", "loud", "cold", "tiny", "sweet", "fast", "brave"]
+# v2: counts 0-10 and 16 properties (each a single token of the frozen tokenizer, all first tokens distinct;
+# "four" and "five" share their first token " f", so count's picked-candidate score skips those items)
+NUMBER_WORDS_V2 = NUMBER_WORDS + ["seven", "eight", "nine", "ten"]
+PROPERTIES_V2 = PROPERTIES + ["sleepy", "funny", "quiet", "fluffy", "hungry", "heavy", "proud", "clever"]
 
 # Character names that TinyStories / SimpleStories use for their protagonists; occurrences in
 # filler stories are renamed to cast members, so a name alone never locates a fact.
@@ -103,6 +121,11 @@ _RESERVED_V1 = re.compile(
     _RESERVED.pattern[:-3] + r"|teach(?:er|ers|es)?|taught|lessons?|" + "|".join(PROPERTIES) + r")\b",
     re.IGNORECASE,
 )
+# v2: the larger property list
+_RESERVED_V2 = re.compile(
+    _RESERVED.pattern[:-3] + r"|teach(?:er|ers|es)?|taught|lessons?|" + "|".join(PROPERTIES_V2) + r")\b",
+    re.IGNORECASE,
+)
 
 TASKS = ("quote", "lookup", "keyed", "latest", "compose", "count", "deduce")
 LEVEL_OF = {"quote": "T1", "lookup": "T2", "keyed": "T3", "latest": "T4", "compose": "T5",
@@ -118,6 +141,16 @@ EVAL_DIALS = {"quote": {"signs": 4}, "lookup": {"cast": 4}, "keyed": {"cast": 16
 HARDER_DIALS = {"quote": {"signs": 16}, "lookup": {"cast": 4}, "keyed": {"cast": 64},
                 "latest": {"moves": 8, "cast": 8}, "compose": {"hops": 3, "cast": 8},
                 "count": {"cast": 8}, "deduce": {"depth": 3}}
+# v2: every exam's guessing rate (1 / candidates) below 10 %; training dials cover the exam dials
+ID_DIALS_V2 = {"quote": {"signs": (4, 16)}, "lookup": {"cast": (4, 16)}, "keyed": {"cast": (4, 16)},
+               "latest": {"moves": (2, 12), "cast": (3, 6)}, "compose": {"hops": (1, 2), "cast": (4, 16)},
+               "count": {"cast": (3, 6)}, "deduce": {"depth": (1, 2), "cast": (4, 16)}}
+EVAL_DIALS_V2 = {"quote": {"signs": 12}, "lookup": {"cast": 12}, "keyed": {"cast": 16},
+                 "latest": {"moves": 10, "cast": 5}, "compose": {"hops": 2, "cast": 12},
+                 "count": {"cast": 4}, "deduce": {"depth": 2, "cast": 12}}
+HARDER_DIALS_V2 = {"quote": {"signs": 24}, "lookup": {"cast": 16}, "keyed": {"cast": 64},
+                   "latest": {"moves": 16, "cast": 8}, "compose": {"hops": 3, "cast": 16},
+                   "count": {"cast": 8}, "deduce": {"depth": 3, "cast": 12}}
 
 # Sentence templates per relation. The last template of each relation is held out of training
 # (the "paraphrase" split); the others are used for training and the ID split.
@@ -158,6 +191,7 @@ QUESTIONS = {
     "teach3": "Where does the teacher of the teacher of the teacher of {p} live?",
     "count": "How many times did {p} visit {v}?",
     "deduce": "Is {p} {v}?",
+    "deduce2": "What is {p} like?",
 }
 
 
@@ -203,19 +237,31 @@ def sample_names(rng: random.Random, n: int, split: str, lookalike_frac: float =
     return out
 
 
-def sample_places(rng: random.Random, n: int, taken: Optional[set] = None, distinct_first: bool = False) -> list[str]:
+_LETTERS = sorted({s[0] for s in _SYLLABLES})  # 17 first letters
+
+
+def sample_places(rng: random.Random, n: int, taken: Optional[set] = None, distinct_first: bool = False,
+                  distinct_letters: int = 0) -> list[str]:
     """n distinct invented places. `distinct_first` (v1): different first syllables while the
-    syllable pool lasts, so candidates differ at their first token."""
+    syllable pool lasts. `distinct_letters` (v2): the first that many places start with different
+    letters (at most 17) — the tokenizer's first token of an invented name is its capital letter, so
+    this is what makes candidates differ at their first token."""
     taken = set() if taken is None else taken
     out: list[str] = []
     firsts: set = set()
+    letters: set = set()
+    want = min(distinct_letters, len(_LETTERS))
     while len(out) < n:
         place = (_make_name(rng, 2) + rng.choice(_PLACE_SUFFIXES)).capitalize()
         if distinct_first and len(firsts) < len(_SYLLABLES) and place[:2].lower() in firsts:
             continue
+        if len(out) < want and place[0] in letters:
+            continue
         if place not in taken:
             taken.add(place)
             firsts.add(place[:2].lower())
+            if len(out) < want:
+                letters.add(place[0])
             out.append(place)
     return out
 
@@ -225,6 +271,7 @@ def sample_places(rng: random.Random, n: int, taken: Optional[set] = None, disti
 # --------------------------------------------------------------------------------------------
 _SENT_SPLIT = re.compile(r"(?<=[.!?])\s+")
 _WORD = re.compile(r"\b[A-Z][a-z]+\b")
+_END = re.compile(r"[.!?][\"'”’)]*$")  # v2: filler sentences must end like a sentence
 
 
 def clean_story(text: str) -> str:
@@ -245,8 +292,11 @@ def renamed_filler(story: str, cast: list[str], rng: random.Random, version: str
         s = s.strip()
         if not s:
             continue
-        if (_RESERVED_V1 if _v(version) >= 1 else _RESERVED).search(s) and (cast_set & set(_WORD.findall(s)) or "?" in s):
+        reserved = _RESERVED_V2 if _v(version) >= 2 else _RESERVED_V1 if _v(version) >= 1 else _RESERVED
+        if reserved.search(s) and (cast_set & set(_WORD.findall(s)) or "?" in s):
             continue
+        if _v(version) >= 2 and not _END.search(s):
+            continue  # a cut-off story sentence would run into the fact sentence placed after it
         out.append(s)
     return out
 
@@ -286,19 +336,22 @@ def _tmpl(rng: random.Random, rel: str, split: str, **kw) -> str:
     return t.format(p2=_poss(p), **kw)
 
 
-def _dial(task: str, split: str, rng: random.Random, key: str) -> int:
+def _dial(task: str, split: str, rng: random.Random, key: str, version: str = "v1") -> int:
+    v2 = _v(version) >= 2
     if split == "harder":
-        return HARDER_DIALS[task][key]
+        return (HARDER_DIALS_V2 if v2 else HARDER_DIALS)[task][key]
     if split == "train":
-        lo, hi = ID_DIALS[task][key]
+        lo, hi = (ID_DIALS_V2 if v2 else ID_DIALS)[task][key]
         return rng.randint(lo, hi)
-    return EVAL_DIALS[task][key]
+    return (EVAL_DIALS_V2 if v2 else EVAL_DIALS)[task][key]
 
 
-def _latest_v1(rng, tsplit, k, n, cast) -> WorldItem:
+def _latest_v1(rng, tsplit, k, n, cast, letters: bool = False) -> WorldItem:
     """Everyone starts somewhere (first 15 %) and moves k times, all moves interleaved in the first
-    95 %; at least one other person moves after the asked person's last move."""
-    places = sample_places(rng, n * (k + 1), distinct_first=True)
+    95 %; at least one other person moves after the asked person's last move. `letters` (v2): the
+    asked person's places (the candidates) start with different letters."""
+    places = (sample_places(rng, n * (k + 1), distinct_letters=k + 1) if letters
+              else sample_places(rng, n * (k + 1), distinct_first=True))
     facts, target = [], places[: k + 1]
     last, qa = {}, []
     for i, c in enumerate(cast):
@@ -315,10 +368,10 @@ def _latest_v1(rng, tsplit, k, n, cast) -> WorldItem:
                      1.0 / (k + 1), facts, cast, meta={"moves": k}, qa=qa)
 
 
-def _compose_v1(rng, tsplit, hops, n, cast) -> WorldItem:
+def _compose_v1(rng, tsplit, hops, n, cast, letters: bool = False) -> WorldItem:
     """Teachers along one random cycle through the whole cast: hops < n never returns to the asked
     person, and every person heads a same-shaped decoy chain."""
-    places = sample_places(rng, n, distinct_first=True)
+    places = sample_places(rng, n, distinct_letters=n) if letters else sample_places(rng, n, distinct_first=True)
     order = list(range(n))
     rng.shuffle(order)
     teacher = {order[i]: order[(i + 1) % n] for i in range(n)}
@@ -343,9 +396,10 @@ def _compose_v1(rng, tsplit, hops, n, cast) -> WorldItem:
                      meta={"hops": hops}, qa=qa)
 
 
-def _count_v1(rng, tsplit, cast, where, k) -> WorldItem:
-    """Everyone visits the asked place 0-6 times and other places 0-2 times, so neither "all
-    visits to the place" nor "all visits by the person" gives the count."""
+def _count_v1(rng, tsplit, cast, where, k, numbers: tuple = tuple(NUMBER_WORDS)) -> WorldItem:
+    """Everyone visits the asked place 0-6 times (v2: 0-10) and other places 0-2 times, so neither
+    "all visits to the place" nor "all visits by the person" gives the count."""
+    NUMBER_WORDS = list(numbers)  # noqa: N806  (v2 passes the 0-10 list)
     others = [p for p in VISIT_PLACES if p != where]
     facts = [Fact(_tmpl(rng, "visit", tsplit, p=cast[0], v=where), evidence=True) for _ in range(k)]
     facts += [Fact(_tmpl(rng, "visit", tsplit, p=cast[0], v=rng.choice(others))) for _ in range(rng.randint(1, 2))]
@@ -359,13 +413,32 @@ def _count_v1(rng, tsplit, cast, where, k) -> WorldItem:
                      1.0 / len(NUMBER_WORDS), facts, cast, meta={"count": k}, qa=qa)
 
 
+def _deduce_v2(rng, depth, n, cast, cat_split) -> WorldItem:
+    """One rule chain per cast member ("Lumo is a wump. Every wump is a tove. Every tove is shiny."),
+    each ending in a different property; the question asks the asked person's property, so the
+    guessing rate is 1 / cast size and every other chain is a same-shaped decoy."""
+    props = rng.sample(PROPERTIES_V2, n)
+    cats = [w.lower() for w in sample_names(rng, n * depth, cat_split, taken=set(cast))]
+    facts, qa = [], []
+    for i, c in enumerate(cast):
+        chain = cats[i * depth:(i + 1) * depth]
+        ev = i == 0
+        facts.append(Fact(f"{c} is a {chain[0]}.", evidence=ev))
+        facts += [Fact(f"Every {a} is a {b}.", evidence=ev) for a, b in zip(chain, chain[1:])]
+        facts.append(Fact(f"Every {chain[-1]} is {props[i]}.", evidence=ev))
+        qa.append((QUESTIONS["deduce2"].format(p=c), props[i]))
+    return WorldItem("deduce", QUESTIONS["deduce2"].format(p=cast[0]), props[0], list(props), 1.0 / n, facts, cast,
+                     meta={"depth": depth}, qa=qa)
+
+
 def build_item(task: str, rng: random.Random, split: str = "train", version: str = TEXT_WORLD_VERSION) -> WorldItem:
     """One question about a fresh world. `split` ∈ train | id | harder | paraphrase."""
     v1 = _v(version) >= 1
+    v2 = _v(version) >= 2
     tsplit = "paraphrase" if split == "paraphrase" else ("train" if split == "train" else "id")
     names_split = "train" if split == "train" else "eval"
     if task == "quote":
-        n = _dial(task, split, rng, "signs")
+        n = _dial(task, split, rng, "signs", version)
         cast = sample_names(rng, n, names_split)
         signs = []
         for _ in range(n):
@@ -381,9 +454,9 @@ def build_item(task: str, rng: random.Random, split: str = "train", version: str
         return WorldItem(task, QUESTIONS["quote"].format(p=cast[0]), signs[0], signs, 1.0 / n, facts, cast, qa=qa)
 
     if task in ("lookup", "keyed"):
-        n = _dial(task, split, rng, "cast")
+        n = _dial(task, split, rng, "cast", version)
         cast = sample_names(rng, n, names_split, lookalike_frac=0.25 if task == "keyed" else 0.0)
-        places = sample_places(rng, n, distinct_first=v1)
+        places = sample_places(rng, n, distinct_letters=n) if v2 else sample_places(rng, n, distinct_first=v1)
         if task == "lookup" and not v1:
             # only the asked person's home is stated; the others get unrelated facts (jobs)
             facts = [Fact(_tmpl(rng, "home", tsplit, p=cast[0], v=places[0]), evidence=True)]
@@ -395,11 +468,11 @@ def build_item(task: str, rng: random.Random, split: str = "train", version: str
         return WorldItem(task, QUESTIONS[task].format(p=cast[0]), places[0], places, 1.0 / n, facts, cast, qa=qa)
 
     if task == "latest":
-        k = _dial(task, split, rng, "moves")
-        n = _dial(task, split, rng, "cast")
+        k = _dial(task, split, rng, "moves", version)
+        n = _dial(task, split, rng, "cast", version)
         cast = sample_names(rng, n, names_split)
         if v1:
-            return _latest_v1(rng, tsplit, k, n, cast)
+            return _latest_v1(rng, tsplit, k, n, cast, letters=v2)
         places = sample_places(rng, k + 1 + 2 * (n - 1))
         target = places[: k + 1]
         facts = [Fact(_tmpl(rng, "home", tsplit, p=cast[0], v=target[0]), evidence=True, order=0.02)]
@@ -416,11 +489,11 @@ def build_item(task: str, rng: random.Random, split: str = "train", version: str
                          1.0 / (k + 1), facts, cast, meta={"moves": k})
 
     if task == "compose":
-        hops = _dial(task, split, rng, "hops")
-        n = max(_dial(task, split, rng, "cast"), hops + 2)
+        hops = _dial(task, split, rng, "hops", version)
+        n = max(_dial(task, split, rng, "cast", version), hops + 2)
         cast = sample_names(rng, n, names_split)
         if v1:
-            return _compose_v1(rng, tsplit, hops, n, cast)
+            return _compose_v1(rng, tsplit, hops, n, cast, letters=v2)
         places = sample_places(rng, n)
         # every person has a sister (a random permutation without fixed points) and a home:
         # the asked chain is one of n same-shaped chains.
@@ -442,12 +515,13 @@ def build_item(task: str, rng: random.Random, split: str = "train", version: str
                          meta={"hops": hops})
 
     if task == "count":
-        n = _dial(task, split, rng, "cast")
+        n = _dial(task, split, rng, "cast", version)
         cast = sample_names(rng, n, names_split, lookalike_frac=0.3)
         where = rng.choice(VISIT_PLACES)
-        k = rng.randrange(len(NUMBER_WORDS))  # balanced answers 0..6
+        numbers = NUMBER_WORDS_V2 if v2 else NUMBER_WORDS
+        k = rng.randrange(len(numbers))  # balanced answers 0..6 (v2: 0..10)
         if v1:
-            return _count_v1(rng, tsplit, cast, where, k)
+            return _count_v1(rng, tsplit, cast, where, k, tuple(numbers))
         facts = [Fact(_tmpl(rng, "visit", tsplit, p=cast[0], v=where), evidence=True) for _ in range(k)]
         others = [p for p in VISIT_PLACES if p != where]
         facts += [Fact(_tmpl(rng, "visit", tsplit, p=cast[0], v=rng.choice(others))) for _ in range(rng.randint(1, 3))]
@@ -458,7 +532,11 @@ def build_item(task: str, rng: random.Random, split: str = "train", version: str
                          1.0 / len(NUMBER_WORDS), facts, cast, meta={"count": k})
 
     if task == "deduce":
-        depth = _dial(task, split, rng, "depth")
+        depth = _dial(task, split, rng, "depth", version)
+        if v2:
+            n = _dial(task, split, rng, "cast", version)
+            cast = sample_names(rng, n, names_split)
+            return _deduce_v2(rng, depth, n, cast, "train" if split == "train" else "eval")
         cast = sample_names(rng, 2, names_split)
         cats = [w.lower() for w in sample_names(rng, 2 * depth + 2, "train" if split == "train" else "eval")]
         prop = rng.choice(PROPERTIES)

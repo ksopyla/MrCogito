@@ -245,6 +245,10 @@ def plan_train_job(name: str, arch: str, tier: str, *, lr: float, tokens: float,
     args_model, n_params = fit_params(arch, tier)
     recipe = load_recipe(arch)
     jobdir = out / "jobs" / name
+    if (jobdir / "status.run").exists() or (jobdir / "DONE").exists():
+        # a started job keeps its script and card: bash reads a running script as it goes, and the card is
+        # the record of what ran (re-planning only the evaluation of a running round must not touch them)
+        return json.loads((jobdir / "job.json").read_text())
     exp_id = f"TEXTCHK-{out.name}-{name}"
     if mode == "local":
         cmd = " ".join(_q(c) for c in local_train_cmd(args_model, recipe, tier, lr=lr, steps=steps, data=data,
@@ -273,14 +277,17 @@ def plan_train_job(name: str, arch: str, tier: str, *, lr: float, tokens: float,
 
 
 def plan_eval_job(name: str, arch: str, tier: str, train_job: str, *, data: Path, out: Path, gpu: str, mode: str,
-                  steps: int) -> dict:
+                  steps: int, lengths: tuple | None = None, curve_fractions: tuple = CURVE_FRACTIONS) -> dict:
+    """`lengths`: exam lengths instead of the tier's (calibration runs score the training length and below;
+    the long-context ladder is for result rounds). `curve_fractions`: learning-curve checkpoints."""
     t = TIERS[tier]
     jobdir = out / "jobs" / name
     model_file = out / "jobs" / train_job / "model_path"
     dev = "" if mode == "local" else f"CUDA_VISIBLE_DEVICES={gpu} "
     device = ""  # the scorer picks cuda, then Apple mps, then cpu
-    lens = " ".join(str(x) for x in t.eval_lengths)
-    extra_lens = " ".join(str(x) for x in t.extra_lengths)
+    eval_lengths = tuple(lengths or t.eval_lengths)
+    lens = " ".join(str(x) for x in eval_lengths)
+    extra_lens = " ".join(str(x) for x in t.extra_lengths if x <= max(eval_lengths))
     cap = "--max_items_per_cell 3" if tier == "smoke" else ""
     ev = f"uv run python evaluation/text_checks_eval.py --tokenizer {_q(data / 'tokenizer')} {device} {cap}"
     # (output file, command): each final evaluation is skipped when its file exists (resumable)
@@ -293,14 +300,15 @@ def plan_eval_job(name: str, arch: str, tier: str, train_job: str, *, data: Path
     if ARCHES[arch].has_notebook:
         finals.append(("final_id_notebook_off.json",
                        f'{dev}{ev} --checkpoint "$MODEL" --items {_q(data / "eval" / "id.jsonl")} --lengths {t.seq_len} '
-                       f'{max(t.eval_lengths)} --message_override none --no_removed --out "$JOB/final_id_notebook_off.json"'))
+                       f'{max(eval_lengths)} --message_override none --no_removed --out "$JOB/final_id_notebook_off.json"'))
     cmds = [f'[ -f "$JOB/{f}" ] || {c} || {{ echo "EXIT {name} 1 ({f})"; exit 1; }}' for f, c in finals]
     # copy probe: can the model repeat text it has just read? (every task builds on it; diagnostic only)
     pdev = "mps" if mode == "local" else "cuda"
     cmds.append(f'[ -f "$JOB/copy_probe.txt" ] || {dev}uv run python scripts/probe_copy.py --checkpoint "$MODEL" '
                 f'--device {pdev} --gaps 0 100 1000 --text {_q(data)} > "$JOB/copy_probe.txt" 2>&1 || true')
-    # learning curve: the checkpoints nearest to 10/25/50/75 % of the steps, scored at the training length
-    curve = " ".join(str(max(1, round(f * steps))) for f in CURVE_FRACTIONS[:-1])
+    # learning curve: the checkpoints nearest to the curve fractions of the steps (default 10/25/50/75 %; the
+    # final model is the last point), scored at the training length
+    curve = " ".join(str(max(1, round(f * steps))) for f in curve_fractions if f < 1.0)
     model_sel = (f'TRAIN_ROOT=$(dirname "$(dirname "$MODEL")")\n'
                  f'CURVE=""\nfor s in {curve}; do\n'
                  f'  CK=$(ls -d "$TRAIN_ROOT"/*/checkpoint-* 2>/dev/null | awk -F- -v s=$s \'{{d=$NF-s; if(d<0)d=-d; print d" "$0}}\' | sort -n | head -1 | cut -d" " -f2-)\n'
@@ -313,7 +321,8 @@ def plan_eval_job(name: str, arch: str, tier: str, train_job: str, *, data: Path
                                              root=_q(ROOT), jobdir=_q(jobdir), model_file=_q(model_file),
                                              model_sel=model_sel, cmds="\n".join(cmds)))
     card = {"job": name, "kind": "eval", "arch": arch, "tier": tier, "train_job": train_job, "gpu": gpu,
-            "version": TEXT_CHECKS_VERSION, "lengths": list(t.eval_lengths), "git_commit": _git_commit()}
+            "version": TEXT_CHECKS_VERSION, "lengths": list(eval_lengths), "curve_fractions": list(curve_fractions),
+            "git_commit": _git_commit()}
     (jobdir / "job.json").write_text(json.dumps(card, indent=2))
     return card
 
@@ -436,7 +445,8 @@ def cmd_plan(a):
             trains.append(name)
             g = gpus[i % len(gpus)]
             jobs.append(plan_eval_job(f"eval_{arch}", arch, a.tier, name, data=data, out=out, gpu=g, mode=a.mode,
-                                      steps=card["steps"]))
+                                      steps=card["steps"], lengths=tuple(a.eval_lengths or ()) or None,
+                                      curve_fractions=tuple(a.curve_fractions or CURVE_FRACTIONS)))
             evals[f"gpu{g}"].append(f"eval_{arch}")
         evals = {q: j for q, j in evals.items() if j}
         if a.phase == "train":
@@ -516,6 +526,10 @@ def main():
     pl.add_argument("--extra_env", nargs="*", default=[], help="KEY=VALUE launcher overrides (recorded in job.json)")
     pl.add_argument("--data_tokens", type=float, default=0, help="data phase: training-mix size in tokens")
     pl.add_argument("--tokens", type=float, default=0, help="train phase: token budget instead of the tier's (record why)")
+    pl.add_argument("--eval_lengths", type=int, nargs="*", default=None,
+                    help="exam lengths instead of the tier's (calibration runs: the training length and below)")
+    pl.add_argument("--curve_fractions", type=float, nargs="*", default=None,
+                    help="learning-curve points as fractions of the steps (default 0.1 0.25 0.5 0.75 1)")
     pl.add_argument("--num_proc", type=int, default=16, help="data phase: generator processes")
     pl.add_argument("--burst_hours", type=float, default=6.0,
                     help="pause a training job at its first checkpoint after this many hours (0 = never)")

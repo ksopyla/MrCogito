@@ -10,6 +10,8 @@ One forward pass per item over  BOS + prompt + answer  (teacher forcing):
   pick     the candidate whose FIRST token is most probable at the answer position; counted right
            only when the gold candidate's first token wins and no other candidate shares it
            (shared first tokens are reported as `pick_ambiguous`);
+  pick_prob  the gold candidate's share of the probability over the candidates' first tokens (graded
+           pick; guessing gives 1 / candidates) — moves before `exact` does, so calibration runs read it;
   removed  `exact` on the evidence-removed twin — must sit at the guessing floor.
 
   uv run python evaluation/text_checks_eval.py --checkpoint <run>/final \
@@ -66,8 +68,14 @@ def score_prompt(model, tok, prompt: str, answer: str, candidates: list[str], de
     ambiguous = firsts.count(gold_first) > 1
     # one candidate (the single-fact lookup) has no pick to make: reported as None, not 100 %
     pick = None if len(candidates) < 2 else bool(best == gold_first and not ambiguous)
+    # graded pick (calibration signal before exact/pick move): the gold candidate's share of the probability
+    # over the candidates' first tokens — guessing gives 1 / candidates; None when the gold first token is shared
+    pick_prob = None
+    if len(candidates) >= 2 and not ambiguous and gold_first in uniq:
+        share = torch.softmax(probs[torch.tensor(uniq, device=probs.device)], -1)
+        pick_prob = float(share[uniq.index(gold_first)])
     return {"exact": bool(exact), "pick": pick, "pick_ambiguous": bool(ambiguous), "n_tokens": ids.shape[1],
-            "answer_nll": answer_nll}
+            "answer_nll": answer_nll, "pick_prob": pick_prob}
 
 
 @torch.no_grad()
@@ -101,7 +109,8 @@ def summarize(rows: list[dict]) -> list[dict]:
         out.append({
             "split": split, "task": task, "level": rs[0]["level"], "length": length, "n": n,
             "exact": acc, "exact_se": math.sqrt(acc * (1 - acc) / n) if acc is not None and n else None,
-            "pick": mean("pick"), "pick_ambiguous": mean("pick_ambiguous"), "answer_nll": mean("answer_nll"),
+            "pick": mean("pick"), "pick_ambiguous": mean("pick_ambiguous"), "pick_prob": mean("pick_prob"),
+            "answer_nll": mean("answer_nll"),
             "removed_answer_nll": mean("removed_answer_nll"),
             "removed_exact": mean("removed_exact"), "floor": mean("floor"),
             "by_depth": {d: sum(r["exact"] for r in rs if r["depth"] == d) / max(1, sum(1 for r in rs if r["depth"] == d))
@@ -197,12 +206,13 @@ def main():
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w") as fh:
         json.dump(res, fh, indent=1)
-    print(f"{'split':<10} {'task':<8} {'len':>6} {'n':>4} {'exact':>6} {'pick':>6} {'removed':>7} {'floor':>6} "
+    print(f"{'split':<10} {'task':<8} {'len':>6} {'n':>4} {'exact':>6} {'pick':>6} {'p_pick':>6} {'removed':>7} {'floor':>6} "
           f"{'ans_nll':>7} {'rm_nll':>7}")
     for c in summary:
         f = lambda v: "  -  " if v is None else f"{v:6.2f}"  # noqa: E731
         print(f"{c['split']:<10} {c['task']:<8} {c['length']:>6} {c['n']:>4} {f(c['exact'])} {f(c['pick'])} "
-              f"{f(c['removed_exact']):>7} {f(c['floor'])} {f(c['answer_nll']):>7} {f(c['removed_answer_nll']):>7}")
+              f"{f(c['pick_prob'])} {f(c['removed_exact']):>7} {f(c['floor'])} {f(c['answer_nll']):>7} "
+              f"{f(c['removed_answer_nll']):>7}")
     if story_loss is not None:
         print(f"held-out story loss: {story_loss:.4f} (next-token cross-entropy per token, lower is better)")
     print(f"scored {len(rows)} items in {res['seconds']}s → {args.out}")

@@ -29,7 +29,10 @@ from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data.text_world import NUMBER_WORDS, PROPERTIES, TEMPLATES, VISIT_PLACES  # noqa: E402
+# v2 lists extend the v1 ones (counts 0-10, 16 properties), so they read every version
+from data.text_world import NUMBER_WORDS_V2 as NUMBER_WORDS  # noqa: E402
+from data.text_world import PROPERTIES_V2 as PROPERTIES  # noqa: E402
+from data.text_world import TEMPLATES, VISIT_PLACES  # noqa: E402
 
 NAME = r"[A-Z][a-z]+"
 _SENT = re.compile(r"(?<=[.!?])\s+|(?<=[.!?][\"'])\s+")  # facts may follow a closing quote: '…!" Lumo lived in X.'
@@ -68,6 +71,33 @@ _Q = {
     "deduce": re.compile(rf"Is ({NAME}) ({'|'.join(PROPERTIES)})\?"),
 }
 _Q["keyed"] = _Q["lookup"]
+_LIKE = re.compile(rf"What is ({NAME}) like\?")  # v2 deduce: the answer is the property itself
+
+
+def _deduce_like(sents: list[str], name: str) -> str | None:
+    isa = {a: b for s in sents for a, b in _IS_A.findall(s)}
+    up = {a: b for s in sents for a, b in _EVERY_A.findall(s)}
+    prop = {c: p for s in sents for c, neg, p in _EVERY_P.findall(s) if not neg}
+    c, guard = isa.get(name), 0
+    while c is not None and c not in prop and guard < 10:
+        c, guard = up.get(c), guard + 1
+    return prop.get(c) if c is not None else None
+
+
+def _like_shortcuts(sents: list[str], name: str) -> dict[str, str | None]:
+    rules = [(i, p) for i, s in enumerate(sents) for c, neg, p in _EVERY_P.findall(s) if not neg]
+    own = [i for i, s in enumerate(sents) if _IS_A.fullmatch(s) and s.startswith(name + " ")]
+    out: dict[str, str | None] = {
+        "first property rule": rules[0][1] if rules else None,
+        "last property rule": rules[-1][1] if rules else None,
+        "property rule nearest the person's sentence": min(rules, key=lambda r: abs(r[0] - own[0]))[1]
+        if rules and own else None,
+    }
+    direct = [s for s in sents if name in s and not s.startswith("Every") and not _IS_A.fullmatch(s)
+              and any(re.search(rf"\b{w}\b", s, re.I) for w in PROPERTIES)]
+    out["filler says it directly"] = (next(w for w in PROPERTIES if re.search(rf"\b{w}\b", direct[-1], re.I))
+                                      if direct else None)
+    return out
 
 
 def split_doc(prompt: str) -> tuple[list[str], str]:
@@ -88,6 +118,8 @@ def parse(sents: list[str]) -> list[tuple[int, str, dict]]:
 
 
 def rule_reader(task: str, sents: list[str], q: str) -> str | None:
+    if task == "deduce" and _LIKE.fullmatch(q):
+        return _deduce_like(sents, _LIKE.fullmatch(q)[1])
     facts = parse(sents)
     m = _Q[task].fullmatch(q)
     if not m:
@@ -129,6 +161,8 @@ def rule_reader(task: str, sents: list[str], q: str) -> str | None:
 
 def shortcuts(task: str, sents: list[str], q: str) -> dict[str, str | None]:
     """Readers that skip part of the skill. Their accuracy must sit near the floor."""
+    if task == "deduce" and _LIKE.fullmatch(q):
+        return _like_shortcuts(sents, _LIKE.fullmatch(q)[1])
     facts = parse(sents)
     m = _Q[task].fullmatch(q)
     places = [w for s in sents for w in _PLACE.findall(s)]
@@ -155,6 +189,8 @@ def shortcuts(task: str, sents: list[str], q: str) -> dict[str, str | None]:
             if r in ("home", "move"):
                 per[f["p"]].append(f["v"])
         busiest = max(per.values(), key=len) if per else []
+        # v0: the asked person moved most, so this found the answer; v1+: everyone moves equally often, so it
+        # takes the first-mentioned person (1 in cast size: recency without whose fact)
         out["busiest mover's last place (ignores the name)"] = busiest[-1] if busiest else None
         if m:
             seq = per.get(m[1], [])
@@ -175,8 +211,8 @@ def shortcuts(task: str, sents: list[str], q: str) -> dict[str, str | None]:
     elif task == "count" and m:
         allv = sum(1 for _, r, f in facts if r == "visit" and f["v"] == m[2])
         named = sum(1 for _, r, f in facts if r == "visit" and f["p"] == m[1])
-        out["all visits to the place (ignores the name)"] = NUMBER_WORDS[allv] if allv < 7 else None
-        out["all visits by the person (ignores the place)"] = NUMBER_WORDS[named] if named < 7 else None
+        out["all visits to the place (ignores the name)"] = NUMBER_WORDS[allv] if allv < len(NUMBER_WORDS) else None
+        out["all visits by the person (ignores the place)"] = NUMBER_WORDS[named] if named < len(NUMBER_WORDS) else None
     elif task == "deduce" and m:
         rules = [(c, neg == "") for s in sents for c, neg, p in _EVERY_P.findall(s) if p == m[2]]
         out["first property rule"] = ("yes" if rules[0][1] else "no") if rules else None
@@ -193,6 +229,11 @@ def shortcuts(task: str, sents: list[str], q: str) -> dict[str, str | None]:
 
 def contamination(task: str, sents: list[str], q: str) -> int:
     """Filler sentences (not template facts) about the asked person that touch what is asked."""
+    if task == "deduce" and _LIKE.fullmatch(q):
+        name = _LIKE.fullmatch(q)[1]
+        cue = re.compile(rf"\b({'|'.join(PROPERTIES)})\b", re.I)
+        isa = {i for i, s in enumerate(sents) if _IS_A.fullmatch(s) or s.startswith("Every ")}
+        return sum(1 for i, s in enumerate(sents) if i not in isa and name in s and cue.search(s))
     m = _Q[task].fullmatch(q)
     if not m:
         return 0
