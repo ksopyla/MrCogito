@@ -145,8 +145,9 @@ details[open] > summary { margin-bottom: 12px; }
   <section id="learning">
     <div>
       <h2>Learning curves: when does each skill appear?</h2>
-      <p class="muted">Score at the training length on checkpoints at 10, 25, 50, 75 and 100 % of the training tokens, and the
-        held-out loss of the training mix (lower is better).</p>
+      <p class="muted">Score at the training length on checkpoints saved along training (result rounds: 10, 25, 50, 75
+        and 100 % of the training tokens; calibration runs: every 10 or 20 %), and the held-out loss of the training mix
+        (lower is better).</p>
     </div>
     <div class="multiples" id="learnbox"></div>
   </section>
@@ -311,7 +312,7 @@ function roundBlock(r) {
     tb.append(tr);
   }
   tt.append(tb);
-  box.append(el("div", {}, el("h3", { class: "small", style: "margin-bottom:6px" }, `TASKS · exact answers at the ${fmtLen(L0)} training length; small line: at ${Lmax ? fmtLen(Lmax) : "–"}`),
+  box.append(el("div", {}, el("h3", { class: "small", style: "margin-bottom:6px" }, `TASKS · exact answers at the ${fmtLen(L0)} training length` + (Lmax && Lmax > L0 ? `; small line: at ${fmtLen(Lmax)}` : "")),
     el("div", { class: "tablebox" }, tt),
     el("div", { class: "legend", style: "margin-top:8px" },
       el("span", {}, el("i", { style: "box-shadow: inset 0 0 0 2px var(--good)" }), "pass (75 % or more)"),
