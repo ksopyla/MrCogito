@@ -514,6 +514,82 @@ def jobs(phase: str) -> list[dict]:
             run("C5.pchain2-1k", short, ["--key_len", "8", "--seq_len", "256"]),
             run("C5.pchain2-1k", "cal4_pchain2hc_k8_256_to_1k_x4_dense_s0", ["--key_len", "8"], init=short),
         ]
+    if phase == "calibrate_c5_r5":
+        # Round 5 (2026-10-07): the combination round 4 left out. E33 reasoning diagnostics: every model needs the
+        # 1-hop stage first, and short names. Dense, seed 0, from random init, one written run per arm:
+        # 1 hop (4x) → 2 hops (16x), 4- / 8-letter names, with or without half the rows kept at 1 hop.
+        x16 = ["--steps", "19200", "--k1_mult", "1"]
+
+        def run(task_id, name, extra, init=None):
+            j = task_job(task_id, "dense", 0, prefix="cal5")
+            j["name"], j["init"], j["args"], j["cost"] = name, init, j["args"] + extra, 1.6
+            return j
+
+        out = []
+        for k in (4, 8):
+            edge = f"cal5_edgehc_k{k}_dense_s0"
+            out += [run("C5.pchain2-1k", edge, ["--key_len", str(k), "--hops", "1"]),
+                    run("C5.pchain2-1k", f"cal5_edgehc_k{k}_to_pchain2hc_k{k}_x16_dense_s0",
+                        [*x16, "--key_len", str(k)], init=edge),
+                    run("C5.pchain2-1k", f"cal5_edgehc_k{k}_to_pchain2mix_k{k}_x16_dense_s0",
+                        [*x16, "--key_len", str(k), "--replay_recipe", "chain_parallel", "--replay_hops", "1",
+                         "--replay_frac", "0.5"], init=edge)]
+        return out
+    if phase in ("confirm_c5_path", "confirm_c5_path3", "calibrate_c5_path3"):
+        # C5 recipe B, built from the task definitions + their written curriculum, dense from random init.
+        from evaluation.capability_tasks import TRAIN_1K_X4
+
+        def curriculum(task_id, seed, prefix):
+            hops = int(task_id.split("path")[1].split("-")[0])
+            out, prev = [], None
+            for k in range(1, hops + 1):
+                j = task_job(task_id, "dense", seed, prefix=prefix)
+                j["name"] = f"{prefix}_{task_id.replace('.', '_')}_h{k}_dense_s{seed}"
+                j["args"] = j["args"] + ["--hops", str(k)]
+                if k == 1:
+                    j["args"] += list(TRAIN_1K_X4)
+                else:
+                    j["args"] += ["--replay_recipe", "chain_parallel", "--replay_hops", str(k - 1),
+                                  "--replay_frac", "0.5"]
+                j["init"], prev = prev, j["name"]
+                out.append(j)
+            return out
+
+        if phase == "confirm_c5_path":
+            return [j for s in (0, 1, 2) for j in curriculum("C5.path2-1k", s, "confp")]
+        if phase == "confirm_c5_path3":
+            return [j for s in (0, 1, 2) for j in curriculum("C5.path3-1k", s, "confp")]
+        return curriculum("C5.path3-1k", 0, "cal6")
+    if phase == "calibrate_c5_r5b":
+        # Recipe B (intermediate nodes supervised) for dense: the answer is the written path n1 … nk
+        # (`--chain_answer_path`; the picked candidate reads the final node). 8-letter names, from random init:
+        # 1 hop (4x) → 2 hops (16x) with half the rows at 1 hop (replay rows inherit the path answer).
+        x16 = ["--steps", "19200", "--k1_mult", "1"]
+        path = ["--key_len", "8", "--chain_answer_path"]
+        edge = "cal5b_edgehc_k8_path_dense_s0"
+        j1 = task_job("C5.pchain2-1k", "dense", 0, prefix="cal5b")
+        j1["name"], j1["args"] = edge, j1["args"] + [*path, "--hops", "1"]
+        j2 = task_job("C5.pchain2-1k", "dense", 0, prefix="cal5b")
+        j2["name"], j2["init"] = "cal5b_edgehc_k8_path_to_pchain2path_mix_k8_x16_dense_s0", edge
+        j2["args"] = j2["args"] + [*x16, *path, "--replay_recipe", "chain_parallel", "--replay_hops", "1",
+                                   "--replay_frac", "0.5"]
+        return [j1, j2]
+    if phase == "calibrate_c5_deep_a":
+        # Rule 5 learnability check for recipe A (C5.pchain2, final answer only): 8-layer dense, from random init,
+        # the same schedule the E33 loop learned it with (2026-10-07): 8-letter names, 1 hop (4x) → 2 hops (16x)
+        # with half the rows at 1 hop. The default early stop (teacher-forced 99 %) cannot fire on a wrong pick:
+        # with one 8-letter answer a wrong node caps it near 7/8.
+        from evaluation.capability_tasks import TRAIN_1K_X4
+        deep = ["--stack_layers", "6", "--max_params", "80000000", "--key_len", "8"]
+        edge = "cal7_C5_pchain2-1k_h1_dense8_s0"
+        j1 = task_job("C5.pchain2-1k", "dense", 0, prefix="cal7")
+        j1["name"], j1["args"] = edge, j1["args"] + deep + ["--hops", "1", *TRAIN_1K_X4]
+        j2 = task_job("C5.pchain2-1k", "dense", 0, prefix="cal7")
+        j2["name"], j2["init"] = "cal7_C5_pchain2-1k_h2_dense8_s0", edge
+        j2["args"] = j2["args"] + deep + ["--steps", "19200", "--k1_mult", "1", "--replay_recipe", "chain_parallel",
+                                          "--replay_hops", "1", "--replay_frac", "0.5"]
+        j1["cost"] = j2["cost"] = 2.5
+        return [j1, j2]
     if phase == "calibrate_c5_deep":
         # Author's decision 2026-10-06: if the 4-layer dense control cannot learn C5, an 8-layer dense model
         # (learnability check only) decides whether the task is learnable. Same exam and budgets as round 3/4.

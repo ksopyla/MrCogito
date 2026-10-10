@@ -1,0 +1,14 @@
+{
+ "schema": 1,
+ "kind": "study",
+ "name": "calibrate_c5_r5",
+ "host": "odra",
+ "source_path": "/home/ksopyla/dev/MrCogito-tracking/Cache/study/calibrate_c5_r5",
+ "archive_path": "/nas/ml_data/mrcogito/results/study/calibrate_c5_r5.odra",
+ "collected": "2026-10-07",
+ "git": ["7892dcc40865979653647ea865bd872f4c6d9c8a"],
+ "jobs": [
+  {"name":"cal5_edgehc_k4_dense_s0","status":"done","phase":"calibrate_c5_r5","args":["--seq_len","1024","--steps","4800","--k1_mult","4","--batch","32","--lr","1e-4","--eval_rows","256","--recipe","chain_parallel","--scale","bridge_1k","--hops","2","--chain_overhang","1","--key_len","16","--hop_count_in_question","--arch","dense","--seed","0","--key_len","4","--hops","1"],"init":null,"results":{"dense":{"acc":0.45312,"acc_se":0.01623,"p0":0.48047,"ppa":[0.4805,0.4023,0.4961,0.4336],"bits":1.478,"prize_bits":8.0,"flow":0.1848,"best_acc":0.47852,"extended":false,"step":19200,"examples_to_75":null,"sec_per_step":0.2533,"tokens_per_sec":129364.4,"params":31176812,"cand":0.15811,"exact":0.05469,"first_greedy":0.48047,"guess_floor":{"link_target_first":0.39583,"link_target_exact":0.12702,"chain_end_exact":0.0,"rows":256}}},"ladders":{}},
+  {"name":"cal5_edgehc_k4_to_pchain2hc_k4_x16_dense_s0","status":"running","phase":"calibrate_c5_r5","args":["--seq_len","1024","--steps","4800","--k1_mult","4","--batch","32","--lr","1e-4","--eval_rows","256","--recipe","chain_parallel","--scale","bridge_1k","--hops","2","--chain_overhang","1","--key_len","16","--hop_count_in_question","--arch","dense","--seed","0","--steps","19200","--k1_mult","1","--key_len","4"],"init":"cal5_edgehc_k4_dense_s0","results":{},"ladders":{}}
+ ]
+}

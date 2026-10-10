@@ -177,6 +177,8 @@ class PerceiverARConfig(PretrainedConfig):
         message_loop_inject: str = "none",  # E33a — "prelude": add the prelude output back each loop (gated)
         message_loop_exit_aux: float = 0.0,  # E33a — weight of each non-final loop exit's CE
         message_loop_exit_targets: str = "progress",  # E33a — "progress" (round targets) | "answer" (labels)
+        message_loop_name_aux: float = 0.0,  # E33 — weight: each loop state names its whole node at the decision position
+        message_loop_name_len: int = 0,  # E33 — letters per node name for the name head (the chain's key_len)
         message_update_slot_kv: bool = False,  # E21 — rewrite exclusive slot K/V between extra hops
         message_global_anchors: str = "none",  # E21 — sparse raw keys joining exclusive slot K/V
         message_anchor_token_ids: tuple[int, ...] = (),  # type-mark / keymark ids
@@ -278,6 +280,8 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_loop_inject = str(message_loop_inject or "none")
         self.message_loop_exit_aux = float(message_loop_exit_aux)
         self.message_loop_exit_targets = str(message_loop_exit_targets or "progress")
+        self.message_loop_name_aux = float(message_loop_name_aux)
+        self.message_loop_name_len = int(message_loop_name_len)
         self.message_update_slot_kv = bool(message_update_slot_kv)
         self.message_global_anchors = str(message_global_anchors or "none")
         self.message_anchor_token_ids = tuple(int(x) for x in (message_anchor_token_ids or ()))
@@ -2034,6 +2038,17 @@ class PerceiverARLM(PreTrainedModel):
             if self.loop_rounds > 1 and getattr(cfg, "message_loop_inject", "none") == "prelude" else None
         )
         self._loop_rounds_override: Optional[int] = None  # eval: run r loops (exit r == the R = r forward)
+        # E33: whole-name loss. A linear probe showed round 1 names the bridge node only by its first letters
+        # while the memory is addressed by the tail of a name; this head asks every loop state, at the decision
+        # position, to name its node completely (all `message_loop_name_len` letters), so the next round can query.
+        nl = int(getattr(cfg, "message_loop_name_len", 0) or 0)
+        self.loop_name_head = (
+            nn.Linear(cfg.hidden_size, nl * cfg.vocab_size)
+            if self.loop_rounds > 1 and float(getattr(cfg, "message_loop_name_aux", 0.0) or 0.0) > 0 and nl > 0
+            else None
+        )
+        self._collect_name_states = False
+        self._loop_core_states = None
         self._loop_states: Optional[list] = None
         self._collect_loop_states = False
         self.gradient_checkpointing = False
@@ -2456,6 +2471,8 @@ class PerceiverARLM(PreTrainedModel):
                 for i in core:
                     x = run_layer(i, x, s)
                 states.append((x, s))
+            if self._collect_name_states:
+                self._loop_core_states = [xs for xs, _ in states]
             if self._collect_loop_states:  # exits: each earlier loop's state through the answer layer
                 exits = []
                 for xr, sr in states[:-1]:
@@ -2524,6 +2541,11 @@ class PerceiverARLM(PreTrainedModel):
             and not return_per_token_loss and int(self._loop_rounds_override or self.loop_rounds) > 1
             and (self.training or getattr(cfg, "lm_read", "exclusive") != "closed")
         )
+        self._collect_name_states = bool(
+            labels is not None and self.loop_name_head is not None and not return_per_token_loss
+            and int(self._loop_rounds_override or self.loop_rounds) > 1
+        )
+        self._loop_core_states = None
         looped = [b for b in self.layers if getattr(b, "read_rounds", 1) > 1]
         for b in looped:
             b._collect_rounds = round_tgt is not None
@@ -2580,6 +2602,10 @@ class PerceiverARLM(PreTrainedModel):
             loss = loss + cfg.message_loop_exit_aux * self._loop_exit_loss(self._loop_states, labels, round_tgt)
         self._loop_states = None
         self._collect_loop_states = False
+        if self._collect_name_states and self._loop_core_states:
+            loss = loss + cfg.message_loop_name_aux * self._loop_name_loss(self._loop_core_states, labels, round_tgt)
+        self._loop_core_states = None
+        self._collect_name_states = False
         loss = self._maybe_add_prefix_ae(loss, input_ids)
         return CausalLMOutput(loss=loss, logits=(logits if return_logits else None))
 
@@ -2599,6 +2625,38 @@ class PerceiverARLM(PreTrainedModel):
                                               cfg.chunked_ce_block_size, cfg.logit_softcap, 0.0)
             total = total + ce_r / n_r.clamp(min=1)
         return total
+
+    def _loop_name_loss(self, states: list, labels: torch.Tensor, round_tgt: Optional[torch.Tensor]) -> torch.Tensor:
+        """E33: mean over loop rounds of the CE of naming the round's node, all letters at once, from the state at
+        the decision position (the position that predicts the first answer letter). Round r names node r+1
+        (round targets; the last round names the answer). Shapes: states r × [B, S, d] → logits [B, L, V]."""
+        cfg = self.config
+        B, S = labels.shape
+        L, V = int(cfg.message_loop_name_len), int(cfg.vocab_size)
+        m = labels != -100
+        has = m.any(-1)
+        first = m.float().argmax(-1)
+        dec = (first - 1).clamp(min=0)
+        idx = first[:, None] + torch.arange(L, device=labels.device)[None]
+        inb = idx < S
+        idx = idx.clamp(max=S - 1)
+        rows = torch.arange(B, device=labels.device)
+        n_tg = round_tgt.shape[0] if round_tgt is not None else 0
+        total = labels.new_zeros((), dtype=torch.float32)
+        for r, xr in enumerate(states):
+            tr = labels
+            if r < n_tg:
+                tr = round_tgt[r]
+                if tr.shape[1] < S:
+                    tr = F.pad(tr, (0, S - tr.shape[1]), value=-100)
+                tr = tr[:, :S]
+            h = self.final_norm(xr[rows, dec])
+            logits = self.loop_name_head(h).view(B, L, V).float()
+            tgt = tr.gather(1, idx)
+            valid = has[:, None] & inb & (tgt != -100)
+            ce = F.cross_entropy(logits.reshape(-1, V), tgt.clamp(min=0).reshape(-1), reduction="none")
+            total = total + (ce * valid.reshape(-1)).sum() / valid.sum().clamp(min=1)
+        return total / max(len(states), 1)
 
     def set_round_targets(self, targets: Optional[torch.Tensor]) -> None:
         """E33: labels per non-final read round [R-1, B, S] for the next forward (then cleared)."""

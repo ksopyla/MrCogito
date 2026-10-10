@@ -43,6 +43,8 @@ LABELS = ("same", "settings-differ", "curriculum-differs", "not-from-scratch", "
 STAGE_OF = {"lookup_8k": "C1.lookup-16k", "chain_8k": "C4.chain4-2k", "recall8_8k": "C3.recall8-1k",
             "recall16_8k": "C3.recall16-1k"}
 PASS, HARM_POINTS = 0.75, 0.05
+SPEC = ROOT / "docs" / "engineering_specs" / "capability_checks.md"
+GITHUB = "https://github.com/ksopyla/MrCogito/blob/dev/"  # where the page's references point (the page is published off-repo)
 MULTI_CANDIDATE = ("lookalike", "chain", "shuffled", "unique", "story")
 
 # Standard battery slots, in reading order: (slot id, exam, training stage label)
@@ -129,6 +131,19 @@ def _score(task: str, first, cand):
     return cand if TASK_BY_ID[task].score == "candidate" else first
 
 
+def _ladder(task: str, j: dict) -> tuple[dict, str | None]:
+    """A study job's length ladder on the task's own score: the picked candidate (`candidate`, length_ladder.py
+    --candidate auto) on candidate-scored tasks, the first letter otherwise or where the cell has no candidate.
+    Returns ({length: score}, "candidate" | "first" | "mixed" | None)."""
+    want = TASK_BY_ID[task].score == "candidate"
+    out, kinds = {}, set()
+    for L, v in (j["ladders"].get("ladder") or {}).items():
+        c = v.get("candidate") if want else None
+        out[int(L)] = c if c is not None else v.get("first_acc")
+        kinds.add("candidate" if c is not None else "first")
+    return out, (kinds.pop() if len(kinds) == 1 else "mixed" if kinds else None)
+
+
 def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
     """One record per (finished job, arch) that maps onto a v4 task, with its match label."""
     versions = sorted({led["suite_version"] for led in ledgers if led.get("suite_version")})
@@ -155,13 +170,18 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
                 if j["status"] != "done":
                     continue
                 # v4 runs built from the task definition itself (`task_job`): `{conf|v4}_{C1_edge-1k}_{arch}_s{seed}`
-                m = re.match(r"^(?:conf|v4)_(C\d)_(.+)_" + re.escape(j["arch"]) + r"_s(\d+)$", j["job"])
-                if m and f"{m[1]}.{m[2]}" in TASK_BY_ID:
+                # the variant comes from the name: a variant may be an arch plus flags (e33a_loop = e31_li_m1 + loop)
+                m = re.match(r"^(?:confp?|v4|recA)_(C\d)_(.+?-\d+k)(?:_h(\d))?_(.+)_s(\d+)$", j["job"])
+                hops = re.search(r"(?:pchain|path)(\d)-", m[2]) if m else None
+                final = m and (m[3] is None or (hops and int(m[3]) == int(hops[1])))  # curriculum: last stage only
+                if m and final and f"{m[1]}.{m[2]}" in TASK_BY_ID:
                     task = f"{m[1]}.{m[2]}"
-                    lad = {int(L): v.get("first_acc") for L, v in (j["ladders"].get("ladder") or {}).items()}
-                    out.append({"task": task, "model": j["arch"], "label": "same", "seed": int(m[3]),
+                    lad, kind = _ladder(task, j)
+                    out.append({"task": task, "model": m[4], "label": "same", "seed": int(m[5]),
                                 "score": _score(task, j.get("p0"), j.get("cand")), "mean": j.get("acc"),
-                                "ladder": lad, "source": j["source"], "collected": "", "via": "v4 task recipe"})
+                                "ladder": lad, "ladder_kind": kind, "source": j["source"], "collected": "", "via": "v4 task recipe"})
+                    continue
+                if m:  # an earlier curriculum stage of a v4 run: not a result of the task itself
                     continue
                 parsed = parse_job(j["job"])
                 if not parsed:
@@ -170,10 +190,10 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
                 task, label = legacy_battery(variant, slot)
                 if task is None:
                     continue
-                lad = {int(L): v.get("first_acc") for L, v in (j["ladders"].get("ladder") or {}).items()}
+                lad, kind = _ladder(task, j)
                 out.append({"task": task, "model": variant, "label": label, "seed": _seed(j),
                             "score": _score(task, j.get("p0"), j.get("cand")),
-                            "mean": j.get("acc"), "ladder": lad, "source": j["source"], "collected": "",
+                            "mean": j.get("acc"), "ladder": lad, "ladder_kind": kind, "source": j["source"], "collected": "",
                             "via": f"battery {slot}"})
     return out, current
 
@@ -181,7 +201,7 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
 # calibration jobs (`cal_*` / `cal2_*`, dense from scratch): name fragment → v4 task, and what the variant changes
 CAL_TASKS = (("lookup1k", "C1.lookup-1k"), ("edge", "C1.edge-1k"), ("keyed4", "C1.keyed4-1k"), ("recall8", "C3.recall8-1k"),
              ("pchain2", "C5.pchain2-1k"), ("pchain3", "C5.pchain3-1k"), ("count", "C6.count-1k"))
-CAL_KNOBS = (("dense8", "8-layer dense (learnability check)"), ("hc", "hop count in question"), ("mix", "half the rows at the previous hop count"),
+CAL_KNOBS = (("path", "written path answer (recipe B)"), ("dense8", "8-layer dense (learnability check)"), ("hc", "hop count in question"), ("mix", "half the rows at the previous hop count"),
              ("direct", "task recipe, no curriculum"), ("_to_", "curriculum from the previous stage"), ("noover", "no overhang (4 facts)"),
              ("k16v16", "16-letter keys and values"), ("k16", "16-letter nodes"), ("k8", "8-letter nodes"),
              ("lr3e-4", "step 3e-4"), ("x16", "16x budget"), ("x4", "4x budget"), ("k4", "4-letter nodes"),
@@ -197,10 +217,14 @@ def calibration(ledgers: list[dict]) -> list[dict]:
             continue
         for j in study_jobs(led):
             name = j["job"]
-            if not re.match(r"^(cal\d?|conf)_", name) or j["status"] not in ("done", "failed"):
+            if not re.match(r"^(cal\d?|confp?)_", name) or j["status"] not in ("done", "failed"):
                 continue
             stem = name.split("_dense")[0]
-            m = re.match(r"^conf_(C\d)_(.+)$", stem)  # confirmation runs built from the task definition itself
+            m = re.match(r"^confp?_(C\d)_(.+?)(?:_h(\d))?$", stem)  # confirmation runs built from the task definition
+            if not m:
+                m2 = re.match(r"^cal\d_(C\d)_(.+?)_h(\d)$", stem)  # calibration runs built from a task definition
+                if m2:
+                    m = m2
             task = (f"{m[1]}.{m[2]}" if m else
                     next((t for frag, t in CAL_TASKS if frag in stem.split("_to_")[-1]), None))
             if task is None:
@@ -210,15 +234,31 @@ def calibration(ledgers: list[dict]) -> list[dict]:
             if "_to_" in name and "x16" not in name or (re.match(r"^cal[23]_", name) and "lookup1k" not in name):
                 knobs = [k for k in knobs if k != "4x budget"] + ["4x budget"]
             if m:
-                knobs = ["written recipe (confirmation)"]
+                knobs = (["written recipe (confirmation)"] if name.startswith("conf") else ["written recipe"]) \
+                    + ([f"curriculum stage {m[3]} hop{'s' if int(m[3]) > 1 else ''}"] if m[3] else [])
             rows.append({"job": name, "task": task,
-                         "round": ("confirm" if m else int(name[3]) if name[3].isdigit() else 1),
+                         "round": ("confirm" if name.startswith("conf") else int(name[3]) if name[3].isdigit() else 1),
                          "model": j["arch"], "variant": ", ".join(dict.fromkeys(knobs)) or "task recipe",
                          "score": _score(task, j.get("p0"), j.get("cand")), "first": j.get("p0"),
                          "first_greedy": j.get("first_greedy"), "teacher": j.get("acc"),
                          "floor": t.floor, "chance": t.chance, "score_kind": t.score, "source": j["source"]})
     rows.sort(key=lambda r: (str(r["round"]), r["task"], r["job"]))
     return rows
+
+
+def latest_log(n: int = 6) -> list[dict]:
+    """The newest rows of the spec's calibration log (date, round, finding, decision), newest first, as plain text."""
+    rows, inside = [], False
+    for line in SPEC.read_text().splitlines():
+        if line.startswith("### Calibration log"):
+            inside = True
+        elif inside and line.startswith("#"):
+            break
+        elif inside and line.startswith("| 20"):
+            cells = [re.sub(r"\*\*|`", "", c).strip() for c in line.strip().strip("|").split(" | ")]
+            if len(cells) >= 4:
+                rows.append(dict(zip(("date", "round", "finding", "decision"), cells[:4])))
+    return rows[::-1][:n]
 
 
 def _shown_path(p: Path, ledger_dir: Path) -> str:
@@ -261,6 +301,9 @@ def table(ev: list[dict]) -> dict:
             out[task][model] = {
                 "label": label, "score": _med([r["score"] for r in rs]), "mean": _med([r["mean"] for r in rs]),
                 "seeds": sorted({r["seed"] for r in rs if r["seed"] is not None}), "ladder": ladder,
+                "per_seed": {str(r["seed"]): r["score"] for r in rs if r["seed"] is not None},
+                "ladder_kind": (lambda ks: ks.pop() if len(ks) == 1 else "mixed" if ks else None)(
+                    {r.get("ladder_kind") or "first" for r in rs if r["ladder"]}),
                 "via": sorted({r["via"] for r in rs}), "sources": sorted({r["source"] for r in rs}),
                 "other": sorted(l for l in labels if l != label),
             }
@@ -295,14 +338,25 @@ def no_harm(tbl: dict, champion: str, models: list[str]) -> dict:
     return out
 
 
+def reference(task_id: str, tbl: dict) -> str | None:
+    """The task's reference (rule 5, 2026-10-07): dense when it passes on the full seed set; otherwise the best
+    model that passes from random init (`same` evidence, seeds 0–2, median ≥ PASS); None if no model does."""
+    ok = {m: c["score"] for m, c in tbl.get(task_id, {}).items()
+          if c["label"] == "same" and c["score"] is not None and c["score"] >= PASS
+          and set(SEEDS) <= set(c["seeds"])}
+    if "dense" in ok:
+        return "dense"
+    return max(ok, key=ok.get) if ok else None
+
+
 def row_status(task, tbl: dict, champion: str) -> dict:
     if task.status == "flawed":
         return {"status": "flawed", "note": task.flaw}
     if task.status == "calibrating":
-        return {"status": "calibrating", "note": "no frozen from-scratch recipe yet; results shown are legacy protocol"}
+        return {"status": "calibrating", "note": "recipe not fixed yet"}
     c = tbl.get(task.id, {}).get(champion)
     if not c or c["label"] != "same":
-        return {"status": "missing", "note": "no from-scratch result under the v4 definition for the champion"}
+        return {"status": "missing", "note": "champion not run on the written recipe"}
     notes = []
     if len(c["seeds"]) < len(SEEDS):
         notes.append(f"{len(c['seeds'])} of {len(SEEDS)} seeds")
@@ -394,7 +448,7 @@ def main() -> int:
     models = sorted({e["model"] for e in ev} | {v for slot in bat.values() for v in slot})
     order = [args.champion, *registered, "e31_li", "e30_li", "dense"]
     models = [m for m in order if m in models] + [m for m in models if m not in order]
-    visible = args.show or [m for m in [args.champion, *registered, "e31_li", "e30_li", "dense"] if m in models]
+    visible = args.show or [m for m in [args.champion, *registered, "dense"] if m in models]  # older builds: one click away
     rerun_models = args.rerun_models or [args.champion, "dense", *registered]
     items = reruns(tbl, rerun_models)
     Path(args.reruns_out).write_text(reruns_md(items, rerun_models))
@@ -416,7 +470,7 @@ def main() -> int:
     slots.sort(key=lambda sl: (lv_order.index(sl["level"]), std_ix.get(sl["id"], 99), sl["task"] or "", sl["id"]))
     tasks = [{"id": t.id, "level": t.level or "X", "name": t.name, "measures": t.measures, "recipe": t.recipe,
               "args": " ".join(t.args), "train_len": t.train_len, "prize": t.prize_bits, "chance": t.chance,
-              "score_kind": t.score, "floor": t.floor,
+              "score_kind": t.score, "floor": t.floor, "reference": reference(t.id, tbl),
               "curriculum": t.curriculum, "ladder": t.ladder, "task_status": t.status, "flaw": t.flaw,
               **row_status(t, tbl, args.champion)} for t in TASKS]
     data = {
@@ -426,7 +480,7 @@ def main() -> int:
         "tasks": tasks, "table": tbl, "no_harm": no_harm(tbl, args.champion, models),
         "slots": slots, "battery": {s["id"]: bat[s["id"]] for s in slots},
         "reruns": items, "rerun_models": rerun_models, "suite_version": suite_version,
-        "calibration": calibration(ledgers),
+        "calibration": calibration(ledgers), "latest": latest_log(), "github": GITHUB,
         "sources": [{"file": _shown_path(Path(l["_file"]), Path(args.ledger_dir)), "kind": l["kind"], "name": l["name"],
                      "host": l["host"], "collected": l["collected"], "archive": l["archive_path"],
                      "done": sum(j["status"] == "done" for j in l["jobs"]), "jobs": len(l["jobs"]),

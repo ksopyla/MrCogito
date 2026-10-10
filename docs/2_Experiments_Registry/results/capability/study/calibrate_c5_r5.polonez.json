@@ -1,0 +1,15 @@
+{
+ "schema": 1,
+ "kind": "study",
+ "name": "calibrate_c5_r5",
+ "host": "polonez",
+ "source_path": "/home/ksopyla/dev/MrCogito-tracking/Cache/study/calibrate_c5_r5",
+ "archive_path": "/nas/ml_data/mrcogito/results/study/calibrate_c5_r5.polonez",
+ "collected": "2026-10-07",
+ "git": ["7892dcc40865979653647ea865bd872f4c6d9c8a"],
+ "jobs": [
+  {"name":"cal5_edgehc_k8_dense_s0","status":"done","phase":"calibrate_c5_r5","args":["--seq_len","1024","--steps","4800","--k1_mult","4","--batch","32","--lr","1e-4","--eval_rows","256","--recipe","chain_parallel","--scale","bridge_1k","--hops","2","--chain_overhang","1","--key_len","16","--hop_count_in_question","--arch","dense","--seed","0","--key_len","8","--hops","1"],"init":null,"results":{"dense":{"acc":0.99023,"acc_se":0.0021,"p0":0.99609,"ppa":[0.9961,0.9844,0.9727,0.9922,0.9922,0.9961,0.9961,0.9922],"bits":15.707,"prize_bits":16.0,"flow":0.9817,"best_acc":0.99023,"extended":false,"step":4700,"examples_to_75":121600,"sec_per_step":0.2386,"tokens_per_sec":137361.6,"params":31176812,"cand":0.95931,"exact":0.92188,"first_greedy":0.99609,"guess_floor":{"link_target_first":0.42383,"link_target_exact":0.125,"chain_end_exact":0.0,"rows":256}}},"ladders":{}},
+  {"name":"cal5_edgehc_k8_to_pchain2hc_k8_x16_dense_s0","status":"done","phase":"calibrate_c5_r5","args":["--seq_len","1024","--steps","4800","--k1_mult","4","--batch","32","--lr","1e-4","--eval_rows","256","--recipe","chain_parallel","--scale","bridge_1k","--hops","2","--chain_overhang","1","--key_len","16","--hop_count_in_question","--arch","dense","--seed","0","--steps","19200","--k1_mult","1","--key_len","8"],"init":"cal5_edgehc_k8_dense_s0","results":{"dense":{"acc":0.8418,"acc_se":0.00494,"p0":0.32422,"ppa":[0.3242,0.625,0.8281,0.9766,0.9805,1.0,1.0,1.0],"bits":12.58,"prize_bits":16.0,"flow":0.7863,"best_acc":0.8667,"extended":false,"step":19200,"examples_to_75":3200,"sec_per_step":0.2423,"tokens_per_sec":135214.3,"params":31176812,"cand":0.09766,"exact":0.09766,"first_greedy":0.32422,"guess_floor":{"link_target_first":0.37793,"link_target_exact":0.08333,"chain_end_exact":0.0,"rows":256}}},"ladders":{}},
+  {"name":"cal5_edgehc_k8_to_pchain2mix_k8_x16_dense_s0","status":"done","phase":"calibrate_c5_r5","args":["--seq_len","1024","--steps","4800","--k1_mult","4","--batch","32","--lr","1e-4","--eval_rows","256","--recipe","chain_parallel","--scale","bridge_1k","--hops","2","--chain_overhang","1","--key_len","16","--hop_count_in_question","--arch","dense","--seed","0","--steps","19200","--k1_mult","1","--key_len","8","--replay_recipe","chain_parallel","--replay_hops","1","--replay_frac","0.5"],"init":"cal5_edgehc_k8_dense_s0","results":{"dense":{"acc":0.85547,"acc_se":0.00474,"p0":0.44531,"ppa":[0.4453,0.6211,0.832,0.9648,0.9844,0.9961,1.0,1.0],"bits":12.716,"prize_bits":16.0,"flow":0.7947,"best_acc":0.86768,"extended":false,"step":19200,"examples_to_75":3200,"sec_per_step":0.2375,"tokens_per_sec":137962.6,"params":31176812,"cand":0.12109,"exact":0.10938,"first_greedy":0.44531,"guess_floor":{"link_target_first":0.37793,"link_target_exact":0.08333,"chain_end_exact":0.0,"rows":256}}},"ladders":{}}
+ ]
+}

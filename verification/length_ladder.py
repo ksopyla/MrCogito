@@ -16,6 +16,11 @@ Stage B (curriculum): continue training at a longer length with
 `bapo_capability_probe.py --init_ckpt DIR --seq_len 8192 ... --save_ckpt DIR2`, then run
 this script on DIR2.
 
+Exams with several same-shaped candidates (keyed lookups, parallel chains) are also scored on the picked
+candidate (`--candidate auto`): the answer is decoded greedily and the nearest planted candidate must be the asked
+one, the capability checks' score for those tasks (`answer_exact` in the probe); the first letter has a ~40 %
+guessing floor there.
+
 Long rows need the `flex` backend (the `sdpa` path builds a dense S x (S + C) mask:
 ~32 GB at 128k). `--backend auto` uses flex on CUDA above 8k tokens.
 """
@@ -91,9 +96,22 @@ def data_config(state: dict, seq_len: int, recipe: str | None = None):
     return config_for(SCALES[d["scale"]], d["task"], **over)
 
 
+def has_candidates(cfg, row) -> bool:
+    """Several same-shaped answers are planted in the book (the picked-candidate score applies)."""
+    from verification.bapo_capability_probe import _candidates
+
+    n = int(cfg.key_len) if getattr(cfg, "chain_answer_path", False) else int((row.labels != -100).sum())
+    return n > 0 and len(_candidates(cfg, row.input_ids, n)) > 1
+
+
 @torch.no_grad()
-def eval_length(model, cfg, *, rows: int, batch: int, seed: int, device, amp: str, depth_bins: int) -> dict:
+def eval_length(model, cfg, *, rows: int, batch: int, seed: int, device, amp: str, depth_bins: int,
+                candidate: str = "auto") -> dict:
     rng = np.random.default_rng(seed)
+    cand_on: bool | None = None if candidate == "auto" else candidate == "on"
+    cand_sum = cand_n = exact_sum = first_g_sum = 0.0
+    dec_rows = 0
+    t_dec = 0.0
     row_acc: list[float] = []
     row_first: list[float] = []   # first answer letter: the honest score on multi-candidate exams
     pos_hits: list[list[float]] = []  # per answer position (teacher-forced)
@@ -115,6 +133,20 @@ def eval_length(model, cfg, *, rows: int, batch: int, seed: int, device, amp: st
         if device.type == "cuda":
             torch.cuda.synchronize()
         t_rows += time.time() - t0
+        if cand_on is None:
+            cand_on = has_candidates(cfg, rr[0])
+        if cand_on:
+            from verification.bapo_capability_probe import _answer_exact
+
+            t1 = time.time()
+            ae = _answer_exact(model, [(ids, labels)], amp=amp, device=device, cfg=cfg)
+            model.eval()
+            t_dec += time.time() - t1
+            exact_sum += ae["exact"] * ae["rows"]
+            first_g_sum += ae["first_greedy"] * ae["rows"]
+            dec_rows += ae["rows"]
+            cand_sum += ae.get("candidate", 0.0) * ae.get("candidate_rows", 0)
+            cand_n += ae.get("candidate_rows", 0)
         lg = logits[:, :-1].float()
         tgt = labels[:, 1:]
         m = tgt != -100
@@ -145,7 +177,14 @@ def eval_length(model, cfg, *, rows: int, batch: int, seed: int, device, amp: st
         by_depth.append({"lo": float(lo), "hi": float(hi), "n": len(sel),
                          "acc": float(np.mean(sel)) if sel else None,
                          "first_acc": float(np.mean(self_first)) if self_first else None})
+    cand = {"candidate_mode": "on" if cand_on else "off"}
+    if cand_on and dec_rows:
+        cand.update(exact=exact_sum / dec_rows, first_greedy=first_g_sum / dec_rows,
+                    sec_per_row_decode=t_dec / dec_rows)
+        if cand_n:
+            cand.update(candidate=cand_sum / cand_n, candidate_rows=int(cand_n))
     return {
+        **cand,
         "acc": acc, "acc_se": se, "ce_nats": ce_sum / max(ce_n, 1), "rows": len(row_acc),
         "first_acc": float(np.mean(row_first)),
         "first_acc_se": float(np.std(row_first, ddof=1) / math.sqrt(len(row_first))) if len(row_first) > 1 else float("nan"),
@@ -169,6 +208,8 @@ def main() -> int:
     p.add_argument("--need_first", action="store_true",
                    help="re-evaluate cells saved before first-letter accuracy was recorded")
     p.add_argument("--out", default=None, help="JSON path (default <ckpt>/ladder.json)")
+    p.add_argument("--candidate", default="auto", choices=("auto", "on", "off"),
+                   help="also decode greedily and score the picked candidate (auto: exams with several candidates)")
     p.add_argument("--recipe", default=None, help="ladder this recipe instead of the checkpoint's own exam")
     p.add_argument("--loop_rounds", type=int, default=None,
                    help="E33a: evaluate looped checkpoints with this many loops (default: as trained)")
@@ -193,7 +234,8 @@ def main() -> int:
         arch = path.stem
         res = report["results"].setdefault(arch, {})
         for L in args.lengths:
-            if str(L) in res and "acc" in res[str(L)] and ("first_acc" in res[str(L)] or not args.need_first):
+            if (str(L) in res and "acc" in res[str(L)] and ("first_acc" in res[str(L)] or not args.need_first)
+                    and ("candidate_mode" in res[str(L)] or args.candidate == "off")):
                 continue
             if arch in caps and L > caps[arch]:
                 res[str(L)] = {"skipped": f"cap {caps[arch]}"}
@@ -211,7 +253,7 @@ def main() -> int:
             batch = max(1, args.tokens_per_batch // L)
             try:
                 ev = eval_length(model, cfg, rows=args.rows, batch=batch, seed=args.seed + L,
-                                 device=device, amp=args.amp, depth_bins=args.depth_bins)
+                                 device=device, amp=args.amp, depth_bins=args.depth_bins, candidate=args.candidate)
             except torch.cuda.OutOfMemoryError as e:  # report, keep going
                 res[str(L)] = {"error": f"OOM: {str(e)[:200]}", "backend": backend, "batch": batch}
                 print(f"  [{arch}] {L:>7}  OOM (batch {batch}, {backend})", flush=True)
@@ -231,7 +273,9 @@ def main() -> int:
                 for b in ev["by_depth"]
             )
             print(
-                f"  [{arch}] {L:>7}  acc {ev['acc']:.3f} ±{ev['acc_se']:.3f}  first {ev['first_acc']:.3f}  CE {ev['ce_nats']:.3f}  "
+                f"  [{arch}] {L:>7}  acc {ev['acc']:.3f} ±{ev['acc_se']:.3f}  first {ev['first_acc']:.3f}  "
+                + (f"picked {ev['candidate']:.3f}  " if "candidate" in ev else "")
+                + f"CE {ev['ce_nats']:.3f}  "
                 f"C={ev['memory_slots']}  {ev['sec_per_row']:.3f} s/row  "
                 f"peak {ev.get('peak_gb', 0):.1f} GB  [{backend}, batch {batch}]  depth {depth}",
                 flush=True,

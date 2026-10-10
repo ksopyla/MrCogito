@@ -383,6 +383,23 @@ def test_hop_count_in_question_states_how_far_to_walk(hops):
         cfg_for("recall", hop_count_in_question=True)
 
 
+@pytest.mark.parametrize("hops", [2, 3])
+def test_chain_answer_path_writes_every_node(hops):
+    """With `chain_answer_path` the answer is n1 … nk, each node one hop after the previous one."""
+    cfg = cfg_for("chain", hops=hops, n_distractors=0, n_chains=4, chain_overhang=1, hop_count_in_question=True,
+                  chain_answer_path=True)
+    assert cfg.answer_len == hops * cfg.key_len
+    L = cfg.key_len
+    for row in iter_rows(cfg, 20, seed=13):
+        a0 = row.answer_start
+        lookup = dict(_edges(cfg, row))
+        node = tuple(_symbols(cfg, row.input_ids[a0 - 1 - hops - L:a0 - 1 - hops]))
+        for j in range(hops):
+            node = lookup[node]
+            assert node == tuple(_symbols(cfg, row.input_ids[a0 + j * L:a0 + (j + 1) * L]))
+        assert (row.labels != -100).sum() == hops * L
+
+
 def test_default_exams_are_bit_identical_to_the_recorded_rows():
     """Options added after an exam was recorded (overhang, hop count in the question, …) must leave the
     default rows untouched: sha256 of 32 rows per exam at bridge_1k, seed 0 (recorded 2026-10-06)."""

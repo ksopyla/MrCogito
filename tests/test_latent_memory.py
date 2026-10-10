@@ -332,6 +332,39 @@ def test_checkpoint_and_ladder_roundtrip(tmp_path):
     cell = rep["results"]["e31_page"]["512"]
     assert cell["rows"] == 4 and cell["trained_seq_len"] == 128
     assert cell["memory_slots"] > rep["results"]["e31_page"]["128"]["memory_slots"]
+    assert cell["candidate_mode"] == "off" and "candidate" not in cell  # one fact: no candidates to pick from
+
+
+def test_ladder_scores_the_picked_candidate(tmp_path):
+    """An exam with several same-shaped candidates (keyed lookup) is also scored on the picked candidate."""
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    ck = tmp_path / "ck"
+    probe = [
+        sys.executable, str(root / "verification/bapo_capability_probe.py"), "--scale", "tiny",
+        "--recipe", "recall", "--n_distractors", "3", "--key_len", "4", "--arch", "e31_page", "--hidden", "64",
+        "--head_dim", "16", "--steps", "2", "--k1_mult", "1", "--batch", "2", "--eval_every", "2", "--eval_rows", "2",
+        "--lm_window", "32", "--lm_stride", "24", "--lm_latents", "4", "--lm_latent_dim", "32",
+        "--lm_heads", "4", "--lm_writer_dim", "32", "--lm_enc_layers", "1", "--lm_reader_tokens", "2",
+        "--token_embedding_dim", "16", "--ngram_orders", "none", "--message_raw_window", "16",
+        "--no-skip_uncalibrated", "--amp", "off", "--answer_exact", "off", "--save_ckpt", str(ck),
+        "--out", str(tmp_path / "run"),
+    ]
+    r = subprocess.run(probe, cwd=root, capture_output=True, text=True, timeout=300)
+    assert r.returncode in (0, 2), r.stdout[-2000:] + r.stderr[-2000:]
+    lad = [
+        sys.executable, str(root / "verification/length_ladder.py"), "--ckpt", str(ck),
+        "--lengths", "256", "--rows", "4", "--amp", "off", "--backend", "sdpa",
+    ]
+    r = subprocess.run(lad, cwd=root, capture_output=True, text=True, timeout=300)
+    assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
+    cell = json.loads((ck / "ladder.json").read_text())["results"]["e31_page"]["256"]
+    assert cell["candidate_mode"] == "on" and cell["candidate_rows"] == 4
+    assert 0.0 <= cell["candidate"] <= 1.0 and 0.0 <= cell["exact"] <= 1.0
 
 
 def test_chunked_block_mask_matches_the_one_shot_mask():
