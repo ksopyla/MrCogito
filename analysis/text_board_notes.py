@@ -6,22 +6,23 @@ Plain words, every number with its meaning (research-comms). Update it whenever 
 """
 
 STATUS = {
-    "as_of": "2026-10-10 08:30 UTC",
-    "headline": "First learning: with 1.5B training tokens the dense reference finds whose fact is asked far above "
-                "guessing (lookup 47 % at 4k vs 25 %), but nothing reaches the 75 % pass mark yet. The exams were "
-                "rebuilt so every guessing rate is below 10 %, and the calibration ladder continues on them.",
+    "as_of": "2026-10-10 11:05 UTC",
+    "headline": "First pass: on the new exams (every guessing rate below 10 %) the 30M dense model passes quote — "
+                "95 % at 4k against 8 % guessing — after 1.5B tokens. Finding a person's home (lookup, keyed) is "
+                "still at guessing, so the ladder goes on to 50M.",
     "where": [
-        "Dense 30M, 1.5B tokens, old exams (Odra, 10 Oct 05:50-08:16 UTC): lookup, latest and keyed climb well "
-        "above guessing from 0.6-0.9B tokens on; quote, compose, count and deduce stay at guessing.",
-        "Exams v2 (10 Oct): more candidates per question, so guessing is 4-9 % (v1: up to 50 %); the audit of all "
-        "29,400 questions finds no shortcut above the guessing rate (one known partial floor on latest).",
-        "30M round on v1 at 600M tokens (9-10 Oct): four models, all at the guessing rate at 4k.",
+        "Ladder step 1, dense 30M, 1.5B tokens, exams v2 (Odra, 10 Oct 08:17-10:52 UTC): quote passes at every "
+        "length, learned abruptly between 0.75B and 1.1B tokens; latest above guessing at 1k only; lookup, keyed, "
+        "compose, count and deduce at guessing.",
+        "The same model on the old exams (05:50-08:16 UTC) learned lookup instead (47 % vs 25 %) and not quote: "
+        "which retrieval task switches on first differs between the two data versions, with one seed each.",
+        "Exams v2: more candidates per question, so guessing is 4-9 % (v1: up to 50 %); the audit of all 29,400 "
+        "questions finds no shortcut above the guessing rate (one known partial floor on latest).",
     ],
     "next": [
-        "Running on Odra since 10 Oct 08:17 UTC: ladder step 1 on the v2 exams — dense 30M for 1.5B tokens "
-        "(training about 2.2 h, then exams at 1k-4k and a learning curve every 10 %; results about 11:00 UTC).",
-        "Then, by the ladder's rules: more tokens at 30M (the old-exam curve flattened as the step size decayed) "
-        "or dense 50M on the same tokens; the four-model round at the first budget where dense passes.",
+        "Running on Odra since 10:56 UTC: step-size tuning for the 50M shape (12 layers at width 576, three "
+        "short runs, chosen by held-out loss), then ladder step 2 — dense 50M for 1.5B tokens on v2, about 3.5 h.",
+        "Queued after it: dense 30M with a second seed on v2 (the protocol's rule: one seed is not a verdict).",
     ],
 }
 
@@ -77,6 +78,27 @@ ROUNDS = {
             "Quoting a 4-6 word sign is still at guessing at 4k (25 %; 34 % at 1k), and the copy probe still finds no "
             "copying of a repeated passage (1.80 → 1.64 nats per token): it finds facts before it copies text.",
             "Language keeps improving with tokens: held-out story loss 1.54 nats per token, down from 1.69 at 600M.",
+        ],
+    },
+    "cal1_dense30m_v2_odra.odra": {
+        "title": "Calibration ladder step 1: dense 30M for 1.5B tokens (new exams, data v2)",
+        "where": "Odra · 3 × RTX 3090",
+        "dates": "10 Oct 2026 08:17 UTC → 10:52 UTC (training 2.2 h, exams 26 min)",
+        "verdict": "Quote passes — the first calibrated task: 95 % at 4k against 8 % guessing, 92 % with 24 signs, "
+                   "76 % with a sentence form never seen in training. Lookup and keyed stay at guessing; latest is "
+                   "above guessing only in short documents.",
+        "observations": [
+            "Quote switches on abruptly: 0 % at 0.75B tokens, 47 % at 0.94B, 78 % at 1.1B, 94 % from 1.3B — the same "
+            "window in which the old-exam run learned lookup.",
+            "With the sign removed it never answers (0 %): it reads the right person's sign and copies it word for "
+            "word.",
+            "Lookup and keyed sit at guessing (6-7 % vs 8 % and 6 %), although it is far less surprised by the right "
+            "home with the fact present (0.81 vs 3.98 nats per answer piece): it knows the answer is a place in "
+            "this document, not whose.",
+            "Latest: 26.5 % at 1k, 16.5 % at 2k, 11 % at 4k (guessing 9 %) — it tracks moves only when they are close.",
+            "The copy probe on repeated stories still finds no copying (1.80 → 1.56 nats per token): copying a named "
+            "sign comes before copying a whole passage.",
+            "Language is the same as on the old data: held-out story loss 1.56 nats per token (1.54 on v1).",
         ],
     },
 }
