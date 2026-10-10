@@ -6,7 +6,7 @@ Plain words, every number with its meaning (research-comms). Update it whenever 
 """
 
 STATUS = {
-    "as_of": "2026-10-10 05:20 UTC",
+    "as_of": "2026-10-10 05:50 UTC",
     "headline": "No model has learned any task yet, the dense reference included. The training budget is too small "
                 "for these exams, so no architecture comparison is possible so far.",
     "where": [
@@ -16,9 +16,10 @@ STATUS = {
         "None of the four can yet copy back a passage it has just read — the skill every task builds on.",
     ],
     "next": [
-        "Budget run: the dense model alone at 30M for 2–3B tokens on Odra (about 3–4 h), scored along the way, "
-        "to find how many tokens the tasks need.",
-        "Then the four-model round at a budget where dense passes.",
+        "Running since 10 Oct 05:50 UTC on Odra: the dense model alone at 30M for 1.5B tokens (7,931 steps, about "
+        "2.2 h + exams), scored along the way — step 1 of the calibration ladder.",
+        "Then dense at 50M on the same tokens (capacity or steps?), then 100M with more tokens; the four-model "
+        "round at the first budget where dense passes.",
     ],
 }
 
@@ -45,6 +46,10 @@ ROUNDS = {
             "E33 loop lowest, the notebook model and the control 1.5 % behind dense.",
             "The copy probe: no model predicts a just-read passage when it is repeated (its surprise barely drops), "
             "so name-to-fact retrieval cannot start yet.",
+            "Dense is half-way: with the fact in the document it is far less surprised by the right answer than with "
+            "the fact removed (lookup 0.6 vs 3.5 nats per answer piece at 4k, lower = surer), yet its pick is still a "
+            "guess. It knows the answer is a word from this document, not whose — the stage before copying in the "
+            "literature. The memory models barely use the document at 4k (1.8–1.9 vs 2.3–2.4).",
             "First faint signal: quoting a sign rises late in training for dense and both notebook models "
             "(0 → 15–18 % exact at 4k), still below the 25 % guessing rate of picking one of four signs.",
             "At 1k the no-memory control answers 'where does X live now' 60 % of the time (guessing 20 %): in a "
