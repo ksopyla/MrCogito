@@ -538,9 +538,15 @@ guessing rate.
 - **30M on v1, 600M tokens** (Odra, 9–10 Oct): four models, all at the guessing rate (the board's round).
 - **Budget run, 30M dense on v1, 1.5B tokens** (Odra, from 2026-10-10 05:50 UTC): exams cut to 1k–4k plus
   a five-point curve; the token answer for the v1 exams.
-- **Step 1, 30M dense on v2, 1.5B tokens** (Odra, queued 2026-10-10: starts when the v2 data, 1.0B-token
-  mix, is built and the budget run has finished its exams).
-- After step 1 the author decides step 2 (50M shape) and whether to extend to 2B.
+  Result: lookup 47 % at 4k (guessing 25 %), latest 37 % (20 %), keyed 13 % (6 %), learned between 0.6B and
+  0.9B tokens; nothing passes; quote, compose, count, deduce at guessing.
+- **Step 1, 30M dense on v2, 1.5B tokens** (Odra, 2026-10-10 08:17–10:52 UTC): **quote passes** (95 % at 4k,
+  guessing 8 %; 92 % harder, 76 % paraphrase), learned between 0.75B and 1.1B tokens; lookup and keyed at
+  guessing; latest above guessing at 1k only (26.5 % vs 9 %). Which retrieval task switches on first
+  differs between v1 and v2 data (one seed each).
+- **Step 2, 50M dense on v2, 1.5B tokens** (mid tier: width 576, 12 layers; step size 1e-3 chosen by held-out
+  loss over 5e-4 / 1e-3 / 2e-3; Odra from 2026-10-10 11:24 UTC, about 117k tokens/s → 3.6 h).
+- **Step 1, second seed** (30M, seed 1), queued after step 2.
 
 ## 17. Open decisions for the author
 1. **Main tier:** 100M parameters and 2B tokens, about one Polonez day (recommended), or 150M and 3B,

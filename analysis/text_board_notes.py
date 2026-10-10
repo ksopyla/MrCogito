@@ -6,7 +6,7 @@ Plain words, every number with its meaning (research-comms). Update it whenever 
 """
 
 STATUS = {
-    "as_of": "2026-10-10 11:05 UTC",
+    "as_of": "2026-10-10 11:30 UTC",
     "headline": "First pass: on the new exams (every guessing rate below 10 %) the 30M dense model passes quote — "
                 "95 % at 4k against 8 % guessing — after 1.5B tokens. Finding a person's home (lookup, keyed) is "
                 "still at guessing, so the ladder goes on to 50M.",
@@ -20,9 +20,11 @@ STATUS = {
         "questions finds no shortcut above the guessing rate (one known partial floor on latest).",
     ],
     "next": [
-        "Running on Odra since 10:56 UTC: step-size tuning for the 50M shape (12 layers at width 576, three "
-        "short runs, chosen by held-out loss), then ladder step 2 — dense 50M for 1.5B tokens on v2, about 3.5 h.",
-        "Queued after it: dense 30M with a second seed on v2 (the protocol's rule: one seed is not a verdict).",
+        "Running on Odra since 11:24 UTC: ladder step 2 — dense 50M (12 layers at width 576; step size 1e-3, the "
+        "best of three short tuning runs by held-out loss) for 1.5B tokens on v2; training ends about 15:00, "
+        "scores about 15:30 UTC.",
+        "Queued after it: dense 30M with a second seed on v2 (the protocol's rule: one seed is not a verdict), "
+        "scores about 18:10 UTC.",
     ],
 }
 
