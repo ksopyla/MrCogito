@@ -322,8 +322,9 @@ def no_harm(tbl: dict, champion: str, models: list[str]) -> dict:
             if not c or c["label"] != "same":
                 continue
             points = [("train", c["score"], v["score"] if v and v["label"] == "same" else None)]
-            points += [(L, cv, v["ladder"].get(L) if v and v["label"] == "same" else None)
-                       for L, cv in c["ladder"].items()]
+            # ladder points compare only the same score (picked candidate vs first letter differ in guessing floor)
+            same_kind = v and v["label"] == "same" and (v.get("ladder_kind") or "first") == (c.get("ladder_kind") or "first")
+            points += [(L, cv, v["ladder"].get(L) if same_kind else None) for L, cv in c["ladder"].items()]
             for where, cv, vv in points:
                 if cv is None or cv < PASS:
                     continue
