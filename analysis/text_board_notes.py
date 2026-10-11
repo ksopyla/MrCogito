@@ -6,7 +6,7 @@ Plain words, every number with its meaning (research-comms). Update it whenever 
 """
 
 STATUS = {
-    "as_of": "2026-10-11 11:00 UTC",
+    "as_of": "2026-10-11 12:20 UTC",
     "headline": "At 30M and 1.5B tokens, dense learns retrieval only in some runs: 2 of 4 seeds learned something "
                 "(one with the input tables, one without), so the plain-input gain was seed luck, not a fix. The E33 "
                 "loop run reads facts at 16k where dense cannot, but it is also one seed.",
@@ -17,7 +17,8 @@ STATUS = {
         "E33 loop, plain input, seed 0: lookup 82 % and keyed 77 % at 16k (dense seed 0: 0 %); notebook off → 0 %.",
     ],
     "next": [
-        "Running on Odra: E31c notebook, plain input, mixed tasks (from 08:44 UTC; scores about 12:00).",
+        "Done 12:15 UTC: E31c notebook, plain input, mixed tasks — lookup 16 % at 4k, 0 % at 16k; the same with "
+        "the notebook off, so without the loop the notebook goes unused (one seed).",
         "Then the single-task comparison (author, 11 Oct): for T1 quote, then T2 lookup, ... T7 deduce, train dense, "
         "E31c and E33 loop on training data of that task only (30M, plain input, 1.5B tokens) and score that task at "
         "1k-16k. About 12.5 h per task, 3.5 days in all; data builds run ahead on the CPU.",
@@ -63,8 +64,9 @@ LADDER = [
      "exams": "v2 (guessing 4-9 %)", "result": "Nothing: every task at guessing (seed 0 learned four). The plain-input gain was seed luck.",
      "when": "11 Oct 05:36 → 08:43", "state": "done"},
     {"run": "Round: E31c (plain)", "model": "E31c notebook · 30M, plain input", "tokens": "1.5B, mixed tasks",
-     "exams": "v2, 1k-16k", "result": "Completes dense / E31c / E33 on mixed training.", "when": "11 Oct 08:44 → ~12:00",
-     "state": "running"},
+     "exams": "v2, 1k-16k",
+     "result": "Lookup 16 %, keyed 15 % at 4k, 0 % at 16k; notebook off gives the same, so it is unused. Latest 87 % at 1k.",
+     "when": "11 Oct 08:44 → 12:15", "state": "done"},
     {"run": "Single-task comparison", "model": "dense, E31c, E33 loop · 30M, plain input",
      "tokens": "1.5B each, training data of one task", "exams": "that task, 1k-16k",
      "result": "T1 quote, then T2 lookup, T3 keyed, T4 latest, T5 compose, T6 count, T7 deduce: 21 runs.",
@@ -204,7 +206,7 @@ ROUNDS = {
         ],
     },
     "r2v2p_screen30m_odra.odra": {
-        "title": "Architecture round on plain input: 30M, 1.5B tokens (data v2) — in progress",
+        "title": "Architecture round on plain input: 30M, 1.5B tokens (data v2)",
         "where": "Odra · 3 × RTX 3090",
         "dates": "from 10 Oct 2026 21:00 UTC (E33 loop done 11 Oct 05:35 UTC; E31c and the control queued)",
         "verdict": "The E33 loop reads facts far past its 4k training length: lookup 82 % and keyed 77 % at 16k "
@@ -221,6 +223,8 @@ ROUNDS = {
             "Held-out sentence forms and 16 people instead of 12 still pass at 16k: lookup 83 % and 79 %.",
             "Language is slightly better than dense: story loss 1.52 vs 1.53 nats per token.",
             "Training took 7.0 h on 3 GPUs (58k tokens/s, a 20-minute cooldown after 6 h), 3× dense.",
+            "E31c without the loop (12:15 UTC 11 Oct) does not use its notebook: lookup 16 % at 4k and 0 % at 16k, "
+            "the same with the notebook off. Latest 87 % at 1k. So the reread loop is what makes the notebook read.",
         ],
     },
 }
