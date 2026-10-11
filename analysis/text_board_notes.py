@@ -6,25 +6,21 @@ Plain words, every number with its meaning (research-comms). Update it whenever 
 """
 
 STATUS = {
-    "as_of": "2026-10-11 06:20 UTC",
-    "headline": "First architecture result: the E33 loop reads facts from long documents where dense cannot. Lookup "
-                "82 % and keyed 77 % at 16k — four times the training length, both passing — against 0 % for dense "
-                "at 16k (39 % and 35 % at 4k). Its notebook does the work: switched off, lookup falls to 0 % at 16k. "
-                "One seed each; E31c and the no-memory control follow today.",
+    "as_of": "2026-10-11 08:50 UTC",
+    "headline": "At 30M and 1.5B tokens, dense learns retrieval only in some runs: 2 of 4 seeds learned something "
+                "(one with the input tables, one without), so the plain-input gain was seed luck, not a fix. The E33 "
+                "loop run reads facts at 16k where dense cannot, but it is also one seed.",
     "where": [
-        "E33 loop, plain input, 30M, 1.5B tokens (Odra, 10 Oct 21:00 → 11 Oct 05:35 UTC): lookup 63.5 % at 4k, "
-        "76 % at 8k, 82 % at 16k; keyed 55.5 / 68.5 / 77 %; latest passes at 1k (79.5 %) but fades by 4k; "
-        "quote 25 % at 4k (dense: 86 %).",
-        "Dense, plain input, same data and tokens: lookup 39 % at 4k, 18 % at 8k, 0 % at 16k — it does not read "
-        "past its training length.",
-        "Plain input (no word-pair/triple tables) is what made the dense reference learn; the round runs on it.",
+        "Dense plain input, seed 1 (Odra, 11 Oct 05:36-08:43 UTC): every task at guessing. Seed 0 learned four tasks.",
+        "Dense with the tables: seed 0 passed quote, seed 1 nothing. So far no input-layer effect can be told apart "
+        "from the seed.",
+        "E33 loop, plain input, seed 0: lookup 82 % and keyed 77 % at 16k (dense seed 0: 0 %); notebook off → 0 %.",
     ],
     "next": [
-        "Running on Odra since 05:36 UTC: dense plain input, second seed (confirms the input-layer finding); "
-        "scores about 08:30 UTC.",
-        "Then E31c notebook (about 12:00), the no-memory control (about 15:30) and dense plain on documents with "
-        "8 questions each (about 18:15 UTC) — the round needs the control to show the notebook, not the window, "
-        "does the reading.",
+        "Running on Odra since 08:44 UTC: E31c notebook, plain input; then the no-memory control (~15:30) and dense "
+        "plain on documents with 8 questions each (~18:15 UTC).",
+        "Proposed: a second E33 seed, and more tokens or questions per document so dense learns reliably — the "
+        "comparison needs a reference that does not depend on luck.",
     ],
 }
 
@@ -64,8 +60,8 @@ LADDER = [
                "Latest 79.5 % at 1k only; quote 25 %.",
      "when": "10 Oct 21:00 → 11 Oct 05:35", "state": "done"},
     {"run": "Plain input, second seed", "model": "dense · 30M, plain, seed 1", "tokens": "1.5B",
-     "exams": "v2 (guessing 4-9 %)", "result": "Confirms the input-layer finding?", "when": "11 Oct 05:36 → ~08:30",
-     "state": "running"},
+     "exams": "v2 (guessing 4-9 %)", "result": "Nothing: every task at guessing (seed 0 learned four). The plain-input gain was seed luck.",
+     "when": "11 Oct 05:36 → 08:43", "state": "done"},
     {"run": "Round: E31c, control (plain)", "model": "E31c notebook; local 256-token control · 30M, plain",
      "tokens": "1.5B each", "exams": "v2, 1k-16k", "result": "The rest of the architecture round.",
      "when": "~12:00 and ~15:30 11 Oct", "state": "queued"},
@@ -191,7 +187,7 @@ ROUNDS = {
         "title": "Diagnostic: dense 30M without the word-pair/triple tables, 1.5B tokens (data v2)",
         "where": "Odra · 3 × RTX 3090",
         "dates": "10 Oct 2026 18:08 UTC → 20:55 UTC (training 2.3 h, exams 27 min)",
-        "verdict": "The tables were holding the model back: with plain input it learned four tasks — quote passes (86 % "
+        "verdict": "Seed 0 only — a second seed (11 Oct) learned nothing, so this is seed luck, not the input layer. With plain input it learned four tasks — quote passes (86 % "
                    "at 4k, guessing 8 %), lookup 39 % (8 %), keyed 35 % (6 %), latest 32 % (9 %) — where the same model "
                    "with the tables learned at most one. One seed; a second is queued.",
         "observations": [
