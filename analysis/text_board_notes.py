@@ -6,23 +6,25 @@ Plain words, every number with its meaning (research-comms). Update it whenever 
 """
 
 STATUS = {
-    "as_of": "2026-10-10 21:10 UTC",
-    "headline": "The input layer was holding the models back: without the word-pair/triple tables, the 30M dense model "
-                "learned four tasks in 1.5B tokens — quote passes (86 % at 4k), lookup 39 %, keyed 35 %, latest 32 % "
-                "(guessing 6-9 %) — where the same model with the tables learned at most one. The architecture round "
-                "now runs on plain input, E33 first.",
+    "as_of": "2026-10-11 06:20 UTC",
+    "headline": "First architecture result: the E33 loop reads facts from long documents where dense cannot. Lookup "
+                "82 % and keyed 77 % at 16k — four times the training length, both passing — against 0 % for dense "
+                "at 16k (39 % and 35 % at 4k). Its notebook does the work: switched off, lookup falls to 0 % at 16k. "
+                "One seed each; E31c and the no-memory control follow today.",
     "where": [
-        "Dense 30M, plain input, v2 (Odra, 10 Oct 18:08-20:55 UTC): quote 86 %, lookup 39 %, keyed 35 %, latest 32 %, "
-        "count 19 % at 4k; compose and deduce at guessing; better language too (story loss 1.53 vs 1.56). One seed.",
-        "Dense 30M with the tables, same data and tokens: seed 0 passed quote only, seed 1 learned nothing. 50M with "
-        "the tables: lookup 19.5 %, keyed 15 %.",
-        "Exams v2: guessing 4-9 % on every task; the audit finds no shortcut above it.",
+        "E33 loop, plain input, 30M, 1.5B tokens (Odra, 10 Oct 21:00 → 11 Oct 05:35 UTC): lookup 63.5 % at 4k, "
+        "76 % at 8k, 82 % at 16k; keyed 55.5 / 68.5 / 77 %; latest passes at 1k (79.5 %) but fades by 4k; "
+        "quote 25 % at 4k (dense: 86 %).",
+        "Dense, plain input, same data and tokens: lookup 39 % at 4k, 18 % at 8k, 0 % at 16k — it does not read "
+        "past its training length.",
+        "Plain input (no word-pair/triple tables) is what made the dense reference learn; the round runs on it.",
     ],
     "next": [
-        "Running on Odra since 21:00 UTC: E33 loop with plain input, 30M, 1.5B tokens (58k tokens/s, about 7.2 h); "
-        "scores about 05:45 UTC 11 Oct. The run with the tables was stopped after 2 minutes.",
-        "Then: dense plain input with a second seed (~08:30), E31c notebook plain (~12:00), no-memory control plain "
-        "(~15:30), dense plain on documents with 8 questions each (~18:15 UTC 11 Oct).",
+        "Running on Odra since 05:36 UTC: dense plain input, second seed (confirms the input-layer finding); "
+        "scores about 08:30 UTC.",
+        "Then E31c notebook (about 12:00), the no-memory control (about 15:30) and dense plain on documents with "
+        "8 questions each (about 18:15 UTC) — the round needs the control to show the notebook, not the window, "
+        "does the reading.",
     ],
 }
 
@@ -57,11 +59,13 @@ LADDER = [
      "result": "Quote passes 86 % (8 %); lookup 39 % (8 %), keyed 35 % (6 %), latest 32 % (9 %), count 19 % (9 %).",
      "when": "10 Oct 18:08 → 20:55", "state": "done"},
     {"run": "Round: E33 loop, plain", "model": "E31c notebook + reread loop · 30M, plain input",
-     "tokens": "1.5B (7,888 steps)", "exams": "v2, 1k-16k", "result": "Author's priority: does the loop add to dense?",
-     "when": "10 Oct 21:00 → ~05:45", "state": "running"},
+     "tokens": "1.5B (7,888 steps)", "exams": "v2, 1k-16k",
+     "result": "Lookup 82 % and keyed 77 % at 16k (pass; dense 0 %); 63.5 / 55.5 % at 4k (dense 39 / 35 %). "
+               "Latest 79.5 % at 1k only; quote 25 %.",
+     "when": "10 Oct 21:00 → 11 Oct 05:35", "state": "done"},
     {"run": "Plain input, second seed", "model": "dense · 30M, plain, seed 1", "tokens": "1.5B",
-     "exams": "v2 (guessing 4-9 %)", "result": "Confirms the input-layer finding?", "when": "~08:30 11 Oct",
-     "state": "queued"},
+     "exams": "v2 (guessing 4-9 %)", "result": "Confirms the input-layer finding?", "when": "11 Oct 05:36 → ~08:30",
+     "state": "running"},
     {"run": "Round: E31c, control (plain)", "model": "E31c notebook; local 256-token control · 30M, plain",
      "tokens": "1.5B each", "exams": "v2, 1k-16k", "result": "The rest of the architecture round.",
      "when": "~12:00 and ~15:30 11 Oct", "state": "queued"},
@@ -199,6 +203,27 @@ ROUNDS = {
             "Language is better without the tables: held-out story loss 1.53 vs 1.56 nats per token, with the tables' "
             "4.2M parameters moved into the feed-forward layers (width 1,472 vs 1,088).",
             "The copy probe still finds no copying of a whole passage (1.72 → 1.49 nats per token), the largest drop so far.",
+            "Read past the training length it fails: lookup 18 % at 8k and 0 % at 16k; quote 20 % at 8k (scored 11 Oct).",
+        ],
+    },
+    "r2v2p_screen30m_odra.odra": {
+        "title": "Architecture round on plain input: 30M, 1.5B tokens (data v2) — in progress",
+        "where": "Odra · 3 × RTX 3090",
+        "dates": "from 10 Oct 2026 21:00 UTC (E33 loop done 11 Oct 05:35 UTC; E31c and the control queued)",
+        "verdict": "The E33 loop reads facts far past its 4k training length: lookup 82 % and keyed 77 % at 16k "
+                   "(guessing 8 % and 6 %), both passing, where dense with the same input, data and tokens scores 0 %. "
+                   "Its notebook carries it: switched off, lookup and keyed fall to 0 % at 16k.",
+        "observations": [
+            "Longer is better for E33 on lookup and keyed (63.5 → 76 → 82 % from 4k to 16k): with more filler between "
+            "facts, each notebook page holds fewer of them — a guess to test.",
+            "Dense reads well only inside its training length: lookup 39 % at 4k, 18 % at 8k, 0 % at 16k.",
+            "Latest goes the other way: 79.5 % at 1k (a pass), 60 % at 2k, 13 % at 4k, about 2 % at 8k-16k — the last "
+            "move must sit near the question.",
+            "Quote is weaker than dense (25 % vs 86 % at 4k) and gone past 4k: word-for-word signs do not survive the "
+            "notebook.",
+            "Held-out sentence forms and 16 people instead of 12 still pass at 16k: lookup 83 % and 79 %.",
+            "Language is slightly better than dense: story loss 1.52 vs 1.53 nats per token.",
+            "Training took 7.0 h on 3 GPUs (58k tokens/s, a 20-minute cooldown after 6 h), 3× dense.",
         ],
     },
 }
