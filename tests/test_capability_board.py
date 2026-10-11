@@ -72,3 +72,11 @@ def test_candidate_scored_ladders_read_the_picked_candidate_and_fall_back_to_the
     j = {"ladders": {"ladder": {"1024": {"first_acc": 0.4, "candidate": 0.9}, "2048": {"first_acc": 0.35}}}}
     assert _ladder("C5.pchain2-1k", j) == ({1024: 0.9, 2048: 0.35}, "mixed")
     assert _ladder("C3.recall8-1k", j) == ({1024: 0.4, 2048: 0.35}, "first")
+
+
+def test_no_harm_does_not_compare_ladders_scored_differently():
+    from analysis.capability_board import no_harm
+    champ = {"label": "same", "score": 0.95, "ladder": {"131072": 0.92}, "ladder_kind": "first"}
+    var = {"label": "same", "score": 0.95, "ladder": {"131072": 0.80}, "ladder_kind": "candidate"}
+    r = no_harm({"T": {"c": champ, "v": var}}, "c", ["v"])["v"]
+    assert r["lost"] == [] and r["kept"] == 1 and r["missing"] == 1
