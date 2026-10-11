@@ -6,7 +6,7 @@ Plain words, every number with its meaning (research-comms). Update it whenever 
 """
 
 STATUS = {
-    "as_of": "2026-10-11 08:50 UTC",
+    "as_of": "2026-10-11 11:00 UTC",
     "headline": "At 30M and 1.5B tokens, dense learns retrieval only in some runs: 2 of 4 seeds learned something "
                 "(one with the input tables, one without), so the plain-input gain was seed luck, not a fix. The E33 "
                 "loop run reads facts at 16k where dense cannot, but it is also one seed.",
@@ -17,10 +17,10 @@ STATUS = {
         "E33 loop, plain input, seed 0: lookup 82 % and keyed 77 % at 16k (dense seed 0: 0 %); notebook off → 0 %.",
     ],
     "next": [
-        "Running on Odra since 08:44 UTC: E31c notebook, plain input; then the no-memory control (~15:30) and dense "
-        "plain on documents with 8 questions each (~18:15 UTC).",
-        "Proposed: a second E33 seed, and more tokens or questions per document so dense learns reliably — the "
-        "comparison needs a reference that does not depend on luck.",
+        "Running on Odra: E31c notebook, plain input, mixed tasks (from 08:44 UTC; scores about 12:00).",
+        "Then the single-task comparison (author, 11 Oct): for T1 quote, then T2 lookup, ... T7 deduce, train dense, "
+        "E31c and E33 loop on training data of that task only (30M, plain input, 1.5B tokens) and score that task at "
+        "1k-16k. About 12.5 h per task, 3.5 days in all; data builds run ahead on the CPU.",
     ],
 }
 
@@ -62,12 +62,13 @@ LADDER = [
     {"run": "Plain input, second seed", "model": "dense · 30M, plain, seed 1", "tokens": "1.5B",
      "exams": "v2 (guessing 4-9 %)", "result": "Nothing: every task at guessing (seed 0 learned four). The plain-input gain was seed luck.",
      "when": "11 Oct 05:36 → 08:43", "state": "done"},
-    {"run": "Round: E31c, control (plain)", "model": "E31c notebook; local 256-token control · 30M, plain",
-     "tokens": "1.5B each", "exams": "v2, 1k-16k", "result": "The rest of the architecture round.",
-     "when": "~12:00 and ~15:30 11 Oct", "state": "queued"},
-    {"run": "Several questions (plain)", "model": "dense · 30M, plain", "tokens": "1.5B, documents with up to 8 questions",
-     "exams": "v2 (guessing 4-9 %)", "result": "Does more answer signal speed learning further?",
-     "when": "~18:15 11 Oct", "state": "queued (data built)"},
+    {"run": "Round: E31c (plain)", "model": "E31c notebook · 30M, plain input", "tokens": "1.5B, mixed tasks",
+     "exams": "v2, 1k-16k", "result": "Completes dense / E31c / E33 on mixed training.", "when": "11 Oct 08:44 → ~12:00",
+     "state": "running"},
+    {"run": "Single-task comparison", "model": "dense, E31c, E33 loop · 30M, plain input",
+     "tokens": "1.5B each, training data of one task", "exams": "that task, 1k-16k",
+     "result": "T1 quote, then T2 lookup, T3 keyed, T4 latest, T5 compose, T6 count, T7 deduce: 21 runs.",
+     "when": "11 Oct ~12:00 → ~14 Oct", "state": "queued (data building)"},
 ]
 
 # Plain names for the architectures (first mention = name + what it is).
