@@ -1,0 +1,147 @@
+<title>Text Checks Handbook</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600&display=swap">
+<style>
+/* Layout: one reading column of reference sections; tables and code scroll inside their own boxes. */
+:root {
+  --bg: #f6f7f4; --surface: #ffffff; --ink: #1d2320; --ink-2: #4a524e; --ink-3: #78807b;
+  --rule: #dde2dc; --accent: #2f6b55; --accent-soft: #e3efe8; --warn: #9a5b12; --warn-soft: #f7ecdc;
+  --display: "Fraunces", Georgia, serif; --body: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #141816; --surface: #1c211e; --ink: #e6ebe7; --ink-2: #b4bcb7; --ink-3: #8a938e;
+  --rule: #2e3531; --accent: #7cc4a4; --accent-soft: #1f3129; --warn: #e0a85c; --warn-soft: #33281a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #141816; --surface: #1c211e; --ink: #e6ebe7; --ink-2: #b4bcb7; --ink-3: #8a938e;
+  --rule: #2e3531; --accent: #7cc4a4; --accent-soft: #1f3129; --warn: #e0a85c; --warn-soft: #33281a; color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font: 15px/1.6 var(--body); }
+.wrap { max-width: 900px; margin: 0 auto; padding-inline: 20px; padding-block: 36px 64px; }
+h1 { font: 600 34px/1.15 var(--display); margin: 0 0 6px; text-wrap: balance; }
+h2 { font: 600 22px/1.25 var(--display); margin: 40px 0 10px; text-wrap: balance; }
+h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); margin: 22px 0 6px; }
+p, li { max-width: 68ch; color: var(--ink); }
+.muted { color: var(--ink-3); font-size: 13px; }
+.eyebrow { font: 500 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+a { color: var(--accent); }
+code, pre { font-family: var(--mono); font-size: 13px; }
+code { background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; }
+pre { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; overflow-x: auto; line-height: 1.5; }
+pre code { background: none; padding: 0; }
+.tbl { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { color: var(--ink-2); font-weight: 600; background: var(--bg); }
+tr:last-child td { border-bottom: 0; }
+td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pass { color: var(--accent); font-weight: 600; }
+.note { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+.toc { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 14px; margin-top: 12px; }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">MrCogito · for agents · as of 2026-10-11 09:00 UTC</div>
+  <h1>Text Checks Handbook</h1>
+  <p>The text capability checks: one small language model per architecture, trained from scratch on simple stories plus generated
+    "world documents", then examined on fact-reading questions at 1k–128k tokens after training at 4k. This page is the working
+    reference for any agent that runs, reads or extends them. The spec is the source of truth; this page points into it.</p>
+  <nav class="toc"><a href="#state">Current state</a><a href="#protocol">Protocol</a><a href="#tasks">Tasks</a><a href="#models">Models</a>
+    <a href="#data">Data &amp; files</a><a href="#run">How to run</a><a href="#results">Results so far</a><a href="#pitfalls">Pitfalls</a></nav>
+
+  <h2 id="state">Current state</h2>
+  <ul>
+    <li><b>Branch:</b> <code>e31-text-memory</code> (worktree <code>MrCogito-e31text</code>), merged into <code>dev</code>. Odra checkout: <code>~/dev/MrCogito-text</code>, byobu session <code>textchk</code>.</li>
+    <li><b>Protocol:</b> <code>text-v1-draft</code> on data <code>text-world-v2</code> (every guessing rate below 10 %).</li>
+    <li><b>Headline:</b> at 30M / 1.5B tokens the dense reference learns retrieval only in some seeds (2 of 4). The E33 loop (plain input, seed 0) reads lookup 82 % and keyed 77 % at 16k where dense reads 0 %, but is one seed.</li>
+    <li><b>Running on Odra:</b> E31c notebook, plain input (from 2026-10-11 08:44 UTC), then the no-memory control (~15:30) and dense plain on 8-questions-per-document data (~18:15). Queue script: <code>Cache/text_checks/start_cal5_v2.sh</code>.</li>
+    <li><b>Open decision (author):</b> second E33 seed, or first make dense learn reliably (more tokens / more questions per document).</li>
+  </ul>
+  <div class="note">Real runs go to Odra/Polonez only. The M5 laptop is for pipeline checks (under 2 h, ≤30M params, ≤300M tokens); nothing is concluded from laptop runs. Code reaches servers by git only. Kill your own jobs by PID only.</div>
+
+  <h2 id="protocol">Protocol in one screen</h2>
+  <ul>
+    <li><b>Equal budgets:</b> same data, same tokens and steps (global batch 96 rows), same compute cap, parameters within ±5 % (FFN width is the one fitted dial), each architecture's own step size chosen by held-out loss, never by exam scores.</li>
+    <li><b>Scoring:</b> one teacher-forced pass per question. <i>Exact</i> = every answer token right, closing period included; pass = 75 %. <i>Pick</i> = the right candidate's first token wins. <i>Graded pick</i> (<code>pick_prob</code>) = probability share on the right candidate (guessing = 1/candidates). Twin with the fact removed must fall to guessing. Memory models are also scored with the notebook off.</li>
+    <li><b>Calibration rule:</b> a task gates a round only where dense passes it at the 4k training length.</li>
+    <li><b>Calibration ladder</b> (spec §16.1): dense alone, 30M → 50M → 100M, tokens up until dense passes; learning curve every 10 %; one failing seed is not a verdict.</li>
+    <li><b>Length:</b> train at 4k; exams 1k, 2k, 4k (calibration) or up to 16k (current round); 32k–128k once something passes at 4k.</li>
+  </ul>
+
+  <h2 id="tasks">Tasks (text-world-v2)</h2>
+  <div class="tbl"><table>
+    <tr><th>task</th><th>question</th><th>candidates</th><th>guessing</th></tr>
+    <tr><td>T1 Quote</td><td>What did the sign of Lumo say? (4–6 words, word for word)</td><td class="n">12 signs</td><td class="n">8 %</td></tr>
+    <tr><td>T2 Lookup</td><td>Where does Lumo live? (every home stated)</td><td class="n">12 homes</td><td class="n">8 %</td></tr>
+    <tr><td>T3 Keyed</td><td>Same, a quarter of the names one syllable apart</td><td class="n">16 homes</td><td class="n">6 %</td></tr>
+    <tr><td>T4 Latest</td><td>Where does Lumo live now? (10 moves each, 5 people, interleaved)</td><td class="n">11 places</td><td class="n">9 %</td></tr>
+    <tr><td>T5 Compose</td><td>Where does the teacher of the teacher of Lumo live?</td><td class="n">12 homes</td><td class="n">8 %</td></tr>
+    <tr><td>T6 Count (frontier)</td><td>How many times did Lumo visit the market? (0–10)</td><td class="n">11 numbers</td><td class="n">9 %</td></tr>
+    <tr><td>T7 Deduce (frontier)</td><td>What is Pim like? (one rule chain per person)</td><td class="n">12 properties</td><td class="n">8 %</td></tr>
+  </table></div>
+  <p class="muted">Candidate places start with different capital letters: the tokenizer splits an invented name into its capital letter first, so this keeps the first answer token decisive. Known partial floor: on latest, tracking moves but ignoring whose they are scores 1 in 5. Model-free audit of all 29,400 items: <code>docs/3_Evaluations_and_Baselines/text_audit/text-world-v2.md</code>.</p>
+
+  <h2 id="models">Models and shapes</h2>
+  <div class="tbl"><table>
+    <tr><th>tier</th><th>layers</th><th>width</th><th>FFN (dense / memory)</th><th>heads</th><th>params</th></tr>
+    <tr><td>screen 30M</td><td class="n">8 (2+1+5)</td><td class="n">576</td><td class="n">1,088 / 832</td><td class="n">9 q, 1 kv, dim 64</td><td class="n">29.7M / 30.2M</td></tr>
+    <tr><td>mid 50M</td><td class="n">12 (2+1+9)</td><td class="n">576</td><td class="n">1,536 / 1,344</td><td class="n">9 q, 1 kv</td><td class="n">49.5M</td></tr>
+    <tr><td>main 100M</td><td class="n">12 (3+1+8)</td><td class="n">896</td><td class="n">2,112 / 1,984</td><td class="n">14 q, 1 kv</td><td class="n">99.5M / 99.4M</td></tr>
+  </table></div>
+  <ul>
+    <li><b>Tokenizer:</b> byte-level BPE, 4,096 tokens, frozen since v0 (published with <code>ksopyla/cogito-text-world</code>); about 3.3 characters per token on stories.</li>
+    <li><b>Input layer:</b> token embedding 256-d up-projected to the width. "E31 as tested" adds hashed word-pair/triple tables (2 × 8,192 × 256) and 64-d value embeddings; <code>*_plain</code> arches drop both and refit the FFN. The current round uses plain input.</li>
+    <li><b>Architectures</b> (<code>evaluation/text_checks.py</code>): <code>dense</code> (all layers full attention), <code>local</code> (no-memory control: last 256 tokens only; carries the unused notebook writer), <code>e31c</code> (16-token local layers + one read of 256 raw tokens and a 32×512 notebook written every 192 tokens), <code>e31c_loop</code> (E33: e31c + 4-round reread loop, about 3× slower), each with a <code>_plain</code> variant; <code>dense_plain</code>.</li>
+  </ul>
+
+  <h2 id="data">Data and files</h2>
+  <div class="tbl"><table>
+    <tr><th>what</th><th>where</th></tr>
+    <tr><td>Spec (source of truth)</td><td><code>docs/engineering_specs/text_capability_checks.md</code> (§9 tasks, §10 scoring, §16.1 ladder)</td></tr>
+    <tr><td>Agent skill</td><td><code>.cursor/skills/text-checks/SKILL.md</code></td></tr>
+    <tr><td>Generator / builder</td><td><code>data/text_world.py</code> (v0, v1 byte-identical; v2 default) · <code>scripts/build_text_checks_data.py</code></td></tr>
+    <tr><td>Definitions / runner</td><td><code>evaluation/text_checks.py</code> · <code>scripts/run_text_checks.py</code> · recipe cards <code>evaluation/text_checks_recipes/</code></td></tr>
+    <tr><td>Scorer / probes</td><td><code>evaluation/text_checks_eval.py</code> · <code>scripts/probe_copy.py</code> · audit <code>analysis/text_checks_audit.py</code></td></tr>
+    <tr><td>Results ledger / board</td><td><code>docs/2_Experiments_Registry/results/capability/text/*.json</code> · <code>analysis/text_board.py</code> + <code>text_board_notes.py</code></td></tr>
+    <tr><td>Data on Odra</td><td><code>$DATASETS_TOK_DIR/text_checks_v2</code> (1.0B-token mix) · <code>text_checks_v2q8</code> (8 questions per doc, same exams) · <code>text_checks_v1</code></td></tr>
+    <tr><td>Literature note</td><td><code>docs/4_Research_Notes/text_calibration_ladder_literature_20261010.md</code></td></tr>
+    <tr><td>Board (people)</td><td><a href="https://claude.ai/artifact/AUUgBTgGQwBDjvKiLzgXo9">Text Capability Board</a></td></tr>
+  </table></div>
+
+  <h2 id="run">How to run a calibration or round job</h2>
+  <pre><code># on Odra, after git pull in ~/dev/MrCogito-text
+export PATH="$HOME/.local/bin:$PATH" PYTHONPATH=.; source scripts/remote_paths.sh
+uv run python scripts/run_text_checks.py plan --phase train --tier screen --arches e31c_loop_plain \
+  --host odra --gpus 0 1 2 --data $DATASETS_TOK_DIR/text_checks_v2 --out Cache/text_checks/&lt;run&gt; \
+  --tokens 1.5e9 --eval_lengths 1024 2048 4096 8192 16384 --curve_fractions 0.2 0.4 0.6 0.8 1.0 --seed 0
+bash Cache/text_checks/&lt;run&gt;/launch/train_start.sh      # byobu session textchk; exams follow training
+
+# from the worktree, when exams are done: ledger + NAS archive + board
+bash scripts/pull_text_checks_results.sh odra &lt;run&gt;
+uv run python analysis/text_board.py                       # then add the round's verdict to text_board_notes.py</code></pre>
+  <ul>
+    <li><b>Pauses:</b> a job pauses for a 20-minute cooldown after 6 h (exit code 75) and resumes from its checkpoint; that is not a failure.</li>
+    <li><b>Re-planning</b> a running round is safe: started jobs keep their scripts and cards.</li>
+    <li><b>Throughput at 30M on 3 × 3090:</b> dense about 190k tokens/s (1.5B in 2.2 h); E31c about 185k; E33 loop about 58k (7 h).</li>
+  </ul>
+
+  <h2 id="results">Results so far (UTC)</h2>
+  <div class="tbl"><table>
+    <tr><th>run</th><th>model</th><th>tokens · exams</th><th>result at 4k unless noted (guessing)</th></tr>
+    <tr><td class="n">9–10 Oct</td><td>4 models, 30M</td><td>0.6B · v1</td><td>all at guessing</td></tr>
+    <tr><td class="n">10 Oct 05:50</td><td>dense 30M</td><td>1.5B · v1</td><td>lookup 47 % (25), latest 37 % (20), keyed 13 % (6)</td></tr>
+    <tr><td class="n">10 Oct 08:17</td><td>dense 30M, seed 0</td><td>1.5B · v2</td><td><span class="pass">quote 95 %</span> (8); rest at guessing</td></tr>
+    <tr><td class="n">10 Oct 11:24</td><td>dense 50M</td><td>1.5B · v2</td><td>lookup 19.5 % (8), keyed 15 % (6); quote 0</td></tr>
+    <tr><td class="n">10 Oct 15:18</td><td>dense 30M, seed 1</td><td>1.5B · v2</td><td>all at guessing</td></tr>
+    <tr><td class="n">10 Oct 18:08</td><td>dense plain 30M, seed 0</td><td>1.5B · v2</td><td><span class="pass">quote 86 %</span>, lookup 39 %, keyed 35 %, latest 32 %; 0 % at 16k</td></tr>
+    <tr><td class="n">10 Oct 21:00</td><td>E33 loop plain 30M</td><td>1.5B · v2</td><td>lookup 63.5 %, keyed 55.5 %; <span class="pass">82 % / 77 % at 16k</span>; notebook off → 0 at 16k; quote 25 %</td></tr>
+    <tr><td class="n">11 Oct 05:36</td><td>dense plain 30M, seed 1</td><td>1.5B · v2</td><td>all at guessing</td></tr>
+  </table></div>
+
+  <h2 id="pitfalls">Pitfalls already paid for</h2>
+  <ul>
+    <li><b>Seed luck at 30M / 1.5B:</b> retrieval switches on abruptly and only in some runs; never conclude from one seed, and do not attribute a one-seed gain to a design change (the plain-input "fix" was retracted after seed 1).</li>
+    <li><b>Shortcuts:</b> every data change needs the model-free audit (rule reader 100 %, shortcuts at guessing, first tokens distinct) before training.</li>
+    <li><b>Copy probe:</b> no run so far copies a repeated passage; models learn task-specific retrieval instead.</li>
+    <li><b>Answer surprise</b> (<code>answer_nll</code>) rewards "a word from this document" without "whose"; read the graded pick for binding.</li>
+    <li><b>Worktree guard:</b> commands with <code>eval</code> in a path or complex shell can be refused locally; write a script to the scratchpad and run it plainly.</li>
+    <li><b>Dev moves:</b> merge <code>origin/dev</code> into the branch, run the tests, then push <code>HEAD:dev</code> (fast-forward only, never force).</li>
+  </ul>
+</div>
