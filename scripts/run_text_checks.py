@@ -277,7 +277,8 @@ def plan_train_job(name: str, arch: str, tier: str, *, lr: float, tokens: float,
 
 
 def plan_eval_job(name: str, arch: str, tier: str, train_job: str, *, data: Path, out: Path, gpu: str, mode: str,
-                  steps: int, lengths: tuple | None = None, curve_fractions: tuple = CURVE_FRACTIONS) -> dict:
+                  steps: int, lengths: tuple | None = None, curve_fractions: tuple = CURVE_FRACTIONS,
+                  tasks: tuple | None = None) -> dict:
     """`lengths`: exam lengths instead of the tier's (calibration runs score the training length and below;
     the long-context ladder is for result rounds). `curve_fractions`: learning-curve checkpoints."""
     t = TIERS[tier]
@@ -289,7 +290,8 @@ def plan_eval_job(name: str, arch: str, tier: str, train_job: str, *, data: Path
     lens = " ".join(str(x) for x in eval_lengths)
     extra_lens = " ".join(str(x) for x in t.extra_lengths if x <= max(eval_lengths))
     cap = "--max_items_per_cell 3" if tier == "smoke" else ""
-    ev = f"uv run python evaluation/text_checks_eval.py --tokenizer {_q(data / 'tokenizer')} {device} {cap}"
+    only = f"--tasks {' '.join(tasks)}" if tasks else ""  # single-task runs score their own task only
+    ev = f"uv run python evaluation/text_checks_eval.py --tokenizer {_q(data / 'tokenizer')} {device} {cap} {only}"
     # (output file, command): each final evaluation is skipped when its file exists (resumable)
     finals = [
         ("final_id.json", f'{dev}{ev} --checkpoint "$MODEL" --items {_q(data / "eval" / "id.jsonl")} --lengths {lens} '
@@ -322,6 +324,7 @@ def plan_eval_job(name: str, arch: str, tier: str, train_job: str, *, data: Path
                                              model_sel=model_sel, cmds="\n".join(cmds)))
     card = {"job": name, "kind": "eval", "arch": arch, "tier": tier, "train_job": train_job, "gpu": gpu,
             "version": TEXT_CHECKS_VERSION, "lengths": list(eval_lengths), "curve_fractions": list(curve_fractions),
+            "tasks": list(tasks) if tasks else None,
             "git_commit": _git_commit()}
     (jobdir / "job.json").write_text(json.dumps(card, indent=2))
     return card
@@ -446,7 +449,8 @@ def cmd_plan(a):
             g = gpus[i % len(gpus)]
             jobs.append(plan_eval_job(f"eval_{arch}", arch, a.tier, name, data=data, out=out, gpu=g, mode=a.mode,
                                       steps=card["steps"], lengths=tuple(a.eval_lengths or ()) or None,
-                                      curve_fractions=tuple(a.curve_fractions or CURVE_FRACTIONS)))
+                                      curve_fractions=tuple(a.curve_fractions or CURVE_FRACTIONS),
+                                      tasks=tuple(a.eval_tasks) if a.eval_tasks else None))
             evals[f"gpu{g}"].append(f"eval_{arch}")
         evals = {q: j for q, j in evals.items() if j}
         if a.phase == "train":
@@ -528,6 +532,7 @@ def main():
     pl.add_argument("--tokens", type=float, default=0, help="train phase: token budget instead of the tier's (record why)")
     pl.add_argument("--eval_lengths", type=int, nargs="*", default=None,
                     help="exam lengths instead of the tier's (calibration runs: the training length and below)")
+    pl.add_argument("--eval_tasks", nargs="*", default=None, help="score only these tasks (single-task runs)")
     pl.add_argument("--curve_fractions", type=float, nargs="*", default=None,
                     help="learning-curve points as fractions of the steps (default 0.1 0.25 0.5 0.75 1)")
     pl.add_argument("--num_proc", type=int, default=16, help="data phase: generator processes")

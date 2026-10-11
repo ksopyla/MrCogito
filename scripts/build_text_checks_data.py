@@ -148,7 +148,7 @@ def language_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eo
             cur = []
 
 
-_VERSION = {"world": TEXT_WORLD_VERSION, "questions": 1}  # set from the arguments before workers fork
+_VERSION = {"world": TEXT_WORLD_VERSION, "questions": 1, "tasks": TASKS}  # set from the arguments before workers fork
 
 
 def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: int, seed: int,
@@ -161,7 +161,8 @@ def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: 
         target = int(math.exp(rng.uniform(math.log(min_len), math.log(seq_len - 2))))
         for shrink in (1.0, 0.9, 0.8, 0.6):
             text = make_train_document(seed * 1_000_003 + k, stories, int(target * shrink), ntok,
-                                       version=_VERSION["world"], questions=_VERSION["questions"])
+                                       tasks=tuple(_VERSION["tasks"]), version=_VERSION["world"],
+                                       questions=_VERSION["questions"])
             ids = encode(text)
             if len(ids) <= seq_len - 2:
                 rows.append(_row(ids, bos, eos))
@@ -279,7 +280,11 @@ def main():
                    help="lengths of the non-id splits (harder, paraphrase)")
     p.add_argument("--eval_items", type=int, default=400, help="items per (split, task, length) up to 16k")
     p.add_argument("--eval_items_long", type=int, default=200, help="items per cell above 16k")
-    p.add_argument("--eval_splits", nargs="+", default=["id", "harder", "paraphrase"])
+    p.add_argument("--eval_splits", nargs="*", default=["id", "harder", "paraphrase"],
+                   help="exam splits to freeze; none (with --eval_from) reuses another build's exams")
+    p.add_argument("--train_tasks", nargs="+", default=list(TASKS),
+                   help="tasks of the training world documents (single-task runs, 2026-10-11); exams are unchanged")
+    p.add_argument("--eval_from", default=None, help="link eval/ from this build instead of freezing new exams")
     p.add_argument("--eval_tasks", nargs="+", default=list(TASKS))
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--world_version", default=TEXT_WORLD_VERSION, help="generator version: v0 (published draft) or v1")
@@ -290,6 +295,7 @@ def main():
     args = p.parse_args()
     _VERSION["world"] = args.world_version
     _VERSION["questions"] = args.train_questions
+    _VERSION["tasks"] = tuple(args.train_tasks)
     wv = f"text-world-v{args.world_version.replace('text-world-', '').lstrip('v')}"
 
     out = Path(args.out_dir)
@@ -373,6 +379,13 @@ def main():
     ntok = lambda s: len(encode(s))  # noqa: E731
     (out / "eval").mkdir(exist_ok=True)
     eval_hashes, eval_counts = {}, {}
+    if args.eval_from:
+        src = Path(args.eval_from)
+        if (out / "eval").is_symlink() or (out / "eval").exists():
+            shutil.rmtree(out / "eval", ignore_errors=True) if not (out / "eval").is_symlink() else (out / "eval").unlink()
+        (out / "eval").symlink_to((src / "eval").resolve())
+        src_meta = json.loads((src / "text_checks_meta.json").read_text())
+        eval_hashes, eval_counts = src_meta["eval_sha256"], src_meta["eval_items"]
     for split in args.eval_splits:
         path = out / "eval" / f"{split}.jsonl"
         n = 0
@@ -403,7 +416,9 @@ def main():
         "mix": {"story_rows": len(lang_tr), "world_rows": len(world_tr), "mean_story_row_tokens": m_lang,
                 "mean_world_row_tokens": m_world, "row_weights": [w_lang, w_world],
                 "mean_row_tokens": w_lang * m_lang + w_world * m_world,
-                "lang_token_share": f, "train_questions": args.train_questions},
+                "lang_token_share": f, "train_questions": args.train_questions,
+                "train_tasks": list(args.train_tasks)},
+        "eval_from": args.eval_from,
         "built_s": round(time.time() - t0, 1),
     }
     (out / "text_checks_meta.json").write_text(json.dumps(meta, indent=2))
