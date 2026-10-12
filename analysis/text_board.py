@@ -26,7 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from analysis.text_board_notes import LADDER, NAMES, ROUNDS, STATUS, SUPERSEDED  # noqa: E402
+from analysis.text_board_notes import LADDER, NAMES, ROUNDS, SCOREBOARD, STATUS, SUPERSEDED  # noqa: E402
 from analysis.text_checks_scorecard import LEVEL, analyse  # noqa: E402
 from evaluation.text_checks import FRONTIER_TASKS, GATING_TASKS, PASS, TEXT_CHECKS_VERSION, TIERS  # noqa: E402
 
@@ -139,6 +139,70 @@ def _round(led: dict) -> dict:
             "calibrated": calibrated, "collected": led.get("collected")}
 
 
+FAMILIES = {"dense": ("dense_plain",), "e31c": ("e31c_plain",), "e33": ("e31c_loop_plain",)}
+
+
+def scoreboard(ledgers: list[dict]) -> dict:
+    """The main table: per setup (mixed-task / single-task training, plain input, 30M, 1.5B tokens) × task × model
+    family, every seed's exact score at 4k and at the longest exam length, its state, and the leader per task."""
+    fam_of = {a: f for f, archs in FAMILIES.items() for a in archs}
+    out = {s["key"]: {} for s in SCOREBOARD["setups"]}
+    floors = {}
+    for led in ledgers:
+        rid = led["_id"]
+        setup = next((s["key"] for s in SCOREBOARD["setups"]
+                      if rid in s.get("runs", ()) or (s.get("prefix") and rid.startswith(s["prefix"]))), None)
+        if not setup:
+            continue
+        only = rid.split("_")[1] if setup == "single" else None  # pt_<task>_30m_<host>
+        states = {j["arch"]: j["state"] for j in led.get("jobs", []) if j.get("kind") == "train"}
+        evals = {j["arch"]: j["state"] for j in led.get("jobs", []) if j.get("kind") == "eval"}
+        for arch, st in states.items():
+            fam = fam_of.get(arch)
+            if not fam:
+                continue
+            ms = [m for m in led.get("models", {}).values() if m["arch"] == arch]
+            cells = ms[0]["cells"] if ms else {}
+            seed = next((j.get("seed") for j in led["jobs"] if j.get("arch") == arch and j.get("kind") == "train"), 0)
+            for task in TASKS:
+                if only and task != only:
+                    continue
+                by_len = {int(k.split("|")[2]): c for k, c in cells.items() if k.startswith(f"id|{task}|")}
+                for c in by_len.values():
+                    floors[task] = c.get("floor")
+                done = st in ("done", "over_budget") and evals.get(arch) == "done" and by_len
+                entry = {"run": rid, "seed": seed or 0, "state": "done" if done else ("running" if st in ("running", "done") else "queued")}
+                if done:
+                    lmax = max(by_len)
+                    entry.update(at4k=(by_len.get(4096) or {}).get("exact"), atmax=by_len[lmax].get("exact"), lmax=lmax,
+                                 at1k=(by_len.get(1024) or {}).get("exact"))
+                out[setup].setdefault(task, {}).setdefault(fam, []).append(entry)
+    # queued single-task work that has no run folder yet
+    for task in SCOREBOARD.get("single_queue", []):
+        for fam in FAMILIES:
+            out["single"].setdefault(task, {}).setdefault(fam, []) or out["single"][task][fam].append({"state": "queued"})
+    # leader per (setup, task): best seed's best length, if clearly above guessing and ahead of the others
+    leaders = {}
+    for setup, tasks in out.items():
+        for task, fams in tasks.items():
+            best = {f: max((max(e.get("at4k") or 0, e.get("atmax") or 0) for e in es if e.get("state") == "done"), default=None)
+                    for f, es in fams.items()}
+            scored = sorted(((v, f) for f, v in best.items() if v is not None), reverse=True)
+            fl = floors.get(task) or 0
+            unfinished = any(all(e.get("state") != "done" for e in es) for es in fams.values())
+            if unfinished:
+                lead = "pending"
+            elif not scored or scored[0][0] < fl + 0.10:
+                lead = None
+            elif len(scored) > 1 and scored[0][0] - scored[1][0] < 0.05:
+                lead = "tie"
+            else:
+                lead = scored[0][1]
+            leaders[f"{setup}|{task}"] = lead
+    return {"setups": SCOREBOARD["setups"], "cells": out, "floors": floors, "leaders": leaders,
+            "families": {"dense": "Dense", "e31c": "E31c notebook", "e33": "E33 loop"}}
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--ledger_dir", default=str(LEDGER_DIR))
@@ -147,6 +211,21 @@ def main() -> int:
     ledgers = load_ledgers(Path(a.ledger_dir))
     rounds = [_round(led) for led in ledgers if led["_id"] in ROUNDS]
     rounds.sort(key=lambda r: r.get("collected") or "", reverse=True)
+    # charts: first a combined view of the main comparison (mixed training, plain input), then every run
+    mixed_ids = SCOREBOARD["setups"][0]["runs"]
+    mixed = [r for i in mixed_ids for r in rounds if r["id"] == i]
+    chart_rounds = list(rounds)
+    if mixed:
+        models = []
+        for r in mixed:
+            for m in r["models"]:
+                m = dict(m)
+                if "_s1_" in r["id"]:
+                    m["name"], m["color"] = m["name"] + " · seed 1", "--s2"
+                models.append(m)
+        combo = {**mixed[-1], "id": "combined_mixed_plain", "models": models,
+                 "notes": {"title": "Main comparison: mixed training, plain input — dense (2 seeds), E31c, E33 loop"}}
+        chart_rounds = [combo] + chart_rounds
     jobs = [{**j, "run": led["_id"]} for led in ledgers for j in led.get("jobs", [])]
     # calibration side: tiny pipeline runs, step-size tuning, data builds, superseded rounds
     pipeline = [{"run": led["_id"], "arch": j["arch"], "name": NAMES.get(j["arch"], (j["arch"],))[0], "params": j.get("params"),
@@ -163,9 +242,9 @@ def main() -> int:
     superseded = [{"run": k, "note": v} for k, v in SUPERSEDED.items()]
     data = {
         "generated": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-        "version": TEXT_CHECKS_VERSION, "pass": PASS, "status": STATUS, "ladder": LADDER,
+        "version": TEXT_CHECKS_VERSION, "pass": PASS, "status": STATUS, "ladder": LADDER, "scoreboard": scoreboard(ledgers),
         "tasks": TASKS, "gating": list(GATING_TASKS), "levels": LEVEL, "guide": GUIDE,
-        "rounds": rounds, "pipeline": pipeline, "tuning": tuning, "data_builds": data_builds, "superseded": superseded,
+        "rounds": rounds, "chart_rounds": chart_rounds, "pipeline": pipeline, "tuning": tuning, "data_builds": data_builds, "superseded": superseded,
         "sources": [{"file": led["_file"], "run": led["_id"], "collected": led["collected"],
                      "data": (led.get("data") or {}).get("version"), "jobs": len(led.get("jobs", [])),
                      "done": sum(j["state"] in ("done", "over_budget") for j in led.get("jobs", []))} for led in ledgers],

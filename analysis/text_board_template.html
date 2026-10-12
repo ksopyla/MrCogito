@@ -78,6 +78,15 @@ td.cell.above { background: var(--tint); color: var(--ink); font-weight: 600; }
 td.cell.pass { box-shadow: inset 0 0 0 2px var(--good); color: var(--good); font-weight: 600; }
 td.cell.short { text-decoration: line-through; color: var(--critical); }
 td.floor { text-align: center; font-family: var(--mono); color: var(--ink-3); }
+table.sb th.grp { text-align: center; border-left: 2px solid var(--rule); }
+table.sb td.lead { font-size: 12px; color: var(--ink-3); border-right: 2px solid var(--rule); white-space: nowrap; }
+table.sb td.lead.win { color: var(--ink); font-weight: 600; }
+td.cell.queued, td.cell.missing { color: var(--ink-3); font: 12px var(--sans); font-style: italic; }
+td.cell.running { color: var(--info); font: 600 12px var(--sans); }
+.sbsum { margin: 10px 0 4px; }
+details.rundetail { border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); padding: 10px 14px; }
+details.rundetail > summary { cursor: pointer; }
+details.rundetail[open] > summary { margin-bottom: 10px; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; color: var(--ink-3); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 14px; height: 14px; border-radius: 3px; display: inline-block; border: 1px solid var(--rule); }
@@ -116,30 +125,21 @@ details[open] > summary { margin-bottom: 12px; }
     <h1>Text Capability Board</h1>
     <p class="small" id="asof"></p>
     <nav class="toc" aria-label="Sections">
-      <a href="#ladder">Ladder</a><a href="#results">Results</a><a href="#length">Length</a><a href="#learning">Learning curves</a>
-      <a href="#guide">Task guide</a><a href="#calibration">Calibration &amp; pipeline checks</a><a href="#sources">Sources</a>
+      <a href="#scoreboard">Scoreboard</a><a href="#length">Length</a><a href="#learning">Learning curves</a>
+      <a href="#guide">Tasks</a><a href="#ladder">All runs</a><a href="#results">Run details</a>
+      <a href="#calibration">Calibration</a><a href="#sources">Sources</a>
     </nav>
     <div class="brief" id="brief"></div>
   </header>
 
-  <section id="ladder">
+  <section id="scoreboard">
     <div>
-      <h2>Calibration ladder at a glance</h2>
-      <p class="muted">The dense reference alone, growing the token budget and then the model, until it passes the gating tasks at
-        the 4k training length — only then can a round compare architectures. Times are UTC. Details of each finished run are
-        under Results.</p>
+      <h2>Scoreboard: who reads which facts</h2>
+      <p class="muted">The current comparison: 30M models, plain input, 1.5B training tokens, exams v2. Each cell is the share of
+        exact answers at the 4k training length (one number per seed), with the score at 16k — four times the training length —
+        underneath. Green border: a pass (75 % or more). Shaded: clearly above guessing. Grey: at guessing.</p>
     </div>
-    <div style="overflow-x:auto"><table id="ladderTable"></table></div>
-  </section>
-
-  <section id="results">
-    <div>
-      <h2>Results</h2>
-      <p class="muted">One block per round. Every model in a round trains from scratch on the same data, with the same number of
-        tokens and the same compute cap; each gets its own tuned step size. Scores are exact answers, word for word including the
-        final period, at the training length; a pass is 75 % or more.</p>
-    </div>
-    <div id="rounds" style="display:grid; gap:20px"></div>
+    <div id="sbbox"></div>
   </section>
 
   <section id="length">
@@ -169,6 +169,25 @@ details[open] > summary { margin-bottom: 12px; }
         woven in. Names and stories in the exams never appear in training.</p>
     </div>
     <div class="guide" id="guidebox"></div>
+  </section>
+
+  <section id="ladder">
+    <div>
+      <h2>All runs, in order</h2>
+      <p class="muted">Everything trained so far and what is queued, oldest first: the calibration ladder (the dense reference
+        alone, growing tokens and size), then the architecture rounds. Times are UTC. Each finished run has its details below.</p>
+    </div>
+    <div style="overflow-x:auto"><table id="ladderTable"></table></div>
+  </section>
+
+  <section id="results">
+    <div>
+      <h2>Run details</h2>
+      <p class="muted">One block per run, newest first; click to open. Every model in a run trains from scratch on the same data,
+        with the same number of tokens and compute cap, and its own tuned step size. Scores are exact answers, word for word
+        including the final period; a pass is 75 % or more.</p>
+    </div>
+    <div id="rounds" style="display:grid; gap:20px"></div>
   </section>
 
   <section id="calibration">
@@ -212,7 +231,8 @@ details[open] > summary { margin-bottom: 12px; }
 <script>
 const D = /*__DATA__*/null;
 const SERIES = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
-const ARCH_COLOR = { dense: "--s1", local: "--s4", e31c: "--s3", e31c_loop: "--s7", dense_plain: "--s2" };
+const ARCH_COLOR = { dense: "--s1", local: "--s4", e31c: "--s3", e31c_loop: "--s7", dense_plain: "--s1",
+  local_plain: "--s4", e31c_plain: "--s3", e31c_loop_plain: "--s7" };
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const el = (tag, attrs = {}, ...kids) => { const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) { if (k === "class") e.className = v; else if (k === "html") e.innerHTML = v; else e.setAttribute(k, v); }
@@ -221,7 +241,7 @@ const pct = v => v == null ? "–" : Math.round(100 * v);
 const fmtTok = v => v == null ? "–" : v >= 1e9 ? (v / 1e9).toFixed(2) + "B" : v >= 1e6 ? Math.round(v / 1e6) + "M" : Math.round(v / 1e3) + "k";
 const fmtLen = L => L >= 1024 ? (L / 1024) + "k" : String(L);
 const fmtTime = s => s ? s.replace("T", " ").replace(/\+00:00$/, "").slice(0, 16) + " UTC" : "–";
-const colorOf = m => ARCH_COLOR[m.arch] || "--s8";
+const colorOf = m => m.color || ARCH_COLOR[m.arch] || "--s8";
 const sw = m => { const s = el("span", { class: "swatch" }); s.style.background = css(colorOf(m)); return s; };
 const tip = document.getElementById("tip");
 function showTip(ev, html) { tip.innerHTML = html; tip.hidden = false;
@@ -246,6 +266,62 @@ function header() {
       el("td", {}, r.state)));
   }
   t.append(tb);
+}
+
+function scoreboardTable() {
+  const S = D.scoreboard, box = document.getElementById("sbbox");
+  const fams = Object.keys(S.families);
+  const leadName = v => v === "pending" ? "running" : v === "tie" ? "tie" : v ? S.families[v] : "nobody yet";
+  const t = el("table", { class: "sb" });
+  const h1 = el("tr", {}, el("th", { rowspan: 2 }, "Task"), el("th", { rowspan: 2, class: "num" }, "Guessing"));
+  const h2 = el("tr");
+  for (const st of S.setups) {
+    h1.append(el("th", { colspan: fams.length + 1, class: "grp" }, st.title));
+    for (const f of fams) h2.append(el("th", { class: "num" }, S.families[f]));
+    h2.append(el("th", {}, "Leading"));
+  }
+  t.append(el("thead", {}, h1, h2));
+  const tb = el("tbody");
+  const wins = {};
+  for (const task of D.tasks) {
+    const g = D.guide[task], fl = S.floors[task];
+    const tr = el("tr", {}, el("td", { class: "task" }, el("div", {}, g[0] + (D.gating.includes(task) ? "" : " · frontier")),
+      el("div", { class: "tid" }, g[1])), el("td", { class: "floor" }, fl != null ? pct(fl) + " %" : "–"));
+    for (const st of S.setups) {
+      const row = (S.cells[st.key] || {})[task] || {};
+      for (const f of fams) {
+        const es = row[f] || [];
+        const done = es.filter(e => e.state === "done");
+        if (!es.length) { tr.append(el("td", { class: "cell missing" }, "not planned")); continue; }
+        if (!done.length) { tr.append(el("td", { class: "cell " + es[0].state }, es[0].state === "running" ? "training…" : "queued")); continue; }
+        const best = Math.max(...done.map(e => Math.max(e.at4k || 0, e.atmax || 0)));
+        const cls = best >= D.pass ? "pass" : (fl != null && best > fl + 0.10) ? "above" : "at";
+        const td = el("td", { class: "cell " + cls }, done.map(e => pct(e.at4k) + " %").join(" · "));
+        td.append(el("span", { class: "sub" }, done.map(e => e.lmax > 4096 ? fmtLen(e.lmax) + ": " + pct(e.atmax) + " %" : "4k only").join(" · ")));
+        if (done.length > 1) td.append(el("span", { class: "sub" }, done.length + " seeds"));
+        if (es.some(e => e.state !== "done")) td.append(el("span", { class: "sub" }, "+ 1 training"));
+        td.addEventListener("mousemove", ev => showTip(ev, `<b>${g[0]}</b> · ${S.families[f]} · ${st.title}` +
+          done.map(e => `<div class="row"><span>seed ${e.seed}: 1k / 4k / ${fmtLen(e.lmax)}</span><span>${pct(e.at1k)} / ${pct(e.at4k)} / ${pct(e.atmax)} %</span></div>`).join("") +
+          `<div class="row"><span>run</span><span>${done.map(e => e.run.split(".")[0]).join(", ")}</span></div>`));
+        td.addEventListener("mouseleave", hideTip);
+        tr.append(td);
+      }
+      const lead = S.leaders[st.key + "|" + task];
+      if (lead && !["pending", "tie"].includes(lead)) wins[st.key + "|" + lead] = (wins[st.key + "|" + lead] || 0) + 1;
+      tr.append(el("td", { class: "lead " + (lead && !["pending", "tie"].includes(lead) ? "win" : "") }, leadName(lead)));
+    }
+    tb.append(tr);
+  }
+  t.append(tb);
+  box.append(el("div", { class: "tablebox" }, t));
+  const lines = S.setups.map(st => {
+    const w = fams.map(f => [S.families[f], wins[st.key + "|" + f] || 0]).filter(x => x[1]).map(x => `${x[0]} leads ${x[1]}`);
+    const pending = D.tasks.filter(task => S.leaders[st.key + "|" + task] === "pending").length;
+    return `${st.title}: ${w.length ? w.join(", ") : "no leader yet"}` + (pending ? `; ${pending} task${pending > 1 ? "s" : ""} still training or queued` : "") + ".";
+  });
+  box.append(el("ul", { class: "small sbsum" }, ...lines.map(l => el("li", {}, l))));
+  box.append(el("p", { class: "small" }, "Leading = the best score at 4k or 16k, at least 10 points above guessing and 5 ahead of the next model. " +
+    "Single seeds: a lead is a signal, not a verdict, until a second seed repeats it. Hover a cell for 1k / 4k / 16k per seed."));
 }
 
 // a score cell: pass / clearly above guessing / at guessing
@@ -346,7 +422,11 @@ function roundBlock(r) {
 function results() {
   const box = document.getElementById("rounds");
   if (!D.rounds.length) { box.append(el("div", { class: "empty-note" }, "No result rounds yet.")); return; }
-  for (const r of D.rounds) box.append(roundBlock(r));
+  for (const r of D.rounds) {
+    const d = el("details", { class: "rundetail" }, el("summary", {}, el("b", {}, r.notes.title || r.id),
+      el("span", { class: "small" }, "  " + (r.notes.dates || ""))), roundBlock(r));
+    box.append(d);
+  }
 }
 
 function chart(box, { title, sub, series, xs, xlabel, logx = true, ymax = 1, yfmt = v => pct(v), floor = null, pass = D.pass, vline = null, xfmt = fmtLen }) {
@@ -387,10 +467,15 @@ function chart(box, { title, sub, series, xs, xlabel, logx = true, ymax = 1, yfm
 }
 
 function charts() {
-  const r = D.rounds.find(x => x.id === document.getElementById("roundSel").value) || D.rounds[0];
+  const r = D.chart_rounds.find(x => x.id === document.getElementById("roundSel").value) || D.chart_rounds[0];
   const lb = document.getElementById("lengthbox"), cb = document.getElementById("learnbox"); lb.innerHTML = ""; cb.innerHTML = "";
   if (!r) return;
   const ms = r.models;
+  for (const box of [lb, cb]) {
+    const lg = el("div", { class: "legend", style: "grid-column: 1 / -1" });
+    for (const m of ms) lg.append(el("span", {}, sw(m), m.name));
+    box.append(lg);
+  }
   for (const task of D.tasks) {
     let floor = null;
     const series = ms.map(m => ({ name: m.name, color: colorOf(m), points: Object.entries(m.cells).filter(([k]) => k.startsWith(`id|${task}|`))
@@ -409,7 +494,8 @@ function charts() {
 
 function roundSelect() {
   const s = document.getElementById("roundSel");
-  for (const r of D.rounds) s.append(el("option", { value: r.id }, r.notes.title || r.id));
+  for (const r of D.chart_rounds) s.append(el("option", { value: r.id }, r.notes.title || r.id));
+  s.value = D.chart_rounds[0].id;
   s.addEventListener("change", charts);
 }
 
@@ -460,5 +546,5 @@ function sources() {
   t.append(body);
 }
 
-header(); results(); roundSelect(); charts(); guide(); calibration(); sources();
+header(); scoreboardTable(); results(); roundSelect(); charts(); guide(); calibration(); sources();
 </script>

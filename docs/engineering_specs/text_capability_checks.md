@@ -558,6 +558,9 @@ guessing rate.
   loss 1.53 (with the tables: 1.56). The same model with the tables learned at most one task (two seeds).
   **Decision (2026-10-10):** the architecture round runs on plain input (`*_plain` arches); a second plain seed
   confirms the finding. The tables came with E18/E31 from the DNA checks and were never chosen for text.
+  **Not confirmed (2026-10-11):** the second plain seed (05:36–08:43 UTC) learned nothing. Across four dense
+  30M / 1.5B runs, two learned something (one per input), so at this budget learning is seed luck and the
+  input-layer effect is not separable from it. The round stays on plain input for consistency.
 - **Round on plain input** (Odra, from 2026-10-10 21:00 UTC, author's priority E33 first; all 30M, 1.5B tokens,
   v2, exams 1k–16k): E33 loop, then dense plain seed 1, E31c, the no-memory control, then dense plain on
   training documents with up to 8 questions each (`--train_questions 8`, data `text_checks_v2q8`, exams

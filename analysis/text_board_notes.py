@@ -5,26 +5,35 @@ the one-line status, where we are, what is next, and per round the verdict and o
 Plain words, every number with its meaning (research-comms). Update it whenever a round lands.
 """
 
+# The main table (top of the board): the current comparison — plain input, 30M, 1.5B tokens, data v2 — in two setups.
+SCOREBOARD = {
+    "setups": [
+        {"key": "mixed", "title": "Mixed training (all seven tasks in one model)",
+         "runs": ["cal3a_plain30m_v2_odra.odra", "cal3a_s1_plain30m_v2_odra.odra", "r2v2p_screen30m_odra.odra"]},
+        {"key": "single", "title": "Single-task training (one model per task)", "prefix": "pt_"},
+    ],
+    # single-task work queued on Odra with no run folder yet (in order)
+    "single_queue": ["keyed", "latest", "compose", "count", "deduce"],
+}
+
 STATUS = {
-    "as_of": "2026-10-11 06:20 UTC",
-    "headline": "First architecture result: the E33 loop reads facts from long documents where dense cannot. Lookup "
-                "82 % and keyed 77 % at 16k — four times the training length, both passing — against 0 % for dense "
-                "at 16k (39 % and 35 % at 4k). Its notebook does the work: switched off, lookup falls to 0 % at 16k. "
-                "One seed each; E31c and the no-memory control follow today.",
+    "as_of": "2026-10-12 07:00 UTC",
+    "headline": "No architecture wins reliably yet. E33 (notebook + reread loop) has the one strong result — lookup "
+                "82 % at 16k where dense reads 0 % — but it is a single run, and dense learns a task only in some runs, "
+                "so most comparisons are not yet trustworthy.",
     "where": [
-        "E33 loop, plain input, 30M, 1.5B tokens (Odra, 10 Oct 21:00 → 11 Oct 05:35 UTC): lookup 63.5 % at 4k, "
-        "76 % at 8k, 82 % at 16k; keyed 55.5 / 68.5 / 77 %; latest passes at 1k (79.5 %) but fades by 4k; "
-        "quote 25 % at 4k (dense: 86 %).",
-        "Dense, plain input, same data and tokens: lookup 39 % at 4k, 18 % at 8k, 0 % at 16k — it does not read "
-        "past its training length.",
-        "Plain input (no word-pair/triple tables) is what made the dense reference learn; the round runs on it.",
+        "E33 leads on lookup with mixed training: 63.5 % at 4k, 82 % at 16k (dense 39 % and 0 %); notebook off → 0 %.",
+        "E31c without the loop never uses its notebook (same scores with it off); the loop seems to be what makes "
+        "the notebook read.",
+        "Single-task runs so far: quote-only taught no one to quote from memory; lookup-only dense 44 % at 4k, 0 % "
+        "past 4k; E31c 14 % at 4k.",
+        "Seed luck at 30M / 1.5B: 2 of 4 dense mixed-training runs learned nothing.",
     ],
     "next": [
-        "Running on Odra since 05:36 UTC: dense plain input, second seed (confirms the input-layer finding); "
-        "scores about 08:30 UTC.",
-        "Then E31c notebook (about 12:00), the no-memory control (about 15:30) and dense plain on documents with "
-        "8 questions each (about 18:15 UTC) — the round needs the control to show the notebook, not the window, "
-        "does the reading.",
+        "Running on Odra since 06:14 UTC: E33 on lookup-only data — the direct check of its lookup win; scores about "
+        "13:45 UTC.",
+        "Then keyed, latest, compose, count, deduce (dense, E31c, E33 each; about 12.5 h per task; done about 14 Oct).",
+        "Proposed: a second E33 seed on lookup before the remaining tasks — no win counts until it repeats.",
     ],
 }
 
@@ -64,14 +73,16 @@ LADDER = [
                "Latest 79.5 % at 1k only; quote 25 %.",
      "when": "10 Oct 21:00 → 11 Oct 05:35", "state": "done"},
     {"run": "Plain input, second seed", "model": "dense · 30M, plain, seed 1", "tokens": "1.5B",
-     "exams": "v2 (guessing 4-9 %)", "result": "Confirms the input-layer finding?", "when": "11 Oct 05:36 → ~08:30",
-     "state": "running"},
-    {"run": "Round: E31c, control (plain)", "model": "E31c notebook; local 256-token control · 30M, plain",
-     "tokens": "1.5B each", "exams": "v2, 1k-16k", "result": "The rest of the architecture round.",
-     "when": "~12:00 and ~15:30 11 Oct", "state": "queued"},
-    {"run": "Several questions (plain)", "model": "dense · 30M, plain", "tokens": "1.5B, documents with up to 8 questions",
-     "exams": "v2 (guessing 4-9 %)", "result": "Does more answer signal speed learning further?",
-     "when": "~18:15 11 Oct", "state": "queued (data built)"},
+     "exams": "v2 (guessing 4-9 %)", "result": "Nothing: every task at guessing (seed 0 learned four). The plain-input gain was seed luck.",
+     "when": "11 Oct 05:36 → 08:43", "state": "done"},
+    {"run": "Round: E31c (plain)", "model": "E31c notebook · 30M, plain input", "tokens": "1.5B, mixed tasks",
+     "exams": "v2, 1k-16k",
+     "result": "Lookup 16 %, keyed 15 % at 4k, 0 % at 16k; notebook off gives the same, so it is unused. Latest 87 % at 1k.",
+     "when": "11 Oct 08:44 → 12:15", "state": "done"},
+    {"run": "Single-task comparison", "model": "dense, E31c, E33 loop · 30M, plain input",
+     "tokens": "1.5B each, training data of one task", "exams": "that task, 1k-16k",
+     "result": "T1 quote, then T2 lookup, T3 keyed, T4 latest, T5 compose, T6 count, T7 deduce: 21 runs.",
+     "when": "11 Oct 12:15 → ~14 Oct", "state": "T1 done; T2 lookup: dense, E31c done, E33 running"},
 ]
 
 # Plain names for the architectures (first mention = name + what it is).
@@ -191,7 +202,7 @@ ROUNDS = {
         "title": "Diagnostic: dense 30M without the word-pair/triple tables, 1.5B tokens (data v2)",
         "where": "Odra · 3 × RTX 3090",
         "dates": "10 Oct 2026 18:08 UTC → 20:55 UTC (training 2.3 h, exams 27 min)",
-        "verdict": "The tables were holding the model back: with plain input it learned four tasks — quote passes (86 % "
+        "verdict": "Seed 0 only — a second seed (11 Oct) learned nothing, so this is seed luck, not the input layer. With plain input it learned four tasks — quote passes (86 % "
                    "at 4k, guessing 8 %), lookup 39 % (8 %), keyed 35 % (6 %), latest 32 % (9 %) — where the same model "
                    "with the tables learned at most one. One seed; a second is queued.",
         "observations": [
@@ -207,7 +218,7 @@ ROUNDS = {
         ],
     },
     "r2v2p_screen30m_odra.odra": {
-        "title": "Architecture round on plain input: 30M, 1.5B tokens (data v2) — in progress",
+        "title": "Architecture round on plain input: 30M, 1.5B tokens (data v2)",
         "where": "Odra · 3 × RTX 3090",
         "dates": "from 10 Oct 2026 21:00 UTC (E33 loop done 11 Oct 05:35 UTC; E31c and the control queued)",
         "verdict": "The E33 loop reads facts far past its 4k training length: lookup 82 % and keyed 77 % at 16k "
@@ -224,6 +235,44 @@ ROUNDS = {
             "Held-out sentence forms and 16 people instead of 12 still pass at 16k: lookup 83 % and 79 %.",
             "Language is slightly better than dense: story loss 1.52 vs 1.53 nats per token.",
             "Training took 7.0 h on 3 GPUs (58k tokens/s, a 20-minute cooldown after 6 h), 3× dense.",
+            "E31c without the loop (12:15 UTC 11 Oct) does not use its notebook: lookup 16 % at 4k and 0 % at 16k, "
+            "the same with the notebook off. Latest 87 % at 1k. So the reread loop is what makes the notebook read.",
+        ],
+    },
+    "pt_quote_30m_odra.odra": {
+        "title": "Single-task T1 quote: dense, E31c, E33 loop trained on quote only (30M, plain input, 1.5B tokens)",
+        "where": "Odra · 3 × RTX 3090",
+        "dates": "11 Oct 2026 12:15 UTC → 12 Oct 01:04 UTC (dense 2.5 h, E31c 2.7 h, E33 7.6 h incl. exams)",
+        "verdict": "Nobody learned quote from memory. Dense stayed at guessing (8 % at 4k); E31c and E33 score 33 % at "
+                   "1k and 25 % at 4k but 0 % from 8k, and exactly the same with the notebook off — they read only "
+                   "the signs that fall in their last 256 tokens. Training on one task did not make dense learn.",
+        "observations": [
+            "The window effect: about a third of the questions put the sign late in the document, inside the 256-token "
+            "window, which matches the 25-33 % and the 0 % at 8k-16k.",
+            "Dense with mixed training learned quote in one seed of four (95 %); quote-only training did not help it.",
+            "Next: T2 lookup (dense from 01:04 UTC 12 Oct), where E33 had its mixed-training win.",
+        ],
+    },
+    "pt_lookup_30m_odra.odra": {
+        "title": "Single-task T2 lookup: dense, E31c, E33 loop trained on lookup only (30M, plain input, 1.5B tokens) — in progress",
+        "where": "Odra · 3 × RTX 3090",
+        "dates": "12 Oct 2026 01:04 UTC → (dense done 03:37, E31c 06:14, E33 about 13:45 UTC)",
+        "verdict": "Dense learns lookup inside its training length (44 % at 4k, 53 % at 1k; guessing 8 %) but reads "
+                   "nothing past it (0 % at 8k-16k). E31c reaches only 14 % at 4k. E33 is training.",
+        "observations": [
+            "Lookup-only training gave dense about the same as its best mixed-training seed (44 % vs 39 % at 4k).",
+            "E31c without the loop stays near its 256-token window, as in every run so far.",
+        ],
+    },
+    "cal3a_s1_plain30m_v2_odra.odra": {
+        "title": "Dense 30M plain input, second seed, 1.5B tokens (data v2, mixed training)",
+        "where": "Odra · 3 × RTX 3090",
+        "dates": "11 Oct 2026 05:36 UTC → 08:43 UTC (training 2.4 h)",
+        "verdict": "Nothing learned: every task at guessing at 4k. Seed 0 of the same setup learned four tasks, so the "
+                   "plain-input gain was seed luck.",
+        "observations": [
+            "Across four dense 30M / 1.5B mixed-training runs, two learned something (one with the input tables, one "
+            "without) and two learned nothing.",
         ],
     },
 }
