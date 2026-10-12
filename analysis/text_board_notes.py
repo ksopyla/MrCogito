@@ -5,6 +5,17 @@ the one-line status, where we are, what is next, and per round the verdict and o
 Plain words, every number with its meaning (research-comms). Update it whenever a round lands.
 """
 
+# The main table (top of the board): the current comparison — plain input, 30M, 1.5B tokens, data v2 — in two setups.
+SCOREBOARD = {
+    "setups": [
+        {"key": "mixed", "title": "Mixed training (all seven tasks in one model)",
+         "runs": ["cal3a_plain30m_v2_odra.odra", "cal3a_s1_plain30m_v2_odra.odra", "r2v2p_screen30m_odra.odra"]},
+        {"key": "single", "title": "Single-task training (one model per task)", "prefix": "pt_"},
+    ],
+    # single-task work queued on Odra with no run folder yet (in order)
+    "single_queue": ["keyed", "latest", "compose", "count", "deduce"],
+}
+
 STATUS = {
     "as_of": "2026-10-12 07:00 UTC",
     "headline": "No architecture wins reliably yet. E33 (notebook + reread loop) has the one strong result — lookup "
@@ -251,6 +262,17 @@ ROUNDS = {
         "observations": [
             "Lookup-only training gave dense about the same as its best mixed-training seed (44 % vs 39 % at 4k).",
             "E31c without the loop stays near its 256-token window, as in every run so far.",
+        ],
+    },
+    "cal3a_s1_plain30m_v2_odra.odra": {
+        "title": "Dense 30M plain input, second seed, 1.5B tokens (data v2, mixed training)",
+        "where": "Odra · 3 × RTX 3090",
+        "dates": "11 Oct 2026 05:36 UTC → 08:43 UTC (training 2.4 h)",
+        "verdict": "Nothing learned: every task at guessing at 4k. Seed 0 of the same setup learned four tasks, so the "
+                   "plain-input gain was seed luck.",
+        "observations": [
+            "Across four dense 30M / 1.5B mixed-training runs, two learned something (one with the input tables, one "
+            "without) and two learned nothing.",
         ],
     },
 }
