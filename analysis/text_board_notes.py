@@ -6,22 +6,23 @@ Plain words, every number with its meaning (research-comms). Update it whenever 
 """
 
 STATUS = {
-    "as_of": "2026-10-12 01:40 UTC",
-    "headline": "At 30M and 1.5B tokens, dense learns retrieval only in some runs: 2 of 4 seeds learned something "
-                "(one with the input tables, one without), so the plain-input gain was seed luck, not a fix. The E33 "
-                "loop run reads facts at 16k where dense cannot, but it is also one seed.",
+    "as_of": "2026-10-12 07:00 UTC",
+    "headline": "No architecture wins reliably yet. E33 (notebook + reread loop) has the one strong result — lookup "
+                "82 % at 16k where dense reads 0 % — but it is a single run, and dense learns a task only in some runs, "
+                "so most comparisons are not yet trustworthy.",
     "where": [
-        "Dense plain input, seed 1 (Odra, 11 Oct 05:36-08:43 UTC): every task at guessing. Seed 0 learned four tasks.",
-        "Dense with the tables: seed 0 passed quote, seed 1 nothing. So far no input-layer effect can be told apart "
-        "from the seed.",
-        "E33 loop, plain input, seed 0: lookup 82 % and keyed 77 % at 16k (dense seed 0: 0 %); notebook off → 0 %.",
+        "E33 leads on lookup with mixed training: 63.5 % at 4k, 82 % at 16k (dense 39 % and 0 %); notebook off → 0 %.",
+        "E31c without the loop never uses its notebook (same scores with it off); the loop seems to be what makes "
+        "the notebook read.",
+        "Single-task runs so far: quote-only taught no one to quote from memory; lookup-only dense 44 % at 4k, 0 % "
+        "past 4k; E31c 14 % at 4k.",
+        "Seed luck at 30M / 1.5B: 2 of 4 dense mixed-training runs learned nothing.",
     ],
     "next": [
-        "Done 12:15 UTC: E31c notebook, plain input, mixed tasks — lookup 16 % at 4k, 0 % at 16k; the same with "
-        "the notebook off, so without the loop the notebook goes unused (one seed).",
-        "Then the single-task comparison (author, 11 Oct): for T1 quote, then T2 lookup, ... T7 deduce, train dense, "
-        "E31c and E33 loop on training data of that task only (30M, plain input, 1.5B tokens) and score that task at "
-        "1k-16k. About 12.5 h per task, 3.5 days in all; data builds run ahead on the CPU.",
+        "Running on Odra since 06:14 UTC: E33 on lookup-only data — the direct check of its lookup win; scores about "
+        "13:45 UTC.",
+        "Then keyed, latest, compose, count, deduce (dense, E31c, E33 each; about 12.5 h per task; done about 14 Oct).",
+        "Proposed: a second E33 seed on lookup before the remaining tasks — no win counts until it repeats.",
     ],
 }
 
@@ -70,7 +71,7 @@ LADDER = [
     {"run": "Single-task comparison", "model": "dense, E31c, E33 loop · 30M, plain input",
      "tokens": "1.5B each, training data of one task", "exams": "that task, 1k-16k",
      "result": "T1 quote, then T2 lookup, T3 keyed, T4 latest, T5 compose, T6 count, T7 deduce: 21 runs.",
-     "when": "11 Oct 12:15 → ~14 Oct", "state": "T1 done; T2 lookup running"},
+     "when": "11 Oct 12:15 → ~14 Oct", "state": "T1 done; T2 lookup: dense, E31c done, E33 running"},
 ]
 
 # Plain names for the architectures (first mention = name + what it is).
@@ -239,6 +240,17 @@ ROUNDS = {
             "window, which matches the 25-33 % and the 0 % at 8k-16k.",
             "Dense with mixed training learned quote in one seed of four (95 %); quote-only training did not help it.",
             "Next: T2 lookup (dense from 01:04 UTC 12 Oct), where E33 had its mixed-training win.",
+        ],
+    },
+    "pt_lookup_30m_odra.odra": {
+        "title": "Single-task T2 lookup: dense, E31c, E33 loop trained on lookup only (30M, plain input, 1.5B tokens) — in progress",
+        "where": "Odra · 3 × RTX 3090",
+        "dates": "12 Oct 2026 01:04 UTC → (dense done 03:37, E31c 06:14, E33 about 13:45 UTC)",
+        "verdict": "Dense learns lookup inside its training length (44 % at 4k, 53 % at 1k; guessing 8 %) but reads "
+                   "nothing past it (0 % at 8k-16k). E31c reaches only 14 % at 4k. E33 is training.",
+        "observations": [
+            "Lookup-only training gave dense about the same as its best mixed-training seed (44 % vs 39 % at 4k).",
+            "E31c without the loop stays near its 256-token window, as in every run so far.",
         ],
     },
 }
