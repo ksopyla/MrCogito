@@ -6,7 +6,7 @@ Plain words, every number with its meaning (research-comms). Update it whenever 
 """
 
 STATUS = {
-    "as_of": "2026-10-11 12:20 UTC",
+    "as_of": "2026-10-12 01:40 UTC",
     "headline": "At 30M and 1.5B tokens, dense learns retrieval only in some runs: 2 of 4 seeds learned something "
                 "(one with the input tables, one without), so the plain-input gain was seed luck, not a fix. The E33 "
                 "loop run reads facts at 16k where dense cannot, but it is also one seed.",
@@ -70,7 +70,7 @@ LADDER = [
     {"run": "Single-task comparison", "model": "dense, E31c, E33 loop · 30M, plain input",
      "tokens": "1.5B each, training data of one task", "exams": "that task, 1k-16k",
      "result": "T1 quote, then T2 lookup, T3 keyed, T4 latest, T5 compose, T6 count, T7 deduce: 21 runs.",
-     "when": "11 Oct ~12:00 → ~14 Oct", "state": "queued (data building)"},
+     "when": "11 Oct 12:15 → ~14 Oct", "state": "T1 done; T2 lookup running"},
 ]
 
 # Plain names for the architectures (first mention = name + what it is).
@@ -225,6 +225,20 @@ ROUNDS = {
             "Training took 7.0 h on 3 GPUs (58k tokens/s, a 20-minute cooldown after 6 h), 3× dense.",
             "E31c without the loop (12:15 UTC 11 Oct) does not use its notebook: lookup 16 % at 4k and 0 % at 16k, "
             "the same with the notebook off. Latest 87 % at 1k. So the reread loop is what makes the notebook read.",
+        ],
+    },
+    "pt_quote_30m_odra.odra": {
+        "title": "Single-task T1 quote: dense, E31c, E33 loop trained on quote only (30M, plain input, 1.5B tokens)",
+        "where": "Odra · 3 × RTX 3090",
+        "dates": "11 Oct 2026 12:15 UTC → 12 Oct 01:04 UTC (dense 2.5 h, E31c 2.7 h, E33 7.6 h incl. exams)",
+        "verdict": "Nobody learned quote from memory. Dense stayed at guessing (8 % at 4k); E31c and E33 score 33 % at "
+                   "1k and 25 % at 4k but 0 % from 8k, and exactly the same with the notebook off — they read only "
+                   "the signs that fall in their last 256 tokens. Training on one task did not make dense learn.",
+        "observations": [
+            "The window effect: about a third of the questions put the sign late in the document, inside the 256-token "
+            "window, which matches the 25-33 % and the 0 % at 8k-16k.",
+            "Dense with mixed training learned quote in one seed of four (95 %); quote-only training did not help it.",
+            "Next: T2 lookup (dense from 01:04 UTC 12 Oct), where E33 had its mixed-training win.",
         ],
     },
 }
