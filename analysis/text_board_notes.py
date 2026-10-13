@@ -17,7 +17,7 @@ SCOREBOARD = {
 }
 
 STATUS = {
-    "as_of": "2026-10-12 07:00 UTC",
+    "as_of": "2026-10-13 05:15 UTC",
     "headline": "No architecture wins reliably yet. E33 (notebook + reread loop) has the one strong result — lookup "
                 "82 % at 16k where dense reads 0 % — but it is a single run, and dense learns a task only in some runs, "
                 "so most comparisons are not yet trustworthy.",
@@ -30,8 +30,9 @@ STATUS = {
         "Seed luck at 30M / 1.5B: 2 of 4 dense mixed-training runs learned nothing.",
     ],
     "next": [
-        "Running on Odra since 06:14 UTC: E33 on lookup-only data — the direct check of its lookup win; scores about "
-        "13:45 UTC.",
+        "Odra has not answered since about 15:00 UTC 12 Oct (connection refused from outside; Polonez is up). "
+        "E33 on lookup-only data started 06:14 UTC 12 Oct and was due to score about 13:45 UTC; its result is not "
+        "yet pulled. The queue keeps running on Odra if the machine itself is up.",
         "Then keyed, latest, compose, count, deduce (dense, E31c, E33 each; about 12.5 h per task; done about 14 Oct).",
         "Proposed: a second E33 seed on lookup before the remaining tasks — no win counts until it repeats.",
     ],
@@ -82,7 +83,7 @@ LADDER = [
     {"run": "Single-task comparison", "model": "dense, E31c, E33 loop · 30M, plain input",
      "tokens": "1.5B each, training data of one task", "exams": "that task, 1k-16k",
      "result": "T1 quote, then T2 lookup, T3 keyed, T4 latest, T5 compose, T6 count, T7 deduce: 21 runs.",
-     "when": "11 Oct 12:15 → ~14 Oct", "state": "T1 done; T2 lookup: dense, E31c done, E33 running"},
+     "when": "11 Oct 12:15 → ~14 Oct", "state": "T1 done; T2 lookup: dense, E31c done, E33 result not pulled (Odra unreachable since 12 Oct ~15:00)"},
 ]
 
 # Plain names for the architectures (first mention = name + what it is).
@@ -256,7 +257,7 @@ ROUNDS = {
     "pt_lookup_30m_odra.odra": {
         "title": "Single-task T2 lookup: dense, E31c, E33 loop trained on lookup only (30M, plain input, 1.5B tokens) — in progress",
         "where": "Odra · 3 × RTX 3090",
-        "dates": "12 Oct 2026 01:04 UTC → (dense done 03:37, E31c 06:14, E33 about 13:45 UTC)",
+        "dates": "12 Oct 2026 01:04 UTC → (dense done 03:37, E31c 06:14, E33 due about 13:45 UTC; not pulled, Odra unreachable)",
         "verdict": "Dense learns lookup inside its training length (44 % at 4k, 53 % at 1k; guessing 8 %) but reads "
                    "nothing past it (0 % at 8k-16k). E31c reaches only 14 % at 4k. E33 is training.",
         "observations": [
