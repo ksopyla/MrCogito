@@ -19,7 +19,7 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
-TEXT_CHECKS_VERSION = "text-v0-draft"
+TEXT_CHECKS_VERSION = "text-v1-draft"   # v1: exams on text-world-v2 (every guessing rate < 10 %), 2026-10-10
 RECIPE_DIR = Path(__file__).resolve().parent / "text_checks_recipes"
 PASS = 0.75
 SHORTCUT_MARGIN = 0.10            # evidence-removed score must stay within floor + 10 points (or 2 SE)
@@ -27,6 +27,77 @@ GATING_TASKS = ("quote", "lookup", "keyed", "latest", "compose")   # text-core T
 FRONTIER_TASKS = ("count", "deduce")                                  # T6, T7
 CURVE_FRACTIONS = (0.10, 0.25, 0.50, 0.75, 1.00)
 VOCAB = 4096
+
+# Reading rules added by the protocol review of 2026-10-13 (spec §10.5). They change how a score is read, not how
+# it is measured, so they apply to every result already in the ledgers.
+# - Far evidence: single-fact exams place the fact early / middle / late (5 %, 50 %, 95 % of the document before
+#   the question; balanced, item i gets bin i % 3). At 1k-4k the late fact sits 50-200 tokens before the question,
+#   inside any local window, so a model with no long-range read answers those items. The memory score is the
+#   score on early + middle facts ("far"); the late facts are reported as "near".
+# - Effective floor: the best score of a model-free reader that does not do the task. Guessing one candidate
+#   gives `floor`; for latest, tracking every move but ignoring whose it is gives 1 in 5 (audit text-world-v2).
+# - Learned: above the effective floor by 10 points or 3 standard errors, whichever is larger. Pass (75 %) is
+#   unchanged: "learned" says a skill switched on, "pass" says it is mastered.
+DEPTH_FAR = ("early", "middle")
+DEPTH_NEAR = ("late",)
+PARTIAL_FLOOR = {"latest": 0.20}
+LEARNED_MARGIN = 0.10
+LEARNED_SE = 3.0
+# Models with no length method on their recipe card ("none") are scored past the training length, but that score
+# measures position extrapolation, not memory (dense: 0 % at 16k on every task, 2026-10-11).
+
+
+def depth_counts(n: int) -> dict:
+    """Items per depth bin in a cell of `n` items (the builder assigns bin i % 3: early, middle, late)."""
+    return {"early": (n + 2) // 3, "middle": (n + 1) // 3, "late": n // 3}
+
+
+def far_near(cell: dict | None) -> dict | None:
+    """Far (early + middle facts) and near (late facts) exact scores of a single-fact cell, with item counts.
+
+    Uses the scorer's own fields when present (scorer from 2026-10-13); for older results derives them from
+    `by_depth` and the builder's bin assignment, and checks that every bin share is a whole number of items.
+    None for exams without depth bins (latest, compose, count, deduce place their facts throughout)."""
+    if not cell:
+        return None
+    if cell.get("far") is not None:
+        return {k: cell.get(k) for k in ("far", "far_n", "near", "near_n")}
+    bd = cell.get("by_depth") or {}
+    if not all(d in bd for d in DEPTH_FAR + DEPTH_NEAR) or not cell.get("n"):
+        return None
+    cnt = cell.get("by_depth_n") or depth_counts(int(cell["n"]))
+    if any(abs(bd[d] * cnt[d] - round(bd[d] * cnt[d])) > 1e-6 for d in cnt):
+        return None  # bins not assigned as assumed: do not guess
+    far_n = sum(cnt[d] for d in DEPTH_FAR)
+    near_n = sum(cnt[d] for d in DEPTH_NEAR)
+    return {"far": sum(bd[d] * cnt[d] for d in DEPTH_FAR) / far_n, "far_n": far_n,
+            "near": sum(bd[d] * cnt[d] for d in DEPTH_NEAR) / near_n, "near_n": near_n}
+
+
+def effective_floor(task: str, floor: float | None) -> float | None:
+    """The guessing floor, raised to the best known partial reader for the task."""
+    if floor is None:
+        return PARTIAL_FLOOR.get(task)
+    return max(floor, PARTIAL_FLOOR.get(task, 0.0))
+
+
+def learned(score: float | None, n: int | None, task: str, floor: float | None) -> bool:
+    """True when `score` (over `n` items) is clearly above the task's effective floor."""
+    if score is None or not n:
+        return False
+    eff = effective_floor(task, floor) or 0.0
+    se = math.sqrt(max(score * (1 - score), 1e-9) / n)
+    return score - eff > max(LEARNED_MARGIN, LEARNED_SE * se)
+
+
+def headline(task: str, cell: dict | None) -> dict | None:
+    """The score a cell is read by: far facts for single-fact exams, every item otherwise."""
+    if not cell or cell.get("exact") is None:
+        return None
+    fn = far_near(cell)
+    if fn:
+        return {"score": fn["far"], "n": fn["far_n"], "near": fn["near"], "all": cell["exact"], "kind": "far"}
+    return {"score": cell["exact"], "n": cell.get("n"), "near": None, "all": cell["exact"], "kind": "all"}
 
 
 @dataclass(frozen=True)
@@ -52,8 +123,17 @@ class Tier:
 TIERS = {
     "screen": Tier("screen", 30e6, 0.6e9, 4096, 96, 8, 24.0, hidden=576, pre_layers=2, global_layers=1,
                    stack_layers=5),
+    # calibration ladder step 2 (spec §16.1, 2026-10-10): 50M, deeper rather than wider than the screen shape
+    # (12 layers at width 576 vs 8), the step-1 budget
+    "mid": Tier("mid", 50e6, 1.5e9, 4096, 96, 8, 40.0, hidden=576, pre_layers=2, global_layers=1,
+                stack_layers=9, tune_runs=3, tune_tokens=60e6),
     "main": Tier("main", 100e6, 2.0e9, 4096, 96, 4, 120.0, hidden=896, pre_layers=3, global_layers=1,
                  stack_layers=8, tune_runs=3, tune_tokens=100e6),
+    # local pipeline-check tier (Apple M5 Max laptop, ~1 h per model): confirms the pipeline works and
+    # catches obvious errors only; no conclusions on learnability or budgets (those runs go to the servers).
+    "lab": Tier("lab", 16e6, 100e6, 1024, 32, 16, 3.0, hidden=256, pre_layers=2, global_layers=1,
+                stack_layers=4, eval_lengths=(1024, 2048, 4096), extra_lengths=(1024,), tune_runs=3,
+                tune_tokens=12e6, band=0.10),
     # local plumbing check only (minutes on a laptop); never a result
     "smoke": Tier("smoke", 2e6, 0.25e6, 1024, 8, 4, 0.5, hidden=128, pre_layers=1, global_layers=1,
                   stack_layers=2, eval_lengths=(512, 1024, 2048), extra_lengths=(1024,), tune_runs=2,
@@ -95,6 +175,10 @@ class Arch:
 
 ARCHES = {
     "dense": Arch("dense", "ceiling at the training length; language reference", {"par_mode": "dense"}),
+    # diagnostic control (lab tier, 2026-10-09): the dense model without the E31 input layer (no hashed
+    # n-gram features, no value embeddings) — does that layer delay learning to copy from context?
+    "dense_plain": Arch("dense_plain", "diagnostic: dense without the n-gram / value-embedding input layer",
+                        {"par_mode": "dense", "par_ngram_orders": "", "par_value_embed_layers": ""}),
     "local": Arch("local", "no-long-memory control: E31c trained with its notebook removed (recent 256 tokens only)",
                   {**_E31C, "message_override": "none"}),
     "e31c": Arch("e31c", "E31 latent notebook, closed-window text read", dict(_E31C), has_notebook=True),
@@ -102,6 +186,15 @@ ARCHES = {
                       {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.3,
                        "message_loop_exit_targets": "answer"}, has_notebook=True),
 }
+# Plain-input variants (2026-10-10): the same models without the word-pair/triple hash tables and value
+# embeddings. Dense with plain input learned quote, lookup, keyed and latest at 30M / 1.5B tokens on v2, where
+# dense with the tables learned at most one (spec §16.1), so the architecture round runs on plain input. FFN width
+# is refitted, so each stays in the parameter band.
+_PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
+for _k in ("local", "e31c", "e31c_loop"):
+    _a = ARCHES[_k]
+    ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
+                                 {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)
 
 # trainer argument → launcher env var (scripts/train_concept_pretraining_multigpu.sh)
 ENV_OF = {
@@ -182,7 +275,7 @@ DEFAULT_RECIPE = {
     "status": "prior (untuned)",
     "init": "trainer default: normal(0.02) projections, zero-init residual outputs (perceiver_ar)",
     "optimizer": "adam", "weight_decay": 0.1, "max_grad_norm": 1.0,
-    "lr": {"screen": 1e-3, "main": 6e-4, "smoke": 1e-3},
+    "lr": {"screen": 1e-3, "mid": 1e-3, "main": 6e-4, "smoke": 1e-3, "lab": 1e-3},
     "warmup_frac": 0.02, "scheduler": "cosine",
     "length_method": "none",
     "tuning": {},
@@ -207,9 +300,16 @@ def steps_for(tokens: float, global_rows: int, mean_row_tokens: float) -> int:
     return max(1, int(math.ceil(tokens / (global_rows * mean_row_tokens))))
 
 
-def grad_accum(tier: str, n_gpus: int) -> int:
+def per_device_batch(recipe: dict, tier: str) -> int:
+    """Rows per GPU micro-batch: the tier default unless the model's recipe card lowers it to fit memory
+    (the global batch, hence the data and the optimizer steps, stay the same through accumulation)."""
+    return int((recipe.get("per_device_batch") or {}).get(tier, TIERS[tier].per_device_batch))
+
+
+def grad_accum(tier: str, n_gpus: int, pdb: int | None = None) -> int:
     t = TIERS[tier]
-    per_step = t.per_device_batch * n_gpus
+    pdb = pdb or t.per_device_batch
+    per_step = pdb * n_gpus
     if t.global_rows % per_step:
-        raise ValueError(f"global batch {t.global_rows} rows is not a multiple of {t.per_device_batch} × {n_gpus} GPUs")
+        raise ValueError(f"global batch {t.global_rows} rows is not a multiple of {pdb} × {n_gpus} GPUs")
     return t.global_rows // per_step

@@ -566,8 +566,12 @@ fi
 # accelerate rejects --multi_gpu with a single process ("You need to use at least 2 processes"),
 # which is exactly the NUM_GPUS=1 calibration / smoke path. Pass it only when it applies.
 MULTI_GPU_ARGS=()
+# --ddp_backend likewise: with one process no process group exists, and transformers' device setup
+# then asks NCCL for a world size and fails ("Default process group has not been initialized").
+DDP_ARGS=()
 if [ "$((NUM_GPUS * NUM_MACHINES))" -gt 1 ]; then
     MULTI_GPU_ARGS+=(--multi_gpu)
+    DDP_ARGS+=(--ddp_backend "nccl")
 fi
 
 uv run accelerate launch \
@@ -626,7 +630,7 @@ uv run accelerate launch \
     --logging_dir "$LOGGING_DIR" \
     --seed "$SEED" \
     --bf16 \
-    --ddp_backend "nccl" \
+    ${DDP_ARGS[@]+"${DDP_ARGS[@]}"} \
     --ddp_timeout "$DDP_TIMEOUT" \
     --ddp_find_unused_parameters False \
     --dataloader_pin_memory True \

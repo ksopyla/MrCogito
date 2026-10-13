@@ -46,6 +46,7 @@ from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from data.text_world import ADDED_SPLITS  # noqa: E402
 from evaluation.text_checks import (  # noqa: E402
     ARCHES,
     CURVE_FRACTIONS,
@@ -55,6 +56,7 @@ from evaluation.text_checks import (  # noqa: E402
     fit_params,
     grad_accum,
     in_band,
+    per_device_batch,
     load_recipe,
     steps_for,
 )
@@ -90,8 +92,9 @@ def train_env(args_model: dict, recipe: dict, tier: str, *, lr: float, steps: in
         "NUM_GPUS": n_gpus, "GPU_IDS": gpu_ids, "TRAIN_OUTPUT_DIR": out_dir,
         "EXPERIMENT_ID": exp_id, "TOKENIZER_NAME": data / "tokenizer",
         "PRETOKENIZED_MANIFEST": data / "manifest.json", "MAX_SEQ_LENGTH": t.seq_len,
-        "BATCH_PACKING_MODE": "length_group", "PER_DEVICE_BATCH_SIZE": t.per_device_batch,
-        "EVAL_BATCH_SIZE": t.per_device_batch, "GRADIENT_ACCUMULATION_STEPS": grad_accum(tier, n_gpus),
+        "BATCH_PACKING_MODE": "length_group", "PER_DEVICE_BATCH_SIZE": per_device_batch(recipe, tier),
+        "EVAL_BATCH_SIZE": per_device_batch(recipe, tier),
+        "GRADIENT_ACCUMULATION_STEPS": grad_accum(tier, n_gpus, per_device_batch(recipe, tier)),
         "MAX_STEPS": steps, "WARMUP_STEPS": max(1, int(recipe["warmup_frac"] * steps)),
         "LEARNING_RATE": lr, "LR_SCHEDULER_TYPE": recipe["scheduler"], "OPTIMIZER": recipe["optimizer"],
         "WEIGHT_DECAY": recipe["weight_decay"], "MAX_GRAD_NORM": recipe["max_grad_norm"],
@@ -115,8 +118,9 @@ def local_train_cmd(args_model: dict, recipe: dict, tier: str, *, lr: float, ste
         "--attn_backend", "sdpa", "--attn_pad_multiple", "1", "--use_liger", "False",
         "--pretokenized_manifest", str(data / "manifest.json"), "--tokenizer_name", str(data / "tokenizer"),
         "--max_seq_length", str(t.seq_len), "--batch_packing_mode", "none",
-        "--per_device_train_batch_size", str(t.per_device_batch), "--per_device_eval_batch_size", str(t.per_device_batch),
-        "--gradient_accumulation_steps", str(grad_accum(tier, 1)), "--learning_rate", str(lr),
+        "--per_device_train_batch_size", str(per_device_batch(recipe, tier)),
+        "--per_device_eval_batch_size", str(per_device_batch(recipe, tier)),
+        "--gradient_accumulation_steps", str(grad_accum(tier, 1, per_device_batch(recipe, tier))), "--learning_rate", str(lr),
         "--warmup_steps", str(max(1, int(recipe["warmup_frac"] * steps))), "--max_steps", str(steps),
         "--lr_scheduler_type", recipe["scheduler"], "--weight_decay", str(recipe["weight_decay"]),
         "--max_grad_norm", str(recipe["max_grad_norm"]), "--optim", "adamw_torch",
@@ -126,6 +130,10 @@ def local_train_cmd(args_model: dict, recipe: dict, tier: str, *, lr: float, ste
         "--overwrite_output_dir", "True", "--disable_tqdm", "True", "--dataloader_num_workers", "0",
         "--prediction_loss_only", "True",
     ]
+    import torch
+
+    if torch.backends.mps.is_available():
+        cmd += ["--bf16", "True"]  # Apple GPU: bf16 autocast, as the servers
     return cmd
 
 
@@ -149,16 +157,30 @@ if [ ! -f "$JOB/status" ]; then
     echo running > "$JOB/status.run"
     {setsid}{cmd} > "$JOB/train.log" 2>&1 &
     PID=$!
+    BURST_S={burst_s}   # 0 = no burst limit; else pause at the first checkpoint after this many seconds
+    RUN_S=0; NCK_AT=""; PAUSED=0
+    nck() {{ ls -d "$JOB"/train/*/checkpoint-*/trainer_state.json 2>/dev/null | wc -l; }}
     while kill -0 "$PID" 2>/dev/null; do
         sleep 30
-        ACTIVE=$((ACTIVE + 30)); echo "$ACTIVE" > "$JOB/active_seconds"
+        ACTIVE=$((ACTIVE + 30)); RUN_S=$((RUN_S + 30)); echo "$ACTIVE" > "$JOB/active_seconds"
         if [ "$ACTIVE" -ge "$CAP_S" ]; then
             echo "compute cap reached ($CAP_S s active): stopping"; kill -TERM -- -"$PID" 2>/dev/null
             sleep 60; kill -KILL -- -"$PID" 2>/dev/null; echo over_budget > "$JOB/status"; break
         fi
+        if [ "$BURST_S" -gt 0 ] && [ "$RUN_S" -ge "$BURST_S" ]; then
+            [ -z "$NCK_AT" ] && NCK_AT=$(nck) && echo "burst time reached: pausing at the next checkpoint"
+            if [ "$(nck)" -gt "$NCK_AT" ]; then
+                sleep 45   # let the checkpoint finish writing
+                echo "paused after a checkpoint ($RUN_S s this burst)"; kill -TERM -- -"$PID" 2>/dev/null
+                sleep 30; kill -KILL -- -"$PID" 2>/dev/null; PAUSED=1; break
+            fi
+        fi
     done
     wait "$PID"; RC=$?
     rm -f "$JOB/status.run"
+    if [ "$PAUSED" = 1 ] && [ ! -f "$JOB/status" ] && [ -z "$(ls -d "$JOB"/train/*/final 2>/dev/null)" ]; then
+        echo "EXIT {job} 75 (paused for cooldown)"; exit 75
+    fi
 fi
 FINAL=$(ls -td "$JOB"/train/*/final 2>/dev/null | head -1 || true)
 if [ -n "$FINAL" ]; then
@@ -214,7 +236,8 @@ def _write(path: Path, text: str):
 
 
 def plan_train_job(name: str, arch: str, tier: str, *, lr: float, tokens: float, n_gpus: int, gpu_ids: str,
-                   data: Path, out: Path, seed: int, mode: str, extra: dict, cap_gpu_hours: float) -> dict:
+                   data: Path, out: Path, seed: int, mode: str, extra: dict, cap_gpu_hours: float,
+                   burst_s: int = 0) -> dict:
     t = TIERS[tier]
     meta = _meta(data)
     mean_row = float(meta["mix"]["mean_row_tokens"])
@@ -223,6 +246,10 @@ def plan_train_job(name: str, arch: str, tier: str, *, lr: float, tokens: float,
     args_model, n_params = fit_params(arch, tier)
     recipe = load_recipe(arch)
     jobdir = out / "jobs" / name
+    if (jobdir / "status.run").exists() or (jobdir / "DONE").exists():
+        # a started job keeps its script and card: bash reads a running script as it goes, and the card is
+        # the record of what ran (re-planning only the evaluation of a running round must not touch them)
+        return json.loads((jobdir / "job.json").read_text())
     exp_id = f"TEXTCHK-{out.name}-{name}"
     if mode == "local":
         cmd = " ".join(_q(c) for c in local_train_cmd(args_model, recipe, tier, lr=lr, steps=steps, data=data,
@@ -236,13 +263,13 @@ def plan_train_job(name: str, arch: str, tier: str, *, lr: float, tokens: float,
     cap_s = int(cap_gpu_hours * 3600 / n_gpus)
     _write(jobdir / "job.sh", TRAIN_SH.format(version=TEXT_CHECKS_VERSION, job=name, when=datetime.now().isoformat(timespec="seconds"),
                                               root=_q(ROOT), jobdir=_q(jobdir), cap_s=cap_s, env=_env_block(env), cmd=cmd,
-                                              setsid="" if mode == "local" else "setsid "))
+                                              setsid="" if mode == "local" else "setsid ", burst_s=burst_s))
     card = {
         "job": name, "kind": "train", "arch": arch, "role": ARCHES[arch].role, "tier": tier, "version": TEXT_CHECKS_VERSION,
         "params": n_params, "params_in_band": in_band(n_params, tier), "model_args": args_model, "recipe": recipe,
         "lr": lr, "tokens": tokens, "steps": steps, "global_rows": t.global_rows, "mean_row_tokens": mean_row,
         "save_steps": save_steps, "n_gpus": n_gpus, "gpu_ids": gpu_ids, "cap_gpu_hours": cap_gpu_hours, "cap_seconds": cap_s,
-        "seed": seed, "data": str(data), "data_version": meta.get("version"), "tokenizer_sha256": meta.get("tokenizer_sha256"),
+        "seed": seed, "burst_seconds": burst_s, "data": str(data), "data_version": meta.get("version"), "tokenizer_sha256": meta.get("tokenizer_sha256"),
         "eval_sha256": meta.get("eval_sha256"), "git_commit": _git_commit(), "mode": mode, "extra_env": extra,
         "planned": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
@@ -251,16 +278,21 @@ def plan_train_job(name: str, arch: str, tier: str, *, lr: float, tokens: float,
 
 
 def plan_eval_job(name: str, arch: str, tier: str, train_job: str, *, data: Path, out: Path, gpu: str, mode: str,
-                  steps: int) -> dict:
+                  steps: int, lengths: tuple | None = None, curve_fractions: tuple = CURVE_FRACTIONS,
+                  tasks: tuple | None = None) -> dict:
+    """`lengths`: exam lengths instead of the tier's (calibration runs score the training length and below;
+    the long-context ladder is for result rounds). `curve_fractions`: learning-curve checkpoints."""
     t = TIERS[tier]
     jobdir = out / "jobs" / name
     model_file = out / "jobs" / train_job / "model_path"
     dev = "" if mode == "local" else f"CUDA_VISIBLE_DEVICES={gpu} "
-    device = "--device cpu" if mode == "local" else ""
-    lens = " ".join(str(x) for x in t.eval_lengths)
-    extra_lens = " ".join(str(x) for x in t.extra_lengths)
+    device = ""  # the scorer picks cuda, then Apple mps, then cpu
+    eval_lengths = tuple(lengths or t.eval_lengths)
+    lens = " ".join(str(x) for x in eval_lengths)
+    extra_lens = " ".join(str(x) for x in t.extra_lengths if x <= max(eval_lengths))
     cap = "--max_items_per_cell 3" if tier == "smoke" else ""
-    ev = f"uv run python evaluation/text_checks_eval.py --tokenizer {_q(data / 'tokenizer')} {device} {cap}"
+    only = f"--tasks {' '.join(tasks)}" if tasks else ""  # single-task runs score their own task only
+    ev = f"uv run python evaluation/text_checks_eval.py --tokenizer {_q(data / 'tokenizer')} {device} {cap} {only}"
     # (output file, command): each final evaluation is skipped when its file exists (resumable)
     finals = [
         ("final_id.json", f'{dev}{ev} --checkpoint "$MODEL" --items {_q(data / "eval" / "id.jsonl")} --lengths {lens} '
@@ -268,13 +300,27 @@ def plan_eval_job(name: str, arch: str, tier: str, train_job: str, *, data: Path
         ("final_extra.json", f'{dev}{ev} --checkpoint "$MODEL" --items {_q(data / "eval" / "harder.jsonl")} '
                              f'{_q(data / "eval" / "paraphrase.jsonl")} --lengths {extra_lens} --out "$JOB/final_extra.json"'),
     ]
+    # exams added after the build (v2.1: crowded, paraphrase2, steps), when this build has them; re-planning the eval
+    # job of a finished run scores only what is missing, so existing checkpoints get the added exams without retraining
+    added = [data / "eval" / f"{sp}.jsonl" for sp in ADDED_SPLITS if (data / "eval" / f"{sp}.jsonl").exists()]
+    if added:
+        finals.append(("final_added.json", f'{dev}{ev} --checkpoint "$MODEL" --items {" ".join(_q(x) for x in added)} '
+                                           f'--lengths {extra_lens} --out "$JOB/final_added.json"'))
     if ARCHES[arch].has_notebook:
         finals.append(("final_id_notebook_off.json",
                        f'{dev}{ev} --checkpoint "$MODEL" --items {_q(data / "eval" / "id.jsonl")} --lengths {t.seq_len} '
-                       f'{max(t.eval_lengths)} --message_override none --no_removed --out "$JOB/final_id_notebook_off.json"'))
+                       f'{max(eval_lengths)} --message_override none --no_removed --out "$JOB/final_id_notebook_off.json"'))
+    # a finished job re-planned with a new final (e.g. added exams) runs again; every finished part is skipped
+    if (jobdir / "DONE").exists() and any(not (jobdir / f).exists() for f, _ in finals):
+        (jobdir / "DONE").unlink()
     cmds = [f'[ -f "$JOB/{f}" ] || {c} || {{ echo "EXIT {name} 1 ({f})"; exit 1; }}' for f, c in finals]
-    # learning curve: the checkpoints nearest to 10/25/50/75 % of the steps, scored at the training length
-    curve = " ".join(str(max(1, round(f * steps))) for f in CURVE_FRACTIONS[:-1])
+    # copy probe: can the model repeat text it has just read? (every task builds on it; diagnostic only)
+    pdev = "mps" if mode == "local" else "cuda"
+    cmds.append(f'[ -f "$JOB/copy_probe.txt" ] || {dev}uv run python scripts/probe_copy.py --checkpoint "$MODEL" '
+                f'--device {pdev} --gaps 0 100 1000 --text {_q(data)} > "$JOB/copy_probe.txt" 2>&1 || true')
+    # learning curve: the checkpoints nearest to the curve fractions of the steps (default 10/25/50/75 %; the
+    # final model is the last point), scored at the training length
+    curve = " ".join(str(max(1, round(f * steps))) for f in curve_fractions if f < 1.0)
     model_sel = (f'TRAIN_ROOT=$(dirname "$(dirname "$MODEL")")\n'
                  f'CURVE=""\nfor s in {curve}; do\n'
                  f'  CK=$(ls -d "$TRAIN_ROOT"/*/checkpoint-* 2>/dev/null | awk -F- -v s=$s \'{{d=$NF-s; if(d<0)d=-d; print d" "$0}}\' | sort -n | head -1 | cut -d" " -f2-)\n'
@@ -287,7 +333,9 @@ def plan_eval_job(name: str, arch: str, tier: str, train_job: str, *, data: Path
                                              root=_q(ROOT), jobdir=_q(jobdir), model_file=_q(model_file),
                                              model_sel=model_sel, cmds="\n".join(cmds)))
     card = {"job": name, "kind": "eval", "arch": arch, "tier": tier, "train_job": train_job, "gpu": gpu,
-            "version": TEXT_CHECKS_VERSION, "lengths": list(t.eval_lengths), "git_commit": _git_commit()}
+            "version": TEXT_CHECKS_VERSION, "lengths": list(eval_lengths), "curve_fractions": list(curve_fractions),
+            "tasks": list(tasks) if tasks else None,
+            "git_commit": _git_commit()}
     (jobdir / "job.json").write_text(json.dumps(card, indent=2))
     return card
 
@@ -314,14 +362,36 @@ def plan_data_job(data: Path, out: Path, tokens: float, num_proc: int, profile: 
 
 # ------------------------------------------------------------------------------------- starters
 def write_starter(out: Path, phase: str, queues: dict[str, list[str]], host: str, then: dict | None = None,
-                  mode: str = "scripts"):
-    """queues: window name → job names run one after another. `then`: queues started after these finish."""
+                  mode: str = "scripts", cooldown_s: int = 0, wait_cmd: str = "", gpus: tuple = ()):
+    """queues: window name → job names run one after another. `then`: queues started after these finish.
+    `wait_cmd` (with `{gpu}`): a queue starts only when it succeeds for each of its GPUs — e.g. another
+    session's queue log saying it released that GPU."""
     launch = out / "launch"
 
     def queue_script(qname, jobs):
-        lines = ["#!/usr/bin/env bash", f"cd {_q(ROOT)}"]
-        for j in jobs:
-            lines.append(f'echo "JOB {j}"; bash {_q(out / "jobs" / j / "job.sh")} 2>&1 | tee -a {_q(launch / (qname + ".log"))}')
+        log = _q(launch / (qname + ".log"))
+        own = [qname[3:]] if qname.startswith("gpu") else list(gpus)
+        sel = f"-i {','.join(own)} " if own else ""
+        lines = ["#!/usr/bin/env bash", f"cd {_q(ROOT)}", f"COOLDOWN_S={cooldown_s}",
+                 # Polonez heat rule: start or resume only when this queue's own GPUs are below 75 C
+                 # (other sessions' busy GPUs run at ~70-72 C and must not block a released one)
+                 'cool() { command -v nvidia-smi >/dev/null || return 0; '
+                 f'while [ "$(nvidia-smi {sel}--query-gpu=temperature.gpu --format=csv,noheader | sort -n | tail -1)" -ge 75 ]; '
+                 'do echo "GPU above 75 C, waiting $(date +%T)"; sleep 120; done; }']
+        if wait_cmd:
+            for g in ([qname[3:]] if qname.startswith("gpu") else list(gpus)):
+                lines.append(f'until {wait_cmd.replace("{gpu}", str(g))}; do echo "waiting for GPU {g} to be released $(date +%T)" '
+                             f'| tee -a {log}; sleep 120; done')
+        for i, j in enumerate(jobs):
+            sh = _q(out / "jobs" / j / "job.sh")
+            lines.append(f'echo "JOB {j}" | tee -a {log}; cool')
+            lines.append(f'while true; do bash {sh} 2>&1 | tee -a {log}; rc=${{PIPESTATUS[0]}}; '
+                         f'[ "$rc" = 75 ] || break; echo "COOLDOWN $COOLDOWN_S s $(date +%T)" | tee -a {log}; '
+                         f'sleep "$COOLDOWN_S"; cool; done')
+            if cooldown_s and i < len(jobs) - 1 and (j.startswith("train_") or j.startswith("tune_")):
+                act = _q(out / "jobs" / j / "active_seconds")
+                lines.append(f'[ "$(cat {act} 2>/dev/null || echo 0)" -ge 7200 ] '
+                             f'&& {{ echo "COOLDOWN $COOLDOWN_S s after {j} $(date +%T)" | tee -a {log}; sleep "$COOLDOWN_S"; }}')
         path = launch / f"{phase}_{qname}.sh"
         _write(path, "\n".join(lines) + "\n")
         return path
@@ -353,6 +423,9 @@ def cmd_plan(a):
     gpus = [str(g) for g in a.gpus]
     extra = dict(kv.split("=", 1) for kv in a.extra_env)
     t = TIERS[a.tier]
+    # Polonez heat rule: training pauses at the first checkpoint after --burst_hours, cools down, resumes
+    burst_s = int(a.burst_hours * 3600) if a.mode == "scripts" else 0
+    cooldown_s = int(a.cooldown_min * 60) if a.mode == "scripts" else 0
     jobs = []
     if a.phase == "data":
         profile = "smoke" if a.tier == "smoke" else "full"
@@ -368,28 +441,33 @@ def cmd_plan(a):
                 name = f"tune_{arch}_lr{prior * mult:.2e}"
                 jobs.append(plan_train_job(name, arch, a.tier, lr=prior * mult, tokens=t.tune_tokens, n_gpus=1,
                                            gpu_ids=gpus[k % len(gpus)], data=data, out=out, seed=a.seed, mode=a.mode,
-                                           extra=extra, cap_gpu_hours=t.cap_gpu_hours))
+                                           extra=extra, cap_gpu_hours=t.cap_gpu_hours, burst_s=burst_s))
                 queues[f"gpu{gpus[k % len(gpus)]}"].append(name)
                 k += 1
-        start = write_starter(out, "tune", {q: j for q, j in queues.items() if j}, a.host, mode=a.mode)
+        start = write_starter(out, "tune", {q: j for q, j in queues.items() if j}, a.host, mode=a.mode,
+                              cooldown_s=cooldown_s, wait_cmd=a.wait_cmd, gpus=tuple(gpus))
     elif a.phase in ("train", "eval"):
         trains, evals = [], {f"gpu{g}": [] for g in gpus}
         for i, arch in enumerate(a.arches):
             lr = load_recipe(arch)["lr"][a.tier]
             name = f"train_{arch}"
-            card = plan_train_job(name, arch, a.tier, lr=lr, tokens=t.tokens, n_gpus=len(gpus), gpu_ids=",".join(gpus),
-                                  data=data, out=out, seed=a.seed, mode=a.mode, extra=extra, cap_gpu_hours=t.cap_gpu_hours)
+            card = plan_train_job(name, arch, a.tier, lr=lr, tokens=a.tokens or t.tokens, n_gpus=len(gpus), gpu_ids=",".join(gpus),
+                                  data=data, out=out, seed=a.seed, mode=a.mode, extra=extra, cap_gpu_hours=t.cap_gpu_hours,
+                                  burst_s=burst_s)
             jobs.append(card)
             trains.append(name)
             g = gpus[i % len(gpus)]
             jobs.append(plan_eval_job(f"eval_{arch}", arch, a.tier, name, data=data, out=out, gpu=g, mode=a.mode,
-                                      steps=card["steps"]))
+                                      steps=card["steps"], lengths=tuple(a.eval_lengths or ()) or None,
+                                      curve_fractions=tuple(a.curve_fractions or CURVE_FRACTIONS),
+                                      tasks=tuple(a.eval_tasks) if a.eval_tasks else None))
             evals[f"gpu{g}"].append(f"eval_{arch}")
         evals = {q: j for q, j in evals.items() if j}
         if a.phase == "train":
-            start = write_starter(out, "train", {"train": trains}, a.host, then=evals, mode=a.mode)
+            start = write_starter(out, "train", {"train": trains}, a.host, then=evals, mode=a.mode,
+                                  cooldown_s=cooldown_s, wait_cmd=a.wait_cmd, gpus=tuple(gpus))
         else:
-            start = write_starter(out, "eval", evals, a.host, mode=a.mode)
+            start = write_starter(out, "eval", evals, a.host, mode=a.mode, wait_cmd=a.wait_cmd, gpus=tuple(gpus))
     else:
         raise SystemExit(a.phase)
     plan = {"version": TEXT_CHECKS_VERSION, "phase": a.phase, "tier": a.tier, "arches": a.arches, "host": a.host,
@@ -461,7 +539,19 @@ def main():
     pl.add_argument("--mode", choices=("scripts", "local"), default="scripts")
     pl.add_argument("--extra_env", nargs="*", default=[], help="KEY=VALUE launcher overrides (recorded in job.json)")
     pl.add_argument("--data_tokens", type=float, default=0, help="data phase: training-mix size in tokens")
+    pl.add_argument("--tokens", type=float, default=0, help="train phase: token budget instead of the tier's (record why)")
+    pl.add_argument("--eval_lengths", type=int, nargs="*", default=None,
+                    help="exam lengths instead of the tier's (calibration runs: the training length and below)")
+    pl.add_argument("--eval_tasks", nargs="*", default=None, help="score only these tasks (single-task runs)")
+    pl.add_argument("--curve_fractions", type=float, nargs="*", default=None,
+                    help="learning-curve points as fractions of the steps (default 0.1 0.25 0.5 0.75 1)")
     pl.add_argument("--num_proc", type=int, default=16, help="data phase: generator processes")
+    pl.add_argument("--burst_hours", type=float, default=6.0,
+                    help="pause a training job at its first checkpoint after this many hours (0 = never)")
+    pl.add_argument("--cooldown_min", type=float, default=20.0, help="cooldown after a burst or a long job")
+    pl.add_argument("--wait_cmd", default="",
+                    help="shell test with {gpu}; each queue waits until it succeeds for its GPUs, e.g. "
+                         "'grep -q QUEUE-END /path/other_gpu{gpu}.log' (GPUs held by another session)")
     se = sub.add_parser("select")
     se.add_argument("--out", required=True)
     se.add_argument("--tier", choices=tuple(TIERS), default="screen")

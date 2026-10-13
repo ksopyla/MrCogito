@@ -5,7 +5,8 @@
   compute caps, mix shares and task dials are expected to move). Data generator, builder, scorer
   (2026-10-06), the runner, scorecard, recipe cards and the `text-checks` skill (2026-10-06, §16) are
   implemented and smoke-tested locally end to end; first server runs are calibration. Version string
-  once frozen: `text-v1`; the current draft data is `text-world-v0`.
+  once frozen: `text-v1`; the current draft is `text-v1-draft` on data `text-world-v2` (2026-10-10: every
+  exam's guessing rate below 10 %), calibrated by the ladder in §16.1.
 - **Owner:** Krzysztof Sopyla
 - **Relation to the DNA checks:** the [capability checks](capability_checks.md) (C0–C7, random-letter
   books, one small model per exam) stay the **first** gate and are not replaced. These text checks are
@@ -87,9 +88,9 @@ strong LLM scores ≤ 30 %) is too hard and too slow to generate for training a 
 | | **screen** | **main** | optional **large** |
 |---|---|---|---|
 | parameters (all trainable, incl. embeddings, head, memory) | 30M ± 5 % | 100M ± 5 % | 150M ± 5 % (hard max) |
-| training tokens (data budget) | 0.6B | 2.0B | 3.0B |
+| training tokens (data budget) | 1.5B (calibration ladder, §16.1; first draft 0.6B) | 2.0B | 3.0B |
 | training length | 4,096 | 4,096 | 4,096 |
-| tokens per optimizer step | 262,144 (64 rows × 4,096) | 262,144 | 524,288 |
+| tokens per optimizer step | ≈ 190k (96 rows; story rows 4,096 tokens, world rows ≈ 1,390 on average) | ≈ 190k | to set |
 | data order | the same pre-tokenized shards in the same order for every run | same | same |
 | compute cap (active training time, Polonez 4 × 3090) | 6 h | 30 h (= 120 GPU-hours) | 48 h |
 | expected time for the dense model | ~1.5–2 h | ~15–20 h | ~30–40 h |
@@ -221,7 +222,14 @@ The answer ends with a period, which is part of the scored answer.
 | **in-distribution (ID)** | new seeds, **held-out names**, held-out filler stories | the gating scores |
 | **length** | ID settings at 1k … 128k (more filler, the same facts) | length reading |
 | **harder** | cast 64, 3 hops, 8 moves, deduction depth 3 | generalization, reported |
-| **paraphrase** | 2 held-out sentence templates per relation | reported, not gating |
+| **paraphrase** | 1 held-out sentence template per relation | reported, not gating |
+| **crowded** (v2.1) | quote / lookup / keyed with every fact within 1,024 tokens of the asked one, at 4k and 16k | separates length from fact crowding; reported |
+| **paraphrase2** (v2.1) | three more sentence shapes per relation, never used in training | meaning vs surface; reported |
+| **steps** (v2.1) | one-step compose and one-step deduce (in-distribution for training) | partial progress on the multi-step tasks; reported |
+
+The v2.1 splits (2026-10-13) are added to the v2 build with `build_text_checks_data.py --add_exams`; training
+documents and the id / harder / paraphrase exams stay byte-identical, so every existing checkpoint can be scored
+on them (the eval job's `final_added.json`) with no retraining.
 
 ## 9. Levels and tasks
 
@@ -232,13 +240,18 @@ averaged.
 | level | task (eval, ID settings) | answer | picked-candidate floor | dials (train → harder split) | maps to DNA level |
 |---|---|---|---|---|---|
 | **T0 Language** | loss on held-out stories; loss on world documents excluding answers | — | — | — | — |
-| **T1 Quote** | "What did the sign on Lumo's door say?", 4 signs in the document | 4–6 words | 1/4 | signs 2–8 → 16 | C0 Carry |
-| **T2 Lookup** | "Where does Lumo live?", cast 4, only Lumo's home is stated | 1 place | — (one place in the document: exact answer only) | — | C1 Address |
+| **T1 Quote** | "What did the sign of Lumo say?", 12 signs in the document | 4–6 words | 1/12 | signs 4–16 → 24 | C0 Carry |
+| **T2 Lookup** | "Where does Lumo live?", cast 12, every home stated, no look-alikes (v0: only Lumo's home, a passkey) | 1 place | 1/12 | cast 4–16 → 16 | C1 Address |
 | **T3 Keyed** | the same question, cast 16, every person's home stated, a quarter of names are look-alikes | 1 place | 1/16 | cast 4–16 → 64 | C2 + C3 |
-| **T4 Latest** | "Where does Lumo live now?" after 4 moves; other people move after Lumo's last move | 1 place | 1/5 (any of Lumo's places); the most-recently-mentioned place is wrong by construction | moves 1–4 → 8 | new |
-| **T5 Compose** | "Where does Lumo's sister live?", cast 8, every person has a sibling and a home (same-shaped decoy chains) | 1 place | 1/8 | hops 1–2 → 3 | C4 + C5 |
-| **T6 Count** | "How many times did Lumo visit the market?", answers 0–6 balanced, look-alike names also visit | 1 number word | 1/7 | events 4–12 → 24 | C6 |
-| **T7 Deduce** | made-up category rules, "Is Pim shiny?", balanced yes/no, distractor rules | yes / no | 1/2 | depth 1–2 → 3 | C5 (rules) |
+| **T4 Latest** | "Where does Lumo live now?" after 10 moves; 5 people, everyone moves as often, interleaved, and someone moves after Lumo's last move | 1 place | 1/11 (any of Lumo's places); the most-recently-mentioned place is wrong by construction; partial floor 1/5 for a reader that tracks moves but ignores whose they are (whose-fact reading is T2/T3) | moves 2–12 → 16, cast 3–6 → 8 | new |
+| **T5 Compose** | "Where does the teacher of the teacher of Lumo live?" (v0: sister), cast 12, teachers along one cycle through the cast, every person has a home (same-shaped decoy chains) | 1 place | 1/12 | hops 1–2 → 3, cast 4–16 → 16 | C4 + C5 |
+| **T6 Count** | "How many times did Lumo visit the market?", answers 0–10 balanced; everyone, look-alike names included, visits the same place 0–10 times | 1 number word | 1/11 | cast 3–6 → 8 | C6 |
+| **T7 Deduce** | made-up category rules, one chain per person ("Pim is a wump. Every wump is a tove. Every tove is shiny."), 12 chains ending in 12 different properties; "What is Pim like?" (v1: yes/no) | 1 property | 1/12 | depth 1–2 → 3, cast 4–16 | C5 (rules) |
+
+The table is `text-world-v2` (2026-10-10). The v1 values (the 30M round of 9–10 Oct) were: 4 signs, 4 homes,
+4 moves among 5 people, 8 in the teacher cycle, counts 0–6, deduce yes/no — guessing rates of 25, 25, 6, 20,
+12.5, 14 and 50 %. The author asked for every guessing rate below 10 %: near-floor progress is then
+visible, and a model that only knows "the answer is one of the names in this document" stays below 10 %.
 
 **Packages:**
 
@@ -261,6 +274,17 @@ sets are built so their **first tokens are distinct**. The pick is the candidate
 the highest probability at the answer position. This uses the same forward pass. It shows "found the
 right fact" separately from "copied it exactly".
 
+- First tokens: the frozen tokenizer splits an invented name into its capital letter first (" L" "um" "o"
+  "ford"), so from v2 candidate places start with **different letters** (17 available; v1's different
+  first syllables still shared the first token in 83 % of 12-place documents). Count's "four" and "five"
+  share " f": those items have no pick (reported as ambiguous). The harder keyed split (64 people) cannot
+  be made distinct.
+- **Graded pick** (`pick_prob`, 2026-10-10): the gold candidate's share of the probability over the
+  candidates' first tokens; guessing gives 1 / candidates. It moves before exact and pick do, so the
+  calibration ladder reads it (§16.1). The mean surprise on the gold answer (`answer_nll`, with and without
+  the evidence) is reported too, but it mixes "the answer is a word from this document" (an in-context word
+  cache, learned early) with "whose fact it is"; the graded pick isolates the second.
+
 ### 10.3 Controls on every model (evaluation only)
 - **Evidence removed.** A twin of each item with the evidence sentences replaced by filler of the same
   length. The score must fall to the guessing floor (within the larger of 10 points and 2 standard
@@ -273,8 +297,36 @@ right fact" separately from "copied it exactly".
 - **Floors printed.** Every score is printed as `score (floor)`.
 
 ### 10.4 Pass
-A (task, length) cell **passes** when exact-answer accuracy ≥ 75 % and the evidence-removed control is at
-the floor. Items per cell: 400 up to 16k, 200 at 32k–128k (standard error ≈ 2.2 and 3.1 points at 75 %).
+A (task, length) cell **passes** when its headline score (§10.5: far facts for quote, lookup and keyed; every item
+otherwise) is ≥ 75 % exact and the evidence-removed control is at the floor. Items per cell: 400 up to 16k, 200 at
+32k–128k (standard error ≈ 2.2 and 3.1 points at 75 %; the far score uses two thirds of them).
+
+### 10.5 Reading rules (protocol review, 2026-10-13)
+These change how a score is read, not how it is measured, so they apply to every result already in the ledgers
+(`evaluation/text_checks.py`: `far_near`, `effective_floor`, `learned`, `headline`; tests
+`tests/test_text_checks_reading.py`).
+
+- **Far and near facts.** Single-fact exams (quote, lookup, keyed) place the fact early, in the middle or late:
+  5 %, 50 % or 95 % of the document before the question, balanced (item i gets bin i % 3). At 1k–4k a late fact
+  sits 50–200 tokens before the question, inside any local window: E31c's whole score came from late facts (lookup
+  at 4k: 0 % early, 0 % middle, 49 % late, the same with the notebook off). The **headline** score of these exams
+  is therefore the **far** score (early + middle facts); late facts are reported as **near**. Older results are
+  re-read from their per-depth shares; the scorer now writes `far`, `near` and their item counts itself.
+- **Effective floor.** The best score of a model-free reader that does not do the task. Guessing one candidate
+  gives the printed floor; for latest, a reader that follows every move but ignores whose it is gets 1 in 5
+  (§16 audit), so latest's effective floor is 20 %. Runs that learned nothing sat at 19–26 % on latest at 1k.
+- **Learned** = the headline score is above the effective floor by 10 points or 3 standard errors, whichever is
+  larger. Learned says a skill switched on; pass (75 %) says it is mastered. A task is **learnable** at a budget
+  when the dense reference learned it at the training length; the board names a leader per task only at the
+  training length, among models that learned it, ahead of the next by more than 5 points and 2 combined
+  standard errors, and marks a lead from a single run.
+- **Past the training length** a model with no length method on its card (dense: `none`) is scored, but its score
+  measures position extrapolation, not memory (dense read 0 % at 16k on every task). The fair long-range
+  references are the no-memory control (local window only) and a dense model with a declared length method;
+  neither has been run on `text-world-v2` yet (§16.2).
+- **Rephrased facts** (the paraphrase split) are shown next to every main score: dense read lookup at 39–53 % with
+  training sentence shapes and 0–2 % with an unseen one, while E33 kept 53 % (one run) — the closest the exams
+  come to "reads the meaning, not the surface".
 
 ## 11. Length: train short, read long
 - Training length is 4,096 for every model. Evaluation lengths are 1k, 2k, **4k**, 8k, 16k, 32k, 64k
@@ -288,7 +340,8 @@ the floor. Items per cell: 400 up to 16k, 200 at 32k–128k (standard error ≈ 
   10 % of tokens at 16k. It is a different track, never mixed with the 4k track in one comparison.
 
 ## 12. Trainability metrics
-- **Learning curve:** ID 4k scores (200 items per task) at 10, 25, 50, 75 and 100 % of the tokens.
+- **Learning curve:** ID 4k scores at 10, 25, 50, 75 and 100 % of the tokens (result rounds); every 10 %
+  in calibration runs (§16.1).
 - **Tokens to pass:** the first checkpoint at which each task passes. The headline trainability number.
 - **Development loss** at the same checkpoints.
 - **Cost:** measured tokens per second at the training length, FLOPs per token, peak memory, and
@@ -401,15 +454,174 @@ Notes for the first server runs:
 - A 2M dense model after 6M tokens learns the language (loss 8.3 → 3.6) but no task leaves its floor:
   expected at that size, and exactly what the calibration pilot measures.
 
-**Calibration pilot** (before freezing `text-v1`, about 2 days on one server):
+**Data `text-world-v0` (2026-10-06):** built on Polonez:
+- 2.1B training tokens: 230,713 story rows of 4,096 tokens and 836,072 world rows averaging 1,383 tokens;
+- 18,200 in-distribution exam items (1k–128k) and 5,600 each in the harder and paraphrase splits.
 
-1. Dense at screen size, 3 seeds: measures throughput, the seed spread, and which tasks dense passes at
-   4k.
-2. Adjust the mix share and the task dials until dense passes T1–T4 at 4k; T5 may stay `uncalibrated`.
-3. Dense at main size, once: confirms the cap and the curve.
-4. Local at screen size: confirms the controls and floors behave (local must fail T2 at 16k with the
-   evidence early).
-5. Freeze `text-v1`.
+Published as https://huggingface.co/datasets/ksopyla/cogito-text-world (CDLA-Sharing-1.0, with card, tokenizer and
+generator code).
+
+**Round 1 (2026-10-06):** the experiment set X0–X7 is `scripts/study_plans/text_r1.py`:
+- X0: data;
+- X1: server smoke;
+- X2–X3: dense recipe and the dense calibration run;
+- X4–X5: recipes and the screen comparison;
+- X6: reference seeds;
+- X7: the main tier, after the author's go-ahead.
+
+Progress and results are on the text capability board (`analysis/text_board.py` →
+`docs/3_Evaluations_and_Baselines/text_capability_board.html`), fed by `scripts/pull_text_checks_results.sh`.
+
+**Model-free audit of `text-world-v0` (2026-10-08, `analysis/text_checks_audit.py`, report in
+`docs/3_Evaluations_and_Baselines/text_audit/`).** Three readers went over all 29,400 frozen items:
+- a rule reader that knows the templates answered 99.8–100 %: the items are well-posed, and the
+  evidence-removed twins never contain the answer;
+- shortcut readers found four flawed tasks and one noisy one:
+  - lookup: "the only place word" 98 % (a passkey, no addressing);
+  - latest: "the busiest mover's last place" 100 % (the asked name is never needed);
+  - count: "all visits to the place" 51 % (floor 14 %);
+  - compose: 2-cycles made "own home" right in 14 %, and "sister" is two-way in plain English, so many
+    items have two right answers;
+  - deduce: the filler states the asked property directly in 19 % of items;
+- smaller: a position cue (an early single fact is usually the first of its kind) and candidates
+  sharing a first token (48 % of keyed items), which blurs the picked-candidate score.
+
+**`text-world-v1` (2026-10-08)** fixes all of them (the generator's docstring lists each change);
+`v0` stays reproducible through `version="v0"`. Every task must show its shortcuts at the floor in
+the audit before a version is frozen.
+
+**Local pipeline checks (lab tier, Apple M5 Max laptop, 2026-10-08/09).** The laptop only confirms that
+the pipeline works and catches obvious errors: each run under 2 hours (about ≤ 300M tokens at 16M
+parameters, ≤ 30M parameters). Nothing about
+task learnability, token budgets or architectures is concluded from it; those runs go to Polonez/Odra.
+What the local runs confirmed:
+- data build (v0/v1, published tokenizer), training on the Apple GPU (bf16, about 47k tokens/s at 16M),
+  step-size tuning by dev loss, scoring, resume and the run queue all work;
+- a 16M model after 100M tokens scores at the guessing rate on every task. The new probes show why:
+  - the graded answer score shows it has learned the answer format;
+  - the copy probe shows it has not yet learned to copy text it has just seen.
+
+  This is expected that early, so it is not a finding.
+- the copy-sanity data (`scripts/build_copy_sanity_data.py`) shows the training path can learn to copy.
+  The point at which it does varies with the seed (about 700 steps for one seed, not within 1,200 for
+  another).
+
+New measuring tools from this stretch, for the server runs:
+- the graded answer surprise in the scorer;
+- short-document exam items (`scripts/make_text_checks_short_items.py`);
+- the copy probe (`scripts/probe_copy.py`);
+- multi-question training documents (`--train_questions`, not yet adopted).
+
+**`text-world-v2` (2026-10-10): every guessing rate below 10 %** (author request; §9 has the table).
+Audit on a local build with the frozen tokenizer (4,200 items at 1k/4k, ID, harder and paraphrase):
+- the rule reader answers 100 % in every cell, and the twins never contain the answer;
+- every shortcut sits at the guessing rate, except latest's known partial floor (a reader that tracks
+  moves but ignores whose they are: 17–23 % vs 1/5);
+- no candidates share a first token, except the 64-person harder keyed split (79 %).
+The full audit of the Odra build (2026-10-10 07:54 UTC, all 29,400 frozen items at 1k–128k; report
+`docs/3_Evaluations_and_Baselines/text_audit/text-world-v2.md`) confirms it: rule reader 100 % in every cell,
+the same shortcut picture, first tokens shared only in harder keyed (82 %). Filler sentences that name
+the asked person near a cue word ("went to", "house") grow with length, as expected for renamed stories:
+count 4 % of items at 1k, 12 % at 4k, near all at 128k; they never change the template answer.
+Two fixes found by the audit: cut-off story sentences (no closing punctuation) are dropped, since one ran
+into the fact sentence after it; latest keeps 5 people, because 55 move sentences already make the 1k
+exam mostly facts. v0 and v1 stay byte-identical (3,420 records and documents compared).
+
+### 16.1 Calibration ladder (2026-10-10; replaces the calibration pilot)
+
+**Question.** At what model size and token budget does the dense reference pass the gating tasks at the
+training length? Only then can the four-model rounds say anything about architectures. The 30M round of
+9–10 Oct (600M tokens = 20 tokens per parameter, 3,173 steps) left every model, dense included, at the
+guessing rate.
+
+**Literature basis** (`docs/4_Research_Notes/text_calibration_ladder_literature_20261010.md`):
+- copying from context needs only 2 layers but appears abruptly, after ~2–5B tokens (Olsson 2022; Pythia
+  ~2B tokens), at a time set by the number of updates, batch size and context length, not model size
+  (Aoyama 2025);
+- larger models learn more per token (Kaplan 2020);
+- in-context two-hop composition is hard even at 1.3B parameters on natural text (Allen-Zhu 2025);
+- model ladders vary size and token multiple, and score tasks near chance by the probability of the
+  right answer (OLMo ladder 2024, DataDecide 2025).
+
+**Steps** (dense only; one server; each step decided on the previous one):
+
+| step | model | tokens | why |
+|---|---|---|---|
+| 1 | dense 30M (screen shape) | 1.5B (7,931 steps), extend to 2B if still improving | tokens and steps at fixed size |
+| 2 | dense 50M, deeper rather than wider | the step-1 budget, same data | capacity at equal tokens |
+| 3 | dense 100M (main shape) | 2–4B, a larger mix | the budget for the main tier |
+
+**What each calibration run records** (runner: `--tokens`, `--eval_lengths 1024 2048 4096`,
+`--curve_fractions 0.1 … 1.0`):
+- exams at 1k, 2k and 4k only (the long-context ladder is for result rounds), harder and paraphrase at 4k;
+- a learning curve every 10 % of the steps: exact, pick and graded pick per task;
+- the copy probe on the final model;
+- throughput and wall-clock, for the round's compute budget.
+
+**Decision rules after each step:**
+- **Pass:** dense reaches 75 % exact on a gating task at 4k with its twin at the floor. The first budget
+  where T1–T4 pass sets the round budget; T5 may stay uncalibrated.
+- **On the way:** the graded pick rises clearly above 1 / candidates (by more than 2 standard errors) but
+  exact has not passed. Extend the tokens (step 1 → 2B) or go to step 2 at equal tokens.
+- **Flat:** nothing moves between consecutive budgets. Not a token problem: step 2 at the same tokens. If
+  50M is flat too, the data format is the limit: answers are about 0.1 % of training tokens (one question
+  per ~2k-token document). Raise the question density (`--train_questions`) before scaling further.
+- **Seeds:** a single failing seed is not a verdict (emergence time is long-tailed; E33 saw one run in
+  three never jump). Add a second seed before concluding "flat".
+
+**Runs:**
+- **30M on v1, 600M tokens** (Odra, 9–10 Oct): four models, all at the guessing rate (the board's round).
+- **Budget run, 30M dense on v1, 1.5B tokens** (Odra, from 2026-10-10 05:50 UTC): exams cut to 1k–4k plus
+  a five-point curve; the token answer for the v1 exams.
+  Result: lookup 47 % at 4k (guessing 25 %), latest 37 % (20 %), keyed 13 % (6 %), learned between 0.6B and
+  0.9B tokens; nothing passes; quote, compose, count, deduce at guessing.
+- **Step 1, 30M dense on v2, 1.5B tokens** (Odra, 2026-10-10 08:17–10:52 UTC): **quote passes** (95 % at 4k,
+  guessing 8 %; 92 % harder, 76 % paraphrase), learned between 0.75B and 1.1B tokens; lookup and keyed at
+  guessing; latest above guessing at 1k only (26.5 % vs 9 %). Which retrieval task switches on first
+  differs between v1 and v2 data (one seed each).
+- **Step 2, 50M dense on v2, 1.5B tokens** (mid tier: width 576, 12 layers; step size 1e-3 chosen by held-out
+  loss over 5e-4 / 1e-3 / 2e-3; Odra 2026-10-10 11:24–15:17 UTC, 117k tokens/s, training 3.4 h): lookup 19.5 %
+  and keyed 15 % at 4k (guessing 8 % and 6 %), rising slowly over the whole run; quote 0 % (the 30M model passed
+  it on the same data); nothing passes; story loss 1.49 (30M: 1.56). No run so far copies a repeated passage:
+  each seems to build its own task-specific retrieval, and which one switches on differs run to run.
+- **Step 1, second seed** (30M, seed 1; Odra 2026-10-10 15:18–17:54 UTC): every task at guessing at 4k
+  (latest 19 % at 1k only); seed 0 passed quote at 95 % on the same data and tokens. At 30M and 1.5B tokens,
+  whether a retrieval skill switches on is a matter of the seed.
+- **Plain input** (dense 30M without the word-pair/triple hash tables and value embeddings, FFN refitted to
+  1,472; step size borrowed from dense; Odra 2026-10-10 18:08–20:55 UTC, seed 0): **quote passes** (86 % at 4k),
+  lookup 39 %, keyed 35 %, latest 32 %, count 19 % (guessing 6–9 %); compose and deduce at guessing; story
+  loss 1.53 (with the tables: 1.56). The same model with the tables learned at most one task (two seeds).
+  **Decision (2026-10-10):** the architecture round runs on plain input (`*_plain` arches); a second plain seed
+  confirms the finding. The tables came with E18/E31 from the DNA checks and were never chosen for text.
+  **Not confirmed (2026-10-11):** the second plain seed (05:36–08:43 UTC) learned nothing. Across four dense
+  30M / 1.5B runs, two learned something (one per input), so at this budget learning is seed luck and the
+  input-layer effect is not separable from it. The round stays on plain input for consistency.
+- **Round on plain input** (Odra, from 2026-10-10 21:00 UTC, author's priority E33 first; all 30M, 1.5B tokens,
+  v2, exams 1k–16k): E33 loop, then dense plain seed 1, E31c, the no-memory control, then dense plain on
+  training documents with up to 8 questions each (`--train_questions 8`, data `text_checks_v2q8`, exams
+  unchanged, sha256 identical). An E33 run with the tables was stopped after 2 minutes.
+
+### 16.2 Protocol review (2026-10-13)
+
+A review of every result so far (13 ledgers, 18 trained models) against the protocol. The exams themselves held up
+(rule reader 100 %, no answer in any evidence-removed twin); the problems were in how results were read and how the
+reference trains. Findings, most severe first, and what was done:
+
+| # | finding (evidence) | done |
+|---|---|---|
+| 1 | **Dense learns by luck at 30M / 1.5B tokens**: of four mixed-training runs, one passed quote only, one learned four tasks, two learned nothing; skills switch on abruptly at 60–70 % of training; training on quote only did not help. Answers are ≈ 0.1 % of training tokens (one question per ≈ 1.4k-token document). | the recipe test is queued: dense 30M × 3 seeds on 8 questions per training document (`text_checks_v2q8`, exams byte-identical); 2 of 3 learning makes it the recipe. Single-task series paused. |
+| 2 | **Near facts are free**: at 1k–4k the late depth bin sits inside every local window; E31c's whole score on quote, lookup and keyed came from it. | reading rule §10.5 (far facts), applied to all ledgers. |
+| 3 | **Length also spreads the facts**: longer documents add filler, so facts are less crowded; E33 on far facts: ≈ 30 % at 1k, 73–93 % at 16k. | `crowded` exams (v2.1, eval only): implemented, audited locally (rule reader 100 %, shortcuts at guessing); built on Odra and scored on the existing checkpoints when it is back. |
+| 4 | **Dense is not a reference past 4k** (no length method: 0 % at 16k on everything); the no-memory control has not run on v2. | reading rule §10.5; control and a dense long-text method queued after the recipe test. |
+| 5 | **Training rarely asks far back**: only ≈ 20 % of training questions have their fact > 1k tokens back, ≈ 4.5 % > 2k (log-uniform 256–4,096-token documents, facts uniform); dense drops on early facts at 4k (quote 72 % vs 95 % middle). | builder option for a later training mix (not in force). |
+| 6 | **Rephrased facts are the clearest meaning-vs-surface signal**: dense lookup 37–48 % → 0–1 % with an unseen sentence shape; E33 64 % → 64 % on far facts (one run). Only one held-out shape per relation. | shown next to every main score; `paraphrase2` exams (v2.1): three more unseen shapes per relation, implemented and audited locally. |
+| 7 | **Floors**: latest's partial reader gets 1 in 5; count's "four"/"five" share a first token. | effective floor §10.5. |
+| 8 | **Compose and deduce give no signal** (graded pick exactly at guessing in every run); exams ask only 2 hops / depth 2. | `steps` exams (v2.1): one-step compose and deduce, implemented and audited locally. |
+| 9 | **Bookkeeping**: the budget table was stale; memory models borrowed dense's step size (§7 asks for their own tuning); the board's leader rule was looser than the pass rule. | §5 table fixed; the board names leaders by §10.5; tuning the memory models' step size is due before the next round. |
+
+**Trust on the board.** The board is the mission control of these checks: every run carries a standing (in use,
+calibration, history), every conclusion a state (holds, single run, open, retracted) and every protocol change a
+log entry saying what it did to earlier results (`analysis/text_board_notes.py`; skill `text-checks`, "The board").
 
 ## 17. Open decisions for the author
 1. **Main tier:** 100M parameters and 2B tokens, about one Polonez day (recommended), or 150M and 3B,

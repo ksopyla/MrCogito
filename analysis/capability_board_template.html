@@ -151,6 +151,35 @@ td.sum.none { background: color-mix(in srgb, var(--critical) 14%, transparent); 
 .ttable tr.lvrow .lvq { font-size: 12px; color: var(--ink-3); margin-left: 8px; }
 .ttable tr.notready td.task a, .ttable tr.notready td.task { color: var(--ink-3); }
 .ttable tr.notready td.cell { opacity: .55; }
+.mission { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.tile { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; display: grid; gap: 2px;
+  text-decoration: none; color: var(--ink); }
+.tile .k { font: 600 22px/1.1 var(--mono); }
+.tile .l { font-size: 12px; color: var(--ink-2); }
+.tile.good .k { color: var(--good); } .tile.warn .k { color: var(--warning); } .tile.bad .k { color: var(--critical); }
+.tile.muted .k { color: var(--ink-3); }
+.nowgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; align-items: start; }
+@media (max-width: 860px) { .nowgrid { grid-template-columns: 1fr; } }
+.card { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; display: grid; gap: 6px;
+  scroll-margin-top: 100px; }
+.card + .card { margin-top: 10px; }
+.card .top { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.card .t { font-weight: 600; }
+.card .m { font-size: 13px; color: var(--ink-2); }
+.card .meta { font-size: 12px; color: var(--ink-3); }
+.card:target { box-shadow: 0 0 0 2px var(--accent); }
+.sev { font: 600 11px/1 var(--mono); text-transform: uppercase; padding: 3px 6px; border-radius: 4px; border: 1px solid currentColor; }
+.sev.critical { color: var(--critical); } .sev.high { color: var(--warning); } .sev.medium { color: var(--ink-2); } .sev.low { color: var(--ink-3); }
+.st2 { font-size: 11px; padding: 3px 7px; border-radius: 999px; background: var(--grid); color: var(--ink-2); }
+.st2.running { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.st2.resolved { background: color-mix(in srgb, var(--good) 14%, transparent); color: var(--good); }
+.progress { height: 6px; border-radius: 3px; background: var(--grid); overflow: hidden; }
+.progress > span { display: block; height: 100%; background: var(--accent); }
+td.cell .warn { display: block; font-size: 10px; font-family: var(--sans); font-weight: 600; }
+td.cell.caution { box-shadow: inset 0 0 0 2px var(--warning); }
+td.cell.caution.pass { box-shadow: inset 0 0 0 2px var(--ink), inset 0 0 0 4px var(--warning); }
+td.cell.hidden { color: var(--ink-3); background: none !important; }
+.toggle { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink); cursor: pointer; }
 .fold { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 16px; display: grid; gap: 10px; }
 .fold > summary { font-weight: 600; }
 .fold > summary .small { font-weight: 400; margin-left: 6px; }
@@ -164,14 +193,11 @@ td.sum.none { background: color-mix(in srgb, var(--critical) 14%, transparent); 
     <div class="eyebrow">MrCogito · capability checks</div>
     <h1>Capability Board</h1>
     <p class="muted" id="lede"></p>
-    <div class="latest">
-      <h3>Latest protocol and result changes</h3>
-      <ol id="latest"></ol>
-      <p class="refs">From the calibration log, newest first; hover a line for the finding behind it · <a data-ref="docs/engineering_specs/capability_checks.md#calibration-log">full log</a></p>
-    </div>
+    <div class="mission" id="mission"></div>
     <nav class="toc" aria-label="Sections">
-      <a href="#ladder">The ladder</a><a href="#tasks">Tasks by level</a><a href="#harm">Kept or lost vs the champion</a><a href="#length">Length charts</a>
-      <a href="#more">Flawed and older</a><a href="#guide">Task guide</a><a href="#calibration">Calibration</a><a href="#reruns">Re-run list</a><a href="#sources">Sources</a>
+      <a href="#now">Now</a><a href="#ladder">The ladder</a><a href="#tasks">Tasks by level</a><a href="#harm">Kept or lost vs the champion</a>
+      <a href="#length">Length charts</a><a href="#history">History</a><a href="#more">Flawed and older</a><a href="#guide">Task guide</a>
+      <a href="#calibration">Calibration</a><a href="#reruns">Re-run list</a><a href="#sources">Sources</a>
     </nav>
   </header>
 
@@ -179,6 +205,22 @@ td.sum.none { background: color-mix(in srgb, var(--critical) 14%, transparent); 
     <div class="controls" id="filter" role="group" aria-label="Models shown in the tables and charts"></div>
     <div class="legend" id="legend"></div>
   </div>
+
+  <section id="now">
+    <div>
+      <h2>Now: what is training, and what to trust</h2>
+      <p class="muted">A result is <b>trusted</b> when it matches its task's written recipe, ran on seeds 0–2 and no open issue touches it.
+        An open issue marks the results it touches with ⚠ (shown, but the verdict may still change) and names the run that will settle it.
+        Nothing is ever deleted: invalid results stay as history with the reason. Status as of the build time above; runs are pulled into the
+        board when they finish.</p>
+      <p class="refs">Issues and runs: <a data-ref="evaluation/capability_audit.py">capability_audit.py</a> ·
+        rules: <a data-ref="docs/engineering_specs/capability_checks.md#trust-open-issues-and-history">trust, open issues and history</a></p>
+    </div>
+    <div class="nowgrid">
+      <div><h3 style="margin-bottom:8px">Training now</h3><div id="runs"></div></div>
+      <div><h3 style="margin-bottom:8px">Open issues</h3><div id="open-issues"></div></div>
+    </div>
+  </section>
 
   <section id="ladder">
     <div>
@@ -216,10 +258,22 @@ td.sum.none { background: color-mix(in srgb, var(--critical) 14%, transparent); 
     <div>
       <h2>Length charts: does it hold up as the book grows?</h2>
       <p class="muted">Every ready task with a length ladder, hardest level first. Each model trains at the task's length, then reads longer books with no more training.
-        Ladders record the first answer letter (also on tasks scored on the picked candidate), median over seeds, only where every seed was read.
+        Ladders read the task's own score (the picked candidate on candidate-scored tasks where the ladder decoded it; older
+        ladders hold only the first letter, which has a ~40 % guessing floor on those exams), median over seeds, only where every seed was read.
         The dashed line is the 75 % pass mark. Dashed cards come from an older protocol.</p>
     </div>
     <div class="multiples" id="multiples"></div>
+  </section>
+
+  <section id="history">
+    <details class="fold" id="f-history"><summary>History: what was wrong, what changed, what we learned <span class="small" id="n-history"></span></summary>
+      <p class="small">Every finding about the checks, newest first, open and resolved. An old number on this page is explained here rather than
+        silently replaced; the lesson says what we now check before trusting a result.</p>
+      <div id="history-list"></div>
+      <h3 style="margin-top:6px">Protocol changes, newest first</h3>
+      <div class="latest"><ol id="latest"></ol>
+        <p class="refs">From the calibration log; hover a line for the finding behind it · <a data-ref="docs/engineering_specs/capability_checks.md#calibration-log">full log</a></p></div>
+    </details>
   </section>
 
   <section id="more">
@@ -351,10 +405,52 @@ if (location.hash) setTimeout(() => reveal(decodeURIComponent(location.hash.slic
 
 // ---- header, latest, filter, legend
 document.getElementById("lede").textContent =
-  `Can our own architectures learn to carry, find, hold, chain and reason over information? Every model trains from scratch on the same ` +
-  `leveled synthetic tasks, C0 (copy) up to C7 (language-like filler), and is compared with the champion, ${label(D.champion)}. ` +
-  `${nReady} tasks are ready, ${D.tasks.filter(t => t.status === "calibrating").length} are still being calibrated, ${FLAWED_T.length} flawed ones are folded at the bottom. ` +
-  `Built ${D.generated} from the committed results ledger (${D.version}).`;
+  `Mission control for the capability checks: can our own architectures learn to carry, find, hold, chain and reason over information? ` +
+  `Every model trains from scratch on the same leveled synthetic tasks, C0 (copy) up to C7 (language-like filler), and is compared with the ` +
+  `champion, ${label(D.champion)}. ${nReady} tasks are ready, ${D.tasks.filter(t => t.status === "calibrating").length} are still being calibrated.`;
+const ISS = Object.fromEntries((D.issues || []).map(i => [i.id, i]));
+const SEV = {critical: 0, high: 1, medium: 2, low: 3};
+const openIssues = (D.issues || []).filter(i => i.status !== "resolved").sort((a, b) => SEV[a.severity] - SEV[b.severity]);
+const cellIssues = (t, m) => ((D.cell_issues || {})[t] || {})[m] || [];
+const cellTrust = (t, m) => ((D.cell_trust || {})[t] || {})[m];
+let trustedOnly = false;
+try { trustedOnly = localStorage.getItem("capboard-trusted-only") === "1"; } catch (e) {}
+function drawMission() {
+  const ms = D.models.filter(m => D.visible.includes(m)), cnt = {trusted: 0, caution: 0, legacy: 0, invalid: 0};
+  for (const t of Object.keys(D.cell_trust || {})) for (const m of ms) { const s = cellTrust(t, m); if (s) cnt[s]++; }
+  const live = (D.runs || []).filter(r => !/^queued/.test(r.started) && !(r.done != null && r.done >= r.jobs)).length;
+  const tile = (href, k, l, cls) => `<a class="tile ${cls}" href="${href}"><span class="k">${k}</span><span class="l">${l}</span></a>`;
+  document.getElementById("mission").innerHTML =
+    tile("#tasks", cnt.trusted, "trusted results", "good") + tile("#tasks", cnt.caution, "under caution (⚠)", cnt.caution ? "warn" : "muted") +
+    tile("#tasks", cnt.legacy, "older protocol (hatched)", "muted") + tile("#more", cnt.invalid, "invalid, kept as history", cnt.invalid ? "bad" : "muted") +
+    tile("#now", openIssues.length, "open issues", openIssues.length ? "warn" : "good") +
+    tile("#now", `${live}/${(D.runs || []).length}`, "runs training / planned", "muted") +
+    `<div class="tile"><span class="l">built</span><span class="mono" style="font-size:13px">${esc(D.built || D.generated)}</span>` +
+    `<span class="l">${esc(D.version)} · default models</span></div>`;
+}
+drawMission();
+const issueLink = id => ISS[id] ? `<a href="#issue-${esc(id)}">${esc(ISS[id].title)}</a>` : esc(id);
+const taskLinks = ts => ts.map(x => `<a href="#task-${esc(x)}" class="mono" style="font-size:12px">${esc(x)}</a>`).join(", ");
+const stChip = st => `<span class="st2 ${st === "rerun running" ? "running" : st === "resolved" ? "resolved" : ""}">${esc(st)}</span>`;
+document.getElementById("runs").innerHTML = (D.runs || []).map(r => {
+  const pctDone = r.done != null ? Math.round(100 * r.done / Math.max(1, r.jobs)) : 0;
+  return `<div class="card"><div class="top"><span class="t mono">${esc(r.folder)}</span><span class="st2 ${/^queued/.test(r.started) ? "" : "running"}">${/^queued/.test(r.started) ? "queued" : "training"}</span>
+    <span class="meta">${esc(r.host)}</span></div>
+    <div class="m">${esc(r.what)}</div>
+    <div class="progress" title="${r.done != null ? `${r.done} of ${r.jobs} jobs done (pulled ${esc(r.collected)})` : "not pulled yet"}"><span style="width:${pctDone}%"></span></div>
+    <div class="meta">started ${esc(r.started)} · expected ${esc(r.eta)} · ${r.done != null ? `${r.done}/${r.jobs} jobs done` : `${r.jobs} jobs, not pulled yet`}</div>
+    <div class="meta">settles: ${r.settles.map(issueLink).join(" · ")}</div></div>`;
+}).join("") || `<p class="muted">Nothing is training.</p>`;
+const issueCard = (i, id) => `<div class="card" id="${id ? `issue-${esc(i.id)}` : ""}"><div class="top"><span class="sev ${i.severity}">${esc(i.severity)}</span>${stChip(i.status)}
+    <span class="meta">${esc(i.date)}${i.effect === "caution" ? " · marks results ⚠" : i.effect === "invalid" ? " · results invalid" : ""}</span></div>
+  <div class="t">${esc(i.title)}</div><div class="m">${esc(i.meaning)}</div>
+  <div class="meta"><b>What changes it:</b> ${esc(i.fix)}${i.runs.length ? ` (${i.runs.map(esc).join(", ")})` : ""}</div>
+  <div class="meta"><b>Lesson:</b> ${esc(i.learned)}</div>
+  ${i.tasks.length ? `<div class="meta">tasks: ${taskLinks(i.tasks)}${i.models.length ? ` · models: ${i.models.map(m => esc(label(m))).join(", ")}` : ""}</div>` : ""}</div>`;
+document.getElementById("open-issues").innerHTML = openIssues.map(i => issueCard(i, true)).join("") || `<p class="muted">No open issues.</p>`;
+const hist = [...(D.issues || [])].sort((a, b) => b.date.localeCompare(a.date) || SEV[a.severity] - SEV[b.severity]);
+document.getElementById("history-list").innerHTML = hist.map(i => issueCard(i, false)).join("");
+document.getElementById("n-history").textContent = `${hist.length} findings, ${hist.filter(i => i.status === "resolved").length} resolved`;
 const cut = (s, n) => s.length > n ? s.slice(0, s.lastIndexOf(" ", n - 1)) + " …" : s;
 document.getElementById("latest").innerHTML = (D.latest || []).slice(0, 4).map(r =>
   `<li title="${esc(r.finding)}"><span class="when">${esc(r.date)}<br>${esc(r.round)}</span><span class="what">${esc(cut(r.decision, 190))}</span></li>`).join("") ||
@@ -385,7 +481,14 @@ document.getElementById("filter").addEventListener("click", e => {
 document.getElementById("legend").innerHTML =
   ["active", "partial", "missing", "calibrating", "flawed"].map(s => `<span class="chip ${s}" title="${esc(STATUS[s])}">${s}</span>`).join("") +
   ["settings-differ", "curriculum-differs", "not-from-scratch"].map(l => `<span title="${esc(LABEL[l].t)}"><span class="badge">${LABEL[l].b}</span> ${l.replace(/-/g, " ")}</span>`).join("") +
-  `<span>score in %; 75 % passes</span>`;
+  `<span>score in %; 75 % passes · ⚠ open issue</span>` +
+  `<label class="toggle"><input type="checkbox" id="trusted-only" ${trustedOnly ? "checked" : ""}> only trusted results</label>`;
+document.getElementById("legend").addEventListener("change", e => {
+  if (e.target.id !== "trusted-only") return;
+  trustedOnly = e.target.checked;
+  try { localStorage.setItem("capboard-trusted-only", trustedOnly ? "1" : "0"); } catch (err) {}
+  redraw();
+});
 
 // ---- no-harm: the default models first, older variants folded
 document.getElementById("harm-rule").textContent =
@@ -421,11 +524,14 @@ function drawLadder() {
       `<span class="lvq">${esc(lv.question)} · ${ready.length} ready${cal ? `, ${cal} calibrating` : ""}</span></td>`;
     for (const m of cols) {
       if (!ready.length) { h += `<td class="sum"><span class="small">no ready task</span></td>`; continue; }
-      const have = ready.filter(t => matched(t, m)).length, n = ready.filter(t => passes(t, m)).length;
+      const ok = t => !trustedOnly || cellTrust(t.id, m) === "trusted";
+      const have = ready.filter(t => matched(t, m)).length, n = ready.filter(t => passes(t, m) && ok(t)).length;
+      const warn = ready.filter(t => cellIssues(t.id, m).length).length;
       if (!have) { h += `<td class="sum"><span class="small">·</span></td>`; continue; }
       const cls = n === ready.length ? "all" : n ? "some" : "none";
       h += `<td class="sum ${cls}" title="${esc(`${label(m)} passes ${n} of ${ready.length} ready ${lv.id} tasks; ${have} have a matching result`)}">` +
-        `<span class="frac">${n}/${ready.length}</span>${have < ready.length ? `<span class="of">${ready.length - have} not run</span>` : ""}</td>`;
+        `<span class="frac">${n}/${ready.length}</span>${have < ready.length ? `<span class="of">${ready.length - have} not run</span>` : ""}` +
+        `${warn ? `<span class="of" title="${esc(`${warn} counted result${warn > 1 ? "s carry" : " carries"} an open issue`)}">⚠ ${warn} under caution</span>` : ""}</td>`;
     }
     h += `</tr>`;
   }
@@ -447,10 +553,15 @@ function taskRow(t, cols, ref) {
     const legacy = e.label !== "same" && !fl;
     const pass = !fl && e.label === "same" && e.score != null && e.score >= D.pass;
     const bg = fl ? "" : `background-color:${seqColor(e.score)};color:${seqInk(e.score)}`;
-    h += `<td class="cell ${fl ? "flawed" : ""} ${legacy ? "legacy" : ""} ${pass ? "pass" : ""}" tabindex="0" data-t="${esc(t.id)}" data-m="${esc(m)}" style="${bg}">` +
+    const iss = cellIssues(t.id, m), state = cellTrust(t.id, m);
+    if (trustedOnly && !fl && state !== "trusted") {
+      h += `<td class="cell hidden" tabindex="0" data-t="${esc(t.id)}" data-m="${esc(m)}" title="hidden: ${esc(state)}">·</td>`; continue;
+    }
+    h += `<td class="cell ${fl ? "flawed" : ""} ${legacy ? "legacy" : ""} ${pass ? "pass" : ""} ${iss.length && !fl ? "caution" : ""}" tabindex="0" data-t="${esc(t.id)}" data-m="${esc(m)}" style="${bg}">` +
       `${pct(e.score)}${legacy ? `<span class="badge">${LABEL[e.label].b}</span>` : ""}` +
       `${L128 != null ? `<span class="sub">128k: ${pct(L128)}</span>` : ""}` +
-      `${pass && failedSeeds(e) ? `<span class="sub">${failedSeeds(e)} seed${failedSeeds(e) > 1 ? "s" : ""} failed</span>` : ""}</td>`;
+      `${pass && failedSeeds(e) ? `<span class="sub">${failedSeeds(e)} seed${failedSeeds(e) > 1 ? "s" : ""} failed</span>` : ""}` +
+      `${iss.length && !fl ? `<span class="warn">⚠ ${iss.length}</span>` : ""}</td>`;
   }
   return h + `</tr>`;
 }
@@ -477,13 +588,16 @@ document.querySelectorAll("table.ttable").forEach(tbl => {
     const cell = ev.target.closest("td[data-m]"), name = ev.target.closest("td.task");
     if (cell) {
       const t = taskBy[cell.dataset.t], e = D.table[t.id][cell.dataset.m];
+      if (!e) { hideTip(); return; }
       const lad = Object.entries(e.ladder).map(([L, v]) => `${kLen(+L)} ${pct(v)}`).join(" · ");
       showTip(`<div><b>${esc(label(cell.dataset.m))}</b> · ${esc(t.name)}</div>
         <div class="row"><span>${scoreName(t)} at ${kLen(t.train_len)}</span><span class="num">${pct(e.score)} %</span></div>
         <div class="row"><span>mean over answer letters</span><span class="num">${pct(e.mean)} %</span></div>
         <div class="row"><span>per seed</span><span class="num">${Object.entries(e.per_seed || {}).map(([k, v]) => `${k}: ${pct(v)}`).join(" · ") || e.seeds.join(", ") || "–"}</span></div>
-        ${lad ? `<div class="small">length ladder (first letter): ${esc(lad)}</div>` : ""}
+        ${lad ? `<div class="small">length ladder (${e.ladder_kind === "candidate" ? "picked candidate" : e.ladder_kind === "mixed" ? "picked candidate where read, else first letter" : "first letter"}): ${esc(lad)}</div>` : ""}
         <div class="small">${esc(e.label)}: ${esc(LABEL[e.label].t)}</div>
+        <div class="small"><b>trust: ${esc(cellTrust(t.id, cell.dataset.m) || "–")}</b></div>
+        ${cellIssues(t.id, cell.dataset.m).map(id => `<div class="small">⚠ <b>${esc(ISS[id].title)}</b> — ${esc(ISS[id].meaning)}</div>`).join("")}
         <div class="small">from ${esc(e.via.join(", "))} · ${esc(e.sources.join(", "))}</div>`, ev);
     } else if (name) showTip(taskTip(taskBy[name.dataset.t]), ev);
     else hideTip();
@@ -538,7 +652,9 @@ function drawCharts() {  // every ready ladder task, hardest level first, from t
       if (!Object.keys(series).length) continue;
       if (!header) { box.insertAdjacentHTML("beforeend", `<div class="lvhead"><h3>${esc(lv.id)} ${esc(lv.name)}</h3><span class="small">${esc(lv.question)}</span></div>`); header = true; }
       const legacy = Object.keys(series).some(m => by[m].label !== "same");
-      panel(box, {title: t.name, stage: `trained at ${kLen(t.train_len)}, first letter`, link: t.id, series,
+      const kinds = new Set(Object.keys(series).map(m => by[m].ladder_kind || "first"));
+      const kindTxt = kinds.size > 1 || kinds.has("mixed") ? "picked candidate where read, else first letter" : kinds.has("candidate") ? "picked candidate" : "first letter";
+      panel(box, {title: t.name, stage: `trained at ${kLen(t.train_len)}, ${kindTxt}`, link: t.id, series,
                   badge: legacy ? ` · <span title="${esc("some lines come from an older protocol (see the table badges)")}"><span class="badge">≈</span> mixed protocols</span>` : "",
                   label: m => by[m].label === "same" ? "" : `(${by[m].label})`});
     }

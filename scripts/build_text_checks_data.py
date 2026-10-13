@@ -20,6 +20,9 @@ Smoke (local, minutes; filler from the small validation/test story files):
 Full (servers):
   uv run python scripts/build_text_checks_data.py --stories full --out_dir $DATA/text_checks_v0 \
       --seq_len 4096 --n_lang_rows ... --n_world_rows ...
+Add exams to an existing build (v2.1 splits; tokenizer, training mix and existing exams untouched):
+  uv run python scripts/build_text_checks_data.py --stories full --out_dir $DATA/text_checks_v2 \
+      --add_exams --eval_splits crowded paraphrase2 steps
 """
 from __future__ import annotations
 
@@ -37,6 +40,7 @@ from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from data.text_world import ADDED_SPLITS  # noqa: E402
 from data.text_world import (  # noqa: E402
     TASKS,
     TEXT_WORLD_VERSION,
@@ -69,7 +73,22 @@ def _read_parquet_texts(repo: str, filename: str) -> list[str]:
     path = hf_hub_download(repo, filename, repo_type="dataset", token=False)
     table = pq.read_table(path)
     col = "text" if "text" in table.column_names else ("story" if "story" in table.column_names else table.column_names[0])
-    return [clean_story(t) for t in table.column(col).to_pylist() if t]
+    # decode story by story: a damaged cached shard once held invalid UTF-8, which made the whole column fail
+    import pyarrow as pa
+
+    raw = table.column(col).cast(pa.binary()).to_pylist()
+    out, bad = [], 0
+    for b in raw:
+        if not b:
+            continue
+        t = b.decode("utf-8", errors="replace")
+        if "�" in t:
+            bad += 1
+            continue
+        out.append(clean_story(t))
+    if bad:
+        print(f"  {repo}/{filename}: dropped {bad} stories with invalid UTF-8")
+    return out
 
 
 def load_stories(mode: str, max_train_files: int, seed: int) -> tuple[list[str], list[str]]:
@@ -118,17 +137,22 @@ def _row(ids: list[int], bos: int, eos: int) -> dict:
             "special_tokens_mask": [1] + [0] * len(ids) + [1]}
 
 
-def language_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: int) -> list[dict]:
-    rows, cur, i = [], [], 0
+def language_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: int):
+    """Yield up to n story rows of exactly seq_len tokens (whole stories, the overflow dropped).
+    A generator: the full-size mix is ~1B tokens and must not sit in memory as Python lists."""
+    made, cur, i = 0, [], 0
     sep = encode("\n\n")
-    while len(rows) < n and i < len(stories) * 4:
+    while made < n and i < len(stories) * 4:
         ids = encode(stories[i % len(stories)])
         i += 1
         cur = cur + (sep if cur else []) + ids
         if len(cur) >= seq_len - 2:
-            rows.append(_row(cur[: seq_len - 2], bos, eos))
+            yield _row(cur[: seq_len - 2], bos, eos)
+            made += 1
             cur = []
-    return rows
+
+
+_VERSION = {"world": TEXT_WORLD_VERSION, "questions": 1, "tasks": TASKS}  # set from the arguments before workers fork
 
 
 def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: int, seed: int,
@@ -140,7 +164,9 @@ def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: 
     while len(rows) < n:
         target = int(math.exp(rng.uniform(math.log(min_len), math.log(seq_len - 2))))
         for shrink in (1.0, 0.9, 0.8, 0.6):
-            text = make_train_document(seed * 1_000_003 + k, stories, int(target * shrink), ntok)
+            text = make_train_document(seed * 1_000_003 + k, stories, int(target * shrink), ntok,
+                                       tasks=tuple(_VERSION["tasks"]), version=_VERSION["world"],
+                                       questions=_VERSION["questions"])
             ids = encode(text)
             if len(ids) <= seq_len - 2:
                 rows.append(_row(ids, bos, eos))
@@ -159,14 +185,33 @@ def _features():
                      "special_tokens_mask": Sequence(Value("int8"))})
 
 
-def _save(rows, path: Path):
-    """Stream rows (a list or a generator) to disk with compact integer types."""
-    from datasets import Dataset
+def _save(rows, path: Path, chunk: int = 5000):
+    """Write rows (an iterable, or a callable returning one) to disk with compact integer types, in
+    chunks of `chunk` rows joined at the end. Not `Dataset.from_generator`: it fingerprints the generator's
+    closure, and with the full story pool (3.9M stories) inside that closure the build segfaulted."""
+    from datasets import Dataset, concatenate_datasets, load_from_disk
 
-    rows = list(rows) if not callable(rows) else rows
-    gen = rows if callable(rows) else (lambda: (r for r in rows))
-    Dataset.from_generator(gen, features=_features(), cache_dir=str(path) + ".cache").save_to_disk(str(path))
-    shutil.rmtree(str(path) + ".cache", ignore_errors=True)
+    it = rows() if callable(rows) else iter(rows)
+    tmp = Path(str(path) + ".parts")
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True)
+    parts, buf = [], []
+
+    def flush():
+        cols = {k: [r[k] for r in buf] for k in ("input_ids", "attention_mask", "special_tokens_mask")}
+        p = tmp / f"part_{len(parts):05d}"
+        Dataset.from_dict(cols, features=_features()).save_to_disk(str(p))
+        parts.append(str(p))
+        buf.clear()
+
+    for r in it:
+        buf.append(r)
+        if len(buf) >= chunk:
+            flush()
+    if buf or not parts:
+        flush()
+    concatenate_datasets([load_from_disk(p) for p in parts]).save_to_disk(str(path))
+    shutil.rmtree(tmp, ignore_errors=True)
 
 
 _WORKER: dict = {}
@@ -239,24 +284,50 @@ def main():
                    help="lengths of the non-id splits (harder, paraphrase)")
     p.add_argument("--eval_items", type=int, default=400, help="items per (split, task, length) up to 16k")
     p.add_argument("--eval_items_long", type=int, default=200, help="items per cell above 16k")
-    p.add_argument("--eval_splits", nargs="+", default=["id", "harder", "paraphrase"])
+    p.add_argument("--eval_splits", nargs="*", default=["id", "harder", "paraphrase"],
+                   help="exam splits to freeze; none (with --eval_from) reuses another build's exams")
+    p.add_argument("--train_tasks", nargs="+", default=list(TASKS),
+                   help="tasks of the training world documents (single-task runs, 2026-10-11); exams are unchanged")
+    p.add_argument("--eval_from", default=None, help="link eval/ from this build instead of freezing new exams")
+    p.add_argument("--add_exams", action="store_true",
+                   help="only freeze --eval_splits into an existing build (its own tokenizer; training mix and other "
+                        "exams untouched; meta updated), e.g. the v2.1 splits crowded paraphrase2 steps")
     p.add_argument("--eval_tasks", nargs="+", default=list(TASKS))
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--world_version", default=TEXT_WORLD_VERSION, help="generator version: v0 (published draft) or v1")
+    p.add_argument("--train_questions", type=int, default=1,
+                   help="questions per training world document (v1; about different cast members); exams keep one")
+    p.add_argument("--tokenizer", default=None,
+                   help="reuse this tokenizer folder instead of training one (e.g. the published one, so data versions compare)")
     args = p.parse_args()
+    _VERSION["world"] = args.world_version
+    _VERSION["questions"] = args.train_questions
+    _VERSION["tasks"] = tuple(args.train_tasks)
+    wv = f"text-world-v{args.world_version.replace('text-world-', '').lstrip('v')}"
 
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     train_st, held_st = load_stories(args.stories, args.max_train_files, args.seed)
     print(f"stories: {len(train_st):,} train / {len(held_st):,} held-out ({time.time() - t0:.0f}s)")
+    if args.add_exams:
+        add_exams(args, out, held_st, t0)
+        return
 
     # tokenizer: stories + world documents (approximate lengths; names and places must be in its data)
     approx = lambda s: max(1, len(s) // 4)  # noqa: E731
-    tok_texts = train_st[: args.tokenizer_sample] + [
-        make_train_document(10_000_000 + i, train_st, int(math.exp(random.Random(i).uniform(math.log(256), math.log(4096)))), approx)
-        for i in range(max(500, args.tokenizer_sample // 50))
-    ]
-    tok = train_tokenizer(tok_texts, args.vocab, out / "tokenizer")
+    if args.tokenizer:
+        from transformers import AutoTokenizer
+
+        tok = AutoTokenizer.from_pretrained(args.tokenizer)
+        tok.save_pretrained(str(out / "tokenizer"))
+    else:
+        tok_texts = train_st[: args.tokenizer_sample] + [
+            make_train_document(10_000_000 + i, train_st, int(math.exp(random.Random(i).uniform(math.log(256), math.log(4096)))),
+                                approx, version=args.world_version)
+            for i in range(max(500, args.tokenizer_sample // 50))
+        ]
+        tok = train_tokenizer(tok_texts, args.vocab, out / "tokenizer")
     bos, eos = tok.bos_token_id, tok.eos_token_id
     cache: dict[str, list[int]] = {}
 
@@ -298,7 +369,7 @@ def main():
     w_world = (1 - f) / m_world
     w_lang, w_world = w_lang / (w_lang + w_world), w_world / (w_lang + w_world)
     manifest = {
-        "mix_id": f"text_checks_{TEXT_WORLD_VERSION}",
+        "mix_id": f"text_checks_{wv}",
         "max_seq_length": args.seq_len,
         "objective": "causal_lm",
         "seed": args.seed,
@@ -318,18 +389,26 @@ def main():
     ntok = lambda s: len(encode(s))  # noqa: E731
     (out / "eval").mkdir(exist_ok=True)
     eval_hashes, eval_counts = {}, {}
+    if args.eval_from:
+        src = Path(args.eval_from)
+        if (out / "eval").is_symlink() or (out / "eval").exists():
+            shutil.rmtree(out / "eval", ignore_errors=True) if not (out / "eval").is_symlink() else (out / "eval").unlink()
+        (out / "eval").symlink_to((src / "eval").resolve())
+        src_meta = json.loads((src / "text_checks_meta.json").read_text())
+        eval_hashes, eval_counts = src_meta["eval_sha256"], src_meta["eval_items"]
     for split in args.eval_splits:
         path = out / "eval" / f"{split}.jsonl"
         n = 0
         with path.open("w") as fh:
             lengths = args.eval_lengths if split == "id" else args.extra_lengths
-            for task in args.eval_tasks:
+            for task in [t for t in args.eval_tasks if t in ADDED_SPLITS.get(split, TASKS)]:
                 for length in lengths:
                     base = zlib.crc32(f"{split}/{task}/{length}".encode()) * 10_000
                     n_items = args.eval_items if length <= 16384 else args.eval_items_long
                     for i in range(n_items):
                         depth = ("early", "middle", "late")[i % 3] if task in SINGLE_EVIDENCE_TASKS else None
-                        rec = make_eval_record(task, base + i, split, length, depth, held_st, ntok)
+                        rec = make_eval_record(task, base + i, split, length, depth, held_st, ntok,
+                                               version=args.world_version)
                         rec["n_tokens"] = 1 + len(encode(rec["prompt"])) + len(encode(rec["answer"]))
                         fh.write(json.dumps(rec) + "\n")
                         n += 1
@@ -338,7 +417,7 @@ def main():
         print(f"eval {split}: {n} items ({time.time() - t0:.0f}s)")
 
     meta = {
-        "version": TEXT_WORLD_VERSION,
+        "version": wv,
         "args": vars(args),
         "tokenizer_sha256": _sha(out / "tokenizer" / "tokenizer.json"),
         "eval_sha256": eval_hashes,
@@ -347,11 +426,76 @@ def main():
         "mix": {"story_rows": len(lang_tr), "world_rows": len(world_tr), "mean_story_row_tokens": m_lang,
                 "mean_world_row_tokens": m_world, "row_weights": [w_lang, w_world],
                 "mean_row_tokens": w_lang * m_lang + w_world * m_world,
-                "lang_token_share": f},
+                "lang_token_share": f, "train_questions": args.train_questions,
+                "train_tasks": list(args.train_tasks)},
+        "eval_from": args.eval_from,
         "built_s": round(time.time() - t0, 1),
     }
     (out / "text_checks_meta.json").write_text(json.dumps(meta, indent=2))
     print(json.dumps({k: meta[k] for k in ("version", "eval_items", "mix")}, indent=2))
+
+
+def write_split(path: Path, split: str, tasks: list, lengths: list, n_items: int, n_items_long: int, stories: list,
+                encode, version: str) -> int:
+    """Freeze one exam split: `n_items` per (task, length) up to 16k, `n_items_long` above. Item i of a single-fact
+    task gets depth bin i % 3 (early, middle, late); seeds are a pure function of (split, task, length, i)."""
+    ntok = lambda s: len(encode(s))  # noqa: E731
+    n = 0
+    with path.open("w") as fh:
+        for task in tasks:
+            for length in lengths:
+                base = zlib.crc32(f"{split}/{task}/{length}".encode()) * 10_000
+                for i in range(n_items if length <= 16384 else n_items_long):
+                    depth = ("early", "middle", "late")[i % 3] if task in SINGLE_EVIDENCE_TASKS else None
+                    rec = make_eval_record(task, base + i, split, length, depth, stories, ntok, version=version)
+                    rec["n_tokens"] = 1 + len(encode(rec["prompt"])) + len(encode(rec["answer"]))
+                    fh.write(json.dumps(rec) + "\n")
+                    n += 1
+    return n
+
+
+def add_exams(args, out: Path, held_st: list, t0: float) -> None:
+    """--add_exams: freeze new exam splits into an existing build with its own tokenizer; nothing else changes."""
+    from transformers import AutoTokenizer
+
+    meta_path = out / "text_checks_meta.json"
+    if not meta_path.exists() or not (out / "tokenizer").exists():
+        raise SystemExit(f"--add_exams needs an existing build at {out} (text_checks_meta.json and tokenizer/)")
+    if (out / "eval").is_symlink():
+        raise SystemExit(f"{out}/eval links to {(out / 'eval').resolve()}: add the exams to the build that owns it")
+    meta = json.loads(meta_path.read_text())
+    tok = AutoTokenizer.from_pretrained(str(out / "tokenizer"))
+    if _sha(out / "tokenizer" / "tokenizer.json") != meta.get("tokenizer_sha256"):
+        raise SystemExit("tokenizer hash differs from the build's meta: refusing to add exams")
+    cache: dict[str, list[int]] = {}
+
+    def encode(s: str) -> list[int]:
+        r = cache.get(s)
+        if r is None:
+            r = tok.encode(s, add_special_tokens=False)
+            if len(s) < 400:
+                if len(cache) > 2_000_000:
+                    cache.clear()
+                cache[s] = r
+        return r
+
+    version = meta.get("args", {}).get("world_version") or args.world_version
+    added = meta.setdefault("exams_added", {})
+    for split in args.eval_splits:
+        if split in meta.get("eval_sha256", {}) and split not in added:
+            raise SystemExit(f"split {split!r} is part of the original build: it is never rewritten")
+        tasks = [t for t in args.eval_tasks if t in ADDED_SPLITS.get(split, TASKS)]
+        path = out / "eval" / f"{split}.jsonl"
+        n = write_split(path, split, tasks, args.extra_lengths, args.eval_items, args.eval_items_long, held_st, encode,
+                        version)
+        meta.setdefault("eval_sha256", {})[split] = _sha(path)
+        meta.setdefault("eval_items", {})[split] = n
+        added[split] = {"version": "text-world-v2.1" if split in ADDED_SPLITS else meta.get("version"),
+                        "tasks": tasks, "lengths": list(args.extra_lengths),
+                        "built": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        print(f"eval {split}: {n} items ({time.time() - t0:.0f}s)")
+    meta_path.write_text(json.dumps(meta, indent=2))
+    print(json.dumps({k: meta[k] for k in ("version", "eval_items", "exams_added")}, indent=2))
 
 
 if __name__ == "__main__":

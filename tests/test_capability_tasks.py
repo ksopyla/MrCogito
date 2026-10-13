@@ -52,11 +52,11 @@ def test_flawed_tasks_never_sit_in_a_package_level():
 def test_multi_candidate_exams_score_the_picked_candidate_and_state_their_floor():
     for t in TASKS:
         assert t.score in ("first", "candidate"), t.id
-        if t.floor is not None:  # a first-letter floor sits above chance; a picked-candidate floor is 1 / #candidates
+        if t.floor is not None:  # a first-letter floor sits above chance; a picked-candidate floor is the best guess
             assert (t.chance <= t.floor if t.score == "first" else 0 < t.floor) and t.floor < 1, t.id
-    for h in (2, 3, 4):
+    for h in (2, 3, 4):  # best no-hop guess on the parallel chains: the node before a chain end of a random chain
         t = TASK_BY_ID[f"C5.pchain{h}-1k"]
-        assert t.score == "candidate" and t.floor is not None and t.floor < 0.15
+        assert t.score == "candidate" and t.floor == 0.25
         assert "--chain_overhang" in t.args and "random init" in t.curriculum
     assert TASK_BY_ID["C1.keyed4-1k"].score == "candidate"
 
@@ -78,3 +78,34 @@ def test_confirmation_jobs_are_built_from_the_task_definition():
         a = j["args"]
         assert all(x in a for x in task.train) and all(x in a for x in task.args)
         assert j["init"] is None                                  # from scratch
+
+
+def test_runs_built_from_a_task_read_its_own_score_for_the_in_run_decisions():
+    from scripts.study_plans.e30_vs_e31 import task_job
+    a = task_job("C5.pchain2-1k", "dense", 0)["args"]
+    assert a[a.index("--stop_on") + 1] == "score" and a[a.index("--task_score") + 1] == "candidate"
+    assert int(a[a.index("--val_rows") + 1]) > 0
+    b = task_job("C3.recall8-1k", "dense", 0)["args"]
+    assert b[b.index("--task_score") + 1] == "first"
+
+
+def test_recorded_first_block_exams_map_to_flawed_tasks():
+    from evaluation.capability_tasks import legacy_battery, legacy_suite
+    assert legacy_suite("L2.lookalike-1k") == ("X.lookalike-1k-v3", "flawed")
+    assert legacy_suite("L6.unique-256") == ("X.unique-256-v3", "flawed")
+    assert legacy_battery("e31_li_m1", "decoy8_1k") == ("X.decoy8-1k-v1", "flawed")
+    for t in ("C2.lookalike-128", "C2.lookalike-1k", "C2.decoy8-1k", "C6.unique-256", "C6.unique-1k"):
+        assert "--shuffle_blocks" in TASK_BY_ID[t].args, t
+
+
+def test_every_issue_and_run_points_at_real_tasks_and_issues():
+    from evaluation.capability_audit import ISSUE_BY_ID, ISSUES, RUNS, issues_for
+    for i in ISSUES:
+        assert i.severity in ("critical", "high", "medium", "low") and i.status in ("open", "rerun running", "resolved")
+        assert i.effect in ("caution", "invalid", "note") and i.meaning and i.learned and i.fix, i.id
+        assert all(x in TASK_BY_ID for x in i.tasks), i.id
+        assert all(r in {run.folder for run in RUNS} for r in i.runs), i.id
+    for r in RUNS:
+        assert r.settles and all(x in ISSUE_BY_ID for x in r.settles), r.folder
+    assert issues_for("C5.pchain2-1k", "dense") == ["recipeA-compute"]
+    assert issues_for("C3.recall8-1k", "dense") == []

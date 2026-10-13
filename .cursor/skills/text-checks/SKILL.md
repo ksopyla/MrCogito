@@ -15,7 +15,17 @@ fast, and does it still work on texts far longer than it was trained on?
 - **Generator:** `data/text_world.py` · **data builder:** `scripts/build_text_checks_data.py`
 - **Runner:** `scripts/run_text_checks.py` · **scorer:** `evaluation/text_checks_eval.py` ·
   **scorecard:** `analysis/text_checks_scorecard.py`
-- **Tests:** `tests/test_text_world.py`, `tests/test_text_checks_runner.py`, `tests/test_text_memory.py`
+- **Tests:** `tests/test_text_world.py`, `tests/test_text_checks_runner.py`, `tests/test_text_memory.py`,
+  `tests/test_text_checks_reading.py` (reading rules)
+- **Round plan:** `scripts/study_plans/text_r1.py` (experiments X0–X7, their runs, gates, cost)
+- **Board = the author's mission control** (see "The board" below): `docs/3_Evaluations_and_Baselines/text_capability_board.html`,
+  drawn by `analysis/text_board.py` from the committed ledgers `docs/2_Experiments_Registry/results/capability/text/`
+  and the hand-written `analysis/text_board_notes.py`; publish it as an Artifact after every refresh, always to
+  https://claude.ai/artifact/AUUgBTgGQwBDjvKiLzgXo9 (pass it as `url`)
+- **Published data (shared with other researchers):** https://huggingface.co/datasets/ksopyla/cogito-text-world
+  (`text-world-v2`, older revision `text-world-v0`; republish with `scripts/publish_text_checks_dataset.py`, card only:
+  `--card_only`). Ask the author before every upload; the card must state the seed spread and the reading rules.
+- **Server checkout:** Polonez `~/dev/MrCogito-text` (its own worktree; other sessions own the others)
 
 **Boundary.** An architecture enters these checks only after passing the DNA **screen** package
 (`capability-checks`). Server facts → `remote-servers`; recording → `experiment-track`; how to tell the
@@ -23,16 +33,16 @@ author → `research-comms`.
 
 ## The checks in one screen
 
-| level | question (end of a story-world document) | answer | floor |
+| level | question (end of a story-world document), exams `text-world-v2` | answer | floor |
 |---|---|---|---|
 | T0 Language | held-out story loss (no question) | — | — |
-| T1 Quote | "What did the sign of Lumo say?" (4 signs) | 4–6 words | 1/4 |
-| T2 Lookup | "Where does Lumo live?" (one home stated) | invented place | ~0 |
+| T1 Quote | "What did the sign of Lumo say?" (12 signs) | 4–6 words | 1/12 |
+| T2 Lookup | "Where does Lumo live?" (12 homes stated) | invented place | 1/12 |
 | T3 Keyed | same, 16 homes, look-alike names | invented place | 1/16 |
-| T4 Latest | "Where does Lumo live now?" after 4 moves | invented place | 1/5 |
-| T5 Compose | "Where does the sister of the sister of Lumo live?" | invented place | 1/8 |
-| T6 Count (frontier) | "How many times did Lumo visit the market?" | number word | 1/7 |
-| T7 Deduce (frontier) | made-up category rules, "Is Pim shiny?" | yes / no | 1/2 |
+| T4 Latest | "Where does Lumo live now?" after 10 moves each, 5 people | invented place | 1/11, effective 1/5 |
+| T5 Compose | "Where does the teacher of the teacher of Lumo live?" (12) | invented place | 1/12 |
+| T6 Count (frontier) | "How many times did Lumo visit the market?" (0–10) | number word | 1/11 |
+| T7 Deduce (frontier) | made-up category rules, "What is Pim like?" (12) | property | 1/12 |
 
 | tier | params (±5 %) | tokens | train length | global batch | cap (active GPU-h) | use |
 |---|---|---|---|---|---|---|
@@ -45,10 +55,14 @@ control), `e31c` (E31 notebook, text read), `e31c_loop` (+ E33a reread loop). FF
 model so every model lands in the band. Evaluation lengths 1k … 128k; harder and paraphrase splits at 4k
 and 16k.
 
-**Pass** = exact answer ≥ 75 % **and** the evidence-removed twin at its floor. A task gates only where
-`dense` passes it at 4k (else `uncalibrated`). Frontier = highest of T1–T5 passing at 4k; reach = longest
-passing length; tokens to pass = first learning-curve checkpoint that passes; language no-harm = story loss
-within 2 % of `dense`.
+**Reading rules (spec §10.5, 2026-10-13; `evaluation/text_checks.py`):** quote, lookup and keyed are read on
+their **far** facts (placed early or in the middle; the late "near" facts sit inside every local window up to 4k);
+latest's **effective floor** is 1 in 5; **learned** = 10 points or 3 standard errors above the effective floor;
+leaders only at the 4k training length; dense (no length method) is not compared past 4k.
+**Pass** = headline score ≥ 75 % **and** the evidence-removed twin at its floor. A task gates only where
+`dense` passes it at 4k (else `uncalibrated`); it is **learnable** where dense learned it. Frontier = highest of
+T1–T5 passing at 4k; reach = longest passing length; tokens to pass = first learning-curve checkpoint that passes;
+language no-harm = story loss within 2 % of `dense`.
 
 ## The process
 
@@ -120,14 +134,19 @@ uv run python scripts/run_text_checks.py status --out Cache/text_checks/r1_scree
   learning-curve checkpoints (10/25/50/75 %), then deletes optimizer states.
 - Gate to the main tier: T2 passes at 4k and story loss is within 5 % of `dense`.
 
-### 6 · Score, record, report
+### 6 · Pull, draw, record, report
 ```bash
-uv run python analysis/text_checks_scorecard.py --in_dir Cache/text_checks/r1_screen \
-    --ledger docs/2_Experiments_Registry/results/capability/text/r1_screen.polonez.json
+bash scripts/pull_text_checks_results.sh polonez r1_smoke r1_screen   # ledgers + NAS archive + board redraw
 ```
-- Commit the ledger file.
-- Archive the raw folder to the NAS: `/nas/ml_data/mrcogito/results/text_checks/<run>.<host>/`
-  (tar over ssh, results only, never code).
+- Pull after every phase, at least daily during a long run (Polonez can shut down for heat), and before
+  any summary. Pulling is idempotent; a live run shows its state, loss and throughput on the board.
+- Commit the ledgers and the board, then publish the board as an Artifact (same URL).
+- The NAS archive skips intermediate checkpoints (`/nas/ml_data/mrcogito/results/text_checks/<run>.<host>/`).
+- A single run's scorecard without the board: `uv run python analysis/text_checks_scorecard.py --in_dir <run>`.
+- **New exams on old checkpoints (no retraining):** add the splits to the build that owns `eval/`
+  (`build_text_checks_data.py --stories full --out_dir $TOK/text_checks_v2 --add_exams --eval_splits crowded
+  paraphrase2 steps`), then re-plan the run's eval phase (`plan --phase eval …` with the same `--out`): finished
+  finals are skipped and only `final_added.json` is scored; pull as usual.
 - Hand the result to `experiment-track`.
 - Tell the author (`research-comms`):
   - which levels each model passes at 4k and how far each reaches;
@@ -136,14 +155,46 @@ uv run python analysis/text_checks_scorecard.py --in_dir Cache/text_checks/r1_sc
   - any shortcut or over-budget flag;
   - what the calibration changed.
 
+## The board: mission control, and how not to go round in circles
+
+The board is the author's main dashboard for the text checks. It must be trustworthy at a glance, so every agent
+keeps these rules (all hand-written parts live in `analysis/text_board_notes.py`):
+
+1. **Status first.** `STATUS` says what runs now, what is next and what blocks (a server down, a busy GPU), with
+   UTC times. Update it whenever a run starts, ends or stalls, and republish.
+2. **Every run has a standing** in `LADDER`: `in use` (feeds the scoreboard), `calibration` (dense alone; sets the
+   recipe), `history` (older exams or recipe: kept, not compared), `running` / `queued` / `blocked`, plus `why` in
+   one line. Never delete a run: change its standing and say why. Only `in use` runs go into `SCOREBOARD`.
+3. **Every conclusion is a claim** in `CLAIMS` with a state: `holds`, `single run`, `open`, `retracted`, the date,
+   the evidence, and what would settle it. A finding said in chat that is not on the board does not exist. When new
+   evidence arrives, change the state (and the date) — never silently rewrite the evidence.
+4. **Every protocol change gets a `PROTOCOL_LOG` entry**: what changed, why, and what it did to earlier results:
+   - **re-read** — same measurements, new reading rule (applied in code to every ledger; no retraining);
+   - **history** — earlier runs used other exams or another recipe; they keep their numbers and get the standing
+     `history` with the reason;
+   - **planned** — not yet in force.
+   Prefer changes that re-read or add exams (new splits scored on existing checkpoints) over changes that force
+   retraining. Before proposing a rerun, read the log and the claims: if the question was answered, say so.
+5. **One reliable reference before rankings.** A leader per task is named only where the dense reference learned the
+   task, and a lead from one run is marked "1 run". Do not spend a series of single-seed runs on comparisons while
+   dense learns by luck (13 Oct lesson: the single-task series measured luck and was paused).
+6. **Reading rules live in code** (`far_near`, `effective_floor`, `learned`, `headline` in `evaluation/text_checks.py`),
+   so the board, the scorecard and the ledgers can never disagree. A new rule is a code change with a test
+   (`tests/test_text_checks_reading.py`), a spec entry (§10.5) and a log entry.
+
 ## Calibration (the protocol is a first draft)
 - **First runs are calibration.** Expect to adjust the token budgets and caps, the mix share, task dials
   and tier shapes after the dense model's screen run.
 - **Every change goes into the spec**, the definitions and a new data version, recorded in the spec's
   calibration notes.
 - **Results before and after a change are compared only with that change stated.**
+- **The calibration ladder** (spec §16.1, 2026-10-10): dense only, 30M at 1.5B tokens → 50M at the same
+  tokens → 100M with more, until dense passes T1–T4 at 4k. Calibration runs use
+  `--tokens`, `--eval_lengths 1024 2048 4096` and `--curve_fractions 0.1 0.2 … 1.0`; read the graded
+  pick (`pick_prob`) on the learning curve, not only exact; one failing seed is not a verdict.
+- **Answered:** dense does not pass anything at 30M / 0.6B tokens (Odra, 9–10 Oct, text-world-v1).
 - **Open calibration questions:**
-  - whether dense passes T1–T4 at 30M / 0.6B tokens;
+  - the token budget at which dense passes (the ladder);
   - whether E31's 16-token local window (as tested on DNA) is right for language;
   - real throughput vs the caps;
   - eval time at 128k.

@@ -1,0 +1,7 @@
+{
+  "arch": "dense_plain",
+  "status": "lab: step size borrowed from dense (diagnostic control, not tuned)",
+  "lr": {
+    "lab": 0.002
+  }
+}

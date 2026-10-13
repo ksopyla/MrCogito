@@ -71,6 +71,26 @@ def test_plan_writes_valid_scripts(tmp_path, phase):
         assert "export GRADIENT_ACCUMULATION_STEPS=4" in sh and "export GPU_IDS=0,1,2" in sh
 
 
+def test_added_exams_rescore_a_finished_run(tmp_path):
+    """Exams added to a build (v2.1) are scored by re-planning the eval phase: the finished job runs again and
+    only the added final is missing (every other part is skipped by its own file check)."""
+    data = _fake_data(tmp_path)
+    out = tmp_path / "run"
+    args = [sys.executable, "scripts/run_text_checks.py", "plan", "--phase", "eval", "--tier", "screen", "--arches",
+            "dense", "--host", "odra", "--gpus", "0", "1", "2", "--data", str(data), "--out", str(out)]
+    assert subprocess.run(args, cwd=ROOT, capture_output=True, text=True).returncode == 0
+    job = out / "jobs" / "eval_dense"
+    assert "final_added.json" not in (job / "job.sh").read_text()
+    for f in ("final_id.json", "final_extra.json", "DONE"):
+        (job / f).write_text("{}")
+    (data / "eval").mkdir(exist_ok=True)
+    (data / "eval" / "crowded.jsonl").write_text("")
+    assert subprocess.run(args, cwd=ROOT, capture_output=True, text=True).returncode == 0
+    sh = (job / "job.sh").read_text()
+    assert "final_added.json" in sh and "crowded.jsonl" in sh
+    assert not (job / "DONE").exists() and (job / "final_id.json").exists()
+
+
 def _cell(task, L, exact, removed=0.0, floor=0.1, split="id"):
     return {"split": split, "task": task, "level": "", "length": L, "n": 400, "exact": exact,
             "exact_se": (exact * (1 - exact) / 400) ** 0.5, "pick": None, "removed_exact": removed, "floor": floor}

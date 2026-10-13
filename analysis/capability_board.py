@@ -32,6 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from analysis.capability_ledger import LEDGER_DIR, load_ledgers, study_jobs, suite_rows  # noqa: E402
+from evaluation.capability_audit import ISSUES, RUNS, issues_for  # noqa: E402
 from evaluation.capability_suite import CELL_BY_ID, lr_for  # noqa: E402
 from evaluation.capability_tasks import (LEVELS, SEEDS, TASK_BY_ID, TASKS, VERSION,  # noqa: E402
                                          legacy_battery, legacy_suite)
@@ -131,6 +132,19 @@ def _score(task: str, first, cand):
     return cand if TASK_BY_ID[task].score == "candidate" else first
 
 
+def _ladder(task: str, j: dict) -> tuple[dict, str | None]:
+    """A study job's length ladder on the task's own score: the picked candidate (`candidate`, length_ladder.py
+    --candidate auto) on candidate-scored tasks, the first letter otherwise or where the cell has no candidate.
+    Returns ({length: score}, "candidate" | "first" | "mixed" | None)."""
+    want = TASK_BY_ID[task].score == "candidate"
+    out, kinds = {}, set()
+    for L, v in (j["ladders"].get("ladder") or {}).items():
+        c = v.get("candidate") if want else None
+        out[int(L)] = c if c is not None else v.get("first_acc")
+        kinds.add("candidate" if c is not None else "first")
+    return out, (kinds.pop() if len(kinds) == 1 else "mixed" if kinds else None)
+
+
 def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
     """One record per (finished job, arch) that maps onto a v4 task, with its match label."""
     versions = sorted({led["suite_version"] for led in ledgers if led.get("suite_version")})
@@ -163,10 +177,10 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
                 final = m and (m[3] is None or (hops and int(m[3]) == int(hops[1])))  # curriculum: last stage only
                 if m and final and f"{m[1]}.{m[2]}" in TASK_BY_ID:
                     task = f"{m[1]}.{m[2]}"
-                    lad = {int(L): v.get("first_acc") for L, v in (j["ladders"].get("ladder") or {}).items()}
+                    lad, kind = _ladder(task, j)
                     out.append({"task": task, "model": m[4], "label": "same", "seed": int(m[5]),
                                 "score": _score(task, j.get("p0"), j.get("cand")), "mean": j.get("acc"),
-                                "ladder": lad, "source": j["source"], "collected": "", "via": "v4 task recipe"})
+                                "ladder": lad, "ladder_kind": kind, "source": j["source"], "collected": "", "via": "v4 task recipe"})
                     continue
                 if m:  # an earlier curriculum stage of a v4 run: not a result of the task itself
                     continue
@@ -177,10 +191,10 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
                 task, label = legacy_battery(variant, slot)
                 if task is None:
                     continue
-                lad = {int(L): v.get("first_acc") for L, v in (j["ladders"].get("ladder") or {}).items()}
+                lad, kind = _ladder(task, j)
                 out.append({"task": task, "model": variant, "label": label, "seed": _seed(j),
                             "score": _score(task, j.get("p0"), j.get("cand")),
-                            "mean": j.get("acc"), "ladder": lad, "source": j["source"], "collected": "",
+                            "mean": j.get("acc"), "ladder": lad, "ladder_kind": kind, "source": j["source"], "collected": "",
                             "via": f"battery {slot}"})
     return out, current
 
@@ -191,8 +205,8 @@ CAL_TASKS = (("lookup1k", "C1.lookup-1k"), ("edge", "C1.edge-1k"), ("keyed4", "C
 CAL_KNOBS = (("path", "written path answer (recipe B)"), ("dense8", "8-layer dense (learnability check)"), ("hc", "hop count in question"), ("mix", "half the rows at the previous hop count"),
              ("direct", "task recipe, no curriculum"), ("_to_", "curriculum from the previous stage"), ("noover", "no overhang (4 facts)"),
              ("k16v16", "16-letter keys and values"), ("k16", "16-letter nodes"), ("k8", "8-letter nodes"),
-             ("lr3e-4", "step 3e-4"), ("x16", "16x budget"), ("x4", "4x budget"), ("k4", "4-letter nodes"),
-             ("nc2", "2 chains"), ("256_to_1k", "256-token stage then 1k"), ("x1", "suite budget"), ("_512_", "512-token book"),
+             ("lr3e-4", "step 3e-4"), ("x16", "19.2k steps (named 16x)"), ("x4", "19.2k steps (named 4x)"), ("k4", "4-letter nodes"),
+             ("nc2", "2 chains"), ("256_to_1k", "256-token stage then 1k"), ("x1", "suite budget, 4.8k steps"), ("_512_", "512-token book"),
              ("_256_", "256-token book"))
 
 
@@ -219,7 +233,7 @@ def calibration(ledgers: list[dict]) -> list[dict]:
             t = TASK_BY_ID[task]
             knobs = [txt for frag, txt in CAL_KNOBS if frag in name + "_"]
             if "_to_" in name and "x16" not in name or (re.match(r"^cal[23]_", name) and "lookup1k" not in name):
-                knobs = [k for k in knobs if k != "4x budget"] + ["4x budget"]
+                knobs = [k for k in knobs if k != "19.2k steps (named 4x)"] + ["19.2k steps (named 4x)"]
             if m:
                 knobs = (["written recipe (confirmation)"] if name.startswith("conf") else ["written recipe"]) \
                     + ([f"curriculum stage {m[3]} hop{'s' if int(m[3]) > 1 else ''}"] if m[3] else [])
@@ -289,6 +303,8 @@ def table(ev: list[dict]) -> dict:
                 "label": label, "score": _med([r["score"] for r in rs]), "mean": _med([r["mean"] for r in rs]),
                 "seeds": sorted({r["seed"] for r in rs if r["seed"] is not None}), "ladder": ladder,
                 "per_seed": {str(r["seed"]): r["score"] for r in rs if r["seed"] is not None},
+                "ladder_kind": (lambda ks: ks.pop() if len(ks) == 1 else "mixed" if ks else None)(
+                    {r.get("ladder_kind") or "first" for r in rs if r["ladder"]}),
                 "via": sorted({r["via"] for r in rs}), "sources": sorted({r["source"] for r in rs}),
                 "other": sorted(l for l in labels if l != label),
             }
@@ -307,8 +323,9 @@ def no_harm(tbl: dict, champion: str, models: list[str]) -> dict:
             if not c or c["label"] != "same":
                 continue
             points = [("train", c["score"], v["score"] if v and v["label"] == "same" else None)]
-            points += [(L, cv, v["ladder"].get(L) if v and v["label"] == "same" else None)
-                       for L, cv in c["ladder"].items()]
+            # ladder points compare only the same score (picked candidate vs first letter differ in guessing floor)
+            same_kind = v and v["label"] == "same" and (v.get("ladder_kind") or "first") == (c.get("ladder_kind") or "first")
+            points += [(L, cv, v["ladder"].get(L) if same_kind else None) for L, cv in c["ladder"].items()]
             for where, cv, vv in points:
                 if cv is None or cv < PASS:
                     continue
@@ -332,6 +349,42 @@ def reference(task_id: str, tbl: dict) -> str | None:
     if "dense" in ok:
         return "dense"
     return max(ok, key=ok.get) if ok else None
+
+
+def trust(tbl: dict) -> tuple[dict, dict]:
+    """Per (task, model) cell: the open issues that mark it and its trust state — trusted (matches the task
+    definition on seeds 0–2, no open issue), caution (an open issue or missing seeds), legacy (older protocol),
+    invalid (flawed). Returns (cell_issues, cell_trust)."""
+    cell_issues, cell_trust = {}, {}
+    for task, by_m in tbl.items():
+        flawed = TASK_BY_ID[task].status == "flawed"
+        for m, c in by_m.items():
+            ids = issues_for(task, m)
+            if ids:
+                cell_issues.setdefault(task, {})[m] = ids
+            if flawed or c["label"] == "flawed":
+                state = "invalid"
+            elif c["label"] != "same":
+                state = "legacy"
+            elif ids or not set(SEEDS) <= set(c["seeds"]):
+                state = "caution"
+            else:
+                state = "trusted"
+            cell_trust.setdefault(task, {})[m] = state
+    return cell_issues, cell_trust
+
+
+def runs_status(ledgers: list[dict]) -> list[dict]:
+    """Runs in flight (evaluation/capability_audit.RUNS) with progress from a pulled ledger of the same folder."""
+    by_name = {led["name"]: led for led in ledgers}
+    out = []
+    for r in RUNS:
+        led = by_name.get(r.folder)
+        done = sum(j["status"] == "done" for j in led["jobs"]) if led else None
+        out.append({"folder": r.folder, "host": r.host, "started": r.started, "eta": r.eta, "what": r.what,
+                    "settles": list(r.settles), "jobs": r.jobs, "done": done,
+                    "collected": led["collected"] if led else None})
+    return out
 
 
 def row_status(task, tbl: dict, champion: str) -> dict:
@@ -458,7 +511,12 @@ def main() -> int:
               "score_kind": t.score, "floor": t.floor, "reference": reference(t.id, tbl),
               "curriculum": t.curriculum, "ladder": t.ladder, "task_status": t.status, "flaw": t.flaw,
               **row_status(t, tbl, args.champion)} for t in TASKS]
+    from dataclasses import asdict
+    cell_issues, cell_trust = trust(tbl)
     data = {
+        "built": datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z"),
+        "issues": [asdict(i) for i in ISSUES], "runs": runs_status(ledgers),
+        "cell_issues": cell_issues, "cell_trust": cell_trust,
         "generated": datetime.date.today().isoformat(), "version": VERSION, "champion": args.champion,
         "models": models, "visible": visible, "pass": PASS, "harm_points": HARM_POINTS, "seeds": list(SEEDS),
         "levels": [{"id": lv.id, "name": lv.name, "question": lv.question, "measures": lv.measures} for lv in LEVELS],

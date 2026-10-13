@@ -10,7 +10,10 @@ One forward pass per item over  BOS + prompt + answer  (teacher forcing):
   pick     the candidate whose FIRST token is most probable at the answer position; counted right
            only when the gold candidate's first token wins and no other candidate shares it
            (shared first tokens are reported as `pick_ambiguous`);
-  removed  `exact` on the evidence-removed twin — must sit at the guessing floor.
+  pick_prob  the gold candidate's share of the probability over the candidates' first tokens (graded
+           pick; guessing gives 1 / candidates) — moves before `exact` does, so calibration runs read it;
+  removed  `exact` on the evidence-removed twin — must sit at the guessing floor;
+  far / near  `exact` on items whose fact sits early or middle (beyond any local window) vs late (spec §10.5).
 
   uv run python evaluation/text_checks_eval.py --checkpoint <run>/final \
       --items Cache/text_checks/smoke/eval/id.jsonl --out <run>/text_checks_id.json \
@@ -31,11 +34,18 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch  # noqa: E402
 
+from evaluation.text_checks import DEPTH_FAR, DEPTH_NEAR  # noqa: E402
 
-def _answer_ids(tok, prompt: str, answer: str, p_ids: list[int]) -> list[int]:
-    full = tok.encode(prompt + answer, add_special_tokens=False)
-    if full[: len(p_ids)] == p_ids:
-        return full[len(p_ids):]
+
+def _answer_ids(tok, prompt: str, answer: str, p_ids: list[int], tail_chars: int = 400) -> list[int]:
+    """Token ids of `answer` as they appear after `prompt`. Only the prompt's tail is re-encoded: BPE
+    merges are local, and re-encoding a 128k-token document per candidate made the scorer CPU-bound
+    (hours per model on 2026-10-07)."""
+    tail = prompt[-tail_chars:]
+    t_ids = tok.encode(tail, add_special_tokens=False)
+    full = tok.encode(tail + answer, add_special_tokens=False)
+    if full[: len(t_ids)] == t_ids:
+        return full[len(t_ids):]
     return tok.encode(answer, add_special_tokens=False)  # BPE merged across the boundary
 
 
@@ -49,6 +59,10 @@ def score_prompt(model, tok, prompt: str, answer: str, candidates: list[str], de
     start = len(p_ids)  # logits[start] predicts the first answer token (BOS shifts by one)
     pred = logits[0, start: start + len(a_ids)].argmax(-1).tolist()
     exact = pred == a_ids
+    # graded signal: mean surprise (nats per token) on the gold answer, closing period excluded
+    lp = torch.log_softmax(logits[0, start: start + len(a_ids)].float(), -1)
+    n_ans = max(1, len(a_ids) - 1)
+    answer_nll = float(-lp[torch.arange(n_ans), torch.tensor(a_ids[:n_ans], device=lp.device)].mean())
     firsts = [(_answer_ids(tok, prompt, c, p_ids) or [-1])[0] for c in candidates]
     gold_first = a_ids[0]
     probs = logits[0, start].float()
@@ -57,7 +71,14 @@ def score_prompt(model, tok, prompt: str, answer: str, candidates: list[str], de
     ambiguous = firsts.count(gold_first) > 1
     # one candidate (the single-fact lookup) has no pick to make: reported as None, not 100 %
     pick = None if len(candidates) < 2 else bool(best == gold_first and not ambiguous)
-    return {"exact": bool(exact), "pick": pick, "pick_ambiguous": bool(ambiguous), "n_tokens": ids.shape[1]}
+    # graded pick (calibration signal before exact/pick move): the gold candidate's share of the probability
+    # over the candidates' first tokens — guessing gives 1 / candidates; None when the gold first token is shared
+    pick_prob = None
+    if len(candidates) >= 2 and not ambiguous and gold_first in uniq:
+        share = torch.softmax(probs[torch.tensor(uniq, device=probs.device)], -1)
+        pick_prob = float(share[uniq.index(gold_first)])
+    return {"exact": bool(exact), "pick": pick, "pick_ambiguous": bool(ambiguous), "n_tokens": ids.shape[1],
+            "answer_nll": answer_nll, "pick_prob": pick_prob}
 
 
 @torch.no_grad()
@@ -88,14 +109,25 @@ def summarize(rows: list[dict]) -> list[dict]:
             return sum(v) / len(v) if v else None
 
         acc = mean("exact")
-        out.append({
+        depths = sorted({r["depth"] for r in rs})
+        by_n = {d: sum(1 for r in rs if r["depth"] == d) for d in depths}
+        cell = {
             "split": split, "task": task, "level": rs[0]["level"], "length": length, "n": n,
             "exact": acc, "exact_se": math.sqrt(acc * (1 - acc) / n) if acc is not None and n else None,
-            "pick": mean("pick"), "pick_ambiguous": mean("pick_ambiguous"),
+            "pick": mean("pick"), "pick_ambiguous": mean("pick_ambiguous"), "pick_prob": mean("pick_prob"),
+            "answer_nll": mean("answer_nll"),
+            "removed_answer_nll": mean("removed_answer_nll"),
             "removed_exact": mean("removed_exact"), "floor": mean("floor"),
-            "by_depth": {d: sum(r["exact"] for r in rs if r["depth"] == d) / max(1, sum(1 for r in rs if r["depth"] == d))
-                         for d in sorted({r["depth"] for r in rs})},
-        })
+            "by_depth": {d: sum(r["exact"] for r in rs if r["depth"] == d) / max(1, by_n[d]) for d in depths},
+            "by_depth_n": by_n,
+        }
+        # far (early + middle facts) vs near (late facts, inside a local window up to 4k): spec §10.5
+        far = [r for r in rs if r["depth"] in DEPTH_FAR]
+        near = [r for r in rs if r["depth"] in DEPTH_NEAR]
+        if far and near:
+            cell.update(far=sum(r["exact"] for r in far) / len(far), far_n=len(far),
+                        near=sum(r["exact"] for r in near) / len(near), near_n=len(near))
+        out.append(cell)
     return out
 
 
@@ -120,7 +152,7 @@ def main():
 
     from nn.perceiver_families import load_perceiver_lm
 
-    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    device = args.device or ("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     backend = args.attn_backend or ("flex" if str(device).startswith("cuda") else "sdpa")
     model = load_perceiver_lm(args.checkpoint, device, backend)
     model.eval()
@@ -145,16 +177,39 @@ def main():
                 kept.append(r)
         items = kept
 
+    # shortest documents first; every scored item is appended to <out>.rows.jsonl, so an interrupted
+    # run resumes where it stopped and progress is visible
+    items.sort(key=lambda r: (r["length"], r["split"], r["task"], r["id"]))
+    part = args.out + ".rows.jsonl"
+    rows, done_ids = [], set()
+    if os.path.exists(part):
+        with open(part) as fh:
+            for line in fh:
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                rows.append(row)
+                done_ids.add(row["id"])
+    todo = [r for r in items if r["id"] not in done_ids]
+    print(f"{len(items)} items, {len(done_ids)} already scored, {len(todo)} to go", flush=True)
     t0 = time.time()
-    rows = []
-    with msg:
-        for r in items:
+    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+    with msg, open(part, "a") as pf:
+        for i, r in enumerate(todo):
             s = score_prompt(model, tok, r["prompt"], r["answer"], r["candidates"], device)
             row = {k: r[k] for k in ("id", "split", "task", "level", "length", "depth", "floor")}
             row.update(s)
             if not args.no_removed:
-                row["removed_exact"] = score_prompt(model, tok, r["prompt_removed"], r["answer"], r["candidates"], device)["exact"]
+                rm = score_prompt(model, tok, r["prompt_removed"], r["answer"], r["candidates"], device)
+                row["removed_exact"], row["removed_answer_nll"] = rm["exact"], rm["answer_nll"]
             rows.append(row)
+            pf.write(json.dumps(row) + "\n")
+            if (i + 1) % 200 == 0 or i + 1 == len(todo):
+                pf.flush()
+                el = time.time() - t0
+                print(f"progress {i + 1}/{len(todo)} · length {r['length']} · {el:.0f}s · "
+                      f"{time.strftime('%Y-%m-%d %H:%M:%S %Z')}", flush=True)
         story_loss = story_ce(model, args.story_eval, args.story_rows, device) if args.story_eval else None
     summary = summarize(rows)
     res = {"checkpoint": args.checkpoint, "message_override": args.message_override, "items": args.items,
@@ -163,11 +218,13 @@ def main():
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w") as fh:
         json.dump(res, fh, indent=1)
-    print(f"{'split':<10} {'task':<8} {'len':>6} {'n':>4} {'exact':>6} {'pick':>6} {'removed':>7} {'floor':>6}")
+    print(f"{'split':<10} {'task':<8} {'len':>6} {'n':>4} {'exact':>6} {'far':>6} {'pick':>6} {'p_pick':>6} {'removed':>7} "
+          f"{'floor':>6} {'ans_nll':>7} {'rm_nll':>7}")
     for c in summary:
         f = lambda v: "  -  " if v is None else f"{v:6.2f}"  # noqa: E731
-        print(f"{c['split']:<10} {c['task']:<8} {c['length']:>6} {c['n']:>4} {f(c['exact'])} {f(c['pick'])} "
-              f"{f(c['removed_exact']):>7} {f(c['floor'])}")
+        print(f"{c['split']:<10} {c['task']:<8} {c['length']:>6} {c['n']:>4} {f(c['exact'])} {f(c.get('far'))} {f(c['pick'])} "
+              f"{f(c['pick_prob'])} {f(c['removed_exact']):>7} {f(c['floor'])} {f(c['answer_nll']):>7} "
+              f"{f(c['removed_answer_nll']):>7}")
     if story_loss is not None:
         print(f"held-out story loss: {story_loss:.4f} (next-token cross-entropy per token, lower is better)")
     print(f"scored {len(rows)} items in {res['seconds']}s → {args.out}")

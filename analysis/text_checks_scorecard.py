@@ -4,6 +4,8 @@ one or more run folders (scripts/run_text_checks.py output).
 
 Spec §10–§13: pass = exact answer ≥ 75 % with the evidence-removed control at its floor; a task
 gates only where the dense model passes it at the training length (else `uncalibrated`);
+§10.5 (2026-10-13): single-fact exams are read on their far facts (early + middle, beyond any local window),
+"learned" = clearly above the effective floor (latest: 1 in 5), dense learnable = dense learned it at 4k;
 frontier = highest of T1–T5 passing at the training length; reach = longest passing length;
 tokens to pass from the learning-curve checkpoints; language no-harm = held-out story loss within
 2 % of dense; notebook contribution = score with the notebook minus without.
@@ -24,7 +26,8 @@ from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from evaluation.text_checks import FRONTIER_TASKS, GATING_TASKS, PASS, SHORTCUT_MARGIN, TEXT_CHECKS_VERSION  # noqa: E402
+from evaluation.text_checks import (FRONTIER_TASKS, GATING_TASKS, PASS, SHORTCUT_MARGIN, TEXT_CHECKS_VERSION,  # noqa: E402
+                                    effective_floor, headline, learned)
 
 LEVEL = {"quote": "T1", "lookup": "T2", "keyed": "T3", "latest": "T4", "compose": "T5", "count": "T6", "deduce": "T7"}
 
@@ -41,7 +44,15 @@ def shortcut(c: dict) -> bool:
 
 
 def passes(c: dict | None) -> bool:
-    return bool(c) and c.get("exact") is not None and c["exact"] >= PASS and not shortcut(c)
+    """Pass on the headline score (far facts for single-fact exams, spec §10.5) with no shortcut."""
+    h = headline(c.get("task"), c) if c else None
+    return bool(h) and h["score"] >= PASS and not shortcut(c)
+
+
+def learned_cell(c: dict | None) -> bool:
+    """The skill switched on: headline score clearly above the effective floor, no shortcut."""
+    h = headline(c.get("task"), c) if c else None
+    return bool(h) and learned(h["score"], h["n"], c["task"], c.get("floor")) and not shortcut(c)
 
 
 def collect(dirs: list[Path]) -> dict:
@@ -63,7 +74,9 @@ def collect(dirs: list[Path]) -> dict:
             from evaluation.text_checks import TIERS
 
             m["seq_len"] = TIERS[card["tier"]].seq_len
-            for name in ("final_id.json", "final_extra.json"):
+            # final_id_long.json: extra lengths scored after the run (e.g. a calibration run read at 8k-16k)
+            # final_added.json: exams added after the build (v2.1 crowded / paraphrase2 / steps)
+            for name in ("final_id.json", "final_extra.json", "final_id_long.json", "final_added.json"):
                 r = _load(ev / name)
                 if r:
                     m["story_loss"] = r.get("story_loss") if r.get("story_loss") is not None else m["story_loss"]
@@ -89,9 +102,12 @@ def analyse(models: dict) -> dict:
         by_tier[m["tier"]][k] = m
     out = {}
     for tier, ms in by_tier.items():
-        dense = next((m for m in ms.values() if m["arch"] == "dense"), None)
+        # the dense reference: plain-input rounds (2026-10-10) use the dense model with plain input
+        dense = (next((m for m in ms.values() if m["arch"] == "dense"), None)
+                 or next((m for m in ms.values() if m["arch"] == "dense_plain"), None))
         tasks = list(GATING_TASKS) + list(FRONTIER_TASKS)
         calibrated = {t: passes(dense["cells"].get(("id", t, dense["seq_len"]))) if dense else False for t in tasks}
+        learnable = {t: learned_cell(dense["cells"].get(("id", t, dense["seq_len"]))) if dense else False for t in tasks}
         for k, m in ms.items():
             L0 = m["seq_len"]
             lengths = sorted({L for (s, t, L) in m["cells"] if s == "id"})
@@ -104,6 +120,7 @@ def analyse(models: dict) -> dict:
                 else:
                     break
             reach = {t: max([L for L in lengths if passes(m["cells"].get(("id", t, L)))], default=None) for t in tasks}
+            learned_at = {t: [L for L in lengths if learned_cell(m["cells"].get(("id", t, L)))] for t in tasks}
             retention = {}
             for t in tasks:
                 base = (m["cells"].get(("id", t, L0)) or {}).get("exact")
@@ -124,10 +141,11 @@ def analyse(models: dict) -> dict:
             lang = None
             if dense and dense.get("story_loss") and m.get("story_loss"):
                 lang = (m["story_loss"] - dense["story_loss"]) / dense["story_loss"]
-            m.update(frontier=frontier, reach=reach, retention=retention, tokens_to_pass=ttp, notebook_gain=nb,
+            m.update(frontier=frontier, reach=reach, learned_at=learned_at, retention=retention, tokens_to_pass=ttp,
+                     notebook_gain=nb,
                      language_gap=lang, language_ok=(lang is None or lang <= 0.02),
                      shortcuts=sorted(f"{t}@{L}" for (s, t, L), c in m["cells"].items() if s == "id" and shortcut(c)))
-        out[tier] = {"calibrated": calibrated, "models": ms}
+        out[tier] = {"calibrated": calibrated, "learnable": learnable, "models": ms}
     return out
 
 
@@ -140,13 +158,17 @@ def _f(v, pct=True):
 def render(res: dict) -> str:
     lines = [f"# Text capability checks — scorecard ({TEXT_CHECKS_VERSION})", "",
              "Exact-answer accuracy in %, pass ≥ 75 % with the evidence-removed control at its floor. "
-             "`(f)` = guessing floor. Draft protocol: budgets and tasks are still being calibrated.", ""]
+             "Quote, lookup and keyed are read on their far facts (early + middle; near = late facts, inside a local "
+             "window up to 4k, in brackets). `learned` = clearly above the effective floor (latest: 1 in 5). "
+             "Draft protocol: budgets and tasks are still being calibrated.", ""]
     for tier, block in res.items():
         ms = block["models"]
         cal = block["calibrated"]
         lines += [f"## Tier `{tier}`", "",
                   "Calibrated (dense passes at the training length): "
-                  + ", ".join(f"{LEVEL[t]} {t} {'yes' if v else 'no'}" for t, v in cal.items()), ""]
+                  + ", ".join(f"{LEVEL[t]} {t} {'yes' if v else 'no'}" for t, v in cal.items()), "",
+                  "Learnable (dense learned it at the training length): "
+                  + ", ".join(f"{LEVEL[t]} {t} {'yes' if v else 'no'}" for t, v in block.get("learnable", {}).items()), ""]
         lines += ["| model | params | status | story loss (vs dense) | frontier | tokens to pass T2 | tokens/s | active h |",
                   "|---|---|---|---|---|---|---|---|"]
         for k, m in ms.items():
@@ -160,7 +182,9 @@ def render(res: dict) -> str:
         lengths = sorted({L for m in ms.values() for (s, t, L) in m["cells"] if s == "id"})
         for t in list(GATING_TASKS) + list(FRONTIER_TASKS):
             floor = next((m["cells"][("id", t, L)]["floor"] for m in ms.values() for L in lengths if ("id", t, L) in m["cells"]), None)
-            lines += [f"### {LEVEL[t]} {t}  (floor {_f(floor)} %{'' if cal.get(t) else ', uncalibrated'})", "",
+            eff = effective_floor(t, floor)
+            fl_txt = _f(floor) + (f", effective {_f(eff)}" if eff != floor else "")
+            lines += [f"### {LEVEL[t]} {t}  (floor {fl_txt} %{'' if cal.get(t) else ', uncalibrated'})", "",
                       "| model | " + " | ".join(f"{L // 1024}k" if L >= 1024 else str(L) for L in lengths) + " | reach |",
                       "|---|" + "---|" * (len(lengths) + 1)]
             for k, m in ms.items():
@@ -172,7 +196,10 @@ def render(res: dict) -> str:
                         continue
                     mark = "**" if passes(c) else ""
                     flag = " ⚠" if shortcut(c) else ""
-                    row.append(f"{mark}{_f(c['exact'])}{mark}{flag}")
+                    h = headline(t, c)
+                    near = f" ({_f(h['near'])})" if h and h["near"] is not None else ""
+                    lrn = "" if passes(c) or not learned_cell(c) else "·"
+                    row.append(f"{mark}{_f(h['score'] if h else None)}{mark}{lrn}{near}{flag}")
                 r = m["reach"].get(t)
                 lines.append(f"| {k} | " + " | ".join(row) + f" | {'–' if r is None else r} |")
             lines.append("")
