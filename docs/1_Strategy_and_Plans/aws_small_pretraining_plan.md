@@ -27,6 +27,12 @@ standard short-text ability, compared with same-size models trained on the same 
   to scale. With a WSD schedule (constant LR, then a short decay), each review point is a decayed
   *branch*; the main run continues from the pre-decay checkpoint with its optimizer state, so no
   tokens are wasted on restarts.
+- **Batch size and learning rate are tuned before the main launch** (detail in group 4). Proposed:
+  (1) on Odra/Polonez, a learning-rate × batch sweep of E33 at two small widths (~50M and ~125M) on
+  the real mix, to see the shape of the optimum and how the best rate moves with width;
+  (2) on AWS at 500M, a short confirmation sweep of ~3 learning rates around the extrapolated value at
+  the chosen batch (~0.5B tokens each, each ending with a short decay, because rankings can flip
+  during the decay) — this also serves as the H100 speed test. Rough cost of (2): ~3–4 node-h.
 - **Go:** no automatic gate. Everything is prepared now; the author decides on launch from the state of
   the text capability board once its running tests finish.
 
@@ -83,7 +89,10 @@ next token (more compute) rather than to answers only.
 
 ## 4. Training recipe and plumbing
 
-- Optimizer and LR: Muon / AdamW, tuned on small proxies on Odra before AWS. **partial**
+- Optimizer and LR: Muon / AdamW. **partial**
+- Batch size × learning rate sweep before launch (decided 2026-10-13): small widths on Odra/Polonez,
+  then a ~3-point confirmation at 500M on AWS (see group 0). The text checks already have a per-model
+  tuning step (`tune_runs`, `tune_tokens` in `evaluation/text_checks.py`) to reuse. **partial**
 - Schedule: WSD (constant then decay, branchable checkpoints). **missing**
 - Sequence length, batch size, tokens per step; packed documents. Packing **exists**.
 - Checkpointing: save cadence, retention, resume tested, S3 sync; safe defaults for long runs. **partial**
