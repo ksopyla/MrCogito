@@ -67,7 +67,7 @@ next token (more compute) rather than to answers only.
 login through SSM Session Manager (no open ports); Terraform state in an S3 backend. The account exists
 but has no GPU quota yet.
 
-**Author action now (lead time ~1–3 days, may need a justification):** Service Quotas → Amazon EC2 →
+**Author action (deferred 2026-10-13: no AWS login yet; lead time ~1–3 days once filed):** Service Quotas → Amazon EC2 →
 "Running On-Demand P instances" → request **192 vCPUs** (one p5.48xlarge) in the chosen region.
 Proposed region: us-east-1 (largest p5 pool, lowest price); confirm p5 is offered in the chosen
 availability zone before the request.
@@ -92,12 +92,36 @@ by the author):
 
 ## 2. Training data
 
-- Tokenizer: SmolLM3 128k vocab (current) vs a ~49k vocab (smaller output layer). **decide**
-- Mix: web (FineWeb-Edu / DCLM), code, math, plus a long-document tier (PG-19, FinePDFs) so the
-  memory has something to do. Recipes exist (`data/mix_recipes/`); the long-document share is **decide**.
-- Pretokenize on Odra/Polonez and upload to S3 vs on a cheap AWS CPU instance. Pipeline **exists**
-  (`scripts/pretokenize_mix.py`, manifest stats).
-- Decontamination of PG-19 and benchmark test sets. **missing**
+**Decided (author, 2026-10-13):**
+- Tokenizer: **SmolLM2** (49,152 vocabulary), **tied input/output embeddings** (~63M of ~500M at width
+  1280). Data is re-tokenized (CPU only); token ids fit in 2 bytes.
+- **Long documents ~35 %** of training tokens (books and long PDFs).
+- **Sequence length 16k**, documents packed into rows with document masks; books and long PDFs chunked
+  into consecutive 16k rows. Extrapolation read at eval time to 128k.
+- **Curriculum:** phase 1 (to the 5B review) natural text only; phase 2 (5B → 10B) adds synthetic text
+  that forces far-back recall (Text World-style documents with questions about early facts; design in
+  this group's drill-down). Side benefit: the notebook-off gap at 5B shows what natural text alone
+  teaches; the change by 10B shows what the synthetic push adds (confounded with 5B more tokens).
+
+Proposed phase-1 mix (to confirm; weights are token shares, checked with `scripts/manifest_token_stats.py`):
+
+| source | share | role |
+|---|---|---|
+| FineWeb-Edu | 30 % | general knowledge (best early benchmark signal) |
+| DCLM-baseline | 15 % | broader web |
+| Stack-Edu (Python) | 10 % | code |
+| FineMath-3+ | 10 % | math |
+| PG-19 books (train split) | 17.5 % | long narrative (~0.6–0.7 epoch by 10B) |
+| FinePDFs, long only (≥ 4k tokens) | 17.5 % | long expository text |
+
+Open items:
+- Phase-2 synthetic data: share, document length (16k), held-out names and sentence shapes so our
+  text exams stay unseen. **decide**
+- Pretokenize on Odra/Polonez (AWS deferred) into the NAS archive, upload to S3 later; the pipeline
+  exists (`scripts/pretokenize_mix.py`); the 2-byte storage and the SmolLM2 tokenizer path need a check.
+- Decontamination: PG-19 test/validation books removed from every training source (title / Gutenberg id
+  match, including copies inside web and PDF data); held-out sets for evaluation: PG-19 test, a held-out
+  slice of long PDFs, a held-out web slice. **missing**
 
 ## 3. Model changes
 
