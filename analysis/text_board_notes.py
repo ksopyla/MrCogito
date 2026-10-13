@@ -15,7 +15,8 @@ Plain words, every number with its meaning (research-comms). Update it whenever 
 SCOREBOARD = {
     "setups": [
         {"key": "q8", "title": "Current recipe: mixed training, 8 questions per training document",
-         "runs": ["q8_dense30m_s0_odra.odra", "q8_dense30m_s1_odra.odra", "q8_dense30m_s2_odra.odra"]},
+         "runs": ["q8_dense30m_s0_odra.odra", "q8_dense30m_s1_odra.odra", "q8_dense30m_s2_odra.odra",
+                  "q8r_e33_s0_odra.odra", "q8r_e33_s1_odra.odra", "q8r_e31c_s0_odra.odra", "q8r_e31c_s1_odra.odra"]},
         {"key": "mixed", "title": "Earlier recipe (history): mixed training, 1 question per document",
          "runs": ["cal3a_plain30m_v2_odra.odra", "cal3a_s1_plain30m_v2_odra.odra", "r2v2p_screen30m_odra.odra"]},
     ],
@@ -26,7 +27,7 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-13 21:10 UTC",
+    "as_of": "2026-10-13 23:20 UTC",
     "headline": "The reference is now reliable: with 8 questions per training document, dense learns lookup and keyed "
                 "in 3 of 3 runs (46-63 % on far facts at 4k), so this is the recipe from 13 Oct 20:40 UTC. The memory "
                 "models are being retrained on it; until they are, there is no current architecture comparison — the "
@@ -48,12 +49,13 @@ STATUS = {
         "story; latest's floor is 20 %; dense is not compared past 4k. Nothing had to be retrained.",
     ],
     "next": [
-        "Running on Odra since about 21:08 UTC: the step size of E33 and E31c on the new recipe (4 short runs each, "
-        "chosen by held-out loss, never by exam scores; about 2.5 h).",
-        "Then the comparison round on the new recipe: E33 twice (about 8 h each) and E31c twice (about 3 h each), "
-        "exams 1k-16k with the added exam sets; done about 14 Oct evening.",
-        "The no-memory control is no longer needed for this round: far-fact scores are beyond every short window "
-        "by construction, and E33's notebook-off twin measures what its notebook adds.",
+        "Running on Odra since 23:12 UTC: the comparison round on the new recipe — E33 run 1 (about 08:00 UTC 14 Oct), "
+        "E33 run 2 (about 17:00), then E31c runs 1 and 2 (about 20:30 and 00:15 UTC 15 Oct). Exams 1k-16k with every "
+        "exam set and the notebook-off twins.",
+        "Step sizes (13 Oct 21:08-23:05 UTC, held-out loss over 5e-4 / 1e-3 / 2e-3 / 4e-3): E33 and E31c both best at "
+        "1e-3, the value they had borrowed from dense — now measured.",
+        "The no-memory control is not in this round: far-fact scores are beyond every short window by construction, "
+        "and E33's notebook-off twin measures what its notebook adds.",
     ],
 }
 
@@ -275,16 +277,17 @@ LADDER = [
      "tokens": "1.5B, 8 questions per document", "exams": "v2 + v2.1, 1k-4k",
      "result": "Quote 94 % and latest 82 % (both pass), lookup 56 %, keyed 46 % (far facts), count 38 % at 4k.",
      "when": "13 Oct 17:49 → 20:40", "why": "The dense reference of the current recipe."},
-    {"id": None, "start": "2026-10-13", "data": "v2", "standing": "running",
+    {"id": None, "start": "2026-10-13", "data": "v2", "standing": "calibration",
      "run": "Step size for E33 and E31c", "model": "E33 loop, E31c notebook · 30M, plain",
      "tokens": "4 × 60M each, 8 questions per document", "exams": "none (held-out loss only)",
-     "result": "Each model's own step size (until now they borrowed dense's).", "when": "13 Oct ~21:08 → ~23:40",
-     "why": "Spec §7: every architecture gets the same tuning budget."},
-    {"id": None, "start": "planned", "data": "v2", "standing": "queued",
-     "run": "Comparison round, new recipe", "model": "E33 loop × 2, E31c notebook × 2 · 30M, plain",
+     "result": "Both best at 1e-3 (E33 held-out loss 2.56 vs 2.77 / 3.07 / 4.41 at 5e-4 / 2e-3 / 4e-3; E31c 2.78 vs "
+               "2.91 / 3.55 / 4.81) — the value they had borrowed from dense.",
+     "when": "13 Oct 21:08 → 23:05", "why": "Spec §7: every architecture gets its own step size, same tuning budget."},
+    {"id": None, "start": "2026-10-13", "data": "v2", "standing": "running",
+     "run": "Comparison round, new recipe", "model": "E33 loop × 2, then E31c notebook × 2 · 30M, plain",
      "tokens": "1.5B each, 8 questions per document", "exams": "v2 + v2.1, 1k-16k",
      "result": "Does the notebook learn to read reliably, and does it beat dense on far facts?",
-     "when": "after the tuning, about 22 h", "why": "The architecture comparison on the reliable recipe."},
+     "when": "13 Oct 23:12 → ~15 Oct 00:15", "why": "The architecture comparison on the reliable recipe."},
 ]
 
 # Plain names for the architectures (first mention = name + what it is).
