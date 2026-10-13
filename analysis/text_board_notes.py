@@ -1,89 +1,224 @@
-"""Hand-written text of the text capability board: the status brief and each round's verdict.
+"""Hand-written text of the text capability board (the mission-control page of the text checks).
 
 Numbers on the board come from the ledgers; this file holds only what a person has to judge:
-the one-line status, where we are, what is next, and per round the verdict and observations.
-Plain words, every number with its meaning (research-comms). Update it whenever a round lands.
+  STATUS        what runs now, what is next, what blocks us;
+  PROTOCOL_LOG  every change to exams, recipe or reading rules, and what it did to earlier results;
+  CLAIMS        every conclusion drawn, with its state (holds / single run / open / retracted);
+  LADDER        every run with its standing (in use / calibration / history / running / queued) and why;
+  ROUNDS        per run: verdict and observations.
+Never delete a run or a claim: change its standing or state and say why (skill `text-checks`, "Board").
+Plain words, every number with its meaning (research-comms). Update it whenever a run lands or a rule changes.
 """
 
-# The main table (top of the board): the current comparison — plain input, 30M, 1.5B tokens, data v2 — in two setups.
+# The main table (top of the board): the comparison in use — plain input, 30M, 1.5B tokens, exams v2, one question
+# per training document — in two setups. Only runs whose standing is "in use" (LADDER below) belong here.
 SCOREBOARD = {
     "setups": [
         {"key": "mixed", "title": "Mixed training (all seven tasks in one model)",
          "runs": ["cal3a_plain30m_v2_odra.odra", "cal3a_s1_plain30m_v2_odra.odra", "r2v2p_screen30m_odra.odra"]},
-        {"key": "single", "title": "Single-task training (one model per task)", "prefix": "pt_"},
+        {"key": "single", "title": "Single-task training (one model per task) — paused", "prefix": "pt_"},
     ],
-    # single-task work queued on Odra with no run folder yet (in order)
-    "single_queue": ["keyed", "latest", "compose", "count", "deduce"],
+    # single-task work that was queued with no run folder yet (in order); paused 2026-10-13, see PROTOCOL_LOG
+    "single_queue": [],
 }
 
+# Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-13 05:15 UTC",
-    "headline": "No architecture wins reliably yet. E33 (notebook + reread loop) has the one strong result — lookup "
-                "82 % at 16k where dense reads 0 % — but it is a single run, and dense learns a task only in some runs, "
-                "so most comparisons are not yet trustworthy.",
+    "as_of": "2026-10-13 06:45 UTC",
+    "headline": "Trust the measurements, not yet the ranking. Every score on this board is measured correctly, and "
+                "the reading rules of 13 Oct are applied to all of them automatically. What is missing is a reliable "
+                "reference: the dense model learns a skill in only some runs at this budget, so no architecture "
+                "comparison is settled until it learns reliably.",
     "where": [
-        "E33 leads on lookup with mixed training: 63.5 % at 4k, 82 % at 16k (dense 39 % and 0 %); notebook off → 0 %.",
-        "E31c without the loop never uses its notebook (same scores with it off); the loop seems to be what makes "
-        "the notebook read.",
-        "Single-task runs so far: quote-only taught no one to quote from memory; lookup-only dense 44 % at 4k, 0 % "
-        "past 4k; E31c 14 % at 4k.",
-        "Seed luck at 30M / 1.5B: 2 of 4 dense mixed-training runs learned nothing.",
+        "Settled: E31c without the loop does not use its notebook (three runs). Dense at 30M / 1.5B learns by luck "
+        "(two of four runs learned nothing).",
+        "One strong signal, one run: E33 reads far facts at 16k (lookup 83 %, keyed 78 %; notebook off: 0 %).",
+        "Reading rules of 13 Oct: quote, lookup and keyed are read on facts placed early or in the middle of the "
+        "story; latest's floor is 20 %; dense is not compared past 4k. Nothing had to be retrained.",
     ],
     "next": [
-        "Odra has not answered since about 15:00 UTC 12 Oct (connection refused from outside; Polonez is up). "
-        "E33 on lookup-only data started 06:14 UTC 12 Oct and was due to score about 13:45 UTC; its result is not "
-        "yet pulled. The queue keeps running on Odra if the machine itself is up.",
-        "Then keyed, latest, compose, count, deduce (dense, E31c, E33 each; about 12.5 h per task; done about 14 Oct).",
-        "Proposed: a second E33 seed on lookup before the remaining tasks — no win counts until it repeats.",
+        "Blocked: Odra is off (since about 15:00 UTC 12 Oct; being powered on); Polonez is busy with other work.",
+        "First on Odra: finish E33 trained on lookup only (it checks E33's one win), then the reliability fix: dense "
+        "30M three times on training documents with 8 questions each (exams unchanged; about 2.5 h per run).",
+        "If dense then learns in at least 2 of 3 runs, that becomes the recipe and the architecture comparison is "
+        "run on it with two seeds per model; the single-task series stays paused.",
     ],
 }
 
-# The calibration ladder at a glance (spec §16.1): one row per run, newest last. Times UTC.
+# Protocol log: every change to the exams, the training recipe or the reading rules, newest last. Each entry says what
+# it did to the results already on the board: "re-read" (same measurements, read with new rules — no retraining),
+# "history" (older exams or recipe — kept, not compared with current runs), or "planned".
+PROTOCOL_LOG = [
+    {"date": "2026-10-06", "version": "exams v0", "kind": "exams",
+     "change": "First exams and training data (published on Hugging Face).",
+     "why": "A from-scratch text testbed with facts, questions and a length ladder.",
+     "effect": "history",
+     "effect_text": "The 7 Oct round on Polonez never finished its exams. A model-free audit (8 Oct) then found five "
+                    "shortcuts (e.g. lookup answerable 98 % by copying the only place name).",
+     "learned": "Every exam needs a model-free shortcut audit before any model is trusted on it."},
+    {"date": "2026-10-08", "version": "exams v1", "kind": "exams",
+     "change": "The five shortcuts fixed; four candidates per question in most tasks.",
+     "why": "v0 exams could be passed without reading.",
+     "effect": "history",
+     "effect_text": "Runs on v1 (the 30M round, 600M tokens; the 1.5B-token dense run) are kept as history: guessing "
+                    "rates of 20-50 % made small gains unreadable, and v2 changed the exams.",
+     "learned": "600M tokens taught no model anything; at 1.5B tokens dense switched on retrieval at 0.6-0.9B."},
+    {"date": "2026-10-10", "version": "exams v2", "kind": "exams",
+     "change": "Every guessing rate below 10 % (12 signs, 12 homes, 10 moves …); candidate places start with different "
+               "letters; a graded score (probability on the right candidate).",
+     "why": "Small progress near guessing was invisible at 25-50 % guessing rates.",
+     "effect": "current",
+     "effect_text": "All current runs use v2. v1 results are not compared with v2 results.",
+     "learned": "A frozen exam with every rate below 10 % shows when a skill switches on."},
+    {"date": "2026-10-10", "version": "plain input", "kind": "recipe",
+     "change": "Architecture rounds run without the word-pair/triple input tables (plain input).",
+     "why": "Dense without the tables learned four tasks where with them it learned one.",
+     "effect": "current",
+     "effect_text": "Retracted as a finding on 11 Oct 08:43 (a second run learned nothing), kept as the setup for "
+                    "consistency. No rerun needed: every model in the comparison has the same input.",
+     "learned": "One run is not evidence at this budget: which skills switch on is a matter of the seed."},
+    {"date": "2026-10-11", "version": "single-task series", "kind": "recipe",
+     "change": "One model per task (dense, E31c, E33), seven tasks in sequence, one run each.",
+     "why": "Remove task interference and see who wins each task.",
+     "effect": "paused",
+     "effect_text": "Paused 13 Oct after quote and lookup: with one run each it measures luck (dense trained on quote "
+                    "only learned nothing, where two mixed-training runs passed quote). Its results stay on the board.",
+     "learned": "More examples of one task did not make dense learn it; the luck is not about task data."},
+    {"date": "2026-10-13", "version": "reading rules", "kind": "reading",
+     "change": "Quote, lookup and keyed are read on facts placed early or in the middle (far); facts at the very end "
+               "(near) are shown apart. Latest's floor is 20 %. \"Learned\" = 10 points or 3 standard errors above the "
+               "floor. Leaders only at the 4k training length; dense is not compared past it.",
+     "why": "Protocol review: near facts sit inside every model's short window, so a model with no memory scored "
+            "there; a reader ignoring whose move it is already gets 1 in 5 on latest; dense has no method for reading "
+            "past 4k.",
+     "effect": "re-read",
+     "effect_text": "Every v2 result re-read from the stored per-position scores — nothing retrained. Changed "
+                    "conclusions: E31c's quote, lookup and keyed scores were all near facts (0 % far); E31c's and "
+                    "E33's latest at 4k are below the 20 % floor; dense's 0 % at 16k is not a memory comparison.",
+     "learned": "Read memory only on facts beyond the short window, and compare long lengths only against a "
+                "reference that can read them."},
+    {"date": "planned", "version": "8 questions per document", "kind": "recipe",
+     "change": "Training documents end with 8 questions instead of 1 (exams unchanged, byte-identical).",
+     "why": "Answers are about 0.1 % of training tokens; dense learns retrieval late and only in some runs.",
+     "effect": "planned",
+     "effect_text": "If dense learns in at least 2 of 3 runs, the architecture comparison is redone on this recipe "
+                    "with two runs per model; the 1-question rounds become history (\"earlier recipe\").",
+     "learned": ""},
+    {"date": "planned", "version": "exams v2.1", "kind": "exams",
+     "change": "New exams added, nothing existing changed: crowded facts (length without spreading the facts), "
+               "more unseen sentence shapes, one-step compose and deduce.",
+     "why": "Length also spread the facts out (E33 did better at 16k than at 1k); one unseen sentence shape per fact "
+            "type is thin; compose and deduce showed no signal at all.",
+     "effect": "planned",
+     "effect_text": "Existing checkpoints can be scored on them — no retraining.",
+     "learned": ""},
+]
+
+# Claims register: every conclusion we have drawn, with its state. holds = repeated or overwhelming within its runs;
+# single run = one run, needs a second; open = not testable yet; retracted = disproved (kept, with the date).
+CLAIMS = [
+    {"claim": "E31c without the loop does not use its notebook.", "state": "holds", "since": "2026-10-11",
+     "evidence": "Three runs (mixed, quote-only, lookup-only): 0 % on far facts at every length, and the same scores "
+                 "with the notebook switched off.",
+     "settle": "—"},
+    {"claim": "Dense at 30M / 1.5B tokens learns retrieval only in some runs.", "state": "holds", "since": "2026-10-11",
+     "evidence": "Four mixed-training runs: one passed quote only, one learned four tasks, two learned nothing; the "
+                 "quote-only run learned nothing.",
+     "settle": "The 8-questions-per-document recipe: does dense learn in 2 of 3 runs?"},
+    {"claim": "E33's notebook reads far facts past the training length.", "state": "single run", "since": "2026-10-11",
+     "evidence": "Lookup 83 % and keyed 78 % at 16k on far facts; notebook off: 0 %. One run (mixed training).",
+     "settle": "E33 trained on lookup only (unfinished on Odra) and a second E33 run."},
+    {"claim": "E33 keeps reading when the fact is phrased in a sentence shape never seen in training; dense does not.",
+     "state": "single run", "since": "2026-10-13",
+     "evidence": "Lookup on far facts at 4k: E33 64 % with training shapes, 64 % with the unseen shape (its near "
+                 "facts, read by short-range attention, drop 62 → 31 %); dense 37-48 % → 0-1 % (three dense runs).",
+     "settle": "A second E33 run; more unseen shapes (exams v2.1)."},
+    {"claim": "Word-for-word quotes do not survive the notebook.", "state": "holds", "since": "2026-10-12",
+     "evidence": "E31c and E33, two runs each: quote 0 % on far facts; their 25-33 % came from signs inside the window.",
+     "settle": "—"},
+    {"claim": "Dense tracks the latest move better than the memory models.", "state": "single run", "since": "2026-10-13",
+     "evidence": "Latest at 4k: dense 32 % in one of two runs; E31c 17 % and E33 13 %, both below the 20 % floor.",
+     "settle": "Dense learning reliably (8-questions recipe), then two runs per model."},
+    {"claim": "Memory models beat rereading on long documents.", "state": "open", "since": "2026-10-13",
+     "evidence": "Dense scores 0 % past 8k on every task, but it has no method for reading past its training length, "
+                 "and the no-memory control has not been run on v2.",
+     "settle": "The no-memory control and a dense model with a long-text method on the same exams."},
+    {"claim": "E33 reads better at 16k than at 1k because the facts are less crowded.", "state": "open",
+     "since": "2026-10-11",
+     "evidence": "E33 on far facts: about 30 % at 1k, 73-93 % at 16k. A guess about the cause.",
+     "settle": "The crowded-facts exam (v2.1) on the existing E33 checkpoint."},
+    {"claim": "Nobody composes two facts or chains rules at 30M / 1.5B.", "state": "holds", "since": "2026-10-10",
+     "evidence": "Every run at guessing on compose and deduce, including the probability on the right candidate.",
+     "settle": "One-step versions (v2.1) to see whether any part is learned."},
+    {"claim": "Plain input (no word-pair/triple tables) makes dense learn.", "state": "retracted", "since": "2026-10-11",
+     "evidence": "Seed 0 learned four tasks (10 Oct); seed 1 learned nothing (11 Oct 08:43).",
+     "settle": "—"},
+    {"claim": "A 50M dense learns more than 30M at equal tokens.", "state": "open", "since": "2026-10-10",
+     "evidence": "One 50M run: lookup and keyed rose slowly (20 % and 15 % at 4k), quote not at all.",
+     "settle": "After the recipe fix, if ever needed."},
+]
+
+# All runs, oldest first. standing: "in use" (feeds the scoreboard), "calibration" (dense alone; sets the recipe and
+# budget; valid evidence about learnability), "history" (older exams or recipe: kept, not compared with current runs),
+# "running" / "queued" / "blocked". `why` says what the standing means for this run. `id` joins the ledger.
 LADDER = [
-    {"run": "30M round, four models", "model": "dense, no-memory control, E31c notebook, E33 loop · 30M",
+    {"id": "r1_screen.polonez", "start": "2026-10-07", "data": "v0", "standing": "history",
+     "run": "First round, four models", "model": "dense, no-memory control, E31c, E33 loop · 30M",
+     "tokens": "0.6B", "exams": "v0", "result": "Exams cut off by the Polonez shutdown.",
+     "when": "7 Oct", "why": "Exams v0 had five shortcuts; superseded by v1."},
+    {"id": "r1v1_screen_odra.odra", "start": "2026-10-09", "data": "v1", "standing": "history",
+     "run": "30M round, four models", "model": "dense, no-memory control, E31c notebook, E33 loop · 30M",
      "tokens": "0.6B (3,173 steps, 0.9 passes)", "exams": "v1 (guessing 6-50 %)",
      "result": "Nothing: every model at guessing on every task at 4k.",
-     "when": "9 Oct 15:48 → 10 Oct 03:07", "state": "done"},
-    {"run": "Budget run", "model": "dense · 30M", "tokens": "1.5B (7,931 steps, 2.3 passes)",
+     "when": "9 Oct 15:48 → 10 Oct 03:07", "why": "Older exams (v1) and a budget too small for any model to learn; "
+                                                  "taught us the token budget."},
+    {"id": "r2_budget_dense_odra.odra", "start": "2026-10-10", "data": "v1", "standing": "history",
+     "run": "Budget run", "model": "dense · 30M", "tokens": "1.5B (7,931 steps, 2.3 passes)",
      "exams": "v1 (guessing 6-50 %)",
      "result": "Lookup 47 % (25 %), latest 37 % (20 %), keyed 13 % (6 %), switched on at 0.6-0.9B tokens. No pass.",
-     "when": "10 Oct 05:50 → 08:16", "state": "done"},
-    {"run": "Step 1", "model": "dense · 30M", "tokens": "1.5B (7,888 steps, 1.5 passes)",
+     "when": "10 Oct 05:50 → 08:16", "why": "Older exams (v1); set the 1.5B-token budget."},
+    {"id": "cal1_dense30m_v2_odra.odra", "start": "2026-10-10", "data": "v2", "standing": "calibration",
+     "run": "Step 1", "model": "dense · 30M", "tokens": "1.5B (7,888 steps, 1.5 passes)", "exams": "v2 (guessing 4-9 %)",
+     "result": "Quote passes: 96 % on far facts (8 %). Lookup and keyed at guessing; latest at 4k below its 20 % floor.",
+     "when": "10 Oct 08:17 → 10:52", "why": "Dense with the input tables; evidence of the seed lottery."},
+    {"id": "cal2_dense50m_v2_odra.odra", "start": "2026-10-10", "data": "v2", "standing": "calibration",
+     "run": "Step 2", "model": "dense · 50M (12 layers, width 576)", "tokens": "1.5B (7,888 steps, 1.5 passes)",
      "exams": "v2 (guessing 4-9 %)",
-     "result": "Quote passes: 95 % (8 %), switched on at 0.75-1.1B tokens. Lookup and keyed at guessing; "
-               "latest 26 % at 1k only (9 %).",
-     "when": "10 Oct 08:17 → 10:52", "state": "done"},
-    {"run": "Step 2", "model": "dense · 50M (12 layers, width 576)", "tokens": "1.5B (7,888 steps, 1.5 passes)",
+     "result": "Lookup and keyed learned a little (20 % and 18 % on far facts at 4k), quote 0 %. No pass.",
+     "when": "10 Oct 11:24 → 15:17", "why": "Bigger, with the input tables; one run."},
+    {"id": "cal1s1_dense30m_v2_odra.odra", "start": "2026-10-10", "data": "v2", "standing": "calibration",
+     "run": "Step 1, second seed", "model": "dense · 30M, seed 1", "tokens": "1.5B (7,888 steps)",
+     "exams": "v2 (guessing 4-9 %)", "result": "Nothing learned (seed 0 passed quote).",
+     "when": "10 Oct 15:18 → 17:54", "why": "Evidence of the seed lottery."},
+    {"id": "cal3a_plain30m_v2_odra.odra", "start": "2026-10-10", "data": "v2", "standing": "in use",
+     "run": "Plain input", "model": "dense · 30M, no word-pair/triple tables", "tokens": "1.5B (7,888 steps)",
      "exams": "v2 (guessing 4-9 %)",
-     "result": "Lookup 19.5 % (8 %), keyed 15 % (6 %), rising slowly; latest 25.5 % at 1k only; quote 0 %. No pass.",
-     "when": "10 Oct 11:24 → 15:17", "state": "done"},
-    {"run": "Step 1, second seed", "model": "dense · 30M, seed 1", "tokens": "1.5B (7,888 steps)",
-     "exams": "v2 (guessing 4-9 %)",
-     "result": "Nothing: every task at guessing at 4k (seed 0 passed quote). Latest 19 % at 1k only.",
-     "when": "10 Oct 15:18 → 17:54", "state": "done"},
-    {"run": "Plain input", "model": "dense · 30M, no word-pair/triple tables", "tokens": "1.5B (7,888 steps)",
-     "exams": "v2 (guessing 4-9 %)", "result": "Do the input tables delay retrieval?",
-     "when": "10 Oct 18:08 → ~21:05", "state": "running"},
-    {"run": "Plain input", "model": "dense · 30M, no word-pair/triple tables", "tokens": "1.5B (7,888 steps)",
-     "exams": "v2 (guessing 4-9 %)",
-     "result": "Quote passes 86 % (8 %); lookup 39 % (8 %), keyed 35 % (6 %), latest 32 % (9 %), count 19 % (9 %).",
-     "when": "10 Oct 18:08 → 20:55", "state": "done"},
-    {"run": "Round: E33 loop, plain", "model": "E31c notebook + reread loop · 30M, plain input",
+     "result": "Quote passes (84 % far); lookup 37 %, keyed 33 % (far facts), latest 32 % (floor 20 %), count 19 %.",
+     "when": "10 Oct 18:08 → 20:55", "why": "The dense reference of the mixed-training comparison (seed 0)."},
+    {"id": "r2v2p_screen30m_odra.odra", "start": "2026-10-10", "data": "v2", "standing": "in use",
+     "run": "Round: E33 loop and E31c, plain", "model": "E33 loop, E31c notebook · 30M, plain input",
      "tokens": "1.5B (7,888 steps)", "exams": "v2, 1k-16k",
-     "result": "Lookup 82 % and keyed 77 % at 16k (pass; dense 0 %); 63.5 / 55.5 % at 4k (dense 39 / 35 %). "
-               "Latest 79.5 % at 1k only; quote 25 %.",
-     "when": "10 Oct 21:00 → 11 Oct 05:35", "state": "done"},
-    {"run": "Plain input, second seed", "model": "dense · 30M, plain, seed 1", "tokens": "1.5B",
-     "exams": "v2 (guessing 4-9 %)", "result": "Nothing: every task at guessing (seed 0 learned four). The plain-input gain was seed luck.",
-     "when": "11 Oct 05:36 → 08:43", "state": "done"},
-    {"run": "Round: E31c (plain)", "model": "E31c notebook · 30M, plain input", "tokens": "1.5B, mixed tasks",
-     "exams": "v2, 1k-16k",
-     "result": "Lookup 16 %, keyed 15 % at 4k, 0 % at 16k; notebook off gives the same, so it is unused. Latest 87 % at 1k.",
-     "when": "11 Oct 08:44 → 12:15", "state": "done"},
-    {"run": "Single-task comparison", "model": "dense, E31c, E33 loop · 30M, plain input",
-     "tokens": "1.5B each, training data of one task", "exams": "that task, 1k-16k",
-     "result": "T1 quote, then T2 lookup, T3 keyed, T4 latest, T5 compose, T6 count, T7 deduce: 21 runs.",
-     "when": "11 Oct 12:15 → ~14 Oct", "state": "T1 done; T2 lookup: dense, E31c done, E33 result not pulled (Odra unreachable since 12 Oct ~15:00)"},
+     "result": "E33: lookup 64 % and keyed 56 % on far facts at 4k, 83 % and 78 % at 16k; notebook off: 0 %. "
+               "E31c: 0 % on far facts.",
+     "when": "10 Oct 21:00 → 11 Oct 12:15", "why": "The memory models of the mixed-training comparison."},
+    {"id": "cal3a_s1_plain30m_v2_odra.odra", "start": "2026-10-11", "data": "v2", "standing": "in use",
+     "run": "Plain input, second seed", "model": "dense · 30M, plain, seed 1", "tokens": "1.5B",
+     "exams": "v2 (guessing 4-9 %)", "result": "Nothing learned (seed 0 learned four tasks).",
+     "when": "11 Oct 05:36 → 08:43", "why": "The dense reference of the mixed-training comparison (seed 1)."},
+    {"id": "pt_quote_30m_odra.odra", "start": "2026-10-11", "data": "v2", "standing": "in use",
+     "run": "Single task: quote", "model": "dense, E31c, E33 loop · 30M, plain", "tokens": "1.5B each, quote only",
+     "exams": "quote, 1k-16k", "result": "Nobody learned quote on far facts (dense 6 %, E31c and E33 0 %).",
+     "when": "11 Oct 12:15 → 12 Oct 01:04", "why": "Single-task series (paused); one run per model."},
+    {"id": "pt_lookup_30m_odra.odra", "start": "2026-10-12", "data": "v2", "standing": "blocked",
+     "run": "Single task: lookup", "model": "dense, E31c, E33 loop · 30M, plain", "tokens": "1.5B each, lookup only",
+     "exams": "lookup, 1k-16k",
+     "result": "Dense 48 % on far facts at 4k (0 % past 4k); E31c 0 %; E33 unfinished.",
+     "when": "12 Oct 01:04 → (E33 since 06:14)", "why": "E33's run was cut off by the Odra outage; it resumes from "
+                                                        "its last checkpoint."},
+    {"id": None, "start": "planned", "data": "v2", "standing": "queued",
+     "run": "Reliability fix", "model": "dense · 30M, plain, three seeds", "tokens": "1.5B, 8 questions per document",
+     "exams": "v2, 1k-4k (+ 16k)", "result": "Does dense learn in at least 2 of 3 runs?",
+     "when": "when Odra is back", "why": "Decides the recipe for the architecture comparison."},
 ]
 
 # Plain names for the architectures (first mention = name + what it is).

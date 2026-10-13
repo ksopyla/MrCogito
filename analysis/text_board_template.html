@@ -79,11 +79,32 @@ td.cell.pass { box-shadow: inset 0 0 0 2px var(--good); color: var(--good); font
 td.cell.short { text-decoration: line-through; color: var(--critical); }
 td.floor { text-align: center; font-family: var(--mono); color: var(--ink-3); }
 table.sb th.grp { text-align: center; border-left: 2px solid var(--rule); }
-table.sb td.lead { font-size: 12px; color: var(--ink-3); border-right: 2px solid var(--rule); white-space: nowrap; }
+table.sb td.lead { font-size: 12px; color: var(--ink-3); border-right: 2px solid var(--rule); min-width: 120px; }
+table.sb td.cell { white-space: nowrap; min-width: 92px; }
 table.sb td.lead.win { color: var(--ink); font-weight: 600; }
 td.cell.queued, td.cell.missing { color: var(--ink-3); font: 12px var(--sans); font-style: italic; }
 td.cell.running { color: var(--info); font: 600 12px var(--sans); }
 .sbsum { margin: 10px 0 4px; }
+.chip.good { color: var(--good); } .chip.info { color: var(--info); } .chip.warn { color: var(--warning); } .chip.bad { color: var(--critical); } .chip.muted { color: var(--muted-chip); }
+table.claims td.claim { font-weight: 600; min-width: 220px; max-width: 360px; }
+table.claims td { min-width: 160px; }
+table.claims tr.retracted td.claim { text-decoration: line-through; color: var(--ink-3); }
+.filters { display: grid; gap: 8px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 14px; }
+.fchips, .frow { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 13px; }
+.fchip { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.frow input[type=date] { font: inherit; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); }
+.fbtn { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--rule); background: var(--surface); color: var(--accent); cursor: pointer; }
+#ladderTable td { min-width: 110px; }
+#ladderTable td:nth-child(2) { min-width: 160px; }
+#ladderTable td:nth-child(6) { min-width: 260px; }
+table.claims td:nth-child(3) { min-width: 280px; }
+.log { display: grid; gap: 10px; }
+.logitem { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 14px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 16px; }
+.logitem.planned { border-style: dashed; }
+.logdate { color: var(--ink-3); font-size: 13px; }
+.logbody { display: grid; gap: 4px; min-width: 0; }
+.loghead { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+@media (max-width: 560px) { .logitem { grid-template-columns: 1fr; gap: 4px; } }
 details.rundetail { border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); padding: 10px 14px; }
 details.rundetail > summary { cursor: pointer; }
 details.rundetail[open] > summary { margin-bottom: 10px; }
@@ -125,19 +146,29 @@ details[open] > summary { margin-bottom: 12px; }
     <h1>Text Capability Board</h1>
     <p class="small" id="asof"></p>
     <nav class="toc" aria-label="Sections">
-      <a href="#scoreboard">Scoreboard</a><a href="#length">Length</a><a href="#learning">Learning curves</a>
-      <a href="#guide">Tasks</a><a href="#ladder">All runs</a><a href="#results">Run details</a>
+      <a href="#trust">What we know</a><a href="#scoreboard">Scoreboard</a><a href="#length">Length</a><a href="#learning">Learning curves</a>
+      <a href="#guide">Tasks</a><a href="#ladder">All runs</a><a href="#log">Protocol log</a><a href="#results">Run details</a>
       <a href="#calibration">Calibration</a><a href="#sources">Sources</a>
     </nav>
     <div class="brief" id="brief"></div>
   </header>
 
+  <section id="trust">
+    <div>
+      <h2>What we know, and how sure we are</h2>
+      <p class="muted">Every conclusion drawn from these runs, with its state: holds (repeated, or overwhelming within its runs),
+        single run (needs a second), open (cannot be tested yet), retracted (disproved, kept with the date).</p>
+    </div>
+    <div id="claimsbox"></div>
+  </section>
+
   <section id="scoreboard">
     <div>
       <h2>Scoreboard: who reads which facts</h2>
       <p class="muted">The current comparison: 30M models, plain input, 1.5B training tokens, exams v2. Each cell is the share of
-        exact answers at the 4k training length (one number per seed), with the score at 16k — four times the training length —
-        underneath. Green border: a pass (75 % or more). Shaded: clearly above guessing. Grey: at guessing.</p>
+        exact answers at the 4k training length (one number per run), with the facts placed near the end, the score at 16k (four times
+        the training length) and the score on rephrased facts underneath. Green border: a pass (75 % or more). Shaded: learned (clearly
+        above the floor). Grey: not learned. The reading rules are under the table.</p>
     </div>
     <div id="sbbox"></div>
   </section>
@@ -146,9 +177,12 @@ details[open] > summary { margin-bottom: 12px; }
     <div>
       <h2>Length: does it still work on longer texts?</h2>
       <p class="muted">Each model trains at the length marked by the vertical line, then reads longer documents with no more training
-        (more story filler, the same facts). Dashed grey: the 75 % pass mark. Dotted red: the guessing rate.</p>
+        (more story filler, the same facts). Dashed grey: the 75 % pass mark. Dotted red: the floor (guessing; latest: 1 in 5).
+        Dense has no method for reading past its training length, so its scores there are not a memory comparison.</p>
     </div>
-    <div class="controls"><label>Round <select id="roundSel"></select></label></div>
+    <div class="controls"><label>Round <select id="roundSel"></select></label>
+      <label>Score <select id="modeSel"><option value="far">quote, lookup, keyed on far facts (beyond the short window)</option>
+        <option value="all">every item (includes facts at the end)</option></select></label></div>
     <div class="multiples" id="lengthbox"></div>
   </section>
 
@@ -174,16 +208,28 @@ details[open] > summary { margin-bottom: 12px; }
   <section id="ladder">
     <div>
       <h2>All runs, in order</h2>
-      <p class="muted">Everything trained so far and what is queued, oldest first: the calibration ladder (the dense reference
-        alone, growing tokens and size), then the architecture rounds. Times are UTC. Each finished run has its details below.</p>
+      <p class="muted">Everything trained so far and what is queued, oldest first, each with its standing: <b>in use</b> (feeds the
+        scoreboard), <b>calibration</b> (the dense reference alone: sets the recipe and budget), <b>history</b> (older exams or recipe:
+        kept, not compared with current runs) and why. Click a run for its details. History is hidden by default.</p>
     </div>
-    <div style="overflow-x:auto"><table id="ladderTable"></table></div>
+    <div class="filters" id="filters"></div>
+    <div class="tablebox"><table id="ladderTable"></table></div>
+  </section>
+
+  <section id="log">
+    <div>
+      <h2>Protocol log: what changed, and what it did to earlier results</h2>
+      <p class="muted">Every change to the exams, the training recipe or the reading rules. "Re-read" means the stored measurements
+        were read again with the new rules, with no retraining; "history" means the earlier runs used other exams or another recipe
+        and are kept for the record, not compared.</p>
+    </div>
+    <div id="logbox" class="log"></div>
   </section>
 
   <section id="results">
     <div>
       <h2>Run details</h2>
-      <p class="muted">One block per run, newest first; click to open. Every model in a run trains from scratch on the same data,
+      <p class="muted">One block per run, newest first; click to open. The filters of "All runs" apply here too. Every model in a run trains from scratch on the same data,
         with the same number of tokens and compute cap, and its own tuned step size. Scores are exact answers, word for word
         including the final period; a pass is 75 % or more.</p>
     </div>
@@ -251,42 +297,155 @@ function hideTip() { tip.hidden = true; }
 const ul = items => el("ul", {}, ...items.map(t => el("li", {}, t)));
 
 function header() {
-  document.getElementById("asof").textContent = `Status as of ${D.status.as_of} · page generated ${D.generated} · protocol ${D.version} (first draft, being calibrated)`;
+  document.getElementById("asof").textContent = `Status as of ${D.status.as_of} · page generated ${D.generated} · protocol ${D.version} (draft, being calibrated) · reading rules of 13 Oct`;
   const b = document.getElementById("brief");
   b.append(el("p", { class: "headline" }, D.status.headline),
     el("div", { class: "cols" }, el("div", {}, el("h3", {}, "Where we are"), ul(D.status.where)),
                                  el("div", {}, el("h3", {}, "What is next"), ul(D.status.next))));
+}
+
+// ---- what we know: the claims register -------------------------------------------------------------
+const CLAIM_ORDER = { "holds": 0, "single run": 1, "open": 2, "retracted": 3 };
+const CLAIM_CLASS = { "holds": "good", "single run": "warn", "open": "muted", "retracted": "bad" };
+function claims() {
+  const box = document.getElementById("claimsbox");
+  const cs = [...(D.claims || [])].sort((a, b) => (CLAIM_ORDER[a.state] ?? 9) - (CLAIM_ORDER[b.state] ?? 9));
+  const t = el("table", { class: "claims" });
+  t.append(el("thead", {}, el("tr", {}, ...["Claim", "State", "Evidence", "What would settle it"].map(h => el("th", {}, h)))));
+  const tb = el("tbody");
+  for (const c of cs) {
+    tb.append(el("tr", { class: c.state === "retracted" ? "retracted" : "" },
+      el("td", { class: "claim" }, c.claim),
+      el("td", {}, el("span", { class: "chip " + (CLAIM_CLASS[c.state] || "muted") }, c.state), el("div", { class: "small" }, "since " + c.since)),
+      el("td", { class: "small" }, c.evidence), el("td", { class: "small" }, c.settle)));
+  }
+  t.append(tb);
+  box.append(el("div", { class: "tablebox" }, t));
+  const n = s => cs.filter(c => c.state === s).length;
+  box.append(el("p", { class: "small" }, `${n("holds")} hold, ${n("single run")} rest on a single run, ${n("open")} are open, ` +
+    `${n("retracted")} retracted. A claim is never deleted: when the evidence changes, its state changes and the date says when.`));
+}
+
+// ---- filters shared by "All runs" and "Run details" ------------------------------------------------
+const STANDING_GROUPS = [
+  ["in use", "In use", "feeds the scoreboard"], ["calibration", "Calibration", "dense alone: sets the recipe"],
+  ["active", "Running / queued", "not finished"], ["history", "History", "older exams or recipe"]];
+const groupOf = st => ["running", "queued", "blocked"].includes(st) ? "active" : st;
+const STANDING_CLASS = { "in use": "good", "calibration": "info", "history": "muted", "running": "info", "queued": "warn", "blocked": "warn" };
+let F = { groups: ["in use", "calibration", "active"], data: "all", from: "", to: "" };
+try { const saved = JSON.parse(localStorage.getItem("textboard.filters") || "null"); if (saved && saved.groups) F = { ...F, ...saved }; } catch (e) { /* storage unavailable */ }
+const saveF = () => { try { localStorage.setItem("textboard.filters", JSON.stringify(F)); } catch (e) { /* ignore */ } };
+const passes = (standing, data, start) => {
+  if (!F.groups.includes(groupOf(standing))) return false;
+  if (F.data !== "all" && data !== F.data) return false;
+  if (start && start !== "planned") {
+    if (F.from && start < F.from) return false;
+    if (F.to && start > F.to) return false;
+  }
+  return true;
+};
+function filterBar() {
+  const box = document.getElementById("filters");
+  const chips = el("div", { class: "fchips" });
+  for (const [key, label, hint] of STANDING_GROUPS) {
+    const id = "fg-" + key.replace(/\W/g, "");
+    const cb = el("input", { type: "checkbox", id });
+    cb.checked = F.groups.includes(key);
+    cb.addEventListener("change", () => { F.groups = cb.checked ? [...new Set([...F.groups, key])] : F.groups.filter(g => g !== key); saveF(); applyFilters(); });
+    chips.append(el("label", { for: id, class: "fchip", title: hint }, cb, " " + label));
+  }
+  const versions = [...new Set((D.ladder || []).map(r => r.data).filter(Boolean))].sort();
+  const sel = el("select", { id: "fdata" }, el("option", { value: "all" }, "all exams"), ...versions.map(v => el("option", { value: v }, "exams " + v)));
+  sel.value = F.data;
+  sel.addEventListener("change", () => { F.data = sel.value; saveF(); applyFilters(); });
+  const from = el("input", { type: "date", id: "ffrom", value: F.from }), to = el("input", { type: "date", id: "fto", value: F.to });
+  from.addEventListener("change", () => { F.from = from.value; saveF(); applyFilters(); });
+  to.addEventListener("change", () => { F.to = to.value; saveF(); applyFilters(); });
+  const reset = el("button", { type: "button", class: "fbtn" }, "Show everything");
+  reset.addEventListener("click", () => { F = { groups: STANDING_GROUPS.map(g => g[0]), data: "all", from: "", to: "" };
+    saveF(); box.innerHTML = ""; filterBar(); applyFilters(); });
+  box.append(chips, el("div", { class: "frow" }, el("label", {}, "Exams ", sel), el("label", {}, "From ", from), el("label", {}, "to ", to), reset),
+    el("p", { class: "small", id: "fcount" }));
+}
+function applyFilters() {
+  let shown = 0, hidden = 0;
+  for (const tr of document.querySelectorAll("#ladderTable tbody tr")) {
+    const ok = passes(tr.dataset.standing, tr.dataset.data, tr.dataset.start);
+    tr.hidden = !ok; ok ? shown++ : hidden++;
+  }
+  for (const d of document.querySelectorAll("#rounds details.rundetail")) d.hidden = !passes(d.dataset.standing, d.dataset.data, d.dataset.start);
+  const fc = document.getElementById("fcount");
+  if (fc) fc.textContent = `${shown} run${shown === 1 ? "" : "s"} shown` + (hidden ? `, ${hidden} hidden by the filters (they also apply to the run details below)` : "");
+}
+
+function ladder() {
   const t = document.getElementById("ladderTable");
-  t.append(el("thead", {}, el("tr", {}, ...["Run", "Model", "Training tokens", "Exams", "What it learned (guessing rate)", "When", "State"]
+  t.append(el("thead", {}, el("tr", {}, ...["Run", "Standing", "Model", "Training tokens", "Exams", "What it learned (guessing rate)", "When (UTC)"]
     .map(h => el("th", {}, h)))));
   const tb = el("tbody");
   for (const r of D.ladder || []) {
-    tb.append(el("tr", {}, el("td", { class: "model" }, el("div", { class: "nm" }, r.run)), el("td", {}, r.model),
-      el("td", {}, r.tokens), el("td", {}, r.exams), el("td", {}, r.result), el("td", { class: "num" }, r.when),
-      el("td", {}, r.state)));
+    const tr = el("tr", { "data-standing": r.standing, "data-data": r.data || "", "data-start": r.start || "" },
+      el("td", { class: "model" }, el("div", { class: "nm" }, r.run)),
+      el("td", {}, el("span", { class: "chip " + (STANDING_CLASS[r.standing] || "muted") }, r.standing), el("div", { class: "small" }, r.why || "")),
+      el("td", {}, r.model), el("td", {}, r.tokens), el("td", {}, r.exams), el("td", {}, r.result), el("td", { class: "num" }, r.when));
+    if (r.id && document.getElementById("round-" + r.id)) {
+      tr.style.cursor = "pointer";
+      tr.title = "Open this run's details";
+      tr.addEventListener("click", () => { const d = document.getElementById("round-" + r.id).closest("details"); d.hidden = false; d.open = true; d.scrollIntoView({ behavior: "smooth", block: "start" }); });
+    }
+    tb.append(tr);
   }
   t.append(tb);
+}
+
+// ---- protocol log ------------------------------------------------------------------------------------
+const EFFECT_CLASS = { "current": "good", "re-read": "info", "history": "muted", "paused": "warn", "planned": "muted" };
+function protocolLog() {
+  const box = document.getElementById("logbox");
+  for (const e of D.protocol_log || []) {
+    box.append(el("div", { class: "logitem" + (e.date === "planned" ? " planned" : "") },
+      el("div", { class: "logdate num" }, e.date),
+      el("div", { class: "logbody" },
+        el("div", { class: "loghead" }, el("b", {}, e.version), el("span", { class: "small" }, " · " + e.kind + " · "),
+          el("span", { class: "chip " + (EFFECT_CLASS[e.effect] || "muted") }, e.effect === "re-read" ? "re-read, no retraining" : e.effect)),
+        el("p", {}, e.change),
+        el("p", { class: "small" }, el("b", {}, "Why: "), e.why),
+        el("p", { class: "small" }, el("b", {}, "What it did to earlier results: "), e.effect_text),
+        e.learned ? el("p", { class: "small" }, el("b", {}, "What we learned: "), e.learned) : null)));
+  }
 }
 
 function scoreboardTable() {
   const S = D.scoreboard, box = document.getElementById("sbbox");
   const fams = Object.keys(S.families);
-  const leadName = v => v === "pending" ? "running" : v === "tie" ? "tie" : v ? S.families[v] : "nobody yet";
+  const leadText = info => {
+    if (!info) return "–";
+    const v = info.lead;
+    if (v === "pending") return "running";
+    if (v === "tie") return "tie";
+    if (!v) return "nobody learned it";
+    let s = S.families[v];
+    if (info.single_seed) s += " · 1 run";
+    else if (info.seeds_learned) s += ` · ${info.seeds_learned} runs`;
+    return s;
+  };
   const t = el("table", { class: "sb" });
-  const h1 = el("tr", {}, el("th", { rowspan: 2 }, "Task"), el("th", { rowspan: 2, class: "num" }, "Guessing"));
+  const h1 = el("tr", {}, el("th", { rowspan: 2 }, "Task"), el("th", { rowspan: 2, class: "num" }, "Floor"));
   const h2 = el("tr");
   for (const st of S.setups) {
     h1.append(el("th", { colspan: fams.length + 1, class: "grp" }, st.title));
     for (const f of fams) h2.append(el("th", { class: "num" }, S.families[f]));
-    h2.append(el("th", {}, "Leading"));
+    h2.append(el("th", {}, "Leading at 4k"));
   }
   t.append(el("thead", {}, h1, h2));
   const tb = el("tbody");
   const wins = {};
   for (const task of D.tasks) {
-    const g = D.guide[task], fl = S.floors[task];
+    const g = D.guide[task], fl = S.floors[task], eff = S.eff_floors[task];
+    const flTxt = fl == null ? "–" : (eff != null && eff > fl + 1e-9 ? `${pct(fl)} % · ${pct(eff)} %*` : pct(fl) + " %");
+    const kindNote = ["quote", "lookup", "keyed"].includes(task) ? "far facts" : "all items";
     const tr = el("tr", {}, el("td", { class: "task" }, el("div", {}, g[0] + (D.gating.includes(task) ? "" : " · frontier")),
-      el("div", { class: "tid" }, g[1])), el("td", { class: "floor" }, fl != null ? pct(fl) + " %" : "–"));
+      el("div", { class: "tid" }, g[1] + " · scored on " + kindNote)), el("td", { class: "floor" }, flTxt));
     for (const st of S.setups) {
       const row = (S.cells[st.key] || {})[task] || {};
       for (const f of fams) {
@@ -294,21 +453,32 @@ function scoreboardTable() {
         const done = es.filter(e => e.state === "done");
         if (!es.length) { tr.append(el("td", { class: "cell missing" }, "not planned")); continue; }
         if (!done.length) { tr.append(el("td", { class: "cell " + es[0].state }, es[0].state === "running" ? "training…" : "queued")); continue; }
-        const best = Math.max(...done.map(e => Math.max(e.at4k || 0, e.atmax || 0)));
-        const cls = best >= D.pass ? "pass" : (fl != null && best > fl + 0.10) ? "above" : "at";
-        const td = el("td", { class: "cell " + cls }, done.map(e => pct(e.at4k) + " %").join(" · "));
-        td.append(el("span", { class: "sub" }, done.map(e => e.lmax > 4096 ? fmtLen(e.lmax) + ": " + pct(e.atmax) + " %" : "4k only").join(" · ")));
-        if (done.length > 1) td.append(el("span", { class: "sub" }, done.length + " seeds"));
+        const nLearned = done.filter(e => e.learned4k).length;
+        const cls = done.some(e => (e.at4k || 0) >= D.pass && e.learned4k) ? "pass" : nLearned ? "above" : "at";
+        const each = f => done.map(e => { const v = f(e); return v == null ? "–" : pct(v); }).join(" · ");
+        const td = el("td", { class: "cell " + cls }, each(e => e.at4k) + " %");
+        if (done[0].kind === "far") td.append(el("span", { class: "sub" }, "near " + each(e => e.near4k)));
+        if (done.some(e => e.lmax > 4096)) td.append(el("span", { class: "sub" }, "16k " + each(e => e.lmax > 4096 ? e.atmax : null)));
+        if (done.some(e => e.para4k != null)) td.append(el("span", { class: "sub" }, "rephrased " + each(e => e.para4k)));
+        if (done.length > 1) td.append(el("span", { class: "sub" }, `learned in ${nLearned} of ${done.length}`));
         if (es.some(e => e.state !== "done")) td.append(el("span", { class: "sub" }, "+ 1 training"));
         td.addEventListener("mousemove", ev => showTip(ev, `<b>${g[0]}</b> · ${S.families[f]} · ${st.title}` +
-          done.map(e => `<div class="row"><span>seed ${e.seed}: 1k / 4k / ${fmtLen(e.lmax)}</span><span>${pct(e.at1k)} / ${pct(e.at4k)} / ${pct(e.atmax)} %</span></div>`).join("") +
+          done.map(e => `<div class="row"><span>seed ${e.seed} at 4k: ${e.kind === "far" ? "far / near / all" : "all items"}</span><span>${e.kind === "far" ? `${pct(e.at4k)} / ${pct(e.near4k)} / ${pct(e.all4k)}` : pct(e.at4k)} %</span></div>` +
+            `<div class="row"><span>seed ${e.seed}: 1k / 4k / ${fmtLen(e.lmax)}</span><span>${pct(e.at1k)} / ${pct(e.at4k)} / ${pct(e.atmax)} %</span></div>` +
+            (e.para4k != null ? `<div class="row"><span>seed ${e.seed}: rephrased facts at 4k</span><span>${pct(e.para4k)} %</span></div>` : "")).join("") +
           `<div class="row"><span>run</span><span>${done.map(e => e.run.split(".")[0]).join(", ")}</span></div>`));
         td.addEventListener("mouseleave", hideTip);
         tr.append(td);
       }
-      const lead = S.leaders[st.key + "|" + task];
-      if (lead && !["pending", "tie"].includes(lead)) wins[st.key + "|" + lead] = (wins[st.key + "|" + lead] || 0) + 1;
-      tr.append(el("td", { class: "lead " + (lead && !["pending", "tie"].includes(lead) ? "win" : "") }, leadName(lead)));
+      const info = S.leaders[st.key + "|" + task];
+      const lead = info && info.lead;
+      const isWin = lead && !["pending", "tie"].includes(lead);
+      if (isWin) wins[st.key + "|" + lead] = (wins[st.key + "|" + lead] || 0) + 1;
+      const td = el("td", { class: "lead " + (isWin ? "win" : "") }, leadText(info));
+      if (isWin && lead !== "dense" && info.uncalibrated) td.append(el("div", { class: "small" }, "dense never learned it"));
+      const rd = (S.readers[st.key + "|" + task] || []).filter(f => f !== "dense");
+      if (rd.length) td.append(el("div", { class: "small" }, "reads at 16k: " + rd.map(f => S.families[f]).join(", ")));
+      tr.append(td);
     }
     tb.append(tr);
   }
@@ -316,25 +486,34 @@ function scoreboardTable() {
   box.append(el("div", { class: "tablebox" }, t));
   const lines = S.setups.map(st => {
     const w = fams.map(f => [S.families[f], wins[st.key + "|" + f] || 0]).filter(x => x[1]).map(x => `${x[0]} leads ${x[1]}`);
-    const pending = D.tasks.filter(task => S.leaders[st.key + "|" + task] === "pending").length;
+    const pending = D.tasks.filter(task => (S.leaders[st.key + "|" + task] || {}).lead === "pending").length;
     return `${st.title}: ${w.length ? w.join(", ") : "no leader yet"}` + (pending ? `; ${pending} task${pending > 1 ? "s" : ""} still training or queued` : "") + ".";
   });
   box.append(el("ul", { class: "small sbsum" }, ...lines.map(l => el("li", {}, l))));
-  box.append(el("p", { class: "small" }, "Leading = the best score at 4k or 16k, at least 10 points above guessing and 5 ahead of the next model. " +
-    "Single seeds: a lead is a signal, not a verdict, until a second seed repeats it. Hover a cell for 1k / 4k / 16k per seed."));
+  box.append(el("p", { class: "small" }, "How to read it (rules of 13 Oct). Quote, lookup and keyed are scored on the facts placed early or in the middle of " +
+    "the story; facts placed at the end (\"near\") sit inside every model's short window up to 4k, so they show nothing about memory. " +
+    "Learned = above the floor by 10 points or 3 standard errors; * latest's floor is 20 %: following the moves without reading whose they are " +
+    "already gets 1 in 5. Leading = learned at 4k and ahead of the next model by more than 5 points and 2 standard errors; \"1 run\" = one seed, " +
+    "a signal, not a verdict. \"Dense never learned it\": the dense reference did not learn the task at this budget, so the task is not yet " +
+    "calibrated. Dense has no method for reading past 4k, so its 16k score is not a memory comparison; \"reads at 16k\" lists memory models " +
+    "that still learned the task there. Rephrased = the same exam with fact sentences in a shape never seen in training. Hover a cell for every seed."));
 }
 
-// a score cell: pass / clearly above guessing / at guessing
+// the score a cell is read by (rules of 13 Oct): far facts for quote / lookup / keyed, every item otherwise
+const headScore = c => !c ? null : (c.far != null ? c.far : c.exact);
+// a score cell: pass / learned (clearly above the effective floor) / not learned
 function cellClass(c) {
   if (!c || c.exact == null) return "at";
-  const margin = Math.max(0.05, 2 * (c.exact_se || 0));
-  const above = c.exact - c.floor > margin;
+  const above = c.exact - c.floor > Math.max(0.10, 2 * (c.exact_se || 0));
   // a shortcut: it scores above guessing AND still does with the evidence removed
   const short = above && c.removed_exact != null && c.removed_exact > c.floor + Math.max(0.10, 2 * (c.exact_se || 0));
   if (short) return "short";
-  if (c.exact >= D.pass) return "pass";
-  return above ? "above" : "at";
+  if (c.learned && headScore(c) >= D.pass) return "pass";
+  return c.learned ? "above" : "at";
 }
+// chart mode: "far" (default) reads quote / lookup / keyed on far facts; "all" on every item
+const scoreMode = () => (document.getElementById("modeSel") || {}).value || "far";
+const modeScore = c => !c ? null : (scoreMode() === "far" ? headScore(c) : c.exact);
 
 function roundBlock(r) {
   const n = r.notes, B = r.budget, ms = r.models;
@@ -387,16 +566,18 @@ function roundBlock(r) {
     const g = D.guide[task];
     const anyc = ms.map(m => m.cells[`id|${task}|${L0}`]).find(c => c);
     const tr = el("tr", {}, el("td", { class: "task" }, el("div", {}, g[0]), el("div", { class: "tid" }, g[1] + (D.gating.includes(task) ? "" : " · frontier"))),
-      el("td", { class: "floor" }, anyc ? pct(anyc.floor) + " %" : "–"));
+      el("td", { class: "floor" }, anyc ? pct(anyc.floor) + " %" + (anyc.eff_floor > anyc.floor + 1e-9 ? ` · ${pct(anyc.eff_floor)} %*` : "") : "–"));
     for (const m of ms) {
       const c = m.cells[`id|${task}|${L0}`], cm = Lmax ? m.cells[`id|${task}|${Lmax}`] : null;
-      const td = el("td", { class: "cell " + cellClass(c) }, c ? pct(c.exact) + " %" : "–");
-      if (cm && Lmax > L0) td.append(el("span", { class: "sub" }, `${pct(cm.exact)} % at ${fmtLen(Lmax)}`));
+      const td = el("td", { class: "cell " + cellClass(c) }, c ? pct(headScore(c)) + " %" : "–");
+      if (c && c.far != null) td.append(el("span", { class: "sub" }, `near ${pct(c.near)} %`));
+      if (cm && Lmax > L0) td.append(el("span", { class: "sub" }, `${pct(headScore(cm))} % at ${fmtLen(Lmax)}`));
       if (c) {
         td.addEventListener("mousemove", ev => showTip(ev, `<b>${g[0]}</b> · ${m.name}` +
-          `<div class="row"><span>exact answer at ${fmtLen(L0)}</span><span>${pct(c.exact)} % ± ${pct(c.exact_se)}</span></div>` +
+          `<div class="row"><span>exact answer at ${fmtLen(L0)}, all items</span><span>${pct(c.exact)} % ± ${pct(c.exact_se)}</span></div>` +
+          (c.far != null ? `<div class="row"><span>facts early or middle (far) / at the end (near)</span><span>${pct(c.far)} / ${pct(c.near)} %</span></div>` : "") +
           `<div class="row"><span>picked the right candidate</span><span>${c.pick == null ? "–" : pct(c.pick) + " %"}</span></div>` +
-          `<div class="row"><span>guessing rate</span><span>${pct(c.floor)} %</span></div>` +
+          `<div class="row"><span>guessing rate</span><span>${pct(c.floor)} %${c.eff_floor > c.floor + 1e-9 ? ` (effective ${pct(c.eff_floor)} %)` : ""}</span></div>` +
           (c.pick_prob != null ? `<div class="row"><span>graded pick (probability on the right candidate)</span><span>${pct(c.pick_prob)} %</span></div>` : "") +
           `<div class="row"><span>evidence removed</span><span>${pct(c.removed_exact)} %</span></div>` +
           (c.answer_nll != null ? `<div class="row"><span>surprise at the answer</span><span>${c.answer_nll.toFixed(2)} nats/token</span></div>` : "") +
@@ -408,12 +589,13 @@ function roundBlock(r) {
     tb.append(tr);
   }
   tt.append(tb);
-  box.append(el("div", {}, el("h3", { class: "small", style: "margin-bottom:6px" }, `TASKS · exact answers at the ${fmtLen(L0)} training length` + (Lmax && Lmax > L0 ? `; small line: at ${fmtLen(Lmax)}` : "")),
+  box.append(el("div", {}, el("h3", { class: "small", style: "margin-bottom:6px" }, `TASKS · exact answers at the ${fmtLen(L0)} training length; quote, lookup and keyed on far facts (near: facts at the end)` + (Lmax && Lmax > L0 ? `; small line: at ${fmtLen(Lmax)}` : "")),
     el("div", { class: "tablebox" }, tt),
     el("div", { class: "legend", style: "margin-top:8px" },
       el("span", {}, el("i", { style: "box-shadow: inset 0 0 0 2px var(--good)" }), "pass (75 % or more)"),
-      el("span", {}, el("i", { style: "background: var(--tint)" }), "clearly above guessing, not a pass"),
-      el("span", {}, el("i", {}), "at the guessing rate"),
+      el("span", {}, el("i", { style: "background: var(--tint)" }), "learned (clearly above the floor), not a pass"),
+      el("span", {}, el("i", {}), "not learned"),
+      el("span", {}, "* latest: following moves without reading whose they are gets 1 in 5"),
       el("span", { style: "text-decoration: line-through; color: var(--critical)" }, "answered without the evidence (shortcut)"),
       el("span", {}, "hover a cell for the details"))));
   return box;
@@ -423,8 +605,9 @@ function results() {
   const box = document.getElementById("rounds");
   if (!D.rounds.length) { box.append(el("div", { class: "empty-note" }, "No result rounds yet.")); return; }
   for (const r of D.rounds) {
-    const d = el("details", { class: "rundetail" }, el("summary", {}, el("b", {}, r.notes.title || r.id),
-      el("span", { class: "small" }, "  " + (r.notes.dates || ""))), roundBlock(r));
+    const d = el("details", { class: "rundetail", "data-standing": r.standing, "data-data": r.data || "", "data-start": r.start || "" },
+      el("summary", {}, el("span", { class: "chip " + (STANDING_CLASS[r.standing] || "muted") }, r.standing), " ", el("b", {}, r.notes.title || r.id),
+        el("span", { class: "small" }, "  " + (r.notes.dates || ""))), r.why ? el("p", { class: "small", style: "margin-bottom:8px" }, "Standing: " + r.why) : null, roundBlock(r));
     box.append(d);
   }
 }
@@ -479,16 +662,18 @@ function charts() {
   for (const task of D.tasks) {
     let floor = null;
     const series = ms.map(m => ({ name: m.name, color: colorOf(m), points: Object.entries(m.cells).filter(([k]) => k.startsWith(`id|${task}|`))
-      .map(([k, c]) => { floor = c.floor; return [+k.split("|")[2], c.exact]; }).filter(p => p[1] != null) }));
+      .map(([k, c]) => { floor = c.eff_floor != null ? c.eff_floor : c.floor; return [+k.split("|")[2], modeScore(c)]; }).filter(p => p[1] != null) }));
     chart(lb, { title: D.guide[task][0], sub: D.guide[task][1], series, xlabel: "document length", floor, vline: r.budget.seq_len });
   }
   chart(cb, { title: "Held-out loss of the training mix", sub: "lower is better", xlabel: "training tokens", logx: false, ymax: null,
     yfmt: v => v.toFixed(2), xfmt: fmtTok,
     series: ms.map(m => ({ name: m.name, color: colorOf(m), points: m.eval_loss.map(([s, l]) => [s * m.tokens_per_step, l]) })) });
   for (const task of D.tasks) {
-    const floor = (ms[0] && Object.values(ms[0].cells).find(c => c)) ? (ms[0].cells[`id|${task}|${r.budget.seq_len}`] || {}).floor : null;
+    const c0 = ms[0] ? (ms[0].cells[`id|${task}|${r.budget.seq_len}`] || {}) : {};
+    const floor = c0.eff_floor != null ? c0.eff_floor : c0.floor;
+    const cur = m => scoreMode() === "far" && m.curve_far ? m.curve_far : m.curve;
     chart(cb, { title: D.guide[task][0], sub: "score at the training length vs training tokens", xlabel: "training tokens", logx: false, xfmt: fmtTok, floor,
-      series: ms.map(m => ({ name: m.name, color: colorOf(m), points: Object.entries(m.curve).map(([s, v]) => [+s * m.tokens_per_step, v[task]]).filter(p => p[1] != null) })) });
+      series: ms.map(m => ({ name: m.name, color: colorOf(m), points: Object.entries(cur(m)).map(([s, v]) => [+s * m.tokens_per_step, v[task]]).filter(p => p[1] != null) })) });
   }
 }
 
@@ -497,6 +682,7 @@ function roundSelect() {
   for (const r of D.chart_rounds) s.append(el("option", { value: r.id }, r.notes.title || r.id));
   s.value = D.chart_rounds[0].id;
   s.addEventListener("change", charts);
+  document.getElementById("modeSel").addEventListener("change", charts);
 }
 
 function guide() {
@@ -546,5 +732,5 @@ function sources() {
   t.append(body);
 }
 
-header(); scoreboardTable(); results(); roundSelect(); charts(); guide(); calibration(); sources();
+header(); claims(); scoreboardTable(); results(); ladder(); filterBar(); applyFilters(); protocolLog(); roundSelect(); charts(); guide(); calibration(); sources();
 </script>

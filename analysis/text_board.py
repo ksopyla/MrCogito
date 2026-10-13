@@ -2,9 +2,14 @@
 """Text capability board: the one dashboard of the text capability checks.
 
 Reads the committed ledgers (`docs/2_Experiments_Registry/results/capability/text/*.json`, written by
-`scripts/pull_text_checks_results.sh`) and the hand-written notes (`analysis/text_board_notes.py`: status,
-round verdicts, plain model names), and writes one self-contained page:
-  * status brief: where we are and what is next;
+`scripts/pull_text_checks_results.sh`) and the hand-written notes (`analysis/text_board_notes.py`: status, claims,
+protocol log, run standings, round verdicts, plain model names), and writes one self-contained page — the mission
+control of the text checks:
+  * status brief: what runs, what is next, what blocks;
+  * what we know: every claim with its state (holds / single run / open / retracted) and what would settle it;
+  * the scoreboard of the runs in use, read with the current rules (spec §10.5);
+  * all runs with their standing (in use / calibration / history …) and why, filterable by standing, exams and date;
+  * the protocol log: every change and what it did to earlier results;
   * results, one block per round: the shared budget (parameters, data, epochs, compute), each model's cost and
     language score, the task table against the guessing rate, and the round's observations;
   * length charts and learning curves for a chosen round;
@@ -26,9 +31,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from analysis.text_board_notes import LADDER, NAMES, ROUNDS, SCOREBOARD, STATUS, SUPERSEDED  # noqa: E402
-from analysis.text_checks_scorecard import LEVEL, analyse  # noqa: E402
-from evaluation.text_checks import FRONTIER_TASKS, GATING_TASKS, PASS, TEXT_CHECKS_VERSION, TIERS  # noqa: E402
+from analysis.text_board_notes import (CLAIMS, LADDER, NAMES, PROTOCOL_LOG, ROUNDS, SCOREBOARD, STATUS,  # noqa: E402
+                                       SUPERSEDED)
+from analysis.text_checks_scorecard import LEVEL, analyse, learned_cell  # noqa: E402
+from evaluation.text_checks import (FRONTIER_TASKS, GATING_TASKS, PASS, TEXT_CHECKS_VERSION, TIERS,  # noqa: E402
+                                    effective_floor, far_near, headline)
 
 LEDGER_DIR = ROOT / "docs" / "2_Experiments_Registry" / "results" / "capability" / "text"
 OUT = ROOT / "docs" / "3_Evaluations_and_Baselines" / "text_capability_board.html"
@@ -115,11 +122,16 @@ def _round(led: dict) -> dict:
                 "examined": evals.get(m["arch"], {}).get("finished"),
                 "story_loss": m.get("story_loss"), "language_gap": m.get("language_gap"), "frontier": m.get("frontier"),
                 "seq_len": m["seq_len"], "tokens_per_step": m["tokens_per_step"],
-                "cells": {f"{s}|{t}|{L}": {k: c.get(k) for k in ("exact", "exact_se", "pick", "pick_prob", "removed_exact", "floor", "n",
-                                                                  "answer_nll", "by_depth")}
+                "cells": {f"{s}|{t}|{L}": {**{k: c.get(k) for k in ("exact", "exact_se", "pick", "pick_prob", "removed_exact", "floor",
+                                                                     "n", "answer_nll", "by_depth")},
+                                           **(far_near(c) or {}), "eff_floor": effective_floor(t, c.get("floor")),
+                                           "learned": learned_cell(c)}
                           for (s, t, L), c in m["cells"].items()},
                 "off": {f"{s}|{t}|{L}": c.get("exact") for (s, t, L), c in m["off"].items()},
+                "off_far": {f"{s}|{t}|{L}": (far_near(c) or {}).get("far") for (s, t, L), c in m["off"].items()},
                 "curve": {str(step): {t: c.get("exact") for t, c in cells.items()} for step, cells in m["curve"].items()},
+                "curve_far": {str(step): {t: (headline(t, c) or {}).get("score") for t, c in cells.items()}
+                              for step, cells in m["curve"].items()},
                 "eval_loss": j.get("eval_loss") or [],
             })
     models.sort(key=lambda m: ORDER.index(m["arch"]) if m["arch"] in ORDER else 9)
@@ -142,9 +154,19 @@ def _round(led: dict) -> dict:
 FAMILIES = {"dense": ("dense_plain",), "e31c": ("e31c_plain",), "e33": ("e31c_loop_plain",)}
 
 
+def _h(cells: dict, split: str, task: str, L: int) -> dict | None:
+    c = cells.get(f"{split}|{task}|{L}")
+    h = headline(task, c)
+    if h:
+        h["learned"] = learned_cell(c)
+        h["se"] = (h["score"] * (1 - h["score"]) / h["n"]) ** 0.5 if h.get("n") else 0.0
+    return h
+
+
 def scoreboard(ledgers: list[dict]) -> dict:
     """The main table: per setup (mixed-task / single-task training, plain input, 30M, 1.5B tokens) × task × model
-    family, every seed's exact score at 4k and at the longest exam length, its state, and the leader per task."""
+    family, every seed's headline score (far facts for quote / lookup / keyed, spec §10.5) at 4k and at the longest
+    exam length, the rephrased-fact score at 4k, its state, and the leader per task at 4k."""
     fam_of = {a: f for f, archs in FAMILIES.items() for a in archs}
     out = {s["key"]: {} for s in SCOREBOARD["setups"]}
     floors = {}
@@ -171,35 +193,55 @@ def scoreboard(ledgers: list[dict]) -> dict:
                 for c in by_len.values():
                     floors[task] = c.get("floor")
                 done = st in ("done", "over_budget") and evals.get(arch) == "done" and by_len
-                entry = {"run": rid, "seed": seed or 0, "state": "done" if done else ("running" if st in ("running", "done") else "queued")}
+                entry = {"run": rid, "seed": seed or 0,
+                         "state": "done" if done else ("running" if st in ("running", "done") else "queued")}
                 if done:
                     lmax = max(by_len)
-                    entry.update(at4k=(by_len.get(4096) or {}).get("exact"), atmax=by_len[lmax].get("exact"), lmax=lmax,
-                                 at1k=(by_len.get(1024) or {}).get("exact"))
+                    h4, hmax, h1 = _h(cells, "id", task, 4096), _h(cells, "id", task, lmax), _h(cells, "id", task, 1024)
+                    para = _h(cells, "paraphrase", task, 4096)
+                    entry.update(at4k=(h4 or {}).get("score"), se4k=(h4 or {}).get("se"), learned4k=(h4 or {}).get("learned"),
+                                 near4k=(h4 or {}).get("near"), all4k=(h4 or {}).get("all"), kind=(h4 or {}).get("kind"),
+                                 atmax=(hmax or {}).get("score"), learnedmax=(hmax or {}).get("learned"), lmax=lmax,
+                                 at1k=(h1 or {}).get("score"), para4k=(para or {}).get("score"),
+                                 learned_para=(para or {}).get("learned"))
                 out[setup].setdefault(task, {}).setdefault(fam, []).append(entry)
     # queued single-task work that has no run folder yet
     for task in SCOREBOARD.get("single_queue", []):
         for fam in FAMILIES:
             out["single"].setdefault(task, {}).setdefault(fam, []) or out["single"][task][fam].append({"state": "queued"})
-    # leader per (setup, task): best seed's best length, if clearly above guessing and ahead of the others
-    leaders = {}
+    # leader per (setup, task) at the 4k training length, where every model is inside its training range: the best
+    # seed's headline score, if learned (clearly above the effective floor) and ahead of the next family by more than
+    # 5 points and 2 combined standard errors. Flags: one seed only; dense never learned the task (uncalibrated).
+    # Past the training length dense has no length method, so "reads at 16k" lists the families that learned there.
+    leaders, readers = {}, {}
     for setup, tasks in out.items():
         for task, fams in tasks.items():
-            best = {f: max((max(e.get("at4k") or 0, e.get("atmax") or 0) for e in es if e.get("state") == "done"), default=None)
-                    for f, es in fams.items()}
-            scored = sorted(((v, f) for f, v in best.items() if v is not None), reverse=True)
-            fl = floors.get(task) or 0
-            unfinished = any(all(e.get("state") != "done" for e in es) for es in fams.values())
+            done = {f: [e for e in es if e.get("state") == "done"] for f, es in fams.items()}
+            best = {f: max(es, key=lambda e: e.get("at4k") or 0) for f, es in done.items() if es}
+            scored = sorted(((e.get("at4k") or 0, f) for f, e in best.items()), reverse=True)
+            unfinished = any(not es for es in done.values())
+            info = {"lead": None, "single_seed": False,
+                    "uncalibrated": not any(e.get("learned4k") for e in done.get("dense", []))}
             if unfinished:
-                lead = "pending"
-            elif not scored or scored[0][0] < fl + 0.10:
-                lead = None
-            elif len(scored) > 1 and scored[0][0] - scored[1][0] < 0.05:
-                lead = "tie"
-            else:
-                lead = scored[0][1]
-            leaders[f"{setup}|{task}"] = lead
-    return {"setups": SCOREBOARD["setups"], "cells": out, "floors": floors, "leaders": leaders,
+                info["lead"] = "pending"
+            elif scored and best[scored[0][1]].get("learned4k"):
+                top = best[scored[0][1]]
+                info["lead"] = scored[0][1]
+                if len(scored) > 1:
+                    nxt = best[scored[1][1]]
+                    gap = scored[0][0] - scored[1][0]
+                    margin = max(0.05, 2 * ((top.get("se4k") or 0) ** 2 + (nxt.get("se4k") or 0) ** 2) ** 0.5)
+                    if gap <= margin:
+                        info["lead"] = "tie"
+                if info["lead"] != "tie":
+                    es = done[info["lead"]]
+                    info["single_seed"] = len(es) < 2
+                    info["seeds_learned"] = f"{sum(bool(e.get('learned4k')) for e in es)} of {len(es)}"
+            leaders[f"{setup}|{task}"] = info
+            readers[f"{setup}|{task}"] = [f for f, es in done.items()
+                                          if any(e.get("learnedmax") and (e.get("lmax") or 0) > 4096 for e in es)]
+    return {"setups": SCOREBOARD["setups"], "cells": out, "floors": floors,
+            "eff_floors": {t: effective_floor(t, f) for t, f in floors.items()}, "leaders": leaders, "readers": readers,
             "families": {"dense": "Dense", "e31c": "E31c notebook", "e33": "E33 loop"}}
 
 
@@ -210,6 +252,12 @@ def main() -> int:
     a = p.parse_args()
     ledgers = load_ledgers(Path(a.ledger_dir))
     rounds = [_round(led) for led in ledgers if led["_id"] in ROUNDS]
+    # each run's standing (in use / calibration / history …), why, start date and exams version, from the run list
+    standing = {r["id"]: r for r in LADDER if r.get("id")}
+    for r in rounds:
+        st = standing.get(r["id"], {})
+        r.update(standing=st.get("standing", "history"), why=st.get("why", ""), start=st.get("start", ""),
+                 data=st.get("data") or (r["budget"].get("data_version") or "").replace("text-world-", ""))
     rounds.sort(key=lambda r: r.get("collected") or "", reverse=True)
     # charts: first a combined view of the main comparison (mixed training, plain input), then every run
     mixed_ids = SCOREBOARD["setups"][0]["runs"]
@@ -243,6 +291,7 @@ def main() -> int:
     data = {
         "generated": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "version": TEXT_CHECKS_VERSION, "pass": PASS, "status": STATUS, "ladder": LADDER, "scoreboard": scoreboard(ledgers),
+        "claims": CLAIMS, "protocol_log": PROTOCOL_LOG,
         "tasks": TASKS, "gating": list(GATING_TASKS), "levels": LEVEL, "guide": GUIDE,
         "rounds": rounds, "chart_rounds": chart_rounds, "pipeline": pipeline, "tuning": tuning, "data_builds": data_builds, "superseded": superseded,
         "sources": [{"file": led["_file"], "run": led["_id"], "collected": led["collected"],

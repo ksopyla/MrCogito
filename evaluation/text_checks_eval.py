@@ -12,7 +12,8 @@ One forward pass per item over  BOS + prompt + answer  (teacher forcing):
            (shared first tokens are reported as `pick_ambiguous`);
   pick_prob  the gold candidate's share of the probability over the candidates' first tokens (graded
            pick; guessing gives 1 / candidates) — moves before `exact` does, so calibration runs read it;
-  removed  `exact` on the evidence-removed twin — must sit at the guessing floor.
+  removed  `exact` on the evidence-removed twin — must sit at the guessing floor;
+  far / near  `exact` on items whose fact sits early or middle (beyond any local window) vs late (spec §10.5).
 
   uv run python evaluation/text_checks_eval.py --checkpoint <run>/final \
       --items Cache/text_checks/smoke/eval/id.jsonl --out <run>/text_checks_id.json \
@@ -32,6 +33,8 @@ from contextlib import nullcontext
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch  # noqa: E402
+
+from evaluation.text_checks import DEPTH_FAR, DEPTH_NEAR  # noqa: E402
 
 
 def _answer_ids(tok, prompt: str, answer: str, p_ids: list[int], tail_chars: int = 400) -> list[int]:
@@ -106,16 +109,25 @@ def summarize(rows: list[dict]) -> list[dict]:
             return sum(v) / len(v) if v else None
 
         acc = mean("exact")
-        out.append({
+        depths = sorted({r["depth"] for r in rs})
+        by_n = {d: sum(1 for r in rs if r["depth"] == d) for d in depths}
+        cell = {
             "split": split, "task": task, "level": rs[0]["level"], "length": length, "n": n,
             "exact": acc, "exact_se": math.sqrt(acc * (1 - acc) / n) if acc is not None and n else None,
             "pick": mean("pick"), "pick_ambiguous": mean("pick_ambiguous"), "pick_prob": mean("pick_prob"),
             "answer_nll": mean("answer_nll"),
             "removed_answer_nll": mean("removed_answer_nll"),
             "removed_exact": mean("removed_exact"), "floor": mean("floor"),
-            "by_depth": {d: sum(r["exact"] for r in rs if r["depth"] == d) / max(1, sum(1 for r in rs if r["depth"] == d))
-                         for d in sorted({r["depth"] for r in rs})},
-        })
+            "by_depth": {d: sum(r["exact"] for r in rs if r["depth"] == d) / max(1, by_n[d]) for d in depths},
+            "by_depth_n": by_n,
+        }
+        # far (early + middle facts) vs near (late facts, inside a local window up to 4k): spec §10.5
+        far = [r for r in rs if r["depth"] in DEPTH_FAR]
+        near = [r for r in rs if r["depth"] in DEPTH_NEAR]
+        if far and near:
+            cell.update(far=sum(r["exact"] for r in far) / len(far), far_n=len(far),
+                        near=sum(r["exact"] for r in near) / len(near), near_n=len(near))
+        out.append(cell)
     return out
 
 
@@ -206,11 +218,11 @@ def main():
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w") as fh:
         json.dump(res, fh, indent=1)
-    print(f"{'split':<10} {'task':<8} {'len':>6} {'n':>4} {'exact':>6} {'pick':>6} {'p_pick':>6} {'removed':>7} {'floor':>6} "
-          f"{'ans_nll':>7} {'rm_nll':>7}")
+    print(f"{'split':<10} {'task':<8} {'len':>6} {'n':>4} {'exact':>6} {'far':>6} {'pick':>6} {'p_pick':>6} {'removed':>7} "
+          f"{'floor':>6} {'ans_nll':>7} {'rm_nll':>7}")
     for c in summary:
         f = lambda v: "  -  " if v is None else f"{v:6.2f}"  # noqa: E731
-        print(f"{c['split']:<10} {c['task']:<8} {c['length']:>6} {c['n']:>4} {f(c['exact'])} {f(c['pick'])} "
+        print(f"{c['split']:<10} {c['task']:<8} {c['length']:>6} {c['n']:>4} {f(c['exact'])} {f(c.get('far'))} {f(c['pick'])} "
               f"{f(c['pick_prob'])} {f(c['removed_exact']):>7} {f(c['floor'])} {f(c['answer_nll']):>7} "
               f"{f(c['removed_answer_nll']):>7}")
     if story_loss is not None:

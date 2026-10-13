@@ -28,6 +28,77 @@ FRONTIER_TASKS = ("count", "deduce")                                  # T6, T7
 CURVE_FRACTIONS = (0.10, 0.25, 0.50, 0.75, 1.00)
 VOCAB = 4096
 
+# Reading rules added by the protocol review of 2026-10-13 (spec §10.5). They change how a score is read, not how
+# it is measured, so they apply to every result already in the ledgers.
+# - Far evidence: single-fact exams place the fact early / middle / late (5 %, 50 %, 95 % of the document before
+#   the question; balanced, item i gets bin i % 3). At 1k-4k the late fact sits 50-200 tokens before the question,
+#   inside any local window, so a model with no long-range read answers those items. The memory score is the
+#   score on early + middle facts ("far"); the late facts are reported as "near".
+# - Effective floor: the best score of a model-free reader that does not do the task. Guessing one candidate
+#   gives `floor`; for latest, tracking every move but ignoring whose it is gives 1 in 5 (audit text-world-v2).
+# - Learned: above the effective floor by 10 points or 3 standard errors, whichever is larger. Pass (75 %) is
+#   unchanged: "learned" says a skill switched on, "pass" says it is mastered.
+DEPTH_FAR = ("early", "middle")
+DEPTH_NEAR = ("late",)
+PARTIAL_FLOOR = {"latest": 0.20}
+LEARNED_MARGIN = 0.10
+LEARNED_SE = 3.0
+# Models with no length method on their recipe card ("none") are scored past the training length, but that score
+# measures position extrapolation, not memory (dense: 0 % at 16k on every task, 2026-10-11).
+
+
+def depth_counts(n: int) -> dict:
+    """Items per depth bin in a cell of `n` items (the builder assigns bin i % 3: early, middle, late)."""
+    return {"early": (n + 2) // 3, "middle": (n + 1) // 3, "late": n // 3}
+
+
+def far_near(cell: dict | None) -> dict | None:
+    """Far (early + middle facts) and near (late facts) exact scores of a single-fact cell, with item counts.
+
+    Uses the scorer's own fields when present (scorer from 2026-10-13); for older results derives them from
+    `by_depth` and the builder's bin assignment, and checks that every bin share is a whole number of items.
+    None for exams without depth bins (latest, compose, count, deduce place their facts throughout)."""
+    if not cell:
+        return None
+    if cell.get("far") is not None:
+        return {k: cell.get(k) for k in ("far", "far_n", "near", "near_n")}
+    bd = cell.get("by_depth") or {}
+    if not all(d in bd for d in DEPTH_FAR + DEPTH_NEAR) or not cell.get("n"):
+        return None
+    cnt = cell.get("by_depth_n") or depth_counts(int(cell["n"]))
+    if any(abs(bd[d] * cnt[d] - round(bd[d] * cnt[d])) > 1e-6 for d in cnt):
+        return None  # bins not assigned as assumed: do not guess
+    far_n = sum(cnt[d] for d in DEPTH_FAR)
+    near_n = sum(cnt[d] for d in DEPTH_NEAR)
+    return {"far": sum(bd[d] * cnt[d] for d in DEPTH_FAR) / far_n, "far_n": far_n,
+            "near": sum(bd[d] * cnt[d] for d in DEPTH_NEAR) / near_n, "near_n": near_n}
+
+
+def effective_floor(task: str, floor: float | None) -> float | None:
+    """The guessing floor, raised to the best known partial reader for the task."""
+    if floor is None:
+        return PARTIAL_FLOOR.get(task)
+    return max(floor, PARTIAL_FLOOR.get(task, 0.0))
+
+
+def learned(score: float | None, n: int | None, task: str, floor: float | None) -> bool:
+    """True when `score` (over `n` items) is clearly above the task's effective floor."""
+    if score is None or not n:
+        return False
+    eff = effective_floor(task, floor) or 0.0
+    se = math.sqrt(max(score * (1 - score), 1e-9) / n)
+    return score - eff > max(LEARNED_MARGIN, LEARNED_SE * se)
+
+
+def headline(task: str, cell: dict | None) -> dict | None:
+    """The score a cell is read by: far facts for single-fact exams, every item otherwise."""
+    if not cell or cell.get("exact") is None:
+        return None
+    fn = far_near(cell)
+    if fn:
+        return {"score": fn["far"], "n": fn["far_n"], "near": fn["near"], "all": cell["exact"], "kind": "far"}
+    return {"score": cell["exact"], "n": cell.get("n"), "near": None, "all": cell["exact"], "kind": "all"}
+
 
 @dataclass(frozen=True)
 class Tier:
