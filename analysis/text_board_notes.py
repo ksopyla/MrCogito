@@ -24,27 +24,28 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-13 07:25 UTC",
-    "headline": "Trust the measurements, not yet the ranking. Every score on this board is measured correctly, and "
-                "the reading rules of 13 Oct are applied to all of them automatically. What is missing is a reliable "
-                "reference: the dense model learns a skill in only some runs at this budget, so no architecture "
-                "comparison is settled until it learns reliably.",
+    "as_of": "2026-10-13 11:35 UTC",
+    "headline": "Trust the measurements, not yet the ranking. Every score on this board is measured correctly, with "
+                "the reading rules of 13 Oct applied to all of them. What is missing is reliable learning: dense learns "
+                "a skill in only some runs at this budget, and now E33's one strong win did not repeat either (trained "
+                "on lookup only, it read no far facts). No architecture comparison is settled until training is reliable.",
     "where": [
         "Settled: E31c without the loop does not use its notebook (three runs). Dense at 30M / 1.5B learns by luck "
         "(two of four runs learned nothing).",
-        "One strong signal, one run: E33 reads far facts at 16k (lookup 83 %, keyed 78 %; notebook off: 0 %).",
+        "E33's strong signal (far facts at 16k: lookup 83 %, keyed 78 %, mixed training) did not repeat when E33 was "
+        "trained on lookup only (13 Oct 11:12 UTC): 0 % on far facts at every length; its 62-83 % came from facts "
+        "inside its window. Dense trained the same way: 48 % on far facts at 4k.",
         "Reading rules of 13 Oct: quote, lookup and keyed are read on facts placed early or in the middle of the "
         "story; latest's floor is 20 %; dense is not compared past 4k. Nothing had to be retrained.",
     ],
     "next": [
-        "Odra is back (07:18 UTC 13 Oct). It had stopped suddenly at 09:52 UTC 12 Oct, 3.6 h into training, with no "
-        "error logged — a power loss or a hard freeze. Running since 07:19 UTC: E33 trained on lookup only, resumed "
-        "from half-way (step 3,960 of 7,928); its scores about 11:50 UTC.",
-        "Then, about 11:50-13:45 UTC: the ten finished models scored on the added exams (crowded facts, more unseen "
-        "sentence shapes, one-step compose and deduce; being built on Odra's CPUs now) — no retraining.",
-        "Then the reliability fix: dense 30M, 8 questions per training document, three runs of about 3 h each "
-        "(done about 22:45 UTC). If dense learns in at least 2 of 3, that becomes the recipe and the architecture "
-        "comparison is run on it with two runs per model, the no-memory control included.",
+        "Running on Odra since 11:12 UTC: the ten finished models scored on the added exams (crowded facts, more "
+        "unseen sentence shapes, one-step compose and deduce; built 07:34 UTC) — no retraining; about 13:45 UTC.",
+        "Then the reliability fix: dense 30M, 8 questions per training document, three runs of about 3 h each (done "
+        "about 22:45 UTC). If dense learns in at least 2 of 3, the same recipe goes to E33 next — its notebook reading "
+        "looks as luck-dependent as dense's retrieval.",
+        "Odra stopped suddenly at 09:52 UTC 12 Oct (3.6 h into training, nothing logged: power loss or hard freeze) "
+        "and was back at 07:18 UTC 13 Oct; E33's lookup run resumed from half-way.",
     ],
 }
 
@@ -130,9 +131,11 @@ CLAIMS = [
      "evidence": "Four mixed-training runs: one passed quote only, one learned four tasks, two learned nothing; the "
                  "quote-only run learned nothing.",
      "settle": "The 8-questions-per-document recipe: does dense learn in 2 of 3 runs?"},
-    {"claim": "E33's notebook reads far facts past the training length.", "state": "single run", "since": "2026-10-11",
-     "evidence": "Lookup 83 % and keyed 78 % at 16k on far facts; notebook off: 0 %. One run (mixed training).",
-     "settle": "E33 trained on lookup only (unfinished on Odra) and a second E33 run."},
+    {"claim": "E33's notebook reads far facts past the training length.", "state": "single run", "since": "2026-10-13",
+     "evidence": "Mixed training (11 Oct): lookup 83 % and keyed 78 % at 16k on far facts; notebook off: 0 %. Not "
+                 "repeated: E33 trained on lookup only (13 Oct) read 0 % of far facts at every length, its 62-83 % all "
+                 "from facts inside its window — so whether the notebook learns to read looks like luck, as for dense.",
+     "settle": "E33 on the reliable recipe (8 questions per document), two runs."},
     {"claim": "E33 keeps reading when the fact is phrased in a sentence shape never seen in training; dense does not.",
      "state": "single run", "since": "2026-10-13",
      "evidence": "Lookup on far facts at 4k: E33 64 % with training shapes, 64 % with the unseen shape (its near "
@@ -214,17 +217,18 @@ LADDER = [
      "run": "Single task: quote", "model": "dense, E31c, E33 loop · 30M, plain", "tokens": "1.5B each, quote only",
      "exams": "quote, 1k-16k", "result": "Nobody learned quote on far facts (dense 6 %, E31c and E33 0 %).",
      "when": "11 Oct 12:15 → 12 Oct 01:04", "why": "Single-task series (paused); one run per model."},
-    {"id": "pt_lookup_30m_odra.odra", "start": "2026-10-12", "data": "v2", "standing": "running",
+    {"id": "pt_lookup_30m_odra.odra", "start": "2026-10-12", "data": "v2", "standing": "in use",
      "run": "Single task: lookup", "model": "dense, E31c, E33 loop · 30M, plain", "tokens": "1.5B each, lookup only",
      "exams": "lookup, 1k-16k",
-     "result": "Dense 48 % on far facts at 4k (0 % past 4k); E31c 0 %; E33 unfinished.",
-     "when": "12 Oct 01:04 → ~13 Oct 11:50", "why": "E33 was cut off half-way by the Odra outage (09:52 UTC 12 Oct); "
-                                                     "resumed 07:19 UTC 13 Oct from step 3,960."},
-    {"id": None, "start": "2026-10-13", "data": "v2.1", "standing": "queued",
+     "result": "Dense 48 % on far facts at 4k (0 % past 4k); E31c and E33 0 % on far facts — both read only facts "
+               "inside their window (E33 near facts 62-83 %). E33's mixed-training win did not repeat.",
+     "when": "12 Oct 01:04 → 13 Oct 11:12", "why": "Single-task series (paused); E33 was cut off half-way by the Odra "
+                                                   "outage and resumed 07:19 UTC 13 Oct."},
+    {"id": None, "start": "2026-10-13", "data": "v2.1", "standing": "running",
      "run": "Added exams on finished models", "model": "E33, E31c, dense (two runs), and the single-task models",
      "tokens": "no training", "exams": "v2.1: crowded facts, more unseen shapes, one step",
      "result": "Does crowding explain why E33 reads better at 16k? Does E33's reading of unseen shapes hold?",
-     "when": "~11:50 → ~13:45", "why": "Scores existing checkpoints; nothing is retrained."},
+     "when": "11:12 → ~13:45", "why": "Scores existing checkpoints; nothing is retrained."},
     {"id": None, "start": "planned", "data": "v2", "standing": "queued",
      "run": "Reliability fix", "model": "dense · 30M, plain, three seeds", "tokens": "1.5B, 8 questions per document",
      "exams": "v2, 1k-4k (+ 16k)", "result": "Does dense learn in at least 2 of 3 runs?",
@@ -400,14 +404,22 @@ ROUNDS = {
         ],
     },
     "pt_lookup_30m_odra.odra": {
-        "title": "Single-task T2 lookup: dense, E31c, E33 loop trained on lookup only (30M, plain input, 1.5B tokens) — in progress",
+        "title": "Single-task T2 lookup: dense, E31c, E33 loop trained on lookup only (30M, plain input, 1.5B tokens)",
         "where": "Odra · 3 × RTX 3090",
-        "dates": "12 Oct 2026 01:04 UTC → (dense done 03:37, E31c 06:14; E33 cut off half-way by the Odra outage at 09:52, resumed 07:19 UTC 13 Oct, scores about 11:50)",
-        "verdict": "Dense learns lookup inside its training length (44 % at 4k, 53 % at 1k; guessing 8 %) but reads "
-                   "nothing past it (0 % at 8k-16k). E31c reaches only 14 % at 4k. E33 is training.",
+        "dates": "12 Oct 2026 01:04 UTC → 13 Oct 11:12 UTC (dense done 03:37, E31c 06:14; E33 cut off half-way by the "
+                 "Odra outage at 09:52 UTC 12 Oct, resumed 07:19 UTC 13 Oct)",
+        "verdict": "Dense learned lookup inside its training length (48 % on far facts at 4k, guessing 8 %); neither "
+                   "memory model read its notebook: E31c and E33 score 0 % on far facts at every length. E33's "
+                   "mixed-training win (83 % at 16k) did not repeat.",
         "observations": [
-            "Lookup-only training gave dense about the same as its best mixed-training seed (44 % vs 39 % at 4k).",
-            "E31c without the loop stays near its 256-token window, as in every run so far.",
+            "E33 learned lookup only through short-range attention: 83 % at 1k, 62 % at 4k on facts at the end of the "
+            "story, 0 % on facts early or in the middle, 0 % at 8k-16k; its learning curve on far facts stays at 0 %.",
+            "E31c the same, weaker: near facts 41-62 %, far facts 0 %.",
+            "Dense's lookup switched on between 0.6B and 0.9B tokens (far facts 12 → 37 %), then 48 % at the end; "
+            "with an unseen sentence shape it falls to 1 %.",
+            "Language: story loss E33 1.511, dense 1.520, E31c 1.554 nats per token (lower is better).",
+            "Training on lookup alone did not make the notebook read: the same E33 with mixed training did (one run "
+            "each), so the notebook switching on looks like luck at this budget, as dense's retrieval does.",
         ],
     },
     "cal3a_s1_plain30m_v2_odra.odra": {
