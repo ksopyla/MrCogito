@@ -24,7 +24,7 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-13 06:45 UTC",
+    "as_of": "2026-10-13 07:10 UTC",
     "headline": "Trust the measurements, not yet the ranking. Every score on this board is measured correctly, and "
                 "the reading rules of 13 Oct are applied to all of them automatically. What is missing is a reliable "
                 "reference: the dense model learns a skill in only some runs at this budget, so no architecture "
@@ -40,8 +40,10 @@ STATUS = {
         "Blocked: Odra is off (since about 15:00 UTC 12 Oct; being powered on); Polonez is busy with other work.",
         "First on Odra: finish E33 trained on lookup only (it checks E33's one win), then the reliability fix: dense "
         "30M three times on training documents with 8 questions each (exams unchanged; about 2.5 h per run).",
+        "Also on Odra, on its CPUs alongside: build the added exams (crowded facts, more unseen sentence shapes, "
+        "one-step compose and deduce; ready and tested) and score the existing models on them — no retraining.",
         "If dense then learns in at least 2 of 3 runs, that becomes the recipe and the architecture comparison is "
-        "run on it with two seeds per model; the single-task series stays paused.",
+        "run on it with two seeds per model, the no-memory control included; the single-task series stays paused.",
     ],
 }
 

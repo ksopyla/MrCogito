@@ -170,6 +170,7 @@ def scoreboard(ledgers: list[dict]) -> dict:
     fam_of = {a: f for f, archs in FAMILIES.items() for a in archs}
     out = {s["key"]: {} for s in SCOREBOARD["setups"]}
     floors = {}
+    blocked = {r["id"] for r in LADDER if r.get("standing") == "blocked" and r.get("id")}  # e.g. a server is off
     for led in ledgers:
         rid = led["_id"]
         setup = next((s["key"] for s in SCOREBOARD["setups"]
@@ -194,7 +195,8 @@ def scoreboard(ledgers: list[dict]) -> dict:
                     floors[task] = c.get("floor")
                 done = st in ("done", "over_budget") and evals.get(arch) == "done" and by_len
                 entry = {"run": rid, "seed": seed or 0,
-                         "state": "done" if done else ("running" if st in ("running", "done") else "queued")}
+                         "state": "done" if done else ("blocked" if rid in blocked else
+                                                       "running" if st in ("running", "done") else "queued")}
                 if done:
                     lmax = max(by_len)
                     h4, hmax, h1 = _h(cells, "id", task, 4096), _h(cells, "id", task, lmax), _h(cells, "id", task, 1024)

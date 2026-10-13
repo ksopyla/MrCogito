@@ -421,7 +421,7 @@ function scoreboardTable() {
   const leadText = info => {
     if (!info) return "–";
     const v = info.lead;
-    if (v === "pending") return "running";
+    if (v === "pending") return "waiting for runs";
     if (v === "tie") return "tie";
     if (!v) return "nobody learned it";
     let s = S.families[v];
@@ -452,7 +452,8 @@ function scoreboardTable() {
         const es = row[f] || [];
         const done = es.filter(e => e.state === "done");
         if (!es.length) { tr.append(el("td", { class: "cell missing" }, "not planned")); continue; }
-        if (!done.length) { tr.append(el("td", { class: "cell " + es[0].state }, es[0].state === "running" ? "training…" : "queued")); continue; }
+        if (!done.length) { tr.append(el("td", { class: "cell " + (es[0].state === "blocked" ? "queued" : es[0].state) },
+          es[0].state === "running" ? "training…" : es[0].state === "blocked" ? "blocked (server off)" : "queued")); continue; }
         const nLearned = done.filter(e => e.learned4k).length;
         const cls = done.some(e => (e.at4k || 0) >= D.pass && e.learned4k) ? "pass" : nLearned ? "above" : "at";
         const each = f => done.map(e => { const v = f(e); return v == null ? "–" : pct(v); }).join(" · ");
