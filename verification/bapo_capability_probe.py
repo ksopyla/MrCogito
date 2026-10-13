@@ -647,8 +647,20 @@ def _preprobe_decision(trace: list, *, floor_nats: float, min_acc: float, min_ga
     return {"status": status, "acc": a, "ce_nats": ce, "gain_nats": gain}
 
 
+def _gate_score(model, batches, args, cfg, device, override, ev: dict | None = None) -> float:
+    """The task's own score, for the in-run decisions (early stop, the one extension) under --stop_on score:
+    the greedy picked candidate (--task_score candidate) or the first answer letter with no answer letters in
+    context (--task_score first). Read on the validation rows (--val_rows), never on the reported eval rows."""
+    if getattr(args, "task_score", "first") == "candidate":
+        return float(_answer_exact(model, batches, amp=args.amp, device=device, message_override=override,
+                                   cfg=cfg).get("candidate", 0.0))
+    if ev is None:
+        ev = evaluate(model, batches, amp=args.amp, device=device, message_override=override)
+    return float((ev.get("per_position_acc") or [0.0])[0])
+
+
 def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, steps: int,
-              ckpt_meta: dict | None = None) -> dict:
+              ckpt_meta: dict | None = None, val_batches=None) -> dict:
     model = build_model(
         arch,
         vocab_size=cfg.vocab.vocab_size,
@@ -815,13 +827,22 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
                     flush=True,
                 )
                 best_acc = max(best_acc, ev["acc"])
-                if ev["acc"] >= args.early_stop_acc:
-                    print(f"  [{arch}] early stop at {step} (acc {ev['acc']:.3f})", flush=True)
+                # in-run decisions: teacher-forced accuracy on the eval rows (recorded runs), or the task's own
+                # score on separate validation rows (--stop_on score, capability checks v4 from 2026-10-13)
+                gate = ev["acc"]
+                if getattr(args, "stop_on", "teacher_forced") == "score":
+                    gate = _gate_score(model, val_batches or eval_batches, args, cfg, device, override,
+                                       ev=None if val_batches else ev)
+                    trace[-1]["gate_score"] = gate
+                    print(f"  [{arch}] step {step:5d}  {args.task_score} score (validation) {gate:.3f}", flush=True)
+                if gate >= args.early_stop_acc:
+                    print(f"  [{arch}] early stop at {step} (gate {gate:.3f})", flush=True)
                     break
                 if (
                     not k1_extended
+                    and getattr(args, "extend", "auto") == "auto"
                     and step >= steps
-                    and ev["acc"] < SOLVABLE_ACC
+                    and gate < SOLVABLE_ACC
                     and _ce_still_falling(trace)
                 ):
                     k1_extended = True
@@ -958,7 +979,8 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
     }:
         cli.update({"width": args.width, "noise": args.noise, "k": args.every_k, "modulus": args.modulus})
     else:
-        cli.update({"n_decoys": args.n_decoys, "evidence_align": args.evidence_align})
+        cli.update({"n_decoys": args.n_decoys, "evidence_align": args.evidence_align,
+                    "shuffle_blocks": getattr(args, "shuffle_blocks", None)})
     over.update({k: v for k, v in cli.items() if v is not None})
     cfg = config_for(scale, recipe.task, **over)
     args._replay_cfg = None
@@ -1070,6 +1092,10 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
     else:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     eval_batches = [make_batch(cfg, eval_rng, args.batch, device) for _ in range(max(1, args.eval_rows // args.batch))]
+    val_batches = None
+    if int(getattr(args, "val_rows", 0) or 0) > 0:  # decision rows, a seed disjoint from train / eval / ladder rows
+        val_rng = np.random.default_rng(args.seed + 4242)
+        val_batches = [make_batch(cfg, val_rng, args.batch, device) for _ in range(max(1, args.val_rows // args.batch))]
     gap_probe = [generate_row_for(cfg, np.random.default_rng(args.seed + 7 + i)).gap for i in range(16)]
     print(
         f"\n=== {display} ({recipe.task}) @ {scale.name}  seq={cfg.seq_len} gap={cfg.min_gap} "
@@ -1142,7 +1168,7 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
             arch_steps = _non_dense_step_budget(args.steps, args.k1_mult, dense_steps_used)
         print(f"--- {arch}  (≤ {arch_steps} steps) ---", flush=True)
         results[arch] = train_one(
-            arch, cfg, args, eval_batches, spec, device, steps=arch_steps,
+            arch, cfg, args, eval_batches, spec, device, steps=arch_steps, val_batches=val_batches,
             ckpt_meta={
                 "scale": scale.name, "recipe": recipe.name, "task": recipe.task, "display": display,
                 "over": over, "seq_len": cfg.seq_len, "local_window": window,
@@ -1190,6 +1216,8 @@ def run_rung(task: str, args, *, recipe_name: str | None = None) -> dict:
         "hidden": args.hidden,
         "steps": args.steps,
         "k1_mult": args.k1_mult,
+        "stop_on": getattr(args, "stop_on", "teacher_forced"), "task_score": getattr(args, "task_score", "first"),
+        "val_rows": getattr(args, "val_rows", 0), "extend": getattr(args, "extend", "auto"),
         "dense_steps_used": dense_steps_used,
         "dense_preprobe": preprobe,
         "batch": args.batch,
@@ -1594,6 +1622,9 @@ def main() -> int:
     p.add_argument("--n_symbols", type=int, default=None,
                    help="DNA alphabet size (default 4). With --key_len 1, e.g. 64 symbols: one-token names, as in "
                         "most multi-hop studies (the model vocabulary grows with it)")
+    p.add_argument("--shuffle_blocks", action="store_const", const=True, default=None,
+                   help="select / unique exams: place the fact blocks in random order (off = the recorded exams, "
+                        "where the asked fact is always the first block)")
     p.add_argument("--hop_count_in_question", action="store_const", const=True, default=None,
                    help="chain exams: the question carries one hop marker per hop to follow "
                         "([query, start, hop x k, answer]); off = today's exams")
@@ -1612,6 +1643,16 @@ def main() -> int:
                    help="split each --batch into k micro-batches (same effective batch; for memory at 2048+)")
     p.add_argument("--eval_rows", type=int, default=64)
     p.add_argument("--early_stop_acc", type=float, default=0.99)
+    p.add_argument("--stop_on", choices=("teacher_forced", "score"), default="teacher_forced",
+                   help="what the early stop and the one extension read: teacher-forced accuracy on the eval rows "
+                        "(recorded runs) or the task's own score (--task_score) on the --val_rows rows")
+    p.add_argument("--task_score", choices=("first", "candidate"), default="first",
+                   help="the task's own score for --stop_on score: first answer letter, or the greedy picked candidate")
+    p.add_argument("--val_rows", type=int, default=0,
+                   help="validation rows for the in-run decisions (own seed; 0 = read the eval rows)")
+    p.add_argument("--extend", choices=("auto", "off"), default="auto",
+                   help="auto: extend once by the budget while below the pass mark and eval CE still falls; "
+                        "off: stop at the budget (fixed-budget controls)")
     p.add_argument("--max_params", type=int, default=100_000_000)
     p.add_argument("--threads", type=int, default=4)
     p.add_argument("--seed", type=int, default=0)

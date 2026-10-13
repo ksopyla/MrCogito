@@ -32,6 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from analysis.capability_ledger import LEDGER_DIR, load_ledgers, study_jobs, suite_rows  # noqa: E402
+from evaluation.capability_audit import ISSUES, RUNS, issues_for  # noqa: E402
 from evaluation.capability_suite import CELL_BY_ID, lr_for  # noqa: E402
 from evaluation.capability_tasks import (LEVELS, SEEDS, TASK_BY_ID, TASKS, VERSION,  # noqa: E402
                                          legacy_battery, legacy_suite)
@@ -204,8 +205,8 @@ CAL_TASKS = (("lookup1k", "C1.lookup-1k"), ("edge", "C1.edge-1k"), ("keyed4", "C
 CAL_KNOBS = (("path", "written path answer (recipe B)"), ("dense8", "8-layer dense (learnability check)"), ("hc", "hop count in question"), ("mix", "half the rows at the previous hop count"),
              ("direct", "task recipe, no curriculum"), ("_to_", "curriculum from the previous stage"), ("noover", "no overhang (4 facts)"),
              ("k16v16", "16-letter keys and values"), ("k16", "16-letter nodes"), ("k8", "8-letter nodes"),
-             ("lr3e-4", "step 3e-4"), ("x16", "16x budget"), ("x4", "4x budget"), ("k4", "4-letter nodes"),
-             ("nc2", "2 chains"), ("256_to_1k", "256-token stage then 1k"), ("x1", "suite budget"), ("_512_", "512-token book"),
+             ("lr3e-4", "step 3e-4"), ("x16", "19.2k steps (named 16x)"), ("x4", "19.2k steps (named 4x)"), ("k4", "4-letter nodes"),
+             ("nc2", "2 chains"), ("256_to_1k", "256-token stage then 1k"), ("x1", "suite budget, 4.8k steps"), ("_512_", "512-token book"),
              ("_256_", "256-token book"))
 
 
@@ -232,7 +233,7 @@ def calibration(ledgers: list[dict]) -> list[dict]:
             t = TASK_BY_ID[task]
             knobs = [txt for frag, txt in CAL_KNOBS if frag in name + "_"]
             if "_to_" in name and "x16" not in name or (re.match(r"^cal[23]_", name) and "lookup1k" not in name):
-                knobs = [k for k in knobs if k != "4x budget"] + ["4x budget"]
+                knobs = [k for k in knobs if k != "19.2k steps (named 4x)"] + ["19.2k steps (named 4x)"]
             if m:
                 knobs = (["written recipe (confirmation)"] if name.startswith("conf") else ["written recipe"]) \
                     + ([f"curriculum stage {m[3]} hop{'s' if int(m[3]) > 1 else ''}"] if m[3] else [])
@@ -348,6 +349,42 @@ def reference(task_id: str, tbl: dict) -> str | None:
     if "dense" in ok:
         return "dense"
     return max(ok, key=ok.get) if ok else None
+
+
+def trust(tbl: dict) -> tuple[dict, dict]:
+    """Per (task, model) cell: the open issues that mark it and its trust state — trusted (matches the task
+    definition on seeds 0–2, no open issue), caution (an open issue or missing seeds), legacy (older protocol),
+    invalid (flawed). Returns (cell_issues, cell_trust)."""
+    cell_issues, cell_trust = {}, {}
+    for task, by_m in tbl.items():
+        flawed = TASK_BY_ID[task].status == "flawed"
+        for m, c in by_m.items():
+            ids = issues_for(task, m)
+            if ids:
+                cell_issues.setdefault(task, {})[m] = ids
+            if flawed or c["label"] == "flawed":
+                state = "invalid"
+            elif c["label"] != "same":
+                state = "legacy"
+            elif ids or not set(SEEDS) <= set(c["seeds"]):
+                state = "caution"
+            else:
+                state = "trusted"
+            cell_trust.setdefault(task, {})[m] = state
+    return cell_issues, cell_trust
+
+
+def runs_status(ledgers: list[dict]) -> list[dict]:
+    """Runs in flight (evaluation/capability_audit.RUNS) with progress from a pulled ledger of the same folder."""
+    by_name = {led["name"]: led for led in ledgers}
+    out = []
+    for r in RUNS:
+        led = by_name.get(r.folder)
+        done = sum(j["status"] == "done" for j in led["jobs"]) if led else None
+        out.append({"folder": r.folder, "host": r.host, "started": r.started, "eta": r.eta, "what": r.what,
+                    "settles": list(r.settles), "jobs": r.jobs, "done": done,
+                    "collected": led["collected"] if led else None})
+    return out
 
 
 def row_status(task, tbl: dict, champion: str) -> dict:
@@ -474,7 +511,12 @@ def main() -> int:
               "score_kind": t.score, "floor": t.floor, "reference": reference(t.id, tbl),
               "curriculum": t.curriculum, "ladder": t.ladder, "task_status": t.status, "flaw": t.flaw,
               **row_status(t, tbl, args.champion)} for t in TASKS]
+    from dataclasses import asdict
+    cell_issues, cell_trust = trust(tbl)
     data = {
+        "built": datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z"),
+        "issues": [asdict(i) for i in ISSUES], "runs": runs_status(ledgers),
+        "cell_issues": cell_issues, "cell_trust": cell_trust,
         "generated": datetime.date.today().isoformat(), "version": VERSION, "champion": args.champion,
         "models": models, "visible": visible, "pass": PASS, "harm_points": HARM_POINTS, "seeds": list(SEEDS),
         "levels": [{"id": lv.id, "name": lv.name, "question": lv.question, "measures": lv.measures} for lv in LEVELS],

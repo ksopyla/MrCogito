@@ -259,13 +259,14 @@ def _job(name, arch, seed, length, exam, extra=(), *, init=None, ladder=None, co
 def task_job(task_id, arch, seed, *, prefix="v4", cost=1.3, ladder=False):
     """One from-scratch job built from the v4 task definition itself (exam args + training budget), so a run
     can never drift from the protocol in `evaluation/capability_tasks.py`."""
-    from evaluation.capability_tasks import TASK_BY_ID
+    from evaluation.capability_tasks import STOP_RULE, TASK_BY_ID
     t = TASK_BY_ID[task_id]
     if not t.train:
         raise SystemExit(f"{task_id} has no written training budget (`train`); use the suite runner")
     name = f"{prefix}_{task_id.replace('.', '_')}_{arch}_s{seed}"
-    return {"name": name, "args": [*t.train, "--eval_rows", "256", "--recipe", t.recipe, *t.args, "--arch", arch,
-                                   "--seed", str(seed)], "init": None,
+    # the stop rule (v4-draft-2026-10-13.2): early stop / extension read the task's own score on validation rows
+    return {"name": name, "args": [*t.train, "--eval_rows", "256", *STOP_RULE, "--task_score", t.score,
+                                   "--recipe", t.recipe, *t.args, "--arch", arch, "--seed", str(seed)], "init": None,
             "ladder": ([L for L in LADDER_1K_FULL if L <= 32768] if arch == "dense" else LADDER_1K_FULL)
             if (t.ladder and ladder) else None, "cost": cost}
 
@@ -574,6 +575,49 @@ def jobs(phase: str) -> list[dict]:
         j2["args"] = j2["args"] + [*x16, *path, "--replay_recipe", "chain_parallel", "--replay_hops", "1",
                                    "--replay_frac", "0.5"]
         return [j1, j2]
+    if phase in ("fix_burst_a", "fix_burst_b", "fix_burst_c"):
+        # Audit fixes (2026-10-13), Polonez, three cooled bursts. Every run from random init, the new stop rule.
+        #   C2 / C6 on the fixed exams (blocks in random order): dense, E31, E33, seeds 0-2.
+        #   Recipe A (C5.pchain2) at matched compute: E33 does ~3.2x the work per step (13 vs 4 layer passes; 1.12 vs
+        #     0.25-0.36 s/step on Odra), so dense and E31 get 57.6k stage-2 steps (= E33's 19.2k at its cost) with no
+        #     extension; E33 without its answer exits (no deep supervision); E33 seeds 3-4 on the written recipe.
+        #   Fixed-budget runs use `--extend off`, as the recorded recipe-A runs never extended.
+        from evaluation.capability_tasks import TRAIN_1K_X4
+        from scripts.study_plans.e33a_curriculum import LOOP_MICRO
+        loop = ["--loop_rounds", "4", "--loop_exit_aux", "0.3", "--loop_exit_targets", "answer", *LOOP_MICRO]
+        noexit = ["--loop_rounds", "4", "--loop_exit_aux", "0", *LOOP_MICRO]
+        variants = {"dense": ("dense", []), "e31_li_m1": ("e31_li_m1", []), "e33a_loop": ("e31_li_m1", loop),
+                    "e33a_noexit": ("e31_li_m1", noexit)}
+        cost = {"dense": 0.15, "e31_li_m1": 0.25, "e33a_loop": 0.6}
+
+        def v4(task_id, variant, seed):
+            arch, flags = variants[variant]
+            j = task_job(task_id, arch, seed, ladder=True)
+            j.update(name=f"v4_{task_id.replace('.', '_')}_{variant}_s{seed}", args=j["args"] + flags,
+                     cost=cost[variant] + (0.3 if j["ladder"] else 0))
+            return j
+
+        def recipe_a(prefix, variant, seed, h2_steps, c1, c2):
+            arch, flags = variants[variant]
+            h1, h2 = (f"{prefix}_C5_pchain2-1k_h{k}_{variant}_s{seed}" for k in (1, 2))
+            j1 = task_job("C5.pchain2-1k", arch, seed, prefix=prefix)
+            j1.update(name=h1, save=True, cost=c1, args=j1["args"] + ["--hops", "1", *TRAIN_1K_X4, *flags])
+            j2 = task_job("C5.pchain2-1k", arch, seed, prefix=prefix)
+            j2.update(name=h2, init=h1, save=True, cost=c2,
+                      args=j2["args"] + ["--steps", str(h2_steps), "--k1_mult", "1", "--extend", "off",
+                                         "--replay_recipe", "chain_parallel", "--replay_hops", "1",
+                                         "--replay_frac", "0.5", *flags, "--flow_log", "@out"])
+            return [j1, j2]
+
+        if phase == "fix_burst_a":
+            return ([v4(t, v, s) for t in ("C2.lookalike-128", "C2.lookalike-1k", "C6.unique-256")
+                     for v in ("dense", "e31_li_m1", "e33a_loop") for s in (0, 1, 2)]
+                    + [j for s in (0, 1, 2) for j in recipe_a("cmp", "dense", s, 57600, 0.6, 4.0)])
+        if phase == "fix_burst_b":
+            return ([j for s in (0, 1, 2) for j in recipe_a("cmp", "e31_li_m1", s, 57600, 0.8, 5.8)]
+                    + recipe_a("cmp", "e33a_noexit", 0, 19200, 2.5, 5.0))
+        return ([j for s in (1, 2) for j in recipe_a("cmp", "e33a_noexit", s, 19200, 2.5, 5.0)]
+                + [j for s in (3, 4) for j in recipe_a("recA", "e33a_loop", s, 19200, 2.5, 6.0)])
     if phase == "calibrate_c5_deep_a":
         # Rule 5 learnability check for recipe A (C5.pchain2, final answer only): 8-layer dense, from random init,
         # the same schedule the E33 loop learned it with (2026-10-07): 8-letter names, 1 hop (4x) → 2 hops (16x)

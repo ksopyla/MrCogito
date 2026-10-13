@@ -188,6 +188,11 @@ class SymbolicTaskConfig:
     # "spread" = uniform over [lo, hi) (default). "right" = pack evidence against hi
     # (just before the min_gap), for S0 near-copy diagnostics at long seq_len.
     evidence_align: str = "spread"
+    # select / unique: place the blocks in random order. Without it the blocks keep list order, so the asked fact
+    # is always the first fact block (select: facts precede decoys; unique: the unique fact is block 0) and a
+    # "copy the first block" reader answers every row (measured 400/400, 2026-10-13). False keeps the recorded
+    # exams bit-identical (capability checks v3 / battery v1 results).
+    shuffle_blocks: bool = False
 
     def __post_init__(self) -> None:
         if self.task not in TASKS:
@@ -327,10 +332,12 @@ def _place_blocks(
     hi: int,
     *,
     align: str = "spread",
+    shuffle: bool = False,
 ) -> list[int]:
-    """Non-overlapping offsets for `blocks` inside `[lo, hi)`.
+    """Non-overlapping offsets for `blocks` inside `[lo, hi)`, returned in the order of `blocks`.
 
-    `spread` (default): random order, slack distributed over the interval.
+    `spread` (default): slack distributed at random over the interval; blocks keep list order unless
+    `shuffle` (then they are placed in a random order).
     `right`: keep block order, pack against `hi` (evidence sits just before min_gap).
     """
     total = sum(len(b) for b in blocks)
@@ -345,6 +352,13 @@ def _place_blocks(
             offsets_rev.append(cursor)
         return list(reversed(offsets_rev))
     cuts = np.sort(rng.integers(0, slack + 1, size=len(blocks)))
+    if shuffle:
+        order = [int(i) for i in rng.permutation(len(blocks))]
+        consumed, offsets = 0, [0] * len(blocks)
+        for rank, i in enumerate(order):
+            offsets[i] = lo + int(cuts[rank]) + consumed
+            consumed += len(blocks[i])
+        return offsets
     consumed, offsets = 0, []
     for i, block in enumerate(blocks):
         offsets.append(lo + int(cuts[i]) + consumed)
@@ -471,7 +485,7 @@ def generate_row(cfg: SymbolicTaskConfig, rng: np.random.Generator) -> SymbolicR
         fact_blocks = [[v.control("keymark"), *sym(k), *sym(val)] for k, val in zip(keys[:n_facts], fact_vals)]
         decoy_blocks = [[v.control("decoy"), *sym(k), *sym(val)] for k, val in zip(keys[n_facts:], decoy_vals)]
         blocks = fact_blocks + decoy_blocks
-        offsets = _place_blocks(rng, blocks, 1, evidence_hi, align=cfg.evidence_align)
+        offsets = _place_blocks(rng, blocks, 1, evidence_hi, align=cfg.evidence_align, shuffle=cfg.shuffle_blocks)
         for off, block in zip(offsets, blocks):
             ids[off : off + len(block)] = block
         pick = int(rng.integers(0, n_facts))
@@ -494,7 +508,7 @@ def generate_row(cfg: SymbolicTaskConfig, rng: np.random.Generator) -> SymbolicR
             blk = [v.control("keymark"), *sym(k), *sym(val)]
             blocks.append(blk)
             blocks.append(list(blk))
-        offsets = _place_blocks(rng, blocks, 1, evidence_hi, align=cfg.evidence_align)
+        offsets = _place_blocks(rng, blocks, 1, evidence_hi, align=cfg.evidence_align, shuffle=cfg.shuffle_blocks)
         for off, block in zip(offsets, blocks):
             ids[off : off + len(block)] = block
         query_tokens, answer_tokens = [], sym(unique_val)
