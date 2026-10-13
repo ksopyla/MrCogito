@@ -222,7 +222,14 @@ The answer ends with a period, which is part of the scored answer.
 | **in-distribution (ID)** | new seeds, **held-out names**, held-out filler stories | the gating scores |
 | **length** | ID settings at 1k … 128k (more filler, the same facts) | length reading |
 | **harder** | cast 64, 3 hops, 8 moves, deduction depth 3 | generalization, reported |
-| **paraphrase** | 2 held-out sentence templates per relation | reported, not gating |
+| **paraphrase** | 1 held-out sentence template per relation | reported, not gating |
+| **crowded** (v2.1) | quote / lookup / keyed with every fact within 1,024 tokens of the asked one, at 4k and 16k | separates length from fact crowding; reported |
+| **paraphrase2** (v2.1) | three more sentence shapes per relation, never used in training | meaning vs surface; reported |
+| **steps** (v2.1) | one-step compose and one-step deduce (in-distribution for training) | partial progress on the multi-step tasks; reported |
+
+The v2.1 splits (2026-10-13) are added to the v2 build with `build_text_checks_data.py --add_exams`; training
+documents and the id / harder / paraphrase exams stay byte-identical, so every existing checkpoint can be scored
+on them (the eval job's `final_added.json`) with no retraining.
 
 ## 9. Levels and tasks
 
@@ -604,12 +611,12 @@ reference trains. Findings, most severe first, and what was done:
 |---|---|---|
 | 1 | **Dense learns by luck at 30M / 1.5B tokens**: of four mixed-training runs, one passed quote only, one learned four tasks, two learned nothing; skills switch on abruptly at 60–70 % of training; training on quote only did not help. Answers are ≈ 0.1 % of training tokens (one question per ≈ 1.4k-token document). | the recipe test is queued: dense 30M × 3 seeds on 8 questions per training document (`text_checks_v2q8`, exams byte-identical); 2 of 3 learning makes it the recipe. Single-task series paused. |
 | 2 | **Near facts are free**: at 1k–4k the late depth bin sits inside every local window; E31c's whole score on quote, lookup and keyed came from it. | reading rule §10.5 (far facts), applied to all ledgers. |
-| 3 | **Length also spreads the facts**: longer documents add filler, so facts are less crowded; E33 on far facts: ≈ 30 % at 1k, 73–93 % at 16k. | crowded-facts exam planned (exams v2.1, eval only). |
+| 3 | **Length also spreads the facts**: longer documents add filler, so facts are less crowded; E33 on far facts: ≈ 30 % at 1k, 73–93 % at 16k. | `crowded` exams (v2.1, eval only): implemented, audited locally (rule reader 100 %, shortcuts at guessing); built on Odra and scored on the existing checkpoints when it is back. |
 | 4 | **Dense is not a reference past 4k** (no length method: 0 % at 16k on everything); the no-memory control has not run on v2. | reading rule §10.5; control and a dense long-text method queued after the recipe test. |
 | 5 | **Training rarely asks far back**: only ≈ 20 % of training questions have their fact > 1k tokens back, ≈ 4.5 % > 2k (log-uniform 256–4,096-token documents, facts uniform); dense drops on early facts at 4k (quote 72 % vs 95 % middle). | builder option for a later training mix (not in force). |
-| 6 | **Rephrased facts are the clearest meaning-vs-surface signal**: dense lookup 37–48 % → 0–1 % with an unseen sentence shape; E33 64 % → 64 % on far facts (one run). Only one held-out shape per relation. | shown next to every main score; more held-out shapes planned (exams v2.1). |
+| 6 | **Rephrased facts are the clearest meaning-vs-surface signal**: dense lookup 37–48 % → 0–1 % with an unseen sentence shape; E33 64 % → 64 % on far facts (one run). Only one held-out shape per relation. | shown next to every main score; `paraphrase2` exams (v2.1): three more unseen shapes per relation, implemented and audited locally. |
 | 7 | **Floors**: latest's partial reader gets 1 in 5; count's "four"/"five" share a first token. | effective floor §10.5. |
-| 8 | **Compose and deduce give no signal** (graded pick exactly at guessing in every run); exams ask only 2 hops / depth 2. | one-step exams planned (exams v2.1). |
+| 8 | **Compose and deduce give no signal** (graded pick exactly at guessing in every run); exams ask only 2 hops / depth 2. | `steps` exams (v2.1): one-step compose and deduce, implemented and audited locally. |
 | 9 | **Bookkeeping**: the budget table was stale; memory models borrowed dense's step size (§7 asks for their own tuning); the board's leader rule was looser than the pass rule. | §5 table fixed; the board names leaders by §10.5; tuning the memory models' step size is due before the next round. |
 
 **Trust on the board.** The board is the mission control of these checks: every run carries a standing (in use,

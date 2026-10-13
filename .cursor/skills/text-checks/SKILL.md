@@ -143,6 +143,10 @@ bash scripts/pull_text_checks_results.sh polonez r1_smoke r1_screen   # ledgers 
 - Commit the ledgers and the board, then publish the board as an Artifact (same URL).
 - The NAS archive skips intermediate checkpoints (`/nas/ml_data/mrcogito/results/text_checks/<run>.<host>/`).
 - A single run's scorecard without the board: `uv run python analysis/text_checks_scorecard.py --in_dir <run>`.
+- **New exams on old checkpoints (no retraining):** add the splits to the build that owns `eval/`
+  (`build_text_checks_data.py --stories full --out_dir $TOK/text_checks_v2 --add_exams --eval_splits crowded
+  paraphrase2 steps`), then re-plan the run's eval phase (`plan --phase eval …` with the same `--out`): finished
+  finals are skipped and only `final_added.json` is scored; pull as usual.
 - Hand the result to `experiment-track`.
 - Tell the author (`research-comms`):
   - which levels each model passes at 4k and how far each reaches;

@@ -32,7 +32,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # v2 lists extend the v1 ones (counts 0-10, 16 properties), so they read every version
 from data.text_world import NUMBER_WORDS_V2 as NUMBER_WORDS  # noqa: E402
 from data.text_world import PROPERTIES_V2 as PROPERTIES  # noqa: E402
-from data.text_world import TEMPLATES, VISIT_PLACES  # noqa: E402
+from data.text_world import HELDOUT_TEMPLATES_2, TEMPLATES, VISIT_PLACES  # noqa: E402
 
 NAME = r"[A-Z][a-z]+"
 _SENT = re.compile(r"(?<=[.!?])\s+|(?<=[.!?][\"'])\s+")  # facts may follow a closing quote: '…!" Lumo lived in X.'
@@ -58,7 +58,8 @@ def _compile(rel: str, tmpl: str) -> re.Pattern:
     return re.compile("".join(out))
 
 
-PATTERNS = {rel: [_compile(rel, t) for t in ts] for rel, ts in TEMPLATES.items()}
+# every sentence shape the generator can write: training, the held-out one, and the v2.1 paraphrase2 shapes
+PATTERNS = {rel: [_compile(rel, t) for t in ts + HELDOUT_TEMPLATES_2.get(rel, [])] for rel, ts in TEMPLATES.items()}
 _IS_A = re.compile(rf"({NAME}) is a ([a-z]+)\.")
 _EVERY_A = re.compile(r"Every ([a-z]+) is a ([a-z]+)\.")
 _EVERY_P = re.compile(rf"Every ([a-z]+) is (not )?({'|'.join(PROPERTIES)})\.")

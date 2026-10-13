@@ -53,6 +53,17 @@ Versions (every public function takes `version`; the default is the current one)
       - known partial floor: latest keeps 5 people (55 move sentences fit the 1k exam), so a reader
         that tracks moves but ignores whose they are scores 1 in 5; whose-fact reading is what
         lookup and keyed test (12 and 16 candidates).
+  v2.1  exams added on top of v2, nothing existing changed (protocol review 2026-10-13; v2 training documents
+      and the id / harder / paraphrase exams stay byte-identical). Built with `version="v2"`; their records
+      say `text-world-v2.1`:
+      - `crowded`: quote, lookup and keyed with every fact of the document packed into a 1,024-token band
+        around the asked fact, so a long document is as crowded as a 1k one (v2 spreads the facts out as
+        the document grows, which changes the difficulty for a model that summarises chunks);
+      - `paraphrase2`: three more sentence shapes per relation that training never uses (v2's paraphrase
+        split has one);
+      - `steps`: one-step compose ("Where does the teacher of Lumo live?") and one-step deduce ("Pim is a
+        wump. Every wump is shiny."), in-distribution for training, to show partial progress on the two
+        tasks that showed none at two steps.
 
 Text-level only: no tokenizer here. Lengths are measured with a caller-supplied `ntok`
 (token counter) so the builder can target exact token lengths with the frozen tokenizer.
@@ -67,6 +78,11 @@ from typing import Callable, Optional
 
 TEXT_WORLD_VERSION = "text-world-v2"
 VERSIONS = ("v0", "v1", "v2")
+# v2.1: exam splits added to v2 (eval only; see the module docstring)
+ADDED_SPLITS = {"crowded": ("quote", "lookup", "keyed"),
+                "paraphrase2": ("quote", "lookup", "keyed", "latest", "compose", "count"),
+                "steps": ("compose", "deduce")}
+CROWD_TOKENS = 1024   # crowded: every fact within this many tokens around the asked fact
 
 
 def _v(version: str) -> int:
@@ -151,6 +167,8 @@ EVAL_DIALS_V2 = {"quote": {"signs": 12}, "lookup": {"cast": 12}, "keyed": {"cast
 HARDER_DIALS_V2 = {"quote": {"signs": 24}, "lookup": {"cast": 16}, "keyed": {"cast": 64},
                    "latest": {"moves": 16, "cast": 8}, "compose": {"hops": 3, "cast": 16},
                    "count": {"cast": 8}, "deduce": {"depth": 3, "cast": 12}}
+# v2.1 `steps` split: one step of the two multi-step tasks (other dials as the id split)
+STEPS_DIALS_V2 = {"compose": {"hops": 1}, "deduce": {"depth": 1}}
 
 # Sentence templates per relation. The last template of each relation is held out of training
 # (the "paraphrase" split); the others are used for training and the ID split.
@@ -176,6 +194,18 @@ TEMPLATES = {
                 "{p} learned to read from {q}, {p2} teacher.", "{p} went to lessons with a teacher named {q}."],
     "visit": ["{p} visited {v}.", "That day {p} visited {v}.", "{p} went for a visit to {v}.",
               "In the morning {p} visited {v}.", "{p} paid a visit to {v}."],
+}
+
+# v2.1 `paraphrase2` split: three more sentence shapes per relation, never used in training or in the v2
+# paraphrase split (relations the v2 exams use; others fall back to their one held-out shape)
+HELDOUT_TEMPLATES_2 = {
+    "home": ["{p2} house was in {v}.", "In {v} lived a person named {p}.", "{p} spent every day at home in {v}."],
+    "move": ["Some time later, {p} left for a new home in {v}.", "{p} said goodbye and settled in {v}.",
+             "The next home of {p} was {v}."],
+    "sign": ["Written on a board by {p2} door were the words: {v}.", "{p} wrote these words on a sign: {v}.",
+             "Everyone could read {p2} sign: {v}."],
+    "teacher": ["{q} gave lessons to {p}.", "The person who taught {p} was {q}.", "{p} was a student of {q}."],
+    "visit": ["{p} stopped by {v}.", "{p} made a trip to {v}.", "{p} dropped in at {v}."],
 }
 
 QUESTIONS = {
@@ -328,7 +358,9 @@ class WorldItem:
 
 def _tmpl(rng: random.Random, rel: str, split: str, **kw) -> str:
     pool = TEMPLATES[rel]
-    if split == "paraphrase":
+    if split == "paraphrase2" and rel in HELDOUT_TEMPLATES_2:
+        t = rng.choice(HELDOUT_TEMPLATES_2[rel])
+    elif split in ("paraphrase", "paraphrase2"):
         t = pool[-1]
     else:
         t = rng.choice(pool[:-1])
@@ -340,6 +372,8 @@ def _dial(task: str, split: str, rng: random.Random, key: str, version: str = "v
     v2 = _v(version) >= 2
     if split == "harder":
         return (HARDER_DIALS_V2 if v2 else HARDER_DIALS)[task][key]
+    if split == "steps" and key in STEPS_DIALS_V2.get(task, {}):
+        return STEPS_DIALS_V2[task][key]
     if split == "train":
         lo, hi = (ID_DIALS_V2 if v2 else ID_DIALS)[task][key]
         return rng.randint(lo, hi)
@@ -432,10 +466,13 @@ def _deduce_v2(rng, depth, n, cast, cat_split) -> WorldItem:
 
 
 def build_item(task: str, rng: random.Random, split: str = "train", version: str = TEXT_WORLD_VERSION) -> WorldItem:
-    """One question about a fresh world. `split` ∈ train | id | harder | paraphrase."""
+    """One question about a fresh world. `split` ∈ train | id | harder | paraphrase, and from v2 the added exam
+    splits crowded | paraphrase2 | steps (v2.1)."""
     v1 = _v(version) >= 1
     v2 = _v(version) >= 2
-    tsplit = "paraphrase" if split == "paraphrase" else ("train" if split == "train" else "id")
+    if split in ADDED_SPLITS and not v2:
+        raise ValueError(f"split {split!r} exists from text-world-v2.1 (version v2), not {version!r}")
+    tsplit = split if split in ("paraphrase", "paraphrase2") else ("train" if split == "train" else "id")
     names_split = "train" if split == "train" else "eval"
     if task == "quote":
         n = _dial(task, split, rng, "signs", version)
@@ -567,13 +604,15 @@ def qa_suffix(question: str) -> str:
 
 def assemble(item: WorldItem, stories: list[str], target_tokens: int, ntok: Callable[[str], int],
              rng: random.Random, depth: Optional[float] = None, remove_evidence: bool = False,
-             filler_seed: Optional[int] = None, version: str = TEXT_WORLD_VERSION) -> tuple[str, dict]:
+             filler_seed: Optional[int] = None, version: str = TEXT_WORLD_VERSION,
+             cluster_tokens: Optional[int] = None) -> tuple[str, dict]:
     """Return (prompt text ending in 'Answer:', info). The prompt plus ' <answer>.' is about
     `target_tokens` tokens. `depth` ∈ [0,1] places the single evidence fact (tasks whose
     evidence is one sentence); `remove_evidence` swaps evidence sentences for filler sentences.
 
     `filler_seed` fixes the filler draw so an item and its evidence-removed twin share the
-    same filler stories in the same places."""
+    same filler stories in the same places. `cluster_tokens` (v2.1 `crowded` split, with `depth`): every
+    free fact sits in a band of that many tokens around the asked fact instead of anywhere."""
     frng = random.Random(filler_seed if filler_seed is not None else rng.random())
     suffix = qa_suffix(item.question)
     budget = target_tokens - ntok(suffix) - ntok(" " + item.answer + ".") - 1
@@ -604,10 +643,15 @@ def assemble(item: WorldItem, stories: list[str], target_tokens: int, ntok: Call
     # v1: one decoy sits beyond a single fact placed at a fixed depth (before an early one, after a
     # late one), so "the first / last such sentence" does not find it
     beyond = None
+    lo, hi = 0.0, 1.0  # where free facts go: anywhere, or (crowded) a band around the asked fact
+    if cluster_tokens and single:
+        band = min(1.0, cluster_tokens / max(1, target_tokens))
+        lo = min(max(0.0, depth - band / 2), 1.0 - band)
+        hi = lo + band
     if single and _v(version) >= 1:
         others = [i for i, f in enumerate(facts) if not f.evidence and f.order is None]
         if others:
-            beyond = (others[0], rng.uniform(0.0, depth) if depth < 0.5 else rng.uniform(depth, 1.0))
+            beyond = (others[0], rng.uniform(lo, depth) if depth < 0.5 else rng.uniform(depth, hi))
     for i, f in enumerate(facts):
         if beyond is not None and i == beyond[0]:
             pos = beyond[1]
@@ -615,6 +659,8 @@ def assemble(item: WorldItem, stories: list[str], target_tokens: int, ntok: Call
             pos = depth
         elif f.order is not None:
             pos = f.order
+        elif cluster_tokens and single:
+            pos = rng.uniform(lo, hi)
         else:
             pos = rng.random()
         text = f.text
@@ -637,6 +683,8 @@ def assemble(item: WorldItem, stories: list[str], target_tokens: int, ntok: Call
     out.extend(p[2] for p in placed[fi:] if p[2])
     body = " ".join(out)
     info = {"n_filler_sentences": len(filler), "n_facts": len(facts), "evidence_removed": remove_evidence}
+    if cluster_tokens and single:
+        info["fact_band"] = [round(lo, 4), round(hi, 4)]
     return body + suffix, info
 
 
@@ -653,13 +701,14 @@ def make_eval_record(task: str, seed: int, split: str, length: int, depth_bin: O
     depth = {"early": 0.05, "middle": 0.5, "late": 0.95}.get(depth_bin) if depth_bin else None
     fseed = rng.randrange(2**31)
     place_seed = rng.randrange(2**31)
+    cluster = CROWD_TOKENS if split == "crowded" else None
     prompt, info = assemble(item, stories, length, ntok, random.Random(place_seed), depth=depth, filler_seed=fseed,
-                            version=version)
+                            version=version, cluster_tokens=cluster)
     twin, _ = assemble(item, stories, length, ntok, random.Random(place_seed), depth=depth, remove_evidence=True,
-                       filler_seed=fseed, version=version)
+                       filler_seed=fseed, version=version, cluster_tokens=cluster)
     return {
         "id": f"{task}-{split}-{length}-{depth_bin or 'spread'}-{seed}",
-        "version": f"text-world-v{_v(version)}",
+        "version": f"text-world-v{_v(version)}" + (".1" if split in ADDED_SPLITS else ""),
         "task": task, "level": LEVEL_OF[task], "split": split, "length": length,
         "depth": depth_bin or "spread", "seed": seed,
         "prompt": prompt, "prompt_removed": twin, "answer": answer_text(item),

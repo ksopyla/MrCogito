@@ -110,7 +110,9 @@ PROTOCOL_LOG = [
      "why": "Length also spread the facts out (E33 did better at 16k than at 1k); one unseen sentence shape per fact "
             "type is thin; compose and deduce showed no signal at all.",
      "effect": "planned",
-     "effect_text": "Existing checkpoints can be scored on them — no retraining.",
+     "effect_text": "Implemented and audited on the laptop 13 Oct (a rule reader answers 100 %, shortcuts stay at guessing; "
+                    "existing exams and training documents byte-identical). Built on Odra and scored on the existing "
+                    "checkpoints when Odra is back — no retraining.",
      "learned": ""},
 ]
 

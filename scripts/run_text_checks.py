@@ -46,6 +46,7 @@ from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from data.text_world import ADDED_SPLITS  # noqa: E402
 from evaluation.text_checks import (  # noqa: E402
     ARCHES,
     CURVE_FRACTIONS,
@@ -299,10 +300,19 @@ def plan_eval_job(name: str, arch: str, tier: str, train_job: str, *, data: Path
         ("final_extra.json", f'{dev}{ev} --checkpoint "$MODEL" --items {_q(data / "eval" / "harder.jsonl")} '
                              f'{_q(data / "eval" / "paraphrase.jsonl")} --lengths {extra_lens} --out "$JOB/final_extra.json"'),
     ]
+    # exams added after the build (v2.1: crowded, paraphrase2, steps), when this build has them; re-planning the eval
+    # job of a finished run scores only what is missing, so existing checkpoints get the added exams without retraining
+    added = [data / "eval" / f"{sp}.jsonl" for sp in ADDED_SPLITS if (data / "eval" / f"{sp}.jsonl").exists()]
+    if added:
+        finals.append(("final_added.json", f'{dev}{ev} --checkpoint "$MODEL" --items {" ".join(_q(x) for x in added)} '
+                                           f'--lengths {extra_lens} --out "$JOB/final_added.json"'))
     if ARCHES[arch].has_notebook:
         finals.append(("final_id_notebook_off.json",
                        f'{dev}{ev} --checkpoint "$MODEL" --items {_q(data / "eval" / "id.jsonl")} --lengths {t.seq_len} '
                        f'{max(eval_lengths)} --message_override none --no_removed --out "$JOB/final_id_notebook_off.json"'))
+    # a finished job re-planned with a new final (e.g. added exams) runs again; every finished part is skipped
+    if (jobdir / "DONE").exists() and any(not (jobdir / f).exists() for f, _ in finals):
+        (jobdir / "DONE").unlink()
     cmds = [f'[ -f "$JOB/{f}" ] || {c} || {{ echo "EXIT {name} 1 ({f})"; exit 1; }}' for f, c in finals]
     # copy probe: can the model repeat text it has just read? (every task builds on it; diagnostic only)
     pdev = "mps" if mode == "local" else "cuda"

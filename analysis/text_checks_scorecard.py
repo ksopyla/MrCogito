@@ -75,7 +75,8 @@ def collect(dirs: list[Path]) -> dict:
 
             m["seq_len"] = TIERS[card["tier"]].seq_len
             # final_id_long.json: extra lengths scored after the run (e.g. a calibration run read at 8k-16k)
-            for name in ("final_id.json", "final_extra.json", "final_id_long.json"):
+            # final_added.json: exams added after the build (v2.1 crowded / paraphrase2 / steps)
+            for name in ("final_id.json", "final_extra.json", "final_id_long.json", "final_added.json"):
                 r = _load(ev / name)
                 if r:
                     m["story_loss"] = r.get("story_loss") if r.get("story_loss") is not None else m["story_loss"]

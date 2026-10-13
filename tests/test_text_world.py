@@ -266,3 +266,92 @@ def test_v2_shortcuts_stay_near_the_guessing_rate(task):
 
 def test_v2_count_answers_cover_zero_to_ten():
     assert len({rec2("count", s, length=900)["answer"] for s in range(220)}) == 11
+
+
+# ---------------------------------------------------------------- v2.1: exams added on top of v2 (eval only)
+@pytest.mark.parametrize("split", ["crowded", "paraphrase2", "steps"])
+def test_v21_added_splits_need_v2_and_say_so(split):
+    from data.text_world import ADDED_SPLITS
+
+    task = ADDED_SPLITS[split][0]
+    with pytest.raises(ValueError):
+        make_eval_record(task, 0, split, 600, None, STORIES, ntok, version="v1")
+    r = rec2(task, 0, split=split, depth="middle" if task in ("quote", "lookup", "keyed") else None)
+    assert r["version"] == "text-world-v2.1" and rec2(task, 0)["version"] == "text-world-v2"
+
+
+@pytest.mark.parametrize("split", ["crowded", "paraphrase2", "steps"])
+def test_v21_rule_reader_recovers_every_answer(split):
+    from data.text_world import ADDED_SPLITS
+
+    for task in ADDED_SPLITS[split]:
+        for s in range(8):
+            depth = ("early", "middle", "late")[s % 3] if task in ("quote", "lookup", "keyed") else None
+            r = rec2(task, s, length=3000, split=split, depth=depth)
+            got, _ = _audit(r)
+            assert got == r["answer"].strip(" ."), (split, task, s, got)
+            assert r["answer"].strip(" .") not in r["prompt_removed"] or task in ("count", "deduce")
+
+
+@pytest.mark.parametrize("task", ["quote", "lookup", "keyed"])
+def test_v21_crowded_packs_every_fact_into_the_band(task):
+    """Every fact sentence sits inside the 1,024-token band around the asked fact (word count stands in for tokens)."""
+    from data.text_world import CROWD_TOKENS, ADDED_SPLITS
+
+    assert task in ADDED_SPLITS["crowded"]
+    for s, depth in enumerate(("early", "middle", "late")):
+        r = rec2(task, s, length=6000, split="crowded", depth=depth)
+        lo, hi = r["meta"]["fact_band"]
+        assert abs((hi - lo) - CROWD_TOKENS / 6000) < 1e-3
+        body = r["prompt"].rpartition("\n\nQuestion:")[0]
+        item = build_item(task, random.Random(r["seed"]), "crowded", "v2")
+        for f in item.facts:
+            at = body.find(f.text)
+            assert at >= 0
+            frac = len(body[:at].split()) / max(1, len(body.split()))
+            assert lo - 0.03 <= frac <= hi + 0.03, (task, depth, frac, lo, hi)
+        spread = rec2(task, s, length=6000, depth=depth)  # the id split spreads them over the document
+        assert "fact_band" not in spread["meta"]
+
+
+def test_v21_paraphrase2_uses_only_unseen_sentence_shapes():
+    from analysis.text_checks_audit import split_doc
+    from data.text_world import HELDOUT_TEMPLATES_2, TEMPLATES
+    from analysis.text_checks_audit import _compile
+
+    seen = [_compile(rel, t) for rel, ts in TEMPLATES.items() for t in ts]
+    new = [_compile(rel, t) for rel, ts in HELDOUT_TEMPLATES_2.items() for t in ts]
+    for task in ("quote", "lookup", "keyed", "latest", "compose", "count"):
+        r = rec2(task, 2, length=2000, split="paraphrase2", depth="middle" if task in ("quote", "lookup", "keyed") else None)
+        sents, _ = split_doc(r["prompt"])
+        facts = [x for x in sents if any(p.fullmatch(x) for p in new)]
+        assert facts, task
+        assert not any(p.fullmatch(x) for x in sents for p in seen), task
+
+
+def test_v21_steps_are_one_step():
+    r = rec2("compose", 4, split="steps")
+    assert r["prompt"].rstrip().endswith("Where does the teacher of " + r["prompt"].split("teacher of ")[-1].split(" live?")[0] + " live?\nAnswer:")
+    assert r["prompt"].count("the teacher of the teacher") == 0
+    d = rec2("deduce", 4, split="steps")
+    assert d["meta"]["depth"] == 1 and not re.search(r"Every \w+ is a \w+\.", d["prompt"])
+
+
+def test_v2_published_data_is_byte_identical():
+    """Pins text-world-v2 (published on the Hub): exams of the id / harder / paraphrase splits and training
+    documents (1 and 8 questions) on the test fixtures. Hash from the v2 generator of 2026-10-10, checked
+    unchanged by the v2.1 additions (2026-10-13). A change here is a new data version, never an edit."""
+    import hashlib
+    import json
+
+    h = hashlib.sha256()
+    for split in ("id", "harder", "paraphrase"):
+        for task in TASKS:
+            for i in range(3):
+                depth = ("early", "middle", "late")[i] if task in ("quote", "lookup", "keyed") else None
+                h.update(json.dumps(make_eval_record(task, 7 * i + 1, split, 1500, depth, STORIES, ntok, version="v2"),
+                                    sort_keys=True).encode())
+    for q in (1, 8):
+        for i in range(10):
+            h.update(make_train_document(i, STORIES, 400 + 50 * i, ntok, version="v2", questions=q).encode())
+    assert h.hexdigest() == "56bb1906d48ffd41d74157222c236094dac9b09ce8501b0471dab0ea01997ffc"

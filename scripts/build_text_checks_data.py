@@ -20,6 +20,9 @@ Smoke (local, minutes; filler from the small validation/test story files):
 Full (servers):
   uv run python scripts/build_text_checks_data.py --stories full --out_dir $DATA/text_checks_v0 \
       --seq_len 4096 --n_lang_rows ... --n_world_rows ...
+Add exams to an existing build (v2.1 splits; tokenizer, training mix and existing exams untouched):
+  uv run python scripts/build_text_checks_data.py --stories full --out_dir $DATA/text_checks_v2 \
+      --add_exams --eval_splits crowded paraphrase2 steps
 """
 from __future__ import annotations
 
@@ -37,6 +40,7 @@ from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from data.text_world import ADDED_SPLITS  # noqa: E402
 from data.text_world import (  # noqa: E402
     TASKS,
     TEXT_WORLD_VERSION,
@@ -285,6 +289,9 @@ def main():
     p.add_argument("--train_tasks", nargs="+", default=list(TASKS),
                    help="tasks of the training world documents (single-task runs, 2026-10-11); exams are unchanged")
     p.add_argument("--eval_from", default=None, help="link eval/ from this build instead of freezing new exams")
+    p.add_argument("--add_exams", action="store_true",
+                   help="only freeze --eval_splits into an existing build (its own tokenizer; training mix and other "
+                        "exams untouched; meta updated), e.g. the v2.1 splits crowded paraphrase2 steps")
     p.add_argument("--eval_tasks", nargs="+", default=list(TASKS))
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--world_version", default=TEXT_WORLD_VERSION, help="generator version: v0 (published draft) or v1")
@@ -303,6 +310,9 @@ def main():
     t0 = time.time()
     train_st, held_st = load_stories(args.stories, args.max_train_files, args.seed)
     print(f"stories: {len(train_st):,} train / {len(held_st):,} held-out ({time.time() - t0:.0f}s)")
+    if args.add_exams:
+        add_exams(args, out, held_st, t0)
+        return
 
     # tokenizer: stories + world documents (approximate lengths; names and places must be in its data)
     approx = lambda s: max(1, len(s) // 4)  # noqa: E731
@@ -391,7 +401,7 @@ def main():
         n = 0
         with path.open("w") as fh:
             lengths = args.eval_lengths if split == "id" else args.extra_lengths
-            for task in args.eval_tasks:
+            for task in [t for t in args.eval_tasks if t in ADDED_SPLITS.get(split, TASKS)]:
                 for length in lengths:
                     base = zlib.crc32(f"{split}/{task}/{length}".encode()) * 10_000
                     n_items = args.eval_items if length <= 16384 else args.eval_items_long
@@ -423,6 +433,69 @@ def main():
     }
     (out / "text_checks_meta.json").write_text(json.dumps(meta, indent=2))
     print(json.dumps({k: meta[k] for k in ("version", "eval_items", "mix")}, indent=2))
+
+
+def write_split(path: Path, split: str, tasks: list, lengths: list, n_items: int, n_items_long: int, stories: list,
+                encode, version: str) -> int:
+    """Freeze one exam split: `n_items` per (task, length) up to 16k, `n_items_long` above. Item i of a single-fact
+    task gets depth bin i % 3 (early, middle, late); seeds are a pure function of (split, task, length, i)."""
+    ntok = lambda s: len(encode(s))  # noqa: E731
+    n = 0
+    with path.open("w") as fh:
+        for task in tasks:
+            for length in lengths:
+                base = zlib.crc32(f"{split}/{task}/{length}".encode()) * 10_000
+                for i in range(n_items if length <= 16384 else n_items_long):
+                    depth = ("early", "middle", "late")[i % 3] if task in SINGLE_EVIDENCE_TASKS else None
+                    rec = make_eval_record(task, base + i, split, length, depth, stories, ntok, version=version)
+                    rec["n_tokens"] = 1 + len(encode(rec["prompt"])) + len(encode(rec["answer"]))
+                    fh.write(json.dumps(rec) + "\n")
+                    n += 1
+    return n
+
+
+def add_exams(args, out: Path, held_st: list, t0: float) -> None:
+    """--add_exams: freeze new exam splits into an existing build with its own tokenizer; nothing else changes."""
+    from transformers import AutoTokenizer
+
+    meta_path = out / "text_checks_meta.json"
+    if not meta_path.exists() or not (out / "tokenizer").exists():
+        raise SystemExit(f"--add_exams needs an existing build at {out} (text_checks_meta.json and tokenizer/)")
+    if (out / "eval").is_symlink():
+        raise SystemExit(f"{out}/eval links to {(out / 'eval').resolve()}: add the exams to the build that owns it")
+    meta = json.loads(meta_path.read_text())
+    tok = AutoTokenizer.from_pretrained(str(out / "tokenizer"))
+    if _sha(out / "tokenizer" / "tokenizer.json") != meta.get("tokenizer_sha256"):
+        raise SystemExit("tokenizer hash differs from the build's meta: refusing to add exams")
+    cache: dict[str, list[int]] = {}
+
+    def encode(s: str) -> list[int]:
+        r = cache.get(s)
+        if r is None:
+            r = tok.encode(s, add_special_tokens=False)
+            if len(s) < 400:
+                if len(cache) > 2_000_000:
+                    cache.clear()
+                cache[s] = r
+        return r
+
+    version = meta.get("args", {}).get("world_version") or args.world_version
+    added = meta.setdefault("exams_added", {})
+    for split in args.eval_splits:
+        if split in meta.get("eval_sha256", {}) and split not in added:
+            raise SystemExit(f"split {split!r} is part of the original build: it is never rewritten")
+        tasks = [t for t in args.eval_tasks if t in ADDED_SPLITS.get(split, TASKS)]
+        path = out / "eval" / f"{split}.jsonl"
+        n = write_split(path, split, tasks, args.extra_lengths, args.eval_items, args.eval_items_long, held_st, encode,
+                        version)
+        meta.setdefault("eval_sha256", {})[split] = _sha(path)
+        meta.setdefault("eval_items", {})[split] = n
+        added[split] = {"version": "text-world-v2.1" if split in ADDED_SPLITS else meta.get("version"),
+                        "tasks": tasks, "lengths": list(args.extra_lengths),
+                        "built": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        print(f"eval {split}: {n} items ({time.time() - t0:.0f}s)")
+    meta_path.write_text(json.dumps(meta, indent=2))
+    print(json.dumps({k: meta[k] for k in ("version", "eval_items", "exams_added")}, indent=2))
 
 
 if __name__ == "__main__":

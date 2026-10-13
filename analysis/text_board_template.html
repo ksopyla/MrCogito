@@ -598,6 +598,46 @@ function roundBlock(r) {
       el("span", {}, "* latest: following moves without reading whose they are gets 1 in 5"),
       el("span", { style: "text-decoration: line-through; color: var(--critical)" }, "answered without the evidence (shortcut)"),
       el("span", {}, "hover a cell for the details"))));
+
+  // other exam sets: harder dials, rephrased facts (v2) and the exams added in v2.1, when scored
+  const SPLITS = [["harder", "Harder settings", "more people, moves, hops; reported, not gating"],
+    ["paraphrase", "Rephrased facts", "one sentence shape never seen in training"],
+    ["paraphrase2", "Rephrased facts, more shapes (v2.1)", "three more unseen sentence shapes"],
+    ["crowded", "Crowded facts (v2.1)", "every fact within 1,024 tokens of the asked one, at any length"],
+    ["steps", "One step (v2.1)", "one-step compose and deduce"]];
+  const rows = [];
+  for (const [sp, label, hint] of SPLITS) {
+    for (const task of D.tasks) {
+      const lens = [...new Set(ms.flatMap(m => Object.keys(m.cells).filter(k => k.startsWith(`${sp}|${task}|`)).map(k => +k.split("|")[2])))].sort((a, b) => a - b);
+      if (lens.length) rows.push([sp, label, hint, task, lens]);
+    }
+  }
+  if (rows.length) {
+    const ot = el("table");
+    const oh = el("tr", {}, el("th", {}, "Exam set"), el("th", {}, "Task"), el("th", { class: "mcol" }, "Floor"));
+    for (const m of ms) oh.append(el("th", { class: "mcol" }, sw(m), m.name));
+    ot.append(el("thead", {}, oh));
+    const ob = el("tbody");
+    let lastSp = null;
+    for (const [sp, label, hint, task, lens] of rows) {
+      const L = lens.includes(L0) ? L0 : lens[0], Lx = lens[lens.length - 1];
+      const any = ms.map(m => m.cells[`${sp}|${task}|${L}`]).find(c => c);
+      const first = sp !== lastSp; lastSp = sp;
+      const tr = el("tr", {}, el("td", { class: "task" }, first ? el("div", {}, label) : null, first ? el("div", { class: "tid" }, hint) : null),
+        el("td", {}, D.guide[task][0]), el("td", { class: "floor" }, any ? pct(any.eff_floor != null ? any.eff_floor : any.floor) + " %" : "–"));
+      for (const m of ms) {
+        const c = m.cells[`${sp}|${task}|${L}`], cx = Lx !== L ? m.cells[`${sp}|${task}|${Lx}`] : null;
+        const td = el("td", { class: "cell " + cellClass(c) }, c ? pct(headScore(c)) + " %" : "–");
+        if (c && c.far != null) td.append(el("span", { class: "sub" }, `near ${pct(c.near)} %`));
+        if (cx) td.append(el("span", { class: "sub" }, `${pct(headScore(cx))} % at ${fmtLen(Lx)}`));
+        tr.append(td);
+      }
+      ob.append(tr);
+    }
+    ot.append(ob);
+    box.append(el("div", {}, el("h3", { class: "small", style: "margin-bottom:6px" }, `OTHER EXAM SETS · at ${fmtLen(L0)} (small line: at the longest length scored); quote, lookup and keyed on far facts`),
+      el("div", { class: "tablebox" }, ot)));
+  }
   return box;
 }
 
