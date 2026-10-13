@@ -24,7 +24,7 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-13 07:10 UTC",
+    "as_of": "2026-10-13 07:25 UTC",
     "headline": "Trust the measurements, not yet the ranking. Every score on this board is measured correctly, and "
                 "the reading rules of 13 Oct are applied to all of them automatically. What is missing is a reliable "
                 "reference: the dense model learns a skill in only some runs at this budget, so no architecture "
@@ -37,13 +37,14 @@ STATUS = {
         "story; latest's floor is 20 %; dense is not compared past 4k. Nothing had to be retrained.",
     ],
     "next": [
-        "Blocked: Odra is off (since about 15:00 UTC 12 Oct; being powered on); Polonez is busy with other work.",
-        "First on Odra: finish E33 trained on lookup only (it checks E33's one win), then the reliability fix: dense "
-        "30M three times on training documents with 8 questions each (exams unchanged; about 2.5 h per run).",
-        "Also on Odra, on its CPUs alongside: build the added exams (crowded facts, more unseen sentence shapes, "
-        "one-step compose and deduce; ready and tested) and score the existing models on them — no retraining.",
-        "If dense then learns in at least 2 of 3 runs, that becomes the recipe and the architecture comparison is "
-        "run on it with two seeds per model, the no-memory control included; the single-task series stays paused.",
+        "Odra is back (07:18 UTC 13 Oct). It had stopped suddenly at 09:52 UTC 12 Oct, 3.6 h into training, with no "
+        "error logged — a power loss or a hard freeze. Running since 07:19 UTC: E33 trained on lookup only, resumed "
+        "from half-way (step 3,960 of 7,928); its scores about 11:50 UTC.",
+        "Then, about 11:50-13:45 UTC: the ten finished models scored on the added exams (crowded facts, more unseen "
+        "sentence shapes, one-step compose and deduce; being built on Odra's CPUs now) — no retraining.",
+        "Then the reliability fix: dense 30M, 8 questions per training document, three runs of about 3 h each "
+        "(done about 22:45 UTC). If dense learns in at least 2 of 3, that becomes the recipe and the architecture "
+        "comparison is run on it with two runs per model, the no-memory control included.",
     ],
 }
 
@@ -213,16 +214,21 @@ LADDER = [
      "run": "Single task: quote", "model": "dense, E31c, E33 loop · 30M, plain", "tokens": "1.5B each, quote only",
      "exams": "quote, 1k-16k", "result": "Nobody learned quote on far facts (dense 6 %, E31c and E33 0 %).",
      "when": "11 Oct 12:15 → 12 Oct 01:04", "why": "Single-task series (paused); one run per model."},
-    {"id": "pt_lookup_30m_odra.odra", "start": "2026-10-12", "data": "v2", "standing": "blocked",
+    {"id": "pt_lookup_30m_odra.odra", "start": "2026-10-12", "data": "v2", "standing": "running",
      "run": "Single task: lookup", "model": "dense, E31c, E33 loop · 30M, plain", "tokens": "1.5B each, lookup only",
      "exams": "lookup, 1k-16k",
      "result": "Dense 48 % on far facts at 4k (0 % past 4k); E31c 0 %; E33 unfinished.",
-     "when": "12 Oct 01:04 → (E33 since 06:14)", "why": "E33's run was cut off by the Odra outage; it resumes from "
-                                                        "its last checkpoint."},
+     "when": "12 Oct 01:04 → ~13 Oct 11:50", "why": "E33 was cut off half-way by the Odra outage (09:52 UTC 12 Oct); "
+                                                     "resumed 07:19 UTC 13 Oct from step 3,960."},
+    {"id": None, "start": "2026-10-13", "data": "v2.1", "standing": "queued",
+     "run": "Added exams on finished models", "model": "E33, E31c, dense (two runs), and the single-task models",
+     "tokens": "no training", "exams": "v2.1: crowded facts, more unseen shapes, one step",
+     "result": "Does crowding explain why E33 reads better at 16k? Does E33's reading of unseen shapes hold?",
+     "when": "~11:50 → ~13:45", "why": "Scores existing checkpoints; nothing is retrained."},
     {"id": None, "start": "planned", "data": "v2", "standing": "queued",
      "run": "Reliability fix", "model": "dense · 30M, plain, three seeds", "tokens": "1.5B, 8 questions per document",
      "exams": "v2, 1k-4k (+ 16k)", "result": "Does dense learn in at least 2 of 3 runs?",
-     "when": "when Odra is back", "why": "Decides the recipe for the architecture comparison."},
+     "when": "~13:45 → ~22:45 (13 Oct)", "why": "Decides the recipe for the architecture comparison."},
 ]
 
 # Plain names for the architectures (first mention = name + what it is).
@@ -396,7 +402,7 @@ ROUNDS = {
     "pt_lookup_30m_odra.odra": {
         "title": "Single-task T2 lookup: dense, E31c, E33 loop trained on lookup only (30M, plain input, 1.5B tokens) — in progress",
         "where": "Odra · 3 × RTX 3090",
-        "dates": "12 Oct 2026 01:04 UTC → (dense done 03:37, E31c 06:14, E33 due about 13:45 UTC; not pulled, Odra unreachable)",
+        "dates": "12 Oct 2026 01:04 UTC → (dense done 03:37, E31c 06:14; E33 cut off half-way by the Odra outage at 09:52, resumed 07:19 UTC 13 Oct, scores about 11:50)",
         "verdict": "Dense learns lookup inside its training length (44 % at 4k, 53 % at 1k; guessing 8 %) but reads "
                    "nothing past it (0 % at 8k-16k). E31c reaches only 14 % at 4k. E33 is training.",
         "observations": [
