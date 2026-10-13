@@ -125,11 +125,31 @@ Open items:
 
 ## 3. Model changes
 
-- ~500M configs for the three arms (memory writer sizes scaled, parameter-matched). **missing**
-- Tied input/output embeddings (the untied 128k head is ~164M params). **decide**
-- Kernels on H100: FlexAttention for the memory read, `torch.compile` graph breaks (host syncs). **partial**
-- Memory-off switch usable during training evals (exists for eval only). **partial**
-- KV cache / incremental memory writes (needed only for generation evals). **missing**, **decide** if needed
+E33 on text as tested at 30M (`evaluation/text_checks.py` `e31c_loop`): local layers see the last 16
+tokens; one reading layer sees the last 256 raw tokens plus the notebook (notes from every closed
+256-token page); the loop repeats [reading layer + 1 layer] 4 times with a next-token loss at every
+round exit (weight 0.3). Beyond the raw read, only the notebook carries information.
+
+**Decided (author, 2026-10-13):**
+- **Windows: local layers 128 tokens, reading layer 512 raw tokens** (+ notebook). At 16k rows ~97 %
+  of positions have most of their context reachable only through the notebook.
+- **Loop: reading layer + 2 layers, 4 rounds.** Follow-up after the first results (keep): the tested
+  span (reading layer + 1 layer) and a large looped core (reading layer + 4 layers).
+
+Defaults (taken unless the author objects):
+- Width 1280, ~22 layers, FFN width fitted to ~500M parameters (as `fit_params` does for the text tiers).
+  In a 22-layer model the loop adds ~+30 % compute, not 2–3× (the DNA models had 4 layers).
+- Plain input (no word-pair/triple hash tables, no value embeddings), as the text checks now use.
+- Per-round exit losses kept as tested; revisit after the symbolic "E33 without exit losses" control
+  (2026-10-14). On web text they apply to every next token (3 extra output-layer passes per step).
+- No generation cache now: likelihood-based benchmarks only; revisit for BABILong-style generation.
+
+Open:
+- Notebook size at 500M (page length, notes per page, writer width). **decide** (explained to the
+  author first)
+- Kernels on H100: FlexAttention for the reading layer with notes, `torch.compile` graph breaks (host
+  syncs). **partial**
+- Notebook-off switch usable in training-time evals (exists for eval: `message_override none`). **partial**
 
 ## 4. Training recipe and plumbing
 
