@@ -24,7 +24,7 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-13 11:35 UTC",
+    "as_of": "2026-10-13 12:40 UTC",
     "headline": "Trust the measurements, not yet the ranking. Every score on this board is measured correctly, with "
                 "the reading rules of 13 Oct applied to all of them. What is missing is reliable learning: dense learns "
                 "a skill in only some runs at this budget, and now E33's one strong win did not repeat either (trained "
@@ -35,17 +35,21 @@ STATUS = {
         "E33's strong signal (far facts at 16k: lookup 83 %, keyed 78 %, mixed training) did not repeat when E33 was "
         "trained on lookup only (13 Oct 11:12 UTC): 0 % on far facts at every length; its 62-83 % came from facts "
         "inside its window. Dense trained the same way: 48 % on far facts at 4k.",
+        "Added exams (scored 12:05 UTC on ten finished models, no retraining): most of E33's long-document gain was "
+        "the facts being spread out — with every fact packed into 1,024 tokens it reads lookup 33 % at 16k (83 % "
+        "spread), about its 1k level, and dense matches it at 4k (42 % vs 39 %). With three more unseen sentence "
+        "shapes E33 reads lookup 30-45 %, dense 1-4 %. One-step compose and deduce: every model at guessing.",
         "Reading rules of 13 Oct: quote, lookup and keyed are read on facts placed early or in the middle of the "
         "story; latest's floor is 20 %; dense is not compared past 4k. Nothing had to be retrained.",
     ],
     "next": [
-        "Running on Odra since 11:12 UTC: the ten finished models scored on the added exams (crowded facts, more "
-        "unseen sentence shapes, one-step compose and deduce; built 07:34 UTC) — no retraining; about 13:45 UTC.",
-        "Then the reliability fix: dense 30M, 8 questions per training document, three runs of about 3 h each (done "
-        "about 22:45 UTC). If dense learns in at least 2 of 3, the same recipe goes to E33 next — its notebook reading "
-        "looks as luck-dependent as dense's retrieval.",
+        "Running on Odra since 12:05 UTC: the reliability fix — dense 30M, 8 questions per training document, three "
+        "runs of about 3 h each (seed 0 about 15:05, seed 1 about 18:05, seed 2 about 21:05 UTC).",
+        "If dense learns in at least 2 of 3, the same recipe goes to E33 next (two runs): its notebook reading looks as "
+        "luck-dependent as dense's retrieval. Then the architecture comparison on that recipe, the no-memory control "
+        "included.",
         "Odra stopped suddenly at 09:52 UTC 12 Oct (3.6 h into training, nothing logged: power loss or hard freeze) "
-        "and was back at 07:18 UTC 13 Oct; E33's lookup run resumed from half-way.",
+        "and was back at 07:18 UTC 13 Oct.",
     ],
 }
 
@@ -101,22 +105,24 @@ PROTOCOL_LOG = [
                     "E33's latest at 4k are below the 20 % floor; dense's 0 % at 16k is not a memory comparison.",
      "learned": "Read memory only on facts beyond the short window, and compare long lengths only against a "
                 "reference that can read them."},
-    {"date": "planned", "version": "8 questions per document", "kind": "recipe",
-     "change": "Training documents end with 8 questions instead of 1 (exams unchanged, byte-identical).",
-     "why": "Answers are about 0.1 % of training tokens; dense learns retrieval late and only in some runs.",
-     "effect": "planned",
-     "effect_text": "If dense learns in at least 2 of 3 runs, the architecture comparison is redone on this recipe "
-                    "with two runs per model; the 1-question rounds become history (\"earlier recipe\").",
-     "learned": ""},
-    {"date": "planned", "version": "exams v2.1", "kind": "exams",
+    {"date": "2026-10-13", "version": "exams v2.1", "kind": "exams",
      "change": "New exams added, nothing existing changed: crowded facts (length without spreading the facts), "
                "more unseen sentence shapes, one-step compose and deduce.",
      "why": "Length also spread the facts out (E33 did better at 16k than at 1k); one unseen sentence shape per fact "
             "type is thin; compose and deduce showed no signal at all.",
-     "effect": "planned",
-     "effect_text": "Implemented and audited on the laptop 13 Oct (a rule reader answers 100 %, shortcuts stay at guessing; "
-                    "existing exams and training documents byte-identical). Built on Odra and scored on the existing "
-                    "checkpoints when Odra is back — no retraining.",
+     "effect": "current",
+     "effect_text": "Added to the v2 builds on Odra 07:34-07:49 UTC 13 Oct (identical files in both; existing exams and "
+                    "training documents byte-identical, 558 outputs compared) and scored on ten finished models 11:12-12:05 "
+                    "UTC — no retraining. Shown under each run as other exam sets.",
+     "learned": "E33's 16k gain was mostly the facts being spread out; compose and deduce fail even at one step; E33 "
+                "reads unseen sentence shapes only partly (30-45 %)."},
+    {"date": "2026-10-13", "version": "8 questions per document", "kind": "recipe",
+     "change": "Training documents end with 8 questions instead of 1 (exams unchanged, byte-identical).",
+     "why": "Answers are about 0.1 % of training tokens; dense learns retrieval late and only in some runs.",
+     "effect": "running",
+     "effect_text": "Three dense runs since 12:05 UTC 13 Oct. If dense learns in at least 2 of 3, the architecture "
+                    "comparison is redone on this recipe with two runs per model; the 1-question rounds become history "
+                    "(\"earlier recipe\").",
      "learned": ""},
 ]
 
@@ -136,11 +142,13 @@ CLAIMS = [
                  "repeated: E33 trained on lookup only (13 Oct) read 0 % of far facts at every length, its 62-83 % all "
                  "from facts inside its window — so whether the notebook learns to read looks like luck, as for dense.",
      "settle": "E33 on the reliable recipe (8 questions per document), two runs."},
-    {"claim": "E33 keeps reading when the fact is phrased in a sentence shape never seen in training; dense does not.",
+    {"claim": "E33 partly keeps reading when the fact is phrased in a sentence shape never seen in training; dense "
+              "does not.",
      "state": "single run", "since": "2026-10-13",
-     "evidence": "Lookup on far facts at 4k: E33 64 % with training shapes, 64 % with the unseen shape (its near "
-                 "facts, read by short-range attention, drop 62 → 31 %); dense 37-48 % → 0-1 % (three dense runs).",
-     "settle": "A second E33 run; more unseen shapes (exams v2.1)."},
+     "evidence": "Lookup on far facts at 4k: E33 64 % with training shapes, 64 % with the first unseen shape, 30 % "
+                 "(45 % at 16k) with three more unseen shapes (exams v2.1); its near facts, read by short-range "
+                 "attention, drop 62 → 31 %. Dense 37-48 % → 0-4 % on every unseen shape (three dense runs).",
+     "settle": "A second E33 run on the reliable recipe."},
     {"claim": "Word-for-word quotes do not survive the notebook.", "state": "holds", "since": "2026-10-12",
      "evidence": "E31c and E33, two runs each: quote 0 % on far facts; their 25-33 % came from signs inside the window.",
      "settle": "—"},
@@ -151,13 +159,22 @@ CLAIMS = [
      "evidence": "Dense scores 0 % past 8k on every task, but it has no method for reading past its training length, "
                  "and the no-memory control has not been run on v2.",
      "settle": "The no-memory control and a dense model with a long-text method on the same exams."},
-    {"claim": "E33 reads better at 16k than at 1k because the facts are less crowded.", "state": "open",
-     "since": "2026-10-11",
-     "evidence": "E33 on far facts: about 30 % at 1k, 73-93 % at 16k. A guess about the cause.",
-     "settle": "The crowded-facts exam (v2.1) on the existing E33 checkpoint."},
-    {"claim": "Nobody composes two facts or chains rules at 30M / 1.5B.", "state": "holds", "since": "2026-10-10",
-     "evidence": "Every run at guessing on compose and deduce, including the probability on the right candidate.",
-     "settle": "One-step versions (v2.1) to see whether any part is learned."},
+    {"claim": "E33 reads better at 16k than at 1k mostly because the facts are spread out, not because of length.",
+     "state": "single run", "since": "2026-10-13",
+     "evidence": "Crowded-facts exam (every fact within 1,024 tokens of the asked one): E33 lookup 33 % at 16k and 39 % "
+                 "at 4k, against 83 % and 64 % with spread facts and 28 % at 1k; keyed 20 % at 16k (78 % spread). Its "
+                 "notebook holds one fact per page far better than several.",
+     "settle": "A second E33 run; a notebook with more room per page would be a design question, not a protocol one."},
+    {"claim": "At 4k, dense matches E33 once the facts are crowded together.", "state": "single run",
+     "since": "2026-10-13",
+     "evidence": "Crowded facts at 4k: lookup dense 42 % vs E33 39 %, keyed 39 % vs 18 % (one run each); with spread "
+                 "facts E33 led (64 % vs 37 %). At 16k E33 still reads crowded facts (33 %), dense nothing.",
+     "settle": "Both models on the reliable recipe, two runs each."},
+    {"claim": "Nobody learns compose or deduce at 30M / 1.5B — not even one step.", "state": "holds",
+     "since": "2026-10-13",
+     "evidence": "Every run at guessing on two-step compose and deduce (10 Oct on), and on the one-step versions "
+                 "(exams v2.1, 13 Oct): dense 9-10 %, E33 6-8 %, E31c 4-10 % (guessing 8 %).",
+     "settle": "The reliable recipe first; these relations may need more data or a larger model."},
     {"claim": "Plain input (no word-pair/triple tables) makes dense learn.", "state": "retracted", "since": "2026-10-11",
      "evidence": "Seed 0 learned four tasks (10 Oct); seed 1 learned nothing (11 Oct 08:43).",
      "settle": "—"},
@@ -224,15 +241,17 @@ LADDER = [
                "inside their window (E33 near facts 62-83 %). E33's mixed-training win did not repeat.",
      "when": "12 Oct 01:04 → 13 Oct 11:12", "why": "Single-task series (paused); E33 was cut off half-way by the Odra "
                                                    "outage and resumed 07:19 UTC 13 Oct."},
-    {"id": None, "start": "2026-10-13", "data": "v2.1", "standing": "running",
+    {"id": None, "start": "2026-10-13", "data": "v2.1", "standing": "in use",
      "run": "Added exams on finished models", "model": "E33, E31c, dense (two runs), and the single-task models",
      "tokens": "no training", "exams": "v2.1: crowded facts, more unseen shapes, one step",
-     "result": "Does crowding explain why E33 reads better at 16k? Does E33's reading of unseen shapes hold?",
-     "when": "11:12 → ~13:45", "why": "Scores existing checkpoints; nothing is retrained."},
-    {"id": None, "start": "planned", "data": "v2", "standing": "queued",
+     "result": "Crowded facts: E33 lookup 33 % at 16k (83 % spread), dense matches it at 4k. Three more unseen shapes: "
+               "E33 30-45 %, dense 1-4 %. One-step compose and deduce: everyone at guessing.",
+     "when": "13 Oct 11:12 → 12:05", "why": "Existing checkpoints scored on the added exams; nothing retrained. Scores "
+                                            "appear under each run's other exam sets."},
+    {"id": None, "start": "2026-10-13", "data": "v2", "standing": "running",
      "run": "Reliability fix", "model": "dense · 30M, plain, three seeds", "tokens": "1.5B, 8 questions per document",
      "exams": "v2, 1k-4k (+ 16k)", "result": "Does dense learn in at least 2 of 3 runs?",
-     "when": "~13:45 → ~22:45 (13 Oct)", "why": "Decides the recipe for the architecture comparison."},
+     "when": "13 Oct 12:05 → ~21:05", "why": "Decides the recipe for the architecture comparison."},
 ]
 
 # Plain names for the architectures (first mention = name + what it is).
@@ -387,6 +406,10 @@ ROUNDS = {
             "Training took 7.0 h on 3 GPUs (58k tokens/s, a 20-minute cooldown after 6 h), 3× dense.",
             "E31c without the loop (12:15 UTC 11 Oct) does not use its notebook: lookup 16 % at 4k and 0 % at 16k, "
             "the same with the notebook off. Latest 87 % at 1k. So the reread loop is what makes the notebook read.",
+            "Added exams (13 Oct): with every fact packed into 1,024 tokens E33 reads lookup 39 % at 4k and 33 % at 16k "
+            "(spread: 64 % and 83 %), keyed 18 % and 20 % (56 %, 78 %) — the long-document gain was mostly the facts "
+            "being spread out. Three more unseen sentence shapes: lookup 30 % / 45 %. One-step compose and deduce: at "
+            "guessing.",
         ],
     },
     "pt_quote_30m_odra.odra": {
