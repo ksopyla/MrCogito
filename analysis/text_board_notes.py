@@ -24,7 +24,7 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-13 12:40 UTC",
+    "as_of": "2026-10-13 15:25 UTC",
     "headline": "Trust the measurements, not yet the ranking. Every score on this board is measured correctly, with "
                 "the reading rules of 13 Oct applied to all of them. What is missing is reliable learning: dense learns "
                 "a skill in only some runs at this budget, and now E33's one strong win did not repeat either (trained "
@@ -43,13 +43,13 @@ STATUS = {
         "story; latest's floor is 20 %; dense is not compared past 4k. Nothing had to be retrained.",
     ],
     "next": [
-        "Running on Odra since 12:05 UTC: the reliability fix — dense 30M, 8 questions per training document, three "
-        "runs of about 3 h each (seed 0 about 15:05, seed 1 about 18:05, seed 2 about 21:05 UTC).",
-        "If dense learns in at least 2 of 3, the same recipe goes to E33 next (two runs): its notebook reading looks as "
-        "luck-dependent as dense's retrieval. Then the architecture comparison on that recipe, the no-memory control "
+        "Reliability fix, first run done (14:58 UTC): dense with 8 questions per training document learned lookup 56 %, "
+        "keyed 46 %, latest 77 % and count 30 % (far facts at 4k) — more than any 1-question run — rising steadily "
+        "from about 0.5B tokens instead of switching on late. Quote stayed at guessing.",
+        "Running: the second run (seed 1, since 14:58 UTC, about 17:55), then the third (about 20:55 UTC). Two of three "
+        "learning makes this the recipe.",
+        "Then the same recipe for E33 (two runs), then the architecture comparison on it, the no-memory control "
         "included.",
-        "Odra stopped suddenly at 09:52 UTC 12 Oct (3.6 h into training, nothing logged: power loss or hard freeze) "
-        "and was back at 07:18 UTC 13 Oct.",
     ],
 }
 
@@ -248,10 +248,17 @@ LADDER = [
                "E33 30-45 %, dense 1-4 %. One-step compose and deduce: everyone at guessing.",
      "when": "13 Oct 11:12 → 12:05", "why": "Existing checkpoints scored on the added exams; nothing retrained. Scores "
                                             "appear under each run's other exam sets."},
+    {"id": "q8_dense30m_s0_odra.odra", "start": "2026-10-13", "data": "v2", "standing": "calibration",
+     "run": "Reliability fix, run 1", "model": "dense · 30M, plain, seed 0", "tokens": "1.5B, 8 questions per document",
+     "exams": "v2 + v2.1, 1k-4k",
+     "result": "Lookup 56 %, keyed 46 % (far facts), latest 77 % (floor 20 %), count 30 % at 4k; quote at guessing; "
+               "learned steadily from about 0.5B tokens.",
+     "when": "13 Oct 12:05 → 14:58", "why": "Tests the 8-questions recipe; needs 2 of 3 runs to learn."},
     {"id": None, "start": "2026-10-13", "data": "v2", "standing": "running",
-     "run": "Reliability fix", "model": "dense · 30M, plain, three seeds", "tokens": "1.5B, 8 questions per document",
-     "exams": "v2, 1k-4k (+ 16k)", "result": "Does dense learn in at least 2 of 3 runs?",
-     "when": "13 Oct 12:05 → ~21:05", "why": "Decides the recipe for the architecture comparison."},
+     "run": "Reliability fix, runs 2 and 3", "model": "dense · 30M, plain, seeds 1 and 2",
+     "tokens": "1.5B, 8 questions per document", "exams": "v2 + v2.1, 1k-4k",
+     "result": "Does dense learn again?", "when": "13 Oct 14:58 → ~20:55",
+     "why": "Decides the recipe for the architecture comparison."},
 ]
 
 # Plain names for the architectures (first mention = name + what it is).
@@ -443,6 +450,24 @@ ROUNDS = {
             "Language: story loss E33 1.511, dense 1.520, E31c 1.554 nats per token (lower is better).",
             "Training on lookup alone did not make the notebook read: the same E33 with mixed training did (one run "
             "each), so the notebook switching on looks like luck at this budget, as dense's retrieval does.",
+        ],
+    },
+    "q8_dense30m_s0_odra.odra": {
+        "title": "Reliability fix, run 1: dense 30M with 8 questions per training document (1.5B tokens, data v2)",
+        "where": "Odra · 3 × RTX 3090",
+        "dates": "13 Oct 2026 12:05 UTC → 14:58 UTC (training 2.3 h, exams and learning curve 0.6 h)",
+        "verdict": "Learned four tasks, more than any 1-question run: on far facts at 4k lookup 56 % and keyed 46 % "
+                   "(guessing 8 % and 6 %), latest 77 % (floor 20 %), count 30 % (9 %). Quote stayed at guessing.",
+        "observations": [
+            "The skills rose steadily from about 0.5B tokens (lookup 15 → 33 → 52 % at 0.45B, 0.75B, 1.05B tokens) "
+            "instead of switching on late; latest jumped between 0.75B and 0.9B (11 → 46 %).",
+            "The best 1-question run (seed 0) had lookup 37 %, keyed 33 %, latest 32 %, count 19 %; two of four had nothing.",
+            "Crowded facts at 4k read as well as spread ones (lookup 57 %, keyed 46 %).",
+            "Unseen sentence shapes still fail (0-2 %): more questions taught the training shapes, not the meaning.",
+            "Quote at guessing (10 %) where two 1-question runs passed it: copying a 4-6 word sign is a different "
+            "skill, and 8 questions per document did not bring it.",
+            "Compose, deduce and their one-step versions at guessing.",
+            "Language: story loss 1.548 nats per token (1-question runs 1.53-1.56).",
         ],
     },
     "cal3a_s1_plain30m_v2_odra.odra": {
