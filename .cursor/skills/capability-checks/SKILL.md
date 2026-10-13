@@ -124,7 +124,8 @@ uv run python analysis/capability_board.py      # → docs/3_Evaluations_and_Bas
 It also rewrites the re-run list `docs/3_Evaluations_and_Baselines/capability_reruns.md` (what must run, from
 scratch, before the table is complete; flawed tasks never). The page: the no-harm verdict per model (`same`
 evidence only), the task table by level with a status per row (active, partial, missing, calibrating,
-flawed) and a protocol badge per legacy cell, the length charts by level, the task guide and the re-run list. **When the author asks for a visual
+flawed) and a protocol badge per legacy cell, the length charts by level, the task guide and the re-run list, plus the trust layer (open issues, runs in flight,
+⚠ marks, history; see "Trust and audit" below). **When the author asks for a visual
 summary**, regenerate from a fresh pull and publish to the existing artifact
 https://claude.ai/artifact/FNTv1zKLc6fh9QRTrJmVrR (pass it as `url` from a new session). Narrative pages
 may sit on top, but their numbers come from the ledger.
@@ -134,6 +135,22 @@ Hand to `experiment-track`: the no-harm verdict and lost list, per-level results
 the length headline, and the ledger file names. Past reports that cite capability numbers get a **dated
 re-scoring note** above the original numbers (never overwrite them). Report to the author per
 `research-comms`: outcome first, plain words, dashboard link.
+
+## Trust and audit — the board is mission control (author, 2026-10-13)
+The author uses the dashboard as the one place to see what is training and what to trust. Keep it that way:
+- **A finding goes into `evaluation/capability_audit.py` (`ISSUES`) in the same commit that finds it** — date,
+  severity, tasks and models touched, what it means for reading the board now, the lesson, the fix and the run that
+  settles it. Never leave a finding only in chat or only in the calibration log.
+- **Launching or pulling a run updates `RUNS`** (folder, host, started, expected end, issues it settles), then
+  regenerate and publish the board. The status strip shows trusted / caution / invalid counts and the build time.
+- **Rerun only what an open issue touches**; re-label old results (flawed task, ⚠ caution), never delete them. When
+  the settling run lands: set the issue's `status="resolved"`, keep its text as history.
+- **Never report "X cannot learn Y"** while an open issue touches that cell; in particular not before a matched-compute
+  run and a second step size. Report the per-seed scores, not only the median.
+- **Pre-flight a new or changed exam before it goes `active`** (spec "Trust: open issues and history"): measured
+  guessing floors (answer-block position, chain end, node before a chain end, commonest first letter), the answer's
+  position spread, budget = stated steps, the stop rule (`STOP_RULE` via `task_job`), dense at a second step size,
+  compute per step per model.
 
 ## Maintaining the checks
 - A task changes (recipe, length, budget, curriculum, rows) → a new task id or a new `VERSION`.

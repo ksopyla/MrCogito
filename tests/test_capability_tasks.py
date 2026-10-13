@@ -96,3 +96,16 @@ def test_recorded_first_block_exams_map_to_flawed_tasks():
     assert legacy_battery("e31_li_m1", "decoy8_1k") == ("X.decoy8-1k-v1", "flawed")
     for t in ("C2.lookalike-128", "C2.lookalike-1k", "C2.decoy8-1k", "C6.unique-256", "C6.unique-1k"):
         assert "--shuffle_blocks" in TASK_BY_ID[t].args, t
+
+
+def test_every_issue_and_run_points_at_real_tasks_and_issues():
+    from evaluation.capability_audit import ISSUE_BY_ID, ISSUES, RUNS, issues_for
+    for i in ISSUES:
+        assert i.severity in ("critical", "high", "medium", "low") and i.status in ("open", "rerun running", "resolved")
+        assert i.effect in ("caution", "invalid", "note") and i.meaning and i.learned and i.fix, i.id
+        assert all(x in TASK_BY_ID for x in i.tasks), i.id
+        assert all(r in {run.folder for run in RUNS} for r in i.runs), i.id
+    for r in RUNS:
+        assert r.settles and all(x in ISSUE_BY_ID for x in r.settles), r.folder
+    assert issues_for("C5.pchain2-1k", "dense") == ["recipeA-compute"]
+    assert issues_for("C3.recall8-1k", "dense") == []

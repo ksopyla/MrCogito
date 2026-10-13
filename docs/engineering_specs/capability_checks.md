@@ -180,6 +180,28 @@ built by `analysis/capability_board.py`, published as an Artifact), organized as
 Default models: the champion, the registered candidate (E33a loop) and dense; older builds are one click away.
 Every section links to its rule in this spec and every number to its ledger file.
 
+## Trust: open issues and history
+
+The dashboard is the **mission control** of the checks (author, 2026-10-13): it must say what is training, what to
+trust, and why an older number is no longer trusted — without re-running everything each time something is found.
+
+- **Trust states, per result:** *trusted* (matches the task's written recipe, seeds 0–2, no open issue) · *caution* ⚠
+  (an open issue touches it, or seeds are missing: shown, the verdict may still change) · *older protocol* (hatched,
+  never counts) · *invalid* (flawed exam: kept as history with the reason). The board has an "only trusted results"
+  toggle; the ladder can count trusted passes only.
+- **Every finding is an issue** in `evaluation/capability_audit.py` (`ISSUES`), recorded in the same commit that finds
+  it — never only in chat: date, severity, which tasks and models it touches, what it means for reading the board now,
+  the lesson, and the run that will settle it. Open issues mark their results ⚠; resolved ones stay as **history**.
+- **Runs in flight** (`RUNS`): what is training, where, since when, the expected end, and which issues it settles.
+  Updated at every launch and every pull; the board shows progress from the pulled ledger.
+- **Rerun only what an issue touches.** An issue names its tasks and models, so a fix reruns those cells, not the
+  board. Old results are re-labelled (moved to a flawed task or marked ⚠), never deleted.
+- **Pre-flight before a task becomes `active`** (the checks that would have caught the 2026-10-13 findings): guessing
+  floors measured with simple no-reasoning rules on generated rows (position of the answer block, chain end, node
+  before a chain end, commonest first letter); the answer's position spread over the book; budget names that state
+  steps; in-run decisions on the task's own score on validation rows; dense tried at a second step size before a
+  "cannot"; compute per step recorded per model; per-seed scores shown, not only the median.
+
 ## Comparing variants: champion and no-harm
 
 **Champion:** `e31_li_m1` (E31 latent memory, one reader entry per latent), chosen 2026-10-01 in E31b.

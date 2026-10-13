@@ -32,6 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from analysis.capability_ledger import LEDGER_DIR, load_ledgers, study_jobs, suite_rows  # noqa: E402
+from evaluation.capability_audit import ISSUES, RUNS, issues_for  # noqa: E402
 from evaluation.capability_suite import CELL_BY_ID, lr_for  # noqa: E402
 from evaluation.capability_tasks import (LEVELS, SEEDS, TASK_BY_ID, TASKS, VERSION,  # noqa: E402
                                          legacy_battery, legacy_suite)
@@ -350,6 +351,42 @@ def reference(task_id: str, tbl: dict) -> str | None:
     return max(ok, key=ok.get) if ok else None
 
 
+def trust(tbl: dict) -> tuple[dict, dict]:
+    """Per (task, model) cell: the open issues that mark it and its trust state — trusted (matches the task
+    definition on seeds 0–2, no open issue), caution (an open issue or missing seeds), legacy (older protocol),
+    invalid (flawed). Returns (cell_issues, cell_trust)."""
+    cell_issues, cell_trust = {}, {}
+    for task, by_m in tbl.items():
+        flawed = TASK_BY_ID[task].status == "flawed"
+        for m, c in by_m.items():
+            ids = issues_for(task, m)
+            if ids:
+                cell_issues.setdefault(task, {})[m] = ids
+            if flawed or c["label"] == "flawed":
+                state = "invalid"
+            elif c["label"] != "same":
+                state = "legacy"
+            elif ids or not set(SEEDS) <= set(c["seeds"]):
+                state = "caution"
+            else:
+                state = "trusted"
+            cell_trust.setdefault(task, {})[m] = state
+    return cell_issues, cell_trust
+
+
+def runs_status(ledgers: list[dict]) -> list[dict]:
+    """Runs in flight (evaluation/capability_audit.RUNS) with progress from a pulled ledger of the same folder."""
+    by_name = {led["name"]: led for led in ledgers}
+    out = []
+    for r in RUNS:
+        led = by_name.get(r.folder)
+        done = sum(j["status"] == "done" for j in led["jobs"]) if led else None
+        out.append({"folder": r.folder, "host": r.host, "started": r.started, "eta": r.eta, "what": r.what,
+                    "settles": list(r.settles), "jobs": r.jobs, "done": done,
+                    "collected": led["collected"] if led else None})
+    return out
+
+
 def row_status(task, tbl: dict, champion: str) -> dict:
     if task.status == "flawed":
         return {"status": "flawed", "note": task.flaw}
@@ -474,7 +511,12 @@ def main() -> int:
               "score_kind": t.score, "floor": t.floor, "reference": reference(t.id, tbl),
               "curriculum": t.curriculum, "ladder": t.ladder, "task_status": t.status, "flaw": t.flaw,
               **row_status(t, tbl, args.champion)} for t in TASKS]
+    from dataclasses import asdict
+    cell_issues, cell_trust = trust(tbl)
     data = {
+        "built": datetime.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z"),
+        "issues": [asdict(i) for i in ISSUES], "runs": runs_status(ledgers),
+        "cell_issues": cell_issues, "cell_trust": cell_trust,
         "generated": datetime.date.today().isoformat(), "version": VERSION, "champion": args.champion,
         "models": models, "visible": visible, "pass": PASS, "harm_points": HARM_POINTS, "seeds": list(SEEDS),
         "levels": [{"id": lv.id, "name": lv.name, "question": lv.question, "measures": lv.measures} for lv in LEVELS],
