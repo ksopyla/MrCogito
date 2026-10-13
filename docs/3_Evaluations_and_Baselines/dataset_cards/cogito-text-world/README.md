@@ -134,19 +134,44 @@ print(tok.decode(next(iter(train))["input_ids"])[-300:])
    decoding would write the answer.
 2. Optional **picked candidate**: of `candidates`, the one whose first token is most likely at the
    answer position (first tokens are distinct, except `four`/`five` in `count` and the 64-person
-   harder `keyed`). Shows *found the right fact* apart from
-   *copied it exactly*.
-3. Report every score next to its guessing rate (`floor`), and score `prompt_removed` too: a model
-   that really does the task falls to the guessing rate there.
+   harder `keyed`). Shows *found the right fact* apart from *copied it exactly*.
+3. Score `prompt_removed` too: a model that really does the task falls to the guessing rate there.
 
-Our pass rule: exact answer ≥ 75 % **and** the evidence-removed twin at its guessing rate.
+**Read the scores with four rules** (they decide most conclusions):
+
+- **Far facts are the headline.** In `quote`, `lookup` and `keyed` the fact sits early, in the middle
+  or late (`depth`: 5 %, 50 %, 95 % of the document, balanced). At 1k–4k a late fact is 50–200 tokens
+  before the question, inside any local attention window, so report **far** (`early` + `middle`) as
+  the main score and **near** (`late`) separately. A model can score 49 % on near facts and 0 % on far ones.
+- **Use the effective floor.** The floor is the best score without doing the task: `floor` for most
+  tasks, but **20 %** for `latest` (follow every move, ignore whose it is).
+- **Learned vs passed.** *Learned*: the headline is above the effective floor by 10 points or 3 standard
+  errors, whichever is larger. *Passed*: ≥ 75 % exact, with the evidence-removed twin at the floor.
+- **Past the training length**, a model with no long-text method measures position extrapolation, not
+  memory. Compare against a local-window model of the same size, not just against itself at 4k.
+
 **Train short, test long:** train at 4,096 tokens, read `eval_id` at every length; longer documents
 add filler, not facts. Reference scorer: `evaluation/text_checks_eval.py` in
 [github.com/ksopyla/MrCogito](https://github.com/ksopyla/MrCogito).
 
-**How hard is it?** First reference point (2026-10-10, one seed, draft protocol): a 30M dense
-Transformer trained on 1.5B tokens of this mix passes `quote` (95 % at 4k vs 8 % guessing) and stays
-near guessing on `lookup` and `keyed`. Larger models are being run.
+## What to expect (findings so far)
+
+From the first 18 small models trained from scratch on this data (mostly 30M parameters, 1.5B tokens;
+Oct 2026, draft protocol). Only findings that held up are listed:
+
+- **Run several seeds.** At 30M / 1.5B tokens a dense Transformer learns retrieval in some runs only: of four runs, one
+  passed `quote`, one learned four tasks (quote 86 %, lookup 39 %, keyed 35 %, latest 32 % at 4k), two
+  learned nothing. Skills switch on abruptly late in training. Answers are ≈ 0.1 % of training tokens
+  (one question per document); a mix with more questions per document is being tested.
+- **`compose` and `deduce` are open frontier:** every run is at guessing, including the probability
+  on the right candidate.
+- **The paraphrase split separates meaning from surface:** dense lookup drops from 37–48 % to 0–1 %
+  when the fact uses a sentence shape never seen in training.
+- **Compressed memories lose exact wording:** two memory architectures we tested scored 0 % on far
+  `quote` items; their quote scores came only from signs inside the local window.
+- **Without a long-text method, dense reads 0 % at 16k** on every task.
+
+Live results and the protocol: [project page](https://ai.ksopyla.com/projects/cogito-capability-datasets/).
 
 ## The family: Cogito Capability Checks
 
@@ -214,6 +239,8 @@ assembly).
 **Limitations**
 - Children's-story language and templated facts: this tests the *mechanisms* of retrieval and
   composition in small models, not world knowledge or open-domain QA.
+- Training rarely asks far back: ≈ 20 % of training questions have their fact more than 1k tokens
+  before the question, ≈ 4.5 % more than 2k (documents are 256–4,096 tokens, facts placed uniformly).
 - Fact sentences differ in style from the filler, so finding *a* fact is easier than in natural text;
   decoys and the evidence-removed twins guard against that.
 - Stories were written by LLMs (TinyStories: GPT-3.5/4; SimpleStories: other LLMs) and inherit their biases.
@@ -227,6 +254,7 @@ TinyStories (Eldan & Li, 2023, CDLA-Sharing-1.0) and SimpleStories (Finke et al.
 
 | date | version | change |
 |---|---|---|
+| 2026-10-13 | card | Reading rules (far facts, effective floor, learned vs passed) and findings from the first 18 models. Data unchanged. |
 | 2026-10-10 | `text-world-v2` (current) | Every guessing rate below 10 % (12 signs, 12 homes, 10 moves, 12-person teacher chain, counts 0–10, deduce asks *which* property); candidate places start with different letters, so the picked-candidate score is clean; cut-off filler sentences dropped; train mix ≈1.0B tokens. |
 | 2026-10-08 | `text-world-v1` | Not published. Fixed the five shortcuts found in v0 (below). |
 | 2026-10-06 | `text-world-v0` | First release, kept as `revision="text-world-v0"`. **Known shortcuts, do not use for conclusions:** `lookup` solvable 98 % by copying the only place word; `latest` 100 % by the busiest mover's last place; `count` 51 % by counting all visits; two-way "sister" made `compose` ambiguous; filler stated the `deduce` property in 19 % of items. |
