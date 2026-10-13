@@ -204,8 +204,8 @@ CAL_TASKS = (("lookup1k", "C1.lookup-1k"), ("edge", "C1.edge-1k"), ("keyed4", "C
 CAL_KNOBS = (("path", "written path answer (recipe B)"), ("dense8", "8-layer dense (learnability check)"), ("hc", "hop count in question"), ("mix", "half the rows at the previous hop count"),
              ("direct", "task recipe, no curriculum"), ("_to_", "curriculum from the previous stage"), ("noover", "no overhang (4 facts)"),
              ("k16v16", "16-letter keys and values"), ("k16", "16-letter nodes"), ("k8", "8-letter nodes"),
-             ("lr3e-4", "step 3e-4"), ("x16", "16x budget"), ("x4", "4x budget"), ("k4", "4-letter nodes"),
-             ("nc2", "2 chains"), ("256_to_1k", "256-token stage then 1k"), ("x1", "suite budget"), ("_512_", "512-token book"),
+             ("lr3e-4", "step 3e-4"), ("x16", "19.2k steps (named 16x)"), ("x4", "19.2k steps (named 4x)"), ("k4", "4-letter nodes"),
+             ("nc2", "2 chains"), ("256_to_1k", "256-token stage then 1k"), ("x1", "suite budget, 4.8k steps"), ("_512_", "512-token book"),
              ("_256_", "256-token book"))
 
 
@@ -232,7 +232,7 @@ def calibration(ledgers: list[dict]) -> list[dict]:
             t = TASK_BY_ID[task]
             knobs = [txt for frag, txt in CAL_KNOBS if frag in name + "_"]
             if "_to_" in name and "x16" not in name or (re.match(r"^cal[23]_", name) and "lookup1k" not in name):
-                knobs = [k for k in knobs if k != "4x budget"] + ["4x budget"]
+                knobs = [k for k in knobs if k != "19.2k steps (named 4x)"] + ["19.2k steps (named 4x)"]
             if m:
                 knobs = (["written recipe (confirmation)"] if name.startswith("conf") else ["written recipe"]) \
                     + ([f"curriculum stage {m[3]} hop{'s' if int(m[3]) > 1 else ''}"] if m[3] else [])

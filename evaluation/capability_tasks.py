@@ -38,16 +38,29 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-VERSION = "v4-draft-2026-10-13.1"
+VERSION = "v4-draft-2026-10-13.2"
 PASS_ACC = 0.75
 SEEDS = (0, 1, 2)
 LADDER = (1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072)
 
 # Training budgets (probe flags; micro-batch splitting `--grad_accum` is memory-only and left to the runner).
-# k1_mult: the run may extend to k1_mult x steps while it has not reached the pass mark.
+# The probe trains `steps x k1_mult` steps up front (constant step size after a 50-step warmup), then extends ONCE by
+# the same number while the run is below the pass mark and eval CE still falls (`--extend auto`). So:
+#   TRAIN_1K      4,800 steps (≤ 9,600 with the extension)
+#   TRAIN_1K_X4  19,200 steps (≤ 38,400)
+#   TRAIN_1K_X16 19,200 steps (≤ 38,400) — the SAME cap as TRAIN_1K_X4. The "x16" name was wrong (audit 2026-10-13);
+#                the tuple is kept so recorded job arguments stay identical. `TRAIN_19K` names both honestly.
 TRAIN_1K = ("--seq_len", "1024", "--steps", "1200", "--k1_mult", "4", "--batch", "32", "--lr", "1e-4")
 TRAIN_1K_X4 = ("--seq_len", "1024", "--steps", "4800", "--k1_mult", "4", "--batch", "32", "--lr", "1e-4")
 TRAIN_1K_X16 = ("--seq_len", "1024", "--steps", "19200", "--k1_mult", "1", "--batch", "32", "--lr", "1e-4")
+TRAIN_5K, TRAIN_19K = TRAIN_1K, TRAIN_1K_X4
+# the suite v3 budget of the short 30M cells, written out (suite `budget_for` / `lr_for`): 3,200 steps at 3e-4
+TRAIN_128 = ("--seq_len", "128", "--steps", "800", "--k1_mult", "4", "--batch", "32", "--lr", "3e-4")
+TRAIN_256 = ("--seq_len", "256", "--steps", "800", "--k1_mult", "4", "--batch", "32", "--lr", "3e-4")
+# In-run decisions (early stop at 99 %, the one extension) read the task's own score on 128 validation rows with
+# their own seed, never teacher-forced accuracy on the reported eval rows (audit 2026-10-13; v4-draft-2026-10-13.2).
+# Added by the runner (`task_job`) with the task's `score`; runs recorded before that read teacher-forced accuracy.
+STOP_RULE = ("--stop_on", "score", "--val_rows", "128")
 
 
 @dataclass(frozen=True)
@@ -145,15 +158,18 @@ TASKS: tuple[Task, ...] = (
     Task("C1.edge-1k", "C1", "1 of 4 edges by its start node, 1024 tokens", "chain_parallel",
          ("--scale", "bridge_1k", "--hops", "1", "--chain_overhang", "1", "--key_len", "16"), 1024, 32,
          "the parallel chains with one hop: the start node picks the edge (keyed lookup in chain format; "
-         "stage 1 of the C5 curriculum)", score="candidate", floor=0.125, ladder=_L,
+         "stage 1 of the C5 curriculum)", score="candidate", floor=0.25, ladder=_L,
          train=TRAIN_1K_X4),
     # C2 — discriminate
-    Task("C2.lookalike-128", "C2", "fact vs 1 look-alike, 128 tokens", "select_1decoy", ("--scale", "tiny"), 128, 32,
-         "the fact vs one same-shaped decoy"),
-    Task("C2.lookalike-1k", "C2", "fact vs 1 look-alike, 1024 tokens", "select_1decoy", ("--scale", "bridge_1k"),
-         1024, 64, "the fact vs one decoy", ladder=_L),
+    # C2 / C6 exams place their blocks in random order (`--shuffle_blocks`, 2026-10-13): before, the asked fact was
+    # always the first block (the v3 / battery v1 results are the flawed X.*-v3 / X.*-v1 tasks below)
+    Task("C2.lookalike-128", "C2", "fact vs 1 look-alike, 128 tokens", "select_1decoy",
+         ("--scale", "tiny", "--shuffle_blocks"), 128, 32, "the fact vs one same-shaped decoy",
+         train=TRAIN_128),
+    Task("C2.lookalike-1k", "C2", "fact vs 1 look-alike, 1024 tokens", "select_1decoy",
+         ("--scale", "bridge_1k", "--shuffle_blocks"), 1024, 64, "the fact vs one decoy", ladder=_L, train=TRAIN_1K),
     Task("C2.decoy8-1k", "C2", "fact among 8 look-alikes, 1024 tokens", "select",
-         ("--scale", "bridge_1k", "--n_decoys", "8", "--n_distractors", "0"), 1024, 64,
+         ("--scale", "bridge_1k", "--n_decoys", "8", "--n_distractors", "0", "--shuffle_blocks"), 1024, 64,
          "pick the fact among 8 same-shaped decoys", status="calibrating", ladder=_L),
     # C3 — hold many
     Task("C3.recall8-1k", "C3", "recall 1 of 8 facts, 1024 tokens", "recall",
@@ -166,7 +182,7 @@ TASKS: tuple[Task, ...] = (
          floor=0.39),
     # C4 — compose (in-order)
     Task("C4.chain4-1k", "C4", "in-order 4-hop chain, 1024 tokens", "chain_ordered",
-         ("--scale", "bridge_1k", "--hops", "4"), 1024, 64, "follow 4 hops listed in order", ladder=_L),
+         ("--scale", "bridge_1k", "--hops", "4"), 1024, 64, "follow 4 hops listed in order", ladder=_L, floor=0.485),
     Task("C4.chain4-2k", "C4", "in-order 4-hop chain, 2048 tokens", "chain_ordered",
          ("--scale", "bridge_1k", "--hops", "4", "--seq_len", "2048"), 2048, 64,
          "follow 4 in-order hops in a 2k book (no architecture, dense included, learns it at the v3 budget)",
@@ -184,7 +200,7 @@ TASKS: tuple[Task, ...] = (
          "compose 2 shuffled hops inside the model: 4 chains of the same length, only the start node names the right one, "
          "every chain runs one edge past the asked node, the question states the hop count; the answer is the final node "
          "only (no scratchpad)",
-         status="active", ladder=_L, score="candidate", floor=0.083, train=TRAIN_1K_X16,
+         status="active", ladder=_L, score="candidate", floor=0.25, train=TRAIN_1K_X16,
          curriculum="one run from random init: the same exam at 1 hop (budget TRAIN_1K_X4) → 2 hops (task budget, half "
                     "the rows at 1 hop: `--replay_recipe chain_parallel --replay_hops 1 --replay_frac 0.5`)"),
     # C5 — recipe A at 3-4 hops: the frozen 2-hop recipe extended one hop per stage (2026-10-13); calibrating until a
@@ -195,7 +211,7 @@ TASKS: tuple[Task, ...] = (
             "--hop_count_in_question"), 1024, 16,
            f"compose {h} shuffled hops inside the model: 4 chains of the same length, only the start node names the right "
            f"one, every chain runs one edge past the asked node, the question states the hop count; final node only",
-           status="calibrating", ladder=_L, score="candidate", floor=fl, train=TRAIN_1K_X16,
+           status="calibrating", ladder=_L, score="candidate", floor=0.25, train=TRAIN_1K_X16,
            curriculum="one run from random init: the same exam at 1 hop (budget TRAIN_1K_X4) → "
                       + " → ".join(f"{k} hops (task budget, half the rows at {k - 1} hop{'s' if k > 2 else ''}: "
                                    f"`--replay_recipe chain_parallel --replay_hops {k - 1} --replay_frac 0.5`)"
@@ -212,7 +228,7 @@ TASKS: tuple[Task, ...] = (
             "--hop_count_in_question", "--chain_answer_path"), 1024, 16 * h,
            f"chained lookup with a scratchpad: follow {h} shuffled hops writing every node on the way (n1 … n{h}); "
            f"4 chains, overhang, hop count in the question; the picked candidate reads the final node",
-           status="active", ladder=_L, score="candidate", floor=fl,
+           status="active", ladder=_L, score="candidate", floor=0.25,
            train=TRAIN_1K_X16,
            curriculum="one run from random init: the same exam at 1 hop (budget TRAIN_1K_X4) → "
                       + " → ".join(f"{k} hops (task budget, half the rows at {k - 1} hop{'s' if k > 2 else ''}: "
@@ -220,10 +236,12 @@ TASKS: tuple[Task, ...] = (
                                    for k in range(2, h + 1)))
       for h, fl in ((2, 0.083), (3, 0.0625))),
     # C6 — aggregate
-    Task("C6.unique-256", "C6", "the fact that appears once, 256 tokens", "unique", ("--scale", "tiny_wide"), 256, 48,
-         "report the one fact that appears once (no key to look up)"),
-    Task("C6.unique-1k", "C6", "the fact that appears once, 1024 tokens", "unique", ("--scale", "bridge_1k"), 1024,
-         None, "report the one fact that appears once in 1024 tokens", status="calibrating", ladder=_L),
+    Task("C6.unique-256", "C6", "the fact that appears once, 256 tokens", "unique",
+         ("--scale", "tiny_wide", "--shuffle_blocks"), 256, 48,
+         "report the one fact that appears once (no key to look up)", train=TRAIN_256),
+    Task("C6.unique-1k", "C6", "the fact that appears once, 1024 tokens", "unique",
+         ("--scale", "bridge_1k", "--shuffle_blocks"), 1024, None,
+         "report the one fact that appears once in 1024 tokens", status="calibrating", ladder=_L),
     Task("C6.count-1k", "C6", "count, 1024 tokens", "count", ("--scale", "bridge_1k"), 1024, 2,
          "a whole-book count, one answer token (2-bit prize: weak signal, report with care)",
          status="calibrating", ladder=_L),
@@ -251,6 +269,17 @@ TASKS: tuple[Task, ...] = (
                 "and picking a chain end 25 % of whole answers; every arm, dense included, sat on that floor "
                 "(use C5: overhang, picked candidate)")
       for h, fl in ((2, 0.44), (3, 0.41), (4, 0.39))),
+    *(Task(f"X.{n}", None, f"{what} — blocks in list order", rec, args, L, prize,
+           "the recorded exam: the asked fact is always the first block", status="flawed",
+           flaw="the asked fact is always the first block in reading order (blocks were never shuffled; measured "
+                "400/400, 2026-10-13), so copying the first block answers every row (use the C2 / C6 exam)")
+      for n, what, rec, args, L, prize in (
+          ("lookalike-128-v3", "fact vs 1 look-alike, 128 tokens", "select_1decoy", ("--scale", "tiny"), 128, 32),
+          ("lookalike-1k-v3", "fact vs 1 look-alike, 1024 tokens", "select_1decoy", ("--scale", "bridge_1k"), 1024, 64),
+          ("decoy8-1k-v1", "fact among 8 look-alikes, 1024 tokens", "select",
+           ("--scale", "bridge_1k", "--n_decoys", "8", "--n_distractors", "0"), 1024, 64),
+          ("unique-256-v3", "the fact that appears once, 256 tokens", "unique", ("--scale", "tiny_wide"), 256, 48),
+          ("unique-1k-v1", "the fact that appears once, 1024 tokens", "unique", ("--scale", "bridge_1k"), 1024, None))),
     Task("X.match3-1k", None, "the fact planted three times", "match3", ("--scale", "bridge_1k"), 1024, None,
          "report the fact that appears three times", status="flawed",
          flaw="at 1k the book holds the triple plus only 2 single facts: averaging all facts gives the majority "
@@ -284,15 +313,15 @@ SUITE_V3 = {  # suite v3 cell → v4 task (all from scratch with frozen settings
     "L0.copy-128": "C0.copy-128", "L1.copy-256": "C0.copy-256", "L1.copy-512": "C0.copy-512",
     "L3.copy-1k": "C0.copy-1k", "L0.lookup-128": "C1.lookup-128", "L1.lookup-256": "C1.lookup-256",
     "L1.lookup-512": "C1.lookup-512", "L3.lookup-1k": "C1.lookup-1k", "L3.lookup-2k": "C1.lookup-2k",
-    "L2.lookalike-128": "C2.lookalike-128", "L2.lookalike-1k": "C2.lookalike-1k", "L4.chain-1k": "C4.chain4-1k",
+    "L2.lookalike-128": "X.lookalike-128-v3", "L2.lookalike-1k": "X.lookalike-1k-v3", "L4.chain-1k": "C4.chain4-1k",
     "L4.chain-2k": "C4.chain4-2k", "L5.fact-512": "C7.fact-512", "L5.story-512": "C7.story-512",
-    "L5.chain-512": "C7.chain-512", "L5.fact-1k": "C7.fact-1k", "L6.unique-256": "C6.unique-256",
+    "L5.chain-512": "C7.chain-512", "L5.fact-1k": "C7.fact-1k", "L6.unique-256": "X.unique-256-v3",
     "L6.shuffled-1k": "X.shuffled2-1k",
 }
 BATTERY_V1 = {  # length-battery slot (analysis/capability_board.parse_job) → v4 task
     "lookup_2k": "C1.lookup-2k", "lookup_16k": "C1.lookup-16k", "chain_2k": "C4.chain4-2k",
-    "recall8_1k": "C3.recall8-1k", "recall16_1k": "C3.recall16-1k", "decoy8_1k": "C2.decoy8-1k",
-    "unique_1k": "C6.unique-1k", "match3_1k": "X.match3-1k", "chain8_1k": "C4.chain8-1k",
+    "recall8_1k": "C3.recall8-1k", "recall16_1k": "C3.recall16-1k", "decoy8_1k": "X.decoy8-1k-v1",
+    "unique_1k": "X.unique-1k-v1", "match3_1k": "X.match3-1k", "chain8_1k": "C4.chain8-1k",
     "pchain2_1k": "X.pchain2-1k-v1", "pchain3_1k": "X.pchain3-1k-v1", "pchain4_1k": "X.pchain4-1k-v1",
     "shuf2_1k": "X.shuffled2-1k", "shuf3_1k": "X.shuffled3-1k", "count_1k": "C6.count-1k",
     "majority_1k": "X.majority-1k",
@@ -323,5 +352,5 @@ def legacy_battery(variant: str, slot: str) -> tuple[str | None, str]:
     return task, "curriculum-differs"                # E31b / E33a: started from the run's own lookup-2k weights
 
 
-__all__ = ["TRAIN_1K", "TRAIN_1K_X4", "TRAIN_1K_X16", "BATTERY_V1", "FLAWED", "LADDER", "LEVELS", "LEVEL_BY_ID", "PACKAGES", "PASS_ACC", "SEEDS",
+__all__ = ["STOP_RULE", "TRAIN_5K", "TRAIN_19K", "TRAIN_128", "TRAIN_256", "TRAIN_1K", "TRAIN_1K_X4", "TRAIN_1K_X16", "BATTERY_V1", "FLAWED", "LADDER", "LEVELS", "LEVEL_BY_ID", "PACKAGES", "PASS_ACC", "SEEDS",
            "SUITE_V3", "TASKS", "TASK_BY_ID", "VERSION", "Level", "Task", "legacy_battery", "legacy_suite"]

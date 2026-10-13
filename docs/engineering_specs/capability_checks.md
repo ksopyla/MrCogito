@@ -66,7 +66,10 @@ dials**, measured the same way on every level.
    must be the asked one. Their first letter has a guessing floor of ~40 % (answer with any candidate: the
    commonest first letter among the candidates wins); the picked candidate has 1 / #candidates, and a lossy
    copy of the right fact still counts. Every task lists its guessing floor (`floor`) next to chance, and
-   every report prints it beside the score (E33a diagnosis, 2026-10-05).
+   every report prints it beside the score (E33a diagnosis, 2026-10-05). The floor is the **best answer that
+   follows no hop**, measured on generated rows: on the parallel chains (C1.edge, C5) it is **25 %** — every
+   chain runs one edge past its asked node, so "the node before a chain end, of a random chain" is right one
+   time in four (audit 2026-10-13); scores between 1 / #candidates and 25 % are guessing, not partial reasoning.
 5. **The dense model trains next to the candidate** on the same data, seed and budget: the ceiling. A
    miss where dense also misses is "uncalibrated", not a failure.
    *Learnability reference for C5 (author, 2026-10-06):* if the standard 4-layer dense control cannot learn
@@ -87,6 +90,12 @@ dials**, measured the same way on every level.
    a protocol change: it applies to all models, bumps `VERSION`, and gets a dated line in the calibration
    log below. Runs are built from the task definition (`task_job` in the study plan), never from hand-typed
    flags.
+   *In-run decisions (audit, 2026-10-13):* a run stops early (99 %) or extends once (while below 75 % and eval CE
+   still falls) by reading the **task's own score on 128 validation rows** with their own seed (`STOP_RULE`,
+   added by `task_job`), never teacher-forced accuracy on the reported eval rows: teacher forcing sat at 82–93 % on
+   the 2-hop plateau, so reasoning runs never extended, and path runs stopped after 300–2,900 steps. Budgets: the
+   probe trains `steps × k1_mult` up front and extends once by the same amount — `TRAIN_1K` is 4,800 steps,
+   `TRAIN_1K_X4` and `TRAIN_1K_X16` are both **19,200** (the "x16" name was wrong; `TRAIN_19K` names both).
 
 ## Levels and tasks
 
@@ -242,6 +251,10 @@ score, read against the task's guessing floor. Ledgers: `results/capability/stud
 | 2026-10-07 22:40 | dashboard (author) | the headline view was not wanted: the board should read as the ladder | board rebuilt as the ladder, hardest level on top (C7 → C0): a level overview (ready tasks passed per model), then every task by level, calibrating tasks greyed inside their level; the headline list is removed. No task deleted, no recipe changed (section "The dashboard") |
 | 2026-10-08 12:30 | rule-5 freeze (Odra, E33 reasoning) | recipe A (`C5.pchain2-1k`, final answer only) from random init on one schedule, picked candidate seeds 0 / 1 / 2 (floor 8.3 %): **E33 loop 94.1 / 93.9 / 3.9 % (median 93.9)**, E31 7.4 / 8.6 / 8.8 %, 4-layer dense 14.5 / 23.0 / 9.4 %, 8-layer dense 15.2 % (seed 0); every 1-hop stage passed (96.5–100 %). E33 seeds 0 and 1 jumped at ~6k and ~10k steps; seed 2 stayed on the same plateau (teacher-forced 82 %) through the 19.2k-step budget | **`C5.pchain2-1k` active** (author, v4-draft-2026-10-08.1): 8-letter names, 1 hop at `TRAIN_1K_X4` → 2 hops at `TRAIN_1K_X16` with half the rows at 1 hop, for every model; the E33 loop is its reference (dense does not learn it). The failed seed is shown on the board. pchain3/4 stay `calibrating` |
 | 2026-10-13 | protocol (author) | the E33 loop passes 2-hop composition (final answer only); 3 hops is the next rung, but `C5.pchain3/4-1k` still had the pre-freeze recipe (16-letter names, 4× budget, no written schedule) | `C5.pchain3-1k` and `C5.pchain4-1k` rewritten on the frozen 2-hop recipe: 8-letter names, `TRAIN_1K_X16`, one run from random init 1 hop (4×) → 2 → 3 (→ 4) hops, each stage with half the rows at the previous hop count; both stay `calibrating` until a model passes seeds 0–2; 4 hops runs only after a model passes 3 (v4-draft-2026-10-13.1) |
+| 2026-10-13 | audit (exam generation) | the select and unique exams never shuffled their blocks: the asked fact was always the first block in reading order (400/400 rows on C2.lookalike-128/1k, C2.decoy8-1k, C6.unique-256/1k), so "copy the first block" answered every row. Chains, keyed lookups and the language-like exams pick the asked fact at random (checked) | generator `shuffle_blocks` (off = recorded exams bit-identical); C2 / C6 tasks use it (`--shuffle_blocks`, suite v3 budget written out as `train`); their recorded results move to flawed tasks `X.lookalike-128-v3`, `X.lookalike-1k-v3`, `X.decoy8-1k-v1`, `X.unique-256-v3`, `X.unique-1k-v1`; rerun on Polonez (v4-draft-2026-10-13.2) |
+| 2026-10-13 | audit (floors) | the best no-hop guess on the parallel chains is the node before a chain end (fixed overhang 1, equal-length chains): 25 % on C1.edge, C5.path2/3 and C5.pchain2, not 1 / #link targets (8.3 / 6.2 / 12.5 %). Dense on recipe A (14.5 / 23.0 / 9.4 %) is guessing, not partial hop-following. C4.chain4-1k first-letter floor 48.5 % (commonest first letter among link targets) | floors set to 25 % (C1.edge, C5) and 48.5 % (C4.chain4-1k); the 75 % pass mark is unchanged. A varied overhang (1–2 per chain) would lower the floor: a next exam version, not applied to the frozen recipes |
+| 2026-10-13 | audit (budgets, stop rule) | `TRAIN_1K_X4` (4,800 × 4) and `TRAIN_1K_X16` (19,200 × 1) have the same 19,200-step cap and a constant step size, so "16× budget" in rounds 3–5 above never tested a longer run; the extension and the 99 % early stop read teacher-forced accuracy on the reported rows (never fired on recipe A; path runs stopped at 300–2,900 steps) | budgets renamed in comments (`TRAIN_19K`); new runs decide on the task's own score on 128 validation rows (`STOP_RULE`, `--stop_on score`); `--extend off` for fixed-budget controls. Recorded runs keep their label: the rule changes when a run stops, not its cap |
+| 2026-10-13 | audit (fairness of recipe A) | the E33 loop does ~3.2× the work per step (13 vs 4 layer passes; 1.12 vs 0.25 / 0.36 s/step on Odra) and gets the answer loss after every round (deep supervision, 0.3 × 3 exits); its seeds jumped at 6k / 10k steps (≈ 20k / 33k steps of E31 compute) while dense and E31 stopped at 19.2k | controls on Polonez (`fix_burst_a/b/c`): dense and E31 recipe A with 57.6k stage-2 steps (matched compute, no extension), E33 without answer exits, E33 seeds 3–4. "Only the loop learns it" is held back until they land |
 
 Until step 4, run new variants with the v3 runners (`suite.md`, `battery.md` in the skill) and label the
 results as legacy protocol.

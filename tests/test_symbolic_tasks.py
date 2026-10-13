@@ -588,3 +588,28 @@ def test_builder_writes_both_schemas_and_the_two_label_routes_agree(tmp_path):
             assert all(via_markers[j] == stored[j] for j in sup_stored)
         assert all(x == 1 for x in l[0]["attention_mask"])
         assert sum(l[0]["special_tokens_mask"]) >= 4
+
+
+def test_shuffle_blocks_breaks_the_first_block_shortcut_and_default_keeps_recorded_exams():
+    """select / unique kept blocks in list order: the asked fact was always the first block (2026-10-13)."""
+    import numpy as np
+
+    from data.bapo_ladder import config_for, generate_row_for
+
+    def first_block_is_answer(task, shuffle, n=200, **over):
+        cfg = config_for("bridge_1k", task, shuffle_blocks=shuffle, **over)
+        rng, hits = np.random.default_rng(0), 0
+        for _ in range(n):
+            row = generate_row_for(cfg, rng)
+            marks = [cfg.vocab.control("keymark"), cfg.vocab.control("decoy")]
+            first = int(np.flatnonzero(np.isin(row.input_ids, marks))[0])  # the first block of any kind
+            ans = row.labels[row.labels != -100][: cfg.value_len]
+            hits += bool((row.input_ids[first + 1 + cfg.key_len: first + 1 + cfg.key_len + cfg.value_len] == ans).all())
+        return hits / n
+
+    assert first_block_is_answer("select", False, n_decoys=8, n_distractors=0) == 1.0
+    assert first_block_is_answer("select", True, n_decoys=8, n_distractors=0) < 0.6
+    assert first_block_is_answer("unique", True) < 0.6
+    a = generate_row_for(config_for("bridge_1k", "recall"), np.random.default_rng(3))
+    b = generate_row_for(config_for("bridge_1k", "recall", shuffle_blocks=False), np.random.default_rng(3))
+    assert (a.input_ids == b.input_ids).all()
