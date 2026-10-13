@@ -38,7 +38,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-VERSION = "v4-draft-2026-10-08.1"
+VERSION = "v4-draft-2026-10-13.1"
 PASS_ACC = 0.75
 SEEDS = (0, 1, 2)
 LADDER = (1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072)
@@ -187,17 +187,19 @@ TASKS: tuple[Task, ...] = (
          status="active", ladder=_L, score="candidate", floor=0.083, train=TRAIN_1K_X16,
          curriculum="one run from random init: the same exam at 1 hop (budget TRAIN_1K_X4) → 2 hops (task budget, half "
                     "the rows at 1 hop: `--replay_recipe chain_parallel --replay_hops 1 --replay_frac 0.5`)"),
-    # C5 — recipe A at 3-4 hops (16-letter nodes so the overhang fits in 1024 tokens): not calibrated
-    *(Task(f"C5.pchain{h}-1k", "C5", f"parallel {h}-hop chain among 3 decoy chains, 1024 tokens", "chain_parallel",
-           ("--scale", "bridge_1k", "--hops", str(h), "--chain_overhang", "1", "--key_len", "16",
-            "--hop_count_in_question"), 1024, 32,
-           f"follow {h} shuffled hops; 4 chains of the same length, only the start node names the right one; "
-           f"every chain runs one edge past the asked node; the question states the hop count ({h} hop markers)",
-           status="calibrating", ladder=_L, score="candidate", floor=fl, train=TRAIN_1K_X4,
-           curriculum=f"candidate (to be fixed by calibration): one run from random init, the same exam at 1 hop → "
-                      + " → ".join(str(k) for k in range(2, h + 1))
-                      + " hops (hop count in every question), each stage at the task's budget, optionally with "
-                      "half its rows at the previous hop count (`--replay_hops`)")
+    # C5 — recipe A at 3-4 hops: the frozen 2-hop recipe extended one hop per stage (2026-10-13); calibrating until a
+    # model passes seeds 0-2 from random init. 4 hops is run only after some model passes 3.
+    *(Task(f"C5.pchain{h}-1k", "C5", f"parallel {h}-hop chain among 3 decoy chains, final answer only, 1024 tokens",
+           "chain_parallel",
+           ("--scale", "bridge_1k", "--hops", str(h), "--chain_overhang", "1", "--key_len", "8",
+            "--hop_count_in_question"), 1024, 16,
+           f"compose {h} shuffled hops inside the model: 4 chains of the same length, only the start node names the right "
+           f"one, every chain runs one edge past the asked node, the question states the hop count; final node only",
+           status="calibrating", ladder=_L, score="candidate", floor=fl, train=TRAIN_1K_X16,
+           curriculum="one run from random init: the same exam at 1 hop (budget TRAIN_1K_X4) → "
+                      + " → ".join(f"{k} hops (task budget, half the rows at {k - 1} hop{'s' if k > 2 else ''}: "
+                                   f"`--replay_recipe chain_parallel --replay_hops {k - 1} --replay_frac 0.5`)"
+                                   for k in range(2, h + 1)))
       for h, fl in ((3, 0.0625), (4, 0.05))),
     # C5, recipe B — chained lookup with a scratchpad: every model writes the path n1 … nk, so each written node is
     # the query of the next hop (k lookups in sequence; no internal composition needed). 8-letter names; scored
