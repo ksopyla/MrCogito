@@ -24,7 +24,7 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-13 15:25 UTC",
+    "as_of": "2026-10-13 18:10 UTC",
     "headline": "Trust the measurements, not yet the ranking. Every score on this board is measured correctly, with "
                 "the reading rules of 13 Oct applied to all of them. What is missing is reliable learning: dense learns "
                 "a skill in only some runs at this budget, and now E33's one strong win did not repeat either (trained "
@@ -43,13 +43,12 @@ STATUS = {
         "story; latest's floor is 20 %; dense is not compared past 4k. Nothing had to be retrained.",
     ],
     "next": [
-        "Reliability fix, first run done (14:58 UTC): dense with 8 questions per training document learned lookup 56 %, "
-        "keyed 46 %, latest 77 % and count 30 % (far facts at 4k) — more than any 1-question run — rising steadily "
-        "from about 0.5B tokens instead of switching on late. Quote stayed at guessing.",
-        "Running: the second run (seed 1, since 14:58 UTC, about 17:55), then the third (about 20:55 UTC). Two of three "
-        "learning makes this the recipe.",
-        "Then the same recipe for E33 (two runs), then the architecture comparison on it, the no-memory control "
-        "included.",
+        "Reliability fix, two of three runs done (14:58 and 17:49 UTC): with 8 questions per training document dense "
+        "learned lookup and keyed in both (far facts at 4k: 56 % and 63 %; 46 % and 54 %); seed 1, which learned "
+        "nothing with 1 question, now learns. Latest and count switched on in one run of two; quote in neither.",
+        "Running: the third run (seed 2, about 20:45 UTC).",
+        "Then E33 on the same recipe: its own step size first (tuning by held-out loss, about 2 h), then two runs "
+        "(about 8 h each), then the comparison round with the no-memory control.",
     ],
 }
 
@@ -133,10 +132,17 @@ CLAIMS = [
      "evidence": "Three runs (mixed, quote-only, lookup-only): 0 % on far facts at every length, and the same scores "
                  "with the notebook switched off.",
      "settle": "—"},
-    {"claim": "Dense at 30M / 1.5B tokens learns retrieval only in some runs.", "state": "holds", "since": "2026-10-11",
+    {"claim": "Dense at 30M / 1.5B tokens with 1 question per training document learns retrieval only in some runs.",
+     "state": "holds", "since": "2026-10-11",
      "evidence": "Four mixed-training runs: one passed quote only, one learned four tasks, two learned nothing; the "
                  "quote-only run learned nothing.",
-     "settle": "The 8-questions-per-document recipe: does dense learn in 2 of 3 runs?"},
+     "settle": "—"},
+    {"claim": "With 8 questions per training document, dense learns lookup and keyed reliably.", "state": "holds",
+     "since": "2026-10-13",
+     "evidence": "Two of two runs (seeds 0 and 1): lookup 56 % and 63 %, keyed 46 % and 54 % on far facts at 4k, "
+                 "rising steadily from about 0.5-0.75B tokens; seed 1 learned nothing with 1 question. Latest and "
+                 "count switched on in one run of two; quote in neither.",
+     "settle": "The third run (seed 2, about 20:45 UTC 13 Oct)."},
     {"claim": "E33's notebook reads far facts past the training length.", "state": "single run", "since": "2026-10-13",
      "evidence": "Mixed training (11 Oct): lookup 83 % and keyed 78 % at 16k on far facts; notebook off: 0 %. Not "
                  "repeated: E33 trained on lookup only (13 Oct) read 0 % of far facts at every length, its 62-83 % all "
@@ -254,10 +260,16 @@ LADDER = [
      "result": "Lookup 56 %, keyed 46 % (far facts), latest 77 % (floor 20 %), count 30 % at 4k; quote at guessing; "
                "learned steadily from about 0.5B tokens.",
      "when": "13 Oct 12:05 → 14:58", "why": "Tests the 8-questions recipe; needs 2 of 3 runs to learn."},
+    {"id": "q8_dense30m_s1_odra.odra", "start": "2026-10-13", "data": "v2", "standing": "calibration",
+     "run": "Reliability fix, run 2", "model": "dense · 30M, plain, seed 1", "tokens": "1.5B, 8 questions per document",
+     "exams": "v2 + v2.1, 1k-4k",
+     "result": "Lookup 63 %, keyed 54 % (far facts at 4k); latest 18 % (floor 20 %) and count 17 % not learned at 4k; "
+               "quote at guessing. The same seed learned nothing with 1 question.",
+     "when": "13 Oct 14:58 → 17:49", "why": "Tests the 8-questions recipe; needs 2 of 3 runs to learn."},
     {"id": None, "start": "2026-10-13", "data": "v2", "standing": "running",
-     "run": "Reliability fix, runs 2 and 3", "model": "dense · 30M, plain, seeds 1 and 2",
+     "run": "Reliability fix, run 3", "model": "dense · 30M, plain, seed 2",
      "tokens": "1.5B, 8 questions per document", "exams": "v2 + v2.1, 1k-4k",
-     "result": "Does dense learn again?", "when": "13 Oct 14:58 → ~20:55",
+     "result": "Third run of the recipe test.", "when": "13 Oct 17:49 → ~20:45",
      "why": "Decides the recipe for the architecture comparison."},
 ]
 
@@ -468,6 +480,22 @@ ROUNDS = {
             "skill, and 8 questions per document did not bring it.",
             "Compose, deduce and their one-step versions at guessing.",
             "Language: story loss 1.548 nats per token (1-question runs 1.53-1.56).",
+        ],
+    },
+    "q8_dense30m_s1_odra.odra": {
+        "title": "Reliability fix, run 2: dense 30M, seed 1, 8 questions per training document (1.5B tokens, data v2)",
+        "where": "Odra · 3 × RTX 3090",
+        "dates": "13 Oct 2026 14:58 UTC → 17:49 UTC (training 2.3 h)",
+        "verdict": "Lookup and keyed learned again: 63 % and 54 % on far facts at 4k (guessing 8 % and 6 %). Latest "
+                   "(18 %, floor 20 %) and count (17 %) did not switch on at 4k; quote at guessing. With 1 question per "
+                   "document the same seed learned nothing.",
+        "observations": [
+            "Lookup and keyed rose between 0.75B and 1.2B tokens (lookup 16 → 30 → 43 → 59 %), later than run 1 but "
+            "steadily.",
+            "Latest learned only in short documents (21 % at 1k) and count only up to 2k (28 % at 1k): which of the "
+            "harder tasks switch on still depends on the seed.",
+            "Crowded facts read as well as spread ones (lookup 58 %, keyed 51 %); unseen sentence shapes still fail (1 %).",
+            "Language: story loss 1.544 nats per token (run 1: 1.548).",
         ],
     },
     "cal3a_s1_plain30m_v2_odra.odra": {
