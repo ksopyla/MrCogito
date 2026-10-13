@@ -1,6 +1,6 @@
 {
   "arch": "e31c_plain",
-  "status": "borrowed from e31c (step size and micro-batch; not tuned with plain input), 2026-10-10",
+  "status": "screen step size tuned 2026-10-13 on the 8-questions data (text_checks_v2q8), 4 runs x 60M tokens, held-out loss; other tiers and the micro-batch still borrowed",
   "init": "trainer default for perceiver_ar: normal(0.02) projections, residual outputs zero-initialized",
   "optimizer": "adam",
   "lr": {
@@ -13,5 +13,21 @@
   "scheduler": "cosine",
   "weight_decay": 0.1,
   "max_grad_norm": 1.0,
-  "length_method": "none"
+  "length_method": "none",
+  "tuning": {
+    "screen": {
+      "chosen_lr": 0.001,
+      "dev_loss": 2.7781,
+      "job": "tune_e31c_plain_lr1.00e-03",
+      "run": "Cache/text_checks/tune_e33_q8_odra (Odra)",
+      "data": "text_checks_v2q8",
+      "grid": {
+        "5e-04": 2.9116,
+        "1e-03": 2.7781,
+        "2e-03": 3.545,
+        "4e-03": 4.8114
+      },
+      "selected": "2026-10-13T23:05:00+00:00"
+    }
+  }
 }

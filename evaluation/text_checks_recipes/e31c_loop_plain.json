@@ -1,6 +1,6 @@
 {
   "arch": "e31c_loop_plain",
-  "status": "borrowed from e31c_loop (step size and micro-batch; not tuned with plain input), 2026-10-10",
+  "status": "screen step size tuned 2026-10-13 on the 8-questions data (text_checks_v2q8), 4 runs x 60M tokens, held-out loss; other tiers and the micro-batch still borrowed",
   "init": "trainer default for perceiver_ar: normal(0.02) projections, residual outputs zero-initialized",
   "optimizer": "adam",
   "lr": {
@@ -18,5 +18,21 @@
     "main": 2,
     "smoke": 4
   },
-  "notes": "4 reread rounds hold 4x the read activations: 8 rows x 4k OOMs on a 24 GB 3090 (2026-10-06), so micro-batches are halved; global batch and steps unchanged via accumulation"
+  "notes": "4 reread rounds hold 4x the read activations: 8 rows x 4k OOMs on a 24 GB 3090 (2026-10-06), so micro-batches are halved; global batch and steps unchanged via accumulation",
+  "tuning": {
+    "screen": {
+      "chosen_lr": 0.001,
+      "dev_loss": 2.5585,
+      "job": "tune_e31c_loop_plain_lr1.00e-03",
+      "run": "Cache/text_checks/tune_e33_q8_odra (Odra)",
+      "data": "text_checks_v2q8",
+      "grid": {
+        "5e-04": 2.7668,
+        "1e-03": 2.5585,
+        "2e-03": 3.0739,
+        "4e-03": 4.4084
+      },
+      "selected": "2026-10-13T23:05:00+00:00"
+    }
+  }
 }
