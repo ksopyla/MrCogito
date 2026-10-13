@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -207,10 +208,14 @@ def scoreboard(ledgers: list[dict]) -> dict:
                                  at1k=(h1 or {}).get("score"), para4k=(para or {}).get("score"),
                                  learned_para=(para or {}).get("learned"))
                 out[setup].setdefault(task, {}).setdefault(fam, []).append(entry)
-    # queued single-task work that has no run folder yet
-    for task in SCOREBOARD.get("single_queue", []):
+    # queued work that has no run folder yet: single-task runs by task; whole families of a setup (every task)
+    for task in SCOREBOARD.get("single_queue", []) if "single" in out else []:
         for fam in FAMILIES:
             out["single"].setdefault(task, {}).setdefault(fam, []) or out["single"][task][fam].append({"state": "queued"})
+    for key, fams in SCOREBOARD.get("queued", {}).items():
+        for task in TASKS:
+            for fam in fams:
+                out[key].setdefault(task, {}).setdefault(fam, []) or out[key][task][fam].append({"state": "queued"})
     # leader per (setup, task) at the 4k training length, where every model is inside its training range: the best
     # seed's headline score, if learned (clearly above the effective floor) and ahead of the next family by more than
     # 5 points and 2 combined standard errors. Flags: one seed only; dense never learned the task (uncalibrated).
@@ -268,13 +273,15 @@ def main() -> int:
     if mixed:
         models = []
         for r in mixed:
+            seed = re.search(r"_s(\d+)_", r["id"])
             for m in r["models"]:
                 m = dict(m)
-                if "_s1_" in r["id"]:
-                    m["name"], m["color"] = m["name"] + " · seed 1", "--s2"
+                if seed:  # several runs of one model: name and colour each seed
+                    m["name"] = m["name"] + f" · seed {seed[1]}"
+                    m["color"] = ("--s1", "--s2", "--s5", "--s6")[int(seed[1]) % 4]
                 models.append(m)
         combo = {**mixed[-1], "id": "combined_mixed_plain", "models": models,
-                 "notes": {"title": "Main comparison: mixed training, plain input — dense (2 seeds), E31c, E33 loop"}}
+                 "notes": {"title": "Main comparison — " + SCOREBOARD["setups"][0]["title"]}}
         chart_rounds = [combo] + chart_rounds
     jobs = [{**j, "run": led["_id"]} for led in ledgers for j in led.get("jobs", [])]
     # calibration side: tiny pipeline runs, step-size tuning, data builds, superseded rounds
