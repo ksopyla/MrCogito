@@ -63,11 +63,32 @@ next token (more compute) rather than to answers only.
 
 ## 1. AWS infrastructure (Terraform)
 
-- Account: GPU quota or Capacity Block for p5 (8×H100), region, budget and alarms. **missing**
-- Terraform: VPC/subnet, security group, IAM role, S3 bucket (data, checkpoints, results), launch
-  template (Deep Learning AMI, CUDA 12.8+), EBS/instance storage, teardown. **missing**
-- Bootstrap: clone at a tag, `uv sync`, secrets (HF, W&B) from Secrets Manager, data pull from S3. **missing**
-- Single node (no multi-node / EFA needed at this size). **decide**
+**Decided (author, 2026-10-13):** on-demand p5.48xlarge (8×H100 80 GB, ~$55/h, per-second billing);
+login through SSM Session Manager (no open ports); Terraform state in an S3 backend. The account exists
+but has no GPU quota yet.
+
+**Author action now (lead time ~1–3 days, may need a justification):** Service Quotas → Amazon EC2 →
+"Running On-Demand P instances" → request **192 vCPUs** (one p5.48xlarge) in the chosen region.
+Proposed region: us-east-1 (largest p5 pool, lowest price); confirm p5 is offered in the chosen
+availability zone before the request.
+
+Proposed layout (`infra/aws/`, written and tested by the agent; every `apply` that costs money is run
+by the author):
+- `bootstrap/`: the state bucket (versioned, encrypted, S3-native lock file, Terraform ≥ 1.10).
+- `main/`:
+  - network: a small VPC, one public subnet in the AZ with p5 capacity (variable), no inbound rules;
+  - S3 bucket `mrcogito-train-<suffix>`: `data/` (pretokenized shards), `runs/` (checkpoints,
+    logs), `results/` (evals);
+  - IAM instance role: that bucket only, the two secrets, `AmazonSSMManagedInstanceCore`;
+  - Secrets Manager: `HF_TOKEN`, `WANDB_API_KEY` (values set by the author outside Terraform);
+  - launch template: AWS Deep Learning AMI (Ubuntu, CUDA 12.8+), root EBS ~200 GB, local NVMe for
+    data and checkpoints, user-data bootstrap (clone repo at a tag, `uv sync`, pull secrets and data,
+    start a byobu session), instance-initiated shutdown = terminate;
+  - safety nets: AWS Budgets alarm (monthly cap, email), a hard maximum lifetime per instance, a
+    CloudWatch alarm that stops an instance whose GPUs are idle for 30 min.
+- Access: `aws ssm start-session`, plus an `ssh` ProxyCommand through SSM so `ssh aws-train` and
+  byobu work as on Odra (needs the Session Manager plugin locally).
+- Checkpoints sync to S3 every 30 min; results are copied back to Odra/NAS for the ledger.
 
 ## 2. Training data
 
