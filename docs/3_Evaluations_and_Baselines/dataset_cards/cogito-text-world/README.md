@@ -46,6 +46,18 @@ configs:
   data_files:
   - split: test
     path: eval/paraphrase/*.parquet
+- config_name: eval_crowded
+  data_files:
+  - split: test
+    path: eval/crowded/*.parquet
+- config_name: eval_paraphrase2
+  data_files:
+  - split: test
+    path: eval/paraphrase2/*.parquet
+- config_name: eval_steps
+  data_files:
+  - split: test
+    path: eval/steps/*.parquet
 - config_name: train_world
   data_files:
   - split: train
@@ -79,11 +91,11 @@ memory, recurrence) at equal data and size.
 | | |
 |---|---|
 | **Tests** | quote · look up · pick among look-alikes · latest of many moves · two-hop chain · count · deduce |
-| **Eval** | 29,400 frozen items: `eval_id` 18,200 at 1k–128k · `eval_harder` 5,600 · `eval_paraphrase` 5,600 (4k, 16k) |
+| **Eval** | 38,200 frozen items: `eval_id` 18,200 at 1k–128k, plus five diagnostic sets at 4k and 16k (harder, paraphrase ×2, crowded, steps) |
 | **Train** | ≈1.0B tokens of token ids: `train_world` (documents with a question and answer) + `train_stories` (plain stories) |
 | **Scoring** | exact answer, one forward pass; guessing rate per item; evidence-removed twin per item |
 | **Tokenizer** | bundled 4,096-token byte-level BPE (`tokenizer/`) |
-| **Version** | `text-world-v2` (2026-10-10) · older: `revision="text-world-v0"` |
+| **Version** | `text-world-v2` (2026-10-10) + v2.1 exams (2026-10-14) · older: `revision="text-world-v0"` |
 | **License** | CDLA-Sharing-1.0 (inherits TinyStories) |
 
 ## The questions
@@ -164,7 +176,7 @@ Oct 2026, draft protocol). Only findings that held up are listed:
   learned nothing. Skills switch on abruptly late in training. Answers are ≈ 0.1 % of training tokens
   (one question per document); a mix with more questions per document is being tested.
 - **`compose` and `deduce` are open frontier:** every run is at guessing, including the probability
-  on the right candidate.
+  on the right candidate; `eval_steps` (one step of each) shows whether any part is learned.
 - **The paraphrase split separates meaning from surface:** dense lookup drops from 37–48 % to 0–1 %
   when the fact uses a sentence shape never seen in training.
 - **Compressed memories lose exact wording:** two memory architectures we tested scored 0 % on far
@@ -210,6 +222,9 @@ labels how hard guessing is. Length is a ladder, so you see *where* a model stop
 | `eval_id` | test | 18,200 | in-distribution exams at 1k, 2k, 4k, 8k, 16k, 32k, 64k, 128k (400 per task and length up to 16k, 200 above) |
 | `eval_harder` | test | 5,600 | harder dials (24 signs, 16 homes, 64 people in keyed, 16 moves, 3 hops, depth-3 rules) at 4k and 16k |
 | `eval_paraphrase` | test | 5,600 | fact sentences in templates never used in training, at 4k and 16k |
+| `eval_paraphrase2` (v2.1) | test | 4,800 | three more unseen sentence shapes per relation (quote, lookup, keyed, latest, compose, count): meaning vs surface |
+| `eval_crowded` (v2.1) | test | 2,400 | quote, lookup, keyed with every fact within 1,024 tokens of the asked one: separates *longer* from *less crowded* |
+| `eval_steps` (v2.1) | test | 1,600 | one-step compose ("the teacher of Lumo") and one-step deduce: partial progress on the two multi-step tasks |
 | `train_world` | train | 394,287 | world documents with question + answer, token ids |
 | `train_stories` | train | 109,864 | plain stories packed to 4,096 tokens, token ids |
 | `dev_world`, `dev_stories` | validation | 128 / 64 | held-out rows for development loss |
@@ -231,8 +246,9 @@ assembly).
   name appears in training. Filler characters are renamed to cast members; filler sentences that pair a
   cast member with a fact word (lives, moved, teacher, sign, …) are dropped.
 - Facts: ≥ 4 templates per relation in training, one more held out for `eval_paraphrase`.
-- Audit (model-free, all 29,400 items): a rule reader answers 100 %; shortcut readers sit at the
-  guessing rate, except `latest`, where tracking moves without reading the name gives 1 in 5.
+- Audit (model-free, all 38,200 exam items, v2 on 2026-10-10 and v2.1 on 2026-10-14): a rule reader
+  answers 100 %, no evidence-removed twin contains the answer, and shortcut readers sit at the guessing
+  rate, except `latest`, where tracking moves without reading the name gives 1 in 5.
 - Deterministic: each item is a pure function of (version, split, task, length, index) and the story
   pool; code in `generator/`, hashes in `text_checks_meta.json`.
 
@@ -254,6 +270,7 @@ TinyStories (Eldan & Li, 2023, CDLA-Sharing-1.0) and SimpleStories (Finke et al.
 
 | date | version | change |
 |---|---|---|
+| 2026-10-14 | `text-world-v2.1` exams | Three diagnostic exam sets added (`eval_paraphrase2`, `eval_crowded`, `eval_steps`), eval only: v2 training data and existing exams byte-identical, so any v2 model can be scored without retraining. |
 | 2026-10-13 | card | Reading rules (far facts, effective floor, learned vs passed) and findings from the first 18 models. Data unchanged. |
 | 2026-10-10 | `text-world-v2` (current) | Every guessing rate below 10 % (12 signs, 12 homes, 10 moves, 12-person teacher chain, counts 0–10, deduce asks *which* property); candidate places start with different letters, so the picked-candidate score is clean; cut-off filler sentences dropped; train mix ≈1.0B tokens. |
 | 2026-10-08 | `text-world-v1` | Not published. Fixed the five shortcuts found in v0 (below). |
