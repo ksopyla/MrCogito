@@ -27,6 +27,10 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 - `evaluation/text_checks.py`: arches `e33d`, `e33d_plain` (E33 + `lm_note_age = log`), recipe cards borrowing E33's
   tuned step size. Tests: `tests/test_e33d_note_age.py` (the flex gradient test runs on a GPU only: flex attention has
   no backward on CPU). Spec: `docs/experiments_specs/ahead/E33d_note_page_distance.md`.
+- GPU check (Polonez RTX 3090, 30M, 4 × 4,096 tokens, bf16, compiled flex): E33d 0.51 s per training step vs E33
+  0.49 s, same peak memory (15.3 GiB); all 12 E33d tests pass on the GPU, including flex vs SDPA slope gradients.
+  The flex `score_mod` reads a per-(row, head, query) copy of the slopes: with 9 shared addresses, flex's atomic
+  gradient adds made the step 2.3× slower (1.15 s).
 
 ## [2026-10-06] - Chain exams: hop count in the question (opt-in), mixed-hop replay
 

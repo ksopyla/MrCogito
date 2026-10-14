@@ -101,7 +101,7 @@ keys at answer positions, and the saved latest answers (which of Anna's places i
   1.5B tokens; exams v2 + v2.1 at 1k–16k, exactly as E33's runs.
 - **Compute:** Odra 3 × RTX 3090 after the E31c runs (about 01:00 UTC 15 Oct), or Polonez in bursts
   under 10 h. About 7 h training + 1.6 h exams per seed at 30M; 2 seeds. Early readout at 0.6B
-  tokens.
+  tokens. Measured on Polonez (14 Oct): a training step costs 0.51 s vs E33's 0.49 s, same memory.
 - **Step size:** E33's tuned 1e-3 is borrowed (the change adds 9 numbers). The text-checks protocol
   gives every architecture its own tuning budget; the text session decides whether to run it.
 - **Launch:** the text-checks runner with arch `e33d_plain`, e.g.
