@@ -160,3 +160,20 @@ def test_text_checks_arch_carries_the_age_term():
     new = model_args("e33d_plain", "screen", 1152)
     assert {k for k in new if new[k] != base.get(k)} == {"lm_note_age"}
     assert count_params(new) - count_params(base) == new["num_attention_heads"]
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="flex attention has no backward pass on CPU")
+def test_flex_slope_gradient_matches_sdpa():
+    """The flex path keeps a per-query copy of the slopes (fast atomic adds); its gradient must equal the
+    SDPA path's, with non-zero slopes of both signs."""
+    grads = {}
+    for backend in ("sdpa", "flex"):
+        m = make(seed=6, **TEXT, **LOOP, **WIDE, message_raw_window=8, attn_backend=backend, lm_note_age="log")
+        (gi, s), = _slopes(m)
+        with torch.no_grad():
+            s.copy_(torch.tensor([0.5, -0.3, 0.0, 1.0]))
+        m = m.to("cuda").train()
+        ids = text_row(S=48).to("cuda")
+        m(ids, labels=ids).loss.backward()
+        grads[backend] = m.layers[gi].attn.note_age_slope.grad.detach().cpu()
+    assert torch.allclose(grads["flex"], grads["sdpa"], rtol=2e-3, atol=1e-5), grads
