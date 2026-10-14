@@ -1550,14 +1550,17 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
         score_mod = None
         if note_bias is not None:
             slope, pos_t, spos, unit, mode = note_bias
-            pos_f, spos_f, sl = pos_t.to(torch.float32), spos.to(torch.float32), slope.to(torch.float32)
+            pos_f, spos_f = pos_t.to(torch.float32), spos.to(torch.float32)
+            # One copy of the slopes per (row, head, query): flex accumulates a captured buffer's gradient
+            # with atomic adds, and 9 shared addresses made the backward 2.3× slower (Polonez, 30M, 4k).
+            sl = slope.to(torch.float32)[None, :, None].expand(B, h, S).contiguous()
             unit_f, log_f = float(unit), mode == "log"
 
             def score_mod(score, b, hh, q_idx, kv_idx):
                 c = torch.clamp(kv_idx - S, min=0)
                 age = torch.clamp(pos_f[b, q_idx] - spos_f[b, c], min=0.0) / unit_f
                 f = torch.log1p(age) if log_f else age
-                return torch.where(kv_idx >= S, score - sl[hh] * f, score)
+                return torch.where(kv_idx >= S, score - sl[b, hh, q_idx] * f, score)
 
         out = _get_flex()(qt, kt, vt, block_mask=bm, enable_gqa=(g != h), scale=scale, score_mod=score_mod)
         return out.transpose(1, 2)
