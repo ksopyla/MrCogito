@@ -13,6 +13,9 @@ from tests.test_latent_memory import lm_cfg
 from tests.test_text_memory import TEXT, make, text_row
 
 LOOP = dict(message_loop_rounds=2, message_loop_exit_aux=0.3, message_loop_exit_targets="answer")
+# On a GPU host the flex path is compiled (as in training) and must get CUDA tensors; on a laptop it runs eager on CPU.
+DEV = "cuda" if torch.cuda.is_available() else "cpu"
+TOL = 1e-4 if DEV == "cuda" else 1e-5
 
 
 def _slopes(m):
@@ -51,9 +54,9 @@ def test_zero_slopes_are_exactly_e33(backend):
     res = b.load_state_dict(a.state_dict(), strict=False)
     gi = a.config.global_layer_index
     assert res.missing_keys == [f"layers.{gi}.attn.note_age_slope"] and not res.unexpected_keys
-    ids = text_row(S=48)
+    a, b, ids = a.to(DEV), b.to(DEV), text_row(S=48).to(DEV)
     with torch.no_grad():
-        assert torch.allclose(a(ids).logits, b(ids).logits, atol=1e-6)
+        assert torch.allclose(a(ids).logits, b(ids).logits, atol=TOL)
 
 
 # ------------------------------------------------------------------ the bias itself
@@ -73,21 +76,22 @@ def test_bias_values_log_and_linear():
 
 def _read_setup(S=40, seed=0):
     torch.manual_seed(seed)
-    m = make(**TEXT, message_raw_window=8)
-    ids = text_row(S=S)
+    m = make(**TEXT, message_raw_window=8).to(DEV)
+    ids = text_row(S=S).to(DEV)
     with torch.no_grad():
         m(ids)
     ctx = m._last_message_ctx
     B, h, g, dh, nb = 1, 4, 2, 8, ctx.n_slots
-    t = dict(q=torch.randn(B, S, h, dh), q_un=torch.randn(B, S, h, dh), k=torch.randn(B, S, g, dh),
-             v=torch.randn(B, S, g, dh), kb=torch.randn(B, nb, g, dh), vb=torch.randn(B, nb, g, dh))
-    pos = torch.arange(S)[None]
+    r = lambda *shape: torch.randn(*shape).to(DEV)  # noqa: E731
+    t = dict(q=r(B, S, h, dh), q_un=r(B, S, h, dh), k=r(B, S, g, dh), v=r(B, S, g, dh),
+             kb=r(B, nb, g, dh), vb=r(B, nb, g, dh))
+    pos = torch.arange(S, device=DEV)[None]
     return ctx, t, pos, (B, S, h, g, dh, nb)
 
 
 def test_sdpa_read_with_bias_matches_reference_and_flex():
     ctx, t, pos, (B, S, h, g, dh, nb) = _read_setup()
-    slope = torch.tensor([0.0, 1.5, -1.0, 3.0])
+    slope = torch.tensor([0.0, 1.5, -1.0, 3.0], device=DEV)
     unit = 12.0
     nbias = (slope, pos, ctx.slot_pos, unit, "log")
     out = attend_message(t["q"], t["k"], t["v"], t["kb"], t["vb"], ctx=ctx, key_valid=None, backend="sdpa",
@@ -98,10 +102,10 @@ def test_sdpa_read_with_bias_matches_reference_and_flex():
     raw = torch.einsum("bqhd,bkhd->bhqk", t["q"], kr) / dh ** 0.5
     notes = torch.einsum("bqhd,bkhd->bhqk", t["q_un"], kbr) / dh ** 0.5
     notes = notes + note_age_bias(pos, ctx.slot_pos, slope, unit, "log")
-    mask = dense_message_mask(S, ctx, None, "cpu")
+    mask = dense_message_mask(S, ctx, None, DEV)
     w = torch.softmax(torch.cat([raw, notes], -1).masked_fill(~mask, float("-inf")), -1)
     ref = torch.einsum("bhqk,bkhd->bqhd", w, torch.cat([vr, vbr], 1))
-    assert torch.allclose(out, ref, atol=1e-5)
+    assert torch.allclose(out, ref, atol=TOL)
     out_f = attend_message(t["q"], t["k"], t["v"], t["kb"], t["vb"], ctx=ctx, key_valid=None, backend="flex",
                            q_slot=t["q_un"], note_bias=nbias)
     assert torch.allclose(out_f, out, atol=1e-4), float((out_f - out).abs().max())
@@ -114,13 +118,13 @@ def test_positive_slope_prefers_newer_notes_negative_older(backend):
     slope (newer notes) and fall below the content-only read with a negative slope (older notes)."""
     ctx, t, pos, (B, S, h, g, dh, nb) = _read_setup(S=48)
     kb = t["kb"][:, :1].expand(B, nb, g, dh).contiguous()
-    vb = torch.zeros(B, nb, g, dh)
+    vb = torch.zeros(B, nb, g, dh, device=DEV)
     vb[..., 0] = 1.0
     vb[..., 1] = ctx.slot_pos.float()[..., None]
     v = torch.zeros_like(t["v"])
 
     def mean_note_pos(sl):
-        nbias = (torch.full((h,), sl), pos, ctx.slot_pos, 12.0, "log")
+        nbias = (torch.full((h,), sl, device=DEV), pos, ctx.slot_pos, 12.0, "log")
         o = attend_message(t["q"], t["k"], v, kb, vb, ctx=ctx, key_valid=None, backend=backend,
                            q_slot=t["q_un"], note_bias=nbias)
         return (o[0, -1, :, 1] / o[0, -1, :, 0]).mean()  # last reader: sees the most closed pages
