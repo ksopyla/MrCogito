@@ -79,19 +79,27 @@ gradient on top of cue matching. The cue picks the memory, and recency breaks ti
 memories.
 
 ## Success criteria (set BEFORE running)
-- **Order:** far latest at 4k ≥ 60 % (median of 2 seeds). Dense's 77–82 % is the ceiling at this
-  scale.
-- **Order beyond training length:** far latest at 8k and 16k ≥ 40 % (dense has nothing past 4k).
-- **No harm:** far lookup, keyed and quote at 16k each within 5 points of E33 (median of E33 runs 1–2);
-  story loss ≤ E33 + 0.01 nats per token.
+Amended 2026-10-14 19:55 UTC, before any E33d run, after E33 run 2 finished: its notebook switched on
+late (far facts 0 % until 0.9B tokens, 13–15 % at 1.5B) where run 1's had switched on by 0.6B. E33's
+notebook therefore switches on in 1 of 2 runs, and E33d is judged on the runs where it does.
+- **Switch-on (reported, not a pass mark):** how many E33d seeds learn far lookup at 4k, next to E33's
+  1 of 2. Switch-on reliability is E33's own open problem, not this bet's.
+- **Order:** on every seed whose notebook switched on, far latest at 4k ≥ 60 %. Dense's 77–82 % is the
+  ceiling at this scale; E33 run 1 had 22 % (guessing 20 %).
+- **Order beyond training length:** on those seeds, far latest at 8k and 16k ≥ 40 % (dense has
+  nothing past 4k).
+- **No harm:** on those seeds, far lookup, keyed and quote at 16k each within 5 points of E33 run 1
+  (92 / 90 / 89 %); story loss ≤ 1.53 nats per token (E33 runs 1–2: 1.520 / 1.522).
 
 ## Kill criteria (set BEFORE running)
-- **Early readout, 0.6B tokens:** far lookup at 4k below 54 % in both seeds (E33 had 64 % at this
-  point) → stop; the bias is hurting the notebook switching on.
-- **Full run, 1.5B tokens:** far lookup at 16k more than 5 points below E33 → reject, whatever latest
-  does.
-- **Full run:** latest at 4k ≤ 30 % in both seeds → the age term is not enough; the order problem
-  lies elsewhere (for example in the writer), stop this line.
+- **No switch-on in 2 seeds:** run a third seed before judging (E33 switched on in 1 of 2). If none of
+  3 switches on, the age term may be blocking the switch-on: stop and compare training curves with E33.
+- **Full run, 1.5B tokens:** on a switched-on seed, far lookup at 16k more than 5 points below E33
+  run 1 → reject, whatever latest does.
+- **Full run:** latest at 4k ≤ 30 % on every switched-on seed → the age term is not enough; the order
+  problem lies elsewhere (for example in the writer), stop this line.
+- The early readout at 0.6B tokens is reported, but it is not a stop rule: run 2 shows E33 can switch on
+  after 0.9B.
 
 Diagnostics logged with each exam: the 9 slopes (signs and sizes), the read's mass on notes vs raw
 keys at answer positions, and the saved latest answers (which of Anna's places is picked).
@@ -100,8 +108,8 @@ keys at answer positions, and the saved latest answers (which of Anna's places i
 - **Data:** Text World v2 training data with 8 questions per document (the current recipe),
   1.5B tokens; exams v2 + v2.1 at 1k–16k, exactly as E33's runs.
 - **Compute:** Odra 3 × RTX 3090 after the E31c runs (about 01:00 UTC 15 Oct), or Polonez in bursts
-  under 10 h. About 7 h training + 1.6 h exams per seed at 30M; 2 seeds. Early readout at 0.6B
-  tokens. Measured on Polonez (14 Oct): a training step costs 0.51 s vs E33's 0.49 s, same memory.
+  under 10 h. About 7 h training + 1.6 h exams per seed at 30M; 2 seeds (a third if neither switches
+  on). Learning-curve exams as in E33's runs. Measured on Polonez (14 Oct): a training step costs 0.51 s vs E33's 0.49 s, same memory.
 - **Step size:** E33's tuned 1e-3 is borrowed (the change adds 9 numbers). The text-checks protocol
   gives every architecture its own tuning budget; the text session decides whether to run it.
 - **Launch:** the text-checks runner with arch `e33d_plain`, e.g.
