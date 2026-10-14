@@ -145,8 +145,30 @@ Defaults (taken unless the author objects):
 - No generation cache now: likelihood-based benchmarks only; revisit for BABILong-style generation.
 
 Open:
-- Notebook size at 500M (page length, notes per page, writer width). **decide** (explained to the
-  author first)
+- **Notebook proportions at 500M (page length, notes per page, writer width and depth, note width):
+  decided from a sweep of tiny experiments** (author, 2026-10-14: "the most important question"),
+  requested from the "E33 reasoning fixes" session. Question: which proportions keep capability
+  learning while compressing as much as possible, and do those proportions (ratios, not absolute
+  sizes) hold when the model grows? Proposed design (that session owns the protocol details):
+  - Fixed: E33 with its loop; capability tasks that stress the notebook: hold-many recall
+    (C3.recall8-1k, capacity) and keyed lookup (C1.keyed4-1k, address precision); the two-step chain
+    (C5.pchain2, recipe A) only for the finalists. Corrected guessing floors.
+  - Axes, one at a time around the tested point (30M):
+    1. compression: notes per 256-word page 8 / 16 / 32 (tested) / 64 → ~24 / 12 / 6 / 3 new words
+       per note;
+    2. page length at constant compression (~6 words per note): pages of 128 / 256 / 512 / 1024
+       words, notes per page scaled with it, stride 3/4 of the page;
+    3. writer width as a fraction of the model width: 1/4 / 1/2 / 1 (writer depth 2; depth 1 and 4
+       for the best width);
+    4. note width as a fraction of the model width: 1/2 / 1.
+  - Size transfer: the tested point and the best 2–3 settings repeated at 10M, to see whether the
+    ratios carry over.
+  - Readouts: score (median of seeds 0–1, finalists 0–2), examples to the pass mark, retention on the
+    length ladder (16k, 128k; 256 rows), notebook diagnostics (latent usage, entropy), time per step.
+  - Rule: pick the most compressive setting within ~5 points of the tested point, and the smallest
+    writer fraction that keeps it; apply the ratios at 500M only if they hold from 10M to 30M.
+  - Optional phase 2: the best 2 settings on text far-fact lookup at 30M (with the text session).
+  - Budget guess: ~60–70 runs of 1–2 GPU-h on the 3090s (~1–2 days on one server).
 - Kernels on H100: FlexAttention for the reading layer with notes, `torch.compile` graph breaks (host
   syncs). **partial**
 - Notebook-off switch usable in training-time evals (exists for eval: `message_override none`). **partial**
