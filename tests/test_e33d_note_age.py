@@ -16,6 +16,9 @@ LOOP = dict(message_loop_rounds=2, message_loop_exit_aux=0.3, message_loop_exit_
 # On a GPU host the flex path is compiled (as in training) and must get CUDA tensors; on a laptop it runs eager on CPU.
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
 TOL = 1e-4 if DEV == "cuda" else 1e-5
+# compiled flex on CUDA needs >= 16 dims per head; the laptop keeps the shared tiny shape
+WIDE = dict(hidden_size=64, head_dim=16) if DEV == "cuda" else {}
+HD = WIDE.get("head_dim", 8)
 
 
 def _slopes(m):
@@ -49,8 +52,8 @@ def test_one_slope_per_head_on_the_global_read_only():
 
 @pytest.mark.parametrize("backend", ["sdpa", "flex"])
 def test_zero_slopes_are_exactly_e33(backend):
-    a = make(seed=3, **TEXT, **LOOP, message_raw_window=8, attn_backend=backend)
-    b = make(seed=3, **TEXT, **LOOP, message_raw_window=8, attn_backend=backend, lm_note_age="log")
+    a = make(seed=3, **TEXT, **LOOP, **WIDE, message_raw_window=8, attn_backend=backend)
+    b = make(seed=3, **TEXT, **LOOP, **WIDE, message_raw_window=8, attn_backend=backend, lm_note_age="log")
     res = b.load_state_dict(a.state_dict(), strict=False)
     gi = a.config.global_layer_index
     assert res.missing_keys == [f"layers.{gi}.attn.note_age_slope"] and not res.unexpected_keys
@@ -76,12 +79,12 @@ def test_bias_values_log_and_linear():
 
 def _read_setup(S=40, seed=0):
     torch.manual_seed(seed)
-    m = make(**TEXT, message_raw_window=8).to(DEV)
+    m = make(**TEXT, **WIDE, message_raw_window=8).to(DEV)
     ids = text_row(S=S).to(DEV)
     with torch.no_grad():
         m(ids)
     ctx = m._last_message_ctx
-    B, h, g, dh, nb = 1, 4, 2, 8, ctx.n_slots
+    B, h, g, dh, nb = 1, 4, 2, HD, ctx.n_slots
     r = lambda *shape: torch.randn(*shape).to(DEV)  # noqa: E731
     t = dict(q=r(B, S, h, dh), q_un=r(B, S, h, dh), k=r(B, S, g, dh), v=r(B, S, g, dh),
              kb=r(B, nb, g, dh), vb=r(B, nb, g, dh))
@@ -138,7 +141,8 @@ def test_positive_slope_prefers_newer_notes_negative_older(backend):
     not torch.cuda.is_available(), reason="flex attention has no backward pass on CPU"))])
 def test_slopes_receive_gradient_through_the_loop(backend):
     dev = "cuda" if backend == "flex" else "cpu"
-    m = make(seed=5, **TEXT, **LOOP, message_raw_window=8, attn_backend=backend, lm_note_age="log").to(dev).train()
+    m = make(seed=5, **TEXT, **LOOP, **WIDE, message_raw_window=8, attn_backend=backend, lm_note_age="log")
+    m = m.to(dev).train()
     ids = text_row(S=48).to(dev)
     m(ids, labels=ids).loss.backward()
     (_, s), = _slopes(m)
