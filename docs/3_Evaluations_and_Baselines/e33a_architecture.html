@@ -1,6 +1,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Read–Think–Reread Loop</title>
+<title>E33 Information Flow</title>
 <style>
 :root{--bg:#f4f3ef;--card:#fcfcfb;--card2:#efeee9;--line:#dcdad3;--fg:#0b0b0b;--fg2:#52514e;--muted:#7c7b76;
  --blue:#2a78d6;--orange:#eb6834;--green:#1a7f37;--amber:#b26b00;--red:#c62828;--violet:#4a3aa7;--teal:#0e8f8f;--pink:#c2417a;
@@ -61,12 +61,130 @@ details.nums{margin:8px 0 0;font-size:13.5px}details.nums summary{cursor:pointer
 .stage .st{flex:1 1 150px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13.5px}
 .stage .st b{display:block;font-size:14px}.stage .arr{align-self:center;color:var(--muted);font-weight:700}
 .newtag{display:inline-block;font-size:11px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:var(--red);border:1px solid var(--red);border-radius:6px;padding:0 6px;margin-left:6px;vertical-align:2px}
+.controls.ns{position:static;border-bottom:0;padding:6px 0}
+.det{margin-top:8px;border-top:1px solid var(--line);padding-top:10px}
+.dgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.dgrid>div{min-width:0;font-size:13.5px}
+.dgrid .q{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:650}
+.dgrid code{white-space:normal;word-break:break-word}
+details.hist{margin:48px 0 0;border-top:2px solid var(--line);padding-top:14px}
+details.hist>summary{cursor:pointer;font-size:15px;color:var(--fg2)}
+details.hist[open]>summary{margin-bottom:10px}
+[hidden]{display:none!important}
 </style>
 <div id="tip"></div>
 <main>
-<div class="kicker">MrCogito · E33a · design 2 Oct · trained, measured and diagnosed 4 Oct 2026 (spec: E33a_reread_loop.md)</div>
-<h1>Read, think, reread: looping the layers above the global read</h1>
-<p class="sub">An analysis of the proposal: keep the memory as a read-only notebook, and loop the <b>upper</b> layers. The model reads the memory, tries to form the answer, notices what is missing, and rereads with its current state, 4 times, before a last layer formulates the answer. The page covers how information flows, which vectors change in each loop, how gradients flow, what the queries and keys are, and how the idea compares with the literature and with our failed E33 loop. <b>Section 0 (new, 4 Oct) shows what happened when we trained it</b>, and the diagram in section 1 can now switch between the design and the trained model.</p>
+<div class="kicker">MrCogito · E33 · the loop over the E31 notebook · re-read from the code on 14 Oct 2026 · the 30M text model of the 8-questions round</div>
+<h1>E33 on text: how information flows through the notebook and the loop</h1>
+<p class="sub">This page follows one document through E33 as it is built and trained today on the text checks. The notebook writer runs first, then the main path, then the read–think loop, the coda layers and the output head. Each stage says what it keeps, what it drops, and what it knows about <b>position</b>. Section 2 explains why the notes cannot tell which of two facts came later. Section 5 maps the 14 Oct results onto the parts. The 2–4 Oct page about the DNA chain test is kept at the bottom as history.</p>
+
+<div class="callout warn"><b>What changed since the 4 Oct version of this page</b>
+<ul style="margin:6px 0 0;padding-left:18px">
+<li><b>The model that matters now is the 30M text model.</b> It has 8 layers (2 local, the global read, 5 local) at width 576. The old page drew the 4-layer DNA model at width 960.</li>
+<li><b>Every token loops.</b> Text has no question boundary, so every token reads the notebook and every token goes through the read–think core 4 times. The old page looped only about 40 question positions.</li>
+<li><b>Four coda layers follow the loop</b>, not one answer layer. Rounds 1–3 are decoded through all four, during training only, and their loss is the next token. There are no step targets.</li>
+<li><b>The notes carry no position at all:</b> no page number and no rotation. This lets the model read 16k documents after training on 4k ones. It also leaves the model no way to tell which of two notes is newer (section 2).</li>
+</ul></div>
+
+<!-- ======================================================= -->
+<h2 id="pipeline">1 · The pipeline, step by step</h2>
+<p>Click a box, or step with the buttons. Each step shows what the stage does, its shapes, what information gets through, and what the stage knows about position. <b>Colour by position</b> paints every box by the position it can see. Shapes switch between the 30M model that was trained and the 100M size planned next.</p>
+<div class="controls ns" id="pctl">
+ <span class="seg"><button id="pprev">← previous</button><button id="pnext">next →</button></span>
+ <span><span class="lab">Scale</span><span class="seg" id="pscale"><button data-v="30" class="on">30M (trained)</button><button data-v="100">100M (next size)</button></span></span>
+ <label class="tg"><input type="checkbox" id="ppos"> colour by position</label>
+ <span class="lab" id="pstep" style="margin-left:auto"></span>
+</div>
+<div class="card"><div class="svgwrap"><svg id="pipe" viewBox="0 0 1060 660" role="img" aria-label="E33 text pipeline: notebook writer and main path"></svg></div>
+<div class="legend" id="plegend" hidden></div>
+<div class="det" id="pdet"></div></div>
+
+<div class="grid g3">
+<div class="tile"><div class="q">Parameters at 30M (measured)</div>29.9M in all. The 8 main layers hold 2.7M each (21.8M), the notebook writer 4.0M (13 %), the output head 2.4M, the token table 1.7M. The loop adds 4 marker vectors. The core's 2 layers run 4 times, so a token passes through 14 layers of compute held in 8 layers of weights.</div>
+<div class="tile"><div class="q">At 100M (same code, main tier)</div>Width 896, 12 layers: 3 local, the global read, then 1 core layer and 7 coda layers. The writer is <b>still 4.0M</b> (4 %): page width 256, latents 512 wide, notes 64 numbers. Nothing in the writer grows with the model. That ratio is one of the sweep's questions.</div>
+<div class="tile"><div class="q">Cost of one 4k document</div>21 pages × 32 = 672 notes, written once. Each token's read covers 256 raw keys plus up to 672 notes (2,720 at 16k). Dense covers up to 4,096 keys. The core runs 4 times over every token, so E33 trains slower than dense: 7.0 h for 1.5B tokens on Odra.</div>
+</div>
+
+<!-- ======================================================= -->
+<h2 id="order">2 · Order: why the notes cannot tell which move came last</h2>
+<p>The "latest" exam has 5 people. Each starts in a home and moves 10 times, and the moves are interleaved through the story. The question at the end is <i>"Where does Anna live now?"</i>, so the answer is Anna's <b>last</b> move. The model has to find Anna's facts and also know which of them came last.</p>
+<p>A note carries no position. Its key is not rotated, so the read cannot measure how far back it is. The writer adds no page number, because the page address is switched off. All a latent knows is roughly which part of its page it read. Picture the student's notebook with the pages torn out and shuffled: the notes still say "Anna moved to Kodaford", "Anna moved to Selby", "Anna lived in Borvale", but there is no date or page number to sort them by. The read is a softmax over the notes, which is a weighted average. Shuffle the notes and the average comes out the same.</p>
+<div class="controls ns" id="octl">
+ <span><span class="lab">Document</span><span class="seg" id="olen"><button data-v="1024" class="on">1k</button><button data-v="4096">4k</button><button data-v="16384">16k</button></span></span>
+ <span><span class="lab">Notes</span><span class="seg" id="omode"><button data-v="off" class="on">no order (today)</button><button data-v="age">with an age signal (proposal)</button></span></span>
+</div>
+<div class="card"><div class="svgwrap"><svg id="osvg" viewBox="0 0 1060 380" role="img" aria-label="Where Anna's moves sit and what the read returns"></svg></div>
+<div class="say" id="osay"></div></div>
+<p style="font-size:13.5px;color:var(--fg2)">The positions follow the exam generator: moves are spread over 15–95 % of the document, and Anna's last move sits on average at 88 %. The read weights are <b>illustrative</b>; we have not measured them yet. The measured scores are E33 run 1 on the 8-questions recipe: 95 % at 1k, 22 % at 4k (guessing 20 %), about 5 % beyond 4k. Dense, which keeps every position, learned this task in 2 of 3 runs (77–82 % at 4k).</p>
+
+<div class="tw"><table>
+<tr><th>where position lives in E33 (text)</th><th>what it knows</th><th>reach</th></tr>
+<tr><td>raw keys of the global read</td><td><span class="pill p-yes">exact distance</span> (rotated keys)</td><td>the last 256 tokens</td></tr>
+<tr><td>prelude, think and coda layers</td><td><span class="pill p-yes">exact distance</span></td><td>the last 16 tokens</td></tr>
+<tr><td>page encoder inside the writer</td><td><span class="pill p-part">order inside one page</span> (relative rotation, 0–255)</td><td>one page</td></tr>
+<tr><td>latent identity</td><td><span class="pill p-part">which part of its page</span> (soft 8-token slice at the start)</td><td>one page</td></tr>
+<tr><td>note key and value</td><td><span class="pill p-no">none</span>: not rotated, no page number</td><td>the whole document</td></tr>
+<tr><td>the closed-page mask</td><td><span class="pill p-part">before or after</span>: a page becomes readable once its last token has passed</td><td>yes / no only</td></tr>
+</table></div>
+
+<div class="grid g2" style="margin-top:12px">
+<div class="card"><h3 style="margin-top:0">Why it is built this way</h3>
+<p style="font-size:14.5px">The order was removed on purpose, to make the read <b>work at any length</b>. In the DNA study, notes rotated at their true position stopped working past the training length. Two fixes were built. "Boundary" puts every note at the question position, so it keeps no order either. "Scaled" keeps the order and squeezes the distances into the trained range. Scaled worked: lookup held to 128k, and the in-order 4-hop chain transferred only with it. E33 on DNA used boundary. On text, scaled does not carry over as it is, because it measures distance from one question. On text every token is a reader, so the text version (un-rotated notes) is the boundary idea again. It is why the model reads 16k documents after training on 4k, and why latest fails.</p></div>
+<div class="card"><h3 style="margin-top:0">Ways to give the notes an order (proposals, not built)</h3>
+<ul style="margin:0;padding-left:18px;font-size:14.5px">
+<li><b>An age signal in the read</b> (recommended). Lower a note's score by a per-head slope × the number of pages since its page closed, the way ALiBi (attention with linear biases) does. Heads with slope 0 keep pure content reads, the others prefer newer notes. ALiBi is known to work beyond the training length. It costs one number per head, added where the read's scores are formed.</li>
+<li><b>Slow rotation only.</b> Rotate note keys at their page position using only the low-frequency rotation pairs, which gives a coarse order. This is close to the DNA "mixed" option.</li>
+<li><b>Page number in the latent.</b> Switch the page address back on. That gives absolute position, which is likely weak beyond 4k.</li>
+</ul></div>
+</div>
+
+<!-- ======================================================= -->
+<h2 id="mask">3 · Who can see what</h2>
+<p>Take one reading token. Its local layers see 16 tokens back. Its global read sees the raw keys of the last 256 tokens, plus the notes of every page that closed at or before it. A page that is still open is invisible as notes, but its recent tokens are covered by the raw window. A long page with a short raw window leaves a <b>blind stretch</b>: tokens too old for the raw window, sitting on a page that has not closed yet. The worst case comes just before a page closes. The blind stretch is the page step minus the raw window, when the step is longer.</p>
+<div class="controls ns" id="mctl"><span><span class="lab">Geometry</span><span class="seg" id="mgeo"><button data-v="0" class="on">today: page 256, step 192, raw 256</button><button data-v="1">page 512, step 384, raw 256</button><button data-v="2">page 512, step 384, raw 512</button></span></span></div>
+<div class="card"><div class="svgwrap"><svg id="msvg" viewBox="0 0 1060 250" role="img" aria-label="What one reading token can see"></svg></div><div class="say" id="msay"></div></div>
+<p style="font-size:13.5px;color:var(--fg2)">Other rules: a page writes from one document only, so notes never mix documents. Inside the writer, every token of a page sees the whole page, in both directions. That is safe, because a page is read only after it has closed. The local layers and the raw read never cross into another document.</p>
+
+<!-- ======================================================= -->
+<h2 id="budget">4 · Information budget along the path</h2>
+<div class="tw"><table>
+<tr><th>stage</th><th>numbers kept per page of new text (192 tokens)</th><th>per new token</th><th>what is lost here</th></tr>
+<tr><td>main path state (30M)</td><td>192 × 576 = 110,592</td><td>576</td><td>nothing yet, but only 16 tokens of context per local layer</td></tr>
+<tr><td>writer input (token table)</td><td>192 × 256 = 49,152</td><td>256</td><td>all context: each token is just its table entry, with no neighbours mixed in</td></tr>
+<tr><td>page encoder output</td><td>256 × 256 per page</td><td>256</td><td>nothing outside the page</td></tr>
+<tr><td><b>notes</b> (32 per page)</td><td>32 × (64 key + 64 value) = 4,096</td><td>≈ 21 (≈ 11 in values)</td><td><b>about 27× compression</b>; every note's position</td></tr>
+<tr><td>one read, one token, one round</td><td>9 heads × one 64-number blend of values</td><td>576 per round, 4 rounds</td><td>all 9 heads share one key head, so every head scores the notes on the same 64 numbers</td></tr>
+</table></div>
+<div class="callout"><b>What an answer needs is small.</b> Which place: 1 of 12 (under 4 bits). Whose: 1 of 12–16 people (4 bits). For latest, which move: 1 of 11 (3.5 bits). A 64-number note has room for all of it. So the limits we see are probably not note size. They are <b>binding</b> (does the note that holds "Kodaford" also hold "Anna"?) and <b>order</b> (is this note newer than that one?). That is a reading of the results, not a measurement: the sweep's wider-note setting tests it.</div>
+
+<!-- ======================================================= -->
+<h2 id="results14">5 · What the 14 Oct results say about each part</h2>
+<p>E33 run 1 on the 8-questions recipe: 30M, 1.5B tokens, Odra, 13 Oct 23:12 → 14 Oct 08:13 UTC. "Far facts" are facts outside the 256-token raw window, which the model can only get from its notes. Run 2 finishes about 17:35 UTC on 14 Oct. Until then, this is one run.</p>
+<div class="tw"><table>
+<tr><th>part</th><th>evidence</th><th>reading</th></tr>
+<tr><td><b>notes are written and read</b></td><td>far lookup 70 / 83 / 92 % at 4k / 8k / 16k, keyed 71 / 86 / 90 %, quote 71 / 84 / 89 %; notebook off → 0 %; dense 56–63 % (lookup) at 4k and nothing past 4k</td><td><span class="pill p-yes">works</span> and reads past its 4k training length, thanks to the position-free notes</td></tr>
+<tr><td><b>loop</b></td><td>far lookup 64 % already at 0.6B tokens; dense reached its lookup between 0.75B and 1.2B. E31c without the loop did not use its notebook in 3 runs on the earlier recipe</td><td><span class="pill p-part">likely helps the notebook switch on</span>; the E31c runs on the new recipe (until about 01:00 UTC on 15 Oct) will separate the loop from the recipe</td></tr>
+<tr><td><b>writer under crowding</b></td><td>all facts in a 1,024-token band: lookup 44 %, keyed 28 % (dense 54–58 %, 46–51 %); far facts in 1k documents 27–34 %, in 2k 46–49 %</td><td><span class="pill p-no">weak</span>. Our guess: when several people share a page, a note loses who did what. The writer starts from bare token vectors and has 2 small layers to connect a name with a place</td></tr>
+<tr><td><b>order</b></td><td>latest 95 % at 1k, 22 % at 4k (guessing 20 %), about 5 % beyond</td><td><span class="pill p-no">missing by design</span> (section 2). Below guessing suggests a consistent wrong pick, perhaps the first home ("lived in" matches "live now"). The saved answers would show this</td></tr>
+<tr><td><b>counting</b></td><td>count 26 % at 4k, 22 % at 16k</td><td><span class="pill p-no">weak</span>. A softmax read averages, it does not add up (our guess)</td></tr>
+<tr><td><b>several steps</b></td><td>compose and deduce at guessing</td><td><span class="pill p-no">not trained</span>: on text the rounds are trained only on the next token, and nothing asks a round to produce an intermediate step</td></tr>
+<tr><td><b>language</b></td><td>story loss 1.520 nats per token vs dense 1.537–1.548</td><td><span class="pill p-yes">no harm</span>: slightly better than dense</td></tr>
+</table></div>
+
+<!-- ======================================================= -->
+<h2 id="sweep">6 · What the notebook-proportions sweep changes, part by part</h2>
+<p>The plan agreed on 14 Oct, not launched yet: 30M E33 on the text checks, each run stopped at 0.6B tokens, one change at a time. Scored on far facts in crowded and short documents, with far facts at 16k, latest, the notebook-off check and story loss alongside. The best setting and today's setting then run again at 100M.</p>
+<div class="tw"><table>
+<tr><th>change</th><th>part it touches</th><th>which weakness it targets</th></tr>
+<tr><td>16 or 64 notes per page (today 32)</td><td>latents</td><td>how much compression the notes tolerate; whether crowded pages need more notes</td></tr>
+<tr><td>128- or 512-token pages; the raw window grows with the page</td><td>pages + read mask</td><td>fewer facts per page; no blind stretch (section 3)</td></tr>
+<tr><td>wider notes (2 key/value heads) or a wider writer</td><td>notes, writer</td><td>tests the "size is not the limit" reading (section 4)</td></tr>
+<tr><td>writer reads the prelude's states instead of bare token vectors</td><td>writer input</td><td>binding under crowding: each token arrives already mixed with its 16 neighbours</td></tr>
+<tr><td>an age signal on the notes</td><td>read</td><td>latest (section 2)</td></tr>
+</table></div>
+
+<!-- ======================================================= -->
+<details class="hist" id="history"><summary><b>History: the DNA chain test, 2–4 Oct 2026 (kept as written)</b>: the read–think–reread design on the 4-layer DNA model, the trained runs, and why every arm stopped at the guessing floor. Section numbers below are the old page's.</summary>
 
 <div class="callout bad"><b>4 Oct: the loop was never tested: no model learned the first hop.</b>
 <ul style="margin:6px 0 0;padding-left:18px">
@@ -77,7 +195,7 @@ details.nums{margin:8px 0 0;font-size:13.5px}details.nums summary{cursor:pointer
 </ul></div>
 
 <!-- ======================================================= -->
-<h2 id="results">0 · What happened when we trained it <span class="newtag">new · 4 Oct</span></h2>
+<h2 id="results">Old 0 · What happened when we trained it <span class="newtag">new · 4 Oct</span></h2>
 <p>Ten arms trained on the parallel chain (4 chains of 8-letter nodes over a 4-letter alphabet, shuffled through a 1k-token book, about 150 k examples per stage, 2 → 3 → 4 hops). Score: <b>first-letter accuracy</b>, the first answer letter predicted before any answer letter is in context. Chance is 25 %.</p>
 
 <div class="card">
@@ -161,7 +279,7 @@ Your design maps onto the best-supported pattern in the literature: an untied fi
 </div>
 
 <!-- ======================================================= -->
-<h2 id="flow">1 · The information flow, loop by loop</h2>
+<h2 id="flow">Old 1 · The information flow, loop by loop</h2>
 <p>The same toy exam as before. Four chains are stored as separate facts, shuffled across the book. The question is "start at A, where do you end?" The answer D is three hops away, and the candidates are D, H, L and P (chance 25 %). Step through the loops. In <b>design</b> view the attention weights and guesses are <b>illustrative</b>: they show what the design should learn. Switch to <b>trained model</b> to see what the trained loop actually does on the 3-hop exam, from the 4 Oct measurements (read shares and decoded answers from section 0).</p>
 <div class="controls">
  <span><span class="lab">View</span><span class="seg" id="view"><button data-v="design" class="on">design (illustrative)</button><button data-v="measured">trained model (measured)</button></span></span>
@@ -178,7 +296,7 @@ Your design maps onto the best-supported pattern in the literature: an untied fi
 <p style="font-size:13.5px;color:var(--fg2)"><span class="chg">changes every loop</span> · <span class="fix">fixed during the loop (the notebook is read-only)</span> · <span class="tied">same weights every loop (tied)</span>. Shapes are for the 30M model (H 960, 15 query heads × 64, 1 key/value head × 64, N/6 memory entries).</p>
 
 <!-- ======================================================= -->
-<h2 id="arch">2 · The layer plan: same four layers, regrouped</h2>
+<h2 id="arch">Old 2 · The layer plan: same four layers, regrouped</h2>
 <div class="grid g2">
 <div class="card"><svg id="plan" viewBox="0 0 480 400" role="img" aria-label="Layer plan"></svg></div>
 <div>
@@ -194,7 +312,7 @@ Your design maps onto the best-supported pattern in the literature: an untied fi
 </div></div>
 
 <!-- ======================================================= -->
-<h2 id="qk">3 · Queries and keys while looping</h2>
+<h2 id="qk">Old 3 · Queries and keys while looping</h2>
 <div class="eq" id="eqs">loop r (question-side position p, head j):
   q_r      = RoPE( W_q · norm(h_r[p]) )                       ← changes every loop
   K_mem, V_mem  = writer(book)   (N/6 entries, 1 head × 64)     ← fixed, computed once
@@ -214,7 +332,7 @@ Your design maps onto the best-supported pattern in the literature: an untied fi
 </div>
 
 <!-- ======================================================= -->
-<h2 id="grad">4 · How the gradients flow</h2>
+<h2 id="grad">Old 4 · How the gradients flow</h2>
 <div class="card"><div class="svgwrap"><svg id="gsvg" viewBox="0 0 1060 360" role="img" aria-label="Gradient flow"></svg></div>
 <p style="font-size:14px;margin:6px 0 0">Switch the diagram in section 1 to "backward" to see the same paths on the network. The loss is a weighted sum over the loop exits. Every exit's gradient enters the network at its own loop, so loop 1 is never more than one core-step from a loss signal. That is the "deep supervision" that the HRM/TRM analysis found to be the real driver.</p></div>
 <div class="grid g3">
@@ -232,7 +350,7 @@ Your design maps onto the best-supported pattern in the literature: an untied fi
 <p style="font-size:13.5px;color:var(--fg2)">E33 also tried progress targets and found no gain. Its targets were decoded through the head <i>without</i> the two upper layers, from a state at layer 2 of 4. Here every exit goes through the trained answer layer, the same path the final answer uses.</p>
 
 <!-- ======================================================= -->
-<h2 id="lit">5 · Confronting the idea with the literature</h2>
+<h2 id="lit">Old 5 · Confronting the idea with the literature</h2>
 <div class="tw"><table>
 <tr><th>work</th><th>what loops</th><th>re-reads a memory?</th><th>input re-injected</th><th>supervision</th><th>result</th></tr>
 <tr><td>End-to-end Memory Networks (2015)</td><td>controller state u ← u + read(u), 3 hops</td><td><span class="pill p-yes">yes</span> same memory each hop</td><td>u carries the question</td><td>final answer</td><td>multi-fact bAbI tasks improve sharply with more hops; <b>adjacent weight tying</b> puts the read output in the next query's space</td></tr>
@@ -263,7 +381,7 @@ Your design maps onto the best-supported pattern in the literature: an untied fi
 </div>
 
 <!-- ======================================================= -->
-<h2 id="test">6 · How we would test it, and what happened</h2>
+<h2 id="test">Old 6 · How we would test it, and what happened</h2>
 <div class="tw"><table>
 <tr><th>arm</th><th>what it isolates</th><th>result, 3 hops, first letter <span class="newtag">4 Oct</span></th></tr>
 <tr><td>R = 1 (today)</td><td>baseline: parallel chain, 3 hops ≈ 40 %, dense 44 %</td><td>40 %: at the guessing floor (41 %)</td></tr>
@@ -287,6 +405,7 @@ Your design maps onto the best-supported pattern in the literature: an untied fi
 <li><b>Cost</b> is small: only the ~40 question-side positions loop, each loop reading N/6 entries. The book is processed once.</li></ul></div>
 </div>
 <p style="font-size:13px;color:var(--fg2)">Sources: <a href="https://arxiv.org/abs/1503.08895">End-to-end Memory Networks</a> · <a href="https://arxiv.org/abs/1606.03126">Key-Value Memory Networks</a> · <a href="https://arxiv.org/abs/2502.05171">Huginn</a> · <a href="https://arxiv.org/abs/2510.25741">Ouro</a> · <a href="https://arxiv.org/abs/2507.10524">Mixture-of-Recursions</a> · <a href="https://arxiv.org/abs/2510.04871">TRM</a> · <a href="https://arcprize.org/blog/hrm-analysis">ARC Prize HRM analysis</a> · <a href="https://arxiv.org/abs/2502.17416">Saunshi 2025</a> · <a href="https://arxiv.org/abs/2605.26099">Sleep</a> · <a href="https://arxiv.org/abs/2412.06769">Coconut</a> · <a href="https://arxiv.org/abs/2502.13913">Guo 2025</a> · <a href="https://arxiv.org/abs/2505.17923">Yao 2025</a> · <a href="https://arxiv.org/abs/2604.07822">Kohli 2026</a> · <a href="https://arxiv.org/abs/2402.09268">Sanford 2024</a>. Ours: E31b limits study, E33 (repeated read, no gain), the latent reasoning review, the latent-thoughts proposal, and the E33a diagnosis note of 4 Oct (docs/4_Research_Notes/e33a_loop_diagnosis_20261004.md).</p>
+</details>
 </main>
 <script>
 const C=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();const NS='http://www.w3.org/2000/svg';const tip=document.getElementById('tip');
@@ -545,6 +664,187 @@ document.querySelectorAll('#dir button').forEach(b=>b.onclick=()=>{S.dir=b.datas
 document.querySelectorAll('#view button').forEach(b=>b.onclick=()=>{S.view=b.dataset.v;document.querySelectorAll('#view button').forEach(x=>x.classList.toggle('on',x===b));drawMain();});
 document.querySelectorAll('#loop button').forEach(b=>b.onclick=()=>{S.loop=+b.dataset.v;document.querySelectorAll('#loop button').forEach(x=>x.classList.toggle('on',x===b));drawMain();});
 document.getElementById('frz').onchange=e=>{S.frz=e.target.checked;drawMain();};document.getElementById('det').onchange=e=>{S.det=e.target.checked;drawMain();};
-document.addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){S.loop=Math.max(0,Math.min(5,S.loop+(e.key==='ArrowRight'?1:-1)));document.querySelectorAll('#loop button').forEach(x=>x.classList.toggle('on',+x.dataset.v===S.loop));drawMain();}});
+document.addEventListener('keydown',e=>{if(!document.getElementById('history').open)return;if(e.key==='ArrowRight'||e.key==='ArrowLeft'){S.loop=Math.max(0,Math.min(5,S.loop+(e.key==='ArrowRight'?1:-1)));document.querySelectorAll('#loop button').forEach(x=>x.classList.toggle('on',+x.dataset.v===S.loop));drawMain();}});
 drawAll();matchMedia('(prefers-color-scheme: dark)').addEventListener('change',drawAll);
+
+/* ===== 14 Oct · E33 on text: pipeline, order, masks ===== */
+const PN={
+ tokens:{x:330,y:604,w:400,h:44,t:'tokens',sub:'one document per row · 4,096 in training · 1k–16k in exams',pos:'na',col:'--muted'},
+ pages:{x:50,y:505,w:350,h:48,t:'pages',sub:'256 tokens each, a new page every 192',pos:'page',col:'--violet'},
+ penc:{x:50,y:425,w:350,h:48,t:'page encoder · 2 layers, both directions',sub:'every token sees its whole page',pos:'page',col:'--violet'},
+ latents:{x:50,y:345,w:350,h:48,t:'32 latents × 2 reading rounds',sub:'each starts on its own 8-token slice',pos:'page',col:'--violet'},
+ notes:{x:50,y:150,w:350,h:160,t:'notes',sub:'',pos:'none',col:'--violet'},
+ emb:{x:590,y:505,w:320,h:48,t:'embedding',sub:{30:'token table 256 → width 576',100:'token table 256 → width 896'},pos:'none',col:'--blue'},
+ prelude:{x:590,y:430,w:320,h:48,t:{30:'prelude · 2 local layers',100:'prelude · 3 local layers'},sub:'16 tokens back · runs once',pos:'exact',col:'--blue'},
+ read:{x:590,y:330,w:320,h:54,t:'GLOBAL READ',sub:'raw: last 256 tokens ‖ notes: closed pages',pos:'mixed',col:'--blue'},
+ think:{x:590,y:262,w:320,h:46,t:'local layer (think)',sub:'16 tokens back',pos:'exact',col:'--teal'},
+ coda:{x:590,y:150,w:320,h:48,t:{30:'coda · 4 local layers',100:'coda · 7 local layers'},sub:'16 tokens back · once, after round 4',pos:'exact',col:'--blue'},
+ head:{x:590,y:70,w:320,h:44,t:'output head → next token',sub:'',pos:'na',col:'--green'},
+ exits:{x:940,y:150,w:100,h:100,t:'exits',sub:'rounds 1–3',pos:'na',col:'--green'}};
+const PORDER=['tokens','pages','penc','latents','notes','emb','prelude','read','think','coda','head','exits'];
+const POSC={exact:['--green','exact distance (rotated keys)'],page:['--amber','order inside one page only'],none:['--red','no position at all'],na:['--muted','not about position'],mixed:['--green','raw part exact · notes none']};
+const PD={
+ tokens:{what:'Stories from the Text World with planted facts and 8 questions per training document. One document per row (start mark, text, end mark). Training rows are 4,096 tokens; the exams run at 1k, 2k, 4k, 8k and 16k.',
+  shape:{30:'[B, 4096] token ids · vocabulary 4,096',100:'[B, 4096] token ids · vocabulary 4,096'},keep:'everything',pos:'none yet: position enters only as rotations inside attention',code:'data/text_world.py · scripts/build_text_checks_data.py'},
+ pages:{what:'The writer starts from the token table itself: each token is its 256-number table entry, before any layer has mixed in its neighbours. It projects that to 256 and cuts the row into pages of 256 tokens, a new page every 192 (64 tokens overlap). A page writes from one document only.',
+  shape:{30:'4k row → 21 pages × 256 tokens × 256 · 16k → 85 pages',100:'same as 30M: the writer does not grow with the model'},keep:'every token, but as a bare word with no context yet',pos:'the page start is known to the code but not given to the model (page address off)',code:'nn/latent_memory.py · LatentMemoryWriter.forward, window_pick'},
+ penc:{what:'Two attention layers run inside each page, in both directions, so every token sees the whole page. This is where "Anna", "moved" and "Kodaford" can be joined, as long as they sit on the same page.',
+  shape:{30:'[pages, 256, 256] · 4 heads × 64 · feed-forward 512',100:'same as 30M'},keep:'the page, in context; nothing from other pages',pos:'order inside the page (relative rotation over 0–255)',code:'nn/latent_memory.py · PageEncoderLayer'},
+ latents:{what:'32 latents per page, 512 numbers each, 8 heads. Each latent starts as a learned identity with a soft preference for its own 8-token slice of the page (a bump it can learn to move). In each of 2 rounds it reads the page (a softmax over the page tokens), then updates through a feed-forward layer.',
+  shape:{30:'[pages, 32, 512]',100:'same as 30M'},keep:'what each latent chose to read: 32 summaries of a 256-token page',pos:'roughly which slice of its page, from the starting bump; not which page',code:'LatentMemoryWriter._latent_read · prior'},
+ notes:{what:'Each latent becomes one note: a key of 64 numbers (its state plus what it read) and a value of 64 numbers (what it read; its state enters through weights that start at zero). Notes are written once, before the main path runs, and stay the same through all 4 rounds.',
+  shape:{30:'4k → 672 notes × (64 key + 64 value) · 16k → 2,720 notes',100:'same as 30M'},keep:'about 27× fewer numbers than the main path holds for the same text',pos:'<b>none</b>: the key is not rotated and carries no page number, so two notes with the same content look the same wherever they came from (section 2)',code:'lm_slot_pos = "reader", lm_addr = "none" in evaluation/text_checks.py'},
+ emb:{what:'The same token table (256 per token, shared with the writer) is projected up to the model width and normalised. Plain input: no word-pair tables and no value embeddings. This vector is also added back in every layer through a learned weight that starts at zero.',
+  shape:{30:'[B, S, 576]',100:'[B, S, 896]'},keep:'the word only',pos:'none',code:'nn/perceiver_ar_lm.py · TinyHashedEmbedding'},
+ prelude:{what:'Local layers: each token attends to the 16 tokens before it, then a feed-forward layer. They run once. Their outputs are kept for the shortcut connections the coda uses later (U-net skips).',
+  shape:{30:'2 layers · [B, S, 576] · 9 query heads × 64, 1 shared key/value head',100:'3 layers · [B, S, 896] · 14 query heads × 64, 1 shared key/value head'},keep:'each token now knows its phrase (about 16 tokens)',pos:'exact distance within 16 tokens',code:'PerceiverARConfig.layer_patterns'},
+ read:{what:'Each token forms 9 queries (one per head) and runs <b>one softmax over two pools</b>: the raw keys of the last 256 tokens, which are rotated so distance counts, and the notes of every page that closed at or before the token, which meet an un-rotated copy of the same query so distance does not count. Raw keys and notes compete for the same attention. When the raw window already predicts the next token, the notes get little weight.',
+  shape:{30:'queries [B, S, 9, 64] · keys: 256 raw + up to 672 notes at 4k',100:'queries [B, S, 14, 64] · keys: 256 raw + up to 672 notes at 4k'},keep:'per token and round: 9 blends of 64 numbers',pos:'raw part: exact distance · notes: none',code:'attend_message (q_slot) · dense_message_mask, closed rule'},
+ think:{what:'One local layer (16 tokens back) after the read mixes what was read with the neighbours. Read plus think is the core. The same weights run 4 times, and a learned loop marker (zero at the start) is added before each round. The notes are the same every round; only the queries change, because the token states change.',
+  shape:{30:'[B, S, 576] · tied × 4',100:'[B, S, 896] · tied × 4'},keep:'the state after round r',pos:'exact distance within 16 tokens',code:'PerceiverARLM._run_layers (loop_emb, core)'},
+ coda:{what:'After round 4, local layers (16 tokens back) run once. U-net skips add back the round-4 core outputs and the prelude outputs, through learned weights that start at zero.',
+  shape:{30:'4 layers · [B, S, 576]',100:'7 layers · [B, S, 896]'},keep:'the final state',pos:'exact distance within 16 tokens',code:'PerceiverARLM._run_layers'},
+ head:{what:'Normalise, project to the 4,096-word vocabulary and soft-cap the scores. The loss is next-token cross-entropy on every token: story, questions and answers alike.',
+  shape:{30:'[B, S, 4096]',100:'[B, S, 4096]'},keep:'—',pos:'—',code:'chunked_softcap_ce'},
+ exits:{what:'Training only. The states after rounds 1, 2 and 3 also run through the coda layers and the head, and each adds 0.3 × its next-token loss: total = final + 0.3 × (round 1 + round 2 + round 3). On text the exits are off at evaluation, so the reported loss is the plain next-token loss. There are no step targets: every round is asked for the same next token.',
+  shape:{30:'3 extra passes through the 4 coda layers',100:'3 extra passes through the 7 coda layers'},keep:'—',pos:'—',code:'_loop_exit_loss (message_loop_exit_targets = "answer")'}};
+const P={i:7,scale:'30',pos:false};
+const pick=(v,s)=>typeof v==='object'?v[s]:v;
+function drawPipe(){const s=document.getElementById('pipe');s.innerHTML='';
+ mk(s,'qG',C('--muted'));mk(s,'qO',C('--orange'));mk(s,'qT',C('--teal'));mk(s,'qE',C('--green'));mk(s,'qB',C('--blue'));
+ const sel=PORDER[P.i];
+ el('rect',{x:10,y:10,width:440,height:576,rx:12,fill:C('--violet'),'fill-opacity':.05,stroke:C('--line')},s);
+ el('text',{x:24,y:34,'font-size':13,'font-weight':750,style:`fill:${C('--violet')}`},s,'NOTEBOOK WRITER · runs once per document, first');
+ el('text',{x:24,y:52,'font-size':11,class:'s'},s,'reads the token table directly, not the model\'s states');
+ el('rect',{x:470,y:10,width:580,height:576,rx:12,fill:C('--blue'),'fill-opacity':.04,stroke:C('--line')},s);
+ el('text',{x:484,y:34,'font-size':13,'font-weight':750,style:`fill:${C('--blue')}`},s,'MAIN PATH · every token');
+ el('text',{x:484,y:52,'font-size':11,class:'s'},s,P.scale==='30'?'8 layers × 2.7M · width 576':'12 layers × 7.6M · width 896');
+ // loop frame
+ el('rect',{x:565,y:236,width:370,height:162,rx:14,fill:C('--teal'),'fill-opacity':.06,stroke:C('--teal'),'stroke-width':2,'stroke-dasharray':'7 5'},s);
+ el('text',{x:575,y:252,'font-size':12,'font-weight':750,style:`fill:${C('--teal')}`},s,'CORE · same weights × 4 rounds');
+ for(let r=1;r<=4;r++){const cx=972,cy=274+r*24;el('circle',{cx:cx-12,cy,r:9,fill:C('--card'),stroke:C('--teal')},s);el('text',{x:cx-12,y:cy+4,'text-anchor':'middle','font-size':10.5,'font-weight':800,style:`fill:${C('--teal')}`},s,r);}
+ el('path',{d:'M910,280 C932,280 932,362 912,362',fill:'none',stroke:C('--teal'),'stroke-width':2,'marker-end':'url(#qT)'},s);
+ // arrows
+ const A=(d,c,m,w,dash)=>el('path',{d,fill:'none',stroke:c,'stroke-width':w||1.8,'stroke-dasharray':dash||'','marker-end':`url(#${m})`},s);
+ A('M450,604 C330,590 225,580 225,556',C('--muted'),'qG');A('M610,604 C690,590 750,580 750,556',C('--muted'),'qG');
+ A('M225,505 L225,475',C('--muted'),'qG');A('M225,425 L225,395',C('--muted'),'qG');A('M225,345 L225,312',C('--muted'),'qG');
+ A('M750,505 L750,480',C('--muted'),'qG');A('M750,430 L750,386',C('--muted'),'qG');A('M750,330 L750,310',C('--muted'),'qG');
+ A('M750,236 L750,200',C('--muted'),'qG');A('M750,150 L750,116',C('--muted'),'qG');
+ // notes -> read
+ A('M402,250 C500,250 520,357 588,357',C('--orange'),'qO',2.6);
+ el('text',{x:412,y:402,'font-size':11.5,'font-weight':700,style:`fill:${C('--orange')}`},s,'notes of closed pages');
+ el('text',{x:412,y:417,'font-size':11.5,'font-weight':700,style:`fill:${C('--orange')}`},s,'no position');
+ // raw self-loop
+ el('text',{x:598,y:404+8,'font-size':10.5,style:`fill:${C('--blue')}`},s,'');
+ // exits
+ A('M935,262 C962,262 990,272 990,252',C('--green'),'qE',1.6,'4 3');A('M985,150 C985,120 960,96 912,94',C('--green'),'qE',1.6,'4 3');
+ // nodes
+ Object.entries(PN).forEach(([k,n])=>{const g=el('g',{},s);const on=k===sel;
+  let col=C(n.col);if(P.pos)col=C(POSC[n.pos][0]);
+  if(k==='notes'){el('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:10,fill:col,'fill-opacity':on?.18:.08,stroke:col,'stroke-width':on?3:1.2},g);
+   el('text',{x:n.x+12,y:n.y+20,'font-size':13,'font-weight':750},g,'notes · 32 per page · 1 key + 1 value of 64');
+   el('text',{x:n.x+12,y:n.y+36,'font-size':10.5,class:'s'},g,'written once; the same in all 4 rounds; no page number');
+   for(let p=0;p<6;p++){const px=n.x+14+p*55;el('rect',{x:px,y:n.y+48,width:46,height:96,rx:6,fill:C('--card2'),stroke:C('--line')},g);
+    el('text',{x:px+23,y:n.y+60,'text-anchor':'middle','font-size':9.5,class:'m'},g,p<5?'page ?':'…');
+    if(p<5)for(let q=0;q<4;q++){el('rect',{x:px+6,y:n.y+66+q*19,width:34,height:14,rx:3,fill:col,'fill-opacity':.45},g);}}
+  }else if(P.pos&&n.pos==='mixed'){el('rect',{x:n.x,y:n.y,width:n.w/2,height:n.h,rx:8,fill:C('--green'),'fill-opacity':.25,stroke:C('--green')},g);
+   el('rect',{x:n.x+n.w/2,y:n.y,width:n.w/2,height:n.h,rx:8,fill:C('--red'),'fill-opacity':.25,stroke:C('--red')},g);
+   if(on)el('rect',{x:n.x-2,y:n.y-2,width:n.w+4,height:n.h+4,rx:9,fill:'none',stroke:C('--fg'),'stroke-width':2.5},g);
+   el('text',{x:n.x+n.w/2,y:n.y+n.h/2-3,'text-anchor':'middle','font-size':13,'font-weight':750},g,pick(n.t,P.scale));
+   el('text',{x:n.x+n.w/2,y:n.y+n.h/2+13,'text-anchor':'middle','font-size':10.5,class:'s'},g,'raw: exact distance ‖ notes: no position');
+  }else{el('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:8,fill:col,'fill-opacity':on?.32:.13,stroke:on?C('--fg'):col,'stroke-width':on?2.5:1.2},g);
+   const sub=pick(n.sub,P.scale);
+   el('text',{x:n.x+n.w/2,y:n.y+(sub?n.h/2-3:n.h/2+5),'text-anchor':'middle','font-size':k==='exits'?12.5:13,'font-weight':750},g,pick(n.t,P.scale));
+   if(sub)el('text',{x:n.x+n.w/2,y:n.y+n.h/2+13,'text-anchor':'middle','font-size':10.5,class:'s'},g,sub);
+   if(k==='exits'){el('text',{x:n.x+n.w/2,y:n.y+n.h/2+29,'text-anchor':'middle','font-size':10.5,class:'s'},g,'training only');el('text',{x:n.x+n.w/2,y:n.y+n.h/2+43,'text-anchor':'middle','font-size':10.5,class:'s'},g,'weight 0.3 each');}}
+  g.style.cursor='pointer';g.addEventListener('click',()=>{P.i=PORDER.indexOf(k);drawPipe();});});
+ el('text',{x:24,y:68,'font-size':11,class:'s'},s,'finishes before layer 1 of the main path runs · 4.0M parameters');
+ // legend + detail
+ const lg=document.getElementById('plegend');lg.hidden=!P.pos;lg.innerHTML=['exact','page','none','na'].map(k=>`<span><i style="background:var(${POSC[k][0]})"></i>${POSC[k][1]}</span>`).join('');
+ const d=PD[sel];
+ document.getElementById('pstep').textContent=`step ${P.i+1} of ${PORDER.length}`;
+ document.getElementById('pdet').innerHTML=`<h3 style="margin:2px 0 6px">${P.i+1} · ${pick(PN[sel].t,P.scale)}</h3><p style="margin:0 0 8px;max-width:none">${d.what}</p>
+ <div class="dgrid"><div><div class="q">shape · ${P.scale}M</div>${d.shape[P.scale]}</div><div><div class="q">what gets through</div>${d.keep}</div><div><div class="q">position it knows</div>${d.pos}</div><div><div class="q">code</div><code>${d.code}</code></div></div>`;}
+
+/* order: Anna's moves */
+const PLACES=['Borvale (home)','Ardmoor','Cresk','Dunlow','Elmby','Fenwick','Gorsley','Hollin','Ivel','Kodaford','Selby (latest)'];
+const AFR=[.07,.20,.28,.37,.45,.52,.60,.67,.74,.81,.877];
+const OTH=[.05,.09,.11,.16,.18,.23,.25,.31,.33,.35,.41,.43,.48,.5,.55,.57,.62,.64,.69,.71,.76,.78,.84,.86,.9,.92,.94];
+const O={L:1024,mode:'off'};
+function oWeights(){const inRaw=(1-AFR[10])*O.L<256;
+ if(inRaw)return{w:[.03,.01,.01,.01,.01,.01,.01,.02,.02,.17,.70],how:'raw'};
+ if(O.mode==='off')return{w:[.16,.084,.084,.084,.084,.084,.084,.084,.084,.084,.084],how:'off'};
+ const a=AFR.map(f=>Math.exp(6*(f-1)));const z=a.reduce((x,y)=>x+y,0);return{w:a.map(v=>v/z),how:'age'};}
+function drawOrder(){const s=document.getElementById('osvg');s.innerHTML='';const X0=70,X1=990,X=f=>X0+f*(X1-X0);const L=O.L;
+ el('text',{x:X0,y:22,'font-size':12.5,'font-weight':750,class:'s'},s,`a ${L>=1024?(L/1024)+'k':L}-token document, the question at the end`);
+ const nP=L<=256?1:Math.ceil((L-256)/192)+1;
+ for(let p=0;p<nP;p++){const a=Math.min(p*192,L-256)/L,b=(Math.min(p*192,L-256)+256)/L;el('rect',{x:X(a),y:84+(p%2)*7,width:Math.max(X(b)-X(a)-1,1),height:6,rx:2,fill:C('--violet'),'fill-opacity':.35},s);}
+ el('text',{x:X0,y:112,'font-size':10.5,class:'m'},s,`${nP} pages (overlapping), each becomes 32 notes`);
+ el('line',{x1:X0,x2:X1,y1:70,y2:70,stroke:C('--line'),'stroke-width':6,'stroke-linecap':'round'},s);
+ const r0=Math.max(0,1-256/L);el('rect',{x:X(r0),y:40,width:X(1)-X(r0),height:42,rx:4,fill:C('--blue'),'fill-opacity':.14,stroke:C('--blue'),'stroke-dasharray':'4 3'},s);
+ el('text',{x:X(1)-4,y:36,'text-anchor':'end','font-size':11,'font-weight':700,style:`fill:${C('--blue')}`},s,'raw window: last 256 tokens, exact order');
+ OTH.forEach(f=>el('line',{x1:X(f),x2:X(f),y1:58,y2:76,stroke:C('--sother'),'stroke-width':2},s));
+ AFR.forEach((f,i)=>{const g=el('g',{},s);el('line',{x1:X(f),x2:X(f),y1:52,y2:80,stroke:C(i===10?'--orange':'--s1'),'stroke-width':i===10?4:2.5},g);
+  el('rect',{x:X(f)-5,y:48,width:10,height:36,fill:'transparent'},g);hov(g,`<b>Anna: ${PLACES[i]}</b><br>at ${Math.round(f*100)} % of the document, ${Math.round((1-f)*L)} tokens before the question`);});
+ el('text',{x:X(AFR[0]),y:134,'text-anchor':'middle','font-size':10.5,class:'s'},s,'home');
+ el('text',{x:X(AFR[10]),y:134,'text-anchor':'middle','font-size':10.5,'font-weight':700,style:`fill:${C('--orange')}`},s,'last move');
+ el('text',{x:X1+6,y:74,'font-size':13,'font-weight':800},s,'?');
+ const back=Math.round((1-AFR[10])*L);const inRaw=back<256;
+ el('text',{x:X0,y:156,'font-size':12,'font-weight':700,style:`fill:${C(inRaw?'--green':'--red')}`},s,`Anna's last move is ${back} tokens back: ${inRaw?'inside the raw window, where order is exact':'outside the raw window, so it reaches the reader only as a note'}`);
+ // bars
+ const {w,how}=oWeights();const BX=230,BW=520,TOP=176,RH=18;const mx=Math.max(...w);const top=w.indexOf(mx);
+ el('text',{x:X0,y:TOP-2+0,'font-size':11.5,'font-weight':700,class:'s'},s,'');
+ PLACES.forEach((p,i)=>{const y=TOP+i*RH;el('text',{x:BX-8,y:y+12,'text-anchor':'end','font-size':11.5,class:i===10?'':'s','font-weight':i===10?700:400},s,p);
+  const g=el('g',{},s);el('rect',{x:BX,y:y+2,width:Math.max(w[i]/.75*BW,2),height:13,rx:3,fill:C(i===top?(i===10?'--green':'--red'):'--s1'),'fill-opacity':i===top?1:.55},g);
+  el('text',{x:BX+Math.max(w[i]/.75*BW,2)+6,y:y+13,'font-size':10.5,class:'m'},g,(w[i]*100).toFixed(0)+' %');
+  el('rect',{x:BX,y,width:BW,height:RH,fill:'transparent'},g);hov(g,`<b>${p}</b>: ${(w[i]*100).toFixed(0)} % of the read on Anna's facts (illustrative)`);});
+ const ttl=how==='raw'?'read on Anna\'s places: the raw window shows the last moves in order':how==='off'?'read on Anna\'s places: content only, every move looks alike':'read on Anna\'s places: content plus an age signal';
+ el('text',{x:BX+BW+20,y:TOP+12,'font-size':12,'font-weight':750},s,'illustrative');
+ const lines=(how==='raw'?['The last move is in the raw window,','so its exact distance is visible.','Answer: Selby ✓ (measured 95 % at 1k)']:
+  how==='off'?['Ten moves, all equally "Anna moved",','plus a home that matches "live now".','Answer: a blend, perhaps the home ✗','(measured 22 % at 4k, about 5 % beyond)']:
+  ['Newer notes score higher per page of age;','content heads keep slope 0.','Answer: Selby ✓ (proposal, not built)']);
+ lines.forEach((t,i)=>el('text',{x:BX+BW+20,y:TOP+34+i*17,'font-size':11.5,class:'s'},s,t));
+ el('text',{x:BX,y:TOP-6,'font-size':11.5,'font-weight':700,class:'s'},s,ttl);
+ document.getElementById('osay').innerHTML=inRaw?'<b>1k:</b> the last move sits about 126 tokens back, inside the 256-token raw window. The raw keys are rotated, so the read sees the exact distance and can take the newest move. That is how E33 scores 95 % at 1k. The notes are not needed here.'
+  :(O.mode==='off'?`<b>${L/1024}k, today:</b> the last move is ${back} tokens back, outside the raw window. Every one of Anna's moves reaches the reader as a note with no position, so "moved to Kodaford" and "moved to Selby" are equally good matches. The read returns a blend, and the answer is whichever place the blend favours. The home sentence's wording ("lived in") matches the question ("live now") best, which may be why the score drops below guessing.`
+  :`<b>${L/1024}k, with an age signal:</b> each head scores a note by content minus its slope × the pages since the note's page closed. A head with a positive slope prefers Anna's newest note. A head with slope 0 still finds old facts by content, as lookup needs. ALiBi-style biases also work on documents longer than the training length.`);}
+
+/* masks: what one token sees */
+const GEO=[{W:256,st:192,raw:256},{W:512,st:384,raw:256},{W:512,st:384,raw:512}];let MG=0;
+function drawMask(){const s=document.getElementById('msvg');s.innerHTML='';const g=GEO[MG];const k=4;const t=k*g.st+g.W-2;const lo=Math.max(0,t-1150),hi=t+90;
+ const X0=40,X1=1020,X=v=>X0+(v-lo)/(hi-lo)*(X1-X0);
+ const starts=[];for(let s0=0;s0<=t+g.W;s0+=g.st)starts.push(s0);
+ el('text',{x:X0,y:18,'font-size':12,'font-weight':750,class:'s'},s,`reading token at position ${t} (worst case: one token before the page that holds it closes)`);
+ // pages
+ starts.forEach((s0,i)=>{const e=s0+g.W-1;if(e<lo||s0>hi)return;const closed=e<=t,open=s0<=t&&e>t;const y=40+(i%2)*26;
+  const gg=el('g',{},s);el('rect',{x:X(Math.max(s0,lo)),y,width:Math.max(X(Math.min(e,hi))-X(Math.max(s0,lo)),2),height:20,rx:4,fill:closed?C('--violet'):C('--sother'),'fill-opacity':closed?.4:(open?.25:.1),stroke:closed?C('--violet'):C('--sother'),'stroke-dasharray':closed?'':'4 3'},gg);
+  el('text',{x:X(Math.max(s0,lo))+6,y:y+14,'font-size':10.5,class:closed?'':'m'},gg,`page ${s0}–${e}: ${closed?'closed → its notes are readable':(open?'open → not readable yet':'future')}`);});
+ // coverage
+ const raw0=Math.max(0,t-g.raw+1);let cov=new Uint8Array(t+1);
+ starts.forEach(s0=>{const e=s0+g.W-1;if(e<=t)for(let j=s0;j<=e;j++)cov[j]=1;});
+ for(let j=raw0;j<=t;j++)cov[j]|=2;
+ const gaps=[];let st=-1;for(let j=lo;j<=t;j++){if(cov[j]===0){if(st<0)st=j;}else if(st>=0){gaps.push([st,j-1]);st=-1;}}if(st>=0)gaps.push([st,t]);
+ const yb=110;
+ el('rect',{x:X(raw0),y:yb,width:X(t)-X(raw0),height:22,rx:4,fill:C('--blue'),'fill-opacity':.3,stroke:C('--blue')},s);
+ el('text',{x:X(raw0)+6,y:yb+15,'font-size':11,'font-weight':700},s,`raw window: ${g.raw} tokens, exact order`);
+ el('rect',{x:X(t-15),y:yb+30,width:X(t)-X(t-15)+2,height:16,rx:3,fill:C('--green'),'fill-opacity':.5},s);
+ el('text',{x:X(t-15)-6,y:yb+42,'text-anchor':'end','font-size':10.5,class:'s'},s,'local layers: 16 tokens');
+ gaps.forEach(([a,b])=>{el('rect',{x:X(a),y:yb-4,width:Math.max(X(b)-X(a),2),height:58,fill:C('--red'),'fill-opacity':.18,stroke:C('--red'),'stroke-width':1.5},s);
+  el('text',{x:(X(a)+X(b))/2,y:yb+70,'text-anchor':'middle','font-size':11,'font-weight':750,style:`fill:${C('--red')}`},s,`blind: ${b-a+1} tokens`);});
+ el('line',{x1:X(t),x2:X(t),y1:30,y2:200,stroke:C('--fg'),'stroke-width':2},s);el('text',{x:X(t),y:214,'text-anchor':'middle','font-size':11,'font-weight':700},s,'reader');
+ [lo,Math.round((lo+t)/2),t].forEach(v=>el('text',{x:X(v),y:240,'text-anchor':'middle','font-size':10.5,class:'m'},s,v));
+ const blind=gaps.reduce((n,[a,b])=>n+b-a+1,0);
+ document.getElementById('msay').innerHTML=blind?`<b>${blind} tokens are invisible</b> to this reader: they are older than the ${g.raw}-token raw window, and the page that holds them has not closed yet. A fact there becomes readable only when that page closes. With a page step of ${g.st}, the raw window needs at least ${g.st} tokens to close the stretch.`
+  :`<b>No blind stretch.</b> The newest closed page always ends less than one page step (${g.st} tokens) back, and the raw window reaches ${g.raw} tokens back. Every earlier token is covered by the raw window, by a note, or by both.`;}
+
+function drawNew(){drawPipe();drawOrder();drawMask();}
+document.getElementById('pprev').onclick=()=>{P.i=(P.i+PORDER.length-1)%PORDER.length;drawPipe();};
+document.getElementById('pnext').onclick=()=>{P.i=(P.i+1)%PORDER.length;drawPipe();};
+document.querySelectorAll('#pscale button').forEach(b=>b.onclick=()=>{P.scale=b.dataset.v;document.querySelectorAll('#pscale button').forEach(x=>x.classList.toggle('on',x===b));drawPipe();});
+document.getElementById('ppos').onchange=e=>{P.pos=e.target.checked;drawPipe();};
+document.querySelectorAll('#olen button').forEach(b=>b.onclick=()=>{O.L=+b.dataset.v;document.querySelectorAll('#olen button').forEach(x=>x.classList.toggle('on',x===b));drawOrder();});
+document.querySelectorAll('#omode button').forEach(b=>b.onclick=()=>{O.mode=b.dataset.v;document.querySelectorAll('#omode button').forEach(x=>x.classList.toggle('on',x===b));drawOrder();});
+document.querySelectorAll('#mgeo button').forEach(b=>b.onclick=()=>{MG=+b.dataset.v;document.querySelectorAll('#mgeo button').forEach(x=>x.classList.toggle('on',x===b));drawMask();});
+drawNew();matchMedia('(prefers-color-scheme: dark)').addEventListener('change',drawNew);
+
 </script>

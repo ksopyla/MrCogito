@@ -1,202 +1,190 @@
 ---
-language:
-  - en
+pretty_name: "CogitoProbe-Arith: nested arithmetic and bracket matching in long context"
 license: apache-2.0
-pretty_name: CogitoProbe-Arith — nested arithmetic / mixed brackets
-size_categories:
-  - 10K<n<100K
+language:
+- en
 task_categories:
-  - question-answering
-  - text-generation
+- question-answering
+- text-generation
+annotations_creators:
+- machine-generated
+language_creators:
+- machine-generated
+multilinguality:
+- monolingual
+source_datasets:
+- original
+size_categories:
+- 10K<n<100K
 tags:
-  - concept-compression
-  - concept-bottleneck
-  - synthetic
-  - long-context
-  - cogito-probe
-  - arith
-  - research
+- cogito-capability-checks
+- synthetic
+- benchmark
+- evaluation
+- long-context
+- needle-in-a-haystack
+- length-generalization
+- memory
+- arithmetic
+- bracket-matching
+- dyck
+- structure
+- cogito-probe
+- arith
 configs:
-  - config_name: default
-    data_files:
-      - split: train
-        path: train.parquet
-      - split: validation
-        path: validation.parquet
-      - split: test
-        path: test.parquet
-dataset_info:
-  dataset_name: ksopyla/cogito-probe-arith
+- config_name: default
+  data_files:
+  - split: train
+    path: train.parquet
+  - split: validation
+    path: validation.parquet
+  - split: test
+    path: test.parquet
 ---
 
-# CogitoProbe-Arith — nested arithmetic / mixed brackets
+# CogitoProbe-Arith: nested arithmetic with mixed brackets
 
-**Hub:** [`ksopyla/cogito-probe-arith`](https://huggingface.co/datasets/ksopyla/cogito-probe-arith)  
-**Author:** Krzysztof Sopyła · **Family:** `arith` · **Series:** CogitoProbe · **Default seed:** `20260916` · **Tokenizer:** `HuggingFaceTB/SmolLM3-3B`
+> **Part of [Cogito Capability Checks](https://huggingface.co/collections/ksopyla/cogito-capability-checks-6aca2db88ba9d2714727489f)** — *does your model actually use what it read?*
+> Small synthetic tests with exact answers, guessing floors and a length ladder (1k → 128k tokens).
+> Project page: [ai.ksopyla.com/projects/cogito-capability-datasets](https://ai.ksopyla.com/projects/cogito-capability-datasets/)
 
-## What it is
+**TL;DR.** Several nested `+ - *` expressions with mixed brackets `()[]{}` up front, filler, then a question about the first (farthest) one: an inner node's value or which bracket closes which. Tests whether a model stored the **expression tree**, not just the final number.
 
-The bottleneck stores a compositional AST (or a sufficient set of node values + Dyck-3 match state), not a bag of digits. Eval-only is a shortcut control (~log2|result| bits) and must not be the success metric.
-
-This is one dataset in a *series* that separates capability from confound:
-
-| Dataset | Claim it can falsify |
+| | |
 |---|---|
-| `ksopyla/cogito-probe-bits` | A C-slot bottleneck's unique-bit capacity vs haystack length |
-| `ksopyla/cogito-probe-bind` | Tuple binding vs bag-of-tokens / document embedding |
-| `ksopyla/cogito-probe-arith` | AST / Dyck-3 structure vs eval-only calculator shortcut |
-| `ksopyla/cogito-probe-props` | Proposition set vs fluent-filler n-grams |
+| **Lengths** | 1k, 4k, 8k, 16k, 32k tokens (`seq_len`) |
+| **Size** | 10,240 rows: train 8,448 · validation 896 · test 896 |
+| **Tests** | structure memory: sub-expression values, bracket matching |
+| **Tasks** | `subexpr` 5,175 · `match` 3,028 (primary) · `eval` 2,037 (control) |
+| **Guessing** | depends on the task; see `prize_bits` |
+| **Format** | text + ready ids for `HuggingFaceTB/SmolLM3-3B` (Llama-3 vocab) |
+| **License** | Apache-2.0 |
 
-DNA A=4 (`data/symbolic_tasks.py`) remains the exact-floor *bandwidth* instrument. These
-datasets exist because DNA cannot produce semantically rich concepts: iid 4-symbol
-copy/recall has no entities, attributes, or propositions.
+## Example
 
-## Why it exists
-
-Current training mixes in this repo (FineWeb-Edu, DCLM, PG-19, FinePDFs, stack-edu) are
-locally predictable: E18's reach ablation paid ~0.05 nats for far text, so a concept
-channel can look "used" while storing a document gist. DNA/Glyph then proved the
-*channel* can copy bits, but those alphabets have no compositional semantics. This
-family is the missing probe: **controlled information** + **a length ladder to 32k**
-(the regime where E21 is supposed to show its potential).
-
-## How it was generated
-
-Exact command (deterministic):
-
-```bash
-uv run python scripts/build_concept_probe_datasets.py \
-  --scale full --seed 20260916 \
-  --tokenizer HuggingFaceTB/SmolLM3-3B \
-  --families arith \
-  --out_dir Cache/concept_probes/full
+```
+( 3 + [ 2 * 4 ] ) - { 5 - 1 } . …more expressions…
+… filler …
+Q sub 0 . 2 .   →   values of internal nodes          (subexpr, primary)
+Q match 2       →   index of the matching closer      (match, primary)
+Q eval          →   the root value                    (eval, control only)
 ```
 
-Generator: `data/concept_probes/` · atom table: verified 1-token pieces of `HuggingFaceTB/SmolLM3-3B`
-(SmolLM3 = Llama-3 vocab). Arithmetic rows **inject** bare digit/operator ids; they do
-**not** BPE-encode glued strings (that merge path is 0.76 tokens/atom and is not an
-instrument).
+## Quick start
 
-Length ladder: **1024 → 4096 → 8192 → 16384 → 32768**.
-Variants: `scaled` (item count grows with length) and `fixed` (1k item count, longer haystack).
+```python
+from datasets import load_dataset
 
-## Schema
+ds = load_dataset("ksopyla/cogito-probe-arith")            # train / validation / test
+row = ds["validation"][0]
+print(row["seq_len"], row["task"], "|", row["query"], "->", row["answer"])
 
-| column | type | meaning |
+# Already tokenized for HuggingFaceTB/SmolLM3-3B (Llama-3 vocab); loss only where labels != -100.
+# Or ignore the ids and use the text fields: context / query / answer.
+small = ds["train"].filter(lambda r: r["seq_len"] == 1024 and r["variant"] == "fixed")  # laptop-sized start
+```
+
+## How to score
+
+Teacher-forced token accuracy on the answer span, per `task`. Report `subexpr` and `match`;
+`eval` is a single number a calculator shortcut can produce, so treat it as a control, not as
+evidence that the model understands arithmetic.
+
+## The family: Cogito Capability Checks
+
+One goal: **check whether a model stores and uses facts from its context, not just predicts nearby
+words.** Each dataset plants facts with known answers, adds filler, asks a question at the end, and
+labels how hard guessing is. Length is a ladder, so you see *where* a model stops working.
+
+| dataset | input | the question it answers | lengths |
+|---|---|---|---|
+| [`cogito-probe-bits`](https://huggingface.co/datasets/ksopyla/cogito-probe-bits) | symbol keys and values | How many key→value facts did it keep? (memory capacity in bits) | 1k–32k |
+| [`cogito-probe-bind`](https://huggingface.co/datasets/ksopyla/cogito-probe-bind) | people with attributes | Does it keep *who has what* together, and follow one link? | 1k–32k |
+| [`cogito-probe-arith`](https://huggingface.co/datasets/ksopyla/cogito-probe-arith) | nested bracket arithmetic | Did it store the expression tree, not only the result? | 1k–32k |
+| [`cogito-probe-props`](https://huggingface.co/datasets/ksopyla/cogito-probe-props) | short facts in fluent filler | Does it keep the facts and ignore the padding? | 1k–32k |
+| [`cogito-text-world`](https://huggingface.co/datasets/ksopyla/cogito-text-world) | simple English stories | Can a small LM trained from scratch quote, look up, track, chain, count and deduce facts in a story? | 1k–128k |
+
+**Start with** a probe if you test a memory or compression module on a pretrained tokenizer;
+**start with** `cogito-text-world` if you compare architectures trained from scratch on language.
+
+## Related work and inspirations
+
+- **Needle in a Haystack** (Kamradt, 2023) and **passkey retrieval** (Mohtashami & Jaggi, 2023, [arXiv:2305.16300](https://arxiv.org/abs/2305.16300)) — one fact in long filler; here: many facts, labelled bits, decoys.
+- **RULER** (Hsieh et al., 2024, [arXiv:2404.06654](https://arxiv.org/abs/2404.06654)) — synthetic long-context tasks (multi-key, variable tracking) for pretrained LMs; these sets add from-scratch training data and evidence-removed controls.
+- **BABILong** (Kuratov et al., 2024, [arXiv:2406.10149](https://arxiv.org/abs/2406.10149)) and **bAbI** (Weston et al., 2015, [arXiv:1502.05698](https://arxiv.org/abs/1502.05698)) — facts hidden in long natural text.
+- **Zoology / MQAR** (Arora et al., 2023, [arXiv:2312.04927](https://arxiv.org/abs/2312.04927)) — multi-query associative recall as an architecture test.
+- **Lost in the Middle** (Liu et al., 2023, [arXiv:2307.03172](https://arxiv.org/abs/2307.03172)) — answers depend on where the evidence sits.
+- **Binding IDs** (Feng & Steinhardt, 2023, [arXiv:2310.17191](https://arxiv.org/abs/2310.17191)), **ListOps** (Nangia & Bowman, 2018, [arXiv:1804.06028](https://arxiv.org/abs/1804.06028)), **PrOntoQA** (Saparov & He, 2022, [arXiv:2210.01240](https://arxiv.org/abs/2210.01240)) — binding, tree structure and rule chains.
+- **TinyStories** (Eldan & Li, 2023, [arXiv:2305.07759](https://arxiv.org/abs/2305.07759)) and **SimpleStories** (Finke et al., 2025, [arXiv:2504.09184](https://arxiv.org/abs/2504.09184)) — the simple language under `cogito-text-world`.
+
+<details>
+<summary><b>Schema, build statistics, rebuild, limitations</b></summary>
+
+**Columns**
+
+| column | meaning |
+|---|---|
+| `text`, `context`, `query`, `answer` | readable surfaces; `text` is the full padded row |
+| `input_ids`, `attention_mask`, `labels` | SmolLM3-3B ids, length = `seq_len`; `labels` = -100 except on the answer |
+| `seq_len`, `rung` | 1024, 4096, 8192, 16384 or 32768 |
+| `variant` | `fixed`: same facts as at 1k, longer filler (a drop = **length** failure); `scaled`: more facts with length (a drop = **capacity** failure) |
+| `task` | question type (see above) |
+| `prize_bits` | information in the gold answer (counting lower bound) |
+| `gap` | tokens from the last evidence token to the answer |
+| `answer_start`, `answer_end`, `evidence_end` | token indices into `input_ids` |
+| `meta` | JSON: fact table, fingerprints, node values |
+
+**Build** (seed `20260916`, 2026-09-16): 10,240 rows = train 8,448 / validation 896 / test 896.
+Rows per length: 1k 4,608 · 4k 2,560 · 8k 1,280 · 16k 1,024 · 32k 768; half `fixed`, half `scaled`.
+Mean `prize_bits` 12.9 (3.3–30.5).
+Splits use disjoint random streams; fact fingerprints, `input_ids`, text and answer strings have zero
+overlap between train, validation and test (shared answer *values*, such as colours, are expected).
+
+**Rebuild** (deterministic):
+
+```bash
+uv run python scripts/build_concept_probe_datasets.py --scale full --seed 20260916 \
+  --tokenizer HuggingFaceTB/SmolLM3-3B --families arith --out_dir Cache/concept_probes/full
+```
+
+Generator: `data/concept_probes/` in [github.com/ksopyla/MrCogito](https://github.com/ksopyla/MrCogito).
+
+**Limitations**
+- Not natural language: symbols are single tokens of the SmolLM3 / Llama-3 vocabulary
+  (real rows use pieces like `gonzalez`, `oslo`, `validators`; the examples above use toy names).
+- Answers are packed (several values per answer), so a small memory gets a dense learning signal.
+- `prize_bits` is a counting lower bound, not a cross-entropy floor.
+- The filler is a repeating cycle, so gzip of the whole row is tiny; compare `prize_bits`, not compressibility.
+- Bracket shapes colour the tree; they do not change the value. Digits and brackets are injected as single ids, not BPE-encoded from a glued string.
+</details>
+
+## Changelog
+
+| date | version | change |
 |---|---|---|
-| `id` | string | `family/seqL/variant/split/index` |
-| `family` | string | `arith` |
-| `task` | string | query type inside the family |
-| `variant` | string | `scaled` or `fixed` |
-| `seq_len` | int | padded length |
-| `rung` | string | `seq1024` … `seq32768` |
-| `split` | string | train / validation / test |
-| `input_ids` | list[int] | composed atom ids, length `seq_len` |
-| `labels` | list[int] | `-100` except the answer span |
-| `attention_mask` | list[int] | 1 on content |
-| `text` | string | space-joined atom surfaces (readable) |
-| `context` | string | prefix before the query |
-| `query` | string | question atoms |
-| `answer` | string | gold packed answer |
-| `prize_bits` | float | known information content of the answer |
-| `gap` | int | tokens from last evidence to answer start |
-| `meta` | JSON string | fingerprints, node values, entity tables |
-
-## Splits and statistics (this build)
-
-| split | rows |
-|---|---|
-| `train` | 8448 |
-| `validation` | 896 |
-| `test` | 896 |
-
-| metric | value |
-|---|---|
-| total rows | 10240 |
-| token length (all padded) | min 1024 / p50 4096.0 / max 32768 |
-| mean prize bits | 12.914 (min 3.322, max 30.546) |
-| mean gzip ratio (text) | 0.026 (n=160 stratified sample) |
-| mean gzip ratio (int32 ids) | 0.037 |
-| mean unigram entropy (bits) | 6.184 |
-| mean bigram entropy (bits) | 6.286 |
-| answer entropy (bits) | 8.604 over 2612 strings |
-| tasks | `{'eval': 2037, 'subexpr': 5175, 'match': 3028}` |
-| variants | `{'scaled': 5120, 'fixed': 5120}` |
-| rungs | `{'seq1024': 4608, 'seq4096': 2560, 'seq8192': 1280, 'seq16384': 1024, 'seq32768': 768}` |
-
-Per-rung means:
-
-| seq_len | n | mean prize bits | mean gap | mean gzip(text) |
-|---|---|---|---|---|
-| 1024 | 4608 | 11.576 | 1001.9 | 0.068 |
-| 4096 | 2560 | 12.086 | 4074.2 | 0.023 |
-| 8192 | 1280 | 15.548 | 8168.9 | 0.016 |
-| 16384 | 1024 | 15.303 | 16360.7 | 0.012 |
-| 32768 | 768 | 16.129 | 32744.7 | 0.010 |
-
-Example rows (truncated):
-
-- `arith/seq1024/scaled/train/00000` task=`eval` prize=6.64 bits gap=1004 query=`Q eval` answer=`3 9`
-- `arith/seq1024/scaled/train/00001` task=`subexpr` prize=15.27 bits gap=1005 query=`Q sub 2 . 1 .` answer=`1 8 . 1 4`
-- `arith/seq1024/scaled/train/00002` task=`subexpr` prize=15.27 bits gap=988 query=`Q sub 5 . 2 .` answer=`- 1 . - 1 2`
-
-### Leakage
-
-| pair | fingerprint overlap | input_ids overlap | text overlap | answer-string overlap |
-|---|---|---|---|---|
-| train∩validation | 0 | 0 | 0 | 248 |
-| train∩test | 0 | 0 | 0 | 245 |
-| validation∩test | 0 | 0 | 0 | 95 |
-
-Within-split duplicate `input_ids` counts: `{'train': 0, 'validation': 0, 'test': 0}`.
-
-Train / validation / test use disjoint `SeedSequence` streams. A fingerprint of the
-*content* (facts / entities / propositions) is checked for overlap. Answer-string
-overlap is expected when the answer vocab is small (e.g. 8 colours) and is **not** a
-leak.
-
-## Intended use
-
-- Train a concept-bottleneck / compressed-read model **only** on the answer span
-  (`labels` or `--loss_span_markers` equivalent: the `answer`/`end` marker ids).
-- Score **teacher-forced token accuracy** and **recovered bits**
-  `max(0, prize_bits + sum log2 p(gold_t))` on `validation`/`test`.
-- Necessity ablations: zero/shuffle concepts; segment-confined decoder with window
-  `< gap` must sit at chance.
-- Length-ladder plot: same prize (`variant=fixed`) vs same density (`variant=scaled`).
-
-### Family-specific eval
-
-**Primary:** `subexpr` packed internal-node values and `match` (Dyck-3). **Control, not success:** `eval` (root scalar; ~log2|result| bits — a 1-slot calculator). Kill the family as a *semantic* claim if only eval moves. Keep it as a *structure* claim if subexpr+match require the AST and survive concept ablation poorly when slots are shuffled.
-
-## Known limitations and biases
-
-- Closed single-token English-ish vocab from Llama-3, not a human language sample.
-- Packed answers are required so the channel is not starved (E25: 8-letter copy stayed
-  at chance; 32-letter copy hit 99%).
-- `arith` does **not** replace DNA for closed-form `ln(A)` floors. Prize bits are
-  combinatorial lower bounds, not CE floors of a local window (except where `gap` is
-  recorded).
-- Arithmetic mixed brackets `()[]{}` are Dyck-3 *colouring*; they do not change
-  arithmetic meaning. Do not treat eval-only accuracy as evidence of rich concepts.
-- Not a substitute for the deferred Deductive Stories corpus
-  (`docs/engineering_specs/deductive_stories_synthetic_dataset.md`).
-
-## Licensing
-
-- **Code:** MIT (this repository).
-- **This synthetic dataset:** Apache-2.0. No web scrapes, no personal data.
+| 2026-10-10 | card | Card rewritten: one-line goal, quick start, family table, related work, citations. Data unchanged. |
+| 2026-09-16 | v0 | First public release, seed `20260916`, 10,240 rows. |
 
 ## Citation
 
-```
-@misc{cogitoprobe2026,
-  title  = {CogitoProbe: controlled datasets for concept/latent compression},
-  author = {Sopyła, Krzysztof},
-  year   = {2026},
-  url    = {https://huggingface.co/datasets/ksopyla/cogito-probe-arith},
-  note   = {Synthetic length-ladder probes for concept bottlenecks. Seed 20260916.},
+Please cite the family, and the dataset you used:
+
+```bibtex
+@misc{sopyla2026cogitochecks,
+  title        = {Cogito Capability Checks: synthetic tests of whether models store and use facts from long context},
+  author       = {Sopyła, Krzysztof},
+  year         = {2026},
+  howpublished = {\url{https://ai.ksopyla.com/projects/cogito-capability-datasets/}},
+  note         = {Datasets: cogito-probe-bits, -bind, -arith, -props; cogito-text-world}
+}
+
+@misc{cogitoprobe_arith,
+  title        = {CogitoProbe-Arith: nested arithmetic with mixed brackets},
+  author       = {Sopyła, Krzysztof},
+  year         = {2026},
+  howpublished = {\url{https://huggingface.co/datasets/ksopyla/cogito-probe-arith}},
+  note         = {Cogito Capability Checks; seed 20260916, data v0}
 }
 ```
 
-Project: [ai.ksopyla.com](https://ai.ksopyla.com) · code on GitHub under the author's namespace.
+Author: [Krzysztof Sopyła](https://ai.ksopyla.com) · code: [github.com/ksopyla/MrCogito](https://github.com/ksopyla/MrCogito).

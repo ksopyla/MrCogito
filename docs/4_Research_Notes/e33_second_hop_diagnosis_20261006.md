@@ -150,3 +150,24 @@ it from E31 lookup weights (94.5 %).
   ~42 %), r2–r4 91–93 %. One read cannot give it; the second read does.
 - By rule 5 (author, 2026-10-07) recipe A is learnable and E33 is its reference: dense (seeds 0–2, last one done
   2026-10-08 11:50 CEST) and E31 both fail it on the same schedule.
+
+## 8. Fair comparison complete, read to 128k (2026-10-09, Odra)
+
+From random init, seeds 0–2, task recipes from `capability_tasks.py`; median, % on the task's own score (picked
+candidate on candidate tasks); long lengths read with no retraining (`length_ladder.py --candidate auto`, 64 rows;
+dense capped at 32k). Queues: `Cache/study/e33_reasoning_fair` (fair_tasks ended 2026-10-09 00:30 CEST),
+`Cache/study/e33_ladders` (30/30 read, ended 04:45 CEST).
+
+| task | E33 loop | E31 | dense | E33 → 128k | E31 → 128k |
+|---|---|---|---|---|---|
+| C5.pchain2 (recipe A, final answer only) | **94** (94/94/4) | 9 | 15 | 81 | 9 |
+| C5.path2 (written path) | 94 | 94 | 90 | 40 | 35 |
+| C5.path3 (written path) | 90 | 93 | 85 | 37 | 23 |
+| C1.edge (1-hop chain) | 98 | — | 96 | 83 | — |
+| C1.keyed4 | 94 | — | 94 | 58 | — |
+| C3.recall8 | 99 | — | 97 | 98 | — |
+
+- Composition without a scratchpad holds with length: E33 recipe A keeps 81 % at 128k (seeds 0–1: 87 / 81 %).
+- Written chains fade past 16k for both single read and loop; the loop fades less (path3 at 32k 76 vs 64 %, at 128k
+  37 vs 23 %). No 1-hop stage failed on path3 for E31 or E33 (dense seed 2 had).
+- Handed to the text session for E33 text capability testing (author, 2026-10-09).
