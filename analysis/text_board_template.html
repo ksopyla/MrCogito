@@ -165,7 +165,8 @@ details[open] > summary { margin-bottom: 12px; }
   <section id="scoreboard">
     <div>
       <h2>Scoreboard: who reads which facts</h2>
-      <p class="muted">The current comparison: 30M models, plain input, 1.5B training tokens, exams v2. Each cell is the share of
+      <p class="muted">30M models, plain input, 1.5B training tokens, exams v2: the current recipe (8 questions per training document)
+        on the left, the earlier one (1 question, where learning was luck) kept on the right as history. Each cell is the share of
         exact answers at the 4k training length (one number per run), with the facts placed near the end, the score at 16k (four times
         the training length) and the score on rephrased facts underneath. Green border: a pass (75 % or more). Shaded: learned (clearly
         above the floor). Grey: not learned. The reading rules are under the table.</p>
@@ -399,7 +400,7 @@ function ladder() {
 }
 
 // ---- protocol log ------------------------------------------------------------------------------------
-const EFFECT_CLASS = { "current": "good", "re-read": "info", "history": "muted", "paused": "warn", "planned": "muted" };
+const EFFECT_CLASS = { "current": "good", "re-read": "info", "running": "info", "history": "muted", "paused": "warn", "planned": "muted" };
 function protocolLog() {
   const box = document.getElementById("logbox");
   for (const e of D.protocol_log || []) {
