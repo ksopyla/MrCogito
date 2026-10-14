@@ -41,7 +41,8 @@ from evaluation.text_checks import (FRONTIER_TASKS, GATING_TASKS, PASS, TEXT_CHE
 LEDGER_DIR = ROOT / "docs" / "2_Experiments_Registry" / "results" / "capability" / "text"
 OUT = ROOT / "docs" / "3_Evaluations_and_Baselines" / "text_capability_board.html"
 TASKS = list(GATING_TASKS) + list(FRONTIER_TASKS)
-ORDER = ["dense", "local", "e31c", "e31c_loop", "dense_plain", "local_plain", "e31c_plain", "e31c_loop_plain"]
+ORDER = ["dense", "local", "e31c", "e31c_loop", "e33d", "dense_plain", "local_plain", "e31c_plain", "e31c_loop_plain",
+         "e33d_plain"]
 # Task guide, as of data v2 (2026-10-10: every guessing rate below 10 %; the v1 values, used by the 30M round of
 # 9-10 Oct, are in brackets; the v0 differences are in the spec)
 GUIDE = {
@@ -152,7 +153,7 @@ def _round(led: dict) -> dict:
             "calibrated": calibrated, "collected": led.get("collected")}
 
 
-FAMILIES = {"dense": ("dense_plain",), "e31c": ("e31c_plain",), "e33": ("e31c_loop_plain",)}
+FAMILIES = {"dense": ("dense_plain",), "e31c": ("e31c_plain",), "e33": ("e31c_loop_plain",), "e33d": ("e33d_plain",)}
 
 
 def _h(cells: dict, split: str, task: str, L: int) -> dict | None:
@@ -247,9 +248,10 @@ def scoreboard(ledgers: list[dict]) -> dict:
             leaders[f"{setup}|{task}"] = info
             readers[f"{setup}|{task}"] = [f for f, es in done.items()
                                           if any(e.get("learnedmax") and (e.get("lmax") or 0) > 4096 for e in es)]
-    return {"setups": SCOREBOARD["setups"], "cells": out, "floors": floors,
+    setups = [{**st, "families": st.get("families") or ["dense", "e31c", "e33"]} for st in SCOREBOARD["setups"]]
+    return {"setups": setups, "cells": out, "floors": floors,
             "eff_floors": {t: effective_floor(t, f) for t, f in floors.items()}, "leaders": leaders, "readers": readers,
-            "families": {"dense": "Dense", "e31c": "E31c notebook", "e33": "E33 loop"}}
+            "families": {"dense": "Dense", "e31c": "E31c notebook", "e33": "E33 loop", "e33d": "E33d page distance"}}
 
 
 def main() -> int:

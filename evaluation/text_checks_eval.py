@@ -77,8 +77,10 @@ def score_prompt(model, tok, prompt: str, answer: str, candidates: list[str], de
     if len(candidates) >= 2 and not ambiguous and gold_first in uniq:
         share = torch.softmax(probs[torch.tensor(uniq, device=probs.device)], -1)
         pick_prob = float(share[uniq.index(gold_first)])
+    # which candidate was picked (index into `candidates`; gold is 0): e.g. latest's earlier places of the same person
+    picked = next((i for i, t in enumerate(firsts) if t == best), None) if len(candidates) >= 2 else None
     return {"exact": bool(exact), "pick": pick, "pick_ambiguous": bool(ambiguous), "n_tokens": ids.shape[1],
-            "answer_nll": answer_nll, "pick_prob": pick_prob}
+            "answer_nll": answer_nll, "pick_prob": pick_prob, "picked": picked}
 
 
 @torch.no_grad()
@@ -121,6 +123,14 @@ def summarize(rows: list[dict]) -> list[dict]:
             "by_depth": {d: sum(r["exact"] for r in rs if r["depth"] == d) / max(1, by_n[d]) for d in depths},
             "by_depth_n": by_n,
         }
+        # where the picks went: candidate 0 is the gold answer, 1, 2 … the others in the item's order (latest: the
+        # asked person's earlier places, newest first)
+        picks = [r.get("picked") for r in rs if r.get("picked") is not None]
+        if picks:
+            hist = {"0": 0, "1": 0, "2": 0, "3+": 0}
+            for k in picks:
+                hist[str(k) if k < 3 else "3+"] += 1
+            cell["picked_hist"] = {k: v / len(picks) for k, v in hist.items()}
         # far (early + middle facts) vs near (late facts, inside a local window up to 4k): spec §10.5
         far = [r for r in rs if r["depth"] in DEPTH_FAR]
         near = [r for r in rs if r["depth"] in DEPTH_NEAR]
@@ -156,6 +166,11 @@ def main():
     backend = args.attn_backend or ("flex" if str(device).startswith("cuda") else "sdpa")
     model = load_perceiver_lm(args.checkpoint, device, backend)
     model.eval()
+    # E33d: the per-head page-distance slopes of the note read, logged with every exam (curve checkpoints included)
+    slopes = {n: [round(float(x), 5) for x in p_.detach().float().cpu().flatten()]
+              for n, p_ in model.named_parameters() if "note_age_slope" in n}
+    if slopes:
+        print("note_age_slope:", json.dumps(slopes), flush=True)
     tok = AutoTokenizer.from_pretrained(args.tokenizer or args.checkpoint)
     msg = model.message_override(args.message_override) if hasattr(model, "message_override") else nullcontext()
 
@@ -214,7 +229,7 @@ def main():
     summary = summarize(rows)
     res = {"checkpoint": args.checkpoint, "message_override": args.message_override, "items": args.items,
            "n_items": len(rows), "seconds": round(time.time() - t0, 1), "story_loss": story_loss,
-           "cells": summary, "rows": rows}
+           "note_age_slopes": slopes or None, "cells": summary, "rows": rows}
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w") as fh:
         json.dump(res, fh, indent=1)

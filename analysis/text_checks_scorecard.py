@@ -80,6 +80,8 @@ def collect(dirs: list[Path]) -> dict:
                 r = _load(ev / name)
                 if r:
                     m["story_loss"] = r.get("story_loss") if r.get("story_loss") is not None else m["story_loss"]
+                    if r.get("note_age_slopes"):  # E33d: the page-distance slopes at the final exam
+                        m.setdefault("note_age_slopes", {})["final"] = r["note_age_slopes"]
                     for c in r["cells"]:
                         m["cells"][(c["split"], c["task"], c["length"])] = c
             r = _load(ev / "final_id_notebook_off.json")
@@ -90,6 +92,8 @@ def collect(dirs: list[Path]) -> dict:
                 step = int(cp.stem.split("-")[-1])
                 r = json.loads(cp.read_text())
                 m["curve"][step] = {c["task"]: c for c in r["cells"] if c["split"] == "id"}
+                if r.get("note_age_slopes"):
+                    m.setdefault("note_age_slopes", {})[str(step)] = r["note_age_slopes"]
             if m["cells"]:
                 m["curve"][m["steps"]] = {t: c for (s, t, L), c in m["cells"].items() if s == "id" and L == m["seq_len"]}
             models[key] = m
