@@ -111,7 +111,7 @@ details.hist[open]>summary{margin-bottom:10px}
 <p>A note carries no position. Its key is not rotated, so the read cannot measure how far back it is. The writer adds no page number, because the page address is switched off. All a latent knows is roughly which part of its page it read. Picture the student's notebook with the pages torn out and shuffled: the notes still say "Anna moved to Kodaford", "Anna moved to Selby", "Anna lived in Borvale", but there is no date or page number to sort them by. The read is a softmax over the notes, which is a weighted average. Shuffle the notes and the average comes out the same.</p>
 <div class="controls ns" id="octl">
  <span><span class="lab">Document</span><span class="seg" id="olen"><button data-v="1024" class="on">1k</button><button data-v="4096">4k</button><button data-v="16384">16k</button></span></span>
- <span><span class="lab">Notes</span><span class="seg" id="omode"><button data-v="off" class="on">no order (today)</button><button data-v="age">with an age signal (proposal)</button></span></span>
+ <span><span class="lab">Notes</span><span class="seg" id="omode"><button data-v="off" class="on">no order (today)</button><button data-v="age">with a page distance (E33d)</button></span></span>
 </div>
 <div class="card"><div class="svgwrap"><svg id="osvg" viewBox="0 0 1060 380" role="img" aria-label="Where Anna's moves sit and what the read returns"></svg></div>
 <div class="say" id="osay"></div></div>
@@ -130,9 +130,9 @@ details.hist[open]>summary{margin-bottom:10px}
 <div class="grid g2" style="margin-top:12px">
 <div class="card"><h3 style="margin-top:0">Why it is built this way</h3>
 <p style="font-size:14.5px">The order was removed on purpose, to make the read <b>work at any length</b>. In the DNA study, notes rotated at their true position stopped working past the training length. Two fixes were built. "Boundary" puts every note at the question position, so it keeps no order either. "Scaled" keeps the order and squeezes the distances into the trained range. Scaled worked: lookup held to 128k, and the in-order 4-hop chain transferred only with it. E33 on DNA used boundary. On text, scaled does not carry over as it is, because it measures distance from one question. On text every token is a reader, so the text version (un-rotated notes) is the boundary idea again. It is why the model reads 16k documents after training on 4k, and why latest fails.</p></div>
-<div class="card"><h3 style="margin-top:0">Ways to give the notes an order (proposals, not built)</h3>
+<div class="card"><h3 style="margin-top:0">Ways to give the notes an order (the first is built as E33d, 14 Oct)</h3>
 <ul style="margin:0;padding-left:18px;font-size:14.5px">
-<li><b>An age signal in the read</b> (recommended). Lower a note's score by a per-head slope × the number of pages since its page closed, the way ALiBi (attention with linear biases) does. Heads with slope 0 keep pure content reads, the others prefer newer notes. ALiBi is known to work beyond the training length. It costs one number per head, added where the read's scores are formed.</li>
+<li><b>An age signal in the read</b> (built as <b>E33d</b>, on a log scale: score −= slope × log(1 + pages back)). Lower a note's score by a per-head slope × the number of pages since its page closed, the way ALiBi (attention with linear biases) does. Heads with slope 0 keep pure content reads, the others prefer newer notes. ALiBi is known to work beyond the training length. It costs one number per head, added where the read's scores are formed.</li>
 <li><b>Slow rotation only.</b> Rotate note keys at their page position using only the low-frequency rotation pairs, which gives a coarse order. This is close to the DNA "mixed" option.</li>
 <li><b>Page number in the latent.</b> Switch the page address back on. That gives absolute position, which is likely weak beyond 4k.</li>
 </ul></div>
@@ -802,12 +802,12 @@ function drawOrder(){const s=document.getElementById('osvg');s.innerHTML='';cons
  el('text',{x:BX+BW+20,y:TOP+12,'font-size':12,'font-weight':750},s,'illustrative');
  const lines=(how==='raw'?['The last move is in the raw window,','so its exact distance is visible.','Answer: Selby ✓ (measured 95 % at 1k)']:
   how==='off'?['Ten moves, all equally "Anna moved",','plus a home that matches "live now".','Answer: a blend, perhaps the home ✗','(measured 22 % at 4k, about 5 % beyond)']:
-  ['Newer notes score higher per page of age;','content heads keep slope 0.','Answer: Selby ✓ (proposal, not built)']);
+  ['Newer notes score higher per page of age;','content heads keep slope 0.','Answer: Selby ✓ (E33d, not yet trained)']);
  lines.forEach((t,i)=>el('text',{x:BX+BW+20,y:TOP+34+i*17,'font-size':11.5,class:'s'},s,t));
  el('text',{x:BX,y:TOP-6,'font-size':11.5,'font-weight':700,class:'s'},s,ttl);
  document.getElementById('osay').innerHTML=inRaw?'<b>1k:</b> the last move sits about 126 tokens back, inside the 256-token raw window. The raw keys are rotated, so the read sees the exact distance and can take the newest move. That is how E33 scores 95 % at 1k. The notes are not needed here.'
   :(O.mode==='off'?`<b>${L/1024}k, today:</b> the last move is ${back} tokens back, outside the raw window. Every one of Anna's moves reaches the reader as a note with no position, so "moved to Kodaford" and "moved to Selby" are equally good matches. The read returns a blend, and the answer is whichever place the blend favours. The home sentence's wording ("lived in") matches the question ("live now") best, which may be why the score drops below guessing.`
-  :`<b>${L/1024}k, with an age signal:</b> each head scores a note by content minus its slope × the pages since the note's page closed. A head with a positive slope prefers Anna's newest note. A head with slope 0 still finds old facts by content, as lookup needs. ALiBi-style biases also work on documents longer than the training length.`);}
+  :`<b>${L/1024}k, with a page distance (E33d):</b> each head scores a note by content minus its slope × the pages since the note's page closed. A head with a positive slope prefers Anna's newest note. A head with slope 0 still finds old facts by content, as lookup needs. ALiBi-style biases also work on documents longer than the training length.`);}
 
 /* masks: what one token sees */
 const GEO=[{W:256,st:192,raw:256},{W:512,st:384,raw:256},{W:512,st:384,raw:512}];let MG=0;

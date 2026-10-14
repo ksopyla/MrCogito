@@ -15,6 +15,19 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-10-14] - E33d: a page distance on the notebook read (opt-in)
+
+- `nn/perceiver_ar_lm.py`: `lm_note_age` ("none" | "log" | "linear", default "none") and `lm_note_age_unit` (0 = the
+  page step, `lm_stride`). The global read of a text latent-memory model gets one signed slope per query head
+  (`note_age_slope`, zeros), and every note's score drops by slope × f(pages between the reader and the note's read
+  position). Added outside the key, on the note columns only: flex `score_mod`, or a float mask on the SDPA path.
+  `note_age_bias` is the shared formula. Needs `lm_slot_pos = "reader"`. With the defaults every model and checkpoint
+  is bit-identical; with zero slopes the output equals E33's (tested on both backends).
+- Trainer, factory and launcher pass it through (`--lm_note_age`, `PAR_LM_NOTE_AGE`, `PAR_LM_NOTE_AGE_UNIT`).
+- `evaluation/text_checks.py`: arches `e33d`, `e33d_plain` (E33 + `lm_note_age = log`), recipe cards borrowing E33's
+  tuned step size. Tests: `tests/test_e33d_note_age.py` (the flex gradient test runs on a GPU only: flex attention has
+  no backward on CPU). Spec: `docs/experiments_specs/ahead/E33d_note_page_distance.md`.
+
 ## [2026-10-06] - Chain exams: hop count in the question (opt-in), mixed-hop replay
 
 - `data/symbolic_tasks.py`: `hop_count_in_question` (default False). On the chain tasks the question becomes

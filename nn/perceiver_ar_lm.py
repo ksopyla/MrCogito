@@ -216,6 +216,9 @@ class PerceiverARConfig(PretrainedConfig):
         lm_read: str = "exclusive",       # E31c — "exclusive" (only tokens after QUERY read earlier sides) |
                                           #   "closed" (every token reads the windows closed at or before it: text)
         slot_pos_ref: int = 2048,         # "scaled" slot positions: max query–slot distance (order kept, length-invariant)
+        lm_note_age: str = "none",        # E33d — page distance on the note read, outside the key: "none" | "log" | "linear"
+                                          #   (score −= s_h · f((pos(t) − slot_pos) / unit), s_h per head, starts at 0)
+        lm_note_age_unit: int = 0,        # E33d — tokens per distance unit; 0 = lm_stride (one page step)
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -317,6 +320,8 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_override = str(message_override)
         self.swp_slot_pos = str(swp_slot_pos)
         self.slot_pos_ref = int(slot_pos_ref)
+        self.lm_note_age = str(lm_note_age or "none")
+        self.lm_note_age_unit = int(lm_note_age_unit or 0)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -442,6 +447,14 @@ class PerceiverARConfig(PretrainedConfig):
                 )
             if self.message_extra_slot_attends or self.message_update_slot_kv:
                 raise ValueError("latent_memory: extra slot attends are not defined (read once; E31a reads per layer)")
+            if self.lm_note_age not in ("none", "log", "linear"):
+                raise ValueError(f"lm_note_age must be none / log / linear, got {self.lm_note_age!r}")
+            if self.lm_note_age_unit < 0:
+                raise ValueError("lm_note_age_unit must be >= 0 (0 = lm_stride)")
+            if self.lm_note_age != "none" and self.lm_slot_pos != "reader":
+                raise ValueError("lm_note_age measures from each note's read position: it needs lm_slot_pos='reader'")
+        if getattr(self, "lm_note_age", "none") != "none" and self.message_write != "latent_memory":
+            raise ValueError("lm_note_age (E33d) is a latent-memory read option; it needs message_write='latent_memory'")
         if self.message_raw_window < 0:
             raise ValueError("message_raw_window must be >= 0 (0 = full causal raw keys)")
         if self.message_raw_window and self.message_slots_inplace:
@@ -1479,14 +1492,29 @@ class PrefixAEHead(nn.Module):
         return self.proj(k_bar.reshape(B, nb, g * dh)).view(B, nb, self.r, self.vocab)
 
 
+def note_age_bias(pos: torch.Tensor, slot_pos: torch.Tensor, slope: torch.Tensor, unit: float,
+                  mode: str) -> torch.Tensor:
+    """E33d: additive score bias on the note columns, [B,h,S,C] (fp32).
+
+    bias[b,h,t,c] = −slope[h] · f(max(0, pos[b,t] − slot_pos[b,c]) / unit), f = log1p ("log") or
+    identity ("linear"). `pos` [B,S] are the readers' positions in their documents, `slot_pos` [B,C]
+    each note's read position (the writer's expected position of what its latent read)."""
+    age = (pos.to(torch.float32)[:, :, None] - slot_pos.to(torch.float32)[:, None, :]).clamp(min=0.0) / float(unit)
+    f = torch.log1p(age) if mode == "log" else age
+    return -slope.to(torch.float32)[None, :, None, None] * f[:, None]
+
+
 def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend, block_masks=None,
-                   q_slot=None):
+                   q_slot=None, note_bias=None):
     """Global read over raw keys ‖ message slots with the E21 mask. Returns [B,S,h,dh].
 
     `q_slot` (E31c "reader" slot keys): the query used against the slots instead of `q` (the
     un-rotated query, while `q` is RoPE'd for the raw keys). One softmax over both, done exactly by
     concatenating head dims: Q = [q, q_slot], raw K = [k, 0], slot K = [0, k̄], scale 1/√dh — so
-    the raw logits are q·k and the slot logits q_slot·k̄. Values keep width dh."""
+    the raw logits are q·k and the slot logits q_slot·k̄. Values keep width dh.
+
+    `note_bias` (E33d) = (slope [h], pos [B,S], slot_pos [B,C], unit, mode): adds `note_age_bias` to the
+    slot logits only (flex `score_mod`, or a float mask on the SDPA path); raw logits are unchanged."""
     B, S, h, dh = q.shape
     g = k.shape[2]
     if backend == "flash":
@@ -1519,13 +1547,30 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
             if block_masks is not None:
                 block_masks[memo_key] = bm
         qt, kt, vt = qt.contiguous(), kt.contiguous(), vt.contiguous()
-        out = _get_flex()(qt, kt, vt, block_mask=bm, enable_gqa=(g != h), scale=scale)
+        score_mod = None
+        if note_bias is not None:
+            slope, pos_t, spos, unit, mode = note_bias
+            pos_f, spos_f, sl = pos_t.to(torch.float32), spos.to(torch.float32), slope.to(torch.float32)
+            unit_f, log_f = float(unit), mode == "log"
+
+            def score_mod(score, b, hh, q_idx, kv_idx):
+                c = torch.clamp(kv_idx - S, min=0)
+                age = torch.clamp(pos_f[b, q_idx] - spos_f[b, c], min=0.0) / unit_f
+                f = torch.log1p(age) if log_f else age
+                return torch.where(kv_idx >= S, score - sl[hh] * f, score)
+
+        out = _get_flex()(qt, kt, vt, block_mask=bm, enable_gqa=(g != h), scale=scale, score_mod=score_mod)
         return out.transpose(1, 2)
     if g != h:
         rep = h // g
         kt = kt.repeat_interleave(rep, dim=1)
         vt = vt.repeat_interleave(rep, dim=1)
     mask = dense_message_mask(S, ctx, key_valid, q.device)
+    if note_bias is not None:  # E33d: float mask, per head, the bias on the slot columns only
+        slope, pos_t, spos, unit, mode = note_bias
+        fm = torch.zeros(mask.shape, dtype=torch.float32, device=q.device).masked_fill(~mask, float("-inf"))
+        nb = note_age_bias(pos_t, spos, slope, unit, mode)
+        mask = torch.cat([fm[..., :S].expand(B, h, S, S), fm[..., S:] + nb], dim=-1).to(qt.dtype)
     dv = vt.shape[-1]
     if qt.shape[-1] != dv:
         # Reader mode (QK width 2·dh, V width dh). Some SDPA backends assume equal widths (MPS
@@ -1666,6 +1711,14 @@ class Attention(nn.Module):
         self.prefix_ae_stopgrad = bool(getattr(cfg, "message_prefix_ae_stopgrad_answer", True))
         self._last_k_bar = None
         self._last_v_bar = None
+        # E33d: one signed slope per query head for the page distance of each note (outside the key).
+        # Zero at the start, so the read is exactly the E31c/E33 read until training moves it.
+        self.note_age_slope = None
+        self.note_age_mode = str(getattr(cfg, "lm_note_age", "none") or "none")
+        if (self.note_age_mode != "none" and pattern == "full" and write == "latent_memory"
+                and getattr(cfg, "message_enabled", False)):
+            self.note_age_slope = nn.Parameter(torch.zeros(h))
+            self.note_age_unit = float(getattr(cfg, "lm_note_age_unit", 0) or cfg.lm_stride)
 
     def kv_raw(self, x: torch.Tensor, ids: Optional[torch.Tensor] = None) -> tuple[torch.Tensor, torch.Tensor]:
         """(k before k_norm, v incl. the value-embedding term) — the pooling inputs of the compressor."""
@@ -1821,9 +1874,14 @@ class Attention(nn.Module):
                 k_bar, v_bar = k_bar.roll(1, dims=0), v_bar.roll(1, dims=0)
             # E31c "reader" slot keys: met by the un-rotated query (exact; see attend_message)
             q_slot = self._scale_q(q_un, pos) if (getattr(message, "slot_nope", False) and self.use_rope) else None
+            note_bias = None
+            if self.note_age_slope is not None and message.slot_pos is not None and pos is not None:
+                note_bias = (self.note_age_slope, pos, message.slot_pos, self.note_age_unit, self.note_age_mode)
             o = attend_message(q, k, v, k_bar, v_bar, ctx=message, key_valid=key_valid,
-                               backend=self.backend, block_masks=block_masks, q_slot=q_slot)
+                               backend=self.backend, block_masks=block_masks, q_slot=q_slot, note_bias=note_bias)
             out = self.wo(o.reshape(B, S, self.h * self.dh))
+            if self.note_age_slope is not None and note_bias is None:
+                out = out + 0.0 * self.note_age_slope.sum().to(out.dtype)
 
             def _rewrite_concat(h):
                 k_raw2, v2 = self.kv_raw(h, ids)
@@ -1851,6 +1909,8 @@ class Attention(nn.Module):
         o = self.wo(o.reshape(B, S, self.h * self.dh))
         if self.compressor is not None:
             o = o + 0.0 * self.compressor.participation().to(o.dtype)
+        if self.note_age_slope is not None:
+            o = o + 0.0 * self.note_age_slope.sum().to(o.dtype)
         return o
 
 

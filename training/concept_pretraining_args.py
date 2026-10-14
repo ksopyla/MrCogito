@@ -369,6 +369,10 @@ class ModelArguments:
     lm_slot_pos: str = field(
         default="reader", metadata={"help": "E31: read | boundary | scaled | mixed | reader (E31c text: NoPE slots)."}
     )
+    lm_note_age: str = field(
+        default="none", metadata={"help": "E33d: page distance on the note read, per-head slope: none | log | linear."}
+    )
+    lm_note_age_unit: int = field(default=0, metadata={"help": "E33d: tokens per distance unit (0 = lm_stride)."})
     message_loop_rounds: int = field(default=1, metadata={"help": "E33a: tied [global read + local] loops (1 = off)."})
     message_loop_exit_aux: float = field(default=0.0, metadata={"help": "E33a: weight of each earlier loop exit."})
     message_loop_exit_targets: str = field(

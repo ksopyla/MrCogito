@@ -20,6 +20,12 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-10-14 — E33d, notes with a page distance (built; text runs handed to the text-checks session).**
+  E33's notes carry no position, so it cannot tell which of two facts is newer (latest: 95 % at 1k, 22 % at
+  4k, guessing 20 %). E33d adds one signed slope per read head, starting at 0, that lowers a note's score by
+  the log of how many pages back it is; content matching is untouched. Pass: latest at 4k ≥ 60 %; stop: far
+  lookup at 16k more than 5 points under E33. Spec [E33d](../experiments_specs/ahead/E33d_note_page_distance.md) ·
+  plan [E33d plan](../experiments_specs/ahead/E33d_note_page_distance_plan.md).
 - **2026-10-03 — E31c, the E31 notebook on plain text (designed and built; runs wait for go-ahead).**
   - **The change:** every token reads the notes of the windows that have already closed, plus the
     last 256 tokens verbatim. Slot keys are matched by content, relative to the reader. With
