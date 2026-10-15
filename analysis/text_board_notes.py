@@ -82,10 +82,9 @@ STATUS = {
         "story; latest's floor is 20 %; dense is not compared past 4k. Nothing had to be retrained.",
     ],
     "next": [
-        "Odra: free since 11:14 UTC 15 Oct; held for the proposed fixed page-distance check if the author says yes.",
+        "Odra: the fixed page-distance check on E33d run 1 (approved; exams only, about 16:20 → 17:20 UTC 15 Oct, run by the E33 session).",
         "Polonez: free since 14:18 UTC 15 Oct.",
-        "Open for the author: a proposed one-hour check of E33d run 1 with the page distance fixed at +1 / +3 / +10 "
-        "(exams only; from the E33 reasoning-fixes session); whether to "
+        "Open for the author: whether to "
         "start the notebook-proportions sweep; give E33 more tokens or keep the equal budget.",
     ],
 }
@@ -402,6 +401,12 @@ LADDER = [
      "result": "Notebook switched on: far facts at 4k / 16k lookup 77 / 92 %, keyed 70 / 91 %, quote 68 / 90 %; crowded "
                "lookup 45 % at 4k; latest 22 % (floor 20 %); story loss 1.564.",
      "when": "15 Oct 11:11 → 14:18", "why": "Settles E31c's switch-on rate before it becomes the main line."},
+    {"id": None, "start": "2026-10-15", "data": "v2", "standing": "running",
+     "run": "E33d run 1 with a fixed page distance (Odra; exams only, run by the E33 reasoning-fixes session)",
+     "model": "E33d run 1's weights, slopes overwritten: all heads +1, +3, +10; 4 of 9 heads +10",
+     "tokens": "none (no training)", "exams": "v2 id: latest / lookup / keyed / quote at 4k-16k",
+     "result": "Does a large page distance fix latest, and what does it cost far lookup?",
+     "when": "15 Oct ~16:20 → ~17:20", "why": "Approved by the author 15 Oct; settles the open fixed-page-distance claim."},
     {"id": "q8r_e33d_s0_polonez.polonez", "start": "2026-10-14", "data": "v2", "standing": "in use",
      "run": "E33d run 1 (Polonez)", "model": "E33d · 30M, plain, seed 0",
      "tokens": "1.5B, 8 questions per document", "exams": "v2 + v2.1, 1k-16k; latest picks and slopes logged",
