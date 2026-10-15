@@ -30,12 +30,14 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-14 22:20 UTC",
-    "headline": "E33's notebook is strong when it switches on, but it switches on only in some runs. On the reliable "
-                "recipe, run 1 read far facts far better than dense (lookup 70 % at 4k, 92 % at 16k; dense 56-63 % at "
-                "4k, nothing past it); run 2's notebook only began to read at the very end (13 %). Dense learns lookup in "
-                "3 of 3 runs, E33's notebook in 1 of 2 (and 1 of 2 on the earlier recipe).",
+    "as_of": "2026-10-15 02:20 UTC",
+    "headline": "On the reliable recipe (8 questions per training document) E31c's notebook switched on in 2 of 2 runs "
+                "and reads far facts better than dense: lookup 75 % and 97 % at 4k (dense 56-63 %), 93 % and 99 % at "
+                "16k, where dense has no method. E33 switched on in 1 of 2 runs at three times the training time. "
+                "Nobody tracks the latest move past 2k yet.",
     "where": [
+        "E31c run 2 (15 Oct 01:49 UTC): far facts at 4k / 16k — lookup 97 / 99 %, keyed 92 / 97 %, quote 88 / 87 %; "
+        "crowded lookup 75 % at 4k (dense 54-58 %, E33 44 %); latest 24 % (floor 20 %); story loss 1.564 again.",
         "E31c (notebook, no loop) run 1 on the new recipe (14 Oct 21:44 UTC): its notebook switched on — far facts at "
         "4k / 16k: lookup 75 / 93 %, keyed 72 / 91 %, quote 77 / 90 %; notebook off 0 %. About E33 run 1's level, at a "
         "third of the training time (2.4 h vs 7 h). Same weak spots: crowded facts (lookup 43 % at 4k) and latest (23 %, "
@@ -63,10 +65,10 @@ STATUS = {
         "story; latest's floor is 20 %; dense is not compared past 4k. Nothing had to be retrained.",
     ],
     "next": [
-        "Odra: E31c run 2 (about 22:05 → 00:30 UTC 15 Oct), then the third E33 run (about 00:50 → 08:00 UTC).",
-        "Polonez (free since 14 Oct): E33d (E33 plus a page distance on its notes) run 1 training since 19:37 UTC "
-        "(exams about 03:45 UTC 15 Oct), run 2 after a 20-minute cooldown (about 11:30 UTC), and a run 3 only if "
-        "neither switches its notebook on. Same recipe; data copied from Odra and checked file by file.",
+        "Odra: the third E33 run, training since 02:09 UTC (about 11:10 UTC 15 Oct with exams).",
+        "Polonez: E33d (E33 plus a page distance on its notes) run 1 trained by about 01:55 UTC; exams running (main "
+        "set already in: notebook switched on, latest still 21 % at 4k). Run 2 after a 20-minute cooldown (about "
+        "11:00 UTC), run 3 only if neither switches its notebook on.",
         "Open question for the author: give E33 more tokens (run 2 was still rising at 1.5B) or keep the equal budget "
         "and report the switch-on rate as the result.",
     ],
@@ -153,11 +155,18 @@ CLAIMS = [
      "evidence": "Three runs (mixed, quote-only, lookup-only): 0 % on far facts at every length, and the same scores "
                  "with the notebook switched off. Narrowed 14 Oct: on the 8-questions recipe it does (next claim).",
      "settle": "—"},
-    {"claim": "On the reliable recipe, E31c without the loop uses its notebook.", "state": "single run",
+    {"claim": "On the reliable recipe, E31c without the loop uses its notebook.", "state": "holds",
      "since": "2026-10-14",
      "evidence": "Run 1: far facts at 4k / 16k lookup 75 / 93 %, keyed 72 / 91 %, quote 77 / 90 %; notebook off 0 %. "
-                 "Learned between 0.3B and 0.9B tokens. 2.4 training hours vs E33's 7 h; story loss 1.564 vs E33 1.520.",
-     "settle": "E31c run 2 (Odra, about 00:30 UTC 15 Oct)."},
+                 "Learned between 0.3B and 0.9B tokens. Run 2: lookup 97 / 99 %, keyed 92 / 97 %, quote 88 / 87 %; "
+                 "learned by 0.6B. 2 of 2 runs. 2.4 training hours vs E33's 7 h; story loss 1.564 vs E33 1.520.",
+     "settle": "—"},
+    {"claim": "On the reliable recipe, E31c beats dense on far facts at the 4k training length.", "state": "holds",
+     "since": "2026-10-15",
+     "evidence": "Far lookup 75 % and 97 % vs dense 56-63 % (3 runs); keyed 72 % and 92 % vs 46-54 %; quote 77 % and "
+                 "88 % vs 3-94 %. Crowded facts: run 1 43 % (below dense 54-58 %), run 2 75 % (above). Latest: E31c 23-24 "
+                 "%, dense 18-82 % — dense is better there.",
+     "settle": "A third E31c run would make the crowded-facts comparison firm."},
     {"claim": "Dense at 30M / 1.5B tokens with 1 question per training document learns retrieval only in some runs.",
      "state": "holds", "since": "2026-10-11",
      "evidence": "Four mixed-training runs: one passed quote only, one learned four tasks, two learned nothing; the "
@@ -342,16 +351,17 @@ LADDER = [
      "result": "Notebook switched on: far facts at 4k / 16k lookup 75 / 93 %, keyed 72 / 91 %, quote 77 / 90 %; "
                "notebook off 0 %. Crowded lookup 43 % at 4k; latest 23 % (floor 20 %); count 24 %; story loss 1.564.",
      "when": "14 Oct 17:54 → 21:44", "why": "The architecture comparison on the reliable recipe."},
-    {"id": None, "start": "2026-10-14", "data": "v2", "standing": "running",
+    {"id": "q8r_e31c_s1_odra.odra", "start": "2026-10-14", "data": "v2", "standing": "in use",
      "run": "Round, new recipe: E31c run 2", "model": "E31c notebook · 30M, plain, seed 1",
      "tokens": "1.5B, 8 questions per document", "exams": "v2 + v2.1, 1k-16k",
-     "result": "Does E31c's notebook switch on again?",
-     "when": "14 Oct ~22:05 → ~15 Oct 00:30", "why": "The repeat of E31c run 1."},
-    {"id": None, "start": "planned", "data": "v2", "standing": "queued",
+     "result": "Notebook switched on again: far facts at 4k / 16k lookup 97 / 99 %, keyed 92 / 97 %, quote 88 / 87 %; "
+               "crowded lookup 75 % at 4k; latest 24 % (floor 20 %); count 28 %; story loss 1.564.",
+     "when": "14 Oct 22:04 → 15 Oct 01:49", "why": "The repeat of E31c run 1."},
+    {"id": None, "start": "2026-10-15", "data": "v2", "standing": "running",
      "run": "Round, new recipe: E33 run 3 (Odra)", "model": "E33 loop · 30M, plain, seed 2",
      "tokens": "1.5B, 8 questions per document", "exams": "v2 + v2.1, 1k-16k",
      "result": "Does E33's notebook switch on in 2 of 3 runs?",
-     "when": "after E31c: ~15 Oct 00:50 → ~08:00", "why": "Run 1 switched on, run 2 did not."},
+     "when": "15 Oct 02:09 → ~11:10", "why": "Run 1 switched on, run 2 did not."},
     {"id": None, "start": "2026-10-14", "data": "v2", "standing": "running",
      "run": "E33d, notes with a page distance (Polonez; runs 1-2, run 3 only if neither switches on)",
      "model": "E33d · 30M, plain (E33 + 9 slopes, start 0)",
