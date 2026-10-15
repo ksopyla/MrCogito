@@ -30,12 +30,16 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-15 11:30 UTC",
-    "headline": "On the reliable recipe (8 questions per training document) E31c's notebook switched on in 2 of 2 runs "
-                "and reads far facts better than dense: lookup 75 % and 97 % at 4k (dense 56-63 %), 93 % and 99 % at "
-                "16k, where dense has no method. E33 switched on in 2 of 3 runs (one without quotes) at three times the training time. "
-                "Nobody tracks the latest move past 2k yet.",
+    "as_of": "2026-10-15 16:10 UTC",
+    "headline": "On the reliable recipe (8 questions per training document) E31c's notebook switched on in 3 of 3 runs "
+                "for lookup, keyed and quote, and reads far facts better than dense: lookup 75-97 % at 4k (dense 56-63 %), "
+                "92-99 % at 16k, where dense has no method. E33 switched on in 2 of 3 runs (one without quotes) at three "
+                "times the training time. Nobody tracks the latest move past 2k; crowded facts favour dense in 2 of 3 "
+                "E31c runs.",
     "where": [
+        "E31c run 3 (Polonez, 15 Oct 14:18 UTC): notebook switched on again, all three fact tasks — far facts at 4k / "
+        "16k lookup 77 / 92 %, keyed 70 / 91 %, quote 68 / 90 %; learned between 0.6B and 0.9B tokens. Crowded lookup 45 % "
+        "at 4k (dense 54-58 %); latest 22 % (floor 20 %); story loss 1.564.",
         "E33 run 3 (15 Oct 11:14 UTC): notebook switched on for lookup and keyed (far facts at 4k / 16k: 76 / 93 %, "
         "68 / 89 %; learned by 0.6B tokens) but not for quotes (far 0 % at every length; near quotes 77-100 % up to "
         "4k). E33's notebook now reads in 2 of 3 runs on this recipe; E31c's in 2 of 2. Latest 20 % (floor 20 %); "
@@ -79,8 +83,7 @@ STATUS = {
     ],
     "next": [
         "Odra: free since 11:14 UTC 15 Oct; held for the proposed fixed page-distance check if the author says yes.",
-        "Polonez: a third E31c run (about 11:15 → 14:00 UTC 15 Oct), to settle E31c's switch-on rate and the "
-        "crowded-facts comparison with dense.",
+        "Polonez: free since 14:18 UTC 15 Oct.",
         "Open for the author: a proposed one-hour check of E33d run 1 with the page distance fixed at +1 / +3 / +10 "
         "(exams only; from the E33 reasoning-fixes session); whether to "
         "start the notebook-proportions sweep; give E33 more tokens or keep the equal budget.",
@@ -172,14 +175,14 @@ CLAIMS = [
      "since": "2026-10-14",
      "evidence": "Run 1: far facts at 4k / 16k lookup 75 / 93 %, keyed 72 / 91 %, quote 77 / 90 %; notebook off 0 %. "
                  "Learned between 0.3B and 0.9B tokens. Run 2: lookup 97 / 99 %, keyed 92 / 97 %, quote 88 / 87 %; "
-                 "learned by 0.6B. 2 of 2 runs. 2.4 training hours vs E33's 7 h; story loss 1.564 vs E33 1.520.",
+                 "learned by 0.6B. Run 3: lookup 77 / 92 %, keyed 70 / 91 %, quote 68 / 90 %. 3 of 3 runs. 2.4 training hours vs E33's 7 h; story loss 1.564 vs E33 1.520.",
      "settle": "—"},
     {"claim": "On the reliable recipe, E31c beats dense on far facts at the 4k training length.", "state": "holds",
      "since": "2026-10-15",
-     "evidence": "Far lookup 75 % and 97 % vs dense 56-63 % (3 runs); keyed 72 % and 92 % vs 46-54 %; quote 77 % and "
-                 "88 % vs 3-94 %. Crowded facts: run 1 43 % (below dense 54-58 %), run 2 75 % (above). Latest: E31c 23-24 "
-                 "%, dense 18-82 % — dense is better there.",
-     "settle": "A third E31c run would make the crowded-facts comparison firm."},
+     "evidence": "Far lookup 75 %, 97 %, 77 % vs dense 56-63 % (3 runs); keyed 72 %, 92 %, 70 % vs 46-54 %; quote 77 %, "
+                 "88 %, 68 % vs 3-94 %. Crowded facts: runs 1 and 3 43 % and 45 % (below dense 54-58 %), run 2 75 % "
+                 "(above). Latest: E31c 22-24 %, dense 18-82 % — dense is better there.",
+     "settle": "—"},
     {"claim": "Dense at 30M / 1.5B tokens with 1 question per training document learns retrieval only in some runs.",
      "state": "holds", "since": "2026-10-11",
      "evidence": "Four mixed-training runs: one passed quote only, one learned four tasks, two learned nothing; the "
@@ -261,8 +264,8 @@ CLAIMS = [
      "evidence": "Earlier recipe: crowded lookup at 4k dense 42 % vs E33 39 %, keyed 39 % vs 18 %. New recipe (E33 run 1, "
                  "dense 3 runs): lookup 44 % vs 54-58 %, keyed 28 % vs 46-51 %. With spread facts E33 leads. At 16k E33 "
                  "still reads crowded facts (43 %), dense nothing. E33 run 3: lookup 46 %, keyed 34 % at 4k — the "
-                 "same picture. E31c run 2 is the exception (75 %).",
-     "settle": "E31c run 3 (Polonez, about 14:00 UTC 15 Oct)."},
+                 "same picture. E31c: 43 %, 75 %, 45 % — run 2 is the exception.",
+     "settle": "—"},
     {"claim": "Nobody learns compose or deduce at 30M / 1.5B — not even one step.", "state": "holds",
      "since": "2026-10-13",
      "evidence": "Every run at guessing on two-step compose and deduce (10 Oct on), and on the one-step versions "
@@ -393,11 +396,12 @@ LADDER = [
      "result": "Notebook switched on for lookup / keyed (far at 4k / 16k: 76 / 93 %, 68 / 89 %) but not for quote (0 % "
                "far; near 77-100 % to 4k). Crowded lookup 46 % at 4k; latest 20 % (floor 20 %); story loss 1.519.",
      "when": "15 Oct 02:09 → 11:14", "why": "Run 1 switched on, run 2 did not."},
-    {"id": None, "start": "2026-10-15", "data": "v2", "standing": "queued",
+    {"id": "q8r_e31c_s2_polonez.polonez", "start": "2026-10-15", "data": "v2", "standing": "in use",
      "run": "Round, new recipe: E31c run 3 (Polonez)", "model": "E31c notebook · 30M, plain, seed 2",
      "tokens": "1.5B, 8 questions per document", "exams": "v2 + v2.1, 1k-16k",
-     "result": "Does E31c switch on in 3 of 3, and where does it stand on crowded facts (43 % and 75 % so far)?",
-     "when": "15 Oct ~11:15 → ~14:00", "why": "Settles E31c's switch-on rate before it becomes the main line."},
+     "result": "Notebook switched on: far facts at 4k / 16k lookup 77 / 92 %, keyed 70 / 91 %, quote 68 / 90 %; crowded "
+               "lookup 45 % at 4k; latest 22 % (floor 20 %); story loss 1.564.",
+     "when": "15 Oct 11:11 → 14:18", "why": "Settles E31c's switch-on rate before it becomes the main line."},
     {"id": "q8r_e33d_s0_polonez.polonez", "start": "2026-10-14", "data": "v2", "standing": "in use",
      "run": "E33d run 1 (Polonez)", "model": "E33d · 30M, plain, seed 0",
      "tokens": "1.5B, 8 questions per document", "exams": "v2 + v2.1, 1k-16k; latest picks and slopes logged",
