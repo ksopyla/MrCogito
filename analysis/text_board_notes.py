@@ -30,12 +30,16 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-15 11:00 UTC",
+    "as_of": "2026-10-15 11:30 UTC",
     "headline": "On the reliable recipe (8 questions per training document) E31c's notebook switched on in 2 of 2 runs "
                 "and reads far facts better than dense: lookup 75 % and 97 % at 4k (dense 56-63 %), 93 % and 99 % at "
-                "16k, where dense has no method. E33 switched on in 1 of 2 runs at three times the training time. "
+                "16k, where dense has no method. E33 switched on in 2 of 3 runs (one without quotes) at three times the training time. "
                 "Nobody tracks the latest move past 2k yet.",
     "where": [
+        "E33 run 3 (15 Oct 11:14 UTC): notebook switched on for lookup and keyed (far facts at 4k / 16k: 76 / 93 %, "
+        "68 / 89 %; learned by 0.6B tokens) but not for quotes (far 0 % at every length; near quotes 77-100 % up to "
+        "4k). E33's notebook now reads in 2 of 3 runs on this recipe; E31c's in 2 of 2. Latest 20 % (floor 20 %); "
+        "story loss 1.519.",
         "E33d stopped (15 Oct 10:49 UTC): run 2 switched its notebook on too (far lookup 75 % at 4k, 93 % at 16k) and "
         "latest stayed at guessing (16 % at 4k, floor 20 %; 1-2 % at 8k-16k). Both switched-on runs are under the stop "
         "mark set before the runs (latest ≤ 30 % at 4k); the 9 page-distance slopes, which start at 0, never grew "
@@ -74,7 +78,7 @@ STATUS = {
         "story; latest's floor is 20 %; dense is not compared past 4k. Nothing had to be retrained.",
     ],
     "next": [
-        "Odra: the third E33 run (about 11:10 UTC 15 Oct).",
+        "Odra: free since 11:14 UTC 15 Oct; held for the proposed fixed page-distance check if the author says yes.",
         "Polonez: a third E31c run (about 11:15 → 14:00 UTC 15 Oct), to settle E31c's switch-on rate and the "
         "crowded-facts comparison with dense.",
         "Open for the author: a proposed one-hour check of E33d run 1 with the page distance fixed at +1 / +3 / +10 "
@@ -194,23 +198,26 @@ CLAIMS = [
      "settle": "—"},
     {"claim": "E33's notebook switches on only in some runs at 30M / 1.5B tokens.", "state": "holds",
      "since": "2026-10-14",
-     "evidence": "New recipe: 1 of 2 runs (run 2 far facts 13-15 %, rising from 0 % at 0.9B tokens to 13 % at 1.5B). "
-                 "Earlier recipe: 1 of 2 (mixed training yes, lookup-only no). Dense's lookup on the new recipe: 3 of 3.",
-     "settle": "A third E33 run (queued); whether more tokens make it reliable."},
-    {"claim": "On the reliable recipe, E33 beats dense on far facts at the 4k training length.", "state": "single run",
-     "since": "2026-10-14",
-     "evidence": "Run 1: lookup 70 % vs dense 56-63 % (3 runs), keyed 71 % vs 46-54 %, quote 71 % vs 3-94 %. Run 2 did not "
-                 "(13-15 %: its notebook had not switched on). Not on crowded facts (run 1 lookup 44 % vs 54-58 %) or "
-                 "latest (20-22 % vs 18-82 %).",
-     "settle": "The third E33 run: does the notebook switch on in 2 of 3, like dense's lookup?"},
+     "evidence": "New recipe: 2 of 3 runs (run 2 far facts 13-15 %, rising from 0 % at 0.9B tokens to 13 % at 1.5B; "
+                 "run 3 lookup and keyed yes, quote no). Earlier recipe: 1 of 2 (mixed training yes, lookup-only no). "
+                 "Dense's lookup on the new recipe: 3 of 3; E31c's notebook: 2 of 2.",
+     "settle": "Whether more tokens make it reliable."},
+    {"claim": "On the reliable recipe, when E33's notebook switches on, it beats dense on far lookup and keyed at the "
+              "4k training length.", "state": "holds",
+     "since": "2026-10-15",
+     "evidence": "Lookup: run 1 70 %, run 3 76 % vs dense 56-63 % (3 runs); keyed 71 %, 68 % vs 46-54 %. Run 2 did not "
+                 "(13-15 %: its notebook had not switched on). Quote: run 1 71 %, run 3 0 % (dense 3-94 %). Not on "
+                 "crowded facts (lookup 44 %, 46 % vs 54-58 %) or latest (20-22 % vs 18-82 %).",
+     "settle": "—"},
     {"claim": "E33 partly keeps reading when the fact is phrased in a sentence shape never seen in training; dense "
               "does not.",
      "state": "single run", "since": "2026-10-13",
      "evidence": "Lookup on far facts at 4k: E33 64 % with training shapes, 64 % with the first unseen shape, 30 % "
                  "(45 % at 16k) with three more unseen shapes (exams v2.1); its near facts, read by short-range "
                  "attention, drop 62 → 31 %. Dense 37-48 % → 0-4 % on every unseen shape (three dense runs).",
-     "settle": "The third E33 run (new recipe run 1: the first unseen shape 74 % on lookup at 4k, three more shapes "
-               "20-27 %; dense 0-2 %; run 2's notebook did not switch on)."},
+     "settle": "New recipe: run 1 first unseen shape 74 % on lookup at 4k, three more shapes 20-27 %; run 3 76 % "
+               "and 25 %; dense 0-2 %; run 2's notebook did not switch on. Two runs agree; E31c reads 76-80 % and "
+               "33-36 % — a property of the notebook, not the loop."},
     {"claim": "Word-for-word quotes do not survive the notebook.", "state": "retracted", "since": "2026-10-14",
      "evidence": "Held on the earlier recipe (E31c and E33, two runs each: quote 0 % on far facts). On the new recipe E33 "
                  "quotes far facts 71 % at 4k and 89 % at 16k (14 Oct 08:13 UTC), 0 % with the notebook off.",
@@ -253,8 +260,9 @@ CLAIMS = [
      "since": "2026-10-13",
      "evidence": "Earlier recipe: crowded lookup at 4k dense 42 % vs E33 39 %, keyed 39 % vs 18 %. New recipe (E33 run 1, "
                  "dense 3 runs): lookup 44 % vs 54-58 %, keyed 28 % vs 46-51 %. With spread facts E33 leads. At 16k E33 "
-                 "still reads crowded facts (43 %), dense nothing.",
-     "settle": "The third E33 run."},
+                 "still reads crowded facts (43 %), dense nothing. E33 run 3: lookup 46 %, keyed 34 % at 4k — the "
+                 "same picture. E31c run 2 is the exception (75 %).",
+     "settle": "E31c run 3 (Polonez, about 14:00 UTC 15 Oct)."},
     {"claim": "Nobody learns compose or deduce at 30M / 1.5B — not even one step.", "state": "holds",
      "since": "2026-10-13",
      "evidence": "Every run at guessing on two-step compose and deduce (10 Oct on), and on the one-step versions "
@@ -379,11 +387,12 @@ LADDER = [
      "result": "Notebook switched on again: far facts at 4k / 16k lookup 97 / 99 %, keyed 92 / 97 %, quote 88 / 87 %; "
                "crowded lookup 75 % at 4k; latest 24 % (floor 20 %); count 28 %; story loss 1.564.",
      "when": "14 Oct 22:04 → 15 Oct 01:49", "why": "The repeat of E31c run 1."},
-    {"id": None, "start": "2026-10-15", "data": "v2", "standing": "running",
+    {"id": "q8r_e33_s2_odra.odra", "start": "2026-10-15", "data": "v2", "standing": "in use",
      "run": "Round, new recipe: E33 run 3 (Odra)", "model": "E33 loop · 30M, plain, seed 2",
      "tokens": "1.5B, 8 questions per document", "exams": "v2 + v2.1, 1k-16k",
-     "result": "Does E33's notebook switch on in 2 of 3 runs?",
-     "when": "15 Oct 02:09 → ~11:10", "why": "Run 1 switched on, run 2 did not."},
+     "result": "Notebook switched on for lookup / keyed (far at 4k / 16k: 76 / 93 %, 68 / 89 %) but not for quote (0 % "
+               "far; near 77-100 % to 4k). Crowded lookup 46 % at 4k; latest 20 % (floor 20 %); story loss 1.519.",
+     "when": "15 Oct 02:09 → 11:14", "why": "Run 1 switched on, run 2 did not."},
     {"id": None, "start": "2026-10-15", "data": "v2", "standing": "queued",
      "run": "Round, new recipe: E31c run 3 (Polonez)", "model": "E31c notebook · 30M, plain, seed 2",
      "tokens": "1.5B, 8 questions per document", "exams": "v2 + v2.1, 1k-16k",
