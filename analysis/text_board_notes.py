@@ -30,13 +30,17 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-15 16:10 UTC",
+    "as_of": "2026-10-15 16:30 UTC",
     "headline": "On the reliable recipe (8 questions per training document) E31c's notebook switched on in 3 of 3 runs "
                 "for lookup, keyed and quote, and reads far facts better than dense: lookup 75-97 % at 4k (dense 56-63 %), "
                 "92-99 % at 16k, where dense has no method. E33 switched on in 2 of 3 runs (one without quotes) at three "
                 "times the training time. Nobody tracks the latest move past 2k; crowded facts favour dense in 2 of 3 "
                 "E31c runs.",
     "where": [
+        "Fixed page distance on E33d run 1 (exams only, 15 Oct 16:06-16:20 UTC, E33 session): +1 on every read head "
+        "lifts latest at 16k from 2 % to 33 % (the last move picked 7 % → 47 %) but halves far lookup (93 → 52 %); +3 "
+        "and +10 erase far facts; +10 on 4 of 9 heads keeps far facts and leaves latest at guessing. The order signal "
+        "is there; it has to be trained, from slopes that do not start at 0.",
         "E31c run 3 (Polonez, 15 Oct 14:18 UTC): notebook switched on again, all three fact tasks — far facts at 4k / "
         "16k lookup 77 / 92 %, keyed 70 / 91 %, quote 68 / 90 %; learned between 0.6B and 0.9B tokens. Crowded lookup 45 % "
         "at 4k (dense 54-58 %); latest 22 % (floor 20 %); story loss 1.564.",
@@ -82,9 +86,8 @@ STATUS = {
         "story; latest's floor is 20 %; dense is not compared past 4k. Nothing had to be retrained.",
     ],
     "next": [
-        "Odra: the fixed page-distance check on E33d run 1 (approved; exams only, about 16:20 → 17:20 UTC 15 Oct, run by the E33 session).",
-        "Polonez: free since 14:18 UTC 15 Oct.",
-        "Open for the author: whether to "
+        "Odra: free since 16:20 UTC 15 Oct. Polonez: free since 14:18 UTC.",
+                "Open for the author: whether to "
         "start the notebook-proportions sweep; give E33 more tokens or keep the equal budget.",
     ],
 }
@@ -243,11 +246,15 @@ CLAIMS = [
                  "What this disproved: a slope starting at 0 gets learned (it stayed ≤ 0.14; about 3-5 is needed). "
                  "Not tested: whether a large page distance fixes latest.",
      "settle": "—"},
-    {"claim": "A large page distance on E33's notes (fixed, not learned) fixes latest.", "state": "open",
+    {"claim": "A large page distance on E33's notes (fixed, not learned) fixes latest.", "state": "retracted",
      "since": "2026-10-15",
-     "evidence": "Untested. Proposed by the E33 reasoning-fixes session: score E33d run 1 with the slopes fixed at +1, "
-                 "+3 and +10 on latest and far lookup at 4k-16k (exams only, about 1 GPU-hour).",
-     "settle": "The fixed-slope check, if the author approves it."},
+     "evidence": "E33d run 1's weights, slopes overwritten, exams only (400 items per cell; latest exact, others far "
+                 "facts, at 4k / 8k / 16k). As trained: latest 21 / 2 / 2 %, lookup 75 / 87 / 93 %. All heads +1: latest "
+                 "28 / 19 / 33 % (last move picked 34 / 36 / 47 %), lookup 56 / 51 / 52 %, quote 45 / 29 / 10 %. All +3: "
+                 "latest 31 / 14 / 4 %, far facts 0 %. All +10: latest 19 / 0 / 0 %, far facts 0 %. Heads 5-8 at +10: "
+                 "latest 18 / 3 / 2 %, far facts unchanged. No fixed value fixes latest without destroying far facts on "
+                 "this model; a mild distance does carry order (+1 lifts latest at 16k 2 → 33 % with no retraining).",
+     "settle": "A design question for the author: train the distance from a non-zero start."},
     {"claim": "Memory models beat rereading on long documents.", "state": "open", "since": "2026-10-13",
      "evidence": "Dense scores 0 % past 8k on every task, but it has no method for reading past its training length, "
                  "and the no-memory control has not been run on v2.",
@@ -401,12 +408,13 @@ LADDER = [
      "result": "Notebook switched on: far facts at 4k / 16k lookup 77 / 92 %, keyed 70 / 91 %, quote 68 / 90 %; crowded "
                "lookup 45 % at 4k; latest 22 % (floor 20 %); story loss 1.564.",
      "when": "15 Oct 11:11 → 14:18", "why": "Settles E31c's switch-on rate before it becomes the main line."},
-    {"id": None, "start": "2026-10-15", "data": "v2", "standing": "running",
+    {"id": None, "start": "2026-10-15", "data": "v2", "standing": "history",
      "run": "E33d run 1 with a fixed page distance (Odra; exams only, run by the E33 reasoning-fixes session)",
      "model": "E33d run 1's weights, slopes overwritten: all heads +1, +3, +10; 4 of 9 heads +10",
      "tokens": "none (no training)", "exams": "v2 id: latest / lookup / keyed / quote at 4k-16k",
-     "result": "Does a large page distance fix latest, and what does it cost far lookup?",
-     "when": "15 Oct ~16:20 → ~17:20", "why": "Approved by the author 15 Oct; settles the open fixed-page-distance claim."},
+     "result": "+1: latest at 16k 2 → 33 %, far lookup 93 → 52 %; +3 / +10: far facts 0 %; 4 heads at +10: far facts "
+               "kept, latest at guessing. No fixed value works; the order signal is there.",
+     "when": "15 Oct 16:06 → 16:20", "why": "Approved by the author 15 Oct; settles the open fixed-page-distance claim."},
     {"id": "q8r_e33d_s0_polonez.polonez", "start": "2026-10-14", "data": "v2", "standing": "in use",
      "run": "E33d run 1 (Polonez)", "model": "E33d · 30M, plain, seed 0",
      "tokens": "1.5B, 8 questions per document", "exams": "v2 + v2.1, 1k-16k; latest picks and slopes logged",
