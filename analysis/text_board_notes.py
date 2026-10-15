@@ -38,8 +38,9 @@ STATUS = {
     "where": [
         "E33d stopped (15 Oct 10:49 UTC): run 2 switched its notebook on too (far lookup 75 % at 4k, 93 % at 16k) and "
         "latest stayed at guessing (16 % at 4k, floor 20 %; 1-2 % at 8k-16k). Both switched-on runs are under the stop "
-        "mark set before the runs (latest ≤ 30 % at 4k); the 9 page-distance slopes stayed near 0 in both. A page "
-        "distance the model can learn is not enough: it never starts using it.",
+        "mark set before the runs (latest ≤ 30 % at 4k); the 9 page-distance slopes, which start at 0, never grew "
+        "(largest 0.14 and 0.09; telling near-identical notes apart needs about 3-5). Whether a larger page distance "
+        "would fix latest is untested.",
         "E33d run 1 (E33 plus a page distance on its notes; Polonez, 15 Oct 02:48 UTC): notebook switched on, the "
         "earliest of any run (far lookup 50 % at 0.3B tokens); far facts at 4k / 16k lookup 75 / 93 %, keyed 68 / 93 %, "
         "quote 69 / 82 %. Latest unchanged: 21 % at 4k (floor 20 %), 2 % at 8k-16k. The 9 page-distance slopes stayed "
@@ -76,7 +77,8 @@ STATUS = {
         "Odra: the third E33 run (about 11:10 UTC 15 Oct).",
         "Polonez: a third E31c run (about 11:15 → 14:00 UTC 15 Oct), to settle E31c's switch-on rate and the "
         "crowded-facts comparison with dense.",
-        "Open for the author: latest needs a different idea (E33d's learned page distance stayed unused); whether to "
+        "Open for the author: a proposed one-hour check of E33d run 1 with the page distance fixed at +1 / +3 / +10 "
+        "(exams only; from the E33 reasoning-fixes session); whether to "
         "start the notebook-proportions sweep; give E33 more tokens or keep the equal budget.",
     ],
 }
@@ -216,7 +218,8 @@ CLAIMS = [
     {"claim": "Dense tracks the latest move better than the memory models.", "state": "single run", "since": "2026-10-13",
      "evidence": "Latest at 4k: dense 32 % in one of two runs; E31c 17 % and E33 13 %, both below the 20 % floor.",
      "settle": "Dense learning reliably (8-questions recipe), then two runs per model."},
-    {"claim": "A page distance on E33's notes (E33d) lets it track the latest move beyond its 256-token window.",
+    {"claim": "A learned page distance on E33's notes, starting at 0 (E33d), is learned within 1.5B tokens and "
+              "lets E33 track the latest move beyond its 256-token window.",
      "state": "retracted", "since": "2026-10-15",
      "evidence": "E33 has no position on its notes: latest 95-96 % at 1k (moves inside the window), 20-22 % at 4k in "
                  "both new-recipe runs (floor 20 %). E33d adds one learned slope per read head, starting at 0. Marks "
@@ -227,8 +230,15 @@ CLAIMS = [
                  "evenly over the person's earlier places (no sense of which move came last). Lookup / keyed at 16k kept (93 / 93 %), quote 82 % (7 "
                  "points under E33 run 1), story loss 1.521."
                  " Run 2 (switched on): latest 16 % at 4k, 1-2 % at 8k-16k; slopes near 0 (largest 0.08); lookup / "
-                 "keyed at 16k 93 / 90 %, quote 77 %, story loss 1.521. Stop mark met on both switched-on runs.",
+                 "keyed at 16k 93 / 90 %, quote 77 %, story loss 1.521. Stop mark met on both switched-on runs. "
+                 "What this disproved: a slope starting at 0 gets learned (it stayed ≤ 0.14; about 3-5 is needed). "
+                 "Not tested: whether a large page distance fixes latest.",
      "settle": "—"},
+    {"claim": "A large page distance on E33's notes (fixed, not learned) fixes latest.", "state": "open",
+     "since": "2026-10-15",
+     "evidence": "Untested. Proposed by the E33 reasoning-fixes session: score E33d run 1 with the slopes fixed at +1, "
+                 "+3 and +10 on latest and far lookup at 4k-16k (exams only, about 1 GPU-hour).",
+     "settle": "The fixed-slope check, if the author approves it."},
     {"claim": "Memory models beat rereading on long documents.", "state": "open", "since": "2026-10-13",
      "evidence": "Dense scores 0 % past 8k on every task, but it has no method for reading past its training length, "
                  "and the no-memory control has not been run on v2.",
