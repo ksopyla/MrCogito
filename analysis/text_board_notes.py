@@ -16,7 +16,7 @@ SCOREBOARD = {
     "setups": [
         {"key": "q8", "title": "Current recipe: mixed training, 8 questions per training document",
          "runs": ["q8_dense30m_s0_odra.odra", "q8_dense30m_s1_odra.odra", "q8_dense30m_s2_odra.odra",
-                  "q8r_e33_s0_odra.odra", "q8r_e33_s1_odra.odra", "q8r_e31c_s0_odra.odra", "q8r_e31c_s1_odra.odra",
+                  "q8r_e33_s0_odra.odra", "q8r_e33_s1_odra.odra", "q8r_e31c_s0_odra.odra", "q8r_e31c_s1_odra.odra", "q8r_e31c_s2_polonez.polonez",
                   "q8r_e33_s2_odra.odra", "q8r_e33d_s0_polonez.polonez", "q8r_e33d_s1_polonez.polonez",
                   "q8r_e33d_s2_polonez.polonez"],
          "families": ["dense", "e31c", "e33", "e33d"]},
@@ -30,12 +30,16 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-15 03:00 UTC",
+    "as_of": "2026-10-15 11:00 UTC",
     "headline": "On the reliable recipe (8 questions per training document) E31c's notebook switched on in 2 of 2 runs "
                 "and reads far facts better than dense: lookup 75 % and 97 % at 4k (dense 56-63 %), 93 % and 99 % at "
                 "16k, where dense has no method. E33 switched on in 1 of 2 runs at three times the training time. "
                 "Nobody tracks the latest move past 2k yet.",
     "where": [
+        "E33d stopped (15 Oct 10:49 UTC): run 2 switched its notebook on too (far lookup 75 % at 4k, 93 % at 16k) and "
+        "latest stayed at guessing (16 % at 4k, floor 20 %; 1-2 % at 8k-16k). Both switched-on runs are under the stop "
+        "mark set before the runs (latest ≤ 30 % at 4k); the 9 page-distance slopes stayed near 0 in both. A page "
+        "distance the model can learn is not enough: it never starts using it.",
         "E33d run 1 (E33 plus a page distance on its notes; Polonez, 15 Oct 02:48 UTC): notebook switched on, the "
         "earliest of any run (far lookup 50 % at 0.3B tokens); far facts at 4k / 16k lookup 75 / 93 %, keyed 68 / 93 %, "
         "quote 69 / 82 %. Latest unchanged: 21 % at 4k (floor 20 %), 2 % at 8k-16k. The 9 page-distance slopes stayed "
@@ -69,11 +73,11 @@ STATUS = {
         "story; latest's floor is 20 %; dense is not compared past 4k. Nothing had to be retrained.",
     ],
     "next": [
-        "Odra: the third E33 run, training since 02:09 UTC (about 11:10 UTC 15 Oct with exams).",
-        "Polonez: E33d run 2 from about 03:08 UTC (about 08:50 UTC with exams). Run 1 hit the stop mark for latest; "
-        "run 2 decides (the stop needs every switched-on run at ≤ 30 %).",
-        "Open question for the author: give E33 more tokens (run 2 was still rising at 1.5B) or keep the equal budget "
-        "and report the switch-on rate as the result.",
+        "Odra: the third E33 run (about 11:10 UTC 15 Oct).",
+        "Polonez: a third E31c run (about 11:15 → 14:00 UTC 15 Oct), to settle E31c's switch-on rate and the "
+        "crowded-facts comparison with dense.",
+        "Open for the author: latest needs a different idea (E33d's learned page distance stayed unused); whether to "
+        "start the notebook-proportions sweep; give E33 more tokens or keep the equal budget.",
     ],
 }
 
@@ -213,7 +217,7 @@ CLAIMS = [
      "evidence": "Latest at 4k: dense 32 % in one of two runs; E31c 17 % and E33 13 %, both below the 20 % floor.",
      "settle": "Dense learning reliably (8-questions recipe), then two runs per model."},
     {"claim": "A page distance on E33's notes (E33d) lets it track the latest move beyond its 256-token window.",
-     "state": "open", "since": "2026-10-14",
+     "state": "retracted", "since": "2026-10-15",
      "evidence": "E33 has no position on its notes: latest 95-96 % at 1k (moves inside the window), 20-22 % at 4k in "
                  "both new-recipe runs (floor 20 %). E33d adds one learned slope per read head, starting at 0. Marks "
                  "set before any run: pass = far latest ≥ 60 % at 4k and ≥ 40 % at 8k-16k on a switched-on run, no "
@@ -221,8 +225,10 @@ CLAIMS = [
                  "latest ≤ 30 % at 4k on every switched-on run. Run 1 (switched on): latest 21 % at 4k, 2 % at 8k-16k "
                  "— at the stop mark; slopes stayed near 0 (largest 0.14); its wrong latest answers at 4k spread "
                  "evenly over the person's earlier places (no sense of which move came last). Lookup / keyed at 16k kept (93 / 93 %), quote 82 % (7 "
-                 "points under E33 run 1), story loss 1.521.",
-     "settle": "E33d run 2 (Polonez, about 08:50 UTC 15 Oct)."},
+                 "points under E33 run 1), story loss 1.521."
+                 " Run 2 (switched on): latest 16 % at 4k, 1-2 % at 8k-16k; slopes near 0 (largest 0.08); lookup / "
+                 "keyed at 16k 93 / 90 %, quote 77 %, story loss 1.521. Stop mark met on both switched-on runs.",
+     "settle": "—"},
     {"claim": "Memory models beat rereading on long documents.", "state": "open", "since": "2026-10-13",
      "evidence": "Dense scores 0 % past 8k on every task, but it has no method for reading past its training length, "
                  "and the no-memory control has not been run on v2.",
@@ -368,20 +374,23 @@ LADDER = [
      "tokens": "1.5B, 8 questions per document", "exams": "v2 + v2.1, 1k-16k",
      "result": "Does E33's notebook switch on in 2 of 3 runs?",
      "when": "15 Oct 02:09 → ~11:10", "why": "Run 1 switched on, run 2 did not."},
+    {"id": None, "start": "2026-10-15", "data": "v2", "standing": "queued",
+     "run": "Round, new recipe: E31c run 3 (Polonez)", "model": "E31c notebook · 30M, plain, seed 2",
+     "tokens": "1.5B, 8 questions per document", "exams": "v2 + v2.1, 1k-16k",
+     "result": "Does E31c switch on in 3 of 3, and where does it stand on crowded facts (43 % and 75 % so far)?",
+     "when": "15 Oct ~11:15 → ~14:00", "why": "Settles E31c's switch-on rate before it becomes the main line."},
     {"id": "q8r_e33d_s0_polonez.polonez", "start": "2026-10-14", "data": "v2", "standing": "in use",
      "run": "E33d run 1 (Polonez)", "model": "E33d · 30M, plain, seed 0",
      "tokens": "1.5B, 8 questions per document", "exams": "v2 + v2.1, 1k-16k; latest picks and slopes logged",
      "result": "Notebook switched on (far lookup 50 % already at 0.3B): far facts at 4k / 16k lookup 75 / 93 %, keyed "
                "68 / 93 %, quote 69 / 82 %; latest 21 % at 4k, 2 % at 8k-16k; slopes near 0; story loss 1.521.",
      "when": "14 Oct 19:37 → 15 Oct 02:48", "why": "Does a page distance let E33 track the latest move?"},
-    {"id": None, "start": "2026-10-15", "data": "v2", "standing": "running",
-     "run": "E33d run 2 (Polonez; run 3 only if neither run switches on)",
-     "model": "E33d · 30M, plain (E33 + 9 slopes, start 0)",
+    {"id": "q8r_e33d_s1_polonez.polonez", "start": "2026-10-15", "data": "v2", "standing": "in use",
+     "run": "E33d run 2 (Polonez); stopped after it, no run 3", "model": "E33d · 30M, plain, seed 1",
      "tokens": "1.5B each, 8 questions per document", "exams": "v2 + v2.1, 1k-16k; latest picks and slopes logged",
-     "result": "E33d passes if far latest at 4k ≥ 60 % and ≥ 40 % at 8k-16k on a switched-on run, without losing E33's "
-               "lookup / keyed / quote at 16k (within 5 points) or language (story loss ≤ 1.53); stops if latest at 4k "
-               "≤ 30 % on every switched-on run.",
-     "when": "15 Oct ~03:08 → ~08:50 (Polonez, 4 GPUs, same 96-row batch)",
+     "result": "Notebook switched on: far facts at 4k / 16k lookup 75 / 93 %, keyed 67 / 90 %, quote 66 / 77 %; "
+               "latest 16 % at 4k, 1-2 % at 8k-16k; slopes near 0; story loss 1.521. E33d stopped.",
+     "when": "15 Oct 03:08 → 10:49 (Polonez, 4 GPUs, same 96-row batch; one 20-minute heat pause)",
      "why": "Requested by the author through the E33 reasoning-fixes session (14 Oct); spec E33d_note_page_distance. "
             "Step size borrowed from E33's tuning (1e-3): the same model plus 9 numbers that start at 0."},
 ]
