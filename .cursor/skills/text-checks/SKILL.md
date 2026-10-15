@@ -160,6 +160,11 @@ bash scripts/pull_text_checks_results.sh polonez r1_smoke r1_screen   # ledgers 
 The board is the author's main dashboard for the text checks. It must be trustworthy at a glance, so every agent
 keeps these rules (all hand-written parts live in `analysis/text_board_notes.py`):
 
+**Layout and visual rules: `docs/engineering_specs/capability_boards.md`** (page order Now → Compare → What changed →
+What we know → Tasks & exams → Curves → Runs → Archive; one colour per architecture; detail collapsed). When a run
+lands, also update `DECISIONS`, `ARCHS` verdicts and — when a change was measured — `CHANGES` (checked before/after
+numbers only). Running/queued cards come from `LADDER` standings; do not repeat them in `STATUS`.
+
 1. **Status first.** `STATUS` says what runs now, what is next and what blocks (a server down, a busy GPU), with
    UTC times. Update it whenever a run starts, ends or stalls, and republish.
 2. **Every run has a standing** in `LADDER`: `in use` (feeds the scoreboard), `calibration` (dense alone; sets the

@@ -31,11 +31,9 @@ SCOREBOARD = {
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
     "as_of": "2026-10-15 16:30 UTC",
-    "headline": "On the reliable recipe (8 questions per training document) E31c's notebook switched on in 3 of 3 runs "
-                "for lookup, keyed and quote, and reads far facts better than dense: lookup 75-97 % at 4k (dense 56-63 %), "
-                "92-99 % at 16k, where dense has no method. E33 switched on in 2 of 3 runs (one without quotes) at three "
-                "times the training time. Nobody tracks the latest move past 2k; crowded facts favour dense in 2 of 3 "
-                "E31c runs.",
+    "headline": "E31c, the notebook model without the loop, is the best architecture so far: on the current recipe it "
+                "learned to read far facts in 3 of 3 runs, better than dense at 4k and still at 16k. Nobody tracks the "
+                "latest move beyond 2k yet.",
     "where": [
         "Fixed page distance on E33d run 1 (exams only, 15 Oct 16:06-16:20 UTC, E33 session): +1 on every read head "
         "lifts latest at 16k from 2 % to 33 % (the last move picked 7 % → 47 %) but halves far lookup (93 → 52 %); +3 "
@@ -729,3 +727,70 @@ SUPERSEDED = {
                          "(dense 05:21, no-memory 06:08, notebook 06:56, E33 loop 09:20 UTC); the exams were cut "
                          "off by the Polonez shutdown that day. Superseded by the v1 round (shortcuts fixed).",
 }
+
+# ---- added 2026-10-15 for the dashboard layout (docs/engineering_specs/capability_boards.md) ----------------------
+
+# Decisions waiting for the author: shown at the top of the board. Remove an item when it is decided.
+DECISIONS = [
+    "Make E31c (notebook, no loop) the main line? It switched on in 3 of 3 runs at a third of E33's training time.",
+    "Start the notebook-proportions sweep (approved in principle 14 Oct) — on E31c instead of E33?",
+    "Latest: train the page distance from a non-zero start (the E33 session's proposal)?",
+]
+
+# One entry per architecture family compared on the board: plain name, what it is in one line, the standing analogy
+# (research-comms), and the current one-line verdict. Keys are the scoreboard families.
+ARCHS = {
+    "dense": {"name": "Dense", "what": "Full attention over the whole document; the reference.",
+              "analogy": "rereads any page of the book at any time", "verdict":
+              "Learns lookup and keyed reliably on the current recipe; cannot read past its 4k training length."},
+    "e31c": {"name": "E31c notebook", "what": "Short-range attention plus a notebook of summaries of past text.",
+             "analogy": "sees the last pages and keeps a notebook", "verdict":
+             "Best so far: reads far facts in 3 of 3 runs, also at 16k; weak on crowded facts and on latest."},
+    "e33": {"name": "E33 loop", "what": "E31c plus a read-think-reread loop over the notebook.",
+            "analogy": "rereads its notebook several times before answering", "verdict":
+            "As good as E31c when its notebook switches on, but it did in 2 of 3 runs, at 3× the training time."},
+    "e33d": {"name": "E33d page distance", "what": "E33 plus a learned penalty on older notes (page distance).",
+             "analogy": "E33 with page numbers in the notebook", "verdict":
+             "Stopped: the page distance was never learned; latest stayed at guessing."},
+}
+
+# What changed the results: one entry per change of recipe, architecture, exam or reading rule whose effect was
+# measured. effect: helped / hurt / no effect / mixed / measurement (a new exam or rule, the models did not change).
+# metrics: (what is measured, before, after, unit) — unit "%" (0-100) or "runs" ("k/n").
+CHANGES = [
+    {"date": "2026-10-15", "kind": "architecture", "change": "Fixed page distance +1 on E33d run 1 (no retraining)",
+     "compared": "E33d run 1 as trained vs the same weights with every slope set to +1", "effect": "mixed",
+     "metrics": [("latest at 16k", 2, 33, "%"), ("far lookup at 16k", 93, 52, "%")],
+     "note": "The order signal is there, but a fixed value trades far facts for it; +3 and +10 erase far facts."},
+    {"date": "2026-10-15", "kind": "architecture", "change": "A learned page distance on E33's notes (E33d)",
+     "compared": "E33 (3 runs) vs E33d (2 runs), current recipe", "effect": "no effect",
+     "metrics": [("latest at 4k, middle run", 20, 19, "%"), ("far quote at 16k, best run", 89, 82, "%")],
+     "note": "The 9 slopes start at 0 and never grew (largest 0.14), so nothing changed except a little quote loss."},
+    {"date": "2026-10-15", "kind": "architecture", "change": "A read-think-reread loop on the notebook (E33 vs E31c)",
+     "compared": "E31c (3 runs) vs E33 (3 runs), current recipe", "effect": "hurt",
+     "metrics": [("runs that read far facts", "3/3", "2/3", "runs"), ("far lookup at 4k, middle run", 77, 70, "%"),
+                 ("training hours on 3 GPUs", 2.4, 7.0, "h")],
+     "note": "Slightly better language (story loss 1.519 vs 1.564), but less reliable and 3× slower to train."},
+    {"date": "2026-10-13", "kind": "recipe", "change": "8 questions per training document instead of 1",
+     "compared": "the same models, earlier recipe vs current recipe", "effect": "helped",
+     "metrics": [("E31c runs that read far facts", "0/3", "3/3", "runs"),
+                 ("dense runs that learned anything", "2/4", "3/3", "runs"),
+                 ("E33 runs that read far facts", "1/2", "2/3", "runs")],
+     "note": "Answers were 0.1 % of training tokens; more questions per document turned luck into a reliable skill."},
+    {"date": "2026-10-13", "kind": "recipe", "change": "Training E33 on lookup only instead of mixed tasks",
+     "compared": "E33, mixed training vs lookup-only training, earlier recipe", "effect": "hurt",
+     "metrics": [("far lookup at 16k", 83, 0, "%")],
+     "note": "Its notebook never switched on with one task; dense trained the same way still learned (48 % at 4k)."},
+    {"date": "2026-10-13", "kind": "exam", "change": "Crowded facts (exams v2.1): every fact within 1,024 tokens",
+     "compared": "E33, spread facts vs crowded facts at 16k", "effect": "measurement",
+     "metrics": [("far lookup at 16k", 83, 33, "%")],
+     "note": "Most of E33's long-document gain was the facts being spread out; the models did not change."},
+    {"date": "2026-10-13", "kind": "rules", "change": "Read memory on far facts only (reading rules)",
+     "compared": "E31c, all facts vs facts beyond the short window", "effect": "measurement",
+     "metrics": [("E31c quote at 4k, earlier recipe", 24, 0, "%")],
+     "note": "Facts at the end sit inside every model's short window; E31c's apparent scores were all near facts."},
+    {"date": "2026-10-10", "kind": "recipe", "change": "Plain input (no word-pair / triple tables)",
+     "compared": "dense with vs without the tables, earlier recipe", "effect": "no effect",
+     "metrics": [("dense runs that learned anything", "1/1", "1/2", "runs")],
+     "note": "The first run learned four tasks, the second nothing: seed luck, not the input. Kept for consistency."},
+]
