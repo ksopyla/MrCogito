@@ -231,6 +231,8 @@ PAR_LM_ADDR="${PAR_LM_ADDR:-none}"
 PAR_LM_SLOT_POS="${PAR_LM_SLOT_POS:-reader}"
 PAR_LM_NOTE_AGE="${PAR_LM_NOTE_AGE:-none}"                # E33d: page distance on the note read (log | linear)
 PAR_LM_NOTE_AGE_UNIT="${PAR_LM_NOTE_AGE_UNIT:-0}"          # E33d: tokens per unit (0 = the page step)
+PAR_LM_NOTE_RANK_MARGIN="${PAR_LM_NOTE_RANK_MARGIN:-1.0}"  # E33e (PAR_LM_NOTE_AGE=rank): match margin below the best note
+PAR_LM_NOTE_RANK_SHARP="${PAR_LM_NOTE_RANK_SHARP:-2.0}"    # E33e: steepness of the match gate
 PAR_LOOP_ROUNDS="${PAR_LOOP_ROUNDS:-1}"                    # E33a loop on text: 4
 PAR_LOOP_EXIT_AUX="${PAR_LOOP_EXIT_AUX:-0.0}"              # E33a: 0.3
 PAR_LOOP_EXIT_TARGETS="${PAR_LOOP_EXIT_TARGETS:-answer}"
@@ -494,6 +496,8 @@ if [ "$MODEL_FAMILY" = "perceiver_ar" ]; then
             --lm_slot_pos "$PAR_LM_SLOT_POS"
             --lm_note_age "$PAR_LM_NOTE_AGE"
             --lm_note_age_unit "$PAR_LM_NOTE_AGE_UNIT"
+            --lm_note_rank_margin "$PAR_LM_NOTE_RANK_MARGIN"
+            --lm_note_rank_sharp "$PAR_LM_NOTE_RANK_SHARP"
             --message_loop_rounds "$PAR_LOOP_ROUNDS"
             --message_loop_exit_aux "$PAR_LOOP_EXIT_AUX"
             --message_loop_exit_targets "$PAR_LOOP_EXIT_TARGETS"

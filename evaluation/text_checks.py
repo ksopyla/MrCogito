@@ -190,13 +190,19 @@ ARCHES = {
     "e33d": Arch("e33d", "E33 + page distance on the notes (per-head log age bias, starts at 0)",
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.3,
                   "message_loop_exit_targets": "answer", "lm_note_age": "log"}, has_notebook=True),
+    # E33e (2026-10-16): E33 + the notes' order among matching notes — the same per-head strength, starting at 0,
+    # score −= s_h · log(1 + soft count of newer notes that match about as well as the best note); a lone fact
+    # pays nothing at any length. Spec E33e_note_rank.md
+    "e33e": Arch("e33e", "E33 + rank among matching notes (per-head strength on the newer-match count, starts at 0)",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.3,
+                  "message_loop_exit_targets": "answer", "lm_note_age": "rank"}, has_notebook=True),
 }
 # Plain-input variants (2026-10-10): the same models without the word-pair/triple hash tables and value
 # embeddings. Dense with plain input learned quote, lookup, keyed and latest at 30M / 1.5B tokens on v2, where
 # dense with the tables learned at most one (spec §16.1), so the architecture round runs on plain input. FFN width
 # is refitted, so each stays in the parameter band.
 _PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
-for _k in ("local", "e31c", "e31c_loop", "e33d"):
+for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e"):
     _a = ARCHES[_k]
     ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
                                  {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)
@@ -216,7 +222,8 @@ ENV_OF = {
     "lm_window": "PAR_LM_WINDOW", "lm_stride": "PAR_LM_STRIDE", "lm_latents": "PAR_LM_LATENTS",
     "lm_latent_dim": "PAR_LM_LATENT_DIM", "lm_heads": "PAR_LM_HEADS", "lm_writer_dim": "PAR_LM_WRITER_DIM",
     "lm_enc_layers": "PAR_LM_ENC_LAYERS", "lm_rounds": "PAR_LM_ROUNDS", "lm_reader_tokens": "PAR_LM_READER_TOKENS",
-    "lm_addr": "PAR_LM_ADDR", "lm_slot_pos": "PAR_LM_SLOT_POS", "lm_note_age": "PAR_LM_NOTE_AGE", "message_loop_rounds": "PAR_LOOP_ROUNDS",
+    "lm_addr": "PAR_LM_ADDR", "lm_slot_pos": "PAR_LM_SLOT_POS", "lm_note_age": "PAR_LM_NOTE_AGE", "lm_note_rank_margin": "PAR_LM_NOTE_RANK_MARGIN",
+    "lm_note_rank_sharp": "PAR_LM_NOTE_RANK_SHARP", "message_loop_rounds": "PAR_LOOP_ROUNDS",
     "message_loop_exit_aux": "PAR_LOOP_EXIT_AUX", "message_loop_exit_targets": "PAR_LOOP_EXIT_TARGETS",
 }
 

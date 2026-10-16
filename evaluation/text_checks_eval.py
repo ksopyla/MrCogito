@@ -18,6 +18,12 @@ One forward pass per item over  BOS + prompt + answer  (teacher forcing):
   uv run python evaluation/text_checks_eval.py --checkpoint <run>/final \
       --items Cache/text_checks/smoke/eval/id.jsonl --out <run>/text_checks_id.json \
       [--message_override none] [--max_items_per_cell 50] [--lengths 512 1024]
+
+Exam-time probes on a trained model (nothing retrained; recorded in the output):
+  --loop_rounds r        a looped model (E33) stops after r rounds and decodes through its coda (rounds 1-4 exams)
+  --note_order rank --note_strength s [--note_margin m --note_sharp k]
+                         the notes' order among matching notes (E33e) with a fixed strength s for every head, put on a
+                         model trained without it (E33, E33d: replaces E33d's page distance)
 """
 from __future__ import annotations
 
@@ -98,6 +104,33 @@ def story_ce(model, path: str, n_rows: int, device) -> float:
     return tot / max(1, cnt)
 
 
+def apply_note_order(model, mode: str, strength: float, margin: float, sharp: float) -> dict:
+    """Exam-time E33e probe: switch the global read's note term to the rank count with one fixed strength for every
+    head (an E33d model's learned page-distance slopes are replaced; an E33 model gets the term added)."""
+    import torch.nn as nn
+
+    done = {}
+    if getattr(model.config, "message_write", None) != "latent_memory":
+        raise SystemExit("--note_order needs a latent-memory model (E31c / E33 / E33d)")
+    for name, mod in model.named_modules():
+        if not (hasattr(mod, "note_age_mode") and getattr(mod, "pattern", None) == "full"
+                and getattr(mod, "compressor", "x") is None):
+            continue
+        cfg = model.config
+        if getattr(mod, "note_age_slope", None) is None:
+            mod.note_age_slope = nn.Parameter(torch.zeros(mod.h, device=next(mod.parameters()).device))
+            mod.note_age_unit = float(cfg.lm_stride)
+        mod.note_age_mode = mode
+        mod.note_rank_rep = int(cfg.lm_latents) * int(cfg.lm_reader_tokens)
+        mod.note_rank_margin, mod.note_rank_sharp = float(margin), float(sharp)
+        with torch.no_grad():
+            mod.note_age_slope.fill_(float(strength))
+        done[name] = {"mode": mode, "strength": strength, "margin": margin, "sharp": sharp}
+    if not done:
+        raise SystemExit("--note_order: no latent-memory global read found in this model")
+    return done
+
+
 def summarize(rows: list[dict]) -> list[dict]:
     cells = defaultdict(list)
     for r in rows:
@@ -156,6 +189,11 @@ def main():
     p.add_argument("--no_removed", action="store_true", help="skip the evidence-removed twins")
     p.add_argument("--story_eval", default=None, help="held-out story rows (<data>/stories/eval): language loss")
     p.add_argument("--story_rows", type=int, default=64)
+    p.add_argument("--loop_rounds", type=int, default=0, help="looped model: stop after this many rounds (0 = trained)")
+    p.add_argument("--note_order", default=None, choices=("rank",), help="exam-time E33e probe (see the docstring)")
+    p.add_argument("--note_strength", type=float, default=0.0)
+    p.add_argument("--note_margin", type=float, default=1.0)
+    p.add_argument("--note_sharp", type=float, default=2.0)
     args = p.parse_args()
 
     from transformers import AutoTokenizer
@@ -166,6 +204,17 @@ def main():
     backend = args.attn_backend or ("flex" if str(device).startswith("cuda") else "sdpa")
     model = load_perceiver_lm(args.checkpoint, device, backend)
     model.eval()
+    probes = {}
+    if args.loop_rounds:
+        if int(getattr(model, "loop_rounds", 1) or 1) < 2:
+            raise SystemExit("--loop_rounds needs a looped model")
+        model._loop_rounds_override = int(args.loop_rounds)
+        probes["loop_rounds"] = int(args.loop_rounds)
+    if args.note_order:
+        probes["note_order"] = apply_note_order(model, args.note_order, args.note_strength, args.note_margin,
+                                                args.note_sharp)
+    if probes:
+        print("exam-time probes:", json.dumps(probes), flush=True)
     # E33d: the per-head page-distance slopes of the note read, logged with every exam (curve checkpoints included)
     slopes = {n: [round(float(x), 5) for x in p_.detach().float().cpu().flatten()]
               for n, p_ in model.named_parameters() if "note_age_slope" in n}
@@ -229,7 +278,7 @@ def main():
     summary = summarize(rows)
     res = {"checkpoint": args.checkpoint, "message_override": args.message_override, "items": args.items,
            "n_items": len(rows), "seconds": round(time.time() - t0, 1), "story_loss": story_loss,
-           "note_age_slopes": slopes or None, "cells": summary, "rows": rows}
+           "note_age_slopes": slopes or None, "probes": probes or None, "cells": summary, "rows": rows}
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w") as fh:
         json.dump(res, fh, indent=1)

@@ -219,6 +219,10 @@ class PerceiverARConfig(PretrainedConfig):
         lm_note_age: str = "none",        # E33d — page distance on the note read, outside the key: "none" | "log" | "linear"
                                           #   (score −= s_h · f((pos(t) − slot_pos) / unit), s_h per head, starts at 0)
         lm_note_age_unit: int = 0,        # E33d — tokens per distance unit; 0 = lm_stride (one page step)
+                                          # E33e — lm_note_age="rank": f = log(1 + soft count of NEWER notes that match the
+                                          #   query about as well as its best note), so a lone fact pays nothing at any length
+        lm_note_rank_margin: float = 1.0, # E33e — a note "matches" when its score is within ~margin of the best note's
+        lm_note_rank_sharp: float = 2.0,  # E33e — steepness of that match gate: σ(sharp · (score − best + margin))
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -322,6 +326,8 @@ class PerceiverARConfig(PretrainedConfig):
         self.slot_pos_ref = int(slot_pos_ref)
         self.lm_note_age = str(lm_note_age or "none")
         self.lm_note_age_unit = int(lm_note_age_unit or 0)
+        self.lm_note_rank_margin = float(lm_note_rank_margin)
+        self.lm_note_rank_sharp = float(lm_note_rank_sharp)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -447,8 +453,10 @@ class PerceiverARConfig(PretrainedConfig):
                 )
             if self.message_extra_slot_attends or self.message_update_slot_kv:
                 raise ValueError("latent_memory: extra slot attends are not defined (read once; E31a reads per layer)")
-            if self.lm_note_age not in ("none", "log", "linear"):
-                raise ValueError(f"lm_note_age must be none / log / linear, got {self.lm_note_age!r}")
+            if self.lm_note_age not in ("none", "log", "linear", "rank"):
+                raise ValueError(f"lm_note_age must be none / log / linear / rank, got {self.lm_note_age!r}")
+            if self.lm_note_rank_sharp <= 0:
+                raise ValueError("lm_note_rank_sharp must be > 0")
             if self.lm_note_age_unit < 0:
                 raise ValueError("lm_note_age_unit must be >= 0 (0 = lm_stride)")
             if self.lm_note_age != "none" and self.lm_slot_pos != "reader":
@@ -1504,6 +1512,42 @@ def note_age_bias(pos: torch.Tensor, slot_pos: torch.Tensor, slope: torch.Tensor
     return -slope.to(torch.float32)[None, :, None, None] * f[:, None]
 
 
+def note_rank_logcount(q_slot: torch.Tensor, k_bar: torch.Tensor, ctx: "MessageCtx", *, scale: float, rep: int,
+                       margin: float, sharp: float, chunk: int = 1024) -> torch.Tensor:
+    """E33e: how many NEWER notes match the reader about as well as its best note, per page, [B,h,S,n_w] fp32.
+
+    For reader t, head h and visible note c (same document, page closed at or before t — the closed read),
+    l = q_slot·k̄ · scale is the read's own note score and m the best visible score. The match gate is
+    σ(sharp · (l − m + margin)); a page's count is the summed gate over the visible notes of every strictly
+    newer page (later close), and the returned value is log(1 + count). A lone fact has no newer match, so it
+    keeps its score at any length; among several matches (Anna's ten moves) the newest gets 0, the one
+    before it ≈ log 2, … — an order that does not grow with the document. Computed without gradient (the
+    read's scores are trained by the read itself); only the per-head strength in front of it learns.
+    `rep` = notes per page (latents × reader tokens): the pages are the n_w = C / rep groups of the slot axis."""
+    B, S, h, dh = q_slot.shape
+    C, g = k_bar.shape[1], k_bar.shape[2]
+    n_w = C // rep
+    with torch.no_grad():
+        sd, sc = ctx.slot_doc, ctx.slot_close  # [B,C]
+        wclose = sc.view(B, n_w, rep)[..., 0]  # every note of a page shares its close
+        newer = (wclose[:, :, None] > wclose[:, None, :]).float()  # [B, w', w]: page w' is newer than page w
+        kbh = k_bar.float().repeat_interleave(h // g, dim=2)  # [B,C,h,dh]
+        tpos = torch.arange(S, device=q_slot.device)
+        out = torch.zeros(B, h, S, n_w, dtype=torch.float32, device=q_slot.device)
+        for s0 in range(0, S, chunk):
+            s1 = min(S, s0 + chunk)
+            vis = ((sd[:, None, :] >= 0) & (sd[:, None, :] == ctx.doc[:, s0:s1, None])
+                   & (sc[:, None, :] >= 0) & (sc[:, None, :] <= tpos[None, s0:s1, None]))  # [B,s,C]
+            l = torch.einsum("bshd,bchd->bhsc", q_slot[:, s0:s1].float(), kbh) * scale
+            l = l.masked_fill(~vis[:, None], float("-inf"))
+            m = l.amax(-1, keepdim=True)
+            m = torch.where(torch.isfinite(m), m, torch.zeros_like(m))
+            gate = torch.sigmoid(sharp * (l - m + margin))  # exactly 0 on invisible notes
+            gw = gate.view(B, h, s1 - s0, n_w, rep).sum(-1)
+            out[:, :, s0:s1] = torch.log1p(torch.einsum("bhsk,bkw->bhsw", gw, newer))
+    return out
+
+
 def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend, block_masks=None,
                    q_slot=None, note_bias=None):
     """Global read over raw keys ‖ message slots with the E21 mask. Returns [B,S,h,dh].
@@ -1514,7 +1558,9 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
     the raw logits are q·k and the slot logits q_slot·k̄. Values keep width dh.
 
     `note_bias` (E33d) = (slope [h], pos [B,S], slot_pos [B,C], unit, mode): adds `note_age_bias` to the
-    slot logits only (flex `score_mod`, or a float mask on the SDPA path); raw logits are unchanged."""
+    slot logits only (flex `score_mod`, or a float mask on the SDPA path); raw logits are unchanged.
+    E33e (mode "rank") = (slope [h], logcount [B,h,S,n_w], None, rep, "rank"): adds −slope[h] · logcount at
+    each note's page (`note_rank_logcount`)."""
     B, S, h, dh = q.shape
     g = k.shape[2]
     if backend == "flash":
@@ -1550,17 +1596,24 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
         score_mod = None
         if note_bias is not None:
             slope, pos_t, spos, unit, mode = note_bias
-            pos_f, spos_f = pos_t.to(torch.float32), spos.to(torch.float32)
             # One copy of the slopes per (row, head, query): flex accumulates a captured buffer's gradient
             # with atomic adds, and 9 shared addresses made the backward 2.3× slower (Polonez, 30M, 4k).
             sl = slope.to(torch.float32)[None, :, None].expand(B, h, S).contiguous()
-            unit_f, log_f = float(unit), mode == "log"
+            if mode == "rank":
+                lc, rep_i = pos_t.to(torch.float32).contiguous(), int(unit)
 
-            def score_mod(score, b, hh, q_idx, kv_idx):
-                c = torch.clamp(kv_idx - S, min=0)
-                age = torch.clamp(pos_f[b, q_idx] - spos_f[b, c], min=0.0) / unit_f
-                f = torch.log1p(age) if log_f else age
-                return torch.where(kv_idx >= S, score - sl[b, hh, q_idx] * f, score)
+                def score_mod(score, b, hh, q_idx, kv_idx):
+                    w = torch.div(torch.clamp(kv_idx - S, min=0), rep_i, rounding_mode="floor")
+                    return torch.where(kv_idx >= S, score - sl[b, hh, q_idx] * lc[b, hh, q_idx, w], score)
+            else:
+                pos_f, spos_f = pos_t.to(torch.float32), spos.to(torch.float32)
+                unit_f, log_f = float(unit), mode == "log"
+
+                def score_mod(score, b, hh, q_idx, kv_idx):
+                    c = torch.clamp(kv_idx - S, min=0)
+                    age = torch.clamp(pos_f[b, q_idx] - spos_f[b, c], min=0.0) / unit_f
+                    f = torch.log1p(age) if log_f else age
+                    return torch.where(kv_idx >= S, score - sl[b, hh, q_idx] * f, score)
 
         out = _get_flex()(qt, kt, vt, block_mask=bm, enable_gqa=(g != h), scale=scale, score_mod=score_mod)
         return out.transpose(1, 2)
@@ -1572,7 +1625,10 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
     if note_bias is not None:  # E33d: float mask, per head, the bias on the slot columns only
         slope, pos_t, spos, unit, mode = note_bias
         fm = torch.zeros(mask.shape, dtype=torch.float32, device=q.device).masked_fill(~mask, float("-inf"))
-        nb = note_age_bias(pos_t, spos, slope, unit, mode)
+        if mode == "rank":  # E33e: the page count broadcast to the page's notes
+            nb = -slope.to(torch.float32)[None, :, None, None] * pos_t.to(torch.float32).repeat_interleave(int(unit), dim=-1)
+        else:
+            nb = note_age_bias(pos_t, spos, slope, unit, mode)
         mask = torch.cat([fm[..., :S].expand(B, h, S, S), fm[..., S:] + nb], dim=-1).to(qt.dtype)
     dv = vt.shape[-1]
     if qt.shape[-1] != dv:
@@ -1722,6 +1778,10 @@ class Attention(nn.Module):
                 and getattr(cfg, "message_enabled", False)):
             self.note_age_slope = nn.Parameter(torch.zeros(h))
             self.note_age_unit = float(getattr(cfg, "lm_note_age_unit", 0) or cfg.lm_stride)
+            # E33e (rank): the same per-head strength, in front of the count of newer matching notes
+            self.note_rank_rep = int(cfg.lm_latents) * int(cfg.lm_reader_tokens)
+            self.note_rank_margin = float(getattr(cfg, "lm_note_rank_margin", 1.0))
+            self.note_rank_sharp = float(getattr(cfg, "lm_note_rank_sharp", 2.0))
 
     def kv_raw(self, x: torch.Tensor, ids: Optional[torch.Tensor] = None) -> tuple[torch.Tensor, torch.Tensor]:
         """(k before k_norm, v incl. the value-embedding term) — the pooling inputs of the compressor."""
@@ -1879,7 +1939,14 @@ class Attention(nn.Module):
             q_slot = self._scale_q(q_un, pos) if (getattr(message, "slot_nope", False) and self.use_rope) else None
             note_bias = None
             if self.note_age_slope is not None and message.slot_pos is not None and pos is not None:
-                note_bias = (self.note_age_slope, pos, message.slot_pos, self.note_age_unit, self.note_age_mode)
+                if self.note_age_mode == "rank":
+                    if message.override not in ("none", "raw"):
+                        lc = note_rank_logcount(q_slot if q_slot is not None else q, k_bar, message,
+                                                scale=self.dh ** -0.5, rep=self.note_rank_rep,
+                                                margin=self.note_rank_margin, sharp=self.note_rank_sharp)
+                        note_bias = (self.note_age_slope, lc, None, self.note_rank_rep, "rank")
+                else:
+                    note_bias = (self.note_age_slope, pos, message.slot_pos, self.note_age_unit, self.note_age_mode)
             o = attend_message(q, k, v, k_bar, v_bar, ctx=message, key_valid=key_valid,
                                backend=self.backend, block_masks=block_masks, q_slot=q_slot, note_bias=note_bias)
             out = self.wo(o.reshape(B, S, self.h * self.dh))

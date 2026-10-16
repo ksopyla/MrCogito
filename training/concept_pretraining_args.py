@@ -370,9 +370,12 @@ class ModelArguments:
         default="reader", metadata={"help": "E31: read | boundary | scaled | mixed | reader (E31c text: NoPE slots)."}
     )
     lm_note_age: str = field(
-        default="none", metadata={"help": "E33d: page distance on the note read, per-head slope: none | log | linear."}
+        default="none", metadata={"help": "E33d: page distance on the note read, per-head slope: none | log | linear; "
+                                          "E33e: rank (count of newer notes that match as well as the best one)."}
     )
     lm_note_age_unit: int = field(default=0, metadata={"help": "E33d: tokens per distance unit (0 = lm_stride)."})
+    lm_note_rank_margin: float = field(default=1.0, metadata={"help": "E33e: match margin below the best note's score."})
+    lm_note_rank_sharp: float = field(default=2.0, metadata={"help": "E33e: steepness of the match gate."})
     message_loop_rounds: int = field(default=1, metadata={"help": "E33a: tied [global read + local] loops (1 = off)."})
     message_loop_exit_aux: float = field(default=0.0, metadata={"help": "E33a: weight of each earlier loop exit."})
     message_loop_exit_targets: str = field(
