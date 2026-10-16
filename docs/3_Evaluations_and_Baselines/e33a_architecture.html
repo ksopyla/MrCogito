@@ -47,6 +47,7 @@ svg text{fill:var(--fg);font-family:inherit}svg .m{fill:var(--muted)}svg .s{fill
 .say{font-size:15px;min-height:48px;margin-top:6px}
 .chg{color:var(--orange);font-weight:700}.fix{color:var(--violet);font-weight:700}.tied{color:var(--teal);font-weight:700}
 .pill{display:inline-block;font-size:11.5px;font-weight:700;padding:1px 8px;border-radius:999px;white-space:nowrap}
+.qa-t td{vertical-align:top;font-size:13.5px}.qa-t{min-width:760px}
 .p-yes{background:var(--good-bg);color:var(--green)}.p-no{background:var(--bad-bg);color:var(--red)}.p-part{background:var(--warn-bg);color:var(--amber)}.p-info{background:var(--info-bg);color:var(--blue)}
 a{color:var(--blue)}
 code{font:13px ui-monospace,Menlo,monospace;background:var(--card2);padding:1px 5px;border-radius:4px}
@@ -102,13 +103,13 @@ details.hist[open]>summary{margin-bottom:10px}
 </style>
 <div id="tip"></div>
 <main>
-<div class="kicker">MrCogito · E33 · re-read from the code and the text board on 15 Oct 2026 · the 30M text model of the 8-questions round</div>
+<div class="kicker">MrCogito · E33 · re-read from the code and the text board on 15 Oct 2026, questions and checks added 16 Oct · the 30M text model of the 8-questions round</div>
 <h1>E33: how it is built, how information flows, how it trains, and what to fix for the harder tasks</h1>
 <p class="sub">This page follows one document through E33, part by part, as the code builds it today. It covers every version tested so far, the notebook (how it is written, kept and read), the token table, the loop, and one training step. Then it puts the latest text-check results for the four harder tasks next to the parts that cause them: latest, compose, count and deduce. It ends with a ranked review of the weak points and the experiments that would test each fix. The DNA chain-test page of 2–4 Oct is kept at the bottom as history.</p>
-<nav class="toc"><a href="#versions">1 · versions</a><a href="#pipeline">2 · forward pass</a><a href="#notebook">3 · the notebook</a><a href="#embed">4 · token table</a><a href="#loopx">5 · the loop</a><a href="#training">6 · training</a><a href="#hard">7 · the four harder tasks</a><a href="#order">8 · order</a><a href="#mask">9 · who sees what</a><a href="#budget">10 · budget</a><a href="#review">11 · review &amp; experiments</a><a href="#sweep">12 · sweep</a><a href="#history">history</a></nav>
+<nav class="toc"><a href="#versions">1 · versions</a><a href="#pipeline">2 · forward pass</a><a href="#notebook">3 · the notebook</a><a href="#embed">4 · token table</a><a href="#loopx">5 · the loop</a><a href="#training">6 · training</a><a href="#hard">7 · the four harder tasks</a><a href="#order">8 · order</a><a href="#mask">9 · who sees what</a><a href="#budget">10 · budget</a><a href="#review">11 · review &amp; experiments</a><a href="#sweep">12 · sweep</a><a href="#qa">13 · your questions (16 Oct)</a><a href="#history">history</a></nav>
 
 <div class="callout warn"><b>What changed since the 14 Oct version of this page</b>
-<ul style="margin:6px 0 0;padding-left:18px">
+<p style="margin:6px 0 4px"><b>16 Oct:</b> <a href="#qa">section 13</a> answers the five questions of that morning (encoder–decoder, encode–reason–decode and A2A, the writer's input, how the loop could join facts, the LeCun / Karpathy review), with the checks run without training and the runs started that day.</p><ul style="margin:6px 0 0;padding-left:18px">
 <li><b>All the runs of the 8-questions round are in</b>: dense ×3, E31c ×3, E33 ×3, E33d ×2, plus the fixed page-distance check. Section 7 shows the four harder tasks for every run.</li>
 <li><b>New sections:</b> every tested version (1), the notebook up close (3), the token table's uses (4), what the loop changes and what training updates (5), one training step and its curves (6).</li>
 <li><b>The order section (8) has a slider.</b> It lets you test the page-distance idea against a proposed alternative, ranking a note among the notes that match it.</li>
@@ -273,6 +274,7 @@ details.hist[open]>summary{margin-bottom:10px}
 
 <!-- ======================================================= -->
 <h2 id="review">11 · Review: weak points, how sure we are, and what to try</h2>
+<div class="callout good" style="margin-top:6px"><b>Updated 16 Oct:</b> the training-free checks (experiments 1–3) ran that morning, and the first runs have started. The new evidence and the revised table are in <a href="#qa">section 13</a>.</div>
 <p>Written as a review by a senior researcher who has watched this project's earlier confident calls turn out to be recipe problems. The rule used here: a fix to the model is proposed only where the dense model shows the skill is learnable on this data and budget, and every proposal comes with a cheap check that could kill it before a full run.</p>
 <div class="callout warn"><b>Calibration: where earlier confident calls went wrong</b>
 <ul style="margin:6px 0 0;padding-left:18px">
@@ -302,6 +304,130 @@ details.hist[open]>summary{margin-bottom:10px}
 <tr><td>writer reads the prelude's states instead of bare token vectors</td><td>writer input</td><td>binding under crowding: each token arrives already mixed with its 16 neighbours</td></tr>
 </table></div>
 <p style="font-size:13.5px;color:var(--fg2)">The sweep's fifth row, an order signal on the notes, became E33d and now the E33e proposal (sections 8 and 11). The sweep targets lookup under crowding; it does not touch latest, compose or deduce.</p>
+
+<!-- ======================================================= -->
+<h2 id="qa">13 · Your questions (16 Oct), with today's checks</h2>
+<p>Five questions from the 16 Oct request, each answered from the code, plus the new measurements made that morning without any training. The runs started the same day are at the end of this section.</p>
+
+<div class="callout good" id="qa-news"><b>New this morning (no training, on already-trained models)</b>
+<ul style="margin:6px 0 0;padding-left:18px">
+<li><b>Order among matching notes works on trained weights.</b> Put on two trained models, with one fixed strength and no training (exam set, 400 questions per cell):
+<ul style="margin:4px 0 0;padding-left:18px">
+<li>E33 run 1: "latest" at 16k rose from 5 % to 41 %, while far lookup went from 92 % to 91 %;</li>
+<li>E33d run 1: "latest" at 16k rose from 2 % to 30 %, while far lookup went from 93 % to 92 %;</li>
+<li>keyed (look-alike names) lost 2–5 points;</li>
+<li>a fixed page distance had bought 33 % only by halving far lookup.</li>
+</ul>
+The match gate was chosen on fresh questions, never the exam set.</li>
+<li><b>The loop adds nothing to the tasks.</b> E33 run 1 with its loop stopped after 1, 2 or 3 rounds scores the same as with all 4 on every task, within 2 points, compose and deduce included (table in 13.4).</li>
+<li><b>Nobody counts.</b> Every model gets "zero visits" right most often (65–81 %). The other counts bunch around a few favourite answers. The notebook models land within one of the true count about 55–65 % of the time: a rough sense of "how many", not counting.</li>
+</ul></div>
+
+<h3>13.1 How is E33 different from a classical encoder–decoder?</h3>
+<div class="card"><div class="svgwrap"><svg id="qa-encdec" viewBox="0 0 1060 330" role="img" aria-label="Classical encoder-decoder next to E33"></svg></div></div>
+<div class="tw"><table class="qa-t">
+<tr><th></th><th>classical encoder–decoder (T5, BART, the 2017 Transformer)</th><th>E33</th></tr>
+<tr><td>what is kept of the input</td><td>one vector per input token, all of them</td><td>32 notes per page (a page is 256 tokens, with a new page every 192), plus the last 256 tokens as they are</td></tr>
+<tr><td>what the encoder sees</td><td>the whole input, both directions</td><td>one page at a time, from the bare word vectors, both directions inside the page</td></tr>
+<tr><td>who writes the answer</td><td>a separate decoder, over a separate output sequence</td><td>the same stack that reads the document: one causal stream of document, question and answer</td></tr>
+<tr><td>how the decoder reads</td><td>cross-attention in every decoder layer</td><td>one shared read layer (raw window and notes in one softmax), reused 4 times by the loop</td></tr>
+<tr><td>what trains the encoder</td><td>the output loss</td><td>the next-word loss of the main path only: the writer gets no target of its own</td></tr>
+<tr><td>can it run while the text is still arriving?</td><td>no, the encoder needs the whole input first</td><td>yes: a page's notes become readable when the page closes</td></tr>
+</table></div>
+<p style="font-size:14px">So E33 is a decoder-only language model with a compressed side memory. Its closest relatives:</p>
+<ul style="font-size:14px;margin-top:4px">
+<li>Perceiver AR;</li>
+<li>the Compressive Transformer;</li>
+<li>the Recurrent Memory Transformer;</li>
+<li>"gist" or summary-token models (AutoCompressors, ICAE).</li>
+</ul>
+<p style="font-size:14px">An encoder–decoder keeps every input vector, so there the "notes" would be lossless. Here the compression is the point (the Vision), and it is also where the order of events gets lost (section 8).</p>
+
+<h3>13.2 Does E33 still follow encode → reason → decode? Is it still on the road to agents talking in latents?</h3>
+<div class="card"><div class="svgwrap"><svg id="qa-erd" viewBox="0 0 1060 250" role="img" aria-label="Encode, reason, decode: what E33 does today"></svg></div></div>
+<div class="grid g3">
+<div class="card"><div class="lab">encode</div><span class="pill p-yes">yes</span><p style="margin:6px 0 0;font-size:14px">The writer turns every page into 32 notes, written once, from the page's words only. Each note serves about 6 new tokens: the first rung of the compression ladder.</p></div>
+<div class="card"><div class="lab">reason</div><span class="pill p-part">in the wrong place</span><p style="margin:6px 0 0;font-size:14px">The loop refines the <b>reading token's</b> state, not the notes. Notes never change and never read each other, so nothing is reasoned "in concept space". And today the loop does no task work at all (rounds 1–4 score the same).</p></div>
+<div class="card"><div class="lab">decode</div><span class="pill p-part">only through the reader</span><p style="margin:6px 0 0;font-size:14px">The main path writes text after consulting the notes. Nothing turns notes back into text, so nobody has checked what a note "says" on its own.</p></div>
+</div>
+<p style="font-size:14px"><b>Agents talking in latents (A2A).</b> A message between models needs three things:</p>
+<ol style="font-size:14px;margin-top:4px">
+<li><b>Self-contained.</b> The notes pass: written from the page alone, with no dependence on who reads them.</li>
+<li><b>Readable by a model that did not write it.</b> The notes fail: their keys are tuned to this reader's questions, and no other model has ever read them.</li>
+<li><b>Smaller than the text.</b> The notes fail badly. A page's 32 notes hold 32 × (64 + 64) = 4,096 numbers for 192 new tokens. In 16-bit numbers that is 65,536 bits, against about 2,300 bits for the text itself (12 bits per token): <b>28 times larger</b>. The roadmap's ladder (6 → 16 → 32 → … → 1,024 tokens per note) is what has to close this gap.</li>
+</ol>
+<p style="font-size:14px">Verdict: on course for "encode" and for the form of the message (a fixed, portable notebook), off course for "reason" and "small message". Two small additions point it back without upheaval:</p>
+<ul style="font-size:14px;margin-top:4px">
+<li><b>A read-back test.</b> A small separate decoder rebuilds the page from its notes, evaluation only. It measures what a note carries for a stranger.</li>
+<li><b>A predict-the-next-page loss</b> on the notes (in the spirit of LeCun's JEPA: predict a representation, not words). The notes would become a summary of the document, not just an index for one reader.</li>
+</ul>
+<p style="font-size:14px">Neither is needed for T4–T7. Both belong to the A2A track.</p>
+
+<h3>13.3 Why does the notebook writer have its own "pre-embedding" layers?</h3>
+<div class="card"><div class="svgwrap"><svg id="qa-emb" viewBox="0 0 1060 220" role="img" aria-label="One token table, two adapters"></svg></div></div>
+<p style="font-size:14px"><b>The embedding itself is shared.</b> Both paths read the same 4,096 × 256 token table. What differs is the small adapter after it:</p>
+<ul style="font-size:14px;margin-top:4px">
+<li><b>Main path:</b> 256 → 576 numbers through a projection plus a small gated layer.</li>
+<li><b>Writer:</b> 256 → 256 through its own projection (66k numbers), then 2 page layers that mix the words of one page in both directions.</li>
+</ul>
+<p style="font-size:14px">Why it was built this way:</p>
+<ol style="font-size:14px;margin-top:4px">
+<li><b>Width.</b> The writer is kept narrow and cheap: 4.0M of the 29.9M parameters.</li>
+<li><b>Independence.</b> Notes depend only on the page's words. Every page is therefore written at once, in parallel, before the main path runs. There is no loop between the reader's states and the notes, and the notebook is a stand-alone object (the A2A point above).</li>
+<li><b>Context inside the page.</b> The page layers look both ways. The main path's local layers only look back 16 tokens.</li>
+</ol>
+<p style="font-size:14px"><b>The price.</b> A note cannot use anything the main path has worked out: who "she" is when the name sits on another page, or what the story is about.</p>
+<ul style="font-size:14px;margin-top:4px">
+<li>On the text checks the price is small, because every fact sentence spells out its name.</li>
+<li>On real text it would be a real limit.</li>
+</ul>
+<p style="font-size:14px"><b>The cheap variant, already in the sweep plan:</b> the writer reads the prelude's output, projected down to 256, instead of the bare table vectors. Each word then arrives mixed with its 16 neighbours, and pages are still written in parallel. It is expected to help crowded lookup. The chance that it fixes any of T4–T7: low (about 20 %).</p>
+
+<h3>13.4 How could the loop join two distant facts?</h3>
+<div class="card">
+<div class="ctl"><span class="lab">round</span><span class="seg" id="qa-rsel"></span></div>
+<div class="svgwrap"><svg id="qa-hop" viewBox="0 0 1060 300" role="img" aria-label="Two-hop read across loop rounds"></svg></div>
+<p id="qa-hop-txt" style="font-size:14px;margin:6px 0 0"></p>
+</div>
+<p style="font-size:14px">One read cannot answer "where does the teacher of Lumo live?". The query knows "teacher of Lumo" but not "Pim", and "Pim" is what finds the second fact. The loop is a pointer chase: each round reads with a question rewritten from the last round's answer.</p>
+<p style="font-size:14px">Three things must hold:</p>
+<ol style="font-size:14px;margin-top:4px">
+<li>the bridge word ("Pim") must survive in the note's <b>value</b>, the part that is copied out, not only in its key;</li>
+<li>the think layer must turn "what I just read" into "what I ask next";</li>
+<li>training must reward round 2 for reading something different from round 1.</li>
+</ol>
+<p style="font-size:14px">On text none of the three is trained today:</p>
+<ul style="font-size:14px;margin-top:4px">
+<li>the bridge question is never asked;</li>
+<li>the round exits score the next word of every story token;</li>
+<li>the measured result is that rounds 2–4 change nothing.</li>
+</ul>
+<p style="font-size:14px">On DNA the loop joined two facts only after a 1-hop stage (94 % in 2 of 3 seeds), and reached 97.8 % with a target on round 1's answer. The text runs started today add the bridge questions first. A round target (round 1 must name "Pim") is the next step if the bridge alone does not do it.</p>
+<div class="tw"><table id="qa-rtab" class="qa-t"></table></div>
+
+<h3>13.5 The review again, as LeCun and Karpathy would push it, with today's evidence</h3>
+<p style="font-size:14px">Same rule as section 11: a model change is proposed only where dense shows the skill is learnable here, and the confidence is the chance that the <b>model</b>, not the recipe or the seed, is the cause. What changed since 15 Oct is marked.</p>
+<div class="grid g2">
+<div class="card"><div class="lab">the Karpathy pass: data, evals, one change at a time</div>
+<ol style="margin:6px 0 0;padding-left:20px;font-size:14px">
+<li><b>"Your data never asks for the skill you grade."</b> Compose and deduce never ask the step in between, and 2 in 3 latest questions are answerable from the last 256 tokens. <i>Fix:</i> bridge questions (running), then a far-back latest share only if E33e misses.</li>
+<li><b>"Every round of the loop must earn its compute."</b> 2.9× the training time for story loss only, and rounds 1 = 4 on the exams. <i>Fix:</i> give the rounds a job (round targets on the bridge), or drop to 2 rounds and spend the time on tokens.</li>
+<li><b>"Watch per-task training loss, not only exams."</b> A task's answer loss during training shows whether it is being learned at all, long before the exams at 20 % steps. <i>Fix:</i> log the answer loss per task (cheap).</li>
+<li><b>"Seeds before claims."</b> The notebook switches on in 2 of 3 E33 runs. <i>Fix:</i> every claim gets two runs, and the switch-on is read off far lookup at 4k and the notebook-off check.</li>
+</ol></div>
+<div class="card"><div class="lab">the LeCun pass: state, latent reasoning, the right inductive bias</div>
+<ol style="margin:6px 0 0;padding-left:20px;font-size:14px">
+<li><b>"Latest is state tracking. An append-only log needs order, or it needs state."</b> The cheapest step is order among matches (E33e, running). The bigger step, later, is a few entity-state slots that a page can overwrite (EntNet-style).</li>
+<li><b>"Reasoning is iterating on a representation toward a target."</b> The loop iterates, but nothing defines the target. <i>Fix:</i> round targets (round 1 must name the bridge). This is also what made DNA compose at 97.8 %.</li>
+<li><b>"Predict representations, not tokens."</b> A small predict-the-next-page loss on the notes (JEPA-style) makes the notebook a model of the document rather than an index for one reader. It is the A2A-aligned step, not a T4–T7 fix.</li>
+<li><b>"Counting is not a softmax."</b> A weighted average cannot say "seven". <i>Fix:</i> a null note per head, so the read can attend to nothing, and the mass on real notes then tracks how many there are.</li>
+</ol></div>
+</div>
+<div class="tw"><table id="qa-wtab" class="qa-t"></table></div>
+
+<h3>13.6 Runs started on 16 Oct</h3>
+<div class="tw"><table id="qa-runs" class="qa-t"></table></div>
+<p style="font-size:13px;color:var(--fg2)">One change per run against the 8-questions recipe (30M, plain input, 1.5B tokens, the same exams). The bridge data is the old data plus up to 4 bridge questions at the end of every compose and deduce document, after the task's own questions, so none can be read off an answer above it. Exams and every other document are unchanged.</p>
 
 <details class="hist" id="history"><summary><b>History: the DNA chain test, 2–4 Oct 2026 (kept as written)</b>: the read–think–reread design on the 4-layer DNA model, the trained runs, and why every arm stopped at the guessing floor. Section numbers below are the old page's.</summary>
 
@@ -557,10 +683,10 @@ const VERS=[
   what:'E33 plus one signed slope per head: a note\'s score drops by slope × log(1 + pages back). Outside the key, so content matching is untouched. Slopes start at 0, so step 0 is exactly E33.',
   res:'Both runs switched on (far lookup 75 % at 4k, 93 % at 16k) but the slopes stayed near 0 (largest 0.14) and latest stayed at 16–21 % at 4k: the stop rule set before the runs. With slopes set by hand on run 1: +1 lifts latest at 16k from 2 % to 33 % but halves far lookup; +3 erases far facts.',
   code:'lm_note_age = "log"'},
- {id:'e33e',name:'E33e',tag:'rank among matching notes (proposal)',when:'proposal · 15 Oct',st:['p-part','proposed'],
-  what:'Instead of "how many pages back", lower a note\'s score by how many <i>matching</i> notes are newer than it: a soft count. Anna\'s newest move has no newer match; a lone fact in a lookup has none either, so lookup is untouched.',
-  res:'Not built. A training-free check on E33d\'s weights comes first (section 11, experiment 2).',
-  code:'—'}];
+ {id:'e33e',name:'E33e',tag:'order among matching notes',when:'16 Oct · text',st:['p-info','training'],
+  what:'Instead of "how many pages back", a note\'s score drops by s<sub>h</sub> · log(1 + how many <i>newer</i> notes match the question about as well as its best note): a soft count, computed from the read\'s own scores. Anna\'s newest move has no newer match; a lone fact in a lookup has none either, at any length. Same per-head strength as E33d, starting at 0.',
+  res:'Checked first with no training, one fixed strength (2) on trained weights, exam set: E33 run 1 latest at 16k 5 → 41 % with far lookup 92 → 91 %; E33d run 1 2 → 30 % with lookup 93 → 92 %. Training run started 16 Oct on Odra (section 13).',
+  code:'lm_note_age = "rank" · evaluation/text_checks.py: e33e_plain'}];
 let VSEL='e33t';
 function drawVers(){document.getElementById('vchips').innerHTML=VERS.map(v=>`<button class="vchip${v.id===VSEL?' on':''}" data-v="${v.id}"><b>${v.name}</b><span>${v.tag}</span><br><span>${v.when}</span><br><span class="pill ${v.st[0]} st">${v.st[1]}</span></button>`).join('');
  document.querySelectorAll('.vchip').forEach(b=>b.onclick=()=>{VSEL=b.dataset.v;drawVers();});
@@ -570,7 +696,7 @@ function drawVers(){document.getElementById('vchips').innerHTML=VERS.map(v=>`<bu
  const g=document.getElementById('vgo');if(g)g.onclick=()=>{P.ver=v.id;segOn('pver',v.id);drawPipe();};
  document.getElementById('vtable').innerHTML='<tr><th>version</th><th>where</th><th>reads the notebook</th><th>latest at 4k</th><th>compose</th><th>story loss</th><th>status</th></tr>'+
   [['E31c','text','3 of 3 runs','22–24 %','guessing','1.564','base'],['E33, first form','DNA','—','—','no gain (pchain)','—','killed'],['E33a','DNA','—','—','2 hops 94 % (2 of 3) with a 1-hop stage','—','composes on DNA'],
-   ['E33 on text','text','2 of 3 runs','20–22 %','guessing','1.519–1.522','current'],['E33d','text','2 of 2 runs','16–21 %','guessing','1.521','stopped'],['E33e','text','—','—','—','—','proposed'],['dense (reference)','text','no notebook','18–82 % (2 of 3 learned it)','guessing','1.537–1.548','ceiling at 4k']]
+   ['E33 on text','text','2 of 3 runs','20–22 %','guessing','1.519–1.522','current'],['E33d','text','2 of 2 runs','16–21 %','guessing','1.521','stopped'],['E33e','text','training','probe: 28–32 % (no training)','—','—','training'],['dense (reference)','text','no notebook','18–82 % (2 of 3 learned it)','guessing','1.537–1.548','ceiling at 4k']]
   .map(r=>`<tr>${r.map((c,i)=>`<td${i===0?' style="font-weight:700"':''}>${c}</td>`).join('')}</tr>`).join('');}
 
 /* ================= 2 · pipeline ================= */
@@ -1039,7 +1165,118 @@ document.getElementById('oslope').oninput=e=>{O.s=+e.target.value;drawOrder();};
 segBind('mgeo',v=>{MG=+v;drawMask();});
 renderAll();matchMedia('(prefers-color-scheme: dark)').addEventListener('change',renderAll);
 
-/* ===== history (DNA chain test, 2–4 Oct) ===== */
+/* ================= 13 · your questions (16 Oct) ================= */
+function qaArrow(s,x1,y1,x2,y2,col,id,dash){el('path',{d:`M${x1},${y1} L${x2},${y2}`,stroke:col,'stroke-width':1.6,fill:'none','marker-end':`url(#${id})`,'stroke-dasharray':dash||''},s);}
+function drawQaEncdec(){const s=document.getElementById('qa-encdec');if(!s)return;s.innerHTML='';
+ const B=C('--blue'),V=C('--violet'),G=C('--green'),M=C('--muted'),T=C('--teal');mk(s,'qa1',M);
+ el('text',{x:20,y:24,'font-size':14,'font-weight':750},s,'Classical encoder–decoder');
+ el('text',{x:560,y:24,'font-size':14,'font-weight':750},s,'E33 (decoder-only with a compressed side memory)');
+ // left
+ box(s,20,250,230,40,M,.12,'input tokens (N)','the whole input, both directions',12);
+ box(s,20,165,230,50,V,.14,'encoder · L layers','keeps N vectors, one per token',12);
+ box(s,290,250,220,40,M,.12,'output so far','a separate sequence',12);
+ box(s,290,140,220,75,B,.12,'decoder · L layers','self-attention + cross-attention',12);
+ box(s,290,60,220,40,G,.14,'next output token','',12);
+ qaArrow(s,135,250,135,217,M,'qa1');qaArrow(s,400,250,400,217,M,'qa1');qaArrow(s,400,140,400,102,M,'qa1');
+ el('path',{d:'M250,190 C270,190 270,178 288,178',stroke:V,'stroke-width':2.2,fill:'none','marker-end':'url(#qa1)'},s);
+ el('text',{x:135,y:155,'text-anchor':'middle','font-size':10.5,class:'s'},s,'all N vectors, read by every decoder layer');
+ // right
+ box(s,560,270,480,34,M,.12,'one stream: document · question · answer','4,096 tokens in training',12);
+ box(s,560,195,190,48,V,.14,'writer (4.0M)','page → 32 notes, written once',12);
+ box(s,560,110,190,60,V,.22,'notebook','32 notes per page; fixed',12);
+ box(s,790,215,250,32,B,.12,'prelude · 2 local layers','',12);
+ box(s,790,150,250,48,B,.16,'core: global read + think','tied, × 4 rounds',12);
+ box(s,790,95,250,32,B,.12,'coda · 4 local layers','',12);
+ box(s,790,45,250,32,G,.14,'next token','',12);
+ qaArrow(s,655,270,655,245,M,'qa1');qaArrow(s,915,270,915,249,M,'qa1');qaArrow(s,655,195,655,172,M,'qa1');
+ qaArrow(s,915,215,915,200,M,'qa1');qaArrow(s,915,150,915,129,M,'qa1');qaArrow(s,915,95,915,79,M,'qa1');
+ el('path',{d:'M750,140 C770,140 770,172 788,172',stroke:V,'stroke-width':2.2,fill:'none','marker-end':'url(#qa1)'},s);
+ el('text',{x:756,y:134,'font-size':10.5,class:'s'},s,'closed pages');
+ el('path',{d:'M1040,174 C1056,174 1056,150 1042,150',stroke:T,'stroke-width':1.6,fill:'none'},s);
+ el('text',{x:560,y:322,'font-size':11,class:'m'},s,'The read also sees the last 256 tokens as they are; everything older reaches it only through the notes.');}
+
+function drawQaErd(){const s=document.getElementById('qa-erd');if(!s)return;s.innerHTML='';
+ const V=C('--violet'),B=C('--blue'),G=C('--green'),A=C('--amber'),M=C('--muted'),R=C('--red');mk(s,'qa2',M);
+ el('text',{x:20,y:22,'font-size':13,'font-weight':750},s,'The Vision');
+ box(s,20,36,300,44,V,.14,'encode: text → concept vectors','',12.5);box(s,380,36,300,44,A,.14,'reason: in concept space','',12.5);box(s,740,36,300,44,G,.14,'decode: concepts → text','',12.5);
+ qaArrow(s,320,58,378,58,M,'qa2');qaArrow(s,680,58,738,58,M,'qa2');
+ el('text',{x:20,y:118,'font-size':13,'font-weight':750},s,'E33 today');
+ box(s,20,132,300,58,V,.22,'writer: page → 32 notes','✓ one page at a time, from its words',12.5);
+ box(s,380,132,300,58,A,.08,'loop: refines the reading token','✗ notes never change; rounds 2–4 add nothing',12.5,true,'5 4');
+ box(s,740,132,300,58,B,.14,'main path writes the text','~ only after reading notes; no notes → text',12.5);
+ qaArrow(s,320,161,378,161,M,'qa2');qaArrow(s,680,161,738,161,M,'qa2');
+ el('text',{x:20,y:222,'font-size':11.5,class:'s'},s,'A2A message test: self-contained ✓ · readable by another model ✗ (keys tuned to one reader) · smaller than the text ✗ (28× larger at 6 tokens per note)');
+ el('text',{x:20,y:240,'font-size':11.5,class:'m'},s,'The compression ladder (6 → 16 → … → 1,024 tokens per note) is what must close the size gap; a read-back test would measure the second point.');}
+
+function drawQaEmb(){const s=document.getElementById('qa-emb');if(!s)return;s.innerHTML='';
+ const V=C('--violet'),B=C('--blue'),M=C('--muted'),G=C('--green');mk(s,'qa3',M);
+ box(s,410,150,240,46,M,.16,'token table 4,096 × 256','shared: 1.05M numbers',12.5);
+ box(s,40,70,330,46,V,.14,'writer adapter 256 → 256','66k numbers · then 2 page layers (both ways)',12);
+ box(s,690,70,330,46,B,.14,'main adapter 256 → 576','projection + small gated layer · then norm',12);
+ box(s,40,8,330,40,V,.24,'notes (written once, in parallel)','',12);box(s,690,8,330,40,B,.18,'prelude → loop → coda','',12);
+ qaArrow(s,470,150,300,118,M,'qa3');qaArrow(s,590,150,760,118,M,'qa3');qaArrow(s,205,70,205,50,M,'qa3');qaArrow(s,855,70,855,50,M,'qa3');
+ el('path',{d:'M690,28 C560,28 520,28 372,28',stroke:G,'stroke-width':1.6,fill:'none','stroke-dasharray':'5 4','marker-end':'url(#qa3)'},s);
+ el('text',{x:430,y:20,'font-size':10.5,class:'s'},s,'option: writer reads the prelude instead');
+ el('text',{x:410,y:214,'font-size':11,class:'m'},s,'Gradient reaches the table from both paths.');}
+
+const QHOP=[
+ {t:'Round 1. The question token asks "teacher of Lumo". Of all notes, the one written from "Pim was the teacher of Lumo" (page 3) matches best and its value is copied in. The think layer has 16 tokens of view and the new value: it can turn "I read: Pim" into "ask about Pim".',r:[3],q:'teacher of Lumo',st:'+ Pim'},
+ {t:'Round 2. Same read weights, a new query, because the token\'s state now holds "Pim". The best match is now the note from "Pim lived in Selby" (page 40), 37 pages from the first fact. No single read could have found it: "Pim" is not in the question.',r:[40],q:'where does Pim live',st:'+ Selby'},
+ {t:'Round 3. Nothing new to look up: a trained loop should keep the answer (the round marker tells the layer which round it is).',r:[40],q:'(settle)',st:'Selby'},
+ {t:'Round 4. The coda decodes the state into "Selby". In training, rounds 1–3 are also decoded: on text every story token is scored at every round, so nothing rewards round 1 for preparing round 2. The measured result: rounds 1 to 4 give the same scores.',r:[40],q:'(decode)',st:'→ Selby'}];
+let QR=0;
+function drawQaHop(){const s=document.getElementById('qa-hop');if(!s)return;s.innerHTML='';
+ const V=C('--violet'),B=C('--blue'),M=C('--muted'),A=C('--amber'),G=C('--green');mk(s,'qa4',A);
+ const r=QHOP[QR];const n=48,x0=30,w=1000/n;
+ el('text',{x:30,y:14,'font-size':12,class:'m'},s,'the notebook of a 9k-token document: one box per page (32 notes each)');
+ for(let i=0;i<n;i++){const hit=r.r.includes(i),was=QR>0&&i===3;el('rect',{x:x0+i*w,y:42,width:w-2,height:26,rx:3,fill:hit?A:V,'fill-opacity':hit?.85:(was?.45:.16),stroke:hit?A:'none'},s);}
+ el('text',{x:x0+3*w,y:36,'text-anchor':'start','font-size':11,class:'s'},s,'Pim was the teacher of Lumo');
+ el('text',{x:x0+41*w,y:36,'text-anchor':'end','font-size':11,class:'s'},s,'Pim lived in Selby');
+ const rx=380;for(let k=0;k<4;k++){const on=k===QR,done=k<QR;box(s,rx+k*165,190,150,52,on?B:M,on?.22:(done?.12:.06),`round ${k+1}`,k<=QR?QHOP[k].st:'',12.5,on);}
+ box(s,40,190,280,52,G,.12,'question token','"Where does the teacher of Lumo live?"',12);
+ const qx=rx+QR*165+75;r.r.forEach(p=>{el('path',{d:`M${qx},188 C${qx},140 ${x0+p*w+w/2},130 ${x0+p*w+w/2},72`,stroke:A,'stroke-width':2.2,fill:'none','marker-end':'url(#qa4)'},s);});
+ el('text',{x:qx,y:268,'text-anchor':'middle','font-size':11.5,'font-weight':650},s,'query: '+r.q);
+ document.getElementById('qa-hop-txt').textContent=r.t;}
+
+/* rounds probe: E33 run 1, loop stopped after r rounds (exams, 400 items per cell; far facts for quote / lookup / keyed) */
+const QRND={tasks:[['latest','late4k','latest at 4k'],['latest16','late16k','latest at 16k'],['lookup','look16k','far lookup at 16k'],['keyed','keye16k','far keyed at 16k'],['quote','quot16k','far quote at 16k'],['count','coun4k','count at 4k'],['compose','comp4k','compose (2 steps) at 4k'],['compose1','st:comp4k','compose, one step, at 4k'],['deduce','dedu4k','deduce (2 steps) at 4k'],['deduce1','st:dedu4k','deduce, one step, at 4k']],
+ r:{1:{'late4k':22,'late16k':7,'look16k':91,'keye16k':91,'quot16k':90,'coun4k':24,'comp4k':8,'st:comp4k':8,'dedu4k':8,'st:dedu4k':6},
+    2:{'late4k':23,'late16k':7,'look16k':91,'keye16k':92,'quot16k':90,'coun4k':23,'comp4k':9,'st:comp4k':7,'dedu4k':8,'st:dedu4k':6},
+    3:{'late4k':22,'late16k':6,'look16k':91,'keye16k':92,'quot16k':89,'coun4k':24,'comp4k':8,'st:comp4k':6,'dedu4k':8,'st:dedu4k':6},
+    4:{'late4k':22,'late16k':5,'look16k':92,'keye16k':90,'quot16k':89,'coun4k':26,'comp4k':8,'st:comp4k':5,'dedu4k':8,'st:dedu4k':6}}};
+function drawQaRounds(){const t=document.getElementById('qa-rtab');if(!t)return;
+ t.innerHTML='<tr><th>E33 run 1, exam</th><th>1 round</th><th>2 rounds</th><th>3 rounds</th><th>4 rounds (as trained)</th><th>guessing</th></tr>'+
+ QRND.tasks.map(([k,key,lab])=>{const fl={late4k:20,late16k:20,'coun4k':9,'comp4k':8,'st:comp4k':8,'dedu4k':8,'st:dedu4k':8}[key]??8;
+  return `<tr><td>${lab}</td>${[1,2,3,4].map(r=>`<td>${QRND.r[r]&&QRND.r[r][key]!=null?QRND.r[r][key]+' %':'…'}</td>`).join('')}<td>${fl} %</td></tr>`;}).join('');}
+
+/* weak points, 16 Oct (what changed is marked) */
+const QW=[
+ ['Notes carry no order: latest fails once the last move leaves the 256-token raw window','T4','c','<b>New:</b> the order-among-matches term, put on trained weights with no training (strength 2, exam set): E33 run 1 latest at 16k 5 → 41 %, far lookup 92 → 91 %; E33d run 1 2 → 30 %, lookup 93 → 92 %; keyed −2 to −5. The missing piece is order, and the scores the read already has are good enough to find the matches.','85 → 90 %','E33e training run (started 16 Oct, Odra)'],
+ ['No bridge is ever taught: compose and deduce ask only the final answer','T5 · T7','c','Unchanged: every run at guessing, dense included, one-step forms too. <b>New:</b> stopping the loop after 1 round changes nothing, so the loop is not even trying.','25 %','Bridge-question data: dense, then E33 (started 16 Oct, Polonez)'],
+ ['The loop has no job on text: rounds 2–4 change no answer','T5 · T7','h','<b>New, measured:</b> rounds 1, 2, 3 and 4 score the same on all seven tasks (within 2 points). The round exits score story text, not answers, and no round is asked for the bridge.','60 %','Round targets on the bridge data (next, if the bridge alone does not compose)'],
+ ['Training rarely makes latest need the notebook','T4','h','About 2 in 3 training latest questions have the last move inside the raw window (rough simulation). Dense learned latest anyway, so pressure is not the only blocker; order is (row 1).','40 → 30 %','Only if E33e misses: a far-back latest share in the data'],
+ ['A softmax read averages: nothing counts','T6','m','<b>New:</b> by true count, every model gets 0 right most often (65–81 %) and bunches the rest; notebook models are within ±1 of the truth 55–65 % of the time: magnitude, not counting.','30 %','A null note per head (lets the read output "nothing" instead of averaging), after T4/T5'],
+ ['Notebook switch-on unreliable: E33 2 of 3 runs, E31c 3 of 3','all','h','Unchanged. Every claim run needs its switch-on checked (far lookup at 4k, notebook-off control).','30 %','Writer step-size multiplier, 3 short runs'],
+ ['Crowded pages: far lookup at 1k is 34 %, at 4k 76 %, at 16k 91 %','T2 · T3','m','<b>New view:</b> the rounds exam shows lookup falls as documents get <i>shorter</i>: 12 facts in 4–5 pages crowd each page\'s 32 notes, which are written from bare words.','50 %','The notebook-proportions sweep (section 12)'],
+ ['Weight decay pulls zero-start numbers (strengths, mixing weights) to 0','all','l','Adam moves a consistently useful number far faster than a 0.1 decay pulls it back; low priority. Changing it would also break comparability with every earlier run.','n/a','Exclude from decay in the next recipe version']];
+function drawQaWeak(){const t=document.getElementById('qa-wtab');if(!t)return;
+ t.innerHTML='<tr><th>weak point</th><th>tasks</th><th>severity</th><th>evidence (16 Oct)</th><th>chance the model is the cause</th><th>next test</th></tr>'+
+ QW.map(r=>`<tr><td style="font-weight:650">${r[0]}</td><td>${r[1]}</td><td><span class="pill ${SEV[r[2]][0]}">${SEV[r[2]][1]}</span></td><td>${r[3]}</td><td>${r[4]}</td><td>${r[5]}</td></tr>`).join('');}
+
+const QRUNS=[
+ ['Odra, 07:53 → about 08:40','No-training checks','order among matching notes on E33d run 1 (strength × gate sweep on fresh questions); E33 run 1 with the loop stopped after 1–4 rounds','done (this section)'],
+ ['Odra, from about 08:45, ~8.5 h with exams','E33e: E33 + order among matching notes, strengths learned from 0','does order lift latest without costing far facts? Pass: latest ≥ 60 % at 4k and ≥ 40 % at 16k, far lookup within 5 points of E33, story loss ≤ 1.53','running'],
+ ['Polonez, 08:08 → about 10:45','Dense on the bridge data','is one-step compose / deduce learnable at all once the steps are taught? Pass: one-step compose or deduce above 25 %','running'],
+ ['Polonez, about 11:05 → 17:30','E33 on the bridge data','does the loop chain the taught steps? Pass: one-step above 25 %; two-step compose above guessing at 4k','queued'],
+ ['Evening (chosen from the results)','second round','E33e with the bridge data if both lines work; a second seed of whichever passed; round targets if the bridge alone does not compose','planned']];
+function drawQaRuns(){const t=document.getElementById('qa-runs');if(!t)return;
+ t.innerHTML='<tr><th>where, when (CEST)</th><th>run</th><th>question it answers</th><th>status</th></tr>'+QRUNS.map(r=>`<tr><td>${r[0]}</td><td style="font-weight:650">${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join('');}
+
+function initQa(){const sel=document.getElementById('qa-rsel');if(sel){sel.innerHTML=[1,2,3,4].map(k=>`<button data-v="${k-1}"${k===1?' class="on"':''}>${k}</button>`).join('');segBind('qa-rsel',v=>{QR=+v;drawQaHop();});}
+ drawQaEncdec();drawQaErd();drawQaEmb();drawQaHop();drawQaRounds();drawQaWeak();drawQaRuns();}
+initQa();matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{drawQaEncdec();drawQaErd();drawQaEmb();drawQaHop();});
+
+/* ===== history (DNA, 3–9 Oct; kept from the earlier page) ===== */
 const S={dir:'fwd',loop:1,frz:false,det:false,view:'design'};
 /* measured on the trained 3-hop loop (seed 2), 4 Oct: read share per link at the answer position (mean of 32 rows; ≈30 % more goes to filler latents) */
 const ATT_M={'A→B':.047,'B→C':.048,'C→D':.049,'E→F':.059,'F→G':.059,'G→H':.059,'I→J':.059,'J→K':.059,'K→L':.059,'M→N':.059,'N→O':.059,'O→P':.059};

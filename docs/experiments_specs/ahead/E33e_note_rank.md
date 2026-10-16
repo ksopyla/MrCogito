@@ -97,4 +97,30 @@ then confirmed on the exam set.
 - the 100M tier.
 
 ## Result
-_(to fill: exam-time check, run 1)_
+**Exam-time check (16 Oct 07:53–08:45 CEST, Odra; no training).**
+
+The gate was chosen on 1,200 fresh development questions (latest, lookup, keyed and quote at 4k and 16k; never the exam set). The default gate (margin 1, sharpness 2) counted look-alikes and cost keyed up to 15 points at strength 2. The tighter gate (margin 0.5, sharpness 4) kept far lookup and lost keyed 7.
+
+On dev, E33d run 1 with the tighter gate at strengths 1 / 2 / 3 / 5:
+
+| strength | latest at 16k | far lookup at 16k |
+|---|---|---|
+| none (as trained) | 5 % | 94 % |
+| 1 | 22 % | 95 % |
+| 2 | 37 % | 95 % |
+| 3 | 39 % | 92 % |
+| 5 | 45 % | 90 % |
+
+On the exam set (400 per cell), strength 2, tighter gate:
+
+| model | latest at 16k | far lookup at 16k | keyed |
+|---|---|---|---|
+| E33 run 1 (never trained with any order term) | 5 % → **41 %** | 92 → 91 % | −2 points |
+| E33d run 1 | 2 % → **30 %** | 93 → 92 % | −5 points |
+
+- **Verdict against the bar set before the check** (latest at 16k above 33 %, far lookup within 5 points): pass on E33 run 1, a narrow miss on E33d run 1.
+- **Against the fixed page distance:** that bought 33 % on E33d run 1 at the cost of far lookup 93 → 52 %.
+- **Reading:** order is the missing piece for latest, and the read's existing scores find the matches well enough to count them.
+- **Training gate:** the training run uses the tighter gate.
+
+**Training run 1** (`q8r_e33e_s0_odra`, Odra, from 16 Oct about 08:45 CEST): _(to fill)_

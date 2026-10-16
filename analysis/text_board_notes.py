@@ -30,11 +30,21 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-15 16:30 UTC",
+    "as_of": "2026-10-16 06:30 UTC",
     "headline": "E31c, the notebook model without the loop, is the best architecture so far: on the current recipe it "
                 "learned to read far facts in 3 of 3 runs, better than dense at 4k and still at 16k. Nobody tracks the "
                 "latest move beyond 2k yet.",
     "where": [
+        "Checks without training (16 Oct 05:53-06:45 UTC, Odra, E33 session). (1) Ranking each note among the notes "
+        "that match the question about as well as its best one, one fixed strength on trained weights (exam set): E33 "
+        "run 1 latest at 16k 5 → 41 % with far lookup 92 → 91 %; E33d run 1 2 → 30 % with lookup 93 → 92 %; keyed "
+        "−2 to −5. A fixed page distance had bought 33 % only by halving far lookup. The match gate was chosen on fresh "
+        "questions, not the exams. (2) E33 run 1 with its loop stopped after 1, 2 or 3 rounds scores like 4 rounds on "
+        "every task (within 2 points): the loop does no task work. (3) By true count, every model gets 0 visits right "
+        "most often and bunches the rest: no model counts.",
+        "Started 16 Oct (author: fixes for T4-T7 and the next runs): E33e, E33 plus that ranking with strengths "
+        "learned from 0 (Odra); dense, then E33, on the bridge-question data — compose and deduce training documents "
+        "also ask the single steps of their chain (Polonez).",
         "Fixed page distance on E33d run 1 (exams only, 15 Oct 16:06-16:20 UTC, E33 session): +1 on every read head "
         "lifts latest at 16k from 2 % to 33 % (the last move picked 7 % → 47 %) but halves far lookup (93 → 52 %); +3 "
         "and +10 erase far facts; +10 on 4 of 9 heads keeps far facts and leaves latest at guessing. The order signal "
@@ -84,9 +94,11 @@ STATUS = {
         "story; latest's floor is 20 %; dense is not compared past 4k. Nothing had to be retrained.",
     ],
     "next": [
-        "Odra: free since 16:20 UTC 15 Oct. Polonez: free since 14:18 UTC.",
-                "Open for the author: whether to "
-        "start the notebook-proportions sweep; give E33 more tokens or keep the equal budget.",
+        "Polonez: dense on the bridge data from 06:08 UTC 16 Oct (about 2.5 h with exams), then E33 on the same data "
+        "after a 20-minute pause (about 6.5 h): done about 15:30 UTC.",
+        "Odra: E33e from about 06:40 UTC 16 Oct (about 8.5 h with exams): done about 15:00 UTC.",
+        "Open for the author: whether to start the notebook-proportions sweep; give E33 more tokens or keep the "
+        "equal budget.",
     ],
 }
 
@@ -160,6 +172,16 @@ PROTOCOL_LOG = [
      "effect_text": "Adopted 20:40 UTC 13 Oct after three dense runs: lookup and keyed learned in 3 of 3 (46-63 % on far "
                     "facts at 4k), latest and count in 2 of 3, quote in 1 of 3. The 1-question rounds are history "
                     "(\"earlier recipe\"); E33 and E31c are retrained on this recipe with their own step sizes.",
+     "learned": ""},
+    {"date": "2026-10-16", "version": "bridge-question data (runs of E33 and dense)", "kind": "recipe",
+     "change": "Compose and deduce training documents end with up to 4 more questions: the single steps of their chain "
+               "asked on their own (\"Who is the teacher of Lumo?\", \"What is Pim?\", \"What is a wump like?\"), "
+               "after the task's own questions. Every other document, and every exam, is unchanged.",
+     "why": "Every model, dense included, guesses on compose and deduce, even at one step; training only ever asks "
+            "for the final answer. On DNA the loop joined two facts only after a one-step stage.",
+     "effect": "planned",
+     "effect_text": "A separate data build (text_checks_v2q8b4, 16 Oct; same tokenizer, same exams). Used only by the "
+                    "runs marked \"bridge data\"; the 8-questions recipe stays the reference until they report.",
      "learned": ""},
 ]
 
@@ -275,6 +297,23 @@ CLAIMS = [
      "evidence": "Every run at guessing on two-step compose and deduce (10 Oct on), and on the one-step versions "
                  "(exams v2.1, 13 Oct): dense 9-10 %, E33 6-8 %, E31c 4-10 % (guessing 8 %).",
      "settle": "The reliable recipe first; these relations may need more data or a larger model."},
+    {"claim": "What latest lacks on the notebook is order, and ranking notes among their matches adds it without "
+              "costing far facts.", "state": "single run", "since": "2026-10-16",
+     "evidence": "No training, one fixed strength (2), exam set: E33 run 1 latest at 16k 5 → 41 %, far lookup 92 → "
+                 "91 %; E33d run 1 2 → 30 %, lookup 93 → 92 %; keyed −2 to −5 (look-alike names count as matches). A "
+                 "fixed page distance bought 33 % at the cost of far lookup 93 → 52 %. Gate chosen on fresh questions.",
+     "settle": "E33e training run (Odra, 16 Oct): latest ≥ 60 % at 4k with far lookup within 5 points of E33."},
+    {"claim": "E33's loop does no task work on text: 1 round scores like 4.", "state": "single run",
+     "since": "2026-10-16",
+     "evidence": "E33 run 1 with the loop stopped after 1 / 2 / 3 rounds: every task within 2 points of the trained 4 "
+                 "rounds (latest at 4k 22 / 23 / 22 vs 22 %, far lookup at 16k 91 / 91 / 91 vs 92 %, compose 8 %, deduce "
+                 "8 %). Its gain is story loss only (1.520 vs E31c 1.564).",
+     "settle": "Rounds exams on a second E33 run; a task for the rounds (round targets) after the bridge data."},
+    {"claim": "No model counts: they know zero and roughly how many, not the number.", "state": "holds",
+     "since": "2026-10-16",
+     "evidence": "Accuracy by true count at 4k, 8 runs: 0 visits right 38-81 %, other counts 0-65 % with no fall-off "
+                 "with size; notebook models within one of the truth 55-65 % of the time.",
+     "settle": "—"},
     {"claim": "Plain input (no word-pair/triple tables) makes dense learn.", "state": "retracted", "since": "2026-10-11",
      "evidence": "Seed 0 learned four tasks (10 Oct); seed 1 learned nothing (11 Oct 08:43).",
      "settle": "—"},
@@ -427,6 +466,29 @@ LADDER = [
      "when": "15 Oct 03:08 → 10:49 (Polonez, 4 GPUs, same 96-row batch; one 20-minute heat pause)",
      "why": "Requested by the author through the E33 reasoning-fixes session (14 Oct); spec E33d_note_page_distance. "
             "Step size borrowed from E33's tuning (1e-3): the same model plus 9 numbers that start at 0."},
+    {"id": None, "start": "2026-10-16", "data": "v2", "standing": "history",
+     "run": "Checks without training (Odra; exams only, E33 session)",
+     "model": "E33d run 1 + the rank-among-matches term (fixed strength 1-5, gate sweep); E33 run 1 with 1-4 loop rounds",
+     "tokens": "none (no training)",
+     "exams": "fresh development questions (latest / lookup / keyed / quote, 4k and 16k); v2 + v2.1 exams for the rounds",
+     "result": "Rank term (strength 2, exam set): latest at 16k E33 5 → 41 %, E33d 2 → 30 %, far lookup within 1 point. "
+               "Rounds: 1, 2, 3 rounds = 4 rounds on every task.",
+     "when": "16 Oct 05:53 → 06:45 UTC", "why": "Author: fixes for T4-T7 (16 Oct); the cheapest tests first."},
+    {"id": "q8r_e33e_s0_odra.odra", "start": "2026-10-16", "data": "v2", "standing": "running",
+     "run": "E33e run 1 (Odra)", "model": "E33e · 30M, plain, seed 0 (E33 + rank among matching notes)",
+     "tokens": "1.5B, 8 questions per document", "exams": "v2 + v2.1, 1k-16k; latest picks and strengths logged",
+     "result": "—", "when": "16 Oct from about 06:40 UTC",
+     "why": "Author: fixes for T4-T7 (16 Oct); spec E33e_note_rank. Gate set on fresh questions, never the exams."},
+    {"id": "q8b_dense_s0_polonez.polonez", "start": "2026-10-16", "data": "v2 + bridge", "standing": "running",
+     "run": "Dense on the bridge data (Polonez)", "model": "dense · 30M, plain, seed 0",
+     "tokens": "1.5B, 8 questions + up to 4 bridge questions per compose / deduce document", "exams": "v2 + v2.1, 1k-16k",
+     "result": "—", "when": "16 Oct from 06:08 UTC",
+     "why": "Is one-step compose / deduce learnable at all once its steps are taught? The cheapest learner first."},
+    {"id": "q8b_e33_s0_polonez.polonez", "start": "2026-10-16", "data": "v2 + bridge", "standing": "queued",
+     "run": "E33 on the bridge data (Polonez)", "model": "E33 · 30M, plain, seed 0",
+     "tokens": "1.5B, as the dense run", "exams": "v2 + v2.1, 1k-16k",
+     "result": "—", "when": "after the dense run and a 20-minute pause",
+     "why": "Does the loop chain the taught steps (two-step compose above guessing)?"},
 ]
 
 # Plain names for the architectures (first mention = name + what it is).
