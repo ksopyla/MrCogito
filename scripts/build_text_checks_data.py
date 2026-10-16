@@ -152,7 +152,7 @@ def language_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eo
             cur = []
 
 
-_VERSION = {"world": TEXT_WORLD_VERSION, "questions": 1, "tasks": TASKS}  # set from the arguments before workers fork
+_VERSION = {"world": TEXT_WORLD_VERSION, "questions": 1, "tasks": TASKS, "bridge": 0}  # set from the arguments before workers fork
 
 
 def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: int, seed: int,
@@ -166,7 +166,7 @@ def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: 
         for shrink in (1.0, 0.9, 0.8, 0.6):
             text = make_train_document(seed * 1_000_003 + k, stories, int(target * shrink), ntok,
                                        tasks=tuple(_VERSION["tasks"]), version=_VERSION["world"],
-                                       questions=_VERSION["questions"])
+                                       questions=_VERSION["questions"], bridge=_VERSION["bridge"])
             ids = encode(text)
             if len(ids) <= seq_len - 2:
                 rows.append(_row(ids, bos, eos))
@@ -297,12 +297,19 @@ def main():
     p.add_argument("--world_version", default=TEXT_WORLD_VERSION, help="generator version: v0 (published draft) or v1")
     p.add_argument("--train_questions", type=int, default=1,
                    help="questions per training world document (v1; about different cast members); exams keep one")
+    p.add_argument("--train_bridge", type=int, default=0,
+                   help="bridge questions per compose / deduce training document (the single steps of the chain, "
+                        "asked after the task's own questions); 0 = none (earlier builds)")
     p.add_argument("--tokenizer", default=None,
                    help="reuse this tokenizer folder instead of training one (e.g. the published one, so data versions compare)")
     args = p.parse_args()
     _VERSION["world"] = args.world_version
     _VERSION["questions"] = args.train_questions
     _VERSION["tasks"] = tuple(args.train_tasks)
+    _VERSION["bridge"] = args.train_bridge
+    if args.eval_from and args.eval_splits:
+        # eval/ becomes a link to the source build: writing a split here would overwrite that build's frozen exams
+        p.error("--eval_from links the source exams; pass --eval_splits with no values")
     wv = f"text-world-v{args.world_version.replace('text-world-', '').lstrip('v')}"
 
     out = Path(args.out_dir)
@@ -426,7 +433,7 @@ def main():
         "mix": {"story_rows": len(lang_tr), "world_rows": len(world_tr), "mean_story_row_tokens": m_lang,
                 "mean_world_row_tokens": m_world, "row_weights": [w_lang, w_world],
                 "mean_row_tokens": w_lang * m_lang + w_world * m_world,
-                "lang_token_share": f, "train_questions": args.train_questions,
+                "lang_token_share": f, "train_questions": args.train_questions, "train_bridge": args.train_bridge,
                 "train_tasks": list(args.train_tasks)},
         "eval_from": args.eval_from,
         "built_s": round(time.time() - t0, 1),

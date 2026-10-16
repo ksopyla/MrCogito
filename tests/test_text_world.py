@@ -355,3 +355,59 @@ def test_v2_published_data_is_byte_identical():
         for i in range(10):
             h.update(make_train_document(i, STORIES, 400 + 50 * i, ntok, version="v2", questions=q).encode())
     assert h.hexdigest() == "56bb1906d48ffd41d74157222c236094dac9b09ce8501b0471dab0ea01997ffc"
+
+
+# ---------------------------------------------------------------- bridge questions (training only, 2026-10-16)
+def _seed_for(task, start=0):
+    for s in range(start, start + 500):
+        if random.Random(s).choice(TASKS) == task:
+            return s
+    raise AssertionError(task)
+
+
+@pytest.mark.parametrize("task", TASKS)
+def test_bridge_off_and_other_tasks_keep_their_bytes(task):
+    s = _seed_for(task)
+    base = make_train_document(s, STORIES, 600, ntok, version="v2", questions=8)
+    assert make_train_document(s, STORIES, 600, ntok, version="v2", questions=8, bridge=0) == base
+    with_b = make_train_document(s, STORIES, 600, ntok, version="v2", questions=8, bridge=4)
+    if task in ("compose", "deduce"):
+        assert with_b != base and with_b.count("Question:") == base.count("Question:") + 4
+    else:
+        assert with_b == base
+
+
+@pytest.mark.parametrize("task", ["compose", "deduce"])
+def test_bridge_answers_are_stated_and_follow_the_task_questions(task):
+    for k in range(5):
+        s = _seed_for(task, 100 * k)
+        doc = make_train_document(s, STORIES, 900, ntok, version="v2", questions=8, bridge=4)
+        body, _, tail = doc.partition("\n\nQuestion:")
+        qs = re.findall(r"Question: (.*?)\nAnswer: (.*?)\.(?=\n|$)", "Question:" + tail)
+        own = [q for q, _ in qs if q.startswith("Where does") or q.endswith("like?") and not q.startswith("What is a ")]
+        brid = [(q, a) for q, a in qs if q.startswith(("Who is the teacher", "What is a ")) or
+                (q.startswith("What is ") and not q.endswith("like?"))]
+        assert len(brid) == 4
+        assert [q for q, _ in qs].index(brid[0][0]) >= len(own)  # bridges come after the task's own questions
+        for q, a in brid:
+            if task == "compose":
+                p = re.match(r"Who is the teacher of (.*)\?", q).group(1)
+                assert any(f in body for f in (f"{a} was the teacher of {p}.", f"{p} was taught by {a}.",
+                                               f"{p}'s teacher was {a}.", f"{p} learned to read from {a}",
+                                               f"{p} went to lessons with a teacher named {a}."))
+            elif q.endswith("like?"):
+                cat = re.match(r"What is a (.*) like\?", q).group(1)
+                assert f"Every {cat} is {a}." in body
+            elif q.startswith("What is a "):
+                cat = re.match(r"What is a (.*)\?", q).group(1)
+                assert f"Every {cat} is {a}." in body
+            else:
+                p = re.match(r"What is (.*)\?", q).group(1)
+                assert f"{p} is {a}." in body
+
+
+def test_bridge_never_reaches_the_exams():
+    for task in ("compose", "deduce"):
+        r = make_eval_record(task, 3, "id", 1500, None, STORIES, ntok, version="v2")
+        assert r["prompt"].count("Question:") == 1
+        assert "Who is the teacher" not in r["prompt"] and "What is a " not in r["prompt"]
