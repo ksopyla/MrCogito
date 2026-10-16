@@ -1,6 +1,6 @@
 # E33f — Notes on the wire (E33 trained as two agents: a question reads its document only through the notes)
 
-- **Status:** opened 2026-10-16, run queued on Polonez. The author asked for "a clear separation between memory,
+- **Status:** run 1 done 2026-10-16 (Polonez); main pass mark met, late-fact mark missed. The author asked for "a clear separation between memory,
   writing to the memory, and sending to another agent ... based on e33 ... work until you reach the goal", and on
   16 Oct: "my main goal was firstly to train the model which could write and read from memory, the e33 was one of
   the most promising". Code and run by the E33 session.
@@ -128,5 +128,41 @@ received and asks again; 4 rounds). All answers, exact; the number of distinct n
 - Late lookup at 4k rose from 54 to 69 % (13 late items: noisy), short of the 80 % pass mark.
 - Wire cost: B's requests are the larger part. One query per head (576 numbers) per round per answer token, about
   2,300 numbers per answer token over 4 rounds. They have not been compressed yet.
-- Pending: the full text-checks exam (400 items per cell) and the long documents (32k–128k).
+
+**Full text-checks exam** (400 items per cell, exact %, all items / far facts; E33f is split by construction, E33
+reads its own text):
+
+| task | 1k E33f | 1k E33 | 4k E33f | 4k E33 | 16k E33f | 16k E33 |
+|---|---|---|---|---|---|---|
+| lookup | 34 / 33 | 55 / 35 | 74 / 77 | 79 / 72 | 91 / 91 | 90 / 90 |
+| keyed | 25 / 26 | 45 / 21 | 63 / 66 | 73 / 69 | 91 / 92 | 88 / 90 |
+| quote | 6 / 5 | 33 / 0 | 15 / 16 | 25 / 0 | 23 / 24 | 0 / 0 |
+| latest | 15 | 95 | 4 | 22 | 6 | 4 |
+| count | 31 | 28 | 29 | 26 | 17 | 19 |
+| compose / deduce | 8 / 7 | 10 / 9 | 8 / 4 | 8 / 10 | 8 / 7 | 9 / 7 |
+
+Held-out story loss 1.516 (E33 1.525).
+
+**Long documents** (E33f, one request per read, 12 items per cell, exact %):
+
+| length | notes in A's notebook | lookup, all notes | lookup, ~8 notes sent | keyed, all | keyed, ~8 sent |
+|---|---|---|---|---|---|
+| 32k | ~5,500 | 83 | 92 | 92 | 75 |
+| 64k | ~10,900 | 92 | 100 | 100 | 100 |
+| 128k | ~21,800 | 100 | 92 (7 notes) | — | — |
+
+**Against the pass marks:**
+- Far lookup and keyed split ≥ 90 % of E33's own text at 4k and 16k: **met** (77 vs 72, 91 vs 90; 66 vs 69,
+  92 vs 90).
+- Late lookup at 4k ≥ 80 %: **missed** (about 69 %; E33 split 54 %, E33 own text about 93 %).
+- Best 16 notes keep ≥ 90 % of the all-notes score: met at 16k and for lookup at 4k (70 of 74), **missed** for keyed
+  at 4k (26 of 70).
+- Story loss within 0.03: **met** (1.516 vs 1.525).
+
+**What the split costs:** near facts. At 1k every fact sits in the raw window E33 reads, and E33f cannot see A's
+text. Lookup drops 55 → 34, keyed 45 → 25, quote 33 → 6, latest 95 → 15. Latest stays broken at every length.
+
+**Verdict:** E33f is the first trained model where agent A's notebook and agent B's reader are separate, and B answers
+far facts from a handful of fetched notes. A 128k-token document becomes about 8 notes per question (1,024 numbers).
+Near facts are the open gap.
 

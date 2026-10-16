@@ -30,11 +30,22 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-16 18:10 UTC",
+    "as_of": "2026-10-16 21:45 UTC",
     "headline": "E31c, the notebook model without the loop, is the best architecture so far: on the current recipe it "
                 "learned to read far facts in 3 of 3 runs, better than dense at 4k and still at 16k. Nobody tracks the "
                 "latest move beyond 2k yet.",
     "where": [
+        "Agent to agent (E35 and E33f, Polonez, 16 Oct 17:00-21:35 UTC, E33 session). (1) Three trained 16-vector message "
+        "channels carried no facts (0.5B tokens each): broadcast, steered by B's question, and B frozen with the loss on "
+        "answers only. B's answer surprise on far lookup at 4k was 2.31 / 2.32 / 2.32 with the real message against 2.35 / "
+        "2.32 / 4.74 empty and 2.32 / 2.32 / 2.33 with another document's: the frozen-B run teaches the answer format, not "
+        "the facts. (2) E33 split at its notebook, no training: B reads another document plus A's notes and answers far "
+        "lookup at 16k 93 % (own text 93 %). With one request per read of the loop (B sends its round queries, A returns "
+        "its 4 best notes), about 8 of 2,720 notes give 90 %. A single request after B's first read fails (0-30 %). "
+        "(3) E33f, E33 fine-tuned 0.3B tokens with every question cut off from the document's raw text (full exam, 400 "
+        "items): far lookup 4k / 16k 77 / 91 % (E33 on its own text 72 / 90 %), far quote 16 / 24 % (0 / 0 %), near facts "
+        "lose (latest at 1k 15 vs 95 %). With per-round requests about 8 notes answer far lookup at 16k-128k (92-100 %, "
+        "12 items per length): a 128k-token document becomes about 1,000 numbers per question.",
         "Odra stopped answering (checked 18:05 UTC 16 Oct: no ping or ssh, also not from Polonez over the LAN; possibly a "
         "power cut). The state of E33e run 1, started there about 06:45 UTC, is unknown until Odra is back.",
         "E33 on the bridge-question data (Polonez, 16 Oct 09:17-17:00 UTC, two bursts): stopped at the 24 GPU-hour cap at "
@@ -202,6 +213,20 @@ PROTOCOL_LOG = [
 # Claims register: every conclusion we have drawn, with its state. holds = repeated or overwhelming within its runs;
 # single run = one run, needs a second; open = not testable yet; retracted = disproved (kept, with the date).
 CLAIMS = [
+    {"claim": "At 30M and 0.5B tokens, a learned 16-vector message from agent A's notebook carries no facts to agent B.",
+     "state": "holds", "since": "2026-10-16",
+     "evidence": "E35 round 1 on Polonez, one run each: broadcast, steered by B's question, and B frozen with the loss on "
+                 "answers only. 0 % exact on every fact task at 1k-128k. B's surprise is the same with the real message "
+                 "and with another document's (far lookup at 4k: 2.31 vs 2.32, 2.32 vs 2.32, 2.32 vs 2.33). The receiver "
+                 "takes about 85 bits per vector even when the vectors are optimised per text (Cramming probe).",
+     "settle": "A transmitter trained much longer, or one that sends the notes themselves (next claim)."},
+    {"claim": "E33's notes are a working agent-to-agent channel: B answers far facts from about 8 of A's notes, fetched "
+              "with one request per read of the loop.", "state": "single run", "since": "2026-10-16",
+     "evidence": "Notes-budget exam (no training), 40 items per cell. B reads another document plus A's notes. Far lookup "
+                 "at 16k: own text 93 %, all of A's notes 93 %, 8 notes fetched by B's per-round requests 90 % (E33) and "
+                 "98 % (E33f, trained with the questions cut off from the text). Keyed at 16k: 95 % from 8 notes, both "
+                 "models. At 4k: 55-70 %, as with all notes. A single request after B's first read: 0-30 %.",
+     "settle": "Repeat on another E33 seed and at 32k-128k (running)."},
     {"claim": "With 1 question per training document, E31c without the loop does not use its notebook.",
      "state": "holds", "since": "2026-10-11",
      "evidence": "Three runs (mixed, quote-only, lookup-only): 0 % on far facts at every length, and the same scores "
@@ -512,11 +537,23 @@ LADDER = [
                "12 % (guessing 8 %); deduce 8 %. Bridge asked directly: teacher-of 69 %, category property 45 %.",
      "when": "16 Oct 06:08 → 08:57 UTC",
      "why": "Is one-step compose / deduce learnable at all once its steps are taught? The cheapest learner first."},
-    {"id": "q8b_e33_s0_polonez.polonez", "start": "2026-10-16", "data": "v2 + bridge", "standing": "queued",
+    {"id": "q8b_e33_s0_polonez.polonez", "start": "2026-10-16", "data": "v2 + bridge", "standing": "in use",
      "run": "E33 on the bridge data (Polonez)", "model": "E33 · 30M, plain, seed 0",
-     "tokens": "1.5B, as the dense run", "exams": "v2 + v2.1, 1k-16k",
-     "result": "—", "when": "after the dense run and a 20-minute pause",
-     "why": "Does the loop chain the taught steps (two-step compose above guessing)?"},
+     "tokens": "about 1.35B (stopped at the 24 GPU-hour cap, 90 %)", "exams": "v2 + v2.1, 1k-16k",
+     "result": "Far lookup 4k / 16k 79 / 91 %, keyed 73 / 88 %, latest 22 / 4 %, quote 25 / 0 %; compose and deduce at "
+               "guessing. Split at its notebook (B reads only A's notes): far lookup at 16k 93 %.",
+     "when": "16 Oct 09:17 → 17:00",
+     "why": "Does the loop chain the taught steps? No: two-step compose stays at guessing."},
+    {"id": "q8b_e33f_s0_polonez.polonez", "start": "2026-10-16", "data": "v2 + bridge", "standing": "in use",
+     "run": "E33f, notes on the wire (Polonez)", "model": "E33 warm start, each question reads its document only "
+                                                       "through the notes · 30M, plain, seed 0",
+     "tokens": "0.3B fine-tune (1,568 steps)", "exams": "v2 + v2.1, 1k-16k (split by construction)",
+     "result": "Split by construction. Far lookup 4k / 16k 77 / 91 % (E33 on its own text 72 / 90 %), keyed 66 / 92 % "
+               "(69 / 90 %), far quote 16 / 24 % (0 / 0 %); near facts lose (lookup at 1k 34 vs 55 %, latest 15 vs 95 %). "
+               "About 8 notes fetched by per-round requests answer far lookup at 16k-128k (92-100 %, 12 items). Story "
+               "loss 1.516 (E33 1.525).",
+     "when": "16 Oct 20:23 → 21:30",
+     "why": "Agent to agent: make the notebook carry everything a question needs, in few notes."},
 ]
 
 # Plain names for the architectures (first mention = name + what it is).
