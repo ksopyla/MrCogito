@@ -152,7 +152,7 @@ def language_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eo
             cur = []
 
 
-_VERSION = {"world": TEXT_WORLD_VERSION, "questions": 1, "tasks": TASKS, "bridge": 0, "a2a": False}  # set from the arguments before workers fork
+_VERSION = {"world": TEXT_WORLD_VERSION, "questions": 1, "tasks": TASKS, "bridge": 0, "a2a": False, "vocab": 0}  # set from the arguments before workers fork
 
 
 def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: int, seed: int,
@@ -173,6 +173,11 @@ def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: 
                 ids = encode(body) + [eos, bos] + encode("Question:" + rest)
             else:
                 ids = encode(text)
+            if _VERSION["vocab"] and not all(0 <= t < _VERSION["vocab"] for t in ids):
+                # a token id outside the vocabulary (2026-10-16 on Polonez: 2**62 + 1789, one flipped bit) — drop the
+                # row and draw the next document instead of writing garbage
+                print(f"warning: invalid token id in world row (seed {seed}, k {k}); skipped", flush=True)
+                break
             if len(ids) <= seq_len - 2:
                 rows.append(_row(ids, bos, eos))
                 break
@@ -356,6 +361,7 @@ def main():
                 cache[s] = r
         return r
 
+    _VERSION["vocab"] = len(tok)
     print(f"tokenizer: {len(tok)} tokens ({time.time() - t0:.0f}s)")
 
     # training mix
