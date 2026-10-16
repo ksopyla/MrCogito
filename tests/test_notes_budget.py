@@ -66,23 +66,32 @@ def test_keep_all_is_the_model_and_keep_none_is_notebook_off():
     assert not torch.allclose(off, base, atol=1e-3)
 
 
-def test_a_hidden_note_gets_no_attention():
+def test_a_hidden_note_is_never_read_but_still_scored():
+    """A hidden note's content cannot reach the logits (garbage in it changes nothing), while a capture still scores
+    it — the request score agent A computes over its whole notebook."""
     m = _model()
     ids = text_row(S=48).to(DEV)
     with torch.no_grad():
         m._note_capture = {"q_pos": torch.tensor([[47]], device=DEV)}
         m(ids)
         full = torch.stack(m._note_capture["mass"]).sum(0)[0, 0]
+        k, v, sp = m._last_notes
         nb = full.shape[0]
         top = int(full.argmax())
         keep = torch.ones(1, nb, dtype=torch.bool, device=DEV)
         keep[0, top] = False
         m._note_keep = keep
         m._note_capture = {"q_pos": torch.tensor([[47]], device=DEV)}
-        m(ids)
-        hid = torch.stack(m._note_capture["mass"]).sum(0)[0, 0]
-    m._note_keep = None
-    assert float(full[top]) > 0 and float(hid[top]) == 0.0
+        hidden = m(ids).logits
+        scored = torch.stack(m._note_capture["mass"]).sum(0)[0, 0]
+        m._note_capture = None
+        v2 = v.clone()
+        v2[:, top] = 100.0
+        m._notes_override = (k, v2, sp)
+        garbage = m(ids).logits
+    m._note_keep, m._notes_override = None, None
+    assert float(full[top]) > 0 and float(scored[top]) > 0
+    assert torch.allclose(hidden, garbage, atol=TOL)
 
 
 def test_b_reads_a_notes_over_its_own_text():

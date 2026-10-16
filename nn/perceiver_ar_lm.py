@@ -82,6 +82,7 @@ Hooks for the family (config fields only — no parameters unless enabled):
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
 import math
 from contextlib import contextmanager
@@ -1555,8 +1556,12 @@ def capture_note_mass(q, k, k_bar, ctx: MessageCtx, key_valid, *, q_slot=None) -
     """Notes-budget exam: the share of each note in this read's attention, at the query positions `ctx.capture["q_pos"]`
     [B,P], summed over heads → appended to `ctx.capture["mass"]` as [B,P,nb] (one entry per read: a looped model
     appends one per round). The softmax is the read's own: raw keys in the raw window ‖ the notes this query may
-    see, logits q·k and q_slot·k̄ (or q·k̄) at scale 1/√dh. The E33d / E33e note terms are not included."""
+    see, logits q·k and q_slot·k̄ (or q·k̄) at scale 1/√dh. The E33d / E33e note terms are not included.
+    With `_note_keep` set, the notes this query could see in the whole notebook are scored (`capture["slot_close_all"]`),
+    hidden ones included: what agent A computes when B sends this query (B adds its raw-key total per head)."""
     cap = ctx.capture
+    if cap.get("slot_close_all") is not None:
+        ctx = dataclasses.replace(ctx, slot_close=cap["slot_close_all"])
     qp = cap["q_pos"].to(q.device)
     B, S, h, dh = q.shape
     g, nb = k.shape[2], k_bar.shape[1]
@@ -2618,6 +2623,8 @@ class PerceiverARLM(PreTrainedModel):
                     msg.slot_pos = out["slot_pos"]
                 if self._note_capture is not None or self._notes_override is not None:
                     self._last_notes = (msg.slots[0], msg.slots[1], msg.slot_pos)
+                if self._note_capture is not None:  # requests score A's whole notebook, hidden notes included
+                    self._note_capture["slot_close_all"] = msg.slot_close
                 if self._note_keep is not None:  # a hidden note's window never closes for anyone
                     msg.slot_close = msg.slot_close.masked_fill(~self._note_keep.to(msg.slot_close.device), -1)
                 msg.capture = self._note_capture

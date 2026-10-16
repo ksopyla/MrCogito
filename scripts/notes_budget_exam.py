@@ -19,6 +19,9 @@ Per item (one teacher-forced forward each, scored like `evaluation/text_checks_e
   split_request_K only the K notes B's FIRST read asks for: B sends its first-round query at the answer position (one
                   query vector per head, computed before it has read anything), A returns its K best-matching notes —
                   a one-message request protocol that B and A can actually run
+  split_rounds_K  one request per read of the loop: B sends its round-r queries at the answer positions, A returns the
+                  K notes that score best for them, B re-reads with every note received so far and asks for round r+1
+                  (at most rounds × K notes; `sent` = how many)
 
 Wire cost: a note is k̄ ‖ v̄ = kv_heads × head_dim × 2 numbers; the request is heads × head_dim numbers.
 
@@ -86,7 +89,8 @@ def summarize(rows: list[dict]) -> list[dict]:
             return sum(v) / len(v) if v else None
         out.append({"task": task, "length": length, "cond": cond, "n": len(ss), "exact": mean("exact"),
                     "far": mean("exact", lambda s: not s["late"]), "late": mean("exact", lambda s: s["late"]),
-                    "answer_nll": mean("answer_nll"), "pick_prob": mean("pick_prob"), "covered": mean("covered")})
+                    "answer_nll": mean("answer_nll"), "pick_prob": mean("pick_prob"), "covered": mean("covered"),
+                    "sent": mean("sent")})
     return out
 
 
@@ -99,6 +103,8 @@ def main():
     p.add_argument("--lengths", type=int, nargs="*", default=None)
     p.add_argument("--max_items_per_cell", type=int, default=40)
     p.add_argument("--budgets", type=int, nargs="+", default=[1, 2, 4, 8, 16, 32, 64, 128])
+    p.add_argument("--round_budgets", type=int, nargs="*", default=[2, 4, 8, 16, 32],
+                   help="notes per read for the per-round request protocol (split_rounds_K)")
     p.add_argument("--device", default=None)
     p.add_argument("--attn_backend", default=None)
     p.add_argument("--no_flush", action="store_true", help="A does not close its last page (late facts cannot cross)")
@@ -189,7 +195,7 @@ def main():
             note_numbers = int(notes[0].shape[2] * notes[0].shape[3] + notes[1].shape[2] * notes[1].shape[3])
             oracle = torch.stack(mass_own).sum(0)[0].sum(0)                       # [nb]: all rounds, answer positions
             cond["split_all"], mass_b = run(model, b_ids, start, a_ids, firsts, r["candidates"], device,
-                                            override=notes, capture_pos=[start])
+                                            override=notes, capture_pos=ans_pos)
             request = mass_b[0][0, 0]                                              # [nb]: B's first read
             none = torch.zeros(1, nb, dtype=torch.bool, device=device)
             cond["split_none"], _ = run(model, b_ids, start, a_ids, firsts, r["candidates"], device,
@@ -205,10 +211,27 @@ def main():
                     s, _ = run(model, b_ids, start, a_ids, firsts, r["candidates"], device, override=notes, keep=keep)
                     s["covered"] = float(oracle[top].sum()) / tot  # share of the answer's note attention kept
                     cond[f"split_{name}_{K}"] = s
+            # one request per read: B sends its round-r queries (all answer positions), A returns its K best notes for
+            # them; B re-reads with every note received so far and asks for the next round. At most rounds × K notes.
+            R = len(mass_b)
+            for K in a.round_budgets:
+                if K * R >= nb:
+                    continue
+                keep = none.clone()
+                keep[0, torch.topk(mass_b[0][0].sum(0), K).indices] = True
+                for rr in range(1, R):
+                    _, mm = run(model, b_ids, start, a_ids, firsts, r["candidates"], device, override=notes,
+                                keep=keep, capture_pos=ans_pos)
+                    keep[0, torch.topk(mm[rr][0].sum(0), K).indices] = True
+                s, _ = run(model, b_ids, start, a_ids, firsts, r["candidates"], device, override=notes, keep=keep)
+                s["covered"] = float(oracle[keep[0]].sum()) / tot
+                s["sent"] = int(keep.sum())
+                cond[f"split_rounds_{K}"] = s
             row = {k: r[k] for k in ("id", "split", "task", "length", "depth", "floor")}
             row.update({"flush": F, "n_notes": nb, "note_share": float(oracle.sum()) / (len(ans_pos) * len(mass_own) *
                                                                            int(cfg.num_attention_heads)),
-                        "cond": {k: {kk: v[kk] for kk in ("exact", "answer_nll", "pick_prob", "covered") if kk in v}
+                        "cond": {k: {kk: v[kk] for kk in ("exact", "answer_nll", "pick_prob", "covered", "sent")
+                                     if kk in v}
                                  for k, v in cond.items()}})
             rows.append(row)
             pf.write(json.dumps(row) + "\n")
@@ -220,7 +243,9 @@ def main():
     res = {"checkpoint": a.checkpoint, "items": a.items, "budgets": a.budgets, "note_numbers": note_numbers,
            "request_numbers": request_numbers, "n_items": len(rows), "cells": summary}
     json.dump(res, open(a.out, "w"), indent=1)
-    order = ["own_plain", "own_all", "split_all", "split_none"] + [f"split_{n}_{K}" for K in a.budgets for n in ("oracle", "request")]
+    order = (["own_plain", "own_all", "split_all", "split_none"]
+             + [f"split_{n}_{K}" for K in a.budgets for n in ("oracle", "request")]
+             + [f"split_rounds_{K}" for K in a.round_budgets])
     by = {(c["task"], c["length"], c["cond"]): c for c in summary}
     for task, length in sorted({(c["task"], c["length"]) for c in summary}):
         print(f"\n{task} @ {length}  (exact: all / far facts / late facts · answer surprise · share of the answer's "
@@ -230,6 +255,7 @@ def main():
             c = by.get((task, length, cname))
             if c:
                 cov = "" if c["covered"] is None else f"  kept {c['covered']:.2f}"
+                cov += "" if c.get("sent") is None else f"  sent {c['sent']:.1f} notes"
                 print(f"  {cname:<20} {f(c['exact'])} / {f(c['far'])} / {f(c['late'])}  {c['answer_nll']:.3f}{cov}")
 
 
