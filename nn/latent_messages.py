@@ -239,15 +239,38 @@ class A2AModel(PreTrainedModel):
         return
 
     # ------------------------------------------------------------------ agent A
-    def write(self, doc_ids: torch.Tensor, doc_mask: Optional[torch.Tensor] = None) -> tuple[LatentMemory, dict]:
-        """Document tokens [B, S_A] → memory. Pages are written independently (the writer's own geometry)."""
+    def write(self, doc_ids: torch.Tensor, doc_mask: Optional[torch.Tensor] = None,
+              chunk_pages: int = 0) -> tuple[LatentMemory, dict]:
+        """Document tokens [B, S_A] → memory. Pages are written independently (the writer's own geometry).
+
+        `chunk_pages` > 0 (one unpadded document, e.g. 1M tokens): write `chunk_pages` pages at a time. Chunks cut
+        at page starts (multiples of the stride) and overlap by window − stride tokens, so the pages and every
+        entry are the same as one pass over the whole document; memory for the writer stays bounded."""
+        B, S = doc_ids.shape
+        W, st = int(self.sender_cfg.lm_window), int(self.sender_cfg.lm_stride)
+        if chunk_pages and B == 1 and S > 2 * chunk_pages * st and (doc_mask is None or bool(doc_mask.all())):
+            T = chunk_pages * st
+            parts, s0 = [], 0
+            while True:
+                end = min(S, s0 + T + (W - st))
+                if S - end < W + st:  # the last chunk absorbs a short tail (keeps the global page geometry)
+                    end = S
+                parts.append(self._write_span(doc_ids[:, s0:end], None, s0)[0])
+                if end == S:
+                    break
+                s0 += T
+            return LatentMemory(torch.cat([m.entries for m in parts], 1), torch.cat([m.pos for m in parts], 1),
+                                torch.cat([m.valid for m in parts], 1), parts[0].per_page), {}
+        return self._write_span(doc_ids, doc_mask, 0)
+
+    def _write_span(self, doc_ids, doc_mask, offset: int):
         B, S = doc_ids.shape
         if doc_mask is None:
             doc_mask = torch.ones_like(doc_ids)
         keep = doc_mask.bool()
         side = torch.zeros_like(doc_ids)
         doc = torch.where(keep, torch.zeros_like(doc_ids), torch.full_like(doc_ids, -1))
-        pos = torch.arange(S, device=doc_ids.device)[None].expand(B, S)
+        pos = torch.arange(S, device=doc_ids.device)[None].expand(B, S) + int(offset)
         out = self.writer(self.sender_tok(doc_ids), side, doc, keep, pos, self.sender_cfg.rope_theta)
         entries = torch.cat([out["z"], out["read"]], -1)
         valid = out["latent_doc"] >= 0

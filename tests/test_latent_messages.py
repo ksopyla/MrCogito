@@ -147,3 +147,14 @@ def test_warm_start_from_a_notebook_and_a_dense_checkpoint(tmp_path):
     with torch.no_grad():
         assert torch.allclose(back.eval()(ids).logits, m.eval()(ids).logits, atol=1e-5)
     assert json.load(open(tmp_path / "a2a" / "config.json"))["checkpoint_family"] == "a2a"
+
+
+def test_chunked_writing_gives_the_same_memory_as_one_pass():
+    m = make()
+    doc = a2a_row(200)[:, 1:201]  # tiny geometry: window 16, stride 12
+    with torch.no_grad():
+        whole, _ = m.write(doc)
+        parts, _ = m.write(doc, chunk_pages=3)
+    assert whole.entries.shape == parts.entries.shape
+    assert torch.allclose(whole.entries, parts.entries, atol=1e-5)
+    assert torch.equal(whole.pos, parts.pos)
