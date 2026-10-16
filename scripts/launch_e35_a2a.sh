@@ -22,6 +22,7 @@ export MODEL_FAMILY=a2a OBJECTIVE_VARIANT=causal_lm DECODER_TYPE=causal_ar
 export A2A_SENDER_INIT="${A2A_SENDER_INIT:-$INIT/sender}" A2A_RECEIVER_INIT="${A2A_RECEIVER_INIT:-$INIT/receiver}"
 export A2A_MSG_SLOTS="${A2A_MSG_SLOTS:-16}" A2A_TX_LAYERS="${A2A_TX_LAYERS:-2}" A2A_TX_DIM="${A2A_TX_DIM:-512}"
 export A2A_TX_ORDER="${A2A_TX_ORDER:-rank}" A2A_TX_REQUEST="${A2A_TX_REQUEST:-none}"
+export A2A_LOSS_ON="${A2A_LOSS_ON:-all}" A2A_FREEZE_RECEIVER="${A2A_FREEZE_RECEIVER:-False}"
 # manifest_a2a.json (if present): stories down-weighted to ~8 % of tokens — B's loss is then ~60 % question-answers
 # (the plain manifest gives ~70 % story text, which dilutes the only signal that teaches the transmitter)
 MANIFEST="${MANIFEST:-$( [ -f "$DATA/manifest_a2a.json" ] && echo "$DATA/manifest_a2a.json" || echo "$DATA/manifest.json")}"
@@ -42,7 +43,7 @@ stamp() { echo "$1 $(date '+%Y-%m-%d %H:%M %Z')" | tee -a "$RUN/events.log"; }
 if [ ! -f "$RUN/TRAIN_DONE" ]; then
     CK=$(ls -d "$RUN"/train/*/checkpoint-* 2>/dev/null | awk -F- '{print $NF" "$0}' | sort -n | tail -1 | cut -d' ' -f2- || true)
     export RESUME_FROM_CHECKPOINT="${CK:-}"
-    stamp "train start (K=$A2A_MSG_SLOTS, order=$A2A_TX_ORDER, request=$A2A_TX_REQUEST, resume=${CK:-none})"
+    stamp "train start (K=$A2A_MSG_SLOTS, order=$A2A_TX_ORDER, request=$A2A_TX_REQUEST, loss=$A2A_LOSS_ON, frozenB=$A2A_FREEZE_RECEIVER, resume=${CK:-none})"
     if bash scripts/train_concept_pretraining_multigpu.sh > "$RUN/train.log" 2>&1 && ls -d "$RUN"/train/*/final >/dev/null 2>&1; then
         touch "$RUN/TRAIN_DONE"; stamp "train done"
     else

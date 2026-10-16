@@ -435,18 +435,25 @@ def _build_a2a_model(tokenizer, model_args, data_args):
     from nn.latent_messages import build_a2a_from_checkpoints
 
     req = {}
-    if model_args.a2a_tx_request != "none":  # the tokens that open a question block and its answer
+    if model_args.a2a_tx_request != "none" or model_args.a2a_loss_on != "all":  # tokens that open a question / answer
         q_ids = tokenizer.encode("Question", add_special_tokens=False)
         a_ids = tokenizer.encode("Answer", add_special_tokens=False)
         if len(q_ids) != 1 or len(a_ids) != 1:
             raise ValueError(f"request mode needs single-token 'Question' / 'Answer', got {q_ids} / {a_ids}")
-        req = dict(tx_request=model_args.a2a_tx_request, question_token_id=q_ids[0], answer_token_id=a_ids[0])
+        req = dict(question_token_id=q_ids[0], answer_token_id=a_ids[0])
+        if model_args.a2a_tx_request != "none":
+            req["tx_request"] = model_args.a2a_tx_request
+        if model_args.a2a_loss_on != "all":
+            req.update(loss_on=model_args.a2a_loss_on, end_token_id=tokenizer.encode(".", add_special_tokens=False)[-1])
     model = build_a2a_from_checkpoints(
         model_args.a2a_sender_init, model_args.a2a_receiver_init,
         msg_slots=model_args.a2a_msg_slots, tx_layers=model_args.a2a_tx_layers, tx_dim=model_args.a2a_tx_dim,
         tx_order=model_args.a2a_tx_order, max_sequence_length=data_args.max_seq_length,
         tokenizer_name=data_args.tokenizer_name, **req,
     )
+    if model_args.a2a_freeze_receiver:  # only agent A learns; B keeps its decoder (Cramming-style: a frozen reader)
+        for prm in model.receiver.parameters():
+            prm.requires_grad_(False)
     if len(tokenizer) != model.receiver.config.vocab_size:
         raise ValueError(f"tokenizer has {len(tokenizer)} tokens, the receiver {model.receiver.config.vocab_size}")
     n = sum(p.numel() for p in model.parameters())
@@ -455,7 +462,8 @@ def _build_a2a_model(tokenizer, model_args, data_args):
     logger.info(f"Initializing A2AModel (E35): {n/1e6:.1f}M params "
                 + " ".join(f"{k}={v/1e6:.2f}M" for k, v in parts.items())
                 + f" | K={model.config.msg_slots} tx_layers={model.config.tx_layers} order={model.config.tx_order}"
-                + f" request={model.config.tx_request}")
+                + f" request={model.config.tx_request} loss_on={model.config.loss_on}"
+                + f" frozen_receiver={model_args.a2a_freeze_receiver}")
     return model, model.config, "a2a_latent_messages"
 
 
@@ -598,7 +606,9 @@ def build_training_wandb_identity(
     if getattr(model_args, "model_family", "auto") == "a2a":
         resolved_experiment = experiment_id or "E35"
         architecture_id = (f"a2a_K{model_args.a2a_msg_slots}_tx{model_args.a2a_tx_layers}_{model_args.a2a_tx_order}"
-                           + ("_req" if model_args.a2a_tx_request != "none" else ""))
+                           + ("_req" if model_args.a2a_tx_request != "none" else "")
+                           + ("_ans" if model_args.a2a_loss_on != "all" else "")
+                           + ("_frozenB" if model_args.a2a_freeze_receiver else ""))
         return WandbRunIdentity(
             experiment_id=resolved_experiment,
             model_family="a2a",

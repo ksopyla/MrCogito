@@ -57,6 +57,8 @@ class A2AConfig(PretrainedConfig):
         tx_request: str = "none",               # "none" (broadcast) | "question" (B's question steers what A sends)
         question_token_id: int = -1,             # E35 request mode: the token that opens a question block ("Question")
         answer_token_id: int = -1,               # … and the one that opens its answer ("Answer")
+        loss_on: str = "all",                    # "all" receiver tokens | "answers" (from "Answer" ":" to the period)
+        end_token_id: int = -1,                  # the token that closes an answer ("."), for loss_on="answers"
         **kwargs,
     ):
         kwargs.setdefault("tie_word_embeddings", False)
@@ -74,6 +76,12 @@ class A2AConfig(PretrainedConfig):
         self.tx_request = str(tx_request)
         self.question_token_id = int(question_token_id)
         self.answer_token_id = int(answer_token_id)
+        self.loss_on = str(loss_on)
+        self.end_token_id = int(end_token_id)
+        if self.loss_on not in ("all", "answers"):
+            raise ValueError(f"loss_on must be all / answers, got {self.loss_on!r}")
+        if self.loss_on == "answers" and min(self.answer_token_id, self.end_token_id) < 0:
+            raise ValueError("loss_on='answers' needs answer_token_id and end_token_id")
         if self.tx_request not in ("none", "question"):
             raise ValueError(f"tx_request must be none / question, got {self.tx_request!r}")
         if self.tx_request == "question" and min(self.question_token_id, self.answer_token_id) < 0:
@@ -231,6 +239,26 @@ def split_rows(input_ids: torch.Tensor, attention_mask: Optional[torch.Tensor], 
     return (*pack(docs), *pack(recvs))
 
 
+def answer_targets(ids: torch.Tensor, mask: torch.Tensor, answer_tok: int, end_tok: int) -> torch.Tensor:
+    """Targets on answer tokens only: after "Answer" ":" up to and including the closing token; −100 elsewhere."""
+    tgt = torch.full_like(ids, -100)
+    for b in range(ids.shape[0]):
+        row = ids[b].tolist()
+        n = int(mask[b].sum())
+        i = 0
+        while i < n:
+            if row[i] == answer_tok:
+                j = i + 2
+                while j < n:
+                    tgt[b, j] = row[j]
+                    if row[j] == end_tok:
+                        break
+                    j += 1
+                i = j
+            i += 1
+    return tgt
+
+
 class A2AModel(PreTrainedModel):
     """Agent A (writer + memory + transmitter) and agent B (receiver), joined only by the message."""
 
@@ -329,6 +357,11 @@ class A2AModel(PreTrainedModel):
         return self.receiver(input_ids=recv_ids, attention_mask=recv_mask, labels=labels, prefix_embeds=message,
                              return_logits=labels is None)
 
+    def _targets(self, ids: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        if self.config.loss_on == "answers":
+            return answer_targets(ids, mask, self.config.answer_token_id, self.config.end_token_id)
+        return ids.masked_fill(~mask.bool(), -100)
+
     def empty_memory(self, B: int, device) -> LatentMemory:
         d = 2 * int(self.sender_cfg.lm_latent_dim)
         z = torch.zeros(B, 0, d, device=device)
@@ -356,7 +389,7 @@ class A2AModel(PreTrainedModel):
             return self._forward_request(input_ids, attention_mask, labels, memory, d_mask, r_ids, r_mask, keep)
         message = self.send(memory)
         if labels is not None:
-            tgt = r_ids.masked_fill(~r_mask.bool(), -100)
+            tgt = self._targets(r_ids, r_mask)
             out = self.answer(message, r_ids, r_mask, labels=tgt)
             return CausalLMOutput(loss=out.loss + keep, logits=None)
         out = self.answer(message, r_ids, r_mask)
@@ -409,7 +442,7 @@ def _request_forward(self, input_ids, attention_mask, labels, memory, d_mask, r_
         msg = self.send(mem_b, self.request(q_ids, q_mask))
         b_ids, b_mask = _pad(blk_seqs, rc.pad_token_id, dev)
         if labels is not None:
-            tgt = b_ids.masked_fill(~b_mask.bool(), -100)
+            tgt = self._targets(b_ids, b_mask)
             n = int((tgt[:, 1:] != -100).sum())
             total = total + self.answer(msg, b_ids, b_mask, labels=tgt).loss * n
             n_tok += n

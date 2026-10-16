@@ -241,6 +241,8 @@ A2A_TX_LAYERS="${A2A_TX_LAYERS:-2}"
 A2A_TX_DIM="${A2A_TX_DIM:-512}"
 A2A_TX_ORDER="${A2A_TX_ORDER:-rank}"                      # rank | none
 A2A_TX_REQUEST="${A2A_TX_REQUEST:-none}"                  # none (broadcast) | question (B's question steers A's message)
+A2A_LOSS_ON="${A2A_LOSS_ON:-all}"                         # all receiver tokens | answers
+A2A_FREEZE_RECEIVER="${A2A_FREEZE_RECEIVER:-False}"       # True: only agent A learns
 PAR_LOOP_ROUNDS="${PAR_LOOP_ROUNDS:-1}"                    # E33a loop on text: 4
 PAR_LOOP_EXIT_AUX="${PAR_LOOP_EXIT_AUX:-0.0}"              # E33a: 0.3
 PAR_LOOP_EXIT_TARGETS="${PAR_LOOP_EXIT_TARGETS:-answer}"
@@ -450,6 +452,8 @@ if [ "$MODEL_FAMILY" = "a2a" ]; then
         --a2a_tx_dim "$A2A_TX_DIM"
         --a2a_tx_order "$A2A_TX_ORDER"
         --a2a_tx_request "$A2A_TX_REQUEST"
+        --a2a_loss_on "$A2A_LOSS_ON"
+        --a2a_freeze_receiver "$A2A_FREEZE_RECEIVER"
     )
 fi
 if [ "$MODEL_FAMILY" = "perceiver_ar" ] || [ "$MODEL_FAMILY" = "a2a" ]; then

@@ -221,3 +221,23 @@ def test_request_mode_scoring_aligns_with_answer():
         direct = m.answer(msg, rv).logits
     n = rv.shape[1]
     assert torch.allclose(full[0, -n:], direct[0], atol=1e-4)
+
+
+def test_answer_only_targets():
+    from nn.latent_messages import answer_targets
+
+    ids = torch.tensor([[BOS, QT, 50, 5, 6, AT, 50, 33, 34, 7, QT, 50, 8, AT, 50, 35, 7]])
+    tgt = answer_targets(ids, torch.ones_like(ids), AT, 7)
+    keep = (tgt[0] != -100).nonzero().flatten().tolist()
+    assert keep == [7, 8, 9, 15, 16]
+
+
+def test_answer_only_loss_trains():
+    torch.manual_seed(0)
+    m = A2AModel(A2AConfig(sender_config=sender_cfg(), receiver_config=receiver_cfg(), msg_slots=4, tx_layers=1,
+                           tx_heads=4, tx_dim=32, tx_ffn=64, loss_on="answers", answer_token_id=AT, end_token_id=34,
+                           question_token_id=QT)).train()
+    r = qa_row()
+    loss = m(r, labels=r).loss
+    loss.backward()
+    assert torch.isfinite(loss)

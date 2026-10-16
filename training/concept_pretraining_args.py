@@ -383,6 +383,8 @@ class ModelArguments:
     a2a_tx_dim: int = field(default=512, metadata={"help": "E35: transmitter width."})
     a2a_tx_order: str = field(default="rank", metadata={"help": "E35: order among matching memory entries: rank | none."})
     a2a_tx_request: str = field(default="none", metadata={"help": "E35: none (broadcast) | question (B's question steers A's message)."})
+    a2a_loss_on: str = field(default="all", metadata={"help": "E35: loss on all receiver tokens | answers only."})
+    a2a_freeze_receiver: bool = field(default=False, metadata={"help": "E35: keep agent B frozen (only A learns)."})
     lm_note_rank_sharp: float = field(default=2.0, metadata={"help": "E33e: steepness of the match gate."})
     message_loop_rounds: int = field(default=1, metadata={"help": "E33a: tied [global read + local] loops (1 = off)."})
     message_loop_exit_aux: float = field(default=0.0, metadata={"help": "E33a: weight of each earlier loop exit."})
