@@ -22,7 +22,10 @@ export MODEL_FAMILY=a2a OBJECTIVE_VARIANT=causal_lm DECODER_TYPE=causal_ar
 export A2A_SENDER_INIT="${A2A_SENDER_INIT:-$INIT/sender}" A2A_RECEIVER_INIT="${A2A_RECEIVER_INIT:-$INIT/receiver}"
 export A2A_MSG_SLOTS="${A2A_MSG_SLOTS:-16}" A2A_TX_LAYERS="${A2A_TX_LAYERS:-2}" A2A_TX_DIM="${A2A_TX_DIM:-512}"
 export A2A_TX_ORDER="${A2A_TX_ORDER:-rank}" A2A_TX_REQUEST="${A2A_TX_REQUEST:-none}"
-export PRETOKENIZED_MANIFEST="$DATA/manifest.json" TOKENIZER_NAME="$DATA/tokenizer" MAX_SEQ_LENGTH=4096
+# manifest_a2a.json (if present): stories down-weighted to ~8 % of tokens — B's loss is then ~60 % question-answers
+# (the plain manifest gives ~70 % story text, which dilutes the only signal that teaches the transmitter)
+MANIFEST="${MANIFEST:-$( [ -f "$DATA/manifest_a2a.json" ] && echo "$DATA/manifest_a2a.json" || echo "$DATA/manifest.json")}"
+export PRETOKENIZED_MANIFEST="$MANIFEST" TOKENIZER_NAME="$DATA/tokenizer" MAX_SEQ_LENGTH=4096
 # receiver shape (read by the launcher for its logs; the model itself comes from the receiver checkpoint)
 export HIDDEN_SIZE=576 TOKEN_EMBEDDING_DIM=256 HEAD_DIM=64 NUM_ATTENTION_HEADS=9 NUM_KV_HEADS=1 PAR_MODE=dense
 export PAR_NGRAM_ORDERS='' PAR_VALUE_EMBED_LAYERS='' ATTN_BACKEND="${ATTN_BACKEND:-flex}"
