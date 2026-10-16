@@ -1558,6 +1558,17 @@ def note_rank_logcount(q_slot: torch.Tensor, k_bar: torch.Tensor, ctx: "MessageC
 
 
 @torch.no_grad()
+def score_notes(qs: torch.Tensor, raw_lse: torch.Tensor, k_bar: torch.Tensor) -> torch.Tensor:
+    """Agent A's side of a request: B's note queries `qs` [B,P,h,dh] and raw log-totals `raw_lse` [B,P,h] (from
+    `capture_note_mass`) against A's notebook keys `k_bar` [B,nb,g,dh] → each note's share of B's read, summed over
+    heads, [B,P,nb] — the same numbers `capture_note_mass` gives with the whole notebook visible."""
+    rep = qs.shape[2] // k_bar.shape[2]
+    sl = torch.einsum("bphd,bchd->bphc", qs.float(), k_bar.float().repeat_interleave(rep, dim=2)) * qs.shape[-1] ** -0.5
+    lse = torch.logsumexp(torch.cat([raw_lse.float()[..., None], sl], -1), -1, keepdim=True)
+    return torch.exp(sl - lse).sum(2)
+
+
+@torch.no_grad()
 def capture_note_mass(q, k, k_bar, ctx: MessageCtx, key_valid, *, q_slot=None) -> None:
     """Notes-budget exam: the share of each note in this read's attention, at the query positions `ctx.capture["q_pos"]`
     [B,P], summed over heads → appended to `ctx.capture["mass"]` as [B,P,nb] (one entry per read: a looped model
@@ -1590,6 +1601,9 @@ def capture_note_mass(q, k, k_bar, ctx: MessageCtx, key_valid, *, q_slot=None) -
     rl = rl.masked_fill(~ok[:, :, None], float("-inf"))
     lse = torch.logsumexp(torch.cat([rl, sl], -1), -1, keepdim=True)
     cap.setdefault("mass", []).append(torch.exp(sl - lse).nan_to_num(0.0).sum(2))
+    # the request itself, for an agent A that scores its own notebook (`score_notes`): B's note query per head and the
+    # log-total of B's own raw attention per head
+    cap.setdefault("queries", []).append((qs, torch.logsumexp(rl, -1)))
 
 
 def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend, block_masks=None,
@@ -2228,8 +2242,11 @@ class PerceiverARLM(PreTrainedModel):
         # Notes-budget exam (latent memory, nothing retrained): `_notes_override` = (k̄, v̄, slot_pos) replaces what the
         # writer would write (another forward's notes: B reads A's notebook over its own text); `_note_keep` [B,nb]
         # hides every other note; `_note_capture` = {"q_pos": [B,P]} records how much each read looks at each note.
-        # `_last_notes` holds the notes of the last forward when a capture or override is set.
+        # `_last_notes` holds the notes of the last forward when a capture or override is set. `_notes_external`: the
+        # override is any number of notes written before this row (agent B's short question row reads agent A's
+        # notebook; `write_notes` makes it), all readable from the row's first token.
         self._notes_override: Optional[tuple] = None
+        self._notes_external = False  # True: the override is a whole notebook read from before this row (agent B)
         self._note_keep: Optional[torch.Tensor] = None
         self._note_capture: Optional[dict] = None
         self._last_notes: Optional[tuple] = None
@@ -2620,7 +2637,13 @@ class PerceiverARLM(PreTrainedModel):
             if msg is not None and msg.external is None:
                 if self._notes_override is not None:  # notes-budget exam: another forward's notebook
                     k_o, v_o, sp_o = self._notes_override
-                    if k_o.shape[1] != msg.n_slots:
+                    if self._notes_external:  # agent B: a notebook written elsewhere, all of it before this row
+                        nb_o = k_o.shape[1]
+                        d0 = msg.doc.clamp(min=0).amax(dim=1, keepdim=True)
+                        msg.slot_doc = d0.expand(B, nb_o).contiguous()
+                        msg.slot_side = torch.zeros_like(msg.slot_doc)
+                        msg.slot_close = torch.zeros_like(msg.slot_doc)  # closed before the row's first token
+                    elif k_o.shape[1] != msg.n_slots:
                         raise ValueError(f"notes override has {k_o.shape[1]} notes, this row's geometry {msg.n_slots}")
                     msg.slots, msg.slot_pos = (k_o, v_o), sp_o
                 else:
@@ -2705,6 +2728,39 @@ class PerceiverARLM(PreTrainedModel):
                 return layer.mix(x, x0, skip)
             x = run_layer(i, x, skips)
         return x
+
+    @torch.no_grad()
+    def write_notes(self, input_ids: torch.Tensor, chunk_pages: int = 0) -> tuple:
+        """Agent A: one document's notes (k̄, v̄, slot_pos) from the writer alone — the notebook the global read would
+        see for this row (one unpadded document, [1, S]). The writer reads page text only, so nothing of the main stack
+        runs. `chunk_pages` > 0: that many pages per pass (chunks cut at page starts, overlapping by window − stride),
+        the same notes as one pass, bounded memory (1M tokens)."""
+        if self.memory_writer is None:
+            raise RuntimeError("write_notes needs a latent-memory model")
+        cfg = self.config
+        B, S = input_ids.shape
+        W, st = int(cfg.lm_window), int(cfg.lm_stride)
+
+        def span(ids, off):
+            side = torch.zeros_like(ids)
+            pos = torch.arange(ids.shape[1], device=ids.device)[None].expand(B, -1) + off
+            msg = self._message_context(ids, None, None, pos)
+            out = self.memory_writer(self.embed.tok(ids), msg.side, msg.doc, None, pos, cfg.rope_theta)
+            return out["k"], out["v"], out["slot_pos"]
+
+        if not chunk_pages or B != 1 or S <= 2 * chunk_pages * st:
+            return span(input_ids, 0)
+        T, parts, s0 = chunk_pages * st, [], 0
+        while True:
+            end = min(S, s0 + T + (W - st))
+            if S - end < W + st:  # the last chunk absorbs a short tail (keeps the page geometry)
+                end = S
+            # a full chunk holds exactly `chunk_pages` windows, at the document's own page starts
+            parts.append(span(input_ids[:, s0:end], s0))
+            if end == S:
+                break
+            s0 += T
+        return tuple(torch.cat([p[i] for p in parts], 1) for i in range(3))
 
     # -- forward ----------------------------------------------------------------------
     def hidden_states(

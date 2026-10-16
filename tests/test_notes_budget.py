@@ -134,3 +134,56 @@ def test_override_with_the_wrong_geometry_is_refused():
             raised = True
     m._notes_override = None
     assert raised
+
+
+def test_agent_b_reads_a_notebook_written_by_agent_a_on_a_short_row():
+    """`write_notes` (writer only) gives the notes the full forward reads, but for the last page: alone, A's last page
+    ends at the document's end; in the full row it also spans the question (and writes only the document side). A
+    question row holding only the question reads a notebook as external notes: with the full row's notes its last-token
+    logits equal the full row's (the boundary keeps the document's raw text from the question). A chunked write gives
+    the same notes as one pass."""
+    T = dict(TEXT)
+    T["message_boundary_token_id"] = 2
+    m = make(seed=4, **T, **LOOP, **WIDE, message_raw_window=8).to(DEV).eval()
+    per = m.config.lm_latents * m.config.lm_reader_tokens
+    torch.manual_seed(3)
+    doc = torch.randint(3, 80, (1, 70)).to(DEV)
+    q = torch.tensor([[2, 11, 12, 13, 14]], device=DEV)  # boundary first: the question's own side
+    with torch.no_grad():
+        k, v, sp = m.write_notes(doc)
+        m._note_capture = {"q_pos": torch.tensor([[74]], device=DEV)}
+        full = m(torch.cat([doc, q], 1)).logits[0, -1]
+        k_f, v_f, sp_f = m._last_notes
+        m._note_capture = None
+        m._notes_override, m._notes_external = (k_f, v_f, sp_f), True
+        short = m(q, position_offset=70).logits[0, -1]
+        m._notes_override = (k, v, sp)
+        short_a = m(q, position_offset=70).logits[0, -1]
+        m._notes_override, m._notes_external = None, False
+        plain = m(q, position_offset=70).logits[0, -1]
+        k2, v2, _ = m.write_notes(doc, chunk_pages=1)
+    assert k.shape == k_f.shape
+    assert torch.allclose(k[:, :-per], k_f[:, :-per], atol=TOL) and torch.allclose(v[:, :-per], v_f[:, :-per], atol=TOL)
+    assert torch.allclose(short, full, atol=1e-4), float((short - full).abs().max())
+    assert not torch.allclose(short_a, plain, atol=1e-3)  # A's own notebook reaches B
+    assert k2.shape == k.shape and torch.allclose(k2, k, atol=TOL) and torch.allclose(v2, v, atol=TOL)
+
+
+def test_agent_a_scores_its_notebook_from_b_queries_alone():
+    """`score_notes(B's queries, B's raw log-totals, A's keys)` equals the capture's mass with the notebook visible."""
+    from nn.perceiver_ar_lm import score_notes
+
+    m = _model()
+    ids = text_row(S=48).to(DEV)
+    with torch.no_grad():
+        m._note_capture = {"q_pos": torch.tensor([[40, 47]], device=DEV)}
+        m(ids)
+        cap = m._note_capture
+        m._note_capture = None
+    k = m._last_notes[0]
+    ctx = m._last_message_ctx
+    vis = (ctx.slot_close[0] >= 0) & (ctx.slot_close[0] <= 40)  # notes both positions may read
+    for r in range(len(cap["mass"])):
+        qs, raw = cap["queries"][r]
+        got = score_notes(qs, raw, k[:, vis])
+        assert torch.allclose(got[0, 0], cap["mass"][r][0, 0, vis], atol=TOL)
