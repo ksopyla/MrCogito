@@ -32,17 +32,25 @@ import torch  # noqa: E402
 
 
 class AgentA:
-    """The sender: reads text into its memory, sends a message on request."""
+    """The sender: reads text into its memory, sends a message on request.
 
-    def __init__(self, model, tok, device, chunk_pages: int = 512):
+    `refine_steps` > 0 (Cramming from the transmitter's output; assumes A holds a copy of B's decoder, as agents that
+    share a model do): the message is then optimized for that many steps so that B, reading it, predicts the
+    document's own text best — no knowledge of B's future questions; the words B cannot predict without the document
+    (names, places) are where the loss is."""
+
+    def __init__(self, model, tok, device, chunk_pages: int = 512, refine_steps: int = 0, refine_lr: float = 0.01,
+                 refine_window: int = 1024):
         self.model, self.tok, self.device, self.chunk_pages = model, tok, device, chunk_pages
-        self.memory = None
+        self.refine_steps, self.refine_lr, self.refine_window = refine_steps, refine_lr, refine_window
+        self.memory, self.doc_ids = None, None
 
     @torch.no_grad()
     def read(self, text: str) -> dict:
         t0 = time.time()
         ids = torch.tensor([self.tok.encode(text, add_special_tokens=False)], device=self.device)
         t1 = time.time()
+        self.doc_ids = ids
         self.memory, _ = self.model.write(ids, chunk_pages=self.chunk_pages)
         if self.device.startswith("cuda"):
             torch.cuda.synchronize()
@@ -56,9 +64,34 @@ class AgentA:
             req = torch.tensor(np.load(io.BytesIO(request)), device=self.device,
                                dtype=next(self.model.parameters()).dtype)[None]
         msg = self.model.send(self.memory, req)[0]  # [K, d]
+        if self.refine_steps:
+            msg = self.refine(msg)
         buf = io.BytesIO()
         np.save(buf, msg.float().cpu().numpy().astype(np.float16))
         return buf.getvalue()
+
+
+    def refine(self, msg: torch.Tensor) -> torch.Tensor:
+        rec = self.model.receiver
+        vec = msg.detach().float().clone()[None].requires_grad_(True)
+        opt = torch.optim.Adam([vec], lr=self.refine_lr)
+        ids = self.doc_ids[0]
+        W = min(self.refine_window, ids.shape[0])
+        g = torch.Generator().manual_seed(0)
+        pad_was = rec.config.attn_pad_multiple
+        rec.config.attn_pad_multiple = 1
+        with torch.enable_grad():
+            for _ in range(self.refine_steps):
+                s0 = int(torch.randint(0, ids.shape[0] - W + 1, (1,), generator=g))
+                x = torch.cat([ids.new_tensor([self.tok.bos_token_id]), ids[s0:s0 + W]])[None]
+                with torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.device.startswith("cuda")):
+                    loss = rec(input_ids=x, labels=x, prefix_embeds=vec.to(next(rec.parameters()).dtype)).loss
+                opt.zero_grad(set_to_none=True)
+                loss.backward()
+                opt.step()
+        rec.config.attn_pad_multiple = pad_was
+        rec.zero_grad(set_to_none=True)
+        return vec.detach()[0].to(msg.dtype)
 
 
 class AgentB:
@@ -118,6 +151,8 @@ def main():
     p.add_argument("--max_questions", type=int, default=12)
     p.add_argument("--device", default=None)
     p.add_argument("--stories", choices=("full", "smoke"), default="full", help="filler pool (smoke: local checks)")
+    p.add_argument("--refine_steps", type=int, default=0, help="Cramming-style refinement of each message (0 = off)")
+    p.add_argument("--refine_lr", type=float, default=0.01)
     p.add_argument("--out", required=True)
     a = p.parse_args()
     from transformers import AutoTokenizer
@@ -130,12 +165,14 @@ def main():
     tok = AutoTokenizer.from_pretrained(os.path.join(a.data, "tokenizer"))
     ntok = lambda s: len(tok.encode(s, add_special_tokens=False))  # noqa: E731
     _, held = load_stories(a.stories, 1, 0)
-    A = AgentA(model, tok, device)
+    A = AgentA(model, tok, device, refine_steps=a.refine_steps, refine_lr=a.refine_lr)
+    for prm in model.parameters():
+        prm.requires_grad_(False)
     B = AgentB(model.receiver, tok, device)
     with torch.no_grad():
         empty = model.send(model.empty_memory(1, device))
     K, d = empty.shape[1], empty.shape[2]
-    res = {"checkpoint": a.checkpoint, "message_vectors": K, "vector_width": d,
+    res = {"checkpoint": a.checkpoint, "message_vectors": K, "vector_width": d, "refine_steps": a.refine_steps,
            "message_bytes": None, "cells": [], "examples": []}
     t_all = time.time()
     for task in a.tasks:
