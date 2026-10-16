@@ -63,13 +63,38 @@ def score_prompt(model, tok, prompt: str, answer: str, candidates: list[str], de
     out = model(input_ids=ids)
     logits = out.logits if hasattr(out, "logits") else out[0]
     start = len(p_ids)  # logits[start] predicts the first answer token (BOS shifts by one)
+    firsts = [(_answer_ids(tok, prompt, c, p_ids) or [-1])[0] for c in candidates]
+    return _score(logits, start, a_ids, firsts, candidates, ids.shape[1])
+
+
+@torch.no_grad()
+def score_prompt_a2a(model, tok, prompt: str, answer: str, candidates: list[str], device,
+                     document: str | None = None) -> dict:
+    """E35: agent A gets the document (the prompt before its question; `document` overrides it — "" = no message
+    content, another item's document = the mismatched-message control), agent B the question. Row: BOS doc EOS BOS
+    question answer; an empty document gives the receiver-only row."""
+    body, _, q = prompt.partition("\n\nQuestion:")
+    recv = "Question:" + q
+    doc = body if document is None else document
+    d_ids = tok.encode(doc, add_special_tokens=False) if doc else []
+    r_ids = tok.encode(recv, add_special_tokens=False)
+    a_ids = _answer_ids(tok, recv, answer, r_ids)
+    head = ([tok.bos_token_id] + d_ids + [tok.eos_token_id]) if d_ids else []
+    ids = torch.tensor([head + [tok.bos_token_id] + r_ids + a_ids], device=device)
+    out = model(input_ids=ids)
+    logits = out.logits if hasattr(out, "logits") else out[0]
+    start = ids.shape[1] - len(a_ids) - 1
+    firsts = [(_answer_ids(tok, recv, c, r_ids) or [-1])[0] for c in candidates]
+    return _score(logits, start, a_ids, firsts, candidates, ids.shape[1])
+
+
+def _score(logits, start: int, a_ids: list[int], firsts: list[int], candidates: list[str], n_tokens: int) -> dict:
     pred = logits[0, start: start + len(a_ids)].argmax(-1).tolist()
     exact = pred == a_ids
     # graded signal: mean surprise (nats per token) on the gold answer, closing period excluded
     lp = torch.log_softmax(logits[0, start: start + len(a_ids)].float(), -1)
     n_ans = max(1, len(a_ids) - 1)
     answer_nll = float(-lp[torch.arange(n_ans), torch.tensor(a_ids[:n_ans], device=lp.device)].mean())
-    firsts = [(_answer_ids(tok, prompt, c, p_ids) or [-1])[0] for c in candidates]
     gold_first = a_ids[0]
     probs = logits[0, start].float()
     uniq = sorted(set(firsts))
@@ -85,7 +110,7 @@ def score_prompt(model, tok, prompt: str, answer: str, candidates: list[str], de
         pick_prob = float(share[uniq.index(gold_first)])
     # which candidate was picked (index into `candidates`; gold is 0): e.g. latest's earlier places of the same person
     picked = next((i for i, t in enumerate(firsts) if t == best), None) if len(candidates) >= 2 else None
-    return {"exact": bool(exact), "pick": pick, "pick_ambiguous": bool(ambiguous), "n_tokens": ids.shape[1],
+    return {"exact": bool(exact), "pick": pick, "pick_ambiguous": bool(ambiguous), "n_tokens": n_tokens,
             "answer_nll": answer_nll, "pick_prob": pick_prob, "picked": picked}
 
 
@@ -190,6 +215,9 @@ def main():
     p.add_argument("--story_eval", default=None, help="held-out story rows (<data>/stories/eval): language loss")
     p.add_argument("--story_rows", type=int, default=64)
     p.add_argument("--loop_rounds", type=int, default=0, help="looped model: stop after this many rounds (0 = trained)")
+    p.add_argument("--a2a_message", default="real", choices=("real", "none", "swapped"),
+                   help="E35 model: the document agent A reads — the item's own, none, or the next item's of the same "
+                        "task and length (mismatched-message control)")
     p.add_argument("--note_order", default=None, choices=("rank",), help="exam-time E33e probe (see the docstring)")
     p.add_argument("--note_strength", type=float, default=0.0)
     p.add_argument("--note_margin", type=float, default=1.0)
@@ -259,9 +287,26 @@ def main():
     print(f"{len(items)} items, {len(done_ids)} already scored, {len(todo)} to go", flush=True)
     t0 = time.time()
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+    is_a2a = getattr(model.config, "checkpoint_family", "") == "a2a"
+    if is_a2a:
+        probes["a2a_message"] = args.a2a_message
+        if not args.no_removed:
+            print("a2a: evidence-removed twins are skipped (the controls are --a2a_message none / swapped)", flush=True)
+            args.no_removed = True
+        nxt = {}
+        groups = defaultdict(list)
+        for r in items:
+            groups[(r["split"], r["task"], r["length"])].append(r)
+        for g in groups.values():
+            for j, r in enumerate(g):
+                nxt[r["id"]] = g[(j + 1) % len(g)]["prompt"].partition("\n\nQuestion:")[0]
     with msg, open(part, "a") as pf:
         for i, r in enumerate(todo):
-            s = score_prompt(model, tok, r["prompt"], r["answer"], r["candidates"], device)
+            if is_a2a:
+                doc = None if args.a2a_message == "real" else ("" if args.a2a_message == "none" else nxt[r["id"]])
+                s = score_prompt_a2a(model, tok, r["prompt"], r["answer"], r["candidates"], device, document=doc)
+            else:
+                s = score_prompt(model, tok, r["prompt"], r["answer"], r["candidates"], device)
             row = {k: r[k] for k in ("id", "split", "task", "level", "length", "depth", "floor")}
             row.update(s)
             if not args.no_removed:

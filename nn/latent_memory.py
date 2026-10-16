@@ -409,6 +409,10 @@ class LatentMemoryWriter(nn.Module):
         return {
             "k": kk, "v": vv, "slot_doc": slot_doc, "slot_side": slot_side, "slot_pos": slot_pos,
             "window_pick": pick,
+            # E35: the latents themselves (state after reading, and what they read), [B, n_w·K, D] each — the
+            # memory entries a transmitter reads; unused by the E31 / E33 notebook read
+            "z": zo.reshape(B, n_w * K, self.D), "read": read.reshape(B, n_w * K, self.D),
+            "latent_pos": p_abs.reshape(B, n_w * K), "latent_doc": slot_doc_w.repeat_interleave(K, dim=1),
         }
 
     @torch.no_grad()

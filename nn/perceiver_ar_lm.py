@@ -2541,7 +2541,8 @@ class PerceiverARLM(PreTrainedModel):
         return not right_padded
 
     def _run_layers(self, input_ids, attention_mask, doc_ids, cu_seqlens, capture_input_of: Optional[int] = None,
-                    message_kv: Optional[tuple] = None, position_offset: int = 0):
+                    message_kv: Optional[tuple] = None, position_offset: int = 0,
+                    prefix_embeds: Optional[torch.Tensor] = None):
         cfg = self.config
         B, S = input_ids.shape
         key_valid = None
@@ -2556,6 +2557,9 @@ class PerceiverARLM(PreTrainedModel):
             if msg is not None:
                 local_doc = msg.local_doc_ids
         x0 = self.embed(input_ids, local_doc)
+        if prefix_embeds is not None:  # E35: the message vectors replace the placeholder embeddings
+            P = prefix_embeds.shape[1]
+            x0 = torch.cat([prefix_embeds.to(x0.dtype), x0[:, P:]], 1)
         if self.memory_writer is not None:
             if msg is not None and msg.external is None:
                 out = self.memory_writer(
@@ -2663,6 +2667,7 @@ class PerceiverARLM(PreTrainedModel):
         return_logits: bool = False,
         message_kv: Optional[tuple] = None,
         position_offset: int = 0,
+        prefix_embeds: Optional[torch.Tensor] = None,
     ):
         # NOTE: no **kwargs here on purpose. HF Trainer treats any VAR_KEYWORD forward as a
         # model that normalizes its own loss by num_items_in_batch and then skips the division
@@ -2692,15 +2697,29 @@ class PerceiverARLM(PreTrainedModel):
             b._collect_rounds = round_tgt is not None
         if message_kv is not None and not cfg.message_enabled:
             raise RuntimeError("message_kv needs message_boundary_token_id >= 0")
+        # E35 receiver: `prefix_embeds` [B, P, d] are read as the first P input positions (Cramming-style message
+        # vectors, seen by every layer); they get no target and no output logits.
+        P = 0
+        if prefix_embeds is not None:
+            if cfg.message_enabled:
+                raise RuntimeError("prefix_embeds is for a model without the E21 message boundary")
+            B0, P = input_ids.shape[0], prefix_embeds.shape[1]
+            input_ids = torch.cat([input_ids.new_full((B0, P), cfg.pad_token_id), input_ids], 1)
+            if attention_mask is not None:
+                attention_mask = torch.cat([attention_mask.new_ones((B0, P)), attention_mask], 1)
+            if labels is not None:
+                labels = torch.cat([labels.new_full((B0, P), -100), labels], 1)
+            if doc_ids is not None:
+                doc_ids = torch.cat([doc_ids[:, :1].expand(B0, P), doc_ids], 1)
         input_ids, attention_mask, labels, doc_ids, S_orig = self._pad_inputs(
             input_ids, attention_mask, labels, doc_ids
         )
         x = self._run_layers(input_ids, attention_mask, doc_ids, cu_seqlens,
-                             message_kv=message_kv, position_offset=position_offset)
+                             message_kv=message_kv, position_offset=position_offset, prefix_embeds=prefix_embeds)
         h = self.final_norm(x)
 
         if labels is None or return_logits:
-            logits = F.linear(h[:, :S_orig], self.lm_head.weight).float()
+            logits = F.linear(h[:, P:S_orig], self.lm_head.weight).float()
             if cfg.logit_softcap:
                 logits = cfg.logit_softcap * torch.tanh(logits / cfg.logit_softcap)
             if labels is None:
@@ -2712,8 +2731,8 @@ class PerceiverARLM(PreTrainedModel):
         if return_per_token_loss:
             per = per_token_ce_chunked(
                 hid, self.lm_head.weight, tgt, cfg.chunked_ce_block_size, cfg.logit_softcap
-            )[:, : S_orig - 1]
-            valid = tgt[:, : S_orig - 1] != -100
+            )[:, P: S_orig - 1]
+            valid = tgt[:, P: S_orig - 1] != -100
             loss = per.sum() / valid.sum().clamp(min=1)
             return CausalLMOutput(loss=loss, logits=None), per, valid
 

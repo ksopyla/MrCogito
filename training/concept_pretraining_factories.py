@@ -248,6 +248,8 @@ def build_pretraining_model(
     """Construct the selected model family and preserve warm-start behavior."""
     if getattr(model_args, "model_family", "auto") == "perceiver_ar":
         return _build_perceiver_ar_model(tokenizer, model_args, data_args)
+    if getattr(model_args, "model_family", "auto") == "a2a":
+        return _build_a2a_model(tokenizer, model_args, data_args)
     if getattr(model_args, "model_family", "auto") == "perceiver_concept":
         return _build_perceiver_concept_model(tokenizer, model_args, data_args)
     if is_backbone:
@@ -427,6 +429,30 @@ def _latent_memory_kwargs(model_args) -> dict:
     return out
 
 
+def _build_a2a_model(tokenizer, model_args, data_args):
+    """E35 — latent messages between agents (nn/latent_messages.py): agent A's writer and token embedding from a
+    notebook checkpoint, agent B from a decoder checkpoint, a fresh transmitter between them."""
+    from nn.latent_messages import build_a2a_from_checkpoints
+
+    model = build_a2a_from_checkpoints(
+        model_args.a2a_sender_init, model_args.a2a_receiver_init,
+        msg_slots=model_args.a2a_msg_slots, tx_layers=model_args.a2a_tx_layers, tx_dim=model_args.a2a_tx_dim,
+        tx_order=model_args.a2a_tx_order, max_sequence_length=data_args.max_seq_length,
+        tokenizer_name=data_args.tokenizer_name,
+    )
+    if len(tokenizer) != model.receiver.config.vocab_size:
+        raise ValueError(f"tokenizer has {len(tokenizer)} tokens, the receiver {model.receiver.config.vocab_size}")
+    if model_args.attn_backend:
+        model.receiver.config.attn_backend = model_args.attn_backend
+    n = sum(p.numel() for p in model.parameters())
+    parts = {k: sum(p.numel() for p in getattr(model, k).parameters()) for k in ("sender_tok", "writer", "transmitter",
+                                                                             "receiver")}
+    logger.info(f"Initializing A2AModel (E35): {n/1e6:.1f}M params "
+                + " ".join(f"{k}={v/1e6:.2f}M" for k, v in parts.items())
+                + f" | K={model.config.msg_slots} tx_layers={model.config.tx_layers} order={model.config.tx_order}")
+    return model, model.config, "a2a_latent_messages"
+
+
 def _build_perceiver_ar_model(tokenizer, model_args, data_args):
     """E18 — from-scratch Perceiver AR v2 (nn/perceiver_ar_lm.py)."""
     from nn.perceiver_ar_lm import PerceiverARConfig, PerceiverARLM, analytic_param_count
@@ -562,6 +588,18 @@ def build_training_wandb_identity(
                 f"backend-{model_args.attn_backend}",
                 resolved_experiment,
             ],
+        )
+    if getattr(model_args, "model_family", "auto") == "a2a":
+        resolved_experiment = experiment_id or "E35"
+        architecture_id = f"a2a_K{model_args.a2a_msg_slots}_tx{model_args.a2a_tx_layers}_{model_args.a2a_tx_order}"
+        return WandbRunIdentity(
+            experiment_id=resolved_experiment,
+            model_family="a2a",
+            objective_family="causal_lm",
+            architecture_id=architecture_id,
+            group=f"{resolved_experiment}_{architecture_id}",
+            job_type="train_a2a_latent_messages",
+            tags=["train", "a2a", "latent_messages", "causal_lm", resolved_experiment],
         )
     if getattr(model_args, "model_family", "auto") == "perceiver_ar":
         resolved_experiment = experiment_id or "E18"

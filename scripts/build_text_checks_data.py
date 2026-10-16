@@ -152,7 +152,7 @@ def language_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eo
             cur = []
 
 
-_VERSION = {"world": TEXT_WORLD_VERSION, "questions": 1, "tasks": TASKS, "bridge": 0}  # set from the arguments before workers fork
+_VERSION = {"world": TEXT_WORLD_VERSION, "questions": 1, "tasks": TASKS, "bridge": 0, "a2a": False}  # set from the arguments before workers fork
 
 
 def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: int, seed: int,
@@ -167,7 +167,12 @@ def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: 
             text = make_train_document(seed * 1_000_003 + k, stories, int(target * shrink), ntok,
                                        tasks=tuple(_VERSION["tasks"]), version=_VERSION["world"],
                                        questions=_VERSION["questions"], bridge=_VERSION["bridge"])
-            ids = encode(text)
+            if _VERSION["a2a"]:
+                # E35: agent A gets the document, agent B the questions: BOS document EOS BOS questions EOS
+                body, _, rest = text.partition("\n\nQuestion:")
+                ids = encode(body) + [eos, bos] + encode("Question:" + rest)
+            else:
+                ids = encode(text)
             if len(ids) <= seq_len - 2:
                 rows.append(_row(ids, bos, eos))
                 break
@@ -300,6 +305,8 @@ def main():
     p.add_argument("--train_bridge", type=int, default=0,
                    help="bridge questions per compose / deduce training document (the single steps of the chain, "
                         "asked after the task's own questions); 0 = none (earlier builds)")
+    p.add_argument("--a2a", action="store_true",
+                   help="E35: world rows become BOS document EOS BOS questions EOS (sender | receiver); stories unchanged")
     p.add_argument("--tokenizer", default=None,
                    help="reuse this tokenizer folder instead of training one (e.g. the published one, so data versions compare)")
     args = p.parse_args()
@@ -307,6 +314,7 @@ def main():
     _VERSION["questions"] = args.train_questions
     _VERSION["tasks"] = tuple(args.train_tasks)
     _VERSION["bridge"] = args.train_bridge
+    _VERSION["a2a"] = bool(args.a2a)
     if args.eval_from and args.eval_splits:
         # eval/ becomes a link to the source build: writing a split here would overwrite that build's frozen exams
         p.error("--eval_from links the source exams; pass --eval_splits with no values")
@@ -433,7 +441,7 @@ def main():
         "mix": {"story_rows": len(lang_tr), "world_rows": len(world_tr), "mean_story_row_tokens": m_lang,
                 "mean_world_row_tokens": m_world, "row_weights": [w_lang, w_world],
                 "mean_row_tokens": w_lang * m_lang + w_world * m_world,
-                "lang_token_share": f, "train_questions": args.train_questions, "train_bridge": args.train_bridge,
+                "lang_token_share": f, "train_questions": args.train_questions, "train_bridge": args.train_bridge, "a2a": bool(args.a2a),
                 "train_tasks": list(args.train_tasks)},
         "eval_from": args.eval_from,
         "built_s": round(time.time() - t0, 1),
