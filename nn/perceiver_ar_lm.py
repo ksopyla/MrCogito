@@ -1053,8 +1053,9 @@ def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Te
         is_raw = kv < S
         j = torch.where(is_raw, kv, kv - S)
         js = torch.clamp(j, max=max(nb - 1, 0))
+        jr = torch.clamp(j, max=S - 1)  # raw lookups only (a slot index can exceed S: short rows, many notes)
         tq = tag[b, q]
-        tj = tag[b, j]
+        tj = tag[b, jr]
         same_doc = torch.div(tj, m, rounding_mode="floor") == torch.div(tq, m, rounding_mode="floor")
         if raw_cross:
             same = same_doc
@@ -1066,10 +1067,10 @@ def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Te
         if not raw_cross:
             dq = torch.div(tq, m, rounding_mode="floor")
             sq = tq - dq * m
-            anc = is_raw & (tq >= 0) & (tj >= 0) & (sq >= 1) & anchor[b, j] & same_doc
+            anc = is_raw & (tq >= 0) & (tj >= 0) & (sq >= 1) & anchor[b, jr] & same_doc
             raw_ok = raw_ok | anc
         if key_valid is not None:
-            raw_ok = raw_ok & (key_valid[b, j] | (j == q))
+            raw_ok = raw_ok & (key_valid[b, jr] | (j == q))
         if not slots_on:
             return raw_ok & is_raw
         s = slot_tag[b, js]

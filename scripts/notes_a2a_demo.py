@@ -115,8 +115,11 @@ class AgentB:
         return len(new)
 
     @torch.no_grad()
-    def ask(self, question: str, A: AgentA | None, K: int, offset: int, max_new: int = 16, log: list | None = None):
-        """Greedy answer. A = None: no notes at all. K = 0 with A: B reads A's whole notebook (no request)."""
+    def ask(self, question: str, A: AgentA | None, K: int, offset: int, max_new: int = 16, log: list | None = None,
+            request_tokens: int = 0):
+        """Greedy answer. A = None: no notes at all. K = 0 with A: B reads A's whole notebook (no request).
+        `request_tokens` > 0: B requests notes only for its first that many answer tokens, then answers from what it
+        holds."""
         if self.blank is None:  # the shape of one note, from a one-page write
             k0, v0, s0 = self.model.write_notes(torch.full((1, int(self.model.config.lm_window)), self.dot,
                                                            device=self.device))
@@ -127,7 +130,7 @@ class AgentB:
         ids = [self.tok.bos_token_id] + self.tok.encode(f"Question: {question}\nAnswer:", add_special_tokens=False)
         out, sent_up, sent_down = [], 0, 0
         for _ in range(max_new):
-            if A is not None and K > 0:
+            if A is not None and K > 0 and (not request_tokens or len(out) < request_tokens):
                 for r in range(self.rounds):
                     _, cap = self._forward(ids + out, offset, capture=True)
                     qs, raw = cap["queries"][r]
@@ -157,6 +160,8 @@ def main():
     p.add_argument("--docs", type=int, default=3)
     p.add_argument("--max_questions", type=int, default=12)
     p.add_argument("--k", type=int, default=4, help="notes A sends per request")
+    p.add_argument("--request_tokens", type=int, default=0,
+                   help="B requests notes only for its first N answer tokens (0 = every token)")
     p.add_argument("--whole_notebook_max", type=int, default=300_000,
                    help="skip the whole-notebook reference above this many notes")
     p.add_argument("--device", default=None)
@@ -179,7 +184,7 @@ def main():
     rounds = int(getattr(model, "loop_rounds", 1) or 1)
     A, A2 = AgentA(model, tok, device), AgentA(model, tok, device)
     B = AgentB(model, tok, device, rounds)
-    res = {"checkpoint": a.checkpoint, "k": a.k, "rounds": rounds, "request_bytes": B.request_numbers * BYTES,
+    res = {"checkpoint": a.checkpoint, "k": a.k, "rounds": rounds, "request_tokens": a.request_tokens, "request_bytes": B.request_numbers * BYTES,
            "cells": [], "examples": []}
     t_all = time.time()
     for task in a.tasks:
@@ -198,7 +203,7 @@ def main():
                 off = r["tokens"]
                 for j, (q, gold) in enumerate(qa[: a.max_questions]):
                     log = []
-                    ans, st = B.ask(q, A, a.k, off, log=log)
+                    ans, st = B.ask(q, A, a.k, off, log=log, request_tokens=a.request_tokens)
                     ok = ans.rstrip(".").strip() == gold
                     score["fetched"].append(ok)
                     for k_ in ("notes_held", "bytes_up", "bytes_down"):
@@ -209,7 +214,8 @@ def main():
                         if r["notes"] <= a.whole_notebook_max:
                             score["whole"].append(B.ask(q, A, 0, off)[0].rstrip(".").strip() == gold)
                         score["none"].append(B.ask(q, None, a.k, off)[0].rstrip(".").strip() == gold)
-                        score["other"].append(B.ask(q, A2, a.k, off)[0].rstrip(".").strip() == gold)
+                        score["other"].append(B.ask(q, A2, a.k, off, request_tokens=a.request_tokens)[0]
+                                              .rstrip(".").strip() == gold)
                     if len(res["examples"]) < 60 and j < 2:
                         first = log[0]["new_notes"][:2] if log and log[0]["new_notes"] else []
                         res["examples"].append({

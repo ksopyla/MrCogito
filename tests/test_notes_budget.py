@@ -187,3 +187,22 @@ def test_agent_a_scores_its_notebook_from_b_queries_alone():
         qs, raw = cap["queries"][r]
         got = score_notes(qs, raw, k[:, vis])
         assert torch.allclose(got[0, 0], cap["mass"][r][0, 0, vis], atol=TOL)
+
+
+def test_short_row_with_more_notes_than_tokens():
+    """Agent B's question row is shorter than the notebook it holds: the read and the capture still work (the mask
+    looks raw tags up only at raw positions)."""
+    T = dict(TEXT)
+    T["message_boundary_token_id"] = 2
+    m = make(seed=4, **T, **LOOP, **WIDE, message_raw_window=8).to(DEV).eval()
+    torch.manual_seed(3)
+    with torch.no_grad():
+        k, v, sp = m.write_notes(torch.randint(3, 80, (1, 200)).to(DEV))
+        q = torch.tensor([[2, 11, 12]], device=DEV)
+        assert k.shape[1] > q.shape[1]
+        m._notes_override, m._notes_external = (k, v, sp), True
+        m._note_capture = {"q_pos": torch.tensor([[2]], device=DEV)}
+        out = m(q, position_offset=200).logits
+        cap = m._note_capture
+    m._notes_override, m._notes_external, m._note_capture = None, False, None
+    assert torch.isfinite(out).all() and cap["mass"][0].shape[-1] == k.shape[1]
