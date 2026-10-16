@@ -241,12 +241,17 @@ function drawTrain(){const s=document.getElementById('tsvg');s.innerHTML='';cons
 
 /* ============ 5 · results (filled as runs finish) ============ */
 const RESULTS={
- asof:'16 Oct 2026, 12:45 CEST',
- status:'Code, tests and the laptop check are done, broadcast and request-steered sending both. The pilot (400 steps on one shared GPU) is training on Polonez. Five runs are queued on Polonez after its E33 run (from about 17:50): K = 16 broadcast, K = 16 and K = 4 request-steered, K = 64 broadcast, K = 16 without the order term. Odra has been unreachable since 12:05.',
+ asof:'16 Oct 2026, 12:40 CEST',
+ status:'Code and tests are done for broadcast and request-steered sending. Two quick checks on Polonez (below) showed the channel works; five runs are queued on Polonez from about 18:00 (after its E33 run): K = 16 broadcast, K = 16 and K = 4 request-steered, K = 64 broadcast, K = 16 without the order term — 4,000 steps each at step size 1e-3, with story rows down-weighted so B\'s loss is mostly question-answers. Odra has been unreachable since 12:05.',
+ checks:[
+  ['Pilot: 400 steps of 16 rows, step size 5e-4','Every answer wrong with the real message, the empty one and another document\'s (exact answers have a 0 % floor here: without the document B cannot spell an invented name); picks at the guessing rate. Too short to say anything.'],
+  ['Overfit check, B trainable: 64 documents, 400 steps','B memorised all 64 documents\' answers in its own weights: 100 % right with its own message and with another document\'s. On a small fixed set the channel is not needed; at full scale (532k documents, fresh names) memorising is impossible.'],
+  ['Overfit check, B frozen: only A learns','The message carries document-specific information: B\'s surprise on the answer tokens fell from 4.5 to 1.97 nats with the document\'s own message, against 2.47 with another document\'s message, after 400 steps at step size 1e-3. Small, and growing.']],
  runs:[],cram:'One vector, optimized per text for the frozen receiver (dense on the bridge data, 30M), carries 26 bits (16-token texts: 38 % reproduced exactly, 94 % of tokens right), 44 bits (32 tokens: 12 %, 91 %) and 60 bits (64 tokens: 0 %, 80 %); the 160M Pythia in the Cramming paper reaches about 400 bits and 80 tokens. If capacity grows with the number of vectors as the paper found, 16 vectors give about 1,000 bits: enough in principle for 12 facts (≈ 420 bits), not for the text.'};
 function drawResults(){const b=document.getElementById('rbox');
  document.getElementById('status').innerHTML=`<b>Status (${RESULTS.asof}).</b> ${RESULTS.status}`;
  let h='';
+ if(RESULTS.checks&&RESULTS.checks.length){h+='<div class="tw"><table><tr><th>quick check</th><th>what it showed</th></tr>'+RESULTS.checks.map(c=>`<tr><td style="font-weight:650">${c[0]}</td><td>${c[1]}</td></tr>`).join('')+'</table></div>';}
  if(RESULTS.cram){h+=`<div class="card"><b>Channel capacity of the receiver (Cramming probe).</b> ${RESULTS.cram}</div>`;}
  if(!RESULTS.runs.length){b.innerHTML=h+'<p style="color:var(--fg2)">No trained run yet. This section fills in as runs finish.</p>';return;}
  h+='<div class="tw"><table><tr><th>run</th><th>K</th><th>tokens per vector at 4k</th><th>lookup</th><th>keyed</th><th>quote</th><th>latest</th><th>empty message</th><th>other document\'s</th><th>note</th></tr>'+
