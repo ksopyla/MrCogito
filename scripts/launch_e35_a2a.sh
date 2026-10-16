@@ -70,4 +70,15 @@ else
     wait
 fi
 stamp "exams done"
+# optional: long documents (frozen exam items at 32k-128k) and the agent-to-agent demo, on the run's first GPU
+if [ -n "${LONG_LENGTHS:-}" ] && [ ! -f "$RUN/exam_long.json" ]; then
+    CUDA_VISIBLE_DEVICES=${GPUS[0]} uv run python evaluation/text_checks_eval.py --checkpoint "$FINAL" --tokenizer "$TOKENIZER_NAME" \
+        --items "$EXAMS/id.jsonl" --lengths $LONG_LENGTHS --tasks lookup keyed quote latest --max_items_per_cell "${LONG_ITEMS:-100}" \
+        --out "$RUN/exam_long.json" > "$RUN/exam_long.log" 2>&1 && stamp "long exam done" || stamp "long exam FAILED"
+fi
+if [ -n "${DEMO_LENGTHS:-}" ] && [ ! -f "$RUN/demo.json" ]; then
+    CUDA_VISIBLE_DEVICES=${GPUS[0]} uv run python scripts/a2a_demo.py --checkpoint "$FINAL" --data "$DATA" \
+        --tasks lookup keyed quote latest --lengths $DEMO_LENGTHS --docs "${DEMO_DOCS:-3}" --max_questions 12 \
+        --out "$RUN/demo.json" > "$RUN/demo.log" 2>&1 && stamp "demo done" || stamp "demo FAILED"
+fi
 touch "$RUN/DONE"
