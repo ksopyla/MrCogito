@@ -6,8 +6,12 @@ A latent-memory model (E31c / E33 / E33e) is split at its notebook, nothing retr
   agent B  reads ANOTHER document of exactly the same token length followed by the real question, and its global read
            sees A's notes instead of its own — so everything B knows about A's document crossed in the notes.
 
+A closes its last page first: notes exist only for finished pages, so a neutral filler after the document runs to the
+next page close (both rows get it; `--no_flush` turns it off and late facts cannot cross).
+
 Per item (one teacher-forced forward each, scored like `evaluation/text_checks_eval.py`):
-  own_all         the normal exam: own text, all notes (sanity check against the run's exam)
+  own_plain       the normal exam row (sanity check against the run's exam)
+  own_all         own text with the closing filler, all notes
   split_all       B's own text, all of A's notes
   split_none      B's own text, no notes (must sit at guessing for far facts)
   split_oracle_K  only the K notes the answer positions looked at most in `own_all` (all rounds, all heads): what the
@@ -74,13 +78,14 @@ def summarize(rows: list[dict]) -> list[dict]:
     cells = defaultdict(list)
     for r in rows:
         for cond, s in r["cond"].items():
-            cells[(r["task"], r["length"], cond)].append(s)
+            cells[(r["task"], r["length"], cond)].append(dict(s, late=r["depth"] == "late"))
     out = []
     for (task, length, cond), ss in sorted(cells.items()):
-        def mean(k):
-            v = [s[k] for s in ss if s.get(k) is not None]
+        def mean(k, sel=lambda s: True):
+            v = [s[k] for s in ss if s.get(k) is not None and sel(s)]
             return sum(v) / len(v) if v else None
         out.append({"task": task, "length": length, "cond": cond, "n": len(ss), "exact": mean("exact"),
+                    "far": mean("exact", lambda s: not s["late"]), "late": mean("exact", lambda s: s["late"]),
                     "answer_nll": mean("answer_nll"), "pick_prob": mean("pick_prob"), "covered": mean("covered")})
     return out
 
@@ -96,6 +101,7 @@ def main():
     p.add_argument("--budgets", type=int, nargs="+", default=[1, 2, 4, 8, 16, 32, 64, 128])
     p.add_argument("--device", default=None)
     p.add_argument("--attn_backend", default=None)
+    p.add_argument("--no_flush", action="store_true", help="A does not close its last page (late facts cannot cross)")
     a = p.parse_args()
     from transformers import AutoTokenizer
 
@@ -147,6 +153,17 @@ def main():
     todo = [r for r in items if r["id"] not in done]
     print(f"{len(items)} items, {len(done)} done, {len(todo)} to go · budgets {a.budgets} · request "
           f"{request_numbers} numbers", flush=True)
+    # A closes its last page: notes exist only for finished pages (window W, stride ST, from the row start), so the
+    # document's tail would never reach B. A neutral filler after the document runs to the next page close.
+    W, ST = int(cfg.lm_window), int(cfg.lm_stride)
+    filler = tok.encode(" And that was all for the day." * 64, add_special_tokens=False)
+
+    def flush_len(n_doc: int) -> int:  # the document's last token sits at row index n_doc (BOS at 0)
+        if a.no_flush:
+            return 0
+        j = max(0, -(-(n_doc - (W - 1)) // ST))
+        return ST * j + W - 1 - n_doc
+
     t0 = time.time()
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(part, "a") as pf:
@@ -154,13 +171,17 @@ def main():
             p_ids, n_doc = split_ids(tok, r["prompt"])
             a_ids = _answer_ids(tok, r["prompt"], r["answer"], p_ids)
             firsts = [(_answer_ids(tok, r["prompt"], c, p_ids) or [-1])[0] for c in r["candidates"]]
-            start = len(p_ids)
-            own = [tok.bos_token_id] + p_ids + a_ids
+            F = flush_len(n_doc)
+            fill = filler[:F]
+            start = len(p_ids) + F
+            own = [tok.bos_token_id] + p_ids[:n_doc] + fill + p_ids[n_doc:] + a_ids
             o_ids, o_n = split_ids(tok, nxt[r["id"]]["prompt"])
             o_doc = o_ids[:o_n]
-            b_ids = [tok.bos_token_id] + other_text(o_doc, n_doc) + p_ids[n_doc:] + a_ids
+            b_ids = [tok.bos_token_id] + other_text(o_doc, n_doc) + fill + p_ids[n_doc:] + a_ids
             ans_pos = list(range(start, start + len(a_ids)))
             cond = {}
+            cond["own_plain"], _ = run(model, [tok.bos_token_id] + p_ids + a_ids, len(p_ids), a_ids, firsts,
+                                       r["candidates"], device)
             cond["own_all"], mass_own = run(model, own, start, a_ids, firsts, r["candidates"], device,
                                             capture_pos=ans_pos)
             notes = model._last_notes
@@ -185,7 +206,7 @@ def main():
                     s["covered"] = float(oracle[top].sum()) / tot  # share of the answer's note attention kept
                     cond[f"split_{name}_{K}"] = s
             row = {k: r[k] for k in ("id", "split", "task", "length", "depth", "floor")}
-            row.update({"n_notes": nb, "note_share": float(oracle.sum()) / (len(ans_pos) * len(mass_own) *
+            row.update({"flush": F, "n_notes": nb, "note_share": float(oracle.sum()) / (len(ans_pos) * len(mass_own) *
                                                                            int(cfg.num_attention_heads)),
                         "cond": {k: {kk: v[kk] for kk in ("exact", "answer_nll", "pick_prob", "covered") if kk in v}
                                  for k, v in cond.items()}})
@@ -199,15 +220,17 @@ def main():
     res = {"checkpoint": a.checkpoint, "items": a.items, "budgets": a.budgets, "note_numbers": note_numbers,
            "request_numbers": request_numbers, "n_items": len(rows), "cells": summary}
     json.dump(res, open(a.out, "w"), indent=1)
-    order = ["own_all", "split_all", "split_none"] + [f"split_{n}_{K}" for K in a.budgets for n in ("oracle", "request")]
+    order = ["own_plain", "own_all", "split_all", "split_none"] + [f"split_{n}_{K}" for K in a.budgets for n in ("oracle", "request")]
     by = {(c["task"], c["length"], c["cond"]): c for c in summary}
     for task, length in sorted({(c["task"], c["length"]) for c in summary}):
-        print(f"\n{task} @ {length}  (exact · answer surprise · share of the answer's note attention kept)")
+        print(f"\n{task} @ {length}  (exact: all / far facts / late facts · answer surprise · share of the answer's "
+              f"note attention kept)")
+        f = lambda v: " -  " if v is None else f"{v:.2f}"  # noqa: E731
         for cname in order:
             c = by.get((task, length, cname))
             if c:
                 cov = "" if c["covered"] is None else f"  kept {c['covered']:.2f}"
-                print(f"  {cname:<20} {c['exact']:.2f}  {c['answer_nll']:.3f}{cov}")
+                print(f"  {cname:<20} {f(c['exact'])} / {f(c['far'])} / {f(c['late'])}  {c['answer_nll']:.3f}{cov}")
 
 
 if __name__ == "__main__":
