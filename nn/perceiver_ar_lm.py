@@ -863,6 +863,9 @@ def _attend_flash(q, k, v, pattern, window, causal, cu_seqlens, key_valid):
 # --------------------------------------------------------------------------------------
 
 
+TAG_SIDES = 64  # sides (boundary-separated parts) per document the global read's mask tag can hold
+
+
 @dataclass
 class MessageCtx:
     """Per-forward geometry of the E21 message boundary (built once in `_run_layers`).
@@ -917,10 +920,13 @@ class MessageCtx:
         return int(self.slot_doc.shape[1])
 
     def tag_stride(self) -> int:
-        """Stride M of the (doc, side) → `doc * M + side` tag; M = 2·n_sides keeps the slot range
-        test `0 < tag_q − slot_tag < n_sides` false for every other document."""
-        k = self.n_sides or int(self.side.max().item()) + 1
-        return 2 * k
+        """Stride M of the (doc, side) → `doc * M + side` tag. M = 2 · `TAG_SIDES` keeps the slot range test
+        `0 < tag_q − slot_tag < M/2` false for every other document and true exactly for an earlier side of the same
+        document, for any row with at most `TAG_SIDES` sides per document (checked where sides are counted).
+        A constant, not 2 · (max side + 1): under dynamic-shape compilation a data-dependent stride is a SymInt, and
+        `div(tensor, SymInt)` does not trace inside the block-mask vmap. Rows with one side specialised to a constant,
+        so E21 / E31c never hit it; E33f's question boundaries (up to ~13 sides) did (Polonez, 16 Oct)."""
+        return 2 * TAG_SIDES
 
     def tags(self) -> tuple[torch.Tensor, torch.Tensor]:
         """int32 `tag` [B,S] and `slot_tag` [B,nb]: `doc * M + side`, −1 for pad / invalid slots."""
@@ -2455,6 +2461,8 @@ class PerceiverARLM(PreTrainedModel):
         base = torch.cummax(torch.where(starts, cum - is_b.long(), torch.zeros_like(cum)), dim=1).values
         side = cum - base
         K = int(side.max().item()) + 1
+        if K > TAG_SIDES:
+            raise ValueError(f"{K} sides in one document; the (doc, side) mask tag holds at most {TAG_SIDES}")
         if getattr(cfg, "message_keep_local_swa", False):
             local = doc
         else:
