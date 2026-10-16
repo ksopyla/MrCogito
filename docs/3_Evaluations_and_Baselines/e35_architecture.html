@@ -241,9 +241,9 @@ function drawTrain(){const s=document.getElementById('tsvg');s.innerHTML='';cons
 
 /* ============ 5 · results (filled as runs finish) ============ */
 const RESULTS={
- asof:'16 Oct 2026, 12:00 CEST',
- status:'Code, tests and the laptop check are done. The agent-to-agent data is being built on both servers; a short pilot (400 steps, one GPU) starts on Polonez when its build finishes; the four first runs start when the E33e and E33 runs release the GPUs (about 17:30–18:00).',
- runs:[],cram:null};
+ asof:'16 Oct 2026, 12:45 CEST',
+ status:'Code, tests and the laptop check are done, broadcast and request-steered sending both. The pilot (400 steps on one shared GPU) is training on Polonez. Five runs are queued on Polonez after its E33 run (from about 17:50): K = 16 broadcast, K = 16 and K = 4 request-steered, K = 64 broadcast, K = 16 without the order term. Odra has been unreachable since 12:05.',
+ runs:[],cram:'One vector, optimized per text for the frozen receiver (dense on the bridge data, 30M), carries 26 bits (16-token texts: 38 % reproduced exactly, 94 % of tokens right), 44 bits (32 tokens: 12 %, 91 %) and 60 bits (64 tokens: 0 %, 80 %); the 160M Pythia in the Cramming paper reaches about 400 bits and 80 tokens. If capacity grows with the number of vectors as the paper found, 16 vectors give about 1,000 bits: enough in principle for 12 facts (≈ 420 bits), not for the text.'};
 function drawResults(){const b=document.getElementById('rbox');
  document.getElementById('status').innerHTML=`<b>Status (${RESULTS.asof}).</b> ${RESULTS.status}`;
  let h='';
