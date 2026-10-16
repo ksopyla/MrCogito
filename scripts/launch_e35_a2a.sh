@@ -15,6 +15,7 @@ EXAMS="${EXAMS:-$DATASETS_TOK_DIR/text_checks_v2q8/eval}"
 INIT="${INIT:-Cache/e35/init}"
 EXAM_LENGTHS="${EXAM_LENGTHS:-1024 4096 16384}"
 CONTROL_ITEMS="${CONTROL_ITEMS:-100}"   # items per cell for the empty / mismatched-message controls
+EXAM_EXTRA="${EXAM_EXTRA:-}"            # extra exam arguments for every exam, e.g. "--tasks lookup keyed --max_items_per_cell 100"
 export NUM_GPUS="${NUM_GPUS:-1}" GPU_IDS="${GPU_IDS:-$(seq -s, 0 $(( ${NUM_GPUS:-1} - 1 )))}"
 
 export MODEL_FAMILY=a2a OBJECTIVE_VARIANT=causal_lm DECODER_TYPE=causal_ar
@@ -51,7 +52,7 @@ exam() {  # exam <gpu> <message> <extra args...>
     local g=$1 m=$2; shift 2
     [ -f "$RUN/exam_$m.json" ] && return 0
     CUDA_VISIBLE_DEVICES=$g uv run python evaluation/text_checks_eval.py --checkpoint "$FINAL" --tokenizer "$TOKENIZER_NAME" \
-        --items "$EXAMS/id.jsonl" "$EXAMS/steps.jsonl" --lengths $EXAM_LENGTHS --a2a_message "$m" "$@" \
+        --items "$EXAMS/id.jsonl" "$EXAMS/steps.jsonl" --lengths $EXAM_LENGTHS --a2a_message "$m" $EXAM_EXTRA "$@" \
         --out "$RUN/exam_$m.json" > "$RUN/exam_$m.log" 2>&1 && stamp "exam $m done" || stamp "exam $m FAILED"
 }
 stamp "exams start"
