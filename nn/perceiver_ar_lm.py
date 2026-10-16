@@ -1593,18 +1593,25 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
             if block_masks is not None:
                 block_masks[memo_key] = bm
         qt, kt, vt = qt.contiguous(), kt.contiguous(), vt.contiguous()
-        score_mod = None
+        score_mod, kernel_options = None, None
         if note_bias is not None:
             slope, pos_t, spos, unit, mode = note_bias
             # One copy of the slopes per (row, head, query): flex accumulates a captured buffer's gradient
             # with atomic adds, and 9 shared addresses made the backward 2.3× slower (Polonez, 30M, 4k).
             sl = slope.to(torch.float32)[None, :, None].expand(B, h, S).contiguous()
             if mode == "rank":
-                lc, rep_i = pos_t.to(torch.float32).contiguous(), int(unit)
+                # One captured buffer, the bias per (row, head, reader, page) with the strength already in it (its
+                # gradient reaches the strength through autograd). A page index depends on the key, so the buffer is
+                # gathered as a full query × key tile: with the default 128 × 128 blocks that overflowed the 3090's
+                # shared memory (148 KB of 99 KB), hence the smaller blocks.
+                nbw = (-slope.to(torch.float32)[None, :, None, None] * pos_t.to(torch.float32)).contiguous()
+                rep_i = int(unit)
+                kernel_options = {"BLOCK_M": 64, "BLOCK_N": 64, "num_stages": 1,
+                                  "bwd_BLOCK_M1": 32, "bwd_BLOCK_N1": 64, "bwd_BLOCK_M2": 64, "bwd_BLOCK_N2": 32}
 
                 def score_mod(score, b, hh, q_idx, kv_idx):
                     w = torch.div(torch.clamp(kv_idx - S, min=0), rep_i, rounding_mode="floor")
-                    return torch.where(kv_idx >= S, score - sl[b, hh, q_idx] * lc[b, hh, q_idx, w], score)
+                    return torch.where(kv_idx >= S, score + nbw[b, hh, q_idx, w], score)
             else:
                 pos_f, spos_f = pos_t.to(torch.float32), spos.to(torch.float32)
                 unit_f, log_f = float(unit), mode == "log"
@@ -1615,7 +1622,11 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
                     f = torch.log1p(age) if log_f else age
                     return torch.where(kv_idx >= S, score - sl[b, hh, q_idx] * f, score)
 
-        out = _get_flex()(qt, kt, vt, block_mask=bm, enable_gqa=(g != h), scale=scale, score_mod=score_mod)
+        if kernel_options is not None and torch.cuda.is_available():
+            out = _get_flex()(qt, kt, vt, block_mask=bm, enable_gqa=(g != h), scale=scale, score_mod=score_mod,
+                              kernel_options=kernel_options)
+        else:
+            out = _get_flex()(qt, kt, vt, block_mask=bm, enable_gqa=(g != h), scale=scale, score_mod=score_mod)
         return out.transpose(1, 2)
     if g != h:
         rep = h // g
