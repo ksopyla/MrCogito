@@ -62,7 +62,7 @@ from evaluation.text_checks import (  # noqa: E402
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-SESSION = "textchk"
+SESSION = os.environ.get("TEXTCHK_SESSION", "textchk")  # byobu session of the generated starters (one per agent session)
 
 
 def _git_commit() -> str:
