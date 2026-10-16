@@ -120,6 +120,14 @@ document-plus-question tokens per 4,000 steps (the planned budget).
 - **Reading:** the receiver learns the question template and ignores the message. In the overfit check the channel
   opened only when the receiver was frozen. Next: receiver frozen + loss on answer tokens only (k16_frozenB_ans,
   6,000 steps). The kill condition (K = 64 below 15 %) is not tested yet; K = 4 request was dropped.
-- **Side result, E33 split at its notebook (no training; `scripts/notes_budget_exam.py`):** agent B reads another
-  document of the same length plus agent A's E33 notes — far facts still cross. Budget results in the E33 page.
+- **k16, B frozen, loss on answers only (6,000 steps):** the message now teaches B the answer format, but not the
+  facts. Answer surprise is 2.32 with the real message, 4.74 empty and 2.33 with another document's.
+- **What works instead: send the notes themselves** (E33f, `docs/experiments_specs/ahead/E33f_notes_on_the_wire.md`).
+  - Agent A keeps its E33 notebook.
+  - Agent B, holding only its question, fetches A's best 4 notes once per read of its loop, for every answer token.
+  - Results: far lookup 97–100 % from about 20 notes (5 KB) on documents of 16k to 1M tokens (4.2 MB of text);
+    keyed 86–100 %; 0 % with no notes or another document's.
+  - Demo: `scripts/notes_a2a_demo.py`.
+  - The request is the larger part of the traffic (22 KB per answer). That is the next compression target, not
+    the notes.
 

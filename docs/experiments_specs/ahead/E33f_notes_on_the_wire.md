@@ -162,6 +162,28 @@ Held-out story loss 1.516 (E33 1.525).
 **What the split costs:** near facts. At 1k every fact sits in the raw window E33 reads, and E33f cannot see A's
 text. Lookup drops 55 → 34, keyed 45 → 25, quote 33 → 6, latest 95 → 15. Latest stays broken at every length.
 
+**Agent-to-agent demo** (`scripts/notes_a2a_demo.py`, 16 Oct 23:19–23:23 UTC, Polonez, 3 documents × 12 questions
+per cell, greedy answers). The two agents are separate:
+- agent A runs only the writer: a 1M-token document becomes 174,752 notes in 0.45 s;
+- agent B runs the reader on a row holding only its question;
+- per answer token and per read of B's loop, B sends one query per head (585 numbers, 1.2 KB) and A returns its 4
+  best notes (256 bytes each).
+
+| document | lookup | keyed | quote | notes B fetched | down / up | text |
+|---|---|---|---|---|---|---|
+| 4k | 69 % | 67 % | 17 % | 13–17 | 3–4 KB / 22 KB | 16 KB |
+| 16k | 97 % | 86 % | 36 % | 15–18 | 4 KB / 23 KB | 65 KB |
+| 64k | 100 % | 94 % | 22 % | 16–21 | 4–5 KB / 23 KB | 260 KB |
+| 256k | 100 % | 100 % | 28 % | 17–21 | 4–5 KB / 23 KB | 1 MB |
+| 1M | 100 % | 97 % | (rerun pending) | 20 | 5 KB / 22 KB | 4.2 MB |
+
+- Controls at every length: no notes 0 %, another document's notebook 0 %.
+- B reading A's whole notebook (no fetching) scores 92–100 % up to 256k, but only 50 % (lookup) and 67 % (keyed) at
+  1M. Fetching a few notes beats reading 174,752.
+- The page that states the fact was among the fetched notes for 100 % of the questions.
+- Asking only for the first answer token gives 0 % everywhere: each token of a name needs its own fetch.
+- Quotes come back partly right (e.g. 5 of 6 words).
+
 **Verdict:** E33f is the first trained model where agent A's notebook and agent B's reader are separate, and B answers
 far facts from a handful of fetched notes. A 128k-token document becomes about 8 notes per question (1,024 numbers).
 Near facts are the open gap.

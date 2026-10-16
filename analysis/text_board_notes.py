@@ -30,7 +30,7 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-16 21:45 UTC",
+    "as_of": "2026-10-16 23:30 UTC",
     "headline": "E31c, the notebook model without the loop, is the best architecture so far: on the current recipe it "
                 "learned to read far facts in 3 of 3 runs, better than dense at 4k and still at 16k. Nobody tracks the "
                 "latest move beyond 2k yet.",
@@ -45,7 +45,11 @@ STATUS = {
         "(3) E33f, E33 fine-tuned 0.3B tokens with every question cut off from the document's raw text (full exam, 400 "
         "items): far lookup 4k / 16k 77 / 91 % (E33 on its own text 72 / 90 %), far quote 16 / 24 % (0 / 0 %), near facts "
         "lose (latest at 1k 15 vs 95 %). With per-round requests about 8 notes answer far lookup at 16k-128k (92-100 %, "
-        "12 items per length): a 128k-token document becomes about 1,000 numbers per question.",
+        "12 items per length): a 128k-token document becomes about 1,000 numbers per question. (4) Demo with the agents "
+        "separate (A runs only the writer, B only the reader on its question row, 16 Oct 23:19 UTC): far lookup 97-100 % "
+        "from about 20 fetched notes (5 KB down, 22 KB of requests up) on documents of 16k to 1M tokens, keyed 86-100 %, "
+        "0 % with no notes or another document's; B reading the whole 1M notebook gets only 50 %. Running: E33f "
+        "continued for 0.6B more tokens (Polonez GPUs 1-3, from 23:23 UTC).",
         "Odra stopped answering (checked 18:05 UTC 16 Oct: no ping or ssh, also not from Polonez over the LAN; possibly a "
         "power cut). The state of E33e run 1, started there about 06:45 UTC, is unknown until Odra is back.",
         "E33 on the bridge-question data (Polonez, 16 Oct 09:17-17:00 UTC, two bursts): stopped at the 24 GPU-hour cap at "
