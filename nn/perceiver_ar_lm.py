@@ -908,6 +908,8 @@ class MessageCtx:
     read_rule: str = "exclusive"  # E31c "closed": any token reads slots of its document whose window closed ≤ it
     slot_close: Optional[torch.Tensor] = None  # [B,nb] int64 — last token a slot's window wrote from (closed rule)
     slot_nope: bool = False       # E31c "reader": slot keys are un-rotated and met by the un-rotated query
+    capture: Optional[dict] = None  # exam probe: {"q_pos": [B,P]} → appends each read's attention mass per note,
+                                    # [B,P,nb] summed over heads, to capture["mass"] (`capture_note_mass`)
 
     @property
     def n_slots(self) -> int:
@@ -1548,6 +1550,37 @@ def note_rank_logcount(q_slot: torch.Tensor, k_bar: torch.Tensor, ctx: "MessageC
     return out
 
 
+@torch.no_grad()
+def capture_note_mass(q, k, k_bar, ctx: MessageCtx, key_valid, *, q_slot=None) -> None:
+    """Notes-budget exam: the share of each note in this read's attention, at the query positions `ctx.capture["q_pos"]`
+    [B,P], summed over heads → appended to `ctx.capture["mass"]` as [B,P,nb] (one entry per read: a looped model
+    appends one per round). The softmax is the read's own: raw keys in the raw window ‖ the notes this query may
+    see, logits q·k and q_slot·k̄ (or q·k̄) at scale 1/√dh. The E33d / E33e note terms are not included."""
+    cap = ctx.capture
+    qp = cap["q_pos"].to(q.device)
+    B, S, h, dh = q.shape
+    g, nb = k.shape[2], k_bar.shape[1]
+    rep = h // g
+    bi = torch.arange(B, device=q.device)[:, None]
+    sc = dh ** -0.5
+    qq = q[bi, qp].float()                                   # [B,P,h,dh]
+    qs = (q_slot if q_slot is not None else q)[bi, qp].float()
+    kb = k_bar.float().repeat_interleave(rep, dim=2)         # [B,nb,h,dh]
+    sl = torch.einsum("bphd,bchd->bphc", qs, kb) * sc
+    pred = make_message_mask_pred(S, ctx, key_valid)
+    kv = S + torch.arange(nb, device=q.device)[None, None]
+    vis = pred(bi[:, :, None], None, qp[:, :, None], kv)     # [B,P,nb]
+    sl = sl.masked_fill(~vis[:, :, None], float("-inf"))
+    W = int(ctx.raw_window or 0) or (int(qp.max()) + 1)
+    j = qp[..., None] - torch.arange(W, device=q.device)     # [B,P,W]
+    kr = k[bi[..., None], j.clamp(min=0)].float().repeat_interleave(rep, dim=3)  # [B,P,W,h,dh]
+    rl = torch.einsum("bphd,bpwhd->bphw", qq, kr) * sc
+    ok = pred(bi[:, :, None], None, qp[:, :, None], j.clamp(min=0)) & (j >= 0)
+    rl = rl.masked_fill(~ok[:, :, None], float("-inf"))
+    lse = torch.logsumexp(torch.cat([rl, sl], -1), -1, keepdim=True)
+    cap.setdefault("mass", []).append(torch.exp(sl - lse).nan_to_num(0.0).sum(2))
+
+
 def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend, block_masks=None,
                    q_slot=None, note_bias=None):
     """Global read over raw keys ‖ message slots with the E21 mask. Returns [B,S,h,dh].
@@ -1565,6 +1598,8 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
     g = k.shape[2]
     if backend == "flash":
         raise NotImplementedError("message boundary needs flex or sdpa")
+    if getattr(ctx, "capture", None) is not None:
+        capture_note_mass(q, k, k_bar, ctx, key_valid, q_slot=q_slot)
     scale = None
     if q_slot is not None:
         q = torch.cat([q, q_slot.to(q.dtype)], dim=-1)
@@ -2179,6 +2214,14 @@ class PerceiverARLM(PreTrainedModel):
             if self.loop_rounds > 1 and getattr(cfg, "message_loop_inject", "none") == "prelude" else None
         )
         self._loop_rounds_override: Optional[int] = None  # eval: run r loops (exit r == the R = r forward)
+        # Notes-budget exam (latent memory, nothing retrained): `_notes_override` = (k̄, v̄, slot_pos) replaces what the
+        # writer would write (another forward's notes: B reads A's notebook over its own text); `_note_keep` [B,nb]
+        # hides every other note; `_note_capture` = {"q_pos": [B,P]} records how much each read looks at each note.
+        # `_last_notes` holds the notes of the last forward when a capture or override is set.
+        self._notes_override: Optional[tuple] = None
+        self._note_keep: Optional[torch.Tensor] = None
+        self._note_capture: Optional[dict] = None
+        self._last_notes: Optional[tuple] = None
         # E33: whole-name loss. A linear probe showed round 1 names the bridge node only by its first letters
         # while the memory is addressed by the tail of a name; this head asks every loop state, at the decision
         # position, to name its node completely (all `message_loop_name_len` letters), so the next round can query.
@@ -2562,11 +2605,22 @@ class PerceiverARLM(PreTrainedModel):
             x0 = torch.cat([prefix_embeds.to(x0.dtype), x0[:, P:]], 1)
         if self.memory_writer is not None:
             if msg is not None and msg.external is None:
-                out = self.memory_writer(
-                    self.embed.tok(input_ids), msg.side, msg.doc, key_valid, pos, cfg.rope_theta
-                )
-                msg.slots = (out["k"], out["v"])
-                msg.slot_pos = out["slot_pos"]
+                if self._notes_override is not None:  # notes-budget exam: another forward's notebook
+                    k_o, v_o, sp_o = self._notes_override
+                    if k_o.shape[1] != msg.n_slots:
+                        raise ValueError(f"notes override has {k_o.shape[1]} notes, this row's geometry {msg.n_slots}")
+                    msg.slots, msg.slot_pos = (k_o, v_o), sp_o
+                else:
+                    out = self.memory_writer(
+                        self.embed.tok(input_ids), msg.side, msg.doc, key_valid, pos, cfg.rope_theta
+                    )
+                    msg.slots = (out["k"], out["v"])
+                    msg.slot_pos = out["slot_pos"]
+                if self._note_capture is not None or self._notes_override is not None:
+                    self._last_notes = (msg.slots[0], msg.slots[1], msg.slot_pos)
+                if self._note_keep is not None:  # a hidden note's window never closes for anyone
+                    msg.slot_close = msg.slot_close.masked_fill(~self._note_keep.to(msg.slot_close.device), -1)
+                msg.capture = self._note_capture
             else:
                 x0 = x0 + self.memory_writer.participation().to(x0.dtype)  # DDP: no QUERY in batch
         cos, sin = rope_cos_sin(pos, cfg.head_dim, cfg.rope_theta, x0.dtype)
