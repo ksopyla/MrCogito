@@ -54,6 +54,9 @@ class A2AConfig(PretrainedConfig):
         tx_order: str = "rank",                  # "rank" (E33e order among matching entries) | "none"
         tx_rank_margin: float = 0.5,
         tx_rank_sharp: float = 4.0,
+        tx_request: str = "none",               # "none" (broadcast) | "question" (B's question steers what A sends)
+        question_token_id: int = -1,             # E35 request mode: the token that opens a question block ("Question")
+        answer_token_id: int = -1,               # … and the one that opens its answer ("Answer")
         **kwargs,
     ):
         kwargs.setdefault("tie_word_embeddings", False)
@@ -68,6 +71,13 @@ class A2AConfig(PretrainedConfig):
         self.tx_order = str(tx_order)
         self.tx_rank_margin = float(tx_rank_margin)
         self.tx_rank_sharp = float(tx_rank_sharp)
+        self.tx_request = str(tx_request)
+        self.question_token_id = int(question_token_id)
+        self.answer_token_id = int(answer_token_id)
+        if self.tx_request not in ("none", "question"):
+            raise ValueError(f"tx_request must be none / question, got {self.tx_request!r}")
+        if self.tx_request == "question" and min(self.question_token_id, self.answer_token_id) < 0:
+            raise ValueError("tx_request='question' needs question_token_id and answer_token_id")
         if self.tx_order not in ("rank", "none"):
             raise ValueError(f"tx_order must be rank / none, got {self.tx_order!r}")
         if self.tx_dim % self.tx_heads:
@@ -171,11 +181,22 @@ class Transmitter(nn.Module):
         self.out_norm_in = nn.RMSNorm(D)
         self.out = nn.Linear(D, d_out, bias=False)
         self.out_norm = nn.RMSNorm(d_out)
+        # request mode: B's request (its question, pooled in B's own embedding space) is added to every slot;
+        # zero at the start, so a fresh request-mode transmitter sends what a broadcast one would
+        self.req_norm = nn.RMSNorm(d_out) if cfg.tx_request != "none" else None
+        self.req_proj = nn.Linear(d_out, D, bias=False) if cfg.tx_request != "none" else None
+        if self.req_proj is not None:
+            nn.init.zeros_(self.req_proj.weight)
 
-    def forward(self, memory: LatentMemory) -> torch.Tensor:
+    def forward(self, memory: LatentMemory, request: Optional[torch.Tensor] = None) -> torch.Tensor:
         B = memory.entries.shape[0]
         mem = self.in_proj(memory.entries.to(self.in_proj.weight.dtype))
         x = self.slots[None].to(mem.dtype).expand(B, -1, -1)
+        if self.req_proj is not None:
+            if request is None:  # keep the request path in the graph (DDP) when a batch has none
+                x = x + 0.0 * self.req_proj.weight.sum() + 0.0 * self.req_norm.weight.sum()
+            else:
+                x = x + self.req_proj(self.req_norm(request.to(mem.dtype)))[:, None]
         for blk in self.blocks:
             x = blk(x, mem, memory.valid, memory.per_page, self.margin, self.sharp)
         return self.out_norm(self.out(self.out_norm_in(x)))
@@ -276,11 +297,33 @@ class A2AModel(PreTrainedModel):
         valid = out["latent_doc"] >= 0
         return LatentMemory(entries, out["latent_pos"], valid, int(self.sender_cfg.lm_latents)), out
 
-    def send(self, memory: LatentMemory) -> torch.Tensor:
-        """Memory → message [B, K, d_B]."""
-        return self.transmitter(memory)
+    def send(self, memory: LatentMemory, request: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """Memory (+ B's request [B, d_B] in request mode) → message [B, K, d_B]."""
+        return self.transmitter(memory, request)
 
     # ------------------------------------------------------------------ agent B
+    def request(self, q_ids: torch.Tensor, q_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """B's request: its question's words, pooled in B's own input-embedding space → [B, d_B] (576 numbers)."""
+        e = self.receiver.embed(q_ids).float()
+        m = (torch.ones_like(q_ids) if q_mask is None else q_mask).float()[..., None]
+        return (e * m).sum(1) / m.sum(1).clamp(min=1.0)
+
+    def _question_spans(self, r_ids: torch.Tensor, r_mask: torch.Tensor) -> list:
+        """Per receiver row: [(block start, question start, question end, block end)] — a block opens at
+        "Question", its question words run to the "Answer" token, the block to the next "Question"."""
+        qt, at = self.config.question_token_id, self.config.answer_token_id
+        out = []
+        for b in range(r_ids.shape[0]):
+            row = r_ids[b, : int(r_mask[b].sum())].tolist()
+            starts = [i for i, t in enumerate(row) if t == qt]
+            spans = []
+            for j, s0 in enumerate(starts):
+                end = starts[j + 1] if j + 1 < len(starts) else len(row)
+                a = next((i for i in range(s0 + 1, end) if row[i] == at), end)
+                spans.append((s0, s0 + 2, a, end))  # skip "Question" ":"
+            out.append(spans)
+        return out
+
     def answer(self, message: torch.Tensor, recv_ids: torch.Tensor, recv_mask: Optional[torch.Tensor] = None,
                labels: Optional[torch.Tensor] = None):
         return self.receiver(input_ids=recv_ids, attention_mask=recv_mask, labels=labels, prefix_embeds=message,
@@ -309,6 +352,8 @@ class A2AModel(PreTrainedModel):
         else:  # no document in this batch: keep every sender parameter in the graph (DDP)
             memory = self.empty_memory(input_ids.shape[0], input_ids.device)
             keep = 0.0 * (self.writer.participation().float().sum() + self.sender_tok.weight.sum())
+        if self.config.tx_request == "question":
+            return self._forward_request(input_ids, attention_mask, labels, memory, d_mask, r_ids, r_mask, keep)
         message = self.send(memory)
         if labels is not None:
             tgt = r_ids.masked_fill(~r_mask.bool(), -100)
@@ -326,6 +371,75 @@ class A2AModel(PreTrainedModel):
 
 
 RECEIVER_OVERRIDES = {"attn_backend": "sdpa", "attn_pad_multiple": 64}
+
+
+def _pad(seqs: list, pad: int, device) -> tuple[torch.Tensor, torch.Tensor]:
+    L = max([len(t) for t in seqs] + [1])
+    ids = torch.full((len(seqs), L), pad, dtype=torch.long, device=device)
+    mask = torch.zeros(len(seqs), L, dtype=torch.long, device=device)
+    for i, t in enumerate(seqs):
+        ids[i, : len(t)] = torch.as_tensor(t, device=device)
+        mask[i, : len(t)] = 1
+    return ids, mask
+
+
+def _request_forward(self, input_ids, attention_mask, labels, memory, d_mask, r_ids, r_mask, keep):
+    """Request mode: every question block of a document row gets its own message, sent for B's request (the block's
+    question words). Blocks run as separate short receiver rows `BOS Question: … Answer: …`; rows without a document
+    (stories) run as before with the empty memory and no request. Loss = token-weighted mean over both."""
+    rc = self.receiver.config
+    dev = input_ids.device
+    spans = self._question_spans(r_ids, r_mask)
+    blk_rows, blk_seqs, q_seqs = [], [], []
+    for b, sp in enumerate(spans):
+        if not bool(d_mask[b].any()):
+            continue
+        row = r_ids[b].tolist()
+        for (s0, qs, qe, e) in sp:
+            blk_rows.append(b)
+            blk_seqs.append([rc.bos_token_id] + row[s0:e])
+            q_seqs.append(row[qs:qe] or [row[s0]])
+    story = [b for b in range(r_ids.shape[0]) if not bool(d_mask[b].any())]
+    total, n_tok, logits_parts = 0.0, 0, {}
+    if blk_rows:
+        idx = torch.tensor(blk_rows, device=dev)
+        mem_b = LatentMemory(memory.entries.index_select(0, idx), memory.pos.index_select(0, idx),
+                             memory.valid.index_select(0, idx), memory.per_page)
+        q_ids, q_mask = _pad(q_seqs, rc.pad_token_id, dev)
+        msg = self.send(mem_b, self.request(q_ids, q_mask))
+        b_ids, b_mask = _pad(blk_seqs, rc.pad_token_id, dev)
+        if labels is not None:
+            tgt = b_ids.masked_fill(~b_mask.bool(), -100)
+            n = int((tgt[:, 1:] != -100).sum())
+            total = total + self.answer(msg, b_ids, b_mask, labels=tgt).loss * n
+            n_tok += n
+        else:
+            logits_parts["blocks"] = (self.answer(msg, b_ids, b_mask).logits, b_mask, blk_rows)
+    if story:
+        idx = torch.tensor(story, device=dev)
+        s_ids, s_mask = r_ids.index_select(0, idx), r_mask.index_select(0, idx)
+        msg = self.send(self.empty_memory(len(story), dev))
+        if labels is not None:
+            tgt = s_ids.masked_fill(~s_mask.bool(), -100)
+            n = int((tgt[:, 1:] != -100).sum())
+            total = total + self.answer(msg, s_ids, s_mask, labels=tgt).loss * n
+            n_tok += n
+        else:
+            logits_parts["story"] = (self.answer(msg, s_ids, s_mask).logits, s_mask, story)
+    if labels is not None:
+        return CausalLMOutput(loss=total / max(n_tok, 1) + keep, logits=None)
+    # scoring (one question per row: the block is the whole receiver part, BOS included) — logits back to the tail
+    B, S = input_ids.shape
+    lens = attention_mask.sum(-1).tolist() if attention_mask is not None else [S] * B
+    out = torch.zeros(B, S, rc.vocab_size, device=dev)
+    for lg, m, rows in logits_parts.values():
+        for i, b in enumerate(rows):
+            n = int(m[i].sum())
+            out[b, int(lens[b]) - n: int(lens[b])] = lg[i, :n].float()
+    return CausalLMOutput(loss=None, logits=out)
+
+
+A2AModel._forward_request = _request_forward
 
 
 def build_a2a_from_checkpoints(sender_dir: str, receiver_dir: str, receiver_overrides: Optional[dict] = None,

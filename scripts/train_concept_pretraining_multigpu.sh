@@ -240,6 +240,7 @@ A2A_MSG_SLOTS="${A2A_MSG_SLOTS:-16}"                      # message vectors per 
 A2A_TX_LAYERS="${A2A_TX_LAYERS:-2}"
 A2A_TX_DIM="${A2A_TX_DIM:-512}"
 A2A_TX_ORDER="${A2A_TX_ORDER:-rank}"                      # rank | none
+A2A_TX_REQUEST="${A2A_TX_REQUEST:-none}"                  # none (broadcast) | question (B's question steers A's message)
 PAR_LOOP_ROUNDS="${PAR_LOOP_ROUNDS:-1}"                    # E33a loop on text: 4
 PAR_LOOP_EXIT_AUX="${PAR_LOOP_EXIT_AUX:-0.0}"              # E33a: 0.3
 PAR_LOOP_EXIT_TARGETS="${PAR_LOOP_EXIT_TARGETS:-answer}"
@@ -448,6 +449,7 @@ if [ "$MODEL_FAMILY" = "a2a" ]; then
         --a2a_tx_layers "$A2A_TX_LAYERS"
         --a2a_tx_dim "$A2A_TX_DIM"
         --a2a_tx_order "$A2A_TX_ORDER"
+        --a2a_tx_request "$A2A_TX_REQUEST"
     )
 fi
 if [ "$MODEL_FAMILY" = "perceiver_ar" ] || [ "$MODEL_FAMILY" = "a2a" ]; then

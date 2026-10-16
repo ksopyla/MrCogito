@@ -158,3 +158,66 @@ def test_chunked_writing_gives_the_same_memory_as_one_pass():
     assert whole.entries.shape == parts.entries.shape
     assert torch.allclose(whole.entries, parts.entries, atol=1e-5)
     assert torch.equal(whole.pos, parts.pos)
+
+
+# ------------------------------------------------------------------ request mode
+QT, AT = 90, 91  # "Question", "Answer" stand-ins in the tiny vocabulary
+
+
+def make_req(seed=0):
+    torch.manual_seed(seed)
+    m = A2AModel(A2AConfig(sender_config=sender_cfg(), receiver_config=receiver_cfg(), msg_slots=4, tx_layers=2,
+                           tx_heads=4, tx_dim=32, tx_ffn=64, tx_request="question", question_token_id=QT,
+                           answer_token_id=AT))
+    for blk in m.transmitter.blocks:
+        for lin in (blk.wo, blk.so, blk.f_down):
+            lin.weight.data.normal_(0, 0.2)
+    m.transmitter.req_proj.weight.data.normal_(0, 0.2)
+    return m.eval()
+
+
+def qa_row(doc_len=40, questions=((5, 6, 7), (8, 9)), seed=1):
+    g = torch.Generator().manual_seed(seed)
+    doc = torch.randint(3, 80, (doc_len,), generator=g).tolist()
+    recv = []
+    for q in questions:
+        recv += [QT, 50, *q, AT, 50, 33, 34]  # Question : q… Answer : a a
+    return torch.tensor([[BOS, *doc, EOS, BOS, *recv, EOS]])
+
+
+def test_request_mode_finds_each_question_block():
+    m = make_req()
+    r = qa_row()
+    _, _, rv, rm = split_rows(r, None, BOS, EOS, PAD)
+    spans = m._question_spans(rv, rm)[0]
+    assert len(spans) == 2
+    row = rv[0].tolist()
+    assert row[spans[0][1]: spans[0][2]] == [5, 6, 7] and row[spans[1][1]: spans[1][2]] == [8, 9]
+
+
+def test_request_changes_the_message_and_trains():
+    m = make_req()
+    with torch.no_grad():
+        mem, _ = m.write(qa_row()[:, 1:41])
+        q1, q2 = m.request(torch.tensor([[5, 6, 7]])), m.request(torch.tensor([[8, 9, 10]]))
+        assert not torch.allclose(m.send(mem, q1), m.send(mem, q2))
+    m.train()
+    ids = torch.cat([qa_row(seed=1), qa_row(seed=2)])
+    story = torch.tensor([[BOS] + list(range(10, 10 + ids.shape[1] - 2)) + [EOS]])
+    batch = torch.cat([ids, story])
+    loss = m(batch, labels=batch).loss
+    loss.backward()
+    assert torch.isfinite(loss) and m.transmitter.req_proj.weight.grad.abs().sum() > 0
+
+
+def test_request_mode_scoring_aligns_with_answer():
+    m = make_req()
+    r = qa_row(questions=((5, 6, 7),))
+    with torch.no_grad():
+        full = m(r).logits
+        _, _, rv, rm = split_rows(r, None, BOS, EOS, PAD)
+        mem, _ = m.write(r[:, 1:41])
+        msg = m.send(mem, m.request(torch.tensor([[5, 6, 7]])))
+        direct = m.answer(msg, rv).logits
+    n = rv.shape[1]
+    assert torch.allclose(full[0, -n:], direct[0], atol=1e-4)

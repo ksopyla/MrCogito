@@ -50,8 +50,12 @@ class AgentA:
                 "write_s": round(time.time() - t1, 3)}
 
     @torch.no_grad()
-    def send(self) -> bytes:
-        msg = self.model.send(self.memory)[0]  # [K, d]
+    def send(self, request: bytes | None = None) -> bytes:
+        req = None
+        if request is not None:
+            req = torch.tensor(np.load(io.BytesIO(request)), device=self.device,
+                               dtype=next(self.model.parameters()).dtype)[None]
+        msg = self.model.send(self.memory, req)[0]  # [K, d]
         buf = io.BytesIO()
         np.save(buf, msg.float().cpu().numpy().astype(np.float16))
         return buf.getvalue()
@@ -63,6 +67,14 @@ class AgentB:
     def __init__(self, receiver, tok, device):
         self.receiver, self.tok, self.device = receiver, tok, device
         self.dot = tok.encode(".", add_special_tokens=False)[-1]
+
+    @torch.no_grad()
+    def request(self, question: str, model) -> bytes:
+        """Request mode: B pools its question's words in its own embedding space and sends that (576 numbers)."""
+        ids = torch.tensor([self.tok.encode(question, add_special_tokens=False)], device=self.device)
+        buf = io.BytesIO()
+        np.save(buf, model.request(ids)[0].float().cpu().numpy().astype(np.float16))
+        return buf.getvalue()
 
     def receive(self, payload: bytes | None) -> torch.Tensor | None:
         if payload is None:
@@ -130,18 +142,26 @@ def main():
         for length in a.lengths:
             base = zlib.crc32(f"demo/{task}/{length}".encode()) * 10_000
             docs = [build_document(task, length, base + i, held, ntok) for i in range(a.docs)]
-            payloads, reads = [], []
+            payloads, reads, memories = [], [], []
             for body, _ in docs:
                 reads.append(A.read(body))
+                memories.append(A.memory)
                 t0 = time.time()
                 payloads.append(A.send())
                 reads[-1]["send_s"] = round(time.time() - t0, 3)
             res["message_bytes"] = len(payloads[0])
             score = {"real": [], "none": [], "swapped": []}
+            req_mode = getattr(model.config, "tx_request", "none") != "none"
             for i, (body, qa) in enumerate(docs):
                 msgs = {"real": B.receive(payloads[i]), "none": None,
                         "swapped": B.receive(payloads[(i + 1) % len(docs)])}
                 for q, gold in qa[: a.max_questions]:
+                    if req_mode:  # B asks, A answers with a message for this question (other doc's: same request)
+                        rq = B.request(q, model)
+                        A.memory = memories[i]
+                        msgs["real"] = B.receive(A.send(rq))
+                        A.memory = memories[(i + 1) % len(docs)]
+                        msgs["swapped"] = B.receive(A.send(rq))
                     for kind, msg in msgs.items():
                         if kind != "real" and len(score[kind]) >= 2 * a.max_questions:
                             continue  # controls on a subset
