@@ -442,8 +442,6 @@ def _build_a2a_model(tokenizer, model_args, data_args):
     )
     if len(tokenizer) != model.receiver.config.vocab_size:
         raise ValueError(f"tokenizer has {len(tokenizer)} tokens, the receiver {model.receiver.config.vocab_size}")
-    if model_args.attn_backend:
-        model.receiver.config.attn_backend = model_args.attn_backend
     n = sum(p.numel() for p in model.parameters())
     parts = {k: sum(p.numel() for p in getattr(model, k).parameters()) for k in ("sender_tok", "writer", "transmitter",
                                                                              "receiver")}

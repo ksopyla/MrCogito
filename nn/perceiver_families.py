@@ -25,12 +25,10 @@ def load_perceiver_lm(checkpoint: str, device: str, attn_backend: str | None = N
     """Instantiate the right family from `checkpoint`, move to `device`, eval mode. bf16 on CUDA
     unless `dtype` is given."""
     fam = checkpoint_family(checkpoint)
-    if fam == "a2a":  # E35: two agents in one checkpoint; the backend applies to the receiver
+    if fam == "a2a":  # E35: two agents in one checkpoint; the receiver keeps its saved backend (short inputs, SDPA)
         from nn.latent_messages import A2AConfig, A2AModel
 
         cfg = A2AConfig.from_pretrained(checkpoint)
-        if attn_backend:
-            cfg.receiver_config["attn_backend"] = attn_backend
         model = A2AModel.from_pretrained(checkpoint, config=cfg)
         model.to(device).eval()
         if dtype is not None:

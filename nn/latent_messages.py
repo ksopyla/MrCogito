@@ -325,9 +325,17 @@ class A2AModel(PreTrainedModel):
         return CausalLMOutput(loss=None, logits=logits)
 
 
-def build_a2a_from_checkpoints(sender_dir: str, receiver_dir: str, **a2a_kwargs) -> A2AModel:
+RECEIVER_OVERRIDES = {"attn_backend": "sdpa", "attn_pad_multiple": 64}
+
+
+def build_a2a_from_checkpoints(sender_dir: str, receiver_dir: str, receiver_overrides: Optional[dict] = None,
+                               **a2a_kwargs) -> A2AModel:
     """Warm start: agent A's token embedding and writer from a notebook checkpoint (E31c / E33), agent B from a
-    decoder checkpoint (dense); the transmitter starts fresh."""
+    decoder checkpoint (dense); the transmitter starts fresh.
+
+    `receiver_overrides` (default `RECEIVER_OVERRIDES`): the text-checks decoders were trained with flex attention and
+    inputs padded to a multiple of 2,048; B's inputs are short (K + a question block), so padding them to 2,048 would
+    waste 10× the compute, and flex would recompile for every length — SDPA with a 64-token pad multiple instead."""
     import json
     import os
 
@@ -338,6 +346,7 @@ def build_a2a_from_checkpoints(sender_dir: str, receiver_dir: str, **a2a_kwargs)
     for c in (scfg, rcfg):
         for k in ("architectures", "transformers_version", "_name_or_path", "auto_map"):
             c.pop(k, None)
+    rcfg.update(RECEIVER_OVERRIDES if receiver_overrides is None else receiver_overrides)
     model = A2AModel(A2AConfig(sender_config=scfg, receiver_config=rcfg,
                                pad_token_id=rcfg.get("pad_token_id"), bos_token_id=rcfg.get("bos_token_id"),
                                eos_token_id=rcfg.get("eos_token_id"), **a2a_kwargs))

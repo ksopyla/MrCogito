@@ -37,6 +37,7 @@ def load_decoder(checkpoint: str, device: str, backend: str):
         m = m.receiver
     for p in m.parameters():
         p.requires_grad_(False)
+    m.config.attn_pad_multiple = 1  # the text-checks decoders pad to 2,048: no padding for short probe texts
     return m.eval()
 
 
