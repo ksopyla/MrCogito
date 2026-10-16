@@ -15,10 +15,27 @@
 - The notes-budget exam (`scripts/notes_budget_exam.py`, no training) splits E33 at its notebook. Agent B reads
   another document of the same length plus agent A's notes. Far facts cross, so E33 already works as two agents
   for them. Two weak points:
-  - late facts do not cross, even when A closes its last page: E33 learned to keep recent text in its raw window,
+  - late facts cross less well, even when A closes its last page: E33 learned to keep recent text in its raw window,
     not in its notes;
   - the read is diffuse: the answer looks at dozens of notes, and B's first query picks the wrong ones.
-  Full numbers: the E33 page (notes-budget section) and this spec's Result.
+
+  E33 on the bridge data, 40 items per cell, exact answers, far facts / late facts (16 Oct, Polonez). "Own text" is
+  the normal exam. "A's notes" means B reads another document plus all of A's notes. "Best 16" keeps only the 16
+  notes the answer looked at most (an upper bound for any selection). "B asks" keeps the 128 notes that B's first
+  read scores best.
+
+  | task | own text | A's notes | best 16 | best 64 | B asks, 128 | no notes |
+  |---|---|---|---|---|---|---|
+  | far lookup 4k | 74 / 100 | 70 / 54 | 59 / 46 | 78 / 46 | 22 / 23 | 0 / 0 |
+  | far lookup 16k | 93 / 92 | 93 / 92 | 93 / 92 | 96 / 100 | 11 / 0 | 0 / 0 |
+  | keyed 4k | 70 / 85 | 67 / 69 | 37 / 46 | 48 / 46 | 22 / 8 | 0 / 0 |
+  | keyed 16k | 96 / 92 | 96 / 100 | 93 / 100 | 93 / 100 | 11 / 0 | 0 / 0 |
+  | quote 4k | 0 / 62 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+
+  - At 16k, 16 of 2,720 notes (2,048 numbers, 4 KB at 16 bits) carry a far fact as well as the whole document.
+  - At 4k the read is more spread out: 64 notes are needed.
+  - Late facts and quotes lose most when B cannot see A's text.
+  - B's first read asks for the wrong notes: the loop finds the fact in later rounds.
 
 ## Hypothesis
 If every question can read its document only through the notes during training, E33 learns to put all a question
@@ -54,7 +71,7 @@ needs into the notes and to read them sharply. Then:
 ## Success / kill
 - **Pass:**
   - split far lookup and keyed at 4k and 16k ≥ 90 % of E33's own-text score;
-  - late lookup at 4k ≥ 60 % (E33 split: see Result);
+  - late lookup at 4k ≥ 80 % (E33 split: 54 %; own text: 100 %);
   - oracle top-16 notes keep ≥ 90 % of the all-notes score;
   - held-out story loss within 0.03 of E33's (1.525).
 - **Kill:** split far lookup at 4k below 60 % of E33's own-text score after 0.3B tokens. Then the notes cannot
