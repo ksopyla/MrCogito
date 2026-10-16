@@ -56,9 +56,15 @@ exam() {  # exam <gpu> <message> <extra args...>
         --out "$RUN/exam_$m.json" > "$RUN/exam_$m.log" 2>&1 && stamp "exam $m done" || stamp "exam $m FAILED"
 }
 stamp "exams start"
-exam "${GPUS[0]}" real &
-exam "${GPUS[1]:-${GPUS[0]}}" none --max_items_per_cell "$CONTROL_ITEMS" &
-exam "${GPUS[2]:-${GPUS[0]}}" swapped --max_items_per_cell "$CONTROL_ITEMS" &
-wait
+if [ "${EXAM_SERIAL:-0}" = 1 ]; then  # one GPU shared with another job: one exam at a time
+    exam "${GPUS[0]}" real
+    exam "${GPUS[0]}" none --max_items_per_cell "$CONTROL_ITEMS"
+    exam "${GPUS[0]}" swapped --max_items_per_cell "$CONTROL_ITEMS"
+else
+    exam "${GPUS[0]}" real &
+    exam "${GPUS[1]:-${GPUS[0]}}" none --max_items_per_cell "$CONTROL_ITEMS" &
+    exam "${GPUS[2]:-${GPUS[0]}}" swapped --max_items_per_cell "$CONTROL_ITEMS" &
+    wait
+fi
 stamp "exams done"
 touch "$RUN/DONE"
