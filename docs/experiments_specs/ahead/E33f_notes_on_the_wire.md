@@ -87,4 +87,46 @@ needs into the notes and to read them sharply. Then:
 - Compressing the notebook for broadcast (E35).
 
 ## Result
-_(to fill)_
+**Run:** Polonez, 16 Oct 2026, warm start from E33 checkpoint 7038, 1,568 steps (0.3B tokens), 20:23–21:30 UTC.
+The first launch crashed at step 1: a compile bug in the global-read mask with more than one side per document,
+fixed by a constant mask-tag stride (same mask).
+
+**Notes-budget exam** (40 items per cell, exact answers, far / late facts). E33f's own exam is already split:
+the boundary applies.
+
+| task | E33 own text | E33 split | E33f split | E33f best 16 | E33f best 64 |
+|---|---|---|---|---|---|
+| far lookup 4k | 74 / 100 | 70 / 54 | 74 / 69 | 70 / 38 | 74 / 54 |
+| far lookup 16k | 93 / 92 | 93 / 92 | 96 / 92 | 100 / 92 | 100 / 92 |
+| keyed 4k | 70 / 85 | 67 / 69 | 70 / 69 | 26 / 62 | 56 / 92 |
+| keyed 16k | 96 / 92 | 96 / 100 | 96 / 100 | 93 / 100 | 96 / 92 |
+| quote 4k | 0 / 62 | 0 / 0 | 11 / 15 | 4 / 0 | 15 / 8 |
+| quote 16k | 0 / 0 | 0 / 0 | 15 / 8 | 11 / 15 | 26 / 8 |
+
+**One request per read** (B sends its round-r queries, A returns its K best notes, B re-reads with everything it
+received and asks again; 4 rounds). All answers, exact; the number of distinct notes sent is in brackets.
+
+| task | model | all notes | K = 2 | K = 4 | K = 8 |
+|---|---|---|---|---|---|
+| far lookup 16k | E33 | 92 | 40 (4) | 90 (8) | 95 (15) |
+| far lookup 16k | E33f | 95 | 75 (4) | 98 (8) | 98 (14) |
+| keyed 16k | E33 | 98 | 32 (4) | 95 (8) | 88 (15) |
+| keyed 16k | E33f | 98 | 70 (4) | 95 (8) | 98 (15) |
+| far lookup 4k | E33 | 65 | 30 (4) | 55 (8) | 62 (13) |
+| far lookup 4k | E33f | 68 | 45 (4) | 70 (8) | 68 (13) |
+| keyed 4k | E33 | 68 | 20 (4) | 57 (7) | 48 (13) |
+| keyed 4k | E33f | 72 | 40 (4) | 70 (8) | 65 (13) |
+| quote 16k | E33f | 12 | 0 (4) | 12 (8) | 25 (16) |
+
+**Reading:**
+- A one-message request (B's first read only) fails for both models: 0–30 %. One request per read of the loop
+  works: about 8 of 2,720 notes (1,024 numbers, 2 KB at 16 bits) answer a far fact in a 16k-token document as
+  well as the whole notebook.
+- The notes needed did not grow from 4k to 16k (8 at both).
+- E33f carries more per note than E33: with 4 notes sent, 75 vs 40 % on lookup and 70 vs 32 % on keyed at 16k.
+- E33f quotes a little through the notes: 11–15 %, where E33 split and E33 on its own text get 0 % on far quotes.
+- Late lookup at 4k rose from 54 to 69 % (13 late items: noisy), short of the 80 % pass mark.
+- Wire cost: B's requests are the larger part. One query per head (576 numbers) per round per answer token, about
+  2,300 numbers per answer token over 4 rounds. They have not been compressed yet.
+- Pending: the full text-checks exam (400 items per cell) and the long documents (32k–128k).
+
