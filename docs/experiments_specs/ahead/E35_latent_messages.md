@@ -101,4 +101,25 @@ text ──► WRITER ──► MEMORY ──► TRANSMITTER ══ message: K �
 - different architectures for sender and receiver.
 
 ## Result
-_(to fill)_
+Round 1, Polonez, 16 Oct 2026 (UTC). Each run: 4 GPUs × 8 rows × 3 accumulation = 96 rows per step, about 0.55B
+document-plus-question tokens per 4,000 steps (the planned budget).
+
+- **Receiver capacity (Cramming probe, frozen receiver, held-out story text):** one vector carries at most ~85 bits
+  (16 tokens reproduced exactly 38 % of the time, 32 tokens 12 %, none longer); four vectors 172 / 213 / 239 bits at
+  128 / 256 / 512 tokens, none reproduced exactly. The 160M Pythia in the paper takes ~400 bits per vector: our
+  30M receiver is a narrow input channel, 4–5× below.
+- **Overfit check (64 fixed documents, 400 steps):**
+  - receiver trainable: it memorises the answers, own message = another document's (100 % both);
+  - receiver frozen: the channel opens, answer surprise 1.97 with the own message vs 2.47 with another document's.
+- **k16 broadcast (16 vectors, receiver trainable, loss on all receiver tokens, 4,000 steps, 17:00–17:23):** nothing
+  crosses. Exact 0 % on every fact task at 1k–16k and 32k–128k. Answer surprise on far lookup at 4k: 2.307 with the
+  real message, 2.346 empty, 2.319 another document's. The demo writes a 1M-token document into 174,752 memory
+  entries in 0.44 s and sends 16 × 576 numbers (18 KB); the receiver still answers 0 %.
+- **k16 request (the receiver's question steers the 16 vectors, 17:52–18:16):** the same. Far lookup at 4k: 2.315
+  real vs 2.323 empty vs 2.318 another document's; 0 % exact everywhere.
+- **Reading:** the receiver learns the question template and ignores the message. In the overfit check the channel
+  opened only when the receiver was frozen. Next: receiver frozen + loss on answer tokens only (k16_frozenB_ans,
+  6,000 steps). The kill condition (K = 64 below 15 %) is not tested yet; K = 4 request was dropped.
+- **Side result, E33 split at its notebook (no training; `scripts/notes_budget_exam.py`):** agent B reads another
+  document of the same length plus agent A's E33 notes — far facts still cross. Budget results in the E33 page.
+
