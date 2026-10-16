@@ -35,6 +35,12 @@ STATUS = {
                 "learned to read far facts in 3 of 3 runs, better than dense at 4k and still at 16k. Nobody tracks the "
                 "latest move beyond 2k yet.",
     "where": [
+        "Dense on the bridge-question data (Polonez, 16 Oct 06:08-08:57 UTC): the best dense run so far on every "
+        "retrieval task — far facts at 4k lookup 81 %, keyed 80 %, quote 99 %, latest 92 %, count 50 %, crowded lookup "
+        "82 % (dense on the old data: 56-63 %, 46-54 %, 3-94 %, 18-82 %, 17-38 %, 54-58 %), learned by 0.6B tokens; story "
+        "loss 1.554 (old data 1.537-1.548). Compose and deduce still at guessing (one-step compose 12 %, guessing 8 %). "
+        "Asked the bridge questions themselves it answers \"who is the teacher of X\" 69 % at 4k (old data 0 %): it "
+        "knows both steps and cannot join them. One run.",
         "Checks without training (16 Oct 05:53-06:45 UTC, Odra, E33 session). (1) Ranking each note among the notes "
         "that match the question about as well as its best one, one fixed strength on trained weights (exam set): E33 "
         "run 1 latest at 16k 5 → 41 % with far lookup 92 → 91 %; E33d run 1 2 → 30 % with lookup 93 → 92 %; keyed "
@@ -309,6 +315,17 @@ CLAIMS = [
                  "rounds (latest at 4k 22 / 23 / 22 vs 22 %, far lookup at 16k 91 / 91 / 91 vs 92 %, compose 8 %, deduce "
                  "8 %). Its gain is story loss only (1.520 vs E31c 1.564).",
      "settle": "Rounds exams on a second E33 run; a task for the rounds (round targets) after the bridge data."},
+    {"claim": "Taught the single steps, dense answers each of them but still cannot join two.", "state": "single run",
+     "since": "2026-10-16",
+     "evidence": "Dense on the bridge data: \"who is the teacher of X\" 69 % at 4k (dense on the old data 0 %); \"where "
+                 "does X live\" (lookup) 81 %; \"where does the teacher of X live\" (one step) 12 %, guessing 8 %.",
+     "settle": "E33 on the same data (running): does the loop join the two steps?"},
+    {"claim": "Bridge questions make dense learn retrieval earlier and better.", "state": "single run",
+     "since": "2026-10-16",
+     "evidence": "Every retrieval task above all three old-data dense runs at 4k (lookup 81 vs 56-63 %, keyed 80 vs "
+                 "46-54 %, latest 92 vs 18-82 %), learned by 0.6B tokens. One seed: the old-data runs show how much the "
+                 "seed decides at this budget.",
+     "settle": "A second seed on the bridge data."},
     {"claim": "No model counts: they know zero and roughly how many, not the number.", "state": "holds",
      "since": "2026-10-16",
      "evidence": "Accuracy by true count at 4k, 8 runs: 0 visits right 38-81 %, other counts 0-65 % with no fall-off "
@@ -479,10 +496,13 @@ LADDER = [
      "tokens": "1.5B, 8 questions per document", "exams": "v2 + v2.1, 1k-16k; latest picks and strengths logged",
      "result": "—", "when": "16 Oct from about 06:40 UTC",
      "why": "Author: fixes for T4-T7 (16 Oct); spec E33e_note_rank. Gate set on fresh questions, never the exams."},
-    {"id": "q8b_dense_s0_polonez.polonez", "start": "2026-10-16", "data": "v2 + bridge", "standing": "running",
+    {"id": "q8b_dense_s0_polonez.polonez", "start": "2026-10-16", "data": "v2 + bridge", "standing": "in use",
      "run": "Dense on the bridge data (Polonez)", "model": "dense · 30M, plain, seed 0",
-     "tokens": "1.5B, 8 questions + up to 4 bridge questions per compose / deduce document", "exams": "v2 + v2.1, 1k-16k",
-     "result": "—", "when": "16 Oct from 06:08 UTC",
+     "tokens": "1.5B, 8 questions + up to 4 bridge questions per compose / deduce document",
+     "exams": "v2 + v2.1, 1k-16k; bridge questions asked directly (diagnostic, CPU)",
+     "result": "Far facts at 4k lookup 81 %, keyed 80 %, quote 99 %; latest 92 %; count 50 %; compose 8 % and one-step "
+               "12 % (guessing 8 %); deduce 8 %. Bridge asked directly: teacher-of 69 %, category property 45 %.",
+     "when": "16 Oct 06:08 → 08:57 UTC",
      "why": "Is one-step compose / deduce learnable at all once its steps are taught? The cheapest learner first."},
     {"id": "q8b_e33_s0_polonez.polonez", "start": "2026-10-16", "data": "v2 + bridge", "standing": "queued",
      "run": "E33 on the bridge data (Polonez)", "model": "E33 · 30M, plain, seed 0",
