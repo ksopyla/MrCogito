@@ -30,11 +30,18 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-16 06:30 UTC",
+    "as_of": "2026-10-16 18:10 UTC",
     "headline": "E31c, the notebook model without the loop, is the best architecture so far: on the current recipe it "
                 "learned to read far facts in 3 of 3 runs, better than dense at 4k and still at 16k. Nobody tracks the "
                 "latest move beyond 2k yet.",
     "where": [
+        "Odra stopped answering (checked 18:05 UTC 16 Oct: no ping or ssh, also not from Polonez over the LAN; possibly a "
+        "power cut). The state of E33e run 1, started there about 06:45 UTC, is unknown until Odra is back.",
+        "E33 on the bridge-question data (Polonez, 16 Oct 09:17-17:00 UTC, two bursts): stopped at the 24 GPU-hour cap at "
+        "90 % of its tokens (about 1.35B; 0.33 steps per second against dense's 1.27). Notebook switched on: far lookup at "
+        "4k / 16k 79 / 91 % (notebook off 23 / 0 %). Latest 22 % at 4k (floor 20 %), 4 % at 16k. Compose and deduce still "
+        "at guessing (5-12 %, guessing 8 %): the loop did not join the two steps. Story eval loss 1.411 (dense on the same "
+        "data 1.432). Exams on checkpoint 7038; not yet in the ledger. One run.",
         "Dense on the bridge-question data (Polonez, 16 Oct 06:08-08:57 UTC): the best dense run so far on every "
         "retrieval task — far facts at 4k lookup 81 %, keyed 80 %, quote 99 %, latest 92 %, count 50 %, crowded lookup "
         "82 % (dense on the old data: 56-63 %, 46-54 %, 3-94 %, 18-82 %, 17-38 %, 54-58 %), learned by 0.6B tokens; story "
@@ -100,9 +107,10 @@ STATUS = {
         "story; latest's floor is 20 %; dense is not compared past 4k. Nothing had to be retrained.",
     ],
     "next": [
-        "Polonez: dense on the bridge data from 06:08 UTC 16 Oct (about 2.5 h with exams), then E33 on the same data "
-        "after a 20-minute pause (about 6.5 h): done about 15:30 UTC.",
-        "Odra: E33e from about 06:40 UTC 16 Oct (about 8.5 h with exams): done about 15:00 UTC.",
+        "Odra: bring it back, then check whether E33e run 1 finished or needs a resume from its last checkpoint.",
+        "Pull the bridge-data results (dense and E33) into the ledger.",
+        "Before the AWS run: the changes in section 14 of the E33 page (exit-loss cost, far-recall data from step 0, a "
+        "switch-on detector, a compute-matched loop check).",
         "Open for the author: whether to start the notebook-proportions sweep; give E33 more tokens or keep the "
         "equal budget.",
     ],
