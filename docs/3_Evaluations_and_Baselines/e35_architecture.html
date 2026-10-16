@@ -1,0 +1,281 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E35 Latent Messages</title>
+<style>
+:root{--bg:#f4f3ef;--card:#fcfcfb;--card2:#efeee9;--line:#dcdad3;--fg:#0b0b0b;--fg2:#52514e;--muted:#7c7b76;
+ --blue:#2a78d6;--orange:#eb6834;--green:#1a7f37;--amber:#b26b00;--red:#c62828;--violet:#4a3aa7;--teal:#0e8f8f;--pink:#c2417a;
+ --good-bg:#e6f4ea;--warn-bg:#fff4e0;--bad-bg:#fdecea;--info-bg:#eaf2fc;color-scheme:light;
+ --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--sother:#a8a7a1}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121211;--card:#1a1a19;--card2:#242422;--line:#3a3935;--fg:#f4f4f2;--fg2:#c3c2b7;--muted:#8f8e86;
+ --blue:#5b9cea;--orange:#e5763f;--green:#5cc47a;--amber:#e0a040;--red:#ef6b6b;--violet:#9085e9;--teal:#3cc4c4;--pink:#e27aa6;--good-bg:#16301f;--warn-bg:#35280f;--bad-bg:#3a1a1a;--info-bg:#15263b;color-scheme:dark;
+ --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--sother:#5e5d58}}
+:root[data-theme="dark"]{--bg:#121211;--card:#1a1a19;--card2:#242422;--line:#3a3935;--fg:#f4f4f2;--fg2:#c3c2b7;--muted:#8f8e86;
+ --blue:#5b9cea;--orange:#e5763f;--green:#5cc47a;--amber:#e0a040;--red:#ef6b6b;--violet:#9085e9;--teal:#3cc4c4;--pink:#e27aa6;--good-bg:#16301f;--warn-bg:#35280f;--bad-bg:#3a1a1a;--info-bg:#15263b;color-scheme:dark;
+ --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--sother:#5e5d58}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15.5px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+main{max-width:1100px;margin:0 auto;padding-inline:18px;padding-block:26px 70px}
+h1{font-size:30px;line-height:1.15;margin:4px 0 8px;text-wrap:balance}
+h2{font-size:21px;margin:44px 0 8px;padding-top:14px;border-top:1px solid var(--line);text-wrap:balance}
+h3{font-size:16px;margin:16px 0 6px}
+p{max-width:76ch}
+.kicker{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650}
+.sub{color:var(--fg2);margin:0 0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:12px 0}
+.callout{border-radius:10px;padding:12px 16px;margin:14px 0;border-left:4px solid var(--blue);background:var(--info-bg)}
+.callout.good{border-color:var(--green);background:var(--good-bg)}.callout.warn{border-color:var(--amber);background:var(--warn-bg)}.callout.bad{border-color:var(--red);background:var(--bad-bg)}
+.grid{display:grid;gap:12px}.g3{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}.g2{grid-template-columns:repeat(auto-fit,minmax(330px,1fr))}.g5{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+.grid>*{min-width:0}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.tile .n{display:inline-flex;width:24px;height:24px;border-radius:50%;background:var(--blue);color:#fff;font-weight:800;font-size:13px;align-items:center;justify-content:center;margin-right:6px}
+.tile .q{font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:650}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.8px}
+th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:650}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.controls{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding:10px 0;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--card);color:var(--fg2);padding:6px 11px;font:inherit;font-size:13.5px;cursor:pointer}
+.seg button.on{background:var(--blue);color:#fff}
+.lab{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:650;margin-right:4px}
+label.tg{font-size:13.5px;color:var(--fg2);display:inline-flex;gap:6px;align-items:center;cursor:pointer}
+input[type=range]{accent-color:var(--blue);vertical-align:middle;width:170px}
+svg{display:block;width:100%;height:auto}
+svg text{fill:var(--fg);font-family:inherit}svg .m{fill:var(--muted)}svg .s{fill:var(--fg2)}
+.svgwrap{overflow-x:auto}.svgwrap svg{min-width:680px}
+.say{font-size:15px;min-height:48px;margin-top:6px}
+.chg{color:var(--orange);font-weight:700}.fix{color:var(--violet);font-weight:700}.tied{color:var(--teal);font-weight:700}
+.pill{display:inline-block;font-size:11.5px;font-weight:700;padding:1px 8px;border-radius:999px;white-space:nowrap}
+.qa-t td{vertical-align:top;font-size:13.5px}.qa-t{min-width:760px}
+.p-yes{background:var(--good-bg);color:var(--green)}.p-no{background:var(--bad-bg);color:var(--red)}.p-part{background:var(--warn-bg);color:var(--amber)}.p-info{background:var(--info-bg);color:var(--blue)}
+a{color:var(--blue)}
+code{font:13px ui-monospace,Menlo,monospace;background:var(--card2);padding:1px 5px;border-radius:4px}
+.eq{font:14px/1.7 ui-monospace,Menlo,monospace;background:var(--card2);border-radius:8px;padding:10px 12px;overflow-x:auto;white-space:pre}
+#tip{position:fixed;pointer-events:none;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.18);opacity:0;z-index:20;max-width:340px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--fg2);margin:4px 0 2px}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.legend i.ln{height:0;border-top:2px dashed var(--fg2);border-radius:0;width:16px;vertical-align:3px}
+.chart-t{font-weight:700;margin:2px 0 0}.chart-s{font-size:13.5px;color:var(--fg2);margin:0 0 6px}
+details.nums{margin:8px 0 0;font-size:13.5px}details.nums summary{cursor:pointer;color:var(--fg2)}
+.cause{display:grid;grid-template-columns:30px 1fr;gap:4px 10px;align-items:start}
+.cause .n{display:inline-flex;width:24px;height:24px;border-radius:50%;background:var(--red);color:#fff;font-weight:800;font-size:13px;align-items:center;justify-content:center}
+.stage{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch;margin:8px 0}
+.stage .st{flex:1 1 150px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13.5px}
+.stage .st b{display:block;font-size:14px}.stage .arr{align-self:center;color:var(--muted);font-weight:700}
+.newtag{display:inline-block;font-size:11px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:var(--red);border:1px solid var(--red);border-radius:6px;padding:0 6px;margin-left:6px;vertical-align:2px}
+.controls.ns{position:static;border-bottom:0;padding:6px 0}
+.det{margin-top:8px;border-top:1px solid var(--line);padding-top:10px}
+.dgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.dgrid>div{min-width:0;font-size:13.5px}
+.dgrid .q{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:650}
+.dgrid code{white-space:normal;word-break:break-word}
+details.hist{margin:48px 0 0;border-top:2px solid var(--line);padding-top:14px}
+details.hist>summary{cursor:pointer;font-size:15px;color:var(--fg2)}
+details.hist[open]>summary{margin-bottom:10px}
+[hidden]{display:none!important}
+/* 15 Oct additions */
+.toc{display:flex;flex-wrap:wrap;gap:6px 8px;margin:10px 0 4px;font-size:13.5px}
+.toc a{text-decoration:none;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:2px 10px;color:var(--fg2)}
+.toc a:hover{border-color:var(--blue);color:var(--blue)}
+.vchips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.vchip{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:7px 11px;cursor:pointer;text-align:left;font:inherit;color:var(--fg);min-width:150px;flex:1 1 150px}
+.vchip b{display:block;font-size:14px}.vchip span{font-size:12px;color:var(--fg2)}
+.vchip.on{border-color:var(--blue);box-shadow:0 0 0 2px var(--blue) inset}
+.vchip .st{display:inline-block;margin-top:4px}
+.ex{font:13px/1.55 ui-monospace,Menlo,monospace;background:var(--card2);border-radius:8px;padding:8px 10px;white-space:pre-wrap;word-break:break-word;margin:6px 0}
+.ex .f{color:var(--orange);font-weight:700}.ex .q{color:var(--blue);font-weight:700}.ex .a{color:var(--green);font-weight:700}
+.sev{display:inline-block;font-size:11.5px;font-weight:750;padding:1px 8px;border-radius:6px;white-space:nowrap}
+.sev-c{background:var(--bad-bg);color:var(--red)}.sev-h{background:var(--warn-bg);color:var(--amber)}.sev-m{background:var(--info-bg);color:var(--blue)}.sev-l{background:var(--card2);color:var(--fg2)}
+.conf{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:12.5px;color:var(--fg2)}
+.conf i{display:inline-block;width:60px;height:7px;border-radius:4px;background:var(--card2);position:relative;overflow:hidden}
+.conf i b{position:absolute;left:0;top:0;bottom:0;background:var(--fg2);border-radius:4px}
+.xcard{border-left:4px solid var(--blue)}
+.xcard.w0{border-left-color:var(--green)}.xcard.w1{border-left-color:var(--amber)}.xcard.w2{border-left-color:var(--violet)}
+.xcard h3{margin:0 0 4px}.xcard .meta{font-size:12.5px;color:var(--fg2);margin-bottom:6px}
+.xcard ul{margin:4px 0 0;padding-left:18px;font-size:14px}
+.gauge{display:flex;align-items:center;gap:10px;font-size:13.5px;margin:4px 0}
+.gauge .bar{flex:1;max-width:340px;height:12px;background:var(--card2);border-radius:6px;position:relative;overflow:hidden}
+.gauge .bar b{position:absolute;left:0;top:0;bottom:0;border-radius:6px}
+.gauge .v{font-variant-numeric:tabular-nums;font-weight:700;min-width:48px;text-align:right}
+#wtab{min-width:960px}#ctab{min-width:720px}#vtable{min-width:760px}
+@media (max-width:640px){.gauge{flex-wrap:wrap}.gauge>span:first-child{min-width:0!important;flex-basis:100%}}
+</style>
+<style>.lead{margin-top:6px}input[type=range]{vertical-align:middle;width:180px;margin:0 6px}select{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:2px 4px}.btn{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:8px;padding:5px 12px;font:inherit;font-size:13.5px;cursor:pointer}.btn:hover{border-color:var(--blue)}.ctl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}</style>
+<div id="tip"></div>
+<main>
+<div class="kicker">MrCogito · E35 · latent messages between agents · built 16 Oct 2026 on E31c / E33 and the text checks</div>
+<h1>E35: two agents that talk in latent vectors</h1>
+<p class="lead" style="font-size:16.5px;color:var(--fg2);max-width:860px">Agent A reads a long document into its memory. Agent B never sees the document: it gets K real-valued vectors from A and answers questions from them. Memory, writing to it, and sending from it are separate parts, and the message tensor is the only thing that crosses. This page shows how information flows through the four parts, what the message costs, how it is trained, and the results so far.</p>
+<div class="callout" id="status"></div>
+<nav class="toc"><a href="#parts">1 · the four parts</a><a href="#wire">2 · what crosses the wire</a><a href="#train">3 · training</a><a href="#measure">4 · measures &amp; controls</a><a href="#results">5 · results</a><a href="#align">6 · design checklist</a></nav>
+
+<h2 id="parts">1 · The four parts, and what each one keeps</h2>
+<p>Click a box, or step through. Shapes are for the 30M setup that is trained first.</p>
+<div class="card">
+<div class="ctl"><button class="btn" id="pprev">◀</button><button class="btn" id="pnext">▶</button><span class="lab" style="margin-left:8px">owner</span><span id="powner" class="pill p-info"></span></div>
+<div class="svgwrap"><svg id="psvg" viewBox="0 0 1060 300" role="img" aria-label="Agent A writer, memory, transmitter, message, agent B receiver"></svg></div>
+<div class="dgrid" id="pdetail"></div>
+</div>
+
+<h2 id="wire">2 · What crosses the wire, and what it costs</h2>
+<p>Compression is counted the way the Cramming paper counts it: document tokens per transmitted vector. Bits are shown too. The vectors stay 16-bit floats (no quantization), so the size of a message is fixed by K and the width.</p>
+<div class="card">
+<div class="ctl" style="flex-wrap:wrap;gap:14px">
+<label><span class="lab">document</span><input type="range" id="wlen" min="3" max="7" step="0.25" value="4"><b id="wlenv"></b></label>
+<label><span class="lab">message vectors K</span><input type="range" id="wk" min="0" max="8" step="1" value="4"><b id="wkv"></b></label>
+<label><span class="lab">facts in the document</span><input type="range" id="wf" min="1" max="2000" step="1" value="12"><b id="wfv"></b></label>
+</div>
+<div class="grid g3" id="wtiles" style="margin-top:10px"></div>
+<div class="svgwrap"><svg id="wsvg" viewBox="0 0 1060 250" role="img" aria-label="Bits of the message against the text and its facts"></svg></div>
+<p style="font-size:13.5px;color:var(--fg2)" id="wnote"></p>
+</div>
+
+<h2 id="train">3 · Training: one row, two agents, one loss</h2>
+<div class="card"><div class="svgwrap"><svg id="tsvg" viewBox="0 0 1060 230" role="img" aria-label="Training row split into sender and receiver parts"></svg></div></div>
+<div class="tw"><table>
+<tr><th>part</th><th>starts from</th><th>gets gradient from</th><th>why</th></tr>
+<tr><td>A's token embedding + writer (4.0M + 1.0M)</td><td>E31c run 2 (far lookup 97 / 99 % at 4k / 16k with its own notebook)</td><td>B's loss, through the message</td><td>a writer that already puts facts into latents</td></tr>
+<tr><td>transmitter (~6M)</td><td>fresh; every block starts as the identity on its slots</td><td>B's loss</td><td>the new part: K slots that learn what to read</td></tr>
+<tr><td>B: dense decoder (30.3M)</td><td>dense on the bridge data, the best dense run so far (far lookup 81 %, latest 92 % at 4k)</td><td>its own next-word loss</td><td>a receiver that already knows the question forms and the language</td></tr>
+</table></div>
+<ul style="font-size:14px">
+<li><b>Data.</b> Text-checks world documents. A gets the document (stories with facts woven in, 256–4,096 tokens). B gets 8 questions with answers, plus up to 4 bridge questions on compose and deduce documents. Story rows (25 % of tokens) train B alone, with an empty memory, to keep its language.</li>
+<li><b>Loss.</b> Next-word loss on B's tokens only. The document is never a target, so the only way to answer is through the message.</li>
+<li><b>First runs.</b> K = 16 with the order term (main), K = 4 (4× more compression), K = 64, and K = 16 without the order term. 3,000 steps of 96 rows (about 0.5B row tokens), step size 5e-4.</li>
+</ul>
+
+<h2 id="measure">4 · How we will know the message carries the document</h2>
+<div class="grid g3">
+<div class="tile"><div class="q">the real message</div><p style="margin:4px 0 0">B answers questions about a document it never saw. Exact answer, as in the text checks, at 1k / 4k / 16k, then up to 1M tokens for lookup.</p></div>
+<div class="tile"><div class="q">an empty message</div><p style="margin:4px 0 0">A reads nothing. What B can guess from the question alone: must sit at the guessing rate (6–20 % depending on the task).</p></div>
+<div class="tile"><div class="q">another document's message</div><p style="margin:4px 0 0">The message of a different document of the same kind. If B still scores, the message was a generic hint, not this document's content (published latent-transfer results have failed this check).</p></div>
+</div>
+<p style="font-size:14px">Two references bracket the result. Dense reading the whole document itself scores 80–99 % at 4k: the ceiling, with no compression. E31c reading its full notebook (about 6 tokens per note) is the same memory before it is squeezed into K vectors. The Cramming probe (per-text optimized vectors for the frozen receiver) measures how many tokens one vector can carry into this receiver at all.</p>
+
+<h2 id="results">5 · Results</h2>
+<div id="rbox"></div>
+
+<h2 id="align">6 · Design checklist</h2>
+<p>Every design decision as a row. Mark agree / change / question, add a note, then copy the answers into the chat.</p>
+<div class="tw"><table id="atab"></table></div>
+<div class="ctl" style="margin-top:8px"><button class="btn" id="acollect">Collect my answers</button><span id="acopied" class="lab"></span></div>
+<textarea id="aout" style="width:100%;min-height:120px;margin-top:8px;font:13px ui-monospace,monospace;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px" readonly></textarea>
+
+<p style="font-size:13px;color:var(--fg2);margin-top:24px">Sources: <a href="https://arxiv.org/abs/2502.13063">Cramming 1568 tokens into a single vector (Kuratov et al.)</a> · <a href="https://arxiv.org/abs/2607.21231">Progressive Cramming</a> · <a href="https://arxiv.org/abs/2408.03094">500xCompressor</a> · <a href="https://arxiv.org/abs/2511.09149">Interlat</a> · <a href="https://arxiv.org/abs/2510.20733">ThoughtComm</a> · <a href="https://arxiv.org/abs/2510.03346">KVComm</a> · <a href="https://arxiv.org/abs/2608.04893">checks of latent transfer with mismatched caches</a> · <a href="https://arxiv.org/abs/2405.18719">CoPE</a>. Code: nn/latent_messages.py, scripts/launch_e35_a2a.sh, scripts/a2a_demo.py, scripts/cramming_probe.py. Spec: docs/experiments_specs/ahead/E35_latent_messages.md.</p>
+</main>
+<script>
+const C=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();const NS='http://www.w3.org/2000/svg';const tip=document.getElementById('tip');
+function el(t,a,p,x){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(x!=null)e.textContent=x;if(p)p.appendChild(e);return e;}
+function mk(s,id,col){let d=s.querySelector('defs')||el('defs',{},s);const m=el('marker',{id,viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:7,markerHeight:7,orient:'auto'},d);el('path',{d:'M0,0L10,5L0,10z',fill:col},m);}
+function box(s,x,y,w,h,col,op,t,sub,fs,bold=true,dash){const r=el('rect',{x,y,width:w,height:h,rx:8,fill:col,'fill-opacity':op,stroke:col,'stroke-dasharray':dash||''},s);
+ el('text',{x:x+w/2,y:y+(sub?h/2-3:h/2+5),'text-anchor':'middle','font-size':fs||13,'font-weight':bold?750:500},s,t);if(sub)el('text',{x:x+w/2,y:y+h/2+13,'text-anchor':'middle','font-size':10.5,class:'s'},s,sub);return r;}
+const fmt=n=>n>=1e9?(n/1e9).toFixed(n>=1e10?0:1)+'G':n>=1e6?(n/1e6).toFixed(n>=1e7?0:1)+'M':n>=1e3?(n/1e3).toFixed(n>=1e4?0:1)+'k':String(Math.round(n));
+
+/* ============ 1 · the four parts ============ */
+const PARTS=[
+ {id:'text',x:20,y:120,w:120,h:56,t:'document',sub:'1k … 1M+ tokens',col:'--muted',own:'agent A',
+  what:'The text agent A has: a prompt, a chat history, a codebase, a long document. In the first runs, a text-checks world document: invented people with facts woven into simple stories.',
+  shape:'tokens [S] — 4,096 at most in training; 1k–16k in the exams, up to 1M in the demo',keeps:'everything'},
+ {id:'writer',x:170,y:120,w:150,h:56,t:'WRITER',sub:'page → 32 latents',col:'--violet',own:'agent A',
+  what:'A\'s own token embedding (256 numbers per token), then pages of 256 tokens every 192. Two page layers mix the words of one page in both directions; 32 latents (512 numbers each) read the page twice. Pages are written independently, so a 1M-token document is about 5,200 pages written in parallel (in chunks of 512 pages: same memory as one pass).',
+  shape:'tokens [S] → latents [S/192 × 32, 512] (+ what each read, 512)',keeps:'what the page says, about 6 tokens per latent; nothing from other pages'},
+ {id:'memory',x:350,y:110,w:150,h:76,t:'MEMORY',sub:'append-only entries',col:'--violet',own:'agent A',
+  what:'One entry per latent: its state and what it read (1,024 numbers), its source position in the document, a valid mask. It only grows. Nothing reads the raw text after writing. 4k tokens → 672 entries; 1M tokens → 167k entries (about 340 MB in 16-bit).',
+  shape:'entries [C = pages × 32, 1024] · positions [C]',keeps:'everything the writer kept, in order of the pages'},
+ {id:'tx',x:530,y:110,w:160,h:76,t:'TRANSMITTER',sub:'K slots read the memory',col:'--amber',own:'agent A',
+  what:'K learned slots (512 numbers each). Each of 2 blocks: the slots read every memory entry (one softmax over all entries plus a learned "nothing" entry, with E33e\'s order term: an entry pays for the matching entries on newer pages); then the slots read each other; then a feed-forward layer. The output is normed to the scale of B\'s input embeddings.',
+  shape:'entries [C, 1024] → slots [K, 512] → message [K, 576]',keeps:'what the K slots chose to read: the bottleneck of the whole system'},
+ {id:'wire',x:720,y:120,w:110,h:56,t:'message',sub:'K × 576 floats',col:'--orange',own:'the channel',
+  what:'The only thing that crosses from A to B: K vectors of 576 numbers, sent as 16-bit floats. K = 16 is 18 KB, whatever the length of the document. In the demo it is serialised to bytes and read back, so the separation is literal.',
+  shape:'[K, 576] · 16 bits each',keeps:'K × 576 numbers — see section 2'},
+ {id:'recv',x:860,y:110,w:180,h:76,t:'RECEIVER',sub:'[message | own text]',col:'--blue',own:'agent B',
+  what:'A dense decoder (30M). The K message vectors are its first K input positions, the way Cramming feeds memory vectors: every layer attends to them. Then B\'s own text follows: the question, or any data B received by other means. It decodes the answer token by token.',
+  shape:'[K + own tokens, 576] → next-token logits',keeps:'whatever the message and its own text tell it'}];
+let PI=0;
+function drawParts(){const s=document.getElementById('psvg');s.innerHTML='';const M=C('--muted');mk(s,'pa',M);
+ el('rect',{x:10,y:40,width:690,height:200,rx:12,fill:C('--violet'),'fill-opacity':.05,stroke:C('--violet'),'stroke-dasharray':'5 4'},s);
+ el('text',{x:22,y:60,'font-size':13,'font-weight':750},s,'AGENT A (sender)');
+ el('rect',{x:850,y:40,width:200,height:200,rx:12,fill:C('--blue'),'fill-opacity':.05,stroke:C('--blue'),'stroke-dasharray':'5 4'},s);
+ el('text',{x:862,y:60,'font-size':13,'font-weight':750},s,'AGENT B (receiver)');
+ PARTS.forEach((p,i)=>{const r=box(s,p.x,p.y,p.w,p.h,C(p.col),i===PI?.3:.12,p.t,p.sub,12.5);r.style.cursor='pointer';r.onclick=()=>{PI=i;drawParts();};
+  if(i===PI)r.setAttribute('stroke-width',2.5);
+  if(i<PARTS.length-1){const q=PARTS[i+1];el('path',{d:`M${p.x+p.w},${p.y+p.h/2} L${q.x-2},${q.y+q.h/2}`,stroke:i===3||i===4?C('--orange'):M,'stroke-width':i===3||i===4?3:1.6,'marker-end':'url(#pa)'},s);}});
+ el('text',{x:775,y:105,'text-anchor':'middle','font-size':11,class:'s'},s,'the only link');
+ box(s,880,200,140,30,C('--green'),.14,'answer','',12);el('path',{d:'M950,186 L950,198',stroke:M,'stroke-width':1.6,'marker-end':'url(#pa)'},s);
+ el('text',{x:20,y:270,'font-size':11.5,class:'m'},s,'Separate calls in code: write(text) → memory · send(memory) → message · answer(message, own text) → tokens.');
+ const p=PARTS[PI];document.getElementById('powner').textContent=p.own;
+ document.getElementById('pdetail').innerHTML=`<div><div class="q">what it does</div>${p.what}</div><div><div class="q">shape</div>${p.shape}</div><div><div class="q">what survives</div>${p.keeps}</div>`;}
+
+/* ============ 2 · the wire ============ */
+const KS=[1,2,4,8,16,32,64,128,256];
+function drawWire(){const L=Math.round(10**+document.getElementById('wlen').value),K=KS[+document.getElementById('wk').value],F=+document.getElementById('wf').value;
+ document.getElementById('wlenv').textContent=' '+fmt(L)+' tokens';document.getElementById('wkv').textContent=' '+K;document.getElementById('wfv').textContent=' '+F;
+ const msgBits=K*576*16,textBits=L*12,factBits=F*35,tpv=L/K,cram=80; /* Pythia-160M decodes 80 tokens per vector (Cramming) */
+ const tiles=[['tokens per vector',fmt(tpv),tpv>cram?`above what a 160M model decodes losslessly from one vector (${cram}): only possible if most of the text need not cross`:'within what a small model can reproduce from one vector'],
+  ['message vs the text',(msgBits/textBits>=1?(msgBits/textBits).toFixed(1)+'× larger':(textBits/msgBits).toFixed(1)+'× smaller'),`${fmt(msgBits/8)} bytes vs ${fmt(textBits/8)} bytes of 12-bit tokens`],
+  ['message vs the facts',(msgBits/factBits).toFixed(0)+'× their size',`${F} facts × ~35 bits = ${fmt(factBits)} bits: what B actually needs for the questions`]];
+ document.getElementById('wtiles').innerHTML=tiles.map(t=>`<div class="tile"><div class="q">${t[0]}</div><div style="font-size:22px;font-weight:750">${t[1]}</div><div style="font-size:12.5px;color:var(--fg2)">${t[2]}</div></div>`).join('');
+ const s=document.getElementById('wsvg');s.innerHTML='';const x0=150,x1=1030,y0=30,h=200;
+ const lens=[1e3,1e4,1e5,1e6,1e7];const lx=v=>x0+(Math.log10(v)-3)/4*(x1-x0);const ly=b=>y0+h-(Math.log10(b)-2)/9*h;
+ [1e3,1e4,1e5,1e6,1e7].forEach(v=>{el('line',{x1:lx(v),x2:lx(v),y1:y0,y2:y0+h,stroke:C('--line')},s);el('text',{x:lx(v),y:y0+h+16,'text-anchor':'middle','font-size':11,class:'m'},s,fmt(v)+' tok');});
+ [1e3,1e5,1e7,1e9,1e11].forEach(b=>{if(b<1e2||b>1e11)return;el('text',{x:x0-8,y:ly(b)+4,'text-anchor':'end','font-size':11,class:'m'},s,fmt(b)+' bits');el('line',{x1:x0,x2:x1,y1:ly(b),y2:ly(b),stroke:C('--line'),'stroke-dasharray':'2 4'},s);});
+ const line=(f,col,lab,dash)=>{const pts=[];for(let e=3;e<=7.001;e+=0.05){const v=10**e;pts.push(`${lx(v)},${ly(Math.max(1e2,f(v)))}`);}el('polyline',{points:pts.join(' '),fill:'none',stroke:col,'stroke-width':2.2,'stroke-dasharray':dash||''},s);
+  el('text',{x:x1-4,y:ly(Math.max(1e2,f(1e7)))-6,'text-anchor':'end','font-size':11.5,'font-weight':650,fill:col},s,lab);};
+ line(v=>v*12,C('--muted'),'the text (12 bits per token)');line(()=>msgBits,C('--orange'),`message: ${K} × 576 × 16 bits`);line(()=>factBits,C('--green'),`the facts (${F} × 35 bits)`,'5 4');
+ el('circle',{cx:lx(L),cy:ly(msgBits),r:5,fill:C('--orange')},s);
+ el('text',{x:x0,y:16,'font-size':12,'font-weight':650},s,'bits (log scale) against document length');
+ document.getElementById('wnote').textContent=`Where the orange line is under the grey one, sending the message is cheaper than sending the text: for K = ${K} that happens beyond ${fmt(msgBits/12)} tokens. For agents the scarcer resource is usually the receiver's context and compute, not the network: B reads ${K} positions instead of ${fmt(L)}. The message can only work while it is above the green line: it must hold at least the facts B will be asked about.`;}
+
+/* ============ 3 · training row ============ */
+function drawTrain(){const s=document.getElementById('tsvg');s.innerHTML='';const M=C('--muted');mk(s,'ta',M);
+ const seg=(x,w,t,col,op)=>{el('rect',{x,y:30,width:w,height:36,rx:6,fill:C(col),'fill-opacity':op,stroke:C(col)},s);el('text',{x:x+w/2,y:53,'text-anchor':'middle','font-size':12,'font-weight':650},s,t);};
+ seg(20,40,'BOS','--muted',.15);seg(62,560,'document — Lumo lived in Redhill. … Later, Mira moved to Ashford. …','--violet',.14);seg(624,40,'EOS','--muted',.15);seg(666,40,'BOS','--muted',.15);seg(708,300,'Question: Where does Lumo live? Answer: Redhill. …','--blue',.14);seg(1010,40,'EOS','--muted',.15);
+ el('text',{x:20,y:20,'font-size':12,class:'m'},s,'one training row (the model splits it at the first EOS followed by BOS)');
+ box(s,170,110,330,40,C('--violet'),.18,'writer → memory → transmitter','agent A: no loss of its own',12);
+ box(s,640,110,380,40,C('--blue'),.18,'receiver: [message | question …]','agent B: next-word loss on its tokens only',12);
+ el('path',{d:'M340,66 L340,108',stroke:M,'stroke-width':1.6,'marker-end':'url(#ta)'},s);el('path',{d:'M858,66 L858,108',stroke:M,'stroke-width':1.6,'marker-end':'url(#ta)'},s);
+ el('path',{d:'M500,130 L638,130',stroke:C('--orange'),'stroke-width':3,'marker-end':'url(#ta)'},s);el('text',{x:569,y:122,'text-anchor':'middle','font-size':11,class:'s'},s,'message');
+ el('path',{d:'M640,170 C560,200 420,200 340,152',stroke:C('--red'),'stroke-width':1.6,fill:'none','stroke-dasharray':'5 4','marker-end':'url(#ta)'},s);
+ el('text',{x:490,y:212,'text-anchor':'middle','font-size':11.5,fill:C('--red')},s,'the gradient of B\'s answers is the only teacher of A');}
+
+/* ============ 5 · results (filled as runs finish) ============ */
+const RESULTS={
+ asof:'16 Oct 2026, 12:00 CEST',
+ status:'Code, tests and the laptop check are done. The agent-to-agent data is being built on both servers; a short pilot (400 steps, one GPU) starts on Polonez when its build finishes; the four first runs start when the E33e and E33 runs release the GPUs (about 17:30–18:00).',
+ runs:[],cram:null};
+function drawResults(){const b=document.getElementById('rbox');
+ document.getElementById('status').innerHTML=`<b>Status (${RESULTS.asof}).</b> ${RESULTS.status}`;
+ let h='';
+ if(RESULTS.cram){h+=`<div class="card"><b>Channel capacity of the receiver (Cramming probe).</b> ${RESULTS.cram}</div>`;}
+ if(!RESULTS.runs.length){b.innerHTML=h+'<p style="color:var(--fg2)">No trained run yet. This section fills in as runs finish.</p>';return;}
+ h+='<div class="tw"><table><tr><th>run</th><th>K</th><th>tokens per vector at 4k</th><th>lookup</th><th>keyed</th><th>quote</th><th>latest</th><th>empty message</th><th>other document\'s</th><th>note</th></tr>'+
+  RESULTS.runs.map(r=>`<tr><td style="font-weight:650">${r.name}</td><td>${r.K}</td><td>${Math.round(4096/r.K)}</td><td>${r.lookup??'…'}</td><td>${r.keyed??'…'}</td><td>${r.quote??'…'}</td><td>${r.latest??'…'}</td><td>${r.none??'…'}</td><td>${r.swapped??'…'}</td><td>${r.note||''}</td></tr>`).join('')+'</table></div>';
+ b.innerHTML=h;}
+
+/* ============ 6 · checklist ============ */
+const ALIGN=[
+ ['Memory = the E31 page writer\'s latents (state ‖ what it read), append-only, page-parallel','separation · scaling to 1M+'],
+ ['Writer warm-started from E31c run 2 (the best notebook), with its own token embedding','A and B are different models'],
+ ['Transmitter: K learned slots, 2 blocks (read memory + a "nothing" entry, read each other, feed-forward)','the bottleneck'],
+ ['Order term from E33e (entries on newer pages that match as well pay)','latest'],
+ ['Broadcast: one message per document, not steered by B\'s question (request-steered sending is round 2)','compression of the whole document'],
+ ['Message = K × 576 16-bit floats, no quantization','author: compress like Cramming, no quantization'],
+ ['B reads the message as its first K input positions (every layer sees them), not as one layer\'s keys/values','Cramming placement'],
+ ['B warm-started from dense on the bridge data','strongest receiver we have'],
+ ['Loss on B\'s tokens only; 25 % story rows train B alone','no shortcut through the document'],
+ ['First sweep: K = 16 (main), 4, 64; order term off at K = 16','compression ladder'],
+ ['Pass: lookup / keyed / quote ≥ 40 % at 4k with K = 16, empty and other-document messages at guessing','set before the runs'],
+ ['Next if it works: request-steered sending, a reconstruction (Cramming) loss, test-time refinement of the message','round 2']];
+function drawAlign(){const t=document.getElementById('atab');
+ t.innerHTML='<tr><th>#</th><th>decision</th><th>serves</th><th>your view</th><th>note</th></tr>'+ALIGN.map((r,i)=>`<tr><td>${i+1}</td><td>${r[0]}</td><td>${r[1]}</td><td><select data-i="${i}"><option value="">—</option><option>agree</option><option>change</option><option>question</option></select></td><td><input data-n="${i}" style="width:100%;min-width:160px;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 6px"></td></tr>`).join('');
+ document.getElementById('acollect').onclick=()=>{const lines=['E35 design checklist:'];ALIGN.forEach((r,i)=>{const v=t.querySelector(`select[data-i="${i}"]`).value,n=t.querySelector(`input[data-n="${i}"]`).value.trim();if(v||n)lines.push(`${i+1}. ${v||'—'}: ${r[0]}${n?' — '+n:''}`);});
+  const txt=lines.length>1?lines.join('\n'):'E35 design checklist: (no answers marked)';const o=document.getElementById('aout');o.value=txt;
+  if(navigator.clipboard)navigator.clipboard.writeText(txt).then(()=>{document.getElementById('acopied').textContent='copied';}).catch(()=>{o.select();document.getElementById('acopied').textContent='select and copy';});else o.select();};}
+
+function renderAll(){drawParts();drawWire();drawTrain();drawResults();}
+document.getElementById('pprev').onclick=()=>{PI=(PI+PARTS.length-1)%PARTS.length;drawParts();};
+document.getElementById('pnext').onclick=()=>{PI=(PI+1)%PARTS.length;drawParts();};
+['wlen','wk','wf'].forEach(id=>document.getElementById(id).oninput=drawWire);
+drawAlign();renderAll();matchMedia('(prefers-color-scheme: dark)').addEventListener('change',renderAll);
+</script>
