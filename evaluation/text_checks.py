@@ -297,7 +297,7 @@ ENV_OF = {
     "lm_note_age_learn": "PAR_LM_NOTE_AGE_LEARN", "lm_count_heads": "PAR_LM_COUNT_HEADS",
     "lm_count_max": "PAR_LM_COUNT_MAX", "message_loop_name_lens": "PAR_LOOP_NAME_LENS",
     "message_loop_feedback": "PAR_LOOP_FEEDBACK", "message_loop_feedback_temp": "PAR_LOOP_FEEDBACK_TEMP",
-    "lm_writer_input": "PAR_LM_WRITER_INPUT",
+    "lm_writer_input": "PAR_LM_WRITER_INPUT", "lm_note_rank_gate": "PAR_LM_NOTE_RANK_GATE",
     "message_loop_rounds": "PAR_LOOP_ROUNDS",
     "message_loop_exit_aux": "PAR_LOOP_EXIT_AUX", "message_loop_exit_targets": "PAR_LOOP_EXIT_TARGETS",
     "message_loop_exit_mask": "PAR_LOOP_EXIT_MASK", "message_loop_read_aux": "PAR_LOOP_READ_AUX",

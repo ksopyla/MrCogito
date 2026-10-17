@@ -229,3 +229,22 @@ def test_exam_time_probe_takes_one_strength_per_head():
     apply_note_order(m, "rank", spec, 0.5, 4.0)
     (_, s), = _slopes(m)
     assert s.detach().cpu().tolist() == [0.0] * (h - 1) + [4.0]
+
+
+def test_content_gate_counts_by_the_content_heads_and_broadcasts():
+    """E33g2: with gate_heads the count comes from the mean score of those heads, the same for every head."""
+    ctx, t, pos, (B, S, h, g, dh, nb) = _read_setup(S=40)
+    m = make(**TEXT, **WIDE, message_raw_window=8)
+    rep = m.config.lm_latents * m.config.lm_reader_tokens
+    q, kb = t["q_un"], t["kb"]
+    lc = note_rank_logcount(q, kb, ctx, scale=dh ** -0.5, rep=rep, margin=1.0, sharp=2.0, gate_heads=[0, 1])
+    assert torch.allclose(lc[:, 0], lc[:, h - 1])
+    # the same as the own-score count of a model whose every head scores like the mean of heads 0 and 1
+    kbh = kb.repeat_interleave(h // g, dim=2)
+    qm = (q[:, :, :2] * kbh.new_ones(1)).clone()
+    # mean of the two heads' scores = score of the mean query against a shared key when the heads share their key
+    if g == 1 or h // g >= 2:
+        qmean = q[:, :, :2].mean(2, keepdim=True).expand(B, S, h, dh)
+        ref = note_rank_logcount(qmean, kb, ctx, scale=dh ** -0.5, rep=rep, margin=1.0, sharp=2.0)
+        assert torch.allclose(lc[:, 0], ref[:, 0], atol=1e-5)
+    del qm

@@ -239,6 +239,8 @@ class PerceiverARConfig(PretrainedConfig):
         lm_note_age_init: str = "",       # E33g — per-head starting strengths, comma-separated (one value = every head,
                                           #   fewer than the heads = the last heads); "" = 0 on every head (E33d / E33e)
         lm_note_age_learn: bool = True,   # E33g — False keeps those strengths fixed (order heads that cannot fade)
+        lm_note_rank_gate: str = "own",   # E33g2 — "own": each head counts matches by its own score; "content": by the
+                                          #   mean score of the strength-0 heads (the asked person's notes), for all heads
         lm_count_heads: int = 0,          # E33h — count heads beside the global read (summing read; 0 = off)
         lm_count_max: int = 10,           # E33h — the counts coded as a soft one-hot over 0..lm_count_max
         init_std: float = 0.02,
@@ -359,6 +361,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.lm_note_rank_sharp = float(lm_note_rank_sharp)
         self.lm_note_age_init = str(lm_note_age_init or "")
         self.lm_note_age_learn = bool(lm_note_age_learn)
+        self.lm_note_rank_gate = str(lm_note_rank_gate or "own")
         self.lm_count_heads = int(lm_count_heads or 0)
         self.lm_count_max = int(lm_count_max)
         self.init_std = init_std
@@ -1568,7 +1571,8 @@ def note_age_bias(pos: torch.Tensor, slot_pos: torch.Tensor, slope: torch.Tensor
 
 
 def note_rank_logcount(q_slot: torch.Tensor, k_bar: torch.Tensor, ctx: "MessageCtx", *, scale: float, rep: int,
-                       margin: float, sharp: float, chunk: int = 1024) -> torch.Tensor:
+                       margin: float, sharp: float, chunk: int = 1024,
+                       gate_heads: Optional[list] = None) -> torch.Tensor:
     """E33e: how many NEWER notes match the reader about as well as its best note, per page, [B,h,S,n_w] fp32.
 
     For reader t, head h and visible note c (same document, page closed at or before t — the closed read),
@@ -1578,7 +1582,9 @@ def note_rank_logcount(q_slot: torch.Tensor, k_bar: torch.Tensor, ctx: "MessageC
     keeps its score at any length; among several matches (Anna's ten moves) the newest gets 0, the one
     before it ≈ log 2, … — an order that does not grow with the document. Computed without gradient (the
     read's scores are trained by the read itself); only the per-head strength in front of it learns.
-    `rep` = notes per page (latents × reader tokens): the pages are the n_w = C / rep groups of the slot axis."""
+    `rep` = notes per page (latents × reader tokens): the pages are the n_w = C / rep groups of the slot axis.
+    `gate_heads` (E33g2): the match is the MEAN score of these heads (the content heads that find the asked person's
+    facts) and every head gets that one count — so the order heads rank the asked person's notes, not anyone's."""
     B, S, h, dh = q_slot.shape
     C, g = k_bar.shape[1], k_bar.shape[2]
     n_w = C // rep
@@ -1595,11 +1601,14 @@ def note_rank_logcount(q_slot: torch.Tensor, k_bar: torch.Tensor, ctx: "MessageC
                    & (sc[:, None, :] >= 0) & (sc[:, None, :] <= tpos[None, s0:s1, None]))  # [B,s,C]
             l = torch.einsum("bshd,bchd->bhsc", q_slot[:, s0:s1].float(), kbh) * scale
             l = l.masked_fill(~vis[:, None], float("-inf"))
+            if gate_heads:
+                l = l[:, gate_heads].masked_fill(~vis[:, None], 0.0).mean(1, keepdim=True)
+                l = l.masked_fill(~vis[:, None], float("-inf"))
             m = l.amax(-1, keepdim=True)
             m = torch.where(torch.isfinite(m), m, torch.zeros_like(m))
             gate = torch.sigmoid(sharp * (l - m + margin))  # exactly 0 on invisible notes
-            gw = gate.view(B, h, s1 - s0, n_w, rep).sum(-1)
-            out[:, :, s0:s1] = torch.log1p(torch.einsum("bhsk,bkw->bhsw", gw, newer))
+            gw = gate.view(B, l.shape[1], s1 - s0, n_w, rep).sum(-1)
+            out[:, :, s0:s1] = torch.log1p(torch.einsum("bhsk,bkw->bhsw", gw, newer))  # one gate head broadcasts
     return out
 
 
@@ -2042,6 +2051,8 @@ class Attention(nn.Module):
             self.note_rank_rep = int(cfg.lm_latents) * int(cfg.lm_reader_tokens)
             self.note_rank_margin = float(getattr(cfg, "lm_note_rank_margin", 1.0))
             self.note_rank_sharp = float(getattr(cfg, "lm_note_rank_sharp", 2.0))
+            # E33g2: "content" = the match is judged by the heads with strength 0 (the content heads), for every head
+            self.note_rank_gate = str(getattr(cfg, "lm_note_rank_gate", "own") or "own")
         # E33h: count heads (a summing read) on the latent-memory global read
         self.note_counter = None
         if (int(getattr(cfg, "lm_count_heads", 0) or 0) > 0 and pattern == "full" and write == "latent_memory"
@@ -2206,9 +2217,13 @@ class Attention(nn.Module):
             if self.note_age_slope is not None and message.slot_pos is not None and pos is not None:
                 if self.note_age_mode == "rank":
                     if message.override not in ("none", "raw"):
+                        gh = None
+                        if getattr(self, "note_rank_gate", "own") == "content":
+                            gh = (self.note_age_slope.detach() == 0).nonzero().flatten().tolist() or None
                         lc = note_rank_logcount(q_slot if q_slot is not None else q, k_bar, message,
                                                 scale=self.dh ** -0.5, rep=self.note_rank_rep,
-                                                margin=self.note_rank_margin, sharp=self.note_rank_sharp)
+                                                margin=self.note_rank_margin, sharp=self.note_rank_sharp,
+                                                gate_heads=gh)
                         note_bias = (self.note_age_slope, lc, None, self.note_rank_rep, "rank")
                 else:
                     note_bias = (self.note_age_slope, pos, message.slot_pos, self.note_age_unit, self.note_age_mode)
