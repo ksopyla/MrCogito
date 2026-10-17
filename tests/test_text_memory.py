@@ -447,3 +447,21 @@ def test_read_target_note_mode_targets_the_spans_own_notes():
         m.config.message_loop_read_target = "page"
         page = float(m(ids, labels=ids.clone(), read_targets=tgt).loss - base)
     assert note > 0 and page > 0 and note >= page - 1e-6  # the span's own notes are a subset of its pages' notes
+
+
+def test_note_readback_trains_values_and_is_off_by_default():
+    ids = text_row(S=48)
+    assert make(**TEXT, message_raw_window=8).note_readback is None
+    m = make(**TEXT, message_raw_window=8, lm_readback_aux=0.2).train()
+    with torch.no_grad():
+        with_rb = m(ids, labels=ids.clone()).loss
+        m.eval()
+        ev = m(ids, labels=ids.clone()).loss  # eval: no read-back term
+        m.config.lm_readback_aux = 0.0
+        m.train()
+        plain = m(ids, labels=ids.clone()).loss
+    assert float(with_rb) > float(plain) + 1e-3 and torch.allclose(ev, plain)
+    m.config.lm_readback_aux = 0.2
+    m.zero_grad()
+    m(ids, labels=ids.clone()).loss.backward()
+    assert m.memory_writer.to_v.weight.grad.abs().sum() > 0 and m.note_readback.weight.grad.abs().sum() > 0

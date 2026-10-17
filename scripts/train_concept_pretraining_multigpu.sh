@@ -249,6 +249,7 @@ PAR_LOOP_EXIT_TARGETS="${PAR_LOOP_EXIT_TARGETS:-answer}"
 PAR_LOOP_EXIT_MASK="${PAR_LOOP_EXIT_MASK:-all}"           # text multi-hop: answers = exits on first answer tokens
 PAR_LOOP_READ_AUX="${PAR_LOOP_READ_AUX:-0.0}"             # text multi-hop: per-round read target weight (E33r 0.5)
 PAR_LOOP_READ_TARGET="${PAR_LOOP_READ_TARGET:-page}"      # text multi-hop: page | note (the output word's notes)
+PAR_LM_READBACK_AUX="${PAR_LM_READBACK_AUX:-0.0}"         # text multi-hop: note read-back weight (E33b 0.2)
 # Optional weight-only warm start (concept-encoder families: encoder weights; perceiver_ar: full
 # state dict from a saved `final/` dir). Empty = random init.
 MODEL_NAME_OR_PATH="${MODEL_NAME_OR_PATH:-}"
@@ -530,6 +531,7 @@ if [ "$MODEL_FAMILY" = "perceiver_ar" ] || [ "$MODEL_FAMILY" = "a2a" ]; then
             --message_loop_exit_mask "$PAR_LOOP_EXIT_MASK"
             --message_loop_read_aux "$PAR_LOOP_READ_AUX"
             --message_loop_read_target "$PAR_LOOP_READ_TARGET"
+            --lm_readback_aux "$PAR_LM_READBACK_AUX"
         )
     elif [ "$PAR_MESSAGE_RAW_WINDOW" != "0" ]; then
         PAR_ARGS+=(--message_raw_window "$PAR_MESSAGE_RAW_WINDOW")

@@ -424,7 +424,7 @@ def _latent_memory_kwargs(model_args) -> dict:
     keys = ("lm_read", "lm_context", "lm_window", "lm_stride", "lm_latents", "lm_latent_dim", "lm_heads",
             "lm_writer_dim", "lm_enc_layers", "lm_rounds", "lm_reader_tokens", "lm_addr", "lm_slot_pos",
             "lm_note_age", "lm_note_age_unit", "lm_note_rank_margin", "lm_note_rank_sharp", "message_loop_rounds", "message_loop_exit_aux", "message_loop_exit_targets",
-            "message_loop_exit_mask", "message_loop_read_aux", "message_loop_read_target")
+            "message_loop_exit_mask", "message_loop_read_aux", "message_loop_read_target", "lm_readback_aux")
     out = {k: getattr(model_args, k) for k in keys}
     out["message_write"] = "latent_memory"
     return out
@@ -539,7 +539,8 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
         # layer the checkpoint did not have one on (E18b R2 adds one to the global read, which the
         # P2 copy result says the retrieving layer needs). Their init is already ~0.3% of |v|, so
         # the warm start is effectively unchanged at step 0. Anything else is a real mismatch.
-        _ALLOWED_FRESH = ("write_back_proj", "value_embed", "value_proj", "value_lambda", "prefix_ae_head")
+        _ALLOWED_FRESH = ("write_back_proj", "value_embed", "value_proj", "value_lambda", "prefix_ae_head",
+                          "note_readback")  # note_readback: the text multi-hop read-back head (training only)
         unexplained = [k for k in missing if not any(tag in k for tag in _ALLOWED_FRESH)]
         if unexpected or unexplained:
             raise ValueError(

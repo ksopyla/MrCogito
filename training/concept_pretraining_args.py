@@ -397,6 +397,9 @@ class ModelArguments:
     message_loop_read_aux: float = field(
         default=0.0, metadata={"help": "Text multi-hop: weight of the per-round read target (needs read_targets data)."}
     )
+    lm_readback_aux: float = field(
+        default=0.0, metadata={"help": "Text multi-hop: weight of the note read-back (each note's value names its tokens)."}
+    )
     message_loop_read_target: str = field(
         default="page", metadata={"help": "Text multi-hop: read target on a page's notes | the span's own notes (note)."}
     )

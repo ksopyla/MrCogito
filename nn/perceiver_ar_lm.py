@@ -211,6 +211,7 @@ class PerceiverARConfig(PretrainedConfig):
         lm_rounds: int = 2,               # latent read rounds (bixt: latent⇄token rounds)
         lm_competition: bool = True,      # softmax over latents per token, then renormalise
         lm_null_latent: bool = False,     # one latent the reader never sees
+        lm_readback_aux: float = 0.0,     # text multi-hop (2026-10-17): each note's value names the tokens it read
         lm_reader_tokens: int = 5,        # reader K/V entries per latent (m)
         lm_pos_prior: bool = True,        # per-latent sub-page prior at init
         lm_addr: str = "window_start",    # latent address: "window_start" sinusoid | "none" (length-invariant)
@@ -324,6 +325,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.lm_competition = bool(lm_competition)
         self.lm_null_latent = bool(lm_null_latent)
         self.lm_reader_tokens = int(lm_reader_tokens)
+        self.lm_readback_aux = float(lm_readback_aux)
         self.lm_pos_prior = bool(lm_pos_prior)
         self.lm_addr = str(lm_addr)
         self.lm_slot_pos = str(lm_slot_pos)
@@ -2308,6 +2310,15 @@ class PerceiverARLM(PreTrainedModel):
         if cfg.write_back_hook:
             g, dh = cfg.num_kv_heads, cfg.head_dim
             self.write_back_proj = nn.Linear(cfg.hidden_size, 2 * g * dh, bias=False)
+        # Text multi-hop (2026-10-17): note read-back, training only. From each note's value v̄ (what the reader gets) a
+        # linear head names the tokens at the note's expected position −1, 0, +1. On the bridge data the writer kept
+        # names and places but dropped common words: the notes on "shiny" in "Every kavi is shiny." did not say which
+        # property it was (probe 11 %, guessing 8 %), so deduce could not be answered however well the read aimed.
+        self.note_readback = (
+            nn.Linear(int(cfg.lm_reader_tokens) * cfg.num_kv_heads * cfg.head_dim, 3 * cfg.vocab_size, bias=False)
+            if self.memory_writer is not None and float(getattr(cfg, "lm_readback_aux", 0.0) or 0.0) > 0 else None
+        )
+        self._readback_inputs = None
         # E33a: tied loop over [global read + span layers]. Zero-init loop marker → R = 1 is today's stack.
         self.loop_rounds = int(getattr(cfg, "message_loop_rounds", 1) or 1)
         self.loop_emb = nn.Parameter(torch.zeros(self.loop_rounds, cfg.hidden_size)) if self.loop_rounds > 1 else None
@@ -2730,6 +2741,8 @@ class PerceiverARLM(PreTrainedModel):
                     )
                     msg.slots = (out["k"], out["v"])
                     msg.slot_pos = out["slot_pos"]
+                    if self.note_readback is not None and self.training:
+                        self._readback_inputs = (out["v"], out["slot_pos"], msg.slot_doc)
                 if self._note_capture is not None or self._notes_override is not None:
                     self._last_notes = (msg.slots[0], msg.slots[1], msg.slot_pos)
                 if self._note_capture is not None:  # requests score A's whole notebook, hidden notes included
@@ -2982,6 +2995,9 @@ class PerceiverARLM(PreTrainedModel):
             loss = loss + cfg.message_loop_name_aux * self._loop_name_loss(self._loop_core_states, labels, round_tgt)
         self._loop_core_states = None
         self._collect_name_states = False
+        if self._readback_inputs is not None:
+            loss = loss + cfg.lm_readback_aux * self._readback_loss(input_ids, attention_mask)
+            self._readback_inputs = None
         mctx = self._last_message_ctx
         rls = getattr(mctx, "read_losses", None) if mctx is not None else None
         if rls:
@@ -2991,6 +3007,25 @@ class PerceiverARLM(PreTrainedModel):
         self._read_targets = None
         loss = self._maybe_add_prefix_ae(loss, input_ids)
         return CausalLMOutput(loss=loss, logits=(logits if return_logits else None))
+
+    def _readback_loss(self, input_ids: torch.Tensor, attention_mask: Optional[torch.Tensor]) -> torch.Tensor:
+        """Mean CE of naming, from each live note's value, the tokens at its expected position −1, 0, +1."""
+        v, sp, sd = self._readback_inputs
+        B, C = sp.shape
+        V = int(self.config.vocab_size)
+        S = input_ids.shape[1]
+        p = self.note_readback.weight.shape[0] // V
+        logits = self.note_readback(v.reshape(B, C, -1)).view(B, C, p, V)
+        off = torch.arange(p, device=sp.device) - (p // 2)
+        pos = sp[:, :, None] + off[None, None]                               # [B,C,p]
+        ok = (sd[:, :, None] >= 0) & (pos >= 0) & (pos < S)
+        pc = pos.clamp(0, S - 1)
+        tgt = input_ids.gather(1, pc.reshape(B, -1)).view(B, C, p)
+        if attention_mask is not None:
+            ok = ok & attention_mask.bool().gather(1, pc.reshape(B, -1)).view(B, C, p)
+        if not bool(ok.any()):
+            return logits.sum() * 0.0
+        return F.cross_entropy(logits[ok].float(), tgt[ok])
 
     def _loop_exit_loss(self, exits: list, labels: torch.Tensor, round_tgt: Optional[torch.Tensor]) -> torch.Tensor:
         """E33a: Σ over non-final loop exits of the token-mean CE. Exit r's targets are the round targets
