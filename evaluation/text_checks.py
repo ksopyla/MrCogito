@@ -226,13 +226,19 @@ ARCHES = {
     "e33b": Arch("e33b", "E33o + note read-back (each note's value names its tokens)",
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
                   "message_loop_read_target": "note", "lm_readback_aux": 0.1}, has_notebook=True),
+    # E33rb: E33r (page-level read target) + note read-back. The note-level target of E33o / E33b emptied the notes
+    # (a probe recovers the place from a note at the place name 14 % / 12 %, E33r 68 %, guessing 8 %; lookup at 16k
+    # 87 → 0 / 18 %), so read-back is tested again on E33r's page target alone.
+    "e33rb": Arch("e33rb", "E33r + note read-back (each note's value names its tokens)",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "lm_readback_aux": 0.1}, has_notebook=True),
 }
 # Plain-input variants (2026-10-10): the same models without the word-pair/triple hash tables and value
 # embeddings. Dense with plain input learned quote, lookup, keyed and latest at 30M / 1.5B tokens on v2, where
 # dense with the tables learned at most one (spec §16.1), so the architecture round runs on plain input. FFN width
 # is refitted, so each stays in the parameter band.
 _PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
-for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o", "e33b"):
+for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o", "e33b", "e33rb"):
     _a = ARCHES[_k]
     ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
                                  {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)
