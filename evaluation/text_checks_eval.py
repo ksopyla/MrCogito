@@ -129,10 +129,13 @@ def story_ce(model, path: str, n_rows: int, device) -> float:
     return tot / max(1, cnt)
 
 
-def apply_note_order(model, mode: str, strength: float, margin: float, sharp: float) -> dict:
-    """Exam-time E33e probe: switch the global read's note term to the rank count with one fixed strength for every
-    head (an E33d model's learned page-distance slopes are replaced; an E33 model gets the term added)."""
+def apply_note_order(model, mode: str, strength, margin: float, sharp: float, gate: str = "own") -> dict:
+    """Exam-time E33e probe: switch the global read's note term to the rank count with fixed strengths (an E33d model's
+    learned page-distance slopes are replaced; an E33 model gets the term added). `strength` is one number for every
+    head or an "a,b,…" string with one value per head (E33g's order heads)."""
     import torch.nn as nn
+
+    from nn.perceiver_ar_lm import note_age_init
 
     done = {}
     if getattr(model.config, "message_write", None) != "latent_memory":
@@ -148,9 +151,10 @@ def apply_note_order(model, mode: str, strength: float, margin: float, sharp: fl
         mod.note_age_mode = mode
         mod.note_rank_rep = int(cfg.lm_latents) * int(cfg.lm_reader_tokens)
         mod.note_rank_margin, mod.note_rank_sharp = float(margin), float(sharp)
+        mod.note_rank_gate = str(gate)
         with torch.no_grad():
-            mod.note_age_slope.fill_(float(strength))
-        done[name] = {"mode": mode, "strength": strength, "margin": margin, "sharp": sharp}
+            mod.note_age_slope.copy_(note_age_init(str(strength), mod.h).to(mod.note_age_slope.device))
+        done[name] = {"mode": mode, "strength": strength, "margin": margin, "sharp": sharp, "gate": gate}
     if not done:
         raise SystemExit("--note_order: no latent-memory global read found in this model")
     return done
@@ -219,7 +223,9 @@ def main():
                    help="E35 model: the document agent A reads — the item's own, none, or the next item's of the same "
                         "task and length (mismatched-message control)")
     p.add_argument("--note_order", default=None, choices=("rank",), help="exam-time E33e probe (see the docstring)")
-    p.add_argument("--note_strength", type=float, default=0.0)
+    p.add_argument("--note_strength", default="0", help="one strength for every head, or a,b,… one per head")
+    p.add_argument("--note_gate", default="own", choices=("own", "content"),
+                   help="E33g2: count matches by each head's own score, or by the strength-0 heads' mean score")
     p.add_argument("--note_margin", type=float, default=1.0)
     p.add_argument("--note_sharp", type=float, default=2.0)
     args = p.parse_args()
@@ -240,7 +246,7 @@ def main():
         probes["loop_rounds"] = int(args.loop_rounds)
     if args.note_order:
         probes["note_order"] = apply_note_order(model, args.note_order, args.note_strength, args.note_margin,
-                                                args.note_sharp)
+                                                args.note_sharp, args.note_gate)
     if probes:
         print("exam-time probes:", json.dumps(probes), flush=True)
     # E33d: the per-head page-distance slopes of the note read, logged with every exam (curve checkpoints included)

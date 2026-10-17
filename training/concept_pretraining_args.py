@@ -386,6 +386,20 @@ class ModelArguments:
     a2a_loss_on: str = field(default="all", metadata={"help": "E35: loss on all receiver tokens | answers only."})
     a2a_freeze_receiver: bool = field(default=False, metadata={"help": "E35: keep agent B frozen (only A learns)."})
     lm_note_rank_sharp: float = field(default=2.0, metadata={"help": "E33e: steepness of the match gate."})
+    lm_note_age_init: str = field(default="", metadata={"help": "E33g: per-head starting strengths of the note-order "
+                                                                 "term, comma-separated (one value = every head)."})
+    lm_note_age_learn: bool = field(default=True, metadata={"help": "E33g: False keeps the note-order strengths fixed."})
+    message_loop_name_lens: float = field(default=0.0, metadata={"help": "E33q: weight of round r naming hop r's "
+                                                                         "output word through the LM head (training)."})
+    message_loop_feedback: str = field(default="none", metadata={"help": "E33q: none | soft (re-embed round r's "
+                                                                          "LM-head distribution into round r+1)."})
+    message_loop_feedback_temp: float = field(default=1.0, metadata={"help": "E33q: softmax temperature of the feedback."})
+    lm_note_rank_gate: str = field(default="own", metadata={"help": "E33g2: own | content (count matches by the "
+                                                                     "strength-0 heads' mean score, for every head)."})
+    lm_writer_input: str = field(default="table", metadata={"help": "Notebook writer input: table (shared token "
+                                                                     "table) | embed (the decoder's whole input layer)."})
+    lm_count_heads: int = field(default=0, metadata={"help": "E33h: count heads (summing read) on the global read; 0 = off."})
+    lm_count_max: int = field(default=10, metadata={"help": "E33h: counts coded as a soft one-hot over 0..max."})
     message_loop_rounds: int = field(default=1, metadata={"help": "E33a: tied [global read + local] loops (1 = off)."})
     message_loop_exit_aux: float = field(default=0.0, metadata={"help": "E33a: weight of each earlier loop exit."})
     message_loop_exit_targets: str = field(

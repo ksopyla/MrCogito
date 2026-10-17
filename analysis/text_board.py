@@ -32,7 +32,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from analysis.text_board_notes import (ARCHS, CHANGES, CLAIMS, DECISIONS, LADDER, NAMES, PROTOCOL_LOG,  # noqa: E402
+from analysis.text_board_notes import (ARCHS, CHANGES, CLAIMS, DECISIONS, GOAL, LADDER, NAMES, PROTOCOL_LOG,  # noqa: E402
                                        ROUNDS, SCOREBOARD, STATUS, SUPERSEDED)
 from analysis.text_checks_scorecard import LEVEL, analyse, learned_cell  # noqa: E402
 from evaluation.text_checks import (FRONTIER_TASKS, GATING_TASKS, PASS, TEXT_CHECKS_VERSION, TIERS,  # noqa: E402
@@ -276,6 +276,29 @@ def scoreboard(ledgers: list[dict]) -> dict:
             "families": {"dense": "Dense", "e31c": "E31c notebook", "e33": "E33 loop", "e33d": "E33d page distance"}}
 
 
+def goal_progress(rounds: list[dict]) -> dict:
+    """The author's goal (GOAL in the notes): per task and length, the best notebook model and the best dense model on
+    the current exams (data v2), every run that is not history. Exact answers over all items (these tasks have no far
+    / near split)."""
+    out = {}
+    for task in GOAL["tasks"]:
+        for L in GOAL["lengths"]:
+            best = {"notebook": None, "dense": None}
+            for r in rounds:
+                if not str(r["budget"].get("data_version") or "").endswith("v2") or r.get("standing") == "history":
+                    continue
+                for m in r["models"]:
+                    c = m["cells"].get(f"id|{task}|{L}") or {}
+                    if c.get("exact") is None:
+                        continue
+                    side = "dense" if m["arch"].startswith("dense") else "notebook"
+                    if best[side] is None or c["exact"] > best[side]["score"]:
+                        best[side] = {"score": c["exact"], "name": m["name"].split(",")[0], "run": r["notes"]["title"],
+                                      "floor": c.get("eff_floor") or c.get("floor")}
+            out[f"{task}|{L}"] = best
+    return {**GOAL, "best": out}
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--ledger_dir", default=str(LEDGER_DIR))
@@ -325,6 +348,7 @@ def main() -> int:
         "generated": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "version": TEXT_CHECKS_VERSION, "pass": PASS, "status": STATUS, "ladder": LADDER, "scoreboard": scoreboard(ledgers),
         "claims": CLAIMS, "protocol_log": PROTOCOL_LOG, "decisions": DECISIONS, "archs": ARCHS, "changes": CHANGES,
+        "goal": goal_progress(rounds),
         "examples": EXAMPLES,
         "exam_runs": {v: sum(1 for r in LADDER if r.get("data") == v and r.get("id")) for v in
                       sorted({r.get("data") for r in LADDER if r.get("data")})},

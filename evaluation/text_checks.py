@@ -223,6 +223,29 @@ ARCHES = {
     # E33b: E33o + note read-back — each note's value must name the tokens it read (training-only head, zero-init).
     # E33r's notes on a property word did not encode which property it was (probe 11 %; on a place name 68 %).
     # Run 1 (17 Oct) used a random-init head at 0.2 and scrambled the warm-started values; from run 2: zero-init, 0.1.
+    # E33g (2026-10-17, roadmap text_t4_t7_roadmap_20261017.md §4.1): E33r + order heads — E33e's rank among matching
+    # notes at FIXED per-head strengths (five heads 0 for lookup / keyed / quote, four at 1, 2, 4, 8 for order) with the
+    # tighter match gate. E33e's strengths, learned from 0, rose to 0.15 and fell back: story text never pays for order,
+    # so one learned scalar per head stays near 0. Warm-started from E33r on the reasoning data.
+    "e33g": Arch("e33g", "E33r + four fixed order heads (rank among matching notes at 1, 2, 4, 8; the other heads 0)",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "lm_note_age": "rank", "lm_note_rank_margin": 0.5, "lm_note_rank_sharp": 4.0,
+                  "lm_note_age_init": "1,2,4,8", "lm_note_age_learn": "false"}, has_notebook=True),
+    # E33h (2026-10-17, roadmap §4.5): E33r + two count heads — a summing read beside the global read. A softmax read
+    # averages, so count shows only as a saturating share; here each head adds σ(a·q·k + b) over the notes (each token
+    # of the document once: a page owns its first `stride` tokens) and the raw tokens no closed page owns yet, codes the
+    # sum as a soft one-hot over 0..10, and adds it to the read through a zero-initialised projection.
+    "e33h": Arch("e33h", "E33r + two count heads (a summing read over notes and recent tokens)",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "lm_count_heads": 2}, has_notebook=True),
+    # E33q (2026-10-17, roadmap §4.3; the decode-and-append oracle): E33r + the loop asks its next question with the name
+    # it found. Round r names hop r's output word through the shared LM head at the decision position (weight 0.3; data
+    # built with --train_read_targets output, whose spans also serve the page-level read target), and its LM-head
+    # distribution, re-embedded with the shared token table and input layer, joins round r+1 through a gate from 0.
+    # Oracle: E33r composes 58 % at 4k, 81 % with the gold bridge written into the question.
+    "e33q": Arch("e33q", "E33r + rounds name their hop and pass the name to the next round's question",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "message_loop_name_lens": 0.3, "message_loop_feedback": "soft"}, has_notebook=True),
     "e33b": Arch("e33b", "E33o + note read-back (each note's value names its tokens)",
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
                   "message_loop_read_target": "note", "lm_readback_aux": 0.1}, has_notebook=True),
@@ -248,7 +271,8 @@ ARCHES = {
 # dense with the tables learned at most one (spec §16.1), so the architecture round runs on plain input. FFN width
 # is refitted, so each stays in the parameter band.
 _PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
-for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o", "e33b", "e33rb", "e33ok", "e33bk"):
+for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o", "e33b", "e33rb", "e33ok", "e33bk",
+           "e33g", "e33h", "e33q"):
     _a = ARCHES[_k]
     ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
                                  {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)
@@ -269,7 +293,12 @@ ENV_OF = {
     "lm_latent_dim": "PAR_LM_LATENT_DIM", "lm_heads": "PAR_LM_HEADS", "lm_writer_dim": "PAR_LM_WRITER_DIM",
     "lm_enc_layers": "PAR_LM_ENC_LAYERS", "lm_rounds": "PAR_LM_ROUNDS", "lm_reader_tokens": "PAR_LM_READER_TOKENS",
     "lm_addr": "PAR_LM_ADDR", "lm_slot_pos": "PAR_LM_SLOT_POS", "lm_note_age": "PAR_LM_NOTE_AGE", "lm_note_rank_margin": "PAR_LM_NOTE_RANK_MARGIN",
-    "lm_note_rank_sharp": "PAR_LM_NOTE_RANK_SHARP", "message_loop_rounds": "PAR_LOOP_ROUNDS",
+    "lm_note_rank_sharp": "PAR_LM_NOTE_RANK_SHARP", "lm_note_age_init": "PAR_LM_NOTE_AGE_INIT",
+    "lm_note_age_learn": "PAR_LM_NOTE_AGE_LEARN", "lm_count_heads": "PAR_LM_COUNT_HEADS",
+    "lm_count_max": "PAR_LM_COUNT_MAX", "message_loop_name_lens": "PAR_LOOP_NAME_LENS",
+    "message_loop_feedback": "PAR_LOOP_FEEDBACK", "message_loop_feedback_temp": "PAR_LOOP_FEEDBACK_TEMP",
+    "lm_writer_input": "PAR_LM_WRITER_INPUT", "lm_note_rank_gate": "PAR_LM_NOTE_RANK_GATE",
+    "message_loop_rounds": "PAR_LOOP_ROUNDS",
     "message_loop_exit_aux": "PAR_LOOP_EXIT_AUX", "message_loop_exit_targets": "PAR_LOOP_EXIT_TARGETS",
     "message_loop_exit_mask": "PAR_LOOP_EXIT_MASK", "message_loop_read_aux": "PAR_LOOP_READ_AUX",
     "message_loop_read_target": "PAR_LOOP_READ_TARGET", "lm_readback_aux": "PAR_LM_READBACK_AUX",
