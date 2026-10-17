@@ -241,6 +241,11 @@ PROTOCOL_LOG = [
 # Claims register: every conclusion we have drawn, with its state. holds = repeated or overwhelming within its runs;
 # single run = one run, needs a second; open = not testable yet; retracted = disproved (kept, with the date).
 CLAIMS = [
+    {"claim": "On the reasoning data, 30M dense learns neither compose nor deduce, so E33r's compose comes from the "
+              "loop and its read target.", "state": "single run", "since": "2026-10-17",
+     "evidence": "Dense warm-started on the same 0.3B tokens as E33r: compose 8 %, deduce 6.5 % at 4k (one step 11 / 8 %), "
+                 "while lookup 84 %, latest 92 %; E33r compose 60 %.",
+     "settle": "A second dense seed, or dense with the same read-target-like supervision (attention to the fact)."},
     {"claim": "Compose fails at forming the second question, not at having the bridge in memory.", "state": "single run",
      "since": "2026-10-17",
      "evidence": "Oracle, no training, 150 items per cell: appending the gold first fact as text moves E33r's compose by "
@@ -629,15 +634,21 @@ LADDER = [
                "lookup 74 / 93 %, keyed 70 / 92 %; near facts and latest unchanged (latest at 1k 15 %). Story loss 1.498.",
      "when": "16 Oct 23:23 → 17 Oct ~03:00",
      "why": "Does more split training close the near-fact gap and carry quotes?"},
-    {"id": None, "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "running",
+    {"id": "reason_e33rb_s0.polonez", "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "in use",
      "run": "E33rb, read target + read-back (Polonez GPUs 0-1, multi-hop session)",
      "model": "E33r + zero-init note read-back 0.1 · 30M, plain", "tokens": "0.3B continuation", "exams": "v2 + v2.1",
-     "result": "—", "when": "17 Oct from 18:24 UTC, about 3 h with exams",
+     "result": "No harm, small gains: compose 61 / 82 % at 4k / 16k (E33r 60 / 76 %), deduce 17 / 12 % (13 / 9 %), lookup "
+               "74 / 89 %, latest 20.5 %, count 22 %; story loss 1.514. The property-word probe stayed at 12 %: the "
+               "read-back head learned token frequency, not the property.",
+     "when": "17 Oct 18:24 → about 20:00 UTC; extra exams still running",
      "why": "Deduce: do the notes keep the property word (probe 11 %) without losing places?"},
-    {"id": None, "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "running",
+    {"id": "reason_dense_s0.polonez", "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "in use",
      "run": "Dense on the reasoning data (Polonez GPUs 2-3, multi-hop session)",
      "model": "dense · 30M, plain, from the bridge-data dense", "tokens": "0.3B continuation", "exams": "v2 + v2.1",
-     "result": "—", "when": "17 Oct from 18:24 UTC, about 3 h with exams",
+     "result": "Compose 8 %, deduce 6.5 % (one step 11 / 8 %), with every fact visible: dense learns neither join in "
+               "this budget, so it is no ceiling for T5 / T7. Lookup 84 %, keyed 83 %, latest 92 % (16k 1 %), count "
+               "46 % at 4k.",
+     "when": "17 Oct 18:24 → about 20:00 UTC",
      "why": "Is deduce learnable at 30M with this data when every fact is visible? Sets the ceiling for T5/T7."},
     {"id": None, "start": "2026-10-17", "data": "v2", "standing": "history",
      "run": "Decode-and-append oracle (Odra GPU 2, agent-memory session)",
