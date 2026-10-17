@@ -1656,17 +1656,19 @@ def read_target_loss(q, k, k_bar, ctx: MessageCtx, key_valid, *, q_slot=None) ->
     bi, qp, vis, ok, jc, raw_t, note_t = bi[has], qp[has], vis[has], ok[has], jc[has], raw_t[has], note_t[has]
     N = bi.shape[0]
     sc = dh ** -0.5
-    qq = q[bi, qp].float().view(N, g, rep, dh)
-    qs = (q_slot if q_slot is not None else q)[bi, qp].float().view(N, g, rep, dh)
-    sl = torch.einsum("ngrd,ncgd->ngrc", qs, k_bar[bi].float()).reshape(N, h, nb) * sc
-    rl = torch.einsum("ngrd,nwgd->ngrw", qq, k[bi[:, None], jc].float()).reshape(N, h, W) * sc
-    neg = torch.finfo(torch.float32).min
-    rl = rl.masked_fill(~ok[:, None], neg)
-    sl = sl.masked_fill(~vis[:, None], neg)
-    lse = torch.logsumexp(torch.cat([rl, sl], -1), -1)
-    hit = torch.logsumexp(torch.cat([rl.masked_fill(~raw_t[:, None], neg), sl.masked_fill(~note_t[:, None], neg)], -1), -1)
-    share = torch.exp(hit - lse).mean(-1)                                 # [N] mean over heads
-    ctx.read_losses.append(-torch.log(share.clamp(min=1e-6)))
+    with torch.autocast(device_type=dev.type, enabled=False):  # fp32 throughout (autocast would make einsum bf16)
+        qq = q[bi, qp].float().view(N, g, rep, dh)
+        qs = (q_slot if q_slot is not None else q)[bi, qp].float().view(N, g, rep, dh)
+        sl = torch.einsum("ngrd,ncgd->ngrc", qs, k_bar[bi].float()).reshape(N, h, nb) * sc
+        rl = torch.einsum("ngrd,nwgd->ngrw", qq, k[bi[:, None], jc].float()).reshape(N, h, W) * sc
+        neg = torch.finfo(torch.float32).min
+        rl = rl.masked_fill(~ok[:, None], neg)
+        sl = sl.masked_fill(~vis[:, None], neg)
+        lse = torch.logsumexp(torch.cat([rl, sl], -1), -1)
+        hit = torch.logsumexp(torch.cat([rl.masked_fill(~raw_t[:, None], neg),
+                                         sl.masked_fill(~note_t[:, None], neg)], -1), -1)
+        share = torch.exp(hit - lse).mean(-1)                             # [N] mean over heads
+        ctx.read_losses.append(-torch.log(share.clamp(min=1e-6)))
 
 
 def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend, block_masks=None,

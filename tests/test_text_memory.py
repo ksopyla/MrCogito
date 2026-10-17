@@ -424,3 +424,14 @@ def test_exit_mask_answers_scores_only_answer_tokens():
         every = m(ids, labels=ids.clone()).loss
     assert torch.allclose(no_answers, plain)
     assert float(one) > float(plain) + 1e-4 and abs(float(one) - float(every)) > 1e-4
+
+
+def test_read_target_runs_under_bf16_autocast():
+    """On the GPUs the trainer runs under bf16 autocast: the loss stays fp32 (an einsum under autocast came back bf16
+    and the fp32 fill overflowed it, Polonez 17 Oct)."""
+    ids = text_row(S=48)
+    m = make(**TEXT, message_raw_window=8, message_loop_rounds=4, message_loop_read_aux=0.5).train()
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        out = m(ids, labels=ids.clone(), read_targets=_targets([40, 1, 5, 7], [40, 2, 35, 36]))
+    out.loss.backward()
+    assert torch.isfinite(out.loss)
