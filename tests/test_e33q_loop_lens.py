@@ -48,7 +48,7 @@ def test_name_lens_is_minus_mean_log_p_of_the_hop_word_tokens():
         base = m(ids, labels=ids.clone()).loss
         states.clear()
         with_t = m(ids, labels=ids.clone(), read_targets=_targets([q, 1, t0, t1], [q, 0, -1, -1])).loss
-    h = m.final_norm(states[0][0, q])
+    h = m.final_norm(states[0][0, q]).detach()
     z = F.linear(h, m.lm_head.weight).float()
     sc = float(m.config.logit_softcap or 0.0)
     if sc > 0:
@@ -66,7 +66,39 @@ def test_feedback_gate_and_name_loss_receive_gradient():
     out.loss.backward()
     assert torch.isfinite(out.loss)
     assert m.loop_feedback_gate.grad is not None and m.loop_feedback_gate.grad.abs().sum() > 0
-    assert m.lm_head.weight.grad.abs().sum() > 0
+    assert m.lm_head.weight.grad.abs().sum() > 0  # from the LM loss itself
+
+
+def test_lens_does_not_train_the_head_or_the_token_table():
+    """The naming loss reaches the loop's state, never the shared output head or final norm directly (the token table
+    still learns through the backbone, as for any loss)."""
+    torch.manual_seed(4)
+    ids = text_row(S=48)
+    m = make(**TEXT, **LOOP4, message_loop_name_lens=1.0, message_loop_feedback="soft").train()
+    with torch.no_grad():
+        m.loop_feedback_gate.fill_(0.5)
+    tgt = _targets([40, 1, 10, 11], [40, 2, 20, 21])
+    m(ids, labels=ids.clone(), read_targets=tgt).loss.backward()
+    with_lens = {n: p.grad.clone() for n, p in m.named_parameters() if p.grad is not None and
+                 n in ("lm_head.weight", "final_norm.weight")}
+    m.zero_grad()
+    m.config.message_loop_name_lens = 0.0
+    gate = m.loop_feedback_gate
+    # same forward, the lens contributions removed: the shared weights' gradients must not change by the naming loss
+    m(ids, labels=ids.clone(), read_targets=tgt).loss.backward()
+    for n, g in with_lens.items():
+        assert torch.allclose(dict(m.named_parameters())[n].grad, g, atol=1e-6), n
+    assert gate is m.loop_feedback_gate
+
+
+def test_long_spans_are_not_named():
+    torch.manual_seed(5)
+    ids = text_row(S=48)
+    m = make(**TEXT, **LOOP4, message_loop_name_lens=1.0).train()
+    with torch.no_grad():
+        base = m(ids, labels=ids.clone()).loss
+        long = m(ids, labels=ids.clone(), read_targets=_targets([40, 1, 5, 12])).loss  # 8 tokens: a sentence
+    assert torch.allclose(base, long)
 
 
 def test_eval_runs_the_feedback_without_targets():

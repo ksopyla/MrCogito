@@ -3165,24 +3165,31 @@ class PerceiverARLM(PreTrainedModel):
         return self.embed.tok(ids)
 
     def _loop_lens(self, x: torch.Tensor, r: int, input_ids: torch.Tensor) -> torch.Tensor:
-        """E33q, after loop round r (0-based, not the last): the round's state through the shared LM head.
+        """E33q, after loop round r (0-based, not the last): the round's state through the shared LM head, with the
+        decoder weights DETACHED (final norm, LM head, token table, input up-projection), so neither the naming loss nor
+        the feedback trains the output head or the encoding the writer reads; only the loop's state and the gate learn.
         - Training with read targets (`message_loop_name_lens` > 0): at each question's decision position the
-          distribution must name hop r+1's output word — every token of its span (quads with round == r + 1:
-          answer position, round, first token, last token), −mean log p; appended to `_name_lens_losses`.
+          distribution must name hop r+1's output word — the tokens of its span (quads with round == r + 1: answer
+          position, round, first token, last token), −mean log p; spans longer than 4 tokens (quote's signs, the
+          builder's whole-sentence fallback) are skipped. All the word's pieces, not just the first: a name's first piece
+          is its capital letter, which a dozen cast members share. Appended to `_name_lens_losses`.
         - `message_loop_feedback="soft"`: softmax(logits / T) @ token table → the input layer's up-projection and norm
           → × the per-channel gate (starts at 0) → added to the state that enters round r + 1. [B,S,d] → [B,S,d]."""
         cfg = self.config
-        h = self.final_norm(x)
+        fn = self.final_norm
+        h = F.rms_norm(x, fn.normalized_shape, fn.weight.detach() if fn.weight is not None else None, fn.eps)
+        W_out = self.lm_head.weight.detach()
         sc = float(cfg.logit_softcap or 0.0)
         cap = (lambda z: sc * torch.tanh(z / sc)) if sc > 0 else (lambda z: z)
         rt = self._read_targets
         if self._name_lens_losses is not None and rt is not None:
             rt = rt.to(x.device)
-            sel = (rt[..., 1] == r + 1) & (rt[..., 0] >= 0) & (rt[..., 2] >= 0)
+            sel = ((rt[..., 1] == r + 1) & (rt[..., 0] >= 0) & (rt[..., 2] >= 0)
+                   & (rt[..., 3] - rt[..., 2] + 1 <= 4) & (rt[..., 3] >= rt[..., 2]))
             if bool(sel.any()):
                 bi, ti = sel.nonzero(as_tuple=True)
                 qp, t0, t1 = rt[bi, ti, 0], rt[bi, ti, 2], rt[bi, ti, 3]
-                logp = F.log_softmax(cap(F.linear(h[bi, qp], self.lm_head.weight).float()), -1)  # [N,V]
+                logp = F.log_softmax(cap(F.linear(h[bi, qp], W_out).float()), -1)                 # [N,V]
                 off = torch.arange(4, device=x.device)
                 tp = t0[:, None] + off[None]                                                     # [N,4]
                 ok = tp <= t1[:, None]
@@ -3191,10 +3198,14 @@ class PerceiverARLM(PreTrainedModel):
                 self._name_lens_losses.append(nll)
         if self.loop_feedback_gate is None:
             return x
-        p = torch.softmax(cap(F.linear(h, self.lm_head.weight)).float() / cfg.message_loop_feedback_temp, -1)
-        e = p.to(self.embed.tok.weight.dtype) @ self.embed.tok.weight                            # [B,S,e]
-        up = self.embed.up0(e) + self.embed.up2(F.silu(self.embed.up1(e)))
-        return x + self.loop_feedback_gate.to(x.dtype) * self.embed.norm(up).to(x.dtype)
+        p = torch.softmax(cap(F.linear(h, W_out)).float() / cfg.message_loop_feedback_temp, -1)
+        E = self.embed
+        e = p.to(E.tok.weight.dtype) @ E.tok.weight.detach()                                      # [B,S,e]
+        up = F.linear(e, E.up0.weight.detach()) + F.linear(F.silu(F.linear(e, E.up1.weight.detach())),
+                                                             E.up2.weight.detach())
+        fb = F.rms_norm(up, E.norm.normalized_shape, E.norm.weight.detach() if E.norm.weight is not None else None,
+                        E.norm.eps)
+        return x + self.loop_feedback_gate.to(x.dtype) * fb.to(x.dtype)
 
     def _readback_loss(self, input_ids: torch.Tensor, attention_mask: Optional[torch.Tensor]) -> torch.Tensor:
         """Mean CE of naming, from each live note's value, the tokens at its expected position −1, 0, +1."""
