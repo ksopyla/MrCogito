@@ -175,7 +175,7 @@ per cell, greedy answers). The two agents are separate:
 | 16k | 97 % | 86 % | 36 % | 15–18 | 4 KB / 23 KB | 65 KB |
 | 64k | 100 % | 94 % | 22 % | 16–21 | 4–5 KB / 23 KB | 260 KB |
 | 256k | 100 % | 100 % | 28 % | 17–21 | 4–5 KB / 23 KB | 1 MB |
-| 1M | 100 % | 97 % | (rerun pending) | 20 | 5 KB / 22 KB | 4.2 MB |
+| 1M | 100 % | 97 % | 33 % (run 1 model, 24 notes) | 20 | 5 KB / 22 KB | 4.2 MB |
 
 - Controls at every length: no notes 0 %, another document's notebook 0 %.
 - B reading A's whole notebook (no fetching) scores 92–100 % up to 256k, but only 50 % (lookup) and 67 % (keyed) at
@@ -184,7 +184,37 @@ per cell, greedy answers). The two agents are separate:
 - Asking only for the first answer token gives 0 % everywhere: each token of a name needs its own fetch.
 - Quotes come back partly right (e.g. 5 of 6 words).
 
-**Verdict:** E33f is the first trained model where agent A's notebook and agent B's reader are separate, and B answers
-far facts from a handful of fetched notes. A 128k-token document becomes about 8 notes per question (1,024 numbers).
-Near facts are the open gap.
+**Run 2, continued** (Polonez GPUs 1–3, from run 1's final model, 0.6B more tokens = 0.9B of split training,
+16 Oct 23:23 → 17 Oct ~03:00 UTC; full exam, 400 items per cell, exact % all / far):
+
+| task | 1k cont. | 1k run 1 | 4k cont. | 4k run 1 | 16k cont. | 16k run 1 | E33 own text 4k / 16k |
+|---|---|---|---|---|---|---|---|
+| quote | 38 / 35 | 6 / 5 | **75 / 76** | 15 / 16 | **92 / 95** | 23 / 24 | 25 / 0 · 0 / 0 (far) |
+| lookup | 34 / 33 | 34 / 33 | 75 / 74 | 74 / 77 | 92 / 93 | 91 / 91 | 79 / 72 · 90 / 90 |
+| keyed | 25 / 26 | 25 / 26 | 70 / 70 | 63 / 66 | 91 / 92 | 91 / 92 | 73 / 69 · 88 / 90 |
+| latest | 15 | 15 | 7 | 4 | 10 | 6 | 22 · 4 |
+| count | 33 | 31 | 33 | 29 | 17 | 17 | 26 · 19 |
+
+Held-out story loss 1.498 (run 1 1.516, E33 1.525). With more split training, the notes learned to carry a whole
+quoted sign, word for word: 76 % at 4k and 95 % at 16k on far quotes. E33 reading its own text gets 0 % on far
+quotes. Near facts and latest did not move.
+
+**Demo with the continued model** (17 Oct ~04:00 UTC, same protocol and documents):
+
+| document | lookup | keyed | quote, word for word | notes B fetched | down / up |
+|---|---|---|---|---|---|
+| 4k | 78 % | 75 % | 78 % | 12–15 | 3–4 KB / 22–28 KB |
+| 16k | 97 % | 86 % | 94 % | 14–18 | 4–5 KB / 23–29 KB |
+| 64k | 100 % | 94 % | 92 % | 15–18 | 4–5 KB / 23–28 KB |
+| 256k | 100 % | 100 % | 100 % | 16–19 | 4–5 KB / 23–27 KB |
+| 1M | 97 % | 97 % | 92 % | 18–21 | 4–5 KB / 23–29 KB |
+
+- B reading A's whole 1M notebook: lookup 42 %, keyed 42 %, quote 0 %.
+- No notes, or another document's notebook: 0 % everywhere.
+
+**Verdict:** E33f is the first trained model where agent A's notebook and agent B's reader are separate.
+- B answers far facts and quotes from about 20 fetched notes (5 KB) in documents up to 1M tokens (4.2 MB of text).
+- Fetching beats reading the whole notebook.
+- Open gaps: near facts and "latest" (the split took B's view of A's recent text away), and the request traffic
+  (22–29 KB per answer, more than the notes).
 

@@ -30,7 +30,7 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-16 23:30 UTC",
+    "as_of": "2026-10-17 04:00 UTC",
     "headline": "E31c, the notebook model without the loop, is the best architecture so far: on the current recipe it "
                 "learned to read far facts in 3 of 3 runs, better than dense at 4k and still at 16k. Nobody tracks the "
                 "latest move beyond 2k yet.",
@@ -48,8 +48,10 @@ STATUS = {
         "12 items per length): a 128k-token document becomes about 1,000 numbers per question. (4) Demo with the agents "
         "separate (A runs only the writer, B only the reader on its question row, 16 Oct 23:19 UTC): far lookup 97-100 % "
         "from about 20 fetched notes (5 KB down, 22 KB of requests up) on documents of 16k to 1M tokens, keyed 86-100 %, "
-        "0 % with no notes or another document's; B reading the whole 1M notebook gets only 50 %. Running: E33f "
-        "continued for 0.6B more tokens (Polonez GPUs 1-3, from 23:23 UTC).",
+        "0 % with no notes or another document's; B reading the whole 1M notebook gets only 50 %. (5) E33f continued for "
+        "0.6B more tokens: far quotes 4k / 16k 76 / 95 % through the notes alone (run 1 16 / 24 %, E33 on its own text "
+        "0 / 0 %), far lookup and keyed unchanged, near facts and latest unchanged, story loss 1.498. Its demo: lookup "
+        "97-100 %, keyed 86-100 %, word-for-word quotes 92-100 % from 15-21 fetched notes at 16k-1M tokens.",
         "Odra stopped answering (checked 18:05 UTC 16 Oct: no ping or ssh, also not from Polonez over the LAN; possibly a "
         "power cut). The state of E33e run 1, started there about 06:45 UTC, is unknown until Odra is back.",
         "E33 on the bridge-question data (Polonez, 16 Oct 09:17-17:00 UTC, two bursts): stopped at the 24 GPU-hour cap at "
@@ -558,6 +560,14 @@ LADDER = [
                "loss 1.516 (E33 1.525).",
      "when": "16 Oct 20:23 → 21:30",
      "why": "Agent to agent: make the notebook carry everything a question needs, in few notes."},
+    {"id": "q8b_e33f_s0_cont_polonez.polonez", "start": "2026-10-16", "data": "v2 + bridge", "standing": "in use",
+     "run": "E33f continued (Polonez GPUs 1-3)", "model": "E33f run 1 + 0.6B tokens of split training · 30M, plain, "
+                                                         "seed 0",
+     "tokens": "0.6B more (0.9B of split training)", "exams": "v2 + v2.1, 1k-16k (split by construction)",
+     "result": "Far quote 4k / 16k 76 / 95 % through the notes alone (run 1 16 / 24 %, E33 on its own text 0 / 0 %); far "
+               "lookup 74 / 93 %, keyed 70 / 92 %; near facts and latest unchanged (latest at 1k 15 %). Story loss 1.498.",
+     "when": "16 Oct 23:23 → 17 Oct ~03:00",
+     "why": "Does more split training close the near-fact gap and carry quotes?"},
 ]
 
 # Plain names for the architectures (first mention = name + what it is).
