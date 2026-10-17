@@ -495,3 +495,29 @@ def test_key_grad_detach_keeps_read_targets_off_the_writers_read():
     assert det[2] > 1e-3 * full[2] and det[3] > 1e-3 * full[3]
     with pytest.raises(ValueError):
         make(**TEXT, message_raw_window=8, lm_key_grad="half")
+
+
+def test_key_grad_address_starts_as_detach_and_learns_only_its_own_read():
+    """lm_key_grad="address": a warm start from a "detach" model is unchanged at step 0 (zero output projection), and
+    a read target trains the key's own read (keyread_*), never the content read (query, prior, token projections)."""
+    ids = text_row(S=48)
+    tgt = _targets([40, 1, 5, 7])
+    det = make(**TEXT, message_raw_window=8, message_loop_read_aux=1.0, lm_key_grad="detach").train()
+    adr = make(**TEXT, message_raw_window=8, message_loop_read_aux=1.0, lm_key_grad="address").train()
+    missing, unexpected = adr.load_state_dict(det.state_dict(), strict=False)
+    assert not unexpected and missing and all("keyread_" in k for k in missing)
+    assert adr.memory_writer.keyread_out.weight.abs().sum() == 0
+    with torch.no_grad():
+        a = adr(ids, labels=ids.clone(), read_targets=tgt).loss
+        b = det(ids, labels=ids.clone(), read_targets=tgt).loss
+    assert abs(float(a) - float(b)) < 1e-6
+    w = adr.memory_writer
+    with torch.no_grad():
+        w.keyread_out.weight.normal_(0, 0.05)  # as after some training
+    term = adr(ids, labels=ids.clone(), read_targets=tgt).loss - adr(ids, labels=ids.clone()).loss
+    own = [w.keyread_q.weight, w.keyread_prior, w.keyread_out.weight]
+    content = [w.wq.weight, w.prior, w.wk.weight, w.wv.weight, w.in_proj.weight]
+    g = torch.autograd.grad(term, own + content, allow_unused=True)
+    size = [0.0 if x is None else float(x.abs().sum()) for x in g]
+    assert all(s > 0 for s in size[:3])
+    assert max(size[3:]) < 1e-5 * min(size[:3])
