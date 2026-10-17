@@ -241,6 +241,17 @@ PROTOCOL_LOG = [
 # Claims register: every conclusion we have drawn, with its state. holds = repeated or overwhelming within its runs;
 # single run = one run, needs a second; open = not testable yet; retracted = disproved (kept, with the date).
 CLAIMS = [
+    {"claim": "Compose fails at forming the second question, not at having the bridge in memory.", "state": "single run",
+     "since": "2026-10-17",
+     "evidence": "Oracle, no training, 150 items per cell: appending the gold first fact as text moves E33r's compose by "
+                 "+6 points at most (58 → 64 % at 4k) and E33 bridge's by 0; writing the gold bridge into the question "
+                 "gives 81 / 89 % (E33r) and 76 / 93 % (E33 bridge) at 4k / 16k. E33r decodes its own steps worse than "
+                 "it composes inside (step 1 55-58 %), so writing its own answers back hurts (53 / 63 %).",
+     "settle": "A loop whose second round is given the bridge it named (round target + re-embedding) reaches ≥ 70 %."},
+    {"claim": "Deduce fails at storage: the notes do not keep the property.", "state": "single run", "since": "2026-10-17",
+     "evidence": "Oracle: deduce stays at 7-15 % even with the gold category written into the question, on E33r and E33 "
+                 "bridge. Property-word probe on the notes 8-13 % (place names 59-80 %).",
+     "settle": "A content objective for the writer (read-back, address/content split) lifts the property probe ≥ 50 %."},
     {"claim": "Fixed order heads (rank among matching notes) let a notebook model learn latest.", "state": "open",
      "since": "2026-10-17",
      "evidence": "Learned strengths from 0 never grew (E33d 0.14, E33e 0.15 then 0.09). Without training a strength "
@@ -382,7 +393,7 @@ CLAIMS = [
                  "finds the right page 95 % of the time, the note lacks the property word (probe 11 %, guessing 8 %). "
                  "Quotes 0 %. The same target on single notes (E33o) erased far facts.",
      "settle": "A second E33r run; deduce once notes keep property words; the target switched off for the last part "
-               "of training."},
+               "of training. Oracle (17 Oct): with the gold bridge in the question E33r reaches 81 / 89 %."},
     {"claim": "What latest lacks on the notebook is order, and ranking notes among their matches adds it without "
               "costing far facts.", "state": "single run", "since": "2026-10-16",
      "evidence": "No training, one fixed strength (2), exam set: E33 run 1 latest at 16k 5 → 41 %, far lookup 92 → "
@@ -628,10 +639,13 @@ LADDER = [
      "model": "dense · 30M, plain, from the bridge-data dense", "tokens": "0.3B continuation", "exams": "v2 + v2.1",
      "result": "—", "when": "17 Oct from 18:24 UTC, about 3 h with exams",
      "why": "Is deduce learnable at 30M with this data when every fact is visible? Sets the ceiling for T5/T7."},
-    {"id": None, "start": "2026-10-17", "data": "v2", "standing": "running",
+    {"id": None, "start": "2026-10-17", "data": "v2", "standing": "history",
      "run": "Decode-and-append oracle (Odra GPU 2, agent-memory session)",
      "model": "E33r and E33 bridge, no training", "tokens": "none", "exams": "compose / deduce, 4k and 16k, 150 per cell",
-     "result": "—", "when": "17 Oct from about 18:30 UTC, about 30 min",
+     "result": "E33r compose at 4k / 16k: as is 58 / 79 %; gold first fact appended 64 / 84 %; own steps appended 53 / 63 %; "
+               "gold bridge written into the question 81 / 89 % (E33 bridge model 10 → 76 / 93 %). Deduce 7-15 % in "
+               "every mode, gold bridge included.",
+     "when": "17 Oct 18:28 → 18:52 UTC",
      "why": "Idea 4: with the first hop written into the document, can the second hop reach 70 %?"},
     {"id": None, "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "queued",
      "run": "E33g, order heads (Odra GPUs 0-1)",
@@ -1025,6 +1039,11 @@ ARCHS = {
 # measured. effect: helped / hurt / no effect / mixed / measurement (a new exam or rule, the models did not change).
 # metrics: (what is measured, before, after, unit) — unit "%" (0-100) or "runs" ("k/n").
 CHANGES = [
+    {"date": "2026-10-17", "kind": "exam", "change": "Oracle: the bridge written into the question vs appended as text",
+     "compared": "E33r, compose at 4k, as is vs gold first fact appended vs gold bridge in the question",
+     "effect": "measurement",
+     "metrics": [("compose at 4k, first fact appended", 58, 64, "%"), ("compose at 4k, bridge in the question", 58, 81, "%")],
+     "note": "The second question is the missing link; memory already has the bridge. The models did not change."},
     {"date": "2026-10-17", "kind": "recipe", "change": "Tell each loop round where to read, in training (E33r)",
      "compared": "E33 bridge model + 0.3B tokens, without (E33x) vs with the per-round read target", "effect": "helped",
      "metrics": [("two-step compose at 4k", 7, 60, "%"), ("two-step compose at 16k", 11, 76, "%"),

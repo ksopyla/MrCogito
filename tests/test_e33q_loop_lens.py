@@ -1,0 +1,86 @@
+"""E33q — the loop asks its next question with the name it found: round r names hop r's output word through the shared
+LM head at the decision position (training loss), and its LM-head distribution, re-embedded with the shared token table
+and input layer, joins round r + 1 through a gate that starts at 0.
+
+Roadmap: docs/4_Research_Notes/text_t4_t7_roadmap_20261017.md §4.3, §4.4 (the decode-and-append oracle).
+"""
+import math
+
+import torch
+import torch.nn.functional as F
+
+from tests.test_text_memory import TEXT, _targets, make, text_row
+
+LOOP4 = dict(message_raw_window=8, message_loop_rounds=4)
+
+
+def test_zero_gate_is_the_model_without_feedback():
+    torch.manual_seed(0)
+    m = make(**TEXT, **LOOP4, message_loop_feedback="soft").eval()
+    assert m.loop_feedback_gate is not None and not m.loop_feedback_gate.any()
+    ids = text_row(S=48)
+    with torch.no_grad():
+        base = m(ids).logits
+        gate = m.loop_feedback_gate
+        m.loop_feedback_gate = None
+        assert torch.allclose(m(ids).logits, base, atol=1e-6)
+        m.loop_feedback_gate = gate
+        with torch.no_grad():
+            gate.fill_(0.5)
+        assert not torch.allclose(m(ids).logits, base, atol=1e-4)
+
+
+def test_name_lens_is_minus_mean_log_p_of_the_hop_word_tokens():
+    """Round 1's state at the decision position, read through final norm + LM head, must name the span's tokens."""
+    torch.manual_seed(1)
+    ids = text_row(S=48)
+    q, t0, t1 = 40, 10, 12
+    m = make(**TEXT, **LOOP4, message_loop_name_lens=1.0).train()
+    states = []
+    orig = m._loop_lens
+
+    def spy(x, r, input_ids):
+        states.append(x.detach().clone())
+        return orig(x, r, input_ids)
+
+    m._loop_lens = spy
+    with torch.no_grad():
+        base = m(ids, labels=ids.clone()).loss
+        states.clear()
+        with_t = m(ids, labels=ids.clone(), read_targets=_targets([q, 1, t0, t1], [q, 0, -1, -1])).loss
+    h = m.final_norm(states[0][0, q])
+    z = F.linear(h, m.lm_head.weight).float()
+    sc = float(m.config.logit_softcap or 0.0)
+    if sc > 0:
+        z = sc * torch.tanh(z / sc)
+    logp = F.log_softmax(z, -1)
+    want = -float(logp[ids[0, t0:t1 + 1]].mean())
+    assert abs(float(with_t - base) - want) < 1e-4
+
+
+def test_feedback_gate_and_name_loss_receive_gradient():
+    torch.manual_seed(2)
+    ids = text_row(S=48)
+    m = make(**TEXT, **LOOP4, message_loop_name_lens=0.3, message_loop_feedback="soft").train()
+    out = m(ids, labels=ids.clone(), read_targets=_targets([40, 1, 10, 12], [40, 2, 20, 21]))
+    out.loss.backward()
+    assert torch.isfinite(out.loss)
+    assert m.loop_feedback_gate.grad is not None and m.loop_feedback_gate.grad.abs().sum() > 0
+    assert m.lm_head.weight.grad.abs().sum() > 0
+
+
+def test_eval_runs_the_feedback_without_targets():
+    m = make(**TEXT, **LOOP4, message_loop_name_lens=0.3, message_loop_feedback="soft").eval()
+    with torch.no_grad():
+        m.loop_feedback_gate.fill_(0.1)
+        out = m(text_row(S=48))
+    assert torch.isfinite(out.logits).all()
+
+
+def test_text_checks_arch_e33q_is_e33r_plus_naming_and_feedback():
+    from evaluation.text_checks import ARCHES, count_params, model_args
+
+    r = model_args("e33r_plain", "screen", 1152)
+    q = model_args("e33q_plain", "screen", 1152)
+    assert {k for k in q if q[k] != r.get(k)} == {"message_loop_name_lens", "message_loop_feedback"}
+    assert ARCHES["e33q_plain"].has_notebook and count_params(q) >= count_params(r)

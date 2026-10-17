@@ -389,6 +389,11 @@ class ModelArguments:
     lm_note_age_init: str = field(default="", metadata={"help": "E33g: per-head starting strengths of the note-order "
                                                                  "term, comma-separated (one value = every head)."})
     lm_note_age_learn: bool = field(default=True, metadata={"help": "E33g: False keeps the note-order strengths fixed."})
+    message_loop_name_lens: float = field(default=0.0, metadata={"help": "E33q: weight of round r naming hop r's "
+                                                                         "output word through the LM head (training)."})
+    message_loop_feedback: str = field(default="none", metadata={"help": "E33q: none | soft (re-embed round r's "
+                                                                          "LM-head distribution into round r+1)."})
+    message_loop_feedback_temp: float = field(default=1.0, metadata={"help": "E33q: softmax temperature of the feedback."})
     lm_count_heads: int = field(default=0, metadata={"help": "E33h: count heads (summing read) on the global read; 0 = off."})
     lm_count_max: int = field(default=10, metadata={"help": "E33h: counts coded as a soft one-hot over 0..max."})
     message_loop_rounds: int = field(default=1, metadata={"help": "E33a: tied [global read + local] loops (1 = off)."})

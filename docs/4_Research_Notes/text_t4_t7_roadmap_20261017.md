@@ -124,10 +124,20 @@ second seed (capability-testing session, DNA ladder).
 - **Also:** a second E33r seed, and a longer continuation (0.6B tokens).
 - **Pass:** compose ≥ 70 % at 4k on two seeds; deduce ≥ 40 % together with §4.2.
 
-### 4.4 Decode and append (T5 / T7 upper bound; idea 4), owner: the A2A session
-- **Oracle, no training, about 1 GPU-hour:** append the gold first-hop sentence before the question, on the E33r
-  and E33 bridge checkpoints, for compose and deduce at 4k and 16k.
-- **Then:** the model's own decoded first hop, tagged as its own output.
+### 4.4 Decode and append (T5 / T7 upper bound; idea 4), owner: the A2A session. Result: dead as a reasoning fix
+- **Oracle, no training (Odra, 17 Oct 18:28–18:52 UTC, 150 items per cell, exact).**
+  - E33r compose at 4k / 16k: as is 58 / 79 %.
+  - Gold first fact appended before the question: 64 / 84 %.
+  - The same fact about 2k tokens back: 64 / 79 %.
+  - Its own decoded steps appended: 53 / 63 %; own step accuracy is 55–58 % for step 1 and 36–39 % for step 2.
+  - Gold bridge written into the question: 81 / 89 %. The E33 bridge model goes from 10 % to 76 / 93 % this way.
+  - Deduce: 7–15 % in every mode, gold bridge included.
+- **Reading.**
+  - The memory already holds the bridge; the missing link is forming the second question. That makes §4.3 (round 1
+    names the bridge, and the name is re-embedded into round 2's query) the lever for compose. The written-question
+    ceiling, about 80 %, is above the goal.
+  - Deduce is a storage problem (§4.2), not a join problem.
+- Append stays useful as a memory-tape feature, not as a reasoning fix.
 
 ### 4.5 Summing read (T6), owner: this session (no other capacity)
 - **Change.** Count heads beside the read use sigmoid weights with a learned bias and no normalisation. They sum

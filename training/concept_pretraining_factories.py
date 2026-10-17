@@ -425,7 +425,7 @@ def _latent_memory_kwargs(model_args) -> dict:
             "lm_writer_dim", "lm_enc_layers", "lm_rounds", "lm_reader_tokens", "lm_addr", "lm_slot_pos",
             "lm_note_age", "lm_note_age_unit", "lm_note_rank_margin", "lm_note_rank_sharp", "lm_note_age_init", "lm_note_age_learn", "lm_count_heads", "lm_count_max", "message_loop_rounds", "message_loop_exit_aux", "message_loop_exit_targets",
             "message_loop_exit_mask", "message_loop_read_aux", "message_loop_read_target", "lm_readback_aux",
-            "lm_key_grad")
+            "lm_key_grad", "message_loop_name_lens", "message_loop_feedback", "message_loop_feedback_temp")
     out = {k: getattr(model_args, k) for k in keys}
     out["message_write"] = "latent_memory"
     return out
@@ -543,7 +543,8 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
         _ALLOWED_FRESH = ("write_back_proj", "value_embed", "value_proj", "value_lambda", "prefix_ae_head",
                           "note_readback",  # note_readback: the text multi-hop read-back head (training only)
                           "note_age_slope",  # E33g: order heads added to a model trained without them (set strengths)
-                          "note_counter")  # E33h: count heads added to a warm start (zero output projection)
+                          "note_counter",  # E33h: count heads added to a warm start (zero output projection)
+                          "loop_feedback_gate")  # E33q: the feedback gate starts at 0 (warm start = E33r)
         unexplained = [k for k in missing if not any(tag in k for tag in _ALLOWED_FRESH)]
         if unexpected or unexplained:
             raise ValueError(

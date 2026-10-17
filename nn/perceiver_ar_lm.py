@@ -183,6 +183,11 @@ class PerceiverARConfig(PretrainedConfig):
         message_loop_read_aux: float = 0.0,  # text multi-hop (2026-10-17) — weight of the per-round read target
         message_loop_exit_mask: str = "all",  # text multi-hop — loop exits score "all" labels or only "answers"
         message_loop_read_target: str = "page",  # text multi-hop — read target on a page's notes or the span's "note"s
+        message_loop_name_lens: float = 0.0,  # E33q — weight: round r names hop r's output word (its tokens) at the
+                                              #   question's decision position, read through the shared LM head
+        message_loop_feedback: str = "none",  # E33q — "soft": round r's LM-head distribution, re-embedded with the
+                                              #   shared token table and input layer, is added to round r+1 (gate from 0)
+        message_loop_feedback_temp: float = 1.0,  # E33q — softmax temperature of that re-embedding
         message_update_slot_kv: bool = False,  # E21 — rewrite exclusive slot K/V between extra hops
         message_global_anchors: str = "none",  # E21 — sparse raw keys joining exclusive slot K/V
         message_anchor_token_ids: tuple[int, ...] = (),  # type-mark / keymark ids
@@ -303,6 +308,9 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_loop_read_aux = float(message_loop_read_aux)
         self.message_loop_exit_mask = str(message_loop_exit_mask or "all")
         self.message_loop_read_target = str(message_loop_read_target or "page")
+        self.message_loop_name_lens = float(message_loop_name_lens or 0.0)
+        self.message_loop_feedback = str(message_loop_feedback or "none")
+        self.message_loop_feedback_temp = float(message_loop_feedback_temp or 1.0)
         self.message_update_slot_kv = bool(message_update_slot_kv)
         self.message_global_anchors = str(message_global_anchors or "none")
         self.message_anchor_token_ids = tuple(int(x) for x in (message_anchor_token_ids or ()))
@@ -2434,6 +2442,17 @@ class PerceiverARLM(PreTrainedModel):
             if self.loop_rounds > 1 and getattr(cfg, "message_loop_inject", "none") == "prelude" else None
         )
         self._loop_rounds_override: Optional[int] = None  # eval: run r loops (exit r == the R = r forward)
+        # E33q: the loop asks its next question with the name it found. Round r's state is read through the shared LM
+        # head (final norm → lm_head); the distribution, re-embedded with the shared token table and the input layer's
+        # up-projection, joins round r+1's input through a per-channel gate that starts at 0 (step 0 = E33r). The
+        # oracle of 17 Oct: E33r composes 58 % at 4k, 81 % with the bridge written into the question.
+        if str(getattr(cfg, "message_loop_feedback", "none") or "none") not in ("none", "soft"):
+            raise ValueError("message_loop_feedback must be 'none' or 'soft'")
+        self.loop_feedback_gate = (
+            nn.Parameter(torch.zeros(cfg.hidden_size))
+            if self.loop_rounds > 1 and getattr(cfg, "message_loop_feedback", "none") == "soft" else None
+        )
+        self._name_lens_losses: Optional[list] = None
         # Notes-budget exam (latent memory, nothing retrained): `_notes_override` = (k̄, v̄, slot_pos) replaces what the
         # writer would write (another forward's notes: B reads A's notebook over its own text); `_note_keep` [B,nb]
         # hides every other note; `_note_capture` = {"q_pos": [B,P]} records how much each read looks at each note.
@@ -2923,6 +2942,8 @@ class PerceiverARLM(PreTrainedModel):
                 for i in core:
                     x = run_layer(i, x, s)
                 states.append((x, s))
+                if r < R - 1 and (self.loop_feedback_gate is not None or self._name_lens_losses is not None):
+                    x = self._loop_lens(x, r, input_ids)
             if self._collect_name_states:
                 self._loop_core_states = [xs for xs, _ in states]
             if self._collect_loop_states:  # exits: each earlier loop's state through the answer layer
@@ -3023,6 +3044,10 @@ class PerceiverARLM(PreTrainedModel):
         self._round_targets = None
         # text multi-hop (2026-10-17): per-question read targets from the collator, used in training only
         self._read_targets = read_targets if self.training else None
+        # E33q: hop-naming losses collected by the loop rounds (training with read targets only)
+        self._name_lens_losses = ([] if (self.training and read_targets is not None and labels is not None
+                                         and float(getattr(cfg, "message_loop_name_lens", 0.0) or 0.0) > 0
+                                         and self.loop_emb is not None) else None)
         # Text (closed read): the exit aux is a training signal only, so eval loss stays the plain
         # next-token CE that every text-checks arm is compared on. Exam mode (exclusive) unchanged.
         self._collect_loop_states = bool(
@@ -3112,6 +3137,9 @@ class PerceiverARLM(PreTrainedModel):
         if self._readback_inputs is not None:
             loss = loss + cfg.lm_readback_aux * self._readback_loss(input_ids, attention_mask)
             self._readback_inputs = None
+        if self._name_lens_losses:
+            loss = loss + cfg.message_loop_name_lens * torch.cat(self._name_lens_losses).mean()
+        self._name_lens_losses = None
         mctx = self._last_message_ctx
         rls = getattr(mctx, "read_losses", None) if mctx is not None else None
         if rls:
@@ -3121,6 +3149,38 @@ class PerceiverARLM(PreTrainedModel):
         self._read_targets = None
         loss = self._maybe_add_prefix_ae(loss, input_ids)
         return CausalLMOutput(loss=loss, logits=(logits if return_logits else None))
+
+    def _loop_lens(self, x: torch.Tensor, r: int, input_ids: torch.Tensor) -> torch.Tensor:
+        """E33q, after loop round r (0-based, not the last): the round's state through the shared LM head.
+        - Training with read targets (`message_loop_name_lens` > 0): at each question's decision position the
+          distribution must name hop r+1's output word — every token of its span (quads with round == r + 1:
+          answer position, round, first token, last token), −mean log p; appended to `_name_lens_losses`.
+        - `message_loop_feedback="soft"`: softmax(logits / T) @ token table → the input layer's up-projection and norm
+          → × the per-channel gate (starts at 0) → added to the state that enters round r + 1. [B,S,d] → [B,S,d]."""
+        cfg = self.config
+        h = self.final_norm(x)
+        sc = float(cfg.logit_softcap or 0.0)
+        cap = (lambda z: sc * torch.tanh(z / sc)) if sc > 0 else (lambda z: z)
+        rt = self._read_targets
+        if self._name_lens_losses is not None and rt is not None:
+            rt = rt.to(x.device)
+            sel = (rt[..., 1] == r + 1) & (rt[..., 0] >= 0) & (rt[..., 2] >= 0)
+            if bool(sel.any()):
+                bi, ti = sel.nonzero(as_tuple=True)
+                qp, t0, t1 = rt[bi, ti, 0], rt[bi, ti, 2], rt[bi, ti, 3]
+                logp = F.log_softmax(cap(F.linear(h[bi, qp], self.lm_head.weight).float()), -1)  # [N,V]
+                off = torch.arange(4, device=x.device)
+                tp = t0[:, None] + off[None]                                                     # [N,4]
+                ok = tp <= t1[:, None]
+                tok = input_ids[bi[:, None], tp.clamp(max=input_ids.shape[1] - 1)]
+                nll = -(logp.gather(1, tok) * ok).sum(-1) / ok.sum(-1).clamp(min=1)
+                self._name_lens_losses.append(nll)
+        if self.loop_feedback_gate is None:
+            return x
+        p = torch.softmax(cap(F.linear(h, self.lm_head.weight)).float() / cfg.message_loop_feedback_temp, -1)
+        e = p.to(self.embed.tok.weight.dtype) @ self.embed.tok.weight                            # [B,S,e]
+        up = self.embed.up0(e) + self.embed.up2(F.silu(self.embed.up1(e)))
+        return x + self.loop_feedback_gate.to(x.dtype) * self.embed.norm(up).to(x.dtype)
 
     def _readback_loss(self, input_ids: torch.Tensor, attention_mask: Optional[torch.Tensor]) -> torch.Tensor:
         """Mean CE of naming, from each live note's value, the tokens at its expected position −1, 0, +1."""
