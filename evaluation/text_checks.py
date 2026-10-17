@@ -241,13 +241,30 @@ ARCHES = {
     "e33b": Arch("e33b", "E33o + note read-back (each note's value names its tokens)",
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
                   "message_loop_read_target": "note", "lm_readback_aux": 0.1}, has_notebook=True),
+    # E33rb: E33r (page-level read target) + note read-back. The note-level target of E33o / E33b emptied the notes
+    # (a probe recovers the place from a note at the place name 14 % / 12 %, E33r 68 %, guessing 8 %; lookup at 16k
+    # 87 → 0 / 18 %), so read-back is tested again on E33r's page target alone.
+    "e33rb": Arch("e33rb", "E33r + note read-back (each note's value names its tokens)",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "lm_readback_aux": 0.1}, has_notebook=True),
+    # E33ok / E33bk: E33o / E33b with the writer's key gradient stopped (lm_key_grad="detach"). A note's key and
+    # value came from one latent read, so the note-level target pulled the latent at a place name toward the person
+    # asked about and the place dropped out of its value; with the stop, read targets train the key projections only.
+    "e33ok": Arch("e33ok", "E33o with key-side losses kept off the writer's read",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "message_loop_read_target": "note", "lm_key_grad": "detach"}, has_notebook=True),
+    "e33bk": Arch("e33bk", "E33b with key-side losses kept off the writer's read",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "message_loop_read_target": "note", "lm_readback_aux": 0.1, "lm_key_grad": "detach"},
+                  has_notebook=True),
 }
 # Plain-input variants (2026-10-10): the same models without the word-pair/triple hash tables and value
 # embeddings. Dense with plain input learned quote, lookup, keyed and latest at 30M / 1.5B tokens on v2, where
 # dense with the tables learned at most one (spec §16.1), so the architecture round runs on plain input. FFN width
 # is refitted, so each stays in the parameter band.
 _PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
-for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o", "e33b", "e33g", "e33h"):
+for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o", "e33b", "e33rb", "e33ok", "e33bk",
+           "e33g", "e33h"):
     _a = ARCHES[_k]
     ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
                                  {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)
@@ -274,6 +291,7 @@ ENV_OF = {
     "message_loop_exit_aux": "PAR_LOOP_EXIT_AUX", "message_loop_exit_targets": "PAR_LOOP_EXIT_TARGETS",
     "message_loop_exit_mask": "PAR_LOOP_EXIT_MASK", "message_loop_read_aux": "PAR_LOOP_READ_AUX",
     "message_loop_read_target": "PAR_LOOP_READ_TARGET", "lm_readback_aux": "PAR_LM_READBACK_AUX",
+    "lm_key_grad": "PAR_LM_KEY_GRAD",
     "message_boundary_token_id": "PAR_MESSAGE_BOUNDARY_TOKEN_ID",
 }
 

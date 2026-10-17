@@ -470,3 +470,28 @@ def test_note_readback_trains_values_and_is_off_by_default():
 def test_note_readback_head_starts_at_zero():
     m = make(**TEXT, message_raw_window=8, lm_readback_aux=0.1)
     assert m.note_readback.weight.abs().sum() == 0
+
+
+def test_key_grad_detach_keeps_read_targets_off_the_writers_read():
+    """lm_key_grad="detach": the forward is unchanged, and a read target trains the key projections only — not what
+    a latent reads (its query, its position prior). E33o's note-level target emptied the notes through that path."""
+    ids = text_row(S=48)
+    tgt = _targets([40, 1, 5, 7])
+
+    def run(mode):
+        m = make(**TEXT, message_raw_window=8, message_loop_read_aux=1.0, lm_key_grad=mode).train()
+        w = m.memory_writer
+        with_t = m(ids, labels=ids.clone(), read_targets=tgt).loss
+        term = with_t - m(ids, labels=ids.clone()).loss  # the read target alone (the LM terms cancel)
+        g = torch.autograd.grad(term, [w.wq.weight, w.prior, w.to_k.weight, w.to_k_read.weight], allow_unused=True)
+        return float(with_t), [0.0 if x is None else float(x.abs().sum()) for x in g]
+
+    loss_full, full = run("full")
+    loss_det, det = run("detach")
+    assert abs(loss_full - loss_det) < 1e-6
+    assert full[0] > 0 and full[1] > 0
+    # what is left on the read side is float noise from the two forwards whose LM terms cancel
+    assert det[0] < 1e-5 * full[0] and det[1] < 1e-5 * full[1]
+    assert det[2] > 1e-3 * full[2] and det[3] > 1e-3 * full[3]
+    with pytest.raises(ValueError):
+        make(**TEXT, message_raw_window=8, lm_key_grad="half")

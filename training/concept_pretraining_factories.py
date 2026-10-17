@@ -424,7 +424,8 @@ def _latent_memory_kwargs(model_args) -> dict:
     keys = ("lm_read", "lm_context", "lm_window", "lm_stride", "lm_latents", "lm_latent_dim", "lm_heads",
             "lm_writer_dim", "lm_enc_layers", "lm_rounds", "lm_reader_tokens", "lm_addr", "lm_slot_pos",
             "lm_note_age", "lm_note_age_unit", "lm_note_rank_margin", "lm_note_rank_sharp", "lm_note_age_init", "lm_note_age_learn", "lm_count_heads", "lm_count_max", "message_loop_rounds", "message_loop_exit_aux", "message_loop_exit_targets",
-            "message_loop_exit_mask", "message_loop_read_aux", "message_loop_read_target", "lm_readback_aux")
+            "message_loop_exit_mask", "message_loop_read_aux", "message_loop_read_target", "lm_readback_aux",
+            "lm_key_grad")
     out = {k: getattr(model_args, k) for k in keys}
     out["message_write"] = "latent_memory"
     return out

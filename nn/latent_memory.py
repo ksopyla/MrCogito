@@ -237,6 +237,14 @@ class LatentMemoryWriter(nn.Module):
         self.addr_mode = str(getattr(cfg, "lm_addr", "window_start"))
         self.slot_pos_mode = str(getattr(cfg, "lm_slot_pos", "read"))
         self.slot_pos_ref = int(getattr(cfg, "slot_pos_ref", 2048) or 2048)
+        # "detach" (text multi-hop, 2026-10-17): the key is built from the latent's state and read with the
+        # gradient stopped, so a loss on where reads land (read targets, the LM through attention) trains only
+        # the key projections; what a latent reads is shaped by its value alone. With one shared read, E33o's
+        # note-level read target pulled the latent at a place name toward the person asked about, and the place
+        # dropped out of its value (probe 68 → 14 %).
+        self.key_grad = str(getattr(cfg, "lm_key_grad", "full") or "full")
+        if self.key_grad not in ("full", "detach"):
+            raise ValueError(f"lm_key_grad must be full | detach, got {self.key_grad!r}")
         std = float(cfg.init_std)
 
         self.in_proj = nn.Linear(e, dw, bias=False)
@@ -380,7 +388,8 @@ class LatentMemoryWriter(nn.Module):
         p_abs = start_pos.reshape(Bn, 1) + p_rel  # [Bn, K]
 
         zo = self.out_norm(z)
-        kk = self.k_out_norm((self.to_k(zo) + self.to_k_read(read)).view(Bn, K, m, self.g, self.dh))
+        zk, rk = (zo.detach(), read.detach()) if self.key_grad == "detach" else (zo, read)
+        kk = self.k_out_norm((self.to_k(zk) + self.to_k_read(rk)).view(Bn, K, m, self.g, self.dh))
         vv = (self.to_v(read) + self.to_v_state(zo)).view(Bn, K, m, self.g, self.dh)
         C = n_w * K * m
         kk = kk.reshape(B, C, self.g, self.dh)

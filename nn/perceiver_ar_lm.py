@@ -212,6 +212,7 @@ class PerceiverARConfig(PretrainedConfig):
         lm_competition: bool = True,      # softmax over latents per token, then renormalise
         lm_null_latent: bool = False,     # one latent the reader never sees
         lm_readback_aux: float = 0.0,     # text multi-hop (2026-10-17): each note's value names the tokens it read
+        lm_key_grad: str = "full",        # text multi-hop: "detach" = key-side losses do not move what a latent reads
         lm_reader_tokens: int = 5,        # reader K/V entries per latent (m)
         lm_pos_prior: bool = True,        # per-latent sub-page prior at init
         lm_addr: str = "window_start",    # latent address: "window_start" sinusoid | "none" (length-invariant)
@@ -331,6 +332,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.lm_null_latent = bool(lm_null_latent)
         self.lm_reader_tokens = int(lm_reader_tokens)
         self.lm_readback_aux = float(lm_readback_aux)
+        self.lm_key_grad = str(lm_key_grad)
         self.lm_pos_prior = bool(lm_pos_prior)
         self.lm_addr = str(lm_addr)
         self.lm_slot_pos = str(lm_slot_pos)
