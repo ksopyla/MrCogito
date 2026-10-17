@@ -169,6 +169,16 @@ Open:
     writer fraction that keeps it; apply the ratios at 500M only if they hold from 10M to 30M.
   - Optional phase 2: the best 2 settings on text far-fact lookup at 30M (with the text session).
   - Budget guess: ~60–70 runs of 1–2 GPU-h on the 3090s (~1–2 days on one server).
+  - Update 2026-10-14 (E33 session): the sweep moved to the **text checks** (30M E33, 0.6B tokens per
+    run, readouts on crowded and short documents; then the best setting at 100M); the symbolic version
+    was dropped (both exams at ceiling). Plan approved in principle, launch awaits the author. Caveat:
+    E33's notebook switched on in 1 of 2 text runs, once only after 0.9B tokens.
+- **Candidate variant E33f** (E33 session, 2026-10-17, on dev `0d8bdb2`): every "Question" is a boundary,
+  so questions read the document only through the notes. At 30M / 0.9B tokens: far quotes 76 / 95 % at
+  4k / 16k (E33: 0 %), far lookup and keyed held; near facts and "latest" got worse. Natural text has no
+  question tokens, so it matters for phase 2 (synthetic text with questions). **decide** at phase 2.
+- `torch.compile` with boundaries: the global-read mask tag now uses a constant (document, side) stride;
+  the old data-dependent stride crashed compile at step 1 (fix on dev `0d8bdb2`, merged here).
 - Kernels on H100: FlexAttention for the reading layer with notes, `torch.compile` graph breaks (host
   syncs). **partial**
 - Notebook-off switch usable in training-time evals (exists for eval: `message_override none`). **partial**
