@@ -427,6 +427,102 @@ The deduce control is not valid: the answer position there predicts " a", not th
    - the dense control now isolates the classic gap: steps known, join not invoked.
 4. **One run per model.** Pages hold about 1.5 facts each at 4k (the uniform column accounts for page size).
 
+## 8. Fix runs (17 Oct 2026, Polonez; the author's goal: multi-hop > 70 % on the board, ≤ 100M parameters)
+
+All runs are 30M, warm-started from E33's bridge-data checkpoint (7038), with LR 3.3e-4 and cosine decay. Scores are
+exact at 4k / 16k on the frozen exams.
+
+**Gate (09:58–10:22 UTC; 0.1B tokens of compose documents asking only "Who is the teacher of X?").**
+- The teacher question rose from 8 % to 47 % (dense 77 %).
+- Round 1 now puts 26 % of its attention on the teacher fact's page, 5.7× uniform: as sharp as a home lookup.
+- The bridge became decodable (probe 22–34 %).
+- Lookup was forgotten (74 % → 8 %), since nothing else was asked.
+
+Reading: E33's notes can hold a two-name fact. The 8 % was missing signal, not the single key, so two keys per note
+are not needed.
+
+**E33r (10:31–11:19 UTC; 0.3B tokens).** Exits off, read target 0.5 on fact pages. Data: compose and deduce are 6 of
+every 11 world documents, 30 % stories, 8 questions and 4 bridges per document.
+
+| exam (id split) | E33 (bridge data) | E33r |
+|---|---|---|
+| compose, two steps | 8 / 9 % | **60 / 76 %** |
+| deduce, depth 2 | 10 / 7 % | 13 / 9 % |
+| far lookup | 72 / 90 % | 67 / 89 % |
+| far keyed | 69 / 88 % | 61 / 85 % |
+| latest · count | 22 / 4 · 26 / 19 % | 20 / 2 · 21 / 18 % |
+| story loss | 1.525 | 1.516 |
+
+- **The reads follow the chain** (two-step compose, share of each round's attention): round 1 on fact 1 97 %,
+  round 2 on fact 2 90 %, round 3 on fact 3 84 % (uniform about 6 %).
+- **The bridges are present:** bridge 1 is decodable after round 1 (91 %), bridge 2 after round 2 (70–74 %).
+- **The answer:** first-token pick 47 % at 4k.
+- **The single steps asked directly:** teacher 52 %, the bridge written in 77 %.
+
+**Why deduce did not move.** E33r's reads reach the property fact (95 % of round 1 on its page, 32 % on the notes
+holding the property word, 100× uniform), but the notes do not say which property it is.
+
+A ridge probe from the notes on the word to the word itself, among the item's 12 candidates (guessing 8 %):
+
+| notes on | from the value | from the key |
+|---|---|---|
+| a place name (compose home facts) | 68 % | 59 % |
+| a property word (deduce property facts) | **11 %** | 11 % |
+
+The writer keeps rare names and places, which far questions need, and drops common words, which local context
+usually predicts. A read cannot return what was never written.
+
+**Control: E33x** (exits off, no read target, same data and budget): compose 7 / 11 %, far lookup 75 / 91 %, far
+keyed 69 / 90 %. The read target is what moved compose. It costs about 8 points of lookup at 4k.
+
+**Aiming at the word emptied the notes (E33o, E33b run 2; 12:53–14:30 UTC, from E33r, 0.3B tokens each).**
+- **E33o:** each round is pushed onto the notes holding the hop's output word (the teacher, the place, the class
+  word, the property), not any note of the fact's page.
+- **E33b run 2:** the same, plus a note read-back: a training-only head, zero-init, weight 0.1, that names from
+  each note's value the tokens it read.
+- **E33b run 1:** a random-init head at 0.2. It scrambled the values within half a run (compose first-token pick
+  47 → 12 %) and was stopped.
+
+| exam (id split) | E33r | E33o | E33b run 2 | notebook off |
+|---|---|---|---|---|
+| compose, two steps | 60 / 76 % | 7 / 1 % | 12 / 10 % | 5 / 2 % |
+| deduce, depth 2 | 13 / 9 % | 13 / 8 % | 14 / 7 % | 10 / 10 % |
+| lookup (whole exam) | 74 / 87 % | 23 / 0 % | 34 / 18 % | 24 / 0 % |
+| keyed (whole exam) | 70 / 83 % | 24 / 0 % | 28 / 14 % | 24 / 0 % |
+| story loss | 1.516 | 1.514 | 1.513 | |
+
+E33o ends at the notebook-off scores. Its lookup at 4k fell steadily over the run (74 → 56 → 45 → 23 → 24 % at
+checkpoints 0 / 178 / 445 / 890 / 1335), so this is a slow drift, not a step-0 shock.
+
+The reads still aim right, but the notes they reach are empty:
+- **Reads:** round 1 lands on fact 1 89 %, round 2 on fact 2 81–83 %, round 3 on fact 3 77 %. On the output word's
+  own notes, round 2 puts 21–32 %, about 100× uniform.
+- **Note content:** the place probe above falls from 68 % to **14 %** (E33o) and **12 %** (E33b run 2); the
+  property probe stays at 12 % / 10 %.
+- **Single steps:** "Where does Pim live?" asked directly falls from 77 % to 12 % / 26 %. The teacher step holds
+  (65 % / 69 %).
+
+**Why (working explanation).** A note's key and value come from the same latent's read of its page:
+k̄ = RMSNorm(to_k(z) + to_k_read(read)) and v̄ = to_v(read) + to_v_state(z).
+- The note-level target asks the note at "Ostrava" to answer a query about Pim.
+- The cheapest way is for that latent to read Pim, so the place drops out of its value.
+- The page-level target is satisfied by the note at "Pim", which can keep the place in its value.
+
+So a loss on addressing leaks into content whenever both share one read. Read-back at 0.1 did not hold it back.
+
+**Not a ceiling either.** The dense 30M model, trained without the reasoning-phase data, is at guessing on compose
+(7.8 %) and deduce (8.5 %) at 4k, though it sees every fact.
+
+**Next (running from 18:24 UTC, Polonez):**
+- **E33rb** (GPUs 0–1): E33r's page target plus the zero-init read-back, from the E33r final, 0.3B tokens.
+  - Question: does the property word get written without losing the places?
+  - Kill at checkpoint-445: the place probe < 50 % or lookup (whole exam) at 4k < 65 %.
+- **Dense on the reasoning data** (GPUs 2–3), from the q8b dense model, same data and budget.
+  - Question: is deduce learnable at 30M with every fact visible?
+  - If it stays near 8 %, deduce is a data or objective problem, not compression.
+- **If read-back fails:** split each latent's read into an address read (key) and a content read (value), or tie
+  the read-back to the reader's own output projection and LM head.
+
 ## Uncertainty
 - The probabilities are my judgement from C5, the board and the literature. They are not measured.
 - C5's names, relations and distractors are simpler than text's, so the port may need more than the C5 recipe
