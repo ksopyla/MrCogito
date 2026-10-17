@@ -2,6 +2,7 @@
 
 Spec: docs/experiments_specs/ahead/E31c_text_memory_read.md (+ _plan.md, tests 1–8).
 """
+import math
 from dataclasses import replace
 
 import numpy as np
@@ -339,3 +340,133 @@ def test_text_loop_eval_loss_is_plain_next_token_loss():
         tr = m.train()(ids, labels=ids.clone()).loss
     assert torch.allclose(ev, plain)
     assert float(tr) > float(plain) + 1e-3
+
+
+# ------------------------------------------------------------------ text multi-hop fixes (2026-10-17)
+def _targets(*quads):
+    return torch.tensor([list(quads)], dtype=torch.long)
+
+
+def _share_from_capture(m, ids, q, t0, t1, rnd=0):
+    """The fact's share of round `rnd`'s read at q (mean over heads), from the exam probe on the same weights."""
+    m.eval()
+    m._note_capture = {"q_pos": torch.tensor([[q]])}
+    with torch.no_grad():
+        m(ids)
+    mass = m._note_capture["mass"][rnd][0, 0]  # [nb], summed over heads
+    m._note_capture = None
+    cfg = m.config
+    geo = m.memory_writer.geometry(ids.shape[1])
+    per = geo.latents * geo.reader_tokens
+    page = torch.arange(mass.shape[0]) // per
+    st = torch.tensor(geo.starts)[page]
+    hit = (st <= t1) & (st + geo.window > t0)
+    return float(mass[hit].sum()) / cfg.num_attention_heads
+
+
+def test_read_target_off_or_absent_keeps_the_loss():
+    ids = text_row(S=48)
+    m = make(**TEXT, message_raw_window=8, message_loop_rounds=4, message_loop_exit_aux=0.3,
+             message_loop_exit_targets="answer", message_loop_read_aux=0.5).train()
+    with torch.no_grad():
+        with_aux = m(ids, labels=ids.clone()).loss  # no read targets in the batch
+        m.config.message_loop_read_aux = 0.0
+        tgt = _targets([40, 1, 5, 7])
+        off = m(ids, labels=ids.clone(), read_targets=tgt).loss  # targets given, weight 0
+        plain = m(ids, labels=ids.clone()).loss
+    assert torch.allclose(with_aux, plain) and torch.allclose(off, plain)
+
+
+@pytest.mark.parametrize("span", [(5, 7), (35, 36)])  # a fact in a closed page; a fact inside the raw window
+def test_read_target_is_minus_log_share_of_the_read(span):
+    ids = text_row(S=48)
+    q, (t0, t1) = 40, span
+    m = make(**TEXT, message_raw_window=8, message_loop_read_aux=1.0)  # one read (E31c)
+    m.train()
+    with torch.no_grad():
+        base = m(ids, labels=ids.clone()).loss
+        with_t = m(ids, labels=ids.clone(), read_targets=_targets([q, 1, t0, t1], [q, 0, -1, -1])).loss
+    got = float(with_t - base)
+    if t0 >= q - 8 + 1:  # inside the raw window: the share is on raw keys, not notes; check it is a valid −log
+        assert got > 0
+    else:
+        share = _share_from_capture(m, ids, q, t0, t1)
+        assert abs(got - (-math.log(max(share, 1e-6)))) < 1e-4
+
+
+def test_read_target_round_r_is_the_rth_read_and_trains_the_writer():
+    ids = text_row(S=48)
+    m = make(**TEXT, message_raw_window=8, message_loop_rounds=4, message_loop_read_aux=1.0)
+    m.train()
+    with torch.no_grad():
+        base = m(ids, labels=ids.clone()).loss
+        r2 = m(ids, labels=ids.clone(), read_targets=_targets([40, 2, 5, 7])).loss
+    share2 = _share_from_capture(m, ids, 40, 5, 7, rnd=1)
+    assert abs(float(r2 - base) - (-math.log(max(share2, 1e-6)))) < 1e-4
+    m.train()
+    m.zero_grad()
+    m(ids, labels=ids.clone(), read_targets=_targets([40, 1, 5, 7])).loss.backward()
+    assert m.memory_writer.to_k.weight.grad.abs().sum() > 0
+
+
+def test_exit_mask_answers_scores_only_answer_tokens():
+    ids = text_row(S=48)
+    kw = dict(**TEXT, message_raw_window=8, message_loop_rounds=4, message_loop_exit_aux=0.3,
+              message_loop_exit_targets="answer", message_loop_exit_mask="answers")
+    m = make(**kw).train()
+    with torch.no_grad():
+        no_answers = m(ids, labels=ids.clone()).loss  # no answer positions: the exits add nothing
+        m.config.message_loop_exit_aux = 0.0
+        plain = m(ids, labels=ids.clone()).loss
+        m.config.message_loop_exit_aux = 0.3
+        one = m(ids, labels=ids.clone(), read_targets=_targets([30, 0, -1, -1])).loss
+        m.config.message_loop_exit_mask = "all"
+        every = m(ids, labels=ids.clone()).loss
+    assert torch.allclose(no_answers, plain)
+    assert float(one) > float(plain) + 1e-4 and abs(float(one) - float(every)) > 1e-4
+
+
+def test_read_target_runs_under_bf16_autocast():
+    """On the GPUs the trainer runs under bf16 autocast: the loss stays fp32 (an einsum under autocast came back bf16
+    and the fp32 fill overflowed it, Polonez 17 Oct)."""
+    ids = text_row(S=48)
+    m = make(**TEXT, message_raw_window=8, message_loop_rounds=4, message_loop_read_aux=0.5).train()
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        out = m(ids, labels=ids.clone(), read_targets=_targets([40, 1, 5, 7], [40, 2, 35, 36]))
+    out.loss.backward()
+    assert torch.isfinite(out.loss)
+
+
+def test_read_target_note_mode_targets_the_spans_own_notes():
+    ids = text_row(S=48)
+    m = make(**TEXT, message_raw_window=8, message_loop_read_aux=1.0, message_loop_read_target="note").train()
+    tgt = _targets([40, 1, 5, 5])
+    with torch.no_grad():
+        base = m(ids, labels=ids.clone()).loss
+        note = float(m(ids, labels=ids.clone(), read_targets=tgt).loss - base)
+        m.config.message_loop_read_target = "page"
+        page = float(m(ids, labels=ids.clone(), read_targets=tgt).loss - base)
+    assert note > 0 and page > 0 and note >= page - 1e-6  # the span's own notes are a subset of its pages' notes
+
+
+def test_note_readback_trains_values_and_is_off_by_default():
+    ids = text_row(S=48)
+    assert make(**TEXT, message_raw_window=8).note_readback is None
+    m = make(**TEXT, message_raw_window=8, lm_readback_aux=0.2).train()
+    with torch.no_grad():
+        with_rb = m(ids, labels=ids.clone()).loss
+        m.eval()
+        ev = m(ids, labels=ids.clone()).loss  # eval: no read-back term
+        m.config.lm_readback_aux = 0.0
+        m.train()
+        plain = m(ids, labels=ids.clone()).loss
+    assert float(with_rb) > float(plain) + 1e-3 and torch.allclose(ev, plain)
+    m.config.lm_readback_aux = 0.2
+    m.zero_grad()
+    m(ids, labels=ids.clone()).loss.backward()
+    assert m.memory_writer.to_v.weight.grad.abs().sum() > 0 and m.note_readback.weight.grad.abs().sum() > 0
+
+
+def test_note_readback_head_starts_at_zero():
+    m = make(**TEXT, message_raw_window=8, lm_readback_aux=0.1)
+    assert m.note_readback.weight.abs().sum() == 0

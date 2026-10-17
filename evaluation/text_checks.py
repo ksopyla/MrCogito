@@ -203,13 +203,36 @@ ARCHES = {
     "e33f": Arch("e33f", "E33 in split mode: each question reads its document only through the notes",
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.3,
                   "message_loop_exit_targets": "answer", "message_boundary_token": "Question"}, has_notebook=True),
+    # Text multi-hop fixes (2026-10-17; note e33_text_multihop_diagnosis_20261017.md).
+    # E33x: E33 with the loop's exit losses off. Every round's exit asked for the final answer (on every token), which
+    # makes the rounds interchangeable and, on a two-step question, asks round 1 for an answer it cannot have read yet.
+    "e33x": Arch("e33x", "E33 with the loop's exit losses off",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0}, has_notebook=True),
+    # E33r: E33x + a per-round read target (needs data built with --train_read_targets): round r of a compose / deduce
+    # answer is pushed to read fact r (its raw tokens or the notes of its pages); single-step questions (bridges,
+    # lookup, keyed, quote) on round 1.
+    "e33r": Arch("e33r", "E33 with exits off and a per-round read target",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5},
+                 has_notebook=True),
+    # E33o: E33r aimed at the hop's output word (data built with --train_read_targets output): round r is pushed onto
+    # the notes whose latent read that word (the teacher's name, the place, the class word, the property), not any
+    # note of its page. E33r reached the right page of "Every kavi is shiny." 95 % of the time and answered 12 %.
+    "e33o": Arch("e33o", "E33 with exits off and a per-round read target on the hop's output word",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "message_loop_read_target": "note"}, has_notebook=True),
+    # E33b: E33o + note read-back — each note's value must name the tokens it read (training-only head, zero-init).
+    # E33r's notes on a property word did not encode which property it was (probe 11 %; on a place name 68 %).
+    # Run 1 (17 Oct) used a random-init head at 0.2 and scrambled the warm-started values; from run 2: zero-init, 0.1.
+    "e33b": Arch("e33b", "E33o + note read-back (each note's value names its tokens)",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "message_loop_read_target": "note", "lm_readback_aux": 0.1}, has_notebook=True),
 }
 # Plain-input variants (2026-10-10): the same models without the word-pair/triple hash tables and value
 # embeddings. Dense with plain input learned quote, lookup, keyed and latest at 30M / 1.5B tokens on v2, where
 # dense with the tables learned at most one (spec §16.1), so the architecture round runs on plain input. FFN width
 # is refitted, so each stays in the parameter band.
 _PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
-for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f"):
+for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o", "e33b"):
     _a = ARCHES[_k]
     ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
                                  {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)
@@ -232,6 +255,8 @@ ENV_OF = {
     "lm_addr": "PAR_LM_ADDR", "lm_slot_pos": "PAR_LM_SLOT_POS", "lm_note_age": "PAR_LM_NOTE_AGE", "lm_note_rank_margin": "PAR_LM_NOTE_RANK_MARGIN",
     "lm_note_rank_sharp": "PAR_LM_NOTE_RANK_SHARP", "message_loop_rounds": "PAR_LOOP_ROUNDS",
     "message_loop_exit_aux": "PAR_LOOP_EXIT_AUX", "message_loop_exit_targets": "PAR_LOOP_EXIT_TARGETS",
+    "message_loop_exit_mask": "PAR_LOOP_EXIT_MASK", "message_loop_read_aux": "PAR_LOOP_READ_AUX",
+    "message_loop_read_target": "PAR_LOOP_READ_TARGET", "lm_readback_aux": "PAR_LM_READBACK_AUX",
     "message_boundary_token_id": "PAR_MESSAGE_BOUNDARY_TOKEN_ID",
 }
 
@@ -281,7 +306,11 @@ def count_params(args: dict, vocab: int = VOCAB) -> int:
     tok = type("T", (), {"pad_token_id": 0, "bos_token_id": 1, "eos_token_id": 2, "__len__": lambda self: vocab})()
     with torch.device("meta"):
         model, _, _ = _build_perceiver_ar_model(tok, ma, SimpleNamespace(max_seq_length=4096, tokenizer_name="text-checks"))
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # training-only heads that the trained model never runs (the note read-back) are not part of its size
+    return sum(p.numel() for n, p in model.named_parameters() if p.requires_grad and not n.startswith(TRAIN_ONLY))
+
+
+TRAIN_ONLY = ("note_readback.",)
 
 
 def fit_params(arch: str, tier: str, vocab: int = VOCAB) -> tuple[dict, int]:

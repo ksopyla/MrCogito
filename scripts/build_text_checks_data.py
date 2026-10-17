@@ -27,11 +27,13 @@ Add exams to an existing build (v2.1 splits; tokenizer, training mix and existin
 from __future__ import annotations
 
 import argparse
+import bisect
 import hashlib
 import json
 import math
 import os
 import random
+import re
 import shutil
 import sys
 import time
@@ -131,10 +133,48 @@ def train_tokenizer(texts, vocab: int, out: Path):
     return fast
 
 
-def _row(ids: list[int], bos: int, eos: int) -> dict:
+def _row(ids: list[int], bos: int, eos: int, read_targets: list | None = None) -> dict:
     full = [bos] + ids + [eos]
-    return {"input_ids": full, "attention_mask": [1] * len(full),
-            "special_tokens_mask": [1] + [0] * len(ids) + [1]}
+    row = {"input_ids": full, "attention_mask": [1] * len(full),
+           "special_tokens_mask": [1] + [0] * len(ids) + [1]}
+    if _VERSION["read_targets"]:
+        row["read_targets"] = list(read_targets or [])
+    return row
+
+
+_QA = re.compile(r"\n\nQuestion: (.*?)\nAnswer:")
+
+
+def read_targets(text: str, offsets: list, chains: list, span: str = "fact") -> list[int]:
+    """Flat (answer position, round, first token, last token) quadruples in row positions (BOS = 0), 2026-10-17.
+    Every question gives (pos, 0, -1, -1): `pos` is the "Answer:" colon, the position that predicts the first answer
+    token. A question whose chain is known (`chains`: question → (fact sentence, hop output word) in hop order) also
+    gives one quadruple per fact: round r of the answer's read should land on fact r — the whole sentence
+    (`span="fact"`) or only that hop's output word inside it (`span="output"`: the teacher's name, the place, the
+    class word, the property; the sentence when the word is not found)."""
+    starts = [a for a, _ in offsets]
+
+    def tok_of(c: int) -> int:  # the token holding character c
+        return max(0, bisect.bisect_right(starts, c) - 1)
+
+    chain_of = dict(chains)
+    out: list[int] = []
+    for m in _QA.finditer(text):
+        pos = tok_of(m.end() - 1) + 1
+        out += [pos, 0, -1, -1]
+        body_end = m.start()
+        for r, step in enumerate(chain_of.get(m.group(1), []), 1):
+            fact, word = step if isinstance(step, (tuple, list)) else (step, None)
+            c0 = text.find(fact, 0, body_end)
+            if c0 < 0:
+                continue
+            a, b = c0, c0 + len(fact)
+            if span == "output" and word:
+                w = re.search(rf"(?<!\w){re.escape(word)}(?!\w)", text[c0:c0 + len(fact)])
+                if w:
+                    a, b = c0 + w.start(), c0 + w.end()
+            out += [pos, r, tok_of(a) + 1, tok_of(b - 1) + 1]
+    return out
 
 
 def language_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: int):
@@ -147,12 +187,14 @@ def language_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eo
         i += 1
         cur = cur + (sep if cur else []) + ids
         if len(cur) >= seq_len - 2:
-            yield _row(cur[: seq_len - 2], bos, eos)
+            yield _row(cur[: seq_len - 2], bos, eos, [])
             made += 1
             cur = []
 
 
-_VERSION = {"world": TEXT_WORLD_VERSION, "questions": 1, "tasks": TASKS, "bridge": 0, "a2a": False, "vocab": 0}  # set from the arguments before workers fork
+_VERSION = {"world": TEXT_WORLD_VERSION, "questions": 1, "tasks": TASKS, "bridge": 0, "bridge_only": False, "a2a": False,
+            "vocab": 0, "read_targets": False}
+_TOKREF: dict = {"tok": None}  # the tokenizer, for read-target offsets (set before workers fork)  # set from the arguments before workers fork
 
 
 def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: int, seed: int,
@@ -164,9 +206,11 @@ def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: 
     while len(rows) < n:
         target = int(math.exp(rng.uniform(math.log(min_len), math.log(seq_len - 2))))
         for shrink in (1.0, 0.9, 0.8, 0.6):
+            chains = [] if _VERSION["read_targets"] else None
             text = make_train_document(seed * 1_000_003 + k, stories, int(target * shrink), ntok,
                                        tasks=tuple(_VERSION["tasks"]), version=_VERSION["world"],
-                                       questions=_VERSION["questions"], bridge=_VERSION["bridge"])
+                                       questions=_VERSION["questions"], bridge=_VERSION["bridge"],
+                                       bridge_only=_VERSION["bridge_only"], chains=chains)
             if _VERSION["a2a"]:
                 # E35: agent A gets the document, agent B the questions: BOS document EOS BOS questions EOS
                 body, _, rest = text.partition("\n\nQuestion:")
@@ -179,7 +223,13 @@ def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: 
                 print(f"warning: invalid token id in world row (seed {seed}, k {k}); skipped", flush=True)
                 break
             if len(ids) <= seq_len - 2:
-                rows.append(_row(ids, bos, eos))
+                rt = None
+                if _VERSION["read_targets"] and not _VERSION["a2a"]:
+                    enc = _TOKREF["tok"](text, add_special_tokens=False, return_offsets_mapping=True)
+                    if list(enc["input_ids"]) != list(ids):
+                        raise RuntimeError("read targets: offset tokenization differs from encode()")
+                    rt = read_targets(text, enc["offset_mapping"], chains, span=_VERSION["read_targets"])
+                rows.append(_row(ids, bos, eos, rt))
                 break
         k += 1
     return rows
@@ -191,8 +241,11 @@ FEATURES = None
 def _features():
     from datasets import Features, Sequence, Value
 
-    return Features({"input_ids": Sequence(Value("int32")), "attention_mask": Sequence(Value("int8")),
-                     "special_tokens_mask": Sequence(Value("int8"))})
+    cols = {"input_ids": Sequence(Value("int32")), "attention_mask": Sequence(Value("int8")),
+            "special_tokens_mask": Sequence(Value("int8"))}
+    if _VERSION["read_targets"]:
+        cols["read_targets"] = Sequence(Value("int32"))
+    return Features(cols)
 
 
 def _save(rows, path: Path, chunk: int = 5000):
@@ -208,7 +261,7 @@ def _save(rows, path: Path, chunk: int = 5000):
     parts, buf = [], []
 
     def flush():
-        cols = {k: [r[k] for r in buf] for k in ("input_ids", "attention_mask", "special_tokens_mask")}
+        cols = {k: [r[k] for r in buf] for k in _features()}
         p = tmp / f"part_{len(parts):05d}"
         Dataset.from_dict(cols, features=_features()).save_to_disk(str(p))
         parts.append(str(p))
@@ -310,6 +363,13 @@ def main():
     p.add_argument("--train_bridge", type=int, default=0,
                    help="bridge questions per compose / deduce training document (the single steps of the chain, "
                         "asked after the task's own questions); 0 = none (earlier builds)")
+    p.add_argument("--train_bridge_only", action="store_true",
+                   help="compose / deduce training documents ask only their bridge questions (up to --train_bridge), "
+                        "none of the task's own (the two-name gate, 2026-10-17)")
+    p.add_argument("--train_read_targets", nargs="?", const="fact", default=None, choices=("fact", "output"),
+                   help="every row gets a read_targets column: per question its answer position and, where the chain "
+                        "is known, per read round the token span of fact r (fact) or of that hop's output word inside "
+                        "it (output); 2026-10-17; stories get an empty list")
     p.add_argument("--a2a", action="store_true",
                    help="E35: world rows become BOS document EOS BOS questions EOS (sender | receiver); stories unchanged")
     p.add_argument("--tokenizer", default=None,
@@ -319,6 +379,8 @@ def main():
     _VERSION["questions"] = args.train_questions
     _VERSION["tasks"] = tuple(args.train_tasks)
     _VERSION["bridge"] = args.train_bridge
+    _VERSION["bridge_only"] = bool(args.train_bridge_only)
+    _VERSION["read_targets"] = args.train_read_targets or False
     _VERSION["a2a"] = bool(args.a2a)
     if args.eval_from and args.eval_splits:
         # eval/ becomes a link to the source build: writing a split here would overwrite that build's frozen exams
@@ -349,6 +411,7 @@ def main():
         ]
         tok = train_tokenizer(tok_texts, args.vocab, out / "tokenizer")
     bos, eos = tok.bos_token_id, tok.eos_token_id
+    _TOKREF["tok"] = tok
     cache: dict[str, list[int]] = {}
 
     def encode(s: str) -> list[int]:
