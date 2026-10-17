@@ -2380,6 +2380,10 @@ class PerceiverARLM(PreTrainedModel):
                 nn.init.zeros_(layer.attn.compressor.delta.weight)   # post_init re-inits Linears
         if self.memory_writer is not None:
             nn.init.zeros_(self.memory_writer.to_v_state.weight)   # E31: values start as content
+        if self.note_readback is not None:
+            # a zero head sends no gradient into the notes at step 0, so a warm-started reader keeps its decoding while the
+            # head learns (a random head scrambled the values: E33b run 1 at half its run, 17 Oct, compose 60 → 12 %)
+            nn.init.zeros_(self.note_readback.weight)
 
     # -- HF plumbing ----------------------------------------------------------------
     def _init_weights(self, module):

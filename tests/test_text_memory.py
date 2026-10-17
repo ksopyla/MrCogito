@@ -465,3 +465,8 @@ def test_note_readback_trains_values_and_is_off_by_default():
     m.zero_grad()
     m(ids, labels=ids.clone()).loss.backward()
     assert m.memory_writer.to_v.weight.grad.abs().sum() > 0 and m.note_readback.weight.grad.abs().sum() > 0
+
+
+def test_note_readback_head_starts_at_zero():
+    m = make(**TEXT, message_raw_window=8, lm_readback_aux=0.1)
+    assert m.note_readback.weight.abs().sum() == 0

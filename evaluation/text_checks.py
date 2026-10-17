@@ -220,11 +220,12 @@ ARCHES = {
     "e33o": Arch("e33o", "E33 with exits off and a per-round read target on the hop's output word",
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
                   "message_loop_read_target": "note"}, has_notebook=True),
-    # E33b: E33o + note read-back — each note's value must name the tokens it read (training-only head). E33r's notes
-    # on a property word did not encode which property it was (probe 11 %; on a place name 68 %).
+    # E33b: E33o + note read-back — each note's value must name the tokens it read (training-only head, zero-init).
+    # E33r's notes on a property word did not encode which property it was (probe 11 %; on a place name 68 %).
+    # Run 1 (17 Oct) used a random-init head at 0.2 and scrambled the warm-started values; from run 2: zero-init, 0.1.
     "e33b": Arch("e33b", "E33o + note read-back (each note's value names its tokens)",
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
-                  "message_loop_read_target": "note", "lm_readback_aux": 0.2}, has_notebook=True),
+                  "message_loop_read_target": "note", "lm_readback_aux": 0.1}, has_notebook=True),
 }
 # Plain-input variants (2026-10-10): the same models without the word-pair/triple hash tables and value
 # embeddings. Dense with plain input learned quote, lookup, keyed and latest at 30M / 1.5B tokens on v2, where
