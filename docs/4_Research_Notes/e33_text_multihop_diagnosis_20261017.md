@@ -541,19 +541,51 @@ So a loss on addressing leaks into content whenever both share one read. Read-ba
 - With every fact visible, the 30M dense model learns neither join in 0.3B tokens. Dense is not a ceiling for T5 /
   T7. E33r's compose comes from the loop plus the read target.
 
-**Next (Polonez, from 20:05 UTC):**
-- **E33ok** (GPUs 2–3, running): E33o + the key-gradient stop (lm_key_grad = detach), same start and data.
-  - Question: does the stop keep place content under the note-level target?
-  - Pass: the place probe ≥ 60 % and lookup at 16k ≥ 80 %.
-- **Deduce gate** (GPUs 0–1, queued): from the E33rb final, 0.1B tokens of deduce documents that ask only their
-  one-fact bridge questions ("What is Pim?", "What is a kavi?", "What is a kavi like?"), with fact-level read
-  targets. It mirrors the compose gate, which took the teacher question from 8 % to 47 %.
-  - Question: can this writer store a property word at all when training asks for it densely?
-  - If the property probe and "What is a kavi like?" rise past about 40 %, deduce is a signal and curriculum
-    problem.
-  - If they stay near 12 %, the writer cannot keep common words at this compression. The candidates are then
-    architectural: more value capacity per page (two reader tokens per latent, or more latents), a separate
-    address read, or a copy path for the read tokens.
+**Deduce gate (21:04–21:34 UTC; from the E33rb final, 0.1B tokens of deduce documents asking only their one-fact
+questions, fact-level read targets).**
+- "What is a kavi like?" asked alone: 12 → 44 %. "What is Pim?": 79 %.
+- The property word in the notes: 12 → 20 %.
+- The joined deduce question did not move (12 % depth 2, 16 % one step), since the gate never asked it.
+- Compose was forgotten (8 %), as the compose gate forgot lookup.
+
+Reading: the writer can store a property when training asks for it densely. The reasoning mix asked about 6× less
+often per token.
+
+**E33ok (20:04–22:37 UTC): E33o + the key-gradient stop (lm_key_grad = detach), from the E33r final, 0.3B tokens on
+the output-word data.**
+
+| exam (id split, 4k / 16k) | E33rb | E33ok |
+|---|---|---|
+| deduce, depth 2 | 17 / 12 % | **36 / 35 %** |
+| deduce, one step | 15 / 10 % | 40 / 35 % |
+| compose, two steps | 61 / 82 % | 42 / 48 % |
+| lookup | 74 / 89 % | 65 / 52 % |
+| keyed | 73 / 86 % | 56 / 51 % |
+| story loss | 1.5135 | 1.5111 |
+
+- **Note content is back:** the place probe is 80 / 75 % (value / key), up from E33o's 14 / 11 %.
+- **The property word is written for the first time:** 33 / 31 %; every earlier model was at 8–13 %.
+- **Why it works (working explanation):** the keys learn addressing only, and the answer's gradient trains the
+  values of exactly the notes the read lands on.
+- **What it cost:** compose and long lookup. The run began with a shock (lookup 74 → 37 % at checkpoint 178) and
+  was still climbing at the end (lookup 37 → 52 → 54 → 60 %, deduce 14 → 17 → 26 → 32 %).
+- **Structural part of the cost:** with the stop, a key can only reuse the content read. A note on a place name
+  can no longer carry the person's name in its key, and compose and long lookup need exactly that.
+
+**Address read (built 18 Oct, lm_key_grad = address).**
+- Each latent reads its page a second time, with its own query and position prior, for its key alone.
+- The token states, latent states and every shared projection enter that read with the gradient stopped, so it
+  cannot move the content read.
+- It joins the key through a zero-init projection, so a warm start from a "detach" model is unchanged at step 0.
+- +0.36M parameters, FFN width unchanged.
+- Arches: e33ak (E33ok + address read), e33gak (E33gk + address read).
+
+**Next (Polonez, queued, ~23:30 UTC; both from the E33ok final, 0.6B tokens on the denser output-word mix
+v2reason2_out: deduce 4 of 12 tasks, 8 one-fact questions per document):**
+- GPUs 0–1: e33ok, the longer run.
+- GPUs 2–3: e33gk = e33ok + E33g's fixed order heads. On Odra, over its matched control E33rb, E33g gained compose
+  +8 / +6 and deduce +7.
+- Then e33gak (address read) if compose or long lookup stay below E33rb.
 
 ## Uncertainty
 - The probabilities are my judgement from C5, the board and the literature. They are not measured.
