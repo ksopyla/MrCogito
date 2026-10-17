@@ -12,6 +12,8 @@ Two parts, two environments, one text file between them:
             (tokenize + forward + pooling) and the forward alone, per batch size; then query latency and search.
 
 Speeds are reported per character as well as per token: the two tokenizers cut the same text differently.
+`--part append` / `--part append_writer` time one append: a single message of 512–8k tokens (embedder: as 256-token
+chunks in one batch and as one whole sequence, GPU and CPU, plus the SQLite tape + keyword-index write; writer: GPU).
 
   uv run python scripts/bench_ingest.py --part writer --checkpoint <E33f final> --data <text_checks data dir> \\
       --text_out Cache/e35/bench_doc.txt --out Cache/e35/bench_writer.json
@@ -214,9 +216,94 @@ def bench_embedder(a) -> dict:
     return res
 
 
+def bench_append(a) -> dict:
+    """Latency of one append: a single message of N tokens, embedded as 256-token chunks in one batch (the design) or
+    as one whole sequence, on GPU (bf16) and CPU (fp32); plus the tape write (SQLite row + keyword-index rows)."""
+    import sqlite3
+
+    body = open(a.text_in).read()[:400_000]
+    res = {"part": "append", "model": a.embedder, "env": env_info(), "chunk_tokens": a.append_chunk, "rows": []}
+    for device in ("cuda", "cpu"):
+        if device == "cpu":
+            torch.set_num_threads(a.cpu_threads)
+        m = _load_st(a.embedder, device, torch.bfloat16 if device == "cuda" else torch.float32, a.text_only).eval()
+        m.max_seq_length = max(a.append_tokens) + 32
+        tk, prompt = m.tokenizer, (getattr(m, "prompts", {}) or {}).get("document", "")
+        ids = tk(body, add_special_tokens=False)["input_ids"]
+        reps = a.repeats_gpu if device == "cuda" else a.repeats_cpu
+        room = a.append_chunk - 12
+        with torch.inference_mode():
+            m.encode([prompt + "warm up " * 64] * 4)
+            for n in a.append_tokens:
+                chunks = [prompt + tk.decode(ids[i:min(n, i + room)]) for i in range(0, n, room)]
+                whole = prompt + tk.decode(ids[:n])
+                t_chunk = timed(lambda: m.encode(chunks, batch_size=len(chunks), convert_to_tensor=True), reps)
+                t_whole = timed(lambda: m.encode([whole], batch_size=1, convert_to_tensor=True), reps)
+                r = {"device": device, "tokens": n, "chunks": len(chunks), "chunked_ms": statistics.median(t_chunk) * 1e3,
+                     "whole_ms": statistics.median(t_whole) * 1e3, "repeats": reps}
+                res["rows"].append(r)
+                print(f"{device} {n:5d} tokens: {len(chunks):2d} chunks in one batch {r['chunked_ms']:8.1f} ms · "
+                      f"whole sequence {r['whole_ms']:8.1f} ms", flush=True)
+        del m
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    path = os.path.join(os.path.dirname(os.path.abspath(a.out)), "bench_tape.db")
+    if os.path.exists(path):
+        os.remove(path)
+    db = sqlite3.connect(path)
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute("PRAGMA synchronous=NORMAL")
+    db.execute("CREATE TABLE events (seq INTEGER PRIMARY KEY, id TEXT UNIQUE, thread TEXT, t_event TEXT, t_ingest TEXT, text TEXT)")
+    db.execute("CREATE VIRTUAL TABLE chunks USING fts5(text)")
+    approx = len(body) / max(1, len(ids))  # characters per token
+    k = [0]
+    tape = {}
+    for n in a.append_tokens:
+        text = body[: int(n * approx)]
+        parts = [text[i:i + int(a.append_chunk * approx)] for i in range(0, len(text), int(a.append_chunk * approx))]
+
+        def write():
+            k[0] += 1
+            with db:
+                db.execute("INSERT INTO events (id, thread, t_event, t_ingest, text) VALUES (?, 't', datetime('now'), "
+                           "datetime('now'), ?)", (f"m{k[0]}", text))
+                db.executemany("INSERT INTO chunks (text) VALUES (?)", [(c,) for c in parts])
+
+        tape[n] = statistics.median(timed(write, 20)) * 1e3
+    res["tape_ms"] = tape
+    print("tape + keyword index write (ms): " + ", ".join(f"{n}: {v:.2f}" for n, v in tape.items()), flush=True)
+    return res
+
+
+def bench_append_writer(a) -> dict:
+    """Our page writer on the same single messages (GPU, bf16)."""
+    from transformers import AutoTokenizer
+
+    from nn.perceiver_families import load_perceiver_lm
+
+    tok = AutoTokenizer.from_pretrained(os.path.join(a.data, "tokenizer"))
+    ids = torch.tensor([tok.encode(open(a.text_in).read()[:400_000], add_special_tokens=False)], device="cuda")
+    model = load_perceiver_lm(a.checkpoint, "cuda", "sdpa").eval()
+    for prm in model.parameters():
+        prm.requires_grad_(False)
+    res = {"part": "append_writer", "env": env_info(), "rows": []}
+    with torch.inference_mode():
+        model.write_notes(ids[:, :4096])
+        for n in a.append_tokens:
+            ms = statistics.median(timed(lambda: model.write_notes(ids[:, :n]), a.repeats_gpu)) * 1e3
+            res["rows"].append({"tokens": n, "ms": ms})
+            print(f"writer cuda {n:5d} tokens: {ms:.1f} ms", flush=True)
+    return res
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--part", choices=("writer", "embedder"), required=True)
+    p.add_argument("--part", choices=("writer", "embedder", "append", "append_writer"), required=True)
+    p.add_argument("--append_tokens", type=int, nargs="+", default=[512, 1024, 2048, 4096, 8192])
+    p.add_argument("--append_chunk", type=int, default=256)
+    p.add_argument("--repeats_gpu", type=int, default=10)
+    p.add_argument("--repeats_cpu", type=int, default=3)
     p.add_argument("--out", required=True)
     p.add_argument("--repeats", type=int, default=3)
     p.add_argument("--cpu_threads", type=int, default=8)
@@ -239,7 +326,8 @@ def main():
     p.add_argument("--search_rows", type=int, default=625_000)
     p.add_argument("--search_dim", type=int, default=256)
     a = p.parse_args()
-    res = bench_writer(a) if a.part == "writer" else bench_embedder(a)
+    res = {"writer": bench_writer, "embedder": bench_embedder, "append": bench_append,
+           "append_writer": bench_append_writer}[a.part](a)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     json.dump(res, open(a.out, "w"), indent=1)
     print(f"wrote {a.out}")
