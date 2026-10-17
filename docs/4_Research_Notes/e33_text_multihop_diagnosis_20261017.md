@@ -513,15 +513,47 @@ So a loss on addressing leaks into content whenever both share one read. Read-ba
 **Not a ceiling either.** The dense 30M model, trained without the reasoning-phase data, is at guessing on compose
 (7.8 %) and deduce (8.5 %) at 4k, though it sees every fact.
 
-**Next (running from 18:24 UTC, Polonez):**
-- **E33rb** (GPUs 0–1): E33r's page target plus the zero-init read-back, from the E33r final, 0.3B tokens.
-  - Question: does the property word get written without losing the places?
-  - Kill at checkpoint-445: the place probe < 50 % or lookup (whole exam) at 4k < 65 %.
-- **Dense on the reasoning data** (GPUs 2–3), from the q8b dense model, same data and budget.
-  - Question: is deduce learnable at 30M with every fact visible?
-  - If it stays near 8 %, deduce is a data or objective problem, not compression.
-- **If read-back fails:** split each latent's read into an address read (key) and a content read (value), or tie
-  the read-back to the reader's own output projection and LM head.
+**Where note content stands (note-content probe; place recovered from the note's value / key, guessing 8 %).**
+
+| checkpoint | place | property word |
+|---|---|---|
+| E33 bridge data (7038) | 71 / 72 % | 8 % |
+| E33x (exits off) | 80 / 77 % | 12 % |
+| E33r (page read target) | 68 / 59 % | 11 % |
+| E33rb at a third / at the end | 63 / 57 % → 56 / 50 % | 13 % → 12 % |
+| E33o / E33b run 2 (note-level target) | 14 / 11 %, 12 / 11 % | 12 %, 10 % |
+
+- The read target costs content even at page level (80 → 68 %), mostly in the keys, and keeps costing it while
+  training continues.
+- No model has ever written the property word.
+
+**E33rb (18:24–20:05 UTC; E33r + zero-init read-back 0.1, page target, 0.3B tokens from the E33r final).**
+- No harm, small gains: compose two steps 61 / 82 % (E33r 60 / 76 %); deduce 17 / 12 % at 4k / 16k (13 / 9 %);
+  lookup 74 / 89 % (74 / 87 %). Part of this is simply 0.3B more tokens.
+- Read-back did not write the property word (12 %).
+- The read-back head itself learned token frequency only: its top guess at a note's own position is right 0 % of
+  the time for names, places, class words and properties, and 8 % for function words.
+- Checked: the targets are right. Rows are not packed with document ids, so note positions are row positions.
+
+**Dense on the reasoning data (18:24–20:05 UTC; from the q8b dense model, same data and budget).**
+- Compose 8 % and deduce 6.5 % at 4k; one-step compose 11 %, one-step deduce 8 %.
+- Lookup 84 %, keyed 83 %, latest 92 %, count 46 % at 4k.
+- With every fact visible, the 30M dense model learns neither join in 0.3B tokens. Dense is not a ceiling for T5 /
+  T7. E33r's compose comes from the loop plus the read target.
+
+**Next (Polonez, from 20:05 UTC):**
+- **E33ok** (GPUs 2–3, running): E33o + the key-gradient stop (lm_key_grad = detach), same start and data.
+  - Question: does the stop keep place content under the note-level target?
+  - Pass: the place probe ≥ 60 % and lookup at 16k ≥ 80 %.
+- **Deduce gate** (GPUs 0–1, queued): from the E33rb final, 0.1B tokens of deduce documents that ask only their
+  one-fact bridge questions ("What is Pim?", "What is a kavi?", "What is a kavi like?"), with fact-level read
+  targets. It mirrors the compose gate, which took the teacher question from 8 % to 47 %.
+  - Question: can this writer store a property word at all when training asks for it densely?
+  - If the property probe and "What is a kavi like?" rise past about 40 %, deduce is a signal and curriculum
+    problem.
+  - If they stay near 12 %, the writer cannot keep common words at this compression. The candidates are then
+    architectural: more value capacity per page (two reader tokens per latent, or more latents), a separate
+    address read, or a copy path for the read tokens.
 
 ## Uncertainty
 - The probabilities are my judgement from C5, the board and the literature. They are not measured.
