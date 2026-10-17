@@ -30,7 +30,7 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-17 18:00 UTC",
+    "as_of": "2026-10-17 19:30 UTC",
     "headline": "E31c, the notebook model without the loop, is still the most reliable reader of far facts (3 of 3 "
                 "runs). New: E33 told in training where each loop round should read (E33r) joined two facts for the "
                 "first time, two-step compose 60 % at 4k, one run.",
@@ -659,12 +659,12 @@ LADDER = [
      "tokens": "0.3B continuation from E33r", "exams": "v2 + v2.1, 1k-16k",
      "result": "—", "when": "after E33g's exams (Odra GPUs 0-1)",
      "why": "T6: add matches up instead of averaging them. Pass: count ≥ 50 % at 4k (dense's best). Kill: ≤ 35 %."},
-    {"id": None, "start": "2026-10-17", "data": "v2 + bridge, reasoning phase (output-word spans)", "standing": "queued",
+    {"id": None, "start": "2026-10-17", "data": "v2 + bridge, reasoning phase (output-word spans)", "standing": "running",
      "run": "E33q, the loop asks with the name it found (Odra GPU 2)",
      "model": "E33r + rounds name their hop through the LM head (0.3) and pass the name, re-embedded, to the next round "
               "(gate from 0) · 30M, plain",
      "tokens": "0.3B continuation from E33r", "exams": "v2 + v2.1, 1k-16k",
-     "result": "—", "when": "17 Oct, when the output-span data reaches Odra; about 3 h on one GPU",
+     "result": "—", "when": "17 Oct from 19:24 UTC; about 3 h on one GPU, then exams",
      "why": "T5: the oracle put the gold bridge in the question and E33r went 58 → 81 % at 4k. Pass: compose ≥ 70 % at "
             "4k, far lookup within 5 points. Kill at mid-run: compose < 60 % or lookup < 65 % at 4k, < 75 % at 16k. "
             "Design reviewed by the multi-hop session."},
