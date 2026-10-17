@@ -30,11 +30,25 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-17 04:00 UTC",
-    "headline": "E31c, the notebook model without the loop, is the best architecture so far: on the current recipe it "
-                "learned to read far facts in 3 of 3 runs, better than dense at 4k and still at 16k. Nobody tracks the "
-                "latest move beyond 2k yet.",
+    "as_of": "2026-10-17 18:00 UTC",
+    "headline": "E31c, the notebook model without the loop, is still the most reliable reader of far facts (3 of 3 "
+                "runs). New: E33 told in training where each loop round should read (E33r) joined two facts for the "
+                "first time, two-step compose 60 % at 4k, one run.",
     "where": [
+        "Two-step questions, first success (E33r, Polonez, 17 Oct 08:27-12:12 UTC, E33 session): E33 on the bridge "
+        "data, continued 0.3B tokens with each loop round's read pushed in training onto the page holding the next "
+        "fact of the chain (no hint at exam time). Two-step compose (\"Where does the teacher of X live?\") 30 / 60 / "
+        "76 % at 1k / 4k / 16k, guessing 8 %; the same continuation without the read target (E33x) 9 / 7 / 11 %. Far "
+        "lookup at 16k 89 % (start 90 %). Deduce still at guessing (13 % at 4k): the read finds the page of \"Every "
+        "kavi is shiny\" 95 % of the time, but the note does not say which property. Quotes lost (0 %). One run.",
+        "Two follow-ups broke the notebook (Polonez, 17 Oct 10:52-16:17 UTC): pushing each round onto single notes "
+        "instead of pages (E33o) erased far facts (lookup 0 % at every length); adding a read-back of each note's "
+        "words (E33b, run 2; run 1 stopped after its random head scrambled the reader) brought lookup back only to "
+        "15-21 %. Deduce at guessing in both.",
+        "E33e (E33 plus ranking among matching notes, learned strengths) finished on Odra (17 Oct 13:38 UTC, resumed "
+        "after the 16 Oct outage; exams 16:48 UTC): latest 19 % at 4k, 0 % at 16k, under the pass mark of 60 %. The "
+        "strengths start at 0 and stayed small (largest 0.15; the no-training check used 2). Far facts fine: lookup "
+        "4k / 16k 81 / 93 %, quote 80 / 94 %. One run.",
         "Agent to agent (E35 and E33f, Polonez, 16 Oct 17:00-21:35 UTC, E33 session). (1) Three trained 16-vector message "
         "channels carried no facts (0.5B tokens each): broadcast, steered by B's question, and B frozen with the loss on "
         "answers only. B's answer surprise on far lookup at 4k was 2.31 / 2.32 / 2.32 with the real message against 2.35 / "
@@ -52,8 +66,8 @@ STATUS = {
         "0.6B more tokens: far quotes 4k / 16k 76 / 95 % through the notes alone (run 1 16 / 24 %, E33 on its own text "
         "0 / 0 %), far lookup and keyed unchanged, near facts and latest unchanged, story loss 1.498. Its demo: lookup "
         "97-100 %, keyed 86-100 %, word-for-word quotes 92-100 % from 15-21 fetched notes at 16k-1M tokens.",
-        "Odra stopped answering (checked 18:05 UTC 16 Oct: no ping or ssh, also not from Polonez over the LAN; possibly a "
-        "power cut). The state of E33e run 1, started there about 06:45 UTC, is unknown until Odra is back.",
+        "Odra stopped answering on 16 Oct (about 18:05 UTC, likely a power cut) and was back on 17 Oct (about 09:05 "
+        "UTC); E33e resumed from its last checkpoint.",
         "E33 on the bridge-question data (Polonez, 16 Oct 09:17-17:00 UTC, two bursts): stopped at the 24 GPU-hour cap at "
         "90 % of its tokens (about 1.35B; 0.33 steps per second against dense's 1.27). Notebook switched on: far lookup at "
         "4k / 16k 79 / 91 % (notebook off 23 / 0 %). Latest 22 % at 4k (floor 20 %), 4 % at 16k. Compose and deduce still "
@@ -124,8 +138,8 @@ STATUS = {
         "story; latest's floor is 20 %; dense is not compared past 4k. Nothing had to be retrained.",
     ],
     "next": [
-        "Odra: bring it back, then check whether E33e run 1 finished or needs a resume from its last checkpoint.",
-        "Pull the bridge-data results (dense and E33) into the ledger.",
+        "E33r: a second run, and the same read target with notes that keep property words (deduce).",
+        "Latest: E33e's strengths never grew from 0; start them non-zero, or fix the strength (decision below).",
         "Before the AWS run: the changes in section 14 of the E33 page (exit-loss cost, far-recall data from step 0, a "
         "switch-on detector, a compute-matched loop check).",
         "Open for the author: whether to start the notebook-proportions sweep; give E33 more tokens or keep the "
@@ -337,17 +351,34 @@ CLAIMS = [
                  "still reads crowded facts (43 %), dense nothing. E33 run 3: lookup 46 %, keyed 34 % at 4k — the "
                  "same picture. E31c: 43 %, 75 %, 45 % — run 2 is the exception.",
      "settle": "—"},
-    {"claim": "Nobody learns compose or deduce at 30M / 1.5B — not even one step.", "state": "holds",
-     "since": "2026-10-13",
+    {"claim": "Trained on answers alone, no model learns compose or deduce at 30M / 1.5B, not even one step.",
+     "state": "holds", "since": "2026-10-13",
      "evidence": "Every run at guessing on two-step compose and deduce (10 Oct on), and on the one-step versions "
-                 "(exams v2.1, 13 Oct): dense 9-10 %, E33 6-8 %, E31c 4-10 % (guessing 8 %).",
-     "settle": "The reliable recipe first; these relations may need more data or a larger model."},
+                 "(exams v2.1, 13 Oct): dense 9-10 %, E33 6-8 %, E31c 4-10 % (guessing 8 %). Also with the single steps "
+                 "taught (bridge data, dense and E33) and with E33's loop exits on answers only (E33x 7 % at 4k). "
+                 "Supervising where each round reads changes this for compose (next claim).",
+     "settle": "—"},
+    {"claim": "Told in training where each loop round should read, E33 learns two-step compose, but not deduce.",
+     "state": "single run", "since": "2026-10-17",
+     "evidence": "E33r: E33 on the bridge data + 0.3B tokens with each round's read pushed onto the page of the next "
+                 "fact (training only). Two-step compose 30 / 60 / 76 % at 1k / 4k / 16k (guessing 8 %); without the "
+                 "target (E33x) 9 / 7 / 11 %. Far lookup at 16k 89 % (start 90 %). Deduce 17 / 13 / 9 %: the read "
+                 "finds the right page 95 % of the time, the note lacks the property word (probe 11 %, guessing 8 %). "
+                 "Quotes 0 %. The same target on single notes (E33o) erased far facts.",
+     "settle": "A second E33r run; deduce once notes keep property words; the target switched off for the last part "
+               "of training."},
     {"claim": "What latest lacks on the notebook is order, and ranking notes among their matches adds it without "
               "costing far facts.", "state": "single run", "since": "2026-10-16",
      "evidence": "No training, one fixed strength (2), exam set: E33 run 1 latest at 16k 5 → 41 %, far lookup 92 → "
                  "91 %; E33d run 1 2 → 30 %, lookup 93 → 92 %; keyed −2 to −5 (look-alike names count as matches). A "
                  "fixed page distance bought 33 % at the cost of far lookup 93 → 52 %. Gate chosen on fresh questions.",
-     "settle": "E33e training run (Odra, 16 Oct): latest ≥ 60 % at 4k with far lookup within 5 points of E33."},
+     "settle": "Not by training it from 0 (next claim); a fixed strength in training is untested."},
+    {"claim": "E33e: ranking among matching notes, with strengths learned from 0, fixes latest.", "state": "disproved",
+     "since": "2026-10-17",
+     "evidence": "E33e run 1 (Odra, 1.5B tokens): latest 19 % at 4k, 0 % at 16k (pass mark 60 % at 4k, floor 20 %). The "
+                 "9 strengths stayed small (largest 0.15 mid-run, 0.09 at the end; the no-training check used 2). Far "
+                 "facts unharmed: lookup 4k / 16k 81 / 93 %, keyed 75 / 91 %, quote 80 / 94 %. Same pattern as E33d.",
+     "settle": "—"},
     {"claim": "E33's loop does no task work on text: 1 round scores like 4.", "state": "single run",
      "since": "2026-10-16",
      "evidence": "E33 run 1 with the loop stopped after 1 / 2 / 3 rounds: every task within 2 points of the trained 4 "
@@ -530,10 +561,13 @@ LADDER = [
      "result": "Rank term (strength 2, exam set): latest at 16k E33 5 → 41 %, E33d 2 → 30 %, far lookup within 1 point. "
                "Rounds: 1, 2, 3 rounds = 4 rounds on every task.",
      "when": "16 Oct 05:53 → 06:45 UTC", "why": "Author: fixes for T4-T7 (16 Oct); the cheapest tests first."},
-    {"id": "q8r_e33e_s0_odra.odra", "start": "2026-10-16", "data": "v2", "standing": "running",
+    {"id": "q8r_e33e_s0_odra.odra", "start": "2026-10-16", "data": "v2", "standing": "in use",
      "run": "E33e run 1 (Odra)", "model": "E33e · 30M, plain, seed 0 (E33 + rank among matching notes)",
      "tokens": "1.5B, 8 questions per document", "exams": "v2 + v2.1, 1k-16k; latest picks and strengths logged",
-     "result": "—", "when": "16 Oct from about 06:40 UTC",
+     "result": "Latest 19 % at 4k, 0 % at 16k (pass mark 60 %): failed. Strengths stayed near 0 (largest 0.15). Far facts "
+               "at 4k / 16k lookup 81 / 93 %, keyed 75 / 91 %, quote 80 / 94 %; compose and deduce at guessing; story "
+               "loss 1.520.",
+     "when": "16 Oct 06:47 UTC → outage → resumed 17 Oct, finished 13:38; exams 16:48 UTC (Odra, 3 GPUs, 7.7 h)",
      "why": "Author: fixes for T4-T7 (16 Oct); spec E33e_note_rank. Gate set on fresh questions, never the exams."},
     {"id": "q8b_dense_s0_polonez.polonez", "start": "2026-10-16", "data": "v2 + bridge", "standing": "in use",
      "run": "Dense on the bridge data (Polonez)", "model": "dense · 30M, plain, seed 0",
@@ -568,6 +602,39 @@ LADDER = [
                "lookup 74 / 93 %, keyed 70 / 92 %; near facts and latest unchanged (latest at 1k 15 %). Story loss 1.498.",
      "when": "16 Oct 23:23 → 17 Oct ~03:00",
      "why": "Does more split training close the near-fact gap and carry quotes?"},
+    {"id": "reason_e33x_s0.polonez", "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "in use",
+     "run": "E33x, loop exits on answers (Polonez)", "model": "E33 bridge warm start, loop exit losses off · 30M, plain",
+     "tokens": "0.3B continuation (1,787 steps)", "exams": "v2 + v2.1, 1k-16k",
+     "result": "Two-step compose 9 / 7 / 11 % at 1k / 4k / 16k (guessing 8 %); far lookup 4k / 16k 75 / 91 %; quotes 0 %.",
+     "when": "17 Oct 09:20 → 10:37, exams 12:51 UTC (2 GPUs)",
+     "why": "Multi-hop diagnosis step 1, the base rung: is it only data and a stuck loop? No."},
+    {"id": "reason_e33r_s0.polonez", "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "in use",
+     "run": "E33r, read target per round (Polonez)", "model": "E33x + each round's read pushed onto the next fact's page "
+                                                         "(weight 0.5, training only) · 30M, plain",
+     "tokens": "0.3B continuation (1,787 steps)", "exams": "v2 + v2.1, 1k-16k",
+     "result": "Two-step compose 30 / 60 / 76 % at 1k / 4k / 16k, the first model above guessing; deduce 17 / 13 / 9 %; far "
+               "lookup 4k / 16k 67 / 89 %, keyed 61 / 85 %; quotes 0 %; story loss 1.516.",
+     "when": "17 Oct 08:27 → 09:18, exams 12:12 UTC (4 GPUs)",
+     "why": "Supervise where each round reads (the agent-to-agent request, ported). One run."},
+    {"id": "reason_e33o_s0.polonez", "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "in use",
+     "run": "E33o, read target on single notes (Polonez)", "model": "E33x + each round pushed onto the notes that read the "
+                                                                "hop's output word · 30M, plain",
+     "tokens": "0.3B continuation", "exams": "v2 + v2.1, 1k-16k",
+     "result": "Far facts erased: lookup and keyed 0 % at every length; compose and deduce at guessing.",
+     "when": "17 Oct 11:14 → 12:50, exams 14:04 UTC (2 GPUs)",
+     "why": "Can a note-level target fix deduce? No: it broke the notebook."},
+    {"id": None, "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "history",
+     "run": "E33b run 1, note read-back (Polonez)", "model": "E33o + a head that names each note's words (0.2, random start)",
+     "tokens": "stopped at about half", "exams": "none",
+     "result": "Stopped: the random head scrambled the warm-started reader (compose two-step 47 → 12 % first-token pick, "
+               "bridge lookup 77 → 13 % at its first check).",
+     "when": "17 Oct 11:41 UTC", "why": "Make notes keep property words for deduce; restarted with the head at 0."},
+    {"id": "reason_e33b2_s0.polonez", "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "in use",
+     "run": "E33b run 2, note read-back (Polonez)", "model": "E33o + read-back head from 0 (weight 0.1) · 30M, plain",
+     "tokens": "0.3B continuation", "exams": "v2 + v2.1, 1k-16k",
+     "result": "Far lookup 10 / 15 / 21 % at 1k / 4k / 16k; compose at guessing; deduce 27 % at 1k, 14 % at 4k.",
+     "when": "17 Oct 10:52 → 13:03, exams 14:17 UTC (2 GPUs)",
+     "why": "Does the read-back repair E33o's notes? Only a little."},
 ]
 
 # Plain names for the architectures (first mention = name + what it is).
@@ -584,6 +651,17 @@ NAMES = {
                                                   "by log(1 + pages back); starts at 0, so it begins as E33"),
     "e33d_plain": ("E33d, notes with a page distance", "E33 plus a learned page distance on the notes (9 numbers, start "
                                                         "at 0); plain input"),
+    "e33e_plain": ("E33e, rank among matching notes", "E33 plus a learned bonus for newer notes among those that match "
+                                                       "the question (9 strengths, start at 0); plain input"),
+    "e33f_plain": ("E33f, notes on the wire", "E33 warm start; every question reads its document only through the "
+                                              "notes (agent to agent); plain input"),
+    "e33x_plain": ("E33x, loop exits on answers", "E33 bridge model continued with a reasoning-heavy mix, loop exit "
+                                                  "losses off; plain input"),
+    "e33r_plain": ("E33r, read target per round", "E33x plus, in training, each loop round's read pushed onto the page "
+                                                  "of the next fact in the chain; plain input"),
+    "e33o_plain": ("E33o, read target on notes", "E33x plus each round pushed onto the single notes that read the "
+                                                 "hop's answer word; plain input"),
+    "e33b_plain": ("E33b, note read-back", "E33o plus a training head that names each note's words; plain input"),
 }
 
 # Result rounds, keyed by "<run>.<host>" (the ledger file name). Rounds not listed here but present in the
@@ -875,7 +953,8 @@ SUPERSEDED = {
 DECISIONS = [
     "Make E31c (notebook, no loop) the main line? It switched on in 3 of 3 runs at a third of E33's training time.",
     "Start the notebook-proportions sweep (approved in principle 14 Oct) — on E31c instead of E33?",
-    "Latest: train the page distance from a non-zero start (the E33 session's proposal)?",
+    "Latest: E33d and E33e both failed because their order strengths start at 0 and never grow. Retrain one of "
+    "them from a non-zero start, or with the strength fixed?",
 ]
 
 # One entry per architecture family compared on the board: plain name, what it is in one line, the standing analogy
@@ -899,6 +978,19 @@ ARCHS = {
 # measured. effect: helped / hurt / no effect / mixed / measurement (a new exam or rule, the models did not change).
 # metrics: (what is measured, before, after, unit) — unit "%" (0-100) or "runs" ("k/n").
 CHANGES = [
+    {"date": "2026-10-17", "kind": "recipe", "change": "Tell each loop round where to read, in training (E33r)",
+     "compared": "E33 bridge model + 0.3B tokens, without (E33x) vs with the per-round read target", "effect": "helped",
+     "metrics": [("two-step compose at 4k", 7, 60, "%"), ("two-step compose at 16k", 11, 76, "%"),
+                 ("far lookup at 16k", 91, 89, "%")],
+     "note": "First model above guessing on a two-fact question; deduce unchanged (9 → 13 % at 4k). One run each."},
+    {"date": "2026-10-17", "kind": "recipe", "change": "Read target on single notes instead of pages (E33o)",
+     "compared": "E33r (page target) vs E33o (note target), same continuation", "effect": "hurt",
+     "metrics": [("far lookup at 4k", 67, 0, "%"), ("two-step compose at 4k", 60, 7, "%")],
+     "note": "The note-level push erased the notebook; a read-back head on top (E33b) brought lookup back to 15 %."},
+    {"date": "2026-10-17", "kind": "architecture", "change": "Rank among matching notes, strengths learned (E33e)",
+     "compared": "E33 (3 runs) vs E33e (1 run), current recipe", "effect": "no effect",
+     "metrics": [("latest at 4k, middle run", 20, 19, "%"), ("far lookup at 4k, middle run", 70, 81, "%")],
+     "note": "The strengths start at 0 and stayed small (largest 0.15); the no-training check had used 2."},
     {"date": "2026-10-15", "kind": "architecture", "change": "Fixed page distance +1 on E33d run 1 (no retraining)",
      "compared": "E33d run 1 as trained vs the same weights with every slope set to +1", "effect": "mixed",
      "metrics": [("latest at 16k", 2, 33, "%"), ("far lookup at 16k", 93, 52, "%")],
