@@ -430,3 +430,55 @@ def test_bridge_only_asks_just_the_bridges(task):
     body = doc.partition("\n\nQuestion:")[0]
     for q, a in qs:  # every bridge answer is stated in the document
         assert a in body
+
+
+# ---------------------------------------------------------------- read targets (training only, 2026-10-17)
+def _word_offsets(text):
+    return [(m.start(), m.end()) for m in re.finditer(r"\S+|\s+", text)]
+
+
+@pytest.mark.parametrize("task", ["compose", "deduce", "lookup", "quote", "latest"])
+def test_read_targets_point_at_the_chain_facts(task):
+    from scripts.build_text_checks_data import read_targets
+
+    for k in range(4):
+        s = _seed_for(task, 100 * k)
+        chains = []
+        doc = make_train_document(s, STORIES, 900, ntok, version="v2", questions=8, bridge=4, chains=chains)
+        assert doc == make_train_document(s, STORIES, 900, ntok, version="v2", questions=8, bridge=4)
+        offs = _word_offsets(doc)
+        q = read_targets(doc, offs, chains)
+        quads = [q[i:i + 4] for i in range(0, len(q), 4)]
+        answers = [x for x in quads if x[1] == 0]
+        assert len(answers) == doc.count("\nAnswer:")
+        for pos, _, _, _ in answers:  # the answer position is the "Answer:" token (BOS shifts by one)
+            a, b = offs[pos - 1]
+            assert doc[a:b].endswith("Answer:")
+        chain_of = dict(chains)
+        if task == "latest":
+            assert not chain_of and all(x[1] == 0 for x in quads)
+            continue
+        assert chain_of
+        for pos, r, t0, t1 in quads:
+            if r == 0:
+                continue
+            a, b = offs[pos - 1]
+            question = re.findall(r"Question: (.*?)\nAnswer:", doc[: b])[-1]
+            fact = chain_of[question][r - 1]
+            assert doc[offs[t0 - 1][0]: offs[t1 - 1][1]] == fact
+            assert offs[t1 - 1][1] < a  # the fact sits before its question
+        if task == "compose":  # a one-step question: teacher fact, then the teacher's home
+            for qq, facts in chains:
+                if qq.startswith("Where does the teacher of ") and "the teacher of the teacher" not in qq:
+                    p = qq[len("Where does the teacher of "):-len(" live?")]
+                    assert p in facts[0] and len(facts) == 2
+
+
+def test_read_targets_tensor_pads_and_cuts():
+    from data.data_collators import read_targets_tensor
+
+    t = read_targets_tensor([{"read_targets": [9, 0, -1, -1, 9, 1, 2, 4]}, {"read_targets": []},
+                             {"read_targets": [30, 0, -1, -1]}], max_len=20)
+    assert t.shape == (3, 2, 4)
+    assert t[0].tolist() == [[9, 0, -1, -1], [9, 1, 2, 4]]
+    assert (t[1] == -1).all() and (t[2] == -1).all()  # row 3's answer sits past the cut

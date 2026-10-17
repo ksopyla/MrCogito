@@ -246,6 +246,8 @@ A2A_FREEZE_RECEIVER="${A2A_FREEZE_RECEIVER:-False}"       # True: only agent A l
 PAR_LOOP_ROUNDS="${PAR_LOOP_ROUNDS:-1}"                    # E33a loop on text: 4
 PAR_LOOP_EXIT_AUX="${PAR_LOOP_EXIT_AUX:-0.0}"              # E33a: 0.3
 PAR_LOOP_EXIT_TARGETS="${PAR_LOOP_EXIT_TARGETS:-answer}"
+PAR_LOOP_EXIT_MASK="${PAR_LOOP_EXIT_MASK:-all}"           # text multi-hop: answers = exits on first answer tokens
+PAR_LOOP_READ_AUX="${PAR_LOOP_READ_AUX:-0.0}"             # text multi-hop: per-round read target weight (E33r 0.5)
 # Optional weight-only warm start (concept-encoder families: encoder weights; perceiver_ar: full
 # state dict from a saved `final/` dir). Empty = random init.
 MODEL_NAME_OR_PATH="${MODEL_NAME_OR_PATH:-}"
@@ -524,6 +526,8 @@ if [ "$MODEL_FAMILY" = "perceiver_ar" ] || [ "$MODEL_FAMILY" = "a2a" ]; then
             --message_loop_rounds "$PAR_LOOP_ROUNDS"
             --message_loop_exit_aux "$PAR_LOOP_EXIT_AUX"
             --message_loop_exit_targets "$PAR_LOOP_EXIT_TARGETS"
+            --message_loop_exit_mask "$PAR_LOOP_EXIT_MASK"
+            --message_loop_read_aux "$PAR_LOOP_READ_AUX"
         )
     elif [ "$PAR_MESSAGE_RAW_WINDOW" != "0" ]; then
         PAR_ARGS+=(--message_raw_window "$PAR_MESSAGE_RAW_WINDOW")

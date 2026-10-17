@@ -391,6 +391,12 @@ class ModelArguments:
     message_loop_exit_targets: str = field(
         default="answer", metadata={"help": "E33a: answer (= next token in text) | progress (exam scaffold)."}
     )
+    message_loop_exit_mask: str = field(
+        default="all", metadata={"help": "Text multi-hop: loop exits score all labels | answers (first answer tokens)."}
+    )
+    message_loop_read_aux: float = field(
+        default=0.0, metadata={"help": "Text multi-hop: weight of the per-round read target (needs read_targets data)."}
+    )
 
 
 @dataclass

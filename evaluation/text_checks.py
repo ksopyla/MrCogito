@@ -203,13 +203,25 @@ ARCHES = {
     "e33f": Arch("e33f", "E33 in split mode: each question reads its document only through the notes",
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.3,
                   "message_loop_exit_targets": "answer", "message_boundary_token": "Question"}, has_notebook=True),
+    # Text multi-hop fixes (2026-10-17; note e33_text_multihop_diagnosis_20261017.md). Both need data built with
+    # --train_read_targets (each question's answer position, and per read round the fact it chains through).
+    # E33x: the loop's exits score only the first answer token of every question (the decision), not every story token.
+    "e33x": Arch("e33x", "E33 with loop exits on answers only",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.3,
+                  "message_loop_exit_targets": "answer", "message_loop_exit_mask": "answers"}, has_notebook=True),
+    # E33r: E33x + a per-round read target — round r of a compose / deduce answer is pushed to read fact r (its raw
+    # tokens or the notes of its pages); also the single-step questions (bridges, lookup, keyed, quote) on round 1.
+    "e33r": Arch("e33r", "E33 with answer-only exits and a per-round read target",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.3,
+                  "message_loop_exit_targets": "answer", "message_loop_exit_mask": "answers",
+                  "message_loop_read_aux": 0.5}, has_notebook=True),
 }
 # Plain-input variants (2026-10-10): the same models without the word-pair/triple hash tables and value
 # embeddings. Dense with plain input learned quote, lookup, keyed and latest at 30M / 1.5B tokens on v2, where
 # dense with the tables learned at most one (spec §16.1), so the architecture round runs on plain input. FFN width
 # is refitted, so each stays in the parameter band.
 _PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
-for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f"):
+for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r"):
     _a = ARCHES[_k]
     ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
                                  {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)
@@ -232,6 +244,7 @@ ENV_OF = {
     "lm_addr": "PAR_LM_ADDR", "lm_slot_pos": "PAR_LM_SLOT_POS", "lm_note_age": "PAR_LM_NOTE_AGE", "lm_note_rank_margin": "PAR_LM_NOTE_RANK_MARGIN",
     "lm_note_rank_sharp": "PAR_LM_NOTE_RANK_SHARP", "message_loop_rounds": "PAR_LOOP_ROUNDS",
     "message_loop_exit_aux": "PAR_LOOP_EXIT_AUX", "message_loop_exit_targets": "PAR_LOOP_EXIT_TARGETS",
+    "message_loop_exit_mask": "PAR_LOOP_EXIT_MASK", "message_loop_read_aux": "PAR_LOOP_READ_AUX",
     "message_boundary_token_id": "PAR_MESSAGE_BOUNDARY_TOKEN_ID",
 }
 
