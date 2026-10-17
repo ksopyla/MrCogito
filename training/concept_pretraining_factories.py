@@ -423,7 +423,7 @@ def _latent_memory_kwargs(model_args) -> dict:
         return {}
     keys = ("lm_read", "lm_context", "lm_window", "lm_stride", "lm_latents", "lm_latent_dim", "lm_heads",
             "lm_writer_dim", "lm_enc_layers", "lm_rounds", "lm_reader_tokens", "lm_addr", "lm_slot_pos",
-            "lm_note_age", "lm_note_age_unit", "lm_note_rank_margin", "lm_note_rank_sharp", "lm_note_age_init", "lm_note_age_learn", "message_loop_rounds", "message_loop_exit_aux", "message_loop_exit_targets",
+            "lm_note_age", "lm_note_age_unit", "lm_note_rank_margin", "lm_note_rank_sharp", "lm_note_age_init", "lm_note_age_learn", "lm_count_heads", "lm_count_max", "message_loop_rounds", "message_loop_exit_aux", "message_loop_exit_targets",
             "message_loop_exit_mask", "message_loop_read_aux", "message_loop_read_target", "lm_readback_aux")
     out = {k: getattr(model_args, k) for k in keys}
     out["message_write"] = "latent_memory"
@@ -541,7 +541,8 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
         # the warm start is effectively unchanged at step 0. Anything else is a real mismatch.
         _ALLOWED_FRESH = ("write_back_proj", "value_embed", "value_proj", "value_lambda", "prefix_ae_head",
                           "note_readback",  # note_readback: the text multi-hop read-back head (training only)
-                          "note_age_slope")  # E33g: order heads added to a model trained without them (set strengths)
+                          "note_age_slope",  # E33g: order heads added to a model trained without them (set strengths)
+                          "note_counter")  # E33h: count heads added to a warm start (zero output projection)
         unexplained = [k for k in missing if not any(tag in k for tag in _ALLOWED_FRESH)]
         if unexpected or unexplained:
             raise ValueError(

@@ -231,6 +231,8 @@ class PerceiverARConfig(PretrainedConfig):
         lm_note_age_init: str = "",       # E33g — per-head starting strengths, comma-separated (one value = every head,
                                           #   fewer than the heads = the last heads); "" = 0 on every head (E33d / E33e)
         lm_note_age_learn: bool = True,   # E33g — False keeps those strengths fixed (order heads that cannot fade)
+        lm_count_heads: int = 0,          # E33h — count heads beside the global read (summing read; 0 = off)
+        lm_count_max: int = 10,           # E33h — the counts coded as a soft one-hot over 0..lm_count_max
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -342,6 +344,8 @@ class PerceiverARConfig(PretrainedConfig):
         self.lm_note_rank_sharp = float(lm_note_rank_sharp)
         self.lm_note_age_init = str(lm_note_age_init or "")
         self.lm_note_age_learn = bool(lm_note_age_learn)
+        self.lm_count_heads = int(lm_count_heads or 0)
+        self.lm_count_max = int(lm_count_max)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -1840,6 +1844,77 @@ def note_age_init(spec: str, h: int) -> torch.Tensor:
     return torch.tensor(vals, dtype=torch.float32)
 
 
+def note_count(qc: torch.Tensor, k_bar: torch.Tensor, k_raw: torch.Tensor, ctx: "MessageCtx", *, scale: float,
+               window: int, stride: int, a: torch.Tensor, b: torch.Tensor, chunk: int = 512) -> torch.Tensor:
+    """E33h: a summing read — how many things match the count query, [B,S,nc] fp32 (with gradient).
+
+    A softmax read returns an average, so it cannot tell three matching visits from five. Here each count head h
+    adds up σ(a_h · q·k · scale + b_h) over everything the reader at t may see, each token of the document once:
+    - notes of closed pages of the same document, but only the notes whose read position lies in the first `stride`
+      tokens of their page (pages are `window` tokens long and overlap by window − stride; a token in the overlap
+      belongs to the later page, so no event is counted twice);
+    - the raw keys k_raw of the tokens no closed page owns yet: after (newest close − (window − stride)), up to t.
+    `k_bar` [B,C,g,dh] and `k_raw` [B,S,g,dh] use their first key head; `qc` [B,S,nc,dh]."""
+    B, S, nc, dh = qc.shape
+    sd, sc, sp = ctx.slot_doc, ctx.slot_close, ctx.slot_pos
+    ok = (sd >= 0) & (sc >= 0)
+    own = ok & ((sp - (sc - window + 1)) < stride)  # [B,C]
+    kb, kr = k_bar[:, :, 0].float(), k_raw[:, :, 0].float()
+    aa, bb = a.float()[None, :, None, None], b.float()[None, :, None, None]
+    out = []
+    for s0 in range(0, S, chunk):
+        s1 = min(S, s0 + chunk)
+        t = torch.arange(s0, s1, device=qc.device)
+        doc_t = ctx.doc[:, s0:s1]
+        q = qc[:, s0:s1].float()
+        seen = ok[:, None, :] & (sd[:, None, :] == doc_t[:, :, None]) & (sc[:, None, :] <= t[None, :, None])  # [B,s,C]
+        last = torch.where(seen, sc[:, None, :], torch.full_like(sc[:, None, :], -(10 ** 9))).amax(-1)  # [B,s]
+        ln = torch.einsum("bshd,bcd->bhsc", q, kb) * scale
+        cnt = (torch.sigmoid(aa * ln + bb) * (seen & own[:, None, :])[:, None]).sum(-1)  # [B,nc,s]
+        r0 = max(0, s0 - window)
+        r = torch.arange(r0, s1, device=qc.device)
+        lr = torch.einsum("bshd,brd->bhsr", q, kr[:, r0:s1]) * scale
+        rvis = ((r[None, None, :] <= t[None, :, None]) & (r[None, None, :] > t[None, :, None] - window)
+                & (ctx.doc[:, None, r0:s1] == doc_t[:, :, None]) & (doc_t[:, :, None] >= 0)
+                & (r[None, None, :] > (last - (window - stride))[:, :, None]))
+        cnt = cnt + (torch.sigmoid(aa * lr + bb) * rvis[:, None]).sum(-1)
+        out.append(cnt)
+    return torch.cat(out, dim=-1).transpose(1, 2)
+
+
+class NoteCounter(nn.Module):
+    """E33h: count heads beside the global read. Own query from the layer input; keys = the notes' keys and the
+    layer's raw keys; the summed gates (note_count) are coded as a soft one-hot over 0..count_max plus log(1 + n)
+    and added to the read's output through a zero-initialised projection, so at step 0 the model is unchanged."""
+
+    def __init__(self, cfg, d: int, dh: int):
+        super().__init__()
+        self.nc, self.dh = int(cfg.lm_count_heads), dh
+        self.kmax = int(getattr(cfg, "lm_count_max", 10))
+        self.window, self.stride = int(cfg.lm_window), int(cfg.lm_stride)
+        self.wq = nn.Linear(d, self.nc * dh, bias=False)
+        self.qn = nn.RMSNorm(dh)
+        # gate σ(a·l + b): with unit-RMS queries and keys l ≈ ±√dh; a = 2, b = −10 keeps unrelated keys near 0
+        # (σ(−10) ≈ 5e-5, so ~1,000 visible keys add ≈ 0.05) while a strong match (l ≈ 8) counts ≈ 1
+        self.log_a = nn.Parameter(torch.full((self.nc,), math.log(2.0)))
+        self.b = nn.Parameter(torch.full((self.nc,), -10.0))
+        self.out = nn.Linear(self.nc * (self.kmax + 2), d, bias=False)
+        nn.init.zeros_(self.out.weight)
+        self.register_buffer("levels", torch.arange(self.kmax + 1, dtype=torch.float32), persistent=False)
+        self.last_count = None
+
+    def forward(self, x, k_bar, k_raw, ctx) -> torch.Tensor:
+        B, S, _ = x.shape
+        qc = self.qn(self.wq(x).view(B, S, self.nc, self.dh))
+        n = note_count(qc, k_bar, k_raw, ctx, scale=self.dh ** -0.5, window=self.window, stride=self.stride,
+                       a=self.log_a.exp(), b=self.b)  # [B,S,nc]
+        self.last_count = n.detach()
+        rbf = torch.exp(-2.0 * (n[..., None] - self.levels) ** 2)  # [B,S,nc,K+1], width 0.5
+        feats = torch.cat([rbf, torch.log1p(n)[..., None]], dim=-1).reshape(B, S, -1)
+        return self.out(feats.to(self.out.weight.dtype))
+
+
+
 class TinyHashedEmbedding(nn.Module):
     """token table [V,e] + Σ n-gram tables [buckets,e] → MLP up-projection to d → RMSNorm."""
 
@@ -1952,6 +2027,11 @@ class Attention(nn.Module):
             self.note_rank_rep = int(cfg.lm_latents) * int(cfg.lm_reader_tokens)
             self.note_rank_margin = float(getattr(cfg, "lm_note_rank_margin", 1.0))
             self.note_rank_sharp = float(getattr(cfg, "lm_note_rank_sharp", 2.0))
+        # E33h: count heads (a summing read) on the latent-memory global read
+        self.note_counter = None
+        if (int(getattr(cfg, "lm_count_heads", 0) or 0) > 0 and pattern == "full" and write == "latent_memory"
+                and getattr(cfg, "message_enabled", False)):
+            self.note_counter = NoteCounter(cfg, cfg.hidden_size, self.dh)
 
     def kv_raw(self, x: torch.Tensor, ids: Optional[torch.Tensor] = None) -> tuple[torch.Tensor, torch.Tensor]:
         """(k before k_norm, v incl. the value-embedding term) — the pooling inputs of the compressor."""
@@ -2122,6 +2202,11 @@ class Attention(nn.Module):
             out = self.wo(o.reshape(B, S, self.h * self.dh))
             if self.note_age_slope is not None and note_bias is None:
                 out = out + 0.0 * self.note_age_slope.sum().to(out.dtype)
+            if self.note_counter is not None:
+                if message.override not in ("none", "raw") and message.slot_close is not None:
+                    out = out + self.note_counter(x, k_bar, k_un, message).to(out.dtype)
+                else:
+                    out = out + 0.0 * sum(p.sum() for p in self.note_counter.parameters()).to(out.dtype)
 
             def _rewrite_concat(h):
                 k_raw2, v2 = self.kv_raw(h, ids)
@@ -2404,6 +2489,9 @@ class PerceiverARLM(PreTrainedModel):
             # a zero head sends no gradient into the notes at step 0, so a warm-started reader keeps its decoding while the
             # head learns (a random head scrambled the values: E33b run 1 at half its run, 17 Oct, compose 60 → 12 %)
             nn.init.zeros_(self.note_readback.weight)
+        for layer in self.layers:
+            if getattr(layer.attn, "note_counter", None) is not None:  # E33h: the count adds nothing at step 0
+                nn.init.zeros_(layer.attn.note_counter.out.weight)
 
     # -- HF plumbing ----------------------------------------------------------------
     def _init_weights(self, module):

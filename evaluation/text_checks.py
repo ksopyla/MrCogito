@@ -231,6 +231,13 @@ ARCHES = {
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
                   "lm_note_age": "rank", "lm_note_rank_margin": 0.5, "lm_note_rank_sharp": 4.0,
                   "lm_note_age_init": "1,2,4,8", "lm_note_age_learn": "false"}, has_notebook=True),
+    # E33h (2026-10-17, roadmap §4.5): E33r + two count heads — a summing read beside the global read. A softmax read
+    # averages, so count shows only as a saturating share; here each head adds σ(a·q·k + b) over the notes (each token
+    # of the document once: a page owns its first `stride` tokens) and the raw tokens no closed page owns yet, codes the
+    # sum as a soft one-hot over 0..10, and adds it to the read through a zero-initialised projection.
+    "e33h": Arch("e33h", "E33r + two count heads (a summing read over notes and recent tokens)",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "lm_count_heads": 2}, has_notebook=True),
     "e33b": Arch("e33b", "E33o + note read-back (each note's value names its tokens)",
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
                   "message_loop_read_target": "note", "lm_readback_aux": 0.1}, has_notebook=True),
@@ -240,7 +247,7 @@ ARCHES = {
 # dense with the tables learned at most one (spec §16.1), so the architecture round runs on plain input. FFN width
 # is refitted, so each stays in the parameter band.
 _PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
-for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o", "e33b", "e33g"):
+for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o", "e33b", "e33g", "e33h"):
     _a = ARCHES[_k]
     ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
                                  {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)
@@ -262,7 +269,8 @@ ENV_OF = {
     "lm_enc_layers": "PAR_LM_ENC_LAYERS", "lm_rounds": "PAR_LM_ROUNDS", "lm_reader_tokens": "PAR_LM_READER_TOKENS",
     "lm_addr": "PAR_LM_ADDR", "lm_slot_pos": "PAR_LM_SLOT_POS", "lm_note_age": "PAR_LM_NOTE_AGE", "lm_note_rank_margin": "PAR_LM_NOTE_RANK_MARGIN",
     "lm_note_rank_sharp": "PAR_LM_NOTE_RANK_SHARP", "lm_note_age_init": "PAR_LM_NOTE_AGE_INIT",
-    "lm_note_age_learn": "PAR_LM_NOTE_AGE_LEARN", "message_loop_rounds": "PAR_LOOP_ROUNDS",
+    "lm_note_age_learn": "PAR_LM_NOTE_AGE_LEARN", "lm_count_heads": "PAR_LM_COUNT_HEADS",
+    "lm_count_max": "PAR_LM_COUNT_MAX", "message_loop_rounds": "PAR_LOOP_ROUNDS",
     "message_loop_exit_aux": "PAR_LOOP_EXIT_AUX", "message_loop_exit_targets": "PAR_LOOP_EXIT_TARGETS",
     "message_loop_exit_mask": "PAR_LOOP_EXIT_MASK", "message_loop_read_aux": "PAR_LOOP_READ_AUX",
     "message_loop_read_target": "PAR_LOOP_READ_TARGET", "lm_readback_aux": "PAR_LM_READBACK_AUX",

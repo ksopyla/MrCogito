@@ -389,6 +389,8 @@ class ModelArguments:
     lm_note_age_init: str = field(default="", metadata={"help": "E33g: per-head starting strengths of the note-order "
                                                                  "term, comma-separated (one value = every head)."})
     lm_note_age_learn: bool = field(default=True, metadata={"help": "E33g: False keeps the note-order strengths fixed."})
+    lm_count_heads: int = field(default=0, metadata={"help": "E33h: count heads (summing read) on the global read; 0 = off."})
+    lm_count_max: int = field(default=10, metadata={"help": "E33h: counts coded as a soft one-hot over 0..max."})
     message_loop_rounds: int = field(default=1, metadata={"help": "E33a: tied [global read + local] loops (1 = off)."})
     message_loop_exit_aux: float = field(default=0.0, metadata={"help": "E33a: weight of each earlier loop exit."})
     message_loop_exit_targets: str = field(
