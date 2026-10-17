@@ -247,7 +247,10 @@ class LatentMemoryWriter(nn.Module):
             raise ValueError(f"lm_key_grad must be full | detach, got {self.key_grad!r}")
         std = float(cfg.init_std)
 
-        self.in_proj = nn.Linear(e, dw, bias=False)
+        # "table": the shared token table only (E31-E33); "embed": the decoder's whole input layer (table + up-projection
+        # + norm, [.., hidden]) — the writer and the reader start from the same encoding (roadmap 17 Oct, idea 1)
+        in_dim = int(cfg.hidden_size) if str(getattr(cfg, "lm_writer_input", "table") or "table") == "embed" else e
+        self.in_proj = nn.Linear(in_dim, dw, bias=False)
         # unit-scale token states: without it tok (0.02) × in_proj (0.02) ≈ 0.002, and the first
         # residual update (≈ window average, ~0.3) wipes each token's identity before any pick
         self.in_norm = nn.RMSNorm(dw)

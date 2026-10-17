@@ -239,6 +239,7 @@ PAR_LM_COUNT_HEADS="${PAR_LM_COUNT_HEADS:-0}"              # E33h: count heads (
 PAR_LOOP_NAME_LENS="${PAR_LOOP_NAME_LENS:-0.0}"            # E33q: round r names hop r's output word (weight)
 PAR_LOOP_FEEDBACK="${PAR_LOOP_FEEDBACK:-none}"             # E33q: none | soft (re-embed round r into round r+1)
 PAR_LOOP_FEEDBACK_TEMP="${PAR_LOOP_FEEDBACK_TEMP:-1.0}"    # E33q: feedback softmax temperature
+PAR_LM_WRITER_INPUT="${PAR_LM_WRITER_INPUT:-table}"        # writer input: table | embed (shared input layer)
 PAR_LM_COUNT_MAX="${PAR_LM_COUNT_MAX:-10}"                 # E33h: counts coded over 0..max
 # E35 — latent messages between agents (MODEL_FAMILY=a2a): warm-started agents, a fresh transmitter
 A2A_SENDER_INIT="${A2A_SENDER_INIT:-}"                    # notebook checkpoint (E31c / E33) for agent A's writer
@@ -539,6 +540,7 @@ if [ "$MODEL_FAMILY" = "perceiver_ar" ] || [ "$MODEL_FAMILY" = "a2a" ]; then
             --message_loop_name_lens "$PAR_LOOP_NAME_LENS"
             --message_loop_feedback "$PAR_LOOP_FEEDBACK"
             --message_loop_feedback_temp "$PAR_LOOP_FEEDBACK_TEMP"
+            --lm_writer_input "$PAR_LM_WRITER_INPUT"
             --lm_count_max "$PAR_LM_COUNT_MAX"
             --message_loop_rounds "$PAR_LOOP_ROUNDS"
             --message_loop_exit_aux "$PAR_LOOP_EXIT_AUX"

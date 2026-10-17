@@ -394,6 +394,8 @@ class ModelArguments:
     message_loop_feedback: str = field(default="none", metadata={"help": "E33q: none | soft (re-embed round r's "
                                                                           "LM-head distribution into round r+1)."})
     message_loop_feedback_temp: float = field(default=1.0, metadata={"help": "E33q: softmax temperature of the feedback."})
+    lm_writer_input: str = field(default="table", metadata={"help": "Notebook writer input: table (shared token "
+                                                                     "table) | embed (the decoder's whole input layer)."})
     lm_count_heads: int = field(default=0, metadata={"help": "E33h: count heads (summing read) on the global read; 0 = off."})
     lm_count_max: int = field(default=10, metadata={"help": "E33h: counts coded as a soft one-hot over 0..max."})
     message_loop_rounds: int = field(default=1, metadata={"help": "E33a: tied [global read + local] loops (1 = off)."})

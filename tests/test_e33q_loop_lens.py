@@ -84,3 +84,16 @@ def test_text_checks_arch_e33q_is_e33r_plus_naming_and_feedback():
     q = model_args("e33q_plain", "screen", 1152)
     assert {k for k in q if q[k] != r.get(k)} == {"message_loop_name_lens", "message_loop_feedback"}
     assert ARCHES["e33q_plain"].has_notebook and count_params(q) >= count_params(r)
+
+
+def test_writer_can_read_the_decoders_whole_input_layer():
+    """lm_writer_input="embed": the writer starts from the same encoding as the reader's tokens; default unchanged."""
+    torch.manual_seed(3)
+    m = make(**TEXT, **LOOP4, lm_writer_input="embed").train()
+    assert m.memory_writer.in_proj.in_features == m.config.hidden_size
+    ids = text_row(S=48)
+    out = m(ids, labels=ids.clone())
+    out.loss.backward()
+    assert torch.isfinite(out.loss) and m.embed.up0.weight.grad is not None
+    d = make(**TEXT, **LOOP4)
+    assert d.memory_writer.in_proj.in_features == d.config.token_embedding_dim

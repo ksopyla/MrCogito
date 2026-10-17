@@ -188,6 +188,8 @@ class PerceiverARConfig(PretrainedConfig):
         message_loop_feedback: str = "none",  # E33q — "soft": round r's LM-head distribution, re-embedded with the
                                               #   shared token table and input layer, is added to round r+1 (gate from 0)
         message_loop_feedback_temp: float = 1.0,  # E33q — softmax temperature of that re-embedding
+        lm_writer_input: str = "table",   # notebook writer input: "table" (the shared token table, E31-E33) | "embed"
+                                          #   (the decoder's whole input layer: the writer and reader share one encoding)
         message_update_slot_kv: bool = False,  # E21 — rewrite exclusive slot K/V between extra hops
         message_global_anchors: str = "none",  # E21 — sparse raw keys joining exclusive slot K/V
         message_anchor_token_ids: tuple[int, ...] = (),  # type-mark / keymark ids
@@ -311,6 +313,9 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_loop_name_lens = float(message_loop_name_lens or 0.0)
         self.message_loop_feedback = str(message_loop_feedback or "none")
         self.message_loop_feedback_temp = float(message_loop_feedback_temp or 1.0)
+        self.lm_writer_input = str(lm_writer_input or "table")
+        if self.lm_writer_input not in ("table", "embed"):
+            raise ValueError("lm_writer_input must be 'table' or 'embed'")
         self.message_update_slot_kv = bool(message_update_slot_kv)
         self.message_global_anchors = str(message_global_anchors or "none")
         self.message_anchor_token_ids = tuple(int(x) for x in (message_anchor_token_ids or ()))
@@ -2870,7 +2875,8 @@ class PerceiverARLM(PreTrainedModel):
                     msg.slots, msg.slot_pos = (k_o, v_o), sp_o
                 else:
                     out = self.memory_writer(
-                        self.embed.tok(input_ids), msg.side, msg.doc, key_valid, pos, cfg.rope_theta
+                        self._writer_input(input_ids, msg.local_doc_ids), msg.side, msg.doc, key_valid, pos,
+                        cfg.rope_theta,
                     )
                     msg.slots = (out["k"], out["v"])
                     msg.slot_pos = out["slot_pos"]
@@ -2981,7 +2987,8 @@ class PerceiverARLM(PreTrainedModel):
             side = torch.zeros_like(ids)
             pos = torch.arange(ids.shape[1], device=ids.device)[None].expand(B, -1) + off
             msg = self._message_context(ids, None, None, pos)
-            out = self.memory_writer(self.embed.tok(ids), msg.side, msg.doc, None, pos, cfg.rope_theta)
+            out = self.memory_writer(self._writer_input(ids, msg.local_doc_ids), msg.side, msg.doc, None, pos,
+                                     cfg.rope_theta)
             return out["k"], out["v"], out["slot_pos"]
 
         if not chunk_pages or B != 1 or S <= 2 * chunk_pages * st:
@@ -3149,6 +3156,13 @@ class PerceiverARLM(PreTrainedModel):
         self._read_targets = None
         loss = self._maybe_add_prefix_ae(loss, input_ids)
         return CausalLMOutput(loss=loss, logits=(logits if return_logits else None))
+
+    def _writer_input(self, ids: torch.Tensor, local_doc: Optional[torch.Tensor]) -> torch.Tensor:
+        """What the notebook writer reads: the shared token table [B,S,e], or with lm_writer_input="embed" the decoder's
+        whole input layer [B,S,d] (the same encoding the reader's tokens start from)."""
+        if getattr(self.config, "lm_writer_input", "table") == "embed":
+            return self.embed(ids, local_doc)
+        return self.embed.tok(ids)
 
     def _loop_lens(self, x: torch.Tensor, r: int, input_ids: torch.Tensor) -> torch.Tensor:
         """E33q, after loop round r (0-based, not the last): the round's state through the shared LM head.
