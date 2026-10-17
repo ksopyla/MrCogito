@@ -369,6 +369,23 @@ class ModelArguments:
     lm_slot_pos: str = field(
         default="reader", metadata={"help": "E31: read | boundary | scaled | mixed | reader (E31c text: NoPE slots)."}
     )
+    lm_note_age: str = field(
+        default="none", metadata={"help": "E33d: page distance on the note read, per-head slope: none | log | linear; "
+                                          "E33e: rank (count of newer notes that match as well as the best one)."}
+    )
+    lm_note_age_unit: int = field(default=0, metadata={"help": "E33d: tokens per distance unit (0 = lm_stride)."})
+    lm_note_rank_margin: float = field(default=1.0, metadata={"help": "E33e: match margin below the best note's score."})
+    # E35 (model_family='a2a'): agent A = notebook writer + memory + transmitter, agent B = decoder; warm-started
+    a2a_sender_init: str = field(default="", metadata={"help": "E35: notebook checkpoint for agent A's writer + token embedding."})
+    a2a_receiver_init: str = field(default="", metadata={"help": "E35: decoder checkpoint for agent B."})
+    a2a_msg_slots: int = field(default=16, metadata={"help": "E35: message vectors per transmission (K)."})
+    a2a_tx_layers: int = field(default=2, metadata={"help": "E35: transmitter blocks."})
+    a2a_tx_dim: int = field(default=512, metadata={"help": "E35: transmitter width."})
+    a2a_tx_order: str = field(default="rank", metadata={"help": "E35: order among matching memory entries: rank | none."})
+    a2a_tx_request: str = field(default="none", metadata={"help": "E35: none (broadcast) | question (B's question steers A's message)."})
+    a2a_loss_on: str = field(default="all", metadata={"help": "E35: loss on all receiver tokens | answers only."})
+    a2a_freeze_receiver: bool = field(default=False, metadata={"help": "E35: keep agent B frozen (only A learns)."})
+    lm_note_rank_sharp: float = field(default=2.0, metadata={"help": "E33e: steepness of the match gate."})
     message_loop_rounds: int = field(default=1, metadata={"help": "E33a: tied [global read + local] loops (1 = off)."})
     message_loop_exit_aux: float = field(default=0.0, metadata={"help": "E33a: weight of each earlier loop exit."})
     message_loop_exit_targets: str = field(
@@ -594,11 +611,13 @@ def validate_training_configuration(
     is_causal_ar = model_args.decoder_type == DECODER_CAUSAL_AR
     is_backbone = model_args.backbone_model is not None
     model_family = getattr(model_args, "model_family", "auto")
-    if model_family not in {"auto", "perceiver_ar", "perceiver_concept"}:
+    if model_family not in {"auto", "perceiver_ar", "perceiver_concept", "a2a"}:
         raise ValueError(
-            f"Unknown model_family: {model_family!r} (expected 'auto', 'perceiver_ar' or 'perceiver_concept')."
+            f"Unknown model_family: {model_family!r} (expected 'auto', 'perceiver_ar', 'perceiver_concept' or 'a2a')."
         )
-    if model_family in {"perceiver_ar", "perceiver_concept"}:
+    if model_family == "a2a" and not (model_args.a2a_sender_init and model_args.a2a_receiver_init):
+        raise ValueError("model_family='a2a' needs --a2a_sender_init and --a2a_receiver_init (warm-started agents).")
+    if model_family in {"perceiver_ar", "perceiver_concept", "a2a"}:
         if model_args.objective_variant != OBJECTIVE_CAUSAL_LM:
             raise ValueError(f"model_family={model_family!r} requires objective_variant='causal_lm'.")
         if is_backbone:

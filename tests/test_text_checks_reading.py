@@ -65,3 +65,14 @@ def test_summarize_reports_far_and_near():
     assert c["far"] == 0.0 and c["far_n"] == 20 and c["near"] == 1.0 and c["near_n"] == 10
     assert c["by_depth_n"] == {"early": 10, "late": 10, "middle": 10}
     assert far_near(c) == {"far": 0.0, "far_n": 20, "near": 1.0, "near_n": 10}
+
+
+def test_summarize_reports_where_the_picks_went():
+    """Candidate 0 is the gold answer; latest's 1, 2 … are the asked person's earlier places (E33d diagnostic)."""
+    from evaluation.text_checks_eval import summarize
+
+    rows = [{"split": "id", "task": "latest", "level": "T4", "length": 4096, "depth": "spread", "floor": 1 / 11,
+             "exact": k == 0, "pick": k == 0, "pick_ambiguous": False, "pick_prob": None, "answer_nll": 1.0, "picked": k}
+            for k in (0, 0, 1, 1, 1, 2, 5, None)]
+    c = summarize(rows)[0]
+    assert c["picked_hist"] == {"0": 2 / 7, "1": 3 / 7, "2": 1 / 7, "3+": 1 / 7}

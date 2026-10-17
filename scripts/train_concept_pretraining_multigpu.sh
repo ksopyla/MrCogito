@@ -229,6 +229,20 @@ PAR_LM_ROUNDS="${PAR_LM_ROUNDS:-2}"
 PAR_LM_READER_TOKENS="${PAR_LM_READER_TOKENS:-1}"
 PAR_LM_ADDR="${PAR_LM_ADDR:-none}"
 PAR_LM_SLOT_POS="${PAR_LM_SLOT_POS:-reader}"
+PAR_LM_NOTE_AGE="${PAR_LM_NOTE_AGE:-none}"                # E33d: page distance on the note read (log | linear)
+PAR_LM_NOTE_AGE_UNIT="${PAR_LM_NOTE_AGE_UNIT:-0}"          # E33d: tokens per unit (0 = the page step)
+PAR_LM_NOTE_RANK_MARGIN="${PAR_LM_NOTE_RANK_MARGIN:-1.0}"  # E33e (PAR_LM_NOTE_AGE=rank): match margin below the best note
+PAR_LM_NOTE_RANK_SHARP="${PAR_LM_NOTE_RANK_SHARP:-2.0}"    # E33e: steepness of the match gate
+# E35 — latent messages between agents (MODEL_FAMILY=a2a): warm-started agents, a fresh transmitter
+A2A_SENDER_INIT="${A2A_SENDER_INIT:-}"                    # notebook checkpoint (E31c / E33) for agent A's writer
+A2A_RECEIVER_INIT="${A2A_RECEIVER_INIT:-}"                # decoder checkpoint (dense) for agent B
+A2A_MSG_SLOTS="${A2A_MSG_SLOTS:-16}"                      # message vectors per transmission
+A2A_TX_LAYERS="${A2A_TX_LAYERS:-2}"
+A2A_TX_DIM="${A2A_TX_DIM:-512}"
+A2A_TX_ORDER="${A2A_TX_ORDER:-rank}"                      # rank | none
+A2A_TX_REQUEST="${A2A_TX_REQUEST:-none}"                  # none (broadcast) | question (B's question steers A's message)
+A2A_LOSS_ON="${A2A_LOSS_ON:-all}"                         # all receiver tokens | answers
+A2A_FREEZE_RECEIVER="${A2A_FREEZE_RECEIVER:-False}"       # True: only agent A learns
 PAR_LOOP_ROUNDS="${PAR_LOOP_ROUNDS:-1}"                    # E33a loop on text: 4
 PAR_LOOP_EXIT_AUX="${PAR_LOOP_EXIT_AUX:-0.0}"              # E33a: 0.3
 PAR_LOOP_EXIT_TARGETS="${PAR_LOOP_EXIT_TARGETS:-answer}"
@@ -429,7 +443,20 @@ fi
 # E18: Perceiver AR v2 family args, only passed when MODEL_FAMILY=perceiver_ar so every existing
 # family's invocation stays byte-identical. Eval keeps loss only (no [B,S,V] logits gathering).
 PAR_ARGS=()
-if [ "$MODEL_FAMILY" = "perceiver_ar" ]; then
+if [ "$MODEL_FAMILY" = "a2a" ]; then
+    PAR_ARGS+=(
+        --a2a_sender_init "$A2A_SENDER_INIT"
+        --a2a_receiver_init "$A2A_RECEIVER_INIT"
+        --a2a_msg_slots "$A2A_MSG_SLOTS"
+        --a2a_tx_layers "$A2A_TX_LAYERS"
+        --a2a_tx_dim "$A2A_TX_DIM"
+        --a2a_tx_order "$A2A_TX_ORDER"
+        --a2a_tx_request "$A2A_TX_REQUEST"
+        --a2a_loss_on "$A2A_LOSS_ON"
+        --a2a_freeze_receiver "$A2A_FREEZE_RECEIVER"
+    )
+fi
+if [ "$MODEL_FAMILY" = "perceiver_ar" ] || [ "$MODEL_FAMILY" = "a2a" ]; then
     PAR_ARGS+=(
         --model_family "$MODEL_FAMILY"
         --par_mode "$PAR_MODE"
@@ -490,6 +517,10 @@ if [ "$MODEL_FAMILY" = "perceiver_ar" ]; then
             --lm_reader_tokens "$PAR_LM_READER_TOKENS"
             --lm_addr "$PAR_LM_ADDR"
             --lm_slot_pos "$PAR_LM_SLOT_POS"
+            --lm_note_age "$PAR_LM_NOTE_AGE"
+            --lm_note_age_unit "$PAR_LM_NOTE_AGE_UNIT"
+            --lm_note_rank_margin "$PAR_LM_NOTE_RANK_MARGIN"
+            --lm_note_rank_sharp "$PAR_LM_NOTE_RANK_SHARP"
             --message_loop_rounds "$PAR_LOOP_ROUNDS"
             --message_loop_exit_aux "$PAR_LOOP_EXIT_AUX"
             --message_loop_exit_targets "$PAR_LOOP_EXIT_TARGETS"

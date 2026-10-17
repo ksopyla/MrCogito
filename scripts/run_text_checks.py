@@ -51,6 +51,7 @@ from evaluation.text_checks import (  # noqa: E402
     ARCHES,
     CURVE_FRACTIONS,
     ENV_OF,
+    resolve_token_args,
     TEXT_CHECKS_VERSION,
     TIERS,
     fit_params,
@@ -62,7 +63,7 @@ from evaluation.text_checks import (  # noqa: E402
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-SESSION = "textchk"
+SESSION = os.environ.get("TEXTCHK_SESSION", "textchk")  # byobu session of the generated starters (one per agent session)
 
 
 def _git_commit() -> str:
@@ -244,6 +245,7 @@ def plan_train_job(name: str, arch: str, tier: str, *, lr: float, tokens: float,
     steps = steps_for(tokens, t.global_rows, mean_row)
     save_steps = max(1, steps // 20)
     args_model, n_params = fit_params(arch, tier)
+    args_model = resolve_token_args(args_model, data / "tokenizer")
     recipe = load_recipe(arch)
     jobdir = out / "jobs" / name
     if (jobdir / "status.run").exists() or (jobdir / "DONE").exists():

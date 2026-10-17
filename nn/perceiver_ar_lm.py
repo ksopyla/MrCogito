@@ -82,6 +82,7 @@ Hooks for the family (config fields only — no parameters unless enabled):
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
 import math
 from contextlib import contextmanager
@@ -216,6 +217,13 @@ class PerceiverARConfig(PretrainedConfig):
         lm_read: str = "exclusive",       # E31c — "exclusive" (only tokens after QUERY read earlier sides) |
                                           #   "closed" (every token reads the windows closed at or before it: text)
         slot_pos_ref: int = 2048,         # "scaled" slot positions: max query–slot distance (order kept, length-invariant)
+        lm_note_age: str = "none",        # E33d — page distance on the note read, outside the key: "none" | "log" | "linear"
+                                          #   (score −= s_h · f((pos(t) − slot_pos) / unit), s_h per head, starts at 0)
+        lm_note_age_unit: int = 0,        # E33d — tokens per distance unit; 0 = lm_stride (one page step)
+                                          # E33e — lm_note_age="rank": f = log(1 + soft count of NEWER notes that match the
+                                          #   query about as well as its best note), so a lone fact pays nothing at any length
+        lm_note_rank_margin: float = 1.0, # E33e — a note "matches" when its score is within ~margin of the best note's
+        lm_note_rank_sharp: float = 2.0,  # E33e — steepness of that match gate: σ(sharp · (score − best + margin))
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -317,6 +325,10 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_override = str(message_override)
         self.swp_slot_pos = str(swp_slot_pos)
         self.slot_pos_ref = int(slot_pos_ref)
+        self.lm_note_age = str(lm_note_age or "none")
+        self.lm_note_age_unit = int(lm_note_age_unit or 0)
+        self.lm_note_rank_margin = float(lm_note_rank_margin)
+        self.lm_note_rank_sharp = float(lm_note_rank_sharp)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -442,6 +454,16 @@ class PerceiverARConfig(PretrainedConfig):
                 )
             if self.message_extra_slot_attends or self.message_update_slot_kv:
                 raise ValueError("latent_memory: extra slot attends are not defined (read once; E31a reads per layer)")
+            if self.lm_note_age not in ("none", "log", "linear", "rank"):
+                raise ValueError(f"lm_note_age must be none / log / linear / rank, got {self.lm_note_age!r}")
+            if self.lm_note_rank_sharp <= 0:
+                raise ValueError("lm_note_rank_sharp must be > 0")
+            if self.lm_note_age_unit < 0:
+                raise ValueError("lm_note_age_unit must be >= 0 (0 = lm_stride)")
+            if self.lm_note_age != "none" and self.lm_slot_pos != "reader":
+                raise ValueError("lm_note_age measures from each note's read position: it needs lm_slot_pos='reader'")
+        if getattr(self, "lm_note_age", "none") != "none" and self.message_write != "latent_memory":
+            raise ValueError("lm_note_age (E33d) is a latent-memory read option; it needs message_write='latent_memory'")
         if self.message_raw_window < 0:
             raise ValueError("message_raw_window must be >= 0 (0 = full causal raw keys)")
         if self.message_raw_window and self.message_slots_inplace:
@@ -841,6 +863,9 @@ def _attend_flash(q, k, v, pattern, window, causal, cu_seqlens, key_valid):
 # --------------------------------------------------------------------------------------
 
 
+TAG_SIDES = 64  # sides (boundary-separated parts) per document the global read's mask tag can hold
+
+
 @dataclass
 class MessageCtx:
     """Per-forward geometry of the E21 message boundary (built once in `_run_layers`).
@@ -887,16 +912,21 @@ class MessageCtx:
     read_rule: str = "exclusive"  # E31c "closed": any token reads slots of its document whose window closed ≤ it
     slot_close: Optional[torch.Tensor] = None  # [B,nb] int64 — last token a slot's window wrote from (closed rule)
     slot_nope: bool = False       # E31c "reader": slot keys are un-rotated and met by the un-rotated query
+    capture: Optional[dict] = None  # exam probe: {"q_pos": [B,P]} → appends each read's attention mass per note,
+                                    # [B,P,nb] summed over heads, to capture["mass"] (`capture_note_mass`)
 
     @property
     def n_slots(self) -> int:
         return int(self.slot_doc.shape[1])
 
     def tag_stride(self) -> int:
-        """Stride M of the (doc, side) → `doc * M + side` tag; M = 2·n_sides keeps the slot range
-        test `0 < tag_q − slot_tag < n_sides` false for every other document."""
-        k = self.n_sides or int(self.side.max().item()) + 1
-        return 2 * k
+        """Stride M of the (doc, side) → `doc * M + side` tag. M = 2 · `TAG_SIDES` keeps the slot range test
+        `0 < tag_q − slot_tag < M/2` false for every other document and true exactly for an earlier side of the same
+        document, for any row with at most `TAG_SIDES` sides per document (checked where sides are counted).
+        A constant, not 2 · (max side + 1): under dynamic-shape compilation a data-dependent stride is a SymInt, and
+        `div(tensor, SymInt)` does not trace inside the block-mask vmap. Rows with one side specialised to a constant,
+        so E21 / E31c never hit it; E33f's question boundaries (up to ~13 sides) did (Polonez, 16 Oct)."""
+        return 2 * TAG_SIDES
 
     def tags(self) -> tuple[torch.Tensor, torch.Tensor]:
         """int32 `tag` [B,S] and `slot_tag` [B,nb]: `doc * M + side`, −1 for pad / invalid slots."""
@@ -1023,8 +1053,9 @@ def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Te
         is_raw = kv < S
         j = torch.where(is_raw, kv, kv - S)
         js = torch.clamp(j, max=max(nb - 1, 0))
+        jr = torch.clamp(j, max=S - 1)  # raw lookups only (a slot index can exceed S: short rows, many notes)
         tq = tag[b, q]
-        tj = tag[b, j]
+        tj = tag[b, jr]
         same_doc = torch.div(tj, m, rounding_mode="floor") == torch.div(tq, m, rounding_mode="floor")
         if raw_cross:
             same = same_doc
@@ -1036,10 +1067,10 @@ def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Te
         if not raw_cross:
             dq = torch.div(tq, m, rounding_mode="floor")
             sq = tq - dq * m
-            anc = is_raw & (tq >= 0) & (tj >= 0) & (sq >= 1) & anchor[b, j] & same_doc
+            anc = is_raw & (tq >= 0) & (tj >= 0) & (sq >= 1) & anchor[b, jr] & same_doc
             raw_ok = raw_ok | anc
         if key_valid is not None:
-            raw_ok = raw_ok & (key_valid[b, j] | (j == q))
+            raw_ok = raw_ok & (key_valid[b, jr] | (j == q))
         if not slots_on:
             return raw_ok & is_raw
         s = slot_tag[b, js]
@@ -1479,18 +1510,122 @@ class PrefixAEHead(nn.Module):
         return self.proj(k_bar.reshape(B, nb, g * dh)).view(B, nb, self.r, self.vocab)
 
 
+def note_age_bias(pos: torch.Tensor, slot_pos: torch.Tensor, slope: torch.Tensor, unit: float,
+                  mode: str) -> torch.Tensor:
+    """E33d: additive score bias on the note columns, [B,h,S,C] (fp32).
+
+    bias[b,h,t,c] = −slope[h] · f(max(0, pos[b,t] − slot_pos[b,c]) / unit), f = log1p ("log") or
+    identity ("linear"). `pos` [B,S] are the readers' positions in their documents, `slot_pos` [B,C]
+    each note's read position (the writer's expected position of what its latent read)."""
+    age = (pos.to(torch.float32)[:, :, None] - slot_pos.to(torch.float32)[:, None, :]).clamp(min=0.0) / float(unit)
+    f = torch.log1p(age) if mode == "log" else age
+    return -slope.to(torch.float32)[None, :, None, None] * f[:, None]
+
+
+def note_rank_logcount(q_slot: torch.Tensor, k_bar: torch.Tensor, ctx: "MessageCtx", *, scale: float, rep: int,
+                       margin: float, sharp: float, chunk: int = 1024) -> torch.Tensor:
+    """E33e: how many NEWER notes match the reader about as well as its best note, per page, [B,h,S,n_w] fp32.
+
+    For reader t, head h and visible note c (same document, page closed at or before t — the closed read),
+    l = q_slot·k̄ · scale is the read's own note score and m the best visible score. The match gate is
+    σ(sharp · (l − m + margin)); a page's count is the summed gate over the visible notes of every strictly
+    newer page (later close), and the returned value is log(1 + count). A lone fact has no newer match, so it
+    keeps its score at any length; among several matches (Anna's ten moves) the newest gets 0, the one
+    before it ≈ log 2, … — an order that does not grow with the document. Computed without gradient (the
+    read's scores are trained by the read itself); only the per-head strength in front of it learns.
+    `rep` = notes per page (latents × reader tokens): the pages are the n_w = C / rep groups of the slot axis."""
+    B, S, h, dh = q_slot.shape
+    C, g = k_bar.shape[1], k_bar.shape[2]
+    n_w = C // rep
+    with torch.no_grad():
+        sd, sc = ctx.slot_doc, ctx.slot_close  # [B,C]
+        wclose = sc.view(B, n_w, rep)[..., 0]  # every note of a page shares its close
+        newer = (wclose[:, :, None] > wclose[:, None, :]).float()  # [B, w', w]: page w' is newer than page w
+        kbh = k_bar.float().repeat_interleave(h // g, dim=2)  # [B,C,h,dh]
+        tpos = torch.arange(S, device=q_slot.device)
+        out = torch.zeros(B, h, S, n_w, dtype=torch.float32, device=q_slot.device)
+        for s0 in range(0, S, chunk):
+            s1 = min(S, s0 + chunk)
+            vis = ((sd[:, None, :] >= 0) & (sd[:, None, :] == ctx.doc[:, s0:s1, None])
+                   & (sc[:, None, :] >= 0) & (sc[:, None, :] <= tpos[None, s0:s1, None]))  # [B,s,C]
+            l = torch.einsum("bshd,bchd->bhsc", q_slot[:, s0:s1].float(), kbh) * scale
+            l = l.masked_fill(~vis[:, None], float("-inf"))
+            m = l.amax(-1, keepdim=True)
+            m = torch.where(torch.isfinite(m), m, torch.zeros_like(m))
+            gate = torch.sigmoid(sharp * (l - m + margin))  # exactly 0 on invisible notes
+            gw = gate.view(B, h, s1 - s0, n_w, rep).sum(-1)
+            out[:, :, s0:s1] = torch.log1p(torch.einsum("bhsk,bkw->bhsw", gw, newer))
+    return out
+
+
+@torch.no_grad()
+def score_notes(qs: torch.Tensor, raw_lse: torch.Tensor, k_bar: torch.Tensor) -> torch.Tensor:
+    """Agent A's side of a request: B's note queries `qs` [B,P,h,dh] and raw log-totals `raw_lse` [B,P,h] (from
+    `capture_note_mass`) against A's notebook keys `k_bar` [B,nb,g,dh] → each note's share of B's read, summed over
+    heads, [B,P,nb] — the same numbers `capture_note_mass` gives with the whole notebook visible."""
+    rep = qs.shape[2] // k_bar.shape[2]
+    sl = torch.einsum("bphd,bchd->bphc", qs.float(), k_bar.float().repeat_interleave(rep, dim=2)) * qs.shape[-1] ** -0.5
+    lse = torch.logsumexp(torch.cat([raw_lse.float()[..., None], sl], -1), -1, keepdim=True)
+    return torch.exp(sl - lse).sum(2)
+
+
+@torch.no_grad()
+def capture_note_mass(q, k, k_bar, ctx: MessageCtx, key_valid, *, q_slot=None) -> None:
+    """Notes-budget exam: the share of each note in this read's attention, at the query positions `ctx.capture["q_pos"]`
+    [B,P], summed over heads → appended to `ctx.capture["mass"]` as [B,P,nb] (one entry per read: a looped model
+    appends one per round). The softmax is the read's own: raw keys in the raw window ‖ the notes this query may
+    see, logits q·k and q_slot·k̄ (or q·k̄) at scale 1/√dh. The E33d / E33e note terms are not included.
+    With `_note_keep` set, the notes this query could see in the whole notebook are scored (`capture["slot_close_all"]`),
+    hidden ones included: what agent A computes when B sends this query (B adds its raw-key total per head)."""
+    cap = ctx.capture
+    if cap.get("slot_close_all") is not None:
+        ctx = dataclasses.replace(ctx, slot_close=cap["slot_close_all"])
+    qp = cap["q_pos"].to(q.device)
+    B, S, h, dh = q.shape
+    g, nb = k.shape[2], k_bar.shape[1]
+    rep = h // g
+    bi = torch.arange(B, device=q.device)[:, None]
+    sc = dh ** -0.5
+    qq = q[bi, qp].float()                                   # [B,P,h,dh]
+    qs = (q_slot if q_slot is not None else q)[bi, qp].float()
+    kb = k_bar.float().repeat_interleave(rep, dim=2)         # [B,nb,h,dh]
+    sl = torch.einsum("bphd,bchd->bphc", qs, kb) * sc
+    pred = make_message_mask_pred(S, ctx, key_valid)
+    kv = S + torch.arange(nb, device=q.device)[None, None]
+    vis = pred(bi[:, :, None], None, qp[:, :, None], kv)     # [B,P,nb]
+    sl = sl.masked_fill(~vis[:, :, None], float("-inf"))
+    W = int(ctx.raw_window or 0) or (int(qp.max()) + 1)
+    j = qp[..., None] - torch.arange(W, device=q.device)     # [B,P,W]
+    kr = k[bi[..., None], j.clamp(min=0)].float().repeat_interleave(rep, dim=3)  # [B,P,W,h,dh]
+    rl = torch.einsum("bphd,bpwhd->bphw", qq, kr) * sc
+    ok = pred(bi[:, :, None], None, qp[:, :, None], j.clamp(min=0)) & (j >= 0)
+    rl = rl.masked_fill(~ok[:, :, None], float("-inf"))
+    lse = torch.logsumexp(torch.cat([rl, sl], -1), -1, keepdim=True)
+    cap.setdefault("mass", []).append(torch.exp(sl - lse).nan_to_num(0.0).sum(2))
+    # the request itself, for an agent A that scores its own notebook (`score_notes`): B's note query per head and the
+    # log-total of B's own raw attention per head
+    cap.setdefault("queries", []).append((qs, torch.logsumexp(rl, -1)))
+
+
 def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend, block_masks=None,
-                   q_slot=None):
+                   q_slot=None, note_bias=None):
     """Global read over raw keys ‖ message slots with the E21 mask. Returns [B,S,h,dh].
 
     `q_slot` (E31c "reader" slot keys): the query used against the slots instead of `q` (the
     un-rotated query, while `q` is RoPE'd for the raw keys). One softmax over both, done exactly by
     concatenating head dims: Q = [q, q_slot], raw K = [k, 0], slot K = [0, k̄], scale 1/√dh — so
-    the raw logits are q·k and the slot logits q_slot·k̄. Values keep width dh."""
+    the raw logits are q·k and the slot logits q_slot·k̄. Values keep width dh.
+
+    `note_bias` (E33d) = (slope [h], pos [B,S], slot_pos [B,C], unit, mode): adds `note_age_bias` to the
+    slot logits only (flex `score_mod`, or a float mask on the SDPA path); raw logits are unchanged.
+    E33e (mode "rank") = (slope [h], logcount [B,h,S,n_w], None, rep, "rank"): adds −slope[h] · logcount at
+    each note's page (`note_rank_logcount`)."""
     B, S, h, dh = q.shape
     g = k.shape[2]
     if backend == "flash":
         raise NotImplementedError("message boundary needs flex or sdpa")
+    if getattr(ctx, "capture", None) is not None:
+        capture_note_mass(q, k, k_bar, ctx, key_valid, q_slot=q_slot)
     scale = None
     if q_slot is not None:
         q = torch.cat([q, q_slot.to(q.dtype)], dim=-1)
@@ -1519,13 +1654,54 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
             if block_masks is not None:
                 block_masks[memo_key] = bm
         qt, kt, vt = qt.contiguous(), kt.contiguous(), vt.contiguous()
-        out = _get_flex()(qt, kt, vt, block_mask=bm, enable_gqa=(g != h), scale=scale)
+        score_mod, kernel_options = None, None
+        if note_bias is not None:
+            slope, pos_t, spos, unit, mode = note_bias
+            # One copy of the slopes per (row, head, query): flex accumulates a captured buffer's gradient
+            # with atomic adds, and 9 shared addresses made the backward 2.3× slower (Polonez, 30M, 4k).
+            sl = slope.to(torch.float32)[None, :, None].expand(B, h, S).contiguous()
+            if mode == "rank":
+                # One captured buffer, the bias per (row, head, reader, page) with the strength already in it (its
+                # gradient reaches the strength through autograd). A page index depends on the key, so the buffer is
+                # gathered as a full query × key tile: with the default 128 × 128 blocks that overflowed the 3090's
+                # shared memory (148 KB of 99 KB), hence the smaller blocks.
+                nbw = (-slope.to(torch.float32)[None, :, None, None] * pos_t.to(torch.float32)).contiguous()
+                rep_i = int(unit)
+                kernel_options = {"BLOCK_M": 64, "BLOCK_N": 64, "num_stages": 1,
+                                  "bwd_BLOCK_M1": 32, "bwd_BLOCK_N1": 64, "bwd_BLOCK_M2": 64, "bwd_BLOCK_N2": 32}
+
+                def score_mod(score, b, hh, q_idx, kv_idx):
+                    w = torch.div(torch.clamp(kv_idx - S, min=0), rep_i, rounding_mode="floor")
+                    return torch.where(kv_idx >= S, score + nbw[b, hh, q_idx, w], score)
+            else:
+                pos_f, spos_f = pos_t.to(torch.float32), spos.to(torch.float32)
+                unit_f, log_f = float(unit), mode == "log"
+
+                def score_mod(score, b, hh, q_idx, kv_idx):
+                    c = torch.clamp(kv_idx - S, min=0)
+                    age = torch.clamp(pos_f[b, q_idx] - spos_f[b, c], min=0.0) / unit_f
+                    f = torch.log1p(age) if log_f else age
+                    return torch.where(kv_idx >= S, score - sl[b, hh, q_idx] * f, score)
+
+        if kernel_options is not None and torch.cuda.is_available():
+            out = _get_flex()(qt, kt, vt, block_mask=bm, enable_gqa=(g != h), scale=scale, score_mod=score_mod,
+                              kernel_options=kernel_options)
+        else:
+            out = _get_flex()(qt, kt, vt, block_mask=bm, enable_gqa=(g != h), scale=scale, score_mod=score_mod)
         return out.transpose(1, 2)
     if g != h:
         rep = h // g
         kt = kt.repeat_interleave(rep, dim=1)
         vt = vt.repeat_interleave(rep, dim=1)
     mask = dense_message_mask(S, ctx, key_valid, q.device)
+    if note_bias is not None:  # E33d: float mask, per head, the bias on the slot columns only
+        slope, pos_t, spos, unit, mode = note_bias
+        fm = torch.zeros(mask.shape, dtype=torch.float32, device=q.device).masked_fill(~mask, float("-inf"))
+        if mode == "rank":  # E33e: the page count broadcast to the page's notes
+            nb = -slope.to(torch.float32)[None, :, None, None] * pos_t.to(torch.float32).repeat_interleave(int(unit), dim=-1)
+        else:
+            nb = note_age_bias(pos_t, spos, slope, unit, mode)
+        mask = torch.cat([fm[..., :S].expand(B, h, S, S), fm[..., S:] + nb], dim=-1).to(qt.dtype)
     dv = vt.shape[-1]
     if qt.shape[-1] != dv:
         # Reader mode (QK width 2·dh, V width dh). Some SDPA backends assume equal widths (MPS
@@ -1666,6 +1842,18 @@ class Attention(nn.Module):
         self.prefix_ae_stopgrad = bool(getattr(cfg, "message_prefix_ae_stopgrad_answer", True))
         self._last_k_bar = None
         self._last_v_bar = None
+        # E33d: one signed slope per query head for the page distance of each note (outside the key).
+        # Zero at the start, so the read is exactly the E31c/E33 read until training moves it.
+        self.note_age_slope = None
+        self.note_age_mode = str(getattr(cfg, "lm_note_age", "none") or "none")
+        if (self.note_age_mode != "none" and pattern == "full" and write == "latent_memory"
+                and getattr(cfg, "message_enabled", False)):
+            self.note_age_slope = nn.Parameter(torch.zeros(h))
+            self.note_age_unit = float(getattr(cfg, "lm_note_age_unit", 0) or cfg.lm_stride)
+            # E33e (rank): the same per-head strength, in front of the count of newer matching notes
+            self.note_rank_rep = int(cfg.lm_latents) * int(cfg.lm_reader_tokens)
+            self.note_rank_margin = float(getattr(cfg, "lm_note_rank_margin", 1.0))
+            self.note_rank_sharp = float(getattr(cfg, "lm_note_rank_sharp", 2.0))
 
     def kv_raw(self, x: torch.Tensor, ids: Optional[torch.Tensor] = None) -> tuple[torch.Tensor, torch.Tensor]:
         """(k before k_norm, v incl. the value-embedding term) — the pooling inputs of the compressor."""
@@ -1821,9 +2009,21 @@ class Attention(nn.Module):
                 k_bar, v_bar = k_bar.roll(1, dims=0), v_bar.roll(1, dims=0)
             # E31c "reader" slot keys: met by the un-rotated query (exact; see attend_message)
             q_slot = self._scale_q(q_un, pos) if (getattr(message, "slot_nope", False) and self.use_rope) else None
+            note_bias = None
+            if self.note_age_slope is not None and message.slot_pos is not None and pos is not None:
+                if self.note_age_mode == "rank":
+                    if message.override not in ("none", "raw"):
+                        lc = note_rank_logcount(q_slot if q_slot is not None else q, k_bar, message,
+                                                scale=self.dh ** -0.5, rep=self.note_rank_rep,
+                                                margin=self.note_rank_margin, sharp=self.note_rank_sharp)
+                        note_bias = (self.note_age_slope, lc, None, self.note_rank_rep, "rank")
+                else:
+                    note_bias = (self.note_age_slope, pos, message.slot_pos, self.note_age_unit, self.note_age_mode)
             o = attend_message(q, k, v, k_bar, v_bar, ctx=message, key_valid=key_valid,
-                               backend=self.backend, block_masks=block_masks, q_slot=q_slot)
+                               backend=self.backend, block_masks=block_masks, q_slot=q_slot, note_bias=note_bias)
             out = self.wo(o.reshape(B, S, self.h * self.dh))
+            if self.note_age_slope is not None and note_bias is None:
+                out = out + 0.0 * self.note_age_slope.sum().to(out.dtype)
 
             def _rewrite_concat(h):
                 k_raw2, v2 = self.kv_raw(h, ids)
@@ -1851,6 +2051,8 @@ class Attention(nn.Module):
         o = self.wo(o.reshape(B, S, self.h * self.dh))
         if self.compressor is not None:
             o = o + 0.0 * self.compressor.participation().to(o.dtype)
+        if self.note_age_slope is not None:
+            o = o + 0.0 * self.note_age_slope.sum().to(o.dtype)
         return o
 
 
@@ -2038,6 +2240,17 @@ class PerceiverARLM(PreTrainedModel):
             if self.loop_rounds > 1 and getattr(cfg, "message_loop_inject", "none") == "prelude" else None
         )
         self._loop_rounds_override: Optional[int] = None  # eval: run r loops (exit r == the R = r forward)
+        # Notes-budget exam (latent memory, nothing retrained): `_notes_override` = (k̄, v̄, slot_pos) replaces what the
+        # writer would write (another forward's notes: B reads A's notebook over its own text); `_note_keep` [B,nb]
+        # hides every other note; `_note_capture` = {"q_pos": [B,P]} records how much each read looks at each note.
+        # `_last_notes` holds the notes of the last forward when a capture or override is set. `_notes_external`: the
+        # override is any number of notes written before this row (agent B's short question row reads agent A's
+        # notebook; `write_notes` makes it), all readable from the row's first token.
+        self._notes_override: Optional[tuple] = None
+        self._notes_external = False  # True: the override is a whole notebook read from before this row (agent B)
+        self._note_keep: Optional[torch.Tensor] = None
+        self._note_capture: Optional[dict] = None
+        self._last_notes: Optional[tuple] = None
         # E33: whole-name loss. A linear probe showed round 1 names the bridge node only by its first letters
         # while the memory is addressed by the tail of a name; this head asks every loop state, at the decision
         # position, to name its node completely (all `message_loop_name_len` letters), so the next round can query.
@@ -2266,6 +2479,8 @@ class PerceiverARLM(PreTrainedModel):
         base = torch.cummax(torch.where(starts, cum - is_b.long(), torch.zeros_like(cum)), dim=1).values
         side = cum - base
         K = int(side.max().item()) + 1
+        if K > TAG_SIDES:
+            raise ValueError(f"{K} sides in one document; the (doc, side) mask tag holds at most {TAG_SIDES}")
         if getattr(cfg, "message_keep_local_swa", False):
             local = doc
         else:
@@ -2400,7 +2615,8 @@ class PerceiverARLM(PreTrainedModel):
         return not right_padded
 
     def _run_layers(self, input_ids, attention_mask, doc_ids, cu_seqlens, capture_input_of: Optional[int] = None,
-                    message_kv: Optional[tuple] = None, position_offset: int = 0):
+                    message_kv: Optional[tuple] = None, position_offset: int = 0,
+                    prefix_embeds: Optional[torch.Tensor] = None):
         cfg = self.config
         B, S = input_ids.shape
         key_valid = None
@@ -2415,13 +2631,35 @@ class PerceiverARLM(PreTrainedModel):
             if msg is not None:
                 local_doc = msg.local_doc_ids
         x0 = self.embed(input_ids, local_doc)
+        if prefix_embeds is not None:  # E35: the message vectors replace the placeholder embeddings
+            P = prefix_embeds.shape[1]
+            x0 = torch.cat([prefix_embeds.to(x0.dtype), x0[:, P:]], 1)
         if self.memory_writer is not None:
             if msg is not None and msg.external is None:
-                out = self.memory_writer(
-                    self.embed.tok(input_ids), msg.side, msg.doc, key_valid, pos, cfg.rope_theta
-                )
-                msg.slots = (out["k"], out["v"])
-                msg.slot_pos = out["slot_pos"]
+                if self._notes_override is not None:  # notes-budget exam: another forward's notebook
+                    k_o, v_o, sp_o = self._notes_override
+                    if self._notes_external:  # agent B: a notebook written elsewhere, all of it before this row
+                        nb_o = k_o.shape[1]
+                        d0 = msg.doc.clamp(min=0).amax(dim=1, keepdim=True)
+                        msg.slot_doc = d0.expand(B, nb_o).contiguous()
+                        msg.slot_side = torch.zeros_like(msg.slot_doc)
+                        msg.slot_close = torch.zeros_like(msg.slot_doc)  # closed before the row's first token
+                    elif k_o.shape[1] != msg.n_slots:
+                        raise ValueError(f"notes override has {k_o.shape[1]} notes, this row's geometry {msg.n_slots}")
+                    msg.slots, msg.slot_pos = (k_o, v_o), sp_o
+                else:
+                    out = self.memory_writer(
+                        self.embed.tok(input_ids), msg.side, msg.doc, key_valid, pos, cfg.rope_theta
+                    )
+                    msg.slots = (out["k"], out["v"])
+                    msg.slot_pos = out["slot_pos"]
+                if self._note_capture is not None or self._notes_override is not None:
+                    self._last_notes = (msg.slots[0], msg.slots[1], msg.slot_pos)
+                if self._note_capture is not None:  # requests score A's whole notebook, hidden notes included
+                    self._note_capture["slot_close_all"] = msg.slot_close
+                if self._note_keep is not None:  # a hidden note's window never closes for anyone
+                    msg.slot_close = msg.slot_close.masked_fill(~self._note_keep.to(msg.slot_close.device), -1)
+                msg.capture = self._note_capture
             else:
                 x0 = x0 + self.memory_writer.participation().to(x0.dtype)  # DDP: no QUERY in batch
         cos, sin = rope_cos_sin(pos, cfg.head_dim, cfg.rope_theta, x0.dtype)
@@ -2492,6 +2730,39 @@ class PerceiverARLM(PreTrainedModel):
             x = run_layer(i, x, skips)
         return x
 
+    @torch.no_grad()
+    def write_notes(self, input_ids: torch.Tensor, chunk_pages: int = 0) -> tuple:
+        """Agent A: one document's notes (k̄, v̄, slot_pos) from the writer alone — the notebook the global read would
+        see for this row (one unpadded document, [1, S]). The writer reads page text only, so nothing of the main stack
+        runs. `chunk_pages` > 0: that many pages per pass (chunks cut at page starts, overlapping by window − stride),
+        the same notes as one pass, bounded memory (1M tokens)."""
+        if self.memory_writer is None:
+            raise RuntimeError("write_notes needs a latent-memory model")
+        cfg = self.config
+        B, S = input_ids.shape
+        W, st = int(cfg.lm_window), int(cfg.lm_stride)
+
+        def span(ids, off):
+            side = torch.zeros_like(ids)
+            pos = torch.arange(ids.shape[1], device=ids.device)[None].expand(B, -1) + off
+            msg = self._message_context(ids, None, None, pos)
+            out = self.memory_writer(self.embed.tok(ids), msg.side, msg.doc, None, pos, cfg.rope_theta)
+            return out["k"], out["v"], out["slot_pos"]
+
+        if not chunk_pages or B != 1 or S <= 2 * chunk_pages * st:
+            return span(input_ids, 0)
+        T, parts, s0 = chunk_pages * st, [], 0
+        while True:
+            end = min(S, s0 + T + (W - st))
+            if S - end < W + st:  # the last chunk absorbs a short tail (keeps the page geometry)
+                end = S
+            # a full chunk holds exactly `chunk_pages` windows, at the document's own page starts
+            parts.append(span(input_ids[:, s0:end], s0))
+            if end == S:
+                break
+            s0 += T
+        return tuple(torch.cat([p[i] for p in parts], 1) for i in range(3))
+
     # -- forward ----------------------------------------------------------------------
     def hidden_states(
         self,
@@ -2522,6 +2793,7 @@ class PerceiverARLM(PreTrainedModel):
         return_logits: bool = False,
         message_kv: Optional[tuple] = None,
         position_offset: int = 0,
+        prefix_embeds: Optional[torch.Tensor] = None,
     ):
         # NOTE: no **kwargs here on purpose. HF Trainer treats any VAR_KEYWORD forward as a
         # model that normalizes its own loss by num_items_in_batch and then skips the division
@@ -2551,15 +2823,29 @@ class PerceiverARLM(PreTrainedModel):
             b._collect_rounds = round_tgt is not None
         if message_kv is not None and not cfg.message_enabled:
             raise RuntimeError("message_kv needs message_boundary_token_id >= 0")
+        # E35 receiver: `prefix_embeds` [B, P, d] are read as the first P input positions (Cramming-style message
+        # vectors, seen by every layer); they get no target and no output logits.
+        P = 0
+        if prefix_embeds is not None:
+            if cfg.message_enabled:
+                raise RuntimeError("prefix_embeds is for a model without the E21 message boundary")
+            B0, P = input_ids.shape[0], prefix_embeds.shape[1]
+            input_ids = torch.cat([input_ids.new_full((B0, P), cfg.pad_token_id), input_ids], 1)
+            if attention_mask is not None:
+                attention_mask = torch.cat([attention_mask.new_ones((B0, P)), attention_mask], 1)
+            if labels is not None:
+                labels = torch.cat([labels.new_full((B0, P), -100), labels], 1)
+            if doc_ids is not None:
+                doc_ids = torch.cat([doc_ids[:, :1].expand(B0, P), doc_ids], 1)
         input_ids, attention_mask, labels, doc_ids, S_orig = self._pad_inputs(
             input_ids, attention_mask, labels, doc_ids
         )
         x = self._run_layers(input_ids, attention_mask, doc_ids, cu_seqlens,
-                             message_kv=message_kv, position_offset=position_offset)
+                             message_kv=message_kv, position_offset=position_offset, prefix_embeds=prefix_embeds)
         h = self.final_norm(x)
 
         if labels is None or return_logits:
-            logits = F.linear(h[:, :S_orig], self.lm_head.weight).float()
+            logits = F.linear(h[:, P:S_orig], self.lm_head.weight).float()
             if cfg.logit_softcap:
                 logits = cfg.logit_softcap * torch.tanh(logits / cfg.logit_softcap)
             if labels is None:
@@ -2571,8 +2857,8 @@ class PerceiverARLM(PreTrainedModel):
         if return_per_token_loss:
             per = per_token_ce_chunked(
                 hid, self.lm_head.weight, tgt, cfg.chunked_ce_block_size, cfg.logit_softcap
-            )[:, : S_orig - 1]
-            valid = tgt[:, : S_orig - 1] != -100
+            )[:, P: S_orig - 1]
+            valid = tgt[:, P: S_orig - 1] != -100
             loss = per.sum() / valid.sum().clamp(min=1)
             return CausalLMOutput(loss=loss, logits=None), per, valid
 

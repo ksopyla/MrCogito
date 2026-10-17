@@ -118,6 +118,8 @@ bash scripts/pull_capability_results.sh odra ~/dev/MrCogito/Cache/study/e30_vs_e
   shown and marked.
 
 ### 7 · The dashboard — the standard visual summary
+Layout and visual rules for every capability board (this one, the text board, future SOTA-eval boards):
+`docs/engineering_specs/capability_boards.md`. The text board is the reference implementation.
 ```bash
 uv run python analysis/capability_board.py      # → docs/3_Evaluations_and_Baselines/capability_board.html
 ```

@@ -248,6 +248,8 @@ def build_pretraining_model(
     """Construct the selected model family and preserve warm-start behavior."""
     if getattr(model_args, "model_family", "auto") == "perceiver_ar":
         return _build_perceiver_ar_model(tokenizer, model_args, data_args)
+    if getattr(model_args, "model_family", "auto") == "a2a":
+        return _build_a2a_model(tokenizer, model_args, data_args)
     if getattr(model_args, "model_family", "auto") == "perceiver_concept":
         return _build_perceiver_concept_model(tokenizer, model_args, data_args)
     if is_backbone:
@@ -421,10 +423,48 @@ def _latent_memory_kwargs(model_args) -> dict:
         return {}
     keys = ("lm_read", "lm_context", "lm_window", "lm_stride", "lm_latents", "lm_latent_dim", "lm_heads",
             "lm_writer_dim", "lm_enc_layers", "lm_rounds", "lm_reader_tokens", "lm_addr", "lm_slot_pos",
-            "message_loop_rounds", "message_loop_exit_aux", "message_loop_exit_targets")
+            "lm_note_age", "lm_note_age_unit", "lm_note_rank_margin", "lm_note_rank_sharp", "message_loop_rounds", "message_loop_exit_aux", "message_loop_exit_targets")
     out = {k: getattr(model_args, k) for k in keys}
     out["message_write"] = "latent_memory"
     return out
+
+
+def _build_a2a_model(tokenizer, model_args, data_args):
+    """E35 — latent messages between agents (nn/latent_messages.py): agent A's writer and token embedding from a
+    notebook checkpoint, agent B from a decoder checkpoint, a fresh transmitter between them."""
+    from nn.latent_messages import build_a2a_from_checkpoints
+
+    req = {}
+    if model_args.a2a_tx_request != "none" or model_args.a2a_loss_on != "all":  # tokens that open a question / answer
+        q_ids = tokenizer.encode("Question", add_special_tokens=False)
+        a_ids = tokenizer.encode("Answer", add_special_tokens=False)
+        if len(q_ids) != 1 or len(a_ids) != 1:
+            raise ValueError(f"request mode needs single-token 'Question' / 'Answer', got {q_ids} / {a_ids}")
+        req = dict(question_token_id=q_ids[0], answer_token_id=a_ids[0])
+        if model_args.a2a_tx_request != "none":
+            req["tx_request"] = model_args.a2a_tx_request
+        if model_args.a2a_loss_on != "all":
+            req.update(loss_on=model_args.a2a_loss_on, end_token_id=tokenizer.encode(".", add_special_tokens=False)[-1])
+    model = build_a2a_from_checkpoints(
+        model_args.a2a_sender_init, model_args.a2a_receiver_init,
+        msg_slots=model_args.a2a_msg_slots, tx_layers=model_args.a2a_tx_layers, tx_dim=model_args.a2a_tx_dim,
+        tx_order=model_args.a2a_tx_order, max_sequence_length=data_args.max_seq_length,
+        tokenizer_name=data_args.tokenizer_name, **req,
+    )
+    if model_args.a2a_freeze_receiver:  # only agent A learns; B keeps its decoder (Cramming-style: a frozen reader)
+        for prm in model.receiver.parameters():
+            prm.requires_grad_(False)
+    if len(tokenizer) != model.receiver.config.vocab_size:
+        raise ValueError(f"tokenizer has {len(tokenizer)} tokens, the receiver {model.receiver.config.vocab_size}")
+    n = sum(p.numel() for p in model.parameters())
+    parts = {k: sum(p.numel() for p in getattr(model, k).parameters()) for k in ("sender_tok", "writer", "transmitter",
+                                                                             "receiver")}
+    logger.info(f"Initializing A2AModel (E35): {n/1e6:.1f}M params "
+                + " ".join(f"{k}={v/1e6:.2f}M" for k, v in parts.items())
+                + f" | K={model.config.msg_slots} tx_layers={model.config.tx_layers} order={model.config.tx_order}"
+                + f" request={model.config.tx_request} loss_on={model.config.loss_on}"
+                + f" frozen_receiver={model_args.a2a_freeze_receiver}")
+    return model, model.config, "a2a_latent_messages"
 
 
 def _build_perceiver_ar_model(tokenizer, model_args, data_args):
@@ -562,6 +602,21 @@ def build_training_wandb_identity(
                 f"backend-{model_args.attn_backend}",
                 resolved_experiment,
             ],
+        )
+    if getattr(model_args, "model_family", "auto") == "a2a":
+        resolved_experiment = experiment_id or "E35"
+        architecture_id = (f"a2a_K{model_args.a2a_msg_slots}_tx{model_args.a2a_tx_layers}_{model_args.a2a_tx_order}"
+                           + ("_req" if model_args.a2a_tx_request != "none" else "")
+                           + ("_ans" if model_args.a2a_loss_on != "all" else "")
+                           + ("_frozenB" if model_args.a2a_freeze_receiver else ""))
+        return WandbRunIdentity(
+            experiment_id=resolved_experiment,
+            model_family="a2a",
+            objective_family="causal_lm",
+            architecture_id=architecture_id,
+            group=f"{resolved_experiment}_{architecture_id}",
+            job_type="train_a2a_latent_messages",
+            tags=["train", "a2a", "latent_messages", "causal_lm", resolved_experiment],
         )
     if getattr(model_args, "model_family", "auto") == "perceiver_ar":
         resolved_experiment = experiment_id or "E18"

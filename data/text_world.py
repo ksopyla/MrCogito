@@ -222,6 +222,11 @@ QUESTIONS = {
     "count": "How many times did {p} visit {v}?",
     "deduce": "Is {p} {v}?",
     "deduce2": "What is {p} like?",
+    # bridge questions (training only, `make_train_document(bridge=…)`)
+    "bridge_teacher": "Who is the teacher of {p}?",
+    "bridge_isa": "What is {p}?",
+    "bridge_cat": "What is a {p}?",
+    "bridge_prop": "What is a {p} like?",
 }
 
 
@@ -354,6 +359,11 @@ class WorldItem:
     # v1: (question, answer) about every cast member of the same world, the asked one first. Training
     # documents may end with several of them (more answer signal per document); never serialized.
     qa: list = field(default_factory=list)
+    # Bridge questions (training only, off by default): the single facts a multi-step answer chains through,
+    # asked on their own — compose "Who is the teacher of Lumo?" → "Pim"; deduce "What is Pim?" → "a wump",
+    # "What is a wump like?" → "shiny". Exams never use them; never serialized. Drawing them uses no random
+    # numbers, so the document itself is unchanged.
+    bridge: list = field(default_factory=list)
 
 
 def _tmpl(rng: random.Random, rel: str, split: str, **kw) -> str:
@@ -426,8 +436,9 @@ def _compose_v1(rng, tsplit, hops, n, cast, letters: bool = False) -> WorldItem:
         for _ in range(hops):
             j = teacher[j]
         qa.append((QUESTIONS[f"teach{hops}"].format(p=cast[i]), places[j]))
+    bridge = [(QUESTIONS["bridge_teacher"].format(p=cast[i]), cast[teacher[i]]) for i in range(n)]
     return WorldItem("compose", QUESTIONS[f"teach{hops}"].format(p=cast[0]), ans, cands, 1.0 / n, facts, cast,
-                     meta={"hops": hops}, qa=qa)
+                     meta={"hops": hops}, qa=qa, bridge=bridge)
 
 
 def _count_v1(rng, tsplit, cast, where, k, numbers: tuple = tuple(NUMBER_WORDS)) -> WorldItem:
@@ -453,7 +464,7 @@ def _deduce_v2(rng, depth, n, cast, cat_split) -> WorldItem:
     guessing rate is 1 / cast size and every other chain is a same-shaped decoy."""
     props = rng.sample(PROPERTIES_V2, n)
     cats = [w.lower() for w in sample_names(rng, n * depth, cat_split, taken=set(cast))]
-    facts, qa = [], []
+    facts, qa, bridge = [], [], []
     for i, c in enumerate(cast):
         chain = cats[i * depth:(i + 1) * depth]
         ev = i == 0
@@ -461,8 +472,11 @@ def _deduce_v2(rng, depth, n, cast, cat_split) -> WorldItem:
         facts += [Fact(f"Every {a} is a {b}.", evidence=ev) for a, b in zip(chain, chain[1:])]
         facts.append(Fact(f"Every {chain[-1]} is {props[i]}.", evidence=ev))
         qa.append((QUESTIONS["deduce2"].format(p=c), props[i]))
+        bridge.append((QUESTIONS["bridge_isa"].format(p=c), f"a {chain[0]}"))
+        bridge += [(QUESTIONS["bridge_cat"].format(p=a), f"a {b}") for a, b in zip(chain, chain[1:])]
+        bridge.append((QUESTIONS["bridge_prop"].format(p=chain[-1]), props[i]))
     return WorldItem("deduce", QUESTIONS["deduce2"].format(p=cast[0]), props[0], list(props), 1.0 / n, facts, cast,
-                     meta={"depth": depth}, qa=qa)
+                     meta={"depth": depth}, qa=qa, bridge=bridge)
 
 
 def build_item(task: str, rng: random.Random, split: str = "train", version: str = TEXT_WORLD_VERSION) -> WorldItem:
@@ -718,13 +732,19 @@ def make_eval_record(task: str, seed: int, split: str, length: int, depth_bin: O
 
 
 def make_train_document(seed: int, stories: list[str], length: int, ntok: Callable[[str], int],
-                        tasks: tuple = TASKS, version: str = TEXT_WORLD_VERSION, questions: int = 1) -> str:
+                        tasks: tuple = TASKS, version: str = TEXT_WORLD_VERSION, questions: int = 1,
+                        bridge: int = 0) -> str:
     """One training world document: a random task at ID dials, question and answer included.
 
     `questions` > 1 (v1): the document ends with up to that many questions about different cast
     members of the same world (the asked one first, then a random sample), each with its answer.
     One answer of ~3 tokens per ~550-token document was too little task signal for a 16M model
-    (lab tier, 2026-10-08); exam documents keep one question."""
+    (lab tier, 2026-10-08); exam documents keep one question.
+
+    `bridge` > 0 (v2 compose / deduce, 2026-10-16): up to that many bridge questions follow the task's own
+    questions — the single steps of the chain asked on their own ("Who is the teacher of Lumo?"), placed
+    after every multi-step question so none of them can read its bridge from an answer above it. Other
+    tasks, and `bridge` = 0, give the same bytes as before."""
     rng = random.Random(seed)
     task = rng.choice(tasks)
     item = build_item(task, rng, "train", version)
@@ -734,5 +754,9 @@ def make_train_document(seed: int, stories: list[str], length: int, ntok: Callab
         qrng = random.Random(seed ^ 0x5EED)  # separate stream: the document itself is unchanged
         qrng.shuffle(more)
         extra = "".join(f"{qa_suffix(q)} {a}." for q, a in more[: questions - 1])
+    if bridge > 0 and item.bridge:
+        pool = list(item.bridge)
+        random.Random(seed ^ 0xB81D6E).shuffle(pool)  # separate stream again
+        extra += "".join(f"{qa_suffix(q)} {a}." for q, a in pool[:bridge])
     prompt, _ = assemble(item, stories, max(64, length - (ntok(extra) if extra else 0)), ntok, rng, version=version)
     return prompt + answer_text(item) + extra

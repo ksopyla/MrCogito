@@ -16,6 +16,8 @@ def checkpoint_family(checkpoint: str) -> str:
     fam = cfg.get("checkpoint_family") or cfg.get("model_type") or "perceiver_ar"
     if fam.startswith("perceiver_concept"):
         return "perceiver_concept"
+    if fam.startswith("a2a"):
+        return "a2a"
     return "perceiver_ar"
 
 
@@ -23,6 +25,17 @@ def load_perceiver_lm(checkpoint: str, device: str, attn_backend: str | None = N
     """Instantiate the right family from `checkpoint`, move to `device`, eval mode. bf16 on CUDA
     unless `dtype` is given."""
     fam = checkpoint_family(checkpoint)
+    if fam == "a2a":  # E35: two agents in one checkpoint; the receiver keeps its saved backend (short inputs, SDPA)
+        from nn.latent_messages import A2AConfig, A2AModel
+
+        cfg = A2AConfig.from_pretrained(checkpoint)
+        model = A2AModel.from_pretrained(checkpoint, config=cfg)
+        model.to(device).eval()
+        if dtype is not None:
+            model.to(dtype)
+        elif str(device).startswith("cuda"):
+            model.to(torch.bfloat16)
+        return model
     if fam == "perceiver_concept":
         from nn.perceiver_concept_lm import PerceiverConceptConfig as Cfg, PerceiverConceptLM as Model
     else:

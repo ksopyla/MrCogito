@@ -38,6 +38,7 @@ never bother to use the notebook.**
 | **ablation** | break one part on a trained model and re-measure. The drop is that part's contribution. |
 | **probe** | a small targeted test run after training (e.g. hide a password, ask for it later). |
 | **closed-window read** (E31c) | the text rule for the notebook: each word may look up the notes of every page that is already finished (closed), plus the last 256 words verbatim. On the exams it gives the answer exactly the notes the question-only rule gave. |
+| **page distance** (E33d) | how many pages back a note was written, counted from the word that is reading it. E33d lowers each note's lookup score by a per-head amount times the log of this distance; a head can prefer newer notes, older notes, or ignore age. Content matching is unchanged. |
 | **reader-relative slot keys** (E31c) | notes carry no page number in the lookup; every note is matched by content, as if it sat right next to the reader. The text form of E31's "all notes at the question" trick. |
 | **teacher-forced** | the model is shown the correct previous words while scoring. Easy mode; flatters memory. |
 | **free-run / generation** | the model writes from its own output. Hard mode; where weak models fall apart. |

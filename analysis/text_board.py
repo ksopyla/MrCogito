@@ -25,14 +25,15 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from analysis.text_board_notes import (CLAIMS, LADDER, NAMES, PROTOCOL_LOG, ROUNDS, SCOREBOARD, STATUS,  # noqa: E402
-                                       SUPERSEDED)
+from analysis.text_board_notes import (ARCHS, CHANGES, CLAIMS, DECISIONS, LADDER, NAMES, PROTOCOL_LOG,  # noqa: E402
+                                       ROUNDS, SCOREBOARD, STATUS, SUPERSEDED)
 from analysis.text_checks_scorecard import LEVEL, analyse, learned_cell  # noqa: E402
 from evaluation.text_checks import (FRONTIER_TASKS, GATING_TASKS, PASS, TEXT_CHECKS_VERSION, TIERS,  # noqa: E402
                                     effective_floor, far_near, headline)
@@ -40,7 +41,8 @@ from evaluation.text_checks import (FRONTIER_TASKS, GATING_TASKS, PASS, TEXT_CHE
 LEDGER_DIR = ROOT / "docs" / "2_Experiments_Registry" / "results" / "capability" / "text"
 OUT = ROOT / "docs" / "3_Evaluations_and_Baselines" / "text_capability_board.html"
 TASKS = list(GATING_TASKS) + list(FRONTIER_TASKS)
-ORDER = ["dense", "local", "e31c", "e31c_loop", "dense_plain", "local_plain", "e31c_plain", "e31c_loop_plain"]
+ORDER = ["dense", "local", "e31c", "e31c_loop", "e33d", "dense_plain", "local_plain", "e31c_plain", "e31c_loop_plain",
+         "e33d_plain"]
 # Task guide, as of data v2 (2026-10-10: every guessing rate below 10 %; the v1 values, used by the 30M round of
 # 9-10 Oct, are in brackets; the v0 differences are in the spec)
 GUIDE = {
@@ -69,6 +71,19 @@ GUIDE = {
                "Every wump is a tove. Every tove is shiny.), twelve chains ending in twelve properties; the "
                "question asks what Pim is like. Guessing: 8 % [v1 asked yes/no: 50 %]. Frontier: reported, "
                "not gating."),
+}
+
+# One short illustrative example per task (the shape of an exam item, not its exact template).
+EXAMPLES = {
+    "quote": ("… Ana's sign said: the old red door is open. …", "What did Ana's sign say?", "the old red door is open."),
+    "lookup": ("… Ana lives in Brindle. … Bo lives in Corvo. …", "Where does Ana live?", "Brindle."),
+    "keyed": ("… Ana lives in Brindle. … Ane lives in Corvo. …", "Where does Ane live?", "Corvo."),
+    "latest": ("… Ana moved to Brindle. … Ana moved to Corvo. … Bo moved to Dell.", "Where is Ana now?", "Corvo."),
+    "compose": ("… Ana's teacher is Bo. … Bo's teacher is Cid. … Cid lives in Dell. …",
+                "Where does the teacher of Ana's teacher live?", "Dell."),
+    "count": ("… Ana visited the mill. … Ane visited the mill. … Ana visited the mill. …",
+              "How many times did Ana visit the mill?", "two."),
+    "deduce": ("… Pim is a wump. … Every wump is a tove. … Every tove is shiny. …", "What is Pim like?", "shiny."),
 }
 
 
@@ -147,11 +162,14 @@ def _round(led: dict) -> dict:
         "steps": any_train.get("steps"), "cap_gpu_h": any_train.get("cap_gpu_hours"), "n_gpus": any_train.get("n_gpus"),
         "lengths": (next(iter(evals.values()), {}).get("lengths") or (list(t.eval_lengths) if t else [])),
     }
-    return {"id": led["_id"], "notes": ROUNDS.get(led["_id"], {}), "budget": budget, "models": models,
+    lad = next((r for r in LADDER if r.get("id") == led["_id"]), {})
+    notes = ROUNDS.get(led["_id"]) or {"title": lad.get("run", led["_id"]), "dates": lad.get("when", ""),
+                                       "verdict": lad.get("result", "")}
+    return {"id": led["_id"], "notes": notes, "budget": budget, "models": models,
             "calibrated": calibrated, "collected": led.get("collected")}
 
 
-FAMILIES = {"dense": ("dense_plain",), "e31c": ("e31c_plain",), "e33": ("e31c_loop_plain",)}
+FAMILIES = {"dense": ("dense_plain",), "e31c": ("e31c_plain",), "e33": ("e31c_loop_plain",), "e33d": ("e33d_plain",)}
 
 
 def _h(cells: dict, split: str, task: str, L: int) -> dict | None:
@@ -194,23 +212,33 @@ def scoreboard(ledgers: list[dict]) -> dict:
                 for c in by_len.values():
                     floors[task] = c.get("floor")
                 done = st in ("done", "over_budget") and evals.get(arch) == "done" and by_len
-                entry = {"run": rid, "seed": seed or 0,
+                job = next((j for j in led["jobs"] if j.get("arch") == arch and j.get("kind") == "train"), {})
+                wall = (job.get("active_seconds") or 0) / 3600
+                entry = {"run": rid, "seed": seed or 0, "story": ms[0].get("story_loss") if ms else None,
+                         "wall_h": wall or None, "gpu_h": (wall * (job.get("n_gpus") or 1)) or None,
                          "state": "done" if done else ("blocked" if rid in blocked else
                                                        "running" if st in ("running", "done") else "queued")}
                 if done:
                     lmax = max(by_len)
                     h4, hmax, h1 = _h(cells, "id", task, 4096), _h(cells, "id", task, lmax), _h(cells, "id", task, 1024)
                     para = _h(cells, "paraphrase", task, 4096)
+                    crowd = _h(cells, "crowded", task, 4096)
                     entry.update(at4k=(h4 or {}).get("score"), se4k=(h4 or {}).get("se"), learned4k=(h4 or {}).get("learned"),
                                  near4k=(h4 or {}).get("near"), all4k=(h4 or {}).get("all"), kind=(h4 or {}).get("kind"),
                                  atmax=(hmax or {}).get("score"), learnedmax=(hmax or {}).get("learned"), lmax=lmax,
                                  at1k=(h1 or {}).get("score"), para4k=(para or {}).get("score"),
-                                 learned_para=(para or {}).get("learned"))
+                                 learned_para=(para or {}).get("learned"),
+                                 crowd4k=(crowd or {}).get("score"), learned_crowd=(crowd or {}).get("learned"),
+                                 learned1k=(h1 or {}).get("learned"))
                 out[setup].setdefault(task, {}).setdefault(fam, []).append(entry)
-    # queued single-task work that has no run folder yet
-    for task in SCOREBOARD.get("single_queue", []):
+    # queued work that has no run folder yet: single-task runs by task; whole families of a setup (every task)
+    for task in SCOREBOARD.get("single_queue", []) if "single" in out else []:
         for fam in FAMILIES:
             out["single"].setdefault(task, {}).setdefault(fam, []) or out["single"][task][fam].append({"state": "queued"})
+    for key, fams in SCOREBOARD.get("queued", {}).items():
+        for task in TASKS:
+            for fam in fams:
+                out[key].setdefault(task, {}).setdefault(fam, []) or out[key][task][fam].append({"state": "queued"})
     # leader per (setup, task) at the 4k training length, where every model is inside its training range: the best
     # seed's headline score, if learned (clearly above the effective floor) and ahead of the next family by more than
     # 5 points and 2 combined standard errors. Flags: one seed only; dense never learned the task (uncalibrated).
@@ -242,9 +270,10 @@ def scoreboard(ledgers: list[dict]) -> dict:
             leaders[f"{setup}|{task}"] = info
             readers[f"{setup}|{task}"] = [f for f, es in done.items()
                                           if any(e.get("learnedmax") and (e.get("lmax") or 0) > 4096 for e in es)]
-    return {"setups": SCOREBOARD["setups"], "cells": out, "floors": floors,
+    setups = [{**st, "families": st.get("families") or ["dense", "e31c", "e33"]} for st in SCOREBOARD["setups"]]
+    return {"setups": setups, "cells": out, "floors": floors,
             "eff_floors": {t: effective_floor(t, f) for t, f in floors.items()}, "leaders": leaders, "readers": readers,
-            "families": {"dense": "Dense", "e31c": "E31c notebook", "e33": "E33 loop"}}
+            "families": {"dense": "Dense", "e31c": "E31c notebook", "e33": "E33 loop", "e33d": "E33d page distance"}}
 
 
 def main() -> int:
@@ -253,7 +282,7 @@ def main() -> int:
     p.add_argument("--out", default=str(OUT))
     a = p.parse_args()
     ledgers = load_ledgers(Path(a.ledger_dir))
-    rounds = [_round(led) for led in ledgers if led["_id"] in ROUNDS]
+    rounds = [r for r in (_round(led) for led in ledgers if led["_id"] in ROUNDS or led.get("models")) if r["models"]]
     # each run's standing (in use / calibration / history …), why, start date and exams version, from the run list
     standing = {r["id"]: r for r in LADDER if r.get("id")}
     for r in rounds:
@@ -268,13 +297,15 @@ def main() -> int:
     if mixed:
         models = []
         for r in mixed:
+            seed = re.search(r"_s(\d+)_", r["id"])
             for m in r["models"]:
                 m = dict(m)
-                if "_s1_" in r["id"]:
-                    m["name"], m["color"] = m["name"] + " · seed 1", "--s2"
+                if seed:  # several runs of one model: one colour per architecture, one dash per seed
+                    m["name"] = m["name"] + f" · run {int(seed[1]) + 1}"
+                    m["dash"] = ("", "6 3", "2 3")[int(seed[1]) % 3]
                 models.append(m)
         combo = {**mixed[-1], "id": "combined_mixed_plain", "models": models,
-                 "notes": {"title": "Main comparison: mixed training, plain input — dense (2 seeds), E31c, E33 loop"}}
+                 "notes": {"title": "Main comparison — " + SCOREBOARD["setups"][0]["title"]}}
         chart_rounds = [combo] + chart_rounds
     jobs = [{**j, "run": led["_id"]} for led in ledgers for j in led.get("jobs", [])]
     # calibration side: tiny pipeline runs, step-size tuning, data builds, superseded rounds
@@ -293,7 +324,10 @@ def main() -> int:
     data = {
         "generated": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "version": TEXT_CHECKS_VERSION, "pass": PASS, "status": STATUS, "ladder": LADDER, "scoreboard": scoreboard(ledgers),
-        "claims": CLAIMS, "protocol_log": PROTOCOL_LOG,
+        "claims": CLAIMS, "protocol_log": PROTOCOL_LOG, "decisions": DECISIONS, "archs": ARCHS, "changes": CHANGES,
+        "examples": EXAMPLES,
+        "exam_runs": {v: sum(1 for r in LADDER if r.get("data") == v and r.get("id")) for v in
+                      sorted({r.get("data") for r in LADDER if r.get("data")})},
         "tasks": TASKS, "gating": list(GATING_TASKS), "levels": LEVEL, "guide": GUIDE,
         "rounds": rounds, "chart_rounds": chart_rounds, "pipeline": pipeline, "tuning": tuning, "data_builds": data_builds, "superseded": superseded,
         "sources": [{"file": led["_file"], "run": led["_id"], "collected": led["collected"],
