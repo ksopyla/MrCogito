@@ -73,7 +73,9 @@ def chain_of(item, rec) -> dict | None:
             chain.append(teacher[chain[-1]])
         facts = [teach_fact[chain[r]] for r in range(len(chain) - 1)] + [home_fact[chain[-1]]]
         student = next((s for s, t in teacher.items() if t == cast[0]), None)
-        return {"facts": facts, "bridges": chain[1:], "asked": cast[0], "names": list(cast),
+        groups = {"own_home": [home_fact[cast[0]]], "all_homes": sorted(home_fact.values()),
+                  "all_teacher_facts": sorted(teach_fact.values())}
+        return {"facts": facts, "groups": groups, "bridges": chain[1:], "asked": cast[0], "names": list(cast),
                 "answer": home[chain[-1]], "answers": places, "own": home.get(cast[0]),
                 "reverse": home.get(student) if student else None,
                 "one_hop": home.get(chain[1]) if len(chain) > 2 else None,
@@ -100,10 +102,12 @@ def chain_of(item, rec) -> dict | None:
             cur = m.group(1)
             chain.append(cur)
         props = list(item.candidates)
+        groups = {"all_isa": [i for i, t in enumerate(texts) if re.fullmatch(r"[A-Z]\w* is a \w+\.", t)],
+                  "all_props": [i for i, t in enumerate(texts) if t.startswith("Every ") and " is a " not in t]}
         steps = [(qa_suffix(f"What is {item.cast[0]}?"), f"a {cat}", [f"a {c}" for c in cats])]
         if len(chain) == 1:
             steps.append((qa_suffix(f"What is a {cat} like?"), item.answer, props))
-        return {"facts": facts, "bridges": chain, "asked": item.cast[0], "names": list(item.cast),
+        return {"facts": facts, "groups": groups, "bridges": chain, "asked": item.cast[0], "names": list(item.cast),
                 "bridge_pool": cats, "answer": item.answer, "answers": props, "steps": steps}
     if item.task == "count":
         return {"facts": [i for i, f in enumerate(item.facts) if f.evidence], "count": int(item.meta["count"])}
@@ -166,19 +170,20 @@ def first_shares(logits, q: int, tok, prompt: str, p_ids, cands: list[str]) -> d
 @torch.no_grad()
 def whole_scores(model, rec, tok, prompt: str, p_ids, cands: list[str], gold: str, device, capture: bool):
     """Sum of log-probabilities of each whole candidate string; the gold one's share; the note mass at the answer."""
-    lp, mass = [], []
+    lp, mass, calls = [], [], None
     q = len(p_ids)
     for c in cands:
         a = _answer_ids(tok, prompt, f" {c}.", p_ids)
-        logits, m, _ = forward(model, rec, [tok.bos_token_id] + p_ids + a, q, device, capture and not mass)
+        logits, m, cl = forward(model, rec, [tok.bos_token_id] + p_ids + a, q, device, capture and not mass)
         mass = mass or m
+        calls = calls if calls is not None else cl  # the answer position precedes the candidate: same state
         lsm = torch.log_softmax(logits[q: q + len(a)], -1)
         lp.append(float(lsm[torch.arange(len(a)), torch.tensor(a)].sum()))
     t = torch.tensor(lp)
     share = torch.softmax(t, -1)
     g = cands.index(gold)
     return {"pick": int(t.argmax()) == g, "share": float(share[g]), "chance": 1.0 / len(cands),
-            "pred": cands[int(t.argmax())]}, mass
+            "pred": cands[int(t.argmax())], "_calls": calls}, mass
 
 
 # ------------------------------------------------------------------------------------------ note mass
@@ -298,7 +303,7 @@ def main():
             items.append(r)
     print(f"{len(items)} items: " + ", ".join(f"{k}={v}" for k, v in sorted(seen.items())), flush=True)
 
-    rows, states, skipped, t0 = [], [], defaultdict(int), time.time()
+    rows, states, direct, skipped, t0 = [], [], [], defaultdict(int), time.time()
     labels = None
     for n_done, r in enumerate(items):
         item = build_item(r["task"], random.Random(r["seed"]), r["split"], a.version)
@@ -320,6 +325,7 @@ def main():
         if r["task"] == "count":
             s, _ = whole_scores(model, rec, tok, prompt, p_ids, [c[1:-1] for c in r["candidates"]], item.answer,
                                 device, False)
+            s.pop("_calls", None)
             stride = int(getattr(cfg, "lm_stride", 192) or 192)
             strides = [sp[0] // stride for sp in spans]
             row.update(count=ch["count"], pred=s["pred"], right=s["pick"], strides=len(set(strides)),
@@ -343,6 +349,13 @@ def main():
             psets = [pages_of(s_, geo.starts, geo.window) for s_ in spans]
             row["d1"] = mass_on(mass, psets, per_page, heads)
             row["fact_pages"] = [sorted(ps) for ps in psets]
+            gnames = list(ch.get("groups", {}))
+            if gnames:
+                gsp = [token_spans(tok, prompt, [item.facts[i].text for i in ch["groups"][g]]) for g in gnames]
+                gsets = [set().union(*(pages_of(x, geo.starts, geo.window) for x in sp_ if x)) for sp_ in gsp]
+                row["d1_groups"] = {g: [{"mass": rr["facts"][k], "uniform": rr["chance"][k]}
+                                        for rr in mass_on(mass, gsets, per_page, heads)]
+                                    for k, g in enumerate(gnames)}
         # D3: the single steps on the same document (one-step items only)
         if (r["task"] == "compose" and row["hops"] == 1) or (r["task"] == "deduce" and row["hops"] == 1):
             row["d3"] = []
@@ -350,6 +363,12 @@ def main():
                 sp = body + suffix
                 sp_ids = tok.encode(sp, add_special_tokens=False)
                 s, m = whole_scores(model, rec, tok, sp, sp_ids, pool, gold, device, memory)
+                cl = s.pop("_calls")
+                if j == 0:  # positive control for D2: the bridge where the model is asked for it directly
+                    pool_b = ch.get("bridge_pool", ch["names"])
+                    direct.append({"task": r["task"], "X": torch.stack([x for _, x in cl]),
+                                   "targets": {"bridge1": (torch.stack([name_vec(model, tok, c) for c in pool_b]),
+                                                           pool_b.index(ch["bridges"][0]))}})
                 if memory:  # the mass was captured on the first candidate's row
                     geo2 = lm_geometry(cfg, 1 + len(sp_ids) + len(_answer_ids(tok, sp, f" {pool[0]}.", sp_ids)))
                     ps2 = [pages_of(s_, geo2.starts, geo2.window) for s_ in spans]
@@ -406,6 +425,10 @@ def main():
                         "chance": [mean([x["d1"][k]["chance"][j] for x in rs]) for j in range(nf)],
                         "top": [mean([float(x["d1"][k]["top"] == j) for x in rs]) for j in range(nf)]}
                        for k in range(nr)]
+        if memory and rs and rs[0].get("d1_groups"):
+            c["d1_groups"] = {g: [{"mass": mean([x["d1_groups"][g][k]["mass"] for x in rs]),
+                                   "uniform": mean([x["d1_groups"][g][k]["uniform"] for x in rs])}
+                                  for k in range(len(rs[0]["d1_groups"][g]))] for g in rs[0]["d1_groups"]}
         if rs and rs[0].get("d3"):
             c["d3"] = []
             for j in range(len(rs[0]["d3"])):
@@ -420,8 +443,8 @@ def main():
         cells.append(c)
 
     probes = {}
-    for task in ("compose", "deduce"):
-        st = [s for s in states if s["task"] == task]
+    for task, st in [(t, [s for s in states if s["task"] == t]) for t in ("compose", "deduce")] + \
+            [(f"{t}_asked_directly", [s for s in direct if s["task"] == t]) for t in ("compose", "deduce")]:
         if len(st) < 30:
             continue
         X = torch.stack([s["X"] for s in st])  # [N, calls, d]
@@ -465,6 +488,8 @@ def _print(res):
             print(f"   D1 round {k + 1}: notes {f(d['notes'])} | " + " | ".join(
                 f"fact{j + 1} {f(d['facts'][j])} (uniform {f(d['chance'][j])}, top {f(d['top'][j])})"
                 for j in range(len(d["facts"]))))
+        for g, ds in (c.get("d1_groups") or {}).items():
+            print(f"   D1 {g}: " + " | ".join(f"r{k + 1} {f(d['mass'])} (uniform {f(d['uniform'])})" for k, d in enumerate(ds)))
         for j, d in enumerate(c.get("d3") or []):
             print(f"   D3 step {j + 1}: pick {f(d['pick'])} share {f(d['share'])} chance {f(d['chance'])}")
             for k, e in enumerate(d.get("d1") or []):
