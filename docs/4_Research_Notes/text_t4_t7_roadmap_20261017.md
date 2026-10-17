@@ -117,7 +117,16 @@ second seed (capability-testing session, DNA ladder).
   - a property-word probe ≥ 50 % (now 11 %).
 - **Kill:** far lookup falls more than 10 points.
 
-### 4.3 Query from the read (T5 → 70 %, T7; idea 7), owner: the multi-hop session (E33r), offered
+### 4.3 Query from the read (T5 → 70 %, T7; idea 7), owner: this session (E33q), agreed with the multi-hop session
+- **Built (17 Oct, E33q):**
+  - After each non-final round, its state is read through the shared final norm and LM head, with the decoder
+    weights detached.
+  - Naming loss, training only, weight 0.3: at each question's decision position, round r must name hop r's output
+    word, all of its pieces (spans of at most 4 tokens).
+  - Feedback: the distribution, re-embedded with the shared token table and input layer, joins round r+1 through a
+    gate that starts at 0.
+  - Warm start from E33r on the output-span data, page-level read target kept.
+  - Kill at mid-run: compose < 60 % or lookup < 65 % at 4k, or lookup < 75 % at 16k.
 - **Change.** Round r's read output goes through the LM head to a soft token distribution, which the shared token
   embedding turns back into a vector. That vector is added to round r+1's query input through a gate that starts
   at 0.
