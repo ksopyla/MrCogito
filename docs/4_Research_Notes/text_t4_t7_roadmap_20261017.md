@@ -82,8 +82,14 @@ second seed (capability-testing session, DNA ladder).
   strengths climbed to 0.15 and fell back to 0.09. With heads at several fixed strengths the network picks the
   right head downstream, which is the same logic as ALiBi.
 - **Tests.**
-  - (a) No training, 20 minutes: E33e run 1 and E33r with the per-head pattern, on fresh development items.
-  - (b) Warm start from E33r, 0.3B tokens of its recipe, plus the order heads.
+  - (a) No training, done 17 Oct 18:20–18:35 UTC on Odra: E33r with the order term, exam set, 200 items per cell.
+    - Strength 2 on every head: latest at 4k 20 → 28 %, at 16k 2 → 7 %; far lookup at 16k 87 → 76 %, compose at
+      4k 60 → 50 %.
+    - Four order heads (1, 2, 4, 8): latest 24 / 4 %; lookup and compose within 2 points except lookup at 16k
+      (87 → 81 %).
+    - Much weaker than the same check on E33 run 1 (5 → 41 % at 16k). E33r's note scores were not trained to be
+      counted, so only training can show whether order heads work.
+  - (b) E33g: warm start from E33r, 0.3B tokens of its recipe, plus the order heads (Odra GPUs 0–1).
 - **Pass:**
   - latest ≥ 60 % at 4k and ≥ 40 % at 16k;
   - compose and far lookup within 5 points of E33r.
@@ -124,11 +130,15 @@ second seed (capability-testing session, DNA ladder).
 - **Then:** the model's own decoded first hop, tagged as its own output.
 
 ### 4.5 Summing read (T6), owner: this session (no other capacity)
-- **Change.** Two of the nine note-read heads use sigmoid weights with a learned bias and no normalisation:
-  out = Σ σ(q·k + b)·v.
-- **Also:** an always-visible "nothing" note, so that attention mass means "how many".
-- **Training signal:** an auxiliary count head on count questions only, which uses the true count the generator
-  knows and is annealed to 0 by the last 40 % of training.
+- **Change.** Count heads beside the read use sigmoid weights with a learned bias and no normalisation. They sum
+  the gates, n = Σ σ(a·q·k + b), instead of averaging values.
+- **Training signal:** the count answer's own token loss reaches the gates through the projection. No auxiliary
+  label is needed at first; an auxiliary loss on the true count the generator knows is the fallback.
+- **Built (17 Oct):** `lm_count_heads` (E33h: E33r + 2 count heads). Each head has its own query from the read
+  layer's input and uses the notes' keys and the layer's raw keys. Every token is counted once: a page owns its first
+  192 tokens, and tokens no closed page owns yet are counted from the raw keys. The sum is coded as a soft one-hot
+  over 0..10 and added through a zero projection. Tests cover a brute-force reference and once-only counting across
+  a page close.
 - **Test.** Warm start from E33r, 0.3B tokens.
 - **Pass:** count ≥ 50 % at 4k (dense's best); then 70 % in the combined model.
 - **Kill:** count ≤ 35 % at 4k.

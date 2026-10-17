@@ -35,6 +35,14 @@ STATUS = {
                 "runs). New: E33 told in training where each loop round should read (E33r) joined two facts for the "
                 "first time, two-step compose 60 % at 4k, one run.",
     "where": [
+        "Goal set by the author (17 Oct): 70 % exact on T4-T7 with a notebook model. Roadmap agreed with the other "
+        "sessions (research note text_t4_t7_roadmap_20261017): order heads for latest and a summing read for count "
+        "(this session, Odra); hop supervision plus a content objective for compose and deduce (multi-hop session, "
+        "Polonez); decode-and-append and the writer signal (agent-memory sessions).",
+        "Order term on E33r without training (Odra, 17 Oct 18:20-18:35 UTC, 200 items per cell): latest at 4k 20 → 28 % "
+        "with strength 2 on every head, 24 % with four order heads (1, 2, 4, 8); at 16k 2 → 7 / 4 %. Far lookup and "
+        "compose lose up to 11 points with every head ranked, about nothing with four order heads. Much weaker than the "
+        "same check on E33 run 1 (5 → 41 % at 16k): E33r's scores were not trained to be counted. Training decides.",
         "Two-step questions, first success (E33r, Polonez, 17 Oct 08:27-12:12 UTC, E33 session): E33 on the bridge "
         "data, continued 0.3B tokens with each loop round's read pushed in training onto the page holding the next "
         "fact of the chain (no hint at exam time). Two-step compose (\"Where does the teacher of X live?\") 30 / 60 / "
@@ -138,8 +146,8 @@ STATUS = {
         "story; latest's floor is 20 %; dense is not compared past 4k. Nothing had to be retrained.",
     ],
     "next": [
-        "E33r: a second run, and the same read target with notes that keep property words (deduce).",
-        "Latest: E33e's strengths never grew from 0; start them non-zero, or fix the strength (decision below).",
+        "Odra: E33g (order heads) then E33h (count heads), 0.3B-token warm starts from E33r, about 1.5 h each.",
+        "Polonez (multi-hop session): E33rb and dense on the reasoning data; then the content fix for deduce.",
         "Before the AWS run: the changes in section 14 of the E33 page (exit-loss cost, far-recall data from step 0, a "
         "switch-on detector, a compute-matched loop check).",
         "Open for the author: whether to start the notebook-proportions sweep; give E33 more tokens or keep the "
@@ -233,6 +241,14 @@ PROTOCOL_LOG = [
 # Claims register: every conclusion we have drawn, with its state. holds = repeated or overwhelming within its runs;
 # single run = one run, needs a second; open = not testable yet; retracted = disproved (kept, with the date).
 CLAIMS = [
+    {"claim": "Fixed order heads (rank among matching notes) let a notebook model learn latest.", "state": "open",
+     "since": "2026-10-17",
+     "evidence": "Learned strengths from 0 never grew (E33d 0.14, E33e 0.15 then 0.09). Without training a strength "
+                 "of 2 took E33 run 1 from 5 to 41 % at 16k, but E33r only from 20 to 28 % at 4k (2 → 7 % at 16k).",
+     "settle": "E33g (Odra): latest ≥ 60 % at 4k after a 0.3B warm start, compose and far lookup within 5 points."},
+    {"claim": "A summing read (count heads) lets a notebook model count.", "state": "open", "since": "2026-10-17",
+     "evidence": "A softmax read averages: every notebook run is at 22-33 % on count at 4k, dense 50 % at best.",
+     "settle": "E33h (Odra): count ≥ 50 % at 4k after a 0.3B warm start."},
     {"claim": "At 30M and 0.5B tokens, a learned 16-vector message from agent A's notebook carries no facts to agent B.",
      "state": "holds", "since": "2026-10-16",
      "evidence": "E35 round 1 on Polonez, one run each: broadcast, steered by B's question, and B frozen with the loss on "
@@ -602,6 +618,33 @@ LADDER = [
                "lookup 74 / 93 %, keyed 70 / 92 %; near facts and latest unchanged (latest at 1k 15 %). Story loss 1.498.",
      "when": "16 Oct 23:23 → 17 Oct ~03:00",
      "why": "Does more split training close the near-fact gap and carry quotes?"},
+    {"id": None, "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "running",
+     "run": "E33rb, read target + read-back (Polonez GPUs 0-1, multi-hop session)",
+     "model": "E33r + zero-init note read-back 0.1 · 30M, plain", "tokens": "0.3B continuation", "exams": "v2 + v2.1",
+     "result": "—", "when": "17 Oct from 18:24 UTC, about 3 h with exams",
+     "why": "Deduce: do the notes keep the property word (probe 11 %) without losing places?"},
+    {"id": None, "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "running",
+     "run": "Dense on the reasoning data (Polonez GPUs 2-3, multi-hop session)",
+     "model": "dense · 30M, plain, from the bridge-data dense", "tokens": "0.3B continuation", "exams": "v2 + v2.1",
+     "result": "—", "when": "17 Oct from 18:24 UTC, about 3 h with exams",
+     "why": "Is deduce learnable at 30M with this data when every fact is visible? Sets the ceiling for T5/T7."},
+    {"id": None, "start": "2026-10-17", "data": "v2", "standing": "running",
+     "run": "Decode-and-append oracle (Odra GPU 2, agent-memory session)",
+     "model": "E33r and E33 bridge, no training", "tokens": "none", "exams": "compose / deduce, 4k and 16k, 150 per cell",
+     "result": "—", "when": "17 Oct from about 18:30 UTC, about 30 min",
+     "why": "Idea 4: with the first hop written into the document, can the second hop reach 70 %?"},
+    {"id": None, "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "queued",
+     "run": "E33g, order heads (Odra GPUs 0-1)",
+     "model": "E33r + four fixed order heads (rank among matching notes at 1, 2, 4, 8) · 30M, plain",
+     "tokens": "0.3B continuation from E33r", "exams": "v2 + v2.1, 1k-16k",
+     "result": "—", "when": "17 Oct, after the reasoning data reaches Odra; about 1.5 h with exams",
+     "why": "T4: order as a separable score term that cannot fade. Pass: latest ≥ 60 % at 4k, compose and far lookup "
+            "within 5 points of E33r. Kill: latest ≤ 30 % at 4k."},
+    {"id": None, "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "queued",
+     "run": "E33h, count heads (Odra)", "model": "E33r + two count heads (a summing read) · 30M, plain",
+     "tokens": "0.3B continuation from E33r", "exams": "v2 + v2.1, 1k-16k",
+     "result": "—", "when": "after E33g",
+     "why": "T6: add matches up instead of averaging them. Pass: count ≥ 50 % at 4k (dense's best). Kill: ≤ 35 %."},
     {"id": "reason_e33x_s0.polonez", "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "in use",
      "run": "E33x, loop exits on answers (Polonez)", "model": "E33 bridge warm start, loop exit losses off · 30M, plain",
      "tokens": "0.3B continuation (1,787 steps)", "exams": "v2 + v2.1, 1k-16k",
@@ -957,8 +1000,8 @@ GOAL = {"set": "2026-10-17", "target": 0.70, "tasks": ["latest", "compose", "cou
 DECISIONS = [
     "Make E31c (notebook, no loop) the main line? It switched on in 3 of 3 runs at a third of E33's training time.",
     "Start the notebook-proportions sweep (approved in principle 14 Oct) — on E31c instead of E33?",
-    "Latest: E33d and E33e both failed because their order strengths start at 0 and never grow. Retrain one of "
-    "them from a non-zero start, or with the strength fixed?",
+    "The from-scratch confirmation, once three of the four bets pass their warm-start tests: the combined model, "
+    "3 seeds at 1.5B tokens (about 7 h × 3 GPUs each), with the writer reading the decoder's full input layer?",
 ]
 
 # One entry per architecture family compared on the board: plain name, what it is in one line, the standing analogy
