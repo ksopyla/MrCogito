@@ -203,18 +203,17 @@ ARCHES = {
     "e33f": Arch("e33f", "E33 in split mode: each question reads its document only through the notes",
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.3,
                   "message_loop_exit_targets": "answer", "message_boundary_token": "Question"}, has_notebook=True),
-    # Text multi-hop fixes (2026-10-17; note e33_text_multihop_diagnosis_20261017.md). Both need data built with
-    # --train_read_targets (each question's answer position, and per read round the fact it chains through).
-    # E33x: the loop's exits score only the first answer token of every question (the decision), not every story token.
-    "e33x": Arch("e33x", "E33 with loop exits on answers only",
-                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.3,
-                  "message_loop_exit_targets": "answer", "message_loop_exit_mask": "answers"}, has_notebook=True),
-    # E33r: E33x + a per-round read target — round r of a compose / deduce answer is pushed to read fact r (its raw
-    # tokens or the notes of its pages); also the single-step questions (bridges, lookup, keyed, quote) on round 1.
-    "e33r": Arch("e33r", "E33 with answer-only exits and a per-round read target",
-                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.3,
-                  "message_loop_exit_targets": "answer", "message_loop_exit_mask": "answers",
-                  "message_loop_read_aux": 0.5}, has_notebook=True),
+    # Text multi-hop fixes (2026-10-17; note e33_text_multihop_diagnosis_20261017.md).
+    # E33x: E33 with the loop's exit losses off. Every round's exit asked for the final answer (on every token), which
+    # makes the rounds interchangeable and, on a two-step question, asks round 1 for an answer it cannot have read yet.
+    "e33x": Arch("e33x", "E33 with the loop's exit losses off",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0}, has_notebook=True),
+    # E33r: E33x + a per-round read target (needs data built with --train_read_targets): round r of a compose / deduce
+    # answer is pushed to read fact r (its raw tokens or the notes of its pages); single-step questions (bridges,
+    # lookup, keyed, quote) on round 1.
+    "e33r": Arch("e33r", "E33 with exits off and a per-round read target",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5},
+                 has_notebook=True),
 }
 # Plain-input variants (2026-10-10): the same models without the word-pair/triple hash tables and value
 # embeddings. Dense with plain input learned quote, lookup, keyed and latest at 30M / 1.5B tokens on v2, where
