@@ -246,6 +246,16 @@ ARCHES = {
     "e33q": Arch("e33q", "E33r + rounds name their hop and pass the name to the next round's question",
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
                   "message_loop_name_lens": 0.3, "message_loop_feedback": "soft"}, has_notebook=True),
+    # E33i (2026-10-18, roadmap §4.1): order on demand. E33g's fixed order heads left latest at 22 % at 4k; probes on its
+    # weights: ordering every head with a wider match (margin 2) lifts the newest pick 29 → 50 % at 4k but costs lookup
+    # 80 → 54 % and compose 68 → 44 %. So every head gets strength 4 on the rank term, the match margin is 2, and a
+    # learned per-position switch σ(w·x + b) (w = 0, b = −2) scales it: a "now" question can turn order up, story text
+    # and other questions keep it off. Warm-started from E33g with its order strengths reset (WARM_START_SKIP).
+    "e33i": Arch("e33i", "E33g with order on demand: every head ranked, scaled by a learned per-question switch",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "lm_note_age": "rank", "lm_note_rank_margin": 2.0, "lm_note_rank_sharp": 2.0,
+                  "lm_note_age_init": "4", "lm_note_age_learn": "false", "lm_note_order_gate": "true"},
+                 has_notebook=True),
     "e33b": Arch("e33b", "E33o + note read-back (each note's value names its tokens)",
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
                   "message_loop_read_target": "note", "lm_readback_aux": 0.1}, has_notebook=True),
@@ -272,7 +282,7 @@ ARCHES = {
 # is refitted, so each stays in the parameter band.
 _PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
 for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o", "e33b", "e33rb", "e33ok", "e33bk",
-           "e33g", "e33h", "e33q"):
+           "e33g", "e33h", "e33q", "e33i"):
     _a = ARCHES[_k]
     ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
                                  {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)
@@ -298,6 +308,7 @@ ENV_OF = {
     "lm_count_max": "PAR_LM_COUNT_MAX", "message_loop_name_lens": "PAR_LOOP_NAME_LENS",
     "message_loop_feedback": "PAR_LOOP_FEEDBACK", "message_loop_feedback_temp": "PAR_LOOP_FEEDBACK_TEMP",
     "lm_writer_input": "PAR_LM_WRITER_INPUT", "lm_note_rank_gate": "PAR_LM_NOTE_RANK_GATE",
+    "lm_note_order_gate": "PAR_LM_NOTE_ORDER_GATE",
     "message_loop_rounds": "PAR_LOOP_ROUNDS",
     "message_loop_exit_aux": "PAR_LOOP_EXIT_AUX", "message_loop_exit_targets": "PAR_LOOP_EXIT_TARGETS",
     "message_loop_exit_mask": "PAR_LOOP_EXIT_MASK", "message_loop_read_aux": "PAR_LOOP_READ_AUX",

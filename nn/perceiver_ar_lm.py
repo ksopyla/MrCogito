@@ -239,6 +239,9 @@ class PerceiverARConfig(PretrainedConfig):
         lm_note_age_init: str = "",       # E33g — per-head starting strengths, comma-separated (one value = every head,
                                           #   fewer than the heads = the last heads); "" = 0 on every head (E33d / E33e)
         lm_note_age_learn: bool = True,   # E33g — False keeps those strengths fixed (order heads that cannot fade)
+        lm_note_order_gate: bool = False,  # E33i — order on demand: the order term × σ(w·x_t + b) per reader position
+                                           #   (w = 0, b = −2 at the start), so a question can turn order up while story
+                                           #   text keeps it off; one learned switch instead of one scalar per head
         lm_note_rank_gate: str = "own",   # E33g2 — "own": each head counts matches by its own score; "content": by the
                                           #   mean score of the strength-0 heads (the asked person's notes), for all heads
         lm_count_heads: int = 0,          # E33h — count heads beside the global read (summing read; 0 = off)
@@ -362,6 +365,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.lm_note_age_init = str(lm_note_age_init or "")
         self.lm_note_age_learn = bool(lm_note_age_learn)
         self.lm_note_rank_gate = str(lm_note_rank_gate or "own")
+        self.lm_note_order_gate = bool(lm_note_order_gate)
         self.lm_count_heads = int(lm_count_heads or 0)
         self.lm_count_max = int(lm_count_max)
         self.init_std = init_std
@@ -2053,6 +2057,9 @@ class Attention(nn.Module):
             self.note_rank_sharp = float(getattr(cfg, "lm_note_rank_sharp", 2.0))
             # E33g2: "content" = the match is judged by the heads with strength 0 (the content heads), for every head
             self.note_rank_gate = str(getattr(cfg, "lm_note_rank_gate", "own") or "own")
+            # E33i: a per-position switch on the order term (initialised in the model, after post_init)
+            self.note_order_gate = (nn.Linear(cfg.hidden_size, 1) if bool(getattr(cfg, "lm_note_order_gate", False))
+                                    and self.note_age_mode == "rank" else None)
         # E33h: count heads (a summing read) on the latent-memory global read
         self.note_counter = None
         if (int(getattr(cfg, "lm_count_heads", 0) or 0) > 0 and pattern == "full" and write == "latent_memory"
@@ -2224,6 +2231,10 @@ class Attention(nn.Module):
                                                 scale=self.dh ** -0.5, rep=self.note_rank_rep,
                                                 margin=self.note_rank_margin, sharp=self.note_rank_sharp,
                                                 gate_heads=gh)
+                        if getattr(self, "note_order_gate", None) is not None:
+                            # E33i: [B,S,1] → [B,1,S,1]; the gradient reaches the switch through the bias buffer
+                            gam = torch.sigmoid(self.note_order_gate(x).float()).transpose(1, 2)[..., None]
+                            lc = lc * gam
                         note_bias = (self.note_age_slope, lc, None, self.note_rank_rep, "rank")
                 else:
                     note_bias = (self.note_age_slope, pos, message.slot_pos, self.note_age_unit, self.note_age_mode)
@@ -2533,6 +2544,9 @@ class PerceiverARLM(PreTrainedModel):
         for layer in self.layers:
             if getattr(layer.attn, "note_counter", None) is not None:  # E33h: the count adds nothing at step 0
                 nn.init.zeros_(layer.attn.note_counter.out.weight)
+            if getattr(layer.attn, "note_order_gate", None) is not None:  # E33i: switch nearly off (σ(−2) ≈ 0.12)
+                nn.init.zeros_(layer.attn.note_order_gate.weight)
+                nn.init.constant_(layer.attn.note_order_gate.bias, -2.0)
 
     # -- HF plumbing ----------------------------------------------------------------
     def _init_weights(self, module):

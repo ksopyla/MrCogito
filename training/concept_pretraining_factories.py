@@ -426,7 +426,7 @@ def _latent_memory_kwargs(model_args) -> dict:
             "lm_note_age", "lm_note_age_unit", "lm_note_rank_margin", "lm_note_rank_sharp", "lm_note_age_init", "lm_note_age_learn", "lm_count_heads", "lm_count_max", "message_loop_rounds", "message_loop_exit_aux", "message_loop_exit_targets",
             "message_loop_exit_mask", "message_loop_read_aux", "message_loop_read_target", "lm_readback_aux",
             "lm_key_grad", "message_loop_name_lens", "message_loop_feedback", "message_loop_feedback_temp",
-            "lm_writer_input", "lm_note_rank_gate")
+            "lm_writer_input", "lm_note_rank_gate", "lm_note_order_gate")
     out = {k: getattr(model_args, k) for k in keys}
     out["message_write"] = "latent_memory"
     return out
@@ -536,6 +536,10 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
 
         weights = os.path.join(model_args.model_name_or_path, "model.safetensors")
         state = load_file(weights)
+        skip = [t.strip() for t in str(getattr(model_args, "warm_start_skip", "") or "").split(",") if t.strip()]
+        if skip:  # weights deliberately left at their fresh init (e.g. E33i resets E33g's order strengths)
+            state = {k: v for k, v in state.items() if not any(t in k for t in skip)}
+            logger.info(f"Warm start skips {skip}")
         missing, unexpected = model.load_state_dict(state, strict=False)
         # Tolerated fresh parameters: the E19 write-back hook, and value embeddings added to a
         # layer the checkpoint did not have one on (E18b R2 adds one to the global read, which the
@@ -545,7 +549,9 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
                           "note_readback",  # note_readback: the text multi-hop read-back head (training only)
                           "note_age_slope",  # E33g: order heads added to a model trained without them (set strengths)
                           "note_counter",  # E33h: count heads added to a warm start (zero output projection)
-                          "loop_feedback_gate")  # E33q: the feedback gate starts at 0 (warm start = E33r)
+                          "loop_feedback_gate",  # E33q: the feedback gate starts at 0 (warm start = E33r)
+                          "note_order_gate",  # E33i: the order switch starts nearly off
+                          *skip)
         unexplained = [k for k in missing if not any(tag in k for tag in _ALLOWED_FRESH)]
         if unexpected or unexplained:
             raise ValueError(
