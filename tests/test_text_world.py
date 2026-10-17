@@ -464,14 +464,24 @@ def test_read_targets_point_at_the_chain_facts(task):
                 continue
             a, b = offs[pos - 1]
             question = re.findall(r"Question: (.*?)\nAnswer:", doc[: b])[-1]
-            fact = chain_of[question][r - 1]
+            fact, word = chain_of[question][r - 1]
             assert doc[offs[t0 - 1][0]: offs[t1 - 1][1]] == fact
             assert offs[t1 - 1][1] < a  # the fact sits before its question
+            assert word in fact
         if task == "compose":  # a one-step question: teacher fact, then the teacher's home
             for qq, facts in chains:
                 if qq.startswith("Where does the teacher of ") and "the teacher of the teacher" not in qq:
                     p = qq[len("Where does the teacher of "):-len(" live?")]
-                    assert p in facts[0] and len(facts) == 2
+                    assert p in facts[0][0] and len(facts) == 2
+        # output spans: the hop's output word inside its fact
+        qo = read_targets(doc, offs, chains, span="output")
+        for pos, r, t0, t1 in [qo[i:i + 4] for i in range(0, len(qo), 4)]:
+            if r == 0:
+                continue
+            a, b = offs[pos - 1]
+            question = re.findall(r"Question: (.*?)\nAnswer:", doc[: b])[-1]
+            fact, word = chain_of[question][r - 1]
+            assert doc[offs[t0 - 1][0]: offs[t1 - 1][1]].strip(" .:,") == word.strip(" .")
 
 
 def test_read_targets_tensor_pads_and_cuts():

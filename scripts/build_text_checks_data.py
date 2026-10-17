@@ -145,11 +145,13 @@ def _row(ids: list[int], bos: int, eos: int, read_targets: list | None = None) -
 _QA = re.compile(r"\n\nQuestion: (.*?)\nAnswer:")
 
 
-def read_targets(text: str, offsets: list, chains: list) -> list[int]:
+def read_targets(text: str, offsets: list, chains: list, span: str = "fact") -> list[int]:
     """Flat (answer position, round, first token, last token) quadruples in row positions (BOS = 0), 2026-10-17.
     Every question gives (pos, 0, -1, -1): `pos` is the "Answer:" colon, the position that predicts the first answer
-    token. A question whose chain is known (`chains`: question → fact sentences in hop order) also gives one
-    quadruple per fact: round r of the answer's read should land on fact r."""
+    token. A question whose chain is known (`chains`: question → (fact sentence, hop output word) in hop order) also
+    gives one quadruple per fact: round r of the answer's read should land on fact r — the whole sentence
+    (`span="fact"`) or only that hop's output word inside it (`span="output"`: the teacher's name, the place, the
+    class word, the property; the sentence when the word is not found)."""
     starts = [a for a, _ in offsets]
 
     def tok_of(c: int) -> int:  # the token holding character c
@@ -161,11 +163,17 @@ def read_targets(text: str, offsets: list, chains: list) -> list[int]:
         pos = tok_of(m.end() - 1) + 1
         out += [pos, 0, -1, -1]
         body_end = m.start()
-        for r, fact in enumerate(chain_of.get(m.group(1), []), 1):
+        for r, step in enumerate(chain_of.get(m.group(1), []), 1):
+            fact, word = step if isinstance(step, (tuple, list)) else (step, None)
             c0 = text.find(fact, 0, body_end)
             if c0 < 0:
                 continue
-            out += [pos, r, tok_of(c0) + 1, tok_of(c0 + len(fact) - 1) + 1]
+            a, b = c0, c0 + len(fact)
+            if span == "output" and word:
+                w = re.search(rf"(?<!\w){re.escape(word)}(?!\w)", text[c0:c0 + len(fact)])
+                if w:
+                    a, b = c0 + w.start(), c0 + w.end()
+            out += [pos, r, tok_of(a) + 1, tok_of(b - 1) + 1]
     return out
 
 
@@ -220,7 +228,7 @@ def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: 
                     enc = _TOKREF["tok"](text, add_special_tokens=False, return_offsets_mapping=True)
                     if list(enc["input_ids"]) != list(ids):
                         raise RuntimeError("read targets: offset tokenization differs from encode()")
-                    rt = read_targets(text, enc["offset_mapping"], chains)
+                    rt = read_targets(text, enc["offset_mapping"], chains, span=_VERSION["read_targets"])
                 rows.append(_row(ids, bos, eos, rt))
                 break
         k += 1
@@ -358,9 +366,10 @@ def main():
     p.add_argument("--train_bridge_only", action="store_true",
                    help="compose / deduce training documents ask only their bridge questions (up to --train_bridge), "
                         "none of the task's own (the two-name gate, 2026-10-17)")
-    p.add_argument("--train_read_targets", action="store_true",
+    p.add_argument("--train_read_targets", nargs="?", const="fact", default=None, choices=("fact", "output"),
                    help="every row gets a read_targets column: per question its answer position and, where the chain "
-                        "is known, the token span of each fact per read round (2026-10-17; stories get an empty list)")
+                        "is known, per read round the token span of fact r (fact) or of that hop's output word inside "
+                        "it (output); 2026-10-17; stories get an empty list")
     p.add_argument("--a2a", action="store_true",
                    help="E35: world rows become BOS document EOS BOS questions EOS (sender | receiver); stories unchanged")
     p.add_argument("--tokenizer", default=None,
@@ -371,7 +380,7 @@ def main():
     _VERSION["tasks"] = tuple(args.train_tasks)
     _VERSION["bridge"] = args.train_bridge
     _VERSION["bridge_only"] = bool(args.train_bridge_only)
-    _VERSION["read_targets"] = bool(args.train_read_targets)
+    _VERSION["read_targets"] = args.train_read_targets or False
     _VERSION["a2a"] = bool(args.a2a)
     if args.eval_from and args.eval_splits:
         # eval/ becomes a link to the source build: writing a split here would overwrite that build's frozen exams

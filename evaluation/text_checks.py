@@ -214,13 +214,19 @@ ARCHES = {
     "e33r": Arch("e33r", "E33 with exits off and a per-round read target",
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5},
                  has_notebook=True),
+    # E33o: E33r aimed at the hop's output word (data built with --train_read_targets output): round r is pushed onto
+    # the notes whose latent read that word (the teacher's name, the place, the class word, the property), not any
+    # note of its page. E33r reached the right page of "Every kavi is shiny." 95 % of the time and answered 12 %.
+    "e33o": Arch("e33o", "E33 with exits off and a per-round read target on the hop's output word",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "message_loop_read_target": "note"}, has_notebook=True),
 }
 # Plain-input variants (2026-10-10): the same models without the word-pair/triple hash tables and value
 # embeddings. Dense with plain input learned quote, lookup, keyed and latest at 30M / 1.5B tokens on v2, where
 # dense with the tables learned at most one (spec §16.1), so the architecture round runs on plain input. FFN width
 # is refitted, so each stays in the parameter band.
 _PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
-for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r"):
+for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o"):
     _a = ARCHES[_k]
     ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
                                  {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)
@@ -244,6 +250,7 @@ ENV_OF = {
     "lm_note_rank_sharp": "PAR_LM_NOTE_RANK_SHARP", "message_loop_rounds": "PAR_LOOP_ROUNDS",
     "message_loop_exit_aux": "PAR_LOOP_EXIT_AUX", "message_loop_exit_targets": "PAR_LOOP_EXIT_TARGETS",
     "message_loop_exit_mask": "PAR_LOOP_EXIT_MASK", "message_loop_read_aux": "PAR_LOOP_READ_AUX",
+    "message_loop_read_target": "PAR_LOOP_READ_TARGET",
     "message_boundary_token_id": "PAR_MESSAGE_BOUNDARY_TOKEN_ID",
 }
 

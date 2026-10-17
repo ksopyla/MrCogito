@@ -435,3 +435,15 @@ def test_read_target_runs_under_bf16_autocast():
         out = m(ids, labels=ids.clone(), read_targets=_targets([40, 1, 5, 7], [40, 2, 35, 36]))
     out.loss.backward()
     assert torch.isfinite(out.loss)
+
+
+def test_read_target_note_mode_targets_the_spans_own_notes():
+    ids = text_row(S=48)
+    m = make(**TEXT, message_raw_window=8, message_loop_read_aux=1.0, message_loop_read_target="note").train()
+    tgt = _targets([40, 1, 5, 5])
+    with torch.no_grad():
+        base = m(ids, labels=ids.clone()).loss
+        note = float(m(ids, labels=ids.clone(), read_targets=tgt).loss - base)
+        m.config.message_loop_read_target = "page"
+        page = float(m(ids, labels=ids.clone(), read_targets=tgt).loss - base)
+    assert note > 0 and page > 0 and note >= page - 1e-6  # the span's own notes are a subset of its pages' notes

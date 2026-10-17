@@ -182,6 +182,7 @@ class PerceiverARConfig(PretrainedConfig):
         message_loop_name_len: int = 0,  # E33 — letters per node name for the name head (the chain's key_len)
         message_loop_read_aux: float = 0.0,  # text multi-hop (2026-10-17) — weight of the per-round read target
         message_loop_exit_mask: str = "all",  # text multi-hop — loop exits score "all" labels or only "answers"
+        message_loop_read_target: str = "page",  # text multi-hop — read target on a page's notes or the span's "note"s
         message_update_slot_kv: bool = False,  # E21 — rewrite exclusive slot K/V between extra hops
         message_global_anchors: str = "none",  # E21 — sparse raw keys joining exclusive slot K/V
         message_anchor_token_ids: tuple[int, ...] = (),  # type-mark / keymark ids
@@ -294,6 +295,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_loop_name_len = int(message_loop_name_len)
         self.message_loop_read_aux = float(message_loop_read_aux)
         self.message_loop_exit_mask = str(message_loop_exit_mask or "all")
+        self.message_loop_read_target = str(message_loop_read_target or "page")
         self.message_update_slot_kv = bool(message_update_slot_kv)
         self.message_global_anchors = str(message_global_anchors or "none")
         self.message_anchor_token_ids = tuple(int(x) for x in (message_anchor_token_ids or ()))
@@ -386,6 +388,8 @@ class PerceiverARConfig(PretrainedConfig):
             raise ValueError("message_loop_exit_targets must be 'progress' or 'answer'")
         if self.message_loop_exit_mask not in ("all", "answers"):
             raise ValueError("message_loop_exit_mask must be 'all' or 'answers'")
+        if self.message_loop_read_target not in ("page", "note"):
+            raise ValueError("message_loop_read_target must be 'page' or 'note'")
         if self.message_loop_rounds > 1:
             if self.message_read_rounds > 1:
                 raise ValueError("message_loop_rounds and message_read_rounds (E33) are exclusive")
@@ -928,6 +932,7 @@ class MessageCtx:
     page_starts: Optional[torch.Tensor] = None  # [n_w] first token of each page
     page_window: int = 0
     notes_per_page: int = 0
+    read_target: str = "page"  # "page": any note of a page covering the span; "note": notes whose position is in it
 
     @property
     def n_slots(self) -> int:
@@ -1650,6 +1655,11 @@ def read_target_loss(q, k, k_bar, ctx: MessageCtx, key_valid, *, q_slot=None) ->
     page = torch.arange(nb, device=dev) // max(1, int(ctx.notes_per_page))
     st = ctx.page_starts.to(dev)[page.clamp(max=ctx.page_starts.numel() - 1)]
     note_t = vis & (st[None] <= t1[:, None]) & (st[None] + int(ctx.page_window) > t0[:, None])
+    if ctx.read_target == "note" and ctx.slot_pos is not None:
+        # the notes whose latent read the span (its expected position within 2 tokens of it); the page if none does
+        sp = ctx.slot_pos.to(dev)[bi]                                     # [N,nb]
+        near = vis & (sp >= t0[:, None] - 2) & (sp <= t1[:, None] + 2)
+        note_t = torch.where(near.any(-1, keepdim=True), near, note_t)
     has = raw_t.any(-1) | note_t.any(-1)
     if not bool(has.any()):
         return
@@ -2736,6 +2746,7 @@ class PerceiverARLM(PreTrainedModel):
             msg.read_round, msg.read_losses = 1, []
             msg.page_starts = torch.tensor(geo.starts, device=input_ids.device, dtype=torch.long)
             msg.page_window, msg.notes_per_page = geo.window, geo.latents * geo.reader_tokens
+            msg.read_target = str(getattr(cfg, "message_loop_read_target", "page") or "page")
         cos, sin = rope_cos_sin(pos, cfg.head_dim, cfg.rope_theta, x0.dtype)
         x = x0
         n = len(self.layers)

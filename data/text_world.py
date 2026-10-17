@@ -364,9 +364,10 @@ class WorldItem:
     # "What is a wump like?" → "shiny". Exams never use them; never serialized. Drawing them uses no random
     # numbers, so the document itself is unchanged.
     bridge: list = field(default_factory=list)
-    # Read targets (training only, 2026-10-17): question → indices into `facts` of the facts its answer chains
-    # through, in hop order (compose: teacher facts then the home; deduce: the class fact, the class links, the
-    # property). Drawing them uses no random numbers; never serialized.
+    # Read targets (training only, 2026-10-17): question → (index into `facts`, that hop's output word) for every fact
+    # its answer chains through, in hop order (compose: teacher facts, output the teacher, then the home, output the
+    # place; deduce: the class fact, the class links, the property). Drawing them uses no random numbers; never
+    # serialized.
     steps: dict = field(default_factory=dict)
 
 
@@ -445,10 +446,10 @@ def _compose_v1(rng, tsplit, hops, n, cast, letters: bool = False) -> WorldItem:
     for i in range(n):
         j, idx = i, []
         for _ in range(hops):
-            idx.append(2 * j)
+            idx.append((2 * j, cast[teacher[j]]))
             j = teacher[j]
-        steps[QUESTIONS[f"teach{hops}"].format(p=cast[i])] = idx + [2 * j + 1]
-        steps[QUESTIONS["bridge_teacher"].format(p=cast[i])] = [2 * i]
+        steps[QUESTIONS[f"teach{hops}"].format(p=cast[i])] = idx + [(2 * j + 1, places[j])]
+        steps[QUESTIONS["bridge_teacher"].format(p=cast[i])] = [(2 * i, cast[teacher[i]])]
     return WorldItem("compose", QUESTIONS[f"teach{hops}"].format(p=cast[0]), ans, cands, 1.0 / n, facts, cast,
                      meta={"hops": hops}, qa=qa, bridge=bridge, steps=steps)
 
@@ -481,11 +482,12 @@ def _deduce_v2(rng, depth, n, cast, cat_split) -> WorldItem:
         chain = cats[i * depth:(i + 1) * depth]
         ev = i == 0
         o = len(facts)  # this chain's facts: o (class), o + 1 … (links), o + depth (property)
-        steps[QUESTIONS["deduce2"].format(p=c)] = list(range(o, o + depth + 1))
-        steps[QUESTIONS["bridge_isa"].format(p=c)] = [o]
+        outs = list(chain) + [props[i]]
+        steps[QUESTIONS["deduce2"].format(p=c)] = [(o + k, outs[k]) for k in range(depth + 1)]
+        steps[QUESTIONS["bridge_isa"].format(p=c)] = [(o, chain[0])]
         for k, a in enumerate(chain[:-1]):
-            steps[QUESTIONS["bridge_cat"].format(p=a)] = [o + 1 + k]
-        steps[QUESTIONS["bridge_prop"].format(p=chain[-1])] = [o + depth]
+            steps[QUESTIONS["bridge_cat"].format(p=a)] = [(o + 1 + k, chain[k + 1])]
+        steps[QUESTIONS["bridge_prop"].format(p=chain[-1])] = [(o + depth, props[i])]
         facts.append(Fact(f"{c} is a {chain[0]}.", evidence=ev))
         facts += [Fact(f"Every {a} is a {b}.", evidence=ev) for a, b in zip(chain, chain[1:])]
         facts.append(Fact(f"Every {chain[-1]} is {props[i]}.", evidence=ev))
@@ -521,7 +523,7 @@ def build_item(task: str, rng: random.Random, split: str = "train", version: str
         facts = [Fact(_tmpl(rng, "sign", tsplit, p=c, v=s), evidence=(i == 0)) for i, (c, s) in enumerate(zip(cast, signs))]
         qa = [(QUESTIONS["quote"].format(p=c), x) for c, x in zip(cast, signs)] if v1 else []
         return WorldItem(task, QUESTIONS["quote"].format(p=cast[0]), signs[0], signs, 1.0 / n, facts, cast, qa=qa,
-                         steps={QUESTIONS["quote"].format(p=c): [i] for i, c in enumerate(cast)})
+                         steps={QUESTIONS["quote"].format(p=c): [(i, x)] for i, (c, x) in enumerate(zip(cast, signs))})
 
     if task in ("lookup", "keyed"):
         n = _dial(task, split, rng, "cast", version)
@@ -536,7 +538,7 @@ def build_item(task: str, rng: random.Random, split: str = "train", version: str
         facts = [Fact(_tmpl(rng, "home", tsplit, p=c, v=v), evidence=(i == 0)) for i, (c, v) in enumerate(zip(cast, places))]
         qa = [(QUESTIONS[task].format(p=c), v) for c, v in zip(cast, places)] if v1 else []
         return WorldItem(task, QUESTIONS[task].format(p=cast[0]), places[0], places, 1.0 / n, facts, cast, qa=qa,
-                         steps={QUESTIONS[task].format(p=c): [i] for i, c in enumerate(cast)})
+                         steps={QUESTIONS[task].format(p=c): [(i, v)] for i, (c, v) in enumerate(zip(cast, places))})
 
     if task == "latest":
         k = _dial(task, split, rng, "moves", version)
@@ -769,8 +771,8 @@ def make_train_document(seed: int, stories: list[str], length: int, ntok: Callab
     `bridge_only` (2026-10-17, the two-name gate of the multi-hop diagnosis): a compose / deduce document asks ONLY
     its bridge questions (up to `bridge`, at least one), none of the task's own; other tasks are unchanged.
 
-    `chains` (a list, 2026-10-17): filled with (question, [fact sentences in hop order]) for every question placed whose
-    chain the item knows (`WorldItem.steps`); the text is the same with or without it."""
+    `chains` (a list, 2026-10-17): filled with (question, [(fact sentence, that hop's output word) in hop order]) for
+    every question placed whose chain the item knows (`WorldItem.steps`); the text is the same with or without it."""
     rng = random.Random(seed)
     task = rng.choice(tasks)
     item = build_item(task, rng, "train", version)
@@ -804,4 +806,4 @@ def _fill_chains(chains: Optional[list], item: WorldItem, questions: list) -> No
         return
     for q in questions:
         if q in item.steps:
-            chains.append((q, [item.facts[i].text for i in item.steps[q]]))
+            chains.append((q, [(item.facts[i].text, out) for i, out in item.steps[q]]))
