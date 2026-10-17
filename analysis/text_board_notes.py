@@ -713,6 +713,17 @@ LADDER = [
      "why": "T5: the oracle put the gold bridge in the question and E33r went 58 → 81 % at 4k. Pass: compose ≥ 70 % at "
             "4k, far lookup within 5 points. Kill at mid-run: compose < 60 % or lookup < 65 % at 4k, < 75 % at 16k. "
             "Design reviewed by the multi-hop session."},
+    {"id": "reason_e33ok_s0.polonez", "start": "2026-10-17", "data": "v2 + bridge, reasoning phase (output-word spans)",
+     "standing": "in use", "run": "E33ok, note target + key-gradient stop (Polonez, multi-hop session)",
+     "model": "E33o + the writer's key gradient stopped (a note's key learns addressing only) · 30M, plain",
+     "tokens": "0.3B continuation from E33r", "exams": "v2 + v2.1",
+     "result": "Deduce 36 / 35 % at 4k / 16k, the best so far (E33rb 17 / 12 %; one step 40 / 35 %); the notes keep the "
+               "property word (probe 8-13 → 33 %). Costs compose 42 / 48 % (61 / 82 %), lookup 65 / 52 %, keyed 56 / 51 %; "
+               "still climbing at the end. Latest 21 %, count 24 %, story loss 1.511.",
+     "when": "17 Oct, exams 22:37 UTC",
+     "why": "A loss on where reads land pulled note content away (E33o); with the key's gradient stopped, the answer "
+            "trains the values of exactly the notes read. Next (multi-hop session): a separate address read for keys "
+            "(lm_key_grad=address) so keys can carry the person's name again."},
     {"id": "reason_e33x_s0.polonez", "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "in use",
      "run": "E33x, loop exits on answers (Polonez)", "model": "E33 bridge warm start, loop exit losses off · 30M, plain",
      "tokens": "0.3B continuation (1,787 steps)", "exams": "v2 + v2.1, 1k-16k",
@@ -1093,6 +1104,11 @@ ARCHS = {
 # measured. effect: helped / hurt / no effect / mixed / measurement (a new exam or rule, the models did not change).
 # metrics: (what is measured, before, after, unit) — unit "%" (0-100) or "runs" ("k/n").
 CHANGES = [
+    {"date": "2026-10-17", "kind": "architecture", "change": "Stop the writer's key gradient (E33ok)",
+     "compared": "E33r + 0.3B tokens: page read target + read-back (E33rb) vs note read target + key stop (E33ok)",
+     "effect": "mixed",
+     "metrics": [("deduce at 4k", 17, 36, "%"), ("compose at 4k", 61, 42, "%"), ("far lookup at 16k", 89, 52, "%")],
+     "note": "The first model whose notes keep property words; keys that can only reuse the content read lose the name."},
     {"date": "2026-10-17", "kind": "architecture", "change": "Fixed order heads on the notebook read (E33g)",
      "compared": "E33r + 0.3B tokens: with read-back (E33rb, matched control) vs with four fixed order heads (E33g)",
      "effect": "mixed",
