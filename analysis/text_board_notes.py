@@ -949,6 +949,10 @@ SUPERSEDED = {
 
 # ---- added 2026-10-15 for the dashboard layout (docs/engineering_specs/capability_boards.md) ----------------------
 
+# The author's goal for the text checks (17 Oct 2026): shown under the headline with the best score so far per task.
+GOAL = {"set": "2026-10-17", "target": 0.70, "tasks": ["latest", "compose", "count", "deduce"], "lengths": [4096, 16384],
+        "text": "70 % exact on T4-T7 with a notebook model (30M, the current exams)."}
+
 # Decisions waiting for the author: shown at the top of the board. Remove an item when it is decided.
 DECISIONS = [
     "Make E31c (notebook, no loop) the main line? It switched on in 3 of 3 runs at a third of E33's training time.",

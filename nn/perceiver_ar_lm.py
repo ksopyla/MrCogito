@@ -228,6 +228,9 @@ class PerceiverARConfig(PretrainedConfig):
                                           #   query about as well as its best note), so a lone fact pays nothing at any length
         lm_note_rank_margin: float = 1.0, # E33e — a note "matches" when its score is within ~margin of the best note's
         lm_note_rank_sharp: float = 2.0,  # E33e — steepness of that match gate: σ(sharp · (score − best + margin))
+        lm_note_age_init: str = "",       # E33g — per-head starting strengths, comma-separated (one value = every head,
+                                          #   fewer than the heads = the last heads); "" = 0 on every head (E33d / E33e)
+        lm_note_age_learn: bool = True,   # E33g — False keeps those strengths fixed (order heads that cannot fade)
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -337,6 +340,8 @@ class PerceiverARConfig(PretrainedConfig):
         self.lm_note_age_unit = int(lm_note_age_unit or 0)
         self.lm_note_rank_margin = float(lm_note_rank_margin)
         self.lm_note_rank_sharp = float(lm_note_rank_sharp)
+        self.lm_note_age_init = str(lm_note_age_init or "")
+        self.lm_note_age_learn = bool(lm_note_age_learn)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -1821,6 +1826,20 @@ def hashed_ngram_ids(
     return acc % buckets
 
 
+def note_age_init(spec: str, h: int) -> torch.Tensor:
+    """E33g: per-head starting strengths of the note-order term. "a" = every head; "a,b,…" with fewer values than
+    heads = the LAST heads (the first ones stay at 0), so one pattern keeps the same order heads at every size."""
+    if not str(spec or "").strip():
+        return torch.zeros(h)
+    vals = [float(x) for x in str(spec).split(",")]
+    if len(vals) == 1:
+        vals = vals * h
+    if len(vals) > h:
+        raise ValueError(f"lm_note_age_init has {len(vals)} values for {h} query heads")
+    vals = [0.0] * (h - len(vals)) + vals
+    return torch.tensor(vals, dtype=torch.float32)
+
+
 class TinyHashedEmbedding(nn.Module):
     """token table [V,e] + Σ n-gram tables [buckets,e] → MLP up-projection to d → RMSNorm."""
 
@@ -1926,7 +1945,8 @@ class Attention(nn.Module):
         self.note_age_mode = str(getattr(cfg, "lm_note_age", "none") or "none")
         if (self.note_age_mode != "none" and pattern == "full" and write == "latent_memory"
                 and getattr(cfg, "message_enabled", False)):
-            self.note_age_slope = nn.Parameter(torch.zeros(h))
+            self.note_age_slope = nn.Parameter(note_age_init(getattr(cfg, "lm_note_age_init", ""), h),
+                                               requires_grad=bool(getattr(cfg, "lm_note_age_learn", True)))
             self.note_age_unit = float(getattr(cfg, "lm_note_age_unit", 0) or cfg.lm_stride)
             # E33e (rank): the same per-head strength, in front of the count of newer matching notes
             self.note_rank_rep = int(cfg.lm_latents) * int(cfg.lm_reader_tokens)

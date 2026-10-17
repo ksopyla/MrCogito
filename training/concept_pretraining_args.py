@@ -386,6 +386,9 @@ class ModelArguments:
     a2a_loss_on: str = field(default="all", metadata={"help": "E35: loss on all receiver tokens | answers only."})
     a2a_freeze_receiver: bool = field(default=False, metadata={"help": "E35: keep agent B frozen (only A learns)."})
     lm_note_rank_sharp: float = field(default=2.0, metadata={"help": "E33e: steepness of the match gate."})
+    lm_note_age_init: str = field(default="", metadata={"help": "E33g: per-head starting strengths of the note-order "
+                                                                 "term, comma-separated (one value = every head)."})
+    lm_note_age_learn: bool = field(default=True, metadata={"help": "E33g: False keeps the note-order strengths fixed."})
     message_loop_rounds: int = field(default=1, metadata={"help": "E33a: tied [global read + local] loops (1 = off)."})
     message_loop_exit_aux: float = field(default=0.0, metadata={"help": "E33a: weight of each earlier loop exit."})
     message_loop_exit_targets: str = field(

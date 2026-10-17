@@ -233,6 +233,8 @@ PAR_LM_NOTE_AGE="${PAR_LM_NOTE_AGE:-none}"                # E33d: page distance 
 PAR_LM_NOTE_AGE_UNIT="${PAR_LM_NOTE_AGE_UNIT:-0}"          # E33d: tokens per unit (0 = the page step)
 PAR_LM_NOTE_RANK_MARGIN="${PAR_LM_NOTE_RANK_MARGIN:-1.0}"  # E33e (PAR_LM_NOTE_AGE=rank): match margin below the best note
 PAR_LM_NOTE_RANK_SHARP="${PAR_LM_NOTE_RANK_SHARP:-2.0}"    # E33e: steepness of the match gate
+PAR_LM_NOTE_AGE_INIT="${PAR_LM_NOTE_AGE_INIT:-}"            # E33g: per-head starting strengths ("" = 0 on every head)
+PAR_LM_NOTE_AGE_LEARN="${PAR_LM_NOTE_AGE_LEARN:-true}"     # E33g: false = fixed order heads
 # E35 — latent messages between agents (MODEL_FAMILY=a2a): warm-started agents, a fresh transmitter
 A2A_SENDER_INIT="${A2A_SENDER_INIT:-}"                    # notebook checkpoint (E31c / E33) for agent A's writer
 A2A_RECEIVER_INIT="${A2A_RECEIVER_INIT:-}"                # decoder checkpoint (dense) for agent B
@@ -525,6 +527,8 @@ if [ "$MODEL_FAMILY" = "perceiver_ar" ] || [ "$MODEL_FAMILY" = "a2a" ]; then
             --lm_note_age_unit "$PAR_LM_NOTE_AGE_UNIT"
             --lm_note_rank_margin "$PAR_LM_NOTE_RANK_MARGIN"
             --lm_note_rank_sharp "$PAR_LM_NOTE_RANK_SHARP"
+            --lm_note_age_init "$PAR_LM_NOTE_AGE_INIT"
+            --lm_note_age_learn "$PAR_LM_NOTE_AGE_LEARN"
             --message_loop_rounds "$PAR_LOOP_ROUNDS"
             --message_loop_exit_aux "$PAR_LOOP_EXIT_AUX"
             --message_loop_exit_targets "$PAR_LOOP_EXIT_TARGETS"
