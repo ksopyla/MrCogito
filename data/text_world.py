@@ -73,7 +73,7 @@ from __future__ import annotations
 import random
 import re
 import zlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Optional
 
 TEXT_WORLD_VERSION = "text-world-v2"
@@ -733,7 +733,7 @@ def make_eval_record(task: str, seed: int, split: str, length: int, depth_bin: O
 
 def make_train_document(seed: int, stories: list[str], length: int, ntok: Callable[[str], int],
                         tasks: tuple = TASKS, version: str = TEXT_WORLD_VERSION, questions: int = 1,
-                        bridge: int = 0) -> str:
+                        bridge: int = 0, bridge_only: bool = False) -> str:
     """One training world document: a random task at ID dials, question and answer included.
 
     `questions` > 1 (v1): the document ends with up to that many questions about different cast
@@ -744,10 +744,21 @@ def make_train_document(seed: int, stories: list[str], length: int, ntok: Callab
     `bridge` > 0 (v2 compose / deduce, 2026-10-16): up to that many bridge questions follow the task's own
     questions — the single steps of the chain asked on their own ("Who is the teacher of Lumo?"), placed
     after every multi-step question so none of them can read its bridge from an answer above it. Other
-    tasks, and `bridge` = 0, give the same bytes as before."""
+    tasks, and `bridge` = 0, give the same bytes as before.
+
+    `bridge_only` (2026-10-17, the two-name gate of the multi-hop diagnosis): a compose / deduce document asks ONLY
+    its bridge questions (up to `bridge`, at least one), none of the task's own; other tasks are unchanged."""
     rng = random.Random(seed)
     task = rng.choice(tasks)
     item = build_item(task, rng, "train", version)
+    if bridge_only and item.bridge:
+        pool = list(item.bridge)
+        random.Random(seed ^ 0xB81D6E).shuffle(pool)
+        pool = pool[: max(1, bridge)]
+        item = replace(item, question=pool[0][0], answer=pool[0][1])
+        extra = "".join(f"{qa_suffix(q)} {a}." for q, a in pool[1:])
+        prompt, _ = assemble(item, stories, max(64, length - (ntok(extra) if extra else 0)), ntok, rng, version=version)
+        return prompt + answer_text(item) + extra
     extra = ""
     if questions > 1 and item.qa:
         more = item.qa[1:]

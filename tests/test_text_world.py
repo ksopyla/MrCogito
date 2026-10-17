@@ -411,3 +411,22 @@ def test_bridge_never_reaches_the_exams():
         r = make_eval_record(task, 3, "id", 1500, None, STORIES, ntok, version="v2")
         assert r["prompt"].count("Question:") == 1
         assert "Who is the teacher" not in r["prompt"] and "What is a " not in r["prompt"]
+
+@pytest.mark.parametrize("task", TASKS)
+def test_bridge_only_asks_just_the_bridges(task):
+    s = _seed_for(task)
+    base = make_train_document(s, STORIES, 600, ntok, version="v2", questions=8)
+    assert make_train_document(s, STORIES, 600, ntok, version="v2", questions=8, bridge=0, bridge_only=False) == base
+    doc = make_train_document(s, STORIES, 900, ntok, version="v2", questions=8, bridge=8, bridge_only=True)
+    if task not in ("compose", "deduce"):
+        assert doc == make_train_document(s, STORIES, 900, ntok, version="v2", questions=8, bridge=8)
+        return
+    qs = re.findall(r"Question: (.*?)\nAnswer: (.*?)\.(?=\n|$)", doc)
+    assert 1 <= len(qs) <= 8
+    if task == "compose":
+        assert all(q.startswith("Who is the teacher of ") for q, _ in qs)
+    else:
+        assert all(q.startswith("What is ") for q, _ in qs)
+    body = doc.partition("\n\nQuestion:")[0]
+    for q, a in qs:  # every bridge answer is stated in the document
+        assert a in body

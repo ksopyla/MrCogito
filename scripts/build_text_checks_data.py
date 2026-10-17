@@ -152,7 +152,8 @@ def language_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eo
             cur = []
 
 
-_VERSION = {"world": TEXT_WORLD_VERSION, "questions": 1, "tasks": TASKS, "bridge": 0, "a2a": False, "vocab": 0}  # set from the arguments before workers fork
+_VERSION = {"world": TEXT_WORLD_VERSION, "questions": 1, "tasks": TASKS, "bridge": 0, "bridge_only": False, "a2a": False,
+            "vocab": 0}  # set from the arguments before workers fork
 
 
 def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: int, seed: int,
@@ -166,7 +167,8 @@ def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: 
         for shrink in (1.0, 0.9, 0.8, 0.6):
             text = make_train_document(seed * 1_000_003 + k, stories, int(target * shrink), ntok,
                                        tasks=tuple(_VERSION["tasks"]), version=_VERSION["world"],
-                                       questions=_VERSION["questions"], bridge=_VERSION["bridge"])
+                                       questions=_VERSION["questions"], bridge=_VERSION["bridge"],
+                                       bridge_only=_VERSION["bridge_only"])
             if _VERSION["a2a"]:
                 # E35: agent A gets the document, agent B the questions: BOS document EOS BOS questions EOS
                 body, _, rest = text.partition("\n\nQuestion:")
@@ -310,6 +312,9 @@ def main():
     p.add_argument("--train_bridge", type=int, default=0,
                    help="bridge questions per compose / deduce training document (the single steps of the chain, "
                         "asked after the task's own questions); 0 = none (earlier builds)")
+    p.add_argument("--train_bridge_only", action="store_true",
+                   help="compose / deduce training documents ask only their bridge questions (up to --train_bridge), "
+                        "none of the task's own (the two-name gate, 2026-10-17)")
     p.add_argument("--a2a", action="store_true",
                    help="E35: world rows become BOS document EOS BOS questions EOS (sender | receiver); stories unchanged")
     p.add_argument("--tokenizer", default=None,
@@ -319,6 +324,7 @@ def main():
     _VERSION["questions"] = args.train_questions
     _VERSION["tasks"] = tuple(args.train_tasks)
     _VERSION["bridge"] = args.train_bridge
+    _VERSION["bridge_only"] = bool(args.train_bridge_only)
     _VERSION["a2a"] = bool(args.a2a)
     if args.eval_from and args.eval_splits:
         # eval/ becomes a link to the source build: writing a split here would overwrite that build's frozen exams
