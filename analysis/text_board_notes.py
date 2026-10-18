@@ -953,6 +953,7 @@ NAMES = {
     "e33jd_plain": ("E33jd, last move supervised + page distance", "E33q plus four page-distance heads; plain input"),
     "e33k_plain": ("E33k, count labels", "E33h with the count heads told the true number; plain input"),
     "e33k2_plain": ("E33k2, count decoded", "E33k plus the rounds naming the count word; plain input"),
+    "e33m_plain": ("E33m, all four", "E33j plus count heads told the true number; plain input"),
 }
 
 # Result rounds, keyed by "<run>.<host>" (the ledger file name). Rounds not listed here but present in the

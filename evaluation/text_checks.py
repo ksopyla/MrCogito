@@ -322,6 +322,15 @@ ARCHES = {
     "e33k2": Arch("e33k2", "E33k + count loss 1.0 + rounds name the count word (naming lens)",
                   {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
                    "lm_count_heads": 2, "lm_count_aux": 1.0, "message_loop_name_lens": 0.3}, has_notebook=True),
+    # E33m (2026-10-18): the combined model for the T4-T7 goal — E33j (hop naming, order on demand, latest told its last
+    # move) + E33k2's count heads told the true number and the rounds naming the count word. Warm-started from E33j on the
+    # data with the latest chain, the count visits and the count naming (text_checks_v2reason_count2).
+    "e33m": Arch("e33m", "E33j + count heads told the true number (one model for latest, compose, count, deduce)",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "message_loop_name_lens": 0.3, "message_loop_feedback": "soft",
+                  "lm_note_age": "rank", "lm_note_rank_margin": 2.0, "lm_note_rank_sharp": 2.0,
+                  "lm_note_age_init": "4", "lm_note_age_learn": "false", "lm_note_order_gate": "true",
+                  "lm_count_heads": 2, "lm_count_aux": 1.0}, has_notebook=True),
     "e33b": Arch("e33b", "E33o + note read-back (each note's value names its tokens)",
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
                   "message_loop_read_target": "note", "lm_readback_aux": 0.1}, has_notebook=True),
@@ -348,7 +357,7 @@ ARCHES = {
 # is refitted, so each stays in the parameter band.
 _PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
 for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o", "e33b", "e33rb", "e33ok", "e33bk",
-           "e33g", "e33h", "e33q", "e33i", "e33j", "e33jf", "e33jd", "e33k", "e33k2", "e33gk", "e33ak", "e33gak", "e33qn"):
+           "e33g", "e33h", "e33q", "e33i", "e33j", "e33jf", "e33jd", "e33k", "e33k2", "e33m", "e33gk", "e33ak", "e33gak", "e33qn"):
     _a = ARCHES[_k]
     ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
                                  {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)
