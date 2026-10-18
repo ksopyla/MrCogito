@@ -30,7 +30,7 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-18 00:30 UTC",
+    "as_of": "2026-10-18 02:00 UTC",
     "headline": "Compose is closest to the 70 % goal: E33 with order heads answers 69 % at 4k and 88 % at 16k (one run). "
                 "Latest still fails for every notebook model; three fixes for latest, count and compose train on Odra.",
     "where": [
@@ -711,6 +711,19 @@ LADDER = [
      "result": "—", "when": "18 Oct from 00:21 CEST (22:21 UTC), about 3 h on one GPU",
      "why": "T4: let 'now' questions turn order up while every other token keeps it off. Pass: latest ≥ 60 % at 4k with "
             "compose and lookup within 5 points of E33g. Kill: latest ≤ 35 % at 4k."},
+    {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain", "standing": "running",
+     "run": "E33j, naming + order on demand, latest supervised (Odra GPU 2)",
+     "model": "E33q + every head ranked (strength 4, margin 2) × a learned per-question switch · 30M, plain",
+     "tokens": "0.3B continuation from E33q", "exams": "v2 + v2.1",
+     "result": "—", "when": "18 Oct from 01:56 UTC, about 3 h on one GPU",
+     "why": "T4: the data now gives each latest question a one-step chain (the asked person's last move), so the read "
+            "target and the naming tell round 1 which move answers; the order term gives the read a way to find it. "
+            "Pass: latest ≥ 60 % at 4k with compose and deduce within 5 points of E33q. Kill: latest ≤ 35 % at 4k."},
+    {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase (output-word spans)", "standing": "queued",
+     "run": "E33q replicate and naming-only arm (Polonez, multi-hop session)",
+     "model": "E33q seed 1; E33q without the feedback", "tokens": "0.3B continuation from E33r each",
+     "exams": "v2 + v2.1; round-embedding probes for 3-hop compose", "result": "—",
+     "when": "18 Oct from about 03:10 UTC, results about 05:00", "why": "Confirm E33q before it becomes the base."},
     {"id": "query_e33q_s0.odra", "start": "2026-10-17", "data": "v2 + bridge, reasoning phase (output-word spans)",
      "standing": "in use", "run": "E33q, the loop asks with the name it found (Odra GPU 2)",
      "model": "E33r + rounds name their hop through the LM head (0.3) and pass the name, re-embedded, to the next round "
