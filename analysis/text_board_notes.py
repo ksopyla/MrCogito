@@ -30,7 +30,7 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-18 06:00 UTC",
+    "as_of": "2026-10-18 07:45 UTC",
     "headline": "Compose is closest to the 70 % goal: E33 with order heads answers 69 % at 4k and 88 % at 16k (one run). "
                 "Latest still fails for every notebook model; three fixes for latest, count and compose train on Odra.",
     "where": [
@@ -254,12 +254,13 @@ CLAIMS = [
                  "even zero, scores the same). Deduce depth 3 works (66-92 %) because its chain ends on content.",
      "settle": "A per-round control over the question words (MAC-style), or training on 3 hops (the author's call)."},
     {"claim": "Training each loop round to name its hop's word lifts compose and deduce above 90 % on the id split.",
-     "state": "single run", "since": "2026-10-18",
+     "state": "holds", "since": "2026-10-18",
      "evidence": "E33q: E33r + a naming loss (round r names hop r's output word through the shared LM head, decoder "
                  "weights detached), 0.3B tokens: compose 94 / 98 %, deduce 99 / 100 % at 4k / 16k, evidence removed 0 %. "
                  "The feedback built beside it is unused (removing it at exam time changes nothing). Fails on new "
                  "sentence shapes (compose 6 %) and on more hops than trained (3-hop compose 0 %).",
-     "settle": "A second seed (multi-hop session, Polonez) and a naming-only arm; hop-count generalisation."},
+     "settle": "Settled on the id split: E33q seed 1 (compose 94 / 98 %, deduce 99.5 / 99.5 %) and the naming-only arm "
+               "E33qn (93.5 / 97 %, 98 / 99.5 %) repeat it. Open: new sentence shapes and hop counts."},
     {"claim": "On the reasoning data, 30M dense learns neither compose nor deduce, so E33r's compose comes from the "
               "loop and its read target.", "state": "single run", "since": "2026-10-17",
      "evidence": "Dense warm-started on the same 0.3B tokens as E33r: compose 8 %, deduce 6.5 % at 4k (one step 11 / 8 %), "
@@ -745,11 +746,19 @@ LADDER = [
      "tokens": "0.3B continuation from E33h", "exams": "v2 + v2.1", "result": "—",
      "when": "18 Oct from 02:28 UTC (Odra GPU 0, micro-batch 2 × 48), about 4 h",
      "why": "T6: give the summing read a direct signal. Pass: count ≥ 50 % at 4k. Kill: ≤ 35 %."},
-    {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase (output-word spans)", "standing": "queued",
-     "run": "E33q replicate and naming-only arm (Polonez, multi-hop session)",
-     "model": "E33q seed 1; E33q without the feedback", "tokens": "0.3B continuation from E33r each",
-     "exams": "v2 + v2.1; round-embedding probes for 3-hop compose", "result": "—",
-     "when": "18 Oct from about 03:10 UTC, results about 05:00", "why": "Confirm E33q before it becomes the base."},
+    {"id": "query_e33q_s1.polonez", "start": "2026-10-18", "data": "v2 + bridge, reasoning phase (output-word spans)",
+     "standing": "in use", "run": "E33q seed 1 (Polonez, multi-hop session)", "model": "E33q, second seed · 30M, plain",
+     "tokens": "0.3B continuation from E33r", "exams": "v2 + v2.1; round-embedding probes",
+     "result": "Replicates: compose 94 / 98 %, deduce 99.5 / 99.5 %, lookup 98.8 / 99.2 %, keyed 97.8 / 99 % at 4k / 16k; "
+               "story loss 1.523. Harder: deduce depth 3 87 / 94 %, compose 3 hops 2 / 0 %; paraphrase compose 6 %.",
+     "when": "18 Oct, exams done 07:33 UTC", "why": "Confirm E33q before it becomes the base."},
+    {"id": "query_e33qn_s0.polonez", "start": "2026-10-18", "data": "v2 + bridge, reasoning phase (output-word spans)",
+     "standing": "in use", "run": "E33qn, naming only (Polonez, multi-hop session)",
+     "model": "E33q without the round feedback · 30M, plain", "tokens": "0.3B continuation from E33r",
+     "exams": "v2 + v2.1",
+     "result": "Same as E33q: compose 93.5 / 97 %, deduce 98 / 99.5 %, lookup 98 / 99 %, keyed 98 / 99 %. The simpler base "
+               "recipe; the feedback contributes nothing.",
+     "when": "18 Oct, exams done 07:33 UTC", "why": "Is the naming loss alone the recipe?"},
     {"id": "dgate_e33rb_s0.polonez", "start": "2026-10-18", "data": "deduce bridge-only gate", "standing": "in use",
      "run": "Deduce gate (Polonez, multi-hop session)", "model": "E33rb + 0.1B tokens of deduce documents asking only their "
      "one-fact bridges · 30M, plain", "tokens": "0.1B continuation", "exams": "v2 + v2.1",
