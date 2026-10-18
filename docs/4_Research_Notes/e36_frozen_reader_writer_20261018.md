@@ -9,7 +9,9 @@
   100M tokens; weights-as-memory is too slow to write. The compressors that work with frozen readers have
   converged on our design: chunks in parallel, a bidirectional encoder, pooled vectors.
 - **Three changes to our writer:**
-  - each entry covers a span of 8 tokens and carries its position, which gives order for free;
+  - each entry is **one vector for a span of 512 tokens** (in line with Cramming's 1,568 tokens per vector),
+    shrinking to 256 and then 128 tokens if a stage fails; each entry carries its span's position, so the order
+    of entries comes for free;
   - it starts from SmolLM2-135M's lower layers, sharing the reader's tokenizer (3 / 8 / 28 layers = 10.6M /
     28.3M / 99.1M);
   - keys for the fetch and values for the reader, trained apart.
@@ -70,17 +72,19 @@ Builds on (not repeated here):
 |---|---|---|
 | the text itself (token ids) | 2–4 B | 0.2–0.4 GB |
 | E33 notes (32 per 192 tokens, 64-d key + 64-d value) | 43 B | 4.3 GB (keys 2.1 GB) |
-| entries in the reader's input space, 16 tokens each, d = 960 | 120 B | 12 GB, plus 0.8 GB of 64-d keys |
-| the same, 32 tokens each | 60 B | 6 GB, plus 0.4 GB of keys |
+| **E36 entries, one vector per 512 tokens** (stored at writer width 576, 64-d key) | 2.5 B | **0.23 GB**, plus 25 MB of keys |
+| the same, 256 tokens per vector (first fallback) | 4.8 B | 0.45 GB, plus 50 MB of keys |
+| the same, 128 tokens per vector (second fallback) | 9.5 B | 0.9 GB, plus 0.1 GB of keys |
+| for comparison: 16 tokens per vector at the reader's width (d = 960) | 120 B | 12 GB, plus 0.8 GB of keys |
 | the reader's full key/value cache (SmolLM2-360M: 32 layers × 5 heads × 64 × 2 × 2 B) | 41 KB | 4.1 TB |
 
-- A 100M-token memory fits in RAM only in compressed form. The reader reads a few dozen fetched entries per
-  question, never the whole memory.
-- The fetch is cheap: an exact top-k over 6.25M keys of 64 numbers is 0.8 GFLOP and 0.8 GB of memory traffic per
-  question, under 1 ms on a 3090. No approximate index is needed below about 50M entries.
+- At 512 tokens per vector the whole 100M-token memory is 195,313 entries, about the size of the text itself, and
+  fits on one GPU. Even at 128 tokens per vector it is under 1 GB.
+- The reader reads a few fetched entries per question, never the whole memory. The fetch is an exact top-k over
+  0.2–0.8M keys of 64 numbers: about 0.1 GFLOP per question, well under 1 ms. No approximate index is needed.
 
 **Speed.** Writing costs about 2 × (non-embedding parameters) × tokens operations, plus attention within a page
-(small at 256 tokens). A 3090 peaks at about 71 TFLOPS in bf16; assume 30 TFLOPS sustained for small layers:
+(about 17 % more at 512 tokens per page and width 576). A 3090 peaks at about 71 TFLOPS in bf16; assume 30 TFLOPS sustained for small layers:
 
 | writer (non-embedding parameters) | 1M tokens, one 3090 | 1M tokens, Polonez's four |
 |---|---|---|
@@ -94,8 +98,8 @@ Builds on (not repeated here):
 - Parameters that cost no operations are free here: a borrowed, frozen embedding table (the reader's own), or a
   sparse mixture of experts with ≈ 10M active parameters out of 100M.
 
-**Positions.** The reader's cost is set by the positions it attends to. Fetching 32 entries of 16 tokens each puts
-512 tokens of evidence into 32 positions.
+**Positions.** The reader's cost is set by the positions it attends to. Fetching 16 entries of 512 tokens each puts
+8,192 tokens of evidence, SmolLM2's whole context, into 16 positions.
 
 ## 3. Task 1 — the frozen reader
 
@@ -144,12 +148,12 @@ vectors each, with a small projection into the reader. Three changes from that l
 
 | family | 100M tokens | 1M tokens < 1 s | small | keeps facts | order | verdict |
 |---|---|---|---|---|---|---|
-| **chunk encoder + pooled vectors** (ours; ARC-Encoder, REFRAG, LCLM, SAC, GMSA) | yes, with a fetch | yes (chunks in parallel) | yes | yes at 4–8 tokens per vector; −7 F1 on multi-hop at 16× | only if each vector carries its span's position | **keep, with three changes** |
+| **chunk encoder + pooled vectors** (ours; ARC-Encoder, REFRAG, LCLM, SAC, GMSA) | yes, with a fetch | yes (chunks in parallel) | yes | yes at 4–8 tokens per vector; −7 F1 on multi-hop at 16×; −21 F1 at 128× (reader with adapters) | only if each vector carries its span's position | **keep, with three changes** |
 | linear recurrent / state-space writer (Gated DeltaNet, Mamba) | no: a fixed state | yes | yes | exact recall falls from 84 at 2k to 28 at 4k (1.3B model) | built in | reject as the store |
 | test-time training (TTT-E2E, LaCT, Titans) | no evidence | no: sequential over the text | — | needle-in-a-haystack 0.06 at 128k vs 0.99 for full attention | built in | reject |
 | product-key memory layers | parameters, not a store | written by training, not by reading | — | gains on factual tasks | none | reject as the writer (the addressing idea stays) |
 | text → adapter weights (Doc-to-LoRA, Generative Adapter) | one adapter per document; no top-k over many | one pass per document | — | good per document | none | reject at 100M tokens |
-| **plain retrieval over raw text** (RETRO-style) | yes, trivially | no writer at all | — | the reader reads the text itself | by sorting | **the baseline to beat**: same answers, but 4–8× more reader positions |
+| **plain retrieval over raw text** (RETRO-style) | yes, trivially | no writer at all | — | the reader reads the text itself | by sorting | **the baseline to beat**: the same spans as raw text cost 512× more reader positions |
 
 Sources: [ARC-Encoder 2510.20535](https://arxiv.org/html/2510.20535), [REFRAG 2509.01092](https://arxiv.org/html/2509.01092),
 [LCLM 2606.09659](https://arxiv.org/html/2606.09659v1), [SAC 2510.08907](https://arxiv.org/html/2510.08907v4),
@@ -171,12 +175,15 @@ Sources: [ARC-Encoder 2510.20535](https://arxiv.org/html/2510.20535), [REFRAG 25
 | LatentPress | the reader's bottom 2 layers, frozen, + a 4–26M adapter | 4–16 | yes | LongMemEval 0.48–0.50 vs 0.49 with the raw text; 43 ms per conversation |
 
 **What this changes in our writer:**
-1. **Each entry is a contiguous span with a known position.** Entries are pooled over spans of 8 tokens and carry
-   the middle position of their span. In ICAE, giving each vector its span's middle position raised
+1. **Each entry is one vector for a contiguous span of 512 tokens, with a known position** (the author's choice,
+   18 Oct, in line with Cramming's 1,568 tokens per vector). If a stage fails at 512, the span shrinks to 256 and
+   then to 128 tokens (§6). The writer reads the whole span bidirectionally and pools it into one vector; the
+   entry carries the middle position of its span. In ICAE, giving each vector its span's middle position raised
    reconstruction BLEU from 31.8 to 96.0 (EPL). Our E33 notes have no position and fail "latest" (22 % at 4k);
-   E33d had to add one. With spans, order and time (need 6) come for free. The fetched entries are placed in the
-   reader in source order, so the reader's own sense of "later in the text" does the rest. Timestamps and
-   document ids go into the keys, kept out of the values (LongMemEval: +7–11 % on temporal recall).
+   E33d had to add one. With spans, the order of entries (need 6) comes for free: the fetched entries are placed
+   in the reader in source order, so the reader's own sense of "later in the text" does the rest. Order *inside*
+   a span is the writer's job. Timestamps and document ids go into the keys, kept out of the values
+   (LongMemEval: +7–11 % on temporal recall).
 2. **Start from a pretrained encoder that shares the reader's tokenizer.** We take the lower layers of
    SmolLM2-135M, made bidirectional within a page. The reader is SmolLM2-360M, and the two share a tokenizer.
    The size ladder falls out of the layer count:
@@ -195,15 +202,38 @@ Sources: [ARC-Encoder 2510.20535](https://arxiv.org/html/2510.20535), [REFRAG 25
    This is F3. Values learn from continuation and distillation. Keys learn from how much a fetched entry lowers
    the reader's loss on the answer (Atlas/REPLUG style, or CLaRa's straight-through top-k: no relevance labels).
 
+**What one vector per 512 tokens can carry** (the main risk of the 512 start):
+
+| reader | tokens rebuilt word for word from one *optimised* vector | source |
+|---|---|---|
+| SmolLM2-135M / SmolLM2-360M | 38.5 / 61 (mean) | [Progressive Cramming 2607.21231](https://arxiv.org/html/2607.21231) |
+| Gemma 3 270M | 71 | same |
+| Pythia-160M / Pythia-410M | 80 / 96 | [Cramming 2502.13063](https://arxiv.org/html/2502.13063) |
+| Llama-3.2-1B | 512 (402 in Progressive Cramming) | Cramming |
+| Llama-3.1-8B | 1,568 | Cramming |
+
+- Capacity tracks bits, not tokens. SmolLM2-360M's optimised vector holds roughly 61 tokens of book text,
+  about 200 bits. That is my estimate at about 3 bits per token of surprise.
+- A 512-token span of web text holds roughly 1,500 bits under the same reader. So even an optimised vector
+  holds about an eighth of a span, and a trained writer holds less (the amortisation gap).
+- At 512 a word-for-word rebuild is therefore out of reach. The bet is that one vector keeps what continuation and
+  questions need, the facts and the gist, not the wording: "distillation, not transcription", as in the E35 spec.
+- Trained compressors at high ratios still answer:
+  - xRAG, one vector per passage into a frozen 7B reader: 42.5 vs 43.6 with the passage as text, and 36.5
+    without it;
+  - No Mean Feat at 128 tokens per vector: HotpotQA F1 63.9 vs 84.7.
+- **Way B (key/value prefix) gives each entry far more room:** a key and a value in each of the reader's 32 layers,
+  instead of one input position. At 512 it is the arm more likely to pass.
+
 **The seven needs, met by this writer:**
 
 | need | how | number |
 |---|---|---|
-| 100M tokens | 12.5M entries at 8 tokens each; values 14.4 GB and keys 1.6 GB in RAM; exact top-k fetch | under 1 ms per question |
+| 100M tokens | 195,313 entries at 512 tokens each (0.23 GB; 0.9 GB at the 128 fallback); exact top-k fetch on one GPU | well under 1 ms per question |
 | 1M tokens < 1 s | pages written in parallel | 10.6M: 0.7 s on one 3090; 28.3M: 0.5 s on four; 99M: about 1.7 s on four (misses; a mixture of experts with ≈ 10M active would meet it) |
 | training | frozen reader, staged (§5); literature recipes exist | — |
 | tasks and data | continuation, reconstruction, teacher matching on public text | §5 |
-| semantic compressor | 4–8 tokens per vector is where frozen-reader compressors stay within 0–3 points of the full text | — |
+| semantic compressor | published frozen-reader compressors stay within 0–3 points of the full text at 4–8 tokens per vector; 512 is far beyond them, which is the bet | — |
 | time / order | span positions, entries placed in source order, timestamps in keys | — |
 | size | 10M → 30M → 100M by layer count | — |
 
@@ -224,8 +254,8 @@ its context.
 
 | stage | trains | loss | data | evidence |
 |---|---|---|---|---|
-| S0 qualify the reader | nothing | — | the evaluation suite below; a Cramming probe (tokens per optimised vector) | readers differ 38–71 tokens per vector; floors and ceilings under 1B are unpublished |
-| S1 task-free writer | writer values + projector (or expander) | the reader continues the next page from the entries of earlier pages (80 %), and rebuilds a page from its own entries (20 %) | FineWeb-Edu; long documents from PG-19 train and ProLong (books, arXiv) | ARC: 20 % reconstruction best (41.6 vs 39.8 at 0 % and 37.5 at 100 %); REFRAG: the cold start needs a curriculum (1 page → many). Curriculum: 4 tokens per entry, then 8 |
+| S0 qualify the reader | nothing | — | the evaluation suite below; a Cramming probe at 128, 256 and 512 tokens per entry, for both ways in (one optimised input vector; one optimised key/value prefix entry) | readers differ 38–71 tokens per optimised input vector; nobody has probed a prefix entry; floors and ceilings under 1B are unpublished |
+| S1 task-free writer | writer values + projector (or expander) | the reader continues the next page from the entries of earlier pages (80 %), and rebuilds a page from its own entries (20 %) | FineWeb-Edu; long documents from PG-19 train and ProLong (books, arXiv) | ARC: 20 % reconstruction best (41.6 vs 39.8 at 0 % and 37.5 at 100 %); REFRAG: the cold start needs a curriculum. Curriculum: the number of earlier entries grows from 1 to 16; the span stays at 512 tokens. At 512 a word-for-word rebuild is out of reach (§4), so reconstruction is a training signal judged by its loss, not by exact match |
 | S2 teacher matching | writer values | KL between the reader's output given the entries and given the raw text; mixed forward/reverse (λ ≈ 0.6) | continuations of plain text (no labels at all); SYNTH (a Wikipedia passage, a question, a reasoning trace, an answer; CC-BY); passages and questions of SQuAD, TriviaQA, HotpotQA (answers written by the teacher, PISCO style); SmolTalk2 conversations (earlier turns become memory, the reply is the target) | Cartridges: distillation beat next-token training (+8.6 chrF); xRAG: −3.1 without the KL term; KV-Distill: mixed KL 86.0 vs 79.1 for reconstruction + continuation (SQuAD) |
 | S3 the fetch at 100M tokens | keys only (values frozen) | the reader's answer loss over the fetched entries (each entry's share of lowering it) | a 100M-token memory: Wikipedia and FineWeb text with the evaluation passages planted inside | CLaRa: fetch trained in the compressed space, recall@5 96 % on HotpotQA at 4×; F3 |
 
@@ -271,7 +301,7 @@ Sources: [Cartridges 2506.06266](https://arxiv.org/html/2506.06266v3), [xRAG 240
 
 **The bet.** A 10–30M writer, trained only on public text against a frozen SmolLM2-360M, makes the reader answer
 from a 100M-token memory at ≥ 80 % of its own score with the relevant text in context. It does this:
-- at 8 tokens per reader position;
+- with one entry (one vector) per 512 tokens, falling back to 256 and then 128 tokens only if a stage fails;
 - writing 1M tokens in under 1 s;
 - without moving the reader's own scores.
 
@@ -281,10 +311,20 @@ writer for a small frozen reader, with a fetch at 100M tokens, has no published 
 | step | runs | pass | stop |
 |---|---|---|---|
 | S0 (no training, ~2 h) | SmolLM2-360M, its instruct version, Qwen3-0.6B-Base: floor and ceiling on the suite; Cramming probe; share of attention on injected vectors | ≥ 3 suite tasks with a ceiling − floor gap ≥ 15 points | a reader with < 2 such tasks is dropped |
-| S1 (≈ 4 h each) | 10.6M writer, 1B tokens; arm A input positions vs arm B key/value prefix | the entries recover ≥ 50 % of the perplexity gain that the raw earlier text gives, at 8 tokens per entry | < 20 % on both arms after 1B tokens: the small reader's channel is too narrow |
-| S2 | the better arm; then 28.3M | SQuAD / SWDE / FDA from memory ≥ 80 % of the in-context score; irrelevant memory moves MMLU and HellaSwag < 1 point | < 50 % of in-context |
-| S3 | keys trained over a 100M-token memory | needle and lookup at 100M ≥ 80 % of the single-document score; equal to the raw-text baseline at 4–8× fewer reader positions | raw-text fetch beats it at equal positions by > 10 points |
+| S1 (≈ 4 h each) | 10.6M writer, 1B tokens, 512 tokens per entry; arm A input positions vs arm B key/value prefix | the entries recover ≥ 50 % of the perplexity gain that the raw earlier text gives | < 20 % on both arms after 1B tokens: this span fails (see the ladder below) |
+| S2 | the better arm; then 28.3M | SQuAD / SWDE / FDA from memory ≥ 80 % of the in-context score; irrelevant memory moves MMLU and HellaSwag < 1 point | < 50 % of in-context: this span fails |
+| S3 | keys trained over a 100M-token memory | needle and lookup at 100M ≥ 80 % of the single-document score; within 10 points of fetching the same spans as raw text (which costs 512× more reader positions) | more than 10 points below the raw-text fetch |
 | writer ladder | 10.6M → 28.3M → 99.1M | each size adds ≥ 3 points on the S2 suite | — |
+
+**The span ladder (512 → 256 → 128 tokens per entry).**
+- Start every stage at 512 tokens per entry.
+- A span fails when S1 or S2 hits its stop mark. That stage is then rerun at the next span, 256 and then 128,
+  keeping everything else fixed. Each rung costs one S1 run, about 4 h. The stages already passed are not
+  repeated unless the span changes under them.
+- If 128 also fails, E36 stops and reports. At that point the lever is the reader, not the writer: Llama-3.2-1B
+  takes 512 tokens per optimised vector, against SmolLM2-360M's 61, but it is over the 500M limit.
+- S0's Cramming probe at 128 / 256 / 512 predicts the rungs before any training. If even an optimised entry
+  carries little at 512, we know the writer has to win on facts alone.
 
 **How this generalises the E33 lessons** (review F1–F7):
 - The frozen reader with memory only removes the raw-window shortcut, which is what made the writer drop facts
@@ -309,5 +349,9 @@ shared writer losing < 1 point.
 - The literature disagrees on bidirectional vs causal writers (SAC: bidirectional +3.4 F1; LCLM: causal better).
   Our page writer is bidirectional within a page.
 - PCC's architecture and REFRAG's curriculum ablation could not be read; REFRAG's code is not released.
+- **512 tokens per entry is far beyond every published trained compressor with a frozen reader** (4–16 tokens per
+  vector there; xRAG's one vector per passage is the nearest). It is about 8× beyond what an *optimised* vector
+  carries into SmolLM2-360M. Whether a trained vector keeps the facts of a 512-token span is the open question
+  the ladder answers.
 - Teacher matching with a 360M teacher is only as good as the teacher's own answers. On plain-text continuations
   this does not matter; on QA it caps the student at the teacher.
