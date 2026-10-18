@@ -30,7 +30,7 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-18 02:40 UTC",
+    "as_of": "2026-10-18 06:00 UTC",
     "headline": "Compose is closest to the 70 % goal: E33 with order heads answers 69 % at 4k and 88 % at 16k (one run). "
                 "Latest still fails for every notebook model; three fixes for latest, count and compose train on Odra.",
     "where": [
@@ -734,7 +734,10 @@ LADDER = [
     {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain",
      "standing": "running", "run": "E33q on the latest-supervised data (Odra GPU 2)",
      "model": "E33q (naming, no order term) · 30M, plain", "tokens": "0.3B continuation from E33q", "exams": "v2 + v2.1",
-     "result": "—", "when": "18 Oct from 02:35 UTC, about 3 h",
+     "result": "Quick exam (200 items): latest still 20 / 2 % at 4k / 16k (the newest move picked 29 %) even with the last "
+               "move as read target and naming target: without an order signal in the read, the supervision cannot be "
+               "met. Compose 96 / 100 %, deduce 99 / 100 %, lookup 100 / 100 %, count 24 / 26 %.",
+     "when": "18 Oct 02:35 → 05:15 UTC training; quick exam 05:45 UTC; full exams running",
      "why": "The ablation beside E33j: do the read target and the naming alone teach latest, or is the order term needed?"},
     {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain + count visits",
      "standing": "running", "run": "E33k, count heads told the true number (Odra)",
