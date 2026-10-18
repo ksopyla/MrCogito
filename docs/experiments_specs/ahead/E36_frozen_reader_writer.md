@@ -35,4 +35,51 @@ hurt the reader when they come from another document.
 - Reported per source (books / PDFs), with bits carried per entry and SQuAD none / raw / memory / other.
 
 ## Result
-_Pending._
+
+### S0 — the frozen reader alone (Polonez GPU3, 17:10–17:28 UTC, 18 Oct)
+Reader SmolLM2-360M; the first 256 held-out rows per source; tokens 1–511 of the target span scored.
+
+| measure | no text | raw text in context | last 512 raw tokens only |
+|---|---|---|---|
+| continuation, PG-19 books (nats/token) | 2.959 | 2.748 (155 bits per span) | 2.806 |
+| continuation, FinePDFs (nats/token) | 2.239 | 1.747 (363 bits per span) | 1.920 |
+| SQuAD v1.1, 500 items, answer contained / exact | 8.8 % / 4.4 % | 51.6 % / 14.4 % | — |
+
+The Cramming probe optimises one entry per text (8 texts, 800 Adam steps). For each way in it reports the share of
+tokens the reader then predicts correctly, the exact prefix in tokens, and the bits the entry adds:
+
+| text length | one input vector | one key/value entry (all 32 layers) |
+|---|---|---|
+| 128 tokens | 61 %, 20 tokens, 227 bits | 99.9 %, 111 tokens (7/8 exact), 547 bits |
+| 256 tokens | 53 %, 15 tokens, 238 bits | 99.95 %, 223 tokens (7/8 exact), 1,044 bits |
+| 512 tokens | 49 %, 12 tokens, 264 bits | 99.98 %, 448 tokens (7/8 exact), 1,994 bits |
+
+**Reading:** an input vector carries about 250 bits whatever the length. A key/value entry carries a whole
+512-token span. So the channel allows 512 tokens per entry only through the key/value way.
+
+### S1 round 1 — 10.6M writer, 512 tokens per entry, 4,000 steps × 32 rows (≈ 0.59B row tokens)
+- Arm B (key/value): GPU3, 17:28:58–19:07:27 UTC. W&B `frozen_reader_SmolLM2-360M_w3_s512m8_kv_20261018_172911`.
+- Arm A (input positions): GPU1, 17:34:01–19:01:53 UTC. W&B `frozen_reader_SmolLM2-360M_w3_s512m8_input_20261018_173412`.
+- Evaluation: `evaluation/frozen_reader_eval.py`. Results in `Cache/e36/<run>/eval_final.json` (Polonez ~/dev/MrCogito-e36).
+
+| measure | none | raw | arm B memory | arm B other doc | arm A memory | arm A other doc |
+|---|---|---|---|---|---|---|
+| PG-19 continuation | 2.959 | 2.748 | 2.921 | 2.930 | 2.952 | 2.952 |
+| FinePDFs continuation | 2.239 | 1.747 | 2.177 | 2.216 | 2.231 | 2.235 |
+| trainer's 256 eval rows (89 % books) | 2.781 | 2.515 | 2.738 | 2.824 | 2.773 | 2.784 |
+| share of the raw-text gain recovered (books / PDFs / trainer rows) | — | 100 % | 18 / 13 / 16 % | — | 4 / 2 / 3 % | — |
+| span rebuilt from its own entry (bits per 511 tokens, books / PDFs) | — | — | 32 / 48 | — | 8 / 9 | — |
+| SQuAD, passage only in memory (contains) | 8.8 % | 51.6 % | 9.8 % | 8.4 % | 9.4 % | 8.8 % |
+
+- **Verdict against the marks:** both arms are below the 20 % stop line, so the 512 span fails. By the ladder, S1
+  reruns at 256.
+- **What crosses is document-specific but small.** Another document's entries are worse than none on the trainer
+  rows (2.824 vs 2.781). The gain is about 4–6 bits per entry. No SQuAD facts cross.
+- **The writer is the bottleneck, not the channel.** Arm B's entries let the reader rebuild about 35 bits of their
+  own span; an optimised key/value entry carries about 2,000 bits for the same span (S0), roughly 50× more.
+  Arm B's held-out loss was still falling at step 4,000 (2.762 at step 500, 2.738 at 4,000).
+- **Correction:** at 17:53 UTC I reported arm B "recovering ~93 %". I had compared the trainer's eval loss (a
+  shuffled sample over both sources) with S0's baseline on different rows. On the same rows the share is 16 %.
+
+### S1 round 2 (started 19:12:01 UTC, Polonez): span ladder 256 (arm B, GPU1) · writer ladder 8 layers = 28.3M at 512 (arm B, GPU3)
+_Running._
