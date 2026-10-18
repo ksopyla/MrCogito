@@ -513,15 +513,166 @@ So a loss on addressing leaks into content whenever both share one read. Read-ba
 **Not a ceiling either.** The dense 30M model, trained without the reasoning-phase data, is at guessing on compose
 (7.8 %) and deduce (8.5 %) at 4k, though it sees every fact.
 
-**Next (running from 18:24 UTC, Polonez):**
-- **E33rb** (GPUs 0–1): E33r's page target plus the zero-init read-back, from the E33r final, 0.3B tokens.
-  - Question: does the property word get written without losing the places?
-  - Kill at checkpoint-445: the place probe < 50 % or lookup (whole exam) at 4k < 65 %.
-- **Dense on the reasoning data** (GPUs 2–3), from the q8b dense model, same data and budget.
-  - Question: is deduce learnable at 30M with every fact visible?
-  - If it stays near 8 %, deduce is a data or objective problem, not compression.
-- **If read-back fails:** split each latent's read into an address read (key) and a content read (value), or tie
-  the read-back to the reader's own output projection and LM head.
+**Where note content stands (note-content probe; place recovered from the note's value / key, guessing 8 %).**
+
+| checkpoint | place | property word |
+|---|---|---|
+| E33 bridge data (7038) | 71 / 72 % | 8 % |
+| E33x (exits off) | 80 / 77 % | 12 % |
+| E33r (page read target) | 68 / 59 % | 11 % |
+| E33rb at a third / at the end | 63 / 57 % → 56 / 50 % | 13 % → 12 % |
+| E33o / E33b run 2 (note-level target) | 14 / 11 %, 12 / 11 % | 12 %, 10 % |
+
+- The read target costs content even at page level (80 → 68 %), mostly in the keys, and keeps costing it while
+  training continues.
+- No model has ever written the property word.
+
+**E33rb (18:24–20:05 UTC; E33r + zero-init read-back 0.1, page target, 0.3B tokens from the E33r final).**
+- No harm, small gains: compose two steps 61 / 82 % (E33r 60 / 76 %); deduce 17 / 12 % at 4k / 16k (13 / 9 %);
+  lookup 74 / 89 % (74 / 87 %). Part of this is simply 0.3B more tokens.
+- Read-back did not write the property word (12 %).
+- The read-back head itself learned token frequency only: its top guess at a note's own position is right 0 % of
+  the time for names, places, class words and properties, and 8 % for function words.
+- Checked: the targets are right. Rows are not packed with document ids, so note positions are row positions.
+
+**Dense on the reasoning data (18:24–20:05 UTC; from the q8b dense model, same data and budget).**
+- Compose 8 % and deduce 6.5 % at 4k; one-step compose 11 %, one-step deduce 8 %.
+- Lookup 84 %, keyed 83 %, latest 92 %, count 46 % at 4k.
+- With every fact visible, the 30M dense model learns neither join in 0.3B tokens. Dense is not a ceiling for T5 /
+  T7. E33r's compose comes from the loop plus the read target.
+
+**Deduce gate (21:04–21:34 UTC; from the E33rb final, 0.1B tokens of deduce documents asking only their one-fact
+questions, fact-level read targets).**
+- "What is a kavi like?" asked alone: 12 → 44 %. "What is Pim?": 79 %.
+- The property word in the notes: 12 → 20 %.
+- The joined deduce question did not move (12 % depth 2, 16 % one step), since the gate never asked it.
+- Compose was forgotten (8 %), as the compose gate forgot lookup.
+
+Reading: the writer can store a property when training asks for it densely. The reasoning mix asked about 6× less
+often per token.
+
+**E33ok (20:04–22:37 UTC): E33o + the key-gradient stop (lm_key_grad = detach), from the E33r final, 0.3B tokens on
+the output-word data.**
+
+| exam (id split, 4k / 16k) | E33rb | E33ok |
+|---|---|---|
+| deduce, depth 2 | 17 / 12 % | **36 / 35 %** |
+| deduce, one step | 15 / 10 % | 40 / 35 % |
+| compose, two steps | 61 / 82 % | 42 / 48 % |
+| lookup | 74 / 89 % | 65 / 52 % |
+| keyed | 73 / 86 % | 56 / 51 % |
+| story loss | 1.5135 | 1.5111 |
+
+- **Note content is back:** the place probe is 80 / 75 % (value / key), up from E33o's 14 / 11 %.
+- **The property word is written for the first time:** 33 / 31 %; every earlier model was at 8–13 %.
+- **Why it works (working explanation):** the keys learn addressing only, and the answer's gradient trains the
+  values of exactly the notes the read lands on.
+- **What it cost:** compose and long lookup. The run began with a shock (lookup 74 → 37 % at checkpoint 178) and
+  was still climbing at the end (lookup 37 → 52 → 54 → 60 %, deduce 14 → 17 → 26 → 32 %).
+- **Structural part of the cost:** with the stop, a key can only reuse the content read. A note on a place name
+  can no longer carry the person's name in its key, and compose and long lookup need exactly that.
+
+**Address read (built 18 Oct, lm_key_grad = address).**
+- Each latent reads its page a second time, with its own query and position prior, for its key alone.
+- The token states, latent states and every shared projection enter that read with the gradient stopped, so it
+  cannot move the content read.
+- It joins the key through a zero-init projection, so a warm start from a "detach" model is unchanged at step 0.
+- +0.36M parameters, FFN width unchanged.
+- Arches: e33ak (E33ok + address read), e33gak (E33gk + address read).
+
+**Next (Polonez, queued, ~23:30 UTC; both from the E33ok final, 0.6B tokens on the denser output-word mix
+v2reason2_out: deduce 4 of 12 tasks, 8 one-fact questions per document):**
+- GPUs 0–1: e33ok, the longer run.
+- GPUs 2–3: e33gk = e33ok + E33g's fixed order heads. On Odra, over its matched control E33rb, E33g gained compose
+  +8 / +6 and deduce +7.
+- Then e33gak (address read) if compose or long lookup stay below E33rb.
+
+**E33q: the goal on the id split (board session, Odra, 17 Oct 21:24 UTC → exams 18 Oct ~01:15 UTC).**
+E33q = E33r + each loop round names its hop's output word through the shared LM head at the answer position, with
+the decoder weights detached and weight 0.3. Round r's predicted distribution is also re-embedded and fed to round
+r+1 through a gate that starts at 0. Warm start: the E33r final, on v2reason_out, 0.3B tokens. One seed. Exact
+scores, read from final_id.json on Odra:
+
+| id split | 1k | 4k | 16k | 128k |
+|---|---|---|---|---|
+| compose, two steps | 79 % | **94 %** | 98 % | 97 % |
+| deduce, depth 2 | 93 % | **99 %** | 100 % | 100 % |
+| lookup · keyed | 93 · 91 % | 98 · 98 % | 100 · 99 % | 99 · 98 % |
+| latest · count | 94 · 28 % | 20 · 24 % | 1 · 22 % | 3 · 13 % |
+
+- With the facts removed from the document: 0 % on compose, deduce, lookup and keyed (removed-answer NLL 8.4 vs
+  0.07). The answers come from the document.
+- **Out of distribution:**
+  - harder split (3-hop compose, depth-3 deduce, both beyond the training dials): compose 0 % (E33r 25 %),
+    deduce 85 / 92 % at 4k / 16k;
+  - paraphrase split (held-out sentence templates): compose 7 % (E33r 6 %, every model fails here), deduce 100 %.
+- **Why deduce went from 13 % to 99 % (working explanation):** the naming loss trains each round to name its hop.
+  Its gradient flows through that round's read into the values of the notes read (only the decoder weights are
+  detached), so every hop's word gets written, the property included. This is E33ok's mechanism, per hop and much
+  denser, and it fits the deduce gate.
+- **The learned feedback gate stays tiny** (|mean| 0.009), so the naming probably does the work.
+- **Working explanation for 3-hop compose at 0 %:** rounds share weights, but the learned per-round embedding lets
+  round 3 become "the place" and leaves round 4 untrained. Deduce's links all share one shape, which may be why
+  depth 3 still works. The board session is testing this without training, by equalising or zeroing loop_emb.
+
+**The key-stop line reaches the goal too (Polonez, 17 Oct 23:07 → 18 Oct 04:43 UTC).** Both runs: from the E33ok
+final, 0.6B tokens on the denser output-word mix (deduce 4 of 12 tasks, 8 one-fact questions per document), no
+naming loss.
+
+| exam, 4k / 16k | E33ok | e33ok, denser mix | e33gk (+ order heads) | E33q |
+|---|---|---|---|---|
+| compose, two steps | 42 / 48 % | **95 / 97 %** | 95 / 96 % | 94 / 98 % |
+| deduce, depth 2 | 36 / 35 % | **98 / 99 %** | 97 / 99 % | 99 / 100 % |
+| lookup | 65 / 52 % | 97 / 98 % | 97 / 99 % | 98 / 100 % |
+| keyed | 56 / 51 % | 95 / 100 % | 95 / 100 % | 98 / 99 % |
+| harder: deduce depth 3 | 22 / 22 % | 66 / 78 % | 61 / 70 % | 85 / 92 % |
+| harder: compose 3 hops | 4 / 6 % | 3 / 2 % | 3 / 2 % | 0 / 0 % |
+| story loss | 1.511 | 1.493 | 1.493 | 1.523 |
+
+- **The notes now hold the property word:** probe 72 % from the value (guessing 8 %), and places 81 %.
+- **The run recovered from E33ok's shock within a third of its length** (lookup at 4k 93 % at the first
+  checkpoint) and kept climbing.
+- **E33g's order heads add nothing here** (e33gk ≈ e33ok).
+
+Two recipes therefore reach > 90 % on compose and deduce at 4k:
+- **E33q:** the naming loss, page-level target, 0.3B tokens from E33r.
+- **The key stop + note-level target + denser mix:** 0.9B tokens from E33r in two stages.
+
+E33q is cheaper and generalises better to depth-3 deduce. Neither does 3-hop compose. The key-stop line keeps a
+slightly lower story loss (1.493 vs 1.523).
+
+**Why 3-hop compose fails (18 Oct 05:20–05:40 UTC, Polonez; no training).**
+- **Not the round embeddings.** On the E33q seed-1 replicate, exam-time maps of the per-round embedding (0,1,1,2;
+  0,1,2,2; all zero) change nothing: harder compose 2–3 %, harder deduce 87–88 %, id compose 92.5 %, id deduce
+  100 %. Zeroing them does move the logits (mean |Δ| 0.38 against a logit scale of 10.7). But they are about 2 % of
+  the state (row norms 0.6–1.2 against 44), so the rounds do not specialise through them.
+- **The models stop after two teacher hops.** Whose home they pick on 3-hop items (asked person = 0, bridge k = k;
+  3 is right):
+
+| model | 0 | 1 | 2 | 3 (right) | other |
+|---|---|---|---|---|---|
+| E33q seed 1 | 1 % | 1 % | **80 %** | 4 % | 15 % |
+| e33ok, denser mix | 0 % | 0 % | **89 %** | 2 % | 8 % |
+| E33r | 3 % | 4 % | 24 % | 33 % | 36 % |
+
+- **Reading:** the reads work; the routine is capped at the training maximum. Training has 1–2 hops, so "read a
+  teacher fact" vs "read the home" was only ever needed for rounds 1–2. The strongly supervised models learned
+  "after at most two teacher reads, read the home".
+- **Why deduce at depth 3 still works (85–88 %):** its chain stops on content (follow "Every X is a Y" until a
+  property sentence appears), not on a count taken from the question.
+- **Direction for later:** each round should take its next relation from the question itself, for example a
+  per-round control attention over the question words (MAC networks, Hudson & Manning 2018,
+  https://arxiv.org/abs/1803.03067). Then the stop is read from the question, not from the round count.
+  Training on 3 hops would also do it, but it would turn the harder split into an in-distribution test, which is
+  the author's call.
+
+**Status against the author's goal** (multi-hop > 70 % on the board, ≤ 100M parameters): met on the board's
+headline (id split, 4k) by E33q at 30M (compose 94 %, deduce 99 %), and independently by the key-stop line
+(compose 95 %, deduce 98 %). It also holds at 1k and up to 128k. Open before
+it becomes the base:
+- a second seed (E33q seed 1, queued on Polonez from ~02:50 UTC, same start, data and budget);
+- 3-hop compose;
+- held-out templates for compose.
 
 ## Uncertainty
 - The probabilities are my judgement from C5, the board and the literature. They are not measured.

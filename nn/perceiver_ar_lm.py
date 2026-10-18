@@ -219,7 +219,8 @@ class PerceiverARConfig(PretrainedConfig):
         lm_competition: bool = True,      # softmax over latents per token, then renormalise
         lm_null_latent: bool = False,     # one latent the reader never sees
         lm_readback_aux: float = 0.0,     # text multi-hop (2026-10-17): each note's value names the tokens it read
-        lm_key_grad: str = "full",        # text multi-hop: "detach" = key-side losses do not move what a latent reads
+        lm_key_grad: str = "full",        # text multi-hop: "detach" = key-side losses do not move what a latent reads;
+                                          # "address" = detach + the key's own read of the page
         lm_reader_tokens: int = 5,        # reader K/V entries per latent (m)
         lm_pos_prior: bool = True,        # per-latent sub-page prior at init
         lm_addr: str = "window_start",    # latent address: "window_start" sinusoid | "none" (length-invariant)
@@ -2541,6 +2542,8 @@ class PerceiverARLM(PreTrainedModel):
                 nn.init.zeros_(layer.attn.compressor.delta.weight)   # post_init re-inits Linears
         if self.memory_writer is not None:
             nn.init.zeros_(self.memory_writer.to_v_state.weight)   # E31: values start as content
+            if getattr(self.memory_writer, "keyread_out", None) is not None:
+                nn.init.zeros_(self.memory_writer.keyread_out.weight)  # the address read adds nothing at step 0
         if self.note_readback is not None:
             # a zero head sends no gradient into the notes at step 0, so a warm-started reader keeps its decoding while the
             # head learns (a random head scrambled the values: E33b run 1 at half its run, 17 Oct, compose 60 → 12 %)

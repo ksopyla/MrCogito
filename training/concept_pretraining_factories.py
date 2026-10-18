@@ -550,6 +550,7 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
                           "note_age_slope",  # E33g: order heads added to a model trained without them (set strengths)
                           "note_counter",  # E33h: count heads added to a warm start (zero output projection)
                           "loop_feedback_gate",  # E33q: the feedback gate starts at 0 (warm start = E33r)
+                          "keyread_",  # lm_key_grad=address: the key's own read (zero output projection)
                           "note_order_gate",  # E33i: the order switch starts nearly off
                           *skip)
         unexplained = [k for k in missing if not any(tag in k for tag in _ALLOWED_FRESH)]

@@ -235,6 +235,31 @@ ARCHES = {
     # averages, so count shows only as a saturating share; here each head adds σ(a·q·k + b) over the notes (each token
     # of the document once: a page owns its first `stride` tokens) and the raw tokens no closed page owns yet, codes the
     # sum as a soft one-hot over 0..10, and adds it to the read through a zero-initialised projection.
+    # E33gk (2026-10-17): E33g's fixed order heads + E33ok (note-level read target with the writer's key gradient
+    # stopped). E33g's order term gave compose +8 / +6 and deduce +7 over its matched control (E33rb); E33ok's stop
+    # kept the note content under the note-level target (place probe 80 %) and wrote the property word (33 %).
+    "e33gk": Arch("e33gk", "E33g's order heads + E33ok's note-level read target with key-side losses off the writer",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "message_loop_read_target": "note", "lm_key_grad": "detach",
+                   "lm_note_age": "rank", "lm_note_rank_margin": 0.5, "lm_note_rank_sharp": 4.0,
+                   "lm_note_age_init": "1,2,4,8", "lm_note_age_learn": "false"}, has_notebook=True),
+    # E33ak / E33gak (2026-10-18): E33ok / E33gk with the key's own read of the page (lm_key_grad="address"). With
+    # the plain stop, keys could only reuse the content read: E33ok wrote the property (deduce 13 → 36 % at 4k) but lost
+    # compose (61 → 42 %) and long lookup (89 → 52 % at 16k), where a note's key must carry a name read elsewhere.
+    # E33qn (2026-10-18): E33q with the round-to-round feedback off — the naming lens alone. Removing the feedback at
+    # exam time left E33q's scores unchanged (compose 93 / 99 %, deduce 99 / 99 % at 4k / 16k; its gate stayed at
+    # |mean| 0.009), so the simpler recipe is trained on its own.
+    "e33qn": Arch("e33qn", "E33r + rounds name their hop through the shared LM head (no feedback)",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "message_loop_name_lens": 0.3, "message_loop_feedback": "none"}, has_notebook=True),
+    "e33ak": Arch("e33ak", "E33ok with the key's own read of the page",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "message_loop_read_target": "note", "lm_key_grad": "address"}, has_notebook=True),
+    "e33gak": Arch("e33gak", "E33gk with the key's own read of the page",
+                   {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                    "message_loop_read_target": "note", "lm_key_grad": "address",
+                    "lm_note_age": "rank", "lm_note_rank_margin": 0.5, "lm_note_rank_sharp": 4.0,
+                    "lm_note_age_init": "1,2,4,8", "lm_note_age_learn": "false"}, has_notebook=True),
     "e33h": Arch("e33h", "E33r + two count heads (a summing read over notes and recent tokens)",
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
                   "lm_count_heads": 2}, has_notebook=True),
@@ -299,7 +324,7 @@ ARCHES = {
 # is refitted, so each stays in the parameter band.
 _PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
 for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o", "e33b", "e33rb", "e33ok", "e33bk",
-           "e33g", "e33h", "e33q", "e33i", "e33j", "e33k"):
+           "e33g", "e33h", "e33q", "e33i", "e33j", "e33k", "e33gk", "e33ak", "e33gak", "e33qn"):
     _a = ARCHES[_k]
     ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
                                  {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)

@@ -421,7 +421,7 @@ class ModelArguments:
         default=0.0, metadata={"help": "Text multi-hop: weight of the note read-back (each note's value names its tokens)."}
     )
     lm_key_grad: str = field(
-        default="full", metadata={"help": "Text multi-hop: full | detach (key-side losses do not move what a latent reads)."}
+        default="full", metadata={"help": "Text multi-hop: full | detach (key-side losses do not move what a latent reads) | address (detach + the key's own read)."}
     )
     message_loop_read_target: str = field(
         default="page", metadata={"help": "Text multi-hop: read target on a page's notes | the span's own notes (note)."}
