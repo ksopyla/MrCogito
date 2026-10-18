@@ -81,5 +81,24 @@ tokens the reader then predicts correctly, the exact prefix in tokens, and the b
 - **Correction:** at 17:53 UTC I reported arm B "recovering ~93 %". I had compared the trainer's eval loss (a
   shuffled sample over both sources) with S0's baseline on different rows. On the same rows the share is 16 %.
 
-### S1 round 2 (started 19:12:01 UTC, Polonez): span ladder 256 (arm B, GPU1) · writer ladder 8 layers = 28.3M at 512 (arm B, GPU3)
-_Running._
+### S1 round 2 — key/value way only, 4,000 steps each (Polonez, 18 Oct)
+Two runs, one change each from round 1's arm B:
+- Span ladder, 256 tokens per entry (16 entries). GPU1, 19:12:01–20:15:28 UTC; W&B
+  `frozen_reader_SmolLM2-360M_w3_s256m16_kv_20261018_191213`. The target span is 256 tokens here, so its
+  none / raw baselines differ from the 512 rows.
+- Writer ladder, 8 layers = 28.3M at 512. GPU3, 19:12:01–21:17:42 UTC; W&B
+  `frozen_reader_SmolLM2-360M_w8_s512m8_kv_20261018_191213`.
+
+| run | books: none / raw / memory / other | PDFs: none / raw / memory / other | recovered (books / PDFs) | span rebuilt (bits, books / PDFs) | SQuAD from memory |
+|---|---|---|---|---|---|
+| 512, 3 layers (round 1) | 2.959 / 2.748 / 2.921 / 2.930 | 2.239 / 1.747 / 2.177 / 2.216 | 18 / 13 % | 32 / 48 | 9.8 % |
+| **256, 3 layers** | 3.074 / 2.745 / 3.000 / 3.027 | 2.455 / 1.749 / 2.350 / 2.435 | 22 / 15 % | 35 / 42 | 9.0 % |
+| **512, 8 layers** | 2.959 / 2.748 / 2.920 / 2.932 | 2.239 / 1.747 / 2.175 / 2.219 | 18 / 13 % | 31 / 48 | 9.0 % |
+
+- **Neither change moves the result.** Shorter spans and a writer 2.7× larger leave the share recovered within
+  4 points. Each entry carries ~35–45 bits of its own span at every setting. The total useful information about the
+  next span is ~28 bits in all three runs (8 × 3.5 at 512; 16 × 1.7 at 256).
+- **The cap sits in how the writer is trained or pooled, not in its size or the span length.** The reader takes
+  ~2,000 bits through one key/value entry (S0).
+- 256 is still below the pass mark (50 %) and below the stop line on PDFs. The 128 rung and a capacity diagnostic
+  follow after the cooling pause (Polonez loaded 16:01–21:17 UTC).
