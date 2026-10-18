@@ -641,6 +641,31 @@ Two recipes therefore reach > 90 % on compose and deduce at 4k:
 E33q is cheaper and generalises better to depth-3 deduce. Neither does 3-hop compose. The key-stop line keeps a
 slightly lower story loss (1.493 vs 1.523).
 
+**Why 3-hop compose fails (18 Oct 05:20–05:40 UTC, Polonez; no training).**
+- **Not the round embeddings.** On the E33q seed-1 replicate, exam-time maps of the per-round embedding (0,1,1,2;
+  0,1,2,2; all zero) change nothing: harder compose 2–3 %, harder deduce 87–88 %, id compose 92.5 %, id deduce
+  100 %. Zeroing them does move the logits (mean |Δ| 0.38 against a logit scale of 10.7). But they are about 2 % of
+  the state (row norms 0.6–1.2 against 44), so the rounds do not specialise through them.
+- **The models stop after two teacher hops.** Whose home they pick on 3-hop items (asked person = 0, bridge k = k;
+  3 is right):
+
+| model | 0 | 1 | 2 | 3 (right) | other |
+|---|---|---|---|---|---|
+| E33q seed 1 | 1 % | 1 % | **80 %** | 4 % | 15 % |
+| e33ok, denser mix | 0 % | 0 % | **89 %** | 2 % | 8 % |
+| E33r | 3 % | 4 % | 24 % | 33 % | 36 % |
+
+- **Reading:** the reads work; the routine is capped at the training maximum. Training has 1–2 hops, so "read a
+  teacher fact" vs "read the home" was only ever needed for rounds 1–2. The strongly supervised models learned
+  "after at most two teacher reads, read the home".
+- **Why deduce at depth 3 still works (85–88 %):** its chain stops on content (follow "Every X is a Y" until a
+  property sentence appears), not on a count taken from the question.
+- **Direction for later:** each round should take its next relation from the question itself, for example a
+  per-round control attention over the question words (MAC networks, Hudson & Manning 2018,
+  https://arxiv.org/abs/1803.03067). Then the stop is read from the question, not from the round count.
+  Training on 3 hops would also do it, but it would turn the harder split into an in-distribution test, which is
+  the author's call.
+
 **Status against the author's goal** (multi-hop > 70 % on the board, ≤ 100M parameters): met on the board's
 headline (id split, 4k) by E33q at 30M (compose 94 %, deduce 99 %), and independently by the key-stop line
 (compose 95 %, deduce 98 %). It also holds at 1k and up to 128k. Open before
