@@ -259,7 +259,8 @@ def main():
         model_description="BiXT perceiver denoising pretraining",
     )
 
-    is_perceiver_ar = getattr(model_args, "model_family", "auto") in {"perceiver_ar", "perceiver_concept", "a2a"}
+    is_perceiver_ar = getattr(model_args, "model_family", "auto") in {"perceiver_ar", "perceiver_concept", "a2a",
+                                                                       "frozen_reader"}
     if torch.cuda.is_available() and is_main_process() and not is_backbone and not is_perceiver_ar:
         num_heads = config.num_attention_heads
         head_dim = config.hidden_size // num_heads
