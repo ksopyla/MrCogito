@@ -247,6 +247,13 @@ PROTOCOL_LOG = [
 # Claims register: every conclusion we have drawn, with its state. holds = repeated or overwhelming within its runs;
 # single run = one run, needs a second; open = not testable yet; retracted = disproved (kept, with the date).
 CLAIMS = [
+    {"claim": "Training each loop round to name its hop's word lifts compose and deduce above 90 % on the id split.",
+     "state": "single run", "since": "2026-10-18",
+     "evidence": "E33q: E33r + a naming loss (round r names hop r's output word through the shared LM head, decoder "
+                 "weights detached), 0.3B tokens: compose 94 / 98 %, deduce 99 / 100 % at 4k / 16k, evidence removed 0 %. "
+                 "The feedback built beside it is unused (removing it at exam time changes nothing). Fails on new "
+                 "sentence shapes (compose 6 %) and on more hops than trained (3-hop compose 0 %).",
+     "settle": "A second seed (multi-hop session, Polonez) and a naming-only arm; hop-count generalisation."},
     {"claim": "On the reasoning data, 30M dense learns neither compose nor deduce, so E33r's compose comes from the "
               "loop and its read target.", "state": "single run", "since": "2026-10-17",
      "evidence": "Dense warm-started on the same 0.3B tokens as E33r: compose 8 %, deduce 6.5 % at 4k (one step 11 / 8 %), "
@@ -704,12 +711,17 @@ LADDER = [
      "result": "—", "when": "18 Oct from 00:21 CEST (22:21 UTC), about 3 h on one GPU",
      "why": "T4: let 'now' questions turn order up while every other token keeps it off. Pass: latest ≥ 60 % at 4k with "
             "compose and lookup within 5 points of E33g. Kill: latest ≤ 35 % at 4k."},
-    {"id": None, "start": "2026-10-17", "data": "v2 + bridge, reasoning phase (output-word spans)", "standing": "running",
-     "run": "E33q, the loop asks with the name it found (Odra GPU 2)",
+    {"id": "query_e33q_s0.odra", "start": "2026-10-17", "data": "v2 + bridge, reasoning phase (output-word spans)",
+     "standing": "in use", "run": "E33q, the loop asks with the name it found (Odra GPU 2)",
      "model": "E33r + rounds name their hop through the LM head (0.3) and pass the name, re-embedded, to the next round "
               "(gate from 0) · 30M, plain",
      "tokens": "0.3B continuation from E33r", "exams": "v2 + v2.1, 1k-16k",
-     "result": "—", "when": "17 Oct from 19:24 UTC; about 3 h on one GPU, then exams",
+     "result": "Goal reached for T5 / T7 on the id split: compose 94 / 98 / 97 % at 4k / 16k / 128k, deduce 99 / 100 %, "
+               "lookup 98 / 100 %, keyed 98 / 99 % (E33r 60 / 76, 13 / 9, 74 / 87, 70 / 83); evidence removed 0 %. "
+               "Latest 20 %, count 24 %, quote 26 % unchanged; story loss 1.523 (E33r 1.516). The same exam with the "
+               "round feedback removed scores the same: the naming does the work. Not on new sentence shapes "
+               "(paraphrase compose 6 %, as every model) or more hops (harder compose 0 %, E33r 25 %).",
+     "when": "17 Oct 19:24 → 22:10 training (Odra GPU 2); exams 22:10 → 18 Oct ~01:15 UTC",
      "why": "T5: the oracle put the gold bridge in the question and E33r went 58 → 81 % at 4k. Pass: compose ≥ 70 % at "
             "4k, far lookup within 5 points. Kill at mid-run: compose < 60 % or lookup < 65 % at 4k, < 75 % at 16k. "
             "Design reviewed by the multi-hop session."},
@@ -1104,6 +1116,10 @@ ARCHS = {
 # measured. effect: helped / hurt / no effect / mixed / measurement (a new exam or rule, the models did not change).
 # metrics: (what is measured, before, after, unit) — unit "%" (0-100) or "runs" ("k/n").
 CHANGES = [
+    {"date": "2026-10-18", "kind": "recipe", "change": "Each loop round names its hop's word (E33q)",
+     "compared": "E33r vs E33r + 0.3B tokens with the naming loss (and an unused feedback)", "effect": "helped",
+     "metrics": [("compose at 4k", 60, 94, "%"), ("deduce at 4k", 13, 99, "%"), ("far lookup at 16k", 87, 100, "%")],
+     "note": "One run; id split only — new sentence shapes and extra hops do not transfer."},
     {"date": "2026-10-17", "kind": "architecture", "change": "Stop the writer's key gradient (E33ok)",
      "compared": "E33r + 0.3B tokens: page read target + read-back (E33rb) vs note read target + key stop (E33ok)",
      "effect": "mixed",
