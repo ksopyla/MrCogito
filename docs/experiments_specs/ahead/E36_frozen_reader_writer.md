@@ -101,4 +101,22 @@ Two runs, one change each from round 1's arm B:
 - **The cap sits in how the writer is trained or pooled, not in its size or the span length.** The reader takes
   ~2,000 bits through one key/value entry (S0).
 - 256 is still below the pass mark (50 %) and below the stop line on PDFs. The 128 rung and a capacity diagnostic
-  follow after the cooling pause (Polonez loaded 16:01–21:17 UTC).
+  follow after the cooling pause (Polonez loaded 16:01–21:17 UTC; pause 21:18–21:38).
+
+### Capacity diagnostic (Polonez GPU3, 21:38–21:44 UTC)
+8 held-out texts of 512 tokens (4 books, 4 PDFs). The table gives the bits one entry adds about its own span when
+the reader rebuilds it (`Cache/e36/subspace_probe.json`):
+
+| entry | bits |
+|---|---|
+| the trained writer's entry (round 1, key/value way) | 54 |
+| optimised in the writer's 576-number output space, through the trained expander (800 Adam steps) | 781 |
+| the same through a fresh, untrained expander | 290 |
+| a free key/value entry, 20,480 numbers (S0) | ~2,000 |
+
+**Reading:** the entry format and the trained expander can hold ~14× what the writer puts in. The gap is the
+writer's: its encoder and mean pooling, and an objective in which continuation on books pays for little. The next
+fixes target the writer:
+- attention pooling instead of a mean over 512 tokens;
+- reconstruction-first training at growing spans (REFRAG's curriculum, with the reader frozen);
+- then teacher matching on passages with questions (S2).
