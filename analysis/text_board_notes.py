@@ -271,19 +271,21 @@ CLAIMS = [
                  "bridge. Property-word probe on the notes 8-13 % (place names 59-80 %).",
      "settle": "A content objective for the writer (read-back, address/content split) lifts the property probe ≥ 50 %."},
     {"claim": "Order on demand (every head ranked, scaled by a learned per-question switch) lets a notebook model "
-              "learn latest.", "state": "open", "since": "2026-10-18",
+              "learn latest.", "state": "disproved", "since": "2026-10-18",
      "evidence": "Probes on E33g: ordering every head with a wide match picks the newest move 50 % at 4k without training, "
                  "at a large cost to lookup and compose when applied to every question.",
-     "settle": "E33i (Odra): latest ≥ 60 % at 4k, compose and lookup within 5 points of E33g."},
+     "settle": "E33i (Odra, 18 Oct): latest 22 % at 4k, the switch never opened. Next: E33j, where the latest "
+               "question's last move is the read target and the naming target."},
     {"claim": "Fixed order heads (rank among matching notes) let a notebook model learn latest.", "state": "disproved",
      "since": "2026-10-18",
      "evidence": "Learned strengths from 0 never grew (E33d 0.14, E33e 0.15 then 0.09). Without training a strength "
                  "of 2 took E33 run 1 from 5 to 41 % at 16k, but E33r only from 20 to 28 % at 4k (2 → 7 % at 16k).",
      "settle": "E33g (Odra, 17 Oct): latest 22 % at 4k after a 0.3B warm start, under the 30 % kill line. Compose and "
                "deduce rose instead (69 / 24 % vs the matched control's 61 / 17 %)."},
-    {"claim": "A summing read (count heads) lets a notebook model count.", "state": "open", "since": "2026-10-17",
+    {"claim": "A summing read (count heads) lets a notebook model count.", "state": "needs another run",
+     "since": "2026-10-18",
      "evidence": "A softmax read averages: every notebook run is at 22-33 % on count at 4k, dense 50 % at best.",
-     "settle": "E33h (Odra): count ≥ 50 % at 4k after a 0.3B warm start."},
+     "settle": "E33h (answer loss only): 23 % at 4k. E33k gives the sum the true number of visits."},
     {"claim": "At 30M and 0.5B tokens, a learned 16-vector message from agent A's notebook carries no facts to agent B.",
      "state": "holds", "since": "2026-10-16",
      "evidence": "E35 round 1 on Polonez, one run each: broadcast, steered by B's question, and B frozen with the loss on "
@@ -688,10 +690,12 @@ LADDER = [
      "when": "17 Oct 18:46 → 20:25 training; exams 20:46 → 22:15 UTC (id split to 32k)",
      "why": "T4: order as a separable score term that cannot fade. Pass: latest ≥ 60 % at 4k, compose and far lookup "
             "within 5 points of E33r. Kill: latest ≤ 30 % at 4k."},
-    {"id": None, "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "running",
+    {"id": "count_e33h_s0.odra", "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "in use",
      "run": "E33h, count heads (Odra)", "model": "E33r + two count heads (a summing read) · 30M, plain",
      "tokens": "0.3B continuation from E33r", "exams": "v2 + v2.1, 1k-16k",
-     "result": "—", "when": "18 Oct from 00:05 CEST (22:05 UTC), Odra GPU 1, about 3 h",
+     "result": "Count failed: 25 / 27 / 23 / 22 / 20 % at 1k-16k (kill line 35 %), the answer loss alone did not teach the "
+               "summing read. Compose 67 / 88 %, deduce 17 / 8 %, latest 22 % at 4k / 16k.",
+     "when": "17 Oct 22:05 → 18 Oct 01:00 UTC training (Odra GPU 1); exams running",
      "why": "T6: add matches up instead of averaging them. Pass: count ≥ 50 % at 4k (dense's best). Kill: ≤ 35 %."},
     {"id": None, "start": "2026-10-17", "data": "v2", "standing": "history",
      "run": "Order probes on E33g (Odra GPU 1, no training)",
@@ -704,11 +708,13 @@ LADDER = [
      "why": "Why did E33g's order heads not pick the newest move? The match set was too narrow (the home fact is the "
             "best match for 'live'), and order on every question costs the other tasks: order must be switched on per "
             "question (E33i)."},
-    {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase", "standing": "running",
+    {"id": "order_e33i_s0.odra", "start": "2026-10-18", "data": "v2 + bridge, reasoning phase", "standing": "in use",
      "run": "E33i, order on demand (Odra GPU 0)",
      "model": "E33g with every head ranked (strength 4, margin 2) × a learned per-position switch (starts at σ(−2)) · "
               "30M, plain", "tokens": "0.3B continuation from E33g (its order strengths reset)", "exams": "v2 + v2.1",
-     "result": "—", "when": "18 Oct from 00:21 CEST (22:21 UTC), about 3 h on one GPU",
+     "result": "Latest failed: 22 % at 4k (kill line 35 %); the switch barely moved (bias −2.03 from −2). Deduce rose "
+               "to 85 / 93 % at 4k / 8k (E33g 24 %), compose 71 / 84 %, lookup 77 %, keyed 74 % (exams to 8k so far).",
+     "when": "17 Oct 22:21 → 18 Oct 01:10 UTC training (Odra GPU 0); exams running",
      "why": "T4: let 'now' questions turn order up while every other token keeps it off. Pass: latest ≥ 60 % at 4k with "
             "compose and lookup within 5 points of E33g. Kill: latest ≤ 35 % at 4k."},
     {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain", "standing": "running",
@@ -719,6 +725,12 @@ LADDER = [
      "why": "T4: the data now gives each latest question a one-step chain (the asked person's last move), so the read "
             "target and the naming tell round 1 which move answers; the order term gives the read a way to find it. "
             "Pass: latest ≥ 60 % at 4k with compose and deduce within 5 points of E33q. Kill: latest ≤ 35 % at 4k."},
+    {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain + count visits",
+     "standing": "queued", "run": "E33k, count heads told the true number (Odra)",
+     "model": "E33h + each count head's sum at a count question supervised with the number of visits (0.1) · 30M, plain",
+     "tokens": "0.3B continuation from E33h", "exams": "v2 + v2.1", "result": "—",
+     "when": "18 Oct, after the count-marked data build (Odra)",
+     "why": "T6: give the summing read a direct signal. Pass: count ≥ 50 % at 4k. Kill: ≤ 35 %."},
     {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase (output-word spans)", "standing": "queued",
      "run": "E33q replicate and naming-only arm (Polonez, multi-hop session)",
      "model": "E33q seed 1; E33q without the feedback", "tokens": "0.3B continuation from E33r each",
