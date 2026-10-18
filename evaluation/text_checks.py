@@ -315,6 +315,13 @@ ARCHES = {
                    "message_loop_name_lens": 0.3, "message_loop_feedback": "soft",
                    "lm_note_age": "log", "lm_note_age_init": "1,2,4,8", "lm_note_age_learn": "false"},
                   has_notebook=True),
+    # E33k2 (2026-10-18): E33k's count heads already count (sum within 0.66 of the truth, rounded exact 49 % on count
+    # exams) but the answer stayed at 26 %: the sum is not decoded into the number word (several of which share a first
+    # token: " f"our / " f"ive). So the count loss weight goes to 1.0 and the rounds' naming lens (E33q) names the count
+    # word itself (data built with --train_count_naming: rounds 1-3 of a count question name its answer tokens).
+    "e33k2": Arch("e33k2", "E33k + count loss 1.0 + rounds name the count word (naming lens)",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "lm_count_heads": 2, "lm_count_aux": 1.0, "message_loop_name_lens": 0.3}, has_notebook=True),
     "e33b": Arch("e33b", "E33o + note read-back (each note's value names its tokens)",
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
                   "message_loop_read_target": "note", "lm_readback_aux": 0.1}, has_notebook=True),
@@ -341,7 +348,7 @@ ARCHES = {
 # is refitted, so each stays in the parameter band.
 _PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
 for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o", "e33b", "e33rb", "e33ok", "e33bk",
-           "e33g", "e33h", "e33q", "e33i", "e33j", "e33jf", "e33jd", "e33k", "e33gk", "e33ak", "e33gak", "e33qn"):
+           "e33g", "e33h", "e33q", "e33i", "e33j", "e33jf", "e33jd", "e33k", "e33k2", "e33gk", "e33ak", "e33gak", "e33qn"):
     _a = ARCHES[_k]
     ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
                                  {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)

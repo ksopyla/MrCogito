@@ -515,3 +515,26 @@ def test_count_questions_mark_every_visit_once():
             assert len(visits) == NUMBER_WORDS.index(answer) if answer in NUMBER_WORDS else True
             assert len({(x[2], x[3]) for x in visits}) == len(visits)  # every visit its own occurrence
             assert not [x for x in quads if x[0] == pos and 0 < x[1] < COUNT_ROUND]  # rounds 1-4 untouched
+
+
+def test_count_naming_quads_point_at_the_answer_word():
+    """--train_count_naming: rounds 1-3 of a count question name its answer word (tokens after "Answer:")."""
+    from data.text_world import COUNT_ROUND, NUMBER_WORDS_V2
+    from scripts.build_text_checks_data import read_targets
+
+    s = _seed_for("count", 7)
+    chains = []
+    doc = make_train_document(s, STORIES, 1500, ntok, version="v2", questions=8, chains=chains)
+    offs = _word_offsets(doc)
+    quads = [x for x in (lambda q: [q[i:i + 4] for i in range(0, len(q), 4)])(
+        read_targets(doc, offs, chains, span="output", count_naming=True))]
+    marks = [x[0] for x in quads if x[1] == COUNT_ROUND]
+    assert marks
+    for pos in marks:
+        named = [x for x in quads if x[0] == pos and 1 <= x[1] <= 3]
+        assert [x[1] for x in named] == [1, 2, 3] and len({(x[2], x[3]) for x in named}) == 1
+        _, t0, t1 = named[0][1:]
+        word = doc[offs[t0 - 1][0]: offs[t1 - 1][1]].strip().rstrip(".")  # test tokens are whole words
+        assert word in NUMBER_WORDS_V2
+    plain = read_targets(doc, offs, chains, span="output")
+    assert not [x for x in (plain[i:i + 4] for i in range(0, len(plain), 4)) if 1 <= x[1] <= 3 and x[0] in marks]
