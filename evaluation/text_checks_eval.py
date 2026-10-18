@@ -224,6 +224,8 @@ def main():
                         "task and length (mismatched-message control)")
     p.add_argument("--note_order", default=None, choices=("rank",), help="exam-time E33e probe (see the docstring)")
     p.add_argument("--note_strength", default="0", help="one strength for every head, or a,b,… one per head")
+    p.add_argument("--loop_feedback", default="as_trained", choices=("as_trained", "off"),
+                   help="E33q probe: 'off' removes the round-to-round name feedback (gate) at exam time")
     p.add_argument("--note_gate", default="own", choices=("own", "content"),
                    help="E33g2: count matches by each head's own score, or by the strength-0 heads' mean score")
     p.add_argument("--note_margin", type=float, default=1.0)
@@ -244,6 +246,11 @@ def main():
             raise SystemExit("--loop_rounds needs a looped model")
         model._loop_rounds_override = int(args.loop_rounds)
         probes["loop_rounds"] = int(args.loop_rounds)
+    if args.loop_feedback == "off":
+        if getattr(model, "loop_feedback_gate", None) is None:
+            raise SystemExit("--loop_feedback off: this model has no round feedback")
+        model.loop_feedback_gate = None
+        probes["loop_feedback"] = "off"
     if args.note_order:
         probes["note_order"] = apply_note_order(model, args.note_order, args.note_strength, args.note_margin,
                                                 args.note_sharp, args.note_gate)
