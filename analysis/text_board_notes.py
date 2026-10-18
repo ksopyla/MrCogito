@@ -30,10 +30,10 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-18 09:45 UTC",
-    "headline": "Three of four goal tasks reach 70 % on the main exam: latest 90 % (E33j, one run), compose 94 % and "
-                "deduce 99 % (E33q, three runs) at 4k, all with privileged training labels and only on trained shapes. "
-                "Count stays at guessing.",
+    "as_of": "2026-10-18 11:20 UTC",
+    "headline": "Three of four goal tasks reach 70 % on the main exam at 4k: latest 88 % (two order arms agree), compose 94 % "
+                "and deduce 99 % (three runs), all with privileged training labels and only on trained shapes. Count stays "
+                "at guessing.",
     "where": [
         "17-18 Oct night (Odra): E33g (E33r + four fixed order heads) failed latest (22 % at 4k) but lifted compose to "
         "69 / 88 / 92 % at 4k / 16k / 32k and deduce to 24 % at 4k, against 61 / 82 % and 17 % for the matched control "
@@ -248,12 +248,14 @@ PROTOCOL_LOG = [
 # Claims register: every conclusion we have drawn, with its state. holds = repeated or overwhelming within its runs;
 # single run = one run, needs a second; open = not testable yet; retracted = disproved (kept, with the date).
 CLAIMS = [
-    {"claim": "Told which move is the newest and given an order signal it can switch on, the notebook learns latest.",
-     "state": "single run", "since": "2026-10-18",
+    {"claim": "Told which move is the newest and given a rank-among-matching-notes order term, the notebook learns latest.",
+     "state": "holds", "since": "2026-10-18",
      "evidence": "E33j (E33q + every head ranked × a learned per-question switch, the last move as read and naming target): "
                  "latest 90 / 96 % at 4k / 16k (quick exam). Without the order term (E33q on the same data) 20 %; order on "
                  "demand without the labels (E33i) 22 %: both parts are needed.",
-     "settle": "Evidence-removed and notebook-off controls (full exams running), a second seed, and E33jf / E33jd."},
+     "settle": "Two arms agree: E33j (order switched per question) 88 / 95 % and E33jf (always on) 88 / 94 % at 4k / 16k, "
+               "evidence removed 0 %. A page-distance penalty instead (E33jd) reaches only 37 / 28 %. Open: a second seed, "
+               "and whether it holds without the last-move labels."},
     {"claim": "Both 90 % recipes run a fixed number of hops: on 3-hop compose they stop after two.", "state": "single run",
      "since": "2026-10-18",
      "evidence": "Harder split, 3-hop compose: E33q 0 %, E33q seed 1 2-3 %, denser-mix E33ok 3 %. The pick is bridge 2's home "
@@ -735,9 +737,9 @@ LADDER = [
      "run": "E33j, naming + order on demand, latest supervised (Odra GPU 1)",
      "model": "E33q + every head ranked (strength 4, margin 2) × a learned per-question switch · 30M, plain",
      "tokens": "0.3B continuation from E33q", "exams": "v2 + v2.1",
-     "result": "Latest solved on the id split (quick exam, 200 items): 90 / 96 % at 4k / 16k, the newest move picked 97 / "
-               "99 % (E33q 20 / 2 %). Compose 96 / 100 %, deduce 99 / 100 %, lookup 100 / 100 %, count 18 / 26 %. The switch "
-               "opens per question (bias −2.02, weight norm 0.46). Full exams with controls running.",
+     "result": "Latest solved on the id split: 88 / 95 % at 4k / 16k (400 items; quick exam 90 / 96 %), the newest move "
+               "picked 97 / 99 % (E33q 20 / 2 %); evidence removed 0 %. Compose 96 / 98 %, deduce 99 / 100 %, lookup 99 / "
+               "100 %, count 22 / 25 %. The switch opens per question (bias −2.02, weight norm 0.46).",
      "when": "18 Oct 01:56 → 09:20 UTC training (Odra GPU 1, one 20-min cooldown); quick exam 09:35 UTC",
      "why": "T4: the data now gives each latest question a one-step chain (the asked person's last move), so the read "
             "target and the naming tell round 1 which move answers; the order term gives the read a way to find it. "
@@ -748,16 +750,20 @@ LADDER = [
      "tokens": "0.3B continuation from E33k", "exams": "v2 + v2.1", "result": "—",
      "when": "18 Oct, after the count-naming data build", "why": "T6: E33k counts but does not say the number. Pass: "
      "count ≥ 50 % at 4k. Kill: ≤ 35 %."},
-    {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain", "standing": "running",
+    {"id": "latest_e33jf_s0.polonez", "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain", "standing": "in use",
      "run": "E33jf, rank term always on, latest supervised (Polonez GPUs 0-1)",
      "model": "E33q + every head ranked (strength 4, margin 2), no switch · 30M, plain",
-     "tokens": "0.3B continuation from E33q", "exams": "v2 + v2.1, 1k / 4k / 16k", "result": "—",
-     "when": "18 Oct from 07:44 UTC, about 2.5 h with exams", "why": "T4: E33i's switch never opened; order always on."},
-    {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain", "standing": "running",
+     "tokens": "0.3B continuation from E33q", "exams": "v2 + v2.1, 1k / 4k / 16k",
+     "result": "Latest 93 / 88 / 94 % at 1k / 4k / 16k (evidence removed 0 %): the switch is not needed. Compose 96 / 98 %, "
+               "deduce 98 / 100 %, keyed 98 / 100 %; count fell to 11 / 12 %. Extra exams still running.",
+     "when": "18 Oct 07:44 → 09:50 UTC training (Polonez); exams to about 11:30", "why": "T4: E33i's switch never opened; order always on."},
+    {"id": "latest_e33jd_s0.polonez", "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain", "standing": "in use",
      "run": "E33jd, page-distance heads, latest supervised (Polonez GPUs 2-3)",
      "model": "E33q + four fixed log page-distance heads (1, 2, 4, 8), five order-free · 30M, plain",
-     "tokens": "0.3B continuation from E33q", "exams": "v2 + v2.1, 1k / 4k / 16k", "result": "—",
-     "when": "18 Oct from 07:44 UTC, about 2.5 h with exams", "why": "T4: the page-distance alternative to the rank term."},
+     "tokens": "0.3B continuation from E33q", "exams": "v2 + v2.1, 1k / 4k / 16k",
+     "result": "Latest only partly: 92 / 37 / 28 % at 1k / 4k / 16k (evidence removed 0 %). A recency penalty by page distance "
+               "is not enough; the rank among matching notes is. Compose 96 / 98 %, deduce 99 / 100 %, lookup 98 / 100 %.",
+     "when": "18 Oct 07:44 → 10:40 UTC (Polonez)", "why": "T4: the page-distance alternative to the rank term."},
     {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain",
      "standing": "running", "run": "E33q on the latest-supervised data (Odra GPU 2)",
      "model": "E33q (naming, no order term) · 30M, plain", "tokens": "0.3B continuation from E33q", "exams": "v2 + v2.1",
@@ -901,6 +907,8 @@ RECIPES = [
      "runs": ["query_e33q_s0.odra", "query_e33q_s1.polonez", "query_e33qn_s0.polonez"]},
     {"key": "e33j", "name": "E33j", "what": "+ order on demand; latest told its last move", "from": "E33q + 0.3B",
      "signals": ["warm", "dense-data", "read", "name", "order", "latest-labels"], "runs": ["latest_e33j_s0.odra"]},
+    {"key": "e33jf", "name": "E33jf", "what": "E33j with order always on (no switch)", "from": "E33q + 0.3B",
+     "signals": ["warm", "dense-data", "read", "name", "order", "latest-labels"], "runs": ["latest_e33jf_s0.polonez"]},
     {"key": "e33ok", "name": "E33ok, denser mix", "what": "key stop + read target on notes, denser reasoning data",
      "from": "E33r + 0.9B", "signals": ["warm", "dense-data", "read", "keystop"],
      "runs": ["r2out_e33ok_s0.polonez", "r2out_e33gk_s0.polonez"]},
@@ -1268,6 +1276,10 @@ ARCHS = {
 # measured. effect: helped / hurt / no effect / mixed / measurement (a new exam or rule, the models did not change).
 # metrics: (what is measured, before, after, unit) — unit "%" (0-100) or "runs" ("k/n").
 CHANGES = [
+    {"date": "2026-10-18", "kind": "architecture", "change": "Order by page distance instead of rank among matches (E33jd)",
+     "compared": "E33jf (rank term, always on) vs E33jd (four page-distance heads), same start, data and labels",
+     "effect": "hurt", "metrics": [("latest at 4k", 88, 37, "%"), ("latest at 16k", 94, 28, "%")],
+     "note": "A recency penalty cannot tell the asked person's last move from anyone's; the rank among matches can."},
     {"date": "2026-10-18", "kind": "recipe", "change": "Latest told its last move, with order on demand (E33j)",
      "compared": "E33q on the same last-move-labelled data, without vs with the order term", "effect": "helped",
      "metrics": [("latest at 4k", 20, 90, "%"), ("latest at 16k", 2, 96, "%"), ("compose at 4k", 96, 96, "%")],
