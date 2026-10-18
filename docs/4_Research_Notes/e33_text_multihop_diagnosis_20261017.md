@@ -587,6 +587,41 @@ v2reason2_out: deduce 4 of 12 tasks, 8 one-fact questions per document):**
   +8 / +6 and deduce +7.
 - Then e33gak (address read) if compose or long lookup stay below E33rb.
 
+**E33q: the goal on the id split (board session, Odra, 17 Oct 21:24 UTC → exams 18 Oct ~01:15 UTC).**
+E33q = E33r + each loop round names its hop's output word through the shared LM head at the answer position, with
+the decoder weights detached and weight 0.3. Round r's predicted distribution is also re-embedded and fed to round
+r+1 through a gate that starts at 0. Warm start: the E33r final, on v2reason_out, 0.3B tokens. One seed. Exact
+scores, read from final_id.json on Odra:
+
+| id split | 1k | 4k | 16k | 128k |
+|---|---|---|---|---|
+| compose, two steps | 79 % | **94 %** | 98 % | 97 % |
+| deduce, depth 2 | 93 % | **99 %** | 100 % | 100 % |
+| lookup · keyed | 93 · 91 % | 98 · 98 % | 100 · 99 % | 99 · 98 % |
+| latest · count | 94 · 28 % | 20 · 24 % | 1 · 22 % | 3 · 13 % |
+
+- With the facts removed from the document: 0 % on compose, deduce, lookup and keyed (removed-answer NLL 8.4 vs
+  0.07). The answers come from the document.
+- **Out of distribution:**
+  - harder split (3-hop compose, depth-3 deduce, both beyond the training dials): compose 0 % (E33r 25 %),
+    deduce 85 / 92 % at 4k / 16k;
+  - paraphrase split (held-out sentence templates): compose 7 % (E33r 6 %, every model fails here), deduce 100 %.
+- **Why deduce went from 13 % to 99 % (working explanation):** the naming loss trains each round to name its hop.
+  Its gradient flows through that round's read into the values of the notes read (only the decoder weights are
+  detached), so every hop's word gets written, the property included. This is E33ok's mechanism, per hop and much
+  denser, and it fits the deduce gate.
+- **The learned feedback gate stays tiny** (|mean| 0.009), so the naming probably does the work.
+- **Working explanation for 3-hop compose at 0 %:** rounds share weights, but the learned per-round embedding lets
+  round 3 become "the place" and leaves round 4 untrained. Deduce's links all share one shape, which may be why
+  depth 3 still works. The board session is testing this without training, by equalising or zeroing loop_emb.
+
+**Status against the author's goal** (multi-hop > 70 % on the board, ≤ 100M parameters): met on the board's
+headline (id split, 4k) by E33q at 30M: compose 94 %, deduce 99 %. It also holds at 1k and up to 128k. Open before
+it becomes the base:
+- a second seed (E33q seed 1, queued on Polonez from ~02:50 UTC, same start, data and budget);
+- 3-hop compose;
+- held-out templates for compose.
+
 ## Uncertainty
 - The probabilities are my judgement from C5, the board and the literature. They are not measured.
 - C5's names, relations and distractors are simpler than text's, so the port may need more than the C5 recipe
