@@ -105,3 +105,7 @@ def test_reconstruction_draw_is_the_same_on_every_rank():
     draws_b = [b._recon_step() for _ in range(50)]
     assert draws_a == draws_b
     assert 10 < sum(r for r, _ in draws_a) < 40
+
+
+def test_trainer_divides_the_loss_by_accumulation_steps():
+    assert FrozenReaderMemory.accepts_loss_kwargs is False

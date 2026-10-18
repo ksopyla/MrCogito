@@ -132,6 +132,10 @@ class FrozenReaderMemory(PreTrainedModel):
     config_class = FrozenReaderMemoryConfig
     base_model_prefix = "frozen_reader_memory"
     _SKIP = ("reader.", "writer.embed_tokens.")  # reloaded from the Hub, never saved
+    # forward() takes **_ (it ignores collator extras); without this flag the HF Trainer reads that as "the model
+    # normalises its loss by num_items_in_batch" and stops dividing by the accumulation steps (loss and gradients
+    # come out gradient_accumulation_steps x too large).
+    accepts_loss_kwargs = False
 
     def __init__(self, config: FrozenReaderMemoryConfig, reader=None, writer_base=None):
         super().__init__(config)
