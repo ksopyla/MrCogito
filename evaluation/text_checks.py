@@ -252,6 +252,17 @@ ARCHES = {
     "e33qn": Arch("e33qn", "E33r + rounds name their hop through the shared LM head (no feedback)",
                   {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
                    "message_loop_name_lens": 0.3, "message_loop_feedback": "none"}, has_notebook=True),
+    # E33c (2026-10-18; note e33_text_multihop_diagnosis_20261017.md §8, "Why 3-hop compose fails"): E33qn + each round
+    # reads its next relation from the question (nn/perceiver_ar_lm.py LoopControl, a MAC control unit). On 3-hop compose
+    # (beyond the training dials) E33q / e33ok pick bridge 2's home 80–89 %: the routine stops after the two teacher reads
+    # it was trained on. A per-round attention over the last 48 words, queried by the previous control, with a learned
+    # bias on the offset from the previous pointer, adds the round's instruction ("teacher of" / "live") to its input
+    # through a gate from 0, so "read a teacher fact" vs "read the home" can come from the question, not the round count.
+    "e33c": Arch("e33c", "E33qn + each loop round reads its next relation from the question (control attention)",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "message_loop_name_lens": 0.3, "message_loop_feedback": "none", "message_loop_control": "question",
+                  "message_loop_control_window": 48, "message_loop_control_dim": 128,
+                  "message_loop_control_heads": 4, "message_loop_control_words": "embed"}, has_notebook=True),
     "e33ak": Arch("e33ak", "E33ok with the key's own read of the page",
                   {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
                    "message_loop_read_target": "note", "lm_key_grad": "address"}, has_notebook=True),
@@ -318,7 +329,7 @@ ARCHES = {
 # is refitted, so each stays in the parameter band.
 _PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
 for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o", "e33b", "e33rb", "e33ok", "e33bk",
-           "e33g", "e33h", "e33q", "e33i", "e33j", "e33gk", "e33ak", "e33gak", "e33qn"):
+           "e33g", "e33h", "e33q", "e33i", "e33j", "e33gk", "e33ak", "e33gak", "e33qn", "e33c"):
     _a = ARCHES[_k]
     ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
                                  {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)
@@ -344,7 +355,9 @@ ENV_OF = {
     "lm_count_max": "PAR_LM_COUNT_MAX", "message_loop_name_lens": "PAR_LOOP_NAME_LENS",
     "message_loop_feedback": "PAR_LOOP_FEEDBACK", "message_loop_feedback_temp": "PAR_LOOP_FEEDBACK_TEMP",
     "lm_writer_input": "PAR_LM_WRITER_INPUT", "lm_note_rank_gate": "PAR_LM_NOTE_RANK_GATE",
-    "lm_note_order_gate": "PAR_LM_NOTE_ORDER_GATE",
+    "lm_note_order_gate": "PAR_LM_NOTE_ORDER_GATE", "message_loop_control": "PAR_LOOP_CONTROL",
+    "message_loop_control_window": "PAR_LOOP_CONTROL_WINDOW", "message_loop_control_dim": "PAR_LOOP_CONTROL_DIM",
+    "message_loop_control_heads": "PAR_LOOP_CONTROL_HEADS", "message_loop_control_words": "PAR_LOOP_CONTROL_WORDS",
     "message_loop_rounds": "PAR_LOOP_ROUNDS",
     "message_loop_exit_aux": "PAR_LOOP_EXIT_AUX", "message_loop_exit_targets": "PAR_LOOP_EXIT_TARGETS",
     "message_loop_exit_mask": "PAR_LOOP_EXIT_MASK", "message_loop_read_aux": "PAR_LOOP_READ_AUX",

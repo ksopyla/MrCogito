@@ -394,6 +394,13 @@ class ModelArguments:
     message_loop_feedback: str = field(default="none", metadata={"help": "E33q: none | soft (re-embed round r's "
                                                                           "LM-head distribution into round r+1)."})
     message_loop_feedback_temp: float = field(default=1.0, metadata={"help": "E33q: softmax temperature of the feedback."})
+    message_loop_control: str = field(default="none", metadata={"help": "E33c: none | question (each loop round reads "
+                                                                         "its next relation from the question; gate from 0)."})
+    message_loop_control_window: int = field(default=48, metadata={"help": "E33c: tokens the control reads (up to t)."})
+    message_loop_control_dim: int = field(default=128, metadata={"help": "E33c: control state width."})
+    message_loop_control_heads: int = field(default=4, metadata={"help": "E33c: control heads (one pointer each)."})
+    message_loop_control_words: str = field(default="embed", metadata={"help": "E33c: embed (input layer) | prelude "
+                                                                                "(the words the control reads)."})
     lm_note_order_gate: bool = field(default=False, metadata={"help": "E33i: the order term × a learned per-position "
                                                                        "switch σ(w·x + b), w = 0, b = −2 at the start."})
     warm_start_skip: str = field(default="", metadata={"help": "Comma-separated name fragments of checkpoint weights NOT "

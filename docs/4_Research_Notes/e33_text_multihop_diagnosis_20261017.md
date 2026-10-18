@@ -688,6 +688,62 @@ headline (id split, 4k) by E33q at 30M (compose 94 %, deduce 99 %), and independ
   - 3-hop compose: the routine stops at the trained hop count; see above;
   - held-out templates for compose (every model fails them).
 
+**E33c: each round reads its next relation from the question (built 18 Oct; not launched, the launch is the
+author's call).** Arch e33c = E33qn + a control read (`LoopControl` in nn/perceiver_ar_lm.py; MAC's control unit).
+- **What it adds.** Before each loop round, every position attends over the last 48 tokens. At a question's answer
+  position that window is the question.
+  - The query is the previous round's control plus the question as seen at that position.
+  - A learned bias on each word's offset from where the previous round looked lets one rule ("the next relation word
+    to the left of the last one") step through any number of "teacher of"s. A third hop applies the same rule once
+    more; the round number never enters.
+  - The words are the input layer's vectors, identical at every "teacher of", so the control cannot count hops.
+  - The result joins the round's input through a per-channel gate that starts at 0, and is taken out after the round,
+    so each round sees only its own instruction.
+- **At step 0 it is exactly the model it starts from** (tested):
+  - from E33qn's weights: the same logits and the same training loss;
+  - from E33q's weights with the feedback gate skipped: E33q with its feedback off (on seed 0 the board measured
+    unchanged scores without it);
+  - configs without the control run bit-for-bit as before the change (checked against the previous code: e31, e31c,
+    e33ok, e33q, e33qn).
+- **Size:** +0.31M parameters (30.17M); the FFN width stays 1152, so every warm-start weight loads.
+- **Probes:** `--loop_control off` in the exam CLI; `_control_capture` records where each round's control looks.
+- **The main risk:** training has only 1–2 hops, which E33q already solves without help, so the gate may stay near
+  0. E33q's feedback gate did (|mean| 0.009).
+
+**E33c run plan (Polonez, two arms in parallel, one burst of about 3.5 h with exams; a 20-minute pause after).**
+
+| arm | GPUs | model | start | data, budget |
+|---|---|---|---|---|
+| A | 0–1 | e33c_plain | E33q seed-1 final, feedback gate skipped | v2reason_out, 0.3B tokens, LR 3.3e-4 cosine, seed 0 |
+| B, matched control | 2–3 | e33qn_plain | the same | the same |
+
+- **Why B:** 0.3B more tokens alone moved scores before (E33rb). B shows whether the control or the extra training
+  does it.
+- **Success (A, at 4k):** harder compose (3 hops) ≥ 50 %, with id compose and id deduce ≥ 90 %. B should stay near
+  E33q's 0–3 %.
+- **No harm:** lookup and keyed within 3 points of E33q seed 1 (99 / 98 % at 4k); story loss ≤ 1.53.
+- **Early stop (no GPU needed):** the gate's mean |value| in checkpoints 178 and 445. If it is below 0.02 and not
+  rising, the control is unused: stop A.
+- **Exams after A**, beyond the standard set:
+  - `--loop_control off` on the id and harder splits (the gain must disappear without the control);
+  - whose home it picks on 3-hop items (the table above);
+  - where each round's control looks on 3-hop questions (`_control_capture`).
+- **If the control stays unused**, the next arm supervises it: round r's control is pointed at hop r's relation
+  word in the question. That needs question spans from the data builder and keeps the 1–2-hop data, with no 3-hop
+  items.
+- **Cost:** on the laptop's GPU (2 rows × 4k, noisy) a training step took about 10–15 % longer than E33qn's. The
+  extra memory is estimated at about 0.6 GB per GPU at 4 rows × 4k; neither is measured on the 3090s. If they run
+  out of memory, the recipe card's micro-batch drops to 2; the global batch and steps stay the same.
+
+```
+# on Polonez, after git pull --ff-only of e33-multihop; arm B: --arches e33qn_plain --gpus 2 3 --out .../qctl_e33qn_s0
+uv run python scripts/run_text_checks.py --phase train --tier screen --arches e33c_plain --host polonez --gpus 0 1 \
+  --data /home/ksopyla/dev/hf_home/datasets_tok/text_checks_v2reason_out --out Cache/text_checks/qctl_e33c_s0 \
+  --seed 0 --tokens 3e8 --extra_env \
+  MODEL_NAME_OR_PATH=/home/ksopyla/dev/MrCogito-e33/Cache/text_checks/query_e33q_s1/jobs/train_e33q_plain/train/perceiver_ar_perceiver_H576L2g1s5N16_20261018_034014/final \
+  LEARNING_RATE=0.000333 WARM_START_SKIP=loop_feedback_gate
+```
+
 ## Uncertainty
 - The probabilities are my judgement from C5, the board and the literature. They are not measured.
 - C5's names, relations and distractors are simpler than text's, so the port may need more than the C5 recipe
