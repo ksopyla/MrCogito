@@ -246,6 +246,12 @@ ARCHES = {
     # E33ak / E33gak (2026-10-18): E33ok / E33gk with the key's own read of the page (lm_key_grad="address"). With
     # the plain stop, keys could only reuse the content read: E33ok wrote the property (deduce 13 → 36 % at 4k) but lost
     # compose (61 → 42 %) and long lookup (89 → 52 % at 16k), where a note's key must carry a name read elsewhere.
+    # E33qn (2026-10-18): E33q with the round-to-round feedback off — the naming lens alone. Removing the feedback at
+    # exam time left E33q's scores unchanged (compose 93 / 99 %, deduce 99 / 99 % at 4k / 16k; its gate stayed at
+    # |mean| 0.009), so the simpler recipe is trained on its own.
+    "e33qn": Arch("e33qn", "E33r + rounds name their hop through the shared LM head (no feedback)",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "message_loop_name_lens": 0.3, "message_loop_feedback": "none"}, has_notebook=True),
     "e33ak": Arch("e33ak", "E33ok with the key's own read of the page",
                   {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
                    "message_loop_read_target": "note", "lm_key_grad": "address"}, has_notebook=True),
@@ -291,7 +297,7 @@ ARCHES = {
 # is refitted, so each stays in the parameter band.
 _PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
 for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o", "e33b", "e33rb", "e33ok", "e33bk",
-           "e33g", "e33h", "e33q", "e33gk", "e33ak", "e33gak"):
+           "e33g", "e33h", "e33q", "e33gk", "e33ak", "e33gak", "e33qn"):
     _a = ARCHES[_k]
     ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
                                  {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)
