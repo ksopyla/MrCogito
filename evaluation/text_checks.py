@@ -306,6 +306,15 @@ ARCHES = {
                    "message_loop_name_lens": 0.3, "message_loop_feedback": "soft",
                    "lm_note_age": "rank", "lm_note_rank_margin": 2.0, "lm_note_rank_sharp": 2.0,
                    "lm_note_age_init": "4", "lm_note_age_learn": "false"}, has_notebook=True),
+    # E33jd (2026-10-18): the page-distance alternative to E33jf's rank term, same latest supervision. Four heads lower
+    # older notes by s·log(1 + pages back) at fixed s = 1, 2, 4, 8; five heads stay order-free for lookup. A recency
+    # head alone reads the newest page (someone else's move, E33d's fixed-slope check); with the last move as the read
+    # target the reader can learn to combine an order-free match with a recency head.
+    "e33jd": Arch("e33jd", "E33q + four fixed page-distance heads (log pages back; 1, 2, 4, 8), latest supervised",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "message_loop_name_lens": 0.3, "message_loop_feedback": "soft",
+                   "lm_note_age": "log", "lm_note_age_init": "1,2,4,8", "lm_note_age_learn": "false"},
+                  has_notebook=True),
     "e33b": Arch("e33b", "E33o + note read-back (each note's value names its tokens)",
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
                   "message_loop_read_target": "note", "lm_readback_aux": 0.1}, has_notebook=True),
@@ -332,7 +341,7 @@ ARCHES = {
 # is refitted, so each stays in the parameter band.
 _PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
 for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o", "e33b", "e33rb", "e33ok", "e33bk",
-           "e33g", "e33h", "e33q", "e33i", "e33j", "e33jf", "e33k", "e33gk", "e33ak", "e33gak", "e33qn"):
+           "e33g", "e33h", "e33q", "e33i", "e33j", "e33jf", "e33jd", "e33k", "e33gk", "e33ak", "e33gak", "e33qn"):
     _a = ARCHES[_k]
     ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
                                  {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)
