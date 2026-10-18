@@ -491,3 +491,24 @@ def test_read_targets_tensor_pads_and_cuts():
     assert t.shape == (3, 2, 4)
     assert t[0].tolist() == [[9, 0, -1, -1], [9, 1, 2, 4]]
     assert (t[1] == -1).all() and (t[2] == -1).all()  # row 3's answer sits past the cut
+
+
+def test_task_free_cuts_keep_length_and_are_deterministic():
+    """--task_free_boundary (stage-W writer, 18 Oct): up to k boundaries, none in the first 128 tokens, length kept."""
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location("build_tc", "scripts/build_text_checks_data.py")
+    b = importlib.util.module_from_spec(spec)
+    argv, sys.argv = sys.argv, ["build_tc"]
+    try:
+        spec.loader.exec_module(b)
+    finally:
+        sys.argv = argv
+    ids = list(range(1000, 1900))
+    out = b.task_free_cuts(ids, 7, 3)
+    pos = [i for i, t in enumerate(out) if t == 7]
+    assert len(out) == len(ids) and len(pos) == 3 and min(pos) >= 128 and max(pos) < len(out) - 31
+    assert [t for t in out if t != 7] == ids[: len(ids) - 3]
+    assert b.task_free_cuts(ids, 7, 3) == out
+    assert b.task_free_cuts(list(range(200)), 7, 3) == list(range(200))  # too short to cut

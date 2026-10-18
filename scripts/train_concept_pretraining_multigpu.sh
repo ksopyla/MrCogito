@@ -247,6 +247,7 @@ PAR_LOOP_CONTROL_WORDS="${PAR_LOOP_CONTROL_WORDS:-embed}"  # E33c: embed | prelu
 PAR_LM_WRITER_INPUT="${PAR_LM_WRITER_INPUT:-table}"        # writer input: table | embed (shared input layer)
 PAR_LM_NOTE_RANK_GATE="${PAR_LM_NOTE_RANK_GATE:-own}"      # E33g2: own | content (match judged by the content heads)
 PAR_LM_NOTE_ORDER_GATE="${PAR_LM_NOTE_ORDER_GATE:-false}"  # E33i: per-position switch on the order term
+TRAIN_ONLY_PARAMS="${TRAIN_ONLY_PARAMS:-}"                 # comma-separated name prefixes that train (rest frozen)
 WARM_START_SKIP="${WARM_START_SKIP:-}"                     # warm start: weights (name fragments) left at fresh init
 PAR_LM_COUNT_MAX="${PAR_LM_COUNT_MAX:-10}"                 # E33h: counts coded over 0..max
 # E35 — latent messages between agents (MODEL_FAMILY=a2a): warm-started agents, a fresh transmitter
@@ -616,6 +617,7 @@ if [ -n "$MODEL_NAME_OR_PATH" ]; then
     WARM_ARGS+=(--model_name_or_path "$MODEL_NAME_OR_PATH")
     [ -n "$WARM_START_SKIP" ] && WARM_ARGS+=(--warm_start_skip "$WARM_START_SKIP")
 fi
+[ -n "$TRAIN_ONLY_PARAMS" ] && WARM_ARGS+=(--train_only_params "$TRAIN_ONLY_PARAMS")
 
 # Optimizer selection (--optimizer is our flag; HF --optim stays adamw_torch_fused for both arms).
 OPTIM_ARGS=(--optimizer "$OPTIMIZER")

@@ -263,6 +263,19 @@ ARCHES = {
                   "message_loop_name_lens": 0.3, "message_loop_feedback": "none", "message_loop_control": "question",
                   "message_loop_control_window": 48, "message_loop_control_dim": 128,
                   "message_loop_control_heads": 4, "message_loop_control_words": "embed"}, has_notebook=True),
+    # Label-free runs of the multi-hop review (2026-10-18, e33_multihop_review_label_free_20261018.md §5).
+    # R1 — E33qn0: the naming lens without the per-round read target (warm start from E33x, which never had one). Are
+    # read targets needed once each hop is named?
+    "e33qn0": Arch("e33qn0", "E33r's loop with rounds naming their hop, no read target",
+                   {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.0,
+                    "message_loop_name_lens": 0.3, "message_loop_feedback": "none"}, has_notebook=True),
+    # R3 — E33w: the stage-W writer. E33f's split read (each side after a boundary reads what came before only through
+    # the notes) on task-free text — stories and world documents without their questions, cut at random points
+    # (build_text_checks_data.py --task_free_boundary Question) — with only the writer training (TRAIN_ONLY_PARAMS=
+    # memory_writer.). Exits off: the plain language-model loss after each cut is the whole objective.
+    "e33w": Arch("e33w", "E33f's split read, writer-only training on task-free cut text",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0,
+                  "message_boundary_token": "Question"}, has_notebook=True),
     "e33ak": Arch("e33ak", "E33ok with the key's own read of the page",
                   {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
                    "message_loop_read_target": "note", "lm_key_grad": "address"}, has_notebook=True),
@@ -329,7 +342,7 @@ ARCHES = {
 # is refitted, so each stays in the parameter band.
 _PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
 for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o", "e33b", "e33rb", "e33ok", "e33bk",
-           "e33g", "e33h", "e33q", "e33i", "e33j", "e33gk", "e33ak", "e33gak", "e33qn", "e33c"):
+           "e33g", "e33h", "e33q", "e33i", "e33j", "e33gk", "e33ak", "e33gak", "e33qn", "e33qn0", "e33w", "e33c"):
     _a = ARCHES[_k]
     ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
                                  {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)

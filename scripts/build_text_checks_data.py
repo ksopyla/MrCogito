@@ -133,7 +133,27 @@ def train_tokenizer(texts, vocab: int, out: Path):
     return fast
 
 
+def task_free_cuts(ids: list[int], boundary: int, k: int) -> list[int]:
+    """Task-free split rows (2026-10-18, the stage-W writer of the multi-hop review): up to `k` boundary tokens at
+    seeded random positions (none in the first 128 tokens or the last 32), the row's end trimmed so its length is
+    unchanged. Each boundary starts a new side, which reads everything before it only through the notes, so the
+    plain language-model loss after it asks the writer for what continuing the text needs."""
+    n = min(k, max(0, (len(ids) - 160) // 192))
+    if n == 0:
+        return ids
+    rng = random.Random(zlib.crc32(bytes(str(ids[:32]), "ascii")) ^ len(ids))
+    body = ids[: len(ids) - n]
+    cuts = sorted(rng.sample(range(128, len(body) - 32), n))
+    out, prev = [], 0
+    for c in cuts:
+        out += body[prev:c] + [boundary]
+        prev = c
+    return out + body[prev:]
+
+
 def _row(ids: list[int], bos: int, eos: int, read_targets: list | None = None) -> dict:
+    if _VERSION["task_free"]:
+        ids = task_free_cuts(ids, _VERSION["task_free"][0], _VERSION["task_free"][1])
     full = [bos] + ids + [eos]
     row = {"input_ids": full, "attention_mask": [1] * len(full),
            "special_tokens_mask": [1] + [0] * len(ids) + [1]}
@@ -193,7 +213,7 @@ def language_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eo
 
 
 _VERSION = {"world": TEXT_WORLD_VERSION, "questions": 1, "tasks": TASKS, "bridge": 0, "bridge_only": False, "a2a": False,
-            "vocab": 0, "read_targets": False}
+            "vocab": 0, "read_targets": False, "task_free": None}
 _TOKREF: dict = {"tok": None}  # the tokenizer, for read-target offsets (set before workers fork)  # set from the arguments before workers fork
 
 
@@ -211,6 +231,8 @@ def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: 
                                        tasks=tuple(_VERSION["tasks"]), version=_VERSION["world"],
                                        questions=_VERSION["questions"], bridge=_VERSION["bridge"],
                                        bridge_only=_VERSION["bridge_only"], chains=chains)
+            if _VERSION["task_free"]:
+                text = text.partition("\n\nQuestion:")[0]  # facts and filler only: no question, no answer
             if _VERSION["a2a"]:
                 # E35: agent A gets the document, agent B the questions: BOS document EOS BOS questions EOS
                 body, _, rest = text.partition("\n\nQuestion:")
@@ -370,6 +392,11 @@ def main():
                    help="every row gets a read_targets column: per question its answer position and, where the chain "
                         "is known, per read round the token span of fact r (fact) or of that hop's output word inside "
                         "it (output); 2026-10-17; stories get an empty list")
+    p.add_argument("--task_free_boundary", default=None,
+                   help="task-free split rows (2026-10-18): world documents lose their questions, and every row "
+                        "(stories too) gets up to --task_free_cuts copies of this single-token boundary at random "
+                        "points, after which earlier text is readable only through the notes")
+    p.add_argument("--task_free_cuts", type=int, default=3)
     p.add_argument("--a2a", action="store_true",
                    help="E35: world rows become BOS document EOS BOS questions EOS (sender | receiver); stories unchanged")
     p.add_argument("--tokenizer", default=None,
@@ -382,6 +409,8 @@ def main():
     _VERSION["bridge_only"] = bool(args.train_bridge_only)
     _VERSION["read_targets"] = args.train_read_targets or False
     _VERSION["a2a"] = bool(args.a2a)
+    if args.task_free_boundary and (args.train_read_targets or args.a2a):
+        raise SystemExit("--task_free_boundary takes no read targets and no --a2a")
     if args.eval_from and args.eval_splits:
         # eval/ becomes a link to the source build: writing a split here would overwrite that build's frozen exams
         p.error("--eval_from links the source exams; pass --eval_splits with no values")
@@ -425,6 +454,11 @@ def main():
         return r
 
     _VERSION["vocab"] = len(tok)
+    if args.task_free_boundary:
+        b_ids = tok.encode(args.task_free_boundary, add_special_tokens=False)
+        if len(b_ids) != 1:
+            raise SystemExit(f"--task_free_boundary {args.task_free_boundary!r} is {len(b_ids)} tokens; it must be one")
+        _VERSION["task_free"] = (b_ids[0], int(args.task_free_cuts))
     print(f"tokenizer: {len(tok)} tokens ({time.time() - t0:.0f}s)")
 
     # training mix
@@ -511,6 +545,8 @@ def main():
                 "mean_world_row_tokens": m_world, "row_weights": [w_lang, w_world],
                 "mean_row_tokens": w_lang * m_lang + w_world * m_world,
                 "lang_token_share": f, "train_questions": args.train_questions, "train_bridge": args.train_bridge, "a2a": bool(args.a2a),
+                "task_free": ({"boundary": args.task_free_boundary, "cuts": args.task_free_cuts}
+                              if args.task_free_boundary else None),
                 "train_tasks": list(args.train_tasks)},
         "eval_from": args.eval_from,
         "built_s": round(time.time() - t0, 1),

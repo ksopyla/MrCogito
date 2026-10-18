@@ -405,6 +405,9 @@ class ModelArguments:
                                                                        "switch σ(w·x + b), w = 0, b = −2 at the start."})
     warm_start_skip: str = field(default="", metadata={"help": "Comma-separated name fragments of checkpoint weights NOT "
                                                                 "loaded in a warm start (they keep their fresh init)."})
+    train_only_params: str = field(default="", metadata={"help": "Comma-separated parameter-name prefixes that train; "
+                                                                  "every other weight is frozen (2026-10-18 stage-W "
+                                                                  "writer: memory_writer.). Empty = all train."})
     lm_note_rank_gate: str = field(default="own", metadata={"help": "E33g2: own | content (count matches by the "
                                                                      "strength-0 heads' mean score, for every head)."})
     lm_writer_input: str = field(default="table", metadata={"help": "Notebook writer input: table (shared token "
