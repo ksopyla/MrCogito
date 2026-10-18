@@ -30,7 +30,7 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-18 14:00 UTC",
+    "as_of": "2026-10-18 15:00 UTC",
     "headline": "Three of four goal tasks reach 70 % on the main exam at 4k: latest 88 % (two order arms agree), compose 94 % "
                 "and deduce 99 % (three runs), all with privileged training labels and only on trained shapes. Count stays "
                 "at guessing.",
@@ -303,10 +303,11 @@ CLAIMS = [
                  "of 2 took E33 run 1 from 5 to 41 % at 16k, but E33r only from 20 to 28 % at 4k (2 → 7 % at 16k).",
      "settle": "E33g (Odra, 17 Oct): latest 22 % at 4k after a 0.3B warm start, under the 30 % kill line. Compose and "
                "deduce rose instead (69 / 24 % vs the matched control's 61 / 17 %)."},
-    {"claim": "A summing read (count heads) lets a notebook model count.", "state": "single run",
+    {"claim": "A summing read (count heads) lets a notebook model count.", "state": "retracted",
      "since": "2026-10-18",
      "evidence": "A softmax read averages: every notebook run is at 22-33 % on count at 4k, dense 50 % at best.",
-     "settle": "E33h (answer loss only): 23 % at 4k. E33k gives the sum the true number of visits."},
+     "settle": "Not at 70 %: answer loss only 23 % (E33h); told the true number 26 % (E33k); decoded 31 % (E33k2). The "
+               "sum stays off by about one."},
     {"claim": "At 30M and 0.5B tokens, a learned 16-vector message from agent A's notebook carries no facts to agent B.",
      "state": "holds", "since": "2026-10-16",
      "evidence": "E35 round 1 on Polonez, one run each: broadcast, steered by B's question, and B frozen with the loss on "
@@ -750,10 +751,13 @@ LADDER = [
             "target and the naming tell round 1 which move answers; the order term gives the read a way to find it. "
             "Pass: latest ≥ 60 % at 4k with compose and deduce within 5 points of E33q. Kill: latest ≤ 35 % at 4k."},
     {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain + count visits + count naming",
-     "standing": "queued", "run": "E33k2, the count decoded (Odra)",
+     "standing": "in use", "run": "E33k2, the count decoded (Odra)",
      "model": "E33k + count loss 1.0 + the rounds name the count word (naming lens) · 30M, plain",
-     "tokens": "0.3B continuation from E33k", "exams": "v2 + v2.1", "result": "—",
-     "when": "18 Oct, after the count-naming data build", "why": "T6: E33k counts but does not say the number. Pass: "
+     "tokens": "0.3B continuation from E33k", "exams": "v2 + v2.1",
+     "result": "Count 31 / 30 % at 4k / 16k (quick exam), under the 35 % kill line. The answer now follows the count heads, "
+               "but their sum is too rough: off by 0.6-1.4 on average, rounded right 38 %, over-counting small numbers and "
+               "under-counting 9-10. Compose 89 / 95 %, deduce 98 / 100 %, lookup 94 / 94 %; latest 21 %.",
+     "when": "18 Oct 11:32 → 14:40 UTC (Odra GPU 2); quick exam 14:48", "why": "T6: E33k counts but does not say the number. Pass: "
      "count ≥ 50 % at 4k. Kill: ≤ 35 %."},
     {"id": "latest_e33jf_s0.polonez", "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain", "standing": "in use",
      "run": "E33jf, rank term always on, latest supervised (Polonez GPUs 0-1)",
@@ -1287,6 +1291,10 @@ ARCHS = {
 # measured. effect: helped / hurt / no effect / mixed / measurement (a new exam or rule, the models did not change).
 # metrics: (what is measured, before, after, unit) — unit "%" (0-100) or "runs" ("k/n").
 CHANGES = [
+    {"date": "2026-10-18", "kind": "recipe", "change": "Count decoded: count loss 1.0 + rounds name the count word (E33k2)",
+     "compared": "E33k vs E33k + 0.3B tokens with the count naming", "effect": "no effect",
+     "metrics": [("count at 4k", 26, 31, "%"), ("compose at 4k", 70, 89, "%")],
+     "note": "Decoding is no longer the limit; the count heads' sum is (off by about one, rounded right 38 %)."},
     {"date": "2026-10-18", "kind": "architecture", "change": "Order by page distance instead of rank among matches (E33jd)",
      "compared": "E33jf (rank term, always on) vs E33jd (four page-distance heads), same start, data and labels",
      "effect": "hurt", "metrics": [("latest at 4k", 88, 37, "%"), ("latest at 16k", 94, 28, "%")],
