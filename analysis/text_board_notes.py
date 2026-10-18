@@ -30,11 +30,16 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-18 11:20 UTC",
+    "as_of": "2026-10-18 14:00 UTC",
     "headline": "Three of four goal tasks reach 70 % on the main exam at 4k: latest 88 % (two order arms agree), compose 94 % "
                 "and deduce 99 % (three runs), all with privileged training labels and only on trained shapes. Count stays "
                 "at guessing.",
     "where": [
+        "18 Oct afternoon: the author asked for methods without generator labels (only text, instruction and reasoning "
+        "data). Every 70 % result so far uses them (read targets, hop naming, last-move labels). The label-free levers — "
+        "order term, count heads, key stop, shared writer input — did not reach the goal alone. The multi-hop session's "
+        "review proposes staged training (writer without a task, then a reader taught by written reasoning steps that a "
+        "schedule removes). E33c (per-round question control for 3 hops) went unused and was stopped at 13:41 UTC.",
         "17-18 Oct night (Odra): E33g (E33r + four fixed order heads) failed latest (22 % at 4k) but lifted compose to "
         "69 / 88 / 92 % at 4k / 16k / 32k and deduce to 24 % at 4k, against 61 / 82 % and 17 % for the matched control "
         "E33rb. Probes on its weights: order on every head with a wider match picks the newest move 50 % at 4k but costs "
@@ -757,6 +762,12 @@ LADDER = [
      "result": "Latest 93 / 88 / 94 % at 1k / 4k / 16k (evidence removed 0 %): the switch is not needed. Compose 96 / 98 %, "
                "deduce 98 / 100 %, keyed 98 / 100 %; count fell to 11 / 12 %. Extra exams still running.",
      "when": "18 Oct 07:44 → 09:50 UTC training (Polonez); exams to about 11:30", "why": "T4: E33i's switch never opened; order always on."},
+    {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase (output-word spans)", "standing": "history",
+     "run": "E33c, per-round question control (Polonez, multi-hop session)",
+     "model": "E33q seed 1 + each round reads its next relation word from the question · 30M, plain",
+     "tokens": "stopped at checkpoint 445 of 0.3B", "exams": "none",
+     "result": "Stopped: the control gate stayed at 0.0013 (stop line 0.02): the rounds did not use the question words.",
+     "when": "18 Oct 13:08 → 13:41 UTC", "why": "3-hop compose: can each round pick its next relation from the question?"},
     {"id": "latest_e33jd_s0.polonez", "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain", "standing": "in use",
      "run": "E33jd, page-distance heads, latest supervised (Polonez GPUs 2-3)",
      "model": "E33q + four fixed log page-distance heads (1, 2, 4, 8), five order-free · 30M, plain",
@@ -1247,13 +1258,12 @@ GOAL = {"set": "2026-10-17", "target": 0.70, "tasks": ["latest", "compose", "cou
 
 # Decisions waiting for the author: shown at the top of the board. Remove an item when it is decided.
 DECISIONS = [
-    "Privileged signals: the 90 % recipes are told which fact each loop round reads and which word it finds (labels "
-    "only the data generator has). Keep them as part of the method, or require the next step to learn from answers "
-    "alone?",
-    "3 hops: both recipes stop after the two hops they were trained on. Train on 3-hop chains, or first build a "
-    "per-round control over the question (the multi-hop session's proposal)?",
-    "From-scratch confirmation of the simplest 90 % recipe (E33qn: hop naming) at 1.5B tokens, 3 seeds (about 7 h × 3 "
-    "GPUs each), once latest and count have a working fix?",
+    "No generator labels from here on (the author, via the multi-hop session): approve the label-free plan — written "
+    "reasoning chains as the per-hop signal (R2) and a writer pretrained without a task (R3) first? Review: "
+    "e33_multihop_review_label_free_20261018.",
+    "3 hops: E33c's per-round question control went unused (gate 0.001). Train on 3-hop chains instead, or drop 3 hops "
+    "until the label-free line works?",
+    "Count: if E33k2 / E33m (count labels) reach 70 %, keep count in the label-free plan as written tallies, or park it?",
 ]
 
 # One entry per architecture family compared on the board: plain name, what it is in one line, the standing analogy
