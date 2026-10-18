@@ -118,3 +118,36 @@ def test_text_checks_arch_e33h_is_e33r_plus_count_heads():
     h = model_args("e33h_plain", "screen", 1152)
     assert {k for k in h if h[k] != r.get(k)} == {"lm_count_heads"} and ARCHES["e33h_plain"].has_notebook
     assert count_params(h) >= count_params(r)
+
+
+def test_count_aux_is_huber_of_the_heads_sum_against_the_true_visits():
+    """E33k: at a count question's decision position (marker quad, round COUNT_ROUND) the count heads' sum must equal
+    the number of visit quads; the loss reaches the count heads' gates."""
+    import torch.nn.functional as F
+
+    from data.text_world import COUNT_ROUND
+    from tests.test_text_memory import _targets
+
+    torch.manual_seed(7)
+    m = make(**TEXT, **LOOP, **WIDE, **COUNT, message_raw_window=8, lm_count_aux=1.0).to(DEV).train()
+    ids = text_row(S=48).to(DEV)
+    att = m.layers[m.config.global_layer_index].attn
+    with torch.no_grad():
+        base = m(ids, labels=ids.clone()).loss
+        tgt = _targets([40, COUNT_ROUND, -1, -1], [40, COUNT_ROUND + 1, 5, 6], [40, COUNT_ROUND + 2, 12, 13],
+                       [40, COUNT_ROUND + 3, 20, 21]).to(DEV)
+        with_t = m(ids, labels=ids.clone(), read_targets=tgt).loss
+        n = att.note_counter.last_n[0, 40]
+    want = float(F.smooth_l1_loss(n.float(), torch.full_like(n.float(), 3.0)))
+    assert abs(float(with_t - base) - want) < 1e-4
+    m.zero_grad()
+    m(ids, labels=ids.clone(), read_targets=tgt).loss.backward()
+    assert att.note_counter.b.grad.abs().sum() > 0 and att.note_counter.wq.weight.grad.abs().sum() > 0
+
+
+def test_text_checks_arch_e33k_is_e33h_plus_count_supervision():
+    from evaluation.text_checks import model_args
+
+    h = model_args("e33h_plain", "screen", 1152)
+    k = model_args("e33k_plain", "screen", 1152)
+    assert {x for x in k if k[x] != h.get(x)} == {"lm_count_aux"}

@@ -244,6 +244,7 @@ PAR_LM_NOTE_RANK_GATE="${PAR_LM_NOTE_RANK_GATE:-own}"      # E33g2: own | conten
 PAR_LM_NOTE_ORDER_GATE="${PAR_LM_NOTE_ORDER_GATE:-false}"  # E33i: per-position switch on the order term
 WARM_START_SKIP="${WARM_START_SKIP:-}"                     # warm start: weights (name fragments) left at fresh init
 PAR_LM_COUNT_MAX="${PAR_LM_COUNT_MAX:-10}"                 # E33h: counts coded over 0..max
+PAR_LM_COUNT_AUX="${PAR_LM_COUNT_AUX:-0.0}"                # E33k: count heads' sum = true visits (weight)
 # E35 — latent messages between agents (MODEL_FAMILY=a2a): warm-started agents, a fresh transmitter
 A2A_SENDER_INIT="${A2A_SENDER_INIT:-}"                    # notebook checkpoint (E31c / E33) for agent A's writer
 A2A_RECEIVER_INIT="${A2A_RECEIVER_INIT:-}"                # decoder checkpoint (dense) for agent B
@@ -547,6 +548,7 @@ if [ "$MODEL_FAMILY" = "perceiver_ar" ] || [ "$MODEL_FAMILY" = "a2a" ]; then
             --lm_note_rank_gate "$PAR_LM_NOTE_RANK_GATE"
             --lm_note_order_gate "$PAR_LM_NOTE_ORDER_GATE"
             --lm_count_max "$PAR_LM_COUNT_MAX"
+            --lm_count_aux "$PAR_LM_COUNT_AUX"
             --message_loop_rounds "$PAR_LOOP_ROUNDS"
             --message_loop_exit_aux "$PAR_LOOP_EXIT_AUX"
             --message_loop_exit_targets "$PAR_LOOP_EXIT_TARGETS"

@@ -246,6 +246,8 @@ class PerceiverARConfig(PretrainedConfig):
                                           #   mean score of the strength-0 heads (the asked person's notes), for all heads
         lm_count_heads: int = 0,          # E33h — count heads beside the global read (summing read; 0 = off)
         lm_count_max: int = 10,           # E33h — the counts coded as a soft one-hot over 0..lm_count_max
+        lm_count_aux: float = 0.0,        # E33k — weight: each count head's sum at a count question's decision position
+                                          #   must equal the true number of visits (read-target quads, round base 100)
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -368,6 +370,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.lm_note_order_gate = bool(lm_note_order_gate)
         self.lm_count_heads = int(lm_count_heads or 0)
         self.lm_count_max = int(lm_count_max)
+        self.lm_count_aux = float(lm_count_aux or 0.0)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -1937,6 +1940,7 @@ class NoteCounter(nn.Module):
         n = note_count(qc, k_bar, k_raw, ctx, scale=self.dh ** -0.5, window=self.window, stride=self.stride,
                        a=self.log_a.exp(), b=self.b)  # [B,S,nc]
         self.last_count = n.detach()
+        self.last_n = n if self.training else None  # E33k: the count loss reads the summed gates with gradient
         rbf = torch.exp(-2.0 * (n[..., None] - self.levels) ** 2)  # [B,S,nc,K+1], width 0.5
         feats = torch.cat([rbf, torch.log1p(n)[..., None]], dim=-1).reshape(B, S, -1)
         return self.out(feats.to(self.out.weight.dtype))
@@ -3173,6 +3177,8 @@ class PerceiverARLM(PreTrainedModel):
         if self._readback_inputs is not None:
             loss = loss + cfg.lm_readback_aux * self._readback_loss(input_ids, attention_mask)
             self._readback_inputs = None
+        if float(getattr(cfg, "lm_count_aux", 0.0) or 0.0) > 0 and self.training and read_targets is not None:
+            loss = loss + cfg.lm_count_aux * self._count_loss(read_targets)
         if self._name_lens_losses:
             loss = loss + cfg.message_loop_name_lens * torch.cat(self._name_lens_losses).mean()
         self._name_lens_losses = None
@@ -3185,6 +3191,25 @@ class PerceiverARLM(PreTrainedModel):
         self._read_targets = None
         loss = self._maybe_add_prefix_ae(loss, input_ids)
         return CausalLMOutput(loss=loss, logits=(logits if return_logits else None))
+
+    def _count_loss(self, read_targets: torch.Tensor) -> torch.Tensor:
+        """E33k: at each count question's decision position (a quad with round == COUNT_ROUND marks it) every count
+        head's sum n (the last loop round's read) must equal the true number of visits (quads with rounds
+        COUNT_ROUND + 1 …): Huber(n − k), mean over heads and questions. 0 if the batch has no count question."""
+        from data.text_world import COUNT_ROUND
+
+        att = self.layers[self.config.global_layer_index].attn
+        n = getattr(getattr(att, "note_counter", None), "last_n", None)
+        rt = read_targets.to(n.device) if n is not None else None
+        if n is None or rt is None or not bool((rt[..., 1] == COUNT_ROUND).any()):
+            return (n.sum() * 0.0) if n is not None else torch.zeros((), device=read_targets.device)
+        bi, ti = (rt[..., 1] == COUNT_ROUND).nonzero(as_tuple=True)
+        qp = rt[bi, ti, 0]
+        visits = ((rt[..., 1] > COUNT_ROUND) & (rt[..., 1] < 2 * COUNT_ROUND))                 # [B,T]
+        same = (rt[bi, :, 0] == qp[:, None]) & visits[bi]                                       # [N,T]
+        k = same.sum(-1).float()                                                                # [N]
+        got = n[bi, qp]                                                                         # [N,nc]
+        return F.smooth_l1_loss(got.float(), k[:, None].expand_as(got))
 
     def _writer_input(self, ids: torch.Tensor, local_doc: Optional[torch.Tensor]) -> torch.Tensor:
         """What the notebook writer reads: the shared token table [B,S,e], or with lm_writer_input="embed" the decoder's

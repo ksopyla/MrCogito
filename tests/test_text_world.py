@@ -491,3 +491,27 @@ def test_read_targets_tensor_pads_and_cuts():
     assert t.shape == (3, 2, 4)
     assert t[0].tolist() == [[9, 0, -1, -1], [9, 1, 2, 4]]
     assert (t[1] == -1).all() and (t[2] == -1).all()  # row 3's answer sits past the cut
+
+
+def test_count_questions_mark_every_visit_once():
+    """18 Oct: a count question's read targets carry (pos, COUNT_ROUND, -1, -1) and one quad per visit of the asked
+    person to the place, each a different occurrence; the number of visit quads equals the answer."""
+    from data.text_world import COUNT_ROUND, NUMBER_WORDS
+    from scripts.build_text_checks_data import read_targets
+
+    for k in range(6):
+        s = _seed_for("count", 100 * k)
+        chains = []
+        doc = make_train_document(s, STORIES, 1500, ntok, version="v2", questions=8, chains=chains)
+        offs = _word_offsets(doc)
+        q = read_targets(doc, offs, chains, span="output")
+        quads = [q[i:i + 4] for i in range(0, len(q), 4)]
+        marks = [x for x in quads if x[1] == COUNT_ROUND]
+        assert marks and len(marks) == doc.count("\nAnswer:")
+        for pos, _, _, _ in marks:
+            a, b = offs[pos - 1]
+            answer = doc[b:].split("\n")[0].strip().rstrip(".")
+            visits = [x for x in quads if x[0] == pos and COUNT_ROUND < x[1] < 2 * COUNT_ROUND]
+            assert len(visits) == NUMBER_WORDS.index(answer) if answer in NUMBER_WORDS else True
+            assert len({(x[2], x[3]) for x in visits}) == len(visits)  # every visit its own occurrence
+            assert not [x for x in quads if x[0] == pos and 0 < x[1] < COUNT_ROUND]  # rounds 1-4 untouched

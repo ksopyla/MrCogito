@@ -403,6 +403,8 @@ class ModelArguments:
     lm_writer_input: str = field(default="table", metadata={"help": "Notebook writer input: table (shared token "
                                                                      "table) | embed (the decoder's whole input layer)."})
     lm_count_heads: int = field(default=0, metadata={"help": "E33h: count heads (summing read) on the global read; 0 = off."})
+    lm_count_aux: float = field(default=0.0, metadata={"help": "E33k: weight of the count heads' sum matching the "
+                                                               "true number of visits (count questions)."})
     lm_count_max: int = field(default=10, metadata={"help": "E33h: counts coded as a soft one-hot over 0..max."})
     message_loop_rounds: int = field(default=1, metadata={"help": "E33a: tied [global read + local] loops (1 = off)."})
     message_loop_exit_aux: float = field(default=0.0, metadata={"help": "E33a: weight of each earlier loop exit."})

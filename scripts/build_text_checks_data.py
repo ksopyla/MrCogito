@@ -145,6 +145,13 @@ def _row(ids: list[int], bos: int, eos: int, read_targets: list | None = None) -
 _QA = re.compile(r"\n\nQuestion: (.*?)\nAnswer:")
 
 
+def _count_base(question: str):
+    """A count question with no visits: its chain is empty, so the base comes from the question's shape."""
+    from data.text_world import COUNT_ROUND
+
+    return COUNT_ROUND if question.startswith("How many times") else None
+
+
 def read_targets(text: str, offsets: list, chains: list, span: str = "fact") -> list[int]:
     """Flat (answer position, round, first token, last token) quadruples in row positions (BOS = 0), 2026-10-17.
     Every question gives (pos, 0, -1, -1): `pos` is the "Answer:" colon, the position that predicts the first answer
@@ -163,9 +170,37 @@ def read_targets(text: str, offsets: list, chains: list, span: str = "fact") -> 
         pos = tok_of(m.end() - 1) + 1
         out += [pos, 0, -1, -1]
         body_end = m.start()
-        for r, step in enumerate(chain_of.get(m.group(1), []), 1):
-            fact, word = step if isinstance(step, (tuple, list)) else (step, None)
-            c0 = text.find(fact, 0, body_end)
+        steps = chain_of.get(m.group(1), [])
+        # count (18 Oct): steps (fact, word, base) — every visit is its own occurrence of a possibly repeated sentence,
+        # rounds base + 1, base + 2 …, and (pos, base, -1, -1) marks the question even with zero visits
+        base = next((st[2] for st in steps if isinstance(st, (tuple, list)) and len(st) > 2), None)
+        if base is None and m.group(1) in chain_of and not steps:
+            base = _count_base(m.group(1))
+        if base is not None:
+            out += [pos, base, -1, -1]
+        seen: dict = {}
+        if base is not None:  # longer sentences first, so a shorter template never claims a visit inside a longer one
+            steps = sorted(steps, key=lambda st: -len(st[0]))
+        for r, step in enumerate(steps, 1):
+            fact, word = (step[0], step[1]) if isinstance(step, (tuple, list)) else (step, None)
+            if base is not None:
+                # every visit its own occurrence: a whole-word match, in order, never inside a region an earlier visit
+                # of this question took (one template's sentence can sit inside another's longer sentence)
+                pat, c0, at = re.compile(r"(?<!\w)" + re.escape(fact)), -1, seen.get(fact, 0)
+                while True:
+                    mm = pat.search(text, at, body_end)
+                    if not mm:
+                        break
+                    if not any(mm.start() < e and s0 < mm.end() for s0, e in seen.get("_taken", [])):
+                        c0 = mm.start()
+                        break
+                    at = mm.start() + 1
+                seen[fact] = c0 + len(fact) if c0 >= 0 else body_end
+                if c0 >= 0:
+                    seen.setdefault("_taken", []).append((c0, c0 + len(fact)))
+                r = base + r
+            else:
+                c0 = text.find(fact, 0, body_end)
             if c0 < 0:
                 continue
             a, b = c0, c0 + len(fact)

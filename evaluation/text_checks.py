@@ -267,6 +267,12 @@ ARCHES = {
                   "lm_note_age": "rank", "lm_note_rank_margin": 2.0, "lm_note_rank_sharp": 2.0,
                   "lm_note_age_init": "4", "lm_note_age_learn": "false", "lm_note_order_gate": "true"},
                  has_notebook=True),
+    # E33k (2026-10-18): E33h's count heads told the true number. E33h (answer loss only) stayed at 23 % at 4k. The data
+    # now marks each count question's visits (read-target quads, round base 100), and each count head's sum at the
+    # decision position must equal the number of visits (Huber, weight 0.1). Warm-started from E33h.
+    "e33k": Arch("e33k", "E33h + the count heads' sum supervised with the true number of visits",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "lm_count_heads": 2, "lm_count_aux": 0.1}, has_notebook=True),
     "e33b": Arch("e33b", "E33o + note read-back (each note's value names its tokens)",
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
                   "message_loop_read_target": "note", "lm_readback_aux": 0.1}, has_notebook=True),
@@ -293,7 +299,7 @@ ARCHES = {
 # is refitted, so each stays in the parameter band.
 _PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
 for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o", "e33b", "e33rb", "e33ok", "e33bk",
-           "e33g", "e33h", "e33q", "e33i", "e33j"):
+           "e33g", "e33h", "e33q", "e33i", "e33j", "e33k"):
     _a = ARCHES[_k]
     ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
                                  {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)
@@ -316,7 +322,7 @@ ENV_OF = {
     "lm_addr": "PAR_LM_ADDR", "lm_slot_pos": "PAR_LM_SLOT_POS", "lm_note_age": "PAR_LM_NOTE_AGE", "lm_note_rank_margin": "PAR_LM_NOTE_RANK_MARGIN",
     "lm_note_rank_sharp": "PAR_LM_NOTE_RANK_SHARP", "lm_note_age_init": "PAR_LM_NOTE_AGE_INIT",
     "lm_note_age_learn": "PAR_LM_NOTE_AGE_LEARN", "lm_count_heads": "PAR_LM_COUNT_HEADS",
-    "lm_count_max": "PAR_LM_COUNT_MAX", "message_loop_name_lens": "PAR_LOOP_NAME_LENS",
+    "lm_count_max": "PAR_LM_COUNT_MAX", "lm_count_aux": "PAR_LM_COUNT_AUX", "message_loop_name_lens": "PAR_LOOP_NAME_LENS",
     "message_loop_feedback": "PAR_LOOP_FEEDBACK", "message_loop_feedback_temp": "PAR_LOOP_FEEDBACK_TEMP",
     "lm_writer_input": "PAR_LM_WRITER_INPUT", "lm_note_rank_gate": "PAR_LM_NOTE_RANK_GATE",
     "lm_note_order_gate": "PAR_LM_NOTE_ORDER_GATE",
