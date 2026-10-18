@@ -247,6 +247,12 @@ PROTOCOL_LOG = [
 # Claims register: every conclusion we have drawn, with its state. holds = repeated or overwhelming within its runs;
 # single run = one run, needs a second; open = not testable yet; retracted = disproved (kept, with the date).
 CLAIMS = [
+    {"claim": "Both 90 % recipes run a fixed number of hops: on 3-hop compose they stop after two.", "state": "single run",
+     "since": "2026-10-18",
+     "evidence": "Harder split, 3-hop compose: E33q 0 %, E33q seed 1 2-3 %, denser-mix E33ok 3 %. The pick is bridge 2's home "
+                 "80-89 % of the time (the right one 2-4 %); E33r 24 / 33 %. Round embeddings are not the cause (any map, "
+                 "even zero, scores the same). Deduce depth 3 works (66-92 %) because its chain ends on content.",
+     "settle": "A per-round control over the question words (MAC-style), or training on 3 hops (the author's call)."},
     {"claim": "Training each loop round to name its hop's word lifts compose and deduce above 90 % on the id split.",
      "state": "single run", "since": "2026-10-18",
      "evidence": "E33q: E33r + a naming loss (round r names hop r's output word through the shared LM head, decoder "
@@ -741,6 +747,25 @@ LADDER = [
      "model": "E33q seed 1; E33q without the feedback", "tokens": "0.3B continuation from E33r each",
      "exams": "v2 + v2.1; round-embedding probes for 3-hop compose", "result": "—",
      "when": "18 Oct from about 03:10 UTC, results about 05:00", "why": "Confirm E33q before it becomes the base."},
+    {"id": "dgate_e33rb_s0.polonez", "start": "2026-10-18", "data": "deduce bridge-only gate", "standing": "in use",
+     "run": "Deduce gate (Polonez, multi-hop session)", "model": "E33rb + 0.1B tokens of deduce documents asking only their "
+     "one-fact bridges · 30M, plain", "tokens": "0.1B continuation", "exams": "v2 + v2.1",
+     "result": "The property step learns when asked densely: \"What is a kavi like?\" 12 → 44 %.",
+     "when": "17-18 Oct night", "why": "Can this writer store a property word at all when paid for it? Yes."},
+    {"id": "r2out_e33ok_s0.polonez", "start": "2026-10-18", "data": "denser reasoning mix (deduce 4 of 12, 8 bridges)",
+     "standing": "in use", "run": "E33ok on the denser mix (Polonez, multi-hop session)",
+     "model": "E33o + key-gradient stop, from the E33ok final · 30M, plain", "tokens": "0.6B continuation (0.9B from E33r)",
+     "exams": "v2 + v2.1",
+     "result": "Goal reached for T5 / T7 by a second recipe: compose 95 / 97 %, deduce 98 / 99 %, lookup 97 / 98 %, keyed "
+               "95 / 100 % at 4k / 16k; story loss 1.493 (E33q 1.523); property word in the notes 72 % (probe). Latest 20 %, "
+               "count 24 %. Harder: deduce depth 3 66 / 78 % (E33q 85 / 92 %), compose 3 hops 3 / 2 %.",
+     "when": "18 Oct, finished 04:43 UTC", "why": "The key-stop line on denser data, without the naming loss."},
+    {"id": "r2out_e33gk_s0.polonez", "start": "2026-10-18", "data": "denser reasoning mix (deduce 4 of 12, 8 bridges)",
+     "standing": "in use", "run": "E33gk = E33ok + order heads (Polonez, multi-hop session)",
+     "model": "E33ok + E33g's fixed order heads · 30M, plain", "tokens": "0.6B continuation", "exams": "v2 + v2.1",
+     "result": "Same as E33ok (compose 95 / 96 %, deduce 97 / 99 %, count 27 / 28 %): the order term adds nothing once the "
+               "reads are supervised this well.",
+     "when": "18 Oct, finished 04:43 UTC", "why": "Isolates E33g's order heads on top of the key stop."},
     {"id": "query_e33q_s0.odra", "start": "2026-10-17", "data": "v2 + bridge, reasoning phase (output-word spans)",
      "standing": "in use", "run": "E33q, the loop asks with the name it found (Odra GPU 2)",
      "model": "E33r + rounds name their hop through the LM head (0.3) and pass the name, re-embedded, to the next round "
