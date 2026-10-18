@@ -250,6 +250,8 @@ def build_pretraining_model(
         return _build_perceiver_ar_model(tokenizer, model_args, data_args)
     if getattr(model_args, "model_family", "auto") == "a2a":
         return _build_a2a_model(tokenizer, model_args, data_args)
+    if getattr(model_args, "model_family", "auto") == "frozen_reader":
+        return _build_frozen_reader_model(tokenizer, model_args, data_args)
     if getattr(model_args, "model_family", "auto") == "perceiver_concept":
         return _build_perceiver_concept_model(tokenizer, model_args, data_args)
     if is_backbone:
@@ -432,6 +434,31 @@ def _latent_memory_kwargs(model_args) -> dict:
     out = {k: getattr(model_args, k) for k in keys}
     out["message_write"] = "latent_memory"
     return out
+
+
+def _build_frozen_reader_model(tokenizer, model_args, data_args):
+    """E36 — a trained span writer read by a frozen pretrained decoder (nn/frozen_reader_memory.py)."""
+    from nn.frozen_reader_memory import FrozenReaderMemory, FrozenReaderMemoryConfig
+
+    need = 2 + (model_args.fr_mem_spans + 1) * model_args.fr_span
+    if data_args.max_seq_length < need:
+        raise ValueError(f"E36 rows need max_seq_length >= {need} (BOS + {model_args.fr_mem_spans + 1} spans + EOS)")
+    config = FrozenReaderMemoryConfig(
+        reader_name=model_args.fr_reader, writer_init=model_args.fr_writer_init,
+        writer_layers=model_args.fr_writer_layers, span=model_args.fr_span, mem_spans=model_args.fr_mem_spans,
+        way=model_args.fr_way, recon_frac=model_args.fr_recon_frac, entry_positions=model_args.fr_entry_positions,
+        proj_hidden=model_args.fr_proj_hidden,
+    )
+    model = FrozenReaderMemory(config)
+    if len(tokenizer) > config.vocab_size:
+        raise ValueError(f"tokenizer has {len(tokenizer)} tokens, the reader {config.vocab_size}")
+    parts = {k: sum(p.numel() for p in getattr(model, k).parameters() if p.requires_grad) for k in ("writer", "adapter")}
+    logger.info(f"Initializing FrozenReaderMemory (E36): reader={config.reader_name} (frozen) "
+                f"writer={config.writer_init}[:{config.writer_layers}] trainable "
+                + " ".join(f"{k}={v/1e6:.2f}M" for k, v in parts.items())
+                + f" | way={config.way} span={config.span} mem_spans={config.mem_spans} "
+                f"recon={config.recon_frac} positions={config.entry_positions}")
+    return model, config, "frozen_reader_memory"
 
 
 def _build_a2a_model(tokenizer, model_args, data_args):
@@ -619,6 +646,21 @@ def build_training_wandb_identity(
                 f"backend-{model_args.attn_backend}",
                 resolved_experiment,
             ],
+        )
+    if getattr(model_args, "model_family", "auto") == "frozen_reader":
+        resolved_experiment = experiment_id or "E36"
+        reader = model_args.fr_reader.split("/")[-1]
+        architecture_id = (f"frozen_reader_{reader}_w{model_args.fr_writer_layers}_s{model_args.fr_span}"
+                           f"m{model_args.fr_mem_spans}_{model_args.fr_way}")
+        return WandbRunIdentity(
+            experiment_id=resolved_experiment,
+            model_family="frozen_reader",
+            objective_family="causal_lm",
+            architecture_id=architecture_id,
+            group=f"{resolved_experiment}_{architecture_id}",
+            job_type="train_frozen_reader_writer",
+            tags=["train", "frozen_reader", "memory_writer", "causal_lm", f"way-{model_args.fr_way}",
+                  resolved_experiment],
         )
     if getattr(model_args, "model_family", "auto") == "a2a":
         resolved_experiment = experiment_id or "E35"

@@ -538,3 +538,24 @@ def test_count_naming_quads_point_at_the_answer_word():
         assert word in NUMBER_WORDS_V2
     plain = read_targets(doc, offs, chains, span="output")
     assert not [x for x in (plain[i:i + 4] for i in range(0, len(plain), 4)) if 1 <= x[1] <= 3 and x[0] in marks]
+
+
+def test_task_free_cuts_keep_length_and_are_deterministic():
+    """--task_free_boundary (stage-W writer, 18 Oct): up to k boundaries, none in the first 128 tokens, length kept."""
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location("build_tc", "scripts/build_text_checks_data.py")
+    b = importlib.util.module_from_spec(spec)
+    argv, sys.argv = sys.argv, ["build_tc"]
+    try:
+        spec.loader.exec_module(b)
+    finally:
+        sys.argv = argv
+    ids = list(range(1000, 1900))
+    out = b.task_free_cuts(ids, 7, 3)
+    pos = [i for i, t in enumerate(out) if t == 7]
+    assert len(out) == len(ids) and len(pos) == 3 and min(pos) >= 128 and max(pos) < len(out) - 31
+    assert [t for t in out if t != 7] == ids[: len(ids) - 3]
+    assert b.task_free_cuts(ids, 7, 3) == out
+    assert b.task_free_cuts(list(range(200)), 7, 3) == list(range(200))  # too short to cut

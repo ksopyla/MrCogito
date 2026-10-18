@@ -521,3 +521,22 @@ def test_key_grad_address_starts_as_detach_and_learns_only_its_own_read():
     size = [0.0 if x is None else float(x.abs().sum()) for x in g]
     assert all(s > 0 for s in size[:3])
     assert max(size[3:]) < 1e-5 * min(size[:3])
+
+
+def test_train_only_params_freezes_everything_but_the_writer():
+    """--train_only_params memory_writer. (stage-W writer, 18 Oct): only the writer trains; a bad prefix fails loudly."""
+    from training.train_concept_pretraining import freeze_all_but
+
+    m = make(**TEXT, message_raw_window=8)
+    freeze_all_but(m, "memory_writer.")
+    on = {n for n, p in m.named_parameters() if p.requires_grad}
+    assert on and all(n.startswith("memory_writer.") for n in on)
+    assert any(not p.requires_grad for n, p in m.named_parameters() if n.startswith("layers."))
+    ids = text_row(S=48)
+    m.train()
+    m(ids, labels=ids.clone()).loss.backward()
+    assert m.memory_writer.to_v.weight.grad is not None and m.lm_head.weight.grad is None
+    freeze_all_but(m, "")  # empty: no change
+    assert {n for n, p in m.named_parameters() if p.requires_grad} == on
+    with pytest.raises(ValueError):
+        freeze_all_but(m, "no_such_module.")

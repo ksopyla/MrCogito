@@ -28,11 +28,15 @@ Run details and numbers: `e33_text_multihop_diagnosis_20261017.md` §7–§8, an
     the iCoT / Coconut / SIM-CoT / LOTUS line.
   - **A writer pretrained without a task:** continuation plus a little reconstruction.
   - **A reader trained on top**, with keys and values on separate gradient paths.
-- **Writer and decoder separately?** Yes, in stages, not fully apart.
-  - The values (what a note holds) can be learned without any task.
-  - The keys (how a note is found) must learn from the reader.
-  - The literature agrees that pure autoencoding does not predict downstream quality, and that freezing the decoder
-    costs a lot.
+- **Writer and decoder separately?** Yes, in stages, but not with plain continuation.
+  - R3 (§5) trained a writer alone on task-free text cut at random points, against a frozen reader. It erased the
+    notes' content (places 80 → 13 %): continuing a text rewards storing only what the text refers to again later.
+  - The values need an objective that rewards every token (reconstruction), or text with natural back-references.
+  - The keys must learn from the reader.
+  - The literature agrees that pure autoencoding does not predict downstream quality, that ~20 % of it in the mix
+    helps, and that freezing the decoder costs a lot.
+- **Read targets:** naming alone solved deduce (99 %) but not compose (8 %) from a start without read targets (R1).
+  Finding a two-name fact still needs a "where to read" signal. Written reasoning gives one by string match.
 
 ## 1. What was tested
 
@@ -55,6 +59,8 @@ training signal comes from the task generator, not from the text.
 | E33j (board) | E33q + order on demand, latest supervised | gen. labels | 96 % | 99 % | 100 % | latest 88 % (95) |
 | E33h / E33k (board) | count heads (a summing read) | answers / gen. labels | — | — | — | count 23 % / sums within ~0.7 when told |
 | E33c | per-round control read over the question (gate from 0) | gen. labels | — | — | — | **unused**: gate 0.0013 at checkpoint 445; stopped early |
+| R1 = E33qn0 | naming only, no read target, from E33x | gen. labels (naming) | **8 %** | **99 %** | 97 % | naming writes content (property 74 %) and teaches deduce, not compose |
+| R3 = E33w | writer only, task-free cut text, frozen E33x reader | none | 1 % | 7 % | 6 % | **erased note content** (place 80 → 13 %) |
 
 ## 2. Main facts
 
@@ -74,6 +80,13 @@ training signal comes from the task generator, not from the text.
   - the naming loss: deduce 99 %.
 - A weak auxiliary, a linear read-back at weight 0.1, did nothing.
 - Capacity was not the limit. One 64-d note per ~6 tokens held the property once asked to.
+- **The cause is the raw-window shortcut, and removing it is label-free** (measured 18 Oct 15:30 UTC). E33f answers
+  questions with the document readable only through the notes (the split read; no raw tokens across the boundary).
+  Its notes hold the property word at 69 / 64 % (value / key) and places at 74 / 76 %. It had no read targets, no
+  naming and no extra questions.
+  - With a raw window, nearby words are always visible directly, so the notes specialise in far names.
+  - When everything must pass through the notes, the writer keeps common words too.
+  - E33f's deduce is still 6 %. Storage is necessary, not sufficient: the join must still be learned (F1).
 
 **F3. Addressing and content must not share a gradient path.**
 - A note's key and value came from one latent read. A loss on where reads land then pulled what the note held
@@ -113,6 +126,7 @@ training signal comes from the task generator, not from the text.
 | order among matching notes (F5) | yes, architecture | the order term as built (E33g) |
 | summing read for count | yes, architecture | — |
 | question density (F2) | yes, data mixture | QA and instruction data where answers depend on far context |
+| split read, notes-only after a boundary (F2) | yes, a mask | random cut points in plain text: what follows sees earlier text only through the notes (E33f's writer keeps common words, 69 %) |
 | per-round **read** target (F1) | no | (a) maybe not needed beside naming: test R1; (b) distant supervision: the context sentence that contains a written reasoning step's entities |
 | per-round **naming** (F4) | no | **the written steps of a reasoning trace**: round r predicts step r's words, and a schedule then removes the steps (iCoT, Coconut, SIM-CoT, LOTUS) |
 | last-move / count labels | no | the same: reasoning text that writes "moved last to", or "1, 2, 3 … so three" |
@@ -130,6 +144,9 @@ reasoning".
 ## 4. Should the writer and the decoder be trained separately?
 
 **What our runs say.**
+- What the writer keeps depends on what must pass through the notes. Under the split read it keeps common words
+  with no labels at all: E33f, property 69 % (F2). Notes-only continuation is therefore the natural stage-W
+  objective.
 - The writer is pulled toward whatever the reader currently needs (F2). Sometimes that is destructive (F3).
 - The cleanest gain came from partial separation: values trained only through what is read (content), keys only
   through addressing (E33ok).
@@ -149,12 +166,14 @@ reasoning".
 
 **Recommendation: train them separately in stages, and split keys from values.**
 1. **Stage W, the writer, label-free.**
-   - Objective: the notes of page p must let the decoder continue the text after page p, with no raw tokens of p
-     visible (AutoCompressors). A small share (~20 %) is page reconstruction (ARC-Encoder's best mix).
-   - Data: plain text plus instruction / QA text.
-   - This is what makes notes keep common words when the next text needs them, without any question labels.
-   - The decoder is the current coda / reader. It is either frozen (warm from E33) or trained at a low learning
-     rate.
+   - **R3 rules out plain continuation.** Notes-only continuation on our text, with a frozen reader, lowered the
+     place probe from 80 % to 13 % and the property from 12 % to 9 %. After a cut in a world document, the next
+     text never needs an earlier fact, so nothing paid for storing one.
+   - **Objective:** reconstruct the page from its notes, which rewards every token, mixed with continuation on text
+     whose content recurs: real documents re-mention their entities, and instruction / QA data asks about earlier
+     text. ARC-Encoder's best mix is ~20 % reconstruction.
+   - **The reader co-adapts** at a low learning rate. R3's frozen E33x reader had never read notes-only, which
+     confounds R3's exams (all ~0 %).
 2. **Stage R, the reader and loop.**
    - The writer's value path is frozen; its key path (address read) and the reader train.
    - Data: reasoning traces whose steps give per-round targets (§3), then the iCoT removal schedule.
@@ -168,9 +187,10 @@ stable message format: notes another model can read without co-training.
 
 | # | run | question | success / kill | cost |
 |---|---|---|---|---|
-| R1 | E33qn with the read target off (naming only) | Are read targets needed once each hop is named? | id compose / deduce ≥ 90 % → read targets dropped | 2 GPUs, 2.5 h |
+| R1 | E33qn with the read target off (naming only) | Are read targets needed once each hop is named? | id compose / deduce ≥ 90 % → read targets dropped | **done, 18 Oct:** deduce 99 %, compose 8 %. Needed for compose. |
 | R2 | **written-chain data**: each answer writes its chain ("Lumo's teacher is Pim. Pim lives in Corvo. So Corvo."). Naming targets are read off the written steps by a rule; then iCoT removal over the last 40 %. | Does text-derived per-hop supervision match the generator labels? | id compose / deduce ≥ 90 % with the steps removed; harder ≥ E33r | data build + 4 GPUs, 4 h |
-| R3 | **stage-W writer**: continuation (+20 % reconstruction) from the notes on stories + QA text, reader frozen | Does a task-free writer keep common words? | property probe ≥ 50 % and lookup 16k ≥ 85 % before any multi-hop training | 2 GPUs, 3 h |
+| R3 | **stage-W writer**: from E33x (property 12 %), only the writer trains, on task-free text (stories, and world documents without their questions) cut at random points, after which earlier text is readable only through the notes (arch e33w) | Does a task-free, notes-only continuation make a writer keep common words? | property probe ≥ 50 % (E33f, trained on questions in split mode: 69 %); place ≥ 74 % | **done, 18 Oct: failed.** Property 9 %, place 13 %. Next: R3b (below). |
+| R3b | stage-W writer with **reconstruction**: the notes of page p must regenerate p, plus ~20 % continuation, reader at a low LR | Does a reconstruction objective keep every word? | property ≥ 50 %, place ≥ 74 % | needs a decoder head for notes → text (2 GPUs, 3 h) |
 | R4 | R3's writer + R2's reader (stage R), then stage J | Does the staged recipe reach the goal without generator labels? | compose / deduce ≥ 70 % at 4k (the original goal) | 4 GPUs, 5 h |
 | R5 | real data at 100M: MuSiQue / HotpotQA long-context with decompositions written as chains; GSM8K-Aug | Does it transfer off the synthetic world? | beats a dense 100M model on MuSiQue answer F1 at matched tokens | multi-day |
 
@@ -178,6 +198,9 @@ R2 still uses our synthetic world, but the supervision reaches the model only as
 runs on real chain-of-thought and decomposed-QA data (R5).
 
 ## 6. What I am not sure about
+
+- **R3's confound.** Its frozen reader had never read notes-only. A reader that co-adapts might keep more content.
+  The probe drop (place 80 → 13 %) is the writer's, though, and the probe needs no reader.
 
 - **Scale and depth.** Coconut, CODI and LOTUS are GPT-2 scale and up. Quiet-STaR-style learning from plain text
   shows gains only at 1B+. A 30M model may need the written-chain stage for longer.

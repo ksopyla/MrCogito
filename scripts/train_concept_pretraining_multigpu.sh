@@ -247,6 +247,7 @@ PAR_LOOP_CONTROL_WORDS="${PAR_LOOP_CONTROL_WORDS:-embed}"  # E33c: embed | prelu
 PAR_LM_WRITER_INPUT="${PAR_LM_WRITER_INPUT:-table}"        # writer input: table | embed (shared input layer)
 PAR_LM_NOTE_RANK_GATE="${PAR_LM_NOTE_RANK_GATE:-own}"      # E33g2: own | content (match judged by the content heads)
 PAR_LM_NOTE_ORDER_GATE="${PAR_LM_NOTE_ORDER_GATE:-false}"  # E33i: per-position switch on the order term
+TRAIN_ONLY_PARAMS="${TRAIN_ONLY_PARAMS:-}"                 # comma-separated name prefixes that train (rest frozen)
 WARM_START_SKIP="${WARM_START_SKIP:-}"                     # warm start: weights (name fragments) left at fresh init
 PAR_LM_COUNT_MAX="${PAR_LM_COUNT_MAX:-10}"                 # E33h: counts coded over 0..max
 PAR_LM_COUNT_AUX="${PAR_LM_COUNT_AUX:-0.0}"                # E33k: count heads' sum = true visits (weight)
@@ -260,6 +261,16 @@ A2A_TX_ORDER="${A2A_TX_ORDER:-rank}"                      # rank | none
 A2A_TX_REQUEST="${A2A_TX_REQUEST:-none}"                  # none (broadcast) | question (B's question steers A's message)
 A2A_LOSS_ON="${A2A_LOSS_ON:-all}"                         # all receiver tokens | answers
 A2A_FREEZE_RECEIVER="${A2A_FREEZE_RECEIVER:-False}"       # True: only agent A learns
+# E36 — a trained span writer read by a frozen pretrained decoder (MODEL_FAMILY=frozen_reader)
+FR_READER="${FR_READER:-HuggingFaceTB/SmolLM2-360M}"       # frozen reader (Hub id)
+FR_WRITER_INIT="${FR_WRITER_INIT:-HuggingFaceTB/SmolLM2-135M}"  # writer = this model's lower layers
+FR_WRITER_LAYERS="${FR_WRITER_LAYERS:-3}"                   # 3 / 8 / 28 = 10.6M / 28.3M / 99.1M
+FR_SPAN="${FR_SPAN:-512}"                                   # tokens per entry (one vector): 512 -> 256 -> 128
+FR_MEM_SPANS="${FR_MEM_SPANS:-8}"                           # earlier entries per continuation row
+FR_WAY="${FR_WAY:-input}"                                   # input | kv
+FR_RECON_FRAC="${FR_RECON_FRAC:-0.2}"                       # share of steps rebuilding a span from its entry
+FR_ENTRY_POSITIONS="${FR_ENTRY_POSITIONS:-span_mid}"        # span_mid | compact
+FR_PROJ_HIDDEN="${FR_PROJ_HIDDEN:-2048}"
 PAR_LOOP_ROUNDS="${PAR_LOOP_ROUNDS:-1}"                    # E33a loop on text: 4
 PAR_LOOP_EXIT_AUX="${PAR_LOOP_EXIT_AUX:-0.0}"              # E33a: 0.3
 PAR_LOOP_EXIT_TARGETS="${PAR_LOOP_EXIT_TARGETS:-answer}"
@@ -478,6 +489,20 @@ if [ "$MODEL_FAMILY" = "a2a" ]; then
         --a2a_freeze_receiver "$A2A_FREEZE_RECEIVER"
     )
 fi
+if [ "$MODEL_FAMILY" = "frozen_reader" ]; then
+    PAR_ARGS+=(
+        --model_family frozen_reader
+        --fr_reader "$FR_READER"
+        --fr_writer_init "$FR_WRITER_INIT"
+        --fr_writer_layers "$FR_WRITER_LAYERS"
+        --fr_span "$FR_SPAN"
+        --fr_mem_spans "$FR_MEM_SPANS"
+        --fr_way "$FR_WAY"
+        --fr_recon_frac "$FR_RECON_FRAC"
+        --fr_entry_positions "$FR_ENTRY_POSITIONS"
+        --fr_proj_hidden "$FR_PROJ_HIDDEN"
+    )
+fi
 if [ "$MODEL_FAMILY" = "perceiver_ar" ] || [ "$MODEL_FAMILY" = "a2a" ]; then
     PAR_ARGS+=(
         --model_family "$MODEL_FAMILY"
@@ -618,6 +643,7 @@ if [ -n "$MODEL_NAME_OR_PATH" ]; then
     WARM_ARGS+=(--model_name_or_path "$MODEL_NAME_OR_PATH")
     [ -n "$WARM_START_SKIP" ] && WARM_ARGS+=(--warm_start_skip "$WARM_START_SKIP")
 fi
+[ -n "$TRAIN_ONLY_PARAMS" ] && WARM_ARGS+=(--train_only_params "$TRAIN_ONLY_PARAMS")
 
 # Optimizer selection (--optimizer is our flag; HF --optim stays adamw_torch_fused for both arms).
 OPTIM_ARGS=(--optimizer "$OPTIMIZER")
