@@ -626,6 +626,9 @@ if [ "$NUM_MACHINES" -gt 1 ]; then
     MULTI_NODE_ARGS+=(--machine_rank "$MACHINE_RANK" --main_process_ip "$MAIN_PROCESS_IP"
                       --main_process_port "${MAIN_PROCESS_PORT:-29500}" --same_network)
     echo "Multi-node: machines=$NUM_MACHINES rank=$MACHINE_RANK main=$MAIN_PROCESS_IP:${MAIN_PROCESS_PORT:-29500}"
+elif [ -n "${MAIN_PROCESS_PORT:-}" ]; then
+    # two single-node jobs on one host (e.g. GPUs 0-1 and 2-3) need different rendezvous ports (2026-10-18)
+    MULTI_NODE_ARGS+=(--main_process_port "$MAIN_PROCESS_PORT")
 fi
 
 # accelerate rejects --multi_gpu with a single process ("You need to use at least 2 processes"),
