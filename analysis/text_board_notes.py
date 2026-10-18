@@ -30,10 +30,10 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-18 09:30 UTC",
-    "headline": "Compose and deduce reach the 70 % goal: E33q answers 94 % and 99 % at 4k in three runs, and a second "
-                "recipe agrees, with privileged training signals and only on trained shapes. Latest and count stay at "
-                "guessing; supervised fixes are training.",
+    "as_of": "2026-10-18 09:45 UTC",
+    "headline": "Three of four goal tasks reach 70 % on the main exam: latest 90 % (E33j, one run), compose 94 % and "
+                "deduce 99 % (E33q, three runs) at 4k, all with privileged training labels and only on trained shapes. "
+                "Count stays at guessing.",
     "where": [
         "17-18 Oct night (Odra): E33g (E33r + four fixed order heads) failed latest (22 % at 4k) but lifted compose to "
         "69 / 88 / 92 % at 4k / 16k / 32k and deduce to 24 % at 4k, against 61 / 82 % and 17 % for the matched control "
@@ -248,6 +248,12 @@ PROTOCOL_LOG = [
 # Claims register: every conclusion we have drawn, with its state. holds = repeated or overwhelming within its runs;
 # single run = one run, needs a second; open = not testable yet; retracted = disproved (kept, with the date).
 CLAIMS = [
+    {"claim": "Told which move is the newest and given an order signal it can switch on, the notebook learns latest.",
+     "state": "single run", "since": "2026-10-18",
+     "evidence": "E33j (E33q + every head ranked × a learned per-question switch, the last move as read and naming target): "
+                 "latest 90 / 96 % at 4k / 16k (quick exam). Without the order term (E33q on the same data) 20 %; order on "
+                 "demand without the labels (E33i) 22 %: both parts are needed.",
+     "settle": "Evidence-removed and notebook-off controls (full exams running), a second seed, and E33jf / E33jd."},
     {"claim": "Both 90 % recipes run a fixed number of hops: on 3-hop compose they stop after two.", "state": "single run",
      "since": "2026-10-18",
      "evidence": "Harder split, 3-hop compose: E33q 0 %, E33q seed 1 2-3 %, denser-mix E33ok 3 %. The pick is bridge 2's home "
@@ -729,7 +735,10 @@ LADDER = [
      "run": "E33j, naming + order on demand, latest supervised (Odra GPU 1)",
      "model": "E33q + every head ranked (strength 4, margin 2) × a learned per-question switch · 30M, plain",
      "tokens": "0.3B continuation from E33q", "exams": "v2 + v2.1",
-     "result": "—", "when": "18 Oct from 01:56 UTC, about 3 h on one GPU",
+     "result": "Latest solved on the id split (quick exam, 200 items): 90 / 96 % at 4k / 16k, the newest move picked 97 / "
+               "99 % (E33q 20 / 2 %). Compose 96 / 100 %, deduce 99 / 100 %, lookup 100 / 100 %, count 18 / 26 %. The switch "
+               "opens per question (bias −2.02, weight norm 0.46). Full exams with controls running.",
+     "when": "18 Oct 01:56 → 09:20 UTC training (Odra GPU 1, one 20-min cooldown); quick exam 09:35 UTC",
      "why": "T4: the data now gives each latest question a one-step chain (the asked person's last move), so the read "
             "target and the naming tell round 1 which move answers; the order term gives the read a way to find it. "
             "Pass: latest ≥ 60 % at 4k with compose and deduce within 5 points of E33q. Kill: latest ≤ 35 % at 4k."},
@@ -890,6 +899,8 @@ RECIPES = [
     {"key": "e33q", "name": "E33q / E33qn", "what": "+ each round names the word its hop finds", "from": "E33r + 0.3B",
      "signals": ["warm", "dense-data", "read", "name"],
      "runs": ["query_e33q_s0.odra", "query_e33q_s1.polonez", "query_e33qn_s0.polonez"]},
+    {"key": "e33j", "name": "E33j", "what": "+ order on demand; latest told its last move", "from": "E33q + 0.3B",
+     "signals": ["warm", "dense-data", "read", "name", "order", "latest-labels"], "runs": ["latest_e33j_s0.odra"]},
     {"key": "e33ok", "name": "E33ok, denser mix", "what": "key stop + read target on notes, denser reasoning data",
      "from": "E33r + 0.9B", "signals": ["warm", "dense-data", "read", "keystop"],
      "runs": ["r2out_e33ok_s0.polonez", "r2out_e33gk_s0.polonez"]},
@@ -1257,6 +1268,10 @@ ARCHS = {
 # measured. effect: helped / hurt / no effect / mixed / measurement (a new exam or rule, the models did not change).
 # metrics: (what is measured, before, after, unit) — unit "%" (0-100) or "runs" ("k/n").
 CHANGES = [
+    {"date": "2026-10-18", "kind": "recipe", "change": "Latest told its last move, with order on demand (E33j)",
+     "compared": "E33q on the same last-move-labelled data, without vs with the order term", "effect": "helped",
+     "metrics": [("latest at 4k", 20, 90, "%"), ("latest at 16k", 2, 96, "%"), ("compose at 4k", 96, 96, "%")],
+     "note": "Quick exam, one run. Order alone (E33i) and labels alone both stayed at about 20 %."},
     {"date": "2026-10-18", "kind": "recipe", "change": "Latest told its last move (read target + naming), no order term",
      "compared": "E33q vs E33q + 0.3B tokens on the last-move-labelled data", "effect": "no effect",
      "metrics": [("latest at 4k", 20, 20, "%"), ("compose at 4k", 94, 96, "%")],
