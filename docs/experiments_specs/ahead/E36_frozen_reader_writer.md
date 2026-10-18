@@ -1,6 +1,6 @@
 # E36 — a trained writer for a frozen reader
 
-- **Status:** S0 + S1 started 2026-10-18 (Polonez). The author asked (18 Oct) to train the memory (the writer) and
+- **Status:** S0 + S1 done 2026-10-18 (Polonez): the span ladder 512 → 256 → 128 stays below the pass mark (18–27 % of the raw-text gain on books, no facts cross); the writer, not the entry format, is the limit (54 vs 781 bits per entry). The author asked (18 Oct) to train the memory (the writer) and
   keep a frozen, well-evaluated small decoder as the reader, with no extra labels; entries start at 512 tokens per
   vector ("aligned with Cramming 1568 tokens"), shrinking to 256 then 128 if a stage fails; "implement the training
   and evaluation and do a training and evaluation on Odra or Polonez".
@@ -102,6 +102,23 @@ Two runs, one change each from round 1's arm B:
   ~2,000 bits through one key/value entry (S0).
 - 256 is still below the pass mark (50 %) and below the stop line on PDFs. The 128 rung and a capacity diagnostic
   follow after the cooling pause (Polonez loaded 16:01–21:17 UTC; pause 21:18–21:38).
+
+### S1 round 3 — the last rung, 128 tokens per entry (32 entries), key/value way
+Polonez GPU1, 21:38:11–22:29:08 UTC. W&B `frozen_reader_SmolLM2-360M_w3_s128m32_kv_20261018_213822`.
+
+| corpus | none | raw | memory | other doc | recovered | span rebuilt from its own entry |
+|---|---|---|---|---|---|---|
+| books | 3.245 | 2.739 | 3.109 | 3.163 | 27 % | 36 bits |
+| PDFs | 2.732 | 1.777 | 2.562 | 2.723 | 18 % | 36 bits |
+
+SQuAD, passage only in memory: 8.6 % (none 8.8 %, with the passage 51.6 %).
+
+**The span ladder is done: 512 → 256 → 128 recovers 18 → 22 → 27 % (books) and 13 → 15 → 18 % (PDFs).**
+- Every rung is below the 50 % pass mark, and no rung moves SQuAD.
+- Each entry carries ~36 bits of its own span at every span length. The useful information about the next span
+  stays ~25–31 bits in total. The share recovered rises only because a shorter target span has less to gain.
+- By the plan, E36's S1 stops here. The capacity diagnostic below shows the format would allow more, so the next
+  step is a better writer, not a shorter span.
 
 ### Capacity diagnostic (Polonez GPU3, 21:38–21:44 UTC)
 8 held-out texts of 512 tokens (4 books, 4 PDFs). The table gives the bits one entry adds about its own span when
