@@ -30,7 +30,7 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-18 02:00 UTC",
+    "as_of": "2026-10-18 02:40 UTC",
     "headline": "Compose is closest to the 70 % goal: E33 with order heads answers 69 % at 4k and 88 % at 16k (one run). "
                 "Latest still fails for every notebook model; three fixes for latest, count and compose train on Odra.",
     "where": [
@@ -725,11 +725,16 @@ LADDER = [
      "why": "T4: the data now gives each latest question a one-step chain (the asked person's last move), so the read "
             "target and the naming tell round 1 which move answers; the order term gives the read a way to find it. "
             "Pass: latest ≥ 60 % at 4k with compose and deduce within 5 points of E33q. Kill: latest ≤ 35 % at 4k."},
+    {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain",
+     "standing": "running", "run": "E33q on the latest-supervised data (Odra GPU 2)",
+     "model": "E33q (naming, no order term) · 30M, plain", "tokens": "0.3B continuation from E33q", "exams": "v2 + v2.1",
+     "result": "—", "when": "18 Oct from 02:35 UTC, about 3 h",
+     "why": "The ablation beside E33j: do the read target and the naming alone teach latest, or is the order term needed?"},
     {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain + count visits",
-     "standing": "queued", "run": "E33k, count heads told the true number (Odra)",
+     "standing": "running", "run": "E33k, count heads told the true number (Odra)",
      "model": "E33h + each count head's sum at a count question supervised with the number of visits (0.1) · 30M, plain",
      "tokens": "0.3B continuation from E33h", "exams": "v2 + v2.1", "result": "—",
-     "when": "18 Oct, after the count-marked data build (Odra)",
+     "when": "18 Oct from 02:28 UTC (Odra GPU 0, micro-batch 2 × 48), about 4 h",
      "why": "T6: give the summing read a direct signal. Pass: count ≥ 50 % at 4k. Kill: ≤ 35 %."},
     {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase (output-word spans)", "standing": "queued",
      "run": "E33q replicate and naming-only arm (Polonez, multi-hop session)",
@@ -744,7 +749,8 @@ LADDER = [
      "result": "Goal reached for T5 / T7 on the id split: compose 94 / 98 / 97 % at 4k / 16k / 128k, deduce 99 / 100 %, "
                "lookup 98 / 100 %, keyed 98 / 99 % (E33r 60 / 76, 13 / 9, 74 / 87, 70 / 83); evidence removed 0 %. "
                "Latest 20 %, count 24 %, quote 26 % unchanged; story loss 1.523 (E33r 1.516). The same exam with the "
-               "round feedback removed scores the same: the naming does the work. Not on new sentence shapes "
+               "round feedback removed scores the same: the naming does the work. Notebook off at 4k: compose 6 %, deduce 8 %, "
+               "lookup 23 %. Learned fast: deduce 96 % and compose 71 % by 0.07B tokens. Not on new sentence shapes "
                "(paraphrase compose 6 %, as every model) or more hops (harder compose 0 %, E33r 25 %).",
      "when": "17 Oct 19:24 → 22:10 training (Odra GPU 2); exams 22:10 → 18 Oct ~01:15 UTC",
      "why": "T5: the oracle put the gold bridge in the question and E33r went 58 → 81 % at 4k. Pass: compose ≥ 70 % at "
