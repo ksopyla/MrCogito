@@ -744,6 +744,23 @@ uv run python scripts/run_text_checks.py --phase train --tier screen --arches e3
   LEARNING_RATE=0.000333 WARM_START_SKIP=loop_feedback_gate
 ```
 
+**E33c result: the control went unused, so arm A was stopped at the early check (18 Oct).**
+- Both arms launched 13:07 UTC on Polonez, as planned.
+- The control gate's mean |value|, from the checkpoint files:
+
+| checkpoint | 89 | 178 | 267 | 356 | 445 |
+|---|---|---|---|---|---|
+| mean / max |gate| | 0.0007 / 0.003 | 0.0010 / 0.006 | 0.0009 / 0.006 | 0.0011 / 0.006 | 0.0013 / 0.007 |
+
+- That is 15× below the 0.02 line. At this size the control adds ~0.07 % of the hidden state, so it cannot change
+  the rounds. The slight upward trend extrapolates to ~0.004 at the end of the run.
+- Arm A was stopped by PID at 13:41 UTC. Arm B (E33qn, the matched control) runs to its end.
+- **Reading:** training has only 1–2 hops, which the rounds already solve by position. Nothing asks for a pointer
+  into the question, so the gradient never opens it. This is the same as E33q's feedback gate (0.009).
+- **Implication:** the control needs data whose hop count varies beyond what position can solve. Natural
+  multi-hop data with 2–4 hops (MuSiQue) would provide that. The supervised-control arm planned above relies on
+  generator question spans, and is set aside under the author's no-extra-labels direction (18 Oct).
+
 ## Uncertainty
 - The probabilities are my judgement from C5, the board and the literature. They are not measured.
 - C5's names, relations and distractors are simpler than text's, so the port may need more than the C5 recipe
