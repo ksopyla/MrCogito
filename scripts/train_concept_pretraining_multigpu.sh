@@ -239,6 +239,11 @@ PAR_LM_COUNT_HEADS="${PAR_LM_COUNT_HEADS:-0}"              # E33h: count heads (
 PAR_LOOP_NAME_LENS="${PAR_LOOP_NAME_LENS:-0.0}"            # E33q: round r names hop r's output word (weight)
 PAR_LOOP_FEEDBACK="${PAR_LOOP_FEEDBACK:-none}"             # E33q: none | soft (re-embed round r into round r+1)
 PAR_LOOP_FEEDBACK_TEMP="${PAR_LOOP_FEEDBACK_TEMP:-1.0}"    # E33q: feedback softmax temperature
+PAR_LOOP_CONTROL="${PAR_LOOP_CONTROL:-none}"               # E33c: none | question (rounds read the question)
+PAR_LOOP_CONTROL_WINDOW="${PAR_LOOP_CONTROL_WINDOW:-48}"   # E33c: tokens the control reads
+PAR_LOOP_CONTROL_DIM="${PAR_LOOP_CONTROL_DIM:-128}"        # E33c: control state width
+PAR_LOOP_CONTROL_HEADS="${PAR_LOOP_CONTROL_HEADS:-4}"      # E33c: control heads (one pointer each)
+PAR_LOOP_CONTROL_WORDS="${PAR_LOOP_CONTROL_WORDS:-embed}"  # E33c: embed | prelude
 PAR_LM_WRITER_INPUT="${PAR_LM_WRITER_INPUT:-table}"        # writer input: table | embed (shared input layer)
 PAR_LM_NOTE_RANK_GATE="${PAR_LM_NOTE_RANK_GATE:-own}"      # E33g2: own | content (match judged by the content heads)
 PAR_LM_NOTE_ORDER_GATE="${PAR_LM_NOTE_ORDER_GATE:-false}"  # E33i: per-position switch on the order term
@@ -544,6 +549,11 @@ if [ "$MODEL_FAMILY" = "perceiver_ar" ] || [ "$MODEL_FAMILY" = "a2a" ]; then
             --message_loop_name_lens "$PAR_LOOP_NAME_LENS"
             --message_loop_feedback "$PAR_LOOP_FEEDBACK"
             --message_loop_feedback_temp "$PAR_LOOP_FEEDBACK_TEMP"
+            --message_loop_control "$PAR_LOOP_CONTROL"
+            --message_loop_control_window "$PAR_LOOP_CONTROL_WINDOW"
+            --message_loop_control_dim "$PAR_LOOP_CONTROL_DIM"
+            --message_loop_control_heads "$PAR_LOOP_CONTROL_HEADS"
+            --message_loop_control_words "$PAR_LOOP_CONTROL_WORDS"
             --lm_writer_input "$PAR_LM_WRITER_INPUT"
             --lm_note_rank_gate "$PAR_LM_NOTE_RANK_GATE"
             --lm_note_order_gate "$PAR_LM_NOTE_ORDER_GATE"

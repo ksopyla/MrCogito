@@ -21,6 +21,7 @@ One forward pass per item over  BOS + prompt + answer  (teacher forcing):
 
 Exam-time probes on a trained model (nothing retrained; recorded in the output):
   --loop_rounds r        a looped model (E33) stops after r rounds and decodes through its coda (rounds 1-4 exams)
+  --loop_control off     a looped model with the E33c question control runs without it (does the control carry it?)
   --note_order rank --note_strength s [--note_margin m --note_sharp k]
                          the notes' order among matching notes (E33e) with a fixed strength s for every head, put on a
                          model trained without it (E33, E33d: replaces E33d's page distance)
@@ -226,6 +227,8 @@ def main():
     p.add_argument("--note_strength", default="0", help="one strength for every head, or a,b,… one per head")
     p.add_argument("--loop_feedback", default="as_trained", choices=("as_trained", "off"),
                    help="E33q probe: 'off' removes the round-to-round name feedback (gate) at exam time")
+    p.add_argument("--loop_control", default="as_trained", choices=("as_trained", "off"),
+                   help="E33c probe: 'off' removes the rounds' question control at exam time (the model without it)")
     p.add_argument("--note_gate", default="own", choices=("own", "content"),
                    help="E33g2: count matches by each head's own score, or by the strength-0 heads' mean score")
     p.add_argument("--loop_emb_map", default="as_trained",
@@ -267,6 +270,11 @@ def main():
             raise SystemExit("--loop_feedback off: this model has no round feedback")
         model.loop_feedback_gate = None
         probes["loop_feedback"] = "off"
+    if args.loop_control == "off":
+        if getattr(model, "loop_control", None) is None:
+            raise SystemExit("--loop_control off: this model has no question control")
+        model.loop_control = None
+        probes["loop_control"] = "off"
     if args.note_order:
         probes["note_order"] = apply_note_order(model, args.note_order, args.note_strength, args.note_margin,
                                                 args.note_sharp, args.note_gate)

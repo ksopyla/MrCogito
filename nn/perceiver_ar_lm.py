@@ -188,6 +188,13 @@ class PerceiverARConfig(PretrainedConfig):
         message_loop_feedback: str = "none",  # E33q — "soft": round r's LM-head distribution, re-embedded with the
                                               #   shared token table and input layer, is added to round r+1 (gate from 0)
         message_loop_feedback_temp: float = 1.0,  # E33q — softmax temperature of that re-embedding
+        message_loop_control: str = "none",  # E33c — "question": each round reads its next relation from the question
+                                             #   (MAC control unit over the last `window` tokens, gate from 0)
+        message_loop_control_window: int = 48,  # E33c — tokens before (and at) each position the control reads
+        message_loop_control_dim: int = 128,  # E33c — control state width (split over the control heads)
+        message_loop_control_heads: int = 4,  # E33c — control heads, each with its own pointer into the question
+        message_loop_control_words: str = "embed",  # E33c — what the control reads: "embed" (the input layer: one
+                                                    #   vector per word, the same at every "teacher of") | "prelude"
         lm_writer_input: str = "table",   # notebook writer input: "table" (the shared token table, E31-E33) | "embed"
                                           #   (the decoder's whole input layer: the writer and reader share one encoding)
         message_update_slot_kv: bool = False,  # E21 — rewrite exclusive slot K/V between extra hops
@@ -321,6 +328,11 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_loop_name_lens = float(message_loop_name_lens or 0.0)
         self.message_loop_feedback = str(message_loop_feedback or "none")
         self.message_loop_feedback_temp = float(message_loop_feedback_temp or 1.0)
+        self.message_loop_control = str(message_loop_control or "none")
+        self.message_loop_control_window = int(message_loop_control_window or 48)
+        self.message_loop_control_dim = int(message_loop_control_dim or 128)
+        self.message_loop_control_heads = int(message_loop_control_heads or 4)
+        self.message_loop_control_words = str(message_loop_control_words or "embed")
         self.lm_writer_input = str(lm_writer_input or "table")
         if self.lm_writer_input not in ("table", "embed"):
             raise ValueError("lm_writer_input must be 'table' or 'embed'")
@@ -427,6 +439,17 @@ class PerceiverARConfig(PretrainedConfig):
             raise ValueError("message_loop_exit_mask must be 'all' or 'answers'")
         if self.message_loop_read_target not in ("page", "note"):
             raise ValueError("message_loop_read_target must be 'page' or 'note'")
+        if self.message_loop_control not in ("none", "question"):
+            raise ValueError("message_loop_control must be 'none' or 'question'")
+        if self.message_loop_control != "none":
+            if self.message_loop_rounds < 2:
+                raise ValueError("message_loop_control needs message_loop_rounds >= 2")
+            if self.message_loop_control_words not in ("embed", "prelude"):
+                raise ValueError("message_loop_control_words must be 'embed' or 'prelude'")
+            if self.message_loop_control_window < 2:
+                raise ValueError("message_loop_control_window must be >= 2")
+            if self.message_loop_control_heads < 1 or self.message_loop_control_dim % self.message_loop_control_heads:
+                raise ValueError("message_loop_control_dim must be a multiple of message_loop_control_heads")
         if self.message_loop_rounds > 1:
             if self.message_read_rounds > 1:
                 raise ValueError("message_loop_rounds and message_read_rounds (E33) are exclusive")
@@ -2420,6 +2443,93 @@ def _liger_flce():
     return LigerFusedLinearCrossEntropyLoss
 
 
+class LoopControl(nn.Module):
+    """E33c (2026-10-18): each loop round reads its next relation from the question — a MAC control unit (Hudson &
+    Manning 2018, arXiv 1803.03067) on the tied read loop.
+
+    Why: rounds share weights, and on E33q / E33qn the only round-specific input was the per-round embedding (~2 % of the
+    state; remapping or zeroing it at exam time changed nothing). Trained on 1–2 teacher hops, the loop learned "after at
+    most two teacher reads, read the home": on 3-hop compose it picks bridge 2's home 80–89 % of the time. Here, at every
+    position t, round r attends over the last W words (t − W + 1 … t, own document), queried by the previous control and
+    the question summary at t:
+
+        s_{r,h,i} = q_{r,h} · k_{h,i} / √dh + b_h(i − P_{r−1,h})     P_{r−1}: the previous round's pointer (t at round 1)
+        α = softmax_i(s);   c_r = Σ_i α_i v_i;   P_r = Σ_i α_i i;   u_r = gate ⊙ rmsnorm(W_o c_r)
+
+    - b_h is learned over the key's offset from the previous pointer (linearly interpolated), so "the next relation word
+      to the left of the one just read" is one rule at any hop count: a third "teacher of" applies it once more.
+    - Words are the input layer's vectors by default, identical at every "teacher of", so c_r cannot count hops either.
+    - u_r is added to round r's input and taken out again after the round: the instruction is that round's alone (a sum
+      over rounds would grow with the hop count).
+    - The gate starts at 0: a warm start from E33q / E33qn is unchanged at step 0.
+    Shapes: words, summary [B,S,d] → per round u [B,S,d]; control c [B,S,dc]; pointer (distance left of t) [B,S,H].
+    """
+
+    def __init__(self, cfg: PerceiverARConfig):
+        super().__init__()
+        d, dc, H = cfg.hidden_size, int(cfg.message_loop_control_dim), int(cfg.message_loop_control_heads)
+        self.W, self.H, self.dh = int(cfg.message_loop_control_window), H, dc // H
+        self.to_k = nn.Linear(d, dc, bias=False)
+        self.to_v = nn.Linear(d, dc, bias=False)
+        self.q_from_c = nn.Linear(dc, dc, bias=False)
+        self.q_from_x = nn.Linear(d, dc, bias=False)
+        self.out = nn.Linear(dc, d, bias=False)
+        self.c0 = nn.Parameter(torch.randn(dc))  # the control before round 1 (rms-normed before use)
+        # b_h(δ) for δ = key − pointer ∈ [−(W−1), W−1], stored at δ + W − 1 (+ one entry for the interpolation's edge)
+        self.ptr_bias = nn.Parameter(torch.zeros(H, 2 * self.W))
+        self.gate = nn.Parameter(torch.zeros(d))
+
+    def start(self, words: torch.Tensor, summary: torch.Tensor, doc: Optional[torch.Tensor]) -> dict:
+        """Once per forward: keys / values of every word (left-padded by W − 1), the window mask, the summary's query
+        part, c_0 and the round-1 pointer (at t). doc [B,S] (−1 = padding) or None (one document per row)."""
+        B, S, _ = words.shape
+        W, H, dh = self.W, self.H, self.dh
+        w = F.rms_norm(words, (words.shape[-1],))
+        k = F.pad(self.to_k(w).view(B, S, H, dh), (0, 0, 0, 0, W - 1, 0))                    # [B,S+W−1,H,dh]
+        v = F.pad(self.to_v(w).view(B, S, H, dh), (0, 0, 0, 0, W - 1, 0))
+        if doc is None:
+            doc = torch.zeros(B, S, dtype=torch.long, device=words.device)
+        dp = F.pad(doc, (W - 1, 0), value=-2)
+        ok = torch.stack([dp[:, j:j + S] == doc for j in range(W)], -1)                      # [B,S,W]; slot W−1 = t
+        qx = self.q_from_x(F.rms_norm(summary, (summary.shape[-1],))).view(B, S, H, dh)
+        return {"k": k, "v": v, "ok": ok, "qx": qx, "c": self.c0.to(qx.dtype).expand(B, S, -1),
+                "ptr": torch.zeros(B, S, H, device=words.device)}
+
+    def step(self, st: dict, capture: Optional[dict] = None) -> torch.Tensor:
+        """One round: read the window, move the pointer, return u_r [B,S,d] (updates st["c"], st["ptr"])."""
+        W, H, dh = self.W, self.H, self.dh
+        B, S = st["ok"].shape[:2]
+        k, v, c, ptr = st["k"], st["v"], st["c"], st["ptr"]
+        q = self.q_from_c(F.rms_norm(c, (c.shape[-1],))).view(B, S, H, dh) + st["qx"]
+        s = torch.stack([(q * k[:, j:j + S]).sum(-1) for j in range(W)], -1).float() / math.sqrt(dh)  # [B,S,H,W]
+        # slot j holds key t − (W − 1) + j; its offset from the pointer t − ptr is δ = j − (W − 1) + ptr, i.e. table
+        # index j + ptr: rows n = ⌊ptr⌋ and n + 1 of the table's length-W windows, mixed by the fraction
+        n = ptr.detach().floor().clamp(0, W - 1)
+        f = (ptr - n).unsqueeze(-1)
+        n = n.long()
+        tab = self.ptr_bias.float().unfold(1, W, 1)                                          # [H, W+1, W]
+        hh = torch.arange(H, device=ptr.device)
+        s = s + tab[hh, n] * (1 - f) + tab[hh, n + 1] * f
+        a = torch.softmax(s.masked_fill(~st["ok"][:, :, None, :], float("-inf")), -1)        # [B,S,H,W]
+        av = a.to(v.dtype)
+        c = sum(av[..., j, None] * v[:, j:j + S] for j in range(W)).reshape(B, S, H * dh)    # [B,S,dc]
+        st["c"] = c
+        st["ptr"] = (a * torch.arange(W - 1, -1, -1, device=a.device, dtype=a.dtype)).sum(-1)
+        if capture is not None and "q_pos" in capture:  # exam probe: where each round's control looks
+            qp = capture["q_pos"].to(a.device)
+            rows = torch.arange(B, device=a.device)[:, None]
+            capture.setdefault("control_attn", []).append(a[rows, qp].detach())          # [B,P,H,W]
+            capture.setdefault("control_ptr", []).append(st["ptr"][rows, qp].detach())   # [B,P,H]
+        u = F.rms_norm(self.out(c), (self.out.out_features,))
+        return self.gate.to(u.dtype) * u
+
+
+def loop_control_param_count(cfg: PerceiverARConfig) -> int:
+    d, dc = cfg.hidden_size, int(cfg.message_loop_control_dim)
+    W, H = int(cfg.message_loop_control_window), int(cfg.message_loop_control_heads)
+    return 3 * d * dc + dc * dc + dc * d + dc + H * 2 * W + d
+
+
 # --------------------------------------------------------------------------------------
 # Model
 # --------------------------------------------------------------------------------------
@@ -2489,6 +2599,13 @@ class PerceiverARLM(PreTrainedModel):
             if self.loop_rounds > 1 and getattr(cfg, "message_loop_feedback", "none") == "soft" else None
         )
         self._name_lens_losses: Optional[list] = None
+        # E33c: each round reads its next relation from the question (LoopControl; gate from 0, step 0 = E33qn).
+        # `_control_capture` = {"q_pos": [B,P]} records each round's control attention and pointer there (exam probe).
+        self.loop_control = (
+            LoopControl(cfg)
+            if self.loop_rounds > 1 and getattr(cfg, "message_loop_control", "none") == "question" else None
+        )
+        self._control_capture: Optional[dict] = None
         # Notes-budget exam (latent memory, nothing retrained): `_notes_override` = (k̄, v̄, slot_pos) replaces what the
         # writer would write (another forward's notes: B reads A's notebook over its own text); `_note_keep` [B,nb]
         # hides every other note; `_note_capture` = {"q_pos": [B,P]} records how much each read looks at each note.
@@ -2973,6 +3090,13 @@ class PerceiverARLM(PreTrainedModel):
             for i in range(gi):
                 x = run_layer(i, x, skips)
             prelude, skips0 = x, list(skips)
+            ctrl, cst = self.loop_control, None
+            if ctrl is not None:  # E33c: the words the control reads, and their documents (−1 = padding)
+                cdoc = local_doc
+                if key_valid is not None:
+                    cdoc = (key_valid.long() - 1) if cdoc is None else cdoc.masked_fill(~key_valid, -1)
+                words = prelude if cfg.message_loop_control_words == "prelude" else x0
+                cst = ctrl.start(words, prelude, cdoc)
             states = []
             for r in range(R):
                 if msg is not None:
@@ -2980,9 +3104,14 @@ class PerceiverARLM(PreTrainedModel):
                 x = x + self.loop_emb[min(r, self.loop_emb.shape[0] - 1)].to(x.dtype)
                 if r and self.loop_gate is not None:
                     x = x + self.loop_gate.to(x.dtype) * prelude
+                u = ctrl.step(cst, self._control_capture).to(x.dtype) if cst is not None else None
+                if u is not None:
+                    x = x + u
                 s = list(skips0)
                 for i in core:
                     x = run_layer(i, x, s)
+                if u is not None:
+                    x = x - u  # round r's instruction is its own; the next round gets the next one
                 states.append((x, s))
                 if r < R - 1 and (self.loop_feedback_gate is not None or self._name_lens_losses is not None):
                     x = self._loop_lens(x, r, input_ids)
@@ -3532,6 +3661,8 @@ def analytic_param_count(cfg: PerceiverARConfig) -> ParamBreakdown:
                 dense += sum(p.numel() for p in LatentMemoryWriter(cfg).parameters())
         else:
             dense += n_full * (g * d + d * 2 * g * dh)                             # KVCompressor: u + delta
+    if int(getattr(cfg, "message_loop_rounds", 1) or 1) > 1 and getattr(cfg, "message_loop_control", "none") != "none":
+        dense += loop_control_param_count(cfg)      # E33c: the loop's question control
     sparse = len(cfg.ngram_orders) * cfg.ngram_buckets * e
     n_ve = sum(1 for i in range(L) if i in cfg.value_embed_layers)
     sparse += n_ve * (V * cfg.value_embed_dim)
