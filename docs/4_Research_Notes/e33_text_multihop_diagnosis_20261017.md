@@ -615,8 +615,35 @@ scores, read from final_id.json on Odra:
   round 3 become "the place" and leaves round 4 untrained. Deduce's links all share one shape, which may be why
   depth 3 still works. The board session is testing this without training, by equalising or zeroing loop_emb.
 
+**The key-stop line reaches the goal too (Polonez, 17 Oct 23:07 → 18 Oct 04:43 UTC).** Both runs: from the E33ok
+final, 0.6B tokens on the denser output-word mix (deduce 4 of 12 tasks, 8 one-fact questions per document), no
+naming loss.
+
+| exam, 4k / 16k | E33ok | e33ok, denser mix | e33gk (+ order heads) | E33q |
+|---|---|---|---|---|
+| compose, two steps | 42 / 48 % | **95 / 97 %** | 95 / 96 % | 94 / 98 % |
+| deduce, depth 2 | 36 / 35 % | **98 / 99 %** | 97 / 99 % | 99 / 100 % |
+| lookup | 65 / 52 % | 97 / 98 % | 97 / 99 % | 98 / 100 % |
+| keyed | 56 / 51 % | 95 / 100 % | 95 / 100 % | 98 / 99 % |
+| harder: deduce depth 3 | 22 / 22 % | 66 / 78 % | 61 / 70 % | 85 / 92 % |
+| harder: compose 3 hops | 4 / 6 % | 3 / 2 % | 3 / 2 % | 0 / 0 % |
+| story loss | 1.511 | 1.493 | 1.493 | 1.523 |
+
+- **The notes now hold the property word:** probe 72 % from the value (guessing 8 %), and places 81 %.
+- **The run recovered from E33ok's shock within a third of its length** (lookup at 4k 93 % at the first
+  checkpoint) and kept climbing.
+- **E33g's order heads add nothing here** (e33gk ≈ e33ok).
+
+Two recipes therefore reach > 90 % on compose and deduce at 4k:
+- **E33q:** the naming loss, page-level target, 0.3B tokens from E33r.
+- **The key stop + note-level target + denser mix:** 0.9B tokens from E33r in two stages.
+
+E33q is cheaper and generalises better to depth-3 deduce. Neither does 3-hop compose. The key-stop line keeps a
+slightly lower story loss (1.493 vs 1.523).
+
 **Status against the author's goal** (multi-hop > 70 % on the board, ≤ 100M parameters): met on the board's
-headline (id split, 4k) by E33q at 30M: compose 94 %, deduce 99 %. It also holds at 1k and up to 128k. Open before
+headline (id split, 4k) by E33q at 30M (compose 94 %, deduce 99 %), and independently by the key-stop line
+(compose 95 %, deduce 98 %). It also holds at 1k and up to 128k. Open before
 it becomes the base:
 - a second seed (E33q seed 1, queued on Polonez from ~02:50 UTC, same start, data and budget);
 - 3-hop compose;
