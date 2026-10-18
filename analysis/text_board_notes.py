@@ -30,9 +30,10 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-18 09:00 UTC",
-    "headline": "Compose is closest to the 70 % goal: E33 with order heads answers 69 % at 4k and 88 % at 16k (one run). "
-                "Latest still fails for every notebook model; three fixes for latest, count and compose train on Odra.",
+    "as_of": "2026-10-18 09:30 UTC",
+    "headline": "Compose and deduce reach the 70 % goal: E33q answers 94 % and 99 % at 4k in three runs, and a second "
+                "recipe agrees, with privileged training signals and only on trained shapes. Latest and count stay at "
+                "guessing; supervised fixes are training.",
     "where": [
         "17-18 Oct night (Odra): E33g (E33r + four fixed order heads) failed latest (22 % at 4k) but lifted compose to "
         "69 / 88 / 92 % at 4k / 16k / 32k and deduce to 24 % at 4k, against 61 / 82 % and 17 % for the matched control "
@@ -858,6 +859,42 @@ LADDER = [
      "why": "Does the read-back repair E33o's notes? Only a little."},
 ]
 
+# ---- recipes (added 2026-10-18): the leaderboard of trained recipes, one row per recipe -------------------------------
+# A recipe = architecture + training signals + data + where it started. `runs` are ledger ids (seeds of the same recipe);
+# numbers come from the ledgers. `signals` keys SIGNALS; "privileged" signals use annotations only a generator has (which
+# fact answers, which word each step finds, how many) — the board marks them so a reader never mistakes a supervised
+# routine for an emergent skill.
+SIGNALS = {
+    "answers": ("answers", "arch", "trained on next-token loss with answers in the text (the default)"),
+    "scratch": ("from scratch", "arch", "trained from random weights, 1.5B tokens"),
+    "warm": ("warm start", "arch", "continued from another trained model"),
+    "dense-data": ("task-dense data", "data", "reasoning mix: compose and deduce ×3, bridge questions asked directly"),
+    "read": ("read target", "privileged", "told which fact each loop round should read (the generator knows the chain)"),
+    "name": ("hop naming", "privileged", "told the word each loop round should find (the generator knows the chain)"),
+    "keystop": ("key stop", "arch", "the writer's key gradient is stopped: keys learn addressing, values keep content"),
+    "order": ("order heads", "arch", "the notebook read ranks newer matching notes (fixed strengths, no labels)"),
+    "count": ("count heads", "arch", "a summing read beside the notebook read (no labels)"),
+    "count-labels": ("count labels", "privileged", "told how many visits the answer counts"),
+    "latest-labels": ("last-move labels", "privileged", "told which move answers a latest question"),
+}
+RECIPES = [
+    {"key": "dense", "name": "Dense", "what": "full attention, the reference", "from": "from scratch, 1.5B (+0.3B "
+     "reasoning data)", "signals": ["scratch", "answers"], "runs": ["q8b_dense_s0_polonez.polonez", "reason_dense_s0.polonez"]},
+    {"key": "e31c", "name": "E31c notebook", "what": "local attention + notebook, no loop", "from": "from scratch, 1.5B",
+     "signals": ["scratch", "answers"],
+     "runs": ["q8r_e31c_s0_odra.odra", "q8r_e31c_s1_odra.odra", "q8r_e31c_s2_polonez.polonez"]},
+    {"key": "e33bridge", "name": "E33 loop", "what": "notebook + read-think-reread loop (bridge-question data)",
+     "from": "from scratch, 1.35B", "signals": ["scratch", "answers"], "runs": ["q8b_e33_s0_polonez.polonez"]},
+    {"key": "e33r", "name": "E33r", "what": "each loop round told which fact to read", "from": "E33 loop + 0.3B",
+     "signals": ["warm", "dense-data", "read"], "runs": ["reason_e33r_s0.polonez", "reason_e33rb_s0.polonez"]},
+    {"key": "e33q", "name": "E33q / E33qn", "what": "+ each round names the word its hop finds", "from": "E33r + 0.3B",
+     "signals": ["warm", "dense-data", "read", "name"],
+     "runs": ["query_e33q_s0.odra", "query_e33q_s1.polonez", "query_e33qn_s0.polonez"]},
+    {"key": "e33ok", "name": "E33ok, denser mix", "what": "key stop + read target on notes, denser reasoning data",
+     "from": "E33r + 0.9B", "signals": ["warm", "dense-data", "read", "keystop"],
+     "runs": ["r2out_e33ok_s0.polonez", "r2out_e33gk_s0.polonez"]},
+]
+
 # Plain names for the architectures (first mention = name + what it is).
 NAMES = {
     "dense": ("Dense", "full attention over the whole document — the reference"),
@@ -883,6 +920,20 @@ NAMES = {
     "e33o_plain": ("E33o, read target on notes", "E33x plus each round pushed onto the single notes that read the "
                                                  "hop's answer word; plain input"),
     "e33b_plain": ("E33b, note read-back", "E33o plus a training head that names each note's words; plain input"),
+    "e33rb_plain": ("E33rb, read target + read-back", "E33r plus a zero-start head that names each note's words; plain input"),
+    "e33ok_plain": ("E33ok, key stop", "E33o with the writer's key gradient stopped; plain input"),
+    "e33gk_plain": ("E33gk, key stop + order heads", "E33ok plus E33g's fixed order heads; plain input"),
+    "e33g_plain": ("E33g, order heads", "E33r plus four fixed order heads (rank among matching notes); plain input"),
+    "e33h_plain": ("E33h, count heads", "E33r plus two count heads (a summing read); plain input"),
+    "e33i_plain": ("E33i, order on demand", "E33g with every head ranked, scaled by a learned per-question switch; plain input"),
+    "e33q_plain": ("E33q, hop naming", "E33r plus: each loop round names the word its hop finds; plain input"),
+    "e33qn_plain": ("E33qn, hop naming only", "E33q without the round-to-round feedback; plain input"),
+    "e33j_plain": ("E33j, last move supervised + order on demand", "E33q plus order on demand, latest told its last "
+                                                                    "move; plain input"),
+    "e33jf_plain": ("E33jf, last move supervised + order always on", "E33j without the switch; plain input"),
+    "e33jd_plain": ("E33jd, last move supervised + page distance", "E33q plus four page-distance heads; plain input"),
+    "e33k_plain": ("E33k, count labels", "E33h with the count heads told the true number; plain input"),
+    "e33k2_plain": ("E33k2, count decoded", "E33k plus the rounds naming the count word; plain input"),
 }
 
 # Result rounds, keyed by "<run>.<host>" (the ledger file name). Rounds not listed here but present in the
@@ -1176,10 +1227,13 @@ GOAL = {"set": "2026-10-17", "target": 0.70, "tasks": ["latest", "compose", "cou
 
 # Decisions waiting for the author: shown at the top of the board. Remove an item when it is decided.
 DECISIONS = [
-    "Make E31c (notebook, no loop) the main line? It switched on in 3 of 3 runs at a third of E33's training time.",
-    "Start the notebook-proportions sweep (approved in principle 14 Oct) — on E31c instead of E33?",
-    "The from-scratch confirmation, once three of the four bets pass their warm-start tests: the combined model, "
-    "3 seeds at 1.5B tokens (about 7 h × 3 GPUs each), with the writer reading the decoder's full input layer?",
+    "Privileged signals: the 90 % recipes are told which fact each loop round reads and which word it finds (labels "
+    "only the data generator has). Keep them as part of the method, or require the next step to learn from answers "
+    "alone?",
+    "3 hops: both recipes stop after the two hops they were trained on. Train on 3-hop chains, or first build a "
+    "per-round control over the question (the multi-hop session's proposal)?",
+    "From-scratch confirmation of the simplest 90 % recipe (E33qn: hop naming) at 1.5B tokens, 3 seeds (about 7 h × 3 "
+    "GPUs each), once latest and count have a working fix?",
 ]
 
 # One entry per architecture family compared on the board: plain name, what it is in one line, the standing analogy
@@ -1203,6 +1257,26 @@ ARCHS = {
 # measured. effect: helped / hurt / no effect / mixed / measurement (a new exam or rule, the models did not change).
 # metrics: (what is measured, before, after, unit) — unit "%" (0-100) or "runs" ("k/n").
 CHANGES = [
+    {"date": "2026-10-18", "kind": "recipe", "change": "Latest told its last move (read target + naming), no order term",
+     "compared": "E33q vs E33q + 0.3B tokens on the last-move-labelled data", "effect": "no effect",
+     "metrics": [("latest at 4k", 20, 20, "%"), ("compose at 4k", 94, 96, "%")],
+     "note": "Without an order signal in the read the supervision cannot be met. With order: E33j / E33jf / E33jd."},
+    {"date": "2026-10-18", "kind": "recipe", "change": "Count heads told the true number (E33k)",
+     "compared": "E33h vs E33h + 0.3B tokens with count labels", "effect": "mixed",
+     "metrics": [("count at 4k", 23, 26, "%"), ("deduce at 4k", 17, 46, "%")],
+     "note": "The heads now count (sum within 0.66 of the truth) but the answer is not decoded; E33k2 names the number."},
+    {"date": "2026-10-18", "kind": "architecture", "change": "Order on demand: every head ranked × a learned switch (E33i)",
+     "compared": "E33g vs E33i (from E33g, + 0.3B tokens)", "effect": "no effect",
+     "metrics": [("latest at 4k", 22, 22, "%"), ("deduce at 4k", 24, 85, "%")],
+     "note": "The switch never opened (bias −2 → −2.03); deduce rose, latest did not."},
+    {"date": "2026-10-18", "kind": "recipe", "change": "Key stop + denser reasoning data (E33ok, multi-hop session)",
+     "compared": "E33r vs E33ok on the denser mix (+0.9B tokens in all)", "effect": "helped",
+     "metrics": [("compose at 4k", 60, 95, "%"), ("deduce at 4k", 13, 98, "%"), ("far lookup at 16k", 87, 98, "%")],
+     "note": "A second route to the goal without the naming loss; the notes keep property words (probe 72 %)."},
+    {"date": "2026-10-18", "kind": "architecture", "change": "Round-to-round name feedback (E33q vs E33qn)",
+     "compared": "E33q (naming + feedback) vs E33qn (naming only), same start and data", "effect": "no effect",
+     "metrics": [("compose at 4k", 94, 94, "%"), ("deduce at 4k", 99, 98, "%")],
+     "note": "The naming loss does the work; the feedback gate stayed near 0."},
     {"date": "2026-10-18", "kind": "recipe", "change": "Each loop round names its hop's word (E33q)",
      "compared": "E33r vs E33r + 0.3B tokens with the naming loss (and an unused feedback)", "effect": "helped",
      "metrics": [("compose at 4k", 60, 94, "%"), ("deduce at 4k", 13, 99, "%"), ("far lookup at 16k", 87, 100, "%")],

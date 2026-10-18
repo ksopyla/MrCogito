@@ -32,7 +32,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from analysis.text_board_notes import (ARCHS, CHANGES, CLAIMS, DECISIONS, GOAL, LADDER, NAMES, PROTOCOL_LOG,  # noqa: E402
+from analysis.text_board_notes import (ARCHS, CHANGES, CLAIMS, DECISIONS, GOAL, LADDER, RECIPES, SIGNALS, NAMES, PROTOCOL_LOG,  # noqa: E402
                                        ROUNDS, SCOREBOARD, STATUS, SUPERSEDED)
 from analysis.text_checks_scorecard import LEVEL, analyse, learned_cell  # noqa: E402
 from evaluation.text_checks import (FRONTIER_TASKS, GATING_TASKS, PASS, TEXT_CHECKS_VERSION, TIERS,  # noqa: E402
@@ -276,6 +276,42 @@ def scoreboard(ledgers: list[dict]) -> dict:
             "families": {"dense": "Dense", "e31c": "E31c notebook", "e33": "E33 loop", "e33d": "E33d page distance"}}
 
 
+def recipe_board(rounds: list[dict]) -> list[dict]:
+    """The recipe leaderboard: per recipe (RECIPES in the notes) and per measure, the runs' scores (headline: far facts
+    for quote / lookup / keyed, every item otherwise) on the current exams, plus held-out shapes / extra hops, the
+    notebook-off control and story loss. Runs without a ledger yet are counted as pending."""
+    by_id = {r["id"]: r for r in rounds}
+    cols = [(f"id|{t}|{L}", t, L) for L in (4096, 16384) for t in TASKS]
+    cols += [("paraphrase|compose|4096", "compose", 4096), ("harder|compose|4096", "compose", 4096),
+             ("paraphrase|deduce|4096", "deduce", 4096), ("harder|deduce|4096", "deduce", 4096)]
+    out = []
+    for rc in RECIPES:
+        runs, pending = [], []
+        for rid in rc["runs"]:
+            r = by_id.get(rid)
+            if not r or not r["models"]:
+                pending.append(rid)
+                continue
+            runs.append((rid, r["models"][0]))
+        cells = {}
+        for key, task, L in cols:
+            vals = []
+            for _, m in runs:
+                h = headline(task, m["cells"].get(key))
+                if h:
+                    vals.append(h["score"])
+            if vals:
+                vals.sort()
+                cells[key] = {"mid": vals[len(vals) // 2], "lo": vals[0], "hi": vals[-1], "n": len(vals),
+                              "floor": (runs[0][1]["cells"].get(key) or {}).get("eff_floor")}
+        off = [m["off"].get("id|compose|4096") for _, m in runs if m["off"].get("id|compose|4096") is not None]
+        story = [m["story_loss"] for _, m in runs if m.get("story_loss")]
+        out.append({**rc, "cells": cells, "n_runs": len(runs), "pending": pending,
+                    "off_compose": (sorted(off)[len(off) // 2] if off else None),
+                    "story": (sorted(story)[len(story) // 2] if story else None)})
+    return out
+
+
 def goal_progress(rounds: list[dict]) -> dict:
     """The author's goal (GOAL in the notes): per task and length, the best notebook model and the best dense model on
     the current exams (data v2), every run that is not history. Exact answers over all items (these tasks have no far
@@ -344,6 +380,9 @@ def main() -> int:
                     "eval_items": (led.get("data") or {}).get("eval_items"), "collected": led.get("collected")}
                    for led in ledgers if led.get("data")]
     superseded = [{"run": k, "note": v} for k, v in SUPERSEDED.items()]
+    unnamed = sorted({m["arch"] for r in rounds for m in r["models"] if m["arch"] not in NAMES})
+    if unnamed:  # the board would print raw arch ids (capability_boards.md, "Names")
+        print(f"warning: no plain name in NAMES for {unnamed}", file=sys.stderr)
     states = {"holds", "single run", "open", "retracted"}  # the board's claim groups
     bad = [c["claim"][:60] for c in CLAIMS if c.get("state") not in states]
     if bad:
@@ -352,7 +391,7 @@ def main() -> int:
         "generated": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "version": TEXT_CHECKS_VERSION, "pass": PASS, "status": STATUS, "ladder": LADDER, "scoreboard": scoreboard(ledgers),
         "claims": CLAIMS, "protocol_log": PROTOCOL_LOG, "decisions": DECISIONS, "archs": ARCHS, "changes": CHANGES,
-        "goal": goal_progress(rounds),
+        "goal": goal_progress(rounds), "recipes": recipe_board(rounds), "signals": SIGNALS,
         "examples": EXAMPLES,
         "exam_runs": {v: sum(1 for r in LADDER if r.get("data") == v and r.get("id")) for v in
                       sorted({r.get("data") for r in LADDER if r.get("data")})},
