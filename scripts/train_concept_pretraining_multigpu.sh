@@ -241,6 +241,8 @@ PAR_LOOP_FEEDBACK="${PAR_LOOP_FEEDBACK:-none}"             # E33q: none | soft (
 PAR_LOOP_FEEDBACK_TEMP="${PAR_LOOP_FEEDBACK_TEMP:-1.0}"    # E33q: feedback softmax temperature
 PAR_LM_WRITER_INPUT="${PAR_LM_WRITER_INPUT:-table}"        # writer input: table | embed (shared input layer)
 PAR_LM_NOTE_RANK_GATE="${PAR_LM_NOTE_RANK_GATE:-own}"      # E33g2: own | content (match judged by the content heads)
+PAR_LM_NOTE_ORDER_GATE="${PAR_LM_NOTE_ORDER_GATE:-false}"  # E33i: per-position switch on the order term
+WARM_START_SKIP="${WARM_START_SKIP:-}"                     # warm start: weights (name fragments) left at fresh init
 PAR_LM_COUNT_MAX="${PAR_LM_COUNT_MAX:-10}"                 # E33h: counts coded over 0..max
 # E35 — latent messages between agents (MODEL_FAMILY=a2a): warm-started agents, a fresh transmitter
 A2A_SENDER_INIT="${A2A_SENDER_INIT:-}"                    # notebook checkpoint (E31c / E33) for agent A's writer
@@ -543,6 +545,7 @@ if [ "$MODEL_FAMILY" = "perceiver_ar" ] || [ "$MODEL_FAMILY" = "a2a" ]; then
             --message_loop_feedback_temp "$PAR_LOOP_FEEDBACK_TEMP"
             --lm_writer_input "$PAR_LM_WRITER_INPUT"
             --lm_note_rank_gate "$PAR_LM_NOTE_RANK_GATE"
+            --lm_note_order_gate "$PAR_LM_NOTE_ORDER_GATE"
             --lm_count_max "$PAR_LM_COUNT_MAX"
             --message_loop_rounds "$PAR_LOOP_ROUNDS"
             --message_loop_exit_aux "$PAR_LOOP_EXIT_AUX"
@@ -601,6 +604,7 @@ fi
 WARM_ARGS=()
 if [ -n "$MODEL_NAME_OR_PATH" ]; then
     WARM_ARGS+=(--model_name_or_path "$MODEL_NAME_OR_PATH")
+    [ -n "$WARM_START_SKIP" ] && WARM_ARGS+=(--warm_start_skip "$WARM_START_SKIP")
 fi
 
 # Optimizer selection (--optimizer is our flag; HF --optim stays adamw_torch_fused for both arms).

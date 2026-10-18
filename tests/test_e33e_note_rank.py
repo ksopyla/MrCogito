@@ -248,3 +248,37 @@ def test_content_gate_counts_by_the_content_heads_and_broadcasts():
         ref = note_rank_logcount(qmean, kb, ctx, scale=dh ** -0.5, rep=rep, margin=1.0, sharp=2.0)
         assert torch.allclose(lc[:, 0], ref[:, 0], atol=1e-5)
     del qm
+
+
+# ------------------------------------------------------------------ E33i: order on demand
+def test_order_switch_starts_nearly_off_and_learns():
+    """E33i: the rank term × σ(w·x + b) per reader position, w = 0 and b = −2 at the start: the model equals the
+    same model with the rank count scaled by σ(−2); the switch's weights receive gradient."""
+    torch.manual_seed(6)
+    kw = dict(**TEXT, **LOOP, **WIDE, **RANK, message_raw_window=8, lm_note_age_init="4", lm_note_age_learn=False)
+    m = make(**kw, lm_note_order_gate=True).to(DEV)
+    att = m.layers[m.config.global_layer_index].attn
+    assert att.note_order_gate is not None and not att.note_order_gate.weight.any()
+    assert torch.allclose(att.note_order_gate.bias, torch.tensor([-2.0], device=att.note_order_gate.bias.device))
+    ids = text_row(S=48).to(DEV)
+    out = m(ids, labels=ids)
+    out.loss.backward()
+    assert torch.isfinite(out.loss) and att.note_order_gate.weight.grad is not None
+    assert att.note_order_gate.bias.grad.abs().sum() > 0
+    # a fully closed switch is the model without an order term
+    m.eval()
+    with torch.no_grad():
+        att.note_order_gate.bias.fill_(-50.0)
+        closed = m(ids).logits
+        att.note_age_slope.zero_()
+        assert torch.allclose(m(ids).logits, closed, atol=1e-4)
+
+
+def test_text_checks_arch_e33i_orders_every_head_on_demand():
+    from evaluation.text_checks import ARCHES, model_args
+
+    g = model_args("e33g_plain", "screen", 1152)
+    i = model_args("e33i_plain", "screen", 1152)
+    assert {k for k in i if i[k] != g.get(k)} == {"lm_note_rank_margin", "lm_note_rank_sharp", "lm_note_age_init",
+                                                  "lm_note_order_gate"}
+    assert ARCHES["e33i_plain"].has_notebook

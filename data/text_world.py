@@ -402,7 +402,7 @@ def _latest_v1(rng, tsplit, k, n, cast, letters: bool = False) -> WorldItem:
     places = (sample_places(rng, n * (k + 1), distinct_letters=k + 1) if letters
               else sample_places(rng, n * (k + 1), distinct_first=True))
     facts, target = [], places[: k + 1]
-    last, qa = {}, []
+    last, qa, steps = {}, [], {}
     for i, c in enumerate(cast):
         mine = places[i * (k + 1): (i + 1) * (k + 1)]
         qa.append((QUESTIONS["latest"].format(p=c), mine[-1]))
@@ -410,11 +410,13 @@ def _latest_v1(rng, tsplit, k, n, cast, letters: bool = False) -> WorldItem:
         facts.append(Fact(_tmpl(rng, "home", tsplit, p=c, v=mine[0]), evidence=(i == 0), order=rng.uniform(0.0, 0.15)))
         facts += [Fact(_tmpl(rng, "move", tsplit, p=c, v=v), evidence=(i == 0), order=o) for v, o in zip(mine[1:], pos)]
         last[i] = (len(facts) - 1, pos[-1])
+        # the read target / hop naming (text multi-hop, 18 Oct): the one fact that answers is the person's LAST move
+        steps[QUESTIONS["latest"].format(p=c)] = [(len(facts) - 1, mine[-1])] if k > 0 else [(len(facts) - 1, mine[0])]
     if n > 1 and k > 0 and all(last[i][1] < last[0][1] for i in range(1, n)):
         j = rng.randrange(1, n)
         facts[last[j][0]].order = rng.uniform(last[0][1], 0.97)
     return WorldItem("latest", QUESTIONS["latest"].format(p=cast[0]), target[-1], list(reversed(target)),
-                     1.0 / (k + 1), facts, cast, meta={"moves": k}, qa=qa)
+                     1.0 / (k + 1), facts, cast, meta={"moves": k}, qa=qa, steps=steps)
 
 
 def _compose_v1(rng, tsplit, hops, n, cast, letters: bool = False) -> WorldItem:

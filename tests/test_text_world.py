@@ -455,10 +455,9 @@ def test_read_targets_point_at_the_chain_facts(task):
             a, b = offs[pos - 1]
             assert doc[a:b].endswith("Answer:")
         chain_of = dict(chains)
-        if task == "latest":
-            assert not chain_of and all(x[1] == 0 for x in quads)
-            continue
         assert chain_of
+        if task == "latest":  # 18 Oct: one step, the asked person's LAST move (its place is the answer)
+            assert all(len(c) == 1 for c in chain_of.values())
         for pos, r, t0, t1 in quads:
             if r == 0:
                 continue

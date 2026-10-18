@@ -30,11 +30,17 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-17 19:30 UTC",
-    "headline": "E31c, the notebook model without the loop, is still the most reliable reader of far facts (3 of 3 "
-                "runs). New: E33 told in training where each loop round should read (E33r) joined two facts for the "
-                "first time, two-step compose 60 % at 4k, one run.",
+    "as_of": "2026-10-18 00:30 UTC",
+    "headline": "Compose is closest to the 70 % goal: E33 with order heads answers 69 % at 4k and 88 % at 16k (one run). "
+                "Latest still fails for every notebook model; three fixes for latest, count and compose train on Odra.",
     "where": [
+        "17-18 Oct night (Odra): E33g (E33r + four fixed order heads) failed latest (22 % at 4k) but lifted compose to "
+        "69 / 88 / 92 % at 4k / 16k / 32k and deduce to 24 % at 4k, against 61 / 82 % and 17 % for the matched control "
+        "E33rb. Probes on its weights: order on every head with a wider match picks the newest move 50 % at 4k but costs "
+        "lookup and compose, so E33i adds a learned per-question switch (training since 22:21 UTC). E33h (count heads) "
+        "and E33q (the loop asks with the name it found) train beside it. Polonez (multi-hop session): E33ok's key-gradient "
+        "stop made the notes keep the property word (probe 8-13 → 33 %), deduce two-step 31 % in its probe; denser-mix "
+        "runs with and without order heads report around 02:00 UTC.",
         "Goal set by the author (17 Oct): 70 % exact on T4-T7 with a notebook model. Roadmap agreed with the other "
         "sessions (research note text_t4_t7_roadmap_20261017): order heads for latest and a summing read for count "
         "(this session, Odra); hop supervision plus a content objective for compose and deduce (multi-hop session, "
@@ -241,6 +247,13 @@ PROTOCOL_LOG = [
 # Claims register: every conclusion we have drawn, with its state. holds = repeated or overwhelming within its runs;
 # single run = one run, needs a second; open = not testable yet; retracted = disproved (kept, with the date).
 CLAIMS = [
+    {"claim": "Training each loop round to name its hop's word lifts compose and deduce above 90 % on the id split.",
+     "state": "single run", "since": "2026-10-18",
+     "evidence": "E33q: E33r + a naming loss (round r names hop r's output word through the shared LM head, decoder "
+                 "weights detached), 0.3B tokens: compose 94 / 98 %, deduce 99 / 100 % at 4k / 16k, evidence removed 0 %. "
+                 "The feedback built beside it is unused (removing it at exam time changes nothing). Fails on new "
+                 "sentence shapes (compose 6 %) and on more hops than trained (3-hop compose 0 %).",
+     "settle": "A second seed (multi-hop session, Polonez) and a naming-only arm; hop-count generalisation."},
     {"claim": "On the reasoning data, 30M dense learns neither compose nor deduce, so E33r's compose comes from the "
               "loop and its read target.", "state": "single run", "since": "2026-10-17",
      "evidence": "Dense warm-started on the same 0.3B tokens as E33r: compose 8 %, deduce 6.5 % at 4k (one step 11 / 8 %), "
@@ -257,11 +270,17 @@ CLAIMS = [
      "evidence": "Oracle: deduce stays at 7-15 % even with the gold category written into the question, on E33r and E33 "
                  "bridge. Property-word probe on the notes 8-13 % (place names 59-80 %).",
      "settle": "A content objective for the writer (read-back, address/content split) lifts the property probe ≥ 50 %."},
-    {"claim": "Fixed order heads (rank among matching notes) let a notebook model learn latest.", "state": "open",
-     "since": "2026-10-17",
+    {"claim": "Order on demand (every head ranked, scaled by a learned per-question switch) lets a notebook model "
+              "learn latest.", "state": "open", "since": "2026-10-18",
+     "evidence": "Probes on E33g: ordering every head with a wide match picks the newest move 50 % at 4k without training, "
+                 "at a large cost to lookup and compose when applied to every question.",
+     "settle": "E33i (Odra): latest ≥ 60 % at 4k, compose and lookup within 5 points of E33g."},
+    {"claim": "Fixed order heads (rank among matching notes) let a notebook model learn latest.", "state": "disproved",
+     "since": "2026-10-18",
      "evidence": "Learned strengths from 0 never grew (E33d 0.14, E33e 0.15 then 0.09). Without training a strength "
                  "of 2 took E33 run 1 from 5 to 41 % at 16k, but E33r only from 20 to 28 % at 4k (2 → 7 % at 16k).",
-     "settle": "E33g (Odra): latest ≥ 60 % at 4k after a 0.3B warm start, compose and far lookup within 5 points."},
+     "settle": "E33g (Odra, 17 Oct): latest 22 % at 4k after a 0.3B warm start, under the 30 % kill line. Compose and "
+               "deduce rose instead (69 / 24 % vs the matched control's 61 / 17 %)."},
     {"claim": "A summing read (count heads) lets a notebook model count.", "state": "open", "since": "2026-10-17",
      "evidence": "A softmax read averages: every notebook run is at 22-33 % on count at 4k, dense 50 % at best.",
      "settle": "E33h (Odra): count ≥ 50 % at 4k after a 0.3B warm start."},
@@ -658,27 +677,65 @@ LADDER = [
                "every mode, gold bridge included.",
      "when": "17 Oct 18:28 → 18:52 UTC",
      "why": "Idea 4: with the first hop written into the document, can the second hop reach 70 %?"},
-    {"id": None, "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "running",
+    {"id": "order_e33g_s0.odra", "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "in use",
      "run": "E33g, order heads (Odra GPUs 0-1)",
      "model": "E33r + four fixed order heads (rank among matching notes at 1, 2, 4, 8) · 30M, plain",
      "tokens": "0.3B continuation from E33r", "exams": "v2 + v2.1, 1k-16k",
-     "result": "—", "when": "17 Oct from 18:46 UTC; training about 1.5 h, then exams on GPU 0",
+     "result": "Latest failed: 95 / 71 / 22 / 4 / 2 % at 1k / 2k / 4k / 8k / 16k (kill line 30 % at 4k); the picks spread "
+               "over the asked person's 11 places. Compose rose: 69 / 88 / 92 % at 4k / 16k / 32k (matched control E33rb "
+               "61 / 82 %), deduce 24 / 19 % (17 / 12 %), lookup 76 / 88 %, keyed 73 / 87 %; story eval loss 1.393 "
+               "(E33r 1.400). Exams at 64k paused for E33i (resumable).",
+     "when": "17 Oct 18:46 → 20:25 training; exams 20:46 → 22:15 UTC (id split to 32k)",
      "why": "T4: order as a separable score term that cannot fade. Pass: latest ≥ 60 % at 4k, compose and far lookup "
             "within 5 points of E33r. Kill: latest ≤ 30 % at 4k."},
-    {"id": None, "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "queued",
+    {"id": None, "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "running",
      "run": "E33h, count heads (Odra)", "model": "E33r + two count heads (a summing read) · 30M, plain",
      "tokens": "0.3B continuation from E33r", "exams": "v2 + v2.1, 1k-16k",
-     "result": "—", "when": "after E33g's exams (Odra GPUs 0-1)",
+     "result": "—", "when": "18 Oct from 00:05 CEST (22:05 UTC), Odra GPU 1, about 3 h",
      "why": "T6: add matches up instead of averaging them. Pass: count ≥ 50 % at 4k (dense's best). Kill: ≤ 35 %."},
-    {"id": None, "start": "2026-10-17", "data": "v2 + bridge, reasoning phase (output-word spans)", "standing": "running",
-     "run": "E33q, the loop asks with the name it found (Odra GPU 2)",
+    {"id": None, "start": "2026-10-17", "data": "v2", "standing": "history",
+     "run": "Order probes on E33g (Odra GPU 1, no training)",
+     "model": "E33g final with other order settings at exam time", "tokens": "none",
+     "exams": "latest / lookup / keyed / compose, 4k and 16k, 200 per cell",
+     "result": "Content-judged match: latest 24 / 4 % (no change). Every head ranked, margin 0.5: strength 3 → 26 %, 8 → 29 %. "
+               "Every head at 4, margin 2: newest picked 50 % at 4k (exact 33 %), 35 % at 16k (exact 14 %), but lookup "
+               "80 → 54 %, compose 68 → 44 %. Margin 4: no better on latest, worse elsewhere.",
+     "when": "17 Oct 21:46 → 22:30 UTC",
+     "why": "Why did E33g's order heads not pick the newest move? The match set was too narrow (the home fact is the "
+            "best match for 'live'), and order on every question costs the other tasks: order must be switched on per "
+            "question (E33i)."},
+    {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase", "standing": "running",
+     "run": "E33i, order on demand (Odra GPU 0)",
+     "model": "E33g with every head ranked (strength 4, margin 2) × a learned per-position switch (starts at σ(−2)) · "
+              "30M, plain", "tokens": "0.3B continuation from E33g (its order strengths reset)", "exams": "v2 + v2.1",
+     "result": "—", "when": "18 Oct from 00:21 CEST (22:21 UTC), about 3 h on one GPU",
+     "why": "T4: let 'now' questions turn order up while every other token keeps it off. Pass: latest ≥ 60 % at 4k with "
+            "compose and lookup within 5 points of E33g. Kill: latest ≤ 35 % at 4k."},
+    {"id": "query_e33q_s0.odra", "start": "2026-10-17", "data": "v2 + bridge, reasoning phase (output-word spans)",
+     "standing": "in use", "run": "E33q, the loop asks with the name it found (Odra GPU 2)",
      "model": "E33r + rounds name their hop through the LM head (0.3) and pass the name, re-embedded, to the next round "
               "(gate from 0) · 30M, plain",
      "tokens": "0.3B continuation from E33r", "exams": "v2 + v2.1, 1k-16k",
-     "result": "—", "when": "17 Oct from 19:24 UTC; about 3 h on one GPU, then exams",
+     "result": "Goal reached for T5 / T7 on the id split: compose 94 / 98 / 97 % at 4k / 16k / 128k, deduce 99 / 100 %, "
+               "lookup 98 / 100 %, keyed 98 / 99 % (E33r 60 / 76, 13 / 9, 74 / 87, 70 / 83); evidence removed 0 %. "
+               "Latest 20 %, count 24 %, quote 26 % unchanged; story loss 1.523 (E33r 1.516). The same exam with the "
+               "round feedback removed scores the same: the naming does the work. Not on new sentence shapes "
+               "(paraphrase compose 6 %, as every model) or more hops (harder compose 0 %, E33r 25 %).",
+     "when": "17 Oct 19:24 → 22:10 training (Odra GPU 2); exams 22:10 → 18 Oct ~01:15 UTC",
      "why": "T5: the oracle put the gold bridge in the question and E33r went 58 → 81 % at 4k. Pass: compose ≥ 70 % at "
             "4k, far lookup within 5 points. Kill at mid-run: compose < 60 % or lookup < 65 % at 4k, < 75 % at 16k. "
             "Design reviewed by the multi-hop session."},
+    {"id": "reason_e33ok_s0.polonez", "start": "2026-10-17", "data": "v2 + bridge, reasoning phase (output-word spans)",
+     "standing": "in use", "run": "E33ok, note target + key-gradient stop (Polonez, multi-hop session)",
+     "model": "E33o + the writer's key gradient stopped (a note's key learns addressing only) · 30M, plain",
+     "tokens": "0.3B continuation from E33r", "exams": "v2 + v2.1",
+     "result": "Deduce 36 / 35 % at 4k / 16k, the best so far (E33rb 17 / 12 %; one step 40 / 35 %); the notes keep the "
+               "property word (probe 8-13 → 33 %). Costs compose 42 / 48 % (61 / 82 %), lookup 65 / 52 %, keyed 56 / 51 %; "
+               "still climbing at the end. Latest 21 %, count 24 %, story loss 1.511.",
+     "when": "17 Oct, exams 22:37 UTC",
+     "why": "A loss on where reads land pulled note content away (E33o); with the key's gradient stopped, the answer "
+            "trains the values of exactly the notes read. Next (multi-hop session): a separate address read for keys "
+            "(lm_key_grad=address) so keys can carry the person's name again."},
     {"id": "reason_e33x_s0.polonez", "start": "2026-10-17", "data": "v2 + bridge, reasoning phase", "standing": "in use",
      "run": "E33x, loop exits on answers (Polonez)", "model": "E33 bridge warm start, loop exit losses off · 30M, plain",
      "tokens": "0.3B continuation (1,787 steps)", "exams": "v2 + v2.1, 1k-16k",
@@ -1059,6 +1116,20 @@ ARCHS = {
 # measured. effect: helped / hurt / no effect / mixed / measurement (a new exam or rule, the models did not change).
 # metrics: (what is measured, before, after, unit) — unit "%" (0-100) or "runs" ("k/n").
 CHANGES = [
+    {"date": "2026-10-18", "kind": "recipe", "change": "Each loop round names its hop's word (E33q)",
+     "compared": "E33r vs E33r + 0.3B tokens with the naming loss (and an unused feedback)", "effect": "helped",
+     "metrics": [("compose at 4k", 60, 94, "%"), ("deduce at 4k", 13, 99, "%"), ("far lookup at 16k", 87, 100, "%")],
+     "note": "One run; id split only — new sentence shapes and extra hops do not transfer."},
+    {"date": "2026-10-17", "kind": "architecture", "change": "Stop the writer's key gradient (E33ok)",
+     "compared": "E33r + 0.3B tokens: page read target + read-back (E33rb) vs note read target + key stop (E33ok)",
+     "effect": "mixed",
+     "metrics": [("deduce at 4k", 17, 36, "%"), ("compose at 4k", 61, 42, "%"), ("far lookup at 16k", 89, 52, "%")],
+     "note": "The first model whose notes keep property words; keys that can only reuse the content read lose the name."},
+    {"date": "2026-10-17", "kind": "architecture", "change": "Fixed order heads on the notebook read (E33g)",
+     "compared": "E33r + 0.3B tokens: with read-back (E33rb, matched control) vs with four fixed order heads (E33g)",
+     "effect": "mixed",
+     "metrics": [("compose at 4k", 61, 69, "%"), ("deduce at 4k", 17, 24, "%"), ("latest at 4k", 20, 22, "%")],
+     "note": "Order sharpened selection among chain facts but did not pick the newest move; one seed each."},
     {"date": "2026-10-17", "kind": "exam", "change": "Oracle: the bridge written into the question vs appended as text",
      "compared": "E33r, compose at 4k, as is vs gold first fact appended vs gold bridge in the question",
      "effect": "measurement",
