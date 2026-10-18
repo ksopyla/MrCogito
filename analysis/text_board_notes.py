@@ -271,18 +271,18 @@ CLAIMS = [
                  "bridge. Property-word probe on the notes 8-13 % (place names 59-80 %).",
      "settle": "A content objective for the writer (read-back, address/content split) lifts the property probe ≥ 50 %."},
     {"claim": "Order on demand (every head ranked, scaled by a learned per-question switch) lets a notebook model "
-              "learn latest.", "state": "disproved", "since": "2026-10-18",
+              "learn latest.", "state": "retracted", "since": "2026-10-18",
      "evidence": "Probes on E33g: ordering every head with a wide match picks the newest move 50 % at 4k without training, "
                  "at a large cost to lookup and compose when applied to every question.",
      "settle": "E33i (Odra, 18 Oct): latest 22 % at 4k, the switch never opened. Next: E33j, where the latest "
                "question's last move is the read target and the naming target."},
-    {"claim": "Fixed order heads (rank among matching notes) let a notebook model learn latest.", "state": "disproved",
+    {"claim": "Fixed order heads (rank among matching notes) let a notebook model learn latest.", "state": "retracted",
      "since": "2026-10-18",
      "evidence": "Learned strengths from 0 never grew (E33d 0.14, E33e 0.15 then 0.09). Without training a strength "
                  "of 2 took E33 run 1 from 5 to 41 % at 16k, but E33r only from 20 to 28 % at 4k (2 → 7 % at 16k).",
      "settle": "E33g (Odra, 17 Oct): latest 22 % at 4k after a 0.3B warm start, under the 30 % kill line. Compose and "
                "deduce rose instead (69 / 24 % vs the matched control's 61 / 17 %)."},
-    {"claim": "A summing read (count heads) lets a notebook model count.", "state": "needs another run",
+    {"claim": "A summing read (count heads) lets a notebook model count.", "state": "single run",
      "since": "2026-10-18",
      "evidence": "A softmax read averages: every notebook run is at 22-33 % on count at 4k, dense 50 % at best.",
      "settle": "E33h (answer loss only): 23 % at 4k. E33k gives the sum the true number of visits."},
@@ -426,7 +426,7 @@ CLAIMS = [
                  "91 %; E33d run 1 2 → 30 %, lookup 93 → 92 %; keyed −2 to −5 (look-alike names count as matches). A "
                  "fixed page distance bought 33 % at the cost of far lookup 93 → 52 %. Gate chosen on fresh questions.",
      "settle": "Not by training it from 0 (next claim); a fixed strength in training is untested."},
-    {"claim": "E33e: ranking among matching notes, with strengths learned from 0, fixes latest.", "state": "disproved",
+    {"claim": "E33e: ranking among matching notes, with strengths learned from 0, fixes latest.", "state": "retracted",
      "since": "2026-10-17",
      "evidence": "E33e run 1 (Odra, 1.5B tokens): latest 19 % at 4k, 0 % at 16k (pass mark 60 % at 4k, floor 20 %). The "
                  "9 strengths stayed small (largest 0.15 mid-run, 0.09 at the end; the no-training check used 2). Far "

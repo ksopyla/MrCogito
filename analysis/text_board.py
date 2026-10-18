@@ -344,6 +344,10 @@ def main() -> int:
                     "eval_items": (led.get("data") or {}).get("eval_items"), "collected": led.get("collected")}
                    for led in ledgers if led.get("data")]
     superseded = [{"run": k, "note": v} for k, v in SUPERSEDED.items()]
+    states = {"holds", "single run", "open", "retracted"}  # the board's claim groups
+    bad = [c["claim"][:60] for c in CLAIMS if c.get("state") not in states]
+    if bad:
+        raise SystemExit(f"claims with a state the board does not show ({sorted(states)}): {bad}")
     data = {
         "generated": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "version": TEXT_CHECKS_VERSION, "pass": PASS, "status": STATUS, "ladder": LADDER, "scoreboard": scoreboard(ledgers),
