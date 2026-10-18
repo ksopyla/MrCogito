@@ -668,11 +668,25 @@ slightly lower story loss (1.493 vs 1.523).
 
 **Status against the author's goal** (multi-hop > 70 % on the board, ≤ 100M parameters): met on the board's
 headline (id split, 4k) by E33q at 30M (compose 94 %, deduce 99 %), and independently by the key-stop line
-(compose 95 %, deduce 98 %). It also holds at 1k and up to 128k. Open before
-it becomes the base:
-- a second seed (E33q seed 1, queued on Polonez from ~02:50 UTC, same start, data and budget);
-- 3-hop compose;
-- held-out templates for compose.
+(compose 95 %, deduce 98 %). It also holds at 1k and up to 128k. 
+**Replicated (Polonez, 18 Oct 03:40–07:33 UTC; same start, data and budget as E33q seed 0):**
+
+| exam (id split, 4k / 16k) | E33q seed 0 (Odra) | E33q seed 1 | E33qn (naming only, no feedback) |
+|---|---|---|---|
+| compose, two steps | 94 / 98 % | **94 / 98 %** | 94 / 97 % |
+| deduce, depth 2 | 99 / 100 % | **100 / 100 %** | 98 / 100 % |
+| lookup | 98 / 100 % | 99 / 99 % | 98 / 99 % |
+| keyed | 98 / 99 % | 98 / 99 % | 98 / 99 % |
+| harder: deduce depth 3 | 85 / 92 % | 87 / 94 % | 87 / 93 % |
+| harder: compose 3 hops | 0 / 0 % | 2 / 0 % | 1 / 0 % |
+| paraphrase: compose | 7 / 5 % | 6 / 4 % | 5 / 5 % |
+| story loss | 1.523 | 1.523 | 1.523 |
+
+- The result holds on a second seed.
+- The naming loss alone (E33qn) gives the same, so it is the simpler base recipe.
+- Still open:
+  - 3-hop compose: the routine stops at the trained hop count; see above;
+  - held-out templates for compose (every model fails them).
 
 ## Uncertainty
 - The probabilities are my judgement from C5, the board and the literature. They are not measured.
