@@ -30,10 +30,10 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-18 15:00 UTC",
-    "headline": "Three of four goal tasks reach 70 % on the main exam at 4k: latest 88 % (two order arms agree), compose 94 % "
-                "and deduce 99 % (three runs), all with privileged training labels and only on trained shapes. Count stays "
-                "at guessing.",
+    "as_of": "2026-10-18 17:40 UTC",
+    "headline": "One model (E33m) now holds three of four goal tasks at 4k: latest 91 %, compose 96 %, deduce 98 %, but "
+                "only with generator labels and on trained shapes. Count stays at 30 %; the author asked for a label-free "
+                "path next.",
     "where": [
         "18 Oct afternoon: the author asked for methods without generator labels (only text, instruction and reasoning "
         "data). Every 70 % result so far uses them (read targets, hop naming, last-move labels). The label-free levers — "
@@ -750,6 +750,14 @@ LADDER = [
      "why": "T4: the data now gives each latest question a one-step chain (the asked person's last move), so the read "
             "target and the naming tell round 1 which move answers; the order term gives the read a way to find it. "
             "Pass: latest ≥ 60 % at 4k with compose and deduce within 5 points of E33q. Kill: latest ≤ 35 % at 4k."},
+    {"id": "all_e33m_s0.odra", "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain + count visits + "
+     "count naming", "standing": "in use", "run": "E33m, one model for all four (Odra GPU 1)",
+     "model": "E33j + count heads told the true number, rounds naming the count word · 30M, plain",
+     "tokens": "0.3B continuation from E33j", "exams": "v2 + v2.1, 1k / 4k / 16k",
+     "result": "One model, quick exam (200 items): latest 91 / 94 %, compose 96 / 98 %, deduce 98 / 100 %, lookup 100 / 100 % "
+               "at 4k / 16k; count 30 / 30 %. Three of the four goal tasks in one set of weights, with generator labels.",
+     "when": "18 Oct 12:50 → about 17:20 UTC (Odra GPU 1, beside E33j's exams); quick exam 17:37 UTC",
+     "why": "The combined recipe: do the latest, compose and deduce fixes and the count heads live together?"},
     {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain + count visits + count naming",
      "standing": "in use", "run": "E33k2, the count decoded (Odra)",
      "model": "E33k + count loss 1.0 + the rounds name the count word (naming lens) · 30M, plain",
@@ -924,6 +932,9 @@ RECIPES = [
      "signals": ["warm", "dense-data", "read", "name", "order", "latest-labels"], "runs": ["latest_e33j_s0.odra"]},
     {"key": "e33jf", "name": "E33jf", "what": "E33j with order always on (no switch)", "from": "E33q + 0.3B",
      "signals": ["warm", "dense-data", "read", "name", "order", "latest-labels"], "runs": ["latest_e33jf_s0.polonez"]},
+    {"key": "e33m", "name": "E33m, all four", "what": "E33j + count heads told the true number", "from": "E33j + 0.3B",
+     "signals": ["warm", "dense-data", "read", "name", "order", "latest-labels", "count", "count-labels"],
+     "runs": ["all_e33m_s0.odra"]},
     {"key": "e33ok", "name": "E33ok, denser mix", "what": "key stop + read target on notes, denser reasoning data",
      "from": "E33r + 0.9B", "signals": ["warm", "dense-data", "read", "keystop"],
      "runs": ["r2out_e33ok_s0.polonez", "r2out_e33gk_s0.polonez"]},
