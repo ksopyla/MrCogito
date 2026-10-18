@@ -30,11 +30,15 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-18 17:40 UTC",
+    "as_of": "2026-10-18 19:00 UTC",
     "headline": "One model (E33m) now holds three of four goal tasks at 4k: latest 91 %, compose 96 %, deduce 98 %, but "
                 "only with generator labels and on trained shapes. Count stays at 30 %; the author asked for a label-free "
                 "path next.",
     "where": [
+        "18 Oct evening, label-free steps (multi-hop session): hop naming without the read target still reaches deduce "
+        "99 % but compose falls to 8 % (finding a two-name fact needs a read signal; written reasoning chains can give it "
+        "by string match). A writer trained without any task erased fact content (probe 80 → 13 %): stage W needs "
+        "reconstruction or recurring content.",
         "18 Oct afternoon: the author asked for methods without generator labels (only text, instruction and reasoning "
         "data). Every 70 % result so far uses them (read targets, hop naming, last-move labels). The label-free levers — "
         "order term, count heads, key stop, shared writer input — did not reach the goal alone. The multi-hop session's "
@@ -774,6 +778,20 @@ LADDER = [
      "result": "Latest 93 / 88 / 94 % at 1k / 4k / 16k (evidence removed 0 %): the switch is not needed. Compose 96 / 98 %, "
                "deduce 98 / 100 %, keyed 98 / 100 %; count fell to 11 / 12 %. Extra exams still running.",
      "when": "18 Oct 07:44 → 09:50 UTC training (Polonez); exams to about 11:30", "why": "T4: E33i's switch never opened; order always on."},
+    {"id": "label_e33qn0_s0.polonez", "start": "2026-10-18", "data": "v2 + bridge, reasoning phase (output-word spans)",
+     "standing": "in use", "run": "R1: naming without the read target (Polonez, multi-hop session)",
+     "model": "E33x + hop naming only (no read target) · 30M, plain", "tokens": "0.3B continuation",
+     "exams": "v2 + v2.1",
+     "result": "Deduce 99 / 100 % at 4k / 16k (harder 54 / 63 %), lookup 97 / 98 %, keyed 94 / 99 %; the notes keep the "
+               "property word (probe 74 %). Compose 8 / 9 %: finding a two-name fact needs a read signal.",
+     "when": "18 Oct, results 18:55 UTC", "why": "Label-free step 1: which part of the 90 % recipe needs the read target?"},
+    {"id": "stagew_e33w_s0.polonez", "start": "2026-10-18", "data": "task-free cut text", "standing": "in use",
+     "run": "R3: writer trained without a task (Polonez, multi-hop session)",
+     "model": "writer only, continuation through the notes after random cuts, reader frozen · 30M, plain",
+     "tokens": "continuation", "exams": "v2 + v2.1",
+     "result": "Content erased: place probe 80 → 13 %, exams 0-6 %. Continuation without back-references does not keep "
+               "facts; a task-free writer needs reconstruction or recurring content.",
+     "when": "18 Oct, results 18:55 UTC", "why": "Label-free stage W: can the notes be learned without any task?"},
     {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase (output-word spans)", "standing": "history",
      "run": "E33c, per-round question control (Polonez, multi-hop session)",
      "model": "E33q seed 1 + each round reads its next relation word from the question · 30M, plain",
