@@ -30,7 +30,7 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-18 07:45 UTC",
+    "as_of": "2026-10-18 09:00 UTC",
     "headline": "Compose is closest to the 70 % goal: E33 with order heads answers 69 % at 4k and 88 % at 16k (one run). "
                 "Latest still fails for every notebook model; three fixes for latest, count and compose train on Odra.",
     "where": [
@@ -725,13 +725,29 @@ LADDER = [
      "why": "T4: let 'now' questions turn order up while every other token keeps it off. Pass: latest ≥ 60 % at 4k with "
             "compose and lookup within 5 points of E33g. Kill: latest ≤ 35 % at 4k."},
     {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain", "standing": "running",
-     "run": "E33j, naming + order on demand, latest supervised (Odra GPU 2)",
+     "run": "E33j, naming + order on demand, latest supervised (Odra GPU 1)",
      "model": "E33q + every head ranked (strength 4, margin 2) × a learned per-question switch · 30M, plain",
      "tokens": "0.3B continuation from E33q", "exams": "v2 + v2.1",
      "result": "—", "when": "18 Oct from 01:56 UTC, about 3 h on one GPU",
      "why": "T4: the data now gives each latest question a one-step chain (the asked person's last move), so the read "
             "target and the naming tell round 1 which move answers; the order term gives the read a way to find it. "
             "Pass: latest ≥ 60 % at 4k with compose and deduce within 5 points of E33q. Kill: latest ≤ 35 % at 4k."},
+    {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain + count visits + count naming",
+     "standing": "queued", "run": "E33k2, the count decoded (Odra)",
+     "model": "E33k + count loss 1.0 + the rounds name the count word (naming lens) · 30M, plain",
+     "tokens": "0.3B continuation from E33k", "exams": "v2 + v2.1", "result": "—",
+     "when": "18 Oct, after the count-naming data build", "why": "T6: E33k counts but does not say the number. Pass: "
+     "count ≥ 50 % at 4k. Kill: ≤ 35 %."},
+    {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain", "standing": "running",
+     "run": "E33jf, rank term always on, latest supervised (Polonez GPUs 0-1)",
+     "model": "E33q + every head ranked (strength 4, margin 2), no switch · 30M, plain",
+     "tokens": "0.3B continuation from E33q", "exams": "v2 + v2.1, 1k / 4k / 16k", "result": "—",
+     "when": "18 Oct from 07:44 UTC, about 2.5 h with exams", "why": "T4: E33i's switch never opened; order always on."},
+    {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain", "standing": "running",
+     "run": "E33jd, page-distance heads, latest supervised (Polonez GPUs 2-3)",
+     "model": "E33q + four fixed log page-distance heads (1, 2, 4, 8), five order-free · 30M, plain",
+     "tokens": "0.3B continuation from E33q", "exams": "v2 + v2.1, 1k / 4k / 16k", "result": "—",
+     "when": "18 Oct from 07:44 UTC, about 2.5 h with exams", "why": "T4: the page-distance alternative to the rank term."},
     {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain",
      "standing": "running", "run": "E33q on the latest-supervised data (Odra GPU 2)",
      "model": "E33q (naming, no order term) · 30M, plain", "tokens": "0.3B continuation from E33q", "exams": "v2 + v2.1",
@@ -743,8 +759,11 @@ LADDER = [
     {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain + count visits",
      "standing": "running", "run": "E33k, count heads told the true number (Odra)",
      "model": "E33h + each count head's sum at a count question supervised with the number of visits (0.1) · 30M, plain",
-     "tokens": "0.3B continuation from E33h", "exams": "v2 + v2.1", "result": "—",
-     "when": "18 Oct from 02:28 UTC (Odra GPU 0, micro-batch 2 × 48), about 4 h",
+     "tokens": "0.3B continuation from E33h", "exams": "v2 + v2.1",
+     "result": "Quick exam: count still 26 / 22 % at 4k / 16k, but the count heads now count — their sum at the decision "
+               "position is within 0.66 of the true number on average (rounded exact 49 %, 4k exams). The sum is not "
+               "decoded into the number word. Deduce 46 % at 4k (E33h 17 %), compose 70 / 92 %, lookup 76 / 87 %.",
+     "when": "18 Oct 02:28 → 08:30 UTC (Odra GPU 0, micro-batch 2 × 48); quick exam 08:46",
      "why": "T6: give the summing read a direct signal. Pass: count ≥ 50 % at 4k. Kill: ≤ 35 %."},
     {"id": "query_e33q_s1.polonez", "start": "2026-10-18", "data": "v2 + bridge, reasoning phase (output-word spans)",
      "standing": "in use", "run": "E33q seed 1 (Polonez, multi-hop session)", "model": "E33q, second seed · 30M, plain",
