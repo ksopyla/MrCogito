@@ -251,7 +251,7 @@ def build_pretraining_model(
     if getattr(model_args, "model_family", "auto") == "a2a":
         return _build_a2a_model(tokenizer, model_args, data_args)
     if getattr(model_args, "model_family", "auto") == "frozen_reader":
-        return _build_frozen_reader_model(tokenizer, model_args, data_args)
+        return _build_frozen_reader_model(tokenizer, model_args, data_args, training_args)
     if getattr(model_args, "model_family", "auto") == "perceiver_concept":
         return _build_perceiver_concept_model(tokenizer, model_args, data_args)
     if is_backbone:
@@ -436,7 +436,7 @@ def _latent_memory_kwargs(model_args) -> dict:
     return out
 
 
-def _build_frozen_reader_model(tokenizer, model_args, data_args):
+def _build_frozen_reader_model(tokenizer, model_args, data_args, training_args):
     """E36 — a trained span writer read by a frozen pretrained decoder (nn/frozen_reader_memory.py)."""
     from nn.frozen_reader_memory import FrozenReaderMemory, FrozenReaderMemoryConfig
 
@@ -447,7 +447,8 @@ def _build_frozen_reader_model(tokenizer, model_args, data_args):
         reader_name=model_args.fr_reader, writer_init=model_args.fr_writer_init,
         writer_layers=model_args.fr_writer_layers, span=model_args.fr_span, mem_spans=model_args.fr_mem_spans,
         way=model_args.fr_way, recon_frac=model_args.fr_recon_frac, entry_positions=model_args.fr_entry_positions,
-        proj_hidden=model_args.fr_proj_hidden,
+        proj_hidden=model_args.fr_proj_hidden, writer_pool=model_args.fr_writer_pool,
+        curriculum=model_args.fr_curriculum, grad_accum=training_args.gradient_accumulation_steps,
     )
     model = FrozenReaderMemory(config)
     if len(tokenizer) > config.vocab_size:
@@ -457,7 +458,8 @@ def _build_frozen_reader_model(tokenizer, model_args, data_args):
                 f"writer={config.writer_init}[:{config.writer_layers}] trainable "
                 + " ".join(f"{k}={v/1e6:.2f}M" for k, v in parts.items())
                 + f" | way={config.way} span={config.span} mem_spans={config.mem_spans} "
-                f"recon={config.recon_frac} positions={config.entry_positions}")
+                f"recon={config.recon_frac} positions={config.entry_positions} pool={config.writer_pool} "
+                f"curriculum={config.curriculum or 'none'}")
     return model, config, "frozen_reader_memory"
 
 
@@ -651,7 +653,9 @@ def build_training_wandb_identity(
         resolved_experiment = experiment_id or "E36"
         reader = model_args.fr_reader.split("/")[-1]
         architecture_id = (f"frozen_reader_{reader}_w{model_args.fr_writer_layers}_s{model_args.fr_span}"
-                           f"m{model_args.fr_mem_spans}_{model_args.fr_way}")
+                           f"m{model_args.fr_mem_spans}_{model_args.fr_way}"
+                           + ("_attn" if model_args.fr_writer_pool == "attn" else "")
+                           + ("_cur" if model_args.fr_curriculum else ""))
         return WandbRunIdentity(
             experiment_id=resolved_experiment,
             model_family="frozen_reader",

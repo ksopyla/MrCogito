@@ -1,8 +1,9 @@
 """E36 — a trained writer for a frozen reader (docs/4_Research_Notes/e36_frozen_reader_writer_20261018.md).
 
 Writer: the lower `writer_layers` decoder layers of a small pretrained LM (SmolLM2-135M by default), made
-bidirectional, read each span of `span` tokens (512) and mean-pool it into ONE entry of the writer's width. The
-borrowed token embedding stays frozen (it costs no compute and shares the reader's tokenizer).
+bidirectional, read each span of `span` tokens (512) and pool it into ONE entry of the writer's width: a mean, or
+(`writer_pool='attn'`) one learned query per head, starting as the mean. The borrowed token embedding stays frozen
+(it costs no compute and shares the reader's tokenizer).
 
 Reader: a frozen pretrained decoder (SmolLM2-360M by default). Two ways in (`way`):
   input — each entry -> 2-layer MLP -> RMS-normalised x a learnable gain -> one input position of the reader
@@ -16,6 +17,8 @@ fetched entries are always given in source order.
 Training rows: [BOS] + (mem_spans + 1) * span tokens + [EOS] from one long document.
   continuation   : the entries of spans 0..M-1 -> the reader predicts span M (tokens 1..S-1 scored);
   reconstruction : (a `recon_frac` share of training steps) the entry of one span -> the reader rebuilds it.
+  curriculum     : (optional, `curriculum='64:750,128:750,...'`) reconstruction-only phases first, at growing
+                   tokens per entry (span // tokens spans rebuilt per row), then the two objectives above.
 Shapes: B rows, M = mem_spans, S = span, D = writer width, d = reader width, L = reader layers, V = vocabulary.
   (B, M*S) -> writer -> (B, M, D) -> input: (B, M, d) | kv: L x [(B, h_kv, M, hd), (B, h_kv, M, hd)]
   -> reader over the target (B, S) -> logits (B, S, V).
@@ -36,6 +39,21 @@ from transformers.modeling_outputs import CausalLMOutput
 from transformers.models.llama.modeling_llama import apply_rotary_pos_emb
 
 WAYS = ("input", "kv")
+POOLS = ("mean", "attn")
+
+
+def parse_curriculum(spec: str, span: int) -> list[tuple[int, int]]:
+    """'64:750,128:750,256:750,512:750' -> [(64, 750), ...]: reconstruction-only phases (tokens per entry,
+    optimizer steps) that run before the main continuation + reconstruction training at `span`."""
+    out = []
+    for part in (spec or "").split(","):
+        if not part.strip():
+            continue
+        s, n = (int(x) for x in part.split(":"))
+        if s < 1 or n < 1 or s > span:
+            raise ValueError(f"curriculum phase {part!r}: need 1 <= tokens <= span ({span}) and steps >= 1")
+        out.append((s, n))
+    return out
 ENTRY_POSITIONS = ("span_mid", "compact")
 
 
@@ -55,6 +73,9 @@ class FrozenReaderMemoryConfig(PretrainedConfig):
         proj_hidden: int = 2048,
         reader_dtype: str = "bfloat16",
         vocab_size: int = 0,
+        writer_pool: str = "mean",
+        curriculum: str = "",
+        grad_accum: int = 1,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -64,20 +85,50 @@ class FrozenReaderMemoryConfig(PretrainedConfig):
             raise ValueError(f"entry_positions must be one of {ENTRY_POSITIONS}, got {entry_positions!r}")
         if not 0.0 <= recon_frac < 1.0:
             raise ValueError("recon_frac must be in [0, 1)")
+        if writer_pool not in POOLS:
+            raise ValueError(f"writer_pool must be one of {POOLS}, got {writer_pool!r}")
+        parse_curriculum(curriculum, span)  # validates
         self.reader_name, self.writer_init, self.writer_layers = reader_name, writer_init, int(writer_layers)
         self.span, self.mem_spans, self.way = int(span), int(mem_spans), way
         self.recon_frac, self.entry_positions = float(recon_frac), entry_positions
         self.proj_hidden, self.reader_dtype, self.vocab_size = int(proj_hidden), reader_dtype, int(vocab_size)
+        self.writer_pool, self.curriculum, self.grad_accum = writer_pool, curriculum, int(grad_accum)
         self.checkpoint_family = "frozen_reader"
         self.pretraining_objective = "causal_lm"
 
 
+class AttnPool(nn.Module):
+    """One learned query per head attends over the span's token states; the heads are concatenated and projected
+    to one vector. Starts as the plain mean (zero queries -> uniform attention; identity value and output maps).
+
+    forward: (N, S, D) -> (N, D)."""
+
+    def __init__(self, d: int, heads: int):
+        super().__init__()
+        if d % heads:
+            raise ValueError(f"width {d} not divisible by {heads} heads")
+        self.heads, self.dh = heads, d // heads
+        self.q = nn.Parameter(torch.zeros(heads, self.dh))
+        self.k = nn.Linear(d, d, bias=False)
+        self.v, self.o = nn.Linear(d, d, bias=False), nn.Linear(d, d, bias=False)
+        nn.init.eye_(self.v.weight)
+        nn.init.eye_(self.o.weight)
+
+    def forward(self, h: torch.Tensor) -> torch.Tensor:
+        n, s, d = h.shape
+        k = self.k(h).view(n, s, self.heads, self.dh)
+        v = self.v(h).view(n, s, self.heads, self.dh)
+        att = torch.einsum("hd,nshd->nhs", self.q.to(k.dtype), k) / math.sqrt(self.dh)
+        return self.o(torch.einsum("nhs,nshd->nhd", att.softmax(-1), v).reshape(n, d))
+
+
 class SpanWriter(nn.Module):
-    """Lower layers of a pretrained decoder, bidirectional within a span, mean-pooled to one entry.
+    """Lower layers of a pretrained decoder, bidirectional within a span, pooled to one entry (mean, or attention
+    pooling with one learned query per head).
 
     forward: span ids (N, S) -> entries (N, D)."""
 
-    def __init__(self, base, n_layers: int):
+    def __init__(self, base, n_layers: int, pool: str = "mean"):
         super().__init__()
         if not 1 <= n_layers <= len(base.layers):
             raise ValueError(f"writer_layers={n_layers} outside 1..{len(base.layers)}")
@@ -89,6 +140,7 @@ class SpanWriter(nn.Module):
         self.rotary_emb = base.rotary_emb
         self.norm = nn.RMSNorm(base.config.hidden_size, eps=1e-6)
         self.hidden_size = base.config.hidden_size
+        self.pool = AttnPool(base.config.hidden_size, base.config.num_attention_heads) if pool == "attn" else None
 
     def forward(self, ids: torch.Tensor) -> torch.Tensor:
         n, s = ids.shape
@@ -98,7 +150,7 @@ class SpanWriter(nn.Module):
         for layer in self.layers:
             out = layer(h, attention_mask=None, position_ids=pos, position_embeddings=pe)
             h = out[0] if isinstance(out, tuple) else out
-        return self.norm(h.mean(dim=1))
+        return self.norm(h.mean(dim=1) if self.pool is None else self.pool(h))
 
 
 class InputProjector(nn.Module):
@@ -147,7 +199,8 @@ class FrozenReaderMemory(PreTrainedModel):
                 config.writer_init, torch_dtype=torch.float32, attn_implementation="sdpa").model
         reader.requires_grad_(False)
         self.reader = reader.eval()
-        self.writer = SpanWriter(writer_base, config.writer_layers)
+        self.writer = SpanWriter(writer_base, config.writer_layers, config.writer_pool)
+        self._curriculum = parse_curriculum(config.curriculum, config.span)
         rc = reader.config
         if config.vocab_size and config.vocab_size != rc.vocab_size:
             raise ValueError(f"config vocab {config.vocab_size} != reader vocab {rc.vocab_size}")
@@ -260,11 +313,37 @@ class FrozenReaderMemory(PreTrainedModel):
 
     # -- training ---------------------------------------------------------------------------------------------
     def _recon_step(self) -> tuple[bool, int]:
-        """Same draw on every rank (a counter of forward calls, identical across DDP ranks)."""
+        """Count one training forward call and draw for it (tests and the trainer use the same counter)."""
         self._fwd += 1
+        return self._draw()
+
+    def _draw(self) -> tuple[bool, int]:
+        """Same draw on every rank (a counter of forward calls, identical across DDP ranks)."""
         u = ((self._fwd * 2654435761) % 2**32) / 2**32
         j = (self._fwd * 40503) % max(self.config.mem_spans, 1)
         return u < self.config.recon_frac, j
+
+    def _curriculum_span(self) -> Optional[int]:
+        """Tokens per entry of the reconstruction-only phase that the current optimizer step falls in, or None once
+        the curriculum is over (a resumed run restarts this counter)."""
+        step = (self._fwd - 1) // max(self.config.grad_accum, 1)
+        for span, steps in self._curriculum:
+            if step < steps:
+                return span
+            step -= steps
+        return None
+
+    def _recon_loss(self, spans: torch.Tensor) -> torch.Tensor:
+        """Each row of `spans` (N, s) is rebuilt by the reader from its own entry, at local positions."""
+        n, s = spans.shape
+        dev = spans.device
+        entries = self.writer(spans).unsqueeze(1)
+        if self.config.entry_positions == "span_mid":
+            epos, tpos = torch.tensor([s // 2], device=dev), torch.arange(s, device=dev)
+        else:
+            epos, tpos = torch.zeros(1, dtype=torch.long, device=dev), torch.arange(s, device=dev) + 1
+        logits = self.read_logits(entries, spans, tpos, epos)
+        return F.cross_entropy(logits[:, :-1].float().reshape(-1, logits.shape[-1]), spans[:, 1:].reshape(-1))
 
     def forward(self, input_ids: torch.Tensor, attention_mask: Optional[torch.Tensor] = None,
                 labels: Optional[torch.Tensor] = None, **_) -> CausalLMOutput:
@@ -274,7 +353,13 @@ class FrozenReaderMemory(PreTrainedModel):
         if ids.shape[1] < need:
             raise ValueError(f"rows need {need} tokens after BOS, got {ids.shape[1]}")
         dev = ids.device
-        recon, j = self._recon_step() if self.training else (False, 0)
+        if self.training:
+            self._fwd += 1
+            cur = self._curriculum_span()
+            if cur is not None:  # reconstruction-only phase: s // cur spans of `cur` tokens per row, same tokens
+                k = max(1, s // cur)
+                return CausalLMOutput(loss=self._recon_loss(ids[:, :k * cur].reshape(-1, cur)), logits=None)
+        recon, j = self._draw() if self.training else (False, 0)
         span_mid = self.config.entry_positions == "span_mid"
         if recon:
             tgt = ids[:, j * s:(j + 1) * s]
