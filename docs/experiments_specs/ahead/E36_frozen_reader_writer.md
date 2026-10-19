@@ -120,6 +120,36 @@ SQuAD, passage only in memory: 8.6 % (none 8.8 %, with the passage 51.6 %).
 - By the plan, E36's S1 stops here. The capacity diagnostic below shows the format would allow more, so the next
   step is a better writer, not a shorter span.
 
+### S1 round 4 — the improved writer (Polonez, 19 Oct, 08:37–11:17 UTC)
+All runs use the key/value way, 512 tokens per entry and the 3-layer writer, evaluated as before.
+- **Attention pooling:** one learned query per head, starting as the mean.
+- **Reconstruction-first curriculum:** 750 steps each of rebuilding spans of 64 / 128 / 256 / 512 tokens from their
+  own entry (reader frozen), then the round-1 objective for 4,000 steps. 7,000 steps in all.
+
+W&B: `frozen_reader_SmolLM2-360M_w3_s512m8_kv_attn_20261019_083716`, `..._kv_cur_20261019_083716`,
+`..._kv_attn_cur_20261019_083716`.
+
+| writer | books recovered | PDFs recovered | own span rebuilt (bits, books / PDFs) | SQuAD from memory (other doc) |
+|---|---|---|---|---|
+| round 1: mean, no curriculum (4,000 steps) | 18 % | 13 % | 32 / 48 | 9.8 % (8.4 %) |
+| attention pooling only (4,000 steps; GPU3, 08:37–10:13) | 17 % | 12 % | 29 / 44 | 9.4 % (7.4 %) |
+| curriculum only, mean (7,000 steps; GPU0, 08:37–11:17) | 24.5 % | 16.7 % | 135 / 114 | 11.2 % (6.4 %) |
+| **both (7,000 steps; GPU1, 08:37–11:02)** | 24.4 % | 16.5 % | **145 / 128** | 11.0 % (6.4 %) |
+
+SQuAD: 8.8 % with no passage, 51.6 % with the passage in context.
+
+- **The curriculum is what works.** Rebuilding first, at growing spans, makes each entry carry 3–4× more of its
+  span (114–145 bits vs 32–48). The share of the continuation gain rises by 4–6 points.
+- **Attention pooling adds nothing measurable,** alone or with the curriculum. Its early lead in rebuilding
+  64-token spans (2.56 vs 2.72 at step 500) was gone by the end.
+- **The first sign of facts crossing:** SQuAD from the own memory 11 % vs another document's 6.4 % (no passage
+  8.8 %). Small, but in the right order on 500 items.
+- Still below the 50 % pass mark. The entries now hold ~145 of the 781 bits the format allows (S1 capacity
+  diagnostic).
+- Caveat: the curriculum runs had 3,000 extra steps of rebuilding. The no-curriculum runs had flattened by step
+  4,000 (held-out loss 2.741 → 2.740), so extra continuation steps alone are unlikely to explain a 3–4× change in
+  bits rebuilt.
+
 ### Capacity diagnostic (Polonez GPU3, 21:38–21:44 UTC)
 8 held-out texts of 512 tokens (4 books, 4 PDFs). The table gives the bits one entry adds about its own span when
 the reader rebuilds it (`Cache/e36/subspace_probe.json`):

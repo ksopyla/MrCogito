@@ -30,8 +30,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
     (8.8 % with no passage, 51.6 % with it in context).
   - **The writer is the limit:** its entries carry ~36–54 bits; an entry optimised within the same format
     carries 781.
-  - Next, waiting for the author: attention pooling and reconstruction-first training at growing spans, then
-    teacher matching on passages with questions.
+  - **19 Oct — the improved writer:** reconstruction-first training at growing spans (64 → 512) makes entries
+    carry 114–145 bits (from 32–48). Continuation recovered rises to 24.5 / 16.7 %. SQuAD from the own memory
+    is 11 % vs 6.4 % from another document's. Attention pooling adds nothing. Still below the 50 % pass mark.
+  - Next: teacher matching (S2) on passages with questions, on top of the curriculum writer.
   - Spec: [E36_frozen_reader_writer.md](../experiments_specs/ahead/E36_frozen_reader_writer.md) · note:
     [e36_frozen_reader_writer_20261018.md](../4_Research_Notes/e36_frozen_reader_writer_20261018.md).
 - **2026-10-17 — Agent to agent through the notebook works (E33f, E33 trained as two agents).** Agent A keeps an
