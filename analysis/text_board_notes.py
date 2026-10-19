@@ -30,10 +30,10 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-18 19:00 UTC",
-    "headline": "One model (E33m) now holds three of four goal tasks at 4k: latest 91 %, compose 96 %, deduce 98 %, but "
-                "only with generator labels and on trained shapes. Count stays at 30 %; the author asked for a label-free "
-                "path next.",
+    "as_of": "2026-10-19 13:00 UTC",
+    "headline": "Compose and deduce now reach the goal without generator labels: written reasoning in the training text "
+                "gives 92 % and 99 % at 4k (R2, one run). Latest and count pass only with labels (latest 91 %) or not at "
+                "all (count 30 %); the written route for both is training.",
     "where": [
         "18 Oct evening, label-free steps (multi-hop session): hop naming without the read target still reaches deduce "
         "99 % but compose falls to 8 % (finding a two-name fact needs a read signal; written reasoning chains can give it "
@@ -257,6 +257,12 @@ PROTOCOL_LOG = [
 # Claims register: every conclusion we have drawn, with its state. holds = repeated or overwhelming within its runs;
 # single run = one run, needs a second; open = not testable yet; retracted = disproved (kept, with the date).
 CLAIMS = [
+    {"claim": "Written reasoning in the training text replaces the generator labels for compose and deduce.",
+     "state": "single run", "since": "2026-10-19",
+     "evidence": "R2: answers write their chain out; a rule reads the read and naming targets off the text (99.3 % "
+                 "agreement with the generator); the written steps are removed in three stages. Compose 92 / 97 %, "
+                 "deduce 99 / 100 % at 4k / 16k, as with labels (94 / 98 %). 3-hop compose still 0 %.",
+     "settle": "A second seed; the same route for latest and count (running on Odra)."},
     {"claim": "Told which move is the newest and given a rank-among-matching-notes order term, the notebook learns latest.",
      "state": "holds", "since": "2026-10-18",
      "evidence": "E33j (E33q + every head ranked × a learned per-question switch, the last move as read and naming target): "
@@ -778,6 +784,23 @@ LADDER = [
      "result": "Latest 93 / 88 / 94 % at 1k / 4k / 16k (evidence removed 0 %): the switch is not needed. Compose 96 / 98 %, "
                "deduce 98 / 100 %, keyed 98 / 100 %; count fell to 11 / 12 %. Extra exams still running.",
      "when": "18 Oct 07:44 → 09:50 UTC training (Polonez); exams to about 11:30", "why": "T4: E33i's switch never opened; order always on."},
+    {"id": "written_r2s3_none.polonez", "start": "2026-10-19", "data": "written reasoning chains (3 builds)",
+     "standing": "in use", "run": "R2: written reasoning, no generator labels (Polonez, multi-hop session)",
+     "model": "E33qn trained in three stages: written steps all → all but the first → none; targets read off the text by "
+              "a rule (99.3 % agreement with the generator, which is not used) · 30M, plain",
+     "tokens": "3 × 0.1B from E33x", "exams": "v2 + v2.1",
+     "result": "Compose 92 / 97 %, deduce 99 / 100 %, lookup 98 / 99 %, keyed 97 / 100 % at 4k / 16k with no generator "
+               "labels (E33qn with labels 94 / 98 %). Reads follow the chain (95 / 93 / 96 % per round). Latest 18 %, "
+               "count 21 % (no order or count signal); 3-hop compose 0 %.",
+     "when": "19 Oct, exams done 12:38 UTC", "why": "The label-free route for multi-hop: is written reasoning enough?"},
+    {"id": None, "start": "2026-10-19", "data": "written reasoning incl. latest and count tallies (3 builds)",
+     "standing": "running", "run": "Written reasoning for latest and count (Odra)",
+     "model": "E33m arch (order on demand + count heads + hop naming) from the R2 final; latest written as its last move, "
+              "count as its visits listed, targets read off the text by a rule · 30M, plain",
+     "tokens": "3 × 0.1B (all → drop one → none)", "exams": "v2 + v2.1, 1k / 4k / 16k", "result": "—",
+     "when": "19 Oct from 12:43 UTC (data builds, then three training stages, about 4 h)",
+     "why": "T4 / T6 without generator labels. Pass: latest ≥ 70 %, count ≥ 50 % at 4k, compose / deduce within 5 "
+            "points of R2."},
     {"id": "label_e33qn0_s0.polonez", "start": "2026-10-18", "data": "v2 + bridge, reasoning phase (output-word spans)",
      "standing": "in use", "run": "R1: naming without the read target (Polonez, multi-hop session)",
      "model": "E33x + hop naming only (no read target) · 30M, plain", "tokens": "0.3B continuation",
@@ -932,6 +955,8 @@ SIGNALS = {
     "count": ("count heads", "arch", "a summing read beside the notebook read (no labels)"),
     "count-labels": ("count labels", "privileged", "told how many visits the answer counts"),
     "latest-labels": ("last-move labels", "privileged", "told which move answers a latest question"),
+    "written": ("written reasoning", "data", "answers write their steps out in the training text; the read and naming "
+                "targets are read off that text by a rule (no generator labels); steps then removed (iCoT schedule)"),
 }
 RECIPES = [
     {"key": "dense", "name": "Dense", "what": "full attention, the reference", "from": "from scratch, 1.5B (+0.3B "
@@ -953,6 +978,9 @@ RECIPES = [
     {"key": "e33m", "name": "E33m, all four", "what": "E33j + count heads told the true number", "from": "E33j + 0.3B",
      "signals": ["warm", "dense-data", "read", "name", "order", "latest-labels", "count", "count-labels"],
      "runs": ["all_e33m_s0.odra"]},
+    {"key": "r2", "name": "R2, written reasoning", "what": "hop naming + read targets read off written chains, "
+     "steps removed all → drop one → none", "from": "E33x + 3 × 0.1B", "signals": ["warm", "dense-data", "written", "name"],
+     "runs": ["written_r2s3_none.polonez"]},
     {"key": "e33ok", "name": "E33ok, denser mix", "what": "key stop + read target on notes, denser reasoning data",
      "from": "E33r + 0.9B", "signals": ["warm", "dense-data", "read", "keystop"],
      "runs": ["r2out_e33ok_s0.polonez", "r2out_e33gk_s0.polonez"]},
@@ -1291,12 +1319,10 @@ GOAL = {"set": "2026-10-17", "target": 0.70, "tasks": ["latest", "compose", "cou
 
 # Decisions waiting for the author: shown at the top of the board. Remove an item when it is decided.
 DECISIONS = [
-    "No generator labels from here on (the author, via the multi-hop session): approve the label-free plan — written "
-    "reasoning chains as the per-hop signal (R2) and a writer pretrained without a task (R3) first? Review: "
-    "e33_multihop_review_label_free_20261018.",
-    "3 hops: E33c's per-round question control went unused (gate 0.001). Train on 3-hop chains instead, or drop 3 hops "
-    "until the label-free line works?",
-    "Count: if E33k2 / E33m (count labels) reach 70 %, keep count in the label-free plan as written tallies, or park it?",
+    "Make written reasoning (R2) the base of the label-free line — and run its from-scratch confirmation, 3 seeds at "
+    "1.5B tokens (about 7 h × 3 GPUs each), once latest and count also pass the written way?",
+    "3 hops: both labelled and written recipes stop after two. Add 3-hop chains to the written data (in-distribution), "
+    "or keep 3 hops as the held-out test?",
 ]
 
 # One entry per architecture family compared on the board: plain name, what it is in one line, the standing analogy
